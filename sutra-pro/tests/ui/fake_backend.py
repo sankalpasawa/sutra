@@ -76,7 +76,7 @@ STAGES = {"1": ("1", "1"), "2": ("2", "2"), "3": ("2", "3"), "full": ("3", "full
 EVENT_NAMES = (
     "server.hello", "server.resync", "chat.turn", "chat.message", "chart.changed", "chart.approval", "graph.updated",
     "task.updated", "atom.updated", "usage.recorded", "needs_you.changed", "connector.health", "connector.switch",
-    "connector.mode",
+    "connector.mode", "agent.session", "chat.choice",
 )
 CONTROL_EVENTS = ("server.hello", "server.resync")  # no `id:` line, never in the ring
 PARTIAL_EVENT = "chat.partial"  # a streamed piece of a reply (ABS-7): it has no sample, needs its data, is never stored or replayed
@@ -85,7 +85,7 @@ HOSTS = ("127.0.0.1", "localhost")
 TASK_STATUS = {"running": "running", "waiting_on_you": "waiting_user", "filed": "done", "left_open": "done_with_open_items",
                "fault": "crashed", "idle": "queued", "not_made": "queued", "waiting": "running", "done_unchecked": "done"}
 SANDBOX = "sandbox allow-scripts allow-forms allow-popups; frame-ancestors 'self'"  # generated HTML (S3-web-14)
-ENGINE_ENUMS = {"output": ("website", "prd", "hld", "lld"), "fixes": (0, 1), "send_mode": ("dry-run", "mock", "live")}
+ENGINE_ENUMS = {"output": ("auto", "website", "prd", "hld", "lld", "project"), "workspace": ("auto", "off"), "fixes": (0, 1), "send_mode": ("dry-run", "mock", "live")}
 ENGINE_MIN = {"budget": 1, "max_cycles": 1, "max_turns": 1, "chat_full_chars": 1000, "budget_cap": 1}
 DEFAULT_MESSAGES = {
     400: ("bad_request", "The request is not valid."),
@@ -1081,6 +1081,7 @@ def make_app(fixtures_dir: str | Path = FIXTURES_DIR, *, pages_dir: str | Path |
     register_j2(app, state)
     register_controls(app, state, fixtures)
     register_welcome_settings(app, state)
+    register_agent_chats(app, state)
     services = _Services(state)
     if pages_dir is None and static_dir is None:
         mount(app, services)
@@ -1942,14 +1943,20 @@ def register_welcome_settings(app: FastAPI, state: FakeState) -> None:
 
     # the pill of a chat (item 4): the fake serves none until a test asks (`/__fake/pill`), as it never did, so no other test sees a pill
     def pill_of(sid: str) -> dict:
-        choice = state.ws["choice"]
+        agent = agent_info(state, sid)
+        own = state.ag["picks"].get(sid) if agent is not None else None
+        choice = own or ({"provider": None, "model": None, "effort": None} if agent is not None else state.ws["choice"])
         claude = choice["provider"] == "claude"
-        return {"providers": [
+        out = {"providers": [
             {"name": "claude", "ready": True, "why_not": "", "model": "sonnet", "models": [], "plan": None, "billing": "subscription", "chosen": claude,
              "quota": None, "model_options": [o.model_dump(mode="json") for o in claude_options()], "chat_model": choice["model"] if claude else None,
              "chat_effort": choice["effort"] if claude else None, "can_pick": state.ws["can_pick"]},
             {"name": "codex", "ready": False, "why_not": "not signed in", "model": "gpt-5.6-luna", "models": [], "plan": None, "billing": "unknown",
              "chosen": False, "quota": None, "model_options": [], "chat_model": None, "chat_effort": None, "can_pick": True}], "chosen": choice["provider"]}
+        info = agent or {"kind": "other", "agent": None}
+        out.update({"kind": state.chat(sid).info["kind"], "agent": info["agent"], "own": ({k: own[k] for k in ("provider", "model", "effort")} if own else None),
+                    "effective": effective_pick(state, sid)})
+        return out
 
     @app.get("/api/chats/{sid}/providers")
     def pill_get(sid: str):
@@ -1967,9 +1974,26 @@ def register_welcome_settings(app: FastAPI, state: FakeState) -> None:
             raise ApiError(422, "validation", f"{provider} cannot run: not signed in")
         if model is not None and model not in slugs:
             raise ApiError(422, "validation", f"{model} is not a model claude offers. Choose one of: {', '.join(slugs[:4])}")
-        state.ws["choice"] = {"provider": provider, "model": model or (state.ws["choice"]["model"] if provider else None),
-                              "effort": effort or (state.ws["choice"]["effort"] if provider else None)}
-        return JSONResponse({"session_id": sid, **state.ws["choice"]})
+        agent = agent_info(state, sid)
+        if agent is not None:                                                    # an agent's chat: checked, stored per chat, no router session (D131)
+            if state.chat(sid).info["status"] != "active":
+                raise ApiError(409, "busy", "That chat belongs to a run that is over. Its choice can no longer change.")
+            before = state.ag["picks"].get(sid)
+            kept = provider is not None and before is not None and before["provider"] == provider
+            if provider is None:
+                state.ag["picks"].pop(sid, None)
+            else:
+                state.ag["picks"][sid] = {"provider": provider, "model": model or (before["model"] if kept else None), "effort": effort or (before["effort"] if kept else None)}
+        else:
+            state.ws["choice"] = {"provider": provider, "model": model or (state.ws["choice"]["model"] if provider else None),
+                                  "effort": effort or (state.ws["choice"]["effort"] if provider else None)}
+            if state.chat(sid).info["kind"] == "department":
+                state.ag["team"] = dict(state.ws["choice"]) if provider else None
+        shown = effective_pick(state, sid)
+        state.publish("chat.choice", {"session_id": sid, "provider": shown["provider"], "model": shown["model"], "effort": shown["effort"], "source": shown["source"]})
+        own = state.ag["picks"].get(sid) if agent is not None else state.ws["choice"]
+        return JSONResponse({"session_id": sid, "provider": (own or {}).get("provider"), "model": (own or {}).get("model"), "effort": (own or {}).get("effort"),
+                             "source": shown["source"], "effective": shown})
 
     @app.post("/__fake/pill")
     async def pill_control(request: Request):
@@ -2140,3 +2164,168 @@ def main(argv: list[str] | None = None) -> int:
 
 if __name__ == "__main__":
     raise SystemExit(main())
+
+
+# ---------------------------------------------------------------------------------------------------------------------
+# agent-sessions (lane 3, WP10): a chat per agent per run, the model chosen for each, the owner's note, a team's list of agents
+# ---------------------------------------------------------------------------------------------------------------------
+DEFAULT_PICK = {"provider": "claude", "model": "sonnet", "effort": "high"}
+FUNCTION_NAMES = ("identity", "adaptation", "priority", "coordination", "audit")
+LIVE_RUN = {"run_id": "j2-20261104-101500-aaaa", "task_id": "tsk_a1b2c3d4e5f6", "status": "running", "started_at": "2026-11-04T10:15:00Z", "ended_at": None}
+PAST_RUN = {"run_id": "j2-20261103-090000-bbbb", "task_id": "tsk_0f0f0f0f0f0f", "status": "done", "started_at": "2026-11-03T09:00:00Z", "ended_at": "2026-11-03T09:40:00Z"}
+PAST_SESSIONS = {
+    "cs_past_identity": {"agent": "identity", "title": "Identity \u00b7 Earlier menu page", "pinned": "claude", "pinned_model": "haiku", "pinned_effort": "low", "node": "web.identity"},
+    "cs_past_audit": {"agent": "audit", "title": "Audit \u00b7 Earlier menu page", "pinned": "", "pinned_model": "", "pinned_effort": "", "node": "web.audit"},
+}
+
+
+def agent_info(state: FakeState, sid: str) -> dict | None:
+    """What an agent's session is in the fake graph: `{kind: function|step, agent, node, dept, past}` (None for any other chat). The sessions of a past run are
+    kept in `state.ag['past']`; a step called `task` is the task's own log, not an agent."""
+    past = PAST_SESSIONS.get(sid)
+    if past is not None and sid in state.ag["past_on"]:
+        return {"kind": "function", "agent": past["agent"], "node": past["node"], "dept": "web", "past": True}
+    node = state.session_ids().get(sid)
+    if node is None:
+        return None
+    if node["kind"] == "function":
+        return {"kind": "function", "agent": node["id"].split(".")[-1], "node": node["id"], "dept": node["dept_id"], "past": False}
+    if node["kind"] == "step" and node.get("step_ref") not in (None, "task"):
+        return {"kind": "step", "agent": node["step_ref"], "node": node["id"], "dept": node["dept_id"], "past": False}
+    return None
+
+
+def effective_pick(state: FakeState, sid: str) -> dict:
+    """The cascade the server applies, own > run > team > default, a whole pick at a time, with its source word."""
+    agent = agent_info(state, sid)
+    if agent is None:
+        own = state.ws["choice"]
+        return {**(own if own["provider"] else DEFAULT_PICK), "source": "own" if own["provider"] else "default"}
+    for source, pick in (("own", state.ag["picks"].get(sid)), ("run", state.ag["run_pick"]), ("team", state.ag["team"])):
+        if pick and pick.get("provider"):
+            return {"provider": pick["provider"], "model": pick.get("model"), "effort": pick.get("effort"), "source": source}
+    return {**DEFAULT_PICK, "source": "default"}
+
+
+def register_agent_chats(app: FastAPI, state: FakeState) -> None:
+    """GET /api/teams/{dept}/agents (the Web team: its five functions, its workflows, and an earlier run's two archived function chats), GET
+    /api/departments/{id}/runs, POST /api/chats/{sid}/steer, PUT /api/tasks/{id}/choice; the pill routes above know agent chats. `/__fake/agents` controls it:
+    {over: true} ends the run for steering (409 not_running), {past: true} brings the earlier run's archived chats into existence. Reset with the story."""
+    def fresh() -> dict:
+        return {"picks": {}, "run_pick": None, "team": None, "over": False, "past_on": set(), "notes": []}
+
+    state.ag = fresh()
+    original_reset, original_chat = state.reset, state.chat
+
+    def reset(*args: Any, **kw: Any) -> None:
+        original_reset(*args, **kw)
+        state.ag = fresh()
+    state.reset = reset                                    # type: ignore[method-assign]
+
+    def chat(sid: str) -> Chat:
+        past = PAST_SESSIONS.get(sid)
+        if past is None or sid not in state.ag["past_on"]:
+            return original_chat(sid)
+        found = state.chats.get(sid)
+        if found is None:
+            session = {"id": sid, "node_id": past["node"], "kind": "function", "title": past["title"], "writable": False, "status": "archived", "filed_under": None,
+                       "connector": "claude", "model": None, "provider_session_id": None, "last_message_id": 1, "note": "", "pinned": past["pinned"],
+                       "pinned_model": past["pinned_model"], "pinned_effort": past["pinned_effort"], "run_id": PAST_RUN["run_id"]}
+            line = {"id": 1, "session_id": sid, "role": "agent", "who": past["agent"], "kind": "text", "text": f"{past['agent'].capitalize()} finished the earlier run.",
+                    "card": None, "pause": None, "answered_by": None, "task_id": PAST_RUN["task_id"], "state": "ok", "at": "2026-11-03T09:30:00Z"}
+            found = Chat({"session": session, "messages": [line], "initial_visible": 1})
+            state.chats[sid] = found
+        return found
+    state.chat = chat                                      # type: ignore[method-assign]
+
+    def rows_of(run: str | None) -> list[dict]:
+        if run == PAST_RUN["run_id"]:
+            state.ag["past_on"].update(PAST_SESSIONS)
+            return [{"agent": p["agent"], "label": p["agent"].capitalize(), "kind": "function", "title": p["title"], "session_id": sid, "node_id": p["node"],
+                     "run_id": PAST_RUN["run_id"], "task_id": PAST_RUN["task_id"], "state": "filed", "live": False, "status": "archived",
+                     "own": ({"provider": p["pinned"], "model": p["pinned_model"] or None, "effort": p["pinned_effort"] or None} if p["pinned"] else None),
+                     "run_pick": None, "effective": {"provider": p["pinned"] or "claude", "model": p["pinned_model"] or "sonnet", "effort": p["pinned_effort"] or "high",
+                                                     "source": "own" if p["pinned"] else "default"},
+                     "usage": {"calls": 3, "usd": 0.04, "tokens_in": 1200, "tokens_out": 300}, "last_at": "2026-11-03T09:30:00Z"} for sid, p in PAST_SESSIONS.items()]
+        nodes = [n for n in state.fx.graphs[state.graph_stage]["nodes"] if n.get("dept_id") == "web"]
+        ordered = [n for fn in FUNCTION_NAMES for n in nodes if n["kind"] == "function" and n["id"] == f"web.{fn}"] + \
+                  [n for n in nodes if n["kind"] == "step" and n.get("step_ref") not in (None, "task")]
+        out = []
+        for i, n in enumerate(ordered):
+            sid = n["chat_session_id"]
+            agent = agent_info(state, sid)
+            own = state.ag["picks"].get(sid)
+            out.append({"agent": agent["agent"], "label": agent["agent"].capitalize() if n["kind"] == "function" else n["label"], "kind": n["kind"],
+                        "title": f"{agent['agent'].capitalize()} \u00b7 Menu page" if n["kind"] == "function" else f"{agent['agent']} \u00b7 {n['label']}",
+                        "session_id": sid, "node_id": n["id"], "run_id": LIVE_RUN["run_id"], "task_id": LIVE_RUN["task_id"], "state": n["status"],
+                        "live": n["status"] == "running" and not state.ag["over"], "status": "active",
+                        "own": {k: own[k] for k in ("provider", "model", "effort")} if own else None, "run_pick": state.ag["run_pick"],
+                        "effective": effective_pick(state, sid), "usage": {"calls": 2 + i, "usd": round(0.01 * (i + 1), 2), "tokens_in": 400 * (i + 1), "tokens_out": 90 * (i + 1)},
+                        "last_at": "2026-11-04T10:20:00Z"})
+        return out
+
+    @app.get("/api/teams/{dept}/agents")
+    def team_agents(dept: str, run: str | None = None):
+        if dept != "web":
+            if state.department(dept) is None:
+                raise ApiError(404, "not_found", f"No team {dept!r}.")
+            return JSONResponse([])
+        if run is not None and run not in (LIVE_RUN["run_id"], PAST_RUN["run_id"]):
+            raise ApiError(404, "not_found", "That run was not found.")
+        return JSONResponse(rows_of(run))
+
+    @app.get("/api/departments/{dept_id}/runs")
+    def dept_runs(dept_id: str):
+        if state.department(dept_id) is None:
+            raise ApiError(404, "not_found", f"No team {dept_id!r}.")
+        if dept_id != "web":
+            return JSONResponse([])
+        return JSONResponse([{"run_id": r["run_id"], "task_id": r["task_id"], "dept_id": "web", "dir": f"departments/web/runs/{r['run_id']}", "status": r["status"],
+                              "pid": None, "started_at": r["started_at"], "ended_at": r["ended_at"]} for r in (LIVE_RUN, PAST_RUN)])
+
+    @app.post("/api/chats/{sid}/steer")
+    async def steer(sid: str, request: Request):
+        require_token(request, state)
+        body = await json_body(request)
+        chat_ = state.chat(sid)
+        agent = agent_info(state, sid)
+        text = body.get("text") if isinstance(body, dict) else None
+        if not isinstance(text, str) or text.strip() == "":
+            raise ApiError(422, "validation", "The note is empty.")
+        if len(text.strip()) > 2000:
+            raise ApiError(422, "validation", f"A note can be up to 2000 characters; this one has {len(text.strip())}.")
+        if agent is None:
+            raise ApiError(422, "rules", "Only an agent's chat takes a note.")
+        if agent["past"] or state.ag["over"]:
+            raise ApiError(409, "not_running", "That run is over, so the agent can no longer read a note.")
+        message = state.add_message(chat_, "user", "user", "text", text.strip(), task_id=LIVE_RUN["task_id"])
+        message["steer"] = True
+        with state.lock:
+            state.ag["notes"].append({"session_id": sid, "agent": agent["agent"], "text": text.strip()})
+        return JSONResponse({"message_id": message["id"], "session_id": sid, "applies": "next_call"})
+
+    @app.put("/api/tasks/{task_id}/choice")
+    async def run_choice(task_id: str, request: Request):
+        require_token(request, state)
+        body = await json_body(request)
+        if task_id != LIVE_RUN["task_id"]:
+            raise ApiError(409 if task_id == PAST_RUN["task_id"] else 404, "busy" if task_id == PAST_RUN["task_id"] else "not_found", "That run is over.")
+        provider = body.get("provider")
+        state.ag["run_pick"] = {"provider": provider, "model": body.get("model"), "effort": body.get("effort")} if provider else None
+        state.publish("chat.choice", {"session_id": None, "task_id": task_id, "run_id": LIVE_RUN["run_id"], "provider": provider, "model": body.get("model"),
+                                      "effort": body.get("effort"), "source": "run"})
+        return JSONResponse({"task_id": task_id, "own": state.ag["run_pick"]})
+
+    @app.post("/__fake/agents")
+    async def agents_control(request: Request):
+        body = await json_body(request)
+        if isinstance(body, dict):
+            if "over" in body:
+                state.ag["over"] = bool(body["over"])
+            if body.get("past"):
+                state.ag["past_on"].update(PAST_SESSIONS)
+            if "run_pick" in body:
+                state.ag["run_pick"] = body["run_pick"]
+            if "team" in body:
+                state.ag["team"] = body["team"]
+        return JSONResponse({"over": state.ag["over"], "run_pick": state.ag["run_pick"], "team": state.ag["team"], "notes": state.ag["notes"]})

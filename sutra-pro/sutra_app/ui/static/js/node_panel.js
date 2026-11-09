@@ -9,6 +9,11 @@
    working log. A division is a lens: its messages are the team's Identity's work for that division, and a link shows the whole team's chat. The
    Details tab is the function drawer (fnode_view.js) or, for any other node, its head, its team's five functions and its links.
 
+   An AGENT's chat (a function or step session, D130 to D134) has the model pill above a note box: the pill chooses its provider, model and effort (its first
+   button, Default, follows the run, the team or the app and says what it resolves to) and the note box is the way to write to it ("Note to Audit", read at its
+   next step); the generic message box never appears there. A past run's agent chat shows its choice as a chip and no pill. A team's panel has a third tab,
+   Agents (agent_chats.js): its agents' chats for one run, each with its model chip, usage and a button that opens it.
+
    While it is open the panel keeps itself current: its own SutraEvents stream (chat.message of its session, atom.updated of its node, task and graph
    updates) refetches what changed, coalesced, and a dropped stream falls back to polling the same two calls (docs/design/ui.md 9, X4).
 
@@ -37,7 +42,7 @@
   const ATOM_PAGE = 100;             // "Show all" asks for this many atoms at a time
   const COALESCE_MS = 150;           // a burst of events is one refetch
   const SEEN = "sutra:seen:";
-  const TOPICS = ["chat", "atom", "graph", "task", "needs_you"];
+  const TOPICS = ["chat", "atom", "graph", "task", "needs_you", "agent"];
   const NO_TOKEN = "This page was opened without its access token. Reload it from the app.";
   const TOO_MANY = "Too many messages are waiting. I answer them one at a time.";
   const DOWN = "The app is not responding. Try again in a moment.";
@@ -50,6 +55,7 @@
   const ctx = () => root.SutraCtx || null;
   const FV = () => root.FnodeView;
   const CV = () => root.ChatView;
+  const AC = () => root.AgentChats || null;                       // agent_chats.js: read when used, the panel works without it (no Agents tab, no note box)
   const CSc = () => root.ChatScroll || null;          // GAP-chat-comfort: chat_draft.js and chat_scroll.js, read when used (a J2 page injects them)
   const api = () => {
     const c = ctx();
@@ -148,7 +154,8 @@
         '<span class="nstatus" hidden></span><span class="npprovider" title="The model behind this chat" hidden></span>' +
         '<button type="button" class="linkbtn npclose" data-npclose>' + (inline ? "Back to Sutra" : "Close (Esc)") + '</button></div><p class="npnote" hidden></p>' +
         '<div class="nptabs" role="tablist" aria-label="Panel"><button type="button" role="tab" id="' + idp + 'tab-chat" data-nptab="chat" aria-selected="false">Chat</button>' +
-        '<button type="button" role="tab" id="' + idp + 'tab-details" data-nptab="details" aria-selected="false">Details</button></div>' +
+        '<button type="button" role="tab" id="' + idp + 'tab-details" data-nptab="details" aria-selected="false">Details</button>' +
+        '<button type="button" role="tab" id="' + idp + 'tab-agents" data-nptab="agents" aria-selected="false" hidden>Agents</button></div>' +
         '<div class="npbody" role="tabpanel"></div>';
       refs = {
         title: host.querySelector("#" + idp + "title"), sub: host.querySelector(".npsub"), status: host.querySelector(".nstatus"), provider: host.querySelector(".npprovider"),
@@ -193,8 +200,14 @@
       refs.note.textContent = note;
     }
 
+    // The Agents tab belongs to a team (a department node) and needs agent_chats.js.
+    const agentsTab = () => !!AC() && !!st && !!st.node && st.node.kind === "department";
+    const tabsOpen = () => ["chat", "details"].concat(agentsTab() ? ["agents"] : []);
     function paintTabs() {
-      refs.tabs.forEach(b => b.setAttribute("aria-selected", String(st !== null && b.dataset.nptab === st.tab)));
+      refs.tabs.forEach(b => {
+        if (b.dataset.nptab === "agents") b.hidden = !agentsTab();
+        b.setAttribute("aria-selected", String(st !== null && b.dataset.nptab === st.tab));
+      });
     }
 
     /* ------------------------------------------------ the Chat tab */
@@ -202,13 +215,13 @@
       refs.body.innerHTML = '<div class="nchat"><div class="nsearch" hidden><input type="search" class="nsbox" aria-label="Search chats" placeholder="Search chats\u2026" maxlength="200"/>' +
         '<div class="nsres" hidden></div></div><div class="nactions" hidden></div><div class="nlens" hidden></div><div class="nlinks" hidden></div><div class="nearlier" hidden></div>' +
         '<div class="nmsgs" role="log" aria-live="polite" aria-label="Messages"></div><div class="cjump" hidden></div><div class="ccstream" hidden></div><p class="nbanner" role="status" hidden></p>' +
-        '<div class="npill" hidden></div><div class="ncomposer" hidden><div class="ccbar" hidden></div><div class="row"><textarea class="nbox" aria-label="Your message" rows="2"></textarea>' +
-        '<button type="button" class="send" data-act="send">Send</button></div></div><p class="nnote" role="note" hidden></p></div>';
+        '<div class="npill" hidden></div><div class="nnotehost" hidden></div><div class="ncomposer" hidden><div class="ccbar" hidden></div><div class="row"><textarea class="nbox" aria-label="Your message" rows="2"></textarea>' +
+        '<button type="button" class="send" data-act="send">Send</button></div><p class="nwd" hidden></p></div><p class="nnote" role="note" hidden></p></div>';
       refs.body.__html = undefined;
       const q = sel => refs.body.querySelector(sel);
       chatRefs = {lens: q(".nlens"), links: q(".nlinks"), earlier: q(".nearlier"), msgs: q(".nmsgs"), banner: q(".nbanner"), composer: q(".ncomposer"),
-        box: q(".nbox"), send: q(".send"), note: q(".nnote"), pill: q(".npill"), bar: q(".ccbar"), stream: q(".ccstream"), search: q(".nsearch"), sbox: q(".nsbox"), sres: q(".nsres"), actions: q(".nactions"),
-        jump: q(".cjump")};
+        box: q(".nbox"), send: q(".send"), note: q(".nnote"), pill: q(".npill"), notehost: q(".nnotehost"), bar: q(".ccbar"), stream: q(".ccstream"), search: q(".nsearch"), sbox: q(".nsbox"), sres: q(".nsres"), actions: q(".nactions"),
+        jump: q(".cjump"), wd: q(".nwd")};
       if (chatRefs.sbox) chatRefs.sbox.addEventListener("input", () => onSearchInput());
       if (CSc()) {
         CSc().watch(chatRefs.msgs, onScrollIntent);
@@ -374,7 +387,16 @@
       markSeen(activeSid(), last);
     }
 
+    // The working folder under the box of a team's chat (D125): "Working in <folder>" or "No working folder: Choose". st.wd is the answer read when the panel opened.
+    function paintWd() {
+      if (!chatRefs || !chatRefs.wd || !st) return;
+      const chip = directOwner() !== "" ? CV().workdirChip(st.wd) : "";
+      chatRefs.wd.hidden = chip === "";
+      paintTo(chatRefs.wd, chip);
+    }
+
     function paintComposer() {
+      paintWd();
       const session = activeSession();
       const direct = directOn();
       const turn = {busy: !st.view && !direct && teamBusy(), asking: asking(), blocked: st.blocked || (direct ? askBlocked() : "")};
@@ -404,7 +426,7 @@
     // POST /direct with attachments and a Stop. The streaming row lives under the messages; the stored reply (with its blocks) replaces it.
     function composerOf() {
       const CC = root.ChatComposer;
-      const sid = pillOwner();
+      const sid = directOwner();
       if (!CC || !sid) return null;
       if (!st.cc || st.cc.sid !== sid) {
         let c = composers.get(sid);              // the same chat opened again: its mode, its files and a running turn (with Stop) are still there
@@ -455,11 +477,16 @@
     }
 
     // The provider pill (ABS-9): only on a team chat the owner can write in; the data comes from GET /api/chats/{sid}/providers.
-    const pillOwner = () => (st && !st.view && !st.readOnly && st.session && (st.session.kind === "department" || st.session.kind === "division")) ? st.sid : "";
+    const directOwner = () => (st && !st.view && !st.readOnly && st.session && (st.session.kind === "department" || st.session.kind === "division")) ? st.sid : "";
+    // An agent's chat (function or step) has the pill too, above its note box: the choice is the agent's own (D131). A past run's chat is archived, so it has none.
+    const agentOwner = () => (st && !st.view && st.session && st.session.status === "active" && !!AC() && AC().isAgent(st.session)) ? st.sid : "";
+    const pillOwner = () => directOwner() || agentOwner();
     function paintPill() {
       const CP = root.ChatPill;
       if (!chatRefs || !chatRefs.pill) return;
       const sid = pillOwner();
+      const past = st && st.view && AC() && AC().isAgent(st.view.session) ? AC().sessionChip(st.view.session) : "";           // an archived agent chat: its choice as a chip, no pill
+      if (past !== "") { chatRefs.pill.hidden = false; chatRefs.pill.innerHTML = '<p class="npill-past">Ran on ' + past + "</p>"; return; }
       if (!CP || !sid) { chatRefs.pill.hidden = true; chatRefs.pill.innerHTML = ""; return; }
       if (st.pillSid !== sid) {
         st.pillSid = sid;
@@ -470,7 +497,7 @@
         });
       }
       const data = st.pill || {providers: [], chosen: null};
-      const html = CP.pill(data.providers, data.chosen);
+      const html = agentOwner() === sid ? CP.agentPill(data) : CP.pill(data.providers, data.chosen);
       chatRefs.pill.hidden = html === "";
       chatRefs.pill.innerHTML = html;
       keepFollowing();
@@ -542,6 +569,64 @@
       });
     }
 
+    // The owner's note to an agent (D132): the box under its pill, "Note to Audit"; a past run's chat has none, and it never offers the generic message box.
+    // The text typed stays in the box across repaints (paintTo leaves an unchanged string alone) and is sent by POST /api/chats/{sid}/steer.
+    const agentLabel = () => {
+      const s = st && st.session ? st.session : null;
+      const t = s ? clean(s.title) : "";
+      return (s && s.kind === "step" ? t : t.split(" \u00b7 ")[0]) || "the agent";
+    };
+    const runLive = () => {
+      const task = st && st.detail && isObj(st.detail.task) ? st.detail.task : null;
+      return task === null || ["running", "starting", "waiting_user"].includes(task.status);          // the node's own detail names the team's task; a stand-in without one is not "over"
+    };
+    function paintNote() {
+      if (!chatRefs || !chatRefs.notehost) return;
+      const sid = agentOwner();
+      const ac = AC();
+      const html = sid && ac ? ac.noteBox({agent: agentLabel(), label: agentLabel(), live: st.noteOver !== true && runLive(), busy: st.noting === true}) : "";
+      chatRefs.notehost.hidden = html === "";
+      paintTo(chatRefs.notehost, html);
+    }
+
+    async function sendNote() {
+      const ac = AC();
+      const sid = agentOwner();
+      const box = chatRefs && chatRefs.notehost ? chatRefs.notehost.querySelector(".nnote-text") : null;
+      if (!ac || !sid || !box || st.noting) return;
+      const req = ac.steerRequest(sid, box.value);
+      if (!req) { st.banner = box.value.trim() === "" ? "Write the note first." : "A note can be up to " + ac.MAX_NOTE + " characters."; paintChat(); return; }
+      const g = gen;
+      st.noting = true;
+      st.banner = "";
+      paintNote();
+      const r = await settle(api().post(req.path, req.body));
+      if (g !== gen || !st || st.sid !== sid) return;
+      st.noting = false;
+      if (r.error) {
+        if (r.error.status === 409) st.noteOver = true;
+        st.banner = problemOf(r.error).text;
+      } else {
+        box.value = "";
+        st.stick = true;
+        st.banner = "";
+        if (r.value && clean(r.value.session_id) !== "" && r.value.session_id !== sid) { open(st.nodeId, st.tab, undefined, r.value.session_id); return; }      // the agent's chat rolled to this run's
+        await refreshMessages(g);
+      }
+      if (st && g === gen && chatRefs) paintChat();
+    }
+
+    // The agent working, live (D133): the stream row of an agent's chat shows its tool line and its text so far, from `chat.partial` events of this session.
+    function paintLive() {
+      if (!chatRefs || !chatRefs.stream) return;
+      const ac = AC();
+      if (!ac || agentOwner() === "" || !st.live) return;
+      const html = ac.liveRow(st.live, agentLabel());
+      chatRefs.stream.hidden = html === "";
+      paintTo(chatRefs.stream, html);
+      keepFollowing();
+    }
+
     function paintChat() {
       if (!st || st.tab !== "chat" || !chatRefs) return;
       const gap = st.loading ? "Loading\u2026" : (st.nodeGone || st.chatNote);
@@ -554,8 +639,52 @@
       paintLens();
       paintActions();
       paintPill();
+      paintNote();
       paintComposer();
       paintBar();
+      paintLive();
+    }
+
+    /* ------------------------------------------------ the Agents tab (D130): a team's agents and their chats for one run */
+    function paintAgents() {
+      if (!st || st.tab !== "agents") return;
+      let el = refs.body.querySelector(".agentsview");
+      if (!el) {
+        refs.body.innerHTML = '<div class="agentsview"></div>';
+        refs.body.__html = undefined;
+        el = refs.body.firstChild;
+      }
+      const a = st.agents || {rows: [], runs: [], run: "", error: "", loading: true};
+      const html = AC() ? AC().list(a.rows, {runs: a.runs, run: a.run, loading: a.loading === true, error: a.error}) : "";
+      paintTo(el, html);
+    }
+
+    // `run` is the run the owner picked in the switcher ("" = the live run, else the latest, which is what the server answers by default).
+    async function loadAgents(g, run) {
+      const ac = AC();
+      const dept = st && st.node && st.node.kind === "department" ? clean(st.node.id) : "";
+      if (!ac || dept === "") return;
+      const want = run === undefined ? (st.agents ? st.agents.run : "") : clean(run);
+      const req = ac.agentsRequest(dept, want);
+      const [rows, runs] = await Promise.all([settle(api().get(req.path, req.query)), settle(api().get("/api/departments/" + enc(dept) + "/runs"))]);
+      if (g !== gen || !st) return;
+      st.agents = {rows: rows.value && Array.isArray(rows.value) ? rows.value : [], runs: runs.value && Array.isArray(runs.value) ? runs.value.filter(isObj) : [], run: want,
+        error: rows.error ? (rows.error.status === 404 ? "This team has no agents yet." : problemOf(rows.error).text) : "", loading: false};
+      if (st.tab === "agents") paintAgents();
+    }
+
+    // A row of the list opens that agent's chat: a live one in the chat tab with its pill and note box (its node, its own session: an Identity's working log
+    // is not the team chat the Identity node shows), a past run's one read-only.
+    async function openAgent(act) {
+      const sid = clean(act.dataset.sid);
+      const node = clean(act.dataset.node);
+      if (sid === "" || node === "") return;
+      if (act.dataset.status === "archived") {
+        switchTab("chat");
+        await showArchived(sid);
+        return;
+      }
+      await open(node, "chat", undefined, sid);
     }
 
     /* ------------------------------------------------ the Details tab */
@@ -679,6 +808,9 @@
       if (st.tab === "chat") {
         if (!chatRefs || !refs.body.contains(chatRefs.msgs)) buildChat();
         paintChat();
+      } else if (st.tab === "agents") {
+        chatRefs = null;
+        paintAgents();
       } else {
         chatRefs = null;
         paintDetails();
@@ -787,7 +919,7 @@
       paintDetails();
     }
 
-    async function open(nodeId, tab, freshGraph) {
+    async function open(nodeId, tab, freshGraph, forceSid) {
       const id = clean(nodeId);
       if (id === "") return;
       ensureShell();
@@ -795,11 +927,16 @@
       const opener = st ? st.opener : { el: doc.activeElement, id: "" };
       if (st) stopLive();
       const graph = isObj(freshGraph) ? freshGraph : getGraph();      // archive and un-archive re-link the team's chat: the caller passes the graph it just fetched
-      st = {nodeId: id, tab: tab === "details" ? "details" : "chat", node: findNode(graph, id), detail: null, detailError: "", sid: "", session: null, messages: [],
+      st = {nodeId: id, tab: tab === "details" || (tab === "agents" && !!AC()) ? tab : "chat", node: findNode(graph, id), detail: null, detailError: "", sid: "", session: null, messages: [],
         lastId: 0, banner: "", blocked: "", cc: null, ccMode: "team", readOnly: false, gone: false, retry: false, sending: false, view: null, scope: "division", divisionChat: null, allAtoms: null,
-        openIds: [], shownOnce: false, agentHtml: "", loading: true, nodeGone: "", chatNote: "", stick: false, reopen: true, scroll: {parked: false, seenId: 0, pill: 0},
+        wd: null, agents: null, live: null, noting: false, noteOver: false, openIds: [], shownOnce: false, agentHtml: "", loading: true, nodeGone: "", chatNote: "", stick: false, reopen: true, scroll: {parked: false, seenId: 0, pill: 0},
         opener: opener, conn: null, refresh: null};
       if (!opener.id) opener.id = id;
+      settle(api().get("/api/connectors/workdir")).then(r => {          // once per open, and silent when it fails: the chip just stays away
+        if (g !== gen || !st) return;
+        st.wd = r.error ? null : r.value;
+        paintWd();
+      });
       rules = noRules("");                                  // the team's rules are read again: they may have changed since this team was last on show
       if (!inline) {
         doc.body.classList.add("nodeopen");
@@ -817,7 +954,8 @@
 
       const detailP = loadDetail(g);
       let sidP;
-      if (st.node) sidP = resolveSid(st.node, graph);
+      if (clean(forceSid) !== "") sidP = Promise.resolve(clean(forceSid));        // an agent's own chat (the Agents tab): the Identity node would show the team's chat instead
+      else if (st.node) sidP = resolveSid(st.node, graph);
       else sidP = detailP.then(detail => (detail ? resolveSid(detail.node, graph) : null));
       const sid = await sidP;
       if (g !== gen || !st) return;
@@ -833,6 +971,7 @@
       paintAll();
       live(g);
       if (st.tab === "details") loadAgent(g);
+      if (st.tab === "agents") loadAgents(g);
     }
 
     async function openFunction(fn, tab) {
@@ -887,9 +1026,15 @@
         onEvent(type, data) {
           if (!st || g !== gen) return;
           if (type === "chat.partial") {
+            if (mine(data) && agentOwner() !== "") {                       // an agent's live call: its tool and text so far (D133)
+              st.live = AC().livePartial(st.live, data);
+              paintLive();
+              return;
+            }
             const c = mine(data) ? composerOf() : null;
             if (c) c.partial(data);
           } else if (type === "chat.message") {
+            if (mine(data) && st.live && st.live.active && isObj(data) && isObj(data.message) && data.message.role !== "user") { st.live = AC().idle(); paintLive(); }
             if (mine(data)) refetchMessages();
           } else if (type === "atom.updated") {
             const atom = isObj(data) && isObj(data.atom) ? data.atom : data;
@@ -897,9 +1042,19 @@
           } else if (type === "graph.updated") {
             const team = st.node ? st.node.dept_id : "";
             if (!isObj(data) || !Array.isArray(data.nodes) || data.nodes.some(n => isObj(n) && (n.id === st.nodeId || n.id === team))) refetchDetail();
+          } else if (type === "agent.session") {
+            // a session opened or rolled: the list is read again, and an agent's chat that this node's session was replaced in is opened on the new one
+            if (st.tab === "agents") loadAgents(g);
+            else if (isObj(data) && agentOwner() !== "" && data.node_id === st.nodeId && data.session_id !== st.sid && data.rolled_from === st.sid) open(st.nodeId, st.tab, undefined, data.session_id);
+          } else if (type === "chat.choice") {
+            // a choice for this chat, for the team or for the run: what Default follows may have changed, so the pill is read again (one cheap GET)
+            if (pillOwner() !== "") { st.pillSid = ""; st.pill = null; if (st.tab === "chat" && chatRefs) paintPill(); }
+            if (st.tab === "agents") loadAgents(g);
           } else if (type === "task.updated" || type === "needs_you.changed") {
             refetchDetail();
+            if (st.tab === "agents") loadAgents(g);
           } else if (type === "server.resync") {
+            if (st.tab === "agents") loadAgents(g);
             refetchMessages();
             refetchDetail();
             if (st.cc && st.cc.sid === st.sid) st.cc.c.resync();          // the server restarted: a turn it ran is gone, and one it runs now is shown
@@ -1144,8 +1299,11 @@
       else if (name === "composer-remove") { const c = composerOf(); if (c) c.removeFile(act.dataset.key); }
       else if (name === "fn") openFrom(act);
       else if (name === "go-tab") goToTab(act.dataset.tab);
+      else if (name === "open-workdir") { if (opts.openSettings) opts.openSettings("workdir"); else navigate("/"); }
       else if (name === "show-all") showAll();
       else if (name === "choose-provider") chooseProvider(act.dataset.provider || null);
+      else if (name === "steer") sendNote();
+      else if (name === "open-agent") openAgent(act);
       else if (name === "archive" || name === "unarchive") archiveChat(act.dataset.sid, name === "archive");
       else if (name === "open-chat") { chatRefs.sres.hidden = true; if (act.dataset.sid !== st.sid) showArchived(act.dataset.sid); }
       else if (name === "open-team") {
@@ -1178,7 +1336,7 @@
     }
 
     function switchTab(tab) {
-      if (!st || (tab !== "chat" && tab !== "details") || st.tab === tab) return;
+      if (!st || !tabsOpen().includes(tab) || st.tab === tab) return;
       if (st.tab === "chat") { rememberScroll(); saveDraft(); }
       st.tab = tab;
       st.reopen = true;
@@ -1187,6 +1345,7 @@
       refs.body.__html = undefined;
       paintAll();
       if (tab === "details" && !st.agentHtml) loadAgent(gen);
+      if (tab === "agents") loadAgents(gen);
     }
 
     // Esc: first it stops a direct answer that is running, else it closes the panel (the draft is already saved, so nothing is lost).
@@ -1210,6 +1369,7 @@
     host.addEventListener("change", e => {
       const t = e.target;
       if (st && t && t.dataset && (t.dataset.act === "choose-model" || t.dataset.act === "choose-effort")) { changePick(t); return; }
+      if (st && t && t.dataset && t.dataset.act === "agents-run") { st.agents = Object.assign({}, st.agents, {run: clean(t.value), loading: true}); paintAgents(); loadAgents(gen, t.value); return; }
       const c = st && t && t.classList && t.classList.contains("ccinput") ? composerOf() : null;
       if (!c) return;
       c.addFiles(t.files);
@@ -1233,7 +1393,11 @@
     host.addEventListener("keydown", e => {
       if (e.key !== "ArrowLeft" && e.key !== "ArrowRight") return;
       const t = e.target;
-      if (t && t.dataset && t.dataset.nptab) switchTab(t.dataset.nptab === "chat" ? "details" : "chat");
+      if (t && t.dataset && t.dataset.nptab && st) {
+        const order = tabsOpen();
+        const at = order.indexOf(t.dataset.nptab);
+        if (at >= 0) switchTab(order[(at + (e.key === "ArrowRight" ? 1 : order.length - 1)) % order.length]);
+      }
     });
     doc.addEventListener("keydown", onKeyDown);
     // J2's Agent drawer and this panel never show together: when the Agent drawer opens, the panel closes

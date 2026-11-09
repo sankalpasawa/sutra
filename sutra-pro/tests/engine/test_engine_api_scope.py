@@ -69,7 +69,8 @@ def test_the_route_table_is_the_28_j2_rows_plus_the_two_p13_routes_the_two_setti
             "/file/{name}", "/site/{key}",
             "/api/runlist", "/api/changes"}                      # 22 J2 paths: /site/{key} answers rows 24 and 25; the last two are P13
     assert table == {("GET", p) for p in gets} | {("POST", p) for p in POSTS} | {("GET", "/api/engine/settings"),
-                                                                                  ("PUT", "/api/engine/settings")}
+                                                                                  ("PUT", "/api/engine/settings"),
+                                                                                  ("GET", "/api/engine/capabilities")}
     assert not [path for _, path in table if path.startswith("/d/")]
 
 

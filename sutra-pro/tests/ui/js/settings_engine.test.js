@@ -98,11 +98,19 @@ test("budget_cap, which is not set by default, is an empty number field", () => 
   assert.match(inputOf(found.budget_cap)[0], /value=""/);
 });
 
-test("the kind of build is a choice among the four the engine accepts", () => {
+test("the kind of build is a choice among the six the engine accepts, and the engine decides by default", () => {
   const row = rows(engineHtml(FOR_ALL, {})).output;
   assert.match(row, /<select\b/);
-  ["website", "prd", "hld", "lld"].forEach(v => assert.match(row, new RegExp(`<option value="${v}"`)));
-  assert.match(row, /<option value="website" selected>/);
+  ["auto", "website", "prd", "hld", "lld", "project"].forEach(v => assert.match(row, new RegExp(`<option value="${v}"`)));
+  assert.match(row, /<option value="auto" selected>Let the team decide</);
+  assert.match(row, /<option value="project">Project work</);
+});
+
+test("the working-folder switch for agents is a choice between auto and off", () => {
+  const row = rows(engineHtml(FOR_ALL, {})).workspace;
+  assert.match(row, /<select\b/);
+  assert.match(row, /<option value="auto" selected>/);
+  assert.match(row, /<option value="off">/);
 });
 
 test("a row says which layer set its value", () => {
@@ -190,7 +198,7 @@ test("the Appearance group has Light, Dark and System, and the chosen one is pre
 
 /* ---------------------------------------------------------------- the PUT body */
 test("a form that changed nothing makes an empty body", () => {
-  const form = {budget: "120", slim: false, rates: true, output: "website", fixes: false, budget_cap: "", max_cycles: "4", delay: "0"};
+  const form = {budget: "120", slim: false, rates: true, output: "auto", fixes: false, budget_cap: "", max_cycles: "4", delay: "0"};
   assert.deepEqual(engineBody(FOR_TEAM, form), {set: {}, unset: []});
   assert.deepEqual(engineBody(FOR_TEAM, {}), {set: {}, unset: []});
 });

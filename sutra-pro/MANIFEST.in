@@ -7,6 +7,7 @@ recursive-include sutra_app/engine/conditions *
 recursive-include sutra_app/engine/artifacts *
 recursive-include sutra_app/engine/templates *
 recursive-include sutra_app/engine/seed *
+recursive-include sutra_app/engine/capabilities/data *
 recursive-include sutra_app/ui/pages *
 recursive-include sutra_app/ui/static *
 recursive-include sutra_app/orchestrator/agent/templates *.md

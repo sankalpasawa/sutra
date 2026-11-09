@@ -129,6 +129,8 @@ def llm_reset(monkeypatch):
     for name, value in (("_PORT", None), ("_DEFAULT_PORT", None), ("_BASE_TAG", CallTag()), ("_BOUND_ATOM", None),
                         ("MOCK", False), ("PROVIDER", None), ("MODEL", None)):
         monkeypatch.setattr(llm, name, value)
+    monkeypatch.setattr(llm, "TAG_HOOKS", [])           # the capabilities' hooks (D126) belong to one host run, not to the next test
+    monkeypatch.setattr(llm, "PROGRESS_HOOKS", [])
     llm.LAST_META.clear()
     yield llm
     llm.LAST_META.clear()

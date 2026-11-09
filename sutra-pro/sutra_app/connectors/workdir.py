@@ -3,8 +3,10 @@
     <data>/connectors/workdir.json     {"version": 1, "path": "/full/path/of/the/folder"}      mode 0600, atomic
 
 Until now every chat ran its CLI in a private empty folder, so the model could not see a single file of the owner. The owner now chooses ONE
-folder in Settings; a chat turn (a direct chat, and the org chat agent) then runs the CLI with that folder as the child's working directory and
-read-only file tools (claude.py, codex.py). The engine's department runs are not touched: they never ask this store.
+folder in Settings; a chat turn (a direct chat, a team's chat, and the org chat agent) then runs the CLI with that folder as the child's working
+directory (claude.py, codex.py). The owner also says what the team may do there: `read` (read-only file tools) or `edit` (the same, plus changing
+files and looking at git; no other command). The project's own instructions (CLAUDE.md, AGENTS.md) at the top of the folder go to the model with
+the folder's name (`instructions_of`). A department's document or website run of the engine is not touched: it never asks this store.
 
 `WorkFolder.set(path)` checks the path when it is written: absolute (a leading ~ is the owner's home folder), existing, a folder, readable, then
 resolved with realpath (a link to a folder is stored as the folder it leads to, so what the owner sees is what the CLI gets). It refuses the
@@ -34,8 +36,8 @@ from .base import write_private_file
 from .errors import InvalidRequestError
 from .models import M
 
-__all__ = ["WorkFolder", "WorkdirFile", "WORKDIR_FILE", "MAX_PATH", "PREVIEW_MAX", "check_folder", "preview_of", "grounding_text",
-           "READ_TOOLS", "NO_FOLDER_TEXT"]
+__all__ = ["WorkFolder", "WorkdirFile", "Folder", "WORKDIR_FILE", "MAX_PATH", "PREVIEW_MAX", "check_folder", "preview_of", "grounding_text",
+           "instructions_of", "READ_TOOLS", "EDIT_TOOLS", "GIT_READ", "GIT_DENY", "DOT_GIT_DENY", "NO_FOLDER_TEXT", "ACCESS", "INSTRUCTION_FILES", "INSTRUCTIONS_MAX"]
 
 log = logging.getLogger("sutra_app.connectors.workdir")
 
@@ -45,6 +47,13 @@ PREVIEW_MAX = 60               # names shown in the preview
 SCAN_MAX = 20_000              # entries looked at before the count stops (a huge folder must not stall the page)
 NAME_CHARS = 120
 READ_TOOLS = ("Read", "Glob", "Grep", "LS")        # the claude tools a chat gets with a folder: all read-only
+EDIT_TOOLS = ("Edit", "MultiEdit", "Write")        # added when the owner lets the team change files in the folder (access "edit")
+GIT_READ = ("Bash(git status:*)", "Bash(git diff:*)", "Bash(git log:*)", "Bash(git show:*)")      # the only commands a team may run, with "edit"
+GIT_DENY = ("Bash(git*--output*)", "Bash(git*--no-index*)", "Bash(git*--ext-diff*)", "Bash(git*--textconv*)", "Bash(git*-c *)", "Bash(git*--exec-path*)")
+DOT_GIT_DENY = ("Edit(.git)", "Edit(.git/**)", "Edit(**/.git/**)")    # Edit rules also bind MultiEdit and Write: the repository's own state is not the team's to write
+ACCESS = ("read", "edit")
+INSTRUCTION_FILES = ("CLAUDE.md", ".claude/CLAUDE.md", "AGENTS.md")      # the project's own instructions, the first one that exists is read
+INSTRUCTIONS_MAX = 12_000          # characters of them given to the model (a longer file is cut with a note)
 
 NO_FOLDER_TEXT = ("No working folder is set, so you cannot see any of the owner's files. When the owner asks about their files, a project or a "
                   "folder, say so and tell them to choose one in Settings, under Connectors, in Working folder.")
@@ -53,6 +62,19 @@ NO_FOLDER_TEXT = ("No working folder is set, so you cannot see any of the owner'
 class WorkdirFile(M):
     version: Literal[1] = 1
     path: str
+    access: Literal["read", "edit"] = "read"       # a file written before the owner could choose stays read-only
+
+
+class Folder(str):
+    """The folder of one chat turn: the path itself (every place that compares or joins it sees a plain string) that also says whether the team may
+    change files in it. The connectors read `.edit` when they choose the tools; nothing else needs to know."""
+
+    edit: bool = False
+
+    def __new__(cls, path: str, edit: bool = False) -> "Folder":
+        found = super().__new__(cls, path)
+        found.edit = bool(edit)
+        return found
 
 
 def _inside(path: str, parent: str) -> bool:
@@ -134,16 +156,49 @@ def preview_of(path: str, *, limit: int = PREVIEW_MAX) -> dict:
     return {"entries": shown, "total": len(found), "shown": len(shown), "capped": capped, "readable": True}
 
 
-def grounding_text(folder: Optional[str]) -> str:
-    """What a chat model is told about the folder: where it is and that its file tools are read-only, or that none is set and how to set one.
-    The one source of the words (chat_ground.py puts it in every direct chat's system text; the router adds it to the org agent's calls)."""
+def instructions_of(folder: str) -> tuple[str, str]:
+    """`(file name, text)` of the project's own instructions (CLAUDE.md, then .claude/CLAUDE.md, then AGENTS.md) at the top of the folder, cut to
+    INSTRUCTIONS_MAX characters; `("", "")` when there is none or it cannot be read. A file that is a link out of the folder is not read: the folder's
+    own words are what the owner put there, not what a link leads to."""
+    root = os.path.realpath(folder)
+    for name in INSTRUCTION_FILES:
+        path = os.path.join(root, *name.split("/"))
+        try:
+            if os.path.islink(path) or not os.path.isfile(path) or not _inside(os.path.realpath(path), root):
+                continue
+            with open(path, "r", encoding="utf-8", errors="replace") as handle:
+                text = handle.read(INSTRUCTIONS_MAX + 1)
+        except OSError:
+            continue
+        text = "".join(c for c in text if c in "\n\t" or ord(c) >= 32).strip()
+        if not text:
+            continue
+        return name, (text[:INSTRUCTIONS_MAX] + "\n(the rest of this file is cut; read it with your file tools)") if len(text) > INSTRUCTIONS_MAX else text
+    return "", ""
+
+
+def grounding_text(folder: Optional[str], edit: Optional[bool] = None) -> str:
+    """What a chat model is told about the folder: where it is, what its tools can do, and the project's own instructions; or that none is set and
+    how to set one. The one source of the words (chat_ground.py puts it in every direct chat's system text; the router adds it to the org agent's
+    calls). `edit` defaults to the folder's own mark (a `Folder` the router read from the store)."""
     if not folder:
         return NO_FOLDER_TEXT
+    allowed = bool(getattr(folder, "edit", False)) if edit is None else edit
     shown = folder if len(folder) <= 300 else folder[:299] + "…"
-    return (f"Working folder: {shown}\n"
-            "You can look at the owner's files there with your file tools (read, list and search). They are read-only: you cannot create, change or "
-            "delete a file, and you cannot run a command. Paths are relative to that folder. When the owner mentions their files, a project or a folder, "
-            "look there first, starting with a listing of the folder itself, and say which files you read.")
+    if allowed:
+        tools = ("You work in the owner's project like a developer at their desk. You can read, list and search the files there, and you can create and change "
+                 "files with your file tools. You can look at the project's git state (status, diff, log, show) but you cannot run anything else and you cannot "
+                 "commit: the owner does that. Paths are relative to that folder.")
+    else:
+        tools = ("You can look at the owner's files there with your file tools (read, list and search). They are read-only: you cannot create, change or "
+                 "delete a file, and you cannot run a command. Paths are relative to that folder.")
+    text = (f"Working folder: {shown}\n{tools} When the owner mentions their files, a project, an app or a folder, look there first, starting with "
+            "a listing of the folder itself, and say which files you read" + (" and which you changed." if allowed else "."))
+    name, body = instructions_of(folder)
+    if body:
+        text += (f"\n\nThe project's own instructions ({name}); follow them as you would in any session in this folder:\n"
+                 f"<project-instructions>\n{body}\n</project-instructions>")
+    return text
 
 
 class WorkFolder:
@@ -177,21 +232,42 @@ class WorkFolder:
             return exc.user_message()
         return None
 
+    def stored_access(self) -> str:
+        """`edit` or `read`: what the owner let the team do in the stored folder (`read` when none is stored or the file is older than the choice)."""
+        try:
+            return WorkdirFile.model_validate(json.loads(self.path.read_text(encoding="utf-8"))).access
+        except (OSError, ValueError, ValidationError):
+            return "read"
+
     def get(self) -> Optional[str]:
         """The folder a chat turn uses now: the stored one while it is still a usable folder, else None."""
         found = self.stored()
         return found if found is not None and self.problem(found) is None else None
+
+    def grant(self) -> Optional[Folder]:
+        """`get()` with the access the owner chose: what the connectors run a chat turn in."""
+        found = self.get()
+        return None if found is None else Folder(found, edit=self.stored_access() == "edit")
 
     def preview(self) -> Optional[dict]:
         found = self.get()
         return None if found is None else preview_of(found)
 
     # ---- writes ----------------------------------------------------------------------------------------------------------------
-    def set(self, raw: Any, *, home: Optional[str] = None) -> str:
+    def set(self, raw: Any, *, home: Optional[str] = None, access: str = "edit") -> str:
         """Store the checked folder; returns what is stored. Raises InvalidRequestError (with the reason) and writes nothing."""
+        if access not in ACCESS:
+            raise InvalidRequestError("Choose read only, or read and change")
         chosen = check_folder(raw, data_dir=self.data_dir, work_root=self.work_root, home=home)
-        self._write(WorkdirFile(path=chosen).model_dump_json(indent=2))
+        self._write(WorkdirFile(path=chosen, access=access).model_dump_json(indent=2))
         return chosen
+
+    def set_access(self, access: str) -> str:
+        """Change what the team may do in the folder already chosen; InvalidRequestError when none is chosen."""
+        found = self.stored()
+        if found is None:
+            raise InvalidRequestError("Choose a working folder first")
+        return self.set(found, access=access)
 
     def clear(self) -> None:
         """Forget the choice; chats go back to the private empty folder."""

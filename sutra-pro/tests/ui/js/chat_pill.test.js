@@ -118,3 +118,52 @@ test("QA bug 5: a partial with reset starts the streaming text again, a plain on
   s = partial(s, {data: {delta: "New", reset: true}});                      // a reset can carry text of its own
   assert.equal(s.text, "New");
 });
+
+// ---- the pill of an agent's chat (agent-sessions design 3.3, D131, D134): Default first, the chip, the same selects --------------------------------------------
+
+const {agentPill} = ChatPill;
+const CLAUDE_OPTS = {name: "claude", ready: true, model: "sonnet", chat_model: null, chat_effort: null, can_pick: true,
+  model_options: [{slug: "sonnet", label: "Sonnet", note: "balanced", group: "main", efforts: ["low", "high"]}, {slug: "haiku", label: "Haiku", note: "fast", group: "main", efforts: ["low"]}]};
+const agentData = (over = {}) => Object.assign({agent: "audit", providers: [CLAUDE_OPTS, {name: "codex", ready: false, why_not: "not signed in"}], chosen: null, own: null,
+  effective: {provider: "claude", model: "sonnet", effort: "high", source: "team"}}, over);
+
+test("an agent's pill starts with Default, pressed when the agent has no choice, and says what it resolves to and from where", () => {
+  const html = agentPill(agentData());
+  assert.match(html, /^<div class="cpill cpill-agent" role="group" aria-label="Which model runs audit">/);
+  assert.match(html, /<button type="button" class="cpill-opt auto on" data-act="choose-provider" data-provider="" aria-pressed="true">Default: <small class="cpill-def">Claude Sonnet, high \(from the team\)<\/small><\/button>/);
+  assert.ok(html.indexOf('data-provider=""') < html.indexOf('data-provider="claude"'), "Default is the first button");
+  assert.match(html, /<span class="cpill-chip"><span class="achip" data-source="team"/);
+  assert.doesNotMatch(html, /cpick/);                                                  // no provider chosen: no selects yet
+});
+
+test("each source is named in the Default button: this run, the team, the app's default", () => {
+  for (const [source, word] of [["run", "this run"], ["team", "the team"], ["default", "the app&#39;s default"]]) {
+    assert.match(agentPill(agentData({effective: {provider: "claude", model: "haiku", effort: "low", source}})), new RegExp("\\(from " + word + "\\)"));
+  }
+});
+
+test("with its own choice the agent's pill presses that provider, drops the words after Default and shows the model and effort selects as is", () => {
+  const own = {provider: "claude", model: "haiku", effort: "low"};
+  const chosen = Object.assign({}, CLAUDE_OPTS, {chat_model: "haiku", chat_effort: "low"});
+  const html = agentPill(agentData({own, providers: [chosen], effective: Object.assign({source: "own"}, own)}));
+  assert.match(html, /class="cpill-opt auto" data-act="choose-provider" data-provider="" aria-pressed="false">Default<\/button>/);
+  assert.match(html, /class="cpill-opt on" data-act="choose-provider" data-provider="claude" aria-pressed="true">Claude<\/button>/);
+  assert.match(html, /<option value="haiku" selected/);
+  assert.match(html, /<option value="low" selected>low<\/option>/);
+  assert.match(html, /data-source="own"/);
+});
+
+test("a provider that cannot run is a label with its reason in an agent's pill too, and nothing without a provider list", () => {
+  assert.match(agentPill(agentData()), /<span class="cpill-opt off" title="not signed in">Codex <small>not signed in<\/small><\/span>/);
+  assert.equal(agentPill(agentData({providers: []})), "");
+  assert.equal(agentPill(null), "");
+});
+
+test("Default sends the request that clears the choice, whatever pill it is on", () => {
+  assert.deepEqual(choiceRequest("cs_aaaaaaaaaaaa", ""), {method: "PUT", path: "/api/chats/cs_aaaaaaaaaaaa/choice", body: {provider: null}});
+});
+
+test("an agent's pill escapes the agent name and the words of a provider", () => {
+  const html = agentPill(agentData({agent: '"><script>x</script>', providers: [{name: "claude", ready: true, model_options: []}]}));
+  assert.doesNotMatch(html, /<script>/);
+});

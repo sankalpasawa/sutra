@@ -106,7 +106,9 @@ def test_providers_lists_the_pill_and_an_unrunnable_choice_is_refused(rig):
     client, world, *_ = rig
     sid = world.session_of["web"]
     r = client.get(f"/api/chats/{sid}/providers")
-    assert r.status_code == 200 and r.json() == {"providers": [], "chosen": None}          # a stub-only router offers no claude or codex
+    assert r.status_code == 200 and r.json()["providers"] == [] and r.json()["chosen"] is None          # a stub-only router offers no claude or codex
+    assert (r.json()["kind"], r.json()["agent"], r.json()["own"]) == ("department", None, None)         # D131: what the chat is, its own pick (none) and what it resolves to
+    assert r.json()["effective"]["source"] == "default"
     assert error_code(client.put(f"/api/chats/{sid}/choice", json={"provider": "codex"}, headers=H), 422) == "validation"
     assert error_code(client.put(f"/api/chats/{sid}/choice", json={"provider": "gemini"}, headers=H), 422) == "validation"
     assert error_code(client.put(f"/api/chats/{sid}/choice", json={"provider": "codex"}), 401) == "bad_token"
@@ -136,7 +138,8 @@ def test_the_choice_route_passes_model_and_effort_and_a_refusal_names_the_valid_
 
     services.chat_port = Port()
     ok = client.put(f"/api/chats/{sid}/choice", json={"provider": "claude", "model": "opus", "effort": "max"}, headers=H)
-    assert ok.status_code == 200 and ok.json() == {"session_id": sid, "provider": "claude", "model": "opus", "effort": "max"}
+    assert ok.status_code == 200 and {k: ok.json()[k] for k in ("session_id", "provider", "model", "effort")} == {"session_id": sid, "provider": "claude", "model": "opus", "effort": "max"}
+    assert ok.json()["source"] == "own" and ok.json()["effective"] == {"provider": "claude", "model": "opus", "effort": "max", "source": "own"}
     assert client.put(f"/api/chats/{sid}/choice", json={"provider": "claude"}, headers=H).json()["effort"] is None
     bad = client.put(f"/api/chats/{sid}/choice", json={"provider": "claude", "model": "opuss"}, headers=H)
     assert error_code(bad, 422) == "validation" and "best, opus, sonnet" in bad.json()["error"]["message"]

@@ -2,7 +2,7 @@
 /* Sutra Pro, the desktop app (D116, D118): a window around the local server. The server is the Python app that ships inside this one (or, from a
    checkout, the checkout's). The app finds the server that is running for the data folder or starts its own, shows its page, and stops its own when
    the window closes. src/server.js has the rules, src/runtime.js where everything is. */
-const { app, BrowserWindow, Menu, dialog, nativeImage, nativeTheme, session, shell } = require('electron');
+const { app, BrowserWindow, Menu, dialog, ipcMain, nativeImage, nativeTheme, session, shell } = require('electron');
 const path = require('node:path');
 const runtime = require('./runtime');
 const { Supervisor } = require('./server');
@@ -13,6 +13,7 @@ const { splashPage, errorPage, dataUrl, THEMES } = require('./pages');
 const { menuTemplate } = require('./menu');
 const { runSelftest, record } = require('./selftest');
 const { createDesktopUpdates } = require('./update_main');
+const { registerFolderPicker } = require('./folder');
 
 const APP_NAME = 'Sutra Pro';
 const APP_ID = 'os.sutra.pro';
@@ -73,8 +74,9 @@ function createWindow() {
   win = new BrowserWindow({
     width: 1440, height: 940, minWidth: 900, minHeight: 600, title: APP_NAME, show: false,
     backgroundColor: THEMES[dark ? 'dark' : 'light'].bg, ...(icon ? { icon } : {}),
-    // the page is the server's own and needs no Node: a page that cannot reach the file system cannot be made to
-    webPreferences: { sandbox: true, contextIsolation: true, nodeIntegration: false, webviewTag: false },
+    // the page is the server's own and needs no Node: a page that cannot reach the file system cannot be made to. The preload hands it one function, the
+    // folder dialog (src/folder.js)
+    webPreferences: { sandbox: true, contextIsolation: true, nodeIntegration: false, webviewTag: false, preload: path.join(__dirname, 'preload.js') },
   });
   win.once('ready-to-show', () => win.show());
   win.on('page-title-updated', (event) => event.preventDefault());       // the title is the app's: the pages say "Sutra", this app is Sutra Pro
@@ -205,6 +207,7 @@ async function boot() {
   }
   app.setAboutPanelOptions({ applicationName: APP_NAME, applicationVersion: app.getVersion(), copyright: 'Sutra' });
   guardNavigation();
+  registerFolderPicker({ ipcMain, dialog, getWindow: () => win, getOrigin: () => supervisor.origin });
   installMenu();
   createWindow();
   supervisor.on('exit', onServerExit);

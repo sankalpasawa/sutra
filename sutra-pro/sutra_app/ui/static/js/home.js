@@ -984,12 +984,19 @@
     paintWorkdir();
     return r;
   }
-  async function workdirAct(act) {
+  async function workdirAct(act, b) {
     if (WD.step === "saving") return null;
+    if (act === "workdir-choose") {                                                    // the desktop's folder dialog; a closed dialog changes nothing
+      const picked = await SV().chooseWorkdir();
+      if (picked === null) return null;
+      WD.value = picked;
+      WD.dirty = true;
+    }
     WD.step = "saving";
     WD.message = "";
     paintWorkdir();
-    const r = act === "workdir-clear" ? await SV().clearWorkdir(api) : await SV().saveWorkdir(api, WD.value);
+    const r = act === "workdir-clear" ? await SV().clearWorkdir(api)
+      : (act === "workdir-access" ? await SV().saveWorkdirAccess(api, b && b.dataset.access) : await SV().saveWorkdir(api, WD.value));
     WD.step = r.ok ? "ok" : "error";
     WD.message = r.message;
     if (r.ok && r.data) {
@@ -1204,7 +1211,7 @@
     else if (act === "save-engine") saveEngine(S.scope, readEngineForm());
     else if (act === "set-path") setCliPath(b.dataset.provider, cliPathState(b.dataset.provider).value);
     else if (act === "clear-path") setCliPath(b.dataset.provider, null);
-    else if (act === "workdir-save" || act === "workdir-clear") workdirAct(act);
+    else if (act === "workdir-save" || act === "workdir-clear" || act === "workdir-choose" || act === "workdir-access") workdirAct(act, b);
     else if (act.indexOf("note-") === 0) noteAct(act, b);
     else if (act === "make-first") changePolicy({first: b.dataset.provider});
     else if (act === "check-update") checkForUpdates();
@@ -1512,7 +1519,7 @@
     BARWIDE.addEventListener("change", barInit);
     S.panel = root.NodePanel.mount($("nodepanel"), {getGraph: () => S.graph, navigate: url => root.location.assign(url)});
     if ($("teamchat")) S.team = root.NodePanel.mount($("teamchat"), {inline: true, idPrefix: "npi", getGraph: () => S.graph, navigate: url => root.location.assign(url),
-      onClose: () => { if (S.chat.sid !== ORG) showOrgChat(); }});
+      openSettings: group => selectPane("settings", {group}), onClose: () => { if (S.chat.sid !== ORG) showOrgChat(); }});
     S.watch = SV().watchHealth(api, h => { S.health = h; paintConnectors(); paintModels(); }, () => {});
     if (root.HeadsUpView) S.seen = root.HeadsUpView.loadSeen(storage());
     if (root.ChatAttention) S.attention = protect("ChatAttention.create", () => root.ChatAttention.create({onOpen: openAttention, prefs: attentionPrefs})) || null;

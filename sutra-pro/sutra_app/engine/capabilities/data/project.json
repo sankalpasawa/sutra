@@ -1,0 +1,9 @@
+{
+  "_note": "Necessary conditions for project work (the project output of the engine's capabilities, D128). Code checks each one on project.md after every build; the report is workable only when all are met and Audit accepts. \"check\" names the code check in j2.condition_met(). \"severity\": \"warn\" shows the result on the Audit tab and in conditions.json but never blocks workable(); every other condition blocks.",
+  "output": "project",
+  "conditions": [
+    {"id": "PJ1", "text": "All five sections are present and not empty", "check": "sections-present", "min_words": 1},
+    {"id": "PJ2", "text": "Nothing is \"to be confirmed\"", "check": "nothing-to-be-confirmed"},
+    {"id": "PJ3", "text": "Every name the owner gave (files, functions) appears exactly", "check": "facts-present-all", "severity": "warn"}
+  ]
+}

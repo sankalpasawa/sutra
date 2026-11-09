@@ -45,7 +45,8 @@ two `engine.json` files. A run does not pass the server's own `J2_*` variables o
 
 | Variable | Field | Default | Locked | Task | Meaning |
 |---|---|---|---|---|---|
-| `J2_OUTPUT` | `output` | `website` | no | yes | what the team builds: `website`, `prd`, `hld` or `lld` |
+| `J2_OUTPUT` | `output` | `auto` | no | yes | what the team builds: `auto` (the engine decides from the brief and the working folder: project work for a project, else the website or the document asked for), `website`, `prd`, `hld`, `lld` or `project` |
+| `J2_WORKSPACE` | `workspace` | `auto` | no | no | `auto`: every agent of the engine may read the owner's working folder (project work may change it, within the owner's access setting); `off`: none |
 | `J2_FIXES` | `fixes` | `0` | no | yes | `1` turns on the two flow fixes of the J2 loop |
 | `J2_BUDGET` | `budget` | `100` | no | yes | starting budget in work credits; a full documents-plus-website run needs 500 or more |
 | `J2_BUDGET_CAP` | `budget_cap` | `unset` | no | yes | the most your approvals can raise the budget to; unset means twice the budget |

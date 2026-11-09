@@ -7,10 +7,12 @@
 (function (root) {
   "use strict";
 
-  // The 15 event names of /api/events (chat.partial, ABS-7, is a streamed piece of a reply: never stored, never replayed). EventSource delivers a named event only to a listener for that name.
+  // The 17 event names of /api/events (chat.partial, ABS-7, is a streamed piece of a reply: never stored, never replayed; agent.session and chat.choice,
+  // agent-sessions D130 and D131: an agent's chat opened or rolled, and a model chosen for a chat, an agent or a run). EventSource delivers a named event only
+  // to a listener for that name.
   const TYPES = Object.freeze(["server.hello", "server.resync", "chat.turn", "chat.message", "chat.partial", "chart.changed", "chart.approval",
     "graph.updated", "task.updated", "atom.updated", "usage.recorded", "needs_you.changed", "connector.health",
-    "connector.switch", "connector.mode"]);
+    "connector.switch", "connector.mode", "agent.session", "chat.choice"]);
   const ERRORS_BEFORE_POLLING = 3;
   const DEFAULT_POLL_MS = 2000;
   // The wait before the page re-creates a stream the browser closed for good (readyState CLOSED), 1, 2, 4, 8, then 15 s.

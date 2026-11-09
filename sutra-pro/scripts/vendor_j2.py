@@ -7,7 +7,7 @@ What it does, in this order, and nothing else:
 
   1. reads the J2 files of ONE commit (git blobs when `--source` is a git repository, so an edited working tree is never
      vendored; a plain folder such as a `git archive` extraction otherwise, with `--commit` naming what it is);
-  2. copies the 14 code modules and applies the numbered patches (P1-P5, P7-P13; there is no P6) as exact text edits:
+  2. copies the 14 code modules and applies the numbered patches (P1-P5, P7-P14; there is no P6) as exact text edits:
      every edit names its old text and how often it must occur, so a J2 change under an anchor stops the run instead of
      producing a silently different file;
   3. copies the data files byte for byte: role files, conditions, artifact types, generic templates, the seed template
@@ -58,7 +58,7 @@ class VendorError(Exception):
 # ---- the patches --------------------------------------------------------------------------------------------------
 @dataclass(frozen=True)
 class Edit:
-    patch: str          # "P1" .. "P13"
+    patch: str          # "P1" .. "P14"
     file: str
     old: str
     new: str
@@ -645,6 +645,12 @@ def saved_snapshot(name, since=0):
     Edit("P7", "j2.py", r'''        raw = llm.ask(
             "You review one test run of J2, a department''', r'''        raw = _ask(self._ask_tag("reviewer", "review"),
             "You review one test run of J2, a department'''),
+    # ---- P14: an output that says `single` is never swapped for the documents a brief names (the project output, D128)
+    Edit("P14", "j2.py", r'''        if self.stages or self.goal:
+            return
+        said = [self.request] + [x["answer"] for x in self.intake]''', r'''        if self.stages or self.goal or self.out.get("single"):      # P14: `single` outputs (project work) keep their output
+            return
+        said = [self.request] + [x["answer"] for x in self.intake]'''),
 )
 
 OTHER_EDITS = (
@@ -756,6 +762,7 @@ PATCH_NOTES = {
     "P10": "`store` and `mark_used` of the template library run inside an exclusive lock on `<library>/.lock` (`oslayer.try_lock`: `flock`, or `msvcrt.locking` on Windows) (waits `LOCK_WAIT_S` = 30 s, then raises `LibraryBusy(RuntimeError)`, which `_route_template` already turns into the generic template); the originals are kept as `_store` and `_mark_used`",
     "P11": "`J2Run.rehydrate(src_dir)` delegates to `rehydrate.py`",
     "P12": "Windows (D101), nothing else: `j2_check.find_chrome` also looks in the Windows install folders of Chrome, `j2_check._chrome` decodes Chrome's output as UTF-8 with replacement, `j2_template_lib` writes its index with `oslayer.replace` (a rename that waits out a reader) and takes its library lock through `oslayer` (P10), records a template's saved path with `/` on every system (`run_tpl_rel`) and splits it on either separator when it checks for `..` (`run_saved_dir`)",
+    "P14": "`J2Run._plan_stages` returns early for an output that says `single` (`if self.stages or self.goal or self.out.get(\"single\"):`): named documents in a brief (\"update the PRD in the repo\") do not swap the project output for a PRD stage chain. No other output has `single`, so every other run, prompt and golden is unchanged. The output itself is registered by `sutra_app/engine/capabilities/` (Sutra's own files, not J2's)",
     "P13": "Run settings' read-only lists (the old Sutra repository's copy of the prototype has them, J2's own repository does not): `run_row(name, runs_dir=None, live_running=False)` and `run_list(runs_dir=None, live=\"\", live_running=False)` (GET /api/runlist: every saved run newest first with id, title, status, output, when, brief) and `run_changes(d)` (GET /api/changes: one stop per change request of `change.json`), placed before `saved_snapshot`; `views.runlist` and `views.changes` and the two routes call them",
 }
 

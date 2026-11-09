@@ -174,7 +174,7 @@ class ResultEvaluation(Evaluation):
     screenshot: Annotated[str, StringConstraints(min_length=1, max_length=500)] | None = None
     all_pass: bool
     accepted: Annotated[list[Annotated[str, StringConstraints(min_length=1, max_length=600)]], Field(max_length=200)] = []
-    output: Literal["website", "prd", "hld", "lld"] | None = None              # set for a document's audit
+    output: Literal["website", "prd", "hld", "lld", "project"] | None = None              # set for a document's audit
     read: Evidence | None = None                                               # what Audit says it read (a document)
     lld: LldComparison | None = None
 

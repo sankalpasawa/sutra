@@ -37,7 +37,7 @@ from .errors import (
 from .models import AuthStatus, Capabilities, ConnectorEvent, ModelInfo, Quota, SessionState, TurnResult, Usage
 from .process import Command, ExitInfo
 from .quota_windows import windows_from_claude
-from .workdir import READ_TOOLS
+from .workdir import DOT_GIT_DENY, EDIT_TOOLS, GIT_DENY, GIT_READ, READ_TOOLS
 
 __all__ = ["ClaudeConnector", "ClaudeParser", "CLAUDE_ERROR_MAP", "SYSTEM_FILE_THRESHOLD", "PROBED_FLAGS", "MODEL_ENV_NAMES"]
 
@@ -51,9 +51,22 @@ PROBED_FLAGS = (
 )
 _MCP_SERVER = "sutra"
 _ALLOWED_TOOLS = f"mcp__{_MCP_SERVER}__*"
-# with an owner's working folder (GAP3-workdir): the only tools are the four read-only ones, and everything that writes, runs a command or
-# reaches the network is denied by name as well, so no setting or later default can widen it
+# with an owner's working folder (GAP3-workdir): the only tools are the four read-only ones (with "edit": and the three that change files, and
+# four read-only git commands), and everything else that writes, runs a command or reaches the network is denied by name as well, so no setting
+# or later default can widen it
 _DENIED_TOOLS = ("Bash", "PowerShell", "Edit", "MultiEdit", "Write", "NotebookEdit", "WebFetch", "WebSearch", "Task", "Agent", "TodoWrite")
+
+
+def _folder_tools(folder: str) -> tuple[list[str], list[str], list[str]]:
+    """`(the tools the CLI offers, the allow rules, the names denied)` of a turn in the owner's folder. A folder the owner let the team change adds
+    Edit, MultiEdit, Write and Bash restricted to the git reads; the deny list drops exactly what is offered, and adds the two ways the allowed ones
+    could do more than they say: a write into the repository's own `.git` (its config can name a program that git status and git diff then run) and a
+    git option that writes a file or reads one outside the repository (`--output`, `--no-index`, `--ext-diff`, `--textconv`)."""
+    edit = bool(getattr(folder, "edit", False))
+    offered = [*READ_TOOLS] + ([*EDIT_TOOLS, "Bash"] if edit else [])
+    allowed = [*READ_TOOLS] + ([*EDIT_TOOLS, *GIT_READ] if edit else [])
+    denied = [name for name in _DENIED_TOOLS if name not in offered]
+    return offered, allowed, denied + ([*GIT_DENY, *DOT_GIT_DENY] if edit else [])
 _IMAGE_MAGIC = ((b"\x89PNG\r\n\x1a\n", "image/png"), (b"\xff\xd8\xff", "image/jpeg"), (b"GIF87a", "image/gif"), (b"GIF89a", "image/gif"),
                 (b"%PDF-", "application/pdf"))        # a PDF goes as a document block (ABS-4)
 _RESULT_TEXT_CHARS = 300             # how much of the CLI's own text an error keeps
@@ -391,8 +404,8 @@ class ClaudeConnector(ModelConnector):
                 argv += ["--system-prompt-file", str(path)]
             else:
                 argv += ["--system-prompt", plan.system]
-            argv += ["--tools", ",".join(READ_TOOLS) if plan.folder else "", "--strict-mcp-config", "--disable-slash-commands",
-                     "--setting-sources", ""]
+            offered, allowed_here, denied_here = _folder_tools(plan.folder) if plan.folder else ([], [], [])
+            argv += ["--tools", ",".join(offered), "--strict-mcp-config", "--disable-slash-commands", "--setting-sources", ""]
             if plan.oneshot:
                 argv.append("--no-session-persistence")
             elif plan.resume:
@@ -414,10 +427,10 @@ class ClaudeConnector(ModelConnector):
                 write_private_file(config, json.dumps({"mcpServers": self.mcp_servers(plan.tools)}, ensure_ascii=False))
                 argv += ["--mcp-config", str(config)]
             if plan.tools or plan.folder:
-                allowed = ([*READ_TOOLS] if plan.folder else []) + ([_ALLOWED_TOOLS] if plan.tools else [])
+                allowed = allowed_here + ([_ALLOWED_TOOLS] if plan.tools else [])
                 argv += ["--restricted", "--allowedTools", ",".join(allowed)]
                 if plan.folder:
-                    argv += ["--disallowedTools", ",".join(_DENIED_TOOLS)]
+                    argv += ["--disallowedTools", ",".join(denied_here)]
                 argv += ["--permission-mode", "dontAsk", "--permission-prompts", "none"]
             if plan.max_budget_usd is not None:
                 argv += ["--max-budget-usd", format(plan.max_budget_usd, ".6f").rstrip("0").rstrip(".") or "0"]

@@ -24,6 +24,7 @@ UI = REPO / "sutra_app" / "ui"
 PAGE_FILES = [UI / "pages" / "j2_ui.html", UI / "pages" / "j2_ui_render.js"]
 STATIC_JS = sorted((UI / "static" / "js").glob("*.js")) + [UI / "pages" / "home.html"]
 SETTINGS_PATH = "/api/engine/settings"
+CAPABILITIES_PATH = "/api/engine/capabilities"      # D126: what the engine can do (a read for the owner and the doctor; no page calls it, no team)
 # served by a package that has not merged yet (ORCH-8: health); the page calls them, no router of this repo has them
 NOT_MOUNTED_YET = {"/api/health"}
 
@@ -85,12 +86,12 @@ def test_the_engine_serves_exactly_the_j2_routes_the_page_lists_plus_the_two_p13
     templated = {path for path in gets if "{" in path}
     assert {path for (method, path) in table if method == "PUT"} == {SETTINGS_PATH}
     assert patched_paths() == PATCHED_PATHS
-    assert len(gets - {SETTINGS_PATH} - PATCHED_PATHS) == 22 and len(posts) == 5      # 22 GET paths (/site/{key} answers two rows)
-    assert len(table) == 22 + 5 + 2 + 2                                              # the last two: P13's /api/runlist and /api/changes
+    assert len(gets - {SETTINGS_PATH, CAPABILITIES_PATH} - PATCHED_PATHS) == 22 and len(posts) == 5      # 22 GET paths (/site/{key} answers two rows)
+    assert len(table) == 22 + 5 + 2 + 2 + 1                                              # the last two: P13's /api/runlist and /api/changes
     assert len(templated) == 4 and all(any(path.startswith(prefix) for prefix in prefixes) for path in templated)
     for prefix in prefixes:
         assert any(path.startswith(prefix) for path in templated), prefix
-    assert (gets | posts) - templated - {SETTINGS_PATH} - PATCHED_PATHS == set(exact)     # the page's list and the table name the same 23
+    assert (gets | posts) - templated - {SETTINGS_PATH, CAPABILITIES_PATH} - PATCHED_PATHS == set(exact)     # the page's list and the table name the same 23
     assert PATCHED_PATHS <= gets
 
 
@@ -107,7 +108,7 @@ def test_no_route_copy_under_a_team_path_and_no_team_header_or_cookie(world):
 
 def test_every_j2_write_and_read_wants_the_team_in_the_query_and_nowhere_else(world):
     for (method, path) in route_table(world.routers["engine"]):
-        if path == SETTINGS_PATH:
+        if path in (SETTINGS_PATH, CAPABILITIES_PATH):
             continue
         url = re.sub(r"\{[^}]+\}", "x1", path)
         call = world.client.request(method, url, headers={**world.auth, "X-Sutra-Dept": "web"}, cookies={"sutra_dept": "web"})
@@ -233,6 +234,8 @@ def test_every_path_the_j2_page_calls_is_in_the_engine_table_and_in_the_ui_list(
 def test_every_engine_route_is_called_by_a_page_or_a_view_script(world):
     called = literal_paths(PAGE_FILES + STATIC_JS)
     for (method, path) in route_table(world.routers["engine"]):
+        if path == CAPABILITIES_PATH:
+            continue
         stem = re.split(r"/\{", path)[0] + ("/" if "{" in path else "")
         assert path in called or stem in called or any(stem == c for c in called), f"{method} {path} is served and no page calls it"
 

@@ -609,7 +609,8 @@
                 "website",
                 "prd",
                 "hld",
-                "lld"
+                "lld",
+                "project"
               ],
               "type": "string"
             },

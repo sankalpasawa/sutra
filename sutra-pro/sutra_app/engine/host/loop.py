@@ -45,7 +45,7 @@ from ..hooks import EventHooks, load_validator
 from ..paths import DataPaths, RunDirError, load_env_file
 from ..port import CallTag, ModelError, PortSpec
 from ..rehydrate import HOST_FILES
-from ..spec import EngineSettings, SettingsError, TaskSpec, read_settings_file
+from ..spec import OUTPUT_NAMES, EngineSettings, SettingsError, TaskSpec, read_settings_file
 from .heartbeat import Heartbeat, heartbeat_interval
 from .inbox import Inbox
 
@@ -125,6 +125,9 @@ class Host:
         self.heartbeat: Optional[Heartbeat] = None
         self.inbox: Optional[Inbox] = None
         self.run = None
+        self.selection = None                       # the output the engine chose for the brief (capabilities.Selection)
+        self.has_folder = False
+        self.context = None                         # the capabilities' view of the run (EngineContext), made with the run
         self.stopping = threading.Event()          # set before the port is closed (a stop line or SIGTERM)
         self._terminate = threading.Event()
         self._ended = False
@@ -191,7 +194,8 @@ class Host:
         path = self.paths.run_dir / "chat.jsonl"
         lines = []
         if not path.exists():
-            lines.append({"meta": True, "run": self.paths.run_id[3:], "output": self.settings.output if self.settings else "website",
+            chosen = self.settings.output if self.settings and self.settings.output != "auto" else "website"
+            lines.append({"meta": True, "run": self.paths.run_id[3:], "output": chosen,
                           "j2_fixes": int(self.settings.fixes) if self.settings else 0, "force_audit_fail": None,
                           "force_question": None, "test_lessons": None,
                           "realization": int(self.settings.realization) if self.settings else 1, "provider": None,
@@ -254,6 +258,7 @@ class Host:
         except SettingsError as exc:
             raise StartFailed(f"settings: {exc}") from None
         self.mock = bool(self.args.mock or llm.env_mock() or task.connector == "stub")
+        self._choose_output()
         try:
             _atomic_write(paths.settings_json, json.dumps(self.settings.model_dump(), indent=2) + "\n")
         except OSError as exc:
@@ -266,6 +271,58 @@ class Host:
             self._seed_library()
         except OSError as exc:
             raise StartFailed(f"the template library cannot be set up: {exc}") from None
+
+    # ---- the output: `auto` is decided here, once, before J2 is imported (D129) ------------------------------------------------
+    def _has_folder(self) -> bool:
+        """True when the owner has set a working folder that is still usable (the same store the router reads per call)."""
+        try:
+            from sutra_app.connectors.workdir import WorkFolder      # read only: nothing is created in the data folder (the work root is not asked)
+            return WorkFolder(self.paths.data_dir).get() is not None
+        except Exception:  # noqa: BLE001 - no connector layer or an unreadable file is "no folder", never a failed start
+            return False
+
+    def _seed_output(self) -> Optional[str]:
+        """The output of the finished run this task continues (`seed_from`), or None: not a follow-up, or its run cannot be read.
+        The same checks as `_seed`: a run of this department, not a link, not this very run."""
+        seed = self.task.seed_from
+        if not seed:
+            return None
+        source = self.paths.runs_dir / seed
+        if source.is_symlink() or not source.is_dir() or source == self.paths.run_dir:
+            return None
+        found = None
+        for name, pick in (("chat.jsonl", lambda row: row.get("output")), ("summary.json", lambda row: row.get("output_type"))):
+            try:
+                text = (source / name).read_text(encoding="utf-8")
+                row = json.loads(text.splitlines()[0]) if name == "chat.jsonl" else json.loads(text)
+                found = pick(row) if isinstance(row, dict) else None
+            except (OSError, ValueError, IndexError):
+                continue
+            if found in OUTPUT_NAMES and found != "auto":
+                return found
+        return None
+
+    def _choose_output(self) -> None:
+        """Replace `auto` by the concrete output (`capabilities.select_output`, a pure rule table: no model call), fix the settings that output
+        needs (`capabilities.forced_settings`), and keep the decision: `self.selection` for the run's chat, `<run>/output.json` and one trace
+        line."""
+        from .. import capabilities
+        task, settings = self.task, self.settings
+        has_folder = self._has_folder()
+        context = capabilities.EngineContext(task=task, settings=settings, paths=self.paths, data_dir=self.paths.data_dir,
+                                             has_folder=has_folder, seed_output=self._seed_output())
+        selection = capabilities.select_output(task.user_text, context)
+        forced = {name: value for name, value in capabilities.forced_settings(selection.output).items()
+                  if getattr(settings, name, value) != value}
+        self.settings = settings.model_copy(update={"output": selection.output, **forced})
+        self.selection, self.has_folder = selection, has_folder
+        record = {"choice": settings.output, "output": selection.output, "rule": selection.rule, "reason": selection.reason,
+                  "folder": has_folder}
+        try:
+            _atomic_write(self.paths.run_dir / "output.json", json.dumps(record, indent=2) + "\n")
+        except OSError as exc:
+            self.trace("publish.error", {"where": "output.json", "error": clip(str(exc), 300)})
+        self.trace("output.selected", {**record, "forced": forced})
 
     def _seed_library(self) -> None:
         """Copy the seed template library to `<data>/library` once. Two processes may start together: each copies to its own
@@ -359,10 +416,15 @@ class Host:
     def _make_run(self) -> None:
         from .publisher import HostHooks, StatePublisher           # these import J2: the environment is set by now
         task, paths = self.task, self.paths
+        from .. import capabilities, j2
+        capabilities.register(j2)                                  # D126: the engine's own outputs, before any J2Run exists
+        self.context = capabilities.EngineContext(task=task, settings=self.settings, paths=paths, data_dir=paths.data_dir,
+                                                  selection=self.selection, has_folder=self.has_folder)
+        capabilities.install(self.context)                         # the tag and progress hooks every model call of this process runs
         self.publisher = StatePublisher(self.writer, paths.run_dir)
-        self.hooks = HostHooks(self._make_hooks(self.publisher.notify), self.publisher)
-        from .. import j2
+        self.hooks = HostHooks(self._make_hooks(self.publisher.notify), self.publisher, self.context)
         self.run = j2.J2Run(run_dir=str(paths.run_dir), run_id=task.run_id[3:], hooks=self.hooks)
+        self.context.run = self.run
         self.publisher.attach(self.run)
         self.hooks.run_started(task.model_dump())
         self.inbox = Inbox(paths.inbox, self.trace)
@@ -465,6 +527,11 @@ class Host:
         self.writer.emit(run_started_event(pid=os.getpid(), mock=self.mock, seed=seed))
         self.heartbeat = Heartbeat(self.writer, heartbeat_interval())
         self.heartbeat.start()                     # the first beat follows run.started at once
+        if self.selection is not None:
+            from ..capabilities.select import chat_line
+            said = chat_line(self.selection, self.has_folder)
+            if said:                                   # project work only: a website selection posts nothing, so existing runs are unchanged
+                lines.append(said)
         if self._function_nodes_off:
             lines.append(f"function nodes are off: {self._function_nodes_off}")
         if task.framing.strip():

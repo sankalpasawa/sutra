@@ -277,7 +277,7 @@ def test_a_wrong_locked_flag_is_reported_both_ways(real):
 
 
 def test_a_wrong_task_flag_is_reported(real):
-    text = edited(real, "docs/ENVIRONMENT.md", "| `J2_OUTPUT` | `output` | `website` | no | yes |", "| `J2_OUTPUT` | `output` | `website` | no | no |")["docs/ENVIRONMENT.md"]
+    text = edited(real, "docs/ENVIRONMENT.md", "| `J2_OUTPUT` | `output` | `auto` | no | yes |", "| `J2_OUTPUT` | `output` | `auto` | no | no |")["docs/ENVIRONMENT.md"]
     assert len(only(cd.check_environment(text), "J2_OUTPUT", "Task must be yes")) == 1
 
 

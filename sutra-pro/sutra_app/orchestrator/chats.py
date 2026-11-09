@@ -33,13 +33,14 @@ from sutra_app.orchestrator.models import ChatMessageOut, ChatSessionOut, NeedsY
 from sutra_app.orchestrator.records import ChatMessage, ChatSession
 from sutra_app.orchestrator.waiting import ask_state
 
-__all__ = ["ChatStore", "ChatTranscripts", "RESUME_MESSAGES", "TURN_PHASES", "PROVIDERS", "parse_options"]
+__all__ = ["ChatStore", "ChatTranscripts", "RESUME_MESSAGES", "TURN_PHASES", "PROVIDERS", "STEER_REF", "parse_options"]
 
 log = logging.getLogger(__name__)
 RESUME_MESSAGES = 20
 MAX_LIMIT = 500
 TURN_PHASES = ("reading", "planning", "building")
 PROVIDERS = ("claude", "codex", "stub", "")
+STEER_REF = "steer:"            # the src_ref prefix of the owner's note to an agent (api/agent_chats.py): the one marker, since MessageMeta is J2's closed key set
 # A question is answered by the owner line stored in its `answered_by`. An approval or choice card has no stored value: pressing one of its buttons
 # stores the owner's line as `choice:<card id>` (TurnRunner._store_user_line), and that line answered the card. Both are read here, from the rows,
 # so a page that loads the chat again (and an app that was restarted) draws the card closed. An approval whose change is no longer pending was
@@ -51,7 +52,7 @@ _ANSWERED_BY = ("CASE WHEN kind = 'card' AND json_extract(card_json, '$.type') I
                 " (SELECT id FROM chart_changes WHERE status = 'pending_approval') THEN id END) ELSE answered_by END AS answered_by")
 _MESSAGE_COLUMNS = f"id, session_id, role, who, kind, text, card_json, meta_json, pause, {_ANSWERED_BY}, task_id, src_ref, state, at"
 _SESSION_COLUMNS = ("id, node_id, kind, title, writable, status, filed_under, connector, model, provider_session_id, "
-                    "last_message_id, note, created_at, updated_at, pinned")
+                    "last_message_id, note, created_at, updated_at, pinned, pinned_model, pinned_effort, run_id")
 _OPEN_TASKS = ("blocked", "queued", "starting", "running", "waiting_user")
 _OPTION_LINE = re.compile(r"^[ \t]*Option[ \t]+[0-9]+:[ \t]*(.+?)[ \t]*$", re.MULTILINE)
 _TRANSCRIPT_ROLES = {"user": "user", "agent": "assistant", "system": "system"}
@@ -67,7 +68,8 @@ def _session_out(row: sqlite3.Row, phase: str | None = None) -> ChatSessionOut:
     return ChatSessionOut(
         id=row["id"], node_id=row["node_id"], kind=row["kind"], title=row["title"], writable=bool(row["writable"]), status=row["status"],
         filed_under=row["filed_under"], connector=row["connector"], model=row["model"], provider_session_id=row["provider_session_id"],
-        last_message_id=row["last_message_id"], note=row["note"], phase=phase, direct_turn=direct_running.turn_of(row["id"]))
+        last_message_id=row["last_message_id"], note=row["note"], phase=phase, direct_turn=direct_running.turn_of(row["id"]),
+        pinned=row["pinned"], pinned_model=row["pinned_model"], pinned_effort=row["pinned_effort"], run_id=row["run_id"])
 
 
 def _session_record(row: sqlite3.Row) -> ChatSession:
@@ -75,7 +77,7 @@ def _session_record(row: sqlite3.Row) -> ChatSession:
         kind=row["kind"], id=row["id"], node_id=row["node_id"], title=row["title"], writable=bool(row["writable"]), status=row["status"],
         filed_under=row["filed_under"], connector=row["connector"], model=row["model"], provider_session_id=row["provider_session_id"],
         last_message_id=row["last_message_id"], note=row["note"], created_at=row["created_at"], updated_at=row["updated_at"],
-        pinned=row["pinned"])
+        pinned=row["pinned"], pinned_model=row["pinned_model"], pinned_effort=row["pinned_effort"], run_id=row["run_id"])
 
 
 def _message_out(row: sqlite3.Row) -> ChatMessageOut:
@@ -83,7 +85,7 @@ def _message_out(row: sqlite3.Row) -> ChatMessageOut:
         id=row["id"], session_id=row["session_id"], role=row["role"], who=row["who"], kind=row["kind"], text=row["text"],
         card=json.loads(row["card_json"]) if row["card_json"] else None, pause=row["pause"], answered_by=row["answered_by"],
         task_id=row["task_id"], state=row["state"], at=iso_z(row["at"]), blocks=_blocks_of(row["meta_json"]),
-        turn=_turn_of(row["src_ref"]), passed_on=_passed_on_of(row["session_id"], row["src_ref"]))
+        turn=_turn_of(row["src_ref"]), passed_on=_passed_on_of(row["session_id"], row["src_ref"]), steer=(row["src_ref"] or "").startswith(STEER_REF))
 
 
 def _passed_on_of(session_id: str, src_ref: str | None) -> int | None:

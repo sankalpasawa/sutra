@@ -7,6 +7,10 @@
                                 PUT /api/chats/{sid}/choice; there is no text detector (one mechanism, D111). A button carries its fullest usage
                                 window ("5-hour 62%") when the provider sent a quota (GAP-providers; a third argument `nowMs` is for a test).
                                 (welcome-settings item 4: under the buttons of the chosen provider, model_pick.js adds its model list and effort selects)
+     agentPill(data)            the pill of an AGENT's chat (agent-sessions design 3.3, D131, D134; GET /api/chats/{sid}/providers of a function or step chat): a first
+                                "Default" button that clears the agent's own choice and says what it resolves to ("Default: Claude Sonnet, high (from the team)"), then
+                                one button per provider that can run, then a chip with the effective model and where it comes from (own choice, this run, the team,
+                                default); under the chosen provider the same model and effort selects (model_pick.js, as is). Buttons are the pill's own.
      selectable(providers)      the names the pill offers
      choiceRequest(sid, name)   {method, path, body} for the PUT; name null clears the choice (the policy decides again)
      partial(state, event)      the streaming state after a `chat.partial` event of this chat: {active, text}; an event with `reset: true` (the turn was tried
@@ -70,6 +74,37 @@
     const auto = picked === "" ? '<span class="cpill-note">chosen by the app</span>' :
       '<button type="button" class="cpill-opt auto" data-act="choose-provider" data-provider="" aria-pressed="false">Let the app choose</button>';
     return '<div class="cpill" role="group" aria-label="Which model answers this chat">' + parts.join("") + auto + "</div>" + pickOf(items, picked);
+  }
+
+  // agent_chats.js: the page's global, or in node the file beside this one; the pill is complete without it (no chip, no words after "Default")
+  const agentChats = () => root.AgentChats || (typeof module === "object" && module !== null && module.exports && typeof require === "function" ? require("./agent_chats.js") : null);
+
+  function agentPill(data, nowMs) {
+    const d = isObj(data) ? data : {};
+    const items = list(d.providers);
+    if (items.length === 0) return "";
+    const AC = agentChats();
+    const own = isObj(d.own) && hasOwn(NAMES, d.own.provider) ? d.own : null;
+    const picked = own ? own.provider : "";
+    const eff = isObj(d.effective) ? d.effective : null;
+    const words = AC && eff ? AC.modelWords(eff, items) : "";
+    const from = AC && eff ? AC.sourceFrom(eff.source) : "";
+    const resolves = picked === "" && words !== "" ? ': <small class="cpill-def">' + esc(words) + (from ? " (from " + esc(from) + ")" : "") + "</small>" : "";
+    const who = clean(d.agent) || "this agent";
+    const buttons = ['<button type="button" class="cpill-opt auto' + (picked === "" ? " on" : "") + '" data-act="choose-provider" data-provider="" aria-pressed="' +
+      (picked === "" ? "true" : "false") + '">Default' + resolves + "</button>"];
+    items.forEach(p => {
+      if (p.ready !== true) {
+        const why = clean(p.why_not) || "cannot run";
+        buttons.push('<span class="cpill-opt off" title="' + esc(why) + '">' + esc(label(p.name)) + ' <small>' + esc(why) + "</small></span>");
+        return;
+      }
+      const on = p.name === picked;
+      buttons.push('<button type="button" class="cpill-opt' + (on ? " on" : "") + '" data-act="choose-provider" data-provider="' + esc(p.name) + '" aria-pressed="' +
+        (on ? "true" : "false") + '">' + esc(label(p.name)) + quotaWord(p, nowMs) + "</button>");
+    });
+    const chip = AC && eff ? '<span class="cpill-chip">' + AC.chip(eff, items) + "</span>" : "";
+    return '<div class="cpill cpill-agent" role="group" aria-label="Which model runs ' + esc(who) + '">' + buttons.join("") + chip + "</div>" + pickOf(items, picked);
   }
 
   // The model list and the effort of the chosen provider (model_pick.js, welcome-settings item 4), under the buttons; looked up when drawn, so the order of the
@@ -137,7 +172,7 @@
     return from + "; " + carried + (omitted > 0 ? ", " + omitted + " earlier shortened" : "");
   }
 
-  const ChatPill = {pill, selectable, choiceRequest, partial, settle, indicator, streamParts, switchNotice, idle, NAMES};
+  const ChatPill = {pill, agentPill, selectable, choiceRequest, partial, settle, indicator, streamParts, switchNotice, idle, NAMES};
   if (typeof module === "object" && module !== null && module.exports) module.exports = ChatPill;
   else root.ChatPill = ChatPill;
 })(globalThis);

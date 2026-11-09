@@ -376,7 +376,7 @@ def test_run_spec_is_what_the_engine_reads():
 
 def test_error_codes_and_statuses_are_the_designs():
     assert STATUS_BY_CODE == {"bad_token": 401, "bad_host": 400, "bad_origin": 403, "validation": 422, "rules": 422, "not_found": 404, "busy": 409,
-                              "stale_chart": 409, "already_decided": 409, "read_only": 403, "too_many_pending": 429, "provider_unavailable": 503,
+                              "stale_chart": 409, "already_decided": 409, "not_running": 409, "read_only": 403, "too_many_pending": 429, "provider_unavailable": 503,
                               "cli_missing": 503, "store_busy": 503, "internal": 500}
     err = AppError("busy", "later", {"task": 1})
     assert (err.status, err.code, err.body()) == (409, "busy", {"error": {"code": "busy", "message": "later", "details": {"task": 1}}})

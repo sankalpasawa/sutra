@@ -108,6 +108,34 @@ def test_a_database_at_version_two_gets_the_recurring_tables_and_keeps_its_rows(
     old.close()
 
 
+def test_a_v3_database_migrates_to_v4_with_every_row_intact(settings, events):
+    """Agent sessions (D130, D131): three columns on chat_sessions and one on tasks, additive; a database built at version 3 keeps all of it."""
+    old = Database(settings.data_dir / "v3.sqlite3", events)
+    old.migrate(schema.MIGRATIONS[:3])
+    seed(old)
+    sql(old, "INSERT INTO chat_sessions(id, node_id, kind, title, pinned, created_at, updated_at) VALUES ('cs_aaaaaaaaaaaa','web','department','Web','codex',1,1)")
+    sql(old, "INSERT INTO chat_messages(session_id, role, who, text, at) VALUES ('cs_aaaaaaaaaaaa','user','user','hello there',1)")
+    usage(old)
+    atom(old, "a-1")
+    sql(old, "INSERT INTO recurring(id, dept_id, text, schedule_json, cursor_at, created_at, updated_at) VALUES ('rec_aaaaaaaaaaaa','web','t','{}',1,1,1)")
+    counts = lambda: {t: sql(old, f"SELECT count(*) FROM {t}").fetchone()[0] for t in schema.TABLES if not t.startswith("chat_search")}      # noqa: E731
+    before, sessions = counts(), [tuple(r) for r in sql(old, "SELECT id, node_id, kind, title, pinned FROM chat_sessions ORDER BY id")]
+    assert old.version() == 3 and "pinned_model" not in {r[1] for r in sql(old, "PRAGMA table_info(chat_sessions)")}
+    assert old.migrate() == schema.SCHEMA_VERSION >= 4
+    assert counts() == before and [tuple(r) for r in sql(old, "SELECT id, node_id, kind, title, pinned FROM chat_sessions ORDER BY id")] == sessions
+    assert sql(old, "SELECT text FROM chat_messages").fetchone()[0] == "hello there"
+    cols = lambda t: {r[1]: r for r in sql(old, f"PRAGMA table_info({t})")}      # noqa: E731
+    assert {"pinned_model", "pinned_effort", "run_id"} <= set(cols("chat_sessions")) and "pick_json" in cols("tasks")
+    assert [tuple(r) for r in sql(old, "SELECT pinned_model, pinned_effort, run_id FROM chat_sessions")] == [("", "", None)] * 2
+    assert sql(old, "SELECT pick_json FROM tasks").fetchone()[0] == ""
+    assert "chat_sessions_run" in names(old, "index") and "chat_sessions_active" in names(old, "index")
+    sql(old, "UPDATE chat_sessions SET pinned_model = 'sonnet', pinned_effort = 'xhigh', run_id = 'r1' WHERE id = 'cs_aaaaaaaaaaaa'")
+    with pytest.raises(sqlite3.IntegrityError):
+        sql(old, "UPDATE chat_sessions SET pinned_effort = 'ultra' WHERE id = 'cs_aaaaaaaaaaaa'")
+    assert old.migrate() == schema.SCHEMA_VERSION                                # again: a no-op
+    old.close()
+
+
 def test_a_due_time_is_unique_per_schedule_and_runs_go_with_their_schedule(db):
     seed(db)
     sql(db, "INSERT INTO recurring(id, dept_id, text, schedule_json, cursor_at, created_at, updated_at) VALUES ('rec_aaaaaaaaaaaa','web','t','{}',1,1,1)")

@@ -345,3 +345,40 @@ def test_an_effort_the_model_does_not_accept_is_refused_with_the_valid_ones(tmp_
         port.choose(B, None, None, "low")                                          # an effort needs its provider too
     with pytest.raises(InvalidRequestError):
         port.choose(A, "claude", None, "low")                                      # the session runs on codex: choose the provider first
+
+
+# ---- check_choice and default_pick (agent-sessions design 3.3, D131): the pill's validation, pure ------------------------------------------
+
+def test_check_choice_validates_like_choose_but_starts_and_stores_nothing(tmp_path):
+    port, router, history, cfg, claude, codex = make(tmp_path, CodexListing)
+    ok = port.check_choice("claude", "haiku", "max")
+    assert (ok.provider, ok.model, ok.effort) == ("claude", "haiku", "max")
+    assert load_session_state(cfg.resolved_work_root() / A) is None and not router._pins and not (cfg.resolved_work_root() / A).exists()      # no session, no pin, no folder
+    with pytest.raises(InvalidRequestError) as caught:
+        port.check_choice("claude", "opuss")
+    assert "best, opus, sonnet, haiku" in str(caught.value) and caught.value.detail["models"][0] == "best"
+    with pytest.raises(InvalidRequestError) as caught:
+        port.check_choice("codex", "gpt-slim", "max")                              # the model's own efforts, named
+    assert "low, medium" in str(caught.value) and caught.value.detail["efforts"] == ["low", "medium"]
+    with pytest.raises(InvalidRequestError):
+        port.check_choice("gemini")
+    with pytest.raises(InvalidRequestError):
+        port.check_choice(None, "opus")                                            # a model needs its provider
+    assert port.check_choice(None).provider is None                                 # Default: nothing to check
+
+
+def test_check_choice_refuses_a_provider_that_cannot_run_and_says_why(tmp_path):
+    port = make(tmp_path, SignedOut)[0]
+    with pytest.raises(InvalidRequestError) as caught:
+        port.check_choice("codex")
+    assert "not signed in" in str(caught.value) and caught.value.detail["why_not"] == "not signed in"
+    assert port.check_choice("claude", None, "low").effort == "low"
+
+
+def test_the_default_pick_is_what_the_policy_answers_for_an_agent_turn(tmp_path):
+    port, router, *_ = make(tmp_path)
+    got = port.default_pick("identity")
+    assert (got.provider, got.model, got.effort) == (router.policy.resolve_fields(function="identity", purpose="agent_turn").order[0],
+                                                     router.policy.model_for(got.provider), "high")
+    router.policy.providers[got.provider].enabled = False
+    assert port.default_pick("identity").provider != got.provider                       # a disabled provider is not what the default resolves to

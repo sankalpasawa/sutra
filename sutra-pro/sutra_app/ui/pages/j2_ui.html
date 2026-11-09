@@ -143,14 +143,17 @@ const EXAMPLES = ["A website for my cafe", "A website for Sweet Crumbs Bakery in
   "A website for Petal & Stem, a florist in Jaipur: bouquets, same-day delivery, wedding flowers",
   "A website for Asha Rao Photography, a wedding and portrait photographer in Mumbai: portfolio, packages, booking"];
 // Output types the start page offers (J2_OUTPUT sets the default); the run keeps its type once it starts.
-const OUTS = [["website", "Website"], ["prd", "PRD document"]];
+const OUTS = [["auto", "Let the team decide"], ["website", "Website"], ["prd", "PRD document"], ["project", "Project work"]];
 const PRD_EXAMPLES = ["Write a PRD for QuickQueue, a mobile app that lets clinic patients join a waiting line remotely. "
   + "Users: patients at small clinics and the front-desk staff who manage the line. Problem: patients wait 45 minutes on "
   + "average in crowded waiting rooms. Must-have features: join the queue from a phone, live position updates, SMS alert "
   + "when 2 patients are ahead, staff dashboard to call the next patient. Constraints: works on low-end Android phones; no "
   + "patient health data stored. Success: average in-room wait under 10 minutes; 60% of patients join remotely within 3 months."];
 const examples = s => s.doc ? PRD_EXAMPLES : EXAMPLES;
-const outOptions = s => OUTS.map(([v, l]) => `<option value="${v}"${s.output === v ? " selected" : ""}>${l}</option>`).join("");
+let EFFOUT = "", PICKEDOUT = "";      // E19: the engine's own default for this team, and what the owner picked on this page
+(async () => { try { const r = await (await fetch("/api/engine/settings" + (SutraCtx.dept ? "?dept=" + encodeURIComponent(SutraCtx.dept) : ""), {cache: "no-store"})).json(); EFFOUT = String(((r || {}).effective || {}).output || ""); } catch (e) {} })();
+const outOptions = s => { const cur = PICKEDOUT || (s.output && s.output !== "website" ? s.output : "") || EFFOUT || s.output;
+  return OUTS.map(([v, l]) => `<option value="${v}"${cur === v ? " selected" : ""}>${l}</option>`).join(""); };
 const docLinks = s => (s.docset_files || []).map(d => `<a href="/file/${d.md}${runQ().replace("&", "?")}" download>${esc(d.kind.toUpperCase())} .md</a> <a href="/file/${d.docx}${runQ().replace("&", "?")}" download>${esc(d.kind.toUpperCase())} .docx</a>`).join(" ");
 const plainDocLinks = s => (s.docset_files || []).map(d => `<a href="/file/${d.md}${runQ().replace("&", "?")}" download>Download the ${esc(d.label)} (markdown)</a> <a href="/file/${d.docx}${runQ().replace("&", "?")}" download>Download the ${esc(d.label)} (Word file)</a>`).join(" ");
 const fileLinks = s => (s.files || []).map(f => `<a href="/file/${f}${runQ().replace("&", "?")}" download>Download ${f.split(".").pop() === "docx" ? "the Word file (.docx)" : "the markdown (.md)"}</a>`).join(" ");
@@ -2871,6 +2874,7 @@ async function send(){
 $("send").onclick = send;
 // The start page's output type (both views): only before the first message; the server refuses it after.
 document.addEventListener("change", async e => { if (!e.target.matches(".outsel")) return;
+  PICKEDOUT = e.target.value;
   await fetch("/api/output", {method:"POST", headers:{"Content-Type":"application/json"}, body:JSON.stringify({type: e.target.value})}); });
 // Delegated clicks: panes are re-rendered on every poll.
 // Detail view: click an agent message, a timeline step, or a lane (its latest message).

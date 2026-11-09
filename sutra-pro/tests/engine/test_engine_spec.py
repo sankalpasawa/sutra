@@ -195,7 +195,7 @@ def test_task_spec_does_not_judge_a_path_that_is_the_hosts_job():
 # ---- EngineSettings: J2's defaults ------------------------------------------------------------------------------------
 
 J2_DEFAULTS = {
-    "output": "website",              # j2.py:2333 J2_OUTPUT
+    "output": "auto",                 # J2's default is website; the engine picks the output for the brief itself (D129)
     "fixes": 0,                       # :2837 == "1"
     "budget": 100,                    # :66
     "budget_cap": None,               # :67 default 2 x budget
@@ -225,13 +225,14 @@ J2_DEFAULTS = {
     "force_audit_note": "",           # :2460
     "force_question": "",             # :2844
     "memory_test_lessons": False,     # :2848 == "1"
+    "workspace": "auto",              # D127: Sutra's own, not J2's: the workspace capability
 }
 
 
 def test_engine_settings_default_to_j2s_values():
     assert EngineSettings().model_dump() == J2_DEFAULTS
     assert list(EngineSettings.model_fields) == list(J2_DEFAULTS)
-    assert len(J2_DEFAULTS) == 30
+    assert len(J2_DEFAULTS) == 31
 
 
 def test_the_flags_that_are_on_in_j2_are_on_and_the_others_off():
@@ -298,7 +299,7 @@ def test_the_ten_locked_fields():
 
 def test_editable_is_everything_else_in_field_order():
     assert EDITABLE_FIELDS == tuple(f for f in EngineSettings.model_fields if f not in LOCKED_FIELDS)
-    assert len(EDITABLE_FIELDS) == 20 and not set(EDITABLE_FIELDS) & set(LOCKED_FIELDS)
+    assert len(EDITABLE_FIELDS) == 21 and not set(EDITABLE_FIELDS) & set(LOCKED_FIELDS)
     assert SETTINGS_SCHEMA == "engine-settings/1"
 
 
@@ -313,7 +314,7 @@ J2_VARIABLES = {     # engine.md 4.4: the J2 variables that become fields
     "send_cap": "J2_SEND_CAP", "milestone_emails": "J2_MILESTONE_EMAILS", "test_email": "J2_TEST_EMAIL",
     "test_slack_target": "J2_TEST_SLACK_TARGET", "tap_min": "J2_TAP_MIN", "chrome": "J2_CHROME",
     "force_audit_fail": "J2_FORCE_AUDIT_FAIL", "force_audit_note": "J2_FORCE_AUDIT_NOTE", "force_question": "J2_FORCE_QUESTION",
-    "memory_test_lessons": "J2_MEMORY_TEST_LESSONS"}
+    "memory_test_lessons": "J2_MEMORY_TEST_LESSONS", "workspace": "J2_WORKSPACE"}
 
 
 def test_every_field_has_its_j2_variable():
@@ -324,19 +325,19 @@ NON_DEFAULT = dict(output="prd", fixes=1, budget=250, budget_cap=400, max_cycles
                    max_turns=9, chat_full_chars=1000, delay=0.5, rates=False, slim=False, memory=False, realization=False, change=True,
                    board=True, artifact_schema=True, template_library=True, send_mode="mock", send_cap=0, milestone_emails=True,
                    test_email="me@example.com", test_slack_target="#tests", tap_min=48, chrome="/opt/chrome", force_audit_fail=2,
-                   force_audit_note="forced", force_question="why?", memory_test_lessons=True)
+                   force_audit_note="forced", force_question="why?", memory_test_lessons=True, workspace="off")
 
 
 def test_to_env_of_the_defaults_leaves_out_the_empty_values():
     env = EngineSettings().to_env()
     assert set(J2_VARIABLES.values()) - set(env) == {"J2_BUDGET_CAP", "J2_TEST_EMAIL", "J2_TEST_SLACK_TARGET", "J2_CHROME",
                                                      "J2_FORCE_AUDIT_NOTE", "J2_FORCE_QUESTION"}
-    assert env == {"J2_OUTPUT": "website", "J2_FIXES": "0", "J2_BUDGET": "100", "J2_MAX_CYCLES": "6", "J2_LIMIT_ADD": "30",
+    assert env == {"J2_OUTPUT": "auto", "J2_FIXES": "0", "J2_BUDGET": "100", "J2_MAX_CYCLES": "6", "J2_LIMIT_ADD": "30",
                    "J2_BARGAIN_MINUTES": "15.0", "J2_BARGAIN_CALLS": "8", "J2_MAX_TURNS": "30", "J2_CHAT_FULL_CHARS": "60000",
                    "J2_DELAY": "0.0", "J2_RATES": "1", "J2_SLIM": "1", "J2_MEMORY": "1", "J2_REALIZATION": "1", "J2_CHANGE": "0",
                    "J2_BOARD": "0", "J2_ARTIFACT_SCHEMA": "0", "J2_TEMPLATE_LIBRARY": "0", "J2_SEND_MODE": "dry-run",
                    "J2_SEND_CAP": "10", "J2_MILESTONE_EMAILS": "0", "J2_TAP_MIN": "44", "J2_FORCE_AUDIT_FAIL": "0",
-                   "J2_MEMORY_TEST_LESSONS": "0"}
+                   "J2_MEMORY_TEST_LESSONS": "0", "J2_WORKSPACE": "auto"}
 
 
 def test_to_env_for_every_field():
@@ -348,7 +349,8 @@ def test_to_env_for_every_field():
                    "J2_REALIZATION": "0", "J2_CHANGE": "1", "J2_BOARD": "1", "J2_ARTIFACT_SCHEMA": "1", "J2_TEMPLATE_LIBRARY": "1",
                    "J2_SEND_MODE": "mock", "J2_SEND_CAP": "0", "J2_MILESTONE_EMAILS": "1", "J2_TEST_EMAIL": "me@example.com",
                    "J2_TEST_SLACK_TARGET": "#tests", "J2_TAP_MIN": "48", "J2_CHROME": "/opt/chrome", "J2_FORCE_AUDIT_FAIL": "2",
-                   "J2_FORCE_AUDIT_NOTE": "forced", "J2_FORCE_QUESTION": "why?", "J2_MEMORY_TEST_LESSONS": "1"}
+                   "J2_FORCE_AUDIT_NOTE": "forced", "J2_FORCE_QUESTION": "why?", "J2_MEMORY_TEST_LESSONS": "1",
+                   "J2_WORKSPACE": "off"}
 
 
 @pytest.mark.parametrize("field", list(EngineSettings.model_fields))

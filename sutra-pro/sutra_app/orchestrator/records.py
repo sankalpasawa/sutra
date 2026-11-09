@@ -48,6 +48,9 @@ class ChatSession(Record):
     connector: Literal["claude", "codex", "stub", ""] = ""
     model: Annotated[str, StringConstraints(max_length=100)] = ""
     pinned: Literal["claude", "codex", ""] = ""            # the owner's per-chat provider choice (ABS-6); "" = the policy decides
+    pinned_model: Annotated[str, StringConstraints(max_length=100)] = ""           # the model and effort of that choice (D131); empty when `pinned` is
+    pinned_effort: Literal["", "low", "medium", "high", "xhigh", "max"] = ""
+    run_id: RunId | None = None                            # the run an agent's function or step session belongs to (D130); None for every other chat
     provider_session_id: Annotated[str, StringConstraints(min_length=1, max_length=200)] | None = None
     last_message_id: Annotated[int, Field(ge=0)] = 0
     note: Annotated[str, StringConstraints(max_length=500)] = ""
@@ -66,6 +69,10 @@ class ChatSession(Record):
             raise ValueError("a function or step session is a read-only log")
         if self.status == "archived" and self.writable:
             raise ValueError("an archived session is not writable")
+        if not self.pinned and (self.pinned_model or self.pinned_effort):
+            raise ValueError("a model or an effort is chosen together with its provider")
+        if self.run_id is not None and self.kind not in ("function", "step"):
+            raise ValueError("only a function or step session belongs to a run")
         if self.filed_under is not None and self.status != "archived":
             raise ValueError("only an archived session is filed under another node")
         if self.updated_at < self.created_at:

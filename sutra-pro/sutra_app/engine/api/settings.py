@@ -2,6 +2,7 @@
 
     GET /api/engine/settings[?dept=]   {schema, defaults, global, department (only with dept), effective, editable, locked}
     PUT /api/engine/settings[?dept=]   {"set": {field: value}, "unset": [field]}   (token required)
+    GET /api/engine/capabilities       {schema, capabilities: [{name, outputs, settings}], outputs}: what the engine can do (D126)
 
 Without `dept` the file is `data/engine.json`, with it `data/departments/<dept>/engine.json`. A file holds field names (partial,
 J2's defaults fill the rest). PUT checks every new value strictly against `EngineSettings` (closed, no secret is a field),
@@ -23,13 +24,14 @@ from fastapi.concurrency import run_in_threadpool
 from fastapi.responses import Response
 from pydantic import ValidationError
 
+from .. import capabilities
 from ..paths import DataPaths
 from ..spec import EDITABLE_FIELDS, LOCKED_FIELDS, SETTINGS_SCHEMA, EngineSettings, SettingsError, read_settings_file
 from .commands import read_json_body
 from .ctx import dept_dependency
 from .reply import json_reply, to_response, validation
 
-__all__ = ["add_routes", "settings_view", "apply_change", "settings_file"]
+__all__ = ["add_routes", "settings_view", "apply_change", "settings_file", "capabilities_view", "CAPABILITIES_SCHEMA"]
 
 _WRITE_LOCK = threading.Lock()
 _FIELDS = tuple(EngineSettings.model_fields)
@@ -64,6 +66,15 @@ def settings_view(data_dir, dept_id: Optional[str]) -> dict:
         body["department"] = dept_file
     body.update(effective=effective.model_dump(), editable=list(EDITABLE_FIELDS), locked=list(LOCKED_FIELDS))
     return body
+
+
+CAPABILITIES_SCHEMA = "engine-capabilities/1"
+
+
+def capabilities_view() -> dict:
+    """The body of GET /api/engine/capabilities: the registry's own description, and every output name the engine accepts."""
+    from .. import j2
+    return {"schema": CAPABILITIES_SCHEMA, "capabilities": capabilities.describe(), "outputs": sorted(j2.OUTPUTS)}
 
 
 def _errors(prefix: str, exc: ValidationError) -> list[dict]:
@@ -134,6 +145,10 @@ def add_routes(router: APIRouter, services, _j2_dept_dep=None) -> None:
     @router.get("/api/engine/settings", response_class=Response)
     def settings_get(dept: Optional[str] = Depends(dept_dep)) -> Response:
         return to_response(json_reply(settings_view(services.data_dir, dept)), services.redact)
+
+    @router.get("/api/engine/capabilities", response_class=Response)
+    def capabilities_get() -> Response:
+        return to_response(json_reply(capabilities_view()), services.redact)
 
     @router.put("/api/engine/settings", dependencies=[Depends(services.require_token)], response_class=Response)
     async def settings_put(request: Request, dept: Optional[str] = Depends(dept_dep)) -> Response:

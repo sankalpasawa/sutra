@@ -15,15 +15,20 @@
                                           the plan in words and one meter per usage window (plan_meter.js, GAP-providers)
      signInState(prev, answer) -> {step, url, code, expires_in, message}   the sign-in reducer (start answer, poll answer, an error)
      appearanceHtml(pref) -> html                 the Appearance group: Light | Dark | System (localStorage j2theme, one choice for both pages)
-     workdirHtml(state) -> html                   the Working folder group (GAP3-workdir): a text field, Save, Clear, "What the model can see" (the folder's
-                                          top-level names from GET /api/connectors/workdir) and the plain words: read-only, chats only, the engine's
-                                          department runs unchanged, what the model reads goes to your own Claude or Codex
+     workdirHtml(state) -> html                   the Working folder group (GAP3-workdir, D125): a text field, "Choose folder…" (only where the desktop
+                                          app bridges its folder dialog), Save, Clear, the access choice (Read and change files | Read only), the
+                                          project instructions file the team follows, "What the model can see" (the folder's top-level names from
+                                          GET /api/connectors/workdir) and the plain words: a team works in the folder like a Claude session, what
+                                          the model reads goes to your own Claude or Codex
+     canChooseFolder() -> bool                    true when window.sutraDesktop.chooseFolder exists (the desktop app's preload); the page then draws "Choose folder…"
 
      testConnector(api, provider) -> Promise<{provider, ok, seconds, message, line}>       POST /api/connectors/{provider}/test
      setCliPath(api, provider, path) -> Promise<{provider, ok, found, message, answer}>   PUT /api/connectors/{provider}/path (GAP-providers: the
                                           file of a CLI the app could not find; null or "" forgets the choice)
-     loadWorkdir(api) / saveWorkdir(api, path) / clearWorkdir(api) -> Promise<{ok, data, message}>   GET, PUT and DELETE /api/connectors/workdir; `data` is
-                                          {path, usable, problem, preview: {entries: [{name, kind}], total, shown, capped, readable}}
+     loadWorkdir(api) / saveWorkdir(api, path) / saveWorkdirAccess(api, access) / clearWorkdir(api) -> Promise<{ok, data, message}>   GET, PUT {path}, PUT {access}
+                                          and DELETE /api/connectors/workdir; `data` is {path, usable, problem, access: "read"|"edit"|null,
+                                          instructions: {file, chars}|null, preview: {entries: [{name, kind}], total, shown, capped, readable}}
+     chooseWorkdir(bridge) -> Promise<string|null>   the folder the desktop dialog returned (a trimmed path), null when it was cancelled or failed
      signIn(api, {onState, sleep, pollMs}) -> {done, cancel}   POST /api/connectors/codex/sign-in, GET ...{id} until signed_in, failed or expired, DELETE
      watchHealth(api, onHealth, onError) -> {onEvent(type), refetch()}   GET /api/health again on connector.health, connector.switch, connector.mode
      loadEngine(api, scope) / saveEngine(api, settings, scope, form)     GET and PUT /api/engine/settings; `dept` is put in the query by hand and
@@ -75,7 +80,7 @@
   /* ---------------------------------------------------------------- the engine fields */
   // [label, hint] for every field of EngineSettings (sutra_app/engine/spec.py). A field this table does not know is shown under its own name.
   const FIELD_TEXT = freeze({
-    output: ["What to build", "The kind of result a new run makes"],
+    output: ["What to build", "The kind of result a new run makes; \"Let the team decide\" picks it from the request"],
     fixes: ["Fix pass", "Let a run make a second pass to repair what the checks refused"],
     budget: ["Budget", "Work credits one run may spend"],
     budget_cap: ["Budget cap", "The most a run may spend; empty means twice the budget"],
@@ -105,8 +110,12 @@
     force_audit_note: ["Forced audit note", "A test switch"],
     force_question: ["Forced question", "A test switch"],
     memory_test_lessons: ["Test lessons", "A test switch"],
+    workspace: ["Working folder for agents", "Let the team's agents look at your working folder (about 3,000 more tokens per call)"],
   });
-  const CHOICES = freeze({output: freeze(["website", "prd", "hld", "lld"])});
+  const CHOICES = freeze({output: freeze(["auto", "website", "prd", "hld", "lld", "project"]), workspace: freeze(["auto", "off"])});
+  // What the owner reads on a choice's option (the value sent stays the engine's own word).
+  const CHOICE_LABELS = freeze({output: freeze({auto: "Let the team decide", project: "Project work"}),
+    workspace: freeze({auto: "Agents read the working folder", off: "Agents do not read it"})});
   const FLAGS01 = freeze(["fixes"]);                   // 0 or 1 on the wire, a toggle on the page
   const FLOATS = freeze(["bargain_minutes", "delay"]); // JSON cannot tell 15.0 from 15, so the float fields are named
   const NULLABLE = freeze(["budget_cap"]);             // empty means "not set" (null)
@@ -232,7 +241,7 @@
     if (kind === "flag") return '<input type="checkbox"' + common + (value === 1 || value === true ? " checked" : "") + ">";
     if (kind === "choice") {
       const options = CHOICES[field].includes(value) ? CHOICES[field] : CHOICES[field].concat(value === undefined || value === null ? [] : [String(value)]);
-      return "<select" + common + ">" + options.map(o => '<option value="' + esc(o) + '"' + (o === value ? " selected" : "") + ">" + esc(o) + "</option>").join("") + "</select>";
+      return "<select" + common + ">" + options.map(o => '<option value="' + esc(o) + '"' + (o === value ? " selected" : "") + ">" + esc(hasOwn(CHOICE_LABELS, field) && hasOwn(CHOICE_LABELS[field], o) ? CHOICE_LABELS[field][o] : o) + "</option>").join("") + "</select>";
     }
     if (kind === "int" || kind === "nullint") {
       return '<input type="number" step="1" inputmode="numeric"' + common + ' value="' + (value === null || value === undefined ? "" : esc(value)) + '"' +
@@ -426,14 +435,22 @@
   /* ---------------------------------------------------------------- Working folder group (GAP3-workdir) */
   const WORKDIR_PATH = "/api/connectors/workdir";
   const WORKDIR_WORDS = freeze({
-    what: "The one folder of your own files that chats can read: a direct chat on any team, and the org chat. It is read-only. The model can open and search " +
-      "these files but cannot create, change or delete one or run a command. It applies to chats only: the engine's department runs are unchanged.",
+    what: "Teams you tell to work on a project (not a document or a website) work in this folder like a Claude session: they read its files, follow its CLAUDE.md " +
+      "and, if you allow it, change files. They never run commands other than git status/diff/log/show, and never leave the folder.",
     egress: "What the model reads here goes to your own Claude or Codex, like any message you type. Sutra's scrub covers what Sutra sends, not the contents of your files.",
     none: "No folder is set. Chats run in a private empty folder and cannot see your files.",
     saved: "Saved. The next message in any chat can read this folder.",
     cleared: "Cleared. Chats go back to a private empty folder.",
+    accessEdit: "Saved. Teams may change files in this folder.",
+    accessRead: "Saved. Teams only read this folder.",
+    accessHint: "Read and change files lets a team create and edit files here; Read only lets it look and nothing more.",
     hint: "Write the full path, for example ~/Documents/my-project. A leading ~ is your home folder.",
   });
+
+  const WORKDIR_ACCESS = freeze([["edit", "Read and change files"], ["read", "Read only"]]);
+  // The desktop app's preload bridges its folder dialog as window.sutraDesktop.chooseFolder; in a browser the text field is all there is.
+  const folderBridge = () => (isObj(root.sutraDesktop) && typeof root.sutraDesktop.chooseFolder === "function" ? root.sutraDesktop : null);
+  const canChooseFolder = () => folderBridge() !== null;
 
   const workdirData = state => (isObj(state) && isObj(state.data) ? state.data : null);
 
@@ -451,6 +468,17 @@
       ? '<p class="sethint wdmore">Showing ' + shown + " of " + (p.capped === true ? "at least " : "") + total + " entries. The model can see all of them.</p>"
       : '<p class="sethint wdmore">' + (total === 0 ? "The folder is empty." : total + (total === 1 ? " entry." : " entries.")) + "</p>";
     return (rows ? '<ul class="wdlist" aria-label="What the model can see">' + rows + "</ul>" : "") + more;
+  }
+
+  // The access choice: two radio-like buttons (the page saves the one pressed) and, when the folder has a CLAUDE.md or AGENTS.md, the line that says it is followed.
+  function workdirAccess(data, saving) {
+    const now = data.access === "read" ? "read" : "edit";
+    const radios = WORKDIR_ACCESS.map(([value, label]) => '<button type="button" class="ghost wdaccess" role="radio" data-act="workdir-access" data-access="' + value +
+      '" aria-checked="' + (value === now ? "true" : "false") + '"' + (value === now ? ' data-on="true"' : "") + (saving ? " disabled" : "") + ">" + esc(label) + "</button>").join("");
+    const file = isObj(data.instructions) ? clean(data.instructions.file) : "";
+    return '<div class="wdaccessrow" role="radiogroup" aria-label="What a team may do in this folder"><span class="setlabel">Access</span>' + radios +
+      '<span class="sethint">' + esc(WORKDIR_WORDS.accessHint) + "</span></div>" +
+      (file !== "" ? '<p class="sethint wdinstr">' + esc("The team follows this folder's " + file + ".") + "</p>" : "");
   }
 
   // workdirHtml(state). state {data: the GET answer or null while it loads, value: what the owner typed, step: idle | saving | ok | error, message}.
@@ -471,9 +499,11 @@
     return head + '<p class="setdetail wdstatus" data-state="' + (path === "" ? "none" : (data.usable === false ? "broken" : "set")) + '">' + esc(status) + "</p>" +
       '<div class="setpath" data-workdir><label class="setlabel" for="setwd">Folder</label><input type="text" id="setwd" data-workdir-input spellcheck="false" ' +
       'autocomplete="off" maxlength="1024" placeholder="~/Documents/my-project" value="' + esc(clean(st.value)) + '">' +
+      (canChooseFolder() ? '<button type="button" class="ghost" data-act="workdir-choose"' + (saving ? " disabled" : "") + ">Choose folder\u2026</button>" : "") +
       '<button type="button" class="ghost" data-act="workdir-save"' + (saving ? " disabled" : "") + ">Save</button>" +
       '<button type="button" class="ghost" data-act="workdir-clear"' + (saving || path === "" ? " disabled" : "") + ">Clear</button>" +
       '<span class="sethint">' + esc(WORKDIR_WORDS.hint) + "</span>" + note + "</div>" +
+      (path !== "" ? workdirAccess(data, saving) : "") +
       '<h4 class="setsub">What the model can see</h4>' +
       (path !== "" && data.usable !== false ? workdirList(data) : '<p class="sethint">Nothing yet: choose a folder and its top level appears here. Names only, never file contents.</p>') +
       "</section>";
@@ -812,6 +842,27 @@
       return {ok: false, data: null, message: clean(e && e.message) || "That folder could not be used."};
     }
   }
+  // Only the access changes: PUT {access} with no path. The answer is the whole setting again.
+  async function saveWorkdirAccess(api, access) {
+    if (access !== "read" && access !== "edit") return {ok: false, data: null, message: "Choose Read and change files or Read only."};
+    try {
+      const data = await api.put(WORKDIR_PATH, {access});
+      return {ok: true, data: isObj(data) ? data : null, message: access === "read" ? WORKDIR_WORDS.accessRead : WORKDIR_WORDS.accessEdit};
+    } catch (e) {
+      return {ok: false, data: null, message: clean(e && e.message) || "The access could not be changed."};
+    }
+  }
+  // The desktop's folder dialog: the chosen path, or null when the owner closed it (or the bridge failed: the text field is still there).
+  async function chooseWorkdir(bridge) {
+    const b = isObj(bridge) ? bridge : folderBridge();
+    if (b === null || typeof b.chooseFolder !== "function") return null;
+    try {
+      const picked = await b.chooseFolder();
+      return typeof picked === "string" && picked.trim() !== "" ? picked.trim() : null;
+    } catch (e) {
+      return null;
+    }
+  }
   async function clearWorkdir(api) {
     try {
       const data = await api.del(WORKDIR_PATH);
@@ -923,7 +974,7 @@
     engineHtml, engineBody, engineErrors, formProblems, connectorsHtml, signInState, appearanceHtml,
     testConnector, signIn, watchHealth, loadEngine, saveEngine, enginePath, testLine, kindOf, parseValue, setCliPath,
     policyHtml, policyBody, policyProblem, policyErrors, loadPolicy, savePolicy, answering, aboutHtml, checkUpdate, updateWords, setAutoUpdate,
-    workdirHtml, loadWorkdir, saveWorkdir, clearWorkdir, WORKDIR_PATH, WORKDIR_WORDS,
+    workdirHtml, loadWorkdir, saveWorkdir, saveWorkdirAccess, clearWorkdir, chooseWorkdir, canChooseFolder, WORKDIR_PATH, WORKDIR_WORDS,
     HEALTH_EVENTS, NOTE_LOCKED, lockedNote, NOTE_NEXT_RUN,
   };
   if (typeof module === "object" && module !== null && module.exports) module.exports = SettingsView;

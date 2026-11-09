@@ -85,7 +85,7 @@ def test_call_json_returns_the_object_the_usd_and_how(rig):
 def test_the_tag_is_built_from_the_arguments_never_from_the_string_step(rig):
     rig.call(function="chat_agent", step="decide", context=ORG)
     ctx = rig.claude.seen[0]["ctx"]
-    assert ctx.tag == CallTag(function="chat_agent", stage="decide", purpose="chat_plan")
+    assert ctx.tag == CallTag(function="chat_agent", stage="decide", purpose="chat_plan", workspace="edit")
     assert (ctx.session_id, ctx.node_id) == ("cs_org", "root") and ctx.tag.step == 0 and ctx.tag.atom is None
 
 
@@ -107,7 +107,7 @@ def test_task_id_becomes_the_tag_task_id(rig):
 def test_no_context_means_the_defaults_and_unknown_keys_are_ignored(rig):
     rig.call(context={"colour": "red"})
     tag = rig.claude.seen[0]["ctx"].tag
-    assert tag == CallTag(function="chat_agent", stage="plan") and rig.claude.seen[0]["ctx"].session_id is None
+    assert tag == CallTag(function="chat_agent", stage="plan", workspace="edit") and rig.claude.seen[0]["ctx"].session_id is None
     assert rig.sink.rows[0].atom_id is None
 
 

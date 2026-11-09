@@ -574,7 +574,8 @@ class CodexConnector(ModelConnector):
         if plan.resume:
             argv.append("resume")
         argv += ["--json", "--skip-git-repo-check", "--ignore-user-config", "--ignore-rules"]
-        sandbox = "read-only" if plan.folder else self.sandbox       # the owner's working folder (GAP3-workdir) is only ever read, whatever the policy says
+        # the owner's working folder (GAP3-workdir) is read, or changed inside the folder only when the owner chose "edit", whatever the policy says
+        sandbox = ("workspace-write" if getattr(plan.folder, "edit", False) else "read-only") if plan.folder else self.sandbox
         cwd = plan.folder or plan.workdir
         if not plan.resume:                                  # `exec resume` takes no -s and no -C: sandbox_mode below, cwd of the process
             if plan.oneshot:

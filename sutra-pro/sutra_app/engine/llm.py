@@ -23,6 +23,7 @@ import itertools
 import math
 import os
 import re
+import sys
 import threading
 import time
 from collections.abc import Callable, Iterator, Mapping
@@ -41,7 +42,7 @@ from .port import (
 __all__ = [
     "ask", "configure", "tagged", "current_tag", "bind_atom", "bound_atom", "env_mock", "step_label", "ScriptedPort",
     "EmptyReply", "extract_json", "close_json", "extract_html", "partial_html", "LAST_META", "MOCK", "PROVIDER", "MODEL",
-    "MOCK_ENV",
+    "MOCK_ENV", "TAG_HOOKS", "PROGRESS_HOOKS",
 ]
 
 MOCK_ENV = ("SUTRA_MOCK", "SUTRA_OFFLINE", "STUDIO_MOCK")     # any of them set to "1" means mock mode (D36)
@@ -52,6 +53,13 @@ def env_mock(environ: Optional[Mapping[str, str]] = None) -> bool:
     env = os.environ if environ is None else environ
     return any(env.get(name) == "1" for name in MOCK_ENV)
 
+
+# Capability hooks (engine/capabilities, D126), filled by `capabilities.install` once per process and read on EVERY call of every
+# output, so a capability reaches every agent with no change to a caller. A tag hook is `hook(tag) -> dict` (fields to add to the tag:
+# only fields that are still empty on it are taken); a progress hook is `hook(tag, event) -> None`. A hook that raises is skipped with one
+# stderr line: a capability can add to a call, never stop it.
+TAG_HOOKS: list = []
+PROGRESS_HOOKS: list = []
 
 LAST_META: dict = {}                    # one model call at a time per process, so a plain dict is safe
 MOCK: bool = env_mock()
@@ -146,6 +154,44 @@ def _active_port() -> ModelPort:
     raise NoModelAvailable("no model is available: no port was configured (llm.configure) and mock mode is off")
 
 
+def _hook_failed(kind: str, hook: Any, exc: BaseException) -> None:
+    name = getattr(hook, "capability", None) or getattr(hook, "__name__", "hook")
+    print(f"{kind} hook {name} failed: {type(exc).__name__}: {str(exc)[:300]}", file=sys.stderr)
+
+
+def _hooked_tag(tag: CallTag) -> CallTag:
+    """`tag` with what each tag hook adds. A field already set on the tag (by J2, by an earlier hook) is never replaced, and a field the
+    tag does not have is ignored: `workspace` is empty until a capability sets it, whatever any other capability says."""
+    for hook in tuple(TAG_HOOKS):
+        try:
+            extra = hook(tag) or {}
+            fill = {name: value for name, value in extra.items()
+                    if name in CallTag.model_fields and getattr(tag, name) == CallTag.model_fields[name].default}
+            if fill:
+                tag = CallTag.model_validate({**tag.model_dump(), **fill})
+        except Exception as exc:  # noqa: BLE001
+            _hook_failed("tag", hook, exc)
+    return tag
+
+
+def _hooked_progress(tag: CallTag, on_progress: Optional[Callable[[dict], None]]) -> Optional[Callable[[dict], None]]:
+    """`on_progress` and every progress hook as one callback; `on_progress` unchanged (maybe None) when no hook is installed, so a
+    process without such a capability asks for no partials it did not ask for before."""
+    hooks = tuple(PROGRESS_HOOKS)
+    if not hooks:
+        return on_progress
+
+    def composed(event: dict) -> None:
+        for hook in hooks:
+            try:
+                hook(tag, event)
+            except Exception as exc:  # noqa: BLE001
+                _hook_failed("progress", hook, exc)
+        if on_progress is not None:
+            on_progress(event)
+    return composed
+
+
 def ask(system, user, mock, max_tokens=1500, effort="high", on_progress=None, json_mode=False, images=None,
         schema=None, *, tag=None) -> str:
     """One model call. `mock` is J2's scripted reply (a callable); only the stub path calls it. `images` are PNG paths and
@@ -157,9 +203,10 @@ def ask(system, user, mock, max_tokens=1500, effort="high", on_progress=None, js
     tag = current_tag() if tag is None else _as_tag(tag)
     if tag.atom is None and _BOUND_ATOM is not None:
         tag = tag.model_copy(update={"atom": _BOUND_ATOM})
+    tag = _hooked_tag(tag)
     request = CompletionRequest(system=system, user=user, max_tokens=max_tokens, effort=effort, json_mode=json_mode,
                                 images=images, json_schema=schema, tag=tag, allowance=None, scripted=mock)
-    result = port.complete(request, on_progress)
+    result = port.complete(request, _hooked_progress(tag, on_progress))
     if MOCK:                          # J2 reported nothing for a mock reply, and returned it as it was
         return result.text
     meta = {"model": result.model, "provider": result.provider, "input_tokens": result.input_tokens,

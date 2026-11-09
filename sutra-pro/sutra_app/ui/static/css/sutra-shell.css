@@ -155,6 +155,11 @@ body.home .rail.tabs button[aria-current="page"], body.home .rail.tabs button[ar
 .wdlist li { overflow-wrap: anywhere; }
 .wdlist li[data-kind="dir"] { color: var(--accent); }
 .wdmore { margin: 0; }
+.wdaccessrow { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 8px; margin: 4px 0; }
+.wdaccessrow .setlabel { font-size: 13.5px; font-weight: 600; margin-right: 4px; }
+.wdaccess[aria-checked="true"] { border-color: var(--accent); color: var(--accent); }
+.wdaccessrow .sethint { flex: 1 1 100%; margin: 0; font-size: 12px; }
+.wdinstr { margin: 2px 0 6px; }
 .setpathd { margin: 6px 0 2px; font-size: 13px; }
 .setpathd summary { color: var(--muted); cursor: pointer; }
 .settest { color: var(--muted); font-size: 13.5px; }

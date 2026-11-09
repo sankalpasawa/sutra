@@ -231,6 +231,53 @@ def test_the_choice_is_stored_cleared_and_validated(db, world):
         choices.set(tx, "cs_000000000fff", "claude")
 
 
+def test_a_whole_pick_is_stored_cleared_validated_and_kept_by_the_replacement_chat(db, world):
+    from sutra_app.connectors.models import Pick
+    sid = world.session_of["web"]
+    choices = ChatChoices(db)
+    assert choices.pick(sid) == Pick()
+    with db.tx() as tx:
+        stored = choices.set_pick(tx, sid, "claude", "sonnet", "xhigh")
+    assert stored == Pick(provider="claude", model="sonnet", effort="xhigh") == choices.pick(sid) and choices.get(sid) == "claude"
+    with db.tx() as tx:
+        choices.set(tx, sid, "codex")                                       # the provider alone: a model of the other provider does not stay
+    assert choices.pick(sid) == Pick(provider="codex")
+    with db.tx() as tx:
+        choices.set_pick(tx, sid, "claude", "haiku", "low")
+    with db.tx() as tx:
+        ChatArchive(db).archive(tx, sid)                                    # the replacement chat carries the whole pick
+    new = db.conn().execute("SELECT id FROM chat_sessions WHERE node_id = 'web' AND status = 'active'").fetchone()["id"]
+    assert new != sid and choices.pick(new) == Pick(provider="claude", model="haiku", effort="low")
+    with db.tx() as tx:
+        assert choices.set_pick(tx, new, None, None, None) == Pick() and choices.pick(new) == Pick()
+    for bad in (dict(provider=None, model="opus"), dict(provider=None, effort="low"), dict(provider="gemini"), dict(provider="claude", effort="ultra")):
+        with db.tx() as tx, pytest.raises(AppError):
+            choices.set_pick(tx, new, **bad)
+    with db.tx() as tx, pytest.raises(NotFound):
+        choices.set_pick(tx, "cs_000000000fff", "claude")
+
+
+def test_the_cascade_is_own_then_run_then_team_then_default_a_whole_pick_at_a_time():
+    from sutra_app.connectors.models import Pick
+    from sutra_app.orchestrator.chat_v2 import cascade
+    own, run, team, default = (Pick(provider="codex", model="gpt-x", effort="low"), Pick(provider="claude", model="opus"),
+                               Pick(provider="claude", effort="max"), Pick(provider="claude", model="sonnet", effort="high"))
+    assert cascade(own, run, team, default) == (own, "own")
+    assert cascade(Pick(), run, team, default) == (run, "run")               # the run's pick has no effort and does not borrow the team's
+    assert cascade(None, Pick(), team, default) == (team, "team")
+    assert cascade(None, None, None, default) == (default, "default")
+    assert cascade(None, None, None, None) == (Pick(), "default")
+
+
+def test_a_session_record_keeps_model_and_effort_with_their_provider_and_a_run_with_an_agent_only():
+    base = dict(id="cs_aaaaaaaaaaaa", node_id="web.identity", title="t", writable=False, created_at=1, updated_at=1)
+    assert GATE.check("chat_session", ChatSession(kind="function", pinned="claude", pinned_model="sonnet", pinned_effort="high", run_id="j2-20261104-100001-aaaa", **base))
+    for bad in (dict(kind="function", pinned_model="sonnet"), dict(kind="function", pinned_effort="low"),
+                dict(kind="department", run_id="j2-20261104-100001-aaaa", writable=True)):
+        with pytest.raises(Exception):
+            ChatSession(**{**base, **bad})
+
+
 def test_a_node_detail_lists_the_owner_archived_chat_as_an_earlier_chat(db, world, chats):
     from sutra_app.orchestrator.graph import GraphStore  # noqa: F401
     sid = world.session_of["web"]

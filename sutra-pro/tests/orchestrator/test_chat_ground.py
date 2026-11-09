@@ -245,3 +245,15 @@ def test_the_direct_route_writes_the_folder_paragraph_into_the_session_system_te
     assert wait_for(lambda: len(chats.messages(sid)) == 2 and sid not in chat_v2._running)
     system = stub_of(services).calls[-1].system
     assert NO_FOLDER_TEXT in system and system.endswith(RULES)              # the stub rig runs offline: no folder is ever given
+
+
+# ---- the project's own instructions (D125) ----------------------------------------------------------------------------------------------------------
+
+def test_the_whole_instruction_file_of_the_project_fits_the_grounding_and_the_rules_stay(world, tmp_path):
+    from sutra_app.connectors.workdir import INSTRUCTIONS_MAX, Folder
+    (tmp_path / "CLAUDE.md").write_text("Always read docs/DESIGN.md first.\n" + "x" * 8000, encoding="utf-8")
+    text = ChatGround(world.db, folder=lambda: Folder(str(tmp_path), edit=True)).text(world.session_of["web"])
+    assert "Always read docs/DESIGN.md first." in text and text.endswith(RULES)
+    assert len(text) > GROUND_CHARS and len(text) <= GROUND_CHARS + INSTRUCTIONS_MAX + 600           # the project's words are not cut to the record's share
+    plain = ChatGround(world.db, folder=lambda: "/work/my-project").text(world.session_of["web"])    # a folder without instructions keeps the record's limit
+    assert len(plain) <= GROUND_CHARS and plain.endswith(RULES)

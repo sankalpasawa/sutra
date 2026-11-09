@@ -662,7 +662,7 @@ def test_engine_settings_follow_the_engine_sections_field_list():
               "force_audit_note", "force_question", "memory_test_lessons"]  # engine.md LOCKED_FIELDS
     assert settings["locked"] == locked
     assert settings["editable"] == [f for f in settings["defaults"] if f not in locked]
-    assert len(settings["defaults"]) == 30
+    assert len(settings["defaults"]) == 31
     assert settings["defaults"]["send_mode"] == "dry-run" and settings["defaults"]["budget"] == 100
     assert settings["defaults"]["delay"] == 0.0 and settings["defaults"]["realization"] is True and settings["defaults"]["board"] is False
     assert settings["effective"] == {**settings["defaults"], **settings["global"], **settings["department"]}
@@ -1261,7 +1261,7 @@ def test_engine_settings_put_sets_unsets_and_answers_like_the_get(fake):
     ("nope", 1, "is not a setting"),
     ("send_mode", "live", "only be changed by hand"),
     ("chrome", "/x", "only be changed by hand"),
-    ("output", "poster", "must be one of website, prd, hld, lld"),
+    ("output", "poster", "must be one of auto, website, prd, hld, lld, project"),
     ("fixes", 2, "must be one of 0, 1"),
     ("fixes", True, "must be one of 0, 1"),
     ("rates", "yes", "must be true or false"),
@@ -1418,6 +1418,8 @@ WRITES = [  # every non-GET route that is not a test control: (method, a concret
     ("POST", "/api/ops/update-status", {"state": "ready"}, "/api/ops/update-status"),
     ("PUT", "/api/chats/cs_org/choice", {"provider": None}, "/api/chats/{sid}/choice"),
     ("POST", "/api/chats/cs_org/messages", {"text": "x"}, "/api/chats/{sid}/messages"),
+    ("POST", "/api/chats/cs_org/steer", {"text": "x"}, "/api/chats/{sid}/steer"),
+    ("PUT", "/api/tasks/tsk_000000000001/choice", {"provider": None}, "/api/tasks/{task_id}/choice"),
     ("POST", "/api/chats/cs_org/retry", {}, "/api/chats/cs_org/retry"),
     ("POST", "/api/tasks/tsk_000000000001/retry", {}, "/api/tasks/{task_id}/retry"),
     ("PUT", "/api/limits", {"guard_enabled": True}, "/api/limits"),

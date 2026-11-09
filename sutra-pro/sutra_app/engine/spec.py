@@ -22,7 +22,7 @@ from pydantic import BaseModel, ConfigDict, Field, PrivateAttr, ValidationError,
 
 __all__ = [
     "DEPT_ID_RE", "RUN_ID_RE", "SETTING_KEY_RE", "TASK_SCHEMA", "TASK_SETTING_KEYS", "CONNECTORS", "is_dept_id",
-    "is_run_id", "TaskSpec", "EngineSettings", "LOCKED_FIELDS", "EDITABLE_FIELDS", "ENV_NAMES", "SettingsError",
+    "is_run_id", "OUTPUT_NAMES", "TaskSpec", "EngineSettings", "LOCKED_FIELDS", "EDITABLE_FIELDS", "ENV_NAMES", "SettingsError",
     "read_settings_file", "SETTINGS_SCHEMA",
 ]
 
@@ -33,6 +33,10 @@ SETTING_KEY_RE = r"J2_[A-Z_]+"
 TASK_SCHEMA = "run-spec/1"
 SETTINGS_SCHEMA = "engine-settings/1"       # the `schema` of GET /api/engine/settings
 CONNECTORS = ("auto", "claude", "codex", "stub")
+# Every output name a setting may hold, in the order the start page lists them. `auto` leaves the choice to the engine
+# (`capabilities.select_output`, decided once by the host before J2 starts); the others name an output of `j2.OUTPUTS`. The one list that
+# `EngineSettings.output`, the task's `J2_OUTPUT` and the start page's command validate against (D129).
+OUTPUT_NAMES = ("auto", "website", "prd", "hld", "lld", "project")
 TASK_SETTING_KEYS = ("J2_OUTPUT", "J2_BUDGET", "J2_BUDGET_CAP", "J2_FIXES", "J2_MEMORY", "J2_SLIM", "J2_RATES")
 
 
@@ -142,7 +146,7 @@ class EngineSettings(BaseModel):
 
     model_config = ConfigDict(extra="forbid")
 
-    output: Literal["website", "prd", "hld", "lld"] = "website"
+    output: Literal[OUTPUT_NAMES] = "auto"          # "auto": the host picks the output for the brief, once, before J2 starts (D129)
     fixes: Literal[0, 1] = 0
     budget: int = Field(100, ge=1, le=100000)
     budget_cap: Optional[int] = Field(None, ge=1, le=100000)      # None: twice the budget
@@ -172,6 +176,7 @@ class EngineSettings(BaseModel):
     force_audit_note: str = Field("", max_length=1000)
     force_question: str = Field("", max_length=1000)
     memory_test_lessons: bool = False
+    workspace: Literal["auto", "off"] = "auto"      # the workspace capability (D127): agents read the owner's working folder; "off" gives them none
 
     def to_env(self) -> dict[str, str]:
         """The J2 environment for these settings: `J2_<FIELD>` with "1"/"0" for flags; empty values (an empty string or
