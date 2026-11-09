@@ -2030,7 +2030,7 @@ function sTop(s, M, open, ready){
   $("sdot").className = "sdot " + (failed(s) ? "bad" : open.length && !s.saved ? "ask" : live ? "on" : ready ? "done" : "");
   const J = sJourneyModel(s);
   $("smeter").hidden = !M.total && !live;
-  $("sbarfill").style.width = J.pct + "%";
+  $("sbarfill").style.width = (M.total ? Math.round(100 * M.done / M.total) : J.pct) + "%";      // the bar says what its label says
   const mt = M.total ? `${M.done} of ${M.total} parts` : `${J.pct}% of the way`;
   if ($("smetertxt").textContent !== mt) $("smetertxt").textContent = mt;
   const q = runQ().replace("&", "?"), site = !s.doc && s.versions > 0;
