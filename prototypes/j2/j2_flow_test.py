@@ -1358,10 +1358,9 @@ def studio_views():
     import urllib.parse
     import urllib.request
     import j2_server
-    here = os.path.dirname(os.path.abspath(__file__))
     srv = j2_server.http.server.ThreadingHTTPServer(("127.0.0.1", 0), j2_server.Handler)
     threading.Thread(target=srv.serve_forever, daemon=True).start()
-    keep_dir, j2.RUNS_DIR = j2.RUNS_DIR, os.path.join(here, "runs")
+    keep_dir, j2.RUNS_DIR = j2.RUNS_DIR, tempfile.mkdtemp(prefix="j2-studio-")      # the docs run lives in a temp folder, never in runs/
     try:
         base = f"http://127.0.0.1:{srv.server_address[1]}"
         get = lambda path: urllib.request.urlopen(base + path).read().decode("utf-8", "replace")
