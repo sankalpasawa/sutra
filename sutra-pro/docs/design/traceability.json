@@ -1,14 +1,14 @@
 {
  "schema": "traceability/1",
  "counts": {
-  "decisions": 124,
+  "decisions": 125,
   "packages": 78,
   "endpoints": 30,
   "chips": 15,
   "steps": 7,
   "owner_rules": 7
  },
- "max_decision": 124,
+ "max_decision": 125,
  "owner_rules": [
   {
    "rule": "This is a new app, no relation to the old sutra-ui. Its design is the J2 prototype's design.",
@@ -313,7 +313,8 @@
     "D121",
     "D122",
     "D123",
-    "D124"
+    "D124",
+    "D125"
    ],
    "modules": [
     "docs/DECISIONS.md",
@@ -2783,6 +2784,17 @@
    "status": "documented only",
    "superseded_by": [],
    "diagram": "key label \"update: verified, then on your word\", pill on the Desktop app box."
+  },
+  {
+   "id": "D125",
+   "title": "The owner chooses what the working folder allows, and the project's own instructions go with it; nothing is routed",
+   "packages": [
+    "UI-6",
+    "UI-7"
+   ],
+   "status": "implemented",
+   "superseded_by": [],
+   "diagram": "key label \"your folder, your access\", pill on the Chat sessions box."
   }
  ],
  "packages": [

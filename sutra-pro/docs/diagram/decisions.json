@@ -563,5 +563,10 @@
   "id": "D124",
   "label": "update: verified, then on your word",
   "anchor": "Desktop app · Electron window"
+ },
+ {
+  "id": "D125",
+  "label": "your folder, your access",
+  "anchor": "Chat sessions"
  }
 ]
