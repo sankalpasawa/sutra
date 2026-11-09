@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>J2 Department</title>
 <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns=%27http://www.w3.org/2000/svg%27 viewBox=%270 0 16 16%27%3E%3Crect x=%273%27 y=%273%27 width=%2710%27 height=%2710%27 rx=%272%27 fill=%27%233D5A80%27/%3E%3C/svg%3E">
-<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,600;12..96,700&family=IBM+Plex+Sans:wght@400;500;600&family=Figtree:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500&display=swap">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,600;12..96,700&family=IBM+Plex+Sans:wght@400;500;600&family=DM+Sans:opsz,wght@9..40,400;9..40,500;9..40,600&family=DM+Mono:wght@400&family=Fraunces:opsz,wght@9..144,500;9..144,600&family=IBM+Plex+Mono:wght@400;500&display=swap">
 <style>
 /* Theme: every colour of the page is a token here, a warm dark set (the default) and a warm light set (data-theme on <html>, set from
    Run settings > Appearance). Text tokens keep 4.5:1 on --bg, --panel and --panel2; line tokens (--edge, --spoke, map strokes) 3:1. */
@@ -29,7 +29,7 @@
   --bot:#e9c9a6;--botline:#b98d63;--botvisor:#2a221c;--boteye:#ffd9b0;--botcheek:#e8956a;
   --display:"Bricolage Grotesque",Arial,sans-serif;--body:"IBM Plex Sans",Arial,sans-serif;--mono:"IBM Plex Mono",Menlo,monospace;
   /* the studio (Simple view) and its people */
-  --s-bg:#191816;--s-surface:#22211e;--s-surface2:#2a2825;--s-ink:#ece7df;--s-muted:#a7a095;--s-line:#35322d;--s-line2:#45413a;--s-accent:#9db8de;--s-accentink:#14171c;--s-good:#86c9a0;--s-goodbg:#1f2e25;--s-ask:#eba25a;--s-askline:#eba25a;--s-askbg:#33261a;--s-askink:#1d1408;--s-bad:#ef8f7a;--s-badbg:#3a221d;--s-shadow:rgb(0 0 0 / .5);--s-scrim:rgb(0 0 0 / .5);--s-ph:#34312c;--s-ph2:#2c2a26;--s-asha:#9db8de;--s-mira:#ec9a86;--s-kabir:#7fcfc2;--s-dev:#e6b45e;--s-nora:#c3aed2;--s-av:#3a3632--s-white:#fff;--s-shade:rgb(0 0 0 / .2);--s-shade2:rgb(0 0 0 / .42);--av-s1:#e8b48f;--av-h1:#2b1d16;--av-t1:#3d5a80;--av-s2:#f1c7a5;--av-h2:#7a3e1d;--av-t2:#c8553d;--av-s3:#c98e68;--av-h3:#1e1e1e;--av-t3:#2a9d8f;--av-s4:#b07a55;--av-h4:#151515;--av-t4:#e9a23b;--av-s5:#f3d2b6;--av-h5:#b5651d;--av-t5:#6d597a;--av-line:#2b2b2b;--av-blush:#e8836b;--av-pen:#f4d35e;--av-pal:#f6e7cb;--av-red:#e76f51;--av-steel:#5c6670;--av-glass:#dff1f7;
+  --s-bg:#191816;--s-surface:#22211e;--s-surface2:#2a2825;--s-ink:#ece7df;--s-muted:#a7a095;--s-line:#35322d;--s-line2:#45413a;--s-accent:#9db8de;--s-accentink:#14171c;--s-good:#86c9a0;--s-goodbg:#1f2e25;--s-ask:#eba25a;--s-askline:#eba25a;--s-askbg:#33261a;--s-askink:#1d1408;--s-bad:#ef8f7a;--s-badbg:#3a221d;--s-shadow:rgb(0 0 0 / .5);--s-scrim:rgb(0 0 0 / .5);--s-ph:#34312c;--s-ph2:#2c2a26;--s-asha:#9db8de;--s-mira:#ec9a86;--s-kabir:#7fcfc2;--s-dev:#e6b45e;--s-nora:#c3aed2;--s-av:#3a3632;--s-ring:rgb(255 255 255 / .06);--s-white:#fff;--s-shade:rgb(0 0 0 / .2);--s-shade2:rgb(0 0 0 / .42);--av-s1:#e8b48f;--av-h1:#2b1d16;--av-t1:#3d5a80;--av-s2:#f1c7a5;--av-h2:#7a3e1d;--av-t2:#c8553d;--av-s3:#c98e68;--av-h3:#1e1e1e;--av-t3:#2a9d8f;--av-s4:#b07a55;--av-h4:#151515;--av-t4:#e9a23b;--av-s5:#f3d2b6;--av-h5:#b5651d;--av-t5:#6d597a;--av-line:#2b2b2b;--av-blush:#e8836b;--av-pen:#f4d35e;--av-pal:#f6e7cb;--av-red:#e76f51;--av-steel:#5c6670;--av-glass:#dff1f7;
 }
 :root[data-theme=light]{color-scheme:light;
   --warm1:#96571a;--warm2:#a8432c;--warm3:#7d6230;--purple:#6e52c4;
@@ -44,7 +44,7 @@
   --doc:#7d6230;--docfill:#fbf3e4;--eat:#b86a12;--eatfill:#fbe3b0;--eattext:#7a4510;--badgefill:#fbf0dc;
   --lblbg:#2a2520;--lblink:#f3ebe0;--lblsub:#c7b9a8;--lblline:#3a332b;
   --bot:#fbe3cc;--botline:#d9ab80;--botvisor:#3a2f28;--boteye:#ffd9b0;--botcheek:#f4a57c;
-  --s-bg:#f3f1ec;--s-surface:#fff;--s-surface2:#faf8f4;--s-ink:#1f2421;--s-muted:#5c605a;--s-line:#e2ded5;--s-line2:#d6d0c4;--s-accent:#3d5a80;--s-accentink:#fff;--s-good:#2e7a4f;--s-goodbg:#e6f1ea;--s-ask:#a9560f;--s-askline:#d9822b;--s-askbg:#fdf3e7;--s-askink:#fff;--s-bad:#b0392c;--s-badbg:#fbeae7;--s-shadow:rgb(40 30 20 / .16);--s-scrim:rgb(31 36 33 / .32);--s-ph:#ece6db;--s-ph2:#f6f2eb;--s-asha:#3d5a80;--s-mira:#b3452e;--s-kabir:#1d7a6f;--s-dev:#96600c;--s-nora:#634f70;--s-av:#f7f2ea;}
+  --s-bg:#fafaf7;--s-surface:#fff;--s-surface2:#f2f1ec;--s-ink:#1a1915;--s-muted:#5c5a52;--s-line:#e6e4dd;--s-line2:#d6d3ca;--s-accent:#3d5a80;--s-accentink:#fff;--s-good:#416c41;--s-goodbg:#e6efe0;--s-ask:#9a4e0c;--s-askline:#c8642a;--s-askbg:#fcebdd;--s-askink:#fff;--s-bad:#c2412d;--s-badbg:#fbeae7;--s-shadow:rgb(26 25 21 / .18);--s-ring:rgb(26 25 21 / .06);--s-scrim:rgb(31 36 33 / .32);--s-ph:#ece6db;--s-ph2:#f6f2eb;--s-asha:#3d5a80;--s-mira:#b3452e;--s-kabir:#1d7a6f;--s-dev:#96600c;--s-nora:#634f70;--s-av:#f7f2ea;}
 *{box-sizing:border-box}html,body{height:100%}
 body{margin:0;background:var(--bg);color:var(--ink);font:14.5px/1.5 var(--body);display:flex;flex-direction:column}
 header{display:flex;align-items:center;gap:12px;padding:10px 16px;border-bottom:1px solid var(--line);background:var(--panel);flex-wrap:wrap}
@@ -146,7 +146,7 @@ body:not(.simple) #sview{display:none}
 /* the rail and its menu button belong to the full view only; the Simple view reaches it from its top bar, team card and finish actions */
 body.simple #dview{display:none}
 #dview{display:contents}
-#sview{--s-display:"Bricolage Grotesque",system-ui,sans-serif;--s-body:"Figtree",system-ui,sans-serif;flex:1;display:flex;flex-direction:column;min-height:0;min-width:0;position:relative;background:var(--s-bg);color:var(--s-ink);font:15px/1.45 var(--s-body)}
+#sview{--s-display:"Fraunces",Georgia,serif;--s-body:"DM Sans",system-ui,sans-serif;--s-mono:"DM Mono",ui-monospace,monospace;flex:1;display:flex;flex-direction:column;min-height:0;min-width:0;position:relative;background:var(--s-bg);color:var(--s-ink);font:15px/1.45 var(--s-body)}
 #sview [hidden]{display:none!important}
 #sview :focus-visible{outline:2.5px solid var(--s-accent);outline-offset:2px;border-radius:8px}
 :where(#sview) button{font:inherit;color:inherit;cursor:pointer}
@@ -170,7 +170,7 @@ body.simple #dview{display:none}
 #sview .sviewteam{font-size:13px;font-weight:600;color:var(--s-accent);opacity:.0;transition:opacity .25s}
 #sview .screwg:is(:hover,:focus-visible) .sviewteam{opacity:1}
 @keyframes sbob{50%{transform:translateY(-3px)}}
-#sview .sgreet{font:600 clamp(28px,4.4vw,42px)/1.1 var(--s-display);margin:14px 0 8px;letter-spacing:-.01em}
+#sview .sgreet{font:500 clamp(30px,4.6vw,44px)/1.1 var(--s-display);margin:14px 0 8px;letter-spacing:-.02em}
 #sview .shint{margin:0 0 22px;color:var(--s-muted);max-width:44ch}
 #sview .sbox{width:100%;background:var(--s-surface);border:1.5px solid var(--s-line2);border-radius:18px;padding:14px 14px 12px 18px;text-align:left;box-shadow:0 18px 40px -28px var(--s-shadow);transition:border-color .2s,box-shadow .2s}
 #sview .sbox:focus-within{border-color:var(--s-accent);box-shadow:0 0 0 4px color-mix(in srgb,var(--s-accent) 16%,transparent),0 18px 40px -28px var(--s-shadow)}
@@ -233,7 +233,7 @@ body.simple #dview{display:none}
 #sview .sback em{font-style:normal;font-size:12px;color:var(--s-muted);width:100%;padding-left:2px}
 #sview .splan{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:1px}
 #sview .splan .sgrp{font-size:12px;font-weight:600;color:var(--s-muted);padding:8px 8px 2px}
-#sview .sstep{display:grid;grid-template-columns:20px 1fr auto;gap:8px;align-items:center;width:100%;text-align:left;padding:6px 8px;border-radius:9px;background:none;border:0;animation:sin .5s ease both}
+#sview .sstep{display:grid;grid-template-columns:20px 1fr auto;gap:8px;align-items:center;width:100%;text-align:left;padding:6px 8px;border-radius:9px;background:none;border:0;animation:sin .32s cubic-bezier(.16,1,.3,1) both}
 #sview .sstep:hover{background:color-mix(in srgb,var(--s-surface) 70%,transparent)}
 #sview .sstep .ic{width:18px;height:18px;border-radius:50%;display:grid;place-items:center;font-size:11px;font-weight:700;box-sizing:border-box}
 #sview .sstep.done .ic{background:var(--s-goodbg);color:var(--s-good)}
@@ -245,12 +245,19 @@ body.simple #dview{display:none}
 #sview .sstep.next .nm{color:var(--s-muted)}#sview .sstep.doing .nm{font-weight:600}
 #sview .sstep .who{display:flex}#sview .sstep.done .who{opacity:.5}
 #sview .sstep small{display:block;color:var(--s-muted);font-size:12px}
-@keyframes sin{from{opacity:0;transform:translateY(4px)}}
+@keyframes sin{from{opacity:0;transform:translateY(6px)}}
+#sview .busy .seyes,#sview .sdesk.busy .seyes,#sview .sface.busy .seyes{transform-box:fill-box;transform-origin:center;animation:sblink 4.4s infinite}
+@keyframes sblink{0%,94%,100%{transform:scaleY(1)}96%{transform:scaleY(.1)}}
+#sview .sstep.doing .nm,#sview .scard.doing .nm{background:linear-gradient(90deg,var(--s-ink) 40%,var(--s-muted) 50%,var(--s-ink) 60%) 0 0/250% 100%;-webkit-background-clip:text;background-clip:text;color:transparent;animation:sshim 3.5s linear infinite}
+#sview .sstep.doing .nm small,#sview .scard.doing .nm small{color:var(--s-muted);-webkit-text-fill-color:var(--s-muted)}
+@keyframes sshim{from{background-position:100% 0}to{background-position:-150% 0}}
+#sview .sprev iframe.in{animation:sblur .6s cubic-bezier(.16,1,.3,1)}
+@keyframes sblur{from{filter:blur(5px);opacity:.4;transform:translate(-50%,8px)}}
 #sview .srailfoot{margin:14px 8px 0}
 #sview .snone{color:var(--s-muted);font-size:13px;padding:4px 8px}
 /* the stage: the frame with its chrome, the output or the team at work */
 #sview .sstage{position:relative;min-width:0;min-height:0;padding:14px 16px;display:flex;overflow:hidden}
-#sview .sframe{flex:1;min-width:0;background:var(--s-surface);border:1px solid var(--s-line);border-radius:14px;box-shadow:0 20px 50px -32px var(--s-shadow);overflow:hidden;display:flex;flex-direction:column;position:relative;transition:box-shadow .6s}
+#sview .sframe{flex:1;min-width:0;background:var(--s-surface);border:1px solid var(--s-line);border-radius:16px;box-shadow:0 0 0 1px var(--s-ring),0 1px 2px var(--s-ring),0 20px 50px -34px var(--s-shadow);overflow:hidden;display:flex;flex-direction:column;position:relative;transition:box-shadow .6s}
 #sview .sframe.done{box-shadow:0 0 0 3px color-mix(in srgb,var(--s-good) 35%,transparent),0 20px 50px -32px var(--s-shadow)}
 #sview .schrome{flex:none;min-height:40px;display:flex;align-items:center;gap:10px;padding:4px 10px;border-bottom:1px solid var(--s-line);background:var(--s-surface2);min-width:0}
 #sview .sdots{display:flex;gap:6px;flex:none}#sview .sdots i{width:9px;height:9px;border-radius:50%;background:var(--s-line2)}
@@ -259,7 +266,7 @@ body.simple #dview{display:none}
 #sview .sviews button[aria-selected=true]{background:var(--s-surface);color:var(--s-ink);box-shadow:0 1px 3px var(--s-shadow)}
 #sview .sviews button .pip{display:inline-block;width:7px;height:7px;border-radius:50%;background:var(--s-good);margin-left:6px;vertical-align:1px;animation:sping 1.8s ease-out infinite}
 #sview .sviews button .pip.todo{background:var(--s-line2);animation:none}
-#sview .surl{flex:1;min-width:0;color:var(--s-muted);font-size:12.5px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;text-align:right}
+#sview .surl{flex:1;min-width:0;color:var(--s-muted);font:12px var(--s-mono);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;text-align:right}
 #sview .sdev{display:flex;gap:2px;flex:none}#sview .sdev button{border:0;background:none;border-radius:7px;width:30px;height:28px;display:grid;place-items:center;color:var(--s-muted);padding:0}
 #sview .sdev button[aria-pressed=true]{background:var(--s-surface);color:var(--s-ink);box-shadow:0 1px 3px var(--s-shadow)}
 #sview .sframe:not(.site) .sdev{display:none}
@@ -298,7 +305,7 @@ body.simple #dview{display:none}
 #sview .sjtip b{display:block;margin-bottom:2px}
 /* the desks: one card per person, what they are on now */
 #sview .sdesks{display:grid;grid-template-columns:repeat(auto-fill,minmax(190px,1fr));gap:10px}
-#sview .sdesk{background:var(--s-surface);border:1px solid var(--s-line);border-radius:14px;padding:12px;display:flex;gap:10px;align-items:flex-start;text-align:left;transition:border-color .4s,box-shadow .4s,transform .4s;width:100%}
+#sview .sdesk{background:var(--s-surface);border:1px solid var(--s-line);border-radius:16px;box-shadow:0 0 0 1px var(--s-ring),0 1px 2px var(--s-ring);padding:12px;display:flex;gap:10px;align-items:flex-start;text-align:left;transition:border-color .4s,box-shadow .4s,transform .4s;width:100%}
 #sview .sdesk.busy{border-color:var(--c);box-shadow:0 10px 24px -18px var(--c);transform:translateY(-2px)}
 #sview .sdesk b{font-weight:600}#sview .sdesk .srole{color:var(--s-muted)}#sview .sdesk small{display:block;color:var(--s-muted);font-size:12.5px;margin-top:2px}
 #sview .sdesk.busy small{color:var(--s-ink)}
@@ -310,7 +317,7 @@ body.simple #dview{display:none}
 #sview .sboard.all .scol h4{grid-column:1/-1}#sview .sboard.all .scard{margin:0}
 #sview .scol{background:color-mix(in srgb,var(--s-ph) 45%,transparent);border-radius:14px;padding:10px;min-height:90px}
 #sview .scol h4{margin:0 2px 8px;font-size:13px;font-weight:600;color:var(--s-muted);display:flex;justify-content:space-between}
-#sview .scard{display:flex;align-items:center;gap:9px;width:100%;text-align:left;background:var(--s-surface);border:1px solid var(--s-line);border-radius:11px;padding:9px 10px;margin-bottom:7px;font-size:13.5px;position:relative;overflow:hidden}
+#sview .scard{display:flex;align-items:center;gap:9px;width:100%;text-align:left;background:var(--s-surface);border:1px solid var(--s-line);border-radius:10px;box-shadow:0 0 0 1px var(--s-ring),0 1px 2px var(--s-ring);padding:9px 10px;margin-bottom:7px;font-size:13.5px;position:relative;overflow:hidden}
 #sview .scard:hover{border-color:var(--s-line2)}
 #sview .scard .nm{flex:1;min-width:0}#sview .scard small{display:block;color:var(--s-muted);font-size:12px}
 #sview .scard.doing{border-color:var(--c)}
@@ -321,8 +328,8 @@ body.simple #dview{display:none}
 #sview .scard.fresh{animation:spop .55s cubic-bezier(.2,.9,.3,1.2)}
 @keyframes spop{from{opacity:0;transform:translateY(8px) scale(.97)}}
 #sview .stalk{display:flex;flex-direction:column;gap:6px}
-#sview .stalk div{display:flex;gap:9px;align-items:flex-start;background:var(--s-surface);border:1px solid var(--s-line);border-radius:12px;padding:8px 10px;font-size:13.5px;animation:sin .5s ease both}
-#sview .stalk b{font-weight:600}#sview .stalk small{color:var(--s-muted);margin-left:6px;font-size:12px}
+#sview .stalk div{display:flex;gap:9px;align-items:flex-start;background:var(--s-surface);border:1px solid var(--s-line);border-radius:12px;padding:8px 10px;font-size:13.5px;animation:sin .32s cubic-bezier(.16,1,.3,1) both}
+#sview .stalk b{font-weight:600}#sview .stalk small{color:var(--s-muted);margin-left:6px;font:12px var(--s-mono)}
 #sview .stalk .rico{width:26px;height:26px;border-radius:50%;display:grid;place-items:center;background:var(--s-ph);color:var(--s-ink);font-size:12px;font-weight:700;flex:none}
 #sview .sarts{display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:8px}
 #sview .sartc{display:flex;align-items:center;gap:10px;text-align:left;background:var(--s-surface);border:1px solid var(--s-line);border-radius:12px;padding:10px 12px;width:100%;animation:spop .5s ease both}
@@ -333,7 +340,7 @@ body.simple #dview{display:none}
 #sview .sdocs{display:flex;flex-wrap:wrap;gap:8px}
 #sview .sdocs a,#sview .sdocs button{display:inline-flex;align-items:center;gap:8px;border:1px solid var(--s-line);background:var(--s-surface);border-radius:11px;padding:8px 12px;font-size:13.5px;font-weight:600;color:var(--s-ink);text-decoration:none}
 /* inside the frame: the decided-for-you line, the nudge, the finish bar */
-#sview .sdecided{position:absolute;left:50%;bottom:16px;transform:translateX(-50%);z-index:6;background:var(--s-surface);border:1px solid var(--s-line);border-radius:999px;padding:6px 8px 6px 6px;display:flex;align-items:center;gap:8px;font-size:13.5px;box-shadow:0 12px 26px -16px var(--s-shadow);animation:sin .4s ease both;max-width:calc(100% - 24px)}
+#sview .sdecided{position:absolute;left:50%;bottom:16px;transform:translateX(-50%);z-index:6;background:var(--s-surface);border:1px solid var(--s-line);border-radius:999px;padding:6px 8px 6px 6px;display:flex;align-items:center;gap:8px;font-size:13.5px;box-shadow:0 12px 26px -16px var(--s-shadow);animation:sin .32s cubic-bezier(.16,1,.3,1) both;max-width:calc(100% - 24px)}
 #sview .sdecided span{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}#sview .sdecided b{font-weight:600}
 #sview .swhochip{position:absolute;left:16px;bottom:16px;z-index:5;display:flex;align-items:center;gap:8px;background:var(--s-surface);color:var(--s-ink);border:1.5px solid var(--c,var(--s-line));border-radius:999px;padding:5px 13px 5px 5px;font-size:13.5px;box-shadow:0 12px 26px -14px var(--s-shadow);transition:transform .35s,opacity .35s;max-width:calc(100% - 32px)}
 #sview .swhochip span{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}#sview .swhochip b{font-weight:600}
@@ -345,7 +352,8 @@ body.simple #dview{display:none}
 @keyframes sdown{50%{transform:translateY(3px)}}
 #sview .sfinish{flex:none;display:flex;flex-wrap:wrap;gap:8px;align-items:center;padding:10px 12px;border-top:1px solid var(--s-line);background:var(--s-surface)}
 #sview .sfinish .sfmsg{flex:1;min-width:180px;font-weight:600;display:flex;align-items:center;gap:8px}
-#sview .sfinish .sfmsg i{width:22px;height:22px;border-radius:50%;background:var(--s-goodbg);color:var(--s-good);display:grid;place-items:center;font-style:normal;font-size:12px;animation:spop .5s ease}
+#sview .sfinish .sfmsg i{width:22px;height:22px;border-radius:50%;background:var(--s-goodbg);color:var(--s-good);display:grid;place-items:center;font-style:normal;font-size:12px;animation:schip .26s cubic-bezier(.16,1,.3,1)}
+@keyframes schip{from{transform:scale(.6);opacity:0}}
 #sview .sfinish a,#sview .sfinish button{border:1px solid var(--s-line);background:var(--s-surface);border-radius:9px;padding:7px 12px;font-size:13.5px;font-weight:600;color:var(--s-ink);text-decoration:none}
 #sview .sfinish .pri{background:var(--s-ink);color:var(--s-bg);border-color:var(--s-ink)}
 /* the drawer: a teammate, a part (goal, method, output, check) or the plan */
@@ -375,7 +383,7 @@ body.simple #dview{display:none}
 #sview .sprog .txt span{font-weight:600}#sview .sprog .txt small{color:var(--s-muted);white-space:nowrap;font-variant-numeric:tabular-nums}
 #sview .sprog .track{height:5px;border-radius:3px;background:var(--s-ph);overflow:hidden}#sview .sprog .fill{height:100%;background:var(--s-accent);border-radius:3px;transition:width .8s ease}
 #sview .smsgs{flex:1;min-height:0;overflow:auto;padding:12px 14px;display:flex;flex-direction:column;gap:8px}
-#sview .sb{max-width:88%;padding:9px 12px;border-radius:14px;white-space:pre-wrap;overflow-wrap:anywhere;animation:sin .35s ease both;font-size:14.5px}
+#sview .sb{max-width:88%;padding:9px 12px;border-radius:14px;white-space:pre-wrap;overflow-wrap:anywhere;animation:sin .32s cubic-bezier(.16,1,.3,1) both;font-size:14.5px}
 #sview .sb.team{align-self:flex-start;background:var(--s-surface);border:1px solid var(--s-line);border-bottom-left-radius:4px}
 #sview .sb.me{align-self:flex-end;background:var(--s-accent);color:var(--s-accentink);border-bottom-right-radius:4px}
 #sview .smorebtn{display:block;margin-top:4px;background:none;border:0;padding:0;color:inherit;font-weight:600;text-decoration:underline;text-underline-offset:3px;font-size:13px}
@@ -389,7 +397,8 @@ body.simple #dview{display:none}
 #sview .scbox input:focus{outline:none;border-color:var(--s-accent)}#sview .scbox input:disabled{opacity:.6}
 #sview .scbox .sgo{width:40px;height:40px;padding:0;display:grid;place-items:center;border-radius:12px}
 /* the question card: in Asha's panel and on the output, at the part it is about */
-#sview .qcard{background:var(--s-surface);border:1.5px solid var(--s-askline);border-radius:14px;padding:14px;box-shadow:0 12px 30px -18px color-mix(in srgb,var(--s-askline) 60%,transparent);animation:spop .45s ease both}
+#sview .qcard{background:linear-gradient(var(--s-askbg),var(--s-surface) 70%);border:1.5px solid var(--s-askline);border-radius:16px;padding:16px;box-shadow:0 0 0 1px var(--s-ring),0 12px 32px -12px var(--s-shadow);animation:sq .2s cubic-bezier(.16,1,.3,1) both}
+@keyframes sq{from{opacity:0;transform:scale(.96)}}
 #sview .qcard.ro{border-style:dashed;box-shadow:none}
 #sview .qhead{display:flex;gap:10px;align-items:center;margin-bottom:8px}#sview .qhead small{display:block;color:var(--s-muted);font-size:12.5px}
 #sview .qtag{font-size:11.5px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;color:var(--s-ask)}
@@ -436,7 +445,7 @@ body.simple #dview{display:none}
   #sview .sasha{display:none;position:fixed;left:8px;right:8px;bottom:calc(64px + env(safe-area-inset-bottom,0px));top:auto;height:min(78vh,640px);z-index:40;border:1px solid var(--s-line);border-radius:18px;box-shadow:0 30px 60px -20px var(--s-shadow);overflow:hidden}
   #sview .sapp.chatopen .sasha{display:flex}#sview .sapp.chatclosed .sasha{display:none}
   #sview .sstage{padding:8px 8px calc(70px + env(safe-area-inset-bottom,0px))}
-  #sview .schrome{padding:4px 6px}#sview .sdots,#sview .surl{display:none}
+  #sview .schrome{padding:4px 6px}#sview .sdots,#sview .surl{display:none}#sview .sviews{flex-wrap:wrap;overflow:visible}#sview .sviews button{padding:5px 8px}
   #sview .sdrawer{top:auto;left:8px;right:8px;bottom:calc(64px + env(safe-area-inset-bottom,0px));width:auto;max-height:76vh;transform:translateY(calc(100% + 90px));position:fixed}
   #sview .sboard{grid-template-columns:minmax(0,1fr)}
   #sview .steamwork{padding:16px 12px 30px}
@@ -1835,7 +1844,7 @@ function face(k, size, o){ const p = PEOPLE[k] || PEOPLE.asha, back = p.style ==
     + (o.ring === false ? "" : `<circle cx="32" cy="32" r="31" fill="var(--s-av)"/>`) + back
     + `<path d="M12 64c1-11 9-17 20-17s19 6 20 17z" fill="${p.shirt}"/><rect x="28" y="38" width="8" height="9" rx="3" fill="${p.skin}"/><circle cx="32" cy="27" r="13" fill="${p.skin}"/>`
     + (back ? "" : sHair(p)) + (back ? `<path d="M20 24c3-4 7-5 12-5s9 1 12 5c-1-7-6-11-12-11s-11 4-12 11z" fill="${p.hair}"/>` : "")
-    + `<circle cx="27.5" cy="28" r="1.6" fill="var(--av-line)"/><circle cx="36.5" cy="28" r="1.6" fill="var(--av-line)"/><path d="M28 33c2 2 6 2 8 0" stroke="var(--av-line)" stroke-width="1.5" fill="none" stroke-linecap="round"/>`
+    + `<g class="seyes"><circle cx="27.5" cy="28" r="1.6" fill="var(--av-line)"/><circle cx="36.5" cy="28" r="1.6" fill="var(--av-line)"/></g><path d="M28 33c2 2 6 2 8 0" stroke="var(--av-line)" stroke-width="1.5" fill="none" stroke-linecap="round"/>`
     + `<circle cx="24.5" cy="32" r="2.2" fill="var(--av-blush)" opacity=".35"/><circle cx="39.5" cy="32" r="2.2" fill="var(--av-blush)" opacity=".35"/>` + (o.prop === false ? "" : sProp(p)) + `</svg>`; }
 const SV = {arts: {}, akey: "", unfold: new Set(), view: "", pick: "", want: "", loading: "", cur: "", secHTML: null, auto: null, drawer: "", talk: new Set(), cards: {}, steps: new Set(), firstVer: 0, decidedT: 0, decided: "", landKey: "", recent: null, chat: null};
 const SREDUCE = () => matchMedia("(prefers-reduced-motion: reduce)").matches;
@@ -2078,6 +2087,7 @@ function sFrameLoaded(f){
   const url = SV.loading, a = $("sframe"), place = sPlace(a), sameOut = SV.cur.split("?")[0].replace(/v\d+$/, "") === url.split("?")[0].replace(/v\d+$/, "");
   SV.loading = ""; a.id = "sframe2"; f.id = "sframe"; a.classList.add("next"); f.classList.remove("next"); a.setAttribute("aria-hidden", "true"); a.tabIndex = -1; f.removeAttribute("aria-hidden"); f.removeAttribute("tabindex");
   SV.cur = url; if (place && sameOut) sRestore(f, place);
+  if (!sameOut && !SREDUCE()){ f.classList.remove("in"); void f.offsetWidth; f.classList.add("in"); }      // a new output blurs in; a new version of the same one swaps in place
   sFrameSetup(f, sameOut); a.removeAttribute("src");
   if (SV.want !== url) sLoad(SV.want);
 }
@@ -2090,8 +2100,9 @@ function sRestore(f, p){ const d = sDoc(f); if (!d) return; const w = d.defaultV
 function sFrameSetup(f, sameOut){
   const d = sDoc(f); if (!d) return; const w = d.defaultView;
   if (!d.getElementById("j2s-style")){ const st = d.createElement("style"); st.id = "j2s-style";
-    st.textContent = sVars(":root") + (d.querySelector("h2") && !d.querySelector("[class]") ? `body{font:16px/1.65 Figtree,system-ui,sans-serif;color:var(--s-ink);background:var(--s-white)df9;max-width:760px;padding:28px 32px 80px}h1{font:600 30px/1.2 "Bricolage Grotesque",system-ui;margin:0 0 18px}h2{font:600 21px/1.3 "Bricolage Grotesque",system-ui;margin:34px 0 10px;padding-top:6px}h3{font-size:16px;margin:22px 0 6px}table{font-size:14px}th{background:var(--s-surface2)}th,td{border-color:var(--s-line)}` : "");
-    (d.head || d.body).appendChild(st); }
+    st.textContent = sVars(":root") + (d.querySelector("h2") && !d.querySelector("[class]") ? `body{font:16px/1.65 "DM Sans",system-ui,sans-serif;color:var(--s-ink);background:var(--s-white)df9;max-width:760px;padding:28px 32px 80px}h1{font:600 30px/1.2 Fraunces,Georgia,serif;margin:0 0 18px}h2{font:600 21px/1.3 Fraunces,Georgia,serif;margin:34px 0 10px;padding-top:6px}h3{font-size:16px;margin:22px 0 6px}table{font-size:14px}th{background:var(--s-surface2)}th,td{border-color:var(--s-line)}` : "");
+    (d.head || d.body).appendChild(st);
+    if (d.querySelector("h2") && !d.querySelector("[class]")){ const fl = d.createElement("link"); fl.rel = "stylesheet"; fl.href = "https://fonts.googleapis.com/css2?family=DM+Sans:opsz,wght@9..40,400;9..40,600&family=Fraunces:opsz,wght@9..144,500;9..144,600&display=swap"; (d.head || d.body).appendChild(fl); } }
   d.addEventListener("click", e => { const a = e.target.closest && e.target.closest("a[href]"); if (!a) return; const h = a.getAttribute("href") || "";
     if (h.startsWith("#") || h.startsWith("javascript:")) return; e.preventDefault(); window.open(a.href, "_blank", "noopener"); });
   w.addEventListener("scroll", sNudge, {passive: true}); w.addEventListener("resize", () => sLayout());
@@ -2121,21 +2132,21 @@ function sSections(d){      // section id -> its elements: the website's J2 mark
 const SLAYER = `:host{all:initial}.box{position:absolute;border-radius:12px;pointer-events:none;outline:2px solid transparent;outline-offset:4px;transition:outline-color .4s,box-shadow .4s}
 .box.doing{outline-color:var(--c)}.box.fix{outline:2px dashed var(--s-askline)}.box.ask{outline-color:var(--s-askline);animation:glow 2.2s ease-in-out infinite}.box.flash{animation:flash 1.2s ease 2}.box.glow{animation:flash 1.3s ease 2}
 @keyframes glow{50%{box-shadow:0 0 0 9px color-mix(in srgb,var(--s-askline) 15%,transparent)}}@keyframes flash{50%{box-shadow:0 0 0 7px color-mix(in srgb,var(--s-accent) 20%,transparent);background:color-mix(in srgb,var(--s-accent) 5%,transparent)}}
-.tag{position:absolute;right:14px;top:-15px;display:flex;align-items:center;gap:6px;background:var(--c);color:var(--s-white);border:0;border-radius:999px;padding:3px 11px 3px 3px;font:600 12.5px/1.2 Figtree,system-ui,sans-serif;box-shadow:0 6px 16px -8px var(--s-shade2);pointer-events:auto;cursor:pointer;white-space:nowrap;animation:tin .4s ease both}
+.tag{position:absolute;right:14px;top:-15px;display:flex;align-items:center;gap:6px;background:var(--c);color:var(--s-white);border:0;border-radius:999px;padding:3px 11px 3px 3px;font:600 12.5px/1.2 "DM Sans",system-ui,sans-serif;box-shadow:0 6px 16px -8px var(--s-shade2);pointer-events:auto;cursor:pointer;white-space:nowrap;animation:tin .4s ease both}
 .tag svg{border-radius:50%;display:block}.tag i{font-style:normal;font-weight:500;opacity:.92}
 @keyframes tin{from{opacity:0;transform:translateY(5px)}}
 .tick{position:absolute;right:10px;top:10px;width:24px;height:24px;border-radius:50%;background:var(--s-goodbg);color:var(--s-good);border:0;display:grid;place-items:center;font:700 12px/1 system-ui,sans-serif;pointer-events:auto;cursor:pointer;box-shadow:0 1px 3px var(--s-shade);animation:pop .5s cubic-bezier(.2,.9,.3,1.4) both}
 @keyframes pop{from{transform:scale(.3);opacity:0}}
-.chg{position:absolute;left:12px;top:10px;pointer-events:auto;background:var(--s-ink);color:var(--s-white);border:0;border-radius:999px;padding:5px 11px;font:600 12.5px Figtree,system-ui,sans-serif;cursor:pointer;box-shadow:0 6px 14px -6px var(--s-shade2)}
+.chg{position:absolute;left:12px;top:10px;pointer-events:auto;background:var(--s-ink);color:var(--s-white);border:0;border-radius:999px;padding:5px 11px;font:600 12.5px "DM Sans",system-ui,sans-serif;cursor:pointer;box-shadow:0 6px 14px -6px var(--s-shade2)}
 .tag:focus-visible,.tick:focus-visible,.chg:focus-visible{outline:2px solid var(--s-accent);outline-offset:2px}
 @media (prefers-reduced-motion:reduce){*{animation:none!important;transition:none!important}}`;
-const SPLAN = `:host{all:initial;display:block;max-width:880px;margin:24px auto 40px;padding:0 18px;font:14px/1.45 Figtree,system-ui,sans-serif;color:var(--s-ink)}
-h6{font:600 11.5px Figtree,system-ui,sans-serif;letter-spacing:.09em;text-transform:uppercase;color:var(--s-muted);margin:0 0 10px}
+const SPLAN = `:host{all:initial;display:block;max-width:880px;margin:24px auto 40px;padding:0 18px;font:14px/1.45 "DM Sans",system-ui,sans-serif;color:var(--s-ink)}
+h6{font:600 11.5px "DM Sans",system-ui,sans-serif;letter-spacing:.09em;text-transform:uppercase;color:var(--s-muted);margin:0 0 10px}
 .ph{position:relative;border:1.5px dashed var(--s-line2);border-radius:14px;padding:16px 18px;margin:0 0 12px;background:var(--s-surface2)}
-.ph.doing{border-style:solid;border-color:var(--c);background:var(--s-white)}.ph b{font:600 15px Figtree,system-ui,sans-serif}.ph small{display:block;color:var(--s-muted);margin-top:2px}
+.ph.doing{border-style:solid;border-color:var(--c);background:var(--s-white)}.ph b{font:600 15px "DM Sans",system-ui,sans-serif}.ph small{display:block;color:var(--s-muted);margin-top:2px}
 .ph i{display:block;height:9px;border-radius:5px;background:linear-gradient(90deg,var(--s-ph) 25%,var(--s-ph2) 50%,var(--s-ph) 75%);background-size:200% 100%;animation:sh 1.6s linear infinite;margin-top:10px}
 .ph.doing i{animation:sh 1.2s linear infinite,grow 2.4s ease-in-out infinite alternate}
-.who{position:absolute;right:14px;top:-14px;display:flex;align-items:center;gap:6px;background:var(--c);color:var(--s-white);border-radius:999px;padding:3px 11px 3px 3px;font:600 12.5px Figtree,system-ui,sans-serif;box-shadow:0 6px 16px -8px var(--s-shade2)}
+.who{position:absolute;right:14px;top:-14px;display:flex;align-items:center;gap:6px;background:var(--c);color:var(--s-white);border-radius:999px;padding:3px 11px 3px 3px;font:600 12.5px "DM Sans",system-ui,sans-serif;box-shadow:0 6px 16px -8px var(--s-shade2)}
 .ph:not(.doing) .who{background:var(--s-white);color:var(--s-muted);border:1px solid var(--s-line);box-shadow:none}.who svg{border-radius:50%;display:block}
 @keyframes sh{to{background-position:-200% 0}}@keyframes grow{from{width:20%}to{width:72%}}
 @media (prefers-reduced-motion:reduce){*{animation:none!important}}`;
@@ -2188,7 +2199,7 @@ function sLayerClick(e){ const t = e.target.closest && e.target.closest("[data-s
 const sPartOf = sec => { const p = state && sModel(state).parts.find(x => x.sec === sec); return p ? p.name.toLowerCase() : "this section"; };
 function sChange(name){ sChatOpen(true); const i = $("sbox"); i.value = `Change the ${name}: `; if (!i.disabled){ i.focus(); i.setSelectionRange(i.value.length, i.value.length); } }
 // the question on the work: after the part it is about, else at the top (after a header or a menu); on the team view, at its top
-const SASK = () => `:host{all:initial;display:block;box-sizing:border-box;width:100%;max-width:600px;margin:20px auto 24px;padding:0 14px;font:15px/1.45 Figtree,system-ui,sans-serif;color:${sToken("--s-ink") || "var(--s-ink)"};text-align:left}`
+const SASK = () => `:host{all:initial;display:block;box-sizing:border-box;width:100%;max-width:600px;margin:20px auto 24px;padding:0 14px;font:15px/1.45 "DM Sans",system-ui,sans-serif;color:${sToken("--s-ink") || "var(--s-ink)"};text-align:left}`
   + [...document.styleSheets].flatMap(ss => { try { return [...ss.cssRules]; } catch (e) { return []; } }).map(r => r.cssText).filter(t => /^#sview \.(qcard|qhead|qtag)|^#sview \.av/.test(t)).map(t => t.replace(/#sview /g, "")).join("\n") + `button{font:inherit;cursor:pointer}@keyframes spop{from{opacity:0;transform:translateY(8px) scale(.97)}}@media (prefers-reduced-motion:reduce){*{animation:none!important;transition:none!important}}`;
 function sInline(s, open, live){
   const m = live && open.length ? {id: open[0].msg, text: ((s.allChat || []).find(x => String(x.id) === String(open[0].msg)) || {text: open[0].line}).text, pause: (s.paused || {}).kind} : null;
