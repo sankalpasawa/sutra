@@ -1,7 +1,8 @@
 "use strict";
-// SettingsView, the Working folder group (sutra_app/ui/static/js/settings_view.js; GAP3-workdir): a text field, Save, Clear, the top of the folder under
-// "What the model can see", the plain words (read-only, chats only, the engine's runs unchanged, what is read goes to your own CLI), and the three calls
-// GET, PUT and DELETE on /api/connectors/workdir. Everything from the wire is escaped.
+// SettingsView, the Working folder group (sutra_app/ui/static/js/settings_view.js; GAP3-workdir, D125): a text field, "Choose folder..." (only with the desktop
+// bridge), Save, Clear, the access choice, the instructions line, the top of the folder under "What the model can see", the plain words (a team works in the
+// folder like a Claude session, what is read goes to your own CLI), and the calls GET, PUT ({path} and {access}) and DELETE on /api/connectors/workdir.
+// Everything from the wire is escaped.
 // Run with: node --test tests/ui/js/settings_workdir.test.js
 const test = require("node:test");
 const assert = require("node:assert/strict");
@@ -9,12 +10,16 @@ const fs = require("node:fs");
 const path = require("node:path");
 
 const SV = require(path.resolve(__dirname, "../../../sutra_app/ui/static/js/settings_view.js"));
-const {workdirHtml, loadWorkdir, saveWorkdir, clearWorkdir, WORKDIR_PATH, WORKDIR_WORDS} = SV;
+const {workdirHtml, loadWorkdir, saveWorkdir, saveWorkdirAccess, chooseWorkdir, canChooseFolder, clearWorkdir, WORKDIR_PATH, WORKDIR_WORDS} = SV;
+const withBridge = (bridge, fn) => {                       // window.sutraDesktop exists only in the desktop app: set it for one test, never leave it
+  globalThis.sutraDesktop = bridge;
+  try { return fn(); } finally { delete globalThis.sutraDesktop; }
+};
 
 const entries = (...names) => names.map(n => ({name: n, kind: n.endsWith("/") ? "dir" : "file"})).map(e => ({name: e.name.replace(/\/$/, ""), kind: e.kind}));
-const data = (over) => Object.assign({path: "/work/proj", usable: true, problem: null,
+const data = (over) => Object.assign({path: "/work/proj", usable: true, problem: null, access: "edit", instructions: null,
   preview: {entries: entries("src/", "docs/", "app.py", "README.md"), total: 4, shown: 4, capped: false, readable: true}}, over || {});
-const NONE = {path: null, usable: false, problem: null, preview: null};
+const NONE = {path: null, usable: false, problem: null, access: null, instructions: null, preview: null};
 
 function fakeApi(answers) {
   const calls = [];
@@ -34,10 +39,9 @@ class ApiError extends Error {
 test("the group is its own section with the heading, the plain words and the field with Save and Clear", () => {
   const html = workdirHtml({data: NONE, value: ""});
   assert.match(html, /^<section class="setgrp" data-group="workdir" aria-labelledby="set-workdir-h"><h3 id="set-workdir-h">Working folder<\/h3>/);
-  assert.match(html, /read-only/i);
-  assert.match(html, /cannot create, change or delete one or run a command/);
-  assert.match(html, /chats only/);
-  assert.match(html, /the engine&#39;s department runs are unchanged/);
+  assert.match(html, /Teams you tell to work on a project \(not a document or a website\) work in this folder like a Claude session: they read its files, follow its CLAUDE\.md and, if you allow it, change files\./);
+  assert.match(html, /They never run commands other than git status\/diff\/log\/show, and never leave the folder\./);
+  assert.doesNotMatch(html, /read-only chats|chats only|department runs are unchanged|cannot create, change or delete/);
   assert.match(html, /goes to your own Claude or Codex/);
   assert.match(html, /<input type="text" id="setwd" data-workdir-input[^>]*placeholder="~\/Documents\/my-project"/);
   assert.match(html, /data-act="workdir-save"/);
@@ -169,4 +173,73 @@ test("clearWorkdir is one DELETE and the group then reads as no folder", async (
   assert.match(workdirHtml({data: r.data, value: ""}), /No folder is set/);
   const failed = await clearWorkdir(fakeApi({["DELETE " + WORKDIR_PATH]: new ApiError("Not allowed", "bad_token", 401)}));
   assert.deepEqual([failed.ok, failed.message], [false, "Not allowed"]);
+});
+
+/* ---------------------------------------------------------------- the folder dialog, the access choice, the instructions line (D125) */
+test("Choose folder is drawn only where the desktop app bridges its dialog", () => {
+  assert.equal(canChooseFolder(), false);
+  assert.doesNotMatch(workdirHtml({data: NONE, value: ""}), /workdir-choose/);
+  withBridge({}, () => assert.doesNotMatch(workdirHtml({data: NONE, value: ""}), /workdir-choose/));           // a bridge without the function is no bridge
+  withBridge({chooseFolder: async () => null}, () => {
+    assert.equal(canChooseFolder(), true);
+    const html = workdirHtml({data: NONE, value: ""});
+    assert.match(html, /<button type="button" class="ghost" data-act="workdir-choose">Choose folder\u2026<\/button><button type="button" class="ghost" data-act="workdir-save"/);
+    assert.match(html, /<input type="text" id="setwd"/);                                                       // the text field stays beside it
+    assert.match(workdirHtml({data: NONE, value: "", step: "saving"}), /data-act="workdir-choose" disabled/);
+  });
+});
+
+test("chooseWorkdir gives the trimmed path, and null for a closed dialog, an odd answer or a failure", async () => {
+  assert.equal(await chooseWorkdir({chooseFolder: async () => "  /Users/me/proj \n"}), "/Users/me/proj");
+  for (const answer of [null, undefined, "", "   ", 7, {}]) assert.equal(await chooseWorkdir({chooseFolder: async () => answer}), null);
+  assert.equal(await chooseWorkdir({chooseFolder: async () => { throw new Error("boom"); }}), null);
+  assert.equal(await chooseWorkdir(null), null);                                                              // no bridge on the page
+  assert.equal(await withBridge({chooseFolder: async () => "/b"}, () => chooseWorkdir()), "/b");              // the page's own bridge by default
+});
+
+test("with a folder set the access choice shows, one option is on, and it is off while saving; with none it is not drawn", () => {
+  const html = workdirHtml({data: data(), value: "/work/proj"});
+  assert.match(html, /<div class="wdaccessrow" role="radiogroup" aria-label="What a team may do in this folder">/);
+  assert.match(html, /<button type="button" class="ghost wdaccess" role="radio" data-act="workdir-access" data-access="edit" aria-checked="true" data-on="true">Read and change files<\/button>/);
+  assert.match(html, /<button type="button" class="ghost wdaccess" role="radio" data-act="workdir-access" data-access="read" aria-checked="false">Read only<\/button>/);
+  const read = workdirHtml({data: data({access: "read"}), value: ""});
+  assert.match(read, /data-access="read" aria-checked="true" data-on="true"/);
+  assert.match(read, /data-access="edit" aria-checked="false">/);
+  assert.equal((workdirHtml({data: data(), value: "", step: "saving"}).match(/data-act="workdir-access"[^>]* disabled/g) || []).length, 2);
+  assert.doesNotMatch(workdirHtml({data: NONE, value: ""}), /workdir-access|radiogroup/);
+});
+
+test("the instructions line names the file the team follows, escaped, and is absent without one", () => {
+  const html = workdirHtml({data: data({instructions: {file: "CLAUDE.md", chars: 812}}), value: ""});
+  assert.match(html, /<p class="sethint wdinstr">The team follows this folder&#39;s CLAUDE\.md\.<\/p>/);
+  assert.match(workdirHtml({data: data({instructions: {file: "AGENTS.md", chars: 5}}), value: ""}), /follows this folder&#39;s AGENTS\.md\./);
+  assert.doesNotMatch(workdirHtml({data: data(), value: ""}), /The team follows/);
+  const evil = workdirHtml({data: data({instructions: {file: "<img src=x>", chars: 1}}), value: ""});
+  assert.doesNotMatch(evil, /<img/);
+  assert.match(evil, /&lt;img src=x&gt;/);
+});
+
+test("saveWorkdirAccess is one PUT with the access alone, and says what it now allows", async () => {
+  const api = fakeApi({["PUT " + WORKDIR_PATH]: body => data({access: body.access})});
+  const r = await saveWorkdirAccess(api, "read");
+  assert.deepEqual(api.calls, [{method: "PUT", path: "/api/connectors/workdir", body: {access: "read"}}]);
+  assert.equal(r.ok, true);
+  assert.equal(r.data.access, "read");
+  assert.equal(r.message, "Saved. Teams only read this folder.");
+  assert.equal((await saveWorkdirAccess(api, "edit")).message, "Saved. Teams may change files in this folder.");
+  assert.deepEqual(api.calls[1].body, {access: "edit"});
+});
+
+test("saveWorkdirAccess sends nothing for another word, and shows the server's reason for a refusal", async () => {
+  const api = fakeApi({});
+  for (const bad of ["", "write", undefined, null, "EDIT"]) assert.equal((await saveWorkdirAccess(api, bad)).ok, false);
+  assert.equal(api.calls.length, 0);
+  const refused = await saveWorkdirAccess(fakeApi({["PUT " + WORKDIR_PATH]: new ApiError("Set a folder first", "invalid_request", 422)}), "read");
+  assert.deepEqual([refused.ok, refused.data, refused.message], [false, null, "Set a folder first"]);
+});
+
+test("saveWorkdir keeps sending the path alone: the server keeps the access of the same folder and gives a new one edit", async () => {
+  const api = fakeApi({["PUT " + WORKDIR_PATH]: data()});
+  await saveWorkdir(api, "/work/proj");
+  assert.deepEqual(api.calls[0].body, {path: "/work/proj"});
 });

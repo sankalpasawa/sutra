@@ -465,9 +465,20 @@
     return {hidden: false, disabled: false, placeholder, note: ""};
   }
 
+  // workdirChip(wd) -> the one line under a team chat's box (D125): "Working in <last two segments>" (the full path is the tooltip) or, with no folder,
+  // "No working folder: Choose" where Choose is a button that opens Settings > Working folder. `wd` is the GET /api/connectors/workdir answer; null (not
+  // read, or the read failed) draws nothing.
+  function workdirChip(wd) {
+    if (!isObj(wd)) return "";
+    const full = clean(wd.path);
+    if (full === "") return 'No working folder: <button type="button" class="linkbtn" data-act="open-workdir">Choose</button>';
+    const tail = full.split(/[\\/]+/).filter(Boolean).slice(-2).join("/");
+    return '<span title="' + esc(full) + '">Working in ' + esc(tail || full) + "</span>";
+  }
+
   const providerLabel = connector => (hasOwn(PROVIDERS, connector) ? PROVIDERS[connector] : clean(connector));
 
-  const ChatView = {transcript, transcriptItems, card, answersOf, composerState, safeText, whoLabel, parseAsk, stripTag, providerLabel, attachedOf, BUSY, ONE_AT_A_TIME, PROVIDERS, PERSONA};
+  const ChatView = {transcript, transcriptItems, card, answersOf, composerState, workdirChip, safeText, whoLabel, parseAsk, stripTag, providerLabel, attachedOf, BUSY, ONE_AT_A_TIME, PROVIDERS, PERSONA};
   if (typeof module === "object" && module !== null && module.exports) module.exports = ChatView;
   else root.ChatView = ChatView;
 })(globalThis);

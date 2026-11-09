@@ -203,12 +203,12 @@
         '<div class="nsres" hidden></div></div><div class="nactions" hidden></div><div class="nlens" hidden></div><div class="nlinks" hidden></div><div class="nearlier" hidden></div>' +
         '<div class="nmsgs" role="log" aria-live="polite" aria-label="Messages"></div><div class="cjump" hidden></div><div class="ccstream" hidden></div><p class="nbanner" role="status" hidden></p>' +
         '<div class="npill" hidden></div><div class="ncomposer" hidden><div class="ccbar" hidden></div><div class="row"><textarea class="nbox" aria-label="Your message" rows="2"></textarea>' +
-        '<button type="button" class="send" data-act="send">Send</button></div></div><p class="nnote" role="note" hidden></p></div>';
+        '<button type="button" class="send" data-act="send">Send</button></div><p class="nwd" hidden></p></div><p class="nnote" role="note" hidden></p></div>';
       refs.body.__html = undefined;
       const q = sel => refs.body.querySelector(sel);
       chatRefs = {lens: q(".nlens"), links: q(".nlinks"), earlier: q(".nearlier"), msgs: q(".nmsgs"), banner: q(".nbanner"), composer: q(".ncomposer"),
         box: q(".nbox"), send: q(".send"), note: q(".nnote"), pill: q(".npill"), bar: q(".ccbar"), stream: q(".ccstream"), search: q(".nsearch"), sbox: q(".nsbox"), sres: q(".nsres"), actions: q(".nactions"),
-        jump: q(".cjump")};
+        jump: q(".cjump"), wd: q(".nwd")};
       if (chatRefs.sbox) chatRefs.sbox.addEventListener("input", () => onSearchInput());
       if (CSc()) {
         CSc().watch(chatRefs.msgs, onScrollIntent);
@@ -374,7 +374,16 @@
       markSeen(activeSid(), last);
     }
 
+    // The working folder under the box of a team's chat (D125): "Working in <folder>" or "No working folder: Choose". st.wd is the answer read when the panel opened.
+    function paintWd() {
+      if (!chatRefs || !chatRefs.wd || !st) return;
+      const chip = pillOwner() !== "" ? CV().workdirChip(st.wd) : "";
+      chatRefs.wd.hidden = chip === "";
+      paintTo(chatRefs.wd, chip);
+    }
+
     function paintComposer() {
+      paintWd();
       const session = activeSession();
       const direct = directOn();
       const turn = {busy: !st.view && !direct && teamBusy(), asking: asking(), blocked: st.blocked || (direct ? askBlocked() : "")};
@@ -797,9 +806,14 @@
       const graph = isObj(freshGraph) ? freshGraph : getGraph();      // archive and un-archive re-link the team's chat: the caller passes the graph it just fetched
       st = {nodeId: id, tab: tab === "details" ? "details" : "chat", node: findNode(graph, id), detail: null, detailError: "", sid: "", session: null, messages: [],
         lastId: 0, banner: "", blocked: "", cc: null, ccMode: "team", readOnly: false, gone: false, retry: false, sending: false, view: null, scope: "division", divisionChat: null, allAtoms: null,
-        openIds: [], shownOnce: false, agentHtml: "", loading: true, nodeGone: "", chatNote: "", stick: false, reopen: true, scroll: {parked: false, seenId: 0, pill: 0},
+        wd: null, openIds: [], shownOnce: false, agentHtml: "", loading: true, nodeGone: "", chatNote: "", stick: false, reopen: true, scroll: {parked: false, seenId: 0, pill: 0},
         opener: opener, conn: null, refresh: null};
       if (!opener.id) opener.id = id;
+      settle(api().get("/api/connectors/workdir")).then(r => {          // once per open, and silent when it fails: the chip just stays away
+        if (g !== gen || !st) return;
+        st.wd = r.error ? null : r.value;
+        paintWd();
+      });
       rules = noRules("");                                  // the team's rules are read again: they may have changed since this team was last on show
       if (!inline) {
         doc.body.classList.add("nodeopen");
@@ -1144,6 +1158,7 @@
       else if (name === "composer-remove") { const c = composerOf(); if (c) c.removeFile(act.dataset.key); }
       else if (name === "fn") openFrom(act);
       else if (name === "go-tab") goToTab(act.dataset.tab);
+      else if (name === "open-workdir") { if (opts.openSettings) opts.openSettings("workdir"); else navigate("/"); }
       else if (name === "show-all") showAll();
       else if (name === "choose-provider") chooseProvider(act.dataset.provider || null);
       else if (name === "archive" || name === "unarchive") archiveChat(act.dataset.sid, name === "archive");

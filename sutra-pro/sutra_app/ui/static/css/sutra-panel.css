@@ -43,7 +43,7 @@ body.nodeopen #pane-map .mappanel{display:none}
 /* ---- the Chat tab */
 .nchat{display:flex;flex-direction:column;height:100%;min-height:0}
 .nlens{flex:0 0 auto;border:1px solid var(--line);border-left:3px solid var(--accent);border-radius:8px;background:var(--panel2);padding:8px 12px;margin:0 0 10px;font-size:13.5px}
-.nlens[hidden],.nlinks[hidden],.nearlier[hidden],.nbanner[hidden],.ncomposer[hidden],.nnote[hidden]{display:none}
+.nlens[hidden],.nlinks[hidden],.nearlier[hidden],.nbanner[hidden],.ncomposer[hidden],.nnote[hidden],.nwd[hidden]{display:none}
 .nlenstext{margin:0 0 4px;overflow-wrap:anywhere}
 .nlinks,.nearlier{flex:0 0 auto;margin:0 0 8px;font-size:13px}
 .nearlier summary{cursor:pointer;color:var(--muted)}
@@ -69,6 +69,7 @@ body.nodeopen #pane-map .mappanel{display:none}
 .ncomposer{flex:0 0 auto;border-top:1px solid var(--line);padding:10px 0 4px;background:var(--panel)}
 .ncomposer .nbox{min-width:0}
 .nnote{flex:0 0 auto;margin:6px 0 0;color:var(--muted);font-size:13px}
+.nwd{margin:4px 0 0;color:var(--muted);font-size:12px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 
 /* ---- the cards of a chat (task, chart change, question, hand-over, atom) */
 .ncard{border:1px solid var(--line);border-radius:10px;padding:10px 12px;background:var(--panel)}
