@@ -5,13 +5,14 @@ Run:  python j2_server.py                         opens http://127.0.0.1:8773
 Every response goes through redact(): API keys, tokens and .env values never reach the page.
 """
 import argparse
+import base64
 import html
 import http.server
 import json
 import os
 import re
 import webbrowser
-from urllib.parse import parse_qs, quote, urlparse
+from urllib.parse import parse_qs, urlparse
 
 import j2
 import j2_agent
@@ -261,7 +262,7 @@ class Handler(http.server.BaseHTTPRequestHandler):
             d = j2.saved_dir(run) if run else RUN.dir
             name = f"{u.path.rsplit('/', 1)[-1]}.md" if u.path.startswith("/doc/") else q.get("name")
             p = j2_artifacts.served(d if d and os.path.isdir(d) else None, name)
-            return self._send(200, view_page(p, name), "text/html")
+            return self._send(200, view_page(p), "text/html")
         if u.path.startswith("/site/") and run:
             d, key = j2.saved_dir(run), u.path.rsplit("/", 1)[-1]
             site = os.path.join(d or "", "site")
@@ -325,15 +326,21 @@ class Handler(http.server.BaseHTTPRequestHandler):
 
 
 
-def view_page(p, name):
+IMAGE_TYPES = {".png": "image/png", ".jpg": "image/jpeg", ".jpeg": "image/jpeg", ".gif": "image/gif", ".webp": "image/webp",
+               ".svg": "image/svg+xml"}      # an <img> never runs an SVG's scripts
+
+
+def view_page(p):
     """A file from a run's artifact list as a page for the Simple view: markdown rendered, a page as it is, an image shown, anything
     else (data, code, a script) as readable text. A file not in the list gets a plain "not written yet" line."""
     if not p:
         return "<p style='font:15px system-ui;color:#667;padding:24px'>This isn't written yet.</p>"
     ext = os.path.splitext(p)[1].lower()
-    if ext in (".png", ".jpg", ".jpeg", ".gif", ".webp", ".svg"):
+    if ext in IMAGE_TYPES:      # inline, so a saved run's image shows (/api/artifact would need ?run=) and every type gets its own media type
+        with open(p, "rb") as f:
+            src = f"data:{IMAGE_TYPES[ext]};base64,{base64.b64encode(f.read()).decode()}"
         return (f"<!doctype html><meta charset='utf-8'><body style='margin:0;display:grid;place-items:center;min-height:100vh;background:#f6f3ee'>"
-                f"<img src='/api/artifact?name={quote(name)}' alt='{html.escape(os.path.basename(p))}' style='max-width:100%;height:auto'></body>")
+                f"<img src='{src}' alt='{html.escape(os.path.basename(p))}' style='max-width:100%;height:auto'></body>")
     with open(p, encoding="utf-8", errors="replace") as f:
         text = f.read()
     if ext == ".md":

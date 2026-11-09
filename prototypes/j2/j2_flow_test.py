@@ -1380,6 +1380,14 @@ def studio_views():
         assert "<h2>" in prd and "<!doctype html>" in prd and prd == get(f"/doc/prd?run={name}"), prd[:200]
         data = next(f for f in files if f.endswith(".json"))
         assert get(f"/view?name={data}&run={name}").count("<pre") == 1
+        # an image is inlined with its own media type: a saved run's image shows without ?run=, and an SVG's script never runs (an <img>)
+        for ext, mime in (("png", "image/png"), ("jpg", "image/jpeg"), ("svg", "image/svg+xml")):
+            img = os.path.join(run.dir, f"view-check.{ext}")
+            with open(img, "wb") as f:
+                f.write(b"<svg xmlns='http://www.w3.org/2000/svg'><script>alert(1)</script></svg>" if ext == "svg" else b"\x89PNG fake")
+            page = j2_server.view_page(img)
+            assert f"src='data:{mime};base64," in page and "/api/artifact" not in page and "<script>" not in page, page[:300]
+            os.remove(img)
         assert "isn't written yet" in get(f"/view?name=../j2.py&run={name}") and "isn't written yet" in get(f"/view?name=nope.md&run={name}") \
             and "isn't written yet" in get(f"/doc/nope?run={name}"), "only listed files are served"
         snap = json.loads(json.dumps(j2.saved_snapshot(name, 0), default=str))
