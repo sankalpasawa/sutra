@@ -2453,7 +2453,7 @@ document.querySelector("#sview .sdev").addEventListener("click", e => { const b 
 $("sview").addEventListener("click", e => {
   const t = e.target.closest && e.target.closest("[data-view],[data-go],[data-part],[data-art],[data-mate],[data-plan],[data-chat],[data-records]"); if (!t || !$("sview").contains(t)) return;
   if (t.closest(".qcard")) return;
-  if (t.dataset.view){ SV.pick = t.dataset.view; if (state) renderSimple(state); return; }
+  if (t.dataset.view){ if (t.closest("#sdrawer")) sDrawer(""); SV.pick = t.dataset.view; if (state) renderSimple(state); return; }      // "Open it here" in a record: the drawer gives way to the output
   if (t.dataset.go) return sGo(t.dataset.go);
   if (t.dataset.part) return sOpenPart(t.dataset.part);
   if (t.dataset.art) return sOpenArt(t.dataset.art);
