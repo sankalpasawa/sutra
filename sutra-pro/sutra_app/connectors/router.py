@@ -59,7 +59,7 @@ from .workdir import Folder, grounding_text
 
 __all__ = [
     "Router", "Plan", "RouterStatus", "ProviderStatus", "PolicyInfo", "ModelBrief", "TodayCounts", "TranscriptSource",
-    "mode_from_env", "CONNECTOR_MODES", "TRANSCRIPT_LIMIT", "NEW_MESSAGE_LABEL", "PICK_PURPOSES", "fallback_phrase",
+    "mode_from_env", "CONNECTOR_MODES", "TRANSCRIPT_LIMIT", "NEW_MESSAGE_LABEL", "PICK_PURPOSES", "fallback_phrase", "tool_title",
 ]
 
 log = logging.getLogger("sutra_app.connectors.router")
@@ -338,6 +338,7 @@ class Router:
         self._pins: dict[str, str] = {}
         self.choice_source: Optional[Callable[[str], Optional[str]]] = None      # session id -> the owner's persisted provider choice (ABS-8)
         self.agent_pick: Optional[Callable[[CallTag], Optional[Pick]]] = None    # call tag -> the owner's pick for that agent (D131); the engine's capability sets it
+        self.finish_hooks: list[Callable[[CallTag], None]] = []              # called with the tag when an engine call (`complete`) ends, ok or not (D133)
         self.egress: Optional[Any] = None                      # an `egress.Egress`, set by the factory (ABS-2); None = no scrub, no row
         self.folders: Optional[Any] = None                     # a `workdir.WorkFolder`, set by the factory (GAP3-workdir); None = no working folder
         self.independence = Independence()                     # who built a run's work, so Audit can go to the other model (off unless the policy says so)
@@ -761,7 +762,10 @@ class Router:
             kind="json" if (req.json_mode or req.json_schema is not None) else "text", effort=req.effort, images=list(req.images),
             schema=req.json_schema, timeout_s=req.timeout_s, partials=on_progress is not None and req.json_schema is None,
             scripted=req.scripted)
-        turn, state = self._ask(ask, on_progress)
+        try:
+            turn, state = self._ask(ask, on_progress)
+        finally:
+            self._call_finished(req.tag)
         row = state.row
         assert row is not None
         stub = turn.provider == "stub"
@@ -772,6 +776,14 @@ class Router:
             structured={"provider": turn.provider, "subtype": turn.subtype, "present": turn.structured is not None}
             if req.json_schema is not None else None,
             note=state.note, detail=row.detail)
+
+    def _call_finished(self, tag: CallTag) -> None:
+        """Tells whoever watches the engine's calls (the live view of an agent's work, D133) that this one is over, whether it answered or not."""
+        for hook in tuple(self.finish_hooks):
+            try:
+                hook(tag)
+            except Exception:
+                log.warning("a call-finished hook failed", exc_info=True)
 
     # ---- chat sessions -------------------------------------------------------------------------------------------------------------
     def _workdir(self, session_id: str) -> Path:
@@ -1081,8 +1093,24 @@ def _once(fn: Callable[[], Any]) -> Iterator[Any]:
     yield       # pragma: no cover  (makes this a generator)
 
 
+_TOOL_ARGS = ("file_path", "pattern", "command", "query", "url", "path", "description")      # what a tool call is about, the first one present
+TOOL_TITLE_CHARS = 120
+
+
+def tool_title(data: Mapping[str, Any]) -> str:
+    """One line for a tool call of the model: its name and what it is about ("Read src/app.py", "Grep def main"). Codex names the kind only."""
+    name = str(data.get("name") or data.get("type") or "tool")
+    args = data.get("input")
+    about = ""
+    if isinstance(args, Mapping):
+        about = next((str(args[k]) for k in _TOOL_ARGS if isinstance(args.get(k), str) and args[k].strip()), "")
+    title = " ".join(f"{name} {about}".split())
+    return title if len(title) <= TOOL_TITLE_CHARS else title[:TOOL_TITLE_CHARS - 1] + "…"
+
+
 def _progress(on_progress: Optional[Callable[[dict], None]]) -> Optional[Callable[[ConnectorEvent], None]]:
-    """J2's progress events: `{"chars": n, "text": text so far}` after every piece of the reply."""
+    """J2's progress events: `{"chars": n, "text": text so far}` after every piece of the reply, and `{"tool": title}` for each tool call of the model
+    (what an agent that works in the owner's folder is doing; a consumer that does not know the key ignores it)."""
     if on_progress is None:
         return None
     acc = {"text": "", "sent": None}
@@ -1090,6 +1118,10 @@ def _progress(on_progress: Optional[Callable[[dict], None]]) -> Optional[Callabl
     def on_event(event: ConnectorEvent) -> None:
         if event.kind == "started":
             acc["text"], acc["sent"] = "", None
+            return
+        if event.kind == "tool_call":
+            if event.data.get("name") != "StructuredOutput":       # Claude's own way of handing back the reply of a schema call: not work to show
+                on_progress({"tool": tool_title(event.data)})
             return
         if event.kind == "text_delta":
             acc["text"] += str(event.data.get("text", ""))
