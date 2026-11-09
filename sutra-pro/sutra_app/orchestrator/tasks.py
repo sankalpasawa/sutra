@@ -45,6 +45,7 @@ from sutra_app.library.gate import GATE, Checked, GateError
 from sutra_app.library.node import StructuralNode, step_node_id
 from sutra_app.library.types import FUNCTIONS, clip, function_node_id, violation, violations_from_validation_error
 from sutra_app.orchestrator import attempts
+from sutra_app.orchestrator.agent_sessions import AgentSessions
 from sutra_app.orchestrator.attempts import ATTEMPT_KEY
 from sutra_app.orchestrator.chat_v2 import ChatChoices
 from sutra_app.orchestrator.records import WorkTask
@@ -367,10 +368,11 @@ class TaskGraph:
     """The graph side of a task: its step node (`step_ref` 'task', parent: the department or the scoped division) and the builder
     step nodes (`W-<n>`, `team:<role>`) that engine events create. Also the one place that announces `task.updated`."""
 
-    def __init__(self, store: TaskStore, graph: GraphStore, *, ids: IdFactory | None = None) -> None:
+    def __init__(self, store: TaskStore, graph: GraphStore, *, ids: IdFactory | None = None, sessions: AgentSessions | None = None) -> None:
         self.store = store
         self.graph = graph
         self._ids = ids or IdFactory()
+        self.sessions = sessions or AgentSessions(store.db, graph)
 
     def _session_id(self) -> str:
         return self._ids.session_id()
@@ -399,6 +401,7 @@ class TaskGraph:
                 kind="step", id=node_id, label=clip(label or ref, 80), department_id=row.dept_id, state=state or "idle",
                 detail=clip(detail or "", 300), parent_id=parent, task_id=row.id, step_ref=ref, ts_created=now, ts_updated=now)
             ensure_node(tx, node_init(node, title=clip(label or ref, 80)), graph=self.graph, new_session_id=self._session_id)
+            self.sessions.open(tx, row, node_id)                    # the step session is stamped with the run and titled by its agent (D130)
             return node_id
         changes: dict[str, Any] = {}
         if label is not None and clip(label, 80) != existing.label:
@@ -412,6 +415,7 @@ class TaskGraph:
         if changes:
             changes["ts_updated"] = max(existing.ts_updated, now)
             self.graph.put_node(tx, GATE.check("node", existing.evolve(**changes), ctx=tx.ctx))
+        self.sessions.open(tx, row, node_id)                        # a step made before its run, or renamed by its `step` event, is stamped and retitled
         return node_id
 
 

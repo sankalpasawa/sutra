@@ -160,8 +160,8 @@ class ChatArchive:
         row = self._row(tx.conn, session_id)
         if row["status"] == "active":
             return False
-        if row["kind"] == "legacy" or row["filed_under"] is not None:
-            raise AppError("rules", "That chat stays in the archive (it was imported or its team was merged away)")
+        if row["kind"] in ("legacy", "function", "step") or row["filed_under"] is not None:
+            raise AppError("rules", "That chat stays in the archive (it was imported, its team was merged away, or it is a past run's agent chat)")
         taken = tx.conn.execute("SELECT id FROM chat_sessions WHERE node_id = ? AND status = 'active'", (row["node_id"],)).fetchone()
         if taken is not None:
             used = tx.conn.execute("SELECT 1 FROM chat_messages WHERE session_id = ? LIMIT 1", (taken["id"],)).fetchone()
