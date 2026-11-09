@@ -565,6 +565,12 @@ def groups(d, m=None):
                     "audits": [{"cycle": a.get("cycle"), "version": a.get("version"), "screenshot": a.get("screenshot"),
                                 "passed": sum(1 for r in a.get("results") or [] if isinstance(r, dict) and r.get("pass")),
                                 "total": len(a.get("results") or [])} for a in audits]})
+    for i, a_ in enumerate(audits, 1):      # agent-views/1: every audit as a workflow of its own, beside the chart row
+        f_ = f"agent/audits/A-{i}.json"
+        rs_ = [r for r in a_.get("results") or [] if isinstance(r, dict)]
+        rec.append({"id": f"A-{i}", "kind": "audit", "name": f"Audit A-{i}", "file": f_ if has(f_) else None, "maker": RECORD_MAKER["audits.json"], "nodes": [],
+                    "cycle": a_.get("cycle"), "version": a_.get("version"), "passed": sum(1 for r in rs_ if r.get("pass")), "total": len(rs_),
+                    "all_pass": a_.get("all_pass") if isinstance(a_.get("all_pass"), bool) else None, "screenshot": a_.get("screenshot")})
     cond = _read(d, "conditions.json")
     if isinstance(cond, list):
         rec.append({"id": "conditions", "kind": "conditions", "name": "Necessary conditions", "file": "conditions.json", "maker": "code", "nodes": [],
@@ -637,6 +643,8 @@ def agent_view(d, row):
     f, sec = row.get("file"), row.get("section")
     stem = os.path.splitext(f)[0] if f and not (sec and row.get("deck")) else None
     cands = [f"{stem}.json"] if stem and not f.endswith(".json") else []
+    if stem and row.get("kind") in ("charter", "realization", "workflows", "receipts", "conditions"):
+        cands.insert(0, f"agent/{os.path.basename(stem)}.json")      # agent-views/1: the record in the agent's shape, the original untouched
     if row.get("kind") == "style":
         cands.insert(0, "design.json")      # the style guide's own data (Design/1), when the run saved it
     if sec and row.get("deck"):
@@ -660,7 +668,7 @@ def agent_view(d, row):
 
 
 HUMAN = {"charter": "list", "realization": "markdown", "workflows": "table", "guide": "markdown", "document": "markdown", "section": "page",
-         "script": "page", "style": "style", "receipts": "table", "audits": "chart", "conditions": "list", "shots": "shots"}
+         "script": "page", "style": "style", "receipts": "table", "audits": "chart", "audit": "list", "conditions": "list", "shots": "shots"}
 
 
 def human_view(d, row):

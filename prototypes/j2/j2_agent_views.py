@@ -281,6 +281,109 @@ def build_sections(d, decs):
     return results
 
 
+# ---------------------------------------------------------------------------------------------------- step 3: records and audits
+def _agent(d, name, model, data, source, kind):
+    env = G.envelope(model, data, source)
+    out = f"agent/{name}.json"
+    _write_json(os.path.join(d, out), env)
+    return _result(kind, model.__name__, out, env["valid"], "" if env["valid"] else "; ".join(env["errors"][:2]))
+
+
+def _s(x, default=G.NOT_RECORDED):
+    return x if isinstance(x, str) and x.strip() else default
+
+
+def build_records(d, goal, workflows):
+    """agent/goal.json (Charter), agent/workflows.json (WorkflowPlan), agent/receipts.json (Receipts), agent/conditions.json
+    (Conditions): the run's own records in the agent's shape, the originals untouched."""
+    results = []
+    if goal:
+        data = {"statement": _s(goal.get("statement")), "site_name": goal.get("site_name") if isinstance(goal.get("site_name"), str) else None,
+                "audience": _s(goal.get("audience")), "business_type": _s(goal.get("business_type")),
+                **{k: [str(x) for x in goal.get(k) or []] for k in ("standards", "rules", "done_when", "core_items", "facts")},
+                **{k: list(goal.get(k) or []) for k in ("to_be_confirmed", "dropped_from_brief", "visitor_needs")}}
+        results.append(_agent(d, "goal", G.Charter, data, {"file": "goal.json", "built_by": "j2_agent_views.py"}, "charter"))
+    if workflows:
+        rows = []
+        for w in workflows:
+            if not isinstance(w, dict):
+                continue
+            rows.append({"id": str(w.get("id") or ""), "name": str(w.get("name") or ""), "purpose": str(w.get("purpose") or ""),
+                         "covers": [x for x in (w.get("covers") or []) if isinstance(x, (int, str))],
+                         "fixes": [x for x in (w.get("fixes") or []) if isinstance(x, (int, str))],
+                         "outputs": [str(x) for x in (w.get("outputs") or [])], "section": w.get("section") if isinstance(w.get("section"), str) else None,
+                         "cycle": w.get("cycle") if isinstance(w.get("cycle"), int) else None,
+                         "cost": float(w["cost"]) if isinstance(w.get("cost"), (int, float)) else None,
+                         "charged": w.get("charged") if isinstance(w.get("charged"), bool) else None,
+                         "calls_used": w.get("calls_used") if isinstance(w.get("calls_used"), int) else None,
+                         "retries_used": w.get("retries_used") if isinstance(w.get("retries_used"), int) else None,
+                         "dependencies": [str(x) for x in (w.get("dependencies") or [])],
+                         "completion_check": w.get("completion_check") if isinstance(w.get("completion_check"), str) else None,
+                         "proposal_id": str(w["proposal_id"]) if w.get("proposal_id") is not None else None})
+        results.append(_agent(d, "workflows", G.WorkflowPlan, {"workflows": rows}, {"file": "workflows.json", "built_by": "j2_agent_views.py"}, "workflow plan"))
+    rp = os.path.join(d, "receipts.jsonl")
+    if os.path.isfile(rp):
+        items = []
+        with open(rp, encoding="utf-8") as fh:
+            for line in fh:
+                try:
+                    r = json.loads(line)
+                except ValueError:
+                    continue
+                if not isinstance(r, dict):
+                    continue
+                items.append({"atom": _s(r.get("atom")), "check": _s(r.get("check") or r.get("kind")), "attempt": r.get("attempt") if isinstance(r.get("attempt"), int) else None,
+                              "passed": r.get("pass") if isinstance(r.get("pass"), bool) else None, "met": r.get("met") if isinstance(r.get("met"), bool) else None,
+                              "by": r.get("by") if isinstance(r.get("by"), str) else None, "kind": r.get("kind") if isinstance(r.get("kind"), str) else None,
+                              "evidence": str(r.get("evidence") or ""), "expect": r.get("expect", r.get("expected")), "actual": r.get("actual"),
+                              "of": r.get("of") if isinstance(r.get("of"), str) else None, "target": r.get("target"), "t": r.get("t") if isinstance(r.get("t"), str) else None})
+        results.append(_agent(d, "receipts", G.Receipts, {"items": items}, {"file": "receipts.jsonl", "built_by": "j2_agent_views.py"}, "check results"))
+    cond = _read_json(os.path.join(d, "conditions.json"))
+    if isinstance(cond, list):
+        items = [{"id": str(c.get("id") or ""), "text": str(c.get("text") or ""), "check": c.get("check") if isinstance(c.get("check"), str) else None,
+                  "met": bool(c.get("met")), "evidence": str(c.get("evidence") or "")} for c in cond if isinstance(c, dict)]
+        results.append(_agent(d, "conditions", G.Conditions, {"items": items}, {"file": "conditions.json", "built_by": "j2_agent_views.py"}, "necessary conditions"))
+    return results
+
+
+def _finding(r):
+    return {"id": r.get("id") if isinstance(r.get("id"), str) else None, "item": r.get("item") if isinstance(r.get("item"), (int, str)) else None,
+            "criterion": _s(r.get("criterion")), "verdict": _s(r.get("verdict")), "note": str(r.get("note") or ""),
+            "severity": _s(r.get("severity")), "confidence": r.get("confidence") if isinstance(r.get("confidence"), (str, int, float)) and not isinstance(r.get("confidence"), bool) else None,
+            "passed": bool(r.get("pass")), "evidence": str(r.get("evidence") or r.get("note") or "")}
+
+
+def build_audits(d, goal):
+    """agent/audits/A-1.json, A-2.json, ...: every audit (audits.json, re-checks left out) as a workflow of its own, with the
+    goal (the done-when items it judged), the method (what the record shows it used) and the evidence, and every finding."""
+    audits = [a for a in (_read_json(os.path.join(d, "audits.json"), []) or []) if isinstance(a, dict) and a.get("kind") != "recheck"]
+    done_when = [str(x) for x in (goal or {}).get("done_when") or []]
+    results = []
+    for i, a in enumerate(audits, 1):
+        findings = [_finding(r) for r in (a.get("results") or []) if isinstance(r, dict)]
+        rubric = [_finding(r) for r in (a.get("rubric") or []) if isinstance(r, dict)]
+        extra = [_finding(r) for r in (a.get("extra_issues") or []) if isinstance(r, dict)]
+        mech = a.get("mechanical") if isinstance(a.get("mechanical"), dict) else {}
+        conds = [{"id": str(c.get("id") or ""), "text": str(c.get("text") or ""), "check": c.get("check") if isinstance(c.get("check"), str) else None,
+                  "met": bool(c.get("met")), "evidence": str(c.get("evidence") or "")} for c in (a.get("conditions") or []) if isinstance(c, dict)]
+        lld = a.get("lld") if isinstance(a.get("lld"), dict) else {}
+        judged = [f["criterion"] for f in findings if f["criterion"] in done_when] or [f["criterion"] for f in findings]
+        goal_s = ("Check the done-when items: " + "; ".join(judged)) if judged else G.NOT_RECORDED
+        used = [k for k, on in (("the rubric", bool(rubric)), ("mechanical page checks", bool(mech.get("available"))),
+                                ("the necessary conditions", bool(conds)), ("the LLD match", bool(lld)), ("a screenshot", bool(a.get("screenshot")))) if on]
+        method = ("Judged each item against the page, using " + ", ".join(used)) if used else G.NOT_RECORDED
+        evidence = ([{"kind": "screenshot", "ref": str(a["screenshot"])}] if a.get("screenshot") else []) \
+            + ([{"kind": "mechanical", "ref": "audits.json#mechanical", "note": f"{mech.get('bytes', '?')} bytes, {mech.get('forms', '?')} forms"}] if mech.get("available") else []) \
+            + ([{"kind": "conditions", "ref": "conditions.json", "note": f"{sum(1 for c in conds if c['met'])} of {len(conds)} met"}] if conds else []) \
+            + ([{"kind": "lld", "ref": "lld.md", "note": f"{len(lld.get('matches') or [])} matches, {len(lld.get('mismatches') or [])} mismatches"}] if lld else [])
+        data = {"id": f"A-{i}", "cycle": a.get("cycle") if isinstance(a.get("cycle"), int) else 0, "version": a.get("version") if isinstance(a.get("version"), int) else 0,
+                "goal": goal_s, "method": method, "findings": findings, "rubric": rubric, "extra_issues": extra,
+                "all_pass": a.get("all_pass") if isinstance(a.get("all_pass"), bool) else None, "screenshot": a.get("screenshot") if isinstance(a.get("screenshot"), str) else None,
+                "mechanical": mech, "conditions": conds, "lld": lld, "evidence": evidence}
+        results.append(_agent(d, f"audits/A-{i}", G.AuditResult, data, {"file": "audits.json", "index": i - 1, "built_by": "j2_agent_views.py"}, f"audit A-{i}"))
+    return results
+
+
 # ---------------------------------------------------------------------------------------------------- the run
 def build(d, quiet=False):
     """Every agent-readable JSON of one run folder; [{kind, model, path, valid, note}]."""
@@ -296,6 +399,8 @@ def build(d, quiet=False):
     results += build_documents(d, decs)
     results += build_design(d, decs)
     results += build_sections(d, decs)
+    results += build_records(d, goal, workflows)
+    results += build_audits(d, goal)
     if not quiet:
         print_table(d, results)
     return results

@@ -8696,7 +8696,7 @@ def artifacts_groups():
             w = next(w for w in wfs if w["id"] == c["workflow"])
             rs = [r for a in w["atoms"] for r in a.get("results") or []]
             assert any(r.get("check") == c["check"] and r.get("attempt", 1) == max(q.get("attempt", 1) for q in rs) for r in rs), ("checks by code: the final attempt only", c)
-    assert {x["id"] for x in G["records"]["rows"]} == {"receipts", "audits", "conditions", "shots"} and len(next(x for x in G["records"]["rows"] if x["id"] == "audits")["audits"]) == len(json.load(open(os.path.join(d, "audits.json"))))
+    assert {x["id"] for x in G["records"]["rows"] if not x["id"].startswith("A-")} == {"receipts", "audits", "conditions", "shots"} and len(next(x for x in G["records"]["rows"] if x["id"] == "audits")["audits"]) == len(json.load(open(os.path.join(d, "audits.json"))))
     assert "realization.md" == next(x for x in G["plan"]["rows"] if x["id"] == "realization")["text"] and A.groups(None)["groups"][0]["rows"] == []
     assert not re.search(r'"(head|body)":', json.dumps(g)) and "<script" not in json.dumps(g), "no file contents in the groups: they load when an item opens"
     for x in [r for G_ in g["groups"] for r in G_["rows"]] + list(g["documents"].values()):
