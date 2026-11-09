@@ -295,6 +295,10 @@ class Handler(http.server.BaseHTTPRequestHandler):
         if self.path == "/api/output":           # the start page's output type, before the first message
             ok = RUN.set_output(body.get("type"))
             return self._send(200 if ok else 409, json.dumps({"ok": ok, "output": RUN.output}))
+        if self.path == "/api/settings":         # the Simple view's Decide for me switch (live run only; kept across Start over)
+            if "decide_for_me" in body:
+                RUN.set_auto(bool(body["decide_for_me"]))
+            return self._send(200, json.dumps({"ok": True, "decide_for_me": RUN.auto}))
         if self.path == "/api/reset":
             if RUN.status == "running":
                 return self._send(409, '{"ok": false}')

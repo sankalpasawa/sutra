@@ -134,6 +134,16 @@ PAUSES = {"info": "J2.a: not enough information to work yet",
           "send_confirm": "J2_SEND_MODE=live: may real emails go to the test address in this run"}
 TO_USER = re.compile(r"@(?:requester|user)\b", re.I)
 
+# Decide for me (the Simple view's switch, POST /api/settings): while it is on, an open question to the Requester is
+# answered by code the moment the run pauses, the way a click would answer it, and the run goes on. Real-world side
+# effects are never decided for you (AUTO_ASK); after AUTO_CAP answers in one run the next question waits for you.
+AUTO_ASK = {"send_confirm"}
+AUTO_CAP = int(os.getenv("J2_AUTO_CAP") or 6)
+AUTO_ASSUME = ("Decide for me: go with sensible, typical choices for anything I haven't told you, "
+               "and list them as assumptions I can check later.")
+AUTO_FINISH = re.compile(r"^(?:finish|ship|stop)\b|\bas it is\b", re.I)
+AUTO_SIMPLE = re.compile(r"\bkeep it simple\b|\bwithout\b|\bno extra\b|\bskip\b|\bleave (?:it|this) out\b|^no\b", re.I)
+
 
 def system_prompt(fn, reply_format, builder="builder.md"):
     """team.md + the function's role file. builder: a workflow agent's role, a file in agents/j2 or the text itself
@@ -2777,6 +2787,8 @@ def saved_snapshot(name, since=0):
             "force_question": head.get("force_question"), "has_board": os.path.isfile(os.path.join(d, "board.json")),
             "has_templates": os.path.isfile(os.path.join(d, "templates.json")),
             "report": _read(d, "report.json"), "outcome": s.get("outcome"),
+            "decide_for_me": bool((_read(d, "settings.json", {}) or {}).get("decide_for_me")),
+            "auto_answers": [{"msg": m["id"], "answer": m["text"], "label": m.get("auto_label")} for m in chat if m.get("auto")],
             "sections": [{"id": k, "owner": x["owner"], "workflow": x.get("workflow"),
                           "bytes": len((x["head"] + x["body"]).encode("utf-8"))} for k, x in sections.items()],
             "write_lock": None, "agents": {w["id"]: w.get("agent") or f"{w['id']} Builder" for w in wfs},
@@ -2867,6 +2879,9 @@ class J2Run:
         self.atom, self.proposed_atoms, self.receipts = None, {}, []        # atom id of the build call in progress; atoms by workflow name
         self.turn, self.handoff, self.outcome = None, {}, None
         self.paused = None          # {"kind", "questions", "to", "handoff", "msg"} while the run waits on the Requester
+        # Decide for me: kept across a reset (the start page sets it before the first message); J2_DECIDE_FOR_ME=1 turns it on
+        self.auto = bool(getattr(self, "auto", False)) or os.getenv("J2_DECIDE_FOR_ME") == "1"
+        self.auto_log = []          # every answer Decide for me gave: {kind, msg, answer, label}
         self.intake, self.decisions = [], []   # J2.a question rounds; every Requester answer to Identity
         self.drop_answer, self.relay, self.a_msg = None, None, None
         self.fixes = os.getenv("J2_FIXES", "0") == "1"   # read per run, so one process can test both modes
@@ -2992,6 +3007,7 @@ class J2Run:
                            | {"label": PAUSES.get(self.paused["kind"], ""),
                               "choices": self.paused["handoff"].get("choices")}) if self.paused else None,
                 "outcome": self.outcome,          # read-only, for the Simple view
+                "decide_for_me": self.auto, "auto_answers": self.auto_log,
                 "style": self.style, "rubric": RUBRIC,
                 "playbooks": load_playbooks() if self.memory else [], "playbooks_used": self.playbooks_used,
                 "playbook_saved": self.playbook_saved,
@@ -3447,10 +3463,57 @@ class J2Run:
             self._write_summary()
         return True
 
-    def _run_safe(self):
+    def set_auto(self, on):
+        """Decide for me on or off (POST /api/settings). Switched on while a question waits, it is answered at once."""
+        self.auto = bool(on)
+        self._event("requester", "setting", f"decide_for_me={self.auto}")
+        if self.chat:
+            self.save("settings.json", {"decide_for_me": self.auto})
+        if self.auto and self.status != "running" and self._auto_pick():
+            self.status = "running"
+            threading.Thread(target=self._run_safe, kwargs={"auto_only": True}, daemon=True).start()
+        return True
+
+    def _auto_pick(self):
+        """Decide for me's answer to the open question: (text sent as your answer, the plain label shown), or None when
+        it must wait for you (switch off, nothing open, a real-world send, or AUTO_CAP answers already given).
+        An option list: the first option; a conflict (asks for more than the plan) takes the simpler option; a second
+        limit question takes "finish as it is". An OK to spend
+        more: yes. A question without options: go on with sensible choices, listed as assumptions."""
+        p = self.paused
+        if not (self.auto and p) or p["kind"] in AUTO_ASK or len(self.auto_log) >= AUTO_CAP:
+            return None
+        if p["kind"] in ("approval", "ruling_budget"):
+            return "Yes, approve it.", "Yes, go ahead"
+        qs = p.get("questions") or []
+        opts = (qs[0].get("options") or []) if len(qs) == 1 else []
+        if opts:
+            k = 1
+            if p["kind"] == "conflict":      # something beyond the agreed plan: stay with the plan (the simpler option)
+                k = next((i + 1 for i, o in enumerate(opts) if AUTO_SIMPLE.search(str(o))), 1)
+            if p["kind"] == "limit" and any(a["kind"] == "limit" for a in self.auto_log):
+                k = next((i + 1 for i, o in enumerate(opts) if AUTO_FINISH.search(str(o))), len(opts))
+            return f"Option {k}", str(opts[k - 1])
+        return AUTO_ASSUME, "Go with sensible choices"
+
+    def _auto_go(self):
+        """While Decide for me can answer the open question: post the answer as the Requester's (flagged auto) and
+        go on, exactly as a click would."""
+        while (pick := self._auto_pick()):
+            text, label = pick
+            self.auto_log.append({"kind": self.paused["kind"], "msg": self.paused["msg"], "answer": text, "label": label})
+            self._event("requester", "auto_answer", f"{self.paused['kind']}: {label}")
+            self.post("user", text, auto=True, auto_label=label)
+            self.done = False
+            self.status = "running"
+            self._run()
+
+    def _run_safe(self, auto_only=False):
         with self.lock:
             try:
-                self._run()
+                if not auto_only:
+                    self._run()
+                self._auto_go()
             except Exception as e:  # noqa: BLE001
                 self.error = f"{type(e).__name__}: {str(e)[:300]}"
                 self.post("system", f"Stopped: {self.error}")
