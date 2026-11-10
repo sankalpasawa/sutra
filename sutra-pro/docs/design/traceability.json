@@ -3256,7 +3256,8 @@
    "id": "D142",
    "title": "A finished run is collected into the catalog by a Sutra-owned step under the library lock",
    "packages": [
-    "GAP-W1"
+    "GAP-W1",
+    "UI-7"
    ],
    "status": "implemented",
    "superseded_by": [],

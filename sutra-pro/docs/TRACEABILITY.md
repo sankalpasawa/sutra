@@ -241,7 +241,7 @@ Golden tests of every row: `tests/engine/test_engine_views.py`, `tests/engine/go
 | D139 | The per-request output choice moves to the new start page as a Sutra module; Settings keeps the default | E4, UI-0, UI-2, UI-8 | implemented |
 | D140 | The new read routes are ordinary views; patch P13 is retired into Sutra-owned code | E1, E2, E4, E5, UI-0, UI-3 | implemented |
 | D141 | The shared template library is served under the team: `/d/{dept}/library`, over the one global library | CT-1, E2, E4, GAP-CONSOLE, UI-1, UI-2, UI-3, UI-8 | implemented |
-| D142 | A finished run is collected into the catalog by a Sutra-owned step under the library lock | GAP-W1 | implemented |
+| D142 | A finished run is collected into the catalog by a Sutra-owned step under the library lock | GAP-W1, UI-7 | implemented |
 | D143 | The agent-readable JSON is built at the end of a run by a Sutra-owned step; the two J2 modules are vendored with P1 only | GAP-E2E, GAP-W1 | implemented |
 | D144 | The seed keeps its mock-flagged templates; `sync_seed_library` delivers new versions and provenance to existing installs, never overwriting | GAP-DEMO, GAP-OPS-1 | implemented |
 | D145 | The late judge stays on by default with no patch; its records are accepted; its cost stays readable in the usage ledger | E3, L3, L8, L9, UI-0 | implemented |
