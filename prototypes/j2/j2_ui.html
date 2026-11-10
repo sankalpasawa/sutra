@@ -2220,7 +2220,7 @@ function sBaton(s, M){
       else if (starts.some(p => p.person === g.k)) B.pend = null; }      // the same teammate carries on: no handoff
   }
   const ends = [B.give && B.give.until, B.res && B.res.until, ...B.take.map(x => x.until)].filter(x => x > now);
-  clearTimeout(B.t); if (ends.length) B.t = setTimeout(() => { if (SV.batS) renderSimple(SV.batS); }, Math.min(...ends) - now + 30);
+  if (typeof clearTimeout === "function") clearTimeout(B.t); if (ends.length && typeof setTimeout === "function") B.t = setTimeout(() => { if (SV.batS) renderSimple(SV.batS); }, Math.min(...ends) - now + 30);
   return fired;
 }
 function sBatLine(k){      // the rail's short state for a teammate, if any: {cls, line, html}
