@@ -57,6 +57,18 @@ def cites(name):
     return out
 
 
+def section_parts(name, path=TYPES_PATH):
+    """{section: the rate-card part one section costs at least} (types.json cost.section_parts, else cost.section_part)."""
+    with open(path, encoding="utf-8") as f:
+        cost = next(t for t in json.load(f)["types"] if t.get("name") == name).get("cost") or {}
+    return {s: (cost.get("section_parts") or {}).get(s, cost.get("section_part")) for s in sections(name)}
+
+
+def id_prefixes(name):
+    """{list field: id prefix} from the template's ids_sequential rules ("requirements": "R")."""
+    return {r["path"]: r["prefix"] for t in template(name) for r in t.get("rules") or [] if r.get("rule") == "ids_sequential"}
+
+
 def enabled():
     return os.getenv("J2_GENERIC") == "1"
 
