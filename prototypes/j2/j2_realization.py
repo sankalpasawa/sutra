@@ -279,13 +279,19 @@ def type_list(path=None):
     with open(path or j2_types.TYPES_PATH, encoding="utf-8") as f:
         ts = [t for t in json.load(f)["types"] if t.get("kind") == "type" and t.get("deliverable")]
     return [{"name": t["name"], "label": t["label"], "form": t["form"], "file": t.get("file"),
-             "needs": list(t.get("depends_on") or []) if t["form"] == "doc" else [],
+             "needs": list(t.get("depends_on") or []) if t["form"] == "document" else [],
              "after": list(t.get("depends_on") or [])} for t in ts]
 
 
 def deliverables(p):
     """The chosen type names, in build order ({"type": name} entries or bare names)."""
     return [str(d.get("type") if isinstance(d, dict) else d) for d in lst((p or {}).get("deliverables"))]
+
+
+def new_types(p):
+    """{name: {"label", "sections", "file"}}: the deliverables that ask J2 to make a new type (document form)."""
+    return {str(d.get("type")): d["new"] for d in lst((p or {}).get("deliverables"))
+            if isinstance(d, dict) and isinstance(d.get("new"), dict)}
 
 
 def deliverable_faults(p, types):
@@ -295,7 +301,11 @@ def deliverable_faults(p, types):
     names = deliverables(p)
     if not names:
         return ["deliverables is empty: choose at least one type from TYPES"]
-    out = [f"deliverable {n!r} is not a type in TYPES ({', '.join(by)})" for n in names if n not in by]
+    new = new_types(p)
+    out = [f"deliverable {n!r} is not a type in TYPES ({', '.join(by)}) and has no \"new\" type to make" for n in names
+           if n not in by and n not in new]
+    out += [f"new type {n}: {x}" for n, spec in new.items() if n not in by
+            for x in j2_types.create_problems(n, spec.get("label"), spec.get("sections"), spec.get("file"))]
     out += [f"deliverable {n} appears twice" for n in sorted({n for n in names if names.count(n) > 1})]
     for i, n in enumerate(names):
         for d in by.get(n, {}).get("after", []):
@@ -309,7 +319,7 @@ def deliverable_faults(p, types):
             serves.setdefault(w.get("serves"), []).append(w.get("name"))
     out += [f"workflow {w}: serves {s!r}, which is not in deliverables" for s, ws in serves.items() if s not in names
             for w in ws]
-    out += [f"R4: deliverable {n} has no workflow that serves it" for n in names if n in by and n not in serves]
+    out += [f"R4: deliverable {n} has no workflow that serves it" for n in names if (n in by or n in new) and n not in serves]
     return out
 
 
@@ -349,8 +359,8 @@ CHANGE_QUESTIONS = (     # asked only when the charter changed (j2_change): the 
 )
 DELIVERABLE_QUESTIONS = (  # asked only when the plan chooses the deliverables (J2_GENERIC=1, before the charter)
     ("T1", "deliverables", 0.25, "R4: the deliverable it serves earns its place: the brief asks for that type, or a "
-                                 "chosen type needs it first; when no type fits the brief exactly, it is the closest "
-                                 "type and its why says so."),
+                                 "chosen type needs it first; when no type in TYPES fits the brief, it is a new type "
+                                 "whose sections fit what the brief asks for."),
 )
 ITEM_WEIGHT, FACTOR_WEIGHT = 0.10, 0.08
 JUDGE_ANSWERS = ("yes", "no", "n/a")
@@ -540,8 +550,9 @@ PLAN_FMT = """{
 }"""
 CHANGES_FMT = ',\n "changes": [{"workflow": str, "weakest": str, "remedy": str, "axis": "ask"|"research:find"|"research:method"|"certainty:analyze"|"certainty:experiment"|"certainty:stabilize"|"certainty:reread"|"realization:add"|"realization:deepen"|"realization:split"|"rewrite"}]\n}'
 REVISE_FMT = PLAN_FMT[:-2] + CHANGES_FMT
-DELIVERABLES_FMT = (',\n "deliverables": [{"type": str (a type name from TYPES), "why": str (one clause; when no type fits '
-                    'the brief exactly, name the closest and say so)}] (build order: a type after every type it needs)\n}')
+DELIVERABLES_FMT = (',\n "deliverables": [{"type": str (a type name from TYPES, or a new name), "why": str (one clause), '
+                    '"new": {"label": str, "sections": [str], "file": str}|null (only for a new type)}] (build order: a '
+                    'type after every type it needs)\n}')
 
 
 def plan_fmt(types=None, revise=False):
@@ -623,7 +634,9 @@ def types_text(types):
     return ("TYPES you can build (needs: the types it is written from, built first; after: types it reads when they are "
             "built, so they go before it):\n" + "\n".join(json.dumps(t, ensure_ascii=False) for t in types)
             + "\nChoose the deliverables first: the types this brief needs, in build order. Every workflow serves one "
-            "deliverable, and every deliverable is served by at least one workflow.")
+            "deliverable, and every deliverable is served by at least one workflow. When no type fits, make a new one: a "
+            "deliverable whose type is a new name (lower case, _ between words) with \"new\": its label, its sections in "
+            "order and its file (<name>.md); J2 makes it as a document and keeps it for later runs.")
 
 
 def _web_note(web):
@@ -1169,8 +1182,9 @@ def deliverable_mocks(goal, names):
     n = {"i": 0}
 
     def plan(rnd):
-        got = names(n["i"]) if callable(names) else names
+        ent = names(n["i"]) if callable(names) else names
         n["i"] += 1
+        got = [d["type"] if isinstance(d, dict) else d for d in ent]      # a dict entry may carry a "new" type
         p = mock_plan(goal)
         p["stages"] = [dict(p["stages"][1], owns_factors=["the goal"], inputs_from=[])]
         p["factors"][0]["stages"] = ["build"]
@@ -1178,7 +1192,7 @@ def deliverable_mocks(goal, names):
                            "name": f"Build {t}", "goal": f"The {t} is built", "done_test": f"The {t} passes its checks",
                            "delivers": [], "serves": t, "inputs_from": [f"Build {got[i - 1]}"] if i else []}
                           for i, t in enumerate(got)]
-        p["deliverables"] = [{"type": t, "why": ""} for t in got]
+        p["deliverables"] = [d if isinstance(d, dict) else {"type": d, "why": ""} for d in ent]
         return json.dumps(p)
     return {"plan": plan, "revise": plan, "checklist": lambda: json.dumps({"items": []}),
             "judge": lambda rnd, p, spec: mock_judge(spec)}
