@@ -44,6 +44,11 @@ body.nodeopen #pane-map .mappanel{display:none}
 @media (min-width:901px){
   body:not(.simple):has(#chatfab) .apillhost{right:22px;bottom:68px;transition:transform var(--dur-base) var(--ease-out)}
   body:not(.simple):has(#dview.chaton) .apillhost{transform:translateX(-430px)}
+  /* The library page of a team (/d/<team>/library). J2 stops the card of the catalog 76px above the bottom of the window (room for the Chat button), and the pill, 34px tall and
+     10px above that button, was 26px inside the card: it covered the catalog's last row buttons (which rows depends on the height of the window, the lists scroll inside the card).
+     While the pill shows, the page keeps room for it under the card, which ends 8px above the pill (110px = 68 + 34 + 8); the pill does not move. This page only: the cards of the
+     other tabs are J2's to size (0.3.2). */
+  body.libpage:has(.apillhost:not([hidden])) #dview main{padding-bottom:110px}
 }
 /* The Detailed view at 900px and under. The pill rode at 58px from the top, "under the header", and the Detailed view has none: there it sat on J2's Needs you box, over the question
    and, from 414 to 900px wide, over the "Answer in Chat" button, where a click in the button's middle went to the pill and so to Home (0.3.2). The page keeps a row for it instead,
