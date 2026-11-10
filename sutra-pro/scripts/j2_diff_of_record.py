@@ -141,8 +141,9 @@ _DOC_FLOW = ("the picture of the J2 flow that J2's README points to (docs/j2-flo
              "therefore points at a file Sutra Pro does not carry.")
 _DOC_FLOW_AT = ("engine design 3.2 (docs/*.jpg); D91 says the flow picture is kept as reference under docs/reference/j2/, but the "
                 "vendor script does not carry it (a disagreement)")
-_DOC_IMAGES = ("screenshots of the Simple view: images, not code. J2's README embeds them, so the vendored README shows no pictures; "
-               "the legacy flow test copies ui-simple-start-390.png as a stand-in file and Sutra's copy generates a plain PNG instead.")
+_DOC_IMAGES = ("screenshots of J2's Simple view and of its studio view (docs/ui-simple-*.png, docs/ui-studio-*.png): images, not code. "
+               "J2's README points at them, so the vendored README shows no pictures; the legacy flow test copies "
+               "ui-simple-start-390.png as a stand-in file and Sutra's copy generates a plain PNG instead.")
 _DOC_IMAGES_AT = "engine design 3.2 (docs/*.png, docs/*.jpg)"
 _DOC_PDF = "rendered PDF documents of J2's design work: not read by any code."
 _DOC_PDF_AT = "engine design 3.2 (docs/*.pdf)"
