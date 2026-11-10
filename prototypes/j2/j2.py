@@ -84,7 +84,8 @@ RUBRIC = (("R-1", "Consistent styling: the whole page follows the style guide (s
           ("R-3", "Clear hierarchy: one main heading, headings in order, the most important things stand out"),
           ("R-4", "One obvious main action: a visitor can tell at once what to do next"),
           ("R-5", "Easy navigation: a visitor can reach every section quickly, on a phone too"),
-          ("R-6", f"Tap targets are big enough on phones (at least {j2_check.TAP_MIN}x{j2_check.TAP_MIN}px)"),
+          ("R-6", f"Tap targets are big enough on phones (at least {j2_check.TAP_MIN}x{j2_check.TAP_MIN}px; "
+                  f"{j2_check.TAP_DENSE}x{j2_check.TAP_DENSE}px for the cells or keys of a dense grid or keypad)"),
           ("R-7", "Images have alt text"))
 WORKABLE_OUTCOME = ("Done: the site is workable. Every done-when item passes with Audit's evidence and the render "
                     "check is clean.")
@@ -769,17 +770,21 @@ def run_check(c, site_dir, page, doc=False):
             return {"actual": n, "pass": n == as_int(expect, -1),
                     "evidence": f"{n} element(s) match {target!r}, expected {expect}"}
         if t == "tap-targets":
-            r, want = j2_check.tap_targets(page, str(target), as_int(expect, j2_check.TAP_MIN)), as_int(expect, 44)
+            r, want = j2_check.tap_targets(page, str(target), as_int(expect, j2_check.TAP_MIN)), as_int(expect, j2_check.TAP_MIN)
             if not r.get("available"):      # no browser: the check didn't run, which says nothing about the build
                 return {"actual": None, "pass": None, "evidence": f"could not run: {r.get('note')}"}
             ok = r["roots"] > 0 and r["checked"] > 0 and not r["small_count"]
             shown = " (hidden on load, shown for the measurement)" if r.get("revealed") else ""
-            return {"actual": {k: r.get(k) for k in ("roots", "checked", "revealed", "small_count", "small")}, "pass": ok,
+            lo = min(want, j2_check.TAP_DENSE)       # a grid's cells and a keypad's keys: the WCAG 2.2 AA minimum
+            size = f"{want}x{want}px" + (f" ({lo}x{lo}px for the {r['dense']} dense grid or keypad control(s))"
+                                         if r.get("dense") and lo < want else "")
+            return {"actual": {k: r.get(k) for k in ("roots", "checked", "dense", "revealed", "small_count", "small")},
+                    "pass": ok,
                     "evidence": (f"nothing on the page matches {target!r}" if not r["roots"] else
                                  f"no buttons or links inside {target!r}" if not r["checked"] else
                                  f"{r['small_count']} of {r['checked']} tap target(s) in {target!r}{shown} under "
-                                 f"{want}x{want}px at 360px: {', '.join(r['small'])}" if r["small_count"] else
-                                 f"all {r['checked']} tap target(s) in {target!r}{shown} at least {want}x{want}px at 360px")}
+                                 f"{size} at 360px: {', '.join(r['small'])}" if r["small_count"] else
+                                 f"all {r['checked']} tap target(s) in {target!r}{shown} at least {size} at 360px")}
         if t == "facts-present":
             text = squash(" ".join(scan.text))
             facts = target if isinstance(target, list) else [target]
@@ -1133,6 +1138,21 @@ def load_conditions(name):
         return json.load(f)["conditions"]
 
 
+def cond_skip(cond, goal):
+    """Why a necessary condition doesn't apply to this charter, else None. "skip_when" in conditions/<type>.json:
+    {"charter": regex, "unless": regex, "why": str}, matched against the charter's statement and business_type."""
+    w, g = cond.get("skip_when") or {}, goal or {}
+    text = " ".join(str(g.get(k) or "") for k in ("statement", "business_type"))
+    hit = w.get("charter") and re.search(w["charter"], text, re.I) and not (
+        w.get("unless") and re.search(w["unless"], text, re.I))
+    return str(w.get("why") or "it doesn't apply to this charter") if hit else None
+
+
+def conditions_for(name, goal):
+    """The necessary conditions of conditions/<name> that apply to this charter (cond_skip)."""
+    return [c for c in load_conditions(name) if not cond_skip(c, goal)]
+
+
 PHONE = re.compile(r"\+?\d[\d\s().-]{6,}\d")
 
 
@@ -1204,6 +1224,8 @@ def condition_met(cond, doc, goal, source, sections, page=None, mech=None):
     page: a website's HTML; mech: its render check (j2_check.check). source: the charter and the Requester's own
     words, squashed; sections: the output's required section headings."""
     k, g = cond.get("check"), goal or {}
+    if why := cond_skip(cond, goal):
+        return True, f"does not apply: {why}"
     if isinstance(k, list):             # several checks, all must hold
         rs = [condition_met({**cond, "check": x}, doc, goal, source, sections, page, mech) for x in k]
         return all(m for m, _ in rs), "; ".join(e for _, e in rs)
@@ -5287,7 +5309,8 @@ class J2Run:
                   "links-resolve or form-has-submit; expect true); facts-present (target: a list of strings that must all "
                   "appear on the page; expect true); tap-targets (target: a section id or class; code measures every "
                   "button, link and field inside it in a headless browser at 360px; expect: the minimum size in px, "
-                  "44). DESIGN RUBRIC: also add, as checks of these types, the rubric rules (R-1 to R-6) that apply to "
+                  "44; code itself allows 24 for the cells or keys of a dense grid or keypad, 9 or more of one control "
+                  "side by side). DESIGN RUBRIC: also add, as checks of these types, the rubric rules (R-1 to R-6) that apply to "
                   "the atom's section: tap-targets on every section that holds buttons, links or form fields (R-6); "
                   "element-count of the classes the style guide gives buttons and cards (j2-btn, j2-card) when the "
                   "section uses them (R-1); links-resolve for navigation (R-5). Never add a rubric check code can't run "
@@ -5557,7 +5580,7 @@ class J2Run:
                       + self._blueprint_plan() + self.ATOM_RULES
                       + f"\nNECESSARY CONDITIONS (code checks every one on the built {self.out['noun']}; it is workable "
                       "only when all are met, so your plan must build what each needs):\n"
-                      + "\n".join(f"{c['id']}: {c['text']}" for c in load_conditions(self.out["conditions"])))
+                      + "\n".join(f"{c['id']}: {c['text']}" for c in conditions_for(self.out["conditions"], self.goal)))
         real, replan = None, self.real_replan
         changing = bool(self.change and self.change["phase"] == "plan")      # J2_CHANGE: the change plan is the task
         if self._realization_applies():
@@ -5679,7 +5702,10 @@ class J2Run:
                 f"either one part of it, checked by code (check types: {', '.join(self.out['check_types'])}), or one "
                 "file that later workflows read; every workflow that lists it in inputs_from, directly or through "
                 f"another, reads that file. Its done_test names what the output must contain. Checking the whole "
-                f"{self.out['noun']} is Audit's job: never plan check, review, QA, test or report workflows.")
+                f"{self.out['noun']} is Audit's job: never plan check, review, QA, test or report workflows."
+                f"\nNECESSARY CONDITIONS (code checks each one on the built {self.out['noun']}; plan the work each "
+                "needs):\n" + "\n".join(f"{c['id']}: {c['text']}" for c in conditions_for(self.out["conditions"], self.goal))
+                + "\nA goal that names a time, price, number or email needs a facts-present check or a named test.")
 
     def _realization_applies(self):
         """J2_REALIZATION=1 shapes the first plan of a website run (not documents, a blueprint build or a change request;
@@ -6190,7 +6216,7 @@ class J2Run:
         met = {c["id"] for c in last.get("conditions") or [] if c["met"]}
         text = json.dumps(list(wfs) + [w for w in self.workflows if w["status"] in ("registered", "held", "running", "done")],
                           ensure_ascii=False)
-        gaps = [c for c in load_conditions(self.out["conditions"])
+        gaps = [c for c in conditions_for(self.out["conditions"], self.goal)
                 if c.get("plan") and c["id"] not in met and not re.search(c["plan"], text, re.I)
                 and (not c.get("key") or (self.goal or {}).get("chain", {}).get(c["key"]))]   # a link needs the earlier document
         return gaps + self._lld_gaps(wfs)

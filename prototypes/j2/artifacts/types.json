@@ -210,7 +210,7 @@
         {"id": "R-3", "text": "Clear hierarchy: one main heading, headings in order, the most important things stand out"},
         {"id": "R-4", "text": "One obvious main action: a visitor can tell at once what to do next"},
         {"id": "R-5", "text": "Easy navigation: a visitor can reach every section quickly, on a phone too"},
-        {"id": "R-6", "text": "Tap targets are big enough on phones (at least 44x44px)"},
+        {"id": "R-6", "text": "Tap targets are big enough on phones (at least 44x44px; 24x24px for the cells or keys of a dense grid or keypad)"},
         {"id": "R-7", "text": "Images have alt text"}
       ],
       "check_types": ["file-exists", "grep-count", "element-count", "named-test", "facts-present", "tap-targets", "behavior-steps"],
