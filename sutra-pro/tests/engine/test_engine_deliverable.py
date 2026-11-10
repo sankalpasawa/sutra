@@ -337,4 +337,3 @@ def test_the_environment_of_git_carries_no_git_variable_of_this_process_and_no_f
     assert fw.snapshot(fw.git_executable(), str(repo), 20) == {}
     assert "GIT_DIR" not in seen["env"] and "GIT_WORK_TREE" not in seen["env"] and seen["env"]["GIT_OPTIONAL_LOCKS"] == "0" and seen["env"]["GIT_TERMINAL_PROMPT"] == "0"
     assert "--no-optional-locks" in seen["argv"] and "core.fsmonitor=false" in seen["argv"]
-
