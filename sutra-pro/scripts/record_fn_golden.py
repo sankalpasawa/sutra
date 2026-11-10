@@ -7,8 +7,9 @@ Runs the engine host IN-PROCESS (a thread, like `tests/engine/test_engine_host.p
 J2's Chrome checks faked (as J2's own `--fast` flow does): the Brew Lab brief arrives as a vague first line ("a website for my
 cafe"), the Requester's answer is the full Brew Lab brief, so Identity asks, the turn pauses and the manual atom appears.
 The run is made twice, with the function-node layer on and with `SUTRA_NODES=off`, in the same way and with the same clock.
-Unlike J2's recorders this one needs no J2 checkout: the layer is new code, so the golden is the engine's own measured
-behaviour (what the strict reply classes say about the mock's replies is part of it, see docs/notes/E7.md).
+Unlike J2's recorders this one needs no extraction of `prototypes/j2`: the layer is new code, so the golden is the engine's own
+measured behaviour, whichever J2 the engine was vendored from (what the strict reply classes say about the mock's replies is part
+of it, see docs/notes/E7.md).
 
 It writes two files:
 
