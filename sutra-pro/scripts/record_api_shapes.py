@@ -17,12 +17,13 @@ drives one Brew Lab run to Done, then asks every GET route in three situations:
     idle    a fresh run, before any message
 
 and the POST routes on a fresh run. Per route it keeps the status, the content type and, for a JSON body, the KEY PATHS (the
-names of the keys at every depth, `[]` for a list; a map keyed by ids is written with `*`), never a value: ids and times change
-between runs, the shape does not. Every route of J2's server is recorded the same way, `/api/runlist` and `/api/changes` and the
-routes added in sync 4 (`/api/plan-map`, `/api/activity`, `/api/catalog`, `/api/artifacts/groups`, `POST /api/ask`) included.
-`tests/engine/test_engine_views.py` runs the same requests against `views.py` and compares. `--check` records again and exits 1
-when the file differs. The module is also imported by that test (and by two library tests) for `key_paths`, `ROUTES` and the
-scenario constants, so the two sides ask the same questions.
+names of the keys at every depth, `[]` for a list; a map keyed by ids is written with `*`, and so is `enums`, the enum names of a
+template version: they are data, a new seed template adds some, D150), never a value: ids and times change between runs, the shape
+does not. Every route of J2's server is recorded the same way, `/api/runlist` and `/api/changes` and the routes added in sync 4
+(`/api/plan-map`, `/api/activity`, `/api/catalog`, `/api/artifacts/groups`, `/api/record`, `/doc/<name>`, `/view`, `POST /api/ask` and
+`POST /api/settings`) included. `tests/engine/test_engine_views.py` runs the same requests against `views.py` and compares. `--check`
+records again and exits 1 when the file differs. The module is also imported by that test (and by two library tests) for `key_paths`,
+`ROUTES` and the scenario constants, so the two sides ask the same questions.
 """
 import argparse
 import json
@@ -39,7 +40,7 @@ import urllib.request
 from pathlib import Path
 
 REPO = Path(__file__).resolve().parent.parent
-BASELINE = "025e265c594564f47a2365874cd5a5cc5d0d20a6"      # the sutra commit that last touched prototypes/j2 (sync 4, D136, re-pinned)
+BASELINE = "025e265c594564f47a2365874cd5a5cc5d0d20a6"       # the sutra commit whose `prototypes/j2` the golden is recorded from (sync 4, D136)
 DEFAULT_OUT = REPO / "tests" / "engine" / "golden" / "api_shapes.json"
 SCHEMA = "api-shapes/1"
 
@@ -51,8 +52,9 @@ BREW_LAB = ("A one-page website for Brew Lab, a small specialty coffee shop in I
 # read those records have something to show; realization off (the unmodified mock cannot pass its cost check, E1 notes).
 SCENARIO_ENV = {"STUDIO_MOCK": "1", "J2_MEMORY": "0", "J2_REALIZATION": "0", "J2_TEMPLATE_LIBRARY": "1",
                 "J2_ARTIFACT_SCHEMA": "1", "J2_BOARD": "1", "J2_FORCE_QUESTION": "adaptation"}
-# Maps keyed by ids: their keys are written as `*` in a key path.
-MAPS = frozenset({"atoms_v1", "agents", "conditions", "rubric", "constellations", "names", "groups", "groups.*"})
+# Maps keyed by ids: their keys are written as `*` in a key path. `enums` is the map of a template version's enum names (`FormField.type`,
+# `Requirement.priority`, ...): data, which every new seed template extends, so no template can move the golden again (D150).
+MAPS = frozenset({"atoms_v1", "agents", "conditions", "rubric", "constellations", "names", "groups", "groups.*", "enums"})
 # Free-form agent output: the key is kept, what is inside it is not (it is the model's reply, not part of the API).
 OPAQUE = frozenset({"reply", "proposal", "adaptation_final", "priority_final", "metrics"})
 # Keys that exist on the engine's side only, on purpose (engine design 4.6): the live state's host, run_id and dept_id, and the
