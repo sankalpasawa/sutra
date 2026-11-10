@@ -259,14 +259,19 @@ body.simple #dview{display:none}
 #sview .sstage{position:relative;min-width:0;min-height:0;padding:14px 16px;display:flex;overflow:hidden}
 #sview .sframe{flex:1;min-width:0;background:var(--s-surface);border:1px solid var(--s-line);border-radius:16px;box-shadow:0 0 0 1px var(--s-ring),0 1px 2px var(--s-ring),0 20px 50px -34px var(--s-shadow);overflow:hidden;display:flex;flex-direction:column;position:relative;transition:box-shadow .6s}
 #sview .sframe.done{box-shadow:0 0 0 3px color-mix(in srgb,var(--s-good) 35%,transparent),0 20px 50px -32px var(--s-shadow)}
-#sview .schrome{flex:none;min-height:40px;display:flex;align-items:center;gap:10px;padding:4px 10px;border-bottom:1px solid var(--s-line);background:var(--s-surface2);min-width:0}
+#sview .schrome{flex:none;min-height:44px;display:flex;align-items:center;gap:12px;padding:6px 10px 6px 14px;border-bottom:1px solid var(--s-line);background:var(--s-surface2);min-width:0;position:relative}
+#sview .sframe.live .schrome::after{content:"";position:absolute;left:0;right:0;bottom:-1px;height:2px;background:linear-gradient(90deg,transparent,var(--s-accent) 50%,transparent) 0 0/40% 100% no-repeat;animation:sline 2.4s cubic-bezier(.45,0,.55,1) infinite;opacity:.8}
+@keyframes sline{from{background-position:-60% 0}to{background-position:160% 0}}
 #sview .sdots{display:flex;gap:6px;flex:none}#sview .sdots i{width:9px;height:9px;border-radius:50%;background:var(--s-line2)}
-#sview .sviews{display:flex;gap:2px;min-width:0;overflow-x:auto;scrollbar-width:none}
-#sview .sviews button{border:0;background:none;border-radius:8px;padding:5px 10px;font-size:13.5px;font-weight:600;color:var(--s-muted);white-space:nowrap;position:relative}
-#sview .sviews button[aria-selected=true]{background:var(--s-surface);color:var(--s-ink);box-shadow:0 1px 3px var(--s-shadow)}
-#sview .sviews button .pip{display:inline-block;width:7px;height:7px;border-radius:50%;background:var(--s-good);margin-left:6px;vertical-align:1px;animation:sping 1.8s ease-out infinite}
+#sview .sviews{display:flex;gap:2px;min-width:0;overflow-x:auto;scrollbar-width:none;padding:3px;border-radius:11px;background:color-mix(in srgb,var(--s-line) 55%,transparent)}
+#sview .sviews button{border:0;background:none;border-radius:8px;padding:4px 11px;font-size:13.5px;font-weight:600;color:var(--s-muted);white-space:nowrap;position:relative}
+#sview .sviews button:hover{color:var(--s-ink)}
+#sview .sviews button[aria-selected=true]{background:var(--s-surface);color:var(--s-ink);box-shadow:0 0 0 1px var(--s-ring),0 1px 2px var(--s-shade)}
+#sview .sviews button .pip{display:inline-block;width:6px;height:6px;border-radius:50%;background:var(--s-good);margin-left:7px;vertical-align:2px;animation:sping 1.8s ease-out infinite}
 #sview .sviews button .pip.todo{background:var(--s-line2);animation:none}
-#sview .surl{flex:1;min-width:0;color:var(--s-muted);font:12px var(--s-mono);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;text-align:right}
+#sview .surl{flex:0 1 auto;margin-left:auto;min-width:0;max-width:340px;color:var(--s-muted);font:12px var(--s-mono);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;background:var(--s-surface);border:1px solid var(--s-line);border-radius:999px;padding:3px 12px 3px 10px;display:flex;align-items:center;gap:7px}
+#sview .surl::before{content:"";flex:none;width:6px;height:6px;border-radius:50%;background:var(--s-line2)}
+#sview .sframe.live .surl::before{background:var(--s-good);animation:sping 1.8s ease-out infinite}#sview .sframe.done .surl::before{background:var(--s-good)}
 #sview .sdev{display:flex;gap:2px;flex:none}#sview .sdev button{border:0;background:none;border-radius:7px;width:30px;height:28px;display:grid;place-items:center;color:var(--s-muted);padding:0}
 #sview .sdev button[aria-pressed=true]{background:var(--s-surface);color:var(--s-ink);box-shadow:0 1px 3px var(--s-shadow)}
 #sview .sframe:not(.site) .sdev{display:none}
@@ -288,15 +293,33 @@ body.simple #dview{display:none}
 #sview .smap-k{font:400 12px var(--s-mono);color:var(--s-muted);letter-spacing:.03em;text-transform:uppercase}
 #sview .smap-h h2{font:500 32px/1.12 var(--s-display);letter-spacing:-.02em;margin:8px 0 8px}
 #sview .smap-h p{margin:0;color:var(--s-muted);display:flex;align-items:center;gap:8px}
+#sview .surl span{overflow:hidden;text-overflow:ellipsis}
+/* the map's status row: a chip for where the run is (shimmer while working, green when ready), and the parts bar */
+#sview .smap-st{display:flex;align-items:center;gap:12px 16px;flex-wrap:wrap;margin-top:14px}
+#sview .sstat{display:inline-flex;align-items:center;gap:8px;border-radius:999px;padding:4px 12px 4px 10px;font-size:13.5px;font-weight:500;background:var(--s-surface);color:var(--s-ink);box-shadow:0 0 0 1px var(--s-line);max-width:100%}
+#sview .sstat>span{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+#sview .sstat .sdot{flex:none;width:7px;height:7px;border-radius:50%;background:var(--s-line2)}
+#sview .sstat.on .sdot{background:var(--s-good);animation:sping 1.8s ease-out infinite}
+#sview .sstat.on>span{background:linear-gradient(90deg,var(--s-ink) 40%,var(--s-muted) 50%,var(--s-ink) 60%) 0 0/250% 100%;-webkit-background-clip:text;background-clip:text;color:transparent;animation:sshim 3.5s linear infinite}
+#sview .sstat.ask{background:var(--s-askbg);box-shadow:0 0 0 1px color-mix(in srgb,var(--s-askline) 45%,transparent);color:var(--s-ask);font-weight:600}
+#sview .sstat.ask .sdot{background:var(--s-askline);animation:sping2 1.8s ease-out infinite}
+#sview .sstat.ready{background:var(--s-goodbg);color:var(--s-good);box-shadow:0 0 0 1px color-mix(in srgb,var(--s-good) 30%,transparent);font-weight:600;animation:schip .26s cubic-bezier(.16,1,.3,1)}
+#sview .sstat.ready{padding-left:5px}#sview .sstat.ready .sdot{width:16px;height:16px;background:var(--s-good);color:var(--s-goodbg);display:grid;place-items:center;font:700 10px/1 var(--s-body);font-style:normal}
+#sview .smbar{display:flex;align-items:center;gap:10px;flex:1 1 180px;min-width:150px;max-width:280px}
+#sview .smbar>i{flex:1;height:6px;border-radius:999px;background:var(--s-ph);overflow:hidden;display:block}
+#sview .smbar>i>i{display:block;height:100%;border-radius:inherit;background:var(--s-good);transition:width .8s cubic-bezier(.16,1,.3,1)}
+#sview .smbar small{flex:none;font:12px var(--s-mono);color:var(--s-muted);white-space:nowrap;font-variant-numeric:tabular-nums}
 #sview #stwq:not(:empty){margin:0 0 22px}
 #sview .smap-g{font:600 11.5px var(--s-body);letter-spacing:.09em;text-transform:uppercase;color:var(--s-muted);margin:24px 0 12px}
 #sview .smap-parts{display:flex;flex-direction:column;gap:14px}
 #sview .smap-none{color:var(--s-muted)}
-#sview .spart{position:relative;display:block;width:100%;text-align:left;background:var(--s-surface);border:1px solid var(--s-line);border-radius:16px;padding:18px 20px 16px;box-shadow:0 0 0 1px var(--s-ring),0 1px 2px var(--s-ring);transition:border-color .3s,box-shadow .3s,transform .2s}
-#sview .spart:hover{border-color:var(--s-line2);transform:translateY(-1px)}
+#sview .spart{position:relative;display:block;width:100%;text-align:left;background:var(--s-surface);border:1px solid var(--s-line);border-radius:16px;padding:18px 20px 16px;box-shadow:0 0 0 1px var(--s-ring),0 1px 2px var(--s-ring);transition:border-color .3s,box-shadow .3s,transform .2s cubic-bezier(.16,1,.3,1)}
+#sview .spart:hover{border-color:var(--s-line2);transform:translateY(-1px);box-shadow:0 0 0 1px var(--s-ring),0 12px 28px -18px var(--s-shadow)}
+#sview .spart .spn{display:block;font:400 11.5px var(--s-mono);color:var(--s-muted);letter-spacing:.04em;margin-bottom:4px;font-variant-numeric:tabular-nums}
 #sview .spart b{display:block;font:500 19px/1.25 var(--s-display);letter-spacing:-.01em;padding-right:150px}
-#sview .spart .sl{display:flex;flex-direction:column;gap:8px;margin-top:14px}
-#sview .spart .sl i{display:block;height:8px;border-radius:4px;background:var(--s-ph)}
+#sview .spart .sl{display:flex;flex-direction:column;gap:7px;margin-top:14px}
+#sview .spart .sl i{display:block;height:7px;border-radius:4px;background:var(--s-ph)}
+#sview .spart.done .sl{gap:6px;margin-top:12px}#sview .spart.done .sl i{height:5px}
 #sview .spart .sl i:nth-child(2){width:88%}#sview .spart .sl i:nth-child(3){width:58%}
 #sview .spart small{display:block;margin-top:12px;color:var(--s-muted);font-size:12.5px}
 #sview .spart.next{background:transparent;border-style:dashed;box-shadow:none}#sview .spart.next b{color:var(--s-muted)}#sview .spart.next .sl i{background:var(--s-ph2)}
@@ -306,22 +329,38 @@ body.simple #dview{display:none}
 #sview .spart.ask{border:1.5px solid var(--s-askline);background:linear-gradient(var(--s-askbg),var(--s-surface) 85%)}
 #sview .spart.done .sl i{background:color-mix(in srgb,var(--c) 16%,var(--s-ph2))}
 #sview .spart.bad{border-color:var(--s-bad)}
-#sview .spart.fresh{animation:spop .4s cubic-bezier(.16,1,.3,1)}
+#sview .spart.fresh{animation:sblurin .6s cubic-bezier(.16,1,.3,1)}
+@keyframes sblurin{from{opacity:0;filter:blur(5px);transform:translateY(8px)}}
 @keyframes spop{from{opacity:0;transform:translateY(8px) scale(.98)}}
-#sview .stag{position:absolute;top:-12px;right:16px;display:inline-flex;align-items:center;gap:6px;background:var(--c);color:var(--s-bg);border-radius:999px;padding:3px 11px 3px 3px;font-size:12.5px;font-weight:600;box-shadow:0 6px 14px -6px var(--c);white-space:nowrap}
-#sview .spart.ask .stag{background:var(--s-askline)}
+#sview .stag{position:absolute;top:-13px;right:16px;display:inline-flex;align-items:center;gap:6px;background:var(--c);color:var(--s-bg);border-radius:999px;padding:3px 11px 3px 3px;font-size:12.5px;font-weight:600;box-shadow:0 8px 18px -8px var(--c);white-space:nowrap;animation:sfloat 4.8s ease-in-out infinite}
+#sview .stag .scur{position:absolute;left:-15px;top:-11px;width:19px;height:19px;color:var(--c);filter:drop-shadow(0 1px 1px var(--s-shade))}
+#sview .stag .sty{display:inline-flex;gap:2px;margin-left:1px}#sview .stag .sty i{width:3px;height:3px;border-radius:50%;background:currentColor;opacity:.5;animation:stype .9s infinite}
+#sview .stag .sty i:nth-child(2){animation-delay:.15s}#sview .stag .sty i:nth-child(3){animation-delay:.3s}
+@keyframes sfloat{0%,100%{transform:translateY(0)}50%{transform:translateY(-2px)}}
+#sview .spart.ask .stag{background:var(--s-askline);animation:none}
 #sview .stag .av{background:var(--s-surface);border-radius:50%}
-#sview .sok{position:absolute;top:18px;right:18px;color:var(--s-good);font-size:12.5px;font-weight:600;white-space:nowrap}
+#sview .sok{position:absolute;top:16px;right:16px;display:inline-flex;align-items:center;gap:6px;background:var(--s-goodbg);color:var(--s-good);border-radius:999px;padding:2px 10px 2px 2px;font-size:12.5px;font-weight:600;white-space:nowrap}
+#sview .sok .av{background:var(--s-surface)}#sview .sok em{font-style:normal;font-weight:500;opacity:.85}
 /* the step log: newest first, a spinner on the step happening now (OpenWork, Sparkles) */
-#sview .stalk{display:flex;flex-direction:column;background:var(--s-surface);border:1px solid var(--s-line);border-radius:16px;padding:6px 14px;box-shadow:0 0 0 1px var(--s-ring)}
-#sview .stalk>div{display:grid;grid-template-columns:18px 22px minmax(0,1fr) auto;gap:10px;align-items:center;min-height:36px;padding:4px 0;border-top:1px solid var(--s-line);font-size:14px}
-#sview .stalk>div:first-child{border-top:0}
-#sview .stalk>div:not(.now){color:var(--s-muted)}#sview .stalk>div b{color:var(--s-ink);font-weight:600}
-#sview .stalk small{font:12px var(--s-mono);color:var(--s-muted)}
-#sview .stalk .slic{color:var(--s-good);font-size:13px;text-align:center}
-#sview .stalk .now .slic{width:14px;height:14px;border-radius:50%;border:2px solid var(--s-line2);border-top-color:var(--s-accent);animation:spin .9s linear infinite}
-#sview .stalk .new{animation:sslide .35s cubic-bezier(.16,1,.3,1)}
-@keyframes sslide{from{opacity:0;transform:translateY(-6px)}}
+#sview .stw-sec>h3.stw-log{display:flex;align-items:center;gap:8px;text-transform:none;letter-spacing:0;font:500 13.5px var(--s-body);color:var(--s-muted)}
+#sview .stw-log b{color:var(--s-ink);font-weight:600}#sview .stw-log .scount{margin:0;font:12px var(--s-mono)}
+#sview .stw-log .slogi{width:18px;height:18px;border-radius:50%;display:grid;place-items:center;background:var(--s-goodbg);color:var(--s-good);font-size:10px;font-weight:700}
+#sview .stw-log .slogi.on{background:none;border:2px solid var(--s-line2);border-top-color:var(--s-accent);width:14px;height:14px;animation:spin .9s linear infinite}
+#sview .stalk{display:flex;flex-direction:column;background:var(--s-surface);border:1px solid var(--s-line);border-radius:16px;padding:6px 8px;box-shadow:0 0 0 1px var(--s-ring),0 1px 2px var(--s-ring);position:relative}
+#sview .stalk>div{display:grid;grid-template-columns:16px 22px minmax(0,1fr) auto;gap:10px;align-items:center;min-height:36px;padding:5px 8px;border-radius:10px;font-size:14px;position:relative}
+#sview .stalk>div:hover{background:var(--s-surface2)}
+#sview .stalk>div:not(:last-of-type)::after{content:"";position:absolute;left:15px;top:27px;bottom:-9px;width:1px;background:var(--s-line)}
+#sview .stalk>div{color:var(--s-muted)}#sview .stalk>div b{color:var(--s-ink);font-weight:600}#sview .stalk>div.now{color:var(--s-ink)}
+#sview .stalk>div.now>span:nth-child(3){background:linear-gradient(90deg,var(--s-ink) 40%,var(--s-muted) 50%,var(--s-ink) 60%) 0 0/250% 100%;-webkit-background-clip:text;background-clip:text;color:transparent;animation:sshim 3.5s linear infinite}
+#sview .stalk>div.now>span:nth-child(3) b{-webkit-text-fill-color:var(--s-ink)}
+#sview .stalk small{font:12px var(--s-mono);color:var(--s-muted);font-variant-numeric:tabular-nums}
+#sview .stalk .slic{color:var(--s-good);font-size:11px;font-weight:700;text-align:center;position:relative;z-index:1;background:var(--s-surface);line-height:16px}
+#sview .stalk>div:hover .slic{background:var(--s-surface2)}
+#sview .stalk .now .slic{width:14px;height:14px;border-radius:50%;border:2px solid var(--s-line2);border-top-color:var(--s-accent);animation:spin .9s linear infinite;justify-self:center}
+#sview .stalk .stmore{align-self:flex-start;margin:4px 8px 4px;border:0;background:none;color:var(--s-muted);font-size:13px;font-weight:600;padding:4px 0}
+#sview .stalk .stmore:hover{color:var(--s-ink)}
+#sview .stalk .new{animation:sslide .32s cubic-bezier(.16,1,.3,1)}
+@keyframes sslide{from{opacity:0;transform:translateY(6px)}}
 @media (max-width:820px){#sview #schatbtn{display:none}}
 @media (max-width:640px){#sview .spart b{padding-right:0;margin-top:8px}#sview .smap-h h2{font-size:26px}}
 /* the journey: one road, a stop per phase, the person working walks it */
@@ -371,30 +410,43 @@ body.simple #dview{display:none}
 @keyframes spop{from{opacity:0;transform:translateY(8px) scale(.97)}}
 #sview .stalk .rico{width:22px;height:22px;border-radius:50%;display:grid;place-items:center;background:var(--s-ph);color:var(--s-ink);font-size:12px;font-weight:700;flex:none}
 #sview .sarts{display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:8px}
-#sview .sartc{display:flex;align-items:center;gap:10px;text-align:left;background:var(--s-surface);border:1px solid var(--s-line);border-radius:12px;padding:10px 12px;width:100%;animation:spop .5s ease both}
-#sview .sartc:hover{border-color:var(--s-accent)}#sview .sartc b{font-weight:600;display:block}#sview .sartc small{color:var(--s-muted);font-size:12.5px}
+#sview .sartc{display:flex;align-items:center;gap:12px;text-align:left;background:var(--s-surface);border:1px solid var(--s-line);border-radius:14px;padding:12px 14px;width:100%;box-shadow:0 0 0 1px var(--s-ring),0 1px 2px var(--s-ring);transition:border-color .15s,transform .2s cubic-bezier(.16,1,.3,1),box-shadow .2s}
+#sview .sartc:hover{border-color:var(--s-line2);transform:translateY(-1px);box-shadow:0 0 0 1px var(--s-ring),0 12px 28px -18px var(--s-shadow)}
+#sview .sartc .sgo2{transition:transform .15s}#sview .sartc:hover .sgo2{transform:translateX(3px);color:var(--s-ink)}#sview .sartc b{font-weight:600;display:block}#sview .sartc small{color:var(--s-muted);font-size:12.5px}
 #sview .sartc>span:nth-child(2){flex:1;min-width:0}#sview .sartc small{display:block;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 #sview .sform{width:34px;height:34px;border-radius:10px;background:var(--s-ph);display:grid;place-items:center;font-weight:700;font-size:14px;flex:none}
 #sview .sartc.rec .sform{background:var(--s-goodbg);color:var(--s-good)}#sview .sgo2{color:var(--s-muted)}
 #sview .sdocs{display:flex;flex-wrap:wrap;gap:8px}
-#sview .sdocs a,#sview .sdocs button{display:inline-flex;align-items:center;gap:8px;border:1px solid var(--s-line);background:var(--s-surface);border-radius:11px;padding:8px 12px;font-size:13.5px;font-weight:600;color:var(--s-ink);text-decoration:none}
+#sview .sdocs a,#sview .sdocs button{display:inline-flex;align-items:center;gap:8px;border:1px solid var(--s-line);background:var(--s-surface);border-radius:999px;padding:4px 14px 4px 4px;font-size:13.5px;font-weight:600;color:var(--s-ink);text-decoration:none;box-shadow:0 0 0 1px var(--s-ring);transition:border-color .15s}
+#sview .sdocs a:hover,#sview .sdocs button:hover{border-color:var(--s-line2)}
 /* inside the frame: the decided-for-you line, the nudge, the finish bar */
 #sview .sdecided{position:absolute;left:50%;bottom:16px;transform:translateX(-50%);z-index:6;background:var(--s-surface);border:1px solid var(--s-line);border-radius:999px;padding:6px 8px 6px 6px;display:flex;align-items:center;gap:8px;font-size:13.5px;box-shadow:0 12px 26px -16px var(--s-shadow);animation:sin .32s cubic-bezier(.16,1,.3,1) both;max-width:calc(100% - 24px)}
 #sview .sdecided span{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}#sview .sdecided b{font-weight:600}
-#sview .swhochip{position:absolute;left:16px;bottom:16px;z-index:5;display:flex;align-items:center;gap:8px;background:var(--s-surface);color:var(--s-ink);border:1.5px solid var(--c,var(--s-line));border-radius:999px;padding:5px 13px 5px 5px;font-size:13.5px;box-shadow:0 12px 26px -14px var(--s-shadow);transition:transform .35s,opacity .35s;max-width:calc(100% - 32px)}
+#sview .swhochip{position:absolute;left:16px;bottom:16px;z-index:5;display:flex;align-items:center;gap:8px;background:var(--s-surface);color:var(--s-ink);border:1.5px solid var(--c,var(--s-line));border-radius:999px;padding:5px 13px 5px 5px;font-size:13.5px;box-shadow:0 0 0 1px var(--s-ring),0 12px 32px -12px var(--s-shadow);transition:transform .35s cubic-bezier(.16,1,.3,1),opacity .35s;max-width:calc(100% - 32px)}
+#sview .swhochip .sty{display:inline-flex;gap:2px;margin-left:-2px}#sview .swhochip .sty i{width:3px;height:3px;border-radius:50%;background:var(--c,var(--s-muted));animation:stype .9s infinite;opacity:.5}
+#sview .swhochip .sty i:nth-child(2){animation-delay:.15s}#sview .swhochip .sty i:nth-child(3){animation-delay:.3s}
 #sview .swhochip span{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}#sview .swhochip b{font-weight:600}
 #sview .swhochip.off{transform:translateY(30px);opacity:0;pointer-events:none}
-#sview .snudge{position:absolute;left:50%;bottom:16px;transform:translate(-50%,0);background:var(--s-ask);color:var(--s-askink);border:0;border-radius:999px;padding:7px 14px 7px 7px;font-weight:600;font-size:13.5px;display:flex;gap:8px;align-items:center;box-shadow:0 12px 26px -12px var(--s-shade2);z-index:5;transition:transform .35s,opacity .35s;white-space:nowrap;max-width:calc(100% - 24px)}
+#sview .snudge{position:absolute;left:50%;bottom:16px;transform:translate(-50%,0);background:var(--s-ask);color:var(--s-askink);border:0;border-radius:999px;padding:7px 14px 7px 7px;font-weight:600;font-size:13.5px;display:flex;gap:8px;align-items:center;box-shadow:inset 0 1px 0 rgb(255 255 255 / .2),0 12px 32px -12px var(--s-shade2);z-index:5;transition:transform .35s cubic-bezier(.16,1,.3,1),opacity .35s;white-space:nowrap;max-width:calc(100% - 24px)}
+#sview .snudge:hover{filter:brightness(1.05)}
 #sview .snudge.off{transform:translate(-50%,30px);opacity:0;pointer-events:none}
 #sview .snudge .sarrow{display:inline-block;animation:sdown 1.4s ease-in-out infinite}#sview .snudge.up .sarrow{transform:rotate(180deg);animation:none}
 #sview .snudge>span:nth-child(2){overflow:hidden;text-overflow:ellipsis}
 @keyframes sdown{50%{transform:translateY(3px)}}
-#sview .sfinish{flex:none;display:flex;flex-wrap:wrap;gap:8px;align-items:center;padding:10px 12px;border-top:1px solid var(--s-line);background:var(--s-surface)}
-#sview .sfinish .sfmsg{flex:1;min-width:180px;font-weight:600;display:flex;align-items:center;gap:8px}
-#sview .sfinish .sfmsg i{width:22px;height:22px;border-radius:50%;background:var(--s-goodbg);color:var(--s-good);display:grid;place-items:center;font-style:normal;font-size:12px;animation:schip .26s cubic-bezier(.16,1,.3,1)}
+#sview .sfinish{flex:none;display:flex;flex-wrap:wrap;gap:8px;align-items:center;padding:10px 12px 10px 14px;border-top:1px solid var(--s-line);background:var(--s-surface);animation:sfin .5s cubic-bezier(.16,1,.3,1) both}
+@keyframes sfin{from{opacity:0;transform:translateY(6px)}}
+#sview .sfinish .sfmsg{flex:1;min-width:180px;font-weight:600;display:flex;align-items:center;gap:10px}
+#sview .sfinish .sfmsg>span{display:inline-flex;align-items:center;gap:7px;background:var(--s-goodbg);color:var(--s-good);border-radius:999px;padding:4px 13px 4px 5px;font-size:13.5px;font-weight:600;min-width:0;max-width:100%;box-shadow:0 0 0 1px color-mix(in srgb,var(--s-good) 25%,transparent);animation:schip .26s .15s cubic-bezier(.16,1,.3,1) both}
+#sview .sfinish .sfmsg i{flex:none;width:18px;height:18px;border-radius:50%;background:var(--s-good);color:var(--s-goodbg);display:grid;place-items:center;font-style:normal;font-size:10px}
+#sview .sfinish .sfmsg em{font-style:normal;overflow:hidden;text-overflow:ellipsis}
+#sview .sfinish svg{flex:none}
 @keyframes schip{from{transform:scale(.6);opacity:0}}
-#sview .sfinish a,#sview .sfinish button{border:1px solid var(--s-line);background:var(--s-surface);border-radius:9px;padding:7px 12px;font-size:13.5px;font-weight:600;color:var(--s-ink);text-decoration:none}
-#sview .sfinish .pri{background:var(--s-ink);color:var(--s-bg);border-color:var(--s-ink)}
+#sview .sfinish a,#sview .sfinish button{display:inline-flex;align-items:center;gap:7px;border:1px solid var(--s-line);background:var(--s-surface);border-radius:10px;padding:7px 12px;font-size:13.5px;font-weight:600;color:var(--s-ink);text-decoration:none;transition:border-color .15s}
+#sview .sfinish a:hover,#sview .sfinish button:hover{border-color:var(--s-line2);background:var(--s-surface2)}
+#sview .sfinish .pri{background:var(--s-accent);color:var(--s-accentink);border-color:var(--s-accent);box-shadow:inset 0 1px 0 rgb(255 255 255 / .25)}
+#sview .sfinish .pri:hover{background:var(--s-accent);border-color:var(--s-accent);filter:brightness(.95)}
+@media (max-width:820px){#sview .sfinish{gap:6px;padding:8px 10px}#sview .sfinish .sfmsg>span{font-size:13px;padding:3px 11px 3px 4px}
+  #sview .sfinish a,#sview .sfinish button{flex:1 1 auto;justify-content:center;padding:7px 9px;font-size:13px}#sview .sfinish a svg,#sview .sfinish button svg{display:none}}
 /* the drawer: a teammate, a part (goal, method, output, check) or the plan */
 #sview .sdrawer{position:absolute;top:14px;right:16px;bottom:14px;width:min(380px,calc(100% - 32px));background:var(--s-surface);border:1px solid var(--s-line);border-radius:16px;box-shadow:0 30px 60px -30px var(--s-shadow);padding:18px;z-index:10;display:flex;flex-direction:column;gap:10px;transform:translateX(calc(100% + 40px));visibility:hidden;transition:transform .35s ease,visibility 0s .35s;overflow:auto}
 #sview .sdrawer.open{transform:none;visibility:visible;transition:transform .35s ease}#sview .sdrawer:focus{outline:none}
@@ -436,24 +488,38 @@ body.simple #dview{display:none}
 #sview .scbox input:focus{outline:none;border-color:var(--s-accent)}#sview .scbox input:disabled{opacity:.6}
 #sview .scbox .sgo{width:40px;height:40px;padding:0;display:grid;place-items:center;border-radius:12px}
 /* the question card: in Asha's panel and on the output, at the part it is about */
-#sview .qcard{background:linear-gradient(var(--s-askbg),var(--s-surface) 70%);border:1.5px solid var(--s-askline);border-radius:16px;padding:16px;box-shadow:0 0 0 1px var(--s-ring),0 12px 32px -12px var(--s-shadow);animation:sq .2s cubic-bezier(.16,1,.3,1) both}
+#sview .qcard{background:linear-gradient(var(--s-askbg),var(--s-surface) 120px);border:1px solid color-mix(in srgb,var(--s-askline) 70%,var(--s-line));border-radius:16px;padding:16px 18px 14px;box-shadow:0 0 0 4px color-mix(in srgb,var(--s-askline) 8%,transparent),0 12px 32px -12px var(--s-shadow);animation:sq .2s cubic-bezier(.16,1,.3,1) both}
 @keyframes sq{from{opacity:0;transform:scale(.96)}}
 #sview .qcard.ro{border-style:dashed;box-shadow:none}
-#sview .qhead{display:flex;gap:10px;align-items:center;margin-bottom:8px}#sview .qhead small{display:block;color:var(--s-muted);font-size:12.5px}
-#sview .qtag{font-size:11.5px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;color:var(--s-ask)}
+#sview .qhead{display:flex;gap:10px;align-items:center;margin-bottom:12px}#sview .qhead small{display:block;color:var(--s-muted);font-size:12.5px}
+#sview .qhead .av{box-shadow:0 0 0 2px var(--s-surface),0 0 0 3.5px color-mix(in srgb,var(--s-askline) 55%,transparent)}
+#sview .qtag{display:inline-flex;align-items:center;gap:6px;font-size:11.5px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;color:var(--s-ask)}
+#sview .qcard .qtag::before{content:"";width:6px;height:6px;border-radius:50%;background:var(--s-askline);animation:sping2 1.8s ease-out infinite}
+#sview .qcard.ro .qtag::before,#sview .qcard.later .qtag::before{animation:none;opacity:.5}
+#sview .qcard.approve .qtag::before{background:var(--s-accent);animation:sping 1.8s ease-out infinite}
 #sview .qcard .q{margin:0 0 10px;font-weight:500;font-size:15px;line-height:1.5}
 #sview .qcard .qlist{margin:0 0 12px;padding:0 0 0 20px;display:flex;flex-direction:column;gap:6px;font-size:14.5px;line-height:1.45}#sview .qcard .qlist li::marker{color:var(--s-ask);font-weight:600}
 #sview .qcard .qnote{font-size:12.5px;color:var(--s-muted);margin:8px 0 0}
 #sview .qcard .opts{display:flex;flex-direction:column;gap:6px;margin-bottom:6px}
-#sview .qcard .opts button{text-align:left;border:1px solid var(--s-line);background:var(--s-surface2);color:var(--s-ink);border-radius:10px;padding:9px 12px;font-size:14px;transition:border-color .2s,transform .15s}
-#sview .qcard .opts button:hover{border-color:var(--s-accent);transform:translateX(2px)}
+#sview .qcard .opts button{display:flex;align-items:flex-start;gap:10px;text-align:left;border:1px solid var(--s-line);background:var(--s-surface);color:var(--s-ink);border-radius:10px;padding:9px 12px 9px 9px;font-size:14px;line-height:1.45;box-shadow:0 1px 2px var(--s-ring);transition:border-color .15s,transform .15s}
+#sview .qcard .opts button:hover:not(:disabled){border-color:var(--s-accent);background:color-mix(in srgb,var(--s-accent) 5%,var(--s-surface))}
+#sview .qcard .opts button:active:not(:disabled){transform:scale(.99)}
+#sview .qcard .opts button kbd{flex:none;width:20px;height:20px;margin-top:1px;border-radius:6px;display:grid;place-items:center;font:500 11.5px var(--s-mono);color:var(--s-muted);background:var(--s-surface2);box-shadow:inset 0 0 0 1px var(--s-line)}
+#sview .qcard .opts button:hover:not(:disabled) kbd,#sview .qcard .opts button.sug kbd{color:var(--s-accent);box-shadow:inset 0 0 0 1px color-mix(in srgb,var(--s-accent) 45%,transparent)}
+#sview .qcard .opts button>span{flex:1;min-width:0}
+#sview .qcard .opts button:disabled{cursor:default;color:var(--s-ink)}
 #sview .qcard .opts button.sug{border-color:var(--s-accent)}
 #sview .qcard .opts button .sugt{display:inline-block;margin-left:8px;font-size:11.5px;font-weight:700;color:var(--s-accent);background:color-mix(in srgb,var(--s-accent) 12%,transparent);border-radius:6px;padding:1px 6px}
 #sview .qcard .own{display:flex;gap:6px;margin-top:6px}
-#sview .qcard .own input{flex:1;min-width:0;border:1px solid var(--s-line2);border-radius:10px;padding:8px 10px;background:var(--s-surface);color:var(--s-ink);font:inherit;font-size:14px}
+#sview .qcard .own input{flex:1;min-width:0;border:1px solid var(--s-line2);border-radius:10px;padding:8px 11px;background:var(--s-surface);color:var(--s-ink);font:inherit;font-size:14px;transition:border-color .15s,box-shadow .15s}
+#sview .qcard .own input:focus{outline:none;border-color:var(--s-accent);box-shadow:0 0 0 3px color-mix(in srgb,var(--s-accent) 18%,transparent)}
 #sview .qcard .acts{display:flex;gap:6px;flex-wrap:wrap;margin-top:8px}
-#sview .qcard .pri{border:0;background:var(--s-accent);color:var(--s-accentink);box-shadow:inset 0 1px 0 rgb(255 255 255 / .25);border-radius:10px;padding:8px 14px;font-weight:600}
-#sview .qcard .ghost{border:1px solid var(--s-line);background:var(--s-surface);color:var(--s-ink);border-radius:10px;padding:7px 12px;font-size:13.5px}
+#sview .qcard .pri{border:0;background:var(--s-accent);color:var(--s-accentink);box-shadow:inset 0 1px 0 rgb(255 255 255 / .25),0 1px 2px var(--s-shade);border-radius:10px;padding:8px 14px;font-weight:600;transition:filter .15s}
+#sview .qcard .pri:hover{filter:brightness(.95)}
+#sview .qcard .ghost{border:1px solid var(--s-line);background:var(--s-surface);color:var(--s-ink);border-radius:10px;padding:7px 12px;font-size:13.5px;transition:border-color .15s}
+#sview .qcard .ghost:hover{border-color:var(--s-line2)}
+#sview .qcard .acts .ghost[data-later]{border-color:transparent;background:none;color:var(--s-muted);padding-left:4px}
+#sview .qcard .acts .ghost[data-later]:hover{color:var(--s-ink)}
 #sview .qcard.later{opacity:.75;border-style:dashed}
 #sview .qcard.approve{border-color:var(--s-accent)}
 /* the team card */
@@ -466,8 +532,9 @@ body.simple #dview{display:none}
 #sview .steamcard .acts{display:flex;justify-content:flex-end;gap:8px;margin-top:16px}
 #sview .steamcard .acts button{border:1px solid var(--s-line);background:var(--s-surface);border-radius:10px;padding:8px 14px;font-weight:600}
 #sview .steamcard .acts .pri{background:var(--s-ink);color:var(--s-bg);border-color:var(--s-ink)}
-#sview .stoast{position:fixed;left:50%;bottom:calc(84px + env(safe-area-inset-bottom,0px));transform:translate(-50%,16px);opacity:0;background:var(--s-ink);color:var(--s-bg);border-radius:12px;padding:10px 16px;font-weight:500;transition:.35s;z-index:80;max-width:calc(100% - 32px);pointer-events:none}
-#sview .stoast.on{transform:translate(-50%,0);opacity:1}
+#sview .stoast{position:fixed;left:50%;bottom:calc(84px + env(safe-area-inset-bottom,0px));transform:translate(-50%,10px) scale(.98);opacity:0;filter:blur(3px);background:var(--s-ink);color:var(--s-bg);border-radius:999px;padding:9px 18px 9px 14px;font-size:14px;font-weight:500;transition:transform .35s cubic-bezier(.16,1,.3,1),opacity .3s,filter .3s;z-index:80;max-width:calc(100% - 32px);pointer-events:none;box-shadow:0 0 0 1px var(--s-ring),0 12px 32px -12px var(--s-shade2);display:flex;align-items:center;gap:9px}
+#sview .stoast::before{content:"";flex:none;width:7px;height:7px;border-radius:50%;background:var(--s-good);box-shadow:0 0 0 3px color-mix(in srgb,var(--s-good) 30%,transparent)}
+#sview .stoast.on{transform:translate(-50%,0);opacity:1;filter:none}
 #sview .sdock{display:none}
 /* a laptop narrower than the three columns: the team and the plan move to the dock; Asha keeps her column */
 @media (max-width:1180px){
@@ -1963,7 +2030,9 @@ function sFinish(s){
   const many = (s.docset || []).length > 1;      // design documents: the website (if any) and every document's files, in one list
   const dl = many ? (!s.doc && s.versions ? `<a class="pri" href="/site/latest${q}" download="my-website.html">Download the website</a>` : "") + `<button type="button" data-files>All files (${(s.docset_files || []).length * 2})</button>`
     : s.doc ? fileLinks(s) : `<a class="pri" href="/site/latest${q}" download="my-website.html">Download</a>`;
-  return `<span class="sfmsg"><i aria-hidden="true">✓</i>${esc(sPhase(s, []))}</span>${dl}<button type="button" data-share>Copy share link</button><button type="button" data-full>Open full view</button>`;
+  const ic = d => `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${d}</svg>`;
+  return `<span class="sfmsg"><span><i aria-hidden="true">✓</i>${esc(sPhase(s, []))}</span></span>${dl.replace(/(<a class="pri"[^>]*>)/, "$1" + ic('<path d="M12 4v11M7 10l5 5 5-5M5 20h14"/>'))}`
+    + `<button type="button" data-share>${ic('<path d="M10 14a4 4 0 0 0 5.7 0l3-3a4 4 0 0 0-5.7-5.7l-1 1M14 10a4 4 0 0 0-5.7 0l-3 3a4 4 0 0 0 5.7 5.7l1-1"/>')}Copy share link</button><button type="button" data-full>${ic('<path d="M14 4h6v6M10 20H4v-6M20 4l-7 7M4 20l7-7"/>')}Open full view</button>`;
 }
 // ---- the question card: in Asha's panel and on the work. The same buttons answer through /api/say.
 function qCard(s, m, live, where){      // one card per Needs you item: the question, its suggested answers, your own words, Answer later
@@ -1975,7 +2044,7 @@ function qCard(s, m, live, where){      // one card per Needs you item: the ques
   qs.forEach((q, i) => {
     h += q.q ? sQText(q.q) : "";
     if (ok) h += q.opts.length ? `<p class="qnote">${esc(q.opts.map(plain).join(" · "))}</p>` : "";
-    else if (q.opts.length) h += `<div class="opts" data-q="${i + 1}" data-n="${qs.length}">${q.opts.map((o, j) => `<button type="button" data-opt="${j + 1}"${one && sug === j + 1 ? ' class="sug"' : ""}${live ? "" : " disabled"}>${esc(optLabel(kind, o))}${one && sug === j + 1 ? '<span class="sugt">Suggested</span>' : ""}</button>`).join("")}</div>`; });
+    else if (q.opts.length) h += `<div class="opts" data-q="${i + 1}" data-n="${qs.length}">${q.opts.map((o, j) => `<button type="button" data-opt="${j + 1}"${one && sug === j + 1 ? ' class="sug"' : ""}${live ? "" : " disabled"}><kbd aria-hidden="true">${j + 1}</kbd><span>${esc(optLabel(kind, o))}${one && sug === j + 1 ? '<span class="sugt">Suggested</span>' : ""}</span></button>`).join("")}</div>`; });
   if (!live) return h + `<p class="qnote">This question was waiting when the project was saved.</p></div>`;
   if (ok) h += `<div class="acts"><button type="button" class="pri" data-approve="yes">Approve</button><button type="button" class="ghost" data-approve="no">Not now</button></div>`;
   else h += `<div class="own"><input aria-label="Your answer" placeholder="${one && qs[0].opts.length ? "Or say it in your own words…" : "Type your answer…"}"><button type="button" class="pri" data-own>Send</button></div>`
@@ -2132,10 +2201,11 @@ function sViews(s, M, ready){
   SV.view = v;
   paint($("sviews"), tabs.map(t => `<button type="button" role="tab" data-view="${t.k}" aria-selected="${t.k === v}">${esc(t.label)}${t.live ? '<span class="pip" aria-hidden="true"></span>' : ""}</button>`).join(""));
   const tab = tabs.find(t => t.k === v), team = v === "team";
-  $("sframebox").classList.toggle("team", team); $("sframebox").classList.toggle("site", v === "site");
+  $("sframebox").classList.toggle("team", team); $("sframebox").classList.toggle("site", v === "site"); $("sframebox").classList.toggle("live", s.status === "running");
   $("steamwork").hidden = !team;
   const host = s.goal && s.goal.site_name ? String(s.goal.site_name).toLowerCase().replace(/[^a-z0-9]+/g, "") : "";
-  $("surl").textContent = team ? (ready || s.saved ? "how your project was made" : "your team, live") : v === "site" ? `${host ? host + " · " : ""}${s.status === "running" ? "live preview" : "preview"}` : `${tab.label} · ${s.status === "running" ? "being written" : "document"}`;
+  const url = team ? (ready || s.saved ? "how your project was made" : "your team, live") : v === "site" ? `${host ? host + " · " : ""}${s.status === "running" ? "live preview" : "preview"}` : `${tab.label} · ${s.status === "running" ? "being written" : "document"}`;
+  if ($("surl").__t !== url){ $("surl").__t = url; $("surl").innerHTML = `<span>${esc(url)}</span>`; }
   if (team) paint($("steamwork"), sTeamwork(s, M));
   else if (tab) sLoad(tab.url);
   sDecorate();
@@ -2192,9 +2262,11 @@ function sSections(d){      // section id -> its elements: the website's J2 mark
 const SLAYER = `:host{all:initial}.box{position:absolute;border-radius:12px;pointer-events:none;outline:2px solid transparent;outline-offset:4px;transition:outline-color .4s,box-shadow .4s}
 .box.doing{outline-color:var(--c)}.box.fix{outline:2px dashed var(--s-askline)}.box.ask{outline-color:var(--s-askline);animation:glow 2.2s ease-in-out infinite}.box.flash{animation:flash 1.2s ease 2}.box.glow{animation:flash 1.3s ease 2}
 @keyframes glow{50%{box-shadow:0 0 0 9px color-mix(in srgb,var(--s-askline) 15%,transparent)}}@keyframes flash{50%{box-shadow:0 0 0 7px color-mix(in srgb,var(--s-accent) 20%,transparent);background:color-mix(in srgb,var(--s-accent) 5%,transparent)}}
-.tag{position:absolute;right:14px;top:-15px;display:flex;align-items:center;gap:6px;background:var(--c);color:var(--s-white);border:0;border-radius:999px;padding:3px 11px 3px 3px;font:600 12.5px/1.2 "DM Sans",system-ui,sans-serif;box-shadow:0 6px 16px -8px var(--s-shade2);pointer-events:auto;cursor:pointer;white-space:nowrap;animation:tin .4s ease both}
+.tag{position:absolute;right:14px;top:-15px;display:flex;align-items:center;gap:6px;background:var(--c);color:var(--s-bg);border:0;border-radius:999px;padding:3px 11px 3px 3px;font:600 12.5px/1.2 "DM Sans",system-ui,sans-serif;box-shadow:0 8px 18px -8px var(--s-shade2);pointer-events:auto;cursor:pointer;white-space:nowrap;animation:tin .5s cubic-bezier(.16,1,.3,1) both,fl 4.8s ease-in-out .5s infinite}
+.tag::before{content:"";position:absolute;left:-11px;top:-8px;width:14px;height:14px;background:var(--c);clip-path:polygon(0 0,100% 45%,55% 58%,38% 100%);filter:drop-shadow(0 1px 1px var(--s-shade))}
 .tag svg{border-radius:50%;display:block}.tag i{font-style:normal;font-weight:500;opacity:.92}
-@keyframes tin{from{opacity:0;transform:translateY(5px)}}
+.box.doing{background:color-mix(in srgb,var(--c) 3%,transparent)}
+@keyframes tin{from{opacity:0;transform:translateY(6px);filter:blur(3px)}}@keyframes fl{50%{transform:translateY(-2px)}}
 .tick{position:absolute;right:10px;top:10px;width:24px;height:24px;border-radius:50%;background:var(--s-goodbg);color:var(--s-good);border:0;display:grid;place-items:center;font:700 12px/1 system-ui,sans-serif;pointer-events:auto;cursor:pointer;box-shadow:0 1px 3px var(--s-shade);animation:pop .5s cubic-bezier(.2,.9,.3,1.4) both}
 @keyframes pop{from{transform:scale(.3);opacity:0}}
 .chg{position:absolute;left:12px;top:10px;pointer-events:auto;background:var(--s-ink);color:var(--s-white);border:0;border-radius:999px;padding:5px 11px;font:600 12.5px "DM Sans",system-ui,sans-serif;cursor:pointer;box-shadow:0 6px 14px -6px var(--s-shade2)}
@@ -2203,11 +2275,11 @@ const SLAYER = `:host{all:initial}.box{position:absolute;border-radius:12px;poin
 const SPLAN = `:host{all:initial;display:block;max-width:880px;margin:24px auto 40px;padding:0 18px;font:14px/1.45 "DM Sans",system-ui,sans-serif;color:var(--s-ink)}
 h6{font:600 11.5px "DM Sans",system-ui,sans-serif;letter-spacing:.09em;text-transform:uppercase;color:var(--s-muted);margin:0 0 10px}
 .ph{position:relative;border:1.5px dashed var(--s-line2);border-radius:14px;padding:16px 18px;margin:0 0 12px;background:var(--s-surface2)}
-.ph.doing{border-style:solid;border-color:var(--c);background:var(--s-white)}.ph b{font:600 15px "DM Sans",system-ui,sans-serif}.ph small{display:block;color:var(--s-muted);margin-top:2px}
+.ph.doing{border-style:solid;border-color:var(--c);background:var(--s-surface);box-shadow:0 0 0 4px color-mix(in srgb,var(--c) 9%,transparent)}.ph b{font:600 15px "DM Sans",system-ui,sans-serif}.ph small{display:block;color:var(--s-muted);margin-top:2px}
 .ph i{display:block;height:9px;border-radius:5px;background:linear-gradient(90deg,var(--s-ph) 25%,var(--s-ph2) 50%,var(--s-ph) 75%);background-size:200% 100%;animation:sh 1.6s linear infinite;margin-top:10px}
 .ph.doing i{animation:sh 1.2s linear infinite,grow 2.4s ease-in-out infinite alternate}
-.who{position:absolute;right:14px;top:-14px;display:flex;align-items:center;gap:6px;background:var(--c);color:var(--s-white);border-radius:999px;padding:3px 11px 3px 3px;font:600 12.5px "DM Sans",system-ui,sans-serif;box-shadow:0 6px 16px -8px var(--s-shade2)}
-.ph:not(.doing) .who{background:var(--s-white);color:var(--s-muted);border:1px solid var(--s-line);box-shadow:none}.who svg{border-radius:50%;display:block}
+.who{position:absolute;right:14px;top:-14px;display:flex;align-items:center;gap:6px;background:var(--c);color:var(--s-bg);border-radius:999px;padding:3px 11px 3px 3px;font:600 12.5px "DM Sans",system-ui,sans-serif;box-shadow:0 6px 16px -8px var(--s-shade2)}
+.ph:not(.doing) .who{background:var(--s-surface);color:var(--s-muted);border:1px solid var(--s-line);box-shadow:none}.who svg{border-radius:50%;display:block}
 @keyframes sh{to{background-position:-200% 0}}@keyframes grow{from{width:20%}to{width:72%}}
 @media (prefers-reduced-motion:reduce){*{animation:none!important}}`;
 function sVars(sel){      // the studio's colour tokens, as resolved now, for a frame's page or a shadow root inside it (they don't inherit the page's :root)
@@ -2222,7 +2294,7 @@ function sDecorate(){
   if (!layer){ layer = d.createElement("j2-layer"); layer.style.cssText = "position:absolute;top:0;left:0;width:0;height:0;overflow:visible;z-index:2147483000;pointer-events:none;display:block;margin:0;padding:0;border:0";
     const r = layer.attachShadow({mode: "open"}); r.innerHTML = `<style>${sVars(":host")}${SLAYER}</style><div></div>`; r.addEventListener("click", sLayerClick); d.documentElement.appendChild(layer); }
   // the plan: placeholders for the parts still to come, after the last part
-  const todo = mine.filter(p => !secs.has(p.sec) && p.st !== "bad" && p.st !== "done"), pk = JSON.stringify(todo.map(p => [p.sec, p.st, p.person]));
+  const todo = mine.filter(p => !secs.has(p.sec) && p.st !== "bad" && p.st !== "done"), pk = JSON.stringify(todo.map(p => [p.sec, p.st, p.person])) + (document.documentElement.dataset.theme || "");
   let plan = d.querySelector("j2-plan");
   if (todo.length && s.status !== "saved" && !isReady(s)){
     if (!plan){ plan = d.createElement("j2-plan"); plan.style.cssText = "display:block;position:relative;z-index:5"; plan.attachShadow({mode: "open"}); d.body.appendChild(plan); }
@@ -2234,6 +2306,7 @@ function sDecorate(){
 function sLayout(){
   const d = sDoc(); if (!d || !state) return;
   const layer = d.querySelector("j2-layer"); if (!layer) return;
+  const th = document.documentElement.dataset.theme || ""; if (layer.__th !== th){ layer.__th = th; layer.shadowRoot.firstElementChild.textContent = sVars(":host") + SLAYER; }      // the tags follow a theme switch
   const s = state, M = sModel(s), secs = sSections(d), w = d.defaultView, live = s.status === "running";
   let h = "";
   secs.forEach((els, sid) => { const p = M.parts.find(x => x.sec === sid); if (!p) return;
@@ -2260,7 +2333,7 @@ const sPartOf = sec => { const p = state && sModel(state).parts.find(x => x.sec 
 function sChange(name){ sChatOpen(true); const i = $("sbox"); i.value = `Change the ${name}: `; if (!i.disabled){ i.focus(); i.setSelectionRange(i.value.length, i.value.length); } }
 // the question on the work: after the part it is about, else at the top (after a header or a menu); on the team view, at its top
 const SASK = () => `:host{all:initial;display:block;box-sizing:border-box;width:100%;max-width:600px;margin:20px auto 24px;padding:0 14px;font:15px/1.45 "DM Sans",system-ui,sans-serif;color:${sToken("--s-ink") || "var(--s-ink)"};text-align:left}`
-  + [...document.styleSheets].flatMap(ss => { try { return [...ss.cssRules]; } catch (e) { return []; } }).map(r => r.cssText).filter(t => /^#sview \.(qcard|qhead|qtag)|^#sview \.av/.test(t)).map(t => t.replace(/#sview /g, "")).join("\n") + `button{font:inherit;cursor:pointer}@keyframes spop{from{opacity:0;transform:translateY(8px) scale(.97)}}@media (prefers-reduced-motion:reduce){*{animation:none!important;transition:none!important}}`;
+  + [...document.styleSheets].flatMap(ss => { try { return [...ss.cssRules]; } catch (e) { return []; } }).map(r => r.cssText).filter(t => /^#sview \.(qcard|qhead|qtag)|^#sview \.av/.test(t)).map(t => t.replace(/#sview /g, "")).join("\n") + `button{font:inherit;cursor:pointer}@keyframes spop{from{opacity:0;transform:translateY(8px) scale(.97)}}@keyframes sq{from{opacity:0;transform:scale(.96)}}@keyframes sping{0%{box-shadow:0 0 0 0 color-mix(in srgb,var(--s-good) 45%,transparent)}100%{box-shadow:0 0 0 9px transparent}}@keyframes sping2{0%{box-shadow:0 0 0 0 color-mix(in srgb,var(--s-askline) 50%,transparent)}100%{box-shadow:0 0 0 9px transparent}}@media (prefers-reduced-motion:reduce){*{animation:none!important;transition:none!important}}`;
 function sInline(s, open, live){
   const m = live && open.length ? {id: open[0].msg, text: ((s.allChat || []).find(x => String(x.id) === String(open[0].msg)) || {text: open[0].line}).text, pause: (s.paused || {}).kind} : null;
   const html = m ? qCard(s, m, true, "work") : "", key = html + "|" + SV.view + "|" + SV.cur;
@@ -2291,7 +2364,7 @@ function sWhoChip(asking){      // a part being made that isn't on the page yet:
   const vis = on && on.getBoundingClientRect().top < w.innerHeight - 40;
   if (asking || !on || vis || s.status !== "running" || !$("sdecided").hidden){ c.classList.add("off"); return; }
   const p = sModel(s).parts.find(x => x.sec === on.dataset.sec); if (!p) return c.classList.add("off");
-  const P = PEOPLE[p.person], h = `${face(p.person, 26, {prop: false, label: false})}<span><b>${P.name}</b> is ${p.fixing ? "fixing" : "making"} ${esc(p.name.toLowerCase())}</span><span aria-hidden="true">↓</span>`;
+  const P = PEOPLE[p.person], h = `${face(p.person, 26, {prop: false, label: false})}<span><b>${P.name}</b> is ${p.fixing ? "fixing" : "making"} ${esc(p.name.toLowerCase())}</span><span class="sty" aria-hidden="true"><i></i><i></i><i></i></span><span aria-hidden="true">↓</span>`;
   if (c.__h !== h){ c.__h = h; c.innerHTML = h; c.style.setProperty("--c", `var(${P.c})`); c.dataset.sec = p.sec; }
   c.classList.remove("off"); }
 function sScrollTo(el, block){      // scroll the frame (or the team view) to el, never the page around it
@@ -2316,18 +2389,23 @@ function sGo(sec){
 // ---- the team at work: where the run is, who is on what, the parts moving to done, what is ready, the team talking
 function sTeamwork(s, M){      // the output is the map: a block per part, the teammate on it tagged, the question at the top
   const ready = isReady(s), open = needsYou(s), live = s.status === "running", title = sTitle(s), VERB = {asha: "planning", mira: "writing", kabir: "designing", dev: "building", nora: "checking"};
-  let h = `<div class="smap"><div class="smap-h"><span class="smap-k">${esc(sNoun(s))}${M.total ? ` · ${M.done} of ${M.total} parts` : ""}</span><h2>${esc(title)}</h2>`
-    + `<p>${live ? '<i class="sdot on" aria-hidden="true"></i>' : open.length && !s.saved ? '<i class="sdot ask" aria-hidden="true"></i>' : ""}${esc(sPhase(s, open))}</p></div><div id="stwq"></div>`;
-  const part = p => { const P = PEOPLE[p.person], fresh = SV.cards[p.sec] !== undefined && SV.cards[p.sec] !== p.st; SV.cards[p.sec] = p.st;
-    const tag = p.st === "doing" || p.st === "fix" ? `<span class="stag">${face(p.person, 20, {prop: false, label: false})}${P.name} is ${p.fixing || p.st === "fix" ? "fixing" : VERB[p.person] || "on"} this</span>`
+  // the status row: one chip for where the run is (shimmers while the team works, green when it's ready) and the parts bar
+  const chip = ready ? "ready" : live ? "on" : open.length && !s.saved ? "ask" : "", pct = M.total ? Math.round(100 * M.done / M.total) : 0;
+  let h = `<div class="smap"><div class="smap-h"><span class="smap-k">${esc(sNoun(s))}</span><h2>${esc(title)}</h2>`
+    + `<div class="smap-st"><span class="sstat ${chip}"><i class="sdot" aria-hidden="true">${ready ? "✓" : ""}</i><span>${esc(sPhase(s, open))}</span></span>`
+    + (M.total ? `<span class="smbar"><i aria-hidden="true"><i style="width:${pct}%"></i></i><small>${M.done} of ${M.total} parts</small></span>` : "") + `</div></div><div id="stwq"></div>`;
+  const CUR = `<svg class="scur" viewBox="0 0 16 16" aria-hidden="true"><path d="M2 1.5l11 5.2-4.6 1.4-1.9 4.6z" fill="currentColor" stroke="var(--s-surface)" stroke-width="1.2" stroke-linejoin="round"/></svg>`, TY = '<span class="sty" aria-hidden="true"><i></i><i></i><i></i></span>';
+  let n = 0;
+  const part = p => { const P = PEOPLE[p.person], fresh = SV.cards[p.sec] !== undefined && SV.cards[p.sec] !== p.st; SV.cards[p.sec] = p.st; n++;
+    const tag = p.st === "doing" || p.st === "fix" ? `<span class="stag">${CUR}${face(p.person, 20, {prop: false, label: false})}${P.name} is ${p.fixing || p.st === "fix" ? "fixing" : VERB[p.person] || "on"} this${TY}</span>`
       : p.st === "ask" ? `<span class="stag">${face("asha", 20, {prop: false, label: false})}Waits on your answer</span>`
-      : p.st === "done" ? `<span class="sok">✓ ${P.name}${p.fixes ? `, fixed ${p.fixes === 1 ? "once" : p.fixes + " times"}` : ""}</span>` : "";
+      : p.st === "done" ? `<span class="sok">${face(p.person, 18, {prop: false, label: false})}✓ ${P.name}${p.fixes ? `<em>, fixed ${p.fixes === 1 ? "once" : p.fixes + " times"}</em>` : ""}</span>` : "";
     const note = p.st === "next" ? `${P.name} next` : p.st === "bad" ? "Couldn't be made" : "";
-    return `<button type="button" class="spart ${p.st}${fresh ? " fresh" : ""}" data-part="${esc(p.sec)}" style="--c:var(${P.c})">${tag}<b>${esc(p.name)}</b><span class="sl" aria-hidden="true"><i></i><i></i><i></i></span>${note ? `<small>${esc(note)}</small>` : ""}</button>`; };
+    return `<button type="button" class="spart ${p.st}${fresh ? " fresh" : ""}" data-part="${esc(p.sec)}" style="--c:var(${P.c})">${tag}<span class="spn" aria-hidden="true">${String(n).padStart(2, "0")}</span><b>${esc(p.name)}</b><span class="sl" aria-hidden="true"><i></i><i></i><i></i></span>${note ? `<small>${esc(note)}</small>` : ""}</button>`; };
   if (M.parts.length){
     const groups = (s.docset || []).length ? ["prd", "hld", "lld", "site"] : [null], GN = {prd: "Product requirements", hld: "High-level design", lld: "Low-level design", site: "Website"};
     h += groups.map(gk => { const ps = M.parts.filter(p => gk === null || p.doc === gk); return ps.length ? (gk ? `<h3 class="smap-g">${GN[gk]}</h3>` : "") + `<div class="smap-parts">${ps.map(part).join("")}</div>` : ""; }).join("");
-  } else if (live || (open.length && !s.saved)) h += `<div class="smap-parts"><div class="spart ${live ? "doing" : "ask"}" style="--c:var(--s-asha)"><span class="stag">${face("asha", 20, {prop: false, label: false})}${live ? `Asha is ${stage(s) ? "planning" : "reading"} this` : "Waits on your answer"}</span><b>${!live ? "The plan comes right after your answer" : stage(s) ? "Splitting the work into parts" : "Reading what you asked for"}</b><span class="sl" aria-hidden="true"><i></i><i></i><i></i></span><small>The plan shows up here, part by part, with who makes each one.</small></div>`
+  } else if (live || (open.length && !s.saved)) h += `<div class="smap-parts"><div class="spart ${live ? "doing" : "ask"}" style="--c:var(--s-asha)"><span class="stag">${live ? CUR : ""}${face("asha", 20, {prop: false, label: false})}${live ? `Asha is ${stage(s) ? "planning" : "reading"} this${TY}` : "Waits on your answer"}</span><b>${!live ? "The plan comes right after your answer" : stage(s) ? "Splitting the work into parts" : "Reading what you asked for"}</b><span class="sl" aria-hidden="true"><i></i><i></i><i></i></span><small>The plan shows up here, part by part, with who makes each one.</small></div>`
     + `<div class="spart next"><b>&nbsp;</b><span class="sl" aria-hidden="true"><i></i><i></i><i></i></span></div><div class="spart next"><b>&nbsp;</b><span class="sl" aria-hidden="true"><i></i><i></i><i></i></span></div></div>`;
   else h += `<p class="smap-none">No parts yet.</p>`;
   h += `</div>`;
@@ -2339,9 +2417,14 @@ function sTeamwork(s, M){      // the output is the map: a block per part, the t
   if (!(s.docset || []).length) (s.files || []).forEach(f => dl.push(`<a href="/file/${f}${q}" download>${face("mira", 22, {prop: false, label: false})}${f.endsWith(".docx") ? "The Word file" : "The document (markdown)"}</a>`));
   if (!s.doc && s.versions > 0) dl.push(`<button type="button" data-view="site">${face("dev", 22, {prop: false, label: false})}The website, version ${s.versions}</button>`);
   if (dl.length) h += `<section class="stw-sec"><h3>${ready || s.saved ? "What you got" : "Ready so far"}</h3><div class="sdocs">${dl.join("")}</div></section>`;
-  const talk = sTalk(s);
-  if (talk.length) h += `<section class="stw-sec"><h3>Activity <span class="scount">${talk.length} step${talk.length === 1 ? "" : "s"}</span></h3><div class="stalk">` + talk.slice(-10).reverse().map((t, i) => { const fresh = !SV.talk.has(t.id), now = live && !i; SV.talk.add(t.id);
-    return `<div class="${fresh ? "new" : ""}${now ? " now" : ""}"><span class="slic" aria-hidden="true">${now ? "" : "✓"}</span>${t.who ? face(t.who, 22, {prop: false, label: false}) : `<span class="rico" aria-hidden="true">${esc(t.role[0])}</span>`}<span><b>${esc(t.who ? PEOPLE[t.who].name : t.role)}</b> ${esc(t.text)}</span><small>${esc(t.t || "")}</small></div>`; }).join("") + `</div></section>`;
+  // the activity log (OpenWork's "Worked for 12m · 8 steps"): the newest first, six at a time, the current step shimmering
+  const talk = sTalk(s), mins = t => { const x = /^(\d\d?):(\d\d)/.exec(t || ""); return x ? +x[1] * 60 + +x[2] : null; };
+  if (talk.length){ const a = mins(talk[0].t), b = mins(talk[talk.length - 1].t), d = a === null || b === null ? null : (b - a + 1440) % 1440;
+    const took = d === null ? "" : d < 1 ? " for under a minute" : d < 60 ? ` for ${d}m` : ` for ${Math.floor(d / 60)}h ${d % 60}m`, LIM = 6, all = SV.talkAll || talk.length <= LIM + 1;
+    h += `<section class="stw-sec"><h3 class="stw-log"><span class="slogi${live ? " on" : ""}" aria-hidden="true">${live ? "" : "✓"}</span><b>${live ? "Working" : "Worked" + took}</b><span class="scount">· ${talk.length} step${talk.length === 1 ? "" : "s"}</span></h3><div class="stalk">`
+    + talk.slice(all ? -40 : -LIM).reverse().map((t, i) => { const fresh = !SV.talk.has(t.id), now = live && !i; SV.talk.add(t.id);
+      return `<div class="${fresh ? "new" : ""}${now ? " now" : ""}"><span class="slic" aria-hidden="true">${now ? "" : "✓"}</span>${t.who ? face(t.who, 22, {prop: false, label: false}) : `<span class="rico" aria-hidden="true">${esc(t.role[0])}</span>`}<span><b>${esc(t.who ? PEOPLE[t.who].name : t.role)}</b> ${esc(t.text)}</span><small>${esc(t.t || "")}</small></div>`; }).join("")
+    + (talk.length > LIM + 1 ? `<button type="button" class="stmore" data-talkall aria-expanded="${!!SV.talkAll}">${SV.talkAll ? "Show fewer" : `Show ${Math.min(talk.length, 40) - LIM} earlier steps`}</button>` : "") + `</div></section>`; }
   return h;
 }
 const sTalk = s => ((s.studio || {}).stream || []).map(x => ({...x, text: plain(x.text).replace(/^[A-Z](?=[a-z])/, c => c.toLowerCase())}));      // the team's messages as plain lines (j2_studio.stream); each follows a name ("Mira finished the menu"), so plain()'s capital comes off
@@ -2516,7 +2599,8 @@ $("sview").addEventListener("click", e => {
     if (SV.drawer === "mate:" + k) return sDrawer("");
     sDrawer(sMateHTML(state, k), "mate:" + k); }
 });
-$("steamwork").addEventListener("click", e => { const g = e.target.closest && e.target.closest(".sjstop"); if (g) sJTip(g); if (e.target.closest && e.target.closest("#stwq")) sCardClick(e); });
+$("steamwork").addEventListener("click", e => { const g = e.target.closest && e.target.closest(".sjstop"); if (g) sJTip(g);
+  if (e.target.closest && e.target.closest("[data-talkall]")){ SV.talkAll = !SV.talkAll; if (state) renderSimple(state); return; } if (e.target.closest && e.target.closest("#stwq")) sCardClick(e); });
 $("steamwork").addEventListener("keydown", e => { const g = e.target.closest && e.target.closest(".sjstop"); if (g && (e.key === "Enter" || e.key === " ")){ e.preventDefault(); sJTip(g); } sCardKey(e); });
 $("steamwork").addEventListener("mouseover", e => { const g = e.target.closest && e.target.closest(".sjstop"); if (g){ SJ.stops = state ? sJourneyModel(state).stops : []; sJTip(g); } });
 $("steamwork").addEventListener("mouseout", e => { const g = e.target.closest && e.target.closest(".sjstop"); if (g && !g.contains(e.relatedTarget)) $("sjtip").hidden = true; });
