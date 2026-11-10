@@ -179,7 +179,6 @@ def test_home_reads_what_the_design_says_on_load_and_nothing_else(browser, fake)
 @browser_only
 def test_home_asks_for_the_newest_changes_not_the_first_of_a_long_log(browser, fake):
     """QA org-chat-teams: `limit=50` alone is the OLDEST 50, so after change 50 the log pane, its marks and Show in the org chart never moved on."""
-    browser.expect_failed("/api/chats/cs_org/providers", 404)                         # the fake serves no model pill; the page copes (a failure the whole file shares)
     load(browser, fake)
     asked = [r["query"] for r in fake.log("/api/chart/changes") if r["path"] == "/api/chart/changes"]
     assert asked and set(asked) == {"limit=50&newest=true"}
@@ -232,7 +231,6 @@ def test_the_progress_bar_and_sentence_follow_the_turn(browser, fake):
 @browser_only
 def test_the_enter_that_confirms_an_ime_candidate_does_not_send_the_half_typed_line(browser, fake):
     """QA org-chat-teams: Enter while composing (Japanese, Chinese, Korean, phonetic Hindi) sent the line; the node panel's box already waited."""
-    browser.expect_failed("/api/chats/cs_org/providers", 404)                         # the fake serves no model pill; the page copes (a failure the whole file shares)
     load(browser, fake)
     enter = lambda init: browser.js(                                                      # noqa: E731  (what the keydown carries is the point of the test)
         "(() => { const t = document.getElementById('sbox'); t.focus(); const e = new KeyboardEvent('keydown', Object.assign({key: 'Enter', bubbles: true, cancelable: true}, "
@@ -248,7 +246,6 @@ def test_the_enter_that_confirms_an_ime_candidate_does_not_send_the_half_typed_l
 @browser_only
 def test_a_reload_during_a_turn_brings_the_progress_bar_and_sentence_back_from_the_servers_phase(browser, fake):
     """QA org-chat-teams: the strip and 'Planning...' went blank after a reload while the server still said planning; the dimmed bubble looked stuck."""
-    browser.expect_failed("/api/chats/cs_org/providers", 404)                         # the fake serves no model pill; the page copes (a failure the whole file shares)
     load(browser, fake)
     reload = lambda: (browser.goto(fake.url + "/"), browser.wait_for("window.HomePage && HomePage.state().loaded === true"))   # noqa: E731
     fake.emit("chat.turn", {"session_id": "cs_org", "turn": 1, "phase": "planning", "detail": "Planning"})
@@ -366,7 +363,6 @@ def test_a_choice_card_posts_the_chosen_option_to_the_org_chat(browser, fake):
 @browser_only
 def test_an_answered_approval_stays_closed_after_a_reload_and_the_open_cards_stay_open(browser, fake):
     """QA org-chat-teams: the answer lived only in the page, so a reload (or a second window) drew the answered card with Yes and No again."""
-    browser.expect_failed("/api/chats/cs_org/providers", 404)                         # the fake serves no model pill; the page copes (a failure the whole file shares)
     load(browser, fake, stage="full")
     present(browser, '.c-approval [data-act="choose"]')
     browser.click('.c-approval [data-act="choose"]')
@@ -384,7 +380,6 @@ def test_an_answered_approval_stays_closed_after_a_reload_and_the_open_cards_sta
 # ---------------------------------------------------------------------------------------------------------------------
 @browser_only
 def test_the_needs_you_strip_lists_the_question_and_its_button_opens_the_teams_own_chat(browser, fake):
-    browser.expect_failed("/providers")                      # the fake has no provider pills (an older gap)
     load(browser, fake, stage="2")
     assert texts(browser, "#needs .needitem span") == ["Web: Should the menu show prices?"]
     assert texts(browser, "#needcount") == ["1"]
@@ -399,7 +394,6 @@ def test_the_needs_you_strip_lists_the_question_and_its_button_opens_the_teams_o
 @browser_only
 def test_a_chart_change_reads_the_rail_and_the_needs_you_strip_again_so_a_renamed_team_shows_its_new_name(browser, fake):
     """QA org-chat-teams: a rename (from the chat or another window) moved the graph and the org chart but the rail and the Needs-you line kept the old name."""
-    browser.expect_failed("/api/chats/cs_org/providers", 404)                         # the fake serves no model pill; the page copes (a failure the whole file shares)
     load(browser, fake, stage="2")
     reads = lambda path: len([r for r in fake.log(path) if r["path"] == path])        # noqa: E731
     before = (reads("/api/departments"), reads("/api/needs-you"))
@@ -411,7 +405,6 @@ def test_a_chart_change_reads_the_rail_and_the_needs_you_strip_again_so_a_rename
 @browser_only
 def test_an_approval_in_the_needs_you_strip_reads_approval_needed_not_a_leading_colon(browser, fake):
     """QA org-chat-teams: an approval has no team, so its row began with ': Merge Corporate into Weddings?'."""
-    browser.expect_failed("/api/chats/cs_org/providers", 404)                         # the fake serves no model pill; the page copes (a failure the whole file shares)
     load(browser, fake, stage="2")
     browser.js("""(() => { const S = HomePage.state(); S.needs.push({message_id: 9, session_id: "cs_org", kind: "approval", dept_id: null, dept_name: "",
       text: "Merge Corporate into Weddings? Their chats and history stay available.", options: ["Yes", "No"], asked_at: "2026-11-04T10:05:00Z"});
@@ -619,7 +612,6 @@ def test_test_posts_to_the_provider_and_shows_the_seconds_or_the_servers_sentenc
 @browser_only
 def test_the_claude_row_shows_its_plan_and_a_meter_per_window_and_takes_another_cli_file(browser, fake):
     """GAP-providers: the plan in words, one bar per usage window, and the folded "Use another file" box that PUTs the path with the token."""
-    browser.expect_failed("/api/chats/cs_org/providers", 404)        # the fake serves no provider pill route (pre-existing, not this package)
     load(browser, fake)
     open_settings(browser, "connectors")
     assert texts(browser, '.setconn[data-provider="claude"] .setplan') == ["Claude Max, counted against your plan, not billed per call"]
@@ -640,8 +632,6 @@ def test_the_claude_row_shows_its_plan_and_a_meter_per_window_and_takes_another_
 @browser_only
 def test_the_working_folder_group_saves_shows_what_the_model_can_see_and_clears(browser, fake):
     """GAP3-workdir: Settings, Connectors shows the Working folder group: PUT with the token, the top of the folder, a refusal in words, DELETE."""
-    browser.expect_failed("/api/chats/cs_org/providers", 404)        # the fake serves no provider pill route (pre-existing, not this package)
-    browser.expect_failed("/api/notes", 404)                         # nor a notes route: every Settings browser test fails on it without this line (pre-existing)
     browser.expect_failed("/api/connectors/workdir", 422)            # the refusal of a relative path, on purpose
     load(browser, fake)
     open_settings(browser, "connectors")
@@ -744,8 +734,6 @@ def test_a_connector_event_refetches_the_health_once(browser, fake):
 # ---------------------------------------------------------------------------------------------------------------------
 @browser_only
 def test_the_engine_group_shows_editable_fields_and_locked_ones_read_only(browser, fake):
-    browser.expect_failed("/api/chats/cs_org/providers", 404)                                      # the fake serves neither the pill's read nor the notes
-    browser.expect_failed("/api/notes", 404)
     load(browser, fake)
     open_settings(browser, "engine")
     browser.wait_for("document.querySelectorAll('#set-engine .setfield').length === 30")
@@ -859,7 +847,6 @@ def test_every_refusal_has_its_sentence_and_only_the_right_ones_link_to_settings
 @browser_only
 def test_a_refusal_with_a_reason_says_the_reason_so_a_too_long_message_names_its_limit(browser, fake):
     """QA org-chat-teams: a message over 8000 characters came back as 'The request was refused' and the violation's own words were dropped."""
-    browser.expect_failed("/api/chats/cs_org/providers", 404)                         # the fake serves no model pill; the page copes (a failure the whole file shares)
     load(browser, fake)
     too_long = {"violations": [{"path": "body.text", "code": "string_too_long", "message": "String should have at most 8000 characters"}]}
     words = browser.js("""(details => [HomePage.errorWords({status: 422, code: "validation", message: "The request was refused", details: details}),
@@ -929,18 +916,12 @@ def from_bottom(browser):
     return browser.js("(() => { const m = document.getElementById('smsgs'); return m.scrollHeight - m.scrollTop - m.clientHeight; })()")
 
 
-def no_pill_route(browser):
-    """The fake backend has no GET /api/chats/{sid}/providers (ABS-9's pill): its 404 is not what these tests are about."""
-    browser.expect_failed("/api/chats/cs_org/providers", 404)
-
-
 def no_console_errors(browser):
-    assert [line for line in browser.console_errors if not (line.startswith("[network]") and "404" in line)] == []
+    assert browser.console_errors == []
 
 
 @browser_only
 def test_a_reader_who_scrolls_up_on_home_stays_put_and_a_pill_counts_what_came_below(browser, fake):
-    no_pill_route(browser)
     load(browser, fake, stage="2")
     for n in range(100, 125):
         fake.emit("chat.message", org_line(n, f"Line {n} " + "text " * 25))
@@ -966,7 +947,6 @@ def test_a_reader_who_scrolls_up_on_home_stays_put_and_a_pill_counts_what_came_b
 
 @browser_only
 def test_the_org_chats_box_keeps_its_words_across_a_reload_and_an_accepted_send_clears_them(browser, fake):
-    no_pill_route(browser)
     load(browser, fake)
     browser.type("#sbox", "A website for my bakery,\nwith a menu")
     browser.reload()
@@ -985,7 +965,6 @@ def test_the_org_chats_box_keeps_its_words_across_a_reload_and_an_accepted_send_
 @browser_only
 def test_enter_that_confirms_an_ime_candidate_sends_nothing_until_the_second_enter(browser, fake):
     """QA direct-chat bug 2: a Chinese, Japanese or Korean typist presses Enter to confirm a candidate; the box must not send the half-written line."""
-    no_pill_route(browser)
     load(browser, fake)
     browser.js("document.getElementById('sbox').focus()")
     browser._send("Input.imeSetComposition", {"text": "にほんご", "selectionStart": 4, "selectionEnd": 4})

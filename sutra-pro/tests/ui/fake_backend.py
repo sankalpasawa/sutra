@@ -37,6 +37,9 @@ Test-only controls (not under /api, no token):
     POST /__fake/fail {path, status, ...}     answer `path` with `status` (method, code, message, details, count are optional;
                                                status null or 200 clears); failing /api/events also ends the open streams
     POST /__fake/chart-notes {notes}          what GET /api/chart/notes answers (gap chart-insight; none by default)
+    POST /__fake/notes {notes}                the owner's notes GET /api/notes lists (each a real NoteOut; none by default; the writes are not served)
+    POST /__fake/pill {on, can_pick, choice}  on false: GET /api/chats/{sid}/providers answers 404, as a server without the route would (it answers every chat
+                                               the fake knows by default, as the real route does); can_pick and choice set what the pill says
     POST /__fake/find {teams, messages}       what GET /api/find answers to any query of two characters or more (none by default)
     POST /__fake/ask {mode, text, note, delay, fail}  how POST /api/ask answers: mode "records" (the default: J2's own answer, no model), "offline" (the same with the
                                                note "No model is connected."), "model" (`text` is the answer, booked as one agent_chat call and announced by
@@ -376,6 +379,7 @@ class FakeState:
             self.recurring: list[dict] = []
             self.recurring_runs: dict[str, list[dict]] = {}
             self.chart_notes: list[dict] = []       # gap chart-insight: GET /api/chart/notes (set by /__fake/chart-notes)
+            self.owner_notes: list[dict] = []       # gap rules-notes: GET /api/notes (set by /__fake/notes); NoteOut rows
             self.find: dict = {"teams": [], "messages": []}       # GET /api/find answers this (set by /__fake/find)
             self.next_output: dict[str, str] = {}   # sync 4 (D139): the start page's choice per team, what POST /api/output stored; the next run would make it
             self.output_locked = False              # POST /api/output answers 409, as it does once the team has a message (set by /__fake/output)
@@ -1390,6 +1394,16 @@ def register_api(app: FastAPI, state: FakeState) -> None:
         with state.lock:
             return JSONResponse({"notes": copy.deepcopy(state.chart_notes), "total": len(state.chart_notes)})
 
+    @app.get("/api/notes")
+    def owner_notes():
+        """The owner's notes as the real route answers (orchestrator/api/rules_notes.py, `NotesOut`): every note in the order of its group, then its id, the three groups
+        with their words and the limits a group and a note have. The groups and limits are read from the real module, so they cannot drift. A read needs no token. Only the
+        read is served: the writes (add, change, forget, with their refusals) belong to the real route, and no browser test drives them."""
+        from sutra_app.orchestrator.notes import GROUP_WORDS, GROUPS, NOTE_CHARS, PER_GROUP
+        with state.lock:
+            notes = sorted(copy.deepcopy(state.owner_notes), key=lambda n: (GROUPS.index(n["group"]), n["id"]))
+        return JSONResponse({"notes": notes, "groups": [{"id": g, "label": GROUP_WORDS[g]} for g in GROUPS], "per_group": PER_GROUP, "max_chars": NOTE_CHARS})
+
     @app.get("/api/find")
     def find(q: str = ""):
         """The teams and messages a test staged with /__fake/find, whatever the query says; a query under two characters finds nothing."""
@@ -1890,6 +1904,25 @@ def register_controls(app: FastAPI, state: FakeState, fixtures: Fixtures) -> Non
             state.chart_notes = copy.deepcopy(body["notes"])
         return JSONResponse({"notes": len(body["notes"])})
 
+    @app.post("/__fake/notes")
+    async def set_owner_notes(request: Request):
+        """What GET /api/notes lists from now on: `{notes: [NoteOut, ...]}`, each row checked against the real `NoteOut` (a row the real route could not send is a 422)."""
+        from pydantic import ValidationError
+
+        from sutra_app.orchestrator.notes import GROUPS, NoteOut
+        body = await json_body(request)
+        if not isinstance(body, dict) or not isinstance(body.get("notes"), list):
+            raise ApiError(422, "validation", "notes needs {notes: [...]}")
+        try:
+            rows = [NoteOut.model_validate(n).model_dump(mode="json") for n in body["notes"]]
+        except ValidationError as exc:
+            raise ApiError(422, "validation", f"a note is not a NoteOut: {exc.errors()[0]['msg']}") from None
+        if any(row["group"] not in GROUPS for row in rows):            # the real store keeps no note of another group (notes._doc)
+            raise ApiError(422, "validation", f"a note's group is one of {', '.join(GROUPS)}")
+        with state.lock:
+            state.owner_notes = rows
+        return JSONResponse({"notes": len(rows)})
+
     @app.post("/__fake/find")
     async def set_find(request: Request):
         body = await json_body(request)
@@ -1987,7 +2020,7 @@ def register_welcome_settings(app: FastAPI, state: FakeState) -> None:
 
     def fresh() -> dict:
         return {"seen": True, "facts": copy.deepcopy(WELCOME_FACTS), "policy": load_default_policy().model_dump(mode="json"), "update": copy.deepcopy(UPDATE_UP_TO_DATE),
-                "auto": copy.deepcopy(UPDATE_SETTING), "pill": False, "can_pick": True, "choice": {"provider": None, "model": None, "effort": None}}
+                "auto": copy.deepcopy(UPDATE_SETTING), "pill": True, "can_pick": True, "choice": {"provider": None, "model": None, "effort": None}}
 
     state.ws = fresh()
     original_reset, original_token = state.reset, state.token
@@ -2075,7 +2108,9 @@ def register_welcome_settings(app: FastAPI, state: FakeState) -> None:
         state.ws["auto"]["last"] = {"at": time.time(), "state": body["state"], "version": body.get("version"), "message": str(body.get("message") or "")[:240]}
         return JSONResponse(state.ws["auto"])
 
-    # the pill of a chat (item 4): the fake serves none until a test asks (`/__fake/pill`), as it never did, so no other test sees a pill
+    # the pill of a chat (item 4): served for every chat the fake knows, as the real route does (a chat it does not know is 404 `not_found`, from `state.chat`).
+    # Home reads the org chat's on every load, so a fake that answered 404 made every test of Home announce a failure the product never has;
+    # `/__fake/pill {on: false}` brings that 404 back for a test of a page whose pill read fails.
     def pill_of(sid: str) -> dict:
         agent = agent_info(state, sid)
         own = state.ag["picks"].get(sid) if agent is not None else None

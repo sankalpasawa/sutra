@@ -25,7 +25,6 @@ NOTES = [
 
 
 def open_home(browser, fake, stage="full"):
-    browser.expect_failed("/api/chats/cs_org/providers", 404)           # the fake has no provider pill route (not this package's)
     load(browser, fake, stage=stage)
 
 

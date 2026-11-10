@@ -1952,6 +1952,61 @@ def test_page_refuses_a_bad_registration(fake, spec):
     error_of(fake.request("POST", "/__fake/page", spec), 422, "validation")
 
 
+# ---- what Home reads on load besides the story: the owner's notes and the pill of a chat, answered as the real routes answer -------------------
+# Both used to be missing or off, so every test of Home had to announce a failure the product never has (a 404 for the pill of the org chat, a 404 for the
+# notes a Settings group reads). The expected shapes are the real models, which the real routes build their answers from (`ProviderPill` is closed: a key it
+# has not is an error; `NoteOut` is not, so the fake's control keeps only its fields).
+def test_the_owners_notes_are_listed_as_the_real_route_lists_them(fake):
+    from sutra_app.orchestrator.notes import GROUP_WORDS, GROUPS, NOTE_CHARS, PER_GROUP, NotesOut
+
+    answer = ok(fake, "/api/notes")
+    assert NotesOut.model_validate(answer).model_dump(mode="json") == answer               # the real model reads it and writes it back unchanged
+    assert answer == {"notes": [], "groups": [{"id": g, "label": GROUP_WORDS[g]} for g in GROUPS], "per_group": PER_GROUP, "max_chars": NOTE_CHARS}
+    assert [g["id"] for g in answer["groups"]] == ["about-you", "work", "preferences"]     # what the page's three lists are named after (notes_view.js)
+    assert fake.request("GET", "/api/notes", token=False)[0] == 200                         # a read needs no token
+
+
+def test_the_notes_a_test_sets_are_listed_by_group_then_id_and_a_row_the_real_route_could_not_send_is_refused(fake):
+    rows = [{"id": 2, "group": "preferences", "text": "Plain words.", "expires": None, "expired": False},
+            {"id": 5, "group": "about-you", "text": "I run a cafe.", "expires": "2020-01-01", "expired": True},
+            {"id": 3, "group": "about-you", "text": "The door is blue.", "expires": None, "expired": False}]
+    assert fake.request("POST", "/__fake/notes", {"notes": rows}) == (200, {"notes": 3})
+    assert [(n["id"], n["group"]) for n in ok(fake, "/api/notes")["notes"]] == [(3, "about-you"), (5, "about-you"), (2, "preferences")]
+    assert ok(fake, "/api/notes")["notes"][1]["expired"] is True                           # an expired note is listed and says so, never dropped
+    for bad in ({"id": "x", "group": "work", "text": "t", "expires": None, "expired": False},          # an id that is not a number
+                {"id": 1, "group": "work", "text": "t", "expires": None},                                   # no `expired`
+                {"id": 1, "group": "gossip", "text": "t", "expires": None, "expired": False}):           # a group the real store does not keep
+        error_of(fake.request("POST", "/__fake/notes", {"notes": [bad]}), 422, "validation")
+    error_of(fake.request("POST", "/__fake/notes", {}), 422, "validation")
+    assert len(ok(fake, "/api/notes")["notes"]) == 3                                        # a refused control changed nothing
+    fake.reset()
+    assert ok(fake, "/api/notes")["notes"] == []
+
+
+def test_the_pill_of_every_chat_the_fake_knows_is_served_in_the_real_shape(fake_server, fake):
+    from sutra_app.connectors.chat_models import ProviderPill
+
+    fake.stage("full")
+    sessions = sorted(fake_server.state.session_ids())
+    assert "cs_org" in sessions and len(sessions) > 5                                       # the org chat, the teams, the functions
+    for sid in sessions:
+        answer = ok(fake, f"/api/chats/{sid}/providers")
+        assert set(answer) == {"providers", "chosen", "kind", "agent", "own", "effective"}, sid          # chat_v2.py: what the route sends
+        assert [p["name"] for p in answer["providers"]] == ["claude", "codex"], sid
+        for entry in answer["providers"]:
+            ProviderPill.model_validate(entry)                                              # the real model: closed, so a key it has not is an error
+        assert set(answer["effective"]) == {"provider", "model", "effort", "source"}, sid
+    assert ok(fake, "/api/chats/cs_org/providers")["kind"] == "org"
+
+
+def test_a_chat_the_fake_does_not_know_has_no_pill_and_the_control_takes_the_route_away_until_the_next_reset(fake):
+    error_of(fake.get("/api/chats/cs_nobody/providers"), 404, "not_found")                  # the real route: NotFound for a session that is not there
+    assert fake.request("POST", "/__fake/pill", {"on": False})[1]["pill"] is False
+    error_of(fake.get("/api/chats/cs_org/providers"), 404, "not_found")                     # for a test of a page whose pill read fails
+    fake.reset()
+    assert ok(fake, "/api/chats/cs_org/providers")["providers"][0]["name"] == "claude"
+
+
 # ---- the owner writes: POST /api/chats/{sid}/messages and the scripted stories it starts ---------------------------------------------
 def all_events(fake_server) -> list[dict]:
     """Everything in the ring, with `server.hello` first (once=1 replays from the start and closes)."""
