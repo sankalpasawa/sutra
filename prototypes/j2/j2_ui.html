@@ -404,6 +404,10 @@ body.simple #dview{display:none}
 #sview .spart.doing,#sview .spart.fix{border:1.5px solid var(--c);box-shadow:0 0 0 4px color-mix(in srgb,var(--c) 9%,transparent),0 14px 30px -20px var(--c)}
 #sview .spart.doing .sl i,#sview .spart.fix .sl i{background:linear-gradient(90deg,var(--s-ph) 0%,var(--s-ph2) 45%,var(--s-ph) 90%);background-size:200% 100%;animation:sshim 1.6s linear infinite}
 @keyframes sshim{to{background-position:-200% 0}}
+#sview .spart .ssk{display:block;width:100%;height:34px;margin-top:12px;overflow:visible}
+#sview .spart .ssk path{fill:none;stroke:var(--c);stroke-width:2;stroke-linecap:round;stroke-dasharray:1;stroke-dashoffset:1;animation:skd .46s cubic-bezier(.45,0,.25,1) calc(var(--t) - var(--e,0ms)) both}
+@keyframes skd{to{stroke-dashoffset:0}}
+@media (prefers-reduced-motion:reduce){#sview .spart .ssk path{stroke-dashoffset:0}}
 #sview .spart.ask{border:1.5px solid var(--s-askline);background:linear-gradient(var(--s-askbg),var(--s-surface) 85%)}
 #sview .spart.done .sl i{background:color-mix(in srgb,var(--c) 16%,var(--s-ph2))}
 #sview .spart.bad{border-color:var(--s-bad)}
@@ -2311,7 +2315,7 @@ function sViews(s, M, ready){
   const host = s.goal && s.goal.site_name ? String(s.goal.site_name).toLowerCase().replace(/[^a-z0-9]+/g, "") : "";
   const url = team ? (ready || s.saved ? "how your project was made" : "your team, live") : v === "site" ? `${host ? host + " · " : ""}${s.status === "running" ? "live preview" : "preview"}` : `${tab.label} · ${s.status === "running" ? "being written" : "document"}`;
   if ($("surl").__t !== url){ $("surl").__t = url; $("surl").innerHTML = `<span>${esc(url)}</span>`; }
-  if (team) paint($("steamwork"), sTeamwork(s, M));
+  if (team){ paint($("steamwork"), sTeamwork(s, M)); sSkTime($("steamwork")); }
   else if (tab) sLoad(tab.url);
   sDecorate();
 }
@@ -2346,6 +2350,7 @@ function sFrameSetup(f, sameOut){
   // a new version of the same output: the parts that changed glow once
   const now = new Map([...sSections(d)].map(([k, els]) => [k, els.map(e => e.outerHTML).join("")])), before = sameOut ? SV.secHTML : null;
   SV.glow = before ? [...now.keys()].filter(k => before.get(k) !== now.get(k)) : [];
+  if (sameOut && SV.ghosted) [...now.keys()].filter(k => SV.ghosted.has(k)).forEach(k => now.has(k) && sSections(d).get(k).forEach(e => { try { e.animate(SREDUCE() ? [{opacity: 0}, {opacity: 1}] : [{opacity: 0, filter: "blur(5px)"}, {opacity: 1, filter: "blur(0)"}], {duration: SREDUCE() ? 150 : 600, easing: "cubic-bezier(.16,1,.3,1)"}); } catch (x) {} }));      // a ghost filled in place
   SV.secHTML = now; SV.layerKey = ""; SV.inlineKey = "";
   sDecorate(); [300, 1200, 3000].forEach(ms => setTimeout(sLayout, ms));
 }
@@ -2355,12 +2360,12 @@ function sSections(d){      // section id -> its elements: the website's J2 mark
   const tw = d.createTreeWalker(d.body, 128);      // NodeFilter.SHOW_COMMENT
   let n;
   while ((n = tw.nextNode())){ const m = /^\s*J2:(\S+) start\b/.exec(n.data); if (!m || m[1] === "style") continue;
-    const els = []; for (let x = n.nextSibling; x && !(x.nodeType === 8 && /^\s*J2:\S+ end\b/.test(x.data)); x = x.nextSibling) if (x.nodeType === 1 && !/^(SCRIPT|STYLE|LINK|TEMPLATE|NOSCRIPT)$/.test(x.tagName)) els.push(x);
+    const els = []; for (let x = n.nextSibling; x && !(x.nodeType === 8 && /^\s*J2:\S+ end\b/.test(x.data)); x = x.nextSibling) if (x.nodeType === 1 && !/^(SCRIPT|STYLE|LINK|TEMPLATE|NOSCRIPT|J2-\w+)$/.test(x.tagName)) els.push(x);
     if (els.length) out.set(m[1], els); }
   if (out.size) return out;
   const hs = [...d.querySelectorAll("h2")], parts = state ? sModel(state).parts : [], norm = t => String(t).toLowerCase().replace(/[^a-z0-9]+/g, " ").trim();
   hs.forEach(h => { const p = parts.find(x => norm(x.name) === norm(h.textContent)) || parts.find(x => norm(h.textContent).startsWith(norm(x.name)) || norm(x.name).startsWith(norm(h.textContent)));
-    const els = [h]; for (let x = h.nextElementSibling; x && !/^H[12]$/.test(x.tagName); x = x.nextElementSibling) els.push(x);
+    const els = [h]; for (let x = h.nextElementSibling; x && !/^H[12]$/.test(x.tagName); x = x.nextElementSibling) if (!/^J2-/.test(x.tagName)) els.push(x);
     out.set(p ? p.sec : "h:" + norm(h.textContent), els); });
   return out;
 }
@@ -2377,16 +2382,64 @@ const SLAYER = `:host{all:initial}.box{position:absolute;border-radius:12px;poin
 .chg{position:absolute;left:12px;top:10px;pointer-events:auto;background:var(--s-ink);color:var(--s-white);border:0;border-radius:999px;padding:5px 11px;font:600 12.5px "DM Sans",system-ui,sans-serif;cursor:pointer;box-shadow:0 6px 14px -6px var(--s-shade2)}
 .tag:focus-visible,.tick:focus-visible,.chg:focus-visible{outline:2px solid var(--s-accent);outline-offset:2px}
 @media (prefers-reduced-motion:reduce){*{animation:none!important;transition:none!important}}`;
-const SPLAN = `:host{all:initial;display:block;max-width:880px;margin:24px auto 40px;padding:0 18px;font:14px/1.45 "DM Sans",system-ui,sans-serif;color:var(--s-ink)}
-h6{font:600 11.5px "DM Sans",system-ui,sans-serif;letter-spacing:.09em;text-transform:uppercase;color:var(--s-muted);margin:0 0 10px}
-.ph{position:relative;border:1.5px dashed var(--s-line2);border-radius:14px;padding:16px 18px;margin:0 0 12px;background:var(--s-surface2)}
-.ph.doing{border-style:solid;border-color:var(--c);background:var(--s-surface);box-shadow:0 0 0 4px color-mix(in srgb,var(--c) 9%,transparent)}.ph b{font:600 15px "DM Sans",system-ui,sans-serif}.ph small{display:block;color:var(--s-muted);margin-top:2px}
-.ph i{display:block;height:9px;border-radius:5px;background:linear-gradient(90deg,var(--s-ph) 25%,var(--s-ph2) 50%,var(--s-ph) 75%);background-size:200% 100%;animation:sh 1.6s linear infinite;margin-top:10px}
-.ph.doing i{animation:sh 1.2s linear infinite,grow 2.4s ease-in-out infinite alternate}
-.who{position:absolute;right:14px;top:-14px;display:flex;align-items:center;gap:6px;background:var(--c);color:var(--s-bg);border-radius:999px;padding:3px 11px 3px 3px;font:600 12.5px "DM Sans",system-ui,sans-serif;box-shadow:0 6px 16px -8px var(--s-shade2)}
-.ph:not(.doing) .who{background:var(--s-surface);color:var(--s-muted);border:1px solid var(--s-line);box-shadow:none}.who svg{border-radius:50%;display:block}
-@keyframes sh{to{background-position:-200% 0}}@keyframes grow{from{width:20%}to{width:72%}}
-@media (prefers-reduced-motion:reduce){*{animation:none!important}}`;
+const SPLAN = `:host{all:initial;display:block;max-width:880px;margin:16px auto;padding:0 24px;box-sizing:border-box;font:14px/1.45 "DM Sans",system-ui,sans-serif;color:var(--s-ink)}
+.ph{position:relative;box-sizing:border-box;border:1.5px dashed var(--s-line2);border-radius:12px;padding:14px 16px;margin:0 0 16px;background:color-mix(in srgb,var(--s-surface) 60%,transparent);display:flex;flex-direction:column;animation:gin .24s ease both;transition:border-color .2s,background-color .2s}
+.ph.up{border-style:solid;border-color:var(--s-line2)}
+.ph.doing{border:1.5px solid var(--c);background:var(--s-surface)}.ph.ask{border:1.5px solid var(--s-askline);background:var(--s-askbg)}
+.gl{display:flex;align-items:center;justify-content:space-between;gap:10px;min-height:22px}
+.gn{font:400 12px "DM Mono",ui-monospace,monospace;color:var(--s-muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.gn b{font-weight:400;color:var(--s-ink)}
+.ph.doing .gn{background:linear-gradient(90deg,var(--s-muted) 40%,var(--s-ink) 50%,var(--s-muted) 60%) 0 0/250% 100%;-webkit-background-clip:text;background-clip:text;color:transparent;animation:sh 3.5s linear infinite}
+.gf{flex:none}.gf svg{display:block;border-radius:50%}.ph:not(.doing):not(.ask) .gf svg{filter:grayscale(1);opacity:.6}
+.gb{flex:1;display:flex;flex-direction:column;justify-content:center;gap:10px;padding:8px 4px;overflow:hidden}.gb i{display:block;height:2px;border-radius:2px;background:var(--s-line2)}
+.gb svg{display:block;overflow:visible;max-width:100%}
+.k{fill:none;stroke:var(--s-muted);stroke-width:1.5;stroke-linecap:round;stroke-linejoin:round;stroke-dasharray:1;stroke-dashoffset:1;animation:kd var(--d) cubic-bezier(.45,0,.25,1) calc(var(--t) - var(--e,0ms)) both}
+.kl{font:400 11px "DM Mono",ui-monospace,monospace;fill:var(--s-muted);opacity:0;animation:kf .3s ease calc(var(--t) - var(--e,0ms)) both}
+.ph.build svg{animation:kh .4s ease calc(var(--all) - var(--e,0ms)) both}
+@keyframes kd{to{stroke-dashoffset:0}}@keyframes kf{to{opacity:1}}@keyframes kh{to{opacity:.5}}
+@keyframes sh{to{background-position:-250% 0}}@keyframes gin{from{opacity:0}}
+@media (prefers-reduced-motion:reduce){*{animation:none!important;transition:none!important}.k{stroke-dashoffset:0}.kl{opacity:1}.ph.build svg{opacity:.5}}`;
+// ---- ghost slots and the pencil sketch: a planned part that isn't on the page yet is a dashed block in plan order; while it's being made
+// a wireframe of its kind of section draws itself (stroke-dashoffset), timed from when the work started so a re-render never restarts it
+const SK = {};      // sec -> when it was first seen being made (ms)
+const sSkStart = sec => SK[sec] || (SK[sec] = Date.now());
+function sSkKind(p){ const t = String(p.name || "").toLowerCase();
+  if (p.doc && p.doc !== "site") return "doc";
+  return /hero|countdown|intro|identity/.test(t) ? "hero" : /\bnav|sticky menu|navigation|header/.test(t) ? "nav" : /faq|question/.test(t) ? "faq"
+    : /form|regist|sign-up|signup|booking|order b|calculator|pre-order/.test(t) ? "form" : /schedule|table|timing|hours|size guide|comparison|fee|price/.test(t) ? "table"
+    : /photo|gallery|lookbook/.test(t) ? "gallery" : /menu|catalog|product|sponsor|prize|track|event|review|special|arrival|card|team|treatment/.test(t) ? "cards"
+    : /footer|contact|visit|venue|address/.test(t) ? "footer" : "text"; }
+const SKH = {hero: 420, form: 360, faq: 300, table: 300, cards: 320, gallery: 300, nav: 130, footer: 200, text: 240, doc: 220};
+function sSketch(kind, W, H, seed){      // wobbly pencil strokes in reading order, each with its own start (--t) and length (--d)
+  let r = seed || 7; const rnd = () => ((r = (r * 9301 + 49297) % 233280) / 233280 - .5) * 2, f = n => n.toFixed(1);
+  const st = [], lab = [], ln = (x1, y1, x2, y2) => `M${f(x1)} ${f(y1)}Q${f((x1 + x2) / 2 + rnd())} ${f((y1 + y2) / 2 + rnd() * 1.5)} ${f(x2)} ${f(y2)}`;
+  const line = (x1, y1, x2, y2) => st.push([ln(x1, y1, x2, y2), Math.hypot(x2 - x1, y2 - y1)]);
+  const box = (x, y, w, h, X) => { st.push([ln(x, y, x + w, y) + ln(x + w, y, x + w, y + h).replace("M", "L") + ln(x + w, y + h, x, y + h).replace("M", "L") + ln(x, y + h, x, y + 1).replace("M", "L"), 2 * (w + h)]); if (X){ line(x + 4, y + 4, x + w - 4, y + h - 4); line(x + w - 4, y + 4, x + 4, y + h - 4); } };
+  const pill = (x, y, w, h) => { const q = h / 2; st.push([`M${f(x + q)} ${f(y)}H${f(x + w - q)}A${f(q)} ${f(q)} 0 0 1 ${f(x + w - q)} ${f(y + h)}H${f(x + q)}A${f(q)} ${f(q)} 0 0 1 ${f(x + q)} ${f(y)}`, 2 * w]); };
+  const say = (x, y, t) => lab.push([x, y, t, st.length]);
+  const head = y => { line(0, y, W * .34, y); line(0, y + 7, W * .22, y + 7); };
+  const wide = W > 520;
+  if (kind === "hero"){ const w = wide ? W * .52 : W; line(0, H * .14, w * .82, H * .14); line(0, H * .14 + 9, w * .6, H * .14 + 9); say(Math.min(w * .82 + 8, W - 60), H * .14 - 8, "headline");
+    [.3, .36, .42].forEach((k, i) => line(0, H * k, w * [.9, .8, .55][i], H * k)); pill(0, H * .52, 130, 34); say(140, H * .52 + 21, "CTA");
+    if (wide){ box(W * .6, H * .06, W * .4, H * .7, 1); say(W * .6, H * .84, "photo"); } else box(0, H * .68, W, H * .3, 1); }
+  else if (kind === "nav"){ box(0, H * .25, 70, H * .5); [0, 1, 2, 3].forEach(i => line(W - 60 - i * (wide ? 80 : 50), H * .5, W - 20 - i * (wide ? 80 : 50), H * .5)); say(80, H * .5 + 4, "nav"); }
+  else if (kind === "faq"){ head(10); for (let i = 0; i < 4; i++){ const y = 50 + i * (H - 60) / 4; line(0, y, W * .6, y); line(W - 14, y - 6, W - 14, y + 6); line(W - 20, y, W - 8, y); line(0, y + 18, W, y + 18); } say(W * .34 + 10, 14, "questions"); }
+  else if (kind === "form"){ head(10); const w = wide ? W * .6 : W; for (let i = 0; i < 3; i++){ const y = 44 + i * 66; line(0, y, 90, y); box(0, y + 10, w, 34); } pill(0, 44 + 200, 140, 34); if (wide) say(w + 12, 72, "fields"); say(150, 44 + 222, "submit"); }
+  else if (kind === "table"){ head(10); const y0 = 44, h = H - 50, n = 5; box(0, y0, W, h); for (let i = 1; i < n; i++) line(0, y0 + i * h / n, W, y0 + i * h / n); [.33, .66].forEach(k => line(W * k, y0, W * k, y0 + h)); say(W * .34 + 10, 14, "rows"); }
+  else if (kind === "cards" || kind === "gallery"){ head(10); const c = wide ? 3 : 2, g = 16, w = (W - g * (c - 1)) / c, y = 44, rows = kind === "gallery" ? 2 : 1, h = kind === "gallery" ? (H - 50 - g) / 2 : H - 100;
+    for (let j = 0; j < rows; j++) for (let i = 0; i < c; i++){ box(i * (w + g), y + j * (h + g), w, h, 1); if (kind === "cards"){ line(i * (w + g), y + h + 18, i * (w + g) + w * .8, y + h + 18); line(i * (w + g), y + h + 32, i * (w + g) + w * .55, y + h + 32); } }
+    say(W * .34 + 10, 14, kind === "gallery" ? "photos" : `${c} cards`); }
+  else if (kind === "footer"){ const c = wide ? 3 : 2, w = W / c; for (let i = 0; i < c; i++){ line(i * w, 20, i * w + w * .4, 20); [44, 62, 80].forEach((y, k) => line(i * w, y, i * w + w * [.7, .55, .6][k], y)); } line(0, H - 20, W, H - 20); say(0, H - 4, "footer"); }
+  else if (kind === "doc"){ line(0, 10, W * .3, 10); [34, 50, 66, 82].forEach((y, i) => line(0, y, W * [.95, .9, .97, .6][i], y)); line(0, 112, W * .22, 112); [134, 150].forEach((y, i) => line(0, y, W * [.9, .7][i], y)); }
+  else { head(10); [50, 68, 86, 104].forEach((y, i) => line(0, y, W * [.95, .88, .92, .5][i], y)); say(W * .34 + 10, 14, "heading"); }
+  let t = 0; const T = st.map(([d, len]) => { const dur = Math.max(180, Math.min(420, len / 1.2)), at = t; t += dur + 60; return [d, at, dur]; });
+  const k = t > 4000 ? 4000 / t : 1;
+  return {svg: `<svg width="${f(W)}" height="${f(H)}" viewBox="-2 -2 ${f(W + 4)} ${f(H + 4)}" aria-hidden="true" style="--all:${Math.round(t * k)}ms">`
+    + T.map(([d, at, dur]) => `<path class="k" pathLength="1" d="${d}" style="--t:${Math.round(at * k)}ms;--d:${Math.round(dur * k)}ms"/>`).join("")
+    + lab.slice(0, 3).map(([x, y, w, i]) => `<text class="kl" x="${f(x)}" y="${f(y)}" style="--t:${Math.round(((T[i - 1] || T[0] || [0, 0])[1] + 200) * k)}ms">${w}</text>`).join("") + `</svg>`}; }
+const sSeed = sec => [...String(sec)].reduce((a, c) => (a * 31 + c.charCodeAt(0)) % 233280, 11);
+function sSkTime(root){ if (!root || !root.querySelectorAll) return; [...root.querySelectorAll("[data-sk]")].forEach(e => e.style.setProperty("--e", (Date.now() - sSkStart(e.dataset.sk)) + "ms")); }
+const sPlans = d => d ? [...d.querySelectorAll("j2-plan")] : [];
+const sPlanFind = (d, sel) => { for (const h of sPlans(d)){ const x = h.shadowRoot && h.shadowRoot.querySelector(sel); if (x) return x; } return null; };
 function sVars(sel){      // the studio's colour tokens, as resolved now, for a frame's page or a shadow root inside it (they don't inherit the page's :root)
   try { const cs = getComputedStyle(document.documentElement); return sel + "{" + [...cs].filter(k => /^--(?:s|av)-/.test(k)).map(k => `${k}:${cs.getPropertyValue(k).trim()}`).join(";") + "}"; } catch (e) { return ""; } }
 function sToken(k){ try { return getComputedStyle($("sview")).getPropertyValue(k).trim(); } catch (e) { return ""; } }
@@ -2398,14 +2451,30 @@ function sDecorate(){
   let layer = d.querySelector("j2-layer");
   if (!layer){ layer = d.createElement("j2-layer"); layer.style.cssText = "position:absolute;top:0;left:0;width:0;height:0;overflow:visible;z-index:2147483000;pointer-events:none;display:block;margin:0;padding:0;border:0";
     const r = layer.attachShadow({mode: "open"}); r.innerHTML = `<style>${sVars(":host")}${SLAYER}</style><div></div>`; r.addEventListener("click", sLayerClick); d.documentElement.appendChild(layer); }
-  // the plan: placeholders for the parts still to come, after the last part
-  const todo = mine.filter(p => !secs.has(p.sec) && p.st !== "bad" && p.st !== "done"), pk = JSON.stringify(todo.map(p => [p.sec, p.st, p.person])) + (document.documentElement.dataset.theme || "");
-  let plan = d.querySelector("j2-plan");
-  if (todo.length && s.status !== "saved" && !isReady(s)){
-    if (!plan){ plan = d.createElement("j2-plan"); plan.style.cssText = "display:block;position:relative;z-index:5"; plan.attachShadow({mode: "open"}); d.body.appendChild(plan); }
-    if (plan.__k !== pk){ plan.__k = pk; plan.shadowRoot.innerHTML = `<style>${sVars(":host")}${SPLAN}</style><h6>Coming up · ${todo.length} part${todo.length === 1 ? "" : "s"}</h6>` + todo.map(p => { const P = PEOPLE[p.person], c = sToken(P.c) || "var(--s-accent)", on = p.st === "doing";
-      return `<div class="ph${on ? " doing" : ""}" style="--c:${c}" data-sec="${esc(p.sec)}"><span class="who">${face(p.person, 22, {prop: false, label: false})}${P.name}${on ? (p.fixing ? " · fixing" : " · on it") : " · next"}</span><b>${esc(p.name)}</b><small>${on ? `${P.name} is ${p.doc === "site" && p.person !== "mira" ? "making" : "writing"} this now` : `${P.name} will make this`}</small><i style="width:70%"></i><i style="width:52%"></i></div>`; }).join(""); }
-  } else if (plan) plan.remove();
+  // ghost slots: each part still to come is a dashed block in plan order, next to the parts around it that are already on the page
+  const todo = mine.filter(p => !secs.has(p.sec) && p.st !== "bad" && p.st !== "done"), W = Math.min(880, d.documentElement.clientWidth) - 48 - 41;
+  const show = todo.length && s.status !== "saved" && !isReady(s), up = todo.find(p => p.st === "next");
+  const groups = new Map();      // where a run of ghosts goes: after a part on the page, before one, or at the end
+  if (show) todo.forEach(p => { const i = mine.indexOf(p), prev = mine.slice(0, i).reverse().find(x => secs.has(x.sec)), nxt = mine.slice(i + 1).find(x => secs.has(x.sec));
+    const at = prev ? "a:" + prev.sec : nxt ? "b:" + nxt.sec : "end"; if (!groups.has(at)) groups.set(at, []); groups.get(at).push(p); });
+  sPlans(d).forEach(h => { if (!groups.has(h.dataset.at)) h.remove(); });
+  const VB = {kabir: "sketching", dev: "building", mira: "writing", nora: "checking", asha: "planning"}, th = document.documentElement.dataset.theme || "";
+  groups.forEach((ps, at) => { let host = sPlans(d).find(h => h.dataset.at === at);
+    if (!host){ host = d.createElement("j2-plan"); host.dataset.at = at; host.style.cssText = "display:block;position:relative;z-index:5"; host.attachShadow({mode: "open"}); }
+    const els = at === "end" ? null : secs.get(at.slice(2));
+    if (!els){ if (host.parentNode !== d.body) d.body.appendChild(host); }
+    else if (at[0] === "a"){ const last = els[els.length - 1]; if (host.previousElementSibling !== last) last.after(host); }
+    else if (host.nextElementSibling !== els[0]) els[0].before(host);
+    const key = JSON.stringify(ps.map(p => [p.sec, p.st, p.person, p.fixing, p === up])) + th + Math.round(W / 40);
+    if (host.__k === key) return; host.__k = key;
+    host.shadowRoot.innerHTML = `<style>${sVars(":host")}${SPLAN}</style>` + ps.map(p => { const P = PEOPLE[p.person], c = sToken(P.c) || "var(--s-accent)", on = p.st === "doing" || p.st === "fix", ask = p.st === "ask";
+      const kind = sSkKind(p), H = SKH[kind], sk = on ? sSketch(kind, Math.max(220, W), H - 64, sSeed(p.sec)) : null;
+      const what = ask ? "waits on your answer" : on ? `${P.name} is ${p.fixing || p.st === "fix" ? "fixing it" : VB[p.person] || "on it"}` : p === up ? "up next" : "not started";
+      return `<div class="ph${on ? " doing" : ""}${ask ? " ask" : ""}${p === up ? " up" : ""}${on && p.person === "dev" ? " build" : ""}" style="--c:${c};min-height:${H}px" data-sec="${esc(p.sec)}"${on ? ` data-sk="${esc(p.sec)}"` : ""}>`
+        + `<div class="gl"><span class="gn"><b>${esc(p.name)}</b> · ${what}</span><span class="gf" title="${P.name}">${face(p.person, 20, {prop: false, label: false})}</span></div>`
+        + `<div class="gb">${sk ? sk.svg : '<i style="width:40%"></i><i style="width:70%"></i><i style="width:55%"></i>'}</div></div>`; }).join("");
+    sSkTime(host.shadowRoot); });
+  SV.ghosted = new Set(show ? todo.map(p => p.sec) : []);
   sLayout();
 }
 function sLayout(){
@@ -2465,7 +2534,7 @@ function sNudge(){
 }
 function sWhoChip(asking){      // a part being made that isn't on the page yet: who is on it, with a way down to its placeholder
   const c = $("swhochip"), s = state; if (!c || !c.classList || !s) return;
-  const d = SV.view !== "team" && sDoc(), ph = d && d.querySelector("j2-plan"), on = ph && ph.shadowRoot && ph.shadowRoot.querySelector(".ph.doing"), w = d && d.defaultView;
+  const d = SV.view !== "team" && sDoc(), on = d && sPlanFind(d, ".ph.doing"), w = d && d.defaultView;
   const vis = on && on.getBoundingClientRect().top < w.innerHeight - 40;
   if (asking || !on || vis || s.status !== "running" || !$("sdecided").hidden){ c.classList.add("off"); return; }
   const p = sModel(s).parts.find(x => x.sec === on.dataset.sec); if (!p) return c.classList.add("off");
@@ -2487,7 +2556,7 @@ function sGo(sec){
   if (!tab){ sOpenPart(sec); return; }
   if (SV.view !== tab.k){ SV.pick = tab.k; renderSimple(s); setTimeout(() => sGo(sec), 600); return; }
   const d = sDoc(), els = d && sSections(d).get(sec);
-  if (!els){ const ph = d && d.querySelector("j2-plan"), x = ph && ph.shadowRoot.querySelector(`[data-sec="${CSS.escape(sec)}"]`); if (x) sScrollTo(x, "center"); else sOpenPart(sec); return; }
+  if (!els){ const x = d && sPlanFind(d, `[data-sec="${CSS.escape(sec)}"]`); if (x) sScrollTo(x, "center"); else sOpenPart(sec); return; }
   sScrollTo(els[0], "start");
   SV.flash = sec; sLayout(); setTimeout(() => { SV.flash = ""; sLayout(); }, 2600);
 }
@@ -2506,7 +2575,7 @@ function sTeamwork(s, M){      // the output is the map: a block per part, the t
       : p.st === "ask" ? `<span class="stag">${face("asha", 20, {prop: false, label: false})}Waits on your answer</span>`
       : p.st === "done" ? `<span class="sok">${face(p.person, 18, {prop: false, label: false})}✓ ${P.name}${p.fixes ? `<em>, fixed ${p.fixes === 1 ? "once" : p.fixes + " times"}</em>` : ""}</span>` : "";
     const note = p.st === "next" ? (live || (open.length && !s.saved) ? `${P.name} next` : "Not made in this run") : p.st === "bad" ? "Couldn't be made" : "";
-    return `<button type="button" class="spart ${p.st}${fresh ? " fresh" : ""}" data-part="${esc(p.sec)}" style="--c:var(${P.c})">${tag}<span class="spn" aria-hidden="true">${String(n).padStart(2, "0")}</span><b>${esc(p.name)}</b><span class="sl" aria-hidden="true"><i></i><i></i><i></i></span>${note ? `<small>${esc(note)}</small>` : ""}</button>`; };
+    return `<button type="button" class="spart ${p.st}${fresh ? " fresh" : ""}" data-part="${esc(p.sec)}" style="--c:var(${P.c})">${tag}<span class="spn" aria-hidden="true">${String(n).padStart(2, "0")}</span><b>${esc(p.name)}</b>${p.st === "doing" || p.st === "fix" ? sTeamSketch(p.sec) : '<span class="sl" aria-hidden="true"><i></i><i></i><i></i></span>'}${note ? `<small>${esc(note)}</small>` : ""}</button>`; };
   if (M.parts.length){
     const groups = (s.docset || []).length ? ["prd", "hld", "lld", "site"] : [null], GN = {prd: "Product requirements", hld: "High-level design", lld: "Low-level design", site: "Website"};
     h += groups.map(gk => { const ps = M.parts.filter(p => gk === null || p.doc === gk); return ps.length ? (gk ? `<h3 class="smap-g">${GN[gk]}</h3>` : "") + `<div class="smap-parts">${ps.map(part).join("")}</div>` : ""; }).join("");
@@ -2532,6 +2601,9 @@ function sTeamwork(s, M){      // the output is the map: a block per part, the t
     + (talk.length > LIM + 1 ? `<button type="button" class="stmore" data-talkall aria-expanded="${!!SV.talkAll}">${SV.talkAll ? "Show fewer" : `Show ${Math.min(talk.length, 40) - LIM} earlier steps`}</button>` : "") + `</div></section>`; }
   return h;
 }
+function sTeamSketch(sec){      // the map's card being made: its three lines draw themselves in pencil (a 600x34 box stretched to the card)
+  let r = sSeed(sec); const j = () => ((r = (r * 9301 + 49297) % 233280) / 233280 - .5) * 2;
+  return `<svg class="ssk" data-sk="${esc(sec)}" viewBox="0 0 600 34" preserveAspectRatio="none" aria-hidden="true">` + [[4, 600], [17, 528], [30, 348]].map(([y, w], i) => `<path pathLength="1" d="M2 ${y}Q${w / 2} ${(y + j() * 1.4).toFixed(1)} ${w - 2} ${(y + j()).toFixed(1)}" style="--t:${i * 520}ms"/>`).join("") + `</svg>`; }
 const sTalk = s => ((s.studio || {}).stream || []).filter(x => x.who && PEOPLE[x.who]).map(x => ({...x, text: plain(x.text).replace(/^[A-Z](?=[a-z])/, c => c.toLowerCase())}));      // the five teammates' messages as plain lines, no backstage roles (j2_studio.stream); each follows a name ("Mira finished the menu"), so plain()'s capital comes off
 // ---- the journey (Your idea, Plan, Build, Check, Ready, then a stop per change): sJourneyModel is the model; drawn as one road, walked by whoever is working
 const SJ = {on: false, changes: [], ckey: "", key: "", stops: []};
@@ -2690,7 +2762,7 @@ $("smsgs").addEventListener("keydown", sCardKey);
 function sChangeAnswer(){ sChatOpen(true); const i = $("sbox"); i.value = "About the choice you made for me: "; if (!i.disabled){ i.focus(); i.setSelectionRange(i.value.length, i.value.length); } else sToast("You can change it once the team is free again."); }
 $("sdecided").addEventListener("click", e => { if (e.target.closest("[data-change]")) sChangeAnswer(); });
 $("snudge").addEventListener("click", sToQuestion);
-$("swhochip").addEventListener("click", () => { const d = sDoc(), ph = d && d.querySelector("j2-plan"), on = ph && ph.shadowRoot.querySelector(".ph.doing"); if (on) sScrollTo(on, "center"); });
+$("swhochip").addEventListener("click", () => { const d = sDoc(), on = d && sPlanFind(d, ".ph.doing"); if (on) sScrollTo(on, "center"); });
 $("sashax").onclick = () => sChatOpen(false);
 document.querySelector("#sview .sdev").addEventListener("click", e => { const b = e.target.closest("[data-dev]"); if (!b) return;
   $("sframebox").classList.toggle("phone", b.dataset.dev === "phone"); document.querySelectorAll("#sview [data-dev]").forEach(x => x.setAttribute("aria-pressed", String(x === b))); setTimeout(sLayout, 400); });
