@@ -1432,7 +1432,7 @@ def studio_views():
     import urllib.error
     import urllib.parse
     import urllib.request
-    from sutra_app.engine import j2_server
+    from sutra_app.engine import j2_server, views
     srv = j2_server.http.server.ThreadingHTTPServer(("127.0.0.1", 0), j2_server.Handler)
     threading.Thread(target=srv.serve_forever, daemon=True).start()
     keep_dir, j2.RUNS_DIR = j2.RUNS_DIR, tempfile.mkdtemp(prefix="j2-studio-")      # the docs run lives in a temp folder, never in runs/
@@ -1455,7 +1455,7 @@ def studio_views():
             img = os.path.join(run.dir, f"view-check.{ext}")
             with open(img, "wb") as f:
                 f.write(b"<svg xmlns='http://www.w3.org/2000/svg'><script>alert(1)</script></svg>" if ext == "svg" else b"\x89PNG fake")
-            page = j2_server.view_page(img)
+            page = views.view_page(img)      # engine port: J2's j2_server.view_page; the engine's one implementation is views.view_page (D25)
             assert f"src='data:{mime};base64," in page and "/api/artifact" not in page and "<script>" not in page, page[:300]
             os.remove(img)
         assert "isn't written yet" in get(f"/view?name=../j2.py&run={name}") and "isn't written yet" in get(f"/view?name=nope.md&run={name}") \

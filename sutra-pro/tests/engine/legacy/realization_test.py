@@ -428,4 +428,8 @@ ok([n for n in ("build-check", "build-mistake-check", "fix-nav-check-link", "pro
    and (setattr(rn, "realization", False) or rn._audit_name("build-check")),
    "a Check button is a feature; check, QA and review workflows are still Audit's job (base J2 unchanged)")
 
+# charter_text: to_be_confirmed holds {"criterion", "fact"} entries (a fact the Requester can't give yet); a live run crashed joining them
+tbc = R.charter_text({**GOAL, "to_be_confirmed": [{"criterion": "menu", "fact": "the menu prices"}, "older plain entry"]})
+ok("TO_BE_CONFIRMED: the menu prices; older plain entry" in tbc, "to be confirmed facts are read, dict or string")
+
 print(f"realization_test: {passed} checks passed")
