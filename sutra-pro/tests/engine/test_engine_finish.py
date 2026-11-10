@@ -2,9 +2,9 @@
 one call in `Host._conclude` that runs them.
 
 The runner is proved with steps made here and a stand-in host. The two real steps are proved on this tree's own mock runs: a Brew Lab run
-in the host (J2's mock mode, Chrome faked) writes the run folder, and the steps read it. A mock run is skipped by the catalog step by
-design, so the catalog step is also called on the host of a finished mock run with its `mock` flag turned off, and a run with the template
-library on is carried through the host with the flag turned off after J2 was configured (only the finish steps read it).
+in the host (J2's mock mode, Chrome faked) writes the run folder, and the steps read it. A mock run is left out of the catalog by design, so
+the catalog step is also called on the host of a finished mock run with its `mock` flag turned off, and one run with the template library on
+is carried through the host with the flag turned off after J2 was configured (only the finish steps read it).
 """
 import json
 import os
@@ -18,7 +18,7 @@ from types import SimpleNamespace
 import pytest
 import test_engine_host as host_tests
 from test_engine_host import (  # noqa: F401  (j2 is a fixture)
-    BREW_LAB, QUIET, VAGUE, Answerer, RaisingPort, Running, append_inbox, chat, events, j2, jsonl, make_port_of, of, trace, wait_until,
+    BREW_LAB, QUIET, VAGUE, RaisingPort, Running, append_inbox, events, j2, jsonl, make_port_of, trace, wait_until,
 )
 
 from sutra_app import oslayer
@@ -178,8 +178,12 @@ def brew(make_run_dir, **settings):
     return make_run_dir(user_text=BREW_LAB, settings={**QUIET, **settings})
 
 
+def finish_lines(run_dir):
+    return [row["data"] for row in trace(run_dir, "finish.step")]
+
+
 def spy_order(monkeypatch, run_dir):
-    """The order of the calls that end a run, and what the run folder held when `run.ended` was written."""
+    """The order of the calls that end a run, and what the run folder and its trace held when `run.ended` was written."""
     from sutra_app.engine.host.heartbeat import Heartbeat
     from sutra_app.engine.host.publisher import StatePublisher
     order, seen = [], {}
@@ -189,10 +193,10 @@ def spy_order(monkeypatch, run_dir):
 
         def wrapper(self, *args, **kwargs):
             order.append(label)
-            if label == "run.ended":
+            if label == "run.ended" and "files" not in seen:
                 seen["files"] = sorted(str(p.relative_to(run_dir)).replace(os.sep, "/") for p in Path(run_dir).rglob("*") if p.is_file())
                 seen["status"] = args[0]
-                seen["trace"] = jsonl(Path(run_dir) / "trace.jsonl")
+                seen["trace"] = [row["data"] for row in jsonl(Path(run_dir) / "trace.jsonl") if row["type"] == "finish.step"]
             return original(self, *args, **kwargs)
         monkeypatch.setattr(cls, name, wrapper)
 
@@ -231,7 +235,7 @@ def test_a_step_that_takes_a_while_does_not_stop_the_heartbeat(j2, make_run_dir,
     monkeypatch.setattr(finish, "STEPS", (("slow", slow_step),))
     assert Running(run_dir, "--mock").wait() == 0
     assert beats["after"] >= beats["before"] + 2
-    assert [row["step"] for row in trace(run_dir, "finish.step") for row in [row["data"]]] == ["slow"]
+    assert [line["step"] for line in finish_lines(run_dir)] == ["slow"]
 
 
 @pytest.mark.parametrize("raised", [RuntimeError("a step broke"), SystemExit("no such run folder: x"), OSError("disk")])
@@ -250,7 +254,7 @@ def test_a_step_that_raises_is_traced_and_the_run_still_ends_done_with_run_ended
     assert Running(run_dir, "--mock").wait() == 0
     ended = events(run_dir)[-1]
     assert ended["t"] == "run.ended" and ended["status"] in ("done", "done_with_open_items") and ended["code"] is None
-    lines = {row["data"]["step"]: row["data"] for row in trace(run_dir, "finish.step")}
+    lines = {line["step"]: line for line in finish_lines(run_dir)}
     assert lines["breaks"]["result"] == "failed" and type(raised).__name__ in lines["breaks"]["error"]
     assert lines["after"]["result"] == "ok" and lines["after"]["note"] == "still ran" and ran == ["after"]
 
@@ -269,28 +273,26 @@ def test_a_step_over_the_limit_through_the_host_ends_the_rest_and_the_run_still_
     monkeypatch.setattr(finish, "STEPS", (("slow", slow), ("never", never)))
     assert Running(run_dir, "--mock").wait() == 0
     assert ran == [] and events(run_dir)[-1]["status"] in ("done", "done_with_open_items")
-    lines = {row["data"]["step"]: row["data"] for row in trace(run_dir, "finish.step")}
+    lines = {line["step"]: line for line in finish_lines(run_dir)}
     assert lines["slow"]["slow"] is True and lines["never"]["result"] == "skipped" and "slow took more than" in lines["never"]["why"]
 
 
-def test_a_stopped_run_runs_no_step(j2, make_run_dir, monkeypatch):
+def test_a_stopped_run_gets_no_step_and_no_file_from_one(j2, make_run_dir):
     run_dir = make_run_dir(user_text=VAGUE[0], settings=QUIET)
-    ran = []
-    monkeypatch.setattr(finish, "STEPS", (("spy", lambda host: ran.append("spy")),))
     running = Running(run_dir, "--mock")
     wait_until(lambda: [e for e in events(run_dir) if e["t"] == "say" and e.get("act") == "ASK_REQUESTER"], what="the question")
     append_inbox(run_dir, 1, "stop")
     assert running.wait() == 0
-    assert events(run_dir)[-1]["status"] == "stopped" and ran == [] and trace(run_dir, "finish.step") == []
+    assert events(run_dir)[-1]["status"] == "stopped"
+    assert finish_lines(run_dir) == [] and not (run_dir / "agent").exists()
 
 
-def test_a_crashed_run_runs_no_step(j2, make_run_dir, monkeypatch):
+def test_a_crashed_run_gets_no_step_and_no_file_from_one(j2, make_run_dir):
     run_dir = brew(make_run_dir)
-    ran = []
-    monkeypatch.setattr(finish, "STEPS", (("spy", lambda host: ran.append("spy")),))
     port = make_port_of(RaisingPort, NoModelAvailable("the model said no"))
     assert Running(run_dir, "--mock", make_port=port).wait() == 0
-    assert events(run_dir)[-1]["status"] == "crashed" and ran == [] and trace(run_dir, "finish.step") == []
+    assert events(run_dir)[-1]["status"] == "crashed"
+    assert finish_lines(run_dir) == [] and not (run_dir / "agent").exists()
 
 
 # ---- agent_views: the agent-readable JSON of a mock run ----------------------------------------------------------------------------
@@ -299,104 +301,146 @@ def test_a_finished_mock_run_has_its_agent_readable_json_before_run_ended_and_th
     run_dir = brew(make_run_dir)
     order, seen = spy_order(monkeypatch, run_dir)
     assert Running(run_dir, "--mock").wait() == 0
-    agent_files = [name for name in seen["files"] if name.startswith("agent/") and name.endswith(".json")]
-    assert {"agent/goal.json", "agent/workflows.json"} <= set(agent_files), "the files exist when run.ended is written"
-    assert any(name.startswith("agent/audits/") for name in agent_files)
     assert seen["status"] in ("done", "done_with_open_items")
-    mine = [row["data"] for row in seen["trace"] if row["type"] == "finish.step"]
-    assert [m["step"] for m in mine] == ["agent_views", "catalog"], "both lines are written before run.ended too"
-    views = mine[0]
-    assert views["result"] == "ok" and views["files"] >= len(agent_files) and views["valid"] >= 1
-    assert views["valid"] + len(views["invalid"]) <= views["files"]
-    assert mine[1]["result"] == "skipped" and "off" in mine[1]["why"], "the template library is off by default (D18)"
+    agent_files = {name for name in seen["files"] if name.startswith("agent/") and name.endswith(".json")}
+    assert {"agent/goal.json", "agent/workflows.json", "agent/receipts.json", "agent/conditions.json", "agent/audits/A-1.json"} <= agent_files, \
+        "the files were there when run.ended was written"
+    assert any(name.startswith("site/sections/") for name in seen["files"]), "a website's sections get their JSON too"
+    assert [line["step"] for line in seen["trace"]] == ["agent_views", "catalog"], "both lines were written before run.ended too"
+    views, library = seen["trace"]
+    assert views["result"] == "ok" and views["valid"] >= len(agent_files) and views["files"] == views["valid"] + len(views["invalid"])
+    assert library["result"] == "skipped" and library["why"] == "the template library is off for this run", "the library is off by default (D18)"
 
 
-def test_the_agent_readable_files_are_the_valid_models_the_artifacts_pane_looks_for(j2, make_run_dir):
+def test_the_artifacts_pane_finds_the_validated_json_of_a_run_of_the_app(j2, make_run_dir):
+    """`j2_artifacts.agent_view` is the one place that picks a row's Agent-readable file: after the step it names agent-views/1 and a model."""
     run_dir = brew(make_run_dir)
     assert Running(run_dir, "--mock").wait() == 0
-    goal = json.loads((run_dir / "agent" / "goal.json").read_text(encoding="utf-8"))
-    assert goal.get("schema") == "agent-views/1" and goal.get("valid") is True and goal.get("model")
     from sutra_app.engine import j2_artifacts
-    groups = j2_artifacts.groups(str(run_dir), None) if False else None            # (the groups view is lane B's; the file is what matters here)
-    assert groups is None
+    charter = j2_artifacts.agent_view(str(run_dir), {"kind": "charter", "id": "goal", "file": "goal.json"})
+    assert charter == {"format": "json", "file": "agent/goal.json", "schema": "agent-views/1", "model": "Charter", "valid": True}
+    audit = json.loads((run_dir / "agent" / "audits" / "A-1.json").read_text(encoding="utf-8"))
+    assert (audit["schema"], audit["model"], audit["valid"], audit["errors"]) == ("agent-views/1", "AuditResult", True, [])
+    (run_dir / "agent" / "goal.json").unlink()                           # without the file the tab falls back to the run's own JSON, unvalidated
+    assert j2_artifacts.agent_view(str(run_dir), {"kind": "charter", "id": "goal", "file": "goal.json"}) == {
+        "format": "json", "file": "goal.json", "schema": None, "model": None, "valid": None}
 
 
-def test_the_step_is_idempotent_and_never_touches_what_the_run_wrote(j2, make_run_dir):
+def test_the_step_reads_what_the_run_kept_and_a_second_pass_changes_nothing(j2, make_run_dir):
     run_dir = brew(make_run_dir)
     running = Running(run_dir, "--mock")
     assert running.wait() == 0
-    kept = {name: (run_dir / name).read_bytes() for name in ("goal.json", "workflows.json", "chat.jsonl", "audits.json", "summary.json")
-            if (run_dir / name).exists()}
-    first = {p.relative_to(run_dir): p.read_bytes() for p in (run_dir / "agent").rglob("*.json")}
+    kept = {name: (run_dir / name).read_bytes() for name in ("goal.json", "workflows.json", "chat.jsonl", "audits.json", "summary.json")}
+    written = lambda: {p.relative_to(run_dir): p.read_bytes() for p in (run_dir / "agent").rglob("*.json")}   # noqa: E731
+    first = written()
+    assert first
     row = finish.run_steps(running.host, "done", (("agent_views", finish.agent_views),))[0]
     assert row["result"] == "ok"
-    assert {p.relative_to(run_dir): p.read_bytes() for p in (run_dir / "agent").rglob("*.json")}.keys() == first.keys()
+    assert written() == first, "the same run gives the same files, byte for byte"
     assert {name: (run_dir / name).read_bytes() for name in kept} == kept, "the files J2 keeps are read, never rewritten"
 
 
-def test_agent_views_on_a_folder_that_is_gone_is_a_traced_failure_not_a_crash(j2, make_run_dir, tmp_path):
+def test_the_step_prints_nothing_to_the_engine_log(j2, make_run_dir, capsys):
+    """`build` prints a table unless it is asked to be quiet; the engine's standard output is the run's log file."""
     run_dir = brew(make_run_dir)
     running = Running(run_dir, "--mock")
     assert running.wait() == 0
-    host = SimpleNamespace(paths=SimpleNamespace(run_dir=tmp_path / "gone"), trace=lambda *a: None, stopping=threading.Event())
+    capsys.readouterr()
+    assert finish.run_steps(running.host, "done", (("agent_views", finish.agent_views),))[0]["result"] == "ok"
+    assert capsys.readouterr().out == ""
+
+
+def test_agent_views_on_a_folder_that_is_gone_is_a_traced_failure_not_a_crash(tmp_path):
+    host = SimpleNamespace(paths=SimpleNamespace(run_dir=tmp_path / "gone"), trace=lambda *args: None, stopping=threading.Event())
     row = finish.run_steps(host, "done", (("agent_views", finish.agent_views),))[0]
     assert row["result"] == "failed" and row["error"].startswith("SystemExit: no such run folder")
 
 
 # ---- catalog ----------------------------------------------------------------------------------------------------------------------
 
-def library_run(make_run_dir, **settings):
-    """A mock run with the template library on: it stores templates and keeps `templates.json` in its folder."""
-    return brew(make_run_dir, J2_TEMPLATE_LIBRARY="1", J2_ARTIFACT_SCHEMA="1", **settings)
+def library_run(make_run_dir):
+    """A mock run with the template library on: it stores templates in the library and keeps its decisions in `templates.json`."""
+    return brew(make_run_dir, J2_TEMPLATE_LIBRARY="1", J2_ARTIFACT_SCHEMA="1")
 
 
-def finished(run_dir, **overrides):
-    """The host of a finished mock run, with the settings or the mock flag changed the way a real run would have them."""
+def finished(run_dir, *, mock=True, template_library=None):
+    """The host of a finished mock run, with the mock flag or the library setting changed the way another run would have them."""
     running = Running(run_dir, "--mock")
     assert running.wait() == 0
     host = running.host
-    for name, value in overrides.items():
-        if name == "template_library":
-            host.settings = host.settings.model_copy(update={"template_library": value})
-        else:
-            setattr(host, name, value)
+    host.mock = mock
+    if template_library is not None:
+        host.settings = host.settings.model_copy(update={"template_library": template_library})
     return host
 
 
-def catalog_rows(host):
+def catalog_row(host):
     return finish.run_steps(host, "done", (("catalog", finish.catalog),))[0]
 
 
-def test_the_catalog_step_does_nothing_while_the_template_library_is_off(j2, make_run_dir, data_dir):
+def hold_the_library_lock(host):
+    fd = os.open(host.paths.library_dir / ".lock", os.O_RDWR | oslayer.O_BINARY | os.O_CREAT, 0o600)
+    assert oslayer.try_lock(fd)
+    return fd
+
+
+def release(fd):
+    oslayer.unlock(fd)
+    os.close(fd)
+
+
+def assert_the_library_lock_is_free(host):
+    fd = os.open(host.paths.library_dir / ".lock", os.O_RDWR | oslayer.O_BINARY)
+    try:
+        assert oslayer.try_lock(fd), "the library lock is free"
+        oslayer.unlock(fd)
+    finally:
+        os.close(fd)
+
+
+def test_the_catalog_step_does_nothing_while_the_template_library_is_off(j2, make_run_dir):
     host = finished(brew(make_run_dir), mock=False)
     assert host.settings.template_library is False
-    row = catalog_rows(host)
+    row = catalog_row(host)
     assert row["result"] == "skipped" and row["why"] == "the template library is off for this run"
-    assert not (data_dir / "library" / ".lock").exists() or True
 
 
 def test_the_catalog_step_leaves_a_mock_run_out(j2, make_run_dir):
     host = finished(library_run(make_run_dir))
     assert host.mock is True and host.settings.template_library is True
-    row = catalog_rows(host)
+    index_before = (host.paths.library_dir / "index.json").read_bytes()
+    row = catalog_row(host)
     assert row["result"] == "skipped" and row["why"] == "a mock run teaches the library nothing"
+    assert (host.paths.library_dir / "index.json").read_bytes() == index_before
 
 
-def test_the_catalog_step_needs_a_run_that_stored_templates(j2, make_run_dir):
-    host = finished(brew(make_run_dir), template_library=True, mock=False)
+def test_the_catalog_step_needs_a_run_that_stored_templates_and_then_neither_locks_nor_rewrites_the_library(j2, make_run_dir, monkeypatch):
+    from sutra_app.engine import j2_template_lib as library
+    host = finished(brew(make_run_dir), mock=False, template_library=True)
     assert not (host.paths.run_dir / "templates.json").exists()
-    row = catalog_rows(host)
+    monkeypatch.setattr(library, "_library_lock", lambda: pytest.fail("the lock is taken for a run with nothing to collect"))
+    index_before = (host.paths.library_dir / "index.json").read_bytes()
+    row = catalog_row(host)
     assert row["result"] == "skipped" and row["why"] == "the run stored no templates"
+    assert (host.paths.library_dir / "index.json").read_bytes() == index_before
 
 
-def test_the_catalog_step_collects_this_runs_templates_under_the_library_lock(j2, make_run_dir, monkeypatch):
+def test_the_catalog_step_collects_this_run_under_the_library_lock_and_the_catalog_gains_its_row_and_provenance(j2, make_run_dir, monkeypatch):
     from sutra_app.engine import j2_template_lib as library
     host = finished(library_run(make_run_dir), mock=False)
-    assert (host.paths.run_dir / "templates.json").is_file(), "the library run stored its decisions"
+    decisions = json.loads((host.paths.run_dir / "templates.json").read_text(encoding="utf-8"))["decisions"]
+    specialised = [d for d in decisions if d.get("kind") == "specialised"]
+    assert specialised, "the library run stored specialised templates"
+    run_id = host.paths.run_id
+    before = library.index()
+    assert run_id not in before["runs"]
+    version_meta = lambda d: json.loads((host.paths.library_dir / d["artifact"] / library.slug(d["section"]) / library.slug(d["template"]) /     # noqa: E731
+                                         f"v{d['version']}" / "meta.json").read_text(encoding="utf-8"))
+    assert "mock" not in version_meta(specialised[0]), "a version the run stored has no provenance yet"
     taken, calls = [], []
     real_lock, real_collect = library._library_lock, library.collect
 
-    class Held:
+    class Watched:
         def __enter__(self):
             taken.append("in")
             self.inner = real_lock()
@@ -409,25 +453,30 @@ def test_the_catalog_step_collects_this_runs_templates_under_the_library_lock(j2
     def collect(runs_dir, runs=None):
         calls.append((runs_dir, runs, list(taken)))
         return real_collect(runs_dir, runs=runs)
-    monkeypatch.setattr(library, "_library_lock", Held)
+    monkeypatch.setattr(library, "_library_lock", Watched)
     monkeypatch.setattr(library, "collect", collect)
-    row = catalog_rows(host)
-    assert row["result"] == "ok" and set(row) >= {"added", "renumbered", "same", "not_recorded"}
-    assert calls == [(str(host.paths.runs_dir), [host.paths.run_id], ["in"])], "collect ran inside the lock, for this run only"
+    row = catalog_row(host)
+    assert calls == [(str(host.paths.runs_dir), [run_id], ["in"])], "collect ran inside the lock, for this run only"
     assert taken == ["in", "out"]
-    assert host.paths.run_id in library.index()["runs"], "the run is a row of the catalog's By run"
-    assert row["added"] + row["same"] + row["renumbered"] >= 1 or row["not_recorded"] >= 1
+    assert row["result"] == "ok" and row["not_recorded"] == 0
+    assert row["added"] + row["renumbered"] + row["same"] == len(specialised), "every specialised decision reached the catalog"
+    after = library.index()
+    assert after["runs"][run_id]["run"] == run_id and after["runs"][run_id]["mock"] is True and after["runs"][run_id]["business"] == "Brew Lab"
+    assert len(after["runs"]) == len(before["runs"]) + 1, "the run is one more row of the catalog's By run"
+    meta = version_meta(specialised[0])
+    assert meta["mock"] is True and meta["business"]["name"] == "Brew Lab" and meta["made_by"]["date"] == "2026-11-04 10:00:04"
+    assert any(use["run"] == run_id for use in meta["used_by"])
+    assert_the_library_lock_is_free(host)
 
 
-def test_the_lock_is_free_again_after_the_step(j2, make_run_dir):
+def test_a_second_pass_over_the_same_run_changes_nothing(j2, make_run_dir):
+    from sutra_app.engine import j2_template_lib as library
     host = finished(library_run(make_run_dir), mock=False)
-    assert catalog_rows(host)["result"] == "ok"
-    fd = os.open(host.paths.library_dir / ".lock", os.O_RDWR | oslayer.O_BINARY)
-    try:
-        assert oslayer.try_lock(fd), "the step released the library lock"
-        oslayer.unlock(fd)
-    finally:
-        os.close(fd)
+    first = catalog_row(host)
+    index = library.index()
+    again = catalog_row(host)
+    assert first["result"] == again["result"] == "ok" and (again["added"], again["renumbered"]) == (0, 0)
+    assert library.index() == index
 
 
 def test_a_library_that_stays_locked_skips_the_step_with_the_busy_message_and_changes_nothing(j2, make_run_dir, monkeypatch):
@@ -435,15 +484,29 @@ def test_a_library_that_stays_locked_skips_the_step_with_the_busy_message_and_ch
     host = finished(library_run(make_run_dir), mock=False)
     index_before = (host.paths.library_dir / "index.json").read_bytes()
     monkeypatch.setattr(library, "LOCK_WAIT_S", 0.3)
-    fd = os.open(host.paths.library_dir / ".lock", os.O_RDWR | oslayer.O_BINARY | os.O_CREAT, 0o600)
+    fd = hold_the_library_lock(host)                                     # another run holds the library lock
     try:
-        assert oslayer.try_lock(fd)                                      # another run holds the library lock
-        row = catalog_rows(host)
+        row = catalog_row(host)
     finally:
-        oslayer.unlock(fd)
-        os.close(fd)
-    assert row["result"] == "skipped" and "locked by another run" in row["why"]
+        release(fd)
+    assert row["result"] == "skipped" and "locked by another run" in row["why"] and "waited 0.3 s" in row["why"]
     assert (host.paths.library_dir / "index.json").read_bytes() == index_before, "a skipped step writes nothing"
+    assert catalog_row(host)["result"] == "ok", "the next try, with the lock free, collects"
+
+
+def test_a_lock_that_is_freed_in_time_lets_the_step_wait_and_finish(j2, make_run_dir, monkeypatch):
+    from sutra_app.engine import j2_template_lib as library
+    host = finished(library_run(make_run_dir), mock=False)
+    monkeypatch.setattr(library, "LOCK_WAIT_S", 10.0)
+    fd = hold_the_library_lock(host)
+    rows = []
+    worker = threading.Thread(target=lambda: rows.append(catalog_row(host)), daemon=True)
+    worker.start()
+    time.sleep(0.4)
+    assert worker.is_alive() and rows == [], "the step waits for the other writer"
+    release(fd)
+    worker.join(10)
+    assert rows[0]["result"] == "ok" and rows[0]["seconds"] >= 0.3
 
 
 def test_a_failure_inside_collect_is_a_traced_failure_and_the_lock_is_released(j2, make_run_dir, monkeypatch):
@@ -453,24 +516,20 @@ def test_a_failure_inside_collect_is_a_traced_failure_and_the_lock_is_released(j
     def broken(runs_dir, runs=None):
         raise ValueError("the index is not JSON")
     monkeypatch.setattr(library, "collect", broken)
-    row = catalog_rows(host)
+    row = catalog_row(host)
     assert row["result"] == "failed" and row["error"] == "ValueError: the index is not JSON"
-    fd = os.open(host.paths.library_dir / ".lock", os.O_RDWR | oslayer.O_BINARY)
-    try:
-        assert oslayer.try_lock(fd)
-        oslayer.unlock(fd)
-    finally:
-        os.close(fd)
+    assert_the_library_lock_is_free(host)
 
 
-def test_a_library_run_reaches_the_catalog_through_the_host_before_run_ended(j2, make_run_dir, monkeypatch):
-    """A run of the app (not a mock run) with the library on: its row is in the index when `run.ended` is written."""
+def test_a_run_of_the_app_with_the_library_on_reaches_the_catalog_through_the_host_before_run_ended(j2, make_run_dir, monkeypatch):
+    """Not a mock run (the flag is turned off once J2 and the port are configured in mock mode; only the finish steps read it): the run's
+    row is in the catalog's index when `run.ended` is written, after the agent-readable files."""
     run_dir = library_run(make_run_dir)
     original = loop.Host._make_run
 
     def make_run(self):
         original(self)
-        self.mock = False                   # J2 and the port are configured in mock mode already; only the finish steps read this flag
+        self.mock = False
 
     monkeypatch.setattr(loop.Host, "_make_run", make_run)
     seen = {}
@@ -479,11 +538,13 @@ def test_a_library_run_reaches_the_catalog_through_the_host_before_run_ended(j2,
     def ended(self, status, outcome, code):
         if "index" not in seen:
             seen["index"] = json.loads((self.paths.library_dir / "index.json").read_text(encoding="utf-8"))
-            seen["trace"] = [row["data"] for row in jsonl(Path(run_dir) / "trace.jsonl") if row["type"] == "finish.step"]
+            seen["trace"] = finish_lines(run_dir)
+            seen["agent"] = (run_dir / "agent" / "goal.json").is_file()
         return original_ended(self, status, outcome, code)
 
     monkeypatch.setattr(loop.Host, "_emit_ended", ended)
     assert Running(run_dir, "--mock").wait() == 0
-    assert [t["step"] for t in seen["trace"]] == ["agent_views", "catalog"]
-    assert seen["trace"][1]["result"] == "ok", seen["trace"][1]
-    assert run_dir.name in seen["index"]["runs"]
+    assert [line["step"] for line in seen["trace"]] == ["agent_views", "catalog"]
+    assert seen["trace"][1]["result"] == "ok" and seen["trace"][1]["not_recorded"] == 0
+    assert run_dir.name in seen["index"]["runs"] and seen["agent"] is True
+    assert events(run_dir)[-1]["t"] == "run.ended"
