@@ -6485,10 +6485,11 @@ class J2Run:
                                                                       ranges=real)]
         if j2_types.enabled() and self.doc and not w.get("revises") and "fix" not in (w.get("parts") or []):
             # every section the workflow writes has its own heading-present and section-not-empty check (any atom)
-            have = {(c.get("type"), heading_target(c.get("target"))) for a in w["atoms"] if isinstance(a, dict)
-                    for c in a.get("verification") or [] if isinstance(c, dict)}
+            # (a target that names the section counts: its exact form is the check's own concern, CHECK_WRONG)
+            have = [(c.get("type"), heading_target(c.get("target")).lower()) for a in w["atoms"] if isinstance(a, dict)
+                    for c in a.get("verification") or [] if isinstance(c, dict)]
             out += [f"no {t} check for the {x} section it writes" for x in wf_sections(w, self.out["sections"])
-                    for t in HEADING_CHECKS if (t, x) not in have]
+                    for t in HEADING_CHECKS if not any(ct == t and x.lower() in tg for ct, tg in have)]
         return out
 
     def _priority_file_note(self, table):
