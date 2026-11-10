@@ -6816,6 +6816,129 @@ def send_deeds():
           "plain briefs untouched ok")
 
 
+SAVED_DOC_RUNS = ("j2-20261013-165916", "j2-20261013-185235", "j2-20261015-190820", "j2-20261016-103256",
+                  "j2-20261016-160511", "j2-20261021-141350", "j2-20261022-123744", "j2-20261023-104150",
+                  "j2-20261023-120350", "j2-20261026-104018", "j2-20261027-130930")
+# Recorded 2026-11-10 (step 0 of docs/remove-hardcoding-plan.md). A view's hash changes only when what it shows for a
+# saved run changes; re-record on purpose, never to make the test pass.
+SAVED_RUNS_GOLDEN = {
+    "j2-20261013-165916": {"groups": "9f2cecac57ef", "docs": "5d52f1ed34ec", "map": "d528979abf18", "checks": "95329398a439"},
+    "j2-20261013-185235": {"groups": "994e2f3e9f1b", "docs": "1ddcae0f0e75", "map": "d6fa33198569", "checks": "f89fefa931db"},
+    "j2-20261015-190820": {"groups": "733665157025", "docs": "d679c04045e7", "map": "d519759eb19e", "checks": "3ef61994e1c4"},
+    "j2-20261016-103256": {"groups": "4f8e8976d6ab", "docs": "37c8b29833ef", "map": "f3a2b5346c06", "checks": "f821b76ca587"},
+    "j2-20261016-160511": {"groups": "d707f761bb24", "docs": "ef9e272df4c6", "map": "edcb83e2f1dc", "checks": "b8b1d57e8530"},
+    "j2-20261021-141350": {"groups": "2794577262d0", "docs": "09504a9763ca", "map": "e6b756ed9025", "checks": "33e341a4604d"},
+    "j2-20261022-123744": {"groups": "2c60cf05422b", "docs": "671562441fc6", "map": "e38dbe427737", "checks": "c28a7e640f30"},
+    "j2-20261023-104150": {"groups": "c370430f720e", "docs": "4dd62f5cb4e1", "map": "180a39f9f978", "checks": "64e1cc96b38b"},
+    "j2-20261023-120350": {"groups": "4e91b057d825", "docs": "f06206b108f1", "map": "8531c3b845fc", "checks": "9778334ea213"},
+    "j2-20261026-104018": {"groups": "fa0846c543b2", "docs": "f9d6cc971436", "map": "35a1b79ff2b0", "checks": "69f64d8c594d"},
+    "j2-20261027-130930": {"groups": "3f2950f30c84", "docs": "9f690587f7c4", "map": "bad64fe59f9f", "checks": "cf4fa11161b5"},
+}
+DOC_PROMPTS_GOLDEN = {
+    "prd.builder": "e971c88e727f", "prd.plan": "5ae0d4bcfb00", "prd.intake": "56b304946997",
+    "prd.charter_fmt": "eedccdf82d84", "prd.atom_rules": "b8a918ef6039", "prd.system": "55a8ffce8e22",
+    "hld.builder": "5ed1a9d0887c", "hld.plan": "2b0dc7c3a98d", "hld.intake": "ac332d648468",
+    "hld.charter_fmt": "eedccdf82d84", "hld.atom_rules": "f03b53ec28a5", "hld.system": "c1b5d40d635c",
+    "lld.builder": "a767f5b54bd4", "lld.plan": "e4b8d751d58e", "lld.intake": "7a7282e0c457",
+    "lld.charter_fmt": "eedccdf82d84", "lld.atom_rules": "4235ba453cd6", "lld.system": "f6ca8c0feffc",
+}
+
+
+def _golden_hash(obj):
+    """sha256 (12 hex) of a JSON value or a string, with ISO times blanked (file mtimes differ per clone)."""
+    text = obj if isinstance(obj, str) else json.dumps(obj, sort_keys=True, ensure_ascii=False)
+    return hashlib.sha256(re.sub(r"\d{4}-\d\d-\d\dT\d\d:\d\d:\d\d", "T", text).encode("utf-8")).hexdigest()[:12]
+
+
+def saved_runs_render():
+    """Step 0 safety net: what the Artifacts groups, the Documents view, the Map and the checks (audits) show for the 11
+    saved PRD/HLD/LLD runs is identical to what was recorded (SAVED_RUNS_GOLDEN), through the server's own endpoints,
+    browser-free. The runs are read from a temp copy, so nothing is written into runs/."""
+    import threading
+    import urllib.request
+    import j2_server
+    here = os.path.dirname(os.path.abspath(__file__))
+    tmp = tempfile.mkdtemp(prefix="j2-saved-runs-")
+    names = [n for n in SAVED_DOC_RUNS if os.path.isdir(os.path.join(here, "runs", n))]
+    if names != list(SAVED_DOC_RUNS):      # runs/ is gitignored: a clone without them has nothing to compare
+        print(f"saved runs render: skipped (not in runs/: {', '.join(sorted(set(SAVED_DOC_RUNS) - set(names)))})")
+        shutil.rmtree(tmp, ignore_errors=True)
+        return
+    for n in names:
+        shutil.copytree(os.path.join(here, "runs", n), os.path.join(tmp, n))
+    srv = j2_server.http.server.ThreadingHTTPServer(("127.0.0.1", 0), j2_server.Handler)
+    threading.Thread(target=srv.serve_forever, daemon=True).start()
+    base = f"http://127.0.0.1:{srv.server_address[1]}"
+    keep_runs = j2.RUNS_DIR
+    j2.RUNS_DIR = tmp
+    got = {}
+    try:
+        for n in names:
+            got[n] = {}
+            get = lambda path: json.loads(urllib.request.urlopen(f"{base}{path}?run={n}").read().decode("utf-8"))
+            state = get("/api/state")
+            views = {"groups": get("/api/artifacts/groups"), "docs": get("/api/docs"), "map": get("/api/map"),
+                     # the checks: a one-stage run's audits.json (in /api/state) and a chain's stage-*.json audits
+                     "checks": {"stages": get("/api/audits"), **{k: state.get(k) for k in (
+                         "audits", "conditions", "rubric", "workable", "outcome", "output", "output_label", "files",
+                         "docset_files")}}}
+            for view, body in views.items():
+                assert body and (view != "checks" or body["audits"] or body["stages"]), (n, view, "empty")
+                got[n][view] = _golden_hash(body)
+    finally:
+        j2.RUNS_DIR = keep_runs
+        srv.shutdown()
+        shutil.rmtree(tmp, ignore_errors=True)
+    diff = [(n, v) for n in got for v in got[n] if (SAVED_RUNS_GOLDEN.get(n) or {}).get(v) != got[n][v]]
+    assert not diff, ("saved runs render differently", diff, json.dumps(got, indent=1))
+    print(f"saved runs render: Artifacts groups, Documents, Map and checks of {len(names)} saved PRD/HLD/LLD runs "
+          "identical to the recorded output ok")
+
+
+def doc_prompts_unchanged():
+    """Step 0 safety net: the PRD, HLD and LLD builder prompts (the text and the whole system prompt a section's
+    workflow agent gets) and their plan, intake, charter format and atom rules are byte-identical to DOC_PROMPTS_GOLDEN."""
+    got = {}
+    j2.add_workflow_agent("W-1")      # what registering a workflow does; the name a run gives it is the same
+    for t in ("prd", "hld", "lld"):
+        o = j2.OUTPUTS[t]
+        for k in ("builder", "plan", "intake", "charter_fmt", "atom_rules"):
+            assert isinstance(o[k], str) and o[k], (t, k)
+            got[f"{t}.{k}"] = hashlib.sha256(o[k].encode("utf-8")).hexdigest()[:12]
+        got[f"{t}.system"] = hashlib.sha256(j2.system_prompt("W-1", "{}", o["builder"]).encode("utf-8")).hexdigest()[:12]
+    diff = sorted(k for k in got if DOC_PROMPTS_GOLDEN.get(k) != got[k])
+    assert not diff and set(got) == set(DOC_PROMPTS_GOLDEN), ("document prompts changed", diff, json.dumps(got, indent=1))
+    print(f"document prompts unchanged: {len(got)} PRD/HLD/LLD builder, system, plan, intake, charter and atom-rule texts "
+          "byte-identical ok")
+
+
+def doc_type_names():
+    """Step 0 safety net: every output type and section name in j2.py (OUTPUTS, PRD_SECTIONS, HLD_SECTIONS,
+    LLD_SECTIONS) matches the keys of j2_artifact_models (SECTION_MODELS, DOC_MODELS, SECTION_CONDITIONS) and
+    j2_template_lib (ARTIFACTS, Template.artifact, DOCUMENT_ARTIFACTS, FACT_FIELD_SECTIONS, generic_sections), so a later
+    move of the types to data cannot silently break the template library."""
+    import typing
+    import j2_artifact_models as AM
+    import j2_template_lib as TL
+    docs = ("prd", "hld", "lld")
+    assert tuple(j2.OUTPUTS) == ("website",) + docs, tuple(j2.OUTPUTS)
+    assert (j2.PRD_SECTIONS, j2.HLD_SECTIONS, j2.LLD_SECTIONS) == tuple(j2.OUTPUTS[t]["sections"] for t in docs)
+    assert j2.ALL_DOC_SECTIONS == j2.PRD_SECTIONS + j2.HLD_SECTIONS + j2.LLD_SECTIONS
+    arts = set(TL.ARTIFACTS)
+    assert set(j2.OUTPUTS) <= arts and arts == set(AM.SECTION_MODELS) == set(AM.DOC_MODELS) == set(AM.SECTION_CONDITIONS)
+    assert set(typing.get_args(TL.Template.model_fields["artifact"].annotation)) == arts
+    assert TL.DOCUMENT_ARTIFACTS == docs
+    for t in docs:
+        secs = tuple(j2.OUTPUTS[t]["sections"])
+        assert tuple(AM.SECTION_MODELS[t]) == secs == tuple(AM.SECTION_CONDITIONS[t]), (t, secs)
+        assert [s for s in TL.generic_sections(t) if s != TL.DOCUMENT] == list(secs), t
+    for t, s in TL.FACT_FIELD_SECTIONS:
+        assert s in AM.SECTION_MODELS[t], (t, s)
+        assert t == "website" or s in j2.OUTPUTS[t]["sections"], (t, s)
+    print("document type names: OUTPUTS and PRD/HLD/LLD_SECTIONS match SECTION_MODELS, DOC_MODELS, SECTION_CONDITIONS, "
+          "ARTIFACTS, Template.artifact, DOCUMENT_ARTIFACTS, FACT_FIELD_SECTIONS and generic_sections ok")
+
+
 def artifact_types():
     """artifacts/types.json mirrors the Python for prd, hld, lld and website, field by field: sections, file names,
     trigger words, groups, tags, labels, colours, conditions file, builder, rate card, minimum cost and what each reads.
@@ -11628,6 +11751,10 @@ if __name__ == "__main__":
         charter_objects()
         milestone_emails()
         artifact_types()
+        if mode == "0":      # step 0 safety net (docs/remove-hardcoding-plan.md): reads saved runs and module data only
+            doc_type_names()
+            doc_prompts_unchanged()
+            saved_runs_render()
         artifacts_tab()
         map_tab()
         map_every_workflow()
