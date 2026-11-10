@@ -12,6 +12,7 @@ import urllib.request
 from pathlib import Path
 
 import pytest
+import seedlib
 
 from sutra_app import main as main_module
 from sutra_app.main import bind_socket, run
@@ -358,10 +359,67 @@ def test_config_sync_library_adds_what_is_missing_and_is_idempotent(tmp_path, ca
     doctor.sync_seed_library(data)
     import shutil
     shutil.rmtree(data / "library" / "prd" / "goals")
+    goals = sorted(n for n in ("/".join(seedlib.key_of(e)) for e in seedlib.seed_index()["templates"]) if n.startswith("prd/goals/"))
     code, out, _ = call(capsys, "config", "sync-library", *data_args(tmp_path))
-    assert code == 0 and "Added 1 template(s): prd/goals/still-point-yoga-goals" in out
+    assert code == 0 and f"Added {len(goals)} template(s): " + ", ".join(goals) in out
     code, out, _ = call(capsys, "config", "sync-library", "--json", *data_args(tmp_path))
-    assert json.loads(out) == {"added": []}
+    assert json.loads(out) == {"added": [], "templates": [], "versions": [], "filled": {}, "skipped": [], "runs": []}
+    code, out, _ = call(capsys, "config", "sync-library", *data_args(tmp_path))
+    assert code == 0 and "The library already has every seed template and version." in out
+
+
+def test_config_sync_library_reports_templates_versions_provenance_and_runs(tmp_path, capsys):
+    seedlib.previous_library(tmp_path / "d")                                    # an install from before the seed grew
+    code, out, _ = call(capsys, "config", "sync-library", *data_args(tmp_path))
+    assert code == 0
+    assert "Added 6 template(s): " + ", ".join(seedlib.NEW_TEMPLATE_NAMES) in out
+    assert "Added 5 version(s): " + ", ".join(seedlib.NEW_VERSION_NAMES) in out
+    assert "Filled the provenance (business, date, live or mock) of 26 version(s)." in out and "Added 8 run(s) of the seed to the catalog." in out
+    seedlib.previous_library(tmp_path / "e")
+    code, out, _ = call(capsys, "config", "sync-library", "--json", "--data-dir", str(tmp_path / "e"))
+    payload = json.loads(out)
+    assert code == 0 and payload["added"] == seedlib.NEW_TEMPLATE_NAMES + seedlib.NEW_VERSION_NAMES
+    assert payload["templates"] == seedlib.NEW_TEMPLATE_NAMES and payload["versions"] == seedlib.NEW_VERSION_NAMES and payload["skipped"] == []
+    assert len(payload["filled"]) == 26 and len(payload["runs"]) == 8
+
+
+def test_config_sync_library_names_what_it_left_alone(tmp_path, capsys):
+    library = seedlib.previous_library(tmp_path / "d")
+    own = seedlib.version_row(seedlib.PROBLEM, 2, seedlib.sha_of("the owner's own spec"), provenance=False)
+    seedlib.write_version(library, seedlib.PROBLEM, own)
+    doc = seedlib.read(library / "index.json")
+    seedlib.entry_of(doc, seedlib.PROBLEM)["versions"].append(own)
+    seedlib.write(library / "index.json", doc)
+    code, out, _ = call(capsys, "config", "sync-library", *data_args(tmp_path))
+    assert code == 0 and "Added 4 version(s): " in out and "still-point-yoga-problem@v2" not in out.split("Left alone")[0]
+    assert "Left alone prd/problem/still-point-yoga-problem@v2: v2 is already taken here by a version with another spec" in out
+    code, out, _ = call(capsys, "config", "sync-library", *data_args(tmp_path))                    # the next run has nothing to add and says what it keeps
+    assert code == 0 and out.splitlines()[0] == "Nothing to add." and "Left alone prd/problem/still-point-yoga-problem@v2" in out
+    code, out, _ = call(capsys, "config", "sync-library", "--json", *data_args(tmp_path))
+    skipped = json.loads(out)["skipped"]
+    assert [(s["template"], s["version"]) for s in skipped] == [("prd/problem/still-point-yoga-problem", 2)]
+
+
+def test_config_sync_library_gives_up_when_the_library_is_locked_or_its_index_is_not_an_index(tmp_path, capsys, monkeypatch):
+    from sutra_app import oslayer
+    monkeypatch.setattr(doctor, "LOCK_WAIT_S", 0.2)
+    library = seedlib.previous_library(tmp_path / "d")
+    fd = os.open(library / ".lock", os.O_RDWR | oslayer.O_BINARY | os.O_CREAT, 0o600)       # a run that is storing a template holds it
+    assert oslayer.try_lock(fd)
+    before = seedlib.snapshot(library)
+    try:
+        code, out, err = call(capsys, "config", "sync-library", *data_args(tmp_path))
+    finally:
+        oslayer.unlock(fd)
+        os.close(fd)
+    assert code == 1 and out == "" and "nothing was changed" in err and "locked by another process" in err
+    assert seedlib.snapshot(library) == before
+    (library / "index.json").write_text("{not json")
+    before = seedlib.snapshot(library)
+    code, out, err = call(capsys, "config", "sync-library", *data_args(tmp_path))
+    assert code == 1 and out == "" and "nothing was changed" in err and "not valid JSON" in err and seedlib.snapshot(library) == before
+    code, out, err = call(capsys, "config", "sync-library", "--json", *data_args(tmp_path))      # no half answer on stdout
+    assert code == 1 and out == ""
 
 
 # ---- the dispatcher and the optional commands ---------------------------------------------------------------------------------------
