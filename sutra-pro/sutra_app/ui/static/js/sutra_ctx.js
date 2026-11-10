@@ -24,22 +24,20 @@
   const isId = v => typeof v === "string" && v !== "." && v !== ".." && ID_RULE.test(v);
   const isRootRelative = v => typeof v === "string" && ROOT_RELATIVE.test(v);
 
-  /* ---------------------------------------------------------------- J2's data routes (j2_server.py:65-268) */
-  // The 23 exact /api/ pathnames of J2 and the four prefixes (S3-web-15). The orchestrator's own routes (/api/runs/{run_id},
-  // /api/chart, /api/graph, /api/schemas/..., /api/tasks, ...) match none of them, so they never get `dept`.
-  const J2_EXACT = ["/api/state", "/api/runs", "/api/call", "/api/preview", "/api/docs", "/api/map", "/api/plan",
-    "/api/library", "/api/run-templates", "/api/artifacts", "/api/artifacts/tree", "/api/artifact", "/api/agent", "/api/code",
-    "/api/story", "/api/board", "/api/audits", "/api/refs", "/api/say", "/api/output", "/api/reset", "/api/playbooks/clear",
-    "/api/lessons/clear"];
+  /* ---------------------------------------------------------------- J2's data routes (j2_server.py) */
+  // The 30 exact /api/ pathnames of J2's page and the four prefixes (S3-web-15; J2 sync 4, D140). Seven are newer than the first port:
+  // /api/runlist and /api/changes (patch P13 until sync 4, J2's own routes since), /api/plan-map, /api/catalog, /api/artifacts/groups,
+  // /api/activity and /api/ask. The orchestrator's own routes (/api/runs/{run_id}, /api/chart, /api/graph, /api/schemas/..., /api/tasks,
+  // ...) match none of them, so they never get `dept`.
+  const J2_EXACT = ["/api/state", "/api/runs", "/api/runlist", "/api/changes", "/api/call", "/api/preview", "/api/docs", "/api/map",
+    "/api/plan", "/api/plan-map", "/api/library", "/api/catalog", "/api/run-templates", "/api/artifacts", "/api/artifacts/tree",
+    "/api/artifacts/groups", "/api/artifact", "/api/agent", "/api/activity", "/api/code", "/api/story", "/api/board", "/api/audits",
+    "/api/refs", "/api/say", "/api/ask", "/api/output", "/api/reset", "/api/playbooks/clear", "/api/lessons/clear"];
   const J2_PREFIXES = ["/api/library/", "/site/", "/file/", "/shot/"];
-  // The two read-only routes of patch P13 (scripts/vendor_j2.py; Run settings' run list and the build journey's stops). J2's own repository
-  // does not have them, so they are not in `exact` (23); they are team routes all the same and get `dept`.
-  const PATCHED_EXACT = ["/api/runlist", "/api/changes"];
-  const J2_EXACT_SET = new Set(J2_EXACT.concat(PATCHED_EXACT));
+  const J2_EXACT_SET = new Set(J2_EXACT);
   const J2_PATHS = Object.freeze({
     exact: Object.freeze(J2_EXACT.slice()),
     prefixes: Object.freeze(J2_PREFIXES.slice()),
-    patched: Object.freeze(PATCHED_EXACT.slice()),
     // `pathname` is the path alone, without a query or fragment.
     matches: pathname => typeof pathname === "string" && (J2_EXACT_SET.has(pathname) || J2_PREFIXES.some(p => pathname.startsWith(p))),
   });
@@ -92,6 +90,11 @@
 
   const boot = readBoot();
   const ctx = {boot: boot, dept: pickDept(boot), currentTab: ""};
+  // The team page's own address and its template library's (D141): /d/<id>/ and /d/<id>/library. The id rule (isId) keeps an id safe to
+  // write into a path as it is. J2's stub DOM and Home have no team, so they get J2's own "/" and "/library": the render harness then
+  // behaves as J2's page does.
+  ctx.pagePath = ctx.dept ? "/d/" + ctx.dept + "/" : "/";
+  ctx.libraryPath = ctx.pagePath + "library";
   const state = {origFetch: null};     // window.fetch before installFetch(window) wrapped it; `api` calls this one
   const tokenOf = () => (typeof ctx.boot.token === "string" ? ctx.boot.token : "");
 
@@ -126,6 +129,13 @@
     } catch (e) {
       return "";                      // no location, or no URLSearchParams
     }
+  }
+
+  // Whether the page on screen is the team's template library (J2 asked `location.pathname === "/library"`). A trailing slash does not matter,
+  // nor does a percent-encoded character of the id; no location (J2's stub DOM, node) is never the library.
+  function onLibrary() {
+    const pathname = root.location?.pathname;
+    return typeof pathname === "string" && safeDecode(pathname).replace(/\/$/, "") === ctx.libraryPath;
   }
 
   // Set the current tab first (the department page reads it when it starts, because J2 shows a ?tab= pane at parse time,
@@ -334,7 +344,7 @@
   }
 
   Object.assign(ctx, {run: run, esc: esc, paint: paint, tab: tab, api: api, installFetch: installFetch, withDept: withDept,
-    J2_PATHS: J2_PATHS, ApiError: ApiError});
+    onLibrary: onLibrary, J2_PATHS: J2_PATHS, ApiError: ApiError});
 
   // A team page wraps J2's fetch calls; Home has none.
   if (boot.page === "dept" && typeof root.fetch === "function") installFetch(root);
