@@ -241,7 +241,8 @@ body.simple #dview{display:none}
 #sview .stop{flex:none;display:flex;align-items:center;gap:10px 12px;min-height:56px;padding:10px 16px;border-bottom:1px solid var(--s-line);min-width:0;background:color-mix(in srgb,var(--s-surface) 55%,var(--s-bg))}
 #sview .stop .shome,#sview .stop .stheme{border:0;box-shadow:0 0 0 1px var(--s-line),0 1px 2px var(--s-ring);background:var(--s-surface);transition:box-shadow .15s}
 #sview .stop .shome:hover,#sview .stop .stheme:hover{box-shadow:0 0 0 1px var(--s-line2),0 1px 2px var(--s-ring)}
-#sview .shome{width:32px;height:32px;border-radius:9px;border:1px solid var(--s-line);background:var(--s-surface);display:grid;place-items:center;padding:0;flex:none}
+#sview .shome{height:32px;border-radius:9px;border:1px solid var(--s-line);background:var(--s-surface);display:inline-flex;align-items:center;gap:6px;padding:0 11px 0 8px;flex:none;font-weight:600;font-size:13.5px;white-space:nowrap}#sview .shome:hover{border-color:var(--s-line2)}
+@media (max-width:640px){#sview .shome .shomet{display:none}#sview .shome{padding:0;width:32px;justify-content:center}}
 #sview .sproj{font:600 17px/1.2 var(--s-display);letter-spacing:-.015em;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:28ch;padding-right:2px}
 #sview .sstate{display:flex;align-items:center;gap:8px;color:var(--s-muted);font-size:13.5px;font-weight:500;font-variant-numeric:tabular-nums;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;background:var(--s-surface);border-radius:999px;padding:4px 12px 4px 10px;box-shadow:0 0 0 1px var(--s-line)}
 #sview .sstate>span{overflow:hidden;text-overflow:ellipsis}
@@ -1030,7 +1031,7 @@ try { var tp = localStorage.getItem("j2theme"); document.documentElement.dataset
   </section>
   <section class="swork" id="swork" aria-label="Your project" hidden>
     <header class="stop">
-      <button type="button" class="shome" id="shome" aria-label="New project" title="New project"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg></button>
+      <button type="button" class="shome" id="shome" title="Start a new project"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg><span class="shomet">New project</span></button>
       <span class="sproj" id="sproj"></span>
       <span class="sstate"><i class="sdot" id="sdot" aria-hidden="true"></i><span role="status" id="sstatus"></span></span>
       <span class="ssp" aria-hidden="true"></span>
@@ -2861,7 +2862,7 @@ $("sfinish").addEventListener("click", async e => { const b = e.target.closest("
     try { await navigator.clipboard.writeText(url); b.textContent = "Link copied"; } catch (err) { b.textContent = url; } setTimeout(() => { b.textContent = "Copy share link"; }, 2500); } });
 $("shome").onclick = async () => {
   if (viewRun || (state && state.saved)){ location.href = "/?view=simple"; return; }
-  if (state && state.status === "running"){ sToast("The team is mid-way. Wait for them to pause, or open the Detailed view."); return; }
+  if (state && state.status === "running"){ sToast("The team is working. You can start a new project when they pause or finish."); return; }
   if (!confirm("Start a new project? This one stays in Recent work.")) return;
   await fetch("/api/reset", {method: "POST"}); location.href = "/?view=simple"; };
 function sThemeBtn(){ const de = document.documentElement, dark = !!de && de.dataset.theme === "dark";
@@ -2869,7 +2870,7 @@ function sThemeBtn(){ const de = document.documentElement, dark = !!de && de.dat
 $("stheme").onclick = $("stheme2").onclick = () => { THEME = document.documentElement.dataset.theme === "dark" ? "light" : "dark"; try { localStorage.setItem("j2theme", THEME); } catch (err) {} themeApply(); sThemeBtn(); SV.inlineKey = ""; if (state) renderSimple(state); };
 // ---- the team card: the five people and the roles behind the scenes; only its "Open detailed view" opens the full view (Esc, Close or a click outside closes it)
 $("steamrows").innerHTML = SKEYS.map(k => `<div class="mrow">${face(k, 44, {label: false})}<span><b>${PEOPLE[k].name}</b> · ${PEOPLE[k].role}<small>${esc(PEOPLE[k].does)}</small></span></div>`).join("")
-  + `<div class="mback"><b>Behind the scenes:</b> ${BACKSTAGE.map(([, n, d]) => `the ${n} ${d}`).join("; ")}. You never need to talk to them; Asha does.</div>`;
+  + `<div class="mback">You only talk to Asha. She passes everything on to the team.</div>`;
 const sTeamCard = () => { const d = $("steamcard"); if (d.showModal && !d.open) d.showModal(); };
 $("slandteam").addEventListener("click", sTeamCard); $("steam").addEventListener("click", sTeamCard);
 $("steamcard").addEventListener("click", e => { const d = $("steamcard"), r = d.getBoundingClientRect();
