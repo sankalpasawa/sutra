@@ -778,5 +778,10 @@
   "id": "D156",
   "label": "stop ladder: identity first",
   "anchor": "band:DEPARTMENT RUNTIME"
+ },
+ {
+  "id": "D157",
+  "label": "atom card shows output and the reply",
+  "anchor": "Workflow graph store"
  }
 ]

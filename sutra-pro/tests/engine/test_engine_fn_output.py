@@ -1,4 +1,4 @@
-"""What a function turn produced (D157, function-nodes.md 5.5): the plain words of each function's turn, the reply printed and cut, and the
+"""What a function turn produced (D157, function-nodes.md 5.6): the plain words of each function's turn, the reply printed and cut, and the
 layer recording both on the atom for a turn that passed, one that failed and one that was abandoned.
 
 The first half asks `output.py` directly, with turn buffers made by hand; the second drives the layer's hooks through the rig of

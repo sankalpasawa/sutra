@@ -1,4 +1,4 @@
-"""What a function turn produced, in plain words (D157, function-nodes.md section 5.5).
+"""What a function turn produced, in plain words (D157, function-nodes.md section 5.6).
 
 The layer asks for this each time it records a transition of the atom of a turn (a failed try, the close, an abandon). It reads
 only what the hooks buffered (`TurnBuffer`: the node's calls and replies, the messages posted, the record files saved) and gives

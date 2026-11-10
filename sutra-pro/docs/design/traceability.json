@@ -1,14 +1,14 @@
 {
  "schema": "traceability/1",
  "counts": {
-  "decisions": 156,
+  "decisions": 157,
   "packages": 78,
   "endpoints": 41,
   "chips": 15,
   "steps": 7,
   "owner_rules": 7
  },
- "max_decision": 156,
+ "max_decision": 157,
  "owner_rules": [
   {
    "rule": "This is a new app, no relation to the old sutra-ui. Its design is the J2 prototype's design.",
@@ -345,7 +345,8 @@
     "D153",
     "D154",
     "D155",
-    "D156"
+    "D156",
+    "D157"
    ],
    "modules": [
     "docs/DECISIONS.md",
@@ -1502,7 +1503,8 @@
    "title": "Own repository, local git only",
    "packages": [
     "E1",
-    "E5"
+    "E5",
+    "UI-8"
    ],
    "status": "implemented",
    "superseded_by": [],
@@ -3055,7 +3057,8 @@
    "title": "The workspace capability: every engine agent call may read the owner's folder, only project builders may change it, the owner's access setting caps both",
    "packages": [
     "CN-7",
-    "E0"
+    "E0",
+    "UI-7"
    ],
    "status": "implemented",
    "superseded_by": [],
@@ -3422,6 +3425,22 @@
    "status": "implemented",
    "superseded_by": [],
    "diagram": "label \"stop ladder: identity first\", pill on band:DEPARTMENT RUNTIME."
+  },
+  {
+   "id": "D157",
+   "title": "A work atom records what its turn produced, the plain words and the model's last reply; the store scrubs them and the card's Result block shows them",
+   "packages": [
+    "CT-1",
+    "GAP-DEMO",
+    "GAP-W1",
+    "L4",
+    "ORCH-3",
+    "UI-0",
+    "UI-6"
+   ],
+   "status": "implemented",
+   "superseded_by": [],
+   "diagram": "label \"atom card shows output and the reply\", pill on Workflow graph store."
   }
  ],
  "packages": [
