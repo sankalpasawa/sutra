@@ -358,10 +358,12 @@ class ChatMessageOut(Value):
     turn: Annotated[int, Field(ge=1)] | None = None                       # a direct-chat reply: the id of the owner's line it answers
     passed_on: Annotated[int, Field(ge=1)] | None = None                  # the owner's line the org chat passed on to this team: the id of the original in cs_org
     steer: bool = False                                                    # the owner's note to an agent (POST /api/chats/{sid}/steer, D132): its src_ref is `steer:<id>`
+    ask: Literal["q", "records", "model"] | None = None                    # the owner's question to a function (q) and its answer, made from its records or by a model
+                                                                           # (POST /api/ask, D148): the src_ref is `ask:<id>`, `ask:<id>:records` or `ask:<id>:model`
 
     @model_serializer(mode="wrap")
     def _blocks_only_when_there_are_some(self, handler: Any) -> dict[str, Any]:
-        """The wire shape of a message without blocks (or a turn, or a pass-on) is what it always was: the keys are left out when empty."""
+        """The wire shape of a message without blocks (or a turn, a pass-on, a note or a question) is what it always was: the keys are left out when empty."""
         data = handler(self)
         if not data.get("blocks"):
             data.pop("blocks", None)
@@ -371,6 +373,8 @@ class ChatMessageOut(Value):
             data.pop("passed_on", None)
         if not data.get("steer"):
             data.pop("steer", None)
+        if data.get("ask") is None:
+            data.pop("ask", None)
         return data
 
 
