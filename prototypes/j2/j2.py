@@ -379,6 +379,11 @@ def human_problem(t):
         "it is longer than 3 sentences" if n > 3 else None
 
 
+def first_sentences(t, n):
+    """The first n sentences of t, split as human_problem counts them."""
+    return " ".join([x for x in re.split(r"(?<=[.!?])\s+", str(t or "").strip()) if x][:n])
+
+
 INTERNAL = re.compile(r"\bW-\d+(?:\.a\d+)?\b|\ba\d\b|(?<![\w&])#[A-Za-z][\w-]*|(?<=\s)\.[A-Za-z][\w-]+|\bunits?\b|[<>]|"
                       r"\b(?:id|class)=|J2:", re.I)
 
@@ -606,6 +611,47 @@ def behavior_problems(steps, told, source, about, loose=False):
         out.append("its rule depends on a date: the atom must create a control that sets the date (e.g. #reg-date) "
                    "and the steps must set it, never rely on today's date")
     return out
+
+
+def fixed_step(st):
+    """A behaviour step the validator rewrites instead of rejecting (None when it parses, or can't be fixed):
+    "expect-text <selector>" with no value (runs/j2-20261109-182842: 'expect-text #cell-0-0 ') -> "expect-visible
+    <selector>"."""
+    try:
+        j2_check.parse_step(st)
+        return None
+    except ValueError:
+        pass
+    w = str(st or "").split()
+    if len(w) < 2 or w[0].lower() != "expect-text":
+        return None
+    new = "expect-visible " + " ".join(w[1:])
+    try:
+        j2_check.parse_step(new)
+        return new
+    except ValueError:
+        return None
+
+
+# target_problem's and css_problem's "not told to create" wording: the target, and css_problem's part of it
+UNTOLD = re.compile(r"""targets ('(?:[^'\\]|\\.)*'|"(?:[^"\\]|\\.)*"), (?:which|whose ('[^']*'|"[^"]*")) the atom's """
+                    r"how or constraints doesn't tell the builder to create")
+
+
+def untold_selector(problem):
+    """The id or class ("#events", ".level-btn") a check problem says the atom never tells the builder to create, or
+    None when the problem is another one."""
+    import ast
+    m = UNTOLD.search(problem)
+    if not m:
+        return None
+    target = ast.literal_eval(m.group(1))
+    if m.group(2):        # css_problem names one part of a compound selector, without its # or .
+        name = ast.literal_eval(m.group(2))
+        p = re.search(r"([#.])" + re.escape(name) + r"(?![\w-])", target)
+        return (p.group(1) if p else "") + name
+    b = SELECTOR.match(target.strip())
+    return b.group("base") if b else target.strip()
 
 
 def range_ids(told):
@@ -6356,6 +6402,7 @@ class J2Run:
         if real and self._file_wf(w):
             for a in w["atoms"]:
                 facts_to_headings(a, src)
+        self._fix_atoms(w, src, types, up, real)
         out = [f"work atom {n}: {x}" for n, a in enumerate(w["atoms"], 1)
                for x in expected_problems(a, types) or check_problems(cover_expected(copy.deepcopy(a)), src, types, up,
                                                                       ranges=real)]
@@ -6367,6 +6414,31 @@ class J2Run:
             out += [f"no {t} check for the {x} section it writes" for x in wf_sections(w, self.out["sections"])
                     for t in HEADING_CHECKS if not any(ct == t and x.lower() in tg for ct, tg in have)]
         return out
+
+    def _fix_atoms(self, w, src, types, up, real):
+        """What the validator fixes in place instead of rejecting, each logged (_autofix): an "expect-text <selector>"
+        step with no value becomes "expect-visible <selector>" (fixed_step); a check or behaviour step that targets an
+        id or class the how and constraints never mention gets a constraint telling the builder to create it."""
+        name = w.get("name") or "?"
+        for n, a in enumerate(w["atoms"], 1):
+            steps = [x.get("steps") for x in a.get("expected_output") or [] if isinstance(x, dict)
+                     and x.get("kind") == "behavior"] + [c.get("target") for c in a.get("verification") or []
+                                                         if isinstance(c, dict) and c.get("type") == "behavior-steps"]
+            for lst in (x for x in steps if isinstance(x, list)):
+                for i, st in enumerate(lst):
+                    if new := fixed_step(st):
+                        lst[i] = new
+                        self._autofix(name, "behavior_step", f"work atom {n}: step {st!r} has no value, so it is {new!r}")
+            if expected_problems(a, types):
+                continue
+            probs = check_problems(cover_expected(copy.deepcopy(a)), src, types, up, ranges=real)
+            sels = [s for s in dict.fromkeys(untold_selector(p) for p in probs) if s]
+            if sels:
+                cons = a.get("constraints")
+                a["constraints"] = (list(cons) if isinstance(cons, list) else [cons] if cons else []) + [
+                    f'Create the element(s) "{s}" this atom\'s checks use.' for s in sels]
+                self._autofix(name, "create_target", f"work atom {n}: its checks target {', '.join(sels)}, which its "
+                                                     "how or constraints never mention, so a constraint now says to create it")
 
     def _priority_file_note(self, table):
         """J2_REALIZATION: what Priority needs to know about file workflows on the table ("" when there are none, so other
@@ -6848,7 +6920,15 @@ class J2Run:
         self.post("system", f"Validator rejected '{name}': {reason}.", rejected=name)
         return f"{name} ({reason})"
 
-    PLAN_NAME = re.compile(r"^Revise W-\d+ |^Fix | \(change \d+(?:, round \d+)?\)$")
+    def _autofix(self, name, kind, detail):
+        """A small thing the validator fixed itself instead of rejecting (a rejection cost a whole re-ask): one row in
+        autofix.json (cycle, workflow, kind, detail) and an auto_fix event."""
+        fixes = self.__dict__.setdefault("autofixes", [])
+        fixes.append({"cycle": self.cycle, "workflow": name, "kind": kind, "detail": detail})
+        self._event("validator", "auto_fix", f"{name}: {detail}")
+        self.save("autofix.json", fixes)
+
+    PLAN_NAME =re.compile(r"^Revise W-\d+ |^Fix | \(change \d+(?:, round \d+)?\)$")
 
     def _plan_name(self, name):
         """The realization plan's name for a workflow: a fix ("Revise W-6 Board...") or a change's revision ("Board... (change 1)")
@@ -6954,6 +7034,26 @@ class J2Run:
                 self.post("system", f"Judge: {name} was not scored ({note or 'the reply lacked it'}); registered as proposed.", judge=name)
         return batch
 
+    def _plan_row(self, name):
+        """The realization plan's proposal_brief row for this workflow (by its name or the planned name inside it)."""
+        rows = (self.real_summary or {}).get("proposal_brief") or []
+        return next((x for x in rows for n in (name, self._plan_name(name)) if x.get("name") == n), None)
+
+    def _fill_from_plan(self, w, row, missing):
+        """Required fields a planned workflow's proposal left out, filled from its plan row instead of refusing it
+        ("required field(s) missing: goal_gap, outputs, completion_check"): goal_gap from goal, completion_check from
+        done_test, outputs the type's file for a row that delivers items, else the planning file artifacts/<name>.md
+        (as the plan's own proposal writes them). Each fill is logged (_autofix)."""
+        slug = re.sub(r"[^a-z0-9]+", "-", str(row.get("name")).lower()).strip("-")
+        have = {"goal_gap": row.get("goal"), "completion_check": row.get("done_test"),
+                "outputs": [self.out.get("file") or "index.html"] if row.get("covers") else [f"artifacts/{slug}.md"]}
+        got = [f for f in missing if have.get(f)]
+        for f in got:
+            w[f] = have[f]
+        if got:
+            self._autofix(w.get("name") or "?", "plan_fields", "filled from the realization plan: " + ", ".join(
+                f"{f}={w[f]!r}" for f in got))
+
     def _register(self, agreed):
         """J2.e, plain code: every proposal is checked before it is registered, including one from an Identity ruling.
         Checks: required fields present, priced from the rate card, nothing Priority refused, cost fits what's left.
@@ -6975,8 +7075,11 @@ class J2Run:
                                                   "propose only the workflows the change plan names"))
                 continue
             missing = [f for f in self.REQUIRED if not (w.get(f) or (f == "goal_gap" and w.get("purpose")))]
+            if missing and (row := self._plan_row(name)):
+                self._fill_from_plan(w, row, missing)
+                missing = [f for f in missing if not w.get(f)]
             atoms = normalise_checks(w.get("atoms") or self.proposed_atoms.get(name))   # Priority or a ruling may drop them
-            no_atom = self._atom_problems({"atoms": atoms, "outputs": w.get("outputs"),
+            no_atom = self._atom_problems({"name": name, "atoms": atoms, "outputs": w.get("outputs"),
                                            "dependencies": w.get("dependencies")}, batch)
             lld = [str(i) for i in (w.get("lld_sections") or self.proposed_lld.get(name) or [])] if self.blueprint else []
             unknown_lld = [i for i in lld if i not in {x["id"] for x in self.blueprint["sections"]}] if self.blueprint else []
@@ -7680,22 +7783,16 @@ class J2Run:
         self._handoff("coordination", kind="schedule")
 
     def _human_output(self, w, meta, sid):
-        """1 to 3 plain sentences saying what the builder built. "done." alone is rejected and asked for once more
-        (a short call about the section just written); if that fails too, code writes the sentence."""
+        """1 to 3 plain sentences saying what the builder built. Code fixes an unusable one itself, with no re-ask
+        (logged, _autofix): a longer one is cut to its first 3 sentences; "done." alone becomes a plain sentence from
+        the workflow's name."""
         fn, last = w["id"], str(meta.get("human_output") or "")
-        if human_problem(last):
-            self._event(fn, "invalid_move", f"human_output: {human_problem(last)}")
-            sec = (self.sections.get(sid) or {}).get("body") or ""
-            r = self.call(fn, '{"human_output": str (1 to 3 plain sentences)}',
-                          f"YOUR REPORT '{last}' CAN'T BE USED: {human_problem(last)}. Tell a person in 1 to 3 plain "
-                          f"sentences what you built in section {sid} ({w['name']}). Never just \"done.\"\nYOUR "
-                          f"SECTION:\n{sec[:3000]}",
-                          lambda: json.dumps({"human_output": f"I built the {w['name']} section ({sid}) of the "
-                                                              f"{self.out['noun']}."}))
-            last = str(r.get("human_output") or "") if isinstance(r, dict) else ""
-        if human_problem(last):
-            self._event(fn, "invalid_move", f"human_output again: {human_problem(last)}")
-            last = f"{fn} built {w['name']} in section {sid}. Code ran its checks; see the receipts."
+        if p := human_problem(last):
+            new = first_sentences(last, 3) if "longer" in p else f"I built {w['name']} for the {self.out['noun']}."
+            if human_problem(new):
+                new = f"{fn} built {w['name']} in section {sid}. Code ran its checks; see the receipts."
+            self._autofix(fn, "human_output", f"human_output: {p}: {last!r} is now {new!r}")
+            last = new
         return last
 
     def _atom_outputs(self, w, meta, attempt):
@@ -7703,6 +7800,12 @@ class J2Run:
         written by code from the atom's expected output), then, for an atom whose checks passed, its agent_output."""
         for n, a in enumerate(w.get("atoms") or []):
             text = str(meta.get("atom_human_output") or "") if n == 0 else ""
+            p = atom_human_problem(text) if n == 0 else None
+            if p and ("longer" in p and not atom_human_problem(first_sentences(text, 2)) or "too short" in p):
+                # fixed by code, no re-ask: cut to 2 sentences, or the atom's expected output in plain words
+                new = first_sentences(text, 2) if "longer" in p else fallback_human(a, self.out["noun"])
+                self._autofix(w["id"], "atom_human_output", f"atom human_output: {p}: {text!r} is now {new!r}")
+                text = new
             if atom_human_problem(text):
                 if n == 0:
                     self._event(w["id"], "invalid_move", f"atom human_output: {atom_human_problem(text)}")
