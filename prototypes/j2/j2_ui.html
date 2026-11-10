@@ -1129,7 +1129,7 @@ try { var tp = localStorage.getItem("j2theme"); document.documentElement.dataset
 <main>
   <section class="work">
     <div class="wbar"><div><button type="button" class="linkbtn" id="backmap" hidden>← Back to map</button><div class="wcrumb" id="wcrumb" hidden><span id="wcrumbs">Artifacts</span> <span aria-hidden="true">/</span> <b id="wcrumbg"></b></div><div class="wtl"><h2 class="wtitle" id="wtitle">Map</h2><span class="wcnt" id="wcnt" hidden></span></div><span class="wsub" id="wsub"></span></div><select id="ver" aria-label="Version"></select></div>
-    <div class="pane preview" id="pane-preview" hidden><div class="doclinks" id="doclinks" hidden></div><iframe id="frame" title="Website preview" src="/site/latest"></iframe></div>
+    <div class="pane preview" id="pane-preview" hidden><div class="doclinks" id="doclinks" hidden></div><iframe id="frame" title="Preview" src="/site/latest"></iframe></div>
     <div class="pane" id="pane-goal" hidden></div>
     <div class="pane" id="pane-workflows" hidden></div>
     <div class="pane" id="pane-planmap" hidden></div>
@@ -1185,7 +1185,7 @@ try { var tp = localStorage.getItem("j2theme"); document.documentElement.dataset
       <div class="waiting" id="waiting" hidden></div>
       <div class="quick" id="quick"></div>
       <div class="row">
-        <textarea id="box" placeholder="Describe the website you want. The agents take it from there…" aria-label="Message"></textarea>
+        <textarea id="box" placeholder="Describe what you want made. The agents take it from there…" aria-label="Message"></textarea>
         <button class="send" id="send">Send</button>
       </div>
       <div class="asknote" id="asknote" hidden>Answers from this run's records. It cannot change the run.</div>
@@ -1216,9 +1216,9 @@ function paint(el, html){
   open.forEach(k => { const d = el.querySelector(`details[data-key="${CSS.escape(k)}"]`); if (d) d.open = true; });
 }
 // Example briefs for both views: different kinds of business, so nothing assumes a cafe.
-const EXAMPLES = ["A website for my cafe", "A website for Sweet Crumbs Bakery in Pune: menu, cake orders, contact",
-  "A website for Petal & Stem, a florist in Jaipur: bouquets, same-day delivery, wedding flowers",
-  "A website for Asha Rao Photography, a wedding and portrait photographer in Mumbai: portfolio, packages, booking"];
+const EXAMPLES = ["A PRD for a food delivery app", "A hiring policy for my startup",
+  "A one-page website for Sweet Crumbs Bakery in Pune: menu, cake orders, contact",
+  "Design docs for a clinic booking app"];
 const PRD_EXAMPLES = ["Write a PRD for QuickQueue, a mobile app that lets clinic patients join a waiting line remotely. "
   + "Users: patients at small clinics and the front-desk staff who manage the line. Problem: patients wait 45 minutes on "
   + "average in crowded waiting rooms. Must-have features: join the queue from a phone, live position updates, SMS alert "
@@ -1287,7 +1287,7 @@ document.addEventListener("change", e => { if (e.target.id === "chthink"){ CHATT
 // Adaptation's feed (activity/1, /api/activity): its messages and hand-offs, each AI call, each planning decision, every judge round with the scores,
 // every revision and the changes it handled, all in the chat's own message style with a small label for the kind. A question typed here goes to
 // /api/ask and is answered from the run's records only; questions and answers sit in the same time order and are not saved.
-const boxHint = s => ASKMODE === "ask" ? `Ask ${who(CHATFN)[0]} about this run…` : s && s.paused ? "Answer your Client Lead's question…" : s && s.total ? "Ask your Client Lead for a change…" : CTX && CTX.generic ? "Describe what you want made. The agents take it from there…" : "Describe the website you want. The agents take it from there…";
+const boxHint = s => ASKMODE === "ask" ? `Ask ${who(CHATFN)[0]} about this run…` : s && s.paused ? "Answer your Client Lead's question…" : s && s.total ? "Ask your Client Lead for a change…" : "Describe what you want made. The agents take it from there…";
 const FEED = {who: "", found: false, events: []}, QA = [];      // QA: this viewer's questions and the answers, per function
 let FEEDKEY = "", ASKMODE = "change";
 const FKIND = {call: "AI call", plan: "plan", wf: "workflow", judge: "judge", revise: "revision", change: "change"};
@@ -1817,7 +1817,7 @@ function idRuns(ids){        // W-1, W-2, W-3, W-5 -> "W-1 to W-3, W-5"; ids tha
 }
 function runSummary(s){
   const at = Object.values(s.atoms_v1 || {}), n = st => at.filter(a => st(a.status)).length;
-  const built = [...(s.docset_files || []).map(d => d.kind.toUpperCase()), ...(s.doc && !(s.docset_files || []).length && (s.files || []).length ? ["PRD"] : []), ...(s.versions ? ["website"] : [])];
+  const built = [...(s.docset_files || []).map(d => d.kind.toUpperCase()), ...(s.doc && !(s.docset_files || []).length && (s.files || []).length ? ["PRD"] : []), ...(s.versions ? [TYL("website", "website").toLowerCase()] : [])];
   return `<div class="runsum" data-summary><div><b>Outcome:</b> ${clip("sum-outcome", dv(s.outcome || s.status || "not started"), 160)}</div>`
     + `<div><b>Credits:</b> ${s.spent} of ${s.budget} used</div>`
     + `<div><b>Work atoms:</b> ${n(x => x === "closed")} closed · ${n(x => x === "verify_failed" || x === "abandoned")} failed · ${n(x => x !== "closed" && x !== "verify_failed" && x !== "abandoned")} open</div>`
@@ -2113,7 +2113,7 @@ function sCrew(s, M){
 // ---- what the run is doing, in one line
 function sTitle(s){ const g = s.goal || {}, first = (s.allChat || []).find(m => m.who === "user"), t = first ? String(first.text) : "", q = t.match(/["“]([^"”]{2,40})["”]/);
   return g.site_name || (q ? `${q[1]} ${sNoun(s)}` : t ? sChipLabel(t) : "Your project"); }
-const sNoun = s => (s.docset || []).length > 1 ? "design documents" : s.doc ? "document" : String(s.output_label || "website").toLowerCase();      // the run's own output type
+const sNoun = s => (s.docset || []).length > 1 ? "design documents" : s.doc ? "document" : String(s.output_label || TYL(s.output, "project")).toLowerCase();      // the run's own output type
 function sPhase(s, open){      // one plain sentence for where the run is; no names of agents, no ids
   const what = sNoun(s);
   if (failed(s)) return s.error || /^Crashed/.test(s.outcome || "") ? "Something went wrong. You can start over." : "The team stopped here. You can start over.";
@@ -2125,16 +2125,16 @@ function sPhase(s, open){      // one plain sentence for where the run is; no na
   return st === 0 ? "Reading your request" : st === 1 ? "Planning the work" : st === 2 ? (w ? `Building ${w.name.toLowerCase()}` : `Building your ${what}`)
     : s.doc ? "Checking the document" : "Checking it on a phone and a laptop";
 }
-const SCHIPS = ["A website for my bakery", "A PRD for a food delivery app", "Design docs for a clinic booking app"];      // what the team makes today: a website, one document, the three design documents
+const SCHIPS = ["A PRD for a food delivery app", "A hiring policy for my startup", "A website for my bakery", "Design docs for a clinic booking app"];      // what the team makes today: one document, a new kind of document, a page, the three design documents
 // start page: a small line icon per kind of work (fixed SVG, no outside text goes in)
 const SLICON = {website: `<svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="4.5" width="18" height="15" rx="2.5"/><path d="M3 9h18"/><circle cx="6.2" cy="6.8" r=".4"/><circle cx="8.4" cy="6.8" r=".4"/></svg>`,
   document: `<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M7.5 3H14l5 5v11.5a1.5 1.5 0 0 1-1.5 1.5h-10A1.5 1.5 0 0 1 6 19.5v-15A1.5 1.5 0 0 1 7.5 3z"/><path d="M14 3v5h5M9.5 13h6M9.5 16.5h4"/></svg>`,
   plan: `<svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3.5" y="5" width="17" height="15" rx="2.5"/><path d="M3.5 10h17M8 3v4M16 3v4M9 15l2 2 4-4"/></svg>`};
-const sKindOf = t => /plan|schedule|roadmap|calendar/i.test(t) ? "plan" : /spec|prd|doc|report|brief/i.test(t) ? "document" : "website";
+const sKindOf = t => /plan|schedule|roadmap|calendar/i.test(t) ? "plan" : /spec|prd|doc|report|brief|policy/i.test(t) ? "document" : "website";
 const sAgo = w => { const t = Date.parse(w); if (!t) return ""; const m = Math.max(0, (Date.now() - t) / 6e4);
   return m < 1 ? "just now" : m < 60 ? `${Math.round(m)}m ago` : m < 1440 ? `${Math.round(m / 60)}h ago` : m < 2880 ? "yesterday" : m < 43200 ? `${Math.round(m / 1440)}d ago` : new Date(t).toLocaleDateString(undefined, {day: "numeric", month: "short"}); };
 // the composer types example ideas with a blinking caret until you click in or start typing (still text when motion is reduced)
-const SGHOST = ["A one-page website for my coffee shop", "A PRD for a habit tracker app", "Design docs for a clinic booking app"];
+const SGHOST = ["A PRD for a habit tracker app", "A hiring policy for my startup", "A one-page website for my coffee shop", "Design docs for a clinic booking app"];
 let sghostT = 0, sghostI = 0;
 function sGhost(){ const g = $("sghost"), box = $("lform"), t = $("lbox"); clearTimeout(sghostT); if (!g) return;
   const on = !$("sland").hidden && !t.value && document.activeElement !== t; box.classList.toggle("ghosting", on); g.hidden = !on; if (!on) return;
@@ -2152,8 +2152,8 @@ const sFilesHTML = s => plainDocLinks(s);      // every design document's files,
 function sFinish(s){
   const q = runQ().replace("&", "?");
   const many = (s.docset || []).length > 1;      // design documents: the website (if any) and every document's files, in one list
-  const dl = many ? (!s.doc && s.versions ? `<a class="pri" href="/site/latest${q}" download="my-website.html">Download the ${esc(TYL("website", "website").toLowerCase())}</a>` : "") + `<button type="button" data-files>All files (${(s.docset_files || []).length * 2})</button>`
-    : s.doc ? fileLinks(s) : `<a class="pri" href="/site/latest${q}" download="my-website.html">Download</a>`;
+  const dl = many ? (!s.doc && s.versions ? `<a class="pri" href="/site/latest${q}" download="website.html">Download the ${esc(TYL("website", "website").toLowerCase())}</a>` : "") + `<button type="button" data-files>All files (${(s.docset_files || []).length * 2})</button>`
+    : s.doc ? fileLinks(s) : `<a class="pri" href="/site/latest${q}" download="${esc(s.output || "website")}.html">Download</a>`;
   const ic = d => `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${d}</svg>`;
   return `<span class="sfmsg"><span><i aria-hidden="true">✓</i>${esc(sPhase(s, []))}</span></span>${dl.replace(/(<a class="pri"[^>]*>)/, "$1" + ic('<path d="M12 4v11M7 10l5 5 5-5M5 20h14"/>'))}`
     + `<button type="button" data-share>${ic('<path d="M10 14a4 4 0 0 0 5.7 0l3-3a4 4 0 0 0-5.7-5.7l-1 1M14 10a4 4 0 0 0-5.7 0l-3 3a4 4 0 0 0 5.7 5.7l1-1"/>')}Copy share link</button><button type="button" data-full>${ic('<path d="M14 4h6v6M10 20H4v-6M20 4l-7 7M4 20l7-7"/>')}Open full view</button>`;
@@ -2244,7 +2244,7 @@ function renderSimple(s){
   $("sland").hidden = started; $("swork").hidden = !started; sThemeBtn(); sAutoPaint(s);
   if (!started){
     if ($("schips").__v !== "o:" + s.output){ $("schips").__v = "o:" + s.output; $("schips").innerHTML = SCHIPS.map(t => `<button type="button" data-brief="${esc(t)}" title="${esc(t)}">${SLICON[sKindOf(t)]}${esc(sChipLabel(t))}</button>`).join("");
-      $("lbox").placeholder = "e.g. A one-page website, a PRD, or design docs (PRD, HLD, LLD)"; }
+      $("lbox").placeholder = "e.g. A PRD, a policy, a one-page website, or design docs (PRD, HLD, LLD)"; }
     if (!SV.landKey){ SV.landKey = "1"; $("slfaces").innerHTML = SKEYS.map(k => face(k, 46, {prop: false, label: false})).join(""); sRecent(); setTimeout(sGhost); }
     return;
   }
@@ -2800,7 +2800,7 @@ function sChatOpen(on){ const a = $("sapp"); if (!a || !a.classList) return; a.c
 async function sRecent(){
   try { const r = await (await fetch("/api/runlist", {cache: "no-store"})).json(), runs = (r.runs || []).filter(x => x.title && x.title !== x.id && x.status !== "running").slice(0, 6);
     if (!runs.length) return;
-    $("srlist").innerHTML = runs.map(x => { const k = x.output === "prd" ? "document" : x.output === "plan" ? "plan" : "website", brief = String(x.brief || "").split("\n")[0].trim();
+    $("srlist").innerHTML = runs.map(x => { const k = x.output === "plan" ? "plan" : TYFORM(x.output) === "page" ? "website" : "document", brief = String(x.brief || "").split("\n")[0].trim();
       return `<a href="/?run=${encodeURIComponent(x.id)}&view=simple"><span class="slico">${SLICON[k]}</span><span class="sltxt"><b>${esc(x.title)}</b>${brief ? `<span>${esc(brief)}</span>` : ""}</span><small><span class="slwhat"><i class="slst${x.status === "done" ? " done" : ""}" aria-hidden="true"></i>${k === "document" ? "Document" : k === "plan" ? "Plan" : "Website"} · ${x.status === "done" ? "finished" : "stopped"} · </span><time datetime="${esc(String(x.when || ""))}">${esc(sAgo(x.when))}</time></small></a>`; }).join("");
     $("srecent").hidden = false; } catch (e) {}
 }
@@ -2931,9 +2931,10 @@ function quick(s){
   [...$("quick").children].forEach(b => b.onclick = () => { $("box").value = b.textContent; send(); });
 }
 // J2_GENERIC=1: a type's label, tag or ready text from the run's own types (/api/state "types"), else today's word
-const GTYPE = k => (CTX && CTX.generic && CTX.types && CTX.types[k === "site" ? "website" : k]) || null;
+const GTYPE = k => (CTX && CTX.types && CTX.types[k === "site" ? "website" : k]) || null;
 const TYL = (k, old) => (GTYPE(k) || {}).label || old;
 const TYTAG = (k, old) => (GTYPE(k) || {}).tag || old;
+const TYFORM = k => (GTYPE(k) || {}).form || (k === "website" || k === "site" ? "page" : "document");      // a run list icon: page or document
 const DOCGROUPS = s => s.generic ? [...new Set(["prd", "hld", "lld", ...(s.docset || [])]), "site"] : ["prd", "hld", "lld", "site"];      // a new document type gets its own group
 async function poll(){
   try{
@@ -3135,7 +3136,7 @@ function sFlow(e){
     + "</ol>";
 }
 function sImpact(e){
-  const order = [...new Set(["prd", "hld", "lld", ...Object.keys((CTX && CTX.generic && CTX.types) || {}), "website"])],
+  const order = [...new Set(["prd", "hld", "lld", ...Object.keys((CTX && CTX.types) || {}), "website"])],
     label = new Proxy({prd: "PRD", hld: "HLD", lld: "LLD", website: "Website"}, {get: (o, k) => TYTAG(k, o[k])});
   const groups = order.concat("other").map(k => [k, e.impact.filter(x => (x.deliverable || "other") === k)]).filter(([, xs]) => xs.length);
   const reused = (e.reused_by || []).map(x => x.atom ? sChip(x)
@@ -3368,7 +3369,7 @@ const artCur = () => { const g = artGroup(ARTS.g), rows = g.rows || []; return r
 function renderArtifacts(){
   if (!ARTS.groups) return '<p class="empty">Loading the artifacts…</p>';
   const g = artGroup(ARTS.g), rows = g.rows || [], x = artCur();
-  if (!x) return `<div class="agwrap"${g.id === "site" ? ' data-node="work:website" data-art="site/index.html"' : ""}><p class="empty">${g.id === "site" ? ((ARTS.groups || {}).site ? "This run recorded no sections for its website." : "This run built no website.")
+  if (!x) return `<div class="agwrap"${g.id === "site" ? ' data-node="work:website" data-art="site/index.html"' : ""}><p class="empty">${g.id === "site" ? ((ARTS.groups || {}).site ? `This run recorded no sections for its ${TYL("website", "website").toLowerCase()}.` : `This run built no ${TYL("website", "website").toLowerCase()}.`)
     : g.id === "guides" ? "This run wrote no guides." : "Nothing recorded yet."}</p></div>`;
   return `<div class="agwrap" data-agroup="${esc(g.id)}"><div class="aglist" aria-label="${esc(g.label)}"${g.id === "site" ? ' data-node="work:website" data-art="site/index.html"' : ""}>${rows.map(r => artListRow(r, r === x)).join("")}</div>`
     + `<div class="agpane" data-apane="${esc(x.id)}">${artPane(x)}</div></div>`; }
@@ -3635,7 +3636,7 @@ function mapShape(kind, st, c, x, y, w, h, col, thin){      // the ring of a dot
 function mapBadge(st, x, y){ return st === "fault" || isWait(st) ? `<g><circle cx="${x}" cy="${y}" r="8" fill="${st === "fault" ? "var(--bad)" : "var(--validator)"}"/><text x="${x}" y="${y + 4}" text-anchor="middle" style="fill:var(--on);font-weight:700">${st === "fault" ? "!" : "?"}</text></g>` : ""; }
 function mapLabelLines(t){ const w = String(t).split(" "), out = [""]; w.forEach(x => { const l = out[out.length - 1]; if (l && (l + " " + x).length > 17 && out.length < 2) out.push(x); else out[out.length - 1] = l ? l + " " + x : x; }); return out; }
 const mapGoLabel = n => n.status === "waiting_on_you" ? "Answer in Chat" : n.kind === "person" ? "Show what needs you" : n.kind === "engine" ? "Open these workflows"
-  : n.kind === "function" ? (n.id === "fn:identity" ? "Open Chat" : n.id === "fn:audit" ? "Open Audit findings" : "Show messages and calls") : n.tag === "Site" || n.id === "work:website" ? "Open the site preview" : n.id === "work:charter" ? "Open the Charter" : "Open the document";
+  : n.kind === "function" ? (n.id === "fn:identity" ? "Open Chat" : n.id === "fn:audit" ? "Open Audit findings" : "Show messages and calls") : n.tag === "Site" || n.id === "work:website" ? `Open the ${TYL(n.id.slice(5), "site").toLowerCase()} preview` : n.id === "work:charter" ? "Open the Charter" : "Open the document";
 const mapById = m => Object.fromEntries((m.nodes || []).map(n => [n.id, n]));
 const mapStepTo = (m, n) => { const e = (m.edges || []).find(x => x.kind === "step" && x.from === n.id); return e ? mapById(m)[e.to] : null; };      // the deliverable a step leads to
 const mapStepVerb = (m, n) => MAPLABEL.verb[n.label] || (mapStepTo(m, n) && MAPLABEL.verbTag[mapStepTo(m, n).tag]) || "working on";
@@ -5255,7 +5256,7 @@ function renderRuns(){
   $("runcount").textContent = L.length === RUNS.all.length ? plural(L.length, "run") : `${L.length} of ${plural(RUNS.all.length, "run")}`;
   L.slice(0, RUNS.show).forEach(x => { const G = runGroup(x.when); if (G !== g){ g = G; h += `<div class="rgrp">${G}</div>`; }
     const me = x.id === cur;
-    h += `<button type="button" class="runrow${me ? " cur" : ""}" data-openrun="${esc(x.id)}"${me ? ' aria-current="true"' : ""} aria-label="${esc(x.title)}, ${esc(x.id)}, ${esc(x.status)}${me ? ", open now" : ""}"><span class="ric">${RUNICON[x.output === "website" ? "web" : "doc"]}</span>`
+    h += `<button type="button" class="runrow${me ? " cur" : ""}" data-openrun="${esc(x.id)}"${me ? ' aria-current="true"' : ""} aria-label="${esc(x.title)}, ${esc(x.id)}, ${esc(x.status)}${me ? ", open now" : ""}"><span class="ric">${RUNICON[TYFORM(x.output) === "page" ? "web" : "doc"]}</span>`
       + `<span class="rmid"><span class="rt">${esc(x.title)}</span><code>${esc(x.id)}</code><span class="rm">${esc([runWhen(x.when), x.brief].filter(Boolean).join(" · "))}</span></span>`
       + `<span class="rr"><span class="rst ${esc(x.status)}">${esc(x.status)}</span><span class="ropen">${me ? "Open now" : "Open"}</span></span></button>`; });
   if (L.length > RUNS.show) h += `<button type="button" class="runmore" id="runmore">Show ${Math.min(20, L.length - RUNS.show)} more · ${L.length - RUNS.show} left</button>`;
