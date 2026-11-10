@@ -25,8 +25,9 @@ from sutra_app.library.types import overhead_atom_id
 from sutra_app.orchestrator.models import parse_event
 
 ENGINE = "sutra_app.engine"
-J2_MODULES = ("j2", "j2_agent", "j2_artifact_models", "j2_artifacts", "j2_board", "j2_change", "j2_check", "j2_map",
-              "j2_realization", "j2_rules", "j2_schema", "j2_send", "j2_story", "j2_template_lib", "rehydrate")
+J2_MODULES = ("j2", "j2_agent", "j2_agent_models", "j2_agent_views", "j2_artifact_models", "j2_artifacts", "j2_board", "j2_change",
+              "j2_check", "j2_map", "j2_realization", "j2_rules", "j2_schema", "j2_send", "j2_story", "j2_studio", "j2_template_lib",
+              "rehydrate")
 BREW_LAB = ("A one-page website for Brew Lab, a small specialty coffee shop in Indiranagar, Bengaluru. Visitors should "
             "see the menu with prices, the opening hours, and where to find us, and be able to pre-order a coffee for "
             "pickup. It should feel warm and modern and work well on a phone. Include a section about our beans and the "
@@ -773,3 +774,33 @@ def test_a_stop_line_clears_the_queue_and_nothing_is_read_after_close(tmp_path):
     with open(path, "a") as f:
         f.write(json.dumps({"n": 4, "kind": "user", "text": "late"}) + "\n")
     assert inbox.poll() is None and len(inbox) == 0
+
+
+# ---- strict records over the records of J2 sync 4 (D145 and Decide for me) --------------------------------------------------
+def test_a_forced_audit_failure_run_with_the_late_judge_ends_in_strict_records_mode_and_holds_its_late_list(j2, make_run_dir, clean_env):
+    """D145: the late judge's records (`late` in realization.json, the chat line's `judge`, the workflow row's judge) and the Plan workflow's
+    version 0 are accepted when the records hook is strict: no RecordRejected stops the run, which ends done or done with open items."""
+    clean_env.setenv("SUTRA_RECORDS", "strict")
+    run_dir = make_run_dir(user_text=BREW_LAB, settings={"J2_MEMORY": "0", "J2_REALIZATION": "1", "J2_FORCE_AUDIT_FAIL": "1"})
+    assert Running(run_dir, "--mock").wait(60) == 0
+    rows = events(run_dir)
+    assert rows[-1]["t"] == "run.ended" and rows[-1]["status"] in ("done", "done_with_open_items") and rows[-1]["code"] is None
+    assert not [r for r in trace(run_dir, "record.warning")], "strict mode refused no record"
+    real = json.loads((Path(run_dir) / "realization.json").read_text(encoding="utf-8"))
+    assert real["late"] and real["late"][0]["revises"] and real["late"][0]["calls"] >= 1
+    assert [m["judge"] for m in chat(run_dir) if "judge" in m] == [e["workflow"] for e in real["late"]]
+    assert [w["version"] for w in json.loads((Path(run_dir) / "workflows.json").read_text(encoding="utf-8")) if w["name"] == "Plan"] == [0]
+
+
+def test_a_decide_for_me_run_ends_in_strict_records_mode_with_its_settings_file_and_flagged_answers(j2, make_run_dir, clean_env):
+    """Sync 4: Decide for me writes settings.json and answers in the Requester's name (`auto`, `auto_label`); strict mode accepts both."""
+    clean_env.setenv("SUTRA_RECORDS", "strict")
+    clean_env.setenv("J2_DECIDE_FOR_ME", "1")           # the host exports only the engine settings it knows: J2 reads this one from the environment
+    run_dir = make_run_dir(user_text=VAGUE[0], settings=QUIET)
+    assert Running(run_dir, "--mock").wait(60) == 0
+    rows = events(run_dir)
+    assert rows[-1]["t"] == "run.ended" and rows[-1]["status"] in ("done", "done_with_open_items") and rows[-1]["code"] is None
+    assert not [r for r in trace(run_dir, "record.warning")], "strict mode refused no record"
+    assert json.loads((Path(run_dir) / "settings.json").read_text(encoding="utf-8")).get("decide_for_me") is True
+    answers = [m for m in chat(run_dir) if m["who"] == "user" and m.get("auto")]
+    assert answers and all(m.get("auto_label") for m in answers), "the vague brief raised questions and Decide for me answered them"

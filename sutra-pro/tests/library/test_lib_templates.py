@@ -19,6 +19,7 @@ from sutra_app.library.gate import GATE, GateError
 from sutra_app.library.registry import REGISTRY, is_transport_safe, schema_sha
 
 FIX = Path(__file__).parent / "fixtures" / "artifacts"
+ENGINE_TEMPLATES = Path(__file__).resolve().parents[2] / "sutra_app" / "engine" / "templates"      # the vendored generics
 SECTIONS = [(a, s) for a, by in SECTION_MODELS.items() for s in by]
 STORED = ["prd/requirements/still-point-yoga-requirements", "hld/components/still-point-yoga-components",
           "lld/form-fields/still-point-yoga-form-fields", "website/section/thread-filter"]
@@ -103,6 +104,31 @@ def test_a_generic_spec_of_j2_is_accepted_and_written_back_as_j2s_file():
     plain = {k: v for k, v in committed.items() if k != "schema_sha"}
     g = T.GenericTemplate.model_validate(plain)
     assert T.spec_json(g) == plain and g.schema_version == 1
+
+
+# ---------------------------------------------------------------- the Document generics of J2 sync 4 (the whole PRD, HLD or LLD)
+@pytest.mark.parametrize("artifact", ["prd", "hld", "lld"])
+def test_the_document_generic_of_a_prd_hld_or_lld_loads_through_the_library_models(artifact):
+    """agent-views/1: the whole document as one object, the last entry of the vendored templates/<artifact>/generic.json. The library's
+    closed GenericTemplate holds it once the two keys that are J2's own are set aside: `schema_sha` (derived, as for every section) and
+    `render` (the renderer's layout, which no library model has). J2's sha is the library's own."""
+    data = json.loads((ENGINE_TEMPLATES / artifact / "generic.json").read_text(encoding="utf-8"))
+    document = data["templates"][-1]
+    assert [x["section"] for x in data["templates"]].count("Document") == 1 and document["section"] == "Document"
+    plain = {k: v for k, v in document.items() if k not in ("schema_sha", "render")}
+    g = T.GenericTemplate.model_validate(plain)
+    assert (g.kind, g.artifact, g.section, g.version) == ("generic", artifact, "Document", 1)
+    assert g.sha == g.compute_sha() == document["sha"] and T.spec_json(g) == plain
+    assert GATE.check("template", plain).kind == "generic"
+    render = document["render"]
+    assert (render["format"], render["file"], render["title"].startswith(f"# {artifact.upper()}/1")) == ("markdown", f"{artifact}.md", True)
+    assert [s["template"] for s in render["sections"]] == [x["name"] for x in data["templates"][:-1]], "one rendered section per section template"
+
+
+@pytest.mark.parametrize("artifact", ["design", "website"])
+def test_a_design_or_website_generic_has_no_document_entry(artifact):
+    data = json.loads((ENGINE_TEMPLATES / artifact / "generic.json").read_text(encoding="utf-8"))
+    assert "Document" not in [x["section"] for x in data["templates"]]
 
 
 # ---------------------------------------------------------------- the registry
