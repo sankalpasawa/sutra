@@ -967,8 +967,8 @@ def test_the_attention_pill_is_drawn_by_its_own_rules_and_an_atoms_status_pill_b
 
 # The pill with the most to say ("2 need you, 1 to try again") and the longest team name the strip is asked to hold, in the Simple view at every width from a small phone to a wide
 # screen, in both themes (the colours differ, the boxes do not), with Asha's panel closed and open: no control of J2's under the pill, the pill on screen and under a click, the
-# name's text (every line of it) and "All teams" stopping short of it, no sideways scroll. Measured on the live page, by box. (The Detailed view is swept by the case after this one;
-# on a 320 or 375 px console page the pill still covers two of the console's links, as it did before the pill got its own rules.)
+# name's text (every line of it) and "All teams" stopping short of it, no sideways scroll. Measured on the live page, by box. (The Detailed view is swept by the case after this one,
+# the console in test_dept_attention.py.)
 PILL_AND_STRIP = r"""(() => {
   const drawn = el => { const s = getComputedStyle(el); return s.display !== "none" && s.visibility !== "hidden" && el.getClientRects().length > 0; };
   const apart = (a, b) => a.right <= b.left || b.right <= a.left || a.bottom <= b.top || b.bottom <= a.top;

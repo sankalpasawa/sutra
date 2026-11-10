@@ -57,6 +57,13 @@ body.nodeopen #pane-map .mappanel{display:none}
   body:not(.simple):has(#chatfab):has(.apillhost:not([hidden])) #dview .needs{margin-top:0}
   body:not(.simple):has(#dview.chaton) .apillhost{transform:translateY(52px)}
 }
+/* The console at 600px and under. Its header wraps there: the three links ("Usage and cost", "Atom log", "Health") drop to a row under the title, and that was where the pill rode, over
+   "Atom log" and "Health" at 320px and over "Health" up to 375px (0.3.2). The links are 207px wide and the pill up to 172px, so they cannot share a row at 320px: the header gets a row
+   above its own for the pill, 4px from the top, with its content 32px down, only while the pill shows. Over 600px the header is one row and the pill rides under it, as before. */
+@media (max-width:600px){
+  body.console:has(.apillhost:not([hidden])) .apillhost{top:4px}
+  body.console:has(.apillhost:not([hidden])) .shead{padding-top:32px}
+}
 /* The Simple view (the studio) is full-bleed, so no corner of it is free: the finish bar (Open full view) and Asha's message box take the lower right, the toolbar
    (Decide for me, the dark-mode button, Open the site) the upper right, and on a phone the dock the bottom, and the pill sat on one of them at every width (found by the
    live check of J2 sync 4). The one row with nothing of J2's in it is the team strip at the very top (ours: "All teams" and the team's name, at the left), so in the Simple view
