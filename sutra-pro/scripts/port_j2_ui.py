@@ -1,25 +1,37 @@
 #!/usr/bin/env python3
-"""Port J2's department page to the app (work package UI-2; docs/design/ui.md section 5 and docs/design/j2-sync.md).
+"""Port J2's department page to the app (docs/design/ui.md section 5; docs/design/j2-sync-4.md part 4, D136 and D137).
 
-    scripts/py scripts/port_j2_ui.py --j2 /path/to/J2_Prototype            # write the ported files
-    scripts/py scripts/port_j2_ui.py --j2 /path/to/J2_Prototype --check    # write nothing; exit 1 when the committed files
-                                                                          # differ from a fresh port
-    scripts/py scripts/port_j2_ui.py --e13-json                            # the E13 wording pairs as JSON (page_render.test.js)
+The J2 source is the folder `prototypes/j2` of this repository, at a pinned commit, extracted (never the working tree: an edited
+file would be ported) into a new, empty folder:
 
-The page is J2's `j2_ui.html` with 19 edits (E1 to E13, the Run settings edits E14 to E18 and E19, the output select). Every edit is `Edit(id, old, new, count)`: `old` is a literal or a
-compiled regex and `count` is the number of places it must match in J2's file. A count that is not met means J2 changed under
-the port: the port stops, names every edit that no longer matches and writes nothing. Re-port; never hand-edit the copy.
+    export J2SRC="$(mktemp -d)"
+    git archive <commit> prototypes/j2 | tar -x --strip-components=2 -C "$J2SRC"
+
+    scripts/py scripts/port_j2_ui.py --j2 "$J2SRC" --commit <commit>            # write the ported files
+    scripts/py scripts/port_j2_ui.py --j2 "$J2SRC" --commit <commit> --check    # write nothing; exit 1 when the committed files
+                                                                               # differ from a fresh port
+    scripts/py scripts/port_j2_ui.py --e13-json                                 # the E13 wording pairs as JSON (page_render.test.js)
+
+`--j2` is always such an extraction. `--commit` names the commit it was taken from: a `git archive` folder is not a repository, so
+the script cannot ask git; without the flag it asks git about the folder and says "unknown" when that fails.
+
+The page is J2's `j2_ui.html` with 32 edits (E1 to E13, E19 to E22; the letters E2a to E2c, E9b and E20a to E20i count). Every edit is `Edit(id, old, new, count)`:
+`old` is a literal or a compiled regex and `count` is the number of places it must match in J2's file. Every count is checked against
+J2's own text first, so no edit anchors on another edit's output. A count that is not met means J2 changed under the port: the port
+stops, names every edit that no longer matches and writes nothing. Re-port; never hand-edit the copy.
 
 What it writes, under `sutra_app/ui/` of the repository the script lives in (or `--root`):
-    pages/j2_ui.html            the page after the 19 edits
+    pages/j2_ui.html            the page after the 32 edits
     pages/j2_ui_render.js       J2's render harness, three small changes (sutra_ctx.js runs first; d3 and its tag test move)
     pages/j2_graph_layout.js    J2's layout harness, one change (sutra_ctx.js runs first)
     static/css/j2.css           the page's `<style>` block, byte for byte (the leading newline included)
-    static/css/run-settings.css the styles of Run settings (edits E14 to E18)
     static/vendor/              d3.min.js, d3-LICENSE and README.md, byte for byte
 
+Home and the console do not take `j2.css`: they link `static/css/j2-shell.css`, a Sutra-owned copy of the previous sheet that this
+script never writes (D138).
+
 J2 is only read, never written, and the port is deterministic (no clock, no random): two runs give the same bytes.
-Exit codes: 0 ported or in step, 1 J2 drifted or the committed files differ, 2 not a J2 checkout.
+Exit codes: 0 ported or in step, 1 J2 drifted or the committed files differ, 2 not an extraction of prototypes/j2.
 """
 from __future__ import annotations
 
@@ -34,7 +46,7 @@ from typing import NamedTuple
 REPO = Path(__file__).resolve().parent.parent
 UI_DIR = Path("sutra_app") / "ui"      # where the outputs go, relative to the repository root
 
-# J2 files read, relative to the J2 checkout
+# J2 files read, relative to the extraction of prototypes/j2
 J2_PAGE = "j2_ui.html"
 J2_RENDER = "j2_ui_render.js"
 J2_LAYOUT = "j2_graph_layout.js"
@@ -43,13 +55,13 @@ J2_FILES = (J2_PAGE, J2_RENDER, J2_LAYOUT, *(f"vendor/{name}" for name in J2_VEN
 
 # The modules the department page loads after its own script, in this order (E12); all under /ui/js/.
 MODULES = ("sutra_events", "graph_layout", "chart_marks", "graph_render", "graph_view", "orgchart_view", "fnode_view",
-           "chat_view", "node_panel", "dept_ext")
+           "chat_view", "node_panel", "function_chat", "output_pick", "dept_ext")
 
 SANDBOX = "allow-scripts allow-forms allow-popups"      # the second layer behind the engine's sandbox header (S3-web-14)
 
 
 class PortError(Exception):
-    """The port cannot run (not a J2 checkout)."""
+    """The port cannot run (not an extraction of prototypes/j2)."""
 
 
 class DriftError(PortError):
@@ -76,16 +88,17 @@ def _lines(*parts: str) -> str:
 
 
 # ----------------------------------------------------------------------------------------------------------------------
-# E1: the Google Fonts link and the `<style>` block (J2 lines 7-319) become three style sheets, the boot marker and the
+# E1: the Google Fonts link and the `<style>` block (J2 lines 7-668) become three style sheets, the boot marker and the
 # context script. The pattern also captures the block's inner text, which is j2.css. It ends at the first-paint theme
 # script, so the `<style>` that J2's page script writes into generated SVG (a string, far below) can never match.
+# Home and the console link j2-shell.css instead (D138); the team page is the only one that takes the regenerated j2.css.
 # ----------------------------------------------------------------------------------------------------------------------
 STYLE_BLOCK = re.compile(
     r'<link rel="stylesheet" href="https://fonts\.googleapis\.com/[^"]*">\n<style>(?P<css>.*?)</style>\n(?=<script>/\* the viewer)',
     re.DOTALL,
 )
 E1_NEW = _lines(
-    '<link rel="stylesheet" href="/ui/css/j2.css"><link rel="stylesheet" href="/ui/css/run-settings.css">',
+    '<link rel="stylesheet" href="/ui/css/j2.css">',
     '<link rel="stylesheet" href="/ui/css/sutra-graph.css"><link rel="stylesheet" href="/ui/css/sutra-panel.css">',
     "<!--SUTRA-BOOT-->",
     '<script src="/ui/js/sutra_ctx.js"></script>',
@@ -93,55 +106,90 @@ E1_NEW = _lines(
 )
 
 # E13: the Priorities tab says "ranked"; the final function-node spec (FN-28) and the owner's rule say Priority prices and
-# never orders. Four literal pairs with their counts (internal names such as `ranked`, `TRANK` and `rank` stay). The parity
+# never orders. Four literal pairs with their counts (internal names such as `ranked`, `TRANK` and `rank` stay). "no ranking
+# records" is in three places now: the tab's own empty line, its status and the rail's status line (`railStatus`). The parity
 # test applies the same pairs to J2's goldens, so it imports them from here.
 E13_WORDS: tuple[tuple[str, str, int], ...] = (
     ("How the Prioritiser ranked the work each cycle", "How the Prioritiser priced the work each cycle", 1),
-    ("no ranking records", "no pricing records", 2),
+    ("no ranking records", "no pricing records", 3),
     ("No ranking records in this run", "No pricing records in this run", 1),
     ("Funded, in the order it ranked them", "Funded, in registration order; Coordination sets the run order", 1),
 )
 
+# E7: the strip at the top of the icon rail (D137, design 4.3): the way back to Home, the team's name and the two Sutra views.
+# It sits outside `#railsub`, so J2's flyout model never lists it and nothing is shown twice; it is inside `.tabs`, so J2's own
+# handlers open the two panes (`showTab`, `setView`) and `aria-selected` follows `showTab`. `.ri` and `.rlbl` give the buttons
+# J2's size and hover label. The icons carry their own stroke attributes, so they draw before any style sheet rule applies.
+_ICON = 'viewBox="0 0 48 48" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"'
+E7_STRIP = _lines(
+    '  <div class="railhome">',
+    '    <a class="ri s-home" href="/" id="to-home" aria-label="All teams, back to Home" data-name="All teams" data-role="back to Home">'
+    f'<svg {_ICON}><path d="M32 24H15M23 15l-9 9 9 9"/></svg>'
+    '<span class="rlbl" aria-hidden="true">All teams<small>back to Home</small></span></a>',
+    '    <b class="rdept" id="deptchip"></b>',
+    '    <button type="button" role="tab" class="ri s-graph" data-tab="graph" aria-selected="false"'
+    ' aria-label="Workflow graph, the team\'s nodes and their chats" data-name="Workflow graph" data-role="the team\'s nodes and their chats">'
+    f'<svg {_ICON}><circle cx="12" cy="13" r="5"/><circle cx="36" cy="13" r="5"/><circle cx="24" cy="36" r="5"/><path d="M17 13h14M15 18l7 14M33 18l-7 14"/></svg>'
+    '<span class="rlbl" aria-hidden="true">Workflow graph<small>the team\'s nodes and their chats</small></span></button>',
+    '    <button type="button" role="tab" class="ri s-org" data-tab="orgchart" aria-selected="false"'
+    ' aria-label="Org chart, every team and how they connect" data-name="Org chart" data-role="every team and how they connect">'
+    f'<svg {_ICON}><rect x="16" y="7" width="16" height="11" rx="2.5"/><rect x="5" y="31" width="16" height="11" rx="2.5"/>'
+    '<rect x="27" y="31" width="16" height="11" rx="2.5"/><path d="M24 18v6M13 31v-7h22v7"/></svg>'
+    '<span class="rlbl" aria-hidden="true">Org chart<small>every team and how they connect</small></span></button>',
+    "  </div>",
+    '  <div class="rsep" aria-hidden="true"></div>',
+    "",
+)
+
+_RAIL_NAV = '<nav class="rail tabs" id="rail" aria-label="Detailed view sections">\n'
+_SVIEW_OPEN = '<div id="sview">\n  <section class="sland" id="sland" aria-label="Start">'
+_AGENT_DRAWER = '<aside id="agentdrawer" class="agentdrawer" hidden role="dialog" aria-labelledby="adtitle"></aside>'
+_E6A_OLD = ('document.querySelector("#dview .wbar").hidden = name === "map"; document.querySelector("#dview .work").classList.toggle("mapfit", name === "map");'
+            " railReveal(name);")
+_E6A_NEW = ('const full = name === "map" || name === "graph" || name === "orgchart"; document.querySelector("#dview .wbar").hidden = full;'
+            ' document.querySelector("#dview .work").classList.toggle("mapfit", full); railReveal(name);')
+_E6B_OLD = '"report","rundetails","runsettings"].forEach(t => $("pane-"+t).hidden = t !== name);'
+_E9B_OLD = '!$("detail").open && $("agentdrawer").hidden) chatSet(false);'
+_E21_OLD = _lines("for (const k of Object.keys(FEED)) delete FEED[k]; Object.assign(FEED, v); } } catch (e) {}", "  paintFeed();")
+_LIBRARY_PATH = "location.pathname === \"/library\""
+
 PAGE_EDITS: tuple[Edit, ...] = (
     Edit("E1", STYLE_BLOCK, E1_NEW, 1),
-    # E2: the two preview iframes get data-src (sutra_ctx.js sets src plus ?dept= at DOMContentLoaded) and a sandbox
-    Edit("E2", re.compile(r'<iframe id="(sframe|frame)" title="([^"]*)" src="/site/latest"></iframe>'),
-         rf'<iframe id="\1" title="\2" data-src="/site/latest" sandbox="{SANDBOX}"></iframe>', 2),
+    # E2: the two preview iframes get a sandbox (no allow-same-origin: a generated page cannot read the page's token, D83). `frame` also gets
+    # data-src (sutra_ctx.js sets src plus ?dept= at DOMContentLoaded); `sframe` has no src in J2's markup, the page sets it with runQ() (E4)
+    Edit("E2a", re.compile(r'<iframe id="frame" title="([^"]*)" src="/site/latest"></iframe>'),
+         rf'<iframe id="frame" title="\1" data-src="/site/latest" sandbox="{SANDBOX}"></iframe>', 1),
+    Edit("E2b", '<iframe id="sframe" title="Your result"></iframe>',
+         f'<iframe id="sframe" title="Your result" sandbox="{SANDBOX}"></iframe>', 1),
+    # E2c: the studio loads a new version into a second frame behind the first and swaps the two (their ids change places), so both get it
+    Edit("E2c", '<iframe id="sframe2" class="next" title="Your result, next version" tabindex="-1" aria-hidden="true"></iframe>',
+         f'<iframe id="sframe2" class="next" title="Your result, next version" tabindex="-1" aria-hidden="true" sandbox="{SANDBOX}"></iframe>', 1),
     # E3: d3 is served under /ui/vendor/; the relative path would resolve to /d/{dept}/vendor/
     Edit("E3", '<script src="vendor/d3.min.js"></script>', '<script src="/ui/vendor/d3.min.js"></script>', 1),
     # E4: the one place every URL-in-HTML site takes the run from now also carries the department
     Edit("E4", 'const runQ = () => viewRun ? "&run=" + encodeURIComponent(viewRun) : "";',
          'const runQ = () => (viewRun ? "&run=" + encodeURIComponent(viewRun) : "")'
          ' + (SutraCtx.dept ? "&dept=" + encodeURIComponent(SutraCtx.dept) : "");', 1),
-    # E5: the Simple view title shows the department
-    Edit("E5", '$("stitle").textContent = s.doc ? "Your document team" : "Your website team";',
-         '$("stitle").textContent = SutraCtx.boot.dept_label || (s.doc ? "Your document team" : "Your website team");', 1),
-    # E6: showTab knows the two new panes, hides the map title bar for them too, and tells SutraCtx
-    Edit("E6a", '  $("backmap").hidden = name === "map"; document.querySelector("#dview .wbar").hidden = name === "map";'
-                ' document.querySelector("#dview .work").classList.toggle("mapfit", name === "map");'
-                ' if (name !== "map") railReveal(name);',
-         _lines('  const full = name === "map" || name === "graph" || name === "orgchart";',
-                '  $("backmap").hidden = full; document.querySelector("#dview .wbar").hidden = full;'
-                ' document.querySelector("#dview .work").classList.toggle("mapfit", full); if (name !== "map") railReveal(name);'), 1),
-    Edit("E6b", '"report","rundetails","runsettings"].forEach(t => $("pane-"+t).hidden = t !== name);',
-         _lines('"report","rundetails","runsettings","graph","orgchart"].forEach(t => $("pane-"+t).hidden = t !== name);',
-                "  SutraCtx.tab(name);"), 1),
-    # E7: the rail gets the way back to Home, the department chip and the two new tabs (outside #railsub: no RAILSEC edit)
-    Edit("E7", _lines('<nav class="rail tabs" id="rail" role="tablist" aria-label="Sections" aria-orientation="vertical">',
-                      '  <button role="tab" data-tab="map" aria-selected="true"><span>Map</span></button>', ""),
-         _lines('<nav class="rail tabs" id="rail" role="tablist" aria-label="Sections" aria-orientation="vertical">',
-                '  <div class="railhome"><a href="/" id="to-home">\u2190 All teams</a><b id="deptchip"></b></div>',
-                '  <button role="tab" data-tab="map" aria-selected="true"><span>Map</span></button>',
-                '  <button role="tab" data-tab="graph" aria-selected="false"><span>Workflow graph</span></button>',
-                '  <button role="tab" data-tab="orgchart" aria-selected="false"><span>Org chart</span></button>', ""), 1),
+    # E5: a strip at the top of the Simple view (above the start page and above the studio): back to All teams and the team's name. Its class is
+    # not `shome`: J2's studio has a button of that name in its top bar ("New project") with a generic rule for it.
+    Edit("E5", _SVIEW_OPEN,
+         _lines('<div id="sview">',
+                '  <div class="steamstrip"><a href="/" id="to-home-s">← All teams</a><b id="deptchip-s"></b></div>',
+                '  <section class="sland" id="sland" aria-label="Start">'), 1),
+    # E6: showTab knows the two new panes, gives them the whole work area (no title bar, like the Map) and tells SutraCtx
+    Edit("E6a", _E6A_OLD, _E6A_NEW, 1),
+    Edit("E6b", _E6B_OLD, _lines('"report","rundetails","runsettings","graph","orgchart"].forEach(t => $("pane-"+t).hidden = t !== name);',
+                                 "  SutraCtx.tab(name);"), 1),
+    # E7: the rail gets the way back to Home, the team's name and the two new tabs (outside #railsub: no RAILSEC edit)
+    Edit("E7", _RAIL_NAV, _RAIL_NAV + E7_STRIP, 1),
     # E8: the two panes, after #pane-map
     Edit("E8", '    <div class="pane" id="pane-map"></div>\n',
          '    <div class="pane" id="pane-map"></div>\n'
          '    <div class="pane" id="pane-graph" hidden></div><div class="pane" id="pane-orgchart" hidden></div>\n', 1),
     # E9: the node panel, after the Agent drawer
-    Edit("E9", '<aside id="agentdrawer" class="agentdrawer" hidden role="dialog" aria-labelledby="adtitle"></aside>',
-         '<aside id="agentdrawer" class="agentdrawer" hidden role="dialog" aria-labelledby="adtitle"></aside>\n'
-         '<aside id="nodepanel" class="agentdrawer" hidden role="dialog" aria-labelledby="nptitle"></aside>', 1),
+    Edit("E9", _AGENT_DRAWER, _AGENT_DRAWER + '\n<aside id="nodepanel" class="agentdrawer" hidden role="dialog" aria-labelledby="nptitle"></aside>', 1),
+    # E9b: Esc with the node panel open closes only the node panel (J2's own handler would close the chat panel behind it too)
+    Edit("E9b", _E9B_OLD, '!$("detail").open && $("agentdrawer").hidden && !document.body.classList.contains("nodeopen")) chatSet(false);', 1),
     # E10: Map pins per department (two departments' live runs must not share pins)
     Edit("E10", 'return `j2pos:${(typeof viewRun !== "undefined" && viewRun) || "live"}:${v}`;',
          'return `j2pos:${SutraCtx.dept}:${(typeof viewRun !== "undefined" && viewRun) || "live"}:${v}`;', 1),
@@ -153,143 +201,29 @@ PAGE_EDITS: tuple[Edit, ...] = (
          "</script>\n" + "".join(f'<script src="/ui/js/{name}.js"></script>\n' for name in MODULES) + "</body>", 1),
     # E13: Priorities wording (four pairs)
     *(Edit(f"E13{letter}", old, new, count) for letter, (old, new, count) in zip("abcd", E13_WORDS)),
-)
-
-# ----------------------------------------------------------------------------------------------------------------------
-# E14 to E18: Run settings as the old Sutra repository's copy of the prototype has it (commit e7800503, docs/design/j2-sync-3.md).
-# J2's own repository has the older tab (a theme switch, a "What to build" list, a "Saved runs" list and a link back to the Simple
-# view). The new tab is two cards: Appearance (three swatch cards) and Runs (a status filter with counts, a search over title, brief
-# and run id, rows grouped by date, 20 at a time), fed by `GET /api/runlist` (patch P13 of scripts/vendor_j2.py). Dropped: "What to
-# build" (the Simple view's start page still has it: its `.outsel` select and `POST /api/output` stay) and "Back to simple view" (the
-# rail's Chat item is that way). The old copy's Simple-view redesign is NOT ported: J2's repository does not have it.
-# The styles are a fifth file, static/css/run-settings.css, so that j2.css stays J2's `<style>` block byte for byte.
-# ----------------------------------------------------------------------------------------------------------------------
-RUN_SETTINGS_CSS = r'''/* Run settings (page edits E14 to E18 of scripts/port_j2_ui.py; patch P13 serves /api/runlist): appearance cards and the run list.
-   Written by the port script, not part of J2's `<style>` block (j2.css stays byte for byte J2's). Colours are the page's theme tokens;
-   the two swatch colours are the same in both themes on purpose (they show what each theme looks like). */
-:root{--swlight:#fbf8f3;--swdark:#1f1c18}
-#pane-runsettings .runset{display:flex;flex-direction:column;gap:14px;align-items:stretch}
-.rssec{background:var(--panel2);border:1px solid var(--line);border-radius:14px;padding:14px 16px}.rssec h3{margin:0 0 2px;font-size:15px}.rssec>p{margin:0 0 10px;color:var(--muted);font-size:13px}
-.themecards{display:flex;flex-wrap:wrap;gap:8px}.themecards button{display:flex;align-items:center;gap:8px;border:1px solid var(--line);background:var(--panel);color:var(--ink);border-radius:12px;padding:9px 14px;font:inherit;cursor:pointer;min-width:104px}
-.themecards button[aria-pressed=true]{border-color:var(--accent);box-shadow:0 0 0 3px color-mix(in srgb,var(--accent) 22%,transparent);font-weight:600}
-.themecards .sw{width:30px;height:20px;border-radius:6px;border:1px solid var(--line)}.sw-l{background:var(--swlight)}.sw-d{background:var(--swdark)}.sw-s{background:linear-gradient(90deg,var(--swlight) 50%,var(--swdark) 50%)}
-.rtop{display:flex;flex-wrap:wrap;align-items:center;gap:10px;margin-bottom:10px}.rtop h3{margin:0}.rtop h3 small{font-weight:400;color:var(--muted);font-size:12.5px;margin-left:6px}
-.rtop input{margin-left:auto;border:1px solid var(--line);background:var(--panel);color:var(--ink);border-radius:10px;padding:7px 10px;font:inherit;width:220px;max-width:100%}
-.newrun{background:var(--accent);color:var(--on);border:0;border-radius:10px;padding:8px 14px;font:inherit;font-weight:600;cursor:pointer}
-.rfil{display:flex;flex-wrap:wrap;gap:6px;margin-bottom:8px}.rfil button{border:1px solid var(--line);background:var(--panel);color:var(--muted);border-radius:99px;padding:4px 11px;font:inherit;font-size:12.5px;cursor:pointer}
-.rfil button i{font-style:normal;margin-left:3px}.rfil button[aria-pressed=true]{background:var(--ink);color:var(--bg);border-color:var(--ink)}
-.runlist{max-height:min(62vh,640px);overflow:auto;display:grid;gap:8px;align-content:start;grid-auto-rows:max-content;padding-right:2px}
-.rgrp{position:sticky;top:0;z-index:1;background:var(--panel2);font-size:11.5px;font-weight:600;letter-spacing:.05em;text-transform:uppercase;color:var(--muted);padding:6px 2px 4px}
-.runrow{display:grid;grid-template-columns:auto minmax(0,1fr) auto;gap:12px;align-items:center;border:1px solid var(--line);background:var(--panel);border-radius:12px;padding:9px 14px;cursor:pointer;text-align:left;font:inherit;color:var(--ink);width:100%}
-.runrow:hover{border-color:var(--accent)}.runrow.cur{border-color:var(--accent);background:color-mix(in srgb,var(--accent) 12%,var(--panel))}
-.runrow .ric{width:34px;height:34px;border-radius:10px;display:grid;place-items:center;background:var(--bg);color:var(--muted)}.runrow.cur .ric{color:var(--accent)}
-.runrow .rmid{min-width:0;display:grid;grid-template-columns:auto minmax(0,1fr);column-gap:10px;align-items:baseline}
-.runrow .rt{font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.runrow code{font:12px var(--mono);color:var(--muted);background:var(--bg);border-radius:6px;padding:1px 6px;justify-self:start;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:100%}
-.runrow .rm{grid-column:1/-1;color:var(--muted);font-size:12.5px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-.runrow .rr{display:flex;gap:8px;align-items:center}.runrow .ropen{font-size:12.5px;color:var(--accent);font-weight:600}.runrow.cur .ropen{color:var(--ink)}
-.rst{font-size:11.5px;border-radius:99px;padding:2px 9px;white-space:nowrap}.rst.done{background:color-mix(in srgb,var(--ok) 16%,var(--panel));color:color-mix(in srgb,var(--ok) 55%,var(--ink))}
-.rst.stopped{background:color-mix(in srgb,var(--warm2) 18%,var(--panel));color:color-mix(in srgb,var(--bad) 55%,var(--ink))}.rst.running{background:color-mix(in srgb,var(--accent) 16%,var(--panel));color:color-mix(in srgb,var(--accent) 55%,var(--ink))}
-.rst.running::before{content:"";display:inline-block;width:6px;height:6px;border-radius:50%;background:var(--accent);margin-right:5px;animation:rpulse calc(var(--dur-slow)*4) var(--ease-in-out) infinite}@keyframes rpulse{50%{opacity:.3}}
-.runmore{margin:4px auto 2px;border:1px solid var(--line);background:var(--panel);color:var(--ink);border-radius:99px;padding:7px 16px;font:inherit;font-size:13px;cursor:pointer}
-.runnone{color:var(--muted);font-size:13px;padding:8px}
-@media (max-width:600px){.runrow{grid-template-columns:auto minmax(0,1fr);gap:8px 10px;padding:8px 10px}.runrow .rr{grid-column:2}.rtop input{margin-left:0;flex:1 1 140px}.rssec{padding:12px}}
-@media (prefers-reduced-motion:reduce){.rst.running::before{animation:none}}
-'''
-E14_OLD = r'''      <div class="runset">
-        <div class="appear" id="appear">Appearance <span class="seg" role="group" aria-label="Appearance"><button type="button" data-themepick="light" aria-pressed="false">Light</button><button type="button" data-themepick="dark" aria-pressed="true">Dark</button><button type="button" data-themepick="system" aria-pressed="false">System</button></span></div>
-        <label>What to build <select id="outsel" class="outsel" aria-label="What to build"></select></label>
-        <label>Saved runs <select id="runsel" class="ghost" aria-label="Open a saved run"><option value="">Live run</option></select></label>
-        <div class="runact"><button class="ghost" id="reset">New run</button> <a href="?view=simple" class="slink" id="to-simple">Back to simple view</a></div>
-      </div>
-'''
-E14_NEW = r'''      <div class="runset">
-        <section class="rssec" id="appear"><h3>Appearance</h3><p>Applies to this browser only.</p>
-          <div class="themecards" role="group" aria-label="Appearance"><button type="button" data-themepick="light" aria-pressed="false"><span class="sw sw-l"></span>Light</button><button type="button" data-themepick="dark" aria-pressed="true"><span class="sw sw-d"></span>Dark</button><button type="button" data-themepick="system" aria-pressed="false"><span class="sw sw-s"></span>System</button></div></section>
-        <section class="rssec runsec" aria-labelledby="runsh"><div class="rtop"><h3 id="runsh">Runs <small id="runcount"></small></h3><input type="search" id="runq" placeholder="Search runs" aria-label="Search runs by title, brief or run ID" autocomplete="off"><button type="button" class="newrun" id="reset">+ New run</button></div>
-          <div class="rfil" role="group" aria-label="Filter by status"><button type="button" data-rf="all" aria-pressed="true">All <i></i></button><button type="button" data-rf="running" aria-pressed="false">Running <i></i></button><button type="button" data-rf="done" aria-pressed="false">Done <i></i></button><button type="button" data-rf="stopped" aria-pressed="false">Stopped <i></i></button></div>
-          <div class="runlist" id="runlist"></div></section>
-      </div>
-'''
-E15_OLD = r'''    if ($("outsel").__v !== s.output + s.total){ $("outsel").__v = s.output + s.total; $("outsel").innerHTML = outOptions(s); }
-    $("outsel").disabled = !!s.total || !!s.saved;
-'''
-E16_OLD = r'''$("to-simple").onclick = e => { e.preventDefault(); setView("simple", true); };
-'''
-E17_OLD = r'''// Saved runs: pick one to open it read-only; the URL keeps ?run= so it can be reloaded or shared locally.
-(async () => { try { const r = await (await fetch("/api/runs")).json();
-  RUNLIST = r.runs || [];                 // the same list the Board story's compare picker offers
-  $("runsel").innerHTML = `<option value="">Live run (${esc(r.live)})</option>` + r.runs.filter(x => x.id !== r.live)
-    .map(x => `<option value="${esc(x.id)}">${esc(x.id)} · ${esc(x.status)} · ${esc(x.brief.slice(0, 50))}</option>`).join("");
-  $("runsel").value = viewRun;
-  if (!$("pane-story").hidden || STORY.entries.length) paint($("pane-story"), renderStory()); } catch (e) {} })();
-$("runsel").onchange = () => { location.search = $("runsel").value ? "?run=" + encodeURIComponent($("runsel").value) : ""; };
-'''
-E17_NEW = r'''// Saved runs: the Board story's compare picker (/api/runs).
-(async () => { try { const r = await (await fetch("/api/runs")).json();
-  RUNLIST = r.runs || [];
-  if (!$("pane-story").hidden || STORY.entries.length) paint($("pane-story"), renderStory()); } catch (e) {} })();
-// Run settings' run list (/api/runlist, patch P13: every saved run of this team from its records), newest first under date headings; 20 at a time;
-// status chips with counts, a search over title, brief and run id. Opening a run keeps the other URL parameters (the view), not the tab.
-const RUNS = {all: [], live: "", f: "all", q: "", show: 20};
-const RUNICON = {web: `<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><rect x="3" y="4" width="18" height="16" rx="2.5"/><path d="M3 9h18"/><circle cx="6.5" cy="6.5" r=".6" fill="currentColor"/><circle cx="9" cy="6.5" r=".6" fill="currentColor"/></svg>`,
-  doc: `<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round" aria-hidden="true"><path d="M6 3h8l4 4v14H6z"/><path d="M14 3v4h4M9 12h6M9 15.5h6"/></svg>`};
-const runCur = () => viewRun || RUNS.live;
-const runHref = id => { const q = new URLSearchParams(location.search); if (id) q.set("run", id); else q.delete("run"); q.delete("tab"); const s = q.toString(); return s ? "?" + s : ""; };
-function runGroup(w){ if (!w) return "Older"; const t = new Date(), d = new Date(w), a = new Date(t.getFullYear(), t.getMonth(), t.getDate()), b = new Date(d.getFullYear(), d.getMonth(), d.getDate()), n = Math.round((a - b) / 864e5);
-  return n <= 0 ? "Today" : n === 1 ? "Yesterday" : n < 7 ? "This week" : d.getMonth() === t.getMonth() && d.getFullYear() === t.getFullYear() ? "Earlier this month" : "Older"; }
-const runWhen = w => { if (!w) return ""; const d = new Date(w); return d.toLocaleDateString("en-GB", {day: "numeric", month: "short", year: d.getFullYear() === new Date().getFullYear() ? undefined : "numeric"}) + " · " + w.slice(11, 16); };
-const runShown = () => { const q = RUNS.q.trim().toLowerCase(); return RUNS.all.filter(x => (RUNS.f === "all" || x.status === RUNS.f) && (!q || (x.title + " " + x.brief + " " + x.id).toLowerCase().includes(q))); };
-function renderRuns(){
-  const L = runShown(), cur = runCur(); let h = "", g = "";
-  document.querySelectorAll("[data-rf]").forEach(b => { b.querySelector("i").textContent = b.dataset.rf === "all" ? RUNS.all.length : RUNS.all.filter(x => x.status === b.dataset.rf).length;
-    b.setAttribute("aria-pressed", String(b.dataset.rf === RUNS.f)); });
-  $("runcount").textContent = L.length === RUNS.all.length ? plural(L.length, "run") : `${L.length} of ${plural(RUNS.all.length, "run")}`;
-  L.slice(0, RUNS.show).forEach(x => { const G = runGroup(x.when); if (G !== g){ g = G; h += `<div class="rgrp">${G}</div>`; }
-    const me = x.id === cur;
-    h += `<button type="button" class="runrow${me ? " cur" : ""}" data-openrun="${esc(x.id)}"${me ? ' aria-current="true"' : ""} aria-label="${esc(x.title)}, ${esc(x.id)}, ${esc(x.status)}${me ? ", open now" : ""}"><span class="ric">${RUNICON[x.output === "website" ? "web" : "doc"]}</span>`
-      + `<span class="rmid"><span class="rt">${esc(x.title)}</span><code>${esc(x.id)}</code><span class="rm">${esc([runWhen(x.when), x.brief].filter(Boolean).join(" · "))}</span></span>`
-      + `<span class="rr"><span class="rst ${esc(x.status)}">${esc(x.status)}</span><span class="ropen">${me ? "Open now" : "Open"}</span></span></button>`; });
-  if (L.length > RUNS.show) h += `<button type="button" class="runmore" id="runmore">Show ${Math.min(20, L.length - RUNS.show)} more · ${L.length - RUNS.show} left</button>`;
-  $("runlist").innerHTML = h || `<div class="runnone">No runs match.</div>`;
-}
-(async () => { try { const r = await (await fetch("/api/runlist", {cache: "no-store"})).json(); RUNS.all = r.runs || []; RUNS.live = r.live || ""; } catch (e) {} renderRuns(); })();
-$("runlist").addEventListener("click", e => {
-  if (e.target.closest("#runmore")){ RUNS.show += 20; return renderRuns(); }
-  const b = e.target.closest("[data-openrun]"); if (!b) return;
-  if (b.dataset.openrun === runCur()) return showTab("map");      // the run already open
-  location.search = runHref(b.dataset.openrun === RUNS.live ? "" : b.dataset.openrun); });
-document.querySelectorAll("[data-rf]").forEach(b => b.onclick = () => { RUNS.f = b.dataset.rf; RUNS.show = 20; renderRuns(); });
-$("runq").addEventListener("input", () => { RUNS.q = $("runq").value; RUNS.show = 20; renderRuns(); });
-'''
-E18_OLD = 'runsettings: "What to build, which run to open, and a new run."'
-E18_NEW = 'runsettings: "How the app looks, and which run you are looking at."'
-RUN_SETTINGS_EDITS: tuple[Edit, ...] = (
-    Edit("E14", E14_OLD, E14_NEW, 1),          # the pane: two cards instead of the select lists
-    Edit("E15", E15_OLD, "", 1),               # poll() filled and disabled the "What to build" select that is gone
-    Edit("E16", E16_OLD, "", 1),               # the "Back to simple view" link is gone
-    Edit("E17", E17_OLD, E17_NEW, 1),          # the saved-runs select becomes the run list
-    Edit("E18", E18_OLD, E18_NEW, 1),          # the tab's hint
-)
-
-# E19: the start page's "What should we make?" select offers the engine's two new kinds (D129). `auto` ("Let the team decide") is the engine's
-# default: the host picks the output for the request when the run starts. The page's state still says `website` for a team with no run, so the
-# select shows `effective.output` of GET /api/engine/settings (no change to /api/state, whose shape the goldens hold) until the owner picks one.
-E19A_OLD = 'const OUTS = [["website", "Website"], ["prd", "PRD document"]];'
-E19A_NEW = ('const OUTS = [["auto", "Let the team decide"], ["website", "Website"], ["prd", "PRD document"], ["project", "Project work"]];')
-E19B_OLD = 'const outOptions = s => OUTS.map(([v, l]) => `<option value="${v}"${s.output === v ? " selected" : ""}>${l}</option>`).join("");'
-E19B_NEW = _lines(
-    'let EFFOUT = "", PICKEDOUT = "";      // E19: the engine\'s own default for this team, and what the owner picked on this page',
-    '(async () => { try { const r = await (await fetch("/api/engine/settings" + (SutraCtx.dept ? "?dept=" + encodeURIComponent(SutraCtx.dept) : ""), {cache: "no-store"})).json(); EFFOUT = String(((r || {}).effective || {}).output || ""); } catch (e) {} })();',
-    'const outOptions = s => { const cur = PICKEDOUT || (s.output && s.output !== "website" ? s.output : "") || EFFOUT || s.output;',
-    '  return OUTS.map(([v, l]) => `<option value="${v}"${cur === v ? " selected" : ""}>${l}</option>`).join(""); };',
-)
-E19C_OLD = '  await fetch("/api/output", {method:"POST", headers:{"Content-Type":"application/json"}, body:JSON.stringify({type: e.target.value})}); });'
-E19C_NEW = _lines('  PICKEDOUT = e.target.value;',
-                  '  await fetch("/api/output", {method:"POST", headers:{"Content-Type":"application/json"}, body:JSON.stringify({type: e.target.value})}); });')
-OUTPUT_EDITS: tuple[Edit, ...] = (
-    Edit("E19a", E19A_OLD, E19A_NEW, 1),
-    Edit("E19b", E19B_OLD, E19B_NEW, 1),
-    Edit("E19c", E19C_OLD, E19C_NEW, 1),
+    # E19: the place for the per-request output choice on the start page (D139): first in its row of options, beside "Decide for me" (the chips are
+    # examples that fill the box, and sit inside the form next to Start); the module output_pick.js fills it
+    Edit("E19", '<div class="slrow">', '<div class="slrow"><div class="soutpick" id="soutpick"></div>', 1),
+    # E20: the template library is a page of the team, not of the root (D141): every root path J2 builds goes through SutraCtx
+    Edit("E20a", "`/library?q=${encodeURIComponent(t.name)}`", "`${SutraCtx.libraryPath}?q=${encodeURIComponent(t.name)}`", 1),
+    Edit("E20b", "const libHref = (art, sec, name, ver) => `/library?open=", "const libHref = (art, sec, name, ver) => `${SutraCtx.libraryPath}?open=", 1),
+    Edit("E20c", "const runHref = id => `/?run=${encodeURIComponent(id)}&view=detail&tab=library`;",
+         "const runHref = id => `${SutraCtx.pagePath}?run=${encodeURIComponent(id)}&view=detail&tab=library`;", 1),
+    Edit("E20d", _LIBRARY_PATH, "SutraCtx.onLibrary()", 2),       # `setView` and the catalog's `CAT.on`
+    Edit("E20e", "const back = view => `/?${viewRun", "const back = view => `${SutraCtx.pagePath}?${viewRun", 1),
+    Edit("E20f", 'data-catgo="/library${viewRun', 'data-catgo="${SutraCtx.libraryPath}${viewRun', 1),
+    # the studio's start page: a static link (no script can write the team into markup, so it is relative: /d/<id>/ gives /d/<id>/library, and
+    # J2's own root gives /library), the Recent work list, and New project, which goes back to the start page
+    Edit("E20g", '<a class="slink" href="/library?view=detail">Template library</a>', '<a class="slink" href="library?view=detail">Template library</a>', 1),
+    Edit("E20h", '`<a href="/?run=${encodeURIComponent(x.id)}&view=simple">', '`<a href="${SutraCtx.pagePath}?run=${encodeURIComponent(x.id)}&view=simple">', 1),
+    Edit("E20i", 'location.href = "/?view=simple"', 'location.href = SutraCtx.pagePath + "?view=simple"', 2),
+    # E21: the function chat's questions and answers are lines of the function's own session (D148): loadFeed fills J2's QA list from it
+    Edit("E21", _E21_OLD,
+         _lines("for (const k of Object.keys(FEED)) delete FEED[k]; Object.assign(FEED, v); } } catch (e) {}",
+                "  try { if (window.FunctionChat) await FunctionChat.hydrate(QA, CHATFN, viewRun); } catch (e) {}",
+                "  paintFeed();"), 1),
+    # E22: J2's own hint of the Run settings item still says the pane has "what to build"; it has Appearance and the saved runs
+    Edit("E22", 'runsettings: "appearance, what to build, saved runs"};', 'runsettings: "appearance and saved runs"};', 1),
 )
 
 # The harnesses. Their command lines and JSON output do not change (docs/design/ui.md section 5, "The two harnesses").
@@ -325,14 +259,14 @@ def apply_edits(text: str, edits: tuple[Edit, ...], what: str) -> str:
 
 def port_page(page: str) -> tuple[str, str]:
     """(the ported page, j2.css) for J2's page text. j2.css is the inner text of the `<style>` block that E1 removes."""
-    ported = apply_edits(page, PAGE_EDITS + RUN_SETTINGS_EDITS + OUTPUT_EDITS, J2_PAGE)       # E1 matched exactly once, so the block is there
+    ported = apply_edits(page, PAGE_EDITS, J2_PAGE)       # E1 matched exactly once, so the block is there
     return ported, STYLE_BLOCK.search(page).group("css")
 
 
 def read_j2(j2: Path) -> dict[str, bytes]:
     missing = [name for name in J2_FILES if not (j2 / name).is_file()]
     if missing:
-        raise PortError(f"{j2} is not a J2 checkout: missing {', '.join(missing)}")
+        raise PortError(f"{j2} is not an extraction of prototypes/j2: missing {', '.join(missing)}")
     return {name: (j2 / name).read_bytes() for name in J2_FILES}
 
 
@@ -349,7 +283,6 @@ def build(j2: Path) -> dict[str, bytes]:
         "pages/j2_ui_render.js": apply_edits(text(J2_RENDER), RENDER_EDITS, J2_RENDER),
         "pages/j2_graph_layout.js": apply_edits(text(J2_LAYOUT), LAYOUT_EDITS, J2_LAYOUT),
         "static/css/j2.css": css,
-        "static/css/run-settings.css": RUN_SETTINGS_CSS,
     }
     files = {path: body.encode("utf-8") for path, body in outputs.items()}
     files.update({f"static/vendor/{name}": source[f"vendor/{name}"] for name in J2_VENDOR})
@@ -375,8 +308,12 @@ def differences(root: Path, files: dict[str, bytes]) -> list[str]:
     return problems
 
 
-def j2_commit(j2: Path) -> str:
-    """J2's HEAD, short; 'unknown' when it is not a git checkout. Read-only (`git rev-parse` writes nothing)."""
+def j2_commit(j2: Path, commit: str | None = None) -> str:
+    """The commit the extraction was taken from, short. `commit` (the --commit flag) wins: a `git archive` folder is not a repository, and one
+    that sits inside another repository would answer with that repository's HEAD. Without the flag: `git rev-parse` of the folder, or
+    'unknown' when git or a repository is missing. Read-only (`git rev-parse` writes nothing)."""
+    if commit:
+        return commit.strip()[:7]
     try:
         done = subprocess.run(["git", "-C", str(j2), "rev-parse", "--short=7", "HEAD"],
                               capture_output=True, text=True, timeout=30, check=True)
@@ -386,8 +323,9 @@ def j2_commit(j2: Path) -> str:
 
 
 def main(argv: list[str] | None = None) -> int:
-    parser = argparse.ArgumentParser(description="Port J2's department page to the app (UI-2).")
-    parser.add_argument("--j2", type=Path, help="the J2 prototype checkout (read only)")
+    parser = argparse.ArgumentParser(description="Port J2's department page to the app (UI-2; sync 4, D137).")
+    parser.add_argument("--j2", type=Path, help="an extraction of prototypes/j2 of this repository (read only)")
+    parser.add_argument("--commit", help="the commit the extraction was taken from (a git archive folder cannot tell)")
     parser.add_argument("--root", type=Path, default=REPO, help="the repository to write into (default: the one this script is in)")
     parser.add_argument("--check", action="store_true", help="write nothing; exit 1 when the files differ from a fresh port")
     parser.add_argument("--e13-json", action="store_true", help="print the E13 wording pairs as JSON and exit")
@@ -405,13 +343,13 @@ def main(argv: list[str] | None = None) -> int:
     except PortError as error:
         print(f"error: {error}", file=sys.stderr)
         return 2
-    commit = j2_commit(args.j2)
+    commit = j2_commit(args.j2, args.commit)
     if args.check:
         problems = differences(args.root, files)
         if problems:
             print(f"The committed files differ from a fresh port of J2 {commit}:\n  " + "\n  ".join(problems), file=sys.stderr)
             return 1
-        print(f"ok: the {len(PAGE_EDITS) + len(RUN_SETTINGS_EDITS) + len(OUTPUT_EDITS)} anchors of the 19 page edits match their counts, and the {len(files)} committed files equal a fresh port of J2 {commit}")
+        print(f"ok: the {len(PAGE_EDITS)} anchors of the page edits match their counts, and the {len(files)} committed files equal a fresh port of J2 {commit}")
         return 0
     write_files(args.root, files)
     print(f"ported J2 {commit}: wrote {len(files)} files under {UI_DIR}")
