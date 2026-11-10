@@ -3616,15 +3616,46 @@ def test_exists_count_and_text_put_the_selector_into_the_script_as_a_json_string
     assert tab.count("#none") == 0 and tab.exists("#none") is False
 
 
+def aimed(x, y, *, ok=True, hit="button#go"):
+    """What the page's aiming script answers (`Browser._AIM`): the middle of the element once it held still, and the topmost element there."""
+    return {"x": x, "y": y, "steady": True, "ok": ok, "hit": hit}
+
+
 def test_click_scrolls_to_the_element_and_presses_and_releases_the_mouse_at_its_middle(tab, devtools):
     quoted = json.dumps("#go")
-    devtools.hook = lambda expression: [120.5, 80] if quoted in expression and "scrollIntoView" in expression else None
+    seen = []
+
+    def page(expression):
+        seen.append(expression)
+        return aimed(120.5, 80) if quoted in expression and "scrollIntoView" in expression else None
+
+    devtools.hook = page
     tab.click("#go")
+    assert "scrollIntoView" in seen[0] and "elementFromPoint" in seen[0] and "requestAnimationFrame" in seen[0]      # one script: scroll, hold still, ask what is on top
     assert devtools.calls("Input.dispatchMouseEvent") == [
         {"type": "mouseMoved", "x": 120.5, "y": 80.0},
         {"type": "mousePressed", "x": 120.5, "y": 80.0, "button": "left", "clickCount": 1},
         {"type": "mouseReleased", "x": 120.5, "y": 80.0, "button": "left", "clickCount": 1},
     ]
+
+
+def test_click_waits_while_a_cover_is_on_top_and_clicks_where_the_element_is_once_it_is_free(tab, devtools):
+    answers = iter([aimed(10, 20, ok=False, hit="div#swelcome.swelcome"), aimed(10, 20, ok=False, hit="div#swelcome.swelcome"), aimed(11, 21)])
+    devtools.hook = lambda expression: next(answers) if "elementFromPoint" in expression else None
+    tab.click("#go")
+    assert [(c["type"], c["x"], c["y"]) for c in devtools.calls("Input.dispatchMouseEvent")] == [("mouseMoved", 11.0, 21.0), ("mousePressed", 11.0, 21.0), ("mouseReleased", 11.0, 21.0)]
+    assert not list(answers)                                                    # all three answers were used: it asked again after each cover
+
+
+def test_click_on_an_element_that_stays_covered_names_what_covers_it_and_sends_no_mouse_event(tab, devtools):
+    devtools.hook = lambda expression: aimed(10.4, 20.6, ok=False, hit="div#swelcome.swelcome") if "elementFromPoint" in expression else None
+    with pytest.raises(cdp.BrowserError, match=r"^a click on '#go' would not reach it: div#swelcome\.swelcome is on top of it, at \(10, 21\), after 0\.2 s$"):
+        tab.click("#go", timeout=0.2)
+    assert devtools.calls("Input.dispatchMouseEvent") == []
+    devtools.hook = lambda expression: aimed(5, 900, ok=False, hit=None) if "elementFromPoint" in expression else None
+    with pytest.raises(cdp.BrowserError, match="its middle is outside the window"):
+        tab.click("#go", timeout=0.1)
+    assert devtools.calls("Input.dispatchMouseEvent") == []
 
 
 def test_hover_moves_the_mouse_to_the_middle_of_the_element_and_does_not_press(tab, devtools):
@@ -4463,6 +4494,28 @@ def test_the_driver_clicks_types_presses_waits_and_takes_a_picture_in_a_real_chr
         browser.wait_for("false", timeout=0.2)
     assert browser.js("new Promise(r => setTimeout(() => r(7), 50))") == 7  # a promise is awaited
     assert browser.console_errors == []
+
+
+COVER_HTML = """<!doctype html><html><head><meta charset="utf-8"><title>Cover</title><!--SUTRA-BOOT--></head><body style="margin:0">
+<button id="go" style="position:absolute;left:100px;top:100px;width:120px;height:40px">Go</button>
+<div id="cover" class="veil" style="position:fixed;inset:0;background:rgba(0,0,0,.1)"></div>
+<div id="out"></div>
+<script>document.getElementById('go').addEventListener('click', function (e) { document.getElementById('out').textContent = 'clicked at ' + Math.round(e.clientX); });</script>
+</body></html>"""
+
+
+@pytest.mark.browser
+def test_a_click_a_cover_would_take_is_refused_by_name_and_a_button_that_is_still_moving_is_clicked_where_it_stops(browser, fake):
+    """The welcome card of Home is a full-screen dialog: a click on the page behind it used to do nothing and the test waited 40 s for the effect. And a button
+    that moves between the reading of its place and the press (a pane still filling in) was clicked at the place it had left."""
+    browser.goto(fake.page("cover", COVER_HTML))
+    with pytest.raises(cdp.BrowserError, match=r"^a click on '#go' would not reach it: div#cover\.veil is on top of it, at \(160, 120\), after 0\.5 s$"):
+        browser.click("#go", timeout=0.5)
+    assert browser.text("#out") == ""
+    browser.js("document.getElementById('cover').remove()")
+    browser.js("(() => { const b = document.getElementById('go'); b.style.transition = 'left 300ms linear'; b.style.left = '500px'; })()")        # slides while it is aimed at
+    browser.click("#go")
+    assert browser.text("#out") == "clicked at 560"                             # the middle of the button where it stopped (500 + 120 / 2), not where it was
 
 
 @pytest.mark.browser

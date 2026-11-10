@@ -22,6 +22,10 @@ Diagnostics (collected by listeners, read as properties):
                    fails the test when this list is not empty at its end. A test that provokes a failure on purpose
                    says so with `expect_failed("/api/graph")`, or empties the lists with `clear_diagnostics()`.
 
+`click(selector)` is a real mouse press and release at the middle of the element, made when the element has held still for two frames and is the topmost
+thing at that point: a page that is still drawing moves a button between the reading of its place and the press, and a full-screen card (Home's welcome card)
+takes a click meant for the page behind it. A cover is waited for 5 s, then `BrowserError` names it ("div#swelcome.swelcome is on top of it").
+
 `Browser(ws_url=...)` attaches to a page that is already open (the unit tests use it with a fake DevTools endpoint).
 """
 from __future__ import annotations
@@ -582,9 +586,48 @@ class Browser:
             raise BrowserError(f"no element matches {selector!r}")
         return float(point[0]), float(point[1])
 
-    def click(self, selector: str) -> None:
-        """Click the middle of the first element that matches `selector` (a real mouse press and release)."""
-        x, y = self._center(selector)
+    # Where a click goes. A page that is still drawing moves a button between the moment its place is read and the moment the mouse is pressed (the lists of a
+    # pane fill in above it, a chat that follows its newest line scrolls), and a press that lands on whatever moved there is a click on nothing: the test then waits
+    # for an effect that never comes. So the place is read once the element has held still for two frames (an element that never does, a pulse, is taken as it
+    # is), in the same script that asks what is topmost there: a cover (the welcome card is a full-screen dialog) takes the click, and is named instead.
+    _AIM = r"""(async selector => {
+  const e = document.querySelector(selector);
+  if (!e) return null;
+  e.scrollIntoView({block: 'center', inline: 'center'});
+  const frame = () => new Promise(done => { const t = setTimeout(done, 100); requestAnimationFrame(() => { clearTimeout(t); done(); }); });
+  const box = () => { const r = e.getBoundingClientRect(); return [r.left, r.top, r.width, r.height]; };
+  let last = box(), still = 0;
+  for (let i = 0; i < 60 && still < 2; i++) {
+    await frame();
+    const now = box();
+    if (now.every((v, k) => v === last[k])) still += 1; else { still = 0; last = now; }
+  }
+  const [left, top, width, height] = box();
+  const x = left + width / 2, y = top + height / 2;
+  const hit = document.elementFromPoint(x, y);
+  const name = n => n.tagName.toLowerCase() + (n.id ? '#' + n.id : '') + (typeof n.className === 'string' && n.className.trim() ? '.' + n.className.trim().split(/\s+/).join('.') : '');
+  return {x, y, steady: still >= 2, ok: !!hit && (hit === e || e.contains(hit) || hit.contains(e)), hit: hit ? name(hit) : null};
+})(__SELECTOR__)"""
+
+    def _aim(self, selector: str, timeout: float) -> tuple[float, float]:
+        """The point a click on `selector` goes to (see `_AIM`). A cover is waited for up to `timeout` seconds, then named in the error."""
+        expression = self._AIM.replace("__SELECTOR__", json.dumps(selector))
+        deadline = time.monotonic() + timeout
+        while True:
+            aim = self.js(expression)
+            if not aim:
+                raise BrowserError(f"no element matches {selector!r}")
+            if aim["ok"]:
+                return float(aim["x"]), float(aim["y"])
+            if time.monotonic() >= deadline:
+                what = f"{aim['hit']} is on top of it" if aim.get("hit") else "its middle is outside the window"
+                raise BrowserError(f"a click on {selector!r} would not reach it: {what}, at ({aim['x']:.0f}, {aim['y']:.0f}), after {timeout} s")
+            time.sleep(0.05)
+
+    def click(self, selector: str, timeout: float = 5.0) -> None:
+        """Click the middle of the first element that matches `selector` (a real mouse press and release), once it has held still and is the topmost thing there.
+        BrowserError when nothing matches, or when something else stays on top of it for `timeout` seconds (the error names it)."""
+        x, y = self._aim(selector, timeout)
         base = {"x": x, "y": y, "button": "left", "clickCount": 1}
         self._send("Input.dispatchMouseEvent", {"type": "mouseMoved", "x": x, "y": y})
         self._send("Input.dispatchMouseEvent", {"type": "mousePressed", **base})
