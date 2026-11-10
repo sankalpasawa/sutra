@@ -6842,7 +6842,7 @@ SAVED_RUNS_GOLDEN = {
     "j2-20261027-130930": {"groups": "2e243a013493", "docs": "9f690587f7c4", "map": "bad64fe59f9f", "checks": "cf4fa11161b5"},
 }
 # Recorded 2026-11-10 (step D): the document runs as they are now (doc_unchanged); re-record on purpose, never to pass
-DOC_RUN_GOLDEN = {"prd": "6a2e2b7c501d", "design docs": "ca6d04f799e4", "docs then site": "f17ab398406b"}
+DOC_RUN_GOLDEN = {"prd": "6a2e2b7c501d", "design docs": "ca6d04f799e4", "docs then site": "68306b02133b"}
 DOC_PROMPTS_GOLDEN = {
     "prd.builder": "e971c88e727f", "prd.intake": "56b304946997",
     "prd.charter_fmt": "eedccdf82d84", "prd.atom_rules": "b8a918ef6039", "prd.system": "55a8ffce8e22",
@@ -7291,6 +7291,101 @@ def report_type():
     md = open(os.path.join(run.dir, "business_report.md"), encoding="utf-8").read()
     assert all(f"## {x}" in md for x in j2_types.sections("business_report")) and os.path.isfile(os.path.join(run.dir, "business_report.docx"))
     print("report type: chosen from its own trigger words, built with the template's five sections, checked and filed, no code names it ok")
+
+
+def tap_dense():
+    """C7: a 9x9 grid of 36px cells at 360px passes a tap-targets check (dense controls need 24px, WCAG 2.2 AA); a
+    lone 36px button, or a 30px one beside the grid, still needs 44px. The rule is told to builders (R-6) and to
+    Adaptation (the tap-targets type). Real Chrome; skipped without it."""
+    assert "24x24px for the cells or keys of a dense grid or keypad" in dict(j2.output_def("website")["rubric"])["R-6"]
+    assert "code itself allows 24 for the cells or keys of a dense grid or keypad" in j2.J2Run.ATOM_RULES
+    if not REAL_FIND():
+        print("tap dense: skipped (no Chrome)")
+        return
+    keep = j2.j2_check.find_chrome, j2.j2_check.tap_targets
+    j2.j2_check.find_chrome, j2.j2_check.tap_targets = REAL_FIND, REAL_TAP
+    try:
+        head = '<!doctype html><html><head><meta name="viewport" content="width=device-width"></head><body style="margin:0">'
+        cell = '<button style="width:36px;height:36px;padding:0;margin:0;border:0">1</button>'
+        grid = "".join(f'<div class="row">{cell * 9}</div>' for _ in range(9))
+        tap = lambda page, sel: j2.run_check({"type": "tap-targets", "target": sel, "expect": 44}, "", page)
+        r = tap(f'{head}<section id="game">{grid}</section></body></html>', "#game")
+        assert r["pass"] and r["actual"]["dense"] == 81 and "24x24px" in r["evidence"], r
+        r = tap(f'{head}<section id="game">{grid}<button style="width:120px;height:30px">New game</button></section>'
+                '</body></html>', "#game")
+        assert not r["pass"] and r["actual"]["small_count"] == 1 and "New game" in r["evidence"], r
+        r = tap(f'{head}<section id="cta"><button style="width:36px;height:36px">Go</button></section></body></html>', "#cta")
+        assert not r["pass"] and r["actual"]["dense"] == 0 and "under 44x44px" in r["evidence"], r
+    finally:
+        j2.j2_check.find_chrome, j2.j2_check.tap_targets = keep
+    print("tap dense: a 9x9 grid at 360px passes at 24px, a lone button and one beside the grid still need 44px ok")
+
+
+def planner_conditions():
+    """C8: the realization planner gets the necessary conditions that apply (id: text) and the number rule before it
+    plans. N8 (nav and main action) doesn't apply to a single-screen app (conditions/website.json skip_when): skipped in
+    the plan gap check and met with its reason in the condition check, kept for a multi-section site."""
+    import j2_realization as R
+    run = j2.J2Run()
+    site = {"statement": "A one-page website for Little Fig, a cafe, with its menu, hours and a visit form",
+            "business_type": "cafe", "done_when": ["Menu", "Hours"]}
+    game = {"statement": "Build a friendly Sudoku game as a single web page", "business_type": "puzzle game",
+            "done_when": ["A 9x9 grid"]}
+    run.goal = site
+    task = R.plan_task(site, False, run._real_note())
+    assert "NECESSARY CONDITIONS" in task and "N8: A nav reaches every section, and the hero has one obvious main action" in task
+    assert "N1: The page opens (it parses, tags balanced)" in task, task
+    assert "A goal that names a time, price, number or email needs a facts-present check or a named test." in task
+    assert [c["id"] for c in run._plan_gaps([{"name": "Menu section", "goal_gap": "the menu"}])] == ["N8"]
+    run.goal = game
+    assert "N8:" not in run._real_note() and "N7:" in run._real_note()
+    assert run._plan_gaps([{"name": "Grid", "goal_gap": "the grid"}]) == []
+    page = "<!doctype html><html><body><main><h1>Sudoku</h1><button>New game</button></main></body></html>"
+    conds = j2.load_conditions("website.json")
+    by = lambda g: {c["id"]: c for c in j2.check_conditions(conds, "Sudoku", g, "", (), page, {})}
+    n8 = by(game)["N8"]
+    assert n8["met"] and n8["evidence"].startswith("does not apply: a single-screen app"), n8
+    assert not by(site)["N8"]["met"]
+    assert not j2.cond_skip(conds[-1], {"statement": "A website for Dice & Co, a board game cafe"})   # "unless": a website
+    print("planner conditions: the planner gets the conditions and the number rule; N8 skipped for a single-screen "
+          "game, kept for a multi-section site ok")
+
+
+def types_constants():
+    """E: the validator's constants come from artifacts/types.json. A temp copy with a new page check type, a new
+    expected-output kind, another page file and other item words is loaded in a fresh process: each is used."""
+    import subprocess
+    here = os.path.dirname(os.path.abspath(__file__))
+    with tempfile.TemporaryDirectory() as tmp:
+        d = json.load(open(os.path.join(here, "artifacts", "types.json"), encoding="utf-8"))
+        d["forms"]["page"]["check_types"].append("pixel-diff")
+        d["forms"]["page"]["file"] = "site/home.html"
+        d["expect_kinds"]["shot"] = "pixel-diff"
+        web = next(t for t in d["types"] if t["name"] == "website")
+        web["cost"]["item_parts"][0]["words"] = r"\bquote\b"
+        path = os.path.join(tmp, "types.json")
+        json.dump(d, open(path, "w", encoding="utf-8"))
+        code = ("import json, sys, j2_types\nj2_types.TYPES_PATH = sys.argv[1]\nimport j2\nj2.load_rates('website')\n"
+                "print(json.dumps({'ct': j2.CHECK_TYPES, 'doc': j2.DOC_CHECK_TYPES, 'ek': j2.EXPECT_KINDS, "
+                "'wf': j2.WF_TYPES + ' ' + j2.WF_KINDS, 'fmt': j2.J2Run.WF_FMT, 'file': j2.PAGE_FILE, "
+                "'files': j2.SITE_FILES, 'kinds': [j2.item_kind('Get a quote'), j2.item_kind('An order form')], "
+                "'bad': j2.check_problems({'verification': [{'type': 'nope', 'target': '#x', 'expect': 1}]}, '')}))")
+        p = subprocess.run([sys.executable, "-c", code, path], cwd=here, capture_output=True, text=True, timeout=120)
+        assert p.returncode == 0, p.stderr[-2000:]
+        got = json.loads(p.stdout.strip().splitlines()[-1])
+    assert got["ct"][-1] == "pixel-diff" and got["doc"] == list(j2.DOC_CHECK_TYPES), got["ct"]
+    assert got["ek"]["shot"] == "pixel-diff" and '"pixel-diff"' in got["wf"] and '"shot"' in got["wf"], got["wf"]
+    assert '"pixel-diff"' in got["fmt"] and '"shot"' in got["fmt"]
+    assert got["file"] == "home.html" and got["files"] == ["home.html", "site/home.html"], got["files"]
+    assert got["kinds"] == ["form", "page_section"], got["kinds"]        # the form words are now "quote" only
+    assert "pixel-diff" in got["bad"][0], got["bad"]                      # check_problems' default types
+    # and this process, with the real file, has the values the prompts were written with
+    assert j2.CHECK_TYPES == ("file-exists", "grep-count", "element-count", "named-test", "facts-present", "tap-targets",
+                              "behavior-steps") and j2.PAGE_FILE == "index.html"
+    assert j2.WF_TYPES == '"file-exists"|"grep-count"|"element-count"|"named-test"|"facts-present"'
+    assert j2.WF_KINDS == '"section"|"element"|"facts"|"file"|"test"|"tap"|"behavior"'
+    print("types constants: check types, expect kinds, the plan format, the page file and item parts read from "
+          "artifacts/types.json ok")
 
 
 def doc_unchanged():
@@ -12138,6 +12233,9 @@ if __name__ == "__main__":
             doc_planner_real()          # step 3c: realistic planner answers for documents
             forms_and_new_types()       # phase C: forms, and new types made on the fly
             report_type()               # step D: a type made of data only
+            tap_dense()                 # C7: dense grids and keypads at 24px
+            planner_conditions()        # C8: the planner gets the conditions; N8 skipped for a single screen
+            types_constants()           # E: the validator constants from artifacts/types.json
         artifacts_tab()
         map_tab()
         map_every_workflow()
