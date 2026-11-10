@@ -613,6 +613,21 @@ body.simple #dview{display:none}
 #sview .stoast{position:fixed;left:50%;bottom:calc(84px + env(safe-area-inset-bottom,0px));transform:translate(-50%,10px) scale(.98);opacity:0;filter:blur(3px);background:var(--s-ink);color:var(--s-bg);border-radius:999px;padding:9px 18px 9px 14px;font-size:14px;font-weight:500;transition:transform .35s cubic-bezier(.16,1,.3,1),opacity .3s,filter .3s;z-index:80;max-width:calc(100% - 32px);pointer-events:none;box-shadow:0 0 0 1px var(--s-ring),0 12px 32px -12px var(--s-shade2);display:flex;align-items:center;gap:9px}
 #sview .stoast::before{content:"";flex:none;width:7px;height:7px;border-radius:50%;background:var(--s-good);box-shadow:0 0 0 3px color-mix(in srgb,var(--s-good) 30%,transparent)}
 #sview .stoast.on{transform:translate(-50%,0);opacity:1;filter:none}
+#sview .stoast.baton{max-width:min(420px,calc(100% - 32px));padding:6px 16px 6px 6px}#sview .stoast.baton::before{display:none}
+#sview .stoast .sbfaces{display:inline-flex;flex:none}#sview .stoast .sbfaces i{display:block;width:22px;height:22px;border-radius:50%;box-shadow:0 0 0 2px var(--s-ink)}
+#sview .stoast .sbfaces .sbr{margin-left:-4px}#sview .stoast .sbfaces .av{display:block;border-radius:50%}
+#sview .stoast.baton.on .sbg{animation:sbslide .4s cubic-bezier(.16,1,.3,1)}#sview .stoast.baton.on .sbr{animation:sbbob .3s .4s ease-out}
+#sview .stoast .sbit{color:color-mix(in srgb,var(--s-bg) 72%,var(--s-ink));white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+#sview .stoast>span:last-child{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+@keyframes sbslide{from{transform:translateX(-12px)}to{transform:none}}@keyframes sbbob{50%{transform:translateY(-1px)}}
+#sview .smate .sbat{display:inline;background:var(--s-goodbg);color:var(--s-ink);border-radius:999px;padding:1px 4px 1px 8px;animation:sbatin .26s cubic-bezier(.16,1,.3,1);-webkit-box-decoration-break:clone;box-decoration-break:clone}
+#sview .smate .schip .av{border-radius:50%;flex:none}#sview .smate .schip{display:inline-flex;align-items:center;gap:4px;height:18px;vertical-align:middle;padding:0 7px 0 3px;border-radius:999px;background:var(--s-surface);color:var(--s-ink);font-weight:500;font-size:12px}
+#sview .smate.give small{color:var(--s-ink)}#sview .smate.take small{color:var(--s-ink)}#sview .smate.resumed small{color:var(--s-good);font-weight:600}
+@keyframes sbatin{from{opacity:0;transform:translateX(-6px)}to{opacity:1;transform:none}}
+#sview .stag.res{background:var(--s-good);animation:none}
+#sview .stalk .shto{display:inline-flex;align-items:center;gap:4px;margin-left:4px;padding:0 7px 0 2px;border-radius:999px;background:var(--s-surface2);color:var(--s-ink);-webkit-text-fill-color:var(--s-ink);font-size:12.5px;font-weight:500;vertical-align:middle;line-height:18px}
+#sview .stalk .shto .av{border-radius:50%}
+@media (prefers-reduced-motion: reduce){#sview .stoast.baton.on .sbg,#sview .stoast.baton.on .sbr,#sview .smate .sbat{animation:none}}
 #sview .sdock{display:none}
 /* a laptop narrower than the three columns: the team and the plan move to the dock; Asha keeps her column */
 @media (max-width:1180px){
@@ -2082,11 +2097,12 @@ function sCrew(s, M){
   if (th === "audit"){ t.nora.busy = true; t.nora.line = s.doc ? "Checking the document against your list" : "Checking it on a phone and a laptop"; }
   else t.nora.line = audits ? `Checked the work ${audits === 1 ? "once" : audits + " times"}` + (live ? ", checks again when parts land" : "") : "Checks each part as it finishes";
   ["mira", "kabir", "dev"].forEach(k => { const m = t[k], on = m.parts.filter(p => p.st === "doing");
-    if (qp && qp.person === k){ m.line = "Waiting on your answer"; m.ask = true; }
+    if (qp && qp.person === k){ const b = SV.bat && SV.bat.park, mn = b && b.sec === qp.sec ? Math.floor((Date.now() - b.at) / 6e4) : 0; m.line = "Parked on your answer" + (mn >= 1 ? ` · ${mn < 60 ? mn + "m" : Math.floor(mn / 60) + "h"}` : ""); m.ask = true; m.cls = "park"; }
     else if (on.length){ m.busy = true; m.line = (on.some(p => p.fixing) ? "Fixing " : "On ") + sAnd(on.slice(0, 2).map(p => p.name)) + (on.length > 2 ? ` and ${on.length - 2} more` : ""); }
     else if (!m.parts.length) m.line = !M.parts.length && !isReady(s) && !s.saved ? "Waiting for the plan" : live ? "Free for the next part" : "Nothing for this project";
     else { const d = m.parts.filter(p => p.st === "done").length, left = m.parts.length - d;
       m.line = live || open ? (d ? `Finished ${sNum(d)}${left ? `, ${left} to go` : ""}` : sCap(`${sNum(left)} coming up`)) : `Finished ${sNum(d)}${left ? `, ${left} left open` : ""}`; } });
+  ["mira", "kabir", "dev", "nora"].forEach(k => { const b = !t[k].ask && sBatLine(k); if (b) Object.assign(t[k], b); });      // a handoff or a resume, for a few seconds
   return t;
 }
 // ---- what the run is doing, in one line
@@ -2174,6 +2190,49 @@ function sCardClick(e){
   inp.value += `${inp.value ? "; " : ""}${g.dataset.q}. Option ${b.dataset.opt}`; inp.focus();      // several: collect, then Send
 }
 function sCardKey(e){ if (e.key === "Enter" && e.target.matches && e.target.matches(".qcard .own input")){ e.preventDefault(); e.target.closest(".own").querySelector("[data-own]").click(); } }
+// ---- handoffs and parked teammates, read from how the parts change between two renders: a part lands and the next part to start is
+// another teammate's (the baton), or the part on your question stops waiting (resumed). Only the five teammates; timers only end a short state.
+const SBAT_TOAST = 4000, SBAT_GIVE = 4000, SBAT_TAKE = 2000, SBAT_RES = 3000, SBAT_PEND = 60000;      // toast cap, giver pill, receiver line, Resumed, how long a finish waits for the next start
+function sBaton(s, M){
+  const now = Date.now(), live = s.status === "running", B = SV.bat || (SV.bat = {prev: null, pend: null, give: null, take: [], toastAt: 0, park: null, res: null, t: 0});
+  const doing = M.parts.filter(p => p.st === "doing" || p.st === "fix"), done = new Set(M.parts.filter(p => p.st === "done").map(p => p.sec)), prev = B.prev;
+  B.prev = {done, doing: new Set(doing.map(p => p.sec)), audit: s.thinking === "audit"}; SV.batS = s;
+  const qp = M.parts.find(p => p.st === "ask" && SKEYS.includes(p.person));      // parked: the part that waits on your answer
+  if (qp){ if (!B.park || B.park.sec !== qp.sec) B.park = {k: qp.person, sec: qp.sec, at: now}; B.res = null; }
+  else if (B.park){ B.res = live ? {k: B.park.k, sec: B.park.sec, until: now + SBAT_RES} : null; B.park = null; }
+  let fired = false;
+  if (!prev || !live) B.pend = null;
+  else {
+    const fin = M.parts.filter(p => done.has(p.sec) && !prev.done.has(p.sec) && p.person !== "asha" && SKEYS.includes(p.person));
+    if (fin.length){ const p = fin[fin.length - 1]; B.pend = {k: p.person, item: p.name.toLowerCase(), at: now}; }
+    if (B.pend && now - B.pend.at > SBAT_PEND) B.pend = null;
+    if (B.pend){ const g = B.pend, starts = doing.filter(p => !prev.doing.has(p.sec));
+      let to = [...new Set(starts.map(p => p.person))].filter(k => SKEYS.includes(k) && k !== "asha" && k !== g.k);
+      if (!to.length && s.thinking === "audit" && (!prev.audit || fin.length) && g.k !== "nora") to = ["nora"];      // the last part landed and Nora picks it up
+      if (to.length){ B.pend = null; fired = true;
+        if (B.give && B.give.k === g.k && B.give.item === g.item && now - B.give.at < 1000) to = [...new Set([...B.give.to, ...to])];      // several within a second: one line
+        B.give = {k: g.k, to, item: g.item, at: now, until: now + SBAT_GIVE}; B.take = to.map(k => ({k, from: g.k, item: g.item, until: now + SBAT_TAKE}));
+        if (now - B.toastAt >= SBAT_TOAST){ B.toastAt = now; sToastBaton(B.give); } }
+      else if (starts.some(p => p.person === g.k)) B.pend = null; }      // the same teammate carries on: no handoff
+  }
+  const ends = [B.give && B.give.until, B.res && B.res.until, ...B.take.map(x => x.until)].filter(x => x > now);
+  clearTimeout(B.t); if (ends.length) B.t = setTimeout(() => { if (SV.batS) renderSimple(SV.batS); }, Math.min(...ends) - now + 30);
+  return fired;
+}
+function sBatLine(k){      // the rail's short state for a teammate, if any: {cls, line, html}
+  const B = SV.bat, now = Date.now(); if (!B) return null; const N = x => PEOPLE[x].name;
+  if (B.give && B.give.k === k && now < B.give.until){ const line = `Finished ${B.give.item} for ${sAnd(B.give.to.map(N))}`;
+    return {cls: "give", line, html: `<span class="sbat">Finished ${esc(B.give.item)} for ${B.give.to.map(x => `<span class="schip">${face(x, 14, {prop: false, label: false})}${N(x)}</span>`).join(" ")}</span>`}; }
+  const t = B.take.find(x => x.k === k && now < x.until); if (t) return {cls: "take", line: `Picking up ${t.item} from ${N(t.from)}`};
+  if (B.res && B.res.k === k && now < B.res.until) return {cls: "resumed", line: "Resumed where it left off"};
+  return null;
+}
+function sToastBaton(g){      // "[faces] Mira → Kabir  hero copy": the giver's face slides toward the receiver's once
+  const el = $("stoast"); if (!el || !el.classList) return; const N = x => PEOPLE[x].name;
+  el.innerHTML = `<span class="sbfaces" aria-hidden="true"><i class="sbg">${face(g.k, 22, {prop: false, label: false})}</i><i class="sbr">${face(g.to[0], 22, {prop: false, label: false})}</i></span><span><b>${N(g.k)} → ${esc(sAnd(g.to.map(N)))}</b> <span class="sbit">${esc(g.item)}</span></span>`;
+  el.setAttribute("aria-label", `${N(g.k)} finished ${g.item} and handed it to ${sAnd(g.to.map(N))}`);
+  el.classList.remove("on", "baton"); void el.offsetWidth; el.classList.add("on", "baton");
+  clearTimeout(sToast.t); sToast.t = setTimeout(() => el.classList.remove("on"), 3200); }
 // ---- render: the start page, or the studio
 function renderSimple(s){
   const started = !!(s.allChat || []).length || !!s.saved;
@@ -2184,12 +2243,12 @@ function renderSimple(s){
     if (!SV.landKey){ SV.landKey = "1"; $("slfaces").innerHTML = SKEYS.map(k => face(k, 46, {prop: false, label: false})).join(""); sRecent(); setTimeout(sGhost); }
     return;
   }
-  const open = needsYou(s), live = !!s.paused && s.status !== "running" && !s.saved, ready = isReady(s), M = sModel(s), T = sCrew(s, M);
+  const open = needsYou(s), live = !!s.paused && s.status !== "running" && !s.saved, ready = isReady(s), M = sModel(s), baton = sBaton(s, M), T = sCrew(s, M);
   if (!SV.chatInit){ SV.chatInit = 1; sChatOpen(false); }
   sChat(s, open, live, M);
   sTop(s, M, open, ready);
   const doneNow = M.parts.filter(p => p.st === "done").map(p => p.sec), fresh = SV.done ? doneNow.filter(x => !SV.done.has(x)) : [];      // a part just landed: say who made it
-  if (fresh.length && s.status === "running"){ const p = M.parts.find(x => x.sec === fresh[fresh.length - 1]); sToast(`${PEOPLE[p.person].name} finished ${p.name.toLowerCase()}${fresh.length > 1 ? ` and ${fresh.length - 1} more` : ""}`); }
+  if (fresh.length && s.status === "running" && !baton){ const p = M.parts.find(x => x.sec === fresh[fresh.length - 1]); sToast(`${PEOPLE[p.person].name} finished ${p.name.toLowerCase()}${fresh.length > 1 ? ` and ${fresh.length - 1} more` : ""}`); }
   SV.done = new Set(doneNow);
   sRail(s, M, T);
   sViews(s, M, ready);
@@ -2264,7 +2323,7 @@ function sTop(s, M, open, ready){
 }
 function sRail(s, M, T){
   paint($("steamlist"), SKEYS.map(k => { const t = T[k], p = PEOPLE[k];
-    return `<button type="button" class="smate${t.busy ? " busy" : ""}${t.ask ? " ask" : ""}" data-mate="${k}" style="--c:var(${p.c})"><span class="sface">${face(k, 42, {label: false})}${t.ask && k === "asha" ? '<i class="spip" aria-hidden="true"></i>' : ""}</span><span><b>${p.name}</b> <span class="srole">· ${p.role}</span><small>${esc(t.line)}</small></span>${t.busy ? '<span class="stype" aria-hidden="true"><i></i><i></i><i></i></span>' : ""}</button>`; }).join(""));
+    return `<button type="button" class="smate${t.busy ? " busy" : ""}${t.ask ? " ask" : ""}${t.cls ? " " + t.cls : ""}" data-mate="${k}" style="--c:var(${p.c})"><span class="sface">${face(k, 42, {label: false})}${t.ask && k === "asha" ? '<i class="spip" aria-hidden="true"></i>' : ""}</span><span><b>${p.name}</b> <span class="srole">· ${p.role}</span><small>${t.html || esc(t.line)}</small></span>${t.busy ? '<span class="stype" aria-hidden="true"><i></i><i></i><i></i></span>' : ""}</button>`; }).join(""));
   $("sback").hidden = true;      // the rail shows the five teammates and the plan only; the backstage roles stay out of sight
   $("splancount").textContent = M.total ? `${M.done}/${M.total}` : "";
   paint($("splan"), sPlanHTML(s, M));
@@ -2502,8 +2561,10 @@ function sTeamwork(s, M){      // the output is the map: a block per part, the t
   const CUR = `<svg class="scur" viewBox="0 0 16 16" aria-hidden="true"><path d="M2 1.5l11 5.2-4.6 1.4-1.9 4.6z" fill="currentColor" stroke="var(--s-surface)" stroke-width="1.2" stroke-linejoin="round"/></svg>`, TY = '<span class="sty" aria-hidden="true"><i></i><i></i><i></i></span>';
   let n = 0;
   const part = p => { const P = PEOPLE[p.person], fresh = SV.cards[p.sec] !== undefined && SV.cards[p.sec] !== p.st; SV.cards[p.sec] = p.st; n++;
-    const tag = p.st === "doing" || p.st === "fix" ? `<span class="stag">${CUR}${face(p.person, 20, {prop: false, label: false})}${P.name} is ${p.fixing || p.st === "fix" ? "fixing" : VERB[p.person] || "on"} this${TY}</span>`
-      : p.st === "ask" ? `<span class="stag">${face("asha", 20, {prop: false, label: false})}Waits on your answer</span>`
+    const res = SV.bat && SV.bat.res && SV.bat.res.sec === p.sec && Date.now() < SV.bat.res.until;
+    const tag = res && p.st === "doing" ? `<span class="stag res">${face(p.person, 20, {prop: false, label: false})}${P.name} resumed this</span>`
+      : p.st === "doing" || p.st === "fix" ? `<span class="stag">${CUR}${face(p.person, 20, {prop: false, label: false})}${P.name} is ${p.fixing || p.st === "fix" ? "fixing" : VERB[p.person] || "on"} this${TY}</span>`
+      : p.st === "ask" ? `<span class="stag">${face(SKEYS.includes(p.person) ? p.person : "asha", 20, {prop: false, label: false})}Parked on your answer</span>`
       : p.st === "done" ? `<span class="sok">${face(p.person, 18, {prop: false, label: false})}✓ ${P.name}${p.fixes ? `<em>, fixed ${p.fixes === 1 ? "once" : p.fixes + " times"}</em>` : ""}</span>` : "";
     const note = p.st === "next" ? (live || (open.length && !s.saved) ? `${P.name} next` : "Not made in this run") : p.st === "bad" ? "Couldn't be made" : "";
     return `<button type="button" class="spart ${p.st}${fresh ? " fresh" : ""}" data-part="${esc(p.sec)}" style="--c:var(${P.c})">${tag}<span class="spn" aria-hidden="true">${String(n).padStart(2, "0")}</span><b>${esc(p.name)}</b><span class="sl" aria-hidden="true"><i></i><i></i><i></i></span>${note ? `<small>${esc(note)}</small>` : ""}</button>`; };
@@ -2528,7 +2589,8 @@ function sTeamwork(s, M){      // the output is the map: a block per part, the t
     const took = d === null ? "" : d < 1 ? " for under a minute" : d < 60 ? ` for ${d}m` : ` for ${Math.floor(d / 60)}h ${d % 60}m`, LIM = 6, all = SV.talkAll || talk.length <= LIM + 1;
     h += `<section class="stw-sec"><h3 class="stw-log"><span class="slogi${live ? " on" : ""}" aria-hidden="true">${live ? "" : "✓"}</span><b>${live ? "Working" : "Worked" + took}</b><span class="scount">· ${talk.length} step${talk.length === 1 ? "" : "s"}</span></h3><div class="stalk">`
     + talk.slice(all ? -40 : -LIM).reverse().map((t, i) => { const fresh = !SV.talk.has(t.id), now = live && !i; SV.talk.add(t.id);
-      return `<div class="${fresh ? "new" : ""}${now ? " now" : ""}"><span class="slic" aria-hidden="true">${now ? "" : "✓"}</span>${t.who ? face(t.who, 22, {prop: false, label: false}) : `<span class="rico" aria-hidden="true">${esc(t.role[0])}</span>`}<span><b>${esc(t.who ? PEOPLE[t.who].name : t.role)}</b> ${esc(t.text)}</span><small>${esc(t.t || "")}</small></div>`; }).join("")
+      const nx = /^(finished|fixed) /.test(t.text) && t.who !== "asha" ? talk.slice(talk.indexOf(t) + 1).find(y => y.who && y.who !== "asha") : null, to = nx && nx.who !== t.who ? nx.who : "";
+      return `<div class="${fresh ? "new" : ""}${now ? " now" : ""}${to ? " hand" : ""}"><span class="slic" aria-hidden="true">${now ? "" : "✓"}</span>${t.who ? face(t.who, 22, {prop: false, label: false}) : `<span class="rico" aria-hidden="true">${esc(t.role[0])}</span>`}<span><b>${esc(t.who ? PEOPLE[t.who].name : t.role)}</b> ${esc(to ? t.text.replace(/\.$/, "") : t.text)}${to ? ` <span class="shto">→ ${face(to, 16, {prop: false, label: false})}${PEOPLE[to].name}</span>` : ""}</span><small>${esc(t.t || "")}</small></div>`; }).join("")
     + (talk.length > LIM + 1 ? `<button type="button" class="stmore" data-talkall aria-expanded="${!!SV.talkAll}">${SV.talkAll ? "Show fewer" : `Show ${Math.min(talk.length, 40) - LIM} earlier steps`}</button>` : "") + `</div></section>`; }
   return h;
 }
@@ -2645,7 +2707,7 @@ async function sOpenArt(name){
     + `<button type="button" class="sbtn smore" data-records>Every record, in the Detailed view</button>`;
 }
 // ---- top bar, dock and the rest
-function sToast(t){ const el = $("stoast"); if (!el || !el.classList) return; el.textContent = t; el.classList.add("on"); clearTimeout(sToast.t); sToast.t = setTimeout(() => el.classList.remove("on"), 2800); }
+function sToast(t){ const el = $("stoast"); if (!el || !el.classList) return; el.textContent = t; el.removeAttribute("aria-label"); el.classList.remove("baton"); el.classList.add("on"); clearTimeout(sToast.t); sToast.t = setTimeout(() => el.classList.remove("on"), 2800); }
 function sAutoPaint(s){      // your click shows at once; after 4 s the server's setting wins (another tab, or a POST that failed)
   if (SV.auto !== null && SV.autoAt && Date.now() - SV.autoAt > 4000) SV.auto = null;
   const on = SV.auto !== null ? SV.auto : !!s.decide_for_me;
