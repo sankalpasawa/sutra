@@ -16,6 +16,24 @@
       "workflow": "W-6",
       "atom": "W-6.a1",
       "action": "created"
+    },
+    {
+      "run": "j2-20261103-154028-3",
+      "workflow": "W-6",
+      "atom": "W-6.a1",
+      "action": "created"
     }
-  ]
+  ],
+  "made_by": {
+    "run": "j2-20261103-161111-3",
+    "workflow": "W-6",
+    "atom": "W-6.a1",
+    "agent": "template generator (mock)",
+    "date": "2026-11-03 16:11:11"
+  },
+  "business": {
+    "name": "Still Point Yoga",
+    "type": "business"
+  },
+  "mock": true
 }

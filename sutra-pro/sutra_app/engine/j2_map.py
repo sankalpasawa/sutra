@@ -791,3 +791,65 @@ def plan_view(d):
                 "changes": [{"workflow": c.get("workflow"), "remedy": c.get("remedy")} for c in r.get("changes") or []]} for r in rz.get("rounds") or [] if (r.get("round") or 0) > 0]
     return {"found": True, "chosen": a.get("chosen") or "", "options": a.get("options") or [], "zone": (p.get("certainty_assessment") or {}).get("zone"),
             "confidence": rz.get("plan_confidence"), "stages": stages, "replans": replans}
+
+
+def plan_map(d):
+    """Adaptation > Map (plan-map/1): the goal, the stages the Strategist chose and every registered workflow under each, from the run's
+    own records and nothing else. realization.json gives the stages, each planned workflow's certainty zone and the judge's score per
+    round; workflows.json gives the registered workflows (id, stage, cycle, status, cost, what it revises); change.json gives where
+    each change started, the revisions it made and the readers it asked to reread. {"found": False} for a run with no plan record."""
+    rz = _read(d, "realization.json") if d else None
+    if not isinstance(rz, dict) or not isinstance(rz.get("plan"), dict):
+        return {"found": False}
+    p, conf, scores, hist = rz["plan"], rz.get("stages") or {}, rz.get("scores") or {}, rz.get("history") or {}
+    planned = {w.get("name"): w for w in p.get("workflows") or [] if isinstance(w, dict)}
+    wfs = [w for w in (_read(d, "workflows.json", []) or []) if isinstance(w, dict)]
+    changes = _read(d, "change.json", []) or []
+    changes = [c for c in (changes if isinstance(changes, list) else [changes]) if isinstance(c, dict)]
+    starts, revisions, readers = {}, {}, {}
+    for i, c in enumerate(changes, 1):
+        cid = c.get("id") or f"C-{i}"
+        for wid, n in (c.get("nodes") or {}).items():
+            n = n if isinstance(n, dict) else {}
+            if n.get("verdict") == "change-here":
+                starts[wid] = {"change": cid, "request": c.get("request") or "", "reason": n.get("reason") or ""}
+            for r in n.get("revisions") or []:
+                revisions.setdefault(wid, []).append(r)
+        for r in c.get("relay") or []:
+            if isinstance(r, dict) and r.get("name"):
+                readers.setdefault(r["name"], []).append({"change": cid, "doc": r.get("doc"), "affected": bool(r.get("affected")),
+                                                         "agree": r.get("agree"), "round": r.get("round") or 0})
+
+    def root_of(doc):      # the workflow a reread document belongs to: the revised root when the document is a revision's
+        w = next((x for x in wfs if x.get("name") == doc), None)
+        return (w or {}).get("revises") or (w or {}).get("id")
+
+    def rounds_of(name):
+        h = hist.get(name)
+        if isinstance(h, list):
+            return [x.get("score") if isinstance(x, dict) else x for x in h if x is not None]
+        return [s for s in (((r.get("scores") or {}).get(name) or {}).get("score") for r in rz.get("rounds") or []) if s is not None]
+    nodes = []
+    for w in wfs:
+        name, pl, sc, j = w.get("name"), planned.get(w.get("name")) or {}, scores.get(w.get("name")) or {}, w.get("judge") or {}
+        nodes.append({"id": w.get("id"), "name": name, "stage": w.get("stage") or pl.get("stage"), "zone": w.get("certainty") or pl.get("certainty"),
+                      "zone_from": w.get("certainty_from") or ("plan" if pl.get("certainty") else None),
+                      "score": j.get("score") if j.get("score") is not None else sc.get("score"), "weakest": j.get("weakest") or sc.get("weakest"),
+                      "rounds": list(j.get("rounds") or []) or rounds_of(name),
+                      "cycle": w.get("cycle") or 1, "status": w.get("status") or "", "cost": w.get("cost"), "revises": w.get("revises"),
+                      "purpose": w.get("purpose") or pl.get("goal") or "",
+                      "change_start": starts.get(w.get("id")), "revisions": revisions.get(w.get("id"), []),
+                      "read": [dict(r, doc_id=root_of(r.get("doc"))) for r in readers.get(name, [])]})
+    stages, known = [], set()
+    for s in p.get("stages") or []:
+        sid = s.get("id")
+        known.add(sid)
+        stages.append({"id": sid, "thinking": s.get("thinking") or "", "goal": s.get("goal") or "",
+                       "zone": (conf.get(sid) or {}).get("zone"), "confidence": (conf.get(sid) or {}).get("confidence"),
+                       "workflows": [n["id"] for n in nodes if n["stage"] == sid]})
+    goal = _read(d, "goal.json", {}) or {}
+    return {"found": True, "goal": goal.get("site_name") or goal.get("statement") or "", "statement": goal.get("statement") or "",
+            "zone": (p.get("certainty_assessment") or {}).get("zone"), "confidence": rz.get("plan_confidence"), "threshold": R.THRESHOLD,
+            "stages": stages, "workflows": nodes, "unplaced": [n["id"] for n in nodes if n["stage"] not in known],
+            "changes": [{"id": c.get("id") or f"C-{i}", "request": c.get("request") or "", "phase": c.get("phase"), "closed": c.get("closed")}
+                        for i, c in enumerate(changes, 1)]}

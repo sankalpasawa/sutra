@@ -3,7 +3,7 @@
   "artifact": "lld",
   "kind": "generic",
   "version": 1,
-  "from": "j2_artifact_models.SECTION_MODELS and j2_rules.RULES (generated: python3 j2_template_lib.py)",
+  "from": "j2_artifact_models.SECTION_MODELS, DOC_MODELS and j2_rules.RULES (generated: python3 j2_template_lib.py)",
   "templates": [
     {
       "name": "LLD/1 · Pages and sections",
@@ -430,6 +430,280 @@
       ],
       "sha": "3241d268e4ffbc1824c123f56e694fbadc87b07069412092131b3be85cd6b874",
       "schema_sha": "f448d1f126274afb39dbdeb908c65d0d21c70f78f28c12090d6b8030a17789d4"
+    },
+    {
+      "name": "LLD/1 · Document",
+      "artifact": "lld",
+      "section": "Document",
+      "version": 1,
+      "kind": "generic",
+      "description": "The generic LLD/1 document template: the whole LLD as one object, every section in order, as the agent reads it and as the renderer writes it",
+      "fields": [
+        {
+          "name": "sections",
+          "type": "list[LLDSection]",
+          "required": false,
+          "description": "",
+          "nullable": false
+        },
+        {
+          "name": "elements",
+          "type": "list[Element]",
+          "required": false,
+          "description": "",
+          "nullable": false
+        },
+        {
+          "name": "form_fields",
+          "type": "list[FormField]",
+          "required": false,
+          "description": "",
+          "nullable": false
+        },
+        {
+          "name": "files",
+          "type": "list[FileEntry]",
+          "required": false,
+          "description": "",
+          "nullable": false
+        },
+        {
+          "name": "responsive_rules",
+          "type": "list[string]",
+          "required": false,
+          "description": "",
+          "nullable": false
+        },
+        {
+          "name": "accessibility_rules",
+          "type": "list[string]",
+          "required": false,
+          "description": "",
+          "nullable": false
+        },
+        {
+          "name": "assumptions",
+          "type": "list[string]",
+          "required": false,
+          "description": "",
+          "nullable": false
+        }
+      ],
+      "objects": [
+        {
+          "name": "LLDSection",
+          "fields": [
+            {
+              "name": "id",
+              "type": "string",
+              "required": true,
+              "description": "S1, S2, ... in order",
+              "nullable": false
+            },
+            {
+              "name": "anchor",
+              "type": "string",
+              "required": true,
+              "description": "the id attribute on the page, with the #, e.g. \"#classes\"",
+              "nullable": false
+            },
+            {
+              "name": "page",
+              "type": "string",
+              "required": false,
+              "description": "the page id, e.g. \"P1\"",
+              "nullable": false
+            },
+            {
+              "name": "implements",
+              "type": "list[string]",
+              "required": false,
+              "description": "the HLD component ids this section implements",
+              "nullable": false
+            }
+          ]
+        },
+        {
+          "name": "Element",
+          "fields": [
+            {
+              "name": "id",
+              "type": "string",
+              "required": true,
+              "description": "E1, E2, ... in order",
+              "nullable": false
+            },
+            {
+              "name": "section",
+              "type": "string",
+              "required": true,
+              "description": "the section id it sits in, e.g. \"S1\"",
+              "nullable": false
+            },
+            {
+              "name": "selector",
+              "type": "string",
+              "required": true,
+              "description": "its selector, e.g. \"#book-now\"",
+              "nullable": false
+            },
+            {
+              "name": "trigger",
+              "type": "string",
+              "required": true,
+              "description": "what the visitor does, e.g. \"click\"",
+              "nullable": false
+            },
+            {
+              "name": "behaviour",
+              "type": "string",
+              "required": true,
+              "description": "what happens then",
+              "nullable": false
+            }
+          ]
+        },
+        {
+          "name": "FormField",
+          "fields": [
+            {
+              "name": "id",
+              "type": "string",
+              "required": true,
+              "description": "F1, F2, ... in order",
+              "nullable": false
+            },
+            {
+              "name": "form",
+              "type": "string",
+              "required": true,
+              "description": "the form's selector, e.g. \"#booking\"",
+              "nullable": false
+            },
+            {
+              "name": "name",
+              "type": "string",
+              "required": true,
+              "description": "the field name attribute",
+              "nullable": false
+            },
+            {
+              "name": "type",
+              "type": "string",
+              "required": true,
+              "description": "one of text, email, tel, url, number, date, time, select, textarea, checkbox, radio, password, file",
+              "enum": [
+                "text",
+                "email",
+                "tel",
+                "url",
+                "number",
+                "date",
+                "time",
+                "select",
+                "textarea",
+                "checkbox",
+                "radio",
+                "password",
+                "file"
+              ],
+              "nullable": false
+            },
+            {
+              "name": "required",
+              "type": "boolean",
+              "required": true,
+              "description": "true when the visitor must fill it in",
+              "nullable": false
+            },
+            {
+              "name": "section",
+              "type": "string",
+              "required": false,
+              "description": "the section id the form sits in, e.g. \"S1\"",
+              "nullable": false
+            },
+            {
+              "name": "validation",
+              "type": "string",
+              "required": false,
+              "description": "the validation rule in one line",
+              "nullable": false
+            }
+          ]
+        },
+        {
+          "name": "FileEntry",
+          "fields": [
+            {
+              "name": "path",
+              "type": "string",
+              "required": true,
+              "description": "the file path, e.g. \"index.html\"",
+              "nullable": false
+            },
+            {
+              "name": "purpose",
+              "type": "string",
+              "required": true,
+              "description": "what it holds",
+              "nullable": false
+            }
+          ]
+        }
+      ],
+      "rules": [],
+      "sha": "ee6437017763e163c9e97da6cbc7fa404761c753a7548c4e7a9e6a90cc551b5e",
+      "schema_sha": "923b0f28925be2d30542d944ffa7ac1caaf88d1f7c0e3ae2017f9de22927a89c",
+      "render": {
+        "format": "markdown",
+        "file": "lld.md",
+        "title": "# LLD/1",
+        "sections": [
+          {
+            "heading": "## Pages and sections",
+            "template": "LLD/1 · Pages and sections",
+            "fields": [
+              "sections",
+              "assumptions"
+            ]
+          },
+          {
+            "heading": "## Interactive elements",
+            "template": "LLD/1 · Interactive elements",
+            "fields": [
+              "elements",
+              "assumptions"
+            ]
+          },
+          {
+            "heading": "## Form fields",
+            "template": "LLD/1 · Form fields",
+            "fields": [
+              "form_fields",
+              "assumptions"
+            ]
+          },
+          {
+            "heading": "## File structure",
+            "template": "LLD/1 · File structure",
+            "fields": [
+              "files",
+              "assumptions"
+            ]
+          },
+          {
+            "heading": "## Responsive and accessibility rules",
+            "template": "LLD/1 · Responsive and accessibility rules",
+            "fields": [
+              "responsive_rules",
+              "accessibility_rules",
+              "assumptions"
+            ]
+          }
+        ],
+        "from": "j2_artifact_models.render_section(kind, section, data), one section after the other, in this order"
+      }
     }
   ]
 }
