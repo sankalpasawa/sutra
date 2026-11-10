@@ -49,7 +49,8 @@ __all__ = ["RehydrateRefused", "check_source", "rehydrate", "continuing_line", "
            "RESTORED", "RESTORED_REALIZATION", "RESTORED_CHAIN"]
 
 HOST_FILES = ("task.json", "settings.json", "snapshot.json", "live.json", "events.jsonl", "trace.jsonl", "inbox.jsonl",
-              "choices.json", "node_context.json")           # the last two are the server's notes to a run's agents (D131, D132): plumbing, never a follow-up's seed
+              "choices.json", "node_context.json",           # the server's notes to a run's agents (D131, D132): plumbing, never a follow-up's seed
+              "deliverable.json")                             # what the host recorded at the end of a run for the team's chat (D135)
 RUN_TREES = ("site", "artifacts")
 RESTORED = ("chat", "goal", "stamped", "workflows", "conflicts", "audits", "sections", "style", "sites", "request", "calls",
             "cycle", "spent", "budget", "receipts", "decisions", "done", "status", "outcome")

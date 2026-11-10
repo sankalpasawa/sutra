@@ -185,7 +185,7 @@ def project_spec(j2) -> OutputSpec:
         intake=PROJECT_INTAKE, charter_fmt=j2.PRD_CHARTER_FMT, plan=PROJECT_PLAN, atom_rules=_atom_rules(j2.PRD_ATOM_RULES),
         mock_charter=mock_project_charter, mock_section=mock_project_section, mock_atom=j2.doc_atom_for(PROJECT_SECTIONS, {}),
         done="Done: the project work report is workable. Every done-when item, rubric item and necessary condition passes.",
-        single=True, workspace="edit")
+        single=True, workspace="edit", deliver=True)
 
 
 # `PRD_ATOM_RULES` with the sentences about ids taken out (a project report has no R1, R2, ... ids): the only check types left are
