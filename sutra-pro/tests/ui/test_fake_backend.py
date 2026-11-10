@@ -51,6 +51,7 @@ from fastapi.routing import iter_route_contexts
 import cdp
 import fake_backend as fb
 from fake_backend import FakeClient
+from sutra_app.library.types import overhead_atom_id
 
 REPO = Path(__file__).resolve().parents[2]
 UI_TESTS = Path(__file__).resolve().parent
@@ -2595,9 +2596,9 @@ def studio_server(tmp_path, make_fake_server):
     captures hold: a part's record, a deliverable's record, one document page and one view page."""
     folder = fixtures_copy(tmp_path)
     (folder / "j2" / "record-S-1.json").write_text(json.dumps({"schema": "studio/1", "sec": "S-1", "name": "Hero"}), encoding="utf-8")
-    (folder / "j2" / "record-art-site_index.html.json").write_text(json.dumps({"schema": "studio/1", "name": "site/index.html"}), encoding="utf-8")
+    (folder / "j2" / "record-art-site-index.html.json").write_text(json.dumps({"schema": "studio/1", "name": "site/index.html"}), encoding="utf-8")
     (folder / "j2" / "doc-prd.html").write_text("<!doctype html><title>PRD</title><h1>A made-up PRD</h1>", encoding="utf-8")
-    (folder / "j2" / "view-notes_todo.md.html").write_text("<!doctype html><title>todo</title><p>todo</p>", encoding="utf-8")
+    (folder / "j2" / "view-notes-todo.md.html").write_text("<!doctype html><title>todo</title><p>todo</p>", encoding="utf-8")
     server = make_fake_server(fixtures_dir=folder)
     server.client.stage("2")
     return server
@@ -2608,7 +2609,7 @@ def test_a_record_is_the_capture_of_its_part_or_its_deliverable_and_otherwise_j2
     status, headers, raw = j2_get(studio_server, "/api/record", dept="web", sec="S-1")
     assert status == 200 and json.loads(raw) == {"schema": "studio/1", "sec": "S-1", "name": "Hero"}
     assert headers["content-type"].startswith("application/json") and headers["x-content-type-options"] == "nosniff"
-    status, _, raw = j2_get(studio_server, "/api/record", dept="web", art="site/index.html")      # a deliverable: the file name is made safe (site_index.html)
+    status, _, raw = j2_get(studio_server, "/api/record", dept="web", art="site/index.html")      # a deliverable: the file name is made safe (site-index.html)
     assert status == 200 and json.loads(raw) == {"schema": "studio/1", "name": "site/index.html"}
     for query in ({"sec": "S-9"}, {"art": "nothing.md"}, {}, {"sec": ""}, {"sec": "../S-1"}):
         status, _, raw = j2_get(studio_server, "/api/record", dept="web", **query)
@@ -2839,7 +2840,7 @@ def test_a_model_answer_is_stored_as_the_models_and_booked_to_the_agent_as_one_a
     assert after["calls"] == usage["calls"] + 1 and after["usd"] == pytest.approx(usage["usd"] + fb.ASK_CALL_USD)
     assert after["tokens_in"] == usage["tokens_in"] + fb.ASK_TOKENS[0] and after["tokens_out"] == usage["tokens_out"] + fb.ASK_TOKENS[1]
     assert recorded["task_total"]["calls"] == sum(r["usage"]["calls"] for r in agent_rows_of(fake).values())
-    fake.post("/__fake/ask", {"mode": "model"}, token=False)                                              # no text: the answer says what it was asked
+    fake.post("/__fake/ask", {"mode": "model", "text": None}, token=False)                                # no text: the answer says what it was asked
     assert ask(fake_server, "audit", "Which check failed?")[1]["answer"] == "From its records: Which check failed?"
     assert agent_rows_of(fake)["audit"]["usage"]["by_purpose"]["agent_chat"]["calls"] == 2
     assert sum(g["calls"] for g in ok(fake, "/api/usage/summary", by="purpose")["groups"] if g["key"] == "agent_chat") == 2

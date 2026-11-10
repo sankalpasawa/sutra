@@ -11,7 +11,7 @@ J2's routes keep J2's bodies. Writes need the header `X-Sutra-Token` (`TOKEN`) a
 
 The sync 4 routes (docs/design/j2-sync-4.md 3.1 to 3.6, 4.8): `/api/plan-map`, `/api/activity`, `/api/catalog`, `/api/artifacts/groups`, `/api/runlist` and
 `/api/changes` answer a capture, the studio redesign's `/api/record` (`?sec=` a part, `?art=` a deliverable: `record-<sec>.json`, `record-art-<name>.json`), `/doc/<name>` and `/view?name=`
-(pages: `doc-<name>.html`, `view-<file>.html`, J2's "isn't written yet" line for one the captures lack) and `POST /api/settings {decide_for_me}` (the
+(pages: `doc-prd.html`, `view-site.html`, `view-goal.html`; J2's "isn't written yet" line for one the captures lack) and `POST /api/settings {decide_for_me}` (the
 switch `/api/state` then reports), and `POST /api/ask {who, q, run}` is the engine's route in small: J2's six functions only (400 `not a function`), a question
 of at most 2,000 characters, an archived team 403, J2's own records-only answer (the capture `ask-<who>.json`), and, for a function that has a session of
 its own for that run, the question and the answer stored as two lines of that session (`ask` is "q", "records" or "model" on the wire, as `ChatMessageOut.ask`)
@@ -149,22 +149,29 @@ def envelope(status: int, code: str, message: str, details: dict | None = None) 
     return JSONResponse({"error": {"code": code, "message": message, "details": details or {}}}, status_code=status)
 
 
-def safe_name(text: str) -> str:
-    """A key of a route (a part, a deliverable, a file the run lists) as the middle of a capture's file name: anything but letters, digits, dot, dash and
-    underscore becomes an underscore (`site/index.html` is `site_index.html`)."""
-    return re.sub(r"[^A-Za-z0-9._-]+", "_", text)
+def file_part(text: str) -> str:
+    """A name as part of a capture's file name, as scripts/capture_j2_fixtures.py makes it: letters, digits, dots, dashes and underscores kept, every other run of
+    characters one dash (so no slash ever reaches a path)."""
+    return re.sub(r"[^A-Za-z0-9._-]+", "-", text).strip("-")
+
+
+# the pages of /view the capture saves, by the file they show (the capture names them by hand: ROUTE_FILES of scripts/capture_j2_fixtures.py)
+VIEW_PAGES = {"site/index.html": "view-site.html", "goal.json": "view-goal.html"}
 
 
 def record_fixture(sec: str | None, art: str | None) -> str | None:
     """The capture of /api/record: `record-<sec>.json` for a part, `record-art-<name>.json` for a deliverable; None when neither is asked for."""
     if art is not None:
-        return f"record-art-{safe_name(art)}.json"
-    return f"record-{safe_name(sec)}.json" if sec else None
+        return f"record-art-{file_part(art)}.json"
+    return f"record-{file_part(sec)}.json" if sec else None
 
 
 def view_fixture(kind: str, name: str) -> str:
-    """The capture of a page the Simple view opens: `doc-<name>.html` for /doc/<name>, `view-<file>.html` for /view?name=<file>."""
-    return f"{kind}-{safe_name(name)}.html"
+    """The capture of a page the Simple view opens: `doc-<name>.html` for /doc/<name>, for /view?name=<file> the page the capture names (`VIEW_PAGES`) or else
+    `view-<file>.html`."""
+    if kind == "view" and name in VIEW_PAGES:
+        return VIEW_PAGES[name]
+    return f"{kind}-{file_part(name)}.html"
 
 
 def violation(path: str, code: str, message: str) -> dict:
