@@ -298,15 +298,17 @@ def runs(ctx: RunCtx, q: dict) -> Reply:
 
 
 def runlist(ctx: RunCtx, q: dict) -> Reply:
-    """P13: Run settings' list of this department's saved runs, newest first (`j2.run_list`). The live run reads `running`
+    """Run settings' list of this department's saved runs, newest first (`runlist.run_list`, D140). The live run reads `running`
     only while its process is alive and its snapshot says so; `?run=` is not used: the list is about the department."""
+    from . import runlist as rl          # the module has this function's name; imported here to keep the shared file's edit in two bodies
     running = ctx.mode == "live" and ctx.alive and (ctx.snap or {}).get("status") == "running"
-    return _json(j2.run_list(ctx.runs_dir, ctx.live_id or "", bool(running)))
+    return _json(rl.run_list(ctx.runs_dir, ctx.live_id or "", bool(running)))
 
 
 def changes(ctx: RunCtx, q: dict) -> Reply:
-    """P13: the build journey's stops, one per change request of the run's `change.json` (`j2.run_changes`); none: an empty list."""
-    return _json(j2.run_changes(_dir(ctx)))
+    """The build journey's stops, one per change request of the run's `change.json` (`runlist.run_changes`, D140); none: an empty list."""
+    from . import runlist as rl
+    return _json(rl.run_changes(_dir(ctx)))
 
 
 def call(ctx: RunCtx, q: dict) -> Reply:
