@@ -225,9 +225,10 @@ class Handler(http.server.BaseHTTPRequestHandler):
             return self._send(200, json.dumps(out, ensure_ascii=False))
         if u.path == "/api/refs":       # ids the cards name, with their text: conditions/*.json and every output type's rubric
             conds = {}
-            for n in ("website", "prd", "hld", "lld"):
-                conds.update({c["id"]: c["text"] for c in j2.load_conditions(f"{n}.json")})
-            rub = {i: t for k in j2.OUTPUTS for o in [j2.output_def(k)] for i, t in o.get("rubric") or ()}
+            kinds = j2.j2_types.names() if j2.j2_types.enabled() else list(j2.OUTPUTS)      # every type, new ones too
+            for f in dict.fromkeys(j2.output_def(k)["conditions"] for k in kinds):
+                conds.update({c["id"]: c["text"] for c in j2.load_conditions(f)})
+            rub = {i: t for k in kinds for o in [j2.output_def(k)] for i, t in o.get("rubric") or ()}
             return self._send(200, json.dumps({"conditions": conds, "rubric": rub}, ensure_ascii=False))
         if u.path.startswith("/shot/"):        # the screenshot Audit looked at for site vN
             d, n = (j2.saved_dir(run) if run else RUN.dir), u.path.rsplit("/", 1)[-1]
@@ -279,7 +280,7 @@ class Handler(http.server.BaseHTTPRequestHandler):
         if u.path.startswith("/site/"):
             if not RUN.sites:
                 return self._send(200, "<p style='font:15px system-ui;color:#667;padding:24px'>Your "
-                                       f"{'document' if RUN.doc else 'website'} will appear here once it's built.</p>",
+                                       f"{'document' if RUN.doc else RUN.out['label'].lower() if j2.j2_types.enabled() else 'website'} will appear here once it's built.</p>",
                                   "text/html")
             key = u.path.rsplit("/", 1)[-1]
             i = len(RUN.sites) if key == "latest" else int(key.lstrip("v") or 0)

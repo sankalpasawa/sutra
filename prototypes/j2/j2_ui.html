@@ -1287,7 +1287,7 @@ document.addEventListener("change", e => { if (e.target.id === "chthink"){ CHATT
 // Adaptation's feed (activity/1, /api/activity): its messages and hand-offs, each AI call, each planning decision, every judge round with the scores,
 // every revision and the changes it handled, all in the chat's own message style with a small label for the kind. A question typed here goes to
 // /api/ask and is answered from the run's records only; questions and answers sit in the same time order and are not saved.
-const boxHint = s => ASKMODE === "ask" ? `Ask ${who(CHATFN)[0]} about this run…` : s && s.paused ? "Answer your Client Lead's question…" : s && s.total ? "Ask your Client Lead for a change…" : "Describe the website you want. The agents take it from there…";
+const boxHint = s => ASKMODE === "ask" ? `Ask ${who(CHATFN)[0]} about this run…` : s && s.paused ? "Answer your Client Lead's question…" : s && s.total ? "Ask your Client Lead for a change…" : CTX && CTX.generic ? "Describe what you want made. The agents take it from there…" : "Describe the website you want. The agents take it from there…";
 const FEED = {who: "", found: false, events: []}, QA = [];      // QA: this viewer's questions and the answers, per function
 let FEEDKEY = "", ASKMODE = "change";
 const FKIND = {call: "AI call", plan: "plan", wf: "workflow", judge: "judge", revise: "revision", change: "change"};
@@ -2152,7 +2152,7 @@ const sFilesHTML = s => plainDocLinks(s);      // every design document's files,
 function sFinish(s){
   const q = runQ().replace("&", "?");
   const many = (s.docset || []).length > 1;      // design documents: the website (if any) and every document's files, in one list
-  const dl = many ? (!s.doc && s.versions ? `<a class="pri" href="/site/latest${q}" download="my-website.html">Download the website</a>` : "") + `<button type="button" data-files>All files (${(s.docset_files || []).length * 2})</button>`
+  const dl = many ? (!s.doc && s.versions ? `<a class="pri" href="/site/latest${q}" download="my-website.html">Download the ${esc(TYL("website", "website").toLowerCase())}</a>` : "") + `<button type="button" data-files>All files (${(s.docset_files || []).length * 2})</button>`
     : s.doc ? fileLinks(s) : `<a class="pri" href="/site/latest${q}" download="my-website.html">Download</a>`;
   const ic = d => `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${d}</svg>`;
   return `<span class="sfmsg"><span><i aria-hidden="true">✓</i>${esc(sPhase(s, []))}</span></span>${dl.replace(/(<a class="pri"[^>]*>)/, "$1" + ic('<path d="M12 4v11M7 10l5 5 5-5M5 20h14"/>'))}`
@@ -2335,7 +2335,7 @@ function sRail(s, M, T){
 }
 function sPlanHTML(s, M){
   if (!M.parts.length) return `<li class="snone">${s.status === "running" ? "The plan appears here as the team writes it." : "No parts yet."}</li>`;
-  const groups = (s.docset || []).length ? ["prd", "hld", "lld", "site"] : [null], GN = {prd: "Product requirements", hld: "High-level design", lld: "Low-level design", site: "Website"};
+  const groups = (s.docset || []).length ? DOCGROUPS(s) : [null], GN = new Proxy({prd: "Product requirements", hld: "High-level design", lld: "Low-level design", site: "Website"}, {get: (o, k) => TYL(k, o[k])});
   return groups.map(g => { const ps = M.parts.filter(p => g === null || p.doc === g); if (!ps.length) return "";
     return (g ? `<li class="sgrp">${GN[g]}</li>` : "") + ps.map(p => { const ic = p.st === "done" ? "✓" : p.st === "ask" ? "?" : p.st === "bad" ? "!" : "", fresh = !SV.steps.has(p.sec); SV.steps.add(p.sec);
       const note = p.st === "doing" ? (p.fixing ? "being fixed" : "in progress") : p.st === "fix" ? "a fix is coming" : p.st === "bad" ? "couldn't be made" : p.fixes ? `fixed ${p.fixes === 1 ? "once" : p.fixes + " times"}` : "";
@@ -2353,8 +2353,8 @@ function sTabs(s){
   if (docs.length){
     docs.forEach(k => { const live = s.doc && s.output === k && s.versions > 0;
       if (live || have.has(k)) tabs.push({k, label: k.toUpperCase(), url: live ? `/site/v${s.versions}?x=1${q}` : `/doc/${k}?x=1${q}`, live: live && s.status === "running"}); });
-    if (!s.doc && s.versions > 0) tabs.push({k: "site", label: "Website", url: `/site/v${s.versions}?x=1${q}`, live: s.status === "running"});
-  } else if (s.versions > 0) tabs.push({k: s.doc ? s.output : "site", label: s.doc ? (s.output || "doc").toUpperCase() : "Website", url: `/site/v${s.versions}?x=1${q}`, live: s.status === "running"});
+    if (!s.doc && s.versions > 0) tabs.push({k: "site", label: TYL("website", "Website"), url: `/site/v${s.versions}?x=1${q}`, live: s.status === "running"});
+  } else if (s.versions > 0) tabs.push({k: s.doc ? s.output : "site", label: s.doc ? TYTAG(s.output, (s.output || "doc").toUpperCase()) : TYL("website", "Website"), url: `/site/v${s.versions}?x=1${q}`, live: s.status === "running"});
   // any other deliverable the run lists (artifacts/types.json: a page, a document, an image, data, code, a script): a readable view of it
   (SV.arts.deliverables || []).forEach(d => { const k = "a:" + d.name; if (d.form === "page" || ["website", "prd", "hld", "lld"].includes(d.type) || tabs.some(t => t.k === d.type || t.k === d.name || t.k === k)) return;      // the site and the design documents have their own live tabs above
     tabs.push({k, label: d.label || d.name, url: `/view?name=${encodeURIComponent(d.file)}${q}`, art: d}); });
@@ -2365,7 +2365,7 @@ function sViews(s, M, ready){
   const tabs = sTabs(s), outs = tabs.filter(t => t.k !== "team"), last = outs[outs.length - 1];
   // what to show: your pick while it exists, else the newest output (it switches as the work moves on), else the team at work
   let v = SV.pick && tabs.some(t => t.k === SV.pick) ? SV.pick : last ? last.k : "team";
-  if (last && SV.lastOut !== last.k && SV.view && !SV.pick && s.status === "running") sToast(last.k === "site" ? "The website is taking shape" : `The ${last.label} is being written`);
+  if (last && SV.lastOut !== last.k && SV.view && !SV.pick && s.status === "running") sToast(last.k === "site" ? `The ${TYL("website", "website").toLowerCase()} is taking shape` : `The ${last.label} is being written`);
   SV.lastOut = last ? last.k : "";
   SV.view = v;
   paint($("sviews"), tabs.map(t => `<button type="button" role="tab" data-view="${t.k}" aria-selected="${t.k === v}">${esc(t.label)}${t.live ? '<span class="pip" aria-hidden="true"></span>' : ""}</button>`).join(""));
@@ -2639,7 +2639,7 @@ function sTeamwork(s, M){      // the output is the map: a block per part, the t
     const note = p.st === "next" ? (live || (open.length && !s.saved) ? `${P.name} next` : "Not made in this run") : p.st === "bad" ? "Couldn't be made" : "";
     return `<button type="button" class="spart ${p.st}${fresh ? " fresh" : ""}" data-part="${esc(p.sec)}" style="--c:var(${P.c})">${tag}<span class="spn" aria-hidden="true">${String(n).padStart(2, "0")}</span><b>${esc(p.name)}</b>${p.st === "doing" || p.st === "fix" ? sTeamSketch(p.sec) : '<span class="sl" aria-hidden="true"><i></i><i></i><i></i></span>'}${note ? `<small>${esc(note)}</small>` : ""}</button>`; };
   if (M.parts.length){
-    const groups = (s.docset || []).length ? ["prd", "hld", "lld", "site"] : [null], GN = {prd: "Product requirements", hld: "High-level design", lld: "Low-level design", site: "Website"};
+    const groups = (s.docset || []).length ? DOCGROUPS(s) : [null], GN = new Proxy({prd: "Product requirements", hld: "High-level design", lld: "Low-level design", site: "Website"}, {get: (o, k) => TYL(k, o[k])});
     h += groups.map(gk => { const ps = M.parts.filter(p => gk === null || p.doc === gk); return ps.length ? (gk ? `<h3 class="smap-g">${GN[gk]}</h3>` : "") + `<div class="smap-parts">${ps.map(part).join("")}</div>` : ""; }).join("");
   } else if (live || (open.length && !s.saved)) h += `<div class="smap-parts"><div class="spart ${live ? "doing" : "ask"}" style="--c:var(--s-asha)"><span class="stag">${live ? CUR : ""}${face("asha", 20, {prop: false, label: false})}${live ? `Asha is ${stage(s) ? "planning" : "reading"} this${TY}` : "Waits on your answer"}</span><b>${!live ? "The plan comes right after your answer" : stage(s) ? "Splitting the work into parts" : "Reading what you asked for"}</b><span class="sl" aria-hidden="true"><i></i><i></i><i></i></span><small>The plan shows up here, part by part, with who makes each one.</small></div>`
     + `<div class="spart next"><b>&nbsp;</b><span class="sl" aria-hidden="true"><i></i><i></i><i></i></span></div><div class="spart next"><b>&nbsp;</b><span class="sl" aria-hidden="true"><i></i><i></i><i></i></span></div></div>`;
@@ -2651,7 +2651,7 @@ function sTeamwork(s, M){      // the output is the map: a block per part, the t
   const q = runQ().replace("&", "?"), dl = [];
   (s.docset_files || []).forEach(d => dl.push(`<a href="/file/${d.md}${q}" download>${face("mira", 22, {prop: false, label: false})}The ${esc(d.label)} (markdown)</a>`));
   if (!(s.docset || []).length) (s.files || []).forEach(f => dl.push(`<a href="/file/${f}${q}" download>${face("mira", 22, {prop: false, label: false})}${f.endsWith(".docx") ? "The Word file" : "The document (markdown)"}</a>`));
-  if (!s.doc && s.versions > 0) dl.push(`<button type="button" data-view="site">${face("dev", 22, {prop: false, label: false})}The website, version ${s.versions}</button>`);
+  if (!s.doc && s.versions > 0) dl.push(`<button type="button" data-view="site">${face("dev", 22, {prop: false, label: false})}The ${esc(TYL("website", "website").toLowerCase())}, version ${s.versions}</button>`);
   if (dl.length) h += `<section class="stw-sec"><h3>${ready || s.saved ? "What you got" : "Ready so far"}</h3><div class="sdocs">${dl.join("")}</div></section>`;
   // the activity log (OpenWork's "Worked for 12m · 8 steps"): the newest first, six at a time, the current step shimmering
   const talk = sTalk(s), mins = t => { const x = /^(\d\d?):(\d\d)/.exec(t || ""); return x ? +x[1] * 60 + +x[2] : null; };
@@ -2930,6 +2930,11 @@ function quick(s){
   $("quick").innerHTML = items.map(t => `<button type="button">${esc(t)}</button>`).join("");
   [...$("quick").children].forEach(b => b.onclick = () => { $("box").value = b.textContent; send(); });
 }
+// J2_GENERIC=1: a type's label, tag or ready text from the run's own types (/api/state "types"), else today's word
+const GTYPE = k => (CTX && CTX.generic && CTX.types && CTX.types[k === "site" ? "website" : k]) || null;
+const TYL = (k, old) => (GTYPE(k) || {}).label || old;
+const TYTAG = (k, old) => (GTYPE(k) || {}).tag || old;
+const DOCGROUPS = s => s.generic ? [...new Set(["prd", "hld", "lld", ...(s.docset || [])]), "site"] : ["prd", "hld", "lld", "site"];      // a new document type gets its own group
 async function poll(){
   try{
     const s = await (await fetch(`/api/state?since=${seen}${runQ()}`, {cache:"no-store"})).json();
@@ -3130,7 +3135,8 @@ function sFlow(e){
     + "</ol>";
 }
 function sImpact(e){
-  const order = ["prd", "hld", "lld", "website"], label = {prd: "PRD", hld: "HLD", lld: "LLD", website: "Website"};
+  const order = [...new Set(["prd", "hld", "lld", ...Object.keys((CTX && CTX.generic && CTX.types) || {}), "website"])],
+    label = new Proxy({prd: "PRD", hld: "HLD", lld: "LLD", website: "Website"}, {get: (o, k) => TYTAG(k, o[k])});
   const groups = order.concat("other").map(k => [k, e.impact.filter(x => (x.deliverable || "other") === k)]).filter(([, xs]) => xs.length);
   const reused = (e.reused_by || []).map(x => x.atom ? sChip(x)
     : `<span class="schip">${esc(fnName(x.id))} <span>function</span></span>`).join(" ");
@@ -3187,21 +3193,22 @@ const ARTGROUPS = [["plan", "Run plan"], ["guides", "Guides the makers read"], [
 const ARTMARK = {ok: `<span class="amark am-ok" role="img" aria-label="passed"><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M3.5 8.5l3 3 6-7"/></svg></span>`,
   warn: `<span class="amark am-warn" role="img" aria-label="needs a look"><svg viewBox="0 0 16 16" aria-hidden="true"><circle cx="8" cy="8" r="6.2"/><path d="M8 4.8v3.8M8 11v.4"/></svg></span>`};
 const artMark = ok => ok === undefined || ok === null ? "" : ARTMARK[ok ? "ok" : "warn"];
-const artGroup = k => ((ARTS.groups || {}).groups || []).find(g => g.id === k) || {id: k, label: (ARTGROUPS.find(x => x[0] === k) || [k, k])[1], rows: []};
+const artGroupLabel = (k, l) => k === "site" ? TYL("website", "Website") + " sections" : l;      // the page type's own label
+const artGroup = k => ((ARTS.groups || {}).groups || []).find(g => g.id === k) || {id: k, label: artGroupLabel(k, (ARTGROUPS.find(x => x[0] === k) || [k, k])[1]), rows: []};
 const artWords = s => String(s || "").replace(/-/g, " ");
 const artNR = '<span class="empty">not recorded</span>';
 function artCount(g){ const r = g.rows || [];
   if (g.id === "documents") return r.length ? plural(r.length, "document") : "no documents in this run";
   if (g.id === "guides") return r.length ? `${plural(r.length, "guide")} · ${plural(r.reduce((n, x) => n + (x.versions || []).length, 0), "version")}` : "no guides in this run";
   if (g.id === "site"){ const s = r.filter(x => x.kind !== "style"), k = s.filter(x => x.kind === "script").length;
-    return s.length ? plural(s.length - k, "section") + (k ? " · " + plural(k, "script") : "") : "no website in this run"; }
+    return s.length ? plural(s.length - k, "section") + (k ? " · " + plural(k, "script") : "") : `no ${TYL("website", "website").toLowerCase()} in this run`; }
   return r.length ? plural(r.length, g.id === "plan" ? "file" : "record") : "nothing recorded"; }
 function artSub(g){
   if (g.id === "documents") return "The PRD, HLD and LLD: each with its sections, its saved versions and its data file.";
   if (g.id === "plan") return "What the run set out to do and how it planned it.";
   if (g.id === "guides") return "Each guide, who wrote it, and how it was checked.";
-  if (g.id === "site"){ const s = (ARTS.groups || {}).site; return !s ? "This run built no website."
-    : `Website v${s.version != null ? s.version : "?"}: ` + (s.audit ? `the latest audit passes ${s.audit.passed} of ${s.audit.total} items.` : "no audit recorded."); }
+  if (g.id === "site"){ const s = (ARTS.groups || {}).site; return !s ? `This run built no ${TYL("website", "website").toLowerCase()}.`
+    : `${TYL("website", "Website")} v${s.version != null ? s.version : "?"}: ` + (s.audit ? `the latest audit passes ${s.audit.passed} of ${s.audit.total} items.` : "no audit recorded."); }
   return "The raw files behind the other views."; }
 const artEntries = n => `${n} entr${n === 1 ? "y" : "ies"}`;
 function artRowSub(x){ const by = x.maker ? esc(x.maker) : "Maker not recorded";
@@ -3386,7 +3393,7 @@ async function loadArtifacts(){
 }
 function railArtCounts(){      // the Artifacts panel of the rail: Preview and Documents, then the four groups with their counts
   const box = (RAIL || {}).open === "artifacts" && $("rflyart"); if (!box) return; const shown = !$("pane-artifacts").hidden;
-  box.innerHTML = `<p class="rnh">Artifacts</p>` + ARTGROUPS.map(([k, l]) => `<button type="button" class="rgo" data-artgo="${k}" aria-current="${shown && ARTS.g === k}">${esc(l)}<small>${ARTS.groups ? artCount(artGroup(k)) : "loading…"}</small></button>`).join(""); }
+  box.innerHTML = `<p class="rnh">Artifacts</p>` + ARTGROUPS.map(([k, l]) => `<button type="button" class="rgo" data-artgo="${k}" aria-current="${shown && ARTS.g === k}">${esc(artGroupLabel(k, l))}<small>${ARTS.groups ? artCount(artGroup(k)) : "loading…"}</small></button>`).join(""); }
 async function artOpenGroup(k, row){ ARTS.g = k; if (row) ARTS.sel[k] = row; ARTS.tab = "sum"; ARTS.ver = ""; showTab("artifacts"); if (!ARTS.groups) await loadArtifacts(); else { artPaint(); await artFetch(); } }
 function artLocate(id){      // the group and row a Map id lands on: a section's own row, else the row that holds the node, else the one with its file
   const rows = ((ARTS.groups || {}).groups || []).flatMap(g => g.rows.map(x => [g.id, x])), n = mapById(MAP)[id] || {};

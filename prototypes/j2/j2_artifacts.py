@@ -13,15 +13,23 @@ import time
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 TYPES_PATH = os.path.join(HERE, "artifacts", "types.json")
-OPEN = {"doc": "text", "data": "text", "page": "preview", "image": "image"}      # how the Artifacts tab shows a form
+OPEN = {"document": "text", "doc": "text",      # "doc": the form name saved runs recorded before Phase C
+         "data": "text", "page": "preview", "image": "image"}      # how the Artifacts tab shows a form
 TEXT = {".md": "text/markdown", ".json": "application/json", ".jsonl": "text/plain", ".txt": "text/plain",
         ".html": "text/html", ".png": "image/png"}
 MAX_BYTES = 2_000_000
 
 
 def load_types():
-    with open(TYPES_PATH, encoding="utf-8") as f:
-        return json.load(f)
+    import j2_types      # its TYPES_PATH: a test may point it at a copy
+    with open(j2_types.TYPES_PATH, encoding="utf-8") as f:
+        d = json.load(f)
+    forms = d.get("forms") or {}
+    for t in d["types"]:      # a type made from its form (a new document type) takes the form's workflow
+        f = (forms.get(t.get("form")) or {}).get("workflow")
+        if t.get("kind") == "type" and f and "workflow" not in t:
+            t["workflow"] = {k: v.replace("{name}", t["name"]) for k, v in f.items()}
+    return d
 
 
 def _read(d, name, default=None):
@@ -601,7 +609,7 @@ def groups(d, m=None):
                                "total": len((aud.get(f) or {}).get("results") or []) if f in aud else None} for f in shots]})
     # the documents (PRD, HLD, LLD) are in Documents, not here: each one's sections with their own heading, so a Map link can land on the heading,
     # and its three views
-    doc_types = [t for t in load_types()["types"] if t["deliverable"] and t["form"] == "doc"]
+    doc_types = [t for t in load_types()["types"] if t["deliverable"] and t["form"] == "document"]
     decks = [n for n in m["nodes"] if n["id"] in {f"work:{t['name']}" for t in doc_types} and n.get("status") != "not_made"]
     documents = {t["name"]: {"sections": {}, "file": t["file"], "kind": "document"} for t in doc_types if has(t["file"])}
     for deck, (_, ss) in sections_of(d, decks).items():
@@ -622,7 +630,8 @@ def groups(d, m=None):
         # the copies only: the page routes a Map link by the node's file (prd.md), and the PRD's must keep landing on the Documents view;
         # the human view reads doc_file (the current document), so the text shown is always the current one
         same = olds and _same_file(d, olds[-1][1], info["file"])
-        docs.append({"id": name, "kind": "document", "name": name.upper(), "file": olds[-1][1] if same else None, "doc_file": info["file"], "maker": mb.get("persona"),
+        tag = next((t.get("tag") for t in doc_types if t["name"] == name), None) or name.upper()      # PRD, HLD, LLD, or a new type's label
+        docs.append({"id": name, "kind": "document", "name": tag, "file": olds[-1][1] if same else None, "doc_file": info["file"], "maker": mb.get("persona"),
                      "made_in": mb.get("workflows") or [], "sections": info["sections"], "nodes": [],      # no Map node: a PRD / HLD / LLD link keeps landing on the Documents view
                      "versions": [{"workflow": None, "cycle": None, "purpose": "", "label": f"v{k}"} for k, _ in olds]
                                  + [{"workflow": None, "cycle": None, "purpose": "", "label": "current"}],

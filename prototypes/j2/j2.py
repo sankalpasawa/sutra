@@ -35,7 +35,7 @@ J2_FIXES (default 0) picks the mode, so findings can compare the two:
      (b) a change request after done goes to Identity at J2.a first, then J2.b.
 """
 import copy
-from functools import lru_cache, reduce
+from functools import lru_cache, partial, reduce
 import html
 import html.parser
 import itertools
@@ -145,6 +145,9 @@ AUTO_ASSUME = ("Decide for me: go with sensible, typical choices for anything I 
                "and list them as assumptions I can check later.")
 AUTO_FINISH = re.compile(r"^\s*(?:finish|ship|stop)\b", re.I)      # "Finish as it is: ..." (a "leave out" option can say "stays as it is")
 AUTO_SIMPLE = re.compile(r"\bkeep it simple\b|\bwithout\b|\bno extra\b|\bskip\b|\bleave (?:it|this) out\b|^no\b", re.I)
+
+
+STAGE_SKILLS = {s["id"]: s["skill"] for s in j2_realization.load_stages() if s.get("skill")}      # stage -> persona file
 
 
 def system_prompt(fn, reply_format, builder="builder.md"):
@@ -1947,6 +1950,25 @@ def mock_prd_charter(text):
             "dropped_from_brief": [], "business_type": "prd", "visitor_needs": []}
 
 
+def mock_form_charter(kind, text):
+    """Mock only: the charter of a type made from the document form: one done-when item per section, naming it."""
+    m = re.search(r"\b(?:for|called)\s+([A-Z][\w']*(?:\s+[A-Z][\w']*)*)", text)
+    name, label = (m.group(1) if m else "the Requester"), j2_types.info(kind)["label"]
+    items = [f"The {x} section is written for {name}" for x in doc_sections(kind)]
+    return {"statement": f"A {label.lower()} for {name}", "product_name": name, "site_name": name, "audience": "its readers",
+            "facts": [], "standards": ["Plain and specific"], "rules": ["No invented facts"], "done_when": items,
+            "core": [True] * len(items), "to_be_confirmed": [], "dropped_from_brief": [], "business_type": kind,
+            "visitor_needs": []}
+
+
+def mock_form_section(kind, w, goal):
+    """Mock only: the markdown a scripted builder writes for each section a document-form workflow names."""
+    secs, name = doc_sections(kind), (goal or {}).get("product_name") or "the Requester"
+    label = j2_types.info(kind)["label"].lower()
+    return "\n".join(f"## {x}\n\nThis section sets out the {x.lower()} of the {label} for {name}, in plain words a reader "
+                     "can act on.\n" for x in (wf_sections(w, secs) or secs[:1]))
+
+
 def mock_doc_section(w, goal):
     """Mock only: the markdown a scripted builder writes for the PRD section its workflow names."""
     many = wf_sections(w, doc_sections("prd"))
@@ -2389,7 +2411,7 @@ OUTPUT = "website"     # the current run's output type (set by load_rates at eac
 def output_type(name=None):
     """A known output type: name, else J2_OUTPUT, else website."""
     t = str(name or os.getenv("J2_OUTPUT") or "website").strip().lower()
-    return t if t in OUTPUTS else "website"
+    return t if t in OUTPUTS or (j2_types.enabled() and t in j2_types.names()) else "website"
 
 
 GENERIC_TYPES = ("website", "prd", "hld", "lld")      # the types j2_types reads from data under J2_GENERIC=1 (docs/remove-hardcoding-plan.md)
@@ -2397,7 +2419,7 @@ GENERIC_TYPES = ("website", "prd", "hld", "lld")      # the types j2_types reads
 
 def output_def(kind):
     """What an output type is: its OUTPUTS entry, or under J2_GENERIC=1 the same entry read from data (j2_types)."""
-    return _data_type(kind) if j2_types.enabled() and kind in GENERIC_TYPES else OUTPUTS[kind]
+    return _data_type(kind) if j2_types.enabled() and (kind in GENERIC_TYPES or kind in j2_types.names()) else OUTPUTS[kind]
 
 
 @lru_cache(maxsize=None)
@@ -2409,7 +2431,8 @@ def _data_type(kind):
     for k, v in (t.pop("mock", None) or {}).items():      # a function name, or the ids doc_atom_for checks for unique
         if not isinstance(v, dict) and not (str(v).startswith("mock_") and callable(globals().get(v))):
             raise ValueError(f"{kind}: mock {k} names no mock function: {v!r}")
-        t[f"mock_{k}"] = doc_atom_for(t["sections"], v) if isinstance(v, dict) else globals()[v]
+        t[f"mock_{k}"] = (doc_atom_for(t["sections"], v) if isinstance(v, dict) else
+                          partial(globals()[v], kind) if v.startswith("mock_form_") else globals()[v])
     return t
 
 
@@ -2911,8 +2934,14 @@ def output_info(out, run_dir, audits, docset=None):
         files = [f for k in docset for f in (f"{k}.md", f"{k}.docx") if os.path.exists(os.path.join(run_dir, f))]
     return {"output": out, "output_label": o["label"], "doc": bool(o["sections"]),
             "rubric": o["rubric"], "conditions": (audits[-1].get("conditions") if audits else None), "files": files,
-            "docset": docset, "docset_files": [{"kind": k, "label": DOC_NAMES[k], "md": f"{k}.md", "docx": f"{k}.docx"}
-                                               for k in docset if os.path.exists(os.path.join(run_dir, f"{k}.md"))]}
+            "docset": docset, "docset_files": [{"kind": k, "label": DOC_NAMES.get(k) or j2_types.info(k)["label"].lower(),
+                                                "md": f"{k}.md", "docx": f"{k}.docx"}
+                                               for k in docset if os.path.exists(os.path.join(run_dir, f"{k}.md"))],
+            # J2_GENERIC=1: what the page shows of every type (labels, tags, forms), so no screen text assumes a website
+            **({"generic": True, "types": {n: {k: j2_types.info(n)[k] for k in ("label", "form", "file", "ready")}
+                                           | {"tag": t.get("tag")} for n in j2_types.names()
+                                           for t in [next(x for x in j2_types._read_types()["types"] if x["name"] == n)]}}
+               if j2_types.enabled() else {})}
 
 
 def atom_section_body(d, wfs, atom_id):
@@ -3031,7 +3060,8 @@ class J2Run:
         """Switch what is built (set_output before the first message; a design-document run at each stage)."""
         self.output = output_type(out)
         self.out = output_def(self.output)      # J2_GENERIC=1: from artifacts/types.json (j2_types)
-        self.doc = bool(self.out["sections"])
+        # J2_GENERIC=1: how it is built and checked follows its form (page or document), not its name
+        self.doc = j2_types.info(self.output)["form"] == "document" if j2_types.enabled() else bool(self.out["sections"])
         # J2_REALIZATION: no rate card; Adaptation estimates each workflow's budget (estimated_resources.money)
         load_rates(self.output, card=not (getattr(self, "realization", None) or realization_on()))
         types = "|".join(f'"{t}"' for t in self.out["check_types"])
@@ -3309,7 +3339,7 @@ class J2Run:
         user = f"{self.context(fn)}\n\nYOUR TURN:\n{task}" + (self.PLAIN_TO_REQUESTER if fn == "identity" else "") \
             + (self._board_context() if board else "") \
             + (DOC_NOTE.format(label=self.out["label"]) if self.doc else "")
-        system = system_prompt(fn, reply_format, self.out["builder"])
+        system = system_prompt(fn, reply_format, self._builder_for(fn))
         if self.calls and DELAY:
             time.sleep(DELAY)
         self.calls += 1
@@ -3818,8 +3848,13 @@ class J2Run:
         self._apply_output(self.stages[0])
         self.site_tag = self.stages[0] + "-" if len(self.stages) > 1 else ""      # one document keeps its plain file names
         self.stage_checked = False       # the funding of the whole chain is checked once, when the first stage's plan starts
-        names = " and ".join(f"the {k.upper()}" for k in docs) if len(docs) < 3 else "the PRD, the HLD and the LLD"
-        self.post("system", f"Documents asked for: {names}" + (", then the website" if "website" in self.stages else "")
+        if j2_types.enabled():      # each type by its own noun; the pages after them by their label
+            names = and_list(f"the {output_def(k)['noun']}" for k in docs)
+            then = "".join(f", then {self._sw(k)}" for k in self.stages if k not in docs and k not in j2_send.DEEDS)
+        else:
+            names = " and ".join(f"the {k.upper()}" for k in docs) if len(docs) < 3 else "the PRD, the HLD and the LLD"
+            then = ", then the website" if "website" in self.stages else ""
+        self.post("system", f"Documents asked for: {names}" + then
                   + (f", then {and_list(j2_send.DEEDS[k]['words'] for k in deeds)} of the last document" if deeds else "")
                   + ". They are written in that order, each from the one before.")
 
@@ -3841,7 +3876,17 @@ class J2Run:
         r = j2_realization.plan_goal(goal, web=False, log=lambda m: None, extra=note, types=types,
                                      mocks=j2_realization.deliverable_mocks(goal, offline))
         self.save("deliverables.json", r)      # its calls stay there: self.calls numbers calls.jsonl (documents.json ranges)
-        known = [t["name"] for t in types]
+        for name, spec in j2_realization.new_types(r["plan"]).items():      # a type no TYPES entry fits: made, kept
+            if name in r["deliverables"] and name not in j2_types.names():
+                try:
+                    j2_types.create(name, spec.get("label"), spec.get("sections"), spec.get("file"))
+                except ValueError as e:
+                    self._event("adaptation", "new_type_refused", str(e))
+                    continue
+                self._event("adaptation", "new_type", f"{name}: {', '.join(spec.get('sections') or [])}")
+                self.post("system", f"New type {name} ({spec.get('label')}): made as a document with the sections "
+                                    f"{', '.join(spec.get('sections') or [])}, and saved for later runs.")
+        known = j2_types.names()
         chosen = [k for k in dict.fromkeys(r["deliverables"]) if k in known]
         if r["plan_faults"]:
             self._event("adaptation", "deliverables", "; ".join(r["plan_faults"]))
@@ -3900,6 +3945,25 @@ class J2Run:
     STAGE_WORDS = {"prd": "the product requirements", "hld": "the high-level design", "lld": "the low-level design",
                    "website": "the website", **{k: f"the {d['words']}" for k, d in j2_send.DEEDS.items()}}
 
+    def _builder_for(self, fn):
+        """A workflow agent's builder guidance: under J2_GENERIC=1 its stage's own persona when stages.json names one
+        ("skill": a role file in agents/j2), else its form's builder. Today no stage names one."""
+        if j2_types.enabled() and is_wf_agent(fn):
+            skill = STAGE_SKILLS.get(str((self._wf(fn) or {}).get("stage") or ""))
+            if skill:
+                return skill
+        return self.out["builder"]
+
+    def _sw(self, k):
+        """A stage in words ("the product requirements"): STAGE_WORDS, or under J2_GENERIC=1 the type's own label."""
+        if j2_types.enabled() and k in j2_types.names():
+            return f"the {j2_types.info(k)['label'].lower()}"
+        return self.STAGE_WORDS[k]
+
+    def _page_ready(self):
+        """The done message of a single output: "Your website is ready.", or under J2_GENERIC=1 the type's form's own."""
+        return j2_types.info(self.output)["ready"] if j2_types.enabled() else "Your website is ready."
+
     def _advance(self, i):
         """Start stage i, unless the credits left can't cover it and the rest (then the Requester is asked). False when
         no stage is left."""
@@ -3935,7 +3999,7 @@ class J2Run:
                         f"of what you asked for built. Or type your own number, up to {room}")
             budget.append(add)
             choices.append("continue")
-        names = and_list(self.STAGE_WORDS[k] for k in short)
+        names = and_list(self._sw(k) for k in short)
         opts.append(f"Leave out {names}: you get the rest without {'it' if len(short) == 1 else 'them'}.")
         budget.append(0)
         choices.append("drop")
@@ -3948,11 +4012,11 @@ class J2Run:
         ask = ", ".join(ask[:-1]) + (", or " if len(ask) > 2 else " or ") + ask[-1] if len(ask) > 1 else ask[0]
         q = {"question": f"The work you approved doesn't cover everything you asked for. {ask[0].upper() + ask[1:]}?",
              "options": opts, **({"budget": budget} if any(budget) else {})}
-        shown = [f"{self.STAGE_WORDS[k]} (needs at least {c} work credits{'' if ok else '; not covered'})" for k, c, ok in rows]
+        shown = [f"{self._sw(k)} (needs at least {c} work credits{'' if ok else '; not covered'})" for k, c, ok in rows]
         self._event("system", "limit", f"stages {', '.join(short)} can't be funded: {left} left, {need} short")
         self.post("system", f"The work credits left ({left}) can't cover {names}. The Requester decides; nothing is skipped.",
                   warning=True)
-        self._ask_user(f"You asked for {and_list(self.STAGE_WORDS[k] for k in todo)}, which needs at least "
+        self._ask_user(f"You asked for {and_list(self._sw(k) for k in todo)}, which needs at least "
                        f"{sum(c for _, c, _ in rows)} work credits; {left} are left.", [q], "limit", gaps=shown,
                        gaps_title="What you asked for",
                        handoff={"kind": "stage_decision", "stage_i": i, "started": started, "choices": choices,
@@ -3965,7 +4029,7 @@ class J2Run:
         self.step = 8
         answer, choices, i, short = h.get("answer") or "", h.get("choices") or [], h.get("stage_i", 0), h.get("unfunded") or []
         q = (h.get("asked") or [{}])[0]
-        labels = [f"{self.STAGE_WORDS[k]} {k}" for k in self.stages[i:]]
+        labels = [f"{self._sw(k)} {k}" for k in self.stages[i:]]
         d = parse_decision(answer, q, choices, labels, list(range(1, len(labels) + 1)))
         decision = d.get("decision")
         if decision not in choices:
@@ -3976,7 +4040,7 @@ class J2Run:
         self.decisions[-1].update(decision=decision, **({"budget_added": add} if add else {}),
                                   **({"left_out": named} if decision == "drop" else {}))
         if decision == "ship":
-            left = and_list(self.STAGE_WORDS[k] for k in self.stages[i:])
+            left = and_list(self._sw(k) for k in self.stages[i:])
             self.post("identity", f"Got it. We'll finish with what is already written. Not made: {left}.", to_user=True,
                       next="user", done=True)
             self.outcome = f"Done with open items: finished as it is on the Requester's decision. Not made: {left}."
@@ -3986,10 +4050,10 @@ class J2Run:
             gone = [k for k in dict.fromkeys(named) if k in self.stages[i + (1 if h.get("started") else 0):]]
             self.stages = [k for k in self.stages if k not in gone]
             self.docset = [k for k in self.docset if k not in gone]
-            self.post("identity", f"Got it. We'll leave out {and_list(self.STAGE_WORDS[k] for k in gone)}"
+            self.post("identity", f"Got it. We'll leave out {and_list(self._sw(k) for k in gone)}"
                       + (f" and add {add} work credits" if add else "") + ". Everything else stays as it is.", to_user=True,
                       next="user")
-            self.post("system", f"Left out on the Requester's decision: {and_list(self.STAGE_WORDS[k] for k in gone)}.")
+            self.post("system", f"Left out on the Requester's decision: {and_list(self._sw(k) for k in gone)}.")
             self.decisions[-1]["left_out"] = gone
         if add:
             self._raise_budget(add, f"the Requester's answer: {answer}")
@@ -4005,7 +4069,7 @@ class J2Run:
     def _stages_finished(self):
         """The last stage left in the chain is done (the rest were left out): the same closing as a normal Done."""
         self.post("identity", "Your design documents are ready." if len(self.docset) > 1 else
-                  "Your document is ready." if self.docset else "Your website is ready.", done=True, to_user=True, next="user")
+                  "Your document is ready." if self.docset else self._page_ready(), done=True, to_user=True, next="user")
         self.outcome = ("Done: the design documents are workable. Every done-when item, rubric item and necessary condition "
                         "passes in each." if len(self.docset) > 1 else self.out["done"])
         self.turn = None
@@ -4742,15 +4806,15 @@ class J2Run:
         if decision == "ship" and limit and self.doc and self.stages and self.stage_i + 1 < len(self.stages):
             # A document in a chain: accept it as it is (open items recorded) and go on with the next stage.
             fails = workable(self.audits[-1]) if self.audits else []
-            self.open_docs.append(f"{self.STAGE_WORDS[self.stage_kind]}: {'; '.join(fails)}" if fails else
-                                  self.STAGE_WORDS[self.stage_kind])
-            self.post("identity", f"Got it. We'll keep {self.STAGE_WORDS[self.stage_kind]} as it is and go on with "
-                      f"{and_list(self.STAGE_WORDS[k] for k in self.stages[self.stage_i + 1:])}.", to_user=True, next="user")
-            self.post("system", f"Accepted as it is on the Requester's decision: {self.STAGE_WORDS[self.stage_kind]}.")
+            self.open_docs.append(f"{self._sw(self.stage_kind)}: {'; '.join(fails)}" if fails else
+                                  self._sw(self.stage_kind))
+            self.post("identity", f"Got it. We'll keep {self._sw(self.stage_kind)} as it is and go on with "
+                      f"{and_list(self._sw(k) for k in self.stages[self.stage_i + 1:])}.", to_user=True, next="user")
+            self.post("system", f"Accepted as it is on the Requester's decision: {self._sw(self.stage_kind)}.")
             if self._next_stage():
                 return
         if decision in ("ship", "stop"):
-            rest = and_list(self.STAGE_WORDS[k] for k in self.stages[self.stage_i + 1:]) if decision == "stop" else ""
+            rest = and_list(self._sw(k) for k in self.stages[self.stage_i + 1:]) if decision == "stop" else ""
             self.post("identity", r.get("to_requester") or ("We'll finish the site as it is now." if not self.doc else
                                                             f"We'll finish with what is already written."
                                                             + (f" Not made: {rest}." if rest else "")), to_user=True,
@@ -4901,7 +4965,7 @@ class J2Run:
                                "Your design documents are ready." if self.docset and self.stage_kind != "website" and
                                len(self.docset) > 1 else
                                r.get("to_requester") or r.get("say") or ("Your document is ready." if self.doc else
-                                                                         "Your website is ready.")), done=True,
+                                                                         self._page_ready())), done=True,
                   to_user=True, next="user")
         self.outcome = (self._ship_outcome("after the Requester accepted a document as it is") if self.open_docs else
                         "Done: the design documents are workable. Every done-when item, rubric item and necessary "
@@ -4964,13 +5028,13 @@ class J2Run:
         if self.sites:                    # finishing needs a site to finish
             opts.append(f"Finish as it is: you get {dw or 'the site'} as it is now" + (f", with {len(gaps)} thing"
                         f"{'s' if len(gaps) > 1 else ''} still not right: {and_list(r['name'] for r in rows)}"
-                        if gaps else "") + (f". Then the team goes on with {and_list(self.STAGE_WORDS[k] for k in later)}"
+                        if gaps else "") + (f". Then the team goes on with {and_list(self._sw(k) for k in later)}"
                                             if later else ""))
             budget.append(0)
             choices.append("ship")
             if later:         # a chain: "finish as it is" accepts this document; stopping the whole run is its own option
                 opts.append(f"Stop the whole run here: you get what is already written, and "
-                            f"{and_list(self.STAGE_WORDS[k] for k in later)} {'is' if len(later) == 1 else 'are'} not made")
+                            f"{and_list(self._sw(k) for k in later)} {'is' if len(later) == 1 else 'are'} not made")
                 budget.append(0)
                 choices.append("stop")
         if not self.sites and len(choices) < 2:
@@ -5159,7 +5223,7 @@ class J2Run:
                       "the goal is reached. Not workable: it goes back to Adaptation (J2.b); give the instruction. If a "
                       "fix needs a fact only the Requester knows (facts above, or any you see), set needs_requester=true "
                       "and ask for it in requester_questions; the run pauses until they answer. " + DECIDE_RULE, mock,
-                      defaults=("Your website is ready.", "") if not fails else
+                      defaults=(self._page_ready(), "") if not fails else
                       ("We're still working on your site.", "Not workable yet: rework the failing findings."))
         if not fails and r.get("done"):
             return self._goal_done(r)
@@ -5168,7 +5232,7 @@ class J2Run:
             # sent the accepted board size and N6 back to Adaptation for another fix round
             self.post("system", "The site is workable. What is still open is what the Requester accepted as it is, so "
                                 "no fix round is started.")
-            return self._goal_done({"to_requester": r.get("to_requester") or "Your website is ready."})
+            return self._goal_done({"to_requester": r.get("to_requester") or self._page_ready()})
         if fails and r.get("needs_decision"):
             return self._identity_limit({"reason": "Identity: the site can't be finished as asked without your "
                                                    "decision.", "budget_needed": as_int(r.get("budget_needed")) or None})
