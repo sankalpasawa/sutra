@@ -12,10 +12,12 @@
       ]
     }
   },
+  "expect_kinds": {"section": "element-count", "element": "element-count", "facts": "facts-present", "file": "file-exists", "test": "named-test", "tap": "tap-targets", "heading": "heading-present", "ids": "ids-unique", "behavior": "behavior-steps"},
   "forms": {
-    "_note": "How each form is built and checked, defined once. A type names its form; every field it leaves out comes from here ({name}, {label}, {noun} and {sections} are filled from the type). Room for \"script\" and \"action\": not built yet.",
+    "_note": "How each form is built and checked, defined once. A type names its form; every field it leaves out comes from here ({name}, {label}, {noun} and {sections} are filled from the type). Room for \"script\" and \"action\": not built yet. browser_checks: the check types code runs in headless Chrome (the plan format lists the others; the atom rules describe these). cost.item_parts: a done-when item's words (regex) -> the rate-card part it costs at least, first match wins. expect_kinds: an expected-output kind -> the check type that verifies it.",
     "page": {"builder": "builder.md", "file": "site/index.html", "preview": "html",
-             "check_types": ["file-exists", "grep-count", "element-count", "named-test", "facts-present", "tap-targets", "behavior-steps"], "ready": "Your {lower} is ready."},
+             "check_types": ["file-exists", "grep-count", "element-count", "named-test", "facts-present", "tap-targets", "behavior-steps"], "ready": "Your {lower} is ready.",
+             "browser_checks": ["tap-targets", "behavior-steps"]},
     "document": {
       "builder": "templates/document/builder.md", "file": "{name}.md", "template": "templates/{name}/generic.json", "preview": "markdown", "export": "docx",
       "check_types": ["facts-present", "heading-present", "section-not-empty"],
@@ -27,7 +29,8 @@
       ],
       "done": "Done: the {label} is workable. Every done-when item, rubric item and necessary condition passes.",
       "ready": "Your document is ready.",
-      "cost": {"card": "rates_prd", "section_part": "doc_section"},
+      "cost": {"card": "rates_prd", "section_part": "doc_section",
+               "item_parts": [{"part": "requirements_section", "words": "requirement|components?\\b|pages and sections"}, {"part": "doc_section", "words": ""}]},
       "workflow": {"template": "doc-sections", "refs": "^{name}\\.md(#|$)"},
       "mock": {"charter": "mock_form_charter", "section": "mock_form_section", "atom": {}}
     }
@@ -230,6 +233,7 @@
       },
       "cost": {
         "card": "rates",
+        "item_parts": [{"part": "form", "words": "\\bform\\b|\\border|\\bbook(?:ing)?\\b|enquir|inquir|appointment|reserv|sign[- ]?up|subscribe"}, {"part": "interactive_feature", "words": "filter|search|sort|slider|carousel|calculator|toggle|\\btabs?\\b|interactive|animat"}, {"part": "styling", "words": "viewport|mobile|phone|responsive|horizontal scroll|\\b360\\s*px|\\b1280\\s*px|\\bcolou?rs?\\b|\\bfonts?\\b"}, {"part": "page_section", "words": ""}],
         "parts": {
           "styling": 1,
           "page_section": 3,

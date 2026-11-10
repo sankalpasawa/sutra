@@ -7361,7 +7361,7 @@ def artifact_types():
         w = by["website"]
         chk(w["file"] == "site/index.html" and w["form"] == "page" and w["triggers"] == [] and w["also_when"] == "site-words", "website file and triggers")
         chk(w["conditions"] == "website.json" and "builder" not in w["workflow"] and T["forms"]["page"]["builder"] == "builder.md", "website conditions, builder (the page form's)")
-        chk(w["cost"]["parts"] == dict(collections.Counter(j2.J2Run.SITE_ESSENTIALS)), "website cost parts")
+        chk(w["cost"]["parts"] == {"styling": 1, "page_section": 3, "form": 1}, "website cost parts")
         chk(sum(A_rates(w["cost"]["card"]).get(p, 0) * n for p, n in w["cost"]["parts"].items()) == run._stage_cost("website"), "website minimum cost")
         chk((w["tag"], w["color"]) == (site_tag, "--site") and "--site:" in ui, "website tag, colour")
         return bad
