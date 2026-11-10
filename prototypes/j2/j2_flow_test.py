@@ -7078,6 +7078,12 @@ def deliverables_generic():
         run, _ = stages(BREW_LAB, ["prd", "hld"])
         assert run.stages == ["prd", "hld"] and run.docset == ["prd", "hld"] and run.output == "prd", run.stages
         assert json.load(open(os.path.join(run.dir, "deliverables.json")))["deliverables"] == ["prd", "hld"]
+        import j2_artifacts as A      # Artifacts > Run plan: a Deliverables row, its JSON and its list
+        row = next(x for g in A.groups(run.dir)["groups"] if g["id"] == "plan" for x in g["rows"] if x["kind"] == "deliverables")
+        assert [x["type"] for x in row["items"]] == ["prd", "hld"] and row["file"] == "deliverables.json", row
+        assert row["views"]["agent"]["format"] == "json" and row["views"]["human"] == {"format": "list", "file": "deliverables.json"}, row["views"]
+        ui = open(os.path.join(os.path.dirname(os.path.abspath(__file__)), "j2_ui.html"), encoding="utf-8").read()
+        assert "deliverables: {sum:" in ui and "deliverables: () =>" in ui
         run, _ = stages("Design docs for Campus Notes." + CAMPUS, ["website"])
         assert run.stages == [] and run.output == "website" and not run.docset
         run, _ = stages(BREW_LAB + " Write the design docs first.")      # offline default: the keyword logic's answer
@@ -7115,6 +7121,67 @@ def deliverables_generic():
           "'write a hiring policy' no longer a website ok")
 
 
+def doc_plans_generic():
+    """Step 3b (docs/remove-hardcoding-plan.md): under J2_GENERIC=1 a document's sections come from its template
+    (templates/<type>/generic.json), not PRD/HLD/LLD_SECTIONS; Adaptation's document task carries them as data instead of
+    plan.md; the cross-document citations come from the template's ref_exists rules; a workflow may name the sections it
+    writes ("sections", checked against the template); no workflows for a document stops the run with a fault."""
+    import j2_types
+    keep = os.environ.pop("J2_GENERIC", None)
+    try:
+        off = {t: (j2.doc_sections(t), j2.doc_cites(t)) for t in j2.DOC_SET}
+        names = [j2.sec_name(k, f, n) for k, f, n in (("prd", "requirements", "Requirements"), ("hld", "components", "Components"),
+                                                     ("lld", "sections", "Pages and sections"), ("lld", "form_fields", "Form fields"))]
+        os.environ["J2_GENERIC"] = "1"
+        for t in j2.DOC_SET:
+            assert j2.doc_sections(t) == j2_types.sections(t) == off[t][0] == j2.OUTPUTS[t]["sections"], t
+            assert j2.doc_cites(t) == off[t][1], (t, j2.doc_cites(t))
+            d = j2.doc_plan_data(t)
+            assert j2.OUTPUTS[t]["plan"] not in d and all(f'"section": "{x}"' in d for x in off[t][0]), t
+        assert [j2.sec_name(k, f, "?") for k, f in (("prd", "requirements"), ("hld", "components"), ("lld", "sections"),
+                                                     ("lld", "form_fields"))] == names
+        secs = j2.doc_sections("prd")
+        assert j2.wf_sections({"name": "Write the opening", "sections": ["Users", "Problem", "Nope"]}, secs) == ["Problem", "Users"]
+        assert j2.wf_sections({"name": "Write Goals"}, secs) == ["Goals"]
+        os.environ.pop("J2_GENERIC", None)
+        assert j2.wf_sections({"name": "Write Goals", "sections": ["Problem"]}, secs) == ["Goals"], "flag off: the name, as today"
+        os.environ["J2_GENERIC"] = "1"
+
+        # the planner's workflows as they come: a named section is kept, an unknown one is refused by the validator
+        def named(run, orig):
+            def call(fn, fmt, task, mock, **k):
+                if fn == "adaptation" and "ITS SECTIONS" in task and not run.workflows:
+                    def m():
+                        r = json.loads(mock())
+                        r["workflows"][0]["sections"] = ["Problem"]
+                        r["workflows"][1]["sections"] = ["Nope"]
+                        return json.dumps(r)
+                    return orig(fn, fmt, task, m, **k)
+                return orig(fn, fmt, task, mock, **k)
+            return call
+        run = docs_run("Write a PRD for Campus Notes." + CAMPUS, 200, named)
+        first = run._all_wfs()[0]
+        assert first["sections"] == ["Problem"], first
+        assert any("template doesn't have: Nope" in x["reason"] for x in run.rejections), run.rejections[-3:]
+
+        # no workflows for a document: a clear fault, no fixed plan to fall back to
+        def empty(run, orig):
+            def call(fn, fmt, task, mock, **k):
+                if fn == "adaptation" and "ITS SECTIONS" in task:
+                    return orig(fn, fmt, task, lambda: json.dumps({"act": "PROPOSE", "say": "@Priority Nothing.", "next": "Priority", "workflows": []}), **k)
+                return orig(fn, fmt, task, mock, **k)
+            return call
+        run = docs_run("Write a PRD for Campus Notes." + CAMPUS, 200, empty)
+        assert run.outcome == "Stopped: Adaptation planned no workflows for the PRD." and not run._all_wfs(), run.outcome
+        assert any("does not fall back to a fixed one-workflow-per-section plan" in m["text"] for m in run.chat if m["who"] == "system")
+    finally:
+        os.environ.pop("J2_GENERIC", None)
+        if keep is not None:
+            os.environ["J2_GENERIC"] = keep
+    print("document plans generic: sections and citations from the template, Adaptation's task carries them as data (no plan.md), "
+          "a workflow's own sections kept and checked, no workflows stops with a fault ok")
+
+
 def doc_unchanged():
     """The document golden: mock runs of a PRD, the design docs (PRD, HLD, LLD) and the design docs with the site after them
     (the LLD as the site's blueprint) give the same model calls (agent, system prompt, prompt), workflows, documents,
@@ -7125,8 +7192,19 @@ def doc_unchanged():
         rows = [json.loads(x) for x in open(os.path.join(run.dir, "calls.jsonl"), encoding="utf-8")]
         files = {f: h(open(os.path.join(run.dir, f), encoding="utf-8").read()) for f in sorted(os.listdir(run.dir))
                  if re.fullmatch(r"(?:prd|hld|lld)\.md|documents\.json|stage-\w+\.json", f)}
+        # the one prompt allowed to differ (step 3b): Adaptation's document task carries the fixed plan (plan.md) with the
+        # flag unset and the template's section data with J2_GENERIC=1; masked here, and which one it carried is kept
+        plans = {t: (j2.OUTPUTS[t]["plan"], j2.doc_plan_data(t)) for t in j2.DOC_SET}
+        carried = set()
+
+        def unplan(p):
+            for t, (old, new) in plans.items():
+                carried.update({f"{t}: plan.md"} if old in p else set())
+                carried.update({f"{t}: sections"} if new in p else set())
+                p = p.replace(old, f"<PLAN {t}>").replace(new, f"<PLAN {t}>")
+            return p
         return {"outcome": run.outcome, "spent": run.spent, "docs": list(run.docs), "files": files,
-                "calls": [[c["fn"], h(c["system"]), h(c["prompt"])] for c in rows],
+                "calls": [[c["fn"], h(c["system"]), h(unplan(c["prompt"]))] for c in rows], "carried": carried,
                 "workflows": h(json.dumps([{k: v for k, v in w.items() if k != "t"} for w in run._all_wfs()], sort_keys=True))}
     briefs = (("Write a PRD for Campus Notes." + CAMPUS, 200), ("Design docs for Campus Notes." + CAMPUS, 400), (DESIGN_BRIEF, 900))
     for brief, budget in briefs:
@@ -7138,6 +7216,9 @@ def doc_unchanged():
             got.append(digest(docs_run(brief, budget)))
         os.environ.pop("J2_GENERIC", None)
         a, b = got
+        assert a["carried"] == {f"{t}: plan.md" for t in a["docs"]} and b["carried"] == {f"{t}: sections" for t in b["docs"]}, \
+            (brief[:40], a["carried"], b["carried"])
+        a.pop("carried"), b.pop("carried")
         assert a["calls"] and a["outcome"].startswith("Done") and a["files"], (brief[:40], a["outcome"])
         diff = [i for i, (x, y) in enumerate(zip(a["calls"], b["calls"])) if x != y]
         assert len(a["calls"]) == len(b["calls"]) and not diff, (brief[:40], "prompts differ", diff[:5], a["calls"][diff[0]] if diff else None, b["calls"][diff[0]] if diff else None)
@@ -7171,7 +7252,7 @@ def artifact_types():
         chk(g["pattern"] == j2._DOC_SET_WORDS.pattern and g["members"] == list(j2.DOC_SET), "design-docs group")
         for k in j2.DOC_SET:
             t, o = by[k], j2.OUTPUTS[k]
-            chk(t["workflow"]["sections"] == list(o["sections"]), f"{k} sections")
+            chk("sections" not in t["workflow"] and j2.j2_types.sections(k) == tuple(o["sections"]), f"{k} sections (from its template)")
             chk(t["file"] == o["file"] and t["export"] == "docx" and bool(o["export"]) and t["form"] == "doc", f"{k} file")
             chk(t["conditions"] == o["conditions"] and os.path.isfile(os.path.join(j2.CONDITIONS_DIR, t["conditions"])), f"{k} conditions")
             chk(getattr(j2, t["workflow"]["builder"].split(":", 1)[1], None) is o["builder"], f"{k} builder")
@@ -7221,7 +7302,7 @@ def artifact_types():
     # records: every record is a kind record, not a deliverable, with a file pattern; a full run keeps the ones a mock run writes
     recs = [t for t in T["types"] if t["kind"] == "record"]
     assert [t["name"] for t in recs] == ["screenshots", "atoms", "audits", "receipts", "conditions", "chain", "goal", "workflows",
-                                         "summary", "report", "chat", "board", "realization", "workflow_files",
+                                         "summary", "report", "chat", "board", "realization", "deliverables", "workflow_files",
                                      "workflow_files_in_folders"] and not any(t["deliverable"] for t in recs)
     # depends_on matches the edges a real chain run records between the documents and the site
     run = docs_run(DESIGN_BRIEF, 900)
@@ -7243,11 +7324,12 @@ def artifact_types():
         assert next(r for r in rows if r["type"] == k)["workflows"] == sorted(docs[k]["workflows"], key=lambda x: int(x[2:])), k
     for t in recs:
         # a mock run takes no screenshots; board.json only exists under J2_BOARD=1; the realization plan and workflow files
-        # only exist under J2_REALIZATION=1
-        if t["name"] not in ("screenshots", "board", "realization", "workflow_files", "workflow_files_in_folders"):
+        # only exist under J2_REALIZATION=1; the deliverables only under J2_GENERIC=1
+        if t["name"] not in ("screenshots", "board", "realization", "workflow_files", "workflow_files_in_folders") + \
+                (() if j2.j2_types.enabled() else ("deliverables",)):
             assert os.path.isfile(os.path.join(run.dir, t["file"])), t["file"]
     print("artifact types: prd, hld, lld and website match the Python field by field (sections, files, triggers, groups, tags, "
-          "colours, conditions, builder, rates, minimum cost, depends_on); drift on either side fails; 15 record entries ok")
+          "colours, conditions, builder, rates, minimum cost, depends_on); drift on either side fails; 16 record entries ok")
 
 
 def artifacts_tab():
@@ -11972,6 +12054,7 @@ if __name__ == "__main__":
             website_generic()      # step 1: the website on data, J2_GENERIC=1
             docs_generic()         # step 2: the documents on data, and the document golden
             deliverables_generic()      # step 3: Adaptation chooses what to build
+            doc_plans_generic()         # step 3b: document plans from the template, not the fixed plan
         artifacts_tab()
         map_tab()
         map_every_workflow()
