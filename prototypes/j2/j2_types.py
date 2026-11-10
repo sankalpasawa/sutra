@@ -7,6 +7,7 @@ A type that fails a check is refused with the reason (ValueError): a run never h
 """
 import json
 import os
+from functools import lru_cache
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 TYPES_PATH = os.path.join(HERE, "artifacts", "types.json")
@@ -17,6 +18,43 @@ NEEDED = ("label", "noun", "form", "conditions", "rubric", "check_types", "done"
 DOC_NEEDED = ("file", "builder", "plan", "atom_rules")
 EXPORTS = (None, "docx")
 TEXTS = {"intake": "intake", "charter_format": "charter_fmt", "plan": "plan", "atom_rules": "atom_rules"}      # field -> OUTPUTS key
+
+
+DOCUMENT = "Document"      # generic.json's document-level template, not a section
+
+
+@lru_cache(maxsize=None)
+def template(name):
+    """The section templates of a type's template library entry (templates/<name>/generic.json), in document order;
+    the document-level template left out. () when the type has no generic.json."""
+    p = os.path.join(HERE, "templates", name, "generic.json")
+    if not os.path.isfile(p):
+        return ()
+    with open(p, encoding="utf-8") as f:
+        return tuple(t for t in json.load(f)["templates"] if t.get("section") != DOCUMENT)
+
+
+def sections(name):
+    """A type's section names, from its template (the source for section names under J2_GENERIC=1)."""
+    return tuple(t["section"] for t in template(name))
+
+
+def section_of(name, field):
+    """The section whose data is `field` (its template's first field: "components" -> "Components")."""
+    return next(t["section"] for t in template(name) if t["fields"] and t["fields"][0]["name"] == field)
+
+
+def cites(name):
+    """Cross-document citations, from the template's ref_exists rules whose target is another document:
+    {section: (that document's type, its list, the citing field)}, e.g. {"Components": ("prd", "requirements", "covers")}."""
+    out = {}
+    for t in template(name):
+        for r in t.get("rules") or []:
+            tgt = str(r.get("target") or "")
+            if r.get("rule") == "ref_exists" and tgt and not tgt.startswith("this."):
+                doc, rest = tgt.split(".", 1)
+                out[t["section"]] = (doc, rest.split("[]")[0], str(r["path"]).split("[].")[-1])
+    return out
 
 
 def enabled():
@@ -53,7 +91,7 @@ def load(name, path=TYPES_PATH):
     if any(not (isinstance(r, dict) and r.get("id") and r.get("text")) for r in entry["rubric"]):
         raise ValueError(f"{name}: every rubric item needs an id and a text")
     out = {"label": entry.get("output_label") or entry["label"], "noun": entry["noun"],
-           "sections": tuple(entry["workflow"].get("sections") or ()), "conditions": entry["conditions"],
+           "sections": sections(name) if doc else (), "conditions": entry["conditions"],
            "rubric": tuple((r["id"], r["text"]) for r in entry["rubric"]), "rates": entry["cost"]["card"],
            "check_types": tuple(entry["check_types"]),
            "builder": _text(entry["builder"]) if entry.get("builder") else entry["workflow"]["builder"],

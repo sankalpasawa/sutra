@@ -50,14 +50,6 @@
       "conditions": "prd.json",
       "workflow": {
         "template": "doc-sections",
-        "sections": [
-          "Problem",
-          "Users",
-          "Goals",
-          "Requirements",
-          "Success metrics",
-          "Out of scope"
-        ],
         "builder": "python:PRD_BUILDER",
         "refs": "^prd\\.md(#|$)"
       },
@@ -108,14 +100,6 @@
       "conditions": "hld.json",
       "workflow": {
         "template": "doc-sections",
-        "sections": [
-          "Purpose and scope",
-          "Pages",
-          "Components",
-          "Data flow",
-          "Hosting and deployment",
-          "Risks"
-        ],
         "builder": "python:HLD_BUILDER",
         "refs": "^hld\\.md(#|$)"
       },
@@ -167,13 +151,6 @@
       "conditions": "lld.json",
       "workflow": {
         "template": "doc-sections",
-        "sections": [
-          "Pages and sections",
-          "Interactive elements",
-          "Form fields",
-          "File structure",
-          "Responsive and accessibility rules"
-        ],
         "builder": "python:LLD_BUILDER",
         "refs": "^lld\\.md(#|$)"
       },
@@ -220,7 +197,6 @@
       "conditions": "website.json",
       "workflow": {
         "template": "site-parts",
-        "sections": [],
         "builder": "builder.md",
         "refs": "\\.html?(#|$)"
       },
@@ -361,6 +337,16 @@
       "color": "--other",
       "form": "data",
       "file": "realization.json",
+      "deliverable": false
+    },
+    {
+      "name": "deliverables",
+      "kind": "record",
+      "label": "Deliverables",
+      "tag": "Other",
+      "color": "--other",
+      "form": "data",
+      "file": "deliverables.json",
       "deliverable": false
     },
     {
