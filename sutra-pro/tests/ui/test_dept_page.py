@@ -298,6 +298,10 @@ class Page:
     def display(self, selector: str) -> str:
         return self.js(f"getComputedStyle(document.querySelector({json.dumps(selector)})).display")
 
+    def drawn(self, selector: str) -> bool:
+        """The element takes room on the page: not hidden, and none of its parents is (the computed `display` of a child of a hidden box is still its own)."""
+        return bool(self.js(f"(() => {{ const e = document.querySelector({json.dumps(selector)}); return !!e && e.offsetParent !== null; }})()"))
+
 
 @pytest.fixture()
 def team(fake_server, fake, browser) -> Page:
@@ -333,9 +337,18 @@ def test_the_page_boots_clean_with_both_strips_the_title_and_both_new_tabs(team)
     assert team.js("document.querySelector('#rail > .railhome').firstElementChild.id") == "to-home"      # the strip is the first thing in the rail
     assert team.js("document.body.classList.contains('archived')") is False
     assert team.b.exists(".archivedbanner") is False
-    assert team.display("#lbox") != "none" and team.display("#lsend") != "none" and team.display("#sbox") != "none"      # a live team keeps its composers
     assert team.b.console_errors == [] and team.b.failed_requests == []
     assert team.state()["mounted"] == {"graph": False, "orgchart": False}
+
+
+@browser_only
+def test_a_live_team_keeps_its_composers_in_the_simple_view(team):
+    team.open(view="simple")
+    team.b.wait_for("!!document.getElementById('schatbtn')")
+    assert team.drawn("#sauto") and team.drawn("#sbox") is False                    # the chat pane starts closed on a wide screen
+    team.b.click("#schatbtn")                                                      # the answer box is in the chat pane, which the top bar's Chat button opens
+    team.b.wait_for("!document.getElementById('sapp').classList.contains('chatclosed')")
+    assert team.drawn("#sbox") and team.drawn("#ssend")
 
 
 # ---------------------------------------------------------------------------------------------------------------------
@@ -424,16 +437,22 @@ def archived_team(monkeypatch, make_fake_server, browser) -> Page:
 @browser_only
 def test_an_archived_team_shows_the_banner_and_hides_every_composer(archived_team):
     page = archived_team.open(view="simple")
+    page.b.wait_for("!!document.getElementById('schatbtn')")
+    page.b.click("#schatbtn")                                                      # the chat pane is open: only the archived rule can keep its box away
+    page.b.wait_for("!document.getElementById('sapp').classList.contains('chatclosed')")
     assert page.js("document.body.classList.contains('archived')") is True
     sentence = "This team was merged into Content. Its history stays available."
     assert page.js("Array.from(document.querySelectorAll('.archivedbanner'), e => e.textContent)") == [sentence, sentence]
     assert page.js("Array.from(document.querySelectorAll('.archivedbanner'), e => e.getAttribute('role'))") == ["status", "status"]
     # one at the top of each of J2's two views, and the one of the view on screen is visible (J2 opens on the chat view)
-    assert page.js("document.getElementById('sview').firstElementChild.classList.contains('archivedbanner')") is True
+    assert page.js("document.getElementById('sview').firstElementChild.classList.contains('steamstrip')") is True      # the strip stays first: the way home is never hidden
+    assert page.js("document.getElementById('sview').children[1].classList.contains('archivedbanner')") is True
     assert page.js("document.querySelector('#dview .dcol').firstElementChild.classList.contains('archivedbanner')") is True
     assert page.js("document.querySelector('#sview > .archivedbanner').offsetHeight") > 0
-    for selector in ("#sbox", "#ssend", "#box", "#send", "#lform", "#lbox", "#lsend", ".schips", "#soutpick"):      # the landing's too (D139): nothing can be started
-        assert page.display(selector) == "none", selector
+    for selector in ("#sbox", "#ssend", "#sauto"):                      # the studio's own: the answer box, its send button and the Decide for me switch
+        assert page.drawn(selector) is False, selector
+    for selector in ("#box", "#send", "#lform", "#lbox", "#lsend", ".schips", "#soutpick"):      # the chat panel's, and the landing's (D139: nothing can be started)
+        assert page.drawn(selector) is False, selector
     assert page.b.text("#deptchip") == "Web" and page.b.text("#deptchip-s") == "Web"             # the history stays readable
     assert page.b.console_errors == []
 
@@ -769,9 +788,9 @@ def test_a_team_that_has_started_keeps_the_choice_closed_and_says_why(team):
     team.open(view="simple")
     team.b.wait_for("!!document.getElementById('outsel')")
     team.js("(() => { const s = document.getElementById('outsel'); s.value = 'website'; s.dispatchEvent(new Event('change', {bubbles: true})); })()")
-    team.b.wait_for("document.getElementById('outsel').disabled === true")
+    team.b.wait_for("document.getElementById('soutnote').textContent !== ''")      # (the select is disabled while the request is out, too: the note is the answer)
     assert team.js("document.getElementById('soutnote').textContent") == "The team has started; choose before the first message."
-    assert team.js("document.getElementById('outsel').value") == "auto"           # the old choice is back
+    assert team.js("[document.getElementById('outsel').disabled, document.getElementById('outsel').value]") == [True, "auto"]       # locked, the old choice is back
 
 
 @browser_only
@@ -900,5 +919,7 @@ def test_the_teams_library_page_is_the_same_page_and_draws_the_catalog_of_the_on
     assert team.js("[location.pathname, CAT.on, SutraCtx.libraryPath, SutraCtx.onLibrary()]") == ["/d/web/library", True, "/d/web/library", True]
     assert "dept=web" in team.requests("/api/catalog")[0]["query"]                    # the data is global, the path says the team
     assert team.js("CAT.runs.length") == len(catalog["runs"]) and team.js("Object.keys(CAT.groups)") == list(catalog["groups"])
-    assert team.hidden("#pane-library") is False
+    assert team.js("document.body.classList.contains('libpage')") is True and team.hidden("#pane-catalog") is False
+    shown = team.js("document.getElementById('pane-catalog').innerText")
+    assert all(run["run"] in shown for run in catalog["runs"]) and "By run" in shown and "By artifact" in shown      # every run that gave the library a template, from catalog.json
     assert team.b.console_errors == [] and team.b.failed_requests == []
