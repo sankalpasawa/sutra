@@ -16,7 +16,8 @@ Two kinds of test:
             the Sutra strip (home, team chip, Workflow graph, Org chart) lives in the Detailed view: a test names the view it works in (`Page.open(view=)`),
             and a deep link (`?tab=`, `#tab`) opens the Detailed view by itself. New here: both strips, the start page's output choice, the function chat of
             J2's panel with a question that was asked before, a question typed there, Esc with the node panel open, the rail's Artifacts flyout, a part's
-            record, the Decide for me switch, the team's library page, and the attention pill clear of every control of the Simple view at a laptop and a phone width.
+            record, the Decide for me switch, the team's library page, and the attention pill clear of every control of the Simple view at a laptop and a phone width, drawn by its own
+            rules (an atom's status pill by the atoms') and clear of the team strip's name from 320 to 1920 px, light and dark.
 """
 from __future__ import annotations
 
@@ -925,6 +926,99 @@ def test_the_attention_pill_is_clear_of_every_control_of_the_simple_view(finishe
     opened = measure([n for n in named if n != "#sfinish [data-full]"] + ["#sbox", "#ssend"])        # (at 375 J2's own sheet covers the finish bar while Asha's panel is open)
     assert opened["missing"] == [] and opened["over"] == [] and opened["stolen"] == [], opened
     assert opened["inside"] is True and opened["clickable"] is True, opened
+    assert team.b.console_errors == [] and team.b.failed_requests == []
+
+
+# `.apill` names two things: the attention pill (a link in `.apillhost`) and the status pill of a work atom (a span in `.atomcard`). The atoms' rules used to be the later ones with the
+# same weight, so they drew the attention pill too, as a 21px box with the atoms' 10px corners and a plain border, and the strip's room for it was fitted to that box (0.3.1).
+PILL_LOOKS = r"""(() => {
+  const probe = document.createElement("span");
+  const colour = value => { probe.style.color = value; document.body.appendChild(probe); const c = getComputedStyle(probe).color; probe.remove(); return c; };
+  const look = el => { const s = getComputedStyle(el);
+    return {display: s.display, padding: [s.paddingTop, s.paddingRight, s.paddingBottom, s.paddingLeft].join(" "), size: s.fontSize, radius: s.borderTopLeftRadius, border: s.borderTopColor}; };
+  const card = document.createElement("details");
+  card.className = "atomcard";
+  card.innerHTML = '<span class="apill st-closed">goal reached, and checked</span>';
+  document.body.appendChild(card);
+  const out = {pill: look(document.querySelector("#attnpill a.apill")), atom: look(card.firstElementChild), accent: colour("var(--accent)"), ok: colour("var(--ok)")};
+  card.remove();
+  return out;
+})()"""
+
+
+@browser_only
+def test_the_attention_pill_is_drawn_by_its_own_rules_and_an_atoms_status_pill_by_the_atoms(finished_team):
+    """Its own rules: a flex link with 13.5px type, 14px at the sides, 99px corners and the accent border; the 6px above and below that a corner chip has are kept where it sits in
+    the bottom corner (the Detailed view from 901 px, the console) and given up where it rides in a row at the top (the Simple view's strip, a phone or tablet width), because
+    that row is 27px tall. The status pill of an atom card keeps its own box: inline, 9px at the sides, 12.5px type, 10px corners and the colour of its state."""
+    team = finished_team
+    run = json.loads((J2_FIXTURES / "runs.json").read_text(encoding="utf-8"))["live"]
+    for width, height, view, rows in [(1280, 860, "simple", "0px"), (1280, 860, "detail", "6px"), (375, 812, "detail", "0px"), (375, 812, "simple", "0px")]:
+        team.b.set_size(width, height)
+        team.open(f"?run={run}", view=view)
+        team.b.wait_for("!!document.querySelector('#attnpill a.apill')")
+        seen = team.js(PILL_LOOKS)
+        where = f"{view} at {width}"
+        assert seen["pill"] == {"display": "inline-flex", "padding": f"{rows} 14px {rows} 14px", "size": "13.5px", "radius": "99px", "border": seen["accent"]}, (where, seen)
+        assert seen["atom"] == {"display": "inline-block", "padding": "0px 9px 0px 9px", "size": "12.5px", "radius": "10px", "border": seen["ok"]}, (where, seen)
+    assert team.b.console_errors == [] and team.b.failed_requests == []
+
+
+# The pill with the most to say ("2 need you, 1 to try again") and the longest team name the strip is asked to hold, in the Simple view at every width from a small phone to a wide
+# screen, in both themes (the colours differ, the boxes do not), with Asha's panel closed and open: no control of J2's under the pill, the pill on screen and under a click, the
+# name's text (every line of it) and "All teams" stopping short of it, no sideways scroll. Measured on the live page, by box. (The Detailed view is not swept: from 600 to 900 px
+# the pill covers part of J2's "Answer in Chat" button there, and on a 320 or 375 px console page two of the console's links, as they did before the pill got its own rules.)
+PILL_AND_STRIP = r"""(() => {
+  const drawn = el => { const s = getComputedStyle(el); return s.display !== "none" && s.visibility !== "hidden" && el.getClientRects().length > 0; };
+  const apart = (a, b) => a.right <= b.left || b.right <= a.left || a.bottom <= b.top || b.bottom <= a.top;
+  const pill = document.querySelector("#attnpill a.apill");
+  const p = pill.getBoundingClientRect();
+  const sweep = "button, a[href], input, textarea, select, [role=switch], [role=tab], summary";
+  const over = Array.from(document.querySelectorAll(sweep)).filter(el => !el.closest("#attnpill") && drawn(el))
+    .filter(el => { const b = el.getBoundingClientRect(); return b.width > 0 && b.height > 0 && !apart(p, b); })
+    .map(el => el.tagName.toLowerCase() + (el.id ? "#" + el.id : "") + " \"" + (el.innerText || el.getAttribute("aria-label") || "").trim().replace(/\s+/g, " ").slice(0, 24) + "\"");
+  const out = {width: innerWidth, over, inside: p.left >= 0 && p.top >= 0 && p.right <= innerWidth && p.bottom <= innerHeight,
+               clickable: (m => !!m && m.closest("a.apill") === pill)(document.elementFromPoint(p.left + p.width / 2, p.top + p.height / 2)),
+               sideways: document.documentElement.scrollWidth > innerWidth, size: [Math.round(p.width), Math.round(p.height)], gap: null, linkApart: null};
+  const strip = document.querySelector("#sview > .steamstrip");
+  if (strip && drawn(strip)) {
+    const name = strip.querySelector("b");
+    const range = document.createRange();
+    range.selectNodeContents(name);
+    out.gap = Math.round(p.left - Math.max(...Array.from(range.getClientRects()).map(r => r.right)));
+    out.linkApart = apart(p, strip.querySelector("a").getBoundingClientRect());
+  }
+  return out;
+})()"""
+LONG_TEAM_NAME = "Corner Bakery and Coffee Roasters of the Greater Metropolitan Area Branch Office"
+CRASH_ELSEWHERE = {"kind": "problem", "tone": "err", "task_id": "tsk_00000000beef", "dept_id": "sales", "dept_name": "Sales", "title": "Quote", "status": "crashed",
+                   "text": 'Sales ran into a problem on "Quote"', "outcome": "", "at": "2026-11-04T10:00:00Z", "since_s": 60, "retry": True}
+PILL_WIDTHS = [320, 360, 375, 414, 480, 600, 768, 900, 901, 1024, 1280, 1440, 1920]
+
+
+@browser_only
+def test_the_attention_pill_and_the_team_strip_clear_each_other_from_320_to_1920_wide_in_both_themes(finished_team):
+    team = finished_team
+    run = json.loads((J2_FIXTURES / "runs.json").read_text(encoding="utf-8"))["live"]
+    team.fake.request("POST", "/__fake/heads-up", {"items": [CRASH_ELSEWHERE]})           # one thing for the owner here and one problem elsewhere: "2 need you 1 to try again"
+    problems: list[tuple] = []
+    for theme in ("light", "dark"):
+        team.b.set_theme(theme)
+        for width in PILL_WIDTHS:
+            team.b.set_size(width, 812 if width <= 600 else (1080 if width >= 1900 else 860))
+            team.open(f"?run={run}", view="simple")
+            team.b.wait_for("document.querySelector('#attnpill a.apill') && document.querySelector('#attnpill a.apill').textContent === '2 need you 1 to try again'")
+            team.b.wait_for("!!document.querySelector('#sfinish [data-full]')")
+            team.js("document.querySelector('#sview > .steamstrip b').textContent = " + json.dumps(LONG_TEAM_NAME))          # the strip's name, as long as a name can reasonably be
+            for chat in (False, True):
+                if chat:
+                    team.js("sChatOpen(true)")
+                    team.b.wait_for("document.getElementById('ssend').getClientRects().length > 0")
+                seen = team.js(PILL_AND_STRIP)
+                clear = seen["gap"] is not None and seen["gap"] >= 8 and seen["linkApart"] is True               # 8 px between the name's text and the pill, at least
+                if seen["over"] or not (seen["inside"] and seen["clickable"] and clear) or seen["sideways"]:
+                    problems.append((theme, width, "Asha's panel open" if chat else "closed", seen))
+    assert problems == [], problems
     assert team.b.console_errors == [] and team.b.failed_requests == []
 
 

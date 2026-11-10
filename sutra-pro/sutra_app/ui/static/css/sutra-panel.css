@@ -28,13 +28,16 @@ body.nodeopen #pane-map .mappanel{display:none}
 .nempty{margin:8px 0}
 
 /* ---- gap attention: the org-wide "N need you" pill in a corner of a team page and the console (attention_pill.js; Home has its strip). Below the
-   drawer (z-index 60); on a phone it sits under the header, clear of the message box and its Send button. The pulse is for a count that went up. */
+   drawer (z-index 60); on a phone it sits under the header, clear of the message box and its Send button. The pulse is for a count that went up. The name `apill` is also the
+   status pill of an atom card (a span in `.atomcard`, further down); each set of rules is for its own place, so that neither draws the other. Where the pill rides in a row at
+   the top (a phone or tablet width, the Simple view's strip) it has no padding above and below: a corner chip's 6px made it 34px tall, which covered the tops of the buttons
+   under that row (0.3.1; until then the atoms' rules drew it as a 21px box, and the places it rides at the top were fitted to that). */
 .apillhost{position:fixed;right:16px;bottom:16px;z-index:50}
 .apillhost[hidden]{display:none}
 .apill{display:inline-flex;align-items:baseline;gap:6px;padding:6px 14px;border:1px solid var(--accent);border-radius:99px;background:var(--panel);color:var(--ink);font-size:13.5px;font-weight:600;text-decoration:none}
 .apill small{color:var(--muted);font-weight:400}
 .apill:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
-@media (max-width:900px){.apillhost{bottom:auto;top:58px;right:12px}}
+@media (max-width:900px){.apillhost{bottom:auto;top:58px;right:12px}.apillhost .apill{padding-top:0;padding-bottom:0}}
 /* J2's Chat button is fixed to the bottom right of the Detailed view (22px from the right, 18px from the bottom, about 40px tall; 452px from the right while the chat is
    open) and the pill sat on it and took the click. The pill rides above the button and moves left with it (a transform, the compositor's). Not on a phone (it is under the
    header there), not in the Simple view (the button is not drawn), not where there is no button (the console). J2 sync 4, E3. */
@@ -46,11 +49,13 @@ body.nodeopen #pane-map .mappanel{display:none}
    (Decide for me, the dark-mode button, Open the site) the upper right, and on a phone the dock the bottom, and the pill sat on one of them at every width (found by the
    live check of J2 sync 4). The one row with nothing of J2's in it is the team strip at the very top (ours: "All teams" and the team's name, at the left), so in the Simple view
    the pill rides at the right end of that row, above the toolbar. Nothing opens over that row (Asha's panel and the sheets start below the toolbar), so it never has to
-   move and has no transition to budget. The strip keeps clear of it (122px for "1 needs you", 190px when it says what to try again too): a long team name wraps
-   instead of running under the pill. */
+   move and has no transition to budget. The strip keeps clear of it (140px for "1 needs you", 204px when it says what to try again too: the pill's width, 14px of
+   margin and some room for a wider font): a long team name wraps instead of running under the pill. The row is 27px tall and the toolbar's buttons start right under it,
+   which is why the pill has no padding above and below here (see above). */
 body.simple .apillhost{top:4px;bottom:auto;right:14px}
-body.simple:has(.apillhost:not([hidden])) #sview>.steamstrip{padding-right:122px}
-body.simple:has(.apillhost:not([hidden]) .apill small) #sview>.steamstrip{padding-right:190px}
+body.simple .apillhost .apill{padding-top:0;padding-bottom:0}
+body.simple:has(.apillhost:not([hidden])) #sview>.steamstrip{padding-right:140px}
+body.simple:has(.apillhost:not([hidden]) .apill small) #sview>.steamstrip{padding-right:204px}
 /* the pulse is a ring that grows and fades (transform and opacity: the compositor's), not an outline that is painted bigger each frame */
 .apill{position:relative}
 @media (prefers-reduced-motion:no-preference){.apill.fresh::after{content:"";position:absolute;inset:-3px;border:3px solid var(--accent);border-radius:inherit;pointer-events:none;animation:apillpulse calc(var(--dur-slow)*4) var(--ease-out) 2}}
@@ -185,11 +190,12 @@ details.atomcard>summary{cursor:pointer;display:flex;flex-wrap:wrap;align-items:
 .try-failed{color:var(--bad)}
 .try-passed{color:var(--ok)}
 .try-pending,.try-deferred,.try-unrun{color:var(--muted)}
-.apill{display:inline-block;border:1px solid var(--line);border-radius:10px;padding:0 9px;font-size:12.5px}
-.apill.st-closed{border-color:var(--ok);color:var(--ok)}
-.apill.st-verify_failed{border-color:var(--bad);color:var(--bad)}
-.apill.st-open{border-color:var(--accent);color:var(--accent)}
-.apill.st-refused{border-color:var(--validator);color:var(--validator)}
+/* the status pill of an atom card; scoped to the card because the attention pill (above) has the same class name */
+.atomcard .apill{display:inline-block;border:1px solid var(--line);border-radius:10px;padding:0 9px;font-size:12.5px}
+.atomcard .apill.st-closed{border-color:var(--ok);color:var(--ok)}
+.atomcard .apill.st-verify_failed{border-color:var(--bad);color:var(--bad)}
+.atomcard .apill.st-open{border-color:var(--accent);color:var(--accent)}
+.atomcard .apill.st-refused{border-color:var(--validator);color:var(--validator)}
 .arow{margin:4px 0 0;font-size:13px}
 .arow>b{color:var(--muted);margin-right:4px}
 .acost{color:var(--muted)}
