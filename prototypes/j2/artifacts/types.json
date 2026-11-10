@@ -78,6 +78,23 @@
       "form": "doc",
       "file": "hld.md",
       "export": "docx",
+      "output_label": "HLD document",
+      "noun": "HLD",
+      "rubric": [
+        {"id": "D-1", "text": "Every component has one clear responsibility"},
+        {"id": "D-2", "text": "The data flow names every form and integration the pages need"},
+        {"id": "D-3", "text": "Hosting, deployment and risks are explicit"},
+        {"id": "D-4", "text": "Consistent with the PRD: every requirement has a component"},
+        {"id": "D-5", "text": "No invented facts: every fact comes from the brief or the Requester's answers or the PRD, or is labelled \"Assumption:\"; the evidence quotes each unlabelled claim not in them"}
+      ],
+      "check_types": ["facts-present", "heading-present", "section-not-empty", "ids-unique"],
+      "done": "Done: the HLD is workable. Every done-when item, rubric item and necessary condition passes.",
+      "builder": "templates/hld/builder.md",
+      "intake": "templates/hld/intake.md",
+      "charter_format": "templates/hld/charter.txt",
+      "plan": "templates/hld/plan.md",
+      "atom_rules": "templates/hld/atom_rules.md",
+      "mock": {"charter": "mock_prd_charter", "section": "mock_hld_section", "atom": {"Components": "C"}},
       "deliverable": true,
       "triggers": [
         "\\bHLDs?\\b|\\bhigh[- ]level\\s+design\\b|\\barchitecture\\s+overview\\b"

@@ -2381,7 +2381,7 @@ def output_type(name=None):
     return t if t in OUTPUTS else "website"
 
 
-GENERIC_TYPES = ("website", "prd")      # the types j2_types reads from data under J2_GENERIC=1 (docs/remove-hardcoding-plan.md)
+GENERIC_TYPES = ("website", "prd", "hld")      # the types j2_types reads from data under J2_GENERIC=1 (docs/remove-hardcoding-plan.md)
 
 
 def output_def(kind):
