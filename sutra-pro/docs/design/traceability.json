@@ -1,14 +1,14 @@
 {
  "schema": "traceability/1",
  "counts": {
-  "decisions": 155,
+  "decisions": 156,
   "packages": 78,
   "endpoints": 41,
   "chips": 15,
   "steps": 7,
   "owner_rules": 7
  },
- "max_decision": 155,
+ "max_decision": 156,
  "owner_rules": [
   {
    "rule": "This is a new app, no relation to the old sutra-ui. Its design is the J2 prototype's design.",
@@ -344,7 +344,8 @@
     "D152",
     "D153",
     "D154",
-    "D155"
+    "D155",
+    "D156"
    ],
    "modules": [
     "docs/DECISIONS.md",
@@ -3409,6 +3410,16 @@
    "status": "implemented",
    "superseded_by": [],
    "diagram": "label \"Sutra's sheet keeps panels and motion\", pill on band:EXPERIENCE."
+  },
+  {
+   "id": "D156",
+   "title": "The stop ladder signals a process only after it has identified it (amends D23 and D24)",
+   "packages": [
+    "ORCH-6"
+   ],
+   "status": "implemented",
+   "superseded_by": [],
+   "diagram": "label \"stop ladder: identity first\", pill on band:DEPARTMENT RUNTIME."
   }
  ],
  "packages": [

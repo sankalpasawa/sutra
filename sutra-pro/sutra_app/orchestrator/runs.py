@@ -4,6 +4,7 @@
     pid = await launcher.start(spec, run_dir)    # python -m sutra_app.engine --run-dir <dir>, new session, own stdout/stderr files
     n = launcher.send(run_dir, {"kind": "user", "text": "..."})      # appends to inbox.jsonl, returns the line number
     await launcher.stop(run_dir, pid)            # THE stop ladder: stop line, STOP_GRACE_S, SIGTERM to the group, TERM_GRACE_S, SIGKILL
+                                                 # (a pid this server did not spawn is signalled only when its command line is the engine's run, D156)
     launcher.alive(pid)                          # the Process handle when this server spawned the pid, else os.kill(pid, 0)
 
     RunWatcher(projector, tasks, launcher, ...)  # one asyncio task per live run: drain events.jsonl every watch_ms, detect a crash
@@ -37,7 +38,7 @@ from sutra_app.orchestrator.pathwords import machine_roots, shorten
 __all__ = [
     "STOP_GRACE_S", "TERM_GRACE_S", "SILENT_AFTER_S", "STDERR_TAIL_BYTES", "EXTRA_PASS_NAMES", "child_environment", "RunLauncher",
     "ProcessLauncher", "RunWatcher", "ReconcileReport", "reconcile", "run_has_ended", "stderr_tail", "inbox_line_count", "append_inbox",
-    "LIVE_FILE", "LIVE_SCHEMA", "live_partials",
+    "LIVE_FILE", "LIVE_SCHEMA", "live_partials", "is_engine_command",
 ]
 
 log = logging.getLogger(__name__)
@@ -185,6 +186,15 @@ def stderr_tail(run_dir: Path, limit: int = STDERR_TAIL_BYTES) -> str:
         return ""
 
 
+def is_engine_command(command: str, module: str, run_dir: Path) -> bool:
+    """True when `command` (what `ProcessLauncher.command_of` read for a pid) is the engine `module` started for the run folder `run_dir`:
+    `<module> --run-dir <run folder>` is in it. This is the identity of the start-up pass (a silent pid) and of the stop ladder (a pid this
+    server did not spawn), said once so the two cannot differ (D24, D156). Double quotes are left out on both sides: Windows shows an
+    argument with a space in it in quotes, a POSIX `ps` never does."""
+    wanted = f"{module} --run-dir {run_dir}"
+    return wanted.replace('"', "") in command.replace('"', "")
+
+
 # ---- the launcher ------------------------------------------------------------------------------------------------------------
 
 class RunLauncher(Protocol):
@@ -262,7 +272,7 @@ class ProcessLauncher:
 
     @staticmethod
     def command_of(pid: int | None) -> str:
-        """`ps -p <pid> -o command=` (empty when there is no such process): the identity check of the reconcile pass."""
+        """`ps -p <pid> -o command=` (empty when there is no such process): the identity check of the reconcile pass and of the stop ladder."""
         if not pid or pid < 1:
             return ""
         if oslayer.IS_WINDOWS:
@@ -272,6 +282,16 @@ class ProcessLauncher:
         except (OSError, subprocess.SubprocessError):
             return ""
         return done.stdout.strip() if done.returncode == 0 else ""
+
+    async def _is_engine(self, pid: int, run_dir: Path) -> bool:
+        """Is `pid` one of this launcher's engine processes, the one of `run_dir`? A pid this server spawned is: its Process handle is the proof
+        (the number cannot go to another program while the handle has not been reaped). A pid an earlier server recorded (a task re-adopted
+        after a restart) is only when its command line is this engine's run of that folder (`is_engine_command`): after a reboot or a crash the
+        number may belong to any program, and the ladder signals a whole process group (D156). The command is read on a worker thread: on
+        Windows it is a PowerShell call."""
+        if pid in self._handles:
+            return True
+        return is_engine_command(await asyncio.to_thread(self.command_of, pid), self.module, run_dir)
 
     def _signal_group(self, pid: int, sig: int) -> None:
         if oslayer.IS_WINDOWS:
@@ -304,9 +324,14 @@ class ProcessLauncher:
 
     async def stop(self, run_dir: Path, pid: int | None, *, stop_grace: float | None = None, term_grace: float | None = None) -> None:
         """THE stop ladder (D23): append `{"kind":"stop"}` to the inbox, wait up to STOP_GRACE_S for `run.ended` (or the exit),
-        send SIGTERM to the process group, wait TERM_GRACE_S, then SIGKILL (12 s at most with the defaults)."""
+        send SIGTERM to the process group, wait TERM_GRACE_S, then SIGKILL (12 s at most with the defaults). A pid this server did not
+        spawn is looked at first (D156): when its command line is not this engine's run of `run_dir` it is another program's now, so it is
+        treated as gone: nothing is written to the inbox, nothing is signalled, nothing is waited for."""
         run_dir = Path(run_dir)
         if not self.alive(pid):
+            return
+        if not await self._is_engine(pid, run_dir):
+            log.warning("process %s is not the engine of %s: the stop ladder did not signal it", pid, run_dir)
             return
         stop_s = stop_grace if stop_grace is not None else (self._stop_grace if self._stop_grace is not None else STOP_GRACE_S)
         term_s = term_grace if term_grace is not None else (self._term_grace if self._term_grace is not None else TERM_GRACE_S)
@@ -568,7 +593,7 @@ async def reconcile(*, tasks: Any, projector: Any, watcher: Any, launcher: Any, 
         else:
             run_dir = await run_blocking(tasks.run_dir_of, row)
             command = getattr(launcher, "command_of", lambda pid: "")(row.pid)
-            if f"{ENGINE_MODULE} --run-dir {run_dir}" in command:
+            if is_engine_command(command, ENGINE_MODULE, run_dir):
                 await launcher.stop(run_dir, row.pid)
                 report.signalled.append(task_id)
             else:
