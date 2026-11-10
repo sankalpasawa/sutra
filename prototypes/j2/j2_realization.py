@@ -17,6 +17,7 @@ import os
 import re
 import time
 
+import j2_types
 import llm
 
 HERE = os.path.dirname(os.path.abspath(__file__))
@@ -146,9 +147,10 @@ def _cycle(wfs):
     return next((n for n in deps if state.get(n) is None and visit(n)), None)
 
 
-def plan_faults(p, goal, items=None):
+def plan_faults(p, goal, items=None, types=None):
     """What a plan breaks: [] when it follows the Realization and Certainty sections. Each fault names what to fix.
-    items: the active charter numbers (a change); by default done-when positions 1 to n."""
+    items: the active charter numbers (a change); by default done-when positions 1 to n. types (J2_GENERIC=1, before the
+    charter): the type list the deliverables are checked against."""
     out = []
     for k in ("factors", "unplaced", "stages", "workflows", "open_facts"):
         if not isinstance(p.get(k), list):
@@ -162,7 +164,7 @@ def plan_faults(p, goal, items=None):
     if not factors:
         out.append("factors is empty: list what is consequential to the output")
     if not wfs:
-        return out + ["workflows is empty"]
+        return out + ["workflows is empty"] + (deliverable_faults(p, types) if types is not None else [])
 
     sid = [s.get("id") for s in stages]
     for x in sorted({x for x in sid if sid.count(x) > 1}, key=str):
@@ -265,7 +267,50 @@ def plan_faults(p, goal, items=None):
         if not isinstance(o, dict) or o.get("workflow") not in wnames or not isinstance(o.get("blocking"), bool):
             out.append(f"open fact {o!r}: needs fact, workflow (a workflow in this plan), blocking (true|false), "
                        "handling")
-    return out + certainty_faults(p)
+    return out + certainty_faults(p) + (deliverable_faults(p, types) if types is not None else [])
+
+
+# ---- deliverables (J2_GENERIC=1, docs/remove-hardcoding-plan.md step 3): before the charter, Adaptation chooses which
+# output types the run builds and in what order; code only checks the choice against artifacts/types.json.
+
+def type_list(path=None):
+    """The buildable types: name, label, form, file and needs (the types it is written from, which must be built
+    first: a document's depends_on). A page reads the documents built before it as its blueprint and needs none."""
+    with open(path or j2_types.TYPES_PATH, encoding="utf-8") as f:
+        ts = [t for t in json.load(f)["types"] if t.get("kind") == "type" and t.get("deliverable")]
+    return [{"name": t["name"], "label": t["label"], "form": t["form"], "file": t.get("file"),
+             "needs": list(t.get("depends_on") or []) if t["form"] == "doc" else [],
+             "after": list(t.get("depends_on") or [])} for t in ts]
+
+
+def deliverables(p):
+    """The chosen type names, in build order ({"type": name} entries or bare names)."""
+    return [str(d.get("type") if isinstance(d, dict) else d) for d in lst((p or {}).get("deliverables"))]
+
+
+def deliverable_faults(p, types):
+    """What the choice breaks: no deliverable, a name not in the type list, a needed type left out or put after the
+    type that needs it, a workflow serving no deliverable, a deliverable no workflow serves (R4)."""
+    by = {t["name"]: t for t in types}
+    names = deliverables(p)
+    if not names:
+        return ["deliverables is empty: choose at least one type from TYPES"]
+    out = [f"deliverable {n!r} is not a type in TYPES ({', '.join(by)})" for n in names if n not in by]
+    out += [f"deliverable {n} appears twice" for n in sorted({n for n in names if names.count(n) > 1})]
+    for i, n in enumerate(names):
+        for d in by.get(n, {}).get("after", []):
+            if d in by[n]["needs"] and d not in names:
+                out.append(f"deliverable {n} needs {d} first, which is not in deliverables")
+            elif d in names and names.index(d) > i:
+                out.append(f"deliverable {n} is written from {d}: put {d} before it")
+    serves = {}
+    for w in lst(p.get("workflows")):
+        if isinstance(w, dict):
+            serves.setdefault(w.get("serves"), []).append(w.get("name"))
+    out += [f"workflow {w}: serves {s!r}, which is not in deliverables" for s, ws in serves.items() if s not in names
+            for w in ws]
+    out += [f"R4: deliverable {n} has no workflow that serves it" for n in names if n in by and n not in serves]
+    return out
 
 
 # ---- the judge's checklist (confidence-judge.md): yes/no answers, code computes the score
@@ -301,6 +346,11 @@ QUESTIONS = (            # id, check, weight, question
 CHANGE_QUESTIONS = (     # asked only when the charter changed (j2_change): the owner of a changed item must fit it
     ("G0", "fits", 0.25, "The changed done-when items listed for it under CHANGE are this workflow's own job: the same "
                          "kind of thinking and output as its goal, not a second job added on."),
+)
+DELIVERABLE_QUESTIONS = (  # asked only when the plan chooses the deliverables (J2_GENERIC=1, before the charter)
+    ("T1", "deliverables", 0.25, "R4: the deliverable it serves earns its place: the brief asks for that type, or a "
+                                 "chosen type needs it first; when no type fits the brief exactly, it is the closest "
+                                 "type and its why says so."),
 )
 ITEM_WEIGHT, FACTOR_WEIGHT = 0.10, 0.08
 JUDGE_ANSWERS = ("yes", "no", "n/a")
@@ -359,10 +409,13 @@ def question_spec(p, checklist, names=None):
     return spec
 
 
-def judge_spec(p, checklist, names=None, change=None):
+def judge_spec(p, checklist, names=None, change=None, types=None):
     """question_spec, plus on a change ({workflow: the charter numbers it is asked to take on}) G0 and the K questions
-    of those items for each of those workflows."""
+    of those items for each of those workflows; with types (choosing the deliverables), T1 for every workflow."""
     spec = question_spec(p, checklist, names)
+    if types is not None:
+        for q in spec.values():
+            q.update({i: (c, wt, t) for i, c, wt, t in DELIVERABLE_QUESTIONS})
     for n, its in (change or {}).items():
         if n in spec:
             spec[n].update({i: (c, wt, t) for i, c, wt, t in CHANGE_QUESTIONS})
@@ -403,7 +456,8 @@ def settle(a, spec):
     "no" when a critical question failed or its failures weigh 0.15 or more; any such check keeps the score below
     the gate. weakest is the check that lost the most."""
     ans = (a or {}).get("a") if isinstance((a or {}).get("a"), dict) else {}
-    lost, critical, failed = {k: 0.0 for k in CHECKS}, set(), []
+    keys = CHECKS + tuple(dict.fromkeys(c for c, _, _ in spec.values() if c not in CHECKS))
+    lost, critical, failed = {k: 0.0 for k in keys}, set(), []
     for i, (check, weight, text) in spec.items():
         if _answer(ans, i) in ("yes", "n/a"):
             continue
@@ -411,12 +465,12 @@ def settle(a, spec):
         if weight >= CRITICAL:
             critical.add(check)
         failed.append((weight, i, _note(ans, i) or f"{i}: {text}"))
-    checks = {k: "no" if k in critical or lost[k] >= 0.15 - 1e-9 else "partly" if lost[k] else "yes" for k in CHECKS}
+    checks = {k: "no" if k in critical or lost[k] >= 0.15 - 1e-9 else "partly" if lost[k] else "yes" for k in keys}
     score = round(max(0.0, BASE - sum(lost.values())), 2)
     capped = any(v == "no" for v in checks.values()) and score >= THRESHOLD
     if capped:
         score = round(THRESHOLD - 0.01, 2)
-    weakest = max(CHECKS, key=lambda k: lost[k]) if any(lost.values()) else None
+    weakest = max(keys, key=lambda k: lost[k]) if any(lost.values()) else None
     return {"score": score, "weakest": weakest, "capped": capped, "checks": checks,
             "missing": [note for _, _, note in sorted(failed, key=lambda x: -x[0])],
             "failed": [i for _, i, _ in sorted(failed, key=lambda x: -x[0])],
@@ -484,7 +538,21 @@ PLAN_FMT = """{
  "open_facts": [{"fact": str, "workflow": workflow name, "blocking": bool, "handling": str}],
  "not_ready": []
 }"""
-REVISE_FMT = PLAN_FMT[:-2] + ',\n "changes": [{"workflow": str, "weakest": str, "remedy": str, "axis": "ask"|"research:find"|"research:method"|"certainty:analyze"|"certainty:experiment"|"certainty:stabilize"|"certainty:reread"|"realization:add"|"realization:deepen"|"realization:split"|"rewrite"}]\n}'
+CHANGES_FMT = ',\n "changes": [{"workflow": str, "weakest": str, "remedy": str, "axis": "ask"|"research:find"|"research:method"|"certainty:analyze"|"certainty:experiment"|"certainty:stabilize"|"certainty:reread"|"realization:add"|"realization:deepen"|"realization:split"|"rewrite"}]\n}'
+REVISE_FMT = PLAN_FMT[:-2] + CHANGES_FMT
+DELIVERABLES_FMT = (',\n "deliverables": [{"type": str (a type name from TYPES), "why": str (one clause; when no type fits '
+                    'the brief exactly, name the closest and say so)}] (build order: a type after every type it needs)\n}')
+
+
+def plan_fmt(types=None, revise=False):
+    """PLAN_FMT (REVISE_FMT), with types: plus deliverables, and the type each workflow serves."""
+    f = PLAN_FMT
+    if types is not None:
+        f = f.replace('"inputs_from": [workflow name],', '"inputs_from": [workflow name], "serves": str (the '
+                      'deliverable type it builds),')[:-2] + DELIVERABLES_FMT
+    return f[:-2] + CHANGES_FMT if revise else f
+
+
 JUDGE_FMT = """{"answers": [{"workflow": str, "a": {"<question id>": {"answer": "yes"|"no"|"n/a", "note": str (required for no: what is missing; start with ask:, research: or probe: when it is missing information)}}, "compare": "better"|"same"|"worse"|null (only for workflows listed under REVISED)}]}"""
 CHECKLIST_FMT = """{"items": [{"item": int (done-when number), "question": str}]}"""
 EDIT_FMT = """{"workflow": {the edited workflow, with the same keys as the plan's workflows}, "docs": [name of a planning workflow in the plan whose written decision must change first]}"""
@@ -509,11 +577,15 @@ def adaptation_part(name):
     return m.group(1).strip() if m else ""
 
 
+DELIVERABLES_PART = re.compile(r"\s*" + PART.format("DELIVERABLES"), re.S)      # J2_GENERIC=1 only
+
+
 def planner_system():
+    part = adaptation_part("PLANNING")
     return ("You are Adaptation in J2, the department's planner. Identity has set the goal; you decide how it becomes "
             "real. Follow the planning part of adaptation.md below exactly: the Realization section says where to cut, "
             "the Certainty section what kind of cut each workflow gets. Reply with one JSON object and nothing else.\n\n"
-            + adaptation_part("PLANNING").replace("<!-- STAGE TABLE -->", stage_table()))
+            + (part if j2_types.enabled() else DELIVERABLES_PART.sub("", part)).replace("<!-- STAGE TABLE -->", stage_table()))
 
 
 def judge_system():
@@ -538,20 +610,37 @@ def charter_text(goal, by_number=False):
     return "\n".join(lines)
 
 
+def charter_block(goal, by_number=False):
+    """The charter as the planner and the judge read it; before the charter (choosing the deliverables), the brief."""
+    if goal.get("brief"):
+        return ("BRIEF (the Requester's words and answers so far; Identity writes the charter for each chosen type "
+                f"afterwards):\n{goal.get('statement', '')}")
+    return f"CHARTER (from Identity):\n{charter_text(goal, by_number)}"
+
+
+def types_text(types):
+    """The type list the planner chooses deliverables from."""
+    return ("TYPES you can build (needs: the types it is written from, built first; after: types it reads when they are "
+            "built, so they go before it):\n" + "\n".join(json.dumps(t, ensure_ascii=False) for t in types)
+            + "\nChoose the deliverables first: the types this brief needs, in build order. Every workflow serves one "
+            "deliverable, and every deliverable is served by at least one workflow.")
+
+
 def _web_note(web):
     return ("WEB ACCESS: research workflows in this run can read outside sources." if web else
             "WEB ACCESS: none in this run. Do not plan research workflows; keep such factors general and mark them "
             "unverified in why.")
 
 
-def plan_task(goal, web, extra=""):
-    return (f"CHARTER (from Identity):\n{charter_text(goal)}\n\n{_web_note(web)}{extra}\n\nPlan how this goal becomes real. "
+def plan_task(goal, web, extra="", types=None):
+    return (f"{charter_block(goal)}\n\n{_web_note(web)}{extra}"
+            + (f"\n\n{types_text(types)}" if types is not None else "") + "\n\nPlan how this goal becomes real. "
             "Work through the Realization section's Steps 1 to 3: factors, stages, then workflows inside the stages, each with "
             "its certainty zone. Every done-when item is delivered by exactly one workflow (or deferred). A separate "
-            f"judge will score each workflow afterwards; you don't score.\n\nReply format:\n{PLAN_FMT}")
+            f"judge will score each workflow afterwards; you don't score.\n\nReply format:\n{plan_fmt(types)}")
 
 
-def revise_task(goal, web, plan, low, extra="", only=None):
+def revise_task(goal, web, plan, low, extra="", only=None, types=None):
     """only (a change's one small fix): revise just these workflows, keeping their names; the charter by number."""
     if only is not None:
         low = {n: s for n, s in low.items() if n in only}
@@ -563,10 +652,11 @@ def revise_task(goal, web, plan, low, extra="", only=None):
            "Revise only the workflows above, as one small fix (the Realization section's Step 5): apply the remedy for "
            "each one's weakest check without splitting it, and keep its name. Keep every other workflow exactly as it "
            "is, with the same name.")
-    return (f"CHARTER (from Identity):\n{charter_text(goal, only is not None)}\n\n{_web_note(web)}{extra}\n\nYOUR CURRENT PLAN:\n"
+    return (f"{charter_block(goal, only is not None)}\n\n{_web_note(web)}{extra}"
+            + (f"\n\n{types_text(types)}" if types is not None else "") + "\n\nYOUR CURRENT PLAN:\n"
             f"{json.dumps(plan, ensure_ascii=False)}\n\nTHE JUDGE SCORED THESE WORKFLOWS BELOW {THRESHOLD:.2f}:\n"
             + "\n".join(lines) + f"\n\n{how} Name each change in changes.\n\nReply with the full plan in this "
-            f"format:\n{REVISE_FMT}")
+            f"format:\n{plan_fmt(types, revise=True)}")
 
 
 def edit_task(goal, plan, owner, intents):
@@ -670,7 +760,7 @@ def judge_task(goal, plan, spec, revised, change=None):
         rev += ("\n\nCHANGE: the charter changed. Each workflow below was edited to take on the done-when items listed "
                 "for it (charter numbers); judge it as written now. G0 asks whether those items are its job at all:\n"
                 + json.dumps(change))
-    return (f"CHARTER (from Identity):\n{charter_text(goal, change is not None)}\n\n"
+    return (f"{charter_block(goal, change is not None)}\n\n"
             f"THE PLAN:\n{json.dumps(plan, ensure_ascii=False)}\n\n"
             f"QUESTIONS, per workflow (answer every id):\n{json.dumps(qs, ensure_ascii=False)}{rev}\n\n"
             f"Reply format:\n{JUDGE_FMT}")
@@ -697,15 +787,15 @@ class Session:
         self.log(f"  {who}: {dt:.0f}s" + ("" if reply is not None else " (reply was not JSON)"))
         return reply
 
-    def plan(self, goal, task, mock):
+    def plan(self, goal, task, mock, types=None):
         """A plan, sent back once with its faults named. Returns (plan, faults still open)."""
         p = self.ask("adaptation", planner_system(), task, mock) or {}
-        faults = plan_faults(p, goal)
+        faults = plan_faults(p, goal, types=types)
         if faults:
             self.log(f"  plan faults: {len(faults)}; sent back once")
             p2 = self.ask("adaptation", planner_system(), task + "\n\nTHE PLAN CHECK FAILED:\n- " + "\n- ".join(faults)
                           + "\nFix exactly these and send the whole plan again.", mock) or {}
-            f2 = plan_faults(p2, goal)
+            f2 = plan_faults(p2, goal, types=types)
             if len(f2) <= len(faults) and p2.get("workflows"):
                 p, faults = p2, f2
         return p, faults
@@ -727,13 +817,13 @@ class Session:
                 got, faults = got2, f2
         return {n: settle(got.get(n), q) for n, q in spec.items()}, faults
 
-    def judge(self, goal, plan, checklist, mock, previous=None, names=None, change=None):
+    def judge(self, goal, plan, checklist, mock, previous=None, names=None, change=None, types=None):
         """Scores for every workflow. previous: last round's {"plan", "scores"}. A revised workflow that is not better
         than before can't score higher than before; a workflow within BORDER of the gate is judged again and the
         lower result counts. names: judge only these workflows. change (a charter change, j2_change): {workflow: the
         charter numbers it is asked to take on}; those workflows also get G0 and the K questions of those items, and
         the charter is shown by charter number ({} for numbers alone)."""
-        spec = judge_spec(plan, checklist, names, change)
+        spec = judge_spec(plan, checklist, names, change, types)
         revised, kept = {}, {}
         if previous:
             old = {w.get("name"): w for w in lst(previous["plan"].get("workflows")) if isinstance(w, dict)}
@@ -766,16 +856,18 @@ class Session:
         return scores, faults
 
 
-def plan_goal(goal, web=True, out_dir=None, log=print, mocks=None, extra=""):
+def plan_goal(goal, web=True, out_dir=None, log=print, mocks=None, extra="", types=None):
     """The planning half of realization for one charter. mocks: {"checklist", "plan", "revise", "judge"} callables for
     offline runs (plan and revise take the round; judge takes the round, the plan and the question spec), used only
-    when llm.MOCK. extra: rules of the system the plan runs in (J2 passes its own), added to Adaptation's task."""
+    when llm.MOCK. extra: rules of the system the plan runs in (J2 passes its own), added to Adaptation's task.
+    types (J2_GENERIC=1): the plan also chooses the deliverables from this type list, checked by code and judged (T1);
+    goal is then the brief ({"statement", "brief": True}), with no done-when items and so no item questions."""
     mocks = mocks or default_mocks(goal)
     s = Session(log)
-    checklist = s.checklist(goal, lambda: mocks["checklist"]())
-    plan, faults = s.plan(goal, plan_task(goal, web, extra), lambda: mocks["plan"](0))
+    checklist = [] if goal.get("brief") else s.checklist(goal, lambda: mocks["checklist"]())
+    plan, faults = s.plan(goal, plan_task(goal, web, extra, types), lambda: mocks["plan"](0), types)
     rounds = [{"round": 0, "plan": plan, "plan_faults": faults, "changes": []}]
-    scores, jf = s.judge(goal, plan, checklist, lambda spec: mocks["judge"](0, plan, spec))
+    scores, jf = s.judge(goal, plan, checklist, lambda spec: mocks["judge"](0, plan, spec), types=types)
     rounds[0].update(scores=scores, judge_faults=jf)
     history = {n: [sc["score"]] for n, sc in scores.items()}
     for rnd in range(1, MAX_ROUNDS + 1):
@@ -787,13 +879,13 @@ def plan_goal(goal, web=True, out_dir=None, log=print, mocks=None, extra=""):
         if not low:
             break
         log(f"  round {rnd}: {len(low)} below {THRESHOLD:.2f}: {', '.join(low)}")
-        new, faults = s.plan(goal, revise_task(goal, web, plan, low, extra), lambda: mocks["revise"](rnd))
+        new, faults = s.plan(goal, revise_task(goal, web, plan, low, extra, types=types), lambda: mocks["revise"](rnd), types)
         if not new.get("workflows"):
             log("  the revision came back empty; keeping the last plan")
             break
         previous = {"plan": plan, "scores": scores}
         plan = new
-        scores, jf = s.judge(goal, plan, checklist, lambda spec: mocks["judge"](rnd, plan, spec), previous)
+        scores, jf = s.judge(goal, plan, checklist, lambda spec: mocks["judge"](rnd, plan, spec), previous, types=types)
         for n, sc in scores.items():
             history.setdefault(n, []).append(sc["score"])
         rounds.append({"round": rnd, "plan": plan, "plan_faults": faults, "changes": lst(new.get("changes")),
@@ -816,6 +908,7 @@ def plan_goal(goal, web=True, out_dir=None, log=print, mocks=None, extra=""):
         "waiting_on_identity": questions,
         "stages": stages, "plan_confidence": plan_conf, "plan_faults": rounds[-1]["plan_faults"],
         "calls": s.calls, "seconds": round(s.seconds, 1),
+        **({"deliverables": deliverables(plan)} if types is not None else {}),
     }
     if out_dir:
         os.makedirs(out_dir, exist_ok=True)
@@ -1067,6 +1160,28 @@ def mock_judge(spec, fail=None, note="no step for the goal", compare=None):
         {"workflow": n, "a": {i: {"answer": "no", "note": note} if i in fail.get(n, ()) else {"answer": "yes", "note": ""}
                               for i in q}, "compare": compare}
         for n, q in spec.items()]})
+
+
+def deliverable_mocks(goal, names):
+    """Choosing the deliverables offline: names as the choice, one build workflow per type (each reading the one before),
+    and a judge that passes every workflow. names may be a callable taking the call number (0, 1, ...), so a test can
+    give a first answer that fails the check and a revised one."""
+    n = {"i": 0}
+
+    def plan(rnd):
+        got = names(n["i"]) if callable(names) else names
+        n["i"] += 1
+        p = mock_plan(goal)
+        p["stages"] = [dict(p["stages"][1], owns_factors=["the goal"], inputs_from=[])]
+        p["factors"][0]["stages"] = ["build"]
+        p["workflows"] = [{**{k: v for k, v in mock_plan({"done_when": ["x"]})["workflows"][1].items()},
+                           "name": f"Build {t}", "goal": f"The {t} is built", "done_test": f"The {t} passes its checks",
+                           "delivers": [], "serves": t, "inputs_from": [f"Build {got[i - 1]}"] if i else []}
+                          for i, t in enumerate(got)]
+        p["deliverables"] = [{"type": t, "why": ""} for t in got]
+        return json.dumps(p)
+    return {"plan": plan, "revise": plan, "checklist": lambda: json.dumps({"items": []}),
+            "judge": lambda rnd, p, spec: mock_judge(spec)}
 
 
 def default_mocks(goal):
