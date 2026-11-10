@@ -370,9 +370,9 @@ test("tab() turns a name that is not a string into a string", () => {
 // ------------------------------------------------------------------------------------------------------------------
 const J2_EXACT = ["/api/state", "/api/runs", "/api/runlist", "/api/changes", "/api/call", "/api/preview", "/api/docs", "/api/map", "/api/plan",
   "/api/plan-map", "/api/library", "/api/catalog", "/api/run-templates", "/api/artifacts", "/api/artifacts/tree", "/api/artifacts/groups",
-  "/api/artifact", "/api/agent", "/api/activity", "/api/code", "/api/story", "/api/board", "/api/audits", "/api/refs", "/api/say", "/api/ask",
-  "/api/output", "/api/reset", "/api/playbooks/clear", "/api/lessons/clear"];
-const J2_PREFIXES = ["/api/library/", "/site/", "/file/", "/shot/"];
+  "/api/artifact", "/api/agent", "/api/activity", "/api/record", "/api/code", "/api/story", "/api/board", "/api/audits", "/api/refs", "/api/say",
+  "/api/ask", "/api/output", "/api/settings", "/api/reset", "/api/playbooks/clear", "/api/lessons/clear", "/view"];
+const J2_PREFIXES = ["/api/library/", "/site/", "/file/", "/shot/", "/doc/"];
 const ORCHESTRATOR = ["/api/chart", "/api/chart/changes", "/api/chart/changes/chg-0002/decision", "/api/graph", "/api/graph/nodes/web.identity",
   "/api/chats", "/api/chats/cs_org", "/api/chats/cs_org/messages", "/api/chats/cs_org/retry", "/api/departments", "/api/departments/web",
   "/api/departments/web/runs", "/api/needs-you", "/api/atoms", "/api/atoms/log", "/api/atoms/a-77aa10c2e9-03", "/api/events", "/api/health",
@@ -380,10 +380,11 @@ const ORCHESTRATOR = ["/api/chart", "/api/chart/changes", "/api/chart/changes/ch
   "/api/connectors/codex/sign-in/abc", "/api/schemas/atom/1", "/api/schemas/validate", "/api/tasks", "/api/tasks/tsk_a1b2c3d4e5f6",
   "/api/tasks/tsk_a1b2c3d4e5f6/stop", "/api/usage", "/api/usage/summary", "/api/runs/j2-20261104-100004-7f3a", "/openapi.json"];
 
-test("J2_PATHS lists the 30 exact pathnames and the four prefixes of j2_server.py", () => {
+test("J2_PATHS lists the 33 exact pathnames (32 under /api/ and the studio's /view) and the five prefixes of j2_server.py", () => {
   const { J2_PATHS } = load(browser()).SutraCtx;
-  assert.equal(J2_EXACT.length, 30);
-  assert.equal(new Set(J2_EXACT).size, 30);
+  assert.equal(J2_EXACT.length, 33);
+  assert.equal(new Set(J2_EXACT).size, 33);
+  assert.equal(J2_EXACT.filter(p => p.startsWith("/api/")).length, 32);
   assert.deepEqual(plain(J2_PATHS.exact).sort(), [...J2_EXACT].sort());
   assert.deepEqual(plain(J2_PATHS.prefixes), J2_PREFIXES);
   assert.ok(Object.isFrozen(J2_PATHS) && Object.isFrozen(J2_PATHS.exact) && Object.isFrozen(J2_PATHS.prefixes));
@@ -391,11 +392,12 @@ test("J2_PATHS lists the 30 exact pathnames and the four prefixes of j2_server.p
 
 // D140: /api/runlist and /api/changes were the two routes of patch P13 (a list of their own); J2's server has them now, so they are exact names like
 // the rest and J2_PATHS has no `patched` list any more
-test("J2_PATHS has no patched list: the two former P13 routes and the five new ones are plain J2 routes that get dept", () => {
+test("J2_PATHS has no patched list: the two former P13 routes and the eight newer ones are plain J2 routes that get dept", () => {
   const { J2_PATHS } = load(browser()).SutraCtx;
   assert.equal(J2_PATHS.patched, undefined);
   assert.deepEqual(Object.keys(J2_PATHS).sort(), ["exact", "matches", "prefixes"]);
-  for (const p of ["/api/runlist", "/api/changes", "/api/plan-map", "/api/catalog", "/api/artifacts/groups", "/api/activity", "/api/ask"]) {
+  for (const p of ["/api/runlist", "/api/changes", "/api/plan-map", "/api/catalog", "/api/artifacts/groups", "/api/activity", "/api/ask",
+    "/api/record", "/api/settings", "/view"]) {
     assert.equal(J2_PATHS.matches(p), true, p);
     assert.ok(J2_PATHS.exact.includes(p), p);
     for (const other of [p + "/", p + "x", p.slice(0, -1), p.toUpperCase()]) assert.equal(J2_PATHS.matches(other), false, other);
@@ -415,12 +417,14 @@ test("J2_PATHS matches whole pathnames exactly for J2's /api/ paths", () => {
   }
 });
 
-test("J2_PATHS matches by prefix only /api/library/, /site/, /file/ and /shot/", () => {
+test("J2_PATHS matches by prefix only /api/library/, /site/, /file/, /shot/ and the studio's /doc/", () => {
   const { J2_PATHS } = load(browser()).SutraCtx;
   for (const p of ["/api/library/", "/api/library/x/y/z/v1", "/api/library/website/hero/plain/v3", "/site/", "/site/latest", "/site/v2",
-    "/file/prd.md", "/file/prd.docx", "/shot/1", "/shot/site-v1.png"]) assert.equal(J2_PATHS.matches(p), true, p);
+    "/file/prd.md", "/file/prd.docx", "/shot/1", "/shot/site-v1.png", "/doc/", "/doc/prd", "/doc/hld", "/doc/lld"]) assert.equal(J2_PATHS.matches(p), true, p);
   for (const p of ["/api/libraryx", "/api/libraries/", "/sites/x", "/site", "/file", "/files/x", "/shot", "/shots/1", "/x/site/latest",
-    "/api/site/latest", "/api/file/x", "/ui/site/x"]) assert.equal(J2_PATHS.matches(p), false, p);
+    "/api/site/latest", "/api/file/x", "/ui/site/x", "/doc", "/docs/prd", "/x/doc/prd", "/api/doc/prd", "/ui/doc/prd", "/views", "/view/x", "/viewer"]) {
+    assert.equal(J2_PATHS.matches(p), false, p);
+  }
 });
 
 test("J2_PATHS matches none of the orchestrator's, the library's or the connectors' routes", () => {
@@ -439,7 +443,7 @@ test("J2_PATHS agrees with the routes of j2_server.py in the extraction of proto
   const server = checkout && path.join(checkout, "j2_server.py");
   if (!server || !fs.existsSync(server)) return t.skip("set SUTRA_J2_CHECKOUT to an extraction of prototypes/j2 to compare the route list");
   const text = fs.readFileSync(server, "utf8");
-  const exact = new Set([...text.matchAll(/(?:u\.path|self\.path) == "(\/api\/[^"]+)"/g)].map(m => m[1]));
+  const exact = new Set([...text.matchAll(/(?:u\.path|self\.path) == "(\/api\/[^"]+|\/view)"/g)].map(m => m[1]));       // /vendor/d3.min.js is J2's own copy of d3: the app serves it under /ui/vendor/
   const prefixes = new Set([...text.matchAll(/u\.path\.startswith\("([^"]+)"\)/g)].map(m => m[1]));
   const { J2_PATHS } = load(browser()).SutraCtx;
   assert.deepEqual([...exact].sort(), plain(J2_PATHS.exact).sort());

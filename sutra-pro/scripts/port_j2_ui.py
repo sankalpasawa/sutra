@@ -15,13 +15,13 @@ file would be ported) into a new, empty folder:
 `--j2` is always such an extraction. `--commit` names the commit it was taken from: a `git archive` folder is not a repository, so
 the script cannot ask git; without the flag it asks git about the folder and says "unknown" when that fails.
 
-The page is J2's `j2_ui.html` with 28 edits (E1 to E13, E19 to E22; E9b and the two E2s count). Every edit is `Edit(id, old, new, count)`:
+The page is J2's `j2_ui.html` with 32 edits (E1 to E13, E19 to E22; the letters E2a to E2c, E9b and E20a to E20i count). Every edit is `Edit(id, old, new, count)`:
 `old` is a literal or a compiled regex and `count` is the number of places it must match in J2's file. Every count is checked against
 J2's own text first, so no edit anchors on another edit's output. A count that is not met means J2 changed under the port: the port
 stops, names every edit that no longer matches and writes nothing. Re-port; never hand-edit the copy.
 
 What it writes, under `sutra_app/ui/` of the repository the script lives in (or `--root`):
-    pages/j2_ui.html            the page after the 28 edits
+    pages/j2_ui.html            the page after the 32 edits
     pages/j2_ui_render.js       J2's render harness, three small changes (sutra_ctx.js runs first; d3 and its tag test move)
     pages/j2_graph_layout.js    J2's layout harness, one change (sutra_ctx.js runs first)
     static/css/j2.css           the page's `<style>` block, byte for byte (the leading newline included)
@@ -161,16 +161,20 @@ PAGE_EDITS: tuple[Edit, ...] = (
          rf'<iframe id="frame" title="\1" data-src="/site/latest" sandbox="{SANDBOX}"></iframe>', 1),
     Edit("E2b", '<iframe id="sframe" title="Your result"></iframe>',
          f'<iframe id="sframe" title="Your result" sandbox="{SANDBOX}"></iframe>', 1),
+    # E2c: the studio loads a new version into a second frame behind the first and swaps the two (their ids change places), so both get it
+    Edit("E2c", '<iframe id="sframe2" class="next" title="Your result, next version" tabindex="-1" aria-hidden="true"></iframe>',
+         f'<iframe id="sframe2" class="next" title="Your result, next version" tabindex="-1" aria-hidden="true" sandbox="{SANDBOX}"></iframe>', 1),
     # E3: d3 is served under /ui/vendor/; the relative path would resolve to /d/{dept}/vendor/
     Edit("E3", '<script src="vendor/d3.min.js"></script>', '<script src="/ui/vendor/d3.min.js"></script>', 1),
     # E4: the one place every URL-in-HTML site takes the run from now also carries the department
     Edit("E4", 'const runQ = () => viewRun ? "&run=" + encodeURIComponent(viewRun) : "";',
          'const runQ = () => (viewRun ? "&run=" + encodeURIComponent(viewRun) : "")'
          ' + (SutraCtx.dept ? "&dept=" + encodeURIComponent(SutraCtx.dept) : "");', 1),
-    # E5: a strip at the top of the Simple view (J2's title that the old edit patched is gone): back to All teams and the team's name
+    # E5: a strip at the top of the Simple view (above the start page and above the studio): back to All teams and the team's name. Its class is
+    # not `shome`: J2's studio has a button of that name in its top bar ("New project") with a generic rule for it.
     Edit("E5", _SVIEW_OPEN,
          _lines('<div id="sview">',
-                '  <div class="shome"><a href="/" id="to-home-s">← All teams</a><b id="deptchip-s"></b></div>',
+                '  <div class="steamstrip"><a href="/" id="to-home-s">← All teams</a><b id="deptchip-s"></b></div>',
                 '  <section class="sland" id="sland" aria-label="Start">'), 1),
     # E6: showTab knows the two new panes, gives them the whole work area (no title bar, like the Map) and tells SutraCtx
     Edit("E6a", _E6A_OLD, _E6A_NEW, 1),
@@ -197,9 +201,9 @@ PAGE_EDITS: tuple[Edit, ...] = (
          "</script>\n" + "".join(f'<script src="/ui/js/{name}.js"></script>\n' for name in MODULES) + "</body>", 1),
     # E13: Priorities wording (four pairs)
     *(Edit(f"E13{letter}", old, new, count) for letter, (old, new, count) in zip("abcd", E13_WORDS)),
-    # E19: the place for the per-request output choice on the landing (D139); the module output_pick.js fills it
-    Edit("E19", '    <div class="schips" id="schips"></div>\n',
-         '    <div class="soutpick" id="soutpick"></div>\n    <div class="schips" id="schips"></div>\n', 1),
+    # E19: the place for the per-request output choice on the start page (D139): first in its row of options, beside "Decide for me" (the chips are
+    # examples that fill the box, and sit inside the form next to Start); the module output_pick.js fills it
+    Edit("E19", '<div class="slrow">', '<div class="slrow"><div class="soutpick" id="soutpick"></div>', 1),
     # E20: the template library is a page of the team, not of the root (D141): every root path J2 builds goes through SutraCtx
     Edit("E20a", "`/library?q=${encodeURIComponent(t.name)}`", "`${SutraCtx.libraryPath}?q=${encodeURIComponent(t.name)}`", 1),
     Edit("E20b", "const libHref = (art, sec, name, ver) => `/library?open=", "const libHref = (art, sec, name, ver) => `${SutraCtx.libraryPath}?open=", 1),
@@ -208,6 +212,11 @@ PAGE_EDITS: tuple[Edit, ...] = (
     Edit("E20d", _LIBRARY_PATH, "SutraCtx.onLibrary()", 2),       # `setView` and the catalog's `CAT.on`
     Edit("E20e", "const back = view => `/?${viewRun", "const back = view => `${SutraCtx.pagePath}?${viewRun", 1),
     Edit("E20f", 'data-catgo="/library${viewRun', 'data-catgo="${SutraCtx.libraryPath}${viewRun', 1),
+    # the studio's start page: a static link (no script can write the team into markup, so it is relative: /d/<id>/ gives /d/<id>/library, and
+    # J2's own root gives /library), the Recent work list, and New project, which goes back to the start page
+    Edit("E20g", '<a class="slink" href="/library?view=detail">Template library</a>', '<a class="slink" href="library?view=detail">Template library</a>', 1),
+    Edit("E20h", '`<a href="/?run=${encodeURIComponent(x.id)}&view=simple">', '`<a href="${SutraCtx.pagePath}?run=${encodeURIComponent(x.id)}&view=simple">', 1),
+    Edit("E20i", 'location.href = "/?view=simple"', 'location.href = SutraCtx.pagePath + "?view=simple"', 2),
     # E21: the function chat's questions and answers are lines of the function's own session (D148): loadFeed fills J2's QA list from it
     Edit("E21", _E21_OLD,
          _lines("for (const k of Object.keys(FEED)) delete FEED[k]; Object.assign(FEED, v); } } catch (e) {}",
