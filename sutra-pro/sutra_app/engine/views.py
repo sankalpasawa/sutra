@@ -227,6 +227,20 @@ def effective_snapshot(ctx: RunCtx) -> dict:
     return snap
 
 
+def _with_studio(ctx: RunCtx, snap: dict) -> dict:
+    """`snap` with its studio block (studio/1) when it has none. The engine before J2 sync 4 (0.2.1 and older) published its snapshot without
+    one, so the Simple view of a run it made drew "No parts yet" and a team with nothing to do, while the same run opened by its id (the saved path,
+    `j2.saved_snapshot_dir`) showed its parts. It is built the way both paths build it, `j2_studio.build` from the snapshot's own workflows, chat,
+    audits and output and from the run's documents record (the run folder's `documents.json`, as the saved path reads it, else `live.json`'s), and
+    from the whole chat, so call it before the poll's slice is taken. A snapshot that has the block is returned as it is (the engine builds it from
+    the whole run), and so is one with no list of workflows, which there is nothing to read parts from."""
+    if isinstance(snap.get("studio"), dict) or not isinstance(snap.get("workflows"), list):
+        return snap
+    d = _dir(ctx)
+    docs = (j2._read(d, "documents.json", {}) if d else None) or _live_dict(ctx)["docs"]
+    return {**snap, "studio": j2_studio.build(snap, docs if isinstance(docs, dict) else {})}
+
+
 def _running_or_paused(snap: dict) -> bool:
     return snap.get("status") == "running" or bool(snap.get("paused"))
 
@@ -321,7 +335,7 @@ def state(ctx: RunCtx, q: dict) -> Reply:
     elif ctx.snap is None:
         snap = None
     else:
-        base = effective_snapshot(ctx)
+        base = _with_studio(ctx, effective_snapshot(ctx))
         snap = {**base, "saved": None, "chat": (base.get("chat") or [])[since:]}
         if ctx.mode == "live":              # additive keys (engine design 4.6): the process, the run and the department
             snap.update(host={"pid": _live_dict(ctx)["pid"], "alive": ctx.alive}, run_id=ctx.run_id, dept_id=ctx.dept_id)
