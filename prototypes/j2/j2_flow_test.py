@@ -6908,7 +6908,7 @@ def doc_prompts_unchanged():
     got = {}
     j2.add_workflow_agent("W-1")      # what registering a workflow does; the name a run gives it is the same
     for t in ("prd", "hld", "lld"):
-        o = j2.OUTPUTS[t]
+        o = j2.output_def(t)      # OUTPUTS, or the type read from data under J2_GENERIC=1
         for k in ("builder", "plan", "intake", "charter_fmt", "atom_rules"):
             assert isinstance(o[k], str) and o[k], (t, k)
             got[f"{t}.{k}"] = hashlib.sha256(o[k].encode("utf-8")).hexdigest()[:12]
@@ -6929,19 +6929,19 @@ def doc_type_names():
     import j2_template_lib as TL
     docs = ("prd", "hld", "lld")
     assert tuple(j2.OUTPUTS) == ("website",) + docs, tuple(j2.OUTPUTS)
-    assert (j2.PRD_SECTIONS, j2.HLD_SECTIONS, j2.LLD_SECTIONS) == tuple(j2.OUTPUTS[t]["sections"] for t in docs)
+    assert (j2.PRD_SECTIONS, j2.HLD_SECTIONS, j2.LLD_SECTIONS) == tuple(j2.output_def(t)["sections"] for t in docs)
     assert j2.ALL_DOC_SECTIONS == j2.PRD_SECTIONS + j2.HLD_SECTIONS + j2.LLD_SECTIONS
     arts = set(TL.ARTIFACTS)
     assert set(j2.OUTPUTS) <= arts and arts == set(AM.SECTION_MODELS) == set(AM.DOC_MODELS) == set(AM.SECTION_CONDITIONS)
     assert set(typing.get_args(TL.Template.model_fields["artifact"].annotation)) == arts
     assert TL.DOCUMENT_ARTIFACTS == docs
     for t in docs:
-        secs = tuple(j2.OUTPUTS[t]["sections"])
+        secs = tuple(j2.output_def(t)["sections"])
         assert tuple(AM.SECTION_MODELS[t]) == secs == tuple(AM.SECTION_CONDITIONS[t]), (t, secs)
         assert [s for s in TL.generic_sections(t) if s != TL.DOCUMENT] == list(secs), t
     for t, s in TL.FACT_FIELD_SECTIONS:
         assert s in AM.SECTION_MODELS[t], (t, s)
-        assert t == "website" or s in j2.OUTPUTS[t]["sections"], (t, s)
+        assert t == "website" or s in j2.output_def(t)["sections"], (t, s)
     print("document type names: OUTPUTS and PRD/HLD/LLD_SECTIONS match SECTION_MODELS, DOC_MODELS, SECTION_CONDITIONS, "
           "ARTIFACTS, Template.artifact, DOCUMENT_ARTIFACTS, FACT_FIELD_SECTIONS and generic_sections ok")
 
@@ -6968,7 +6968,7 @@ def website_generic():
         os.environ["J2_GENERIC"] = "1"
         r = j2.J2Run()
         assert r.out == g and r.out is not o and (r.WF_FMT, r.GRANT_FMT, r.ATOM_RULES) == (j2.J2Run.WF_FMT, j2.J2Run.GRANT_FMT, j2.J2Run.ATOM_RULES)
-        assert r.set_output("prd") and r.out is j2.OUTPUTS["prd"], "documents stay on OUTPUTS"
+        assert r.set_output("prd") and r.out is j2.output_def("prd") and r.doc, "a document switches to its own type"
         T = json.load(open(j2_types.TYPES_PATH, encoding="utf-8"))
         w = next(i for i, t in enumerate(T["types"]) if t["name"] == "website")
         tmp = tempfile.mkdtemp(prefix="j2-types-")
@@ -6995,6 +6995,68 @@ def website_generic():
             os.environ["J2_GENERIC"] = keep
     print("website generic: j2_types.load('website') equals OUTPUTS['website'], the inline intake and CHARTER_FMT; used only under "
           "J2_GENERIC=1; a missing field, unknown form, missing file or bad rubric is refused; plain brief identical with J2_GENERIC unset and =1 (default, J2_SLIM=0, J2_BOARD=0) ok")
+
+
+def docs_generic():
+    """Step 2 (docs/remove-hardcoding-plan.md): each document type in j2.GENERIC_TYPES, read from data, equals its OUTPUTS entry
+    (every text byte for byte, the same mock functions, the export writes the same .docx), and mock document runs give the
+    same prompts, plan, documents and outcome with J2_GENERIC unset and =1 (doc_unchanged)."""
+    import j2_types
+    keep = os.environ.pop("J2_GENERIC", None)
+    try:
+        docs = [t for t in j2.GENERIC_TYPES if t != "website"]
+        for t in docs:
+            o, g = j2.OUTPUTS[t], j2._data_type(t)
+            assert set(g) == set(o) and all(g[k] == o[k] for k in o if not callable(o[k])), (t, sorted(set(g) ^ set(o)))
+            assert all(g[k] is o[k] for k in ("mock_charter", "mock_section")), t
+            assert g["mock_atom"] is o["mock_atom"] or g["mock_atom"].__code__ is o["mock_atom"].__code__, t
+            w = {"name": f"W-1 {o['sections'][2]}", "covers": [1]}
+            assert g["mock_atom"](w) == o["mock_atom"](w), t
+            tmp = tempfile.mkdtemp(prefix="j2-export-")
+            g["export"]("# Title\n\n## Problem\n\nText.\n", tmp)
+            assert os.listdir(tmp) == [o["file"][:-3] + ".docx"], (t, os.listdir(tmp))
+            shutil.rmtree(tmp, ignore_errors=True)
+            entry = next(x for x in json.load(open(j2_types.TYPES_PATH, encoding="utf-8"))["types"] if x["name"] == t)
+            assert '.replace(' not in json.dumps(entry) and all(entry[k] == f"templates/{t}/{f}" for k, f in
+                   (("builder", "builder.md"), ("plan", "plan.md"), ("atom_rules", "atom_rules.md"), ("intake", "intake.md"),
+                    ("charter_format", "charter.txt"))), (t, "its own files")
+        doc_unchanged()
+    finally:
+        os.environ.pop("J2_GENERIC", None)
+        if keep is not None:
+            os.environ["J2_GENERIC"] = keep
+    print(f"documents generic: {', '.join(docs)} from data equal OUTPUTS (texts byte for byte, mock functions, .docx export) ok")
+
+
+def doc_unchanged():
+    """The document golden: mock runs of a PRD, the design docs (PRD, HLD, LLD) and the design docs with the site after them
+    (the LLD as the site's blueprint) give the same model calls (agent, system prompt, prompt), workflows, documents,
+    documents.json, spend and outcome with J2_GENERIC unset and =1. Times and the run folder are masked."""
+    def digest(run):
+        mask = lambda t: re.sub(r"\d{4}-\d\d-\d\dT\d\d:\d\d:\d\d(\.\d+)?", "T", str(t).replace(run.dir, "RUN").replace(os.path.basename(run.dir), "RUN"))
+        h = lambda t: hashlib.sha256(mask(t).encode("utf-8")).hexdigest()[:12]
+        rows = [json.loads(x) for x in open(os.path.join(run.dir, "calls.jsonl"), encoding="utf-8")]
+        files = {f: h(open(os.path.join(run.dir, f), encoding="utf-8").read()) for f in sorted(os.listdir(run.dir))
+                 if re.fullmatch(r"(?:prd|hld|lld)\.md|documents\.json|stage-\w+\.json", f)}
+        return {"outcome": run.outcome, "spent": run.spent, "docs": list(run.docs), "files": files,
+                "calls": [[c["fn"], h(c["system"]), h(c["prompt"])] for c in rows],
+                "workflows": h(json.dumps([{k: v for k, v in w.items() if k != "t"} for w in run._all_wfs()], sort_keys=True))}
+    briefs = (("Write a PRD for Campus Notes." + CAMPUS, 200), ("Design docs for Campus Notes." + CAMPUS, 400), (DESIGN_BRIEF, 900))
+    for brief, budget in briefs:
+        got = []
+        for flag in (None, "1"):
+            os.environ.pop("J2_GENERIC", None)
+            if flag:
+                os.environ["J2_GENERIC"] = flag
+            got.append(digest(docs_run(brief, budget)))
+        os.environ.pop("J2_GENERIC", None)
+        a, b = got
+        assert a["calls"] and a["outcome"].startswith("Done") and a["files"], (brief[:40], a["outcome"])
+        diff = [i for i, (x, y) in enumerate(zip(a["calls"], b["calls"])) if x != y]
+        assert len(a["calls"]) == len(b["calls"]) and not diff, (brief[:40], "prompts differ", diff[:5], a["calls"][diff[0]] if diff else None, b["calls"][diff[0]] if diff else None)
+        assert a == b, (brief[:40], {k: (a[k], b[k]) for k in a if a[k] != b[k]})
+        print(f"document run unchanged ({brief[:30]}...): {', '.join(a['docs'])}, {len(a['calls'])} calls, every prompt, the workflows, "
+              f"{len(a['files'])} document files, spend and outcome identical with J2_GENERIC unset and =1")
 
 
 def artifact_types():
@@ -11821,6 +11883,7 @@ if __name__ == "__main__":
             doc_prompts_unchanged()
             saved_runs_render()
             website_generic()      # step 1: the website on data, J2_GENERIC=1
+            docs_generic()         # step 2: the documents on data, and the document golden
         artifacts_tab()
         map_tab()
         map_every_workflow()

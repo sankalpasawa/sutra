@@ -2381,7 +2381,7 @@ def output_type(name=None):
     return t if t in OUTPUTS else "website"
 
 
-GENERIC_TYPES = ("website",)      # the types j2_types reads from data under J2_GENERIC=1 (docs/remove-hardcoding-plan.md)
+GENERIC_TYPES = ("website", "prd")      # the types j2_types reads from data under J2_GENERIC=1 (docs/remove-hardcoding-plan.md)
 
 
 def output_def(kind):
@@ -2391,7 +2391,15 @@ def output_def(kind):
 
 @lru_cache(maxsize=None)
 def _data_type(kind):
-    return j2_types.load(kind)
+    """j2_types.load, with what the data can only name made real here: the docx export, and the mock functions (migration only)."""
+    t = j2_types.load(kind)
+    if t["export"] == "docx":
+        t["export"] = lambda doc, run_dir, name=t["file"][:-3] + ".docx": export_docx(doc, os.path.join(run_dir, name))
+    for k, v in (t.pop("mock", None) or {}).items():      # a function name, or the ids doc_atom_for checks for unique
+        if not isinstance(v, dict) and not (str(v).startswith("mock_") and callable(globals().get(v))):
+            raise ValueError(f"{kind}: mock {k} names no mock function: {v!r}")
+        t[f"mock_{k}"] = doc_atom_for(t["sections"], v) if isinstance(v, dict) else globals()[v]
+    return t
 
 
 # ---- the style guide: written by the first workflow that runs, followed by every workflow agent

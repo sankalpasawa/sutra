@@ -22,6 +22,23 @@
       "form": "doc",
       "file": "prd.md",
       "export": "docx",
+      "output_label": "PRD document",
+      "noun": "PRD",
+      "rubric": [
+        {"id": "D-1", "text": "Every requirement is specific and testable"},
+        {"id": "D-2", "text": "Goals and success metrics are measurable"},
+        {"id": "D-3", "text": "Users and problem are consistent with the requirements"},
+        {"id": "D-4", "text": "Out of scope is explicit"},
+        {"id": "D-5", "text": "No invented facts: every fact comes from the brief or the Requester's answers, or is labelled \"Assumption:\"; the evidence quotes each unlabelled claim not in the brief"}
+      ],
+      "check_types": ["facts-present", "heading-present", "section-not-empty", "ids-unique"],
+      "done": "Done: the PRD is workable. Every done-when item, rubric item and necessary condition passes.",
+      "builder": "templates/prd/builder.md",
+      "intake": "templates/prd/intake.md",
+      "charter_format": "templates/prd/charter.txt",
+      "plan": "templates/prd/plan.md",
+      "atom_rules": "templates/prd/atom_rules.md",
+      "mock": {"charter": "mock_prd_charter", "section": "mock_doc_section", "atom": "mock_doc_atom"},
       "deliverable": true,
       "triggers": [
         "\\bPRDs?\\b|\\bproduct\\s+requirements?\\b"
