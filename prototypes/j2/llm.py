@@ -58,33 +58,61 @@ LAST_META = {}  # model, finish reason and token counts of the latest Gemini rep
 _client = None
 
 
+class CallTimeout(RuntimeError):
+    """A call ran past its time limit and was stopped: its reply, if one ever comes, is never returned."""
+
+
 def ask(system, user, mock, max_tokens=1500, effort="high", on_progress=None, json_mode=False, images=None,
-        schema=None):
+        schema=None, timeout=None):
     """effort="low" caps Gemini thinking; use it for short structured replies.
     json_mode=True makes Gemini return a JSON object only (Claude follows the prompt's format).
     images: PNG paths sent with the prompt (Audit's screenshots); every provider takes them, mock ignores them.
     schema: a JSON Schema the reply must follow (J2_ARTIFACT_SCHEMA=1). claude-cli sends it with --json-schema and
     reads structured_output; the Anthropic API uses output_config's json_format; Gemini gets response_schema when
     the schema is simple enough, else the schema in the prompt and code validates it. The reply is still returned as
-    the JSON text, so nothing downstream changes. LAST_META["structured"] records what the provider did."""
+    the JSON text, so nothing downstream changes. LAST_META["structured"] records what the provider did.
+    timeout: seconds; past it the call is stopped (claude-cli: the process is killed; the streaming APIs: the request
+    times out or the stream is closed) and CallTimeout is raised. Mock ignores it."""
     images = [p for p in images or [] if p and os.path.exists(p)]
     progress = on_progress or (lambda e: None)
     LAST_META.clear()   # each provider fills in what it reports (tokens included); mock reports nothing
     if MOCK:
         return _stream_mock(mock(), progress)
+    if not timeout:
+        return _ask(system, user, max_tokens, effort, progress, json_mode, images, schema, None)
+    deadline = time.time() + timeout
+    try:
+        return _ask(system, user, max_tokens, effort, progress, json_mode, images, schema, deadline)
+    except CallTimeout:
+        raise
+    except Exception as e:      # an SDK's own timeout error, or anything else that ends past the deadline
+        if time.time() >= deadline:
+            raise CallTimeout(f"stopped after {timeout:g}s ({type(e).__name__})") from e
+        raise
+
+
+def _check_deadline(deadline):
+    if deadline and time.time() >= deadline:
+        raise CallTimeout("time limit reached while streaming")
+
+
+def _ask(system, user, max_tokens, effort, progress, json_mode, images, schema, deadline):
     if PROVIDER == "gemini":
-        return _ask_gemini(system, user, max_tokens, effort, progress, json_mode, images, schema)
+        return _ask_gemini(system, user, max_tokens, effort, progress, json_mode, images, schema, deadline)
     if PROVIDER == "claude-cli":
-        return _ask_claude_cli(system, user, effort, progress, images, schema)
+        return _ask_claude_cli(system, user, effort, progress, images, schema, deadline)
     global _client
     if _client is None:
         import anthropic
         _client = anthropic.Anthropic()
     text = ""
     extra = {"output_config": {"format": {"type": "json_schema", "schema": schema}}} if schema else {}
+    if deadline:
+        extra["timeout"] = max(0.1, deadline - time.time())
     with _client.messages.stream(model=MODEL, max_tokens=max_tokens, system=system,
                                  messages=[{"role": "user", "content": _blocks(user, images)}], **extra) as stream:
         for piece in stream.text_stream:
+            _check_deadline(deadline)
             text += piece
             progress({"chars": len(text), "text": text})
         usage = stream.get_final_message().usage
@@ -106,7 +134,7 @@ def _blocks(user, images):
     return out + [{"type": "text", "text": user}]
 
 
-def _ask_claude_cli(system, user, effort, progress, images=None, schema=None):
+def _ask_claude_cli(system, user, effort, progress, images=None, schema=None, deadline=None):
     """One non-interactive `claude -p` call with no tools, MCP, skills or settings: a plain completion.
     The CLI has no max-tokens flag, so the reply format in the prompt is what keeps replies short.
     With images the prompt goes in as one stream-json user message (image blocks + text) and the result line is read
@@ -127,7 +155,7 @@ def _ask_claude_cli(system, user, effort, progress, images=None, schema=None):
     if schema:      # structured output: Claude Code validates the schema, then returns the object in structured_output
         cmd += ["--json-schema", json.dumps(schema, ensure_ascii=False)]
     try:
-        return _run_claude_cli(cmd, images, user, env, progress, schema)
+        return _run_claude_cli(cmd, images, user, env, progress, schema, deadline)
     finally:
         if sysfile:
             try:
@@ -149,13 +177,17 @@ def _cli_meta(d):
         LAST_META["structured"] = keep
 
 
-def _run_claude_cli(cmd, images, user, env, progress, schema=None):
+def _run_claude_cli(cmd, images, user, env, progress, schema=None, deadline=None):
     stdin = (json.dumps({"type": "user", "message": {"role": "user", "content": _blocks(user, images)}}) + "\n"
              if images else user)
     last = None
     for attempt in range(2):
+        if deadline and time.time() >= deadline:
+            raise CallTimeout("time limit reached before the CLI retry")
         try:
-            p = subprocess.run(cmd, input=stdin, capture_output=True, text=True, env=env, timeout=900,
+            # subprocess.run kills the process on timeout, so a stopped call can never reply later
+            p = subprocess.run(cmd, input=stdin, capture_output=True, text=True, env=env,
+                               timeout=max(0.1, deadline - time.time()) if deadline else 900,
                                cwd=tempfile.gettempdir())
             if images:   # stream-json: one JSON event per line; the reply is the "result" event
                 lines = [json.loads(x) for x in (p.stdout or "").splitlines() if x.strip().startswith("{")]
@@ -190,6 +222,8 @@ def _run_claude_cli(cmd, images, user, env, progress, schema=None):
                 return text
             last = RuntimeError(f"claude -p failed (exit {p.returncode}): {(d.get('result') or p.stderr)[:300]}")
         except (subprocess.TimeoutExpired, json.JSONDecodeError) as e:
+            if deadline and isinstance(e, subprocess.TimeoutExpired):
+                raise CallTimeout("claude -p killed at the time limit") from e
             last = RuntimeError(f"claude -p failed: {type(e).__name__}")
         progress({"note": f"{last}; retrying" if attempt == 0 else str(last)})
     raise last
@@ -211,7 +245,7 @@ def _simple_schema(schema):
     return "$ref" not in t and "definitions" not in t and '"type": [' not in t
 
 
-def _ask_gemini(system, user, max_tokens, effort, progress, json_mode=False, images=None, schema=None):
+def _ask_gemini(system, user, max_tokens, effort, progress, json_mode=False, images=None, schema=None, deadline=None):
     global _client
     from google import genai
     from google.genai import errors, types
@@ -225,8 +259,11 @@ def _ask_gemini(system, user, max_tokens, effort, progress, json_mode=False, ima
     # One short pause between rounds; two rounds at most.
     for rnd in range(2):
         for model in MODELS:
+            _check_deadline(deadline)
             config = types.GenerateContentConfig(system_instruction=system, max_output_tokens=max_tokens + 8192,
                                                  thinking_config=thinking,
+                                                 http_options=types.HttpOptions(timeout=max(1000, int(
+                                                     (deadline - time.time()) * 1000))) if deadline else None,
                                                  response_mime_type="application/json" if json_mode else None)
             try:
                 text, finish, usage = "", None, None
@@ -235,6 +272,7 @@ def _ask_gemini(system, user, max_tokens, effort, progress, json_mode=False, ima
                     contents = [types.Part.from_bytes(data=open(p, "rb").read(), mime_type="image/png") for p in images] \
                         + [user]
                 for chunk in _client.models.generate_content_stream(model=model, contents=contents, config=config):
+                    _check_deadline(deadline)
                     text += chunk.text or ""
                     if chunk.candidates and chunk.candidates[0].finish_reason:
                         finish = chunk.candidates[0].finish_reason
@@ -256,7 +294,8 @@ def _ask_gemini(system, user, max_tokens, effort, progress, json_mode=False, ima
                 if e.code == 400 and thinking is not None and "thinking" in str(e).lower():
                     # This model does not accept a thinking budget; retry without one.
                     progress({"note": f"{model} rejected the thinking budget, retrying without it"})
-                    return _ask_gemini(system, user, max_tokens, "high", progress, json_mode, images)
+                    return _ask_gemini(system, user, max_tokens, "high", progress, json_mode, images, schema,
+                                       deadline)
                 if e.code not in (404, 429, 500, 503):
                     raise
                 last = e
