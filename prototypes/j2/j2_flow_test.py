@@ -1000,7 +1000,7 @@ def simple_view():
     try:
         os.environ["J2_FIXES"] = "0"
         text = check(j2.J2Run(), "What should we make today?", "The team plans it, does the work and checks it for you.", "A website for my bakery",
-                     "A product spec for a food delivery app", "A 4-week launch plan for my cafe", site=False)
+                     "A PRD for a food delivery app", "Design docs for a clinic booking app", site=False)
         assert "What to make" not in text and "build today" not in text, text[:300]
         run = j2.J2Run()
         say(run, "a website for my cafe")

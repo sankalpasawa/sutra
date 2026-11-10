@@ -2125,7 +2125,7 @@ function sPhase(s, open){      // one plain sentence for where the run is; no na
   return st === 0 ? "Reading your request" : st === 1 ? "Planning the work" : st === 2 ? (w ? `Building ${w.name.toLowerCase()}` : `Building your ${what}`)
     : s.doc ? "Checking the document" : "Checking it on a phone and a laptop";
 }
-const SCHIPS = ["A website for my bakery", "A product spec for a food delivery app", "A 4-week launch plan for my cafe"];      // a website, a document and a plan
+const SCHIPS = ["A website for my bakery", "A PRD for a food delivery app", "Design docs for a clinic booking app"];      // what the team makes today: a website, one document, the three design documents
 // start page: a small line icon per kind of work (fixed SVG, no outside text goes in)
 const SLICON = {website: `<svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="4.5" width="18" height="15" rx="2.5"/><path d="M3 9h18"/><circle cx="6.2" cy="6.8" r=".4"/><circle cx="8.4" cy="6.8" r=".4"/></svg>`,
   document: `<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M7.5 3H14l5 5v11.5a1.5 1.5 0 0 1-1.5 1.5h-10A1.5 1.5 0 0 1 6 19.5v-15A1.5 1.5 0 0 1 7.5 3z"/><path d="M14 3v5h5M9.5 13h6M9.5 16.5h4"/></svg>`,
@@ -2134,7 +2134,7 @@ const sKindOf = t => /plan|schedule|roadmap|calendar/i.test(t) ? "plan" : /spec|
 const sAgo = w => { const t = Date.parse(w); if (!t) return ""; const m = Math.max(0, (Date.now() - t) / 6e4);
   return m < 1 ? "just now" : m < 60 ? `${Math.round(m)}m ago` : m < 1440 ? `${Math.round(m / 60)}h ago` : m < 2880 ? "yesterday" : m < 43200 ? `${Math.round(m / 1440)}d ago` : new Date(t).toLocaleDateString(undefined, {day: "numeric", month: "short"}); };
 // the composer types example ideas with a blinking caret until you click in or start typing (still text when motion is reduced)
-const SGHOST = ["A one-page website for my coffee shop", "A product spec for a habit tracker app", "A 4-week launch plan for my bakery"];
+const SGHOST = ["A one-page website for my coffee shop", "A PRD for a habit tracker app", "Design docs for a clinic booking app"];
 let sghostT = 0, sghostI = 0;
 function sGhost(){ const g = $("sghost"), box = $("lform"), t = $("lbox"); clearTimeout(sghostT); if (!g) return;
   const on = !$("sland").hidden && !t.value && document.activeElement !== t; box.classList.toggle("ghosting", on); g.hidden = !on; if (!on) return;
@@ -2244,7 +2244,7 @@ function renderSimple(s){
   $("sland").hidden = started; $("swork").hidden = !started; sThemeBtn(); sAutoPaint(s);
   if (!started){
     if ($("schips").__v !== "o:" + s.output){ $("schips").__v = "o:" + s.output; $("schips").innerHTML = SCHIPS.map(t => `<button type="button" data-brief="${esc(t)}" title="${esc(t)}">${SLICON[sKindOf(t)]}${esc(sChipLabel(t))}</button>`).join("");
-      $("lbox").placeholder = "e.g. A launch plan for my bakery, a product spec, or a one-page website"; }
+      $("lbox").placeholder = "e.g. A one-page website, a PRD, or design docs (PRD, HLD, LLD)"; }
     if (!SV.landKey){ SV.landKey = "1"; $("slfaces").innerHTML = SKEYS.map(k => face(k, 46, {prop: false, label: false})).join(""); sRecent(); setTimeout(sGhost); }
     return;
   }
