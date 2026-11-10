@@ -90,6 +90,9 @@ class Handler(http.server.BaseHTTPRequestHandler):
             return self._send(200, json.dumps(run_list(), ensure_ascii=False))
         if u.path == "/api/runs":
             return self._send(200, json.dumps({"live": os.path.basename(RUN.dir), "runs": j2.list_runs()}))
+        if u.path == "/api/timing":     # Run settings' "Time per step": timing.json (live: built now)
+            t = j2.saved_timing(j2.saved_dir(run)) if run else RUN.timing()
+            return self._send(200, json.dumps(t, ensure_ascii=False)) if t else self._send(404, '{"error": "no timing"}')
         if u.path == "/api/call":       # one AI call in full, for the detail view's "full text" toggle
             d = j2.saved_dir(run) if run else RUN.dir
             rec = j2.call_record(d, int(q.get("id", "0") or 0))

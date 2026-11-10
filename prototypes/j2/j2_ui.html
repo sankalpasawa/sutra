@@ -896,6 +896,7 @@ body:not(.simple) #dview{display:flex;flex:1;min-height:0}
 .rst.running::before{content:"";display:inline-block;width:6px;height:6px;border-radius:50%;background:var(--accent);margin-right:5px;animation:rpulse 1.2s infinite}@keyframes rpulse{50%{opacity:.3}}
 .runmore{margin:4px auto 2px;border:1px solid var(--line);background:var(--panel);color:var(--ink);border-radius:99px;padding:7px 16px;font:inherit;font-size:13px;cursor:pointer}
 .runnone{color:var(--muted);font-size:13px;padding:8px}
+#timing>p{margin:0;color:var(--muted);font-size:13px}#timing summary{cursor:pointer;font-size:13px;margin-top:6px}.timetbl{max-height:30vh;overflow:auto}.timetbl table{font-size:12.5px;margin:6px 0 0}.timetbl td,.timetbl th{border-bottom:1px solid var(--line);padding:2px 12px 2px 0;text-align:left}
 #dview:is([data-tab=runsettings],[data-tab=artifacts],[data-tab=catalog]) .dcol{overflow:hidden}#dview:is([data-tab=runsettings],[data-tab=artifacts],[data-tab=catalog]) main{grid-template-rows:minmax(0,1fr);flex:1;min-height:0}
 /* Artifacts: four groups; a list on the left and the chosen item on the right; the page fits the screen, only the list and the item scroll */
 #pane-artifacts,#pane-catalog{overflow:hidden}#dview #pane-artifacts,#dview #pane-catalog{max-width:none}#pane-artifacts:not([hidden]),#pane-catalog:not([hidden]){display:flex;flex-direction:column}#pane-catalog .agwrap{flex:1;min-height:0}.cattools{margin:0 0 12px}.tplview h3{display:flex;flex-wrap:wrap;gap:6px 10px;align-items:baseline}.tplview .tplmeta{margin:0 0 14px}
@@ -1153,6 +1154,7 @@ try { var tp = localStorage.getItem("j2theme"); document.documentElement.dataset
       <div class="runset">
         <section class="rsec" id="appear"><h3>Appearance</h3><p>Applies to this browser only.</p>
           <div class="themecards" role="group" aria-label="Appearance"><button type="button" data-themepick="light" aria-pressed="false"><span class="sw sw-l"></span>Light</button><button type="button" data-themepick="dark" aria-pressed="true"><span class="sw sw-d"></span>Dark</button><button type="button" data-themepick="system" aria-pressed="false"><span class="sw sw-s"></span>System</button></div></section>
+        <section class="rsec" id="timesec"><h3>This run: calls, tokens and time</h3><div id="timing"><p>Loading…</p></div></section>
         <section class="rsec runsec" aria-labelledby="runsh"><div class="rtop"><h3 id="runsh">Runs <small id="runcount"></small></h3><input type="search" id="runq" placeholder="Search runs" aria-label="Search runs by title, brief or run ID" autocomplete="off"><button type="button" class="newrun" id="reset">+ New run</button></div>
           <div class="rfil" role="group" aria-label="Filter by status"><button type="button" data-rf="all" aria-pressed="true">All <i></i></button><button type="button" data-rf="running" aria-pressed="false">Running <i></i></button><button type="button" data-rf="done" aria-pressed="false">Done <i></i></button><button type="button" data-rf="stopped" aria-pressed="false">Stopped <i></i></button></div>
           <div class="runlist" id="runlist"></div></section>
@@ -3055,6 +3057,7 @@ function showTab(name){
   $("backmap").hidden = name === "map" || crumb; $("wcrumbs").textContent = name === "planmap" ? "Adaptation" : name === "catalog" ? "Library" : "Artifacts"; if (name === "planmap") try { pmHead(); } catch (e) {}      // a ?tab=planmap link runs before the plan-map code
   ["wcrumb", "wcnt"].forEach(i => $(i).hidden = !crumb); document.querySelector("#dview .wbar").hidden = name === "map"; document.querySelector("#dview .work").classList.toggle("mapfit", name === "map"); railReveal(name);
   ["preview","goal","planmap","workflows","conflicts","priorities","timeline","audit","charter","docs","artifacts","board","library","catalog","story","map","style","lessons","playbooks","report","rundetails","runsettings"].forEach(t => $("pane-"+t).hidden = t !== name);
+  if (name === "runsettings" && typeof loadTiming === "function") loadTiming();      // fresh numbers each time it opens
 }
 document.querySelectorAll(".tabs [role=tab]").forEach(b => b.onclick = () => { if (b.dataset.tab === "workflows" && WFSTEP.length){ WFSTEP = []; if (state) paint($("pane-workflows"), renderWorkflows(state)); } showTab(b.dataset.tab); });
 showTab("map");
@@ -5263,6 +5266,20 @@ function renderRuns(){
   $("runlist").innerHTML = h || `<div class="runnone">No runs match.</div>`;
 }
 (async () => { try { const r = await (await fetch("/api/runlist", {cache: "no-store"})).json(); RUNS.all = r.runs || []; RUNS.live = r.live || ""; } catch (e) {} renderRuns(); })();
+// Run settings' "This run": timing.json (/api/timing, j2.timing_record): AI calls, tokens and seconds per step and per agent, code checks, Requester waits
+function timingHtml(t){
+  if (!t || !(t.rows || []).length) return `<p>No AI calls recorded yet.</p>`;
+  const a = t.ai, sec = x => (+x || 0).toFixed(1) + " s", tok = (i, o) => i || o ? `${(+i).toLocaleString()} in · ${(+o).toLocaleString()} out` : "not reported";
+  const name = r => r.kind === "wait" ? "Requester (answering)" : who(r.who)[0] + (r.kind === "checks" ? " checks (code)" : "");
+  return `<p>${plural(a.calls, "AI call")} · tokens ${tok(a.tokens_in, a.tokens_out)} · AI ${sec(a.seconds)} · checks ${sec(t.checks_seconds)} · waiting for the Requester ${sec(t.requester_wait_seconds)}${t.wall_seconds != null ? ` · run ${sec(t.wall_seconds)}` : ""}${t.from_calls_only ? " (from calls.jsonl: AI calls only)" : ""}</p>`
+    + `<details><summary>Per step (J2.a to J2.h) and agent</summary><div class="timetbl"><table><tr><th>Step</th><th>Who</th><th>AI calls</th><th>Tokens</th><th>Time</th></tr>`
+    + t.rows.map(r => `<tr><td>${esc(r.step || "–")}</td><td>${esc(name(r))}</td><td>${r.kind === "ai" ? r.calls : "–"}</td><td>${r.kind === "ai" ? tok(r.tokens_in, r.tokens_out) : "–"}</td><td>${sec(r.seconds)}</td></tr>`).join("")
+    + `</table></div></details>`;
+}
+async function loadTiming(){ let t = null;
+  try { const r = await fetch("/api/timing" + (viewRun ? "?run=" + encodeURIComponent(viewRun) : ""), {cache: "no-store"}); t = r.ok ? await r.json() : null; } catch (e) {}
+  $("timing").innerHTML = timingHtml(t); }
+loadTiming();
 $("runlist").addEventListener("click", e => {
   if (e.target.closest("#runmore")){ RUNS.show += 20; return renderRuns(); }
   const b = e.target.closest("[data-openrun]"); if (!b) return;
