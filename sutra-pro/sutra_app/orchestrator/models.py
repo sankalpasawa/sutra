@@ -530,7 +530,7 @@ _INT_SETTING = re.compile(r"[1-9][0-9]{0,5}")
 
 
 class TaskSettings(Value):
-    """The seven task keys a request may carry (D18, S1-contracts-03), all text as J2 reads its environment. A key left unset is
+    """The eight task keys a request may carry (D18, S1-contracts-03; J2 sync 4 added the Decide for me switch), all text as J2 reads its environment. A key left unset is
     left out of the dump. Anything else is refused (closed class), so a model reply or web request cannot reach live email,
     a Chrome path or a forced audit failure."""
 
@@ -541,6 +541,7 @@ class TaskSettings(Value):
     J2_MEMORY: Literal["0", "1"] | None = None
     J2_SLIM: Literal["0", "1"] | None = None
     J2_RATES: Literal["0", "1"] | None = None
+    J2_DECIDE_FOR_ME: Literal["0", "1"] | None = None
 
     @field_validator("J2_BUDGET", "J2_BUDGET_CAP")
     @classmethod

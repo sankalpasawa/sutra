@@ -1,6 +1,7 @@
 """The inbox: the tailer of `inbox.jsonl` and the FIFO (engine design 4.5 "Inbox rule", S1-contracts-13).
 
-The server appends one JSON object per line: `{"n": int, "kind": "user"|"override"|"stop", "text"?: str, "cmd"?: str, "at": iso}`.
+The server appends one JSON object per line: `{"n": int, "kind": "user"|"override"|"stop"|"setting", "text"?: str, "cmd"?: str,
+"decide_for_me"?: bool, "at": iso}`.
 `InboxTailer` reads the complete lines that arrived since its last call (a half-written line waits for its newline), checks
 each one, puts a batch in `n` order and writes an `inbox.skipped` trace line for what it cannot use (bad JSON, bad shape,
 an unknown kind, a repeated `n`). `Inbox` adds the FIFO and the delivery rule:
@@ -8,6 +9,8 @@ an unknown kind, a repeated `n`). `Inbox` adds the FIFO and the delivery rule:
 * lines are delivered one at a time, in `n` order, the head first;
 * a `user` line is delivered only while `run.status == "waiting"` (paused, or finished but not yet ended) and when
   `run.user_says` takes it; an `override` line goes to `run.apply_override`;
+* a `setting` line (J2 sync 4: `{"kind": "setting", "decide_for_me": bool}`, the Simple view's Decide for me switch) is not an answer: it
+  is applied with `run.set_auto` as soon as the host looks, whatever the run is doing and whatever waits ahead of it;
 * a head that cannot be delivered now stays the head and writes ONE `inbox.deferred` trace line (a normal path: the `say`
   event of a question is written before the run thread has finished its last steps);
 * a `stop` line is handled the moment it is read, ahead of the FIFO, and discards everything queued (and the rest of its
@@ -24,7 +27,7 @@ from typing import Any, Optional
 
 __all__ = ["InboxLine", "InboxTailer", "Inbox", "KINDS"]
 
-KINDS = ("user", "override", "stop")
+KINDS = ("user", "override", "stop", "setting")
 MAX_LINE_BYTES = 1_000_000
 Trace = Callable[[str, dict], Any]
 
@@ -36,6 +39,7 @@ class InboxLine:
     text: Optional[str] = None
     cmd: Optional[str] = None
     at: Optional[str] = None
+    decide_for_me: Optional[bool] = None
 
 
 def _parse(raw: bytes) -> InboxLine:
@@ -56,8 +60,11 @@ def _parse(raw: bytes) -> InboxLine:
         raise ValueError("a user line needs text")
     if kind == "override" and (not isinstance(cmd, str) or not cmd.strip()):
         raise ValueError("an override line needs cmd")
+    decide = data.get("decide_for_me")
+    if kind == "setting" and not isinstance(decide, bool):
+        raise ValueError("a setting line needs decide_for_me, true or false")
     return InboxLine(n=n, kind=kind, text=text if kind == "user" else None, cmd=cmd if kind == "override" else None,
-                     at=at if isinstance(at, str) else None)
+                     at=at if isinstance(at, str) else None, decide_for_me=decide if kind == "setting" else None)
 
 
 class InboxTailer:
@@ -137,6 +144,11 @@ class Inbox:
         empty or the head must wait (one `inbox.deferred` trace line per head)."""
         if not self.fifo:
             return False
+        for i, line in enumerate(self.fifo):          # a setting jumps the queue: it is not an answer and never waits for the run to stop
+            if line.kind == "setting":
+                del self.fifo[i]
+                run.set_auto(bool(line.decide_for_me))
+                return True
         head = self.fifo[0]
         if head.kind == "user":
             taken = run.status == "waiting" and bool(run.user_says(head.text))

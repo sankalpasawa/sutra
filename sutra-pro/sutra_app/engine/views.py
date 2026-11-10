@@ -1,5 +1,6 @@
-"""The 37 handlers of J2's server as plain functions (work package E2, engine design 4.6 and 7.1; J2 sync 4 added `plan_map`,
-`activity`, `catalog`, `artifacts_groups` and `ask`, D140: `runlist` and `changes` are J2's own routes now).
+"""The 41 handlers of J2's server as plain functions (work package E2, engine design 4.6 and 7.1; J2 sync 4 added `plan_map`,
+`activity`, `catalog`, `artifacts_groups`, `ask`, `record`, `doc`, `view` and `settings`, D140: `runlist` and `changes` are J2's own
+routes now).
 
     VIEWS[name](ctx: RunCtx, query_or_body: dict) -> Reply
 
@@ -21,6 +22,9 @@ page and the d3 file) and are redacted by the adapter, never here.
 
 `live_state(run)` is the other direction: what the host publishes (`snapshot.json`, `live.json`) built from a `J2Run`.
 """
+import base64
+import contextlib
+import html
 import json
 import os
 import re
@@ -30,7 +34,7 @@ import time
 from dataclasses import dataclass
 from typing import Any, Callable, Dict, List, Mapping, Optional, Protocol, Tuple, Union
 
-from . import j2, j2_agent, j2_artifacts, j2_map, j2_story, j2_template_lib, llm
+from . import j2, j2_agent, j2_artifacts, j2_map, j2_story, j2_studio, j2_template_lib, llm
 from . import capabilities
 from .paths import pid_alive
 from .spec import EngineSettings
@@ -44,7 +48,7 @@ DOCX = "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
 PROCESS_GONE = "The department process stopped (exit unknown). Try again."      # engine design 4.6
 SNAPSHOT_FILE, LIVE_FILE = "snapshot.json", "live.json"
 PNG = "image/png"
-HANDLER_COUNT = 37        # J2's rows of engine design 7.1: 31 GET rows ("site" has two, saved and live, and one entry in VIEWS) and 6 POST rows
+HANDLER_COUNT = 41        # J2's rows of engine design 7.1: 34 GET rows ("site" has two, saved and live, and one entry in VIEWS) and 7 POST rows
 ASK_CHARS = 2000          # the longest question `ask` takes: as long as a note to an agent (D147)
 
 
@@ -76,6 +80,7 @@ class Commands(Protocol):
     def set_output(self, out: Any) -> Tuple[bool, str]: ...    # (accepted, the output type now)
     def reset(self) -> bool: ...                               # False: a run is going on, nothing was touched (409)
     def ask(self, who: str, question: Any, run_id: str) -> dict: ...      # J2's answer {who, answer, from}, plus additive keys; AskBusy: 409
+    def decide_for_me(self, on: Optional[bool]) -> bool: ...   # the Simple view's switch: set it (None: only read); the switch as it is now
 
 
 @dataclass
@@ -93,6 +98,8 @@ class RunCtx:
     commands: Optional[Commands] = None           # E2 addition: the three POSTs
     here: Optional[str] = None                    # E2 addition: the folder of j2_ui.html, stdlib adapter only
     vendor: Optional[str] = None                  # E2 addition: the folder of d3.min.js, stdlib adapter only
+    library: Optional[str] = None                 # J2 sync 4: the one global template library's folder (`<data>/library`, D26); None: J2's own default
+    decide_for_me: bool = False                   # J2 sync 4: the team's Decide for me switch (page.json); shown when no live process holds it
 
 
 @dataclass(frozen=True)
@@ -209,10 +216,13 @@ def _live_dict(ctx: RunCtx) -> dict:
 
 def effective_snapshot(ctx: RunCtx) -> dict:
     """The published snapshot with the process-gone rule: when the process is gone and the snapshot still says running, the
-    run is waiting and has an error (engine design 4.6)."""
+    run is waiting and has an error (engine design 4.6). Where no live process holds Decide for me (no run yet, or a run whose process
+    has gone), `decide_for_me` is the team's own switch (`page.json`): a live process answers with J2's own field."""
     snap = ctx.snap or {}
     if not ctx.alive and snap.get("status") == "running":
-        return {**snap, "status": "waiting", "error": PROCESS_GONE}
+        snap = {**snap, "status": "waiting", "error": PROCESS_GONE}
+    if ctx.mode == "idle" or (ctx.mode == "live" and not ctx.alive):      # no process holds the switch: it is the team's own choice (J2 sync 4)
+        snap = {**snap, "decide_for_me": bool(ctx.decide_for_me)}
     return snap
 
 
@@ -229,6 +239,30 @@ def _live_map_input(ctx: RunCtx) -> Optional[dict]:
         return None
     return {"snapshot": snap, "stages": list(_live_dict(ctx)["stages"]), "stage_words": j2.J2Run.STAGE_WORDS,
             "board": _live_dict(ctx)["board"]}
+
+
+_LIBRARY_LOCK = threading.RLock()
+
+
+@contextlib.contextmanager
+def _library(ctx: RunCtx):
+    """Point J2's template library at the app's one global library (`<data>/library`, D26 and D141) for one call. The server process never
+    sets `J2_LIBRARY_DIR` (only the engine host does, in its own process) and J2 reads the variable on every call, so a view that reads the
+    library sets it here and puts the old value back; the lock keeps two requests from interleaving. `ctx.library` None (the stdlib
+    adapter): J2's own resolution, which the tests and the legacy server set themselves."""
+    if not ctx.library:
+        yield
+        return
+    with _LIBRARY_LOCK:
+        old = os.environ.get("J2_LIBRARY_DIR")
+        os.environ["J2_LIBRARY_DIR"] = ctx.library
+        try:
+            yield
+        finally:
+            if old is None:
+                os.environ.pop("J2_LIBRARY_DIR", None)
+            else:
+                os.environ["J2_LIBRARY_DIR"] = old
 
 
 def _site_path(ctx: RunCtx, version: int) -> Optional[str]:
@@ -373,7 +407,8 @@ def activity(ctx: RunCtx, q: dict) -> Reply:
 
 # --------------------------------------------------------------------------------------------------------- rows 10 to 12
 def library(ctx: RunCtx, q: dict) -> Reply:
-    return _json(j2_template_lib.library_view())
+    with _library(ctx):
+        return _json(j2_template_lib.library_view())
 
 
 def catalog(ctx: RunCtx, q: dict) -> Reply:
@@ -389,16 +424,18 @@ def library_item(ctx: RunCtx, q: dict) -> Reply:
     ok = (artifact in j2_template_lib.ARTIFACTS and all(re.fullmatch(r"[a-z0-9-]+", x) for x in (section, slug))
           and re.fullmatch(r"v[0-9]+", version))
     d = _dir(ctx)
-    got = j2_template_lib.template_view(artifact, section, slug, int(version[1:]), run_dir=d) if ok else None
-    if got and d:      # an example filled from this run's data, when the run used it
-        got["example"] = j2_template_lib.run_example(d, got["template"], slug)
+    with _library(ctx):
+        got = j2_template_lib.template_view(artifact, section, slug, int(version[1:]), run_dir=d) if ok else None
+        if got and d:      # an example filled from this run's data, when the run used it
+            got["example"] = j2_template_lib.run_example(d, got["template"], slug)
     return _json(got) if got else _json({"error": "no such template"}, 404)
 
 
 def run_templates(ctx: RunCtx, q: dict) -> Reply:
     """This run's routing decisions, each with where its template is read from; none recorded: an empty list."""
     d = _dir(ctx)
-    return _json({"decisions": j2_template_lib.run_templates(d) if d else []})
+    with _library(ctx):
+        return _json({"decisions": j2_template_lib.run_templates(d) if d else []})
 
 
 # --------------------------------------------------------------------------------------------------------- rows 13 to 17
@@ -453,6 +490,62 @@ def artifact(ctx: RunCtx, q: dict) -> Reply:
     if ext == ".docx":
         return Reply(200, data, DOCX, os.path.basename(p))
     return Reply(200, data, "text/html" if ext == ".html" else "text/plain")
+
+
+IMAGE_TYPES = {".png": "image/png", ".jpg": "image/jpeg", ".jpeg": "image/jpeg", ".gif": "image/gif", ".webp": "image/webp",
+               ".svg": "image/svg+xml"}      # an <img> never runs an SVG's scripts
+
+
+def view_page(p: Optional[str]) -> str:
+    """A file of a run's artifact list as a page for the Simple view: markdown rendered, a page as it is, an image shown inline,
+    anything else (data, code, a script) as readable text; no path (a file that is not in the list) is a plain "not written yet"
+    line. J2's own `view_page` lives in its server file, which the app does not vendor (D25): this is the same function, the app's."""
+    if not p:
+        return "<p style='font:15px system-ui;color:#667;padding:24px'>This isn't written yet.</p>"
+    ext = os.path.splitext(p)[1].lower()
+    if ext in IMAGE_TYPES:      # inline, so a saved run's image shows (/api/artifact would need ?run=) and every type gets its own media type
+        with open(p, "rb") as f:
+            src = f"data:{IMAGE_TYPES[ext]};base64,{base64.b64encode(f.read()).decode()}"
+        return (f"<!doctype html><meta charset='utf-8'><body style='margin:0;display:grid;place-items:center;min-height:100vh;background:#f6f3ee'>"
+                f"<img src='{src}' alt='{html.escape(os.path.basename(p))}' style='max-width:100%;height:auto'></body>")
+    with open(p, encoding="utf-8", errors="replace") as f:
+        text = f.read()
+    if ext == ".md":
+        return j2.md_html(text, os.path.basename(p))
+    if ext in (".html", ".htm"):
+        return text
+    return (f"<!doctype html><meta charset='utf-8'><title>{html.escape(os.path.basename(p))}</title><body style='margin:0;background:#fbfaf7'>"
+            f"<pre style='margin:0;padding:24px;font:13px/1.55 ui-monospace,Menlo,monospace;color:#1f2421;white-space:pre-wrap;overflow-wrap:anywhere'>"
+            f"{html.escape(text)}</pre></body>")
+
+
+def record(ctx: RunCtx, q: dict) -> Reply:
+    """The Simple view's record of one part (`?sec=`) or of one deliverable (`?art=`): goal, method, output and check, built by code from
+    the run's snapshot, its documents record and its artifact list (studio/1, `j2_studio.record` and `deliverable_record`; J2 sync 4).
+    Live or saved. 404 `{"error": "no such part"}` for a part or a deliverable the run does not have, and for no run."""
+    d = _dir(ctx)
+    if _saved(ctx):
+        snap = j2.saved_snapshot_dir(d, ctx.run_id, 0) if d else None
+        docs = (j2._read(d, "documents.json", {}) or {}) if d else {}
+    else:
+        snap, docs = effective_snapshot(ctx), _live_dict(ctx)["docs"]
+    if q.get("art") is not None:
+        row = next((r for r in j2_artifacts.listing(d)["deliverables"] if r["name"] == q["art"]), None)
+        rec = j2_studio.deliverable_record(snap, docs, row) if row and snap else None
+    else:
+        rec = j2_studio.record(snap, docs, q.get("sec")) if snap else None
+    return _json(rec) if rec else _json({"error": "no such part"}, 404)
+
+
+def doc(ctx: RunCtx, q: dict) -> Reply:
+    """`GET /doc/<name>`: the run's `<name>.md` (prd, hld, lld, ...) as a readable page for the Simple view's output tabs. Only a file the
+    run's artifact list names is read (`j2_artifacts.served`); anything else is the plain "not written yet" line (J2 sync 4)."""
+    return Reply(200, view_page(j2_artifacts.served(_dir(ctx), f"{q.get('name') or ''}.md")), "text/html")
+
+
+def view(ctx: RunCtx, q: dict) -> Reply:
+    """`GET /view?name=<file>`: any file the run's artifact list names, as a readable page (`view_page`): the Simple view's output tabs."""
+    return Reply(200, view_page(j2_artifacts.served(_dir(ctx), q.get("name"))), "text/html")
 
 
 # --------------------------------------------------------------------------------------------------------- rows 18 to 21
@@ -592,6 +685,16 @@ def ask(ctx: RunCtx, body: dict) -> Reply:
         return _json({"error": "busy"}, 409)
 
 
+def settings(ctx: RunCtx, body: dict) -> Reply:
+    """`POST /api/settings {decide_for_me}`: the Simple view's Decide for me switch (J2's route; J2 sync 4). `decide_for_me` in the body
+    sets it; without it nothing changes. The answer is J2's `{"ok": true, "decide_for_me": <the switch now>}`. The command object acts:
+    in the app the team's live run is another process, so the switch reaches it as an inbox line the engine host applies."""
+    if ctx.commands is None:
+        return _no_commands()
+    wanted = bool(body["decide_for_me"]) if "decide_for_me" in body else None
+    return _json({"ok": True, "decide_for_me": bool(ctx.commands.decide_for_me(wanted))})
+
+
 def playbooks_clear(ctx: RunCtx, body: dict) -> Reply:
     return _json({"ok": True, "cleared": j2.clear_playbooks(ctx.memory.playbooks)})
 
@@ -618,8 +721,8 @@ def reset(ctx: RunCtx, body: dict) -> Reply:
 VIEWS: Dict[str, Callable[[RunCtx, dict], Reply]] = {fn.__name__: fn for fn in (
     index, vendor, state, runs, call, preview, docs, map, plan, library, library_item, run_templates, artifacts, agent, code,
     artifacts_tree, artifact, story, board, audits, refs, shot, file, site, say, playbooks_clear, lessons_clear, output, reset,
-    runlist, changes, plan_map, activity, catalog, artifacts_groups, ask)}
+    runlist, changes, plan_map, activity, catalog, artifacts_groups, ask, record, doc, view, settings)}
 
 # What a request needs from the live run (the stdlib adapter builds `live_state` only for these; the others read the folder).
-LIVE_VIEWS = frozenset({"state", "runlist", "preview", "docs", "map", "artifacts_tree", "artifacts_groups", "story", "board", "file",
-                        "site"})
+LIVE_VIEWS = frozenset({"state", "runlist", "preview", "docs", "map", "artifacts_tree", "artifacts_groups", "record", "story", "board",
+                        "file", "site"})
