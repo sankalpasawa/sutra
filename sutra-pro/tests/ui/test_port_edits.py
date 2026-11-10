@@ -1,8 +1,8 @@
-"""UI-2: the port of J2's department page (docs/design/ui.md section 5, S3-web-10, docs/design/j2-sync-4.md part 4: D137, D138, D139, D141).
+"""UI-2: the port of J2's department page (docs/design/ui.md section 5, S3-web-10, docs/design/j2-sync-4.md part 4 and its studio addendum: D137, D138, D139, D141).
 
 Three groups, none of them needs a browser or the J2 source:
   1. the committed files (sutra_app/ui/pages/j2_ui.html, static/css/j2.css, static/vendor/*, the two harness copies, and the frozen
-     static/css/j2-shell.css that Home and the console keep): edit by edit (the 28 page edits) against a table written out here, and
+     static/css/j2-shell.css that Home and the console keep): edit by edit (the 32 page edits) against a table written out here, and
      the invariants the design lists;
   2. scripts/port_j2_ui.py on a miniature J2 built below: the same table holds for what the script produces, J2 drift stops the
      port, `--check`, `--commit`, J2 is never written, two ports give the same bytes;
@@ -37,12 +37,12 @@ _spec.loader.exec_module(port)
 SANDBOX = "allow-scripts allow-forms allow-popups"
 MODULES = ["sutra_events", "graph_layout", "chart_marks", "graph_render", "graph_view", "orgchart_view", "fnode_view",
            "chat_view", "node_panel", "function_chat", "output_pick", "dept_ext"]
-# The 30 exact data routes of the page (J2's server since sync 4: sutra_ctx.js J2_EXACT), written out again here. The page calls 28 of
-# them: it no longer calls /api/artifacts (the Artifacts pane reads the groups) or /api/output (output_pick.js posts it).
+# The 32 exact data routes under /api/ of J2's server (sutra_ctx.js J2_EXACT has them and /view, the studio's output page), written out again
+# here. The page calls 31 of them: /api/output is posted by output_pick.js, not by the page (and /view is a frame's address, not a fetch).
 J2_API = ["state", "runs", "runlist", "changes", "call", "preview", "docs", "map", "plan", "plan-map", "library", "catalog", "run-templates",
-          "artifacts", "artifacts/tree", "artifacts/groups", "artifact", "agent", "activity", "code", "story", "board", "audits", "refs", "say",
-          "ask", "output", "reset", "playbooks/clear", "lessons/clear"]
-NOT_FETCHED = {"artifacts", "output"}
+          "artifacts", "artifacts/tree", "artifacts/groups", "artifact", "agent", "activity", "record", "code", "story", "board", "audits", "refs",
+          "say", "ask", "output", "settings", "reset", "playbooks/clear", "lessons/clear"]
+NOT_FETCHED = {"output"}
 EXTERNAL_REF = re.compile(r"""(?:src|href|action|poster|data-src)\s*=\s*["']\s*(?:https?:)?//""", re.IGNORECASE)
 INLINE_SCRIPT = re.compile(r"<script>(.*?)</script>", re.DOTALL)
 # D138: Home and the console keep the style sheet of the previous sync, frozen. The whole file (one comment line of its own, then the old
@@ -62,16 +62,16 @@ PAGE = read(UI / "pages" / "j2_ui.html")
 # The table: per edit, what the ported page holds (fragment, how many times) and what it no longer holds.
 # A fragment sometimes spans a neighbouring line: that pins where the new text was put.
 # ----------------------------------------------------------------------------------------------------------------------
-EDIT_IDS = ["E1", "E2a", "E2b", "E3", "E4", "E5", "E6a", "E6b", "E7", "E8", "E9", "E9b", "E10", "E11", "E12", "E13a", "E13b", "E13c", "E13d",
-            "E19", "E20a", "E20b", "E20c", "E20d", "E20e", "E20f", "E21", "E22"]
-COUNTS = {edit: 1 for edit in EDIT_IDS} | {"E13b": 3, "E20d": 2}
+EDIT_IDS = ["E1", "E2a", "E2b", "E2c", "E3", "E4", "E5", "E6a", "E6b", "E7", "E8", "E9", "E9b", "E10", "E11", "E12", "E13a", "E13b", "E13c", "E13d",
+            "E19", "E20a", "E20b", "E20c", "E20d", "E20e", "E20f", "E20g", "E20h", "E20i", "E21", "E22"]
+COUNTS = {edit: 1 for edit in EDIT_IDS} | {"E13b": 3, "E20d": 2, "E20i": 2}
 E1_HEAD = ('<link rel="stylesheet" href="/ui/css/j2.css">\n'
            '<link rel="stylesheet" href="/ui/css/sutra-graph.css"><link rel="stylesheet" href="/ui/css/sutra-panel.css">\n'
            "<!--SUTRA-BOOT-->\n"
            '<script src="/ui/js/sutra_ctx.js"></script>\n'
            "<script>/* the viewer's Appearance before the first paint")
 E5_STRIP = ('<div id="sview">\n'
-            '  <div class="shome"><a href="/" id="to-home-s">← All teams</a><b id="deptchip-s"></b></div>\n'
+            '  <div class="steamstrip"><a href="/" id="to-home-s">← All teams</a><b id="deptchip-s"></b></div>\n'
             '  <section class="sland" id="sland" aria-label="Start">')
 E6A_SHOWTAB = ('const full = name === "map" || name === "graph" || name === "orgchart"; document.querySelector("#dview .wbar").hidden = full;'
                ' document.querySelector("#dview .work").classList.toggle("mapfit", full); railReveal(name);')
@@ -92,16 +92,19 @@ E21_HYDRATE = ("Object.assign(FEED, v); } } catch (e) {}\n"
                "  paintFeed();")
 
 CASES = {
-    "E1": ([(E1_HEAD, 1)], ["fonts.googleapis.com", "<style>\n/* Theme", ":root{color-scheme:dark", "</style>\n<script>/* the viewer", "run-settings.css"]),
+    "E1": ([(E1_HEAD, 1)], ['<link rel="stylesheet" href="https://fonts.googleapis.com', "<style>\n/* Theme", ":root{color-scheme:dark", "</style>\n<script>/* the viewer",
+                            "run-settings.css"]),
     "E2a": ([(f'<iframe id="frame" title="Website preview" data-src="/site/latest" sandbox="{SANDBOX}"></iframe>', 1)],
             ['title="Website preview" src=']),
     "E2b": ([(f'<iframe id="sframe" title="Your result" sandbox="{SANDBOX}"></iframe>', 1)],
             ['<iframe id="sframe" title="Your result"></iframe>']),
+    "E2c": ([(f'<iframe id="sframe2" class="next" title="Your result, next version" tabindex="-1" aria-hidden="true" sandbox="{SANDBOX}"></iframe>', 1)],
+            ['aria-hidden="true"></iframe>']),
     "E3": ([('<script src="/ui/vendor/d3.min.js"></script>', 1)], ['<script src="vendor/d3.min.js">']),
     "E4": ([('const runQ = () => (viewRun ? "&run=" + encodeURIComponent(viewRun) : "")'
              ' + (SutraCtx.dept ? "&dept=" + encodeURIComponent(SutraCtx.dept) : "");', 1)],
            ["const runQ = () => viewRun ?"]),
-    "E5": ([(E5_STRIP, 1)], ['<div id="sview">\n  <section class="sland"', "stitle"]),
+    "E5": ([(E5_STRIP, 1)], ['<div id="sview">\n  <section class="sland"', "stitle", 'class="shome"><a']),
     "E6a": ([(E6A_SHOWTAB, 1)], ['.hidden = name === "map"; document.querySelector("#dview .work")']),
     "E6b": ([(E6B_PANES, 1)], ['"runsettings"].forEach']),
     "E7": ([(E7_HOME, 1), ('    <b class="rdept" id="deptchip"></b>\n', 1), (E7_TABS[0], 1), (E7_TABS[1], 1), (E7_END, 1)],
@@ -125,8 +128,8 @@ CASES = {
     "E13b": ([("no pricing records", 3)], ["no ranking records"]),
     "E13c": ([("No pricing records in this run", 1)], ["No ranking records"]),
     "E13d": ([("Funded, in registration order; Coordination sets the run order", 1)], ["Funded, in the order it ranked them"]),
-    "E19": ([('    <div class="soutpick" id="soutpick"></div>\n    <div class="schips" id="schips"></div>\n', 1)],
-            ['</form>\n    <div class="schips"', 'id="outsel"', "OUTS", "EFFOUT", "PICKEDOUT"]),
+    "E19": ([('<div class="slrow"><div class="soutpick" id="soutpick"></div><button type="button" class="sauto" id="sautoland"', 1)],
+            ['<div class="slrow"><button', 'id="outsel"', "OUTS", "EFFOUT", "PICKEDOUT"]),
     "E20a": ([("`${SutraCtx.libraryPath}?q=${encodeURIComponent(t.name)}`", 1)], ["`/library?q="]),
     "E20b": ([("const libHref = (art, sec, name, ver) => `${SutraCtx.libraryPath}?open=", 1)], ["`/library?open="]),
     "E20c": ([("const runHref = id => `${SutraCtx.pagePath}?run=${encodeURIComponent(id)}&view=detail&tab=library`;", 1)],
@@ -135,6 +138,9 @@ CASES = {
              ['location.pathname === "/library"']),
     "E20e": ([("const back = view => `${SutraCtx.pagePath}?${viewRun", 1)], ["const back = view => `/?${viewRun"]),
     "E20f": ([('data-catgo="${SutraCtx.libraryPath}${viewRun', 1)], ['data-catgo="/library']),
+    "E20g": ([('<a class="slink" href="library?view=detail">Template library</a>', 1)], ['href="/library?view=detail"']),
+    "E20h": ([('`<a href="${SutraCtx.pagePath}?run=${encodeURIComponent(x.id)}&view=simple">', 1)], ['`<a href="/?run=']),
+    "E20i": ([('location.href = SutraCtx.pagePath + "?view=simple"', 2)], ['location.href = "/?view=simple"']),
     "E21": ([(E21_HYDRATE, 1)], ["Object.assign(FEED, v); } } catch (e) {}\n  paintFeed();"]),
     "E22": ([('runsettings: "appearance and saved runs"};', 1)], ["appearance, what to build, saved runs"]),
 }
@@ -156,16 +162,16 @@ def test_edit_is_in_the_committed_page(case):
     check_case(PAGE, case)
 
 
-def test_there_are_twenty_eight_edits_and_every_one_has_a_case_here():
-    assert len(EDIT_IDS) == len(set(EDIT_IDS)) == 28 and sorted(CASES) == sorted(EDIT_IDS)
-    assert [COUNTS[f"E13{letter}"] for letter in "abcd"] == [1, 3, 1, 1] and COUNTS["E20d"] == 2
-    assert sum(1 for count in COUNTS.values() if count == 1) == 26
+def test_there_are_thirty_two_edits_and_every_one_has_a_case_here():
+    assert len(EDIT_IDS) == len(set(EDIT_IDS)) == 32 and sorted(CASES) == sorted(EDIT_IDS)
+    assert [COUNTS[f"E13{letter}"] for letter in "abcd"] == [1, 3, 1, 1] and COUNTS["E20d"] == COUNTS["E20i"] == 2
+    assert sum(1 for count in COUNTS.values() if count == 1) == 29
 
 
 def test_the_retired_edits_left_nothing_behind():
     # E14 to E18 (Run settings: J2's own is native now) and E19a to E19c (the start select, OUTS and /api/output moved to a module)
     for gone in ('id="outsel"', 'id="to-simple"', "What to build", "EFFOUT", "PICKEDOUT", "/api/engine/settings", 'id="stitle"', 'id="sotype"',
-                 "run-settings.css"):
+                 "run-settings.css", "/api/output"):
         assert gone not in PAGE, gone
     assert 'id="runlist"' in PAGE and 'id="runq"' in PAGE and 'class="rsec"' in PAGE            # J2's own Run settings is there instead
     assert not (UI / "static" / "css" / "run-settings.css").exists()
@@ -204,18 +210,23 @@ def test_every_module_the_page_loads_is_in_the_static_folder():
 
 
 def test_no_external_url_in_the_markup_and_no_cdn():
-    assert not EXTERNAL_REF.search(PAGE)
-    assert "googleapis" not in PAGE
+    markup = PAGE[:PAGE.index('<script src="/ui/vendor/d3.min.js">')]               # the head and the body's markup, before the scripts
+    assert not EXTERNAL_REF.search(markup) and "googleapis" not in markup and "<link rel=\"stylesheet\" href=\"https://" not in markup
     assert not re.search(r"url\(\s*[\"']?\s*(?:https?:)?//", PAGE)
+    # the one outside address left is a string of the studio's script: it adds Google Fonts to a generated document when it can read the frame
+    # (sFrameSetup). It cannot under the sandbox (no allow-same-origin), and the CSP would refuse the sheet if it could.
+    assert PAGE.count("googleapis") == 1 and 'fl.href = "https://fonts.googleapis.com/css2?family=DM+Sans' in PAGE
+    assert len(EXTERNAL_REF.findall(PAGE)) == 1
 
 
-def test_every_link_of_the_markup_is_a_hash_a_root_path_or_one_of_the_page_s_own_url_helpers():
+def test_every_link_of_the_markup_is_a_hash_a_root_path_a_relative_library_link_or_one_of_the_page_s_own_url_helpers():
     hrefs = re.findall(r'href="([^"]*)"', PAGE)
-    own = ("${artUrl(", "${libHref(", "${runHref(", "${href}")          # template expressions over the helpers that E4 and E20 made team-aware
-    odd = [h for h in hrefs if h != "#" and not h.startswith("/") and not h.startswith(own)]
-    assert odd == [], odd
-    assert not any(h.startswith("?") for h in hrefs)                  # J2's old relative "?view=" links are gone with the old Simple-view title
+    own = ("${artUrl(", "${libHref(", "${runHref(", "${href}", "${SutraCtx.pagePath}")      # template expressions over the helpers E4 and E20 made team-aware
+    odd = [h for h in hrefs if h != "#" and not h.startswith(("/", "data:image/svg+xml,")) and not h.startswith(own)]
+    assert odd == ["library?view=detail"], odd                       # E20g: the start page's static link is relative to the team's page, /d/<id>/
+    assert not any(h.startswith("?") for h in hrefs)                  # J2's old relative "?view=" links are gone
     assert hrefs.count("/") == 2                                      # the two ways back to Home (E5, E7); nothing else points at the root
+    assert not [h for h in hrefs if h.startswith("/") and h.split("?")[0].rstrip("/") in ("/library", "/view", "/doc")], hrefs
 
 
 def test_ids_of_the_page_are_unique():
@@ -224,14 +235,18 @@ def test_ids_of_the_page_are_unique():
     assert len(ids) > 100 and sorted({i for i in ids if ids.count(i) > 1}) == []
 
 
-def test_both_preview_iframes_wait_for_their_src_or_the_page_and_are_sandboxed_without_same_origin():
-    tags = {m.group(1): m.group(0) for m in re.finditer(r'<iframe id="(sframe|frame)"[^>]*>', PAGE)}
-    assert sorted(tags) == ["frame", "sframe"]
+def test_the_three_generated_page_frames_wait_for_their_src_or_the_page_and_are_sandboxed_without_same_origin():
+    tags = {m.group(1): m.group(0) for m in re.finditer(r'<iframe id="(sframe2|sframe|frame)"[^>]*>', PAGE)}
+    assert sorted(tags) == ["frame", "sframe", "sframe2"]
     for tag in tags.values():
         assert f'sandbox="{SANDBOX}"' in tag and "allow-same-origin" not in tag
         assert not re.search(r'(?<![-\w])src=', tag)
-    assert 'data-src="/site/latest"' in tags["frame"] and "data-src" not in tags["sframe"]       # sframe's src is set by the page, with runQ()
-    assert "$(\"sframe\").src = `/site/${sframeKey}?t=${Date.now()}${runQ()}`" in PAGE
+    assert 'data-src="/site/latest"' in tags["frame"] and "data-src" not in tags["sframe"] and "data-src" not in tags["sframe2"]
+    # the studio sets src itself, with a url built by runQ() (which E4 gave the team), into the frame behind the visible one, then swaps their ids
+    assert 'function sLoad(url){ SV.want = url; if (SV.loading || SV.cur === url) return; SV.loading = url; $("sframe2").src = url; }' in PAGE
+    assert "const tabs = [], q = runQ()," in PAGE and PAGE.count("?x=1${q}") >= 3
+    # J2's own frames of the Artifacts pane (srcdoc, no scripts) are not ours: they keep J2's sandbox, which has no allow-scripts
+    assert [m.group(0) for m in re.finditer(r'<iframe class="asecview"[^>]*>', PAGE) if "allow-scripts" in m.group(0)] == []
 
 
 def test_the_rail_strip_is_the_first_thing_in_the_rail_and_outside_the_flyout_pool():
@@ -247,11 +262,17 @@ def test_the_rail_strip_is_the_first_thing_in_the_rail_and_outside_the_flyout_po
     assert PAGE.count('data-tab="graph"') == 1 and PAGE.count('data-tab="orgchart"') == 1
 
 
-def test_the_simple_view_strip_and_the_output_place_are_inside_the_start_area():
+def test_the_simple_view_strip_is_above_the_start_page_and_the_output_place_is_in_its_row_of_options():
     sview = PAGE[PAGE.index('<div id="sview">'):PAGE.index('<section class="swork"')]
-    assert sview.index('class="shome"') < sview.index('id="sland"') and sview.count('id="to-home-s"') == 1 and sview.count('id="deptchip-s"') == 1
+    assert sview.index('class="steamstrip"') < sview.index('id="sland"') and sview.count('id="to-home-s"') == 1 and sview.count('id="deptchip-s"') == 1
+    assert 'class="shome"' not in sview                              # J2's studio has a New project button of that class, with its own rule (E5)
     sland = sview[sview.index('id="sland"'):]
-    assert sland.index('id="lform"') < sland.index('id="soutpick"') < sland.index('id="schips"')       # the chips are after the box, the choice before them
+    row = sland[sland.index('<div class="slrow">'):]
+    assert sland.index('id="lform"') < sland.index('id="schips"') < sland.index('<div class="slrow">')      # J2's chips are examples inside the form
+    assert row.index('id="soutpick"') < row.index('id="sautoland"') < row.index('class="slsep"') < row.index('id="slanddetail"')
+    assert row.count('id="soutpick"') == 1 and PAGE.count('id="soutpick"') == 1
+    studio = PAGE[PAGE.index('<section class="swork"'):PAGE.index('<div id="dview">')]
+    assert 'id="soutpick"' not in studio and 'class="steamstrip"' not in studio                         # only the start page and the top of the view carry them
 
 
 def fetch_sites(script: str) -> list[str]:
@@ -284,7 +305,7 @@ def fetch_sites(script: str) -> list[str]:
 
 def test_every_fetch_goes_to_a_j2_route_or_through_artUrl_so_the_wrapper_covers_the_whole_page():
     sites = fetch_sites(INLINE_SCRIPT.findall(PAGE)[1])
-    assert len(sites) == 32 and sites.count("artUrl(f)") == 1
+    assert len(sites) == 37 and sites.count("artUrl(f)") == 1
     routes = set()
     for site in sites:
         if site == "artUrl(f)":
@@ -298,14 +319,16 @@ def test_every_fetch_goes_to_a_j2_route_or_through_artUrl_so_the_wrapper_covers_
             continue
         assert route[len("/api/"):] in J2_API, site
         routes.add(route[len("/api/"):])
-    assert routes == set(J2_API) - NOT_FETCHED                       # 28 routes, and never /api/artifacts or /api/output
+    assert routes == set(J2_API) - NOT_FETCHED                       # 31 routes, and never /api/output (output_pick.js posts it)
     assert "const artUrl = f => `/api/artifact?name=${encodeURIComponent(f)}${runQ()}`;" in PAGE
 
 
 def test_the_page_uses_no_transport_the_fetch_wrapper_could_not_cover_and_none_the_csp_would_have_to_allow():
-    for word in ("XMLHttpRequest", "EventSource", "WebSocket", "sendBeacon", "new Worker", "eval(", "new Function", "document.cookie", "setInterval",
-                 "blob:", "data:"):
+    for word in ("XMLHttpRequest", "EventSource", "WebSocket", "sendBeacon", "new Worker", "eval(", "new Function", "document.cookie", "blob:"):
         assert word not in PAGE, word
+    # the studio has one timer (a function, never a string: nothing for the CSP to allow) and J2's favicon is the one data: URL
+    assert PAGE.count("setInterval") == 1 and re.search(r"setInterval\(\(\) =>", PAGE) and not re.search(r"setInterval\([\"'`]", PAGE)
+    assert re.findall(r"data:image/[\w+]+,", PAGE) == ["data:image/svg+xml,"] and '<link rel="icon" href="data:image/svg+xml,' in PAGE
     assert PAGE.count("localStorage") == 23 and PAGE.count("navigator.clipboard") == 3
 
 
@@ -384,11 +407,12 @@ document.documentElement.dataset.theme = "dark";</script>
 <body class="simple">
 <div id="sview">
   <section class="sland" id="sland" aria-label="Start">
-    <form class="sbox" id="lform"><textarea id="lbox"></textarea></form>
-    <div class="schips" id="schips"></div>
+    <form class="sbox" id="lform"><textarea id="lbox"></textarea><div class="sbrow"><div class="schips" id="schips"></div><button class="sgo" id="lsend" type="submit">Start</button></div></form>
+    <div class="slrow"><button type="button" class="sauto" id="sautoland" role="switch" aria-checked="false">Decide for me</button>
+      <span class="slsep" aria-hidden="true"></span><a class="slink" href="/library?view=detail">Template library</a><button type="button" class="slink" id="slanddetail">Detailed view</button></div>
   </section>
   <section class="swork" id="swork" hidden>
-    <div class="sprev" id="sprevbox"><div class="sframe" id="sframebox"><iframe id="sframe" title="Your result"></iframe></div></div>
+    <div class="sprev" id="sprevbox"><iframe id="sframe" title="Your result"></iframe><iframe id="sframe2" class="next" title="Your result, next version" tabindex="-1" aria-hidden="true"></iframe></div>
   </section>
 </div>
 <div id="dview">
@@ -426,6 +450,10 @@ async function openAgent(id){
 const libLink = t => t.artifact ? libHref(t.artifact) : `/library?q=${encodeURIComponent(t.name)}`;
 const libHref = (art, sec, name, ver) => `/library?open=${encodeURIComponent(art)}`;
 const runHref = id => `/?run=${encodeURIComponent(id)}&view=detail&tab=library`;
+const recent = x => `<a href="/?run=${encodeURIComponent(x.id)}&view=simple"><span>${x.title}</span></a>`;
+$("shome").onclick = async () => {
+  if (viewRun || (state && state.saved)){ location.href = "/?view=simple"; return; }
+  await fetch("/api/reset", {method: "POST"}); location.href = "/?view=simple"; };
 function setView(v){
   if (location.pathname === "/library") return;      // the catalog page keeps its own ?view=
 }
@@ -556,7 +584,7 @@ def test_check_is_quiet_about_files_in_step_and_writes_nothing(ported, capsys):
     j2, root = ported
     before = tree(root)
     code, out, err = run(capsys, "--j2", j2, "--root", root, "--check")
-    assert (code, err) == (0, "") and out.startswith("ok: the 28 anchors of the page edits match their counts, ")
+    assert (code, err) == (0, "") and out.startswith("ok: the 32 anchors of the page edits match their counts, ")
     assert "and the 7 committed files equal a fresh port of J2 " in out
     assert tree(root) == before
 
@@ -648,13 +676,16 @@ def test_an_anchor_that_appears_twice_is_drift_too(tmp_path, capsys):
     assert code == 1 and "  E3: expected 1 match, found 2\n" in err
 
 
-def test_each_of_the_two_iframes_has_its_own_edit(tmp_path, capsys):
+def test_each_of_the_three_iframes_has_its_own_edit(tmp_path, capsys):
     j2 = make_j2(tmp_path, page=(('<iframe id="frame" title="Website preview" src="/site/latest"></iframe>', ""),))
     code, _, err = run(capsys, "--j2", j2, "--root", tmp_path / "repo")
-    assert code == 1 and "  E2a: expected 1 match, found 0\n" in err and "E2b" not in err
+    assert code == 1 and "  E2a: expected 1 match, found 0\n" in err and "E2b" not in err and "E2c" not in err
     j2 = make_j2(tmp_path / "b", page=(('<iframe id="sframe" title="Your result"></iframe>', '<iframe id="sframe" title="Your result" src="/site/latest"></iframe>'),))
     code, _, err = run(capsys, "--j2", j2, "--root", tmp_path / "repo2")
-    assert code == 1 and "  E2b: expected 1 match, found 0\n" in err and "E2a" not in err
+    assert code == 1 and "  E2b: expected 1 match, found 0\n" in err and "E2a" not in err and "E2c" not in err
+    j2 = make_j2(tmp_path / "c", page=((' tabindex="-1" aria-hidden="true"></iframe>', ' tabindex="0"></iframe>'),))      # the studio's second frame changed
+    code, _, err = run(capsys, "--j2", j2, "--root", tmp_path / "repo3")
+    assert code == 1 and "  E2c: expected 1 match, found 0\n" in err and "E2a" not in err and "E2b" not in err
 
 
 def test_the_counts_that_are_not_one_are_checked_both_ways(tmp_path, capsys):
@@ -669,6 +700,13 @@ def test_the_counts_that_are_not_one_are_checked_both_ways(tmp_path, capsys):
     j2 = make_j2(tmp_path / "c", page=(("</script>\n</body>", "</script>\n</body>\n<script>1</script>\n</body>"),))
     code, _, err = run(capsys, "--j2", j2, "--root", tmp_path / "repo3")
     assert code == 1 and "  E12: expected 1 match, found 2\n" in err
+    # E20i is the two places New project goes back to the start page; E19, E20g and E20h are one each
+    j2 = make_j2(tmp_path / "d", page=(('{ location.href = "/?view=simple"; return; }', '{ location.href = "/?view=other"; return; }'),))
+    code, _, err = run(capsys, "--j2", j2, "--root", tmp_path / "repo4")
+    assert code == 1 and "  E20i: expected 2 matches, found 1\n" in err
+    j2 = make_j2(tmp_path / "e", page=(('<div class="slrow">', '<div class="slrow2">'),))
+    code, _, err = run(capsys, "--j2", j2, "--root", tmp_path / "repo5")
+    assert code == 1 and "  E19: expected 1 match, found 0\n" in err
 
 
 def test_a_page_without_the_font_and_style_block_is_drift_in_e1(tmp_path, capsys):
@@ -773,7 +811,7 @@ def test_e13_words_are_the_four_pairs_of_the_design_and_the_script_prints_them_a
 
 def test_the_edit_table_has_the_design_ids_and_counts():
     assert [(edit.id, edit.count) for edit in port.PAGE_EDITS] == [(edit, COUNTS[edit]) for edit in EDIT_IDS]
-    assert len(port.PAGE_EDITS) == 28
+    assert len(port.PAGE_EDITS) == 32
     assert [(e.id, e.count) for e in port.RENDER_EDITS] == [("H1", 1), ("H2", 1), ("H3", 1)]
     assert [(e.id, e.count) for e in port.LAYOUT_EDITS] == [("H1", 1)]
     for retired in ("RUN_SETTINGS_EDITS", "OUTPUT_EDITS", "RUN_SETTINGS_CSS"):
@@ -804,5 +842,5 @@ def test_a_fresh_port_of_the_real_j2_equals_the_committed_files_and_leaves_j2_al
     before = [p.read_bytes() for p in watched]
     code, out, err = run(capsys, "--j2", j2, "--commit", PIN, "--check")
     assert (code, err) == (0, ""), out + err
-    assert out.startswith("ok: the 28 anchors of the page edits match their counts, and the 7 committed files equal a fresh port of J2 ")
+    assert out.startswith("ok: the 32 anchors of the page edits match their counts, and the 7 committed files equal a fresh port of J2 ")
     assert [p.read_bytes() for p in watched] == before
