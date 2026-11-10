@@ -609,7 +609,8 @@ def check_lines(check: Check, cap: int = 24) -> list[str]:
     """What a check printed, in a code block; a line that only informs (`note:`) is counted, not repeated. Long output is cut."""
     shown = [line for line in check.output.splitlines() if line.strip() and not line.startswith("note:")]
     notes = sum(1 for line in check.output.splitlines() if line.startswith("note:"))
-    body = shown[:cap] + ([f"... {len(shown) - cap} more line(s)"] if len(shown) > cap else [])
+    # a long output keeps its first lines and its last one (the summary line of vendor_j2.py --check)
+    body = shown if len(shown) <= cap else shown[:cap - 2] + [f"... {len(shown) - cap + 1} more line(s)", shown[-1]]
     if notes:
         body.append(f"({notes} informational note line(s) not repeated)")
     return ["```", *(body or ["(no output)"]), "```"]

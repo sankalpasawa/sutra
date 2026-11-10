@@ -400,7 +400,7 @@ def test_a_check_prints_its_lines_and_counts_but_does_not_repeat_a_note():
     shown = tool.check_lines(tool.Check("c", "cmd", 2, "note: names the old baseline\nvendor_j2: boom\n", "build error"))
     assert shown == ["```", "vendor_j2: boom", "(1 informational note line(s) not repeated)", "```"]
     many = tool.check_lines(tool.Check("c", "cmd", 1, "".join(f"differs: f{i}\n" for i in range(30)), "differences"), cap=5)
-    assert many[0] == "```" and many[-2] == "... 25 more line(s)" and len(many) == 8
+    assert many == ["```", "differs: f0", "differs: f1", "differs: f2", "... 26 more line(s)", "differs: f29", "```"], "the first lines and the last"
 
 
 def test_the_two_folders_are_replaced_in_what_a_check_printed(tmp_path):
