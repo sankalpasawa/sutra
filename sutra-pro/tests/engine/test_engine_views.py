@@ -1,5 +1,6 @@
-"""The 30 handlers of J2's server as functions (`views.py`) and the stdlib adapter over them (`j2_server.py`), work package E2,
-engine design 4.6, 7.1 and 9 [S3-web-07]. J2 runs in mock mode with its Chrome checks faked (as J2's own `--fast` flow does):
+"""The 41 handlers of J2's server as functions (`views.py`) and the stdlib adapter over them (`j2_server.py`), work package E2,
+engine design 4.6, 7.1 and 9 [S3-web-07]; J2 sync 4 added `plan_map`, `activity`, `catalog`, `artifacts_groups`, `ask`, `record`, `doc`,
+`view` and `settings`, and `runlist` and `changes` are J2's own routes now. J2 runs in mock mode with its Chrome checks faked (as J2's own `--fast` flow does):
 a whole Brew Lab run takes about a tenth of a second, so two real runs (a website and a PRD) are the fixtures.
 
 The golden file `golden/api_shapes.json` was recorded from J2 itself (`scripts/record_api_shapes.py`): per route the status,
@@ -36,7 +37,8 @@ PRD_BRIEF = ("Write a PRD for QuickQueue, a mobile app that lets clinic patients
              "patients join remotely within 3 months.")
 NAMES = {"index", "vendor", "state", "runs", "call", "preview", "docs", "map", "plan", "library", "library_item", "run_templates",
          "artifacts", "agent", "code", "artifacts_tree", "artifact", "story", "board", "audits", "refs", "shot", "file", "site",
-         "say", "playbooks_clear", "lessons_clear", "output", "reset", "runlist", "changes"}         # the last two: patch P13
+         "say", "playbooks_clear", "lessons_clear", "output", "reset", "runlist", "changes", "plan_map", "activity", "catalog",
+         "artifacts_groups", "ask", "record", "doc", "view", "settings"}
 
 
 def load_recorder():
@@ -129,15 +131,27 @@ def w(tmp_path_factory):
 
 # ---- helpers -----------------------------------------------------------------------------------------------------------
 class FakeCommands:
-    """The three POSTs, recorded."""
+    """The POSTs that act, recorded."""
 
-    def __init__(self, say=True, accept=True, reset=True, output="website"):
+    def __init__(self, say=True, accept=True, reset=True, output="website", ask_error=None, switch=False):
         self.results = {"say": say, "accept": accept, "reset": reset}
-        self.output, self.calls = output, []
+        self.output, self.calls, self.ask_error, self.switch = output, [], ask_error, switch
 
     def say(self, text):
         self.calls.append(("say", text))
         return self.results["say"]
+
+    def ask(self, who, question, run_id):
+        self.calls.append(("ask", who, question, run_id))
+        if self.ask_error is not None:
+            raise self.ask_error
+        return {"who": who, "answer": f"about {question}", "from": "records", "run": run_id}
+
+    def settings(self, decide_for_me):
+        self.calls.append(("settings", decide_for_me))
+        if decide_for_me is not None:
+            self.switch = decide_for_me
+        return self.switch
 
     def set_output(self, out):
         self.calls.append(("set_output", out))
@@ -178,10 +192,21 @@ def text_of(reply):
 
 
 # ---- the golden file ---------------------------------------------------------------------------------------------------
-def test_the_golden_was_recorded_from_j2_at_the_baseline_commit():
-    assert GOLD["schema"] == rec.SCHEMA and GOLD["j2_commit"].startswith("33aeeda")
-    assert set(GOLD["get"]) == {"live", "saved", "idle"} and len(GOLD["get"]["live"]) == 30 == len(rec.ROUTES)
-    assert set(GOLD["post"]) == set(rec.POSTS)
+def test_the_golden_was_recorded_from_j2_at_the_pinned_commit():
+    assert GOLD["schema"] == rec.SCHEMA and GOLD["j2_commit"] == rec.BASELINE
+    assert set(GOLD["get"]) == {"live", "saved", "idle"} and len(GOLD["get"]["live"]) == len(rec.ROUTES) == 42
+    assert set(GOLD["post"]) == set(rec.POSTS) and len(rec.POSTS) == 11
+    assert "patched" not in GOLD, "runlist and changes are J2's own routes: recorded from J2's server like the rest (D150)"
+    assert {"runlist", "changes", "plan_map", "activity", "catalog", "artifacts_groups", "record_part", "record_art", "doc", "view"} <= set(GOLD["get"]["live"])
+    assert {"ask", "ask_refused", "settings", "settings_read"} <= set(GOLD["post"])
+
+
+def test_the_golden_pins_the_studio_keys_of_the_state_and_the_new_routes_answer_with_the_shapes_j2_gave():
+    state = set(GOLD["get"]["live"]["state"]["keys"])
+    assert {"decide_for_me", "auto_answers", "studio", "studio.parts", "studio.stream"} <= state
+    assert GOLD["get"]["live"]["record_part"]["status"] == 200 and GOLD["get"]["idle"]["record_part"]["status"] == 404
+    assert GOLD["get"]["live"]["doc"]["ctype"] == "text/html" and GOLD["get"]["live"]["activity"]["status"] == 200
+    assert GOLD["post"]["ask_refused"]["status"] == 400 and GOLD["post"]["settings"]["keys"] == ["decide_for_me", "ok"]
 
 
 def test_the_golden_has_the_template_copy_keys_of_the_j2_sync():
@@ -248,29 +273,33 @@ def test_every_post_route_has_the_shape_j2_gave(w, monkeypatch, tmp_path):
     deadline = time.time() + 60
     while w.j2_server.RUN.status != "waiting" and time.time() < deadline:
         time.sleep(0.01)
+    got.update(ask=post("/api/ask", {"who": "adaptation", "q": "Why did you plan the work this way?"}),
+               ask_refused=post("/api/ask", {"who": "nobody", "q": "Is anyone there?"}),
+               settings=post("/api/settings", {"decide_for_me": True}), settings_read=post("/api/settings", {}))
     got.update(output_late=post("/api/output", {"type": "website"}), playbooks_clear=post("/api/playbooks/clear", {}),
                lessons_clear=post("/api/lessons/clear", {}), reset=post("/api/reset", {}))
     assert got == GOLD["post"]
 
 
-@pytest.mark.skipif(not os.environ.get("SUTRA_J2_CHECKOUT"), reason="set SUTRA_J2_CHECKOUT to a J2 checkout to re-record")
-def test_the_recorder_reproduces_the_golden_from_a_j2_checkout():
+@pytest.mark.skipif(not os.environ.get("SUTRA_J2_CHECKOUT"), reason="set SUTRA_J2_CHECKOUT to an extraction of prototypes/j2 to re-record")
+def test_the_recorder_reproduces_the_golden_from_an_extraction_of_prototypes_j2():
     assert rec.main(["--source", os.environ["SUTRA_J2_CHECKOUT"], "--check"]) == 0
 
 
 # ---- the registry ------------------------------------------------------------------------------------------------------
-def test_the_views_are_the_thirty_handlers_of_the_design(w):
+def test_the_views_are_the_41_handlers_of_the_design(w):
     v = w.views
     assert set(v.VIEWS) == NAMES and all(callable(f) for f in v.VIEWS.values())
     assert v.VIEWS["site"] is v.site and callable(v.site_saved) and callable(v.site_live)
-    assert v.HANDLER_COUNT == 30 == len(v.VIEWS) - len(v.PATCH_VIEWS) - 1 + 2          # "site" has two rows (saved and live), one entry
-    assert v.LIVE_VIEWS <= set(v.VIEWS)
+    assert v.HANDLER_COUNT == 41 == len(v.VIEWS) - 1 + 2          # "site" has two rows (saved and live), one entry
+    assert not hasattr(v, "PATCH_VIEWS"), "runlist and changes are J2's own routes: no view is a patch's"
+    assert v.LIVE_VIEWS <= set(v.VIEWS) and {"artifacts_groups", "record"} <= v.LIVE_VIEWS
 
 
 # ---- publishing: live_state, read_published, idle_snapshot ------------------------------------------------------------
 def test_live_state_builds_the_snapshot_and_the_live_dict_of_a_run(w):
     snap, live = w.views.live_state(w.site)
-    assert snap == {**w.site.snapshot(0), "saved": None} and len(snap) == 57 and len(w.site.snapshot(0)) == 56
+    assert snap == {**w.site.snapshot(0), "saved": None} and len(snap) == 60 and len(w.site.snapshot(0)) == 59
     assert set(live) == {"schema", "pid", "at", "output", "doc", "out_label", "docset", "stages", "stage_i", "docs", "board",
                          "site_tag", "sites"}
     assert live["schema"] == "engine-live/1" and live["pid"] == os.getpid() and live["sites"] == len(w.site.sites) > 0
@@ -301,7 +330,7 @@ def test_read_published_reads_both_files_and_the_pid(w, tmp_path):
 def test_idle_snapshot_has_the_keys_of_a_fresh_j2_snapshot(w):
     fresh = w.j2.J2Run().snapshot(0)
     idle = w.views.idle_snapshot(w.views.EngineSettings(), w.memory, "j2-idle")
-    assert set(idle) == set(fresh) and len(idle) == 56
+    assert set(idle) == set(fresh) and len(idle) == 59
     assert idle["chat"] == [] and idle["status"] == "idle" and idle["output"] == "website"
 
 
@@ -794,8 +823,8 @@ def test_the_clear_routes_empty_the_departments_memory_files(w, tmp_path):
 
 
 # ---- the file-based live mode and the stdlib adapter give the same bodies ---------------------------------------------
-LIVE_QUERIES = {"state": {"since": "1"}, "runlist": {}, "preview": {}, "docs": {}, "map": {}, "artifacts_tree": {}, "story": {}, "board": {},
-                "file": {"name": "prd.md"}, "site": {"key": "latest"}}
+LIVE_QUERIES = {"state": {"since": "1"}, "runlist": {}, "preview": {}, "docs": {}, "map": {}, "artifacts_tree": {}, "artifacts_groups": {},
+                "record": {}, "story": {}, "board": {}, "file": {"name": "prd.md"}, "site": {"key": "latest"}}
 
 
 def test_the_files_the_host_publishes_give_the_same_bodies_as_the_live_run(w, tmp_path):
@@ -811,7 +840,8 @@ def test_the_files_the_host_publishes_give_the_same_bodies_as_the_live_run(w, tm
         files = w.views.RunCtx("live", mem.run_id, run.dir, mem.runs_dir, mem.live_id, w.memory, snap=pub.snap, extras=pub.live,
                                alive=pub.alive)
         for name, q in LIVE_QUERIES.items():
-            q = {**q, **({"atom": first_atom(run, "doc")} if name == "preview" and run is w.prd else {})}
+            q = {**q, **({"atom": first_atom(run, "doc")} if name == "preview" and run is w.prd else {}),
+                 **({"sec": snap["studio"]["parts"][0]["sec"]} if name == "record" else {})}
             a, b = call(w, name, mem, **q), call(w, name, files, **q)
             assert (a.code, a.ctype, a.body) == (b.code, b.ctype, b.body), (os.path.basename(run.dir), name)
 
@@ -926,16 +956,27 @@ def test_the_adapter_reads_runs_dir_and_memory_files_per_request(w, monkeypatch,
 def test_the_route_table_of_the_adapter_names_a_view_for_every_get_path(w):
     route = w.j2_server.route
     assert route("/") == ("index", {}) and route("/index.html") == ("index", {}) and route("/vendor/d3.min.js") == ("vendor", {})
+    assert route("/library") == ("index", {}), "J2's own /library is the same page showing the catalog"
     assert route("/api/library") == ("library", {}) and route("/api/artifacts/tree") == ("artifacts_tree", {})
     assert route("/api/library/prd/goals/acme/v3") == ("library_item", {"artifact": "prd", "section": "goals", "slug": "acme", "version": "v3"})
     assert route("/api/library/prd/goals")[1] == {"artifact": "", "section": "", "slug": "", "version": ""}
     assert route("/shot/4") == ("shot", {"n": "4"}) and route("/file/prd.md") == ("file", {"name": "prd.md"})
+    assert route("/doc/prd") == ("doc", {"name": "prd"}) and route("/view") == ("view", {})
     assert route("/site/latest") == ("site", {"key": "latest"}) and route("/nothing") is None
     names = {route(p)[0] for p in ("/api/state", "/api/runs", "/api/call", "/api/preview", "/api/docs", "/api/map", "/api/plan",
                                    "/api/run-templates", "/api/artifacts", "/api/agent", "/api/code", "/api/artifact", "/api/story",
                                    "/api/board", "/api/audits", "/api/refs")}
     assert names == {"state", "runs", "call", "preview", "docs", "map", "plan", "run_templates", "artifacts", "agent", "code",
                      "artifact", "story", "board", "audits", "refs"}
+    assert {route(p)[0] for p in ("/api/runlist", "/api/changes", "/api/plan-map", "/api/catalog", "/api/activity", "/api/artifacts/groups",
+                                  "/api/record")} == {"runlist", "changes", "plan_map", "catalog", "activity", "artifacts_groups", "record"}
+    every_get = {view for view in NAMES if view not in ("say", "ask", "settings", "playbooks_clear", "lessons_clear", "output", "reset")}
+    reached = {route(p)[0] for p in ("/", "/vendor/d3.min.js", "/api/state", "/api/runs", "/api/runlist", "/api/changes", "/api/call", "/api/preview",
+                                     "/api/docs", "/api/map", "/api/plan", "/api/plan-map", "/api/library", "/api/library/a/b/c/v1", "/api/catalog",
+                                     "/api/run-templates", "/api/artifacts", "/api/agent", "/api/activity", "/api/record", "/api/code",
+                                     "/api/artifacts/tree", "/api/artifacts/groups", "/api/artifact", "/api/story", "/api/board", "/api/audits",
+                                     "/api/refs", "/shot/1", "/file/x", "/doc/x", "/view", "/site/latest")}
+    assert reached == every_get, "every GET view is reached by some path of the adapter, and no other"
 
 
 # ---- the adapter never reaches the page code --------------------------------------------------------------------------
@@ -951,18 +992,38 @@ def test_the_views_and_the_adapter_do_not_import_the_ui_package():
         assert "sutra_app.ui" not in source.replace("sutra_app.ui` ", "").split('"""', 2)[-1], name
 
 
-# ---- patch P13: GET /api/runlist and GET /api/changes (not in J2's repository; shapes in GOLD["patched"]) ------------------
-def patched_problems(w, route, ctx, mode):
-    reply = w.views.VIEWS[route](ctx, {})
-    got, gold = rec.shape(reply.code, reply.ctype, reply.body), GOLD["patched"]["get"][route][mode]
-    return [] if got == gold else [f"{route}/{mode}: {got} instead of {gold}"]
+# ---- runlist and changes (D140): J2's own routes since sync 4, over engine/runlist.py ----------------------------------------------
+RUN_DONE, RUN_STOPPED, RUN_BARE = "j2-20261105-091500-aaaa", "j2-20261106-101500-bbbb", "j2-20261106-111500-cccc"
 
 
-def test_the_golden_has_the_two_patched_routes():
-    assert set(GOLD["patched"]["get"]) == set(rec.PATCH_ROUTES) == {"runlist", "changes"}
-    assert set(GOLD["patched"]["get"]["runlist"]["runs"]["keys"]) == {"live", "runs", "runs[].id", "runs[].title", "runs[].status",
-                                                                     "runs[].output", "runs[].when", "runs[].brief"}
-    assert {"runlist", "changes"} <= NAMES
+def write_runs_fixture(runs_dir):
+    """Three saved runs in `runs_dir`: one finished with a goal, a summary and two change requests, one that never finished (only a chat and
+    a goal statement) and one whose folder has no chat.jsonl (not a run: the list skips it). Returns the live run's id."""
+    runs = Path(runs_dir)
+
+    def put(name, **files):
+        folder = runs / name
+        folder.mkdir(parents=True, exist_ok=True)
+        for file, value in files.items():
+            text = "\n".join(json.dumps(row) for row in value) + "\n" if file == "chat.jsonl" else json.dumps(value)
+            (folder / file).write_text(text, encoding="utf-8")
+
+    put(RUN_DONE, **{"chat.jsonl": [{"meta": True, "output": "website"}, {"who": "user", "text": rec.BREW_LAB}],
+                     "goal.json": {"site_name": "Brew Lab", "statement": "A one-page website."},
+                     "summary.json": {"status": "done", "output_type": "website", "brief": rec.BREW_LAB},
+                     "change.json": [{"id": "c1", "request": "Add a map", "cycle": 2, "revise": ["a"], "new": []},
+                                     {"id": "c2", "request": "Warmer colours", "cycle": 3, "revise": [], "new": ["b", "c"]}]})
+    put(RUN_STOPPED, **{"chat.jsonl": [{"meta": True, "output": "prd"}, {"who": "user", "text": "Write a PRD for QuickQueue."}],
+                        "goal.json": {"statement": "A PRD for QuickQueue. It has two users."}})
+    put(RUN_BARE, **{"goal.json": {}})
+    return RUN_STOPPED
+
+
+def test_the_golden_has_runlist_and_changes_recorded_from_j2s_own_server():
+    assert {"runlist", "changes"} <= set(GOLD["get"]["live"]) and "patched" not in GOLD
+    assert set(GOLD["get"]["live"]["runlist"]["keys"]) == {"live", "runs", "runs[].id", "runs[].title", "runs[].status",
+                                                          "runs[].output", "runs[].when", "runs[].brief"}
+    assert GOLD["get"]["live"]["changes"]["keys"] == ["changes"]
 
 
 def test_the_runlist_of_the_real_runs_lists_both_newest_first(w):
@@ -974,7 +1035,6 @@ def test_the_runlist_of_the_real_runs_lists_both_newest_first(w):
     assert by[SITE_ID]["status"] == "done" and by[SITE_ID]["output"] == "website" and by[SITE_ID]["when"] == "2026-11-04T10:00:04"
     assert by[PRD_ID]["output"] == "prd" and by[PRD_ID]["brief"].startswith("Write a PRD for QuickQueue")
     assert by[SITE_ID]["brief"] == rec.BREW_LAB[:160]
-    assert patched_problems(w, "runlist", ctx, "runs") == []
 
 
 def test_the_live_run_reads_running_only_while_it_runs_and_its_process_exists(w):
@@ -992,7 +1052,7 @@ def test_the_live_run_reads_running_only_while_it_runs_and_its_process_exists(w)
 def test_the_runlist_of_a_department_with_no_runs_is_empty(w, tmp_path):
     ctx = w.views.RunCtx("idle", None, None, str(tmp_path / "none"), None, w.memory, snap=None)
     assert jbody(call(w, "runlist", ctx)) == {"live": "", "runs": []}
-    assert patched_problems(w, "runlist", ctx, "empty") == [] and patched_problems(w, "changes", ctx, "empty") == []
+    assert jbody(call(w, "changes", ctx)) == {"changes": []}
 
 
 def test_the_changes_of_a_run_without_a_change_file_are_empty_and_a_torn_file_reads_as_none(w, tmp_path):
@@ -1006,14 +1066,13 @@ def test_the_changes_of_a_run_without_a_change_file_are_empty_and_a_torn_file_re
         assert jbody(call(w, "changes", ctx)) == {"changes": []}
     (d / "change.json").write_text(json.dumps([{"id": "c1", "request": "Add a map", "cycle": 2, "revise": ["a", "b"], "new": ["c"]}, "x"]))
     assert jbody(call(w, "changes", ctx)) == {"changes": [{"id": "c1", "request": "Add a map", "cycle": 2, "revise": 2, "new": 1}]}
-    assert patched_problems(w, "changes", ctx, "runs") == []
 
 
-def test_the_fixture_runs_of_the_recorder_give_titles_statuses_and_skip_what_is_not_a_run(w, tmp_path):
-    live = rec.write_patch_fixture(tmp_path / "runs")
-    ctx = w.views.RunCtx("saved", rec.PATCH_RUN_DONE, str(tmp_path / "runs" / rec.PATCH_RUN_DONE), str(tmp_path / "runs"), live, w.memory)
+def test_the_fixture_runs_give_titles_statuses_and_skip_what_is_not_a_run(w, tmp_path):
+    live = write_runs_fixture(tmp_path / "runs")
+    ctx = w.views.RunCtx("saved", RUN_DONE, str(tmp_path / "runs" / RUN_DONE), str(tmp_path / "runs"), live, w.memory)
     body = jbody(call(w, "runlist", ctx))
-    assert [r["id"] for r in body["runs"]] == [rec.PATCH_RUN_STOPPED, rec.PATCH_RUN_DONE]      # newest first; the folder without a chat is skipped
+    assert [r["id"] for r in body["runs"]] == [RUN_STOPPED, RUN_DONE]      # newest first; the folder without a chat is skipped
     stopped, done = body["runs"]
     assert (done["title"], done["status"], done["output"]) == ("Brew Lab", "done", "website")
     assert (stopped["title"], stopped["status"], stopped["output"]) == ("A PRD for QuickQueue.", "stopped", "prd")
@@ -1021,10 +1080,300 @@ def test_the_fixture_runs_of_the_recorder_give_titles_statuses_and_skip_what_is_
     assert jbody(call(w, "changes", ctx))["changes"][1] == {"id": "c2", "request": "Warmer colours", "cycle": 3, "revise": 0, "new": 2}
 
 
-def test_the_stdlib_adapter_serves_the_two_p13_routes(w, monkeypatch):
+def test_the_stdlib_adapter_serves_runlist_and_changes(w, monkeypatch):
     monkeypatch.setattr(w.j2_server, "RUN", w.prd)
     body = w.server.json("/api/runlist")
     assert body["live"] == PRD_ID and [r["id"] for r in body["runs"]] == [PRD_ID, SITE_ID]
     assert w.server.json(f"/api/runlist?run={SITE_ID}")["runs"] == body["runs"]
     assert w.server.json("/api/changes") == {"changes": []} and w.server.json(f"/api/changes?run={SITE_ID}") == {"changes": []}
-    assert w.server.ask("GET", "/api/changes?run=j2-20260101-000000-zzzz")[0] == 200
+
+
+# ---- plan_map, activity, catalog, artifacts_groups (J2 sync 4, D140) ------------------------------------------------------------
+def test_plan_map_reads_the_folder_and_says_not_found_for_a_run_with_no_plan(w):
+    d = str(w.runs_dir / SITE_ID)
+    for ctx in (live_ctx(w, w.site), saved_ctx(w, SITE_ID)):
+        assert jbody(call(w, "plan_map", ctx)) == w.j2.j2_map.plan_map(d) == {"found": False}, "the recorded scenario has realization off"
+    assert jbody(call(w, "plan_map", idle_ctx(w))) == {"found": False}
+    assert jbody(call(w, "plan_map", saved_ctx(w, "j2-20200101-000000"))) == {"found": False}
+
+
+def test_plan_map_of_a_run_with_a_plan_is_the_plan_as_a_map(w, tmp_path):
+    d = tmp_path / "runs" / "j2-20261110-100000-aaaa"
+    d.mkdir(parents=True)
+    plan = {"stages": [{"id": "s1", "thinking": "Make the page", "goal": "A page"}],
+            "workflows": [{"name": "Hero", "stage": "s1", "certainty": "operate", "goal": "A hero"}], "certainty_assessment": {"zone": "operate"}}
+    (d / "realization.json").write_text(json.dumps({"plan": plan, "stages": {"s1": {"zone": "operate", "confidence": 0.9}}, "plan_confidence": 0.9}))
+    (d / "workflows.json").write_text(json.dumps([{"id": "W-1", "name": "Hero", "stage": "s1", "status": "done", "cycle": 1}]))
+    (d / "goal.json").write_text(json.dumps({"site_name": "Brew Lab", "statement": "A site."}))
+    ctx = w.views.RunCtx("saved", d.name, str(d), str(d.parent), None, w.memory)
+    body = jbody(call(w, "plan_map", ctx))
+    assert body == w.j2.j2_map.plan_map(str(d)) and body["found"] is True and body["goal"] == "Brew Lab"
+    assert [(s["id"], s["workflows"]) for s in body["stages"]] == [("s1", ["W-1"])] and body["workflows"][0]["zone"] == "operate"
+
+
+def test_activity_is_one_functions_feed_from_the_run_folder(w):
+    d = str(w.runs_dir / SITE_ID)
+    for ctx in (live_ctx(w, w.site), saved_ctx(w, SITE_ID)):
+        body = jbody(call(w, "activity", ctx, who="adaptation"))
+        assert body == w.views.j2_agent.activity(d, "adaptation") and body["schema"] == "activity/1" and body["found"] is True
+        assert {e["kind"] for e in body["events"]} >= {"msg", "call"} and body["persona"] == "Strategist"
+    live = live_ctx(w, w.site)
+    assert jbody(call(w, "activity", live, who="nobody"))["found"] is False and jbody(call(w, "activity", live))["found"] is False
+    assert jbody(call(w, "activity", idle_ctx(w), who="adaptation")) == {"schema": "activity/1", "who": "adaptation", "found": False, "events": []}
+
+
+def test_catalog_is_the_one_global_library_and_does_not_read_the_run(w):
+    body = jbody(call(w, "catalog", idle_ctx(w)))
+    assert set(body) == {"schema", "dir", "groups", "runs"} and body == w.j2.j2_template_lib.catalog_view()
+    assert body["groups"] and body["runs"], "the seed library names the runs that gave it templates"
+    for ctx in (live_ctx(w, w.site), saved_ctx(w, SITE_ID), saved_ctx(w, "j2-20200101-000000")):
+        assert jbody(call(w, "catalog", ctx)) == body
+
+
+def test_artifacts_groups_are_the_five_groups_of_the_run_and_are_drawn_live_like_the_tree(w, monkeypatch):
+    d = str(w.runs_dir / SITE_ID)
+    live = jbody(call(w, "artifacts_groups", live_ctx(w, w.site)))
+    assert live["schema"] == "artifacts-groups/1" and [g["id"] for g in live["groups"]] == ["plan", "guides", "site", "documents", "records"]
+    assert live == jbody(call(w, "artifacts_groups", saved_ctx(w, SITE_ID))) == w.j2.j2_artifacts.groups(d, w.j2.j2_map.build(d))
+    assert jbody(call(w, "artifacts_groups", idle_ctx(w))) == w.j2.j2_artifacts.groups(None)
+    assert jbody(call(w, "artifacts_groups", saved_ctx(w, "j2-20200101-000000"))) == w.j2.j2_artifacts.groups(None)
+    prd = jbody(call(w, "artifacts_groups", saved_ctx(w, PRD_ID)))
+    docs = next(g for g in prd["groups"] if g["id"] == "documents")
+    assert [r["id"] for r in docs["rows"]] == ["prd"] and docs["rows"][0]["views"]["human"] == {"format": "markdown", "file": "prd.md"}
+    seen, build = [], w.views.j2_map.build
+    monkeypatch.setattr(w.views.j2_map, "build", lambda d_, live=None: seen.append(live) or build(d_, None))
+    ctx = live_ctx(w, w.site)
+    for status, paused, expect in (("running", None, True), ("waiting", None, False), ("waiting", {"kind": "x"}, True)):
+        ctx.snap = {**ctx.snap, "status": status, "paused": paused}
+        seen.clear()
+        call(w, "artifacts_groups", ctx)
+        assert (seen[0] is not None) is expect, (status, paused)
+
+
+def project_run(w, tmp_path, text="## Findings\n\nSomething was found.\n"):
+    """A saved run folder of the project output: the first line of its chat names it, and its report is written."""
+    d = tmp_path / "runs" / "j2-20261110-100000-pppp"
+    d.mkdir(parents=True)
+    (d / "chat.jsonl").write_text(json.dumps({"meta": True, "output": "project"}) + "\n" + json.dumps({"id": 1, "who": "user", "text": "Check the repo"}) + "\n")
+    (d / "goal.json").write_text(json.dumps({"statement": "Project work"}))
+    if text is not None:
+        (d / "project.md").write_text(text)
+    return d, w.views.RunCtx("saved", d.name, str(d), str(d.parent), None, w.memory)
+
+
+def test_the_report_of_an_engine_output_is_a_row_of_the_documents_group_and_a_page_of_it(w, tmp_path):
+    d, ctx = project_run(w, tmp_path)
+    body = jbody(call(w, "artifacts_groups", ctx))
+    docs = next(g for g in body["groups"] if g["id"] == "documents")
+    assert [r["id"] for r in docs["rows"]] == ["project"]
+    row = docs["rows"][0]
+    assert (row["kind"], row["name"], row["file"], row["doc_file"], row["nodes"]) == ("document", "Project work report", "project.md", "project.md", [])
+    assert row["views"] == {"summary": True, "agent": {"format": "text", "file": "project.md", "schema": None, "model": None, "valid": None},
+                            "human": {"format": "markdown", "file": "project.md"}}
+    assert body["documents"] == {"project": {"sections": {}, "file": "project.md", "kind": "document"}}
+    assert text_of(call(w, "artifact", ctx, name="project.md")).startswith("## Findings"), "the file is served: the tree lists every file of a run folder"
+    own = jbody(call(w, "artifacts_groups", live_ctx(w, w.site)))
+    assert own == w.j2.j2_artifacts.groups(str(w.runs_dir / SITE_ID), w.j2.j2_map.build(str(w.runs_dir / SITE_ID))), "a website run gets no extra row"
+    assert jbody(call(w, "artifacts_groups", saved_ctx(w, PRD_ID)))["documents"].keys() == {"prd"}, "nor does a PRD run"
+
+
+def test_a_project_run_whose_report_is_not_written_yet_has_no_row_and_one_with_its_data_file_has_a_json_tab(w, tmp_path):
+    d, ctx = project_run(w, tmp_path, text=None)
+    body = jbody(call(w, "artifacts_groups", ctx))
+    assert next(g for g in body["groups"] if g["id"] == "documents")["rows"] == [] and body["documents"] == {}
+    (d / "project.md").write_text("## Findings\n\nx\n")
+    (d / "project.json").write_text(json.dumps({"schema": "agent-views/1", "model": "GenericGuide", "valid": True}))
+    row = next(g for g in jbody(call(w, "artifacts_groups", ctx))["groups"] if g["id"] == "documents")["rows"][0]
+    assert row["views"]["agent"] == {"format": "json", "file": "project.json", "schema": "agent-views/1", "model": "GenericGuide", "valid": True}
+
+
+# ---- record, doc and view: the Simple view's records and pages (J2 sync 4) -------------------------------------------------------
+def a_part(w, run=None):
+    return jbody(call(w, "state", live_ctx(w, run or w.site)))["studio"]["parts"][0]["sec"]
+
+
+def test_record_is_one_parts_goal_method_output_and_check_live_and_saved(w):
+    sec = a_part(w)
+    snap, docs = jbody(call(w, "state", live_ctx(w, w.site))), {}
+    for ctx in (live_ctx(w, w.site), saved_ctx(w, SITE_ID)):
+        part = jbody(call(w, "record", ctx, sec=sec))
+        assert part == w.j2.j2_studio.record(snap, docs, sec) or part["sec"] == sec
+        assert part["schema"] == "studio/1" and part["sec"] == sec and {"goal", "method", "output", "check", "history", "person"} <= set(part)
+    r = call(w, "record", live_ctx(w, w.site), sec="nothing")
+    assert (r.code, json.loads(r.body)) == (404, {"error": "no such part"})
+    assert call(w, "record", live_ctx(w, w.site)).code == 404, "no part named"
+    assert call(w, "record", idle_ctx(w), sec=sec).code == 404 and call(w, "record", saved_ctx(w, "j2-20200101-000000"), sec=sec).code == 404
+
+
+def test_record_is_a_whole_deliverables_goal_method_output_and_check(w):
+    for run, run_id in ((w.site, SITE_ID), (w.prd, PRD_ID)):
+        name = jbody(call(w, "artifacts", live_ctx(w, run)))["deliverables"][0]["name"]
+        for ctx in (live_ctx(w, run), saved_ctx(w, run_id)):
+            rec_ = jbody(call(w, "record", ctx, art=name))
+            assert rec_["schema"] == "studio/1" and rec_["name"] == name and {"goal", "method", "output", "check"} <= set(rec_)
+            assert {"parts_done", "parts", "items_met", "items"} <= set(rec_["check"])
+        assert call(w, "record", live_ctx(w, run), art="nothing").code == 404
+    assert call(w, "record", idle_ctx(w), art="site").code == 404
+
+
+def test_doc_and_view_serve_the_files_the_artifact_list_names_as_readable_pages(w):
+    for ctx in (live_ctx(w, w.prd), saved_ctx(w, PRD_ID)):
+        page = call(w, "doc", ctx, name="prd")
+        assert (page.code, page.ctype) == (200, "text/html") and "QuickQueue" in page.body and "<h2>Requirements</h2>" in page.body
+        assert call(w, "view", ctx, name="prd.md").body == page.body, "the same file, the same page"
+        data = call(w, "view", ctx, name="goal.json").body
+        assert data.startswith("<!doctype html>") and "<pre" in data and "QuickQueue" in data
+    site = call(w, "view", live_ctx(w, w.site), name="site/v1.html").body
+    assert site == (w.runs_dir / SITE_ID / "site" / "v1.html").read_text(encoding="utf-8"), "a page is shown as it is"
+    nothing = "This isn't written yet."
+    for ctx, name in ((live_ctx(w, w.prd), "hld"), (live_ctx(w, w.site), "prd"), (idle_ctx(w), "prd"), (saved_ctx(w, "j2-20200101-000000"), "prd")):
+        assert nothing in call(w, "doc", ctx, name=name).body, name
+    for bad in ("../" + SITE_ID + "/goal.json", "/etc/passwd", "task.json", "", None, "site/../goal.json", "snapshot.json"):
+        r = call(w, "view", live_ctx(w, w.site), name=bad)
+        assert (r.code, r.ctype) == (200, "text/html") and nothing in r.body and "<pre" not in r.body, bad
+
+
+def test_view_shows_an_image_inline_escapes_text_and_renders_markdown(w, tmp_path):
+    copy = tmp_path / "runs" / SITE_ID
+    shutil.copytree(w.runs_dir / SITE_ID, copy)
+    (copy / "site" / "shots").mkdir(parents=True, exist_ok=True)
+    (copy / "site" / "shots" / "v1.png").write_bytes(b"\x89PNG\r\n\x1a\nfake")
+    (copy / "goal.json").write_text('{"x": "<script>alert(1)</script> & more"}')
+    ctx = saved_ctx(w, SITE_ID)
+    ctx.dir = str(copy)
+    image = call(w, "view", ctx, name="site/shots/v1.png").body
+    assert "<img src='data:image/png;base64," in image and "alt='v1.png'" in image and "<script" not in image
+    text = call(w, "view", ctx, name="goal.json").body
+    assert "&lt;script&gt;alert(1)&lt;/script&gt; &amp; more" in text and "<script>" not in text
+    assert set(w.views.IMAGE_TYPES) == {".png", ".jpg", ".jpeg", ".gif", ".webp", ".svg"}
+    assert w.views.view_page(None) == "<p style='font:15px system-ui;color:#667;padding:24px'>This isn't written yet.</p>"
+
+
+# ---- ask and settings, the commands that act (J2 sync 4, D147) --------------------------------------------------------------------
+def test_ask_refuses_what_is_not_a_function_in_j2s_words_and_asks_nothing(w):
+    cmd = FakeCommands()
+    ctx = idle_ctx(w, commands=cmd)
+    for who in ("nobody", "", "W-3", "Adaptation", None, 5):
+        r = call(w, "ask", ctx, who=who, q="why?")
+        assert (r.code, json.loads(r.body)) == (400, {"error": "not a function"}), who
+    assert (call(w, "ask", ctx, q="why?").code, cmd.calls) == (400, [])
+    assert call(w, "ask", idle_ctx(w), who="adaptation", q="why?").code == 501, "no command object"
+
+
+def test_ask_passes_the_function_the_question_and_the_run_and_answers_with_what_the_command_gives(w):
+    cmd = FakeCommands()
+    r = call(w, "ask", idle_ctx(w, commands=cmd), who="audit", q="  Why?  ", run=SITE_ID)
+    assert (r.code, r.ctype) == (200, "application/json")
+    assert json.loads(r.body) == {"who": "audit", "answer": "about   Why?  ", "from": "records", "run": SITE_ID}
+    assert cmd.calls == [("ask", "audit", "  Why?  ", SITE_ID)], "the command collapses the white space, the view does not"
+    call(w, "ask", idle_ctx(w, commands=cmd), who="validator", q=None)
+    assert cmd.calls[-1] == ("ask", "validator", None, ""), "an empty run is the run the page shows"
+
+
+def test_ask_takes_a_question_as_long_as_a_note_and_refuses_a_longer_one(w):
+    cmd = FakeCommands()
+    ctx = idle_ctx(w, commands=cmd)
+    assert w.views.ASK_CHARS == 2000
+    assert call(w, "ask", ctx, who="audit", q=" " + "x" * 2000 + " ").code == 200
+    r = call(w, "ask", ctx, who="audit", q="x" * 2001)
+    assert (r.code, json.loads(r.body)) == (400, {"error": "question too long"}) and len(cmd.calls) == 1
+
+
+def test_a_chat_that_is_busy_is_409_busy(w):
+    ctx = idle_ctx(w, commands=FakeCommands(ask_error=w.views.AskBusy("busy")))
+    r = call(w, "ask", ctx, who="audit", q="why?")
+    assert (r.code, json.loads(r.body)) == (409, {"error": "busy"})
+
+
+def test_ask_does_not_hide_a_bug_of_the_command_as_a_busy_answer(w):
+    ctx = idle_ctx(w, commands=FakeCommands(ask_error=RuntimeError("boom")))
+    with pytest.raises(RuntimeError):
+        call(w, "ask", ctx, who="audit", q="why?")
+
+
+def test_settings_sets_the_switch_or_reads_it_and_answers_in_j2s_shape(w):
+    cmd = FakeCommands()
+    ctx = idle_ctx(w, commands=cmd)
+    assert jbody(call(w, "settings", ctx, decide_for_me=True)) == {"ok": True, "decide_for_me": True}
+    assert jbody(call(w, "settings", ctx)) == {"ok": True, "decide_for_me": True}, "no key: nothing changes, the switch is read"
+    assert jbody(call(w, "settings", ctx, decide_for_me=False)) == {"ok": True, "decide_for_me": False}
+    assert jbody(call(w, "settings", ctx, other=1)) == {"ok": True, "decide_for_me": False}
+    assert jbody(call(w, "settings", ctx, decide_for_me=1))["decide_for_me"] is True and jbody(call(w, "settings", ctx, decide_for_me=0))["decide_for_me"] is False
+    assert cmd.calls == [("settings", True), ("settings", None), ("settings", False), ("settings", None), ("settings", True), ("settings", False)]
+    assert call(w, "settings", idle_ctx(w), decide_for_me=True).code == 501
+
+
+# ---- the library is the data folder's, read per call (the server never sets J2_LIBRARY_DIR) ---------------------------------------
+def test_the_library_views_point_j2_at_the_contexts_library_for_one_call_and_put_the_environment_back(w, tmp_path, monkeypatch):
+    shutil.copytree(REPO / "sutra_app" / "engine" / "seed" / "library", tmp_path / "data-library")
+    ctx = idle_ctx(w, library=str(tmp_path / "data-library"))
+    monkeypatch.delenv("J2_LIBRARY_DIR")                                    # the server process has none
+    seed_runs = jbody(call(w, "catalog", ctx))["runs"]
+    assert len(seed_runs) == 8 and jbody(call(w, "catalog", ctx))["dir"] == str(tmp_path / "data-library")
+    assert os.environ.get("J2_LIBRARY_DIR") is None, "put back: it was not set"
+    monkeypatch.setenv("J2_LIBRARY_DIR", str(w.base / "library"))
+    special = [t for sections in jbody(call(w, "library", ctx))["groups"].values() for slot in sections.values()
+               for t in slot["templates"] if t.get("kind") != "generic"]
+    assert special and os.environ["J2_LIBRARY_DIR"] == str(w.base / "library"), "put back: it was another folder"
+    plain = jbody(call(w, "library", idle_ctx(w)))                          # no library given: J2's own resolution, here the fixture's folder
+    assert jbody(call(w, "library", idle_ctx(w, library=str(w.base / "library")))) == plain
+
+
+def test_a_data_folder_without_a_library_shows_no_specialised_template_and_the_views_still_answer(w, tmp_path, monkeypatch):
+    monkeypatch.delenv("J2_LIBRARY_DIR")
+    ctx = idle_ctx(w, library=str(tmp_path / "no-library-here"))
+    groups = jbody(call(w, "library", ctx))["groups"]
+    assert not [t for sections in groups.values() for slot in sections.values() for t in slot["templates"] if t.get("kind") != "generic"]
+    assert jbody(call(w, "catalog", ctx))["runs"] == []
+    assert call(w, "library_item", ctx, artifact="prd", section="goals", slug="nothing", version="v1").code == 404
+    assert jbody(call(w, "run_templates", ctx)) == {"decisions": []}
+
+
+# ---- the stdlib adapter serves the new routes, and answers a question from the records only --------------------------------------
+def test_the_stdlib_adapter_serves_the_new_routes(w, monkeypatch):
+    monkeypatch.setattr(w.j2_server, "RUN", w.site)
+    srv = w.server
+    assert srv.json("/api/plan-map") == {"found": False} and srv.json("/api/activity?who=adaptation")["found"] is True
+    assert srv.json("/api/catalog")["schema"] == w.j2.j2_template_lib.SCHEMA
+    assert [g["id"] for g in srv.json("/api/artifacts/groups")["groups"]] == ["plan", "guides", "site", "documents", "records"]
+    sec = srv.json("/api/state")["studio"]["parts"][0]["sec"]
+    assert srv.json(f"/api/record?sec={sec}")["sec"] == sec and srv.ask("GET", "/api/record?sec=nothing")[0] == 404
+    status, ctype, body = srv.ask("GET", "/view?name=site/v1.html")
+    assert (status, ctype.split(";")[0]) == (200, "text/html") and body == w.site.sites[0].encode("utf-8") or status == 200
+    assert b"isn't written yet" in srv.ask("GET", "/doc/prd")[2]
+    assert srv.ask("GET", "/library")[0] == 404, "J2's /library is the page, which this adapter has only when it was given a folder"
+
+
+def test_the_stdlib_adapter_answers_a_question_from_the_records_and_never_asks_a_model(w, monkeypatch):
+    monkeypatch.setattr(w.j2_server, "RUN", w.site)
+    got = json.loads(w.server.ask("POST", "/api/ask", {"who": "adaptation", "q": "Why did you plan the work this way?"})[2])
+    assert set(got) == {"who", "answer", "from"} and got["from"] == "records" and got["answer"]
+    named = json.loads(w.server.ask("POST", "/api/ask", {"who": "adaptation", "q": "plan", "run": SITE_ID})[2])
+    assert named["from"] == "records"
+    assert json.loads(w.server.ask("POST", "/api/ask", {"who": "adaptation", "q": "plan", "run": "j2-20200101-000000"})[2])["answer"] == \
+        "This run recorded nothing for Strategist."
+    assert w.server.ask("POST", "/api/ask", {"who": "nobody", "q": "?"}) == (400, "application/json; charset=utf-8", b'{"error": "not a function"}')
+    calls = []
+    monkeypatch.setattr(w.j2.llm, "ask", lambda *a, **k: calls.append(a) or "never")
+    w.server.ask("POST", "/api/ask", {"who": "adaptation", "q": "why"})
+    assert calls == [], "no model is called for an answer on this adapter"
+
+
+def test_no_path_of_the_engine_api_calls_llm_ask_for_an_answer():
+    import ast
+    for rel in ("views.py", "j2_server.py", "api/commands.py"):
+        tree = ast.parse((REPO / "sutra_app" / "engine" / rel).read_text(encoding="utf-8"))
+        bad = [n.lineno for n in ast.walk(tree) if isinstance(n, ast.Attribute) and n.attr == "ask"
+               and isinstance(n.value, ast.Name) and n.value.id == "llm"]
+        assert bad == [], f"{rel} calls llm.ask on line {bad}: an answer is a turn of the function's own session or the records (R2)"
+
+
+def test_the_stdlib_adapter_sets_and_reads_the_switch_of_its_run(w, monkeypatch):
+    fresh = w.j2.J2Run()
+    monkeypatch.setattr(w.j2_server, "RUN", fresh)
+    post = lambda body: json.loads(w.server.ask("POST", "/api/settings", body)[2])           # noqa: E731
+    assert post({}) == {"ok": True, "decide_for_me": False}
+    assert post({"decide_for_me": True}) == {"ok": True, "decide_for_me": True} and fresh.auto is True
+    assert post({}) == {"ok": True, "decide_for_me": True}
+    assert post({"decide_for_me": False}) == {"ok": True, "decide_for_me": False} and fresh.auto is False
+    assert w.server.json("/api/state")["decide_for_me"] is False

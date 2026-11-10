@@ -113,8 +113,10 @@ def fake_chrome(j2_check):
 ROUTES = ("state", "state_since", "runs", "runlist", "changes", "call", "call_missing", "preview", "docs", "map", "plan", "plan_map",
           "library", "library_item", "library_missing", "catalog", "run_templates", "artifacts", "agent", "activity", "code",
           "code_missing", "artifacts_tree", "artifacts_groups", "artifact", "artifact_missing", "story", "board", "audits", "refs",
-          "shot_missing", "file_missing", "site_latest", "site_v1", "site_v99", "unknown")
-POSTS = ("output_prd", "say_empty", "say", "ask", "ask_refused", "output_late", "playbooks_clear", "lessons_clear", "reset")
+          "shot_missing", "file_missing", "record_part", "record_art", "record_missing", "doc", "view", "view_missing", "site_latest",
+          "site_v1", "site_v99", "unknown")
+POSTS = ("output_prd", "say_empty", "say", "ask", "ask_refused", "settings", "settings_read", "output_late", "playbooks_clear",
+         "lessons_clear", "reset")
 
 
 def slug(text):
@@ -134,6 +136,9 @@ def paths_for(state, tree, lib, artifacts, run_q, decisions=()):
                 for sections in (lib.get("groups") or {}).values() for slot in sections.values()
                 for t in slot.get("templates") or [] if t.get("versions")), None)
     art = next((r["file"] for r in artifacts.get("deliverables", []) if r.get("file")), "site/v1.html")
+    parts = (state.get("studio") or {}).get("parts") or []                  # the Simple view's parts: one record each (/api/record?sec=)
+    sec = parts[0]["sec"] if parts else "W-1"
+    deliverable = next((r["name"] for r in artifacts.get("deliverables", []) if r.get("name")), "site")
     code = next(((r["deck"], r.get("section")) for r in _walk_code(tree)), ("x", None))
     return {
         "state": "/api/state" + q(), "state_since": "/api/state" + q("since=3"), "runs": "/api/runs" + q(),
@@ -150,7 +155,10 @@ def paths_for(state, tree, lib, artifacts, run_q, decisions=()):
         "artifacts_groups": "/api/artifacts/groups" + q(),
         "artifact": "/api/artifact" + q(f"name={art}"), "artifact_missing": "/api/artifact" + q("name=nothing.txt"),
         "story": "/api/story" + q(), "board": "/api/board" + q(), "audits": "/api/audits" + q(), "refs": "/api/refs" + q(),
-        "shot_missing": "/shot/99" + q(), "file_missing": "/file/goal.json" + q(), "site_latest": "/site/latest" + q(),
+        "shot_missing": "/shot/99" + q(), "file_missing": "/file/goal.json" + q(),
+        "record_part": "/api/record" + q(f"sec={sec}"), "record_art": "/api/record" + q(f"art={deliverable}"),
+        "record_missing": "/api/record" + q("sec=nothing"), "doc": "/doc/prd" + q(), "view": "/view" + q(f"name={art}"),
+        "view_missing": "/view" + q("name=nothing.txt"), "site_latest": "/site/latest" + q(),
         "site_v1": "/site/v1" + q(), "site_v99": "/site/v99" + q(), "unknown": "/api/nothing" + q(),
     }
 
@@ -236,6 +244,8 @@ def child(source, work):
             time.sleep(0.01)
         out["post"]["ask"] = post("/api/ask", {"who": "adaptation", "q": "Why did you plan the work this way?"})      # mock: from the records
         out["post"]["ask_refused"] = post("/api/ask", {"who": "nobody", "q": "Is anyone there?"})
+        out["post"]["settings"] = post("/api/settings", {"decide_for_me": True})                 # the Simple view's Decide for me switch
+        out["post"]["settings_read"] = post("/api/settings", {})
         out["post"]["output_late"] = post("/api/output", {"type": "website"})
         out["post"]["playbooks_clear"] = post("/api/playbooks/clear", {})
         out["post"]["lessons_clear"] = post("/api/lessons/clear", {})

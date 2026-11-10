@@ -414,8 +414,9 @@ def library(ctx: RunCtx, q: dict) -> Reply:
 
 def catalog(ctx: RunCtx, q: dict) -> Reply:
     """The shared library page's data (J2 sync 4, D141): the committed library and the runs that gave it templates. It is the one
-    global library: the run is not read, and the index is replaced atomically (P12), so no lock is needed for a read."""
-    return _json(j2_template_lib.catalog_view())
+    global library: the run is not read, and the index is replaced atomically (P12), so J2's library lock is not needed for a read."""
+    with _library(ctx):
+        return _json(j2_template_lib.catalog_view())
 
 
 def library_item(ctx: RunCtx, q: dict) -> Reply:
