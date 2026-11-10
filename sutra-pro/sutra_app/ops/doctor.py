@@ -13,8 +13,14 @@ warning; when neither works both fail. The CLI checks reuse the connector layer'
 `<cli> --version`, `claude auth status`, `codex login status`; no model call). An API-key login is refused (D34).
 `offline` skips the three CLI checks and the two browser checks.
 """
+import contextlib
+import copy
+import hashlib
 import json
+import logging
 import os
+import stat
+import time
 from sutra_app import oslayer
 import shutil
 import socket
@@ -22,7 +28,7 @@ import sqlite3
 import subprocess
 import sys
 import tempfile
-from collections.abc import Callable, Mapping, Sequence
+from collections.abc import Callable, Iterator, Mapping, Sequence
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
@@ -31,7 +37,8 @@ from sutra_app.config import Settings, read_env_file
 from sutra_app.ops import browser, lock
 from sutra_app.ops.envfile import SMTP_VARS, mode_problem
 
-__all__ = ["Check", "Report", "run", "CHECK_IDS", "MIN_FREE_BYTES", "PORT_RANGE", "seed_dir", "missing_seed_templates", "sync_seed_library"]
+__all__ = ["Check", "Report", "run", "CHECK_IDS", "MIN_FREE_BYTES", "PORT_RANGE", "seed_dir", "missing_seed_templates", "missing_seed_versions",
+           "sync_seed_library", "sync_seed_once", "SeedSyncError", "LibraryBusy", "LibraryUnreadable", "LOCK_WAIT_S", "SEED_MARKER"]
 
 MIN_FREE_BYTES = 1024 ** 3
 MIN_PYTHON = (3, 11)
@@ -83,6 +90,28 @@ class Report:
 
 
 # ---- the seed library ---------------------------------------------------------------------------------------------------------
+# D144. The app ships a seed template library (`engine/seed/library`). An install's `<data>/library` began as a copy of it and its runs
+# have added to it since. A newer seed brings new templates, new versions of templates the install has, the provenance of the versions it
+# has (who made one, when, for which business, live or mock) and the runs those came from. `sync_seed_library` gives an existing library
+# exactly that and nothing else: it only adds. It never changes a value, never renumbers a version, and writes every file by a temp file
+# and `oslayer.replace`, under the `<library>/.lock` that the runtime's `store` and `mark_used` take (the engine's patch P10).
+
+log = logging.getLogger(__name__)
+LOCK_WAIT_S = 30.0                      # the most a sync waits for the library lock (the wait P10 gives a run)
+SEED_MARKER = ".seed-sync"              # `<library>/.seed-sync`: the sha256 of the seed's index.json that the library was last synced with
+
+
+class SeedSyncError(OSError):
+    """The seed could not be synced into the library. Nothing was changed: the library is as it was."""
+
+
+class LibraryBusy(SeedSyncError):
+    """Another process held `<library>/.lock` for `LOCK_WAIT_S` seconds (a run storing a template, or another sync)."""
+
+
+class LibraryUnreadable(SeedSyncError):
+    """`<library>/index.json` exists and is not a template library index. It is never replaced: it lists the owner's templates."""
+
 
 def seed_dir() -> Path:
     return Path(__file__).resolve().parent.parent / "engine" / "seed" / "library"
@@ -112,43 +141,364 @@ def missing_seed_templates(data_dir: str | os.PathLike[str], seed: Path | None =
     return ["/".join(key) for key in wanted if key not in have or not library.joinpath(*key).is_dir()]
 
 
-def sync_seed_library(data_dir: str | os.PathLike[str], seed: Path | None = None) -> list[str]:
-    """Copy the seed templates the data library lacks and add their index entries. Nothing that exists is changed. Returns the
-    templates added (`artifact/section/slug`). A data folder without a library gets the whole seed."""
+def _read_json(path: Path) -> Any:
+    """What `path` holds as JSON; None when it is absent or not JSON."""
+    try:
+        return json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return None
+
+
+def _write_json(path: Path, obj: Any) -> None:
+    """A library file written as J2 writes one (indent 2, readable text, a newline), by a temp file beside it and `oslayer.replace`; an
+    existing file keeps its permission bits. Always `\\n`, whatever the system."""
+    fd, tmp = tempfile.mkstemp(dir=path.parent, prefix=".tmp-")
+    try:
+        with os.fdopen(fd, "wb") as handle:
+            handle.write((json.dumps(obj, indent=2, ensure_ascii=False) + "\n").encode("utf-8"))
+        with contextlib.suppress(OSError):
+            os.chmod(tmp, stat.S_IMODE(path.stat().st_mode))
+        oslayer.replace(tmp, path)
+    except BaseException:
+        with contextlib.suppress(OSError):
+            os.unlink(tmp)
+        raise
+
+
+def _copy_folder(source: Path, target: Path) -> None:
+    """Copy a seed folder to a place that does not exist yet: into a temp folder beside it, then one rename, so that a crash cannot leave
+    a half-copied version folder that looks present."""
+    target.parent.mkdir(parents=True, exist_ok=True)
+    scratch = Path(tempfile.mkdtemp(dir=target.parent, prefix=".sync-"))
+    try:
+        part = scratch / "copy"
+        shutil.copytree(source, part)
+        oslayer.replace(part, target)
+    finally:
+        shutil.rmtree(scratch, ignore_errors=True)
+
+
+@contextlib.contextmanager
+def _library_lock(library: Path) -> Iterator[None]:
+    """An exclusive lock on `<library>/.lock`, the file and the calls the runtime's `store` and `mark_used` use (P10), so that a sync and a
+    run never write the index together. Waits `LOCK_WAIT_S`, then raises `LibraryBusy`."""
+    fd = os.open(library / ".lock", os.O_RDWR | oslayer.O_BINARY | os.O_CREAT, 0o600)
+    try:
+        deadline = time.monotonic() + LOCK_WAIT_S
+        while not oslayer.try_lock(fd):
+            if time.monotonic() >= deadline:
+                raise LibraryBusy(f"the template library is locked by another process (waited {LOCK_WAIT_S:g} s)") from None
+            time.sleep(0.05)
+        try:
+            yield
+        finally:
+            oslayer.unlock(fd)
+    finally:
+        os.close(fd)
+
+
+def _library_doc(library: Path) -> dict[str, Any]:
+    """The library's index as J2 reads it: a library with no index file has an empty one. A file that is there and is not an index is
+    `LibraryUnreadable`: the sync never replaces it."""
+    path = library / "index.json"
+    try:
+        text = path.read_text(encoding="utf-8")
+    except FileNotFoundError:
+        return {"schema": "template-library/1", "templates": []}
+    except OSError as exc:
+        raise LibraryUnreadable(f"{path} cannot be read ({exc.strerror or exc})") from exc
+    try:
+        doc = json.loads(text)
+    except ValueError as exc:
+        raise LibraryUnreadable(f"{path} is not valid JSON ({exc})") from exc
+    if doc == {}:
+        return {"schema": "template-library/1", "templates": []}
+    if not isinstance(doc, dict) or not isinstance(doc.get("templates"), list):
+        raise LibraryUnreadable(f"{path} is not a template library index (it has no list of templates)")
+    return doc
+
+
+def _safe_key(key: tuple[str, str, str]) -> bool:
+    """A seed template's folder names are used to make folders under the library: only plain names pass."""
+    return all(part not in ("", ".", "..", "None") and "/" not in part and "\\" not in part for part in key)
+
+
+def _disk_sha(folder: Path) -> str | None:
+    """The spec sha a version folder's own meta.json holds."""
+    meta = _read_json(folder / "meta.json")
+    sha = meta.get("sha") if isinstance(meta, dict) else None
+    return sha if isinstance(sha, str) else None
+
+
+def _seed_doc(seed: Path) -> dict[str, Any]:
+    doc = _read_json(seed / "index.json")
+    return doc if isinstance(doc, dict) else {}
+
+
+def _template_order(entry: Any) -> tuple[str, str, str]:
+    """J2's own order of the index's templates (`_save_index`)."""
+    return (str(entry.get("artifact")), str(entry.get("section")), str(entry.get("slug"))) if isinstance(entry, dict) else ("", "", "")
+
+
+def _version_of(row: Any) -> int:
+    return row["version"] if isinstance(row, dict) and isinstance(row.get("version"), int) else 0
+
+
+def _fill(target: dict[str, Any], *sources: Any) -> list[str]:
+    """Give `target` the provenance keys it lacks (`business`, `mock`, `collected_from`, `made_by` and its `date`), each taken from the first
+    of `sources` that has it. A key that is there is never changed; of a `made_by` that is there only a missing `date` is added. Returns
+    the keys added, by the names D144 uses."""
+    found_in = tuple(s for s in sources if isinstance(s, Mapping))
+    added: list[str] = []
+    for name in ("business", "mock", "collected_from"):
+        if name not in target:
+            donor = next((s for s in found_in if name in s), None)
+            if donor is not None:
+                target[name] = copy.deepcopy(donor[name])
+                added.append(name)
+    made = target.get("made_by")
+    if "made_by" not in target:
+        donor = next((s for s in found_in if "made_by" in s), None)
+        if donor is not None:
+            target["made_by"] = copy.deepcopy(donor["made_by"])
+            added.append("made_by.date" if isinstance(donor["made_by"], Mapping) and "date" in donor["made_by"] else "made_by")
+    elif isinstance(made, dict) and "date" not in made:
+        donor = next((s["made_by"] for s in found_in if isinstance(s.get("made_by"), Mapping) and "date" in s["made_by"]), None)
+        if donor is not None:
+            made["date"] = donor["date"]
+            added.append("made_by.date")
+    return added
+
+
+def _apply_seed(library: Path, seed: Path, doc: dict[str, Any], *, apply: bool) -> dict[str, Any]:
+    """The rule of D144 over the library's index `doc`, which it edits in place; the caller writes the index when it changed.
+
+    For each seed template and each of its versions (the library's state decides, the seed's number is never changed):
+      * the library has a row with the same spec sha (at any number): present. Provenance keys it lacks are added to its row and to its
+        meta.json. A row whose folder is gone, at the seed's own number, gets its folder back from the seed;
+      * else a row at that number (another spec): left alone, reported `skipped`;
+      * else a folder at that number with no row: its own meta.json decides: the same sha gets its row (the index lost it), any other
+        is left alone and reported `skipped`;
+      * else the number is free: the seed's folder is copied and its row appended.
+    A template the library lacks (no index entry, or no folder) is the same rule over all its versions; it is reported as a template,
+    its versions are not listed one by one. The seed's `runs` rows whose id is absent are appended.
+
+    `apply` False writes nothing (`doc` is still edited: pass a copy); the report says what would be done. The report:
+    `templates`, `versions` (`artifact/section/slug@vN`), `filled` (version -> provenance keys added), `skipped`, `runs`."""
+    report: dict[str, Any] = {"templates": [], "versions": [], "filled": {}, "skipped": [], "runs": []}
+    seed_doc = _seed_doc(seed)
+    held = {_key(e): e for e in doc["templates"] if isinstance(e, dict)}
+    new_entries: list[dict[str, Any]] = []
+
+    def skip(template: str, version: Any, why: str) -> None:
+        report["skipped"].append({"template": template, "version": version, "why": why})
+
+    for seed_entry in seed_doc.get("templates") or []:
+        if not isinstance(seed_entry, dict) or not _safe_key(_key(seed_entry)):
+            continue
+        key = _key(seed_entry)
+        name = "/".join(key)
+        folder, source = library.joinpath(*key), seed.joinpath(*key)
+        entry = held.get(key)
+        if entry is not None and not isinstance(entry.get("versions"), list):
+            skip(name, None, "its entry in the library index has no list of versions")
+            continue
+        rows: list[Any] = entry["versions"] if entry is not None else []
+        lacking = entry is None or not folder.is_dir()
+        done: list[str] = []
+        appended = False
+        seed_rows = sorted((r for r in seed_entry.get("versions") or [] if isinstance(r, dict) and isinstance(r.get("version"), int)),
+                           key=_version_of)
+        for seed_row in seed_rows:
+            n = seed_row["version"]
+            sha = seed_row.get("sha") if isinstance(seed_row.get("sha"), str) else None
+            seed_folder = source / f"v{n}"
+            same = next((r for r in rows if sha and isinstance(r, dict) and r.get("sha") == sha), None)
+            if same is not None:                                              # the same spec is here, at its number
+                m = same.get("version")
+                here = folder / f"v{m}"
+                if here.is_dir():
+                    state = "present"
+                elif m == n and seed_folder.is_dir():
+                    state = "restore"
+                else:
+                    skip(name, n, f"its folder v{m} is missing here and the seed's v{n} is not copied under another number")
+                    continue
+            else:
+                m, here = n, folder / f"v{n}"
+                if any(isinstance(r, dict) and r.get("version") == n for r in rows):
+                    skip(name, n, f"v{n} is already taken here by a version with another spec; yours is kept and the seed's is not renumbered")
+                    continue
+                if here.exists():
+                    if here.is_dir() and sha is not None and _disk_sha(here) == sha:
+                        state = "adopt"
+                    else:
+                        skip(name, n, f"a folder v{n} exists here with another spec and no index row; it is left alone")
+                        continue
+                elif seed_folder.is_dir():
+                    state = "add"
+                else:
+                    skip(name, n, "the seed has no folder for it")
+                    continue
+            label = f"{name}@v{m}"
+            keys: list[str] = []
+            if state in ("add", "restore") and apply:
+                _copy_folder(seed_folder, here)
+            if state in ("add", "adopt"):
+                row = copy.deepcopy(seed_row)
+                rows.append(row)
+                appended = True
+                done.append(label)
+            elif state == "restore":
+                done.append(label)
+            if state in ("present", "restore"):                               # the library's own row gains the seed row's provenance
+                keys += _fill(same, seed_row)
+            if state in ("present", "adopt"):                                 # the folder was there before the sync: its meta.json too
+                meta_path = here / "meta.json"
+                meta = _read_json(meta_path)
+                if isinstance(meta, dict) and sha is not None and meta.get("sha") == sha:
+                    got = _fill(meta, _read_json(seed_folder / "meta.json"), seed_row)
+                    if got and apply:
+                        _write_json(meta_path, meta)
+                    keys += got
+                elif isinstance(meta, dict) and _fill(copy.deepcopy(meta), _read_json(seed_folder / "meta.json"), seed_row):
+                    skip(name, m, "its meta.json does not hold this spec's sha; provenance was not added to it")
+                elif meta is None and meta_path.exists():
+                    skip(name, m, "its meta.json is not valid JSON; provenance was not added to it")
+            if keys:
+                report["filled"][label] = sorted(set(keys))
+        if appended and entry is not None:
+            rows.sort(key=_version_of)
+        if entry is None:
+            if rows:                                                          # versions were added or adopted: the template is new here
+                new_entries.append({k: sorted(rows, key=_version_of) if k == "versions" else copy.deepcopy(v) for k, v in seed_entry.items()})
+                report["templates"].append(name)
+        elif done:
+            if lacking:
+                report["templates"].append(name)
+            else:
+                report["versions"].extend(done)
+    doc["templates"].extend(new_entries)
+    seed_runs = seed_doc.get("runs")
+    if isinstance(seed_runs, dict) and seed_runs:
+        mine = doc.get("runs")
+        if mine is None:
+            mine = {}
+        if isinstance(mine, dict):
+            fresh = {rid: row for rid, row in seed_runs.items() if rid not in mine}
+            if fresh:
+                mine.update(copy.deepcopy(fresh))
+                doc["runs"] = mine
+                report["runs"] = list(fresh)
+        else:
+            skip("index.json", None, "`runs` is not an object; the seed's runs were not added")
+    return report
+
+
+def _seed_whole(library: Path, seed: Path) -> bool:
+    """A data folder without a library gets the whole seed, as the engine does at a first run: copied beside it, then one rename decides
+    between processes that start together. False when another process made the library first (the locked path then adds what it lacks)."""
+    library.parent.mkdir(mode=0o700, parents=True, exist_ok=True)
+    scratch = library.with_name(f".library.sync-{os.getpid()}")
+    shutil.rmtree(scratch, ignore_errors=True)
+    shutil.copytree(seed, scratch)
+    try:
+        oslayer.replace(scratch, library)
+    except OSError:
+        shutil.rmtree(scratch, ignore_errors=True)
+        if not library.exists():
+            raise
+        return False
+    return True
+
+
+def sync_seed_library(data_dir: str | os.PathLike[str], seed: Path | None = None, *, report: dict[str, Any] | None = None) -> list[str]:
+    """Give `<data>/library` what the seed has and it lacks (D144: only adds, never overwrites; `_apply_seed` has the rule). Returns the
+    templates added (`artifact/section/slug`) and the versions added to templates it had (`artifact/section/slug@vN`). `report`, when
+    given, is filled with `templates`, `versions`, `filled`, `skipped` and `runs`.
+
+    A data folder without a library gets the whole seed. Otherwise the sync runs under the library lock (waits `LOCK_WAIT_S`, then
+    raises `LibraryBusy`) and writes the index once, at the end; an index that is not an index raises `LibraryUnreadable` and nothing is
+    touched. Both are `OSError`s, and the library is as it was. Run twice, the second changes nothing."""
     seed = seed or seed_dir()
     library = Path(data_dir) / "library"
-    wanted = _entries(seed / "index.json")
-    if not library.exists():
-        library.parent.mkdir(mode=0o700, parents=True, exist_ok=True)
-        shutil.copytree(seed, library)
-        return ["/".join(_key(e)) for e in wanted]
-    index_path = library / "index.json"
+    found: dict[str, Any] | None = None
+    if not library.exists() and _seed_whole(library, seed):
+        seed_runs = _seed_doc(seed).get("runs")
+        found = {"templates": ["/".join(_key(e)) for e in _entries(seed / "index.json")], "versions": [], "filled": {}, "skipped": [],
+                 "runs": list(seed_runs) if isinstance(seed_runs, dict) else []}
+    if found is None:
+        with _library_lock(library):
+            doc = _library_doc(library)
+            before = copy.deepcopy(doc)
+            found = _apply_seed(library, seed, doc, apply=True)
+            if doc != before:
+                doc["templates"].sort(key=_template_order)
+                _write_json(library / "index.json", doc)
+    if report is not None:
+        report.update(found)
+    return sorted(found["templates"]) + sorted(found["versions"])
+
+
+def missing_seed_versions(data_dir: str | os.PathLike[str], seed: Path | None = None) -> list[str]:
+    """The seed versions (`artifact/section/slug@vN`) of templates the library has that it lacks and could receive: what `sync_seed_library`
+    would add or restore. Not the versions of a template it lacks as a whole (`missing_seed_templates` lists those) and not a version whose
+    number is taken by another spec (the sync leaves that one alone). Nothing is written and no lock is taken. [] when there is no library
+    or its index is not an index."""
+    library = Path(data_dir) / "library"
+    if not library.is_dir():
+        return []
     try:
-        doc = json.loads(index_path.read_text(encoding="utf-8"))
-    except (OSError, ValueError):
-        doc = None
-    if not isinstance(doc, dict) or not isinstance(doc.get("templates"), list):
-        doc = {"schema": "template-library/1", "templates": []}
-    have = {_key(e) for e in doc["templates"] if isinstance(e, dict)}
-    added: list[str] = []
-    for entry in wanted:
-        key = _key(entry)
-        folder, source = library.joinpath(*key), seed.joinpath(*key)
-        changed = False
-        if not folder.exists() and source.is_dir():
-            shutil.copytree(source, folder)
-            changed = True
-        if key not in have:
-            doc["templates"].append(entry)
-            have.add(key)
-            changed = True
-        if changed:
-            added.append("/".join(key))
+        doc = _library_doc(library)
+    except LibraryUnreadable:
+        return []
+    return sorted(_apply_seed(library, seed or seed_dir(), doc, apply=False)["versions"])
+
+
+def _seed_sha(seed: Path) -> str | None:
+    try:
+        return hashlib.sha256((seed / "index.json").read_bytes()).hexdigest()
+    except OSError:
+        return None
+
+
+def sync_seed_once(data_dir: str | os.PathLike[str], seed: Path | None = None) -> dict[str, Any] | None:
+    """The server's start-up sync: `sync_seed_library` for an existing library, once per seed. `<library>/.seed-sync` holds the sha256 of
+    the seed's index.json the library was last synced with; when it is the current one nothing is done. A data folder without a library is
+    left to the engine, which seeds it whole at the first run. Never raises: a failure (the lock held, an index that is not an index, a
+    disk error) is a warning in the log, the marker is not written, and the next start tries again. Returns the report when it synced,
+    else None."""
+    try:
+        seed = seed or seed_dir()
+        library = Path(data_dir) / "library"
+        wanted = _seed_sha(seed)
+        if wanted is None or not library.is_dir():
+            return None
+        marker = library / SEED_MARKER
+        try:
+            if marker.read_text(encoding="utf-8").strip() == wanted:
+                return None
+        except OSError:
+            pass
+        report: dict[str, Any] = {}
+        sync_seed_library(data_dir, seed, report=report)
+    except Exception as exc:                                                    # noqa: BLE001 - a library problem never stops the app from starting
+        log.warning("the template library was not synced with the seed (%s: %s); the next start tries again", type(exc).__name__, exc)
+        return None
+    try:
+        tmp = marker.with_name(f"{SEED_MARKER}.{os.getpid()}.tmp")
+        tmp.write_text(wanted + "\n", encoding="utf-8")
+        oslayer.replace(tmp, marker)
+    except OSError as exc:
+        log.warning("the template library was synced, but %s could not be written (%s); the next start syncs again", SEED_MARKER, exc.strerror or exc)
+    added = len(report["templates"]) + len(report["versions"]) + len(report["filled"]) + len(report["runs"])
     if added:
-        tmp = index_path.with_name(f".index.{os.getpid()}.tmp")
-        tmp.write_text(json.dumps(doc, indent=2) + "\n", encoding="utf-8")
-        oslayer.replace(tmp, index_path)
-    return added
+        log.info("template library synced with the seed: %d template(s), %d version(s), provenance on %d version(s), %d run(s)",
+                 len(report["templates"]), len(report["versions"]), len(report["filled"]), len(report["runs"]))
+    if report["skipped"]:
+        log.warning("template library: %d seed version(s) were left alone (their number is taken here by another spec, or their files differ): %s",
+                    len(report["skipped"]), ", ".join(f"{s['template']}@v{s['version']}" if s["version"] is not None else s["template"] for s in report["skipped"][:5]))
+    return report
 
 
 # ---- the checks ---------------------------------------------------------------------------------------------------------------
@@ -364,13 +714,23 @@ def _check_instance(data_dir: Path) -> Check:
 
 
 def _check_library(data_dir: Path, seed: Path | None) -> Check:
+    title = "Template library"
     missing = missing_seed_templates(data_dir, seed)
     if missing is None:
-        return Check("library", "Template library", "ok", "not created yet; the first run seeds it")
-    if missing:
-        return Check("library", "Template library", "warn", f"{len(missing)} seed template(s) are missing from {data_dir / 'library'}: "
-                     + ", ".join(missing[:3]) + (" ..." if len(missing) > 3 else ""), "run `sutra-pro config sync-library` (adds only what is missing)")
-    return Check("library", "Template library", "ok", "all seed templates are present")
+        return Check("library", title, "ok", "not created yet; the first run seeds it")
+    library = data_dir / "library"
+    try:
+        _library_doc(library)
+    except LibraryUnreadable as exc:
+        return Check("library", title, "warn", f"{exc}; the seed cannot be synced into it",
+                     "restore library/index.json from a backup (`sutra-pro config sync-library` leaves an index it cannot read alone)")
+    versions = missing_seed_versions(data_dir, seed)
+    if missing or versions:
+        names = [*missing, *versions]
+        what = " and ".join(part for part in (f"{len(missing)} seed template(s)" if missing else "", f"{len(versions)} seed version(s)" if versions else "") if part)
+        return Check("library", title, "warn", f"{what} are missing from {library}: " + ", ".join(names[:3]) + (" ..." if len(names) > 3 else ""),
+                     "run `sutra-pro config sync-library` (adds only what is missing, never overwrites)")
+    return Check("library", title, "ok", "all seed templates and versions are present")
 
 
 def _check_browser(offline: bool, platform: str | None, plist_path: Any, chrome_known: bool) -> Check:

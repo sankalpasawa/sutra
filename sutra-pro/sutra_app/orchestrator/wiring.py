@@ -211,14 +211,17 @@ def refresh_function_nodes(services: Services) -> int:
 
 
 async def start_services(services: AppServices) -> AppServices:
-    """Orchestrator 5.1 steps 2, 3, 5, 6 and 7, in this order: migrate; bootstrap the chart when there is no root; sweep empty
+    """Orchestrator 5.1 steps 2, 3, 5, 6 and 7, in this order: migrate; sync an existing template library with the seed (D144: adds what a
+    newer seed has, once per seed, never overwrites, never stops the start); bootstrap the chart when there is no root; sweep empty
     department folders and refresh stale function nodes; reconcile the tasks a previous run left (ends with `server.resync`
     restart) and close the org-chat requests it accepted and never answered (`TurnRunner.recover`); the scheduler's catch-up tick and loop
     (recurring.py: one run for the time the app was away); start queued work.
     Idempotent: a second start finds the root, nothing to sweep, nothing stale."""
     if services.started:
         return services
+    from sutra_app.ops.doctor import sync_seed_once         # the ops package is not imported by `import sutra_app` (D144)
     await run_blocking(services.db.migrate)
+    await run_blocking(sync_seed_once, services.settings.data_dir)          # an existing template library gains what a newer seed has, once per seed; never raises
     await run_blocking(services.chart.bootstrap)
     services.tasks.bind_loop(asyncio.get_running_loop())
     services.swept = await run_blocking(services.departments.sweep)
