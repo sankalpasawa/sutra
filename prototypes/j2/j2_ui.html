@@ -2505,7 +2505,7 @@ function sTeamwork(s, M){      // the output is the map: a block per part, the t
     const tag = p.st === "doing" || p.st === "fix" ? `<span class="stag">${CUR}${face(p.person, 20, {prop: false, label: false})}${P.name} is ${p.fixing || p.st === "fix" ? "fixing" : VERB[p.person] || "on"} this${TY}</span>`
       : p.st === "ask" ? `<span class="stag">${face("asha", 20, {prop: false, label: false})}Waits on your answer</span>`
       : p.st === "done" ? `<span class="sok">${face(p.person, 18, {prop: false, label: false})}✓ ${P.name}${p.fixes ? `<em>, fixed ${p.fixes === 1 ? "once" : p.fixes + " times"}</em>` : ""}</span>` : "";
-    const note = p.st === "next" ? `${P.name} next` : p.st === "bad" ? "Couldn't be made" : "";
+    const note = p.st === "next" ? (live || (open.length && !s.saved) ? `${P.name} next` : "Not made in this run") : p.st === "bad" ? "Couldn't be made" : "";
     return `<button type="button" class="spart ${p.st}${fresh ? " fresh" : ""}" data-part="${esc(p.sec)}" style="--c:var(${P.c})">${tag}<span class="spn" aria-hidden="true">${String(n).padStart(2, "0")}</span><b>${esc(p.name)}</b><span class="sl" aria-hidden="true"><i></i><i></i><i></i></span>${note ? `<small>${esc(note)}</small>` : ""}</button>`; };
   if (M.parts.length){
     const groups = (s.docset || []).length ? ["prd", "hld", "lld", "site"] : [null], GN = {prd: "Product requirements", hld: "High-level design", lld: "Low-level design", site: "Website"};

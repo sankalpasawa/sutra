@@ -1004,7 +1004,7 @@ def simple_view():
         assert "What to make" not in text and "build today" not in text, text[:300]
         run = j2.J2Run()
         say(run, "a website for my cafe")
-        check(run, "Client Lead", "Quick question", "What is the business called", "Answer later", "Team at work", "The team needs you", site=False)          # J2.a questions: on Team at work and in Asha's panel
+        check(run, "Client Lead", "Quick question", "What is the business called", "Answer later", "Team at work", "Waiting for your answer", site=False)          # J2.a questions: on Team at work and in Asha's panel
         say(run, "It's called Little Fig, in Koramangala, Bengaluru. Visitors should see our menu with prices, opening "
                  "hours and where to find us. Cozy and simple, and it must work on phones.")
         check(run, opts=2, once=("Do you want a section about your coffee's story?",
