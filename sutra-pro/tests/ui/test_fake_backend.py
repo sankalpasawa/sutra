@@ -61,6 +61,11 @@ import fake_devtools as fdt  # noqa: E402  (after the path line above)
 
 # ---- the design's vocabulary, written out here on purpose --------------------------------------------------------------
 FUNCTIONS = ("identity", "adaptation", "priority", "coordination", "audit")
+J2_FUNCS = (*FUNCTIONS, "validator")  # J2's own six: the names /api/activity and /api/ask serve (the validator is code)
+# what J2's render harness printed that page_render.test.js compares (the seven of the first capture, then the Simple view's and the chat
+# panel's), and the layout harness last: the manifest lists them in this order (docs/design/j2-sync-4.md 4.8)
+J2_GOLDENS = ("simple", "sprog", "workflows", "rail", "needs", "map", "agent", "finish", "journey", "journeyhtml", "sframe", "needids",
+              "railst", "planmap", "msgfns", "feed", "layout")
 STATUS_WORDS = ("idle", "running", "waiting", "waiting_on_you", "fault", "filed", "done_unchecked", "left_open", "not_made")  # J2 map/1
 FUNCTION_STATUS_WORDS = STATUS_WORDS[:5]  # a function node uses the first five
 EDGE_KINDS = ("contains", "has_function", "has_step", "handoff", "depends_on", "speaks_to", "step")
@@ -765,9 +770,8 @@ def test_the_j2_captures_hold_a_small_finished_mock_run_and_the_goldens_of_the_p
     assert len((J2_FIXTURES / "state.json").read_bytes()) < 150_000  # R4: small enough to commit
     assert state["mock"] is True and state["status"] == "waiting" and state["workflows"] and state["chat"]
     manifest = json.loads((J2_FIXTURES / "MANIFEST.json").read_text(encoding="utf-8"))
-    assert manifest["harness"]["goldens"] == [f"golden-{k}.json" for k in
-                                              ("simple", "sprog", "workflows", "rail", "needs", "map", "agent", "layout")]
-    for key in ("simple", "sprog", "workflows", "rail", "needs", "map", "agent", "layout"):
+    assert manifest["harness"]["goldens"] == [f"golden-{k}.json" for k in J2_GOLDENS]
+    for key in J2_GOLDENS:
         assert (J2_FIXTURES / f"golden-{key}.json").is_file()
     rail = json.loads((J2_FIXTURES / "golden-rail.json").read_bytes())
     assert isinstance(rail, list) and {"conflicts", "identity", "audit"} <= {section["id"] for section in rail}
@@ -776,6 +780,36 @@ def test_the_j2_captures_hold_a_small_finished_mock_run_and_the_goldens_of_the_p
         assert agent["schema"] == "agent/1" and agent["found"] is True
     assert json.loads((J2_FIXTURES / "agent-unknown.json").read_bytes())["found"] is False
     assert "<title>Brew Lab</title>" in (J2_FIXTURES / "site-latest.html").read_text(encoding="utf-8")
+
+
+def test_the_j2_captures_hold_the_routes_feeds_and_answers_that_j2_added_in_sync_4():
+    load = lambda name: json.loads((J2_FIXTURES / name).read_bytes())  # noqa: E731
+    plan_map = load("plan-map.json")  # J2's plan-map/1 carries no schema key
+    assert plan_map["found"] is True and len(plan_map["workflows"]) == 6 and plan_map["stages"] and plan_map["changes"] == []
+    groups = load("artifacts-groups.json")
+    assert groups["schema"] == "artifacts-groups/1" and [g["id"] for g in groups["groups"]] == ["plan", "guides", "site", "documents", "records"]
+    assert load("changes.json") == {"changes": []}  # the mock brief has no change request
+    runlist = load("runlist.json")
+    assert list(runlist) == ["live", "runs"] and [r["id"] for r in runlist["runs"]] == [runlist["live"]] == [load("runs.json")["live"]]
+    catalog = load("catalog.json")
+    assert catalog["schema"] == "template-library/1" and catalog["dir"] == "library" and catalog["groups"] and len(catalog["runs"]) == 8
+    for who in J2_FUNCS:  # one feed and one answer per function, from the records of the same run
+        feed, answer = load(f"activity-{who}.json"), load(f"ask-{who}.json")
+        assert feed["schema"] == "activity/1" and feed["who"] == who and feed["found"] is True and feed["events"], who
+        assert set(answer) == {"who", "answer", "from"} and answer["who"] == who and answer["from"] == "records", who
+        assert answer["answer"].startswith("From the records:"), who
+    unknown = load("activity-unknown.json")  # a name J2 does not know: the run's step names are still there, and no event
+    assert (unknown["schema"], unknown["who"], unknown["persona"], unknown["found"], unknown["events"]) == ("activity/1", "nobody", "", False, [])
+    assert set(unknown["names"]) == {f"W-{n}" for n in range(1, 7)}
+
+
+def test_no_j2_capture_holds_an_absolute_home_folder_path():
+    """R5: the catalog fixture shows six of J2's own development runs; the capture made the home-folder paths of the machine they ran on
+    `not recorded` (the rule of patch P15 of the vendoring) and refuses any other."""
+    home = re.compile(rb"(?:/Users|/home)/[^/\s\"'\\]+/")
+    assert [p.name for p in sorted(J2_FIXTURES.iterdir()) if p.is_file() and home.search(p.read_bytes())] == []
+    libraries = [run.get("library") for run in json.loads((J2_FIXTURES / "catalog.json").read_bytes())["runs"]]
+    assert libraries.count("not recorded") == 6 and sorted(v for v in libraries if v != "not recorded") == ["/tmp/j2-live-library", "/tmp/j2-live-library-2"]
 
 
 def test_the_graph_run_ids_extend_the_run_id_j2_recorded():
