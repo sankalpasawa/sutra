@@ -7,6 +7,7 @@ output, with nothing routed in front of it.
     install(ctx)   once per run process: each `install(ctx)`, then the tag and progress hooks go into `llm.TAG_HOOKS` / `llm.PROGRESS_HOOKS`,
                    which `llm.ask` runs for every call of every output
     addenda(fn, ctx)  every capability's system text for agent `fn`
+    documents(output, run_dir)  every capability's Artifacts rows for the report of a run of `output` (the Documents group, D146)
     describe()     what `GET /api/engine/capabilities` answers: the registry is the only way the host, the API and the tests learn what
                    the engine can do
 
@@ -25,7 +26,8 @@ from .project import ProjectCapability
 from .workspace import WorkspaceCapability
 
 __all__ = ["CAPABILITIES", "OUTPUT_NAMES", "Capability", "CapabilityConflict", "EngineContext", "OutputSpec", "Selection", "SPECS",
-           "output_spec", "register", "install", "addenda", "describe", "capability_hooks", "select_output", "forced_settings"]
+           "output_spec", "register", "install", "addenda", "documents", "describe", "capability_hooks", "select_output",
+           "forced_settings"]
 
 
 def _agent_capabilities() -> tuple:
@@ -127,6 +129,21 @@ def addenda(fn: str, ctx: EngineContext, capabilities=None) -> str:
             continue
         out += text if isinstance(text, str) else ""
     return out
+
+
+def documents(output: str, run_dir, capabilities=None) -> list:
+    """Every capability's Artifacts rows for the report of a run of `output` in `run_dir`, in registry order (D146): `[]` for J2's own
+    outputs (no capability registered them), the report row for an output a capability added. A capability that fails adds nothing:
+    the Artifacts pane is polled and must not break because one hook did."""
+    rows: list = []
+    for cap in _caps(capabilities):
+        try:
+            got = cap.documents(output, run_dir)
+        except Exception as exc:  # noqa: BLE001
+            print(f"documents of capability {cap.name} failed: {type(exc).__name__}: {str(exc)[:300]}", file=sys.stderr)
+            continue
+        rows += got if isinstance(got, list) else []
+    return rows
 
 
 def describe(capabilities=None) -> list:

@@ -1,15 +1,16 @@
 #!/usr/bin/env python3
-"""Record the shapes of J2's HTTP API into `tests/engine/golden/api_shapes.json` (work package E2, engine design 9).
+"""Record the shapes of J2's HTTP API into `tests/engine/golden/api_shapes.json` (work package E2, engine design 9; J2 sync 4, D150).
 
-    scripts/py scripts/record_api_shapes.py --source "$J2SRC" [--commit <sha>] [--out FILE] [--check]
-    scripts/py scripts/record_api_shapes.py --patched-only [--out FILE] [--check]       # only the "patched" section (no J2 checkout)
+    scripts/py scripts/record_api_shapes.py --source <an extraction of prototypes/j2> [--commit <sutra commit>] [--out FILE] [--check]
 
-Runs J2's own `j2_server.Handler` from `$J2SRC`, an extraction of this repository's `prototypes/j2` at the pinned sutra commit
-(`git archive <sha> prototypes/j2 | tar -x --strip-components=2 -C "$J2SRC"`, docs/design/j2-sync-4.md 2.2): a plain folder, used as it
-is, so an edited working tree or a `.pyc` never matters; `--commit` only names the commit and is recorded as `j2_commit`. J2 runs in a
-child process, in mock mode with the Chrome checks faked as J2's `--fast` flow does, and with every J2 path under a temp folder
-(`J2_RUNS_DIR`, memory, library): nothing is written to the extraction. It drives one Brew Lab run to Done, then asks every GET route
-in three situations:
+The one J2 this product follows is the folder `prototypes/j2` of this repository. `--source` (or the variable SUTRA_J2_CHECKOUT) is
+a new, empty folder it was extracted into with `git archive <commit> prototypes/j2 | tar -x --strip-components=2 -C <folder>`, and
+`--commit` is that sutra commit (recorded as `j2_commit`; the default is `BASELINE`). An extraction, never the working tree, so an
+edited file or a `.pyc` can never matter.
+
+Runs J2's own `j2_server.Handler` from that folder in a child process, in mock mode with the Chrome checks faked as J2's `--fast`
+flow does, and with every J2 path under a temp folder (`J2_RUNS_DIR`, memory, library): nothing is written to the extraction. It
+drives one Brew Lab run to Done, then asks every GET route in three situations:
 
     live    no `?run=`: the run that is held by the server
     saved   `?run=<id>`: the same run read from its folder
@@ -17,15 +18,12 @@ in three situations:
 
 and the POST routes on a fresh run. Per route it keeps the status, the content type and, for a JSON body, the KEY PATHS (the
 names of the keys at every depth, `[]` for a list; a map keyed by ids is written with `*`, and so is `enums`, the enum names of a
-template version: they are data, a new seed template adds some, D150), never a value: ids and times change between runs, the shape
-does not. `tests/engine/test_engine_views.py` runs the same requests against `views.py` and compares.
-`--check` records again and exits 1 when the file differs.
-
-The "patched" section (patch P13) is the one part J2 cannot give: `GET /api/runlist` and `GET /api/changes` exist only in the old Sutra
-repository's copy of the prototype, so their shapes are recorded from the engine's own handlers (`views.runlist`, `views.changes`)
-over a small fixture of saved runs (`write_patch_fixture`), once for a department with runs and once for an empty one.
-The module is also imported by that test for `key_paths`, `ROUTES`
-and the scenario constants, so the two sides ask the same questions.
+template version: they are data, a new seed template adds some, D150), never a value: ids and times change between runs, the
+shape does not. Every route of J2's server is recorded the same way, `/api/runlist` and `/api/changes` and the
+routes added in sync 4 (`/api/plan-map`, `/api/activity`, `/api/catalog`, `/api/artifacts/groups`, `POST /api/ask`) included.
+`tests/engine/test_engine_views.py` runs the same requests against `views.py` and compares. `--check` records again and exits 1
+when the file differs. The module is also imported by that test (and by two library tests) for `key_paths`, `ROUTES` and the
+scenario constants, so the two sides ask the same questions.
 """
 import argparse
 import json
@@ -112,12 +110,11 @@ def fake_chrome(j2_check):
 
 # The GET routes: (name, path with {run} where the query starts). `{run}` is "" live and idle, "run=<id>" saved. The routes that
 # take an id or a name are filled from the run itself by `ask_routes`.
-ROUTES = ("state", "state_since", "runs", "call", "call_missing", "preview", "docs", "map", "plan", "library", "library_item",
-          "library_missing", "run_templates", "artifacts", "agent", "code", "code_missing", "artifacts_tree", "artifact",
-          "artifact_missing", "story", "board", "audits", "refs", "shot_missing", "file_missing", "site_latest", "site_v1",
-          "site_v99", "unknown")
-PATCH_ROUTES = {"runlist": "/api/runlist", "changes": "/api/changes"}         # P13: not in J2's repository, recorded from the engine
-POSTS = ("output_prd", "say_empty", "say", "output_late", "playbooks_clear", "lessons_clear", "reset")
+ROUTES = ("state", "state_since", "runs", "runlist", "changes", "call", "call_missing", "preview", "docs", "map", "plan", "plan_map",
+          "library", "library_item", "library_missing", "catalog", "run_templates", "artifacts", "agent", "activity", "code",
+          "code_missing", "artifacts_tree", "artifacts_groups", "artifact", "artifact_missing", "story", "board", "audits", "refs",
+          "shot_missing", "file_missing", "site_latest", "site_v1", "site_v99", "unknown")
+POSTS = ("output_prd", "say_empty", "say", "ask", "ask_refused", "output_late", "playbooks_clear", "lessons_clear", "reset")
 
 
 def slug(text):
@@ -140,14 +137,17 @@ def paths_for(state, tree, lib, artifacts, run_q, decisions=()):
     code = next(((r["deck"], r.get("section")) for r in _walk_code(tree)), ("x", None))
     return {
         "state": "/api/state" + q(), "state_since": "/api/state" + q("since=3"), "runs": "/api/runs" + q(),
+        "runlist": "/api/runlist" + q(), "changes": "/api/changes" + q(),
         "call": "/api/call" + q("id=1"), "call_missing": "/api/call" + q("id=99999"),
         "preview": "/api/preview" + q(f"atom={atom}"), "docs": "/api/docs" + q(), "map": "/api/map" + q(), "plan": "/api/plan" + q(),
-        "library": "/api/library" + q(),
+        "plan_map": "/api/plan-map" + q(), "library": "/api/library" + q(),
         "library_item": ("/api/library/%s/%s/%s/v%s" % tpl if tpl else "/api/library/website/x/x/v1") + q(),
-        "library_missing": "/api/library/website/none/none/v1" + q(), "run_templates": "/api/run-templates" + q(),
-        "artifacts": "/api/artifacts" + q(), "agent": "/api/agent" + q("who=identity"),
+        "library_missing": "/api/library/website/none/none/v1" + q(), "catalog": "/api/catalog" + q(),
+        "run_templates": "/api/run-templates" + q(), "artifacts": "/api/artifacts" + q(), "agent": "/api/agent" + q("who=identity"),
+        "activity": "/api/activity" + q("who=adaptation"),
         "code": "/api/code" + q(f"deck={code[0]}" + (f"&section={code[1]}" if code[1] else "")),
         "code_missing": "/api/code" + q("deck=none"), "artifacts_tree": "/api/artifacts/tree" + q(),
+        "artifacts_groups": "/api/artifacts/groups" + q(),
         "artifact": "/api/artifact" + q(f"name={art}"), "artifact_missing": "/api/artifact" + q("name=nothing.txt"),
         "story": "/api/story" + q(), "board": "/api/board" + q(), "audits": "/api/audits" + q(), "refs": "/api/refs" + q(),
         "shot_missing": "/shot/99" + q(), "file_missing": "/file/goal.json" + q(), "site_latest": "/site/latest" + q(),
@@ -167,52 +167,6 @@ def _walk_code(tree):
             stack.extend(n.values())
         elif isinstance(n, list):
             stack.extend(n)
-
-
-# ------------------------------------------------------------------------------------------------- the patched routes (P13)
-PATCH_RUN_DONE, PATCH_RUN_STOPPED, PATCH_RUN_BARE = "j2-20261105-091500-aaaa", "j2-20261106-101500-bbbb", "j2-20261106-111500-cccc"
-
-
-def write_patch_fixture(runs_dir):
-    """Three saved runs in `runs_dir`: one finished with a goal, a summary and two change requests, one that never finished (only a
-    chat and a goal statement) and one whose folder has no chat.jsonl (not a run: the list skips it). Returns the live run's id."""
-    runs = Path(runs_dir)
-
-    def put(name, **files):
-        folder = runs / name
-        folder.mkdir(parents=True, exist_ok=True)
-        for file, value in files.items():
-            text = "\n".join(json.dumps(row) for row in value) + "\n" if file == "chat.jsonl" else json.dumps(value)
-            (folder / file).write_text(text, encoding="utf-8")
-
-    put(PATCH_RUN_DONE, **{"chat.jsonl": [{"meta": True, "output": "website"}, {"who": "user", "text": BREW_LAB}],
-                           "goal.json": {"site_name": "Brew Lab", "statement": "A one-page website."},
-                           "summary.json": {"status": "done", "output_type": "website", "brief": BREW_LAB},
-                           "change.json": [{"id": "c1", "request": "Add a map", "cycle": 2, "revise": ["a"], "new": []},
-                                           {"id": "c2", "request": "Warmer colours", "cycle": 3, "revise": [], "new": ["b", "c"]}]})
-    put(PATCH_RUN_STOPPED, **{"chat.jsonl": [{"meta": True, "output": "prd"}, {"who": "user", "text": "Write a PRD for QuickQueue."}],
-                              "goal.json": {"statement": "A PRD for QuickQueue. It has two users."}})
-    put(PATCH_RUN_BARE, **{"goal.json": {}})
-    return PATCH_RUN_STOPPED
-
-
-def patched_shapes():
-    """{"get": {route: {mode: shape}}} recorded from the engine's `views.runlist` and `views.changes` over `write_patch_fixture`:
-    the department with runs (`runs`) and one with none (`empty`). Imports the engine, so it needs this checkout on the path."""
-    sys.path.insert(0, str(REPO))
-    from sutra_app.engine import views
-    with tempfile.TemporaryDirectory(prefix="j2-shapes-patched-") as work:
-        runs = Path(work) / "runs"
-        live = write_patch_fixture(runs)
-        memory = views.MemoryPaths(str(Path(work) / "lessons"), str(Path(work) / "playbooks"))
-        out = {name: {} for name in PATCH_ROUTES}
-        for mode, runs_dir, run_id in (("runs", runs, PATCH_RUN_DONE), ("empty", Path(work) / "none", None)):
-            ctx = views.RunCtx("saved" if run_id else "idle", run_id, str(runs_dir / run_id) if run_id else None, str(runs_dir),
-                               live if run_id else None, memory)
-            for name in PATCH_ROUTES:
-                reply = views.VIEWS[name](ctx, {})
-                out[name][mode] = shape(reply.code, reply.ctype, reply.body)
-    return {"fixture": "write_patch_fixture in scripts/record_api_shapes.py", "get": out}
 
 
 # ---------------------------------------------------------------------------------------------------------------- the child
@@ -280,6 +234,8 @@ def child(source, work):
         end = time.time() + 120
         while j2_server.RUN.status != "waiting" and time.time() < end:
             time.sleep(0.01)
+        out["post"]["ask"] = post("/api/ask", {"who": "adaptation", "q": "Why did you plan the work this way?"})      # mock: from the records
+        out["post"]["ask_refused"] = post("/api/ask", {"who": "nobody", "q": "Is anyone there?"})
         out["post"]["output_late"] = post("/api/output", {"type": "website"})
         out["post"]["playbooks_clear"] = post("/api/playbooks/clear", {})
         out["post"]["lessons_clear"] = post("/api/lessons/clear", {})
@@ -290,21 +246,20 @@ def child(source, work):
 
 
 # ---------------------------------------------------------------------------------------------------------------- the parent
-def checkout_of(source, commit):
-    """(folder to run J2 from, temp folder to remove or None, commit text). `source` is an extraction of `prototypes/j2` (see the
-    module docstring), used as it is; `commit` is only the name recorded as `j2_commit`. Anything else stops here with the recipe."""
-    source = Path(source).resolve()
-    if not (source / "j2.py").is_file():
-        raise SystemExit(f"--source {source} holds no j2.py: it must be an extraction of prototypes/j2, "
-                         "`git archive <sha> prototypes/j2 | tar -x --strip-components=2 -C <empty folder>`")
-    return source, None, commit
+def extraction_of(source):
+    """The folder to run J2 from: the extraction of `prototypes/j2` that `--source` names (it must hold J2's own server)."""
+    folder = Path(source).resolve()
+    if not (folder / "j2_server.py").is_file():
+        raise SystemExit(f"{folder} is not an extraction of prototypes/j2 (no j2_server.py in it): make one with "
+                         "`git archive <commit> prototypes/j2 | tar -x --strip-components=2 -C <new, empty folder>`")
+    return folder
 
 
 def record(source, commit=BASELINE):
-    folder, tmp, full = checkout_of(source, commit)
+    folder = extraction_of(source)
     work = Path(tempfile.mkdtemp(prefix="j2-shapes-work-"))
     try:
-        env = {**os.environ, "PYTHONDONTWRITEBYTECODE": "1", "J2_COMMIT": full}
+        env = {**os.environ, "PYTHONDONTWRITEBYTECODE": "1", "J2_COMMIT": commit}
         for name in list(env):
             if name.startswith(("J2_", "STUDIO_")) and name != "J2_COMMIT":
                 del env[name]
@@ -315,33 +270,23 @@ def record(source, commit=BASELINE):
         return json.loads(res.stdout)
     finally:
         shutil.rmtree(work, ignore_errors=True)
-        if tmp:
-            shutil.rmtree(tmp, ignore_errors=True)
 
 
 def main(argv=None):
     ap = argparse.ArgumentParser(description=__doc__.split("\n")[0])
     ap.add_argument("--source", default=os.environ.get("SUTRA_J2_CHECKOUT"),
-                    help="an extraction of this repository's prototypes/j2: git archive <sha> prototypes/j2 | tar -x --strip-components=2 -C "
-                         "<empty folder> (default: $SUTRA_J2_CHECKOUT, which names such a folder)")
-    ap.add_argument("--commit", default=BASELINE, help="the sutra commit the extraction was made from, recorded as j2_commit "
-                                                       "(default: the pin of the last sync)")
+                    help="an extraction of prototypes/j2 (git archive into a new folder); the variable SUTRA_J2_CHECKOUT names it too")
+    ap.add_argument("--commit", default=BASELINE, help="the sutra commit the extraction was made from (recorded as j2_commit)")
     ap.add_argument("--out", default=str(DEFAULT_OUT))
     ap.add_argument("--check", action="store_true", help="record again and exit 1 when the file differs")
-    ap.add_argument("--patched-only", action="store_true", help="only the patched section (P13), in the existing file; no J2 checkout")
     ap.add_argument("--child", nargs=2, metavar=("SOURCE", "WORK"), help=argparse.SUPPRESS)
     a = ap.parse_args(argv)
     if a.child:
         return child(*a.child)
+    if not a.source:
+        ap.error("--source (or SUTRA_J2_CHECKOUT) is required: an extraction of prototypes/j2")
     out = Path(a.out)
-    if a.patched_only:
-        data = json.loads(out.read_text(encoding="utf-8"))
-        data["patched"] = patched_shapes()
-    else:
-        if not a.source:
-            ap.error("--source (or SUTRA_J2_CHECKOUT) is required")
-        data = record(a.source, a.commit)
-        data["patched"] = patched_shapes()
+    data = record(a.source, a.commit)
     text = json.dumps(data, indent=1, sort_keys=True) + "\n"
     if a.check:
         same = out.is_file() and out.read_text(encoding="utf-8") == text
@@ -349,7 +294,7 @@ def main(argv=None):
         return 0 if same else 1
     out.parent.mkdir(parents=True, exist_ok=True)
     out.write_text(text, encoding="utf-8")
-    print(f"wrote {out} ({len(data['get']['live'])} routes x 3 modes, {len(data['post'])} POSTs, {len(data['patched']['get'])} patched routes)")
+    print(f"wrote {out} ({len(data['get']['live'])} routes x 3 modes, {len(data['post'])} POSTs)")
     return 0
 
 

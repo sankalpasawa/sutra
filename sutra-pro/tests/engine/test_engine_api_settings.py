@@ -9,7 +9,7 @@ import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
-from sutra_app.engine.api import mount
+from sutra_app.engine.api import ctx as ctxmod, mount
 from sutra_app.engine.api.settings import apply_change, settings_file, settings_view
 from sutra_app.engine.spec import EDITABLE_FIELDS, LOCKED_FIELDS, SETTINGS_SCHEMA, EngineSettings, read_settings_file
 
@@ -56,6 +56,39 @@ def test_get_with_dept_adds_the_department_file_and_layers_it_over_the_global_on
     assert (body["effective"]["budget"], body["effective"]["fixes"]) == (20, 1)
     assert api.client.get(URL + "?dept=sales").json()["department"] == {}          # no file yet
     assert api.client.get(URL + "?dept=sales").json()["effective"]["budget"] == 80
+
+
+def test_with_a_team_the_body_says_what_the_next_run_would_use_and_without_one_it_does_not(api):
+    body = api.client.get(URL + "?dept=web").json()
+    assert body["next_run"] == {"output": "auto"} == {"output": EngineSettings().output}, "the default: the engine picks (D129)"
+    assert "next_run" not in api.client.get(URL).json(), "the global scope is no run"
+    assert set(body) == {"schema", "defaults", "global", "department", "next_run", "effective", "editable", "locked"}
+
+
+def test_next_run_layers_the_files_and_the_start_pages_choice_and_effective_does_not(api):
+    api.glob.write_text(json.dumps({"output": "prd"}))
+    assert api.client.get(URL + "?dept=web").json()["next_run"] == {"output": "prd"}
+    api.web.write_text(json.dumps({"output": "project"}))
+    body = api.client.get(URL + "?dept=web").json()
+    assert body["next_run"] == {"output": "project"} and api.client.get(URL + "?dept=sales").json()["next_run"] == {"output": "prd"}
+    ctxmod.write_page(api.data, "web", next_settings={"J2_OUTPUT": "hld"})                 # what the start page chose for the first message
+    body = api.client.get(URL + "?dept=web").json()
+    assert body["next_run"] == {"output": "hld"} and body["effective"]["output"] == "project", "effective is the files only"
+    assert api.client.get(URL + "?dept=sales").json()["next_run"] == {"output": "prd"}, "another team's page is not read"
+
+
+def test_a_reload_of_the_start_page_shows_the_choice_it_made_through_post_output(api):
+    assert api.client.post("/api/output?dept=web", json={"type": "website"}, headers=TOKEN).json() == {"ok": True, "output": "website"}
+    assert api.client.get(URL + "?dept=web").json()["next_run"] == {"output": "website"}
+    assert api.client.post("/api/output?dept=web", json={"type": "prd"}, headers=TOKEN).status_code == 200
+    assert api.client.get(URL + "?dept=web").json()["next_run"] == {"output": "prd"}
+    assert api.client.get(URL + "?dept=web").json()["global"] == {} and not api.web.exists(), "the team's file is not written by a start page choice"
+
+
+def test_put_with_a_team_answers_with_next_run_like_get(api):
+    got = put(api, {"set": {"output": "lld"}}, "web")
+    assert got.status_code == 200 and got.json()["next_run"] == {"output": "lld"} and got.json() == api.client.get(URL + "?dept=web").json()
+    assert "next_run" not in put(api, {"set": {"budget": 70}}).json()
 
 
 def test_get_is_read_without_a_token_and_the_server_environment_is_not_a_layer(api, monkeypatch):

@@ -37,6 +37,7 @@ from sutra_app.orchestrator import records as _records  # noqa: F401  (registers
 from sutra_app.orchestrator.agent.agent import ChatAgent
 from sutra_app.orchestrator.agent.demo import demo_book
 from sutra_app.orchestrator.agent.runner import TurnRunner
+from sutra_app.orchestrator.agent_ask import AgentAsk
 from sutra_app.orchestrator.atoms import AtomStore
 from sutra_app.orchestrator.chart import ChartStore
 from sutra_app.orchestrator.attachments import Attachments
@@ -76,6 +77,7 @@ class AppServices(Services):
     attachments: Any = None            # the attachment service (ABS-4)
     recurring: Any = None              # the schedules of recurring work and their ticker (GAP2 routines-limits)
     limits: Any = None                 # the monthly spending limit and the plan-window guard, TaskService's start gate (GAP2 routines-limits)
+    agent_chat: Any = None             # `AgentAsk.turn`: a function's question as a turn of its own chat session, for POST /api/ask (J2 sync 4, D147); the engine's routes read it optionally
     reconciled: ReconcileReport | None = None
     swept: int = 0
     refreshed: int = 0
@@ -177,6 +179,7 @@ def build_services(settings: Settings, *, connector: Any = None, launcher: Any =
     limits = Limits(settings.data_dir / LIMITS_FILE, db, quotas=lambda: {name: router.health.quota(name) for name in ("claude", "codex")},
                     clock=clock, offline=settings.offline or router_settings.connector == "stub")
     tasks.start_gate = limits.gate
+    agent_chat = AgentAsk(db=db, tasks=tasks, chats=chats, router=router, chat_port=chat_port, limits=limits, redact=redactor, clock=clock).turn
     agent = ChatAgent(port, chart, redact=redactor, clock=clock, attempts=settings.chat_attempts, timeout=settings.chat_timeout,
                       notes=prompt_notes(db, redactor, clock))                 # the owner's notes, in the decide and assign prompts (GAP2 rules-notes)
     runner = TurnRunner(db=db, chart=chart, chats=chats, tasks=tasks, agent=agent, connector=port,
@@ -187,7 +190,7 @@ def build_services(settings: Settings, *, connector: Any = None, launcher: Any =
         projector=projector, watcher=watcher, runner=runner, connector=port, launcher=launcher,
         resolve_run=tasks.resolve_run, department=departments.row, deliver_to_department=tasks.deliver_to_department,
         stop_live=tasks.stop_live, connector_router=router, chat_port=chat_port, attachments=attachments, recurring=recurring,
-        limits=limits)
+        limits=limits, agent_chat=agent_chat)
 
 
 # ---- startup steps --------------------------------------------------------------------------------------------------------------
