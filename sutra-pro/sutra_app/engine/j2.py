@@ -3671,7 +3671,7 @@ class J2Run:
         self.auto = bool(on)
         self._event("requester", "setting", f"decide_for_me={self.auto}")
         if self.chat:
-            self.save("settings.json", {"decide_for_me": self.auto})
+            self.save("settings.json", {**(_read(self.dir, "settings.json", {}) or {}), "decide_for_me": self.auto})      # P16: the host's dump stays
         if self.auto and self.status != "running" and self._auto_pick():
             self.status = "running"
             threading.Thread(target=self._run_safe, kwargs={"auto_only": True}, daemon=True).start()
@@ -3719,7 +3719,7 @@ class J2Run:
     def _run_safe(self, auto_only=False):
         with self.lock:
             if self.auto:      # a saved run reads Decide for me back from here
-                self.save("settings.json", {"decide_for_me": True})
+                self.save("settings.json", {**(_read(self.dir, "settings.json", {}) or {}), "decide_for_me": True})      # P16
             try:
                 if not auto_only:
                     self._run()

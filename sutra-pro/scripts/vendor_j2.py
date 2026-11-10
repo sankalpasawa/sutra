@@ -10,7 +10,7 @@ What it does, in this order, and nothing else:
 
   1. reads the J2 files from `--source`, an extraction of `prototypes/j2` at ONE commit (a plain folder, so an edited working
      tree, a `.pyc` or a stray file is never vendored), with `--commit` naming the commit it was taken from;
-  2. copies the 17 code modules and applies the numbered patches (P1 to P5, P7 to P12, P14 and P15; no P6, no P13) as exact
+  2. copies the 17 code modules and applies the numbered patches (P1 to P5, P7 to P12 and P14 to P16; no P6, no P13) as exact
      text edits: every edit names its old text and how often it must occur, so a J2 change under an anchor stops the run
      instead of producing a silently different file (P15 is a data patch: see `scrub_seed_index`);
   3. copies the data files byte for byte: role files, conditions, artifact types, generic templates, the seed template
@@ -66,7 +66,7 @@ class VendorError(Exception):
 # ---- the patches --------------------------------------------------------------------------------------------------
 @dataclass(frozen=True)
 class Edit:
-    patch: str          # "P1" .. "P15" (P15 is the data patch below, not an Edit)
+    patch: str          # "P1" .. "P16" (P15 is the data patch below, not an Edit)
     file: str
     old: str
     new: str
@@ -612,6 +612,13 @@ def saved_snapshot_dir(d, name, since=0):
         said = [self.request] + [x["answer"] for x in self.intake]''', r'''        if self.stages or self.goal or self.out.get("single"):      # P14: `single` outputs (project work) keep their output
             return
         said = [self.request] + [x["answer"] for x in self.intake]'''),
+    # ---- P16: Decide for me's two writes of settings.json add their key to the file the host wrote there; they no longer replace it
+    Edit("P16", "j2.py", '''            self.save("settings.json", {"decide_for_me": self.auto})
+''', '''            self.save("settings.json", {**(_read(self.dir, "settings.json", {}) or {}), "decide_for_me": self.auto})      # P16: the host's dump stays
+'''),
+    Edit("P16", "j2.py", '''                self.save("settings.json", {"decide_for_me": True})
+''', '''                self.save("settings.json", {**(_read(self.dir, "settings.json", {}) or {}), "decide_for_me": True})      # P16
+'''),
 )
 
 OTHER_EDITS = (
@@ -731,6 +738,7 @@ PATCH_NOTES = {
     "P11": "`J2Run.rehydrate(src_dir)` delegates to `rehydrate.py`",
     "P12": "Windows (D101), nothing else: `j2_check.find_chrome` also looks in the Windows install folders of Chrome, `j2_check._chrome` decodes Chrome's output as UTF-8 with replacement, `j2_template_lib` writes its index with `oslayer.replace` (a rename that waits out a reader) and takes its library lock through `oslayer` (P10), records a template's saved path with `/` on every system (`run_tpl_rel`) and splits it on either separator when it checks for `..` (`run_saved_dir`)",
     "P14": "`J2Run._plan_stages` returns early for an output that says `single` (`if self.stages or self.goal or self.out.get(\"single\"):`): named documents in a brief (\"update the PRD in the repo\") do not swap the project output for a PRD stage chain. No other output has `single`, so every other run, prompt and golden is unchanged. The output itself is registered by `sutra_app/engine/capabilities/` (Sutra's own files, not J2's)",
+    "P16": "Decide for me's two writes of `settings.json` (`set_auto`, and the one at the start of `_run_safe`) add `decide_for_me` to what the file holds instead of replacing it: the engine host writes its resolved engine settings to the same file before J2 starts, and that dump now survives (`saved_snapshot` keeps reading `decide_for_me` from the same file)",
     "P15": "seed data: the six `runs[].library` values of `library/index.json` that held a J2 developer's absolute home-folder path become `not recorded` (R5: no absolute home path in any file of this product); nothing reads the field; the two `/tmp/` values stay",
 }
 

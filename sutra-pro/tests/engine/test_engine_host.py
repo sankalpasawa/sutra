@@ -21,6 +21,7 @@ from sutra_app.engine.host import loop
 from sutra_app.engine.host.heartbeat import Heartbeat, heartbeat_interval
 from sutra_app.engine.host.inbox import Inbox, InboxTailer
 from sutra_app.engine.port import PreflightResult
+from sutra_app.engine.spec import EngineSettings
 from sutra_app.library.types import overhead_atom_id
 from sutra_app.orchestrator.models import parse_event
 
@@ -801,6 +802,8 @@ def test_a_decide_for_me_run_ends_in_strict_records_mode_with_its_settings_file_
     rows = events(run_dir)
     assert rows[-1]["t"] == "run.ended" and rows[-1]["status"] in ("done", "done_with_open_items") and rows[-1]["code"] is None
     assert not [r for r in trace(run_dir, "record.warning")], "strict mode refused no record"
-    assert json.loads((Path(run_dir) / "settings.json").read_text(encoding="utf-8")).get("decide_for_me") is True
+    settings = json.loads((Path(run_dir) / "settings.json").read_text(encoding="utf-8"))
+    assert settings["decide_for_me"] is True, "J2 added its key (P16)"
+    assert set(EngineSettings.model_fields) <= set(settings), "and the host's resolved-settings dump, written to the same file, survived"
     answers = [m for m in chat(run_dir) if m["who"] == "user" and m.get("auto")]
     assert answers and all(m.get("auto_label") for m in answers), "the vague brief raised questions and Decide for me answered them"

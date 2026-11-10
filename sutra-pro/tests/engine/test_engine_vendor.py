@@ -157,11 +157,11 @@ def test_every_vendored_file_is_listed_and_every_listed_file_exists():
     assert on_disk == listed
 
 
-def test_the_patch_table_has_p1_to_p15_without_p6_and_p13():
+def test_the_patch_table_has_p1_to_p16_without_p6_and_p13():
     """P6 never existed; P13 (the run list and the change list) was retired into engine/runlist.py in sync 4 (D140)."""
     table = MD.read_text(encoding="utf-8").split("## Files")[0]
     ids = re.findall(r"^\| (P\d+) \|", table, re.M)
-    assert ids == [f"P{n}" for n in range(1, 16) if n not in (6, 13)]
+    assert ids == [f"P{n}" for n in range(1, 17) if n not in (6, 13)]
     used = {p for _, _, patches, _, _ in rows() for p in patches.split(",") if p != "-"}
     assert used == set(ids)
 
@@ -170,6 +170,7 @@ def test_a_patch_listed_for_a_file_leaves_its_mark_in_it():
     marks = {"P3": ("j2.py", "run_dir=None"), "P4": ("j2.py", "def apply_override"), "P9": ("j2.py", "system_addendum"),
              "P10": ("j2_template_lib.py", "class LibraryBusy"), "P11": ("j2.py", "def rehydrate"),
              "P14": ("j2.py", 'self.out.get("single")'),
+             "P16": ("j2.py", '{**(_read(self.dir, "settings.json", {}) or {}), "decide_for_me": True}'),
              "P2": ("j2_realization.py", "J2_AGENTS_DIR")}
     by_file = {Path(v).name: patches.split(",") for v, _, patches, _, _ in rows() if v.endswith(".py")}
     for patch, (name, text) in marks.items():
