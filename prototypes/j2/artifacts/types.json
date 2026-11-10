@@ -12,6 +12,27 @@
       ]
     }
   },
+  "forms": {
+    "_note": "How each form is built and checked, defined once. A type names its form; every field it leaves out comes from here ({name}, {label}, {noun} and {sections} are filled from the type). Room for \"script\" and \"action\": not built yet.",
+    "page": {"builder": "builder.md", "file": "site/index.html", "preview": "html",
+             "check_types": ["file-exists", "grep-count", "element-count", "named-test", "facts-present", "tap-targets", "behavior-steps"], "ready": "Your {lower} is ready."},
+    "document": {
+      "builder": "templates/document/builder.md", "file": "{name}.md", "preview": "markdown", "export": "docx",
+      "check_types": ["facts-present", "heading-present", "section-not-empty"],
+      "intake": "templates/document/intake.md", "charter_format": "templates/document/charter.txt",
+      "plan": "templates/document/plan.md", "atom_rules": "templates/document/atom_rules.md", "conditions": "document.json",
+      "rubric": [
+        {"id": "D-1", "text": "Every section does the job its name says, for the charter's audience"},
+        {"id": "D-2", "text": "Specific and checkable: names, numbers and rules are stated, not implied"},
+        {"id": "D-3", "text": "No invented facts: every fact comes from the brief or the Requester's answers, or is labelled \"Assumption:\"; the evidence quotes each unlabelled claim not in the brief"}
+      ],
+      "done": "Done: the {label} is workable. Every done-when item, rubric item and necessary condition passes.",
+      "ready": "Your document is ready.",
+      "cost": {"card": "rates_prd", "section_part": "doc_section"},
+      "workflow": {"template": "doc-sections", "refs": "^{name}\\.md(#|$)"},
+      "mock": {"charter": "mock_form_charter", "section": "mock_form_section", "atom": {}}
+    }
+  },
   "types": [
     {
       "name": "prd",
@@ -19,7 +40,7 @@
       "label": "Product requirements",
       "tag": "PRD",
       "color": "--prd",
-      "form": "doc",
+      "form": "document",
       "file": "prd.md",
       "export": "docx",
       "output_label": "PRD document",
@@ -71,7 +92,7 @@
       "label": "High-level design",
       "tag": "HLD",
       "color": "--hld",
-      "form": "doc",
+      "form": "document",
       "file": "hld.md",
       "export": "docx",
       "output_label": "HLD document",
@@ -125,7 +146,7 @@
       "label": "Low-level design",
       "tag": "LLD",
       "color": "--lld",
-      "form": "doc",
+      "form": "document",
       "file": "lld.md",
       "export": "docx",
       "output_label": "LLD document",
@@ -209,7 +230,6 @@
       "conditions": "website.json",
       "workflow": {
         "template": "site-parts",
-        "builder": "builder.md",
         "refs": "\\.html?(#|$)"
       },
       "cost": {
@@ -317,7 +337,7 @@
       "label": "Run report",
       "tag": "Other",
       "color": "--other",
-      "form": "doc",
+      "form": "document",
       "file": "report.md",
       "deliverable": false
     },

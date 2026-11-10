@@ -7,13 +7,14 @@ A type that fails a check is refused with the reason (ValueError): a run never h
 """
 import json
 import os
+import re
 from functools import lru_cache
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 TYPES_PATH = os.path.join(HERE, "artifacts", "types.json")
 AGENTS_DIR = os.path.join(HERE, "agents", "j2")
 CONDITIONS_DIR = os.path.join(HERE, "conditions")
-FORMS = ("page", "doc")
+FORMS = ("page", "document")      # room for "script" and "action": not built yet
 NEEDED = ("label", "noun", "form", "conditions", "rubric", "check_types", "done", "intake", "charter_format", "workflow", "cost")
 DOC_NEEDED = ("file", "builder", "plan", "atom_rules")
 EXPORTS = (None, "docx")
@@ -21,13 +22,15 @@ TEXTS = {"intake": "intake", "charter_format": "charter_fmt", "plan": "plan", "a
 
 
 DOCUMENT = "Document"      # generic.json's document-level template, not a section
+TEMPLATES_DIR = os.path.join(HERE, "templates")
+NAME_RE = re.compile(r"^[a-z][a-z0-9_]{1,40}$")
 
 
 @lru_cache(maxsize=None)
 def template(name):
     """The section templates of a type's template library entry (templates/<name>/generic.json), in document order;
     the document-level template left out. () when the type has no generic.json."""
-    p = os.path.join(HERE, "templates", name, "generic.json")
+    p = os.path.join(TEMPLATES_DIR, name, "generic.json")
     if not os.path.isfile(p):
         return ()
     with open(p, encoding="utf-8") as f:
@@ -57,10 +60,9 @@ def cites(name):
     return out
 
 
-def section_parts(name, path=TYPES_PATH):
-    """{section: the rate-card part one section costs at least} (types.json cost.section_parts, else cost.section_part)."""
-    with open(path, encoding="utf-8") as f:
-        cost = next(t for t in json.load(f)["types"] if t.get("name") == name).get("cost") or {}
+def section_parts(name, path=None):
+    """{section: the rate-card part one section costs at least} (cost.section_parts, else cost.section_part)."""
+    cost = _merged(name, path)["cost"]
     return {s: (cost.get("section_parts") or {}).get(s, cost.get("section_part")) for s in sections(name)}
 
 
@@ -80,22 +82,64 @@ def _text(rel):
     return t[:-1] if t.endswith("\n") else t
 
 
-def load(name, path=TYPES_PATH):
-    with open(path, encoding="utf-8") as f:
-        entry = next((t for t in json.load(f)["types"] if t.get("name") == name and t.get("kind") == "type"), None)
+_CACHE = {}
+
+
+def _read_types(path=None):
+    """types.json, read again only when the file changed (a new type is saved during a run)."""
+    p = path or TYPES_PATH
+    key = (p, os.path.getmtime(p), os.path.getsize(p))
+    if key not in _CACHE:
+        with open(p, encoding="utf-8") as f:
+            _CACHE.clear()
+            _CACHE[key] = json.load(f)
+    return _CACHE[key]
+
+
+def names(path=None):
+    """Every output type's name, in file order."""
+    return [t["name"] for t in _read_types(path)["types"] if t.get("kind") == "type"]
+
+
+def _merged(name, path=None):
+    """A type's entry with its form's defaults filled in ({name}, {label}, {noun} and {sections} from the type)."""
+    d = _read_types(path)
+    entry = next((t for t in d["types"] if t.get("name") == name and t.get("kind") == "type"), None)
     if entry is None:
-        raise ValueError(f"{name}: no such output type in {os.path.basename(path)}")
-    doc = entry.get("form") == "doc"
+        raise ValueError(f"{name}: no such output type in {os.path.basename(path or TYPES_PATH)}")
+    form = (d.get("forms") or {}).get(entry.get("form"))
+    if entry.get("form") not in FORMS or not isinstance(form, dict):
+        raise ValueError(f"{name}: unknown form {entry.get('form')!r}")
+    noun = entry.get("noun") or entry.get("label") or name
+    label = str(entry.get("label") or name)
+    fill = lambda v: (v.replace("{name}", name).replace("{label}", label).replace("{lower}", label.lower())
+                      .replace("{noun}", noun).replace("{sections}", ", ".join(sections(name))) if isinstance(v, str) else v)
+    out = {**{k: fill(v) for k, v in form.items() if k not in ("workflow", "cost")}, **entry, "noun": noun}
+    out["workflow"] = {**{k: fill(v) for k, v in (form.get("workflow") or {}).items()}, **(entry.get("workflow") or {})}
+    out["cost"] = {**(form.get("cost") or {}), **(entry.get("cost") or {})}
+    out["_fill"] = fill
+    return out
+
+
+def info(name, path=None):
+    """What the views and messages need of a type: its form, label, file, preview and ready message."""
+    e = _merged(name, path)
+    return {"name": name, "form": e["form"], "label": e.get("label"), "noun": e["noun"], "file": e.get("file"),
+            "preview": e.get("preview"), "ready": e.get("ready")}
+
+
+def load(name, path=None):
+    entry = _merged(name, path)
+    fill = entry.pop("_fill")
+    doc = entry["form"] == "document"
     bad = [k for k in NEEDED + (DOC_NEEDED if doc else ()) if entry.get(k) in (None, "", [])]
     if bad:
         raise ValueError(f"{name}: missing {', '.join(bad)}")
-    if entry["form"] not in FORMS:
-        raise ValueError(f"{name}: unknown form {entry['form']!r}")
     if entry.get("export") not in EXPORTS:
         raise ValueError(f"{name}: unknown export {entry['export']!r}")
     # a page's builder is a role file in agents/j2 (workflow.builder); a document's is its own text ("builder")
     files = {"conditions": os.path.join(CONDITIONS_DIR, entry["conditions"]),
-             "builder": os.path.join(HERE, entry["builder"]) if entry.get("builder") else os.path.join(AGENTS_DIR, entry["workflow"].get("builder") or ""),
+             "builder": os.path.join(HERE if doc else AGENTS_DIR, entry.get("builder") or ""),
              **{k: os.path.join(HERE, entry[k]) for k in TEXTS if entry.get(k)}}
     missing = [k for k, p in files.items() if not os.path.isfile(p)]
     if missing:
@@ -106,9 +150,9 @@ def load(name, path=TYPES_PATH):
            "sections": sections(name) if doc else (), "conditions": entry["conditions"],
            "rubric": tuple((r["id"], r["text"]) for r in entry["rubric"]), "rates": entry["cost"]["card"],
            "check_types": tuple(entry["check_types"]),
-           "builder": _text(entry["builder"]) if entry.get("builder") else entry["workflow"]["builder"],
+           "builder": fill(_text(entry["builder"])) if doc else entry["builder"],
            "export": entry.get("export"), "done": entry["done"]}
-    out.update({key: _text(entry[k]) for k, key in TEXTS.items() if entry.get(k)})
+    out.update({key: fill(_text(entry[k])) for k, key in TEXTS.items() if entry.get(k)})
     if doc:      # a page's file is the page form's own (site/index.html); a document names its own
         out["file"] = entry["file"]
     else:      # the parts a page needs first, in order (J2Run.SITE_ESSENTIALS): its minimum cost
@@ -116,3 +160,62 @@ def load(name, path=TYPES_PATH):
     if entry.get("mock"):      # migration only: names of the mock functions in j2.py, which j2 resolves (j2.output_def)
         out["mock"] = dict(entry["mock"])
     return out
+
+
+def template_for(name, label, secs):
+    """A new document type's template library entry (templates/<name>/generic.json): one generic template per section,
+    its text required, its assumptions optional."""
+    return {"schema": "template-library/1", "artifact": name, "kind": "generic", "version": 1,
+            "from": "made by J2 for a new document type (J2_GENERIC=1, j2_types.create)",
+            "templates": [{"name": f"{label} · {x}", "artifact": name, "section": x, "version": 1, "kind": "generic",
+                           "description": f"The generic {label} {x} section",
+                           "fields": [{"name": "text", "type": "string", "required": True, "nullable": False,
+                                       "description": f"the {x} section, in the charter's own facts"},
+                                      {"name": "assumptions", "type": "list[string]", "required": False, "nullable": False,
+                                       "description": "facts you had to assume, each one line"}],
+                           "objects": [], "rules": [{"rule": "not_empty", "path": "text", "name": "the section is written",
+                                                     "from": "C1"}]} for x in secs]}
+
+
+def create_problems(name, label, secs, file, path=None):
+    """What a proposed new type lacks ([] when it can be made): a name, a form (document), a section, a file name."""
+    out = []
+    if not NAME_RE.match(str(name or "")):
+        out.append(f"name {name!r} must be lower case letters, digits and _ (2 to 41 characters)")
+    elif name in names(path):
+        out.append(f"type {name} already exists")
+    if not str(label or "").strip():
+        out.append("it needs a label")
+    if not isinstance(secs, list) or not [x for x in secs if str(x or "").strip()]:
+        out.append("it needs at least one section")
+    elif len(set(map(str, secs))) != len(secs) or any(not str(x).strip() or x == DOCUMENT for x in secs):
+        out.append("its sections must be unique, named, and not 'Document'")
+    if not re.fullmatch(r"[a-z0-9_-]+\.md", str(file or "")):
+        out.append(f"file {file!r} must be a .md file name")
+    return out
+
+
+def create(name, label, secs, file=None, path=None):
+    """Save a new document type: its entry in types.json (the document form fills the rest) and its template in the
+    template library, so the next run reuses it. ValueError with the reasons when it can't be made."""
+    file = file or f"{name}.md"
+    bad = create_problems(name, label, secs, file, path)
+    if bad:
+        raise ValueError(f"new type {name}: " + "; ".join(bad))
+    p = path or TYPES_PATH
+    text = open(p, encoding="utf-8").read()
+    entry = {"name": name, "kind": "type", "label": str(label).strip(), "tag": str(label).strip(), "color": "--other",
+             "form": "document", "file": file, "deliverable": True, "triggers": [], "groups": [], "depends_on": [],
+             "made_by": "adaptation"}
+    first_record = text.index('    {\n      "name": "screenshots"')
+    text = text[:first_record] + "    " + json.dumps(entry, ensure_ascii=False) + ",\n" + text[first_record:]
+    json.loads(text)
+    d = os.path.join(TEMPLATES_DIR, name)
+    os.makedirs(d, exist_ok=True)
+    with open(os.path.join(d, "generic.json"), "w", encoding="utf-8") as f:
+        json.dump(template_for(name, entry["label"], [str(x).strip() for x in secs]), f, indent=1, ensure_ascii=False)
+        f.write("\n")
+    with open(p, "w", encoding="utf-8") as f:
+        f.write(text)
+    template.cache_clear()
+    return entry
