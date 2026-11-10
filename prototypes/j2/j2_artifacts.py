@@ -689,7 +689,7 @@ HUMAN = {"charter": "list", "realization": "markdown", "workflows": "table", "gu
 def human_view(d, row):
     """What a person reads: the rendered view the pane drew before the tabs, from the file it was drawn from; None when nothing was saved."""
     k = row.get("kind")
-    f = {"realization": row.get("text"), "shots": ((row.get("shots") or [{}])[0]).get("file"), "document": row.get("doc_file")}.get(k, row.get("file"))
+    f = {"realization": row.get("text"), "shots": ((row.get("shots") or [{}])[0]).get("file"), "document": row.get("doc_file") or row.get("file")}.get(k, row.get("file"))      # a Documents row reads doc_file; a documents entry (no doc_file) its own file
     return {"format": HUMAN[k], "file": f} if k in HUMAN and _ok(d, f) else None
 
 

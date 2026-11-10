@@ -6822,17 +6822,17 @@ SAVED_DOC_RUNS = ("j2-20261013-165916", "j2-20261013-185235", "j2-20261015-19082
 # Recorded 2026-11-10 (step 0 of docs/remove-hardcoding-plan.md). A view's hash changes only when what it shows for a
 # saved run changes; re-record on purpose, never to make the test pass.
 SAVED_RUNS_GOLDEN = {
-    "j2-20261013-165916": {"groups": "9f2cecac57ef", "docs": "5d52f1ed34ec", "map": "d528979abf18", "checks": "95329398a439"},
-    "j2-20261013-185235": {"groups": "994e2f3e9f1b", "docs": "1ddcae0f0e75", "map": "d6fa33198569", "checks": "f89fefa931db"},
-    "j2-20261015-190820": {"groups": "733665157025", "docs": "d679c04045e7", "map": "d519759eb19e", "checks": "3ef61994e1c4"},
-    "j2-20261016-103256": {"groups": "4f8e8976d6ab", "docs": "37c8b29833ef", "map": "f3a2b5346c06", "checks": "f821b76ca587"},
-    "j2-20261016-160511": {"groups": "d707f761bb24", "docs": "ef9e272df4c6", "map": "edcb83e2f1dc", "checks": "b8b1d57e8530"},
-    "j2-20261021-141350": {"groups": "2794577262d0", "docs": "09504a9763ca", "map": "e6b756ed9025", "checks": "33e341a4604d"},
-    "j2-20261022-123744": {"groups": "2c60cf05422b", "docs": "671562441fc6", "map": "e38dbe427737", "checks": "c28a7e640f30"},
-    "j2-20261023-104150": {"groups": "c370430f720e", "docs": "4dd62f5cb4e1", "map": "180a39f9f978", "checks": "64e1cc96b38b"},
-    "j2-20261023-120350": {"groups": "4e91b057d825", "docs": "f06206b108f1", "map": "8531c3b845fc", "checks": "9778334ea213"},
-    "j2-20261026-104018": {"groups": "fa0846c543b2", "docs": "f9d6cc971436", "map": "35a1b79ff2b0", "checks": "69f64d8c594d"},
-    "j2-20261027-130930": {"groups": "3f2950f30c84", "docs": "9f690587f7c4", "map": "bad64fe59f9f", "checks": "cf4fa11161b5"},
+    "j2-20261013-165916": {"groups": "7941f580e973", "docs": "5d52f1ed34ec", "map": "d528979abf18", "checks": "95329398a439"},
+    "j2-20261013-185235": {"groups": "c05be390286c", "docs": "1ddcae0f0e75", "map": "d6fa33198569", "checks": "f89fefa931db"},
+    "j2-20261015-190820": {"groups": "2be496269550", "docs": "d679c04045e7", "map": "d519759eb19e", "checks": "3ef61994e1c4"},
+    "j2-20261016-103256": {"groups": "99f6853e8575", "docs": "37c8b29833ef", "map": "f3a2b5346c06", "checks": "f821b76ca587"},
+    "j2-20261016-160511": {"groups": "1b32b250385f", "docs": "ef9e272df4c6", "map": "edcb83e2f1dc", "checks": "b8b1d57e8530"},
+    "j2-20261021-141350": {"groups": "8b35dff7697a", "docs": "09504a9763ca", "map": "e6b756ed9025", "checks": "33e341a4604d"},
+    "j2-20261022-123744": {"groups": "ca346a1c6b9c", "docs": "671562441fc6", "map": "e38dbe427737", "checks": "c28a7e640f30"},
+    "j2-20261023-104150": {"groups": "1fc302de13a0", "docs": "4dd62f5cb4e1", "map": "180a39f9f978", "checks": "64e1cc96b38b"},
+    "j2-20261023-120350": {"groups": "7c8ad9f43fcc", "docs": "f06206b108f1", "map": "8531c3b845fc", "checks": "9778334ea213"},
+    "j2-20261026-104018": {"groups": "031a3b974f4a", "docs": "f9d6cc971436", "map": "35a1b79ff2b0", "checks": "69f64d8c594d"},
+    "j2-20261027-130930": {"groups": "2e243a013493", "docs": "9f690587f7c4", "map": "bad64fe59f9f", "checks": "cf4fa11161b5"},
 }
 DOC_PROMPTS_GOLDEN = {
     "prd.builder": "e971c88e727f", "prd.plan": "5ae0d4bcfb00", "prd.intake": "56b304946997",
@@ -7251,7 +7251,9 @@ def artifacts_tree():
         html = art("site")
         assert len(re.findall(r'data-agrow="([^"]+)"', html)) == 11 and re.findall(r'data-agrow="([^"]+)"', html)[-1] == "style" and 'data-sec="work:website|W-6"' in html, "10 sections, then the Style guide"
         html = art("records")
-        assert 'data-agrow="shots"' in html and "2 images" in html and html.count("data-agrow=") == 4
+        audit_rows = [x["id"] for x in next(x for x in gr["groups"] if x["id"] == "records")["rows"] if x["kind"] == "audit"]      # A-1, A-2, ... (agent-views/1) sit beside the four record rows
+        assert 'data-agrow="shots"' in html and "2 images" in html and html.count("data-agrow=") == 4 + len(audit_rows), \
+            (re.findall(r'data-agrow="([^"]+)"', html), "2 images" in html, audit_rows)
     if "j2-20261027-130930" in names:
         t = A.tree(os.path.join(repo, "j2-20261027-130930"))
         prd = next(x for g in t["groups"] if g["id"] == "deliverables" for x in g["items"])
@@ -9136,6 +9138,7 @@ def artifacts_groups():
     threading.Thread(target=srv.serve_forever, daemon=True).start()
     base, seen = f"http://127.0.0.1:{srv.server_address[1]}", 0
     counts = {x["id"]: x for x in g["groups"]}
+    n_audits = sum(1 for x in counts["records"]["rows"] if x["kind"] == "audit")      # A-1, A-2, ... (agent-views/1) sit beside the four record rows
     try:
         for w, h in ((1440, 900), (390, 844)):
             url = f"/?view=detail&run={name}"
@@ -9149,7 +9152,7 @@ def artifacts_groups():
             r = json.loads(htmllib.unescape(hit.group(1)))
             assert not r["err"], (w, r["err"])
             nv = sum(len(x["versions"]) for x in counts["guides"]["rows"])
-            assert r["fly"][0] == ["preview", "docs"] and [x for x in r["fly"][1] if not x.startswith("Documents|")] == [f"Run plan|3 files", f"Guides the makers read|5 guides · {nv} versions", "Website sections|13 sections · 1 script", "Run records|4 records"] \
+            assert r["fly"][0] == ["preview", "docs"] and [x for x in r["fly"][1] if not x.startswith("Documents|")] == [f"Run plan|3 files", f"Guides the makers read|5 guides · {nv} versions", "Website sections|13 sections · 1 script", f"Run records|{4 + n_audits} records"] \
                 and any(x.startswith("Documents|") for x in r["fly"][1]), r["fly"]      # agent-views/1: the Documents group sits between the sections and the records, (w, r["fly"])
             assert r["f0"] == 0 and r["f1"] == ["artifacts/product-plan.md", "artifacts/architecture.md"] and r["f2"] == 3 and r["f3"] == 4, (w, "a file loads only when its item opens (a group opens its first item)", r["f0"], r["f1"], r["f2"], r["f3"])
             assert r["heads"]["guides"][:2] == ["Guides the makers read", "Each guide, who wrote it, and how it was checked."] and r["heads"]["guides"][2] is True, (w, r["heads"])
@@ -11520,6 +11523,10 @@ def agent_views():
     A = j2_artifacts
     here = os.path.dirname(os.path.abspath(__file__))
     names = [n for n in ("j2-20261103-132506", "j2-20261103-161111-3", "j2-20261103-184249") if os.path.isdir(os.path.join(here, "runs", n))]
+    other = [n for n in names if not os.path.isfile(os.path.join(here, "runs", n, "prd.md"))]      # a run folder is named by its start time, so another
+    names = [n for n in names if n not in other]                                                      # machine's run can share the name: the test runs are PRD runs
+    if other:
+        print(f"agent views: {', '.join(other)} left out (a run of the same name without prd.md, not the PRD test run)")
     if not names:
         print("agent views: skipped (no saved test run in runs/)")
         return
