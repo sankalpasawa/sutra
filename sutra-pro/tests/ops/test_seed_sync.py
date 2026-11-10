@@ -279,17 +279,24 @@ def test_the_start_up_sync_runs_once_per_seed(tmp_path, caplog):
     assert doctor.sync_seed_once(data, other) is None
 
 
-def test_a_data_folder_without_a_library_is_left_to_the_engine_at_start_and_gets_the_whole_seed_by_command(tmp_path):
-    data = tmp_path / "data"
-    data.mkdir()
-    assert doctor.sync_seed_once(data) is None and not (data / "library").exists()    # the engine seeds it whole at the first run (host/loop.py)
-    report: dict = {}
-    added = doctor.sync_seed_library(data, report=report)
+def test_a_data_folder_without_a_library_gets_the_whole_seed_at_start_and_by_command(tmp_path):
     seed = doctor.seed_dir()
-    assert added == sorted(name_of(key_of(e)) for e in seed_index()["templates"]) and report["versions"] == [] and len(report["runs"]) == 8
-    assert snapshot(data / "library") == snapshot(seed)                           # the seed, byte for byte
-    assert [p.name for p in data.iterdir()] == ["library"]                        # and no temp folder beside it
-    assert doctor.sync_seed_library(data) == []
+    names = sorted(name_of(key_of(e)) for e in seed_index()["templates"])
+    first = tmp_path / "first-start"
+    first.mkdir()
+    report = doctor.sync_seed_once(first)                                         # a new install: the start gives the Library page its templates before any run
+    assert report["templates"] == names and report["versions"] == [] and len(report["runs"]) == 8
+    marker = first / "library" / doctor.SEED_MARKER
+    assert marker.read_text(encoding="utf-8").strip() == hashlib.sha256((seed / "index.json").read_bytes()).hexdigest()
+    assert {k: v for k, v in snapshot(first / "library").items() if k != doctor.SEED_MARKER} == snapshot(seed)       # the seed, byte for byte
+    assert [p.name for p in first.iterdir()] == ["library"]                       # and no temp folder beside it
+    assert doctor.sync_seed_once(first) is None                                   # and the next start does nothing
+    typed = tmp_path / "by-command"
+    typed.mkdir()
+    done: dict = {}
+    assert doctor.sync_seed_library(typed, report=done) == names and done["versions"] == [] and len(done["runs"]) == 8
+    assert snapshot(typed / "library") == snapshot(seed) and [p.name for p in typed.iterdir()] == ["library"]       # the command writes no marker: only the start does
+    assert doctor.sync_seed_library(typed) == []
 
 
 # ---- an index that is not an index ------------------------------------------------------------------------------------------------
@@ -420,7 +427,7 @@ def started(tmp_path: Path, data: Path) -> None:
         pass
 
 
-def test_the_server_start_syncs_an_existing_library_once_and_never_creates_one(tmp_path, monkeypatch, caplog):
+def test_the_server_start_syncs_an_existing_library_once_and_seeds_a_data_folder_that_has_none(tmp_path, monkeypatch, caplog):
     data = tmp_path / "data"
     library = previous_library(data)
     started(tmp_path, data)
@@ -430,8 +437,8 @@ def test_the_server_start_syncs_an_existing_library_once_and_never_creates_one(t
     started(tmp_path, data)                                                                                    # a second start: the marker says it was done
     assert not gone.exists()
     fresh = tmp_path / "fresh" / "data"
-    started(tmp_path, fresh)                                                                                   # a data folder with no library: the engine's first run seeds it
-    assert not (fresh / "library").exists()
+    started(tmp_path, fresh)                                                                                   # a new install: the start seeds it, and the marker says so
+    assert index_of(fresh / "library") == read(doctor.seed_dir() / "index.json") and (fresh / "library" / doctor.SEED_MARKER).is_file()
     monkeypatch.setattr(doctor, "LOCK_WAIT_S", 0.2)
     (library / doctor.SEED_MARKER).unlink()
     fd = os.open(library / ".lock", os.O_RDWR | oslayer.O_BINARY | os.O_CREAT, 0o600)
