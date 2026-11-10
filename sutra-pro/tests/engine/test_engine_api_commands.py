@@ -3,6 +3,8 @@ reset and the two memory clears. The orchestrator is the fake services of confte
 (`/api/ask`) is J2's own `answer` over a run folder; the function's chat turn is a fake that records what the route asks of it."""
 import json
 import os
+import subprocess
+import sys
 from types import SimpleNamespace
 
 import pytest
@@ -425,3 +427,119 @@ def test_the_commands_object_asks_through_the_port_and_without_it(api):
     with pytest.raises(views.AskBusy):
         port_of(api, FakeTurn(busy=True))
         cmd.ask("adaptation", QUESTION, "")
+
+
+# ---- settings (J2 sync 4): the Simple view's Decide for me switch -----------------------------------------------------------
+def switch(api, body, dept="web"):
+    return api.client.post(f"/api/settings?dept={dept}", json=body, headers=TOKEN)
+
+
+def state_of(api, dept="web"):
+    return api.client.get(f"/api/state?dept={dept}").json()
+
+
+def publish_with_switch(api, on, *, pid=None):
+    """A live run whose published snapshot says Decide for me is `on`; its process is this one (alive) unless `pid` says another."""
+    ref = api.svc.add_run("web", status="running")
+    publish(api.svc, ref, status="running")
+    folder = api.svc.data_dir / ref.dir
+    snap = json.loads((folder / "snapshot.json").read_text())
+    (folder / "snapshot.json").write_text(json.dumps({**snap, "decide_for_me": on}))
+    if pid is not None:
+        live = json.loads((folder / "live.json").read_text())
+        (folder / "live.json").write_text(json.dumps({**live, "pid": pid}))
+    return ref
+
+
+def test_with_no_run_the_choice_is_kept_in_page_json_and_the_idle_state_shows_it(api):
+    assert state_of(api)["decide_for_me"] is False
+    got = switch(api, {"decide_for_me": True})
+    assert (got.status_code, got.json()) == (200, {"ok": True, "decide_for_me": True})
+    assert api.page().next_settings == {"J2_DECIDE_FOR_ME": "1"} and state_of(api)["decide_for_me"] is True
+    assert switch(api, {"decide_for_me": False}).json() == {"ok": True, "decide_for_me": False}
+    assert api.page().next_settings == {"J2_DECIDE_FOR_ME": "0"} and state_of(api)["decide_for_me"] is False
+    assert state_of(api, "sales")["decide_for_me"] is False, "another team's switch is its own"
+
+
+def test_a_body_without_decide_for_me_changes_nothing_and_answers_the_switch(api):
+    assert switch(api, {}).json() == {"ok": True, "decide_for_me": False} and not api.page().next_settings
+    switch(api, {"decide_for_me": True})
+    assert switch(api, {}).json() == {"ok": True, "decide_for_me": True} and switch(api, {"other": 1}).json()["decide_for_me"] is True
+    assert api.page().next_settings == {"J2_DECIDE_FOR_ME": "1"}
+    assert switch(api, {"decide_for_me": 0}).json()["decide_for_me"] is False, "J2 reads any value as a yes or a no"
+
+
+def test_a_live_run_is_handed_the_choice_as_an_inbox_line_through_the_services_and_the_page_keeps_it_too(api):
+    sent = []
+    api.svc.send_setting = lambda dept, setting: sent.append((dept, setting)) or True
+    publish_with_switch(api, False)
+    assert switch(api, {"decide_for_me": True}).json() == {"ok": True, "decide_for_me": True}
+    assert sent == [("web", {"decide_for_me": True})] and api.page().next_settings == {"J2_DECIDE_FOR_ME": "1"}
+    switch(api, {"decide_for_me": False})
+    assert sent[-1] == ("web", {"decide_for_me": False}) and len(sent) == 2
+    switch(api, {})
+    assert len(sent) == 2, "a read sends nothing"
+    switch(api, {"decide_for_me": True}, dept="sales")
+    assert sent[-1][0] == "sales"
+
+
+def test_without_send_setting_the_choice_is_still_kept_for_the_next_run(api):
+    assert not hasattr(api.svc, "send_setting")                                      # the fake has none, as for agent_chat
+    assert switch(api, {"decide_for_me": True}).status_code == 200 and api.page().next_settings == {"J2_DECIDE_FOR_ME": "1"}
+
+
+def test_the_switch_of_a_live_process_is_its_own_snapshot_field_whatever_the_page_kept(api):
+    ref = publish_with_switch(api, True)
+    ctxmod.write_page(api.data, "web", next_settings={"J2_DECIDE_FOR_ME": "0"})
+    assert state_of(api)["decide_for_me"] is True and switch(api, {}).json()["decide_for_me"] is True
+    (api.data / ref.dir / "snapshot.json").write_text(json.dumps({**json.loads((api.data / ref.dir / "snapshot.json").read_text()), "decide_for_me": False}))
+    assert state_of(api)["decide_for_me"] is False and switch(api, {}).json()["decide_for_me"] is False
+
+
+def test_a_run_whose_process_has_gone_shows_the_owners_latest_choice(api):
+    gone = subprocess.Popen([sys.executable, "-c", "pass"])
+    gone.wait()
+    publish_with_switch(api, False, pid=gone.pid)
+    assert state_of(api)["decide_for_me"] is False and switch(api, {}).json()["decide_for_me"] is False
+    switch(api, {"decide_for_me": True})
+    assert state_of(api)["decide_for_me"] is True, "no process holds the switch: the page shows what the owner chose"
+    assert switch(api, {}).json()["decide_for_me"] is True
+
+
+def test_a_saved_run_shows_its_own_recorded_switch_not_the_teams_choice(api):
+    ref = with_records(api)
+    (api.data / ref.dir / "settings.json").write_text(json.dumps({"decide_for_me": True}))
+    switch(api, {"decide_for_me": False})
+    assert api.client.get(f"/api/state?dept=web&run={ref.run_id}").json()["decide_for_me"] is True
+
+
+def test_the_switch_goes_to_the_next_task_with_the_first_message_and_stays_through_follow_ups(api):
+    api.client.post("/api/output?dept=web", json={"type": "prd"}, headers=TOKEN)
+    switch(api, {"decide_for_me": True})
+    assert api.client.post("/api/say?dept=web", json={"text": "write a PRD"}, headers=TOKEN).status_code == 200
+    assert api.svc.deliveries[0]["settings"] == {"J2_OUTPUT": "prd", "J2_DECIDE_FOR_ME": "1"}
+    assert api.page().next_settings == {"J2_DECIDE_FOR_ME": "1"}, "the output was the first message's; the switch stays, as in J2"
+    api.client.post("/api/say?dept=web", json={"text": "and a menu"}, headers=TOKEN)
+    assert api.svc.deliveries[1]["settings"] == {"J2_DECIDE_FOR_ME": "1"}
+
+
+def test_a_reset_keeps_the_switch(api):
+    switch(api, {"decide_for_me": True})
+    api.svc.add_run("web", files={"chat.jsonl": "{}\n"})
+    api.client.post("/api/reset?dept=web", headers=TOKEN)
+    assert api.page().next_settings == {"J2_DECIDE_FOR_ME": "1"} and state_of(api)["decide_for_me"] is True
+
+
+def test_the_engine_setting_is_the_default_the_switch_starts_from(api):
+    (api.data / "departments" / "web" / "engine.json").write_text(json.dumps({"decide_for_me": True}))
+    assert state_of(api)["decide_for_me"] is True and switch(api, {}).json()["decide_for_me"] is True
+    switch(api, {"decide_for_me": False})
+    assert state_of(api)["decide_for_me"] is False, "the owner's choice wins over the team's default"
+
+
+def test_the_settings_route_needs_the_token_and_an_open_team(api):
+    assert api.client.post("/api/settings?dept=web", json={"decide_for_me": True}).status_code == 401
+    api.svc.add_department("old", archived=True)
+    got = switch(api, {"decide_for_me": True}, dept="old")
+    assert got.status_code == 403 and got.json()["error"]["code"] == "read_only" and not api.page("old").next_settings
+    assert switch(api, {"decide_for_me": True}, dept="nope").status_code == 404

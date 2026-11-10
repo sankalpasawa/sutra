@@ -78,6 +78,7 @@ class AppServices(Services):
     recurring: Any = None              # the schedules of recurring work and their ticker (GAP2 routines-limits)
     limits: Any = None                 # the monthly spending limit and the plan-window guard, TaskService's start gate (GAP2 routines-limits)
     agent_chat: Any = None             # `AgentAsk.turn`: a function's question as a turn of its own chat session, for POST /api/ask (J2 sync 4, D147); the engine's routes read it optionally
+    send_setting: Any = None           # what the engine's POST /api/settings calls: a setting as an inbox line to the team's live run (J2 sync 4)
     reconciled: ReconcileReport | None = None
     swept: int = 0
     refreshed: int = 0
@@ -190,7 +191,7 @@ def build_services(settings: Settings, *, connector: Any = None, launcher: Any =
         projector=projector, watcher=watcher, runner=runner, connector=port, launcher=launcher,
         resolve_run=tasks.resolve_run, department=departments.row, deliver_to_department=tasks.deliver_to_department,
         stop_live=tasks.stop_live, connector_router=router, chat_port=chat_port, attachments=attachments, recurring=recurring,
-        limits=limits, agent_chat=agent_chat)
+        limits=limits, agent_chat=agent_chat, send_setting=tasks.send_setting)
 
 
 # ---- startup steps --------------------------------------------------------------------------------------------------------------

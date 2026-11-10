@@ -18,7 +18,7 @@ from sutra_app.engine.capabilities.project import (CONDITIONS_FILE, PROJECT_BUIL
                                                    ProjectCapability, mock_project_charter, mock_project_section, project_spec)
 from sutra_app.engine.spec import EngineSettings
 
-from test_engine_host import QUIET, Running, chat, events, j2, jsonl, make_port_of, of, trace   # noqa: F401  (fixtures and helpers)
+from test_engine_host import BREW_LAB, QUIET, Running, chat, events, j2, jsonl, make_port_of, of, trace   # noqa: F401  (fixtures and helpers)
 
 PRD_BRIEF = ("Write a PRD for QuickQueue, a mobile app that lets clinic patients join a waiting line remotely. Users: patients at small "
              "clinics and the front-desk staff who manage the line. Problem: patients wait 45 minutes on average in crowded waiting "
@@ -540,3 +540,84 @@ def test_the_start_pages_output_command_accepts_auto_and_project_and_nothing_els
     for kind, expect in (("auto", "auto"), ("project", "project"), ("prd", "prd"), ("pdf", "website"), ("", "website")):
         got = api.post("/api/output?dept=web", json={"type": kind}, headers={"X-Sutra-Token": "fake-token-fake-token-0123"})
         assert got.status_code == 200 and got.json() == {"ok": True, "output": expect}, (kind, got.text)
+
+
+# ---- the report in Artifacts (J2 sync 4, D146): a row of the Documents group made by the capability, with J2's own three tabs ------------
+def register_run(fake_services, run_dir, dept="web"):
+    """The run folder the host made, as a run of the department for the engine's routes."""
+    ref = SimpleNamespace(run_id=run_dir.name, task_id="tsk_" + "0" * 12, dept_id=dept, dir=f"departments/{dept}/runs/{run_dir.name}", status="done")
+    fake_services.runs.append(ref)
+    return ref
+
+
+def documents_of(api, ref):
+    body = api.get(f"/api/artifacts/groups?dept=web&run={ref.run_id}").json()
+    return body, next(g for g in body["groups"] if g["id"] == "documents")["rows"]
+
+
+def test_a_project_runs_report_is_a_row_of_the_documents_group_with_the_summary_agent_and_human_tabs(j2, make_run_dir, api, fake_services):
+    run_dir = make_run_dir(user_text=BRIEF, settings=QUIET)
+    go(run_dir)
+    ref = register_run(fake_services, run_dir)
+    body, rows = documents_of(api, ref)
+    assert [r["id"] for r in rows] == ["project"]
+    row = rows[0]
+    assert (row["kind"], row["name"], row["file"], row["doc_file"], row["nodes"], row["ok"]) == \
+        ("document", "Project work report", "project.md", "project.md", [], True), "a report is not a Map node: nothing links to it"
+    assert row["views"] == {"summary": True,
+                            "agent": {"format": "json", "file": "project.json", "schema": "agent-views/1", "model": "GenericGuide", "valid": True},
+                            "human": {"format": "markdown", "file": "project.md"}}, "the finish step wrote project.json beside the report"
+    assert body["documents"] == {"project": {"sections": {}, "file": "project.md", "kind": "document"}}
+    for name, start in (("project.md", "# The project"), ("project.json", "{")):
+        got = api.get(f"/api/artifact?dept=web&run={ref.run_id}&name={name}")
+        assert got.status_code == 200 and got.text.lstrip().startswith(start), f"{name} is served: the tree lists every file of a run folder"
+    page = api.get(f"/view?dept=web&run={ref.run_id}&name=project.md")
+    assert page.status_code == 200 and page.headers["content-type"].startswith("text/html") and "<h2>Findings</h2>" in page.text
+    assert "sandbox" in page.headers["content-security-policy"], "a generated page is sandboxed like every html the engine serves (D83)"
+    assert api.get(f"/doc/project?dept=web&run={ref.run_id}").text == page.text, "/doc/<name> is the same file as a page"
+
+
+def test_a_website_run_and_a_prd_run_made_by_the_host_get_no_extra_row(j2, make_run_dir, api, fake_services):
+    site = make_run_dir(run_id="j2-20261104-100001-aaaa", user_text=BREW_LAB, settings=QUIET)
+    go(site)
+    prd = make_run_dir(run_id="j2-20261104-100002-bbbb", user_text=PRD_BRIEF, settings={**QUIET, "J2_OUTPUT": "prd"})
+    go(prd)
+    for run_dir, expect in ((site, []), (prd, ["prd"])):
+        ref = register_run(fake_services, run_dir)
+        body, rows = documents_of(api, ref)
+        assert [r["id"] for r in rows] == expect and set(body["documents"]) == set(expect), run_dir.name
+    assert "project" not in {r["id"] for r in documents_of(api, SimpleNamespace(run_id=prd.name))[1]}
+
+
+def test_a_capability_that_registers_a_second_output_with_a_report_file_is_listed_with_no_code_of_its_own(j2, make_run_dir, api, fake_services):
+    """The registry's hook is the whole mechanism: a test capability adds an output with a `file`, and its run shows the row."""
+    from sutra_app.engine.capabilities import OutputSpec
+    thing = OutputSpec(label="Thing", noun="note", sections=("One",), conditions="x.json", rubric=(("T-1", "t"),), rates="rates_prd",
+                       check_types=("heading-present",), builder="b", file="thing.md", done="Done")
+
+    class Adds(Capability):
+        name = "adds"
+
+        def outputs(self):
+            return {"thing": thing}
+    capabilities.register(j2, [Adds()])
+    try:
+        run_dir = make_run_dir(user_text=BRIEF, settings=QUIET)
+        go(run_dir)
+        (run_dir / "thing.md").write_text("# Thing\n\nDone.\n", encoding="utf-8")
+        chat_file = run_dir / "chat.jsonl"
+        lines = chat_file.read_text(encoding="utf-8").splitlines()
+        first = json.loads(lines[0])
+        chat_file.write_text("\n".join([json.dumps({**first, "output": "thing"}), *lines[1:]]) + "\n", encoding="utf-8")
+        ref = register_run(fake_services, run_dir)
+        from sutra_app.engine import views
+        views.j2.OUTPUTS["thing"] = j2.OUTPUTS["thing"]                       # the API process reads the same registry the run process built
+        with pytest.MonkeyPatch.context() as mp:
+            mp.setattr(capabilities, "CAPABILITIES", (*capabilities.CAPABILITIES, Adds()))
+            _, rows = documents_of(api, ref)
+        assert "thing" in {r["id"] for r in rows}
+        row = next(r for r in rows if r["id"] == "thing")
+        assert (row["name"], row["file"]) == ("Thing note", "thing.md") and row["views"]["human"] == {"format": "markdown", "file": "thing.md"}
+    finally:
+        capabilities.SPECS.pop("thing", None)
+        __import__("sutra_app.engine.views", fromlist=["j2"]).j2.OUTPUTS.pop("thing", None)

@@ -1,10 +1,11 @@
 """Which team and which run a request is about (work package E4, engine design 7.2, S1-contracts-01, S3-web-12).
 
-FastAPI `TestClient` over the `fake_services` fixture of conftest: J2's 35 data routes at the root with `?dept=` (the 37 handlers of
+FastAPI `TestClient` over the `fake_services` fixture of conftest: J2's 39 data routes at the root with `?dept=` (the 41 handlers of
 `views.py` less the page and d3, which the UI serves), the team named nowhere else, the run named by `?run=` (saved, read-only) or
 found through `resolve_run` (live, else idle)."""
 import json
 import os
+import shutil
 import subprocess
 import sys
 from types import SimpleNamespace
@@ -22,11 +23,13 @@ GET_PATHS = ["/api/state", "/api/runs", "/api/call?id=1", "/api/preview?atom=a",
              "/api/library/website/hero/main/v1", "/api/run-templates", "/api/artifacts", "/api/agent?who=identity",
              "/api/code?deck=a&section=b", "/api/artifacts/tree", "/api/artifact?name=x", "/api/story", "/api/board", "/api/audits",
              "/api/refs", "/shot/1", "/file/prd.md", "/site/latest", "/site/v1", "/api/runlist", "/api/changes",
-             "/api/plan-map", "/api/activity?who=adaptation", "/api/catalog", "/api/artifacts/groups"]       # the last four: J2 sync 4
+             "/api/plan-map", "/api/activity?who=adaptation", "/api/catalog", "/api/artifacts/groups",         # the last seven: J2 sync 4
+             "/api/record?sec=W-1", "/doc/prd", "/view?name=goal.json"]
 NOT_FOUND = {"/api/call?id=1", "/api/library/website/hero/main/v1", "/api/code?deck=a&section=b", "/api/artifact?name=x", "/shot/1",
-             "/file/prd.md"}           # the view's own 404 for a run with nothing in it
-POSTS = ["/api/say", "/api/ask", "/api/playbooks/clear", "/api/lessons/clear", "/api/output", "/api/reset"]
-BODIES = {"/api/say": {"text": "hello"}, "/api/ask": {"who": "adaptation", "q": "why?"}, "/api/output": {"type": "prd"}}
+             "/file/prd.md", "/api/record?sec=W-1"}           # the view's own 404 for a run with nothing in it
+POSTS = ["/api/say", "/api/ask", "/api/settings", "/api/playbooks/clear", "/api/lessons/clear", "/api/output", "/api/reset"]
+BODIES = {"/api/say": {"text": "hello"}, "/api/ask": {"who": "adaptation", "q": "why?"}, "/api/settings": {"decide_for_me": True},
+          "/api/output": {"type": "prd"}}
 
 
 def join(path: str, query: str) -> str:
@@ -63,14 +66,15 @@ def test_every_row_of_7_1_answers_at_the_root_with_dept_in_both_modes(api):
             assert got.status_code == (404 if path in NOT_FOUND else 200), (path, query, got.text[:200])
 
 
-def test_the_route_table_is_the_35_j2_rows_the_two_settings_routes_the_capabilities_route_and_nothing_under_d(api):
+def test_the_route_table_is_the_39_j2_rows_the_two_settings_routes_the_capabilities_route_and_nothing_under_d(api):
     table = {(method.upper(), path) for path, item in api.app.openapi()["paths"].items() for method in item}
     gets = {"/api/state", "/api/runs", "/api/call", "/api/preview", "/api/docs", "/api/map", "/api/plan", "/api/library",
             "/api/library/{artifact}/{section}/{slug}/{version}", "/api/run-templates", "/api/artifacts", "/api/agent", "/api/code",
             "/api/artifacts/tree", "/api/artifact", "/api/story", "/api/board", "/api/audits", "/api/refs", "/shot/{n}",
             "/file/{name}", "/site/{key}", "/api/runlist", "/api/changes",
-            "/api/plan-map", "/api/activity", "/api/catalog", "/api/artifacts/groups"}      # 28 GET paths: /site/{key} answers rows 24 and 25
-    assert len(gets) == 28 and len(POSTS) == 6                  # 29 GET rows and 6 POST rows: J2's 37 handlers less the page and d3
+            "/api/plan-map", "/api/activity", "/api/catalog", "/api/artifacts/groups",
+            "/api/record", "/doc/{name}", "/view"}              # 31 GET paths: /site/{key} answers rows 24 and 25
+    assert len(gets) == 31 and len(POSTS) == 7                  # 32 GET rows and 7 POST rows: J2's 41 handlers less the page and d3
     assert table == {("GET", p) for p in gets} | {("POST", p) for p in POSTS} | {("GET", "/api/engine/settings"),
                                                                                   ("PUT", "/api/engine/settings"),
                                                                                   ("GET", "/api/engine/capabilities")}
@@ -247,3 +251,60 @@ def test_a_resolver_that_answers_with_another_teams_run_is_not_believed(api):
     api.svc.resolve_run = lambda run_id, dept_id: other                           # a buggy orchestrator
     assert api.client.get(f"/api/state?dept=web&run={other.run_id}").json() == {"error": "not_found"}
     assert api.client.get("/api/state?dept=web").json()["status"] == "idle"
+
+
+# ---- the library is the data folder's: the server process never sets J2_LIBRARY_DIR (J2 sync 4, D141) ------------------------------
+SEED_LIBRARY = os.path.join(os.path.dirname(views.__file__), "seed", "library")
+
+
+def specialised(groups):
+    return [t for sections in groups.values() for slot in sections.values() for t in slot["templates"] if t.get("kind") != "generic"]
+
+
+def test_a_data_folder_that_holds_a_library_shows_its_templates_through_api_library_and_api_catalog(api, monkeypatch):
+    monkeypatch.delenv("J2_LIBRARY_DIR", raising=False)                        # as in the server process: only the engine host sets it
+    before = api.client.get("/api/library?dept=web").json()
+    assert specialised(before["groups"]) == [] and api.client.get("/api/catalog?dept=web").json()["runs"] == [], "no library under the data folder yet"
+    shutil.copytree(SEED_LIBRARY, api.data / "library")
+    library = api.client.get("/api/library?dept=web").json()
+    found = specialised(library["groups"])
+    assert len(found) == 32 and library["dir"] == str(api.data / "library")
+    catalog = api.client.get("/api/catalog?dept=sales").json()
+    assert len(catalog["runs"]) == 8 and len(specialised(catalog["groups"])) == 32 and catalog["dir"] == str(api.data / "library"), "one library for every team"
+    t = found[0]
+    item = api.client.get(f"/api/library/{t['artifact']}/{t['section_slug']}/{t['slug']}/v{t['versions'][0]['version']}?dept=web")
+    assert item.status_code == 200 and item.json()["template"]["name"] == t["name"]
+    assert api.client.get("/api/run-templates?dept=web").json() == {"decisions": []}
+    assert os.environ.get("J2_LIBRARY_DIR") is None, "the variable is set for one call and put back"
+
+
+def test_the_environment_of_the_server_is_what_it_was_after_every_library_call_even_one_that_fails(api, monkeypatch):
+    monkeypatch.setenv("J2_LIBRARY_DIR", "elsewhere")
+    shutil.copytree(SEED_LIBRARY, api.data / "library")
+    for path in ("/api/library", "/api/catalog", "/api/library/prd/goals/none/v1", "/api/library/nope/x/y/v1", "/api/run-templates"):
+        api.client.get(f"{path}?dept=web")
+        assert os.environ["J2_LIBRARY_DIR"] == "elsewhere", path
+    original = views.j2_template_lib.catalog_view
+    monkeypatch.setattr(views.j2_template_lib, "catalog_view", lambda: (_ for _ in ()).throw(RuntimeError("boom")))
+    assert api.client.get("/api/catalog?dept=web").status_code == 500 and os.environ["J2_LIBRARY_DIR"] == "elsewhere"
+    monkeypatch.setattr(views.j2_template_lib, "catalog_view", original)
+
+
+def test_two_teams_asking_at_once_read_the_one_library_without_mixing_the_environment(api, monkeypatch):
+    import threading
+    monkeypatch.delenv("J2_LIBRARY_DIR", raising=False)
+    shutil.copytree(SEED_LIBRARY, api.data / "library")
+    results, errors = [], []
+
+    def ask(dept):
+        try:
+            for _ in range(10):
+                results.append(len(api.client.get(f"/api/catalog?dept={dept}").json()["runs"]))
+        except Exception as exc:  # noqa: BLE001
+            errors.append(exc)
+    threads = [threading.Thread(target=ask, args=(d,)) for d in ("web", "sales", "web", "sales")]
+    for thread in threads:
+        thread.start()
+    for thread in threads:
+        thread.join(30)
+    assert not errors and results == [8] * 40 and os.environ.get("J2_LIBRARY_DIR") is None
