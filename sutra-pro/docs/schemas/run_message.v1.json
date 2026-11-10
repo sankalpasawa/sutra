@@ -45,6 +45,10 @@
       "$ref": "#/$defs/JsonValue",
       "default": null
     },
+    "auto_label": {
+      "$ref": "#/$defs/JsonValue",
+      "default": null
+    },
     "board_read": {
       "default": [],
       "items": {
@@ -126,6 +130,10 @@
       "minimum": 1,
       "title": "Id",
       "type": "integer"
+    },
+    "judge": {
+      "$ref": "#/$defs/JsonValue",
+      "default": null
     },
     "keep": {
       "$ref": "#/$defs/JsonValue",

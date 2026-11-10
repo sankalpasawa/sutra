@@ -327,7 +327,7 @@ class RegisteredWorkflow(DeptWorkflow):
     hold_override: bool = False
     approval_asked: bool = False
     style_guide: bool = False
-    version: Count | None = None
+    version: Annotated[int, Field(ge=0)] | None = None      # the site version the work ended at: 0 for work that makes none (the Plan workflow)
     artifact: Annotated[str, StringConstraints(max_length=300)] | None = None
 
     @model_validator(mode="after")
