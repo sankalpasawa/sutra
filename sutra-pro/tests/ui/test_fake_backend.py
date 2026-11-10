@@ -2800,7 +2800,7 @@ def test_the_ask_control_sets_how_the_next_questions_are_answered_and_reset_puts
     fake.stage("full")
     sid = agent_rows_of(fake)["coordination"]["session_id"]
     records = j2_capture("ask-coordination.json")["answer"]
-    assert fake.post("/__fake/ask", {"mode": "offline"}, token=False)[1] == {"mode": "offline", "text": None, "note": None, "delay": 0.0}
+    assert fake.post("/__fake/ask", {"mode": "offline"}, token=False)[1] == {"mode": "offline", "text": None, "note": None, "delay": 0.0, "fail": None}
     status, body = ask(fake_server, "coordination")
     assert status == 200 and body["note"] == "No model is connected." and (body["answer"], body["from"]) == (records, "records")
     assert lines_of(fake, sid)[-1]["ask"] == "records"                                                    # offline: both lines are stored all the same
@@ -2811,12 +2811,12 @@ def test_the_ask_control_sets_how_the_next_questions_are_answered_and_reset_puts
     assert body["note"].startswith("The model could not answer (") and body["note"].endswith("this is from the records only.") and body["from"] == "records"
     fake.post("/__fake/ask", {"mode": "records", "note": None}, token=False)
     assert "note" not in ask(fake_server, "coordination")[1]
-    for bad in ({"mode": "guess"}, {"delay": -1}, {"delay": 31}, {"delay": True}, {"text": 5}, {"extra": 1}, []):
+    for bad in ({"mode": "guess"}, {"delay": -1}, {"delay": 31}, {"delay": True}, {"text": 5}, {"extra": 1}, {"fail": 200}, {"fail": "busy"}, []):
         assert fake.post("/__fake/ask", bad, token=False)[0] == 422, bad
     fake.post("/__fake/ask", {"mode": "offline", "delay": 2}, token=False)
     fake.reset()
     fake.stage("full")
-    assert fake.post("/__fake/ask", {}, token=False)[1] == {"mode": "records", "text": None, "note": None, "delay": 0.0}
+    assert fake.post("/__fake/ask", {}, token=False)[1] == {"mode": "records", "text": None, "note": None, "delay": 0.0, "fail": None}
     assert not any("ask" in m for m in lines_of(fake, sid))                                               # the lines go with the story, as every other line does
 
 
@@ -2874,6 +2874,18 @@ def test_an_interrupted_question_stays_without_an_answer_and_frees_the_session(f
     assert [(m["role"], m.get("ask")) for m in lines if m.get("ask")] == [("user", "q")]                    # J2's panel says "No answer was stored." for it
     fake.post("/__fake/ask", {"mode": "records"}, token=False)
     assert ask(fake_server, "priority", "And now?")[0] == 200                                              # the session is free again
+
+
+def test_a_refusal_the_test_asks_for_happens_once_before_anything_is_stored(fake_server, fake):
+    fake.stage("full")
+    sid = agent_rows_of(fake)["audit"]["session_id"]
+    before = lines_of(fake, sid)
+    assert fake.post("/__fake/ask", {"fail": 409}, token=False)[1]["fail"] == 409
+    assert ask(fake_server, "audit") == (409, {"error": "busy"}) and lines_of(fake, sid) == before                 # J2's busy, and nothing stored
+    assert ask(fake_server, "audit")[0] == 200                                                                  # once
+    fake.post("/__fake/ask", {"fail": 500}, token=False)
+    assert ask(fake_server, "audit", q="  ") == (200, {"who": "audit", "answer": "", "from": "records"})        # nothing asked: nothing refused, and it stays for the next
+    assert ask(fake_server, "audit") == (500, {"error": "failed"})
 
 
 # ---- sync 4: usage by purpose, in the agents rows and in the summary ------------------------------------------------------------------------------------

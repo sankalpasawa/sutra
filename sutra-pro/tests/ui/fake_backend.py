@@ -38,11 +38,12 @@ Test-only controls (not under /api, no token):
                                                status null or 200 clears); failing /api/events also ends the open streams
     POST /__fake/chart-notes {notes}          what GET /api/chart/notes answers (gap chart-insight; none by default)
     POST /__fake/find {teams, messages}       what GET /api/find answers to any query of two characters or more (none by default)
-    POST /__fake/ask {mode, text, note, delay}  how POST /api/ask answers: mode "records" (the default: J2's own answer, no model), "offline" (the same with the
+    POST /__fake/ask {mode, text, note, delay, fail}  how POST /api/ask answers: mode "records" (the default: J2's own answer, no model), "offline" (the same with the
                                                note "No model is connected."), "model" (`text` is the answer, booked as one agent_chat call and announced by
                                                usage.recorded), "failed" (records, the note says the model could not answer) or "interrupted" (the question
                                                line is stored, no answer line, the route answers 500); `note` replaces the note of "records" and "offline";
-                                               `delay` seconds hold the answer back after the question line is stored (a second question meanwhile is 409 busy)
+                                               `delay` seconds hold the answer back after the question line is stored (a second question meanwhile is 409 busy);
+                                               `fail` (a status) refuses the next question once and stores nothing (409 is J2's `{"error": "busy"}`)
     POST /__fake/output {locked}              true: POST /api/output answers 409, as it does once the team has a message
     GET  /__fake/log[?prefix=]                the requests seen: [{n, method, path, query, status, token, body}]
     GET  /__fake/state                        stages, failures, open streams, last event id
@@ -2478,11 +2479,15 @@ async def ask_function(state: FakeState, dept: str, who: str, question: Any, run
     node panel and J2's chat panel read one transcript; a function with none, or an empty question, is answered and nothing is stored. One question at a time
     per session: a second is 409 `busy`. `interrupted` stores the question and no answer, and the route fails, as the app stopping between the two lines would."""
     q = " ".join(str(question or "").split())
+    ctl = state.ag["ask"]
+    if q and ctl["fail"]:                                    # a refusal the test asked for (`fail`): once, before anything is stored
+        status, ctl["fail"] = ctl["fail"], None
+        raise J2Reject(status, {"error": "busy" if status == 409 else "failed"})
     got = ask_records_answer(state, who, q)
     target = ask_target(state, dept, who, run) if q else None
     if target is None:
         return got
-    ctl, sid = state.ag["ask"], target["sid"]
+    sid = target["sid"]
     with state.lock:
         if sid in ctl["inflight"]:
             raise J2Reject(409, {"error": "busy"})
@@ -2519,7 +2524,7 @@ def register_agent_chats(app: FastAPI, state: FakeState) -> None:
     sets how POST /api/ask answers (`ask_function`: the question and the answer are two lines of the function's session)."""
     def fresh() -> dict:
         return {"picks": {}, "run_pick": None, "team": None, "over": False, "past_on": set(), "notes": [], "asked": {},
-                "ask": {"mode": "records", "text": None, "note": None, "delay": 0.0, "inflight": set(), "count": 0}}
+                "ask": {"mode": "records", "text": None, "note": None, "delay": 0.0, "fail": None, "inflight": set(), "count": 0}}
 
     state.ag = fresh()
     original_reset, original_chat = state.reset, state.chat
@@ -2621,10 +2626,13 @@ def register_agent_chats(app: FastAPI, state: FakeState) -> None:
 
     @app.post("/__fake/ask")
     async def ask_control(request: Request):
-        """How the next POST /api/ask answers (see the module docstring): `{mode, text, note, delay}`, each optional; the answer is what is now set."""
+        """How the next POST /api/ask answers (see the module docstring): `{mode, text, note, delay, fail}`, each optional; the answer is what is now set."""
         body = await json_body(request)
-        if not isinstance(body, dict) or set(body) - {"mode", "text", "note", "delay"}:
-            raise ApiError(422, "validation", "ask needs {mode?, text?, note?, delay?}")
+        if not isinstance(body, dict) or set(body) - {"mode", "text", "note", "delay", "fail"}:
+            raise ApiError(422, "validation", "ask needs {mode?, text?, note?, delay?, fail?}")
+        fail = body.get("fail")
+        if fail is not None and (isinstance(fail, bool) or not isinstance(fail, int) or not 400 <= fail <= 599):
+            raise ApiError(422, "validation", "fail is a status from 400 to 599 (or null)")
         if "mode" in body and body["mode"] not in ASK_MODES:
             raise ApiError(422, "validation", f"mode is one of {', '.join(ASK_MODES)}")
         delay = body.get("delay", 0)
@@ -2633,9 +2641,9 @@ def register_agent_chats(app: FastAPI, state: FakeState) -> None:
         if any(body.get(k) is not None and not isinstance(body[k], str) for k in ("text", "note")):
             raise ApiError(422, "validation", "text and note are text (or null)")
         with state.lock:
-            state.ag["ask"].update({k: body[k] for k in ("mode", "text", "note") if k in body}, **({"delay": float(delay)} if "delay" in body else {}))
+            state.ag["ask"].update({k: body[k] for k in ("mode", "text", "note", "fail") if k in body}, **({"delay": float(delay)} if "delay" in body else {}))
             ctl = state.ag["ask"]
-            return JSONResponse({"mode": ctl["mode"], "text": ctl["text"], "note": ctl["note"], "delay": ctl["delay"]})
+            return JSONResponse({"mode": ctl["mode"], "text": ctl["text"], "note": ctl["note"], "delay": ctl["delay"], "fail": ctl["fail"]})
 
 
 def main(argv: list[str] | None = None) -> int:
