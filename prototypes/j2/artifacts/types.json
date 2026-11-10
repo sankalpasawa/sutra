@@ -136,6 +136,23 @@
       "form": "doc",
       "file": "lld.md",
       "export": "docx",
+      "output_label": "LLD document",
+      "noun": "LLD",
+      "rubric": [
+        {"id": "D-1", "text": "Every page section has an id and implements at least one component"},
+        {"id": "D-2", "text": "Every interactive element has a selector, a trigger and a behaviour"},
+        {"id": "D-3", "text": "Every form field has a type, a required flag and a validation rule"},
+        {"id": "D-4", "text": "Consistent with the HLD: every component is built by a section"},
+        {"id": "D-5", "text": "No invented facts: every fact comes from the brief or the Requester's answers or the earlier documents, or is labelled \"Assumption:\"; the evidence quotes each unlabelled claim"}
+      ],
+      "check_types": ["facts-present", "heading-present", "section-not-empty", "ids-unique"],
+      "done": "Done: the LLD is workable. Every done-when item, rubric item and necessary condition passes.",
+      "builder": "templates/lld/builder.md",
+      "intake": "templates/lld/intake.md",
+      "charter_format": "templates/lld/charter.txt",
+      "plan": "templates/lld/plan.md",
+      "atom_rules": "templates/lld/atom_rules.md",
+      "mock": {"charter": "mock_prd_charter", "section": "mock_lld_section", "atom": {"Pages and sections": "S", "Interactive elements": "E", "Form fields": "F"}},
       "deliverable": true,
       "triggers": [
         "\\bLLDs?\\b|\\blow[- ]level\\s+design\\b|\\bdetailed\\s+design\\b"
