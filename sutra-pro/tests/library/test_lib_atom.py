@@ -12,8 +12,8 @@ from factories_atom import ATOM_ID, abandon, check, close_with, closed, draft, f
 from sutra_app.library import atom as atom_module
 from sutra_app.library.atom import (
     BEHAVIOR_VERBS, CHECK_NAMES, J2_CHECKS, PLUGIN_CHECKS, REGISTRY_CHECKS, Atom, AtomDraft, AtomEdge, Check, CheckResult,
-    CheckTemplate, Constraint, ExpectedItem, OutputItem, Refusal, Verify, Work, check_arity, check_sentence, default_relevance,
-    open_rules,
+    CheckTemplate, Constraint, ExpectedItem, OutputItem, REPLY_TEXT_MAX, AtomReply, Refusal, Verify, Work, check_arity, check_sentence,
+    default_relevance, open_rules,
 )
 from sutra_app.library.base import aliased_fields, unbounded_fields
 from sutra_app.library.gate import GATE, GateError
@@ -448,6 +448,44 @@ def test_a_registry_check_opens_with_its_own_sentence_as_relevance():
     first, second = atom.verify.checks
     assert (first.relevance, first.relevance_source) == ("The reply is a valid price", "default")
     assert (second.relevance, second.relevance_source) == ("declared: turn-posted", "default")
+
+
+# ---- D157: what a turn produced -------------------------------------------------------------------------------------------
+
+def test_an_atom_stored_before_d157_has_no_reply_and_still_loads():
+    """The body an earlier version wrote has no `reply` key: it loads, reads as "nothing recorded" and goes through the gate."""
+    body = json.loads(GATE.check("atom", SPEC_CLOSED).json)
+    assert body["reply"] is None and body["produced"] == [] and body["notes"] == ""
+    del body["reply"]
+    atom = Atom.model_validate(body)
+    assert (atom.reply, atom.produced, atom.notes) == (None, [], "")
+    assert GATE.check("atom", body).model == atom and json.loads(GATE.check("atom", body).json)["reply"] is None
+
+
+def test_an_atom_keeps_the_reply_and_the_produced_items_it_is_given_and_they_survive_the_gate():
+    reply = AtomReply(text='{\n  "say": "ok"\n}')
+    items = [OutputItem(verb="make", name="a proposal of 2 workflows", form="record", ref="workflows.json"),
+             OutputItem(verb="do", name="posted 1 message to Priority", form="message", ref="chat")]
+    atom = opened().evolve(reply=reply, produced=items)
+    assert atom.reply == reply and atom.produced == items and reply.clipped is False
+    body = json.loads(GATE.check("atom", atom).json)
+    assert body["reply"] == {"text": '{\n  "say": "ok"\n}', "clipped": False} and [i["verb"] for i in body["produced"]] == ["make", "do"]
+    assert GATE.check("atom", body).model == atom
+
+
+def test_the_reply_is_a_closed_value_of_at_most_4000_characters_and_says_when_it_was_cut():
+    assert REPLY_TEXT_MAX == 4000
+    assert AtomReply(text="x" * REPLY_TEXT_MAX, clipped=True).clipped is True and AtomReply(text="").text == ""
+    for bad in ({"text": "x" * (REPLY_TEXT_MAX + 1)}, {"text": 5}, {"text": "a", "clipped": "yes"}, {"text": "a", "colour": 1}, {}):
+        assert violations(lambda b=bad: AtomReply(**b))
+    assert violations(lambda: opened().evolve(reply={"text": "x" * (REPLY_TEXT_MAX + 1)}))
+    assert violations(lambda: opened().evolve(reply="just text"))
+
+
+def test_the_reply_class_follows_rules_three_and_seven():
+    assert unbounded_fields(Atom) == [] and aliased_fields(Atom) == []
+    assert unbounded_fields(AtomReply) == []
+    assert "AtomReply" in REGISTRY.json_schema("atom")["$defs"]
 
 
 def test_module_public_names_exist():
