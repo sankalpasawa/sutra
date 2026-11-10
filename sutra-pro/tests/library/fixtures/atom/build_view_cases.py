@@ -1,19 +1,26 @@
 """Builds view_cases.json, the atom/1 parity cases of tests/library/test_lib_atom_view.py. Run it ONCE, by hand; the tests
 never run it and never import J2.
 
-    scripts/py tests/library/fixtures/atom/build_view_cases.py [path/to/J2_Prototype]
+    scripts/py tests/library/fixtures/atom/build_view_cases.py <extraction of prototypes/j2 with the saved runs added>
+    SUTRA_J2_CHECKOUT=<that folder> scripts/py tests/library/fixtures/atom/build_view_cases.py
+
+The folder is required and has no default: an extraction of this repository's `prototypes/j2` at one commit (the recipe is in
+scripts/vendor_j2.py: `git archive <commit> prototypes/j2 | tar -x --strip-components=2 -C <new, empty folder>`). The extraction
+does not carry the saved runs (`runs/<id>/workflows.json`) this builder reads: they must be added to that folder, and the builder
+says so when they are not there. The committed view_cases.json is its output.
 
 Each case holds one J2 stored atom (trimmed to the keys `j2_schema.atom_view` and the importer read; an explicit "count": 1 on an expected item is dropped,
 because the library treats 1 as the default and does not echo it), the workflow it
 belongs to (name and status), the edges and `ended` flag, and `view`: the dict J2's OWN `atom_view` returned for them.
 The real atoms come from J2's saved runs (runs/*/workflows.json, read only); the other cases edit one of them the way
 J2's own tests do (a failing result, no result at all, a workflow that was never funded). A copy of j2_schema.py is
-imported from a temporary folder, so nothing is written to the J2 checkout. The script checks every case against the
+imported from a temporary folder, so nothing is written to the extraction. The script checks every case against the
 library before it writes the file.
 """
 import copy
 import importlib.util
 import json
+import os
 import shutil
 import sys
 import tempfile
@@ -26,8 +33,26 @@ sys.dont_write_bytecode = True
 from factories_atom import atom_from_j2          # noqa: E402
 from sutra_app.library.atom import atom_view    # noqa: E402
 
-J2 = Path(sys.argv[1] if len(sys.argv) > 1 else "~/Desktop/development/J2_Prototype").expanduser()
 RUNS = ("j2-20261016-160511", "j2-20261021-141350", "j2-20261022-123744")
+
+
+def j2_extraction() -> Path:
+    """The extraction of prototypes/j2 (with the saved runs added) the cases are built from: the first argument, else
+    $SUTRA_J2_CHECKOUT. Never a default."""
+    given = sys.argv[1] if len(sys.argv) > 1 else os.environ.get("SUTRA_J2_CHECKOUT")
+    if not given:
+        sys.exit("usage: build_view_cases.py <extraction of prototypes/j2 with the saved runs>   (or set SUTRA_J2_CHECKOUT to it)")
+    root = Path(given).expanduser()
+    if not (root / "j2_schema.py").is_file():
+        sys.exit(f"{root} is not an extraction of prototypes/j2 (no j2_schema.py in it)")
+    missing = [run for run in RUNS if not (root / "runs" / run / "workflows.json").is_file()]
+    if missing:
+        sys.exit(f"no saved run {', '.join(missing)} under {root}/runs: an extraction of prototypes/j2 does not carry the saved runs this "
+                 "builder reads; add them to that folder (the committed view_cases.json is this builder's output)")
+    return root
+
+
+J2 = j2_extraction()
 KEEP_ATOM = ("id", "goal", "constraints", "context", "how", "expected_output", "attempts", "status", "deed", "board_stale", "board_rechecked")
 
 

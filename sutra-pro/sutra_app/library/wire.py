@@ -982,6 +982,28 @@ class WaitingOnIdentity(Value):
     ask: seq(Optional[Text], 50)
 
 
+class LateEntry(Value):
+    """One judgement of a workflow proposed after the first plan (J2 `_late_judge`: a fix, a replacement, a change's relay round),
+    kept in realization.json under `late`. J2 writes all fourteen keys every time: the workflow, what it revises, the time, the
+    cycle, the calls and seconds the judging took, and the judge's own mark (score, weakest check, up to three missing items, the
+    score of each round, ready, zone, stage); a judge that could not be reached leaves `score` empty and says why in `note`."""
+
+    workflow: Id
+    revises: Optional[Id] = None
+    t: Text
+    cycle: Count
+    calls: Count
+    seconds: Seconds
+    score: Optional[Score] = None
+    weakest: Optional[Text] = None
+    missing: seq(Text, 3) = []
+    rounds: seq(Score, 5) = []
+    ready: Optional[bool] = None
+    zone: Optional[Text] = None
+    stage: Optional[Text] = None
+    note: Optional[Text] = None
+
+
 class RealizationDoc(Wire):
     """realization.json: the whole planning record of a run (j2_realization.plan_goal)."""
 
@@ -1003,6 +1025,7 @@ class RealizationDoc(Wire):
     plan_faults: seq(Text, 200)
     calls: Count
     seconds: Seconds
+    late: seq(LateEntry, 200) = []      # J2 sync 4 (D145): the late judge's entries; a run that never judged one late leaves the key out
 
     @model_validator(mode="after")
     def _the_record_agrees_with_its_last_round(self) -> Self:

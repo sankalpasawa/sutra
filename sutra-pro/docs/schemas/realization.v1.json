@@ -1,6 +1,160 @@
 {
   "$defs": {
     "JsonValue": {},
+    "LateEntry": {
+      "additionalProperties": false,
+      "description": "One judgement of a workflow proposed after the first plan (J2 `_late_judge`: a fix, a replacement, a change's relay round),\nkept in realization.json under `late`. J2 writes all fourteen keys every time: the workflow, what it revises, the time, the\ncycle, the calls and seconds the judging took, and the judge's own mark (score, weakest check, up to three missing items, the\nscore of each round, ready, zone, stage); a judge that could not be reached leaves `score` empty and says why in `note`.",
+      "properties": {
+        "calls": {
+          "minimum": 0,
+          "title": "Calls",
+          "type": "integer"
+        },
+        "cycle": {
+          "minimum": 0,
+          "title": "Cycle",
+          "type": "integer"
+        },
+        "missing": {
+          "default": [],
+          "items": {
+            "maxLength": 100000,
+            "type": "string"
+          },
+          "maxItems": 3,
+          "title": "Missing",
+          "type": "array"
+        },
+        "note": {
+          "anyOf": [
+            {
+              "maxLength": 100000,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Note"
+        },
+        "ready": {
+          "anyOf": [
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Ready"
+        },
+        "revises": {
+          "anyOf": [
+            {
+              "maxLength": 200,
+              "minLength": 1,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Revises"
+        },
+        "rounds": {
+          "default": [],
+          "items": {
+            "maximum": 1,
+            "minimum": 0,
+            "type": "number"
+          },
+          "maxItems": 5,
+          "title": "Rounds",
+          "type": "array"
+        },
+        "score": {
+          "anyOf": [
+            {
+              "maximum": 1,
+              "minimum": 0,
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Score"
+        },
+        "seconds": {
+          "minimum": 0,
+          "title": "Seconds",
+          "type": "number"
+        },
+        "stage": {
+          "anyOf": [
+            {
+              "maxLength": 100000,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Stage"
+        },
+        "t": {
+          "maxLength": 100000,
+          "title": "T",
+          "type": "string"
+        },
+        "weakest": {
+          "anyOf": [
+            {
+              "maxLength": 100000,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Weakest"
+        },
+        "workflow": {
+          "maxLength": 200,
+          "minLength": 1,
+          "title": "Workflow",
+          "type": "string"
+        },
+        "zone": {
+          "anyOf": [
+            {
+              "maxLength": 100000,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Zone"
+        }
+      },
+      "required": [
+        "workflow",
+        "t",
+        "cycle",
+        "calls",
+        "seconds"
+      ],
+      "title": "LateEntry",
+      "type": "object"
+    },
     "PlanAnalysis": {
       "additionalProperties": false,
       "properties": {
@@ -1060,6 +1214,15 @@
       },
       "title": "History",
       "type": "object"
+    },
+    "late": {
+      "default": [],
+      "items": {
+        "$ref": "#/$defs/LateEntry"
+      },
+      "maxItems": 200,
+      "title": "Late",
+      "type": "array"
     },
     "mock": {
       "title": "Mock",
