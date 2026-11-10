@@ -277,3 +277,68 @@ def test_a_past_runs_chat_is_read_and_not_asked(fake, browser):
     browser.click('.agent-open[data-sid="cs_past_identity"]')
     browser.wait_for("!!document.querySelector('.npill-past')")
     assert not shown(browser, ".nnotehost") and browser.count('[data-act="ask"]') == 0
+
+
+# ---- one transcript, on the real page -----------------------------------------------------------------------------------------------------------------
+
+@pytest.fixture(scope="module")
+def page_server():
+    app = fake_backend.make_app()                                                                       # the real pages and the whole static folder
+    add_ask_route(app)
+    running = fake_backend.run_in_thread(app)
+    try:
+        yield PanelServer(running.url, fake_backend.FakeClient(running.url, app.state.fake.token))
+    finally:
+        running.stop()
+
+
+@pytest.mark.browser
+def test_a_question_stored_in_the_functions_chat_shows_in_j2s_chat_panel_and_in_the_node_panel(page_server, browser):
+    """D148: the question and the answer are lines of the function's own session, so J2's chat panel (function mode, filled by function_chat.js from the page's own
+    loadFeed) and the node panel show the same two lines, after a reload, with no state in the page."""
+    client = page_server.client
+    client.reset()
+    client.stage("2")
+    assert client.request("POST", "/__fake/pill", {"on": True}, token=False)[0] == 200                  # the pill of an agent's chat reads /providers
+    status, answer = client.request("POST", "/api/ask?dept=web", {"who": "audit", "q": WHY, "run": ""}, token=True)
+    assert status == 200 and answer["from"] == "records"
+    for route in ("/api/activity", "/api/artifacts/groups", "/api/plan-map"):                            # routes the fake of this folder may not have
+        browser.expect_failed(route)
+    browser.goto(page_server.url + "/d/web/?view=detail&tab=audit")
+    browser.wait_for("typeof FunctionChat === 'object' && !!document.getElementById('chatfab') && typeof CHATFN === 'string' && CHATFN === 'audit'", timeout=15)
+    browser.js("document.getElementById('chatfab').click()")
+    browser.wait_for(f"document.getElementById('chatfeed').textContent.includes({json.dumps(WHY)})", timeout=15)
+    feed = browser.text("#chatfeed")
+    assert f"From the records: {WHY}" in feed and "from its records, no AI call" in feed
+    assert browser.js("QA.length") == 1 and browser.js("QA[0].from") == "records" and browser.js("QA[0].a") == f"From the records: {WHY}"
+    browser.js("NodePanel.open('web.audit', 'chat')")
+    browser.wait_for("document.querySelectorAll('#nodepanel .nmsgs [data-ask]').length === 2", timeout=15)
+    assert texts(browser, '#nodepanel .nmsgs [data-ask="q"]') == [f"You asked{WHY}"]
+    assert texts(browser, '#nodepanel .nmsgs [data-ask="records"]')[0].endswith("From its records, no AI call")
+    assert [e for e in browser.console_errors if "404" not in e] == []
+
+
+# ---- "What should we make?" on the real page ----------------------------------------------------------------------------------------------------------
+
+@pytest.mark.browser
+def test_the_start_page_offers_what_should_we_make_and_a_pick_is_one_post_with_the_team(page_server, browser):
+    """D139: output_pick.js fills the placeholder the port leaves in the landing: the four choices, the one the team's settings give, and a change is one
+    POST /api/output with the type and the team. (A started team hides the landing, so the select is read and changed in the page, not clicked.)"""
+    client = page_server.client
+    client.reset()
+    client.stage("2")
+    for route in ("/api/activity", "/api/artifacts/groups", "/api/plan-map"):
+        browser.expect_failed(route)
+    browser.goto(page_server.url + "/d/web/")
+    browser.wait_for("!!document.getElementById('outsel')", timeout=15)
+    assert texts(browser, '#soutpick label') == ["What should we make?"]
+    assert browser.js("Array.from(document.getElementById('outsel').options, o => [o.value, o.text])") == [
+        ["auto", "Let the team decide"], ["website", "Website"], ["prd", "PRD document"], ["project", "Project work"]]
+    assert browser.js("document.getElementById('outsel').value") == "auto"
+    assert browser.js("document.getElementById('soutpick').parentElement.className") == "slrow"                  # the first thing in the row under the box
+    browser.js("(() => { const s = document.getElementById('outsel'); s.value = 'prd'; s.dispatchEvent(new Event('change', {bubbles: true})); })()")
+    browser.wait_for("document.getElementById('outsel').value === 'prd' && !document.getElementById('outsel').disabled")
+    sent = client.log("/api/output")
+    assert [r["method"] for r in sent] == ["POST"] and sent[0]["status"] == 200 and sent[0]["token"] is True
+    assert sent[0]["query"] == "dept=web" and sent[0]["body"] == {"type": "prd"}
+    assert [e for e in browser.console_errors if "404" not in e] == []
