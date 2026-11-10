@@ -130,4 +130,16 @@ pack('62_handwritten_evidence',evidence=workflow_facts(HANDWRITTEN))
 pack('63_repair_method',methods=[method('add-step-checks@1','every_step_has_check',['has_overall_verify'],cost={'compute':1,'money':0,'attention':1})],
      providers={'local-provider':2},grants=['action:add-step-checks@1'])
 pack('64_generated_evidence',evidence=workflow_facts(generated_workflow()))
+# Fourth domain (0.6.0-order): a website for an organisation. A chain of four methods; the plan must come out in order.
+pack('70_site_goal',scope='orgA/website',goals=['site_live'],budget={'compute':10,'money':5,'attention':3},
+     preference=['attention','money','compute'])
+pack('71_site_theory',rules=[rule('R-SITE@1','site_live',[['site_checked']],source='reviewed/website-department')],
+     evidence=[fact('brief_given','TRUE',source='fixture/owner-brief'),fact('site_planned','FALSE'),fact('content_written','FALSE'),
+               fact('pages_built','FALSE'),fact('site_checked','FALSE')])
+pack('72_site_methods',methods=[
+ method('check-site@1','site_checked',['pages_built'],cost={'compute':1,'money':0,'attention':1}),
+ method('build-pages@1','pages_built',['content_written','site_planned'],cost={'compute':3,'money':1,'attention':0}),
+ method('write-content@1','content_written',['site_planned'],cost={'compute':2,'money':1,'attention':0}),
+ method('plan-site@1','site_planned',['brief_given'],cost={'compute':1,'money':0,'attention':1})],
+ providers={'local-provider':6},grants=['action:plan-site@1','action:write-content@1','action:build-pages@1','action:check-site@1'])
 if __name__=='__main__':print('Generated',len(list(P.glob('*.json'))),'authored data pack fixtures')

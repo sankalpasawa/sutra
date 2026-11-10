@@ -26,7 +26,7 @@ EXPECTED={
  '20_wrong_tenant':'QUERY_EVIDENCE','21_no_goal':'NO_STANDING_GOAL',
  '22_revoke':'AUTHORITY_REQUIRED','23_capacity':'PROVIDER_REQUIRED','24_budget':'RESOURCE_REQUIRED',
  '25_registrable_gap':'METHOD_ABSENT','26_registrable_repair':'LOCAL_MODEL_EFFECTS_RECORDED',
- '27_registrable_generated':'SUPPORTED_BY_EVIDENCE'
+ '27_registrable_generated':'SUPPORTED_BY_EVIDENCE','28_website':'PLAN_READY'
 }
 class ContractTests(unittest.TestCase):
     def test_original_baseline_byte_identical(self):
@@ -236,6 +236,22 @@ class ContractTests(unittest.TestCase):
         rep,s=out['26_registrable_repair'];self.assertEqual(rep['actions'],['add-step-checks@1']);self.assertEqual(s.fact('every_step_has_check')['source'],'LOCAL_MODEL:add-step-checks@1')
         ok,s=out['27_registrable_generated'];self.assertEqual((ok['status'],ok['actions'],ok['model_receipts']),('SUPPORTED_BY_EVIDENCE',[],[]))
         self.assertTrue(s.fact('every_step_has_check')['source'].startswith('adapter:standards/'))
+    # 0.6.0-order: the generator emits each step's prerequisites and the plan's edges, and refuses a wrong order.
+    SITE=('70_site_goal','71_site_theory','72_site_methods')
+    def test_plan_and_edges_follow_the_requires_chain(self):
+        c=State.from_packs([pack(n) for n in self.SITE]);r=Kernel(c).run_standing()['runs'][0]
+        self.assertEqual(r['actions'],['plan-site@1','write-content@1','build-pages@1','check-site@1'])   # authored in the reverse order
+        wf=to_implementation(r,c)['workflow'];self.assertEqual(validate_workflow(wf),[])
+        self.assertEqual([(e['from'],e['to'],e['via']) for e in wf['edges']],
+            [('plan-site-1','write-content-1','site_planned'),('write-content-1','build-pages-1','content_written'),
+             ('plan-site-1','build-pages-1','site_planned'),('build-pages-1','check-site-1','pages_built')])
+        after={s['id']:s['after'] for s in wf['steps'] if s.get('method')}
+        self.assertEqual(after,{'plan-site-1':[],'write-content-1':['plan-site-1'],'build-pages-1':['write-content-1','plan-site-1'],'check-site-1':['build-pages-1']})
+    def test_workflow_with_a_step_before_its_prerequisite_is_refused(self):
+        c=State.from_packs([pack(n) for n in self.SITE]);wf=to_implementation(Kernel(c).run_standing()['runs'][0],c)['workflow']
+        bad=dict(wf,steps=[wf['steps'][0],wf['steps'][2],wf['steps'][1]]+wf['steps'][3:])
+        self.assertTrue(any('comes before its prerequisite' in p for p in validate_workflow(bad)))
+        self.assertTrue(any('not in the workflow' in p for p in validate_workflow(dict(wf,edges=[{'from':'nowhere','to':'check-site-1','via':'x'}]))))
     def test_hash_chain_valid(self):
         c=State.from_packs([pack(n) for n in ('00_goal','01_domain','02_methods','03_approval','04_admission')]);r=Kernel(c).run_standing(execute=True)['runs'][0]
         for i,x in enumerate(r['trace']):

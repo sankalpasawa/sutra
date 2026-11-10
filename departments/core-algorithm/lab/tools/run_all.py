@@ -37,6 +37,7 @@ CASES=[
  ('25_registrable_gap','A standard as a rule','A hand-written workflow fails a reviewed standard: the checker found steps without a check, and no method can add them.',['60_standard_goal','61_standard_theory','62_handwritten_evidence'],False,'Standards'),
  ('26_registrable_repair','Repair to the standard','A reviewed method that adds step checks turns the failed standard into a plan.',['60_standard_goal','61_standard_theory','62_handwritten_evidence','63_repair_method'],True,'Standards'),
  ('27_registrable_generated','Generated work meets the standard','The workflow the implementation generator emits passes the same standard on evidence alone.',['60_standard_goal','61_standard_theory','64_generated_evidence'],True,'Standards'),
+ ('28_website','A chain of four methods','A website: plan, write, build, check. The methods are authored out of order; the plan comes out in dependency order.',['70_site_goal','71_site_theory','72_site_methods'],False,'Ordering'),
 ]
 
 def pack(n):return json.loads((P/(n+'.json')).read_text())
@@ -79,7 +80,7 @@ def extra_events():
             'journal_count':len(s.event_journal)}
 
 def build():
-    result={'release':'sutra-kernel-extensions/0.5.0-standards',
+    result={'release':'sutra-kernel-extensions/0.6.0-order',
             'kernel_sha256':hashlib.sha256((ROOT/'kernel'/'core.py').read_bytes()).hexdigest(),
             'baseline_v0_1_sha256':hashlib.sha256((ROOT/'release'/'baseline_v0_1_core.py').read_bytes()).hexdigest(),
             'scope':'finite synthetic deterministic local simulation; NOT historical Core, current J2, or external outcomes',

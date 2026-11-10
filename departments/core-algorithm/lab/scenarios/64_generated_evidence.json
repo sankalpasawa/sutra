@@ -7,7 +7,7 @@
       "truth": "TRUE",
       "verified": true,
       "source": "adapter:standards/workflow@1",
-      "version": "wf-22e6ba79325b",
+      "version": "wf-4f4984967f52",
       "checked": "W-order-complete",
       "question": "the workflow says what starts it"
     },
@@ -16,7 +16,7 @@
       "truth": "TRUE",
       "verified": true,
       "source": "adapter:standards/workflow@1",
-      "version": "wf-22e6ba79325b",
+      "version": "wf-4f4984967f52",
       "checked": "W-order-complete",
       "question": "every step carries a check of its own"
     },
@@ -25,7 +25,7 @@
       "truth": "TRUE",
       "verified": true,
       "source": "adapter:standards/workflow@1",
-      "version": "wf-22e6ba79325b",
+      "version": "wf-4f4984967f52",
       "checked": "W-order-complete",
       "question": "the workflow says how the whole is verified"
     }
