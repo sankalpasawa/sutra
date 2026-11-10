@@ -18,10 +18,11 @@ REPO = Path(__file__).resolve().parents[2]
 ENGINE = REPO / "sutra_app" / "engine"
 MD = ENGINE / "VENDORED.md"
 SEED_INDEX = ENGINE / "seed" / "library" / "index.json"
-PIN = "00efb179e21cb79fae157a0679e819921ac37726"          # sync 4 (D136): the sutra commit that last touched prototypes/j2
-PIN_TREE = "99b6f3a05de78a609b593d81d7fb06b55c32b961"     # `git rev-parse <PIN>:prototypes/j2`
+PIN = "025e265c594564f47a2365874cd5a5cc5d0d20a6"          # sync 4 (D136): the sutra commit that last touched prototypes/j2
+PIN_TREE = "21c67045fe3230c1ab9be381c2f21465ea91849c"     # `git rev-parse <PIN>:prototypes/j2`
+FILES = 208                                               # what the script builds from that extraction, VENDORED.md included
 CODE = ("j2", "j2_agent", "j2_agent_models", "j2_agent_views", "j2_artifact_models", "j2_artifacts", "j2_board", "j2_change",
-        "j2_check", "j2_map", "j2_realization", "j2_rules", "j2_schema", "j2_send", "j2_story", "j2_template_lib")
+        "j2_check", "j2_map", "j2_realization", "j2_rules", "j2_schema", "j2_send", "j2_story", "j2_studio", "j2_template_lib")
 SIBLINGS = set(CODE) | {"llm", "rehydrate"}
 ROLE_FILES = {"team.md", "identity.md", "adaptation.md", "priority.md", "coordination.md", "audit.md", "builder.md",
               "confidence-judge.md", "rates.json", "stages.json"}
@@ -133,7 +134,7 @@ def test_the_vendoring_script_pins_the_same_commit_and_tree_as_the_header():
     module = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(module)
     assert (module.BASELINE, module.BASELINE_TREE) == (PIN, PIN_TREE)
-    assert len(module.CODE) == 16 and tuple(Path(n).stem for n in module.CODE) == CODE
+    assert len(module.CODE) == 17 and tuple(Path(n).stem for n in module.CODE) == CODE
 
 
 def test_every_recorded_vendored_hash_matches_the_file():
@@ -181,6 +182,18 @@ def test_p13_left_nothing_behind_in_the_vendored_j2():
     j2_text = (ENGINE / "j2.py").read_text(encoding="utf-8")
     assert "def run_list" not in j2_text and "def run_changes" not in j2_text and "def run_row" not in j2_text
     assert "P13" not in j2_text and (ENGINE / "runlist.py").is_file()
+
+
+def test_p1_j2_imports_the_studio_module_relative_and_the_studio_module_imports_no_sibling():
+    """j2_studio.py (studio/1, the Simple view's records) is a code module: j2.py's import block names it, and it needs no edit."""
+    tree = ast.parse((ENGINE / "j2.py").read_text(encoding="utf-8"))
+    relative = {n.names[0].name for n in tree.body if isinstance(n, ast.ImportFrom) and n.level == 1 and n.module is None}
+    assert {"j2_studio", "j2_send", "j2_template_lib", "llm"} <= relative
+    studio = ast.parse((ENGINE / "j2_studio.py").read_text(encoding="utf-8"))
+    assert sorted({a.name for n in ast.walk(studio) if isinstance(n, ast.Import) for a in n.names}) == ["re"]
+    assert not [n for n in ast.walk(studio) if isinstance(n, ast.ImportFrom)]
+    row = next(r for r in rows() if r[0] == "sutra_app/engine/j2_studio.py")
+    assert row[2] == "-" and row[3] == row[4], "j2_studio.py is a byte copy"
 
 
 def test_p1_j2_agent_views_has_no_sys_path_insert_and_imports_its_three_siblings_relative():
@@ -240,4 +253,4 @@ def test_the_tree_is_exactly_what_the_vendoring_script_derives_from_the_extracti
     done = subprocess.run([sys.executable, str(REPO / "scripts" / "vendor_j2.py"), "--commit", PIN, "--check"], capture_output=True,
                           text=True, env={**os.environ, "PYTHONPATH": str(REPO)}, timeout=120)
     assert done.returncode == 0, done.stdout + done.stderr
-    assert "207 files, ok" in done.stdout
+    assert f"{FILES} files, ok" in done.stdout
