@@ -5209,12 +5209,12 @@ def test_a_j2_that_moved_to_a_new_commit_but_gives_the_same_bytes_is_not_drift(s
     out = tmp_path / "out"
     capture.write_files(out, files)
     manifest = json.loads(files["MANIFEST.json"])
-    moved = {**files, "MANIFEST.json": (json.dumps({**manifest, "j2_commit": "33aeeda639cd7bf828d5361273a8a153ebc63a36"}, indent=2) + "\n").encode()}
+    moved = {**files, "MANIFEST.json": (json.dumps({**manifest, "j2_commit": "abcdef0123456789abcdef0123456789abcdef01"}, indent=2) + "\n").encode()}
     monkeypatch.setattr(capture, "capture", lambda *args, **kwargs: moved)
     common = ["--j2", str(j2), "--j2-python", sys.executable, "--out", str(out), "--check"]
     assert capture.main(common) == 0
     assert capsys.readouterr().out == (f"ok: {len(files) - 1} files equal a fresh capture; J2 moved on ({manifest['j2_commit'][:7]} captured, "
-                                       "33aeeda now) and gives the same bytes\n")
+                                       "abcdef0 now) and gives the same bytes\n")
     unknown = {**files, "MANIFEST.json": (json.dumps({**manifest, "j2_commit": None}, indent=2) + "\n").encode()}  # an extraction and no --commit
     monkeypatch.setattr(capture, "capture", lambda *args, **kwargs: unknown)
     assert capture.main(common) == 0
@@ -5272,8 +5272,8 @@ def test_the_committed_j2_captures_equal_a_fresh_capture_of_the_real_j2(capsys):
     assert capture.folder_digest(j2) == before  # J2 is read-only for the app: nothing was written there
 
 
-# ---- patch P13: the fake's /api/runlist and /api/changes (the engine's own shapes, not captured from J2) -------------------------
-def test_the_fake_answers_the_two_p13_routes_per_team(fake_server, fake):
+# ---- the run list and the changes: J2's own routes since sync 4 (D140), so captures like the rest ------------------------------
+def test_the_run_list_and_the_changes_are_j2s_captures_and_a_team_is_asked_for(fake_server, fake):
     fake.stage("2")
     status, _, raw = j2_get(fake_server, "/api/runlist", dept="web")
     body = json.loads(raw)
