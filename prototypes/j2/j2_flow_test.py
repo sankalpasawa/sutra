@@ -7182,6 +7182,90 @@ def doc_plans_generic():
           "a workflow's own sections kept and checked, no workflows stops with a fault ok")
 
 
+def doc_planner_real():
+    """Step 3c: under J2_GENERIC=1, Adaptation's document planning with realistic (non-mock) planner answers: free
+    workflow names with "sections" filled and one workflow writing two sections (built, checked and priced per section,
+    its done-when items re-mapped to it); a missing section, an empty plan and a workflow with no section are flagged and
+    revised once; a two-section workflow priced as one section is refused."""
+    keep = os.environ.pop("J2_GENERIC", None)
+    os.environ["J2_GENERIC"] = "1"
+    try:
+        def wf(name, secs, parts=None):
+            a = [j2.mock_doc_atom({"name": x}) for x in secs]
+            atom = {**a[0], "goal": f"The PRD's {' and '.join(secs)} section(s) are written from the charter",
+                    "how": {"kind": "AI", "agent": "Builder",
+                            "steps": "Write " + " and ".join(f'the "## {x}" section' for x in secs) + " of the PRD in markdown"},
+                    "expected_output": [e for x in a for e in x["expected_output"]], "verification": [c for x in a for c in x["verification"]]}
+            return {"name": name, "goal_gap": f"The PRD has no {' or '.join(secs)} yet", "sections": secs,
+                    "parts": parts or ["requirements_section" if x == "Requirements" else "doc_section" for x in secs],
+                    "covers": [], "outputs": ["prd.md"], "completion_check": "every section it writes is present", "atoms": [atom]}
+        FULL = [wf("Frame the problem and who has it", ["Problem", "Users"]), wf("Set the goals", ["Goals"]),
+                wf("Specify what it must do", ["Requirements"]), wf("Measure success", ["Success metrics"]),
+                wf("Draw the boundary", ["Out of scope"])]
+
+        def planner(*replies):
+            """The first document plan (and its revisions) come from these replies, in turn; later calls are the mock's."""
+            def patch(run, orig):
+                n = {"i": 0}
+
+                def call(fn, fmt, task, mock, **k):
+                    if fn == "adaptation" and "ITS SECTIONS" in task and not run.workflows and n["i"] < len(replies):
+                        n["i"] += 1
+                        body = {"say": "@Priority The PRD plan.", "act": "PROPOSE", "next": "Priority", "left_out": [],
+                                "workflows": copy.deepcopy(replies[n["i"] - 1])}
+                        return orig(fn, fmt, task, lambda: json.dumps(body), **k)
+                    return orig(fn, fmt, task, mock, **k)
+                return call
+            return patch
+        import copy
+        brief = "Write a PRD for Campus Notes." + CAMPUS
+        # free names, sections filled, one workflow writing two sections: built, checked, priced per section, items re-mapped
+        run = docs_run(brief, 400, planner(FULL))
+        assert run.outcome.startswith("Done"), run.outcome
+        w = run._all_wfs()[0]
+        assert w["name"] == "Frame the problem and who has it" and w["sections"] == ["Problem", "Users"] and w["cost"] == 20, w
+        crit = run.stage_archive[0]["goal"]["done_when"] if run.stage_archive else run.goal["done_when"]
+        mine = [i for i, c in enumerate(crit, 1) if re.search(r"\bproblem\b|\busers\b", c, re.I)]
+        assert mine and sorted(run._covers(w)) == mine, (mine, w["covers"], crit)
+        heads = {heading_t for a in w["atoms"] for c in a["verification"] for heading_t in [c.get("target")] if c["type"] == "heading-present"}
+        assert heads == {"Problem", "Users"}
+        md = open(os.path.join(run.dir, "prd.md"), encoding="utf-8").read()
+        assert "## Problem" in md and "## Users" in md and md.index("## Problem") < md.index("## Goals"), md[:300]
+        # a missing section is flagged, the planner revises once, then the plan goes ahead complete
+        run = docs_run(brief, 400, planner(FULL[:-1], FULL))
+        assert any("no workflow writes the Out of scope section" in x["reason"] for x in run.rejections), run.rejections
+        assert run.outcome.startswith("Done") and any(x["name"] == "Draw the boundary" for x in run._all_wfs()), run.outcome
+        # a workflow with no section and an empty plan: flagged, revised once
+        run = docs_run(brief, 400, planner([], FULL))
+        why = " | ".join(x["reason"] for x in run.rejections)
+        assert "the plan has no workflows" in why and run.outcome.startswith("Done"), (why, run.outcome)
+        bad = [{**FULL[0], "sections": None, "name": "Opening"}] + FULL[1:]
+        run = docs_run(brief, 400, planner(bad, bad))
+        why = " | ".join(x["reason"] for x in run.rejections)
+        assert "workflow 'Opening' names no section of the PRD" in why and "it names no section of the PRD (sections)" in why, why
+        # empty twice: the run stops with the fault
+        run = docs_run(brief, 400, planner([], []))
+        assert run.outcome == "Stopped: Adaptation planned no workflows for the PRD.", run.outcome
+        # a two-section workflow priced as one section is refused
+        cheap = [wf("Frame the problem and who has it", ["Problem", "Users"], ["doc_section"])] + FULL[1:]
+        run = docs_run(brief, 400, planner(cheap, cheap))
+        assert any("writes 2 sections (Problem, Users), so it costs at least 20 (doc_section + doc_section), not 10" in x["reason"]
+                   for x in run.rejections), [x["reason"] for x in run.rejections]
+        # a two-section atom missing one section's checks is refused by the atom check
+        thin = wf("Frame the problem and who has it", ["Problem", "Users"])
+        thin["atoms"][0]["verification"] = [c for c in thin["atoms"][0]["verification"] if c["target"] != "Users"]
+        thin["atoms"][0]["expected_output"] = [e for e in thin["atoms"][0]["expected_output"] if e["target"] != "Users"]
+        assert run._atom_problems(thin) == ["no heading-present check for the Users section it writes",
+                                            "no section-not-empty check for the Users section it writes"], run._atom_problems(thin)
+    finally:
+        os.environ.pop("J2_GENERIC", None)
+        if keep is not None:
+            os.environ["J2_GENERIC"] = keep
+    print("document planner (realistic answers): free names with sections, a two-section workflow built, checked, priced and "
+          "re-mapped; missing section, empty plan and no-section workflow flagged and revised once; empty twice stops; "
+          "under-priced two-section workflow and a missing per-section check refused ok")
+
+
 def doc_unchanged():
     """The document golden: mock runs of a PRD, the design docs (PRD, HLD, LLD) and the design docs with the site after them
     (the LLD as the site's blueprint) give the same model calls (agent, system prompt, prompt), workflows, documents,
@@ -12055,6 +12139,7 @@ if __name__ == "__main__":
             docs_generic()         # step 2: the documents on data, and the document golden
             deliverables_generic()      # step 3: Adaptation chooses what to build
             doc_plans_generic()         # step 3b: document plans from the template, not the fixed plan
+            doc_planner_real()          # step 3c: realistic planner answers for documents
         artifacts_tab()
         map_tab()
         map_every_workflow()
