@@ -47,8 +47,9 @@ ATOMS_FILE, EVENTS_FILE = "fn_atoms_brewlab.json", "run_events.jsonl"
 SCHEMA = "fn-atoms-golden/1"
 
 ENGINE = "sutra_app.engine"
-J2_MODULES = ("j2", "j2_agent", "j2_artifact_models", "j2_artifacts", "j2_board", "j2_change", "j2_check", "j2_map",
-              "j2_realization", "j2_rules", "j2_schema", "j2_send", "j2_story", "j2_template_lib", "rehydrate")
+J2_MODULES = ("j2", "j2_agent", "j2_agent_models", "j2_agent_views", "j2_artifact_models", "j2_artifacts", "j2_board", "j2_change",
+              "j2_check", "j2_map", "j2_realization", "j2_rules", "j2_schema", "j2_send", "j2_story", "j2_studio", "j2_template_lib",
+              "rehydrate")
 RUN_ID, TASK_ID, DEPT = "j2-20261104-100004-7f3a", "tsk_a1b2c3d4e5f6", "web"
 VAGUE = "a website for my cafe"
 BREW_LAB = ("A one-page website for Brew Lab, a small specialty coffee shop in Indiranagar, Bengaluru. Visitors should "

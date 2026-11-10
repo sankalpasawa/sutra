@@ -24,8 +24,9 @@ import pytest
 
 REPO = Path(__file__).resolve().parents[2]
 ENGINE = "sutra_app.engine"
-J2_MODULES = ("j2", "j2_agent", "j2_artifact_models", "j2_artifacts", "j2_board", "j2_change", "j2_check", "j2_map",
-              "j2_realization", "j2_rules", "j2_schema", "j2_send", "j2_story", "j2_template_lib", "rehydrate", "views", "j2_server")
+J2_MODULES = ("j2", "j2_agent", "j2_agent_models", "j2_agent_views", "j2_artifact_models", "j2_artifacts", "j2_board", "j2_change",
+              "j2_check", "j2_map", "j2_realization", "j2_rules", "j2_schema", "j2_send", "j2_story", "j2_studio", "j2_template_lib",
+              "rehydrate", "views", "j2_server")
 GOLD = json.loads((REPO / "tests" / "engine" / "golden" / "api_shapes.json").read_text(encoding="utf-8"))
 SITE_ID, PRD_ID = "j2-20261104-100004-7f3a", "j2-20261104-100005-7f3a"
 PRD_BRIEF = ("Write a PRD for QuickQueue, a mobile app that lets clinic patients join a waiting line remotely. Users: "
