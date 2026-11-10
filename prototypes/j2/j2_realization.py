@@ -149,7 +149,7 @@ def _cycle(wfs):
 
 def plan_faults(p, goal, items=None, types=None):
     """What a plan breaks: [] when it follows the Realization and Certainty sections. Each fault names what to fix.
-    items: the active charter numbers (a change); by default done-when positions 1 to n. types (J2_GENERIC=1, before the
+    items: the active charter numbers (a change); by default done-when positions 1 to n. types (before the
     charter): the type list the deliverables are checked against."""
     out = []
     for k in ("factors", "unplaced", "stages", "workflows", "open_facts"):
@@ -270,7 +270,7 @@ def plan_faults(p, goal, items=None, types=None):
     return out + certainty_faults(p) + (deliverable_faults(p, types) if types is not None else [])
 
 
-# ---- deliverables (J2_GENERIC=1, docs/remove-hardcoding-plan.md step 3): before the charter, Adaptation chooses which
+# ---- deliverables (docs/remove-hardcoding-plan.md step 3): before the charter, Adaptation chooses which
 # output types the run builds and in what order; code only checks the choice against artifacts/types.json.
 
 def type_list(path=None):
@@ -357,7 +357,7 @@ CHANGE_QUESTIONS = (     # asked only when the charter changed (j2_change): the 
     ("G0", "fits", 0.25, "The changed done-when items listed for it under CHANGE are this workflow's own job: the same "
                          "kind of thinking and output as its goal, not a second job added on."),
 )
-DELIVERABLE_QUESTIONS = (  # asked only when the plan chooses the deliverables (J2_GENERIC=1, before the charter)
+DELIVERABLE_QUESTIONS = (  # asked only when the plan chooses the deliverables (before the charter)
     ("T1", "deliverables", 0.25, "R4: the deliverable it serves earns its place: the brief asks for that type, or a "
                                  "chosen type needs it first; when no type in TYPES fits the brief, it is a new type "
                                  "whose sections fit what the brief asks for."),
@@ -588,7 +588,6 @@ def adaptation_part(name):
     return m.group(1).strip() if m else ""
 
 
-DELIVERABLES_PART = re.compile(r"\s*" + PART.format("DELIVERABLES"), re.S)      # J2_GENERIC=1 only
 
 
 def planner_system():
@@ -596,7 +595,7 @@ def planner_system():
     return ("You are Adaptation in J2, the department's planner. Identity has set the goal; you decide how it becomes "
             "real. Follow the planning part of adaptation.md below exactly: the Realization section says where to cut, "
             "the Certainty section what kind of cut each workflow gets. Reply with one JSON object and nothing else.\n\n"
-            + (part if j2_types.enabled() else DELIVERABLES_PART.sub("", part)).replace("<!-- STAGE TABLE -->", stage_table()))
+            + part.replace("<!-- STAGE TABLE -->", stage_table()))
 
 
 def judge_system():
@@ -873,7 +872,7 @@ def plan_goal(goal, web=True, out_dir=None, log=print, mocks=None, extra="", typ
     """The planning half of realization for one charter. mocks: {"checklist", "plan", "revise", "judge"} callables for
     offline runs (plan and revise take the round; judge takes the round, the plan and the question spec), used only
     when llm.MOCK. extra: rules of the system the plan runs in (J2 passes its own), added to Adaptation's task.
-    types (J2_GENERIC=1): the plan also chooses the deliverables from this type list, checked by code and judged (T1);
+    types : the plan also chooses the deliverables from this type list, checked by code and judged (T1);
     goal is then the brief ({"statement", "brief": True}), with no done-when items and so no item questions."""
     mocks = mocks or default_mocks(goal)
     s = Session(log)

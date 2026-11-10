@@ -138,7 +138,7 @@ class Handler(http.server.BaseHTTPRequestHandler):
             d = j2.saved_dir(run) if run else RUN.dir
             live = None
             if not run and RUN.status == "running" or (not run and RUN.paused):
-                live = {"snapshot": RUN.snapshot(), "stages": list(RUN.stages), "stage_words": j2.J2Run.STAGE_WORDS,
+                live = {"snapshot": RUN.snapshot(), "stages": list(RUN.stages), "stage_words": j2.J2Run.stage_words(),
                         "board": RUN.board}
             return self._send(200, json.dumps(j2_map.build(d if d and os.path.isdir(d) else None, live), ensure_ascii=False))
         if u.path == "/api/plan":       # the Workflows tab: the stages the Strategist chose and the replans (realization.json)
@@ -180,13 +180,13 @@ class Handler(http.server.BaseHTTPRequestHandler):
             return self._send(200, txt, "text/plain") if txt is not None else self._send(404, "not found", "text/plain")
         if u.path == "/api/artifacts/tree":      # the Artifacts tab as a tree (artifacts-tree/1), made from the same data as the Map
             d = j2.saved_dir(run) if run else RUN.dir
-            live = {"snapshot": RUN.snapshot(), "stages": list(RUN.stages), "stage_words": j2.J2Run.STAGE_WORDS, "board": RUN.board} \
+            live = {"snapshot": RUN.snapshot(), "stages": list(RUN.stages), "stage_words": j2.J2Run.stage_words(), "board": RUN.board} \
                 if not run and (RUN.status == "running" or RUN.paused) else None
             ok = d and os.path.isdir(d)
             return self._send(200, json.dumps(j2_artifacts.tree(d, j2_map.build(d, live)) if ok else j2_artifacts.tree(None), ensure_ascii=False))
         if u.path == "/api/artifacts/groups":      # the Artifacts section's four groups (artifacts-groups/1), from the run's own files
             d = j2.saved_dir(run) if run else RUN.dir
-            live = {"snapshot": RUN.snapshot(), "stages": list(RUN.stages), "stage_words": j2.J2Run.STAGE_WORDS, "board": RUN.board} \
+            live = {"snapshot": RUN.snapshot(), "stages": list(RUN.stages), "stage_words": j2.J2Run.stage_words(), "board": RUN.board} \
                 if not run and (RUN.status == "running" or RUN.paused) else None
             ok = d and os.path.isdir(d)
             return self._send(200, json.dumps(j2_artifacts.groups(d, j2_map.build(d, live)) if ok else j2_artifacts.groups(None), ensure_ascii=False))
@@ -225,7 +225,7 @@ class Handler(http.server.BaseHTTPRequestHandler):
             return self._send(200, json.dumps(out, ensure_ascii=False))
         if u.path == "/api/refs":       # ids the cards name, with their text: conditions/*.json and every output type's rubric
             conds = {}
-            kinds = j2.j2_types.names() if j2.j2_types.enabled() else list(j2.OUTPUTS)      # every type, new ones too
+            kinds = j2.j2_types.names()      # every type, new ones too
             for f in dict.fromkeys(j2.output_def(k)["conditions"] for k in kinds):
                 conds.update({c["id"]: c["text"] for c in j2.load_conditions(f)})
             rub = {i: t for k in kinds for o in [j2.output_def(k)] for i, t in o.get("rubric") or ()}
@@ -280,7 +280,7 @@ class Handler(http.server.BaseHTTPRequestHandler):
         if u.path.startswith("/site/"):
             if not RUN.sites:
                 return self._send(200, "<p style='font:15px system-ui;color:#667;padding:24px'>Your "
-                                       f"{'document' if RUN.doc else RUN.out['label'].lower() if j2.j2_types.enabled() else 'website'} will appear here once it's built.</p>",
+                                       f"{'document' if RUN.doc else RUN.out['label'].lower()} will appear here once it's built.</p>",
                                   "text/html")
             key = u.path.rsplit("/", 1)[-1]
             i = len(RUN.sites) if key == "latest" else int(key.lstrip("v") or 0)

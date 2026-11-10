@@ -1187,7 +1187,7 @@ def doc_names(text):
     """Proper names a document states: capitalised words that don't start a sentence, line, list item or table cell.
     Ids (R1, G2), section headings and possessives are left out. ponytail: a capitalised common word mid-sentence
     ("the Requirements section") counts unless it is a section word; a real NER pass is the upgrade."""
-    every = sum((doc_sections(k) for k in DOC_SET), ()) if j2_types.enabled() else ALL_DOC_SECTIONS
+    every = sum((doc_sections(k) for k in j2_types.names() if output_def(k)["sections"]), ())
     skip = {w.lower() for s in every + (ASSUMPTIONS_HEADING,) for w in s.split()} | {"i", "assumption"}
     out = set()
     for ln in strip_md(text).splitlines():
@@ -1243,7 +1243,7 @@ def condition_met(cond, doc, goal, source, sections, page=None, mech=None):
                                                  + ("is missing" if missing else "appears"))
         return not missing, f"missing: {missing}" if missing else f"all {len(facts)} brief fact(s) appear"
     if k == "groups-covered":
-        groups, req = user_groups(g), squash(strip_md(md_section(doc, cond.get("section", sec_name("prd", "requirements", "Requirements"))) or ""))
+        groups, req = user_groups(g), squash(strip_md(md_section(doc, cond.get("section", sec_name("prd", "requirements"))) or ""))
         said = squash(strip_md(doc))
         stem = lambda x: squash(x)[:-1] if squash(x).endswith("s") else squash(x)     # "students" -> "student"
         miss = [x for x in groups if stem(x) not in req and not re.search(
@@ -1252,7 +1252,7 @@ def condition_met(cond, doc, goal, source, sections, page=None, mech=None):
                           f"each of the {len(groups)} user group(s) has a requirement or a \"no actions\" statement"
                           if groups else "the charter names no user groups")
     if k == "metric-window":
-        body = md_section(doc, cond.get("section", sec_name("prd", "success_metrics", "Success metrics"))) or ""
+        body = md_section(doc, cond.get("section", sec_name("prd", "success_metrics"))) or ""
         rows = [ln for ln in strip_md(body).splitlines() if re.match(r"\s*(?:[-*+]|\d+[.)]|\|)", ln)
                 and not re.fullmatch(r"\s*\|?[\s|:-]*", ln)]
         num = [r for r in rows if re.search(r"\d", re.sub(r"\b[A-Z]{1,3}-?\d+\b", "", r))]
@@ -1913,7 +1913,6 @@ def mock_page(w, goal, sections, anchors=()):
                        + "</nav>" if more else "") + (items or '<div class="j2-extra"><p>Sample content.</p></div>')
 
 
-PRD_SECTIONS = ("Problem", "Users", "Goals", "Requirements", "Success metrics", "Out of scope")
 
 
 def mock_prd_charter(text):
@@ -1972,7 +1971,7 @@ def mock_form_section(kind, w, goal):
 def mock_doc_section(w, goal):
     """Mock only: the markdown a scripted builder writes for the PRD section its workflow names."""
     many = wf_sections(w, doc_sections("prd"))
-    if len(many) > 1:      # J2_GENERIC=1: a workflow that writes several sections writes each, in order
+    if len(many) > 1:      # a workflow that writes several sections writes each, in order
         return "\n".join(mock_doc_section({**w, "sections": [x]}, goal) for x in many)
     g = goal or {}
     sec = (wf_sections(w, doc_sections("prd")) or doc_sections("prd"))[0]
@@ -2016,85 +2015,14 @@ def mock_doc_atom(w):
 
 # ---- design documents (opt-in): PRD, then HLD, then LLD, built as a chain; the HLD and LLD reuse the PRD path
 # (a document output type: markdown sections, checks by code, no browser, exported to .docx).
-DOC_SET = ("prd", "hld", "lld")
-_DOC_SET_WORDS = re.compile(r"\bdesign\s+(?:docs?|documents?|documentation)\b|\bfull\s+documentation\b", re.I)
-_DOC_WORDS = {"prd": re.compile(r"\bPRDs?\b|\bproduct\s+requirements?\b", re.I),
-              "hld": re.compile(r"\bHLDs?\b|\bhigh[- ]level\s+design\b|\barchitecture\s+overview\b", re.I),
-              "lld": re.compile(r"\bLLDs?\b|\blow[- ]level\s+design\b|\bdetailed\s+design\b", re.I)}
-_SITE_WORDS = re.compile(r"\b(?:web\s?)?sites?\b|\bweb\s?pages?\b|\blanding\s+page\b", re.I)
 
 
-def detect_documents(*texts):
-    """The documents the Requester explicitly asked for, in chain order (PRD, HLD, LLD); [] when none: never a
-    default. A set request ("design docs", "full documentation") means all three. Other uses of the word design
-    ("modern design", "design a logo") match nothing."""
-    text = " ".join(str(t or "") for t in texts)
-    if _DOC_SET_WORDS.search(text):
-        return list(DOC_SET)
-    return [k for k in DOC_SET if _DOC_WORDS[k].search(text)]
 
 
-def wants_site(*texts):
-    """A document request that also names a website: the documents are its blueprint and the site is built after."""
-    return bool(_SITE_WORDS.search(" ".join(str(t or "") for t in texts)))
 
 
-HLD_SECTIONS = ("Purpose and scope", "Pages", "Components", "Data flow", "Hosting and deployment", "Risks")
-LLD_SECTIONS = ("Pages and sections", "Interactive elements", "Form fields", "File structure",
-                "Responsive and accessibility rules")
-ALL_DOC_SECTIONS = PRD_SECTIONS + HLD_SECTIONS + LLD_SECTIONS
 
-HLD_RUBRIC = (("D-1", "Every component has one clear responsibility"),
-              ("D-2", "The data flow names every form and integration the pages need"),
-              ("D-3", "Hosting, deployment and risks are explicit"),
-              ("D-4", "Consistent with the PRD: every requirement has a component"),
-              ("D-5", "No invented facts: every fact comes from the brief or the Requester's answers or the PRD, or is "
-                      "labelled \"Assumption:\"; the evidence quotes each unlabelled claim not in them"))
-LLD_RUBRIC = (("D-1", "Every page section has an id and implements at least one component"),
-              ("D-2", "Every interactive element has a selector, a trigger and a behaviour"),
-              ("D-3", "Every form field has a type, a required flag and a validation rule"),
-              ("D-4", "Consistent with the HLD: every component is built by a section"),
-              ("D-5", "No invented facts: every fact comes from the brief or the Requester's answers or the earlier "
-                      "documents, or is labelled \"Assumption:\"; the evidence quotes each unlabelled claim"))
 
-HLD_BUILDER = """# Workflow agent for an HLD section (one per registered workflow, e.g. "W-7 Builder")
-
-- You exist for one registered workflow: one section of the high-level design. Write that section only, in markdown,
-  starting with its "## <Section>" heading. Never HTML. Code assembles the HLD from every section, in section order.
-- Read the PRD's agent_output in the charter (its requirements R1, R2, ...), not any other text. Use only facts from
-  the charter and the Requester's answers; copy names and numbers exactly.
-- Components are a list, one per line: "- **C1** <Name>: <one-sentence responsibility>. Covers R1, R2." Every PRD
-  requirement is covered by at least one component. Never start another line with a component id.
-- Data flow names every form and integration. Hosting and deployment says where the site lives and how it ships.
-- Any statement beyond the charter and the answers starts with "Assumption:" on its own line or list item. Code
-  collects these lines into "Assumptions to confirm" at the end.
-- If your reply can't be used, code tells you why and you retry, within your envelope. Then report to
-  @Coordination what you changed."""
-LLD_BUILDER = """# Workflow agent for an LLD section (one per registered workflow, e.g. "W-9 Builder")
-
-- You exist for one registered workflow: one section of the low-level design. Write that section only, in markdown,
-  starting with its "## <Section>" heading. Never HTML. Code assembles the LLD from every section, in section order.
-- Read the HLD's agent_output in the charter (its components C1, C2, ...), not any other text. Use only facts from the
-  charter and the Requester's answers.
-- Pages and sections: one line each: "- **S1** `#section-id` (page index.html): <what it shows>. Implements C1, C2."
-- Interactive elements: "- **E1** in S1: `#selector` trigger <click|change|submit|...>; behaviour <what happens>."
-- Form fields: "- **F1** in S1, form `#form-id`: field `name`, type <text|email|...>, required <yes|no>, validation <rule>."
-- File structure, responsive and accessibility rules are short lists. Every id is unique. The page builders will
-  implement exactly this, so write only what must exist.
-- Any statement beyond the charter and the answers starts with "Assumption:" on its own line or list item.
-- If your reply can't be used, code tells you why and you retry, within your envelope. Then report to
-  @Coordination what you changed."""
-HLD_PLAN = ("\nTHE OUTPUT IS AN HLD DOCUMENT (markdown), not a website. Plan exactly one workflow per HLD section, in "
-            f"this order: {', '.join(HLD_SECTIONS)}; each has one work atom whose how.steps names the section heading it "
-            "writes (e.g. \"## Components\"). covers lists the done-when items about that section. The Components "
-            "workflow must name every requirement id it covers (R1, R2, ...). Price them with the document rate card: "
-            "doc_section, or requirements_section for Components; fixes with 'fix'. Components are C1, C2, ....")
-LLD_PLAN = ("\nTHE OUTPUT IS AN LLD DOCUMENT (markdown), not a website. Plan exactly one workflow per LLD section, in "
-            f"this order: {', '.join(LLD_SECTIONS)}; each has one work atom whose how.steps names the section heading it "
-            "writes (e.g. \"## Form fields\"). covers lists the done-when items about that section. The Pages and "
-            "sections workflow must name every component id it implements (C1, C2, ...). Price them with the document "
-            "rate card: doc_section, or requirements_section for Pages and sections; fixes with 'fix'. Sections are S1, "
-            "S2, ...; elements E1, ...; fields F1, ....")
 
 
 def _md_list(doc, section):
@@ -2104,7 +2032,7 @@ def _md_list(doc, section):
 def parse_hld(doc):
     """The HLD's components: [{"id", "name", "responsibility", "covers": [R ids]}], read from the Components section."""
     out = []
-    for ln in _md_list(doc, sec_name("hld", "components", "Components")):
+    for ln in _md_list(doc, sec_name("hld", "components")):
         m = re.match(r"\s*(?:[-*+]\s+)?(C\d+)\b\s*[:.-]?\s*(.*)$", ln)
         if m:
             name, _, rest = m[2].partition(":")
@@ -2121,19 +2049,19 @@ def parse_lld(doc):
     raw = lambda s: [ln for ln in (md_section(doc, s) or "").splitlines() if ln.strip()]
     tick = lambda ln: re.findall(r"`([^`]+)`", ln)
     secs, els, flds = [], [], []
-    for ln in raw(sec_name("lld", "sections", "Pages and sections")):
+    for ln in raw(sec_name("lld", "sections")):
         if m := re.match(r"\s*(?:[-*+]\s+)?(?:\*\*)?(S\d+)(?:\*\*)?\b(.*)$", ln):
             t = tick(m[2])
             page = re.search(r"page\s+`?([\w./-]+)`?", m[2])
             secs.append({"id": m[1], "anchor": next((x[1:] for x in t if x.startswith("#")), None),
                          "page": page[1] if page else None, "implements": list(dict.fromkeys(re.findall(r"\bC\d+\b", m[2])))})
-    for ln in raw(sec_name("lld", "elements", "Interactive elements")):
+    for ln in raw(sec_name("lld", "elements")):
         if m := re.match(r"\s*(?:[-*+]\s+)?(?:\*\*)?(E\d+)(?:\*\*)?\s+in\s+(S\d+)\s*:?\s*(.*)$", ln):
             t = tick(m[3])
             tr, bh = re.search(r"trigger\s+([^;]+)", m[3]), re.search(r"behaviou?r\s+(.+)", m[3])
             els.append({"id": m[1], "section": m[2], "selector": t[0] if t else None,
                         "trigger": tr[1].strip() if tr else None, "behaviour": bh[1].strip(" .") if bh else None})
-    for ln in raw(sec_name("lld", "form_fields", "Form fields")):
+    for ln in raw(sec_name("lld", "form_fields")):
         if m := re.match(r"\s*(?:[-*+]\s+)?(?:\*\*)?(F\d+)(?:\*\*)?\s+in\s+(S\d+)\s*,?\s*(.*)$", ln):
             t = tick(m[3])
             fld = re.search(r"field\s+`([^`]+)`", m[3])
@@ -2149,7 +2077,7 @@ def parse_lld(doc):
 def doc_agent_output(kind, doc):
     """The document-level agent_output the next document reads instead of the whole text (built by code)."""
     if kind == "prd":
-        body = md_section(doc, sec_name("prd", "requirements", "Requirements")) or ""
+        body = md_section(doc, sec_name("prd", "requirements")) or ""
         return {"kind": "prd", "requirements": [{"id": f"R{m[1]}", "text": m[2].strip()} for m in
                                                re.finditer(r"(?m)^\s*(?:[-*+]\s+|\d+[.)]\s+)?(?:\*\*)?R(\d+)(?:\*\*)?\s*[:.-]?\s*(.+)$",
                                                            strip_md(body))]}
@@ -2188,7 +2116,7 @@ def lld_condition(k, doc):
 def mock_hld_section(w, goal):
     """Mock only: the markdown a scripted builder writes for the HLD section its workflow names, from the charter."""
     many = wf_sections(w, doc_sections("hld"))
-    if len(many) > 1:      # J2_GENERIC=1: a workflow that writes several sections writes each, in order
+    if len(many) > 1:      # a workflow that writes several sections writes each, in order
         return "\n".join(mock_hld_section({**w, "sections": [x]}, goal) for x in many)
     g = goal or {}
     sec = (wf_sections(w, doc_sections("hld")) or doc_sections("hld"))[0]
@@ -2212,7 +2140,7 @@ def mock_hld_section(w, goal):
 def mock_lld_section(w, goal):
     """Mock only: the markdown for the LLD section a workflow names, one page section per HLD component."""
     many = wf_sections(w, doc_sections("lld"))
-    if len(many) > 1:      # J2_GENERIC=1: a workflow that writes several sections writes each, in order
+    if len(many) > 1:      # a workflow that writes several sections writes each, in order
         return "\n".join(mock_lld_section({**w, "sections": [x]}, goal) for x in many)
     g = goal or {}
     sec = (wf_sections(w, doc_sections("lld")) or doc_sections("lld"))[0]
@@ -2252,12 +2180,8 @@ def doc_atom_for(secs, ids_in):
     return make
 
 
-def export_hld(doc, run_dir):
-    return export_docx(doc, os.path.join(run_dir, "hld.docx"))
 
 
-def export_lld(doc, run_dir):
-    return export_docx(doc, os.path.join(run_dir, "lld.docx"))
 
 
 def stage_goal(kind, base, chain):
@@ -2284,34 +2208,6 @@ def stage_goal(kind, base, chain):
 # ---- what the department builds: one registry entry per output type. The flow, agents, budget, rulings, receipts
 # and the 3-attempt rule are shared; an entry says what is built and how it is checked. A document type (sections
 # set) is markdown assembled in section order, checked by code with no browser, and exported at the end.
-DOC_RUBRIC = (("D-1", "Every requirement is specific and testable"),
-              ("D-2", "Goals and success metrics are measurable"),
-              ("D-3", "Users and problem are consistent with the requirements"),
-              ("D-4", "Out of scope is explicit"),
-              ("D-5", "No invented facts: every fact comes from the brief or the Requester's answers, or is labelled "
-                      "\"Assumption:\"; the evidence quotes each unlabelled claim not in the brief"))
-PRD_BUILDER = """# Workflow agent for a PRD section (one per registered workflow, e.g. "W-1 Builder")
-
-- You exist for one registered workflow: one section of the PRD. Write that section only, in markdown, starting
-  with its "## <Section>" heading. Never HTML. Code assembles the PRD from every section, in section order.
-- Use only facts from the charter and the Requester's answers; copy names and numbers exactly. Never write
-  "to be confirmed": a missing fact is Identity's question to the Requester.
-- Requirements are a numbered list, one per line: "1. **R1**: ...". Goals are "- **G1**: ...". Every success
-  metric names the goal it measures (a table row "| G1 | metric |" or a line "- **G1**: ..."). Mention an id
-  inside a sentence anywhere else, never at the start of a line.
-- Each requirement is specific and testable; goals and metrics are measurable; out of scope is explicit.
-- Every user group the charter names either has requirements that name it, or, when the charter records no actions
-  for it, this line in the Users section: "<Group> have no actions in this version." Never invent what a group does.
-- A numeric success metric states its measurement window ("per week", "within 3 months"); if the charter gives
-  none, write "measurement window not set".
-- Any statement that goes beyond the charter and the Requester's answers starts with "Assumption:" on its own line
-  or list item. Nothing else may add a claim. Code collects these lines into "Assumptions to confirm" at the end.
-- Never write an "Assumptions to confirm" heading or list yourself, and never repeat a claim without the label: every
-  line that carries an assumption starts with "Assumption:", wherever it is.
-- Never start a sentence with a capitalised word followed by "PRD" or another capitalised word that is not in the
-  charter ("This PRD ..."): the invented-names check reads it as a made-up name. Write "This document ...".
-- If your reply can't be used, code tells you why and you retry, within your envelope. Then report to
-  @Coordination what you changed."""
 # A documents run that ends with the website: its details are asked once, before the first document (the answers go into the
 # charter every stage uses), and the website stage asks again only for what is genuinely missing.
 SITE_FIRST = ("\nA website will be built from these documents. In this same round, also ask the Requester (one question) "
@@ -2321,50 +2217,6 @@ SITE_FIRST = ("\nA website will be built from these documents. In this same roun
               "them. If the brief already gives them, ask nothing about them.")
 SITE_LATER = ("\nThe documents are written and the Requester was already asked for the website's details before them (see "
               "EARLIER QUESTIONS AND ANSWERS). Ask again only for what is genuinely missing; never repeat a question.")
-PRD_INTAKE = ("J2.a for a PRD: is there enough information to write it? You need these product facts: the product "
-              "name, who the users are, the problem, the must-have features, constraints, and how success is measured. "
-              "Ask the Requester only for the ones the brief lacks (set enough=false, 1-4 specific questions); ask about "
-              "nothing else, and never invent a fact. Enough: set enough=true and record the charter from the brief and "
-              "the answers only. Name every user group in user_groups. For each group whose actions the brief doesn't give, ask "
-              "the Requester what that group does in the product; if they don't say, record its actions as []. When a "
-              "success measure is a number, ask for its measurement window (\"over what time?\") in the same question "
-              "as the number, unless the brief gives one. done_when is the checklist for the PRD: checkable items for its sections (Problem, "
-              "Users, Goals, Requirements, Success metrics, Out of scope), each checkable by reading the document and "
-              "each checking one thing (a section that needs two checks gets two items); mark "
-              "core=true for the problem, the requirements and the success metrics. facts: the exact strings from the "
-              "brief or the answers that the PRD must contain (product name, numbers, feature names). Done-when may not "
-              "refer to the Requester, Audit, verification, approval or launch. Keep everything the brief asks for; if "
-              "the charter leaves any of it out, list it in dropped_from_brief with the reason. Don't plan costs.")
-PRD_CHARTER_FMT = ('{"statement": str, "product_name": str, "users": str, "problem": str, "features": [str] (the '
-                   'must-have features), "user_groups": [{"name": str, "actions": [str] (what the group does, from the '
-                   'brief or the answers; [] if the Requester didn\'t say)}], "constraints": [str], "success_measures": [str], "facts": [str] (exact strings '
-                   'from the brief or the answers the PRD must contain), "standards": [str], "rules": [str], '
-                   '"done_when": [str], "core": [bool] (one per done-when item, same order), '
-                   '"to_be_confirmed": [{"item": int (done-when item number), "fact": str}], "dropped_from_brief": [str]}')
-PRD_PLAN = ("\nTHE OUTPUT IS A PRD DOCUMENT (markdown), not a website. Plan exactly one workflow per PRD section, in this "
-            f"order: {', '.join(PRD_SECTIONS)}; each has one work atom whose how.steps names the section heading it "
-            "writes (e.g. \"## Problem\"). covers lists the done-when items about that section. Price them with the "
-            "document rate card: doc_section, or requirements_section for Requirements; fixes with 'fix'. Requirements "
-            "are numbered R1, R2, ...; goals G1, G2, ...; each success metric names the goal it measures.")
-PRD_ATOM_RULES = ("\nWORK ATOMS: every workflow, fixes included, carries atoms: exactly one work atom for now, id \"a1\" "
-                  "(code renames it W-n.a1 at registration). goal: what must be true when it is done, one sentence. "
-                  "constraints: short strings, what must never break. context: references only, charter item numbers "
-                  "and section ids, never copied text. how: {kind: \"AI\" or \"code\", agent: who builds it, steps: which "
-                  "\"## <Section>\" it writes}. expected_output: written now, before any build: a short list of the "
-                  "concrete things that must exist in the PRD when the atom is done, each {text: the thing in plain "
-                  "words, kind, target}: heading (target: the section heading text, no # characters), ids (target: the "
-                  "id prefix, \"R\" for requirement ids R1, R2, ...), facts (target: a list of strings copied exactly "
-                  "from the charter or the Requester's answers). Code turns each item into a check and reports it met "
-                  "or not met; an item no check can verify, or an empty list, is rejected. "
-                  "verification: the checks code runs on the PRD after the builder writes it "
-                  "(the builder gets 3 attempts), each {text: the check in plain words, type, target, expect}. Only these "
-                  "types: heading-present (target: the section heading text only, with no # characters, e.g. \"Problem\"; "
-                  "expect true); section-not-empty (target: the heading text only, no # characters; expect: the minimum "
-                  "number of words); ids-unique (target: an id prefix, \"R\" for R1, R2, "
-                  "...; expect true); facts-present (target: a list of strings that must all appear in the document; "
-                  "expect true). No browser checks. Each facts-present string is copied exactly from the charter or the "
-                  "Requester's answers (no invented facts). A goal that names a number needs a facts-present check. A "
-                  "workflow whose atom breaks a rule or lacks a field is rejected.")
 DOC_NOTE = ("\nOUTPUT TYPE: {label}. The department writes a markdown document, not a website: where a role file says "
             "site, website, page or HTML, read the document. There is no browser check, style guide or design rubric; "
             "Audit uses the document rubric and code checks the necessary conditions.")
@@ -2372,54 +2224,22 @@ WF_TYPES = '"file-exists"|"grep-count"|"element-count"|"named-test"|"facts-prese
 WF_KINDS = '"section"|"element"|"facts"|"file"|"test"|"tap"|"behavior"'
 
 
-def export_prd(doc, run_dir):
-    """prd.docx next to prd.md. None when written, else why not."""
-    return export_docx(doc, os.path.join(run_dir, "prd.docx"))
 
 
-OUTPUTS = {
-    "website": {"label": "Website", "noun": "site", "sections": (), "conditions": "website.json", "rubric": RUBRIC,
-                "rates": "rates", "check_types": CHECK_TYPES, "builder": "builder.md", "export": None,
-                "done": WORKABLE_OUTCOME},
-    "prd": {"label": "PRD document", "noun": "PRD", "sections": PRD_SECTIONS, "conditions": "prd.json",
-            "rubric": DOC_RUBRIC, "rates": "rates_prd", "check_types": DOC_CHECK_TYPES, "builder": PRD_BUILDER,
-            "export": export_prd, "file": "prd.md", "intake": PRD_INTAKE, "charter_fmt": PRD_CHARTER_FMT,
-            "plan": PRD_PLAN, "atom_rules": PRD_ATOM_RULES, "mock_charter": mock_prd_charter,
-            "mock_section": mock_doc_section, "mock_atom": mock_doc_atom,
-            "done": "Done: the PRD is workable. Every done-when item, rubric item and necessary condition passes."},
-}
-OUTPUTS["hld"] = {"label": "HLD document", "noun": "HLD", "sections": HLD_SECTIONS, "conditions": "hld.json",
-                  "rubric": HLD_RUBRIC, "rates": "rates_prd", "check_types": DOC_CHECK_TYPES, "builder": HLD_BUILDER,
-                  "export": export_hld, "file": "hld.md", "plan": HLD_PLAN,
-                  "intake": PRD_INTAKE.replace("PRD", "HLD"), "charter_fmt": PRD_CHARTER_FMT,
-                  "mock_charter": mock_prd_charter,
-                  "atom_rules": PRD_ATOM_RULES.replace("PRD", "HLD"), "mock_section": mock_hld_section,
-                  "mock_atom": doc_atom_for(HLD_SECTIONS, {"Components": "C"}),
-                  "done": "Done: the HLD is workable. Every done-when item, rubric item and necessary condition passes."}
-OUTPUTS["lld"] = {"label": "LLD document", "noun": "LLD", "sections": LLD_SECTIONS, "conditions": "lld.json",
-                  "rubric": LLD_RUBRIC, "rates": "rates_prd", "check_types": DOC_CHECK_TYPES, "builder": LLD_BUILDER,
-                  "export": export_lld, "file": "lld.md", "plan": LLD_PLAN,
-                  "intake": PRD_INTAKE.replace("PRD", "LLD"), "charter_fmt": PRD_CHARTER_FMT,
-                  "mock_charter": mock_prd_charter,
-                  "atom_rules": PRD_ATOM_RULES.replace("PRD", "LLD"), "mock_section": mock_lld_section,
-                  "mock_atom": doc_atom_for(LLD_SECTIONS, {"Pages and sections": "S", "Interactive elements": "E",
-                                                           "Form fields": "F"}),
-                  "done": "Done: the LLD is workable. Every done-when item, rubric item and necessary condition passes."}
 OUTPUT = "website"     # the current run's output type (set by load_rates at each reset; one run at a time, like NAMES)
 
 
 def output_type(name=None):
-    """A known output type: name, else J2_OUTPUT, else website."""
-    t = str(name or os.getenv("J2_OUTPUT") or "website").strip().lower()
-    return t if t in OUTPUTS or (j2_types.enabled() and t in j2_types.names()) else "website"
+    """A known output type (artifacts/types.json): name, else the start type (j2_types.default)."""
+    t = str(name or "").strip().lower()
+    return t if t in j2_types.names() else j2_types.default()
 
 
-GENERIC_TYPES = ("website", "prd", "hld", "lld")      # the types j2_types reads from data under J2_GENERIC=1 (docs/remove-hardcoding-plan.md)
 
 
 def output_def(kind):
-    """What an output type is: its OUTPUTS entry, or under J2_GENERIC=1 the same entry read from data (j2_types)."""
-    return _data_type(kind) if j2_types.enabled() and (kind in GENERIC_TYPES or kind in j2_types.names()) else OUTPUTS[kind]
+    """What an output type is, read from artifacts/types.json and its files (j2_types)."""
+    return _data_type(kind)
 
 
 @lru_cache(maxsize=None)
@@ -2437,33 +2257,29 @@ def _data_type(kind):
 
 
 def doc_sections(kind):
-    """A document type's section names: OUTPUTS, or under J2_GENERIC=1 its template (templates/<kind>/generic.json)."""
+    """A document type's section names, from its template (templates/<kind>/generic.json)."""
     return tuple(output_def(kind)["sections"])
 
 
-def sec_name(kind, field, name):
-    """The heading of the section that holds `field`: under J2_GENERIC=1 read from the type's template, else name."""
-    return j2_types.section_of(kind, field) if j2_types.enabled() else name
+def sec_name(kind, field):
+    """The heading of the section that holds `field`, read from the type's template."""
+    return j2_types.section_of(kind, field)
 
 
 def wf_sections(w, secs):
-    """The sections a document workflow writes: under J2_GENERIC=1 its optional "sections" field (the planner names
-    them), else (and when it names none of secs) the first section its name names, as today."""
-    own = w.get("sections") if j2_types.enabled() and isinstance(w.get("sections"), list) else []
+    """The sections a document workflow writes: its optional "sections" field (the planner names them), else (and
+    when it names none of secs) the first section its name names."""
+    own = w.get("sections") if isinstance(w.get("sections"), list) else []
     return [x for x in secs if x in own] or [x for x in secs if x.lower() in str(w.get("name")).lower()][:1]
 
 
 def doc_cites(kind):
-    """{section: (cited type, its list, the citing field)}: under J2_GENERIC=1 the template's cross-document ref_exists
-    rules, else the HLD Components citing PRD requirements and the LLD Pages and sections citing HLD components."""
-    if j2_types.enabled():
-        return j2_types.cites(kind)
-    return {"hld": {"Components": ("prd", "requirements", "covers")},
-            "lld": {"Pages and sections": ("hld", "components", "implements")}}.get(kind, {})
+    """{section: (cited type, its list, the citing field)}: the template's cross-document ref_exists rules."""
+    return j2_types.cites(kind)
 
 
 def doc_plan_data(kind):
-    """J2_GENERIC=1: what Adaptation's document task carries instead of the fixed plan (templates/<kind>/plan.md): the
+    """What Adaptation's document task carries (there is no fixed plan): the
     type's sections from its template, in document order, with their fields, as data; then the planning guidance
     plan.md gave, made from the same data (section parts, citations, id formats, in-document references)."""
     o, secs = output_def(kind), j2_types.sections(kind)
@@ -2921,7 +2737,6 @@ def saved_output(d):
     return output_type(head.get("output") or "website")
 
 
-DOC_NAMES = {"prd": "product requirements", "hld": "high-level design", "lld": "low-level design"}   # plain words
 
 
 def output_info(out, run_dir, audits, docset=None):
@@ -2934,14 +2749,13 @@ def output_info(out, run_dir, audits, docset=None):
         files = [f for k in docset for f in (f"{k}.md", f"{k}.docx") if os.path.exists(os.path.join(run_dir, f))]
     return {"output": out, "output_label": o["label"], "doc": bool(o["sections"]),
             "rubric": o["rubric"], "conditions": (audits[-1].get("conditions") if audits else None), "files": files,
-            "docset": docset, "docset_files": [{"kind": k, "label": DOC_NAMES.get(k) or j2_types.info(k)["label"].lower(),
+            "docset": docset, "docset_files": [{"kind": k, "label": j2_types.info(k)["label"].lower(),
                                                 "md": f"{k}.md", "docx": f"{k}.docx"}
                                                for k in docset if os.path.exists(os.path.join(run_dir, f"{k}.md"))],
-            # J2_GENERIC=1: what the page shows of every type (labels, tags, forms), so no screen text assumes a website
-            **({"generic": True, "types": {n: {k: j2_types.info(n)[k] for k in ("label", "form", "file", "ready")}
+            # what the page shows of every type (labels, tags, forms), so no screen text assumes a website
+            "generic": True, "types": {n: {k: j2_types.info(n)[k] for k in ("label", "form", "file", "ready")}
                                            | {"tag": t.get("tag")} for n in j2_types.names()
                                            for t in [next(x for x in j2_types._read_types()["types"] if x["name"] == n)]}}
-               if j2_types.enabled() else {})}
 
 
 def atom_section_body(d, wfs, atom_id):
@@ -3059,9 +2873,9 @@ class J2Run:
     def _apply_output(self, out):
         """Switch what is built (set_output before the first message; a design-document run at each stage)."""
         self.output = output_type(out)
-        self.out = output_def(self.output)      # J2_GENERIC=1: from artifacts/types.json (j2_types)
-        # J2_GENERIC=1: how it is built and checked follows its form (page or document), not its name
-        self.doc = j2_types.info(self.output)["form"] == "document" if j2_types.enabled() else bool(self.out["sections"])
+        self.out = output_def(self.output)      # from artifacts/types.json (j2_types)
+        # how it is built and checked follows its form (page or document), not its name
+        self.doc = j2_types.info(self.output)["form"] == "document"
         # J2_REALIZATION: no rate card; Adaptation estimates each workflow's budget (estimated_resources.money)
         load_rates(self.output, card=not (getattr(self, "realization", None) or realization_on()))
         types = "|".join(f'"{t}"' for t in self.out["check_types"])
@@ -3681,7 +3495,7 @@ class J2Run:
             if h.get("why"):
                 h["why"] += f" The Requester answered: {last_user}"
             self._handoff(p["to"], **h, answer=last_user, asked=p["questions"])
-            if self._plan_stages() is False:      # J2_GENERIC=1: the plan chose no buildable type
+            if self._plan_stages() is False:      # the plan chose no buildable type
                 self.turn = None
         else:
             if not self.goal:
@@ -3807,25 +3621,21 @@ class J2Run:
     # ---- design documents: stages. PRD, HLD and LLD run one after another through the same flow (each its own output
     # type, charter, plan, build and audit); the site follows when it was asked for. Plain runs never get here.
     SITE_ESSENTIALS = ("styling", "page_section", "page_section", "page_section", "form")   # parts the site needs first
-    mock_deliverables = None      # J2_GENERIC=1, offline: the planner's choice, set per test (default: the keyword logic's)
+    mock_deliverables = None      # offline: the planner's choice, set per test (default: the types the brief names, j2_types.named)
 
     def _plan_stages(self):
         """Once, before the charter: the documents the brief or the answers ask for by name (detect_documents). None
         asked: nothing changes. The first document's output type is picked here; a site follows only if it was named.
-        J2_GENERIC=1: the types come from Adaptation's planner instead (_deliverables); one page type alone is the plain
+        the types come from Adaptation's planner instead (_deliverables); one page type alone is the plain
         run of that type. False when the plan chose no buildable type (the run stops)."""
         if self.stages or self.goal:
             return
         said = [self.request] + [x["answer"] for x in self.intake]
-        site = None
-        if j2_types.enabled():
-            chosen = self._deliverables(said)
-            if chosen is None:
-                return False
-            docs = [k for k in chosen if output_def(k)["sections"]]
-            site = [k for k in chosen if k not in docs]
-        else:
-            docs = detect_documents(*said)
+        chosen = self._deliverables(said)
+        if chosen is None:
+            return False
+        docs = [k for k in chosen if output_def(k)["sections"]]
+        site = [k for k in chosen if k not in docs]
         deeds = j2_send.detect_deeds(*said)
         for k in deeds:      # the brief never chooses the recipient: say so once, in plain words
             if j2_send.names_other(k, *said) and k not in self.deed_seen:
@@ -3843,23 +3653,19 @@ class J2Run:
             return
         self.docset = docs
         # ponytail: documents first, then sends, then pages, whatever order the plan gave (the stage flow knows no other)
-        self.stages = docs + deeds + (site if site is not None else ["website"] if wants_site(*said) else [])
+        self.stages = docs + deeds + site
         self.stage_i = 0
         self._apply_output(self.stages[0])
         self.site_tag = self.stages[0] + "-" if len(self.stages) > 1 else ""      # one document keeps its plain file names
         self.stage_checked = False       # the funding of the whole chain is checked once, when the first stage's plan starts
-        if j2_types.enabled():      # each type by its own noun; the pages after them by their label
-            names = and_list(f"the {output_def(k)['noun']}" for k in docs)
-            then = "".join(f", then {self._sw(k)}" for k in self.stages if k not in docs and k not in j2_send.DEEDS)
-        else:
-            names = " and ".join(f"the {k.upper()}" for k in docs) if len(docs) < 3 else "the PRD, the HLD and the LLD"
-            then = ", then the website" if "website" in self.stages else ""
+        names = and_list(f"the {output_def(k)['noun']}" for k in docs)      # each type by its own noun
+        then = "".join(f", then {self._sw(k)}" for k in self.stages if k not in docs and k not in j2_send.DEEDS)
         self.post("system", f"Documents asked for: {names}" + then
                   + (f", then {and_list(j2_send.DEEDS[k]['words'] for k in deeds)} of the last document" if deeds else "")
                   + ". They are written in that order, each from the one before.")
 
     def _deliverables(self, said):
-        """J2_GENERIC=1: the types to build, in order, chosen by Adaptation's planner from the brief and the answers so
+        """the types to build, in order, chosen by Adaptation's planner from the brief and the answers so
         far (j2_realization.plan_goal with the type list: checked by code, judged, revised like any plan fault).
         Offline, the planner answers what the keyword logic chose (or mock_deliverables). Records deliverables.json.
         None when even the revised plan names no type in artifacts/types.json."""
@@ -3869,8 +3675,7 @@ class J2Run:
         def offline(i):
             if self.mock_deliverables is not None:
                 return self.mock_deliverables(i) if callable(self.mock_deliverables) else self.mock_deliverables
-            docs = detect_documents(*said)
-            return docs + (["website"] if wants_site(*said) else []) if docs else [self.output]
+            return j2_types.named(" ".join(str(t or "") for t in said)) or [self.output]
         note = (f"\nThe Requester chose the {output_def(self.output)['label']} on the start page: include it."
                 if self.output != "website" else "")
         r = j2_realization.plan_goal(goal, web=False, log=lambda m: None, extra=note, types=types,
@@ -3942,27 +3747,28 @@ class J2Run:
         r, n = RATES_DOC(), len(output_def(kind)["sections"])
         return r.get("doc_section", 0) * (n - 1) + r.get("requirements_section", 0)
 
-    STAGE_WORDS = {"prd": "the product requirements", "hld": "the high-level design", "lld": "the low-level design",
-                   "website": "the website", **{k: f"the {d['words']}" for k, d in j2_send.DEEDS.items()}}
+    @staticmethod
+    def stage_words():
+        """Every stage in words: each type by its own label ("the product requirements"), each send by its words."""
+        return {**{k: f"the {j2_types.info(k)['label'].lower()}" for k in j2_types.names()},
+                **{k: f"the {d['words']}" for k, d in j2_send.DEEDS.items()}}
 
     def _builder_for(self, fn):
-        """A workflow agent's builder guidance: under J2_GENERIC=1 its stage's own persona when stages.json names one
+        """A workflow agent's builder guidance: under its stage's own persona when stages.json names one
         ("skill": a role file in agents/j2), else its form's builder. Today no stage names one."""
-        if j2_types.enabled() and is_wf_agent(fn):
+        if is_wf_agent(fn):
             skill = STAGE_SKILLS.get(str((self._wf(fn) or {}).get("stage") or ""))
             if skill:
                 return skill
         return self.out["builder"]
 
     def _sw(self, k):
-        """A stage in words ("the product requirements"): STAGE_WORDS, or under J2_GENERIC=1 the type's own label."""
-        if j2_types.enabled() and k in j2_types.names():
-            return f"the {j2_types.info(k)['label'].lower()}"
-        return self.STAGE_WORDS[k]
+        """A stage in words (stage_words)."""
+        return self.stage_words()[k]
 
     def _page_ready(self):
-        """The done message of a single output: "Your website is ready.", or under J2_GENERIC=1 the type's form's own."""
-        return j2_types.info(self.output)["ready"] if j2_types.enabled() else "Your website is ready."
+        """The done message of a single output: its type's form's own ("Your website is ready.")."""
+        return j2_types.info(self.output)["ready"]
 
     def _advance(self, i):
         """Start stage i, unless the credits left can't cover it and the rest (then the Requester is asked). False when
@@ -5000,7 +4806,7 @@ class J2Run:
         stale = (self.last_limit and self.last_limit["state"] == state and self.last_limit["decision"] == "continue"
                  and not h.get("budget_needed"))
         opts, budget, choices = [], [], []
-        dw = (self.STAGE_WORDS.get(self.stage_kind) or f"the {self.out['noun']}") if self.doc else None   # a document in plain words
+        dw = (self.stage_words().get(self.stage_kind) or f"the {self.out['noun']}") if self.doc else None   # a document in plain words
         later = self.stages[self.stage_i + 1:] if self.doc and self.stages else []
         if (not short or self.budget + add - self.spent >= cheapest) and not stale and (add or not h.get("budget_needed")):
             more = f"the team works on what is not right in {dw}" if dw else "you get more of the missing parts built"
@@ -5753,7 +5559,7 @@ class J2Run:
                       "budget, cost or cutting. When the done-when items cost more than the budget left, still PROPOSE "
                       "the best set that fits and list each item you leave out in left_out with its reason. Never leave "
                       f"out these items (the no-errors check and the brief's core facts): {keep}."
-                      + ((doc_plan_data(self.output) if j2_types.enabled() else self.out["plan"]) if self.doc else "")
+                      + (doc_plan_data(self.output) if self.doc else "")
                       + self._blueprint_plan() + self.ATOM_RULES
                       + f"\nNECESSARY CONDITIONS (code checks every one on the built {self.out['noun']}; it is workable "
                       "only when all are met, so your plan must build what each needs):\n"
@@ -5808,8 +5614,8 @@ class J2Run:
             self.real_summary["proposed"] = {"planned": planned, "followed": [n for n in planned if n in got],
                                              "not_proposed": [n for n in planned if n not in got],
                                              "extra": [n for n in got if n not in planned]}
-        if not wfs and act != "POLICY_QUESTION" and self.doc and j2_types.enabled() and not self.workflows:
-            # J2_GENERIC=1: a document's workflows are the planner's; there is no fixed plan to fall back to
+        if not wfs and act != "POLICY_QUESTION" and self.doc and not self.workflows:
+            # a document's workflows are the planner's; there is no fixed plan to fall back to
             self._event("adaptation", "fault", f"no workflows planned for the {self.out['noun']}")
             self.post("system", f"Fault: Adaptation planned no workflows for the {self.out['noun']}, so nothing can be "
                                 "built. J2 does not fall back to a fixed one-workflow-per-section plan.", warning=True)
@@ -5872,9 +5678,7 @@ class J2Run:
                  "is Audit's job: never plan check, review, QA, test or report workflows.")
 
     def _real_note(self):
-        """REAL_NOTE, or under J2_GENERIC=1 the same rules for the chosen type (artifacts/types.json)."""
-        if not j2_types.enabled():
-            return self.REAL_NOTE
+        """The rules of the J2 system for the realization planner, for the chosen type (artifacts/types.json)."""
         t = next(x for x in j2_realization.type_list() if x["name"] == self.output)
         return (f"\nTHIS PLAN RUNS IN J2. Every workflow becomes one funded J2 workflow with one output, run in "
                 f"dependency order. The run builds the {t['label']} ({t['file']}, a {t['form']}). A workflow's output is "
@@ -5885,7 +5689,7 @@ class J2Run:
 
     def _realization_applies(self):
         """J2_REALIZATION=1 shapes the first plan of a website run (not documents, a blueprint build or a change request;
-        a change that needs a full re-plan, J2_CHANGE=1, is planned through it once more). J2_GENERIC=1: every run,
+        a change that needs a full re-plan, J2_CHANGE=1, is planned through it once more). every run,
         documents included, is first planned before the charter to choose its deliverables (_deliverables); this
         per-charter plan stays website-only, so a document stage's prompts are unchanged (doc_unchanged)."""
         return (self.realization and self.goal and not self.doc and not self.blueprint
@@ -6285,7 +6089,7 @@ class J2Run:
         crit, secs = (self.goal or {}).get("done_when") or [], self.out["sections"]
         sec_of = lambda text: next((x for x in secs if x.lower() in str(text).lower()), None)
         if not self.workflows:
-            link = {x: f"{c[0]}_ids" for k in DOC_SET for x, c in doc_cites(k).items()}      # the ids the plan must name (a chain link)
+            link = {x: f"{c[0]}_ids" for k in j2_types.names() for x, c in doc_cites(k).items()}      # the ids the plan must name (a chain link)
             ids = lambda x: ((self.goal or {}).get("chain") or {}).get(link.get(x)) or []
             wfs = [{"name": f"Write {x}", "goal_gap": f"The {self.out['noun']} has no {x} section yet", "parts": [item_kind(x)],
                     "covers": [self._no(c) for c in crit if sec_of(c) == x], "outputs": [self.out["file"]],
@@ -6454,7 +6258,7 @@ class J2Run:
                 r = self._atoms_checked(self.call("adaptation", fmt, task + "\nTHE VALIDATOR FLAGGED YOUR PLAN: " + why
                                                   + ". Put that work in a workflow and send your whole reply again.", mock),
                                         fmt, task, mock)
-            elif any(c.get("text") == "document plan" for c in gaps):      # J2_GENERIC=1: _doc_plan_gaps
+            elif any(c.get("text") == "document plan" for c in gaps):      # _doc_plan_gaps
                 self.post("system", f"The {self.out['noun']} plan still has gaps after one revision: {why}. It goes ahead; "
                                     "the validator refuses what can't be built and Audit's checks show the rest.", warning=True)
             else:
@@ -6463,12 +6267,12 @@ class J2Run:
         return r
 
     def _doc_first_plan(self, r):
-        """J2_GENERIC=1: Adaptation's first proposal for a document stage (the planner's own workflows)."""
-        return (j2_types.enabled() and self.doc and not self.workflows
+        """Adaptation's first proposal for a document stage (the planner's own workflows)."""
+        return (self.doc and not self.workflows
                 and str(r.get("act") or "PROPOSE").upper() == "PROPOSE")
 
     def _doc_remap(self, r):
-        """J2_GENERIC=1, a document's first plan: a done-when item that names a section is covered by the one workflow
+        """a document's first plan: a done-when item that names a section is covered by the one workflow
         that writes that section (taken out of the others' covers). Other items keep the covers the planner gave."""
         if not self._doc_first_plan(r):
             return
@@ -6485,7 +6289,7 @@ class J2Run:
             owner["covers"] = list(owner.get("covers") or []) + [no]
 
     def _doc_plan_gaps(self, r):
-        """J2_GENERIC=1, a document's first plan, worded for the plan flag: no workflows; a workflow that names no
+        """a document's first plan, worded for the plan flag: no workflows; a workflow that names no
         section or one the template doesn't have; a section no workflow writes or two write; a done-when item (not left
         out) that no workflow covers (R1) or two cover (R2)."""
         if not self._doc_first_plan(r):
@@ -6547,7 +6351,7 @@ class J2Run:
         out = [f"work atom {n}: {x}" for n, a in enumerate(w["atoms"], 1)
                for x in expected_problems(a, types) or check_problems(cover_expected(copy.deepcopy(a)), src, types, up,
                                                                       ranges=real)]
-        if j2_types.enabled() and self.doc and not w.get("revises") and "fix" not in (w.get("parts") or []):
+        if self.doc and not w.get("revises") and "fix" not in (w.get("parts") or []):
             # every section the workflow writes has its own heading-present and section-not-empty check (any atom)
             # (a target that names the section counts: its exact form is the check's own concern, CHECK_WRONG)
             have = [(c.get("type"), heading_target(c.get("target")).lower()) for a in w["atoms"] if isinstance(a, dict)
@@ -7169,10 +6973,10 @@ class J2Run:
             lld = [str(i) for i in (w.get("lld_sections") or self.proposed_lld.get(name) or [])] if self.blueprint else []
             unknown_lld = [i for i in lld if i not in {x["id"] for x in self.blueprint["sections"]}] if self.blueprint else []
             rc, unknown = price(w)
-            own = w.get("sections") if j2_types.enabled() and self.doc and isinstance(w.get("sections"), list) else []
+            own = w.get("sections") if self.doc and isinstance(w.get("sections"), list) else []
             bad_secs = [str(x) for x in own if x not in self.out["sections"]]
-            writes = wf_sections(w, self.out["sections"]) if j2_types.enabled() and self.doc else []
-            no_sec = (j2_types.enabled() and self.doc and not writes and not w.get("revises")
+            writes = wf_sections(w, self.out["sections"]) if self.doc else []
+            no_sec = (self.doc and not writes and not w.get("revises")
                       and "fix" not in (w.get("parts") or []))
             parts_of = j2_types.section_parts(self.output) if writes and RATES else {}
             sec_min = sum(RATES.get(parts_of[x], 0) for x in writes) if len(writes) > 1 else 0
@@ -7219,7 +7023,7 @@ class J2Run:
                   "completion_check": w.get("completion_check", ""), "dependencies": w.get("dependencies") or [],
                   "status": "registered", "cycle": self.cycle}
             wf["atoms"] = [{**a, "id": f"{wf['id']}.a{n}"} for n, a in enumerate(atoms, 1)]
-            if own:       # J2_GENERIC=1: the document sections this workflow writes, as the planner named them
+            if own:       # the document sections this workflow writes, as the planner named them
                 wf["sections"] = list(own)
             if lld:       # the LLD slice is this workflow's spec: code adds the check that the page matches it
                 wf["lld_sections"] = lld
@@ -8004,21 +7808,21 @@ class J2Run:
         sl = self._lld_slice_for(w) or {}
         ids = ", ".join(w.get("lld_sections") or [])
         return [{"atom": a, "why": f"LLD slice {ids}: its {h.lower()} were in this builder's prompt"}
-                for key, h in (("sections", sec_name("lld", "sections", "Pages and sections")),
-                               ("elements", sec_name("lld", "elements", "Interactive elements")),
-                               ("fields", sec_name("lld", "form_fields", "Form fields")))
+                for key, h in (("sections", sec_name("lld", "sections")),
+                               ("elements", sec_name("lld", "elements")),
+                               ("fields", sec_name("lld", "form_fields")))
                 if sl.get(key) for a in self._doc_atoms("lld", h)]
 
     def _hld_edges(self):
         return [{"atom": a, "why": "the HLD component summary was in this builder's prompt"}
-                for a in (self._doc_atoms("hld", sec_name("hld", "components", "Components")) if (self.chain.get("hld") or {}).get("components") else [])]
+                for a in (self._doc_atoms("hld", sec_name("hld", "components")) if (self.chain.get("hld") or {}).get("components") else [])]
 
     def _chain_edges(self):
         """A document builder is given the charter, which carries the earlier documents' agent_output."""
         ch = (self.goal or {}).get("chain") or {}
-        return [{"atom": a, "why": why} for kind, h, why in (("prd", sec_name("prd", "requirements", "Requirements"),
+        return [{"atom": a, "why": why} for kind, h, why in (("prd", sec_name("prd", "requirements"),
                                                               "the PRD's requirements were in this builder's prompt (charter)"),
-                                                             ("hld", sec_name("hld", "components", "Components"),
+                                                             ("hld", sec_name("hld", "components"),
                                                               "the HLD's components were in this builder's "
                                                               "prompt (charter)")) if ch.get(kind) for a in self._doc_atoms(kind, h)]
 
@@ -8593,9 +8397,9 @@ class J2Run:
 
     # The document question each role word scripts (mock mode): the builder of this section asks the atom of the
     # earlier document its own prompt was built from (_chain_edges), about the subject that section must settle.
-    DOC_ASKS = {"lld": (("elements", "Interactive elements"), "hld", ("components", "Components"), "how the booking is sent",
+    DOC_ASKS = {"lld": (("elements",), "hld", ("components",), "how the booking is sent",
                         "How is the booking sent: mailto or a server endpoint?"),
-                "hld": (("components", "Components"), "prd", ("requirements", "Requirements"), "which requirement the booking form covers",
+                "hld": (("components",), "prd", ("requirements",), "which requirement the booking form covers",
                         "Which requirement covers the booking form?")}
 
     def _mock_board_extra(self, w, attempt):
@@ -8764,7 +8568,7 @@ class J2Run:
             lld["agent_output"] = {**lld["agent_output"], **{k: spec[k] for k in ("sections", "elements", "fields")},
                                    "revisions": self.lld_revisions}
         for o in self.past_workflows:        # the LLD atom that wrote the sections carries the reason in its agent_output
-            if sec_name("lld", "sections", "Pages and sections") in wf_sections(o, doc_sections("lld")):
+            if sec_name("lld", "sections") in wf_sections(o, doc_sections("lld")):
                 for a in o.get("atoms") or []:
                     if a.get("agent_output"):
                         a["agent_output"] = {**a["agent_output"], "revisions": self.lld_revisions}
@@ -8773,7 +8577,7 @@ class J2Run:
                             f"revised once, to version {v}; the checks now use the revised section.", warning=True)
 
     def _lld_owner_note(self, c):
-        o = next((x for x in reversed(self.past_workflows) if sec_name("lld", "sections", "Pages and sections")
+        o = next((x for x in reversed(self.past_workflows) if sec_name("lld", "sections")
                   in wf_sections(x, doc_sections("lld"))), None)
         a = ((o or {}).get("atoms") or [{}])[0].get("id")
         return (f"Owner atom: {a or 'the LLD'} (the LLD section {c.get('section')} was already revised once; "

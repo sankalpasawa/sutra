@@ -472,7 +472,7 @@ def _wf_row(kind, vs, by, persona, last_audit, file, nodes):
 
 
 def deliverable_items(dv):
-    """The types the planner chose, in build order, each with its why (deliverables.json, J2_GENERIC=1)."""
+    """The types the planner chose, in build order, each with its why (deliverables.json)."""
     return [{"type": str(x.get("type") if isinstance(x, dict) else x), "why": str((x.get("why") if isinstance(x, dict) else "") or "")}
             for x in ((dv or {}).get("plan") or {}).get("deliverables") or []]
 
