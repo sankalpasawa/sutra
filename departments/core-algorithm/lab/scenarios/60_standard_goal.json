@@ -1,0 +1,18 @@
+{
+  "schema": "sutra-extension/2",
+  "id": "60_standard_goal",
+  "scope": "sutra/workflows",
+  "goals": [
+    "workflow_registrable"
+  ],
+  "budget": {
+    "compute": 5,
+    "money": 5,
+    "attention": 2
+  },
+  "preference": [
+    "compute",
+    "money",
+    "attention"
+  ]
+}

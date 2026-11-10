@@ -1,0 +1,19 @@
+{
+  "schema": "sutra-extension/2",
+  "id": "61_standard_theory",
+  "rules": [
+    {
+      "id": "R-REGISTRABLE@1",
+      "head": "workflow_registrable",
+      "branches": [
+        [
+          "has_trigger",
+          "every_step_has_check",
+          "has_overall_verify"
+        ]
+      ],
+      "approved": true,
+      "source": "reviewed/workflow-standard"
+    }
+  ]
+}

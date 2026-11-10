@@ -5,7 +5,7 @@ sys.path.insert(0,str(ROOT))
 from kernel.core import State,Kernel,digest
 from tools.run_all import CASES,pack,extra_events
 from extensions.knowledge import compile_pattern,signal_priority
-from extensions.reflection import minimal_graph_diff,reflect
+from extensions.reflection import minimal_graph_diff,reflect,Learner
 from extensions.j2_projection import to_j2_proposed_atom_views
 from extensions.implementation import to_implementation,validate_workflow
 
@@ -24,7 +24,9 @@ EXPECTED={
  '17_reviewed_release':'LOCAL_MODEL_EFFECTS_RECORDED',
  '18_self_need':'AUTHORITY_REQUIRED','19_self_grant':'LOCAL_MODEL_EFFECTS_RECORDED',
  '20_wrong_tenant':'QUERY_EVIDENCE','21_no_goal':'NO_STANDING_GOAL',
- '22_revoke':'AUTHORITY_REQUIRED','23_capacity':'PROVIDER_REQUIRED','24_budget':'RESOURCE_REQUIRED'
+ '22_revoke':'AUTHORITY_REQUIRED','23_capacity':'PROVIDER_REQUIRED','24_budget':'RESOURCE_REQUIRED',
+ '25_registrable_gap':'METHOD_ABSENT','26_registrable_repair':'LOCAL_MODEL_EFFECTS_RECORDED',
+ '27_registrable_generated':'SUPPORTED_BY_EVIDENCE','28_website':'PLAN_READY'
 }
 class ContractTests(unittest.TestCase):
     def test_original_baseline_byte_identical(self):
@@ -162,6 +164,94 @@ class ContractTests(unittest.TestCase):
         tags2={row['line'].split(' ')[0]:row['tag'] for row in impl2['scaffold']['rules'] if row['tag'] in ('go','ask')}
         self.assertEqual(tags2['ship-replacement@1'],'ask');self.assertEqual(tags2['notify-customer@1'],'go')
         self.assertTrue(any(row['tag']=='refuse' for row in impl2['scaffold']['rules']))
+    # 0.4.0-shrink, move-out M1: learning left the kernel for extensions/reflection.Learner.
+    LEARN=('00_goal','01_domain','02_methods','03_approval','04_admission','05_learning')
+    def test_kernel_carries_no_learning_state_or_branch(self):
+        # Counterexample: fails on 0.3.0, whose State carried learned_signatures and whose resolve emitted REUSE_COMPOSITION.
+        import inspect
+        self.assertFalse(hasattr(State(),'learned_signatures'));self.assertFalse(hasattr(State(),'learning'))
+        src=inspect.getsource(Kernel.resolve)
+        for word in ('REUSE_COMPOSITION','INVESTIGATE_GAP','LEARN_CANDIDATE'):self.assertNotIn(word,src)
+        c=State.from_packs([pack(n) for n in self.LEARN]);r=Kernel(c).run_standing(execute=True)['runs'][0]
+        self.assertNotIn('learning',r);self.assertEqual(r['status'],'LOCAL_MODEL_EFFECTS_RECORDED')
+    def test_learner_reproduces_0_3_0_learning_on_recorded_cases(self):
+        # Equivalence: what the 0.3.0 kernel's learning block emitted on cases 05, 06, 07 and 08 (recorded 2026-11-10).
+        reuse='independent held-out verification + approval';gap='independent evidence + authorization'
+        expect={'05_learn':[{'kind':'REUSE_COMPOSITION','signature':'ship-replacement@1','observations':1,'status':'PROPOSED_ONLY','gate':reuse}],
+                '06_nuance':[{'kind':'REUSE_COMPOSITION','signature':'ship-replacement@1 -> notify-customer@1','observations':1,'status':'PROPOSED_ONLY','gate':reuse}],
+                '07_gap':[{'kind':'INVESTIGATE_GAP','gap':'METHOD_ABSENT','status':'PROPOSED_ONLY','gate':gap}],
+                '08_method_added':[{'kind':'REUSE_COMPOSITION','signature':'ship-replacement@1 -> notify-customer@1 -> record-survey@1','observations':1,'status':'PROPOSED_ONLY','gate':reuse}]}
+        for cid,_,_,files,execute,_ in CASES:
+            if cid not in expect:continue
+            packs=[pack(n) for n in files];k=Kernel(State.from_packs(packs));learner=Learner.from_packs(packs)
+            self.assertEqual(learner.attach(k.run_standing(execute=execute))['runs'][0]['learning'],expect[cid],cid)
+            again=learner.attach(k.run_standing(execute=execute))['runs'][0]['learning']
+            self.assertEqual(again,expect[cid] if cid=='07_gap' else [],cid)   # a second run: evidence holds, nothing to learn; a still-blocked goal proposes again
+        self.assertTrue(all(x['status']=='PROPOSED_ONLY' for v in expect.values() for x in v))
+    def test_learner_off_without_pack_flag_and_counts_repeats(self):
+        packs=[pack(n) for n in ('00_goal','01_domain','02_methods','03_approval','04_admission')]
+        self.assertEqual(Learner.from_packs(packs).attach(Kernel(State.from_packs(packs)).run_standing(execute=True))['runs'][0]['learning'],[])
+        l=Learner(enabled=True);r={'status':'LOCAL_MODEL_EFFECTS_RECORDED','work_state':'completed','actions':['a@1','b@1']}
+        self.assertEqual(l.learn(r)[0]['observations'],1);self.assertEqual(l.learn(r)[0]['observations'],2)
+    def test_learner_matches_0_3_0_on_dry_run_recount_and_late_packs(self):
+        # Recorded from the 0.3.0 kernel on 2026-11-10 (the points the D79 refuters named): a dry run learns nothing;
+        # a re-execution on one State counts 2 even through a second Kernel; a late pack switches learning off or on.
+        revoke={'predicate':'customer_approved','truth':'FALSE','version':'v2','verified':True,'source':'t'}
+        again={'predicate':'customer_approved','truth':'TRUE','version':'v3','verified':True,'source':'t'}
+        kinds=lambda run:[(x['kind'],x.get('observations')) for r in run['runs'] for x in r['learning']]
+        packs=[pack(n) for n in self.LEARN]
+        s=State.from_packs(packs);l=Learner.from_packs(packs);dry=l.attach(Kernel(s).run_standing(execute=False))
+        self.assertEqual(dry['runs'][0]['status'],'PLAN_READY');self.assertEqual(kinds(dry),[])
+        s=State.from_packs(packs);l=Learner.from_packs(packs);k=Kernel(s)
+        self.assertEqual(kinds(l.attach(k.run_standing(execute=True))),[('REUSE_COMPOSITION',1)])
+        self.assertEqual(kinds(l.attach(k.on_event(revoke,execute=True))),[('INVESTIGATE_GAP',None)])
+        self.assertEqual(kinds(l.attach(Kernel(s).on_event(again,execute=True))),[('REUSE_COMPOSITION',2)])
+        s=State.from_packs(packs);l=Learner.from_packs(packs);k=Kernel(s);l.attach(k.run_standing(execute=True))
+        off={'schema':'sutra-extension/2','id':'late-off','learning':False};s.apply(off);l.apply(off)
+        self.assertEqual(kinds(l.attach(k.on_event(revoke,execute=True))),[])
+        base=[pack(n) for n in self.LEARN[:-1]];s=State.from_packs(base);l=Learner.from_packs(base);k=Kernel(s)
+        self.assertEqual(kinds(l.attach(k.run_standing(execute=True))),[])
+        on={'schema':'sutra-extension/2','id':'late-on','learning':True};s.apply(on);l.apply(on)
+        self.assertEqual(kinds(l.attach(k.on_event(revoke,execute=True))),[('INVESTIGATE_GAP',None)])
+        self.assertEqual(kinds(l.attach(k.on_event(again,execute=True))),[('REUSE_COMPOSITION',1)])
+    def test_learning_is_bound_to_the_trace_root(self):
+        packs=[pack(n) for n in self.LEARN];r=Learner.from_packs(packs).attach(Kernel(State.from_packs(packs)).run_standing(execute=True))['runs'][0]
+        self.assertEqual(r['learning_record'],{'source_trace':r['trace_root_sha256'],'learning_sha256':digest(r['learning'])})
+    # 0.5.0-standards: a standard is a rule; its facts come from an evidence adapter over a workflow JSON.
+    def test_standards_adapter_rows_are_verified_and_versioned(self):
+        from extensions.standards import workflow_facts,SOURCE
+        bad={'id':'W-x','trigger':{'kind':'intent'},'steps':[{'id':'a','action':'do'}],'verify':'whole'}
+        rows={r['predicate']:r for r in workflow_facts(bad)}
+        self.assertEqual([rows[p]['truth'] for p in ('has_trigger','every_step_has_check','has_overall_verify')],['TRUE','FALSE','TRUE'])
+        self.assertTrue(all(r['verified'] and r['source']==SOURCE and r['version'].startswith('wf-') for r in rows.values()))
+        good=dict(bad,steps=[{'id':'a','action':'do','verify':'done'}])
+        self.assertTrue(all(r['truth']=='TRUE' for r in workflow_facts(good)))
+        self.assertNotEqual(workflow_facts(good)[0]['version'],rows['has_trigger']['version'])
+        self.assertEqual(workflow_facts({})[1]['truth'],'FALSE')   # no steps is not "every step has a check"
+    def test_standard_blocks_then_repairs_then_generated_work_passes(self):
+        by={c[0]:c for c in CASES};out={}
+        for cid in ('25_registrable_gap','26_registrable_repair','27_registrable_generated'):
+            _,_,_,files,execute,_=by[cid];s=State.from_packs([pack(n) for n in files]);out[cid]=(Kernel(s).run_standing(execute=execute)['runs'][0],s)
+        gap,s=out['25_registrable_gap'];self.assertEqual(gap['status'],'METHOD_ABSENT');self.assertEqual(s.fact('every_step_has_check')['truth'],'FALSE')
+        rep,s=out['26_registrable_repair'];self.assertEqual(rep['actions'],['add-step-checks@1']);self.assertEqual(s.fact('every_step_has_check')['source'],'LOCAL_MODEL:add-step-checks@1')
+        ok,s=out['27_registrable_generated'];self.assertEqual((ok['status'],ok['actions'],ok['model_receipts']),('SUPPORTED_BY_EVIDENCE',[],[]))
+        self.assertTrue(s.fact('every_step_has_check')['source'].startswith('adapter:standards/'))
+    # 0.6.0-order: the generator emits each step's prerequisites and the plan's edges, and refuses a wrong order.
+    SITE=('70_site_goal','71_site_theory','72_site_methods')
+    def test_plan_and_edges_follow_the_requires_chain(self):
+        c=State.from_packs([pack(n) for n in self.SITE]);r=Kernel(c).run_standing()['runs'][0]
+        self.assertEqual(r['actions'],['plan-site@1','write-content@1','build-pages@1','check-site@1'])   # authored in the reverse order
+        wf=to_implementation(r,c)['workflow'];self.assertEqual(validate_workflow(wf),[])
+        self.assertEqual([(e['from'],e['to'],e['via']) for e in wf['edges']],
+            [('plan-site-1','write-content-1','site_planned'),('write-content-1','build-pages-1','content_written'),
+             ('plan-site-1','build-pages-1','site_planned'),('build-pages-1','check-site-1','pages_built')])
+        after={s['id']:s['after'] for s in wf['steps'] if s.get('method')}
+        self.assertEqual(after,{'plan-site-1':[],'write-content-1':['plan-site-1'],'build-pages-1':['write-content-1','plan-site-1'],'check-site-1':['build-pages-1']})
+    def test_workflow_with_a_step_before_its_prerequisite_is_refused(self):
+        c=State.from_packs([pack(n) for n in self.SITE]);wf=to_implementation(Kernel(c).run_standing()['runs'][0],c)['workflow']
+        bad=dict(wf,steps=[wf['steps'][0],wf['steps'][2],wf['steps'][1]]+wf['steps'][3:])
+        self.assertTrue(any('comes before its prerequisite' in p for p in validate_workflow(bad)))
+        self.assertTrue(any('not in the workflow' in p for p in validate_workflow(dict(wf,edges=[{'from':'nowhere','to':'check-site-1','via':'x'}]))))
     def test_hash_chain_valid(self):
         c=State.from_packs([pack(n) for n in ('00_goal','01_domain','02_methods','03_approval','04_admission')]);r=Kernel(c).run_standing(execute=True)['runs'][0]
         for i,x in enumerate(r['trace']):

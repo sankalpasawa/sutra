@@ -25,7 +25,7 @@ The computation is recursive but *bounded*. A new business requirement should no
 5. **Compare complete plans.** Consider alternative prerequisite trees, share common subgoals safely, detect cycles, and sum resource vectors componentwise. Retain Pareto-feasible plans and apply an authorized preference; do not invent exchange rates between money, compute and attention.
 6. **Admit and execute.** Recheck provider offers, scope, grants, resources, readiness and idempotency before every real effect. The current reference supports only allowlisted synthetic local actions.
 7. **Independently verify and record.** Accept only independently checked results as achieved; record source versions, decisions, results, event hashes and resource ledgers. Invalidate dependent claims selectively when inputs change.
-8. **Reflect and evolve under governance.** Record candidate reuses/structural patterns after terminal attempts. Treat improvement as another bounded goal, but do not let the candidate promote its own source, authority or verifier.
+8. **Reflect and evolve under governance.** Record candidate reuses/structural patterns after terminal attempts. Treat improvement as another bounded goal, but do not let the candidate promote its own source, authority or verifier. Since 0.4.0-shrink this step is an extension over the run record (`lab/extensions/reflection.py`, `Learner`), not a branch of the kernel.
 
 This sequence is a conceptual contract, not proof that all stages are implemented in the current finite lab.
 

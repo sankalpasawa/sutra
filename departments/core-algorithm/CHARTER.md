@@ -18,7 +18,7 @@ Maintain a **small, versioned, evidence-aware computational kernel** that reconc
 1. **Meaning and Need Formation:** Specify typed goal contracts, rule-grounded AND/OR condition refinement, truth/evidence scope and explicit missing-semantics outcomes. New obligations arise from standing goals plus approved rules and relevant evidence changes—not from an empty prompt.
 2. **Resolution and Adaptation:** Specify recursive Method search, alternative plan evaluation, shared prerequisites, minimal graph changes, stop states and bounded candidate construction. Separate required goal conditions from Method-specific prerequisites.
 3. **Governed Execution:** Define interfaces for provider commitments, authority checks, nonfungible resource budgets, idempotency and independently verified effects. Enforce an action boundary; the reference lab implements **local simulation only**.
-4. **Memory, Trace and Learning:** Own versioned run traces, provenance, selective dependency invalidation and candidate-only learning. No autonomous promotion of Methods, rules, validators or Core releases.
+4. **Memory, Trace and Learning:** Own versioned run traces, provenance and selective dependency invalidation; candidate-only learning reads that record from an extension (`lab/extensions/reflection.py`, `Learner`, since 0.4.0-shrink), never from inside the kernel. No autonomous promotion of Methods, rules, validators or Core releases.
 5. **Compatibility and Evidence:** Define adapters and acceptance tests for J2 `atom/1` / `map/1`, Native graph/charter primitives and future production effect receipts, without rewriting existing J2 semantics.
 
 ## In scope / out of scope
@@ -51,9 +51,9 @@ Output contract: `proven satisfaction | evidence query | selected bounded plan |
 
 | Outcome | Current reference evidence | Required before promotion |
 |---|---|---|
-| Add domain nuance without kernel change | 25 synthetic recorded scenarios against one kernel hash | Held-out domains and independent need labels |
+| Add domain nuance without kernel change | 29 synthetic recorded scenarios against one kernel hash (0.5.0 added workflow standards and 0.6.0 a website, a third and a fourth domain, with no kernel change) | Held-out domains and independent need labels |
 | Block unjustified actions | Unknown/authority/provider/resource counterexamples | Real policy enforcement and independently witnessed external effects |
-| Reproduce reference algorithm | 54/54 unit + 31/31 independent model-record checks | Original historical Core v0.2.2 source and sealed baseline recovered for head-to-head comparison |
+| Reproduce reference algorithm | 70/70 unit + 39/39 independent model-record checks (0.6.0-order; 0.2.0 had 54 and 31) | Original historical Core v0.2.2 source and sealed baseline recovered for head-to-head comparison |
 | Method formation | Contract assembled from seeded components, marked `PROPOSED_ONLY` | Generic independent constructor, hidden tests and release authority |
 | J2 compatibility | `atom/1`-shaped read-only projection only | Real J2 `atom/1` / `map/1` run, verification and recovery |
 | Native maturity | Not claimed | Native's independently witnessed v1 FOLLOW → v5 DISTRIBUTE stage gates |
