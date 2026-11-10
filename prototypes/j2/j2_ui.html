@@ -161,35 +161,77 @@ body.simple #dview{display:none}
 #sview .sauto[aria-checked=true]{color:var(--s-ink)}#sview .sauto[aria-checked=true] .ssw{background:var(--s-good)}#sview .sauto[aria-checked=true] .ssw::after{transform:translateX(14px)}
 #sview .stheme{width:34px;height:34px;border-radius:50%;border:1px solid var(--s-line);background:var(--s-surface);color:var(--s-ink);font-size:15px;line-height:1;padding:0;flex:none}
 /* ---- start */
-#sview .sland{flex:1;overflow:auto;display:flex;justify-content:center;padding:clamp(28px,9vh,96px) 16px 40px}
+#sview .sland{flex:1;overflow:auto;display:flex;justify-content:center;padding:clamp(28px,9vh,88px) 16px 48px;background:radial-gradient(60% 40% at 50% 0%,color-mix(in srgb,var(--s-accent) 7%,transparent),transparent 70%)}
 #sview .slin{width:min(680px,100%);display:flex;flex-direction:column;align-items:center;text-align:center}
-#sview .screwg{background:none;border:0;padding:6px 10px;border-radius:16px;display:flex;flex-direction:column;align-items:center;gap:2px}
-#sview .slfaces{display:flex}#sview .slfaces .av{margin:0 -5px;border:3px solid var(--s-bg);box-sizing:content-box;transition:transform .3s}
+#sview .slin>*{flex:none;animation:slrise .7s cubic-bezier(.16,1,.3,1) both}
+#sview .slin>:nth-child(2){animation-delay:.06s}#sview .slin>:nth-child(3){animation-delay:.12s}#sview .slin>:nth-child(4){animation-delay:.18s}#sview .slin>:nth-child(5){animation-delay:.24s}#sview .slin>:nth-child(6){animation-delay:.3s}#sview .slin>:nth-child(7){animation-delay:.36s}
+@keyframes slrise{from{opacity:0;filter:blur(5px);transform:translateY(8px)}}
+#sview .screwg{background:none;border:0;padding:6px 10px;border-radius:16px;display:flex;flex-direction:column;align-items:center;gap:10px}
+#sview .slfaces{display:flex}#sview .slfaces .av{margin:0 -5px;border:3px solid var(--s-bg);box-sizing:content-box;transition:transform .3s cubic-bezier(.16,1,.3,1)}
 #sview .slfaces .av:nth-child(odd){animation:sbob 3.2s ease-in-out infinite}#sview .slfaces .av:nth-child(even){animation:sbob 3.2s ease-in-out -1.6s infinite}
+#sview .slfaces .seyes{transform-box:fill-box;transform-origin:center;animation:sblink 4.4s infinite}
+#sview .slfaces .av:nth-child(2) .seyes{animation-delay:-1.3s}#sview .slfaces .av:nth-child(3) .seyes{animation-delay:-2.9s}#sview .slfaces .av:nth-child(4) .seyes{animation-delay:-.6s}#sview .slfaces .av:nth-child(5) .seyes{animation-delay:-3.7s}
 #sview .screwg:is(:hover,:focus-visible) .av{transform:translateY(-4px)}
-#sview .sviewteam{font-size:13px;font-weight:600;color:var(--s-accent);opacity:.0;transition:opacity .25s}
-#sview .screwg:is(:hover,:focus-visible) .sviewteam{opacity:1}
+#sview .screwg:is(:hover,:focus-visible) .av:nth-child(2){transition-delay:.03s}#sview .screwg:is(:hover,:focus-visible) .av:nth-child(3){transition-delay:.06s}#sview .screwg:is(:hover,:focus-visible) .av:nth-child(4){transition-delay:.09s}#sview .screwg:is(:hover,:focus-visible) .av:nth-child(5){transition-delay:.12s}
+#sview .slready{display:inline-flex;align-items:center;gap:8px;padding:4px 12px 4px 10px;border-radius:999px;background:var(--s-surface);box-shadow:0 0 0 1px var(--s-line),0 1px 2px var(--s-ring);font-size:13px;color:var(--s-muted);white-space:nowrap}
+#sview .slready b{font-weight:500;color:var(--s-ink)}
+#sview .sldot{position:relative;width:7px;height:7px;border-radius:50%;background:var(--s-accent);flex:none}
+#sview .sldot::after{content:"";position:absolute;inset:0;border-radius:50%;background:var(--s-accent);animation:slping 2.4s cubic-bezier(0,0,.2,1) infinite}
+@keyframes slping{0%{transform:scale(1);opacity:.55}80%,100%{transform:scale(2.6);opacity:0}}
+#sview .sviewteam{font-weight:600;color:var(--s-good);transition:color .15s}
+#sview .sviewteam::after{content:"→";display:inline-block;margin-left:4px;transition:transform .2s}
+#sview .screwg:is(:hover,:focus-visible) .sviewteam::after{transform:translateX(2px)}
 @keyframes sbob{50%{transform:translateY(-3px)}}
-#sview .sgreet{font:500 clamp(30px,4.6vw,44px)/1.1 var(--s-display);margin:14px 0 8px;letter-spacing:-.02em}
-#sview .shint{margin:0 0 22px;color:var(--s-muted);max-width:44ch}
-#sview .sbox{width:100%;background:var(--s-surface);border:1.5px solid var(--s-line2);border-radius:18px;padding:14px 14px 12px 18px;text-align:left;box-shadow:0 18px 40px -28px var(--s-shadow);transition:border-color .2s,box-shadow .2s}
-#sview .sbox:focus-within{border-color:var(--s-accent);box-shadow:0 0 0 4px color-mix(in srgb,var(--s-accent) 16%,transparent),0 18px 40px -28px var(--s-shadow)}
-#sview .sbox textarea{width:100%;border:0;background:none;color:var(--s-ink);font:17px/1.45 var(--s-body);resize:none;min-height:52px;padding:2px 0}
+#sview .sgreet{font:500 clamp(30px,4.6vw,44px)/1.1 var(--s-display);margin:20px 0 10px;letter-spacing:-.02em;text-wrap:balance}
+#sview .sgreet em{font-style:italic;color:var(--s-good);padding-right:.08em}
+#sview .shint{margin:0 0 26px;color:var(--s-muted);max-width:44ch;text-wrap:balance}
+#sview .sbox{position:relative;width:100%;background:var(--s-surface);border:1px solid var(--s-line2);border-radius:18px;padding:16px 14px 12px 18px;text-align:left;box-shadow:0 0 0 1px var(--s-ring),0 24px 48px -32px var(--s-shadow);transition:border-color .2s,box-shadow .2s}
+#sview .sbox:focus-within{border-color:var(--s-accent);box-shadow:0 0 0 4px color-mix(in srgb,var(--s-accent) 16%,transparent),0 24px 48px -32px var(--s-shadow)}
+#sview .sbox textarea{width:100%;border:0;background:none;color:var(--s-ink);font:17px/1.45 var(--s-body);resize:none;min-height:52px;padding:2px 0;position:relative;z-index:1}
 #sview .sbox textarea:focus,#sview .sbox textarea:focus-visible{outline:none}
 #sview .sbox textarea::placeholder{color:var(--s-muted)}
-#sview .sbrow{display:flex;align-items:flex-end;gap:10px;margin-top:8px}
+#sview .sbox.ghosting textarea::placeholder{color:transparent}
+#sview .sghost{position:absolute;left:18px;right:14px;top:18px;font:17px/1.45 var(--s-body);color:var(--s-muted);pointer-events:none;max-height:3em;overflow:hidden}
+#sview .sghost::after{content:"";display:inline-block;width:2px;height:1.1em;margin-left:1px;vertical-align:-.18em;background:var(--s-accent);border-radius:1px;animation:slcaret 1.05s steps(1) infinite}
+@keyframes slcaret{50%{opacity:0}}#sview .sghost.typing::after{animation:none}
+#sview .sbrow{display:flex;align-items:flex-end;gap:10px;margin-top:10px}
 #sview .schips{flex:1;display:flex;flex-wrap:wrap;gap:6px}
-#sview .schips button{border:1px solid var(--s-line);background:var(--s-surface2);color:var(--s-ink);border-radius:999px;padding:6px 12px;font-size:13px}
-#sview .schips button:hover{border-color:var(--s-accent)}
-#sview .sgo{border:0;background:var(--s-accent);color:var(--s-accentink);box-shadow:inset 0 1px 0 rgb(255 255 255 / .25),0 1px 2px var(--s-ring);border-radius:12px;padding:10px 18px;font-weight:600;transition:transform .15s,opacity .2s;flex:none}
-#sview .sgo:hover{transform:translateY(-1px)}#sview .sgo:disabled{opacity:.4;cursor:default;transform:none}
+#sview .schips button{display:inline-flex;align-items:center;gap:6px;border:1px solid var(--s-line);background:var(--s-surface2);color:var(--s-ink);border-radius:999px;padding:5px 11px 5px 8px;font-size:13px;transition:border-color .15s,transform .15s}
+#sview .schips button:hover{border-color:var(--s-accent);background:var(--s-surface);transform:translateY(-1px)}
+#sview .schips svg,#sview .srlist .slico svg,#sview .slsteps svg{width:14px;height:14px;flex:none;fill:none;stroke:currentColor;stroke-width:1.7;stroke-linecap:round;stroke-linejoin:round}
+#sview .schips svg{color:var(--s-good)}
+#sview .sgo{display:inline-flex;align-items:center;gap:6px;border:0;background:var(--s-accent);color:var(--s-accentink);box-shadow:inset 0 1px 0 rgb(255 255 255 / .25),0 1px 2px var(--s-ring),0 4px 12px -4px color-mix(in srgb,var(--s-accent) 60%,transparent);border-radius:12px;padding:10px 16px 10px 18px;font-weight:600;transition:transform .15s,opacity .2s,box-shadow .2s;flex:none}
+#sview .sgo svg{width:15px;height:15px;transition:transform .2s}
+#sview .sgo:hover{transform:translateY(-1px)}#sview .sgo:hover svg{transform:translateX(2px)}#sview .sgo:active{transform:translateY(0)}
+#sview .sgo:disabled{opacity:.45;cursor:default;transform:none;box-shadow:inset 0 1px 0 rgb(255 255 255 / .25)}
 #sview .slrow{display:flex;align-items:center;gap:6px 14px;flex-wrap:wrap;justify-content:center;margin-top:16px}
 #sview .slsep{width:1px;height:18px;background:var(--s-line2)}
-#sview .srecent{width:100%;margin-top:36px;text-align:left}
+#sview .slsteps{list-style:none;margin:40px 0 0;padding:0;width:100%;display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:0;text-align:left;border-radius:16px;background:var(--s-surface);box-shadow:0 0 0 1px var(--s-line),0 1px 2px var(--s-ring);overflow:hidden}
+#sview .slsteps li{position:relative;padding:14px 16px 15px;display:flex;flex-direction:column;gap:4px;min-width:0}
+#sview .slsteps li+li{border-left:1px solid var(--s-line)}
+#sview .slsteps .n{display:flex;align-items:center;gap:8px;font:12px var(--s-mono);color:var(--s-muted)}#sview .slsteps .n em{font-style:normal;letter-spacing:.02em}
+#sview .slsteps .n i{display:grid;place-items:center;width:24px;height:24px;border-radius:8px;background:var(--s-goodbg);color:var(--s-good)}
+#sview .slsteps b{font-weight:600;font-size:14px;color:var(--s-ink)}
+#sview .slsteps .sltx{display:flex;flex-direction:column;gap:2px;min-width:0}
+#sview .slsteps span{font-size:13px;color:var(--s-muted);line-height:1.4}
+#sview .slsteps li:nth-child(2) .n i{animation:slwork 2.6s ease-in-out infinite}
+@keyframes slwork{50%{transform:rotate(-10deg) translateY(-1px)}}
+#sview .srecent{width:100%;margin-top:40px;text-align:left}
 #sview .srecent h2{font:600 11.5px var(--s-body);letter-spacing:.09em;text-transform:uppercase;color:var(--s-muted);margin:0 0 8px 4px}
-#sview .srlist{display:flex;flex-direction:column;border-top:1px solid var(--s-line)}
-#sview .srlist a{display:flex;align-items:baseline;justify-content:space-between;gap:16px;padding:12px 4px;border-bottom:1px solid var(--s-line);color:var(--s-ink);text-decoration:none;min-width:0;transition:padding .2s,background .2s}
-#sview .srlist a:hover{background:var(--s-surface);padding-left:10px;padding-right:10px}#sview .srlist b{font-weight:500;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}#sview .srlist small{color:var(--s-muted);font:12px var(--s-mono);white-space:nowrap;flex:none}
+#sview .srlist{display:flex;flex-direction:column;gap:2px}
+#sview .srlist a{display:flex;align-items:center;gap:12px;padding:9px 10px;border-radius:12px;color:var(--s-ink);text-decoration:none;min-width:0;transition:background .15s,box-shadow .15s;animation:slrise .5s cubic-bezier(.16,1,.3,1) both}
+#sview .srlist a:nth-child(2){animation-delay:.04s}#sview .srlist a:nth-child(3){animation-delay:.08s}#sview .srlist a:nth-child(4){animation-delay:.12s}#sview .srlist a:nth-child(5){animation-delay:.16s}#sview .srlist a:nth-child(6){animation-delay:.2s}
+#sview .srlist a:hover{background:var(--s-surface);box-shadow:0 0 0 1px var(--s-line),0 1px 2px var(--s-ring)}
+#sview .srlist .slico{display:grid;place-items:center;width:34px;height:34px;border-radius:10px;background:var(--s-surface2);color:var(--s-muted);flex:none;transition:background .15s,color .15s}
+#sview .srlist a:hover .slico{background:var(--s-goodbg);color:var(--s-good)}
+#sview .srlist .sltxt{flex:1;min-width:0;display:flex;flex-direction:column}
+#sview .srlist b{font-weight:500;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+#sview .srlist .sltxt span{font-size:12.5px;color:var(--s-muted);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+#sview .srlist small{color:var(--s-muted);font:12px var(--s-mono);white-space:nowrap;flex:none;text-align:right}
+#sview .srlist .slst{display:inline-block;width:6px;height:6px;border-radius:50%;margin-right:6px;vertical-align:1px;background:var(--s-line2)}#sview .srlist .slst.done{background:var(--s-accent)}
+@media (max-width:600px){#sview .sland{padding-top:28px}#sview .sbrow{flex-direction:column;align-items:stretch}#sview .sgo{justify-content:center;padding:12px 16px}#sview .slsep{display:none}
+  #sview .slsteps{grid-template-columns:1fr;margin-top:32px}#sview .slsteps li{flex-direction:row;align-items:center;gap:12px;padding:12px 14px}#sview .slsteps li+li{border-left:0;border-top:1px solid var(--s-line)}#sview .slsteps .n em{display:none}#sview .slsteps .sltx{display:flex;flex-direction:column;min-width:0}
+  #sview .srlist small .slwhat{display:none}}
 /* ---- the studio */
 #sview .swork{flex:1;min-height:0;display:flex;flex-direction:column;overflow:hidden}
 #sview .stop{flex:none;display:flex;align-items:center;gap:10px 14px;padding:10px 16px;border-bottom:1px solid var(--s-line);min-width:0}
@@ -849,13 +891,18 @@ try { var tp = localStorage.getItem("j2theme"); document.documentElement.dataset
 <div id="sview">
   <section class="sland" id="sland" aria-label="Start">
     <div class="slin">
-      <button type="button" class="screwg" id="slandteam" aria-haspopup="dialog" aria-controls="steamcard" aria-label="See your team"><span class="slfaces" id="slfaces"></span><span class="sviewteam">Meet your team</span></button>
-      <h1 class="sgreet" id="sgreet">What should we make today?</h1>
+      <button type="button" class="screwg" id="slandteam" aria-haspopup="dialog" aria-controls="steamcard" aria-label="See your team"><span class="slfaces" id="slfaces"></span><span class="slready"><i class="sldot" aria-hidden="true"></i><b>5 teammates ready</b><span class="sviewteam">Meet your team</span></span></button>
+      <h1 class="sgreet" id="sgreet">What should we <em>make</em> today?</h1>
       <p class="shint">Describe it in a sentence. The team plans it, does the work and checks it for you.</p>
-      <form class="sbox" id="lform"><textarea id="lbox" rows="2" aria-label="Describe what to build" placeholder="Describe what you want…"></textarea>
-        <div class="sbrow"><div class="schips" id="schips"></div><button class="sgo" id="lsend" type="submit" disabled>Start</button></div></form>
+      <form class="sbox" id="lform"><span class="sghost" id="sghost" aria-hidden="true"></span><textarea id="lbox" rows="2" aria-label="Describe what to build" placeholder="Describe what you want…"></textarea>
+        <div class="sbrow"><div class="schips" id="schips"></div><button class="sgo" id="lsend" type="submit" disabled>Start<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12h14M13 6l6 6-6 6"/></svg></button></div></form>
       <div class="slrow"><button type="button" class="sauto" id="sautoland" role="switch" aria-checked="false" title="When this is on, the team answers its own questions with the suggested option and keeps going."><span class="ssw" aria-hidden="true"></span>Decide for me</button>
         <span class="slsep" aria-hidden="true"></span><a class="slink" href="/library?view=detail">Template library</a><button type="button" class="slink" id="slanddetail">Detailed view</button><button type="button" class="stheme" id="stheme" aria-label="Switch to dark mode">☾</button></div>
+      <ol class="slsteps" aria-label="How it works">
+        <li><span class="n"><i><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 20h4L19 9l-4-4L4 16z"/><path d="M13 7l4 4"/></svg></i><em>Step 1</em></span><span class="sltx"><b>Describe it</b><span>One sentence is enough.</span></span></li>
+        <li><span class="n"><i><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M14.7 6.3a4 4 0 0 0-5.4 5.4L4 17v3h3l5.3-5.3a4 4 0 0 0 5.4-5.4l-2.5 2.5-2.5-2.5z"/></svg></i><em>Step 2</em></span><span class="sltx"><b>The team builds</b><span>They plan, make and check each part.</span></span></li>
+        <li><span class="n"><i><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 12.5l4.5 4.5L19 7.5"/></svg></i><em>Step 3</em></span><span class="sltx"><b>You approve</b><span>Answer a question or two, then ship it.</span></span></li>
+      </ol>
       <section class="srecent" id="srecent" aria-labelledby="srecenth" hidden><h2 id="srecenth">Recent work</h2><div class="srlist" id="srlist"></div></section>
     </div>
   </section>
@@ -1955,6 +2002,26 @@ function sPhase(s, open){      // one plain sentence for where the run is; no na
     : s.doc ? "Checking the document" : "Checking it on a phone and a laptop";
 }
 const SCHIPS = ["A website for my bakery", "A product spec for a food delivery app", "A 4-week launch plan for my cafe"];      // a website, a document and a plan
+// start page: a small line icon per kind of work (fixed SVG, no outside text goes in)
+const SLICON = {website: `<svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="4.5" width="18" height="15" rx="2.5"/><path d="M3 9h18"/><circle cx="6.2" cy="6.8" r=".4"/><circle cx="8.4" cy="6.8" r=".4"/></svg>`,
+  document: `<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M7.5 3H14l5 5v11.5a1.5 1.5 0 0 1-1.5 1.5h-10A1.5 1.5 0 0 1 6 19.5v-15A1.5 1.5 0 0 1 7.5 3z"/><path d="M14 3v5h5M9.5 13h6M9.5 16.5h4"/></svg>`,
+  plan: `<svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3.5" y="5" width="17" height="15" rx="2.5"/><path d="M3.5 10h17M8 3v4M16 3v4M9 15l2 2 4-4"/></svg>`};
+const sKindOf = t => /plan|schedule|roadmap|calendar/i.test(t) ? "plan" : /spec|prd|doc|report|brief/i.test(t) ? "document" : "website";
+const sAgo = w => { const t = Date.parse(w); if (!t) return ""; const m = Math.max(0, (Date.now() - t) / 6e4);
+  return m < 1 ? "just now" : m < 60 ? `${Math.round(m)}m ago` : m < 1440 ? `${Math.round(m / 60)}h ago` : m < 2880 ? "yesterday" : m < 43200 ? `${Math.round(m / 1440)}d ago` : new Date(t).toLocaleDateString(undefined, {day: "numeric", month: "short"}); };
+// the composer types example ideas with a blinking caret until you click in or start typing (still text when motion is reduced)
+const SGHOST = ["A one-page website for my coffee shop", "A product spec for a habit tracker app", "A 4-week launch plan for my bakery"];
+let sghostT = 0, sghostI = 0;
+function sGhost(){ const g = $("sghost"), box = $("lform"), t = $("lbox"); clearTimeout(sghostT); if (!g) return;
+  const on = !$("sland").hidden && !t.value && document.activeElement !== t; box.classList.toggle("ghosting", on); g.hidden = !on; if (!on) return;
+  if (SREDUCE()){ g.textContent = SGHOST[0]; return; }
+  const w = SGHOST[sghostI % SGHOST.length]; let n = 0, back = false;
+  const step = () => { if (!box.classList.contains("ghosting")) return; g.textContent = w.slice(0, n); g.classList.toggle("typing", !(back && n === w.length));
+    if (!back && n < w.length){ n++; sghostT = setTimeout(step, 38 + Math.random() * 40); }
+    else if (!back){ back = true; sghostT = setTimeout(step, 2200); }
+    else if (n > 0){ n--; sghostT = setTimeout(step, 18); }
+    else { sghostI++; sghostT = setTimeout(sGhost, 350); } };
+  step(); }
 const sChipLabel = t => { t = String(t).split(/[:.]/)[0].trim(); return t.length > 48 ? t.slice(0, t.lastIndexOf(" ", 46)) + "…" : t; };      // a short label; the chip fills in the whole example
 const sParts = s => { const M = sModel(s); return {n: M.done, m: M.total}; };      // the parts, as the plan and the top bar count them
 const sFilesHTML = s => plainDocLinks(s);      // every design document's files, in plain words (the finish bar's All files)
@@ -2007,9 +2074,9 @@ function renderSimple(s){
   const started = !!(s.allChat || []).length || !!s.saved;
   $("sland").hidden = started; $("swork").hidden = !started; sThemeBtn(); sAutoPaint(s);
   if (!started){
-    if ($("schips").__v !== "o:" + s.output){ $("schips").__v = "o:" + s.output; $("schips").innerHTML = SCHIPS.map(t => `<button type="button" data-brief="${esc(t)}" title="${esc(t)}">${esc(sChipLabel(t))}</button>`).join("");
+    if ($("schips").__v !== "o:" + s.output){ $("schips").__v = "o:" + s.output; $("schips").innerHTML = SCHIPS.map(t => `<button type="button" data-brief="${esc(t)}" title="${esc(t)}">${SLICON[sKindOf(t)]}${esc(sChipLabel(t))}</button>`).join("");
       $("lbox").placeholder = "e.g. A launch plan for my bakery, a product spec, or a one-page website"; }
-    if (!SV.landKey){ SV.landKey = "1"; $("slfaces").innerHTML = SKEYS.map(k => face(k, 46, {prop: false, label: false})).join(""); sRecent(); }
+    if (!SV.landKey){ SV.landKey = "1"; $("slfaces").innerHTML = SKEYS.map(k => face(k, 46, {prop: false, label: false})).join(""); sRecent(); setTimeout(sGhost); }
     return;
   }
   const open = needsYou(s), live = !!s.paused && s.status !== "running" && !s.saved, ready = isReady(s), M = sModel(s), T = sCrew(s, M);
@@ -2477,7 +2544,8 @@ function sChatOpen(on){ const a = $("sapp"); if (!a || !a.classList) return; a.c
 async function sRecent(){
   try { const r = await (await fetch("/api/runlist", {cache: "no-store"})).json(), runs = (r.runs || []).filter(x => x.title && x.title !== x.id && x.status !== "running").slice(0, 6);
     if (!runs.length) return;
-    $("srlist").innerHTML = runs.map(x => `<a href="/?run=${encodeURIComponent(x.id)}&view=simple"><b>${esc(x.title)}</b><small>${esc(x.output === "prd" ? "Document" : (x.output || "website").replace(/^./, c => c.toUpperCase()))} · ${x.status === "done" ? "finished" : "stopped"} · ${esc(String(x.when || "").slice(0, 10))}</small></a>`).join("");
+    $("srlist").innerHTML = runs.map(x => { const k = x.output === "prd" ? "document" : x.output === "plan" ? "plan" : "website", brief = String(x.brief || "").split("\n")[0].trim();
+      return `<a href="/?run=${encodeURIComponent(x.id)}&view=simple"><span class="slico">${SLICON[k]}</span><span class="sltxt"><b>${esc(x.title)}</b>${brief ? `<span>${esc(brief)}</span>` : ""}</span><small><span class="slwhat"><i class="slst${x.status === "done" ? " done" : ""}" aria-hidden="true"></i>${k === "document" ? "Document" : k === "plan" ? "Plan" : "Website"} · ${x.status === "done" ? "finished" : "stopped"} · </span><time datetime="${esc(String(x.when || ""))}">${esc(sAgo(x.when))}</time></small></a>`; }).join("");
     $("srecent").hidden = false; } catch (e) {}
 }
 async function sendText(text){
@@ -2487,6 +2555,7 @@ async function sendText(text){
 ["sframe", "sframe2"].forEach(id => $(id).addEventListener("load", e => sFrameLoaded(e.target)));
 // start page: type, or pick an example; Decide for me; the team card
 $("lbox").addEventListener("input", () => { const t = $("lbox"); $("lsend").disabled = !t.value.trim(); t.style.height = "auto"; t.style.height = Math.min(180, Math.max(52, t.scrollHeight)) + "px"; });
+$("lbox").addEventListener("focus", sGhost); $("lbox").addEventListener("blur", sGhost);
 $("lbox").addEventListener("keydown", e => { if (e.key === "Enter" && !e.shiftKey){ e.preventDefault(); $("lform").requestSubmit(); } });
 $("lform").addEventListener("submit", e => { e.preventDefault(); const t = $("lbox").value.trim(); if (!t) return; $("lbox").value = ""; $("lsend").disabled = true; sendText(t); });
 $("schips").addEventListener("click", e => { const b = e.target.closest("[data-brief]"); if (!b) return; $("lbox").value = b.dataset.brief; $("lbox").dispatchEvent(new Event("input")); $("lbox").focus(); });
