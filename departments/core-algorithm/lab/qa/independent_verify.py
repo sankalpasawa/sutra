@@ -101,6 +101,11 @@ def inspect(data):
     check('S39_website_edges_run_forward',len(site['edges'])==4 and all(e['from'] in where and e['to'] in where and where[e['from']]<where[e['to']] for e in site['edges'])
           and all(set(s.get('after',[]))=={e['from'] for e in site['edges'] if e['to']==s['id']} for s in site['steps'] if s.get('method'))
           and m['28_website']['outcome']['actions']==['plan-site@1','write-content@1','build-pages@1','check-site@1'])
+    # 0.7.0-handlers: the kernel names no constructor or artifact kind; the code that performs effects is recorded by sha.
+    check('S40_kernel_source_without_moved_kinds',all(w not in core_src for w in ('compile_candidate','emit_artifact','LOCAL_ARTIFACT','valid_contract')))
+    handlers=data.get('action_handlers',{})
+    check('S41_action_handlers_recorded_by_sha',set(handlers)=={'simulate_fact','compile_candidate','emit_artifact'} and handlers['simulate_fact']['file']=='kernel/core.py'
+          and all(hashlib.sha256((ROOT/h['file']).read_bytes()).hexdigest()==h['sha256'] for h in handlers.values()))
     valid=all(t['pass'] for t in tests)
     return {'verifier':'independent_verify.py: pure JSON/hash verifier, never imports kernel',
             'checks':tests,'passed':sum(t['pass'] for t in tests),'total':len(tests),

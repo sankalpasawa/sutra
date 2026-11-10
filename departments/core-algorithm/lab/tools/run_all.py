@@ -6,6 +6,8 @@ ROOT=Path(__file__).resolve().parents[1]
 sys.path.insert(0,str(ROOT))
 from kernel.core import State,Kernel,digest
 from extensions.reflection import Learner   # learning lives in the extension since 0.4.0-shrink (move-out M1)
+import extensions.constructor   # registers compile_candidate and emit_artifact (0.7.0-handlers, move-outs M2 + M3)
+from kernel.core import ACTIONS
 from tools.make_packs import P
 
 CASES=[
@@ -80,7 +82,9 @@ def extra_events():
             'journal_count':len(s.event_journal)}
 
 def build():
-    result={'release':'sutra-kernel-extensions/0.6.0-order',
+    handlers={kind:{'module':fn.__module__,'file':str(Path(sys.modules[fn.__module__].__file__).resolve().relative_to(ROOT)),
+                     'sha256':hashlib.sha256(Path(sys.modules[fn.__module__].__file__).read_bytes()).hexdigest()} for kind,fn in sorted(ACTIONS.items())}
+    result={'release':'sutra-kernel-extensions/0.7.0-handlers','action_handlers':handlers,
             'kernel_sha256':hashlib.sha256((ROOT/'kernel'/'core.py').read_bytes()).hexdigest(),
             'baseline_v0_1_sha256':hashlib.sha256((ROOT/'release'/'baseline_v0_1_core.py').read_bytes()).hexdigest(),
             'scope':'finite synthetic deterministic local simulation; NOT historical Core, current J2, or external outcomes',
