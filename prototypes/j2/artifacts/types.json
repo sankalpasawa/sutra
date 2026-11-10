@@ -17,10 +17,9 @@
     "page": {"builder": "builder.md", "file": "site/index.html", "preview": "html",
              "check_types": ["file-exists", "grep-count", "element-count", "named-test", "facts-present", "tap-targets", "behavior-steps"], "ready": "Your {lower} is ready."},
     "document": {
-      "builder": "templates/document/builder.md", "file": "{name}.md", "preview": "markdown", "export": "docx",
+      "builder": "templates/document/builder.md", "file": "{name}.md", "template": "templates/{name}/generic.json", "preview": "markdown", "export": "docx",
       "check_types": ["facts-present", "heading-present", "section-not-empty"],
-      "intake": "templates/document/intake.md", "charter_format": "templates/document/charter.txt",
-      "plan": "templates/document/plan.md", "atom_rules": "templates/document/atom_rules.md", "conditions": "document.json",
+      "intake": "templates/document/intake.md", "charter_format": "templates/document/charter.txt", "atom_rules": "templates/document/atom_rules.md", "conditions": "document.json",
       "rubric": [
         {"id": "D-1", "text": "Every section does the job its name says, for the charter's audience"},
         {"id": "D-2", "text": "Specific and checkable: names, numbers and rules are stated, not implied"},
@@ -41,6 +40,7 @@
       "tag": "PRD",
       "color": "--prd",
       "form": "document",
+      "template": "templates/prd/generic.json",
       "file": "prd.md",
       "export": "docx",
       "output_label": "PRD document",
@@ -57,7 +57,6 @@
       "builder": "templates/prd/builder.md",
       "intake": "templates/prd/intake.md",
       "charter_format": "templates/prd/charter.txt",
-      "plan": "templates/prd/plan.md",
       "atom_rules": "templates/prd/atom_rules.md",
       "mock": {"charter": "mock_prd_charter", "section": "mock_doc_section", "atom": "mock_doc_atom"},
       "deliverable": true,
@@ -71,7 +70,6 @@
       "conditions": "prd.json",
       "workflow": {
         "template": "doc-sections",
-        "builder": "python:PRD_BUILDER",
         "refs": "^prd\\.md(#|$)"
       },
       "cost": {
@@ -93,6 +91,7 @@
       "tag": "HLD",
       "color": "--hld",
       "form": "document",
+      "template": "templates/hld/generic.json",
       "file": "hld.md",
       "export": "docx",
       "output_label": "HLD document",
@@ -109,7 +108,6 @@
       "builder": "templates/hld/builder.md",
       "intake": "templates/hld/intake.md",
       "charter_format": "templates/hld/charter.txt",
-      "plan": "templates/hld/plan.md",
       "atom_rules": "templates/hld/atom_rules.md",
       "mock": {"charter": "mock_prd_charter", "section": "mock_hld_section", "atom": {"Components": "C"}},
       "deliverable": true,
@@ -125,7 +123,6 @@
       "conditions": "hld.json",
       "workflow": {
         "template": "doc-sections",
-        "builder": "python:HLD_BUILDER",
         "refs": "^hld\\.md(#|$)"
       },
       "cost": {
@@ -147,6 +144,7 @@
       "tag": "LLD",
       "color": "--lld",
       "form": "document",
+      "template": "templates/lld/generic.json",
       "file": "lld.md",
       "export": "docx",
       "output_label": "LLD document",
@@ -163,7 +161,6 @@
       "builder": "templates/lld/builder.md",
       "intake": "templates/lld/intake.md",
       "charter_format": "templates/lld/charter.txt",
-      "plan": "templates/lld/plan.md",
       "atom_rules": "templates/lld/atom_rules.md",
       "mock": {"charter": "mock_prd_charter", "section": "mock_lld_section", "atom": {"Pages and sections": "S", "Interactive elements": "E", "Form fields": "F"}},
       "deliverable": true,
@@ -180,7 +177,6 @@
       "conditions": "lld.json",
       "workflow": {
         "template": "doc-sections",
-        "builder": "python:LLD_BUILDER",
         "refs": "^lld\\.md(#|$)"
       },
       "cost": {
@@ -241,6 +237,7 @@
         }
       }
     },
+    {"name": "business_report", "kind": "type", "label": "Report", "tag": "Report", "color": "--other", "form": "document", "template": "templates/business_report/generic.json", "file": "business_report.md", "noun": "report", "deliverable": true, "triggers": ["\\b(?:sales|monthly|weekly|quarterly|annual|business|status|progress)\\s+report\\b|\\breport\\s+on\\b"], "groups": [], "depends_on": []},
     {
       "name": "screenshots",
       "kind": "record",

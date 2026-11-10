@@ -2,7 +2,7 @@
 
 load(name) reads one output type from artifacts/types.json and the files its entry points to (the intake prompt, the
 charter format, the builder guidance, the plan and atom rules of a document, the necessary conditions), checks them, and
-returns the type in the shape of an entry of j2.OUTPUTS. j2.py uses it instead of OUTPUTS only when J2_GENERIC=1 (j2.output_def).
+returns the type in the shape j2.output_def gives every run.
 A type that fails a check is refused with the reason (ValueError): a run never half-uses it.
 """
 import json
@@ -16,9 +16,9 @@ AGENTS_DIR = os.path.join(HERE, "agents", "j2")
 CONDITIONS_DIR = os.path.join(HERE, "conditions")
 FORMS = ("page", "document")      # room for "script" and "action": not built yet
 NEEDED = ("label", "noun", "form", "conditions", "rubric", "check_types", "done", "intake", "charter_format", "workflow", "cost")
-DOC_NEEDED = ("file", "builder", "plan", "atom_rules")
+DOC_NEEDED = ("file", "builder", "atom_rules")
 EXPORTS = (None, "docx")
-TEXTS = {"intake": "intake", "charter_format": "charter_fmt", "plan": "plan", "atom_rules": "atom_rules"}      # field -> OUTPUTS key
+TEXTS = {"intake": "intake", "charter_format": "charter_fmt", "atom_rules": "atom_rules"}      # field -> OUTPUTS key
 
 
 DOCUMENT = "Document"      # generic.json's document-level template, not a section
@@ -30,7 +30,9 @@ NAME_RE = re.compile(r"^[a-z][a-z0-9_]{1,40}$")
 def template(name):
     """The section templates of a type's template library entry (templates/<name>/generic.json), in document order;
     the document-level template left out. () when the type has no generic.json."""
-    p = os.path.join(TEMPLATES_DIR, name, "generic.json")
+    e = next((t for t in _read_types()["types"] if t.get("name") == name), {})      # types.json points to it
+    rel = e.get("template") or f"templates/{name}/generic.json"
+    p = os.path.join(TEMPLATES_DIR, os.path.relpath(rel, "templates"))
     if not os.path.isfile(p):
         return ()
     with open(p, encoding="utf-8") as f:
@@ -38,7 +40,7 @@ def template(name):
 
 
 def sections(name):
-    """A type's section names, from its template (the source for section names under J2_GENERIC=1)."""
+    """A type's section names, from its template (the source for section names)."""
     return tuple(t["section"] for t in template(name))
 
 
@@ -69,10 +71,6 @@ def section_parts(name, path=None):
 def id_prefixes(name):
     """{list field: id prefix} from the template's ids_sequential rules ("requirements": "R")."""
     return {r["path"]: r["prefix"] for t in template(name) for r in t.get("rules") or [] if r.get("rule") == "ids_sequential"}
-
-
-def enabled():
-    return os.getenv("J2_GENERIC") == "1"
 
 
 def _text(rel):
@@ -121,6 +119,27 @@ def _merged(name, path=None):
     return out
 
 
+def named(text, path=None):
+    """The document types a text names by their own words (each type's triggers, or a group's pattern for all its
+    members), in types.json order, and then the page types it names (also_when: site-words), only when a document is
+    named too. Offline only: the planner's answer in mock runs."""
+    d, text = _read_types(path), str(text or "")
+    docs = [t["name"] for t in d["types"] if t.get("kind") == "type" and t.get("form") == "document"
+            and (any(re.search(x, text, re.I) for x in t.get("triggers") or [])
+                 or any(re.search((d.get("groups") or {}).get(g, {}).get("pattern", "$^"), text, re.I) for g in t.get("groups") or []))]
+    pages = [t["name"] for t in d["types"] if t.get("kind") == "type" and t.get("also_when") == "site-words"
+             and re.search(d.get("site_words") or "$^", text, re.I)]
+    return docs + pages if docs else []
+
+
+def default(path=None):
+    """The type a run starts as before the planner chooses: J2_OUTPUT (the start page), else the first page type."""
+    names_ = names(path)
+    t = str(os.getenv("J2_OUTPUT") or "").strip().lower()
+    return t if t in names_ else next(x["name"] for x in _read_types(path)["types"] if x.get("kind") == "type"
+                                        and x.get("form") == "page")
+
+
 def info(name, path=None):
     """What the views and messages need of a type: its form, label, file, preview and ready message."""
     e = _merged(name, path)
@@ -166,7 +185,7 @@ def template_for(name, label, secs):
     """A new document type's template library entry (templates/<name>/generic.json): one generic template per section,
     its text required, its assumptions optional."""
     return {"schema": "template-library/1", "artifact": name, "kind": "generic", "version": 1,
-            "from": "made by J2 for a new document type (J2_GENERIC=1, j2_types.create)",
+            "from": "made by J2 for a new document type (j2_types.create)",
             "templates": [{"name": f"{label} · {x}", "artifact": name, "section": x, "version": 1, "kind": "generic",
                            "description": f"The generic {label} {x} section",
                            "fields": [{"name": "text", "type": "string", "required": True, "nullable": False,
@@ -205,7 +224,7 @@ def create(name, label, secs, file=None, path=None):
     p = path or TYPES_PATH
     text = open(p, encoding="utf-8").read()
     entry = {"name": name, "kind": "type", "label": str(label).strip(), "tag": str(label).strip(), "color": "--other",
-             "form": "document", "file": file, "deliverable": True, "triggers": [], "groups": [], "depends_on": [],
+             "form": "document", "template": f"templates/{name}/generic.json", "file": file, "deliverable": True, "triggers": [], "groups": [], "depends_on": [],
              "made_by": "adaptation"}
     first_record = text.index('    {\n      "name": "screenshots"')
     text = text[:first_record] + "    " + json.dumps(entry, ensure_ascii=False) + ",\n" + text[first_record:]

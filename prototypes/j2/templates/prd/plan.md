@@ -1,2 +1,0 @@
-
-THE OUTPUT IS A PRD DOCUMENT (markdown), not a website. Plan exactly one workflow per PRD section, in this order: Problem, Users, Goals, Requirements, Success metrics, Out of scope; each has one work atom whose how.steps names the section heading it writes (e.g. "## Problem"). covers lists the done-when items about that section. Price them with the document rate card: doc_section, or requirements_section for Requirements; fixes with 'fix'. Requirements are numbered R1, R2, ...; goals G1, G2, ...; each success metric names the goal it measures.
