@@ -367,7 +367,8 @@ PLACE = {
     "One global org chart": ("tl", 0, 0, 3),          # badge 7 sits inside the top-right corner
     "Interface library (Python models)": ("tl", 0, 0, 3),   # chat-flow badge 3 sits on the top-right corner
     "Workflow graph store": ("br", 0, 0, 3),          # arrow F rises from the top edge
-    "Chat sessions": ("tl", 0, 0, 3),
+    "Chat sessions": ("tl", 0, 0, 2),                 # the row of the Workflow graph store above starts at x=1147; three ids and "+N" would end at 1154
+    "band:CONNECTOR LAYER": ("tr", 0, 0, 3),          # arrow D (claude cli + python models) runs down x=122, through the end of a row at the top left
 }
 def pills(name, ids):
     ax, ay, aw, ah = ANCH[name]
