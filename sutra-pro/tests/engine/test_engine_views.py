@@ -7,6 +7,7 @@ The golden file `golden/api_shapes.json` was recorded from J2 itself (`scripts/r
 the content type and the key paths of a JSON body, in three situations (live, saved, idle). The stdlib adapter is asked the same
 questions and must give the same shapes, except for the keys the engine adds on purpose (the allow-list in the recorder)."""
 import contextlib
+import dataclasses
 import importlib
 import importlib.util
 import json
@@ -401,6 +402,81 @@ def test_the_idle_state_is_the_idle_snapshot_without_run_keys(w):
     body = jbody(call(w, "state", ctx, since="5"))
     assert body == json.loads(json.dumps({**ctx.snap, "saved": None})) and "host" not in body and body["status"] == "idle"
     assert call(w, "state", w.views.RunCtx("live", None, None, "x", None, w.memory)).code == 404, "live without a snapshot"
+
+
+# ---- a run the engine before J2 sync 4 made: its snapshot has no studio block (0.2.1 and older) ---------------------------
+def without_studio(w, run, **kw):
+    """The context of a live run whose snapshot was published as the engine before sync 4 published it: the same snapshot, minus its `studio`."""
+    ctx = live_ctx(w, run, **kw)
+    assert isinstance(ctx.snap["studio"], dict) and ctx.snap["studio"]["parts"], "the engine's own snapshot has the block"
+    return dataclasses.replace(ctx, snap={k: v for k, v in ctx.snap.items() if k != "studio"})
+
+
+def test_an_older_runs_state_gets_the_studio_block_built_as_the_engine_and_the_saved_path_build_it(w):
+    for run, run_id in ((w.site, SITE_ID), (w.prd, PRD_ID)):
+        made = jbody(call(w, "state", live_ctx(w, run, alive=False)))
+        old = without_studio(w, run, alive=False)
+        assert "studio" not in old.snap
+        body = jbody(call(w, "state", old))
+        assert body["studio"] == made["studio"] and body["studio"]["schema"] == "studio/1", "what the engine publishes today, built from the older snapshot"
+        assert body["studio"]["total"] == len(body["studio"]["parts"]) > 0 and body["studio"]["done"] == body["studio"]["total"]
+        assert {k: v for k, v in body.items() if k != "studio"} == {k: v for k, v in made.items() if k != "studio"}, "nothing else changes"
+        saved = jbody(call(w, "state", saved_ctx(w, run_id)))["studio"]
+        assert body["studio"]["parts"] == saved["parts"] and body["studio"]["qsec"] == saved["qsec"], "the run opened by its id shows the same parts"
+        assert [p["doc"] for p in body["studio"]["parts"]] == [p["doc"] for p in saved["parts"]]
+    assert {p["doc"] for p in body["studio"]["parts"]} == {"prd"}, "a document's parts are attributed to it (the documents record was read)"
+
+
+def test_the_published_files_of_an_older_engine_answer_the_live_state_with_the_parts_the_saved_state_has(w, tmp_path):
+    for run, run_id in ((w.site, SITE_ID), (w.prd, PRD_ID)):
+        snap, live = w.views.live_state(run)
+        snap.pop("studio")                                                                  # snapshot.json as the engine before sync 4 wrote it
+        out = tmp_path / run_id
+        out.mkdir()
+        (out / "snapshot.json").write_text(json.dumps(snap, ensure_ascii=False), encoding="utf-8")
+        (out / "live.json").write_text(json.dumps(live), encoding="utf-8")
+        pub = w.views.read_published(out)
+        ctx = w.views.RunCtx("live", run_id, run.dir, str(w.runs_dir), run_id, w.memory, snap=pub.snap, extras=pub.live, alive=False)
+        live_body, saved_body = jbody(call(w, "state", ctx)), jbody(call(w, "state", saved_ctx(w, run_id)))
+        assert live_body["studio"]["parts"] and live_body["studio"]["parts"] == saved_body["studio"]["parts"], run_id
+        assert live_body["studio"]["done"] == saved_body["studio"]["done"] == saved_body["studio"]["total"] == live_body["studio"]["total"]
+
+
+def test_the_studio_block_is_built_from_the_whole_chat_not_from_the_poll_slice(w):
+    old = without_studio(w, w.site, alive=False)
+    whole = jbody(call(w, "state", old))
+    polled = jbody(call(w, "state", old, since=str(len(old.snap["chat"]) - 1)))
+    assert len(polled["chat"]) == 1 and polled["studio"] == whole["studio"] and whole["studio"]["stream"]
+
+
+def test_a_snapshot_that_already_has_the_studio_block_is_returned_as_it_is(w):
+    ctx = live_ctx(w, w.site)
+    own = {"schema": "studio/1", "parts": [], "stream": [], "qsec": None, "done": 0, "total": 0, "kept": "as published"}
+    for studio in (own, {}):
+        kept = dataclasses.replace(ctx, snap={**ctx.snap, "studio": studio})
+        assert jbody(call(w, "state", kept))["studio"] == studio, "a block the engine published is never built again"
+    assert jbody(call(w, "state", ctx))["studio"] == json.loads(json.dumps(ctx.snap["studio"]))
+    assert jbody(call(w, "state", idle_ctx(w)))["studio"]["parts"] == []
+
+
+def test_the_documents_record_of_an_older_run_comes_from_its_folder_else_from_live_json(w):
+    made = jbody(call(w, "state", live_ctx(w, w.prd)))["studio"]
+    old = without_studio(w, w.prd)
+    assert old.extras["docs"] and {p["doc"] for p in made["parts"]} == {"prd"}
+    no_live_file = dataclasses.replace(old, extras={})                                     # live.json missing: documents.json of the run folder
+    assert jbody(call(w, "state", no_live_file))["studio"] == made
+    no_folder = dataclasses.replace(old, dir=None)                                         # no folder: the record live.json carries
+    assert jbody(call(w, "state", no_folder))["studio"] == made
+    neither = dataclasses.replace(old, dir=None, extras={})                                # no record at all: still a block, never an error
+    assert call(w, "state", neither).code == 200 and jbody(call(w, "state", neither))["studio"]["total"] == made["total"]
+
+
+def test_a_snapshot_with_no_list_of_workflows_gets_no_studio_block(w):
+    for snap in ({"status": "waiting"}, {"status": "waiting", "workflows": None}, {"workflows": {"W-1": {}}}):
+        body = jbody(call(w, "state", w.views.RunCtx("live", "j2-x", None, str(w.runs_dir), "j2-x", w.memory, snap=snap, extras={})))
+        assert "studio" not in body, snap
+    body = jbody(call(w, "state", w.views.RunCtx("live", "j2-x", None, str(w.runs_dir), "j2-x", w.memory, snap={"workflows": []}, extras={})))
+    assert body["studio"] == {"schema": "studio/1", "parts": [], "stream": [], "qsec": None, "done": 0, "total": 0}, "a run with an empty plan has an empty one"
 
 
 # ---- runs, call, preview -----------------------------------------------------------------------------------------------
