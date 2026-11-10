@@ -4498,7 +4498,7 @@ def test_the_driver_clicks_types_presses_waits_and_takes_a_picture_in_a_real_chr
 
 COVER_HTML = """<!doctype html><html><head><meta charset="utf-8"><title>Cover</title><!--SUTRA-BOOT--></head><body style="margin:0">
 <button id="go" style="position:absolute;left:100px;top:100px;width:120px;height:40px">Go</button>
-<div id="cover" class="veil" style="position:fixed;inset:0;background:rgba(0,0,0,.1)"></div>
+<div id="cover" class="veil" style="position:fixed;inset:0;background:rgba(0,0,0,.1)"><h3 style="margin:100px 0 0 100px">A card</h3></div>
 <div id="out"></div>
 <script>document.getElementById('go').addEventListener('click', function (e) { document.getElementById('out').textContent = 'clicked at ' + Math.round(e.clientX); });</script>
 </body></html>"""
@@ -4509,8 +4509,8 @@ def test_a_click_a_cover_would_take_is_refused_by_name_and_a_button_that_is_stil
     """The welcome card of Home is a full-screen dialog: a click on the page behind it used to do nothing and the test waited 40 s for the effect. And a button
     that moves between the reading of its place and the press (a pane still filling in) was clicked at the place it had left."""
     browser.goto(fake.page("cover", COVER_HTML))
-    with pytest.raises(cdp.BrowserError, match=r"^a click on '#go' would not reach it: div#cover\.veil is on top of it, at \(160, 120\), after 0\.5 s$"):
-        browser.click("#go", timeout=0.5)
+    with pytest.raises(cdp.BrowserError, match=r"^a click on '#go' would not reach it: h3 in div#cover\.veil is on top of it, at \(160, 120\), after 0\.5 s$"):
+        browser.click("#go", timeout=0.5)                                          # what is hit is the card's heading: it is named with the card it is in
     assert browser.text("#out") == ""
     browser.js("document.getElementById('cover').remove()")
     browser.js("(() => { const b = document.getElementById('go'); b.style.transition = 'left 300ms linear'; b.style.left = '500px'; })()")        # slides while it is aimed at

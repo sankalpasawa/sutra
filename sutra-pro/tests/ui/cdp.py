@@ -606,7 +606,8 @@ class Browser:
   const x = left + width / 2, y = top + height / 2;
   const hit = document.elementFromPoint(x, y);
   const name = n => n.tagName.toLowerCase() + (n.id ? '#' + n.id : '') + (typeof n.className === 'string' && n.className.trim() ? '.' + n.className.trim().split(/\s+/).join('.') : '');
-  return {x, y, steady: still >= 2, ok: !!hit && (hit === e || e.contains(hit) || hit.contains(e)), hit: hit ? name(hit) : null};
+  const within = n => { const a = n.id ? null : (n.parentElement && n.parentElement.closest('[id]')); return a ? ' in ' + name(a) : ''; };     // a heading says little: name the card it is in
+  return {x, y, steady: still >= 2, ok: !!hit && (hit === e || e.contains(hit) || hit.contains(e)), hit: hit ? name(hit) + within(hit) : null};
 })(__SELECTOR__)"""
 
     def _aim(self, selector: str, timeout: float) -> tuple[float, float]:
