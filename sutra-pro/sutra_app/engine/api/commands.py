@@ -1,12 +1,16 @@
-"""The six POST routes, rows 26 to 30 and J2's `/api/ask` (engine design 7.1, F3 and F9, S1-contracts-04; J2 sync 4, D147).
+"""The seven POST routes, rows 26 to 30 and J2's `/api/ask` and `/api/settings` (engine design 7.1, F3 and F9, S1-contracts-04; J2 sync 4,
+D147).
 
-`views.say`, `views.ask`, `views.output` and `views.reset` keep J2's validation and bodies and ask a `Commands` object to act; here
-that object is `DeptCommands`, which acts through the orchestrator:
+`views.say`, `views.ask`, `views.settings`, `views.output` and `views.reset` keep J2's validation and bodies and ask a `Commands` object
+to act; here that object is `DeptCommands`, which acts through the orchestrator:
 
     say      `deliver_to_department(dept, text, settings=page.next_settings)`; Busy is 409 `{"ok": false}`; the start page's
              output choice is cleared once a delivery created a task
     ask      a question to one function about a run: J2's `j2_agent.answer`, asked of the function's own chat session when the
              orchestrator offers a turn for it (`services.agent_chat`, optional: `ports.AgentChatTurn`), else from the run's records
+    settings the Simple view's Decide for me switch (`{decide_for_me}`): a live run gets the inbox line `{"kind": "setting", "decide_for_me": bool}`
+             (`services.send_setting`, optional) that the engine host applies with `J2Run.set_auto`; the choice is also kept in
+             `page.json.next_settings.J2_DECIDE_FOR_ME`, so the team's next run starts with it (it stays through follow-ups and a reset)
     output   only while the page has no run: writes `page.json.next_settings.J2_OUTPUT` (`auto`, or any registered output: D129); otherwise 409 with the run's output
     reset    `stop_live(dept)`: False is 409 and touches nothing; True writes `page.json.since_run` (the latest run id)
     playbooks/clear, lessons/clear   the team's memory files (views)
@@ -30,7 +34,7 @@ from .reply import json_reply, to_response
 
 __all__ = ["DeptCommands", "add_routes", "read_json_body"]
 
-ROUTES = (("/api/say", "say"), ("/api/ask", "ask"), ("/api/playbooks/clear", "playbooks_clear"),
+ROUTES = (("/api/say", "say"), ("/api/ask", "ask"), ("/api/settings", "settings"), ("/api/playbooks/clear", "playbooks_clear"),
           ("/api/lessons/clear", "lessons_clear"), ("/api/output", "output"), ("/api/reset", "reset"))
 
 
@@ -102,8 +106,34 @@ class DeptCommands:
                 return False
             raise
         if settings and getattr(delivery, "delivered", None) == "follow_up":
-            ctxmod.write_page(self.services.data_dir, self.dept_id, next_settings={})
+            keep = {key: value for key, value in settings.items() if key == "J2_DECIDE_FOR_ME"}      # the switch stays, as in J2; the output is the first message's
+            ctxmod.write_page(self.services.data_dir, self.dept_id, next_settings=keep)
         return True
+
+    def settings(self, decide_for_me: Optional[bool]) -> bool:
+        """The Simple view's Decide for me switch (J2 sync 4): True when it is on after this call; `None` only reads it.
+
+        A live run (its process may be working or waiting for the owner) gets an inbox line the engine host applies with
+        `J2Run.set_auto` (`services.send_setting`, optional: a fake has none). The choice is also kept in the team's `page.json`
+        (`next_settings.J2_DECIDE_FOR_ME`, as the start page keeps the output), so a team with no run yet, and the team's next run, start
+        with it. Reading: a live process answers with its snapshot's own `decide_for_me`, else the kept choice, else the engine setting."""
+        page = ctxmod.read_page(self.services.data_dir, self.dept_id)
+        if decide_for_me is None:
+            return self._switch(page)
+        ctxmod.write_page(self.services.data_dir, self.dept_id,
+                          next_settings={**page.next_settings, "J2_DECIDE_FOR_ME": "1" if decide_for_me else "0"})
+        send = getattr(self.services, "send_setting", None)
+        if send is not None:
+            send(self.dept_id, {"decide_for_me": bool(decide_for_me)})
+        return bool(decide_for_me)
+
+    def _switch(self, page) -> bool:
+        ref = ctxmod.current_ref(self.services, self.dept_id, page)
+        folder = ctxmod.run_dir_of(self.services, self.dept_id, ref) if ref is not None else None
+        published = read_published(folder) if folder else None
+        if published is not None and published.alive and isinstance(published.snap.get("decide_for_me"), bool):
+            return published.snap["decide_for_me"]
+        return ctxmod.effective_settings(self.services.data_dir, self.dept_id, page).decide_for_me
 
     def set_output(self, out: Any) -> tuple[bool, str]:
         page = ctxmod.read_page(self.services.data_dir, self.dept_id)

@@ -80,7 +80,7 @@ class Commands(Protocol):
     def set_output(self, out: Any) -> Tuple[bool, str]: ...    # (accepted, the output type now)
     def reset(self) -> bool: ...                               # False: a run is going on, nothing was touched (409)
     def ask(self, who: str, question: Any, run_id: str) -> dict: ...      # J2's answer {who, answer, from}, plus additive keys; AskBusy: 409
-    def decide_for_me(self, on: Optional[bool]) -> bool: ...   # the Simple view's switch: set it (None: only read); the switch as it is now
+    def settings(self, decide_for_me: Optional[bool]) -> bool: ...    # the Simple view's switch: set it (None: only read); the switch as it is now
 
 
 @dataclass
@@ -99,7 +99,7 @@ class RunCtx:
     here: Optional[str] = None                    # E2 addition: the folder of j2_ui.html, stdlib adapter only
     vendor: Optional[str] = None                  # E2 addition: the folder of d3.min.js, stdlib adapter only
     library: Optional[str] = None                 # J2 sync 4: the one global template library's folder (`<data>/library`, D26); None: J2's own default
-    decide_for_me: bool = False                   # J2 sync 4: the team's Decide for me switch (page.json); shown when no live process holds it
+    decide_for_me: Optional[bool] = None          # J2 sync 4: the owner's choice for the team's next run (page.json), None: none made; shown where no live process holds the switch
 
 
 @dataclass(frozen=True)
@@ -176,6 +176,7 @@ def idle_snapshot(settings: EngineSettings, memory: MemoryPaths, run_id: str) ->
     out = j2.output_type(settings.output)
     memory_on = bool(settings.memory)
     snap.update({"fixes": int(settings.fixes), "mock": mock, "model": None, "budget": settings.budget, "memory": memory_on,
+                 "decide_for_me": bool(settings.decide_for_me),
                  "lessons": _rows(memory.lessons) if memory_on else [], "playbooks": _rows(memory.playbooks) if memory_on else [],
                  **j2.output_info(out, missing, [], [])})
     return snap
@@ -216,13 +217,13 @@ def _live_dict(ctx: RunCtx) -> dict:
 
 def effective_snapshot(ctx: RunCtx) -> dict:
     """The published snapshot with the process-gone rule: when the process is gone and the snapshot still says running, the
-    run is waiting and has an error (engine design 4.6). Where no live process holds Decide for me (no run yet, or a run whose process
-    has gone), `decide_for_me` is the team's own switch (`page.json`): a live process answers with J2's own field."""
+    run is waiting and has an error (engine design 4.6). A run whose process has gone shows the owner's latest Decide for me choice
+    for the team's next run when there is one (`page.json`); a live process answers with J2's own `decide_for_me` field."""
     snap = ctx.snap or {}
     if not ctx.alive and snap.get("status") == "running":
         snap = {**snap, "status": "waiting", "error": PROCESS_GONE}
-    if ctx.mode == "idle" or (ctx.mode == "live" and not ctx.alive):      # no process holds the switch: it is the team's own choice (J2 sync 4)
-        snap = {**snap, "decide_for_me": bool(ctx.decide_for_me)}
+    if ctx.decide_for_me is not None and ctx.mode == "live" and not ctx.alive:      # a run whose process has gone: the owner's latest choice (J2 sync 4)
+        snap = {**snap, "decide_for_me": ctx.decide_for_me}
     return snap
 
 
@@ -692,7 +693,7 @@ def settings(ctx: RunCtx, body: dict) -> Reply:
     if ctx.commands is None:
         return _no_commands()
     wanted = bool(body["decide_for_me"]) if "decide_for_me" in body else None
-    return _json({"ok": True, "decide_for_me": bool(ctx.commands.decide_for_me(wanted))})
+    return _json({"ok": True, "decide_for_me": bool(ctx.commands.settings(wanted))})
 
 
 def playbooks_clear(ctx: RunCtx, body: dict) -> Reply:
