@@ -463,16 +463,16 @@ def _seed_sha(seed: Path) -> str | None:
 
 
 def sync_seed_once(data_dir: str | os.PathLike[str], seed: Path | None = None) -> dict[str, Any] | None:
-    """The server's start-up sync: `sync_seed_library` for an existing library, once per seed. `<library>/.seed-sync` holds the sha256 of
-    the seed's index.json the library was last synced with; when it is the current one nothing is done. A data folder without a library is
-    left to the engine, which seeds it whole at the first run. Never raises: a failure (the lock held, an index that is not an index, a
-    disk error) is a warning in the log, the marker is not written, and the next start tries again. Returns the report when it synced,
-    else None."""
+    """The server's start-up sync: `sync_seed_library`, once per seed. `<library>/.seed-sync` holds the sha256 of the seed's index.json the
+    library was last synced with; when it is the current one nothing is done. A data folder without a library gets the whole seed, as the
+    engine does at a first run (`host/loop._seed_library` stays for a run that starts without the server). Never raises: a failure (the
+    lock held, an index that is not an index, a disk error) is a warning in the log, the marker is not written, and the next start tries
+    again. Returns the report when it synced, else None."""
     try:
         seed = seed or seed_dir()
         library = Path(data_dir) / "library"
         wanted = _seed_sha(seed)
-        if wanted is None or not library.is_dir():
+        if wanted is None:
             return None
         marker = library / SEED_MARKER
         try:
