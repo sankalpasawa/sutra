@@ -3584,12 +3584,13 @@ class J2Run:
             if h.get("why"):
                 h["why"] += f" The Requester answered: {last_user}"
             self._handoff(p["to"], **h, answer=last_user, asked=p["questions"])
-            self._plan_stages()
+            if self._plan_stages() is False:      # J2_GENERIC=1: the plan chose no buildable type
+                self.turn = None
         else:
             if not self.goal:
                 self.request = last_user
-                self._plan_stages()
-                self._handoff("identity", kind="intake")
+                if self._plan_stages() is not False:
+                    self._handoff("identity", kind="intake")
             elif self.fixes or self._change_applies():   # fix (b): a change request is checked at J2.a first
                 self._handoff("identity", kind="intake", change=self.feedback, mark=len(self.intake))
             else:
@@ -3709,14 +3710,25 @@ class J2Run:
     # ---- design documents: stages. PRD, HLD and LLD run one after another through the same flow (each its own output
     # type, charter, plan, build and audit); the site follows when it was asked for. Plain runs never get here.
     SITE_ESSENTIALS = ("styling", "page_section", "page_section", "page_section", "form")   # parts the site needs first
+    mock_deliverables = None      # J2_GENERIC=1, offline: the planner's choice, set per test (default: the keyword logic's)
 
     def _plan_stages(self):
         """Once, before the charter: the documents the brief or the answers ask for by name (detect_documents). None
-        asked: nothing changes. The first document's output type is picked here; a site follows only if it was named."""
+        asked: nothing changes. The first document's output type is picked here; a site follows only if it was named.
+        J2_GENERIC=1: the types come from Adaptation's planner instead (_deliverables); one page type alone is the plain
+        run of that type. False when the plan chose no buildable type (the run stops)."""
         if self.stages or self.goal:
             return
         said = [self.request] + [x["answer"] for x in self.intake]
-        docs = detect_documents(*said)
+        site = None
+        if j2_types.enabled():
+            chosen = self._deliverables(said)
+            if chosen is None:
+                return False
+            docs = [k for k in chosen if output_def(k)["sections"]]
+            site = [k for k in chosen if k not in docs]
+        else:
+            docs = detect_documents(*said)
         deeds = j2_send.detect_deeds(*said)
         for k in deeds:      # the brief never chooses the recipient: say so once, in plain words
             if j2_send.names_other(k, *said) and k not in self.deed_seen:
@@ -3729,9 +3741,12 @@ class J2Run:
             self.post("system", "A send needs a document to send. Ask for a PRD, HLD or LLD as well; nothing will be sent.",
                       warning=True)
         if not docs:
+            if site and site[0] != self.output:
+                self._apply_output(site[0])
             return
         self.docset = docs
-        self.stages = docs + deeds + (["website"] if wants_site(*said) else [])
+        # ponytail: documents first, then sends, then pages, whatever order the plan gave (the stage flow knows no other)
+        self.stages = docs + deeds + (site if site is not None else ["website"] if wants_site(*said) else [])
         self.stage_i = 0
         self._apply_output(self.stages[0])
         self.site_tag = self.stages[0] + "-" if len(self.stages) > 1 else ""      # one document keeps its plain file names
@@ -3740,6 +3755,39 @@ class J2Run:
         self.post("system", f"Documents asked for: {names}" + (", then the website" if "website" in self.stages else "")
                   + (f", then {and_list(j2_send.DEEDS[k]['words'] for k in deeds)} of the last document" if deeds else "")
                   + ". They are written in that order, each from the one before.")
+
+    def _deliverables(self, said):
+        """J2_GENERIC=1: the types to build, in order, chosen by Adaptation's planner from the brief and the answers so
+        far (j2_realization.plan_goal with the type list: checked by code, judged, revised like any plan fault).
+        Offline, the planner answers what the keyword logic chose (or mock_deliverables). Records deliverables.json.
+        None when even the revised plan names no type in artifacts/types.json."""
+        types = j2_realization.type_list()
+        goal = {"statement": " ".join(str(t or "") for t in said if t), "brief": True}
+
+        def offline(i):
+            if self.mock_deliverables is not None:
+                return self.mock_deliverables(i) if callable(self.mock_deliverables) else self.mock_deliverables
+            docs = detect_documents(*said)
+            return docs + (["website"] if wants_site(*said) else []) if docs else [self.output]
+        note = (f"\nThe Requester chose the {output_def(self.output)['label']} on the start page: include it."
+                if self.output != "website" else "")
+        r = j2_realization.plan_goal(goal, web=False, log=lambda m: None, extra=note, types=types,
+                                     mocks=j2_realization.deliverable_mocks(goal, offline))
+        self.save("deliverables.json", r)      # its calls stay there: self.calls numbers calls.jsonl (documents.json ranges)
+        known = [t["name"] for t in types]
+        chosen = [k for k in dict.fromkeys(r["deliverables"]) if k in known]
+        if r["plan_faults"]:
+            self._event("adaptation", "deliverables", "; ".join(r["plan_faults"]))
+        if not chosen:
+            self.post("system", "Adaptation's plan named no type J2 can build (" + ", ".join(known) + "), even after "
+                      "one revision, so nothing is built.", warning=True)
+            self.outcome = "Stopped: the plan chose nothing J2 can build."
+            return None
+        why = [f"{d['type']}: {d['why']}" for d in r["plan"].get("deliverables") or []
+               if isinstance(d, dict) and d.get("type") in chosen and str(d.get("why") or "").strip()]
+        if why:
+            self.post("adaptation", "What I build: " + "; ".join(why) + ".")
+        return chosen
 
     @property
     def stage_kind(self):
@@ -5683,9 +5731,23 @@ class J2Run:
                  "another, reads that file. Its done_test names what the output must contain. Checking the whole site "
                  "is Audit's job: never plan check, review, QA, test or report workflows.")
 
+    def _real_note(self):
+        """REAL_NOTE, or under J2_GENERIC=1 the same rules for the chosen type (artifacts/types.json)."""
+        if not j2_types.enabled():
+            return self.REAL_NOTE
+        t = next(x for x in j2_realization.type_list() if x["name"] == self.output)
+        return (f"\nTHIS PLAN RUNS IN J2. Every workflow becomes one funded J2 workflow with one output, run in "
+                f"dependency order. The run builds the {t['label']} ({t['file']}, a {t['form']}). A workflow's output is "
+                f"either one part of it, checked by code (check types: {', '.join(self.out['check_types'])}), or one "
+                "file that later workflows read; every workflow that lists it in inputs_from, directly or through "
+                f"another, reads that file. Its done_test names what the output must contain. Checking the whole "
+                f"{self.out['noun']} is Audit's job: never plan check, review, QA, test or report workflows.")
+
     def _realization_applies(self):
         """J2_REALIZATION=1 shapes the first plan of a website run (not documents, a blueprint build or a change request;
-        a change that needs a full re-plan, J2_CHANGE=1, is planned through it once more)."""
+        a change that needs a full re-plan, J2_CHANGE=1, is planned through it once more). J2_GENERIC=1: every run,
+        documents included, is first planned before the charter to choose its deliverables (_deliverables); this
+        per-charter plan stays website-only, so a document stage's prompts are unchanged (doc_unchanged)."""
         return (self.realization and self.goal and not self.doc and not self.blueprint
                 and (self.real_replan or (not self.feedback and not self._all_wfs())))
 
@@ -5699,7 +5761,7 @@ class J2Run:
         if self.real is None:
             self.post("system", "Realization is on: Adaptation plans by stage and certainty, and a separate judge scores "
                                 "every workflow before anything is built.")
-            r = j2_realization.plan_goal(self.goal, web=False, log=lambda m: None, extra=self.REAL_NOTE)
+            r = j2_realization.plan_goal(self.goal, web=False, log=lambda m: None, extra=self._real_note())
             self.real, self.real_base = r, copy.deepcopy(self.goal)     # a change is diffed against this charter
             self.calls += r["calls"]
             self.save("realization.json", r)

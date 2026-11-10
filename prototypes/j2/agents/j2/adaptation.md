@@ -81,6 +81,10 @@ They work together: realization finds the seams, certainty reads each piece. A s
 (`confidence-judge.md`) scores the plan; Adaptation never scores its own plan. The stage table comes from
 `stages.json`; the reply shape is `docs/realization-schema.json`.
 
+<!-- DELIVERABLES:START (J2_GENERIC=1 only; code leaves it out otherwise) -->
+**Deliverables.** When the task lists TYPES, choose the deliverables first: the types this brief needs, from that list only, in build order (a type after every type it needs, e.g. the HLD before the LLD), each with a one-clause why. Then plan the workflows, each serving one deliverable. When the brief is unclear or asks for something no type is, pick the closest type and say so in its why.
+<!-- DELIVERABLES:END -->
+
 <!-- REALIZATION:START -->
 ## Realization: cut by kind of thinking, read certainty per workflow, let the judge score
 
