@@ -16,7 +16,6 @@ from pathlib import Path
 from types import SimpleNamespace
 
 import pytest
-import test_engine_host as host_tests
 from test_engine_host import (  # noqa: F401  (j2 is a fixture)
     BREW_LAB, QUIET, VAGUE, RaisingPort, Running, append_inbox, events, j2, jsonl, make_port_of, trace, wait_until,
 )
@@ -24,13 +23,6 @@ from test_engine_host import (  # noqa: F401  (j2 is a fixture)
 from sutra_app import oslayer
 from sutra_app.engine.host import finish, loop
 from sutra_app.engine.port import NoModelAvailable
-
-
-@pytest.fixture(autouse=True)
-def _import_the_modules_the_steps_use_anew(monkeypatch):
-    """`fresh_j2` puts back the J2 modules it imported anew; the two the finish steps import are not in its list, so they would outlive
-    the test and keep the first test's copies of the modules they import. Added here, for this file only."""
-    monkeypatch.setattr(host_tests, "J2_MODULES", host_tests.J2_MODULES + ("j2_agent_models", "j2_agent_views"))
 
 
 # ---- the runner, with steps made here ---------------------------------------------------------------------------------------------
