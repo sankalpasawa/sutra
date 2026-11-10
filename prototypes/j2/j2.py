@@ -7171,7 +7171,7 @@ class J2Run:
         (as the plan's own proposal writes them). Each fill is logged (_autofix)."""
         slug = re.sub(r"[^a-z0-9]+", "-", str(row.get("name")).lower()).strip("-")
         have = {"goal_gap": row.get("goal"), "completion_check": row.get("done_test"),
-                "outputs": [self.out.get("file") or "index.html"] if row.get("covers") else [f"artifacts/{slug}.md"]}
+                "outputs": [self.out.get("file") or PAGE_FILE] if row.get("covers") else [f"artifacts/{slug}.md"]}
         got = [f for f in missing if have.get(f)]
         for f in got:
             w[f] = have[f]
