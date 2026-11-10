@@ -11,10 +11,12 @@
      sessionChip(session)           the chip of a chat's own choice from its record (pinned, pinned_model, pinned_effort): an archived agent chat shows this and no pill
      stateWord(state)               the word for a function node's state ("working", "done", ...)
      usageWords(usage)              "3 calls, $0.04" ("" when nothing was spent)
+     purposeLines(usage)            what the calls were for (D159): [{key, calls, usd, text, hint}] for "judging 2 calls, $0.04" (the late judge: purposes plan and judge) and
+                                    "questions 1 call, $0.02" (the answers in the agent's chat: agent_chat), each only when its calls are above zero
      agentsRequest(dept, run)       {method, path, query} for GET /api/teams/{dept}/agents
      runSwitcher(runs, selected)    the run <select data-act="agents-run"> over RunRef[] (newest first)
-     list(rows, opts)               the Agents tab: one row per agent chat (state, the model chip, usage), a button that opens it, the run switcher;
-                                    opts {runs, run, loading, error}
+     list(rows, opts)               the Agents tab: one row per agent chat (state, the model chip, usage and, under it, what the calls were for), a button that opens it,
+                                    the run switcher; opts {runs, run, loading, error}
      noteBox(info)                  the box under an agent chat's pill: "Note to Audit" and what it says ({agent, label, live, busy}). A function's chat also
                                     offers Ask (J2 sync 4, D148): info {ask: true, mode: "note" | "ask", asking, askNote} adds the Note / Ask switch and, in
                                     Ask, the question box ("Ask Audit", answered from the run's records); a run that is over has no note, only the Ask box
@@ -90,6 +92,30 @@
     return Number.isFinite(usage.usd) && usage.usd > 0 ? calls + ", $" + (usage.usd < 0.01 ? usage.usd.toFixed(4) : usage.usd.toFixed(2)) : calls;
   }
 
+  // What the agent's calls were for (D159). `usage.by_purpose` is {purpose: {calls, usd}} for each purpose the agent's session was charged for. Two lines are drawn
+  // under its usage: "judging" is the late judge's work (the purposes `plan` and `judge`, D145) and "questions" the answers given in the agent's chat (`agent_chat`,
+  // D147). The rest (the agent's own turns, a helper's summary) is the usage line above it, so nothing more is said about it here.
+  const PURPOSE_LINES = Object.freeze([
+    Object.freeze({key: "judging", purposes: Object.freeze(["judge", "plan"]), hint: "Calls that planned or judged a workflow in this agent's turn"}),
+    Object.freeze({key: "questions", purposes: Object.freeze(["agent_chat"]), hint: "Answers this agent gave to questions asked in its chat"})]);
+
+  function purposeLines(usage) {
+    const by = isObj(usage) && isObj(usage.by_purpose) ? usage.by_purpose : {};
+    const out = [];
+    PURPOSE_LINES.forEach(line => {
+      let calls = 0;
+      let usd = null;
+      line.purposes.forEach(p => {
+        const cell = hasOwn(by, p) && isObj(by[p]) ? by[p] : null;
+        if (cell === null || !Number.isFinite(cell.calls) || cell.calls <= 0) return;
+        calls += cell.calls;
+        if (Number.isFinite(cell.usd)) usd = (usd === null ? 0 : usd) + cell.usd;
+      });
+      if (calls > 0) out.push({key: line.key, calls, usd, text: line.key + " " + usageWords({calls, usd}), hint: line.hint});
+    });
+    return out;
+  }
+
   function agentsRequest(dept, run) {
     const query = clean(run) !== "" ? {run: clean(run)} : {};
     return {method: "GET", path: "/api/teams/" + encodeURIComponent(clean(dept)) + "/agents", query};
@@ -113,10 +139,12 @@
     const dot = '<span class="agent-dot" data-state="' + esc(state) + '" aria-hidden="true"></span>';
     const word = past ? "past run" : stateWord(clean(r.state));
     const usage = usageWords(r.usage);
+    const purposes = purposeLines(r.usage);
     return '<li class="agent" data-kind="' + esc(clean(r.kind)) + '" data-state="' + esc(state) + '">' +
       '<button type="button" class="agent-open" data-act="open-agent" data-sid="' + esc(sid) + '" data-node="' + esc(clean(r.node_id)) + '" data-status="' +
       esc(clean(r.status)) + '" title="' + esc(clean(r.title)) + '">' + dot + '<span class="agent-name">' + esc(clean(r.label) || clean(r.agent)) + "</span>" +
-      '<span class="agent-state">' + esc(word) + "</span></button>" + chip(r.effective) + (usage ? '<span class="agent-usage">' + esc(usage) + "</span>" : "") + "</li>";
+      '<span class="agent-state">' + esc(word) + "</span></button>" + chip(r.effective) + (usage ? '<span class="agent-usage">' + esc(usage) + "</span>" : "") +
+      (purposes.length ? '<span class="agent-purposes">' + purposes.map(p => '<span class="agent-purpose" data-line="' + p.key + '" title="' + esc(p.hint) + '">' + esc(p.text) + "</span>").join("") + "</span>" : "") + "</li>";
   }
 
   function list(rows, opts) {
@@ -237,7 +265,7 @@
     return '<div class="cstream agentlive" role="status" aria-live="polite"><small>' + esc(who) + " is working…</small>" + parts.join("") + "</div>";
   }
 
-  const AgentChats = {isAgent, sourceWord, sourceFrom, modelWords, chip, sessionChip, stateWord, usageWords, agentsRequest, runSwitcher, list, noteBox, boxMode,
+  const AgentChats = {isAgent, sourceWord, sourceFrom, modelWords, chip, sessionChip, stateWord, usageWords, purposeLines, agentsRequest, runSwitcher, list, noteBox, boxMode,
     steerRequest, askRequest, askProblem, livePartial, liveRow, idle, MAX_NOTE, MAX_ASK, FUNCTIONS, SOURCES};
   if (typeof module === "object" && module !== null && module.exports) module.exports = AgentChats;
   else root.AgentChats = AgentChats;
