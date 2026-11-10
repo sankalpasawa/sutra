@@ -1949,6 +1949,9 @@ def mock_prd_charter(text):
 
 def mock_doc_section(w, goal):
     """Mock only: the markdown a scripted builder writes for the PRD section its workflow names."""
+    many = wf_sections(w, doc_sections("prd"))
+    if len(many) > 1:      # J2_GENERIC=1: a workflow that writes several sections writes each, in order
+        return "\n".join(mock_doc_section({**w, "sections": [x]}, goal) for x in many)
     g = goal or {}
     sec = (wf_sections(w, doc_sections("prd")) or doc_sections("prd"))[0]
     name, feats, succ = g.get("product_name") or "The product", g.get("features") or [], g.get("success_measures") or []
@@ -2162,6 +2165,9 @@ def lld_condition(k, doc):
 
 def mock_hld_section(w, goal):
     """Mock only: the markdown a scripted builder writes for the HLD section its workflow names, from the charter."""
+    many = wf_sections(w, doc_sections("hld"))
+    if len(many) > 1:      # J2_GENERIC=1: a workflow that writes several sections writes each, in order
+        return "\n".join(mock_hld_section({**w, "sections": [x]}, goal) for x in many)
     g = goal or {}
     sec = (wf_sections(w, doc_sections("hld")) or doc_sections("hld"))[0]
     name, reqs = g.get("product_name") or "The product", ((g.get("chain") or {}).get("prd") or {}).get("requirements") or []
@@ -2183,6 +2189,9 @@ def mock_hld_section(w, goal):
 
 def mock_lld_section(w, goal):
     """Mock only: the markdown for the LLD section a workflow names, one page section per HLD component."""
+    many = wf_sections(w, doc_sections("lld"))
+    if len(many) > 1:      # J2_GENERIC=1: a workflow that writes several sections writes each, in order
+        return "\n".join(mock_lld_section({**w, "sections": [x]}, goal) for x in many)
     g = goal or {}
     sec = (wf_sections(w, doc_sections("lld")) or doc_sections("lld"))[0]
     comps = ((g.get("chain") or {}).get("hld") or {}).get("components") or [{"id": "C1"}]
@@ -2432,12 +2441,32 @@ def doc_cites(kind):
 
 def doc_plan_data(kind):
     """J2_GENERIC=1: what Adaptation's document task carries instead of the fixed plan (templates/<kind>/plan.md): the
-    type's sections from its template, in document order, with their fields, as data."""
-    o = output_def(kind)
-    secs = [{"section": t["section"], "fields": [f["name"] + ("" if f.get("required") else " (optional)") for f in t["fields"]]}
+    type's sections from its template, in document order, with their fields, as data; then the planning guidance
+    plan.md gave, made from the same data (section parts, citations, id formats, in-document references)."""
+    o, secs = output_def(kind), j2_types.sections(kind)
+    data = [{"section": t["section"], "fields": [f["name"] + ("" if f.get("required") else " (optional)") for f in t["fields"]]}
             for t in j2_types.template(kind)]
+    parts, ids = j2_types.section_parts(kind), j2_types.id_prefixes(kind)
+    base = max(set(parts.values()), key=list(parts.values()).count)      # the part most sections cost
+    big = [x for x in secs if parts[x] != base]
+    words = lambda f: f.replace("_", " ")
+    cite = [f"the workflow that writes {x} names every {d.upper()} {words(lst)[:-1]} id it {f} "
+            f"({j2_types.id_prefixes(d).get(lst, '')}1, ...)" for x, (d, lst, f) in j2_types.cites(kind).items()]
+    refs = [f"every {words(r['path'].split('[].')[0])[:-1]} names its {words(r['path'].split('[].')[1])} "
+            f"({ids.get(r['target'][5:].split('[]')[0], '')}1, ...)"
+            for t in j2_types.template(kind) for r in t.get("rules") or []
+            if r.get("rule") == "ref_exists" and str(r.get("target", "")).startswith("this.")]
     return (f"\nTHE OUTPUT IS A {o['noun']} DOCUMENT ({o['file']}, markdown), not a website. ITS SECTIONS, in document "
-            f"order (template library, templates/{kind}/generic.json): {json.dumps(secs, ensure_ascii=False)}")
+            f"order (template library, templates/{kind}/generic.json): {json.dumps(data, ensure_ascii=False)}"
+            "\nPLAN THE WORKFLOWS as you judge best; one workflow may write several sections. Each workflow names the "
+            "section(s) it writes in \"sections\", using only the names above, and every section is written by exactly "
+            "one workflow. Each work atom's how.steps names the heading(s) it writes (e.g. \"## "
+            f"{secs[0]}\"), with one heading-present and one section-not-empty check per section it writes. covers "
+            "lists the done-when items of its section(s); every done-when item is covered by exactly one workflow. "
+            f"Price each section it writes with the document rate card: {base}"
+            + "".join(f", or {parts[x]} for {x}" for x in big) + "; a workflow that writes several sections costs at least the sum; fixes with 'fix'. "
+            + "".join(f"{x[0].upper() + x[1:]}. " for x in cite + refs)
+            + "Ids: " + "; ".join(f"{words(k)} {v}1, {v}2, ..." for k, v in ids.items()) + ".")
 
 
 # ---- the style guide: written by the first workflow that runs, followed by every workflow agent
@@ -6348,7 +6377,8 @@ class J2Run:
         """J2.e before building: a plan that leaves a necessary condition with no workflow is flagged and Adaptation
         gets one retry. If the gap is still there, the plan goes ahead with a warning (Audit's check will show it)."""
         for retry in (True, False):
-            gaps = self._plan_gaps(norm(r.get("workflows"))) if norm(r.get("workflows")) else []
+            self._doc_remap(r)
+            gaps = (self._plan_gaps(norm(r.get("workflows"))) if norm(r.get("workflows")) else []) + self._doc_plan_gaps(r)
             if not gaps:
                 return r
             why = "; ".join(c.get("why") or f"no workflow builds {c['id']} ({c['text']})" for c in gaps)
@@ -6360,10 +6390,76 @@ class J2Run:
                 r = self._atoms_checked(self.call("adaptation", fmt, task + "\nTHE VALIDATOR FLAGGED YOUR PLAN: " + why
                                                   + ". Put that work in a workflow and send your whole reply again.", mock),
                                         fmt, task, mock)
+            elif any(c.get("text") == "document plan" for c in gaps):      # J2_GENERIC=1: _doc_plan_gaps
+                self.post("system", f"The {self.out['noun']} plan still has gaps after one revision: {why}. It goes ahead; "
+                                    "the validator refuses what can't be built and Audit's checks show the rest.", warning=True)
             else:
                 self.post("system", f"The plan still leaves {', '.join(c['id'] for c in gaps)} with no workflow. It goes "
                                     "ahead; the necessary-conditions check after the build will show the gap.", warning=True)
         return r
+
+    def _doc_first_plan(self, r):
+        """J2_GENERIC=1: Adaptation's first proposal for a document stage (the planner's own workflows)."""
+        return (j2_types.enabled() and self.doc and not self.workflows
+                and str(r.get("act") or "PROPOSE").upper() == "PROPOSE")
+
+    def _doc_remap(self, r):
+        """J2_GENERIC=1, a document's first plan: a done-when item that names a section is covered by the one workflow
+        that writes that section (taken out of the others' covers). Other items keep the covers the planner gave."""
+        if not self._doc_first_plan(r):
+            return
+        wfs = [w for w in r.get("workflows") or [] if isinstance(w, dict) and not w.get("revises")]
+        for i, c in enumerate((self.goal or {}).get("done_when") or [], 1):
+            sec = next((x for x in self.out["sections"] if x.lower() in str(c).lower()), None)
+            owner = next((w for w in wfs if sec in wf_sections(w, self.out["sections"])), None) if sec else None
+            holders = [w for w in wfs if i in self._covers(w)]
+            if owner is None or holders == [owner]:
+                continue
+            no = self._no(c)
+            for w in holders:
+                w["covers"] = [x for x in w.get("covers") or [] if as_int(x) != as_int(no)]
+            owner["covers"] = list(owner.get("covers") or []) + [no]
+
+    def _doc_plan_gaps(self, r):
+        """J2_GENERIC=1, a document's first plan, worded for the plan flag: no workflows; a workflow that names no
+        section or one the template doesn't have; a section no workflow writes or two write; a done-when item (not left
+        out) that no workflow covers (R1) or two cover (R2)."""
+        if not self._doc_first_plan(r):
+            return []
+        noun, secs = self.out["noun"], self.out["sections"]
+        wfs = [w for w in norm(r.get("workflows")) if not w.get("revises")]
+        gap = lambda i, why: {"id": i, "text": "document plan", "why": why}
+        if not wfs:
+            return [gap("plan", f"the plan has no workflows: propose at least one workflow for the {noun}")]
+        out, by, cov = [], {}, {}
+        for w in wfs:
+            n = w.get("name") or "?"
+            bad = [str(x) for x in w.get("sections") or [] if x not in secs] if isinstance(w.get("sections"), list) else []
+            if bad:
+                out.append(gap(n, f"workflow {n!r} names section(s) the {noun} doesn't have: {', '.join(bad)}"))
+            got = wf_sections(w, secs)
+            if not got:
+                out.append(gap(n, f"workflow {n!r} names no section of the {noun} in \"sections\""))
+            for x in got:
+                by.setdefault(x, []).append(n)
+            for i in self._covers(w):
+                cov.setdefault(i, []).append(n)
+        for x in secs:
+            if x not in by:
+                out.append(gap(x, f"no workflow writes the {x} section"))
+            elif len(by[x]) > 1:
+                out.append(gap(x, f"the {x} section is written by {' and '.join(by[x])}: one workflow writes each section"))
+        at = self._item_at()
+        left = {at.get(as_int(x.get("item") if isinstance(x, dict) else x)) for x in r.get("left_out") or []}
+        for i in range(1, len((self.goal or {}).get("done_when") or []) + 1):
+            if i in left:
+                continue
+            if not cov.get(i):
+                out.append(gap(f"item {i}", f"R1: done-when item {i} has no workflow that covers it"))
+            elif len(cov[i]) > 1:
+                out.append(gap(f"item {i}", f"R2: done-when item {i} is covered by {' and '.join(cov[i])}; one workflow "
+                                            "covers each item"))
+        return out
 
     def _fact_source(self, goal=None):
         """What a facts-present string must come from: the charter and the Requester's own words, squashed. goal: an
@@ -6384,9 +6480,16 @@ class J2Run:
         if real and self._file_wf(w):
             for a in w["atoms"]:
                 facts_to_headings(a, src)
-        return [f"work atom {n}: {x}" for n, a in enumerate(w["atoms"], 1)
-                for x in expected_problems(a, types) or check_problems(cover_expected(copy.deepcopy(a)), src, types, up,
-                                                                       ranges=real)]
+        out = [f"work atom {n}: {x}" for n, a in enumerate(w["atoms"], 1)
+               for x in expected_problems(a, types) or check_problems(cover_expected(copy.deepcopy(a)), src, types, up,
+                                                                      ranges=real)]
+        if j2_types.enabled() and self.doc and not w.get("revises") and "fix" not in (w.get("parts") or []):
+            # every section the workflow writes has its own heading-present and section-not-empty check (any atom)
+            have = {(c.get("type"), heading_target(c.get("target"))) for a in w["atoms"] if isinstance(a, dict)
+                    for c in a.get("verification") or [] if isinstance(c, dict)}
+            out += [f"no {t} check for the {x} section it writes" for x in wf_sections(w, self.out["sections"])
+                    for t in HEADING_CHECKS if (t, x) not in have]
+        return out
 
     def _priority_file_note(self, table):
         """J2_REALIZATION: what Priority needs to know about file workflows on the table ("" when there are none, so other
@@ -7003,18 +7106,26 @@ class J2Run:
             rc, unknown = price(w)
             own = w.get("sections") if j2_types.enabled() and self.doc and isinstance(w.get("sections"), list) else []
             bad_secs = [str(x) for x in own if x not in self.out["sections"]]
+            writes = wf_sections(w, self.out["sections"]) if j2_types.enabled() and self.doc else []
+            no_sec = (j2_types.enabled() and self.doc and not writes and not w.get("revises")
+                      and "fix" not in (w.get("parts") or []))
+            parts_of = j2_types.section_parts(self.output) if writes and RATES else {}
+            sec_min = sum(RATES.get(parts_of[x], 0) for x in writes) if len(writes) > 1 else 0
             reason = ("a check or report on the site is Audit's job, not a workflow" if self._audit_name(name)
                       else f"required field(s) missing: {', '.join(missing)}" if missing
                       else "; ".join(no_atom) if no_atom
                       else f"it cites LLD section(s) that don't exist: {unknown_lld}" if unknown_lld
                       else (f"it names section(s) the {self.out['noun']} template doesn't have: {', '.join(bad_secs)} "
                             f"(sections: {', '.join(self.out['sections'])})") if bad_secs
+                      else f"it names no section of the {self.out['noun']} (sections)" if no_sec
                       else f"{self.p_refused[name]}, so it can't be registered" if name in self.p_refused
                       else "no rate-card parts, so it has no price" if RATES and rc is None
                       else f"unknown rate-card parts {unknown}; allowed: {', '.join(RATES)}" if unknown
                       else (f"the judge scored it {w['judge']['score']:.2f}, below the {j2_realization.THRESHOLD:.2f} gate"
                             f" (weakest: {w['judge'].get('weakest')}" + (f": {w['judge']['missing'][0]}" if w['judge'].get('missing') else "") + ")")
                       if (w.get("judge") or {}).get("ready") is False
+                      else (f"it writes {len(writes)} sections ({', '.join(writes)}), so it costs at least {sec_min} "
+                            f"({' + '.join(parts_of[x] for x in writes)}), not {c}") if c < sec_min
                       else "its cost is 0" if c <= 0
                       else self._underpriced(w, rc, covered) if RATES
                       else None) or (f"it costs {c}, over the {remaining} left in the budget" if c > remaining else None)
