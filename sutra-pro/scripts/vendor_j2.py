@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Vendor the J2 prototype's engine into `sutra_app/engine/` (work package E1; engine design 3.1 and 3.4, decision D13).
 
-    scripts/py scripts/vendor_j2.py --source /path/to/extraction --commit 00efb179... [--dest .] [--check]
+    scripts/py scripts/vendor_j2.py --source /path/to/extraction --commit 025e265c... [--dest .] [--check]
 
 Since sync 4 (D136) the source is the folder `prototypes/j2` of this repository at the pinned sutra commit, extracted with
 `git archive <commit> prototypes/j2 | tar -x --strip-components=2 -C <new, empty folder>` (never the working tree).
@@ -10,7 +10,7 @@ What it does, in this order, and nothing else:
 
   1. reads the J2 files from `--source`, an extraction of `prototypes/j2` at ONE commit (a plain folder, so an edited working
      tree, a `.pyc` or a stray file is never vendored), with `--commit` naming the commit it was taken from;
-  2. copies the 16 code modules and applies the numbered patches (P1 to P5, P7 to P12, P14 and P15; no P6, no P13) as exact
+  2. copies the 17 code modules and applies the numbered patches (P1 to P5, P7 to P12, P14 and P15; no P6, no P13) as exact
      text edits: every edit names its old text and how often it must occur, so a J2 change under an anchor stops the run
      instead of producing a silently different file (P15 is a data patch: see `scrub_seed_index`);
   3. copies the data files byte for byte: role files, conditions, artifact types, generic templates, the seed template
@@ -37,15 +37,15 @@ from pathlib import Path
 from typing import Optional
 
 REPO = Path(__file__).resolve().parent.parent
-BASELINE = "00efb179e21cb79fae157a0679e819921ac37726"        # sutra commit that last touched prototypes/j2 (sync 4, D136)
-BASELINE_TREE = "99b6f3a05de78a609b593d81d7fb06b55c32b961"   # `git rev-parse <BASELINE>:prototypes/j2`
+BASELINE = "025e265c594564f47a2365874cd5a5cc5d0d20a6"        # sutra commit that last touched prototypes/j2 (sync 4, D136)
+BASELINE_TREE = "21c67045fe3230c1ab9be381c2f21465ea91849c"   # `git rev-parse <BASELINE>:prototypes/j2`
 PREVIOUS_BASELINES = ("9200cf6", "33aeeda")                   # commits the earlier syncs took the J2 prototype at: history only, never a source
 DESIGNED_AGAINST = "ce2631f"                                  # the design documents' line numbers (`j2.py:n`) are those of this commit: history only
 J2_ENV = "SUTRA_J2_CHECKOUT"
 
 CODE = ("j2.py", "j2_agent.py", "j2_agent_models.py", "j2_agent_views.py", "j2_artifact_models.py", "j2_artifacts.py",
         "j2_board.py", "j2_change.py", "j2_check.py", "j2_map.py", "j2_realization.py", "j2_rules.py", "j2_schema.py",
-        "j2_send.py", "j2_story.py", "j2_template_lib.py")
+        "j2_send.py", "j2_story.py", "j2_studio.py", "j2_template_lib.py")
 ROLE_FILES = ("team.md", "identity.md", "adaptation.md", "priority.md", "coordination.md", "audit.md", "builder.md",
               "confidence-judge.md", "rates.json", "stages.json")          # agents/j2/ without the never-read _placeholders/
 CONDITIONS = ("hld.json", "lld.json", "prd.json", "website.json")
@@ -94,6 +94,7 @@ import j2_realization
 import j2_rules
 import j2_schema
 import j2_send
+import j2_studio
 import j2_template_lib
 import llm
 ''', r'''from . import j2_artifacts
@@ -106,6 +107,7 @@ from . import j2_realization
 from . import j2_rules
 from . import j2_schema
 from . import j2_send
+from . import j2_studio
 from . import j2_template_lib
 from . import llm
 from . import hooks as _hooks                    # P3, P8: NullHooks, TurnInfo, CallInfo, TurnOutcome
