@@ -45,19 +45,8 @@ RECORDS = "Judge W-3 scored 0.71 and named the missing footer."
 ANSWER = "W-3 scored 0.71 because the footer was missing."
 
 
-@pytest.fixture(autouse=True)
-def _ask_failed_exists(monkeypatch):
-    """`AskFailed` is declared by lane B in engine/api/ports.py; until its commit is merged here a stand-in of the same shape stands in for it."""
-    from sutra_app.engine.api import ports
-    if not hasattr(ports, "AskFailed"):
-        class AskFailed(Exception):
-            def __init__(self, reason: str) -> None:
-                super().__init__(reason)
-                self.reason = reason
-        monkeypatch.setattr(ports, "AskFailed", AskFailed, raising=False)
-
-
 def ask_failed():
+    """The refusal of the engine's route (engine/api/ports.py): imported by the test as the port imports it, where it is needed."""
     from sutra_app.engine.api.ports import AskFailed
     return AskFailed
 

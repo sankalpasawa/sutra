@@ -222,10 +222,10 @@ def test_asking_changes_nothing_in_the_records_j2s_panel_reads(story):
 
 def test_the_event_stream_carried_both_lines_of_each_question_in_order(story):
     frames = [f["data"] for f in story.live.sse.snapshot() if f["type"] == "chat.message" and f["data"]["message"].get("ask")]
-    mine = {who: [(f["message"]["ask"], f["message"]["who"]) for f in frames if f["session_id"] == story.sessions[who]]
-            for who in ("identity", "audit", "priority", "coordination", "validator")}
+    mine = {who: [(f["message"]["ask"], f["message"]["who"]) for f in frames if f["session_id"] == sid] for who, sid in story.sessions.items()}
     assert mine == {"identity": [("q", "user"), ("model", "identity")], "audit": [("q", "user"), ("model", "audit")],
-                    "priority": [("q", "user"), ("records", "priority")], "coordination": [("q", "user"), ("records", "coordination")], "validator": []}
+                    "priority": [("q", "user"), ("records", "priority")], "coordination": [("q", "user"), ("records", "coordination")],
+                    "adaptation": []}                                                # asked nothing: and the validator has no session to carry a line
 
 
 # ---- an app with no model ----------------------------------------------------------------------------------------------------------------------------------------------------------
