@@ -1,4 +1,5 @@
-"""The 30 handlers of J2's server as plain functions (work package E2, engine design 4.6 and 7.1).
+"""The 37 handlers of J2's server as plain functions (work package E2, engine design 4.6 and 7.1; J2 sync 4 added `plan_map`,
+`activity`, `catalog`, `artifacts_groups` and `ask`, D140: `runlist` and `changes` are J2's own routes now).
 
     VIEWS[name](ctx: RunCtx, query_or_body: dict) -> Reply
 
@@ -14,9 +15,9 @@ is about and where its state comes from:
 
 The query parameters of J2's routes arrive in the dict (`since`, `id`, `atom`, `who`, `deck`, `section`, `name`); the parts of a
 path arrive in it too: `artifact`, `section`, `slug`, `version` ("v3") for `library_item`, `n` for `shot`, `name` for `file`, `key`
-for `site`. The three commands (say, output, reset) are done by `ctx.commands` (the orchestrator through `api/`, the in-process run
-in the stdlib adapter); the handler keeps J2's validation and J2's body shapes. Bodies are text (or bytes for PNG, DOCX, the page
-and the d3 file) and are redacted by the adapter, never here.
+for `site`. The four commands (say, ask, output, reset) are done by `ctx.commands` (the orchestrator through `api/`, the in-process
+run in the stdlib adapter); the handler keeps J2's validation and J2's body shapes. Bodies are text (or bytes for PNG, DOCX, the
+page and the d3 file) and are redacted by the adapter, never here.
 
 `live_state(run)` is the other direction: what the host publishes (`snapshot.json`, `live.json`) built from a `J2Run`.
 """
@@ -37,14 +38,19 @@ from .spec import EngineSettings
 capabilities.register(j2)        # D126: the API process, the stdlib adapter and the tests see the same outputs as the run process
 
 __all__ = ["Reply", "MemoryPaths", "Commands", "RunCtx", "Published", "VIEWS", "HANDLER_COUNT", "DOCX", "PROCESS_GONE",
-           "EMPTY_LIVE", "LIVE_VIEWS", "PATCH_VIEWS", "live_state", "read_published", "idle_snapshot", "effective_snapshot"]
+           "EMPTY_LIVE", "LIVE_VIEWS", "ASK_CHARS", "AskBusy", "live_state", "read_published", "idle_snapshot", "effective_snapshot"]
 
 DOCX = "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
 PROCESS_GONE = "The department process stopped (exit unknown). Try again."      # engine design 4.6
 SNAPSHOT_FILE, LIVE_FILE = "snapshot.json", "live.json"
 PNG = "image/png"
-HANDLER_COUNT = 30        # the rows 1 to 30 of engine design 7.1 ("site" has two rows, saved and live, and one entry in VIEWS)
-PATCH_VIEWS = ("runlist", "changes")      # P13: two read-only routes J2's own repository does not have (docs/design/j2-sync-3.md)
+HANDLER_COUNT = 37        # J2's rows of engine design 7.1: 31 GET rows ("site" has two, saved and live, and one entry in VIEWS) and 6 POST rows
+ASK_CHARS = 2000          # the longest question `ask` takes: as long as a note to an agent (D147)
+
+
+class AskBusy(RuntimeError):
+    """The function's chat is answering another question. `DeptCommands.ask` raises it when the orchestrator says busy (the engine
+    cannot import the orchestrator's `Busy`); the route answers 409 `{"error": "busy"}`."""
 
 
 @dataclass(frozen=True)
@@ -63,11 +69,13 @@ class MemoryPaths:
 
 
 class Commands(Protocol):
-    """What the three POSTs do to the run. The handler validates; this object acts."""
+    """What the four POSTs that act do to the run (the two clears only touch memory files, which the views do themselves). The
+    handler validates; this object acts."""
 
     def say(self, text: str) -> bool: ...                      # False: the run is busy (409)
     def set_output(self, out: Any) -> Tuple[bool, str]: ...    # (accepted, the output type now)
     def reset(self) -> bool: ...                               # False: a run is going on, nothing was touched (409)
+    def ask(self, who: str, question: Any, run_id: str) -> dict: ...      # J2's answer {who, answer, from}, plus additive keys; AskBusy: 409
 
 
 @dataclass
@@ -352,9 +360,26 @@ def plan(ctx: RunCtx, q: dict) -> Reply:
     return _json(j2_map.plan_view(_dir(ctx)))
 
 
+def plan_map(ctx: RunCtx, q: dict) -> Reply:
+    """Adaptation, Map: the plan as a map (plan-map/1), from the run's realization, workflow, change and goal files (J2 sync 4, D140)."""
+    return _json(j2_map.plan_map(_dir(ctx)))
+
+
+def activity(ctx: RunCtx, q: dict) -> Reply:
+    """One function's feed (activity/1): its messages, AI calls, planning, judging and changes, in order, from the run's own
+    records (`?who=`); a run with nothing recorded for it, or no run, is `{"found": false}` (J2 sync 4, D140)."""
+    return _json(j2_agent.activity(_dir(ctx), q.get("who")))
+
+
 # --------------------------------------------------------------------------------------------------------- rows 10 to 12
 def library(ctx: RunCtx, q: dict) -> Reply:
     return _json(j2_template_lib.library_view())
+
+
+def catalog(ctx: RunCtx, q: dict) -> Reply:
+    """The shared library page's data (J2 sync 4, D141): the committed library and the runs that gave it templates. It is the one
+    global library: the run is not read, and the index is replaced atomically (P12), so no lock is needed for a read."""
+    return _json(j2_template_lib.catalog_view())
 
 
 def library_item(ctx: RunCtx, q: dict) -> Reply:
@@ -393,6 +418,26 @@ def code(ctx: RunCtx, q: dict) -> Reply:
 def artifacts_tree(ctx: RunCtx, q: dict) -> Reply:
     d = _dir(ctx)
     return _json(j2_artifacts.tree(d, j2_map.build(d, _live_map_input(ctx))) if d else j2_artifacts.tree(None))
+
+
+def artifacts_groups(ctx: RunCtx, q: dict) -> Reply:
+    """The Artifacts pane's five groups (artifacts-groups/1), made from the same data as the Map like `artifacts_tree`.
+
+    J2's Documents group knows its own PRD, HLD and LLD only. The report of an output a capability added (the project report) is
+    asked of the registry (`capabilities.documents`, D146), and its row is added to the Documents group and to the top-level
+    `documents` map: nothing of J2's constants is edited, and the next output with a report file needs no work here."""
+    d = _dir(ctx)
+    body = j2_artifacts.groups(d, j2_map.build(d, _live_map_input(ctx))) if d else j2_artifacts.groups(None)
+    out = j2.saved_output(d) if _saved(ctx) else _live_dict(ctx)["output"]
+    rows = capabilities.documents(out, d) if d else []
+    if rows:
+        docs = next(g for g in body["groups"] if g["id"] == "documents")
+        have = {r["id"] for r in docs["rows"]}
+        added = [r for r in rows if r["id"] not in have]          # never a second row, and never over J2's own entry
+        docs["rows"] += added
+        body["documents"] = {**(body.get("documents") or {}),
+                             **{r["id"]: {"sections": {}, "file": r["file"], "kind": "document"} for r in added}}
+    return _json(body)
 
 
 def artifact(ctx: RunCtx, q: dict) -> Reply:
@@ -528,6 +573,25 @@ def say(ctx: RunCtx, body: dict) -> Reply:
     return _json({"ok": ok}, 200 if ok else 409)
 
 
+def ask(ctx: RunCtx, body: dict) -> Reply:
+    """`POST /api/ask {who, q, run}`: a question to one of J2's six functions about a run (J2 sync 4, D147). J2's order and words
+    hold: 400 `{"error": "not a function"}` unless `who` is one of `j2_agent.FUNCS`; the answer is `{who, answer, from}`. Who answers is
+    the command object's business (the app: the function's own chat session through a port, or the run's records; the stdlib
+    adapter: the records, always), so this route is the one door for both."""
+    who = str(body.get("who") or "")
+    if who not in j2_agent.FUNCS:
+        return _json({"error": "not a function"}, 400)
+    if ctx.commands is None:
+        return _no_commands()
+    q = body.get("q")
+    if isinstance(q, str) and len(q.strip()) > ASK_CHARS:
+        return _json({"error": "question too long"}, 400)
+    try:
+        return _json(ctx.commands.ask(who, q, str(body.get("run") or "")))
+    except AskBusy:
+        return _json({"error": "busy"}, 409)
+
+
 def playbooks_clear(ctx: RunCtx, body: dict) -> Reply:
     return _json({"ok": True, "cleared": j2.clear_playbooks(ctx.memory.playbooks)})
 
@@ -554,7 +618,8 @@ def reset(ctx: RunCtx, body: dict) -> Reply:
 VIEWS: Dict[str, Callable[[RunCtx, dict], Reply]] = {fn.__name__: fn for fn in (
     index, vendor, state, runs, call, preview, docs, map, plan, library, library_item, run_templates, artifacts, agent, code,
     artifacts_tree, artifact, story, board, audits, refs, shot, file, site, say, playbooks_clear, lessons_clear, output, reset,
-    runlist, changes)}
+    runlist, changes, plan_map, activity, catalog, artifacts_groups, ask)}
 
 # What a request needs from the live run (the stdlib adapter builds `live_state` only for these; the others read the folder).
-LIVE_VIEWS = frozenset({"state", "runlist", "preview", "docs", "map", "artifacts_tree", "story", "board", "file", "site"})
+LIVE_VIEWS = frozenset({"state", "runlist", "preview", "docs", "map", "artifacts_tree", "artifacts_groups", "story", "board", "file",
+                        "site"})
