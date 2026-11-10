@@ -1,0 +1,58 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "additionalProperties": false,
+  "properties": {
+    "heading": {
+      "description": "The section heading, written exactly as '## Goals'",
+      "type": "string"
+    },
+    "studio_name": {
+      "description": "The studio name as it appears in the section",
+      "type": "string"
+    },
+    "goals": {
+      "description": "The goals G1, G2, G3 in order, each once",
+      "items": {
+        "$ref": "#/definitions/Goal"
+      },
+      "type": "array"
+    },
+    "assumptions": {
+      "description": "Assumptions behind the goals, taken only from the recorded facts",
+      "items": {
+        "type": "string"
+      },
+      "type": "array"
+    }
+  },
+  "required": [
+    "heading",
+    "studio_name"
+  ],
+  "type": "object",
+  "definitions": {
+    "Goal": {
+      "additionalProperties": false,
+      "properties": {
+        "id": {
+          "description": "G1, G2 or G3, in order",
+          "enum": [
+            "G1",
+            "G2",
+            "G3"
+          ],
+          "type": "string"
+        },
+        "statement": {
+          "description": "The goal in one line, with no numeric targets",
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "statement"
+      ],
+      "type": "object"
+    }
+  }
+}
