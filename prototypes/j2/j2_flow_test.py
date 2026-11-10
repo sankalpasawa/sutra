@@ -1210,7 +1210,7 @@ def simple_redesign():
                  " if (r.work && innerWidth > 1180){ S('steam').click(); r.card = S('steamcard').open; S('steamfull').click(); r.full = [S('steamcard').open, document.body.classList.contains('simple')]; }"
                  " if (r.land){ const b = S('slandteam'); r.crew = [b.tagName, b.getAttribute('aria-label') || '', b.querySelectorAll('.av').length];"
                  "   const dl = S('steamcard'), at = (x, y) => dl.dispatchEvent(new MouseEvent('click', {bubbles: true, clientX: x, clientY: y}));"
-                 "   b.click(); r.crewcard = [dl.open, document.body.classList.contains('simple'), ['Asha', 'Mira', 'Kabir', 'Dev', 'Nora', 'Planner', 'Budget lead', 'Scheduler', 'Gatekeeper'].every(w => dl.textContent.includes(w))];"
+                 "   b.click(); r.crewcard = [dl.open, document.body.classList.contains('simple'), ['Asha', 'Mira', 'Kabir', 'Dev', 'Nora'].every(w => dl.textContent.includes(w)) && !['Planner', 'Budget lead', 'Scheduler', 'Gatekeeper'].some(w => dl.textContent.includes(w))];"
                  "   const dr = dl.getBoundingClientRect(); at(dr.left + 4, dr.top + 4); r.crewpad = dl.open; at(2, 2); r.crewout = dl.open;"
                  "   b.click(); dl.querySelector('[data-close]').click(); r.crewclose = dl.open; b.click(); S('steamfull').click(); r.crewfull = [dl.open, document.body.classList.contains('simple')]; }"
                  " r.err2 = __e.slice();")
