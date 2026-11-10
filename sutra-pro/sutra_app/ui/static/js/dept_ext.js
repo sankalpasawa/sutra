@@ -126,7 +126,8 @@
         banner = d.createElement("div");
         banner.className = "banner archivedbanner";
         banner.setAttribute("role", "status");
-        place.insertBefore(banner, place.firstChild);
+        const strip = place.querySelector(":scope > .steamstrip");          // the Simple view's strip ("All teams", the team's name) stays the first thing on the page
+        place.insertBefore(banner, strip ? strip.nextSibling : place.firstChild);
       }
       banner.textContent = sentence;
     });
