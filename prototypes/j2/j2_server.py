@@ -227,7 +227,7 @@ class Handler(http.server.BaseHTTPRequestHandler):
             conds = {}
             for n in ("website", "prd", "hld", "lld"):
                 conds.update({c["id"]: c["text"] for c in j2.load_conditions(f"{n}.json")})
-            rub = {i: t for o in j2.OUTPUTS.values() for i, t in o.get("rubric") or ()}
+            rub = {i: t for k in j2.OUTPUTS for o in [j2.output_def(k)] for i, t in o.get("rubric") or ()}
             return self._send(200, json.dumps({"conditions": conds, "rubric": rub}, ensure_ascii=False))
         if u.path.startswith("/shot/"):        # the screenshot Audit looked at for site vN
             d, n = (j2.saved_dir(run) if run else RUN.dir), u.path.rsplit("/", 1)[-1]
@@ -238,7 +238,7 @@ class Handler(http.server.BaseHTTPRequestHandler):
                 return self._send(200, f.read(), "image/png")
         if u.path.startswith("/file/"):        # a document run's prd.md or prd.docx, to download
             d, name = (j2.saved_dir(run) if run else RUN.dir), u.path.rsplit("/", 1)[-1]
-            o = j2.OUTPUTS[j2.saved_output(d) if run else RUN.output]
+            o = j2.output_def(j2.saved_output(d) if run else RUN.output)
             allowed = [o["file"], o["file"][:-3] + ".docx"] if o.get("file") else []
             allowed += [f for k in j2._read(d or "", "documents.json", {}) for f in (f"{k}.md", f"{k}.docx")]   # design documents
             path = os.path.join(d or "", name)

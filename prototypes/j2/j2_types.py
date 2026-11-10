@@ -53,4 +53,6 @@ def load(name, path=TYPES_PATH):
         raise ValueError(f"{name}: export and plan are not read from data yet")
     if entry["form"] == "doc":      # a page's file is the page form's own (site/index.html); OUTPUTS names a document's
         out["file"] = entry["file"]
+    if entry["form"] == "page":      # the parts a page needs first, in order (J2Run.SITE_ESSENTIALS): its minimum cost
+        out["essentials"] = tuple(p for p, n in entry["cost"]["parts"].items() for _ in range(n))
     return out

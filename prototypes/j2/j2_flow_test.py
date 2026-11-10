@@ -6956,7 +6956,8 @@ def website_generic():
     import j2_types
     here = os.path.dirname(os.path.abspath(__file__))
     g, o = j2_types.load("website"), j2.OUTPUTS["website"]
-    assert {k: g.get(k) for k in o} == o and set(g) - set(o) == {"intake", "charter_fmt"}, sorted(set(g) ^ set(o))
+    assert {k: g.get(k) for k in o} == o and set(g) - set(o) == {"intake", "charter_fmt", "essentials"}, sorted(set(g) ^ set(o))
+    assert g["essentials"] == j2.J2Run.SITE_ESSENTIALS and g["rubric"] == j2.RUBRIC and g["done"] == j2.WORKABLE_OUTCOME
     inline = [n.value for n in ast.walk(ast.parse(open(os.path.join(here, "j2.py"), encoding="utf-8").read()))
               if isinstance(n, ast.Constant) and isinstance(n.value, str) and n.value.startswith("J2.a: is there enough information to work? You need")]
     assert inline == [g["intake"]], "templates/website/intake.md differs from the inline website intake in j2.py"

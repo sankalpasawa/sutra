@@ -35,7 +35,7 @@ J2_FIXES (default 0) picks the mode, so findings can compare the two:
      (b) a change request after done goes to Identity at J2.a first, then J2.b.
 """
 import copy
-from functools import reduce
+from functools import lru_cache, reduce
 import html
 import html.parser
 import itertools
@@ -197,7 +197,7 @@ def load_rates(output="website", card=True):
     path = os.path.join(J2_DIR, "rates.json")
     if card and RATES_ON and os.path.exists(path):
         with open(path, encoding="utf-8") as f:
-            RATES = {k: int(v) for k, v in (json.load(f).get(OUTPUTS[output]["rates"]) or {}).items()}
+            RATES = {k: int(v) for k, v in (json.load(f).get(output_def(output)["rates"]) or {}).items()}
 
 
 def _rate_card(key):
@@ -243,7 +243,7 @@ DOC_KINDS = (("requirements_section", r"requirement|components?\b|pages and sect
 
 
 def item_kind(criterion):
-    return next(k for k, pat in (DOC_KINDS if OUTPUTS[OUTPUT]["sections"] else ITEM_KINDS)
+    return next(k for k, pat in (DOC_KINDS if output_def(OUTPUT)["sections"] else ITEM_KINDS)
                 if re.search(pat, str(criterion), re.I))
 
 
@@ -2235,7 +2235,7 @@ def stage_goal(kind, base, chain):
     reqs = [r["id"] for r in (chain.get("prd") or {}).get("requirements") or []]
     comps = [c["id"] for c in (chain.get("hld") or {}).get("components") or []]
     items = []
-    for s in OUTPUTS[kind]["sections"]:
+    for s in output_def(kind)["sections"]:
         extra = (f", and names every requirement ({', '.join(reqs)}) it covers" if s == "Components" and reqs else
                  f", and names every component ({', '.join(comps)}) it implements" if s == "Pages and sections" and comps
                  else "")
@@ -2379,6 +2379,19 @@ def output_type(name=None):
     """A known output type: name, else J2_OUTPUT, else website."""
     t = str(name or os.getenv("J2_OUTPUT") or "website").strip().lower()
     return t if t in OUTPUTS else "website"
+
+
+GENERIC_TYPES = ("website",)      # the types j2_types reads from data under J2_GENERIC=1 (docs/remove-hardcoding-plan.md)
+
+
+def output_def(kind):
+    """What an output type is: its OUTPUTS entry, or under J2_GENERIC=1 the same entry read from data (j2_types)."""
+    return _data_type(kind) if j2_types.enabled() and kind in GENERIC_TYPES else OUTPUTS[kind]
+
+
+@lru_cache(maxsize=None)
+def _data_type(kind):
+    return j2_types.load(kind)
 
 
 # ---- the style guide: written by the first workflow that runs, followed by every workflow agent
@@ -2791,7 +2804,7 @@ def saved_snapshot(name, since=0):
             "report": _read(d, "report.json"), "outcome": s.get("outcome"),
             "decide_for_me": bool((_read(d, "settings.json", {}) or {}).get("decide_for_me")),
             "studio": j2_studio.build({"workflows": wfs, "chat": chat, "status": "saved", "audits": audits, "saved": name, "output": out,
-                                       "doc": bool(OUTPUTS[out]["sections"])}, docs),
+                                       "doc": bool(output_def(out)["sections"])}, docs),
             "auto_answers": [{"msg": m["id"], "answer": m["text"], "label": m.get("auto_label")} for m in chat if m.get("who") == "user" and m.get("auto")],
             "sections": [{"id": k, "owner": x["owner"], "workflow": x.get("workflow"),
                           "bytes": len((x["head"] + x["body"]).encode("utf-8"))} for k, x in sections.items()],
@@ -2799,7 +2812,7 @@ def saved_snapshot(name, since=0):
             "lanes": lanes(chat, wfs, None, None, "saved", None, 8, None), "call_log": calls,
             "workable": s.get("workable") if s else (workable(audits[-1]) if audits else None),
             "memory": False, "lessons": [], "lessons_used": (s.get("lessons") or {}).get("used", []),
-            "lessons_saved": (s.get("lessons") or {}).get("saved", []), "style": _read(d, "style.json"), "rubric": RUBRIC,
+            "lessons_saved": (s.get("lessons") or {}).get("saved", []), "style": _read(d, "style.json"), "rubric": output_def("website")["rubric"],
             "playbooks": [], "playbooks_used": (s.get("playbooks") or {}).get("used", []),
             "playbook_saved": (s.get("playbooks") or {}).get("saved"), **output_info(out, d, audits, list(docs))}
 
@@ -2816,7 +2829,7 @@ DOC_NAMES = {"prd": "product requirements", "hld": "high-level design", "lld": "
 def output_info(out, run_dir, audits, docset=None):
     """What the page needs about the output type: its label, whether it is a document, the latest necessary
     conditions and which exported files exist. A design-document run lists every document it has written."""
-    o = OUTPUTS[out]
+    o = output_def(out)
     docset = docset or []
     files = [f for f in ([o["file"], o["file"][:-3] + ".docx"] if o.get("file") else []) if os.path.exists(os.path.join(run_dir, f))]
     if docset:
@@ -2942,9 +2955,8 @@ class J2Run:
     def _apply_output(self, out):
         """Switch what is built (set_output before the first message; a design-document run at each stage)."""
         self.output = output_type(out)
-        self.out, self.doc = OUTPUTS[self.output], bool(OUTPUTS[self.output]["sections"])
-        if j2_types.enabled() and self.output == "website":      # J2_GENERIC=1: the website from artifacts/types.json (j2_types)
-            self.out = j2_types.load("website")
+        self.out = output_def(self.output)      # J2_GENERIC=1: from artifacts/types.json (j2_types)
+        self.doc = bool(self.out["sections"])
         # J2_REALIZATION: no rate card; Adaptation estimates each workflow's budget (estimated_resources.money)
         load_rates(self.output, card=not (getattr(self, "realization", None) or realization_on()))
         types = "|".join(f'"{t}"' for t in self.out["check_types"])
@@ -3018,7 +3030,7 @@ class J2Run:
                 "outcome": self.outcome,          # read-only, for the Simple view
                 "decide_for_me": self.auto, "auto_answers": self.auto_log,
                 "studio": self.studio_view(),     # the Simple view's parts, people and team stream (j2_studio.py, studio/1)
-                "style": self.style, "rubric": RUBRIC,
+                "style": self.style, "rubric": output_def("website")["rubric"],
                 "playbooks": load_playbooks() if self.memory else [], "playbooks_used": self.playbooks_used,
                 "playbook_saved": self.playbook_saved,
                 "mock": llm.MOCK, "model": None if llm.MOCK else llm.MODEL, "fixes": int(self.fixes),
@@ -3757,9 +3769,9 @@ class J2Run:
         if kind in j2_send.DEEDS:
             return RATES_DEED().get(kind, 0)
         if kind == "website":
-            r, parts = RATES_WEB(), self.SITE_ESSENTIALS
+            r, parts = RATES_WEB(), output_def("website").get("essentials", self.SITE_ESSENTIALS)
             return sum(r.get(k, 0) for k in parts)
-        r, n = RATES_DOC(), len(OUTPUTS[kind]["sections"])
+        r, n = RATES_DOC(), len(output_def(kind)["sections"])
         return r.get("doc_section", 0) * (n - 1) + r.get("requirements_section", 0)
 
     STAGE_WORDS = {"prd": "the product requirements", "hld": "the high-level design", "lld": "the low-level design",
@@ -7308,7 +7320,7 @@ class J2Run:
                                     "belong to other workflows. After you write it, code runs every check in your work atoms' "
                                     f"verification on the whole page ({MAX_CHECK_ATTEMPTS} attempts)." + style_task
                                     + "\nDESIGN RUBRIC (Audit checks every section against it; follow it):\n"
-                                    + "\n".join(f"{rid} {txt}" for rid, txt in RUBRIC[:6])
+                                    + "\n".join(f"{rid} {txt}" for rid, txt in output_def("website")["rubric"][:6])
                                     + (f"\nYOUR SECTION NOW (last written by {mine['owner']}):\n```head\n{mine['head']}\n```\n"
                                        f"```section\n{mine['body']}\n```" if mine else "")
                                     + (f"\nATTEMPT {attempt} OF {MAX_CHECK_ATTEMPTS}. CODE RAN YOUR CHECKS ON YOUR LAST "
@@ -7952,7 +7964,7 @@ class J2Run:
         aid = (target.get("atoms") or [{}])[0].get("id")
         if kind not in self.docs:
             return f"{kind or 'that document'} is not a document of this run"
-        if section not in OUTPUTS[kind]["sections"]:
+        if section not in output_def(kind)["sections"]:
             return f"{section!r} is not a section of the {kind.upper()}"
         if not self._board_doc_owner(aid, kind, section):
             return f"{aid} doesn't own the {kind.upper()}'s {section} section"
@@ -8008,8 +8020,8 @@ class J2Run:
             tag = f"{kind}-" if len(self.stages) > 1 else ""
             with open(os.path.join(self.dir, "site", f"{tag}v{version}.md"), "w", encoding="utf-8") as f:
                 f.write(text)
-        if OUTPUTS[kind].get("export"):
-            OUTPUTS[kind]["export"](text, self.dir)
+        if output_def(kind).get("export"):
+            output_def(kind)["export"](text, self.dir)
         ao = doc_agent_output(kind, text)
         if kind in self.docs:
             self.docs[kind] = {**self.docs[kind], "agent_output": ao}
@@ -8144,8 +8156,8 @@ class J2Run:
         with open(path, encoding="utf-8") as f:
             text = f.read()
         goal = next((s["goal"] for s in reversed(self.stage_archive) if s.get("stage") == kind), self.goal)
-        conds = check_conditions(load_conditions(OUTPUTS[kind]["conditions"]), text, goal,
-                                 self._fact_source(goal), OUTPUTS[kind]["sections"])
+        conds = check_conditions(load_conditions(output_def(kind)["conditions"]), text, goal,
+                                 self._fact_source(goal), output_def(kind)["sections"])
         self.save(f"conditions-{kind}.json", conds)
         self.post("system", f"{kind.upper()} v{version} conditions after {qid} (checked by code): " + "; ".join(
             f"{c['id']} " + ("met" if c["met"] else f"NOT MET ({c['evidence']})") for c in conds), mechanical=True)
@@ -8343,7 +8355,7 @@ class J2Run:
         own section; a question about which requirement covers something names the requirement. The words are the
         brief's and the document's; nothing is invented, and "not recorded" when the run holds neither."""
         kind = self._doc_of_workflow(wid)
-        section = next((s for s in OUTPUTS[kind]["sections"] if squash(w.get("name") or "").endswith(squash(s))), None)
+        section = next((s for s in output_def(kind)["sections"] if squash(w.get("name") or "").endswith(squash(s))), None)
         aid = ((w or {}).get("atoms") or [{}])[0].get("id")
         body = (atom_section_body(self.dir, self._all_wfs(), aid) or "") if aid else ""
         body = re.sub(r"^\s*#{1,6}\s+[^\n]*\n?", "", body.strip("\n"), count=1).strip("\n")
@@ -8445,7 +8457,7 @@ class J2Run:
                               lambda m: re.sub(r"type [\w-]+", f"type {new}", m.group(0)), text)
             text = re.sub(rf"(?m)^(\s*[-*+]\s*\*\*{sec}\*\*.*?)$", lambda m: m.group(1) + f" Version {v}: {note['reason']}.", text, count=1)
             open(path, "w", encoding="utf-8").write(text)
-            export_lld(text, self.dir)
+            output_def("lld")["export"](text, self.dir)
         if lld:
             lld["agent_output"] = {**lld["agent_output"], **{k: spec[k] for k in ("sections", "elements", "fields")},
                                    "revisions": self.lld_revisions}
@@ -9285,7 +9297,7 @@ class J2Run:
                                         "phones render the page at desktop width") if phone else
                                        ("Section present in the page" if ok else "No section for this item")})
             n = sum(f["verdict"] == "NEEDS_REVISION" for f in fs)
-            rub = [{"id": rid, "verdict": "PASS", "evidence": "Mock: looks fine in the measurements"} for rid, _ in RUBRIC]
+            rub = [{"id": rid, "verdict": "PASS", "evidence": "Mock: looks fine in the measurements"} for rid, _ in output_def("website")["rubric"]]
             # Checking a price item: Audit asks the workflow that built the products which attribute holds the
             # price, rather than guessing from the markup (board, J2_BOARD=1).
             changed = any(m.get("change") for m in self.chat)     # the demo's order: after the change request
@@ -9314,7 +9326,7 @@ class J2Run:
                       f"use BLOCKED_BY_EVIDENCE only for what neither it nor the code can show): {json.dumps(mech)}\n"
                       f"NECESSARY CONDITIONS (checked by code on the page; evidence): {json.dumps(conds, ensure_ascii=False)}\n"
                       f"DESIGN AND USABILITY RUBRIC (judge each item; a failing item is a normal finding): "
-                      f"{json.dumps(dict(RUBRIC), ensure_ascii=False)}\nSTYLE GUIDE: {json.dumps(self.style, ensure_ascii=False)}"
+                      f"{json.dumps(dict(output_def('website')['rubric']), ensure_ascii=False)}\nSTYLE GUIDE: {json.dumps(self.style, ensure_ascii=False)}"
                       f"\nDESIGN MEASUREMENTS (code, both widths): {json.dumps(mech.get('design'), ensure_ascii=False)}\n"
                       f"MEASURED PROBLEMS (code; you can't PASS these items): {json.dumps(measured, ensure_ascii=False)}\n"
                       + ("SCREENSHOT ATTACHED: the first screen at 360px (left) and 1280px (right). Judge R-1 to R-5 on "
