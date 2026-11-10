@@ -23,6 +23,12 @@ const REPORT = {
   days: [{key: "2026-11-02", calls: 3, usd: 0.25, tokens_in: 1, tokens_out: 1}, {key: "2026-11-04", calls: 11, usd: 0.5, tokens_in: 1, tokens_out: 1}],
   teams: [{key: "web", name: "Web <team>", calls: 14, usd: 0.75, tokens_in: 3300, tokens_out: 460}],
   functions: [{dept: "web", name: "Web <team>", fn: "audit", calls: 2, usd: 0.5, tokens_in: 1000, tokens_out: 100}, {dept: "web", name: "Web", fn: "identity", calls: 12, usd: 0.25, tokens_in: 2300, tokens_out: 360}],
+  purposes: [
+    {key: "agent_turn", calls: 11, usd: 0.6, tokens_in: 2900, tokens_out: 300},
+    {key: "judge", calls: 1, usd: 0.1, tokens_in: 100, tokens_out: 20},
+    {key: "plan", calls: 1, usd: 0.05, tokens_in: 295, tokens_out: 140},
+    {key: "made_up<x>", calls: 1, usd: null, tokens_in: 5, tokens_out: null},
+  ],
   atoms: [
     {atom_id: "a-1", dept: "web", fn: "audit", node_id: "web.audit", calls: 2, usd: 0.5, tokens_in: 1000, tokens_out: 100, team_href: "/d/web/?tab=audit", node_href: "/?pane=graph&node=web.audit"},
     {atom_id: "a-2<x>", dept: "web", fn: "chat", node_id: null, calls: 1, usd: null, tokens_in: 5, tokens_out: null, team_href: "javascript:alert(1)", node_href: null},
@@ -120,6 +126,53 @@ test("the team table lists each team with its functions under it, and every name
   assert.match(html, /<tr class="cteam"><th scope="row">Web &lt;team&gt;<\/th><td>14<\/td><td>\$0\.75<\/td>/);
   assert.ok(html.indexOf('class="cteam"') < html.indexOf('<tr class="cfn"><th scope="row">audit'));
   assert.doesNotMatch(html, /<team>/);
+});
+
+test("the table by purpose gives each purpose in the owner's words, in the order sent, with calls, dollars and tokens in and out", () => {
+  const html = CV.usageHtml(REPORT, {}, "");
+  assert.match(html, /<caption>Usage by purpose<\/caption>/);
+  assert.match(html, /<th scope="col">Purpose<\/th><th scope="col">Calls<\/th><th scope="col">USD<\/th><th scope="col">Tokens in<\/th><th scope="col">Tokens out<\/th>/);
+  assert.match(html, /<tr class="cpurpose" data-purpose="agent_turn"><th scope="row" title="agent_turn">Agents at work<\/th><td>11<\/td><td>\$0\.60<\/td><td>2,900<\/td><td>300<\/td><\/tr>/);
+  assert.match(html, /<tr class="cpurpose" data-purpose="judge"><th scope="row" title="judge">Judging workflows<\/th><td>1<\/td><td>\$0\.10<\/td><td>100<\/td><td>20<\/td><\/tr>/);
+  assert.match(html, /<th scope="row" title="plan">Planning workflows<\/th><td>1<\/td><td>\$0\.05<\/td>/);
+  const order = ["agent_turn", "judge", "plan", "made_up"].map(k => html.indexOf('data-purpose="' + k));
+  assert.deepEqual(order, order.slice().sort((a, b) => a - b));                                       // the order the server sent
+  assert.ok(order.every(i => i > 0));
+  assert.equal((html.match(/class="cpurpose"/g) || []).length, 4);
+});
+
+test("a purpose the page has no words for shows as itself, escaped, and a call with no price or no token count leaves its cell blank", () => {
+  const html = CV.usageHtml(REPORT, {}, "");
+  assert.match(html, /<tr class="cpurpose" data-purpose="made_up&lt;x&gt;"><th scope="row">made_up&lt;x&gt;<\/th><td>1<\/td><td><\/td><td>5<\/td><td><\/td><\/tr>/);
+  assert.doesNotMatch(html, /<x>/);
+  assert.match(CV.purposesHtml({purposes: [{key: "digest", calls: 2, usd: 0, tokens_in: 0, tokens_out: 0}]}), /<th scope="row">digest<\/th><td>2<\/td><td>\$0\.00<\/td><td>0<\/td><td>0<\/td>/);
+  assert.match(CV.purposesHtml({purposes: [{key: "  agent_chat  ", calls: 1, usd: 0.02, tokens_in: 300, tokens_out: 60}]}), /data-purpose="agent_chat"><th scope="row" title="agent_chat">Questions to agents<\/th>/);
+});
+
+test("the table by purpose sits between the table by team and the ten dearest atoms, and is not drawn when the server sends no purpose", () => {
+  const html = CV.usageHtml(REPORT, {}, "");
+  assert.ok(html.indexOf("By team and function") < html.indexOf("Usage by purpose") && html.indexOf("Usage by purpose") < html.indexOf("Top ten atoms by cost"));
+  for (const report of [{...REPORT, purposes: []}, {...REPORT, purposes: undefined}, {...REPORT, purposes: "judge"}, {...REPORT, purposes: [null, 5, {key: ""}, {calls: 3}]}]) {
+    assert.doesNotMatch(CV.usageHtml(report, {}, ""), /Usage by purpose|cpurpose/);
+    assert.match(CV.usageHtml(report, {}, ""), /By team and function[\s\S]*Top ten atoms by cost/);                         // the other tables are as they were
+  }
+  const older = {...REPORT};
+  delete older.purposes;
+  assert.doesNotMatch(CV.usageHtml(older, {}, ""), /Usage by purpose/);                                // a server from before this table
+});
+
+test("every purpose the app writes has words of its own, plain and different from the ledger's, and any other purpose is its own name", () => {
+  const written = ["agent_turn", "plan", "judge", "change", "summary", "template", "review", "chat", "chat_plan", "agent_chat", "connector_test"];
+  assert.deepEqual(Object.keys(CV.PURPOSE_WORDS).sort(), written.slice().sort());
+  const words = written.map(CV.purposeName);
+  assert.equal(new Set(words).size, written.length);                                                   // no two purposes share a name
+  words.forEach((word, i) => assert.ok(word.length >= 4 && word.length <= 28 && word !== written[i] && !/_/.test(word), written[i]));
+  assert.equal(CV.purposeName("agent_chat"), "Questions to agents");
+  assert.equal(CV.purposeName("judge"), "Judging workflows");
+  assert.equal(CV.purposeName("brand_new"), "brand_new");                                              // never hidden
+  assert.equal(CV.purposeName("toString"), "toString");                                                // a word of Object.prototype is no purpose of ours
+  assert.equal(CV.purposeName("<b>"), "<b>");                                                          // (the table escapes it)
+  assert.ok(Object.isFrozen(CV.PURPOSE_WORDS));
 });
 
 test("the ten dearest atoms link to the team tab and the node, but only by a path on this origin", () => {
@@ -490,6 +543,18 @@ test("the period buttons and the stub toggle read usage again with their choice"
   assert.match(t.doc.els["c-usage"].innerHTML, /data-period="7d" aria-pressed="true"/);
 });
 
+test("the panel paints the table by purpose from the report it read, and the next period's report replaces it", async () => {
+  const reports = {today: {...REPORT, period: "today", purposes: [{key: "agent_chat", calls: 2, usd: 0.04, tokens_in: 600, tokens_out: 120}]}};
+  const t = setup({routes: {"/api/ops/usage": q => reports[q.period] || REPORT}});
+  await t.page.start();
+  assert.match(t.doc.els["c-usage"].innerHTML, /<caption>Usage by purpose<\/caption>[\s\S]*Agents at work[\s\S]*Judging workflows/);
+  await click(t.doc, target({act: "period", period: "today"}));
+  const html = t.doc.els["c-usage"].innerHTML;
+  assert.match(html, /<th scope="row" title="agent_chat">Questions to agents<\/th><td>2<\/td><td>\$0\.04<\/td><td>600<\/td><td>120<\/td>/);
+  assert.doesNotMatch(html, /Agents at work|Judging workflows/);                                       // the earlier period's rows are gone
+  assert.equal((html.match(/class="cpurpose"/g) || []).length, 1);
+});
+
 test("a failing usage route shows its words in its panel and leaves the other panels alone", async () => {
   const t = setup({routes: {"/api/ops/usage": () => { throw Object.assign(new Error("The app is not responding."), {code: "network"}); }}});
   await t.page.start();
@@ -666,4 +731,5 @@ test("the exports name the periods, the window and the polling interval the page
   assert.deepEqual(CV.PERIODS.map(p => p[0]), ["today", "7d", "30d", "all"]);
   assert.deepEqual([CV.WINDOW, CV.LOG_PAGE_SIZE, CV.POLL_MS, CV.USAGE_COALESCE_MS, CV.DEFAULT_PERIOD], [1000, 25, 2000, 1000, "7d"]);
   assert.deepEqual(CV.STATES.map(s => s[0]), ["closed", "verify_failed", "abandoned", "refused"]);
+  assert.equal(typeof CV.purposesHtml, "function");
 });
