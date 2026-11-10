@@ -7107,7 +7107,7 @@ def deliverables_generic():
         # REAL_NOTE describes the chosen type, no longer "one section of the site"
         run, _ = stages("Write a hiring policy.", ["prd"])
         note = run._real_note()
-        assert "single-page site" not in note and "Product requirements (prd.md, a doc)" in note and "PRD" in note, note
+        assert "single-page site" not in note and "Product requirements (prd.md, a document)" in note and "PRD" in note, note
         run, _ = stages(BREW_LAB, ["website"])
         assert "Website (site/index.html, a page)" in run._real_note()
         os.environ.pop("J2_GENERIC", None)
@@ -7266,6 +7266,87 @@ def doc_planner_real():
           "under-priced two-section workflow and a missing per-section check refused ok")
 
 
+def forms_and_new_types():
+    """Phase C (docs/remove-hardcoding-plan.md): under J2_GENERIC=1 every type has a form (page or document) defined once in
+    types.json, which fills what the type leaves out; checks, the ready message and the stage words follow the form and
+    the type's label; a stage may name its own builder persona (stages.json "skill"); and a deliverable no type fits is
+    made as a new document type, saved to types.json and the template library, built and checked, and reused next run."""
+    import j2_types
+    import j2_artifacts as A
+    T = json.load(open(j2_types.TYPES_PATH, encoding="utf-8"))
+    assert set(T["forms"]) == {"_note", "page", "document"} and j2_types.FORMS == ("page", "document")
+    assert {t["form"] for t in T["types"] if t["kind"] == "type"} == {"page", "document"}
+    assert j2_types.load("website")["builder"] == T["forms"]["page"]["builder"] == "builder.md"
+    assert j2_types.info("website")["ready"] == "Your website is ready." and j2_types.info("prd")["ready"] == "Your document is ready."
+    # a new type's problems are named; a good one is made from the document form
+    tmp = tempfile.mkdtemp(prefix="j2-types-")
+    shutil.copy(j2_types.TYPES_PATH, tmp)
+    shutil.copytree(j2_types.TEMPLATES_DIR, os.path.join(tmp, "templates"))
+    keep_paths = (j2_types.TYPES_PATH, j2_types.TEMPLATES_DIR)
+    keep_env = os.environ.pop("J2_GENERIC", None)
+    j2_types.TYPES_PATH, j2_types.TEMPLATES_DIR = os.path.join(tmp, "types.json"), os.path.join(tmp, "templates")
+    j2_types.template.cache_clear()
+    j2._data_type.cache_clear()
+    try:
+        cp = j2_types.create_problems
+        assert cp("", "X", ["A"], "x.md") and cp("prd", "X", ["A"], "x.md") == ["type prd already exists"]
+        assert cp("policy", "Policy", [], "policy.md") == ["it needs at least one section"]
+        assert cp("policy", "Policy", ["A"], "policy.html") == ["file 'policy.html' must be a .md file name"]
+        assert cp("policy", "", ["A", "A"], "policy.md") == ["it needs a label", "its sections must be unique, named, and not 'Document'"]
+        os.environ["J2_GENERIC"] = "1"
+        briefs = (("hiring_policy", "Hiring policy", ["Purpose", "Roles and approvals", "Process", "Fair hiring rules"],
+                   "Write a hiring policy for Acme Labs, a small startup of twelve people in Pune. It covers who approves a "
+                   "hire, how candidates are interviewed, how offers are made and the rules that keep hiring fair."),
+                  ("monthly_sales_report", "Monthly sales report", ["Summary", "Sales by product", "Trends", "Next steps"],
+                   "Write a monthly sales report for Petal House, a flower shop in Jaipur. It shows what sold this month, "
+                   "which products grew or fell, and what the owner should do next month to sell more."))
+        for name, label, secs, brief in briefs:
+            before = j2_types.names()
+            for rnd in (1, 2):      # the first run makes the type; the second names it and reuses it
+                run = j2.J2Run()
+                run.budget = 300
+                run.mock_deliverables = [{"type": name, "why": "no type fits", "new": {"label": label, "sections": secs,
+                                                                                    "file": f"{name}.md"}}] if rnd == 1 else [name]
+                say(run, brief)
+                made = [m["text"] for m in run.chat if m["text"].startswith(f"New type {name}")]
+                assert run.output == name and run.stages == [name] and run.doc, (name, run.output, run.stages)
+                assert run.outcome == f"Done: the {label} is workable. Every done-when item, rubric item and necessary condition passes.", run.outcome
+                assert os.path.isfile(os.path.join(run.dir, f"{name}.md")) and os.path.isfile(os.path.join(run.dir, f"{name}.docx"))
+                md = open(os.path.join(run.dir, f"{name}.md"), encoding="utf-8").read()
+                assert all(f"## {x}" in md for x in secs), md[:200]
+                conds = json.load(open(os.path.join(run.dir, "conditions.json"), encoding="utf-8"))
+                assert [c["id"] for c in conds] == ["C1", "C2", "C3", "C4"] and all(c["met"] for c in conds), conds
+                assert bool(made) == (rnd == 1), (rnd, made)
+                assert j2_types.names() == before + [name], j2_types.names()
+                g = A.groups(run.dir)
+                assert [r["name"] for x in g["groups"] if x["id"] == "documents" for r in x["rows"]] == [label], g["groups"]
+                assert any(m["text"].startswith(f"Documents asked for: the {label}") for m in run.chat)
+            entry = next(t for t in json.load(open(j2_types.TYPES_PATH, encoding="utf-8"))["types"] if t["name"] == name)
+            assert entry["form"] == "document" and entry["file"] == f"{name}.md" and j2_types.sections(name) == tuple(secs), entry
+            assert os.path.isfile(os.path.join(j2_types.TEMPLATES_DIR, name, "generic.json"))
+            assert name not in ("prd", "website")
+        # a stage may name its own builder persona; every stage names none today
+        assert j2.STAGE_SKILLS == {}
+        j2.STAGE_SKILLS["build"] = "builder.md#build"
+        run.workflows = [{"id": "W-1", "stage": "build"}]
+        assert run._builder_for("W-1") == "builder.md#build" and run._builder_for("identity") == run.out["builder"]
+        j2.STAGE_SKILLS.clear()
+        ui = open(os.path.join(os.path.dirname(os.path.abspath(__file__)), "j2_ui.html"), encoding="utf-8").read()
+        assert "const TYL = " in ui and 'TYL("website", "Website") + " sections"' in ui
+    finally:
+        j2_types.TYPES_PATH, j2_types.TEMPLATES_DIR = keep_paths
+        j2_types.template.cache_clear()
+        j2._data_type.cache_clear()
+        j2.STAGE_SKILLS.clear()
+        os.environ.pop("J2_GENERIC", None)
+        if keep_env is not None:
+            os.environ["J2_GENERIC"] = keep_env
+        shutil.rmtree(tmp, ignore_errors=True)
+    print("forms and new types: page and document forms fill every type; a hiring policy and a monthly sales report are each "
+          "made as a new document type, built, checked and filed, and reused on the next run; a bad new type is refused; a "
+          "stage may name its builder persona; UI labels come from the type ok")
+
+
 def doc_unchanged():
     """The document golden: mock runs of a PRD, the design docs (PRD, HLD, LLD) and the design docs with the site after them
     (the LLD as the site's blueprint) give the same model calls (agent, system prompt, prompt), workflows, documents,
@@ -7337,7 +7418,7 @@ def artifact_types():
         for k in j2.DOC_SET:
             t, o = by[k], j2.OUTPUTS[k]
             chk("sections" not in t["workflow"] and j2.j2_types.sections(k) == tuple(o["sections"]), f"{k} sections (from its template)")
-            chk(t["file"] == o["file"] and t["export"] == "docx" and bool(o["export"]) and t["form"] == "doc", f"{k} file")
+            chk(t["file"] == o["file"] and t["export"] == "docx" and bool(o["export"]) and t["form"] == "document", f"{k} file")
             chk(t["conditions"] == o["conditions"] and os.path.isfile(os.path.join(j2.CONDITIONS_DIR, t["conditions"])), f"{k} conditions")
             chk(getattr(j2, t["workflow"]["builder"].split(":", 1)[1], None) is o["builder"], f"{k} builder")
             chk(t["cost"]["card"] == o["rates"], f"{k} rate card")
@@ -7352,7 +7433,7 @@ def artifact_types():
             chk(t["color"] == f"--{k}" and f"--{k}:" in ui, f"{k} colour")
         w, o = by["website"], j2.OUTPUTS["website"]
         chk(w["file"] == "site/index.html" and w["form"] == "page" and w["triggers"] == [] and w["also_when"] == "site-words", "website file and triggers")
-        chk(w["conditions"] == o["conditions"] and w["workflow"]["builder"] == o["builder"] and w["cost"]["card"] == o["rates"], "website conditions, builder, card")
+        chk(w["conditions"] == o["conditions"] and "builder" not in w["workflow"] and T["forms"]["page"]["builder"] == o["builder"] and w["cost"]["card"] == o["rates"], "website conditions, builder (the page form's), card")
         chk(w["cost"]["parts"] == dict(collections.Counter(j2.J2Run.SITE_ESSENTIALS)), "website cost parts")
         chk(sum(A_rates(w["cost"]["card"]).get(p, 0) * n for p, n in w["cost"]["parts"].items()) == run._stage_cost("website"), "website minimum cost")
         chk((w["tag"], w["color"]) == (site_tag, "--site") and "--site:" in ui and w["label"] == o["label"], "website tag, colour, label")
@@ -12140,6 +12221,7 @@ if __name__ == "__main__":
             deliverables_generic()      # step 3: Adaptation chooses what to build
             doc_plans_generic()         # step 3b: document plans from the template, not the fixed plan
             doc_planner_real()          # step 3c: realistic planner answers for documents
+            forms_and_new_types()       # phase C: forms, and new types made on the fly
         artifacts_tab()
         map_tab()
         map_every_workflow()
