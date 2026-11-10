@@ -151,12 +151,13 @@ def test_no_two_routers_serve_the_same_method_and_path(world):
 
 def test_the_ui_alone_serves_the_pages(world):
     pages = {path for (_, path) in route_table(world.routers["ui"])}
-    assert pages == {"/", "/d/{dept}", "/d/{dept}/", "/console", "/favicon.ico"}
+    assert pages == {"/", "/d/{dept}", "/d/{dept}/", "/d/{dept}/library", "/d/{dept}/library/", "/console", "/favicon.ico"}      # the library page is the team's (D141)
     for name, router in world.routers.items():
         if name != "ui":
             assert not (pages & {path for (_, path) in route_table(router)}), name
     assert world.client.get("/", follow_redirects=False).status_code == 404            # the world mounts no UI: the engine serves no page
     assert world.client.get("/d/web/", follow_redirects=False).status_code == 404
+    assert world.client.get("/d/web/library", follow_redirects=False).status_code == 404
 
 
 def test_every_route_that_changes_something_depends_on_the_one_write_guard(world):
