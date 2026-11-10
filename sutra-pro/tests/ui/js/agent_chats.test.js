@@ -170,7 +170,7 @@ test("the Ask mode is a question box that names the function, says where the ans
   assert.match(html, /<button type="button" class="ccmode-opt" data-act="box-mode" data-mode="note" aria-pressed="false">Note<\/button>/);
   assert.match(html, /<button type="button" class="ccmode-opt on" data-act="box-mode" data-mode="ask" aria-pressed="true">Ask<\/button>/);
   assert.match(html, /<label class="nnote-l">Ask Audit<\/label>/);
-  assert.match(html, /<textarea class="nnote-text nask-text" rows="2" maxlength="2000" aria-label="Ask Audit" placeholder="Ask Audit about this run"><\/textarea>/);
+  assert.match(html, /<textarea class="nask-text" rows="2" maxlength="2000" aria-label="Ask Audit" placeholder="Ask Audit about this run"><\/textarea>/);
   assert.match(html, /<button type="button" class="send" data-act="ask">Ask<\/button>/);
   assert.match(html, /Audit answers from this run's records and cannot change the run\. The question and the answer stay in this chat\./);
   assert.doesNotMatch(html, /data-act="steer"|Send note/);

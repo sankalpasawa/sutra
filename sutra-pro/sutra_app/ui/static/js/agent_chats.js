@@ -153,7 +153,7 @@
   function askBox(i, label) {
     const busy = i.asking === true;
     const said = clean(i.askNote);
-    return '<div class="nnotebox naskbox"><label class="nnote-l">Ask ' + esc(label) + '</label><div class="row"><textarea class="nnote-text nask-text" rows="2" maxlength="' + MAX_ASK +
+    return '<div class="nnotebox naskbox"><label class="nnote-l">Ask ' + esc(label) + '</label><div class="row"><textarea class="nask-text" rows="2" maxlength="' + MAX_ASK +
       '" aria-label="Ask ' + esc(label) + '" placeholder="Ask ' + esc(label) + ' about this run"' + (busy ? " disabled" : "") + "></textarea>" +
       '<button type="button" class="send" data-act="ask"' + (busy ? " disabled" : "") + ">Ask</button></div>" +
       (busy ? '<small class="nnote-help nask-wait" role="status">Asking ' + esc(label) + "\u2026</small>"
