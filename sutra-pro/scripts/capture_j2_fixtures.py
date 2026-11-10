@@ -20,8 +20,11 @@ What it does, in a scratch folder (the extraction is read-only here and is check
   3. saves what every J2 read route answered, byte for byte (`state.json`, `map.json`, `plan-map.json`, `catalog.json`,
      `artifacts-groups.json`, `runlist.json`, `changes.json`, ..., `agent-<who>.json`, `site-latest.html`), the feed of each of J2's six
      functions (`activity-<who>.json`; `activity-unknown.json` for a name J2 does not know), J2's answer to one question for each of the
-     six (`ask-<who>.json`: `POST /api/ask`, which answers from the run's records in mock mode), the preview replies, and the inputs of
-     J2's two node harnesses. The one change to J2's bytes is rule R5 (patch P15 of the vendoring): the home-folder paths of J2's own
+     six (`ask-<who>.json`: `POST /api/ask`, which answers from the run's records in mock mode), the Studio view's records (one per part:
+     `record-<sec>.json`, one per deliverable: `record-art-<name>.json`) and readable pages (`doc-prd.html`, `view-site.html`,
+     `view-goal.html`), the preview replies, and the inputs of J2's two node harnesses. (`POST /api/settings`, the Decide for me switch,
+     is not captured: it changes the live run and answers with the switch's own value.) The one change to J2's bytes is rule R5 (patch
+     P15 of the vendoring): the home-folder paths of J2's own
      development machine that its seed library index records (`runs[].library`, shown by `/api/catalog`) become `not recorded`; a finished
      file that still holds an absolute home-folder path stops the capture;
   4. runs `j2_ui_render.js` on J2's own `j2_ui.html` (twice, the outputs must be equal) and `j2_graph_layout.js`, with node's clock frozen
@@ -47,6 +50,7 @@ import sys
 import tempfile
 import time
 import urllib.error
+import urllib.parse
 import urllib.request
 from pathlib import Path
 from typing import Iterator
@@ -70,9 +74,12 @@ ACTIVITY_WHO = (*J2_FUNCS, "nobody")  # the same `nobody` for the feed: activity
 ASK_QUESTION = "Which AI calls did you make, and why?"  # one question for every function: each of the six has records that answer it
 FEED_WHO = "adaptation"  # the function whose feed the render harness is given (plans, judgements and revisions: every kind of event)
 # the outputs page_render.test.js compares: the seven of the first capture, then what J2's harness prints since the Simple view and the
-# chat panel were redesigned (finish .. needids), then the rail's status, the Adaptation Map, the message-to-function mapping and the feed
+# chat panel were redesigned (finish .. needids), then the rail's status, the Adaptation Map, the message-to-function mapping and the
+# feed, then what the Studio redesign of the Simple view added (the team at work, the plan, the team list, the status line, the output
+# tabs, the files, the parts, the tabs and the question drawn inside the work)
 GOLDEN_KEYS = ("simple", "sprog", "workflows", "rail", "needs", "map", "agent",
-               "finish", "journey", "journeyhtml", "sframe", "needids", "railst", "planmap", "msgfns", "feed")
+               "finish", "journey", "journeyhtml", "sframe", "needids", "railst", "planmap", "msgfns", "feed",
+               "teamwork", "plan", "team", "status", "views", "files", "parts", "tabs", "inline")
 REQUIRED_J2_FILES = ("j2_server.py", "j2_ui.html", "j2_ui_render.js", "j2_graph_layout.js")
 COMMIT_PATTERN = re.compile(r"[0-9a-f]{40}")  # --commit is a full commit id: the pin is an exact one
 # R5: no absolute home-folder path in a file of this product. J2's seed library index records, for six of J2's own development runs, the
@@ -104,6 +111,11 @@ ROUTE_FILES = {
     "audits.json": "/api/audits",
     "refs.json": "/api/refs",
     "site-latest.html": "/site/latest",
+    # the Studio view's readable pages: a document's tab (the mock website run wrote none: J2's "not written yet" page), the site and one
+    # record of the run, as `/view?name=` shows a file of the run's artifact list
+    "doc-prd.html": "/doc/prd",
+    "view-site.html": "/view?name=site/index.html",
+    "view-goal.html": "/view?name=goal.json",
 }
 
 # A launcher that freezes the clock before J2 is imported. Local time is UTC and every timestamp is FIXED_TIME,
@@ -170,6 +182,22 @@ def rail_tabs(page_html: str) -> list[str]:
     start = page_html.index('<nav class="rail tabs"')
     nav = page_html[start:page_html.index("</nav>", start)]
     return [tab for tab in re.findall(r'data-tab="(\w+)"', nav[nav.index('id="railsub"'):]) if tab != "map"]
+
+
+def record_secs(state_json: bytes) -> list[str]:
+    """The `sec` of every part of the Studio view (`state.studio.parts`), in order: each has a record at `/api/record?sec=`."""
+    parts = (json.loads(state_json).get("studio") or {}).get("parts") or []
+    return [str(part["sec"]) for part in parts if part.get("sec")]
+
+
+def record_arts(artifacts_json: bytes) -> list[str]:
+    """The name of every deliverable J2 lists (`/api/artifacts`), in order: each has a record at `/api/record?art=`."""
+    return [str(row["name"]) for row in json.loads(artifacts_json).get("deliverables") or [] if row.get("name")]
+
+
+def file_part(text: str) -> str:
+    """A name as part of a file name: letters, digits, dots, dashes and underscores kept, every other run of characters one dash."""
+    return re.sub(r"[^A-Za-z0-9._-]+", "-", text).strip("-")
 
 
 def atom_ids(state: dict) -> list[str]:
@@ -400,6 +428,16 @@ def collect_routes(server: J2Server, max_state_bytes: int) -> dict[str, bytes]:
         if code != 200:
             raise CaptureError(f"GET /api/activity?who={who} answered {code}")
         files["activity-unknown.json" if who == "nobody" else f"activity-{who}.json"] = body
+    for sec in record_secs(files["state.json"]):  # the record behind each part the Studio view draws, and behind each deliverable
+        code, body = server.get(f"/api/record?sec={urllib.parse.quote(sec, safe='')}")
+        if code != 200:
+            raise CaptureError(f"GET /api/record?sec={sec} answered {code}")
+        files[f"record-{file_part(sec)}.json"] = body
+    for name in record_arts(files["artifacts.json"]):
+        code, body = server.get(f"/api/record?art={urllib.parse.quote(name, safe='')}")
+        if code != 200:
+            raise CaptureError(f"GET /api/record?art={name} answered {code}")
+        files[f"record-art-{file_part(name)}.json"] = body
     for who in J2_FUNCS:
         code, body = server.post_json("/api/ask", {"who": who, "q": ASK_QUESTION, "run": ""})
         if code != 200:
@@ -444,6 +482,7 @@ def derive(j2: Path, node: str, routes: dict[str, bytes], preview_replies: dict[
         "changes": json.loads(routes["changes.json"]).get("changes") or [],
         "journey": True,
         "msgs": state.get("chat") or [],
+        "arts": json.loads(routes["artifacts.json"]),
         "artifacts": {"tree": json.loads(routes["artifacts-tree.json"]), "groups": json.loads(routes["artifacts-groups.json"])},
         "agent": json.loads(routes["agent-identity.json"]),
     }

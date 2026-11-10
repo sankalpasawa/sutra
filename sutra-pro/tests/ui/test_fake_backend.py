@@ -14,14 +14,15 @@ What is tested here, in this order:
   6. `cdp.py`: the Chrome driver against a stand-in DevTools endpoint and a stand-in Chrome program (no Chrome needed);
      `conftest.py`: its marker and fixtures, run under a copy of it; and, in tests marked `browser` (they run only with
      `SUTRA_BROWSER=1`), the driver and the fake with the app's own client scripts in a real Chrome;
-  7. `scripts/capture_j2_fixtures.py`: against a stand-in J2 checkout (no J2 needed) and, when `SUTRA_J2_CHECKOUT` names
-     one, against the real J2 (a drift check of the committed captures).
+  7. `scripts/capture_j2_fixtures.py`: against a stand-in J2 folder (no J2 needed) and, when `SUTRA_J2_CHECKOUT` names an
+     extraction of prototypes/j2 at the pinned commit, against the real J2 (a drift check of the committed captures).
 
 The stand-ins live in `fixtures/tools/` (`fake_devtools.py`, `standin_j2/`). Expected values come from the design (ui.md,
 orchestrator.md, library.md, engine.md), written out below, and not from the code under test.
 """
 from __future__ import annotations
 
+import argparse
 import base64
 import contextlib
 import copy
@@ -63,10 +64,10 @@ import fake_devtools as fdt  # noqa: E402  (after the path line above)
 # ---- the design's vocabulary, written out here on purpose --------------------------------------------------------------
 FUNCTIONS = ("identity", "adaptation", "priority", "coordination", "audit")
 J2_FUNCS = (*FUNCTIONS, "validator")  # J2's own six: the names /api/activity and /api/ask serve (the validator is code)
-# what J2's render harness printed that page_render.test.js compares (the seven of the first capture, then the Simple view's and the chat
-# panel's), and the layout harness last: the manifest lists them in this order (docs/design/j2-sync-4.md 4.8)
+# what J2's render harness printed that page_render.test.js compares (the seven of the first capture, then the Simple view's, the chat
+# panel's and the Studio view's), and the layout harness last: the manifest lists them in this order (docs/design/j2-sync-4.md 4.8)
 J2_GOLDENS = ("simple", "sprog", "workflows", "rail", "needs", "map", "agent", "finish", "journey", "journeyhtml", "sframe", "needids",
-              "railst", "planmap", "msgfns", "feed", "layout")
+              "railst", "planmap", "msgfns", "feed", "teamwork", "plan", "team", "status", "views", "files", "parts", "tabs", "inline", "layout")
 STATUS_WORDS = ("idle", "running", "waiting", "waiting_on_you", "fault", "filed", "done_unchecked", "left_open", "not_made")  # J2 map/1
 FUNCTION_STATUS_WORDS = STATUS_WORDS[:5]  # a function node uses the first five
 EDGE_KINDS = ("contains", "has_function", "has_step", "handoff", "depends_on", "speaks_to", "step")
@@ -4590,9 +4591,10 @@ def standin_checkout(root: Path, *, repository: bool = True) -> Path:
 
 
 def quick_capture(j2: Path, **overrides):
-    options = {"brief": capture.BRIEF, "max_state_bytes": capture.MAX_STATE_BYTES, "timeout": 30}
+    options = {"brief": capture.BRIEF, "max_state_bytes": capture.MAX_STATE_BYTES, "timeout": 30, "commit": None}
     options.update(overrides)
-    return capture.capture(j2, sys.executable, NODE, options["brief"], options["max_state_bytes"], options["timeout"], log=lambda text: None)
+    return capture.capture(j2, sys.executable, NODE, options["brief"], options["max_state_bytes"], options["timeout"], log=lambda text: None,
+                           commit=options["commit"])
 
 
 @pytest.fixture(scope="module")
@@ -4629,6 +4631,59 @@ def test_rail_tabs_reads_the_tab_names_of_the_sections_not_the_buttons_before_th
             '<button data-tab="goal"></button><button role="tab" data-tab="workflows" aria-selected="false"></button>'
             '<button data-tab="run_settings"></button></div></nav><button data-tab="outside"></button>')
     assert capture.rail_tabs(page) == ["goal", "workflows", "run_settings"]
+
+
+def test_rail_tabs_leaves_out_the_map_tab_that_the_page_keeps_in_the_rails_panel():
+    """J2's page since the icon rail: every tab button sits in #railsub, the Map's first (hidden); the Map has its own rail item."""
+    page = ('<nav class="rail tabs" id="rail" aria-label="x"><button data-ri="map"></button><div class="railsub" id="railsub">'
+            '<div class="rpool"><button role="tab" data-tab="map" hidden></button><button role="tab" data-tab="story" hidden></button>'
+            '<button role="tab" data-tab="planmap"></button></div></div></nav><button data-tab="outside"></button>')
+    assert capture.rail_tabs(page) == ["story", "planmap"]
+
+
+def test_the_home_folder_paths_of_j2s_development_machine_are_not_recorded_and_no_other_is_let_through():
+    body = (b'{"runs": [{"run": "a", "library": "/Users/someone/dev/library"}, {"run": "b", "library": "/home/someone/dev/library"}, '
+            b'{"run": "c", "library": "/tmp/j2-live-library"}], "dir": "library"}')
+    assert capture.scrub_home_paths(body) == (b'{"runs": [{"run": "a", "library": "not recorded"}, {"run": "b", "library": "not recorded"}, '
+                                              b'{"run": "c", "library": "/tmp/j2-live-library"}], "dir": "library"}')
+    assert capture.scrub_home_paths(b'{"a": 1}') == b'{"a": 1}'  # nothing to change: the same bytes
+    capture.refuse_home_paths({"ok.json": b'{"library": "not recorded", "p": "/tmp/x/y/", "u": "/home"}'})  # none of these is a home folder
+    with pytest.raises(capture.CaptureError, match=r"^an absolute home-folder path \(rule R5: none in any file of this product\) is in: a\.json, c\.html$"):
+        capture.refuse_home_paths({"c.html": b"<p>/Users/me/x</p>", "ok.json": b"{}", "a.json": b'{"where": "/home/me/dev"}'})
+
+
+def test_a_folders_digest_lists_every_file_by_content_and_ignores_a_git_folder(tmp_path):
+    (tmp_path / "a").mkdir()
+    (tmp_path / "a" / "one.txt").write_bytes(b"1")
+    (tmp_path / "two.txt").write_bytes(b"2")
+    (tmp_path / ".git").mkdir()
+    (tmp_path / ".git" / "HEAD").write_bytes(b"ref")
+    expected = {"a/one.txt": hashlib.sha256(b"1").hexdigest(), "two.txt": hashlib.sha256(b"2").hexdigest()}
+    assert capture.folder_digest(tmp_path) == expected
+    (tmp_path / "two.txt").write_bytes(b"changed")
+    assert capture.folder_digest(tmp_path) != expected and list(capture.folder_digest(tmp_path)) == ["a/one.txt", "two.txt"]
+    assert capture.folder_digest(tmp_path / "nowhere") == {}
+
+
+def test_the_parts_and_deliverables_of_the_studio_view_name_their_records():
+    state = json.dumps({"studio": {"parts": [{"sec": "W-1"}, {"name": "no sec"}, {"sec": "Intro/Hero"}]}}).encode()
+    assert capture.record_secs(state) == ["W-1", "Intro/Hero"]
+    assert capture.record_secs(b"{}") == [] and capture.record_secs(b'{"studio": null}') == []
+    assert capture.record_arts(json.dumps({"deliverables": [{"name": "Website"}, {"type": "x"}, {"name": "Menu card"}]}).encode()) == ["Website", "Menu card"]
+    assert capture.record_arts(b"{}") == []
+    assert capture.file_part("Menu card") == "Menu-card" and capture.file_part("Intro/Hero") == "Intro-Hero" and capture.file_part("W-1") == "W-1"
+    assert capture.file_part("  a b.c_d ") == "a-b.c_d"
+
+
+def test_the_commit_option_takes_a_full_commit_id_and_nothing_else():
+    pin = "025e265c594564f47a2365874cd5a5cc5d0d20a6"
+    assert capture.commit_id(pin) == pin
+    for bad in ("025e265", "main", pin.upper(), pin + "0", ""):
+        with pytest.raises(argparse.ArgumentTypeError, match="is not a full commit id"):
+            capture.commit_id(bad)
+    assert capture.build_parser().parse_args(["--j2", "/j2", "--commit", pin]).commit == pin
+    with pytest.raises(SystemExit):
+        capture.build_parser().parse_args(["--j2", "/j2", "--commit", "main"])
 
 
 def test_atom_ids_lists_each_atom_of_the_state_once_in_order():
@@ -4695,14 +4750,14 @@ def test_git_missing_is_none(tmp_path, monkeypatch):
     assert capture.git(tmp_path, "status") is None
 
 
-def test_check_checkout_refuses_what_is_not_a_j2_checkout_a_python_that_cannot_run_or_a_missing_node(tmp_path):
+def test_check_checkout_refuses_what_is_not_an_extraction_of_j2_a_python_that_cannot_run_or_a_missing_node(tmp_path):
     j2 = standin_checkout(tmp_path, repository=False)
     capture.check_checkout(j2, sys.executable, "/usr/bin/node")  # nothing is run here: the names are enough
     with pytest.raises(capture.CaptureError, match=r"^--j2 .*nowhere is not a folder$"):
         capture.check_checkout(tmp_path / "nowhere", sys.executable, "node")
     (j2 / "j2_graph_layout.js").unlink()
     (j2 / "j2_ui_render.js").unlink()
-    with pytest.raises(capture.CaptureError, match=r"is not a J2 checkout: missing j2_ui_render\.js, j2_graph_layout\.js$"):
+    with pytest.raises(capture.CaptureError, match=r"is not an extraction of prototypes/j2: missing j2_ui_render\.js, j2_graph_layout\.js$"):
         capture.check_checkout(j2, sys.executable, "node")
     j2 = standin_checkout(tmp_path / "again", repository=False)
     with pytest.raises(capture.CaptureError, match=r"^--j2-python .*no-python is not an executable file$"):
@@ -4715,10 +4770,16 @@ def test_check_checkout_refuses_what_is_not_a_j2_checkout_a_python_that_cannot_r
 
 
 # ---- a whole capture of the stand-in ------------------------------------------------------------------------------------------
+STANDIN_FILES = 77  # 22 route files + 7 agent views + 7 feeds + 6 answers + 4 records (2 parts, 2 deliverables) + 4 derived inputs + 26 goldens + the manifest
+
+
 def test_the_capture_of_the_stand_in_makes_the_files_the_committed_set_has(standin):
     j2, files = standin
     committed = {p.name for p in J2_FIXTURES.iterdir() if p.is_file()}
-    assert set(files) == committed and len(files) == 34
+    families = lambda names: {n for n in names if not n.startswith("record-")}  # noqa: E731  (one record per part and per deliverable: the stand-in has others)
+    assert families(files) == families(committed) and len(files) == STANDIN_FILES
+    assert {n for n in files if n.startswith("record-")} == {"record-W-1.json", "record-W-2.json", "record-art-Website.json", "record-art-Menu-card.json"}
+    assert any(n.startswith("record-W-") for n in committed) and any(n.startswith("record-art-") for n in committed)
     assert all(isinstance(data, bytes) for data in files.values())
 
 
@@ -4732,6 +4793,27 @@ def test_the_routes_are_saved_as_the_server_answered_them(standin):
     assert json.loads(files["agent-unknown.json"]) == {"schema": "agent/1", "who": "nobody", "found": False}
     state = json.loads(files["state.json"])
     assert state["status"] == "waiting" and state["total"] == 3 and state["brief"] == capture.BRIEF  # the run was asked and had answered
+
+
+def test_the_routes_feeds_answers_and_records_of_sync_4_are_saved_as_the_server_answered_them(standin):
+    j2, files = standin
+    load = lambda name: json.loads(files[name])  # noqa: E731
+    assert load("changes.json") == {"changes": []} and load("plan-map.json") == {"found": False}
+    assert load("artifacts-groups.json")["schema"] == "artifacts-groups/1" and load("runlist.json")["live"] == "j2-standin-run"
+    assert files["doc-prd.html"] == b"<p>This isn't written yet.</p>"
+    assert files["view-site.html"] == b"<p>view of site/index.html</p>" and files["view-goal.html"] == b"<p>view of goal.json</p>"
+    for who in J2_FUNCS:  # J2's six functions: a feed and an answer to the one question
+        assert load(f"activity-{who}.json") == {"schema": "activity/1", "who": who, "found": True, "events": []}
+        assert load(f"ask-{who}.json") == {"who": who, "answer": "From the records: " + capture.ASK_QUESTION, "from": "records"}
+    assert load("activity-unknown.json") == {"schema": "activity/1", "who": "nobody", "found": False, "events": []}
+    assert load("record-W-1.json") == {"schema": "studio/1", "sec": "W-1", "name": "Part W-1"}
+    assert load("record-art-Menu-card.json") == {"schema": "studio/1", "art": "Menu card"}  # a deliverable's name, made a file name
+
+
+def test_the_catalog_is_saved_with_the_home_folder_paths_not_recorded(standin):
+    j2, files = standin
+    assert [run["library"] for run in json.loads(files["catalog.json"])["runs"]] == ["not recorded", "/tmp/standin-library"]
+    assert not any(b"/Users/" in data for data in files.values())  # the made-up home path of the stand-in's catalog is in no file
 
 
 def test_the_j2_process_ran_in_its_folder_under_a_frozen_clock_in_a_scrubbed_environment(standin):
@@ -4763,19 +4845,27 @@ def test_the_previews_are_asked_for_once_per_atom_and_only_those_with_a_page_are
 def test_the_harness_inputs_are_made_from_the_routes_and_the_pages_rail(standin):
     j2, files = standin
     docs = json.loads(files["render-docs.json"])
-    assert set(docs) == {"docs", "map", "railtabs", "plan", "artifacts", "agent"}
-    assert docs["railtabs"] == ["goal", "workflows", "audit"] and docs["map"] == json.loads(files["map.json"])
+    assert set(docs) == {"docs", "map", "railtabs", "plan", "planmap", "activity", "changes", "journey", "msgs", "arts", "artifacts", "agent"}
+    assert docs["railtabs"] == ["goal", "workflows", "audit"] and docs["map"] == json.loads(files["map.json"])  # the Map's own tab is left out
     assert docs["docs"] == json.loads(files["docs.json"]) and docs["plan"] == json.loads(files["plan.json"])
     assert docs["agent"] == json.loads(files["agent-identity.json"])
-    assert docs["artifacts"] == {**json.loads(files["artifacts.json"]), "tree": json.loads(files["artifacts-tree.json"])}
+    assert docs["planmap"] == json.loads(files["plan-map.json"]) and docs["activity"] == json.loads(files["activity-adaptation.json"])  # Adaptation's feed
+    assert docs["changes"] == [] and docs["journey"] is True and docs["msgs"] == json.loads(files["state.json"])["chat"]
+    assert docs["arts"] == json.loads(files["artifacts.json"])  # what the Studio view reads at /api/artifacts
+    assert docs["artifacts"] == {"tree": json.loads(files["artifacts-tree.json"]), "groups": json.loads(files["artifacts-groups.json"])}
     assert json.loads(files["maps.json"]) == {"j2-standin-run": json.loads(files["map.json"])}  # keyed by the map's own run id
 
 
 def test_the_goldens_are_what_the_page_harnesses_printed(standin):
     j2, files = standin
-    golden = {key: json.loads(files[f"golden-{key}.json"]) for key in ("simple", "sprog", "workflows", "rail", "needs", "map", "agent", "layout")}
-    assert golden == {"simple": "chat:1", "sprog": "status:waiting", "workflows": "W-1:2,W-2:2", "rail": ["goal", "workflows", "audit"],
-                      "needs": "", "map": "nodes:1", "agent": "identity", "layout": [{"run": "j2-standin-run", "nodes": 1}]}
+    golden = {key: json.loads(files[f"golden-{key}.json"]) for key in J2_GOLDENS}
+    assert golden == {
+        "simple": "chat:1", "sprog": "status:waiting", "workflows": "W-1:2,W-2:2", "rail": ["goal", "workflows", "audit"],
+        "needs": "", "map": "nodes:1", "agent": "identity", "finish": "", "journey": {"stops": 0}, "journeyhtml": "journey:0",
+        "sframe": "/site/v0?t=1793786404000",  # the page puts the time in it: node's clock is frozen at the capture's (in ms)
+        "needids": [], "railst": {"tabs": 3}, "planmap": "planmap:false", "msgfns": [["you"]], "feed": "feed:adaptation:0",
+        "teamwork": "teamwork:1", "plan": "plan:2", "team": "team:2", "status": "status:waiting", "views": "views:deliverables,records",
+        "files": "", "parts": ["W-1", "W-2"], "tabs": ["site", "team"], "inline": "", "layout": [{"run": "j2-standin-run", "nodes": 1}]}
     assert files["golden-simple.json"] == b'"chat:1"'  # compact one-line JSON
 
 
@@ -4786,17 +4876,22 @@ def test_the_manifest_names_the_commit_the_brief_the_clock_and_every_other_file(
     assert manifest["schema"] == "j2-fixtures/1" and manifest["mock"] is True and manifest["brief"] == capture.BRIEF
     assert manifest["j2_commit"] == git_in(j2, "rev-parse", "HEAD").strip() and manifest["clock"] == capture.FIXED_TIME
     assert manifest["harness"] == {"page": "j2_ui.html", "render": ["state.json", "previews.json", "render-docs.json"], "layout": ["maps.json"],
-                                   "goldens": [f"golden-{k}.json" for k in ("simple", "sprog", "workflows", "rail", "needs", "map", "agent", "layout")]}
+                                   "goldens": [f"golden-{k}.json" for k in J2_GOLDENS]}
     assert list(manifest["files"]) == sorted(manifest["files"]) and set(manifest["files"]) == set(files) - {"MANIFEST.json"}
     for name, info in manifest["files"].items():
         assert info == {"bytes": len(files[name]), "sha256": hashlib.sha256(files[name]).hexdigest()}, name
 
 
-def test_a_checkout_that_is_not_a_repository_has_no_commit_in_the_manifest(tmp_path):
+def test_a_checkout_that_is_not_a_repository_has_no_commit_in_the_manifest_unless_one_is_given(tmp_path):
     j2 = standin_checkout(tmp_path, repository=False)
     manifest = json.loads(capture.manifest(j2, "a brief", {"a.json": b"1"}))
     assert manifest["j2_commit"] is None and manifest["brief"] == "a brief" and manifest["files"] == {
         "a.json": {"bytes": 1, "sha256": hashlib.sha256(b"1").hexdigest()}}
+    pin = "025e265c594564f47a2365874cd5a5cc5d0d20a6"  # an extraction made by `git archive` knows its commit only from --commit
+    assert json.loads(capture.manifest(j2, "a brief", {"a.json": b"1"}, pin))["j2_commit"] == pin
+    repository = standin_checkout(tmp_path / "repo")
+    assert json.loads(capture.manifest(repository, "b", {}, pin))["j2_commit"] == pin  # the given commit wins over the folder's own HEAD
+    assert json.loads(capture.manifest(repository, "b", {}))["j2_commit"] == git_in(repository, "rev-parse", "HEAD").strip()
 
 
 # ---- the capture does not touch J2, and says so when it did ---------------------------------------------------------------------
@@ -4811,9 +4906,22 @@ def test_a_j2_that_writes_into_its_own_folder_is_caught(tmp_path):
 
 
 @needs_node
+def test_a_j2_extraction_that_is_written_into_is_caught_by_the_content_of_its_files(tmp_path):
+    """An extraction made by `git archive` is not a repository: `git status` has nothing to say, the digest of its files does."""
+    j2 = standin_checkout(tmp_path, repository=False)
+    assert capture.checkout_state(j2) is None
+    with pytest.raises(capture.CaptureError) as caught:
+        quick_capture(j2, brief="STRAY: write a file")
+    assert str(caught.value) == "the J2 folder changed during the capture (files added, removed or changed): stray.txt"
+    (j2 / "stray.txt").unlink()
+    assert len(quick_capture(j2)) == STANDIN_FILES  # and without the write the same folder is fine: no repository, no commit
+    assert json.loads(quick_capture(j2, commit="025e265c594564f47a2365874cd5a5cc5d0d20a6")["MANIFEST.json"])["j2_commit"] == "025e265c594564f47a2365874cd5a5cc5d0d20a6"
+
+
+@needs_node
 def test_a_checkout_with_uncommitted_edits_is_fine_when_the_capture_leaves_them_alone(quiet):
     j2, files = quiet
-    assert capture.checkout_state(j2) == " M j2_server.py\n" and len(files) == 34  # captured with the edit in place, and still there
+    assert capture.checkout_state(j2) == " M j2_server.py\n" and len(files) == STANDIN_FILES  # captured with the edit in place, and still there
 
 
 # ---- the J2 server as a child process --------------------------------------------------------------------------------------------
@@ -4967,6 +5075,12 @@ def test_a_state_over_the_limit_is_refused_with_the_limit_in_the_message(server)
     ("/api/refs", r"^GET /api/refs answered 404$"),
     ("/api/agent?who=nobody", r"^GET /api/agent\?who=nobody answered 404$"),
     ("/api/state", r"^GET /api/state answered 404$"),
+    ("/api/plan-map", r"^GET /api/plan-map answered 404$"),
+    ("/api/activity?who=audit", r"^GET /api/activity\?who=audit answered 404$"),
+    ("/api/record?sec=W-2", r"^GET /api/record\?sec=W-2 answered 404$"),
+    ("/api/record?art=Menu%20card", r"^GET /api/record\?art=Menu card answered 404$"),  # a name with a space is asked for quoted
+    ("/view?name=goal.json", r"^GET /view\?name=goal\.json answered 404$"),
+    ("/api/ask", r"^POST /api/ask \(who identity\) answered 404$"),  # a POST path can be broken too
 ])
 def test_a_route_that_does_not_answer_200_stops_the_capture_and_names_it(server, path, message):
     capture.run_team(server, "a brief", 20)
@@ -4975,10 +5089,14 @@ def test_a_route_that_does_not_answer_200_stops_the_capture_and_names_it(server,
         capture.collect_routes(server, 100_000)
 
 
-def test_every_route_and_every_agent_view_is_asked_for_once(server):
+def test_every_route_every_agent_view_every_feed_every_record_and_every_answer_is_asked_for_once(server):
     capture.run_team(server, "a brief", 20)
     routes = capture.collect_routes(server, 100_000)
-    assert list(routes) == list(capture.ROUTE_FILES) + [f"agent-{who}.json" for who in (*FUNCTIONS, "W-1")] + ["agent-unknown.json"]
+    assert list(routes) == (list(capture.ROUTE_FILES) + [f"agent-{who}.json" for who in (*FUNCTIONS, "W-1")] + ["agent-unknown.json"]
+                            + [f"activity-{who}.json" for who in J2_FUNCS] + ["activity-unknown.json"]
+                            + ["record-W-1.json", "record-W-2.json", "record-art-Website.json", "record-art-Menu-card.json"]
+                            + [f"ask-{who}.json" for who in J2_FUNCS])
+    assert len(capture.ROUTE_FILES) == 22 and len(routes) == 22 + 7 + 7 + 4 + 6
 
 
 def test_a_preview_route_that_does_not_answer_200_stops_the_capture(server):
@@ -4995,7 +5113,7 @@ def test_a_preview_route_that_does_not_answer_200_stops_the_capture(server):
 def standin_parts(standin):
     """The routes and previews of the stand-in as `collect_routes` and `collect_previews` hand them over, for the tests of `derive`."""
     j2, files = standin
-    routes = {name: data for name, data in files.items() if name in capture.ROUTE_FILES or name.startswith("agent-")}
+    routes = {name: data for name, data in files.items() if name in capture.ROUTE_FILES or name.startswith(("agent-", "activity-", "ask-", "record-"))}
     previews = {atom: {"anchor": "a-1", "html": html} for atom, html in json.loads(files["previews.json"]).items()}
     return j2, routes, previews
 
@@ -5007,9 +5125,8 @@ def test_derive_makes_the_same_goldens_again_from_the_same_routes(standin, stand
     derived = capture.derive(j2, NODE, routes, previews, tmp_path)
     assert {name: derived[name] for name in derived} == {name: files[name] for name in derived}
     assert capture.derive(j2, NODE, routes, previews, tmp_path) == derived  # and again in the same working folder
-    assert set(derived) == {"previews.json", "preview-replies.json", "render-docs.json", "maps.json", "golden-simple.json", "golden-sprog.json",
-                            "golden-workflows.json", "golden-rail.json", "golden-needs.json", "golden-map.json", "golden-agent.json",
-                            "golden-layout.json"}
+    assert set(derived) == {"previews.json", "preview-replies.json", "render-docs.json", "maps.json"} | {f"golden-{key}.json" for key in J2_GOLDENS}
+    assert "golden-sframe.json" in derived and derived["golden-sframe.json"] == b'"/site/v0?t=1793786404000"'  # the harness ran on the frozen clock
 
 
 @needs_node
@@ -5083,7 +5200,14 @@ def test_a_j2_that_moved_to_a_new_commit_but_gives_the_same_bytes_is_not_drift(s
     monkeypatch.setattr(capture, "capture", lambda *args, **kwargs: moved)
     common = ["--j2", str(j2), "--j2-python", sys.executable, "--out", str(out), "--check"]
     assert capture.main(common) == 0
-    assert capsys.readouterr().out == f"ok: 33 files equal a fresh capture; J2 moved on ({manifest['j2_commit'][:7]} captured, 33aeeda now) and gives the same bytes\n"
+    assert capsys.readouterr().out == (f"ok: {len(files) - 1} files equal a fresh capture; J2 moved on ({manifest['j2_commit'][:7]} captured, "
+                                       "33aeeda now) and gives the same bytes\n")
+    unknown = {**files, "MANIFEST.json": (json.dumps({**manifest, "j2_commit": None}, indent=2) + "\n").encode()}  # an extraction and no --commit
+    monkeypatch.setattr(capture, "capture", lambda *args, **kwargs: unknown)
+    assert capture.main(common) == 0
+    assert capsys.readouterr().out == (f"ok: {len(files) - 1} files equal a fresh capture (no --commit given: the committed manifest's commit "
+                                       f"{manifest['j2_commit'][:7]} is not compared)\n")
+    monkeypatch.setattr(capture, "capture", lambda *args, **kwargs: moved)
     changed = {**moved, "board.json": b"[]"}  # a file differs as well: that is drift whatever the commit
     changed["MANIFEST.json"] = capture.manifest(j2, capture.BRIEF, {k: v for k, v in changed.items() if k != "MANIFEST.json"})
     monkeypatch.setattr(capture, "capture", lambda *args, **kwargs: changed)
@@ -5120,17 +5244,19 @@ def test_run_as_a_program_a_second_capture_equals_the_first_and_the_checkout_sta
     capture.write_files(out, files)
     base = [sys.executable, str(SCRIPT), "--j2", str(j2), "--j2-python", sys.executable, "--out", str(out), "--timeout", "30", "--check"]
     checked = subprocess.run(base, capture_output=True, text=True, timeout=120)  # another process, another port, another scratch folder
-    assert (checked.returncode, checked.stdout.strip().splitlines()[-1], checked.stderr) == (0, "ok: 34 files equal a fresh capture", "")
+    assert (checked.returncode, checked.stdout.strip().splitlines()[-1], checked.stderr) == (0, f"ok: {STANDIN_FILES} files equal a fresh capture", "")
     assert capture.checkout_state(j2) == before
 
 
-@pytest.mark.skipif(not os.environ.get("SUTRA_J2_CHECKOUT"), reason="set SUTRA_J2_CHECKOUT to a J2 checkout (and SUTRA_J2_PYTHON if its venv is elsewhere)")
+@pytest.mark.skipif(not os.environ.get("SUTRA_J2_CHECKOUT"),
+                    reason="set SUTRA_J2_CHECKOUT to an extraction of prototypes/j2 at the pinned commit (and SUTRA_J2_COMMIT to that commit)")
 def test_the_committed_j2_captures_equal_a_fresh_capture_of_the_real_j2(capsys):
     j2 = Path(os.environ["SUTRA_J2_CHECKOUT"])
-    python = os.environ.get("SUTRA_J2_PYTHON") or str(j2 / "venv" / "bin" / "python")
-    before = capture.checkout_state(j2)
-    assert capture.main(["--j2", str(j2), "--j2-python", python, "--check"]) == 0, capsys.readouterr().err
-    assert capture.checkout_state(j2) == before  # J2 is read-only for the app: nothing was written there
+    before = capture.folder_digest(j2)
+    commit = ["--commit", os.environ["SUTRA_J2_COMMIT"]] if os.environ.get("SUTRA_J2_COMMIT") else []
+    # J2's server runs on this Python, the project's own virtualenv: J2's mock mode needs only the standard library and pydantic
+    assert capture.main(["--j2", str(j2), *commit, "--check"]) == 0, capsys.readouterr().err
+    assert capture.folder_digest(j2) == before  # J2 is read-only for the app: nothing was written there
 
 
 # ---- patch P13: the fake's /api/runlist and /api/changes (the engine's own shapes, not captured from J2) -------------------------
