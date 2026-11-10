@@ -21,7 +21,7 @@ def inspect(data):
     check('S01_source_hash_current',data['kernel_sha256']==h)
     baseline=hashlib.sha256((ROOT/'release'/'baseline_v0_1_core.py').read_bytes()).hexdigest()
     check('S02_old_baseline_immutable',data['baseline_v0_1_sha256']==baseline and baseline.startswith('c5a86c28aac'))
-    check('S03_25_distinct_cases',len(data['cases'])==25 and len(set(x['id'] for x in data['cases']))==25)
+    check('S03_28_distinct_cases',len(data['cases'])==28 and len(set(x['id'] for x in data['cases']))==28)
     valid_chains=[];all_model_only=True;all_costs_ok=True;all_governed=True;valid_packs=[]
     for case in data['cases']:
         pack_objs=[json.loads((ROOT/'scenarios'/(n+'.json')).read_text()) for n in case['packs']]
@@ -37,7 +37,7 @@ def inspect(data):
             all_governed &= all(c['status']=='PROPOSED_ONLY' for c in outcome['candidates'])
             all_governed &= all(c['status']=='PROPOSED_ONLY' for c in outcome['learning'])
     check('S04_all_pack_sha_match',all(valid_packs))
-    check('S05_all_24_run_chains',len(valid_chains)==24 and all(valid_chains))
+    check('S05_all_27_run_chains',len(valid_chains)==27 and all(valid_chains))
     check('S06_receipts_local_only',all_model_only)
     check('S07_all_plan_costs_nonnegative',all_costs_ok)
     check('S08_all_candidates_proposed_only',all_governed)
@@ -90,6 +90,12 @@ def inspect(data):
           and all(x['kind'] in ('REUSE_COMPOSITION','INVESTIGATE_GAP') for v in learned.values() for x in v))
     # Each learning list is bound to the kernel's hash-chained record: trace root + sha256 of the list.
     check('S36_learning_bound_to_trace_root',all(c['outcome'].get('learning_record')=={'source_trace':c['outcome']['trace_root_sha256'],'learning_sha256':sha(c['outcome']['learning'])} for c in data['cases'] if c['outcome']))
+    # 0.5.0-standards: the failed standard rests on adapter evidence; the repair is one reviewed method; generated work passes on evidence alone.
+    world={w['predicate']:w for w in m['25_registrable_gap']['four_views']['world']}
+    finding=world.get('sutra/workflows|every_step_has_check',{})
+    check('S37_standard_from_adapter_evidence',status('25_registrable_gap')=='METHOD_ABSENT' and finding.get('truth')=='FALSE' and str(finding.get('source','')).startswith('adapter:standards/')
+          and m['26_registrable_repair']['outcome']['actions']==['add-step-checks@1']
+          and status('27_registrable_generated')=='SUPPORTED_BY_EVIDENCE' and not m['27_registrable_generated']['outcome']['actions'] and not m['27_registrable_generated']['outcome']['model_receipts'])
     valid=all(t['pass'] for t in tests)
     return {'verifier':'independent_verify.py: pure JSON/hash verifier, never imports kernel',
             'checks':tests,'passed':sum(t['pass'] for t in tests),'total':len(tests),

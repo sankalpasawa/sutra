@@ -34,6 +34,9 @@ CASES=[
  ('22_revoke','Revoked authority','Ready Method becomes blocked without the relevant scoped grant.',['00_goal','01_domain','02_methods','03_approval','04_admission','13_revoke_authority'],False,'Governance'),
  ('23_capacity','Provider scarcity','A method exists but no provider slot remains.',['00_goal','01_domain','02_methods','03_approval','04_admission','14_remove_capacity'],False,'Resources'),
  ('24_budget','Insufficient resources','A solution exists but cannot fit the nonfungible budget.',['00_goal','01_domain','02_methods','03_approval','04_admission','15_low_budget'],False,'Resources'),
+ ('25_registrable_gap','A standard as a rule','A hand-written workflow fails a reviewed standard: the checker found steps without a check, and no method can add them.',['60_standard_goal','61_standard_theory','62_handwritten_evidence'],False,'Standards'),
+ ('26_registrable_repair','Repair to the standard','A reviewed method that adds step checks turns the failed standard into a plan.',['60_standard_goal','61_standard_theory','62_handwritten_evidence','63_repair_method'],True,'Standards'),
+ ('27_registrable_generated','Generated work meets the standard','The workflow the implementation generator emits passes the same standard on evidence alone.',['60_standard_goal','61_standard_theory','64_generated_evidence'],True,'Standards'),
 ]
 
 def pack(n):return json.loads((P/(n+'.json')).read_text())
@@ -76,7 +79,7 @@ def extra_events():
             'journal_count':len(s.event_journal)}
 
 def build():
-    result={'release':'sutra-kernel-extensions/0.4.0-shrink',
+    result={'release':'sutra-kernel-extensions/0.5.0-standards',
             'kernel_sha256':hashlib.sha256((ROOT/'kernel'/'core.py').read_bytes()).hexdigest(),
             'baseline_v0_1_sha256':hashlib.sha256((ROOT/'release'/'baseline_v0_1_core.py').read_bytes()).hexdigest(),
             'scope':'finite synthetic deterministic local simulation; NOT historical Core, current J2, or external outcomes',

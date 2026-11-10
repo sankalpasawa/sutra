@@ -24,7 +24,9 @@ EXPECTED={
  '17_reviewed_release':'LOCAL_MODEL_EFFECTS_RECORDED',
  '18_self_need':'AUTHORITY_REQUIRED','19_self_grant':'LOCAL_MODEL_EFFECTS_RECORDED',
  '20_wrong_tenant':'QUERY_EVIDENCE','21_no_goal':'NO_STANDING_GOAL',
- '22_revoke':'AUTHORITY_REQUIRED','23_capacity':'PROVIDER_REQUIRED','24_budget':'RESOURCE_REQUIRED'
+ '22_revoke':'AUTHORITY_REQUIRED','23_capacity':'PROVIDER_REQUIRED','24_budget':'RESOURCE_REQUIRED',
+ '25_registrable_gap':'METHOD_ABSENT','26_registrable_repair':'LOCAL_MODEL_EFFECTS_RECORDED',
+ '27_registrable_generated':'SUPPORTED_BY_EVIDENCE'
 }
 class ContractTests(unittest.TestCase):
     def test_original_baseline_byte_identical(self):
@@ -215,6 +217,25 @@ class ContractTests(unittest.TestCase):
     def test_learning_is_bound_to_the_trace_root(self):
         packs=[pack(n) for n in self.LEARN];r=Learner.from_packs(packs).attach(Kernel(State.from_packs(packs)).run_standing(execute=True))['runs'][0]
         self.assertEqual(r['learning_record'],{'source_trace':r['trace_root_sha256'],'learning_sha256':digest(r['learning'])})
+    # 0.5.0-standards: a standard is a rule; its facts come from an evidence adapter over a workflow JSON.
+    def test_standards_adapter_rows_are_verified_and_versioned(self):
+        from extensions.standards import workflow_facts,SOURCE
+        bad={'id':'W-x','trigger':{'kind':'intent'},'steps':[{'id':'a','action':'do'}],'verify':'whole'}
+        rows={r['predicate']:r for r in workflow_facts(bad)}
+        self.assertEqual([rows[p]['truth'] for p in ('has_trigger','every_step_has_check','has_overall_verify')],['TRUE','FALSE','TRUE'])
+        self.assertTrue(all(r['verified'] and r['source']==SOURCE and r['version'].startswith('wf-') for r in rows.values()))
+        good=dict(bad,steps=[{'id':'a','action':'do','verify':'done'}])
+        self.assertTrue(all(r['truth']=='TRUE' for r in workflow_facts(good)))
+        self.assertNotEqual(workflow_facts(good)[0]['version'],rows['has_trigger']['version'])
+        self.assertEqual(workflow_facts({})[1]['truth'],'FALSE')   # no steps is not "every step has a check"
+    def test_standard_blocks_then_repairs_then_generated_work_passes(self):
+        by={c[0]:c for c in CASES};out={}
+        for cid in ('25_registrable_gap','26_registrable_repair','27_registrable_generated'):
+            _,_,_,files,execute,_=by[cid];s=State.from_packs([pack(n) for n in files]);out[cid]=(Kernel(s).run_standing(execute=execute)['runs'][0],s)
+        gap,s=out['25_registrable_gap'];self.assertEqual(gap['status'],'METHOD_ABSENT');self.assertEqual(s.fact('every_step_has_check')['truth'],'FALSE')
+        rep,s=out['26_registrable_repair'];self.assertEqual(rep['actions'],['add-step-checks@1']);self.assertEqual(s.fact('every_step_has_check')['source'],'LOCAL_MODEL:add-step-checks@1')
+        ok,s=out['27_registrable_generated'];self.assertEqual((ok['status'],ok['actions'],ok['model_receipts']),('SUPPORTED_BY_EVIDENCE',[],[]))
+        self.assertTrue(s.fact('every_step_has_check')['source'].startswith('adapter:standards/'))
     def test_hash_chain_valid(self):
         c=State.from_packs([pack(n) for n in ('00_goal','01_domain','02_methods','03_approval','04_admission')]);r=Kernel(c).run_standing(execute=True)['runs'][0]
         for i,x in enumerate(r['trace']):

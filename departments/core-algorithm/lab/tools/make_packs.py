@@ -106,4 +106,28 @@ pack('43_self_review_grant',grants=['action:request-review@1'])
 pack('50_unapproved_semantics',scope='orgA/enquiries',goals=['enquiry_complete'],
      rules=[{'id':'R-ENQUIRY-DRAFT@1','head':'enquiry_complete','branches':[['record_stored']],
              'approved':False,'source':'LLM/candidate-unreviewed'}])
+# A standard is a reviewed rule over evidence an adapter produced (0.5.0-standards, program slice S3).
+import sys;sys.path.insert(0,str(ROOT))
+from extensions.standards import workflow_facts
+# The shape of a hand-written intent workflow (as deployed W-start-department.json: steps carry an action, no check of their own).
+HANDWRITTEN={'id':'W-handwritten-sample','name':'a hand-written intent workflow','version':'1',
+             'trigger':{'kind':'intent','utterance_patterns':['start (a )?(new )?department( .*)?']},
+             'steps':[{'id':'record-intent','host':'codex','sandbox':'read-only','action':'log the line to the execution record'},
+                      {'id':'create','host':'claude-effector','sandbox':'workspace-write','action':'create the department through the app ask'},
+                      {'id':'open','host':'claude-effector','sandbox':'read-only','action':'open the department'}],
+             'verify':'the department exists in the tree with its charter'}
+def generated_workflow():
+    """The workflow the lab's own implementation generator emits for the order plan with the notification rule."""
+    from kernel.core import State,Kernel
+    from extensions.implementation import to_implementation
+    s=State.from_packs([json.loads((P/(n+'.json')).read_text()) for n in ('00_goal','01_domain','02_methods','03_approval','04_admission','06_notify')])
+    return to_implementation(Kernel(s).run_standing()['runs'][0],s)['workflow']
+pack('60_standard_goal',scope='sutra/workflows',goals=['workflow_registrable'],budget={'compute':5,'money':5,'attention':2},
+     preference=['compute','money','attention'])
+pack('61_standard_theory',rules=[rule('R-REGISTRABLE@1','workflow_registrable',[['has_trigger','every_step_has_check','has_overall_verify']],
+                                      source='reviewed/workflow-standard')])
+pack('62_handwritten_evidence',evidence=workflow_facts(HANDWRITTEN))
+pack('63_repair_method',methods=[method('add-step-checks@1','every_step_has_check',['has_overall_verify'],cost={'compute':1,'money':0,'attention':1})],
+     providers={'local-provider':2},grants=['action:add-step-checks@1'])
+pack('64_generated_evidence',evidence=workflow_facts(generated_workflow()))
 if __name__=='__main__':print('Generated',len(list(P.glob('*.json'))),'authored data pack fixtures')
