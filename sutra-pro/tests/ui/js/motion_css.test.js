@@ -76,8 +76,10 @@ function transitioned(value) {
 }
 
 /* ---------------------------------------------------------------- the rules */
-test("1. no sheet says `transition: all` or `transition-property: all`", () => {
-  ALL.forEach(file => {
+// Rules 1 and 2 are for the sheets that are ours. J2's own sheets are frozen (not ours to edit): what they do that D122 does not allow is switched off by rules
+// of sutra-panel.css, which load after them, and rule 8 proves that every such declaration has its replacement.
+test("1. no sheet of ours says `transition: all` or `transition-property: all`", () => {
+  OURS.forEach(file => {
     blocks(read(file)).forEach(b => {
       if (b.keyframes) return;
       decls(b.body).forEach(([prop, value]) => {
@@ -88,8 +90,8 @@ test("1. no sheet says `transition: all` or `transition-property: all`", () => {
   });
 });
 
-test("2. no sheet transitions or animates a layout property (width, height, top, left, margin, padding, box-shadow, filter ...)", () => {
-  ALL.forEach(file => {
+test("2. no sheet of ours transitions or animates a layout property (width, height, top, left, margin, padding, box-shadow, filter ...)", () => {
+  OURS.forEach(file => {
     blocks(read(file)).forEach(b => {
       if (b.keyframes) {
         b.frames.forEach(frame => decls(frame).forEach(([prop]) => assert.ok(!LAYOUT.has(prop), `${file}: @keyframes ${b.keyframes} animates ${prop}`)));
@@ -174,4 +176,30 @@ test("6. the drawer, the panes and a new line are animated, and the idle drift o
 test("7. reduced motion stops everything on every Sutra page: the durations are 0 and a universal rule ends any animation that is left", () => {
   const panel = strip(read("sutra-panel.css"));
   assert.match(panel, /prefers-reduced-motion:\s*reduce\)\s*\{\s*\*,\*::before,\*::after\s*\{[^}]*animation-duration:\s*\.01ms\s*!important[^}]*transition-duration:\s*\.01ms\s*!important/);
+});
+
+test("8. every `transition: all`, layout transition and layout keyframe of J2's own sheets has a rule in sutra-panel.css that replaces it", () => {
+  const ours = blocks(read("sutra-panel.css"));
+  const selectors = head => head.split(",").map(x => x.trim());
+  const compliant = value => transitioned(value).every(name => name === "none" || (name !== "all" && !LAYOUT.has(name)));
+  const covered = selector => ours.some(b => !b.keyframes && selectors(b.head).includes(selector) && decls(b.body).some(([prop, value]) => prop === "transition" && compliant(value)));
+  let found = 0;
+  FROZEN.forEach(file => {
+    blocks(read(file)).forEach(b => {
+      if (b.keyframes) {
+        if (!b.frames.some(frame => decls(frame).some(([prop]) => LAYOUT.has(prop)))) return;
+        found += 1;
+        const mine = ours.filter(o => o.keyframes === b.keyframes);
+        assert.ok(mine.length > 0 && mine.every(o => o.frames.every(frame => decls(frame).every(([prop]) => !LAYOUT.has(prop)))), `${file}: @keyframes ${b.keyframes} has no compositor-only replacement`);
+        return;
+      }
+      decls(b.body).forEach(([prop, value]) => {
+        const bad = (prop === "transition" && !compliant(value)) || (prop === "transition-property" && /\ball\b/.test(value));
+        if (!bad) return;
+        found += 1;
+        selectors(b.head).forEach(selector => assert.ok(covered(selector), `${file}: ${selector} { ${prop}: ${value} } has no rule of sutra-panel.css`));
+      });
+    });
+  });
+  assert.ok(found > 0, "the check found J2's offending declarations, so it is looking at the right sheets");
 });
