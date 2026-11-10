@@ -33,10 +33,12 @@ from sutra_app.library.node import STEP_REF_RE, FunctionNode, NodeStats, NodeTok
 from sutra_app.library.types import FUNCTIONS, clip, function_node_id
 from sutra_app.orchestrator.attempts import attempt_in
 from sutra_app.orchestrator.db import Database, Tx
+from sutra_app.orchestrator.deliverable import Deliverable, read_deliverable
 from sutra_app.orchestrator.errors import AppError, NotFound
 from sutra_app.orchestrator.ids import ORG_SESSION_ID, Clock, SystemClock, iso_z, parse_iso_z
 from sutra_app.orchestrator.models import (
-    DoneCard, DoneReceipt, EventParseError, RunAtom, RunEnded, RunNode, RunSay, RunStarted, RunStep, RunUsage, TeamChatCard, parse_event,
+    DeliverableCard, DoneCard, DoneReceipt, DoneReport, EventParseError, RunAtom, RunEnded, RunNode, RunSay, RunStarted, RunStep, RunUsage, TeamChatCard,
+    parse_event,
 )
 from sutra_app.orchestrator.tasks import TaskGraph, TaskRow, TaskStore
 from sutra_app.orchestrator.usage import UsageStore
@@ -454,7 +456,8 @@ class Projector:
     def _finish(self, batch: _Batch, status: str, outcome: str, code: str | None, when: int) -> None:
         """A task ends: status, outcome and time; steps settle (map/1 words), functions go idle; every open function atom of the
         task is abandoned ('run ended: <status>'); blocked dependants are queued or cancelled; a `done` card in the org chat, with its
-        receipt (`_receipt`); a crash also says so in the department chat."""
+        receipt (`_receipt`) and, when the run left a report, the link that opens it; ONE `deliverable` card in the team's chat with the report and the
+        files the host saw change in the owner's folder (D135); a crash also says so in the department chat."""
         tx = batch.tx
         row = batch.row
         text = clip((outcome or "").strip() or DEFAULT_OUTCOMES[status], 2000)
@@ -467,13 +470,34 @@ class Projector:
         self.taskgraph.sync(tx, row)
         self.store.settle_blocked(tx, lambda moved: self.taskgraph.sync(tx, moved))
         name = tx.conn.execute("SELECT name FROM org_nodes WHERE id = ?", (row.dept_id,)).fetchone()
+        left = self._deliverable(row)
+        report = DoneReport(dept_id=row.dept_id, run_id=row.run_id or "", label=left.label) if left is not None and left.has_report and row.run_id else None
         card = DoneCard(type="done", task_id=row.id, dept_name=name["name"] if name is not None else row.dept_id, title=clip(row.title, 200),
-                        status=status, outcome=text, receipt=self._receipt(tx.conn, row))
+                        status=status, outcome=text, receipt=self._receipt(tx.conn, row), report=report)
         self._post(batch, ORG_SESSION_ID, who="sutra", kind="card", card=card.model_dump(mode="json"), src_ref=f"{batch.run}#done", at=ended_at)
-        if status == "crashed":
-            session = self._session_of(tx, row.dept_id)
-            if session is not None:
-                self._post(batch, session, who="sutra", kind="error", text=CRASH_TEXT, role="system", src_ref=f"{batch.run}#crashed", at=ended_at)
+        session = self._session_of(tx, row.dept_id)
+        if left is not None and session is not None and row.run_id:
+            self._post_deliverable(batch, session, left, ended_at)
+        if status == "crashed" and session is not None:
+            self._post(batch, session, who="sutra", kind="error", text=CRASH_TEXT, role="system", src_ref=f"{batch.run}#crashed", at=ended_at)
+
+    def _deliverable(self, row: TaskRow) -> Deliverable | None:
+        """What the run left for the owner (`deliverable.json` and the report it names), or None: no run folder, no record, nothing to show. Never raises."""
+        if row.run_id is None:
+            return None
+        try:
+            return read_deliverable(self.store.run_dir_of(row))
+        except Exception:                                   # noqa: BLE001 - a deliverable that cannot be read is no deliverable, never a failed end
+            log.warning("run %s: the deliverable could not be read", row.run_id, exc_info=True)
+            return None
+
+    def _post_deliverable(self, batch: _Batch, session_id: str, left: Deliverable, when: int) -> None:
+        """ONE card in the TEAM's chat with the report as the team wrote it, the files git saw change in the owner's folder and the link to the whole report
+        (D135). Idempotent by `src_ref`, so a replayed `run.ended` posts nothing more."""
+        row = batch.row
+        card = DeliverableCard(type="deliverable", task_id=row.id, run_id=row.run_id or "", dept_id=row.dept_id, label=left.label, file=left.file,
+                               text=left.text, cut=left.cut, changes=left.changes)
+        self._post(batch, session_id, who="sutra", kind="card", card=card.model_dump(mode="json"), src_ref=f"{batch.run}#deliverable", at=when)
 
     @staticmethod
     def _receipt(conn: sqlite3.Connection, row: TaskRow) -> DoneReceipt | None:
