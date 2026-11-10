@@ -129,30 +129,47 @@ python j2_server.py                              # same page, uses the API keys 
 STUDIO_MOCK=1 python j2_server.py                # offline demo, scripted agents
 ```
 
-The page opens in the **Simple view**, made for someone who knows nothing about agents (screenshots in
-`docs/ui-simple-*.png`):
-- **Layout:** chat on the left, a large preview of the site on the right. On a phone the preview stays hidden
-  until a site exists; then a "Chat | Preview" toggle at the top shows one at a time.
-- **One voice:** only the messages addressed to you, from one assistant called "Your website team". No agent
-  names, @mentions, step codes or internal messages.
-- **Plain words at the source:** every Identity prompt says that anything written to you must suit a college
-  student with no tech background: no internal terms, at most two short sentences of context, and each option
-  says what you get and what it costs ("Add a section about your coffee's story (takes a bit longer)" / "Keep
-  it simple, no story section").
-- **Word list (fallback only):** a word list in the page rewrites whatever still slips through. Function names
-  become "the team", Audit becomes "our checks" (so never "after the team"), budget becomes "effort". There are
-  no model names, AI-call counts, cycles or badges. When the effort runs out it asks "This needs a bit more work
-  than planned. What would you like to do?" with Continue (uses a little more effort) / Skip … / Finish as it
-  is.
-- **Progress:** a 5-step bar above the chat (solid background, so messages never show through it) (Understanding your request, Planning, Building, Checking, Ready),
-  plus one friendly line while the team works, e.g. "Building your menu section…".
-- **Questions:** a question with options is shown once, followed by its buttons, so you never type an option
-  number; a text box is there for your own answer.
-- **Start screen:** example briefs as cards: a cafe, a bakery, a florist and a photographer.
-- **When done:** "Your website is ready" with Open full screen, Download the HTML file and Ask for a change.
-- **Errors:** a plain "Something went wrong. Try again."; the details stay in the Detailed view.
+The page opens in the **Simple view** (the studio), made for someone who knows nothing about agents. The work is the
+screen; the team is visible; one person talks to you. Light by default, dark with the moon button (screenshots in
+`docs/ui-studio-*.png`):
 
-"See how it works" (top right) opens the **Detailed view**: everything described below. A rail on the left
+| Area | What it shows |
+|---|---|
+| Start | One box ("What should we make today?"), three examples (a website, a product spec, a launch plan), the five faces (tap for the team card), **Decide for me**, Template library, Detailed view, and Recent work (`/api/runlist`) |
+| Top bar | New project (+), the project's name, one status line ("Building the menu · 4 of 7 parts done"), parts done, Decide for me, Detailed view, theme, and Open the site / Download when it is ready |
+| Left: Your team | Five people, one role word each, everywhere: **Asha, Client Lead** (Identity: the only one who talks to you), and the Makers **Mira, Writer**, **Kabir, Designer**, **Dev, Developer** (the builders of each part, by what the part is: words, look, or things that work; the PRD is Mira's, the HLD Kabir's, the LLD Dev's), and **Nora, Quality check** (Audit). Each line says what they are on now; whoever is working gets a turning ring. Under them, **Behind the scenes**: Planner, Budget lead, Scheduler and Gatekeeper (Adaptation, Priority, Coordination, Validator) light up while they work |
+| Left: The plan | One line per part (one per section; a fix rewrites its part, so it stays one line): done, in progress, coming, a fix coming, waits on you. Grouped by document in a design-document run. A click goes to the part on the work |
+| Centre | Tabs for the output: the website, each design document, and any other deliverable the run lists (`/api/artifacts`: a page, a document, an image, or data, code or a script as readable text through `/view`), then **Team at work** |
+| Centre: the output | A new version loads behind the visible one and swaps in at the same reading place. The part someone is on is outlined with their face; a finished part gets a check that opens what went into it (goal, method, output, check); hovering a part offers Change this. Parts still to come are placeholders at the end of the page ("Dev · on it"), with a chip pointing down to them |
+| Centre: Team at work | Shown on its own whenever nothing can be previewed yet, or ever (a task with no page): the journey (Your idea, Plan, Build, Check, Ready, a stop per change; the person working walks it), who is on what, the parts moving from Planned to Being made to Done, **What the team made** (every deliverable, each opening goal, method, output, check; and the proof and records), what is ready to download, and the team's talk in plain lines written by code from what each message is |
+| Right: Asha | The conversation: your messages and Asha's, a card per question (options, your own words, Answer later; an OK to spend or send is Approve / Not now), progress, and the message box ("Ask for a change…"). Long messages fold. On a phone she is a sheet from the dock |
+| Questions | The open question shows twice: in Asha's panel and on the work, after the part it is about (or at the top), with a nudge when it is off screen. The option Decide for me would take is marked **Suggested** |
+| Decide for me | While it is on, the team answers its own questions (`POST /api/settings`, see below) and goes on; each answer shows as "Decided for you: …" with Change. A real email or Slack send always waits for you |
+| Finished | A green ring on the work, "Your website is ready", Download (or All files for design documents), Copy share link, Open full view |
+| Phone | The work fills the screen; the five faces, Plan and Chat sit in a dock at the bottom and open as sheets |
+
+**Where it comes from:** `j2_studio.py` (studio/1) builds the studio's model in code, in every state (`studio`) and for saved runs:
+the parts (one per section, a fix stays the same part; each with its document, kind of work and person), the team stream (one plain
+line per function message, written from what the message is, never the agents' words) and the part the open question is about.
+`GET /api/record?sec=<section>` (or `?art=<deliverable name>`) gives one part's (or one deliverable's) goal, method, output and check.
+The output tabs read `/api/artifacts`; `/view?name=<file>` shows any listed file (markdown rendered, a page, an image, or text) and
+`/doc/<prd|hld|lld>` a finished design document. `POST /api/settings` sets Decide for me. The page only draws.
+
+**Plain words at the source:** every Identity prompt says that anything written to you must suit a college student with no
+tech background: no internal terms, at most two short sentences of context, and each option says what you get and what it
+costs. **Word list (fallback only):** a word list in the page rewrites whatever still slips through (function names become
+"the team", Audit becomes "our checks", budget becomes "effort"). The role names above are the only names shown.
+
+**Decide for me** (`J2Run.auto`; the switch, `POST /api/settings {"decide_for_me": true}`, or `J2_DECIDE_FOR_ME=1`): kept across
+Start over, so the start page can set it before the first message. When the run pauses on a question, code answers it the way a
+click would and the run goes on: an option list takes the first option; a conflict (asking for more than the plan) takes the
+simpler option; a second limit question takes "finish as it is"; an OK to spend more is a yes; a question without options gets
+"go with sensible, typical choices … and list them as assumptions". A real send (`send_confirm`) is never decided, and after
+`J2_AUTO_CAP` (6) answers in one run the next question waits for you. Each answer is the Requester's message with `auto` and
+`auto_label`, logged in `auto_log` and the run's events; switched on while a question waits, it is answered at once. A saved run
+reads the setting from `settings.json`. The same choice is the open question's `suggested` option in the state, on or off.
+
+"Detailed view" (top bar) opens the **Detailed view**: everything described below. A rail on the left
 switches between the views: **Map** (the Detailed view opens on it), **Chat** (the Simple view; the rail stays and
 Chat is highlighted) and **Internals** (the other tabs: Preview, Goal, Workflows, Conflicts, Timeline, Audit,
 Charter, Documents, Artifacts, Board, Style guide, Lessons, Playbooks, Report, Run details, Run settings). Any
@@ -480,6 +497,8 @@ Settings:
 | `J2_MEMORY_TEST_LESSONS` | off | 1 lets J2.b read test lessons (demo runs only), see below |
 | `J2_BOARD` | off | 1 turns on the message board, see "Message board" |
 | `J2_FORCE_QUESTION` | off | Mock-only test switch: a comma list of askers (a function or a builder), each asking one question |
+| `J2_DECIDE_FOR_ME` | off | 1 starts every run with Decide for me on (the Simple view's switch sets it per run) |
+| `J2_AUTO_CAP` | 6 | Decide for me: the most questions it answers in one run before the next one waits for you |
 | `J2_MILESTONE_EMAILS` | off | 1 sends a milestone email per goal reached (dry run) |
 | `J2_SEND_MODE` | `dry-run` | `dry-run`, `mock` or `live` (real email by SMTP, after you say yes once a run) |
 | `J2_SEND_CAP` | 10 | The most live emails one run sends |
@@ -575,11 +594,16 @@ playbooks into the real file, and a live clothing run reused one. Those are now 
 - F: `J2_FORCE_AUDIT_FAIL`: forced once in cycle 1 and marked as a test, real fix and re-check, test lesson saved
   and not reused, an unknown item ignored, off when unset. `J2_MEMORY_TEST_LESSONS`: test lessons filtered by
   default; with the opt-in one is used and flagged in the chat, the lane and `summary.json`
-- G: the Simple view rendered in headless Chrome in five states (start, intake questions, a conflict question, a
-  limit question, ready). Its visible text never contains agent names, J2 codes, "budget", COUNTER/GRANT/REFUSE,
-  "after the team" or other internals. A question with buttons appears once. The phone toggle appears only once
-  a site exists. The ready card has its three buttons. Also checked: the word list (run in node: Audit becomes
-  "our checks"), and that every Identity prompt, and no other, carries the plain-language rule
+- G: the Simple view (the studio) rendered in headless Chrome in five states (start, intake questions, a conflict
+  question, a limit question, ready). Its visible text never contains agent names, J2 codes, "budget" (the role name
+  Budget lead aside), COUNTER/GRANT/REFUSE, "after the team" or other internals. A question with buttons appears once
+  per card (Asha's panel, and the copy on the work), never as a numbered list. The ready bar has its buttons.
+  `simple_redesign` runs the page's script on every saved run and seven live states (node), then in Chrome at 1440 and
+  390, light and dark: contrast, no sideways scroll, cards answer through `/api/say`, Decide for me posts
+  `/api/settings`, the phone dock opens Asha, a part's check opens goal, method, output and check, Change this.
+  `decide_for_me` covers the backend switch; `studio_views` the `/view` and `/doc/<kind>` pages and the parts' documents.
+  Also checked: the word list (run in node: Audit becomes "our checks"), and that every Identity prompt, and no other,
+  carries the plain-language rule
 - I: unpaid items. A passing item no workflow paid for is flagged `UNPAID`, paid for and passes. Playbooks:
   same business type only (a clothing brief that shares words with a cafe brief gets nothing), mock memory
   kept away from live runs, test memory isolated
