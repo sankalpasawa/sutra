@@ -3,7 +3,7 @@
   "artifact": "website",
   "kind": "generic",
   "version": 1,
-  "from": "j2_artifact_models.SECTION_MODELS and j2_rules.RULES (generated: python3 j2_template_lib.py)",
+  "from": "j2_artifact_models.SECTION_MODELS, DOC_MODELS and j2_rules.RULES (generated: python3 j2_template_lib.py)",
   "templates": [
     {
       "name": "WebsiteSection/1 · Section",

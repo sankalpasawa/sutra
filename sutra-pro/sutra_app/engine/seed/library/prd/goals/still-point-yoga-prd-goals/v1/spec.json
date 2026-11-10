@@ -1,0 +1,123 @@
+{
+  "name": "Still Point Yoga PRD Goals",
+  "artifact": "prd",
+  "section": "Goals",
+  "version": 1,
+  "kind": "specialised",
+  "description": "The '## Goals' section of the Still Point Yoga PRD. It has goals G1, G2 and G3 in order. They say the page shows the studio name and address as text, lists the weekly classes, and takes bookings. No numeric targets.",
+  "fields": [
+    {
+      "name": "heading",
+      "type": "string",
+      "required": true,
+      "description": "The section heading, written exactly as '## Goals'",
+      "enum": [
+        "## Goals"
+      ],
+      "nullable": false
+    },
+    {
+      "name": "studio_name",
+      "type": "string",
+      "required": true,
+      "description": "The studio name as it appears in the section",
+      "enum": [
+        "Still Point Yoga"
+      ],
+      "nullable": false
+    },
+    {
+      "name": "goals",
+      "type": "list[Goal]",
+      "required": true,
+      "description": "The goals G1, G2, G3 in order, each once",
+      "enum": null,
+      "nullable": false
+    },
+    {
+      "name": "assumptions",
+      "type": "list[string]",
+      "required": false,
+      "description": "Assumptions behind the goals, taken only from the recorded facts",
+      "enum": null,
+      "nullable": false
+    }
+  ],
+  "objects": [
+    {
+      "name": "Goal",
+      "fields": [
+        {
+          "name": "id",
+          "type": "string",
+          "required": true,
+          "description": "G1, G2 or G3, in order",
+          "enum": [
+            "G1",
+            "G2",
+            "G3"
+          ],
+          "nullable": false
+        },
+        {
+          "name": "statement",
+          "type": "string",
+          "required": true,
+          "description": "The goal in one line, with no numeric targets",
+          "enum": null,
+          "nullable": false
+        }
+      ]
+    }
+  ],
+  "rules": [
+    {
+      "rule": "ids_sequential",
+      "name": "ids G1, G2, G3 unique and in order",
+      "from": "P6",
+      "path": "goals",
+      "prefix": "G"
+    },
+    {
+      "rule": "enum",
+      "name": "heading is exactly '## Goals'",
+      "from": "P6",
+      "path": "heading",
+      "values": [
+        "## Goals"
+      ]
+    },
+    {
+      "rule": "not_empty",
+      "name": "studio name present",
+      "from": "P6",
+      "path": "studio_name"
+    }
+  ],
+  "sha": "bd3af332a236a669431f604d2f0ed5125ac076565773b280af22bf7d7673937c",
+  "extends": "prd/goals@generic/1",
+  "made_by": {
+    "run": "j2-20261103-162711",
+    "workflow": "W-5",
+    "atom": "W-5.a1",
+    "agent": "template generator (claude-cli)"
+  },
+  "context": {
+    "business_type": "prd",
+    "facts_used": [
+      "4th Floor, 22 Church Street, Bengaluru 560001",
+      "Monday 7:00 am Gentle Flow 500",
+      "No online payment is taken",
+      "Payment is made at the studio",
+      "Saturday 9:00 am Beginners Basics 400",
+      "Still Point Yoga",
+      "Sunday 8:00 am Slow Sunday 500",
+      "The Goals section states that the page shows the studio name and address as text, lists the weekly classes, and takes bookings",
+      "Thursday 7:00 am Breath and Stretch 450",
+      "Tuesday 6:30 pm Strength Yoga 600",
+      "bookings@stillpoint.example",
+      "name, email, class and preferred date"
+    ],
+    "fingerprint": "cf6a256522d1fef899dd7a1ddab7e10c42bfc6b57a2e25f3fcbc05110c7a251a"
+  }
+}
