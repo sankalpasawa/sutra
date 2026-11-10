@@ -7510,6 +7510,15 @@ def doc_planner_real():
         assert heads == {"Problem", "Users"}
         md = open(os.path.join(run.dir, "prd.md"), encoding="utf-8").read()
         assert "## Problem" in md and "## Users" in md and md.index("## Problem") < md.index("## Goals"), md[:300]
+        # with realization on (the default) a document has no rate card: a multi-section workflow has no minimum price
+        # (runs/j2-20261111-012507 crashed here with KeyError: 'Problem')
+        keep_rz = os.environ.get("J2_REALIZATION")
+        os.environ["J2_REALIZATION"] = "1"
+        try:
+            run = docs_run(brief, 400, planner(FULL))
+            assert not j2.RATES and not str(run.outcome).startswith("Crashed"), run.outcome
+        finally:
+            os.environ["J2_REALIZATION"] = keep_rz if keep_rz is not None else "0"
         # a missing section is flagged, the planner revises once, then the plan goes ahead complete
         run = docs_run(brief, 400, planner(FULL[:-1], FULL))
         assert any("no workflow writes the Out of scope section" in x["reason"] for x in run.rejections), run.rejections

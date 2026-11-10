@@ -7215,7 +7215,7 @@ class J2Run:
             no_sec = (self.doc and not writes and not w.get("revises")
                       and "fix" not in (w.get("parts") or []))
             parts_of = j2_types.section_parts(self.output) if writes and RATES else {}
-            sec_min = sum(RATES.get(parts_of[x], 0) for x in writes) if len(writes) > 1 else 0
+            sec_min = sum(RATES.get(parts_of[x], 0) for x in writes) if len(writes) > 1 and parts_of else 0      # no rate card: no minimum
             reason = ("a check or report on the site is Audit's job, not a workflow" if self._audit_name(name)
                       else f"required field(s) missing: {', '.join(missing)}" if missing
                       else "; ".join(no_atom) if no_atom
