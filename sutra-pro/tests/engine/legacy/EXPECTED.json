@@ -1,6 +1,24 @@
 {
  "change_checks": 192,
- "flow_fast_ok_lines": 67,
- "j2_commit": "9200cf626e5c05032caefda4f96b694284efdc5e",
- "realization_checks": 97
+ "flow_fast_ok_lines": 70,
+ "flow_fast_ok_lines_with_extraction": 109,
+ "j2_commit": "025e265c594564f47a2365874cd5a5cc5d0d20a6",
+ "j2_flow_test_sha256": "e1748988bfc118fc5ab04b10b3235561de4f7c78de37c586486295b98b338c87",
+ "realization_checks": 98,
+ "skip_lines_with_extraction": [
+  "replay test skipped: runs/j2-20261015-114723 not found",
+  "skipped the rest of left_bar: no saved runs",
+  "skipped the rest of graph_map: no saved runs",
+  "skipped the rest of map_shapes: no saved runs",
+  "map tree: runs 174314, 155610 and 130930 not in runs/",
+  "map: every workflow placed or listed in 0 saved runs",
+  "agent views: skipped (no saved test run in runs/)",
+  "artifacts groups: static checks ok (skipped the rest: runs/j2-20261103-132506 not found)",
+  "rules split: j2-20261030-003100 isn't in this clone",
+  "icon rail: static checks ok (browser steps skipped",
+  "chat panel: static checks ok (browser steps skipped",
+  "function chat: static checks ok (browser steps skipped",
+  "view kept: static checks ok (browser steps skipped",
+  "run settings: no old controls, Appearance cards; run list = the records on 0 runs"
+ ]
 }
