@@ -450,6 +450,18 @@ def test_when_the_owner_chose_read_only_the_whole_team_is_told_so_plainly(dirs):
         assert "builders can create" not in text and "Your own tools do not change files" not in text
 
 
+def test_an_auditor_that_may_run_the_git_reads_is_told_so_and_that_it_changes_nothing(dirs):
+    audit = grounding_text(Folder(str(dirs.mine), edit=False, team="edit", git=True))
+    assert "(read, list and search) and at the project's git state (status, diff, log, show), so you can check what was changed." in audit
+    assert "Your own tools do not change files" in audit and "builders can create and change files there" in audit
+    assert "They are read-only" not in audit and "cannot create, change or delete a file" not in audit
+    assert Folder(str(dirs.mine), git=True).git is True and Folder(str(dirs.mine)).git is False
+    plain = grounding_text(Folder(str(dirs.mine), edit=False, git=True))                                         # git, and no team said
+    assert "git state (status, diff, log, show)" in plain and "They are read-only: you cannot create, change or delete a file" in plain
+    assert "and you can run only those git reads" in plain
+    assert grounding_text(Folder(str(dirs.mine), edit=True, team="edit", git=True)) == grounding_text(Folder(str(dirs.mine), edit=True))     # a builder has it all
+
+
 def test_with_no_team_the_words_are_what_they_always_were(dirs):
     expected = READ_ONLY_OLD.format(path=str(dirs.mine))
     for folder in (Folder(str(dirs.mine), edit=False), Folder(str(dirs.mine), edit=False, team=""), Folder(str(dirs.mine), edit=False, team="nonsense"), str(dirs.mine)):

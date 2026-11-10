@@ -98,6 +98,7 @@ def test_a_tag_asks_for_nothing_by_default_and_refuses_a_word_it_does_not_know()
     assert CallTag(workspace="read").workspace == "read" and CallTag(workspace="edit").workspace == "edit"
     with pytest.raises(ValidationError):
         CallTag(workspace="write")
+    assert CallTag(workspace="inspect").workspace == "inspect"
     assert CallTag().team_workspace == "none" and CallTag(team_workspace="edit").team_workspace == "edit"
     with pytest.raises(ValidationError):
         CallTag(team_workspace="write")
@@ -122,6 +123,21 @@ def test_folder_for_the_tag_asked_and_the_owners_access_caps_it(tmp_path, worksp
         assert got == ""
     else:
         assert str(got) == real(tmp_path / "p") and isinstance(got, Folder) and got.edit is (expected == "rw")
+
+
+@pytest.mark.parametrize("workspace,access,git", [
+    ("inspect", "edit", True),                                   # Audit of a project run: the git reads, no change (D135)
+    ("inspect", "read", False),                                  # read only means no command at all: the owner's choice caps it
+    ("read", "edit", False), ("edit", "edit", False),            # a read call has no git; a builder has them as part of editing
+])
+def test_an_inspect_call_may_run_the_git_reads_only_when_the_owner_allowed_changes_and_never_edits(tmp_path, workspace, access, git):
+    cfg = ConnectorConfig(data_dir=tmp_path / "data", work_root=tmp_path / "work")
+    router = Router({"stub": StubConnector(cfg)}, policy())
+    router.folders = WorkFolder(cfg.data_dir, cfg.resolved_work_root())
+    (tmp_path / "p").mkdir()
+    router.folders.set(str(tmp_path / "p"), access=access)
+    got = router.folder_for(tag(workspace))
+    assert isinstance(got, Folder) and got.git is git and got.edit is (workspace == "edit" and access == "edit")
 
 
 @pytest.mark.parametrize("workspace", ["none", "read", "edit"])
@@ -230,6 +246,59 @@ def test_with_read_only_chosen_every_agent_of_a_project_run_is_told_so_and_none_
         said = value(call["argv"], "--system-prompt")
         assert value(call["argv"], "--tools") == READ and "The owner chose read only for this folder (Settings, under Working folder)" in said
         assert "allow changes in Settings, under Working folder" in said and "builders can create" not in said
+
+
+# ---- Audit's git reads (D135): the claimed changes are checked with `git diff`, which a read-only tool set cannot run -----------------------------------------------
+
+GIT_PATTERNS = ["Bash(git status:*)", "Bash(git diff:*)", "Bash(git log:*)", "Bash(git show:*)"]
+INSPECT = "Read,Glob,Grep,LS,Bash"
+
+
+def test_an_inspect_call_runs_the_four_git_reads_and_nothing_that_writes(make, fake):
+    fake.sequence("ok_plain").reply(text="r")
+    rig = make("claude")
+    rig.choose("edit")
+    rig.router.ask(text_req("inspect", function="audit", team="edit"))
+    call, = rig.calls()
+    argv = call["argv"]
+    assert call["cwd"] == real(rig.folder) and value(argv, "--tools") == INSPECT
+    allowed, denied = value(argv, "--allowedTools").split(","), set(value(argv, "--disallowedTools").split(","))
+    assert allowed == ["Read", "Glob", "Grep", "LS", *GIT_PATTERNS]                                  # the file tools and exactly the four git reads
+    assert {"Edit", "MultiEdit", "Write", "NotebookEdit", "WebFetch", "WebSearch"} <= denied and "Bash" not in denied
+    assert {"Bash(git*--output*)", "Bash(git*--no-index*)", "Bash(git*--ext-diff*)", "Bash(git*--textconv*)", "Bash(git*-c *)"} <= denied
+    said = value(argv, "--system-prompt")
+    assert "and at the project's git state (status, diff, log, show)" in said and "Your own tools do not change files" in said
+    assert "builders can create and change files there" in said and "They are read-only" not in said
+
+
+def test_with_read_only_chosen_an_inspect_call_has_no_command_at_all(make, fake):
+    fake.sequence("ok_plain").reply(text="r")
+    rig = make("claude")
+    rig.choose("read")
+    rig.router.ask(text_req("inspect", function="audit", team="edit"))
+    argv = rig.calls()[0]["argv"]
+    assert value(argv, "--tools") == READ and value(argv, "--allowedTools") == READ and "git state" not in value(argv, "--system-prompt")
+    assert "Bash" in value(argv, "--disallowedTools").split(",")
+
+
+def test_a_read_call_still_has_no_git_and_a_builder_keeps_the_whole_edit_set(make, fake):
+    fake.sequence("ok_plain").reply(text="r")
+    rig = make("claude")
+    rig.choose("edit")
+    rig.router.ask(text_req("read", team="edit"))
+    rig.router.ask(text_req("edit", function="W-2", team="edit"))
+    planner, builder = rig.calls()
+    assert value(planner["argv"], "--tools") == READ and value(builder["argv"], "--tools") == EDIT
+
+
+@pytest.mark.parametrize("access,sandbox", [("edit", "read-only"), ("read", "read-only")])
+def test_codex_runs_an_inspect_call_in_its_read_only_sandbox(make, fake, access, sandbox):
+    fake.sequence("ok_plain", cli="codex").reply(text="r")
+    rig = make("codex", sandbox="read-only")
+    rig.choose(access)
+    rig.router.ask(text_req("inspect", function="audit", team="edit"))
+    call, = rig.calls("codex")
+    assert value(call["argv"], "-s") == sandbox and call["cwd"] == real(rig.folder)
 
 
 def test_a_call_with_no_team_gets_the_same_words_as_before_the_team_existed(make, fake):

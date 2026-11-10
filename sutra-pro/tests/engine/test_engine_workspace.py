@@ -54,12 +54,19 @@ def test_builders_read_on_every_output_that_does_not_say_edit(edit_output):
         assert workspace_for("W-1", "agent_turn", output) == "read"
 
 
-def test_a_builder_of_an_output_that_says_edit_may_edit_and_audit_still_only_reads(edit_output):
+def test_a_builder_of_an_output_that_says_edit_may_edit_and_audit_looks_at_git_but_never_changes_anything(edit_output):
     assert workspace_for("W-2", "agent_turn", edit_output) == "edit"
     assert workspace_for("W-2", "judge", edit_output) == "edit"
     for fn in FIVE:
-        assert workspace_for(fn, "agent_turn", edit_output) == "read", fn      # only builders change files
-    assert workspace_for("audit", "agent_turn", edit_output) == "read"
+        assert workspace_for(fn, "agent_turn", edit_output) in ("read", "inspect"), fn      # only builders change files
+        assert workspace_for(fn, "agent_turn", edit_output) == ("inspect" if fn == "audit" else "read"), fn
+    for purpose in WORKSPACE_PURPOSES:
+        assert workspace_for("audit", purpose, edit_output) == "inspect"      # D135: Audit checks the builders' claims with git diff, so it may run the git reads
+
+
+def test_audit_of_an_output_whose_builders_only_read_has_no_git_either():
+    for output in ("website", "prd", "hld", "lld", None, "unknown"):
+        assert workspace_for("audit", "agent_turn", output) == "read", output
 
 
 def test_an_agent_that_is_not_one_of_the_engines_gets_no_folder():
@@ -81,7 +88,7 @@ def test_the_capability_reads_the_calls_own_stage_before_the_runs_output(edit_ou
 def test_every_agent_of_an_output_that_edits_carries_what_the_team_may_do(edit_output, function):
     tag = WorkspaceCapability().tag(CallTag(function=function, stage=edit_output), ctx())
     assert tag["team_workspace"] == "edit"
-    assert tag["workspace"] == ("edit" if function.startswith("W-") else "read")             # the agent's own reach is unchanged
+    assert tag["workspace"] == ("edit" if function.startswith("W-") else "inspect" if function == "audit" else "read")      # its own reach
 
 
 @pytest.mark.parametrize("output", ["website", "prd", "hld", "lld", None, "unknown"])

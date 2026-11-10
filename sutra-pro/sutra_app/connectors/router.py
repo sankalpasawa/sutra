@@ -371,16 +371,17 @@ class Router:
         and change". No folder set, or an offline router, is none. A tag is data: no function name is looked at here.
 
         The tag also says what the run's builders may do (`team_workspace`, D135), so the folder text of an agent that only reads can say what its TEAM
-        may do: `edit` when the builders may change files and the owner allowed it, `read` when they would but the owner chose read only."""
+        may do: `edit` when the builders may change files and the owner allowed it, `read` when they would but the owner chose read only. An `inspect`
+        call (Audit of such a run) also gets the four git reads, and only when the owner allowed changes: "read only" means no command at all."""
         want = getattr(tag, "workspace", "")
-        if want not in ("read", "edit"):
+        if want not in ("read", "inspect", "edit"):
             return ""
         grant = self.chat_folder()
         if not grant:
             return ""
         allowed = bool(getattr(grant, "edit", False))
         crew = ("edit" if allowed else "read") if getattr(tag, "team_workspace", "none") == "edit" else ""
-        return Folder(str(grant), edit=want == "edit" and allowed, team=crew)
+        return Folder(str(grant), edit=want == "edit" and allowed, team=crew, git=want == "inspect" and allowed)
 
     @staticmethod
     def _grounded(system: str, folder: "Folder | str") -> str:

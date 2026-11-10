@@ -22,12 +22,14 @@ _BUILDER = re.compile(r"W-[0-9]+")
 
 
 def workspace_for(function: str, purpose: str, output: Optional[str]) -> str:
-    """`none`, `read` or `edit` for one call: the five functions and every builder may read; a builder of an output whose spec says
-    `edit` may also change files; Audit only ever reads, so it checks the builders' work independently of them."""
+    """`none`, `read`, `inspect` or `edit` for one call: the five functions and every builder may read; a builder of an output whose spec says
+    `edit` may also change files; Audit only ever reads, so it checks the builders' work independently of them, and in a run whose builders change
+    files it may also run the four git reads (`inspect`), because "check every claimed change with `git diff`" cannot be done with file tools alone
+    (a live run: "I could not run git, so the git claims rest on the earlier report", D135). The owner's access caps it like every level."""
     if purpose not in WORKSPACE_PURPOSES:
         return "none"
     if function in FUNCTIONS:
-        return "read"
+        return "inspect" if function == "audit" and team_workspace_for(output) == "edit" else "read"
     if _BUILDER.fullmatch(function or ""):
         spec = output_spec(output)
         return "edit" if spec is not None and spec.workspace == "edit" else "read"

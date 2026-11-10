@@ -82,15 +82,20 @@ class Folder(str):
 
     `team` is what the grounding says about the team the call belongs to (D135), for the engine's runs only: `edit` (this run's builders can change
     files here and the owner allowed it), `read` (the run is built to change files but the owner chose read only: nobody can), or `` (nothing is
-    said about a team: a direct chat, the org agent, an output whose builders only read). It changes the words of `grounding_text`, never the tools."""
+    said about a team: a direct chat, the org agent, an output whose builders only read). It changes the words of `grounding_text`, never the tools.
+
+    `git` says the call may run the four git reads (status, diff, log, show) without being able to change a file (Audit of a run whose builders change
+    files, D135); a call that may edit has them anyway. The claude connector adds Bash restricted to those reads and the same deny list as for an edit."""
 
     edit: bool = False
     team: str = ""
+    git: bool = False
 
-    def __new__(cls, path: str, edit: bool = False, team: str = "") -> "Folder":
+    def __new__(cls, path: str, edit: bool = False, team: str = "", git: bool = False) -> "Folder":
         found = super().__new__(cls, path)
         found.edit = bool(edit)
         found.team = team if team in ("edit", "read") else ""
+        found.git = bool(git)
         return found
 
 
@@ -206,16 +211,22 @@ def grounding_text(folder: Optional[str], edit: Optional[bool] = None, team: Opt
         return NO_FOLDER_TEXT
     allowed = bool(getattr(folder, "edit", False)) if edit is None else edit
     crew = getattr(folder, "team", "") if team is None else team
+    git = bool(getattr(folder, "git", False)) and not allowed
     shown = folder if len(folder) <= 300 else folder[:299] + "…"
+    look = "You can look at the owner's files there with your file tools (read, list and search)"
     if allowed:
         tools = ("You work in the owner's project like a developer at their desk. You can read, list and search the files there, and you can create and change "
                  "files with your file tools. You can look at the project's git state (status, diff, log, show) but you cannot run anything else and you cannot "
                  "commit: the owner does that. Paths are relative to that folder.")
     elif crew == "edit":
-        tools = ("You can look at the owner's files there with your file tools (read, list and search). Your own tools do not change files, because you "
-                 "plan and check the work and the builders do the changing: that is not a limit of this run. " + TEAM_EDIT_TEXT + " Paths are relative to that folder.")
+        tools = (look + (" and at the project's git state (status, diff, log, show), so you can check what was changed" if git else "") +
+                 ". Your own tools do not change files, because you plan and check the work and the builders do the changing: that is not a limit of this "
+                 "run. " + TEAM_EDIT_TEXT + " Paths are relative to that folder.")
+    elif git:
+        tools = (look + " and at the project's git state (status, diff, log, show). They are read-only: you cannot create, change or delete a file, and you "
+                 "can run only those git reads." + (" " + TEAM_READ_TEXT if crew == "read" else "") + " Paths are relative to that folder.")
     else:
-        tools = ("You can look at the owner's files there with your file tools (read, list and search). They are read-only: you cannot create, change or "
+        tools = (look + ". They are read-only: you cannot create, change or "
                  "delete a file, and you cannot run a command." + (" " + TEAM_READ_TEXT if crew == "read" else "") + " Paths are relative to that folder.")
     text = (f"Working folder: {shown}\n{tools} When the owner mentions their files, a project, an app or a folder, look there first, starting with "
             "a listing of the folder itself, and say which files you read" + (" and which you changed." if allowed else "."))

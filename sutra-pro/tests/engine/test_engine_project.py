@@ -292,13 +292,13 @@ def test_a_seed_that_is_not_a_run_of_this_team_is_not_a_follow_up(j2, make_run_d
 
 
 # ---- the folder policy of a project run ----------------------------------------------------------------------------------------
-def test_builders_of_a_project_run_may_edit_audit_only_reads_and_helpers_get_no_folder(j2, make_run_dir):
+def test_builders_of_a_project_run_may_edit_audit_looks_at_git_and_helpers_get_no_folder(j2, make_run_dir):
     run_dir = make_run_dir(user_text=BRIEF, settings=QUIET)
     _, port = go(run_dir)
     tags = port.tags
     builders = [t for t in tags if t.function.startswith("W-") and t.purpose == "agent_turn"]
     assert builders and {t.workspace for t in builders} == {"edit"}
-    assert {t.workspace for t in tags if t.function == "audit" and t.purpose in ("agent_turn", "plan", "judge")} == {"read"}
+    assert {t.workspace for t in tags if t.function == "audit" and t.purpose in ("agent_turn", "plan", "judge")} == {"inspect"}      # D135: reads files and git, changes nothing
     for fn in ("identity", "adaptation", "priority", "coordination"):
         assert {t.workspace for t in tags if t.function == fn and t.purpose == "agent_turn"} == {"read"}, fn
     assert {t.workspace for t in tags if t.purpose in ("summary", "template", "review", "change")} <= {"none"}
@@ -456,6 +456,13 @@ def test_the_intake_reaches_identity_after_j2s_own_prompt_in_a_project_run(j2, m
     assert intake and all(PROJECT_INTAKE in u for u in intake)
     assert all(u.index("REQUESTER'S BRIEF") < u.index(PROJECT_INTAKE) for u in intake)                 # J2's brief and answers first, the output's rules after them
     assert not [u for t, u in zip(port.tags, port.users) if t.function != "identity" and PROJECT_INTAKE in u]
+
+
+def test_a_builder_is_told_not_to_fence_its_whole_reply_and_to_fence_blocks_with_tildes():
+    """A live run: the builder wrapped its reply in a code fence and put an edit in a second one; the first closing fence ended the section, and the exact edit
+    the owner needed was lost."""
+    for words in ("never inside a code fence of its own", "fenced with three tildes (~~~), never three backticks", "so it cannot end the section early"):
+        assert words in PROJECT_BUILDER, words
 
 
 def test_audit_is_told_to_check_every_claimed_change_against_the_folder_with_git_diff():

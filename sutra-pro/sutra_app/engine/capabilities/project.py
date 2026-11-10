@@ -75,8 +75,9 @@ PROJECT_BUILDER = (
     "the charter asks for a change, give the exact edits file by file and say how to allow changes (Settings, under Working folder). "
     "Confirmation: look at the files and `git diff`/`git status` and say what you confirmed "
     "and what you could not (you cannot run tests). Open items: what is left and why. Outcome: three sentences from the other sections. "
-    "Reply with the section only, starting with `## <Section>`, in markdown. Claims beyond a file you read or the charter start with "
-    "`Assumption:`.")
+    "Reply with the section only, starting with `## <Section>`, in markdown, and never inside a code fence of its own. A block inside the section "
+    "(an edit, a diff, a command's output) is fenced with three tildes (~~~), never three backticks, so it cannot end the section early. Claims "
+    "beyond a file you read or the charter start with `Assumption:`.")
 
 ADDENDA = {
     "identity": ("Project work: look before you ask. Read the working folder with your file tools first, and ask the owner only what the "
