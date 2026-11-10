@@ -2,7 +2,9 @@
 
 `sutra_app.ui` is the only server of HTML and static files (D72); the engine and the orchestrator answer no page.
 Three pages share one look: Home at `/`, the owner console at `/console` (usage and cost, the Atom log, health; GAP-CONSOLE) and the
-copied J2 page for one department at `/d/{dept}/`. A page is a file under `pages/` with one boot marker; `render_page` fills it per
+copied J2 page for one department at `/d/{dept}/`. The shared template library is a page of the team too, `/d/{dept}/library`: the same
+page file, the same boot block and the same policy (D141); the library behind it is one global store, and the team in the path only gives
+the page its shell (rail, token, node panel). A page is a file under `pages/` with one boot marker; `render_page` fills it per
 request, and the Content-Security-Policy is built from the page file once per version of that file (D82).
 
 GAP-CONSOLE also puts the HTML error page here (`install_error_pages`, called by `mount_static`, the one call of this package that
@@ -254,7 +256,7 @@ def build_router(
     version: str,
     pages_dir: Path = PAGES_DIR,
 ) -> APIRouter:
-    """The router of the pages: `/`, `/d/{dept}`, `/console` and `/favicon.ico`. `department` is `Services.department`; the pages
+    """The router of the pages: `/`, `/d/{dept}`, `/d/{dept}/library`, `/console` and `/favicon.ico`. `department` is `Services.department`; the pages
     are read from `pages_dir` (a parameter so tests run on a temp tree)."""
     BootContext(page="home", token=token, version=version)  # a bad token fails at mount time, not at the first view
     pages = Path(pages_dir)
@@ -293,6 +295,14 @@ def build_router(
             return _not_found(dept)
         return serve(DEPT_PAGE, dept_boot(row, token=token, version=version))
 
+    def dept_library(dept: str) -> Response:
+        # D141: the page that J2 serves at /library, under the team. The file is the team page's and J2's own script tells the two apart by
+        # the path (SutraCtx.onLibrary), so the answer is the team page's answer, an unknown team's 404 included.
+        return dept_page(dept)
+
+    def dept_library_slash(dept: str, request: Request) -> Response:
+        return _redirect(f"/d/{quote(dept, safe=':')}/library", request.url.query)
+
     def console() -> Response:
         return serve(CONSOLE_PAGE, BootContext(page="console", token=token, version=version))
 
@@ -304,6 +314,8 @@ def build_router(
         ("/", home, "ui_home"),
         ("/d/{dept}", dept_slash, "ui_dept_redirect"),
         ("/d/{dept}/", dept_page, "ui_dept"),
+        ("/d/{dept}/library", dept_library, "ui_dept_library"),
+        ("/d/{dept}/library/", dept_library_slash, "ui_dept_library_redirect"),
         ("/console", console, "ui_console"),
         ("/favicon.ico", favicon, "ui_favicon"),
     ):

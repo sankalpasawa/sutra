@@ -146,6 +146,99 @@ def test_nothing_breaks_without_a_page(probe):
 
 
 # =====================================================================================================================
+# 1b. The page under its team, in node (J2 sync 4, E1.3: D141, edits E20a to E20i)
+# =====================================================================================================================
+# The ported page's script runs in a stub DOM the way J2's own render harness runs it (pages/j2_ui_render.js), with the context script first and
+# a boot block and an address of the test's choosing. What is asked afterwards is what the page builds from SutraCtx: its library and its own
+# page, and whether it knows it is on the library page.
+LIBRARY_PROBE = r"""
+const fs = require("fs"), vm = require("vm"), path = require("path");
+const root = "__ROOT__";
+const page = fs.readFileSync(path.join(root, "sutra_app/ui/pages/j2_ui.html"), "utf8");
+const scripts = [...page.matchAll(/<script>([\s\S]*?)<\/script>/g)];
+const noop = () => noop;
+const el = () => new Proxy({innerHTML: "", textContent: "", value: "", style: {}, dataset: {}, disabled: false, open: false, hidden: false,
+  classList: {toggle: noop, add: noop, remove: noop, contains: () => false}, children: [], scrollHeight: 0},
+  {get: (t, k) => k in t ? t[k] : k === "querySelectorAll" ? () => [] : noop, set: (t, k, v) => (t[k] = v, true)});
+function run(boot, pathname, search) {
+  const els = {}, replaced = [];
+  const ctx = vm.createContext({
+    document: {getElementById: id => id === "sutra-boot" ? (boot ? {textContent: JSON.stringify(boot)} : el()) : els[id] || (els[id] = el()),
+               querySelector: () => el(), querySelectorAll: () => [], body: el(), addEventListener: noop, createElement: el, readyState: "complete"},
+    location: {pathname, search, href: pathname + search, hash: ""}, history: {replaceState: (...a) => replaced.push(a[2]), state: null},
+    localStorage: {getItem: () => null, setItem: noop}, CSS: {escape: x => x}, matchMedia: () => ({matches: true, addEventListener: noop}),
+    fetch: () => Promise.reject(new Error("no network")), setTimeout: noop, setInterval: noop, requestAnimationFrame: noop,
+    console, URLSearchParams, Date, JSON, Math, Set, Map, Promise});
+  vm.runInContext(fs.readFileSync(path.join(root, "sutra_app/ui/static/js/sutra_ctx.js"), "utf8"), ctx);
+  vm.runInContext(scripts[scripts.length - 1][1], ctx);
+  const ask = code => vm.runInContext(code, ctx);
+  return {
+    dept: ask("SutraCtx.dept"), pagePath: ask("SutraCtx.pagePath"), libraryPath: ask("SutraCtx.libraryPath"), onLibrary: ask("SutraCtx.onLibrary()"),
+    catOn: ask("CAT.on"), libHref: ask('libHref("prd", "Problem", "generic", 1)'), runHref: ask('runHref("j2-1")'),
+    runQ: ask('(viewRun = "j2-1", runQ())'), viewHref: ask('viewHref("j2-2")'),
+    loadWrites: replaced.slice(), setViewWrites: (() => { const n = replaced.length; ask('setView("simple", false)'); return replaced.slice(n); })(),
+    pos: ask('(svg => motionKey(svg))({classList: {contains: () => false}})'),
+  };
+}
+const BOOT = {page: "dept", token: "t".repeat(24), dept: "web", dept_label: "Web", archived: false, note: "", version: "0.1.0"};
+const out = {
+  team: run(BOOT, "/d/web/", ""),
+  library: run(BOOT, "/d/web/library", "?view=artifact&q=x"),
+  libraryColon: run({...BOOT, dept: "a:b"}, "/d/a:b/library", ""),
+  noTeam: run(null, "/", ""),
+  jTwoLibrary: run(null, "/library", ""),
+};
+console.log(JSON.stringify(out));
+"""
+
+
+@pytest.fixture(scope="module")
+def library_probe() -> dict:
+    if NODE is None:
+        pytest.skip("node is not installed")
+    done = subprocess.run([NODE, "-e", LIBRARY_PROBE.replace("__ROOT__", REPO.as_posix())], capture_output=True, text=True, timeout=120, cwd=REPO)
+    assert done.returncode == 0, done.stderr[-3000:]
+    return json.loads(done.stdout)
+
+
+def test_the_library_page_of_a_team_knows_it_is_the_library_and_builds_its_links_under_the_team(library_probe):
+    page = library_probe["library"]
+    assert (page["dept"], page["pagePath"], page["libraryPath"]) == ("web", "/d/web/", "/d/web/library")
+    assert page["onLibrary"] is True and page["catOn"] is True                       # E20d: J2 asked location.pathname === "/library"
+    assert page["libHref"] == "/d/web/library?open=prd/problem/generic/v1"           # E20b
+    assert page["runHref"] == "/d/web/?run=j2-1&view=detail&tab=library"             # E20c: back to the team's page, never to the root
+    assert page["pos"].startswith("j2pos:web:")                                      # E10: pins per team
+
+
+def test_the_team_page_is_not_the_library_and_shares_the_same_builders(library_probe):
+    page = library_probe["team"]
+    assert page["onLibrary"] is False and page["catOn"] is False
+    assert page["libHref"] == "/d/web/library?open=prd/problem/generic/v1" and page["runHref"] == "/d/web/?run=j2-1&view=detail&tab=library"
+    assert page["runQ"] == "&run=j2-1&dept=web"                                      # E4: every URL the page builds carries the team
+    assert page["viewHref"].startswith("?run=j2-2&view=")                           # a relative query: it stays on the page it is on
+
+
+def test_the_library_page_keeps_its_own_query_while_a_team_page_writes_the_view_into_the_address(library_probe):
+    library, team = library_probe["library"], library_probe["team"]
+    assert library["loadWrites"] == [] and library["setViewWrites"] == []           # E20d, setView: the catalog's ?view= (run | artifact) is its own
+    assert team["loadWrites"] == ["/d/web/?view=simple"] and team["setViewWrites"] == ["/d/web/?view=simple"]    # a team page writes ?view= as J2's always did
+
+
+def test_a_team_id_with_a_colon_keeps_its_library_path_and_its_page(library_probe):
+    page = library_probe["libraryColon"]
+    assert (page["dept"], page["pagePath"], page["libraryPath"], page["onLibrary"]) == ("a:b", "/d/a:b/", "/d/a:b/library", True)
+    assert page["libHref"].startswith("/d/a:b/library?open=")
+
+
+def test_without_a_team_the_page_behaves_as_j2s_own_does(library_probe):
+    stub, library = library_probe["noTeam"], library_probe["jTwoLibrary"]
+    assert (stub["dept"], stub["pagePath"], stub["libraryPath"], stub["onLibrary"], stub["catOn"]) == ("", "/", "/library", False, False)
+    assert stub["libHref"] == "/library?open=prd/problem/generic/v1" and stub["runHref"] == "/?run=j2-1&view=detail&tab=library"
+    assert stub["runQ"] == "&run=j2-1" and stub["pos"].startswith("j2pos::")
+    assert library["onLibrary"] is True and library["catOn"] is True and library["libraryPath"] == "/library"       # J2's own address, the harness's too
+
+
+# =====================================================================================================================
 # 2. The real page in Chrome
 # =====================================================================================================================
 class Page:
