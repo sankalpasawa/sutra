@@ -2,7 +2,7 @@
 
 Three groups, none of them needs a browser or the J2 source:
   1. the committed files (sutra_app/ui/pages/j2_ui.html, static/css/j2.css, static/vendor/*, the two harness copies, and the frozen
-     static/css/j2-shell.css that Home and the console keep): edit by edit (the 32 page edits) against a table written out here, and
+     static/css/j2-shell.css that Home and the console keep): edit by edit (the 33 page edits) against a table written out here, and
      the invariants the design lists;
   2. scripts/port_j2_ui.py on a miniature J2 built below: the same table holds for what the script produces, J2 drift stops the
      port, `--check`, `--commit`, J2 is never written, two ports give the same bytes;
@@ -63,7 +63,7 @@ PAGE = read(UI / "pages" / "j2_ui.html")
 # A fragment sometimes spans a neighbouring line: that pins where the new text was put.
 # ----------------------------------------------------------------------------------------------------------------------
 EDIT_IDS = ["E1", "E2a", "E2b", "E2c", "E3", "E4", "E5", "E6a", "E6b", "E7", "E8", "E9", "E9b", "E10", "E11", "E12", "E13a", "E13b", "E13c", "E13d",
-            "E19", "E20a", "E20b", "E20c", "E20d", "E20e", "E20f", "E20g", "E20h", "E20i", "E21", "E22"]
+            "E19", "E20a", "E20b", "E20c", "E20d", "E20e", "E20f", "E20g", "E20h", "E20i", "E21", "E22", "E23"]
 COUNTS = {edit: 1 for edit in EDIT_IDS} | {"E13b": 3, "E20d": 2, "E20i": 2}
 E1_HEAD = ('<link rel="stylesheet" href="/ui/css/j2.css">\n'
            '<link rel="stylesheet" href="/ui/css/sutra-graph.css"><link rel="stylesheet" href="/ui/css/sutra-panel.css">\n'
@@ -143,6 +143,8 @@ CASES = {
     "E20i": ([('location.href = SutraCtx.pagePath + "?view=simple"', 2)], ['location.href = "/?view=simple"']),
     "E21": ([(E21_HYDRATE, 1)], ["Object.assign(FEED, v); } } catch (e) {}\n  paintFeed();"]),
     "E22": ([('runsettings: "appearance and saved runs"};', 1)], ["appearance, what to build, saved runs"]),
+    "E23": ([("/* no web fonts in the app (UI-D3): the studio's Google Fonts link is not added to a generated document */ }", 1)],
+            ["googleapis", "fl.rel = \"stylesheet\""]),
 }
 
 
@@ -162,10 +164,10 @@ def test_edit_is_in_the_committed_page(case):
     check_case(PAGE, case)
 
 
-def test_there_are_thirty_two_edits_and_every_one_has_a_case_here():
-    assert len(EDIT_IDS) == len(set(EDIT_IDS)) == 32 and sorted(CASES) == sorted(EDIT_IDS)
+def test_there_are_thirty_three_edits_and_every_one_has_a_case_here():
+    assert len(EDIT_IDS) == len(set(EDIT_IDS)) == 33 and sorted(CASES) == sorted(EDIT_IDS)
     assert [COUNTS[f"E13{letter}"] for letter in "abcd"] == [1, 3, 1, 1] and COUNTS["E20d"] == COUNTS["E20i"] == 2
-    assert sum(1 for count in COUNTS.values() if count == 1) == 29
+    assert sum(1 for count in COUNTS.values() if count == 1) == 30
 
 
 def test_the_retired_edits_left_nothing_behind():
@@ -210,13 +212,12 @@ def test_every_module_the_page_loads_is_in_the_static_folder():
 
 
 def test_no_external_url_in_the_markup_and_no_cdn():
-    markup = PAGE[:PAGE.index('<script src="/ui/vendor/d3.min.js">')]               # the head and the body's markup, before the scripts
-    assert not EXTERNAL_REF.search(markup) and "googleapis" not in markup and "<link rel=\"stylesheet\" href=\"https://" not in markup
+    assert not EXTERNAL_REF.search(PAGE)                              # E1 took J2's font link, E23 the studio's own (it added Google Fonts to a readable frame)
+    assert "googleapis" not in PAGE
     assert not re.search(r"url\(\s*[\"']?\s*(?:https?:)?//", PAGE)
-    # the one outside address left is a string of the studio's script: it adds Google Fonts to a generated document when it can read the frame
-    # (sFrameSetup). It cannot under the sandbox (no allow-same-origin), and the CSP would refuse the sheet if it could.
-    assert PAGE.count("googleapis") == 1 and 'fl.href = "https://fonts.googleapis.com/css2?family=DM+Sans' in PAGE
-    assert len(EXTERNAL_REF.findall(PAGE)) == 1
+    head = PAGE[:PAGE.index("</head>")]
+    assert re.findall(r'<link [^>]*>', head) == [re.search(r'<link rel="icon"[^>]*>', head).group(0), '<link rel="stylesheet" href="/ui/css/j2.css">',
+                                                  '<link rel="stylesheet" href="/ui/css/sutra-graph.css">', '<link rel="stylesheet" href="/ui/css/sutra-panel.css">']
 
 
 def test_every_link_of_the_markup_is_a_hash_a_root_path_a_relative_library_link_or_one_of_the_page_s_own_url_helpers():
@@ -442,6 +443,12 @@ function showTab(name){
   ["wcrumb", "wcnt"].forEach(i => $(i).hidden = !crumb); document.querySelector("#dview .wbar").hidden = name === "map"; document.querySelector("#dview .work").classList.toggle("mapfit", name === "map"); railReveal(name);
   ["preview","goal","workflows","conflicts","priorities","timeline","audit","charter","docs","artifacts","board","library","story","map","style","lessons","playbooks","report","rundetails","runsettings"].forEach(t => $("pane-"+t).hidden = t !== name);
 }
+function sFrameSetup(f){
+  const d = sDoc(f); if (!d) return;
+  if (!d.getElementById("j2s-style")){ const st = d.createElement("style"); st.id = "j2s-style";
+    (d.head || d.body).appendChild(st);
+    if (d.querySelector("h2") && !d.querySelector("[class]")){ const fl = d.createElement("link"); fl.rel = "stylesheet"; fl.href = "https://fonts.googleapis.com/css2?family=DM+Sans:opsz,wght@9..40,400;9..40,600&family=Fraunces:opsz,wght@9..144,500;9..144,600&display=swap"; (d.head || d.body).appendChild(fl); } }
+}
 const motionKey = svg => {
   return `j2pos:${(typeof viewRun !== "undefined" && viewRun) || "live"}:${v}`; };
 async function openAgent(id){
@@ -584,7 +591,7 @@ def test_check_is_quiet_about_files_in_step_and_writes_nothing(ported, capsys):
     j2, root = ported
     before = tree(root)
     code, out, err = run(capsys, "--j2", j2, "--root", root, "--check")
-    assert (code, err) == (0, "") and out.startswith("ok: the 32 anchors of the page edits match their counts, ")
+    assert (code, err) == (0, "") and out.startswith("ok: the 33 anchors of the page edits match their counts, ")
     assert "and the 7 committed files equal a fresh port of J2 " in out
     assert tree(root) == before
 
@@ -811,7 +818,7 @@ def test_e13_words_are_the_four_pairs_of_the_design_and_the_script_prints_them_a
 
 def test_the_edit_table_has_the_design_ids_and_counts():
     assert [(edit.id, edit.count) for edit in port.PAGE_EDITS] == [(edit, COUNTS[edit]) for edit in EDIT_IDS]
-    assert len(port.PAGE_EDITS) == 32
+    assert len(port.PAGE_EDITS) == 33
     assert [(e.id, e.count) for e in port.RENDER_EDITS] == [("H1", 1), ("H2", 1), ("H3", 1)]
     assert [(e.id, e.count) for e in port.LAYOUT_EDITS] == [("H1", 1)]
     for retired in ("RUN_SETTINGS_EDITS", "OUTPUT_EDITS", "RUN_SETTINGS_CSS"):
@@ -842,5 +849,5 @@ def test_a_fresh_port_of_the_real_j2_equals_the_committed_files_and_leaves_j2_al
     before = [p.read_bytes() for p in watched]
     code, out, err = run(capsys, "--j2", j2, "--commit", PIN, "--check")
     assert (code, err) == (0, ""), out + err
-    assert out.startswith("ok: the 32 anchors of the page edits match their counts, and the 7 committed files equal a fresh port of J2 ")
+    assert out.startswith("ok: the 33 anchors of the page edits match their counts, and the 7 committed files equal a fresh port of J2 ")
     assert [p.read_bytes() for p in watched] == before

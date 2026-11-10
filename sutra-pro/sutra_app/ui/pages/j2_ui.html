@@ -1414,7 +1414,7 @@ function sFrameSetup(f, sameOut){
   if (!d.getElementById("j2s-style")){ const st = d.createElement("style"); st.id = "j2s-style";
     st.textContent = sVars(":root") + (d.querySelector("h2") && !d.querySelector("[class]") ? `body{font:16px/1.65 "DM Sans",system-ui,sans-serif;color:var(--s-ink);background:var(--s-white)df9;max-width:760px;padding:28px 32px 80px}h1{font:600 30px/1.2 Fraunces,Georgia,serif;margin:0 0 18px}h2{font:600 21px/1.3 Fraunces,Georgia,serif;margin:34px 0 10px;padding-top:6px}h3{font-size:16px;margin:22px 0 6px}table{font-size:14px}th{background:var(--s-surface2)}th,td{border-color:var(--s-line)}` : "");
     (d.head || d.body).appendChild(st);
-    if (d.querySelector("h2") && !d.querySelector("[class]")){ const fl = d.createElement("link"); fl.rel = "stylesheet"; fl.href = "https://fonts.googleapis.com/css2?family=DM+Sans:opsz,wght@9..40,400;9..40,600&family=Fraunces:opsz,wght@9..144,500;9..144,600&display=swap"; (d.head || d.body).appendChild(fl); } }
+    /* no web fonts in the app (UI-D3): the studio's Google Fonts link is not added to a generated document */ }
   d.addEventListener("click", e => { const a = e.target.closest && e.target.closest("a[href]"); if (!a) return; const h = a.getAttribute("href") || "";
     if (h.startsWith("#") || h.startsWith("javascript:")) return; e.preventDefault(); window.open(a.href, "_blank", "noopener"); });
   w.addEventListener("scroll", sNudge, {passive: true}); w.addEventListener("resize", () => sLayout());
