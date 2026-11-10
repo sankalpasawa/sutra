@@ -112,8 +112,8 @@ def test_the_follow_up_run_holds_the_old_runs_files_and_the_old_folder_is_untouc
     old_ids, new_ids = ([w["id"] for w in json.loads((folder / "workflows.json").read_text())] for folder in (old, new))
     assert new_ids[:len(old_ids)] == old_ids and old_ids
     assert (new / "style.json").read_bytes() == (old / "style.json").read_bytes()
-    old_versions = sorted(p.name for p in (old / "site").iterdir())
-    assert old_versions == sorted(p.name for p in (new / "site").iterdir()) and len(old_versions) >= 4
+    old_versions = sorted(p.name for p in (old / "site").iterdir() if p.is_file())       # the versions; site/sections/ holds the finish step's agent-readable JSON (D143)
+    assert old_versions == sorted(p.name for p in (new / "site").iterdir() if p.is_file()) and len(old_versions) >= 4
     for name in old_versions:
         assert (new / "site" / name).read_bytes() == (old / "site" / name).read_bytes(), name
     old_chat = (old / "chat.jsonl").read_text().splitlines()
