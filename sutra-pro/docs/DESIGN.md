@@ -83,7 +83,7 @@ From `docs/design/gaps.md` (low findings, no package unless noted) and `docs/not
 
 - G18 `enforce` mode is reserved: "verify is the teeth" is observed, not enforced (D52); `SUTRA_NODES=enforce` raises. Decide after the live false-failure rate is known.
 - G19 Quota and cooldown knowledge is per process; a new run re-learns it with one failed call.
-- G20 The architecture diagram has a key label (and a pill where a box exists) for every decision of `docs/diagram/decisions.json`: D1 to D156 except D105 to D115, the old Sutra's absorption, which have none yet; `gen.py` sizes its key from that file since J2 sync 4; the published copy of the figure is a Claude artifact and is refreshed by hand.
+- G20 The architecture diagram has a key label (and a pill where a box exists) for every decision of `docs/diagram/decisions.json`: D1 to D156, and `tests/test_diagram_decisions.py` fails when `docs/DECISIONS.md` and that file differ; `gen.py` sizes its key from that file since J2 sync 4; the published copy of the figure is a Claude artifact and is refreshed by hand.
 - G21 Excluded J2 material (older studio, negotiation demo, explainer pages) is recorded by D91, not ported.
 - G22 One accepted contrast exception (dark, filed node second line, 4.22:1) in `tests/ui/js/contrast.test.js`.
 - G23 No spend circuit breaker across the whole app; the subscription quota is the real limit (D38).

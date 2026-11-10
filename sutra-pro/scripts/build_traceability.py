@@ -270,7 +270,7 @@ OWNER_RULE_MAP = [
     ("Decide autonomously", None,
      ["docs/DECISIONS.md", "docs/DESIGN.md", "docs/diagram/decisions.json", "docs/diagram/gen.py", "docs/design/decision-index.json",
       "scripts/build_traceability.py"],
-     ["tests/contracts/test_contract_diagram_strings.py", "tests/test_traceability.py"]),
+     ["tests/contracts/test_contract_diagram_strings.py", "tests/test_traceability.py", "tests/test_diagram_decisions.py"]),
     ("never push", [1, 89],
      ["scripts/wt.sh", "scripts/gate.sh", "scripts/py", "scripts/plan_tools.py", "docs/BUILD-PLAN.md"],
      ["tests/test_build_plan.py", "tests/test_layout.py"]),
