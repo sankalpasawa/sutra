@@ -153,6 +153,10 @@ body.simple #dview{display:none}
 #sview .av{display:block;flex:none;border-radius:50%}
 #sview .slink{background:none;border:0;padding:4px 2px;color:var(--s-accent);font-weight:600;text-decoration:underline;text-underline-offset:3px;font-size:14px}
 #sview .sh3{font:600 11.5px var(--s-body);letter-spacing:.09em;text-transform:uppercase;color:var(--s-muted);margin:4px 0 6px 8px}
+#sview .srail .sh3{display:flex;align-items:center;justify-content:space-between;margin:2px 8px 8px;font-size:11px;letter-spacing:.1em}
+#sview .srail .sh3 .scount{font:500 11.5px var(--s-mono);letter-spacing:0;text-transform:none;color:var(--s-muted);background:var(--s-surface);border-radius:999px;padding:1px 8px;box-shadow:0 0 0 1px var(--s-line)}
+#sview .srail .sh3 .scount:empty{display:none}
+#sview .srail .steamlist{display:flex;flex-direction:column;gap:2px;padding-bottom:14px;margin-bottom:14px;border-bottom:1px solid var(--s-line)}
 #sview .scount{letter-spacing:0;margin-left:6px;font-variant-numeric:tabular-nums}
 /* switch: Decide for me */
 #sview .sauto{display:inline-flex;align-items:center;gap:8px;background:none;border:0;padding:6px 4px;color:var(--s-muted);font-weight:500;white-space:nowrap}
@@ -234,59 +238,91 @@ body.simple #dview{display:none}
   #sview .srlist small .slwhat{display:none}}
 /* ---- the studio */
 #sview .swork{flex:1;min-height:0;display:flex;flex-direction:column;overflow:hidden}
-#sview .stop{flex:none;display:flex;align-items:center;gap:10px 14px;padding:10px 16px;border-bottom:1px solid var(--s-line);min-width:0}
+#sview .stop{flex:none;display:flex;align-items:center;gap:10px 12px;min-height:56px;padding:10px 16px;border-bottom:1px solid var(--s-line);min-width:0;background:color-mix(in srgb,var(--s-surface) 55%,var(--s-bg))}
+#sview .stop .shome,#sview .stop .stheme{border:0;box-shadow:0 0 0 1px var(--s-line),0 1px 2px var(--s-ring);background:var(--s-surface);transition:box-shadow .15s}
+#sview .stop .shome:hover,#sview .stop .stheme:hover{box-shadow:0 0 0 1px var(--s-line2),0 1px 2px var(--s-ring)}
 #sview .shome{width:32px;height:32px;border-radius:9px;border:1px solid var(--s-line);background:var(--s-surface);display:grid;place-items:center;padding:0;flex:none}
-#sview .sproj{font:600 16px var(--s-display);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:28ch}
-#sview .sstate{display:flex;align-items:center;gap:8px;color:var(--s-muted);font-variant-numeric:tabular-nums;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+#sview .sproj{font:600 17px/1.2 var(--s-display);letter-spacing:-.015em;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:28ch;padding-right:2px}
+#sview .sstate{display:flex;align-items:center;gap:8px;color:var(--s-muted);font-size:13.5px;font-weight:500;font-variant-numeric:tabular-nums;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;background:var(--s-surface);border-radius:999px;padding:4px 12px 4px 10px;box-shadow:0 0 0 1px var(--s-line)}
 #sview .sstate>span{overflow:hidden;text-overflow:ellipsis}
-#sview .sdot{width:9px;height:9px;border-radius:50%;background:var(--s-muted);flex:none}
+#sview .sdot{width:8px;height:8px;border-radius:50%;background:var(--s-line2);flex:none}
 #sview .sdot.on{background:var(--s-good);box-shadow:0 0 0 0 color-mix(in srgb,var(--s-good) 40%,transparent);animation:sping 1.8s ease-out infinite}
 #sview .sdot.ask{background:var(--s-askline);animation:sping2 1.8s ease-out infinite}#sview .sdot.done{background:var(--s-good)}#sview .sdot.bad{background:var(--s-bad)}
-@keyframes sping{0%{box-shadow:0 0 0 0 color-mix(in srgb,var(--s-good) 45%,transparent)}100%{box-shadow:0 0 0 9px transparent}}
+@keyframes sping{0%{box-shadow:0 0 0 0 color-mix(in srgb,var(--s-good) 45%,transparent)}100%{box-shadow:0 0 0 7px transparent}}
 @keyframes sping2{0%{box-shadow:0 0 0 0 color-mix(in srgb,var(--s-askline) 50%,transparent)}100%{box-shadow:0 0 0 9px transparent}}
 #sview .ssp{flex:1}
-#sview .smeter{display:flex;align-items:center;gap:8px;color:var(--s-muted);font-size:13.5px;font-variant-numeric:tabular-nums;white-space:nowrap}
-#sview .sbar{width:110px;height:6px;border-radius:3px;background:var(--s-ph);overflow:hidden}#sview .sbar i{display:block;height:100%;width:0;background:var(--s-accent);border-radius:3px;transition:width .8s ease}
+#sview .smeter{display:flex;align-items:center;gap:10px;color:var(--s-muted);font-size:13px;font-variant-numeric:tabular-nums;white-space:nowrap}
+#sview .smeter b{color:var(--s-ink);font-weight:600}
+#sview .sseg{display:flex;gap:2px;width:132px;height:6px}#sview .sseg[hidden]{display:none}
+#sview .sseg i{flex:1;border-radius:2px;background:var(--s-ph)}
+#sview .sseg i.d{background:var(--s-accent)}
+#sview .sseg i.w{background:color-mix(in srgb,var(--s-accent) 35%,var(--s-ph));animation:sseg 1.6s ease-in-out infinite}
+#sview .sseg i.q{background:var(--s-askline)}
+@keyframes sseg{50%{background:color-mix(in srgb,var(--s-accent) 75%,var(--s-ph))}}
+#sview .sbar{width:132px;height:6px;border-radius:3px;background:var(--s-ph);overflow:hidden}#sview .sbar[hidden]{display:none}#sview .sbar i{display:block;height:100%;width:0;background:var(--s-accent);border-radius:3px;transition:width .8s ease}
 #sview .sbtn{border:1px solid var(--s-line);background:var(--s-surface);border-radius:9px;padding:7px 12px;font-weight:600;font-size:14px;color:var(--s-ink);text-decoration:none;white-space:nowrap}
 #sview .sbtn:hover{border-color:var(--s-line2)}
 #sview .sbtn.pri{background:var(--s-accent);color:var(--s-accentink);border-color:var(--s-accent);box-shadow:inset 0 1px 0 rgb(255 255 255 / .25)}
+#sview .stop .sbtn{display:inline-flex;align-items:center;gap:6px;height:34px;border:0;border-radius:10px;padding:0 13px;font-size:13.5px;box-shadow:0 0 0 1px var(--s-line),0 1px 2px var(--s-ring);transition:box-shadow .15s}
+#sview .stop .sbtn:hover{background:var(--s-surface2);box-shadow:0 0 0 1px var(--s-line2),0 1px 2px var(--s-ring)}
+#sview .stop .sbtn.pri{background:var(--s-accent);color:var(--s-accentink);box-shadow:inset 0 1px 0 rgb(255 255 255 / .22),0 0 0 1px color-mix(in srgb,var(--s-accent) 80%,var(--s-ink)),0 2px 6px -2px color-mix(in srgb,var(--s-accent) 60%,transparent)}
+#sview .stop .sbtn.pri:hover{background:color-mix(in srgb,var(--s-accent) 88%,var(--s-ink))}
+#sview .stop #sopen:not([download])::after{content:"\2197";font-size:13px;opacity:.85}#sview .stop #sopen[download]::after{content:"\2193";font-size:13px;opacity:.85}
+#sview .stop #sopen:not([hidden]){animation:spop .26s cubic-bezier(.16,1,.3,1)}@keyframes spop{from{transform:scale(.85);opacity:0}}
+#sview .stop .sauto{gap:8px;height:34px;padding:0 12px 0 8px;border-radius:999px;font-size:13.5px;box-shadow:0 0 0 1px var(--s-line);background:var(--s-surface);transition:box-shadow .2s}
+#sview .stop .sauto:hover:not(:disabled){box-shadow:0 0 0 1px var(--s-line2)}
+#sview .stop .sauto .ssw{width:28px;height:16px}#sview .stop .sauto .ssw::after{width:12px;height:12px}
+#sview .stop .sauto[aria-checked=true]{background:var(--s-goodbg);color:var(--s-good);box-shadow:0 0 0 1px color-mix(in srgb,var(--s-good) 35%,transparent)}
+#sview .stop .sauto[aria-checked=true] .ssw{background:var(--s-good)}#sview .stop .sauto[aria-checked=true] .ssw::after{transform:translateX(12px)}
+#sview .stop .sauto:disabled{cursor:default;opacity:.7}
 #sview .sapp{flex:1;min-height:0;display:grid;grid-template-columns:262px minmax(0,1fr) var(--sasha,340px);grid-template-rows:minmax(0,1fr);position:relative}
 #sview .sapp.chatclosed{--sasha:0px}#sview .sapp.chatclosed .sasha{display:none}
 /* rail: the team, behind the scenes, the plan */
-#sview .srail{border-right:1px solid var(--s-line);overflow:auto;padding:14px 10px 14px 12px;display:flex;flex-direction:column;gap:2px;min-height:0}
-#sview .smate{display:grid;grid-template-columns:42px 1fr auto;gap:10px;align-items:center;padding:7px 8px;border-radius:12px;text-align:left;width:100%;background:none;border:0;position:relative}
-#sview .smate:hover{background:color-mix(in srgb,var(--s-surface) 70%,transparent)}
+#sview .srail{border-right:1px solid var(--s-line);overflow:auto;padding:16px 10px 16px 12px;display:flex;flex-direction:column;gap:2px;min-height:0;scrollbar-width:thin}
+#sview .smate{display:grid;grid-template-columns:42px minmax(0,1fr) auto;gap:10px;align-items:center;padding:7px 8px;border-radius:12px;text-align:left;width:100%;background:none;border:0;position:relative;transition:box-shadow .2s}
+#sview .smate:hover{background:var(--s-surface);box-shadow:0 0 0 1px var(--s-line)}
+#sview .smate.busy{background:var(--s-surface);box-shadow:0 0 0 1px var(--s-line),0 1px 2px var(--s-ring)}
+#sview .smate.ask{background:var(--s-askbg);box-shadow:0 0 0 1px color-mix(in srgb,var(--s-askline) 30%,transparent)}
 #sview .smate b{font-weight:600}#sview .smate .srole{color:var(--s-muted)}
-#sview .smate small{display:block;color:var(--s-muted);font-size:12.5px;line-height:1.35}
+#sview .smate small{display:-webkit-box;-webkit-box-orient:vertical;-webkit-line-clamp:2;overflow:hidden;color:var(--s-muted);font-size:12.5px;line-height:1.35;margin-top:1px}
 #sview .smate .sface{position:relative;display:block;width:42px;height:42px}
-#sview .smate.busy .sface::after{content:"";position:absolute;inset:-3px;border-radius:50%;border:2px solid var(--c);border-right-color:transparent;border-bottom-color:transparent;animation:spin 1.6s linear infinite}
+#sview .smate.busy .sface::before{content:"";position:absolute;inset:-3px;border-radius:50%;box-shadow:0 0 0 2px color-mix(in srgb,var(--c) 45%,transparent)}
+#sview .smate.busy .sface::after{content:"";position:absolute;right:-1px;bottom:-1px;width:11px;height:11px;border-radius:50%;background:var(--s-good);border:2px solid var(--s-surface);box-sizing:border-box;animation:sping 2s ease-out infinite}
 #sview .smate.busy small{color:var(--s-ink)}
-#sview .smate .spip{position:absolute;right:-2px;top:-2px;width:13px;height:13px;border-radius:50%;background:var(--s-askline);border:2px solid var(--s-bg);animation:sping2 1.8s ease-out infinite}
+#sview .smate .spip{position:absolute;right:-2px;top:-2px;width:13px;height:13px;border-radius:50%;background:var(--s-askline);border:2px solid var(--s-askbg);animation:sping2 1.8s ease-out infinite}
 #sview .smate.ask small{color:var(--s-ask);font-weight:600}
 #sview .sbadge{background:var(--s-ask);color:var(--s-askink);border-radius:999px;font:600 11.5px var(--s-body);padding:3px 8px;white-space:nowrap;animation:sbob 2.4s ease-in-out infinite}
 #sview .stype{display:inline-flex;gap:3px;margin-left:5px;vertical-align:middle}#sview .stype i{width:4px;height:4px;border-radius:50%;background:currentColor;opacity:.35;animation:stype 1.2s infinite}
+#sview .smate .stype{align-self:center;margin:0;padding:6px 7px;border-radius:999px;background:var(--s-surface2);color:var(--s-muted);box-shadow:0 0 0 1px var(--s-line)}
+#sview .smate .stype i{animation-duration:.9s}
 #sview .stype i:nth-child(2){animation-delay:.2s}#sview .stype i:nth-child(3){animation-delay:.4s}
 @keyframes stype{30%{opacity:1;transform:translateY(-2px)}}
 @keyframes spin{to{transform:rotate(360deg)}}
-#sview .sback{display:flex;flex-wrap:wrap;gap:5px;padding:6px 8px 14px;margin-bottom:8px;border-bottom:1px solid var(--s-line)}
+#sview .sback{display:none}
 #sview .sback span{font-size:12px;border:1px solid var(--s-line);border-radius:999px;padding:2px 9px;color:var(--s-muted);background:var(--s-surface2);transition:all .3s}
 #sview .sback span.on{color:var(--s-ink);border-color:var(--s-accent);background:var(--s-surface)}
 #sview .sback span.on::before{content:"";display:inline-block;width:6px;height:6px;border-radius:50%;background:var(--s-good);margin-right:6px;vertical-align:1px;animation:sping 1.8s ease-out infinite}
 #sview .sback em{font-style:normal;font-size:12px;color:var(--s-muted);width:100%;padding-left:2px}
-#sview .splan{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:1px}
+#sview .splan{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:0}
+#sview .splan li{position:relative}
+#sview .splan li:has(+li>.sstep)>.sstep::before{content:"";position:absolute;left:16.5px;top:calc(50% + 11px);height:calc(100% - 22px);width:1.5px;border-radius:1px;background:var(--s-line)}
+#sview .splan li:has(+li>.sstep)>.sstep.done::before{background:color-mix(in srgb,var(--s-good) 30%,var(--s-line))}
 #sview .splan .sgrp{font-size:12px;font-weight:600;color:var(--s-muted);padding:8px 8px 2px}
-#sview .sstep{display:grid;grid-template-columns:20px 1fr auto;gap:8px;align-items:center;width:100%;text-align:left;padding:6px 8px;border-radius:9px;background:none;border:0;animation:sin .32s cubic-bezier(.16,1,.3,1) both}
-#sview .sstep:hover{background:color-mix(in srgb,var(--s-surface) 70%,transparent)}
-#sview .sstep .ic{width:18px;height:18px;border-radius:50%;display:grid;place-items:center;font-size:11px;font-weight:700;box-sizing:border-box}
+#sview .sstep{display:grid;grid-template-columns:18px minmax(0,1fr) auto;gap:10px;align-items:center;width:100%;min-height:36px;text-align:left;padding:5px 8px;border-radius:10px;background:none;border:0;font-size:13.5px;line-height:1.3;animation:sin .32s cubic-bezier(.16,1,.3,1) both;transition:box-shadow .15s}
+#sview .sstep:hover{background:var(--s-surface);box-shadow:0 0 0 1px var(--s-line)}
+#sview .sstep.doing{background:var(--s-surface);box-shadow:0 0 0 1px var(--s-line),0 1px 2px var(--s-ring)}
+#sview .sstep .ic{width:18px;height:18px;border-radius:50%;display:grid;place-items:center;font-size:10.5px;font-weight:700;box-sizing:border-box;position:relative;z-index:1;background:var(--s-bg)}
 #sview .sstep.done .ic{background:var(--s-goodbg);color:var(--s-good)}
-#sview .sstep.doing .ic{border:2px solid var(--c,var(--s-accent));border-top-color:transparent;animation:spin 1.4s linear infinite}
-#sview .sstep.next .ic{border:1.5px dashed var(--s-line2)}
+#sview .sstep.doing .ic{border:2px solid var(--s-accent);border-top-color:transparent;background:var(--s-surface);animation:spin 1s linear infinite}
+#sview .sstep.next .ic{border:1.5px solid var(--s-line2)}
+#sview .sstep.done .nm{color:var(--s-muted)}
 #sview .sstep.fix .ic{border:1.5px dashed var(--s-askline)}
 #sview .sstep.ask .ic{background:var(--s-ask);color:var(--s-askink)}
+#sview .sstep.ask{background:var(--s-askbg);box-shadow:0 0 0 1px color-mix(in srgb,var(--s-askline) 30%,transparent)}
 #sview .sstep.bad .ic{background:var(--s-badbg);color:var(--s-bad)}
 #sview .sstep.next .nm{color:var(--s-muted)}#sview .sstep.doing .nm{font-weight:600}
 #sview .sstep .who{display:flex}#sview .sstep.done .who{opacity:.5}
-#sview .sstep small{display:block;color:var(--s-muted);font-size:12px}
+#sview .sstep small{display:block;color:var(--s-muted);font:11.5px/1.4 var(--s-mono);margin-top:1px}
 @keyframes sin{from{opacity:0;transform:translateY(6px)}}
 #sview .busy .seyes,#sview .sdesk.busy .seyes,#sview .sface.busy .seyes{transform-box:fill-box;transform-origin:center;animation:sblink 4.4s infinite}
 @keyframes sblink{0%,94%,100%{transform:scaleY(1)}96%{transform:scaleY(.1)}}
@@ -521,8 +557,8 @@ body.simple #dview{display:none}
 @media (max-width:820px){
   #sview .stop{gap:6px 10px;padding:8px 12px;flex-wrap:wrap}#sview .sproj{font-size:15px;max-width:52vw}
   #sview .sproj{order:1;flex:1}#sview #stheme2{order:2}#sview .ssp{display:none}
-  #sview .sstate{order:5;flex:1 1 100%;font-size:13px}
-  #sview .smeter,#sview #sdetail,#sview #sopen,#sview .sdev{display:none!important}#sview .sauto{order:2;font-size:13px;padding:2px 0;gap:6px}#sview #stheme2{order:3}
+  #sview .sstate{order:5;flex:1 1 100%;font-size:13px;background:none;box-shadow:none;padding:0 0 0 2px}
+  #sview .smeter,#sview #sdetail,#sview #sopen,#sview .sdev{display:none!important}#sview .sauto{order:2;font-size:13px;padding:2px 0;gap:6px}#sview .stop .sauto{height:30px;padding:0 10px 0 6px;font-size:13px}#sview #stheme2{order:3}
   #sview .sapp{grid-template-columns:minmax(0,1fr)}
   #sview .sasha{display:none;position:fixed;left:8px;right:8px;bottom:calc(64px + env(safe-area-inset-bottom,0px));top:auto;height:min(78vh,640px);z-index:40;border:1px solid var(--s-line);border-radius:18px;box-shadow:0 30px 60px -20px var(--s-shadow);overflow:hidden}
   #sview .sapp.chatopen .sasha{display:flex}#sview .sapp.chatclosed .sasha{display:none}
@@ -912,7 +948,7 @@ try { var tp = localStorage.getItem("j2theme"); document.documentElement.dataset
       <span class="sproj" id="sproj"></span>
       <span class="sstate"><i class="sdot" id="sdot" aria-hidden="true"></i><span role="status" id="sstatus"></span></span>
       <span class="ssp" aria-hidden="true"></span>
-      <span class="smeter" id="smeter" hidden><span class="sbar"><i id="sbarfill"></i></span><span id="smetertxt"></span></span>
+      <span class="smeter" id="smeter" hidden><span class="sseg" id="sseg" aria-hidden="true" hidden></span><span class="sbar"><i id="sbarfill"></i></span><span id="smetertxt"></span></span>
       <button type="button" class="sauto" id="sauto" role="switch" aria-checked="false" title="When this is on, the team answers its own questions with the suggested option and keeps going."><span class="ssw" aria-hidden="true"></span><span class="sautot">Decide for me</span></button>
       <button type="button" class="sbtn" id="schatbtn" data-chat aria-label="Chat with Asha">Chat with Asha</button>
       <button type="button" class="sbtn" id="sdetail" title="Every message, plan, check and file, in full">Detailed view</button>
@@ -2147,7 +2183,10 @@ function sTop(s, M, open, ready){
   $("smeter").hidden = !M.total && !live;
   $("sbarfill").style.width = (M.total ? Math.round(100 * M.done / M.total) : J.pct) + "%";      // the bar says what its label says
   const mt = M.total ? `${M.done} of ${M.total} parts` : `${J.pct}% of the way`;
-  if ($("smetertxt").textContent !== mt) $("smetertxt").textContent = mt;
+  if ($("smetertxt").textContent !== mt) $("smetertxt").innerHTML = M.total ? `<b>${M.done}</b> of ${M.total} parts` : esc(mt);
+  const seg = M.total && M.total <= 30 && M.parts.length === M.total, sk = seg ? M.parts.map(p => p.st === "done" ? "d" : p.st === "doing" ? "w" : p.st === "ask" ? "q" : "").join(",") : "";      // one segment a part, up to 30
+  $("sseg").hidden = !seg; $("sbarfill").parentNode.hidden = !!seg;
+  if (seg && $("sseg").__v !== sk){ $("sseg").__v = sk; $("sseg").innerHTML = sk.split(",").map(c => `<i${c ? ` class="${c}"` : ""}></i>`).join(""); }
   const q = runQ().replace("&", "?"), site = !s.doc && s.versions > 0;
   $("sopen").hidden = !(ready && (site || (s.files || []).length));
   if (ready){ const f = (s.docset_files || [])[0], doc = s.doc || (s.docset || []).length;
@@ -2156,10 +2195,9 @@ function sTop(s, M, open, ready){
 }
 function sRail(s, M, T){
   paint($("steamlist"), SKEYS.map(k => { const t = T[k], p = PEOPLE[k];
-    return `<button type="button" class="smate${t.busy ? " busy" : ""}${t.ask ? " ask" : ""}" data-mate="${k}" style="--c:var(${p.c})"><span class="sface">${face(k, 42, {label: false})}${t.ask && k === "asha" ? '<i class="spip" aria-hidden="true"></i>' : ""}</span><span><b>${p.name}</b> <span class="srole">· ${p.role}</span><small>${esc(t.line)}${t.busy ? '<span class="stype" aria-hidden="true"><i></i><i></i><i></i></span>' : ""}</small></span></button>`; }).join(""));
-  const th = s.status === "running" ? s.thinking : "";
-  paint($("sback"), BACKSTAGE.map(([k, n]) => `<span class="${th === k ? "on" : ""}" title="${esc(n)}: ${esc(BACKSTAGE.find(x => x[0] === k)[2])}">${n}</span>`).join("") + `<em>Behind the scenes</em>`);
-  $("splancount").textContent = M.total ? `${M.done} / ${M.total}` : "";
+    return `<button type="button" class="smate${t.busy ? " busy" : ""}${t.ask ? " ask" : ""}" data-mate="${k}" style="--c:var(${p.c})"><span class="sface">${face(k, 42, {label: false})}${t.ask && k === "asha" ? '<i class="spip" aria-hidden="true"></i>' : ""}</span><span><b>${p.name}</b> <span class="srole">· ${p.role}</span><small>${esc(t.line)}</small></span>${t.busy ? '<span class="stype" aria-hidden="true"><i></i><i></i><i></i></span>' : ""}</button>`; }).join(""));
+  $("sback").hidden = true;      // the rail shows the five teammates and the plan only; the backstage roles stay out of sight
+  $("splancount").textContent = M.total ? `${M.done}/${M.total}` : "";
   paint($("splan"), sPlanHTML(s, M));
 }
 function sPlanHTML(s, M){
