@@ -30,10 +30,8 @@ class State:
     preference: list[str] = field(default_factory=lambda: ['compute', 'money', 'attention'])
     constructor_specs: dict[str, dict] = field(default_factory=dict)
     candidates: dict[str, dict] = field(default_factory=dict)
-    learning: bool = False
     loaded: list[dict] = field(default_factory=list)
     event_journal: list[dict] = field(default_factory=list)
-    learned_signatures: dict[str, int] = field(default_factory=dict)
     active_work: dict[str, str] = field(default_factory=dict)
     goal_history: list[dict] = field(default_factory=list)
 
@@ -83,8 +81,6 @@ class State:
             if set(pack['preference']) != set(self.budget):
                 raise ValueError('Preference must cover each resource dimension')
             self.preference = pack['preference']
-        if 'learning' in pack:
-            self.learning = bool(pack['learning'])
         self.loaded.append({'pack':pack['id'],'sha256':digest(pack)})
 
     @classmethod
@@ -267,7 +263,7 @@ class Kernel:
             else:blockers+=blocked
         result={'goal':goal,'scope':self.s.scope,'goal_truth_before':self.s.fact(goal)['truth'],
                 'work_state':'blocked','actions':[],'needs':[],'cost':None,'proof':[],
-                'model_receipts':[],'learning':[],'candidates':[],'selected_branch':None,
+                'model_receipts':[],'candidates':[],'selected_branch':None,
                 'stop_reasons':sorted(set(blockers)), 'provenance':list(self.s.loaded)}
         if eligible:
             frontier=[p for p in eligible if not any(self._dominates(q,p) for q in eligible)]
@@ -290,20 +286,6 @@ class Kernel:
             status=next((x for x in rank if x in blockers),'METHOD_ABSENT')
             self.log('BLOCK',reason=status,all_reasons=sorted(set(blockers)))
             result.update(status=status,pareto_options=0)
-        if self.s.learning:
-            signature=' -> '.join(result['actions'])
-            if result.get('status')=='LOCAL_MODEL_EFFECTS_RECORDED' and signature:
-                n=self.s.learned_signatures.get(signature,0)+1
-                self.s.learned_signatures[signature]=n
-                candidate={'kind':'REUSE_COMPOSITION','signature':signature,'observations':n,
-                           'status':'PROPOSED_ONLY','gate':'independent held-out verification + approval'}
-                self.log('LEARN_CANDIDATE',**candidate)
-                result['learning']=[candidate]
-            elif result['work_state']=='blocked':
-                candidate={'kind':'INVESTIGATE_GAP','gap':result['status'],
-                           'status':'PROPOSED_ONLY','gate':'independent evidence + authorization'}
-                self.log('LEARN_CANDIDATE',**candidate)
-                result['learning']=[candidate]
         result['candidates']=list(self.s.candidates.values())
         self.log('TERMINAL',status=result['status'],work_state=result['work_state'])
         result['trace']=list(self.events)

@@ -5,6 +5,7 @@ from pathlib import Path
 ROOT=Path(__file__).resolve().parents[1]
 sys.path.insert(0,str(ROOT))
 from kernel.core import State,Kernel,digest
+from extensions.reflection import Learner   # learning lives in the extension since 0.4.0-shrink (move-out M1)
 from tools.make_packs import P
 
 CASES=[
@@ -41,7 +42,7 @@ def scenario(spec):
     cid,title,description,files,execute,area=spec
     packs=[pack(n) for n in files]
     state=State.from_packs(packs)
-    run=Kernel(state).run_standing(execute=execute)
+    run=Learner.from_packs(packs).attach(Kernel(state).run_standing(execute=execute))
     outcome=run['runs'][0] if run['runs'] else None
     return {'id':cid,'title':title,'description':description,'area':area,'packs':files,'pack_digest':digest(packs),
             'scope':state.scope,'run':run,'outcome':outcome,
@@ -66,13 +67,16 @@ def extra_events():
     # Rule update itself is a reviewed new version, rather than mutation of stored old run.
     revised=pack('07_survey_gap');s.apply(revised)
     updated=k.run_standing(execute=False)
+    learner=Learner.from_packs(packs)   # one Learner for this State's whole life, fed in run order
+    for run in (first,irrelevant,cross_tenant,revoked):learner.attach(run)
+    learner.apply(revised);learner.attach(updated)
     return {'initial':first,'unrelated':irrelevant,'cross_tenant':cross_tenant,'approval_revoked':revoked,
             'rule_updated':updated,'old_trace_hash_before':old_hash,'old_trace_hash_after':first['runs'][0]['trace_root_sha256'],
             'impacted_fact_after_revoke':s.fact('replacement_delivered'),
             'journal_count':len(s.event_journal)}
 
 def build():
-    result={'release':'sutra-kernel-extensions/0.2.0-experimental',
+    result={'release':'sutra-kernel-extensions/0.4.0-shrink',
             'kernel_sha256':hashlib.sha256((ROOT/'kernel'/'core.py').read_bytes()).hexdigest(),
             'baseline_v0_1_sha256':hashlib.sha256((ROOT/'release'/'baseline_v0_1_core.py').read_bytes()).hexdigest(),
             'scope':'finite synthetic deterministic local simulation; NOT historical Core, current J2, or external outcomes',

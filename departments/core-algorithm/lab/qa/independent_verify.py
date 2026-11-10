@@ -81,6 +81,15 @@ def inspect(data):
     forged=json.loads(json.dumps(test_case['outcome']['trace']))
     forged[2]['operation']='FORGED_SUCCESS'
     check('S31_reject_tampered_event',not check_chain(forged))
+    # 0.4.0-shrink (move-out M1): learning is an extension over the record; the kernel source carries none of it.
+    core_src=(ROOT/'kernel'/'core.py').read_text()
+    check('S34_kernel_source_without_learning',all(w not in core_src for w in ('REUSE_COMPOSITION','INVESTIGATE_GAP','learned_signatures','LEARN_CANDIDATE')))
+    learned={c['id']:c['outcome']['learning'] for c in data['cases'] if c['outcome']}
+    check('S35_learning_recorded_from_extension',learned['05_learn']==[{'kind':'REUSE_COMPOSITION','signature':'ship-replacement@1','observations':1,'status':'PROPOSED_ONLY','gate':'independent held-out verification + approval'}]
+          and learned['07_gap'][0]['kind']=='INVESTIGATE_GAP' and learned['04_gates']==[]
+          and all(x['kind'] in ('REUSE_COMPOSITION','INVESTIGATE_GAP') for v in learned.values() for x in v))
+    # Each learning list is bound to the kernel's hash-chained record: trace root + sha256 of the list.
+    check('S36_learning_bound_to_trace_root',all(c['outcome'].get('learning_record')=={'source_trace':c['outcome']['trace_root_sha256'],'learning_sha256':sha(c['outcome']['learning'])} for c in data['cases'] if c['outcome']))
     valid=all(t['pass'] for t in tests)
     return {'verifier':'independent_verify.py: pure JSON/hash verifier, never imports kernel',
             'checks':tests,'passed':sum(t['pass'] for t in tests),'total':len(tests),
