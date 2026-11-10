@@ -192,12 +192,15 @@ function usage(files) {
         if (prop.startsWith("--")) continue;
         const word = colourWord(value);
         if (!word) continue;
-        if (COLOUR_PROPS.text.has(prop)) { fg = word; found.text.set(word, `${file} ${rule.selector}`); }
+        if (COLOUR_PROPS.text.has(prop)) fg = word;
         else if (COLOUR_PROPS.background.has(prop)) bg = word;
         else if (COLOUR_PROPS.line.has(prop)) strokes.push([prop, word]);
       }
       // `paint-order` next to a stroke makes it the halo of a label (it keeps text readable on a line), not a line that carries meaning
       for (const [prop, word] of strokes) if (!(prop === "stroke" && rule.decls.some(([p]) => p === "paint-order"))) found.line.set(word, `${file} ${rule.selector}`);
+      // A rule that paints its own opaque background (the owner's bubble: --on text on --accent) is judged against that background, by the pairs below, and not
+      // against the three surfaces it never sits on; text on no background, or on one with transparency in it, is judged against the surfaces.
+      if (fg && (!bg || /transparent/.test(bg))) found.text.set(fg, `${file} ${rule.selector}`);
       if (fg && bg) found.pairs.push({fg, bg, where: `${file} ${rule.selector}`});
     }
   }
