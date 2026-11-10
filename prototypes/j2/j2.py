@@ -764,9 +764,12 @@ def run_check(c, site_dir, page, doc=False):
             path = os.path.normpath(os.path.join(site_dir, str(c.get("file") or "index.html")))
             text = open(path, encoding="utf-8").read() if path.startswith(os.path.normpath(site_dir)) \
                 and os.path.isfile(path) else ""
+            # the markup only: CSS and JS that name the id or class aren't the element ('#continue-prompt' counted 3)
+            text = re.sub(r"(<(script|style)\b[^>]*>).*?(</\2\s*>)", r"\1\3", text, flags=re.S | re.I)
             n = text.count(str(target).lstrip("#."))
             return {"actual": n, "pass": n == as_int(expect, -1),
-                    "evidence": f"{target!r} found {n} time(s) in {c.get('file') or 'index.html'}, expected {expect}"}
+                    "evidence": f"{target!r} found {n} time(s) in {c.get('file') or 'index.html'} (in the markup, not "
+                                f"CSS/JS), expected {expect}"}
         if t == "lld-slice":
             ok, ev = lld_check(page, c.get("spec") or {})
             return {"actual": ok, "pass": ok, "evidence": ev}
@@ -774,9 +777,14 @@ def run_check(c, site_dir, page, doc=False):
             return j2_check.run_steps(target if isinstance(target, list) else [], lambda ops: j2_check.behavior(page, ops))
         scan = PageScan(page)
         if t == "element-count":
-            n = len(scan.matching(target))
+            n, where = len(scan.matching(target)), ""
+            if n < as_int(expect, -1) and re.search(r"<script\b", page or "", re.I):
+                # elements the page's script builds count 0 in the static HTML: counted again once it has run
+                got = j2_check.rendered_count(page, str(target))
+                if got is not None:
+                    n, where = got, " in the rendered page"
             return {"actual": n, "pass": n == as_int(expect, -1),
-                    "evidence": f"{n} element(s) match {target!r}, expected {expect}"}
+                    "evidence": f"{n} element(s) match {target!r}{where}, expected {expect}"}
         if t == "tap-targets":
             r, want = j2_check.tap_targets(page, str(target), as_int(expect, j2_check.TAP_MIN)), as_int(expect, 44)
             if not r.get("available"):      # no browser: the check didn't run, which says nothing about the build

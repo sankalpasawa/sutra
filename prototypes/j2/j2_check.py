@@ -519,6 +519,7 @@ f.addEventListener('load', () => setTimeout(async () => { const out = [];
   for (const o of ops){ let r;
     try { const all = [...d.querySelectorAll(o.sel || 'body')], el = all[0];
       if (o.do === 'wait') { await sleep(o.ms); r = {v: true}; }
+      else if (o.read === 'count') r = {v: all.length};
       else if (!el) r = {missing: true};
       else if (o.do === 'set') { const val = String(o.val), lc = val.toLowerCase();
         if (el.tagName === 'SELECT') { const opt = [...el.options].find(x => x.value.toLowerCase() === lc || x.textContent.trim().toLowerCase() === lc);
@@ -565,6 +566,14 @@ def behavior(html, ops):
                                .replace("&gt;", ">"))
                 return {"available": True, **r}
     return {"available": False, "note": "Chrome ran but the page never reported (twice)"}
+
+
+def rendered_count(html, selector):
+    """How many elements match selector once the page's scripts have run (the behaviour driver, headless Chrome), or
+    None when it couldn't run. A grid drawn by script counts 0 in the static HTML (".cell": 0 of 81 expected)."""
+    r = behavior(html, [{"read": "count", "sel": selector}])
+    v = ((r.get("results") or [{}])[0] or {}).get("v") if r.get("available") else None
+    return v if type(v) is int else None
 
 
 if __name__ == "__main__":   # python j2_check.py site.html [...]: print the mechanical check for each file
