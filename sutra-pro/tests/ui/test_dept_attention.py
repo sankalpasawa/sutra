@@ -11,7 +11,8 @@ from test_dept_page import CRASH_ELSEWHERE, PILL_WIDTHS, Page, measure_the_pill,
 browser_only = pytest.mark.browser
 
 CONSOLE_ROUTES = ("/api/ops/", "/api/connectors/status", "/api/atoms/")           # the console's own routes are not in this fake (test_console.py has them)
-CONSOLE_LINKS = ['.shead a.ghost', '.cjump a[href="#c-usage"]', '.cjump a[href="#c-log"]', '.cjump a[href="#c-health"]']      # Home and the three links under the title
+CONSOLE_NAV = 'header.shead nav[aria-label="On this page"]'                       # the header's three links, found by what they are (test_console.py), not by a class
+CONSOLE_LINKS = ['.shead a.ghost', CONSOLE_NAV + ' a[href="#c-usage"]', CONSOLE_NAV + ' a[href="#c-log"]', CONSOLE_NAV + ' a[href="#c-health"]']      # Home and the three links under the title
 CONSOLE_PHONE = 600                                                              # up to here the header's links wrap under its title, and the pill has a row above the header
 CONSOLE_REGIONS = [".shead > *", ".cpanel"]                                       # what the pill's row keeps clear of
 
@@ -87,7 +88,7 @@ def test_the_pill_does_not_sit_on_the_consoles_links_at_phone_widths(fake_server
             found = pill_problems(seen, boxes=True, regions=True)
             if found:
                 problems.append((text, width, found, seen["box"]))
-            for link, panel in (('.cjump a[href="#c-log"]', "#c-log"), ('.cjump a[href="#c-health"]', "#c-health")):
+            for link, panel in ((CONSOLE_NAV + ' a[href="#c-log"]', "#c-log"), (CONSOLE_NAV + ' a[href="#c-health"]', "#c-health")):
                 browser.click(link)                                                      # a real click in the middle of the link
                 here = browser.js("location.pathname + location.hash")
                 if here != "/console" + panel:

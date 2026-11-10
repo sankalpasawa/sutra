@@ -44,6 +44,11 @@ body.nodeopen #pane-map .mappanel{display:none}
 @media (min-width:901px){
   body:not(.simple):has(#chatfab) .apillhost{right:22px;bottom:68px;transition:transform var(--dur-base) var(--ease-out)}
   body:not(.simple):has(#dview.chaton) .apillhost{transform:translateX(-430px)}
+  /* The library page of a team (/d/<team>/library). J2 stops the card of the catalog 76px above the bottom of the window (room for the Chat button), and the pill, 34px tall and
+     10px above that button, was 26px inside the card: it covered the catalog's last row buttons (which rows depends on the height of the window, the lists scroll inside the card).
+     While the pill shows, the page keeps room for it under the card, which ends 8px above the pill (110px = 68 + 34 + 8); the pill does not move. This page only: the cards of the
+     other tabs are J2's to size (0.3.2). */
+  body.libpage:has(.apillhost:not([hidden])) #dview main{padding-bottom:110px}
 }
 /* The Detailed view at 900px and under. The pill rode at 58px from the top, "under the header", and the Detailed view has none: there it sat on J2's Needs you box, over the question
    and, from 414 to 900px wide, over the "Answer in Chat" button, where a click in the button's middle went to the pill and so to Home (0.3.2). The page keeps a row for it instead,
@@ -222,6 +227,11 @@ details.atomcard>summary{cursor:pointer;display:flex;flex-wrap:wrap;align-items:
 /* ---- a team that was merged away: its page keeps the history but takes no new line (docs/design/ui.md 6.7) */
 body.archived .scompose,body.archived #sbox,body.archived #ssend,body.archived #sform,body.archived #box,body.archived #send,body.archived .outsel,
 body.archived #lform,body.archived #lbox,body.archived #lsend,body.archived .schips,body.archived #soutpick,body.archived #sauto,body.archived #sautoland,body.archived #shome{display:none}
+
+/* ---- the library page of a team (/d/<team>/library) has no run, and J2's script hides the Needs you box there with the `hidden` attribute ("no run here: nothing needs you"). J2's own
+   `.needs{display:flex}` is an author rule, so it beat the browser's `[hidden]{display:none}` and an empty bordered box (18px: the padding and the border) was drawn above the catalog (0.3.2).
+   Only that page ever sets the attribute (a team page and Home paint into the box and never hide it, and the Simple view hides the whole Detailed view as before), so nothing else changes. */
+.needs[hidden]{display:none}
 
 /* ---- the department page's strip at the top of J2's icon rail (D137): back to all teams, which team this is, and the two Sutra panes. It is the rail's own size:
    84 px wide, icons 64 x 58 px with J2's hover label, so the team's name is one short line (its whole name is the title) */

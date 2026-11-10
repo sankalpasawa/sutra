@@ -47,7 +47,8 @@ Built:
   header on a phone (clear of the message box), below the node drawer. Amended (0.3.2): "under the header" sat on J2's Needs you box and its Answer in Chat
   button in the Detailed view and on the console's links, so at 900px and under the pill rides in a row at the very top that the page keeps free for it while
   it shows (the Simple view's strip, a row above the Needs you box, a row above the console's header at 600px and under); `css/sutra-panel.css` has the rules
-  and `tests/ui/test_dept_page.py` and `test_dept_attention.py` measure them from 320 to 1920px.
+  and `tests/ui/test_dept_page.py` and `test_dept_attention.py` measure them from 320 to 1920px. From 901px it rides above J2's Chat button; on a team's library page the
+  page keeps 34px under the catalog's card for it while it shows (J2's card ended 26px inside the pill's box and covered the catalog's last row buttons), and no other tab's card is resized.
 - **Why a task waits.** A queued task behind a team that waits for the owner reads "waiting for your answer: the team's current task asked you
   something" (it said "waiting for the team to finish its current task"); a full house of teams waiting for answers reads "waiting for a free slot: 12
   teams are waiting for your answers".
