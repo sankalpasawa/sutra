@@ -1926,7 +1926,7 @@ function sCrew(s, M){
   if (open){ t.asha.line = APPROVE.includes((s.paused || {}).kind) ? "Needs your OK" : "Has a question for you"; t.asha.ask = true; }
   else if (th === "identity"){ t.asha.busy = true; t.asha.line = stage(s) === 0 ? "Reading your request" : "Talking it through with the team"; }
   else if (["adaptation", "priority", "coordination", "validator"].includes(th)){ t.asha.busy = true;
-    t.asha.line = {adaptation: "Planning the parts with the Planner", priority: "Agreeing the effort with the Budget lead", coordination: "Lining up who goes next", validator: "Checking each part is ready to start"}[th]; }
+    t.asha.line = {adaptation: "Planning the parts", priority: "Deciding what comes first", coordination: "Lining up who goes next", validator: "Making sure each part is ready to start"}[th]; }
   else t.asha.line = live ? "Keeping things on track" : failed(s) ? "Hit a problem" : isReady(s) ? "Wrapped up your project" : s.saved ? "Wrapped up this project" : "Ready when you are";
   const audits = (s.audits || []).length;
   if (th === "audit"){ t.nora.busy = true; t.nora.line = s.doc ? "Checking the document against your list" : "Checking it on a phone and a laptop"; }
@@ -1947,7 +1947,7 @@ function sPhase(s, open){      // one plain sentence for where the run is; no na
   const what = sNoun(s);
   if (failed(s)) return s.error || /^Crashed/.test(s.outcome || "") ? "Something went wrong. You can start over." : "The team stopped here. You can start over.";
   if (isReady(s)) return (s.docset || []).length > 1 ? "Your design documents are ready" : `Your ${what} is ready` + (/^Done with open items/.test(s.outcome || "") ? ". Some things were left as they are." : "");
-  if (open.length) return APPROVE.includes((s.paused || {}).kind) ? "Waiting for your OK" : "Waiting for your answer";
+  if (open.length) return s.saved ? "Saved while it waited for you" : APPROVE.includes((s.paused || {}).kind) ? "Waiting for your OK" : "Waiting for your answer";
   if (s.status !== "running") return s.saved ? "Saved project" : "Waiting for your message";
   const w = sModel(s).parts.find(p => p.st === "doing");
   const st = stage(s);
@@ -2414,8 +2414,12 @@ function sMateHTML(s, k){
   const M = sModel(s), T = sCrew(s, M), t = T[k], p = PEOPLE[k];
   let h = `<div class="sdhead">${face(k, 56, {label: false})}<div><h4>${p.name}</h4><small>${p.role} · ${esc(p.does)}</small></div></div><p><b>Now:</b> ${esc(t.line)}</p>`;
   if (t.parts.length) h += `<p class="sdk">Parts</p><div class="slog">${t.parts.map(x => `<div><button type="button" class="slink" data-go="${esc(x.sec)}">${esc(x.name)}</button> · ${x.st === "done" ? "done" : x.st === "doing" ? "on it now" : x.st === "ask" ? "waits on you" : x.st === "fix" ? "a fix is coming" : x.st === "bad" ? "couldn't be made" : "next up"}</div>`).join("")}</div>`;
-  if (k === "asha") h += `<p class="sdk">Behind the scenes, with Asha</p><div class="slog">${BACKSTAGE.map(([, n, d]) => `<div><b>${n}</b> ${esc(d)}</div>`).join("")}</div>`;
-  const talk = sTalk(s).filter(x => x.who === k).slice(-4);
+  if (k === "asha"){      // what Asha did: only her own messages to you, newest first; no backstage roles
+    const said = (s.allChat || []).filter(m => m.who === "identity" && withYou(m) && plain(m.text).trim()), asks = said.filter(isAsk).length;
+    if (said.length) h += `<p class="sdk">What Asha did</p><div class="slog"><div>Sent you ${said.length === 1 ? "one message" : said.length + " messages"}${asks ? `, ${asks === 1 ? "one" : asks} with a question` : ""}.</div>`
+      + said.slice(-4).reverse().map(m => { const t = plain(isAsk(m) ? [parseAsk(m.text).say, ...parseAsk(m.text).qs.map(q => q.q)].filter(Boolean).join(" ") : m.text).replace(/\s+/g, " ").trim();
+        return `<div>${esc(t.length > 140 ? t.slice(0, t.lastIndexOf(" ", 136)) + "…" : t)}</div>`; }).join("") + `</div>`; }
+  const talk = k === "asha" ? [] : sTalk(s).filter((x, i, a) => x.who === k && !a.slice(i + 1).some(y => y.who === k && y.text === x.text)).slice(-4);      // Asha's own messages above say it; a repeated line shows once
   if (talk.length) h += `<p class="sdk">Recently</p><div class="slog">${talk.map(x => `<div><b>${p.name}</b> ${esc(x.text)}</div>`).join("")}</div>`;
   return h + `<div style="display:flex;gap:8px;flex-wrap:wrap">${k === "asha" && !s.saved ? `<button type="button" class="sbtn smore" data-chat>Message Asha</button>` : ""}`
     + `<button type="button" class="sbtn smore" data-detail>${p.name}'s work in the Detailed view</button></div>`;      // the phone's way to the Detailed view (its top bar has no room for the button)

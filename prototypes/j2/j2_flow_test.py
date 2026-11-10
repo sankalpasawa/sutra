@@ -9160,10 +9160,11 @@ def graph_map():
     finally:
         j2.RUNS_DIR = keep_dir
     assert teams_n > 40, ("every saved run's teams are checked", teams_n)
-    wd = next(t for t in maps["j2-20261026-174314"]["teams"] if t["id"] == "stage:Web Developer")
-    col = {n["id"]: n["col"] for n in wd["nodes"] if n["kind"] == "wf"}
-    assert col["W-6"] < col["W-7"] < col["W-8"] < col["W-9"] < col["W-10"] < col["W-14"] < col["W-15"] < col["W-17"] and col["W-7"] == col["W-13"] and col["W-9"] == col["W-11"] and col["W-10"] == col["W-12"], ("174314 Web Developer columns", col)
-    assert any(n["kind"] == "artifact" and n["section"] and n["file"] == "Website" for n in wd["nodes"]) and sum(1 for n in wd["nodes"] if n["kind"] == "artifact" and n["section"]) == 10, "its Website sections are artifacts"
+    if "j2-20261026-174314" in maps:      # the golden run; not on every machine (see "map tree" above)
+        wd = next(t for t in maps["j2-20261026-174314"]["teams"] if t["id"] == "stage:Web Developer")
+        col = {n["id"]: n["col"] for n in wd["nodes"] if n["kind"] == "wf"}
+        assert col["W-6"] < col["W-7"] < col["W-8"] < col["W-9"] < col["W-10"] < col["W-14"] < col["W-15"] < col["W-17"] and col["W-7"] == col["W-13"] and col["W-9"] == col["W-11"] and col["W-10"] == col["W-12"], ("174314 Web Developer columns", col)
+        assert any(n["kind"] == "artifact" and n["section"] and n["file"] == "Website" for n in wd["nodes"]) and sum(1 for n in wd["nodes"] if n["kind"] == "artifact" and n["section"]) == 10, "its Website sections are artifacts"
     # constellations (m["constellations"], j2_map.constellations): the data, on every run and every artifact
     def run_order(d, ids):
         first = {}
