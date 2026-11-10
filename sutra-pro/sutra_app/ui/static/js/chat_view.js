@@ -2,7 +2,7 @@
    S4-fnodes-12).
 
    Strings in, strings out: transcript() draws a session's messages in J2's bubble look (.sb.team, .sb.me, .opts), card() draws one chat card
-   (task, chart_change, approval, choice, needs_you, team_chat, done and, in a function node's working log, atom), composerState() says whether the
+   (task, chart_change, approval, choice, needs_you, team_chat, done, deliverable and, in a function node's working log, atom), composerState() says whether the
    message box shows, is disabled and what it says, whoLabel() names an author, and safeText() is the one door a message text goes through.
    Nothing touches the DOM, every word that came from the wire is escaped, and the markup is well formed XML.
 
@@ -14,6 +14,9 @@
 
    Buttons carry data-act (open-team, open-team-chat, show-node, show-change, choose, option, answer-option, answer, retry, retry-task, retry-direct) and the data they need; the page that
    shows the transcript (the node panel, Home) listens for them. A link that opens a team page is a real <a href>, so it also works without a script.
+   The finished report of a run (D135) is a `deliverable` card in the team's chat: the report as markdown (ChatMarkdown, folded by ChatFold.longText when long),
+   the files git saw change in the owner's folder (nothing at all when git could not say) and "Open the full report", a real link to the team page's Preview tab
+   for that run; the done card in the org chat gets "Open the report", the same link.
 
    A classic script with ONE global, ChatView (see sutra_ctx.js for why); in node it is module.exports. */
 (function (root) {
@@ -245,6 +248,20 @@
       (done ? ' data-answered="true"' : "") + '><p class="cteam"><span class="cteamlead">' + lead.trim() + "</span>" + chatChip(c, label) + "</p></div>";
   }
 
+  // The whole report of a run, on the team's page: its Preview tab for that run (J2's page draws a document there as a page: markdown made into html). Both ids
+  // are checked here again, so an id the page does not know makes no link rather than a wrong one.
+  const DEPT_ID = /^[A-Za-z0-9_.:-]{1,120}$/;
+  const RUN_ID = /^j2-[A-Za-z0-9_-]{1,120}$/;
+  function reportHref(dept, run) {
+    const d = clean(dept);
+    const r = clean(run);
+    return DEPT_ID.test(d) && d !== "." && d !== ".." && RUN_ID.test(r) ? "/d/" + encodeURIComponent(d) + "/?view=detail&tab=preview&run=" + encodeURIComponent(r) : "";
+  }
+  const reportLink = (report, label) => {
+    const href = isObj(report) ? reportHref(report.dept_id, report.run_id) : "";
+    return href === "" ? "" : '<a class="lbtn" data-act="open-team" href="' + esc(href) + '">' + esc(label) + "</a>";
+  };
+
   const DONE_TONE = freeze({done: "ok", done_with_open_items: "warn", crashed: "bad", stopped: "bad"});
   const DONE_HEAD = freeze({done: "is done", done_with_open_items: "is done, with some things left open", crashed: "ran into a problem", stopped: "was stopped"});
 
@@ -261,7 +278,41 @@
       "<h2>Your " + (dept ? esc(dept) + " " : "") + "team " + esc(hasOwn(DONE_HEAD, status) ? DONE_HEAD[status] : taskWord(status)) + "</h2>" +
       '<p class="ctitle">' + esc(clean(c.title)) + "</p>" + (clean(c.outcome) ? '<p class="coutcome">' + safeText(clean(c.outcome)) + "</p>" : "") +
       receiptLine(c.receipt) +
-      '<div class="acts">' + retryButton(c, ctx) + openTeam(deptId, ' data-task="' + esc(clean(c.task_id)) + '" data-dept-name="' + esc(dept) + '"') + "</div></div>";
+      '<div class="acts">' + retryButton(c, ctx) + reportLink(c.report, "Open the report") +
+      openTeam(deptId, ' data-task="' + esc(clean(c.task_id)) + '" data-dept-name="' + esc(dept) + '"') + "</div></div>";
+  }
+
+  // The finished deliverable of a run in the team's chat (D135, a `deliverable` card): the report as the team wrote it, the files git saw change in the owner's
+  // folder, the way to the whole report. The words that name a file's state are ours; a path is shown as the host recorded it. `changes` absent means git could
+  // not say (no repository, read only, too slow): then the card says nothing about changes, not even that there were none.
+  const CHANGE_WORDS = freeze({new: "new", modified: "changed", deleted: "deleted", reverted: "back to the committed version"});
+
+  function changedFiles(changes) {
+    if (!isObj(changes)) return "";
+    const files = (Array.isArray(changes.files) ? changes.files : []).filter(isObj).filter(f => clean(f.path) !== "");
+    const more = count(changes.more) || 0;
+    if (files.length === 0 && more === 0) return '<p class="cdnone">No file in your folder changed during this run (checked with git).</p>';
+    const line = f => {
+      const state = clean(f.status);
+      const known = hasOwn(CHANGE_WORDS, state);
+      return '<li><code>' + esc(clean(f.path)) + '</code><span class="cdst st-' + (known ? state : "other") + '">' + esc(known ? CHANGE_WORDS[state] : state) + "</span></li>";
+    };
+    return '<div class="cdchanges"><p class="cdhead">Changed in your folder during this run (' + (files.length + more) + ")</p>" +
+      '<ul class="cdfiles">' + files.map(line).join("") + (more > 0 ? '<li class="cdmore">and ' + more + " more</li>" : "") + "</ul></div>";
+  }
+
+  function deliverableCard(c) {
+    const body = text(c.text);
+    const href = reportHref(c.dept_id, c.run_id);
+    let report = '<p class="cdnone">The report was not written: the run ended before it.</p>';
+    if (body.trim() !== "") {
+      const html = root.ChatMarkdown ? root.ChatMarkdown.render(body) : safeText(body);
+      report = root.ChatFold && root.ChatFold.longText ? root.ChatFold.longText(body, html, {label: "Read the report"}) : html;
+    }
+    return '<div class="ncard c-deliverable" data-card="deliverable" data-task="' + esc(clean(c.task_id)) + '" data-run="' + esc(clean(c.run_id)) + '">' +
+      '<h2 class="cdtitle">' + esc(clean(c.label) || "Report") + "</h2>" + '<div class="cdreport">' + report + "</div>" +
+      (c.cut === true ? '<p class="cdcut">The report is longer than shown here. Open the full report to read all of it.</p>' : "") + changedFiles(c.changes) +
+      (href !== "" ? '<div class="acts"><a class="lbtn" data-act="open-team" href="' + esc(href) + '">Open the full report</a></div>' : "") + "</div>";
   }
 
   // The receipt of a finished task, evidence only (GAP-model-quality): "Attempt 2 . Took 6 min . about $0.42 . 7 of 8 items passed their checks".
@@ -320,6 +371,7 @@
       case "needs_you": return needsYouCard(value, c);
       case "team_chat": return teamChatCard(value, c);
       case "done": return doneCard(value, c);
+      case "deliverable": return deliverableCard(value);
       case "atom": return c.sessionKind === "function" ? atomCard(value) : plainCard(Object.assign({}, value, {text: clean(value.label) + (clean(value.goal) ? ": " + clean(value.goal) : "")}));
       default: return plainCard(value);
     }

@@ -532,7 +532,9 @@ def charter_text(goal, by_number=False):
     lines += [f"  {i}. {d}" for i, d in (numbered(goal) if by_number else enumerate(goal.get("done_when") or [], 1))]
     for k in ("open_inputs", "to_be_confirmed"):
         if goal.get(k):
-            lines.append(f"{k.upper()}: " + "; ".join(goal[k]))
+            # to_be_confirmed holds {"criterion", "fact"} entries (j2.py's _tbc); older records and open_inputs are plain strings
+            lines.append(f"{k.upper()}: " + "; ".join(x if isinstance(x, str) else str(x.get("fact") or x.get("criterion") or x)
+                                                       for x in goal[k]))
     return "\n".join(lines)
 
 

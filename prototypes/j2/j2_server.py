@@ -5,6 +5,8 @@ Run:  python j2_server.py                         opens http://127.0.0.1:8773
 Every response goes through redact(): API keys, tokens and .env values never reach the page.
 """
 import argparse
+import base64
+import html
 import http.server
 import json
 import os
@@ -17,6 +19,7 @@ import j2_agent
 import j2_artifacts
 import j2_map
 import j2_story
+import j2_studio
 import j2_template_lib
 import llm
 from j2 import HERE, J2Run, clear_lessons
@@ -245,6 +248,21 @@ class Handler(http.server.BaseHTTPRequestHandler):
                 data = f.read()
             return self._send(200, data, DOCX, name) if name.endswith(".docx") else \
                 self._send(200, data, "text/markdown")
+        if u.path == "/api/record":     # the Simple view's goal, method, output and check: one part (sec) or one deliverable (art), live or saved
+            snap = j2.saved_snapshot(run, 0) if run else {**RUN.snapshot(0), "saved": None}
+            d = j2.saved_dir(run) if run else RUN.dir
+            docs = (j2._read(d, "documents.json", {}) if d else {}) if run else RUN.docs
+            if q.get("art") is not None:
+                row = next((r for r in j2_artifacts.listing(d if d and os.path.isdir(d) else None)["deliverables"] if r["name"] == q["art"]), None)
+                rec = j2_studio.deliverable_record(snap, docs, row) if row and snap else None
+            else:
+                rec = j2_studio.record(snap, docs, q.get("sec")) if snap else None
+            return self._send(200, json.dumps(rec, ensure_ascii=False)) if rec else self._send(404, '{"error": "no such part"}')
+        if u.path.startswith("/doc/") or u.path == "/view":      # the Simple view's output tabs: any file the run's artifact list names, as a readable page
+            d = j2.saved_dir(run) if run else RUN.dir
+            name = f"{u.path.rsplit('/', 1)[-1]}.md" if u.path.startswith("/doc/") else q.get("name")
+            p = j2_artifacts.served(d if d and os.path.isdir(d) else None, name)
+            return self._send(200, view_page(p), "text/html")
         if u.path.startswith("/site/") and run:
             d, key = j2.saved_dir(run), u.path.rsplit("/", 1)[-1]
             site = os.path.join(d or "", "site")
@@ -295,6 +313,10 @@ class Handler(http.server.BaseHTTPRequestHandler):
         if self.path == "/api/output":           # the start page's output type, before the first message
             ok = RUN.set_output(body.get("type"))
             return self._send(200 if ok else 409, json.dumps({"ok": ok, "output": RUN.output}))
+        if self.path == "/api/settings":         # the Simple view's Decide for me switch (live run only; kept across Start over)
+            if "decide_for_me" in body:
+                RUN.set_auto(bool(body["decide_for_me"]))
+            return self._send(200, json.dumps({"ok": True, "decide_for_me": RUN.auto}))
         if self.path == "/api/reset":
             if RUN.status == "running":
                 return self._send(409, '{"ok": false}')
@@ -302,6 +324,32 @@ class Handler(http.server.BaseHTTPRequestHandler):
             return self._send(200, '{"ok": true}')
         self._send(404, "{}")
 
+
+
+IMAGE_TYPES = {".png": "image/png", ".jpg": "image/jpeg", ".jpeg": "image/jpeg", ".gif": "image/gif", ".webp": "image/webp",
+               ".svg": "image/svg+xml"}      # an <img> never runs an SVG's scripts
+
+
+def view_page(p):
+    """A file from a run's artifact list as a page for the Simple view: markdown rendered, a page as it is, an image shown, anything
+    else (data, code, a script) as readable text. A file not in the list gets a plain "not written yet" line."""
+    if not p:
+        return "<p style='font:15px system-ui;color:#667;padding:24px'>This isn't written yet.</p>"
+    ext = os.path.splitext(p)[1].lower()
+    if ext in IMAGE_TYPES:      # inline, so a saved run's image shows (/api/artifact would need ?run=) and every type gets its own media type
+        with open(p, "rb") as f:
+            src = f"data:{IMAGE_TYPES[ext]};base64,{base64.b64encode(f.read()).decode()}"
+        return (f"<!doctype html><meta charset='utf-8'><body style='margin:0;display:grid;place-items:center;min-height:100vh;background:#f6f3ee'>"
+                f"<img src='{src}' alt='{html.escape(os.path.basename(p))}' style='max-width:100%;height:auto'></body>")
+    with open(p, encoding="utf-8", errors="replace") as f:
+        text = f.read()
+    if ext == ".md":
+        return j2.md_html(text, os.path.basename(p))
+    if ext in (".html", ".htm"):
+        return text
+    return (f"<!doctype html><meta charset='utf-8'><title>{html.escape(os.path.basename(p))}</title><body style='margin:0;background:#fbfaf7'>"
+            f"<pre style='margin:0;padding:24px;font:13px/1.55 ui-monospace,Menlo,monospace;color:#1f2421;white-space:pre-wrap;overflow-wrap:anywhere'>"
+            f"{html.escape(text)}</pre></body>")
 
 
 # Run settings' run list (read-only): every saved run, newest first, from its own records. status: summary.json "status" (done and
