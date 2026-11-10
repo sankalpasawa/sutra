@@ -63,10 +63,11 @@ def _folder_tools(folder: str) -> tuple[list[str], list[str], list[str]]:
     could do more than they say: a write into the repository's own `.git` (its config can name a program that git status and git diff then run) and a
     git option that writes a file or reads one outside the repository (`--output`, `--no-index`, `--ext-diff`, `--textconv`)."""
     edit = bool(getattr(folder, "edit", False))
-    offered = [*READ_TOOLS] + ([*EDIT_TOOLS, "Bash"] if edit else [])
-    allowed = [*READ_TOOLS] + ([*EDIT_TOOLS, *GIT_READ] if edit else [])
+    git = bool(getattr(folder, "git", False)) and not edit          # a call that checks what changed (Audit, D135): the git reads, and no tool that writes
+    offered = [*READ_TOOLS] + ([*EDIT_TOOLS, "Bash"] if edit else ["Bash"] if git else [])
+    allowed = [*READ_TOOLS] + ([*EDIT_TOOLS, *GIT_READ] if edit else [*GIT_READ] if git else [])
     denied = [name for name in _DENIED_TOOLS if name not in offered]
-    return offered, allowed, denied + ([*GIT_DENY, *DOT_GIT_DENY] if edit else [])
+    return offered, allowed, denied + ([*GIT_DENY, *DOT_GIT_DENY] if edit else [*GIT_DENY] if git else [])
 _IMAGE_MAGIC = ((b"\x89PNG\r\n\x1a\n", "image/png"), (b"\xff\xd8\xff", "image/jpeg"), (b"GIF87a", "image/gif"), (b"GIF89a", "image/gif"),
                 (b"%PDF-", "application/pdf"))        # a PDF goes as a document block (ABS-4)
 _RESULT_TEXT_CHARS = 300             # how much of the CLI's own text an error keeps

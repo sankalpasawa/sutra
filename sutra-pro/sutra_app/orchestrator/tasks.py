@@ -78,7 +78,7 @@ BAD_END = ("stopped", "crashed", "cancelled")
 OVERRIDE_BUSY_NOTE = "Owner override needs a team that is waiting for you."
 RUN_FOLDER_INTERNALS = frozenset({
     "task.json", "inbox.jsonl", "events.jsonl", "trace.jsonl", "snapshot.json", "live.json", "settings.json", "run.stdout.log",
-    "run.stderr.log", "choices.json", "node_context.json",
+    "run.stderr.log", "choices.json", "node_context.json", "deliverable.json",
 })
 NODE_STATE_OF_TASK = {
     "blocked": "not_made", "queued": "not_made", "cancelled": "not_made", "starting": "running", "running": "running",

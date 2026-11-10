@@ -43,8 +43,10 @@ class Selection:
 @dataclass(frozen=True)
 class OutputSpec:
     """The keys of a `j2.OUTPUTS` entry, plus what the capabilities layer adds: `single` (named documents in the brief do not swap the
-    output: patch P14), `workspace` (the most the builders of this output may do in the owner's folder) and `force_off` (engine settings
-    that are switched off for a run of this output because the output has nothing for them)."""
+    output: patch P14), `workspace` (the most the builders of this output may do in the owner's folder), `deliver` (a run of this output leaves
+    a file the owner reads: the host records what it delivered and what changed in the owner's folder in `deliverable.json` before `run.ended`, and
+    the server posts it to the team's chat; D135) and `force_off` (engine settings that are switched off for a run of this output because the output has
+    nothing for them)."""
 
     label: str
     noun: str
@@ -66,6 +68,7 @@ class OutputSpec:
     done: str = ""
     single: bool = False
     workspace: str = "read"
+    deliver: bool = False
 
     def __post_init__(self) -> None:
         if self.workspace not in WORKSPACE_LEVELS:
@@ -82,6 +85,7 @@ class OutputSpec:
                 entry[key] = value
         entry["single"] = self.single
         entry["workspace"] = self.workspace
+        entry["deliver"] = self.deliver
         return entry
 
 

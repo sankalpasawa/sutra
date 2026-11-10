@@ -40,9 +40,15 @@ class CallTag(BaseModel):
     atom: Optional[str] = None
     # agent_turn, summary, template, review, plan, judge, change, chat_plan, chat; the policy matches it exactly
     purpose: str = Field("agent_turn", pattern=PURPOSE_PATTERN)
-    # The most this call may do in the owner's working folder (D127): "none" (no folder), "read" (look at files) or "edit" (also change
-    # them). Set by the workspace capability; the router (`Router.folder_for`) turns it into a folder, capped by the owner's own access choice.
-    workspace: Literal["none", "read", "edit"] = "none"
+    # The most this call may do in the owner's working folder (D127): "none" (no folder), "read" (look at files), "inspect" (also run the four git
+    # reads, status, diff, log and show, and change nothing: Audit of a run whose builders edit, so it can check their claims with `git diff`, D135) or
+    # "edit" (also change files). Set by the workspace capability; the router (`Router.folder_for`) turns it into a folder, capped by the owner's own
+    # access choice.
+    workspace: Literal["none", "read", "inspect", "edit"] = "none"
+    # What the BUILDERS of this run may do in the owner's folder (the output's own policy), set on every agent's call of a run whose output changes
+    # files, so each agent's folder text says what the TEAM may do and not only what its own tools do (D135): Identity's tools only read, and
+    # it must not take that for a limit of the run. "none": nothing is said about the team. The router caps it by the owner's access choice.
+    team_workspace: Literal["none", "read", "edit"] = "none"
 
 
 class Allowance(BaseModel):

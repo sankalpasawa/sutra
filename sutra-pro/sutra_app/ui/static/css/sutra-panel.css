@@ -302,6 +302,23 @@ body.archived .scompose,body.archived #sbox,body.archived #ssend,body.archived #
 .cfold-item{padding:2px 0;color:var(--ink);overflow-wrap:anywhere}
 .cfold-item.failed small{color:var(--bad)}
 .cfold-out{margin:2px 0 0;white-space:pre-wrap;max-height:12em;overflow:auto;color:var(--muted)}
+.cfold.cfold-text{margin-top:0;font-size:inherit;color:var(--ink)}
+.cfold.cfold-text summary{color:var(--ink);font-weight:600}
+.cfold.cfold-text[open] summary{margin-bottom:6px}
+
+/* the finished report of a run in the team's chat (D135, chat_view.js deliverableCard): the report as markdown (folded when long), the files git saw change in
+   the owner's folder, the link to the whole report; J2's tokens only */
+.ncard.c-deliverable{border-left:4px solid var(--ok)}
+.ncard .cdtitle{font:700 16px var(--display);margin:0 0 6px}
+.ncard .cdreport{margin:0 0 6px;min-width:0}
+.ncard .cdcut,.ncard .cdnone{margin:6px 0 0;color:var(--muted);font-size:13px}
+.ncard .cdhead{margin:8px 0 2px;font:700 12.5px var(--mono);color:var(--muted)}
+.ncard .cdfiles{list-style:none;margin:0;padding:0;font-size:13px}
+.ncard .cdfiles li{padding:1px 0;overflow-wrap:anywhere}
+.ncard .cdfiles code{font:12.5px var(--mono);background:var(--panel2);border-radius:4px;padding:0 4px}
+.ncard .cdst{margin-left:8px;color:var(--muted);font:500 12px var(--mono)}
+.ncard .cdst.st-deleted{color:var(--bad)}
+.ncard .cdmore{color:var(--muted)}
 
 /* the composer of the direct chat (ABS-15): the mode toggle, the file chips, the attach row, the streaming row; J2's tokens only */
 .ccbar{display:flex;flex-direction:column;gap:6px;padding:0 0 6px}

@@ -37,7 +37,8 @@ from .errors import InvalidRequestError
 from .models import M
 
 __all__ = ["WorkFolder", "WorkdirFile", "Folder", "WORKDIR_FILE", "MAX_PATH", "PREVIEW_MAX", "check_folder", "preview_of", "grounding_text",
-           "instructions_of", "READ_TOOLS", "EDIT_TOOLS", "GIT_READ", "GIT_DENY", "DOT_GIT_DENY", "NO_FOLDER_TEXT", "ACCESS", "INSTRUCTION_FILES", "INSTRUCTIONS_MAX"]
+           "instructions_of", "READ_TOOLS", "EDIT_TOOLS", "GIT_READ", "GIT_DENY", "DOT_GIT_DENY", "NO_FOLDER_TEXT", "TEAM_EDIT_TEXT", "TEAM_READ_TEXT",
+           "ACCESS", "INSTRUCTION_FILES", "INSTRUCTIONS_MAX"]
 
 log = logging.getLogger("sutra_app.connectors.workdir")
 
@@ -58,6 +59,16 @@ INSTRUCTIONS_MAX = 12_000          # characters of them given to the model (a lo
 NO_FOLDER_TEXT = ("No working folder is set, so you cannot see any of the owner's files. When the owner asks about their files, a project or a "
                   "folder, say so and tell them to choose one in Settings, under Connectors, in Working folder.")
 
+# What the TEAM of an engine run may do in the folder (D135), added to the grounding of every agent whose own tools do not change files. The first
+# is for a run of an output whose builders change files when the owner chose "read and change"; the second when the same run meets "read only".
+TEAM_EDIT_TEXT = ("The owner allowed changes to this folder (Settings, under Working folder). In this run the team's builders can create and change "
+                  "files there and look at git status, diff, log and show; nobody commits or runs anything else. Plan and judge as a team that CAN change "
+                  "the folder: when the request is to update, implement, fix, change or add something, the change is made in the folder (the plan names "
+                  "the files to change), not only described. Never write that the folder is read-only: for this run it is not.")
+TEAM_READ_TEXT = ("The owner chose read only for this folder (Settings, under Working folder), so nobody on this team can create, change or delete a "
+                  "file in it. When the request asks for a change, say so plainly: the report gives the exact edits (file by file, what to change) and "
+                  "tells the owner to allow changes in Settings, under Working folder, and ask again.")
+
 
 class WorkdirFile(M):
     version: Literal[1] = 1
@@ -66,14 +77,25 @@ class WorkdirFile(M):
 
 
 class Folder(str):
-    """The folder of one chat turn: the path itself (every place that compares or joins it sees a plain string) that also says whether the team may
-    change files in it. The connectors read `.edit` when they choose the tools; nothing else needs to know."""
+    """The folder of one chat turn: the path itself (every place that compares or joins it sees a plain string) that also says whether THIS call may
+    change files in it. The connectors read `.edit` when they choose the tools; nothing else needs to know.
+
+    `team` is what the grounding says about the team the call belongs to (D135), for the engine's runs only: `edit` (this run's builders can change
+    files here and the owner allowed it), `read` (the run is built to change files but the owner chose read only: nobody can), or `` (nothing is
+    said about a team: a direct chat, the org agent, an output whose builders only read). It changes the words of `grounding_text`, never the tools.
+
+    `git` says the call may run the four git reads (status, diff, log, show) without being able to change a file (Audit of a run whose builders change
+    files, D135); a call that may edit has them anyway. The claude connector adds Bash restricted to those reads and the same deny list as for an edit."""
 
     edit: bool = False
+    team: str = ""
+    git: bool = False
 
-    def __new__(cls, path: str, edit: bool = False) -> "Folder":
+    def __new__(cls, path: str, edit: bool = False, team: str = "", git: bool = False) -> "Folder":
         found = super().__new__(cls, path)
         found.edit = bool(edit)
+        found.team = team if team in ("edit", "read") else ""
+        found.git = bool(git)
         return found
 
 
@@ -177,21 +199,35 @@ def instructions_of(folder: str) -> tuple[str, str]:
     return "", ""
 
 
-def grounding_text(folder: Optional[str], edit: Optional[bool] = None) -> str:
+def grounding_text(folder: Optional[str], edit: Optional[bool] = None, team: Optional[str] = None) -> str:
     """What a chat model is told about the folder: where it is, what its tools can do, and the project's own instructions; or that none is set and
     how to set one. The one source of the words (chat_ground.py puts it in every direct chat's system text; the router adds it to the org agent's
-    calls). `edit` defaults to the folder's own mark (a `Folder` the router read from the store)."""
+    calls and to every agent call of the engine). `edit` and `team` default to the folder's own marks (a `Folder` the router read from the store).
+
+    A call whose own tools only read may belong to a team that can change files (Identity plans, the builders write): then the text says what the TEAM
+    may do (`team` `edit`), or that the owner chose read only so nobody can (`team` `read`), and not only what this agent's own tools do. Saying only
+    "they are read-only" made a planner write the folder's limit into the charter of a run whose owner had allowed changes (D135)."""
     if not folder:
         return NO_FOLDER_TEXT
     allowed = bool(getattr(folder, "edit", False)) if edit is None else edit
+    crew = getattr(folder, "team", "") if team is None else team
+    git = bool(getattr(folder, "git", False)) and not allowed
     shown = folder if len(folder) <= 300 else folder[:299] + "…"
+    look = "You can look at the owner's files there with your file tools (read, list and search)"
     if allowed:
         tools = ("You work in the owner's project like a developer at their desk. You can read, list and search the files there, and you can create and change "
                  "files with your file tools. You can look at the project's git state (status, diff, log, show) but you cannot run anything else and you cannot "
                  "commit: the owner does that. Paths are relative to that folder.")
+    elif crew == "edit":
+        tools = (look + (" and at the project's git state (status, diff, log, show), so you can check what was changed" if git else "") +
+                 ". Your own tools do not change files, because you plan and check the work and the builders do the changing: that is not a limit of this "
+                 "run. " + TEAM_EDIT_TEXT + " Paths are relative to that folder.")
+    elif git:
+        tools = (look + " and at the project's git state (status, diff, log, show). They are read-only: you cannot create, change or delete a file, and you "
+                 "can run only those git reads." + (" " + TEAM_READ_TEXT if crew == "read" else "") + " Paths are relative to that folder.")
     else:
-        tools = ("You can look at the owner's files there with your file tools (read, list and search). They are read-only: you cannot create, change or "
-                 "delete a file, and you cannot run a command. Paths are relative to that folder.")
+        tools = (look + ". They are read-only: you cannot create, change or "
+                 "delete a file, and you cannot run a command." + (" " + TEAM_READ_TEXT if crew == "read" else "") + " Paths are relative to that folder.")
     text = (f"Working folder: {shown}\n{tools} When the owner mentions their files, a project, an app or a folder, look there first, starting with "
             "a listing of the folder itself, and say which files you read" + (" and which you changed." if allowed else "."))
     name, body = instructions_of(folder)

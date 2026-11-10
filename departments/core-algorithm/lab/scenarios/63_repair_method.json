@@ -1,0 +1,29 @@
+{
+  "schema": "sutra-extension/2",
+  "id": "63_repair_method",
+  "methods": [
+    {
+      "id": "add-step-checks@1",
+      "effect": "every_step_has_check",
+      "requires": [
+        "has_overall_verify"
+      ],
+      "provider": "local-provider",
+      "grant": "action:add-step-checks@1",
+      "cost": {
+        "compute": 1,
+        "money": 0,
+        "attention": 1
+      },
+      "action": "simulate_fact",
+      "approved": true,
+      "source": "reviewed/synthetic-method"
+    }
+  ],
+  "providers": {
+    "local-provider": 2
+  },
+  "grants": [
+    "action:add-step-checks@1"
+  ]
+}

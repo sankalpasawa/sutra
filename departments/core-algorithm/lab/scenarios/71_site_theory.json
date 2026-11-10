@@ -1,0 +1,54 @@
+{
+  "schema": "sutra-extension/2",
+  "id": "71_site_theory",
+  "rules": [
+    {
+      "id": "R-SITE@1",
+      "head": "site_live",
+      "branches": [
+        [
+          "site_checked"
+        ]
+      ],
+      "approved": true,
+      "source": "reviewed/website-department"
+    }
+  ],
+  "evidence": [
+    {
+      "predicate": "brief_given",
+      "truth": "TRUE",
+      "verified": true,
+      "source": "fixture/owner-brief",
+      "version": "1"
+    },
+    {
+      "predicate": "site_planned",
+      "truth": "FALSE",
+      "verified": true,
+      "source": "fixture/reviewed",
+      "version": "1"
+    },
+    {
+      "predicate": "content_written",
+      "truth": "FALSE",
+      "verified": true,
+      "source": "fixture/reviewed",
+      "version": "1"
+    },
+    {
+      "predicate": "pages_built",
+      "truth": "FALSE",
+      "verified": true,
+      "source": "fixture/reviewed",
+      "version": "1"
+    },
+    {
+      "predicate": "site_checked",
+      "truth": "FALSE",
+      "verified": true,
+      "source": "fixture/reviewed",
+      "version": "1"
+    }
+  ]
+}

@@ -1,0 +1,33 @@
+{
+  "schema": "sutra-extension/2",
+  "id": "62_handwritten_evidence",
+  "evidence": [
+    {
+      "predicate": "has_trigger",
+      "truth": "TRUE",
+      "verified": true,
+      "source": "adapter:standards/workflow@1",
+      "version": "wf-aa61ecb5822a",
+      "checked": "W-handwritten-sample",
+      "question": "the workflow says what starts it"
+    },
+    {
+      "predicate": "every_step_has_check",
+      "truth": "FALSE",
+      "verified": true,
+      "source": "adapter:standards/workflow@1",
+      "version": "wf-aa61ecb5822a",
+      "checked": "W-handwritten-sample",
+      "question": "every step carries a check of its own"
+    },
+    {
+      "predicate": "has_overall_verify",
+      "truth": "TRUE",
+      "verified": true,
+      "source": "adapter:standards/workflow@1",
+      "version": "wf-aa61ecb5822a",
+      "checked": "W-handwritten-sample",
+      "question": "the workflow says how the whole is verified"
+    }
+  ]
+}

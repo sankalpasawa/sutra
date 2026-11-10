@@ -1,14 +1,14 @@
 {
  "schema": "traceability/1",
  "counts": {
-  "decisions": 134,
+  "decisions": 135,
   "packages": 78,
   "endpoints": 30,
   "chips": 15,
   "steps": 7,
   "owner_rules": 7
  },
- "max_decision": 134,
+ "max_decision": 135,
  "owner_rules": [
   {
    "rule": "This is a new app, no relation to the old sutra-ui. Its design is the J2 prototype's design.",
@@ -323,7 +323,8 @@
     "D131",
     "D132",
     "D133",
-    "D134"
+    "D134",
+    "D135"
    ],
    "modules": [
     "docs/DECISIONS.md",
@@ -2923,6 +2924,23 @@
    "status": "implemented",
    "superseded_by": [],
    "diagram": "key label \"same picker as Claude\", pill on the Chat sessions box."
+  },
+  {
+   "id": "D135",
+   "title": "Project work tells every agent what the team may do, puts its report in the team's chat, and gives a follow-up the earlier report (amends D127 and D128)",
+   "packages": [
+    "ABS-10",
+    "CN-7",
+    "E0",
+    "GAP-E1B",
+    "GAP-W1",
+    "ORCH-1",
+    "ORCH-6",
+    "UI-6"
+   ],
+   "status": "implemented",
+   "superseded_by": [],
+   "diagram": "key label \"your report in the team's chat\", pill on the Chat sessions box."
   }
  ],
  "packages": [

@@ -613,5 +613,10 @@
   "id": "D134",
   "label": "model picker like Claude desktop",
   "anchor": "Chat sessions"
+ },
+ {
+  "id": "D135",
+  "label": "your report in the team's chat",
+  "anchor": "Chat sessions"
  }
 ]

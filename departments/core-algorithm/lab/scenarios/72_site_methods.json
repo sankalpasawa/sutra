@@ -1,0 +1,84 @@
+{
+  "schema": "sutra-extension/2",
+  "id": "72_site_methods",
+  "methods": [
+    {
+      "id": "check-site@1",
+      "effect": "site_checked",
+      "requires": [
+        "pages_built"
+      ],
+      "provider": "local-provider",
+      "grant": "action:check-site@1",
+      "cost": {
+        "compute": 1,
+        "money": 0,
+        "attention": 1
+      },
+      "action": "simulate_fact",
+      "approved": true,
+      "source": "reviewed/synthetic-method"
+    },
+    {
+      "id": "build-pages@1",
+      "effect": "pages_built",
+      "requires": [
+        "content_written",
+        "site_planned"
+      ],
+      "provider": "local-provider",
+      "grant": "action:build-pages@1",
+      "cost": {
+        "compute": 3,
+        "money": 1,
+        "attention": 0
+      },
+      "action": "simulate_fact",
+      "approved": true,
+      "source": "reviewed/synthetic-method"
+    },
+    {
+      "id": "write-content@1",
+      "effect": "content_written",
+      "requires": [
+        "site_planned"
+      ],
+      "provider": "local-provider",
+      "grant": "action:write-content@1",
+      "cost": {
+        "compute": 2,
+        "money": 1,
+        "attention": 0
+      },
+      "action": "simulate_fact",
+      "approved": true,
+      "source": "reviewed/synthetic-method"
+    },
+    {
+      "id": "plan-site@1",
+      "effect": "site_planned",
+      "requires": [
+        "brief_given"
+      ],
+      "provider": "local-provider",
+      "grant": "action:plan-site@1",
+      "cost": {
+        "compute": 1,
+        "money": 0,
+        "attention": 1
+      },
+      "action": "simulate_fact",
+      "approved": true,
+      "source": "reviewed/synthetic-method"
+    }
+  ],
+  "providers": {
+    "local-provider": 6
+  },
+  "grants": [
+    "action:plan-site@1",
+    "action:write-content@1",
+    "action:build-pages@1",
+    "action:check-site@1"
+  ]
+}
