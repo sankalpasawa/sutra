@@ -373,10 +373,12 @@ edit = {"outputs": ["index.html"], "dependencies": [], "atoms": [{
                       "item": 1}]}]}
 rv = j2.J2Run()
 rv.realization = True
-ok(any("'#hint-section'" in x for x in rv._atom_problems(copy.deepcopy(edit))),
-   "before the page has it, '#hint-section' is unknown")
+e1 = copy.deepcopy(edit)
+ok(rv._atom_problems(e1) == [] and 'Create the element(s) "#hint-section" this atom\'s checks use.' in e1["atoms"][0]["constraints"],
+   "before the page has it, '#hint-section' is unknown: the validator tells the builder to create it (auto-fix)")
 rv.sites = [page]
-ok(rv._atom_problems(copy.deepcopy(edit)) == [],
+e2 = copy.deepcopy(edit)
+ok(rv._atom_problems(e2) == [] and e2["atoms"][0]["constraints"] == edit["atoms"][0]["constraints"],
    "a change to an existing section may target what the page already has (111726 learning-hint-*, 140419 W-27)")
 # A count in the goal is not a fact to copy; a price, time or email still is
 cnt_goal = {"goal": "learn-puzzles.json holds 8 valid practice starts, one per technique",
