@@ -8,7 +8,7 @@
   "J2_REALIZATION": "0",
   "STUDIO_MOCK": "1"
  },
- "j2_commit": "33aeeda639cd7bf828d5361273a8a153ebc63a36",
+ "j2_commit": "025e265c594564f47a2365874cd5a5cc5d0d20a6",
  "outcome": "Done: the PRD is workable. Every done-when item, rubric item and necessary condition passes.",
  "scenario": "prd",
  "schema": "prompts-golden/1",

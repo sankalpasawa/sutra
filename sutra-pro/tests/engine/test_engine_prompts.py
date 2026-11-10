@@ -1,10 +1,12 @@
 """Prompt goldens (work package E5, engine design 9, ENG-01): in mock mode the engine asks the model for exactly the text J2 asks for.
 
-`scripts/record_engine_golden.py` ran six scenarios against J2 `33aeeda` (see `golden/prompts_*.json`): per scenario the outcome, the
-spend, the hash of the last page, of the sections and of the workflows and, per model call in order, `[function, sha(system),
-sha(prompt)]`. Here the same scenarios run against the vendored engine, each in its own child process (J2 reads its environment when
-it is imported), and the results must be equal. The six runs take about two seconds each and run side by side, so this file is part
-of every merge gate (it is not marked slow); the legacy J2 scripts are the slow part (test_engine_legacy.py).
+`scripts/record_engine_golden.py` ran seven scenarios against J2, the folder `prototypes/j2` of this repository at the pinned commit
+(`BASELINE` of the recorder; see `golden/prompts_*.json`): per scenario the outcome, the spend, the hash of the last page, of the
+sections and of the workflows and, per model call in order, `[function, sha(system), sha(prompt)]`. The seventh, `agent_answer`, is the
+`realization` run followed by one question to Adaptation through `j2_agent.answer` (a stub in place of the model): the one prompt J2's
+agent view adds, recorded as the last call. Here the same scenarios run against the vendored engine, each in its own child process
+(J2 reads its environment when it is imported), and the results must be equal. The runs take about two seconds each and run side by
+side, so this file is part of every merge gate (it is not marked slow); the legacy J2 scripts are the slow part (test_engine_legacy.py).
 
 The tests of the machinery make sure the comparison can fail: a changed role file, a changed digest, a changed length and a changed
 outcome each show up as a difference.
@@ -14,6 +16,7 @@ import json
 import os
 import shutil
 import sys
+import time
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
@@ -22,7 +25,7 @@ import pytest
 HERE = Path(__file__).resolve().parent
 REPO = HERE.parent.parent
 GOLDEN = HERE / "golden"
-NAMES = ("brewlab_fixes0", "brewlab_fixes1", "realization", "prd", "design_docs", "template_library")
+NAMES = ("brewlab_fixes0", "brewlab_fixes1", "realization", "prd", "design_docs", "template_library", "agent_answer")
 
 
 def _load_recorder():
@@ -42,13 +45,13 @@ def golden(name: str) -> dict:
 
 @pytest.fixture(scope="module")
 def engine_results() -> dict:
-    """The vendored engine's run of every scenario (six child processes at once)."""
+    """The vendored engine's run of every scenario (seven child processes at once)."""
     with ThreadPoolExecutor(len(NAMES)) as pool:
         return dict(zip(NAMES, pool.map(rec.engine_result, NAMES)))
 
 
 # ---- the goldens themselves -----------------------------------------------------------------------------------------------
-def test_there_are_six_goldens_and_they_are_the_scenarios():
+def test_there_are_seven_goldens_and_they_are_the_scenarios():
     files = sorted(p.name for p in GOLDEN.glob("prompts_*.json"))
     assert files == sorted(f"prompts_{n}.json" for n in NAMES)
     assert sorted(rec.SCENARIOS) == sorted(NAMES)
@@ -58,7 +61,7 @@ def test_there_are_six_goldens_and_they_are_the_scenarios():
 def test_golden_file_shape(name):
     g = golden(name)
     assert g["schema"] == rec.SCHEMA and g["scenario"] == name
-    assert g["j2_commit"].startswith("33aeeda")                          # the J2 sync baseline (docs/design/j2-sync.md)
+    assert g["j2_commit"] == rec.BASELINE                                # one extraction, one pin for all seven (docs/design/j2-sync-4.md)
     assert g["outcome"].startswith("Done") and g["spent"] > 0
     assert len(g["calls"]) >= 10 and all(len(c) == 3 and all(isinstance(x, str) and x for x in c) for c in g["calls"])
     assert all(len(c[1]) == 12 and len(c[2]) == 12 for c in g["calls"])
@@ -73,6 +76,53 @@ def test_scenarios_differ_where_their_flags_differ():
     assert len(calls["design_docs"]) > 60 > len(calls["prd"])                             # three documents and a site, against one document
     assert golden("prd")["env"]["J2_OUTPUT"] == "prd" and golden("realization")["env"]["J2_REALIZATION"] == "1"
     assert golden("template_library")["env"]["J2_TEMPLATE_LIBRARY"] == "1" and golden("design_docs")["budget"] == 900
+
+
+# ---- the seventh scenario: a question to a function (j2_agent.answer, the one prompt the agent view adds) -------------------
+def test_the_answer_scenario_is_the_realization_run_and_one_question_to_adaptation():
+    ans, real = golden("agent_answer"), golden("realization")
+    assert rec.SCENARIOS["agent_answer"]["ask"] == {"who": "adaptation", "q": "Why was W-3 scored below the gate?"}
+    assert [n for n in NAMES if "ask" in rec.SCENARIOS[n]] == ["agent_answer"]
+    keys = ("env", "brief_sha", "budget", "outcome", "spent", "site", "sections", "workflows")
+    assert {k: ans[k] for k in keys} == {k: real[k] for k in keys}
+    assert ans["calls"][:-1] == real["calls"], "fixing J2's time-of-day stamp changes no prompt of the run itself"
+    assert len(ans["calls"]) == len(real["calls"]) + 1 and ans["calls"][-1][0] == "adaptation"
+    assert ans["calls"][-1] not in real["calls"], "the answer is a prompt of its own, not one the run already asked"
+
+
+def test_a_changed_answer_prompt_is_seen():
+    g = golden("agent_answer")
+    n = len(g["calls"])
+    for column, what in ((1, "system"), (2, "prompt")):
+        other = json.loads(json.dumps(g))
+        other["calls"][-1][column] = "000000000000"
+        assert rec.differences(g, other) == [f"call {n} (adaptation): {what} differ"]
+
+
+def test_feed_digest_ignores_the_wall_clock_seconds_and_nothing_else():
+    feed = ("[12:00:00] AI call 7 · step 2 · cycle 1 · 0.0 s — Scripted mock reply\n"
+            "[12:00:00] Plan confidence 0.95 · 8 workflows — 5 AI calls · 0 s")
+    slower = feed.replace("· 0.0 s", "· 0.1 s").replace("· 0 s", "· 2 s")
+    assert rec.feed_digest(feed) == rec.feed_digest(slower) != rec.digest(feed)
+    assert rec.feed_digest(feed) != rec.feed_digest(feed.replace("AI call 7", "AI call 8")), "a changed record is seen"
+    assert rec.feed_digest(feed) != rec.feed_digest(feed.replace("[12:00:00]", "[12:00:01]")), "so is a stamp (the child fixes it instead)"
+    assert rec.feed_digest("3 stages, 2 steps, 8 s") == rec.feed_digest("3 stages, 2 steps, 9 s")
+    assert rec.feed_digest("3 stages, 2 steps") == rec.digest("3 stages, 2 steps"), "only `N s` is touched, not `N stages`"
+
+
+def test_freeze_time_of_day_fixes_that_one_format_only(monkeypatch):
+    monkeypatch.setattr(time, "strftime", time.strftime)          # the real one is put back when the test ends
+    rec.freeze_time_of_day()
+    assert time.strftime("%H:%M:%S") == "12:00:00"
+    assert rec.TIME_RE.fullmatch(time.strftime("%Y-%m-%dT%H:%M:%S")) and len(time.strftime("%Y%m%d-%H%M%S")) == 15
+    assert time.strftime("%Y", time.gmtime(0)) == "1970"
+
+
+def test_the_source_must_be_an_extraction_of_prototypes_j2(tmp_path):
+    with pytest.raises(SystemExit, match="holds no j2.py"):
+        rec.checkout_of(tmp_path, "abc")
+    (tmp_path / "j2.py").write_text("", encoding="utf-8")
+    assert rec.checkout_of(tmp_path, "abc") == (tmp_path.resolve(), None, "abc")
 
 
 # ---- the engine against the goldens ----------------------------------------------------------------------------------------
@@ -150,9 +200,9 @@ def test_recorder_writes_checks_and_refuses_without_a_source(tmp_path, monkeypat
 
 
 @pytest.mark.slow
-@pytest.mark.skipif(not os.environ.get("SUTRA_J2_CHECKOUT"), reason="needs SUTRA_J2_CHECKOUT (a J2 checkout with commit 33aeeda)")
-@pytest.mark.parametrize("name", ("brewlab_fixes0", "prd"))
+@pytest.mark.skipif(not os.environ.get("SUTRA_J2_CHECKOUT"), reason="needs SUTRA_J2_CHECKOUT (an extraction of prototypes/j2 at the pinned commit)")
+@pytest.mark.parametrize("name", ("brewlab_fixes0", "prd", "agent_answer"))
 def test_goldens_are_what_j2_does_at_the_baseline(name):
-    """Re-record two scenarios from J2 itself: the stored goldens are not stale."""
+    """Re-record three scenarios from J2 itself: the stored goldens are not stale."""
     got = rec.record(os.environ["SUTRA_J2_CHECKOUT"], rec.BASELINE, [name])[name]
     assert got["j2_commit"] == golden(name)["j2_commit"] and rec.differences(golden(name), got) == []
