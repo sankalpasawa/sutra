@@ -7028,6 +7028,93 @@ def docs_generic():
     print(f"documents generic: {', '.join(docs)} from data equal OUTPUTS (texts byte for byte, mock functions, .docx export) ok")
 
 
+def deliverables_generic():
+    """Step 3 (docs/remove-hardcoding-plan.md): under J2_GENERIC=1 Adaptation's planner chooses what to build. Code only
+    checks the choice (a type in artifacts/types.json, needed types included and first, not empty, every deliverable
+    served); the judge asks T1 (R4) of every workflow; the deliverables, not the keywords, fix the stages; a bad first
+    choice is revised; one still bad stops the run; REAL_NOTE describes the chosen type. Mock answers set per test."""
+    import j2_realization as R
+    T = R.type_list()
+    assert [t["name"] for t in T] == ["prd", "hld", "lld", "website"] and next(t for t in T if t["name"] == "lld")["needs"] == ["prd", "hld"]
+    assert next(t for t in T if t["name"] == "website")["needs"] == [], "a page reads documents when built; it needs none"
+    brief = {"statement": "Write a hiring policy for a ten-person studio.", "brief": True}
+    plan = lambda names: json.loads(R.deliverable_mocks(brief, names)["plan"](0))
+    faults = lambda names: R.plan_faults(plan(names), brief, types=T)
+    assert faults(["prd"]) == [] and faults(["prd", "hld", "lld", "website"]) == [] and faults(["website"]) == []
+    assert any("'policy' is not a type in TYPES" in f for f in faults(["policy"])), faults(["policy"])
+    assert "deliverable lld needs hld first, which is not in deliverables" in faults(["prd", "lld"])
+    assert "deliverable hld is written from prd: put prd before it" in faults(["hld", "prd"])
+    assert "deliverables is empty: choose at least one type from TYPES" in faults([])
+    p = plan(["prd"])
+    p["workflows"][0]["serves"] = "website"
+    assert any("serves 'website'" in f for f in R.plan_faults(p, brief, types=T)) and \
+        "R4: deliverable prd has no workflow that serves it" in R.plan_faults(p, brief, types=T)
+    # flag off: the planner's format, task and checks are as before
+    assert R.plan_fmt() == R.PLAN_FMT and R.plan_fmt(revise=True) == R.REVISE_FMT and '"deliverables"' not in R.PLAN_FMT
+    assert '"deliverables"' in R.plan_fmt(T) and '"serves"' in R.plan_fmt(T, revise=True) and '"changes"' in R.plan_fmt(T, revise=True)
+    assert "TYPES you can build" in R.plan_task(brief, False, types=T) and R.plan_task(brief, False, types=T).startswith("BRIEF")
+    # the judge scores the choice: T1 for every workflow, and a "no" keeps the workflow below the gate
+    spec = R.judge_spec(plan(["prd", "hld"]), [], types=T)
+    assert all("T1" in q for q in spec.values()) and "T1" not in R.judge_spec(plan(["prd"]), [])["Build prd"]
+    s = R.settle(json.loads(R.mock_judge(spec, fail={"Build hld": ["T1"]}))["answers"][1], spec["Build hld"])
+    assert s["score"] < R.THRESHOLD and s["weakest"] == "deliverables" and s["checks"]["deliverables"] == "no", s
+    assert "deliverables" not in R.settle(None, R.judge_spec(plan(["prd"]), [])["Build prd"])["checks"], "flag off: same checks"
+
+    keep = os.environ.pop("J2_GENERIC", None)
+    try:
+        assert "**Deliverables.**" not in R.planner_system() and "DELIVERABLES" not in R.planner_system(), "flag off: the planning part as it was"
+        os.environ["J2_GENERIC"] = "1"
+        assert "**Deliverables.**" in R.planner_system()
+
+        def stages(text, answer=None, generic=True):
+            os.environ.pop("J2_GENERIC", None)
+            if generic:
+                os.environ["J2_GENERIC"] = "1"
+            run = j2.J2Run()
+            run.request, run.mock_deliverables = text, answer
+            ok = run._plan_stages()
+            return run, ok
+        # the deliverables drive the stages, whatever the brief's words
+        run, _ = stages(BREW_LAB, ["prd", "hld"])
+        assert run.stages == ["prd", "hld"] and run.docset == ["prd", "hld"] and run.output == "prd", run.stages
+        assert json.load(open(os.path.join(run.dir, "deliverables.json")))["deliverables"] == ["prd", "hld"]
+        run, _ = stages("Design docs for Campus Notes." + CAMPUS, ["website"])
+        assert run.stages == [] and run.output == "website" and not run.docset
+        run, _ = stages(BREW_LAB + " Write the design docs first.")      # offline default: the keyword logic's answer
+        assert run.stages == ["prd", "hld", "lld", "website"], run.stages
+        # "write a hiring policy": a website by default with the flag off; the planner's closest type with it on
+        run, _ = stages("Write a hiring policy for a ten-person studio.", generic=False)
+        assert run.stages == [] and run.output == "website"
+        run, _ = stages("Write a hiring policy for a ten-person studio.", ["prd"])
+        assert run.stages == ["prd"] and run.output == "prd" and run.doc, (run.stages, run.output)
+        # a bad choice is sent back and revised: unknown type, missing prerequisite, empty list
+        for bad, good in ((["policy"], ["prd"]), (["lld"], ["prd", "hld", "lld"]), ([], ["prd"])):
+            run, _ = stages("Write a hiring policy.", lambda i, b=bad, g=good: b if i == 0 else g)
+            assert run.stages == good, (bad, run.stages)
+            assert json.load(open(os.path.join(run.dir, "deliverables.json")))["plan_faults"] == []
+        # still bad after the revision: nothing J2 can build, the run stops before the charter
+        run = j2.J2Run()
+        run.mock_deliverables = ["policy"]
+        say(run, "Write a hiring policy.")
+        assert run.outcome == "Stopped: the plan chose nothing J2 can build." and not run.goal and not run.workflows, run.outcome
+        assert any("named no type J2 can build" in m["text"] for m in run.chat if m["who"] == "system")
+        # REAL_NOTE describes the chosen type, no longer "one section of the site"
+        run, _ = stages("Write a hiring policy.", ["prd"])
+        note = run._real_note()
+        assert "single-page site" not in note and "Product requirements (prd.md, a doc)" in note and "PRD" in note, note
+        run, _ = stages(BREW_LAB, ["website"])
+        assert "Website (site/index.html, a page)" in run._real_note()
+        os.environ.pop("J2_GENERIC", None)
+        assert run._real_note() == j2.J2Run.REAL_NOTE, "flag off: REAL_NOTE as it was"
+    finally:
+        os.environ.pop("J2_GENERIC", None)
+        if keep is not None:
+            os.environ["J2_GENERIC"] = keep
+    print("deliverables generic: the planner's deliverables drive the stages; unknown type, missing or late prerequisite, "
+          "empty list and unserved deliverable caught and revised; still bad stops the run; T1 judged; REAL_NOTE by type; "
+          "'write a hiring policy' no longer a website ok")
+
+
 def doc_unchanged():
     """The document golden: mock runs of a PRD, the design docs (PRD, HLD, LLD) and the design docs with the site after them
     (the LLD as the site's blueprint) give the same model calls (agent, system prompt, prompt), workflows, documents,
@@ -11884,6 +11971,7 @@ if __name__ == "__main__":
             saved_runs_render()
             website_generic()      # step 1: the website on data, J2_GENERIC=1
             docs_generic()         # step 2: the documents on data, and the document golden
+            deliverables_generic()      # step 3: Adaptation chooses what to build
         artifacts_tab()
         map_tab()
         map_every_workflow()
