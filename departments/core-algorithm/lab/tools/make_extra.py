@@ -14,6 +14,7 @@ source=json.loads((ROOT/'results'/'actual_run_records.json').read_text())
 runs=[r['outcome'] for r in source['cases'] if r['outcome']]
 def state_of(case_index):
     return State.from_packs([pack(n) for n in source['cases'][case_index]['packs']])
+SITE=next(i for i,c in enumerate(source['cases']) if c['id']=='28_website')
 pattern={'id':'R-PATTERN-ENQUIRY','slots':['S','B'],'head':'enquiry_complete_${S}',
          'branches':[['received_${S}','retrievable_${B}'],['inbox_record_${B}']],
          'source':'reviewed/pattern-catalogue','source_version':'1'}
@@ -33,8 +34,10 @@ source['meta_extensions']={
   # enquiry plan with the privacy rule (case 14), each turned into a runnable workflow shape + scaffold + page.
   'implementation':to_implementation(runs[6],state_of(6)),
   'implementation_enquiry':to_implementation(runs[14],state_of(14)),
+  # The website plan (case 28): four method steps with their dependency edges.
+  'implementation_website':to_implementation(source['cases'][SITE]['outcome'],state_of(SITE)),
   'stage_boundary':{'implemented':'Finite local rule interpreter, predeclared components, and a proposal-only implementation generator (workflow shape, atoms, scaffold, page)',
                     'proposed':'Knowledge extraction from unstructured information, true domain autonomy, real J2 adapter, running a generated workflow in the daemon, external effect verification, open-world federation, Native v1-v5 claims'}
 }
 (ROOT/'results'/'actual_run_records.json').write_text(json.dumps(source,indent=2,ensure_ascii=False)+'\n')
-print('ADDED five lenses: reviewed knowledge compilation, graph diff, reflection, proposed J2 projection, proposal-only implementation versions (2)')
+print('ADDED five lenses: reviewed knowledge compilation, graph diff, reflection, proposed J2 projection, proposal-only implementation versions (3)')

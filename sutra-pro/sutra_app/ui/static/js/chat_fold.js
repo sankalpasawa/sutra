@@ -7,6 +7,8 @@
      summarize(blocks)   {calls, kinds: {read, edit, run, search, web, other}, failed, hidden}
      line(blocks)        "12 tool calls: 8 read, 3 run, 1 failed" ("" when the turn made no tool call)
      fold(blocks, {settled})   the <details> row, or "" (streaming, or no tool call)
+     longText(raw, html, {limit, label})   a long text's html folded in ONE <details> whose summary names the text's `## ` headings ("Read the report
+                               (Findings, Changes, Outcome)"); a short text is returned as it is (D135: the finished report in the team's chat)
 
    A classic script with ONE global, ChatFold; in node it is module.exports. */
 (function (root) {
@@ -74,7 +76,34 @@
     return '<details class="cfold"><summary>' + esc(label) + '</summary><ul class="cfold-list">' + items.slice(0, SHOWN).join("") + more + "</ul></details>";
   }
 
-  const ChatFold = {summarize, line, fold, KINDS};
+  // A long TEXT folded (D135): the report a team wrote is read in its chat, but a page of it does not push the conversation away. `html` is the text already
+  // drawn by its own renderer (ChatMarkdown), so it is trusted here as every caller's html is; `raw` is only counted and read for its `## ` headings. A fold of
+  // a reading, never a summary by a model.
+  const TEXT_FOLD_AT = 1400;           // characters a text may have before it is folded
+  const HEADINGS_NAMED = 8;
+  const HEADING = /^##[ \t]+(.+?)[ \t]*#*[ \t]*$/gm;
+
+  function headings(raw) {
+    const names = [];
+    for (const m of text(raw).matchAll(HEADING)) {
+      const name = clean(m[1]);
+      if (name !== "" && !names.includes(name)) names.push(name);
+    }
+    return names;
+  }
+
+  function longText(raw, html, opts) {
+    const o = isObj(opts) ? opts : {};
+    const limit = Number.isFinite(o.limit) && o.limit > 0 ? o.limit : TEXT_FOLD_AT;
+    const body = text(html);
+    if (body === "" || text(raw).length <= limit) return body;
+    const names = headings(raw);
+    const label = (clean(o.label) || "Read the full text") +
+      (names.length ? " (" + names.slice(0, HEADINGS_NAMED).join(", ") + (names.length > HEADINGS_NAMED ? ", \u2026" : "") + ")" : "");
+    return '<details class="cfold cfold-text"><summary>' + esc(label) + "</summary>" + body + "</details>";
+  }
+
+  const ChatFold = {summarize, line, fold, longText, headings, KINDS, TEXT_FOLD_AT};
   if (typeof module === "object" && module !== null && module.exports) module.exports = ChatFold;
   else root.ChatFold = ChatFold;
 })(globalThis);

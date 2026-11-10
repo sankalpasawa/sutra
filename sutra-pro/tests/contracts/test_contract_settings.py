@@ -1,4 +1,4 @@
-"""Settings across sections (S1-contracts-03): the seven task keys the orchestrator validates, the two `engine.json` layers the engine
+"""Settings across sections (S1-contracts-03): the eight task keys the orchestrator validates, the two `engine.json` layers the engine
 host reads, the Settings routes that edit them, and the dangerous switches that stay out of every web path."""
 import json
 import os
@@ -18,16 +18,17 @@ from sutra_app.orchestrator.models import TaskSettings
 from .test_contract_world import World, clock, db, events, ids, settings, tenv, world  # noqa: F401  (fixtures used by name)
 
 PATH = "/api/engine/settings"
-GOOD = {"J2_OUTPUT": "lld", "J2_BUDGET": "55", "J2_BUDGET_CAP": "99", "J2_FIXES": "1", "J2_MEMORY": "0", "J2_SLIM": "0", "J2_RATES": "0"}
+GOOD = {"J2_OUTPUT": "lld", "J2_BUDGET": "55", "J2_BUDGET_CAP": "99", "J2_FIXES": "1", "J2_MEMORY": "0", "J2_SLIM": "0", "J2_RATES": "0",
+        "J2_DECIDE_FOR_ME": "1"}
 FIELD_OF = {env: name for name, env in ENV_NAMES.items()}
 
 
 # ---- the task keys: orchestrator (writer) against engine (reader) -----------------------------------------------------------------
 
-def test_the_seven_keys_are_the_same_list_on_both_sides():
+def test_the_eight_keys_are_the_same_list_on_both_sides():
     assert tuple(TaskSettings.model_fields) == TASK_SETTING_KEYS
-    assert len(TASK_SETTING_KEYS) == 7
-    assert [FIELD_OF[key] for key in TASK_SETTING_KEYS] == ["output", "budget", "budget_cap", "fixes", "memory", "slim", "rates"]
+    assert len(TASK_SETTING_KEYS) == 8
+    assert [FIELD_OF[key] for key in TASK_SETTING_KEYS] == ["output", "budget", "budget_cap", "fixes", "memory", "slim", "rates", "decide_for_me"]
 
 
 def test_what_the_orchestrator_accepts_the_engine_reads_as_the_same_values():
@@ -35,7 +36,7 @@ def test_what_the_orchestrator_accepts_the_engine_reads_as_the_same_values():
     assert task == GOOD
     effective = EngineSettings.layered({}, None, None, task)
     assert (effective.output, effective.budget, effective.budget_cap, effective.fixes) == ("lld", 55, 99, 1)
-    assert (effective.memory, effective.slim, effective.rates) == (False, False, False)
+    assert (effective.memory, effective.slim, effective.rates, effective.decide_for_me) == (False, False, False, True)
 
 
 @pytest.mark.parametrize("key, value, ok", [

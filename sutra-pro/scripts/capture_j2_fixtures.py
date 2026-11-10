@@ -1,18 +1,36 @@
 #!/usr/bin/env python3
-"""Capture the J2 fixtures and goldens for the UI tests from a J2 MOCK run (UI-0, docs/design/ui.md section 10).
+"""Capture the J2 fixtures and goldens for the UI tests from a J2 MOCK run (UI-0, docs/design/ui.md section 10; sync 4: docs/design/j2-sync-4.md 4.8).
 
-    scripts/py scripts/capture_j2_fixtures.py --j2 /path/to/J2_Prototype --j2-python /path/to/J2_Prototype/venv/bin/python
-    scripts/py scripts/capture_j2_fixtures.py --j2 ... --j2-python ... --check      # drift check, writes nothing
+The one J2 source is the folder `prototypes/j2` of this repository, at the commit that `scripts/vendor_j2.py` pins (its BASELINE),
+extracted into a new, empty folder outside the repository. A `git archive` folder is not a repository, so the commit is given by --commit:
 
-What it does, in a scratch folder (the J2 checkout is read-only here and is checked to be unchanged afterwards):
+    J2SRC="$(mktemp -d)"
+    git archive <commit> prototypes/j2 | tar -x --strip-components=2 -C "$J2SRC"
+    scripts/py scripts/capture_j2_fixtures.py --j2 "$J2SRC" --commit <commit>
+    scripts/py scripts/capture_j2_fixtures.py --j2 "$J2SRC" --commit <commit> --check      # drift check, writes nothing
+
+J2's server runs on Sutra's own Python: --j2-python defaults to the one that runs this script (the project's shared virtualenv under
+`scripts/py`). J2's mock mode needs only the standard library and pydantic: J2 imports `anthropic` and `google.genai` inside the functions
+that make live model calls, so a capture never needs them.
+
+What it does, in a scratch folder (the extraction is read-only here and is checked to be unchanged afterwards):
   1. starts J2's own `j2_server.py` with `STUDIO_MOCK=1` on a free loopback port, in a scrubbed environment and under a
      frozen clock, so two captures give the same bytes: no model, no network, no Chrome (`J2_CHROME=none`);
   2. sends one brief to `/api/say` and waits until the team has answered;
-  3. saves what every J2 read route answered, byte for byte (`state.json`, `map.json`, ..., `agent-<who>.json`,
-     `site-latest.html`), the preview replies, and the inputs of J2's two node harnesses;
-  4. runs `j2_ui_render.js` on J2's own `j2_ui.html` (twice, the outputs must be equal) and `j2_graph_layout.js`, and
-     saves the outputs as `golden-<key>.json` (the goldens that `page_render.test.js` of UI-2 compares with);
-  5. writes `MANIFEST.json` (J2 commit, brief, size and sha256 of every file).
+  3. saves what every J2 read route answered, byte for byte (`state.json`, `map.json`, `plan-map.json`, `catalog.json`,
+     `artifacts-groups.json`, `runlist.json`, `changes.json`, ..., `agent-<who>.json`, `site-latest.html`), the feed of each of J2's six
+     functions (`activity-<who>.json`; `activity-unknown.json` for a name J2 does not know), J2's answer to one question for each of the
+     six (`ask-<who>.json`: `POST /api/ask`, which answers from the run's records in mock mode), the Studio view's records (one per part:
+     `record-<sec>.json`, one per deliverable: `record-art-<name>.json`) and readable pages (`doc-prd.html`, `view-site.html`,
+     `view-goal.html`), the preview replies, and the inputs of J2's two node harnesses. (`POST /api/settings`, the Decide for me switch,
+     is not captured: it changes the live run and answers with the switch's own value.) The one change to J2's bytes is rule R5 (patch
+     P15 of the vendoring): the home-folder paths of J2's own
+     development machine that its seed library index records (`runs[].library`, shown by `/api/catalog`) become `not recorded`; a finished
+     file that still holds an absolute home-folder path stops the capture;
+  4. runs `j2_ui_render.js` on J2's own `j2_ui.html` (twice, the outputs must be equal) and `j2_graph_layout.js`, with node's clock frozen
+     (the page puts `Date.now()` into the preview's address), and saves the outputs as `golden-<key>.json` (the goldens that
+     `page_render.test.js` of UI-2 compares with);
+  5. writes `MANIFEST.json` (the commit, brief, size and sha256 of every file).
 The files go to `tests/ui/fixtures/j2/`. The state must stay under `--max-state-bytes` (default 150,000).
 `--check` captures into a scratch folder and compares byte for byte with the committed files: exit 1 when J2 has drifted. A J2 that
 moved to a new commit but gives the same bytes is not drift: the check says so and exits 0 (only the manifest's `j2_commit` differs).
@@ -32,6 +50,7 @@ import sys
 import tempfile
 import time
 import urllib.error
+import urllib.parse
 import urllib.request
 from pathlib import Path
 from typing import Iterator
@@ -49,26 +68,54 @@ MAX_STATE_BYTES = 150_000
 STOP_GRACE_S = 5.0  # how long J2's server gets to leave after SIGTERM, and again after SIGKILL
 FIXED_TIME = 1793786404  # 2026-11-04T10:00:04Z: the clock the J2 process sees, so a re-capture gives the same bytes
 FUNCTIONS = ("identity", "adaptation", "priority", "coordination", "audit")
+J2_FUNCS = (*FUNCTIONS, "validator")  # J2's own `j2_agent.FUNCS`: the six names `/api/activity` and `/api/ask` serve (the validator is code)
 AGENT_WHO = (*FUNCTIONS, "W-1", "nobody")  # `nobody` is J2's answer for an agent it does not know (found: false)
-GOLDEN_KEYS = ("simple", "sprog", "workflows", "rail", "needs", "map", "agent")  # the outputs page_render.test.js compares
+ACTIVITY_WHO = (*J2_FUNCS, "nobody")  # the same `nobody` for the feed: activity/1 with found: false
+ASK_QUESTION = "Which AI calls did you make, and why?"  # one question for every function: each of the six has records that answer it
+FEED_WHO = "adaptation"  # the function whose feed the render harness is given (plans, judgements and revisions: every kind of event)
+# the outputs page_render.test.js compares: the seven of the first capture, then what J2's harness prints since the Simple view and the
+# chat panel were redesigned (finish .. needids), then the rail's status, the Adaptation Map, the message-to-function mapping and the
+# feed, then what the Studio redesign of the Simple view added (the team at work, the plan, the team list, the status line, the output
+# tabs, the files, the parts, the tabs and the question drawn inside the work)
+GOLDEN_KEYS = ("simple", "sprog", "workflows", "rail", "needs", "map", "agent",
+               "finish", "journey", "journeyhtml", "sframe", "needids", "railst", "planmap", "msgfns", "feed",
+               "teamwork", "plan", "team", "status", "views", "files", "parts", "tabs", "inline")
 REQUIRED_J2_FILES = ("j2_server.py", "j2_ui.html", "j2_ui_render.js", "j2_graph_layout.js")
+COMMIT_PATTERN = re.compile(r"[0-9a-f]{40}")  # --commit is a full commit id: the pin is an exact one
+# R5: no absolute home-folder path in a file of this product. J2's seed library index records, for six of J2's own development runs, the
+# machine they ran on (`"library": "/<home folder>/<login>/.../library"`) and `/api/catalog` passes the field through. Nothing reads it.
+# The capture makes those values `not recorded`, which is the rule of patch P15 of scripts/vendor_j2.py for the vendored seed, so the
+# catalog fixture equals what the app answers for the same library. HOME_PATH is the guard behind it: no finished file may hold any other.
+HOME_LIBRARY = re.compile(rb'"library": "/(?:Users|home)/[^"]*"')
+NOT_RECORDED = b'"library": "not recorded"'
+HOME_PATH = re.compile(rb"(?:/Users|/home)/[^/\s\"'\\]+/")
 
 # fixture file -> the J2 read route it holds, byte for byte
 ROUTE_FILES = {
     "state.json": "/api/state",
     "runs.json": "/api/runs",
+    "runlist.json": "/api/runlist",
+    "changes.json": "/api/changes",
     "map.json": "/api/map",
     "plan.json": "/api/plan",
+    "plan-map.json": "/api/plan-map",
     "docs.json": "/api/docs",
     "library.json": "/api/library",
+    "catalog.json": "/api/catalog",
     "run-templates.json": "/api/run-templates",
     "artifacts.json": "/api/artifacts",
     "artifacts-tree.json": "/api/artifacts/tree",
+    "artifacts-groups.json": "/api/artifacts/groups",
     "board.json": "/api/board",
     "story.json": "/api/story",
     "audits.json": "/api/audits",
     "refs.json": "/api/refs",
     "site-latest.html": "/site/latest",
+    # the Studio view's readable pages: a document's tab (the mock website run wrote none: J2's "not written yet" page), the site and one
+    # record of the run, as `/view?name=` shows a file of the run's artifact list
+    "doc-prd.html": "/doc/prd",
+    "view-site.html": "/view?name=site/index.html",
+    "view-goal.html": "/view?name=goal.json",
 }
 
 # A launcher that freezes the clock before J2 is imported. Local time is UTC and every timestamp is FIXED_TIME,
@@ -113,6 +160,14 @@ sys.path.insert(0, os.path.dirname(script))
 runpy.run_path(script, run_name="__main__")
 '''
 
+# Preloaded into node (`--require`) before J2's render harness. The page writes `Date.now()` into the preview iframe's address
+# (`/site/v5?t=<ms>`), so without this every run of the harness prints another `sframe`. The harness hands its stub page node's own
+# `Date`, so the page sees this clock; nothing else in the page's output depends on the time.
+NODE_CLOCK = '''\
+// frozen clock for J2's render harness (scripts/capture_j2_fixtures.py): Date.now() is always the capture's FIXED_TIME
+Date.now = () => %(fixed_ms)d;
+'''
+
 
 class CaptureError(RuntimeError):
     """The capture cannot go on; the message says why."""
@@ -122,10 +177,27 @@ class CaptureError(RuntimeError):
 # Small pure helpers
 # ---------------------------------------------------------------------------------------------------------------------
 def rail_tabs(page_html: str) -> list[str]:
-    """The tab names of the rail's sections, as J2's own tests read them from the page (the harness cannot see the DOM)."""
+    """The tab names of the rail's sections, as J2's own tests read them from the page (the harness cannot see the DOM). The page keeps
+    every tab button in the rail's panel (`#railsub`), the Map's included: the Map has its own rail item, so its tab is not listed."""
     start = page_html.index('<nav class="rail tabs"')
     nav = page_html[start:page_html.index("</nav>", start)]
-    return re.findall(r'data-tab="(\w+)"', nav[nav.index('id="railsub"'):])
+    return [tab for tab in re.findall(r'data-tab="(\w+)"', nav[nav.index('id="railsub"'):]) if tab != "map"]
+
+
+def record_secs(state_json: bytes) -> list[str]:
+    """The `sec` of every part of the Studio view (`state.studio.parts`), in order: each has a record at `/api/record?sec=`."""
+    parts = (json.loads(state_json).get("studio") or {}).get("parts") or []
+    return [str(part["sec"]) for part in parts if part.get("sec")]
+
+
+def record_arts(artifacts_json: bytes) -> list[str]:
+    """The name of every deliverable J2 lists (`/api/artifacts`), in order: each has a record at `/api/record?art=`."""
+    return [str(row["name"]) for row in json.loads(artifacts_json).get("deliverables") or [] if row.get("name")]
+
+
+def file_part(text: str) -> str:
+    """A name as part of a file name: letters, digits, dots, dashes and underscores kept, every other run of characters one dash."""
+    return re.sub(r"[^A-Za-z0-9._-]+", "-", text).strip("-")
 
 
 def atom_ids(state: dict) -> list[str]:
@@ -145,6 +217,19 @@ def sha256_hex(data: bytes) -> str:
 def dump_json(value) -> bytes:
     """Derived files: compact JSON, UTF-8, one line (the route files keep J2's own bytes)."""
     return json.dumps(value, ensure_ascii=False, separators=(",", ":")).encode("utf-8")
+
+
+def scrub_home_paths(body: bytes) -> bytes:
+    """A J2 reply with the absolute home-folder paths of J2's own development machine made `not recorded` (HOME_LIBRARY); every other
+    byte as J2 answered it."""
+    return HOME_LIBRARY.sub(NOT_RECORDED, body)
+
+
+def refuse_home_paths(files: dict[str, bytes]) -> None:
+    """R5: stop the capture when any finished file still holds an absolute home-folder path (the guard behind `scrub_home_paths`)."""
+    leaks = sorted(name for name, data in files.items() if HOME_PATH.search(data))
+    if leaks:
+        raise CaptureError("an absolute home-folder path (rule R5: none in any file of this product) is in: " + ", ".join(leaks))
 
 
 def free_port() -> int:
@@ -184,8 +269,20 @@ def git(j2: Path, *args: str) -> str | None:
 
 
 def checkout_state(j2: Path) -> str | None:
-    """What `git status` says about the J2 checkout, to prove afterwards that nothing was written there."""
+    """What `git status` says about the J2 folder, to prove afterwards that nothing was written there (None when it is not a repository:
+    an extraction made by `git archive` is not one, and `folder_digest` is what vouches for it)."""
     return git(j2, "status", "--porcelain", "--untracked-files=all")
+
+
+def folder_digest(folder: Path) -> dict[str, str]:
+    """{relative path: sha256} of every file under `folder`, a `.git` folder aside: what the folder holds, so that a capture can prove
+    it wrote nothing there even when the folder is an extraction and has no repository to ask."""
+    digest: dict[str, str] = {}
+    for path in sorted(folder.rglob("*")):
+        relative = path.relative_to(folder)
+        if ".git" not in relative.parts and path.is_file():
+            digest[relative.as_posix()] = sha256_hex(path.read_bytes())
+    return digest
 
 
 def check_checkout(j2: Path, j2_python: str, node: str | None) -> None:
@@ -193,7 +290,7 @@ def check_checkout(j2: Path, j2_python: str, node: str | None) -> None:
         raise CaptureError(f"--j2 {j2} is not a folder")
     missing = [name for name in REQUIRED_J2_FILES if not (j2 / name).is_file()]
     if missing:
-        raise CaptureError(f"{j2} is not a J2 checkout: missing {', '.join(missing)}")
+        raise CaptureError(f"{j2} is not an extraction of prototypes/j2: missing {', '.join(missing)}")
     if not (os.path.isfile(j2_python) and os.access(j2_python, os.X_OK)):
         raise CaptureError(f"--j2-python {j2_python} is not an executable file")
     if not node:
@@ -270,15 +367,19 @@ class J2Server:
         except urllib.error.HTTPError as exc:
             return exc.code, exc.read()
 
-    def post(self, path: str, body: dict) -> int:
+    def post_json(self, path: str, body: dict) -> tuple[int, bytes]:
+        """Status and raw body of a POST; a 4xx is an answer, not an error."""
         request = urllib.request.Request(self.base + path, data=json.dumps(body).encode(), method="POST",
                                          headers={"Content-Type": "application/json"})
         opener = urllib.request.build_opener(urllib.request.ProxyHandler({}))
         try:
             with opener.open(request, timeout=30) as response:
-                return response.status
+                return response.status, response.read()
         except urllib.error.HTTPError as exc:
-            return exc.code
+            return exc.code, exc.read()
+
+    def post(self, path: str, body: dict) -> int:
+        return self.post_json(path, body)[0]
 
 
 def run_team(server: J2Server, brief: str, timeout: float) -> None:
@@ -307,13 +408,14 @@ def run_team(server: J2Server, brief: str, timeout: float) -> None:
 # Collecting and deriving
 # ---------------------------------------------------------------------------------------------------------------------
 def collect_routes(server: J2Server, max_state_bytes: int) -> dict[str, bytes]:
-    """Every read route, byte for byte, plus one agent view per `AGENT_WHO`."""
+    """Every read route, byte for byte, plus one agent view per `AGENT_WHO`, one feed per `ACTIVITY_WHO` and J2's answer to `ASK_QUESTION`
+    from each of its six functions. `POST /api/ask` writes nothing in J2 (and in mock mode it answers from the records, with no model)."""
     files: dict[str, bytes] = {}
     for name, route in ROUTE_FILES.items():
         code, body = server.get(route)
         if code != 200:
             raise CaptureError(f"GET {route} answered {code}")
-        files[name] = body
+        files[name] = scrub_home_paths(body)
     if len(files["state.json"]) > max_state_bytes:
         raise CaptureError(f"the state is {len(files['state.json'])} bytes, over --max-state-bytes {max_state_bytes}: use a shorter --brief")
     for who in AGENT_WHO:
@@ -321,6 +423,26 @@ def collect_routes(server: J2Server, max_state_bytes: int) -> dict[str, bytes]:
         if code != 200:
             raise CaptureError(f"GET /api/agent?who={who} answered {code}")
         files["agent-unknown.json" if who == "nobody" else f"agent-{who}.json"] = body
+    for who in ACTIVITY_WHO:
+        code, body = server.get(f"/api/activity?who={who}")
+        if code != 200:
+            raise CaptureError(f"GET /api/activity?who={who} answered {code}")
+        files["activity-unknown.json" if who == "nobody" else f"activity-{who}.json"] = body
+    for sec in record_secs(files["state.json"]):  # the record behind each part the Studio view draws, and behind each deliverable
+        code, body = server.get(f"/api/record?sec={urllib.parse.quote(sec, safe='')}")
+        if code != 200:
+            raise CaptureError(f"GET /api/record?sec={sec} answered {code}")
+        files[f"record-{file_part(sec)}.json"] = body
+    for name in record_arts(files["artifacts.json"]):
+        code, body = server.get(f"/api/record?art={urllib.parse.quote(name, safe='')}")
+        if code != 200:
+            raise CaptureError(f"GET /api/record?art={name} answered {code}")
+        files[f"record-art-{file_part(name)}.json"] = body
+    for who in J2_FUNCS:
+        code, body = server.post_json("/api/ask", {"who": who, "q": ASK_QUESTION, "run": ""})
+        if code != 200:
+            raise CaptureError(f"POST /api/ask (who {who}) answered {code}")
+        files[f"ask-{who}.json"] = body
     return files
 
 
@@ -335,25 +457,33 @@ def collect_previews(server: J2Server, state: dict) -> dict[str, dict]:
     return replies
 
 
-def run_node(node: str, script: Path, args: list[str], work: Path) -> bytes:
-    done = subprocess.run([node, str(script), *args], capture_output=True, cwd=work, timeout=120)
+def run_node(node: str, script: Path, args: list[str], work: Path, preload: Path | None = None) -> bytes:
+    command = [node, *(["--require", str(preload)] if preload else []), str(script), *args]
+    done = subprocess.run(command, capture_output=True, cwd=work, timeout=120)
     if done.returncode != 0:
         raise CaptureError(f"node {script.name} failed: {done.stderr.decode(errors='replace')[-800:]}")
     return done.stdout
 
 
 def derive(j2: Path, node: str, routes: dict[str, bytes], preview_replies: dict[str, dict], work: Path) -> dict[str, bytes]:
-    """The harness inputs and the goldens, made by J2's own harnesses on J2's own page."""
+    """The harness inputs and the goldens, made by J2's own harnesses on J2's own page. The inputs are what J2's own routes answered:
+    the Map, the plan and its map, the Artifacts tree and groups, the feed of `FEED_WHO`, the build journey's change requests (the
+    journey is shown: `journey: true`), the chat's messages (for the message-to-function mapping) and the Identity agent's view."""
     state = json.loads(routes["state.json"])
     map_ = json.loads(routes["map.json"])
     previews = {atom: (reply.get("html") or "") for atom, reply in preview_replies.items()}
-    listing = json.loads(routes["artifacts.json"])
     render_docs = {
         "docs": json.loads(routes["docs.json"]),
         "map": map_,
         "railtabs": rail_tabs((j2 / "j2_ui.html").read_text(encoding="utf-8")),
         "plan": json.loads(routes["plan.json"]),
-        "artifacts": {**listing, "tree": json.loads(routes["artifacts-tree.json"])},
+        "planmap": json.loads(routes["plan-map.json"]),
+        "activity": json.loads(routes[f"activity-{FEED_WHO}.json"]),
+        "changes": json.loads(routes["changes.json"]).get("changes") or [],
+        "journey": True,
+        "msgs": state.get("chat") or [],
+        "arts": json.loads(routes["artifacts.json"]),
+        "artifacts": {"tree": json.loads(routes["artifacts-tree.json"]), "groups": json.loads(routes["artifacts-groups.json"])},
         "agent": json.loads(routes["agent-identity.json"]),
     }
     maps = {map_.get("run") or "run": map_}
@@ -368,10 +498,12 @@ def derive(j2: Path, node: str, routes: dict[str, bytes], preview_replies: dict[
     for name in ("previews.json", "render-docs.json", "maps.json"):
         (inputs / name).write_bytes(derived[name])
     (inputs / "state.json").write_bytes(routes["state.json"])
+    clock = inputs / "frozen_clock.js"
+    clock.write_text(NODE_CLOCK % {"fixed_ms": FIXED_TIME * 1000}, encoding="utf-8")
     page = str(j2 / "j2_ui.html")
     render_args = [page, str(inputs / "state.json"), str(inputs / "previews.json"), str(inputs / "render-docs.json")]
-    first = run_node(node, j2 / "j2_ui_render.js", render_args, work)
-    second = run_node(node, j2 / "j2_ui_render.js", render_args, work)
+    first = run_node(node, j2 / "j2_ui_render.js", render_args, work, preload=clock)
+    second = run_node(node, j2 / "j2_ui_render.js", render_args, work, preload=clock)
     if first != second:
         raise CaptureError("J2's render harness gave two different outputs for one input: the goldens would not be stable")
     rendered = json.loads(first)
@@ -384,10 +516,11 @@ def derive(j2: Path, node: str, routes: dict[str, bytes], preview_replies: dict[
     return derived
 
 
-def manifest(j2: Path, brief: str, files: dict[str, bytes]) -> bytes:
+def manifest(j2: Path, brief: str, files: dict[str, bytes], commit: str | None = None) -> bytes:
+    """MANIFEST.json. The commit is the one given (an extraction has no repository to ask), else the folder's own HEAD, else none."""
     body = {
         "schema": "j2-fixtures/1",
-        "j2_commit": (git(j2, "rev-parse", "HEAD") or "").strip() or None,
+        "j2_commit": commit or (git(j2, "rev-parse", "HEAD") or "").strip() or None,
         "mock": True,
         "brief": brief,
         "clock": FIXED_TIME,
@@ -406,10 +539,11 @@ def manifest(j2: Path, brief: str, files: dict[str, bytes]) -> bytes:
 # The whole capture, writing and checking
 # ---------------------------------------------------------------------------------------------------------------------
 def capture(j2: Path, j2_python: str, node: str | None, brief: str, max_state_bytes: int, timeout: float,
-            log=print) -> dict[str, bytes]:
-    """Run the mock team and return every fixture file as {name: bytes}. Writes nothing in the J2 checkout."""
+            log=print, commit: str | None = None) -> dict[str, bytes]:
+    """Run the mock team and return every fixture file as {name: bytes}. Writes nothing in the J2 folder: `git status` (a repository)
+    and the content of every file (an extraction) are compared before and after."""
     check_checkout(j2, j2_python, node)
-    before = checkout_state(j2)
+    before, before_files = checkout_state(j2), folder_digest(j2)
     with tempfile.TemporaryDirectory(prefix="j2-capture-") as scratch:
         work = Path(scratch)
         with J2Server(j2, j2_python, work) as server:
@@ -418,11 +552,15 @@ def capture(j2: Path, j2_python: str, node: str | None, brief: str, max_state_by
             routes = collect_routes(server, max_state_bytes)
             previews = collect_previews(server, json.loads(routes["state.json"]))
         derived = derive(j2, node, routes, previews, work)
-    after = checkout_state(j2)
+    after, after_files = checkout_state(j2), folder_digest(j2)
     if before != after:
         raise CaptureError(f"the J2 checkout changed during the capture (git status before and after differ):\n{before}\n--\n{after}")
+    if before_files != after_files:
+        names = sorted(n for n in before_files.keys() | after_files.keys() if before_files.get(n) != after_files.get(n))
+        raise CaptureError(f"the J2 folder changed during the capture (files added, removed or changed): {', '.join(names)}")
     files = {**routes, **derived}
-    files["MANIFEST.json"] = manifest(j2, brief, files)
+    refuse_home_paths(files)
+    files["MANIFEST.json"] = manifest(j2, brief, files, commit)
     return files
 
 
@@ -460,10 +598,21 @@ def commit_only_moved(have: bytes, now: bytes) -> tuple[str | None, str | None] 
     return old.get("j2_commit"), new.get("j2_commit")
 
 
+def commit_id(text: str) -> str:
+    """argparse type of --commit: a full lower-case commit id (the pin is an exact one, not a name that moves)."""
+    if not COMMIT_PATTERN.fullmatch(text):
+        raise argparse.ArgumentTypeError(f"{text!r} is not a full commit id (40 lower-case hex digits)")
+    return text
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description="Capture the J2 fixtures and goldens of the UI tests from a J2 mock run.")
-    parser.add_argument("--j2", required=True, type=Path, help="the J2 checkout (read-only here)")
-    parser.add_argument("--j2-python", required=True, help="the Python of J2's own virtualenv")
+    parser.add_argument("--j2", required=True, type=Path,
+                        help="an extraction of prototypes/j2 at the pinned commit (git archive <commit> prototypes/j2 | tar -x --strip-components=2 -C <new empty folder>); read-only here")
+    parser.add_argument("--j2-python", default=sys.executable,
+                        help="the Python that runs J2's server (default: the one running this script, the project's own virtualenv under scripts/py; J2's mock mode needs only the standard library and pydantic)")
+    parser.add_argument("--commit", type=commit_id, default=None,
+                        help="the commit the extraction was made from, recorded in the manifest (an extraction is not a repository, so J2's HEAD cannot be asked)")
     parser.add_argument("--out", type=Path, default=DEFAULT_OUT, help="where the files go (default tests/ui/fixtures/j2)")
     parser.add_argument("--brief", default=BRIEF, help="the one message sent to J2's team")
     parser.add_argument("--max-state-bytes", type=int, default=MAX_STATE_BYTES)
@@ -476,7 +625,7 @@ def build_parser() -> argparse.ArgumentParser:
 def main(argv: list[str] | None = None) -> int:
     args = build_parser().parse_args(argv)
     try:
-        files = capture(args.j2.resolve(), args.j2_python, args.node, args.brief, args.max_state_bytes, args.timeout)
+        files = capture(args.j2.resolve(), args.j2_python, args.node, args.brief, args.max_state_bytes, args.timeout, commit=args.commit)
     except CaptureError as exc:
         print(f"capture failed: {exc}", file=sys.stderr)
         return 1
@@ -485,7 +634,10 @@ def main(argv: list[str] | None = None) -> int:
         moved = commit_only_moved((args.out / "MANIFEST.json").read_bytes(), files["MANIFEST.json"]) if differ == ["MANIFEST.json (changed)"] else None
         if moved:
             captured, current = ((c or "none")[:7] for c in moved)
-            print(f"ok: {len(files) - 1} files equal a fresh capture; J2 moved on ({captured} captured, {current} now) and gives the same bytes")
+            if moved[1] is None:      # no --commit and no repository: the commit cannot be compared, the bytes are what counts
+                print(f"ok: {len(files) - 1} files equal a fresh capture (no --commit given: the committed manifest's commit {captured} is not compared)")
+            else:
+                print(f"ok: {len(files) - 1} files equal a fresh capture; J2 moved on ({captured} captured, {current} now) and gives the same bytes")
             return 0
         if differ:
             print("the J2 fixtures have drifted from a fresh capture:\n  " + "\n  ".join(differ), file=sys.stderr)

@@ -6,7 +6,7 @@ writer and this class the tolerant reader (`extra="ignore"`): two classes of one
 `EngineSettings` holds every J2 flag with J2's default (D18). The host resolves them in this order, later wins:
 
     defaults  <  data/engine.json  <  J2_* in the process environment (dev and tests)  <  data/departments/<id>/engine.json
-              <  the task's settings (the seven keys `TASK_SETTING_KEYS`; the orchestrator validates them)
+              <  the task's settings (the eight keys `TASK_SETTING_KEYS`; the orchestrator validates them)
 
 writes the result to `<run>/settings.json`, exports `to_env()` before it imports J2, and never reads the layers again.
 The files hold field names (`{"board": true}`); the environment and the task hold J2's variable names (`J2_BOARD=1`).
@@ -37,7 +37,7 @@ CONNECTORS = ("auto", "claude", "codex", "stub")
 # (`capabilities.select_output`, decided once by the host before J2 starts); the others name an output of `j2.OUTPUTS`. The one list that
 # `EngineSettings.output`, the task's `J2_OUTPUT` and the start page's command validate against (D129).
 OUTPUT_NAMES = ("auto", "website", "prd", "hld", "lld", "project")
-TASK_SETTING_KEYS = ("J2_OUTPUT", "J2_BUDGET", "J2_BUDGET_CAP", "J2_FIXES", "J2_MEMORY", "J2_SLIM", "J2_RATES")
+TASK_SETTING_KEYS = ("J2_OUTPUT", "J2_BUDGET", "J2_BUDGET_CAP", "J2_FIXES", "J2_MEMORY", "J2_SLIM", "J2_RATES", "J2_DECIDE_FOR_ME")
 
 
 def is_dept_id(value: object) -> bool:
@@ -177,6 +177,7 @@ class EngineSettings(BaseModel):
     force_question: str = Field("", max_length=1000)
     memory_test_lessons: bool = False
     workspace: Literal["auto", "off"] = "auto"      # the workspace capability (D127): agents read the owner's working folder; "off" gives them none
+    decide_for_me: bool = False     # J2 sync 4: the team answers its own questions with the suggested option; the Simple view's switch (J2_DECIDE_FOR_ME)
 
     def to_env(self) -> dict[str, str]:
         """The J2 environment for these settings: `J2_<FIELD>` with "1"/"0" for flags; empty values (an empty string or

@@ -691,13 +691,100 @@ def test_favicon_answers_204(client):
 
 
 def test_the_routes_answer_get_and_head_only(client):
-    for path in ("/", "/d/web/", "/d/web", "/console", "/favicon.ico"):
+    for path in ("/", "/d/web/", "/d/web", "/d/web/library", "/d/web/library/", "/console", "/favicon.ico"):
         for method in ("POST", "PUT", "PATCH", "DELETE"):
             assert client.request(method, path).status_code == 405, (method, path)
     router = build_router(token=TOKEN, department=Lookup(), version=VERSION)
-    assert {route.path for route in router.routes} == {"/", "/d/{dept}", "/d/{dept}/", "/console", "/favicon.ico"}
+    assert {route.path for route in router.routes} == {"/", "/d/{dept}", "/d/{dept}/", "/d/{dept}/library", "/d/{dept}/library/", "/console",
+                                                       "/favicon.ico"}
     for route in router.routes:
         assert set(route.methods) == {"GET", "HEAD"}
+
+
+# ------------------------------------------------------------------------------------------------------------------
+# The team's template library: /d/{dept}/library (J2 sync 4, D141)
+# ------------------------------------------------------------------------------------------------------------------
+def test_the_library_page_is_the_team_page_under_its_own_path_with_the_same_boot_block_and_policy(client):
+    page = client.get("/d/web/")
+    for path in ("/d/web/library", "/d/web/library"):
+        for response in (client.get(path), client.head(path)):
+            assert response.status_code == 200
+            assert response.headers["content-type"] == "text/html; charset=utf-8"
+            assert response.headers["cache-control"] == "no-store"
+            assert response.headers["x-content-type-options"] == "nosniff"
+            assert response.headers["referrer-policy"] == "no-referrer"
+            assert response.headers["content-security-policy"] == expected_csp(J2_HASHES)
+    library = client.get("/d/web/library")
+    assert library.text == page.text                                  # one page file, one boot block: J2's script tells the two apart by the path
+    assert boot_of(library.text) == {"page": "dept", "token": TOKEN, "dept": "web", "dept_label": "Web", "archived": False, "note": "",
+                                     "version": VERSION}
+    assert client.head("/d/web/library").content == b"" and MARKER not in library.text
+    assert library.headers["content-security-policy"] == page.headers["content-security-policy"]
+
+
+def test_the_library_page_asks_the_lookup_about_the_team_in_its_path_and_an_archived_team_opens_it_too(client):
+    assert client.get("/d/docs/library").status_code == 200
+    assert client.lookup.asked == ["docs"]
+    old = client.get("/d/old/library")
+    assert old.status_code == 200 and boot_of(old.text)["archived"] is True and boot_of(old.text)["dept"] == "old"
+    assert boot_of(client.get("/d/evil/library").text)["dept_label"].startswith("</script>")          # the escaping of the boot block holds here too
+    assert client.get("/d/evil/library").text.count("</script>") == client.get("/d/evil/").text.count("</script>")
+
+
+@pytest.mark.parametrize("dept", ["nosuchteam", "a%20b", "%2e%2e", "web%0A", "%3Cscript%3E", "x" * 121, "caf%C3%A9"])
+def test_an_unknown_or_malformed_team_has_no_library_page_either(client, dept):
+    response = client.get(f"/d/{dept}/library")
+    assert response.status_code == 404
+    assert "No team called" in response.text and "<script" not in response.text.lower()
+    assert response.headers["content-security-policy"] == expected_csp() and response.headers["cache-control"] == "no-store"
+    assert MARKER not in response.text and "sutra-boot" not in response.text and TOKEN not in response.text
+
+
+def test_the_library_path_with_a_slash_redirects_with_308_and_keeps_the_query(client):
+    response = client.get("/d/web/library/")
+    assert response.status_code == 308 and response.headers["location"] == "/d/web/library"
+    assert response.headers["cache-control"] == "no-store"
+    for name in ("content-security-policy", "x-content-type-options", "referrer-policy"):
+        assert name not in response.headers
+    assert response.content == b""
+    query = "view=artifact&business=Still%20Point&q=%2F+x&mock=hide&open=prd/problem/generic/v1&tab=agent"
+    assert client.get(f"/d/web/library/?{query}").headers["location"] == f"/d/web/library?{query}"
+    assert client.head("/d/web/library/?q=1").headers["location"] == "/d/web/library?q=1"
+    assert client.get("/d/a:b/library/").headers["location"] == "/d/a:b/library"
+    assert client.get("/d/a%20b/library/").headers["location"] == "/d/a%20b/library"
+    assert client.get("/d/a%3Fb/library/?x=1").headers["location"] == "/d/a%3Fb/library?x=1"
+    assert client.lookup.asked == []                                  # the redirect decides nothing; the page it points to does
+
+
+def test_only_the_team_has_a_library_page_there_is_no_global_one_and_nothing_below_it(client):
+    for path in ("/library", "/library/", "/d/web/library/x", "/d/web/library/x/", "/d/web/library//", "/d//library", "/d/web/libraries",
+                 "/d/web/Library", "/d/web/library.html"):
+        assert client.get(path).status_code in (404, 307, 308), path
+    assert client.get("/library").status_code == 404 and client.get("/d/web/library/x").status_code == 404
+    assert client.lookup.asked == []
+
+
+def test_a_team_called_library_keeps_its_page_and_has_a_library_page_of_its_own(pages, static):
+    app, lookup = make_app(pages, static, Lookup({"library": Row("library", "Library")}))
+    client = TestClient(app, follow_redirects=False)
+    assert client.get("/d/library/").status_code == 200 and boot_of(client.get("/d/library/").text)["dept"] == "library"
+    assert client.get("/d/library/library").status_code == 200 and boot_of(client.get("/d/library/library").text)["dept"] == "library"
+    assert client.get("/d/library").headers["location"] == "/d/library/"
+    assert client.get("/d/library/library/").headers["location"] == "/d/library/library"
+    assert lookup.asked == ["library"] * 4                              # the two GETs of each page; the redirects ask nobody
+    assert [name for path, _, name in route_table(app) if path.startswith("/d/")] == [
+        "ui_dept_redirect", "ui_dept", "ui_dept_library", "ui_dept_library_redirect"]
+
+
+def test_the_library_page_is_read_and_hashed_once_with_the_team_page(pages, static, monkeypatch):
+    reads = []
+    original = routes_mod.csp_header
+    monkeypatch.setattr(routes_mod, "csp_header", lambda hashes: reads.append(1) or original(hashes))
+    app, _ = make_app(pages, static)
+    client = TestClient(app, follow_redirects=False)
+    for path in ("/d/web/", "/d/web/library", "/d/docs/library", "/d/web/"):
+        assert client.get(path).status_code == 200
+    assert reads == [1]                                               # one page file, so one read and one hash for all of them
 
 
 def test_the_pages_are_not_part_of_the_openapi_schema(pages):
@@ -944,7 +1031,7 @@ def test_mount_registers_the_pages_and_the_static_mount_at_the_package_folders()
     mount(app, strict_services(Lookup())[0])
     table = route_table(app)
     paths = [path for path, _, _ in table]
-    for expected in ("/", "/d/{dept}", "/d/{dept}/", "/console", "/favicon.ico", "/ui"):
+    for expected in ("/", "/d/{dept}", "/d/{dept}/", "/d/{dept}/library", "/d/{dept}/library/", "/console", "/favicon.ico", "/ui"):
         assert paths.count(expected) == 1, expected
     assert ("/ui", (), "ui") in table
     assert ui.PAGES_DIR.name == "pages" and ui.STATIC_DIR.name == "static"
@@ -1045,6 +1132,18 @@ def test_real_page_is_served_under_the_hashes_of_its_own_inline_scripts(name, ro
         assert len(expected) == 2  # the first-paint theme script and the page script, as in J2
     assert len(boot_of(response.text)) == 7
     assert BOOT_BLOCK.sub(MARKER, response.text.replace("\r\n", "\n")) == html.replace("\r\n", "\n")
+
+
+def test_the_real_department_page_is_the_library_page_too_with_one_policy():
+    html = real_page("j2_ui.html")
+    app = FastAPI()
+    app.include_router(build_router(token=TOKEN, department=Lookup(), version=VERSION))
+    client = TestClient(app, follow_redirects=False)
+    team, library = client.get("/d/web/"), client.get("/d/web/library")
+    assert team.status_code == library.status_code == 200
+    assert library.text == team.text and library.headers["content-security-policy"] == team.headers["content-security-policy"]
+    assert BOOT_BLOCK.sub(MARKER, library.text.replace("\r\n", "\n")) == html.replace("\r\n", "\n")
+    assert boot_of(library.text)["dept"] == "web" and client.get("/d/web/library/?q=a").headers["location"] == "/d/web/library?q=a"
 
 
 def test_real_style_sheets_have_no_external_url():

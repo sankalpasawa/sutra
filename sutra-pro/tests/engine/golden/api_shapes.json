@@ -1,6 +1,16 @@
 {
  "get": {
   "idle": {
+   "activity": {
+    "ctype": "application/json",
+    "keys": [
+     "events",
+     "found",
+     "schema",
+     "who"
+    ],
+    "status": 200
+   },
    "agent": {
     "ctype": "application/json",
     "keys": [
@@ -23,6 +33,17 @@
     "keys": [
      "deliverables",
      "records"
+    ],
+    "status": 200
+   },
+   "artifacts_groups": {
+    "ctype": "application/json",
+    "keys": [
+     "documents",
+     "groups",
+     "groups[].*",
+     "schema",
+     "site"
     ],
     "status": 200
    },
@@ -61,6 +82,99 @@
     ],
     "status": 404
    },
+   "catalog": {
+    "ctype": "application/json",
+    "keys": [
+     "dir",
+     "groups",
+     "groups.*",
+     "groups.*.*",
+     "groups.*.*.generic",
+     "groups.*.*.generic.description",
+     "groups.*.*.generic.fields",
+     "groups.*.*.generic.name",
+     "groups.*.*.generic.sha",
+     "groups.*.*.generic.version",
+     "groups.*.*.templates",
+     "groups.*.*.templates[].artifact",
+     "groups.*.*.templates[].description",
+     "groups.*.*.templates[].extends",
+     "groups.*.*.templates[].kind",
+     "groups.*.*.templates[].name",
+     "groups.*.*.templates[].section",
+     "groups.*.*.templates[].section_slug",
+     "groups.*.*.templates[].slug",
+     "groups.*.*.templates[].versions",
+     "groups.*.*.templates[].versions[].business",
+     "groups.*.*.templates[].versions[].business.name",
+     "groups.*.*.templates[].versions[].business.type",
+     "groups.*.*.templates[].versions[].business_type",
+     "groups.*.*.templates[].versions[].collected_from",
+     "groups.*.*.templates[].versions[].collected_from.run",
+     "groups.*.*.templates[].versions[].collected_from.where",
+     "groups.*.*.templates[].versions[].description",
+     "groups.*.*.templates[].versions[].enums",
+     "groups.*.*.templates[].versions[].enums.*",
+     "groups.*.*.templates[].versions[].facts",
+     "groups.*.*.templates[].versions[].fields",
+     "groups.*.*.templates[].versions[].fingerprints",
+     "groups.*.*.templates[].versions[].made_by",
+     "groups.*.*.templates[].versions[].made_by.agent",
+     "groups.*.*.templates[].versions[].made_by.atom",
+     "groups.*.*.templates[].versions[].made_by.date",
+     "groups.*.*.templates[].versions[].made_by.run",
+     "groups.*.*.templates[].versions[].made_by.workflow",
+     "groups.*.*.templates[].versions[].mock",
+     "groups.*.*.templates[].versions[].schema_sha",
+     "groups.*.*.templates[].versions[].sha",
+     "groups.*.*.templates[].versions[].used_by",
+     "groups.*.*.templates[].versions[].used_by[].action",
+     "groups.*.*.templates[].versions[].used_by[].atom",
+     "groups.*.*.templates[].versions[].used_by[].run",
+     "groups.*.*.templates[].versions[].used_by[].workflow",
+     "groups.*.*.templates[].versions[].version",
+     "runs",
+     "runs[].business",
+     "runs[].business_type",
+     "runs[].counts",
+     "runs[].counts.created",
+     "runs[].counts.extended",
+     "runs[].counts.generic",
+     "runs[].counts.reused",
+     "runs[].date",
+     "runs[].decisions",
+     "runs[].decisions[].action",
+     "runs[].decisions[].artifact",
+     "runs[].decisions[].atom",
+     "runs[].decisions[].kind",
+     "runs[].decisions[].ref",
+     "runs[].decisions[].ref.artifact",
+     "runs[].decisions[].ref.section_slug",
+     "runs[].decisions[].ref.slug",
+     "runs[].decisions[].ref.version",
+     "runs[].decisions[].rule",
+     "runs[].decisions[].score",
+     "runs[].decisions[].section",
+     "runs[].decisions[].source",
+     "runs[].decisions[].template",
+     "runs[].decisions[].version",
+     "runs[].decisions[].workflow",
+     "runs[].library",
+     "runs[].mock",
+     "runs[].model",
+     "runs[].provider",
+     "runs[].run",
+     "schema"
+    ],
+    "status": 200
+   },
+   "changes": {
+    "ctype": "application/json",
+    "keys": [
+     "changes"
+    ],
+    "status": 200
+   },
    "code": {
     "ctype": "text/plain",
     "status": 404
@@ -68,6 +182,10 @@
    "code_missing": {
     "ctype": "text/plain",
     "status": 404
+   },
+   "doc": {
+    "ctype": "text/html",
+    "status": 200
    },
    "docs": {
     "ctype": "application/json",
@@ -114,23 +232,26 @@
      "groups.*.*.templates[].section_slug",
      "groups.*.*.templates[].slug",
      "groups.*.*.templates[].versions",
+     "groups.*.*.templates[].versions[].business",
+     "groups.*.*.templates[].versions[].business.name",
+     "groups.*.*.templates[].versions[].business.type",
      "groups.*.*.templates[].versions[].business_type",
+     "groups.*.*.templates[].versions[].collected_from",
+     "groups.*.*.templates[].versions[].collected_from.run",
+     "groups.*.*.templates[].versions[].collected_from.where",
      "groups.*.*.templates[].versions[].description",
      "groups.*.*.templates[].versions[].enums",
-     "groups.*.*.templates[].versions[].enums.FormField.type",
-     "groups.*.*.templates[].versions[].enums.Requirement.priority",
-     "groups.*.*.templates[].versions[].enums.booking_form_fields",
-     "groups.*.*.templates[].versions[].enums.elements",
-     "groups.*.*.templates[].versions[].enums.facts_used",
-     "groups.*.*.templates[].versions[].enums.form_fields",
+     "groups.*.*.templates[].versions[].enums.*",
      "groups.*.*.templates[].versions[].facts",
      "groups.*.*.templates[].versions[].fields",
      "groups.*.*.templates[].versions[].fingerprints",
      "groups.*.*.templates[].versions[].made_by",
      "groups.*.*.templates[].versions[].made_by.agent",
      "groups.*.*.templates[].versions[].made_by.atom",
+     "groups.*.*.templates[].versions[].made_by.date",
      "groups.*.*.templates[].versions[].made_by.run",
      "groups.*.*.templates[].versions[].made_by.workflow",
+     "groups.*.*.templates[].versions[].mock",
      "groups.*.*.templates[].versions[].schema_sha",
      "groups.*.*.templates[].versions[].sha",
      "groups.*.*.templates[].versions[].used_by",
@@ -268,6 +389,13 @@
     ],
     "status": 200
    },
+   "plan_map": {
+    "ctype": "application/json",
+    "keys": [
+     "found"
+    ],
+    "status": 200
+   },
    "preview": {
     "ctype": "application/json",
     "keys": [
@@ -275,6 +403,27 @@
      "html"
     ],
     "status": 200
+   },
+   "record_art": {
+    "ctype": "application/json",
+    "keys": [
+     "error"
+    ],
+    "status": 404
+   },
+   "record_missing": {
+    "ctype": "application/json",
+    "keys": [
+     "error"
+    ],
+    "status": 404
+   },
+   "record_part": {
+    "ctype": "application/json",
+    "keys": [
+     "error"
+    ],
+    "status": 404
    },
    "refs": {
     "ctype": "application/json",
@@ -293,6 +442,20 @@
     ],
     "status": 200
    },
+   "runlist": {
+    "ctype": "application/json",
+    "keys": [
+     "live",
+     "runs",
+     "runs[].brief",
+     "runs[].id",
+     "runs[].output",
+     "runs[].status",
+     "runs[].title",
+     "runs[].when"
+    ],
+    "status": 200
+   },
    "runs": {
     "ctype": "application/json",
     "keys": [
@@ -326,6 +489,7 @@
      "agents",
      "atoms_v1",
      "audits",
+     "auto_answers",
      "budget",
      "call_log",
      "calls",
@@ -334,6 +498,7 @@
      "conflicts",
      "cycle",
      "cycle_turns",
+     "decide_for_me",
      "doc",
      "docset",
      "docset_files",
@@ -384,6 +549,13 @@
      "steps.6",
      "steps.7",
      "steps.8",
+     "studio",
+     "studio.done",
+     "studio.parts",
+     "studio.qsec",
+     "studio.schema",
+     "studio.stream",
+     "studio.total",
      "style",
      "test_lessons",
      "thinking",
@@ -402,6 +574,7 @@
      "agents",
      "atoms_v1",
      "audits",
+     "auto_answers",
      "budget",
      "call_log",
      "calls",
@@ -410,6 +583,7 @@
      "conflicts",
      "cycle",
      "cycle_turns",
+     "decide_for_me",
      "doc",
      "docset",
      "docset_files",
@@ -460,6 +634,13 @@
      "steps.6",
      "steps.7",
      "steps.8",
+     "studio",
+     "studio.done",
+     "studio.parts",
+     "studio.qsec",
+     "studio.schema",
+     "studio.stream",
+     "studio.total",
      "style",
      "test_lessons",
      "thinking",
@@ -490,9 +671,59 @@
    "unknown": {
     "ctype": "text/plain",
     "status": 404
+   },
+   "view": {
+    "ctype": "text/html",
+    "status": 200
+   },
+   "view_missing": {
+    "ctype": "text/html",
+    "status": 200
    }
   },
   "live": {
+   "activity": {
+    "ctype": "application/json",
+    "keys": [
+     "events",
+     "events[].given",
+     "events[].id",
+     "events[].items",
+     "events[].kind",
+     "events[].msg",
+     "events[].msg.accept",
+     "events[].msg.act",
+     "events[].msg.agree",
+     "events[].msg.artifact",
+     "events[].msg.atom",
+     "events[].msg.attempt",
+     "events[].msg.audience",
+     "events[].msg.calls",
+     "events[].msg.conflict",
+     "events[].msg.cycle",
+     "events[].msg.decision",
+     "events[].msg.done",
+     "events[].msg.exchange",
+     "events[].msg.id",
+     "events[].msg.next",
+     "events[].msg.proposal",
+     "events[].msg.stamp",
+     "events[].msg.step",
+     "events[].msg.t",
+     "events[].msg.text",
+     "events[].msg.who",
+     "events[].t",
+     "events[].text",
+     "events[].title",
+     "found",
+     "names",
+     "names.*",
+     "persona",
+     "schema",
+     "who"
+    ],
+    "status": 200
+   },
    "agent": {
     "ctype": "application/json",
     "keys": [
@@ -592,6 +823,93 @@
     ],
     "status": 200
    },
+   "artifacts_groups": {
+    "ctype": "application/json",
+    "keys": [
+     "documents",
+     "groups",
+     "groups[].*",
+     "groups[].*[].all_pass",
+     "groups[].*[].audience",
+     "groups[].*[].audit",
+     "groups[].*[].audit[].item",
+     "groups[].*[].audit[].note",
+     "groups[].*[].audit[].pass",
+     "groups[].*[].audit[].verdict",
+     "groups[].*[].audits",
+     "groups[].*[].audits[].cycle",
+     "groups[].*[].audits[].passed",
+     "groups[].*[].audits[].screenshot",
+     "groups[].*[].audits[].total",
+     "groups[].*[].audits[].version",
+     "groups[].*[].checks",
+     "groups[].*[].checks[].check",
+     "groups[].*[].checks[].evidence",
+     "groups[].*[].checks[].pass",
+     "groups[].*[].checks[].workflow",
+     "groups[].*[].count",
+     "groups[].*[].covers",
+     "groups[].*[].cycle",
+     "groups[].*[].cycles",
+     "groups[].*[].cycles[].changes",
+     "groups[].*[].cycles[].cycle",
+     "groups[].*[].cycles[].fixes",
+     "groups[].*[].cycles[].n",
+     "groups[].*[].deck",
+     "groups[].*[].done_when",
+     "groups[].*[].failed",
+     "groups[].*[].file",
+     "groups[].*[].goal",
+     "groups[].*[].id",
+     "groups[].*[].items",
+     "groups[].*[].items[].id",
+     "groups[].*[].items[].met",
+     "groups[].*[].items[].text",
+     "groups[].*[].kind",
+     "groups[].*[].made_in",
+     "groups[].*[].maker",
+     "groups[].*[].method",
+     "groups[].*[].name",
+     "groups[].*[].nodes",
+     "groups[].*[].ok",
+     "groups[].*[].owner",
+     "groups[].*[].parts",
+     "groups[].*[].parts.css",
+     "groups[].*[].parts.html",
+     "groups[].*[].parts.js",
+     "groups[].*[].passed",
+     "groups[].*[].read_by",
+     "groups[].*[].reused_by",
+     "groups[].*[].screenshot",
+     "groups[].*[].section",
+     "groups[].*[].total",
+     "groups[].*[].version",
+     "groups[].*[].versions",
+     "groups[].*[].versions[].cycle",
+     "groups[].*[].versions[].label",
+     "groups[].*[].versions[].purpose",
+     "groups[].*[].versions[].workflow",
+     "groups[].*[].views",
+     "groups[].*[].views.agent",
+     "groups[].*[].views.agent.file",
+     "groups[].*[].views.agent.format",
+     "groups[].*[].views.agent.model",
+     "groups[].*[].views.agent.schema",
+     "groups[].*[].views.agent.valid",
+     "groups[].*[].views.human",
+     "groups[].*[].views.human.file",
+     "groups[].*[].views.human.format",
+     "groups[].*[].views.summary",
+     "schema",
+     "site",
+     "site.audit",
+     "site.audit.passed",
+     "site.audit.total",
+     "site.audit.version",
+     "site.version"
+    ],
+    "status": 200
+   },
    "artifacts_tree": {
     "ctype": "application/json",
     "keys": [
@@ -687,6 +1005,99 @@
     ],
     "status": 404
    },
+   "catalog": {
+    "ctype": "application/json",
+    "keys": [
+     "dir",
+     "groups",
+     "groups.*",
+     "groups.*.*",
+     "groups.*.*.generic",
+     "groups.*.*.generic.description",
+     "groups.*.*.generic.fields",
+     "groups.*.*.generic.name",
+     "groups.*.*.generic.sha",
+     "groups.*.*.generic.version",
+     "groups.*.*.templates",
+     "groups.*.*.templates[].artifact",
+     "groups.*.*.templates[].description",
+     "groups.*.*.templates[].extends",
+     "groups.*.*.templates[].kind",
+     "groups.*.*.templates[].name",
+     "groups.*.*.templates[].section",
+     "groups.*.*.templates[].section_slug",
+     "groups.*.*.templates[].slug",
+     "groups.*.*.templates[].versions",
+     "groups.*.*.templates[].versions[].business",
+     "groups.*.*.templates[].versions[].business.name",
+     "groups.*.*.templates[].versions[].business.type",
+     "groups.*.*.templates[].versions[].business_type",
+     "groups.*.*.templates[].versions[].collected_from",
+     "groups.*.*.templates[].versions[].collected_from.run",
+     "groups.*.*.templates[].versions[].collected_from.where",
+     "groups.*.*.templates[].versions[].description",
+     "groups.*.*.templates[].versions[].enums",
+     "groups.*.*.templates[].versions[].enums.*",
+     "groups.*.*.templates[].versions[].facts",
+     "groups.*.*.templates[].versions[].fields",
+     "groups.*.*.templates[].versions[].fingerprints",
+     "groups.*.*.templates[].versions[].made_by",
+     "groups.*.*.templates[].versions[].made_by.agent",
+     "groups.*.*.templates[].versions[].made_by.atom",
+     "groups.*.*.templates[].versions[].made_by.date",
+     "groups.*.*.templates[].versions[].made_by.run",
+     "groups.*.*.templates[].versions[].made_by.workflow",
+     "groups.*.*.templates[].versions[].mock",
+     "groups.*.*.templates[].versions[].schema_sha",
+     "groups.*.*.templates[].versions[].sha",
+     "groups.*.*.templates[].versions[].used_by",
+     "groups.*.*.templates[].versions[].used_by[].action",
+     "groups.*.*.templates[].versions[].used_by[].atom",
+     "groups.*.*.templates[].versions[].used_by[].run",
+     "groups.*.*.templates[].versions[].used_by[].workflow",
+     "groups.*.*.templates[].versions[].version",
+     "runs",
+     "runs[].business",
+     "runs[].business_type",
+     "runs[].counts",
+     "runs[].counts.created",
+     "runs[].counts.extended",
+     "runs[].counts.generic",
+     "runs[].counts.reused",
+     "runs[].date",
+     "runs[].decisions",
+     "runs[].decisions[].action",
+     "runs[].decisions[].artifact",
+     "runs[].decisions[].atom",
+     "runs[].decisions[].kind",
+     "runs[].decisions[].ref",
+     "runs[].decisions[].ref.artifact",
+     "runs[].decisions[].ref.section_slug",
+     "runs[].decisions[].ref.slug",
+     "runs[].decisions[].ref.version",
+     "runs[].decisions[].rule",
+     "runs[].decisions[].score",
+     "runs[].decisions[].section",
+     "runs[].decisions[].source",
+     "runs[].decisions[].template",
+     "runs[].decisions[].version",
+     "runs[].decisions[].workflow",
+     "runs[].library",
+     "runs[].mock",
+     "runs[].model",
+     "runs[].provider",
+     "runs[].run",
+     "schema"
+    ],
+    "status": 200
+   },
+   "changes": {
+    "ctype": "application/json",
+    "keys": [
+     "changes"
+    ],
+    "status": 200
+   },
    "code": {
     "ctype": "text/plain",
     "status": 200
@@ -694,6 +1105,10 @@
    "code_missing": {
     "ctype": "text/plain",
     "status": 404
+   },
+   "doc": {
+    "ctype": "text/html",
+    "status": 200
    },
    "docs": {
     "ctype": "application/json",
@@ -740,23 +1155,26 @@
      "groups.*.*.templates[].section_slug",
      "groups.*.*.templates[].slug",
      "groups.*.*.templates[].versions",
+     "groups.*.*.templates[].versions[].business",
+     "groups.*.*.templates[].versions[].business.name",
+     "groups.*.*.templates[].versions[].business.type",
      "groups.*.*.templates[].versions[].business_type",
+     "groups.*.*.templates[].versions[].collected_from",
+     "groups.*.*.templates[].versions[].collected_from.run",
+     "groups.*.*.templates[].versions[].collected_from.where",
      "groups.*.*.templates[].versions[].description",
      "groups.*.*.templates[].versions[].enums",
-     "groups.*.*.templates[].versions[].enums.FormField.type",
-     "groups.*.*.templates[].versions[].enums.Requirement.priority",
-     "groups.*.*.templates[].versions[].enums.booking_form_fields",
-     "groups.*.*.templates[].versions[].enums.elements",
-     "groups.*.*.templates[].versions[].enums.facts_used",
-     "groups.*.*.templates[].versions[].enums.form_fields",
+     "groups.*.*.templates[].versions[].enums.*",
      "groups.*.*.templates[].versions[].facts",
      "groups.*.*.templates[].versions[].fields",
      "groups.*.*.templates[].versions[].fingerprints",
      "groups.*.*.templates[].versions[].made_by",
      "groups.*.*.templates[].versions[].made_by.agent",
      "groups.*.*.templates[].versions[].made_by.atom",
+     "groups.*.*.templates[].versions[].made_by.date",
      "groups.*.*.templates[].versions[].made_by.run",
      "groups.*.*.templates[].versions[].made_by.workflow",
+     "groups.*.*.templates[].versions[].mock",
      "groups.*.*.templates[].versions[].schema_sha",
      "groups.*.*.templates[].versions[].sha",
      "groups.*.*.templates[].versions[].used_by",
@@ -1056,11 +1474,77 @@
     ],
     "status": 200
    },
+   "plan_map": {
+    "ctype": "application/json",
+    "keys": [
+     "found"
+    ],
+    "status": 200
+   },
    "preview": {
     "ctype": "application/json",
     "keys": [
      "anchor",
      "html"
+    ],
+    "status": 200
+   },
+   "record_art": {
+    "ctype": "application/json",
+    "keys": [
+     "check",
+     "check.fixed",
+     "check.items",
+     "check.items_met",
+     "check.parts",
+     "check.parts_done",
+     "form",
+     "goal",
+     "label",
+     "method",
+     "method[].name",
+     "method[].person",
+     "method[].sec",
+     "method[].st",
+     "name",
+     "output",
+     "output.file",
+     "output.open",
+     "output.version",
+     "schema"
+    ],
+    "status": 200
+   },
+   "record_missing": {
+    "ctype": "application/json",
+    "keys": [
+     "error"
+    ],
+    "status": 404
+   },
+   "record_part": {
+    "ctype": "application/json",
+    "keys": [
+     "check",
+     "check[].met",
+     "check[].text",
+     "checked",
+     "doc",
+     "goal",
+     "history",
+     "history[].fix",
+     "history[].name",
+     "history[].status",
+     "kind",
+     "method",
+     "name",
+     "output",
+     "output[].met",
+     "output[].text",
+     "person",
+     "schema",
+     "sec",
+     "st"
     ],
     "status": 200
    },
@@ -1108,6 +1592,20 @@
      "decisions[].template",
      "decisions[].version",
      "decisions[].workflow"
+    ],
+    "status": 200
+   },
+   "runlist": {
+    "ctype": "application/json",
+    "keys": [
+     "live",
+     "runs",
+     "runs[].brief",
+     "runs[].id",
+     "runs[].output",
+     "runs[].status",
+     "runs[].title",
+     "runs[].when"
     ],
     "status": 200
    },
@@ -1229,6 +1727,7 @@
      "audits[].rubric[].*",
      "audits[].screenshot",
      "audits[].version",
+     "auto_answers",
      "budget",
      "call_log",
      "call_log[].artifact_schema",
@@ -1348,6 +1847,7 @@
      "conflicts[].winner",
      "cycle",
      "cycle_turns",
+     "decide_for_me",
      "doc",
      "docset",
      "docset_files",
@@ -1442,6 +1942,28 @@
      "steps.6",
      "steps.7",
      "steps.8",
+     "studio",
+     "studio.done",
+     "studio.parts",
+     "studio.parts[].doc",
+     "studio.parts[].fixes",
+     "studio.parts[].fixing",
+     "studio.parts[].id",
+     "studio.parts[].kind",
+     "studio.parts[].name",
+     "studio.parts[].person",
+     "studio.parts[].sec",
+     "studio.parts[].st",
+     "studio.parts[].workflows",
+     "studio.qsec",
+     "studio.schema",
+     "studio.stream",
+     "studio.stream[].id",
+     "studio.stream[].role",
+     "studio.stream[].t",
+     "studio.stream[].text",
+     "studio.stream[].who",
+     "studio.total",
      "style",
      "style.buttons",
      "style.buttons.primary",
@@ -1671,6 +2193,7 @@
      "audits[].rubric[].*",
      "audits[].screenshot",
      "audits[].version",
+     "auto_answers",
      "budget",
      "call_log",
      "call_log[].artifact_schema",
@@ -1788,6 +2311,7 @@
      "conflicts[].winner",
      "cycle",
      "cycle_turns",
+     "decide_for_me",
      "doc",
      "docset",
      "docset_files",
@@ -1882,6 +2406,28 @@
      "steps.6",
      "steps.7",
      "steps.8",
+     "studio",
+     "studio.done",
+     "studio.parts",
+     "studio.parts[].doc",
+     "studio.parts[].fixes",
+     "studio.parts[].fixing",
+     "studio.parts[].id",
+     "studio.parts[].kind",
+     "studio.parts[].name",
+     "studio.parts[].person",
+     "studio.parts[].sec",
+     "studio.parts[].st",
+     "studio.parts[].workflows",
+     "studio.qsec",
+     "studio.schema",
+     "studio.stream",
+     "studio.stream[].id",
+     "studio.stream[].role",
+     "studio.stream[].t",
+     "studio.stream[].text",
+     "studio.stream[].who",
+     "studio.total",
      "style",
      "style.buttons",
      "style.buttons.primary",
@@ -2053,9 +2599,59 @@
    "unknown": {
     "ctype": "text/plain",
     "status": 404
+   },
+   "view": {
+    "ctype": "text/html",
+    "status": 200
+   },
+   "view_missing": {
+    "ctype": "text/html",
+    "status": 200
    }
   },
   "saved": {
+   "activity": {
+    "ctype": "application/json",
+    "keys": [
+     "events",
+     "events[].given",
+     "events[].id",
+     "events[].items",
+     "events[].kind",
+     "events[].msg",
+     "events[].msg.accept",
+     "events[].msg.act",
+     "events[].msg.agree",
+     "events[].msg.artifact",
+     "events[].msg.atom",
+     "events[].msg.attempt",
+     "events[].msg.audience",
+     "events[].msg.calls",
+     "events[].msg.conflict",
+     "events[].msg.cycle",
+     "events[].msg.decision",
+     "events[].msg.done",
+     "events[].msg.exchange",
+     "events[].msg.id",
+     "events[].msg.next",
+     "events[].msg.proposal",
+     "events[].msg.stamp",
+     "events[].msg.step",
+     "events[].msg.t",
+     "events[].msg.text",
+     "events[].msg.who",
+     "events[].t",
+     "events[].text",
+     "events[].title",
+     "found",
+     "names",
+     "names.*",
+     "persona",
+     "schema",
+     "who"
+    ],
+    "status": 200
+   },
    "agent": {
     "ctype": "application/json",
     "keys": [
@@ -2155,6 +2751,93 @@
     ],
     "status": 200
    },
+   "artifacts_groups": {
+    "ctype": "application/json",
+    "keys": [
+     "documents",
+     "groups",
+     "groups[].*",
+     "groups[].*[].all_pass",
+     "groups[].*[].audience",
+     "groups[].*[].audit",
+     "groups[].*[].audit[].item",
+     "groups[].*[].audit[].note",
+     "groups[].*[].audit[].pass",
+     "groups[].*[].audit[].verdict",
+     "groups[].*[].audits",
+     "groups[].*[].audits[].cycle",
+     "groups[].*[].audits[].passed",
+     "groups[].*[].audits[].screenshot",
+     "groups[].*[].audits[].total",
+     "groups[].*[].audits[].version",
+     "groups[].*[].checks",
+     "groups[].*[].checks[].check",
+     "groups[].*[].checks[].evidence",
+     "groups[].*[].checks[].pass",
+     "groups[].*[].checks[].workflow",
+     "groups[].*[].count",
+     "groups[].*[].covers",
+     "groups[].*[].cycle",
+     "groups[].*[].cycles",
+     "groups[].*[].cycles[].changes",
+     "groups[].*[].cycles[].cycle",
+     "groups[].*[].cycles[].fixes",
+     "groups[].*[].cycles[].n",
+     "groups[].*[].deck",
+     "groups[].*[].done_when",
+     "groups[].*[].failed",
+     "groups[].*[].file",
+     "groups[].*[].goal",
+     "groups[].*[].id",
+     "groups[].*[].items",
+     "groups[].*[].items[].id",
+     "groups[].*[].items[].met",
+     "groups[].*[].items[].text",
+     "groups[].*[].kind",
+     "groups[].*[].made_in",
+     "groups[].*[].maker",
+     "groups[].*[].method",
+     "groups[].*[].name",
+     "groups[].*[].nodes",
+     "groups[].*[].ok",
+     "groups[].*[].owner",
+     "groups[].*[].parts",
+     "groups[].*[].parts.css",
+     "groups[].*[].parts.html",
+     "groups[].*[].parts.js",
+     "groups[].*[].passed",
+     "groups[].*[].read_by",
+     "groups[].*[].reused_by",
+     "groups[].*[].screenshot",
+     "groups[].*[].section",
+     "groups[].*[].total",
+     "groups[].*[].version",
+     "groups[].*[].versions",
+     "groups[].*[].versions[].cycle",
+     "groups[].*[].versions[].label",
+     "groups[].*[].versions[].purpose",
+     "groups[].*[].versions[].workflow",
+     "groups[].*[].views",
+     "groups[].*[].views.agent",
+     "groups[].*[].views.agent.file",
+     "groups[].*[].views.agent.format",
+     "groups[].*[].views.agent.model",
+     "groups[].*[].views.agent.schema",
+     "groups[].*[].views.agent.valid",
+     "groups[].*[].views.human",
+     "groups[].*[].views.human.file",
+     "groups[].*[].views.human.format",
+     "groups[].*[].views.summary",
+     "schema",
+     "site",
+     "site.audit",
+     "site.audit.passed",
+     "site.audit.total",
+     "site.audit.version",
+     "site.version"
+    ],
+    "status": 200
+   },
    "artifacts_tree": {
     "ctype": "application/json",
     "keys": [
@@ -2250,6 +2933,99 @@
     ],
     "status": 404
    },
+   "catalog": {
+    "ctype": "application/json",
+    "keys": [
+     "dir",
+     "groups",
+     "groups.*",
+     "groups.*.*",
+     "groups.*.*.generic",
+     "groups.*.*.generic.description",
+     "groups.*.*.generic.fields",
+     "groups.*.*.generic.name",
+     "groups.*.*.generic.sha",
+     "groups.*.*.generic.version",
+     "groups.*.*.templates",
+     "groups.*.*.templates[].artifact",
+     "groups.*.*.templates[].description",
+     "groups.*.*.templates[].extends",
+     "groups.*.*.templates[].kind",
+     "groups.*.*.templates[].name",
+     "groups.*.*.templates[].section",
+     "groups.*.*.templates[].section_slug",
+     "groups.*.*.templates[].slug",
+     "groups.*.*.templates[].versions",
+     "groups.*.*.templates[].versions[].business",
+     "groups.*.*.templates[].versions[].business.name",
+     "groups.*.*.templates[].versions[].business.type",
+     "groups.*.*.templates[].versions[].business_type",
+     "groups.*.*.templates[].versions[].collected_from",
+     "groups.*.*.templates[].versions[].collected_from.run",
+     "groups.*.*.templates[].versions[].collected_from.where",
+     "groups.*.*.templates[].versions[].description",
+     "groups.*.*.templates[].versions[].enums",
+     "groups.*.*.templates[].versions[].enums.*",
+     "groups.*.*.templates[].versions[].facts",
+     "groups.*.*.templates[].versions[].fields",
+     "groups.*.*.templates[].versions[].fingerprints",
+     "groups.*.*.templates[].versions[].made_by",
+     "groups.*.*.templates[].versions[].made_by.agent",
+     "groups.*.*.templates[].versions[].made_by.atom",
+     "groups.*.*.templates[].versions[].made_by.date",
+     "groups.*.*.templates[].versions[].made_by.run",
+     "groups.*.*.templates[].versions[].made_by.workflow",
+     "groups.*.*.templates[].versions[].mock",
+     "groups.*.*.templates[].versions[].schema_sha",
+     "groups.*.*.templates[].versions[].sha",
+     "groups.*.*.templates[].versions[].used_by",
+     "groups.*.*.templates[].versions[].used_by[].action",
+     "groups.*.*.templates[].versions[].used_by[].atom",
+     "groups.*.*.templates[].versions[].used_by[].run",
+     "groups.*.*.templates[].versions[].used_by[].workflow",
+     "groups.*.*.templates[].versions[].version",
+     "runs",
+     "runs[].business",
+     "runs[].business_type",
+     "runs[].counts",
+     "runs[].counts.created",
+     "runs[].counts.extended",
+     "runs[].counts.generic",
+     "runs[].counts.reused",
+     "runs[].date",
+     "runs[].decisions",
+     "runs[].decisions[].action",
+     "runs[].decisions[].artifact",
+     "runs[].decisions[].atom",
+     "runs[].decisions[].kind",
+     "runs[].decisions[].ref",
+     "runs[].decisions[].ref.artifact",
+     "runs[].decisions[].ref.section_slug",
+     "runs[].decisions[].ref.slug",
+     "runs[].decisions[].ref.version",
+     "runs[].decisions[].rule",
+     "runs[].decisions[].score",
+     "runs[].decisions[].section",
+     "runs[].decisions[].source",
+     "runs[].decisions[].template",
+     "runs[].decisions[].version",
+     "runs[].decisions[].workflow",
+     "runs[].library",
+     "runs[].mock",
+     "runs[].model",
+     "runs[].provider",
+     "runs[].run",
+     "schema"
+    ],
+    "status": 200
+   },
+   "changes": {
+    "ctype": "application/json",
+    "keys": [
+     "changes"
+    ],
+    "status": 200
+   },
    "code": {
     "ctype": "text/plain",
     "status": 200
@@ -2257,6 +3033,10 @@
    "code_missing": {
     "ctype": "text/plain",
     "status": 404
+   },
+   "doc": {
+    "ctype": "text/html",
+    "status": 200
    },
    "docs": {
     "ctype": "application/json",
@@ -2303,23 +3083,26 @@
      "groups.*.*.templates[].section_slug",
      "groups.*.*.templates[].slug",
      "groups.*.*.templates[].versions",
+     "groups.*.*.templates[].versions[].business",
+     "groups.*.*.templates[].versions[].business.name",
+     "groups.*.*.templates[].versions[].business.type",
      "groups.*.*.templates[].versions[].business_type",
+     "groups.*.*.templates[].versions[].collected_from",
+     "groups.*.*.templates[].versions[].collected_from.run",
+     "groups.*.*.templates[].versions[].collected_from.where",
      "groups.*.*.templates[].versions[].description",
      "groups.*.*.templates[].versions[].enums",
-     "groups.*.*.templates[].versions[].enums.FormField.type",
-     "groups.*.*.templates[].versions[].enums.Requirement.priority",
-     "groups.*.*.templates[].versions[].enums.booking_form_fields",
-     "groups.*.*.templates[].versions[].enums.elements",
-     "groups.*.*.templates[].versions[].enums.facts_used",
-     "groups.*.*.templates[].versions[].enums.form_fields",
+     "groups.*.*.templates[].versions[].enums.*",
      "groups.*.*.templates[].versions[].facts",
      "groups.*.*.templates[].versions[].fields",
      "groups.*.*.templates[].versions[].fingerprints",
      "groups.*.*.templates[].versions[].made_by",
      "groups.*.*.templates[].versions[].made_by.agent",
      "groups.*.*.templates[].versions[].made_by.atom",
+     "groups.*.*.templates[].versions[].made_by.date",
      "groups.*.*.templates[].versions[].made_by.run",
      "groups.*.*.templates[].versions[].made_by.workflow",
+     "groups.*.*.templates[].versions[].mock",
      "groups.*.*.templates[].versions[].schema_sha",
      "groups.*.*.templates[].versions[].sha",
      "groups.*.*.templates[].versions[].used_by",
@@ -2619,11 +3402,77 @@
     ],
     "status": 200
    },
+   "plan_map": {
+    "ctype": "application/json",
+    "keys": [
+     "found"
+    ],
+    "status": 200
+   },
    "preview": {
     "ctype": "application/json",
     "keys": [
      "anchor",
      "html"
+    ],
+    "status": 200
+   },
+   "record_art": {
+    "ctype": "application/json",
+    "keys": [
+     "check",
+     "check.fixed",
+     "check.items",
+     "check.items_met",
+     "check.parts",
+     "check.parts_done",
+     "form",
+     "goal",
+     "label",
+     "method",
+     "method[].name",
+     "method[].person",
+     "method[].sec",
+     "method[].st",
+     "name",
+     "output",
+     "output.file",
+     "output.open",
+     "output.version",
+     "schema"
+    ],
+    "status": 200
+   },
+   "record_missing": {
+    "ctype": "application/json",
+    "keys": [
+     "error"
+    ],
+    "status": 404
+   },
+   "record_part": {
+    "ctype": "application/json",
+    "keys": [
+     "check",
+     "check[].met",
+     "check[].text",
+     "checked",
+     "doc",
+     "goal",
+     "history",
+     "history[].fix",
+     "history[].name",
+     "history[].status",
+     "kind",
+     "method",
+     "name",
+     "output",
+     "output[].met",
+     "output[].text",
+     "person",
+     "schema",
+     "sec",
+     "st"
     ],
     "status": 200
    },
@@ -2671,6 +3520,20 @@
      "decisions[].template",
      "decisions[].version",
      "decisions[].workflow"
+    ],
+    "status": 200
+   },
+   "runlist": {
+    "ctype": "application/json",
+    "keys": [
+     "live",
+     "runs",
+     "runs[].brief",
+     "runs[].id",
+     "runs[].output",
+     "runs[].status",
+     "runs[].title",
+     "runs[].when"
     ],
     "status": 200
    },
@@ -2792,6 +3655,7 @@
      "audits[].rubric[].*",
      "audits[].screenshot",
      "audits[].version",
+     "auto_answers",
      "budget",
      "call_log",
      "call_log[].artifact_schema",
@@ -2911,6 +3775,7 @@
      "conflicts[].winner",
      "cycle",
      "cycle_turns",
+     "decide_for_me",
      "doc",
      "docset",
      "docset_files",
@@ -3005,6 +3870,28 @@
      "steps.6",
      "steps.7",
      "steps.8",
+     "studio",
+     "studio.done",
+     "studio.parts",
+     "studio.parts[].doc",
+     "studio.parts[].fixes",
+     "studio.parts[].fixing",
+     "studio.parts[].id",
+     "studio.parts[].kind",
+     "studio.parts[].name",
+     "studio.parts[].person",
+     "studio.parts[].sec",
+     "studio.parts[].st",
+     "studio.parts[].workflows",
+     "studio.qsec",
+     "studio.schema",
+     "studio.stream",
+     "studio.stream[].id",
+     "studio.stream[].role",
+     "studio.stream[].t",
+     "studio.stream[].text",
+     "studio.stream[].who",
+     "studio.total",
      "style",
      "style.buttons",
      "style.buttons.primary",
@@ -3234,6 +4121,7 @@
      "audits[].rubric[].*",
      "audits[].screenshot",
      "audits[].version",
+     "auto_answers",
      "budget",
      "call_log",
      "call_log[].artifact_schema",
@@ -3351,6 +4239,7 @@
      "conflicts[].winner",
      "cycle",
      "cycle_turns",
+     "decide_for_me",
      "doc",
      "docset",
      "docset_files",
@@ -3445,6 +4334,28 @@
      "steps.6",
      "steps.7",
      "steps.8",
+     "studio",
+     "studio.done",
+     "studio.parts",
+     "studio.parts[].doc",
+     "studio.parts[].fixes",
+     "studio.parts[].fixing",
+     "studio.parts[].id",
+     "studio.parts[].kind",
+     "studio.parts[].name",
+     "studio.parts[].person",
+     "studio.parts[].sec",
+     "studio.parts[].st",
+     "studio.parts[].workflows",
+     "studio.qsec",
+     "studio.schema",
+     "studio.stream",
+     "studio.stream[].id",
+     "studio.stream[].role",
+     "studio.stream[].t",
+     "studio.stream[].text",
+     "studio.stream[].who",
+     "studio.total",
      "style",
      "style.buttons",
      "style.buttons.primary",
@@ -3616,15 +4527,24 @@
    "unknown": {
     "ctype": "text/plain",
     "status": 404
+   },
+   "view": {
+    "ctype": "text/html",
+    "status": 200
+   },
+   "view_missing": {
+    "ctype": "text/html",
+    "status": 200
    }
   }
  },
- "j2_commit": "33aeeda639cd7bf828d5361273a8a153ebc63a36",
+ "j2_commit": "025e265c594564f47a2365874cd5a5cc5d0d20a6",
  "maps": [
   "agents",
   "atoms_v1",
   "conditions",
   "constellations",
+  "enums",
   "groups",
   "groups.*",
   "names",
@@ -3637,57 +4557,23 @@
   "proposal",
   "reply"
  ],
- "patched": {
-  "fixture": "write_patch_fixture in scripts/record_api_shapes.py",
-  "get": {
-   "changes": {
-    "empty": {
-     "ctype": "application/json",
-     "keys": [
-      "changes"
-     ],
-     "status": 200
-    },
-    "runs": {
-     "ctype": "application/json",
-     "keys": [
-      "changes",
-      "changes[].cycle",
-      "changes[].id",
-      "changes[].new",
-      "changes[].request",
-      "changes[].revise"
-     ],
-     "status": 200
-    }
-   },
-   "runlist": {
-    "empty": {
-     "ctype": "application/json",
-     "keys": [
-      "live",
-      "runs"
-     ],
-     "status": 200
-    },
-    "runs": {
-     "ctype": "application/json",
-     "keys": [
-      "live",
-      "runs",
-      "runs[].brief",
-      "runs[].id",
-      "runs[].output",
-      "runs[].status",
-      "runs[].title",
-      "runs[].when"
-     ],
-     "status": 200
-    }
-   }
-  }
- },
  "post": {
+  "ask": {
+   "ctype": "application/json",
+   "keys": [
+    "answer",
+    "from",
+    "who"
+   ],
+   "status": 200
+  },
+  "ask_refused": {
+   "ctype": "application/json",
+   "keys": [
+    "error"
+   ],
+   "status": 400
+  },
   "lessons_clear": {
    "ctype": "application/json",
    "keys": [
@@ -3740,6 +4626,22 @@
     "error"
    ],
    "status": 400
+  },
+  "settings": {
+   "ctype": "application/json",
+   "keys": [
+    "decide_for_me",
+    "ok"
+   ],
+   "status": 200
+  },
+  "settings_read": {
+   "ctype": "application/json",
+   "keys": [
+    "decide_for_me",
+    "ok"
+   ],
+   "status": 200
   }
  },
  "scenario_env": {

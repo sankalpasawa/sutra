@@ -9,6 +9,7 @@ from pathlib import Path
 from types import SimpleNamespace
 
 import pytest
+import seedlib
 
 from sutra_app.config import Settings
 from sutra_app.connectors.models import ConnectorConfig
@@ -300,8 +301,9 @@ def test_a_second_instance_is_a_warning_and_this_process_holding_the_folder_is_n
 
 def test_the_seed_library_is_checked_and_synced_without_overwriting(tmp_path):
     settings = make_settings(tmp_path)
+    seed_keys = sorted("/".join(seedlib.key_of(e)) for e in seedlib.seed_index()["templates"])
     assert "first run seeds" in check(run(settings), "library").detail
-    assert len(doctor.sync_seed_library(settings.data_dir)) == 26             # no library yet: the whole seed
+    assert doctor.sync_seed_library(settings.data_dir) == seed_keys             # no library yet: the whole seed
     library = settings.data_dir / "library"
     assert check(run(settings), "library").status == "ok" and doctor.missing_seed_templates(settings.data_dir) == []
     gone = library / "hld" / "risks"
@@ -311,13 +313,57 @@ def test_the_seed_library_is_checked_and_synced_without_overwriting(tmp_path):
     index = json.loads((library / "index.json").read_text())
     index["templates"] = [t for t in index["templates"] if t["section_slug"] != "problem"]
     (library / "index.json").write_text(json.dumps(index))
+    lost = [k for k in seed_keys if k.startswith(("hld/risks/", "prd/problem/"))]
+    assert len(lost) >= 2
     missing = check(run(settings), "library")
-    assert missing.status == "warn" and "2 seed template(s)" in missing.detail and "config sync-library" in missing.fix
-    added = doctor.sync_seed_library(settings.data_dir)
-    assert sorted(added) == ["hld/risks/still-point-yoga-risks", "prd/problem/still-point-yoga-problem"]
+    assert missing.status == "warn" and f"{len(lost)} seed template(s)" in missing.detail and "config sync-library" in missing.fix
+    report: dict = {}
+    added = doctor.sync_seed_library(settings.data_dir, report=report)
+    assert sorted(added) == lost
     assert edited.read_text() == '{"mine": true}'                            # nothing that existed was touched
+    assert [(s["template"], s["version"]) for s in report["skipped"]] == [("prd/goals/still-point-yoga-goals", 1)] and "meta.json" in report["skipped"][0]["why"]
     assert doctor.sync_seed_library(settings.data_dir) == [] and check(run(settings), "library").status == "ok"
-    assert len(json.loads((library / "index.json").read_text())["templates"]) == 26
+    assert len(json.loads((library / "index.json").read_text())["templates"]) == len(seed_keys)
+
+
+def test_the_library_check_names_missing_templates_and_versions_and_writes_nothing(tmp_path):
+    settings = make_settings(tmp_path)
+    library = seedlib.previous_library(settings.data_dir)                       # an install from before the seed grew
+    before = seedlib.snapshot(library)
+    found = check(run(settings), "library")
+    assert found.status == "warn" and f"6 seed template(s) and 5 seed version(s) are missing from {library}: " in found.detail
+    assert found.detail.endswith(", ".join(seedlib.NEW_TEMPLATE_NAMES[:3]) + " ...")
+    assert "sutra-pro config sync-library" in found.fix and "never overwrites" in found.fix
+    assert seedlib.snapshot(library) == before and not (library / ".lock").exists() and run(settings).ok        # the doctor only reads; a warning does not fail it
+    doctor.sync_seed_library(settings.data_dir)
+    done = check(run(settings), "library")
+    assert done.status == "ok" and done.detail == "all seed templates and versions are present"
+
+
+def test_a_library_that_lacks_only_versions_is_a_warning_too(tmp_path):
+    settings = make_settings(tmp_path)
+    seedlib.previous_library(settings.data_dir)
+    doctor.sync_seed_library(settings.data_dir)
+    library = settings.data_dir / "library"
+    doc = json.loads((library / "index.json").read_text())
+    for key, n in seedlib.NEW_VERSIONS:                                          # the templates stay, five of their versions are gone
+        shutil.rmtree(library.joinpath(*key, f"v{n}"))
+        entry = seedlib.entry_of(doc, key)
+        entry["versions"] = [v for v in entry["versions"] if v["version"] != n]
+    seedlib.write(library / "index.json", doc)
+    found = check(run(settings), "library")
+    assert found.status == "warn" and found.detail.startswith(f"5 seed version(s) are missing from {library}: ") and "template(s)" not in found.detail
+    assert doctor.missing_seed_templates(settings.data_dir) == [] and doctor.missing_seed_versions(settings.data_dir) == seedlib.NEW_VERSION_NAMES
+
+
+def test_an_index_that_is_not_json_is_a_warning_and_the_fix_does_not_promise_the_sync_repairs_it(tmp_path):
+    settings = make_settings(tmp_path)
+    library = seedlib.previous_library(settings.data_dir)
+    (library / "index.json").write_text("{not json")
+    found = check(run(settings), "library")
+    assert found.status == "warn" and "index.json is not valid JSON" in found.detail and "restore library/index.json from a backup" in found.fix
+    assert "leaves an index it cannot read alone" in found.fix and run(settings).ok
+    assert (library / "index.json").read_text() == "{not json"
 
 
 def test_the_default_browser_check(tmp_path):

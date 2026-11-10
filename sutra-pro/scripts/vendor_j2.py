@@ -1,23 +1,27 @@
 #!/usr/bin/env python3
 """Vendor the J2 prototype's engine into `sutra_app/engine/` (work package E1; engine design 3.1 and 3.4, decision D13).
 
-    scripts/py scripts/vendor_j2.py --source /path/to/J2_Prototype [--commit 33aeeda...] [--dest .] [--check]
+    scripts/py scripts/vendor_j2.py --source /path/to/extraction --commit 025e265c... [--dest .] [--check]
+
+Since sync 4 (D136) the source is the folder `prototypes/j2` of this repository at the pinned sutra commit, extracted with
+`git archive <commit> prototypes/j2 | tar -x --strip-components=2 -C <new, empty folder>` (never the working tree).
 
 What it does, in this order, and nothing else:
 
-  1. reads the J2 files of ONE commit (git blobs when `--source` is a git repository, so an edited working tree is never
-     vendored; a plain folder such as a `git archive` extraction otherwise, with `--commit` naming what it is);
-  2. copies the 14 code modules and applies the numbered patches (P1-P5, P7-P14; there is no P6) as exact text edits:
-     every edit names its old text and how often it must occur, so a J2 change under an anchor stops the run instead of
-     producing a silently different file;
+  1. reads the J2 files from `--source`, an extraction of `prototypes/j2` at ONE commit (a plain folder, so an edited working
+     tree, a `.pyc` or a stray file is never vendored), with `--commit` naming the commit it was taken from;
+  2. copies the 17 code modules and applies the numbered patches (P1 to P5, P7 to P12 and P14 to P16; no P6, no P13) as exact
+     text edits: every edit names its old text and how often it must occur, so a J2 change under an anchor stops the run
+     instead of producing a silently different file (P15 is a data patch: see `scrub_seed_index`);
   3. copies the data files byte for byte: role files, conditions, artifact types, generic templates, the seed template
-     library and the reference docs;
+     library (but for P15) and the reference docs;
   4. writes `sutra_app/engine/VENDORED.md`: the commit, the sha256 of every J2 file and of its vendored copy, and the patch
      list with the line ranges the patches ended up on.
 
 `--check` changes nothing: it builds the same tree in memory and compares it with `--dest` (exit 1 on any difference,
 including a file that should not be there). Re-running the script on an unchanged source writes the same bytes: a re-sync
-to a newer J2 commit is `--source` plus `--commit`, a review of the diff, and a look at the patch table.
+to a newer commit of `prototypes/j2` is a new extraction, `--source` plus `--commit`, a review of the diff, and a look at the
+patch table.
 
 The patched files never `import j2` or `import llm` any more: the siblings are package-relative (P1), so the whole tree
 imports as `sutra_app.engine.*`. Only the standard library is used here.
@@ -25,6 +29,7 @@ imports as `sutra_app.engine.*`. Only the standard library is used here.
 import argparse
 import hashlib
 import os
+import re
 import subprocess
 import sys
 from dataclasses import dataclass
@@ -32,19 +37,22 @@ from pathlib import Path
 from typing import Optional
 
 REPO = Path(__file__).resolve().parent.parent
-BASELINE = "9200cf626e5c05032caefda4f96b694284efdc5e"        # J2_Prototype main, 2026-11-06: PR #31 (template-library-fixes); 33aeeda (PR #30) before it
-DESIGNED_AGAINST = "ce2631f"                                  # the design's line numbers are those of this commit
+BASELINE = "025e265c594564f47a2365874cd5a5cc5d0d20a6"        # sutra commit that last touched prototypes/j2 (sync 4, D136)
+BASELINE_TREE = "21c67045fe3230c1ab9be381c2f21465ea91849c"   # `git rev-parse <BASELINE>:prototypes/j2`
+PREVIOUS_BASELINES = ("9200cf6", "33aeeda")                   # commits the earlier syncs took the J2 prototype at: history only, never a source
+DESIGNED_AGAINST = "ce2631f"                                  # the design documents' line numbers (`j2.py:n`) are those of this commit: history only
 J2_ENV = "SUTRA_J2_CHECKOUT"
 
-CODE = ("j2.py", "j2_agent.py", "j2_artifact_models.py", "j2_artifacts.py", "j2_board.py", "j2_change.py", "j2_check.py",
-        "j2_map.py", "j2_realization.py", "j2_rules.py", "j2_schema.py", "j2_send.py", "j2_story.py", "j2_template_lib.py")
+CODE = ("j2.py", "j2_agent.py", "j2_agent_models.py", "j2_agent_views.py", "j2_artifact_models.py", "j2_artifacts.py",
+        "j2_board.py", "j2_change.py", "j2_check.py", "j2_map.py", "j2_realization.py", "j2_rules.py", "j2_schema.py",
+        "j2_send.py", "j2_story.py", "j2_studio.py", "j2_template_lib.py")
 ROLE_FILES = ("team.md", "identity.md", "adaptation.md", "priority.md", "coordination.md", "audit.md", "builder.md",
               "confidence-judge.md", "rates.json", "stages.json")          # agents/j2/ without the never-read _placeholders/
 CONDITIONS = ("hld.json", "lld.json", "prd.json", "website.json")
 GENERIC_TEMPLATES = tuple(f"{a}/generic.json" for a in ("design", "hld", "lld", "prd", "website"))
 REF_TOP = ("README.md", "SETUP.md")
 REF_DOCS = ("atom-schema.json", "atom-schema.md", "map-schema.md", "realization-schema.json", "realization-axis.md",
-            "j2-handoff.md", "j2-prompts.md", "j2-test-plan.md")
+            "j2-handoff.md", "j2-prompts.md", "j2-test-plan.md", "agent-views-j2-proposal.md")
 REF_TREES = ("docs/superpowers",)
 MANAGED = ("sutra_app/engine/agents", "sutra_app/engine/conditions", "sutra_app/engine/artifacts",
            "sutra_app/engine/templates", "sutra_app/engine/seed", "docs/reference/j2")      # stale files in these are removed
@@ -58,14 +66,15 @@ class VendorError(Exception):
 # ---- the patches --------------------------------------------------------------------------------------------------
 @dataclass(frozen=True)
 class Edit:
-    patch: str          # "P1" .. "P14"
+    patch: str          # "P1" .. "P16" (P15 is the data patch below, not an Edit)
     file: str
     old: str
     new: str
     count: int = 1      # how often `old` must occur
 
 
-P1_NOTE = "sibling imports become package-relative: `import x` -> `from . import x`, `from x import y` -> `from .x import y`"
+P1_NOTE = ("sibling imports become package-relative: `import x` -> `from . import x`, `from x import y` -> `from .x import y`; "
+           "`j2_agent_views.py` also loses its `sys.path` insert")
 
 J2_EDITS = (
     # ---- imports (P1) and what the other patches import
@@ -85,6 +94,7 @@ import j2_realization
 import j2_rules
 import j2_schema
 import j2_send
+import j2_studio
 import j2_template_lib
 import llm
 ''', r'''from . import j2_artifacts
@@ -97,6 +107,7 @@ from . import j2_realization
 from . import j2_rules
 from . import j2_schema
 from . import j2_send
+from . import j2_studio
 from . import j2_template_lib
 from . import llm
 from . import hooks as _hooks                    # P3, P8: NullHooks, TurnInfo, CallInfo, TurnOutcome
@@ -257,56 +268,6 @@ def _ask(tag, *args, **kw):
 def saved_snapshot_dir(d, name, since=0):
     """P5: saved_snapshot for a folder the caller has already resolved (the server resolves it per department)."""
     rows = _jsonl(d, "chat.jsonl")
-'''),
-    # ---- P13: the run list of Run settings and the change list of the build journey (read-only; J2's own repository has neither)
-    Edit("P13", "j2.py", r'''def saved_snapshot(name, since=0):
-    """The page's state for a saved run, read from its folder (read-only)."""
-''', r'''# P13: Run settings' run list (GET /api/runlist), read-only: every saved run, newest first, from its own records. status: summary.json
-# "status" (done and done_with_open_items -> done; stopped, crashed, stuck, out_of_budget -> stopped); no summary.json -> stopped (it never
-# finished), except the live run while it runs -> running. title: goal.json "site_name", else the first sentence of goal.json "statement",
-# else the run id. output: summary.json "output_type" (the type the run ended with), else the chat's meta row "output" (the type it started
-# with). brief: summary.json "brief", else the first user message of chat.jsonl. when: from the id. Taken from the old Sutra repository's copy
-# of the prototype (e7800503, `j2_server.run_row` / `run_list`), which J2's own repository does not have; `runs_dir` as in P5.
-def run_row(name, runs_dir=None, live_running=False):
-    d = saved_dir(name, runs_dir)
-    if not d or not os.path.exists(os.path.join(d, "chat.jsonl")):
-        return None
-    s, g = _read(d, "summary.json", {}) or {}, _read(d, "goal.json", {}) or {}
-    rows = _jsonl(d, "chat.jsonl")
-    meta = rows[0] if rows and rows[0].get("meta") else {}
-    first = next((m for m in rows if m.get("who") == "user"), {})
-    st = str(s.get("status") or "")
-    status = "running" if live_running else "done" if st.startswith("done") else "stopped"
-    stmt = re.split(r"(?<=[.!?])\s", str(g.get("statement") or "").strip())[0]
-    title = str(g.get("site_name") or "").strip() or (stmt[:70] + ("\u2026" if len(stmt) > 70 else "")) or name
-    m = re.search(r"(\d{4})(\d{2})(\d{2})-(\d{2})(\d{2})(\d{2})", name)
-    return {"id": name, "title": title, "status": status, "output": s.get("output_type") or meta.get("output") or "",
-            "when": f"{m[1]}-{m[2]}-{m[3]}T{m[4]}:{m[5]}:{m[6]}" if m else "", "brief": str(s.get("brief") or first.get("text") or "")[:160]}
-
-
-def run_list(runs_dir=None, live="", live_running=False):
-    runs_dir = runs_dir or RUNS_DIR
-    names = sorted(os.listdir(runs_dir), reverse=True) if os.path.isdir(runs_dir) else []
-    out = [x for x in (run_row(n, runs_dir, bool(live_running) and n == live) for n in names) if x]
-    out.sort(key=lambda x: x["when"], reverse=True)
-    return {"live": live or "", "runs": out}
-
-
-# P13: GET /api/changes, the build journey's stops: one per change request in the run's change.json (a folder or None), read-only.
-def run_changes(d):
-    p = os.path.join(d or "", "change.json")
-    try:
-        with open(p, encoding="utf-8") as f:
-            rows = json.load(f) if d and os.path.isfile(p) else []
-    except (OSError, ValueError):
-        rows = []
-    return {"changes": [{"id": c.get("id"), "request": str(c.get("request") or ""), "cycle": c.get("cycle"),
-                         "revise": len(c.get("revise") or []), "new": len(c.get("new") or [])}
-                        for c in (rows if isinstance(rows, list) else []) if isinstance(c, dict)]}
-
-
-def saved_snapshot(name, since=0):
-    """The page's state for a saved run, read from its folder (read-only)."""
 '''),
     # ---- P3: the host names the run folder and id; P8: the hooks
     Edit("P3", "j2.py", r'''class J2Run:
@@ -651,13 +612,27 @@ def saved_snapshot(name, since=0):
         said = [self.request] + [x["answer"] for x in self.intake]''', r'''        if self.stages or self.goal or self.out.get("single"):      # P14: `single` outputs (project work) keep their output
             return
         said = [self.request] + [x["answer"] for x in self.intake]'''),
+    # ---- P16: Decide for me's two writes of settings.json add their key to the file the host wrote there; they no longer replace it
+    Edit("P16", "j2.py", '''            self.save("settings.json", {"decide_for_me": self.auto})
+''', '''            self.save("settings.json", {**(_read(self.dir, "settings.json", {}) or {}), "decide_for_me": self.auto})      # P16: the host's dump stays
+'''),
+    Edit("P16", "j2.py", '''                self.save("settings.json", {"decide_for_me": True})
+''', '''                self.save("settings.json", {**(_read(self.dir, "settings.json", {}) or {}), "decide_for_me": True})      # P16
+'''),
 )
 
 OTHER_EDITS = (
     # ---- P1 in the other modules
     Edit("P1", "j2_artifact_models.py", "import j2_rules\n", "from . import j2_rules\n"),
     Edit("P1", "j2_artifacts.py", "        import j2_schema\n", "        from . import j2_schema\n"),
-    Edit("P1", "j2_artifacts.py", "    import j2_map\n", "    from . import j2_map\n", count=2),
+    Edit("P1", "j2_artifacts.py", "    import j2_map\n", "    from . import j2_map\n", count=3),      # three lazy imports: the third is in groups()
+    # j2_agent_models.py has no sibling import; j2_agent_views.py (D143) puts its folder on sys.path and imports three siblings flat
+    Edit("P1", "j2_agent_views.py",
+         "HERE = os.path.dirname(os.path.abspath(__file__))\nif HERE not in sys.path:\n    sys.path.insert(0, HERE)\n"
+         "import j2_agent_models as G      # noqa: E402\nimport j2_artifact_models as AM      # noqa: E402\n"
+         "import j2_template_lib as L      # noqa: E402\n",
+         "HERE = os.path.dirname(os.path.abspath(__file__))\nfrom . import j2_agent_models as G\n"
+         "from . import j2_artifact_models as AM\nfrom . import j2_template_lib as L\n"),
     Edit("P1", "j2_change.py", "import llm\nimport j2_realization as R\n", "from . import llm\nfrom . import j2_realization as R\n"),
     Edit("P1", "j2_map.py", "import j2_artifacts as A\nimport j2_realization as R\n",
          "from . import j2_artifacts as A\nfrom . import j2_realization as R\n"),
@@ -763,7 +738,8 @@ PATCH_NOTES = {
     "P11": "`J2Run.rehydrate(src_dir)` delegates to `rehydrate.py`",
     "P12": "Windows (D101), nothing else: `j2_check.find_chrome` also looks in the Windows install folders of Chrome, `j2_check._chrome` decodes Chrome's output as UTF-8 with replacement, `j2_template_lib` writes its index with `oslayer.replace` (a rename that waits out a reader) and takes its library lock through `oslayer` (P10), records a template's saved path with `/` on every system (`run_tpl_rel`) and splits it on either separator when it checks for `..` (`run_saved_dir`)",
     "P14": "`J2Run._plan_stages` returns early for an output that says `single` (`if self.stages or self.goal or self.out.get(\"single\"):`): named documents in a brief (\"update the PRD in the repo\") do not swap the project output for a PRD stage chain. No other output has `single`, so every other run, prompt and golden is unchanged. The output itself is registered by `sutra_app/engine/capabilities/` (Sutra's own files, not J2's)",
-    "P13": "Run settings' read-only lists (the old Sutra repository's copy of the prototype has them, J2's own repository does not): `run_row(name, runs_dir=None, live_running=False)` and `run_list(runs_dir=None, live=\"\", live_running=False)` (GET /api/runlist: every saved run newest first with id, title, status, output, when, brief) and `run_changes(d)` (GET /api/changes: one stop per change request of `change.json`), placed before `saved_snapshot`; `views.runlist` and `views.changes` and the two routes call them",
+    "P16": "Decide for me's two writes of `settings.json` (`set_auto`, and the one at the start of `_run_safe`) add `decide_for_me` to what the file holds instead of replacing it: the engine host writes its resolved engine settings to the same file before J2 starts, and that dump now survives (`saved_snapshot` keeps reading `decide_for_me` from the same file)",
+    "P15": "seed data: the six `runs[].library` values of `library/index.json` that held a J2 developer's absolute home-folder path become `not recorded` (R5: no absolute home path in any file of this product); nothing reads the field; the two `/tmp/` values stay",
 }
 
 
@@ -794,9 +770,30 @@ def sha256(data: bytes) -> str:
     return hashlib.sha256(data).hexdigest()
 
 
+# ---- P15: the one data patch ---------------------------------------------------------------------------------------------
+SEED_INDEX = "library/index.json"
+HOME_PATH = re.compile(r'"library": "/(?:Users|home)/[^"]*"')        # the pattern only: a literal path would put one into this product (R5)
+NOT_RECORDED = '"library": "not recorded"'
+HOME_PATHS = 6                                                          # what the pinned seed holds; J2 changing it stops the run
+
+
+def scrub_seed_index(text: str):
+    """P15: (new text, lines). The seed's `library/index.json` records, per development run, the library folder of the J2
+    developer's machine (`runs[].library`). Six of those values are absolute home-folder paths; R5 forbids one in any file of this
+    product and nothing reads the field, so each becomes `not recorded` (the two `/tmp/` values are left as they are). `lines`
+    are the line numbers of the changed lines (the same in both texts: no newline is added or removed). It must find exactly
+    HOME_PATHS values: any other number means J2 changed under the patch, which stops the run like a missing anchor."""
+    found = list(HOME_PATH.finditer(text))
+    if len(found) != HOME_PATHS:
+        raise VendorError(f"{SEED_INDEX}: P15 expects {HOME_PATHS} home-folder paths in `runs[].library`, found {len(found)}")
+    lines = sorted({text.count("\n", 0, m.start()) + 1 for m in found})
+    return HOME_PATH.sub(NOT_RECORDED, text), lines
+
+
 # ---- reading J2 ----------------------------------------------------------------------------------------------------
 class Source:
-    """The J2 files of one commit: git blobs when `root` is a git repository, else plain files."""
+    """The J2 files of one commit, read from `root`: an extraction of `prototypes/j2` (plain files; `commit` names the sutra commit
+    it was taken from). A `root` that is itself a git repository is read as that commit's blobs instead."""
 
     def __init__(self, root: Path, commit: Optional[str]):
         self.root = Path(root)
@@ -806,7 +803,7 @@ class Source:
             self.commit, self.git = out.decode().strip(), True
         else:
             if not commit:
-                raise VendorError(f"{root} is not a git repository: name the commit it was taken from with --commit")
+                raise VendorError(f"{root} has no git history: name the commit the extraction was taken from with --commit")
             self.commit, self.git = commit, False
 
     def _git(self, *args: str) -> bytes:
@@ -868,9 +865,21 @@ def build(src: Source):
     for name in GENERIC_TEMPLATES:
         data = src.read(f"templates/{name}")
         add(f"sutra_app/engine/templates/{name}", f"templates/{name}", data, data)
+    patched_index = False
     for rel in src.tree("library"):
         data = src.read(rel)
-        add(f"sutra_app/engine/seed/{rel}", rel, data, data)
+        if rel == SEED_INDEX:        # P15: the only seed file that is not a byte copy
+            try:
+                text, lines = scrub_seed_index(data.decode("utf-8"))
+            except UnicodeDecodeError as exc:
+                raise VendorError(f"{rel} is not UTF-8: {exc}") from None
+            ranges.setdefault("P15", []).extend(f"seed/{rel}:{n}" for n in lines)
+            add(f"sutra_app/engine/seed/{rel}", rel, text.encode("utf-8"), data, ("P15",))
+            patched_index = True
+        else:
+            add(f"sutra_app/engine/seed/{rel}", rel, data, data)
+    if not patched_index:
+        raise VendorError(f"the seed has no {SEED_INDEX}: P15 has nothing to patch")
     for name in REF_TOP:
         data = src.read(name)
         add(f"docs/reference/j2/{name}", name, data, data)
@@ -890,17 +899,22 @@ def _pnum(patch: str) -> int:
 
 
 def render_vendored_md(commit: str, rows, ranges) -> str:
+    tree = f" (tree of `prototypes/j2`: `{BASELINE_TREE}`)" if commit == BASELINE else ""      # the tree id belongs to the pinned commit only
     out = [
         "# Vendored J2 engine",
         "",
-        f"Source: J2_Prototype commit `{commit}` (main on 2026-11-06, PR #31 `template-library-fixes`; 33aeeda, PR #30, was the baseline before it). The design was written "
-        f"against `{DESIGNED_AGAINST}`; its line numbers (`j2.py:n`) are that commit's, and everything after `j2.py:8313` "
-        "moved down by 7 lines. Patches are located by anchor text, never by line.",
+        f"Source: the J2 prototype as it is kept in this repository's own copy `prototypes/j2`, at the sutra commit `{commit}`{tree}, "
+        f"extracted with `git archive {commit} prototypes/j2 | tar -x --strip-components=2 -C <empty folder>` (sync 4, D136). That "
+        "extraction, given to the script with `--source` and `--commit`, is the only source of every file below, never the working tree. "
+        f"History, not a source: the earlier syncs took the J2 prototype at the commits `{PREVIOUS_BASELINES[0]}` and "
+        f"`{PREVIOUS_BASELINES[1]}`; the design documents cite the line numbers (`j2.py:n`) of `{DESIGNED_AGAINST}`, and everything "
+        "after `j2.py:8313` has moved. Patches are located by anchor text, never by line.",
         "",
         "Copied into `sutra_app/engine/` with the same module names; every change to a J2 file is one of the numbered patches "
-        "below and nothing else (decision D13). Prompts stay byte-identical. There is no P6: the design's table skips it. "
-        "This file is written by `scripts/vendor_j2.py`; `scripts/py scripts/vendor_j2.py --source <J2 checkout> --check` "
-        "re-derives every file below from the J2 commit and fails on any difference.",
+        "below and nothing else (decision D13). Prompts stay byte-identical. There is no P6 (the design's table skips it) and no "
+        "P13 (retired in sync 4, D140: its code is Sutra's own `engine/runlist.py`). "
+        "This file is written by `scripts/vendor_j2.py`; `scripts/py scripts/vendor_j2.py --source <the extraction> --commit "
+        f"{commit} --check` re-derives every file below from the J2 source and fails on any difference.",
         "",
         "## Patches",
         "| Id | What changes | Where (vendored file:lines) |",
@@ -920,6 +934,7 @@ def render_vendored_md(commit: str, rows, ranges) -> str:
                 "`agents/{product,design,development,team}.md`), the budget-conflict demo (`negotiate*`, `scenarios/`), "
                 "`agents/j2/_placeholders/`, the saved runs, the IDE and environment files, the page and its scripts "
                 "(`j2_ui.html`, `j2_ui_render.js`, `j2_graph_layout.js`, `vendor/`: the UI package ports them), "
+                "`docs/mocks/*.html` and `docs/build-on-run-design.md` of the copy (mocks; a design with no code), "
                 "`j2_server.py` (WP E2) and the legacy test scripts (WP E5).", ""]
     return "\n".join(out)
 
@@ -960,14 +975,16 @@ def write(files: dict, dest: Path) -> None:
 
 
 def main(argv=None) -> int:
-    ap = argparse.ArgumentParser(description="Vendor the J2 engine into sutra_app/engine/ (WP E1).")
-    ap.add_argument("--source", default=os.environ.get(J2_ENV), help=f"a J2 checkout or a git archive of it (default: ${J2_ENV})")
-    ap.add_argument("--commit", default=None, help="the J2 commit (default: HEAD of a git source; required for a plain folder)")
+    ap = argparse.ArgumentParser(description="Vendor the J2 engine from an extraction of prototypes/j2 into sutra_app/engine/ (WP E1, sync 4).")
+    ap.add_argument("--source", default=os.environ.get(J2_ENV),
+                    help=f"an extraction of this repository's prototypes/j2 (see the module docstring); default: ${J2_ENV}")
+    ap.add_argument("--commit", default=None,
+                    help="the sutra commit the extraction was taken from (required: an extraction is a plain folder with no history)")
     ap.add_argument("--dest", default=str(REPO), help="the repository to write into (default: this one)")
     ap.add_argument("--check", action="store_true", help="write nothing; exit 1 if the repository differs from the J2 snapshot")
     args = ap.parse_args(argv)
     if not args.source:
-        ap.error(f"--source (or ${J2_ENV}) is required")
+        ap.error(f"--source (an extraction of prototypes/j2, or ${J2_ENV}) is required")
     try:
         src = Source(Path(args.source), args.commit)
         if src.commit != BASELINE:

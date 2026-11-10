@@ -1,0 +1,64 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "additionalProperties": false,
+  "properties": {
+    "heading": {
+      "description": "The section heading, written exactly as '## Users'",
+      "type": "string"
+    },
+    "users": {
+      "description": "The user groups of Still Point Yoga: prospective students and the studio team",
+      "items": {
+        "$ref": "#/definitions/UserGroup"
+      },
+      "type": "array"
+    },
+    "booking_address": {
+      "description": "The address the booking form sends to: bookings@stillpoint.example",
+      "type": "string"
+    },
+    "assumptions": {
+      "description": "Anything assumed; nothing is invented",
+      "items": {
+        "type": "string"
+      },
+      "type": "array"
+    }
+  },
+  "required": [
+    "heading",
+    "users",
+    "booking_address"
+  ],
+  "type": "object",
+  "definitions": {
+    "UserGroup": {
+      "additionalProperties": false,
+      "properties": {
+        "group": {
+          "description": "The name of this user group",
+          "enum": [
+            "Prospective students",
+            "Studio team"
+          ],
+          "type": "string"
+        },
+        "needs": {
+          "description": "What this group needs from the page",
+          "type": "string"
+        },
+        "actions": {
+          "description": "What this group does, for example a student sends name, email, class and preferred date, and pays at the studio; the studio team receives the booking at the booking address. Empty if none in this version.",
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        }
+      },
+      "required": [
+        "group"
+      ],
+      "type": "object"
+    }
+  }
+}

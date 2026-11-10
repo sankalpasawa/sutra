@@ -7,7 +7,7 @@ import pytest
 
 from sutra_app.engine import capabilities, llm
 from sutra_app.engine.capabilities import Capability, EngineContext, OutputSpec, SPECS, register
-from sutra_app.engine.capabilities.workspace import WORKSPACE_PURPOSES, WorkspaceCapability, workspace_for
+from sutra_app.engine.capabilities.workspace import WORKSPACE_PURPOSES, WorkspaceCapability, team_workspace_for, workspace_for
 from sutra_app.engine.host.publisher import HostHooks
 from sutra_app.engine.port import CallTag, CompletionResult
 from sutra_app.engine.spec import EngineSettings
@@ -54,12 +54,19 @@ def test_builders_read_on_every_output_that_does_not_say_edit(edit_output):
         assert workspace_for("W-1", "agent_turn", output) == "read"
 
 
-def test_a_builder_of_an_output_that_says_edit_may_edit_and_audit_still_only_reads(edit_output):
+def test_a_builder_of_an_output_that_says_edit_may_edit_and_audit_looks_at_git_but_never_changes_anything(edit_output):
     assert workspace_for("W-2", "agent_turn", edit_output) == "edit"
     assert workspace_for("W-2", "judge", edit_output) == "edit"
     for fn in FIVE:
-        assert workspace_for(fn, "agent_turn", edit_output) == "read", fn      # only builders change files
-    assert workspace_for("audit", "agent_turn", edit_output) == "read"
+        assert workspace_for(fn, "agent_turn", edit_output) in ("read", "inspect"), fn      # only builders change files
+        assert workspace_for(fn, "agent_turn", edit_output) == ("inspect" if fn == "audit" else "read"), fn
+    for purpose in WORKSPACE_PURPOSES:
+        assert workspace_for("audit", purpose, edit_output) == "inspect"      # D135: Audit checks the builders' claims with git diff, so it may run the git reads
+
+
+def test_audit_of_an_output_whose_builders_only_read_has_no_git_either():
+    for output in ("website", "prd", "hld", "lld", None, "unknown"):
+        assert workspace_for("audit", "agent_turn", output) == "read", output
 
 
 def test_an_agent_that_is_not_one_of_the_engines_gets_no_folder():
@@ -70,10 +77,33 @@ def test_an_agent_that_is_not_one_of_the_engines_gets_no_folder():
 
 def test_the_capability_reads_the_calls_own_stage_before_the_runs_output(edit_output):
     cap, c = WorkspaceCapability(), ctx()
-    assert cap.tag(CallTag(function="W-1", stage=edit_output), c) == {"workspace": "edit"}
+    assert cap.tag(CallTag(function="W-1", stage=edit_output), c) == {"workspace": "edit", "team_workspace": "edit"}
     assert cap.tag(CallTag(function="W-1", stage="prd"), c) == {"workspace": "read"}
     c.selection = capabilities.Selection(edit_output, "owner", "x")
-    assert cap.tag(CallTag(function="W-1"), c) == {"workspace": "edit"}          # no stage on the tag: the run's output
+    assert cap.tag(CallTag(function="W-1"), c) == {"workspace": "edit", "team_workspace": "edit"}          # no stage on the tag: the run's output
+
+
+# ---- what the TEAM may do (D135): every agent of a run whose builders change files is told so, not only the builders ----------------------
+@pytest.mark.parametrize("function", FIVE + ("W-1", "W-7"))
+def test_every_agent_of_an_output_that_edits_carries_what_the_team_may_do(edit_output, function):
+    tag = WorkspaceCapability().tag(CallTag(function=function, stage=edit_output), ctx())
+    assert tag["team_workspace"] == "edit"
+    assert tag["workspace"] == ("edit" if function.startswith("W-") else "inspect" if function == "audit" else "read")      # its own reach
+
+
+@pytest.mark.parametrize("output", ["website", "prd", "hld", "lld", None, "unknown"])
+def test_an_output_whose_builders_only_read_says_nothing_about_a_team(edit_output, output):
+    for function in FIVE + ("W-1",):
+        assert "team_workspace" not in WorkspaceCapability().tag(CallTag(function=function, stage=output), ctx())
+
+
+def test_a_helper_call_of_an_editing_output_carries_neither(edit_output):
+    assert WorkspaceCapability().tag(CallTag(function="reviewer", purpose="review", stage=edit_output), ctx()) == {}
+
+
+def test_team_workspace_for_is_a_table_of_the_outputs_specs(edit_output):
+    assert team_workspace_for(edit_output) == "edit"
+    assert [team_workspace_for(o) for o in ("website", "prd", None, "")] == ["none"] * 4
 
 
 def test_a_helper_call_adds_nothing_to_its_tag():

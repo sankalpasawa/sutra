@@ -51,7 +51,7 @@ def _rules(state, actions: list) -> list:
             rows.append({"tag": "ask", "line": f"{mid} needs grant {g} before it runs"})
         else:
             rows.append({"tag": "ask", "line": f"{mid} has no grant declared; ask before it runs"})
-    rows.append({"tag": "refuse", "line": "any action kind outside simulate_fact, emit_artifact, compile_candidate"})
+    rows.append({"tag": "refuse", "line": "any action kind without a registered handler (registered: " + ", ".join(sorted(getattr(state, "actions", {}))) + ")"})
     rows.extend({"tag": "always", "line": inv} for inv in INVARIANTS)
     return rows
 
@@ -61,12 +61,14 @@ def _steps(result: dict, state) -> list:
     steps = [{"id": "record-intent", "host": "codex", "sandbox": "read-only",
               "action": f"log the goal {goal}, the scope {result['scope']} and the selected plan to the execution record",
               "verify": "an execution row exists for this run"}]
+    made_by = {state.methods.get(mid, {}).get("effect"): _slug(mid) for mid in result.get("actions", [])}   # effect -> the step that makes it
     for mid in result.get("actions", []):
         m = state.methods.get(mid, {})
         cost = ", ".join(f"{k} {v}" for k, v in sorted(m.get("cost", {}).items()))
         reqs = ", ".join(m.get("requires", [])) or "none"
         steps.append({"id": _slug(mid), "host": m.get("provider") or "claude-effector", "sandbox": LOCAL_SANDBOX,
                       "method": mid, "effect": m.get("effect"), "requires": list(m.get("requires", [])),
+                      "after": [made_by[r] for r in m.get("requires", []) if r in made_by],   # the steps in this plan it waits for
                       "grant": m.get("grant"), "cost": dict(m.get("cost", {})),
                       "action": f"make {m.get('effect')} true by {mid} (needs {reqs}; grant {m.get('grant')}; cost {cost or 'none'}); "
                                 "the owner stamps the ask before any real effect",
@@ -77,10 +79,16 @@ def _steps(result: dict, state) -> list:
     return steps
 
 
+def _edges(steps: list) -> list:
+    """The plan as ordered dependency edges: one per prerequisite a step takes from another step of the same plan."""
+    made = {s.get("effect"): s["id"] for s in steps if s.get("method")}
+    return [{"from": made[r], "to": s["id"], "via": r} for s in steps if s.get("method") for r in s.get("requires", []) if r in made]
+
+
 def _ui(impl: dict) -> str:
     e = html.escape
     wf = impl["workflow"]
-    rows = "".join(f"<tr><td>{e(s['id'])}</td><td>{e(s['host'])}</td><td>{e(s['sandbox'])}</td><td>{e(s['action'])}</td><td>{e(s['verify'])}</td></tr>" for s in wf["steps"])
+    rows = "".join(f"<tr><td>{e(s['id'])}</td><td>{e(', '.join(s.get('after', [])) or '-')}</td><td>{e(s['host'])}</td><td>{e(s['sandbox'])}</td><td>{e(s['action'])}</td><td>{e(s['verify'])}</td></tr>" for s in wf["steps"])
     gates = "".join(f"<li><b>{e(r['tag'])}</b> {e(r['line'])}</li>" for r in impl["scaffold"]["rules"])
     done = "".join(f"<li>{e(d)}</li>" for d in impl["scaffold"]["done_when"])
     return ("<!doctype html><html lang=\"en\"><head><meta charset=\"utf-8\"><meta name=\"viewport\" content=\"width=device-width,initial-scale=1\">"
@@ -91,7 +99,7 @@ def _ui(impl: dict) -> str:
             f"<h1>{e(impl['scaffold']['title'])}</h1><div class=\"banner\"><b>{e(impl['status'])}.</b> Generated from a local plan; nothing here has run. "
             f"Workflow <code>{e(wf['id'])}</code>, {len(wf['steps'])} steps, kernel status <code>{e(impl['plan']['status'])}</code>.</div>"
             f"<h2>Goal</h2><p>{e(impl['scaffold']['purpose'])}</p><h2>Done when</h2><ul>{done}</ul>"
-            f"<h2>Steps</h2><table><tr><th>Step</th><th>Host</th><th>Sandbox</th><th>Action</th><th>Verify</th></tr>{rows}</table>"
+            f"<h2>Steps</h2><table><tr><th>Step</th><th>After</th><th>Host</th><th>Sandbox</th><th>Action</th><th>Verify</th></tr>{rows}</table>"
             f"<h2>Gates and rules</h2><ul>{gates}</ul>"
             f"<h2>Record</h2><p>Plan cost {e(canonical(impl['plan']['cost']))}; trace root <code>{e(impl['plan']['trace_root_sha256'] or '')}</code>; "
             f"implementation sha256 <code>{e(impl['implementation_sha256'])}</code>.</p></body></html>")
@@ -113,11 +121,13 @@ def to_implementation(result: dict, state) -> dict:
         "deploy": "PROPOSED_ONLY: review, then cp to ~/.sutra-native/user-kit/workflows/ under the owner's stamp",
         "trigger": {"kind": "intent", "utterance_patterns": [f"(make|complete) {slug.replace('-', ' ')}"], "input": f"the standing goal {goal} in scope {scope}"},
         "steps": _steps(result, state),
+        "edges": [],
         "verify": f"{goal} observed TRUE from an independent source; every step's receipt present; budget not exceeded "
                   f"(plan cost {canonical(result.get('cost'))} within {canonical(state.budget)})",
         "enforcement": {"current": "PROPOSED_ONLY: generated from a local plan; nothing executed; every real effect is an ask the owner stamps",
                         "planned": "the daemon runs the steps as asks; independent verification closes each"},
     }
+    workflow["edges"] = _edges(workflow["steps"])
     scaffold = {
         "title": f"Department for {goal}",
         "scope": scope,
@@ -152,6 +162,12 @@ def validate_workflow(wf: dict) -> list:
         problems += [f"step {i} missing {f}" for f in REQUIRED_STEP_FIELDS if f not in s]
         if s.get("method") and s.get("sandbox") != LOCAL_SANDBOX:
             problems.append(f"step {i} is a method step without the local sandbox")
+    pos = {s.get("id"): i for i, s in enumerate(wf.get("steps", []))}
+    for e in wf.get("edges", []):
+        if e.get("from") not in pos or e.get("to") not in pos:
+            problems.append(f"edge {e.get('from')} -> {e.get('to')} names a step that is not in the workflow")
+        elif pos[e["from"]] >= pos[e["to"]]:
+            problems.append(f"step {e['to']} comes before its prerequisite {e['from']}")
     if "PROPOSED_ONLY" not in str(wf.get("enforcement", {}).get("current", "")):
         problems.append("enforcement.current is not PROPOSED_ONLY")
     return problems

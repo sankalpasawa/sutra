@@ -70,3 +70,39 @@ test("the transcript draws the fold under a settled agent message and not under 
     delete global.ChatFold;
   }
 });
+
+// ---- a long TEXT folded (D135): the finished report in the team's chat ------------------------------------------------------------------------------
+const {longText, headings} = ChatFold;
+const SECTIONS = "## Findings\n\nx\n\n## Changes\n\ny\n\n## Findings\n\nagain\n\n### not a section\n\n## Outcome ##\n\nz\n";
+
+test("a short text is returned as it is and a long one is folded into one details row", () => {
+  assert.equal(longText("short", "<p>short</p>"), "<p>short</p>");
+  assert.equal(longText("x".repeat(ChatFold.TEXT_FOLD_AT), "<p>x</p>"), "<p>x</p>");                           // the limit itself is still short
+  const folded = longText("x".repeat(ChatFold.TEXT_FOLD_AT + 1), "<p>x</p>");
+  assert.equal(folded, '<details class="cfold cfold-text"><summary>Read the full text</summary><p>x</p></details>');
+  assert.equal(ChatFold.TEXT_FOLD_AT, 1400);
+});
+
+test("the summary names the text's headings once each, in order, and the label and limit can be chosen", () => {
+  assert.deepEqual(headings(SECTIONS), ["Findings", "Changes", "Outcome"]);
+  const html = longText(SECTIONS + "z".repeat(50), "<div>body</div>", {limit: 40, label: "Read the report"});
+  assert.equal(html, '<details class="cfold cfold-text"><summary>Read the report (Findings, Changes, Outcome)</summary><div>body</div></details>');
+  assert.equal(longText(SECTIONS, "<div>b</div>", {limit: 10_000}), "<div>b</div>");
+});
+
+test("a text with many headings names the first eight and says there are more", () => {
+  const many = Array.from({length: 11}, (_, i) => "## Part " + (i + 1) + "\n\ntext\n").join("\n");
+  const html = longText(many, "<p>x</p>", {limit: 10});
+  assert.match(html, /<summary>Read the full text \(Part 1, Part 2, Part 3, Part 4, Part 5, Part 6, Part 7, Part 8, …\)<\/summary>/);
+});
+
+test("a heading is escaped in the summary and an odd call is harmless", () => {
+  const html = longText("## <script>x</script> & \"q\"\n" + "z".repeat(60), "<p>x</p>", {limit: 10, label: "<b>Read</b>"});
+  assert.doesNotMatch(html, /<script|<b>Read/);
+  assert.match(html, /&lt;script&gt;x&lt;\/script&gt; &amp; &quot;q&quot;/);
+  assert.equal(longText("z".repeat(5000), ""), "");
+  assert.equal(longText(null, "<p>x</p>"), "<p>x</p>");
+  assert.equal(longText("z".repeat(5000), "<p>x</p>", "limit").startsWith("<details"), true);                 // opts that are not an object are the defaults
+  assert.equal(longText("z".repeat(50), "<p>x</p>", {limit: -1}), "<p>x</p>");                                  // a bad limit is the default one
+  assert.deepEqual(headings(undefined), []);
+});

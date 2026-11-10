@@ -7,7 +7,7 @@
   "J2_REALIZATION": "0",
   "STUDIO_MOCK": "1"
  },
- "j2_commit": "33aeeda639cd7bf828d5361273a8a153ebc63a36",
+ "j2_commit": "025e265c594564f47a2365874cd5a5cc5d0d20a6",
  "outcome": "Done: the site is workable. Every done-when item passes with Audit's evidence and the render check is clean.",
  "scenario": "brewlab_fixes1",
  "schema": "prompts-golden/1",

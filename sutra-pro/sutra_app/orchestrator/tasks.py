@@ -78,7 +78,7 @@ BAD_END = ("stopped", "crashed", "cancelled")
 OVERRIDE_BUSY_NOTE = "Owner override needs a team that is waiting for you."
 RUN_FOLDER_INTERNALS = frozenset({
     "task.json", "inbox.jsonl", "events.jsonl", "trace.jsonl", "snapshot.json", "live.json", "settings.json", "run.stdout.log",
-    "run.stderr.log", "choices.json", "node_context.json",
+    "run.stderr.log", "choices.json", "node_context.json", "deliverable.json",
 })
 NODE_STATE_OF_TASK = {
     "blocked": "not_made", "queued": "not_made", "cancelled": "not_made", "starting": "running", "running": "running",
@@ -827,6 +827,17 @@ class TaskService:
         if result.delivered == "follow_up":
             self.kick()
         return result
+
+    def send_setting(self, dept_id: str, setting: dict) -> bool:
+        """What the engine's `POST /api/settings` calls (J2 sync 4: the Simple view's Decide for me switch): hand a setting to the team's
+        live run as the inbox line `{"kind": "setting", **setting}`, which the engine host applies at once (`decide_for_me` with
+        `J2Run.set_auto`). False, writing nothing, when the team has no live task: the engine keeps the owner's choice for the next run."""
+        with self.db.tx() as tx:
+            live = self.store.live_in(tx.conn, dept_id)
+            if live is None or live.run_id is None:
+                return False
+            self.launcher.send(self.store.run_dir_of(live), {"kind": "setting", **setting, "at": iso_z(tx.now())})
+        return True
 
     def _override_command(self, text: str) -> str | None:
         """The command after the override key, '' when only the key was sent, None when the text does not start with the key."""

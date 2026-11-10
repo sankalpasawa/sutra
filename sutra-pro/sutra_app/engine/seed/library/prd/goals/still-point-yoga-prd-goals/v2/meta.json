@@ -1,0 +1,43 @@
+{
+  "schema": "template-library/1",
+  "name": "Still Point Yoga PRD Goals",
+  "version": 2,
+  "sha": "2ec668218f496b7041db8fb55410ee1e010c7293852b6ae3110230036fa7366d",
+  "schema_sha": "fdf7e8b142ee5c6cbd312b6d3d52208714cd714a469fff15e0b6181a3aca434e",
+  "model_sha": "1d0c7a2945dc4069b56ad99586d8dfc077390de276575d184e26bce0f430263a",
+  "class": "StillPointYogaPRDGoalsV2",
+  "created": "2026-11-03T18:46:20",
+  "fingerprints": [
+    "2d76617a94a7ced8e87116276e7e6fd803b4f4863b4edb95fa697b905fd8a8f7"
+  ],
+  "made_by": {
+    "run": "j2-20261103-184249",
+    "workflow": "W-3",
+    "atom": "W-3.a1",
+    "agent": "template generator (claude-cli)",
+    "date": "2026-11-03 18:42:49"
+  },
+  "business": {
+    "name": "Still Point Yoga",
+    "type": "yoga studio"
+  },
+  "mock": false,
+  "collected_from": {
+    "run": "j2-20261103-184249",
+    "where": "the run's copy"
+  },
+  "used_by": [
+    {
+      "run": "j2-20261103-184249",
+      "workflow": "W-3",
+      "atom": "W-3.a1",
+      "action": "extended"
+    },
+    {
+      "run": "j2-20261103-184249",
+      "workflow": "W-7",
+      "atom": "W-7.a1",
+      "action": "reused"
+    }
+  ]
+}

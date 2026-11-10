@@ -1,0 +1,18 @@
+{
+  "schema": "sutra-extension/2",
+  "id": "70_site_goal",
+  "scope": "orgA/website",
+  "goals": [
+    "site_live"
+  ],
+  "budget": {
+    "compute": 10,
+    "money": 5,
+    "attention": 3
+  },
+  "preference": [
+    "attention",
+    "money",
+    "compute"
+  ]
+}
