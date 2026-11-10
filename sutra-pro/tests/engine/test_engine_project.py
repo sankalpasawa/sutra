@@ -12,8 +12,10 @@ from fastapi.testclient import TestClient
 from sutra_app.engine import capabilities, llm
 from sutra_app.engine.api import mount
 from sutra_app.engine.capabilities import EngineContext, Capability, register
-from sutra_app.engine.capabilities.project import (CONDITIONS_FILE, PROJECT_BUILDER, PROJECT_RUBRIC, PROJECT_SECTIONS, ProjectCapability,
-                                                   mock_project_charter, mock_project_section, project_spec)
+from sutra_app.connectors.workdir import WorkFolder
+from sutra_app.engine.capabilities import project as project_module
+from sutra_app.engine.capabilities.project import (CONDITIONS_FILE, PROJECT_BUILDER, PROJECT_INTAKE, PROJECT_RUBRIC, PROJECT_SECTIONS,
+                                                   ProjectCapability, mock_project_charter, mock_project_section, project_spec)
 from sutra_app.engine.spec import EngineSettings
 
 from test_engine_host import QUIET, Running, chat, events, j2, jsonl, make_port_of, of, trace   # noqa: F401  (fixtures and helpers)
@@ -33,11 +35,12 @@ class TaggingPort(llm.ScriptedPort):
 
     def __init__(self, *args, **kw):
         super().__init__(*args, **kw)
-        self.tags, self.systems = [], []
+        self.tags, self.systems, self.users = [], [], []
 
     def complete(self, req, on_progress=None):
         self.tags.append(req.tag)
         self.systems.append(req.system)
+        self.users.append(req.user)
         return super().complete(req, on_progress)
 
 
@@ -332,6 +335,134 @@ def test_a_website_run_has_no_project_text_in_any_prompt(j2, make_run_dir):
     running.wait(60)
     answerer.stop()
     assert json.loads((run_dir / "output.json").read_text())["output"] == "website"
+
+
+# ---- honest capability text (D135): what the owner allowed reaches the charter and the team's own words ---------------------------------------------
+UPDATE_BRIEF = ("Check the details of the app in the repo and update README.md so that its first section matches the app: add the line "
+                "'checked by the team' at the end of README.md, list what you changed, and say what you verified and what is left to do.")
+LOOK_BRIEF = ("Look at the folder of the app in the repo and list its top-level files, say what each one is for, and report which of them the "
+              "settings page reads, naming each file and saying what you could not check and what is left to look at.")
+READ_ONLY = re.compile(r"read[- ]only", re.I)
+
+
+@pytest.fixture(autouse=True)
+def unbound_mock_policy():
+    """The scripted Identity asks the store the host bound for the run; a unit test that calls the mock directly starts from none."""
+    project_module.bind_data_dir(None)
+    yield
+    project_module.bind_data_dir(None)
+
+
+def choose_folder(data_dir, tmp_path, access):
+    folder = tmp_path / "myproject"
+    folder.mkdir(exist_ok=True)
+    WorkFolder(data_dir).set(str(folder), access=access)
+    return folder
+
+
+def charter_of(run_dir):
+    return json.loads((run_dir / "goal.json").read_text(encoding="utf-8"))
+
+
+def limits_of(goal):
+    return " | ".join([*goal["constraints"], *goal["rules"]])
+
+
+def test_the_charter_of_an_update_brief_has_no_read_only_limit_when_the_owner_allowed_changes(j2, make_run_dir, data_dir, tmp_path):
+    choose_folder(data_dir, tmp_path, "edit")
+    run_dir = make_run_dir(user_text=UPDATE_BRIEF, settings=QUIET)
+    go(run_dir)
+    goal = charter_of(run_dir)
+    assert not READ_ONLY.search(limits_of(goal)), limits_of(goal)
+    assert "Do not change any file" not in limits_of(goal) and "no code or files in the folder are changed" not in limits_of(goal)
+    changes = next(item for item in goal["done_when"] if "Changes section" in item)
+    assert "README.md" in changes and "lists each change made" in changes          # the files to change are named
+    assert goal["features"] and any("update readme.md" in f.lower() for f in goal["features"])
+
+
+def test_the_charter_of_an_update_brief_says_read_only_plainly_when_the_owner_chose_read_only(j2, make_run_dir, data_dir, tmp_path):
+    choose_folder(data_dir, tmp_path, "read")
+    run_dir = make_run_dir(user_text=UPDATE_BRIEF, settings=QUIET)
+    go(run_dir)
+    goal = charter_of(run_dir)
+    assert READ_ONLY.search(limits_of(goal)) and "Settings, under Working folder" in limits_of(goal)
+    assert "Do not change any file in the working folder" in goal["rules"]
+    changes = next(item for item in goal["done_when"] if "Changes section" in item)
+    assert "cannot be made" in changes and "exact edits file by file" in changes and "how to allow changes" in changes
+
+
+def test_with_no_folder_an_update_brief_is_not_told_the_folder_is_read_only(j2, make_run_dir):
+    run_dir = make_run_dir(user_text=UPDATE_BRIEF, settings=QUIET)
+    go(run_dir)
+    assert not READ_ONLY.search(limits_of(charter_of(run_dir)))
+
+
+@pytest.mark.parametrize("access", ["edit", "read"])
+def test_a_brief_that_only_looks_stays_a_report_whatever_the_owner_allowed(j2, make_run_dir, data_dir, tmp_path, access):
+    choose_folder(data_dir, tmp_path, access)
+    run_dir = make_run_dir(user_text=LOOK_BRIEF, settings=QUIET)
+    go(run_dir)
+    goal = charter_of(run_dir)
+    changes = next(item for item in goal["done_when"] if "Changes section" in item)
+    assert "says no change was asked" in changes and not READ_ONLY.search(limits_of(goal)), limits_of(goal)
+    assert "The request asks for no change" in limits_of(goal)
+
+
+def test_the_scripted_identity_reads_the_access_the_host_bound_and_a_direct_call_can_say_it(data_dir, tmp_path):
+    assert not READ_ONLY.search(limits_of(mock_project_charter(UPDATE_BRIEF)))                       # nothing bound: no folder, no claim
+    choose_folder(data_dir, tmp_path, "read")
+    project_module.bind_data_dir(data_dir)
+    assert READ_ONLY.search(limits_of(mock_project_charter(UPDATE_BRIEF)))
+    assert not READ_ONLY.search(limits_of(mock_project_charter(UPDATE_BRIEF, access="edit")))        # an explicit access wins over the store
+    WorkFolder(data_dir).set_access("edit")
+    assert not READ_ONLY.search(limits_of(mock_project_charter(UPDATE_BRIEF)))                       # read again on every call: a change applies at once
+
+
+def test_every_call_of_a_project_run_that_has_a_folder_says_what_the_team_may_do(j2, make_run_dir):
+    run_dir = make_run_dir(user_text=BRIEF, settings=QUIET)
+    _, port = go(run_dir)
+    asked = [t for t in port.tags if t.workspace != "none"]
+    assert asked and {t.team_workspace for t in asked} == {"edit"}
+    assert {t.team_workspace for t in port.tags if t.workspace == "none"} == {"none"}                 # a helper call has no folder and says nothing of a team
+    assert {f for t in asked for f in [t.function] if f in ("identity", "adaptation", "priority", "coordination", "audit")} == {
+        "identity", "adaptation", "priority", "coordination", "audit"}
+
+
+def test_a_website_run_never_says_anything_about_a_team(j2, make_run_dir):
+    run_dir = make_run_dir(user_text="build a florist site for Petal and Stem in Jaipur with bouquets, same-day delivery, wedding flowers, "
+                                     "a contact form and opening hours, warm and simple, working well on phones", settings=QUIET)
+    running = Running(run_dir, "--mock", make_port=make_port_of(TaggingPort))
+    from test_engine_host import Answerer, VAGUE
+    answerer = Answerer(run_dir, VAGUE[1:])
+    running.wait(60)
+    answerer.stop()
+    assert {t.team_workspace for t in running.host.port.tags} == {"none"}
+
+
+def test_the_intake_says_what_the_brief_means_and_when_read_only_may_be_written():
+    for words in ("update, implement, fix, change or add something", "the goal includes making that change in the folder",
+                  "names the files to change", "only asks to look, list, check or report stays a report",
+                  "Your own tools only read because you plan; that is not a limit of the run, so never put it in the charter",
+                  "\"Folder is read-only\" in constraints or rules only when that text says the owner chose read only",
+                  "gives the exact edits file by file, and says how to allow changes (Settings, under Working folder)"):
+        assert words in PROJECT_INTAKE, words
+    assert "the owner" in PROJECT_INTAKE and PROJECT_INTAKE.startswith("J2.a for project work in the owner's working folder.")
+
+
+def test_the_intake_reaches_identity_after_j2s_own_prompt_in_a_project_run(j2, make_run_dir):
+    run_dir = make_run_dir(user_text=UPDATE_BRIEF, settings=QUIET)
+    _, port = go(run_dir)
+    intake = [u for t, u in zip(port.tags, port.users) if t.function == "identity" and "REQUESTER'S BRIEF" in u]
+    assert intake and all(PROJECT_INTAKE in u for u in intake)
+    assert all(u.index("REQUESTER'S BRIEF") < u.index(PROJECT_INTAKE) for u in intake)                 # J2's brief and answers first, the output's rules after them
+    assert not [u for t, u in zip(port.tags, port.users) if t.function != "identity" and PROJECT_INTAKE in u]
+
+
+def test_audit_is_told_to_check_every_claimed_change_against_the_folder_with_git_diff():
+    text = project_module.ADDENDA["audit"]
+    for words in ("git diff", "git status", "the report claims that the folder does not show has not been made", "You cannot edit anything"):
+        assert words in text
+    assert "never describe a change instead of making it" in PROJECT_BUILDER and "how to allow changes" in PROJECT_BUILDER
 
 
 # ---- the addendum, as a unit -------------------------------------------------------------------------------------------------

@@ -417,6 +417,47 @@ def test_a_folder_the_team_may_change_says_so_and_carries_the_projects_instructi
     assert "read-only" in read and "create and change" not in read and "<project-instructions>" in read    # the instructions are read in both
 
 
+# D135: an agent whose own tools only read (Identity plans, the builders write) is told what its TEAM may do, not only what its own tools do.
+READ_ONLY_OLD = ("Working folder: {path}\nYou can look at the owner's files there with your file tools (read, list and search). They are read-only: you cannot "
+                 "create, change or delete a file, and you cannot run a command. Paths are relative to that folder. When the owner mentions their files, a "
+                 "project, an app or a folder, look there first, starting with a listing of the folder itself, and say which files you read.")
+
+
+def test_a_planner_of_a_team_that_may_change_files_is_not_told_the_folder_is_read_only(dirs):
+    (dirs.mine / "CLAUDE.md").write_text("Run the tests before you say it is done.", encoding="utf-8")
+    planner = grounding_text(Folder(str(dirs.mine), edit=False, team="edit"))
+    assert "Your own tools do not change files" in planner and "that is not a limit of this run" in planner
+    assert "builders can create and change files there" in planner and "git status, diff, log and show" in planner
+    assert "Settings, under Working folder" in planner and "the plan names the files to change" in planner
+    assert "Never write that the folder is read-only" in planner
+    assert "They are read-only" not in planner and "cannot create, change or delete a file" not in planner      # the sentence that leaked into a charter
+    assert "<project-instructions>\nRun the tests before you say it is done.\n</project-instructions>" in planner
+    assert planner.endswith("</project-instructions>") and "which files you read." in planner and "and which you changed" not in planner
+
+
+def test_a_builder_already_knows_what_it_may_do_so_the_team_adds_nothing_for_it(dirs):
+    own = grounding_text(Folder(str(dirs.mine), edit=True))
+    assert grounding_text(Folder(str(dirs.mine), edit=True, team="edit")) == own
+    assert "create and change files" in own and "which you changed" in own
+
+
+def test_when_the_owner_chose_read_only_the_whole_team_is_told_so_plainly(dirs):
+    for edit in (False,):
+        text = grounding_text(Folder(str(dirs.mine), edit=edit, team="read"))
+        assert "They are read-only" in text                                        # its own tools, as before
+        assert "The owner chose read only for this folder (Settings, under Working folder)" in text and "nobody on this team can create, change or delete" in text
+        assert "the exact edits (file by file, what to change)" in text and "allow changes in Settings, under Working folder" in text
+        assert "builders can create" not in text and "Your own tools do not change files" not in text
+
+
+def test_with_no_team_the_words_are_what_they_always_were(dirs):
+    expected = READ_ONLY_OLD.format(path=str(dirs.mine))
+    for folder in (Folder(str(dirs.mine), edit=False), Folder(str(dirs.mine), edit=False, team=""), Folder(str(dirs.mine), edit=False, team="nonsense"), str(dirs.mine)):
+        assert grounding_text(folder) == expected
+    assert Folder(str(dirs.mine), team="nonsense").team == "" and Folder(str(dirs.mine), team="edit").team == "edit"
+    assert grounding_text(str(dirs.mine), False, "edit") != expected and grounding_text(str(dirs.mine), team="read") != expected     # the arguments win over the marks
+
+
 def test_put_changes_the_access_alone_and_the_answer_names_the_instructions(client):
     (client.mine / "CLAUDE.md").write_text("be brief", encoding="utf-8")
     body = client.put(route(), json={"path": str(client.mine)}, headers=HEADERS).json()

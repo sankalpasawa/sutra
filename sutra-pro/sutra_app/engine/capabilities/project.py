@@ -19,7 +19,7 @@ from .base import Capability, EngineContext, OutputSpec, Selection
 from .select import choose_output
 
 __all__ = ["ProjectCapability", "PROJECT_SECTIONS", "PROJECT_RUBRIC", "CONDITIONS_FILE", "PROJECT_INTAKE", "PROJECT_PLAN",
-           "PROJECT_BUILDER", "project_spec", "mock_project_charter", "mock_project_section"]
+           "PROJECT_BUILDER", "project_spec", "mock_project_charter", "mock_project_section", "bind_data_dir"]
 
 # The design names the third section "Verification". J2's own validator refuses that word: a done-when item may not contain it
 # (`J2Run.NOT_CHECKABLE`) and, unless the realization pass is on, a workflow whose name contains it is "Audit's job, not a workflow"
@@ -44,7 +44,15 @@ PROJECT_INTAKE = (
     "no working folder is set, set enough=false and ask the owner to choose one in Settings, under Connectors, in Working folder, and to "
     "say the request again. Record the charter from the brief, the answers and what you read; `product_name` is the project (folder or "
     "repository) name; `features` are the changes or checks asked; `facts` are exact names the owner used. done_when: one checkable item "
-    "per section. Keep everything the brief asks for. Don't plan costs.")
+    "per section. Keep everything the brief asks for. Don't plan costs.\n"
+    "- What the brief asks decides the goal. A brief that asks to update, implement, fix, change or add something means the goal includes "
+    "making that change in the folder: `features` name it and the done_when item for the Changes section names the files to change. A brief "
+    "that only asks to look, list, check or report stays a report: that item says no change was asked.\n"
+    "- The folder's access is what the working folder text says the owner allowed. Your own tools only read because you plan; that is not a "
+    "limit of the run, so never put it in the charter. Write \"Folder is read-only\" in constraints or rules only when that text says the "
+    "owner chose read only. Then, if the brief asks for a change, the goal is the report: it says plainly that changes cannot be made, "
+    "gives the exact edits file by file, and says how to allow changes (Settings, under Working folder). When changes are allowed, never "
+    "write that files are not changed.")
 
 PROJECT_PLAN = (
     "\nTHE OUTPUT IS A PROJECT WORK REPORT (markdown). Plan one workflow per section in this order: "
@@ -55,20 +63,25 @@ PROJECT_PLAN = (
 PROJECT_BUILDER = (
     "Workflow agent for one section of a project work report. You work in the owner's folder with your file tools. Findings: read and "
     "report what you saw, naming each file. Changes: make the smallest change that does what the charter asks, follow the project's own "
-    "instructions, then list each on its own line as - `path`: what changed; never commit; when your tools are read-only write 'No changes were "
-    "made: the folder is read only for the team.' Confirmation: look at the files and `git diff`/`git status` and say what you confirmed "
+    "instructions, then list each on its own line as - `path`: what changed; never commit; never describe a change instead of making it; "
+    "when your tools are read-only (the owner chose read only) write 'No changes were made: the folder is read only for the team.' and, when "
+    "the charter asks for a change, give the exact edits file by file and say how to allow changes (Settings, under Working folder). "
+    "Confirmation: look at the files and `git diff`/`git status` and say what you confirmed "
     "and what you could not (you cannot run tests). Open items: what is left and why. Outcome: three sentences from the other sections. "
     "Reply with the section only, starting with `## <Section>`, in markdown. Claims beyond a file you read or the charter start with "
     "`Assumption:`.")
 
 ADDENDA = {
     "identity": ("Project work: look before you ask. Read the working folder with your file tools first, and ask the owner only what the "
-                 "folder and its instructions cannot answer. This is not a website: never ask about pages, menus or visitors."),
+                 "folder and its instructions cannot answer. This is not a website: never ask about pages, menus or visitors. Your tools only "
+                 "read, because you plan: the builders change files when the owner allowed it, and the working folder text says whether he or "
+                 "she did, so plan for what the team can do and never write your own tools' limit into the charter as the run's."),
     "adaptation": f"Project work: plan the five sections only ({', '.join(PROJECT_SECTIONS)}), one workflow each, in that order.",
-    "audit": ("Project work: verify every change the report lists in the folder with your tools (read the file, look at `git diff` and "
-              "`git status`). You cannot edit anything: you check the builders' work independently of them."),
+    "audit": ("Project work: check every change the report claims against the folder with your tools: read the file and look at `git diff` and "
+              "`git status`. A change the report claims that the folder does not show has not been made; a change the charter asked for that "
+              "the folder does not show is not done, whatever the report says; a change the request did not ask for fails the rubric. You "
+              "cannot edit anything: you check the builders' work independently of them."),
 }
-
 
 def project_spec(j2) -> OutputSpec:
     """The output's spec, built from the J2 module that is running (its charter format, rate card and atom helper)."""
@@ -111,18 +124,61 @@ def _clauses(text: str) -> list[str]:
     return [p[:1].upper() + p[1:] for p in parts if len(p.split()) >= 3][:5]
 
 
-def mock_project_charter(text: str) -> dict:
-    """Mock only: a project charter from the brief: the project's name, the changes or checks it asks for (its own sentences)."""
+# What the owner allowed in the working folder, as the SCRIPTED Identity reads it (offline mode only): the real Identity reads the same fact from the working
+# folder text its calls carry (`Router.folder_for`); a scripted reply has no router, so `install` binds the data folder and the mock asks the store.
+_BOUND: dict = {"data_dir": None}
+_CHANGE = re.compile(r"\b(?:updat\w*|upgrad\w*|implement\w*|fix\w*|chang\w*|add(?:s|ed|ing)?|creat\w*|writ(?:e|es|ing|ten)|rewrit\w*|renam\w*|remov\w*|"
+                     r"delet\w*|refactor\w*|edit\w*|modif\w*|replac\w*|insert\w*|append\w*|patch\w*)\b", re.I)
+_NAMED_FILE = re.compile(r"(?<![\w./-])((?:[\w-]+/)*[\w-]+\.(?:md|txt|py|js|ts|tsx|jsx|json|html|css|yml|yaml|toml|cfg|ini|sh|java|go|rs|rb|php|sql))(?![\w])")
+
+
+def bind_data_dir(data_dir) -> None:
+    """Tell the scripted Identity where the owner's choices live (`install` calls it for every run; a test may bind a folder or None)."""
+    _BOUND["data_dir"] = data_dir
+
+
+def _folder_access() -> str:
+    """`edit` or `read`: what the owner allowed in the working folder; `` when none is set (or no data folder is bound)."""
+    if _BOUND["data_dir"] is None:
+        return ""
+    try:
+        from sutra_app.connectors.workdir import WorkFolder
+        grant = WorkFolder(_BOUND["data_dir"]).grant()
+    except Exception:  # noqa: BLE001 - an unreadable store is "no folder", never a failed scripted reply
+        return ""
+    return "" if grant is None else ("edit" if getattr(grant, "edit", False) else "read")
+
+
+def mock_project_charter(text: str, access: Optional[str] = None) -> dict:
+    """Mock only: a project charter from the brief: the project's name, the changes or checks it asks for (its own sentences). It follows the same
+    rules the real Identity is given (`PROJECT_INTAKE`): a brief that asks for a change has the change as its goal, with the files named in the
+    Changes item; "Folder is read-only" is written only when the owner chose read only (`access`, else the bound folder's), and then the goal is the
+    report of the exact edits; a brief that only looks stays a report."""
     name = _name_of(text)
     features = _clauses(text) or ["Look at the project and report what was found"]
-    items = [f"The Findings section says what was found in {name}", f"The Changes section lists every change made to {name}",
+    allowed = _folder_access() if access is None else access
+    asks = bool(_CHANGE.search(text or ""))
+    named = list(dict.fromkeys(_NAMED_FILE.findall(text or "")))[:5]
+    constraints, rules = ["Change only what the request asks", "Never commit"], ["No invented facts"]
+    changes = f"The Changes section lists every change made to {name}"
+    if not asks:
+        constraints = ["The request asks for no change: leave every file as it is", "Never commit"]
+        changes = f"The Changes section says no change was asked in {name}"
+    elif allowed == "read":
+        constraints = ["Folder is read-only: the owner chose read only in Settings, under Working folder, so changes cannot be made here",
+                       "The report gives the exact edits and how to allow changes"]
+        rules = ["No invented facts", "Do not change any file in the working folder"]
+        changes = f"The Changes section says changes cannot be made in {name}, gives the exact edits file by file and says how to allow changes"
+    elif named:
+        changes = f"The Changes section lists each change made to {', '.join(named)} in {name}"
+    items = [f"The Findings section says what was found in {name}", changes,
              "The Confirmation section says what was checked and what could not be", "The Open items section says what is left and why",
              "The Outcome section sums the work up in three sentences"]
     return {"statement": f"Project work on {name}", "product_name": name, "site_name": name, "users": "The owner",
             "audience": "The owner", "user_groups": [{"name": "Owner", "actions": features}],
             "problem": " ".join((text or "").split())[:300] or "The request in the brief", "features": features,
-            "constraints": ["Change only what the request asks", "Never commit"], "success_measures": [],
-            "facts": [name], "standards": ["Every finding names its file"], "rules": ["No invented facts"],
+            "constraints": constraints, "success_measures": [],
+            "facts": [name], "standards": ["Every finding names its file"], "rules": rules,
             "done_when": items, "core": [True, True, True, False, False], "to_be_confirmed": [], "dropped_from_brief": [],
             "business_type": "project", "visitor_needs": []}
 
@@ -149,6 +205,9 @@ class ProjectCapability(Capability):
     def outputs(self) -> dict:
         import importlib
         return {"project": project_spec(importlib.import_module("sutra_app.engine.j2"))}
+
+    def install(self, ctx: EngineContext) -> None:
+        bind_data_dir(getattr(ctx, "data_dir", None))              # the scripted Identity reads the owner's access choice from the same store
 
     def select(self, brief: str, ctx: EngineContext) -> Optional[Selection]:
         return choose_output(brief, ctx.has_folder, ctx.seed_output, ctx.settings.output)

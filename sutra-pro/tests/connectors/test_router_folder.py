@@ -46,13 +46,13 @@ def real(path):
     return os.path.realpath(path)
 
 
-def tag(workspace="none", function="identity", purpose="agent_turn"):
-    return CallTag(function=function, stage="website", workspace=workspace, purpose=purpose)
+def tag(workspace="none", function="identity", purpose="agent_turn", team="none"):
+    return CallTag(function=function, stage="website" if team == "none" else "project", workspace=workspace, purpose=purpose, team_workspace=team)
 
 
-def text_req(workspace="none", system=J2_SYSTEM, schema=None, function="identity", purpose="agent_turn"):
+def text_req(workspace="none", system=J2_SYSTEM, schema=None, function="identity", purpose="agent_turn", team="none"):
     return AskRequest(user="the brief", system=system, kind="text" if schema is None else "json", schema=schema,
-                      ctx=RouteContext(tag=tag(workspace, function, purpose)))
+                      ctx=RouteContext(tag=tag(workspace, function, purpose, team)))
 
 
 class Rig:
@@ -98,6 +98,9 @@ def test_a_tag_asks_for_nothing_by_default_and_refuses_a_word_it_does_not_know()
     assert CallTag(workspace="read").workspace == "read" and CallTag(workspace="edit").workspace == "edit"
     with pytest.raises(ValidationError):
         CallTag(workspace="write")
+    assert CallTag().team_workspace == "none" and CallTag(team_workspace="edit").team_workspace == "edit"
+    with pytest.raises(ValidationError):
+        CallTag(team_workspace="write")
 
 
 # ---- the matrix: tag x access x folder x offline -----------------------------------------------------------------------------------
@@ -179,6 +182,63 @@ def test_an_edit_call_may_change_files_only_when_the_owner_allowed_it(make, fake
     assert value(capped["argv"], "--tools") == READ and "read-only" in value(capped["argv"], "--system-prompt")
     assert value(capped["argv"], "--allowedTools") == READ
     assert {"Edit", "MultiEdit", "Write", "Bash"} <= set(value(capped["argv"], "--disallowedTools").split(","))
+
+
+# ---- what the TEAM may do (D135): the grounding of an agent that only reads says what its builders can do -----------------------------------------
+
+@pytest.mark.parametrize("workspace,team,access,edit,crew", [
+    ("read", "edit", "edit", False, "edit"),               # Identity of a run whose builders edit, owner allowed: it reads, the team edits
+    ("edit", "edit", "edit", True, "edit"),                # a builder
+    ("read", "edit", "read", False, "read"),               # the owner chose read only: nobody on the team can change anything
+    ("edit", "edit", "read", False, "read"),
+    ("read", "none", "edit", False, ""),                   # an output whose builders only read says nothing about a team
+    ("edit", "none", "edit", True, ""),
+    ("read", "read", "edit", False, ""),                   # a team of readers is not a statement either
+])
+def test_folder_for_carries_what_the_team_may_do_capped_by_the_owners_access(tmp_path, workspace, team, access, edit, crew):
+    cfg = ConnectorConfig(data_dir=tmp_path / "data", work_root=tmp_path / "work")
+    router = Router({"stub": StubConnector(cfg)}, policy())
+    router.folders = WorkFolder(cfg.data_dir, cfg.resolved_work_root())
+    (tmp_path / "p").mkdir()
+    router.folders.set(str(tmp_path / "p"), access=access)
+    got = router.folder_for(tag(workspace, team=team))
+    assert isinstance(got, Folder) and (got.edit, got.team) == (edit, crew)
+
+
+def test_the_agent_that_only_reads_is_told_its_builders_can_change_files_when_the_owner_allowed_it(make, fake):
+    fake.sequence("ok_plain").reply(text="r")
+    rig = make("claude")
+    rig.choose("edit")
+    rig.router.ask(text_req("read", team="edit"))                                  # Identity of a project run
+    rig.router.ask(text_req("edit", function="W-2", team="edit"))                  # a builder of the same run
+    planner, builder = rig.calls()
+    said = value(planner["argv"], "--system-prompt")
+    assert value(planner["argv"], "--tools") == READ and value(builder["argv"], "--tools") == EDIT           # the tools are what they were
+    assert "builders can create and change files there" in said and "Your own tools do not change files" in said
+    assert "They are read-only" not in said and "cannot create, change or delete a file" not in said        # the sentence that leaked into a charter
+    built = value(builder["argv"], "--system-prompt")
+    assert "can create and change files with your file tools" in built and "builders can create" not in built
+
+
+def test_with_read_only_chosen_every_agent_of_a_project_run_is_told_so_and_none_can_edit(make, fake):
+    fake.sequence("ok_plain").reply(text="r")
+    rig = make("claude")
+    rig.choose("read")
+    rig.router.ask(text_req("read", team="edit"))
+    rig.router.ask(text_req("edit", function="W-2", team="edit"))
+    for call in rig.calls():
+        said = value(call["argv"], "--system-prompt")
+        assert value(call["argv"], "--tools") == READ and "The owner chose read only for this folder (Settings, under Working folder)" in said
+        assert "allow changes in Settings, under Working folder" in said and "builders can create" not in said
+
+
+def test_a_call_with_no_team_gets_the_same_words_as_before_the_team_existed(make, fake):
+    fake.sequence("ok_plain").reply(text="r")
+    rig = make("claude")
+    rig.choose("edit")
+    rig.router.ask(text_req("read"))
+    said = value(rig.calls()[0]["argv"], "--system-prompt")
+    assert "They are read-only: you cannot create, change or delete a file" in said and "builders" not in said and "owner chose read only" not in said
 
 
 def test_a_folder_chosen_in_the_middle_of_a_run_applies_from_the_next_call(make, fake):
