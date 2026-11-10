@@ -1,6 +1,6 @@
 {
   "schema": "j2-fixtures/1",
-  "j2_commit": "00efb179e21cb79fae157a0679e819921ac37726",
+  "j2_commit": "025e265c594564f47a2365874cd5a5cc5d0d20a6",
   "mock": true,
   "brief": "A one-page website for Brew Lab, a small specialty coffee shop in Indiranagar, Bengaluru. Visitors should see the menu with prices, the opening hours, and where to find us, and be able to pre-order a coffee for pickup. It should feel warm and modern and work well on a phone.",
   "clock": 1793786404,
@@ -31,6 +31,15 @@
       "golden-planmap.json",
       "golden-msgfns.json",
       "golden-feed.json",
+      "golden-teamwork.json",
+      "golden-plan.json",
+      "golden-team.json",
+      "golden-status.json",
+      "golden-views.json",
+      "golden-files.json",
+      "golden-parts.json",
+      "golden-tabs.json",
+      "golden-inline.json",
       "golden-layout.json"
     ]
   },
@@ -143,6 +152,10 @@
       "bytes": 15,
       "sha256": "c5965b4b973d3a7d9a0db8178b0d4a724b08bc5299f46630ad9f9a95e33c2752"
     },
+    "doc-prd.html": {
+      "bytes": 82,
+      "sha256": "ba69c2a42c5e61147dfded37c52b4b79f322bc043daf11c83c63cbaf4a88f40d"
+    },
     "docs.json": {
       "bytes": 168,
       "sha256": "8ec3135c1f4624db617785ced22785e61f0c045ef229d46eaef4e822621a274a"
@@ -155,17 +168,25 @@
       "bytes": 5160,
       "sha256": "00a2da7a608855f9f893f36d944daaebf7eafbb38101312087eeee7965fc2275"
     },
+    "golden-files.json": {
+      "bytes": 2,
+      "sha256": "12ae32cb1ec02d01eda3581b127c1fee3b0dc53572ed6baf239721a03d82e126"
+    },
     "golden-finish.json": {
       "bytes": 2,
       "sha256": "12ae32cb1ec02d01eda3581b127c1fee3b0dc53572ed6baf239721a03d82e126"
     },
+    "golden-inline.json": {
+      "bytes": 2361,
+      "sha256": "879c5e74892a35caf35e0e81540c2a361f652d4d10f39e14e40d7a31a858694f"
+    },
     "golden-journey.json": {
-      "bytes": 1000,
-      "sha256": "e1634cb492d0ebb655d3b3b2122df8b8f1779f21ed0adda33d5501c56d1bd5dc"
+      "bytes": 1088,
+      "sha256": "57d0a7825b371337438d5894163ac88a235d970402ebadb1dba8f94e027e0cb0"
     },
     "golden-journeyhtml.json": {
-      "bytes": 4169,
-      "sha256": "5e4975420071c4cfe9b5f3aba191a0ddcaa5ac68898c77397931574f658020ab"
+      "bytes": 18340,
+      "sha256": "b2dbb84550cee3f6d7a8df6e25b7820c3baae6a5519479c4698bfb03a9385d8c"
     },
     "golden-layout.json": {
       "bytes": 24794,
@@ -187,6 +208,14 @@
       "bytes": 381,
       "sha256": "814e644632d0e513ae5076503c6098a2765e89c744aca2330ed55d8d8e5f879d"
     },
+    "golden-parts.json": {
+      "bytes": 425,
+      "sha256": "a08cc98ae3195393788a935081189a4f78a6b01335fb888fe6268ac59123fffe"
+    },
+    "golden-plan.json": {
+      "bytes": 7374,
+      "sha256": "af3e147c195a4811ab50fc1cf71059a9f0b2096790122ebf4175b93838bb114e"
+    },
     "golden-planmap.json": {
       "bytes": 8674,
       "sha256": "1c386488f6e483c9f1d95d751b804e357e8449a678edc5e4f2df130dd00f2797"
@@ -200,16 +229,36 @@
       "sha256": "46545c05e6c09b473a053f81632ae08603f4acd5a594cb44df21d6df676e4b0e"
     },
     "golden-sframe.json": {
-      "bytes": 26,
-      "sha256": "66ba156a7acdec05c476697d4556125751d748be61eb18ffd41c4a6d75632b65"
+      "bytes": 14,
+      "sha256": "4042e3b03766e1ce384fc5519d7ce95f87b99652cb81ed193295424965b2b153"
     },
     "golden-simple.json": {
-      "bytes": 1301,
-      "sha256": "e5aa347a28634eecf2cd9ab54ceaa9d978df63db6cddab142cee01da8c981588"
+      "bytes": 2914,
+      "sha256": "f626890606c4cd5d9987ac5bea5bfce985a928cbed096c6e95612991caf293ec"
     },
     "golden-sprog.json": {
       "bytes": 169,
       "sha256": "aeee9c9eba078e7463d8e054e968e58acab9c49d844bccc76ba64cd4b8b98870"
+    },
+    "golden-status.json": {
+      "bytes": 25,
+      "sha256": "b05e48639dbeb8e325070a28ff3efd2656da4d3a8a3dc3c37bacc188b9205101"
+    },
+    "golden-tabs.json": {
+      "bytes": 15,
+      "sha256": "05f3234dd289c1ca62f6c9ddc5c293e1c9efc6ea24d4bc1af7605b07b1b534ab"
+    },
+    "golden-team.json": {
+      "bytes": 7375,
+      "sha256": "cf179d0a35d91facf36730d74a4dcadcae8716db3b2bda8bb6faa19eb8aa4e65"
+    },
+    "golden-teamwork.json": {
+      "bytes": 18322,
+      "sha256": "4d7e82bb22c6515d422697b75d04ebd189ee102f7b0ad98f54eafd5f9c3e79ba"
+    },
+    "golden-views.json": {
+      "bytes": 198,
+      "sha256": "78ef268e2a0b79791ab4d3d8c56b658227d8c52c8f8ec3834cb33bfab644c6f1"
     },
     "golden-workflows.json": {
       "bytes": 48216,
@@ -243,13 +292,41 @@
       "bytes": 2075,
       "sha256": "7a2f84ea54ff2b44fad0267045e40d88fc5fce15ca696e88fb329f4de6bef2d2"
     },
+    "record-W-1.json": {
+      "bytes": 408,
+      "sha256": "190d53b1219f3468ca666471f011ab3561d7811eb0aa1648f7a3720a91a12349"
+    },
+    "record-W-2.json": {
+      "bytes": 498,
+      "sha256": "88c186f0204d012c46671d4df3c7afd51202f327c4508ccade60eb70ae1d2f68"
+    },
+    "record-W-3.json": {
+      "bytes": 474,
+      "sha256": "5467d6721094c883bb7ac3c756f9c1f666ada43d6a70ef4452aba49ee849c6ee"
+    },
+    "record-W-4.json": {
+      "bytes": 486,
+      "sha256": "1c4175d989b02554e1a3f0527e0bd9868eff7ee2938142939361eaaf59aac6be"
+    },
+    "record-W-5.json": {
+      "bytes": 655,
+      "sha256": "cd276e5e49bc09d53f42d6b1c5c0a5405557cdd091791685d91cc92a6cd9b942"
+    },
+    "record-W-6.json": {
+      "bytes": 473,
+      "sha256": "d65e890d24d864c432314b7d3d1214a79094456ec45a0f4d8becc8a727ecd35a"
+    },
+    "record-art-Website.json": {
+      "bytes": 725,
+      "sha256": "5463f8d0ab2e4f973c7cb5b760465a8acf33397397ce52b09658a28dee576ec2"
+    },
     "refs.json": {
       "bytes": 3270,
       "sha256": "24facb6b461d164ffb3ffb30b492c603b625445f41e0e92521d0fee988e26782"
     },
     "render-docs.json": {
-      "bytes": 145525,
-      "sha256": "8f3eafc108ae7c13e380b56548c5120f95a21994488918deee8129c6e5ae321a"
+      "bytes": 149257,
+      "sha256": "45f914f469339ecb1e8bc2a513f42eed4787153b636f3eee3a507f19971ee4d5"
     },
     "run-templates.json": {
       "bytes": 17,
@@ -268,12 +345,20 @@
       "sha256": "dac57d43aa835999c178b5a886ae2aa278ae4dcc96524f54d75cd9537430e196"
     },
     "state.json": {
-      "bytes": 118406,
-      "sha256": "f9562a45d8052c5c03ad8038b3a444d31bad3bc9f97a4fb3971f85774d20ba3e"
+      "bytes": 121902,
+      "sha256": "9fbddccec8ac33019a1b0562ef5dc8d92fd5bc9dafe82849d993201d155d43c3"
     },
     "story.json": {
       "bytes": 463,
       "sha256": "8175b808983dd120d2de11086a6a94fc523a6730becd8fddfdabb43002275355"
+    },
+    "view-goal.html": {
+      "bytes": 1847,
+      "sha256": "08103c910baa6c3070c6eb9db9fe76ef48fcfd9022372ec304dc071ad0767a4a"
+    },
+    "view-site.html": {
+      "bytes": 3048,
+      "sha256": "dac57d43aa835999c178b5a886ae2aa278ae4dcc96524f54d75cd9537430e196"
     }
   }
 }
