@@ -25,6 +25,9 @@ exchange atom audit workable playbook lessons""".split())
 # found by the same scan of j2.py 33aeeda (keyword arguments of post, _say, _reply and _ask_user) after the design was written
 SCAN_ADDED = {"forced_test", "lesson_test", "lesson_used", "lessons_offered", "playbook_used", "playbook_changes", "playbooks_offered",
               "board_read"}
+# found by the scan of the vendored j2.py of J2 sync 4: the late judge's system lines say whose judgement they report (`judge`, D145),
+# and the answer Decide for me gives in the Requester's name is flagged `auto` and carries a plain label (`auto_label`)
+SYNC4_ADDED = {"judge", "auto_label"}
 
 USER_LINE = {"id": 1, "t": "12:48:35", "who": "user", "step": 0,
              "text": "A one-page website for Brew Lab, a small specialty coffee shop in Indiranagar, Bengaluru."}
@@ -36,7 +39,10 @@ PROPOSAL_LINE = {"id": 5, "t": "12:48:36", "who": "adaptation", "step": 2, "next
                  "proposal": [{"id": "P-1", "name": "Scaffold", "outputs": ["#hero"], "envelope": {"money_limit": 10, "retry_limit": 1}}]}
 BOARD_LINE = {"id": 9, "t": "12:49:01", "who": "W-3", "step": 6, "workflow": "W-3", "section": "W-3", "version": 4, "workflow_cost": 12,
               "human_output": "I wrote the Goals section.", "calls": [4, 5], "board_read": ["Q-1"], "text": "@Coordination I wrote the Goals section. [read Q-1]"}
-LINES = [USER_LINE, IDENTITY_LINE, VALIDATOR_LINE, PROPOSAL_LINE, BOARD_LINE]
+JUDGE_LINE = {"id": 12, "t": "12:49:30", "who": "system", "step": 6, "judge": "W-9",          # what J2's `_late_judge` posts (sync 4, D145)
+              "text": "Judge: W-9 scored 0.91, at or above the 0.80 gate; zone certain, stage build."}
+AUTO_LINE = {"id": 13, "t": "12:49:40", "who": "user", "text": "Option 1", "auto": True, "auto_label": "Go with sensible choices"}
+LINES = [USER_LINE, IDENTITY_LINE, VALIDATOR_LINE, PROPOSAL_LINE, BOARD_LINE, JUDGE_LINE, AUTO_LINE]
 OPEN_VALUES = [True, False, 0, 3, 1.5, "", "grant", None, [], [1, "a", None], {}, {"a": {"b": [1, 2.5, "c", None]}}]
 
 
@@ -56,9 +62,32 @@ def deep(levels: int):
 # ---- MessageMeta --------------------------------------------------------------------------------------------------
 
 def test_the_key_set_is_the_design_list_plus_what_the_scan_of_j2_found_since():
-    assert set(META_KEYS) == SECTION_10 | SCAN_ADDED
-    assert len(META_KEYS) == len(set(META_KEYS)) == 60
+    assert set(META_KEYS) == SECTION_10 | SCAN_ADDED | SYNC4_ADDED
+    assert len(META_KEYS) == len(set(META_KEYS)) == 62
     assert set(MessageMeta.model_fields) == set(META_KEYS)
+
+
+def test_the_late_judge_meta_key_is_known_takes_a_workflow_name_and_stays_in_the_stored_line():
+    """D145: a chat line that J2's late judge posts says which workflow it judged (`judge="W-9"`); strict mode must accept it."""
+    assert "judge" in META_KEYS and "judge" not in BASE_KEYS
+    assert MessageMeta(judge="W-9").canonical_json() == '{"judge":"W-9"}'
+    line = RunMessage.model_validate(JUDGE_LINE)
+    assert line.judge == "W-9" and line.who == "system"
+    checked = GATE.check("run_message", JUDGE_LINE)
+    assert checked.model.judge == "W-9"
+    assert '"judge":"W-9"' in checked.model.canonical_json()
+    assert RunMessage.model_validate({k: v for k, v in JUDGE_LINE.items() if k != "judge"}).judge is None
+    for value in ("W-9", "Revise W-6 Board (change 1)", None, 0):          # J2 writes the workflow's name; the key takes any JSON value like the others
+        assert MessageMeta(judge=value).judge == value
+
+
+def test_decide_for_mes_answer_is_flagged_auto_and_keeps_its_plain_label():
+    """The answer J2 posts as the Requester's when Decide for me is on: `auto=True` and `auto_label` (what the Simple view shows)."""
+    line = RunMessage.model_validate(AUTO_LINE)
+    assert (line.who, line.auto, line.auto_label) == ("user", True, "Go with sensible choices")
+    assert GATE.check("run_message", AUTO_LINE).model.auto_label == "Go with sensible choices"
+    assert MessageMeta(auto=True, auto_label="Yes, go ahead").canonical_json() == '{"auto":true,"auto_label":"Yes, go ahead"}'
+    assert RunMessage.model_validate({k: v for k, v in AUTO_LINE.items() if k != "auto_label"}).auto_label is None
 
 
 def test_every_key_takes_any_json_value():
