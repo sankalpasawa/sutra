@@ -5,6 +5,7 @@ FastAPI `TestClient` over the `fake_services` fixture of conftest: J2's 39 data 
 found through `resolve_run` (live, else idle)."""
 import json
 import os
+import shutil
 import subprocess
 import sys
 from types import SimpleNamespace
@@ -250,3 +251,60 @@ def test_a_resolver_that_answers_with_another_teams_run_is_not_believed(api):
     api.svc.resolve_run = lambda run_id, dept_id: other                           # a buggy orchestrator
     assert api.client.get(f"/api/state?dept=web&run={other.run_id}").json() == {"error": "not_found"}
     assert api.client.get("/api/state?dept=web").json()["status"] == "idle"
+
+
+# ---- the library is the data folder's: the server process never sets J2_LIBRARY_DIR (J2 sync 4, D141) ------------------------------
+SEED_LIBRARY = os.path.join(os.path.dirname(views.__file__), "seed", "library")
+
+
+def specialised(groups):
+    return [t for sections in groups.values() for slot in sections.values() for t in slot["templates"] if t.get("kind") != "generic"]
+
+
+def test_a_data_folder_that_holds_a_library_shows_its_templates_through_api_library_and_api_catalog(api, monkeypatch):
+    monkeypatch.delenv("J2_LIBRARY_DIR", raising=False)                        # as in the server process: only the engine host sets it
+    before = api.client.get("/api/library?dept=web").json()
+    assert specialised(before["groups"]) == [] and api.client.get("/api/catalog?dept=web").json()["runs"] == [], "no library under the data folder yet"
+    shutil.copytree(SEED_LIBRARY, api.data / "library")
+    library = api.client.get("/api/library?dept=web").json()
+    found = specialised(library["groups"])
+    assert len(found) == 32 and library["dir"] == str(api.data / "library")
+    catalog = api.client.get("/api/catalog?dept=sales").json()
+    assert len(catalog["runs"]) == 8 and len(specialised(catalog["groups"])) == 32 and catalog["dir"] == str(api.data / "library"), "one library for every team"
+    t = found[0]
+    item = api.client.get(f"/api/library/{t['artifact']}/{t['section_slug']}/{t['slug']}/v{t['versions'][0]['version']}?dept=web")
+    assert item.status_code == 200 and item.json()["template"]["name"] == t["name"]
+    assert api.client.get("/api/run-templates?dept=web").json() == {"decisions": []}
+    assert os.environ.get("J2_LIBRARY_DIR") is None, "the variable is set for one call and put back"
+
+
+def test_the_environment_of_the_server_is_what_it_was_after_every_library_call_even_one_that_fails(api, monkeypatch):
+    monkeypatch.setenv("J2_LIBRARY_DIR", "elsewhere")
+    shutil.copytree(SEED_LIBRARY, api.data / "library")
+    for path in ("/api/library", "/api/catalog", "/api/library/prd/goals/none/v1", "/api/library/nope/x/y/v1", "/api/run-templates"):
+        api.client.get(f"{path}?dept=web")
+        assert os.environ["J2_LIBRARY_DIR"] == "elsewhere", path
+    original = views.j2_template_lib.catalog_view
+    monkeypatch.setattr(views.j2_template_lib, "catalog_view", lambda: (_ for _ in ()).throw(RuntimeError("boom")))
+    assert api.client.get("/api/catalog?dept=web").status_code == 500 and os.environ["J2_LIBRARY_DIR"] == "elsewhere"
+    monkeypatch.setattr(views.j2_template_lib, "catalog_view", original)
+
+
+def test_two_teams_asking_at_once_read_the_one_library_without_mixing_the_environment(api, monkeypatch):
+    import threading
+    monkeypatch.delenv("J2_LIBRARY_DIR", raising=False)
+    shutil.copytree(SEED_LIBRARY, api.data / "library")
+    results, errors = [], []
+
+    def ask(dept):
+        try:
+            for _ in range(10):
+                results.append(len(api.client.get(f"/api/catalog?dept={dept}").json()["runs"]))
+        except Exception as exc:  # noqa: BLE001
+            errors.append(exc)
+    threads = [threading.Thread(target=ask, args=(d,)) for d in ("web", "sales", "web", "sales")]
+    for thread in threads:
+        thread.start()
+    for thread in threads:
+        thread.join(30)
+    assert not errors and results == [8] * 40 and os.environ.get("J2_LIBRARY_DIR") is None
