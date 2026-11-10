@@ -9,7 +9,7 @@ const path = require("node:path");
 
 const CSS_DIR = path.join(__dirname, "..", "..", "..", "sutra_app", "ui", "static", "css");
 const ALL = fs.readdirSync(CSS_DIR).filter(f => f.endsWith(".css")).sort();
-const FROZEN = new Set(["j2.css"]);                       // J2's own sheet, byte for byte: it only has to be free of the layout properties and `all`
+const FROZEN = new Set(["j2.css", "j2-shell.css"]);       // J2's own sheet, byte for byte, and Home's frozen copy of the previous one (D138): neither is ours to edit
 const OURS = ALL.filter(f => !FROZEN.has(f));
 const read = name => fs.readFileSync(path.join(CSS_DIR, name), "utf8");
 const strip = css => css.replace(/\/\*[\s\S]*?\*\//g, "");
@@ -165,7 +165,9 @@ test("6. the drawer, the panes and a new line are animated, and the idle drift o
   ["home.html", "console.html", "j2_ui.html"].forEach(page => {
     const html = fs.readFileSync(path.join(CSS_DIR, "..", "..", "pages", page), "utf8");
     const sheets = [...html.matchAll(/<link rel="stylesheet" href="\/ui\/css\/([\w.-]+\.css)"/g)].map(m => m[1]);
-    assert.ok(sheets.indexOf("sutra-panel.css") > sheets.indexOf("j2.css"), `${page}: sutra-panel.css comes after j2.css`);
+    const base = page === "j2_ui.html" ? "j2.css" : "j2-shell.css";      // the team page takes J2's new sheet; Home and the console keep the frozen one (D138)
+    assert.ok(sheets.includes(base), `${page}: links ${base}`);
+    assert.ok(sheets.indexOf("sutra-panel.css") > sheets.indexOf(base), `${page}: sutra-panel.css comes after ${base}`);
   });
 });
 
