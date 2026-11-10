@@ -4867,11 +4867,12 @@ def docs_blueprint():
           "atom, Audit compares the page to the LLD, chain recorded, J2_SLIM keeps the manifest ok")
 
 
-def plain_unchanged(checkpoint=None, slim=None, board=None):
+def plain_unchanged(checkpoint=None, slim=None, board=None, generic=False):
     """3: with no document asked for, the website flow is unchanged: same prompts, same page, same result as the
     checkpoint commit (run in a copy of it). checkpoint: the commit to compare with (default PLAIN_CHECKPOINT); slim: set
     J2_SLIM to this in both runs ("0" = the old whole-page path), else it is left unset (the default); board: set
-    J2_BOARD to this in both runs (the checkpoint commit predates j2_board and ignores the env var either way)."""
+    J2_BOARD to this in both runs (the checkpoint commit predates j2_board and ignores the env var either way); generic: compare
+    this tree with J2_GENERIC unset against this tree with J2_GENERIC=1 instead of the checkpoint (no checkpoint needed)."""
     checkpoint = checkpoint or PLAIN_CHECKPOINT
     import subprocess
     import shutil
@@ -4892,21 +4893,27 @@ def plain_unchanged(checkpoint=None, slim=None, board=None):
              "  'calls': [[c['fn'], h(c['system']), h(c['prompt'])] for c in rows],\n"
              "  'workflows': h(json.dumps([{k: v for k, v in w.items() if k not in ('t',)} for w in r.workflows], sort_keys=True))}))\n")
     old = tempfile.mkdtemp(prefix="j2-checkpoint-")
+    if generic:
+        checkpoint, tar = "J2_GENERIC unset", None
+    else:
+        tar = subprocess.run(["git", "archive", checkpoint, "--", ":(exclude)runs", ":(exclude)docs"], cwd=here, capture_output=True)
     # the whole checkpoint tree: a newer checkpoint's j2.py imports modules (j2_artifacts, j2_board, ...) an old list missed
-    tar = subprocess.run(["git", "archive", checkpoint, "--", ":(exclude)runs", ":(exclude)docs"], cwd=here,
-                         capture_output=True)
-    if tar.returncode:
+    if tar is not None and tar.returncode:
         print(f"plain brief unchanged: skipped (checkpoint {checkpoint} not in this clone)")
         shutil.rmtree(old, ignore_errors=True)
         return
-    subprocess.run(["tar", "-x", "-C", old], input=tar.stdout, check=True)
+    if tar is not None:
+        subprocess.run(["tar", "-x", "-C", old], input=tar.stdout, check=True)
     for name in ("j2_check.py",):
         pass
     try:
         results = []
-        for cwd in (old, here):
+        for cwd, flag in ((here, None), (here, "1")) if generic else ((old, os.environ.get("J2_GENERIC")), (here, os.environ.get("J2_GENERIC"))):
             env = {**os.environ, "STUDIO_MOCK": "1", "J2_MEMORY": "0", "J2_FIXES": os.environ.get("J2_FIXES", "0")}
             env.pop("J2_SLIM", None)
+            env.pop("J2_GENERIC", None)
+            if flag is not None:
+                env["J2_GENERIC"] = flag
             if slim is not None:
                 env["J2_SLIM"] = slim
             if board is not None:
@@ -6937,6 +6944,56 @@ def doc_type_names():
         assert t == "website" or s in j2.OUTPUTS[t]["sections"], (t, s)
     print("document type names: OUTPUTS and PRD/HLD/LLD_SECTIONS match SECTION_MODELS, DOC_MODELS, SECTION_CONDITIONS, "
           "ARTIFACTS, Template.artifact, DOCUMENT_ARTIFACTS, FACT_FIELD_SECTIONS and generic_sections ok")
+
+
+def website_generic():
+    """Step 1 (docs/remove-hardcoding-plan.md): the website defined by data. j2_types.load("website") equals OUTPUTS["website"]
+    on every key, its intake text equals the inline prompt in j2.py and its charter format J2Run.CHARTER_FMT; a run uses it only
+    under J2_GENERIC=1; a type with a missing field, an unknown form or a missing file is refused; and with J2_GENERIC=1 the
+    website brief gives the same prompts, page, sections, workflows and outcome as with the flag unset (plain_unchanged x3)."""
+    import ast
+    import copy
+    import j2_types
+    here = os.path.dirname(os.path.abspath(__file__))
+    g, o = j2_types.load("website"), j2.OUTPUTS["website"]
+    assert {k: g.get(k) for k in o} == o and set(g) - set(o) == {"intake", "charter_fmt"}, sorted(set(g) ^ set(o))
+    inline = [n.value for n in ast.walk(ast.parse(open(os.path.join(here, "j2.py"), encoding="utf-8").read()))
+              if isinstance(n, ast.Constant) and isinstance(n.value, str) and n.value.startswith("J2.a: is there enough information to work? You need")]
+    assert inline == [g["intake"]], "templates/website/intake.md differs from the inline website intake in j2.py"
+    assert g["charter_fmt"] == j2.J2Run.CHARTER_FMT
+    keep = os.environ.pop("J2_GENERIC", None)
+    try:
+        assert j2.J2Run().out is o, "flag off: OUTPUTS"
+        os.environ["J2_GENERIC"] = "1"
+        r = j2.J2Run()
+        assert r.out == g and r.out is not o and (r.WF_FMT, r.GRANT_FMT, r.ATOM_RULES) == (j2.J2Run.WF_FMT, j2.J2Run.GRANT_FMT, j2.J2Run.ATOM_RULES)
+        assert r.set_output("prd") and r.out is j2.OUTPUTS["prd"], "documents stay on OUTPUTS"
+        T = json.load(open(j2_types.TYPES_PATH, encoding="utf-8"))
+        w = next(i for i, t in enumerate(T["types"]) if t["name"] == "website")
+        tmp = tempfile.mkdtemp(prefix="j2-types-")
+        for bend, why in ((lambda e: e.pop("rubric"), "missing rubric"), (lambda e: e.update(form="sheet"), "unknown form"),
+                          (lambda e: e.update(intake="templates/website/none.md"), "file not found for intake"),
+                          (lambda e: e.update(rubric=[{"id": "R-1"}]), "needs an id and a text")):
+            bent = copy.deepcopy(T)
+            bend(bent["types"][w])
+            p = os.path.join(tmp, "types.json")
+            json.dump(bent, open(p, "w", encoding="utf-8"))
+            try:
+                j2_types.load("website", p)
+                raise AssertionError(f"a bad type was loaded: {why}")
+            except ValueError as e:
+                assert why.split()[-1] in str(e), (why, str(e))
+        shutil.rmtree(tmp, ignore_errors=True)
+        os.environ.pop("J2_GENERIC", None)      # plain_unchanged(generic=True) sets the flag on one side only
+        plain_unchanged(generic=True)
+        plain_unchanged(slim="0", generic=True)
+        plain_unchanged(board="0", generic=True)
+    finally:
+        os.environ.pop("J2_GENERIC", None)
+        if keep is not None:
+            os.environ["J2_GENERIC"] = keep
+    print("website generic: j2_types.load('website') equals OUTPUTS['website'], the inline intake and CHARTER_FMT; used only under "
+          "J2_GENERIC=1; a missing field, unknown form, missing file or bad rubric is refused; plain brief identical with J2_GENERIC unset and =1 (default, J2_SLIM=0, J2_BOARD=0) ok")
 
 
 def artifact_types():
@@ -11762,6 +11819,7 @@ if __name__ == "__main__":
             doc_type_names()
             doc_prompts_unchanged()
             saved_runs_render()
+            website_generic()      # step 1: the website on data, J2_GENERIC=1
         artifacts_tab()
         map_tab()
         map_every_workflow()

@@ -59,6 +59,7 @@ import j2_schema
 import j2_send
 import j2_studio
 import j2_template_lib
+import j2_types
 import llm
 
 HERE = os.path.dirname(os.path.abspath(__file__))
@@ -2942,6 +2943,8 @@ class J2Run:
         """Switch what is built (set_output before the first message; a design-document run at each stage)."""
         self.output = output_type(out)
         self.out, self.doc = OUTPUTS[self.output], bool(OUTPUTS[self.output]["sections"])
+        if j2_types.enabled() and self.output == "website":      # J2_GENERIC=1: the website from artifacts/types.json (j2_types)
+            self.out = j2_types.load("website")
         # J2_REALIZATION: no rate card; Adaptation estimates each workflow's budget (estimated_resources.money)
         load_rates(self.output, card=not (getattr(self, "realization", None) or realization_on()))
         types = "|".join(f'"{t}"' for t in self.out["check_types"])
@@ -4150,7 +4153,7 @@ class J2Run:
                                    "recorded") + "}",
                       f"REQUESTER'S BRIEF: {self.request}\nEARLIER QUESTIONS AND ANSWERS: {json.dumps(self.intake)}\n"
                       f"{feedback}\n" + (self.out["intake"] + (SITE_FIRST if "website" in self.stages and not change else "") if self.doc else
-                      "J2.a: is there enough information to work? You need enough to write the charter: "
+                      self.out.get("intake") or "J2.a: is there enough information to work? You need enough to write the charter: "
                       "goal, audience, standards, rules and a checkable done-when list. Never invent a missing fact.\n"
                       "- Work out what kind of business this is and what its visitors usually need (for example a "
                       "florist: browse bouquets, order, delivery areas; a photographer: portfolio, packages, booking; a "
