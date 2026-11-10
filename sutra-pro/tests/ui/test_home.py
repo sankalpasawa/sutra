@@ -168,7 +168,10 @@ def test_home_reads_what_the_design_says_on_load_and_nothing_else(browser, fake)
     load(browser, fake)
     paths = sorted({(r["path"], tuple(sorted(r["query"].split("&"))) if r["query"] else ()) for r in fake.log("/api/") if r["method"] == "GET"})
     wanted = {"/api/chats/cs_org", "/api/chats/cs_org/messages", "/api/chart", "/api/chart/changes", "/api/graph", "/api/departments", "/api/needs-you",
-              "/api/health", "/api/heads-up"}
+              "/api/health", "/api/heads-up",
+              "/api/chats/cs_org/providers",                   # the model pill of the org chat (ABS-9)
+              "/api/limits", "/api/ops/attention",             # the limit line of the strip and the quiet hours (gap routines-limits)
+              "/api/ops/welcome"}                              # whether the first-run card is due (gap welcome-settings)
     assert {p for p, _ in paths if p != "/api/events"} == wanted
     graph = [r for r in fake.log("/api/graph") if r["path"] == "/api/graph"][0]
     assert "level=chart" in graph["query"]
@@ -187,7 +190,9 @@ def test_home_asks_for_the_newest_changes_not_the_first_of_a_long_log(browser, f
 @browser_only
 def test_home_boots_with_no_console_error_and_the_rail_shows_its_items(browser, fake):
     load(browser, fake, stage="full")
-    assert texts(browser, "#rail > button, #rail .railhead, #rail .railsec > button") == ["Chat", "Workflow graph", "Org chart", "Teams", "Settings", "Appearance", "Connectors", "Engine"]
+    assert texts(browser, "#rail > button, #rail .railhead, #rail .railsec > button") == [
+        "Chat", "Workflow graph", "Org chart", "Teams", "Settings", "Appearance", "Connectors", "Limits", "Notifications", "Recurring work", "Engine", "Notes", "About", "Owner"]
+    assert texts(browser, "#goconsole .rtname") == ["Usage and log"] and attrs(browser, "#goconsole", "href") == ["/console"]       # the Owner section's one link
     assert browser.console_errors == []
 
 
@@ -454,9 +459,9 @@ def test_a_question_that_is_no_longer_listed_reads_answered_after_a_reload(brows
 @browser_only
 def test_the_rail_lists_the_teams_with_their_status_and_the_panes_switch(browser, fake):
     load(browser, fake, stage="full")
-    assert texts(browser, ".railteam .rtname") == ["Web", "Content"]
-    assert texts(browser, ".railteam .rtstat") == ["waiting on you", "idle"]
-    assert attrs(browser, ".railteam", "href") == ["/d/web/", "/d/content/"]
+    assert texts(browser, "#railteams .railteam .rtname") == ["Web", "Content"]
+    assert texts(browser, "#railteams .railteam .rtstat") == ["waiting on you", "idle"]
+    assert attrs(browser, "#railteams .railteam", "href") == ["/d/web/", "/d/content/"]
     assert shown(browser, "#pane-graph") and not shown(browser, "#pane-chart") and not shown(browser, "#pane-settings")
     browser.click('#rail [data-pane="chart"]')
     assert shown(browser, "#pane-chart") and not shown(browser, "#pane-graph")
@@ -736,8 +741,9 @@ def test_a_connector_event_refetches_the_health_once(browser, fake):
 def test_the_engine_group_shows_editable_fields_and_locked_ones_read_only(browser, fake):
     load(browser, fake)
     open_settings(browser, "engine")
-    browser.wait_for("document.querySelectorAll('#set-engine .setfield').length === 30")
+    browser.wait_for("document.querySelectorAll('#set-engine .setfield').length === 31")          # the 31 settings of engine.json (`workspace`, D127, was the 31st)
     assert browser.count('.setfield[data-locked="false"] input[type="checkbox"]') == 9          # rates slim memory realization change board artifact_schema template_library fixes
+    assert browser.count('.setfield[data-locked="false"] select') == 2                          # output and workspace
     assert browser.count('.setfield[data-locked="false"] input[type="number"]') == 10
     assert browser.count('.setfield[data-locked="true"]') == 10
     assert browser.count('.setfield[data-locked="true"] input, .setfield[data-locked="true"] select') == 0
