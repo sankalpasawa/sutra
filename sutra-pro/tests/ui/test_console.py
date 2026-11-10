@@ -250,3 +250,57 @@ def test_the_console_paints_its_three_panels_and_the_log_filters_and_opens_a_car
     browser.click("#c-log .lrow button")
     browser.wait_for("document.querySelector('#c-card').textContent.includes('goal number')")
     assert [e for e in browser.console_errors if "404" not in e] == []
+
+
+# The header's three links ("Usage and cost", "Atom log", "Health") are found by what they are (the nav's accessible name and their targets), not by a class: the chat's "new messages
+# below" pill is a zero-height box of its own (`.cjump`, sutra-panel.css) and the nav had that class too, so it was drawn at no height and its links hung out of it.
+HEADER_NAV = 'header.shead nav[aria-label="On this page"]'
+HEADER_LINKS = [("Usage and cost", "#c-usage"), ("Atom log", "#c-log"), ("Health", "#c-health")]
+HEADER_BOXES = r"""(() => {
+  const head = document.querySelector("header.shead"), nav = head.querySelector('nav[aria-label="On this page"]');
+  const box = el => { const r = el.getBoundingClientRect(); return {left: r.left, top: r.top, right: r.right, bottom: r.bottom}; };
+  const within = (a, b) => a.left >= b.left - .5 && a.right <= b.right + .5 && a.top >= b.top - .5 && a.bottom <= b.bottom + .5;
+  const h = box(head), n = box(nav), t = box(head.querySelector("#stitle")), first = box(nav.querySelector("a"));
+  return {
+    width: innerWidth, head: [h.left, h.top, h.right, h.bottom].map(Math.round), nav: [n.left, n.top, n.right, n.bottom].map(Math.round),
+    navInHeader: within(n, h), sideways: document.documentElement.scrollWidth > innerWidth,
+    middles: [Math.round((t.top + t.bottom) / 2), Math.round((first.top + first.bottom) / 2)],                          // the title's and the first link's, from the top
+    links: Array.from(nav.querySelectorAll("a"), a => {
+      const b = box(a), at = document.elementFromPoint((b.left + b.right) / 2, (b.top + b.bottom) / 2);
+      return {text: a.textContent, href: a.getAttribute("href"), box: [b.left, b.top, b.right, b.bottom].map(Math.round), inNav: within(b, n), inHeader: within(b, h),
+              reached: !!at && a.contains(at)};
+    }),
+  };
+})()"""
+
+
+@pytest.mark.browser
+def test_the_headers_links_sit_inside_the_header_in_both_themes_and_take_their_clicks(real_server, browser):
+    """At 480px and under the header wraps and its links drop to a row under the title. They were drawn on a box of no height (the chat's rule for the pill of new messages
+    reached the nav through the one class name), so they hung 8px out of the header, over the panels' edge (320, 375 and 480px, light and dark); from 520px they sat 10px below the
+    title's line. Now each link is inside the nav's box, the nav inside the header's, a click in the middle of a link reaches it, and a real click goes to its panel and stays on the console."""
+    problems: list[tuple] = []
+    for theme in ("light", "dark"):
+        browser.set_theme(theme)
+        for width in (320, 375, 480, 1280):
+            browser.set_size(width, 812)
+            browser.goto(real_server + "/console")
+            browser.wait_for("window.ConsolePage && ConsolePage.state().log.loaded === true")
+            seen = browser.js(HEADER_BOXES)
+            if [(link["text"], link["href"]) for link in seen["links"]] != HEADER_LINKS:
+                problems.append((theme, width, "the links are not the three of the header", seen["links"]))
+                continue
+            for link in seen["links"]:
+                if not (link["inNav"] and link["inHeader"] and link["reached"]):
+                    problems.append((theme, width, link["text"], "box", link["box"], "nav", seen["nav"], "header", seen["head"], "reached", link["reached"]))
+            if not seen["navInHeader"] or seen["sideways"]:
+                problems.append((theme, width, "nav in header", seen["navInHeader"], "sideways", seen["sideways"], seen["nav"], seen["head"]))
+            if width == 1280 and abs(seen["middles"][0] - seen["middles"][1]) > 2:
+                problems.append((theme, width, "the links are not on the title's line", seen["middles"]))        # one row: the nav is centred on it like the title
+            for text, panel in HEADER_LINKS:
+                browser.click(f'{HEADER_NAV} a[href="{panel}"]')                             # a real click in the middle of the link
+                here = browser.js("location.pathname + location.hash")
+                if here != "/console" + panel:
+                    problems.append((theme, width, f"a click on {text} went to {here}"))
+    assert problems == [], problems
+    assert browser.console_errors == []
