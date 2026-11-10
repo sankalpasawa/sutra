@@ -149,3 +149,98 @@ test("the usage words are short and leave out nothing that was not spent", () =>
   assert.equal(AC.usageWords({calls: 12, usd: 1.234}), "12 calls, $1.23");
   assert.equal(AC.usageWords(null), "");
 });
+
+// ---- Ask: a question to a function, beside the note (J2 sync 4, D147 and D148) -----------------------------------------------------------------
+
+test("a function's box shows the note by default and offers the Ask mode; a step's chat keeps the note box as it was", () => {
+  const plain = AC.noteBox({agent: "audit", label: "Audit", live: true});
+  assert.doesNotMatch(plain, /box-mode|ccmode/);
+  assert.equal(AC.noteBox({label: "Audit", live: true, ask: false}), plain);
+  const html = AC.noteBox({agent: "audit", label: "Audit", live: true, ask: true});
+  assert.match(html, /^<div class="ccmode nboxmode" role="group" aria-label="What to send to Audit">/);
+  assert.match(html, /<button type="button" class="ccmode-opt on" data-act="box-mode" data-mode="note" aria-pressed="true">Note<\/button>/);
+  assert.match(html, /<button type="button" class="ccmode-opt" data-act="box-mode" data-mode="ask" aria-pressed="false">Ask<\/button>/);
+  assert.match(html, /<label class="nnote-l">Note to Audit<\/label>/);
+  assert.match(html, /data-act="steer">Send note<\/button>/);
+  assert.doesNotMatch(html, /data-act="ask"/);
+});
+
+test("the Ask mode is a question box that names the function, says where the answer comes from and sends with Ask", () => {
+  const html = AC.noteBox({label: "Audit", live: true, ask: true, mode: "ask"});
+  assert.match(html, /<button type="button" class="ccmode-opt" data-act="box-mode" data-mode="note" aria-pressed="false">Note<\/button>/);
+  assert.match(html, /<button type="button" class="ccmode-opt on" data-act="box-mode" data-mode="ask" aria-pressed="true">Ask<\/button>/);
+  assert.match(html, /<label class="nnote-l">Ask Audit<\/label>/);
+  assert.match(html, /<textarea class="nnote-text nask-text" rows="2" maxlength="2000" aria-label="Ask Audit" placeholder="Ask Audit about this run"><\/textarea>/);
+  assert.match(html, /<button type="button" class="send" data-act="ask">Ask<\/button>/);
+  assert.match(html, /Audit answers from this run's records and cannot change the run\. The question and the answer stay in this chat\./);
+  assert.doesNotMatch(html, /data-act="steer"|Send note/);
+});
+
+test("while the answer is awaited the box says so and is disabled; what the answer's note said stays under it", () => {
+  const waiting = AC.noteBox({label: "Audit", live: true, ask: true, mode: "ask", asking: true});
+  assert.match(waiting, /<small class="nnote-help nask-wait" role="status">Asking Audit…<\/small>/);
+  assert.match(waiting, /aria-label="Ask Audit" placeholder="Ask Audit about this run" disabled><\/textarea>/);
+  assert.match(waiting, /data-act="ask" disabled>Ask<\/button>/);
+  assert.match(waiting, /data-mode="note" aria-pressed="false" disabled>Note<\/button>/);          // the mode cannot change under a question that is out
+  assert.doesNotMatch(waiting, /answers from this run's records/);
+  const said = AC.noteBox({label: "Audit", live: true, ask: true, mode: "ask", askNote: "No model is connected."});
+  assert.match(said, /<small class="nnote-help nask-note" role="status">No model is connected\.<\/small>/);
+  assert.doesNotMatch(AC.noteBox({label: "Audit", live: true, ask: true, mode: "ask"}), /nask-note/);
+});
+
+test("a run that is over has no note and no switch, only the Ask box, and says why", () => {
+  const html = AC.noteBox({label: "Audit", live: false, ask: true});
+  assert.match(html, /<p class="nnote-over" role="note">That run is over\. Audit can no longer read a note\. You can still ask it about the run\.<\/p>/);
+  assert.match(html, /data-act="ask">Ask<\/button>/);
+  assert.doesNotMatch(html, /box-mode|data-act="steer"|Send note/);
+  const asking = AC.noteBox({label: "Audit", live: false, ask: true, mode: "note", asking: true});
+  assert.match(asking, /Asking Audit…/);                                                       // whatever mode was left behind, a finished run asks
+  assert.equal(AC.noteBox({label: "Audit", live: false, ask: false}).includes("data-act=\"ask\""), false);
+});
+
+test("which mode the box shows: the note unless the function can be asked, the question once the run is over", () => {
+  assert.equal(AC.boxMode({ask: false, live: true, mode: "ask"}), "note");
+  assert.equal(AC.boxMode({ask: true, live: true}), "note");
+  assert.equal(AC.boxMode({ask: true, live: true, mode: "note"}), "note");
+  assert.equal(AC.boxMode({ask: true, live: true, mode: "ask"}), "ask");
+  assert.equal(AC.boxMode({ask: true, live: false, mode: "note"}), "ask");
+  assert.equal(AC.boxMode({ask: false, live: false}), "note");
+  assert.equal(AC.boxMode(null), "note");
+});
+
+test("a question becomes a POST to /api/ask with the team, the function, the words and the run; nothing for what the server would refuse", () => {
+  assert.deepEqual(AC.askRequest("web", "audit", "  Why was W-3 scored low? \n", "j2-20261104-1"),
+    {method: "POST", path: "/api/ask?dept=web", body: {who: "audit", q: "Why was W-3 scored low?", run: "j2-20261104-1"}});
+  assert.deepEqual(AC.askRequest("we b", "identity", "Who?", "").body, {who: "identity", q: "Who?", run: ""});
+  assert.equal(AC.askRequest("we b", "identity", "Who?", "").path, "/api/ask?dept=we%20b");
+  assert.equal(AC.askRequest("web", "audit", "   ", "r"), null);
+  assert.equal(AC.askRequest("web", "audit", "x".repeat(2001), "r"), null);
+  assert.notEqual(AC.askRequest("web", "audit", "x".repeat(2000), "r"), null);
+  assert.equal(AC.askRequest("web", "W-1", "Why?", "r"), null);                                       // a builder's chat is not asked
+  assert.equal(AC.askRequest("web", "validator", "Why?", "r"), null);                                 // the validator is code
+  assert.equal(AC.askRequest("", "audit", "Why?", "r"), null);
+  assert.equal(AC.askRequest("web", "audit", null, "r"), null);
+  assert.deepEqual(AC.FUNCTIONS, ["identity", "adaptation", "priority", "coordination", "audit"]);
+  assert.equal(AC.MAX_ASK, 2000);
+});
+
+test("a question that was refused is told in plain words, by what the server answered", () => {
+  const e = (status, extra = {}) => Object.assign(new Error(extra.message || "x"), {status}, extra);
+  assert.equal(AC.askProblem(e(401, {code: "bad_token"}), "Audit"), "This page was opened without its access token. Reload it from the app.");
+  assert.equal(AC.askProblem(e(403, {code: "read_only"}), "Audit"), "This team is read-only, so it cannot be asked.");
+  assert.equal(AC.askProblem(e(409, {message: "busy"}), "Audit"), "Audit is still answering. Ask again in a moment.");
+  assert.equal(AC.askProblem(e(409), ""), "The agent is still answering. Ask again in a moment.");
+  assert.equal(AC.askProblem(e(400, {message: "question too long"}), "Audit"), "A question can be up to 2,000 characters.");
+  assert.equal(AC.askProblem(e(400, {message: "not a function"}), "Audit"), "Only the team's five functions can be asked.");
+  assert.equal(AC.askProblem(e(400, {message: "something else"}), "Audit"), "That question could not be sent.");
+  assert.equal(AC.askProblem(e(0, {code: "network"}), "Audit"), "The app is not responding. Try again in a moment.");
+  assert.equal(AC.askProblem(e(500), "Audit"), "Something went wrong. Try again.");
+  assert.equal(AC.askProblem(null, "Audit"), "The app is not responding. Try again in a moment.");
+});
+
+test("the Ask box escapes every word from the wire", () => {
+  const html = AC.noteBox({label: '<img src=x onerror="alert(1)">', live: true, ask: true, mode: "ask", askNote: "<b>no</b>"});
+  assert.doesNotMatch(html, /<img|<b>/);
+  assert.match(html, /Ask &lt;img src=x onerror=&quot;alert\(1\)&quot;&gt;/);
+  assert.match(html, /&lt;b&gt;no&lt;\/b&gt;/);
+});

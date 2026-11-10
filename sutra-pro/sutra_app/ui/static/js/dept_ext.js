@@ -1,15 +1,17 @@
 /* dept_ext.js - the glue of the department page (work package UI-8; docs/design/ui.md sections 5 (E6, E12), 6.7, 7 and 9; S3-web-10; UI-D10).
 
-   The department page is J2's own page with 13 edits. This file is the one script that wires the new parts into it: the team's name in the rail and
-   the title, the banner of a team that was merged away, the two new tabs (Workflow graph and Org chart), the node panel, and the live events.
+   The department page is J2's own page with the Sutra edits (scripts/port_j2_ui.py). This file is the one script that wires the new parts into it: the team's
+   name in the rail and in the Simple view's strip and the title, the banner of a team that was merged away, the two new tabs (Workflow graph and Org chart),
+   the node panel, and the live events.
    It needs SutraCtx and, for what it mounts, GraphView, OrgChartView, NodePanel and SutraEvents (all read when they are used, so a missing view
    only leaves its tab empty). It is loaded last (E12), after J2's page script, and it does nothing on a page whose boot block is not a team page.
 
      DeptExt.init()       once, after DOMContentLoaded: chip(), title(), the node panel (drawers()), the `sutra:tab` listener, and, when
                           SutraCtx.currentTab is graph or orgchart, that view. J2 shows a ?tab= (or #hash) pane at PARSE time, before the E12
                           scripts run, so the `sutra:tab` event of E6 had no listener then; currentTab is what it left behind.
-     DeptExt.chip()       the team's name in #deptchip; for a team the boot block calls archived: the banner and body.archived (sutra-panel.css
-                          hides the composers, because J2 ignores a refused write silently).
+     DeptExt.chip()       the team's name in every chip the page has, #deptchip (the icon rail's strip) and #deptchip-s (the Simple view's), and as their
+                          title, so a name the chip cuts short is whole on hover; for a team the boot block calls archived: the banner and body.archived
+                          (sutra-panel.css hides the composers, because J2 ignores a refused write silently).
      DeptExt.title()      document.title = "<team> \u00b7 Sutra" (a middle dot).
      DeptExt.onTab(name)  the first time graph or orgchart shows, create its view in #pane-graph / #pane-orgchart and fill it; a later visit
                           fetches again only when the live stream is not up (events keep it current otherwise).
@@ -99,11 +101,15 @@
   };
 
   /* ---- chip, title, banner */
+  const CHIPS = ["deptchip", "deptchip-s"];          // the strip at the top of the icon rail and the one at the top of the Simple view
+
   function chip() {
     const boot = bootOf();
-    const chipEl = byId("deptchip");
     const label = clean(boot.dept_label);
-    if (chipEl) chipEl.textContent = label;
+    CHIPS.map(byId).filter(Boolean).forEach(el => {
+      el.textContent = label;
+      if (label !== "" && typeof el.setAttribute === "function") el.setAttribute("title", label);
+    });
     const d = doc();
     if (!d || !d.body) return false;
     if (boot.archived !== true) return false;
@@ -282,8 +288,8 @@
       if (S.refetchChart) S.refetchChart();
     } else if (type === "chat.message") {
       const message = isObj(data) && isObj(data.message) ? data.message : null;
-      // the owner's own line is not news to the owner
-      if (S.graph && message && message.who !== "user" && clean(data.session_id) !== "") safely("noteMessage", () => S.graph.noteMessage(data.session_id, message.id));
+      // the owner's own line is not news to the owner, and neither is a question to a function (`ask`: the owner asked it) or the answer the owner is waiting for
+      if (S.graph && message && message.who !== "user" && clean(message.ask) === "" && clean(data.session_id) !== "") safely("noteMessage", () => S.graph.noteMessage(data.session_id, message.id));
     }
   }
 
