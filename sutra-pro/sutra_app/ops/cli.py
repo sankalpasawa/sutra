@@ -316,12 +316,29 @@ def _config_init(args: argparse.Namespace, settings: Settings) -> int:
 
 def _config_sync(args: argparse.Namespace, settings: Settings) -> int:
     from sutra_app.ops import doctor
+    report: dict[str, Any] = {}
     try:
-        added = doctor.sync_seed_library(settings.data_dir)
+        added = doctor.sync_seed_library(settings.data_dir, report=report)
+    except doctor.SeedSyncError as exc:                  # the lock was held, or the index is not an index: the library is as it was
+        print(f"sutra-pro: the library was not synced and nothing was changed: {exc}", file=sys.stderr)
+        return 1
     except OSError as exc:
         print(f"sutra-pro: the library could not be synced: {exc}", file=sys.stderr)
         return 1
-    emit(args, {"added": added}, [f"Added {len(added)} template(s): " + ", ".join(added) if added else "The library already has every seed template."])
+    templates, versions, filled, runs, skipped = (report[k] for k in ("templates", "versions", "filled", "runs", "skipped"))
+    lines: list[str] = []
+    if templates:
+        lines.append(f"Added {len(templates)} template(s): " + ", ".join(templates))
+    if versions:
+        lines.append(f"Added {len(versions)} version(s): " + ", ".join(versions))
+    if filled:
+        lines.append(f"Filled the provenance (business, date, live or mock) of {len(filled)} version(s).")
+    if runs:
+        lines.append(f"Added {len(runs)} run(s) of the seed to the catalog.")
+    if not lines:
+        lines.append("Nothing to add." if skipped else "The library already has every seed template and version.")
+    lines += [f"Left alone {s['template']}" + (f"@v{s['version']}" if s["version"] is not None else "") + f": {s['why']}" for s in skipped]
+    emit(args, {"added": added, **report}, lines)
     return 0
 
 
@@ -358,7 +375,7 @@ def build_parser() -> argparse.ArgumentParser:
     q.add_argument("--dept", metavar="D", help="write it into this department's engine.json instead of the global one")
     q = cfg.add_parser("init", parents=common, help="write a commented .env template (mode 600); never overwrites")
     q.add_argument("--generate-override-key", action="store_true", help="also put a fresh J2_OVERRIDE_KEY in it")
-    cfg.add_parser("sync-library", parents=common, help="copy seed templates the data library lacks (never overwrites)")
+    cfg.add_parser("sync-library", parents=common, help="add what the seed has and the data library lacks: templates, versions, provenance, runs (never overwrites)")
     p.set_defaults(func=cmd_config)
     COMMANDS.clear()
     COMMANDS.update({name: sub.choices[name].get_default("func") for name in BUILTIN})
