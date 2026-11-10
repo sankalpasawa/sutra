@@ -42,6 +42,15 @@ body.nodeopen #pane-map .mappanel{display:none}
   body:not(.simple):has(#chatfab) .apillhost{right:22px;bottom:68px;transition:transform var(--dur-base) var(--ease-out)}
   body:not(.simple):has(#dview.chaton) .apillhost{transform:translateX(-430px)}
 }
+/* The Simple view (the studio) is full-bleed, so no corner of it is free: the finish bar (Open full view) and Asha's message box take the lower right, the toolbar
+   (Decide for me, the dark-mode button, Open the site) the upper right, and on a phone the dock the bottom, and the pill sat on one of them at every width (found by the
+   live check of J2 sync 4). The one row with nothing of J2's in it is the team strip at the very top (ours: "All teams" and the team's name, at the left), so in the Simple view
+   the pill rides at the right end of that row, above the toolbar. Nothing opens over that row (Asha's panel and the sheets start below the toolbar), so it never has to
+   move and has no transition to budget. The strip keeps clear of it (122px for "1 needs you", 190px when it says what to try again too): a long team name wraps
+   instead of running under the pill. */
+body.simple .apillhost{top:4px;bottom:auto;right:14px}
+body.simple:has(.apillhost:not([hidden])) #sview>.steamstrip{padding-right:122px}
+body.simple:has(.apillhost:not([hidden]) .apill small) #sview>.steamstrip{padding-right:190px}
 /* the pulse is a ring that grows and fades (transform and opacity: the compositor's), not an outline that is painted bigger each frame */
 .apill{position:relative}
 @media (prefers-reduced-motion:no-preference){.apill.fresh::after{content:"";position:absolute;inset:-3px;border:3px solid var(--accent);border-radius:inherit;pointer-events:none;animation:apillpulse calc(var(--dur-slow)*4) var(--ease-out) 2}}
