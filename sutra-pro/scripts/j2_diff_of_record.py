@@ -124,10 +124,10 @@ _CHECKS = ("J2's runner for its flow test in two throwaway copies of its folder;
 _SHOT = "a screenshot of J2's page at the top of its folder; no file in the folder refers to it."
 _DEV_AT = "engine design 3.2 (VENDORED.md says only 'the IDE and environment files'; design 7.4 does not name it)"
 _MOCKS = ("HTML mock-ups of screens that are ported (the Artifacts groups, Run settings): design sketches, not engine or page code.")
-_MOCKS_AT = "design 7.4"
+_MOCKS_AT = "VENDORED.md ('docs/mocks/*.html'); design 7.4 names two of the three mocks"
 _SOLAR = "an HTML mock of the team view as a solar system: a design sketch, not code."
-_SOLAR_AT = ("D91 says it is kept as reference under docs/reference/j2/, but the vendor script does not carry it (a disagreement); "
-             "design 7.4 does not name it")
+_SOLAR_AT = ("VENDORED.md ('docs/mocks/*.html'); design 7.4 does not name it; D91 says it is kept as reference under "
+             "docs/reference/j2/, but the vendor script does not carry it (a disagreement)")
 _SUDOKU = ("a one-off comparison write-up with its HTML, PDF and PNG renders (the Sudoku runs): not read by any code, not a "
            "reference the engine needs.")
 _SUDOKU_AT = ("engine design 3.2 (docs/*.html, docs/*.png, docs/*.pdf); D91 says explainer pages are kept as reference under "
@@ -175,7 +175,7 @@ EXCLUDED: tuple[Exclusion, ...] = (
     Exclusion("docs/mocks/team-solar-mock.html", "solar mock", _SOLAR, _SOLAR_AT),
     Exclusion("docs/mocks/*", "mocks", _MOCKS, _MOCKS_AT),
     Exclusion("docs/sudoku-comparison/*", "sudoku comparison", _SUDOKU, _SUDOKU_AT),
-    Exclusion("docs/build-on-run-design.md", "build-on-run design", _BUILD_ON_RUN, "design 7.4"),
+    Exclusion("docs/build-on-run-design.md", "build-on-run design", _BUILD_ON_RUN, "VENDORED.md; design 7.4"),
     Exclusion("docs/*.html", "design docs (HTML)", _DOC_HTML, _DOC_HTML_AT),
     Exclusion("docs/j2-flow.jpg", "flow picture", _DOC_FLOW, _DOC_FLOW_AT),
     Exclusion("docs/*.png", "doc images", _DOC_IMAGES, _DOC_IMAGES_AT),
