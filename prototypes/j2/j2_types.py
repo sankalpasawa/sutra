@@ -132,12 +132,33 @@ def named(text, path=None):
     return docs + pages if docs else []
 
 
+def page_type(path=None):
+    """The first page type (the start type without J2_OUTPUT)."""
+    return next(x["name"] for x in _read_types(path)["types"] if x.get("kind") == "type" and x.get("form") == "page")
+
+
 def default(path=None):
     """The type a run starts as before the planner chooses: J2_OUTPUT (the start page), else the first page type."""
-    names_ = names(path)
     t = str(os.getenv("J2_OUTPUT") or "").strip().lower()
-    return t if t in names_ else next(x["name"] for x in _read_types(path)["types"] if x.get("kind") == "type"
-                                        and x.get("form") == "page")
+    return t if t in names(path) else page_type(path)
+
+
+def form(name, path=None):
+    """A form's own entry in types.json ("page", "document")."""
+    return _read_types(path)["forms"][name]
+
+
+def form_check_types(name, path=None):
+    """Every check type a form's outputs run: the form's own, then each of its types' own, in file order, once each."""
+    d = _read_types(path)
+    lists = [form(name, path).get("check_types") or []] + [t.get("check_types") or [] for t in d["types"]
+                                                         if t.get("kind") == "type" and t.get("form") == name]
+    return tuple(dict.fromkeys(x for xs in lists for x in xs))
+
+
+def expect_kinds(path=None):
+    """{expected-output kind: the check type that verifies it} (types.json "expect_kinds")."""
+    return dict(_read_types(path)["expect_kinds"])
 
 
 def info(name, path=None):
@@ -172,9 +193,11 @@ def load(name, path=None):
            "builder": fill(_text(entry["builder"])) if doc else entry["builder"],
            "export": entry.get("export"), "done": entry["done"]}
     out.update({key: fill(_text(entry[k])) for k, key in TEXTS.items() if entry.get(k)})
+    # a done-when item's words -> the rate-card part it needs at least (cost.item_parts; first match wins)
+    out["item_parts"] = tuple((x["part"], x["words"]) for x in entry["cost"].get("item_parts") or ())
     if doc:      # a page's file is the page form's own (site/index.html); a document names its own
         out["file"] = entry["file"]
-    else:      # the parts a page needs first, in order (J2Run.SITE_ESSENTIALS): its minimum cost
+    else:      # the parts a page needs first, in order: its minimum cost (J2Run._stage_cost)
         out["essentials"] = tuple(p for p, n in entry["cost"]["parts"].items() for _ in range(n))
     if entry.get("mock"):      # migration only: names of the mock functions in j2.py, which j2 resolves (j2.output_def)
         out["mock"] = dict(entry["mock"])

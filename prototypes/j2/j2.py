@@ -84,7 +84,8 @@ RUBRIC = (("R-1", "Consistent styling: the whole page follows the style guide (s
           ("R-3", "Clear hierarchy: one main heading, headings in order, the most important things stand out"),
           ("R-4", "One obvious main action: a visitor can tell at once what to do next"),
           ("R-5", "Easy navigation: a visitor can reach every section quickly, on a phone too"),
-          ("R-6", f"Tap targets are big enough on phones (at least {j2_check.TAP_MIN}x{j2_check.TAP_MIN}px)"),
+          ("R-6", f"Tap targets are big enough on phones (at least {j2_check.TAP_MIN}x{j2_check.TAP_MIN}px; "
+                  f"{j2_check.TAP_DENSE}x{j2_check.TAP_DENSE}px for the cells or keys of a dense grid or keypad)"),
           ("R-7", "Images have alt text"))
 WORKABLE_OUTCOME = ("Done: the site is workable. Every done-when item passes with Audit's evidence and the render "
                     "check is clean.")
@@ -235,19 +236,10 @@ def price(w):
 
 
 # Cost follows the work: each done-when item a workflow covers has a minimum price, the rate-card part that kind of
-# item needs. ponytail: keyword match on the item text; first match wins, else a page section.
-ITEM_KINDS = (("form", r"\bform\b|\border|\bbook(?:ing)?\b|enquir|inquir|appointment|reserv|sign[- ]?up|subscribe"),
-              ("interactive_feature", r"filter|search|sort|slider|carousel|calculator|toggle|\btabs?\b|interactive|animat"),
-              ("styling", r"viewport|mobile|phone|responsive|horizontal scroll|\b360\s*px|\b1280\s*px|\bcolou?rs?\b|\bfonts?\b"),
-              ("page_section", r""))
-
-
-DOC_KINDS = (("requirements_section", r"requirement|components?\b|pages and sections"), ("doc_section", r""))   # a document's items
-
-
+# item needs (the type's cost.item_parts in artifacts/types.json). ponytail: keyword match on the item text; first
+# match wins, the last entry (empty words) is the default.
 def item_kind(criterion):
-    return next(k for k, pat in (DOC_KINDS if output_def(OUTPUT)["sections"] else ITEM_KINDS)
-                if re.search(pat, str(criterion), re.I))
+    return next(k for k, pat in output_def(OUTPUT)["item_parts"] if re.search(pat, str(criterion), re.I))
 
 
 def item_min(criterion):
@@ -333,9 +325,9 @@ def atom_missing(w):
 
 
 # ---- work-atom checks: the only check types Adaptation may write. Code runs them; no agent reports a result.
-CHECK_TYPES = ("file-exists", "grep-count", "element-count", "named-test", "facts-present", "tap-targets",
-               "behavior-steps")
-DOC_CHECK_TYPES = ("facts-present", "heading-present", "section-not-empty", "ids-unique")   # a document: no browser
+CHECK_TYPES = j2_types.form_check_types("page")          # artifacts/types.json: the page form's and its types'
+DOC_CHECK_TYPES = j2_types.form_check_types("document")  # every document type's: no browser
+PAGE_FILE = os.path.basename(j2_types.form("page")["file"])     # "index.html": the name workflows give the site file
 COUNTED = ("grep-count", "element-count", "tap-targets")     # target: a section id or class the atom says to create
 NAMED_TESTS = ("page-parses", "links-resolve", "form-has-submit")
 MAX_CHECK_ATTEMPTS = 3
@@ -851,14 +843,14 @@ def run_check(c, site_dir, page, doc=False):
             want = True if expect is None else bool(expect)
             return {"actual": ok, "pass": ok == want, "evidence": f"{target} {'exists' if ok else 'not found'} in the build"}
         if t == "grep-count":
-            path = os.path.normpath(os.path.join(site_dir, str(c.get("file") or "index.html")))
+            path = os.path.normpath(os.path.join(site_dir, str(c.get("file") or PAGE_FILE)))
             text = open(path, encoding="utf-8").read() if path.startswith(os.path.normpath(site_dir)) \
                 and os.path.isfile(path) else ""
             # the markup only: CSS and JS that name the id or class aren't the element ('#continue-prompt' counted 3)
             text = re.sub(r"(<(script|style)\b[^>]*>).*?(</\2\s*>)", r"\1\3", text, flags=re.S | re.I)
             n = text.count(str(target).lstrip("#."))
             return {"actual": n, "pass": n == as_int(expect, -1),
-                    "evidence": f"{target!r} found {n} time(s) in {c.get('file') or 'index.html'} (in the markup, not "
+                    "evidence": f"{target!r} found {n} time(s) in {c.get('file') or PAGE_FILE} (in the markup, not "
                                 f"CSS/JS), expected {expect}"}
         if t == "lld-slice":
             ok, ev = lld_check(page, c.get("spec") or {})
@@ -876,17 +868,21 @@ def run_check(c, site_dir, page, doc=False):
             return {"actual": n, "pass": n == as_int(expect, -1),
                     "evidence": f"{n} element(s) match {target!r}{where}, expected {expect}"}
         if t == "tap-targets":
-            r, want = j2_check.tap_targets(page, str(target), as_int(expect, j2_check.TAP_MIN)), as_int(expect, 44)
+            r, want = j2_check.tap_targets(page, str(target), as_int(expect, j2_check.TAP_MIN)), as_int(expect, j2_check.TAP_MIN)
             if not r.get("available"):      # no browser: the check didn't run, which says nothing about the build
                 return {"actual": None, "pass": None, "evidence": f"could not run: {r.get('note')}"}
             ok = r["roots"] > 0 and r["checked"] > 0 and not r["small_count"]
             shown = " (hidden on load, shown for the measurement)" if r.get("revealed") else ""
-            return {"actual": {k: r.get(k) for k in ("roots", "checked", "revealed", "small_count", "small")}, "pass": ok,
+            lo = min(want, j2_check.TAP_DENSE)       # a grid's cells and a keypad's keys: the WCAG 2.2 AA minimum
+            size = f"{want}x{want}px" + (f" ({lo}x{lo}px for the {r['dense']} dense grid or keypad control(s))"
+                                         if r.get("dense") and lo < want else "")
+            return {"actual": {k: r.get(k) for k in ("roots", "checked", "dense", "revealed", "small_count", "small")},
+                    "pass": ok,
                     "evidence": (f"nothing on the page matches {target!r}" if not r["roots"] else
                                  f"no buttons or links inside {target!r}" if not r["checked"] else
                                  f"{r['small_count']} of {r['checked']} tap target(s) in {target!r}{shown} under "
-                                 f"{want}x{want}px at 360px: {', '.join(r['small'])}" if r["small_count"] else
-                                 f"all {r['checked']} tap target(s) in {target!r}{shown} at least {want}x{want}px at 360px")}
+                                 f"{size} at 360px: {', '.join(r['small'])}" if r["small_count"] else
+                                 f"all {r['checked']} tap target(s) in {target!r}{shown} at least {size} at 360px")}
         if t == "facts-present":
             text = squash(" ".join(scan.text))
             facts = target if isinstance(target, list) else [target]
@@ -974,9 +970,7 @@ def heading_target(t):
 
 # An expected-output item names one concrete thing that must exist when the atom is done; its kind says which check
 # type verifies it. An output allows the kinds whose check type it runs (a website's or a document's).
-EXPECT_KINDS = {"section": "element-count", "element": "element-count", "facts": "facts-present",
-                "file": "file-exists", "test": "named-test", "tap": "tap-targets",
-                "heading": "heading-present", "ids": "ids-unique", "behavior": "behavior-steps"}
+EXPECT_KINDS = j2_types.expect_kinds()      # artifacts/types.json "expect_kinds"
 
 
 def expect_kinds(types):
@@ -1242,6 +1236,21 @@ def load_conditions(name):
         return json.load(f)["conditions"]
 
 
+def cond_skip(cond, goal):
+    """Why a necessary condition doesn't apply to this charter, else None. "skip_when" in conditions/<type>.json:
+    {"charter": regex, "unless": regex, "why": str}, matched against the charter's statement and business_type."""
+    w, g = cond.get("skip_when") or {}, goal or {}
+    text = " ".join(str(g.get(k) or "") for k in ("statement", "business_type"))
+    hit = w.get("charter") and re.search(w["charter"], text, re.I) and not (
+        w.get("unless") and re.search(w["unless"], text, re.I))
+    return str(w.get("why") or "it doesn't apply to this charter") if hit else None
+
+
+def conditions_for(name, goal):
+    """The necessary conditions of conditions/<name> that apply to this charter (cond_skip)."""
+    return [c for c in load_conditions(name) if not cond_skip(c, goal)]
+
+
 PHONE = re.compile(r"\+?\d[\d\s().-]{6,}\d")
 
 
@@ -1313,6 +1322,8 @@ def condition_met(cond, doc, goal, source, sections, page=None, mech=None):
     page: a website's HTML; mech: its render check (j2_check.check). source: the charter and the Requester's own
     words, squashed; sections: the output's required section headings."""
     k, g = cond.get("check"), goal or {}
+    if why := cond_skip(cond, goal):
+        return True, f"does not apply: {why}"
     if isinstance(k, list):             # several checks, all must hold
         rs = [condition_met({**cond, "check": x}, doc, goal, source, sections, page, mech) for x in k]
         return all(m for m, _ in rs), "; ".join(e for _, e in rs)
@@ -1541,7 +1552,7 @@ def with_atoms(wfs, atom=None):
 # or a section of it. The workflows after it read the file, kept under the run's artifacts/ folder. Code runs its work
 # atom's text checks on the file.
 FILE_PATH = re.compile(r"(?!/)(?!.*\.\.)[\w./-]+\.\w+")
-SITE_FILES = ("index.html", "site/index.html")
+SITE_FILES = (PAGE_FILE, j2_types.form("page")["file"])
 
 
 def is_artifact(w):
@@ -2318,8 +2329,10 @@ SITE_LATER = ("\nThe documents are written and the Requester was already asked f
 DOC_NOTE = ("\nOUTPUT TYPE: {label}. The department writes a markdown document, not a website: where a role file says "
             "site, website, page or HTML, read the document. There is no browser check, style guide or design rubric; "
             "Audit uses the document rubric and code checks the necessary conditions.")
-WF_TYPES = '"file-exists"|"grep-count"|"element-count"|"named-test"|"facts-present"'
-WF_KINDS = '"section"|"element"|"facts"|"file"|"test"|"tap"|"behavior"'
+# The plan format's check types and expected-output kinds, from the page form (artifacts/types.json); a document's
+# agents get their own in their place. The browser checks are left out of the type list: the atom rules describe them.
+WF_TYPES = "|".join(f'"{t}"' for t in CHECK_TYPES if t not in j2_types.form("page").get("browser_checks", []))
+WF_KINDS = "|".join(f'"{k}"' for k in expect_kinds(CHECK_TYPES))
 
 
 
@@ -2338,6 +2351,11 @@ def output_type(name=None):
 def output_def(kind):
     """What an output type is, read from artifacts/types.json and its files (j2_types)."""
     return _data_type(kind)
+
+
+def is_page(kind):
+    """kind names an output type of the page form (a website); False for a document or anything else."""
+    return kind in j2_types.names() and j2_types.info(kind)["form"] == "page"
 
 
 @lru_cache(maxsize=None)
@@ -2550,7 +2568,7 @@ def workable(audit):
     ok = set(audit.get("accepted") or [])     # what the Requester finished with (_accept_open): ids, and item texts
     out = [f"done-when item {num(r)} ({r['id']} {r['verdict']}): {r['criterion']}" for r in audit["results"]
            if not r["pass"] and r["criterion"] not in ok]
-    if audit.get("output", "website") != "website":
+    if not is_page(audit.get("output", j2_types.page_type())):
         # A document: Audit accepts (every item and document rubric item passes) and every necessary condition is met.
         return (out + [f"document rubric {r['id']} ({r['verdict']}): {r['criterion']}" for r in audit.get("rubric", [])
                        if not r["pass"]]
@@ -3779,7 +3797,6 @@ class J2Run:
 
     # ---- design documents: stages. PRD, HLD and LLD run one after another through the same flow (each its own output
     # type, charter, plan, build and audit); the site follows when it was asked for. Plain runs never get here.
-    SITE_ESSENTIALS = ("styling", "page_section", "page_section", "page_section", "form")   # parts the site needs first
     mock_deliverables = None      # offline: the planner's choice, set per test (default: the types the brief names, j2_types.named)
 
     def _plan_stages(self):
@@ -3900,9 +3917,9 @@ class J2Run:
         site's essentials (a scaffold, three sections, a form). 0 when the rate card is off."""
         if kind in j2_send.DEEDS:
             return RATES_DEED().get(kind, 0)
-        if kind == "website":
-            r, parts = RATES_WEB(), output_def("website").get("essentials", self.SITE_ESSENTIALS)
-            return sum(r.get(k, 0) for k in parts)
+        if is_page(kind):      # the parts the page needs first (cost.parts in artifacts/types.json)
+            r = _rate_card(output_def(kind)["rates"])
+            return sum(r.get(k, 0) for k in output_def(kind)["essentials"])
         r, n = RATES_DOC(), len(output_def(kind)["sections"])
         return r.get("doc_section", 0) * (n - 1) + r.get("requirements_section", 0)
 
@@ -4052,7 +4069,7 @@ class J2Run:
         self.site_tag = kind + "-"
         self.stage_calls0 = self.calls
         self._apply_output(kind)
-        if kind == "website":
+        if is_page(kind):
             self.post("system", "The documents are done. Now the website, built from them.")
             self.proposed_lld = {}
             if (self.chain.get("lld") or {}).get("sections"):       # only an LLD is a blueprint; an HLD alone is a summary
@@ -5410,10 +5427,9 @@ class J2Run:
               'section), "estimated_resources": {"money": int, "calls": int, "time_minutes": int}, '
               '"atoms": [{"id": str, "goal": str, "constraints": [str], "context": [str], "how": {"kind": "AI"|"code", '
               '"agent": str, "steps": str (what to build, naming every section id and class name it creates)}, '
-              '"expected_output": [{"text": str, "kind": "section"|"element"|"facts"|"file"|"test"|"tap"|"behavior", '
+              '"expected_output": [{"text": str, "kind": ' + WF_KINDS + ', '
               '"target": str|[str], "count": int (section/element only, default 1), "steps": [str] (behavior only)}], '
-              '"verification": [{"text": str, "type": "file-exists"|"grep-count"|"element-count"|"named-test"|'
-              '"facts-present", "target": str|[str], "expect": int|bool}]}]}]')
+              '"verification": [{"text": str, "type": ' + WF_TYPES + ', "target": str|[str], "expect": int|bool}]}]}]')
     ATOM_RULES = ("\nWORK ATOMS: every workflow, fixes included, carries atoms: exactly one work atom for now, id \"a1\" "
                   "(code renames it W-n.a1 at registration). goal: what must be true when it is done, one sentence. "
                   "constraints: short strings, what must never break. context: references only, charter item numbers "
@@ -5452,7 +5468,8 @@ class J2Run:
                   "links-resolve or form-has-submit; expect true); facts-present (target: a list of strings that must all "
                   "appear on the page; expect true); tap-targets (target: a section id or class; code measures every "
                   "button, link and field inside it in a headless browser at 360px; expect: the minimum size in px, "
-                  "44). DESIGN RUBRIC: also add, as checks of these types, the rubric rules (R-1 to R-6) that apply to "
+                  "44; code itself allows 24 for the cells or keys of a dense grid or keypad, 9 or more of one control "
+                  "side by side). DESIGN RUBRIC: also add, as checks of these types, the rubric rules (R-1 to R-6) that apply to "
                   "the atom's section: tap-targets on every section that holds buttons, links or form fields (R-6); "
                   "element-count of the classes the style guide gives buttons and cards (j2-btn, j2-card) when the "
                   "section uses them (R-1); links-resolve for navigation (R-5). Never add a rubric check code can't run "
@@ -5545,13 +5562,13 @@ class J2Run:
                                               "it, priced as a fix.", "act": "PROPOSE", "next": "Priority",
                                        "workflows": [{"name": "Visiting hours", "goal_gap": self.feedback,
                                                       "parts": ["fix"], "revises": owner["id"], "covers": [],
-                                                      "outputs": ["index.html"], "estimated_resources": {"money": 10},
+                                                      "outputs": [PAGE_FILE], "estimated_resources": {"money": 10},
                                                       "completion_check": "The visiting hours are in that section"}]})
                 return json.dumps({"say": f"@Priority The Requester asked: \"{self.feedback}\". One workflow covers it.",
                                    "act": "PROPOSE", "next": "Priority",
                                    "workflows": [{"name": "Requester change", "goal_gap": self.feedback,
                                                   "parts": ["page_section"], "covers": [self._no(crit[-1])],
-                                                  "outputs": ["index.html"], "completion_check": "Change visible"}]})
+                                                  "outputs": [PAGE_FILE], "completion_check": "Change visible"}]})
             phone = next((f for f in fails if "phone" in str(f["criterion"]).lower()      # the done-when item, not R-6
                           and not str(f["id"]).startswith("R-")), None)
             if phone and self._can_dispute("audit", phone["id"])[0]:
@@ -5560,12 +5577,12 @@ class J2Run:
                                    "next": "Audit", "dispute": {"with": "Audit", "about": phone["id"],
                                                                 "reason": "Fluid layout, no overflow at 360px"}})
             others = [{"name": f"Cover item {f['item']}", "goal_gap": f["criterion"], "covers": [f["item"]],
-                       "parts": [item_kind(f["criterion"])], "outputs": ["index.html"], "completion_check": f["criterion"],
+                       "parts": [item_kind(f["criterion"])], "outputs": [PAGE_FILE], "completion_check": f["criterion"],
                        "estimated_resources": {"money": 10}}
                       if f.get("verdict") == "UNPAID" else
                       {"name": f"Fix item {f['item']}", "goal_gap": f["criterion"], "parts": ["fix"], "revises": "W-2",
                        "fixes": [f["id"]], "estimated_resources": {"money": 10},      # the mock's estimate, for runs without a rate card
-                       "outputs": ["index.html"], "completion_check": f["criterion"]} for f in fails
+                       "outputs": [PAGE_FILE], "completion_check": f["criterion"]} for f in fails
                       if f is not phone and f.get("item") and f.get("verdict") != "TO_BE_CONFIRMED"]
             if phone:
                 return json.dumps({"say": f"@Priority {phone['id']} stands. One small fix closes it: add the viewport "
@@ -5573,7 +5590,7 @@ class J2Run:
                                    "act": "PROPOSE", "next": "Priority",
                                    "workflows": [{"name": "Viewport fix", "goal_gap": phone["criterion"], "parts": ["fix"],
                                                   "fixes": [phone["id"]],
-                                                  "outputs": ["index.html"],
+                                                  "outputs": [PAGE_FILE],
                                                   "completion_check": "viewport meta tag present"}] + others})
             if others and self.cycle > 1:
                 return json.dumps({"say": "@Priority One fix per failing item.", "act": "PROPOSE", "next": "Priority",
@@ -5586,27 +5603,27 @@ class J2Run:
                                    "act": "PROPOSE", "next": "Priority", "workflows": [
                                        {"name": "Scaffold and styling", "goal_gap": "No site exists",
                                         "parts": ["page_section", "styling"], "covers": [self._no(crit[0])],
-                                        "outputs": ["index.html"],
+                                        "outputs": [PAGE_FILE],
                                         "completion_check": "index.html loads with a nav to every section and a main "
                                                             "action in the hero"},
                                        {"name": "Products", "goal_gap": "Each product's id and price are shown",
                                         "parts": ["page_section"], "covers": items(r"id and price", {"page_section"}),
-                                        "outputs": ["index.html"],
+                                        "outputs": [PAGE_FILE],
                                         "completion_check": "Every product shows its id and price"}]
                                    # before the other sections, so the timings sit in their own section
                                    + ([{"name": "Store timings and address",
                                         "goal_gap": "Visitors can't see when the shop is open or where it is",
-                                        "parts": ["page_section"], "covers": timings, "outputs": ["index.html"],
+                                        "parts": ["page_section"], "covers": timings, "outputs": [PAGE_FILE],
                                         "completion_check": "The timings and the address are on the page"}]
                                       if timings else []) + [
                                        {"name": "Order on WhatsApp", "goal_gap": "Order button opens a WhatsApp link",
                                         "parts": ["form"], "covers": items(r"whatsapp", {"form"}),
-                                        "outputs": ["index.html"],
+                                        "outputs": [PAGE_FILE],
                                         "completion_check": "The order button opens WhatsApp with the product id "
                                                             "and price"},
                                        {"name": "Filter", "goal_gap": "Filter by size and price",
                                         "parts": ["interactive_feature"], "covers": items(r"filter", {"interactive_feature"}),
-                                        "outputs": ["index.html"], "completion_check": "The filters work together"}]})
+                                        "outputs": [PAGE_FILE], "completion_check": "The filters work together"}]})
             if self.cycle == 1 and not self.workflows:
                 extra = r"bean|farm|loyal|phone"
                 core = [i for i in items(r".", {"page_section"}, extra) if i != self._no(crit[0])][:3] \
@@ -5615,12 +5632,12 @@ class J2Run:
                                           "sections, a stories section for warmth, and subtle animations.",
                                    "act": "PROPOSE", "next": "Priority", "workflows": [
                                        {"name": "Scaffold and styling", "goal_gap": "No site exists",
-                                        "parts": ["page_section", "styling"], "covers": [self._no(crit[0])], "outputs": ["index.html"],
+                                        "parts": ["page_section", "styling"], "covers": [self._no(crit[0])], "outputs": [PAGE_FILE],
                                         "completion_check": "index.html loads with a nav to every section and a main "
                                                             "action in the hero"},
                                        {"name": "Core sections", "goal_gap": "Every done-when section",
                                         "parts": ["page_section", "page_section", "page_section", "form"], "covers": core,
-                                        "outputs": ["index.html"], "completion_check": "All done-when sections present"},
+                                        "outputs": [PAGE_FILE], "completion_check": "All done-when sections present"},
                                        {"name": "Stories section", "goal_gap": "Warm content: the beans, the farms and "
                                         "the people behind the cafe", "parts": ["blog_post"] * 3, "covers": items(r"bean|farm"),
                                         "outputs": ["stories section"], "completion_check": "3 stories visible"},
@@ -5629,7 +5646,7 @@ class J2Run:
                                         "covers": items(r"loyal")[:1],
                                         "completion_check": "Effects run on scroll"}]
                                    + [{"name": f"Interactive item {self._no(c)}", "goal_gap": c, "covers": [self._no(c)],
-                                       "parts": ["interactive_feature"], "outputs": ["index.html"],
+                                       "parts": ["interactive_feature"], "outputs": [PAGE_FILE],
                                        "completion_check": c} for c in crit if ACTION_GOAL.search(str(c))][:1]})
             if not self.audits and self._cheapest_fit()["workflows"]:
                 return json.dumps(self._cheapest_fit())         # items left out earlier, now that credits were added
@@ -5643,7 +5660,7 @@ class J2Run:
             for x in self.real_summary["proposal_brief"]:
                 w_ = {"name": x["name"], "goal_gap": x.get("goal") or x["name"], "covers": x["covers"],
                       "parts": [item_kind(crit[i - 1]) for i in x["covers"] if 0 < i <= len(crit)] or ["page_section"],
-                      "outputs": ["index.html"], "completion_check": x.get("done_test") or x["name"],
+                      "outputs": [PAGE_FILE], "completion_check": x.get("done_test") or x["name"],
                       "dependencies": x["after"], "estimated_resources": {"money": 10, "calls": 2, "time_minutes": 5}}
                 if not x["covers"]:
                     f = "artifacts/" + re.sub(r"[^a-z0-9]+", "-", x["name"].lower()).strip("-") + ".md"
@@ -5722,7 +5739,7 @@ class J2Run:
                       + self._blueprint_plan() + self.ATOM_RULES
                       + f"\nNECESSARY CONDITIONS (code checks every one on the built {self.out['noun']}; it is workable "
                       "only when all are met, so your plan must build what each needs):\n"
-                      + "\n".join(f"{c['id']}: {c['text']}" for c in load_conditions(self.out["conditions"])))
+                      + "\n".join(f"{c['id']}: {c['text']}" for c in conditions_for(self.out["conditions"], self.goal)))
         real, replan = None, self.real_replan
         changing = bool(self.change and self.change["phase"] == "plan")      # J2_CHANGE: the change plan is the task
         if self._realization_applies():
@@ -5844,7 +5861,10 @@ class J2Run:
                 f"either one part of it, checked by code (check types: {', '.join(self.out['check_types'])}), or one "
                 "file that later workflows read; every workflow that lists it in inputs_from, directly or through "
                 f"another, reads that file. Its done_test names what the output must contain. Checking the whole "
-                f"{self.out['noun']} is Audit's job: never plan check, review, QA, test or report workflows.")
+                f"{self.out['noun']} is Audit's job: never plan check, review, QA, test or report workflows."
+                f"\nNECESSARY CONDITIONS (code checks each one on the built {self.out['noun']}; plan the work each "
+                "needs):\n" + "\n".join(f"{c['id']}: {c['text']}" for c in conditions_for(self.out["conditions"], self.goal))
+                + "\nA goal that names a time, price, number or email needs a facts-present check or a named test.")
 
     def _realization_applies(self):
         """J2_REALIZATION=1 shapes the first plan of a website run (not documents, a blueprint build or a change request;
@@ -6044,7 +6064,7 @@ class J2Run:
         for x in self.change["rows"]:
             t = self._wf_any(x.get("revises"))
             w = {"name": x["name"], "goal_gap": x.get("goal") or x["name"], "covers": x["covers"],
-                 "outputs": x.get("outputs") or ["index.html"], "completion_check": x.get("done_test") or x["name"],
+                 "outputs": x.get("outputs") or [PAGE_FILE], "completion_check": x.get("done_test") or x["name"],
                  "dependencies": x["after"], "parts": ["fix"] if t else ["page_section"],
                  "estimated_resources": {"money": max(1, as_int((t or {}).get("cost"), 5)), "calls": 1, "time_minutes": 3}}
             if t:
@@ -6355,7 +6375,7 @@ class J2Run:
         met = {c["id"] for c in last.get("conditions") or [] if c["met"]}
         text = json.dumps(list(wfs) + [w for w in self.workflows if w["status"] in ("registered", "held", "running", "done")],
                           ensure_ascii=False)
-        gaps = [c for c in load_conditions(self.out["conditions"])
+        gaps = [c for c in conditions_for(self.out["conditions"], self.goal)
                 if c.get("plan") and c["id"] not in met and not re.search(c["plan"], text, re.I)
                 and (not c.get("key") or (self.goal or {}).get("chain", {}).get(c["key"]))]   # a link needs the earlier document
         return gaps + self._lld_gaps(wfs)
@@ -6365,13 +6385,13 @@ class J2Run:
         are spread over them so each pays its rate-card minimum, the last one takes what is left."""
         secs, items = self.blueprint["sections"], [c for c in crit if "phone" not in str(c).lower()]
         wfs = [{"name": "Scaffold and styling", "goal_gap": "No site exists", "parts": ["styling"], "covers": [],
-                "lld_sections": [], "outputs": ["index.html"], "completion_check": "index.html loads with a nav to every "
+                "lld_sections": [], "outputs": [PAGE_FILE], "completion_check": "index.html loads with a nav to every "
                                                                                  "section and a main action in the hero"}]
         for n, sec in enumerate(secs):
             mine = items[n:n + 1] if n < len(secs) - 1 else items[n:]
             wfs.append({"name": f"Build section {sec['id']}", "goal_gap": f"LLD section {sec['id']} is not on the page",
                         "parts": [item_kind(c) for c in mine] or ["interactive_feature"],
-                        "covers": [self._no(c) for c in mine], "lld_sections": [sec["id"]], "outputs": ["index.html"],
+                        "covers": [self._no(c) for c in mine], "lld_sections": [sec["id"]], "outputs": [PAGE_FILE],
                         "completion_check": f"The page matches LLD section {sec['id']}"})
         return {"say": "@Priority One workflow per LLD section, after the scaffold.", "act": "PROPOSE", "next": "Priority",
                 "workflows": wfs}
@@ -6623,7 +6643,7 @@ class J2Run:
             left -= cost
             first = not self.sites and not self.workflows and not wfs     # the first workflow lays out the page
             wfs.append({"name": f"{'Scaffold and item' if first else 'Build item'} {i}", "goal_gap": c,
-                        "parts": [item_kind(c)], "covers": [self._no(c)], "outputs": ["index.html"],
+                        "parts": [item_kind(c)], "covers": [self._no(c)], "outputs": [PAGE_FILE],
                         "completion_check": c})
         wfs = with_atoms(wfs, self.out.get("mock_atom"))
         say = f"@Priority The cheapest done-when items that fit the {self.budget - self.spent} left: " + \
@@ -8879,7 +8899,7 @@ class J2Run:
         rec = {"run": run_id, "t": time.strftime("%Y-%m-%dT%H:%M:%S"), **rec}
         self.tpl_routes[wid] = (t, rec, need)
         self.tpl_decisions.append(rec)
-        if kind == "website" and self.style is None and not self.doc:
+        if is_page(kind) and self.style is None and not self.doc:
             gd = j2_template_lib.generic("design", "Style guide")
             self.tpl_decisions.append({"run": run_id, "t": rec["t"], "workflow": wid, "atom": aid,
                                        "artifact": "design", "section": "Style guide", "action": "generic",
@@ -8918,7 +8938,7 @@ class J2Run:
             facts = items + [f for f in charter if (j2_template_lib.words(f) - name) & about]
         atom = (w.get("atoms") or [{}])[0]
         extra = []
-        if kind == "website":      # the LLD slice this section builds (input document data): its elements and fields
+        if is_page(kind):      # the LLD slice this section builds (input document data): its elements and fields
             spec = next((c.get("spec") for c in atom.get("verification") or []
                          if isinstance(c, dict) and c.get("type") == "lld-slice" and isinstance(c.get("spec"), dict)),
                         None) or {}
@@ -9065,7 +9085,7 @@ class J2Run:
                                  + "; ".join(dbad))
             guide = j2_artifact_models.style_from_design(dd)
             self.art_data.setdefault("design", {})["Style guide"] = dd
-        if kind == "website":
+        if is_page(kind):
             state["rendered"] = True
             return (got.get("head") or "", got.get("html") or ""), guide
         body = j2_artifact_models.render_section(kind, section, got)
