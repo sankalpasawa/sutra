@@ -39,6 +39,9 @@ HARNESS = textwrap.dedent(r'''
            "J2_PLAYBOOK_FILE": base / "memory" / "playbooks.jsonl", "J2_LIBRARY_DIR": base / "library"}
     if scenario == "board":
         env["J2_FORCE_QUESTION"] = "identity,adaptation,priority,coordination,audit,W-2,W-3,W-4,W-5,hours,menu"
+    if scenario == "late":      # realization on and a forced audit failure: the fix Priority is shown goes through the late judge (sync 4)
+        env.update(J2_REALIZATION="1", J2_FORCE_AUDIT_FAIL="1")
+        del env["J2_FORCE_QUESTION"]
     for key, value in env.items():
         os.environ[key] = str(value)
     from sutra_app.engine import llm
@@ -61,7 +64,7 @@ HARNESS = textwrap.dedent(r'''
         assert time.time() < end, "the run did not stop"
         time.sleep(0.003)
     d = Path(run.dir)
-    for name in ("summary.json", "map.json", "board.json", "artifacts.json"):
+    for name in ("summary.json", "map.json", "board.json", "artifacts.json", "realization.json"):
         if (d / name).is_file():
             shutil.copy(d / name, out / name)
     paths = views.MemoryPaths(str(base / "memory" / "lessons.jsonl"), str(base / "memory" / "playbooks.jsonl"))
@@ -91,7 +94,7 @@ def run_scenario(scenario: str, folder: Path) -> Path:
 @pytest.fixture(scope="module")
 def runs(tmp_path_factory) -> dict[str, Path]:
     base = tmp_path_factory.mktemp("wire")
-    return {name: run_scenario(name, base / name) for name in ("site", "prd", "board", "plan")}
+    return {name: run_scenario(name, base / name) for name in ("site", "prd", "board", "plan", "late")}
 
 
 def load(folder: Path, name: str):
@@ -200,6 +203,18 @@ def test_the_planning_record_j2_wrote_in_mock_mode_is_accepted(runs):
     record = passes("realization", load(runs["plan"], "realization.json"))
     assert record.plan.workflows and record.rounds[-1].round == len(record.rounds) - 1
     assert GATE.check("realization_plan", load(runs["plan"], "realization.json")["plan"]).model == record.plan
+
+
+def test_the_late_judgements_j2_wrote_after_a_forced_audit_failure_are_accepted_and_come_back_unchanged(runs):
+    """D145: with realization on, the fix a forced audit failure brings is judged late; realization.json keeps it under `late`."""
+    raw = load(runs["late"], "realization.json")
+    assert raw["late"], "the forced failure brings a fix and the late judge scores it"
+    record = passes("realization", raw)
+    assert [e.workflow for e in record.late] == [e["workflow"] for e in raw["late"]]
+    first = record.late[0]
+    assert first.revises and first.cycle >= 1 and first.calls >= 1 and first.score is not None and first.ready is True
+    assert record.wire()["late"] == trimmed(raw["late"]), "J2's JSON back, key for key"
+    assert record.plan.workflows and record.rounds[-1].round == len(record.rounds) - 1       # the rest of the record is as before
 
 
 # ---- registration --------------------------------------------------------------------------------------------------------
@@ -613,6 +628,72 @@ def test_a_score_for_a_workflow_the_plan_does_not_have_is_refused():
     assert shape_errors("realization", record(held={"Plan": "sulking"}))
     assert shape_errors("realization", record(plan_confidence=-0.1))
     passes("realization", record(held={"Plan": "not_ready"}))
+
+
+LATE = {"workflow": "Fix item 1", "revises": "W-2", "t": "12:50:01", "cycle": 2, "calls": 1, "seconds": 0.4, "score": 0.91,
+        "weakest": "inputs", "missing": ["the footer link"], "rounds": [0.74, 0.91], "ready": True, "zone": "operate", "stage": "build",
+        "note": None}
+UNJUDGED = {**LATE, "workflow": "Cover item 2", "revises": None, "score": None, "weakest": None, "missing": [], "rounds": [],
+            "ready": None, "note": "the judge could not score it: no reply"}
+
+
+def test_a_planning_record_with_late_judgements_is_valid_and_comes_back_unchanged():
+    doc = passes("realization", record(late=[LATE, UNJUDGED]))
+    assert [e.workflow for e in doc.late] == ["Fix item 1", "Cover item 2"]
+    assert doc.late[0].rounds == [0.74, 0.91] and doc.late[0].ready is True and doc.late[1].score is None and doc.late[1].note
+
+
+def test_an_old_planning_record_without_late_is_valid_and_comes_back_without_it():
+    doc = passes("realization", record())
+    assert doc.late == [] and "late" not in doc.wire()
+    assert passes("realization", record(late=[])).wire()["late"] == []
+
+
+def test_a_late_entry_may_be_as_empty_as_a_judge_that_could_not_be_reached():
+    bare = {k: LATE[k] for k in ("workflow", "t", "cycle", "calls", "seconds")}
+    entry = passes("realization", record(late=[bare])).late[0]
+    assert (entry.revises, entry.score, entry.weakest, entry.missing, entry.rounds, entry.ready, entry.zone, entry.stage, entry.note) == \
+        (None, None, None, [], [], None, None, None, None)
+    passes("realization", record(late=[{**LATE, "score": 1, "seconds": 0}]))            # a whole number is a number
+
+
+@pytest.mark.parametrize("change, path, words", [
+    ({"mood": "ok"}, "late.0.mood", "Extra inputs"),
+    ({"score": 1.2}, "late.0.score", "less than or equal to 1"), ({"score": -0.1}, "late.0.score", "greater than or equal to 0"),
+    ({"rounds": [0.1] * 6}, "late.0.rounds", "at most 5"), ({"rounds": [1.5]}, "late.0.rounds.0", "less than or equal to 1"),
+    ({"missing": ["a", "b", "c", "d"]}, "late.0.missing", "at most 3"), ({"missing": [1]}, "late.0.missing.0", "valid string"),
+    ({"calls": -1}, "late.0.calls", "greater than or equal to 0"), ({"calls": 1.5}, "late.0.calls", "valid integer"),
+    ({"cycle": "2"}, "late.0.cycle", "valid integer"), ({"seconds": -1}, "late.0.seconds", "greater than or equal to 0"),
+    ({"workflow": ""}, "late.0.workflow", "at least 1 character"), ({"ready": "yes"}, "late.0.ready", "valid boolean"),
+])
+def test_a_late_entry_is_closed_and_bounded(change, path, words):
+    errors = shape_errors("realization", record(late=[{**LATE, **change}]))
+    assert any(p == path and words in message for p, message in errors), errors
+
+
+def test_a_late_entry_needs_its_workflow_time_cycle_calls_and_seconds():
+    for key in ("workflow", "t", "cycle", "calls", "seconds"):
+        errors = shape_errors("realization", record(late=[{k: v for k, v in LATE.items() if k != key}]))
+        assert (f"late.0.{key}", "Field required") in errors
+
+
+def test_the_late_list_holds_at_most_200_entries_and_is_a_list():
+    passes("realization", record(late=[LATE] * 200))
+    assert says(shape_errors("realization", record(late=[LATE] * 201)), "at most 200")
+    assert shape_errors("realization", record(late={"workflow": "x"}))
+
+
+def test_the_late_entry_class_is_closed_strict_and_frozen_like_every_wire_part():
+    from pydantic import ValidationError
+    assert W.LateEntry.model_config["extra"] == "forbid" and W.LateEntry.model_config["frozen"] is True
+    assert list(W.LateEntry.model_fields) == ["workflow", "revises", "t", "cycle", "calls", "seconds", "score", "weakest", "missing",
+                                              "rounds", "ready", "zone", "stage", "note"]
+    with pytest.raises(ValidationError):
+        W.LateEntry.model_validate({**LATE, "calls": "1"})                                   # strict: no text for a number
+    entry = W.LateEntry.model_validate(LATE)
+    with pytest.raises(ValidationError):
+        entry.score = 0.1
+    assert list(W.RealizationDoc.model_fields)[-2:] == ["seconds", "late"], "late comes after seconds"
 
 
 # ---- summary.json --------------------------------------------------------------------------------------------------------

@@ -14,6 +14,12 @@
    next step); the generic message box never appears there. A past run's agent chat shows its choice as a chip and no pill. A team's panel has a third tab,
    Agents (agent_chats.js): its agents' chats for one run, each with its model chip, usage and a button that opens it.
 
+   A live FUNCTION's chat has a second mode in that box, Ask (J2 sync 4, D147 and D148): a question goes to POST /api/ask?dept= and is answered from the
+   function's records (with a model call of its own session when one is connected). The question and the answer are lines of this very chat, so they arrive
+   as `chat.message` events like any other line, and the call's own result reads the messages again when the stream is down. Once the run is over the note is
+   gone and the Ask box stays. A workflow builder's chat and the validator offer no Ask, and a past run's chat is read, not asked (J2's chat panel asks about
+   a past run with its ?run=).
+
    While it is open the panel keeps itself current: its own SutraEvents stream (chat.message of its session, atom.updated of its node, task and graph
    updates) refetches what changed, coalesced, and a dropped stream falls back to polling the same two calls (docs/design/ui.md 9, X4).
 
@@ -580,13 +586,48 @@
       const task = st && st.detail && isObj(st.detail.task) ? st.detail.task : null;
       return task === null || ["running", "starting", "waiting_user"].includes(task.status);          // the node's own detail names the team's task; a stand-in without one is not "over"
     };
+    // Ask (D147, D148): the chat of a live function; a workflow builder's chat is not asked. The function and the team come from the chat itself (its node id is
+    // `<team>.<function>`), the run from its session.
+    const askWho = () => (st && st.session && st.session.kind === "function" ? functionKey({id: text(st.session.node_id)}) : "");
+    const askOwner = () => (agentOwner() !== "" && askWho() !== "" ? st.sid : "");
+    const askDept = () => {
+      const dept = st ? departmentOf(st.node) : null;
+      const node = st && st.node ? st.node : {};
+      return (dept ? clean(dept.id) : "") || clean(node.dept_id) || text(st && st.session && st.session.node_id).split(".")[0] || deptPage();
+    };
+
+    // What the box under the pill is made of now (agent_chats.noteBox): the note of a live agent chat, and the question beside it when it is a function's.
+    function boxInfo() {
+      const label = agentLabel();
+      return {agent: label, label, live: st.noteOver !== true && runLive(), busy: st.noting === true, ask: askOwner() !== "", mode: st.boxMode, asking: st.asking === true, askNote: st.askNote};
+    }
+
     function paintNote() {
       if (!chatRefs || !chatRefs.notehost) return;
-      const sid = agentOwner();
       const ac = AC();
-      const html = sid && ac ? ac.noteBox({agent: agentLabel(), label: agentLabel(), live: st.noteOver !== true && runLive(), busy: st.noting === true}) : "";
+      const html = ac && agentOwner() !== "" ? ac.noteBox(boxInfo()) : "";
       chatRefs.notehost.hidden = html === "";
       paintTo(chatRefs.notehost, html);
+    }
+
+    // The box is made again when it changes, so the words typed in one mode are kept while the other shows (and a question that could not be sent stays in it).
+    const boxField = () => (chatRefs && chatRefs.notehost ? chatRefs.notehost.querySelector(".nnote-text, .nask-text") : null);
+    function setBoxMode(mode) {
+      const ac = AC();
+      if (!st || !ac || askOwner() === "" || st.asking || st.noting) return;
+      const on = ac.boxMode(boxInfo());
+      const next = mode === "ask" ? "ask" : "note";
+      if (next === on) return;
+      const field = boxField();
+      if (field) st.boxText[on] = field.value;
+      st.boxMode = next;
+      st.askNote = "";
+      paintNote();
+      const back = boxField();
+      if (back) {
+        back.value = st.boxText[ac.boxMode(boxInfo())] || "";
+        if (typeof back.focus === "function") back.focus();
+      }
     }
 
     async function sendNote() {
@@ -613,6 +654,44 @@
         if (r.value && clean(r.value.session_id) !== "" && r.value.session_id !== sid) { open(st.nodeId, st.tab, undefined, r.value.session_id); return; }      // the agent's chat rolled to this run's
         await refreshMessages(g);
       }
+      if (st && g === gen && chatRefs) paintChat();
+    }
+
+    // The owner's question to a function: POST /api/ask?dept=. The server stores the question as a line of this chat at once and the answer when it is made, so
+    // both arrive as chat.message events; the result of the call reads the messages again anyway (the stream may be down).
+    async function sendAsk() {
+      const ac = AC();
+      const sid = askOwner();
+      const field = boxField();
+      if (!ac || sid === "" || !field || st.asking) return;
+      const label = agentLabel();
+      const request = ac.askRequest(askDept(), askWho(), field.value, st.session.run_id);
+      if (!request) {
+        st.banner = field.value.trim() === "" ? "Write the question first." : "A question can be up to " + ac.MAX_ASK.toLocaleString("en-US") + " characters.";
+        paintChat();
+        return;
+      }
+      const g = gen;
+      st.boxText.ask = field.value;                                       // kept while it is out: a question that could not be sent is still in the box
+      st.asking = true;
+      st.askNote = "";
+      st.banner = "";
+      paintNote();
+      const r = await settle(api().post(request.path, request.body));
+      if (g !== gen || !st || st.sid !== sid) return;
+      st.asking = false;
+      if (r.error) {
+        st.banner = ac.askProblem(r.error, label);
+        paintChat();
+        const back = boxField();
+        if (back) back.value = st.boxText.ask;
+        return;
+      }
+      st.boxText.ask = "";
+      st.askNote = r.value && typeof r.value.note === "string" ? clean(r.value.note) : "";
+      st.stick = true;
+      if (r.value && clean(r.value.session_id) !== "" && r.value.session_id !== sid) { open(st.nodeId, st.tab, undefined, r.value.session_id); return; }      // the agent's chat rolled to this run's
+      await refreshMessages(g);
       if (st && g === gen && chatRefs) paintChat();
     }
 
@@ -929,7 +1008,7 @@
       const graph = isObj(freshGraph) ? freshGraph : getGraph();      // archive and un-archive re-link the team's chat: the caller passes the graph it just fetched
       st = {nodeId: id, tab: tab === "details" || (tab === "agents" && !!AC()) ? tab : "chat", node: findNode(graph, id), detail: null, detailError: "", sid: "", session: null, messages: [],
         lastId: 0, banner: "", blocked: "", cc: null, ccMode: "team", readOnly: false, gone: false, retry: false, sending: false, view: null, scope: "division", divisionChat: null, allAtoms: null,
-        wd: null, agents: null, live: null, noting: false, noteOver: false, openIds: [], shownOnce: false, agentHtml: "", loading: true, nodeGone: "", chatNote: "", stick: false, reopen: true, scroll: {parked: false, seenId: 0, pill: 0},
+        wd: null, agents: null, live: null, noting: false, noteOver: false, boxMode: "", asking: false, askNote: "", boxText: {note: "", ask: ""}, openIds: [], shownOnce: false, agentHtml: "", loading: true, nodeGone: "", chatNote: "", stick: false, reopen: true, scroll: {parked: false, seenId: 0, pill: 0},
         opener: opener, conn: null, refresh: null};
       if (!opener.id) opener.id = id;
       settle(api().get("/api/connectors/workdir")).then(r => {          // once per open, and silent when it fails: the chip just stays away
@@ -1303,6 +1382,8 @@
       else if (name === "show-all") showAll();
       else if (name === "choose-provider") chooseProvider(act.dataset.provider || null);
       else if (name === "steer") sendNote();
+      else if (name === "ask") sendAsk();
+      else if (name === "box-mode") setBoxMode(act.dataset.mode);
       else if (name === "open-agent") openAgent(act);
       else if (name === "archive" || name === "unarchive") archiveChat(act.dataset.sid, name === "archive");
       else if (name === "open-chat") { chatRefs.sres.hidden = true; if (act.dataset.sid !== st.sid) showArchived(act.dataset.sid); }
@@ -1359,9 +1440,13 @@
         return;
       }
       const t = e.target;
-      if ((root.ChatComposer ? root.ChatComposer.sendKey(e) : (e.key === "Enter" && !e.shiftKey && !e.isComposing)) && t && t.classList && t.classList.contains("nbox")) {
+      const sends = root.ChatComposer ? root.ChatComposer.sendKey(e) : (e.key === "Enter" && !e.shiftKey && !e.isComposing);
+      if (sends && t && t.classList && t.classList.contains("nbox")) {
         e.preventDefault();
         send(t.value, true);
+      } else if (sends && t && t.classList && t.classList.contains("nask-text") && st.tab === "chat") {          // Enter asks, Shift+Enter is a new line, as in the chat box
+        e.preventDefault();
+        sendAsk();
       }
     }
 

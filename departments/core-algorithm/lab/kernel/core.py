@@ -16,6 +16,20 @@ def digest(v: Any) -> str:
     return hashlib.sha256(canonical(v).encode()).hexdigest()
 
 
+ACTIONS: dict = {}   # action kind -> handler(state, method, method_id, deps) -> receipt detail. Reviewed code registers; packs cannot.
+def register(kind: str):
+    def add(fn):
+        if kind in ACTIONS:raise ValueError('Action kind already registered')
+        ACTIONS[kind]=fn;return fn
+    return add
+
+@register('simulate_fact')
+def _simulate_fact(s, m, mid, deps):
+    s.observe({'predicate':m['effect'],'truth':'TRUE','verified':True,'source':f'LOCAL_MODEL:{mid}','version':'local-sim-1',
+               'evidence_kind':'SIMULATED_LOCAL', 'depends_on':deps})
+    return {'model_effect':m['effect']}
+
+
 @dataclass
 class State:
     scope: str = 'orgA/fulfillment'
@@ -30,12 +44,11 @@ class State:
     preference: list[str] = field(default_factory=lambda: ['compute', 'money', 'attention'])
     constructor_specs: dict[str, dict] = field(default_factory=dict)
     candidates: dict[str, dict] = field(default_factory=dict)
-    learning: bool = False
     loaded: list[dict] = field(default_factory=list)
     event_journal: list[dict] = field(default_factory=list)
-    learned_signatures: dict[str, int] = field(default_factory=dict)
     active_work: dict[str, str] = field(default_factory=dict)
     goal_history: list[dict] = field(default_factory=list)
+    actions: dict = field(default_factory=lambda: dict(ACTIONS))   # the registry as it stood when this State was built
 
     def apply(self, pack: dict) -> None:
         if pack.get('schema') != 'sutra-extension/2' or not pack.get('id'):
@@ -61,7 +74,7 @@ class State:
                 raise ValueError('Rules must cite replaced rule ID')
             self.rules[r['head']] = dict(r)
         for m in pack.get('methods', []):
-            if m.get('action') not in ('simulate_fact','emit_artifact','compile_candidate'):
+            if m.get('action') not in self.actions:
                 raise ValueError('Untrusted or unknown action kind')
             if m['id'] in self.methods:
                 raise ValueError('Duplicate method ID')
@@ -83,8 +96,6 @@ class State:
             if set(pack['preference']) != set(self.budget):
                 raise ValueError('Preference must cover each resource dimension')
             self.preference = pack['preference']
-        if 'learning' in pack:
-            self.learning = bool(pack['learning'])
         self.loaded.append({'pack':pack['id'],'sha256':digest(pack)})
 
     @classmethod
@@ -225,30 +236,11 @@ class Kernel:
                 raise RuntimeError('Gate changed before effect')
             action=m['action']
             deps=[{'predicate':pre,'version':self.s.fact(pre).get('version')} for pre in m.get('requires',[]) if self.s.fact(pre)['truth']=='TRUE']
-            if action=='compile_candidate':
-                spec=self.s.constructor_specs.get(m.get('constructor'))
-                if not spec:raise RuntimeError('No declared constructor')
-                composed=spec.get('components',[])
-                if not composed or any(c not in self.s.methods for c in composed):
-                    raise RuntimeError('Components unavailable')
-                required=set(spec.get('required_effects',[]))
-                produced={self.s.methods[c]['effect'] for c in composed}
-                candidate={'id':spec['id'],'components':composed,'effect':spec['target_effect'],
-                           'required_effects':sorted(required),'observed_effects':sorted(produced),
-                           'status':'PROPOSED_ONLY','valid_contract':required <= produced,
-                           'provenance':spec.get('source','fixture')}
-                self.s.candidates[spec['id']]=candidate
-                detail={'candidate_sha256':digest(candidate),'contract_valid':candidate['valid_contract']}
-            elif action=='emit_artifact':
-                payload=canonical({'title':m.get('artifact_title',mid),'scope':self.s.scope,'method':mid})
-                detail={'artifact_text':payload,'artifact_sha256':hashlib.sha256(payload.encode()).hexdigest()}
-                self.s.observe({'predicate':m['effect'],'truth':'TRUE','verified':True,'source':f'LOCAL_ARTIFACT:{mid}',
-                                'version':'local-sim-1','evidence_kind':'SIMULATED_LOCAL', 'depends_on':deps})
-            else:
-                self.s.observe({'predicate':m['effect'],'truth':'TRUE','verified':True,
-                                'source':f'LOCAL_MODEL:{mid}','version':'local-sim-1',
-                                'evidence_kind':'SIMULATED_LOCAL', 'depends_on':deps})
-                detail={'model_effect':m['effect']}
+            if any(self.s.fact(p)['truth']!='TRUE' for p in m.get('requires',[])):
+                raise RuntimeError('Prerequisite not true before effect')
+            detail=self.s.actions[action](self.s,m,mid,deps)   # the effect is the handler's; the gate above and the record below are the kernel's
+            if set(detail)&{'method','scope','action','status','sha256'}:
+                raise RuntimeError('A handler may not set the receipt fields')
             for dim,v in m.get('cost',{}).items():self.s.budget[dim]-=v
             if m.get('provider'):self.s.providers[m['provider']]-=1
             rec={'method':mid,'scope':self.s.scope,'action':action,'status':'LOCAL_ONLY',**detail}
@@ -267,7 +259,7 @@ class Kernel:
             else:blockers+=blocked
         result={'goal':goal,'scope':self.s.scope,'goal_truth_before':self.s.fact(goal)['truth'],
                 'work_state':'blocked','actions':[],'needs':[],'cost':None,'proof':[],
-                'model_receipts':[],'learning':[],'candidates':[],'selected_branch':None,
+                'model_receipts':[],'candidates':[],'selected_branch':None,
                 'stop_reasons':sorted(set(blockers)), 'provenance':list(self.s.loaded)}
         if eligible:
             frontier=[p for p in eligible if not any(self._dominates(q,p) for q in eligible)]
@@ -290,20 +282,6 @@ class Kernel:
             status=next((x for x in rank if x in blockers),'METHOD_ABSENT')
             self.log('BLOCK',reason=status,all_reasons=sorted(set(blockers)))
             result.update(status=status,pareto_options=0)
-        if self.s.learning:
-            signature=' -> '.join(result['actions'])
-            if result.get('status')=='LOCAL_MODEL_EFFECTS_RECORDED' and signature:
-                n=self.s.learned_signatures.get(signature,0)+1
-                self.s.learned_signatures[signature]=n
-                candidate={'kind':'REUSE_COMPOSITION','signature':signature,'observations':n,
-                           'status':'PROPOSED_ONLY','gate':'independent held-out verification + approval'}
-                self.log('LEARN_CANDIDATE',**candidate)
-                result['learning']=[candidate]
-            elif result['work_state']=='blocked':
-                candidate={'kind':'INVESTIGATE_GAP','gap':result['status'],
-                           'status':'PROPOSED_ONLY','gate':'independent evidence + authorization'}
-                self.log('LEARN_CANDIDATE',**candidate)
-                result['learning']=[candidate]
         result['candidates']=list(self.s.candidates.values())
         self.log('TERMINAL',status=result['status'],work_state=result['work_state'])
         result['trace']=list(self.events)

@@ -16,8 +16,9 @@ import pytest
 
 REPO = Path(__file__).resolve().parents[2]
 ENGINE = "sutra_app.engine"
-J2_MODULES = ("j2", "j2_agent", "j2_artifact_models", "j2_artifacts", "j2_board", "j2_change", "j2_check", "j2_map",
-              "j2_realization", "j2_rules", "j2_schema", "j2_send", "j2_story", "j2_template_lib", "rehydrate")
+J2_MODULES = ("j2", "j2_agent", "j2_agent_models", "j2_agent_views", "j2_artifact_models", "j2_artifacts", "j2_board", "j2_change",
+              "j2_check", "j2_map", "j2_realization", "j2_rules", "j2_schema", "j2_send", "j2_story", "j2_studio", "j2_template_lib",
+              "rehydrate")
 BREW_LAB = ("A one-page website for Brew Lab, a small specialty coffee shop in Indiranagar, Bengaluru. Visitors should "
             "see the menu with prices, the opening hours, and where to find us, and be able to pre-order a coffee for "
             "pickup. It should feel warm and modern and work well on a phone.")

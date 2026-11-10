@@ -13,7 +13,7 @@ from sutra_app.engine import capabilities, llm
 from sutra_app.engine.api import mount
 from sutra_app.engine.api.settings import CAPABILITIES_SCHEMA, capabilities_view
 from sutra_app.engine.capabilities import (CAPABILITIES, Capability, CapabilityConflict, EngineContext, OutputSpec, SPECS, addenda,
-                                           describe, install, register)
+                                           describe, documents, install, register)
 from sutra_app.engine.port import CallTag, CompletionResult
 from sutra_app.engine.spec import EngineSettings
 
@@ -245,6 +245,108 @@ def test_describe_lists_name_outputs_and_settings():
     assert rows == [{"name": "a", "outputs": [{"name": "thing", "label": "Thing", "workspace": "edit", "single": True}], "settings": []}]
     assert describe()[0] == {"name": "workspace", "outputs": [],
                              "settings": [{"field": "workspace", "values": ["auto", "off"], "default": "auto"}]}
+
+
+# ---- the Artifacts row of an output's report (J2 sync 4, D146) -------------------------------------------------------
+def report_run(tmp_path, text="# Thing\n\nWhat was done.\n", name="thing.md", folder="j2-20261104-100004-7f3a"):
+    """A run folder (`folder` under `tmp_path`) holding the report `name`, or none when `text` is None."""
+    run = tmp_path / folder
+    run.mkdir()
+    if text is not None:
+        (run / name).write_text(text, encoding="utf-8")
+    return run
+
+
+def test_a_capability_with_an_output_that_has_a_report_file_gets_its_document_row_with_no_code_of_its_own(tmp_path):
+    cap = Adds("a", {"thing": spec()})
+    assert type(cap).documents is Capability.documents, "the hook is inherited: the capability adds only its output"
+    rows = cap.documents("thing", report_run(tmp_path))
+    assert len(rows) == 1
+    row = rows[0]
+    assert (row["id"], row["kind"], row["name"], row["file"], row["doc_file"]) == ("thing", "document", "Thing thing", "thing.md", "thing.md")
+    assert (row["maker"], row["made_in"], row["sections"], row["nodes"], row["docs"], row["ok"]) == (None, [], {}, [], [], True)
+    assert row["versions"] == [{"workflow": None, "cycle": None, "purpose": "", "label": "current"}]
+    assert row["views"] == {"summary": True, "agent": {"format": "text", "file": "thing.md", "schema": None, "model": None, "valid": None},
+                            "human": {"format": "markdown", "file": "thing.md"}}, "the three tabs are J2's own views() of the row"
+
+
+def test_the_row_is_in_the_shape_of_j2s_own_document_rows(tmp_path):
+    from sutra_app.engine import j2_artifacts
+    theirs = j2_artifacts.groups(str(report_run(tmp_path, name="prd.md", folder="j2-prd")))["groups"][3]
+    assert theirs["id"] == "documents" and [r["id"] for r in theirs["rows"]] == ["prd"]
+    mine = Adds("a", {"thing": spec()}).documents("thing", report_run(tmp_path))[0]
+    assert set(mine) == set(theirs["rows"][0]), "the same keys as a row of J2's own Documents group"
+    for key in ("kind", "maker", "made_in", "sections", "nodes", "docs"):
+        assert type(mine[key]) is type(theirs["rows"][0][key]), key
+
+
+def test_an_output_that_is_not_this_capabilitys_gets_no_row_even_when_the_file_is_there(tmp_path):
+    run = report_run(tmp_path)
+    cap = Adds("a", {"thing": spec()})
+    for output in ("website", "prd", "hld", "lld", "other", "", None):
+        assert cap.documents(output, run) == [], output
+    assert Adds("empty").documents("thing", run) == [], "a capability with no output has no report"
+
+
+def test_no_file_no_run_or_an_empty_file_is_no_row_or_a_row_that_is_not_ok(tmp_path):
+    cap = Adds("a", {"thing": spec()})
+    assert cap.documents("thing", report_run(tmp_path, text=None)) == [], "the run has not written the report yet"
+    assert cap.documents("thing", None) == [] and cap.documents("thing", str(tmp_path / "nowhere")) == []
+    empty = cap.documents("thing", report_run(tmp_path, text="", folder="j2-empty"))
+    assert len(empty) == 1 and empty[0]["ok"] is False, "an empty report is listed, and not marked ok"
+    assert Adds("b", {"nofile": OutputSpec(label="N", noun="n", file=None)}).documents("nofile", tmp_path) == []
+
+
+def test_an_output_given_as_a_plain_dict_has_its_row_too(tmp_path):
+    plain = {"label": "Plain", "noun": "note", "file": "plain.md"}
+    rows = Adds("a", {"plain": plain}).documents("plain", report_run(tmp_path, name="plain.md"))
+    assert [(r["id"], r["name"], r["file"]) for r in rows] == [("plain", "Plain note", "plain.md")]
+
+
+def test_the_registry_concatenates_every_capabilitys_rows_in_order_and_a_broken_one_adds_nothing(tmp_path, capsys):
+    run = report_run(tmp_path)
+
+    class Broken(Capability):
+        name = "broken"
+
+        def documents(self, output, run_dir):
+            raise RuntimeError("no rows today")
+
+    class Odd(Capability):
+        name = "odd"
+
+        def documents(self, output, run_dir):
+            return {"not": "a list"}
+
+    class Two(Capability):
+        name = "two"
+
+        def documents(self, output, run_dir):
+            return [{"id": "two-a"}, {"id": "two-b"}]
+    got = documents("thing", run, [Adds("a", {"thing": spec()}), Broken(), Odd(), Two()])
+    assert [r["id"] for r in got] == ["thing", "two-a", "two-b"]
+    assert "no rows today" in capsys.readouterr().err
+    assert documents("thing", run, []) == [] and documents("thing", run, [Adds("none")]) == []
+
+
+def test_the_real_registry_gives_a_row_for_the_project_report_and_none_for_j2s_own_outputs(tmp_path):
+    from sutra_app.engine import j2
+    capabilities.register(j2)
+    assert all(type(c).documents is Capability.documents for c in CAPABILITIES), "no capability overrides the hook (project.py is not edited)"
+    run = report_run(tmp_path, text="## Findings\n\nSomething.\n", name="project.md")
+    rows = documents("project", run)
+    assert [(r["id"], r["name"], r["file"]) for r in rows] == [("project", "Project work report", "project.md")]
+    assert rows[0]["views"]["human"] == {"format": "markdown", "file": "project.md"}
+    for own in ("website", "prd", "hld", "lld", "", None):
+        assert documents(own, run) == [], own
+
+
+def test_asking_for_rows_imports_j2_only_when_a_row_is_built_and_the_package_still_imports_none():
+    import ast
+    import inspect
+    tree = ast.parse(inspect.getsource(sys.modules["sutra_app.engine.capabilities.base"]))
+    top = [n for n in tree.body if isinstance(n, (ast.Import, ast.ImportFrom))]
+    assert not [n for n in top if "j2" in ast.dump(n)], "base.py imports no J2 module at the top"
 
 
 def test_the_context_names_the_concrete_output(llm_reset):

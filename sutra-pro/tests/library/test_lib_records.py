@@ -32,6 +32,7 @@ from sutra_app.library.gate import GATE, Checked, GateError
 from sutra_app.library.node import load_function_specs
 from sutra_app.library.registry import REGISTRY, RegistryError
 from sutra_app.library.wire import WIRE_FILES, WIRE_PAYLOADS
+from sutra_app.library.workflow import registered_from_j2
 
 REPO = Path(__file__).resolve().parents[2]
 
@@ -52,6 +53,12 @@ HARNESS = textwrap.dedent(r'''
            "J2_PLAYBOOK_FILE": base / "memory" / "playbooks.jsonl", "J2_LIBRARY_DIR": base / "library"}
     if scenario == "board":
         env["J2_FORCE_QUESTION"] = "identity,adaptation,priority,coordination,audit,W-2,W-3,W-4,W-5,hours,menu"
+    if scenario == "late":      # realization on and a forced audit failure: the late judge scores the fix Priority is shown (sync 4, D145)
+        env.update(J2_REALIZATION="1", J2_FORCE_AUDIT_FAIL="1")
+        del env["J2_FORCE_QUESTION"]
+    if scenario == "auto":      # Decide for me answers the questions a vague brief raises, in the Requester's name (sync 4)
+        env.update(J2_DECIDE_FOR_ME="1")
+        del env["J2_FORCE_QUESTION"]
     for key, value in env.items():
         os.environ[key] = str(value)
     from sutra_app.engine import llm
@@ -63,9 +70,11 @@ HARNESS = textwrap.dedent(r'''
     if scenario == "prd":
         run.set_output("prd")
         brief = "Write a PRD for QuickQueue, a mobile app that lets clinic patients join a waiting line remotely. Users: patients at small clinics and the front-desk staff who manage the line. Problem: patients wait 45 minutes on average in crowded waiting rooms. Must-have features: join the queue from a phone, live position updates, SMS alert when 2 patients are ahead, staff dashboard to call the next patient. Constraints: works on low-end Android phones; no patient health data stored. Success: average in-room wait under 10 minutes; 60% of patients join remotely within 3 months."
+    if scenario == "auto":
+        brief = "a website for my cafe"
     assert run.user_says(brief) is True
     end = time.time() + 90
-    while run.status != "waiting":
+    while run.status != "waiting" or run.lock.locked():      # the lock is held while Decide for me answers and goes on
         assert time.time() < end, "the run did not stop"
         time.sleep(0.003)
     shutil.copytree(run.dir, out / "run")
@@ -86,7 +95,7 @@ def run_scenario(scenario: str, folder: Path) -> Path:
 @pytest.fixture(scope="module")
 def golden(tmp_path_factory) -> dict[str, Path]:
     base = tmp_path_factory.mktemp("records")
-    return {name: run_scenario(name, base / name) for name in ("site", "prd", "board")}
+    return {name: run_scenario(name, base / name) for name in ("site", "prd", "board", "late", "auto")}
 
 
 def documents(run_dir: Path):
@@ -150,9 +159,67 @@ def test_every_json_file_of_a_mock_run_is_accepted_in_strict_mode(golden):
     assert {"goal.json, goal.v<N>.json", "workflows.json", "atoms.json", "audits.json", "conflicts.json", "conditions*.json",
             "style.json", "receipts.jsonl", "chat.jsonl", "calls.jsonl", "templates.json", "map.json", "board.json",
             "artifacts.json", "summary.json", "chain.json", "documents.json", "sections.json", "stage-<kind>.json",
-            "report.json", "<prd|hld|lld|design|website>.json, site/<kind>-v<N>.json",
+            "report.json", "settings.json", "realization.json", "<prd|hld|lld|design|website>.json, site/<kind>-v<N>.json",
             "templates/<artifact>/<section>/<slug>@v<N>/spec.json", "templates/<artifact>/<section>/<slug>@v<N>/meta.json",
             "templates/<artifact>/<section>/<slug>@v<N>/schema.json"} <= seen_routes
+
+
+LATE_KEYS = {"workflow", "revises", "t", "cycle", "calls", "seconds", "score", "weakest", "missing", "rounds", "ready", "zone", "stage", "note"}
+
+
+def test_a_forced_failure_run_with_the_late_judge_is_accepted_in_strict_mode_and_really_holds_the_new_records(golden):
+    """D145: with realization on, the fix a forced audit failure brings is scored by the late judge. The strict test above passed every file
+    and line of this run; this one proves the run holds what strict mode used to refuse: `late`, the chat line that names it with `judge`,
+    and the workflow row with `judge`, `stage_from`, `certainty` and `certainty_from`."""
+    run = golden["late"] / "run"
+    real = first(run, "realization.json")
+    assert real["late"] and all(set(entry) == LATE_KEYS for entry in real["late"])
+    judged = [m for m in lines(run, "chat.jsonl") if "judge" in m]
+    assert [m["judge"] for m in judged] == [e["workflow"] for e in real["late"]] and all(m["who"] == "system" for m in judged)
+    rows = first(run, "workflows.json")
+    row = next(w for w in rows if w["name"] == real["late"][0]["workflow"])
+    assert row["judge"]["score"] == real["late"][0]["score"] and {"stage_from", "certainty", "certainty_from"} <= set(row)
+    assert R.gate_record("workflows.json", rows, mode="strict") is None
+    assert [r["version"] for r in rows if r["name"] == "Plan"] == [0], "the Plan workflow makes no site version"
+
+
+def test_a_registered_late_row_is_accepted_and_keeps_the_keys_the_workflow_model_has(golden):
+    """`registered_from_j2` copies named keys only: J2's judge, stage_from and certainty_from are its own record of the placement and are not
+    part of the library's workflow, but the row passes, with its stage, version and what it revises."""
+    run = golden["late"] / "run"
+    rows = first(run, "workflows.json")
+    row = next(w for w in rows if "judge" in w)
+    kept = registered_from_j2(row)
+    assert (kept.id, kept.stage, kept.version, kept.revises) == (row["id"], row["stage"], row["version"], row["revises"])
+    assert not {"judge", "stage_from", "certainty_from"} & set(kept.model_dump())
+    plan = registered_from_j2(next(w for w in rows if w["name"] == "Plan"))
+    assert plan.version == 0, "version 0 is the Plan workflow of a realization run"
+
+
+def test_a_workflow_version_may_be_zero_and_never_negative(golden):
+    row = next(w for w in first(golden["late"] / "run", "workflows.json") if w["name"] == "Plan")
+    assert registered_from_j2({**row, "version": 0}).version == 0
+    with pytest.raises(Exception) as error:
+        registered_from_j2({**row, "version": -1})
+    assert "version" in str(error.value)
+
+
+def test_decide_for_me_leaves_settings_json_and_flagged_answers_that_strict_mode_accepts(golden):
+    """Sync 4: switched on, Decide for me writes settings.json and posts the Requester's answers with `auto` and `auto_label`."""
+    run = golden["auto"] / "run"
+    assert first(run, "settings.json") == {"decide_for_me": True}
+    route = R.route_for("settings.json")
+    assert route.family == "run_file.object" and route.label == "settings.json"
+    assert R.gate_record("settings.json", {"decide_for_me": True}, mode="strict").family == "run_file.object"
+    assert R.gate_record("settings.json", {"decide_for_me": False}, mode="strict").family == "run_file.object"
+    answers = [m for m in lines(run, "chat.jsonl") if m.get("who") == "user" and m.get("auto")]      # `auto` is older: code's own system lines carry it too
+    assert answers and all(m.get("auto_label") for m in answers)
+    for line in answers:
+        assert R.gate_record("chat.jsonl", line, mode="strict").family == "run_message"
+
+
+def test_a_run_without_decide_for_me_writes_no_settings_file(golden):
+    assert not (golden["site"] / "run" / "settings.json").exists() and not (golden["late"] / "run" / "settings.json").exists()
 
 
 def test_the_first_chat_line_is_a_run_header_and_every_other_line_a_run_message(golden):
@@ -208,7 +275,7 @@ def test_a_template_file_with_the_old_schema_string_is_refused(golden):
 
 
 # ============================================ the catalogue =================================================================
-SPEC_FILES = ["goal.json", "goal.v2.json", "workflows.json", "atoms.json", "audits.json", "conflicts.json", "conditions.json",
+SPEC_FILES = ["settings.json", "goal.json", "goal.v2.json", "workflows.json", "atoms.json", "audits.json", "conflicts.json", "conditions.json",
               "conditions-prd.json", "style.json", "memory/lessons.jsonl", "receipts.jsonl", "realization.json", "map.json",
               "board.json", "artifacts.json", "summary.json", "chat.jsonl", "calls.jsonl", "templates.json",
               "templates/website/section/brew-lab-core@v2/spec.json", "templates/website/section/brew-lab-core@v2/meta.json",
@@ -455,6 +522,7 @@ def test_the_open_files_are_bounded_json_of_the_right_outer_shape(golden):
     run = golden["prd"] / "run"
     assert R.check_record("documents.json", first(run, "documents.json"))[0].family == "run_file.object"
     assert R.check_record("change.json", [{"id": "CH-1"}])[0].family == "run_file.list"
+    assert R.check_record("settings.json", {"decide_for_me": True})[0].family == "run_file.object"
     deep = {}
     node = deep
     for _ in range(40):

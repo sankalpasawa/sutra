@@ -127,6 +127,8 @@ class Host:
         self.run = None
         self.selection = None                       # the output the engine chose for the brief (capabilities.Selection)
         self.has_folder = False
+        self.folder_watch = None                    # the baseline of the owner's folder for an output that leaves a deliverable (folder_watch.FolderWatch)
+        self._deliverable_written = False
         self.context = None                         # the capabilities' view of the run (EngineContext), made with the run
         self.stopping = threading.Event()          # set before the port is closed (a stop line or SIGTERM)
         self._terminate = threading.Event()
@@ -184,6 +186,7 @@ class Host:
         self._ended = True
         if self.writer is None:
             return
+        self._write_deliverable()                   # before the last line: the server reads the file when it applies run.ended
         try:
             self.writer.emit(run_ended_event(status=status, outcome=outcome, code=code))
         except (EventError, OSError) as exc:
@@ -544,6 +547,7 @@ class Host:
         self._install_handlers()
         self.publisher.publish(force=True)
         self.publisher.start()
+        self._start_folder_watch()                  # before the first message starts the work: nothing has changed the folder yet
         if not run.user_says(task.user_text):
             raise RuntimeError("the run did not take the first message")
         while True:
@@ -551,6 +555,55 @@ class Host:
             if code is not None:
                 return code
             self._terminate.wait(TICK_S)
+
+    # ---- what the run leaves for the owner (D135) -------------------------------------------------------------------------------
+    def _delivers(self) -> bool:
+        """Does the run's output leave a file the owner reads (`OutputSpec.deliver`)? Only the project output says so today."""
+        out = getattr(self.run, "out", None)
+        return bool(isinstance(out, dict) and out.get("deliver"))
+
+    def _owner_grant(self):
+        """The working folder with the owner's access as it is now, or None (read from the same store the router reads per call)."""
+        from sutra_app.connectors.workdir import WorkFolder
+        return WorkFolder(self.paths.data_dir).grant()
+
+    def _start_folder_watch(self) -> None:
+        """The baseline of the owner's working folder (`folder_watch.FolderWatch`, git, never an agent), taken once before the work starts, for an output
+        that leaves a deliverable. Nothing is said when there is nothing to read: no folder, no git work tree, git missing or slow."""
+        if not self._delivers():
+            return
+        try:
+            from .folder_watch import FolderWatch
+            self.folder_watch = FolderWatch.start(self._owner_grant())
+        except Exception as exc:  # noqa: BLE001 - the run never fails for a list the owner did not ask for
+            self.folder_watch = None
+            self.trace("publish.error", {"where": "folder watch", "error": clip(f"{type(exc).__name__}: {exc}", 300)})
+            return
+        if self.folder_watch is not None:
+            self.trace("folder_watch.started", {"entries": len(self.folder_watch.before), "edit": self.folder_watch.edit_at_start})
+
+    def _write_deliverable(self) -> None:
+        """`deliverable.json`, once, before `run.ended` and whatever the end was (done, stopped, crashed): which file the run delivered and, when the
+        folder watch could read git at both ends, what changed in the owner's folder. The server reads it when it applies `run.ended` and posts the
+        report and the list to the team's chat. An output that leaves no deliverable writes nothing; a failure here is a trace line, never a failed end."""
+        if self.run is None or self._deliverable_written:
+            return
+        self._deliverable_written = True
+        try:
+            if not self._delivers():
+                return
+            out = self.run.out
+            record: dict[str, Any] = {"schema": "deliverable/1", "output": str(self.run.output), "file": out.get("file"),
+                                      "label": clip(f"{out.get('label') or ''} {out.get('noun') or ''}".strip(), 80)}
+            if self.folder_watch is not None:
+                grant = self._owner_grant()
+                changes = self.folder_watch.finish(bool(getattr(grant, "edit", False)))
+                if changes is not None:
+                    record["changes"] = changes
+                    self.trace("folder_watch.finished", {"files": len(changes["files"]), "more": changes["more"]})
+            _atomic_write(self.paths.run_dir / "deliverable.json", json.dumps(record, indent=2, ensure_ascii=False) + "\n")
+        except Exception as exc:  # noqa: BLE001
+            self.trace("publish.error", {"where": "deliverable.json", "error": clip(f"{type(exc).__name__}: {exc}", 300)})
 
     # ---- one tick ---------------------------------------------------------------------------------------------------------
     def _tick(self) -> Optional[int]:
@@ -686,6 +739,8 @@ class Host:
         """Final publish, then `run.ended`: the publisher and the heartbeat are stopped first, so nothing follows it."""
         self.inbox.close()
         self.publisher.stop()
+        from . import finish
+        finish.run_steps(self, status)             # D142, D143: the steps of a run that ended well; the heartbeat still beats
         self.heartbeat.stop()
         try:
             self.publisher.final()

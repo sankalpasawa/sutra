@@ -27,7 +27,8 @@ from sutra_app.library.types import (
 __all__ = [
     "Iso", "Event", "Violation", "ChartNodeOut", "ChartView", "ChartChangeOut", "ChangeResult", "GraphEdgeOut", "GraphNodeOut",
     "GraphView", "FnStats", "FnMeta", "FnDetailMeta", "UsageTotals", "ChatSessionOut", "ChatMessageOut", "ChatOption",
-    "ChatCard", "ChartChangeCard", "TaskCard", "ApprovalCard", "ChoiceCard", "NeedsYouCard", "DoneCard", "DoneReceipt", "AtomCard", "CardRow",
+    "ChatCard", "ChartChangeCard", "TaskCard", "ApprovalCard", "ChoiceCard", "NeedsYouCard", "DoneCard", "DoneReceipt", "DoneReport", "AtomCard", "CardRow",
+    "DeliverableCard", "DeliverableChanges", "ChangedFile", "DELIVERABLE_TEXT_MAX", "DELIVERABLE_FILES_MAX",
     "ChatChoice", "ChatPost", "Accepted", "Delivery", "TaskOut", "RunRef", "FunctionChip", "DepartmentOut", "DeptRow", "AtomOut",
     "AtomLogRow", "UsageOut", "NeedsYouOut", "NodeDetail", "TaskSettings", "UpstreamRef", "RunSpec", "RunEvent", "RUN_EVENT_TYPES",
     "RUN_EVENT_VARIANTS", "EventParseError", "parse_event", "RunStarted", "RunSay", "RunNode", "RunStep", "RunAtom", "RunUsage",
@@ -303,6 +304,13 @@ class DoneReceipt(Value):
     attempt: Annotated[int, Field(ge=2)] | None = None
 
 
+class DoneReport(Value):
+    """Where the finished report of a run opens (D135): the team's page at its Preview tab for this run. `label` is the deliverable's name ("Project work report")."""
+    dept_id: NodeId
+    run_id: RunId
+    label: Name
+
+
 class DoneCard(Value):
     type: Literal["done"]
     task_id: TaskId
@@ -311,13 +319,55 @@ class DoneCard(Value):
     status: TaskStatus
     outcome: Annotated[str, StringConstraints(max_length=2000)] = ""
     receipt: DoneReceipt | None = None
+    report: DoneReport | None = None
 
     @model_serializer(mode="wrap")
-    def _receipt_only_when_there_is_one(self, handler: Any) -> dict[str, Any]:
-        """A card without a receipt (every card stored before it existed) keeps the wire shape it always had: the key is left out."""
+    def _receipt_and_report_only_when_there_are_some(self, handler: Any) -> dict[str, Any]:
+        """A card without a receipt or a report (every card stored before they existed) keeps the wire shape it always had: the keys are left out."""
         data = handler(self)
-        if data.get("receipt") is None:
-            data.pop("receipt", None)
+        for key in ("receipt", "report"):
+            if data.get(key) is None:
+                data.pop(key, None)
+        return data
+
+
+DELIVERABLE_TEXT_MAX = 30_000          # characters of the report a team chat card holds (a longer report is cut and says so; the page opens the whole)
+DELIVERABLE_FILES_MAX = 100            # changed files a card names (the host's record names as many; the rest are counted)
+
+
+class ChangedFile(Value):
+    """One path git saw change in the owner's folder during the run, relative to that folder."""
+    path: Annotated[str, StringConstraints(min_length=1, max_length=400)]
+    status: Literal["new", "modified", "deleted", "reverted"]
+
+
+class DeliverableChanges(Value):
+    """What the engine host saw change in the owner's working folder during the run (git, before and after; never an agent): the first files and how
+    many more there were. An empty list is an answer: git looked and nothing changed."""
+    files: Annotated[list[ChangedFile], Field(max_length=DELIVERABLE_FILES_MAX)] = []
+    more: Count = 0
+
+
+class DeliverableCard(Value):
+    """The finished deliverable of a run in the TEAM's chat (D135): the report as the team wrote it (markdown, `text`, cut at DELIVERABLE_TEXT_MAX with
+    `cut` set), the files the host saw change in the owner's folder (`changes`, absent when the folder is no git work tree, access was read or git could not
+    say), and where the whole report opens on the team page (`run_id`, `dept_id`). Posted once, by the Projector, when the run ends."""
+    type: Literal["deliverable"]
+    task_id: TaskId
+    run_id: RunId
+    dept_id: NodeId
+    label: Name
+    file: Annotated[str, StringConstraints(max_length=80)] = ""
+    text: Annotated[str, StringConstraints(max_length=DELIVERABLE_TEXT_MAX)] = ""
+    cut: bool = False
+    changes: DeliverableChanges | None = None
+
+    @model_serializer(mode="wrap")
+    def _changes_only_when_known(self, handler: Any) -> dict[str, Any]:
+        """No `changes` key when git could not say (not a work tree, read only, too slow): the card then says nothing of changes."""
+        data = handler(self)
+        if data.get("changes") is None:
+            data.pop("changes", None)
         return data
 
 
@@ -336,7 +386,7 @@ class AtomCard(Value):
 
 
 ChatCard = Annotated[
-    Union[ChartChangeCard, TaskCard, ApprovalCard, ChoiceCard, NeedsYouCard, TeamChatCard, DoneCard, AtomCard],
+    Union[ChartChangeCard, TaskCard, ApprovalCard, ChoiceCard, NeedsYouCard, TeamChatCard, DoneCard, DeliverableCard, AtomCard],
     Field(discriminator="type"),
 ]
 
@@ -358,10 +408,12 @@ class ChatMessageOut(Value):
     turn: Annotated[int, Field(ge=1)] | None = None                       # a direct-chat reply: the id of the owner's line it answers
     passed_on: Annotated[int, Field(ge=1)] | None = None                  # the owner's line the org chat passed on to this team: the id of the original in cs_org
     steer: bool = False                                                    # the owner's note to an agent (POST /api/chats/{sid}/steer, D132): its src_ref is `steer:<id>`
+    ask: Literal["q", "records", "model"] | None = None                    # the owner's question to a function (q) and its answer, made from its records or by a model
+                                                                           # (POST /api/ask, D148): the src_ref is `ask:<id>`, `ask:<id>:records` or `ask:<id>:model`
 
     @model_serializer(mode="wrap")
     def _blocks_only_when_there_are_some(self, handler: Any) -> dict[str, Any]:
-        """The wire shape of a message without blocks (or a turn, or a pass-on) is what it always was: the keys are left out when empty."""
+        """The wire shape of a message without blocks (or a turn, a pass-on, a note or a question) is what it always was: the keys are left out when empty."""
         data = handler(self)
         if not data.get("blocks"):
             data.pop("blocks", None)
@@ -371,6 +423,8 @@ class ChatMessageOut(Value):
             data.pop("passed_on", None)
         if not data.get("steer"):
             data.pop("steer", None)
+        if data.get("ask") is None:
+            data.pop("ask", None)
         return data
 
 

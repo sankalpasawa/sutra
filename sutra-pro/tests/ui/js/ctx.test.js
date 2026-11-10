@@ -86,7 +86,8 @@ test("J2's page script can declare its own top-level names after it (no lexical 
     "RUNLIST", "runQ", "EXAMPLES", "OUTS", "examples", "run", "tab", "api", "boot", "dept", "ctx", "root", "TOKEN_HEADER", "ID_RULE",
     "PATH_DEPT", "ROOT_RELATIVE", "isId", "isRootRelative", "J2_EXACT", "J2_PREFIXES", "J2_EXACT_SET", "J2_PATHS", "DEFAULT_MESSAGES",
     "ApiError", "readBoot", "deptFromPath", "pickDept", "tokenOf", "ESCAPES", "cssEscape", "paint", "safeDecode", "hasParam", "withDept",
-    "methodOf", "needsToken", "withToken", "installFetch", "queryString", "buildUrl", "failure", "send", "fillFrames", "doc"];
+    "methodOf", "needsToken", "withToken", "installFetch", "queryString", "buildUrl", "failure", "send", "fillFrames", "doc",
+    "pagePath", "libraryPath", "onLibrary"];
   vm.runInContext([...new Set(names)].map(name => `const ${name} = 1;`).join("\n"), sandbox);
   vm.runInContext("class Later { constructor(){ this.d = SutraCtx.dept; } }; if (new Later().d !== 'web') throw new Error('SutraCtx lost');", sandbox);
 });
@@ -94,9 +95,11 @@ test("J2's page script can declare its own top-level names after it (no lexical 
 test("the public surface is exactly the one the design lists", () => {
   const { SutraCtx } = load(browser());
   assert.deepEqual(Object.keys(SutraCtx).sort(),
-    ["ApiError", "J2_PATHS", "api", "boot", "currentTab", "dept", "esc", "installFetch", "paint", "run", "tab", "withDept"]);
+    ["ApiError", "J2_PATHS", "api", "boot", "currentTab", "dept", "esc", "installFetch", "libraryPath", "onLibrary", "pagePath", "paint", "run", "tab",
+      "withDept"]);
   assert.deepEqual(Object.keys(SutraCtx.api).sort(), ["del", "get", "post", "put"]);
-  for (const name of ["run", "esc", "paint", "tab", "installFetch", "withDept"]) assert.equal(typeof SutraCtx[name], "function", name);
+  for (const name of ["run", "esc", "paint", "tab", "installFetch", "withDept", "onLibrary"]) assert.equal(typeof SutraCtx[name], "function", name);
+  for (const name of ["pagePath", "libraryPath"]) assert.equal(typeof SutraCtx[name], "string", name);
   assert.equal(SutraCtx.currentTab, "");
 });
 
@@ -365,10 +368,11 @@ test("tab() turns a name that is not a string into a string", () => {
 // ------------------------------------------------------------------------------------------------------------------
 // J2_PATHS
 // ------------------------------------------------------------------------------------------------------------------
-const J2_EXACT = ["/api/state", "/api/runs", "/api/call", "/api/preview", "/api/docs", "/api/map", "/api/plan", "/api/library",
-  "/api/run-templates", "/api/artifacts", "/api/artifacts/tree", "/api/artifact", "/api/agent", "/api/code", "/api/story", "/api/board",
-  "/api/audits", "/api/refs", "/api/say", "/api/output", "/api/reset", "/api/playbooks/clear", "/api/lessons/clear"];
-const J2_PREFIXES = ["/api/library/", "/site/", "/file/", "/shot/"];
+const J2_EXACT = ["/api/state", "/api/runs", "/api/runlist", "/api/changes", "/api/call", "/api/preview", "/api/docs", "/api/map", "/api/plan",
+  "/api/plan-map", "/api/library", "/api/catalog", "/api/run-templates", "/api/artifacts", "/api/artifacts/tree", "/api/artifacts/groups",
+  "/api/artifact", "/api/agent", "/api/activity", "/api/record", "/api/code", "/api/story", "/api/board", "/api/audits", "/api/refs", "/api/say",
+  "/api/ask", "/api/output", "/api/settings", "/api/reset", "/api/playbooks/clear", "/api/lessons/clear", "/view"];
+const J2_PREFIXES = ["/api/library/", "/site/", "/file/", "/shot/", "/doc/"];
 const ORCHESTRATOR = ["/api/chart", "/api/chart/changes", "/api/chart/changes/chg-0002/decision", "/api/graph", "/api/graph/nodes/web.identity",
   "/api/chats", "/api/chats/cs_org", "/api/chats/cs_org/messages", "/api/chats/cs_org/retry", "/api/departments", "/api/departments/web",
   "/api/departments/web/runs", "/api/needs-you", "/api/atoms", "/api/atoms/log", "/api/atoms/a-77aa10c2e9-03", "/api/events", "/api/health",
@@ -376,22 +380,26 @@ const ORCHESTRATOR = ["/api/chart", "/api/chart/changes", "/api/chart/changes/ch
   "/api/connectors/codex/sign-in/abc", "/api/schemas/atom/1", "/api/schemas/validate", "/api/tasks", "/api/tasks/tsk_a1b2c3d4e5f6",
   "/api/tasks/tsk_a1b2c3d4e5f6/stop", "/api/usage", "/api/usage/summary", "/api/runs/j2-20261104-100004-7f3a", "/openapi.json"];
 
-test("J2_PATHS lists the 23 exact pathnames and the four prefixes of j2_server.py", () => {
+test("J2_PATHS lists the 33 exact pathnames (32 under /api/ and the studio's /view) and the five prefixes of j2_server.py", () => {
   const { J2_PATHS } = load(browser()).SutraCtx;
-  assert.equal(J2_EXACT.length, 23);
+  assert.equal(J2_EXACT.length, 33);
+  assert.equal(new Set(J2_EXACT).size, 33);
+  assert.equal(J2_EXACT.filter(p => p.startsWith("/api/")).length, 32);
   assert.deepEqual(plain(J2_PATHS.exact).sort(), [...J2_EXACT].sort());
   assert.deepEqual(plain(J2_PATHS.prefixes), J2_PREFIXES);
   assert.ok(Object.isFrozen(J2_PATHS) && Object.isFrozen(J2_PATHS.exact) && Object.isFrozen(J2_PATHS.prefixes));
 });
 
-const PATCHED = ["/api/runlist", "/api/changes"];
-
-test("J2_PATHS.patched lists the two read-only routes of patch P13 and they get dept like J2's own", () => {
+// D140: /api/runlist and /api/changes were the two routes of patch P13 (a list of their own); J2's server has them now, so they are exact names like
+// the rest and J2_PATHS has no `patched` list any more
+test("J2_PATHS has no patched list: the two former P13 routes and the eight newer ones are plain J2 routes that get dept", () => {
   const { J2_PATHS } = load(browser()).SutraCtx;
-  assert.deepEqual(plain(J2_PATHS.patched), PATCHED);
-  assert.ok(Object.isFrozen(J2_PATHS.patched) && PATCHED.every(p => !J2_PATHS.exact.includes(p)));
-  for (const p of PATCHED) {
+  assert.equal(J2_PATHS.patched, undefined);
+  assert.deepEqual(Object.keys(J2_PATHS).sort(), ["exact", "matches", "prefixes"]);
+  for (const p of ["/api/runlist", "/api/changes", "/api/plan-map", "/api/catalog", "/api/artifacts/groups", "/api/activity", "/api/ask",
+    "/api/record", "/api/settings", "/view"]) {
     assert.equal(J2_PATHS.matches(p), true, p);
+    assert.ok(J2_PATHS.exact.includes(p), p);
     for (const other of [p + "/", p + "x", p.slice(0, -1), p.toUpperCase()]) assert.equal(J2_PATHS.matches(other), false, other);
   }
 });
@@ -409,12 +417,14 @@ test("J2_PATHS matches whole pathnames exactly for J2's /api/ paths", () => {
   }
 });
 
-test("J2_PATHS matches by prefix only /api/library/, /site/, /file/ and /shot/", () => {
+test("J2_PATHS matches by prefix only /api/library/, /site/, /file/, /shot/ and the studio's /doc/", () => {
   const { J2_PATHS } = load(browser()).SutraCtx;
   for (const p of ["/api/library/", "/api/library/x/y/z/v1", "/api/library/website/hero/plain/v3", "/site/", "/site/latest", "/site/v2",
-    "/file/prd.md", "/file/prd.docx", "/shot/1", "/shot/site-v1.png"]) assert.equal(J2_PATHS.matches(p), true, p);
+    "/file/prd.md", "/file/prd.docx", "/shot/1", "/shot/site-v1.png", "/doc/", "/doc/prd", "/doc/hld", "/doc/lld"]) assert.equal(J2_PATHS.matches(p), true, p);
   for (const p of ["/api/libraryx", "/api/libraries/", "/sites/x", "/site", "/file", "/files/x", "/shot", "/shots/1", "/x/site/latest",
-    "/api/site/latest", "/api/file/x", "/ui/site/x"]) assert.equal(J2_PATHS.matches(p), false, p);
+    "/api/site/latest", "/api/file/x", "/ui/site/x", "/doc", "/docs/prd", "/x/doc/prd", "/api/doc/prd", "/ui/doc/prd", "/views", "/view/x", "/viewer"]) {
+    assert.equal(J2_PATHS.matches(p), false, p);
+  }
 });
 
 test("J2_PATHS matches none of the orchestrator's, the library's or the connectors' routes", () => {
@@ -426,17 +436,77 @@ test("J2_PATHS matches none of the orchestrator's, the library's or the connecto
   for (const v of [undefined, null, 5, {}, ["/api/state"]]) assert.equal(J2_PATHS.matches(v), false);
 });
 
-// Optional drift check against the real J2 server: SUTRA_J2_CHECKOUT=/path/to/J2_Prototype node --test tests/ui/js/ctx.test.js
-test("J2_PATHS agrees with the routes of the J2 checkout when SUTRA_J2_CHECKOUT is set", t => {
+// Optional drift check against J2's own server: SUTRA_J2_CHECKOUT=<an extraction of prototypes/j2 of this repository> node --test tests/ui/js/ctx.test.js
+// (git archive <commit> prototypes/j2 | tar -x --strip-components=2 -C <a new, empty folder>)
+test("J2_PATHS agrees with the routes of j2_server.py in the extraction of prototypes/j2 when SUTRA_J2_CHECKOUT is set", t => {
   const checkout = process.env.SUTRA_J2_CHECKOUT;
   const server = checkout && path.join(checkout, "j2_server.py");
-  if (!server || !fs.existsSync(server)) return t.skip("set SUTRA_J2_CHECKOUT to a J2 checkout to compare the route list");
+  if (!server || !fs.existsSync(server)) return t.skip("set SUTRA_J2_CHECKOUT to an extraction of prototypes/j2 to compare the route list");
   const text = fs.readFileSync(server, "utf8");
-  const exact = new Set([...text.matchAll(/(?:u\.path|self\.path) == "(\/api\/[^"]+)"/g)].map(m => m[1]));
+  const exact = new Set([...text.matchAll(/(?:u\.path|self\.path) == "(\/api\/[^"]+|\/view)"/g)].map(m => m[1]));       // /vendor/d3.min.js is J2's own copy of d3: the app serves it under /ui/vendor/
   const prefixes = new Set([...text.matchAll(/u\.path\.startswith\("([^"]+)"\)/g)].map(m => m[1]));
   const { J2_PATHS } = load(browser()).SutraCtx;
   assert.deepEqual([...exact].sort(), plain(J2_PATHS.exact).sort());
   assert.deepEqual([...prefixes].sort(), plain(J2_PATHS.prefixes).sort());
+});
+
+// ------------------------------------------------------------------------------------------------------------------
+// pagePath, libraryPath and onLibrary (D141): the team's page and its template library
+// ------------------------------------------------------------------------------------------------------------------
+test("pagePath and libraryPath are the team's own addresses: /d/<id>/ and /d/<id>/library", () => {
+  const { SutraCtx } = load(browser());
+  assert.equal(SutraCtx.pagePath, "/d/web/");
+  assert.equal(SutraCtx.libraryPath, "/d/web/library");
+  const colon = load(browser({boot: {page: "dept", token: TOKEN, dept: "org:a.b-c_1"}, pathname: "/d/org:a.b-c_1/"})).SutraCtx;
+  assert.equal(colon.pagePath, "/d/org:a.b-c_1/", "the id rule keeps every character safe in a path, so none is encoded");
+  assert.equal(colon.libraryPath, "/d/org:a.b-c_1/library");
+  const fromPath = load(browser({boot: false, pathname: "/d/web/library"})).SutraCtx;
+  assert.equal(fromPath.dept, "web", "without a block the team comes from the path, the library page's too");
+  assert.equal(fromPath.libraryPath, "/d/web/library");
+});
+
+test("without a team (Home, J2's stub DOM, node) they are J2's own: / and /library, so the render harness behaves as J2's page does", () => {
+  const stub = load({document: {getElementById: () => ({textContent: () => "{}"})}, location: {search: ""}, URLSearchParams}).SutraCtx;
+  assert.equal(stub.dept, "");
+  assert.equal(stub.pagePath, "/");
+  assert.equal(stub.libraryPath, "/library");
+  assert.equal(stub.onLibrary(), false, "the stub has no pathname");
+  const home = load(browser({boot: {page: "home", token: TOKEN}, pathname: "/"})).SutraCtx;
+  assert.equal(home.pagePath, "/");
+  assert.equal(home.libraryPath, "/library");
+  assert.equal(require(FILE).libraryPath, "/library", "in node, with no document");
+});
+
+test("onLibrary is true on the team's library page (a trailing slash too) and on no other page", () => {
+  const on = pathname => load(browser({pathname})).SutraCtx.onLibrary();
+  assert.equal(on("/d/web/library"), true);
+  assert.equal(on("/d/web/library/"), true);
+  for (const other of ["/d/web/", "/d/web", "/d/web/libraries", "/d/web/librarys", "/d/web/library/x", "/d/web/library//", "/library", "/", "/d/other/library",
+    "/d/webs/library", "/d/web/Library", "/d/web/library.html"]) assert.equal(on(other), false, other);
+});
+
+test("onLibrary reads the location when it is asked, not when the script loads", () => {
+  const sandbox = load(browser({pathname: "/d/web/"}));       // the context's own global: a swap on it is what the script sees
+  const { SutraCtx } = sandbox;
+  assert.equal(SutraCtx.onLibrary(), false);
+  sandbox.location.pathname = "/d/web/library";
+  assert.equal(SutraCtx.onLibrary(), true);
+  sandbox.location = null;
+  assert.equal(SutraCtx.onLibrary(), false, "no location: never the library");
+  sandbox.location = {};
+  assert.equal(SutraCtx.onLibrary(), false, "a location with no pathname (J2's stub)");
+  sandbox.location = {pathname: 5};
+  assert.equal(SutraCtx.onLibrary(), false, "a pathname that is not a string");
+});
+
+test("onLibrary reads a percent-encoded team id as the id it spells; with no team the page is J2's /library", () => {
+  const colon = {page: "dept", token: TOKEN, dept: "a:b"};
+  assert.equal(load(browser({boot: colon, pathname: "/d/a:b/library"})).SutraCtx.onLibrary(), true);
+  assert.equal(load(browser({boot: colon, pathname: "/d/a%3Ab/library"})).SutraCtx.onLibrary(), true);
+  assert.equal(load(browser({boot: colon, pathname: "/d/a%ZZb/library"})).SutraCtx.onLibrary(), false, "an undecodable path is not the library");
+  const noTeam = pathname => load(browser({boot: {page: "home", token: TOKEN}, pathname})).SutraCtx.onLibrary();
+  assert.equal(noTeam("/library"), true);
+  assert.equal(noTeam("/"), false);
 });
 
 // ------------------------------------------------------------------------------------------------------------------

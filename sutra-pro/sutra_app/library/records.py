@@ -378,6 +378,7 @@ ROUTES: Final[tuple[Route, ...]] = (
     _r("stage-<kind>.json", r"stage-[a-z]+\.json", "run_file.object", _p_run_object),
     _r("report.json", r"report\.json", "run_file.object", _p_run_object),
     _r("change.json", r"change\.json", "run_file.list", _p_run_list),
+    _r("settings.json", r"settings\.json", "run_file.object", _p_run_object),      # Decide for me (J2 sync 4): {"decide_for_me": bool}
     *(_r(file, re.escape(file), family, _p_one(family)) for file, family in wire.WIRE_FILES.items()),
 )
 

@@ -9,7 +9,7 @@ const path = require("node:path");
 
 const CSS_DIR = path.join(__dirname, "..", "..", "..", "sutra_app", "ui", "static", "css");
 const ALL = fs.readdirSync(CSS_DIR).filter(f => f.endsWith(".css")).sort();
-const FROZEN = new Set(["j2.css"]);                       // J2's own sheet, byte for byte: it only has to be free of the layout properties and `all`
+const FROZEN = new Set(["j2.css", "j2-shell.css"]);       // J2's own sheet, byte for byte, and Home's frozen copy of the previous one (D138): neither is ours to edit
 const OURS = ALL.filter(f => !FROZEN.has(f));
 const read = name => fs.readFileSync(path.join(CSS_DIR, name), "utf8");
 const strip = css => css.replace(/\/\*[\s\S]*?\*\//g, "");
@@ -76,32 +76,55 @@ function transitioned(value) {
 }
 
 /* ---------------------------------------------------------------- the rules */
-test("1. no sheet says `transition: all` or `transition-property: all`", () => {
-  ALL.forEach(file => {
-    blocks(read(file)).forEach(b => {
-      if (b.keyframes) return;
-      decls(b.body).forEach(([prop, value]) => {
-        if (prop === "transition") assert.ok(!transitioned(value).includes("all"), `${file}: ${b.head} { transition: ${value} }`);
-        if (prop === "transition-property") assert.ok(!/\ball\b/.test(value), `${file}: ${b.head} { transition-property: ${value} }`);
-      });
+// What J2's own sheet does, recorded. The sheet that port_j2_ui.py regenerates is J2's (the studio of J2 sync 4 is its design): it says `transition: all`
+// three times and moves layout properties thirty times, where the sheets of the previous sync (and every Sutra sheet) say neither. It stays byte for
+// byte J2's, so these two rules do not forbid it; they record it, exactly, so that a sync that adds or removes one has to say so here. The motion budget
+// of what is recorded is measured with the probe (docs/design/j2-sync-4.md 4.9) and, where it misses, switched off from sutra-panel.css (D122): rule 8
+// proves that every such declaration of J2's own sheets (j2.css, and Home's frozen j2-shell.css) has its replacement there.
+const J2_SHEET = "j2.css";
+const J2_RECORDED = {
+  all: ["#sview .sback span { transition: all .3s }", "#sview .sjdone { transition: all .8s }", "#sview .sjdot { transition: all .4s }"],
+  layout: ["@keyframes slrise animates filter", "#sview .sbox transitions box-shadow", "#sview .sgo transitions box-shadow", "#sview .srlist a transitions box-shadow",
+    "#sview .stop .shome,#sview .stop .stheme transitions box-shadow", "@keyframes sping animates box-shadow", "@keyframes sping animates box-shadow",
+    "@keyframes sping2 animates box-shadow", "@keyframes sping2 animates box-shadow", "#sview .sbar i transitions width", "#sview .stop .sbtn transitions box-shadow",
+    "#sview .stop .sauto transitions box-shadow", "#sview .smate transitions box-shadow", "#sview .sstep transitions box-shadow", "@keyframes sblur animates filter",
+    "#sview .sframe transitions box-shadow", "#sview .sprev iframe transitions width", "#sview .smbar>i>i transitions width", "#sview .spart transitions box-shadow",
+    "@keyframes sblurin animates filter", "#sview .sdesk transitions box-shadow", "@keyframes sload animates left", "@keyframes sload animates left",
+    "#sview .sartc transitions box-shadow", "#sview .sprog .fill transitions width", "#sview .qcard .own input transitions box-shadow",
+    "#sview .qcard .pri transitions filter", "#sview .stoast transitions filter", "#dview .dcol transitions margin-right", ".chatfab transitions right"],
+};
+
+// every `transition: all` (and `transition-property: all`) and every layout property that a sheet transitions, animates or announces with will-change
+function motionFindings(file) {
+  const all = [], layout = [];
+  blocks(read(file)).forEach(b => {
+    if (b.keyframes) {
+      b.frames.forEach(frame => decls(frame).forEach(([prop]) => { if (LAYOUT.has(prop)) layout.push(`@keyframes ${b.keyframes} animates ${prop}`); }));
+      return;
+    }
+    decls(b.body).forEach(([prop, value]) => {
+      if (prop === "transition"){
+        if (transitioned(value).includes("all")) all.push(`${b.head} { transition: ${value} }`);
+        transitioned(value).forEach(name => { if (LAYOUT.has(name)) layout.push(`${b.head} transitions ${name}`); });
+      }
+      if (prop === "transition-property"){
+        if (/\ball\b/.test(value)) all.push(`${b.head} { transition-property: ${value} }`);
+        value.split(",").map(v => v.trim()).forEach(name => { if (LAYOUT.has(name)) layout.push(`${b.head} transitions ${name}`); });
+      }
+      if (prop === "will-change") value.split(",").map(v => v.trim()).forEach(name => { if (LAYOUT.has(name)) layout.push(`${b.head} will-change ${name}`); });
     });
   });
+  return {all: all.sort(), layout: layout.sort()};
+}
+
+test("1. no sheet says `transition: all` or `transition-property: all` (J2's own generated sheet: exactly the recorded ones)", () => {
+  ALL.filter(file => file !== J2_SHEET).forEach(file => assert.deepEqual(motionFindings(file).all, [], `${file}: ${motionFindings(file).all[0]}`));
+  assert.deepEqual(motionFindings(J2_SHEET).all, [...J2_RECORDED.all].sort(), `${J2_SHEET} changed: update J2_RECORDED and say why in the note of the sync`);
 });
 
-test("2. no sheet transitions or animates a layout property (width, height, top, left, margin, padding, box-shadow, filter ...)", () => {
-  ALL.forEach(file => {
-    blocks(read(file)).forEach(b => {
-      if (b.keyframes) {
-        b.frames.forEach(frame => decls(frame).forEach(([prop]) => assert.ok(!LAYOUT.has(prop), `${file}: @keyframes ${b.keyframes} animates ${prop}`)));
-        return;
-      }
-      decls(b.body).forEach(([prop, value]) => {
-        if (prop === "transition") transitioned(value).forEach(name => assert.ok(!LAYOUT.has(name), `${file}: ${b.head} transitions ${name}`));
-        if (prop === "transition-property") value.split(",").map(v => v.trim()).forEach(name => assert.ok(!LAYOUT.has(name), `${file}: ${b.head} transitions ${name}`));
-        if (prop === "will-change") value.split(",").map(v => v.trim()).forEach(name => assert.ok(!LAYOUT.has(name), `${file}: ${b.head} will-change ${name}`));
-      });
-    });
-  });
+test("2. no sheet transitions or animates a layout property (width, height, top, left, margin, padding, box-shadow, filter ...) (J2's own generated sheet: exactly the recorded ones)", () => {
+  ALL.filter(file => file !== J2_SHEET).forEach(file => assert.deepEqual(motionFindings(file).layout, [], `${file}: ${motionFindings(file).layout[0]}`));
+  assert.deepEqual(motionFindings(J2_SHEET).layout, [...J2_RECORDED.layout].sort(), `${J2_SHEET} changed: update J2_RECORDED and say why in the note of the sync`);
 });
 
 test("3. the Sutra sheets move only transform and opacity (and colours): everything else is a finding", () => {
@@ -165,11 +188,39 @@ test("6. the drawer, the panes and a new line are animated, and the idle drift o
   ["home.html", "console.html", "j2_ui.html"].forEach(page => {
     const html = fs.readFileSync(path.join(CSS_DIR, "..", "..", "pages", page), "utf8");
     const sheets = [...html.matchAll(/<link rel="stylesheet" href="\/ui\/css\/([\w.-]+\.css)"/g)].map(m => m[1]);
-    assert.ok(sheets.indexOf("sutra-panel.css") > sheets.indexOf("j2.css"), `${page}: sutra-panel.css comes after j2.css`);
+    const base = page === "j2_ui.html" ? "j2.css" : "j2-shell.css";      // the team page takes J2's new sheet; Home and the console keep the frozen one (D138)
+    assert.ok(sheets.includes(base), `${page}: links ${base}`);
+    assert.ok(sheets.indexOf("sutra-panel.css") > sheets.indexOf(base), `${page}: sutra-panel.css comes after ${base}`);
   });
 });
 
 test("7. reduced motion stops everything on every Sutra page: the durations are 0 and a universal rule ends any animation that is left", () => {
   const panel = strip(read("sutra-panel.css"));
   assert.match(panel, /prefers-reduced-motion:\s*reduce\)\s*\{\s*\*,\*::before,\*::after\s*\{[^}]*animation-duration:\s*\.01ms\s*!important[^}]*transition-duration:\s*\.01ms\s*!important/);
+});
+
+test("8. every `transition: all`, layout transition and layout keyframe of J2's own sheets has a rule in sutra-panel.css that replaces it", () => {
+  const ours = blocks(read("sutra-panel.css"));
+  const selectors = head => head.split(",").map(x => x.trim());
+  const compliant = value => transitioned(value).every(name => name === "none" || (name !== "all" && !LAYOUT.has(name)));
+  const covered = selector => ours.some(b => !b.keyframes && selectors(b.head).includes(selector) && decls(b.body).some(([prop, value]) => prop === "transition" && compliant(value)));
+  let found = 0;
+  FROZEN.forEach(file => {
+    blocks(read(file)).forEach(b => {
+      if (b.keyframes) {
+        if (!b.frames.some(frame => decls(frame).some(([prop]) => LAYOUT.has(prop)))) return;
+        found += 1;
+        const mine = ours.filter(o => o.keyframes === b.keyframes);
+        assert.ok(mine.length > 0 && mine.every(o => o.frames.every(frame => decls(frame).every(([prop]) => !LAYOUT.has(prop)))), `${file}: @keyframes ${b.keyframes} has no compositor-only replacement`);
+        return;
+      }
+      decls(b.body).forEach(([prop, value]) => {
+        const bad = (prop === "transition" && !compliant(value)) || (prop === "transition-property" && /\ball\b/.test(value));
+        if (!bad) return;
+        found += 1;
+        selectors(b.head).forEach(selector => assert.ok(covered(selector), `${file}: ${selector} { ${prop}: ${value} } has no rule of sutra-panel.css`));
+      });
+    });
+  });
+  assert.ok(found > 0, "the check found J2's offending declarations, so it is looking at the right sheets");
 });

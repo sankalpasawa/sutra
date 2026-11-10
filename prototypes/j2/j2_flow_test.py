@@ -920,8 +920,10 @@ def summary_before_review():
     assert run.outcome.startswith("Crashed") and summary(run)["status"] == "crashed", run.outcome
 
 
+# "Budget lead" is one of the team's role names (the team card showed it before the studio, the studio's Behind the scenes shows it); the
+# word budget is still never shown on its own.
 SIMPLE_FORBIDDEN = re.compile(r"\b(Identity|Adaptation|Priority|Coordination|Audit|Validator|Builder|Requester)\b|J2|"
-                              r"budget|\bW-\d|@|\bcycles?\b|AI calls?|\bmock\b|charter|done[-_ ]when|workflow|\bthe you\b",
+                              r"budget(?! lead)|\bW-\d|@|\bcycles?\b|AI calls?|\bmock\b|charter|done[-_ ]when|workflow|\bthe you\b",
                               re.I)
 SIMPLE_FORBIDDEN_CASE = re.compile(r"\b(COUNTER|GRANT|REFUSE|Clause|NEEDS_REVISION|PASS)\b"
                                    r"|\b(?:after|before|by|from|until|than) the team\b")   # e.g. "after Audit" -> not "after the team"
@@ -990,19 +992,19 @@ def simple_view():
         for w in want:
             assert w in text, (w, text[:600])
         assert sum(1 for b in buttons if b.get("data-opt")) >= opts, (opts, buttons)
-        for w in once:                         # a question with buttons is shown once, not also as a numbered list
-            assert text.count(w) == 1, (w, text.count(w), text[-500:])
+        for w in once:                         # a question with buttons: once per card (Asha's panel, and on Team at work), never also as a numbered list
+            assert 1 <= text.count(w) <= 2 and "Option 1:" not in text, (w, text.count(w), text[-500:])
         if site is not None:                   # phone: the Chat | Preview toggle only once a site exists
             assert ("has-site" in cls) == site, cls
         return text
     try:
         os.environ["J2_FIXES"] = "0"
-        text = check(j2.J2Run(), "What should we do today?", "The team plans it, does the work and checks it for you.", "A website for my bakery",
-                     "A product spec for a food delivery app", "A 4-week launch plan for my cafe", site=False)
+        text = check(j2.J2Run(), "What should we make today?", "The team plans it, does the work and checks it for you.", "A website for my bakery",
+                     "A PRD for a food delivery app", "Design docs for a clinic booking app", site=False)
         assert "What to make" not in text and "build today" not in text, text[:300]
         run = j2.J2Run()
         say(run, "a website for my cafe")
-        check(run, "Client Lead", "Quick question", "What is the business called", "Answer later", "Your result will appear here", site=False)          # J2.a questions
+        check(run, "Client Lead", "Quick question", "What is the business called", "Answer later", "Team at work", "Waiting for your answer", site=False)          # J2.a questions: on Team at work and in Asha's panel
         say(run, "It's called Little Fig, in Koramangala, Bengaluru. Visitors should see our menu with prices, opening "
                  "hours and where to find us. Cozy and simple, and it must work on phones.")
         check(run, opts=2, once=("Do you want a section about your coffee's story?",
@@ -1037,13 +1039,15 @@ def simple_view():
 
 
 def simple_redesign():
-    """Simple view (chat + preview with the Client Lead bot), on every saved run in runs/ and on live mock states, browser-free (the page's
-    script on a stub DOM): the chat holds only the Requester's messages and Identity's messages to the Requester; every Needs you item is a
-    card (an approval card for a send or a budget raise); "N of M parts built" counts the run's workflows; the preview frame shows the latest
-    version; Download, Copy share link and Open full view once it's ready. The tokens the view uses keep 4.5:1 in light and dark; reduced
-    motion turns its motion off. With Chrome (--browser), at 1440x900 and 390x844 in light and dark: no page error, no sideways scroll, text
-    4.5:1 on its own background; answering a card calls /api/say, an approval sends nothing until Approve or Not now is clicked; the Chat |
-    Preview tabs switch under 820px; a changed part of the page glows and its Change this button fills the chat box."""
+    """Simple view (the studio: the work in the centre, the team and the plan on the left, Asha the Client Lead on the right), on every saved
+    run in runs/ and on live mock states, browser-free (the page's script on a stub DOM): Asha's panel holds only the Requester's messages and
+    Identity's messages to the Requester (an answer Decide for me gave is marked "Decided for you"); every Needs you item is a card there, and the
+    open one is also a card on the work; "N of M parts built" counts the plan's parts (one per section), the same count as the plan and the top bar;
+    every part has one of the five people; the output tab shows the latest version; the finished run's actions; Team at work and the journey in
+    plain words. The studio's tokens keep 4.5:1 in light and dark; reduced motion turns its motion off. With Chrome (--browser), at 1440x900 and
+    390x844 in light and dark: no page error, no sideways scroll, text 4.5:1 on its own background; answering a card calls /api/say, an approval
+    sends nothing until Approve or Not now is clicked; Decide for me posts /api/settings; on a phone the dock opens Asha's panel; the team card
+    reaches the full view; on a finished website a part's check opens what went into it, and Change this fills the box."""
     import html as htmllib
     import shutil
     import threading
@@ -1051,19 +1055,18 @@ def simple_redesign():
     here = os.path.dirname(os.path.abspath(__file__))
     ui = open(os.path.join(here, "j2_ui.html"), encoding="utf-8").read()
     T = theme_tokens(ui)
-    pairs = (("on", "warm1"), ("ink", "panel"), ("ink", "panel2"), ("ink", "bg"), ("muted", "panel"), ("muted", "panel2"), ("muted", "bg"),
-             ("warm1", "panel"), ("warm1", "bg"), ("paper", "botvisor"), ("bad", "bg"))
-    six = lambda h: "#" + "".join(c * 2 for c in h[1:]) if len(h) == 4 else h      # --paper is #fff
+    pairs = (("s-ink", "s-bg"), ("s-ink", "s-surface"), ("s-ink", "s-surface2"), ("s-muted", "s-bg"), ("s-muted", "s-surface"), ("s-muted", "s-surface2"),
+             ("s-accent", "s-surface"), ("s-accentink", "s-accent"), ("s-good", "s-goodbg"), ("s-good", "s-surface"), ("s-ask", "s-surface"), ("s-askink", "s-ask"),
+             ("s-bad", "s-surface"), ("s-bg", "s-ink"))
+    six = lambda h: "#" + "".join(c * 2 for c in h[1:]) if len(h) == 4 else h      # --s-white is #fff
     low = [(t, a, b, round(contrast(six(v[a]), six(v[b])), 2)) for t, v in T.items() for a, b in pairs if contrast(six(v[a]), six(v[b])) < 4.5]
-    assert not low, ("Simple view below WCAG AA", low)
-    assert "@media (prefers-reduced-motion:reduce){#sview *,#sview *::before{animation:none!important;transition:none!important}}" in ui
-    assert "@media (prefers-reduced-motion:reduce){.j2s-glow,.j2s-chg{animation:none;transition:none}}" in ui      # the glow inside the preview too
-    for rule in (".screwg:is(:hover,:focus-visible) .omouth{opacity:1", ".screwg:is(:hover,:focus-visible) .sviewteam{opacity:1", ".screwg:is(:hover,:focus-visible) .alert{opacity:1",
-                 ".screwg:is(:hover,:focus-visible) .schat span{animation:none;opacity:0}", ".screwg:is(:hover,:focus-visible) .ey{ry:5}"):
-        assert rule in ui, ("hover and keyboard focus share the landing team's reaction", rule)      # Chrome is probed with focus; a real hover can't be scripted
+    assert not low, ("studio text below WCAG AA", low)
+    assert "@media (prefers-reduced-motion:reduce){#sview *,#sview *::before,#sview *::after{animation:none!important;transition:none!important}}" in ui
+    assert ui.count("@media (prefers-reduced-motion:reduce){*{animation:none!important") >= 2      # inside the frame too: the layer and the placeholders
     if not shutil.which("node"):
         print("simple redesign test skipped: node not found")
         return
+    PEOPLE5 = {"asha", "mira", "kabir", "dev", "nora"}
 
     def changes_of(d):      # what /api/changes serves from the run's change.json
         p = os.path.join(d or "", "change.json")
@@ -1072,32 +1075,45 @@ def simple_redesign():
 
     def check(s, label, d=None):
         chg = changes_of(d)
-        out = render_node(s, docs={"docs": {}, "changes": chg, "journey": 1})
-        J, built = out["journey"], [x["id"] for x in s.get("sections") or [] if x["id"] != "style"]
+        out = render_node(s, docs={"docs": {}, "changes": chg})
+        J = out["journey"]
         assert len(J["stops"]) == 5 + len(chg) and [x["t"] for x in J["stops"]] == ["Your idea", "Plan", "Build", "Check", "Ready"] + [f"Change {i + 1}" for i in range(len(chg))], (label, [x["t"] for x in J["stops"]])
         assert all(c["request"][:60] in J["stops"][5 + i]["tip"] or len(c["request"]) > 179 for i, c in enumerate(chg)), (label, "each change stop is its request")
-        stars = re.findall(r'class="sjstar( on)?"', out["journeyhtml"])
-        assert J["built"] == len(built) and len(stars) == J["planned"] >= len(built) and sum(1 for x in stars if x) == len(built), (label, J["built"], len(built), len(stars))
         assert sum(x["s"] == "now" for x in J["stops"]) <= 1 and J["stops"][0]["s"] == "done", (label, [x["s"] for x in J["stops"]])
         byid = {str(m["id"]): m for m in s["chat"]}
-        bubbles = [(c, htmllib.unescape(i)) for c, i in re.findall(r'class="sb (me|team)" data-m="([^"]*)"', out["simple"])]
+        bubbles = [(c, htmllib.unescape(i)) for c, i in re.findall(r'class="sb (me|team)"(?: data-auto="1")? data-m="([^"]*)"', out["simple"])]
         for c, i in bubbles:       # every bubble is a message of yours (right) or of the Client Lead (left)
             m = byid[i]
             assert m["who"] in ("user", "identity") and (c == "me") == (m["who"] == "user"), (label, c, m["who"], m["text"][:80])
+        autos = {htmllib.unescape(i) for i in re.findall(r'data-auto="1" data-m="([^"]*)"', out["simple"])}
+        assert autos == {str(m["id"]) for m in s["chat"] if m["who"] == "user" and m.get("auto")}, (label, "an answer Decide for me gave is marked, and only those", autos)
         cards = {htmllib.unescape(x) for x in re.findall(r'class="qcard[^"]*" data-msg="([^"]*)"', out["simple"])}
         want = {str(m["id"]) for m in s["chat"] if m["who"] == "user" or (m["who"] == "identity" and m.get("to_user"))}
-        assert want <= {i for _, i in bubbles} | cards, (label, "missing from the chat", sorted(want - {i for _, i in bubbles} - cards)[:5])
+        assert want <= {i for _, i in bubbles} | cards, (label, "missing from Asha's panel", sorted(want - {i for _, i in bubbles} - cards)[:5])
         assert set(out["needids"]) == cards, (label, "every Needs you item is a card, and only those", out["needids"], cards)
-        n, m_ = sum(w.get("status") == "done" for w in s["workflows"]), len(s["workflows"])
+        if cards and s.get("paused") and s["status"] != "running" and not s.get("saved"):
+            assert 'data-where="work"' in out["inline"] and re.search(r'data-msg="([^"]*)"', out["inline"]).group(1) in cards, (label, "the open question is also on the work")
+        parts = out["parts"]
+        assert all(p["person"] in PEOPLE5 for p in parts) and len({p["sec"] for p in parts}) == len(parts), (label, "one line per part, each with one of the five people")
+        n, m_ = sum(p["st"] == "done" for p in parts), len(parts)
         got = re.search(r"(\d+) of (\d+) parts built", out["sprog"])
         assert (got and (int(got[1]), int(got[2])) == (n, m_)) if m_ else not got, (label, out["sprog"], n, m_)
-        if s["versions"]:
-            assert f"/site/v{s['versions']}?" in out["sframe"], (label, "the preview shows the latest version", out["sframe"])
+        assert out["plan"].count("data-go=") == m_, (label, "the plan lists every part once")
+        assert out["tabs"][-1] == "team" and all(k in ("site", "prd", "hld", "lld", "team") or k.startswith("a:") for k in out["tabs"]), (label, out["tabs"])
+        if s["versions"] and out["tabs"][0] != "team":
+            assert re.match(r"/(site/v\d+|doc/\w+|view)\?", out["sframe"]) and (s.get("docset") or f"/site/v{s['versions']}?" in out["sframe"]), (label, "the newest output is shown", out["sframe"])
         if re.match(r"Done", s.get("outcome") or "") and not s.get("paused") and s["status"] != "running":
-            assert all(w in out["finish"] for w in ("Download", "Copy share link", "Open full view")), (label, out["finish"])
+            assert ("Download" in out["finish"] or "All files" in out["finish"]) and all(w in out["finish"] for w in ("Copy share link", "Open full view")), (label, out["finish"])
             noun = "design documents" if len(s.get("docset") or []) > 1 else "document" if s.get("doc") else str(s.get("output_label") or "website").lower()
             assert f"Your {noun} {'are' if noun.endswith('s') else 'is'} ready" in out["sprog"], (label, "the run's own output type", out["sprog"])
-        assert not s["chat"] or "How it was made" in out["journeyhtml"] and not re.search(r"\bsite\b|\bBuilders?\b", re.sub(r"<[^>]+>", " ", out["journeyhtml"])), (label, "neutral journey words")
+        talk = re.findall(r'<div class="stalk">(.*?)</div></section>', out["teamwork"])
+        assert not re.search(r"</b> [A-Z][a-z]", "".join(talk)), (label, "a team line follows its name in lower case (\"Mira finished the menu\")", talk[:1])
+        team = re.sub(r"<[^>]+>", " ", htmllib.unescape(out["teamwork"]))
+        assert {htmllib.unescape(x) for x in re.findall(r'data-part="([^"]*)"', out["teamwork"])} == {p["sec"] for p in parts}, (label, "the map has one block per part")
+        for p in sorted(parts, key=lambda p: -len(p["name"])):      # a part's own name is the content's words ("Shop identity"), not the team's jargon
+            team = re.sub(re.escape(p["name"]), " ", team, flags=re.I)
+        bad = SIMPLE_FORBIDDEN.findall(team) + SIMPLE_FORBIDDEN_CASE.findall(team) + re.findall(r"\bW-\d+\b", team)
+        assert not bad, (label, "Team at work in plain words", bad)
         return out
     # every saved run, as the page reads it
     keep_dir, j2.RUNS_DIR = j2.RUNS_DIR, os.path.join(here, "runs")
@@ -1113,7 +1129,7 @@ def simple_redesign():
             check(json.loads(json.dumps(snap, default=str)), name, os.path.join(j2.RUNS_DIR, name))
     finally:
         j2.RUNS_DIR = keep_dir
-    # live mock states: a question (J2.a), a question with suggested answers (a conflict), an approval (real emails), a finished run
+    # live mock states: a question (J2.a), a question with suggested answers (a conflict), an approval (real emails), a finished run, a change, Decide for me
     old = os.environ.get("J2_FIXES")
     os.environ["J2_FIXES"] = "0"
     try:
@@ -1129,6 +1145,9 @@ def simple_redesign():
                           [{"question": "Send real emails to your test address during this run?", "options": ["Yes", "No"]}], "send_confirm")
         done = j2.J2Run()
         say(done, BREW_LAB)
+        auto = j2.J2Run()
+        auto.auto = True
+        say(auto, "a website for my cafe")
         keep_env = {k: os.environ.get(k) for k in ("J2_REALIZATION", "J2_CHANGE")}
         os.environ.update(J2_REALIZATION="1", J2_CHANGE="1")      # a change request after Done, planned into change.json
         try:
@@ -1143,72 +1162,63 @@ def simple_redesign():
         assert len(changes_of(changed.dir)) == 1, "the change was planned into change.json"
     finally:
         os.environ["J2_FIXES"] = old if old is not None else "0"
-    states = {"landing": fresh, "question": info, "options": conflict, "approval": approve, "done": done, "changed": changed}
+    states = {"landing": fresh, "question": info, "options": conflict, "approval": approve, "done": done, "changed": changed, "auto": auto}
     for k, run in states.items():
         out = check(json.loads(json.dumps(run.snapshot(), default=str)), k, run.dir)
-        text = re.sub(r"<[^>]+>", " ", htmllib.unescape(out["simple"] + out["sprog"] + out["finish"]))
+        text = re.sub(r"<[^>]+>", " ", htmllib.unescape(out["simple"] + out["sprog"] + out["finish"] + out["plan"] + out["team"] + out["status"]))
         bad = SIMPLE_FORBIDDEN.findall(text) + SIMPLE_FORBIDDEN_CASE.findall(text)
         assert not bad, (k, bad)
         if k == "approval":
             assert 'data-approve="yes"' in out["simple"] and 'data-approve="no"' in out["simple"] and "data-opt" not in out["simple"], out["simple"][-600:]
+            assert "Decide for me never answers this one" in out["simple"], "a real send always waits for you"
         if k in ("question", "options"):
             assert "data-later" in out["simple"] and "data-own" in out["simple"] and "data-approve" not in out["simple"], (k, out["simple"][-600:])
         if k == "options":
-            assert out["simple"].count("data-opt=") >= 2, out["simple"][-600:]
+            assert out["simple"].count("data-opt=") >= 2 and out["simple"].count('class="sugt">Suggested') == 1, out["simple"][-600:]
+            cp = conflict.snapshot()["paused"]; sug = cp["questions"][0]["options"][cp["suggested"] - 1]
+            assert "simple" in sug.lower(), ("the suggested option is the one Decide for me takes: stay with the plan", sug)
+        if k == "auto":
+            assert "Decided for you" in out["simple"] and "data-change" in out["simple"] and re.match(r"Done", auto.outcome), (auto.outcome, out["simple"][-400:])
     note = "Chrome checks skipped"
     chrome = j2.j2_check.find_chrome()
     if chrome and BROWSER:
         head = ("<script>{ const wq = new URLSearchParams(location.search).get('wrap'); if (wq){ const [ww, wh] = wq.split('x');"      # a phone-width frame, same origin; <plaintext> keeps the rest of this page from running
                 "  document.write(`<style>body{margin:0}</style><iframe src=\"/?view=simple\" style=\"border:0;width:${ww}px;height:${wh}px\"></iframe><plaintext hidden>`); } }"
-                " window.__e = []; addEventListener('error', e => __e.push(String(e.message))); window.__say = [];"
+                " window.__e = []; addEventListener('error', e => __e.push(String(e.message))); window.__say = []; window.__set = [];"
                 " const __f = fetch; window.fetch = (u, o) => String(u).startsWith('/api/say') ? (__say.push(JSON.parse(o.body).text), Promise.resolve(new Response('{\"ok\":true}')))"
-                " : __f(u, o);</script>")
+                " : String(u).startsWith('/api/settings') ? (__set.push(JSON.parse(o.body)), Promise.resolve(new Response('{\"ok\":true}'))) : __f(u, o);</script>")
         probe = ("const q = s => [...document.querySelectorAll(s)], shown = e => !!e.getClientRects().length && getComputedStyle(e).visibility !== 'hidden';"
                  " const rgb = c => { const n = (c.match(/[\\d.]+/g) || []).map(Number); return /color\\(srgb/.test(c) ? n.slice(0, 3).map(x => x * 255).concat(n[3] ?? 1) : n.slice(0, 3).concat(n[3] ?? 1); };"
                  " const lum = c => { const v = c.slice(0, 3).map(x => { x /= 255; return x <= .03928 ? x / 12.92 : ((x + .055) / 1.055) ** 2.4; }); return .2126 * v[0] + .7152 * v[1] + .0722 * v[2]; };"
                  " const bgOf = e => { for (; e; e = e.parentElement){ const c = rgb(getComputedStyle(e).backgroundColor); if (c[3] > .5) return c; } return rgb(getComputedStyle(document.body).backgroundColor); };"
-                 " const low = th => q('#sview .sb, #sview .sjhead h4, #sview .sjhead p, #sview .sjpct span, #sview .steam, #sview .sjbtn, #sview .qcard .q, #sview .qcard button, #sview .sprog .txt span, #sview .sgreet, #sview .shint, #sview .schips button, #sview .sfinish a, #sview .sfinish button, #sview .sph, #sview .stabs button, #sview .smake').filter(shown)"
+                 " const low = th => q('#sview .sb, #sview .qcard .q, #sview .qcard button, #sview .qtag, #sview .smate b, #sview .smate small, #sview .sstep .nm, #sview .sproj, #sview #sstatus, #sview .sviews button, #sview .sgreet, #sview .shint, #sview .schips button, #sview .sfinish a, #sview .sfinish button, #sview .sdesk small, #sview .scard .nm, #sview .stalk span, #sview .sbtn, #sview .sauto, #sview .sh3, #sview .sprog .txt span, #sview .sdock button, #sview .stw-h p').filter(shown)"
                  "   .map(e => { const a = lum(rgb(getComputedStyle(e).color)), b = lum(bgOf(e)), k = (Math.max(a, b) + .05) / (Math.min(a, b) + .05); return [th, e.className || e.tagName, +k.toFixed(2)]; }).filter(x => x[2] < 4.5);"
                  " const S = id => document.getElementById(id);"
-                 " r.err = __e; THEME = 'light'; themeApply(); r.low = low('light'); r.wide = [document.documentElement.scrollWidth, innerWidth]; THEME = 'dark'; themeApply(); r.low = r.low.concat(low('dark'));"
-                 " r.wide.push(document.documentElement.scrollWidth); r.land = !S('sland').hidden; r.work = !S('swork').hidden; r.say0 = __say.slice();"
-                 " r.cards = q('.qcard').map(c => c.dataset.msg); r.happy = S('smini').classList.contains('happy');"
-                 " if (innerWidth < 820 && r.work){ q('[data-stab=prev]')[0].click(); r.tabs = [shown(q('.spane.c')[0]), shown(q('.spane.p')[0])]; q('[data-stab=chat]')[0].click(); r.tabs.push(shown(q('.spane.c')[0])); }"
-                 " const ap = q('[data-approve=yes]')[0]; if (ap){ ap.click(); q('[data-approve=no]')[0].click(); }"
-                 " const op = q('.qcard [data-opt]')[0]; if (op) op.click();"
-                 " const own = q('.qcard .own input')[0]; if (own){ own.value = 'My own answer'; q('.qcard [data-own]')[0].click(); q('.qcard [data-later]')[0].click(); r.later = q('.qcard.later').length; q('.qcard [data-now]')[0].click(); r.now = q('.qcard.later').length; }"
-                 " r.say = __say.slice();"
+                 " r.err = __e; THEME = 'light'; themeApply(); renderSimple(state || {chat: []}); r.low = low('light'); r.wide = [document.documentElement.scrollWidth, innerWidth]; THEME = 'dark'; themeApply(); r.low = r.low.concat(low('dark'));"
+                 " r.wide.push(document.documentElement.scrollWidth); THEME = 'light'; themeApply(); r.land = !S('sland').hidden; r.work = !S('swork').hidden; r.say0 = __say.slice();"
+                 " r.cards = q('#smsgs .qcard').map(c => c.dataset.msg);"
+                 " if (r.work && innerWidth < 821){ r.dock = shown(S('sdock')); r.chat0 = shown(S('sasha')); q('#sdock [data-chat]')[0].click(); r.chat1 = shown(S('sasha')); }"
+                 " const ap = q('#smsgs [data-approve=yes]')[0]; if (ap){ ap.click(); q('#smsgs [data-approve=no]')[0].click(); }"
+                 " const op = q('#smsgs .qcard [data-opt]')[0]; if (op) op.click();"
+                 " const own = q('#smsgs .qcard .own input')[0]; if (own){ own.value = 'My own answer'; q('#smsgs .qcard [data-own]')[0].click(); q('#smsgs .qcard [data-later]')[0].click(); r.later = q('#smsgs .qcard.later').length; q('#smsgs .qcard [data-now]')[0].click(); r.now = q('#smsgs .qcard.later').length; }"
+                 " r.say = __say.slice(); const sw = r.work ? S('sauto') : S('sautoland'); sw.click(); r.set = __set.slice(); r.sw = sw.getAttribute('aria-checked');"
                  " const f = S('sframe'), d = f.contentDocument; r.src = f.getAttribute('src') || '';"
-                 " if (d && d.getElementById('j2s-style')){ const chg = [...d.querySelectorAll('.j2s-chg')]; r.chg = chg.length; chg[0].click(); r.prefill = S('sbox').value;"
-                 "   chg.forEach(b => b.remove()); d.getElementById('j2s-style').remove(); [...d.querySelectorAll('.j2s-part')].forEach(e => { e.classList.remove('j2s-part'); if (!e.classList.length) e.removeAttribute('class'); });"
-                 "   sblocks = sblocks.map((x, i) => i === 1 ? [x[0], 'an earlier version'] : x); sLoaded(); r.glow = [...d.querySelectorAll('.j2s-glow')].map(e => sBlocks(d).indexOf(e)); r.look = S('smini').classList.contains('look'); }"
-                 " r.landsel = !!document.querySelector('#sland select'); r.burger = !!S('railtoggle') || shown(q('.rail.tabs')[0]);"
-                 " if (r.work){ sTab('prev'); sJourneyShow(true); const ov = (a, b) => a.x < b.x + b.width && b.x < a.x + a.width && a.y < b.y + b.height && b.y < a.y + a.height;"
-                 "   r.jstops = q('.sjstop').length; r.jbadge = S('sbadge').hidden; r.jnarrow = q('.sjsvg')[0].viewBox.baseVal.width; r.jover = [];"
-                 "   const labs = q('.sjlab').map(e => e.getBBox()), dots = q('.sjdot').map(e => e.getBBox()), stars = q('.sjstar').map(e => e.getBBox());"
-                 "   labs.forEach((l, i) => { dots.forEach((b, j) => { if (ov(l, b)) r.jover.push(['label', i, 'stop', j]); }); stars.forEach((b, j) => { if (ov(l, b)) r.jover.push(['label', i, 'star', j]); }); labs.forEach((b, j) => { if (j > i && ov(l, b)) r.jover.push(['label', i, 'label', j]); }); });"
-                 "   const tr = q('.sjtrack')[0], L = tr.getTotalLength(); for (let t = 0; t <= L; t += 3){ const pt = tr.getPointAtLength(t); labs.forEach((l, i) => { if (pt.x >= l.x - 4 && pt.x <= l.x + l.width + 4 && pt.y >= l.y - 4 && pt.y <= l.y + l.height + 4) r.jover.push(['label', i, 'path', Math.round(t)]); }); }"
-                 "   r.jwide = [document.documentElement.scrollWidth, innerWidth]; q('.sjstop')[2].dispatchEvent(new MouseEvent('mouseover', {bubbles: true})); r.jtip = !S('sjtip').hidden && S('sjtip').textContent;"
-                 "   THEME = 'light'; themeApply(); r.jlow = low('light'); THEME = 'dark'; themeApply(); r.jlow = r.jlow.concat(low('dark'));"
-                 "   sJourneyShow(false); r.jback = !S('sprevbox').hidden && S('sjourney').hidden;"
-                 "   S('steam').click(); r.card = S('steamcard').open; S('steamfull').click(); r.full = [S('steamcard').open, document.body.classList.contains('simple')]; }"
-                 " if (r.land){ const g = q('#sland .screwg'), b = g[0], fin = () => document.getAnimations().filter(a => a instanceof CSSTransition).forEach(a => a.finish()), cs = (s, k) => getComputedStyle(b.querySelector(s))[k];"
-                 "   r.crew = [g.length, b.tagName, b.getAttribute('aria-label') || '', b.tabIndex, b.querySelectorAll('button, a, input, [tabindex]').length, b.querySelectorAll('.smate').length, (b.textContent.match(/Planner|Budget|Builder|Gatekeeper|Quality/g) || []).length];"
-                 "   r.crew0 = [cs('.omouth', 'opacity'), cs('.sviewteam', 'opacity')];"
-                 "   const ta = S('lbox'); ta.focus(); fin(); r.box = [getComputedStyle(ta).outlineStyle, getComputedStyle(S('lform')).borderTopColor === getComputedStyle(S('sgreet')).color ? 'ink' : getComputedStyle(S('lform')).borderTopColor, getComputedStyle(S('lform')).boxShadow !== 'none'];"
-                 "   const am = document.createElement('i'); am.style.color = 'var(--warm1)'; document.body.appendChild(am); r.amber = getComputedStyle(am).color; am.remove();"
-                 "   b.focus(); fin(); r.crew1 = [b.matches(':focus-visible'), cs('.omouth', 'opacity'), cs('.smile', 'opacity'), cs('.sviewteam', 'opacity'), cs('.alert', 'opacity'), cs('.schat span', 'opacity')];"
-                 "   const d = S('steamcard'), at = (x, y) => d.dispatchEvent(new MouseEvent('click', {bubbles: true, clientX: x, clientY: y}));"
-                 "   b.click(); r.crewcard = [d.open, document.body.classList.contains('simple'), d.textContent.includes('Planner') && d.textContent.includes('Budget lead') && d.textContent.includes('Makers') && d.textContent.includes('Gatekeeper') && d.textContent.includes('Quality check')];"
-                 "   const dr = d.getBoundingClientRect(); at(dr.left + 4, dr.top + 4); r.crewpad = d.open; at(2, 2); r.crewout = d.open;"
-                 "   b.click(); d.querySelector('[data-close]').click(); r.crewclose = d.open;"
-                 "   b.click(); r.crewesc = d.tagName === 'DIALOG' && d.matches(':modal'); d.close();"      # a modal <dialog>: the browser closes it on Esc (a scripted key can't)
-                 "   b.click(); S('steamfull').click(); r.crewfull = [d.open, document.body.classList.contains('simple')]; }"
+                 " const L = d && d.querySelector('j2-layer'); r.ticks = L ? L.shadowRoot.querySelectorAll('.tick').length : 0;"
+                 " if (L && r.ticks){ L.shadowRoot.querySelector('.tick').click(); await new Promise(ok => setTimeout(ok, 1500));"      # the record comes from /api/record
+                 "   r.drawer = S('sdrawer').classList.contains('open') && /Goal/.test(S('sdbody').textContent) && /Method/.test(S('sdbody').textContent) && /Check/.test(S('sdbody').textContent); sDrawer('');"
+                 "   const el = [...sSections(d).values()][1][0]; el.dispatchEvent(new MouseEvent('mousemove', {bubbles: true})); const chg = L.shadowRoot.querySelector('.chg'); r.chg = !!chg; if (chg){ chg.click(); r.prefill = S('sbox').value; } }"
+                 " if (r.work && innerWidth > 1180){ S('steam').click(); r.card = S('steamcard').open; S('steamfull').click(); r.full = [S('steamcard').open, document.body.classList.contains('simple')]; }"
+                 " if (r.land){ const b = S('slandteam'); r.crew = [b.tagName, b.getAttribute('aria-label') || '', b.querySelectorAll('.av').length];"
+                 "   const dl = S('steamcard'), at = (x, y) => dl.dispatchEvent(new MouseEvent('click', {bubbles: true, clientX: x, clientY: y}));"
+                 "   b.click(); r.crewcard = [dl.open, document.body.classList.contains('simple'), ['Asha', 'Mira', 'Kabir', 'Dev', 'Nora'].every(w => dl.textContent.includes(w)) && !['Planner', 'Budget lead', 'Scheduler', 'Gatekeeper'].some(w => dl.textContent.includes(w))];"
+                 "   const dr = dl.getBoundingClientRect(); at(dr.left + 4, dr.top + 4); r.crewpad = dl.open; at(2, 2); r.crewout = dl.open;"
+                 "   b.click(); dl.querySelector('[data-close]').click(); r.crewclose = dl.open; b.click(); S('steamfull').click(); r.crewfull = [dl.open, document.body.classList.contains('simple')]; }"
                  " r.err2 = __e.slice();")
-        page = ui.replace("<head>", "<head>" + head, 1).replace("</body>", "<script>setTimeout(() => { const r = {}; try { " + probe
-                                                                + " } catch (e) { r.error = String(e); } (parent !== window ? parent : window).document.body.setAttribute('data-r', JSON.stringify(r)); }, 5000)</script></body>")
+        page = ui.replace("<head>", "<head>" + head, 1).replace("</body>", "<script>setTimeout(async () => { const r = {}; try { " + probe
+                                                                + " } catch (e) { r.error = String(e.stack || e); } (parent !== window ? parent : window).document.body.setAttribute('data-r', JSON.stringify(r)); }, 6000)</script></body>")
         tmp = tempfile.mkdtemp(prefix="j2-simple-")
         open(os.path.join(tmp, "j2_ui.html"), "w", encoding="utf-8").write(page)
+        os.symlink(os.path.join(here, "vendor"), os.path.join(tmp, "vendor"))
         keep_here, keep_run = j2_server.HERE, j2_server.RUN
         j2_server.HERE = tmp
         srv = j2_server.http.server.ThreadingHTTPServer(("127.0.0.1", 0), j2_server.Handler)
@@ -1219,7 +1229,7 @@ def simple_redesign():
                 j2_server.RUN = run
                 for w, h in ((1440, 900), (390, 844)):
                     base = f"http://127.0.0.1:{srv.server_address[1]}/"      # headless Chrome's window is at least 500px wide: a phone is a 390px frame in it
-                    dom = chrome_dom([chrome, "--headless=new", "--disable-gpu", f"--window-size={max(w, 500)},{h}", "--virtual-time-budget=12000", "--dump-dom",
+                    dom = chrome_dom([chrome, "--headless=new", "--disable-gpu", f"--window-size={max(w, 500)},{h}", "--virtual-time-budget=14000", "--dump-dom",
                                       base + (f"?wrap={w}x{h}" if w < 500 else "?view=simple")], capture_output=True, text=True, timeout=120).stdout
                     m = re.search(r'data-r="([^"]*)"', dom)
                     assert m, (k, w, "the probe did not report")
@@ -1230,37 +1240,236 @@ def simple_redesign():
                     assert not r["low"], (k, w, "text below 4.5:1", r["low"][:6])
                     assert r["land"] == (k == "landing") and r["work"] == (k != "landing"), (k, w, r["land"], r["work"])
                     assert r["say0"] == [], (k, w, "nothing is sent before a click", r["say0"])
-                    if w < 820 and k != "landing":
-                        assert r["tabs"] == [False, True, True], (k, w, r["tabs"])
-                    want = set(str(x["msg"]) for x in [{"msg": run.paused["msg"]}]) if run.paused else set()
+                    want = {str(run.paused["msg"])} if run.paused else set()
                     assert set(r["cards"]) == want, (k, w, r["cards"], want)
-                    assert r["landsel"] is False and r["burger"] is False, (k, w, "no dropdown and no menu button in the Simple view")
-                    assert not r["err2"], (k, w, r["err2"])
-                    if k == "landing":      # the team on the landing: one focusable button with a name, no names under it; focus reacts; a click opens the full view
-                        assert r["crew"] == [1, "BUTTON", "See your team", 0, 0, 5, 0], (w, r["crew"])
-                        assert r["crew0"] == ["0", "0"] and r["crew1"] == [True, "1", "0", "1", "1", "0"], (w, r["crew0"], r["crew1"])
+                    assert r["set"] == [{"decide_for_me": r["sw"] == "true"}] and r["sw"] == ("false" if k == "auto" else "true"), (k, w, "Decide for me posts the setting", r["set"], r["sw"])
+                    if w < 821 and k != "landing":
+                        assert r["dock"] and not r["chat0"] and r["chat1"], (k, w, "the dock opens Asha's panel", r.get("dock"), r.get("chat0"), r.get("chat1"))
+                    if w > 1180 and k != "landing":
+                        assert r["card"] is True and r["full"] == [False, False], (k, w, "the team card reaches the full view", r.get("card"), r.get("full"))
+                    if k == "landing":
+                        assert r["crew"] == ["BUTTON", "See your team", 5], (w, r["crew"])
                         assert r["crewcard"] == [True, True, True], (w, "a click opens the team card, not the full view", r["crewcard"])
-                        assert r["crewpad"] is True and r["crewout"] is False and r["crewclose"] is False and r["crewesc"] is True, (w, "a click on the card stays; outside or Close closes", r["crewpad"], r["crewout"], r["crewclose"])
+                        assert r["crewpad"] is True and r["crewout"] is False and r["crewclose"] is False, (w, "a click on the card stays; outside or Close closes", r["crewpad"], r["crewout"], r["crewclose"])
                         assert r["crewfull"] == [False, False], (w, "only Open detailed view opens the full view", r["crewfull"])
-                        assert r["box"][0] == "none" and r["box"][1] == r["amber"] and r["box"][2], (w, "the prompt box: one amber border and a glow, no outline inside", r["box"], r["amber"])
-                    if k != "landing":
-                        assert r["jstops"] == 5 + len(changes_of(run.dir)) and r["jbadge"] and r["jtip"] and r["jback"], (k, w, r["jstops"], r["jbadge"], r["jtip"], r["jback"])
-                        assert not r["jover"], (k, w, "a journey label overlaps", r["jover"][:6])
-                        assert r["jwide"][0] <= r["jwide"][1] and not r["jlow"] and r["jnarrow"] == (360 if w < 520 else 560), (k, w, r["jwide"], r["jlow"][:4], r["jnarrow"])
-                        assert r["card"] is True and r["full"] == [False, False], (k, w, "the strip opens the team card; Open detailed view reaches the full view", r["card"], r["full"])
+                    assert not r["err2"], (k, w, r["err2"])
             a, qn, op, dn = got[("approval", 1440)], got[("question", 1440)], got[("options", 1440)], got[("done", 1440)]
             assert a["say"] == ["Yes, approve it.", "No, not now."], a["say"]
             assert qn["say"] == ["My own answer"] and qn["later"] == 1 and qn["now"] == 0, qn
             assert op["say"] == ["Option 1", "My own answer"], op["say"]
-            assert dn["happy"] and dn["src"].startswith(f"/site/v{len(done.sites)}?") and dn["chg"] >= 2 and dn["prefill"].startswith("Change the ") \
-                and dn["prefill"].endswith(": ") and dn["glow"] == [1] and dn["look"], dn
+            assert dn["src"].startswith(f"/site/v{len(done.sites)}?") and dn["ticks"] >= 2 and dn["drawer"] and dn["chg"] \
+                and dn["prefill"].startswith("Change the ") and dn["prefill"].endswith(": "), dn
         finally:
             j2_server.HERE, j2_server.RUN = keep_here, keep_run
             srv.shutdown()
-        note = (f"Chrome: 6 states x 1440x900 and 390x844, light and dark, no error, no sideways scroll, text 4.5:1; cards answer through /api/say, "
-                f"approvals only on a click; tabs; glow and Change this; journey labels clear of stops and path, team card to the full view; no dropdown or menu button")
-    print(f"simple redesign: {len(names) - len(unread)} saved runs ({len(unread)} the server can't open: {'; '.join(unread)[:300]}) and 6 live states (one with a change request), chat only you and the Client Lead, journey stops from change.json and built sections, every Needs you item a card, "
-          f"parts built from the workflows, latest version in the preview; {note} ok")
+        note = (f"Chrome: 7 states x 1440x900 and 390x844, light and dark, no error, no sideways scroll, text 4.5:1; cards answer through /api/say, "
+                f"approvals only on a click, Decide for me posts /api/settings, the phone dock opens Asha's panel, a part's check opens goal, method, output and check, "
+                f"Change this fills the box, the team card reaches the full view")
+    print(f"simple redesign: {len(names) - len(unread)} saved runs ({len(unread)} the server can't open: {'; '.join(unread)[:300]}) and 7 live states (one with a change request, one with Decide for me), "
+          f"Asha's panel only you and the Client Lead, the open question also on the work, every Needs you item a card, parts counted one per section with one of five people, "
+          f"journey stops from change.json, newest output shown, Team at work in plain words; {note} ok")
+
+
+def decide_for_me():
+    """Decide for me (J2Run.auto; POST /api/settings; J2_DECIDE_FOR_ME=1): on from the start, J2.a is answered with sensible choices listed
+    as assumptions and a conflict with the simpler option, each answer posted as the Requester's own message flagged auto (with its plain
+    label), and the run ends Done with no question left; switched on while a question waits, that question is answered at once; a real send
+    (send_confirm) always waits for the Requester; after J2_AUTO_CAP answers the next question waits too; a second limit question takes
+    "finish as it is"; the open question carries the option Decide for me would take (suggested), on or off; a saved run reads the setting and
+    its auto answers back; the server's /api/settings sets it on the live run and keeps it across a reset."""
+    import threading
+    import urllib.request
+    import j2_server
+    old = os.environ.get("J2_FIXES")
+    os.environ["J2_FIXES"] = "0"
+    try:
+        run = j2.J2Run()
+        run.set_auto(True)                     # before the first message (the start page's switch)
+        say(run, "a website for my cafe")
+        autos = [m for m in run.chat if m["who"] == "user" and m.get("auto")]
+        assert re.match(r"Done", run.outcome or "") and not run.paused, run.outcome
+        assert autos and autos[0]["text"] == j2.AUTO_ASSUME and autos[0]["auto_label"] == "Go with sensible choices", autos[:1]
+        assert [a["kind"] for a in run.auto_log] == ["info", "conflict"] and "simple" in run.auto_log[1]["label"].lower(), run.auto_log
+        assert [m["text"] for m in autos][1] == "Option 2" and len(autos) == len(run.auto_log), [m["text"] for m in autos]
+        snap = run.snapshot()
+        assert snap["decide_for_me"] is True and snap["auto_answers"] == run.auto_log
+        saved = j2.saved_snapshot(os.path.basename(run.dir), 0)
+        assert saved["decide_for_me"] is True and [a["msg"] for a in saved["auto_answers"]] == [m["id"] for m in autos], saved["auto_answers"]
+        assert sum(1 for e in run.events if e["type"] == "auto_answer") == 2
+        # off: the same brief waits at J2.a; switched on while it waits, the question is answered at once and the run goes on
+        r2 = j2.J2Run()
+        say(r2, "a website for my cafe")
+        assert r2.paused and r2.paused["kind"] == "info" and r2.snapshot()["paused"]["suggested"] is None
+        r2.set_auto(True)
+        for _ in range(500):
+            if r2.status == "waiting" and not r2.lock.locked():
+                break
+            time.sleep(0.02)
+        assert re.match(r"Done", r2.outcome or "") and r2.auto_log[0]["msg"] == 2, (r2.outcome, r2.auto_log)
+        # the conflict's suggested option is the one Decide for me takes, on or off
+        r3 = j2.J2Run()
+        say(r3, "a website for my cafe")
+        say(r3, "It's called Little Fig, in Koramangala, Bengaluru. Visitors should see our menu with prices, opening hours and where to find "
+                "us. Cozy and simple, and it must work on phones.")
+        p = r3.snapshot()["paused"]
+        assert p["kind"] == "conflict" and p["suggested"] and "simple" in p["questions"][0]["options"][p["suggested"] - 1].lower(), p
+        # a real send always waits; the cap; a second limit question finishes as it is
+        r4 = j2.J2Run()
+        r4.auto = True
+        r4._ask_user("Before the first email goes out, one question.",
+                     [{"question": "Send real emails to your test address during this run?", "options": ["Yes", "No"]}], "send_confirm")
+        assert r4._auto_pick() is None and r4.snapshot()["paused"]["auto_waits"] is True
+        r4.paused = {"kind": "conflict", "questions": [{"question": "q", "options": ["Add a story section (takes longer)", "Keep it simple, no story section"]}],
+                     "to": "identity", "handoff": {}, "msg": 1}
+        assert r4._auto_pick() == ("Option 2", "Keep it simple, no story section", 2)
+        r4.auto_log = [{"kind": "info"}] * j2.AUTO_CAP
+        assert r4._auto_pick() is None, "after the cap the question waits for the Requester"
+        r4.auto_log = [{"kind": "limit"}]
+        r4.paused = {"kind": "limit", "questions": [{"question": "q", "options": ["Add 30 work credits and keep going", "Leave out item 7",
+                                                                                   "Finish as it is: you get the site as it is now"]}], "to": "identity", "handoff": {}, "msg": 1}
+        assert r4._auto_pick()[2] == 3 and j2.J2Run()._auto_choice({**r4.paused})[2] == 1, "the first limit keeps going, a second one finishes as it is"
+        r4.paused["questions"][0]["options"] = ["Keep going: you get more of the missing parts built",       # live run j2-20261109-231951: the
+                                                "Leave out item 7: you get the site without it. The form stays as it is, still failing",   # leave-out option
+                                                "Finish as it is: you get the site as it is now"]                 # also says "as it is"
+        assert r4._auto_pick()[2] == 3, "finish as it is, not the leave-out option that also says as it is"
+        assert r4._auto_choice({"kind": "approval", "questions": [], "handoff": {}})[0] == "Yes, approve it."
+        # the server: /api/settings on the live run, kept across Start over
+        srv = j2_server.http.server.ThreadingHTTPServer(("127.0.0.1", 0), j2_server.Handler)
+        threading.Thread(target=srv.serve_forever, daemon=True).start()
+        keep = j2_server.RUN
+        j2_server.RUN = j2.J2Run()
+        try:
+            base = f"http://127.0.0.1:{srv.server_address[1]}"
+            post = lambda path, body: json.loads(urllib.request.urlopen(urllib.request.Request(base + path, data=json.dumps(body).encode(),
+                                                                                                 headers={"Content-Type": "application/json"}, method="POST")).read())
+            assert post("/api/settings", {"decide_for_me": True}) == {"ok": True, "decide_for_me": True} and j2_server.RUN.auto is True
+            post("/api/reset", {})
+            assert j2_server.RUN.auto is True and json.loads(urllib.request.urlopen(base + "/api/state").read())["decide_for_me"] is True
+            assert post("/api/settings", {"decide_for_me": False})["decide_for_me"] is False and j2_server.RUN.auto is False
+        finally:
+            j2_server.RUN = keep
+            srv.shutdown()
+    finally:
+        os.environ["J2_FIXES"] = old if old is not None else "0"
+    print("decide for me: J2.a answered with sensible choices, a conflict with the simpler option, run Done, answers flagged and logged, switched on "
+          "while waiting answers at once, a real send waits, the cap, a second limit finishes as it is, suggested on or off, saved runs read it back, "
+          "/api/settings kept across a reset ok")
+
+
+def studio_views():
+    """The studio's output views: /view serves any file the run's artifact list names as a readable page (markdown rendered, a page as it is, an
+    image shown, anything else as text) and nothing else; /doc/<kind> is a finished PRD, HLD or LLD; the open question names its workflow when
+    it has one; parts map to their documents through /api/docs (a design-document run) and every saved run's tabs end with Team at work."""
+    import threading
+    import urllib.error
+    import urllib.parse
+    import urllib.request
+    import j2_server
+    srv = j2_server.http.server.ThreadingHTTPServer(("127.0.0.1", 0), j2_server.Handler)
+    threading.Thread(target=srv.serve_forever, daemon=True).start()
+    keep_dir, j2.RUNS_DIR = j2.RUNS_DIR, tempfile.mkdtemp(prefix="j2-studio-")      # the docs run lives in a temp folder, never in runs/
+    try:
+        base = f"http://127.0.0.1:{srv.server_address[1]}"
+        get = lambda path: urllib.request.urlopen(base + path).read().decode("utf-8", "replace")
+        run = docs_run(DESIGN_BRIEF, 900)
+        j2.RUNS_DIR = os.path.dirname(run.dir)
+        name = os.path.basename(run.dir)
+        keep_run, j2_server.RUN = j2_server.RUN, run      # the server's live run could share this run's id (both made in the same second)
+        arts = json.loads(get(f"/api/artifacts?run={name}"))
+        files = [r["file"] for r in arts["deliverables"] + arts["records"]]
+        assert "prd.md" in files, files
+        prd = get(f"/view?name=prd.md&run={name}")
+        assert "<h2>" in prd and "<!doctype html>" in prd and prd == get(f"/doc/prd?run={name}"), prd[:200]
+        data = next(f for f in files if f.endswith(".json"))
+        assert get(f"/view?name={data}&run={name}").count("<pre") == 1
+        # an image is inlined with its own media type: a saved run's image shows without ?run=, and an SVG's script never runs (an <img>)
+        for ext, mime in (("png", "image/png"), ("jpg", "image/jpeg"), ("svg", "image/svg+xml")):
+            img = os.path.join(run.dir, f"view-check.{ext}")
+            with open(img, "wb") as f:
+                f.write(b"<svg xmlns='http://www.w3.org/2000/svg'><script>alert(1)</script></svg>" if ext == "svg" else b"\x89PNG fake")
+            page = j2_server.view_page(img)
+            assert f"src='data:{mime};base64," in page and "/api/artifact" not in page and "<script>" not in page, page[:300]
+            os.remove(img)
+        assert "isn't written yet" in get(f"/view?name=../j2.py&run={name}") and "isn't written yet" in get(f"/view?name=nope.md&run={name}") \
+            and "isn't written yet" in get(f"/doc/nope?run={name}"), "only listed files are served"
+        snap = json.loads(json.dumps(j2.saved_snapshot(name, 0), default=str))
+        out = render_node(snap, docs={"docs": {}, "arts": arts})
+        kinds = {p["doc"] for p in out["parts"]}
+        assert {"prd", "hld", "lld", "site"} <= kinds and out["tabs"][:4] == ["prd", "hld", "lld", "site"] and out["tabs"][-1] == "team", (kinds, out["tabs"])
+        assert all(p["person"] == {"prd": "mira", "hld": "kabir", "lld": "dev"}[p["doc"]] for p in out["parts"] if p["doc"] != "site"), "the PRD is Mira's, the HLD Kabir's, the LLD Dev's"
+        assert "What the team made" in out["teamwork"] and out["teamwork"].count("data-art=") == len(arts["deliverables"]), "every deliverable on Team at work"
+        # /api/record: one part's goal, method, output and check, and a whole deliverable's, live or saved; an unknown part is a 404
+        sec = snap["studio"]["parts"][0]["sec"]
+        rec = json.loads(get(f"/api/record?sec={sec}&run={name}"))
+        assert rec["schema"] == "studio/1" and rec["goal"] and rec["method"] and rec["output"] and rec["doc"] == "prd" and rec["person"] == "mira", rec
+        drec = json.loads(get(f"/api/record?art={urllib.parse.quote(arts['deliverables'][0]['name'])}&run={name}"))
+        assert drec["goal"] == run.goal["statement"][:300] or drec["goal"].endswith("…"), drec["goal"]
+        assert drec["method"] and drec["check"]["parts"] == len(drec["method"]) and drec["output"]["file"] == arts["deliverables"][0]["file"], drec
+        try:
+            get(f"/api/record?sec=W-999&run={name}")
+            raise AssertionError("an unknown part is a 404")
+        except urllib.error.HTTPError as e:
+            assert e.code == 404
+    finally:
+        j2.RUNS_DIR = keep_dir
+        j2_server.RUN = locals().get("keep_run", j2_server.RUN)
+        srv.shutdown()
+    print("studio views: /view serves only listed files (markdown, page, image, text), /doc/<kind>, parts mapped to their documents with their people, "
+          "every deliverable on Team at work, /api/record for a part and a deliverable ok")
+
+
+def studio_model():
+    """j2_studio.py (studio/1), code only: one part per section in plan order (a fix is the same part, marked fixing, counted in fixes);
+    each part's document from the run's documents record, else its name, else the stage under way; its kind and person (the PRD is
+    Mira's, the HLD Kabir's, the LLD Dev's; on a page, something that works is Dev's, the look Kabir's, words Mira's); the part the open
+    question is about; the team stream in plain lines with no agent words or ids, every function message once; every saved run builds."""
+    import j2_studio as St
+    assert St.part_name("PRD Requirements section revision 2") == "Requirements" and St.part_name("Build_menu") == "Menu" \
+        and St.part_name("W-3 builder notes") == "W-3 maker notes" and St.part_name("") == "A part"
+    assert [St.kind_of(n, "site") for n in ("Pre-order form", "Hero and gallery", "Our story", "Sticky menu with active section")] \
+        == ["developer", "designer", "writer", "developer"] and St.kind_of("Anything", "hld") == "designer"
+    wfs = [{"id": "W-1", "name": "Menu section", "section": "W-1", "status": "done", "covers": [1]},
+           {"id": "W-2", "name": "Order form", "section": "W-2", "status": "running", "covers": [2]},
+           {"id": "W-3", "name": "Menu fix", "section": "W-1", "status": "registered", "revises": "W-1", "covers": [1]},
+           {"id": "W-4", "name": "Gallery", "section": "W-4", "status": "registered", "covers": [3]}]
+    snap = {"workflows": wfs, "chat": [], "status": "running", "thinking": "W-2", "output": "website", "doc": False}
+    ps = St.parts(snap)
+    assert [(p["sec"], p["st"], p["person"], p["fixes"]) for p in ps] == [("W-1", "fix", "mira", 1), ("W-2", "doing", "dev", 0), ("W-4", "next", "kabir", 0)], ps
+    paused = {**snap, "status": "waiting", "thinking": None, "paused": {"kind": "limit"},
+              "audits": [{"results": [{"id": "F-3", "item": 3, "verdict": "NEEDS_REVISION"}, {"item": 1, "verdict": "PASS"}]}]}
+    assert St.build(paused)["qsec"] == "W-4" and St.build({**paused, "paused": {"kind": "approval", "workflow": "W-2"}})["qsec"] == "W-2" \
+        and St.build({**paused, "paused": {"kind": "info"}})["qsec"] is None, "the part a question is about"
+    assert St.parts({**snap, "workflows": [{"id": "W-1", "name": "Problem", "section": "W-1", "status": "done"}], "output": "prd", "doc": True})[0]["doc"] == "prd"
+    assert St.parts(snap, {"hld": {"workflows": ["W-4"]}})[2]["doc"] == "hld", "the documents record wins over the name"
+    here = os.path.dirname(os.path.abspath(__file__))
+    keep_dir, j2.RUNS_DIR = j2.RUNS_DIR, os.path.join(here, "runs")
+    n_runs = lines = 0
+    try:
+        for name in sorted(os.listdir(j2.RUNS_DIR)) if os.path.isdir(j2.RUNS_DIR) else []:
+            if not os.path.isfile(os.path.join(j2.RUNS_DIR, name, "workflows.json")):
+                continue
+            try:
+                sn = j2.saved_snapshot(name, 0)
+            except (KeyError, TypeError, ValueError):
+                continue
+            st = sn["studio"]
+            n_runs += 1
+            assert st["schema"] == "studio/1" and st["total"] == len(st["parts"]) and all(p["person"] in St.PEOPLE for p in st["parts"]), name
+            secs = {w.get("section") or w.get("id") for w in sn["workflows"] if w.get("section") != "style"}
+            assert {p["sec"] for p in st["parts"]} == secs and len(st["parts"]) == len(secs), (name, "one part per section")
+            text = " ".join(x["text"] for x in st["stream"])
+            bad = SIMPLE_FORBIDDEN.findall(text) + SIMPLE_FORBIDDEN_CASE.findall(text) + re.findall(r"\bW-\d+\b", text)
+            for p in st["parts"]:
+                text = text.replace(p["name"].lower(), " ")
+            bad = SIMPLE_FORBIDDEN.findall(text) + SIMPLE_FORBIDDEN_CASE.findall(text) + re.findall(r"\bW-\d+\b", text)
+            assert not bad, (name, bad)
+            fns = [m for m in sn["chat"] if m["who"] in ("adaptation", "priority", "coordination", "validator", "audit")]
+            assert len(st["stream"]) == min(St.STREAM_MAX, len(st["stream"])) and (len(st["stream"]) == St.STREAM_MAX or len(st["stream"]) >= len(fns)), name
+            lines += len(st["stream"])
+    finally:
+        j2.RUNS_DIR = keep_dir
+    print(f"studio model: parts one per section with their document, kind and person, fixes on the same part, the question's part, "
+          f"{n_runs} saved runs build with {lines} plain stream lines ok")
 
 
 def work_atoms():
@@ -1719,7 +1928,8 @@ def detail_stays_open():
 
 def plain_words():
     """The Simple view's word list (fallback only): Audit becomes "our checks", never "the team", so nothing reads
-    "after the team"; other function names become "the team"; budget becomes effort. Runs the page's own JS in node."""
+    "after the team"; other function names become "the team"; budget becomes effort; the render check's findings (a JS error, a
+    form that throws, overflow in px, a broken link) read as plain sentences with no error text. Runs the page's own JS in node."""
     import shutil
     import subprocess
     if not shutil.which("node"):
@@ -1731,7 +1941,14 @@ def plain_words():
     cases = {"only 10 units stay for fixes after Audit": "Only 10 work credits stay for fixes after our checks",
              "Every done-when item passes with Audit's evidence.": "Every checklist item passes with our checks' evidence.",
              "@Adaptation Priority's final answer was COUNTER.": "The team's final answer was a smaller offer.",
-             "The Requester picked; the budget is over budget.": "You picked; the effort is more than planned."}
+             "The Requester picked; the budget is over budget.": "You picked; the effort is more than planned.",
+             # the render check's findings in a "Still not right" list (live run j2-20261109-231951): no error text, no pixel counts
+             "Still not right (5):\n- JS error: Uncaught SyntaxError: Failed to execute 'requestSubmit' on 'HTMLFormElement': Unexpected identifier 've' (failing)\n"
+             "- form 1 throws on submit: Uncaught SyntaxError: Unexpected identifier 've' (failing)\n- phone overflow 8px (failing)\n"
+             "- broken link #menu (failing)\n- Every form has a submit control and a destination (action or mailto) (failing)":
+             "Still not right (5):\n- the page shows a script error (failing)\n- form 1 breaks when someone sends it (failing)\n"
+             "- the page scrolls sideways on a phone (failing)\n- a link on the page leads nowhere (failing)\n- Every form has a send button and a destination (failing)",
+             "The page has no JavaScript errors, no horizontal overflow at 360px and 1280px.": "The page has no script errors, no sideways scrolling on phones or computers."}
     out = subprocess.run(["node", "-e", js + "\nconst c = " + json.dumps(list(cases)) +
                           ";\nprocess.stdout.write(JSON.stringify(c.map(plain)));"], capture_output=True, text=True)
     got = json.loads(out.stdout or "null") or sys.exit(out.stderr)
@@ -5937,9 +6154,9 @@ def docs_views():
         cards += 1
     assert cards == 3
     # Simple view: the finished set in plain words, no ids or check codes
-    text = re.sub(r"<[^>]+>", " ", htmllib.unescape(out["simple"] + out["sprog"] + out["finish"]))
+    text = re.sub(r"<[^>]+>", " ", htmllib.unescape(out["simple"] + out["sprog"] + out["finish"] + out["files"]))
     assert "Your design documents are ready" in text and "Download the product requirements (markdown)" in text \
-        and "Download the low-level design (Word file)" in text, text[-500:]
+        and "Download the low-level design (Word file)" in text and "All files (6)" in out["finish"], text[-500:]
     bad = SIMPLE_FORBIDDEN.findall(text) + SIMPLE_FORBIDDEN_CASE.findall(text) + re.findall(r"\b(?:[PHLN]\d|R\d|W-\d+)\b", text)
     assert not bad, bad
     # a plain brief: the website's ready line and its Download; a PRD-only run: its own document links
@@ -8943,10 +9160,11 @@ def graph_map():
     finally:
         j2.RUNS_DIR = keep_dir
     assert teams_n > 40, ("every saved run's teams are checked", teams_n)
-    wd = next(t for t in maps["j2-20261026-174314"]["teams"] if t["id"] == "stage:Web Developer")
-    col = {n["id"]: n["col"] for n in wd["nodes"] if n["kind"] == "wf"}
-    assert col["W-6"] < col["W-7"] < col["W-8"] < col["W-9"] < col["W-10"] < col["W-14"] < col["W-15"] < col["W-17"] and col["W-7"] == col["W-13"] and col["W-9"] == col["W-11"] and col["W-10"] == col["W-12"], ("174314 Web Developer columns", col)
-    assert any(n["kind"] == "artifact" and n["section"] and n["file"] == "Website" for n in wd["nodes"]) and sum(1 for n in wd["nodes"] if n["kind"] == "artifact" and n["section"]) == 10, "its Website sections are artifacts"
+    if "j2-20261026-174314" in maps:      # the golden run; not on every machine (see "map tree" above)
+        wd = next(t for t in maps["j2-20261026-174314"]["teams"] if t["id"] == "stage:Web Developer")
+        col = {n["id"]: n["col"] for n in wd["nodes"] if n["kind"] == "wf"}
+        assert col["W-6"] < col["W-7"] < col["W-8"] < col["W-9"] < col["W-10"] < col["W-14"] < col["W-15"] < col["W-17"] and col["W-7"] == col["W-13"] and col["W-9"] == col["W-11"] and col["W-10"] == col["W-12"], ("174314 Web Developer columns", col)
+        assert any(n["kind"] == "artifact" and n["section"] and n["file"] == "Website" for n in wd["nodes"]) and sum(1 for n in wd["nodes"] if n["kind"] == "artifact" and n["section"]) == 10, "its Website sections are artifacts"
     # constellations (m["constellations"], j2_map.constellations): the data, on every run and every artifact
     def run_order(d, ids):
         first = {}
@@ -9269,7 +9487,7 @@ def warm_ui():
     """Warm UI: every colour of j2_ui.html is a theme token (no hex, rgb or hsl outside the two token sets, so none in map rendering);
     text tokens keep 4.5:1 and line tokens 3:1 in both sets; the Style guide has no tab of its own. With Chrome (--browser), for every run:
     the Tree, the Line, every team focused and opened, every artifact sun and every workflow sun render in dark and in light with no page error and no colour in the
-    markup, with words at least 11px on screen, never cut and never overlapping another node's, the maps' colours follow the theme at once (no reload); Appearance is Dark by default and the choice persists across a reload."""
+    markup, with words at least 11px on screen, never cut and never overlapping another node's, the maps' colours follow the theme at once (no reload); Appearance is Light by default and the choice persists across a reload."""
     import html as htmllib
     import threading
     import j2_server
@@ -9313,7 +9531,7 @@ def warm_ui():
               "     const L = e.getTotalLength(), end = e.getPointAtLength(L), b = nodes[e.dataset.to].b, dx = Math.max(b[0] - end.x, 0, end.x - b[2]), dy = Math.max(b[1] - end.y, 0, end.y - b[3]), tn = nodes[e.dataset.to], d = tn.round ? Math.hypot(end.x - (b[0] + b[2]) / 2, end.y - (b[1] + b[3]) / 2) - Math.max(b[2] - b[0], b[3] - b[1]) / 2 : Math.hypot(dx, dy);"
               "     if (d < 0.5 || d > 4) bad.push([th, what, 'arrowhead not at the target border', e.dataset.from, e.dataset.to, +d.toFixed(2)]);"
               "     for (let i = 2; i <= 38; i++){ const p = e.getPointAtLength(L * i / 40), h = boxes.find(([, q]) => p.x > q[0] + 1 && p.x < q[2] - 1 && p.y > q[1] + 1 && p.y < q[3] - 1); if (h){ bad.push([th, what, 'an edge through a ' + h[2], e.dataset.from, e.dataset.to, h[0]]); break; } } } };"
-              " let small = 99; const views = {dark: 0, light: 0}, bad = [], bgs = {}; showTab('map'); r.first = [document.documentElement.dataset.theme, document.querySelector('[data-themepick=\"dark\"]').getAttribute('aria-pressed')];"
+              " let small = 99; const views = {dark: 0, light: 0}, bad = [], bgs = {}; showTab('map'); r.first = [document.documentElement.dataset.theme, document.querySelector('[data-themepick=\"light\"]').getAttribute('aria-pressed')];"
               " const look = (th, what, sel, bgk) => { const s = document.querySelector(sel); if (!s){ bad.push([th, what, 'missing']); return; } views[th]++; if (hexy.test(s.outerHTML)) bad.push([th, what, 'colour in markup']);"
               "   const cs = getComputedStyle(s), t = s.querySelector('text'); if (bgk && cs.backgroundColor !== tok(bgk) && !cs.backgroundImage.includes(tok(bgk).slice(0, 12))) bad.push([th, what, 'background', cs.backgroundColor, cs.backgroundImage.slice(0, 80), tok(bgk)]);"
               "   if (t && !getComputedStyle(t).fill) bad.push([th, what, 'no text fill']); (bgs[what.split(' ')[0]] = bgs[what.split(' ')[0]] || {})[th] = cs.backgroundColor + cs.backgroundImage;"
@@ -9361,7 +9579,7 @@ def warm_ui():
         assert hit, ("the page did not finish its steps", dom[-300:])
         r = json.loads(htmllib.unescape(hit.group(1)))
         assert "error" not in r and not r["errs"], r
-        assert r["first"] == ["dark", "true"], ("Dark by default", r["first"])
+        assert r["first"] == ["light", "true"], ("Light by default (the studio's calm look; dark is one click away)", r["first"])
         assert r["nbad"] == 0 and r["views"]["dark"] == r["views"]["light"] > 2 * len(names), ("every map view in both themes, colours from the tokens", r["why"], r["bad"], r["views"])
         assert all(x[1] for x in r["flip"]) and r["kinds"] == ["tree", "line", "tfocus", "team", "sun", "wfsun"], ("each kind of map changes with the theme, no reload", r["flip"], r["kinds"])
         assert r["reload1"] == ["light", "true"] and r["reload2"][0] == r["reload2"][2] and r["reload2"][1] == "true" and r["stored"] == "dark", ("the choice persists across a reload", r)
@@ -11547,6 +11765,9 @@ if __name__ == "__main__":
     print("Detailed view: opened screenshot, event log and message detail stay open while the run updates ok")
     simple_view()
     simple_redesign()
+    decide_for_me()
+    studio_views()
+    studio_model()
     plain_words()
     identity_prompt_is_plain()
     print("G simple view (plain words at the source and as fallback, buttons once, phone toggle, ready card) ok")

@@ -2,7 +2,7 @@
    S4-fnodes-12).
 
    Strings in, strings out: transcript() draws a session's messages in J2's bubble look (.sb.team, .sb.me, .opts), card() draws one chat card
-   (task, chart_change, approval, choice, needs_you, team_chat, done and, in a function node's working log, atom), composerState() says whether the
+   (task, chart_change, approval, choice, needs_you, team_chat, done, deliverable and, in a function node's working log, atom), composerState() says whether the
    message box shows, is disabled and what it says, whoLabel() names an author, and safeText() is the one door a message text goes through.
    Nothing touches the DOM, every word that came from the wire is escaped, and the markup is well formed XML.
 
@@ -14,6 +14,13 @@
 
    Buttons carry data-act (open-team, open-team-chat, show-node, show-change, choose, option, answer-option, answer, retry, retry-task, retry-direct) and the data they need; the page that
    shows the transcript (the node panel, Home) listens for them. A link that opens a team page is a real <a href>, so it also works without a script.
+   The finished report of a run (D135) is a `deliverable` card in the team's chat: the report as markdown (ChatMarkdown, folded by ChatFold.longText when long),
+   the files git saw change in the owner's folder (nothing at all when git could not say) and "Open the full report", a real link to the team page's Preview tab
+   for that run; the done card in the org chat gets "Open the report", the same link.
+
+   The owner's questions to a function and its answers (J2 sync 4, D148) are lines of that function's chat, drawn by the messages route with `ask`: "q" is the
+   owner's own line, labelled "You asked"; "records" and "model" are the function's answer, with a small label that says where it came from ("From its records,
+   no AI call", "AI answer from its records"). Every such line carries data-ask. A note to an agent (`steer`) is drawn as it was.
 
    A classic script with ONE global, ChatView (see sutra_ctx.js for why); in node it is module.exports. */
 (function (root) {
@@ -42,6 +49,7 @@
   const TASK_WORDS = freeze({queued: "queued", starting: "starting", running: "running", waiting_user: "waiting for you", done: "done",
     done_with_open_items: "done, with open items", stopped: "stopped", crashed: "crashed"});
   const KIND_WORDS = freeze({department: "team", division: "division", root: "root", function: "function", step: "step"});
+  const ASK_WORDS = freeze({q: "You asked", records: "From its records, no AI call", model: "AI answer from its records"});          // D148: a question and where its answer came from
   const BUSY = "The team is working. You can write again when it asks you something or is done";
   const ONE_AT_A_TIME = "I answer your messages one at a time.";
   const DEFAULT_PLACEHOLDER = "Write a message\u2026";
@@ -245,6 +253,20 @@
       (done ? ' data-answered="true"' : "") + '><p class="cteam"><span class="cteamlead">' + lead.trim() + "</span>" + chatChip(c, label) + "</p></div>";
   }
 
+  // The whole report of a run, on the team's page: its Preview tab for that run (J2's page draws a document there as a page: markdown made into html). Both ids
+  // are checked here again, so an id the page does not know makes no link rather than a wrong one.
+  const DEPT_ID = /^[A-Za-z0-9_.:-]{1,120}$/;
+  const RUN_ID = /^j2-[A-Za-z0-9_-]{1,120}$/;
+  function reportHref(dept, run) {
+    const d = clean(dept);
+    const r = clean(run);
+    return DEPT_ID.test(d) && d !== "." && d !== ".." && RUN_ID.test(r) ? "/d/" + encodeURIComponent(d) + "/?view=detail&tab=preview&run=" + encodeURIComponent(r) : "";
+  }
+  const reportLink = (report, label) => {
+    const href = isObj(report) ? reportHref(report.dept_id, report.run_id) : "";
+    return href === "" ? "" : '<a class="lbtn" data-act="open-team" href="' + esc(href) + '">' + esc(label) + "</a>";
+  };
+
   const DONE_TONE = freeze({done: "ok", done_with_open_items: "warn", crashed: "bad", stopped: "bad"});
   const DONE_HEAD = freeze({done: "is done", done_with_open_items: "is done, with some things left open", crashed: "ran into a problem", stopped: "was stopped"});
 
@@ -261,7 +283,41 @@
       "<h2>Your " + (dept ? esc(dept) + " " : "") + "team " + esc(hasOwn(DONE_HEAD, status) ? DONE_HEAD[status] : taskWord(status)) + "</h2>" +
       '<p class="ctitle">' + esc(clean(c.title)) + "</p>" + (clean(c.outcome) ? '<p class="coutcome">' + safeText(clean(c.outcome)) + "</p>" : "") +
       receiptLine(c.receipt) +
-      '<div class="acts">' + retryButton(c, ctx) + openTeam(deptId, ' data-task="' + esc(clean(c.task_id)) + '" data-dept-name="' + esc(dept) + '"') + "</div></div>";
+      '<div class="acts">' + retryButton(c, ctx) + reportLink(c.report, "Open the report") +
+      openTeam(deptId, ' data-task="' + esc(clean(c.task_id)) + '" data-dept-name="' + esc(dept) + '"') + "</div></div>";
+  }
+
+  // The finished deliverable of a run in the team's chat (D135, a `deliverable` card): the report as the team wrote it, the files git saw change in the owner's
+  // folder, the way to the whole report. The words that name a file's state are ours; a path is shown as the host recorded it. `changes` absent means git could
+  // not say (no repository, read only, too slow): then the card says nothing about changes, not even that there were none.
+  const CHANGE_WORDS = freeze({new: "new", modified: "changed", deleted: "deleted", reverted: "back to the committed version"});
+
+  function changedFiles(changes) {
+    if (!isObj(changes)) return "";
+    const files = (Array.isArray(changes.files) ? changes.files : []).filter(isObj).filter(f => clean(f.path) !== "");
+    const more = count(changes.more) || 0;
+    if (files.length === 0 && more === 0) return '<p class="cdnone">No file in your folder changed during this run (checked with git).</p>';
+    const line = f => {
+      const state = clean(f.status);
+      const known = hasOwn(CHANGE_WORDS, state);
+      return '<li><code>' + esc(clean(f.path)) + '</code><span class="cdst st-' + (known ? state : "other") + '">' + esc(known ? CHANGE_WORDS[state] : state) + "</span></li>";
+    };
+    return '<div class="cdchanges"><p class="cdhead">Changed in your folder during this run (' + (files.length + more) + ")</p>" +
+      '<ul class="cdfiles">' + files.map(line).join("") + (more > 0 ? '<li class="cdmore">and ' + more + " more</li>" : "") + "</ul></div>";
+  }
+
+  function deliverableCard(c) {
+    const body = text(c.text);
+    const href = reportHref(c.dept_id, c.run_id);
+    let report = '<p class="cdnone">The report was not written: the run ended before it.</p>';
+    if (body.trim() !== "") {
+      const html = root.ChatMarkdown ? root.ChatMarkdown.render(body) : safeText(body);
+      report = root.ChatFold && root.ChatFold.longText ? root.ChatFold.longText(body, html, {label: "Read the report"}) : html;
+    }
+    return '<div class="ncard c-deliverable" data-card="deliverable" data-task="' + esc(clean(c.task_id)) + '" data-run="' + esc(clean(c.run_id)) + '">' +
+      '<h2 class="cdtitle">' + esc(clean(c.label) || "Report") + "</h2>" + '<div class="cdreport">' + report + "</div>" +
+      (c.cut === true ? '<p class="cdcut">The report is longer than shown here. Open the full report to read all of it.</p>' : "") + changedFiles(c.changes) +
+      (href !== "" ? '<div class="acts"><a class="lbtn" data-act="open-team" href="' + esc(href) + '">Open the full report</a></div>' : "") + "</div>";
   }
 
   // The receipt of a finished task, evidence only (GAP-model-quality): "Attempt 2 . Took 6 min . about $0.42 . 7 of 8 items passed their checks".
@@ -320,6 +376,7 @@
       case "needs_you": return needsYouCard(value, c);
       case "team_chat": return teamChatCard(value, c);
       case "done": return doneCard(value, c);
+      case "deliverable": return deliverableCard(value);
       case "atom": return c.sessionKind === "function" ? atomCard(value) : plainCard(Object.assign({}, value, {text: clean(value.label) + (clean(value.goal) ? ": " + clean(value.goal) : "")}));
       default: return plainCard(value);
     }
@@ -339,6 +396,9 @@
   // The owner's request that the org chat passed on to a team (ChatMessageOut.passed_on: the id of the original in the org chat): the first line of the
   // team's chat says where it came from.
   const passedOnHtml = m => (Number.isInteger(m.passed_on) && m.passed_on > 0 ? '<small class="npassed">Passed on from your chat with Sutra</small>' : "");
+
+  // The owner's question to a function ("q"), or the answer of the function ("records": from its records alone, "model": a model read them), or "".
+  const askOf = m => (isObj(m) && hasOwn(ASK_WORDS, m.ask) ? m.ask : "");
 
   // answersOf(messages, o) -> {message id: the answer}: the cards of a transcript the owner has dealt with, for transcript()'s `answers`. An answer is
   // the words of the owner line that answered ("Yes"), or "" for a card that reads just "Answered". o {local, needs, needsLoaded}: `local` is what the
@@ -400,14 +460,17 @@
       const cardIn = kind === "card" && isObj(m.card) ? m.card : null;
       const dept = (cardIn && clean(cardIn.dept_name)) || clean(o.deptName);
       const label = whoLabel(who, {deptName: clean(s.kind) === "org" || cardIn ? dept : ""});
-      const attrs = ' data-id="' + esc(text(m.id)) + '" data-who="' + esc(who) + '" data-kind="' + esc(kind) + '" data-state="' + esc(clean(m.state) || "ok") + '"';
+      const ask = askOf(m);
+      const attrs = ' data-id="' + esc(text(m.id)) + '" data-who="' + esc(who) + '" data-kind="' + esc(kind) + '" data-state="' + esc(clean(m.state) || "ok") + '"' +
+        (ask !== "" ? ' data-ask="' + ask + '"' : "");
       const klass = bubbleClass(m) + (clean(m.state) === "pending" ? " pending" : "");
       if (bubbleClass(m) === "nmsg sb me") {
         const picked = /^Option (\d+)$/.exec(text(m.text).trim());
         const chosen = picked && asked && asked.qs[0] && asked.qs[0].opts[Number(picked[1]) - 1];
         const failed = clean(m.state) === "error";
         const att = attachedOf(m.text);
-        return '<div class="' + klass + (failed ? " failed" : "") + '"' + attrs + ">" + passedOnHtml(m) + safeText(chosen ? clean(chosen) : att.text) + attachedHtml(att.names) +
+        return '<div class="' + klass + (failed ? " failed" : "") + '"' + attrs + ">" + passedOnHtml(m) + (ask === "q" ? '<small class="nask">' + ASK_WORDS.q + "</small>" : "") +
+          safeText(chosen ? clean(chosen) : att.text) + attachedHtml(att.names) +
           (failed ? '<div class="nerr">Something went wrong. Try again.' + (clean(s.kind) === "org" ? ' <button type="button" class="linkbtn" data-act="retry">Retry</button>' : "") + "</div>" : "") + "</div>";
       }
       if (kind === "note" || kind === "error" || bubbleClass(m) === "nmsg sys") return '<div class="' + klass + '"' + attrs + ">" + safeText(text(m.text)) + retryOf(m) + "</div>";
@@ -428,6 +491,7 @@
       }
       // a settled provider turn: its tool calls fold into ONE row (ChatFold, ABS-10); nothing is drawn while the message is pending
       if (root.ChatFold && Array.isArray(m.blocks) && m.blocks.length > 0) inner += root.ChatFold.fold(m.blocks, {settled: clean(m.state) !== "pending"});
+      if (ask === "records" || ask === "model") inner += '<span class="nasksrc">' + ASK_WORDS[ask] + "</span>";
       return '<div class="' + klass + '"' + attrs + "><small>" + esc(label) + "</small>" + inner + "</div>";
     };
     return list.map((m, i) => ({key: text(m.id) !== "" ? "m" + text(m.id) : "i" + i, html: html(m, i)}));
@@ -478,7 +542,8 @@
 
   const providerLabel = connector => (hasOwn(PROVIDERS, connector) ? PROVIDERS[connector] : clean(connector));
 
-  const ChatView = {transcript, transcriptItems, card, answersOf, composerState, workdirChip, safeText, whoLabel, parseAsk, stripTag, providerLabel, attachedOf, BUSY, ONE_AT_A_TIME, PROVIDERS, PERSONA};
+  const ChatView = {transcript, transcriptItems, card, answersOf, composerState, workdirChip, safeText, whoLabel, parseAsk, stripTag, providerLabel, attachedOf, askOf, BUSY, ONE_AT_A_TIME, ASK_WORDS,
+    PROVIDERS, PERSONA};
   if (typeof module === "object" && module !== null && module.exports) module.exports = ChatView;
   else root.ChatView = ChatView;
 })(globalThis);
