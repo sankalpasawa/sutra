@@ -174,12 +174,38 @@ def session_of(conn: sqlite3.Connection, row: Any, agent: str) -> str | None:
 
 # ---- the agents of a team, for the page (GET /api/teams/{dept}/agents) --------------------------------------------------------------------------
 
+def _plus(a: int | float | None, b: int | float | None) -> int | float | None:
+    """A sum in which a part nobody reported counts for nothing, and which is null when every part is (as the SQL `sum` is)."""
+    return b if a is None else (a if b is None else a + b)
+
+
+def _spent(conn: sqlite3.Connection, session_ids: list[str]) -> dict[str, dict[str, Any]]:
+    """What each of the sessions was charged, stub rows left out: `{session_id: {calls, usd, tokens_in, tokens_out, by_purpose: {purpose: {calls, usd}}}}`. One
+    pass over the ledger by session and purpose, so the purposes of a row always add up to its totals (a session with no call has no entry here)."""
+    spent: dict[str, dict[str, Any]] = {}
+    if not session_ids:
+        return spent
+    for u in conn.execute(
+            "SELECT session_id, purpose, count(*) AS calls, sum(usd) AS usd, sum(tokens_in) AS tin, sum(tokens_out) AS tout FROM usage_ledger "
+            f"WHERE provider != 'stub' AND session_id IN ({','.join('?' * len(session_ids))}) GROUP BY session_id, purpose ORDER BY session_id, purpose", session_ids):
+        mine = spent.setdefault(u["session_id"], {"calls": 0, "usd": None, "tokens_in": None, "tokens_out": None, "by_purpose": {}})
+        mine["calls"] += u["calls"]
+        mine["usd"], mine["tokens_in"], mine["tokens_out"] = _plus(mine["usd"], u["usd"]), _plus(mine["tokens_in"], u["tin"]), _plus(mine["tokens_out"], u["tout"])
+        mine["by_purpose"][u["purpose"]] = {"calls": u["calls"], "usd": round(float(u["usd"]), 6) if u["usd"] is not None else None}
+    for mine in spent.values():
+        if mine["usd"] is not None:
+            mine["usd"] = round(float(mine["usd"]), 6)
+    return spent
+
+
 def team_agents(conn: sqlite3.Connection, store: Any, dept_id: str, run_id: str | None = None,
                 default: Callable[[str], Pick] | Pick | None = None) -> list[dict[str, Any]]:
     """The agent chats of a team for one run: the five active function sessions (when the run is the live or latest one) and every session stamped with the
     run (its builders, and the function sessions a later run rolled). `run_id` None means the live run, else the latest. A run that is not the team's is
     NotFound. Each row: `{agent, label, kind, title, session_id, node_id, run_id, task_id, state, live, status, own, run_pick, effective, usage, last_at}`.
-    Usage is the session's own (stub rows left out, as in every total)."""
+    Usage is the session's own (stub rows left out, as in every total): `{calls, usd, tokens_in, tokens_out, by_purpose}`, where `by_purpose` is
+    `{purpose: {calls, usd}}` for each purpose the session was charged for (`agent_turn`, `plan`, `judge`, `agent_chat`, ...; none for an agent that has not
+    called, D159), `usd` null when none of that purpose's calls has a price. Its calls add up to `calls`, and its dollars to `usd`."""
     from sutra_app.orchestrator.errors import NotFound
     from sutra_app.orchestrator.ids import iso_z
     from sutra_app.orchestrator.tasks import TaskStore
@@ -207,13 +233,7 @@ def team_agents(conn: sqlite3.Connection, store: Any, dept_id: str, run_id: str 
         "FROM chat_sessions s JOIN graph_nodes g ON g.id = s.node_id "
         f"WHERE {' AND '.join(where)} AND ({' OR '.join(sessions)}) ORDER BY s.created_at, s.rowid", args).fetchall()
     ids = [r["id"] for r in found]
-    spent: dict[str, Any] = {}
-    if ids:
-        for u in conn.execute(
-                "SELECT session_id, count(*) AS calls, sum(usd) AS usd, sum(tokens_in) AS tin, sum(tokens_out) AS tout FROM usage_ledger "
-                f"WHERE provider != 'stub' AND session_id IN ({','.join('?' * len(ids))}) GROUP BY session_id", ids):
-            spent[u["session_id"]] = {"calls": u["calls"], "usd": round(float(u["usd"]), 6) if u["usd"] is not None else None,
-                                      "tokens_in": u["tin"], "tokens_out": u["tout"]}
+    spent = _spent(conn, ids)
     run_pick = pick_dict(TaskStore.pick_in(conn, task["id"])) if task is not None else None
     rows = []
     for r in found:
@@ -224,7 +244,7 @@ def team_agents(conn: sqlite3.Connection, store: Any, dept_id: str, run_id: str 
             "node_id": r["node_id"], "run_id": r["run_id"], "task_id": task["id"] if task is not None else None, "state": r["state"],
             "live": bool(live and r["status"] == "active" and r["state"] == "running"), "status": r["status"],
             "own": pick_dict(ChatChoices.pick_in(conn, r["id"])), "run_pick": run_pick, "effective": effective(conn, r["id"], default),
-            "usage": spent.get(r["id"], {"calls": 0, "usd": None, "tokens_in": None, "tokens_out": None}), "last_at": iso_z(r["updated_at"]),
+            "usage": spent.get(r["id"], {"calls": 0, "usd": None, "tokens_in": None, "tokens_out": None, "by_purpose": {}}), "last_at": iso_z(r["updated_at"]),
             "_order": (0 if function else 1, FUNCTIONS.index(agent) if function and agent in FUNCTIONS else 0, r["created_at"])})
     rows.sort(key=lambda x: x["_order"])
     for row in rows:
