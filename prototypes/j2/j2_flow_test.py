@@ -1109,7 +1109,7 @@ def simple_redesign():
         talk = re.findall(r'<div class="stalk">(.*?)</div></section>', out["teamwork"])
         assert not re.search(r"</b> [A-Z][a-z]", "".join(talk)), (label, "a team line follows its name in lower case (\"Mira finished the menu\")", talk[:1])
         team = re.sub(r"<[^>]+>", " ", htmllib.unescape(out["teamwork"]))
-        assert "Who's on what" in team and ("The work" in team or not parts), (label, team[:200])
+        assert {htmllib.unescape(x) for x in re.findall(r'data-part="([^"]*)"', out["teamwork"])} == {p["sec"] for p in parts}, (label, "the map has one block per part")
         for p in sorted(parts, key=lambda p: -len(p["name"])):      # a part's own name is the content's words ("Shop identity"), not the team's jargon
             team = re.sub(re.escape(p["name"]), " ", team, flags=re.I)
         bad = SIMPLE_FORBIDDEN.findall(team) + SIMPLE_FORBIDDEN_CASE.findall(team) + re.findall(r"\bW-\d+\b", team)
