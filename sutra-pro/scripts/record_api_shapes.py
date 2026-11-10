@@ -1,21 +1,24 @@
 #!/usr/bin/env python3
 """Record the shapes of J2's HTTP API into `tests/engine/golden/api_shapes.json` (work package E2, engine design 9).
 
-    scripts/py scripts/record_api_shapes.py --source /path/to/J2_Prototype [--commit 33aeeda...] [--out FILE] [--check]
+    scripts/py scripts/record_api_shapes.py --source "$J2SRC" [--commit <sha>] [--out FILE] [--check]
     scripts/py scripts/record_api_shapes.py --patched-only [--out FILE] [--check]       # only the "patched" section (no J2 checkout)
 
-Runs J2's own `j2_server.Handler` at one commit (git archive into a temp folder when `--source` is a git repository, so an
-edited working tree or a `.pyc` never matters; a plain folder is used as it is) in a child process, in mock mode with the Chrome
-checks faked as J2's `--fast` flow does, and with every J2 path under a temp folder (`J2_RUNS_DIR`, memory, library): nothing is
-written to the J2 checkout. It drives one Brew Lab run to Done, then asks every GET route in three situations:
+Runs J2's own `j2_server.Handler` from `$J2SRC`, an extraction of this repository's `prototypes/j2` at the pinned sutra commit
+(`git archive <sha> prototypes/j2 | tar -x --strip-components=2 -C "$J2SRC"`, docs/design/j2-sync-4.md 2.2): a plain folder, used as it
+is, so an edited working tree or a `.pyc` never matters; `--commit` only names the commit and is recorded as `j2_commit`. J2 runs in a
+child process, in mock mode with the Chrome checks faked as J2's `--fast` flow does, and with every J2 path under a temp folder
+(`J2_RUNS_DIR`, memory, library): nothing is written to the extraction. It drives one Brew Lab run to Done, then asks every GET route
+in three situations:
 
     live    no `?run=`: the run that is held by the server
     saved   `?run=<id>`: the same run read from its folder
     idle    a fresh run, before any message
 
 and the POST routes on a fresh run. Per route it keeps the status, the content type and, for a JSON body, the KEY PATHS (the
-names of the keys at every depth, `[]` for a list; a map keyed by ids is written with `*`), never a value: ids and times change
-between runs, the shape does not. `tests/engine/test_engine_views.py` runs the same requests against `views.py` and compares.
+names of the keys at every depth, `[]` for a list; a map keyed by ids is written with `*`, and so is `enums`, the enum names of a
+template version: they are data, a new seed template adds some, D150), never a value: ids and times change between runs, the shape
+does not. `tests/engine/test_engine_views.py` runs the same requests against `views.py` and compares.
 `--check` records again and exits 1 when the file differs.
 
 The "patched" section (patch P13) is the one part J2 cannot give: `GET /api/runlist` and `GET /api/changes` exist only in the old Sutra
@@ -39,7 +42,7 @@ import urllib.request
 from pathlib import Path
 
 REPO = Path(__file__).resolve().parent.parent
-BASELINE = "33aeeda639cd7bf828d5361273a8a153ebc63a36"
+BASELINE = "025e265c594564f47a2365874cd5a5cc5d0d20a6"       # the sutra commit whose `prototypes/j2` the golden is recorded from (sync 4, D136)
 DEFAULT_OUT = REPO / "tests" / "engine" / "golden" / "api_shapes.json"
 SCHEMA = "api-shapes/1"
 
@@ -51,8 +54,9 @@ BREW_LAB = ("A one-page website for Brew Lab, a small specialty coffee shop in I
 # read those records have something to show; realization off (the unmodified mock cannot pass its cost check, E1 notes).
 SCENARIO_ENV = {"STUDIO_MOCK": "1", "J2_MEMORY": "0", "J2_REALIZATION": "0", "J2_TEMPLATE_LIBRARY": "1",
                 "J2_ARTIFACT_SCHEMA": "1", "J2_BOARD": "1", "J2_FORCE_QUESTION": "adaptation"}
-# Maps keyed by ids: their keys are written as `*` in a key path.
-MAPS = frozenset({"atoms_v1", "agents", "conditions", "rubric", "constellations", "names", "groups", "groups.*"})
+# Maps keyed by ids: their keys are written as `*` in a key path. `enums` is the map of a template version's enum names (`FormField.type`,
+# `Requirement.priority`, ...): data, which every new seed template extends, so no template can move the golden again (D150).
+MAPS = frozenset({"atoms_v1", "agents", "conditions", "rubric", "constellations", "names", "groups", "groups.*", "enums"})
 # Free-form agent output: the key is kept, what is inside it is not (it is the model's reply, not part of the API).
 OPAQUE = frozenset({"reply", "proposal", "adaptation_final", "priority_final", "metrics"})
 # Keys that exist on the engine's side only, on purpose (engine design 4.6): the live state's host, run_id and dept_id, and the
@@ -287,15 +291,12 @@ def child(source, work):
 
 # ---------------------------------------------------------------------------------------------------------------- the parent
 def checkout_of(source, commit):
-    """(folder to run J2 from, temp folder to remove or None, commit text)."""
+    """(folder to run J2 from, temp folder to remove or None, commit text). `source` is an extraction of `prototypes/j2` (see the
+    module docstring), used as it is; `commit` is only the name recorded as `j2_commit`. Anything else stops here with the recipe."""
     source = Path(source).resolve()
-    if (source / ".git").exists():
-        tmp = Path(tempfile.mkdtemp(prefix="j2-shapes-src-"))
-        arch = subprocess.run(["git", "-C", str(source), "archive", commit], capture_output=True, check=True).stdout
-        subprocess.run(["tar", "-x", "-C", str(tmp)], input=arch, check=True)
-        full = subprocess.run(["git", "-C", str(source), "rev-parse", commit], capture_output=True, text=True,
-                              check=True).stdout.strip()
-        return tmp, tmp, full
+    if not (source / "j2.py").is_file():
+        raise SystemExit(f"--source {source} holds no j2.py: it must be an extraction of prototypes/j2, "
+                         "`git archive <sha> prototypes/j2 | tar -x --strip-components=2 -C <empty folder>`")
     return source, None, commit
 
 
@@ -320,8 +321,11 @@ def record(source, commit=BASELINE):
 
 def main(argv=None):
     ap = argparse.ArgumentParser(description=__doc__.split("\n")[0])
-    ap.add_argument("--source", default=os.environ.get("SUTRA_J2_CHECKOUT"), help="a J2_Prototype checkout")
-    ap.add_argument("--commit", default=BASELINE)
+    ap.add_argument("--source", default=os.environ.get("SUTRA_J2_CHECKOUT"),
+                    help="an extraction of this repository's prototypes/j2: git archive <sha> prototypes/j2 | tar -x --strip-components=2 -C "
+                         "<empty folder> (default: $SUTRA_J2_CHECKOUT, which names such a folder)")
+    ap.add_argument("--commit", default=BASELINE, help="the sutra commit the extraction was made from, recorded as j2_commit "
+                                                       "(default: the pin of the last sync)")
     ap.add_argument("--out", default=str(DEFAULT_OUT))
     ap.add_argument("--check", action="store_true", help="record again and exit 1 when the file differs")
     ap.add_argument("--patched-only", action="store_true", help="only the patched section (P13), in the existing file; no J2 checkout")
