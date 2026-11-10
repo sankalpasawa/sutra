@@ -8,7 +8,8 @@ What is tested here, in this order:
      reads, the error envelope, the token / Origin / Host rules, the event stream (hello, replay, resync, topics, ring),
      what the owner's lines do (the scripted stories of a first brief and of an answer);
   3. its test-only controls (`/__fake/emit|fixture|fail|log|state|reset|page|mount`);
-  4. J2's 28 data routes at the root with `?dept=`;
+  4. J2's data routes at the root with `?dept=` (the 28 of engine.md 7.1 and what sync 4 added: the plan map, the feeds, the catalog, the Artifacts groups,
+     the run list and changes, the studio's records and pages, the Decide for me switch, and `POST /api/ask` with the lines it stores);
   5. the real UI package mounted on it (pages, boot block, CSP, static files) and the fixtures folder as an option;
   6. `cdp.py`: the Chrome driver against a stand-in DevTools endpoint and a stand-in Chrome program (no Chrome needed);
      `conftest.py`: its marker and fixtures, run under a copy of it; and, in tests marked `browser` (they run only with
@@ -1266,8 +1267,9 @@ def test_engine_settings_get_has_the_documented_shape_for_all_teams_and_for_one(
     assert everyone["defaults"] == es["defaults"] and everyone["global"] == es["global"]
     assert everyone["effective"] == {**es["defaults"], **es["global"]} and everyone["editable"] == es["editable"]
     one = ok(fake, "/api/engine/settings", dept="web")
-    assert set(one) == {"schema", "defaults", "global", "department", "effective", "editable", "locked"}
+    assert set(one) == {"schema", "defaults", "global", "department", "effective", "editable", "locked", "next_run"}   # sync 4 (D139): what the next run would use
     assert one["department"] == es["department"] and one["effective"] == es["effective"]
+    assert one["next_run"] == {"output": es["effective"]["output"]} == {"output": "auto"}     # nothing chosen on the start page: the team's own setting
     error_of(fake.get("/api/engine/settings", dept="nosuch"), 404, "not_found")
     error_of(fake.get("/api/engine/settings", dept="Not A Team"), 404, "not_found")
 
@@ -1473,6 +1475,8 @@ WRITES = [  # every non-GET route that is not a test control: (method, a concret
     ("POST", "/api/say?dept=web", {"text": "x"}, "/api/say"),
     ("POST", "/api/output?dept=web", {"type": "website"}, "/api/output"),
     ("POST", "/api/reset?dept=web", {}, "/api/reset"),
+    ("POST", "/api/ask?dept=web", {"who": "adaptation", "q": "Why?"}, "/api/ask"),
+    ("POST", "/api/settings?dept=web", {"decide_for_me": True}, "/api/settings"),
     ("POST", "/api/playbooks/clear?dept=web", {}, "/api/playbooks/clear"),
     ("POST", "/api/lessons/clear?dept=web", {}, "/api/lessons/clear"),
 ]
@@ -2307,21 +2311,24 @@ def test_fixtures_of_other_shapes_work_too(tmp_path, make_fake_server):
 
 
 # =====================================================================================================================
-# 4. J2's 28 data routes at the root, the team in ?dept=
+# 4. J2's data routes at the root, the team in ?dept=
 # =====================================================================================================================
-J2_GETS = [  # the 23 GET handlers of j2_server.py (ENG 7.1 rows 3-25), each as a concrete path
+J2_GETS = [  # the GET handlers of j2_server.py (ENG 7.1 rows 3-25, then sync 4's), each as a concrete path
     "/api/state", "/api/runs", "/api/call?id=1", "/api/preview?atom=W-2.a1", "/api/docs", "/api/map", "/api/plan", "/api/library",
     "/api/library/website/hero/classic/v1", "/api/run-templates", "/api/artifacts", "/api/agent?who=identity",
     "/api/code?deck=a&section=b", "/api/artifacts/tree", "/api/artifact?name=site/index.html", "/api/story", "/api/board",
     "/api/audits", "/api/refs", "/shot/1", "/file/prd.md", "/site/latest", "/site/v1",
+    "/api/plan-map", "/api/activity?who=adaptation", "/api/catalog", "/api/artifacts/groups", "/api/runlist", "/api/changes",
+    "/api/record?sec=nothing", "/doc/prd", "/view?name=site/index.html",
 ]
 J2_POSTS = [("/api/say", {"text": "hello"}), ("/api/playbooks/clear", {}), ("/api/lessons/clear", {}), ("/api/output", {"type": "website"}),
-            ("/api/reset", {})]
+            ("/api/reset", {}), ("/api/ask", {"who": "adaptation", "q": "Why?"}), ("/api/settings", {"decide_for_me": True})]
 J2_JSON_FILES = {  # the routes that answer a capture byte for byte
     "/api/runs": "runs.json", "/api/docs": "docs.json", "/api/map": "map.json", "/api/plan": "plan.json",
     "/api/run-templates": "run-templates.json", "/api/artifacts": "artifacts.json", "/api/artifacts/tree": "artifacts-tree.json",
     "/api/story": "story.json", "/api/board": "board.json", "/api/audits": "audits.json", "/api/library": "library.json",
-    "/api/refs": "refs.json",
+    "/api/refs": "refs.json", "/api/plan-map": "plan-map.json", "/api/catalog": "catalog.json", "/api/artifacts/groups": "artifacts-groups.json",
+    "/api/runlist": "runlist.json", "/api/changes": "changes.json",
 }
 BAD_DEPTS = [None, "", "Web", "WEB", "w", "web_1", "1web", "a b", "web/../x", "x" * 41, "web."]  # none passes DEPT_ID_RE
 J2_SANDBOX = "sandbox allow-scripts allow-forms allow-popups; frame-ancestors 'self'"  # D83
@@ -2351,16 +2358,23 @@ def test_the_j2_routes_the_fake_registers_are_the_ones_the_client_wrapper_adds_d
                           text=True, timeout=30)
     assert done.returncode == 0, done.stderr
     paths = json.loads(done.stdout)
-    assert len(paths["exact"]) == 23 and paths["prefixes"] == ["/api/library/", "/site/", "/file/", "/shot/"]
+    assert {"/api/ask", "/api/plan-map", "/api/activity", "/api/catalog", "/api/artifacts/groups", "/api/runlist", "/api/changes"} <= set(paths["exact"])
+    assert "patched" not in paths                                   # P13 is retired (D140): runlist and changes are J2's own routes now
     registered = {(method, ctx.path) for ctx in iter_route_contexts(fake_server.app.routes) for method in (ctx.methods or ())
                   if method in ("GET", "POST") and not ctx.path.startswith("/__fake/")}
-    exact = {path for _, path in registered if path in paths["exact"]}
-    assert exact == set(paths["exact"]), "every path the wrapper adds ?dept= to has a route in the fake, and the reverse"
-    assert fb.J2_PATH_SET == frozenset(paths["exact"])  # the paths whose forced failures have J2's body shape
+    # the pages the Simple view puts in its frame build their own ?dept= (E4), so whether the wrapper lists them does not matter here
+    fetches = set(paths["exact"]) - set(fb.J2_PAGE_PATHS)
+    exact = {path for _, path in registered if path in fetches}
+    assert exact == fetches, "every path the wrapper adds ?dept= to has a route in the fake, and the reverse"
+    assert fb.J2_PATH_SET == frozenset(fetches)  # the paths whose forced failures have J2's body shape
+    assert {path for _, path in registered if path in fb.J2_PAGE_PATHS} == set(fb.J2_PAGE_PATHS) and "/doc/{name}" in {path for _, path in registered}
     prefixed = {path for _, path in registered if any(path.startswith(prefix) for prefix in paths["prefixes"])}
-    assert prefixed == {"/api/library/{artifact}/{section}/{slug}/{ver}", "/site/{key}", "/file/{name}", "/shot/{n}"}
-    assert {(m, p) for m, p in registered if p in fb.J2_POST_PATHS} == {("POST", p) for p in fb.J2_POST_PATHS} and len(fb.J2_POST_PATHS) == 5
-    assert len(J2_GETS) + len(J2_POSTS) == 28  # ENG 7.1: 23 GET and 5 POST handlers
+    assert prefixed >= {"/api/library/{artifact}/{section}/{slug}/{ver}", "/site/{key}", "/file/{name}", "/shot/{n}"}
+    assert prefixed <= {"/api/library/{artifact}/{section}/{slug}/{ver}", "/site/{key}", "/file/{name}", "/shot/{n}", "/doc/{name}"}
+    assert {(m, p) for m, p in registered if p in fb.J2_POST_PATHS} == {("POST", p) for p in fb.J2_POST_PATHS} and len(fb.J2_POST_PATHS) == 7
+    # 23 GET and 5 POST handlers of engine.md 7.1; sync 4 added nine GET (the plan map, a feed, the catalog, the groups, the run list, the changes, a record,
+    # a document page, a view page) and two POST (ask, settings)
+    assert len(J2_GETS) + len(J2_POSTS) == 28 + 9 + 2
 
 
 @pytest.mark.parametrize("path", J2_GETS)
@@ -2426,7 +2440,7 @@ def test_a_run_is_a_saved_view_of_a_run_the_team_has_and_nothing_else(fake_serve
     status, _, raw = j2_get(fake_server, "/api/state", dept="web", run="j2-19990101-000000-0000")
     assert (status, json.loads(raw)) == (404, {"error": "no such run"})  # J2's own body for the state route
     for path in J2_GETS[1:]:
-        if path.startswith(("/api/library", "/api/refs")):
+        if path.startswith(("/api/library", "/api/refs", "/api/catalog")):
             continue  # global: J2 ignores `run` there
         status, _, raw = j2_get(fake_server, path, dept="web", run="j2-19990101-000000-0000")
         assert status == 404, path
@@ -2550,6 +2564,423 @@ def test_a_forced_failure_on_a_j2_write_has_j2s_body(fake_server, fake):
     fake.fail("/api/say", 503, code="busy_starting")
     status, _, raw = j2_post(fake_server, "/api/say", {"text": "x"})
     assert (status, json.loads(raw)) == (503, {"error": "busy_starting"})
+
+
+# ---- sync 4: the feeds, the records and pages of the studio, the Decide for me switch -------------------------------------------------------------------
+def j2_capture(name: str):
+    return json.loads((J2_FIXTURES / name).read_bytes())
+
+
+@pytest.mark.parametrize("who", J2_FUNCS)
+def test_activity_answers_the_captured_feed_of_each_of_j2s_six_functions(fake_server, fake, who):
+    fake.stage("2")
+    status, headers, raw = j2_get(fake_server, "/api/activity", dept="web", who=who)
+    assert status == 200 and raw == (J2_FIXTURES / f"activity-{who}.json").read_bytes() and json.loads(raw)["who"] == who
+    assert headers["content-type"].startswith("application/json") and headers["x-content-type-options"] == "nosniff"
+
+
+def test_activity_of_anyone_else_is_the_capture_of_a_name_j2_does_not_know_with_the_name_asked_for(fake_server, fake):
+    fake.stage("2")
+    unknown = j2_capture("activity-unknown.json")
+    for who in ("zed", "W-1", "", "../identity"):
+        status, _, raw = j2_get(fake_server, "/api/activity", dept="web", who=who)
+        assert status == 200 and json.loads(raw) == {**unknown, "who": who}, who
+    assert json.loads(j2_get(fake_server, "/api/activity", dept="web")[2]) == {**unknown, "who": ""}
+
+
+@pytest.fixture()
+def studio_server(tmp_path, make_fake_server):
+    """The fake with a few captures of the studio's routes made up here (small, valid, and unlike any real record), so the routes are proved whatever the committed
+    captures hold: a part's record, a deliverable's record, one document page and one view page."""
+    folder = fixtures_copy(tmp_path)
+    (folder / "j2" / "record-S-1.json").write_text(json.dumps({"schema": "studio/1", "sec": "S-1", "name": "Hero"}), encoding="utf-8")
+    (folder / "j2" / "record-art-site_index.html.json").write_text(json.dumps({"schema": "studio/1", "name": "site/index.html"}), encoding="utf-8")
+    (folder / "j2" / "doc-prd.html").write_text("<!doctype html><title>PRD</title><h1>A made-up PRD</h1>", encoding="utf-8")
+    (folder / "j2" / "view-notes_todo.md.html").write_text("<!doctype html><title>todo</title><p>todo</p>", encoding="utf-8")
+    server = make_fake_server(fixtures_dir=folder)
+    server.client.stage("2")
+    return server
+
+
+def test_a_record_is_the_capture_of_its_part_or_its_deliverable_and_otherwise_j2s_404(studio_server):
+    url = studio_server.url
+    status, headers, raw = j2_get(studio_server, "/api/record", dept="web", sec="S-1")
+    assert status == 200 and json.loads(raw) == {"schema": "studio/1", "sec": "S-1", "name": "Hero"}
+    assert headers["content-type"].startswith("application/json") and headers["x-content-type-options"] == "nosniff"
+    status, _, raw = j2_get(studio_server, "/api/record", dept="web", art="site/index.html")      # a deliverable: the file name is made safe (site_index.html)
+    assert status == 200 and json.loads(raw) == {"schema": "studio/1", "name": "site/index.html"}
+    for query in ({"sec": "S-9"}, {"art": "nothing.md"}, {}, {"sec": ""}, {"sec": "../S-1"}):
+        status, _, raw = j2_get(studio_server, "/api/record", dept="web", **query)
+        assert (status, json.loads(raw)) == (404, {"error": "no such part"}), query              # J2's own body for an unknown part (and for no question at all)
+    assert j2_get(studio_server, "/api/record", dept="web", sec="S-1", run="j2-20261104-100004-7f3a")[0] == 200      # a saved run of the team
+    assert j2_get(studio_server, "/api/record", dept="web", sec="S-1", run="j2-19990101-000000-0000")[0] == 404      # D73: any other run is not found
+    assert raw_request(url, "GET", "/api/record?sec=S-1")[0] == 400                                # no team: dept_required
+
+
+def test_the_pages_of_the_studio_come_sandboxed_and_a_file_that_is_not_written_is_j2s_own_line(studio_server):
+    for path in ("/doc/prd", "/view?name=notes/todo.md"):
+        status, headers, raw = j2_get(studio_server, path.split("?")[0], dept="web", **({"name": "notes/todo.md"} if "?" in path else {}))
+        assert status == 200 and headers["content-type"].startswith("text/html"), path
+        assert headers["content-security-policy"] == J2_SANDBOX and headers["x-content-type-options"] == "nosniff" and headers["referrer-policy"] == "no-referrer"
+        assert raw.startswith(b"<!doctype html>"), path
+    for path, params in (("/doc/hld", {}), ("/view", {"name": "never.txt"}), ("/view", {})):
+        status, headers, raw = j2_get(studio_server, path, dept="web", **params)
+        assert (status, raw) == (200, fb.NOT_WRITTEN.encode()), (path, params)              # J2 answers 200 and says so, as the page puts it in its frame
+        assert headers["content-security-policy"] == J2_SANDBOX
+    assert j2_get(studio_server, "/doc/prd", dept="web", run="j2-19990101-000000-0000")[0] == 404
+    assert raw_request(studio_server.url, "GET", "/doc/prd")[0] == 400 and raw_request(studio_server.url, "GET", "/view?name=x")[0] == 400
+
+
+def test_every_part_and_deliverable_the_captured_state_names_has_its_record_in_the_captures(fake_server, fake):
+    """The studio's captures are complete: the fake answers a record for each part of the captured state and for each deliverable the artifacts listing names,
+    and a page for each file the listing says the page opens (scripts/capture_j2_fixtures.py makes them with the state)."""
+    fake.stage("2")
+    studio = j2_capture("state.json")["studio"]
+    assert studio["schema"] == "studio/1" and studio["parts"], "state.json holds no studio: the captures were made before the studio redesign"
+    for part in studio["parts"]:
+        status, _, raw = j2_get(fake_server, "/api/record", dept="web", sec=part["sec"])
+        assert status == 200, part["sec"]
+        assert (json.loads(raw)["sec"], json.loads(raw)["name"]) == (part["sec"], part["name"])
+    deliverables = j2_capture("artifacts.json")["deliverables"]
+    assert deliverables
+    for row in deliverables:
+        status, _, raw = j2_get(fake_server, "/api/record", dept="web", art=row["name"])
+        assert status == 200, row["name"]
+        assert json.loads(raw)["name"] == row["name"]
+        status, _, page = j2_get(fake_server, "/view", dept="web", name=row["file"])
+        assert status == 200 and page != fb.NOT_WRITTEN.encode(), row["file"]
+
+
+def test_decide_for_me_is_a_switch_the_state_reports_back(fake_server, fake):
+    fake.stage("2")
+    captured = bool(j2_capture("state.json").get("decide_for_me", False))
+    reads = lambda: json.loads(j2_get(fake_server, "/api/state", dept="web")[2]).get("decide_for_me", False)  # noqa: E731
+    assert reads() is captured
+    assert j2_post(fake_server, "/api/settings", {})[0] == 200 and reads() is captured                # no key: nothing changes (J2 answers the switch as it is)
+    status, _, raw = j2_post(fake_server, "/api/settings", {"decide_for_me": True})
+    assert (status, json.loads(raw)) == (200, {"ok": True, "decide_for_me": True}) and reads() is True
+    assert json.loads(j2_post(fake_server, "/api/settings", {"other": 1})[2]) == {"ok": True, "decide_for_me": True}
+    assert json.loads(j2_post(fake_server, "/api/settings", {"decide_for_me": 0})[2]) == {"ok": True, "decide_for_me": False} and reads() is False
+    fake.stage("full")
+    j2_post(fake_server, "/api/settings", {"decide_for_me": True})
+    assert reads() is True
+    assert json.loads(j2_get(fake_server, "/api/state", dept="content")[2]).get("decide_for_me", False) is captured      # a switch is a team's own
+    fake.reset()
+    fake.stage("2")
+    assert reads() is captured                                                                           # reset with the story
+
+
+# ---- sync 4: POST /api/ask and the two lines it stores ---------------------------------------------------------------------------------------------------
+ASK = "/api/ask"
+
+
+def ask(fake_server, who="adaptation", q="Why was W-3 scored below the gate?", run="", dept="web", **extra):
+    body = {"who": who, "q": q, **({"run": run} if run is not None else {}), **extra}
+    status, _, raw = j2_post(fake_server, ASK, body, dept=dept)
+    return status, json.loads(raw)
+
+
+def agent_rows_of(fake, run=None):
+    return {row["agent"]: row for row in ok(fake, "/api/teams/web/agents", **({"run": run} if run else {}))}
+
+
+def lines_of(fake, sid):
+    return ok(fake, f"/api/chats/{sid}/messages")["messages"]
+
+
+def test_a_question_to_something_that_is_not_a_function_or_too_long_is_j2s_400(fake_server, fake):
+    fake.stage("full")
+    for who in ("zed", "W-1", "", "Identity", "ADAPTATION", "web.identity"):
+        assert ask(fake_server, who) == (400, {"error": "not a function"}), who
+    assert j2_post(fake_server, ASK, {"q": "no one asked"})[0] == 400 and j2_post(fake_server, ASK, [])[0] == 400
+    assert ask(fake_server, q="x" * 2001) == (400, {"error": "question too long"})
+    assert ask(fake_server, q=" " + "x" * 2000 + " ")[0] == 200                                         # the ceiling is on what is left after trimming, as the engine's
+    sid = agent_rows_of(fake)["adaptation"]["session_id"]
+    assert [m["text"] for m in lines_of(fake, sid) if m.get("ask")] == ["x" * 2000, "From the records:"[:0] + j2_capture("ask-adaptation.json")["answer"]]
+
+
+def test_a_question_to_a_function_with_a_session_is_answered_from_the_records_and_stored_as_two_lines_of_that_session(fake_server, fake):
+    fake.stage("full")
+    rows = agent_rows_of(fake)
+    sid = rows["adaptation"]["session_id"]
+    before = lines_of(fake, sid)
+    captured = j2_capture("ask-adaptation.json")
+    status, body = ask(fake_server, q="  Why was W-3\n scored   below the gate?  ")
+    assert status == 200 and set(body) == {"who", "answer", "from", "session_id", "question_id", "answer_id"}
+    assert (body["who"], body["answer"], body["from"], body["session_id"]) == ("adaptation", captured["answer"], "records", sid)
+    after = lines_of(fake, sid)
+    assert after[: len(before)] == before and len(after) == len(before) + 2                               # the lines are added to the transcript, never in place of one
+    question, answer = after[-2:]
+    assert (question["id"], answer["id"]) == (body["question_id"], body["answer_id"]) and answer["id"] == question["id"] + 1
+    assert (question["role"], question["who"], question["kind"], question["text"], question["ask"]) == (
+        "user", "user", "text", "Why was W-3 scored below the gate?", "q")                              # whitespace is one space, as `DeptCommands.ask` writes it
+    assert (answer["role"], answer["who"], answer["kind"], answer["text"], answer["ask"]) == ("agent", "adaptation", "text", captured["answer"], "records")
+    assert {k for k in question} == MESSAGE_KEYS | {"ask"} and {k for k in answer} == MESSAGE_KEYS | {"ask"}
+    assert question["task_id"] == answer["task_id"] == rows["adaptation"]["task_id"] and RE_TS.match(question["at"]) and question["at"] <= answer["at"]
+    assert all("ask" not in m for m in before)                                                          # a line that is no part of a question has no `ask`
+    assert ok(fake, f"/api/chats/{sid}")["last_message_id"] == answer["id"]
+
+
+@pytest.mark.parametrize("who", FUNCTIONS)
+def test_each_of_the_five_functions_keeps_its_own_transcript_of_questions(fake_server, fake, who):
+    fake.stage("full")
+    rows = agent_rows_of(fake)
+    sids = {row["session_id"] for row in rows.values()}
+    status, body = ask(fake_server, who)
+    assert status == 200 and body["session_id"] == rows[who]["session_id"] and body["answer"] == j2_capture(f"ask-{who}.json")["answer"]
+    for other in sids - {body["session_id"]}:
+        assert not any("ask" in m for m in lines_of(fake, other)), other                                # the question is in one session only
+
+
+def test_both_lines_are_announced_the_question_first_so_the_node_panel_and_j2s_panel_read_one_transcript(fake_server, fake):
+    fake.stage("full")
+    sid = agent_rows_of(fake)["audit"]["session_id"]
+    with Stream(fake_server.url, "/api/events?topics=chat,usage") as stream:
+        status, body = ask(fake_server, "audit", "Which check failed?")
+        frames = [f for f in stream.until("chat.message") + stream.until("chat.message") if f.get("event") == "chat.message"]
+    assert status == 200 and len(frames) == 2
+    first, second = (f["data"] for f in frames)
+    assert first["session_id"] == second["session_id"] == sid
+    assert (first["message"]["id"], first["message"]["ask"], first["message"]["role"]) == (body["question_id"], "q", "user")      # the event carries the line as the read does
+    assert (second["message"]["id"], second["message"]["ask"], second["message"]["who"]) == (body["answer_id"], "records", "audit")
+    assert first["message"] in lines_of(fake, sid) and second["message"] in lines_of(fake, sid)
+
+
+def test_a_function_with_no_session_of_its_own_is_answered_and_nothing_is_stored(fake_server, fake):
+    fake.stage("full")
+    before = {sid: len(lines_of(fake, sid)) for sid in (row["session_id"] for row in agent_rows_of(fake).values())}
+    status, body = ask(fake_server, "validator")                                                          # the validator is code: it has no session
+    assert (status, body) == (200, j2_capture("ask-validator.json"))
+    status, body = ask(fake_server, "adaptation", run=fb.PAST_RUN["run_id"])                              # the earlier run has Identity's and Audit's chats only
+    assert (status, body) == (200, j2_capture("ask-adaptation.json"))
+    status, body = ask(fake_server, "adaptation", dept="content")                                         # the fake keeps agents for the Web team
+    assert (status, body) == (200, j2_capture("ask-adaptation.json"))
+    assert {sid: len(lines_of(fake, sid)) for sid in before} == before
+    assert ask(fake_server, q="   ") == (200, {"who": "adaptation", "answer": "", "from": "records"})      # nothing asked is nothing stored: J2's own empty answer
+    assert {sid: len(lines_of(fake, sid)) for sid in before} == before
+
+
+def test_an_earlier_runs_function_chat_takes_the_question_though_it_is_archived(fake_server, fake):
+    fake.stage("full")
+    status, body = ask(fake_server, "identity", run=fb.PAST_RUN["run_id"])
+    assert status == 200 and body["session_id"] == "cs_past_identity"
+    shown = ok(fake, "/api/chats/cs_past_identity")
+    assert shown["status"] == "archived" and shown["writable"] is False                                   # the session stays read-only: only this route writes there
+    lines = lines_of(fake, "cs_past_identity")
+    assert [(m["role"], m.get("ask")) for m in lines[-2:]] == [("user", "q"), ("agent", "records")] and lines[-1]["task_id"] == fb.PAST_RUN["task_id"]
+    assert agent_rows_of(fake, fb.PAST_RUN["run_id"])["identity"]["session_id"] == "cs_past_identity"
+    error_of(fake.request("POST", "/api/chats/cs_past_identity/steer", {"text": "a note"}, token=True), 409, "not_running")   # a note is another box, and the run is over
+
+
+def test_a_run_the_fake_does_not_know_is_the_current_run_as_the_engine_reads_it(fake_server, fake):
+    fake.stage("full")
+    sid = agent_rows_of(fake)["priority"]["session_id"]
+    for run in ("", "j2-20261104-100004-7f3a", fb.LIVE_RUN["run_id"], "j2-not-a-run", "../x"):
+        status, body = ask(fake_server, "priority", run=run)
+        assert status == 200 and body["session_id"] == sid, run
+    assert len([m for m in lines_of(fake, sid) if m.get("ask") == "q"]) == 5
+
+
+def test_an_archived_team_takes_no_question(fake_server, fake, monkeypatch):
+    fake.stage("full")
+
+    class Row:
+        id, name, archived = "web", "Web", True
+
+    monkeypatch.setattr(fb._Services, "department", lambda self, dept_id: Row() if dept_id == "web" else None)
+    status, _, raw = j2_post(fake_server, ASK, {"who": "adaptation", "q": "Why?"})
+    assert status == 403 and json.loads(raw)["error"]["code"] == "read_only"                              # the engine's envelope for a write to a merged team
+    sid = agent_rows_of(fake)["adaptation"]["session_id"]
+    assert not any("ask" in m for m in lines_of(fake, sid))
+
+
+def test_the_ask_control_sets_how_the_next_questions_are_answered_and_reset_puts_it_back(fake_server, fake):
+    fake.stage("full")
+    sid = agent_rows_of(fake)["coordination"]["session_id"]
+    records = j2_capture("ask-coordination.json")["answer"]
+    assert fake.post("/__fake/ask", {"mode": "offline"}, token=False)[1] == {"mode": "offline", "text": None, "note": None, "delay": 0.0}
+    status, body = ask(fake_server, "coordination")
+    assert status == 200 and body["note"] == "No model is connected." and (body["answer"], body["from"]) == (records, "records")
+    assert lines_of(fake, sid)[-1]["ask"] == "records"                                                    # offline: both lines are stored all the same
+    fake.post("/__fake/ask", {"mode": "offline", "note": "Your monthly limit is reached."}, token=False)
+    assert ask(fake_server, "coordination")[1]["note"] == "Your monthly limit is reached."
+    fake.post("/__fake/ask", {"mode": "failed", "note": None}, token=False)
+    status, body = ask(fake_server, "coordination")
+    assert body["note"].startswith("The model could not answer (") and body["note"].endswith("this is from the records only.") and body["from"] == "records"
+    fake.post("/__fake/ask", {"mode": "records", "note": None}, token=False)
+    assert "note" not in ask(fake_server, "coordination")[1]
+    for bad in ({"mode": "guess"}, {"delay": -1}, {"delay": 31}, {"delay": True}, {"text": 5}, {"extra": 1}, []):
+        assert fake.post("/__fake/ask", bad, token=False)[0] == 422, bad
+    fake.post("/__fake/ask", {"mode": "offline", "delay": 2}, token=False)
+    fake.reset()
+    fake.stage("full")
+    assert fake.post("/__fake/ask", {}, token=False)[1] == {"mode": "records", "text": None, "note": None, "delay": 0.0}
+    assert not any("ask" in m for m in lines_of(fake, sid))                                               # the lines go with the story, as every other line does
+
+
+def test_a_model_answer_is_stored_as_the_models_and_booked_to_the_agent_as_one_agent_chat_call(fake_server, fake):
+    fake.stage("full")
+    rows = agent_rows_of(fake)
+    sid, usage = rows["audit"]["session_id"], rows["audit"]["usage"]
+    assert usage["by_purpose"]["agent_chat"] == {"calls": 0, "usd": 0.0}
+    fake.post("/__fake/ask", {"mode": "model", "text": "Item 4 was not met: the footer has no phone number."}, token=False)
+    with Stream(fake_server.url, "/api/events?topics=usage") as stream:
+        status, body = ask(fake_server, "audit", "Which check failed?")
+        recorded = stream.until("usage.recorded")[-1]["data"]
+    assert status == 200 and (body["answer"], body["from"]) == ("Item 4 was not met: the footer has no phone number.", "model") and "note" not in body
+    lines = lines_of(fake, sid)
+    assert [(m["role"], m["ask"]) for m in lines[-2:]] == [("user", "q"), ("agent", "model")] and lines[-1]["text"] == body["answer"]
+    row = recorded["row"]
+    assert (row["purpose"], row["session_id"], row["fn"], row["dept_id"], row["task_id"]) == ("agent_chat", sid, "audit", "web", fb.LIVE_RUN["task_id"])
+    assert row["atom_id"] == overhead_atom_id(fb.LIVE_RUN["run_id"]) and row["usd"] == fb.ASK_CALL_USD         # an answer is overhead, never a work atom (D59)
+    after = agent_rows_of(fake)["audit"]["usage"]
+    assert after["by_purpose"]["agent_chat"] == {"calls": 1, "usd": fb.ASK_CALL_USD}
+    assert after["calls"] == usage["calls"] + 1 and after["usd"] == pytest.approx(usage["usd"] + fb.ASK_CALL_USD)
+    assert after["tokens_in"] == usage["tokens_in"] + fb.ASK_TOKENS[0] and after["tokens_out"] == usage["tokens_out"] + fb.ASK_TOKENS[1]
+    assert recorded["task_total"]["calls"] == sum(r["usage"]["calls"] for r in agent_rows_of(fake).values())
+    fake.post("/__fake/ask", {"mode": "model"}, token=False)                                              # no text: the answer says what it was asked
+    assert ask(fake_server, "audit", "Which check failed?")[1]["answer"] == "From its records: Which check failed?"
+    assert agent_rows_of(fake)["audit"]["usage"]["by_purpose"]["agent_chat"]["calls"] == 2
+    assert sum(g["calls"] for g in ok(fake, "/api/usage/summary", by="purpose")["groups"] if g["key"] == "agent_chat") == 2
+
+
+def test_a_second_question_to_a_session_that_is_still_being_answered_is_409_busy(fake_server, fake):
+    fake.stage("full")
+    sid = agent_rows_of(fake)["adaptation"]["session_id"]
+    fake.post("/__fake/ask", {"delay": 0.8}, token=False)
+    first: list = []
+    thread = threading.Thread(target=lambda: first.append(ask(fake_server, "adaptation", "First?")))
+    thread.start()
+    deadline = time.monotonic() + 5
+    while not any(m.get("ask") == "q" for m in lines_of(fake, sid)):                                      # the question line is stored before the answer is made
+        assert time.monotonic() < deadline, "the first question was never stored"
+        time.sleep(0.02)
+    assert ask(fake_server, "adaptation", "Second?") == (409, {"error": "busy"})
+    assert ask(fake_server, "priority", "Another function?")[0] == 200                                    # one question at a time per session, not per team
+    thread.join(10)
+    assert first and first[0][0] == 200 and [m["text"] for m in lines_of(fake, sid) if m.get("ask") == "q"] == ["First?"]
+    assert ask(fake_server, "adaptation", "Third?")[0] == 200                                             # the busy mark is gone with the answer
+
+
+def test_an_interrupted_question_stays_without_an_answer_and_frees_the_session(fake_server, fake):
+    fake.stage("full")
+    sid = agent_rows_of(fake)["priority"]["session_id"]
+    fake.post("/__fake/ask", {"mode": "interrupted"}, token=False)
+    status, body = ask(fake_server, "priority", "Will this be answered?")
+    assert status == 500 and body["error"]["code"] == "internal"
+    lines = lines_of(fake, sid)
+    assert [(m["role"], m.get("ask")) for m in lines if m.get("ask")] == [("user", "q")]                    # J2's panel says "No answer was stored." for it
+    fake.post("/__fake/ask", {"mode": "records"}, token=False)
+    assert ask(fake_server, "priority", "And now?")[0] == 200                                              # the session is free again
+
+
+# ---- sync 4: usage by purpose, in the agents rows and in the summary ------------------------------------------------------------------------------------
+def test_an_agents_usage_names_its_calls_by_purpose_and_they_add_up(fake):
+    fake.stage("full")
+    for run in (None, fb.PAST_RUN["run_id"]):
+        for agent, row in agent_rows_of(fake, run).items():
+            usage = row["usage"]
+            assert set(usage) == {"calls", "usd", "tokens_in", "tokens_out", "by_purpose"} and list(usage["by_purpose"]) == list(fb.PURPOSES), agent
+            cells = usage["by_purpose"]
+            assert all(set(cell) == {"calls", "usd"} for cell in cells.values())
+            assert sum(c["calls"] for c in cells.values()) == usage["calls"], agent
+            assert sum(c["usd"] for c in cells.values()) == pytest.approx(usage["usd"], abs=1e-3), agent
+    rows = agent_rows_of(fake)
+    assert {a: r["usage"]["by_purpose"]["judge"]["calls"] for a, r in rows.items() if r["usage"]["by_purpose"]["judge"]["calls"]} == {"priority": 2, "coordination": 1}
+    assert {a: r["usage"]["by_purpose"]["plan"]["calls"] for a, r in rows.items() if r["usage"]["by_purpose"]["plan"]["calls"]} == {"adaptation": 2, "coordination": 1}
+    assert all(r["usage"]["by_purpose"]["agent_chat"]["calls"] == 0 for r in rows.values())               # nobody has been asked anything
+    assert [(r["usage"]["calls"], r["usage"]["usd"]) for r in rows.values()][:5] == [(2, 0.01), (3, 0.02), (4, 0.03), (5, 0.04), (6, 0.05)]      # the totals a row always had
+
+
+def test_the_usage_summary_groups_the_same_numbers_by_purpose_and_by_the_ledgers_other_keys(fake):
+    fake.stage("full")
+    rows = [*agent_rows_of(fake).values(), *agent_rows_of(fake, fb.PAST_RUN["run_id"]).values()]
+    total = {"calls": sum(r["usage"]["calls"] for r in rows), "usd": sum(r["usage"]["usd"] for r in rows),
+             "tokens_in": sum(r["usage"]["tokens_in"] for r in rows), "tokens_out": sum(r["usage"]["tokens_out"] for r in rows)}
+    for by in ("purpose", "fn", "session", "day", "dept", "provider", "atom"):
+        groups = ok(fake, "/api/usage/summary", by=by)["groups"]
+        assert groups and all(set(g) == {"key", "calls", "usd", "tokens_in", "tokens_out"} for g in groups), by
+        assert [g["key"] for g in groups] == sorted(g["key"] for g in groups) or groups[0]["key"] == "(none)", by       # key order, a row with no key first
+        assert sum(g["calls"] for g in groups) == total["calls"] and sum(g["usd"] for g in groups) == pytest.approx(total["usd"], abs=1e-3), by
+        assert sum(g["tokens_in"] for g in groups) == total["tokens_in"] and sum(g["tokens_out"] for g in groups) == total["tokens_out"], by
+    purposes = {g["key"]: g for g in ok(fake, "/api/usage/summary", by="purpose")["groups"]}
+    assert set(purposes) == {"agent_turn", "judge", "plan"} and purposes["judge"]["calls"] == 3 and purposes["plan"]["calls"] == 3      # agent_chat has no row until a model answers
+    assert {g["key"] for g in ok(fake, "/api/usage/summary", by="provider")["groups"]} == {"claude"}
+    assert {g["key"] for g in ok(fake, "/api/usage/summary", by="day")["groups"]} == {"2026-11-03", "2026-11-04"}
+    atoms = {g["key"]: g for g in ok(fake, "/api/usage/summary", by="atom")["groups"]}
+    assert atoms["(none)"]["calls"] == purposes["agent_turn"]["calls"]                                     # a turn's calls have atoms of their own; judging and planning are overhead
+    assert atoms[overhead_atom_id(fb.LIVE_RUN["run_id"])]["calls"] == purposes["judge"]["calls"] + purposes["plan"]["calls"]
+    assert next(iter(atoms)) == "(none)"                                                                   # a row without a key sorts first, as in the ledger's SQL
+
+
+def test_the_summary_of_one_session_and_a_bad_grouping(fake):
+    fake.stage("full")
+    sid = agent_rows_of(fake)["coordination"]["session_id"]
+    groups = ok(fake, "/api/usage/summary", by="purpose", session_id=sid)["groups"]
+    assert {g["key"]: g["calls"] for g in groups} == {"agent_turn": 3, "judge": 1, "plan": 1}
+    assert ok(fake, "/api/usage/summary", by="purpose", session_id="cs_nobody") == {"groups": []}
+    assert ok(fake, "/api/usage/summary") == ok(fake, "/api/usage/summary", by="dept") == {"groups": [{
+        "key": "web", **{k: v for k, v in ok(fake, "/api/usage/summary", by="dept")["groups"][0].items() if k != "key"}}]}                    # dept is the default
+    error = error_of(fake.get("/api/usage/summary", by="colour"), 422, "validation")
+    assert error["details"]["violations"][0]["path"] == "query.by"
+    assert ok(fake, "/api/usage/summary", by="fn", include_stub=1) == ok(fake, "/api/usage/summary", by="fn")                          # no stub rows exist here
+
+
+# ---- sync 4 (D139): what the next run makes -------------------------------------------------------------------------------------------------------------------
+def test_next_run_is_the_start_pages_choice_else_the_teams_setting_else_the_default(fake_server, fake):
+    fake.stage("2")
+    nxt = lambda: ok(fake, "/api/engine/settings", dept="web")["next_run"]  # noqa: E731
+    assert nxt() == {"output": "auto"} and "next_run" not in ok(fake, "/api/engine/settings")              # a team's view only: "all teams" has no next run
+    fake.request("PUT", "/api/engine/settings?dept=web", {"set": {"output": "prd"}}, token=True)
+    assert nxt() == {"output": "prd"}                                                                       # the team's own setting
+    assert json.loads(j2_post(fake_server, "/api/output", {"type": "website"})[2]) == {"ok": True, "output": "website"}
+    assert nxt() == {"output": "website"}                                                                   # what was picked on the start page wins
+    assert ok(fake, "/api/engine/settings", dept="web")["effective"]["output"] == "prd"                    # and the setting is untouched: a pick is for the next run only
+    assert j2_post(fake_server, "/api/output", {"type": "poster"})[0] == 409 and nxt() == {"output": "website"}   # a refused pick changes nothing
+    for kind in ("auto", "project", "hld"):
+        j2_post(fake_server, "/api/output", {"type": kind})
+        assert nxt() == {"output": kind}
+    status, answer = fake.request("PUT", "/api/engine/settings?dept=web", {"set": {"budget": 99}}, token=True)
+    assert answer["next_run"] == {"output": "hld"}                                                          # the answer of a save is the same view
+
+
+def test_a_team_that_has_started_closes_the_choice_and_a_follow_up_clears_it(fake_server, fake):
+    fake.stage("2")
+    assert fake.post("/__fake/output", {"locked": "yes"}, token=False)[0] == 422 and fake.post("/__fake/output", {}, token=False)[0] == 422
+    assert fake.post("/__fake/output", {"locked": True}, token=False)[1] == {"locked": True}
+    status, _, raw = j2_post(fake_server, "/api/output", {"type": "prd"})
+    assert (status, json.loads(raw)) == (409, {"ok": False, "output": "auto"})                              # 409 names what the run makes
+    assert ok(fake, "/api/engine/settings", dept="web")["next_run"] == {"output": "auto"}
+    fake.post("/__fake/output", {"locked": False}, token=False)
+    assert j2_post(fake_server, "/api/output", {"type": "prd"})[0] == 200
+    fake.stage("full")
+    j2_post(fake_server, "/api/output", {"type": "prd"}, dept="content")
+    assert ok(fake, "/api/engine/settings", dept="content")["next_run"] == {"output": "prd"}
+    assert j2_post(fake_server, "/api/say", {"text": "Add a gallery"}, dept="content")[0] == 200            # a follow-up created a task: the pick has been used
+    assert ok(fake, "/api/engine/settings", dept="content")["next_run"] == {"output": "auto"}
+    fake.reset()
+    fake.stage("2")
+    fake.post("/__fake/output", {"locked": True}, token=False)
+    fake.reset()
+    fake.stage("2")
+    assert j2_post(fake_server, "/api/output", {"type": "prd"})[0] == 200                                   # reset with the story
+
+
+# ---- the file runs as a script (the motion probe starts it by hand) ---------------------------------------------------------------------------------------------
+def test_the_file_runs_as_a_script_so_a_page_can_be_looked_at_by_hand(monkeypatch):
+    """`scripts/py tests/ui/fake_backend.py --port 8791 --stage full` once failed with a NameError: its main guard sat above the agent-sessions block, which was
+    not defined yet when the guard ran. Run the file as a program with the server stubbed out: it must build the app and serve it."""
+    import runpy
+
+    served: dict = {}
+    monkeypatch.setattr(fb.uvicorn, "run", lambda app, **kw: served.update(app=app, **kw))
+    monkeypatch.setattr(sys, "argv", ["fake_backend.py", "--port", "8791", "--stage", "full"])
+    with pytest.raises(SystemExit) as stopped:
+        runpy.run_path(fb.__file__, run_name="__main__")
+    assert stopped.value.code == 0 and served["port"] == 8791 and served["host"] == "127.0.0.1"
+    assert served["app"].state.fake.stages()["graph"] == "full"
+    source = Path(fb.__file__).read_text(encoding="utf-8").rstrip().splitlines()
+    assert source[-2:] == ['if __name__ == "__main__":', "    raise SystemExit(main())"]                       # the guard is the last statement: nothing is defined after it
 
 
 # =====================================================================================================================

@@ -3,14 +3,16 @@
 `make_app(fixtures_dir)` returns a FastAPI app that mounts the REAL UI package (pages, boot block, CSP, `/ui` static
 files) and answers the paths of the UI-to-server contract (ORCH section 6, as patched by S1 to S4) from the JSON files of
 `tests/ui/fixtures/`: the chart, the graph, the chats, the departments, "needs you", the Atom log, the health, the engine
-Settings, the connector Test and Sign in paths, the event stream, and J2's own data routes at the root with `?dept=` (since
-sync 4: 24 GET paths and 6 POST paths, the 30 names of `J2_EXACT` in sutra_ctx.js; the answers are `tests/ui/fixtures/j2/`, J2's own bytes).
+Settings, the connector Test and Sign in paths, the event stream, and J2's own data routes at the root with `?dept=` (the names of `J2_EXACT` and the
+prefixes of `J2_PREFIXES` in sutra_ctx.js, and nothing else; the answers are `tests/ui/fixtures/j2/`, J2's own bytes).
 Everything uses the library ids (`root`, `web`, `web.identity`, `s-3f9a1c2b7d`, `cs_org`, `chg-0002`, `req-17`), J2's nine
 status words, the edge kinds of S3-web-13 and the five atom words. Errors of the new routes are `{error:{code,message,details}}`;
 J2's routes keep J2's bodies. Writes need the header `X-Sutra-Token` (`TOKEN`) and a matching Origin, as the real server does.
 
 The sync 4 routes (docs/design/j2-sync-4.md 3.1 to 3.6, 4.8): `/api/plan-map`, `/api/activity`, `/api/catalog`, `/api/artifacts/groups`, `/api/runlist` and
-`/api/changes` answer a capture, and `POST /api/ask {who, q, run}` is the engine's route in small: J2's six functions only (400 `not a function`), a question
+`/api/changes` answer a capture, the studio redesign's `/api/record` (`?sec=` a part, `?art=` a deliverable: `record-<sec>.json`, `record-art-<name>.json`), `/doc/<name>` and `/view?name=`
+(pages: `doc-<name>.html`, `view-<file>.html`, J2's "isn't written yet" line for one the captures lack) and `POST /api/settings {decide_for_me}` (the
+switch `/api/state` then reports), and `POST /api/ask {who, q, run}` is the engine's route in small: J2's six functions only (400 `not a function`), a question
 of at most 2,000 characters, an archived team 403, J2's own records-only answer (the capture `ask-<who>.json`), and, for a function that has a session of
 its own for that run, the question and the answer stored as two lines of that session (`ask` is "q", "records" or "model" on the wire, as `ChatMessageOut.ask`)
 and announced as `chat.message` events, so the node panel and J2's chat panel read one transcript; a second question while one is being answered is 409
@@ -105,6 +107,7 @@ ENGINE_MIN = {"budget": 1, "max_cycles": 1, "max_turns": 1, "chat_full_chars": 1
 J2_FUNCS = (*FUNCTIONS, "validator")  # J2's six functions (j2_agent.FUNCS): the ones GET /api/activity and POST /api/ask know
 ASK_CHARS = 2000  # the longest question: the ceiling of a note to an agent (views.ASK_CHARS)
 PURPOSES = ("agent_turn", "judge", "plan", "agent_chat")  # what `usage.by_purpose` of an agent's row names (D145)
+NOT_WRITTEN = "<p style='font:15px system-ui;color:#667;padding:24px'>This isn't written yet.</p>"   # j2_server.view_page for a file the run does not list
 SUMMARY_BY = ("dept", "fn", "provider", "day", "atom", "session", "purpose")  # GET /api/usage/summary?by=
 NO_KEY = "(none)"  # the group of a ledger row that has no value for the key (orchestrator/usage.py)
 DEFAULT_MESSAGES = {
@@ -144,6 +147,24 @@ class J2Reject(Exception):
 
 def envelope(status: int, code: str, message: str, details: dict | None = None) -> JSONResponse:
     return JSONResponse({"error": {"code": code, "message": message, "details": details or {}}}, status_code=status)
+
+
+def safe_name(text: str) -> str:
+    """A key of a route (a part, a deliverable, a file the run lists) as the middle of a capture's file name: anything but letters, digits, dot, dash and
+    underscore becomes an underscore (`site/index.html` is `site_index.html`)."""
+    return re.sub(r"[^A-Za-z0-9._-]+", "_", text)
+
+
+def record_fixture(sec: str | None, art: str | None) -> str | None:
+    """The capture of /api/record: `record-<sec>.json` for a part, `record-art-<name>.json` for a deliverable; None when neither is asked for."""
+    if art is not None:
+        return f"record-art-{safe_name(art)}.json"
+    return f"record-{safe_name(sec)}.json" if sec else None
+
+
+def view_fixture(kind: str, name: str) -> str:
+    """The capture of a page the Simple view opens: `doc-<name>.html` for /doc/<name>, `view-<file>.html` for /view?name=<file>."""
+    return f"{kind}-{safe_name(name)}.html"
 
 
 def violation(path: str, code: str, message: str) -> dict:
@@ -350,6 +371,7 @@ class FakeState:
             self.find: dict = {"teams": [], "messages": []}       # GET /api/find answers this (set by /__fake/find)
             self.next_output: dict[str, str] = {}   # sync 4 (D139): the start page's choice per team, what POST /api/output stored; the next run would make it
             self.output_locked = False              # POST /api/output answers 409, as it does once the team has a message (set by /__fake/output)
+            self.decide_for_me: dict[str, bool] = {}   # the Simple view's switch per team (POST /api/settings); /api/state says it (the capture's value until it is set)
             for chat in self.chats.values():
                 chat.reset()
             self._apply_visibility()
@@ -1071,14 +1093,16 @@ def _parse_body(raw: bytes) -> Any:
         return raw[:200].decode("utf-8", "replace")
 
 
-J2_GET_PATHS = (    # the 24 GET names of J2_EXACT (sutra_ctx.js); sync 4 added plan-map, activity, catalog, artifacts/groups, runlist and changes
+J2_GET_PATHS = (    # the GET names of J2_EXACT (sutra_ctx.js); sync 4 added plan-map, activity, catalog, artifacts/groups, runlist, changes and record
     "/api/state", "/api/runs", "/api/call", "/api/preview", "/api/docs", "/api/map", "/api/plan", "/api/library",
     "/api/run-templates", "/api/artifacts", "/api/agent", "/api/code", "/api/artifacts/tree", "/api/artifact", "/api/story",
     "/api/board", "/api/audits", "/api/refs",
     "/api/plan-map", "/api/activity", "/api/catalog", "/api/artifacts/groups", "/api/runlist", "/api/changes",
+    "/api/record",               # the studio redesign (pin 025e265): the record of a part or of a deliverable
 )
-J2_POST_PATHS = ("/api/say", "/api/playbooks/clear", "/api/lessons/clear", "/api/output", "/api/reset", "/api/ask")
-J2_PATH_SET = frozenset(J2_GET_PATHS + J2_POST_PATHS)
+J2_POST_PATHS = ("/api/say", "/api/playbooks/clear", "/api/lessons/clear", "/api/output", "/api/reset", "/api/ask", "/api/settings")
+J2_PATH_SET = frozenset(J2_GET_PATHS + J2_POST_PATHS)      # the names whose forced failures have J2's body shape (the fetches the client wrapper adds ?dept= to)
+J2_PAGE_PATHS = ("/view",)   # pages the Simple view puts in its frame (with /doc/<name>): the page's own URL builders add ?dept=, so they are no fetch of the wrapper
 
 
 def make_app(fixtures_dir: str | Path = FIXTURES_DIR, *, pages_dir: str | Path | None = None,
@@ -1573,6 +1597,11 @@ def register_j2(app: FastAPI, state: FakeState) -> None:
     def html(data: bytes) -> Response:
         return Response(data, media_type="text/html", headers={**secure, "Content-Security-Policy": SANDBOX})
 
+    def page_of(name: str) -> Response:
+        """A file of the run's artifact list as a readable page (J2's `view_page`): its capture, else J2's own line for a file that is not written."""
+        data = j2.raw(name)
+        return html(data if data is not None else NOT_WRITTEN.encode())
+
     def not_found_text() -> Response:
         return PlainTextResponse("not found", status_code=404, headers=secure)
 
@@ -1583,6 +1612,8 @@ def register_j2(app: FastAPI, state: FakeState) -> None:
         start = int(since) if since.isdigit() else 0
         snapshot["chat"] = snapshot["chat"][start:]
         snapshot["saved"] = run
+        if dept in state.decide_for_me:                  # the switch the owner set (POST /api/settings): the page reads it back from every poll
+            snapshot["decide_for_me"] = state.decide_for_me[dept]
         return JSONResponse(snapshot, headers=secure)
 
     # the reads that answer a capture of J2's own server byte for byte. Since sync 4 `/api/runlist` and `/api/changes` are J2's routes too (patch P13 is
@@ -1618,11 +1649,36 @@ def register_j2(app: FastAPI, state: FakeState) -> None:
 
     @app.get("/api/activity")
     def j2_activity(who: str = "", dept: str | None = None, run: str | None = None):
-        """One function's feed (activity/1). A function of J2's six answers its capture; anyone else gets J2's own shape for nothing recorded."""
+        """One function's feed (activity/1). A function of J2's six answers its capture; anyone else gets the capture of a name J2 does not know (the run's step
+        names are there, no event), with the name that was asked for, as /api/agent does."""
         scope(dept, run)
         if who in J2_FUNCS:
             return raw_json(f"activity-{who}.json")
-        return JSONResponse({"schema": "activity/1", "who": who, "found": False, "events": []}, headers=secure)
+        unknown = json.loads(need("activity-unknown.json"))
+        unknown["who"] = who
+        return JSONResponse(unknown, headers=secure)
+
+    @app.get("/api/record")
+    def j2_record(sec: str | None = None, art: str | None = None, dept: str | None = None, run: str | None = None):
+        """The Simple view's record of one part (`?sec=`) or one deliverable (`?art=`): goal, method, output and check (studio/1). A part or deliverable whose
+        capture the fixtures lack is J2's own 404 for no such part."""
+        scope(dept, run)
+        name = record_fixture(sec, art)
+        if name is None or j2.raw(name) is None:
+            raise J2Reject(404, {"error": "no such part"})
+        return raw_json(name)
+
+    @app.get("/doc/{name}")
+    def j2_doc(name: str, dept: str | None = None, run: str | None = None):
+        """The Simple view's output tab of a document (`/doc/prd`): the page of `<name>.md` when the run wrote it."""
+        scope(dept, run)
+        return page_of(view_fixture("doc", name))
+
+    @app.get("/view")
+    def j2_view(name: str = "", dept: str | None = None, run: str | None = None):
+        """The Simple view's output tab of any file the run lists, as a page."""
+        scope(dept, run)
+        return page_of(view_fixture("view", name))
 
     @app.get("/api/library/{artifact}/{section}/{slug}/{ver}")
     def j2_library_item(artifact: str, section: str, slug: str, ver: str, dept: str | None = None, run: str | None = None):
@@ -1740,6 +1796,17 @@ def register_j2(app: FastAPI, state: FakeState) -> None:
         if isinstance(question, str) and len(question.strip()) > ASK_CHARS:
             raise J2Reject(400, {"error": "question too long"})
         return JSONResponse(await ask_function(state, dept or "", who, question, str(body.get("run") or "")), headers=secure)
+
+    @app.post("/api/settings")
+    async def j2_settings(request: Request, dept: str | None = None):
+        """The Simple view's Decide for me switch. J2 answers `{ok, decide_for_me}` whatever the body says, and changes the switch only when the body names it."""
+        require_token(request, state)
+        scope(dept, None)
+        body = await json_body(request)
+        if isinstance(body, dict) and "decide_for_me" in body:
+            state.decide_for_me[dept or ""] = bool(body["decide_for_me"])
+        captured = (j2.json("state.json") or {}).get("decide_for_me", False)
+        return JSONResponse({"ok": True, "decide_for_me": state.decide_for_me.get(dept or "", bool(captured))}, headers=secure)
 
     @app.post("/api/reset")
     def j2_reset(request: Request, dept: str | None = None):
