@@ -42,7 +42,6 @@ def open_chip(browser):
 
 @browser_only
 def test_the_org_chat_says_started_with_a_chip_and_the_switcher_names_both_chats(browser, fake, fake_server):
-    browser.expect_failed("/providers")                       # the fake has no provider pills (an older gap, not this one)
     add_pointer(fake_server)
     load(browser, fake, stage="2")
     present(browser, ".c-teamchat .chatchip")
@@ -59,7 +58,6 @@ def test_the_org_chat_says_started_with_a_chip_and_the_switcher_names_both_chats
 
 @browser_only
 def test_the_chip_opens_the_teams_own_chat_in_the_column_and_back_returns_to_the_org_chat(browser, fake, fake_server):
-    browser.expect_failed("/providers")
     add_pointer(fake_server)
     load(browser, fake, stage="2")
     present(browser, ".c-teamchat .chatchip")
@@ -86,7 +84,6 @@ def test_the_chip_opens_the_teams_own_chat_in_the_column_and_back_returns_to_the
 
 @browser_only
 def test_a_tab_switches_and_esc_comes_back(browser, fake, fake_server):
-    browser.expect_failed("/providers")
     load(browser, fake, stage="2")
     present(browser, '#cswitch .cstab[data-node="web"]')
     browser.click('#cswitch .cstab[data-node="web"]')
@@ -104,7 +101,6 @@ def test_a_tab_switches_and_esc_comes_back(browser, fake, fake_server):
 
 @browser_only
 def test_the_arrow_keys_move_between_the_tabs(browser, fake, fake_server):
-    browser.expect_failed("/providers")
     load(browser, fake, stage="2")
     present(browser, "#cswitch .cstab")
     browser.js("document.getElementById('cstab-cs_org').focus()")
@@ -119,7 +115,6 @@ def test_the_arrow_keys_move_between_the_tabs(browser, fake, fake_server):
 
 @browser_only
 def test_the_needs_you_strip_names_the_teams_chat_and_opens_it_with_the_question_in_view(browser, fake):
-    browser.expect_failed("/providers")
     load(browser, fake, stage="2")
     assert texts(browser, "#needs [data-needmsg]") == ["Answer in Web's chat"]
     browser.click("#needs [data-needmsg]")
@@ -137,7 +132,6 @@ def test_the_needs_you_strip_names_the_teams_chat_and_opens_it_with_the_question
 
 @browser_only
 def test_a_question_pointer_reads_answered_once_the_question_is_gone_and_a_started_line_for_an_unknown_team_is_still_a_chip(browser, fake, fake_server):
-    browser.expect_failed("/providers")
     add_pointer(fake_server, dict(POINTER, about="question", question_message_id=2))
     load(browser, fake, stage="3")                                           # stage 3: nothing waits any more
     present(browser, ".c-teamchat[data-about=question]")
@@ -147,7 +141,6 @@ def test_a_question_pointer_reads_answered_once_the_question_is_gone_and_a_start
 
 @browser_only
 def test_a_division_has_its_tab_under_its_team_and_its_chat_is_named_and_selected(browser, fake):
-    browser.expect_failed("/providers")
     load(browser, fake, stage="full")                                        # two teams, two divisions: the graph names a division's team in `dept_id`
     present(browser, "#cswitch .cstab")
     assert browser.js("Array.from(document.querySelectorAll('#cswitch .cstab'), t => [t.dataset.kind, t.dataset.node, t.firstChild.textContent])") == [

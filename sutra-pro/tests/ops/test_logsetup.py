@@ -18,15 +18,30 @@ TOKEN = "tok-0123456789abcdef"
 KEY = "override-key-987654321"
 
 
+UVICORN_LOGGERS = ("uvicorn", "uvicorn.error", "uvicorn.access", "uvicorn.asgi")
+
+
 @pytest.fixture(autouse=True)
 def clean_root_logger():
     root = logging.getLogger()
     before, level = list(root.handlers), root.level
+    # `configure` sets the level of `uvicorn.access`, and a uvicorn server that an earlier test started with uvicorn's own log config has rewired all four
+    # loggers of the process: handlers of their own, `propagate` off (the access record then stops at `uvicorn` and never reaches the root's file). The app
+    # runs uvicorn with `log_config=None` (main.py), so a test of what `configure` does starts from that, and gives back what it found.
+    kept = {}
+    for name in UVICORN_LOGGERS:
+        logger = logging.getLogger(name)
+        kept[name] = (list(logger.handlers), logger.propagate, logger.disabled, logger.level)
+        logger.handlers[:], logger.propagate, logger.disabled = [], True, False
     yield
     for handler in [h for h in root.handlers if h not in before]:
         root.removeHandler(handler)
         handler.close()
     root.setLevel(level)
+    for name, (handlers, propagate, disabled, logger_level) in kept.items():
+        logger = logging.getLogger(name)
+        logger.handlers[:], logger.propagate, logger.disabled = handlers, propagate, disabled
+        logger.setLevel(logger_level)
 
 
 def make_settings(tmp_path, **changes):

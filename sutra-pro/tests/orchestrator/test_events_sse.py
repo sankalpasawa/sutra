@@ -213,7 +213,9 @@ class Live:
     """A uvicorn thread serving `app`, plus a reader for one stream."""
 
     def __init__(self, app):
-        self.server = uvicorn.Server(uvicorn.Config(app, host="127.0.0.1", port=0, log_level="warning", lifespan="off", timeout_graceful_shutdown=2))
+        # `log_config=None`, as the app runs uvicorn (main.py): with uvicorn's own config the Config() call rewires the loggers of the whole process (`uvicorn.access`
+        # gets a handler of its own and stops reaching the root's), and a test of the log file that ran later in the same process found its line missing.
+        self.server = uvicorn.Server(uvicorn.Config(app, host="127.0.0.1", port=0, log_config=None, lifespan="off", timeout_graceful_shutdown=2))
         self.thread = threading.Thread(target=self.server.run, daemon=True)
         self.thread.start()
         deadline = time.monotonic() + 15

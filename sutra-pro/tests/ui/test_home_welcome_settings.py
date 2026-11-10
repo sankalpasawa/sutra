@@ -131,7 +131,6 @@ def test_about_checks_for_updates_only_when_the_owner_presses_the_button(browser
 
 @browser_only
 def test_about_has_the_automatic_check_switch_which_is_one_put_and_asks_github_nothing(browser, fake):
-    browser.expect_failed("/api/notes", 404)                                                           # the fake has no notes route (no other test of Settings is ahead of this one in that)
     load(browser, fake)
     open_settings(browser, "about")
     browser.wait_for("document.querySelector('#set-about [data-act=toggle-auto-update]') !== null")
