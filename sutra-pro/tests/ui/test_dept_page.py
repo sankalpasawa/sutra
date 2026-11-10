@@ -16,7 +16,7 @@ Two kinds of test:
             the Sutra strip (home, team chip, Workflow graph, Org chart) lives in the Detailed view: a test names the view it works in (`Page.open(view=)`),
             and a deep link (`?tab=`, `#tab`) opens the Detailed view by itself. New here: both strips, the start page's output choice, the function chat of
             J2's panel with a question that was asked before, a question typed there, Esc with the node panel open, the rail's Artifacts flyout, a part's
-            record, the Decide for me switch, and the team's library page.
+            record, the Decide for me switch, the team's library page, and the attention pill clear of every control of the Simple view at a laptop and a phone width.
 """
 from __future__ import annotations
 
@@ -851,6 +851,81 @@ def test_the_attention_pill_does_not_sit_on_the_chat_button(team):
     team.b.wait_for("!!document.querySelector('#attnpill a.apill')")
     assert team.js("(() => { const r = document.getElementById('chatfab').getBoundingClientRect(); "
                    "return document.elementFromPoint(r.x + r.width / 2, r.y + r.height / 2).closest('#chatfab') !== null; })()") is True
+
+
+# What the pill is measured against in the Simple view (the studio): every control J2 draws there (buttons, links, fields, the switch, the tabs) and the regions that hold
+# them. `named` are the controls the case must find drawn (so a pass is never an empty sweep): each is also asked whether a click in its middle reaches it.
+PILL_AGAINST_THE_STUDIO = r"""(() => {
+  const drawn = el => { const s = getComputedStyle(el); return s.display !== "none" && s.visibility !== "hidden" && el.getClientRects().length > 0; };
+  const label = el => el.tagName.toLowerCase() + (el.id ? "#" + el.id : "") + (typeof el.className === "string" && el.className.trim() ? "." + el.className.trim().split(/\s+/).join(".") : "")
+    + " \"" + (el.innerText || el.getAttribute("aria-label") || "").trim().replace(/\s+/g, " ").slice(0, 24) + "\"";
+  const apart = (a, b) => a.right <= b.left || b.right <= a.left || a.bottom <= b.top || b.bottom <= a.top;
+  const pill = document.querySelector("#attnpill a.apill");
+  const p = pill.getBoundingClientRect();
+  const sweep = [...new Set([
+    "#sview button", "#sview a[href]", "#sview input", "#sview textarea", "#sview select", "#sview [role=switch]", "#sview [role=tab]",     // J2's controls
+    "#sview .swork", "#sview .sland", "#sview .sdock", "#sview .sasha", "#sview .sdrawer",                                                    // the regions that hold them
+    "#sview > .steamstrip > *",                                                                                                              // the strip the pill rides in
+  ].flatMap(sel => Array.from(document.querySelectorAll(sel))))].filter(drawn);
+  const named = __NAMED__;
+  const missing = named.filter(sel => !(document.querySelector(sel) && drawn(document.querySelector(sel))));
+  const stolen = named.filter(sel => { const el = document.querySelector(sel); if (!el || !drawn(el)) return false; const b = el.getBoundingClientRect();
+    const at = document.elementFromPoint(b.left + b.width / 2, b.top + b.height / 2); return !(at && el.contains(at)); });
+  const middle = document.elementFromPoint(p.left + p.width / 2, p.top + p.height / 2);
+  const cs = getComputedStyle(document.querySelector(".apillhost"));
+  const seconds = cs.transitionDuration.split(",").map(parseFloat);
+  const moving = cs.transitionProperty.split(",").map(s => s.trim()).filter((_, i) => seconds[i % seconds.length] > 0);        // what the pill's box animates, if anything
+  return {
+    over: sweep.filter(el => !apart(p, el.getBoundingClientRect())).map(label),
+    swept: sweep.length, missing, stolen,
+    inside: p.left >= 0 && p.top >= 0 && p.right <= innerWidth && p.bottom <= innerHeight,
+    clickable: !!middle && middle.closest("a.apill") === pill,
+    moving, box: [p.left, p.top, p.right, p.bottom].map(Math.round),
+  };
+})()"""
+
+
+@pytest.fixture()
+def finished_team(team, fake_server, monkeypatch) -> Page:
+    """The team after a run that finished: J2's captured snapshot is of a run that paused on a question, so its outcome, pause and status are set to what a finished run says
+    (the Simple view then draws its finish bar, with Open full view at its right end). The fake's cache of that capture is put back after the test."""
+    j2 = fake_server.state.fx.j2
+    snapshot = json.loads(j2.raw("state.json"))
+    snapshot.update(outcome="Done. The site is ready.", paused=None, status="done")
+    monkeypatch.setitem(j2._cache, "state.json", json.dumps(snapshot).encode())
+    return team
+
+
+STUDIO_NAMED = ["#sfinish [data-full]", "#sauto", "#stheme2"]               # drawn at every width: Open full view, Decide for me, the dark-mode button
+STUDIO_SIZES = [
+    (1280, 860, STUDIO_NAMED + ["#schatbtn", "#sdetail", "#sopen", ".srail"]),     # a laptop: the toolbar with Chat, Detailed view and Open the site, and the team rail
+    (375, 812, STUDIO_NAMED + [".sdock", ".sdock .sdkchat"]),                       # a phone: the two-row toolbar and the dock under it all (the team, the plan, Chat)
+]
+
+
+@browser_only
+@pytest.mark.parametrize("width, height, named", STUDIO_SIZES, ids=[f"{w}x{h}" for w, h, _ in STUDIO_SIZES])
+def test_the_attention_pill_is_clear_of_every_control_of_the_simple_view(finished_team, width, height, named):
+    """The studio is full-bleed, so the pill (fixed, z 50) sat on one of J2's controls at every width: over the lower right of Open full view at 1280 x 860, over the lower edge of
+    Decide for me and the dark-mode button at 375 x 812, and a click there went to the pill. It rides in the team strip at the very top now: in the Simple view no control of J2's, and
+    none of the regions that hold them, is under its box, with the chat closed and open; it is on screen, a click in its middle reaches it, and it has no transition of layout."""
+    team = finished_team
+    run = json.loads((J2_FIXTURES / "runs.json").read_text(encoding="utf-8"))["live"]
+    team.b.set_size(width, height)
+    team.open(f"?run={run}", view="simple")
+    team.b.wait_for("!!document.querySelector('#attnpill a.apill') && !!document.querySelector('#sfinish [data-full]')")
+    assert team.b.text("#attnpill a.apill") == "1 needs you" and team.js("document.body.classList.contains('simple')") is True
+    measure = lambda names: team.js(PILL_AGAINST_THE_STUDIO.replace("__NAMED__", json.dumps(names)))  # noqa: E731
+    closed = measure(named)
+    assert closed["missing"] == [] and closed["swept"] > len(named), closed          # the controls to clear are really on screen
+    assert closed["over"] == [] and closed["stolen"] == [], closed
+    assert closed["inside"] is True and closed["clickable"] is True and set(closed["moving"]) <= {"transform", "opacity"}, closed
+    team.js("sChatOpen(true)")                                                      # Asha's panel (a column at 1280, a sheet at 375) brings the message box and Send
+    team.b.wait_for("document.getElementById('ssend').getClientRects().length > 0")
+    opened = measure([n for n in named if n != "#sfinish [data-full]"] + ["#sbox", "#ssend"])        # (at 375 J2's own sheet covers the finish bar while Asha's panel is open)
+    assert opened["missing"] == [] and opened["over"] == [] and opened["stolen"] == [], opened
+    assert opened["inside"] is True and opened["clickable"] is True, opened
+    assert team.b.console_errors == [] and team.b.failed_requests == []
 
 
 @browser_only
