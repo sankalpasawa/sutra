@@ -1,0 +1,31 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "additionalProperties": false,
+  "properties": {
+    "studio_name": {
+      "description": "the studio name, exactly as written",
+      "type": "string"
+    },
+    "address": {
+      "description": "the studio address, exactly as written, as text only",
+      "type": "string"
+    },
+    "statement": {
+      "description": "the problem: Still Point Yoga at its address needs a page showing its classes and taking booking requests",
+      "type": "string"
+    },
+    "assumptions": {
+      "description": "facts you had to assume, each one line",
+      "items": {
+        "type": "string"
+      },
+      "type": "array"
+    }
+  },
+  "required": [
+    "studio_name",
+    "address",
+    "statement"
+  ],
+  "type": "object"
+}

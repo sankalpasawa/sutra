@@ -3,7 +3,7 @@
   "artifact": "hld",
   "kind": "generic",
   "version": 1,
-  "from": "j2_artifact_models.SECTION_MODELS and j2_rules.RULES (generated: python3 j2_template_lib.py)",
+  "from": "j2_artifact_models.SECTION_MODELS, DOC_MODELS and j2_rules.RULES (generated: python3 j2_template_lib.py)",
   "templates": [
     {
       "name": "HLD/1 · Purpose and scope",
@@ -396,6 +396,270 @@
       ],
       "sha": "2ad49cc69b9805e231a348b18d28d9dbfb58aa638238d9a4f331b730c3f90e3f",
       "schema_sha": "6720ce6ef504f1f586697c0548c3873d2f200c20673187486d285471bd18813a"
+    },
+    {
+      "name": "HLD/1 · Document",
+      "artifact": "hld",
+      "section": "Document",
+      "version": 1,
+      "kind": "generic",
+      "description": "The generic HLD/1 document template: the whole HLD as one object, every section in order, as the agent reads it and as the renderer writes it",
+      "fields": [
+        {
+          "name": "purpose",
+          "type": "string",
+          "required": false,
+          "description": "",
+          "nullable": false
+        },
+        {
+          "name": "pages",
+          "type": "list[Page]",
+          "required": false,
+          "description": "",
+          "nullable": false
+        },
+        {
+          "name": "components",
+          "type": "list[Component]",
+          "required": false,
+          "description": "",
+          "nullable": false
+        },
+        {
+          "name": "data_flows",
+          "type": "list[DataFlow]",
+          "required": false,
+          "description": "",
+          "nullable": false
+        },
+        {
+          "name": "hosting",
+          "type": "Hosting",
+          "required": false,
+          "description": "",
+          "nullable": true
+        },
+        {
+          "name": "risks",
+          "type": "list[Risk]",
+          "required": false,
+          "description": "",
+          "nullable": false
+        },
+        {
+          "name": "assumptions",
+          "type": "list[string]",
+          "required": false,
+          "description": "",
+          "nullable": false
+        }
+      ],
+      "objects": [
+        {
+          "name": "Page",
+          "fields": [
+            {
+              "name": "id",
+              "type": "string",
+              "required": true,
+              "description": "P1, P2, ... in order",
+              "nullable": false
+            },
+            {
+              "name": "name",
+              "type": "string",
+              "required": true,
+              "description": "the page name",
+              "nullable": false
+            },
+            {
+              "name": "purpose",
+              "type": "string",
+              "required": true,
+              "description": "what the page is for",
+              "nullable": false
+            },
+            {
+              "name": "implements",
+              "type": "list[string]",
+              "required": false,
+              "description": "the PRD requirement ids this page carries",
+              "nullable": false
+            }
+          ]
+        },
+        {
+          "name": "Component",
+          "fields": [
+            {
+              "name": "id",
+              "type": "string",
+              "required": true,
+              "description": "C1, C2, ... in order",
+              "nullable": false
+            },
+            {
+              "name": "name",
+              "type": "string",
+              "required": true,
+              "description": "the component name",
+              "nullable": false
+            },
+            {
+              "name": "responsibility",
+              "type": "string",
+              "required": true,
+              "description": "its one responsibility, in one line",
+              "nullable": false
+            },
+            {
+              "name": "covers",
+              "type": "list[string]",
+              "required": false,
+              "description": "the PRD requirement ids it covers, e.g. [\"R1\"]",
+              "nullable": false
+            },
+            {
+              "name": "page",
+              "type": "string",
+              "required": false,
+              "description": "the page id it sits on, e.g. \"P1\"",
+              "nullable": false
+            }
+          ]
+        },
+        {
+          "name": "DataFlow",
+          "fields": [
+            {
+              "name": "from",
+              "type": "string",
+              "required": true,
+              "description": "where the data comes from",
+              "nullable": false
+            },
+            {
+              "name": "to",
+              "type": "string",
+              "required": true,
+              "description": "where it goes",
+              "nullable": false
+            },
+            {
+              "name": "data",
+              "type": "string",
+              "required": true,
+              "description": "what is sent",
+              "nullable": false
+            },
+            {
+              "name": "trigger",
+              "type": "string",
+              "required": true,
+              "description": "what starts it",
+              "nullable": false
+            }
+          ]
+        },
+        {
+          "name": "Hosting",
+          "fields": [
+            {
+              "name": "kind",
+              "type": "string",
+              "required": true,
+              "description": "how it is hosted, e.g. \"one static file on a static host\"",
+              "nullable": false
+            },
+            {
+              "name": "notes",
+              "type": "string",
+              "required": false,
+              "description": "how it is deployed and replaced",
+              "nullable": false
+            }
+          ]
+        },
+        {
+          "name": "Risk",
+          "fields": [
+            {
+              "name": "risk",
+              "type": "string",
+              "required": true,
+              "description": "the risk, one line",
+              "nullable": false
+            },
+            {
+              "name": "mitigation",
+              "type": "string",
+              "required": true,
+              "description": "what is done about it",
+              "nullable": false
+            }
+          ]
+        }
+      ],
+      "rules": [],
+      "sha": "c43583ed3f699f92808afec542caf91c1b82dfa963f0635fb69c239e3ac939fd",
+      "schema_sha": "b4613819392c3cae64604ad8625417cbf7cf600f084e214058026cbfb9639e81",
+      "render": {
+        "format": "markdown",
+        "file": "hld.md",
+        "title": "# HLD/1",
+        "sections": [
+          {
+            "heading": "## Purpose and scope",
+            "template": "HLD/1 · Purpose and scope",
+            "fields": [
+              "purpose",
+              "assumptions"
+            ]
+          },
+          {
+            "heading": "## Pages",
+            "template": "HLD/1 · Pages",
+            "fields": [
+              "pages",
+              "assumptions"
+            ]
+          },
+          {
+            "heading": "## Components",
+            "template": "HLD/1 · Components",
+            "fields": [
+              "components",
+              "assumptions"
+            ]
+          },
+          {
+            "heading": "## Data flow",
+            "template": "HLD/1 · Data flow",
+            "fields": [
+              "data_flows",
+              "assumptions"
+            ]
+          },
+          {
+            "heading": "## Hosting and deployment",
+            "template": "HLD/1 · Hosting and deployment",
+            "fields": [
+              "hosting",
+              "assumptions"
+            ]
+          },
+          {
+            "heading": "## Risks",
+            "template": "HLD/1 · Risks",
+            "fields": [
+              "risks",
+              "assumptions"
+            ]
+          }
+        ],
+        "from": "j2_artifact_models.render_section(kind, section, data), one section after the other, in this order"
+      }
     }
   ]
 }

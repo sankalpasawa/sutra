@@ -1,0 +1,33 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "additionalProperties": false,
+  "properties": {
+    "heading": {
+      "description": "The section heading, written exactly as '## Out of scope'",
+      "type": "string"
+    },
+    "out_of_scope": {
+      "description": "What the Still Point Yoga page will not have, one line each: teacher names, phone number, embedded map, online payment. Never write an actual teacher name or phone number.",
+      "items": {
+        "type": "string"
+      },
+      "type": "array"
+    },
+    "online_payment_exclusion": {
+      "description": "States that no online payment is taken and that payment is made at the studio",
+      "type": "string"
+    },
+    "assumptions": {
+      "description": "Assumptions, only if recorded in the facts",
+      "items": {
+        "type": "string"
+      },
+      "type": "array"
+    }
+  },
+  "required": [
+    "heading",
+    "online_payment_exclusion"
+  ],
+  "type": "object"
+}
