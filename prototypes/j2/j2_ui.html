@@ -2532,7 +2532,7 @@ function sTeamwork(s, M){      // the output is the map: a block per part, the t
     + (talk.length > LIM + 1 ? `<button type="button" class="stmore" data-talkall aria-expanded="${!!SV.talkAll}">${SV.talkAll ? "Show fewer" : `Show ${Math.min(talk.length, 40) - LIM} earlier steps`}</button>` : "") + `</div></section>`; }
   return h;
 }
-const sTalk = s => ((s.studio || {}).stream || []).map(x => ({...x, text: plain(x.text).replace(/^[A-Z](?=[a-z])/, c => c.toLowerCase())}));      // the team's messages as plain lines (j2_studio.stream); each follows a name ("Mira finished the menu"), so plain()'s capital comes off
+const sTalk = s => ((s.studio || {}).stream || []).filter(x => x.who && PEOPLE[x.who]).map(x => ({...x, text: plain(x.text).replace(/^[A-Z](?=[a-z])/, c => c.toLowerCase())}));      // the five teammates' messages as plain lines, no backstage roles (j2_studio.stream); each follows a name ("Mira finished the menu"), so plain()'s capital comes off
 // ---- the journey (Your idea, Plan, Build, Check, Ready, then a stop per change): sJourneyModel is the model; drawn as one road, walked by whoever is working
 const SJ = {on: false, changes: [], ckey: "", key: "", stops: []};
 const sPartName = (s, id) => { const p = sModel(s).parts.find(x => x.sec === id); return p ? p.name.toLowerCase() : "a part"; };
