@@ -136,7 +136,8 @@ Decided by Claude on its own, on the dates shown. The owner can veto any of them
 - Decided: every J2 flag is an `EngineSettings` field with J2's default (pacing delay 0, because the router paces). The engine host resolves them as defaults < `data/engine.json` < process `J2_*` env (dev and tests) < department `engine.json` < task settings, writes the effective values to `<run>/settings.json` at start and never re-reads. A task may carry only seven keys (J2_OUTPUT, J2_BUDGET, J2_BUDGET_CAP, J2_FIXES, J2_MEMORY, J2_SLIM, J2_RATES), validated on create. Every other flag is reachable only through the two files, which the owner edits in Settings through `GET/PUT /api/engine/settings[?dept=]` (token required; risky fields such as send_mode, chrome and force_audit_fail stay locked to hand edits); a change applies to the next run of that scope.
 - Why: J2's defaults stay in one place and every J2 flag stays present; the seven-key allowlist keeps live email, a Chrome path and forced audit failures out of anything a model reply or web request can set; only the engine host knows which settings the process really uses.
 - Rejected: every `EngineSettings` field in a task; an orchestrator copy of the defaults; env-only (J2's way, no Settings page); a SQLite settings table; PUT writing locked fields; turning the off-by-default paths on; removing flags.
-- Diagram: label "settings: 2 files + 7 task keys · edit in Settings" with badge D18 on J2 chips.
+- Amended (J2 sync 4, D152): a task may carry eight keys, not seven: `J2_DECIDE_FOR_ME` (the Simple view's Decide for me) joins the allowlist; the reason and the rest are in D152.
+- Diagram: label "settings: 2 files + 8 task keys · edit in Settings" (7 until D152) with badge D18 on J2 chips.
 
 ## D19 — Failure semantics: one visible end state per failure, retries only in the router
 - Sources: ENG-D10

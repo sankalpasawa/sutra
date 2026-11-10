@@ -40,7 +40,7 @@ Flags with no variable: `--no-browser`, `--browser auto|chrome|default`, `--exit
 
 These are the J2 flags, each with J2's own default (the pacing delay is 0 because the connector layer paces). The variable name is what J2 reads and what
 `sutra-pro config show` prints; in `engine.json` and in `config set` you use the field name. **Locked** fields are not editable in Settings (they can send mail, run a browser or force a
-failure) and change only with `sutra-pro config set`. **Task** fields may also be given by a single request (the seven keys a task may carry); every other field reaches a run only through the
+failure) and change only with `sutra-pro config set`. **Task** fields may also be given by a single request (the eight keys a task may carry); every other field reaches a run only through the
 two `engine.json` files. A run does not pass the server's own `J2_*` variables on to its engine process: the files are the way in.
 
 | Variable | Field | Default | Locked | Task | Meaning |
@@ -60,6 +60,7 @@ two `engine.json` files. A run does not pass the server's own `J2_*` variables o
 | `J2_RATES` | `rates` | `1` | no | yes | `0` turns the rate card off |
 | `J2_SLIM` | `slim` | `1` | no | yes | builders get their own section plus a short list of the others, not the whole page; `0` turns it off |
 | `J2_MEMORY` | `memory` | `1` | no | yes | `0`: lessons and playbooks are neither read nor written |
+| `J2_DECIDE_FOR_ME` | `decide_for_me` | `0` | no | yes | the team answers its own questions with the suggested option and keeps going (the Simple view's Decide for me); `1` turns it on |
 | `J2_REALIZATION` | `realization` | `1` | no | no | Adaptation's first plan of a website goes through realization and certainty, and a separate judge scores each workflow |
 | `J2_CHANGE` | `change` | `0` | no | no | `1`: the charter of the last full plan is kept and a change request is handled as a change |
 | `J2_BOARD` | `board` | `0` | no | no | `1`: the message board between the function nodes |
@@ -78,7 +79,7 @@ two `engine.json` files. A run does not pass the server's own `J2_*` variables o
 | `J2_MEMORY_TEST_LESSONS` | `memory_test_lessons` | `0` | yes | no | demo switch: Adaptation may read lessons that test runs wrote |
 
 How the layers combine, lowest first: the defaults, `<data>/engine.json`, a `J2_*` variable in the server's environment (development and tests), the team's
-`<data>/departments/<team>/engine.json`, and last the seven task keys of one request. The effective values are written to `<run>/settings.json` when the run starts and never re-read.
+`<data>/departments/<team>/engine.json`, and last the eight task keys of one request. The effective values are written to `<run>/settings.json` when the run starts and the engine never re-reads them; the one later write is the Simple view's Decide for me switch, which adds `decide_for_me` to the same file (a running team takes the switch at once, as a line in its inbox).
 A value that is not valid (a word that is neither on nor off, a number out of range) is an error naming the layer, not a silent default.
 
 ## 3. Secrets: the override key and the SMTP login
