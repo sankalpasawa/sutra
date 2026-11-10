@@ -25,15 +25,17 @@
   const isRootRelative = v => typeof v === "string" && ROOT_RELATIVE.test(v);
 
   /* ---------------------------------------------------------------- J2's data routes (j2_server.py) */
-  // The 30 exact /api/ pathnames of J2's page and the four prefixes (S3-web-15; J2 sync 4, D140). Seven are newer than the first port:
-  // /api/runlist and /api/changes (patch P13 until sync 4, J2's own routes since), /api/plan-map, /api/catalog, /api/artifacts/groups,
-  // /api/activity and /api/ask. The orchestrator's own routes (/api/runs/{run_id}, /api/chart, /api/graph, /api/schemas/..., /api/tasks,
-  // ...) match none of them, so they never get `dept`.
+  // The 33 exact pathnames of J2's page (32 under /api/, and the studio's /view) and the five prefixes (S3-web-15; J2 sync 4, D140). Ten are
+  // newer than the first port: /api/runlist and /api/changes (patch P13 until sync 4, J2's own routes since), /api/plan-map, /api/catalog,
+  // /api/artifacts/groups, /api/activity, /api/ask and, with the studio, /api/record, /api/settings, /view and the /doc/ prefix. The
+  // orchestrator's own routes (/api/runs/{run_id}, /api/chart, /api/graph, /api/schemas/..., /api/tasks, /api/engine/settings, ...) match none
+  // of them, so they never get `dept`.
   const J2_EXACT = ["/api/state", "/api/runs", "/api/runlist", "/api/changes", "/api/call", "/api/preview", "/api/docs", "/api/map",
     "/api/plan", "/api/plan-map", "/api/library", "/api/catalog", "/api/run-templates", "/api/artifacts", "/api/artifacts/tree",
-    "/api/artifacts/groups", "/api/artifact", "/api/agent", "/api/activity", "/api/code", "/api/story", "/api/board", "/api/audits",
-    "/api/refs", "/api/say", "/api/ask", "/api/output", "/api/reset", "/api/playbooks/clear", "/api/lessons/clear"];
-  const J2_PREFIXES = ["/api/library/", "/site/", "/file/", "/shot/"];
+    "/api/artifacts/groups", "/api/artifact", "/api/agent", "/api/activity", "/api/record", "/api/code", "/api/story", "/api/board",
+    "/api/audits", "/api/refs", "/api/say", "/api/ask", "/api/output", "/api/settings", "/api/reset", "/api/playbooks/clear",
+    "/api/lessons/clear", "/view"];
+  const J2_PREFIXES = ["/api/library/", "/site/", "/file/", "/shot/", "/doc/"];
   const J2_EXACT_SET = new Set(J2_EXACT);
   const J2_PATHS = Object.freeze({
     exact: Object.freeze(J2_EXACT.slice()),
