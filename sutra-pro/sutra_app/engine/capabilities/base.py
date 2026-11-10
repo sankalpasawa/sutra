@@ -8,9 +8,12 @@ text, progress sinks and one setting; it can never replace what another one adde
     Capability.addendum(fn, ctx)   system text for agent `fn` (`ctx.output` says which output is running)
     Capability.select(brief, ctx)  a vote on the output when the owner left it on `auto`
     Capability.force(output)       settings fixed for a run of one output (`{field: value}`)
+    Capability.documents(output, run_dir)  the Artifacts rows for the report of an output this capability added (D146)
 
-This module imports nothing of J2 and nothing of the host: `OutputSpec.to_j2()` is the one place that turns a spec into the dict J2 reads.
+This module imports nothing of J2 and nothing of the host when it is imported: `OutputSpec.to_j2()` is the one place that turns a spec
+into the dict J2 reads, and `documents` imports J2's Artifacts module only when a report row is asked for.
 """
+import os
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any, Callable, Optional
 
@@ -148,3 +151,30 @@ class Capability:
     def settings(self) -> list:
         """The one engine setting this capability has, if any: `[{"field": "workspace", "values": [...], "default": ...}]`."""
         return []
+
+    def documents(self, output: str, run_dir) -> list:
+        """The Artifacts rows (the Documents group of `artifacts-groups/1`) for a run of `output` in `run_dir` (D146).
+
+        J2's Documents group lists its own PRD, HLD and LLD, because the constant that names them (`TYPES_PATH`) holds no other type.
+        An output a capability adds has a report file too (`OutputSpec.file`), so the capability that registered the output says
+        what its row is, from the spec it already has: nothing of J2 is patched, and a future output with a report file shows
+        up the same way with no code. Every capability inherits this: `[]` unless `output` is one of THIS capability's outputs, its
+        spec names a `file`, and that file exists in the run folder. Otherwise one row of J2's own document shape (`id`, `kind`,
+        `name`, `file`, `doc_file`, `maker`, `made_in`, `sections`, `nodes`, `versions`, `docs`, `ok`, `views`): `views` is
+        `j2_artifacts.views(run_dir, row)`, so the three tabs (Summary, Agent-readable, Human-readable) work as they do for a PRD.
+        A report is not a Map node, so `nodes` is empty and no Map link points at it."""
+        spec = self.outputs().get(output) if output and run_dir else None
+        if spec is None:
+            return []
+        get = (lambda key: getattr(spec, key, None)) if isinstance(spec, OutputSpec) else spec.get
+        file = get("file")
+        if not isinstance(file, str) or not file or not os.path.isfile(os.path.join(run_dir, file)):
+            return []
+        from .. import j2_artifacts          # J2's module is read when a row is built, never when the registry is imported
+        label, noun = str(get("label") or output), str(get("noun") or "").strip()
+        row = {"id": output, "kind": "document", "name": f"{label} {noun}".strip(), "file": file, "doc_file": file, "maker": None,
+               "made_in": [], "sections": {}, "nodes": [],
+               "versions": [{"workflow": None, "cycle": None, "purpose": "", "label": "current"}], "docs": [],
+               "ok": os.path.getsize(os.path.join(run_dir, file)) > 0}
+        row["views"] = j2_artifacts.views(run_dir, row)
+        return [row]
