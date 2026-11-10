@@ -1,6 +1,6 @@
 {
   "schema": "j2-fixtures/1",
-  "j2_commit": "ce2631fb04ac29883bf0149f1552118655eef785",
+  "j2_commit": "00efb179e21cb79fae157a0679e819921ac37726",
   "mock": true,
   "brief": "A one-page website for Brew Lab, a small specialty coffee shop in Indiranagar, Bengaluru. Visitors should see the menu with prices, the opening hours, and where to find us, and be able to pre-order a coffee for pickup. It should feel warm and modern and work well on a phone.",
   "clock": 1793786404,
@@ -22,29 +22,66 @@
       "golden-needs.json",
       "golden-map.json",
       "golden-agent.json",
+      "golden-finish.json",
+      "golden-journey.json",
+      "golden-journeyhtml.json",
+      "golden-sframe.json",
+      "golden-needids.json",
+      "golden-railst.json",
+      "golden-planmap.json",
+      "golden-msgfns.json",
+      "golden-feed.json",
       "golden-layout.json"
     ]
   },
   "files": {
+    "activity-adaptation.json": {
+      "bytes": 11763,
+      "sha256": "9745f40e14fe1eccc7696b07b3b8895e2494e593ec044cc236f86ab1f0ea4f07"
+    },
+    "activity-audit.json": {
+      "bytes": 1585,
+      "sha256": "40ea9f845f8c19ccb286bac43b6ce1bae4c71615ee85a5e00e98086f8a57d91e"
+    },
+    "activity-coordination.json": {
+      "bytes": 8383,
+      "sha256": "d100902a3e0b2e116f23c8bbcb0f225bb2ba22b21ab2afe14d1cd2ddf309a688"
+    },
+    "activity-identity.json": {
+      "bytes": 3208,
+      "sha256": "610ad4ff17c97f49bd27b6bc72b0039528e9caa489d903ba93457c90ded9fcb6"
+    },
+    "activity-priority.json": {
+      "bytes": 12446,
+      "sha256": "0f48bbe7dc74b099d2926abab03d0799d6f3db112cf2688c379ad0b400a3e467"
+    },
+    "activity-unknown.json": {
+      "bytes": 227,
+      "sha256": "0327baae7db21e0fba7d02fec546d3bcb54e33ca7f73585b38df9a9a8a6f7ef1"
+    },
+    "activity-validator.json": {
+      "bytes": 997,
+      "sha256": "a91985d95ecf4c8522fce204133086fece75db77d3e9b694b799c1d6459ecb80"
+    },
     "agent-W-1.json": {
-      "bytes": 24175,
-      "sha256": "b01406191702f64590a9b79c4dcb32ca6240852189a81a8cd42dc36ddf3889d5"
+      "bytes": 24679,
+      "sha256": "6421b0dd14ab1bed278f48c06abb8dfaf119c8ed386f9022801387a013471cb7"
     },
     "agent-adaptation.json": {
-      "bytes": 103109,
-      "sha256": "7de40d7cd9276f8afe5e135b7363d4205adf0f90d1dc4fc871c9cc352c001673"
+      "bytes": 103613,
+      "sha256": "0317624e044d5af4cd6e7fe8b90032dd33d5e42d4229897155d3829a1a99fb53"
     },
     "agent-audit.json": {
-      "bytes": 76481,
-      "sha256": "966a063ca9d3a349d1ee0dd94b3153314975a06938bdd1a0e4b90075e0869385"
+      "bytes": 77489,
+      "sha256": "34155035a983ebb9350b39a84c7abf25299ee0172a5198686cfd272efcf0ce5f"
     },
     "agent-coordination.json": {
-      "bytes": 182373,
-      "sha256": "bd4e14aa221015dbcabf7610310e49aa8babceede529b9a32de20ff131bbbb40"
+      "bytes": 187161,
+      "sha256": "e6203da52f688498345656d8d09b6872f379403490dd89c97c263868f77f5e16"
     },
     "agent-identity.json": {
-      "bytes": 79352,
-      "sha256": "4518633577b1c3c565fa688e6b5d637a30ba8d444b5c5a7a29cb40bb91e1f81e"
+      "bytes": 80360,
+      "sha256": "9ed39097eb48214b1ddf87eb695c5e734d4a2b10a23a3f3f7509575d9facef07"
     },
     "agent-priority.json": {
       "bytes": 34535,
@@ -54,13 +91,41 @@
       "bytes": 351,
       "sha256": "b45afd5e2a54db0b190ed75616bc4dd1949dbfeaa02b419fb4cb8540a60654a0"
     },
+    "artifacts-groups.json": {
+      "bytes": 11063,
+      "sha256": "989f138fad8af5a582a6154d29c2251475d557252565a68b2d1df5ac458a5d3c"
+    },
     "artifacts-tree.json": {
       "bytes": 5943,
-      "sha256": "3963ef18d14d3a09ab8600598787a887f83f6e4761f4b87b90c3a76ca04ee8c5"
+      "sha256": "9d0d6357874f8bcb7a05ea543d6f490dc6285c43ca016b75475ed9cfe4c5664a"
     },
     "artifacts.json": {
       "bytes": 4068,
-      "sha256": "f416130d3fe17011812ea2cb04f5dbc2b110db6a4b4af75ab21277fd033d275a"
+      "sha256": "3150f3a1325f3bc576850ed48701744d00412450385a4997da7c8c5e2a9c1d57"
+    },
+    "ask-adaptation.json": {
+      "bytes": 697,
+      "sha256": "adba420e4fd735b867f7e4cc28dfe584d1b357521caec8b6f97f734f3f97a41c"
+    },
+    "ask-audit.json": {
+      "bytes": 796,
+      "sha256": "18138a65418aa1ddeb1d1d7741bbf75d22c7d436de5d054756201c0f41738e7b"
+    },
+    "ask-coordination.json": {
+      "bytes": 1181,
+      "sha256": "8131249a71ddbef8a22619e80773677923b60eee9e40fe545c8cc78d554c7600"
+    },
+    "ask-identity.json": {
+      "bytes": 712,
+      "sha256": "a8797a0a4139ad186f023b0a252047e27a95978e4e5cb2390e4ce59d6dacc077"
+    },
+    "ask-priority.json": {
+      "bytes": 1949,
+      "sha256": "5d0cc82b25834337f860301da24b2f8e36bb599051a313d74566ca14c2c8dd4a"
+    },
+    "ask-validator.json": {
+      "bytes": 560,
+      "sha256": "5ba7992c94312a749a13a60d5c848d8c76597a01af325d1b86cf9939439ebd73"
     },
     "audits.json": {
       "bytes": 2,
@@ -70,13 +135,37 @@
       "bytes": 36,
       "sha256": "b429ba025aeeb8963f98b408bbcea1ac1ddfc3b44b3a9cb085449c869ad6e208"
     },
+    "catalog.json": {
+      "bytes": 120764,
+      "sha256": "2e82a3603eac9484ca9698c6907c498089993e216765ac3ab4562f57f0a43425"
+    },
+    "changes.json": {
+      "bytes": 15,
+      "sha256": "c5965b4b973d3a7d9a0db8178b0d4a724b08bc5299f46630ad9f9a95e33c2752"
+    },
     "docs.json": {
       "bytes": 168,
       "sha256": "8ec3135c1f4624db617785ced22785e61f0c045ef229d46eaef4e822621a274a"
     },
     "golden-agent.json": {
-      "bytes": 94524,
-      "sha256": "5dadfe0de68dcb8a371e5e7739bcb0be0aafbd2b611636212c310811dec39fe6"
+      "bytes": 96108,
+      "sha256": "54bc1425a97cd9198aaaa12c4900ec5339120f6e8dc89221a0d82ed5e6bf504c"
+    },
+    "golden-feed.json": {
+      "bytes": 5160,
+      "sha256": "00a2da7a608855f9f893f36d944daaebf7eafbb38101312087eeee7965fc2275"
+    },
+    "golden-finish.json": {
+      "bytes": 2,
+      "sha256": "12ae32cb1ec02d01eda3581b127c1fee3b0dc53572ed6baf239721a03d82e126"
+    },
+    "golden-journey.json": {
+      "bytes": 1000,
+      "sha256": "e1634cb492d0ebb655d3b3b2122df8b8f1779f21ed0adda33d5501c56d1bd5dc"
+    },
+    "golden-journeyhtml.json": {
+      "bytes": 4169,
+      "sha256": "5e4975420071c4cfe9b5f3aba191a0ddcaa5ac68898c77397931574f658020ab"
     },
     "golden-layout.json": {
       "bytes": 24794,
@@ -86,29 +175,49 @@
       "bytes": 47765,
       "sha256": "685316688508e90d5446ba8097436a0412fd96e29d77d27f321f7859ecfe732a"
     },
+    "golden-msgfns.json": {
+      "bytes": 893,
+      "sha256": "8b1c1ba18e973ef60e6665cf4088ad12970f7ab8bab2d8cf4aaca5fb6738f788"
+    },
+    "golden-needids.json": {
+      "bytes": 6,
+      "sha256": "4ebd698b4a1c3c7f36b8b8d87cfea5bc4fe952045cc27bbf17a4077740b3ad67"
+    },
     "golden-needs.json": {
       "bytes": 381,
       "sha256": "814e644632d0e513ae5076503c6098a2765e89c744aca2330ed55d8d8e5f879d"
     },
+    "golden-planmap.json": {
+      "bytes": 8674,
+      "sha256": "1c386488f6e483c9f1d95d751b804e357e8449a678edc5e4f2df130dd00f2797"
+    },
     "golden-rail.json": {
-      "bytes": 2369,
-      "sha256": "33c02e451610eafd3c7c0da84f2f4f71b91019c2299075066ce69fe2cbaaf6a3"
+      "bytes": 2562,
+      "sha256": "329846117d4a1118c1c0800e78b2d834bc342f82d986d54833568b87c672cd11"
+    },
+    "golden-railst.json": {
+      "bytes": 827,
+      "sha256": "46545c05e6c09b473a053f81632ae08603f4acd5a594cb44df21d6df676e4b0e"
+    },
+    "golden-sframe.json": {
+      "bytes": 26,
+      "sha256": "66ba156a7acdec05c476697d4556125751d748be61eb18ffd41c4a6d75632b65"
     },
     "golden-simple.json": {
-      "bytes": 968,
-      "sha256": "0a81085c47a2b41e9d1289a8c18acb059e14eeba371d27896a7ac29fb478fb4a"
+      "bytes": 1301,
+      "sha256": "e5aa347a28634eecf2cd9ab54ceaa9d978df63db6cddab142cee01da8c981588"
     },
     "golden-sprog.json": {
-      "bytes": 216,
-      "sha256": "804ed4f19a2c1390f6e2b967c56cbcd6af1361600382c36c81034fee1993205b"
+      "bytes": 169,
+      "sha256": "aeee9c9eba078e7463d8e054e968e58acab9c49d844bccc76ba64cd4b8b98870"
     },
     "golden-workflows.json": {
-      "bytes": 45708,
-      "sha256": "47c25eeeadd563673c4310e51047870851aa792fc5bec9e53e225edfc6ed3a66"
+      "bytes": 48216,
+      "sha256": "10c8a992c27826419fe7b6643154613c542259fdf04b5766d31c1aa34100e8d3"
     },
     "library.json": {
-      "bytes": 45211,
-      "sha256": "87e2f2d5eb5721ba08b0a9b3d489b0b2540451ce042da0d0b0abc1b37753a0ef"
+      "bytes": 78336,
+      "sha256": "b7be879b6d5a625a6f21bd810e1207535241683bf6c90ea3544e9feaec7f30fa"
     },
     "map.json": {
       "bytes": 19642,
@@ -117,6 +226,10 @@
     "maps.json": {
       "bytes": 17740,
       "sha256": "2a0376d6427d0797b5473686966ffb298debba48856ca0594da5ef2ac07949dc"
+    },
+    "plan-map.json": {
+      "bytes": 2278,
+      "sha256": "1102f1a975275a9851ff2bf48fb9e54e5d6bf0c7c7e24edafd2cdc3edf66ff28"
     },
     "plan.json": {
       "bytes": 604,
@@ -135,12 +248,16 @@
       "sha256": "24facb6b461d164ffb3ffb30b492c603b625445f41e0e92521d0fee988e26782"
     },
     "render-docs.json": {
-      "bytes": 106848,
-      "sha256": "9e426e58f89510694d45a61ae2d267528c8ff600f42b89aeb4af7ce6ba71d9a2"
+      "bytes": 145525,
+      "sha256": "8f3eafc108ae7c13e380b56548c5120f95a21994488918deee8129c6e5ae321a"
     },
     "run-templates.json": {
       "bytes": 17,
       "sha256": "1672e9728a2079c90e1a3de3b2279d199f0bc1a90b366656915700a3922c7f18"
+    },
+    "runlist.json": {
+      "bytes": 337,
+      "sha256": "54272b2d5231dc059f1592a7c035e4675adfb34e9a1118f997e6024eb61fa3ee"
     },
     "runs.json": {
       "bytes": 227,
@@ -151,8 +268,8 @@
       "sha256": "dac57d43aa835999c178b5a886ae2aa278ae4dcc96524f54d75cd9537430e196"
     },
     "state.json": {
-      "bytes": 117974,
-      "sha256": "72fc183f4249ef24f43f11b4b4d3dbacccfef338dae50d64d92e70cbbdc5a762"
+      "bytes": 118406,
+      "sha256": "f9562a45d8052c5c03ad8038b3a444d31bad3bc9f97a4fb3971f85774d20ba3e"
     },
     "story.json": {
       "bytes": 463,
