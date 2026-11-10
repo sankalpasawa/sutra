@@ -549,6 +549,36 @@ def test_without_a_source_the_folder_is_extracted_from_the_last_commit_that_touc
     assert "(tree `" in out
 
 
+def _commit(repo: Path, message: str) -> str:
+    identity = ["-c", "user.name=scope test", "-c", "user.email=scope@example.invalid", "-c", "commit.gpgsign=false"]
+    subprocess.run(["git", "-C", str(repo), "add", "-A"], check=True, capture_output=True)
+    subprocess.run(["git", "-C", str(repo), *identity, "commit", "-q", "-m", message], check=True, capture_output=True)
+    return subprocess.run(["git", "-C", str(repo), "rev-parse", "HEAD"], check=True, capture_output=True, text=True).stdout.strip()
+
+
+@needs_git
+def test_the_default_label_is_the_commit_vendored_md_names_while_the_folder_is_the_one_head_has(tmp_path):
+    repo = tmp_path / "mono"
+    (repo / "prototypes/j2").mkdir(parents=True)
+    (repo / "sutra-pro").mkdir()
+    page = repo / "prototypes/j2/a.py"
+    page.write_text("x = 1\n", encoding="utf-8")
+    subprocess.run(["git", "-C", str(repo), "init", "-q"], check=True, capture_output=True)
+    first = _commit(repo, "the folder")
+    page.write_text("x = 2\n", encoding="utf-8")
+    _commit(repo, "changes the folder")
+    page.write_text("x = 1\n", encoding="utf-8")
+    third = _commit(repo, "puts it back: the same tree again, in a newer commit")
+    named = HEADER.format(commit=first)
+    assert tool.resolve_commit(repo, None) == third, "nothing names a pin: the last commit that touched the folder"
+    assert tool.resolve_commit(repo, None, named) == first, "the folder is the pin's, so the pin stays the label"
+    assert tool.resolve_commit(repo, None, HEADER.format(commit="9" * 40)) == third, "a commit this repository lacks is no pin"
+    page.write_text("x = 3\n", encoding="utf-8")
+    fourth = _commit(repo, "J2 moved on")
+    assert tool.resolve_commit(repo, None, named) == fourth, "the folder is no longer the pin's: the newer commit is the label"
+    assert tool.resolve_commit(repo, first[:10], named) == first, "an explicit commit wins, in full"
+
+
 @needs_git
 def test_extracting_a_commit_that_has_no_such_folder_is_an_error(tmp_path):
     repo = make_monorepo(tmp_path)

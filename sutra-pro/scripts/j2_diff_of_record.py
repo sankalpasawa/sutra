@@ -11,8 +11,8 @@ and no earlier baseline. `--source` is an extraction of that folder, made with
     git archive <commit> prototypes/j2 | tar -x --strip-components=2 -C <new empty folder>
 
 (never a working tree: an edited file or a `.pyc` cannot be vendored; a folder that holds a `.git` is refused). Without `--source`
-the script makes the same extraction from `--commit` (default: the last commit that touched the folder, on HEAD) into a temporary
-folder and removes it afterwards. `--commit` is the label the two scripts below write into what they build.
+the script makes the same extraction from `--commit` (default: the commit VENDORED.md names while its folder is the one HEAD has,
+else the last commit that touched the folder on HEAD) into a temporary folder and removes it afterwards. `--commit` is the label the two scripts below write into what they build.
 
 What it does, in this order:
 
@@ -518,13 +518,22 @@ def git_top(root: Path) -> Path | None:
     return Path(top) if top else None
 
 
-def resolve_commit(top: Path | None, given: str | None) -> str | None:
-    """The full id of `given` when this repository knows it, else `given` as it is; with no `given`, the last commit on HEAD that
-    touched prototypes/j2."""
+def resolve_commit(top: Path | None, given: str | None, vendored_md: str = "") -> str | None:
+    """The full id of `given` when this repository knows it, else `given` as it is. With no `given`: the commit VENDORED.md names when
+    its prototypes/j2 is the folder HEAD has (the pin, however many commits touched the folder since: a merge can re-touch it with the
+    same content), else the last commit on HEAD that touched prototypes/j2 (J2 moved on: the label then differs from the one in
+    VENDORED.md, and the check says so)."""
     if top is None:
         return given
     if given:
         return git_text(top, "rev-parse", "--verify", f"{given}^{{commit}}") or given
+
+    def tree(rev: str) -> str | None:
+        return git_text(top, "rev-parse", "--verify", f"{rev}:{J2_FOLDER}")
+
+    named = vendored_commit(vendored_md, lambda found: tree(found) is not None)
+    if named and tree(named) == tree("HEAD"):
+        return named
     return git_text(top, "log", "-1", "--format=%H", "HEAD", "--", J2_FOLDER) or None
 
 
@@ -732,8 +741,9 @@ def build_parser() -> argparse.ArgumentParser:
                                         "2 the arguments or inputs are wrong.")
     ap.add_argument("--source", type=Path, help="an extraction of prototypes/j2 (git archive; never a working tree). Default: extracted "
                                                 "from --commit of this repository into a temporary folder")
-    ap.add_argument("--commit", help="the commit the source is (the label both scripts write; default: the last commit on HEAD that "
-                                     "touched prototypes/j2). Without --source the extraction is made from it")
+    ap.add_argument("--commit", help="the commit the source is (the label both scripts write; default: the commit VENDORED.md names when "
+                                     "its prototypes/j2 is the one HEAD has, else the last commit on HEAD that touched prototypes/j2). "
+                                     "Without --source the extraction is made from it")
     ap.add_argument("--root", type=Path, default=REPO, help="the sutra-pro folder to compare (default: the one this script is in)")
     ap.add_argument("--vendor-script", type=Path, help=f"default: <root>/{VENDOR_SCRIPT}; a copy can be given for a dry run")
     ap.add_argument("--port-script", type=Path, help=f"default: <root>/{PORT_SCRIPT}; a copy can be given for a dry run")
@@ -759,7 +769,7 @@ def run(args: argparse.Namespace) -> int:
     ctx = Context.load(root)
     md_text = (root / VENDORED_MD).read_text(encoding="utf-8")
     top = git_top(root)
-    commit = resolve_commit(top, args.commit)
+    commit = resolve_commit(top, args.commit, md_text)
     if not commit:
         raise ToolError("cannot tell which commit the source is: give --commit")
     with tempfile.TemporaryDirectory(prefix="j2-src-") as tmp:
