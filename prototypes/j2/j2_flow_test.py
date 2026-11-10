@@ -3809,6 +3809,226 @@ def slim_prompts():
     print(f"slim: both paths Done; prompt characters {sizes['0']:,} (old) -> {sizes['1']:,} (J2_SLIM=1) in the mock run")
 
 
+def builder_time_limit():
+    """J2_BUILDER_TIMEOUT (default 600 s): llm stops a call past its limit for claude-cli (the process is killed once, no
+    internal retry) and the Anthropic stream (closed at the next piece, the late text never returned); without a limit
+    the CLI keeps its 900 s and its own retry. In a run, only builder build calls get the limit; a stopped call is
+    retried once, an event and a system note each time, and nothing is written twice (same sections, pages and call
+    rows as a run with no stop). Stopped twice: an unusable reply retried within the envelope; the run still ends."""
+    import llm
+    import subprocess
+    keep = (llm.MOCK, llm.PROVIDER, llm.MODEL, llm._client, llm.subprocess.run, llm.ask)
+    try:
+        llm.MOCK, llm.PROVIDER, llm.MODEL = False, "claude-cli", "sonnet"
+        seen = []
+
+        def slow_cli(cmd, **kw):
+            seen.append(kw["timeout"])
+            raise subprocess.TimeoutExpired(cmd, kw["timeout"])
+        llm.subprocess.run = slow_cli
+        try:
+            llm.ask("s", "u", lambda: "x", timeout=0.5)
+            raise AssertionError("no CallTimeout")
+        except llm.CallTimeout:
+            pass
+        assert len(seen) == 1 and seen[0] <= 0.5, seen
+        seen.clear()
+        try:
+            llm.ask("s", "u", lambda: "x")
+            raise AssertionError("no error")
+        except llm.CallTimeout:
+            raise AssertionError("no limit asked: never a CallTimeout")
+        except RuntimeError:
+            pass
+        assert seen == [900, 900], seen          # unchanged without a limit
+
+        class Stream:
+            def __init__(self, kw):
+                self.kw = kw
+
+            def __enter__(self):
+                return self
+
+            def __exit__(self, *a):
+                self.closed = True
+
+            @property
+            def text_stream(self):
+                yield "early "
+                time.sleep(0.3)
+                yield "LATE"
+
+            def get_final_message(self):
+                raise AssertionError("a stopped stream is never finished")
+        streams = []
+        llm._client = type("C", (), {"messages": type("M", (), {"stream": lambda self, **kw: streams.append(Stream(kw)) or streams[-1]})()})()
+        llm.PROVIDER = "anthropic"
+        try:
+            llm.ask("s", "u", lambda: "x", timeout=0.1)
+            raise AssertionError("no CallTimeout")
+        except llm.CallTimeout:
+            pass
+        assert streams[0].closed and 0 < streams[0].kw["timeout"] <= 0.1, streams[0].kw
+    finally:
+        llm.MOCK, llm.PROVIDER, llm.MODEL, llm._client, llm.subprocess.run, llm.ask = keep
+
+    def run_with(stops):
+        """A mock Brew Lab run whose first `stops` builder build calls are stopped at the limit."""
+        real, limits = llm.ask, []
+
+        def ask(system, user, mock, **kw):
+            limits.append(("YOU OWN SECTION" in user or "YOUR OUTPUT IS ONE FILE" in user, kw.get("timeout")))
+            if kw.get("timeout") and sum(1 for b, t in limits if t) <= stops:
+                raise llm.CallTimeout("stopped after 600s (test)")
+            return real(system, user, mock, **kw)
+        llm.ask = ask
+        try:
+            run = j2.J2Run()
+            say(run, BREW_LAB)
+            finish(run)
+        finally:
+            llm.ask = real
+        assert all(t == (j2.builder_timeout() if build else None) for build, t in limits), "only build calls get the limit"
+        return run
+    base, once, twice = run_with(0), run_with(1), run_with(2)
+    for run in (base, once, twice):
+        assert run.outcome.startswith("Done"), run.outcome
+    ev = lambda r: [e for e in r.events if e["type"] == "builder_timeout"]
+    notes = lambda r: [m for m in r.chat if m["who"] == "system" and "limit and was stopped" in m["text"]]
+    assert not ev(base) and len(ev(once)) == 1 and len(ev(twice)) == 2 and len(notes(once)) == 1 and len(notes(twice)) == 2
+    assert "tried once more" in notes(once)[0]["text"] and "not tried again" in notes(twice)[1]["text"]
+    # stopped once: the retry's reply is the one used, written once: the same pages, sections and call rows as no stop
+    assert once.sections == base.sections and len(once.sites) == len(base.sites), (len(once.sites), len(base.sites))
+    rows, brow = calls_file(once), calls_file(base)
+    assert [r["fn"] for r in rows] == [r["fn"] for r in brow], "no call logged twice"
+    assert [r.get("timeouts") for r in rows if r.get("timeouts")] == [1] and not any(r.get("timeouts") for r in brow)
+    # stopped twice: the attempt is unusable (nothing written for it), the envelope's retry builds the section
+    w1 = twice._wf("W-1") or {}
+    assert twice.sections.keys() == base.sections.keys(), (list(twice.sections), list(base.sections))
+    assert len(twice.sites) == len(base.sites), "the stopped attempt wrote no page"
+    assert any("can't be used" in m["text"] and "stopped" in m["text"] for m in twice.chat if m["who"] == "system"), w1.get("last_check")
+    print(f"builder time limit: claude-cli killed once at the limit, the stream closed before its late text, no limit = 900 s and "
+          f"its own retry; in a run a stop is retried once ({len(ev(once))} event, same {len(once.sites)} pages and "
+          f"{len(rows)} call rows as no stop); stopped twice -> retried in the envelope, run Done ok")
+
+
+def builder_context_trim():
+    """A builder's prompt in a real run (J2_SLIM on): STATE holds the brief, charter, Requester's answers, style guide, section
+    map and the findings its workflow fixes; no chat, no other workflows, no audits, no budget. Its own section is in its
+    task when it revises one, other sections' bodies never are. Mock runs keep the full context (the goldens' prompts)."""
+    import llm
+    real, keep_mock, prompts = llm.ask, llm.MOCK, []
+
+    def ask(system, user, mock, **kw):      # a "real" run whose replies are the mock's
+        prompts.append(user)
+        return mock()
+    llm.ask, llm.MOCK = ask, False
+    try:
+        run = j2.J2Run()
+        say(run, BREW_LAB)
+        finish(run)
+    finally:
+        llm.ask, llm.MOCK = real, keep_mock
+    assert run.outcome.startswith("Done"), run.outcome
+    rows = calls_file(run)
+    builds = [r for r in rows if j2.is_wf_agent(r["fn"]) and "YOU OWN SECTION" in r["prompt"]]
+    others = [r for r in rows if not j2.is_wf_agent(r["fn"])]
+    assert builds and all("\n\nCHAT:\n" in r["prompt"] for r in others)
+    for r in builds:
+        st = json.loads(r["prompt"].split("STATE:\n", 1)[1].split("\n\nYOUR TURN:\n", 1)[0])
+        assert "\n\nCHAT:\n" not in r["prompt"] and set(st) == {"requester_brief", "requester_feedback", "requester_decisions",
+                                                                 "site_sections", "style_guide", "charter", "findings_to_fix"}, set(st)
+        sid = re.search(r"YOU OWN SECTION (\S+) of", r["prompt"])[1]
+        for k, sec in run.sections.items():
+            body = (sec.get("body") or "").strip()
+            if k not in (sid, "style") and len(body) > 80:
+                assert body[:80] not in r["prompt"], (r["fn"], "has section", k)
+    fixers = [r for r in builds if (run._wf(r["fn"]) or {}).get("fixes")]
+    for r in fixers:
+        st = json.loads(r["prompt"].split("STATE:\n", 1)[1].split("\n\nYOUR TURN:\n", 1)[0])
+        assert {f["id"] for f in st["findings_to_fix"]} == set(map(str, run._wf(r["fn"])["fixes"])), st["findings_to_fix"]
+    revising = [r for r in builds if "YOUR SECTION NOW" in r["prompt"]]
+    for r in revising:
+        sid = re.search(r"YOU OWN SECTION (\S+) of", r["prompt"])[1]
+        assert "```section\n" in r["prompt"].split("YOUR SECTION NOW", 1)[1], r["fn"]
+    # mock: the full context, as before (plain_unchanged and doc_unchanged hold every mock prompt to its golden)
+    assert run.context("W-1").startswith("STATE:\n" + run.state("W-1") + "\n\nCHAT:\n")
+    old = sum(len(r["prompt"]) for r in builds)
+    print(f"builder context: {len(builds)} build prompts without chat or other workflows ({len(fixers)} with their findings, "
+          f"{len(revising)} with their own section); no other section's body; mock context unchanged ok ({old:,} characters)")
+
+
+def timing_records():
+    """timing.json: written when a run stops or pauses; one row per (who, J2 step, kind): AI calls with their seconds and
+    tokens (summing to calls.jsonl), code running checks, the Requester's answer time. /api/timing serves it and Run
+    settings shows it (calls, tokens and time, then per step and agent)."""
+    import shutil
+    import subprocess
+    import threading
+    import urllib.request
+    import j2_server
+    run = j2.J2Run()
+    say(run, "a website for my cafe")      # J2.a asks the Requester first
+    assert run.paused and json.load(open(os.path.join(run.dir, "timing.json")))["ai"]["calls"], "written at the pause"
+    time.sleep(0.3)      # the Requester takes a moment
+    say(run, "It's called Little Fig, in Koramangala, Bengaluru. Visitors should see our menu with prices, opening "
+             "hours and where to find us. Cozy and simple, and it must work on phones.")
+    time.sleep(0.3)
+    finish(run)
+    assert run.outcome.startswith("Done"), run.outcome
+    t = json.load(open(os.path.join(run.dir, "timing.json"), encoding="utf-8"))
+    rows = calls_file(run)
+    ai = [r for r in t["rows"] if r["kind"] == "ai"]
+    assert t["ai"]["calls"] == len(rows) == sum(r["calls"] for r in ai), (t["ai"], len(rows))
+    assert abs(t["ai"]["seconds"] - sum(r["seconds"] for r in rows)) < 0.05 * len(rows) + 0.01
+    assert {(r["who"], r["step"]) for r in ai} == {(c["fn"], j2.step_id(c["step"])) for c in rows}
+    assert all(re.fullmatch(r"J2\.[a-h]", r["step"]) for r in ai), {r["step"] for r in ai}
+    checks = [r for r in t["rows"] if r["kind"] == "checks"]
+    assert checks and all(j2.is_wf_agent(r["who"]) and r["step"] == "J2.f" for r in checks), checks[:2]
+    waits = [r for r in t["rows"] if r["kind"] == "wait"]
+    assert len(waits) == len(run.decisions) >= 2 and t["requester_wait_seconds"] >= 0.6, (waits, run.decisions)
+    assert waits[0]["step"] == "J2.a", waits
+    assert t["wall_seconds"] + 0.5 >= t["ai"]["seconds"] + t["checks_seconds"] + t["requester_wait_seconds"], t
+    assert t["by_step"] and sum(x["calls"] for x in t["by_agent"]) == len(rows)
+    # an older run without timing.json: rebuilt from calls.jsonl
+    os.rename(os.path.join(run.dir, "timing.json"), os.path.join(run.dir, "timing.bak"))
+    old = j2.saved_timing(run.dir)
+    assert old["from_calls_only"] and old["ai"] == t["ai"] and not old["checks_seconds"]
+    os.rename(os.path.join(run.dir, "timing.bak"), os.path.join(run.dir, "timing.json"))
+    # served by /api/timing, for a saved run and the live one
+    keep = j2_server.RUN
+    j2_server.RUN = run
+    srv = j2_server.http.server.ThreadingHTTPServer(("127.0.0.1", 0), j2_server.Handler)
+    threading.Thread(target=srv.serve_forever, daemon=True).start()
+    base = f"http://127.0.0.1:{srv.server_address[1]}"
+    try:
+        live = json.load(urllib.request.urlopen(base + "/api/timing"))
+        saved = json.load(urllib.request.urlopen(base + "/api/timing?run=" + os.path.basename(run.dir)))
+    finally:
+        srv.shutdown()
+        j2_server.RUN = keep
+    assert live["ai"] == t["ai"] and saved == t
+    # shown in Run settings: the section is in its pane, and timingHtml renders the totals and one table row per timing row
+    here = os.path.dirname(os.path.abspath(__file__))
+    ui = open(os.path.join(here, "j2_ui.html"), encoding="utf-8").read()
+    rs = ui[ui.index('id="pane-runsettings"'):ui.index('id="pane-rundetails"')]
+    assert 'id="timesec"' in rs and 'id="timing"' in rs and '"/api/timing"' in ui
+    if not shutil.which("node"):
+        print("timing.json: records ok; Run settings render skipped (node not found)")
+        return
+    fn = re.search(r"\nfunction timingHtml\(t\)\{.*?\n\}\n", ui, re.S)[0]
+    js = ("const esc = s => String(s).replace(/[&<>\"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','\"':'&quot;'})[c]);"
+          "const plural = (n, w) => n + ' ' + w + (n === 1 ? '' : 's'); const who = k => [k.startsWith('W-') ? k + ' Builder' : k];"
+          + fn + "process.stdout.write(timingHtml(JSON.parse(require('fs').readFileSync(0, 'utf8'))));")
+    out = subprocess.run(["node", "-e", js], input=json.dumps(t), capture_output=True, text=True, timeout=30)
+    assert out.returncode == 0, out.stderr[-500:]
+    h = out.stdout
+    assert f"{t['ai']['calls']} AI calls" in h and "checks (code)" in h and h.count("<tr>") == len(t["rows"]) + 1, h[:400]
+    assert ("Requester (answering)" in h) == bool(waits) and "J2.f" in h
+    print(f"timing.json: {len(t['rows'])} rows ({len(ai)} AI, {len(checks)} checks, {len(waits)} waits), sums match calls.jsonl "
+          f"({t['ai']['calls']} calls, {t['ai']['seconds']} s); rebuilt from calls.jsonl for old runs; /api/timing and Run settings ok")
+
+
 def render_node(state, previews=None, html=None, docs=None):
     """j2_ui_render.js: the page's script against a stub DOM (no browser). Returns {simple, sprog, cards}."""
     import subprocess
@@ -12267,6 +12487,9 @@ if __name__ == "__main__":
             types_refused()        # a bad type is refused
             doc_unchanged()        # the document golden
             deliverables_generic()      # step 3: Adaptation chooses what to build
+            builder_time_limit()        # J2_BUILDER_TIMEOUT: a stopped builder call, retried once, written once
+            builder_context_trim()      # a real run's builder prompt: no chat, no other workflows
+            timing_records()            # timing.json and Run settings' calls, tokens and time
             doc_plans_generic()         # step 3b: document plans from the template, not the fixed plan
             doc_planner_real()          # step 3c: realistic planner answers for documents
             forms_and_new_types()       # phase C: forms, and new types made on the fly

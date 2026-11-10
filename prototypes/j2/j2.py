@@ -477,6 +477,50 @@ def slim():
     return os.environ.get("J2_SLIM") != "0"
 
 
+def builder_timeout():
+    """J2_BUILDER_TIMEOUT: seconds one builder AI call may take (default 600; 0 = no limit). Read per call so tests
+    can switch it. Past it the call is stopped and retried once (J2Run.call)."""
+    return float(os.environ.get("J2_BUILDER_TIMEOUT") or 600)
+
+
+def step_id(step):
+    """"J2.f" for step 6 (STEPS), else the step as recorded ("" when none)."""
+    return STEPS[step][:4] if step in STEPS else str(step or "")
+
+
+def timing_rows(calls, checks=(), waits=()):
+    """timing.json's rows: who took how long per step. calls: calls.jsonl rows (fn, step, seconds, tokens);
+    checks: {"who", "step", "seconds"} for code running a workflow's checks (receipts); waits: {"step", "seconds"}
+    for the Requester answering a question. One row per (who, step, kind), in first-seen order."""
+    rows = {}
+    for kind, who_of, src in (("ai", lambda c: c.get("fn"), calls), ("checks", lambda c: c.get("who"), checks),
+                              ("wait", lambda c: "requester", waits)):
+        for c in src:
+            k = (who_of(c), step_id(c.get("step")), kind)
+            r = rows.setdefault(k, {"who": k[0], "step": k[1], "kind": kind, "seconds": 0.0, "calls": 0,
+                                    "tokens_in": 0, "tokens_out": 0})
+            r["seconds"] = round(r["seconds"] + (c.get("seconds") or 0), 2)
+            if kind == "ai":
+                t = c.get("tokens") or {}
+                r["calls"] += 1
+                r["tokens_in"] += t.get("input") or 0
+                r["tokens_out"] += t.get("output") or 0
+    return list(rows.values())
+
+
+def timing_record(rows, wall=None):
+    """timing.json: totals by kind, the share of AI time per step and per agent, and the rows."""
+    tot = lambda kind, f: round(sum(r[f] for r in rows if r["kind"] == kind), 2)
+    by = lambda f: sorted(({"name": n, "seconds": round(sum(r["seconds"] for r in rows if r[f] == n and r["kind"] == "ai"), 2),
+                            "calls": sum(r["calls"] for r in rows if r[f] == n)}
+                           for n in dict.fromkeys(r[f] for r in rows if r["kind"] == "ai")), key=lambda x: -x["seconds"])
+    return {"wall_seconds": round(wall, 1) if wall is not None else None,
+            "ai": {"calls": sum(r["calls"] for r in rows), "seconds": tot("ai", "seconds"),
+                   "tokens_in": tot("ai", "tokens_in"), "tokens_out": tot("ai", "tokens_out")},
+            "checks_seconds": tot("checks", "seconds"), "requester_wait_seconds": tot("wait", "seconds"),
+            "by_step": by("step"), "by_agent": by("who"), "rows": rows}
+
+
 def slim_atom(a):
     return {k: a[k] for k in ("id", "status", "agent_output")} if a.get("status") == "passed" and a.get("agent_output") else a
 
@@ -2823,6 +2867,16 @@ def atom_section_body(d, wfs, atom_id):
     return next((x["body"] for src in sources for k, x in src.items() if k == w.get("section") and x.get("body")), None)
 
 
+def saved_timing(d):
+    """A saved run's timing.json; a run from before it existed: rebuilt from calls.jsonl (AI calls only)."""
+    if not d:
+        return None
+    t = _read(d, "timing.json")
+    if t is None and os.path.isfile(os.path.join(d, "calls.jsonl")):
+        t = {**timing_record(timing_rows(_jsonl(d, "calls.jsonl"))), "from_calls_only": True}
+    return t
+
+
 def call_record(d, cid):
     """One AI call in full (system prompt, prompt, raw reply) from a run folder's calls.jsonl."""
     return next((c for c in _jsonl(d, "calls.jsonl") if c.get("id") == cid), None) if d else None
@@ -2914,6 +2968,7 @@ class J2Run:
         # and every change so far (change.json); relay_script: mock replies of the readers asked after a doc revision
         self.real_base, self.real_replan, self.change, self.changes, self.relay_script = None, False, None, [], {}
         self.accepted = []       # rubric and condition ids the Requester finished with (_accept_open)
+        self.check_times, self.waits, self.wait_from = [], [], None    # timing.json: code checks, Requester waits
         self._begin_cycle(advance=False)
 
     def set_output(self, out):
@@ -3174,7 +3229,25 @@ class J2Run:
             f.write(f"Messages 1-{self.summary_upto}\n{self.summary}\n")
 
     def context(self, fn=None):
+        if is_wf_agent(fn) and slim() and not llm.MOCK:
+            return f"STATE:\n{self.builder_state(fn)}"
         return f"STATE:\n{self.state(fn)}\n\nCHAT:\n{self.chat_view()}"
+
+    def builder_state(self, fn):
+        """A builder's STATE in a real run (J2_SLIM on): what it builds from, not the whole run. The brief, the charter
+        (a document builder's task already has it in full), the Requester's answers, the style guide, the section map,
+        and the Audit findings its workflow fixes. Its workflow, its own section, the files it reads and the other
+        sections' agent_output are in its task. No chat, no other workflows, no audits, no budget. Mock runs keep the
+        full context, so the mock goldens' prompts are unchanged."""
+        s, w = json.loads(self.state(fn)), self._wf(fn) or {}
+        keep = ("requester_brief", "requester_feedback", "requester_decisions", "site_sections", "style_guide") \
+            + (() if self.doc else ("charter",))
+        fixes, found = {str(f) for f in w.get("fixes") or []}, {}
+        for a in reversed(self.audits):      # each finding as Audit last wrote it
+            for r in a["results"]:
+                if r.get("id") in fixes and r["id"] not in found:
+                    found[r["id"]] = {k: r.get(k) for k in ("id", "criterion", "verdict", "severity", "note")}
+        return json.dumps({**{k: s[k] for k in keep}, "findings_to_fix": list(found.values())}, ensure_ascii=False)
 
     REASON = '"reason": str (one short sentence: why you decided this)'
     # Every Identity call gets this: anything Identity writes to the Requester must read plainly at the source.
@@ -3192,9 +3265,14 @@ class J2Run:
     REPLY_DEFAULTS = ("Thanks, got it. We're working on it now.", "Go ahead with the Requester's latest answer.")
 
     def call(self, fn, reply_format, task, mock, max_tokens=900, json_reply=True, images=None, defaults=None,
-             _retry=False, answer_only=False, schema=None):
+             _retry=False, answer_only=False, schema=None, timeout=None):
         """One agent's AI call. Every JSON reply format gets a "reason" field. Each call is logged to calls.jsonl
         (inputs, reply, reason, tokens, time) and linked to the agent's next chat message for the detail view.
+
+        timeout (a builder's build call: builder_timeout()): a call past it is stopped by llm (the CLI process killed,
+        the stream closed, so a late reply can never arrive) and retried once; a second stop raises llm.CallTimeout.
+        Each stop is an event and a system note. Nothing is written from a stopped call: sections are written only
+        from a returned reply.
 
         With J2_BOARD=1 every function's format gets the board fields the same way (board_question, board_used) and
         every function's prompt gets the answered entries (_board_context); answer_only is the board's own answer
@@ -3214,9 +3292,23 @@ class J2Run:
         self.thinking = fn
         t0 = time.time()
         self.art_sent = schema is not None
+        self.call_timeouts = 0
         try:
-            raw = llm.ask(system, user, mock, max_tokens=max_tokens, effort="low" if json_reply else "high",
-                          json_mode=json_reply, images=images, schema=schema)
+            while True:
+                try:
+                    raw = llm.ask(system, user, mock, max_tokens=max_tokens, effort="low" if json_reply else "high",
+                                  json_mode=json_reply, images=images, schema=schema, timeout=timeout)
+                    break
+                except llm.CallTimeout as e:
+                    self.call_timeouts += 1
+                    again = self.call_timeouts == 1
+                    self._event(fn, "builder_timeout", f"{fn}: AI call stopped after {timeout:g}s ({e}); "
+                                + ("retried once" if again else "not retried again"))
+                    self.post("system", f"{fn}'s AI call ran past its {timeout:g}s limit and was stopped; nothing from "
+                                        "it is used. " + ("It is tried once more." if again else
+                                                          "It is not tried again."), warning=True)
+                    if not again:
+                        raise
         finally:
             self.thinking = None
         reply = raw
@@ -3309,6 +3401,7 @@ class J2Run:
                "reply": {k: v for k, v in reply.items() if k != "reason"} if isinstance(reply, dict) else None,
                "reason": reply.get("reason") if isinstance(reply, dict) else None,
                **({"atom": self.atom} if self.atom else {}),
+               **({"timeouts": self.call_timeouts} if getattr(self, "call_timeouts", 0) else {}),
                **({"artifact_schema": art} if art else {})}
         self.call_log.append(rec)
         self.pending_calls.setdefault(fn, []).append(rec["id"])
@@ -3528,6 +3621,7 @@ class J2Run:
                 self.outcome = f"Crashed: {self.error}"
                 try:
                     self._write_summary()      # code only, before the slow reviewer call
+                    self.save("timing.json", self.timing())
                     self._make_report()
                 except Exception as e2:  # noqa: BLE001
                     self.post("system", f"Run report failed: {type(e2).__name__}: {str(e2)[:200]}")
@@ -3538,6 +3632,9 @@ class J2Run:
         last_user = next(m["text"] for m in reversed(self.chat) if m["who"] == "user")
         self.started = self.started or time.time()
         self.outcome, p = None, self.paused
+        if p and self.wait_from:      # timing.json: how long the Requester took to answer
+            self.waits.append({"step": self.step, "seconds": round(time.time() - self.wait_from, 2)})
+        self.wait_from = None
         if p:
             # The Requester answered Identity: resume where the run stopped. Answers don't renew the cycle allowance.
             self.paused = None
@@ -3639,7 +3736,15 @@ class J2Run:
         self.feedback = None
         if self.change and not self.paused:      # J2_CHANGE: the change ends with the run it was built in
             self.change["phase"] = "closed"
+        self.wait_from = time.time() if self.paused else None
+        self.save("timing.json", self.timing())
         self.status = "waiting"
+
+    def timing(self):
+        """timing.json (written whenever the run stops or pauses): who took how long per step. AI calls from the call
+        log (fn, step, seconds, tokens), code running checks (receipts), and the Requester's answer times."""
+        return timing_record(timing_rows(self.call_log, self.check_times, self.waits),
+                             time.time() - self.started if self.started else None)
 
     # ------------------------------------------------------------------ Identity
     def _turn_identity(self, h):
@@ -7546,16 +7651,19 @@ class J2Run:
                     if art_model is not None:      # data, not markdown: one JSON object that follows the template
                         fmt_task = (self._artifact_reply_format(art_model, first),
                                     fmt_task[1] + self._artifact_task(art_kind, art_sec, art_model, first))
-                    prov_err = None
+                    prov_err, timed_out = None, False
                     try:
-                        raw = self.call(fn, *fmt_task, mock, max_tokens=16000, json_reply=False, schema=schema)
+                        raw = self.call(fn, *fmt_task, mock, max_tokens=16000, json_reply=False, schema=schema,
+                                        timeout=builder_timeout())
                     except RuntimeError as e:      # no usable structured output: a refusal, a cut-off, a bad subtype
-                        if schema is None:
+                        timed_out = isinstance(e, llm.CallTimeout)      # stopped twice: unusable, retried in the envelope
+                        if schema is None and not timed_out:
                             raise
                         raw, prov_err = "", str(e)
                     try:
                         if prov_err:
-                            self._artifact_provider_fail(w, attempt, prov_err)
+                            if not timed_out:
+                                self._artifact_provider_fail(w, attempt, prov_err)
                             raise ValueError(prov_err)
                         if art_model is not None:      # J2_ARTIFACT_SCHEMA=1: data in, markdown rendered by code
                             parts, guide = self._read_artifact(w, raw, art_kind, art_sec, art_model, sid, first,
@@ -7731,15 +7839,19 @@ class J2Run:
         while attempt < MAX_CHECK_ATTEMPTS and w["calls_used"] < max_calls + attempt:
             attempt += 1
             w["calls_used"] += 1
-            raw = self.call(fn, fmt, f"YOU ARE {NAMES[fn]}, the agent for one registered workflow.\nYOUR WORKFLOW: "
-                            f"{json.dumps(brief, ensure_ascii=False)}\nYOUR OUTPUT IS ONE FILE, {f}, which the "
-                            "workflows after you read and follow. It builds no part of the site. Write what your "
-                            "workflow's goal and work atom ask for, in the format the file's name says. Mark anything "
-                            "the charter doesn't give as an assumption. Code runs your work atom's checks on the file."
-                            f"\nCHARTER: {json.dumps(charter, ensure_ascii=False)}" + self._artifact_context(w)
-                            + (f"\nATTEMPT {attempt} OF {MAX_CHECK_ATTEMPTS}. THESE CHECKS FAILED ON YOUR LAST "
-                               f"ATTEMPT:\n{evidence}\nFix the file so they pass." if evidence else ""),
-                            mock, max_tokens=8000, json_reply=False)
+            try:
+                raw = self.call(fn, fmt, f"YOU ARE {NAMES[fn]}, the agent for one registered workflow.\nYOUR WORKFLOW: "
+                                f"{json.dumps(brief, ensure_ascii=False)}\nYOUR OUTPUT IS ONE FILE, {f}, which the "
+                                "workflows after you read and follow. It builds no part of the site. Write what your "
+                                "workflow's goal and work atom ask for, in the format the file's name says. Mark anything "
+                                "the charter doesn't give as an assumption. Code runs your work atom's checks on the file."
+                                f"\nCHARTER: {json.dumps(charter, ensure_ascii=False)}" + self._artifact_context(w)
+                                + (f"\nATTEMPT {attempt} OF {MAX_CHECK_ATTEMPTS}. THESE CHECKS FAILED ON YOUR LAST "
+                                   f"ATTEMPT:\n{evidence}\nFix the file so they pass." if evidence else ""),
+                                mock, max_tokens=8000, json_reply=False, timeout=builder_timeout())
+            except llm.CallTimeout as e:      # stopped twice at the time limit: nothing written, the next attempt runs
+                evidence = f"- your last reply never came: the AI call was stopped at the time limit ({e})"
+                continue
             body = re.search(r"^<<<FILE[ \t]*\n(.*?)\n?^FILE>>>", raw or "", re.S | re.M)
             head = str(raw or "").split("<<<FILE")[0].strip()
             try:
@@ -9196,6 +9308,7 @@ class J2Run:
         for an artifact workflow); each result is a receipt and the atom keeps its latest ones. Returns the failed
         receipts."""
         site_dir, failed, doc = os.path.join(self.dir, "site"), [], self.doc if doc is None else doc
+        t0 = time.time()
 
         def one(c):
             if doc and c.get("type") == "file-exists" and self._file_wf(w):      # a file workflow: the file it wrote
@@ -9223,6 +9336,7 @@ class J2Run:
                                    "all passed")
                                 + ".", checks=w["id"])
         self.save("workflows.json", self.workflows)
+        self.check_times.append({"who": w["id"], "step": self.step, "seconds": round(time.time() - t0, 2)})
         return failed
 
     def _adaptation_atom_failed(self, h):
