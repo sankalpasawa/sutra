@@ -184,7 +184,9 @@ def test_with_artifact_schema_and_the_template_library_on_a_project_run_still_wo
     assert settings["artifact_schema"] is False and settings["template_library"] is False
     assert trace(run_dir, "output.selected")[0]
     assert events(run_dir)[-1]["status"] in ("done", "done_with_open_items")
-    assert not list(run_dir.glob("site/*.json")) and not (run_dir / "project.json").exists()
+    assert not list(run_dir.glob("site/*.json")), "no artifact-schema section files: that machinery is off for a project run"
+    built = json.loads((run_dir / "project.json").read_text())     # the finish step's agent-readable form of project.md (D143), not J2's artifact-schema data
+    assert built["schema"] == "agent-views/1" and built["model"] == "GenericGuide" and built["valid"] is True
 
 
 def test_other_outputs_keep_the_flags_the_owner_turned_on(j2, make_run_dir, data_dir):
