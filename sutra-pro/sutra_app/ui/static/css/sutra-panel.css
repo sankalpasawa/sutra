@@ -35,6 +35,13 @@ body.nodeopen #pane-map .mappanel{display:none}
 .apill small{color:var(--muted);font-weight:400}
 .apill:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
 @media (max-width:900px){.apillhost{bottom:auto;top:58px;right:12px}}
+/* J2's Chat button is fixed to the bottom right of the Detailed view (22px from the right, 18px from the bottom, about 40px tall; 452px from the right while the chat is
+   open) and the pill sat on it and took the click. The pill rides above the button and moves left with it (a transform, the compositor's). Not on a phone (it is under the
+   header there), not in the Simple view (the button is not drawn), not where there is no button (the console). J2 sync 4, E3. */
+@media (min-width:901px){
+  body:not(.simple):has(#chatfab) .apillhost{right:22px;bottom:68px;transition:transform var(--dur-base) var(--ease-out)}
+  body:not(.simple):has(#dview.chaton) .apillhost{transform:translateX(-430px)}
+}
 /* the pulse is a ring that grows and fades (transform and opacity: the compositor's), not an outline that is painted bigger each frame */
 .apill{position:relative}
 @media (prefers-reduced-motion:no-preference){.apill.fresh::after{content:"";position:absolute;inset:-3px;border:3px solid var(--accent);border-radius:inherit;pointer-events:none;animation:apillpulse calc(var(--dur-slow)*4) var(--ease-out) 2}}
@@ -196,6 +203,8 @@ body.archived #lform,body.archived #lbox,body.archived #lsend,body.archived .sch
 #sview>.steamstrip a{color:var(--s-muted,var(--muted));text-decoration:none}
 #sview>.steamstrip a:hover,#sview>.steamstrip a:focus-visible{color:var(--s-ink,var(--ink));text-decoration:underline}
 #sview>.steamstrip b{font:700 14px var(--s-display,var(--display));color:var(--s-ink,var(--ink));overflow-wrap:anywhere}
+/* J2's "How the team works" link is drawn in --s-accent, which reads 4.39:1 on the rail in the light theme (14px text needs 4.5); a fifth of the ink colour in it reads 5.7:1 and 7+ in dark */
+#sview .srailfoot .slink{color:color-mix(in srgb,var(--s-accent) 80%,var(--s-ink))}
 
 /* the node panel (z 60) opens over J2's chat panel and its button (z 30 and 31): hidden, they are no stray tab stop behind the dialog, and Esc closes the panel only */
 body.nodeopen #dview .chat,body.nodeopen .chatfab{visibility:hidden}
