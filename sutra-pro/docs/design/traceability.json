@@ -1,14 +1,14 @@
 {
  "schema": "traceability/1",
  "counts": {
-  "decisions": 135,
+  "decisions": 155,
   "packages": 78,
-  "endpoints": 30,
+  "endpoints": 41,
   "chips": 15,
   "steps": 7,
   "owner_rules": 7
  },
- "max_decision": 135,
+ "max_decision": 155,
  "owner_rules": [
   {
    "rule": "This is a new app, no relation to the old sutra-ui. Its design is the J2 prototype's design.",
@@ -324,7 +324,27 @@
     "D132",
     "D133",
     "D134",
-    "D135"
+    "D135",
+    "D136",
+    "D137",
+    "D138",
+    "D139",
+    "D140",
+    "D141",
+    "D142",
+    "D143",
+    "D144",
+    "D145",
+    "D146",
+    "D147",
+    "D148",
+    "D149",
+    "D150",
+    "D151",
+    "D152",
+    "D153",
+    "D154",
+    "D155"
    ],
    "modules": [
     "docs/DECISIONS.md",
@@ -1269,6 +1289,209 @@
     "tests/engine/test_engine_api_scope.py",
     "tests/contracts/test_contract_route_table.py"
    ]
+  },
+  {
+   "n": 31,
+   "name": "runlist",
+   "method": "GET",
+   "path": "/api/runlist",
+   "handler": "sutra_app/engine/views.py",
+   "adapter": "sutra_app/engine/api/state.py",
+   "in_ui_list": true,
+   "golden_keys": [
+    "runlist"
+   ],
+   "tests": [
+    "tests/engine/test_engine_views.py",
+    "tests/engine/golden/api_shapes.json",
+    "tests/engine/test_engine_api_scope.py",
+    "tests/contracts/test_contract_route_table.py"
+   ]
+  },
+  {
+   "n": 32,
+   "name": "changes",
+   "method": "GET",
+   "path": "/api/changes",
+   "handler": "sutra_app/engine/views.py",
+   "adapter": "sutra_app/engine/api/state.py",
+   "in_ui_list": true,
+   "golden_keys": [
+    "changes"
+   ],
+   "tests": [
+    "tests/engine/test_engine_views.py",
+    "tests/engine/golden/api_shapes.json",
+    "tests/engine/test_engine_api_scope.py",
+    "tests/contracts/test_contract_route_table.py"
+   ]
+  },
+  {
+   "n": 33,
+   "name": "plan_map",
+   "method": "GET",
+   "path": "/api/plan-map",
+   "handler": "sutra_app/engine/views.py",
+   "adapter": "sutra_app/engine/api/run_views.py",
+   "in_ui_list": true,
+   "golden_keys": [
+    "plan_map"
+   ],
+   "tests": [
+    "tests/engine/test_engine_views.py",
+    "tests/engine/golden/api_shapes.json",
+    "tests/engine/test_engine_api_scope.py",
+    "tests/contracts/test_contract_route_table.py"
+   ]
+  },
+  {
+   "n": 34,
+   "name": "activity",
+   "method": "GET",
+   "path": "/api/activity",
+   "handler": "sutra_app/engine/views.py",
+   "adapter": "sutra_app/engine/api/run_views.py",
+   "in_ui_list": true,
+   "golden_keys": [
+    "activity"
+   ],
+   "tests": [
+    "tests/engine/test_engine_views.py",
+    "tests/engine/golden/api_shapes.json",
+    "tests/engine/test_engine_api_scope.py",
+    "tests/contracts/test_contract_route_table.py"
+   ]
+  },
+  {
+   "n": 35,
+   "name": "catalog",
+   "method": "GET",
+   "path": "/api/catalog",
+   "handler": "sutra_app/engine/views.py",
+   "adapter": "sutra_app/engine/api/library.py",
+   "in_ui_list": true,
+   "golden_keys": [
+    "catalog"
+   ],
+   "tests": [
+    "tests/engine/test_engine_views.py",
+    "tests/engine/golden/api_shapes.json",
+    "tests/engine/test_engine_api_scope.py",
+    "tests/contracts/test_contract_route_table.py"
+   ]
+  },
+  {
+   "n": 36,
+   "name": "artifacts_groups",
+   "method": "GET",
+   "path": "/api/artifacts/groups",
+   "handler": "sutra_app/engine/views.py",
+   "adapter": "sutra_app/engine/api/files.py",
+   "in_ui_list": true,
+   "golden_keys": [
+    "artifacts_groups"
+   ],
+   "tests": [
+    "tests/engine/test_engine_views.py",
+    "tests/engine/golden/api_shapes.json",
+    "tests/engine/test_engine_api_scope.py",
+    "tests/contracts/test_contract_route_table.py"
+   ]
+  },
+  {
+   "n": 37,
+   "name": "ask",
+   "method": "POST",
+   "path": "/api/ask",
+   "handler": "sutra_app/engine/views.py",
+   "adapter": "sutra_app/engine/api/commands.py",
+   "in_ui_list": true,
+   "golden_keys": [
+    "ask",
+    "ask_refused"
+   ],
+   "tests": [
+    "tests/engine/test_engine_views.py",
+    "tests/engine/golden/api_shapes.json",
+    "tests/engine/test_engine_api_scope.py",
+    "tests/contracts/test_contract_route_table.py"
+   ]
+  },
+  {
+   "n": 38,
+   "name": "record",
+   "method": "GET",
+   "path": "/api/record",
+   "handler": "sutra_app/engine/views.py",
+   "adapter": "sutra_app/engine/api/run_views.py",
+   "in_ui_list": true,
+   "golden_keys": [
+    "record_art",
+    "record_missing",
+    "record_part"
+   ],
+   "tests": [
+    "tests/engine/test_engine_views.py",
+    "tests/engine/golden/api_shapes.json",
+    "tests/engine/test_engine_api_scope.py",
+    "tests/contracts/test_contract_route_table.py"
+   ]
+  },
+  {
+   "n": 39,
+   "name": "doc",
+   "method": "GET",
+   "path": "/doc/{name}",
+   "handler": "sutra_app/engine/views.py",
+   "adapter": "sutra_app/engine/api/files.py",
+   "in_ui_list": false,
+   "golden_keys": [
+    "doc"
+   ],
+   "tests": [
+    "tests/engine/test_engine_views.py",
+    "tests/engine/golden/api_shapes.json",
+    "tests/engine/test_engine_api_scope.py",
+    "tests/contracts/test_contract_route_table.py"
+   ]
+  },
+  {
+   "n": 40,
+   "name": "view",
+   "method": "GET",
+   "path": "/view",
+   "handler": "sutra_app/engine/views.py",
+   "adapter": "sutra_app/engine/api/files.py",
+   "in_ui_list": true,
+   "golden_keys": [
+    "view",
+    "view_missing"
+   ],
+   "tests": [
+    "tests/engine/test_engine_views.py",
+    "tests/engine/golden/api_shapes.json",
+    "tests/engine/test_engine_api_scope.py",
+    "tests/contracts/test_contract_route_table.py"
+   ]
+  },
+  {
+   "n": 41,
+   "name": "settings",
+   "method": "POST",
+   "path": "/api/settings",
+   "handler": "sutra_app/engine/views.py",
+   "adapter": "sutra_app/engine/api/commands.py",
+   "in_ui_list": true,
+   "golden_keys": [
+    "settings",
+    "settings_read"
+   ],
+   "tests": [
+    "tests/engine/test_engine_views.py",
+    "tests/engine/golden/api_shapes.json",
+    "tests/engine/test_engine_api_scope.py",
+    "tests/contracts/test_contract_route_table.py"
+   ]
   }
  ],
  "decisions": [
@@ -1499,7 +1722,7 @@
    ],
    "status": "implemented",
    "superseded_by": [],
-   "diagram": "label \"settings: 2 files + 7 task keys · edit in Settings\" with badge D18 on J2 chips."
+   "diagram": "label \"settings: 2 files + 8 task keys · edit in Settings\" (7 until D152) with badge D18 on J2 chips."
   },
   {
    "id": "D19",
@@ -1569,7 +1792,8 @@
    "id": "D25",
    "title": "The J2 data routes have one implementation behind two thin adapters",
    "packages": [
-    "E2"
+    "E2",
+    "E5"
    ],
    "status": "implemented",
    "superseded_by": [],
@@ -1580,7 +1804,9 @@
    "title": "Memory is per department; the template library is one global store behind a file lock",
    "packages": [
     "E0",
-    "E3"
+    "E2",
+    "E3",
+    "E4"
    ],
    "status": "implemented",
    "superseded_by": [],
@@ -2022,7 +2248,8 @@
     "L1",
     "ORCH-1",
     "ORCH-3",
-    "ORCH-7"
+    "ORCH-7",
+    "UI-0"
    ],
    "status": "implemented",
    "superseded_by": [],
@@ -2941,6 +3168,247 @@
    "status": "implemented",
    "superseded_by": [],
    "diagram": "key label \"your report in the team's chat\", pill on the Chat sessions box."
+  },
+  {
+   "id": "D136",
+   "title": "Sync 4 vendors from the J2 copy `prototypes/j2` at a pinned commit and tree",
+   "packages": [
+    "E1"
+   ],
+   "status": "implemented",
+   "superseded_by": [],
+   "diagram": "label \"J2 sync 4: prototypes/j2 @025e265\", pill on J2 chips."
+  },
+  {
+   "id": "D137",
+   "title": "The department page is J2's new page, re-ported by anchor; Sutra's strip, tabs and panels are added around it",
+   "packages": [
+    "E1",
+    "E3",
+    "E4",
+    "E5",
+    "E7",
+    "E8",
+    "UI-2"
+   ],
+   "status": "implemented",
+   "superseded_by": [],
+   "diagram": "label \"J2 page re-ported (33 edits, D137)\", pill on User chat interface · J2 Simple view."
+  },
+  {
+   "id": "D138",
+   "title": "Home and Console keep a frozen copy of the previous J2 stylesheet; only the team page takes the new one",
+   "packages": [
+    "UI-2",
+    "UI-7"
+   ],
+   "status": "implemented",
+   "superseded_by": [],
+   "diagram": "label \"Home and console keep J2's previous stylesheet\", pill on band:EXPERIENCE."
+  },
+  {
+   "id": "D139",
+   "title": "The per-request output choice moves to the new start page as a Sutra module; Settings keeps the default",
+   "packages": [
+    "E4",
+    "UI-0",
+    "UI-2",
+    "UI-8"
+   ],
+   "status": "implemented",
+   "superseded_by": [],
+   "diagram": "label \"start page: choose what to make\", pill on band:EXPERIENCE."
+  },
+  {
+   "id": "D140",
+   "title": "The new read routes are ordinary views; patch P13 is retired into Sutra-owned code",
+   "packages": [
+    "E1",
+    "E2",
+    "E4",
+    "E5",
+    "UI-0",
+    "UI-3"
+   ],
+   "status": "implemented",
+   "superseded_by": [],
+   "diagram": "label \"J2 routes: one implementation, P13 retired\", pill on J2 chips."
+  },
+  {
+   "id": "D141",
+   "title": "The shared template library is served under the team: `/d/{dept}/library`, over the one global library",
+   "packages": [
+    "CT-1",
+    "E2",
+    "E4",
+    "GAP-CONSOLE",
+    "UI-1",
+    "UI-2",
+    "UI-3",
+    "UI-8"
+   ],
+   "status": "implemented",
+   "superseded_by": [],
+   "diagram": "label \"/d/{dept}/library over the one library\", pill on Template library."
+  },
+  {
+   "id": "D142",
+   "title": "A finished run is collected into the catalog by a Sutra-owned step under the library lock",
+   "packages": [
+    "GAP-W1"
+   ],
+   "status": "implemented",
+   "superseded_by": [],
+   "diagram": "label \"run end: collect into the catalog\", pill on Template library."
+  },
+  {
+   "id": "D143",
+   "title": "The agent-readable JSON is built at the end of a run by a Sutra-owned step; the two J2 modules are vendored with P1 only",
+   "packages": [
+    "GAP-E2E",
+    "GAP-W1"
+   ],
+   "status": "implemented",
+   "superseded_by": [],
+   "diagram": "label \"run end: agent-readable JSON\", pill on Department records."
+  },
+  {
+   "id": "D144",
+   "title": "The seed keeps its mock-flagged templates; `sync_seed_library` delivers new versions and provenance to existing installs, never overwriting",
+   "packages": [
+    "GAP-DEMO",
+    "GAP-OPS-1"
+   ],
+   "status": "implemented",
+   "superseded_by": [],
+   "diagram": "label \"seed library: add, never overwrite\", pill on Template library."
+  },
+  {
+   "id": "D145",
+   "title": "The late judge stays on by default with no patch; its records are accepted; its cost stays readable in the usage ledger",
+   "packages": [
+    "E3",
+    "L3",
+    "L8",
+    "L9",
+    "UI-0"
+   ],
+   "status": "implemented",
+   "superseded_by": [],
+   "diagram": "label \"late judge on, no patch\", pill on Usage and cost ledger."
+  },
+  {
+   "id": "D146",
+   "title": "A report document of an engine output is shown in Artifacts' Documents group through a capability hook",
+   "packages": [
+    "E2"
+   ],
+   "status": "implemented",
+   "superseded_by": [],
+   "diagram": "label \"report row from the capability\", pill on band:DEPARTMENT RUNTIME."
+  },
+  {
+   "id": "D147",
+   "title": "A function's model-backed answer is a turn of its own agent session, through one port; `POST /api/ask` stays the one route",
+   "packages": [
+    "E2",
+    "E4",
+    "GAP-DEMO",
+    "UI-0",
+    "UI-6"
+   ],
+   "status": "implemented",
+   "superseded_by": [],
+   "diagram": "label \"ask a function: a turn of its own session\", pill on Chat sessions."
+  },
+  {
+   "id": "D148",
+   "title": "One transcript: the question and the answer are lines of the agent's session, and both panels read it",
+   "packages": [
+    "ORCH-1",
+    "ORCH-3",
+    "UI-6"
+   ],
+   "status": "implemented",
+   "superseded_by": [],
+   "diagram": "label \"one transcript per agent\", pill on Chat sessions."
+  },
+  {
+   "id": "D149",
+   "title": "The answer call carries the agent's own pick, is scrubbed, limited and booked to the session, and never runs offline",
+   "packages": [
+    "CN-1",
+    "CN-7",
+    "E4",
+    "UI-0"
+   ],
+   "status": "implemented",
+   "superseded_by": [],
+   "diagram": "label \"answer: own pick, scrubbed, booked\", pill on Connector router."
+  },
+  {
+   "id": "D150",
+   "title": "Tests move only through the recorders; the shape golden stops depending on the seed; J2's own new test blocks run on the vendored engine",
+   "packages": [
+    "E2"
+   ],
+   "status": "implemented",
+   "superseded_by": [],
+   "diagram": "label \"goldens only by recorder\", pill on Department records."
+  },
+  {
+   "id": "D151",
+   "title": "Closed library models for the four new view shapes wait; the shape goldens and J2's own blocks hold them",
+   "packages": [],
+   "status": "documented only",
+   "superseded_by": [],
+   "diagram": "key only, label \"new J2 views pinned by shape goldens\"."
+  },
+  {
+   "id": "D152",
+   "title": "Decide for me is one switch in one `settings.json`: patch P16, the eighth task key, an inbox command the host applies, and the page's switch through `POST /api/settings`",
+   "packages": [
+    "E1",
+    "E3",
+    "ORCH-6",
+    "UI-3"
+   ],
+   "status": "implemented",
+   "superseded_by": [],
+   "diagram": "label \"Decide for me: one settings.json, P16\", pill on band:DEPARTMENT RUNTIME."
+  },
+  {
+   "id": "D153",
+   "title": "The pin moved to the Studio tip: `j2_studio.py` is vendored, the Studio routes are views, and the preview frames keep Sutra's sandbox",
+   "packages": [
+    "E1",
+    "E2",
+    "E5",
+    "UI-2",
+    "UI-3"
+   ],
+   "status": "implemented",
+   "superseded_by": [],
+   "diagram": "label \"pin at the Studio tip, sandbox kept\", pill on User chat interface · J2 Simple view."
+  },
+  {
+   "id": "D154",
+   "title": "`prototypes/j2` of this repository is the only J2 source; no other J2 repository is read, run or compared",
+   "packages": [],
+   "status": "documented only",
+   "superseded_by": [],
+   "diagram": "label \"prototypes/j2 is the only J2 source\", pill on J2 chips."
+  },
+  {
+   "id": "D155",
+   "title": "The Studio sheet breaks two things Sutra's panels need; Sutra's own sheet puts them back, and J2's sheet is never edited",
+   "packages": [
+    "UI-2",
+    "UI-6"
+   ],
+   "status": "implemented",
+   "superseded_by": [],
+   "diagram": "label \"Sutra's sheet keeps panels and motion\", pill on band:EXPERIENCE."
   }
  ],
  "packages": [
