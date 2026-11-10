@@ -19,7 +19,7 @@ RECORD = {"schema": "deliverable/1", "output": "project", "label": "Project work
 def leave(folder, report=REPORT, **record):
     """What the host leaves in a run folder at the end of a run: the report and the record."""
     if report is not None:
-        (folder / "project.md").write_text(report, encoding="utf-8")
+        (folder / "project.md").write_bytes(report.encode("utf-8"))        # bytes: a text-mode write would turn "\r\n" into "\r\r\n" on Windows
     (folder / RECORD_NAME).write_text(json.dumps({**RECORD, **record}), encoding="utf-8")
 
 
