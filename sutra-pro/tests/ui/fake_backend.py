@@ -3,10 +3,21 @@
 `make_app(fixtures_dir)` returns a FastAPI app that mounts the REAL UI package (pages, boot block, CSP, `/ui` static
 files) and answers the paths of the UI-to-server contract (ORCH section 6, as patched by S1 to S4) from the JSON files of
 `tests/ui/fixtures/`: the chart, the graph, the chats, the departments, "needs you", the Atom log, the health, the engine
-Settings, the connector Test and Sign in paths, the event stream, and J2's own 28 routes at the root with `?dept=`.
+Settings, the connector Test and Sign in paths, the event stream, and J2's own data routes at the root with `?dept=` (the names of `J2_EXACT` and the
+prefixes of `J2_PREFIXES` in sutra_ctx.js, and nothing else; the answers are `tests/ui/fixtures/j2/`, J2's own bytes).
 Everything uses the library ids (`root`, `web`, `web.identity`, `s-3f9a1c2b7d`, `cs_org`, `chg-0002`, `req-17`), J2's nine
 status words, the edge kinds of S3-web-13 and the five atom words. Errors of the new routes are `{error:{code,message,details}}`;
 J2's routes keep J2's bodies. Writes need the header `X-Sutra-Token` (`TOKEN`) and a matching Origin, as the real server does.
+
+The sync 4 routes (docs/design/j2-sync-4.md 3.1 to 3.6, 4.8): `/api/plan-map`, `/api/activity`, `/api/catalog`, `/api/artifacts/groups`, `/api/runlist` and
+`/api/changes` answer a capture, the studio redesign's `/api/record` (`?sec=` a part, `?art=` a deliverable: `record-<sec>.json`, `record-art-<name>.json`), `/doc/<name>` and `/view?name=`
+(pages: `doc-prd.html`, `view-site.html`, `view-goal.html`; J2's "isn't written yet" line for one the captures lack) and `POST /api/settings {decide_for_me}` (the
+switch `/api/state` then reports), and `POST /api/ask {who, q, run}` is the engine's route in small: J2's six functions only (400 `not a function`), a question
+of at most 2,000 characters, an archived team 403, J2's own records-only answer (the capture `ask-<who>.json`), and, for a function that has a session of
+its own for that run, the question and the answer stored as two lines of that session (`ask` is "q", "records" or "model" on the wire, as `ChatMessageOut.ask`)
+and announced as `chat.message` events, so the node panel and J2's chat panel read one transcript; a second question while one is being answered is 409
+`busy`. `GET /api/engine/settings?dept=` carries `next_run.output` (the start page's choice, else the team's setting), `GET /api/teams/{dept}/agents` rows carry
+`usage.by_purpose`, and `GET /api/usage/summary?by=dept|fn|provider|day|atom|session|purpose` groups the same numbers. `/d/{dept}/library` is the real UI router's.
 
 The state is a STAGE of the story the fixtures tell:
 
@@ -27,6 +38,13 @@ Test-only controls (not under /api, no token):
                                                status null or 200 clears); failing /api/events also ends the open streams
     POST /__fake/chart-notes {notes}          what GET /api/chart/notes answers (gap chart-insight; none by default)
     POST /__fake/find {teams, messages}       what GET /api/find answers to any query of two characters or more (none by default)
+    POST /__fake/ask {mode, text, note, delay, fail}  how POST /api/ask answers: mode "records" (the default: J2's own answer, no model), "offline" (the same with the
+                                               note "No model is connected."), "model" (`text` is the answer, booked as one agent_chat call and announced by
+                                               usage.recorded), "failed" (records, the note says the model could not answer) or "interrupted" (the question
+                                               line is stored, no answer line, the route answers 500); `note` replaces the note of "records" and "offline";
+                                               `delay` seconds hold the answer back after the question line is stored (a second question meanwhile is 409 busy);
+                                               `fail` (a status) refuses the next question once and stores nothing (409 is J2's `{"error": "busy"}`)
+    POST /__fake/output {locked}              true: POST /api/output answers 409, as it does once the team has a message
     GET  /__fake/log[?prefix=]                the requests seen: [{n, method, path, query, status, token, body}]
     GET  /__fake/state                        stages, failures, open streams, last event id
     POST /__fake/reset                        back to stage 1, empty log and ring (open streams get server.resync)
@@ -60,7 +78,7 @@ from fastapi import FastAPI, Request
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse, PlainTextResponse, Response, StreamingResponse
 
-from sutra_app.library.types import atom_sid, function_atom_id
+from sutra_app.library.types import atom_sid, function_atom_id, overhead_atom_id
 from sutra_app.ui import BootContext, build_router, mount, mount_static, render_page
 
 HERE = Path(__file__).resolve().parent
@@ -87,6 +105,12 @@ TASK_STATUS = {"running": "running", "waiting_on_you": "waiting_user", "filed": 
 SANDBOX = "sandbox allow-scripts allow-forms allow-popups; frame-ancestors 'self'"  # generated HTML (S3-web-14)
 ENGINE_ENUMS = {"output": ("auto", "website", "prd", "hld", "lld", "project"), "workspace": ("auto", "off"), "fixes": (0, 1), "send_mode": ("dry-run", "mock", "live")}
 ENGINE_MIN = {"budget": 1, "max_cycles": 1, "max_turns": 1, "chat_full_chars": 1000, "budget_cap": 1}
+J2_FUNCS = (*FUNCTIONS, "validator")  # J2's six functions (j2_agent.FUNCS): the ones GET /api/activity and POST /api/ask know
+ASK_CHARS = 2000  # the longest question: the ceiling of a note to an agent (views.ASK_CHARS)
+PURPOSES = ("agent_turn", "judge", "plan", "agent_chat")  # what `usage.by_purpose` of an agent's row names (D145)
+NOT_WRITTEN = "<p style='font:15px system-ui;color:#667;padding:24px'>This isn't written yet.</p>"   # j2_server.view_page for a file the run does not list
+SUMMARY_BY = ("dept", "fn", "provider", "day", "atom", "session", "purpose")  # GET /api/usage/summary?by=
+NO_KEY = "(none)"  # the group of a ledger row that has no value for the key (orchestrator/usage.py)
 DEFAULT_MESSAGES = {
     400: ("bad_request", "The request is not valid."),
     401: ("bad_token", "This page was opened without its access token. Reload it from the app."),
@@ -124,6 +148,31 @@ class J2Reject(Exception):
 
 def envelope(status: int, code: str, message: str, details: dict | None = None) -> JSONResponse:
     return JSONResponse({"error": {"code": code, "message": message, "details": details or {}}}, status_code=status)
+
+
+def file_part(text: str) -> str:
+    """A name as part of a capture's file name, as scripts/capture_j2_fixtures.py makes it: letters, digits, dots, dashes and underscores kept, every other run of
+    characters one dash (so no slash ever reaches a path)."""
+    return re.sub(r"[^A-Za-z0-9._-]+", "-", text).strip("-")
+
+
+# the pages of /view the capture saves, by the file they show (the capture names them by hand: ROUTE_FILES of scripts/capture_j2_fixtures.py)
+VIEW_PAGES = {"site/index.html": "view-site.html", "goal.json": "view-goal.html"}
+
+
+def record_fixture(sec: str | None, art: str | None) -> str | None:
+    """The capture of /api/record: `record-<sec>.json` for a part, `record-art-<name>.json` for a deliverable; None when neither is asked for."""
+    if art is not None:
+        return f"record-art-{file_part(art)}.json"
+    return f"record-{file_part(sec)}.json" if sec else None
+
+
+def view_fixture(kind: str, name: str) -> str:
+    """The capture of a page the Simple view opens: `doc-<name>.html` for /doc/<name>, for /view?name=<file> the page the capture names (`VIEW_PAGES`) or else
+    `view-<file>.html`."""
+    if kind == "view" and name in VIEW_PAGES:
+        return VIEW_PAGES[name]
+    return f"{kind}-{file_part(name)}.html"
 
 
 def violation(path: str, code: str, message: str) -> dict:
@@ -328,6 +377,9 @@ class FakeState:
             self.recurring_runs: dict[str, list[dict]] = {}
             self.chart_notes: list[dict] = []       # gap chart-insight: GET /api/chart/notes (set by /__fake/chart-notes)
             self.find: dict = {"teams": [], "messages": []}       # GET /api/find answers this (set by /__fake/find)
+            self.next_output: dict[str, str] = {}   # sync 4 (D139): the start page's choice per team, what POST /api/output stored; the next run would make it
+            self.output_locked = False              # POST /api/output answers 409, as it does once the team has a message (set by /__fake/output)
+            self.decide_for_me: dict[str, bool] = {}   # the Simple view's switch per team (POST /api/settings); /api/state says it (the capture's value until it is set)
             for chat in self.chats.values():
                 chat.reset()
             self._apply_visibility()
@@ -575,6 +627,8 @@ class FakeState:
             view["department"] = copy.deepcopy(layer)
         view["effective"] = {**es["defaults"], **self.layers["global"], **layer}
         view["editable"], view["locked"] = list(es["editable"]), list(es["locked"])
+        if dept:                                                # sync 4 (D139): what the team's next run would use, the start page's choice included
+            view["next_run"] = {"output": self.next_output.get(dept) or view["effective"]["output"]}
         return view
 
     def settings_put(self, dept: str | None, body: Any) -> dict:
@@ -850,10 +904,12 @@ class FakeState:
             self.clock += 1
             return iso_at(self.clock)
 
-    def add_message(self, chat: Chat, role: str, who: str, kind: str, text: str, *, task_id: str | None = None) -> dict:
+    def add_message(self, chat: Chat, role: str, who: str, kind: str, text: str, *, task_id: str | None = None, extra: dict | None = None) -> dict:
+        """One new line of a chat, stored and announced. `extra` are the keys a line carries besides the usual ones (`ask`, as ChatMessageOut has it), so the
+        event and every later read of the session show them."""
         with self.lock:
             message = {"id": chat.next_id(), "session_id": chat.sid, "role": role, "who": who, "kind": kind, "text": text, "card": None,
-                       "pause": None, "answered_by": None, "task_id": task_id, "state": "ok", "at": self.next_clock()}
+                       "pause": None, "answered_by": None, "task_id": task_id, "state": "ok", "at": self.next_clock(), **(extra or {})}
             chat.extra.append(message)
         self.publish("chat.message", {"session_id": chat.sid, "message": copy.deepcopy(message)})
         return message
@@ -1045,13 +1101,16 @@ def _parse_body(raw: bytes) -> Any:
         return raw[:200].decode("utf-8", "replace")
 
 
-J2_GET_PATHS = (
+J2_GET_PATHS = (    # the GET names of J2_EXACT (sutra_ctx.js); sync 4 added plan-map, activity, catalog, artifacts/groups, runlist, changes and record
     "/api/state", "/api/runs", "/api/call", "/api/preview", "/api/docs", "/api/map", "/api/plan", "/api/library",
     "/api/run-templates", "/api/artifacts", "/api/agent", "/api/code", "/api/artifacts/tree", "/api/artifact", "/api/story",
     "/api/board", "/api/audits", "/api/refs",
+    "/api/plan-map", "/api/activity", "/api/catalog", "/api/artifacts/groups", "/api/runlist", "/api/changes",
+    "/api/record",               # the studio redesign (pin 025e265): the record of a part or of a deliverable
 )
-J2_POST_PATHS = ("/api/say", "/api/playbooks/clear", "/api/lessons/clear", "/api/output", "/api/reset")
-J2_PATH_SET = frozenset(J2_GET_PATHS + J2_POST_PATHS)
+J2_POST_PATHS = ("/api/say", "/api/playbooks/clear", "/api/lessons/clear", "/api/output", "/api/reset", "/api/ask", "/api/settings")
+J2_PATH_SET = frozenset(J2_GET_PATHS + J2_POST_PATHS)      # the names whose forced failures have J2's body shape (the fetches the client wrapper adds ?dept= to)
+J2_PAGE_PATHS = ("/view",)   # pages the Simple view puts in its frame (with /doc/<name>): the page's own URL builders add ?dept=, so they are no fetch of the wrapper
 
 
 def make_app(fixtures_dir: str | Path = FIXTURES_DIR, *, pages_dir: str | Path | None = None,
@@ -1523,6 +1582,7 @@ def _check_post(body: Any) -> list[dict]:
 def register_j2(app: FastAPI, state: FakeState) -> None:
     j2 = state.fx.j2
     secure = {"X-Content-Type-Options": "nosniff", "Referrer-Policy": "no-referrer"}
+    services = _Services(state)         # the row of a team, as the UI router reads it: a test that patches `_Services.department` (an archived team) is seen here too
 
     def scope(dept: str | None, run: str | None, no_run: dict | None = None) -> None:
         """The checks every J2 route makes first: a well-formed department that exists, and a run of it (D73)."""
@@ -1545,6 +1605,11 @@ def register_j2(app: FastAPI, state: FakeState) -> None:
     def html(data: bytes) -> Response:
         return Response(data, media_type="text/html", headers={**secure, "Content-Security-Policy": SANDBOX})
 
+    def page_of(name: str) -> Response:
+        """A file of the run's artifact list as a readable page (J2's `view_page`): its capture, else J2's own line for a file that is not written."""
+        data = j2.raw(name)
+        return html(data if data is not None else NOT_WRITTEN.encode())
+
     def not_found_text() -> Response:
         return PlainTextResponse("not found", status_code=404, headers=secure)
 
@@ -1555,12 +1620,17 @@ def register_j2(app: FastAPI, state: FakeState) -> None:
         start = int(since) if since.isdigit() else 0
         snapshot["chat"] = snapshot["chat"][start:]
         snapshot["saved"] = run
+        if dept in state.decide_for_me:                  # the switch the owner set (POST /api/settings): the page reads it back from every poll
+            snapshot["decide_for_me"] = state.decide_for_me[dept]
         return JSONResponse(snapshot, headers=secure)
 
+    # the reads that answer a capture of J2's own server byte for byte. Since sync 4 `/api/runlist` and `/api/changes` are J2's routes too (patch P13 is
+    # retired: D140), so their answers are captures like the rest and nothing is derived here any more
     for path, name in (("/api/runs", "runs.json"), ("/api/docs", "docs.json"), ("/api/map", "map.json"), ("/api/plan", "plan.json"),
-                       ("/api/run-templates", "run-templates.json"), ("/api/artifacts", "artifacts.json"),
-                       ("/api/artifacts/tree", "artifacts-tree.json"), ("/api/story", "story.json"), ("/api/board", "board.json"),
-                       ("/api/audits", "audits.json")):
+                       ("/api/plan-map", "plan-map.json"), ("/api/run-templates", "run-templates.json"), ("/api/artifacts", "artifacts.json"),
+                       ("/api/artifacts/tree", "artifacts-tree.json"), ("/api/artifacts/groups", "artifacts-groups.json"),
+                       ("/api/story", "story.json"), ("/api/board", "board.json"), ("/api/audits", "audits.json"),
+                       ("/api/runlist", "runlist.json"), ("/api/changes", "changes.json")):
         def make(file_name: str):
             def view(dept: str | None = None, run: str | None = None):
                 scope(dept, run)
@@ -1569,33 +1639,54 @@ def register_j2(app: FastAPI, state: FakeState) -> None:
 
         app.add_api_route(path, make(name), methods=["GET"])
 
-    @app.get("/api/runlist")
-    def j2_runlist(dept: str | None = None, run: str | None = None):
-        """Patch P13's run list, derived from the captured /api/runs: the runs of the web team only, as the engine's rows."""
-        scope(dept, run)
-        listed = json.loads(need("runs.json")) if dept == "web" else {"live": "", "runs": []}
-        rows = []
-        for item in listed["runs"]:
-            m = re.search(r"(\d{4})(\d{2})(\d{2})-(\d{2})(\d{2})(\d{2})", item["id"])
-            rows.append({"id": item["id"], "title": item["id"], "status": "done" if str(item["status"]).startswith("done") else "stopped",
-                         "output": "website", "when": f"{m[1]}-{m[2]}-{m[3]}T{m[4]}:{m[5]}:{m[6]}" if m else "", "brief": item["brief"][:160]})
-        return JSONResponse({"live": listed["live"], "runs": rows}, headers=secure)
-
-    @app.get("/api/changes")
-    def j2_changes(dept: str | None = None, run: str | None = None):
-        """Patch P13's build journey: the captured run has no change.json, so no stops."""
-        scope(dept, run)
-        return JSONResponse({"changes": []}, headers=secure)
-
     @app.get("/api/library")
     def j2_library(dept: str | None = None):
         scope(dept, None)
         return raw_json("library.json")
 
+    @app.get("/api/catalog")
+    def j2_catalog(dept: str | None = None):
+        """The /library page's data: the committed library and the runs that gave it templates. Global like /api/library: a `run` is ignored."""
+        scope(dept, None)
+        return raw_json("catalog.json")
+
     @app.get("/api/refs")
     def j2_refs(dept: str | None = None):
         scope(dept, None)
         return raw_json("refs.json")
+
+    @app.get("/api/activity")
+    def j2_activity(who: str = "", dept: str | None = None, run: str | None = None):
+        """One function's feed (activity/1). A function of J2's six answers its capture; anyone else gets the capture of a name J2 does not know (the run's step
+        names are there, no event), with the name that was asked for, as /api/agent does."""
+        scope(dept, run)
+        if who in J2_FUNCS:
+            return raw_json(f"activity-{who}.json")
+        unknown = json.loads(need("activity-unknown.json"))
+        unknown["who"] = who
+        return JSONResponse(unknown, headers=secure)
+
+    @app.get("/api/record")
+    def j2_record(sec: str | None = None, art: str | None = None, dept: str | None = None, run: str | None = None):
+        """The Simple view's record of one part (`?sec=`) or one deliverable (`?art=`): goal, method, output and check (studio/1). A part or deliverable whose
+        capture the fixtures lack is J2's own 404 for no such part."""
+        scope(dept, run)
+        name = record_fixture(sec, art)
+        if name is None or j2.raw(name) is None:
+            raise J2Reject(404, {"error": "no such part"})
+        return raw_json(name)
+
+    @app.get("/doc/{name}")
+    def j2_doc(name: str, dept: str | None = None, run: str | None = None):
+        """The Simple view's output tab of a document (`/doc/prd`): the page of `<name>.md` when the run wrote it."""
+        scope(dept, run)
+        return page_of(view_fixture("doc", name))
+
+    @app.get("/view")
+    def j2_view(name: str = "", dept: str | None = None, run: str | None = None):
+        """The Simple view's output tab of any file the run lists, as a page."""
+        scope(dept, run)
+        return page_of(view_fixture("view", name))
 
     @app.get("/api/library/{artifact}/{section}/{slug}/{ver}")
     def j2_library_item(artifact: str, section: str, slug: str, ver: str, dept: str | None = None, run: str | None = None):
@@ -1662,11 +1753,13 @@ def register_j2(app: FastAPI, state: FakeState) -> None:
             raise J2Reject(400, {"error": "empty"})
         dept_node = state.node(dept or "")
         try:
-            state.deliver(state.chat(dept_node["chat_session_id"]), text)
+            delivered = state.deliver(state.chat(dept_node["chat_session_id"]), text)
         except ApiError as exc:
             if exc.status == 409:
                 raise J2Reject(409, {"ok": False}) from None
             raise
+        if delivered.get("delivered") == "follow_up":      # DeptCommands.say: the start page's output choice is cleared once a delivery created a task
+            state.next_output.pop(dept or "", None)
         return JSONResponse({"ok": True}, headers=secure)
 
     @app.post("/api/playbooks/clear")
@@ -1687,9 +1780,41 @@ def register_j2(app: FastAPI, state: FakeState) -> None:
         scope(dept, None)
         body = await json_body(request)
         kind = body.get("type") if isinstance(body, dict) else None
+        if state.output_locked:                              # a message exists: J2 refuses, and says what the run makes
+            raise J2Reject(409, {"ok": False, "output": state.settings_view(dept)["next_run"]["output"]})
         if kind not in ENGINE_ENUMS["output"]:
             raise J2Reject(409, {"ok": False, "output": "website"})
+        state.next_output[dept or ""] = kind                 # page.json next_settings.J2_OUTPUT: GET /api/engine/settings?dept= says it in next_run
         return JSONResponse({"ok": True, "output": kind}, headers=secure)
+
+    @app.post("/api/ask")
+    async def j2_ask(request: Request, dept: str | None = None):
+        """A question to one function about a run (D147). The order of the engine's route: the token, the team, an archived team (403), the body, J2's six
+        functions (400), the length (400); then the answer, which is `ask_function`'s."""
+        require_token(request, state)
+        scope(dept, None)
+        if getattr(services.department(dept or ""), "archived", False):
+            raise ApiError(403, "read_only", "This team was merged into another one and is read-only")
+        body = await json_body(request)
+        body = body if isinstance(body, dict) else {}
+        who = str(body.get("who") or "")
+        if who not in J2_FUNCS:
+            raise J2Reject(400, {"error": "not a function"})
+        question = body.get("q")
+        if isinstance(question, str) and len(question.strip()) > ASK_CHARS:
+            raise J2Reject(400, {"error": "question too long"})
+        return JSONResponse(await ask_function(state, dept or "", who, question, str(body.get("run") or "")), headers=secure)
+
+    @app.post("/api/settings")
+    async def j2_settings(request: Request, dept: str | None = None):
+        """The Simple view's Decide for me switch. J2 answers `{ok, decide_for_me}` whatever the body says, and changes the switch only when the body names it."""
+        require_token(request, state)
+        scope(dept, None)
+        body = await json_body(request)
+        if isinstance(body, dict) and "decide_for_me" in body:
+            state.decide_for_me[dept or ""] = bool(body["decide_for_me"])
+        captured = (j2.json("state.json") or {}).get("decide_for_me", False)
+        return JSONResponse({"ok": True, "decide_for_me": state.decide_for_me.get(dept or "", bool(captured))}, headers=secure)
 
     @app.post("/api/reset")
     def j2_reset(request: Request, dept: str | None = None):
@@ -1773,6 +1898,15 @@ def register_controls(app: FastAPI, state: FakeState, fixtures: Fixtures) -> Non
         with state.lock:
             state.find = {"teams": copy.deepcopy(body.get("teams", [])), "messages": copy.deepcopy(body.get("messages", []))}
         return JSONResponse({"teams": len(state.find["teams"]), "messages": len(state.find["messages"])})
+
+    @app.post("/__fake/output")
+    async def set_output_lock(request: Request):
+        """`{locked: true}`: POST /api/output answers 409 (the team has a message, so the start page's choice is closed); false opens it again."""
+        body = await json_body(request)
+        if not isinstance(body, dict) or not isinstance(body.get("locked"), bool):
+            raise ApiError(422, "validation", "output needs {locked: true or false}")
+        state.output_locked = body["locked"]
+        return JSONResponse({"locked": state.output_locked})
 
     @app.post("/__fake/fail")
     async def fail(request: Request):
@@ -2150,22 +2284,6 @@ class FakeClient:
             time.sleep(0.02)
 
 
-def main(argv: list[str] | None = None) -> int:
-    parser = argparse.ArgumentParser(description="Serve the fake backend of the UI tests (for looking at a page by hand).")
-    parser.add_argument("--port", type=int, default=8790)
-    parser.add_argument("--stage", default="1", choices=list(STAGES))
-    args = parser.parse_args(argv)
-    app = make_app()
-    app.state.fake.set_stage(args.stage)
-    print(f"fake backend on http://127.0.0.1:{args.port}/  (stage {args.stage}; token {TOKEN}; Ctrl-C stops)")
-    uvicorn.run(app, host="127.0.0.1", port=args.port, log_level="warning", lifespan="off")
-    return 0
-
-
-if __name__ == "__main__":
-    raise SystemExit(main())
-
-
 # ---------------------------------------------------------------------------------------------------------------------
 # agent-sessions (lane 3, WP10): a chat per agent per run, the model chosen for each, the owner's note, a team's list of agents
 # ---------------------------------------------------------------------------------------------------------------------
@@ -2207,12 +2325,206 @@ def effective_pick(state: FakeState, sid: str) -> dict:
     return {**DEFAULT_PICK, "source": "default"}
 
 
+# ---- sync 4: an agent's usage by purpose (D145) and a question to a function (D147 to D149) -----------------------------------------------------------------
+# How the calls of a function's turns split by purpose in the fake (the rest are `agent_turn`): Adaptation plans, Priority and Coordination judge what they
+# register late (D145: a late judge's calls carry the turn's function), the builders only work. A model answer to a question is one `agent_chat` call on top.
+PURPOSE_SPLIT = {"adaptation": {"plan": 2}, "priority": {"judge": 2}, "coordination": {"judge": 1, "plan": 1}}
+ASK_CALL_USD = 0.02          # what one model answer is booked at (a short call)
+ASK_TOKENS = (300, 60)       # its tokens in and out
+ASK_NO_MODEL = "No model is connected."
+ASK_MODES = ("records", "offline", "model", "failed", "interrupted")
+PERSONA = {"identity": "Client Lead", "adaptation": "Strategist", "priority": "Prioritiser", "coordination": "Scheduler", "audit": "Quality Reviewer"}   # j2_agent.PERSONA
+
+
+def spread(total: int, weights: list[int]) -> list[int]:
+    """`total` cut into whole parts in proportion to `weights`; the parts add up to `total`."""
+    whole = sum(weights)
+    parts = [total * w // whole for w in weights] if whole else [0] * len(weights)
+    for i in range(total - sum(parts)):
+        parts[i % len(parts)] += 1
+    return parts
+
+
+def usage_of(agent: str, calls: int, usd: float, tokens_in: int, tokens_out: int, asked: dict | None = None) -> dict:
+    """The `usage` of one agent's row: the totals a row always had, plus `by_purpose` (`{agent_turn, judge, plan, agent_chat}`, each with `calls` and `usd`, all
+    four always there). The turns' calls are split by `PURPOSE_SPLIT`; the model answers booked since (`asked`: calls and usd) are the `agent_chat` calls and
+    are added on top of the totals, as the ledger would count them."""
+    split = PURPOSE_SPLIT.get(agent, {})
+    cells = {p: {"calls": split.get(p, 0), "usd": round(usd * split.get(p, 0) / calls, 4) if calls else 0.0} for p in PURPOSES}
+    cells["agent_turn"] = {"calls": calls - sum(split.values()), "usd": round(usd - sum(c["usd"] for p, c in cells.items() if p != "agent_turn"), 4)}
+    asked = asked or {"calls": 0, "usd": 0.0}
+    cells["agent_chat"] = {"calls": asked["calls"], "usd": round(asked["usd"], 4)}
+    return {"calls": calls + asked["calls"], "usd": round(usd + asked["usd"], 4), "tokens_in": tokens_in + asked["calls"] * ASK_TOKENS[0],
+            "tokens_out": tokens_out + asked["calls"] * ASK_TOKENS[1], "by_purpose": cells}
+
+
+def past_agent_rows(state: FakeState) -> list[dict]:
+    """The earlier run's two archived function chats as the agents list shows them (it has no side effect: `agent_rows` is what brings the chats to life)."""
+    return [{"agent": p["agent"], "label": p["agent"].capitalize(), "kind": "function", "title": p["title"], "session_id": sid, "node_id": p["node"],
+             "run_id": PAST_RUN["run_id"], "task_id": PAST_RUN["task_id"], "state": "filed", "live": False, "status": "archived",
+             "own": ({"provider": p["pinned"], "model": p["pinned_model"] or None, "effort": p["pinned_effort"] or None} if p["pinned"] else None),
+             "run_pick": None, "effective": {"provider": p["pinned"] or "claude", "model": p["pinned_model"] or "sonnet", "effort": p["pinned_effort"] or "high",
+                                             "source": "own" if p["pinned"] else "default"},
+             "usage": usage_of(p["agent"], 3, 0.04, 1200, 300, state.ag["asked"].get(sid)), "last_at": "2026-11-03T09:30:00Z"} for sid, p in PAST_SESSIONS.items()]
+
+
+def agent_rows(state: FakeState, run: str | None) -> list[dict]:
+    """GET /api/teams/web/agents: the Web team's five functions and its builders for the live run, or the earlier run's two archived chats."""
+    if run == PAST_RUN["run_id"]:
+        state.ag["past_on"].update(PAST_SESSIONS)
+        return past_agent_rows(state)
+    nodes = [n for n in state.fx.graphs[state.graph_stage]["nodes"] if n.get("dept_id") == "web"]
+    ordered = [n for fn in FUNCTION_NAMES for n in nodes if n["kind"] == "function" and n["id"] == f"web.{fn}"] + \
+              [n for n in nodes if n["kind"] == "step" and n.get("step_ref") not in (None, "task")]
+    out = []
+    for i, n in enumerate(ordered):
+        sid = n["chat_session_id"]
+        agent = agent_info(state, sid)
+        own = state.ag["picks"].get(sid)
+        out.append({"agent": agent["agent"], "label": agent["agent"].capitalize() if n["kind"] == "function" else n["label"], "kind": n["kind"],
+                    "title": f"{agent['agent'].capitalize()} · Menu page" if n["kind"] == "function" else f"{agent['agent']} · {n['label']}",
+                    "session_id": sid, "node_id": n["id"], "run_id": LIVE_RUN["run_id"], "task_id": LIVE_RUN["task_id"], "state": n["status"],
+                    "live": n["status"] == "running" and not state.ag["over"], "status": "active",
+                    "own": {k: own[k] for k in ("provider", "model", "effort")} if own else None, "run_pick": state.ag["run_pick"],
+                    "effective": effective_pick(state, sid),
+                    "usage": usage_of(agent["agent"], 2 + i, round(0.01 * (i + 1), 2), 400 * (i + 1), 90 * (i + 1), state.ag["asked"].get(sid)),
+                    "last_at": "2026-11-04T10:20:00Z"})
+    return out
+
+
+def usage_ledger(state: FakeState) -> list[dict]:
+    """The usage rows of the fake's story, one per agent and purpose: what GET /api/usage/summary groups. They are cut from the agents' rows, so the two views of
+    the usage agree (the calls, the dollars and the tokens of a row are the sum of its ledger rows)."""
+    out = []
+    for run_id, rows, day in ((LIVE_RUN["run_id"], agent_rows(state, None), "2026-11-04"), (PAST_RUN["run_id"], past_agent_rows(state), "2026-11-03")):
+        for row in rows:
+            usage = row["usage"]
+            calls = [usage["by_purpose"][p]["calls"] for p in PURPOSES]
+            tin, tout = spread(usage["tokens_in"], calls), spread(usage["tokens_out"], calls)
+            for i, purpose in enumerate(PURPOSES):
+                cell = usage["by_purpose"][purpose]
+                if cell["calls"]:
+                    out.append({"purpose": purpose, "fn": row["agent"] if row["kind"] == "function" else None, "session_id": row["session_id"], "day": day,
+                                "calls": cell["calls"], "usd": cell["usd"], "tokens_in": tin[i], "tokens_out": tout[i],
+                                "atom": None if purpose == "agent_turn" else overhead_atom_id(run_id)})     # judging, planning and answering are overhead, not a work atom (D59)
+    return out
+
+
+def usage_summary(state: FakeState, by: str, session_id: str | None = None) -> list[dict]:
+    """GET /api/usage/summary: calls and sums per `by`, in key order; a row without a key is grouped under `(none)` (and sorts first, as in the ledger's SQL)."""
+    key = {"dept": lambda e: "web", "fn": lambda e: e["fn"], "provider": lambda e: "claude", "day": lambda e: e["day"], "atom": lambda e: e["atom"],
+           "session": lambda e: e["session_id"], "purpose": lambda e: e["purpose"]}[by]
+    groups: dict[str | None, dict] = {}
+    for entry in usage_ledger(state):
+        if session_id is not None and entry["session_id"] != session_id:
+            continue
+        group = groups.setdefault(key(entry), {"calls": 0, "usd": 0.0, "tokens_in": 0, "tokens_out": 0})
+        for field in ("calls", "usd", "tokens_in", "tokens_out"):
+            group[field] += entry[field]
+    return [{"key": NO_KEY if k is None else k, **{**groups[k], "usd": round(groups[k]["usd"], 4)}} for k in sorted(groups, key=lambda k: (k is not None, k or ""))]
+
+
+def ask_target(state: FakeState, dept: str, who: str, run: str) -> dict | None:
+    """The session a question to `who` about `run` belongs to: `{sid, task_id, run_id}`, or None when the function has no session of its own for that run (the
+    validator is code; the earlier run has Identity's and Audit's chats only; the fake keeps agents for the Web team). Any run id that is not the earlier one
+    is the page's current run, as the engine's route falls back to it."""
+    if dept != "web" or who not in FUNCTION_NAMES:
+        return None
+    if run == PAST_RUN["run_id"]:
+        sid = next((s for s, p in PAST_SESSIONS.items() if p["agent"] == who), None)
+        if sid is None:
+            return None
+        state.ag["past_on"].update(PAST_SESSIONS)          # an earlier run's chats come into existence when they are first looked at
+        return {"sid": sid, "task_id": PAST_RUN["task_id"], "run_id": PAST_RUN["run_id"]}
+    node = state.node(f"web.{who}")
+    if node is None or not node.get("chat_session_id"):
+        return None
+    return {"sid": node["chat_session_id"], "task_id": LIVE_RUN["task_id"], "run_id": LIVE_RUN["run_id"]}
+
+
+def ask_records_answer(state: FakeState, who: str, q: str) -> dict:
+    """J2's own answer from the records, `j2_agent.answer(d, who, q, ask=None)`: nothing for an empty question; the capture `ask-<who>.json` (what J2's mock
+    run answered) for a function that has one; J2's sentence for a run that recorded nothing for the function otherwise."""
+    if not q:
+        return {"who": who, "answer": "", "from": "records"}
+    captured = state.fx.j2.json(f"ask-{who}.json")
+    if isinstance(captured, dict) and isinstance(captured.get("answer"), str):
+        return {"who": who, "answer": captured["answer"], "from": "records"}
+    return {"who": who, "answer": f"This run recorded nothing for {PERSONA.get(who, who)}.", "from": "records"}
+
+
+def book_model_answer(state: FakeState, who: str, sid: str, target: dict) -> None:
+    """One model answer is one ledger row of purpose `agent_chat` on the overhead atom (D149): the agent's usage grows by it and usage.recorded says so."""
+    with state.lock:
+        booked = state.ag["asked"].setdefault(sid, {"calls": 0, "usd": 0.0})
+        booked["calls"] += 1
+        booked["usd"] = round(booked["usd"] + ASK_CALL_USD, 4)
+        number = state.ag["ask"]["count"]
+    live = [r["usage"] for r in agent_rows(state, None)]
+    event = state.sample("usage.recorded")
+    event["row"].update(provider="claude", model=effective_pick(state, sid)["model"], purpose="agent_chat", session_id=sid, node_id=f"web.{who}",
+                        task_id=target["task_id"], dept_id="web", fn=who, step=None, atom_id=overhead_atom_id(target["run_id"]), usd=ASK_CALL_USD,
+                        tokens_in=ASK_TOKENS[0], tokens_out=ASK_TOKENS[1], seconds=4.0, call_ref=f"{target['run_id']}:ask{number}", id=900 + number,
+                        at=state.next_clock())
+    event["task_total"] = {"calls": sum(u["calls"] for u in live), "usd": round(sum(u["usd"] for u in live), 4),
+                           "tokens_in": sum(u["tokens_in"] for u in live), "tokens_out": sum(u["tokens_out"] for u in live)}
+    state.publish("usage.recorded", event)
+
+
+async def ask_function(state: FakeState, dept: str, who: str, question: Any, run: str) -> dict:
+    """What POST /api/ask does once the route has checked the body (D147 to D149; docs/design/j2-sync-4.md 3.3, 3.6).
+
+    The answer is J2's own, from the records (`ask_records_answer`), unless the control says otherwise (`state.ag["ask"]`, set by /__fake/ask). A function that has a
+    session of its own for the run gets two lines in it, the owner's question first (its event goes out at once) and then the answer (after `delay`), so the
+    node panel and J2's chat panel read one transcript; a function with none, or an empty question, is answered and nothing is stored. One question at a time
+    per session: a second is 409 `busy`. `interrupted` stores the question and no answer, and the route fails, as the app stopping between the two lines would."""
+    q = " ".join(str(question or "").split())
+    ctl = state.ag["ask"]
+    if q and ctl["fail"]:                                    # a refusal the test asked for (`fail`): once, before anything is stored
+        status, ctl["fail"] = ctl["fail"], None
+        raise J2Reject(status, {"error": "busy" if status == 409 else "failed"})
+    got = ask_records_answer(state, who, q)
+    target = ask_target(state, dept, who, run) if q else None
+    if target is None:
+        return got
+    sid = target["sid"]
+    with state.lock:
+        if sid in ctl["inflight"]:
+            raise J2Reject(409, {"error": "busy"})
+        ctl["inflight"].add(sid)
+        ctl["count"] += 1
+        mode, delay, text, note = ctl["mode"], ctl["delay"], ctl["text"], ctl["note"]
+    try:
+        chat = state.chat(sid)
+        asked = state.add_message(chat, "user", "user", "text", q, task_id=target["task_id"], extra={"ask": "q"})
+        if delay > 0:
+            await asyncio.sleep(delay)
+        if mode == "interrupted":
+            raise ApiError(500, "internal", "The answer could not be made.")
+        source = "records"
+        if mode == "model":
+            source, got["from"], got["answer"] = "model", "model", text or f"From its records: {q}"
+            book_model_answer(state, who, sid, target)
+        elif mode == "failed":
+            note = note or "The model could not answer (the fake says so); this is from the records only."
+        elif mode == "offline":
+            note = note or ASK_NO_MODEL
+        replied = state.add_message(chat, "agent", who, "text", got["answer"], task_id=target["task_id"], extra={"ask": source})
+    finally:
+        with state.lock:
+            ctl["inflight"].discard(sid)
+    return {**got, "session_id": sid, "question_id": asked["id"], "answer_id": replied["id"], **({"note": note} if note else {})}
+
+
 def register_agent_chats(app: FastAPI, state: FakeState) -> None:
     """GET /api/teams/{dept}/agents (the Web team: its five functions, its workflows, and an earlier run's two archived function chats), GET
     /api/departments/{id}/runs, POST /api/chats/{sid}/steer, PUT /api/tasks/{id}/choice; the pill routes above know agent chats. `/__fake/agents` controls it:
-    {over: true} ends the run for steering (409 not_running), {past: true} brings the earlier run's archived chats into existence. Reset with the story."""
+    {over: true} ends the run for steering (409 not_running), {past: true} brings the earlier run's archived chats into existence. Reset with the story.
+    Since sync 4 the rows carry `usage.by_purpose`, GET /api/usage/summary groups the same numbers (by=purpose and the six the ledger knows), and `/__fake/ask`
+    sets how POST /api/ask answers (`ask_function`: the question and the answer are two lines of the function's session)."""
     def fresh() -> dict:
-        return {"picks": {}, "run_pick": None, "team": None, "over": False, "past_on": set(), "notes": []}
+        return {"picks": {}, "run_pick": None, "team": None, "over": False, "past_on": set(), "notes": [], "asked": {},
+                "ask": {"mode": "records", "text": None, "note": None, "delay": 0.0, "fail": None, "inflight": set(), "count": 0}}
 
     state.ag = fresh()
     original_reset, original_chat = state.reset, state.chat
@@ -2238,32 +2550,6 @@ def register_agent_chats(app: FastAPI, state: FakeState) -> None:
         return found
     state.chat = chat                                      # type: ignore[method-assign]
 
-    def rows_of(run: str | None) -> list[dict]:
-        if run == PAST_RUN["run_id"]:
-            state.ag["past_on"].update(PAST_SESSIONS)
-            return [{"agent": p["agent"], "label": p["agent"].capitalize(), "kind": "function", "title": p["title"], "session_id": sid, "node_id": p["node"],
-                     "run_id": PAST_RUN["run_id"], "task_id": PAST_RUN["task_id"], "state": "filed", "live": False, "status": "archived",
-                     "own": ({"provider": p["pinned"], "model": p["pinned_model"] or None, "effort": p["pinned_effort"] or None} if p["pinned"] else None),
-                     "run_pick": None, "effective": {"provider": p["pinned"] or "claude", "model": p["pinned_model"] or "sonnet", "effort": p["pinned_effort"] or "high",
-                                                     "source": "own" if p["pinned"] else "default"},
-                     "usage": {"calls": 3, "usd": 0.04, "tokens_in": 1200, "tokens_out": 300}, "last_at": "2026-11-03T09:30:00Z"} for sid, p in PAST_SESSIONS.items()]
-        nodes = [n for n in state.fx.graphs[state.graph_stage]["nodes"] if n.get("dept_id") == "web"]
-        ordered = [n for fn in FUNCTION_NAMES for n in nodes if n["kind"] == "function" and n["id"] == f"web.{fn}"] + \
-                  [n for n in nodes if n["kind"] == "step" and n.get("step_ref") not in (None, "task")]
-        out = []
-        for i, n in enumerate(ordered):
-            sid = n["chat_session_id"]
-            agent = agent_info(state, sid)
-            own = state.ag["picks"].get(sid)
-            out.append({"agent": agent["agent"], "label": agent["agent"].capitalize() if n["kind"] == "function" else n["label"], "kind": n["kind"],
-                        "title": f"{agent['agent'].capitalize()} \u00b7 Menu page" if n["kind"] == "function" else f"{agent['agent']} \u00b7 {n['label']}",
-                        "session_id": sid, "node_id": n["id"], "run_id": LIVE_RUN["run_id"], "task_id": LIVE_RUN["task_id"], "state": n["status"],
-                        "live": n["status"] == "running" and not state.ag["over"], "status": "active",
-                        "own": {k: own[k] for k in ("provider", "model", "effort")} if own else None, "run_pick": state.ag["run_pick"],
-                        "effective": effective_pick(state, sid), "usage": {"calls": 2 + i, "usd": round(0.01 * (i + 1), 2), "tokens_in": 400 * (i + 1), "tokens_out": 90 * (i + 1)},
-                        "last_at": "2026-11-04T10:20:00Z"})
-        return out
-
     @app.get("/api/teams/{dept}/agents")
     def team_agents(dept: str, run: str | None = None):
         if dept != "web":
@@ -2272,7 +2558,7 @@ def register_agent_chats(app: FastAPI, state: FakeState) -> None:
             return JSONResponse([])
         if run is not None and run not in (LIVE_RUN["run_id"], PAST_RUN["run_id"]):
             raise ApiError(404, "not_found", "That run was not found.")
-        return JSONResponse(rows_of(run))
+        return JSONResponse(agent_rows(state, run))
 
     @app.get("/api/departments/{dept_id}/runs")
     def dept_runs(dept_id: str):
@@ -2329,3 +2615,50 @@ def register_agent_chats(app: FastAPI, state: FakeState) -> None:
             if "team" in body:
                 state.ag["team"] = body["team"]
         return JSONResponse({"over": state.ag["over"], "run_pick": state.ag["run_pick"], "team": state.ag["team"], "notes": state.ag["notes"]})
+
+    @app.get("/api/usage/summary")
+    def usage_summary_route(by: str = "dept", session_id: str | None = None, include_stub: bool = False):
+        """The usage grouped as the real route groups it (dept, fn, provider, day, atom, session) and, since sync 4 (D145), by purpose; stub rows do not exist here."""
+        if by not in SUMMARY_BY:
+            raise ApiError(422, "validation", "The request did not pass validation.",
+                           {"violations": [violation("query.by", "literal_error", f"by must be one of {', '.join(SUMMARY_BY)}")]})
+        return JSONResponse({"groups": usage_summary(state, by, session_id)})
+
+    @app.post("/__fake/ask")
+    async def ask_control(request: Request):
+        """How the next POST /api/ask answers (see the module docstring): `{mode, text, note, delay, fail}`, each optional; the answer is what is now set."""
+        body = await json_body(request)
+        if not isinstance(body, dict) or set(body) - {"mode", "text", "note", "delay", "fail"}:
+            raise ApiError(422, "validation", "ask needs {mode?, text?, note?, delay?, fail?}")
+        fail = body.get("fail")
+        if fail is not None and (isinstance(fail, bool) or not isinstance(fail, int) or not 400 <= fail <= 599):
+            raise ApiError(422, "validation", "fail is a status from 400 to 599 (or null)")
+        if "mode" in body and body["mode"] not in ASK_MODES:
+            raise ApiError(422, "validation", f"mode is one of {', '.join(ASK_MODES)}")
+        delay = body.get("delay", 0)
+        if isinstance(delay, bool) or not isinstance(delay, (int, float)) or not 0 <= delay <= 30:
+            raise ApiError(422, "validation", "delay is a number of seconds from 0 to 30")
+        if any(body.get(k) is not None and not isinstance(body[k], str) for k in ("text", "note")):
+            raise ApiError(422, "validation", "text and note are text (or null)")
+        with state.lock:
+            state.ag["ask"].update({k: body[k] for k in ("mode", "text", "note", "fail") if k in body}, **({"delay": float(delay)} if "delay" in body else {}))
+            ctl = state.ag["ask"]
+            return JSONResponse({"mode": ctl["mode"], "text": ctl["text"], "note": ctl["note"], "delay": ctl["delay"], "fail": ctl["fail"]})
+
+
+def main(argv: list[str] | None = None) -> int:
+    parser = argparse.ArgumentParser(description="Serve the fake backend of the UI tests (for looking at a page by hand).")
+    parser.add_argument("--port", type=int, default=8790)
+    parser.add_argument("--stage", default="1", choices=list(STAGES))
+    args = parser.parse_args(argv)
+    app = make_app()
+    app.state.fake.set_stage(args.stage)
+    print(f"fake backend on http://127.0.0.1:{args.port}/  (stage {args.stage}; token {TOKEN}; Ctrl-C stops)")
+    uvicorn.run(app, host="127.0.0.1", port=args.port, log_level="warning", lifespan="off")
+    return 0
+
+
+# This guard is the LAST statement of the file on purpose: a block of code after it (the agent-sessions routes once were) is not defined yet when `main` runs
+# as a script, and `make_app` then fails with a NameError (found by sync 4, whose motion probe starts the fake by hand: test_fake_backend.py runs the file as a script).
+if __name__ == "__main__":
+    raise SystemExit(main())
