@@ -223,6 +223,11 @@ details.atomcard>summary{cursor:pointer;display:flex;flex-wrap:wrap;align-items:
 body.archived .scompose,body.archived #sbox,body.archived #ssend,body.archived #sform,body.archived #box,body.archived #send,body.archived .outsel,
 body.archived #lform,body.archived #lbox,body.archived #lsend,body.archived .schips,body.archived #soutpick,body.archived #sauto,body.archived #sautoland,body.archived #shome{display:none}
 
+/* ---- the library page of a team (/d/<team>/library) has no run, and J2's script hides the Needs you box there with the `hidden` attribute ("no run here: nothing needs you"). J2's own
+   `.needs{display:flex}` is an author rule, so it beat the browser's `[hidden]{display:none}` and an empty bordered box (18px: the padding and the border) was drawn above the catalog (0.3.2).
+   Only that page ever sets the attribute (a team page and Home paint into the box and never hide it, and the Simple view hides the whole Detailed view as before), so nothing else changes. */
+.needs[hidden]{display:none}
+
 /* ---- the department page's strip at the top of J2's icon rail (D137): back to all teams, which team this is, and the two Sutra panes. It is the rail's own size:
    84 px wide, icons 64 x 58 px with J2's hover label, so the team's name is one short line (its whole name is the title) */
 #rail .railhome{display:flex;flex-direction:column;align-items:center;gap:4px;width:100%}

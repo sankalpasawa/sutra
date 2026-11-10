@@ -1226,3 +1226,60 @@ def test_the_teams_library_page_is_the_same_page_and_draws_the_catalog_of_the_on
     shown = team.js("document.getElementById('pane-catalog').innerText")
     assert all(run["run"] in shown for run in catalog["runs"]) and "By run" in shown and "By artifact" in shown      # every run that gave the library a template, from catalog.json
     assert team.b.console_errors == [] and team.b.failed_requests == []
+
+
+# What is drawn of J2's Needs you box (`#needs`). J2's page hides it on the library page with the `hidden` attribute ("no run here: nothing needs you"), and J2's own
+# `.needs{display:flex}` is an author rule, which beats the browser's `[hidden]{display:none}`: an empty bordered box was drawn above the catalog.
+NEEDS_BOX = r"""(() => {
+  const el = document.getElementById("needs"), r = el.getBoundingClientRect();
+  return {hidden: el.hidden, display: getComputedStyle(el).display, drawn: el.getClientRects().length > 0, height: Math.round(r.height), children: el.children.length,
+          text: el.innerText.trim().replace(/\s+/g, " "), asks: el.querySelectorAll("[data-needmsg]").length,
+          anyDrawn: Array.from(document.querySelectorAll(".needs")).filter(e => e.getClientRects().length > 0).length};
+})()"""
+NEEDS_SIZES = [(1280, 860), (375, 812)]
+
+
+@pytest.fixture()
+def idle_team(finished_team, fake_server, monkeypatch) -> Page:
+    """The finished team with nothing left to answer: J2 also reads a paused message of Identity at the end of the chat as a question, so the pause is taken off the transcript too."""
+    j2 = fake_server.state.fx.j2
+    snapshot = json.loads(j2.raw("state.json"))                      # the finished run of `finished_team`
+    for line in snapshot["chat"]:
+        line.pop("pause", None)
+    monkeypatch.setitem(j2._cache, "state.json", json.dumps(snapshot).encode())
+    return finished_team
+
+
+@browser_only
+@pytest.mark.parametrize("width, height", NEEDS_SIZES, ids=[str(w) for w, _ in NEEDS_SIZES])
+def test_the_library_page_draws_no_empty_needs_you_box(team, width, height):
+    """There is no run on the library page, so J2's script hides the Needs you box and never paints into it. The box is `hidden` and has no child, and it is not drawn: no bordered
+    strip of 18px (the box's padding and border) sits above the catalog at a laptop or a phone width."""
+    team.b.set_size(width, height)
+    team.b.goto(f"{team.server.url}/d/{DEPT}/library")
+    team.b.wait_for("window.DeptExt !== undefined && DeptExt.state().started === true")
+    team.b.wait_for("CAT.loaded === true")
+    seen = team.js(NEEDS_BOX)
+    assert seen["hidden"] is True and seen["children"] == 0 and seen["text"] == "", seen            # J2's page hid an empty box: that is what is measured
+    assert (seen["display"], seen["drawn"], seen["anyDrawn"], seen["height"]) == ("none", False, 0, 0), seen
+    assert team.hidden("#pane-catalog") is False and team.js("document.body.classList.contains('libpage')") is True       # and this is the library page, with its catalog
+    assert team.b.console_errors == [] and team.b.failed_requests == []
+
+
+@browser_only
+@pytest.mark.parametrize("width, height", NEEDS_SIZES, ids=[str(w) for w, _ in NEEDS_SIZES])
+@pytest.mark.parametrize("asked", [True, False], ids=["a question", "nothing to answer"])
+def test_a_team_page_still_draws_its_needs_you_box(request, asked, width, height):
+    """What hides the box on the library page does not reach a team page: with a question for the owner it is drawn with the question and its "Answer in Chat" button, and with nothing to
+    answer (a run that finished) it is drawn as J2 draws it, "Nothing needs you right now"."""
+    team = request.getfixturevalue("team" if asked else "idle_team")
+    team.b.set_size(width, height)
+    team.open(view="detail")
+    team.b.wait_for("!!document.querySelector('#needs .needbadge')")
+    seen = team.js(NEEDS_BOX)
+    assert seen["hidden"] is False and seen["display"] == "flex" and seen["drawn"] is True and seen["anyDrawn"] == 1 and seen["height"] > 40, seen
+    if asked:
+        assert seen["asks"] == 1 and seen["text"].startswith("Needs you 1 "), seen
+    else:
+        assert seen["asks"] == 0 and seen["text"].startswith("Needs you 0 Nothing needs you right now."), seen
+    assert team.b.console_errors == [] and team.b.failed_requests == []
