@@ -106,6 +106,13 @@ test("the kind of build is a choice among the six the engine accepts, and the en
   assert.match(row, /<option value="project">Project work</);
 });
 
+test("the template library flag says what the catalog's By run list shows while it is off (D142)", () => {
+  const html = engineHtml(FOR_ALL, {scope: "", departments: DEPARTMENTS});
+  const row = rows(html).template_library;
+  assert.match(row, /<label class="setlabel" for="setf-template_library">Template library<\/label>/);
+  assert.match(row, /<span class="sethint">Builders use the template library\. While this is off, the catalog&#39;s &quot;By run&quot; list shows J2&#39;s eight development runs only\.<\/span>/);
+});
+
 test("the working-folder switch for agents is a choice between auto and off", () => {
   const row = rows(engineHtml(FOR_ALL, {})).workspace;
   assert.match(row, /<select\b/);

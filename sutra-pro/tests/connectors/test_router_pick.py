@@ -2,8 +2,11 @@
 
 What is proved: a pick makes its provider the first of the order and its model go through that provider's `resolve_model`; its effort is used for the
 picked provider only (a fallback answers with the policy's); a pick that cannot run falls back by policy and the usage note says so; only an agent's own
-calls (agent_turn, plan, judge) look at it, and never a call of a chat session; the pick is read once per request, so a change applies from the
-agent's next call, never in the middle of one or of its retry; with no pick (or a broken reader) nothing changes."""
+calls (agent_turn, plan, judge, agent_chat) look at it, and the engine's reader is never asked for a call of a chat session; the pick is read once per
+request, so a change applies from the agent's next call, never in the middle of one or of its retry; with no pick (or a broken reader) nothing changes.
+
+A pick the caller resolved and put in `RouteContext.pick` (the owner's question to a function, D149) is used as it is, for a call that carries a session id
+too: it decides before the session's own provider, it falls back with the same note, and it is ignored for a purpose outside the governed ones."""
 from __future__ import annotations
 
 import sys
@@ -64,10 +67,11 @@ class Rig:
         self.asked.append(tag.function)
         return self.current(tag) if callable(self.current) else self.current
 
-    def ask(self, function="identity", purpose="agent_turn", session_id=None, progress=None):
-        """One text call; the answer is the name of the provider that answered (the stubs all say `stub` in the turn, the usage row says who)."""
-        self.router.ask(AskRequest(user="hello", kind="text", ctx=RouteContext(tag=CallTag(function=function, purpose=purpose), session_id=session_id)),
-                        progress)
+    def ask(self, function="identity", purpose="agent_turn", session_id=None, progress=None, pick=None):
+        """One text call; the answer is the name of the provider that answered (the stubs all say `stub` in the turn, the usage row says who).
+        `pick` is the pick the caller resolved and carries in the context (D149)."""
+        self.router.ask(AskRequest(user="hello", kind="text",
+                                   ctx=RouteContext(tag=CallTag(function=function, purpose=purpose), session_id=session_id, pick=pick)), progress)
         return self.row().provider
 
     def row(self):
@@ -197,11 +201,11 @@ def test_a_pick_on_a_provider_this_app_is_limited_away_from_says_so(tmp_path):
 # ---- which calls look at it ----------------------------------------------------------------------------------------------------------------------
 
 def test_the_purposes_an_agents_pick_governs():
-    assert PICK_PURPOSES == ("agent_turn", "plan", "judge")
+    assert PICK_PURPOSES == ("agent_turn", "plan", "judge", "agent_chat")
 
 
-@pytest.mark.parametrize("purpose,governed", [("agent_turn", True), ("plan", True), ("judge", True), ("summary", False), ("template", False),
-                                              ("review", False), ("change", False), ("chat_plan", False), ("chat", False)])
+@pytest.mark.parametrize("purpose,governed", [("agent_turn", True), ("plan", True), ("judge", True), ("agent_chat", True), ("summary", False),
+                                              ("template", False), ("review", False), ("change", False), ("chat_plan", False), ("chat", False)])
 def test_only_an_agents_own_calls_follow_the_pick(rig, purpose, governed):
     rig.current = Pick(provider="codex", model="gpt-5.6-terra", effort="low")
     assert (rig.ask(purpose=purpose) == "codex") is governed and bool(rig.asked) is governed
@@ -222,6 +226,90 @@ def test_a_json_call_of_an_agent_follows_the_pick_too(rig):
     rig.current = Pick(provider="codex")
     rig.router.call_json(JsonRequest(user="p", ctx=RouteContext(tag=CallTag(function="identity", purpose="plan"))))
     assert rig.row().provider == "codex" and rig.asked == ["identity"]
+
+
+# ---- a pick the caller resolved: RouteContext.pick (D149) -----------------------------------------------------------------------------------------
+
+CODEX_PICK = Pick(provider="codex", model="gpt-5.6-terra", effort="xhigh")
+
+
+def plan_with(rig, pick, function="audit", purpose="agent_chat", session_id="cs_1"):
+    return rig.router.plan(AskRequest(user="x", kind="text", ctx=RouteContext(tag=CallTag(function=function, purpose=purpose), session_id=session_id, pick=pick)))
+
+
+def test_the_context_pick_of_a_call_that_belongs_to_a_session_decides_with_its_model_and_effort(rig):
+    assert rig.ask("audit", "agent_chat", session_id="cs_1", pick=CODEX_PICK) == "codex"
+    assert rig.codex.got == [{"model": "gpt-5.6-terra", "effort": "xhigh"}] and rig.claude.got == []
+    row = rig.row()
+    assert (row.session_id, row.fn, row.purpose, row.detail["note"]) == ("cs_1", "audit", "agent_chat", None)
+    assert rig.asked == []                                               # the engine's reader is for calls with no session: it was not asked
+
+
+def test_the_plan_of_a_context_pick_holds_the_pick_and_its_effort_for_the_picked_provider_only(rig):
+    plan = plan_with(rig, Pick(provider="codex", model="gpt-5.6-terra", effort="medium"))
+    assert plan.order == ("codex", "claude") and plan.pick == Pick(provider="codex", model="gpt-5.6-terra", effort="medium")
+    assert plan.models == {"codex": "gpt-5.6-terra", "claude": "sonnet"}
+    assert plan.effort_for("codex") == "medium" and plan.effort_for("claude") == plan.resolved.effort
+
+
+def test_the_context_pick_goes_before_the_sessions_own_provider_and_the_engines_reader(rig):
+    rig.router.choice_source = lambda sid: "claude"                      # the session's own pill says claude
+    rig.current = Pick(provider="claude", model="haiku")                 # and so does the engine's reader
+    assert rig.ask("audit", "agent_chat", session_id="cs_1", pick=CODEX_PICK) == "codex"
+    assert rig.asked == [] and rig.events == []                          # the session's choice was not overruled with a "pill could not run" event
+
+
+def test_a_context_pick_that_cannot_run_falls_back_by_policy_with_the_usual_note_and_names_the_session(rig):
+    rig.codex.signed_in = False
+    progress = []
+    answered = rig.ask("audit", "agent_chat", session_id="cs_1", progress=progress.append, pick=Pick(provider="codex", model="gpt-5.6-luna", effort="low"))
+    note = "your choice for audit (codex) could not run: not signed in; claude answered"
+    assert answered == "claude" and rig.claude.got == [{"model": "sonnet", "effort": "high"}]         # the policy's model and effort answer
+    assert rig.row().detail["note"] == note and {"note": note} in progress
+    event, = [d for t, d in rig.events if t == "connector.choice_unavailable"]
+    assert (event["session_id"], event["agent"], event["wanted"], event["used"]) == ("cs_1", "audit", "codex", "claude")
+
+
+def test_a_context_pick_the_policy_cannot_serve_either_fails_like_any_request(rig):
+    rig.codex.signed_in = False
+    rig.claude.fail_next("quota")
+    with pytest.raises(Exception):
+        rig.ask("audit", "agent_chat", session_id="cs_1", pick=Pick(provider="codex"))
+    assert rig.row().ok is False and rig.row().session_id == "cs_1"
+
+
+@pytest.mark.parametrize("purpose", ["summary", "template", "review", "change", "chat_plan", "chat"])
+def test_a_context_pick_is_ignored_for_a_purpose_outside_the_governed_ones(rig, purpose):
+    assert plan_with(rig, CODEX_PICK, purpose=purpose).pick is None
+    assert rig.ask("audit", purpose, session_id="cs_1", pick=CODEX_PICK) == "claude" and rig.codex.got == []
+
+
+def test_a_context_pick_outside_the_governed_purposes_leaves_the_sessions_own_provider_in_charge(rig):
+    rig.router.choice_source = lambda sid: "codex"
+    assert rig.ask("audit", "chat", session_id="cs_1", pick=Pick(provider="claude")) == "codex"       # the old path: the pill of the session
+
+
+def test_a_context_pick_with_no_provider_is_default_and_the_session_or_the_policy_answers(rig):
+    assert plan_with(rig, Pick()).pick is None
+    assert rig.ask("audit", "agent_chat", session_id="cs_1", pick=Pick()) == "claude" and rig.row().detail["note"] is None
+    rig.router.choice_source = lambda sid: "codex"                       # the session's own choice is then the one that counts, as before
+    assert rig.ask("audit", "agent_chat", session_id="cs_1", pick=Pick(model="haiku")) == "codex" and rig.asked == []
+
+
+def test_without_a_context_pick_a_session_call_is_what_it_always_was(rig):
+    rig.current = Pick(provider="codex")                                 # the engine's reader would say codex ...
+    assert rig.ask("audit", "agent_chat", session_id="cs_1") == "claude" and rig.asked == []      # ... but a call of a session never asks it
+    rig.router.choice_source = lambda sid: "codex"
+    assert rig.ask("audit", "agent_chat", session_id="cs_1") == "codex"
+
+
+def test_a_context_pick_on_a_provider_this_app_is_limited_away_from_says_so(tmp_path):
+    cfg = ConnectorConfig(data_dir=tmp_path / "data", work_root=tmp_path / "work", claude_exe=sys.executable, codex_exe=sys.executable)
+    sink = MemoryUsageSink()
+    router = Router({"claude": Named("claude", cfg)}, policy(), usage_sink=sink, connector="claude")
+    router.ask(AskRequest(user="x", kind="text", ctx=RouteContext(tag=CallTag(function="audit", purpose="agent_chat"), session_id="cs_1",
+                                                                   pick=Pick(provider="codex"))))
+    assert sink.rows[0].detail["note"] == "your choice for audit (codex) could not run: this app is set to use only claude; claude answered"
 
 
 # ---- a change applies at the agent's next call ----------------------------------------------------------------------------------------------
@@ -315,5 +403,29 @@ def test_a_signed_out_pick_falls_back_with_the_note_on_the_real_connectors(fake,
         assert turn.provider == "claude" and sink.rows[0].detail["note"].startswith("your choice for identity (codex) could not run: not signed in; claude answered")
         argv = fake.model_calls("claude")[0]["argv"]
         assert (value(argv, "--model"), value(argv, "--effort")) == ("sonnet", "high")
+    finally:
+        router.close()
+
+
+def test_a_context_picks_model_and_effort_reach_the_claude_argv_of_a_call_that_belongs_to_a_session(fake, tmp_path):
+    fake.sequence("ok_plain").reply(text="r")
+    router = real_router(fake, tmp_path)
+    try:
+        router.ask(AskRequest(user="hello", kind="text", ctx=RouteContext(tag=CallTag(function="audit", purpose="agent_chat"), session_id="cs_1",
+                                                                          pick=Pick(provider="claude", model="haiku", effort="low"))))
+        argv = fake.model_calls("claude")[0]["argv"]
+        assert (value(argv, "--model"), value(argv, "--effort")) == ("haiku", "low") and fake.model_calls("codex") == []
+    finally:
+        router.close()
+
+
+def test_a_context_picks_effort_reaches_the_codex_argv_and_a_signed_out_pick_falls_back_on_the_real_connectors(fake, tmp_path):
+    fake.sequence("ok_plain", cli="codex").reply(text="r")
+    router = real_router(fake, tmp_path)
+    try:
+        router.ask(AskRequest(user="hello", kind="text", ctx=RouteContext(tag=CallTag(function="audit", purpose="agent_chat"), session_id="cs_1",
+                                                                          pick=Pick(provider="codex", effort="medium"))))
+        call, = fake.model_calls("codex")
+        assert 'model_reasoning_effort="medium"' in call["argv"] and fake.model_calls("claude") == []
     finally:
         router.close()

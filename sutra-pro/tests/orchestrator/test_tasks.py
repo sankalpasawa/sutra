@@ -20,7 +20,7 @@ from sutra_app.orchestrator.errors import AppError, Busy, NotFound, ReadOnly
 from sutra_app.orchestrator.models import RunSpec
 from sutra_app.orchestrator.projector import Projector
 from sutra_app.orchestrator.runs import (
-    STOP_GRACE_S, TERM_GRACE_S, ProcessLauncher, RunWatcher, child_environment, inbox_line_count, run_has_ended,
+    ENGINE_MODULE, STOP_GRACE_S, TERM_GRACE_S, ProcessLauncher, RunWatcher, child_environment, inbox_line_count, run_has_ended,
 )
 from sutra_app.orchestrator.tasks import TaskGraph, TaskService, TaskStore
 from sutra_app.orchestrator.testing import FakeClock
@@ -789,12 +789,19 @@ while True:
 """
 
 
+def engine_argv(run_dir: Path) -> list[str]:
+    """The tail of the engine's own command line (`-m <module> --run-dir <run folder>`): what `ps` shows of a real run, and what the stop
+    ladder (D156) looks for in a pid it did not spawn. A plain `python -c` child lacks it, so the ladder would take it for another program."""
+    return ["-m", ENGINE_MODULE, "--run-dir", str(run_dir)]
+
+
 def spawn_holdout(run_dir: Path):
+    """A process that plays the engine of a task re-adopted after a restart: the launcher has no handle on its pid, `ps` shows the engine's command."""
     import subprocess
     run_dir.mkdir(parents=True, exist_ok=True)
     (run_dir / "inbox.jsonl").write_bytes(b"")
     (run_dir / "events.jsonl").write_bytes(b"")
-    proc = subprocess.Popen([sys.executable, "-c", HOLDOUT, str(run_dir)], start_new_session=True)
+    proc = subprocess.Popen([sys.executable, "-c", HOLDOUT, str(run_dir), *engine_argv(run_dir)], start_new_session=True)
     threading.Thread(target=proc.wait, daemon=True).start()                      # reap it the moment it dies (a zombie still answers kill -0)
     for _ in range(200):
         if (run_dir / "ready").exists():
@@ -804,7 +811,7 @@ def spawn_holdout(run_dir: Path):
 
 
 def test_stop_ladder_order(tmp_path):
-    """A process that ignores the stop line and SIGTERM: the ladder sends the stop line, then SIGTERM to the group, then SIGKILL."""
+    """An engine that ignores the stop line and SIGTERM: the ladder sends the stop line, then SIGTERM to the group, then SIGKILL."""
     proc = spawn_holdout(tmp_path / "run")
     launcher = ProcessLauncher()
     started = time.monotonic()
@@ -828,7 +835,7 @@ def test_stop_ladder_ends_at_once_when_run_ended_and_the_process_exits(tmp_path)
     (run / "inbox.jsonl").write_bytes(b"")
     (run / "events.jsonl").write_text('{"t":"run.ended","status":"stopped","at":"2026-11-04T10:00:00Z"}\n')
     import subprocess
-    proc = subprocess.Popen([sys.executable, "-c", "import time; time.sleep(0.2)"], start_new_session=True)
+    proc = subprocess.Popen([sys.executable, "-c", "import time; time.sleep(0.5)", *engine_argv(run)], start_new_session=True)
     threading.Thread(target=proc.wait, daemon=True).start()
     launcher = ProcessLauncher()
     assert run_has_ended(run)

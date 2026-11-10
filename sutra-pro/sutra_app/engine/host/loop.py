@@ -739,6 +739,8 @@ class Host:
         """Final publish, then `run.ended`: the publisher and the heartbeat are stopped first, so nothing follows it."""
         self.inbox.close()
         self.publisher.stop()
+        from . import finish
+        finish.run_steps(self, status)             # D142, D143: the steps of a run that ended well; the heartbeat still beats
         self.heartbeat.stop()
         try:
             self.publisher.final()

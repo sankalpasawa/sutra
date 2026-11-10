@@ -81,6 +81,7 @@ with warnings.catch_warnings():
         redirect: MetaValue = None
         shaped: MetaValue = None
         auto: MetaValue = None
+        auto_label: MetaValue = None
         to: MetaValue = None
         handoff: MetaValue = None
         # the questions to the Requester (Identity's pauses) and the owner's override
@@ -124,6 +125,7 @@ with warnings.catch_warnings():
         artifact: MetaValue = None
         human_output: MetaValue = None
         realization: MetaValue = None
+        judge: MetaValue = None
         template_route: MetaValue = None
         # the message board (a reader of a changed document and who it affects)
         reader: MetaValue = None

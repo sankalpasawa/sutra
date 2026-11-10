@@ -1,11 +1,15 @@
 """Builds cases.json, the J2 parity cases of tests/library/test_lib_{artifacts,rules,templates}.py. Run it ONCE, by hand; the
 tests never run it and never import J2.
 
-    scripts/py tests/library/fixtures/artifacts/build_artifact_cases.py [path/to/J2_Prototype]
+    scripts/py tests/library/fixtures/artifacts/build_artifact_cases.py <extraction of prototypes/j2>
+    SUTRA_J2_CHECKOUT=<extraction of prototypes/j2> scripts/py tests/library/fixtures/artifacts/build_artifact_cases.py
+
+The folder is required and has no default: an extraction of this repository's `prototypes/j2` at one commit (the recipe is in
+scripts/vendor_j2.py: `git archive <commit> prototypes/j2 | tar -x --strip-components=2 -C <new, empty folder>`).
 
 It holds the GOOD payload of each of the 19 sections and 3 documents (a small yoga-studio site, in the shape J2's mock
 builders write), and BAD variants for the rules. A copy of j2_artifact_models.py and j2_rules.py is imported from a temporary
-folder (nothing is written to the J2 checkout) and answers, for the J2 baseline 33aeeda:
+folder (nothing is written to the extraction) and answers, for the J2 source it is given:
   * `transport_sha` / `reply_sha`: schema_sha of transport_schema(model) and reply_schema(model, {}) for the 19 sections and
     the 3 documents, keyed "<kind>/<section>" and "doc/<kind>";
   * `valid_in_j2`: every good payload validates in J2's own models (the script refuses to write otherwise);
@@ -20,13 +24,27 @@ It also copies J2's committed templates/<artifact>/generic.json (five files) and
 import copy
 import importlib.util
 import json
+import os
 import shutil
 import sys
 import tempfile
 from pathlib import Path
 
 HERE = Path(__file__).resolve().parent
-J2 = Path(sys.argv[1] if len(sys.argv) > 1 else "~/Desktop/development/J2_Prototype").expanduser()
+
+
+def j2_extraction() -> Path:
+    """The extraction of prototypes/j2 the cases are built from: the first argument, else $SUTRA_J2_CHECKOUT. Never a default."""
+    given = sys.argv[1] if len(sys.argv) > 1 else os.environ.get("SUTRA_J2_CHECKOUT")
+    if not given:
+        sys.exit("usage: build_artifact_cases.py <extraction of prototypes/j2>   (or set SUTRA_J2_CHECKOUT to it)")
+    root = Path(given).expanduser()
+    if not (root / "j2_artifact_models.py").is_file() or not (root / "templates").is_dir():
+        sys.exit(f"{root} is not an extraction of prototypes/j2 (no j2_artifact_models.py and templates/ in it)")
+    return root
+
+
+J2 = j2_extraction()
 
 PRD = {
     "Problem": {"statement": "Busy people in the neighbourhood cannot find a calm class that fits their week.",

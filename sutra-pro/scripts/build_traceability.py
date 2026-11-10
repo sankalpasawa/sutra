@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
-"""The traceability matrix (GAP-TRACE): owner rules, the seven draw.io steps, the 15 chips, the 30 J2 endpoints, every decision and every
-work package, each tied to the modules, tests and commits that carry it.
+"""The traceability matrix (GAP-TRACE): owner rules, the seven draw.io steps, the 15 chips, the J2 endpoints (one row per handler of
+`engine/views.py`: 41 since J2 sync 4), every decision and every work package, each tied to the modules, tests and commits that carry it.
 
     scripts/py scripts/build_traceability.py            write docs/design/traceability.json and docs/TRACEABILITY.md
     scripts/py scripts/build_traceability.py --check    verify the committed json (exit 1 with the first 20 problems)
@@ -181,20 +181,12 @@ def literal_assign(text: str, name: str):
 
 
 def parse_view_names(views_text: str) -> list[str]:
-    """The names in `VIEWS = {fn.__name__: fn for fn in (index, vendor, ...)}` of sutra_app/engine/views.py, in order."""
+    """The names in `VIEWS = {fn.__name__: fn for fn in (index, vendor, ...)}` of sutra_app/engine/views.py, in order: every one is a J2
+    endpoint (since J2 sync 4 `runlist` and `changes` are J2's own routes, so no view is left out)."""
     for node in ast.walk(ast.parse(views_text)):
         targets = node.targets if isinstance(node, ast.Assign) else [node.target] if isinstance(node, ast.AnnAssign) else []
         if any(isinstance(t, ast.Name) and t.id == "VIEWS" for t in targets) and isinstance(node.value, ast.DictComp):
-            patched = parse_patch_views(views_text)          # J2's 30 handlers only: the P13 views are not J2 endpoints
-            return [elt.id for elt in node.value.generators[0].iter.elts if elt.id not in patched]
-    return []
-
-
-def parse_patch_views(views_text: str) -> list[str]:
-    """`PATCH_VIEWS = ("runlist", "changes")` of views.py: the read-only views of patch P13, which J2's own repository does not have."""
-    for node in ast.walk(ast.parse(views_text)):
-        if isinstance(node, ast.Assign) and any(isinstance(t, ast.Name) and t.id == "PATCH_VIEWS" for t in node.targets):
-            return [elt.value for elt in node.value.elts]
+            return [elt.id for elt in node.value.generators[0].iter.elts]
     return []
 
 
@@ -289,6 +281,10 @@ OWNER_RULE_MAP = [
 DECISION_PACKAGES = {
     8: ["CN-2", "CN-5", "UI-0"], 10: ["ORCH-2", "UI-3"], 12: ["GAP-OPS-1", "ORCH-8"], 26: ["E0", "E3"], 30: ["CN-6"],
     39: ["L1", "L5", "L7"], 40: ["L1", "L8"], 50: ["L4", "L5", "L6"], 69: ["ORCH-7"], 90: ["E1", "E2", "E5", "L7", "L8", "UI-2"],
+    # J2 sync 4 (no work package carries it: the lanes' notes are docs/notes/J2S4-*.md). D151 and D154 stay "documented only": a recorded non-decision and a rule.
+    152: ["E1", "E3", "ORCH-6", "UI-3"],       # P16 in the vendored j2.py, the host's inbox line, the task service's send_setting, J2_PATHS
+    153: ["E1", "E2", "UI-2", "UI-3"],         # j2_studio.py, the Studio views, the page port, J2_PATHS
+    155: ["UI-2", "UI-6"],                     # the Studio sheet on the team page, the node panel's own rules
 }
 
 # step n -> (draw.io step, modules, tests that exist now, the gap the coverage critic named)
@@ -523,7 +519,7 @@ def render_markdown(doc: dict) -> str:
         mods = [m.replace("sutra_app/engine/", "", 1) for m in r["modules"]]
         out.append(f"| {cell(r['id'] + ': ' + r['chip'])} | {cell(r['diagram_label'])} | {code_list(mods)} | {cell(r['flags'])} |")
 
-    out += ["", "## D. The 30 J2 endpoints", "",
+    out += ["", "## D. The J2 endpoints", "",
             "| # | View | Method and path | Handler | Served by | Golden keys | In the page's list |", "|---|---|---|---|---|---|---|"]
     for r in doc["endpoints"]:
         out.append(f"| {r['n']} | {cell(r['name'])} | {r['method']} `{r['path']}` | `{r['handler']}` | `{r['adapter']}` | "

@@ -86,7 +86,7 @@
  },
  {
   "id": "D18",
-  "label": "settings: 2 files + 7 task keys · edit in Settings",
+  "label": "settings: 2 files + 8 task keys · edit in Settings",
   "anchor": "J2 chips"
  },
  {
@@ -618,5 +618,110 @@
   "id": "D135",
   "label": "your report in the team's chat",
   "anchor": "Chat sessions"
+ },
+ {
+  "id": "D136",
+  "label": "J2 sync 4: prototypes/j2 @025e265",
+  "anchor": "J2 chips"
+ },
+ {
+  "id": "D137",
+  "label": "J2 page re-ported (33 edits, D137)",
+  "anchor": "User chat interface · J2 Simple view"
+ },
+ {
+  "id": "D138",
+  "label": "Home and console keep J2's previous stylesheet",
+  "anchor": "band:EXPERIENCE"
+ },
+ {
+  "id": "D139",
+  "label": "start page: choose what to make",
+  "anchor": "band:EXPERIENCE"
+ },
+ {
+  "id": "D140",
+  "label": "J2 routes: one implementation, P13 retired",
+  "anchor": "J2 chips"
+ },
+ {
+  "id": "D141",
+  "label": "/d/{dept}/library over the one library",
+  "anchor": "Template library"
+ },
+ {
+  "id": "D142",
+  "label": "run end: collect into the catalog",
+  "anchor": "Template library"
+ },
+ {
+  "id": "D143",
+  "label": "run end: agent-readable JSON",
+  "anchor": "Department records"
+ },
+ {
+  "id": "D144",
+  "label": "seed library: add, never overwrite",
+  "anchor": "Template library"
+ },
+ {
+  "id": "D145",
+  "label": "late judge on, no patch",
+  "anchor": "Usage and cost ledger"
+ },
+ {
+  "id": "D146",
+  "label": "report row from the capability",
+  "anchor": "band:DEPARTMENT RUNTIME"
+ },
+ {
+  "id": "D147",
+  "label": "ask a function: a turn of its own session",
+  "anchor": "Chat sessions"
+ },
+ {
+  "id": "D148",
+  "label": "one transcript per agent",
+  "anchor": "Chat sessions"
+ },
+ {
+  "id": "D149",
+  "label": "answer: own pick, scrubbed, booked",
+  "anchor": "Connector router"
+ },
+ {
+  "id": "D150",
+  "label": "goldens only by recorder",
+  "anchor": "Department records"
+ },
+ {
+  "id": "D151",
+  "label": "new J2 views pinned by shape goldens",
+  "anchor": null
+ },
+ {
+  "id": "D152",
+  "label": "Decide for me: one settings.json, P16",
+  "anchor": "band:DEPARTMENT RUNTIME"
+ },
+ {
+  "id": "D153",
+  "label": "pin at the Studio tip, sandbox kept",
+  "anchor": "User chat interface · J2 Simple view"
+ },
+ {
+  "id": "D154",
+  "label": "prototypes/j2 is the only J2 source",
+  "anchor": "J2 chips"
+ },
+ {
+  "id": "D155",
+  "label": "Sutra's sheet keeps panels and motion",
+  "anchor": "band:EXPERIENCE"
+ },
+ {
+  "id": "D156",
+  "label": "stop ladder: identity first",
+  "anchor": "band:DEPARTMENT RUNTIME"
  }
 ]

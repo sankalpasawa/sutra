@@ -75,15 +75,16 @@ flowchart LR
 |---|---|---|
 | `sutra_app/ui/__init__.py` | `mount(app, services)` (ORCH §3.5 plug-in rule), `build_router`, `mount_static`, `render_page`, `inline_script_hashes`, `csp_header`, `BootContext`, `PAGES_DIR`, `STATIC_DIR` [S3-web-02] [S3-web-09] | UI-1 |
 | `sutra_app/ui/boot.py` | `BootContext`, the `DeptLike` protocol, `render_page` (fills the boot block), `inline_script_hashes`, `csp_header` [S3-web-02] [S3-web-09] | UI-1 |
-| `sutra_app/ui/routes.py` | pages `/`, `/d/{dept}`, `/d/{dept}/`, `/favicon.ico`; static mount `/ui`; headers (the CSP is built from the final HTML once per page file, cached by mtime) [S3-web-09] | UI-1 |
-| `sutra_app/ui/pages/j2_ui.html` | the J2 page after the 13 edits; produced by the port script, never hand-edited [S3-web-10] | UI-2 |
+| `sutra_app/ui/routes.py` | pages `/`, `/d/{dept}`, `/d/{dept}/`, `/d/{dept}/library` (sync 4, D141), `/favicon.ico`; static mount `/ui`; headers (the CSP is built from the final HTML once per page file, cached by mtime) [S3-web-09] | UI-1 |
+| `sutra_app/ui/pages/j2_ui.html` | the J2 page after the 33 edits of sync 4 (5.1; 13 at the first import); produced by the port script, never hand-edited [S3-web-10] | UI-2 |
 | `sutra_app/ui/pages/j2_ui_render.js`, `pages/j2_graph_layout.js` | J2's two node harnesses (three small changes to the first, one to the second, section 5), kept beside the page because `scripts/port_j2_ui.py` and `tests/ui/js/page_render.test.js` use them; the engine's legacy tests read J2's own copies through `SUTRA_J2_CHECKOUT` (ENG §3.1 and §9); the `pages/*` package-data glob ships them in the wheel, which is harmless [S3-web-01] | UI-2 |
 | `sutra_app/ui/pages/home.html` | Home markup | UI-7 |
-| `sutra_app/ui/static/css/j2.css` | J2's `<style>` block, byte for byte (UI-D3) | UI-2 |
+| `sutra_app/ui/static/css/j2.css` | J2's `<style>` block, byte for byte (UI-D3); the team page links it | UI-2 |
+| `sutra_app/ui/static/css/j2-shell.css` | sync 4 (D138): a frozen byte copy of the previous sync's `j2.css` that Home and the console link; Sutra owns it, the port never writes it, its sha256 is pinned | UI-2 |
 | `sutra_app/ui/static/css/sutra-graph.css` | `.wgsvg`, org chart, change log, legend, live chip, `--e-org` | UI-5 |
-| `sutra_app/ui/static/css/sutra-panel.css` | node panel, function sections, atom cards, chat, rail additions | UI-6 |
+| `sutra_app/ui/static/css/sutra-panel.css` | node panel, function sections, atom cards, chat, rail additions; since sync 4 also the strips (`#rail .railhome`, `#sview>.steamstrip`), the output choice, the Ask box, the node panel's own bubbles and the motion overrides for the Studio sheet (D155) | UI-6 |
 | `sutra_app/ui/static/css/sutra-shell.css` | Home deltas (`.sright`, start page, teams list, Settings groups) [S1-contracts-03] [S1-contracts-08] | UI-7 |
-| `sutra_app/ui/static/js/sutra_ctx.js` | context, J2 fetch wrapper, `api` (get, post, put, del), `esc`, `paint`, `tab`, `currentTab` [S1-contracts-03] [S3-web-10] | UI-3 |
+| `sutra_app/ui/static/js/sutra_ctx.js` | context, J2 fetch wrapper, `api` (get, post, put, del), `esc`, `paint`, `tab`, `currentTab`; since sync 4 `pagePath`, `libraryPath` and `onLibrary()` (D141) and `J2_EXACT` with 33 names [S1-contracts-03] [S3-web-10] | UI-3 |
 | `sutra_app/ui/static/js/sutra_events.js` | SSE client with polling fallback, `coalesce` | UI-3 |
 | `sutra_app/ui/static/js/graph_layout.js` | pure: validate (GraphView to tree), layered layout, edge paths, diff | UI-4 |
 | `sutra_app/ui/static/js/chart_marks.js` | pure: OrgChart to graph, reuse/add/move marks, change log html | UI-4 |
@@ -95,7 +96,8 @@ flowchart LR
 | `sutra_app/ui/static/js/node_panel.js` | DOM: `#nodepanel` drawer with Chat and Details tabs | UI-6 |
 | `sutra_app/ui/static/js/home.js` | Home controller: org chat, hand-over, rail, theme, panes, Settings wiring [S1-contracts-03] [S1-contracts-08] | UI-7 |
 | `sutra_app/ui/static/js/settings_view.js` | pure: Settings pane html and bodies: Engine group (editable and locked fields, the `{set, unset}` body), Connectors rows (Test, Codex Sign in state) [S1-contracts-03] [S1-contracts-08] | UI-7 |
-| `sutra_app/ui/static/js/dept_ext.js` | department-page glue: tab hook, chip, mounting, events | UI-8 |
+| `sutra_app/ui/static/js/dept_ext.js` | department-page glue: tab hook, both team chips (`#deptchip`, `#deptchip-s`), mounting, events | UI-8 |
+| `sutra_app/ui/static/js/output_pick.js`, `function_chat.js` | sync 4: the start page's output choice (D139); J2's question list filled from the function's own session, and the route the node panel's Ask box posts to (D148) | UI-8 |
 | `sutra_app/ui/static/vendor/{d3.min.js,d3-LICENSE,README.md}` | d3 7.9.0 copied from J2 `vendor/` by the port script | UI-2 |
 | `scripts/port_j2_ui.py` · `scripts/capture_j2_fixtures.py` | reproducible port and drift check · fixtures and goldens from a J2 mock run | UI-2 · UI-0 |
 
@@ -168,7 +170,8 @@ Page headers: `Cache-Control: no-store`; `X-Content-Type-Options: nosniff`; `Ref
 ### 4.3 Offline and safety
 No CDN anywhere: both pages and all CSS and JS are `'self'` (UI-D3). A test fails on any `http(s)://` in `src`, `href` or `url()` (J2 makes the same check, j2_check.py:146-152). Text from models or the graph store is always `esc`-aped (`& < > " '`); chat text goes through `ChatView.safeText` (escape, then `**bold**`, `` `code` ``, line breaks; no links, no HTML), except a model's reply to a direct line (`ChatMessageOut.turn` set) and the streaming row, which go through `ChatMarkdown.render` (`chat_markdown.js`, GAP-markdown: escape first, then paragraphs, lists, fenced code, tables, headings, quotes, rules, `**bold**`, `*italic*`, `~~struck~~`, `` `code` ``; still no links, no images, no HTML, so a link or an address stays text). Node and session ids are opaque: the UI never parses them.
 
-## 5. Edits to the copied `j2_ui.html` (13, and the five of Run settings, E14 to E18; each guarded by a test) [S3-web-10]
+## 5. Edits to the copied `j2_ui.html` (13 at the first import; since sync 4 the table is 33, in 5.1; each guarded by a test) [S3-web-10]
+_Since sync 4 (D137) the page is J2's at `025e265c` and `scripts/port_j2_ui.py` applies the 33 edits of 5.1. E14 to E18 and `run-settings.css` are retired (J2's own Run settings is the design they copied). The text below is the history of the first 13 edits, kept for its reasons; E1 to E13 mean the same in 5.1._
 `scripts/port_j2_ui.py --j2 <J2 checkout> [--check]` applies them to J2's `j2_ui.html`. Each edit is a tuple `(id, literal or regex, replacement, expected_count)`; a count mismatch stops the port (J2 drifted). It writes `pages/j2_ui.html`, `static/css/j2.css`, `static/vendor/*`; `--check` fails when the committed files differ from a fresh port. J2 itself is never touched.
 
 **E1 · 7-319 · stylesheets, no CDN, boot marker, context script**
@@ -261,6 +264,31 @@ Invariants the tests keep: the J2 main script stays the **last inline `<script>`
 **The two harnesses** (`pages/j2_ui_render.js`, `pages/j2_graph_layout.js`; used by `scripts/port_j2_ui.py` and `page_render.test.js`; the engine's legacy tests read J2's own copies through `SUTRA_J2_CHECKOUT`, ENG §3.1 and §9) are copied by the same port script. [S3-web-01] `j2_ui_render.js` gets three changes: (1) `sutra_ctx.js` is run in the stub context before the page script, so `SutraCtx` exists (`dept` stays `""`: the stub `getElementById` returns an empty element and `location` has no `pathname`, and `sutra_ctx.js` must tolerate both); (2) d3 is read from `../static/vendor/d3.min.js`; (3) the d3 tag test matches `/ui/vendor/d3.min.js`. `j2_graph_layout.js` gets only (1). Their command lines and JSON output are unchanged.
 
 **Tried here** (scratch copy, nothing in the repo; S3-web-10 later re-checked all 12 anchors and counts at ce2631f and added E13) [S3-web-10]: the first 12 edits applied to J2's page with exactly the match counts above (E2 twice, E6 on two lines, the rest once); with an empty department `pages/j2_ui_render.js` printed output byte-identical to J2's own harness on J2's own page, 5,893 bytes for an empty state and 612,427 bytes for the finished 31-workflow run's state, and `pages/j2_graph_layout.js` printed 152,504 bytes of layout JSON identical to J2's. In headless Chrome 156 the ported page was served at `/d/org_3f9a1c2b7d10/` (a stand-in id of the earlier `org_<12 hex>` form; the real ids are the library's, S3-web-13) by a small FastAPI app (a stand-in `sutra_ctx.js`, assets under `/ui/`, the CSP of 4.1 as first drafted, with `'unsafe-inline'` for scripts; S3-web-09 re-measured it with the two script hashes and got the same result, J2's routes proxied from a J2 mock server): zero CSP messages and zero failed loads (J2's original page: the same); the Map Tree drew its 10 nodes; the rail showed `← All teams`, Map, Workflow graph, Org chart; `showTab("graph")` showed `#pane-graph`; all 49 proxied J2 calls carried `dept=org_3f9a1c2b7d10`; the iframes loaded `/site/…?…&run=…&dept=…`; a POST carried `X-Sutra-Token`; `/api/chart` was left alone.
+
+### 5.1 The 33 page edits of J2 sync 4 (D137; `scripts/port_j2_ui.py`, `tests/ui/test_port_edits.py`)
+Each is an `Edit(id, old, new, count)` checked on J2's own text first; a missed count stops the port and names every edit; `--check` fails when the seven generated files differ from a fresh port. `scripts/port_j2_ui.py --j2 <extraction> --commit <sha>` takes an extraction of `prototypes/j2` (a `git archive` folder is not a repository).
+
+| Edits | What | Decision |
+|---|---|---|
+| E1 | three style links (`j2.css`, `sutra-graph.css`, `sutra-panel.css`), the boot marker and `sutra_ctx.js`; J2's own `data:` favicon link stays | D137 |
+| E2a, E2b, E2c | the sandbox, with no `allow-same-origin`, on `frame`, `sframe` and the Studio's second frame `sframe2` (a new version loads behind the visible one and the ids swap) | D83, D153 |
+| E3, E4 | d3 under `/ui/vendor/`; `runQ()` carries the team into every URL the page builds | D76 |
+| E5 | a strip above the Simple view: `div.steamstrip` with `#to-home-s` and `#deptchip-s` (not `.shome`: J2's New project button uses that class) | D137 |
+| E6a, E6b | graph and org chart use the whole work area; `SutraCtx.tab(name)` | D137 |
+| E7 | a strip at the top of the icon rail, `div.railhome`: back to All teams (`#to-home`), the team chip (`#deptchip`) and the two `role=tab` buttons | D137 |
+| E8 to E12, E9b | the two Sutra panes, the node panel, Esc closes only the node panel when it is open, pins per team, `NodePanel.wants`, and the modules `function_chat` and `output_pick` before `dept_ext` | D139, D148 |
+| E13a to E13d | the Priorities wording (the four pairs of the first import; "no ranking records" is three places) | |
+| E19 | `div#soutpick` is the first child of the start page's row of options (`div.slrow`), beside Decide for me | D139 |
+| E20a to E20i | the template library and the page's own address come from `SutraCtx` (`libraryPath`, `pagePath`, `onLibrary()`): `/d/<team>/library`, Recent work, New project; the Start page's Template library link is relative (`library?view=detail`) | D141 |
+| E21 | `loadFeed` fills J2's question list from the function's session (`FunctionChat.hydrate`) before it paints | D148 |
+| E22 | the Run settings hint no longer says it has "what to build" | D139 |
+| E23 | the Studio's Google Fonts injection into a readable frame becomes a comment: no CDN and no web font (UI-D3) | D137 |
+
+- **The Studio and the sandbox (D153).** The preview frames keep Sutra's sandbox (D83). The Studio reads its frames' documents (`sDoc`, `sFrameSetup`, `sDecorate`: tags on the parts of a preview, a glow on a new version, scroll restore across versions, link interception); under the sandbox it cannot, so those features are off. The code is guarded and the frames still show the output.
+- **Style sheets (D138, D155).** The team page links the regenerated `j2.css`, `sutra-graph.css` and `sutra-panel.css`; Home and the console link `j2-shell.css`, the frozen copy of the previous `j2.css` (`test_port_edits.py` pins its sha256, `tests/ui/test_shared_css.py` fails when a class a page uses is styled only by a sheet that page does not load). The Studio sheet scopes the chat bubbles and answer buttons to `#sview` and breaks D122's motion rules; `sutra-panel.css` restores the bubbles for the node panel (`.nmsg`) and overrides each offending declaration, and `motion_css.test.js` proves the coverage.
+- **Routes and the page's list.** `GET /d/{dept}/library` (HEAD too; `/d/{dept}/library/` redirects with 308) answers with the page, the CSP and the boot block of `/d/{dept}/` (D141). `J2_EXACT` of `sutra_ctx.js` has 33 names and `J2_PREFIXES` five (`/api/record`, `/api/settings`, `/view` and `/doc/` are the Studio's); it equals the routes of J2's own server file, which an opt-in test of `ctx.test.js` checks against an extraction.
+- **New and changed modules.** `output_pick.js` (D139) and `function_chat.js` (D148) are new; the box of a live function chat in `node_panel.js` and `agent_chats.js` has two modes, Note and Ask (Ask posts `POST /api/ask?dept=`); `chat_view.js` draws the ask lines ("You asked", "From its records, no AI call", "AI answer from its records"); `dept_ext.js` fills both team chips and raises no unread dot for an ask line.
+- **Known difference.** J2's page paints light first (a viewer who never chose gets light on the team page and dark on Home); not changed, it is J2's design.
 
 ## 6. The new views
 ### 6.1 Shared rules

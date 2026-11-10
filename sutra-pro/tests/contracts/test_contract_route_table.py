@@ -39,25 +39,17 @@ def j2_paths() -> tuple[list[str], list[str]]:
     return found[0], found[1]
 
 
-PATCHED_PATHS = {"/api/runlist", "/api/changes"}        # patch P13: not J2's, but team routes (sutra_ctx.js PATCHED_EXACT)
-
-
-def patched_paths() -> set[str]:
-    text = (UI / "static" / "js" / "sutra_ctx.js").read_text(encoding="utf-8")
-    return set(re.findall(r'"([^"]+)"', re.search(r"const PATCHED_EXACT = \[(.*?)\];", text, re.S).group(1)))
-
-
 def ui_matches(path: str) -> bool:
     exact, prefixes = j2_paths()
-    return path in exact or path in patched_paths() or any(path.startswith(p) for p in prefixes)
+    return path in exact or any(path.startswith(p) for p in prefixes)
 
 
 def literal_paths(files) -> set[str]:
-    """The path part of every string literal in `files` that starts like a route (`/api/`, `/site/`, `/file/`, `/shot/`): cut at the
+    """The path part of every string literal in `files` that starts like a route (`/api/`, `/site/`, `/file/`, `/shot/`, `/doc/`, `/view`): cut at the
     first `?`, `$`, quote or `#`, so "/api/chats/${id}/messages" gives "/api/chats/"."""
     found = set()
     for file in files:
-        for quote_char, body in re.findall(r"([\"'`])((?:/api/|/site/|/file/|/shot/)[^\"'`]*)", file.read_text(encoding="utf-8")):
+        for quote_char, body in re.findall(r"([\"'`])((?:/api/|/site/|/file/|/shot/|/doc/|/view)[^\"'`]*)", file.read_text(encoding="utf-8")):
             found.add(re.split(r"[?$#]", body)[0])
     return found
 
@@ -78,21 +70,20 @@ def all_templates(world: World) -> set[str]:
 
 # ---- the engine's table ----------------------------------------------------------------------------------------------------------
 
-def test_the_engine_serves_exactly_the_j2_routes_the_page_lists_plus_the_two_p13_routes_and_the_two_settings_routes(world):
+def test_the_engine_serves_exactly_the_j2_routes_the_page_lists_plus_the_two_settings_routes_and_the_capabilities_route(world):
     table = route_table(world.routers["engine"])
     exact, prefixes = j2_paths()
     gets = {path for (method, path) in table if method == "GET"}
     posts = {path for (method, path) in table if method == "POST"}
     templated = {path for path in gets if "{" in path}
     assert {path for (method, path) in table if method == "PUT"} == {SETTINGS_PATH}
-    assert patched_paths() == PATCHED_PATHS
-    assert len(gets - {SETTINGS_PATH, CAPABILITIES_PATH} - PATCHED_PATHS) == 22 and len(posts) == 5      # 22 GET paths (/site/{key} answers two rows)
-    assert len(table) == 22 + 5 + 2 + 2 + 1                                              # the last two: P13's /api/runlist and /api/changes
-    assert len(templated) == 4 and all(any(path.startswith(prefix) for prefix in prefixes) for path in templated)
+    assert len(gets - {SETTINGS_PATH, CAPABILITIES_PATH}) == 31 and len(posts) == 7      # 31 GET paths (/site/{key} answers two rows), J2 sync 4's included
+    assert len(table) == 31 + 7 + 2 + 1                                                  # the settings GET and PUT and the capabilities GET
+    assert len(templated) == 5 and all(any(path.startswith(prefix) for prefix in prefixes) for path in templated)
     for prefix in prefixes:
         assert any(path.startswith(prefix) for path in templated), prefix
-    assert (gets | posts) - templated - {SETTINGS_PATH, CAPABILITIES_PATH} - PATCHED_PATHS == set(exact)     # the page's list and the table name the same 23
-    assert PATCHED_PATHS <= gets
+    assert (gets | posts) - templated - {SETTINGS_PATH, CAPABILITIES_PATH} == set(exact)     # the page's list and the table name the same 33
+    assert len(exact) == 33 and len(prefixes) == 5
 
 
 def test_no_route_copy_under_a_team_path_and_no_team_header_or_cookie(world):
@@ -160,12 +151,13 @@ def test_no_two_routers_serve_the_same_method_and_path(world):
 
 def test_the_ui_alone_serves_the_pages(world):
     pages = {path for (_, path) in route_table(world.routers["ui"])}
-    assert pages == {"/", "/d/{dept}", "/d/{dept}/", "/console", "/favicon.ico"}
+    assert pages == {"/", "/d/{dept}", "/d/{dept}/", "/d/{dept}/library", "/d/{dept}/library/", "/console", "/favicon.ico"}      # the library page is the team's (D141)
     for name, router in world.routers.items():
         if name != "ui":
             assert not (pages & {path for (_, path) in route_table(router)}), name
     assert world.client.get("/", follow_redirects=False).status_code == 404            # the world mounts no UI: the engine serves no page
     assert world.client.get("/d/web/", follow_redirects=False).status_code == 404
+    assert world.client.get("/d/web/library", follow_redirects=False).status_code == 404
 
 
 def test_every_route_that_changes_something_depends_on_the_one_write_guard(world):

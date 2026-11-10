@@ -1,6 +1,6 @@
 """The patches of the vendored J2 (work package E1, engine design 3.4): P2 role-file folder, P3 explicit run folder and id,
 P4 non-blocking user_says and apply_override, P5 explicit-path memory and saved-run functions, P7 tagged model calls,
-P8 hooks, P9 the system addendum. J2 runs in mock mode with its Chrome checks faked (as J2's own `--fast` flow does), so a
+P8 hooks, P9 the system addendum, P16 Decide for me's settings file. J2 runs in mock mode with its Chrome checks faked (as J2's own `--fast` flow does), so a
 whole Brew Lab run takes about a tenth of a second. P1 (imports) and P10 (the library lock) are in test_engine_vendor.py and
 test_engine_library_lock.py, P11 (rehydrate) in test_engine_rehydrate.py."""
 import contextlib
@@ -18,8 +18,9 @@ from pathlib import Path
 import pytest
 
 ENGINE = "sutra_app.engine"
-J2_MODULES = ("j2", "j2_agent", "j2_artifact_models", "j2_artifacts", "j2_board", "j2_change", "j2_check", "j2_map",
-              "j2_realization", "j2_rules", "j2_schema", "j2_send", "j2_story", "j2_template_lib", "rehydrate")
+J2_MODULES = ("j2", "j2_agent", "j2_agent_models", "j2_agent_views", "j2_artifact_models", "j2_artifacts", "j2_board", "j2_change",
+              "j2_check", "j2_map", "j2_realization", "j2_rules", "j2_schema", "j2_send", "j2_story", "j2_studio", "j2_template_lib",
+              "rehydrate")
 BREW_LAB = ("A one-page website for Brew Lab, a small specialty coffee shop in Indiranagar, Bengaluru. Visitors should "
             "see the menu with prices, the opening hours, and where to find us, and be able to pre-order a coffee for "
             "pickup. It should feel warm and modern and work well on a phone. Include a section about our beans and the "
@@ -749,3 +750,74 @@ def test_p9_an_addendum_that_raises_or_is_not_text_is_empty(j2, make_run, mock_m
     say(run, BREW_LAB)
     assert system_prompts(run) == system_prompts(plain)
     assert "hook system_addendum failed: KeyError" in capsys.readouterr().err
+
+
+# ---- P16: Decide for me adds its key to the settings file the host wrote; it never replaces the file ---------------------------------
+HOST_SETTINGS = {"realization": True, "record_mode": "log", "nested": {"a": [1, 2]}}      # keys of the host's own resolved-settings dump
+
+
+def settings_of(run):
+    return json.loads((Path(run.dir) / "settings.json").read_text(encoding="utf-8"))
+
+
+def host_wrote(run, content=HOST_SETTINGS):
+    """What the engine host does before J2 starts: the resolved engine settings go to <run>/settings.json."""
+    Path(run.dir).mkdir(parents=True, exist_ok=True)
+    (Path(run.dir) / "settings.json").write_text(content if isinstance(content, str) else json.dumps(content), encoding="utf-8")
+
+
+def test_p16_decide_for_me_on_at_the_start_adds_its_key_and_keeps_the_hosts_dump(j2, make_run):
+    run = make_run()
+    host_wrote(run)
+    run.set_auto(True)                                   # nothing has been said yet: the switch writes nothing
+    assert settings_of(run) == HOST_SETTINGS
+    say(run, BREW_LAB)                                   # the run's first turn writes `decide_for_me` next to the host's keys
+    assert settings_of(run) == {**HOST_SETTINGS, "decide_for_me": True}
+
+
+def test_p16_switching_it_on_and_off_later_keeps_the_hosts_dump_too(j2, make_run):
+    run = make_run()
+    host_wrote(run)
+    say(run, BREW_LAB)
+    assert settings_of(run) == HOST_SETTINGS, "off: J2 writes nothing at the start"
+    run.set_auto(True)
+    assert settings_of(run) == {**HOST_SETTINGS, "decide_for_me": True}
+    run.set_auto(False)
+    assert settings_of(run) == {**HOST_SETTINGS, "decide_for_me": False}
+
+
+def test_p16_without_a_host_file_the_file_is_j2s_own_one_key(j2, make_run):
+    run = make_run()
+    run.set_auto(True)
+    say(run, BREW_LAB)
+    assert settings_of(run) == {"decide_for_me": True}
+
+
+@pytest.mark.parametrize("torn", ["{not json", "", "   "])
+def test_p16_a_settings_file_that_is_not_json_reads_as_empty(j2, make_run, torn):
+    run = make_run()
+    host_wrote(run, torn)
+    run.set_auto(True)
+    say(run, BREW_LAB)
+    assert settings_of(run) == {"decide_for_me": True}
+
+
+def test_p16_a_saved_run_reads_decide_for_me_back_from_the_merged_file(j2, make_run):
+    on, off = make_run(), make_run()
+    for run, flag in ((on, True), (off, False)):
+        host_wrote(run)
+        run.set_auto(flag)
+        say(run, BREW_LAB)
+    assert j2.saved_snapshot_dir(str(on.dir), on.run_id)["decide_for_me"] is True
+    assert j2.saved_snapshot_dir(str(off.dir), off.run_id)["decide_for_me"] is False
+    assert settings_of(on)["nested"] == HOST_SETTINGS["nested"] and "decide_for_me" not in settings_of(off)
+
+
+def test_p16_the_records_hook_gets_the_merged_file(j2, make_run):
+    rec = recorder()
+    run = make_run(hooks=rec)
+    host_wrote(run)
+    run.set_auto(True)
+    say(run, BREW_LAB)
+    saved = [data for name, data in [c[1:3] for c in rec.calls if c[0] == "record_saved"] if name == "settings.json"]
+    assert saved == [{**HOST_SETTINGS, "decide_for_me": True}]

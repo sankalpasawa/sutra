@@ -1,6 +1,6 @@
 """Rows 31 and 32: the engine settings the owner edits in Settings (engine design 7.1, S1-contracts-03, D18).
 
-    GET /api/engine/settings[?dept=]   {schema, defaults, global, department (only with dept), effective, editable, locked}
+    GET /api/engine/settings[?dept=]   {schema, defaults, global, department and next_run (only with dept), effective, editable, locked}
     PUT /api/engine/settings[?dept=]   {"set": {field: value}, "unset": [field]}   (token required)
     GET /api/engine/capabilities       {schema, capabilities: [{name, outputs, settings}], outputs}: what the engine can do (D126)
 
@@ -10,6 +10,10 @@ refuses unknown and `LOCKED_FIELDS` (live email, recipients, the Chrome path, th
 `validation`, proves the whole file still validates, and writes it by temp file and rename with mode 0600. A change applies to
 the NEXT run of that scope: the host reads the files once at start and writes `<run>/settings.json`. These are new routes, so
 errors are the envelope `{error: {code, message, details}}`; an unreadable settings file is 422 `validation` naming the file.
+
+With a team the body also has `next_run` (J2 sync 4, D139): what the team's next run would use, the start page's choice included
+(`ctx.effective_settings`: `engine.json`, the team's file and `page.json` layered). Today it holds `output`, which the start page's
+"What should we make?" select shows, so a reload shows what was picked. Additive: nothing else of the body changes.
 """
 import json
 import os
@@ -28,7 +32,7 @@ from .. import capabilities
 from ..paths import DataPaths
 from ..spec import EDITABLE_FIELDS, LOCKED_FIELDS, SETTINGS_SCHEMA, EngineSettings, SettingsError, read_settings_file
 from .commands import read_json_body
-from .ctx import dept_dependency
+from .ctx import dept_dependency, effective_settings
 from .reply import json_reply, to_response, validation
 
 __all__ = ["add_routes", "settings_view", "apply_change", "settings_file", "capabilities_view", "CAPABILITIES_SCHEMA"]
@@ -65,6 +69,8 @@ def settings_view(data_dir, dept_id: Optional[str]) -> dict:
     if dept_id:
         body["department"] = dept_file
     body.update(effective=effective.model_dump(), editable=list(EDITABLE_FIELDS), locked=list(LOCKED_FIELDS))
+    if dept_id:
+        body["next_run"] = {"output": effective_settings(data_dir, dept_id).output}
     return body
 
 

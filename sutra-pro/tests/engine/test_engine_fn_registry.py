@@ -321,8 +321,8 @@ def fresh_j2(base: Path):
     """The vendored J2 imported anew in mock mode with its paths under `base`; the modules are put back afterwards."""
     from sutra_app.engine import llm
     package = importlib.import_module(ENGINE)
-    names = ("j2", "j2_agent", "j2_artifact_models", "j2_artifacts", "j2_board", "j2_change", "j2_check", "j2_map", "j2_realization",
-             "j2_rules", "j2_schema", "j2_send", "j2_story", "j2_template_lib", "rehydrate")
+    names = ("j2", "j2_agent", "j2_agent_models", "j2_agent_views", "j2_artifact_models", "j2_artifacts", "j2_board", "j2_change", "j2_check",
+             "j2_map", "j2_realization", "j2_rules", "j2_schema", "j2_send", "j2_story", "j2_studio", "j2_template_lib", "rehydrate")
     saved = {name: (sys.modules.pop(f"{ENGINE}.{name}", None), package.__dict__.pop(name, None)) for name in names}
     with pytest.MonkeyPatch.context() as mp:
         for name in list(os.environ):

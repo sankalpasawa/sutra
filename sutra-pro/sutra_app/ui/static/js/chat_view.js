@@ -18,6 +18,10 @@
    the files git saw change in the owner's folder (nothing at all when git could not say) and "Open the full report", a real link to the team page's Preview tab
    for that run; the done card in the org chat gets "Open the report", the same link.
 
+   The owner's questions to a function and its answers (J2 sync 4, D148) are lines of that function's chat, drawn by the messages route with `ask`: "q" is the
+   owner's own line, labelled "You asked"; "records" and "model" are the function's answer, with a small label that says where it came from ("From its records,
+   no AI call", "AI answer from its records"). Every such line carries data-ask. A note to an agent (`steer`) is drawn as it was.
+
    A classic script with ONE global, ChatView (see sutra_ctx.js for why); in node it is module.exports. */
 (function (root) {
   "use strict";
@@ -45,6 +49,7 @@
   const TASK_WORDS = freeze({queued: "queued", starting: "starting", running: "running", waiting_user: "waiting for you", done: "done",
     done_with_open_items: "done, with open items", stopped: "stopped", crashed: "crashed"});
   const KIND_WORDS = freeze({department: "team", division: "division", root: "root", function: "function", step: "step"});
+  const ASK_WORDS = freeze({q: "You asked", records: "From its records, no AI call", model: "AI answer from its records"});          // D148: a question and where its answer came from
   const BUSY = "The team is working. You can write again when it asks you something or is done";
   const ONE_AT_A_TIME = "I answer your messages one at a time.";
   const DEFAULT_PLACEHOLDER = "Write a message\u2026";
@@ -392,6 +397,9 @@
   // team's chat says where it came from.
   const passedOnHtml = m => (Number.isInteger(m.passed_on) && m.passed_on > 0 ? '<small class="npassed">Passed on from your chat with Sutra</small>' : "");
 
+  // The owner's question to a function ("q"), or the answer of the function ("records": from its records alone, "model": a model read them), or "".
+  const askOf = m => (isObj(m) && hasOwn(ASK_WORDS, m.ask) ? m.ask : "");
+
   // answersOf(messages, o) -> {message id: the answer}: the cards of a transcript the owner has dealt with, for transcript()'s `answers`. An answer is
   // the words of the owner line that answered ("Yes"), or "" for a card that reads just "Answered". o {local, needs, needsLoaded}: `local` is what the
   // owner clicked on this page; a card the server says was answered (`answered_by`, the owner line of a pressed button; an approval decided without
@@ -452,14 +460,17 @@
       const cardIn = kind === "card" && isObj(m.card) ? m.card : null;
       const dept = (cardIn && clean(cardIn.dept_name)) || clean(o.deptName);
       const label = whoLabel(who, {deptName: clean(s.kind) === "org" || cardIn ? dept : ""});
-      const attrs = ' data-id="' + esc(text(m.id)) + '" data-who="' + esc(who) + '" data-kind="' + esc(kind) + '" data-state="' + esc(clean(m.state) || "ok") + '"';
+      const ask = askOf(m);
+      const attrs = ' data-id="' + esc(text(m.id)) + '" data-who="' + esc(who) + '" data-kind="' + esc(kind) + '" data-state="' + esc(clean(m.state) || "ok") + '"' +
+        (ask !== "" ? ' data-ask="' + ask + '"' : "");
       const klass = bubbleClass(m) + (clean(m.state) === "pending" ? " pending" : "");
       if (bubbleClass(m) === "nmsg sb me") {
         const picked = /^Option (\d+)$/.exec(text(m.text).trim());
         const chosen = picked && asked && asked.qs[0] && asked.qs[0].opts[Number(picked[1]) - 1];
         const failed = clean(m.state) === "error";
         const att = attachedOf(m.text);
-        return '<div class="' + klass + (failed ? " failed" : "") + '"' + attrs + ">" + passedOnHtml(m) + safeText(chosen ? clean(chosen) : att.text) + attachedHtml(att.names) +
+        return '<div class="' + klass + (failed ? " failed" : "") + '"' + attrs + ">" + passedOnHtml(m) + (ask === "q" ? '<small class="nask">' + ASK_WORDS.q + "</small>" : "") +
+          safeText(chosen ? clean(chosen) : att.text) + attachedHtml(att.names) +
           (failed ? '<div class="nerr">Something went wrong. Try again.' + (clean(s.kind) === "org" ? ' <button type="button" class="linkbtn" data-act="retry">Retry</button>' : "") + "</div>" : "") + "</div>";
       }
       if (kind === "note" || kind === "error" || bubbleClass(m) === "nmsg sys") return '<div class="' + klass + '"' + attrs + ">" + safeText(text(m.text)) + retryOf(m) + "</div>";
@@ -480,6 +491,7 @@
       }
       // a settled provider turn: its tool calls fold into ONE row (ChatFold, ABS-10); nothing is drawn while the message is pending
       if (root.ChatFold && Array.isArray(m.blocks) && m.blocks.length > 0) inner += root.ChatFold.fold(m.blocks, {settled: clean(m.state) !== "pending"});
+      if (ask === "records" || ask === "model") inner += '<span class="nasksrc">' + ASK_WORDS[ask] + "</span>";
       return '<div class="' + klass + '"' + attrs + "><small>" + esc(label) + "</small>" + inner + "</div>";
     };
     return list.map((m, i) => ({key: text(m.id) !== "" ? "m" + text(m.id) : "i" + i, html: html(m, i)}));
@@ -530,7 +542,8 @@
 
   const providerLabel = connector => (hasOwn(PROVIDERS, connector) ? PROVIDERS[connector] : clean(connector));
 
-  const ChatView = {transcript, transcriptItems, card, answersOf, composerState, workdirChip, safeText, whoLabel, parseAsk, stripTag, providerLabel, attachedOf, BUSY, ONE_AT_A_TIME, PROVIDERS, PERSONA};
+  const ChatView = {transcript, transcriptItems, card, answersOf, composerState, workdirChip, safeText, whoLabel, parseAsk, stripTag, providerLabel, attachedOf, askOf, BUSY, ONE_AT_A_TIME, ASK_WORDS,
+    PROVIDERS, PERSONA};
   if (typeof module === "object" && module !== null && module.exports) module.exports = ChatView;
   else root.ChatView = ChatView;
 })(globalThis);

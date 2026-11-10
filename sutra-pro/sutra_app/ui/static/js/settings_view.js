@@ -98,7 +98,7 @@
     change: ["Change requests", "Allow a change request on a finished run"],
     board: ["Board story", "Show the Board and its story"],
     artifact_schema: ["Artifact schema", "Check artifacts against their schema"],
-    template_library: ["Template library", "Builders use the template library"],
+    template_library: ["Template library", "Builders use the template library. While this is off, the catalog's \"By run\" list shows J2's eight development runs only."],
     tap_min: ["Smallest tap target (px)", "The least size a button may have on a phone"],
     send_mode: ["Email sending", "dry-run writes no email"],
     send_cap: ["Emails per run", ""],

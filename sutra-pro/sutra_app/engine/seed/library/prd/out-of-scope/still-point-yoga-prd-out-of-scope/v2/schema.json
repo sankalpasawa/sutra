@@ -1,0 +1,33 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "additionalProperties": false,
+  "properties": {
+    "heading": {
+      "description": "the section heading",
+      "type": "string"
+    },
+    "out_of_scope": {
+      "description": "what the page will not have, one line each: teacher names, a phone number, an embedded map, online payment",
+      "items": {
+        "type": "string"
+      },
+      "type": "array"
+    },
+    "online_payment_exclusion": {
+      "description": "the fact stated exactly: No online payment is taken",
+      "type": "string"
+    },
+    "assumptions": {
+      "description": "anything assumed; nothing beyond the brief and the answers",
+      "items": {
+        "type": "string"
+      },
+      "type": "array"
+    }
+  },
+  "required": [
+    "heading",
+    "online_payment_exclusion"
+  ],
+  "type": "object"
+}
