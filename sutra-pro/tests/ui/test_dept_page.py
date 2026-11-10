@@ -17,7 +17,9 @@ Two kinds of test:
             and a deep link (`?tab=`, `#tab`) opens the Detailed view by itself. New here: both strips, the start page's output choice, the function chat of
             J2's panel with a question that was asked before, a question typed there, Esc with the node panel open, the rail's Artifacts flyout, a part's
             record, the Decide for me switch, the team's library page, and the attention pill clear of every control of the Simple view at a laptop and a phone width, drawn by its own
-            rules (an atom's status pill by the atoms') and clear of the team strip's name from 320 to 1920 px, light and dark.
+            rules (an atom's status pill by the atoms') and clear of the team strip's name from 320 to 1920 px, light and dark; in the Detailed view it has a row of its own above
+            the Needs you box at 900 px and under and is clear of every control from 320 to 1920 px, light and dark, with the chat closed and open; the library page draws no empty Needs
+            you box, and from 901 px its catalog's card ends above the pill.
 """
 from __future__ import annotations
 
@@ -966,8 +968,8 @@ def test_the_attention_pill_is_drawn_by_its_own_rules_and_an_atoms_status_pill_b
 
 # The pill with the most to say ("2 need you, 1 to try again") and the longest team name the strip is asked to hold, in the Simple view at every width from a small phone to a wide
 # screen, in both themes (the colours differ, the boxes do not), with Asha's panel closed and open: no control of J2's under the pill, the pill on screen and under a click, the
-# name's text (every line of it) and "All teams" stopping short of it, no sideways scroll. Measured on the live page, by box. (The Detailed view is not swept: from 600 to 900 px
-# the pill covers part of J2's "Answer in Chat" button there, and on a 320 or 375 px console page two of the console's links, as they did before the pill got its own rules.)
+# name's text (every line of it) and "All teams" stopping short of it, no sideways scroll. Measured on the live page, by box. (The Detailed view is swept by the case after this one,
+# the console in test_dept_attention.py.)
 PILL_AND_STRIP = r"""(() => {
   const drawn = el => { const s = getComputedStyle(el); return s.display !== "none" && s.visibility !== "hidden" && el.getClientRects().length > 0; };
   const apart = (a, b) => a.right <= b.left || b.right <= a.left || a.bottom <= b.top || b.bottom <= a.top;
@@ -1018,6 +1020,139 @@ def test_the_attention_pill_and_the_team_strip_clear_each_other_from_320_to_1920
                 clear = seen["gap"] is not None and seen["gap"] >= 8 and seen["linkApart"] is True               # 8 px between the name's text and the pill, at least
                 if seen["over"] or not (seen["inside"] and seen["clickable"] and clear) or seen["sideways"]:
                     problems.append((theme, width, "Asha's panel open" if chat else "closed", seen))
+    assert problems == [], problems
+    assert team.b.console_errors == [] and team.b.failed_requests == []
+
+
+# The pill in the Detailed view of a team page (and, in test_dept_attention.py, on the console), measured the way the D1 cases measure it in the Simple view: against every control the page draws
+# and the regions that hold them, its box on screen, a click in its middle reaching it, and the controls it must not sit on taking their own clicks. `under` is what the pill is visibly on
+# (the layer right below it, at some point of its box, is the control: a control that J2's chat panel covers while the chat is open is not under the pill, a control the pill hides is);
+# `over` is the plainer test, any control whose box meets the pill's, and is asked where only the pill can cover a control (the chat closed, the pill in a row of its own at the top).
+PILL_AGAINST_THE_PAGE = r"""(() => {
+  const drawn = el => { const s = getComputedStyle(el); return s.display !== "none" && s.visibility !== "hidden" && el.getClientRects().length > 0; };
+  const label = el => el.tagName.toLowerCase() + (el.id ? "#" + el.id : "") + " \"" + (el.innerText || el.getAttribute("aria-label") || "").trim().replace(/\s+/g, " ").slice(0, 24) + "\"";
+  const apart = (a, b) => a.right <= b.left || b.right <= a.left || a.bottom <= b.top || b.bottom <= a.top;
+  const pill = document.querySelector("#attnpill a.apill");
+  const p = pill.getBoundingClientRect();
+  const controls = Array.from(document.querySelectorAll("button, a[href], input, textarea, select, summary, [role=switch], [role=tab], [tabindex]:not([tabindex='-1'])"))
+    .filter(el => !el.closest("#attnpill") && drawn(el) && el.getBoundingClientRect().width > 0 && el.getBoundingClientRect().height > 0);
+  const under = el => {
+    const b = el.getBoundingClientRect();
+    const x0 = Math.max(b.left, p.left), x1 = Math.min(b.right, p.right), y0 = Math.max(b.top, p.top), y1 = Math.min(b.bottom, p.bottom);
+    if (x1 <= x0 || y1 <= y0) return false;
+    for (let i = 0; i < 8; i++) for (let j = 0; j < 4; j++) {
+      const stack = document.elementsFromPoint(x0 + (x1 - x0) * (i + .5) / 8, y0 + (y1 - y0) * (j + .5) / 4);
+      if (!stack.length || stack[0].closest("a.apill") !== pill) continue;                        // that point of the box is outside the pill's rounded shape
+      const below = stack.find(e => !e.closest("#attnpill"));
+      if (below && el.contains(below)) return true;
+    }
+    return false;
+  };
+  const named = __NAMED__;
+  const regions = __REGIONS__.flatMap(sel => Array.from(document.querySelectorAll(sel))).filter(drawn);
+  const missing = named.filter(sel => !(document.querySelector(sel) && drawn(document.querySelector(sel))));
+  const stolen = named.filter(sel => { const el = document.querySelector(sel); if (!el || !drawn(el)) return false; const b = el.getBoundingClientRect();
+    const at = document.elementFromPoint(b.left + b.width / 2, b.top + b.height / 2); return !(at && el.contains(at)); });
+  const middle = document.elementFromPoint(p.left + p.width / 2, p.top + p.height / 2);
+  return {
+    width: innerWidth, box: [p.left, p.top, p.right, p.bottom].map(Math.round), swept: controls.length,
+    over: controls.filter(el => !apart(p, el.getBoundingClientRect())).map(label), under: controls.filter(under).map(label),
+    regions: regions.filter(el => !apart(p, el.getBoundingClientRect())).map(label), missing, stolen,
+    inside: p.left >= 0 && p.top >= 0 && p.right <= innerWidth && p.bottom <= innerHeight,
+    clickable: !!middle && middle.closest("a.apill") === pill, sideways: document.documentElement.scrollWidth > innerWidth,
+  };
+})()"""
+
+
+def measure_the_pill(browser: Any, named: Any = (), regions: Any = ()) -> dict:
+    """The pill's place on the page in `browser`: `named` are controls that must be drawn and take a click in their middle, `regions` the boxes the pill must stay out of."""
+    return browser.js(PILL_AGAINST_THE_PAGE.replace("__NAMED__", json.dumps(list(named))).replace("__REGIONS__", json.dumps(list(regions))))
+
+
+def pill_problems(seen: dict, *, boxes: bool, regions: bool) -> list[str]:
+    """What is wrong with the pill's place in one measurement (an empty list: nothing). `boxes` asks the plainer test too (no control's box meets the pill's), `regions` that no region does."""
+    out = []
+    if seen["missing"]:
+        out.append(f"not drawn: {seen['missing']}")
+    if seen["under"]:
+        out.append(f"on {seen['under']}")
+    if boxes and seen["over"]:
+        out.append(f"meets {seen['over']}")
+    if regions and seen["regions"]:
+        out.append(f"meets the region of {seen['regions']}")
+    if seen["stolen"]:
+        out.append(f"takes the click of {seen['stolen']}")
+    if not seen["inside"]:
+        out.append(f"is off the screen at {seen['box']}")
+    if not seen["clickable"]:
+        out.append("is not what a click in its middle reaches")
+    if seen["sideways"]:
+        out.append("the page scrolls sideways")
+    return out
+
+
+def pill_sweep_height(width: int) -> int:
+    return 812 if width <= 600 else (1080 if width >= 1900 else 860)
+
+
+PILL_ROW_WIDTH = 900                                                              # up to here the pill rides in a row at the top (below, in the corner above J2's Chat button)
+DETAIL_REGIONS = ["#needs", "#dview main", "#rail"]                                # the Needs you box, the page's cards and the icon rail: what the pill's row keeps clear of
+CHAT_SLID_IN = ("(() => { const r = document.getElementById('send').getBoundingClientRect(); return r.left >= 0 && r.right <= innerWidth; })() "
+                "&& document.getElementById('attnpill').getAnimations().length === 0")      # J2's chat panel is in place and the pill has stopped moving (it moves under the panel's header)
+
+
+def detail_ready(team: Page, text: str) -> None:
+    team.b.wait_for("!!document.querySelector('#attnpill a.apill') && document.querySelector('#attnpill a.apill').textContent === " + json.dumps(text)
+                    + " && !!document.querySelector('#needs [data-needmsg]')")
+
+
+DETAIL_WIDTHS = [(320, 812), (375, 812), (414, 812), (480, 812), (600, 812), (768, 860), (900, 860)]
+
+
+@browser_only
+@pytest.mark.parametrize("width, height", DETAIL_WIDTHS, ids=[str(w) for w, _ in DETAIL_WIDTHS])
+def test_the_attention_pill_has_a_row_of_its_own_above_the_needs_you_box_of_the_detailed_view(team, width, height):
+    """At 900px and under the pill rode at 58px from the top, where J2's Detailed view has no header: it sat on the Needs you box, over the question and, from 414 to 900px wide, over the
+    "Answer in Chat" button (the button's middle gave the click to the pill, which goes to Home). The page keeps a row for it above that box now: no control and no region of the page is
+    under the pill, the button takes its own click (it opens the chat and the page stays), and with the chat open (a panel over the page here) the pill sits clear of the panel's buttons."""
+    team.b.set_size(width, height)
+    team.open(view="detail")
+    detail_ready(team, "1 needs you")
+    seen = measure_the_pill(team.b, ["#needs [data-needmsg]", "#chatfab"], DETAIL_REGIONS)
+    assert seen["missing"] == [] and seen["swept"] > 15, seen                      # the controls to clear are really on screen
+    assert pill_problems(seen, boxes=True, regions=True) == [], seen
+    team.b.click("#needs [data-needmsg]")                                          # a real click in the middle of the button: it opens the chat, the page does not go to Home
+    team.b.wait_for("CHAT.on === true")
+    assert team.js("location.pathname") == f"/d/{DEPT}/"
+    team.b.wait_for(CHAT_SLID_IN)
+    opened = measure_the_pill(team.b, ["#chatx"], [])
+    assert pill_problems(opened, boxes=False, regions=False) == [], opened
+    assert team.b.console_errors == [] and team.b.failed_requests == []
+
+
+@browser_only
+def test_the_attention_pill_is_clear_of_the_detailed_view_from_320_to_1920_wide_in_both_themes(team):
+    """The pill with the most to say ("2 need you, 1 to try again") in the Detailed view at every width from a small phone to a wide screen, in both themes, with the chat closed and open: no
+    control of J2's under the pill, the pill on screen and under a click, J2's Chat button, Answer in Chat and the chat's close button taking their own clicks, no sideways scroll; at 900px
+    and under, where the pill rides in a row at the top, no control's box and none of the Needs you box, the cards and the rail meets it either."""
+    team.fake.request("POST", "/__fake/heads-up", {"items": [CRASH_ELSEWHERE]})           # one thing for the owner here and one problem elsewhere
+    problems: list[tuple] = []
+    for theme in ("light", "dark"):
+        team.b.set_theme(theme)
+        for width in PILL_WIDTHS:
+            team.b.set_size(width, pill_sweep_height(width))
+            team.open(view="detail")
+            detail_ready(team, "2 need you 1 to try again")
+            row = width <= PILL_ROW_WIDTH
+            for chat in (False, True):
+                if chat:
+                    team.js("chatSet(true)")
+                    team.b.wait_for(CHAT_SLID_IN)
+                seen = measure_the_pill(team.b, ["#chatx"] if chat else ["#needs [data-needmsg]", "#chatfab"], DETAIL_REGIONS if row and not chat else [])
+                found = pill_problems(seen, boxes=row and not chat, regions=row and not chat)
+                if found:
+                    problems.append((theme, width, "chat open" if chat else "chat closed", found, seen["box"]))
+            team.js("chatSet(false, false)")                                               # J2 remembers an open chat: the next load starts the way this one ends
     assert problems == [], problems
     assert team.b.console_errors == [] and team.b.failed_requests == []
 
@@ -1091,4 +1226,128 @@ def test_the_teams_library_page_is_the_same_page_and_draws_the_catalog_of_the_on
     assert team.js("document.body.classList.contains('libpage')") is True and team.hidden("#pane-catalog") is False
     shown = team.js("document.getElementById('pane-catalog').innerText")
     assert all(run["run"] in shown for run in catalog["runs"]) and "By run" in shown and "By artifact" in shown      # every run that gave the library a template, from catalog.json
+    assert team.b.console_errors == [] and team.b.failed_requests == []
+
+
+# What is drawn of J2's Needs you box (`#needs`). J2's page hides it on the library page with the `hidden` attribute ("no run here: nothing needs you"), and J2's own
+# `.needs{display:flex}` is an author rule, which beats the browser's `[hidden]{display:none}`: an empty bordered box was drawn above the catalog.
+NEEDS_BOX = r"""(() => {
+  const el = document.getElementById("needs"), r = el.getBoundingClientRect();
+  return {hidden: el.hidden, display: getComputedStyle(el).display, drawn: el.getClientRects().length > 0, height: Math.round(r.height), children: el.children.length,
+          text: el.innerText.trim().replace(/\s+/g, " "), asks: el.querySelectorAll("[data-needmsg]").length,
+          anyDrawn: Array.from(document.querySelectorAll(".needs")).filter(e => e.getClientRects().length > 0).length};
+})()"""
+NEEDS_SIZES = [(1280, 860), (375, 812)]
+
+
+@pytest.fixture()
+def idle_team(finished_team, fake_server, monkeypatch) -> Page:
+    """The finished team with nothing left to answer: J2 also reads a paused message of Identity at the end of the chat as a question, so the pause is taken off the transcript too."""
+    j2 = fake_server.state.fx.j2
+    snapshot = json.loads(j2.raw("state.json"))                      # the finished run of `finished_team`
+    for line in snapshot["chat"]:
+        line.pop("pause", None)
+    monkeypatch.setitem(j2._cache, "state.json", json.dumps(snapshot).encode())
+    return finished_team
+
+
+@browser_only
+@pytest.mark.parametrize("width, height", NEEDS_SIZES, ids=[str(w) for w, _ in NEEDS_SIZES])
+def test_the_library_page_draws_no_empty_needs_you_box(team, width, height):
+    """There is no run on the library page, so J2's script hides the Needs you box and never paints into it. The box is `hidden` and has no child, and it is not drawn: no bordered
+    strip of 18px (the box's padding and border) sits above the catalog at a laptop or a phone width."""
+    team.b.set_size(width, height)
+    team.b.goto(f"{team.server.url}/d/{DEPT}/library")
+    team.b.wait_for("window.DeptExt !== undefined && DeptExt.state().started === true")
+    team.b.wait_for("CAT.loaded === true")
+    seen = team.js(NEEDS_BOX)
+    assert seen["hidden"] is True and seen["children"] == 0 and seen["text"] == "", seen            # J2's page hid an empty box: that is what is measured
+    assert (seen["display"], seen["drawn"], seen["anyDrawn"], seen["height"]) == ("none", False, 0, 0), seen
+    assert team.hidden("#pane-catalog") is False and team.js("document.body.classList.contains('libpage')") is True       # and this is the library page, with its catalog
+    assert team.b.console_errors == [] and team.b.failed_requests == []
+
+
+@browser_only
+@pytest.mark.parametrize("width, height", NEEDS_SIZES, ids=[str(w) for w, _ in NEEDS_SIZES])
+@pytest.mark.parametrize("asked", [True, False], ids=["a question", "nothing to answer"])
+def test_a_team_page_still_draws_its_needs_you_box(request, asked, width, height):
+    """What hides the box on the library page does not reach a team page: with a question for the owner it is drawn with the question and its "Answer in Chat" button, and with nothing to
+    answer (a run that finished) it is drawn as J2 draws it, "Nothing needs you right now"."""
+    team = request.getfixturevalue("team" if asked else "idle_team")
+    team.b.set_size(width, height)
+    team.open(view="detail")
+    team.b.wait_for("!!document.querySelector('#needs .needbadge')")
+    seen = team.js(NEEDS_BOX)
+    assert seen["hidden"] is False and seen["display"] == "flex" and seen["drawn"] is True and seen["anyDrawn"] == 1 and seen["height"] > 40, seen
+    if asked:
+        assert seen["asks"] == 1 and seen["text"].startswith("Needs you 1 "), seen
+    else:
+        assert seen["asks"] == 0 and seen["text"].startswith("Needs you 0 Nothing needs you right now."), seen
+    assert team.b.console_errors == [] and team.b.failed_requests == []
+
+
+# The library page from 901px: J2 stops its content card 76px above the bottom of the window (room for the Chat button) and the pill rides 10px above that button, so the pill's box (34px
+# tall, 102px to 68px from the bottom) was 26px inside the card: it covered the catalog's last row buttons, at 901px with the chat closed and open and at 1024 and 1280px with it open (8 of the
+# 20 cells from 901px, light and dark; at other heights of the window, 600 to 1300px, 8 of 18 cells, which rows are under it depends on the height). While the pill shows, the card now ends above it.
+LIBRARY_CARD_AND_PILL = r"""(() => {
+  const card = document.querySelector("#dview .work").getBoundingClientRect(), pill = document.querySelector("#attnpill a.apill"), main = document.querySelector("#dview main");
+  return {card: Math.round(card.bottom), pill: pill ? Math.round(pill.getBoundingClientRect().top) : null, pad: getComputedStyle(main).paddingBottom, height: innerHeight};
+})()"""
+
+
+def library_ready(team: Page, text: str | None = None) -> None:
+    team.b.goto(f"{team.server.url}/d/{DEPT}/library")
+    team.b.wait_for("window.DeptExt !== undefined && DeptExt.state().started === true")
+    team.b.wait_for("CAT.loaded === true")
+    if text:
+        team.b.wait_for("!!document.querySelector('#attnpill a.apill') && document.querySelector('#attnpill a.apill').textContent === " + json.dumps(text))
+
+
+@browser_only
+def test_the_attention_pill_is_clear_of_the_library_page_from_901_to_1920_wide_in_both_themes(team):
+    """The pill with the most to say on the library page at every width from 901px, in both themes, with the chat closed and open: no control of the catalog is under the pill, the pill is on
+    screen and under a click, J2's Chat button (the chat's close button while it is open) takes its own click, no sideways scroll, and the card of the catalog ends above the pill's top."""
+    team.fake.request("POST", "/__fake/heads-up", {"items": [CRASH_ELSEWHERE]})           # one thing for the owner here and one problem elsewhere
+    problems: list[tuple] = []
+    for theme in ("light", "dark"):
+        team.b.set_theme(theme)
+        for width in [w for w in PILL_WIDTHS if w > PILL_ROW_WIDTH]:
+            team.b.set_size(width, pill_sweep_height(width))
+            library_ready(team, "2 need you 1 to try again")
+            for chat in (False, True):
+                if chat:
+                    team.js("chatSet(true)")
+                    team.b.wait_for(CHAT_SLID_IN)
+                seen = measure_the_pill(team.b, ["#chatx"] if chat else ["#chatfab"], [])
+                found = pill_problems(seen, boxes=False, regions=False)                    # the catalog's list rows are clipped by the card: what is under the pill is what is drawn there
+                edge = team.js(LIBRARY_CARD_AND_PILL)
+                if edge["card"] > edge["pill"]:
+                    found.append(f"the card of the catalog ends at {edge['card']}, under the pill's top at {edge['pill']}")
+                if found:
+                    problems.append((theme, width, "chat open" if chat else "chat closed", found, seen["box"]))
+            team.js("chatSet(false, false)")                                               # J2 remembers an open chat: the next load starts the way this one ends
+    assert problems == [], problems
+    assert team.b.console_errors == [] and team.b.failed_requests == []
+
+
+@browser_only
+def test_the_library_page_makes_room_for_the_attention_pill_only_while_it_shows_and_only_there(team):
+    """The 34px of room is the library page's, and only while the pill shows: with nothing for the owner the card keeps J2's own bottom edge (76px up, the Chat button's room), and the
+    Detailed view of a team page, with the pill, keeps J2's 76px too (its cards are the page's own to size)."""
+    team.b.set_size(1280, 860)
+    team.fake.stage("3")                                                           # the owner answered: nothing needs them, and the fake has no problem elsewhere
+    library_ready(team)
+    team.wait_requests("/api/needs-you", 1)
+    team.wait_requests("/api/heads-up", 1)
+    team.settle(0.5)                                                               # the first read is drawn
+    assert team.hidden("#attnpill") is True
+    idle = team.js(LIBRARY_CARD_AND_PILL)
+    assert (idle["pad"], idle["card"]) == ("76px", idle["height"] - 76), idle
+    team.fake.stage("2")
+    library_ready(team, "1 needs you")
+    shown = team.js(LIBRARY_CARD_AND_PILL)
+    assert (shown["pad"], shown["card"] <= shown["pill"]) == ("110px", True), shown
+    team.open(view="detail")
+    detail_ready(team, "1 needs you")
+    assert team.js(LIBRARY_CARD_AND_PILL)["pad"] == "76px"
     assert team.b.console_errors == [] and team.b.failed_requests == []

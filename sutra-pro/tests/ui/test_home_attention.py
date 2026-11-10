@@ -26,9 +26,7 @@ def lane_rows():
 
 
 def open_home(browser, fake, stage):
-    """Home on one stage. The fake backend has no GET /api/chats/{sid}/providers (the provider pill of ABS-9), so that one 404 is announced
-    here and its console line is left out of the checks; it is not this package's."""
-    browser.expect_failed("/api/chats/cs_org/providers", 404)
+    """Home on one stage."""
     load(browser, fake, stage=stage)
 
 

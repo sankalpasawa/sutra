@@ -357,7 +357,8 @@
    ],
    "tests": [
     "tests/contracts/test_contract_diagram_strings.py",
-    "tests/test_traceability.py"
+    "tests/test_traceability.py",
+    "tests/test_diagram_decisions.py"
    ]
   },
   {

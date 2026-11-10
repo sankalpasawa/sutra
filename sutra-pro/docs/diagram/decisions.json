@@ -520,6 +520,61 @@
   "anchor": null
  },
  {
+  "id": "D105",
+  "label": "one provider seam below every surface",
+  "anchor": "Connector router"
+ },
+ {
+  "id": "D106",
+  "label": "old Sutra: ported, not embedded",
+  "anchor": null
+ },
+ {
+  "id": "D107",
+  "label": "dropped and later: see design",
+  "anchor": null
+ },
+ {
+  "id": "D108",
+  "label": "transcript: segments, blocks, search, archive",
+  "anchor": "Chat sessions"
+ },
+ {
+  "id": "D109",
+  "label": "egress scrub (chat: replace, J2: observe)",
+  "anchor": "Connector router"
+ },
+ {
+  "id": "D110",
+  "label": "carry-over: window per model, J2 caps stay",
+  "anchor": "Connector router"
+ },
+ {
+  "id": "D111",
+  "label": "provider per chat; one mechanism",
+  "anchor": "Chat sessions"
+ },
+ {
+  "id": "D112",
+  "label": "DeepSeek later (D7)",
+  "anchor": "band:CONNECTOR LAYER"
+ },
+ {
+  "id": "D113",
+  "label": "old chats: import command, read only",
+  "anchor": "Operator"
+ },
+ {
+  "id": "D114",
+  "label": "J2 sync 2 and 3 (D114)",
+  "anchor": "J2 chips"
+ },
+ {
+  "id": "D115",
+  "label": "direct chat composer (D115)",
+  "anchor": "band:EXPERIENCE"
+ },
+ {
   "id": "D116",
   "label": "Electron window around the local server",
   "anchor": "Desktop app · Electron window"

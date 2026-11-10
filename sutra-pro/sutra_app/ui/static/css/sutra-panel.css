@@ -28,10 +28,10 @@ body.nodeopen #pane-map .mappanel{display:none}
 .nempty{margin:8px 0}
 
 /* ---- gap attention: the org-wide "N need you" pill in a corner of a team page and the console (attention_pill.js; Home has its strip). Below the
-   drawer (z-index 60); on a phone it sits under the header, clear of the message box and its Send button. The pulse is for a count that went up. The name `apill` is also the
-   status pill of an atom card (a span in `.atomcard`, further down); each set of rules is for its own place, so that neither draws the other. Where the pill rides in a row at
-   the top (a phone or tablet width, the Simple view's strip) it has no padding above and below: a corner chip's 6px made it 34px tall, which covered the tops of the buttons
-   under that row (0.3.1; until then the atoms' rules drew it as a 21px box, and the places it rides at the top were fitted to that). */
+   drawer (z-index 60); at 900px and under it rides in a row at the top of the page (each page keeps that row free, below), clear of the message box and its Send button on a phone.
+   The pulse is for a count that went up. The name `apill` is also the status pill of an atom card (a span in `.atomcard`, further down); each set of rules is for its own place, so
+   that neither draws the other. Where the pill rides in a row at the top (a phone or tablet width, the Simple view's strip) it has no padding above and below: a corner chip's 6px
+   made it 34px tall, which covered the tops of the buttons under that row (0.3.1; until then the atoms' rules drew it as a 21px box, and the places it rides at the top were fitted to that). */
 .apillhost{position:fixed;right:16px;bottom:16px;z-index:50}
 .apillhost[hidden]{display:none}
 .apill{display:inline-flex;align-items:baseline;gap:6px;padding:6px 14px;border:1px solid var(--accent);border-radius:99px;background:var(--panel);color:var(--ink);font-size:13.5px;font-weight:600;text-decoration:none}
@@ -39,11 +39,35 @@ body.nodeopen #pane-map .mappanel{display:none}
 .apill:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
 @media (max-width:900px){.apillhost{bottom:auto;top:58px;right:12px}.apillhost .apill{padding-top:0;padding-bottom:0}}
 /* J2's Chat button is fixed to the bottom right of the Detailed view (22px from the right, 18px from the bottom, about 40px tall; 452px from the right while the chat is
-   open) and the pill sat on it and took the click. The pill rides above the button and moves left with it (a transform, the compositor's). Not on a phone (it is under the
-   header there), not in the Simple view (the button is not drawn), not where there is no button (the console). J2 sync 4, E3. */
+   open) and the pill sat on it and took the click. The pill rides above the button and moves left with it (a transform, the compositor's). Not at 900px and under (it rides
+   at the top there, below), not in the Simple view (the button is not drawn), not where there is no button (the console). J2 sync 4, E3. */
 @media (min-width:901px){
   body:not(.simple):has(#chatfab) .apillhost{right:22px;bottom:68px;transition:transform var(--dur-base) var(--ease-out)}
   body:not(.simple):has(#dview.chaton) .apillhost{transform:translateX(-430px)}
+  /* The library page of a team (/d/<team>/library). J2 stops the card of the catalog 76px above the bottom of the window (room for the Chat button), and the pill, 34px tall and
+     10px above that button, was 26px inside the card: it covered the catalog's last row buttons (which rows depends on the height of the window, the lists scroll inside the card).
+     While the pill shows, the page keeps room for it under the card, which ends 8px above the pill (110px = 68 + 34 + 8); the pill does not move. This page only: the cards of the
+     other tabs are J2's to size (0.3.2). */
+  body.libpage:has(.apillhost:not([hidden])) #dview main{padding-bottom:110px}
+}
+/* The Detailed view at 900px and under. The pill rode at 58px from the top, "under the header", and the Detailed view has none: there it sat on J2's Needs you box, over the question
+   and, from 414 to 900px wide, over the "Answer in Chat" button, where a click in the button's middle went to the pill and so to Home (0.3.2). The page keeps a row for it instead,
+   above that box, as the Simple view does for its strip: the pill is 22px tall (see above) at 4px from the top, and the column of the page (`.dcol`, which scrolls at this width)
+   starts 32px down, 6px under the pill; the column's first box, Needs you, gives up J2's gutter above it (24px, 12px under 601px) for that. Only while the pill shows (:has), so a page
+   with nothing for the owner is J2's to the pixel. J2's chat is a panel over the page at this width (from 8 or 16px down: no row above it), and while it is open the pill drops 52px
+   to ride under the panel's header, where it was (a transform, the compositor's; at 56px it clears the panel's filter buttons, at the old 58px it sat 2px on them at 480px and under). */
+@media (max-width:900px){
+  body:not(.simple):has(#chatfab) .apillhost{top:4px;transition:transform var(--dur-base) var(--ease-out)}
+  body:not(.simple):has(#chatfab):has(.apillhost:not([hidden])) #dview .dcol{padding-top:32px}
+  body:not(.simple):has(#chatfab):has(.apillhost:not([hidden])) #dview .needs{margin-top:0}
+  body:not(.simple):has(#dview.chaton) .apillhost{transform:translateY(52px)}
+}
+/* The console at 600px and under. Its header wraps there: the three links ("Usage and cost", "Atom log", "Health") drop to a row under the title, and that was where the pill rode, over
+   "Atom log" and "Health" at 320px and over "Health" up to 375px (0.3.2). The links are 207px wide and the pill up to 172px, so they cannot share a row at 320px: the header gets a row
+   above its own for the pill, 4px from the top, with its content 32px down, only while the pill shows. Over 600px the header is one row and the pill rides under it, as before. */
+@media (max-width:600px){
+  body.console:has(.apillhost:not([hidden])) .apillhost{top:4px}
+  body.console:has(.apillhost:not([hidden])) .shead{padding-top:32px}
 }
 /* The Simple view (the studio) is full-bleed, so no corner of it is free: the finish bar (Open full view) and Asha's message box take the lower right, the toolbar
    (Decide for me, the dark-mode button, Open the site) the upper right, and on a phone the dock the bottom, and the pill sat on one of them at every width (found by the
@@ -203,6 +227,11 @@ details.atomcard>summary{cursor:pointer;display:flex;flex-wrap:wrap;align-items:
 /* ---- a team that was merged away: its page keeps the history but takes no new line (docs/design/ui.md 6.7) */
 body.archived .scompose,body.archived #sbox,body.archived #ssend,body.archived #sform,body.archived #box,body.archived #send,body.archived .outsel,
 body.archived #lform,body.archived #lbox,body.archived #lsend,body.archived .schips,body.archived #soutpick,body.archived #sauto,body.archived #sautoland,body.archived #shome{display:none}
+
+/* ---- the library page of a team (/d/<team>/library) has no run, and J2's script hides the Needs you box there with the `hidden` attribute ("no run here: nothing needs you"). J2's own
+   `.needs{display:flex}` is an author rule, so it beat the browser's `[hidden]{display:none}` and an empty bordered box (18px: the padding and the border) was drawn above the catalog (0.3.2).
+   Only that page ever sets the attribute (a team page and Home paint into the box and never hide it, and the Simple view hides the whole Detailed view as before), so nothing else changes. */
+.needs[hidden]{display:none}
 
 /* ---- the department page's strip at the top of J2's icon rail (D137): back to all teams, which team this is, and the two Sutra panes. It is the rail's own size:
    84 px wide, icons 64 x 58 px with J2's hover label, so the team's name is one short line (its whole name is the title) */

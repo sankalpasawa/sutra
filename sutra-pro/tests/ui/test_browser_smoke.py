@@ -47,18 +47,9 @@ def shown(browser, css) -> bool:
     return browser.js(f"(() => {{ const e = document.querySelector({q(css)}); return !!e && !e.hidden && e.offsetParent !== null; }})()")
 
 
-PILL_404 = "status of 404"      # the console line of a 404 (it does not name the URL): the fake has no provider pill route, and the two requests below say so
-
-
-def announce_the_missing_pill(browser):
-    """The fake serves no `/api/chats/{sid}/providers` (pre-existing: the Home tests announce it too), so every chat the walk opens gets a 404 for it."""
-    browser.expect_failed("/providers", 404)
-
-
 def clean(browser, step):
-    """After every step: no console error (a CSP violation is one) and no failed request; the announced 404 of the pill is the one line let through."""
-    errors = [line for line in browser.console_errors if PILL_404 not in line]
-    assert errors == [], f"{step}: console errors {browser.console_errors}"
+    """After every step: no console error (a CSP violation is one) and no failed request."""
+    assert browser.console_errors == [], f"{step}: console errors {browser.console_errors}"
     assert browser.failed_requests == [], f"{step}: failed requests {browser.failed_requests}"
 
 
@@ -85,7 +76,6 @@ def story(tmp_path, make_fake_server):
 
 @browser_only
 def test_the_whole_first_day_walk(story, browser):
-    announce_the_missing_pill(browser)
     fake = story.client
     fake.reset()
     fake.stage("1")
@@ -201,7 +191,6 @@ def test_the_whole_first_day_walk(story, browser):
 
 @browser_only
 def test_a_dropped_stream_shows_the_polling_chip_and_the_page_keeps_up_by_asking(story, browser):
-    announce_the_missing_pill(browser)
     fake = story.client
     fake.reset()
     fake.stage("2")
@@ -225,7 +214,6 @@ def test_a_dropped_stream_shows_the_polling_chip_and_the_page_keeps_up_by_asking
 
 @browser_only
 def test_both_pages_are_served_under_a_csp_and_a_violation_would_show_in_the_console(story, browser):
-    announce_the_missing_pill(browser)
     story.client.reset()
     story.client.stage("2")                                                 # the Web team exists
     opener = urllib.request.build_opener(urllib.request.ProxyHandler({}))

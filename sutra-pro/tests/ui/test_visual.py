@@ -31,7 +31,6 @@ THEMES = (("light", "light", "light"), ("dark", "dark", "dark"), ("system-light"
 WIDTHS = (1440, 900, 390)
 HEIGHT = 900
 SETTLE_S = 0.25                      # a resized graph or panel repaints on the next frame; the shot waits for it
-PILL_404 = "status of 404"           # the console line of a 404 (it does not name the URL): the fake serves no `/api/chats/{sid}/providers` (pre-existing, announced below)
 
 # The graph box of a filed node paints a 14 % green over --panel and J2's --muted second line on it reads 4.2:1 in the dark set (UI-4 owns
 # graph_render.js and sutra-graph.css; docs/notes/UI-9.md). It is the one finding of the audit that is allowed, and only in the dark theme.
@@ -165,7 +164,6 @@ def png_name(page: str, label: str, width: int) -> str:
 def test_one_page_in_every_theme_and_width(page, fake, fake_server, visual_browser, screens_dir):
     stage, url, ready, after, scope = PAGES[page]
     browser = visual_browser
-    browser.expect_failed("/providers", 404)
     for label, theme, scheme in THEMES:
         fake.reset()
         fake.stage(stage)
@@ -195,7 +193,7 @@ def test_one_page_in_every_theme_and_width(page, fake, fake_server, visual_brows
                 assert len(result["failures"]) >= 1, (where, "KNOWN_GAPS is stale: the graph's filed box now reads well in dark")
             shot = browser.shot(screens_dir / png_name(page, label, width))
             assert shot.stat().st_size > 2000, where
-        assert [line for line in browser.console_errors if PILL_404 not in line] == [], (page, label, browser.console_errors)
+        assert browser.console_errors == [], (page, label, browser.console_errors)
         assert browser.failed_requests == [], (page, label, browser.failed_requests)
 
 

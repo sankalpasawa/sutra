@@ -2,75 +2,37 @@
 POST /api/ask?dept=, the question and the answer are lines of the function's own chat, and the words of a question that could not be sent stay in the box.
 
 The tests run the real node_panel.js, agent_chats.js and chat_view.js in headless Chrome (marker `browser`, SUTRA_BROWSER=1) on the node panel's mount page, over
-the fake backend. The fake has no /api/ask of its own in the folder this file was written for, so the module adds the one a server would have: it stores the
-owner's question as a line of the function's session (`ask: "q"`), waits a moment, and stores the answer (`ask: "records"`), as POST /api/ask does. If the fake
-already has the route, that one is used and the checks below hold for it as well.
+the fake backend. The fake's POST /api/ask is the engine's route in small (tests/ui/fake_backend.py, `ask_function`): it stores the owner's question as a line of the
+function's session (`ask: "q"`), waits `delay` seconds, and stores the answer (`ask: "records"`): J2's own answer from the records, the capture `ask-audit.json`.
+`/__fake/ask` says how the next question goes (`delay`, `fail`, `mode`), and `think()` below sets the delay every test of the box needs.
 """
 from __future__ import annotations
 
-import asyncio
 import json
 import shutil
 from pathlib import Path
 from typing import NamedTuple
 
 import pytest
-from fastapi import Request
-from fastapi.responses import JSONResponse
 
 import fake_backend
+from sutra_app.orchestrator.agent_ask import NO_MODEL
 
 STATIC = Path(__file__).resolve().parents[2] / "sutra_app" / "ui" / "static"
 FIXTURES = Path(__file__).resolve().parent / "fixtures"
 SCRIPTS = ("sutra_ctx.js", "sutra_events.js", "fluid.js", "fnode_view.js", "chat_view.js", "chat_draft.js", "chat_scroll.js", "model_pick.js", "chat_pill.js",
            "agent_chats.js", "node_panel.js")
 AUDIT = "cs_e1acceab39f9"                 # web.audit's own session
-THINK_S = 0.5                             # how long the fake's answer takes: long enough for the page to show "Asking Audit..."
+THINK_S = 0.5                             # how long the fake holds its answer back: long enough for the page to show "Asking Audit..."
 WHY = "Why was W-3 scored below the gate?"
+# J2's own answer from the records, what the fake sends for Audit: the capture of J2's mock run, line by line (the page breaks the lines, so each is read alone)
+RECORDS = json.loads((FIXTURES / "j2" / "ask-audit.json").read_text(encoding="utf-8"))["answer"]
+RECORDS_LINES = [line.strip() for line in RECORDS.splitlines() if line.strip()]
 
 
 class PanelServer(NamedTuple):
     url: str
     client: fake_backend.FakeClient
-
-
-def add_ask_route(app) -> bool:
-    """POST /api/ask on the fake, the way the real route behaves for a function that has a session: the question is stored at once, the answer after a moment.
-    `/__test/ask` {fail: 409} makes the next question be refused; {note: "..."} adds a note to the next answer. False when the fake already has the route."""
-    state = app.state.fake
-    if any(getattr(route, "path", "") == "/api/ask" for route in app.router.routes):
-        return False
-    plan = {"fail": None, "note": ""}
-
-    @app.post("/api/ask")
-    async def ask(request: Request, dept: str | None = None):
-        fake_backend.require_token(request, state)
-        body = await fake_backend.json_body(request)
-        who = body.get("who") if isinstance(body, dict) else None
-        if who not in ("identity", "adaptation", "priority", "coordination", "audit", "validator"):
-            return JSONResponse({"error": "not a function"}, status_code=400)
-        if plan["fail"]:
-            status, plan["fail"] = plan["fail"], None
-            return JSONResponse({"error": "busy" if status == 409 else "failed"}, status_code=status)
-        question = " ".join(str(body.get("q") or "").split())
-        sid = next((sid for sid, node in state.session_ids().items() if node["id"] == f"web.{who}"), AUDIT)
-        chat = state.chat(sid)
-        asked = state.add_message(chat, "user", "user", "text", question, task_id=fake_backend.LIVE_RUN["task_id"])
-        asked["ask"] = "q"
-        await asyncio.sleep(THINK_S)
-        answer = state.add_message(chat, "agent", who, "text", f"From the records: {question}", task_id=fake_backend.LIVE_RUN["task_id"])
-        answer["ask"] = "records"
-        reply = {"who": who, "answer": answer["text"], "from": "records", "session_id": sid, "question_id": asked["id"], "answer_id": answer["id"]}
-        if plan["note"]:
-            reply["note"], plan["note"] = plan["note"], ""
-        return JSONResponse(reply)
-
-    @app.post("/__test/ask")
-    async def control(request: Request):
-        body = await fake_backend.json_body(request)
-        plan.update({k: v for k, v in body.items() if k in plan})
-        return JSONResponse(plan)
-    return True
 
 
 def build_static(folder: Path) -> Path:
@@ -86,7 +48,6 @@ def build_static(folder: Path) -> Path:
 @pytest.fixture(scope="module")
 def panel_server(tmp_path_factory):
     app = fake_backend.make_app(static_dir=build_static(tmp_path_factory.mktemp("ask-static")))
-    add_ask_route(app)
     running = fake_backend.run_in_thread(app)
     try:
         yield PanelServer(running.url, fake_backend.FakeClient(running.url, app.state.fake.token))
@@ -110,9 +71,15 @@ def q(css: str) -> str:
     return json.dumps(css)
 
 
+def think(fake, **controls):
+    """How the fake answers the next questions (`/__fake/ask`): the answer is held back THINK_S seconds, so the box is seen waiting. Merged with what was set."""
+    status, answer = fake.request("POST", "/__fake/ask", {"delay": THINK_S, **controls}, token=False)
+    assert status == 200 and answer["delay"] == THINK_S, answer
+
+
 def load(browser, fake):
     fake.stage("full")
-    assert fake.request("POST", "/__fake/pill", {"on": True}, token=False)[0] == 200
+    think(fake)
     fake.page("agents", page_html())
     browser.goto(fake.mount_url("agents"))
     browser.wait_for("window.mounted === true")
@@ -173,7 +140,8 @@ def test_a_question_is_one_post_the_box_waits_and_both_lines_show_in_the_chat(fa
     assert sent[0]["body"]["who"] == "audit" and sent[0]["body"]["q"] == WHY and "run" in sent[0]["body"]
     browser.wait_for("document.querySelectorAll('.nmsgs [data-ask]').length === 2")
     assert texts(browser, '.nmsgs [data-ask="q"]') == [f"You asked{WHY}"]
-    assert texts(browser, '.nmsgs [data-ask="records"]')[0].endswith("From its records, no AI call") and f"From the records: {WHY}" in texts(browser, '.nmsgs [data-ask="records"]')[0]
+    answer = texts(browser, '.nmsgs [data-ask="records"]')[0]
+    assert answer.endswith("From its records, no AI call") and all(line in answer for line in RECORDS_LINES)
     assert browser.js("document.querySelector('.nmsgs [data-ask=\"q\"]').classList.contains('me')") is True
     assert not browser.console_errors
 
@@ -197,7 +165,7 @@ def test_a_question_that_is_refused_says_why_and_keeps_its_words(fake, browser):
     load(browser, fake)
     open_node(browser, "web.audit")
     ask_mode(browser)
-    assert fake.request("POST", "/__test/ask", {"fail": 409}, token=False)[0] == 200
+    think(fake, fail=409)
     browser.expect_failed("/api/ask", 409)
     browser.type(".nask-text", WHY)
     browser.click('[data-act="ask"]')
@@ -215,11 +183,11 @@ def test_an_answers_note_stays_under_the_box(fake, browser):
     load(browser, fake)
     open_node(browser, "web.audit")
     ask_mode(browser)
-    fake.request("POST", "/__test/ask", {"note": "No model is connected."}, token=False)
+    think(fake, mode="offline")                                                                         # no model is connected: the answer is the records' and says so
     browser.type(".nask-text", WHY)
     browser.click('[data-act="ask"]')
     browser.wait_for("!!document.querySelector('.nask-note')")
-    assert texts(browser, ".nask-note") == ["No model is connected."]
+    assert texts(browser, ".nask-note") == [NO_MODEL]
 
 
 @pytest.mark.browser
@@ -284,7 +252,6 @@ def test_a_past_runs_chat_is_read_and_not_asked(fake, browser):
 @pytest.fixture(scope="module")
 def page_server():
     app = fake_backend.make_app()                                                                       # the real pages and the whole static folder
-    add_ask_route(app)
     running = fake_backend.run_in_thread(app)
     try:
         yield PanelServer(running.url, fake_backend.FakeClient(running.url, app.state.fake.token))
@@ -299,7 +266,6 @@ def test_a_question_stored_in_the_functions_chat_shows_in_j2s_chat_panel_and_in_
     client = page_server.client
     client.reset()
     client.stage("2")
-    assert client.request("POST", "/__fake/pill", {"on": True}, token=False)[0] == 200                  # the pill of an agent's chat reads /providers
     status, answer = client.request("POST", "/api/ask?dept=web", {"who": "audit", "q": WHY, "run": ""}, token=True)
     assert status == 200 and answer["from"] == "records"
     for route in ("/api/activity", "/api/artifacts/groups", "/api/plan-map"):                            # routes the fake of this folder may not have
@@ -309,8 +275,9 @@ def test_a_question_stored_in_the_functions_chat_shows_in_j2s_chat_panel_and_in_
     browser.js("document.getElementById('chatfab').click()")
     browser.wait_for(f"document.getElementById('chatfeed').textContent.includes({json.dumps(WHY)})", timeout=15)
     feed = browser.text("#chatfeed")
-    assert f"From the records: {WHY}" in feed and "from its records, no AI call" in feed
-    assert browser.js("QA.length") == 1 and browser.js("QA[0].from") == "records" and browser.js("QA[0].a") == f"From the records: {WHY}"
+    shown = [line.replace("done-when", "checklist") for line in RECORDS_LINES]                         # J2's own page says "checklist" for its "done-when" (j2_ui.html, plain words)
+    assert all(line in feed for line in shown) and "from its records, no AI call" in feed
+    assert browser.js("QA.length") == 1 and browser.js("QA[0].from") == "records" and browser.js("QA[0].a") == RECORDS
     browser.js("NodePanel.open('web.audit', 'chat')")
     browser.wait_for("document.querySelectorAll('#nodepanel .nmsgs [data-ask]').length === 2", timeout=15)
     assert texts(browser, '#nodepanel .nmsgs [data-ask="q"]') == [f"You asked{WHY}"]
