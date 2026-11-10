@@ -1618,7 +1618,9 @@ def atom_checks():
     item = lambda **x: run._atom_problems({"atoms": [{**a, "expected_output": [{"text": "x", **x}]}]})
     assert "has kind 'heading', which no check can verify" in item(kind="heading", target="Menu")[0]
     assert "expected output item 1 facts-present lists ['+91 98450 12345']" in item(kind="facts", target=["+91 98450 12345"])[0]
-    assert "expected output item 1 element-count targets '#events'" in item(kind="section", target="#events")[0]
+    assert "expected output item 1 element-count targets '#events'" in j2.check_problems(j2.cover_expected(
+        {**a, "expected_output": [{"text": "x", "kind": "section", "target": "#events"}]}), src)[0]
+    assert not item(kind="section", target="#events")      # the validator adds "create #events" (validator_autofix_target)
     assert not item(kind="facts", target=["Indiranagar"]) and run._atom_problems({"atoms": [{**a, "expected_output": []}]})
     # a goal naming times whose checks only count headings is flagged, and sent back to Adaptation once
     timed = {**a, "goal": "Opening hours 8am to 9pm are listed", "how": {**how, "steps": "h2 headings, class hours-head"},
@@ -3698,7 +3700,8 @@ def run_20261015_fixes():
         run.handoff
     assert any("same evidence twice" in m["text"] for m in run.chat if m["who"] == "system")
 
-    # 3: "done." alone is rejected and asked for once more; the next speaker is set by code even when missing
+    # 3: "done." alone is replaced by code's own sentence (no re-ask, validator_autofix_human); the next speaker is set
+    # by code even when missing
     run = j2.J2Run()
     run.budget, run.goal = 500, {"done_when": ["a"]}
     reg, _, _ = run._register([{"name": "Hero", "goal_gap": "x", "outputs": ["y"], "completion_check": "z",
@@ -3716,11 +3719,11 @@ def run_20261015_fixes():
     run.call = call3
     run._turn_workflow_agent({"wid": wid})
     last = next(m for m in reversed(run.chat) if m["who"] == wid)
-    assert len(asked) == 1 and "headline and a button" in last["text"] and run.turn == "coordination", (asked, last)
+    assert not asked and "I built Hero for the site." in last["text"] and run.turn == "coordination", (asked, last)
     assert not any("Route check" in m["text"] for m in run.chat), "route check fired"
     assert j2.human_problem("done.") and j2.human_problem("a b c d e. f. g. h.") and not j2.human_problem("I built it all today.")
     print("runs/j2-20261015-114723 fixes: wrapper example registers first try, same failure twice escalates after "
-          "attempt 2 naming the owner atom, human_output regenerated once and next speaker set by code ok")
+          "attempt 2 naming the owner atom, human_output written by code with no re-ask and next speaker set by code ok")
 
 
 def calls_file(run):
@@ -3767,7 +3770,7 @@ def atom_outputs():
             small.append(fn)
             return {"atom_human_output": "It makes #hero for W-1.a1."}
         r = orig(fn, fmt, task, mock, **k)
-        return re.sub(r'"atom_human_output": "[^"]*"', '"atom_human_output": "Shows #hero."', r) if isinstance(r, str) else r
+        return re.sub(r'"atom_human_output": "[^"]*"', '"atom_human_output": "This part shows the #hero banner."', r) if isinstance(r, str) else r
     run.call = call
     say(run, BREW_LAB)
     w1 = run.workflows[0]["atoms"][0]
@@ -5255,6 +5258,136 @@ def validator_fixes():
           "runs/j2-20261027-170831 lost now pass), a bare charter value still points at facts-present, a GRANT "
           "without a price keeps the computed one and registers at 30, and a board question for the Requester is "
           "routed to Identity ok")
+
+
+def autofixes(run):
+    """The validator's auto-fixes this run logged: autofix.json rows, checked against its auto_fix events."""
+    p = os.path.join(run.dir, "autofix.json")
+    rows = json.load(open(p, encoding="utf-8")) if os.path.isfile(p) else []
+    assert len(rows) == len([e for e in run.events if e["type"] == "auto_fix" and e["agent"] == "validator"]), rows
+    return rows
+
+
+def validator_autofix_target():
+    """A1: a check that targets a class the atom's how or constraints never mention is accepted with a constraint
+    telling the builder to create it (".level-btn", run evidence), logged in autofix.json; a charter fact as a target
+    is still rejected."""
+    run = j2.J2Run()
+    a = {**j2.mock_atom({}), "expected_output": j2.mock_atom({})["expected_output"] + [
+        {"text": "3 level buttons", "kind": "element", "target": ".level-btn", "count": 3}]}
+    assert any("doesn't tell the builder to create" in x for x in j2.check_problems(j2.cover_expected(json.loads(
+        json.dumps(a))), run._fact_source())), "the rule itself is unchanged"
+    assert not run._atom_problems({"name": "Levels", "atoms": [a]})
+    assert a["constraints"][-1] == 'Create the element(s) ".level-btn" this atom\'s checks use.', a["constraints"]
+    rows = autofixes(run)
+    assert [r["kind"] for r in rows] == ["create_target"] and rows[0]["workflow"] == "Levels" and ".level-btn" in rows[0]["detail"]
+    assert not run._atom_problems({"name": "Levels", "atoms": [a]}) and len(autofixes(run)) == 1, "fixed once"
+    bad = {**j2.mock_atom({}), "expected_output": [{"text": "x", "kind": "section", "target": "hello@brewlab.in"}]}
+    assert run._atom_problems({"name": "Mail", "atoms": [bad]}) and len(autofixes(run)) == 1
+    print("validator auto-fix: an undeclared check target gets a 'create' constraint and is accepted, logged in "
+          "autofix.json; a charter fact is still rejected ok")
+
+
+def validator_autofix_step():
+    """A2: 'expect-text #cell-0-0 ' (no value, runs/j2-20261109-182842) becomes 'expect-visible #cell-0-0' in the
+    behaviour item and its check, logged; 'expect-text <sel> <value>' in one string still parses; an expect-number with
+    no value is still rejected."""
+    assert j2.j2_check.parse_step("expect-text #cell-0-0 5") == {"verb": "expect-text", "sel": "#cell-0-0", "arg": "5"}
+    assert j2.fixed_step("expect-text #cell-0-0 ") == "expect-visible #cell-0-0" and j2.fixed_step("expect-text #a 5") is None
+    assert j2.fixed_step("expect-number #total") is None
+    run = j2.J2Run()
+    how = {"kind": "AI", "agent": "Builder", "steps": "a button with id cell-try and a cell with id cell-0-0"}
+    a = {**j2.mock_atom({}), "how": how, "expected_output": [
+        {"text": "Tapping fills the cell", "kind": "behavior", "steps": ["click #cell-try", "expect-text #cell-0-0 "]}]}
+    a = j2.normalise_checks([a])[0]
+    assert not run._atom_problems({"name": "Board", "atoms": [a]}), run._atom_problems({"name": "Board", "atoms": [a]})
+    assert a["expected_output"][0]["steps"][1] == "expect-visible #cell-0-0", a["expected_output"]
+    assert next(c for c in a["verification"] if c["type"] == "behavior-steps")["target"][1] == "expect-visible #cell-0-0"
+    assert [r["kind"] for r in autofixes(run)] == ["behavior_step", "behavior_step"]
+    num = j2.normalise_checks([{**a, "verification": [], "expected_output": [
+        {"text": "x", "kind": "behavior", "steps": ["click #cell-try", "expect-number #cell-0-0"]}]}])[0]
+    assert any("expect-number takes a selector and a value" in x for x in run._atom_problems({"name": "N", "atoms": [num]}))
+    print("validator auto-fix: an expect-text with no value becomes expect-visible, logged; expect-number with no value "
+          "is still rejected ok")
+
+
+def validator_autofix_plan_fields():
+    """A3: a planned workflow whose proposal lacks goal_gap, outputs and completion_check is registered with them
+    filled from its realization plan row (goal, done_test, the type's file), logged; an unplanned one is still
+    refused."""
+    run = j2.J2Run()
+    run.budget, run.goal = 500, {"done_when": ["a"]}
+    run.real_summary = {"proposal_brief": [{"name": "Board", "goal": "The board shows 81 cells", "covers": [1],
+                                            "done_test": "81 cells are on the page", "after": []}]}
+    reg, refused, _ = run._register([{"name": "Board", "atoms": ATOM, "parts": ["fix"]},
+                                     {"name": "Other", "atoms": ATOM, "parts": ["fix"]}])
+    assert [w["name"] for w in reg] == ["Board"] and len(refused) == 1, (reg, refused)
+    assert "required field(s) missing: goal_gap, outputs, completion_check" in refused[0], refused
+    w = reg[0]
+    assert (w["purpose"], w["outputs"], w["completion_check"]) == ("The board shows 81 cells", ["index.html"],
+                                                                   "81 cells are on the page"), w
+    rows = autofixes(run)
+    assert [r["kind"] for r in rows] == ["plan_fields"] and rows[0]["workflow"] == "Board", rows
+    print("validator auto-fix: a planned workflow's missing goal_gap, outputs and completion_check come from its "
+          "plan row, logged; an unplanned one is still refused ok")
+
+
+def validator_autofix_human():
+    """A4: a builder's human_output over 3 sentences is cut to 3, "done." becomes code's sentence, an atom's over 2
+    sentences is cut to 2 and a too-short one becomes code's sentence; no re-ask call; every fix logged."""
+    run = j2.J2Run()
+    run.budget, run.goal = 500, {"done_when": ["a"]}
+    w = run._register([{"name": "Hero", "goal_gap": "x", "outputs": ["index.html"], "completion_check": "z",
+                        "atoms": [j2.mock_atom({})], "parts": ["fix"]}])[0][0]
+    calls = []
+    run.call = lambda *a, **k: calls.append(a) or {}
+    long = "I built the hero. It has a headline. It has a button. It has a photo too."
+    assert run._human_output(w, {"human_output": long}, w["section"]) == "I built the hero. It has a headline. It has a button."
+    assert run._human_output(w, {"human_output": "done."}, w["section"]) == "I built Hero for the site."
+    run._atom_outputs(w, {"atom_human_output": "This adds a hero for visitors. It has a headline. It has a button."}, 1)
+    assert w["atoms"][0]["human_output"]["text"] == "This adds a hero for visitors. It has a headline.", w["atoms"][0]
+    run._atom_outputs(w, {"atom_human_output": "ok"}, 1)
+    assert not j2.atom_human_problem(w["atoms"][0]["human_output"]["text"]), w["atoms"][0]["human_output"]
+    assert not calls, calls
+    assert [r["kind"] for r in autofixes(run)] == ["human_output", "human_output", "atom_human_output", "atom_human_output"]
+    print("validator auto-fix: human_output cut to 3 sentences or written from the workflow's name, an atom's cut to 2 "
+          "or written by code, no re-ask, each logged ok")
+
+
+def check_rendered_count():
+    """B5: an element-count short in the static HTML of a page with scripts is counted in the rendered page (the
+    behaviour driver; faked here) and says so; a page without scripts, or a driver that can't run, keeps the static
+    count."""
+    page = ('<html><body><div id="grid"></div><script>for (let i = 0; i < 81; i++) document.getElementById("grid")'
+            '.insertAdjacentHTML("beforeend", "<div class=cell></div>")</script></body></html>')
+    c = {"type": "element-count", "target": ".cell", "expect": 81}
+    old, seen = j2.j2_check.behavior, []
+    try:
+        j2.j2_check.behavior = lambda html, ops: seen.append(ops) or {"available": True, "results": [{"v": 81}]}
+        r = j2.run_check(c, tempfile.mkdtemp(), page)
+        assert r["pass"] and r["actual"] == 81 and "in the rendered page" in r["evidence"], r
+        assert seen == [[{"read": "count", "sel": ".cell"}]], seen
+        r = j2.run_check(c, tempfile.mkdtemp(), page.replace("<script>", "<!--").replace("</script>", "-->"))
+        assert not r["pass"] and r["evidence"] == "0 element(s) match '.cell', expected 81" and len(seen) == 1, r
+        j2.j2_check.behavior = lambda html, ops: {"available": False, "note": "Chrome not found"}
+        r = j2.run_check(c, tempfile.mkdtemp(), page)
+        assert not r["pass"] and r["actual"] == 0 and "rendered" not in r["evidence"], r
+    finally:
+        j2.j2_check.behavior = old
+    print("element-count: a script-drawn grid is counted in the rendered page (81 of 81), the static count otherwise ok")
+
+
+def check_grep_markup():
+    """B6: grep-count counts in the markup only: an id the CSS and JS also name ('#continue-prompt' found 3 times in
+    a real run) counts once, and the evidence says so."""
+    site = tempfile.mkdtemp()
+    with open(os.path.join(site, "index.html"), "w", encoding="utf-8") as f:
+        f.write('<html><head><style>#continue-prompt { color: red }</style></head><body>'
+                '<p id="continue-prompt">Continue?</p><script>document.getElementById("continue-prompt")'
+                '.hidden = false</script></body></html>')
+    r = j2.run_check({"type": "grep-count", "target": "#continue-prompt", "expect": 1}, site, "")
+    assert r["pass"] and r["actual"] == 1 and "in the markup, not CSS/JS" in r["evidence"], r
+    print("grep-count: counted in the markup, not CSS/JS (1, not 3) ok")
 
 
 def board_content_edges():
@@ -12260,7 +12393,13 @@ if __name__ == "__main__":
     simple_messages()
     owner_override()
     form_submit()
-    print("second pass: two audiences, simple messages, owner override, form submit ok")
+    validator_autofix_target()      # the validator fixes small things itself, logged in autofix.json
+    validator_autofix_step()
+    validator_autofix_plan_fields()
+    validator_autofix_human()
+    check_rendered_count()          # better check methods: element-count in the rendered page, grep-count in markup
+    check_grep_markup()
+    print("second pass:two audiences, simple messages, owner override, form submit ok")
     print("limit answers (turn cap, nine workflows, own amount, drop with reason, done with open items), budget cap, repeats, idle Adaptation, decisions applied by code (msgs 24, 50) ok")
     behavior_browser()
     page()
