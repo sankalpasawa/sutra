@@ -38,7 +38,9 @@ import re
 import sys
 import time
 
+import atexit
 import hashlib
+import shutil
 import tempfile
 
 os.environ["STUDIO_MOCK"] = "1"
@@ -47,6 +49,7 @@ os.environ["J2_REALIZATION"] = "0"   # the classic path (realization is on by de
 # Every memory file of this test session lives in a temp folder, set before j2 is imported, so no test can write
 # lessons or playbooks into the real memory/ (it once wrote 109 mock cafe playbooks there; a live run reused one).
 SESSION_MEMORY = tempfile.mkdtemp(prefix="j2-test-memory-")
+atexit.register(shutil.rmtree, SESSION_MEMORY, ignore_errors=True)   # 112 of these once piled up 2.9 GB in %TEMP%
 os.environ["J2_MEMORY_FILE"] = os.path.join(SESSION_MEMORY, "lessons.jsonl")
 os.environ["J2_PLAYBOOK_FILE"] = os.path.join(SESSION_MEMORY, "playbooks.jsonl")
 os.environ["J2_RUNS_DIR"] = os.path.join(SESSION_MEMORY, "runs")   # runs/ holds real runs only: report evidence
@@ -92,6 +95,12 @@ def write_png(path, width=390, height=844):
     with open(path, "wb") as f:
         f.write(b"\x89PNG\r\n\x1a\n" + chunk(b"IHDR", struct.pack(">IIBBBBB", width, height, 8, 2, 0, 0, 0))
                 + chunk(b"IDAT", zlib.compress(rows)) + chunk(b"IEND", b""))
+
+
+def server_run_list():
+    """J2's `j2_server.run_list()` (Run settings' list): the stdlib adapter does not carry it, `engine/runlist.py` holds the logic (D140)."""
+    from sutra_app.engine import j2_server, runlist
+    return runlist.run_list(j2.RUNS_DIR, os.path.basename(j2_server.RUN.dir), j2_server.RUN.status == "running")
 
 
 def skippable(fn):
@@ -1001,22 +1010,23 @@ def simple_text(base):
                           base + "/?view=simple"], capture_output=True, text=True, timeout=90).stdout
 
     class P(html.parser.HTMLParser):
-        depth, skip, text, buttons = 0, 0, [], []
+        depth, skip, text, buttons = 0, 0, [], []      # skip: the depth of the hidden (or script/style) element being skipped
+        VOID = {"area", "base", "br", "col", "embed", "hr", "img", "input", "link", "meta", "source", "track", "wbr"}
 
         def handle_starttag(self, tag, attrs):
             a = dict(attrs)
-            if self.depth or a.get("id") == "sview":
+            if (self.depth or a.get("id") == "sview") and tag not in self.VOID:
                 self.depth += 1
-                if tag in ("script", "style") or "hidden" in a:
-                    self.skip += 1
-                if tag == "button":
+                if not self.skip and (tag in ("script", "style") or "hidden" in a or (tag == "dialog" and "open" not in a)):
+                    self.skip = self.depth
+                if tag == "button" and not self.skip:
                     self.buttons.append(a)
 
         def handle_endtag(self, tag):
-            if self.depth:
+            if self.depth and tag not in self.VOID:
+                if self.skip == self.depth:
+                    self.skip = 0
                 self.depth -= 1
-                if self.skip and tag in ("script", "style"):
-                    self.skip -= 1
 
         def handle_data(self, d):
             if self.depth and not self.skip:
@@ -1055,18 +1065,19 @@ def simple_view():
         return text
     try:
         os.environ["J2_FIXES"] = "0"
-        check(j2.J2Run(), "Describe the website you want", "A website for my cafe", "Understanding your request",
-              site=False)
+        text = check(j2.J2Run(), "What should we do today?", "The team plans it, does the work and checks it for you.", "A website for my bakery",
+                     "A product spec for a food delivery app", "A 4-week launch plan for my cafe", site=False)
+        assert "What to make" not in text and "build today" not in text, text[:300]
         run = j2.J2Run()
         say(run, "a website for my cafe")
-        check(run, "Your website team", "What is the business called", site=False)          # J2.a questions
+        check(run, "Client Lead", "Quick question", "What is the business called", "Answer later", "Your result will appear here", site=False)          # J2.a questions
         say(run, "It's called Little Fig, in Koramangala, Bengaluru. Visitors should see our menu with prices, opening "
                  "hours and where to find us. Cozy and simple, and it must work on phones.")
         check(run, opts=2, once=("Do you want a section about your coffee's story?",
                                  "Add a section about your coffee's story (takes a bit longer)",
                                  "Keep it simple, no story section"))                       # a conflict: once, as buttons
         say(run, "Option 2")
-        check(run, "Your website is ready", "Open full screen", "Download the HTML file", "Ask for a change",
+        check(run, "Your website is ready", "Download", "Copy share link", "Open full view",
               "Keep it simple, no story section", site=True)                                # the chosen label shows
         os.environ["J2_FIXES"] = "1"
         run = j2.J2Run()
@@ -1086,11 +1097,238 @@ def simple_view():
         import subprocess
         dom = chrome_dom([j2.j2_check.find_chrome(), "--headless=new", "--disable-gpu", "--virtual-time-budget=6000",
                               "--dump-dom", base + "/?view=detail"], capture_output=True, text=True, timeout=90).stdout
-        assert "for Requester (you)" in dom and "for Adaptation" in dom, "Detailed view must label both audiences"
+        assert '<span class="tag to">→ you</span>' in dom and '<span class="tag to">→ Adaptation</span>' in dom, "Detailed view must label both audiences"
     finally:
         j2_server.RUN = keep
         srv.shutdown()
         os.environ["J2_FIXES"] = "0"
+
+
+def simple_redesign():
+    """Simple view (chat + preview with the Client Lead bot), on every saved run in runs/ and on live mock states, browser-free (the page's
+    script on a stub DOM): the chat holds only the Requester's messages and Identity's messages to the Requester; every Needs you item is a
+    card (an approval card for a send or a budget raise); "N of M parts built" counts the run's workflows; the preview frame shows the latest
+    version; Download, Copy share link and Open full view once it's ready. The tokens the view uses keep 4.5:1 in light and dark; reduced
+    motion turns its motion off. With Chrome (--browser), at 1440x900 and 390x844 in light and dark: no page error, no sideways scroll, text
+    4.5:1 on its own background; answering a card calls /api/say, an approval sends nothing until Approve or Not now is clicked; the Chat |
+    Preview tabs switch under 820px; a changed part of the page glows and its Change this button fills the chat box."""
+    import html as htmllib
+    import shutil
+    import threading
+    from sutra_app.engine import j2_server
+    here = HERE
+    ui = open(page_file("j2_ui.html"), encoding="utf-8").read()
+    T = theme_tokens(ui)
+    pairs = (("on", "warm1"), ("ink", "panel"), ("ink", "panel2"), ("ink", "bg"), ("muted", "panel"), ("muted", "panel2"), ("muted", "bg"),
+             ("warm1", "panel"), ("warm1", "bg"), ("paper", "botvisor"), ("bad", "bg"))
+    six = lambda h: "#" + "".join(c * 2 for c in h[1:]) if len(h) == 4 else h      # --paper is #fff
+    low = [(t, a, b, round(contrast(six(v[a]), six(v[b])), 2)) for t, v in T.items() for a, b in pairs if contrast(six(v[a]), six(v[b])) < 4.5]
+    assert not low, ("Simple view below WCAG AA", low)
+    assert "@media (prefers-reduced-motion:reduce){#sview *,#sview *::before{animation:none!important;transition:none!important}}" in ui
+    assert "@media (prefers-reduced-motion:reduce){.j2s-glow,.j2s-chg{animation:none;transition:none}}" in ui      # the glow inside the preview too
+    for rule in (".screwg:is(:hover,:focus-visible) .omouth{opacity:1", ".screwg:is(:hover,:focus-visible) .sviewteam{opacity:1", ".screwg:is(:hover,:focus-visible) .alert{opacity:1",
+                 ".screwg:is(:hover,:focus-visible) .schat span{animation:none;opacity:0}", ".screwg:is(:hover,:focus-visible) .ey{ry:5}"):
+        assert rule in ui, ("hover and keyboard focus share the landing team's reaction", rule)      # Chrome is probed with focus; a real hover can't be scripted
+    if not shutil.which("node"):
+        print("simple redesign test skipped: node not found")
+        return
+
+    def changes_of(d):      # what /api/changes serves from the run's change.json
+        p = os.path.join(d or "", "change.json")
+        rows = json.load(open(p, encoding="utf-8")) if d and os.path.isfile(p) else []
+        return [{"id": c.get("id"), "request": str(c.get("request") or ""), "revise": len(c.get("revise") or []), "new": len(c.get("new") or [])} for c in rows]
+
+    def check(s, label, d=None):
+        chg = changes_of(d)
+        out = render_node(s, docs={"docs": {}, "changes": chg, "journey": 1})
+        J, built = out["journey"], [x["id"] for x in s.get("sections") or [] if x["id"] != "style"]
+        assert len(J["stops"]) == 5 + len(chg) and [x["t"] for x in J["stops"]] == ["Your idea", "Plan", "Build", "Check", "Ready"] + [f"Change {i + 1}" for i in range(len(chg))], (label, [x["t"] for x in J["stops"]])
+        assert all(c["request"][:60] in J["stops"][5 + i]["tip"] or len(c["request"]) > 179 for i, c in enumerate(chg)), (label, "each change stop is its request")
+        stars = re.findall(r'class="sjstar( on)?"', out["journeyhtml"])
+        assert J["built"] == len(built) and len(stars) == J["planned"] >= len(built) and sum(1 for x in stars if x) == len(built), (label, J["built"], len(built), len(stars))
+        assert sum(x["s"] == "now" for x in J["stops"]) <= 1 and J["stops"][0]["s"] == "done", (label, [x["s"] for x in J["stops"]])
+        byid = {str(m["id"]): m for m in s["chat"]}
+        bubbles = [(c, htmllib.unescape(i)) for c, i in re.findall(r'class="sb (me|team)" data-m="([^"]*)"', out["simple"])]
+        for c, i in bubbles:       # every bubble is a message of yours (right) or of the Client Lead (left)
+            m = byid[i]
+            assert m["who"] in ("user", "identity") and (c == "me") == (m["who"] == "user"), (label, c, m["who"], m["text"][:80])
+        cards = {htmllib.unescape(x) for x in re.findall(r'class="qcard[^"]*" data-msg="([^"]*)"', out["simple"])}
+        want = {str(m["id"]) for m in s["chat"] if m["who"] == "user" or (m["who"] == "identity" and m.get("to_user"))}
+        assert want <= {i for _, i in bubbles} | cards, (label, "missing from the chat", sorted(want - {i for _, i in bubbles} - cards)[:5])
+        assert set(out["needids"]) == cards, (label, "every Needs you item is a card, and only those", out["needids"], cards)
+        n, m_ = sum(w.get("status") == "done" for w in s["workflows"]), len(s["workflows"])
+        got = re.search(r"(\d+) of (\d+) parts built", out["sprog"])
+        assert (got and (int(got[1]), int(got[2])) == (n, m_)) if m_ else not got, (label, out["sprog"], n, m_)
+        if s["versions"]:
+            assert f"/site/v{s['versions']}?" in out["sframe"], (label, "the preview shows the latest version", out["sframe"])
+        if re.match(r"Done", s.get("outcome") or "") and not s.get("paused") and s["status"] != "running":
+            assert all(w in out["finish"] for w in ("Download", "Copy share link", "Open full view")), (label, out["finish"])
+            noun = "design documents" if len(s.get("docset") or []) > 1 else "document" if s.get("doc") else str(s.get("output_label") or "website").lower()
+            assert f"Your {noun} {'are' if noun.endswith('s') else 'is'} ready" in out["sprog"], (label, "the run's own output type", out["sprog"])
+        assert not s["chat"] or "How it was made" in out["journeyhtml"] and not re.search(r"\bsite\b|\bBuilders?\b", re.sub(r"<[^>]+>", " ", out["journeyhtml"])), (label, "neutral journey words")
+        return out
+    # every saved run, as the page reads it
+    keep_dir, j2.RUNS_DIR = j2.RUNS_DIR, os.path.join(here, "runs")
+    try:
+        names = sorted(n for n in os.listdir(j2.RUNS_DIR) if os.path.isfile(os.path.join(j2.RUNS_DIR, n, "workflows.json"))) if os.path.isdir(j2.RUNS_DIR) else []
+        unread = []
+        for name in names:
+            try:
+                snap = j2.saved_snapshot(name, 0)
+            except (KeyError, TypeError, ValueError) as e:      # an older run's records the server can't open either (j2.saved_snapshot)
+                unread.append(f"{name} ({type(e).__name__}: {e})")
+                continue
+            check(json.loads(json.dumps(snap, default=str)), name, os.path.join(j2.RUNS_DIR, name))
+    finally:
+        j2.RUNS_DIR = keep_dir
+    # live mock states: a question (J2.a), a question with suggested answers (a conflict), an approval (real emails), a finished run
+    old = os.environ.get("J2_FIXES")
+    os.environ["J2_FIXES"] = "0"
+    try:
+        fresh = j2.J2Run()
+        info = j2.J2Run()
+        say(info, "a website for my cafe")
+        conflict = j2.J2Run()
+        say(conflict, "a website for my cafe")
+        say(conflict, "It's called Little Fig, in Koramangala, Bengaluru. Visitors should see our menu with prices, opening hours and where to "
+                      "find us. Cozy and simple, and it must work on phones.")
+        approve = j2.J2Run()
+        approve._ask_user("Before the first email goes out, one question.",
+                          [{"question": "Send real emails to your test address during this run?", "options": ["Yes", "No"]}], "send_confirm")
+        done = j2.J2Run()
+        say(done, BREW_LAB)
+        keep_env = {k: os.environ.get(k) for k in ("J2_REALIZATION", "J2_CHANGE")}
+        os.environ.update(J2_REALIZATION="1", J2_CHANGE="1")      # a change request after Done, planned into change.json
+        try:
+            changed = j2.J2Run()
+            say(changed, BREW_LAB)
+            finish(changed)
+            say(changed, "Add a section for visiting hours")
+            finish(changed)
+        finally:
+            for k, v in keep_env.items():
+                os.environ.pop(k, None) if v is None else os.environ.__setitem__(k, v)
+        assert len(changes_of(changed.dir)) == 1, "the change was planned into change.json"
+    finally:
+        os.environ["J2_FIXES"] = old if old is not None else "0"
+    states = {"landing": fresh, "question": info, "options": conflict, "approval": approve, "done": done, "changed": changed}
+    for k, run in states.items():
+        out = check(json.loads(json.dumps(run.snapshot(), default=str)), k, run.dir)
+        text = re.sub(r"<[^>]+>", " ", htmllib.unescape(out["simple"] + out["sprog"] + out["finish"]))
+        bad = SIMPLE_FORBIDDEN.findall(text) + SIMPLE_FORBIDDEN_CASE.findall(text)
+        assert not bad, (k, bad)
+        if k == "approval":
+            assert 'data-approve="yes"' in out["simple"] and 'data-approve="no"' in out["simple"] and "data-opt" not in out["simple"], out["simple"][-600:]
+        if k in ("question", "options"):
+            assert "data-later" in out["simple"] and "data-own" in out["simple"] and "data-approve" not in out["simple"], (k, out["simple"][-600:])
+        if k == "options":
+            assert out["simple"].count("data-opt=") >= 2, out["simple"][-600:]
+    note = "Chrome checks skipped"
+    chrome = j2.j2_check.find_chrome()
+    if chrome and BROWSER:
+        head = ("<script>{ const wq = new URLSearchParams(location.search).get('wrap'); if (wq){ const [ww, wh] = wq.split('x');"      # a phone-width frame, same origin; <plaintext> keeps the rest of this page from running
+                "  document.write(`<style>body{margin:0}</style><iframe src=\"/?view=simple\" style=\"border:0;width:${ww}px;height:${wh}px\"></iframe><plaintext hidden>`); } }"
+                " window.__e = []; addEventListener('error', e => __e.push(String(e.message))); window.__say = [];"
+                " const __f = fetch; window.fetch = (u, o) => String(u).startsWith('/api/say') ? (__say.push(JSON.parse(o.body).text), Promise.resolve(new Response('{\"ok\":true}')))"
+                " : __f(u, o);</script>")
+        probe = ("const q = s => [...document.querySelectorAll(s)], shown = e => !!e.getClientRects().length && getComputedStyle(e).visibility !== 'hidden';"
+                 " const rgb = c => { const n = (c.match(/[\\d.]+/g) || []).map(Number); return /color\\(srgb/.test(c) ? n.slice(0, 3).map(x => x * 255).concat(n[3] ?? 1) : n.slice(0, 3).concat(n[3] ?? 1); };"
+                 " const lum = c => { const v = c.slice(0, 3).map(x => { x /= 255; return x <= .03928 ? x / 12.92 : ((x + .055) / 1.055) ** 2.4; }); return .2126 * v[0] + .7152 * v[1] + .0722 * v[2]; };"
+                 " const bgOf = e => { for (; e; e = e.parentElement){ const c = rgb(getComputedStyle(e).backgroundColor); if (c[3] > .5) return c; } return rgb(getComputedStyle(document.body).backgroundColor); };"
+                 " const low = th => q('#sview .sb, #sview .sjhead h4, #sview .sjhead p, #sview .sjpct span, #sview .steam, #sview .sjbtn, #sview .qcard .q, #sview .qcard button, #sview .sprog .txt span, #sview .sgreet, #sview .shint, #sview .schips button, #sview .sfinish a, #sview .sfinish button, #sview .sph, #sview .stabs button, #sview .smake').filter(shown)"
+                 "   .map(e => { const a = lum(rgb(getComputedStyle(e).color)), b = lum(bgOf(e)), k = (Math.max(a, b) + .05) / (Math.min(a, b) + .05); return [th, e.className || e.tagName, +k.toFixed(2)]; }).filter(x => x[2] < 4.5);"
+                 " const S = id => document.getElementById(id);"
+                 " r.err = __e; THEME = 'light'; themeApply(); r.low = low('light'); r.wide = [document.documentElement.scrollWidth, innerWidth]; THEME = 'dark'; themeApply(); r.low = r.low.concat(low('dark'));"
+                 " r.wide.push(document.documentElement.scrollWidth); r.land = !S('sland').hidden; r.work = !S('swork').hidden; r.say0 = __say.slice();"
+                 " r.cards = q('.qcard').map(c => c.dataset.msg); r.happy = S('smini').classList.contains('happy');"
+                 " if (innerWidth < 820 && r.work){ q('[data-stab=prev]')[0].click(); r.tabs = [shown(q('.spane.c')[0]), shown(q('.spane.p')[0])]; q('[data-stab=chat]')[0].click(); r.tabs.push(shown(q('.spane.c')[0])); }"
+                 " const ap = q('[data-approve=yes]')[0]; if (ap){ ap.click(); q('[data-approve=no]')[0].click(); }"
+                 " const op = q('.qcard [data-opt]')[0]; if (op) op.click();"
+                 " const own = q('.qcard .own input')[0]; if (own){ own.value = 'My own answer'; q('.qcard [data-own]')[0].click(); q('.qcard [data-later]')[0].click(); r.later = q('.qcard.later').length; q('.qcard [data-now]')[0].click(); r.now = q('.qcard.later').length; }"
+                 " r.say = __say.slice();"
+                 " const f = S('sframe'), d = f.contentDocument; r.src = f.getAttribute('src') || '';"
+                 " if (d && d.getElementById('j2s-style')){ const chg = [...d.querySelectorAll('.j2s-chg')]; r.chg = chg.length; chg[0].click(); r.prefill = S('sbox').value;"
+                 "   chg.forEach(b => b.remove()); d.getElementById('j2s-style').remove(); [...d.querySelectorAll('.j2s-part')].forEach(e => { e.classList.remove('j2s-part'); if (!e.classList.length) e.removeAttribute('class'); });"
+                 "   sblocks = sblocks.map((x, i) => i === 1 ? [x[0], 'an earlier version'] : x); sLoaded(); r.glow = [...d.querySelectorAll('.j2s-glow')].map(e => sBlocks(d).indexOf(e)); r.look = S('smini').classList.contains('look'); }"
+                 " r.landsel = !!document.querySelector('#sland select'); r.burger = !!S('railtoggle') || shown(q('.rail.tabs')[0]);"
+                 " if (r.work){ sTab('prev'); sJourneyShow(true); const ov = (a, b) => a.x < b.x + b.width && b.x < a.x + a.width && a.y < b.y + b.height && b.y < a.y + a.height;"
+                 "   r.jstops = q('.sjstop').length; r.jbadge = S('sbadge').hidden; r.jnarrow = q('.sjsvg')[0].viewBox.baseVal.width; r.jover = [];"
+                 "   const labs = q('.sjlab').map(e => e.getBBox()), dots = q('.sjdot').map(e => e.getBBox()), stars = q('.sjstar').map(e => e.getBBox());"
+                 "   labs.forEach((l, i) => { dots.forEach((b, j) => { if (ov(l, b)) r.jover.push(['label', i, 'stop', j]); }); stars.forEach((b, j) => { if (ov(l, b)) r.jover.push(['label', i, 'star', j]); }); labs.forEach((b, j) => { if (j > i && ov(l, b)) r.jover.push(['label', i, 'label', j]); }); });"
+                 "   const tr = q('.sjtrack')[0], L = tr.getTotalLength(); for (let t = 0; t <= L; t += 3){ const pt = tr.getPointAtLength(t); labs.forEach((l, i) => { if (pt.x >= l.x - 4 && pt.x <= l.x + l.width + 4 && pt.y >= l.y - 4 && pt.y <= l.y + l.height + 4) r.jover.push(['label', i, 'path', Math.round(t)]); }); }"
+                 "   r.jwide = [document.documentElement.scrollWidth, innerWidth]; q('.sjstop')[2].dispatchEvent(new MouseEvent('mouseover', {bubbles: true})); r.jtip = !S('sjtip').hidden && S('sjtip').textContent;"
+                 "   THEME = 'light'; themeApply(); r.jlow = low('light'); THEME = 'dark'; themeApply(); r.jlow = r.jlow.concat(low('dark'));"
+                 "   sJourneyShow(false); r.jback = !S('sprevbox').hidden && S('sjourney').hidden;"
+                 "   S('steam').click(); r.card = S('steamcard').open; S('steamfull').click(); r.full = [S('steamcard').open, document.body.classList.contains('simple')]; }"
+                 " if (r.land){ const g = q('#sland .screwg'), b = g[0], fin = () => document.getAnimations().filter(a => a instanceof CSSTransition).forEach(a => a.finish()), cs = (s, k) => getComputedStyle(b.querySelector(s))[k];"
+                 "   r.crew = [g.length, b.tagName, b.getAttribute('aria-label') || '', b.tabIndex, b.querySelectorAll('button, a, input, [tabindex]').length, b.querySelectorAll('.smate').length, (b.textContent.match(/Planner|Budget|Builder|Gatekeeper|Quality/g) || []).length];"
+                 "   r.crew0 = [cs('.omouth', 'opacity'), cs('.sviewteam', 'opacity')];"
+                 "   const ta = S('lbox'); ta.focus(); fin(); r.box = [getComputedStyle(ta).outlineStyle, getComputedStyle(S('lform')).borderTopColor === getComputedStyle(S('sgreet')).color ? 'ink' : getComputedStyle(S('lform')).borderTopColor, getComputedStyle(S('lform')).boxShadow !== 'none'];"
+                 "   const am = document.createElement('i'); am.style.color = 'var(--warm1)'; document.body.appendChild(am); r.amber = getComputedStyle(am).color; am.remove();"
+                 "   b.focus(); fin(); r.crew1 = [b.matches(':focus-visible'), cs('.omouth', 'opacity'), cs('.smile', 'opacity'), cs('.sviewteam', 'opacity'), cs('.alert', 'opacity'), cs('.schat span', 'opacity')];"
+                 "   const d = S('steamcard'), at = (x, y) => d.dispatchEvent(new MouseEvent('click', {bubbles: true, clientX: x, clientY: y}));"
+                 "   b.click(); r.crewcard = [d.open, document.body.classList.contains('simple'), d.textContent.includes('Planner') && d.textContent.includes('Budget lead') && d.textContent.includes('Makers') && d.textContent.includes('Gatekeeper') && d.textContent.includes('Quality check')];"
+                 "   const dr = d.getBoundingClientRect(); at(dr.left + 4, dr.top + 4); r.crewpad = d.open; at(2, 2); r.crewout = d.open;"
+                 "   b.click(); d.querySelector('[data-close]').click(); r.crewclose = d.open;"
+                 "   b.click(); r.crewesc = d.tagName === 'DIALOG' && d.matches(':modal'); d.close();"      # a modal <dialog>: the browser closes it on Esc (a scripted key can't)
+                 "   b.click(); S('steamfull').click(); r.crewfull = [d.open, document.body.classList.contains('simple')]; }"
+                 " r.err2 = __e.slice();")
+        page = ui.replace("<head>", "<head>" + head, 1).replace("</body>", "<script>setTimeout(() => { const r = {}; try { " + probe
+                                                                + " } catch (e) { r.error = String(e); } (parent !== window ? parent : window).document.body.setAttribute('data-r', JSON.stringify(r)); }, 5000)</script></body>")
+        tmp = tempfile.mkdtemp(prefix="j2-simple-")
+        open(os.path.join(tmp, "j2_ui.html"), "w", encoding="utf-8").write(page)
+        keep_here, keep_run = j2_server.HERE, j2_server.RUN
+        j2_server.HERE = tmp
+        srv = j2_server.http.server.ThreadingHTTPServer(("127.0.0.1", 0), j2_server.Handler)
+        threading.Thread(target=srv.serve_forever, daemon=True).start()
+        got = {}
+        try:
+            for k, run in states.items():
+                j2_server.RUN = run
+                for w, h in ((1440, 900), (390, 844)):
+                    base = f"http://127.0.0.1:{srv.server_address[1]}/"      # headless Chrome's window is at least 500px wide: a phone is a 390px frame in it
+                    dom = chrome_dom([chrome, "--headless=new", "--disable-gpu", f"--window-size={max(w, 500)},{h}", "--virtual-time-budget=12000", "--dump-dom",
+                                      base + (f"?wrap={w}x{h}" if w < 500 else "?view=simple")], capture_output=True, text=True, timeout=120).stdout
+                    m = re.search(r'data-r="([^"]*)"', dom)
+                    assert m, (k, w, "the probe did not report")
+                    r = json.loads(htmllib.unescape(m.group(1)))
+                    got[(k, w)] = r
+                    assert "error" not in r and not r.get("err"), (k, w, r.get("error"), r.get("err"))
+                    assert r["wide"][0] <= r["wide"][1] and r["wide"][2] <= r["wide"][1], (k, w, "sideways scroll", r["wide"])
+                    assert not r["low"], (k, w, "text below 4.5:1", r["low"][:6])
+                    assert r["land"] == (k == "landing") and r["work"] == (k != "landing"), (k, w, r["land"], r["work"])
+                    assert r["say0"] == [], (k, w, "nothing is sent before a click", r["say0"])
+                    if w < 820 and k != "landing":
+                        assert r["tabs"] == [False, True, True], (k, w, r["tabs"])
+                    want = set(str(x["msg"]) for x in [{"msg": run.paused["msg"]}]) if run.paused else set()
+                    assert set(r["cards"]) == want, (k, w, r["cards"], want)
+                    assert r["landsel"] is False and r["burger"] is False, (k, w, "no dropdown and no menu button in the Simple view")
+                    assert not r["err2"], (k, w, r["err2"])
+                    if k == "landing":      # the team on the landing: one focusable button with a name, no names under it; focus reacts; a click opens the full view
+                        assert r["crew"] == [1, "BUTTON", "See your team", 0, 0, 5, 0], (w, r["crew"])
+                        assert r["crew0"] == ["0", "0"] and r["crew1"] == [True, "1", "0", "1", "1", "0"], (w, r["crew0"], r["crew1"])
+                        assert r["crewcard"] == [True, True, True], (w, "a click opens the team card, not the full view", r["crewcard"])
+                        assert r["crewpad"] is True and r["crewout"] is False and r["crewclose"] is False and r["crewesc"] is True, (w, "a click on the card stays; outside or Close closes", r["crewpad"], r["crewout"], r["crewclose"])
+                        assert r["crewfull"] == [False, False], (w, "only Open detailed view opens the full view", r["crewfull"])
+                        assert r["box"][0] == "none" and r["box"][1] == r["amber"] and r["box"][2], (w, "the prompt box: one amber border and a glow, no outline inside", r["box"], r["amber"])
+                    if k != "landing":
+                        assert r["jstops"] == 5 + len(changes_of(run.dir)) and r["jbadge"] and r["jtip"] and r["jback"], (k, w, r["jstops"], r["jbadge"], r["jtip"], r["jback"])
+                        assert not r["jover"], (k, w, "a journey label overlaps", r["jover"][:6])
+                        assert r["jwide"][0] <= r["jwide"][1] and not r["jlow"] and r["jnarrow"] == (360 if w < 520 else 560), (k, w, r["jwide"], r["jlow"][:4], r["jnarrow"])
+                        assert r["card"] is True and r["full"] == [False, False], (k, w, "the strip opens the team card; Open detailed view reaches the full view", r["card"], r["full"])
+            a, qn, op, dn = got[("approval", 1440)], got[("question", 1440)], got[("options", 1440)], got[("done", 1440)]
+            assert a["say"] == ["Yes, approve it.", "No, not now."], a["say"]
+            assert qn["say"] == ["My own answer"] and qn["later"] == 1 and qn["now"] == 0, qn
+            assert op["say"] == ["Option 1", "My own answer"], op["say"]
+            assert dn["happy"] and dn["src"].startswith(f"/site/v{len(done.sites)}?") and dn["chg"] >= 2 and dn["prefill"].startswith("Change the ") \
+                and dn["prefill"].endswith(": ") and dn["glow"] == [1] and dn["look"], dn
+        finally:
+            j2_server.HERE, j2_server.RUN = keep_here, keep_run
+            srv.shutdown()
+        note = (f"Chrome: 6 states x 1440x900 and 390x844, light and dark, no error, no sideways scroll, text 4.5:1; cards answer through /api/say, "
+                f"approvals only on a click; tabs; glow and Change this; journey labels clear of stops and path, team card to the full view; no dropdown or menu button")
+    print(f"simple redesign: {len(names) - len(unread)} saved runs ({len(unread)} the server can't open: {'; '.join(unread)[:300]}) and 6 live states (one with a change request), chat only you and the Client Lead, journey stops from change.json and built sections, every Needs you item a card, "
+          f"parts built from the workflows, latest version in the preview; {note} ok")
 
 
 def work_atoms():
@@ -1908,7 +2146,7 @@ def page():
         say(j2_server.RUN, BREW_LAB + " Test key: sk-test-not-a-real-key-123")
         html = served_page(get)
         for x in ('data-tab="timeline"', 'data-tab="lessons"', 'id="lanes"', 'id="detail"', "renderLanes", "openDetail",
-                  "renderTimeline", 'id="runsel"', "clear-lessons", "--wf0"):
+                  "renderTimeline", 'id="runlist"', "clear-lessons", "--wf0"):
             assert html is None or x in html, x
         raw = get("/api/state")
         st = json.loads(raw)
@@ -2916,7 +3154,7 @@ def prd_page():
         st = json.loads(get("/api/state"))
         assert st["output"] == "prd" and st["output_label"] == "PRD document" and st["doc"], st["output"]
         html = served_page(get)
-        assert html is None or ('id="outsel"' in html and 'id="otype"' in html and 'id="doclinks"' in html and "/api/output" in html)
+        assert html is None or ('id="outsel"' not in html and 'id="otype"' in html and 'id="doclinks"' in html)
         say(j2_server.RUN, PRD_BRIEF)
         try:
             post("/api/output", {"type": "website"})
@@ -2931,7 +3169,7 @@ def prd_page():
         if j2.j2_check.find_chrome():            # the Simple view in Chrome: plain words, document links
             text, _, _ = simple_text(base)
             bad = SIMPLE_FORBIDDEN.findall(text) + SIMPLE_FORBIDDEN_CASE.findall(text)
-            assert not bad and "Your document team" in text and "Your document is ready" in text, (bad, text[-600:])
+            assert not bad and "Client Lead" in text and "Your document is ready" in text, (bad, text[-600:])
             assert "Download the Word file (.docx)" in text and "Download the markdown (.md)" in text, text[-400:]
             assert "Download the HTML file" not in text, text[-400:]
         name = os.path.basename(j2_server.RUN.dir)
@@ -3459,7 +3697,7 @@ def atom_cards_render():
         card = card[card.index(f'data-key="atom-{a["id"]}"'):]
         card = card[:card.index("Run details")]
         blocks = re.findall(r'data-block="([a-z_]+)"', card)
-        assert blocks == ["goal", "how", "constraints", "context", "expected_output", "verification", "human_output",
+        assert blocks == ["goal", "how", "constraints", "context", "expected_output", "template_line", "verification", "human_output",
                           "agent_output", "result"], blocks
         assert all(f"<b>{x}</b>" in card for x in ("Notes", "Workflow output", "Result")) and "<b>Human output</b>" not in card
         assert re.findall(r'<h4 class="agroup">([^<]*)<', card) == ["1. Particles", "2. Defined output and verification",
@@ -3499,14 +3737,8 @@ def atom_cards_render():
     assert 'data-preview="text"' in pre and "<iframe" not in card0 and 'data-link="site"' not in card0
     # an atom with an anchor but no preview yet shows a loading note
     assert 'data-preview="wait"' in render_node(snap)["cards"][atoms[0][0]["id"]] or not atoms[0][1]["agent_output"]["anchor"]
-    # Simple view output is identical to before the atom cards changed (the checkpoint commit's page, same state)
-    old = subprocess.run(["git", "show", "3ab8120:j2_ui.html"], capture_output=True, text=True,
-                         cwd=HERE)
-    if old.returncode == 0:
-        p = os.path.join(tempfile.mkdtemp(prefix="j2-old-ui-"), "j2_ui_old.html")
-        open(p, "w", encoding="utf-8").write(old.stdout)
-        before = render_node(snap, html=p)
-        assert before["simple"] == out["simple"] and before["sprog"] == out["sprog"] and before["simple"], "Simple view changed"
+    # the Simple view shows none of the atom cards' internals (simple_redesign covers its layout)
+    assert out["simple"] and "Your website is ready" in out["sprog"] and "data-block" not in out["simple"] + out["finish"], out["sprog"]
     # the page's preview endpoint serves the same source
     import threading
     import urllib.request
@@ -3619,7 +3851,7 @@ def docs_tab():
     assert re.findall(r'<span>(End of \w+|Start of \w+)</span>', d) == ["End of PRD", "Start of HLD", "End of HLD", "Start of LLD", "End of LLD"], d
     assert d.count('data-docjump="top"') == 3
     assert '<p class="dl hit" id="doc-prd-R2">' in d and '<p class="dl" id="doc-prd-G1">' in d and 'id="doc-lld-S1"' in d, d
-    assert d.count('id="doc-prd-G1"') == 1 and "<h4>P</h4>" in d, "an item's first line only carries the id"
+    assert d.count('id="doc-prd-G1"') == 1 and '<h4 data-head="P">P</h4>' in d, "an item's first line only carries the id; a heading carries its text (a Map section link lands on it)"
     docs["docs"]["hld"] = {"asked": False, "text": None, "workflows": []}
     nd = render_node(snap, docs=docs)["docs"]
     assert "Not asked for in this run." in nd.split('data-doc-kind="hld"')[1].split("</section>")[0] and nd.count("End of HLD") == 1
@@ -5405,7 +5637,8 @@ def artifact_schemas():
         wf = next(w for w in snap["workflows"] if (w.get("atoms") or [{}])[0].get("id") in built)
         card = render_node(snap, docs={"docs": {}})["cards"][wf["id"]]
         order = re.findall(r'data-block="(\w+)"', card)
-        assert order.index("artifact_template") == order.index("expected_output") + 1, order
+        assert order.index("template_line") == order.index("expected_output") + 1, order      # the atom's Template line, then the artifact template
+        assert order.index("artifact_template") == order.index("template_line") + 1, order
         assert order.index("artifact_template") + 1 == order.index("verification"), order
         blk = card.split('data-block="artifact_template"')[1].split('data-block="verification"')[0]
         assert re.findall(r'data-artrow="(\w+)"', blk) == ["template", "schema", "rules", "rendered"], blk[:200]
@@ -5462,11 +5695,11 @@ def artifact_schema_failures():
     # (g) no usable structured output: both cases are failed attempts, with the subtype as the evidence
     from sutra_app.engine import llm
     class FakeRun:
-        def __init__(self, payload):
-            self.payload, self.returncode, self.stderr = payload, 0, ""
+        def __init__(self, payload, returncode=0, stderr="", stdout=None):
+            self.payload, self.returncode, self.stderr, self._stdout = payload, returncode, stderr, stdout
         @property
         def stdout(self):
-            return json.dumps(self.payload)
+            return json.dumps(self.payload) if self._stdout is None else self._stdout
     cli_cases = (({"subtype": "error_max_structured_output_retries", "result": "", "is_error": True},
                   "error_max_structured_output_retries"),
                  ({"subtype": "success", "result": "{}", "is_error": False}, "no structured_output"))
@@ -5769,7 +6002,7 @@ def docs_views():
         card = out["cards"][w["id"]]
         a = w["atoms"][0]
         card = card[card.index(f'data-key="atom-{a["id"]}"'):].split("Run details")[0]
-        assert re.findall(r'data-block="([a-z_]+)"', card) == ["goal", "how", "constraints", "context", "expected_output",
+        assert re.findall(r'data-block="([a-z_]+)"', card) == ["goal", "how", "constraints", "context", "expected_output", "template_line",
                                                               "verification", "human_output", "agent_output", "result"], w["id"]
         pre = card.split('data-block="result"')[1]
         assert 'data-preview="frame"' in pre and "sandbox" in pre and "srcdoc=" in pre, pre[:200]
@@ -5781,27 +6014,21 @@ def docs_views():
         cards += 1
     assert cards == 3
     # Simple view: the finished set in plain words, no ids or check codes
-    text = re.sub(r"<[^>]+>", " ", htmllib.unescape(out["simple"]))
+    text = re.sub(r"<[^>]+>", " ", htmllib.unescape(out["simple"] + out["sprog"] + out["finish"]))
     assert "Your design documents are ready" in text and "Download the product requirements (markdown)" in text \
         and "Download the low-level design (Word file)" in text, text[-500:]
     bad = SIMPLE_FORBIDDEN.findall(text) + SIMPLE_FORBIDDEN_CASE.findall(text) + re.findall(r"\b(?:[PHLN]\d|R\d|W-\d+)\b", text)
     assert not bad, bad
-    # a plain brief's Simple view is identical to the checkpoint's page, on the same state
+    # a plain brief: the website's ready line and its Download; a PRD-only run: its own document links
     plain = docs_run(BREW_LAB, 200)
-    ps = j2.saved_snapshot(os.path.basename(plain.dir), 0)
-    old = subprocess.run(["git", "show", f"{CHECKPOINT}:j2_ui.html"], capture_output=True, text=True, cwd=here)
-    if old.returncode == 0:
-        p = os.path.join(tempfile.mkdtemp(prefix="j2-old-ui-"), "j2_ui_old.html")
-        open(p, "w", encoding="utf-8").write(old.stdout)
-        before, after = render_node(ps, html=p), render_node(ps)
-        assert before["simple"] == after["simple"] and before["sprog"] == after["sprog"] and after["simple"] and "ready" in after["simple"]
-        # and a PRD-only run keeps its own ready card
-        prd = docs_run("Write a PRD for Campus Notes." + CAMPUS, 200)
-        ss = j2.saved_snapshot(os.path.basename(prd.dir), 0)
-        assert render_node(ss, html=p)["simple"] == render_node(ss)["simple"]
+    after = render_node(j2.saved_snapshot(os.path.basename(plain.dir), 0))
+    assert "Your website is ready" in after["sprog"] and 'download="my-website.html"' in after["finish"], (after["sprog"], after["finish"])
+    prd = docs_run("Write a PRD for Campus Notes." + CAMPUS, 200)
+    ss = render_node(j2.saved_snapshot(os.path.basename(prd.dir), 0))
+    assert "Your document is ready" in ss["sprog"] and "Download the Word file (.docx)" in ss["finish"], (ss["sprog"], ss["finish"])
     print("document views: .md and .docx downloads (live and saved), preview of a document atom's section, eight-block "
           "cards with download links, Simple view says 'Your design documents are ready' in plain words, a plain "
-          "brief's Simple view identical to the checkpoint's ok")
+          "brief's and a PRD's ready line and downloads ok")
 
 
 
@@ -6555,8 +6782,8 @@ def artifact_types():
 
 def artifacts_tab():
     """Artifacts: artifacts.json written at the end of a run (additive), the same rows rebuilt from an old folder, the
-    endpoints serve only files the list names, and the tab renders two headings with tags, workflows, dependencies and an
-    Open button per form (document text, website preview, screenshot image, data text)."""
+    endpoints serve only files the list names; the Artifacts groups keep the PRD, HLD and LLD out of the guides, and the page lists a group
+    with nothing opened but its first item."""
     import shutil
     import threading
     import urllib.error
@@ -6649,37 +6876,20 @@ def artifacts_tab():
         print("artifacts tab render skipped: node not found")
         return
     snap = j2.saved_snapshot(name, 0)
-    lst = A.listing(run.dir)
-    html = render_node(snap, docs={"docs": {}, "artifacts": lst})["artifacts"]
-    assert html.index("<h3>Deliverables</h3>") < html.index("<h3>Evidence and records</h3>") and html.count("<h3>") == 2
-    top, rest = html.split("<h3>Evidence and records</h3>")
-    assert top.count('class="artrow"') == 4 and rest.count('class="artrow"') == len(lst["records"])
-    for r in lst["deliverables"]:
-        row = top[top.index(f'data-art="{r["file"]}"'):].split('<div class="artrow"')[0]
-        assert f"<b>{r['label']}</b>" in row and f'style="background:var({r["color"]})">{r["tag"]}</span>' in row and "Open</button>" in row
-        assert (f"made by {j2_ui_idruns(r['workflows'])}" in row) and r["form"] in row
-    assert "depends on nothing in this run" in top.split('data-art="hld.md"')[0] and "depends on Product requirements" in top.split('data-art="hld.md"')[1].split('data-art="lld.md"')[0]
-    assert "depends on High-level design, Low-level design" in top.split('data-art="site/index.html"')[1]
-    assert "Open</button>" in rest and "iframe" not in html and "<img" not in html and "<pre" not in html      # nothing open by default
-    # Open: a document shows readable text, the site a preview frame, a screenshot an image, a data file plain text
-    lst["records"].append({**lst["records"][0], "name": "Screenshot v4", "type": "screenshots", "form": "image", "file": "site/shots/v4.png",
-                           "open": "image", "tag": "Other", "color": "--other"})
-    for f, mode, mark in (("prd.md", "text", '<pre class="arttext">'), ("site/index.html", "preview", '<iframe class="artframe" sandbox=""'),
-                          ("site/shots/v4.png", "image", '<img class="artimg"'), ("atoms.json", "text", '<pre class="arttext">')):
-        out = render_node(snap, docs={"docs": {}, "artifacts": lst, "artopen": f, "arttext": {f: "# Product\n<b>x</b>"}})["artifacts"]
-        assert out.count(mark) == 1 and "Close</button>" in out, (f, mode)
-        if mode == "text":
-            assert "# Product\n&lt;b&gt;x&lt;/b&gt;" in out      # escaped, never run as markup
-        assert f"/api/artifact?name={urllib.request.quote(f, safe='')}" in out or mode == "text"
-    out = render_node(snap, docs={"docs": {}, "artifacts": {"deliverables": [], "records": []}})["artifacts"]
-    assert "Nothing built yet." in out and "Nothing recorded yet." in out
+    g = A.groups(run.dir)
+    G = {x["id"]: x for x in g["groups"]}
+    assert all(x["file"] not in ("prd.md", "hld.md", "lld.md") for x in G["guides"]["rows"]), "a PRD, HLD or LLD is a document (Documents), not a guide"
+    art = lambda k, **kw: render_node(snap, docs={"docs": {}, "artifacts": {"groups": g, "g": k, "sel": {}, "tab": "sum", "ver": "", **kw}})["artifacts"]
+    html = art("records")
+    assert html.count("data-agrow=") == len(G["records"]["rows"]) >= 3 and "<iframe" not in html and "<pre" not in html, "a list and the first record; nothing else opened"
+    assert 'data-agrow="charter"' in art("plan") and 'data-art="goal.json"' in art("plan")
+    assert "Loading the artifacts" in render_node(snap, docs={"docs": {}, "artifacts": {}})["artifacts"], "before the groups load"
     # the Documents and Charter tabs still render as before
     both = render_node(snap, docs={"docs": {k: {"asked": True, "text": open(os.path.join(run.dir, k + ".md"), encoding="utf-8").read()}
                                             for k in ("prd", "hld", "lld")}})
     assert 'id="docblock-prd"' in both["docs"] and "Charter" in both["charter"]
     print("artifacts: artifacts.json written at run end (additive), an old run gets the same rows from its folder, endpoints serve "
-          "only listed files (live, saved, missing run), the tab shows two headings with tag, workflows, dependencies and an Open "
-          "button per form ok")
+          "only listed files (live, saved, missing run), the groups keep documents out of the guides, a group lists its rows ok")
 
 
 def j2_ui_idruns(ids):
@@ -6702,7 +6912,8 @@ def artifacts_tree():
     """The Artifacts page as a tree (artifacts-tree/1) for every run under runs/: Plan, Specs, Deliverable, Proof; every file in
     artifacts.json exactly once; every spec has its maker and the Style guide is a spec; screenshots only under Proof (Verification
     proof); makers, readers and statuses are j2_map.build's; no deliverable among the run records. Run 174314: 5 specs and the Style
-    guide, the Website with 11 sections folded and 14 versions, 2 screenshots. The page: one line per item with one status tag."""
+    guide, the Website with 11 sections folded and 14 versions, 2 screenshots. The page (the Artifacts groups): the five guides, ten sections and the
+    Style guide, the screenshots as one record."""
     import collections
     from sutra_app.engine import j2_artifacts as A
     from sutra_app.engine import j2_map as M
@@ -6769,14 +6980,15 @@ def artifacts_tree():
         assert "zone analyze" in plan["Realization plan"]["note"] and "plan confidence 0.85" in plan["Realization plan"]["note"] and plan["Workflows"]["note"] == "17 workflows"
         assert plan["Realization plan"]["children"][0]["file"] == "realization.md"
         assert plan["Realization plan"]["made_by"] == {"function": "Adaptation (scored by the confidence judge)"}, "Adaptation's plan reply, saved by code"
-        # the page: four groups; one line per item (name, maker, one status tag, Open); the sections folded; the screenshots as thumbnails
-        html = render_node({"workflows": [], "chat": []}, docs={"docs": {}, "artifacts": {**A.listing(d74), "tree": t}})["artifacts"]
-        assert [re.sub(r"<[^>]+>", "", h).split()[0] for h in re.findall(r'<h3 class="arthead">.*?</h3>', html)] == ["Plan", "Specs", "Deliverable", "Proof"]
-        assert "Product Manager (W-1) · Product plan · read by 7" in html and "Web Developer (W-6)" in html and 'data-artopen="artifacts/hint-method.md"' in html
-        assert "<summary>11 sections</summary>" in html and "<summary>14 versions</summary>" in html and html.count('class="artshot"') == 2
-        assert html.index('data-group="specs"') < html.index('data-art="style.json"') < html.index('data-group="deliverables"'), "the Style guide under Specs"
-        tails = re.findall(r'<div class="artrow" data-art="([^"]*)"[^>]*>.*?<span class="artr">(.*?)</span></div>', html, re.S)
-        assert len(tails) == html.count('<div class="artrow"') and all(r.count('class="arttag') == (0 if a == "Verification proof" else 1) for a, r in tails), "one status tag per line"
+        # the page (the Artifacts groups, j2_artifacts.groups): the guides with their makers, the sections then the Style guide, the screenshots as one record
+        gr = A.groups(d74)
+        art = lambda k: render_node({"workflows": [], "chat": []}, docs={"docs": {}, "artifacts": {"groups": gr, "g": k, "sel": {}, "tab": "sum", "ver": ""}})["artifacts"]
+        html = art("guides")
+        assert re.findall(r'data-agrow="([^"]+)"', html) == ["W-1", "W-2", "W-3", "W-4", "W-5"] and "Product Manager · 1 version" in html and 'data-art="artifacts/hint-method.md"' in html
+        html = art("site")
+        assert len(re.findall(r'data-agrow="([^"]+)"', html)) == 11 and re.findall(r'data-agrow="([^"]+)"', html)[-1] == "style" and 'data-sec="work:website|W-6"' in html, "10 sections, then the Style guide"
+        html = art("records")
+        assert 'data-agrow="shots"' in html and "2 images" in html and html.count("data-agrow=") == 4
     if "j2-20261027-130930" in names:
         t = A.tree(os.path.join(repo, "j2-20261027-130930"))
         prd = next(x for g in t["groups"] if g["id"] == "deliverables" for x in g["items"])
@@ -6785,7 +6997,7 @@ def artifacts_tree():
     print(f"artifacts tree: {seen} runs, Plan / Specs / Deliverable / Proof, every artifacts.json file once, every spec with its maker, "
           f"the Style guide under Specs ({style_n}), {shots_n} screenshots only under Proof, makers, readers and statuses from j2_map.build, "
           "no deliverable among the run records; 174314: 5 specs and the Style guide, Website with 11 sections folded and 14 versions, "
-          "2 screenshots as thumbnails, one status tag per line; 130930: the emails under the PRD with sent and skipped ok")
+          "2 screenshots, and on the page five guides, ten sections and the Style guide, the screenshots as one record; 130930: the emails under the PRD with sent and skipped ok")
 
 
 def agent_view():
@@ -6922,8 +7134,8 @@ def agent_view():
               " document.dispatchEvent(new KeyboardEvent('keydown', {key: 'Escape', bubbles: true})); r.closed = d.hidden; r.panel = !!document.querySelector('#pane-map .mappanel');"
               " const c = document.querySelector('#msgs [data-agent^=\"W-\"]'); r.chatbtn = c ? c.dataset.agent : null; c.click();"
               " setTimeout(() => { r.wf = d.hidden ? '' : d.querySelector('h3').textContent; document.querySelector('[data-agentclose]').click(); r.closed2 = d.hidden;"
-              "  showTab('artifacts'); loadArtifacts().then(() => { const o = document.querySelector('[data-artcode=\"work:website|W-8\"]'); o.click();"
-              "   setTimeout(() => { const pre = document.querySelector('#pane-artifacts pre.code'); r.code = pre ? [pre.querySelectorAll('.ln').length, getComputedStyle(pre).fontFamily, !!document.querySelector('[data-codecopy]'), pre.querySelector('.hlt') ? 1 : 0] : null;"
+              "  artOpenGroup('site', 'W-8').then(() => { document.querySelector('#pane-artifacts [data-atab=agent]').click();"
+              "   setTimeout(() => { const pre = document.querySelector('#pane-artifacts pre.code'); r.code = pre ? [pre.querySelectorAll('.ln').length, getComputedStyle(pre).fontFamily, !!document.querySelector('[data-codecopy]'), document.querySelector('#pane-artifacts pre.code .hlt') ? 1 : 0] : null;"
               "    document.body.setAttribute('data-r', JSON.stringify(r)); }, 900); }); }, 900); }, 900);")
         tmp = tf.mkdtemp(prefix="j2-agent-")
         open(os.path.join(tmp, "j2_ui.html"), "w", encoding="utf-8").write(ui.replace("</body>", "<script>setTimeout(() => { try { " + js + " } catch (e) { document.body.setAttribute('data-r', JSON.stringify({error: String(e.stack || e)})); } }, 2500)</script></body>"))
@@ -7706,13 +7918,121 @@ def map_line():
           "no horizontal page scroll, the legend chip in the card corner covering nothing; wheel, + and - (0.25x to 4x), Fit after zoom and pan gives back the same transform; a click on a dot keeps the view; a narrower card refits ok")
 
 
+def late_judge_run():
+    """A mock run with realization on and one forced Audit failure: every planned workflow is registered with its stage and zone from
+    the plan; the fix Adaptation proposes after the failure inherits the stage and zone of the workflow it revises, is judged once
+    (Priority's exchanges resend it; the judgement is cached) and recorded in realization.json under "late" with a system line."""
+    from sutra_app.engine import j2_realization
+    keep = {k: os.environ.get(k) for k in ("J2_REALIZATION", "J2_CHANGE", "J2_FORCE_AUDIT_FAIL")}
+    os.environ.update(J2_REALIZATION="1", J2_CHANGE="1", J2_FORCE_AUDIT_FAIL="1")
+    try:
+        run = j2.J2Run(); say(run, BREW_LAB); finish(run)
+    finally:
+        for k, v in keep.items():
+            os.environ.pop(k, None) if v is None else os.environ.__setitem__(k, v)
+    wfs = run._all_wfs()
+    assert run.real is not None and wfs and all(w.get("stage") and w.get("certainty") and w.get("certainty_from") == ("plan" if not w.get("revises") else "inherited from " + w["revises"]) for w in wfs), \
+        [(w["id"], w.get("stage"), w.get("certainty"), w.get("certainty_from")) for w in wfs]
+    late = run.real.get("late") or []
+    assert late and all(x["revises"] and x["zone"] and x["stage"] and x["score"] >= j2_realization.THRESHOLD and x["ready"] for x in late), late
+    names = [x["workflow"] for x in late]
+    assert len(names) == len(set(names)), ("a resent proposal is judged once", names)
+    src = next(w for w in wfs if w["id"] == late[0]["revises"])
+    assert late[0]["zone"] == src["certainty"] and late[0]["stage"] == src["stage"], (late[0], src)
+    fix = next(w for w in wfs if w.get("revises") == src["id"])
+    assert fix["certainty"] == src["certainty"] and fix["stage"] == src["stage"] and fix["judge"]["score"] == late[0]["score"] and fix["judge"]["ready"],         ("the registered fix carries the inherited zone and its judgement", fix)
+    posts = [m for m in run.chat if m.get("judge")]
+    assert posts and "scored 0.95" in posts[0]["text"] and f"zone {src['certainty']}, stage {src['stage']}" in posts[0]["text"], posts[0]["text"]
+    saved = json.load(open(os.path.join(run.dir, "realization.json"), encoding="utf-8"))
+    assert saved.get("late") == late, "the late judgements are saved with the plan"
+    print(f"late judge: {len(wfs)} planned workflows placed from the plan; {len(late)} late judgement(s) inherited stage and zone and were judged once")
+
+
+def plan_map_view():
+    """Adaptation > Map (plan-map/1): the goal, the stages the Strategist chose and every registered workflow under each, from the run's own
+    records (realization.json, workflows.json, change.json, goal.json). Browser-free: the pane draws the goal, every stage, a no-stage column and
+    every workflow, tints by zone, shows the judge's score against the gate, marks a revised workflow and where a change started, and dashes a held one."""
+    from sutra_app.engine import j2_map as M
+    from sutra_app.engine import j2_realization as R
+    td = tempfile.mkdtemp(prefix="j2-planmap-")
+    rz = {"plan": {"certainty_assessment": {"zone": "analyze"}, "stages": [{"id": "product", "thinking": "scope"}, {"id": "build", "thinking": "make it"}],
+                   "workflows": [{"name": "Plan", "stage": "product", "certainty": "analyze", "goal": "fix the scope"},
+                                 {"name": "Shell", "stage": "build", "certainty": "operate", "goal": "page shell"}]},
+          "scores": {"Plan": {"score": 0.95, "weakest": None}, "Shell": {"score": 0.79, "weakest": "done_test"}}, "history": {"Plan": [0.95], "Shell": [0.75, 0.79]},
+          "plan_confidence": 0.79, "stages": {"product": {"confidence": 0.95, "zone": "analyze"}, "build": {"confidence": 0.79, "zone": "operate"}}}
+    wfs = [{"id": "W-1", "name": "Plan", "stage": "product", "cycle": 1, "status": "done", "cost": 20},
+           {"id": "W-2", "name": "Shell", "stage": "build", "cycle": 1, "status": "held", "cost": 30},
+           {"id": "W-3", "name": "Plan (change 1)", "stage": "product", "cycle": 2, "status": "done", "cost": 20, "revises": "W-1",
+            "certainty": "analyze", "certainty_from": "inherited from W-1", "judge": {"score": 0.9, "weakest": "done_test", "rounds": [0.7, 0.9], "ready": True}},
+           {"id": "W-4", "name": "Extra", "cycle": 2, "status": "registered", "cost": 10}]
+    ch = [{"id": "C-1", "request": "Rename the levels", "phase": "relay",
+           "nodes": {"W-1": {"name": "Plan", "verdict": "change-here", "revisions": ["W-3"], "reason": "the levels live in the plan"}},
+           "relay": [{"name": "Shell", "doc": "Plan (change 1)", "affected": False, "agree": True, "round": 0}]}]
+    for f, obj in (("realization.json", rz), ("workflows.json", wfs), ("change.json", ch), ("goal.json", {"site_name": "Sudoku", "statement": "a sudoku page"})):
+        json.dump(obj, open(os.path.join(td, f), "w", encoding="utf-8"))
+    m = M.plan_map(td)
+    assert m["found"] and m["goal"] == "Sudoku" and m["zone"] == "analyze" and m["confidence"] == 0.79 and m["threshold"] == R.THRESHOLD         and [s["id"] for s in m["stages"]] == ["product", "build"] and m["stages"][0]["workflows"] == ["W-1", "W-3"] and m["unplaced"] == ["W-4"], m
+    w = {x["id"]: x for x in m["workflows"]}
+    assert w["W-2"]["zone"] == "operate" and w["W-2"]["score"] == 0.79 and w["W-2"]["rounds"] == [0.75, 0.79] and w["W-2"]["weakest"] == "done_test"         and w["W-3"]["zone"] == "analyze" and w["W-3"]["zone_from"] == "inherited from W-1" and w["W-3"]["score"] == 0.9 and w["W-3"]["rounds"] == [0.7, 0.9] and w["W-1"]["zone_from"] == "plan" and w["W-4"]["zone"] is None and w["W-3"]["revises"] == "W-1" and w["W-1"]["revisions"] == ["W-3"] and w["W-1"]["change_start"]["change"] == "C-1"         and w["W-2"]["read"] == [{"change": "C-1", "doc": "Plan (change 1)", "affected": False, "agree": True, "round": 0, "doc_id": "W-1"}], w
+    assert M.plan_map(tempfile.mkdtemp(prefix="j2-planmap-empty-")) == {"found": False} and M.plan_map(None) == {"found": False}
+    out = render_node({"workflows": wfs, "chat": []}, docs={"docs": {}, "planmap": m})["planmap"]
+    assert all(f'data-pm="{i}"' in out for i in ("goal", "product", "build", "unplaced", "W-1", "W-2", "W-3", "W-4")) and "Shell" in out, "every node is drawn"
+    assert "var(--warm1)" in out and "var(--bld)" in out and out.count('class="pbadge"') == 3 and 'fill="var(--ok)"' in out and 'fill="var(--validator)"' in out,         "zones tint the squares; the badge is green at the gate and amber below it"
+    assert 'class="pver"' in out and ">v2<" in out and 'class="phalo"' in out and "pedge reads" in out and 'stroke-dasharray="4 3"' in out, "v2, the change halo, the reread edge, the held dash"
+    assert "No plan record" in render_node({"workflows": [], "chat": []}, docs={"docs": {}, "planmap": {"found": False}})["planmap"]
+    ui = open(page_file("j2_ui.html"), encoding="utf-8").read()
+    nav = ui[ui.index('id="railsub"'):ui.index("</nav>", ui.index('id="railsub"'))]
+    assert nav.index('data-tab="planmap"') < nav.index('data-tab="workflows"') and 'planmap: "adaptation"' in ui, "Map sits under Adaptation, before Workflows"
+    # the chat follows the open section: a message belongs to its speaker and to every function it addresses, hands to or is meant for
+    fns = render_node({"workflows": [], "chat": []}, docs={"docs": {}, "msgs": [
+        {"who": "priority", "text": "@Adaptation GRANT for P-R1 and P-R2 at your estimates."}, {"who": "adaptation", "text": "@Priority two workflows", "next": "priority"},
+        {"who": "W-1", "text": "@Coordination done", "audience": "audit"}, {"who": "identity", "text": "@Requester thanks", "audience": "user"}, {"who": "system", "text": "cycle 2"}]})["msgfns"]
+    assert fns == [["priority", "adaptation"], ["adaptation", "priority"], ["W-1", "coordination", "audit"], ["identity"], ["system"]], fns
+    assert "chatFollow(name);" in ui and 'id="chseg"' in ui and 'data-chmode="all">Whole chat<' in ui and 'id="chthink"' in ui, "showTab opens the function's chat, with a toggle to the whole chat"
+    # activity/1: everything a function did, in order, from the records; a question answered from them (code only, or a model given the records)
+    from sutra_app.engine import j2_agent as AG
+    td2 = tempfile.mkdtemp(prefix="j2-activity-")
+    chat = [{"id": 1, "t": "10:00:00", "who": "user", "text": "Build it"}, {"id": 2, "t": "10:00:05", "who": "identity", "text": "@Adaptation the charter is recorded", "next": "adaptation"},
+            {"id": 3, "t": "10:01:00", "who": "adaptation", "text": "Plan by realization: 2 stages", "realization": True}, {"id": 4, "t": "10:01:10", "who": "adaptation", "text": "@Priority proposing 2 workflows", "next": "priority"},
+            {"id": 5, "t": "10:02:00", "who": "priority", "text": "@Coordination go", "next": "coordination"}, {"id": 6, "t": "10:03:00", "who": "user", "text": "Rename the levels"}]
+    open(os.path.join(td2, "chat.jsonl"), "w", encoding="utf-8").write("".join(json.dumps(m) + chr(10) for m in chat))
+    calls = [{"id": 1, "fn": "adaptation", "t": "10:00:50", "step": 2, "cycle": 1, "seconds": 3.5, "reason": "two stages suffice", "inputs": [["charter", "x"]], "reply": {"say": "ok", "proposals": [1, 2]}},
+             {"id": 2, "fn": "priority", "t": "10:02:00", "step": 3, "seconds": 1}]
+    open(os.path.join(td2, "calls.jsonl"), "w", encoding="utf-8").write("".join(json.dumps(c) + chr(10) for c in calls))
+    rz["rounds"] = [{"round": 0, "scores": {"Plan": {"score": 0.95, "weakest": None}, "Shell": {"score": 0.79, "weakest": "done_test", "missing": ["no pass line"]}}, "changes": [], "plan_faults": []}]
+    rz["late"] = [{"workflow": "Plan (change 1)", "revises": "W-1", "t": "10:03:30", "score": 0.9, "weakest": "done_test", "missing": ["no pass line"], "rounds": [0.7, 0.9], "ready": True, "zone": "analyze", "stage": "product"}]
+    json.dump(rz, open(os.path.join(td2, "realization.json"), "w", encoding="utf-8")); json.dump(wfs, open(os.path.join(td2, "workflows.json"), "w", encoding="utf-8"))
+    json.dump([dict(ch[0], chat0=5)], open(os.path.join(td2, "change.json"), "w", encoding="utf-8"))
+    act = AG.activity(td2, "adaptation"); kinds = [e["kind"] for e in act["events"]]
+    assert act["found"] and act["persona"] == "Strategist" and kinds.count("msg") == 3 and kinds.count("call") == 1 and kinds.count("judge") == 2 and "revise" not in kinds and kinds.count("wf") == 2 and kinds.count("change") == 3, kinds
+    late = [e for e in act["events"] if e["kind"] == "judge"][-1]
+    assert late["t"] == "10:03:30" and "Judged Plan (change 1) (revises W-1): 0.90 after one improvement" in late["title"] and "rounds: 0.70 → 0.90" in late["items"][1], late
+    ts = [e["t"] for e in act["events"]]
+    assert ts == sorted(ts) and ts[kinds.index("call")] == "10:00:50" and all(e["t"] == "10:01:00" for e in act["events"] if e["kind"] in ("plan", "wf") or (e["kind"] == "judge" and "round" in e["title"])) \
+        and all(e["t"] == "10:03:00" for e in act["events"] if e["kind"] == "change") and kinds.index("judge") > kinds.index("wf") and kinds[-1] == "judge" and kinds[-2] == "change", (kinds, ts)
+    judge = next(e for e in act["events"] if e["kind"] == "judge")
+    assert "1 below" in judge["title"] and any("Shell: 0.79" in x and "done_test" in x and "no pass line" in x for x in judge["items"]), judge
+    assert AG.activity(td2, "audit") == {"schema": "activity/1", "who": "audit", "persona": "Quality Reviewer", "found": False, "names": act["names"], "events": []}
+    ans = AG.answer(td2, "adaptation", "what did the judge say about Shell?")
+    assert ans["from"] == "records" and "Shell: 0.79" in ans["answer"], ans
+    assert "nothing about that" in AG.answer(td2, "adaptation", "zzzz")["answer"] and "nothing for" in AG.answer(tempfile.mkdtemp(prefix="j2-act-empty-"), "adaptation", "x")["answer"]
+    asked = {}
+    got = AG.answer(td2, "adaptation", "why?", ask=lambda system, user, mock, **kw: asked.update(system=system, user=user) or "Because the judge said so.")
+    assert got["from"] == "model" and got["answer"] == "Because the judge said so." and "YOUR RECORDS" in asked["user"] and "Shell: 0.79" in asked["user"] and "Strategist" in asked["system"], "the model gets the records and the question"
+    feed0 = render_node({"workflows": wfs, "chat": []}, docs={"docs": {}, "activity": act})["feed"]
+    assert feed0.count('class="msg ') == 3 and " fev f-" not in feed0, "the switch off: the function's messages only"
+    feed = render_node({"workflows": wfs, "chat": []}, docs={"docs": {}, "activity": act, "think": True})["feed"]
+    assert feed.count(' fev f-') == len(act["events"]) - 3 and feed.count('class="msg ') == len(act["events"]) and feed.count('class="tag kind"') == len(act["events"]) - 3 and "f-judge" in feed and "Judge round 0" in feed and "Created Plan in product" in feed and "C-1: Rename the levels" in feed, "the feed draws every event in the chat's message style: messages as they are, the rest with a small label for their kind"
+    print("plan map: the Sudoku-shaped record builds, the pane draws every node with zone, score, v2, change halo and reread edge; Map sits under Adaptation; the chat follows the section; the feed and the question answer from the records")
+
+
 def left_bar():
-    """Left bar: Map and Chat as two plain rows, then the tabs in sections (Conflicts pinned and only when the run has conflicts, the five functions, Artifacts, Actions,
-    Other, Settings); no icon rail and no Internals folder. Every run under runs/ (browser-free): every tab sits in exactly one section and Other is empty; Workflows is
+    """Left bar data (the icon rail draws it; left_bar_toggle tests the rail itself): the tabs in sections (Conflicts only when the run has conflicts, the five functions,
+    Artifacts, Actions, Other, Settings); no Internals folder. Every rail item's status line and badge come from the same records. Every run under runs/ (browser-free): every tab sits in exactly one section and Other is empty; Workflows is
     under Adaptation and Priorities under Priority; Priority's header and view come from the run's decisions, priced workflows and conflicts (a run with none says so);
     the Workflows view lists every workflow once, by cycle, each with a link to its place in the Map's Tree; the tabs whose data this run lacks are dimmed with their reason
-    and exactly those; the conflicts and the actions of the run are each listed once; no artifact row says "not audited" and the ones a record names show their Audit
-    status. With Chrome (--browser): Map and Chat rows, the active one highlighted, sections open and close and remember it, a dimmed tab still opens, a workflow's Map
+    and exactly those; the conflicts and the actions of the run are each listed once; no artifact row says "not audited" and each guide and section row shows its
+    record's mark (latest checks by code, audit of its items). With Chrome (--browser): Map and Chat rows, the active one highlighted, sections open and close and remember it, a dimmed tab still opens, a workflow's Map
     link focuses it in the Tree, the Run details line has the run id and budget."""
     import collections
     import copy
@@ -7726,13 +8046,13 @@ def left_bar():
     names = sorted(n for n in os.listdir(repo) if os.path.isfile(os.path.join(repo, n, "workflows.json"))) if os.path.isdir(repo) else []
     ui = open(page_file("j2_ui.html"), encoding="utf-8").read()
     nav = ui[ui.index('<nav class="rail tabs"'):ui.index("</nav>", ui.index('<nav class="rail tabs"'))]
-    assert 'id="internals"' not in ui and "Internals" not in nav and "<svg" not in nav, "no Internals folder and no icon rail"
-    tabs = re.findall(r'data-tab="(\w+)"', nav[nav.index('id="railsub"'):])
+    assert 'id="internals"' not in ui and "Internals" not in nav and 'id="railtoggle"' not in ui, "no Internals folder and no menu button: the icon rail"
+    tabs = [t_ for t_ in re.findall(r'data-tab="(\w+)"', nav[nav.index('id="railsub"'):]) if t_ != "map"]      # the Map has its own rail item
     assert len(tabs) == len(set(tabs)) >= 17 and "priorities" in tabs, tabs
     plural = lambda n, w: f"{n} {w}{'' if n == 1 else 's'}"
     keep_dir, j2.RUNS_DIR = j2.RUNS_DIR, repo
     seen = collections.Counter()
-    order = ["conflicts", "identity", "adaptation", "priority", "coordination", "audit", "artifacts", "actions", "other", "settings"]
+    order = ["conflicts", "identity", "adaptation", "priority", "coordination", "audit", "artifacts", "actions", "library", "other", "settings"]
     try:
         for name in names:
             d = os.path.join(repo, name)
@@ -7749,17 +8069,20 @@ def left_bar():
                     "audits": [a for a in rd_("audits.json", []) if (a or {}).get("kind") != "recheck"], "report": report, "outcome": summ.get("outcome"), "versions": versions,
                     "docset": list(rd_("documents.json", {})), "style": rd_("style.json", None), "memory": False, "budget": b_.get("granted") or j2.BUDGET, "spent": b_.get("used") or 0,
                     "lessons_used": (summ.get("lessons") or {}).get("used", []), "lessons_saved": (summ.get("lessons") or {}).get("saved", []),
-                    "playbooks_used": (summ.get("playbooks") or {}).get("used", []), "playbook_saved": (summ.get("playbooks") or {}).get("saved")}
+                    "playbooks_used": (summ.get("playbooks") or {}).get("used", []), "playbook_saved": (summ.get("playbooks") or {}).get("saved"), "has_templates": os.path.isfile(os.path.join(d, "templates.json"))}
             t = A.tree(d, m)
             docs_ = {k: {"asked": "", "text": open(os.path.join(d, k + ".md"), encoding="utf-8").read()} for k in docfiles}
-            plan = M.plan_view(d)
-            out = render_node(snap, docs={"docs": docs_, "map": m, "railtabs": tabs, "plan": plan, "artifacts": {**A.listing(d), "tree": t}})
+            plan, planmap = M.plan_view(d), M.plan_map(d)
+            gr = A.groups(d, m)
+            out = render_node(snap, docs={"docs": docs_, "map": m, "railtabs": tabs, "plan": plan, "planmap": planmap, "artifacts": {"tree": t, "groups": gr}})
             model = out["rail"]
             assert [x["id"] for x in model] == order, (name, "the sections, in order")
             # deep links from the Map: every workflow has its row in Workflows, every artifact and section on the Map its item in Artifacts
             for w in wfs:
                 assert f'data-wfrow="{htmllib.escape(w["id"])}"' in out["workflows"], (name, w["id"], "a workflow's deep link lands on no Workflows row")
-            arts_html = out["artifacts"]
+            arts_html = "".join(render_node(snap, docs={"docs": {}, "map": m, "artifacts": {"groups": gr, "g": k, "sel": {}, "tab": "sum", "ver": ""}})["artifacts"]
+                                for k in ("plan", "guides", "site", "documents", "records"))      # every group's list (a row's data-node lists each Map node it holds)
+            arts_html = re.sub(r'data-node="([^"]*)"', lambda x: " ".join(f'data-node="{v}"' for v in x.group(1).split()), arts_html)
             map_arts = {n["id"]: n for n in m["nodes"] if n["kind"] == "work"}
             ids = set(map_arts) | {a for C in (m.get("constellations") or {}).values() for a in [C["id"]] + [s_["section"] for s_ in C["slots"] if s_["section"]]}
             def want_of(a):      # mapDeepTarget: a section's own row, else its document's item
@@ -7769,14 +8092,16 @@ def left_bar():
                 return [f'data-node="{htmllib.escape(a)}"'] + ([f'data-art="{htmllib.escape(f_)}"'] if f_ else []) + (['data-art="goal.json"'] if a == "work:charter" else [])
             for a in sorted(ids):
                 want = want_of(a)
-                assert any(w_ in arts_html for w_ in want), (name, a, "an artifact's deep link lands on no Artifacts item", want)
+                doc = re.sub(r"^work:", "", ":".join(a.split(":")[1:-1]) if a.startswith("sec:") else a)
+                assert any(w_ in arts_html for w_ in want) or (doc in ("prd", "hld", "lld") and f'id="docblock-{doc}"' in out["docs"]), \
+                    (name, a, "an artifact's deep link lands on no Artifacts item (a PRD, HLD or LLD: on its Documents block)", want)
                 seen["deep links"] += 1
             seen["deep links"] += len(wfs)
             sec = {x["id"]: x for x in model}
             placed = [t_["tab"] for x in model for t_ in x["tabs"]]
             assert sorted(placed) == sorted(tabs), (name, "every tab is in exactly one section")
             assert sec["other"]["tabs"] == [] and not sec["other"]["shown"], (name, "Other is empty", sec["other"]["tabs"])
-            assert [t_["tab"] for t_ in sec["adaptation"]["tabs"]] == ["workflows", "lessons", "playbooks"] or sorted(t_["tab"] for t_ in sec["adaptation"]["tabs"]) == ["lessons", "playbooks", "workflows"], (name, "Workflows is under Adaptation")
+            assert [t_["tab"] for t_ in sec["adaptation"]["tabs"]] == ["planmap", "workflows", "lessons", "playbooks"], (name, "Map, then Workflows, under Adaptation")
             assert [t_["tab"] for t_ in sec["priority"]["tabs"]] == ["priorities"] and "workflows" not in [t_["tab"] for t_ in sec["coordination"]["tabs"]], (name, "Priorities under Priority")
             assert sorted(t_["tab"] for t_ in sec["coordination"]["tabs"]) == ["board", "story", "timeline"], (name, "Coordination keeps Timeline, Board, Board story")
             conf = snap["conflicts"]
@@ -7818,7 +8143,8 @@ def left_bar():
             # dimmed tabs: exactly those whose data this run lacks
             lacks = {"goal": not snap["goal"], "charter": not snap["goal"], "report": not report and not summ.get("outcome"), "workflows": not wfs, "priorities": not has, "timeline": not chat,
                      "audit": not snap["audits"], "preview": not versions, "docs": not snap["docset"] and not docfiles, "artifacts": not any(g["count"] for g in t["groups"]),
-                     "lessons": not (snap["lessons_used"] or snap["lessons_saved"]), "playbooks": not (snap["playbooks_used"] or snap["playbook_saved"])}
+                     "lessons": not (snap["lessons_used"] or snap["lessons_saved"]), "playbooks": not (snap["playbooks_used"] or snap["playbook_saved"]),
+                     "planmap": not planmap["found"]}
             dimmed = {t_["tab"] for x in model for t_ in x["tabs"] if t_["dim"]}
             assert dimmed == {k for k, v in lacks.items() if v}, (name, "dimmed tabs are the ones with no data", dimmed ^ {k for k, v in lacks.items() if v})
             assert all(t_["dim"] for x in model for t_ in x["tabs"] if t_["tab"] in ("lessons", "playbooks") and lacks[t_["tab"]]) and not any(t_["dim"] for x in model for t_ in x["tabs"] if t_["tab"] in ("rundetails", "runsettings", "conflicts", "map")), (name, "reasons given; the settings are never dimmed")
@@ -7840,21 +8166,38 @@ def left_bar():
             wantA = (f"{plural(n_, 'finding')}, {fx_} fixed" + (f", {n_ - fx_} open" if n_ - fx_ else "")) if n_ else ("no findings" if snap["audits"] else "no audits yet")
             assert sec["audit"]["status"] == wantA, (name, sec["audit"]["status"], wantA)
             assert sec["coordination"]["status"] == (f"{sum(1 for w in wfs if w.get('status') == 'done')} of {len(wfs)} workflows done" if wfs else "no workflows yet"), name
-            # artifact rows: an Audit status only where a record names the artifact
-            rows = []
-            walk = lambda xs: [rows.append(x) or walk(x.get("children") or []) for x in xs]
-            for g in t["groups"]:
-                walk(g["items"])
-            rows = [x for x in rows if x.get("count") is None]
-            html = out["artifacts"]
-            audited = {a.get("version") for a in snap["audits"]}
-            want_n = sum(1 for x in rows if (x.get("version") is not None and x["version"] in audited) or (x.get("file") == "goal.json" and snap["goal"]))
-            got_n = len(re.findall(r'class="arttag \w+">(?:audited|validated)', html))      # the Audit status is the row's one tag where a record names it
-            assert "not audited" not in html and got_n == want_n, (name, "no row says not audited; the rows a record names show their status", got_n, want_n)
+            # artifact rows: a mark only on a guide or a section, and it is the record's (its latest version's checks by code and the audit of its items)
+            rows = [x for g_ in gr["groups"] for x in g_["rows"] if x.get("versions")]
+            for x in rows:
+                seg = arts_html.split(f'data-agrow="{htmllib.escape(x["id"])}"', 1)[1].split("</button>", 1)[0]
+                assert ("am-ok" in seg) == x["ok"] and ("am-warn" in seg) == (not x["ok"]), (name, x["id"], "a row's mark is its record's")
+            lists = "".join(re.findall(r'<div class="aglist".*?</div><div class="agpane"', arts_html, re.S))
+            assert "not audited" not in lists and lists.count("am-ok") + lists.count("am-warn") == len(rows), (name, "one mark per guide and section row, none says not audited")
             seen["artifact rows"] += len(rows)
-            seen["artifact audit"] += want_n
+            seen["artifact audit"] += sum(1 for x in rows if not x["ok"])
+            # the icon rail: every tab in exactly one item; the status lines and badges come from the same records
+            rs_ = out["railst"]
+            flat = [t_ for v in rs_["items"].values() for t_ in v]
+            assert sorted(flat) == sorted(tabs) and rs_["items"]["map"] == [], (name, "every tab in exactly one rail item", sorted(set(tabs) ^ set(flat)))
+            assert rs_["items"]["priority"] == ["priorities", "conflicts"] and sorted(rs_["items"]["identity"]) == ["charter", "goal", "report"] and sorted(rs_["items"]["settings"]) == ["rundetails", "runsettings"], (name, rs_["items"])
+            assert rs_["items"]["library"] == ["library"] and sorted(rs_["items"]["artifacts"]) == ["artifacts", "docs", "preview"], (name, "Library is its own rail item; Artifacts keeps Preview, Documents, Artifacts", rs_["items"])
+            assert rs_["st"]["library"] == ("templates you can reuse" if snap.get("has_templates") else "no templates in this run"), (name, rs_["st"]["library"])
+            settled_ = sum(1 for c in conf if c.get("status") == "settled"); open_ = len(conf) - settled_
+            wantP = " · ".join(x for x in [f"{spent} of {total} credits" if has else "no ranking records", f"{ndef} deferred" if ndef else "",
+                                            f"{plural(open_, 'conflict')} open" if open_ else "", f"{plural(settled_, 'conflict')} settled" if settled_ else ""] if x)
+            assert rs_["st"]["priority"] == wantP and rs_["st"]["audit"] == wantA and rs_["st"]["coordination"] == sec["coordination"]["status"] and rs_["st"]["identity"] == sec["identity"]["status"], (name, rs_["st"], wantP, wantA)
+            assert rs_["badge"]["priority"] == ((([open_, "", f"{plural(open_, 'conflict')} open"]) if open_ else [settled_, "ok", f"{plural(settled_, 'conflict')} settled"]) if conf else None), (name, rs_["badge"]["priority"])
+            assert rs_["badge"]["audit"] == ((([n_ - fx_, "", f"{plural(n_ - fx_, 'finding')} open"]) if n_ - fx_ else [n_, "ok", f"{plural(n_, 'finding')}, all fixed"]) if n_ else None), (name, rs_["badge"]["audit"])
+            last_ = next((x for x in reversed(chat) if x.get("who") != "system"), None)
+            need_ = 1 if last_ and last_.get("pause") and last_.get("who") == "identity" else 0
+            assert rs_["badge"]["identity"] == ([need_, "", f"{plural(need_, 'item')} waiting on you"] if need_ else None), (name, rs_["badge"]["identity"])
+            ck_ = (m.get("status") or {}).get("checks") or {}
+            assert (f"{ck_['passed']} of {ck_['run']} checks passed" in rs_["st"]["map"]) if ck_.get("run") else "checks passed" not in rs_["st"]["map"], (name, rs_["st"]["map"])
+            seen["rail badges"] += sum(1 for v in rs_["badge"].values() if v)
             seen["runs"] += 1
         # a tab the table does not name: the function whose Map node carries it, else Other
+        if not names:
+            raise NeedsPage("no saved runs (runs/ of a J2 checkout)")
         name = "j2-20261026-174314" if "j2-20261026-174314" in names else names[0]
         m = copy.deepcopy(M.build(os.path.join(repo, name)))
         next(n for n in m["nodes"] if n["id"] == "fn:audit")["tab"] = "futuretab"
@@ -7864,144 +8207,768 @@ def left_bar():
         assert "No ranking records" in e_["priorities"] and e_["prio"]["status"] == "no ranking records" and all(x["dim"] for y in e_["rail"] for x in y["tabs"] if x["tab"] == "priorities"), "a run with no ranking records says so"
     finally:
         j2.RUNS_DIR = keep_dir
-    chrome = j2.j2_check.find_chrome()
-    if chrome and BROWSER and names:
-        with_c = next((n for n in names if os.path.isfile(os.path.join(repo, n, "conflicts.json")) and json.load(open(os.path.join(repo, n, "conflicts.json")))
-                       and any(x["tag"] == "Send" for x in M.build(os.path.join(repo, n))["nodes"] if x.get("tag"))), None)
-        js = ("(async () => { const q = s => [...document.querySelectorAll(s)], wait = ms => new Promise(r => setTimeout(r, ms)), r = {}, rc = el => el.getBoundingClientRect(), vis = el => !!el && el.getClientRects().length > 0;"
-              " await wait(1500); const rail = document.querySelector('#dview .rail'); r.w = rc(rail).width; r.sw = [document.documentElement.scrollWidth, innerWidth]; r.gone = [!document.getElementById('internals'), rail.querySelectorAll('svg').length];"
-              " r.rows = q('.rail.tabs > button').filter(vis).map(b => b.textContent.trim()); const hl = el => getComputedStyle(el).backgroundColor !== 'rgba(0, 0, 0, 0)';"
-              " r.mapOn = [q('.rail [data-tab=map]')[0].getAttribute('aria-selected'), hl(q('.rail [data-tab=map]')[0]), hl(document.getElementById('gochat'))];"
-              " r.secs = q('.rsec').filter(x => !x.hidden).map(x => x.dataset.sec + ':' + x.querySelector('.rshead').getAttribute('aria-expanded')).join(' ');"
-              " r.owned = q('#railsub [data-tab]').every(b => b.closest('.rsec') && q('#railsub [data-tab=\"' + b.dataset.tab + '\"]').length === 1); r.tabsN = q('#railsub [data-tab]').length;"
-              " const head = id => q('.rsec[data-sec=\"' + id + '\"] .rshead')[0]; head('adaptation').click(); r.open1 = [head('adaptation').getAttribute('aria-expanded'), vis(q('#rsb-adaptation')[0]), localStorage.getItem('j2railopen')]; head('adaptation').click(); r.open2 = [head('adaptation').getAttribute('aria-expanded'), localStorage.getItem('j2railopen')];"
-              " showTab('lessons'); r.reveal = [head('adaptation').getAttribute('aria-expanded'), vis(q('[data-tab=lessons]')[0])]; r.dim = q('#railsub [data-dim]').map(b => b.dataset.tab + '=' + b.dataset.dim + '|' + b.title);"
-              " const dm = q('#railsub [data-dim]')[0]; if (dm){ dm.click(); r.dimClick = [vis(document.getElementById('pane-' + dm.dataset.tab)), dm.getAttribute('aria-selected')]; }"
-              " q('[data-tab=priorities]')[0].click(); r.prio = [vis(document.getElementById('pane-priorities')), document.getElementById('pane-priorities').textContent.length > 20];"
-              " q('[data-tab=workflows]')[0].click(); await wait(200); const wl = q('#pane-workflows [data-wfmap]')[0]; r.wfn = q('#pane-workflows [data-wfmap]').length; if (wl){ wl.click(); await wait(500); r.wfmap = [vis(document.getElementById('pane-map')), CONS.kind === 'wf' && CONS.id === wl.dataset.wfmap, (CONS.path[0] || {}).id === wl.dataset.stage, q('.consvg[data-kind=wf]').length]; consBack(); }"
-              " showTab('rundetails'); r.mode = document.getElementById('mode').textContent;"
-              " const ac = q('[data-railact]')[0]; if (ac){ ac.click(); await wait(100); r.act = [vis(document.getElementById('pane-map')), MAPPIN === ac.dataset.railact]; mapSelect(''); }"
-              " const fl = q('[data-railfn]')[0]; if (fl){ fl.click(); r.fn = document.querySelector('.tabs [aria-selected=true]').dataset.tab; q('[data-railgo]')[0].click(); r.go = vis(document.getElementById('pane-conflicts')); const pl = q('[data-railsec]')[0]; pl.click(); r.prioLink = head('conflicts').getAttribute('aria-expanded'); }"
-              " document.getElementById('gochat').click(); await wait(100); r.chatOn = [document.getElementById('gochat').getAttribute('aria-current'), hl(document.getElementById('gochat'))]; document.body.setAttribute('data-r', JSON.stringify(r)); })()")
-        tmp = tempfile.mkdtemp(prefix="j2-leftbar-")
-        open(os.path.join(tmp, "j2_ui.html"), "w", encoding="utf-8").write(ui.replace("</body>", "<script>setTimeout(() => { " + js + " }, 2000)</script></body>"))
-        os.symlink(page_file("vendor"), os.path.join(tmp, "vendor"))
-
-        def probe(run):
-            keep_here, runs_, j2_server.HERE = j2_server.HERE, j2.RUNS_DIR, tmp
-            j2.RUNS_DIR = repo
-            srv = j2_server.http.server.ThreadingHTTPServer(("127.0.0.1", 0), j2_server.Handler)
-            threading.Thread(target=srv.serve_forever, daemon=True).start()
-            try:
-                dom = chrome_dom([chrome, "--headless=new", "--disable-gpu", "--window-size=1440,900", "--virtual-time-budget=25000", "--dump-dom",
-                                  f"http://127.0.0.1:{srv.server_address[1]}/?view=detail&run={run}"], capture_output=True, text=True, timeout=120).stdout
-            finally:
-                j2.RUNS_DIR, j2_server.HERE = runs_, keep_here
-                srv.shutdown()
-            hit_ = re.search(r'data-r="([^"]*)"', dom)
-            assert hit_, ("the page did not finish its steps", dom[-300:])
-            return json.loads(htmllib.unescape(hit_.group(1)))
-        for run in dict.fromkeys([n for n in ("j2-20261026-174314", with_c) if n]):
-            r = probe(run)
-            assert 230 <= r["w"] <= 250 and r["sw"][0] <= r["sw"][1] and r["gone"] == [True, 0] and r["rows"][:2] == ["Map", "Chat"], (run, "a plain 240px column with Map and Chat first; no Internals, no icons", r["w"], r["gone"], r["rows"])
-            assert r["mapOn"] == ["true", True, False] and r["chatOn"][0] == "page" and r["chatOn"][1], (run, "the active row is highlighted", r["mapOn"], r["chatOn"])
-            assert r["owned"] and r["tabsN"] == len(tabs), (run, "every tab is in exactly one section", r)
-            assert r["open1"][:2] == ["true", True] and '"adaptation":true' in r["open1"][2] and r["open2"][0] == "false" and '"adaptation":false' in r["open2"][1], (run, "a section opens and closes and remembers it", r["open1"], r["open2"])
-            assert r["reveal"] == ["true", True], (run, "a tab opened from elsewhere opens its section")
-            assert all("|" in x and x.split("=")[1].split("|")[0] == x.split("|")[1] for x in r["dim"]), (run, "a dimmed row has its reason as its tooltip", r["dim"])
-            if "dimClick" in r:
-                assert r["dimClick"] == [True, "true"], (run, "a dimmed tab is still clickable", r["dimClick"])
-            assert r["prio"] == [True, True], (run, "the Priorities view opens", r["prio"])
-            if r["wfn"]:
-                assert r["wfmap"] == [True, True, True, 1], (run, "a workflow's Map link opens its sun, its team's solar system one step back", r["wfmap"])
-            assert "run " + run in r["mode"] and "credits" in r["mode"], (run, "Run details keeps the configuration: run id, model, budget", r["mode"])
-            assert (("conflicts:true" in r["secs"]) if run == with_c else ("conflicts" not in r["secs"])) and "artifacts:true" in r["secs"], (run, "Conflicts (when the run has any) and Artifacts start open", r["secs"])
-            if "act" in r:
-                assert r["act"] == [True, True], (run, "an action opens the Map's panel", r["act"])
-            if "fn" in r:
-                assert r["go"] and r["prioLink"] == "true", (run, "a conflict's links open its tabs; Priority links to Conflicts", r["fn"], r["go"], r["prioLink"])
-            seen["browser"] += 1
-    print(f"left bar: {seen['runs']} runs: Map and Chat rows, no icon rail, no Internals; every one of the {len(tabs)} tabs in exactly one section, Other empty; Priorities ({seen['with ranking']} runs with ranking records, "
+    print(f"left bar: {seen['runs']} runs: icon rail (every tab in exactly one item, status lines and {seen['rail badges']} badges from the records), no Internals; every one of the {len(tabs)} tabs in exactly one section, Other empty; Priorities ({seen['with ranking']} runs with ranking records, "
           f"{seen['no ranking']} without) and the Workflows view ({seen['workflows linked']} workflows, each linked to its Map team ({seen['workflows not on the map']} the Map itself lists as not placed, shown as such), {seen['with plan']} runs with a plan record) render from the records; {seen['dimmed']} dimmed tabs, exactly the ones with no data; "
-          f"{seen['conflicts']} conflicts and {seen['actions']} actions each once; {seen['artifact rows']} artifact rows, {seen['artifact audit']} with an Audit status where a record names them, none \"not audited\""
-          + (f"; real page, {seen['browser']} runs: rows, highlight, sections, dimmed tab, Map link, Run details line ok" if seen.get("browser") else " ok"))
+          f"{seen['conflicts']} conflicts and {seen['actions']} actions each once; {seen['artifact rows']} guide and section rows with their record's mark ({seen['artifact audit']} needing a look), none \"not audited\""
+          + " ok")
 
 
 def left_bar_toggle():
-    """Left bar hamburger: static (always): the toggle sits before the bar, the choice is kept in a try/catch localStorage, the breakpoint is 1200px, no All views
-    button. With Chrome (--browser), on a saved run: at 1440x900 the bar is open and the hamburger collapses and reopens it, the choice survives a reload (a second
-    Chrome run on the same profile), the badge shows only when Needs you has items, and there is no horizontal scroll open or collapsed; at 800px the bar starts
-    collapsed, opens over the content, Esc, a click outside or picking a tab closes it, a click inside it does not, and again no horizontal scroll."""
+    """The icon rail (the full view's left bar). Static: Map, Chat, the five function bots, Artifacts, Actions, Settings and the theme, in that order, each a
+    labelled button; no menu button; the label colours are the theme's (warm dark in light mode, cream in dark mode); reduced motion turns it all off; hover and
+    keyboard focus share every reaction. With Chrome (--browser), on two saved runs at 1440x900 and 390x844, light and dark: no page error and no sideways scroll; focus
+    shows the label in the theme's colours and a bot's alert face; each item's panel opens with its name, role, status line and tabs (railStatus, from the records),
+    keeps the focus inside, and closes on Esc, Close and a click outside, giving the focus back; picking a tab opens it in the main area; the Map's Run graph opens the
+    Map's graph; Chat opens the Simple view; the badges show; the chat calls the Validator the Gatekeeper."""
     import html as htmllib
-    import shutil
-    import socket
+    import threading
+    from sutra_app.engine import j2_map as M
+    from sutra_app.engine import j2_server
+    here = HERE
+    ui = open(page_file("j2_ui.html"), encoding="utf-8").read()
+    nav = ui[ui.index('<nav class="rail tabs"'):ui.index("</nav>", ui.index('<nav class="rail tabs"'))]
+    names_ = re.findall(r'class="ri [^"]*"[^>]*data-name="([^"]+)"', nav)
+    assert names_ == ["Map", "Simple view", "Identity", "Adaptation", "Priority", "Coordination", "Audit", "Artifacts", "Actions", "Library", "Settings"], names_
+    assert nav.count('<button type="button" class="ri ') == 11 and nav.count("aria-label=") >= 11 and 'id="rtheme"' in nav and 'id="railtoggle"' not in ui and 'id="barbadge"' not in ui, "eleven labelled buttons and the theme; no menu button"
+    for cls in ("p-id", "p-plan", "p-bud", "p-sch", "p-aud"):
+        b = nav[nav.index(f'class="ri {cls}"'):]
+        b = b[:b.index("</button>")]
+        assert b.index('class="hb"') < b.index('<g class="hat">') and 'class="omouth"' in b and 'class="alert"' in b, (cls, "a bot: the hat in front of the head, an O mouth and a !")
+    assert "56%,72%{transform:translate(2.6px,0)}" in ui, "the idle glance goes to the bots' own left: into the page"
+    lib = nav[nav.index('data-ri="library"'):nav.index('data-ri="settings"')]
+    assert nav.index('data-ri="actions"') < nav.index('data-ri="library"') < nav.index('data-ri="settings"') and lib.count('class="bk') == 5 and '<g class="act"><rect class="bk4"' in lib and 'Library<small>templates to start from</small>' in lib, "Library: a bookshelf between Actions and Settings, one book that tips and slides up"
+    for cls in ("p-id",):
+        b = nav[nav.index(f'class="ri {cls}"'):]
+        assert cls != "p-id" or ('class="boom"' in b and 'class="act mic"' in b and 'class="arm"' not in b), "Identity: a headset with a mic boom and its light, no waving arm"
+    T = theme_tokens(ui)
+    assert (T["light"]["lblbg"], T["light"]["lblink"], T["dark"]["lblbg"], T["dark"]["lblink"]) == ("#2a2520", "#f3ebe0", "#f6eee3", "#2e2721"), "label colours"
+    assert all(contrast(T[t]["lblink"], T[t]["lblbg"]) >= 4.5 and contrast(T[t]["lblsub"], T[t]["lblbg"]) >= 4.5 for t in T), "label text 4.5:1"
+    assert "@media (prefers-reduced-motion:reduce){#rail *,#rail *::before,.rfly{animation:none!important;transition:none!important}}" in ui
+    for rule in ("#rail .ri:is(:hover,:focus-visible) .omouth{opacity:1", "#rail .ri:is(:hover,:focus-visible) .rlbl{opacity:1", "#rail .s-art:is(:hover,:focus-visible) .lid{transform:rotate(-28deg)}",
+                 "#rail .p-bud:is(:hover,:focus-visible) .act{animation:none;transform:translateY(-10px)}", "#rail .p-id:is(:hover,:focus-visible) .act{animation:rmic .5s",
+                 "#rail .p-id .act{animation:rmic 2.4s", "#rail .s-lib .act{animation:rlean 4s", "#rail .s-lib:is(:hover,:focus-visible) .act{animation:none;transform:translateY(-7px)}"):
+        assert rule in ui, ("hover and keyboard focus share the reaction", rule)      # Chrome is probed with focus; a real hover can't be scripted
+    chrome = j2.j2_check.find_chrome()
+    repo = os.path.join(here, "runs")
+    names = sorted(n for n in os.listdir(repo) if os.path.isfile(os.path.join(repo, n, "workflows.json"))) if os.path.isdir(repo) else []
+    if not (chrome and BROWSER and names):
+        print("icon rail: static checks ok (browser steps skipped: Chrome not found, no saved run, or --fast without --browser)")
+        return
+    with_c = next((n for n in reversed(names) if os.path.isfile(os.path.join(repo, n, "conflicts.json")) and json.load(open(os.path.join(repo, n, "conflicts.json")))), None)
+    runs = list(dict.fromkeys([n for n in ("j2-20261026-174314", with_c) if n and n in names])) or names[-1:]
+    head = "<script>window.__e = []; addEventListener('error', e => __e.push(String(e.message)));</script>"
+    probe = ("(async () => { const q = s => [...document.querySelectorAll(s)], wait = ms => new Promise(r => setTimeout(r, ms)), vis = e => !!e && e.getClientRects().length > 0, r = {}, S = id => document.getElementById(id);"
+             " const fin = () => document.getAnimations().filter(a => a instanceof CSSTransition).forEach(a => a.finish()); await wait(2500); const st = railStatus(state, MAP);"
+             " r.items = q('#rail .ri').map(b => [b.tagName, b.dataset.name, (b.getAttribute('aria-label') || '').startsWith(b.dataset.name + ', ')]);"
+             " r.badges = q('#rail .ri').filter(b => !b.querySelector('.rbadge').hidden).map(b => (b.dataset.ri || 'chat') + ':' + b.querySelector('.rbadge').textContent + ':' + b.querySelector('.rbadge').classList.contains('ok'));"
+             " r.wantBadges = Object.entries(st.badge).filter(([k, v]) => v).map(([k, v]) => k + ':' + v[0] + ':' + (v[1] === 'ok'));"
+             " r.gk = q('#msgs .msg.validator .who').map(e => (e.querySelector('.whobtn') || e.firstChild).textContent.trim()); r.v = (state.allChat || []).filter(m => m.who === 'validator').length;"
+             " r.themes = {}; for (const th of ['light', 'dark']){ THEME = th; themeApply(); const b = document.querySelector('#rail .p-bud'); b.focus(); fin(); const l = b.querySelector('.rlbl');"
+             "   r.themes[th] = [getComputedStyle(l).opacity, getComputedStyle(l).backgroundColor, getComputedStyle(b.querySelector('.omouth')).opacity, getComputedStyle(b.querySelector('.alert')).opacity, document.documentElement.scrollWidth <= innerWidth]; b.blur(); }"
+             " r.panels = {}; for (const b of q('#rail .ri[data-ri]')){ b.click(); await wait(30); const f = S('rfly'), id = b.dataset.ri;"
+             "   const p = {open: !f.hidden && b.getAttribute('aria-expanded') === 'true', head: S('rflyh').textContent.trim(), role: S('rflyrole').textContent, st: S('rflyst').textContent === (st.st[id] || ''),"
+             "     focusIn: f.contains(document.activeElement), tabs: q('#rfl [data-tab]').map(x => x.dataset.tab), gos: q('#rfl .rgo').map(x => x.textContent.trim()), dims: q('#rfl [data-dim]').map(x => x.dataset.tab + '=' + x.dataset.sub)};"
+             "   const fs = q('#rfly button').filter(vis); fs[fs.length - 1].focus(); f.dispatchEvent(new KeyboardEvent('keydown', {key: 'Tab', bubbles: true})); p.trap = document.activeElement === fs[0];"
+             "   document.dispatchEvent(new KeyboardEvent('keydown', {key: 'Escape', bubbles: true})); p.esc = f.hidden && document.activeElement === b && b.getAttribute('aria-expanded') === 'false';"
+             "   b.click(); f.querySelector('.rclose').click(); p.close = f.hidden && document.activeElement === b;"
+             "   b.click(); S('needs').click(); p.outside = f.hidden; r.panels[id] = p; }"
+             " document.querySelector('#rail [data-ri=identity]').click(); q('#rfl [data-tab=goal]')[0].click(); r.pick = [vis(S('pane-goal')), S('rfly').hidden, document.querySelector('#rail [data-ri=identity]').classList.contains('cur')];"
+             " document.querySelector('#rail [data-ri=map]').click(); q('#rfl [data-mapgo=line]')[0].click(); r.graph = [vis(S('pane-map')), MAPVIEW, S('rfly').hidden]; MAPVIEW = 'tree'; paintMap();"
+             " r.sw = [document.documentElement.scrollWidth, innerWidth]; S('gochat').click(); r.chat = document.body.classList.contains('simple'); r.err = __e.slice();"
+             " (parent !== window ? parent : window).document.body.setAttribute('data-r', JSON.stringify(r)); })()")
+    page = ui.replace("<head>", "<head>" + head, 1).replace("</body>", "<script>setTimeout(() => { " + probe + " }, 1500)</script></body>")
+    tmp = tempfile.mkdtemp(prefix="j2-rail-")
+    open(os.path.join(tmp, "j2_ui.html"), "w", encoding="utf-8").write(page)
+    os.symlink(page_file("vendor"), os.path.join(tmp, "vendor"))
+    wrap = {}
+
+    class Wrap(j2_server.Handler):      # a phone-width frame, same origin (headless Chrome's window is at least 500px wide)
+        def do_GET(self):
+            return self._send(200, wrap["page"], "text/html") if self.path.startswith("/wrap") else super().do_GET()
+    keep_here, runs_ = j2_server.HERE, j2.RUNS_DIR
+    j2_server.HERE, j2.RUNS_DIR = tmp, repo
+    srv = j2_server.http.server.ThreadingHTTPServer(("127.0.0.1", 0), Wrap)
+    threading.Thread(target=srv.serve_forever, daemon=True).start()
+    base, seen = f"http://127.0.0.1:{srv.server_address[1]}", 0
+    want_tabs = {"identity": ["goal", "charter", "report"], "adaptation": ["planmap", "workflows", "lessons", "playbooks"], "priority": ["priorities", "conflicts"], "coordination": ["timeline", "board", "story"],
+                 "audit": ["audit"], "artifacts": ["preview", "docs"], "library": ["library"], "settings": ["rundetails", "runsettings"], "map": [], "actions": []}
+    try:
+        for run in runs:
+            sends = [n for n in M.build(os.path.join(repo, run))["nodes"] if n["kind"] == "work" and n.get("tag") == "Send"]
+            for w, h in ((1440, 900), (390, 844)):
+                url = f"/?view=detail&run={run}"
+                if w < 500:
+                    wrap["page"] = f'<!doctype html><body style="margin:0"><iframe src="{url}" style="width:{w}px;height:{h}px;border:0;display:block"></iframe></body>'
+                    url = "/wrap"
+                dom = chrome_dom([chrome, "--headless=new", "--disable-gpu", f"--window-size={max(w, 500)},{h}", "--virtual-time-budget=30000", "--dump-dom", base + url],
+                                 capture_output=True, text=True, timeout=180).stdout
+                hit = re.search(r'data-r="([^"]*)"', dom)
+                assert hit, (run, w, "the page did not finish its steps", dom[-300:])
+                r = json.loads(htmllib.unescape(hit.group(1)))
+                assert not r["err"] and r["sw"][0] <= r["sw"][1], (run, w, r["err"], r["sw"])
+                assert [x[1] for x in r["items"]] == ["Map", "Simple view", "Identity", "Adaptation", "Priority", "Coordination", "Audit", "Artifacts", "Actions", "Library", "Settings"] and all(x[0] == "BUTTON" and x[2] for x in r["items"]), (run, w, r["items"])
+                assert sorted(r["badges"]) == sorted(r["wantBadges"]), (run, w, "the badges are the records'", r["badges"], r["wantBadges"])
+                assert r["v"] == 0 or (r["gk"] and set(r["gk"]) == {"Gatekeeper"}), (run, w, "the chat calls the Validator the Gatekeeper", r["gk"])
+                assert r["themes"]["light"][:2] == ["1", "rgb(42, 37, 32)"] and r["themes"]["dark"][:2] == ["1", "rgb(246, 238, 227)"], (run, w, "the label in the theme's colours", r["themes"])
+                assert all(v[2:] == ["1", "1", True] for v in r["themes"].values()), (run, w, "a bot's alert face on focus; no sideways scroll", r["themes"])
+                for id_, p in r["panels"].items():
+                    assert p["open"] and p["st"] and p["focusIn"] and p["trap"] and p["esc"] and p["close"] and p["outside"], (run, w, id_, "opens, holds the focus, closes on Esc, Close and outside", p)
+                    assert p["tabs"] == want_tabs[id_], (run, w, id_, "its tabs, in order", p["tabs"])
+                    if id_ == "map":
+                        assert p["gos"] == ["Treeteams and what they made", "Run graphevery workflow and artifact"], (run, w, p["gos"])
+                    if id_ == "actions":
+                        assert len(p["gos"]) == max(1, len(sends)), (run, w, "each action once, or none in this run", p["gos"])
+                    if id_ == "artifacts":      # Preview and Documents, then the four groups of the Artifacts section with their counts
+                        assert len(p["gos"]) == 5 and all(x.startswith(w) for x, w in zip(p["gos"], ["Run plan", "Guides", "Website", "Documents", "Run records"])) \
+                            and all(re.search(r"\d|no |nothing|loading", x) for x in p["gos"]), (run, w, p["gos"])
+                assert set(t_ for p in r["panels"].values() for t_ in p["tabs"]) == {t_ for v in want_tabs.values() for t_ in v}, (run, w, "no tab is lost")
+                assert r["pick"] == [True, True, True] and r["graph"] == [True, "line", True] and r["chat"] is True, (run, w, "a tab opens in the main area; Run graph opens the Map's graph; Chat opens the Simple view", r["pick"], r["graph"], r["chat"])
+                seen += 1
+    finally:
+        srv.shutdown()
+        j2_server.HERE, j2.RUNS_DIR = keep_here, runs_
+    print(f"icon rail: eleven labelled items and the theme, bots with hats in front, label colours per theme, reduced motion; Chrome on {len(runs)} runs x 1440x900 and 390x844 "
+          f"({seen} pages), light and dark: no error, no sideways scroll, focus face and label, every panel's status line and tabs, focus kept and returned, Esc, Close and outside close, "
+          "tab picks, Run graph, Chat to Simple, badges from the records, Validator shown as Gatekeeper ok")
+
+def chat_panel():
+    """The full view's chat (docs/mocks/j2-detailed-rail-mock.html): a panel that slides in from the right. Static: the pill, the panel's header, filters and an
+    aria-live log; the input asks the Client Lead; reduced motion makes it instant; the rail's Chat item is now Simple view. With Chrome (--browser), on two saved runs
+    at 1440x900 and 390x844, light and dark: no page error and no sideways scroll; closed, the main area has the full width and the pill shows every message as unread;
+    open, the main area shrinks (1440) or the panel covers it (phone), the pill reads Hide chat, sits beside the panel and never covers the input, the count clears and
+    the focus is in the panel; Esc and the X close it and give the focus back to the pill; every message has its sender's avatar (the rail's bot, the Gatekeeper's cap,
+    You) and role; All, With you and Between the team show the messages the records say; a long message folds and Show more opens it; the text is 4.5:1."""
+    import html as htmllib
     import threading
     from sutra_app.engine import j2_server
     here = HERE
     ui = open(page_file("j2_ui.html"), encoding="utf-8").read()
-    assert ui.index('id="railtoggle"') < ui.index('<nav class="rail tabs"') and 'id="railmenu"' not in ui and "All views" not in ui, "the hamburger comes first; no All views button"
-    assert 'try { localStorage.setItem("j2bar"' in ui and 'try { v = localStorage.getItem("j2bar")' in ui and "(min-width:1200px)" in ui, "remembered per viewer in try/catch; 1200px"
+    for x in ('id="chatfab" aria-expanded="false" aria-controls="chatp"', 'id="chatx" aria-label="Close chat"', 'data-cf="all">All<', 'data-cf="you">With you<', 'data-cf="team">Between the team<',
+              'id="msgs" role="log" aria-live="polite"', '"Ask your Client Lead for a change…"', 'data-name="Simple view"', "@media (prefers-reduced-motion:reduce){#dview .dcol,#dview .chat,.chatfab{transition:none!important}}"):
+        assert x in ui, ("chat panel markup", x)
+    assert 'data-name="Chat"' not in ui, "the rail's Chat item is Simple view now"
     chrome = j2.j2_check.find_chrome()
     repo = os.path.join(here, "runs")
-    run = "j2-20261026-174314" if os.path.isdir(os.path.join(repo, "j2-20261026-174314")) else None
-    if not (chrome and BROWSER and run):
-        print("left bar toggle: static checks ok (browser steps skipped: Chrome not found, no saved run, or --fast without --browser)")
+    names = sorted(n for n in os.listdir(repo) if os.path.isfile(os.path.join(repo, n, "workflows.json"))) if os.path.isdir(repo) else []
+    if not (chrome and BROWSER and names):
+        print("chat panel: static checks ok (browser steps skipped: Chrome not found, no saved run, or --fast without --browser)")
         return
-    note = ("(async () => { const q = s => [...document.querySelectorAll(s)], wait = ms => new Promise(r => setTimeout(r, ms)), vis = e => !!e && e.getClientRects().length > 0, rc = e => e.getBoundingClientRect(),"
-            " tg = document.getElementById('railtoggle'), bar = document.getElementById('rail'), st = () => ({open: !document.getElementById('dview').classList.contains('railoff'), bar: vis(bar), tog: vis(tg), exp: tg.getAttribute('aria-expanded'),"
-            " bw: vis(bar) ? Math.round(rc(bar).width) : 0, left: vis(bar) ? Math.round(rc(bar).left) : null, pos: getComputedStyle(bar).position, sw: [document.documentElement.scrollWidth, innerWidth],"
-            " body: [document.body.scrollWidth, innerWidth], col: Math.round(rc(document.querySelector('#dview .dcol')).width), badge: [vis(document.getElementById('barbadge')), document.getElementById('barbadge').textContent],"
-            " stored: (() => { try { return localStorage.getItem('j2bar'); } catch (e) { return 'err'; } })()}), r = {}; await wait(1500);")
-    steps = {
-        "wide1": "r.a = st(); tg.click(); r.b = st(); paint($('needs'), renderNeeds({paused: {msg: 1, questions: [{question: 'Q?'}]}})); barBadge(); r.c = st(); paint($('needs'), renderNeeds({})); barBadge(); r.d = st();"
-                 " paint($('needs'), renderNeeds({paused: {msg: 1, questions: [{question: 'Q?'}, {question: 'R?'}]}})); barBadge(); r.e = st(); r.label = tg.getAttribute('aria-label');",
-        "wide2": "r.a = st(); tg.click(); r.b = st();",
-        "narrow": "r.a = st(); tg.click(); r.b = st(); document.dispatchEvent(new KeyboardEvent('keydown', {key: 'Escape', bubbles: true})); r.esc = st(); tg.click();"
-                  " document.getElementById('needs').click(); r.out = st(); tg.click(); q('.rshead')[0].click(); r.inside = st(); q('#rail [data-tab=goal]')[0].click(); r.tab = st(); r.stored = st().stored;",
-    }
-    port = socket.socket(); port.bind(("127.0.0.1", 0)); p_ = port.getsockname()[1]; port.close()
-    tmp = tempfile.mkdtemp(prefix="j2-bartoggle-")
-    os.symlink(page_file("vendor"), os.path.join(tmp, "vendor"))
-    pick = ";".join(f"if (s === '{k}') {{ {note} {v} document.body.setAttribute('data-r', JSON.stringify(r)); }})(); }}" for k, v in steps.items())
-    page = ui.replace("</body>", "<script>setTimeout(() => { const s = new URLSearchParams(location.search).get('step'); " + pick + " }, 500)</script></body>")
+    def chat_of(n):
+        f = os.path.join(repo, n, "chat.jsonl")
+        return [json.loads(x) for x in open(f, encoding="utf-8") if x.strip()] if os.path.isfile(f) else []
+    long_ = next((n for n in reversed(names) if any(m.get("who") not in ("system", None) and not m.get("meta") and len(m.get("text") or "") > 280 for m in chat_of(n))), None)
+    runs = list(dict.fromkeys([n for n in ("j2-20261026-174314", long_) if n and n in names])) or names[-1:]
+    role = {"identity": "Client Lead", "adaptation": "Planner", "priority": "Budget lead", "coordination": "Scheduler", "audit": "Quality check", "validator": "checks before work starts", "user": "", "builder": "Builder"}
+    head = "<script>window.__e = []; addEventListener('error', e => __e.push(String(e.message))); try { localStorage.clear(); } catch (x) {}</script>"
+    probe = ("(async () => { const q = s => [...document.querySelectorAll(s)], wait = ms => new Promise(r => setTimeout(r, ms)), S = id => document.getElementById(id), r = {};"
+             " const fin = () => document.getAnimations().forEach(a => { try { a.finish(); } catch (x) {} }), box = e => { const b = e.getBoundingClientRect(); return [b.left, b.top, b.right, b.bottom, b.width]; };"
+             " const lum = c => { const f = /^color\\(srgb/.test(c), v = (c.replace(/^color\\(srgb/, '').match(/[\\d.]+/g) || []).slice(0, 3).map(x => { x = f ? +x : x / 255; return x <= .03928 ? x / 12.92 : ((x + .055) / 1.055) ** 2.4; }); return .2126 * v[0] + .7152 * v[1] + .0722 * v[2]; };"
+             " const ct = (a, b) => { const x = lum(a), y = lum(b); return (Math.max(x, y) + .05) / (Math.min(x, y) + .05); }, bg = e => { while (e) { const c = getComputedStyle(e).backgroundColor; if (c && !/rgba\\(0, 0, 0, 0\\)|transparent/.test(c)) return c; e = e.parentElement; } return 'rgb(255, 255, 255)'; };"
+             " const hit = (a, b) => a[0] < b[2] && b[0] < a[2] && a[1] < b[3] && b[1] < a[3];"
+             " await wait(2500); fin(); r.err0 = __e.slice(); r.closed = {on: S('dview').classList.contains('chaton'), main: box(S('dview').querySelector('.dcol'))[4], pill: S('chatfab').querySelector('span').textContent, unread: S('unread').hidden ? 0 : S('unread').textContent,"
+             "   vis: getComputedStyle(S('chatp')).visibility, want: (state.allChat || []).filter(m => m.who !== 'system').length};"
+             " r.msgs = q('#msgs .msg').map(e => [e.dataset.id, e.dataset.who, e.querySelector('.who b').textContent.trim(), (e.querySelector('.role') || {}).textContent || '', e.querySelector('.ava svg') ? [...e.querySelector('.ava svg').querySelectorAll('[class]')].map(x => x.getAttribute('class')).join(' ') : 'letters:' + e.querySelector('.ava').textContent]);"
+             " r.toyou = q('#msgs .msg.touser').map(e => e.dataset.id); r.log = [S('msgs').getAttribute('role'), S('msgs').getAttribute('aria-live')];"
+             " S('chatfab').click(); fin(); await wait(50); fin();"
+             " r.open = {on: S('dview').classList.contains('chaton'), main: box(S('dview').querySelector('.dcol'))[4], pill: S('chatfab').querySelector('span').textContent, unread: S('unread').hidden, focus: S('chatp').contains(document.activeElement),"
+             "   panel: box(S('chatp')), fab: getComputedStyle(S('chatfab')).display === 'none' ? null : box(S('chatfab')), input: box(S('box')), send: box(S('send')), vis: getComputedStyle(S('chatp')).visibility, sw: [document.documentElement.scrollWidth, innerWidth]};"
+             " r.filters = {}; for (const f of ['you', 'team', 'all']){ q('[data-cf=' + f + ']')[0].click(); r.filters[f] = [q('#msgs .msg').filter(e => e.getClientRects().length).map(e => e.dataset.id), q('#msgs .msg.cont .who').length, q('[data-cf]').map(b => b.getAttribute('aria-pressed')).join()]; }"
+             " const c = q('#msgs .text.clip')[0]; r.fold = c ? [c.scrollHeight > c.clientHeight + 4, c.nextElementSibling.textContent] : null; if (c){ c.nextElementSibling.click(); r.fold.push(!c.classList.contains('clip'), c.nextElementSibling.textContent, c.nextElementSibling.getAttribute('aria-expanded')); }"
+             " r.themes = {}; for (const th of ['light', 'dark']){ THEME = th; themeApply(); await wait(20); const pr = []; for (const sel of ['#msgs .msg:not(.user) .text', '#msgs .msg.user .text', '#msgs .who b', '#msgs .role', '#msgs .tag.ok', '#msgs .tag.bad', '#msgs .tag.to', '.chat .ch b', '#chatfab']){"
+             "   const e = q(sel)[0]; if (e) pr.push([sel, +ct(getComputedStyle(e).color, bg(e)).toFixed(2)]); } r.themes[th] = pr; }"
+             " document.dispatchEvent(new KeyboardEvent('keydown', {key: 'Escape', bubbles: true})); fin(); r.esc = [S('dview').classList.contains('chaton'), document.activeElement === S('chatfab'), S('dview').querySelector('.dcol').getBoundingClientRect().width, getComputedStyle(S('chatp')).visibility];"
+             " S('chatfab').click(); fin(); S('chatx').click(); fin(); r.x = [S('dview').classList.contains('chaton'), document.activeElement === S('chatfab'), localStorage.getItem('j2chat')];"
+             " r.err = __e.slice(); (parent !== window ? parent : window).document.body.setAttribute('data-r', JSON.stringify(r)); })()")
+    page = ui.replace("<head>", "<head>" + head, 1).replace("</body>", "<script>setTimeout(() => { " + probe + " }, 1500)</script></body>")
+    tmp = tempfile.mkdtemp(prefix="j2-chat-")
     open(os.path.join(tmp, "j2_ui.html"), "w", encoding="utf-8").write(page)
+    os.symlink(page_file("vendor"), os.path.join(tmp, "vendor"))
+    wrap = {}
+
+    class Wrap(j2_server.Handler):      # a phone-width frame, same origin (headless Chrome's window is at least 500px wide)
+        def do_GET(self):
+            return self._send(200, wrap["page"], "text/html") if self.path.startswith("/wrap") else super().do_GET()
     keep_here, runs_ = j2_server.HERE, j2.RUNS_DIR
     j2_server.HERE, j2.RUNS_DIR = tmp, repo
-    srv = j2_server.http.server.ThreadingHTTPServer(("127.0.0.1", p_), j2_server.Handler)
+    srv = j2_server.http.server.ThreadingHTTPServer(("127.0.0.1", 0), Wrap)
     threading.Thread(target=srv.serve_forever, daemon=True).start()
-
-    def probe(step, size, profile):
-        dom = chrome_dom([chrome, "--headless=new", "--disable-gpu", f"--user-data-dir={profile}", "--no-first-run", f"--window-size={size}", "--virtual-time-budget=25000", "--dump-dom",
-                          f"http://127.0.0.1:{p_}/?view=detail&run={run}&step={step}"], capture_output=True, text=True, timeout=120).stdout
-        hit = re.search(r'data-r="([^"]*)"', dom)
-        assert hit, (step, "the page did not finish its steps", dom[-300:])
-        return json.loads(htmllib.unescape(hit.group(1)))
-    prof_w, prof_n = tempfile.mkdtemp(prefix="j2-barprof-"), tempfile.mkdtemp(prefix="j2-barprof-")
+    base, seen, folded = f"http://127.0.0.1:{srv.server_address[1]}", 0, 0
     try:
-        w1 = probe("wide1", "1440,900", prof_w)
-        w2 = probe("wide2", "1440,900", prof_w)      # a second Chrome run on the same profile: the reload
-        n1 = probe("narrow", "800,900", prof_n)
+        for run in runs:
+            chat = [m for m in chat_of(run) if not m.get("meta") and m.get("who") != "system"]
+            you = [str(m["id"]) for m in chat if m["who"] == "user" or m.get("to_user") or m.get("audience") == "user"]
+            team = [str(m["id"]) for m in chat if str(m["id"]) not in you]
+            for w, h in ((1440, 900), (390, 844)):
+                url = f"/?view=detail&run={run}"
+                if w < 500:
+                    wrap["page"] = f'<!doctype html><body style="margin:0"><iframe src="{url}" style="width:{w}px;height:{h}px;border:0;display:block"></iframe></body>'
+                    url = "/wrap"
+                dom = chrome_dom([chrome, "--headless=new", "--disable-gpu", f"--window-size={max(w, 500)},{h}", "--virtual-time-budget=30000", "--dump-dom", base + url],
+                                 capture_output=True, text=True, timeout=180).stdout
+                hit = re.search(r'data-r="([^"]*)"', dom)
+                assert hit, (run, w, "the page did not finish its steps", dom[-300:])
+                r = json.loads(htmllib.unescape(hit.group(1)))
+                assert not r["err"], (run, w, r["err"])
+                c, o = r["closed"], r["open"]
+                assert not c["on"] and c["pill"] == "Chat" and c["vis"] == "hidden" and str(c["unread"]) == (str(c["want"]) if c["want"] <= 99 else "99+") and c["want"] == len(chat), (run, w, "closed: Chat pill with every message unread", c, len(chat))
+                assert o["on"] and o["pill"] == "Hide chat" and o["unread"] and o["focus"] and o["vis"] == "visible" and o["sw"][0] <= o["sw"][1], (run, w, "open: Hide chat, count cleared, focus in the panel", o)
+                assert o["fab"] is None or not (o["fab"][0] < o["input"][2] and o["input"][0] < o["fab"][2] and o["fab"][1] < o["input"][3] and o["input"][1] < o["fab"][3]) \
+                    and not (o["fab"][0] < o["send"][2] and o["send"][0] < o["fab"][2] and o["fab"][1] < o["send"][3] and o["send"][1] < o["fab"][3]), (run, w, "the pill never covers the input", o["fab"], o["input"], o["send"])
+                if w >= 1000:
+                    assert c["main"] - o["main"] > 400 and o["fab"][2] <= o["panel"][0] and o["panel"][2] <= w, (run, w, "the main area shrinks for the panel; the pill sits beside it", c["main"], o["main"], o["fab"], o["panel"])
+                else:
+                    assert o["fab"] is None and o["panel"][2] <= w + 1 and o["panel"][0] >= 0, (run, w, "on a phone the panel covers the main area; its X closes it", o)
+                assert r["esc"][:2] == [False, True] and abs(r["esc"][2] - c["main"]) < 2 and r["esc"][3] == "hidden" and r["x"] == [False, True, "0"], (run, w, "Esc and the X close it, the focus goes back to the pill, the choice is kept", r["esc"], r["x"])
+                assert r["log"] == ["log", "polite"]
+                assert [m[0] for m in r["msgs"]] == [str(m["id"]) for m in chat], (run, w, "every message once, in order")
+                for (id_, who_, name_, role_, ava), m in zip(r["msgs"], chat):
+                    k = m["who"]
+                    want_name = "Gatekeeper" if k == "validator" else "You" if k == "user" else None
+                    assert who_ == k and (want_name is None or name_ == want_name) and role_ == role.get(k, "builds one job" if re.fullmatch(r"W-\d+", k) else ""), (run, id_, k, name_, role_)
+                    if k in ("identity", "adaptation", "priority", "coordination", "audit"):
+                        assert ava.startswith("body hb hv eyes") and "alert" not in ava and {"identity": "headset", "adaptation": "glasses", "priority": "coin", "coordination": "hathard", "audit": "monocle"}[k] in ava, (run, id_, k, ava)
+                    elif k == "validator":
+                        assert "capd capb" in ava and "brows" in ava, (run, id_, ava)
+                    elif k == "user":
+                        assert ava == "youc yout", (run, id_, ava)
+                assert sorted(r["toyou"]) == sorted(str(m["id"]) for m in chat if m.get("to_user") or m.get("audience") == "user"), (run, w, "messages to you are outlined")
+                assert r["filters"]["you"][0] == you and r["filters"]["team"][0] == team and r["filters"]["all"][0] == [str(m["id"]) for m in chat], (run, w, "the filters show the records' messages")
+                assert [v[2] for v in r["filters"].values()] == ["false,true,false", "false,false,true", "true,false,false"]
+                if any(len(m.get("text") or "") > 280 for m in chat):
+                    assert r["fold"] and r["fold"][0] and r["fold"][1] == "Show more" and r["fold"][2:] == [True, "Show less", "true"], (run, w, "a long message folds behind Show more", r["fold"])
+                    folded += 1
+                for th, pr in r["themes"].items():
+                    assert all(v >= 4.5 for k_, v in pr), (run, w, th, "chat text 4.5:1", pr)
+                seen += 1
     finally:
         srv.shutdown()
         j2_server.HERE, j2.RUNS_DIR = keep_here, runs_
-        for d in (tmp, prof_w, prof_n):
-            shutil.rmtree(d, ignore_errors=True)
-    noscroll = lambda st: st["sw"][0] <= st["sw"][1] and st["body"][0] <= st["body"][1]
-    a, b = w1["a"], w1["b"]
-    assert a["open"] and a["bar"] and a["tog"] and 230 <= a["bw"] <= 250 and a["exp"] == "true" and a["badge"][0] is False, ("1440: open by default, hamburger shown, no badge while the bar is open", a)
-    assert not b["open"] and not b["bar"] and b["tog"] and b["exp"] == "false" and b["stored"] == "0" and b["col"] > a["col"] + 150, ("1440: the hamburger collapses the bar, only it shows, the content widens", a["col"], b)
-    assert noscroll(a) and noscroll(b), ("1440: no horizontal scroll, open or collapsed", a["sw"], b["sw"])
-    assert b["badge"][0] == (b["badge"][1] != "0") and w1["c"]["badge"] == [True, "1"] and w1["d"]["badge"][0] is False and w1["e"]["badge"] == [True, "2"] and "2 waiting on you" in w1["label"], ("the badge shows the number of Needs you items, only when there are some", w1["c"], w1["d"], w1["e"])
-    assert not w2["a"]["open"] and not w2["a"]["bar"] and w2["a"]["tog"] and w2["a"]["stored"] == "0", ("the collapsed choice survives a reload", w2["a"])
-    assert w2["b"]["open"] and w2["b"]["bar"] and w2["b"]["stored"] == "1" and noscroll(w2["a"]) and noscroll(w2["b"]), ("the hamburger reopens it, and that is remembered", w2["b"])
-    a, b = n1["a"], n1["b"]
-    assert not a["open"] and not a["bar"] and a["tog"] and noscroll(a), ("800: collapsed by default", a)
-    assert b["open"] and b["bar"] and b["pos"] == "fixed" and b["left"] == 0 and b["bw"] <= 240 and noscroll(b), ("800: the open bar overlays the content, no horizontal scroll", b)
-    assert not n1["esc"]["open"] and not n1["out"]["open"] and n1["inside"]["open"] and not n1["tab"]["open"], ("800: Esc, a click outside and a picked tab close it; a click inside does not", n1["esc"], n1["out"], n1["inside"], n1["tab"])
-    assert n1["stored"] in (None, "err"), ("800: a narrow overlay is not remembered", n1["stored"])
-    print("left bar toggle: hamburger collapses and reopens the bar at 1440x900, choice kept across a reload, badge only with Needs you items, no horizontal scroll open or collapsed "
-          "at 1440 and 800; at 800 the bar starts collapsed, overlays, closes on Esc, outside click and a picked tab ok")
+    print(f"chat panel: pill, header, filters, aria-live log, Client Lead input, reduced motion, rail item Simple view; Chrome on {len(runs)} runs x 1440x900 and 390x844 ({seen} pages): "
+          f"no error, main width shrinks and comes back, pill beside the panel and off the input, unread count clears on open, focus in and back, Esc and X close, avatars and roles "
+          f"for every message, All / With you / Between the team from the records, Show more ({folded} pages), text 4.5:1 in light and dark ok")
 
+
+def function_chat():
+    """One-on-one chat with each function (activity/1 and /api/ask): with a function's view open (Identity, Adaptation, Priority, Coordination, Audit),
+    the panel is "<Function> chat" with a count chip, its role and "answers from the run's records", a toggle <Function> | Whole chat (aria-pressed),
+    a "Show AI calls and thinking" switch (off: messages only), the function's feed and an Ask box with its note; a question is answered from the records.
+    Whole chat brings back the Team chat, its filters and the Client Lead input, and the toggle goes back. Map, Artifacts and Settings show the Team chat
+    with no toggle. No text links in the header, nothing wraps at 390px, and the new controls read 4.5:1 in light and dark."""
+    import html as htmllib
+    import threading
+    from sutra_app.engine import j2_server
+    from sutra_app.engine import j2_agent as AG
+    here = HERE
+    ui = open(page_file("j2_ui.html"), encoding="utf-8").read()
+    head_ = ui[ui.index('<section class="chat" id="chatp"'):ui.index('id="msgs"')]
+    for x in ('id="chseg" role="group"', 'data-chmode="fn"', 'data-chmode="all">Whole chat<', 'role="switch" id="chthink"', ">Show AI calls and thinking<", 'id="chatcnt"',
+              ">Answers from this run's records. It cannot change the run.<"):
+        assert x in ui, ("function chat markup", x)
+    assert "linkbtn" not in head_ and "data-agent" not in head_ and "data-chatall" not in ui and "data-chatonly" not in ui, "no text links in the chat header"
+    chrome = j2.j2_check.find_chrome()
+    repo = os.path.join(here, "runs")
+    run = "j2-20261106-184848"
+    if not (chrome and BROWSER and os.path.isfile(os.path.join(repo, run, "chat.jsonl"))):
+        print("function chat: static checks ok (browser steps skipped: Chrome not found, run missing, or --fast without --browser)")
+        return
+    tabs = {"identity": "goal", "adaptation": "planmap", "priority": "priorities", "coordination": "timeline", "audit": "audit"}
+    names = {"identity": "Identity", "adaptation": "Adaptation", "priority": "Priority", "coordination": "Coordination", "audit": "Audit"}
+    want = {k: [e["kind"] for e in AG.activity(os.path.join(repo, run), k)["events"]] for k in tabs}
+    head = "<script>window.__e = []; addEventListener('error', e => __e.push(String(e.message))); try { localStorage.clear(); localStorage.setItem('j2chat', '1'); } catch (x) {}</script>"
+    probe = ("(async () => { const q = s => [...document.querySelectorAll(s)], wait = ms => new Promise(r => setTimeout(r, ms)), S = id => document.getElementById(id), r = {fns: {}};"
+             " const lum = c => { const f = /^color\\(srgb/.test(c), v = (c.replace(/^color\\(srgb/, '').match(/[\\d.]+/g) || []).slice(0, 3).map(x => { x = f ? +x : x / 255; return x <= .03928 ? x / 12.92 : ((x + .055) / 1.055) ** 2.4; }); return .2126 * v[0] + .7152 * v[1] + .0722 * v[2]; };"
+             " const ct = (a, b) => { const x = lum(a), y = lum(b); return (Math.max(x, y) + .05) / (Math.min(x, y) + .05); }, bg = e => { while (e) { const c = getComputedStyle(e).backgroundColor; if (c && !/rgba\\(0, 0, 0, 0\\)|transparent/.test(c)) return c; e = e.parentElement; } return 'rgb(255, 255, 255)'; };"
+             " const vis = id => !S(id).hidden && S(id).getClientRects().length > 0, until = async f => { for (let i = 0; i < 60 && !f(); i++) await wait(100); };"
+             " const look = () => ({title: S('chath').textContent, sub: S('chatsub').textContent, cnt: vis('chatcnt') ? S('chatcnt').textContent : '', seg: vis('chseg'), pressed: q('[data-chmode]').map(b => b.dataset.chmode + ':' + b.getAttribute('aria-pressed')).join(),"
+             "   segname: S('chsegfn').textContent, sw: vis('chsw'), on: S('chthink').checked, feed: vis('chatfeed'), msgs: vis('msgs'), filters: vis('cfil'), note: vis('asknote'), ph: S('box').placeholder, dis: S('box').disabled,"
+             "   kinds: q('#chatfeed .msg').map(e => e.classList.contains('fev') ? [...e.classList].find(c => c.startsWith('f-')).slice(2) : 'msg'), links: q('#chatp .ch a, #chatp .ch .linkbtn, #chseg .linkbtn, #chsw .linkbtn').length,"
+             "   wraps: ['chath', 'chatsub', 'chseg', 'chsw'].filter(id => { const e = S(id); return vis(id) && (e.scrollWidth > e.clientWidth + 1 || e.getBoundingClientRect().height > 46); }), sw_: document.documentElement.scrollWidth <= innerWidth});"
+             " await wait(2500);"
+             " for (const [fn, tab] of Object.entries(" + json.dumps(tabs) + ")){ showTab(tab); await until(() => FEED.who === fn && FEED.found); await wait(200); const a = look();"
+             "   S('chthink').click(); await wait(200); const b = look(); S('chthink').click(); await wait(100);"
+             "   q('[data-chmode=all]')[0].click(); await wait(100); const c = look(); q('[data-chmode=fn]')[0].click(); await wait(100); const d = look();"
+             "   S('chseg').querySelector('[data-chmode=all]').focus(); const fo = getComputedStyle(document.activeElement).outlineStyle;"
+             "   r.fns[fn] = {a, b, c, d, focus: [document.activeElement.dataset.chmode, fo]}; }"
+             " showTab('priorities'); await until(() => FEED.who === 'priority' && FEED.found); S('box').value = 'Why did you grant the workflows?'; await send(); await until(() => q('#chatfeed .msg.user').length && !/Thinking/.test(S('chatfeed').lastElementChild.textContent));"
+             " const last = q('#chatfeed .msg').slice(-2); r.ask = [last[0].dataset.who, last[0].querySelector('.text').textContent, last[1].dataset.who, last[1].querySelector('.text').textContent.slice(0, 40), last[1].querySelector('.tag') ? last[1].querySelector('.tag').textContent : ''];"
+             " r.other = {}; for (const t of ['map', 'artifacts', 'runsettings']){ showTab(t); r.other[t] = look(); }"
+             " r.themes = {}; showTab('priorities'); await wait(100); if (!S('chthink').checked) S('chthink').click(); await wait(100); for (const th of ['light', 'dark']){ THEME = th; themeApply(); await wait(30); const pr = [];"
+             "   for (const sel of ['#chath', '#chatsub', '#chatcnt', '#chseg [aria-pressed=true]', '#chseg [aria-pressed=false]', '#chsw span', '#asknote', '#chatfeed .tag.kind']){ const e = q(sel)[0]; if (e) pr.push([sel, +ct(getComputedStyle(e).color, bg(e)).toFixed(2)]); }"
+             "   r.themes[th] = pr; }"
+             " r.err = __e.slice(); (parent !== window ? parent : window).document.body.setAttribute('data-r', JSON.stringify(r)); })()")
+    page = ui.replace("<head>", "<head>" + head, 1).replace("</body>", "<script>setTimeout(() => { " + probe + " }, 1500)</script></body>")
+    tmp = tempfile.mkdtemp(prefix="j2-fnchat-")
+    open(os.path.join(tmp, "j2_ui.html"), "w", encoding="utf-8").write(page)
+    os.symlink(page_file("vendor"), os.path.join(tmp, "vendor"))
+    wrap = {}
+
+    class Wrap(j2_server.Handler):      # a phone-width frame, same origin (headless Chrome's window is at least 500px wide)
+        def do_GET(self):
+            return self._send(200, wrap["page"], "text/html") if self.path.startswith("/wrap") else super().do_GET()
+    keep_here, runs_ = j2_server.HERE, j2.RUNS_DIR
+    j2_server.HERE, j2.RUNS_DIR = tmp, repo
+    srv = j2_server.http.server.ThreadingHTTPServer(("127.0.0.1", 0), Wrap)
+    threading.Thread(target=srv.serve_forever, daemon=True).start()
+    base = f"http://127.0.0.1:{srv.server_address[1]}"
+    try:
+        for w, h in ((1440, 900), (390, 844)):
+            url = f"/?view=detail&run={run}"
+            if w < 500:
+                wrap["page"] = f'<!doctype html><body style="margin:0"><iframe src="{url}" style="width:{w}px;height:{h}px;border:0;display:block"></iframe></body>'
+                url = "/wrap"
+            dom = chrome_dom([chrome, "--headless=new", "--disable-gpu", f"--window-size={max(w, 500)},{h}", "--virtual-time-budget=60000", "--dump-dom", base + url],
+                             capture_output=True, text=True, timeout=240).stdout
+            hit = re.search(r'data-r="([^"]*)"', dom)
+            assert hit, (w, "the page did not finish its steps", dom[-300:])
+            r = json.loads(htmllib.unescape(hit.group(1)))
+            assert not r["err"], (w, r["err"])
+            for fn, v in r["fns"].items():
+                a, b, c, d, nm = v["a"], v["b"], v["c"], v["d"], names[fn]
+                msgs, every = want[fn].count("msg"), len(want[fn])
+                assert a["title"] == nm + " chat" and a["cnt"] == str(msgs) and a["sub"].endswith(" · answers from the run's records") and a["seg"] and a["segname"] == nm \
+                    and a["pressed"] == "fn:true,all:false" and a["sw"] and not a["on"] and a["feed"] and not a["msgs"] and not a["filters"] and a["note"] \
+                    and a["ph"] == f"Ask {nm} about this run…" and not a["dis"], (w, fn, "the function's chat: title, chip, toggle, switch off, feed and Ask box", a)
+                assert a["kinds"] == ["msg"] * msgs, (w, fn, "switch off: messages only", a["kinds"][:8])
+                assert b["on"] and len(b["kinds"]) == every and b["cnt"] == str(every), (w, fn, "switch on: the AI calls and thinking too", b["kinds"][:8], every)
+                assert c["title"] == "Team chat" and c["sub"] == "Client Lead and the team, as it happens" and c["seg"] and c["pressed"] == "fn:false,all:true" and not c["sw"] and c["msgs"] and not c["feed"] \
+                    and c["filters"] and not c["note"] and not c["cnt"] and "Client Lead" in c["ph"], (w, fn, "Whole chat: the Team chat, its filters and the Client Lead input", c)
+                assert d == a, (w, fn, "the toggle goes back to the function's chat", d)
+                assert a["links"] == 0 and not a["wraps"] and not c["wraps"] and a["sw_"], (w, fn, "no links in the header, nothing wraps, no sideways scroll", a["wraps"], c["wraps"])
+                assert v["focus"][0] == "all" and v["focus"][1] != "none", (w, fn, "the toggle takes the focus with a visible ring", v["focus"])
+            assert r["ask"][0] == "user" and r["ask"][1] == "Why did you grant the workflows?" and r["ask"][2] == "priority" and r["ask"][3].startswith("From the records") and r["ask"][4] == "from its records, no AI call", (w, "a question is answered from the records", r["ask"])
+            for t, o in r["other"].items():
+                assert o["title"] == "Team chat" and not o["seg"] and not o["sw"] and o["filters"] and o["msgs"] and not o["note"], (w, t, "a page with no function keeps the Team chat, no toggle", o)
+            for th, pr in r["themes"].items():
+                assert len(pr) == 8 and all(x >= 4.5 for _, x in pr), (w, th, "the chat controls 4.5:1", pr)
+    finally:
+        srv.shutdown()
+        j2_server.HERE, j2.RUNS_DIR = keep_here, runs_
+    print("function chat: Identity, Adaptation, Priority, Coordination and Audit each open their chat (title and count, toggle, switch off: messages only, on: every record, feed, Ask box "
+          "and its note); a question answered from the records; Whole chat and back; Map, Artifacts and Settings keep the Team chat with no toggle; no header links, no wrap at 390, focus ring, 4.5:1 in light and dark ok")
+
+def view_kept():
+    """The view is kept (Simple only on a fresh visit with no view chosen): ?view= in the URL plus a per-viewer preference. With Chrome (--browser), on saved
+    runs: a fresh visit with no preference opens Simple; from the detailed view, opening another run from Run settings stays detailed and the URL names the run and
+    the view; a reload keeps it; the rail's Simple view item and the team card's "Open detailed view" switch both ways, and each choice survives a reload."""
+    import html as htmllib
+    import threading
+    from sutra_app.engine import j2_server
+    here = HERE
+    ui = open(page_file("j2_ui.html"), encoding="utf-8").read()
+    assert 'location.search = viewHref(b.dataset.openrun === RUNS.live ? "" : b.dataset.openrun);' in ui and "location.search = viewHref(\"\")" in ui, "run links keep the view"
+    chrome = j2.j2_check.find_chrome()
+    repo = os.path.join(here, "runs")
+    names = sorted(n for n in os.listdir(repo) if os.path.isfile(os.path.join(repo, n, "workflows.json"))) if os.path.isdir(repo) else []
+    if not (chrome and BROWSER and len(names) >= 2):
+        print("view kept: static checks ok (browser steps skipped: Chrome not found, fewer than two saved runs, or --fast without --browser)")
+        return
+    a_, b_ = names[-1], names[-2]
+    # one tab, several page loads: the steps and results live in sessionStorage; the first load starts with no preference
+    head = ("<script>window.__e = []; addEventListener('error', e => __e.push(String(e.message))); try { if (!sessionStorage.getItem('vk')){ localStorage.clear(); sessionStorage.setItem('vk', '[]'); } } catch (x) {}</script>")
+    probe = ("(async () => { const wait = ms => new Promise(r => setTimeout(r, ms)), S = id => document.getElementById(id), log = JSON.parse(sessionStorage.getItem('vk') || '[]');"
+             " const v = () => document.body.classList.contains('simple') ? 'simple' : 'detail', u = () => new URLSearchParams(location.search), rec = k => log.push([k, v(), u().get('view'), u().get('run') || '', __e.length]);"
+             " const save = () => sessionStorage.setItem('vk', JSON.stringify(log)), done = () => { save(); document.body.setAttribute('data-r', JSON.stringify(log)); };"
+             " const step = log.length ? log[log.length - 1][0] : '';"
+             " if (u().get('fresh')){ rec('fresh'); return done(); }"
+             " if (!step){ rec('start'); showTab('runsettings'); for (let i = 0; i < 50 && !RUNS.all.length; i++) await wait(100); RUNS.show = 1e4; renderRuns(); const o = document.querySelector('#runlist [data-openrun=\"" + b_ + "\"]');"
+             "   if (!o){ rec('no-run-row'); return done(); } save(); o.click(); return; }"
+             " if (step === 'start'){ rec('opened'); save(); location.reload(); return; }"
+             " if (step === 'opened'){ rec('reloaded'); S('gochat').click(); rec('to-simple'); save(); location.reload(); return; }"
+             " if (step === 'to-simple'){ rec('simple-reloaded'); S('steamfull').click(); rec('to-detail'); save(); location.reload(); return; }"
+             " if (step === 'to-detail'){ rec('detail-reloaded'); return done(); } })()")
+    page = ui.replace("<head>", "<head>" + head, 1).replace("</body>", "<script>setTimeout(() => { " + probe + " }, 1500)</script></body>")
+    tmp = tempfile.mkdtemp(prefix="j2-view-")
+    open(os.path.join(tmp, "j2_ui.html"), "w", encoding="utf-8").write(page)
+    os.symlink(page_file("vendor"), os.path.join(tmp, "vendor"))
+    keep_here, runs_ = j2_server.HERE, j2.RUNS_DIR
+    j2_server.HERE, j2.RUNS_DIR = tmp, repo
+    srv = j2_server.http.server.ThreadingHTTPServer(("127.0.0.1", 0), j2_server.Handler)
+    threading.Thread(target=srv.serve_forever, daemon=True).start()
+    base = f"http://127.0.0.1:{srv.server_address[1]}"
+    def run_(url):
+        dom = chrome_dom([chrome, "--headless=new", "--disable-gpu", "--window-size=1440,900", "--virtual-time-budget=60000", "--dump-dom", base + url], capture_output=True, text=True, timeout=240).stdout
+        hit = re.search(r'data-r="([^"]*)"', dom)
+        assert hit, (url, "the page did not finish its steps", dom[-300:])
+        return json.loads(htmllib.unescape(hit.group(1)))
+    try:
+        fresh = run_(f"/?fresh=1&run={a_}")
+        assert fresh == [["fresh", "simple", "simple", a_, 0]], ("a fresh visit with no preference opens the Simple view", fresh)
+        got = run_(f"/?view=detail&run={a_}")
+        want = [["start", "detail", "detail", a_, 0], ["opened", "detail", "detail", b_, 0], ["reloaded", "detail", "detail", b_, 0], ["to-simple", "simple", "simple", b_, 0],
+                ["simple-reloaded", "simple", "simple", b_, 0], ["to-detail", "detail", "detail", b_, 0], ["detail-reloaded", "detail", "detail", b_, 0]]
+        assert got == want, ("the view is kept across a run switch and reloads; the two switches work both ways", got)
+    finally:
+        srv.shutdown()
+        j2_server.HERE, j2.RUNS_DIR = keep_here, runs_
+    print(f"view kept: a fresh visit opens Simple; from the detailed view another run opens detailed ({a_} -> {b_}); reloads keep the view; Simple view and "
+          "Open detailed view switch both ways and survive a reload; no page error ok")
+
+def run_settings():
+    """Run settings (docs/mocks/j2-run-settings-mock.html): no What to build and no Back to simple view; Appearance as three cards; the run list from
+    /api/runlist (j2_server.run_list) against the records on every saved run: each run once, newest first, its ID, title (goal.json site_name, else the
+    statement's first sentence, else the ID), status (summary.json status: done*, stopped/crashed/stuck/out_of_budget or no summary -> stopped, the
+    live run while it runs -> running). With Chrome (--browser) at 1440x900 and 390x844, light and dark: the current run is highlighted, the chips'
+    counts are the records', a full run ID finds exactly that run, 50+ runs load 20 at a time, a Running row (one run marked running) is as tall as a
+    normal row and the list stacks from the top, the page's scroll height is the window's and only the list scrolls, text 4.5:1, no page error."""
+    import collections
+    import html as htmllib
+    import threading
+    from sutra_app.engine import j2_server
+    here = HERE
+    ui = open(page_file("j2_ui.html"), encoding="utf-8").read()
+    rs = ui[ui.index('id="pane-runsettings"'):ui.index('id="pane-rundetails"')]
+    assert "What to build" not in ui and "Back to simple view" not in ui and 'id="outsel"' not in ui and 'id="runsel"' not in ui, "the old controls are gone"
+    assert rs.count("data-themepick=") == 3 and "Applies to this browser only." in rs and all(f'class="sw sw-{k}"' in rs for k in "lds"), "Appearance: three cards with swatches"
+    assert [x for x in re.findall(r'data-rf="(\w+)"', rs)] == ["all", "running", "done", "stopped"] and 'id="runq"' in rs and 'id="reset"' in rs
+    repo = os.path.join(here, "runs")
+    keep_runs = j2.RUNS_DIR
+    j2.RUNS_DIR = repo
+    try:
+        got = server_run_list()      # engine port: j2_server.run_list()
+        names = sorted((n for n in os.listdir(repo) if j2.saved_dir(n) and os.path.isfile(os.path.join(repo, n, "chat.jsonl"))), reverse=True) if os.path.isdir(repo) else []
+    finally:
+        j2.RUNS_DIR = keep_runs
+    def want(n):
+        d = os.path.join(repo, n)
+        rd = lambda f: json.load(open(os.path.join(d, f))) if os.path.isfile(os.path.join(d, f)) else {}
+        st = str((rd("summary.json") or {}).get("status") or "")
+        g = rd("goal.json") or {}
+        stmt = re.split(r"(?<=[.!?])\s", str(g.get("statement") or "").strip())[0]
+        return {"status": "done" if st.startswith("done") else "stopped", "title": str(g.get("site_name") or "").strip() or (stmt[:70] + ("…" if len(stmt) > 70 else "")) or n}
+    ids = [x["id"] for x in got["runs"]]
+    assert sorted(ids) == sorted(names) and len(ids) == len(set(ids)), ("every saved run once", sorted(set(ids) ^ set(names)))
+    assert [x["when"] for x in got["runs"]] == sorted((x["when"] for x in got["runs"]), reverse=True), "newest first"
+    for x in got["runs"]:
+        w_ = want(x["id"])
+        assert x["status"] == ("running" if x["id"] == got["live"] and j2_server.RUN.status == "running" else w_["status"]) and x["title"] == w_["title"], (x, w_)
+        assert x["output"] in ("website", "prd", "hld", "lld", "docset", "") and re.fullmatch(r"\d{4}-\d\d-\d\dT\d\d:\d\d:\d\d", x["when"]), x
+    counts = collections.Counter(x["status"] for x in got["runs"])
+    chrome = j2.j2_check.find_chrome()
+    if not (chrome and BROWSER and len(names) >= 50):
+        print(f"run settings: no old controls, Appearance cards; run list = the records on {len(ids)} runs ({dict(counts)}) ok (browser steps skipped: Chrome not found, fewer than 50 runs, or --fast without --browser)")
+        return
+    cur, mark = names[3], names[5]      # the run opened, and one marked running for the row-height check
+    head = "<script>window.__e = []; addEventListener('error', e => __e.push(String(e.message)));</script>"
+    probe = ("(async () => { const q = s => [...document.querySelectorAll(s)], wait = ms => new Promise(r => setTimeout(r, ms)), S = id => document.getElementById(id), r = {};"
+             " const lum = c => { const f = /^color\\(srgb/.test(c), v = (c.replace(/^color\\(srgb/, '').match(/[\\d.]+/g) || []).slice(0, 3).map(x => { x = f ? +x : x / 255; return x <= .03928 ? x / 12.92 : ((x + .055) / 1.055) ** 2.4; }); return .2126 * v[0] + .7152 * v[1] + .0722 * v[2]; };"
+             " const ct = (a, b) => { const x = lum(a), y = lum(b); return (Math.max(x, y) + .05) / (Math.min(x, y) + .05); }, bg = e => { while (e) { const c = getComputedStyle(e).backgroundColor; if (c && !/rgba\\(0, 0, 0, 0\\)|transparent/.test(c)) return c; e = e.parentElement; } return 'rgb(255, 255, 255)'; };"
+             " showTab('runsettings'); for (let i = 0; i < 80 && !RUNS.all.length; i++) await wait(100); await wait(300);"
+             " const rows = () => q('#runlist .runrow'), fit = () => [document.documentElement.scrollHeight, innerHeight, document.querySelector('#dview .dcol').scrollHeight <= document.querySelector('#dview .dcol').clientHeight + 1, S('runlist').scrollHeight > S('runlist').clientHeight];"
+             " r.first = [rows().length, (S('runmore') || {}).textContent || '', S('runcount').textContent]; r.fit = fit();"
+             " r.cur = q('#runlist .runrow.cur').map(e => [e.dataset.openrun, e.querySelector('.ropen').textContent, e.getAttribute('aria-current')]);"
+             " r.chips = q('[data-rf]').map(b => [b.dataset.rf, +b.querySelector('i').textContent]);"
+             " while (S('runmore')) { S('runmore').click(); }"
+             " r.all = rows().map(e => [e.dataset.openrun, e.querySelector('code').textContent, e.querySelector('.rst').textContent, e.querySelector('.rt').textContent]); r.groups = q('#runlist .rgrp').map(e => e.textContent);"
+             " r.sticky = getComputedStyle(q('#runlist .rgrp')[0]).position; const normal = rows()[1].getBoundingClientRect().height;"
+             " S('runq').value = '" + cur + "'; S('runq').dispatchEvent(new Event('input')); r.search = [rows().map(e => e.dataset.openrun), S('runcount').textContent];"
+             " S('runq').value = ''; S('runq').dispatchEvent(new Event('input')); q('[data-rf=running]')[0].click(); const one = rows();"
+             " r.running = [one.map(e => e.dataset.openrun), one.length ? +one[0].getBoundingClientRect().height.toFixed(1) : 0, +normal.toFixed(1), one.length ? Math.round(one[0].getBoundingClientRect().top - S('runlist').getBoundingClientRect().top) : -1, S('runcount').textContent, q('[data-rf]').map(b => b.getAttribute('aria-pressed')).join()];"
+             " r.fit1 = fit().slice(0, 3); q('[data-rf=all]')[0].click();"
+             " r.themes = {}; for (const th of ['light', 'dark']){ THEME = th; themeApply(); await wait(30); const pr = [];"
+             "   for (const sel of ['#runlist .runrow:not(.cur) .rt', '#runlist .runrow.cur .rt', '#runlist .rm', '#runlist code', '#runlist .rst.done', '#runlist .rst.stopped', '#runlist .rst.running', '#runlist .ropen', '#runlist .rgrp', '.rfil button[aria-pressed=true]', '.rfil button[aria-pressed=false]', '.newrun', '.themecards button']){"
+             "     const e = q(sel)[0]; if (e) pr.push([sel, +ct(getComputedStyle(e).color, bg(e)).toFixed(2)]); }"
+             "   r.themes[th] = [pr, fit(), q('.themecards [aria-pressed=true]').map(b => b.dataset.themepick + ':' + getComputedStyle(b).borderTopColor)]; }"
+             " r.err = __e.slice(); (parent !== window ? parent : window).document.body.setAttribute('data-r', JSON.stringify(r)); })()")
+    page = ui.replace("<head>", "<head>" + head, 1).replace("</body>", "<script>setTimeout(() => { " + probe + " }, 1500)</script></body>")
+    tmp = tempfile.mkdtemp(prefix="j2-runs-")
+    open(os.path.join(tmp, "j2_ui.html"), "w", encoding="utf-8").write(page)
+    os.symlink(page_file("vendor"), os.path.join(tmp, "vendor"))
+    wrap = {}
+
+    class Wrap(j2_server.Handler):      # a phone-width frame, same origin (headless Chrome's window is at least 500px wide)
+        def do_GET(self):
+            return self._send(200, wrap["page"], "text/html") if self.path.startswith("/wrap") else super().do_GET()
+    from sutra_app.engine import runlist      # engine port: the adapter's /api/runlist is views.runlist over runlist.run_list, which is patched here
+    keep_here, keep_list = j2_server.HERE, runlist.run_list
+    def marked(*args, **kw):      # one run reported running, so the Running filter has a row (saved runs have none)
+        o = keep_list(*args, **kw)
+        for x in o["runs"]:
+            if x["id"] == mark:
+                x["status"] = "running"
+        return o
+    j2_server.HERE, j2.RUNS_DIR, runlist.run_list = tmp, repo, marked
+    srv = j2_server.http.server.ThreadingHTTPServer(("127.0.0.1", 0), Wrap)
+    threading.Thread(target=srv.serve_forever, daemon=True).start()
+    base, seen = f"http://127.0.0.1:{srv.server_address[1]}", 0
+    try:
+        L = marked()["runs"]
+        cnt = collections.Counter(x["status"] for x in L)
+        for w, h in ((1440, 900), (390, 844)):
+            url = f"/?view=detail&run={cur}"
+            if w < 500:
+                wrap["page"] = f'<!doctype html><body style="margin:0"><iframe src="{url}" style="width:{w}px;height:{h}px;border:0;display:block"></iframe></body>'
+                url = "/wrap"
+            dom = chrome_dom([chrome, "--headless=new", "--disable-gpu", f"--window-size={max(w, 500)},{h}", "--virtual-time-budget=40000", "--dump-dom", base + url],
+                             capture_output=True, text=True, timeout=240).stdout
+            hit = re.search(r'data-r="([^"]*)"', dom)
+            assert hit, (w, "the page did not finish its steps", dom[-300:])
+            r = json.loads(htmllib.unescape(hit.group(1)))
+            assert not r["err"], (w, r["err"])
+            n = len(L)
+            assert r["first"] == [20, f"Show 20 more · {n - 20} left", f"{n} runs"], (w, "20 at a time", r["first"])
+            assert [x[0] for x in r["all"]] == [x["id"] for x in L] and all(a[1] == a[0] for a in r["all"]), (w, "every run once, newest first, with its ID")
+            assert [x[2] for x in r["all"]] == [x["status"] for x in L] and [x[3] for x in r["all"]] == [x["title"] for x in L], (w, "status and title from the records")
+            assert r["cur"] == [[cur, "Open now", "true"]], (w, "the current run is highlighted", r["cur"])
+            assert dict(r["chips"]) == {"all": n, "running": cnt["running"], "done": cnt["done"], "stopped": cnt["stopped"]}, (w, r["chips"], cnt)
+            assert set(r["groups"]) <= {"Today", "Yesterday", "This week", "Earlier this month", "Older"} and r["sticky"] == "sticky", (w, r["groups"])
+            assert r["search"] == [[cur], f"1 of {n} runs"], (w, "a full run ID finds exactly that run", r["search"])
+            assert r["running"][0] == [mark] and r["running"][1] == r["running"][2] and 0 <= r["running"][3] <= 40 and r["running"][4] == f"1 of {n} runs" and r["running"][5] == "false,true,false,false", (w, "a lone row keeps its height, at the top", r["running"])
+            for f_ in (r["fit"], r["fit1"]):
+                assert f_[0] == f_[1] and f_[2], (w, "the page fits the window; only the list scrolls", f_)
+            assert r["fit"][3], (w, "the list scrolls inside its card", r["fit"])
+            for th, (pr, fit_, act) in r["themes"].items():
+                assert all(v >= 4.5 for k_, v in pr) and len(pr) >= 12, (w, th, "readable", pr)
+                assert fit_[0] == fit_[1] and fit_[2], (w, th, fit_)
+                assert len(act) == 1 and act[0].startswith(th + ":"), (w, th, "the active card", act)
+            seen += 1
+    finally:
+        srv.shutdown()
+        j2_server.HERE, j2.RUNS_DIR, runlist.run_list = keep_here, keep_runs, keep_list
+    print(f"run settings: no What to build or Back to simple view, Appearance cards; run list = the records on {len(ids)} runs ({dict(counts)}): each once, newest first, ID, title, status; "
+          f"Chrome at 1440x900 and 390x844 ({seen} pages), light and dark: current run highlighted, chip counts, search by ID finds one, 20 at a time, a lone Running row keeps its height "
+          "at the top, page height = window height with only the list scrolling, text 4.5:1, no error ok")
+
+def artifacts_groups():
+    """Artifacts as four groups (docs/mocks/j2-artifacts-mock.html; j2_artifacts.groups, /api/artifacts/groups), on run j2-20261103-132506. Browser-free: each
+    guide is one row per output file with its revisions as versions, each website section one row per sections.json entry with every workflow recorded on it,
+    the old copies of a guide paired with its versions, a missing maker left None, tree() untouched; a file's text is escaped. With Chrome (--browser) at
+    1440x900 and 390x844, light and dark: the rail panel keeps Preview and Documents and lists the four groups with counts; each group sets the title and
+    subtitle; no file is fetched until its item opens; a guide's assumptions, sections, Read document and version switcher; a section's Code and a script's
+    Script tab in JS, CSS and HTML blocks with line numbers and Copy; the style guide row; the audits as bars; the page's scroll height is the window's with
+    no sideways scroll and only the list and the item scrolling; text 4.5:1; no emoji; no page error."""
+    import collections
+    import html as htmllib
+    import shutil
+    import threading
+    from sutra_app.engine import j2_server
+    A = j2_artifacts
+    here = HERE
+    ui = open(page_file("j2_ui.html"), encoding="utf-8").read()
+    assert 'data-artgo="${k}"' in ui and "/api/artifacts/groups" in ui and 'b.dataset.tab === "artifacts"' in ui, "the rail lists the groups instead of one Artifacts entry"
+    assert all(x not in ui for x in ("renderArtTree", "artNode(", "data-artopen=")), "the old tree view is gone"
+    assert not re.search("[\U0001F300-\U0001FAFF☀-➿]", ui[ui.index("const ARTGROUPS"):ui.index("function railArtCounts")]), "no emoji in the Artifacts code"
+    name = "j2-20261103-132506"
+    d = os.path.join(here, "runs", name)
+    if not os.path.isdir(d):
+        print(f"artifacts groups: static checks ok (skipped the rest: runs/{name} not found)")
+        return
+    g = A.groups(d)
+    G = {x["id"]: x for x in g["groups"]}
+    assert [x["id"] for x in g["groups"]] == ["plan", "guides", "site", "documents", "records"] and [x["label"] for x in g["groups"]] == ["Run plan", "Guides the makers read", "Website sections", "Documents", "Run records"]
+    wfs = json.load(open(os.path.join(d, "workflows.json")))
+    num = lambda w: int(w.split("-")[1])
+    secs = json.load(open(os.path.join(d, "sections.json")))
+    want_site = {s: [s] + sorted((w["id"] for w in wfs if w.get("section") == s and w["id"] != s), key=num) for s in secs if s != "style"}
+    got_site = {x["id"]: [v["workflow"] for v in x["versions"]] for x in G["site"]["rows"] if x["kind"] != "style"}
+    assert got_site == want_site, ("a section's versions are the workflows recorded on it", got_site, want_site)
+    assert [x["id"] for x in G["site"]["rows"]][-1] == "style" and G["site"]["rows"][-1]["maker"] == "Web Developer", "the style guide is a row under Website sections"
+    outs = collections.defaultdict(list)
+    for w in sorted(wfs, key=lambda w: num(w["id"])):
+        if (w.get("outputs") or [""])[0].endswith(".md"):
+            outs[w["outputs"][0]].append(w["id"])
+    assert {x["file"]: [v["workflow"] for v in x["versions"]] for x in G["guides"]["rows"]} == {"artifacts/" + k: v for k, v in outs.items()}, "a guide: one row per file"
+    arch = next(x for x in G["guides"]["rows"] if x["file"] == "artifacts/architecture.md")
+    assert [(v["label"], v["workflow"]) for v in arch["versions"]] == [("first version", "W-2"), ("change 1", "W-23"), ("change 2", "W-27")], arch["versions"]
+    assert [(x["label"], x["file"], x["workflow"]) for x in arch["docs"]] == [("v1", "artifacts/architecture.v1.md", "W-2"), ("v2", "artifacts/architecture.v2.md", "W-23"), ("current", "artifacts/architecture.md", "W-27")]
+    assert next(x for x in G["guides"]["rows"] if x["id"] == "W-31")["maker"] is None, "no step recorded for W-31: its maker is left out, not guessed"
+    eng = next(x for x in G["site"]["rows"] if x["id"] == "W-6")
+    assert eng["kind"] == "script" and {r["id"] for r in eng["reused_by"]} == {w["id"] for w in wfs if "puzzle-engine" in (w.get("dependencies") or [])}, eng["reused_by"]
+    last = json.load(open(os.path.join(d, "audits.json")))[-1]
+    assert all(a["pass"] == next(r["pass"] for r in last["results"] if r.get("item") == a["item"]) for x in G["site"]["rows"] for a in x.get("audit") or []), "audit results are the latest audit's"
+    for x in G["guides"]["rows"] + [r for r in G["site"]["rows"] if r.get("versions")]:
+        for c in x["checks"]:
+            w = next(w for w in wfs if w["id"] == c["workflow"])
+            rs = [r for a in w["atoms"] for r in a.get("results") or []]
+            assert any(r.get("check") == c["check"] and r.get("attempt", 1) == max(q.get("attempt", 1) for q in rs) for r in rs), ("checks by code: the final attempt only", c)
+    assert {x["id"] for x in G["records"]["rows"] if not x["id"].startswith("A-")} == {"receipts", "audits", "conditions", "shots"} and len(next(x for x in G["records"]["rows"] if x["id"] == "audits")["audits"]) == len(json.load(open(os.path.join(d, "audits.json"))))
+    assert "realization.md" == next(x for x in G["plan"]["rows"] if x["id"] == "realization")["text"] and A.groups(None)["groups"][0]["rows"] == []
+    assert not re.search(r'"(head|body)":', json.dumps(g)) and "<script" not in json.dumps(g), "no file contents in the groups: they load when an item opens"
+    for x in [r for G_ in g["groups"] for r in G_["rows"]] + list(g["documents"].values()):
+        v = x["views"]
+        assert v["summary"] is True and set(v) == {"summary", "agent", "human"}, x.get("id")
+        for vv in (v["agent"], v["human"]):
+            assert vv is None or A.served(d, vv["file"]), ("every file a view names is served", x.get("id"), vv)
+    V = {r["id"]: r["views"] for G_ in g["groups"] for r in G_["rows"]}
+    assert V["charter"]["agent"]["file"] == "goal.json" and V["realization"]["human"]["file"] == "realization.md" and V["W-5"]["agent"]["format"] == "code" \
+        and V["W-2"]["agent"] == {"format": "text", "file": "artifacts/architecture.md", "schema": None, "model": None, "valid": None} and V["shots"]["agent"] is None, V
+    tmpd = tempfile.mkdtemp(prefix="j2-views-")      # a teammate's Pydantic JSON beside a guide, and one for a section: picked up, served, drawn
+    try:
+        d2 = os.path.join(tmpd, name)
+        shutil.copytree(d, d2)
+        json.dump({"schema": "guide/1", "model": "ArchitectureGuide", "valid": False, "x": "<b>"}, open(os.path.join(d2, "artifacts", "architecture.json"), "w"))
+        os.makedirs(os.path.join(d2, "site", "sections"))
+        json.dump({"schema": "section/1", "model": "Hero", "valid": True}, open(os.path.join(d2, "site", "sections", "W-5.json"), "w"))
+        g2 = A.groups(d2)
+        R2 = {r["id"]: r for G_ in g2["groups"] for r in G_["rows"]}
+        assert R2["W-2"]["views"]["agent"] == {"format": "json", "file": "artifacts/architecture.json", "schema": "guide/1", "model": "ArchitectureGuide", "valid": False}, R2["W-2"]["views"]
+        assert R2["W-5"]["views"]["agent"]["file"] == "site/sections/W-5.json" and R2["W-5"]["views"]["agent"]["valid"] is True
+        assert A.served(d2, "artifacts/architecture.json") and A.served(d2, "site/sections/W-5.json")
+        if shutil.which("node"):
+            out = render_node({"workflows": [], "chat": []}, docs={"docs": {}, "artifacts": {"groups": g2, "g": "guides", "sel": {"guides": "W-2"}, "tab": "agent", "ver": ""},
+                                                                 "arttext": {"artifacts/architecture.json": open(os.path.join(d2, "artifacts", "architecture.json")).read()}})["artifacts"]
+            assert "ArchitectureGuide" in out and "guide/1" in out and "Invalid" in out and "Open file" in out and "&quot;&lt;b&gt;&quot;" in out and "Source text" not in out, out[-600:]
+            out = render_node({"workflows": [], "chat": []}, docs={"docs": {}, "artifacts": {"groups": g2, "g": "records", "sel": {"records": "shots"}, "tab": "agent", "ver": ""}, "arttext": {}})["artifacts"]
+            assert "Not saved for this artifact yet." in out, out[-300:]
+    finally:
+        shutil.rmtree(tmpd, ignore_errors=True)
+    for dn in [n for n in sorted(os.listdir(os.path.join(here, "runs"))) if os.path.isfile(os.path.join(here, "runs", n, "prd.md"))][-3:]:      # a document run: no website wording
+        gd = A.groups(os.path.join(here, "runs", dn))
+        if not os.path.isfile(os.path.join(here, "runs", dn, "site", "index.html")):
+            assert gd["site"] is None and not next(x for x in gd["groups"] if x["id"] == "site")["rows"], (dn, "a document run lists no website sections")
+        assert gd["documents"]["prd"]["views"]["human"] == {"format": "markdown", "file": "prd.md"}, (dn, gd["documents"]["prd"]["views"])
+    if shutil.which("node"):      # escaped: a guide whose text holds markup shows it as text
+        out = render_node({"workflows": [], "chat": []}, docs={"docs": {}, "artifacts": {"groups": g, "g": "guides", "sel": {"guides": arch["id"]}, "tab": "human", "ver": ""},
+                                                             "arttext": {arch["file"]: "## Heading <b>x</b>\nAssumption: <img src=x onerror=alert(1)>"}})["artifacts"]
+        assert "&lt;b&gt;x&lt;/b&gt;" in out and "<img src=x" not in out and "<b>x</b>" not in out, out[-400:]
+    chrome = j2.j2_check.find_chrome()
+    if not (chrome and BROWSER):
+        print("artifacts groups: four groups from the run's files, guides by output file, sections by sections.json with their versions, maker not guessed, checks "
+              "final attempt, escaped text ok (browser steps skipped: Chrome not found, or --fast without --browser)")
+        return
+    asm = sum("Assumption:" in l for l in open(os.path.join(d, "artifacts", "architecture.md"), encoding="utf-8"))
+    heads = sum(l.startswith("## ") for l in open(os.path.join(d, "artifacts", "architecture.md"), encoding="utf-8"))
+    v1 = next(l for l in open(os.path.join(d, "artifacts", "architecture.v1.md"), encoding="utf-8") if l.strip()).lstrip("# ").strip()
+    head = "<script>window.__e = []; addEventListener('error', e => __e.push(String(e.message))); window.__f = []; const __of = window.fetch; window.fetch = (u, o) => { __f.push(String(u)); return __of(u, o); };</script>"
+    probe = ("(async () => { const q = s => [...document.querySelectorAll(s)], wait = ms => new Promise(r => setTimeout(r, ms)), S = id => document.getElementById(id), r = window.__r = {};"
+             " const lum = c => { const f = /^color\\(srgb/.test(c), v = (c.replace(/^color\\(srgb/, '').match(/[\\d.]+/g) || []).slice(0, 3).map(x => { x = f ? +x : x / 255; return x <= .03928 ? x / 12.92 : ((x + .055) / 1.055) ** 2.4; }); return .2126 * v[0] + .7152 * v[1] + .0722 * v[2]; };"
+             " const ct = (a, b) => { const x = lum(a), y = lum(b); return (Math.max(x, y) + .05) / (Math.min(x, y) + .05); }, bg = e => { while (e) { const c = getComputedStyle(e).backgroundColor; if (c && !/rgba\\(0, 0, 0, 0\\)|transparent/.test(c)) return c; e = e.parentElement; } return 'rgb(255, 255, 255)'; };"
+             " const fit = () => [document.documentElement.scrollHeight, innerHeight, document.documentElement.scrollWidth <= innerWidth, document.querySelector('#dview .dcol').scrollHeight <= document.querySelector('#dview .dcol').clientHeight + 1];"
+             " const contrast = sels => sels.map(sel => { const e = q(sel).find(x => x.getClientRects().length); return e ? [sel, +ct(getComputedStyle(e).color, bg(e)).toFixed(2)] : [sel, 0]; });"
+             " const row = id => q('#pane-artifacts [data-agrow]').find(e => e.dataset.agrow === id), rows = () => q('#pane-artifacts [data-agrow]').map(e => e.dataset.agrow), pane = () => document.querySelector('#pane-artifacts .agpane');"
+             " const files = () => __f.filter(u => /\\/api\\/(artifact\\?|code\\?)/.test(u)).map(u => decodeURIComponent((u.match(/name=([^&]+)/) || u.match(/section=([^&]+)/) || ['', ''])[1]));"
+             " for (let i = 0; i < 80 && !document.querySelector('#rail [data-ri=artifacts]'); i++) await wait(100); await wait(500);"
+             " document.querySelector('#rail [data-ri=artifacts]').click(); for (let i = 0; i < 80 && !ARTS.groups; i++) await wait(100); await wait(200);"
+             " r.fly = [q('#rfl [data-tab]').map(b => b.dataset.tab), q('#rfl [data-artgo]').map(b => b.firstChild.textContent.trim() + '|' + b.querySelector('small').textContent)];"
+             " r.flyc = contrast(['#rfl [data-artgo] small', '#rfly .rnh']);"
+             " r.f0 = files().length; r.heads = {}; r.err0 = __e.slice();"
+             " q('#rfl [data-artgo=guides]')[0].click(); await wait(300); r.heads.guides = [S('wtitle').textContent, S('wsub').textContent, S('rfly').hidden]; r.grows = rows();"
+             " const vh = id => !S(id).hidden && S(id).getClientRects().length > 0; r.hdr = [S('wcrumb').textContent.replace(/\\s+/g, ' ').trim(), S('wcnt').textContent, vh('wcnt'), vh('backmap'), S('wtheme') === null, S('wsub').getClientRects().length === 1 && S('wsub').getBoundingClientRect().height < 24];"
+             " showTab('charter'); r.hdrOther = [vh('backmap'), vh('wcrumb'), vh('wcnt')]; showTab('artifacts');"
+             " row('W-2').click(); await wait(400); r.f1 = files(); r.guide = [q('.aasm .ackl li').length, q('.atoc [data-ajump]').length, !!q('.aasm')[0], pane().textContent.includes('Guides are not audited')];"
+             " r.mk = row('W-31').textContent.includes('Maker not recorded');"
+             " q('[data-atab=agent]')[0].click(); await wait(400); r.gagent = [pane().textContent.includes('Source text: no structured form saved yet'), !!q('.ameta a')[0] && q('.ameta a')[0].textContent, q('.agpane pre.code .ln').length > 5]; q('[data-atab=human]')[0].click(); await wait(300); r.vers = q('.avers button').map(b => b.textContent + ':' + b.getAttribute('aria-pressed')); r.doch = q('.amd h3').length; r.scrolls = pane().scrollHeight > pane().clientHeight; r.fitDoc = fit();"
+             " q('.avers button')[0].click(); await wait(400); r.v1 = [q('.amd h2, .amd h3, .amd p')[0] ? q('.amd h2, .amd h3, .amd p')[0].textContent.trim() : '', files().includes('artifacts/architecture.v1.md')];"
+             " q('[data-atab=sum]')[0].click(); await wait(200); q('.atoc [data-ajump]')[2].click(); await wait(300); const h2 = S('ah-2'); r.jump = [q('[data-atab=human]')[0].getAttribute('aria-selected'), !!h2 && h2.getBoundingClientRect().top >= pane().getBoundingClientRect().top - 2 && h2.getBoundingClientRect().top < pane().getBoundingClientRect().top + 80];"
+             " q('#rail [data-ri=artifacts]')[0].click(); await wait(200); q('#rfl [data-artgo=site]')[0].click(); await wait(300); r.heads.site = [S('wtitle').textContent, S('wsub').textContent]; r.srows = rows();"
+             " row('W-6').click(); await wait(300); r.script = [q('[data-atab]').map(b => b.textContent).join(','), pane().textContent.includes('Reused by'), !!pane().querySelector('.ashot img')];"
+             " r.f2 = files().length; q('[data-atab=agent]')[0].click(); await wait(500); r.sblocks = q('.acode').map(b => b.dataset.acode + ':' + b.querySelectorAll('.ln').length + ':' + !!b.querySelector('[data-codecopy]'));"
+             " row('W-5').click(); await wait(200); r.f3 = files().length; q('[data-atab=agent]')[0].click(); await wait(500); r.cblocks = q('.acode').map(b => b.dataset.acode); r.mono = getComputedStyle(q('.acode pre.code')[0]).fontFamily; r.fitCode = fit();"
+             " row('W-6').click(); await wait(200); q('[data-atab=human]')[0].click(); await wait(600); r.shuman = [pane().textContent.includes('This section has no visible part; it runs behind the page'), !q('iframe.asecview').length, q('.agpane .ackl li').length]; row('W-5').click(); await wait(200); q('[data-atab=human]')[0].click(); await wait(1500); const fr = q('iframe.asecview')[0], fe = fr && fr.contentDocument.querySelector(q('[data-aselname]')[0].textContent); r.viewer = [!!fr, fr ? fr.getAttribute('sandbox') : null, !!fe && /solid/.test(fe.style.outline), !!fe && fe.getBoundingClientRect().top < fr.clientHeight && fe.getBoundingClientRect().bottom > 0]; row('style').click(); await wait(400); q('[data-atab=human]')[0].click(); await wait(500); r.style = [!!q('.astyle')[0], q('[data-atab]').map(b => b.textContent).join(',')];"
+             " q('#rail [data-ri=artifacts]')[0].click(); await wait(200); q('#rfl [data-artgo=plan]')[0].click(); await wait(300); r.heads.plan = [S('wtitle').textContent, S('wsub').textContent];"
+             " row('realization').click(); await wait(200); q('[data-atab=human]')[0].click(); await wait(400); r.rz = [q('.amd h2, .amd h3').length, files().includes('realization.md')];"
+             " q('#rail [data-ri=artifacts]')[0].click(); await wait(200); q('#rfl [data-artgo=records]')[0].click(); await wait(300); r.heads.records = [S('wtitle').textContent, S('wsub').textContent];"
+             " row('audits').click(); await wait(200); q('[data-atab=agent]')[0].click(); await wait(500); r.aagent = [q('.agpane pre.code .ln').length > 10, !!q('.ameta [data-codecopy]')[0], !!q('.ameta a')[0]]; row('shots').click(); await wait(200); q('[data-atab=agent]')[0].click(); await wait(200); r.nosaved = pane().textContent.includes('Not saved for this artifact yet.'); row('audits').click(); await wait(200); q('[data-atab=human]')[0].click(); await wait(200); r.bars = q('.abar').length; r.fit = fit(); r.listScroll = getComputedStyle(document.querySelector('.aglist')).overflowY;"
+             " r.emoji = /[\\u{1F300}-\\u{1FAFF}\\u{2600}-\\u{27BF}]/u.test(S('pane-artifacts').innerText + S('rfly').innerText);"
+             " r.themes = {}; for (const th of ['light', 'dark']){ THEME = th; themeApply(); await wait(30); const out = [];"
+             "   for (const [g_, id] of [['guides', 'W-2'], ['site', 'W-8'], ['plan', 'charter'], ['records', 'conditions']]){ await artOpenGroup(g_, id); await wait(250);"
+             "     out.push(...contrast(['#wcrumb', '#wcrumb b', '#wcnt', '.agrow.on .agt b', '.agrow:not(.on) .agt span', '.agrow .mono', '.aby', '.ablk h5', '.ackl li span', '.atabs button[aria-selected=false]', '.atabs button[aria-selected=true]', '.aasm p', '.atoc .linkbtn', '.agpane .empty', '.aev']).filter(x => x[1])); }"
+             "   r.themes[th] = [out, fit()]; }"
+             " r.err = __e.slice(); (parent !== window ? parent : window).document.body.setAttribute('data-r', JSON.stringify(r)); })().catch(e => (parent !== window ? parent : window).document.body.setAttribute('data-r', JSON.stringify({err: [String(e.stack || e), Object.keys(window.__r || {}).join(',')]})))")
+    page = ui.replace("<head>", "<head>" + head, 1).replace("</body>", "<script>setTimeout(() => { " + probe + " }, 1500)</script></body>")
+    tmp = tempfile.mkdtemp(prefix="j2-arts-")
+    open(os.path.join(tmp, "j2_ui.html"), "w", encoding="utf-8").write(page)
+    os.symlink(page_file("vendor"), os.path.join(tmp, "vendor"))
+    wrap = {}
+
+    class Wrap(j2_server.Handler):      # a phone-width frame, same origin (headless Chrome's window is at least 500px wide)
+        def do_GET(self):
+            return self._send(200, wrap["page"], "text/html") if self.path.startswith("/wrap") else super().do_GET()
+    keep_here, keep_runs = j2_server.HERE, j2.RUNS_DIR
+    j2_server.HERE, j2.RUNS_DIR = tmp, os.path.join(here, "runs")
+    srv = j2_server.http.server.ThreadingHTTPServer(("127.0.0.1", 0), Wrap)
+    threading.Thread(target=srv.serve_forever, daemon=True).start()
+    base, seen = f"http://127.0.0.1:{srv.server_address[1]}", 0
+    counts = {x["id"]: x for x in g["groups"]}
+    try:
+        for w, h in ((1440, 900), (390, 844)):
+            url = f"/?view=detail&run={name}"
+            if w < 500:
+                wrap["page"] = f'<!doctype html><body style="margin:0"><iframe src="{url}" style="width:{w}px;height:{h}px;border:0;display:block"></iframe></body>'
+                url = "/wrap"
+            dom = chrome_dom([chrome, "--headless=new", "--disable-gpu", f"--window-size={max(w, 500)},{h}", "--virtual-time-budget=60000", "--dump-dom", base + url],
+                             capture_output=True, text=True, timeout=300).stdout
+            hit = re.search(r'data-r="([^"]*)"', dom)
+            assert hit, (w, "the page did not finish its steps", dom[-300:])
+            r = json.loads(htmllib.unescape(hit.group(1)))
+            assert not r["err"], (w, r["err"])
+            nv = sum(len(x["versions"]) for x in counts["guides"]["rows"])
+            assert r["fly"][0] == ["preview", "docs"] and [x for x in r["fly"][1] if not x.startswith("Documents|")] == [f"Run plan|3 files", f"Guides the makers read|5 guides · {nv} versions", "Website sections|13 sections · 1 script", "Run records|4 records"] \
+                and any(x.startswith("Documents|") for x in r["fly"][1]), r["fly"]      # agent-views/1: the Documents group sits between the sections and the records, (w, r["fly"])
+            assert r["f0"] == 0 and r["f1"] == ["artifacts/product-plan.md", "artifacts/architecture.md"] and r["f2"] == 3 and r["f3"] == 4, (w, "a file loads only when its item opens (a group opens its first item)", r["f0"], r["f1"], r["f2"], r["f3"])
+            assert r["heads"]["guides"][:2] == ["Guides the makers read", "Each guide, who wrote it, and how it was checked."] and r["heads"]["guides"][2] is True, (w, r["heads"])
+            assert r["heads"]["site"] == ["Website sections", "Website v33: the latest audit passes 19 of 19 items."] and r["heads"]["plan"][0] == "Run plan" and r["heads"]["records"][0] == "Run records", (w, r["heads"])
+            assert r["hdr"] == ["Artifacts / Guides the makers read", f"5 guides · {nv} versions", True, False, True, True], (w, "the header: breadcrumb, count chip, no Back to map, no theme button (the rail has one), a one-line subtitle", r["hdr"])
+            assert r["hdrOther"] == [True, False, False], (w, "Back to map stays on the other views", r["hdrOther"])
+            assert r["grows"] == [x["id"] for x in counts["guides"]["rows"]] and r["srows"] == [x["id"] for x in counts["site"]["rows"]], (w, r["grows"], r["srows"])
+            assert r["guide"] == [asm, heads, True, True] and r["mk"], (w, "assumptions, sections, guides not audited, maker not recorded", r["guide"], asm, heads)
+            assert r["vers"] == ["v1 · W-2:false", "v2 · W-23:false", "current · W-27:true"] and r["doch"] == heads and r["scrolls"], (w, r["vers"], r["doch"])
+            assert r["v1"] == [v1, True] and r["jump"] == ["true", True], (w, "the version switcher and a section link", r["v1"], r["jump"])
+            TABS = "Summary,Agent-readable,Human-readable"
+            assert r["gagent"] == [True, "Open file", True], (w, "a guide with no JSON shows its source text", r["gagent"])
+            assert r["shuman"][:2] == [True, True] and r["viewer"] == [True, "allow-same-origin", True, True], (w, "a script has no visible part; a section is outlined in view in the latest page", r["shuman"], r["viewer"])
+            assert r["aagent"] == [True, True, True] and r["nosaved"], (w, "audits.json in the code viewer with Copy and Open file; nothing saved says so", r["aagent"], r["nosaved"])
+            assert r["script"] == [TABS, True, True] and r["sblocks"] and r["sblocks"][0].split(":")[0] == "JavaScript" and int(r["sblocks"][0].split(":")[1]) >= 200 and r["sblocks"][0].endswith(":true"), (w, r["script"], r["sblocks"])
+            assert r["cblocks"] == ["JavaScript", "CSS", "HTML"] and "mono" in r["mono"].lower() or "menlo" in r["mono"].lower(), (w, r["cblocks"], r["mono"])
+            assert r["style"] == [True, TABS] and r["rz"][0] >= 3 and r["rz"][1] and r["bars"] == len(counts["records"]["rows"][1]["audits"]), (w, r["style"], r["rz"], r["bars"])
+            for f_ in (r["fit"], r["fitDoc"], r["fitCode"]) + tuple(v[1] for v in r["themes"].values()):
+                assert f_[0] == f_[1] and f_[2] and f_[3], (w, "the page fits the window with no sideways scroll; only the panes scroll", f_)
+            assert r["listScroll"] == "auto" and not r["emoji"], (w, r["listScroll"], r["emoji"])
+            for th, (pr, _) in r["themes"].items():
+                assert len(pr) >= 30 and all(v >= 4.5 for _, v in pr), (w, th, "readable", [x for x in pr if x[1] < 4.5], len(pr))
+            assert all(v >= 4.5 for _, v in r["flyc"]), (w, r["flyc"])
+            seen += 1
+    finally:
+        srv.shutdown()
+        j2_server.HERE, j2.RUNS_DIR = keep_here, keep_runs
+        shutil.rmtree(tmp, ignore_errors=True)
+    # document runs: every saved run with a PRD, HLD or LLD; each document and each of its sections is reachable from the rail's Documents entry and from Map links
+    repo = os.path.join(here, "runs")
+    docruns = [n for n in sorted(os.listdir(repo)) if any(os.path.isfile(os.path.join(repo, n, k + ".md")) for k in ("prd", "hld", "lld"))]
+    dprobe = ("(async () => { const q = s => [...document.querySelectorAll(s)], wait = ms => new Promise(r => setTimeout(r, ms)), S = id => document.getElementById(id), r = {docs: {}, links: [], err: []};"
+              " const vis = () => q('#dview .pane').filter(p => !p.hidden).map(p => p.id.slice(5)).join(','), inview = e => { const b = e.getBoundingClientRect(), p = S('pane-docs').getBoundingClientRect(); return b.top >= p.top - 2 && b.top < p.bottom; };"
+              " for (let i = 0; i < 80 && !document.querySelector('#rail [data-ri=artifacts]'); i++) await wait(100); await wait(800);"
+              " document.querySelector('#rail [data-ri=artifacts]').click(); await wait(300); q('#rfl [data-tab=docs]')[0].click(); for (let i = 0; i < 50 && !q('#pane-docs .docbody h4').length; i++) await wait(100);"
+              " r.pane = vis(); for (const b of q('#pane-docs [data-doc-kind]')) r.docs[b.dataset.docKind] = q('#docblock-' + b.dataset.docKind + ' [data-head]').map(h => h.dataset.head);"
+              " for (let i = 0; i < 50 && !ARTS.groups; i++) await wait(100); const D = (ARTS.groups || {}).documents || {};"
+              " for (const k of Object.keys(D)){ showTab('map'); let el = await mapOpenIn('art', 'work:' + k); r.links.push(['work:' + k, vis(), el ? el.id : '', '']);"
+              "   for (const [sid, h] of Object.entries(D[k].sections)){ showTab('map'); el = await mapOpenIn('art', 'sec:work:' + k + ':' + sid); r.links.push([sid, vis(), el ? (el.dataset.head || el.id) : '', h, el ? inview(el) && el.classList.contains('dlhit') && !!el.closest('#docblock-' + k) : false]); } }"
+              " r.groups = D; r.err = __e.slice(); document.body.setAttribute('data-r', JSON.stringify(r)); })()")
+    page = ui.replace("<head>", "<head><script>window.__e = []; addEventListener('error', e => __e.push(String(e.message)));</script>", 1).replace("</body>", "<script>setTimeout(() => { " + dprobe + " }, 1500)</script></body>")
+    tmp = tempfile.mkdtemp(prefix="j2-docs-")
+    open(os.path.join(tmp, "j2_ui.html"), "w", encoding="utf-8").write(page)
+    os.symlink(page_file("vendor"), os.path.join(tmp, "vendor"))
+    j2_server.HERE, j2.RUNS_DIR = tmp, repo
+    srv = j2_server.http.server.ThreadingHTTPServer(("127.0.0.1", 0), j2_server.Handler)
+    threading.Thread(target=srv.serve_forever, daemon=True).start()
+    nsec = 0
+    try:
+        for n in docruns:
+            dom = chrome_dom([chrome, "--headless=new", "--disable-gpu", "--window-size=1440,900", "--virtual-time-budget=40000", "--dump-dom",
+                              f"http://127.0.0.1:{srv.server_address[1]}/?view=detail&run={n}"], capture_output=True, text=True, timeout=240).stdout
+            hit = re.search(r'data-r="([^"]*)"', dom)
+            assert hit, (n, "the page did not finish its steps", dom[-300:])
+            r = json.loads(htmllib.unescape(hit.group(1)))
+            made = [k for k in ("prd", "hld", "lld") if os.path.isfile(os.path.join(repo, n, k + ".md"))]
+            heads = {k: [l[3:].strip() for l in open(os.path.join(repo, n, k + ".md"), encoding="utf-8") if l.startswith("## ")] for k in made}
+            assert not r["err"] and r["pane"] == "docs", (n, r["err"], r["pane"])
+            assert all(r["docs"].get(k) and set(heads[k]) <= set(r["docs"][k]) for k in made), (n, "the Documents entry shows every document and its sections", r["docs"], heads)
+            assert set(r["groups"]) <= set(made) and all(set(v["sections"].values()) <= set(heads[k]) for k, v in r["groups"].items()), (n, r["groups"])
+            for x in r["links"]:
+                if x[0].startswith("work:"):
+                    assert x[1] == "docs" and x[2] == "docblock-" + x[0][5:], (n, "a document's Map link opens it in Documents", x)
+                else:
+                    assert x[1] == "docs" and x[2] == x[3] and x[4], (n, "a section's Map link lands on its heading in Documents, lit and in view", x)
+                    nsec += 1
+    finally:
+        srv.shutdown()
+        j2_server.HERE, j2.RUNS_DIR = keep_here, keep_runs
+        shutil.rmtree(tmp, ignore_errors=True)
+    print(f"artifacts groups: four groups from {name}'s files (guides by output file, sections by sections.json, versions folded, maker not guessed, checks final "
+          f"attempt, escaped text); Chrome at 1440x900 and 390x844 ({seen} pages), light and dark: the rail keeps Preview and Documents and lists the groups with "
+          "counts, title and subtitle per group, files load on open, three tabs (Summary, Agent-readable, Human-readable), a saved JSON picked up with its model, schema and valid mark, "
+          "the section viewer outlining its first visible element, assumptions, sections, the document and its versions, Code and Script blocks with line numbers "
+          "and Copy, the style guide, audit bars, page = window with only the panes scrolling, text 4.5:1, no emoji, no error; "
+          f"{len(docruns)} document runs: every PRD, HLD and LLD and its sections in Documents, and {nsec} Map section links landing on their heading ok")
 
 def graph_map():
     """Map, open team as a workflow-artifact graph (m["teams"], j2_map.team_graphs), on every saved run and every team that has workflows: no team node (the team is a
@@ -8619,9 +9586,9 @@ def map_motion():
                " document.getElementById('backmap').click(); await wait(300); r.wfBack = [vis(document.getElementById('pane-map')), CONS.kind, CONS.id, CONS.path.length, !!document.querySelector('.consvg[data-kind=wf]')];"
                " consGo([{id: 'work:website', kind: 'art'}], 'sec:work:website:W-8'); await wait(200); document.querySelector('.conspanel [data-openart]').click(); await wait(800);"
                " const a = document.querySelector('#pane-artifacts .dlhit'); r.art = [vis(document.getElementById('pane-artifacts')), a ? a.dataset.sec : '', a ? inview(a) : false, a ? [...(function* (){ let d = a.closest('details'); while (d){ yield d.open; d = d.parentElement.closest('details'); } })()].every(Boolean) : false];"
-               " document.getElementById('backmap').click(); await wait(300); r.artBack = [vis(document.getElementById('pane-map')), CONS.kind, CONS.id, CONS.focus, !!document.querySelector('.consvg.focusing')];")
+               " r.artNoBack = document.getElementById('backmap').hidden; showTab('map'); await wait(300); r.artBack = [vis(document.getElementById('pane-map')), CONS.kind, CONS.id, CONS.focus, !!document.querySelector('.consvg.focusing')];")
     assert dl["wf"] == [True, "W-8", True, 1] and dl["wfBack"] == [True, "wf", "W-8", 2, True], ("Open in Workflows: W-8's row, lit and in view; Back to the same sun", dl)
-    assert dl["art"] == [True, "work:website|W-8", True, True] and dl["artBack"] == [True, "art", "work:website", "sec:work:website:W-8", True], ("Open in Artifacts: the section's row in its open fold, lit and in view; Back to the same focus", dl)
+    assert dl["art"] == [True, "work:website|W-8", True, True] and dl["artNoBack"] is True and dl["artBack"] == [True, "art", "work:website", "sec:work:website:W-8", True], ("Open in Artifacts: the section's row, lit and in view (Artifacts has no Back to map); the Map keeps the same focus", dl)
     # reduced motion: no drift, a new view at once, hover moves nothing
     rm = probe("showTab('map'); MAPVIEW = 'tree'; paintMap(); const k = Object.keys(mapTree(MAP).stages)[0]; treeFocusTeam(k); let M = document.querySelector('.treesvg').__m; r.focus = [M.svg.dataset.settled, M.svg.classList.contains('tmoving'), exact(M)];"
                " consOpen('work:website'); M = document.querySelector('.consvg').__m; r.sun = [M.svg.dataset.settled, exact(M)]; const n = M.nodes.find(x => x.id === 'W-8'); fire('mouseover', n.el, 0, 0); await wait(300);"
@@ -9044,7 +10011,7 @@ def map_tab():
     ui = open(page_file("j2_ui.html"), encoding="utf-8").read()
     assert "@media (max-width:600px){.mapsvgwrap{display:none}.mapcards{display:block}}" in ui and ".mapcards{display:none}" in ui
     assert ".mapsvg{width:100%;height:clamp(440px,64vh,760px)" in ui and "st-running{border-style:double" in ui and "st-left_open{border-style:dashed" in ui
-    assert ui.index('data-tab="map"') < ui.index('id="railsub"') < ui.index('data-tab="docs"') < ui.index('data-tab="artifacts"') < ui.index('data-tab="lessons"'), "Map is the first rail entry; every other tab sits in the sections below it"
+    assert ui.index('data-ri="map"') < ui.index('id="gochat"') < ui.index('data-ri="identity"') < ui.index('id="railsub"') < ui.index('data-tab="docs"') < ui.index('data-tab="artifacts"') < ui.index('data-tab="lessons"'), "Map is the first rail item; every tab sits in the rail's panel"
     empty = render_node(snap, docs={"docs": {}, "map": {"nodes": [], "edges": []}})["map"]
     assert "Nothing to draw yet." in empty
     real = render_node(snap, docs={"docs": {}, "map": saved})["map"]
@@ -9125,7 +10092,7 @@ def map_tab():
         assert 'data-mapopen="prd.md"' in pane and 'data-maptab="charter"' in pane and "Management layer" in pane and "Product Analyst" in pane and "Web Developer" in pane and "Specialists" not in pane and not re.search(r"envelope|done.when", text, re.I), "plain words in the Map tab"
         boxes = re.findall(r'<g class="mapnode mapfn.*?(?=<g class="mapnode)', pane, re.S)[:5]      # the five function dots in the page (the legend may say "running now")
         assert len(boxes) == 5 and all("last seen: " in b and "running now" not in b and "waiting on" not in b for b in boxes), "a saved run never says running"
-        assert dom.index('data-tab="map"') < dom.index('id="railsub"') < dom.index('data-tab="artifacts"')
+        assert dom.index('data-ri="map"') < dom.index('id="railsub"') < dom.index('data-tab="artifacts"')
     # "given to": each hand-off line ends on the step that was given the document, never on a later document box
     rg = render_node(snap, docs={"docs": {}, "map": saved})
     gv, byid = rg["given"], {n["id"]: n for n in saved["nodes"]}
@@ -9179,14 +10146,14 @@ def map_tab():
     rail = ui[ui.index('<nav class="rail tabs"'):ui.index("</nav>", ui.index('<nav class="rail tabs"'))]
     top, inside = rail.split('id="railsub"')
     # the Board story is the first entry under Internals (shown only when the run has a board); the rest are the old order
-    old_tabs = ["story", "preview", "goal", "workflows", "conflicts", "priorities", "timeline", "audit", "charter", "docs", "artifacts", "board", "library", "lessons", "playbooks", "report", "rundetails", "runsettings"]      # the Style guide is under Artifacts > Specs
-    assert re.findall(r'data-tab="(\w+)"', top) == ["map"] and 'id="gochat"' in top and 'id="internals"' not in top and "Internals" not in rail and re.findall(r"<span>([^<]+)</span>", top) == ["Map", "Chat"], "the rail has Map and Chat rows; no Internals folder"
-    assert re.findall(r'data-tab="(\w+)"', inside) == old_tabs, "every other tab is under Internals, in the old order"
-    assert "<svg" not in rail and ' hidden' not in rail.split('id="railsub"')[1].split(">")[0], "no icon rail; the sections are always shown"
+    old_tabs = ["story", "preview", "goal", "planmap", "workflows", "conflicts", "priorities", "timeline", "audit", "charter", "docs", "artifacts", "board", "library", "lessons", "playbooks", "report", "rundetails", "runsettings"]      # the Style guide is under Artifacts > Specs
+    assert re.findall(r'data-ri="(\w+)"', top) == ["map", "identity", "adaptation", "priority", "coordination", "audit", "artifacts", "actions", "library", "settings"] and 'id="gochat"' in top and 'id="internals"' not in top and "Internals" not in rail, "the icon rail: Map, Chat, the five functions, Artifacts, Actions, Library, Settings; no Internals folder"
+    assert re.findall(r'data-tab="(\w+)"', inside) == ["map"] + old_tabs, "every tab is in the rail's panel pool, in the old order"
+    assert top.count("<svg") == 11, "an icon for every rail item"
     dvh = ui[ui.index('<div id="dview">'):ui.index('<dialog id="detail">')]
     panes = re.findall(r'<div class="pane[^"]*" id="pane-(\w+)"( hidden)?', dvh)
-    assert [n for n, h in panes if not h] == ["map"] and {n for n, _ in panes} == set(old_tabs) | {"map", "style"}, "the home shows only the Map pane; every old pane still exists"
-    assert dvh.index('id="needs"') < dvh.index('<section class="work">') < dvh.index('<section class="chat">'), "Needs you, then the Map, then the Chat"
+    assert [n for n, h in panes if not h] == ["map"] and {n for n, _ in panes} == set(old_tabs) | {"map", "style", "catalog"}, "the home shows only the Map pane; every old pane still exists (catalog: the shared template library, /library)"
+    assert dvh.index('id="needs"') < dvh.index('<section class="work">') < dvh.index('<section class="chat" id="chatp"'), "Needs you, then the Map, then the Chat"
     assert "@media (max-width:900px){#dview .dcol{overflow:auto}#dview main{grid-template-columns:minmax(0,1fr)" in ui and "@media (max-width:600px){.mapsvgwrap{display:none}.mapcards{display:block}}" in ui, "stacked below 900px; map cards at 600px"
     # Needs you: every open question, a plain line each, a button into the Chat; nothing waiting says so
     n0 = render_node(snap, docs={"docs": {}, "map": saved})
@@ -9225,9 +10192,9 @@ def map_tab():
     # ---- the home is simpler: the header is only the department name; the controls are in Run settings; one Map heading
     assert '<header class="dtop">' not in ui and ui.count("J2 Department") == 1 and "<title>J2 Department</title>" in ui, "no department heading on the page; the title stays"
     assert ui.split('<div id="dview">')[1].split('<div class="dcol">')[1].lstrip().startswith('<section class="needs"'), "the page starts with the Needs you strip"
-    rs = ui[ui.index('id="pane-runsettings"'):ui.index("</section>", ui.index('id="pane-runsettings"'))]
-    assert all(f'id="{i}"' in rs for i in ("outsel", "runsel", "reset", "to-simple")) and "Back to simple view" in rs and 'href="?view=simple"' in rs, "the old controls live in Run settings"
-    assert all(f'id="{i}"' not in ui[:ui.index('id="pane-runsettings"')].split('<div id="dview">')[1] for i in ("outsel", "runsel", "reset", "to-simple")), "and nowhere else in the Detailed view"
+    rs = ui[ui.index('id="pane-runsettings"'):ui.index('id="pane-rundetails"')]
+    assert all(f'id="{i}"' in rs for i in ("appear", "runlist", "runq", "reset")) and all(x not in rs for x in ("Back to simple view", "What to build", 'id="outsel"', 'id="runsel"', 'id="to-simple"')), "Run settings: Appearance and the run list"
+    assert all(f'id="{i}"' not in ui[:ui.index('id="pane-runsettings"')].split('<div id="dview">')[1] for i in ("runlist", "reset")), "and nowhere else in the Detailed view"
     assert real.count("<h3>Map</h3>") == 1 and real.count(">Map<") == 1, "one Map heading, next to the status chips"
     assert 'class="maphead"' in real and real.index("<h3>Map</h3>") < real.index('class="mappill'), "the heading comes first, then the chips"
     # the outcome is one plain line in the Needs you strip, with a link to the Report; the banner text is in the Report
@@ -9273,7 +10240,7 @@ def map_tab():
             os.environ["J2_TEST_EMAIL"] = keep_mail
     send_name = os.path.basename(send_run.dir)
     cross_runs = [("mock run", run.dir), ("mock run with a send", send_run.dir)] + [(n_, os.path.join(j2.RUNS_DIR, n_)) for n_ in real_names]
-    assert len(cross_runs) == 4, "both saved runs are in runs/"
+    assert len(cross_runs) == 4 or not real_names, "both saved runs are in runs/"      # engine port: a checkout without any saved run compares the two mock runs only
     sm_ = M.build(send_run.dir)
     wo_ = [n_["id"] for n_ in sm_["nodes"] if n_["row"] == "work"]
     assert wo_.index("work:lld") < wo_.index("work:website") and any(n_.get("tag") == "Send" and n_["lane"] == "branch" for n_ in sm_["nodes"]), "the send sits off the trunk, the site follows the LLD"
@@ -9411,62 +10378,63 @@ def map_tab():
             a = home_probe("j2-20200105-000000", base_js +
                 "r.home = vis(); r.needs = document.getElementById('needs').innerText.replace(/\\s+/g, ' '); r.count = document.getElementById('needcount').textContent;"
                 "r.layout = [rect('#needs').bottom <= rect('#pane-map').top + 1, rect('#dview .chat').left >= rect('#dview .work').right - 1, rect('#dview .chat').height > 200];"
-                "r.rail = q('.rail.tabs > button').map(b => b.textContent.trim()); r.sub = document.getElementById('railsub').hidden; r.back0 = document.getElementById('backmap').hidden;"
+                "r.rail = q('.rail.tabs > .ri').map(b => b.dataset.name); r.sub = document.getElementById('rfly').hidden; r.back0 = document.getElementById('backmap').hidden;"
                 "document.querySelector('[data-needmsg]').click(); const f = document.activeElement; r.focus = f.classList.contains('msg') + '|' + f.dataset.id;"
-                "r.tabs = {}; q('#railsub [data-tab]').forEach(b => { b.click(); r.tabs[b.dataset.tab] = vis() + '|' + document.getElementById('backmap').hidden + '|' + document.getElementById('railsub').hidden; });"
+                "r.tabs = {}; q('#railsub [data-tab]:not([data-tab=map])').forEach(b => { b.click(); r.tabs[b.dataset.tab] = vis() + '|' + document.getElementById('backmap').hidden + '|' + !document.getElementById('rfly').hidden; });"
                 "document.getElementById('backmap').click(); r.back = vis() + '|' + document.getElementById('backmap').hidden;"
                 "let asked = []; const fq = focusQuestion; focusQuestion = id => { asked.push(String(id)); return fq(id); }; r.nodes = {};"
                 "for (const id of ['person:requester', 'fn:identity', 'fn:adaptation', 'fn:audit', 'step:prd>hld', 'work:prd', 'work:website', 'work:charter']) { showTab('map'); asked = []; click(id);"
-                " r.nodes[id] = {pane: vis(), asked: asked.join(','), wf: WFSTEP.join(','), filt: MAPFILT, art: ARTOPEN}; }"
+                " r.nodes[id] = {pane: vis(), asked: asked.join(','), wf: WFSTEP.join(','), filt: MAPFILT, art: (document.querySelector('.dlhit') || {id: ''}).id}; document.querySelectorAll('.dlhit').forEach(x => x.classList.remove('dlhit')); }"
                 "showTab('workflows'); r.wfnote = !!document.querySelector('[data-stepfilter]'); document.querySelector('[data-wfclear]').click(); r.wfcleared = !document.querySelector('[data-stepfilter]') && WFSTEP.length;")
             b = home_probe(name, base_js +
                 "let chats = 0; const fc = focusChat; focusChat = () => { chats++; return fc(); }; r.none = document.getElementById('needs').innerText.replace(/\\s+/g, ' ') + '|' + document.getElementById('needcount').textContent;"
                 "click('person:requester'); r.person = document.activeElement.id; showTab('map'); click('fn:identity'); r.chats = chats; r.pane = vis();"
-                "showTab('map'); window.j2mark = 1; const where = location.href, rs = () => [document.body.classList.contains('simple'), rect('#sview').width > 0, rect('.rail.tabs').width > 0, rect('#dview .dcol').width, document.getElementById('gochat').getAttribute('aria-current'), getComputedStyle(document.querySelector('.rail [data-tab=map]')).fontWeight].join('|'),"
-                " msgs = () => document.getElementById('msgs').children.length + '/' + document.getElementById('smsgs').children.length + '|' + document.getElementById('needs').textContent.replace(/\\s+/g, ' ') + '|' + document.getElementById('runsel').value;"
+                "showTab('map'); window.j2mark = 1; const where = location.href, rs = () => [document.body.classList.contains('simple'), rect('#sview').width > 0, rect('.rail.tabs').width > 0, rect('#dview .dcol').width, document.getElementById('gochat').getAttribute('aria-current')].join('|'),"
+                " msgs = () => document.getElementById('msgs').children.length + '/' + document.getElementById('smsgs').children.length + '|' + document.getElementById('needs').textContent.replace(/\\s+/g, ' ') + '|' + runCur();"
                 "r.m0 = msgs(); r.home0 = rs(); document.getElementById('gochat').click(); r.railchat = chats; r.simple = rs(); r.railleft = rect('.rail.tabs').right <= rect('#sview').left + 1; r.m1 = msgs();"
                 "document.querySelector('.rail [data-tab=map]').click(); r.back = rs() + '|' + vis(); r.m2 = msgs(); document.getElementById('gochat').click(); r.m3 = msgs(); document.querySelector('.rail [data-tab=map]').click(); r.m4 = msgs(); r.same = (window.j2mark === 1) + '|' + (location.href === where);"
-                "r.toggled = !document.getElementById('internals') && !document.querySelector('.rail svg');"
-                "showTab('runsettings'); document.getElementById('to-simple').click(); r.tosimple = rs(); document.querySelector('.rail [data-tab=map]').click();")
+                "r.toggled = !document.getElementById('internals') && q('.rail .ri svg').length === 11;"
+                "showTab('runsettings'); document.getElementById('gochat').click(); r.tosimple = rs(); document.querySelector('.rail [data-tab=map]').click();")
         finally:
             shutil.rmtree(ended, ignore_errors=True)
         assert a["home"] == "map" and a["count"] == "1" and "Needs you" in a["needs"] and "Add credits?" in a["needs"] and "Answer in Chat" in a["needs"], a
-        assert a["layout"] == [True, True, True] and a["rail"] == ["Map", "Chat"] and a["sub"] is False and a["back0"] is True, a      # strip above the map, chat docked on the right, no Back link on the home
+        assert a["layout"] == [True, True, True] and a["rail"] == ["Map", "Simple view", "Identity", "Adaptation", "Priority", "Coordination", "Audit", "Artifacts", "Actions", "Library", "Settings"] and a["sub"] is True and a["back0"] is True, a      # strip above the map, chat docked on the right, no Back link on the home
         assert a["focus"] == "true|9999", a      # the strip's button focuses the question in the Chat
-        assert a["tabs"] == {t: f"{t}|false|false" for t in old_tabs}, a      # every old tab opens from the sections, with a Back to map link
+        assert a["tabs"] == {t: f"{t}|{str(t in ('artifacts', 'planmap')).lower()}|false" for t in old_tabs}, a      # Artifacts and Adaptation > Map have their own header (a breadcrumb, no Back to map)      # every old tab opens from the sections, with a Back to map link
         assert a["back"] == "map|true", a
         sw = by["step:prd>hld"]["workflows"]
         n = a["nodes"]
         assert n["person:requester"]["asked"] == "9999" and n["fn:identity"]["asked"] == "9999", n      # waiting on you: straight to the question in the Chat
         assert n["fn:adaptation"] == {"pane": "map", "asked": "", "wf": "", "filt": "fn:adaptation", "art": ""}, n      # the other functions: the tables under the Map, filtered to them
         assert n["fn:audit"]["pane"] == "audit" and n["step:prd>hld"]["pane"] == "workflows" and n["step:prd>hld"]["wf"] == ",".join(sw), n
-        assert n["work:prd"]["pane"] == "artifacts" and n["work:prd"]["art"] == "prd.md" and n["work:website"]["pane"] == "preview" and n["work:charter"]["pane"] == "charter", n
+        assert n["work:prd"]["pane"] == "docs" and n["work:prd"]["art"] == "docblock-prd" and n["work:website"]["pane"] == "preview" and n["work:charter"]["pane"] == "charter", n
         assert a["wfnote"] is True and a["wfcleared"] == 0, a      # "Show all" clears the step filter
         assert b["none"].startswith("Needs you 0 Nothing needs you right now.") and b["none"].endswith("See report|0") and b["person"] == "needs" and b["chats"] == 1 and b["railchat"] == 1 and b["toggled"] is True, b
         # the rail's Chat opens the Simple view with the rail kept and Chat lit; Map goes back to the unchanged home; same run, same messages, no reload
-        assert b["home0"] == "false|false|true|" + b["home0"].split("|")[3] + "|false|600" and float(b["home0"].split("|")[3]) > 0, b
-        assert b["simple"] == "true|true|true|0|page|500" and b["railleft"] is True, b
-        assert b["back"] == b["home0"] + "|map" and b["tosimple"] == b["simple"], b      # Back to simple view does what Chat does
+        assert b["home0"] == "false|false|true|" + b["home0"].split("|")[3] + "|false" and float(b["home0"].split("|")[3]) > 0, b
+        assert b["simple"] == "true|true|false|0|page" and b["railleft"] is True, b      # the Simple view has no rail (the full view keeps it)
+        nw = lambda x: "|".join(v for i, v in enumerate(x.split("|")) if i != 3)      # the main width aside: Answer in Chat opened the chat panel, which narrows it
+        assert nw(b["back"]) == nw(b["home0"] + "|map") and b["tosimple"] == b["simple"], b      # Back to simple view does what the Simple view item does
         assert b["m0"] == b["m1"] == b["m2"] == b["m3"] == b["m4"] and b["same"] == "true|true" and int(b["m0"].split("/")[0]) > 0, b
         # the header is the name only; Map has one visible heading; the outcome line opens the Report; the banner text is there; nothing overlaps
         vis_js = "const seen = e => e.getClientRects().length > 0 && getComputedStyle(e).visibility !== 'hidden';"
         c = home_probe(name, base_js + vis_js +
             "r.head = q('#dview h1').filter(seen).length + '|' + document.getElementById('dview').innerText.includes('J2 Department'); r.heads = q('#dview h1, #dview h2, #dview h3').filter(seen).map(h => h.textContent.trim()).filter(t => t === 'Map').length;"
             "r.outcome = !!document.querySelector('#needs [data-outcome]'); document.querySelector('#needs [data-gotab=\"report\"]').click(); r.afterLink = vis(); r.banner = document.getElementById('banner').textContent; r.bannerIn = !!document.getElementById('banner').closest('#pane-report'); r.bannerShown = seen(document.getElementById('banner'));"
-            "showTab('runsettings'); r.settings = ['outsel', 'runsel', 'reset', 'to-simple'].map(i => seen(document.getElementById(i))).join(','); r.runsel = document.getElementById('runsel').value; r.opts = document.getElementById('runsel').options.length;"
+            "showTab('runsettings'); r.settings = ['appear', 'runlist', 'runq', 'reset'].map(i => seen(document.getElementById(i))).join(','); r.runsel = runCur(); r.opts = document.querySelectorAll('#runlist .runrow').length;"
             "showTab('map');")
         assert c["head"] == "0|false" and c["heads"] == 1, c      # no department heading; exactly one visible "Map" heading
         assert c["outcome"] is True and c["afterLink"] == "report" and c["bannerIn"] is True and c["bannerShown"] is True and c["banner"].startswith("Viewing saved run " + name + " (read only)."), c
         assert c["settings"] == "true,true,true,true" and c["opts"] >= 2, c      # the controls are all there in Run settings
         newest = os.path.join(j2.RUNS_DIR, "j2-29990101-000001")      # sorts first, so the selector (newest 60) always lists it
         shutil.copytree(run.dir, newest)
-        assert home_probe("j2-29990101-000001", base_js + "showTab('runsettings'); r.val = document.getElementById('runsel').value;")["val"] == "j2-29990101-000001", "the selector shows the run that is open"
+        assert home_probe("j2-29990101-000001", base_js + "showTab('runsettings'); r.val = (document.querySelector('#runlist .runrow.cur') || {dataset: {}}).dataset.openrun;")["val"] == "j2-29990101-000001", "the run list highlights the run that is open"
         fx = ("document.querySelectorAll('.mapsvgwrap').forEach(w => w.dataset.layout = 'h'); const sv = [...document.querySelectorAll('.mapsvg')].find(x => x.getClientRects().length); const lines = [...sv.querySelectorAll('path.mapedge')].filter(p => parseFloat(getComputedStyle(p).opacity) > 0.01).map(p => { const L = p.getTotalLength(), o = []; for (let i = 0; i <= L; i += 2) { const t = p.getPointAtLength(i); o.push([t.x, t.y]); } return {id: p.dataset.from + ' > ' + p.dataset.to, o}; });"
               "const texts = [...sv.querySelectorAll('text')].filter(t => parseFloat(getComputedStyle(t).opacity) > 0.01 && t.textContent.trim()).map(t => ({t: t.textContent.trim(), b: t.getBBox()}));"
               "r.n = texts.length; r.hits = []; for (const x of texts) { for (const l of lines) if (l.o.some(([px, py]) => px > x.b.x - 1 && px < x.b.x + x.b.width + 1 && py > x.b.y && py < x.b.y + x.b.height)) r.hits.push(x.t + ' on ' + l.id); }"
               "for (let i = 0; i < texts.length; i++) for (let j = i + 1; j < texts.length; j++) { const a = texts[i].b, b = texts[j].b; if (a.x < b.x + b.width - 1 && b.x < a.x + a.width - 1 && a.y < b.y + b.height - 1 && b.y < a.y + a.height - 1) r.hits.push(texts[i].t + ' over ' + texts[j].t); }")
         for rn in (name, send_name, *real_names):
-            d_ = home_probe(rn, base_js + fx, "1444,900")      # the card is as wide as it was with the 76px rail at 1280
+            d_ = home_probe(rn, base_js + fx, "1288,900")      # the card is as wide as it was with the 76px rail at 1280 (1288 - the 84px icon rail = 1204)
             assert d_["n"] > 20 and d_["hits"] == [], (rn, d_["hits"])      # no label sits on a line or on another label
         # the Line view shows the wide or the tall drawing at 1440x900 with no horizontal scroll; under 900px the narrow drawing is shown instead
         fit_js = ("const p = document.getElementById('pane-map'), w = document.querySelector('.mapsvg:not(.mapvert)'), v = document.querySelector('.mapsvg.mapvert');"
@@ -9480,9 +10448,9 @@ def map_tab():
         # window is at least 500px wide, so the page is measured in a 360px iframe served from the same origin.
         def phone_probe(run_name, view):
             js = ("setTimeout(() => { const d = document.querySelector('iframe').contentDocument, W = d.documentElement.clientWidth, r = {W, sw: d.documentElement.scrollWidth, out: []};"
-                  "d.querySelectorAll('body *').forEach(e => { const b = e.getBoundingClientRect(); if (b.width && b.height && (b.right > W + 0.5 || b.left < -0.5)) r.out.push((e.id || e.className || e.tagName) + ' ' + Math.round(b.left) + '-' + Math.round(b.right)); });"
-                  "const rail = d.querySelector('.rail.tabs').getBoundingClientRect(), tg = d.getElementById('railtoggle').getBoundingClientRect();"
-                  "r.rail = [rail.height === 0, tg.width > 0 && tg.left >= 0 && tg.right <= W && tg.top >= 0, d.getElementById('railtoggle').getAttribute('aria-expanded') === 'false'];"
+                  "d.querySelectorAll('body *').forEach(e => { const b = e.getBoundingClientRect(); if (b.width && b.height && (b.right > W + 0.5 || b.left < -0.5) && getComputedStyle(e).visibility !== 'hidden') r.out.push((e.id || e.className || e.tagName) + ' ' + Math.round(b.left) + '-' + Math.round(b.right)); });"
+                  "const rail = d.querySelector('.rail.tabs').getBoundingClientRect();"
+                  "r.rail = [rail.width > 0, rail.right <= W, !d.getElementById('railtoggle')];"
                   "document.body.setAttribute('data-r', JSON.stringify(r)); }, 6000)")
             page = (f'<!doctype html><body style="margin:0"><iframe src="/?view={view}&run={run_name}" style="width:360px;height:800px;border:0;display:block"></iframe>'
                     f'<script>{js}</script></body>')
@@ -9506,11 +10474,11 @@ def map_tab():
         for v_ in ("simple", "detail"):
             p_ = phone_probe(name, v_)
             assert p_["W"] == 360 and p_["sw"] == 360 and p_["out"] == [], (v_, p_)      # no sideways scroll, nothing past either edge
-            assert p_["rail"] == [True, True, True], (v_, p_)      # on a phone the bar starts collapsed: only the hamburger shows, inside the screen
+            assert p_["rail"] == ([False, True, True] if v_ == "simple" else [True, True, True]), (v_, p_)      # on a phone the full view shows its narrow icon rail inside the screen; the Simple view has none; no menu button
         # Run settings: New run posts to /api/reset; choosing a saved run opens it
         e_ = home_probe(name, base_js + "let posted = ''; window.fetch = (u, o) => { if (String(u).includes('/api/reset')) posted = (o && o.method) || 'GET'; return new Promise(() => {}); }; showTab('runsettings'); document.getElementById('reset').click(); r.posted = posted;")
         assert e_["posted"] == "POST", e_
-        f_ = home_probe(name, base_js + "if (sessionStorage.step !== '2') { sessionStorage.step = '2'; showTab('runsettings'); const sel = document.getElementById('runsel'); const o = [...sel.options].find(x => x.value && x.value !== '" + name + "'); sel.value = o ? o.value : ''; r.picked = sel.value; sel.dispatchEvent(new Event('change')); } else { r.after = location.search; r.val = document.getElementById('runsel').value; sessionStorage.clear(); }")
+        f_ = home_probe(name, base_js + "if (sessionStorage.step !== '2') { sessionStorage.step = '2'; showTab('runsettings'); const o = [...document.querySelectorAll('#runlist [data-openrun]')].find(x => x.dataset.openrun !== '" + name + "' && x.dataset.openrun !== RUNS.live); r.picked = o ? o.dataset.openrun : ''; if (o) o.click(); } else { r.after = location.search; r.val = runCur(); sessionStorage.clear(); }")
         assert f_.get("after", "").startswith("?run=j2-") and f_["val"] and f_["val"] != name, f_      # the selector switches runs
         shutil.rmtree(newest, ignore_errors=True)
     for n_ in real_names:
@@ -10200,7 +11168,7 @@ def template_library(demo=False):
         ex = L.run_example(r3.dir, tv["template"], L.slug(rs.name))
         assert ex and ex["workflow"] == req["workflow"] and "requirements" in ex["data"], ex
         ui = open(page_file("j2_ui.html"), encoding="utf-8").read() if os.path.exists(os.path.join(HERE, "j2_ui.html")) else None
-        for s_ in ('data-tab="library"', 'id="pane-library"', 'data-tplmode="template"', 'data-tplmode="readable"',
+        for s_ in ('data-tab="library"', 'id="pane-library"', 'data-tplmode="${k}"', 'TPLTABS = ARTTABS',
                    'data-tplcopy=', 'data-link="tplview"', "/api/run-templates", '$("tab-library").hidden = !s.has_templates;'):
             assert ui is None or s_ in ui, s_
         if BROWSER and j2.j2_check.find_chrome():
@@ -10226,9 +11194,9 @@ def template_library(demo=False):
 
 
 def library_page(run, lib):
-    """--browser: the Library tab on a saved run, in headless Chrome: the routing table, a template opened in both
-    modes (Readable with enum chips and rule sentences; As template with four files, Copy buttons and shas), and the
-    atom card's template line."""
+    """--browser: the Templates (this run) tab on a saved run, in headless Chrome: the routing table, a template opened on its three
+    tabs (Summary with the rules; Human-readable with enum chips and this run's example; Agent-readable with four files, Copy buttons
+    and shas), and the atom card's template line."""
     import html as htmllib
     import shutil
     import socket
@@ -10241,9 +11209,10 @@ def library_page(run, lib):
              " r.tab = !document.getElementById('tab-library').hidden; document.getElementById('tab-library').click(); await wait(1500);"
              " r.rows = q('[data-tplrow]').length; r.reasons = q('[data-tplrow] td:last-child').map(x => x.textContent).slice(0, 3); r.sources = q('[data-tplsource]').map(x => x.dataset.tplsource);"
              " q('[data-tpltable] [data-tplopen]')[0].click(); await wait(1500);"
-             " r.head = (document.querySelector('#tplviewer h3') || {}).textContent || ''; r.readable = !!document.querySelector('[data-tplreadable]'); r.chips = q('#tplviewer .mappill').length; r.rules = q('#tplviewer li').length;"
+             " r.head = (document.querySelector('#tplviewer h3') || {}).textContent || ''; r.tabs = q('#tplviewer [data-tplmode]').map(x => x.dataset.tplmode); r.rules = q('#tplviewer .ackl li').length;"
+             " document.querySelector('[data-tplmode=human]').click(); await wait(300); r.readable = !!document.querySelector('[data-tplreadable]'); r.chips = q('#tplviewer .mappill').length;"
              " r.example = (document.querySelector('#tplviewer pre') || {}).textContent || '';"
-             " document.querySelector('[data-tplmode=template]').click(); await wait(300);"
+             " document.querySelector('[data-tplmode=agent]').click(); await wait(300);"
              " r.files = q('[data-tplfile]').map(x => x.dataset.tplfile); r.copies = q('[data-tplcopy]').length; r.shas = q('[data-tplfile] .empty').map(x => x.textContent);"
              " r.groups = q('[data-libart]').map(x => x.dataset.libart); r.card = typeof renderWorkflows === 'function' && renderWorkflows(state).includes('data-link=\"tplview\"');"
              " r.sw = [document.documentElement.scrollWidth, innerWidth];"
@@ -10271,13 +11240,167 @@ def library_page(run, lib):
     r = json.loads(htmllib.unescape(hit.group(1)))
     assert r["tab"] and r["rows"] >= 5 and all(r["reasons"]), r
     assert len(r["sources"]) == r["rows"] and all(x == "from this run" for x in r["sources"]) and "from this run" in r["head"], (r["sources"], r["head"])
-    assert r["readable"] and r["chips"] >= 1 and r["rules"] >= 1 and '"html"' in r["example"], r
-    assert r["files"] == ["spec.json", "model.py", "schema.json", "meta.json"] and r["copies"] == 4 and all(s.startswith("sha ") for s in r["shas"]), r
+    assert r["tabs"] == ["sum", "agent", "human"] and r["rules"] >= 1, r
+    assert r["readable"] and r["chips"] >= 1 and '"html"' in r["example"], r
+    assert r["files"] == ["spec.json", "schema.json", "model.py", "meta.json"] and r["copies"] == 4 and all(s.startswith("sha ") for s in r["shas"]), r
     assert set(r["groups"]) == {"prd", "hld", "lld", "design", "website"} and r["card"], r
     assert r["sw"][0] <= r["sw"][1], ("no horizontal scroll", r["sw"])
-    print(f"template library page: Library tab shown for a run with decisions, {r['rows']} routing rows with reasons, a template opened Readable "
-          f"({r['chips']} enum chips, {r['rules']} rules, an example from the run) and As template (4 files, Copy and sha each), every row and the viewer say "
+    print(f"template library page: Templates (this run) tab shown for a run with decisions, {r['rows']} routing rows with reasons, a template opened on its "
+          f"three tabs: Summary ({r['rules']} rules), Human-readable ({r['chips']} enum chips, an example from the run), Agent-readable (4 files, Copy and sha each); every row and the viewer say "
           "\"from this run\", the atom card links it ok")
+
+
+def agent_views():
+    """agent-views/1 (j2_agent_views.py, j2_agent_models.py): python3 j2_agent_views.py build <run> gives every artifact of a
+    saved run an agent-readable JSON where agent_view() looks (artifacts/<guide>.json, prd.json with model and valid,
+    site/sections/<id>.json, agent/<record>.json, agent/audits/A-n.json), each valid against its Pydantic model for real;
+    the Documents group and the audit rows carry them; a planted invalid JSON reads invalid. Browser-free with Node, and
+    with Chrome (--browser) the Agent-readable tab shows the model, the schema and the Valid / Invalid mark."""
+    import glob as globlib
+    import shutil
+    import subprocess
+    from sutra_app.engine import j2_agent_models as G
+    from sutra_app.engine import j2_agent_views as V
+    A = j2_artifacts
+    here = HERE
+    names = [n for n in ("j2-20261103-132506", "j2-20261103-161111-3", "j2-20261103-184249") if os.path.isdir(os.path.join(here, "runs", n))]
+    if not names:
+        print("agent views: skipped (no saved test run in runs/)")
+        return
+    tmp = tempfile.mkdtemp(prefix="j2-agent-views-")
+    built, seen_kinds = {}, set()
+    keep_lib = os.environ.get("J2_LIBRARY_DIR")
+    os.environ["J2_LIBRARY_DIR"] = os.path.join(here, "library")      # read only: a run's sections are checked against the templates the committed library holds
+    try:
+        for n in names:
+            d = os.path.join(tmp, n)
+            shutil.copytree(os.path.join(here, "runs", n), d)
+            for p in globlib.glob(os.path.join(d, "agent", "**", "*.json"), recursive=True) + globlib.glob(os.path.join(d, "site", "sections", "*.json")) \
+                    + globlib.glob(os.path.join(d, "artifacts", "**", "*.json"), recursive=True):
+                os.remove(p)      # the test builds them itself
+            res = V.build(d, quiet=True)
+            assert res, (n, "nothing built")
+            assert all(r["valid"] for r in res), (n, [r for r in res if not r["valid"]])
+            built[n] = res
+            g = A.groups(d)
+            assert [x["id"] for x in g["groups"]] == ["plan", "guides", "site", "documents", "records"], [x["id"] for x in g["groups"]]
+            rows = [x for gr in g["groups"] for x in gr["rows"]]
+            for x in rows:
+                if x["id"] in ("audits", "shots"):      # the chart row and the screenshots keep their old views
+                    continue
+                v = x["views"]["agent"]
+                assert v and v["format"] == "json" and v["schema"] and v["model"] and v["valid"] is True, (n, x["kind"], x["id"], v)
+                assert A.served(d, v["file"]), (n, v["file"], "served")
+                rec = json.load(open(os.path.join(d, v["file"]), encoding="utf-8"))
+                cls = G.MODELS.get(rec.get("model"))
+                if cls is not None:      # the mark is real: the data validates again against the named model
+                    assert G.validate(cls, rec["data"])[0] is not None, (n, x["id"])
+                seen_kinds.add(x["kind"])
+            audits = [a for a in json.load(open(os.path.join(d, "audits.json"))) if a.get("kind") != "recheck"] if os.path.isfile(os.path.join(d, "audits.json")) else []
+            assert [x["id"] for x in rows if x["kind"] == "audit"] == [f"A-{i}" for i in range(1, len(audits) + 1)], (n, "one audit row per audit")
+            for x in [x for x in rows if x["kind"] == "audit"]:
+                rec = json.load(open(os.path.join(d, x["views"]["agent"]["file"]), encoding="utf-8"))["data"]
+                assert rec["id"] == x["id"] and rec["goal"] and rec["method"] and isinstance(rec["findings"], list) and isinstance(rec["evidence"], list), (n, x["id"])
+                assert x["views"]["human"] == {"format": "list", "file": x["views"]["agent"]["file"]}, x["views"]
+            docs = [x for x in rows if x["kind"] == "document"]
+            assert {x["id"] for x in docs} == {k for k in ("prd", "hld", "lld") if os.path.isfile(os.path.join(d, k + ".md"))}, (n, [x["id"] for x in docs])
+            for x in docs:
+                rec = json.load(open(os.path.join(d, x["views"]["agent"]["file"]), encoding="utf-8"))
+                assert rec["schema"] == "artifact-schema/1" and rec["model"] == x["id"].upper() and rec["valid"] is True and rec["validation"] \
+                    and all(v["valid"] for v in rec["validation"].values()) and "sections" in rec, (n, x["id"])      # the data file keeps its keys
+                hv = x["views"]["human"]
+                assert hv["format"] == "markdown" and hv["file"].endswith(".md") and open(os.path.join(d, hv["file"]), "rb").read() == open(os.path.join(d, f"{x['id']}.md"), "rb").read(), hv      # the current text, from prd.md or its identical latest copy
+            # the CLI builds the same files (before the planted invalid one below, which it would rebuild)
+            r = subprocess.run([sys.executable, os.path.join(here, "j2_agent_views.py"), "build", d], capture_output=True, text=True, timeout=300)
+            assert r.returncode == 0 and "agent-readable JSON" in r.stdout and "INVALID" not in r.stdout.replace("Invalid", ""), (r.returncode, r.stdout[-300:], r.stderr[-300:])
+            # a planted invalid JSON reads invalid, in the data and on the row
+            bp = os.path.join(d, "agent", "goal.json")
+            bad = json.load(open(bp, encoding="utf-8"))
+            bad["data"].pop("statement", None)
+            bad["data"]["planted"] = "<b>not a field</b>"
+            bad = G.envelope(G.Charter, bad["data"], bad["source"])
+            assert bad["valid"] is False and bad["errors"], bad["errors"]
+            json.dump(bad, open(bp, "w", encoding="utf-8"))
+            g2 = A.groups(d)
+            ch = next(x for gr in g2["groups"] for x in gr["rows"] if x["id"] == "charter")
+            assert ch["views"]["agent"]["valid"] is False and ch["views"]["agent"]["model"] == "Charter", ch["views"]
+            if shutil.which("node"):
+                def pane(group, sel, file):
+                    return render_node({"workflows": [], "chat": []}, docs={"docs": {}, "artifacts": {"groups": g2, "g": group, "sel": {group: sel}, "tab": "agent", "ver": ""},
+                                                                        "arttext": {file: open(os.path.join(d, file), encoding="utf-8").read()}})["artifacts"]
+                out = pane("plan", "charter", "agent/goal.json")
+                assert "Charter" in out and "agent-views/1" in out and "Invalid" in out and "&lt;b&gt;not a field&lt;/b&gt;" in out and "<b>not a field</b>" not in out, out[-500:]
+                out = pane("plan", "workflows", "agent/workflows.json")
+                assert "WorkflowPlan" in out and ">Valid<" in out or "Valid</" in out or "Valid" in out, out[-300:]
+                assert "Invalid" not in out, out[-300:]
+                out = pane("documents", "prd", "prd.json")
+                assert ">PRD<" in out or "PRD" in out, out[-300:]
+                assert "artifact-schema/1" in out and "Invalid" not in out and "Valid" in out, out[-400:]
+                if audits:
+                    out = pane("records", "A-1", "agent/audits/A-1.json")
+                    assert "AuditResult" in out and "Valid" in out and "Invalid" not in out, out[-400:]
+            if BROWSER and j2.j2_check.find_chrome():
+                agent_views_page(d, n)
+    finally:
+        shutil.rmtree(tmp, ignore_errors=True)
+        if keep_lib is None:
+            os.environ.pop("J2_LIBRARY_DIR", None)
+        else:
+            os.environ["J2_LIBRARY_DIR"] = keep_lib
+    kinds = sorted(seen_kinds)
+    print(f"agent views: {', '.join(f'{n} ({len(built[n])} JSONs, all valid)' for n in names)}; rows with a valid agent JSON: {', '.join(kinds)}; "
+          "Documents group and audit rows A-n present; a planted invalid charter reads Invalid, the rest Valid ok")
+
+
+def agent_views_page(d, name):
+    """--browser: the Artifacts pane in headless Chrome on a saved run: the Documents group opens, the PRD row's Agent-readable
+    tab shows the model, the schema and Valid; an audit row's tab shows AuditResult and Valid; the planted charter shows Invalid."""
+    import html as htmllib
+    import shutil
+    import socket
+    import threading
+    from sutra_app.engine import j2_server
+    here = HERE
+    ui = open(page_file("j2_ui.html"), encoding="utf-8").read()
+    chrome = j2.j2_check.find_chrome()
+    has_audit = os.path.isfile(os.path.join(d, "agent", "audits", "A-1.json"))
+    steps = ("(async () => { const wait = ms => new Promise(r => setTimeout(r, ms)), q = s => [...document.querySelectorAll(s)], r = {}, meta = () => (document.querySelector('#pane-artifacts .ameta') || {}).textContent || '';"
+             " await wait(2500); await artOpenGroup('documents', 'prd'); await wait(800); r.docTitle = document.getElementById('wtitle').textContent; r.docRows = q('#pane-artifacts .agrow').map(b => b.dataset.agrow);"
+             " q('#pane-artifacts [data-atab=agent]')[0].click(); await wait(1200); r.prd = meta();"
+             f" if ({'true' if has_audit else 'false'}) {{ await artOpenGroup('records', 'A-1'); await wait(800); q('#pane-artifacts [data-atab=agent]')[0].click(); await wait(1200); r.audit = meta(); q('#pane-artifacts [data-atab=human]')[0].click(); await wait(600); r.auditHuman = (document.querySelector('#pane-artifacts .agpane') || {{}}).textContent.slice(0, 400); }}"
+             " await artOpenGroup('plan', 'charter'); await wait(800); q('#pane-artifacts [data-atab=agent]')[0].click(); await wait(1200); r.charter = meta();"
+             " r.err = (window.__e || []).slice(); document.body.setAttribute('data-r', JSON.stringify(r)); })();")
+    port = socket.socket(); port.bind(("127.0.0.1", 0)); p_ = port.getsockname()[1]; port.close()
+    tmp = tempfile.mkdtemp(prefix="j2-agent-views-page-")
+    os.symlink(page_file("vendor"), os.path.join(tmp, "vendor"))
+    open(os.path.join(tmp, "j2_ui.html"), "w", encoding="utf-8").write(ui.replace("<head>", "<head><script>window.__e = []; addEventListener('error', e => __e.push(String(e.message)));</script>", 1)
+                                                                        .replace("</body>", f"<script>setTimeout(() => {{ {steps} }}, 500)</script></body>"))
+    keep_here, runs_ = j2_server.HERE, j2.RUNS_DIR
+    j2_server.HERE, j2.RUNS_DIR = tmp, os.path.dirname(d)
+    srv = j2_server.http.server.ThreadingHTTPServer(("127.0.0.1", p_), j2_server.Handler)
+    threading.Thread(target=srv.serve_forever, daemon=True).start()
+    prof = tempfile.mkdtemp(prefix="j2-avprof-")
+    try:
+        dom = chrome_dom([chrome, "--headless=new", "--disable-gpu", f"--user-data-dir={prof}", "--no-first-run", "--window-size=1440,900",
+                          "--virtual-time-budget=30000", "--dump-dom", f"http://127.0.0.1:{p_}/?view=detail&run={name}&tab=artifacts"],
+                         capture_output=True, text=True, timeout=120).stdout
+    finally:
+        srv.shutdown()
+        j2_server.HERE, j2.RUNS_DIR = keep_here, runs_
+        shutil.rmtree(tmp, ignore_errors=True)
+        shutil.rmtree(prof, ignore_errors=True)
+    hit = re.search(r'data-r="([^"]*)"', dom)
+    assert hit, ("the page did not finish its steps", dom[-300:])
+    r = json.loads(htmllib.unescape(hit.group(1)))
+    assert r["docTitle"] == "Documents" and "prd" in r["docRows"], r
+    assert "PRD" in r["prd"] and "artifact-schema/1" in r["prd"] and "Valid" in r["prd"] and "Invalid" not in r["prd"], r["prd"]
+    if has_audit:
+        assert "AuditResult" in r["audit"] and "agent-views/1" in r["audit"] and "Valid" in r["audit"] and "Invalid" not in r["audit"], r["audit"]
+        assert "Not saved" not in r["auditHuman"], r["auditHuman"][:200]
+    assert "Charter" in r["charter"] and "Invalid" in r["charter"], r["charter"]
+    assert not r["err"], r["err"]
+    print(f"agent views page ({name}): Documents group lists the PRD, its Agent-readable tab shows PRD, artifact-schema/1 and Valid; "
+          f"{'audit A-1 shows AuditResult and Valid with a findings list; ' if has_audit else ''}the planted charter shows Invalid; no page error ok")
 
 
 # the blocks that may need J2's page, harness files or saved runs (see `skippable`)
@@ -10288,7 +11411,9 @@ for _name in ("rubric_and_credits", "detail_stays_open", "plain_words", "general
               "artifacts_tree", "agent_view", "map_logic", "map_readback", "map_shapes", "map_tree",
               "map_focus", "map_line", "left_bar", "left_bar_toggle", "graph_map", "warm_ui",
               "map_motion", "map_every_workflow", "map_tab", "template_library", "plain_unchanged", "atom_schema",
-              "board_functions"):
+              "board_functions",
+              "simple_redesign", "plan_map_view", "chat_panel", "function_chat", "view_kept", "run_settings",
+              "artifacts_groups", "agent_views", "agent_views_page"):
     globals()[_name] = skippable(globals()[_name])
 
 
@@ -10396,7 +11521,15 @@ if __name__ == "__main__":
             map_line()
             map_logic()
             left_bar()
+            plan_map_view()
+            late_judge_run()
             left_bar_toggle()
+            chat_panel()
+            function_chat()
+            view_kept()
+            run_settings()
+            artifacts_groups()
+            agent_views()
             graph_map()
             warm_ui()
             map_motion()
@@ -10515,6 +11648,7 @@ if __name__ == "__main__":
     print("work atoms: validator names a missing field and retries once, atoms stored and tagged, cards render ok")
     print("Detailed view: opened screenshot, event log and message detail stay open while the run updates ok")
     simple_view()
+    simple_redesign()
     plain_words()
     identity_prompt_is_plain()
     print("G simple view (plain words at the source and as fallback, buttons once, phone toggle, ready card) ok")
