@@ -2,7 +2,7 @@ from pathlib import Path
 import unittest, sys, json, copy, hashlib
 ROOT=Path(__file__).resolve().parents[1]
 sys.path.insert(0,str(ROOT))
-from kernel.core import State,Kernel,digest
+from kernel.core import State,Kernel,digest,ACTIONS,register
 from tools.run_all import CASES,pack,extra_events
 from extensions.knowledge import compile_pattern,signal_priority
 from extensions.reflection import minimal_graph_diff,reflect,Learner
@@ -252,6 +252,63 @@ class ContractTests(unittest.TestCase):
         bad=dict(wf,steps=[wf['steps'][0],wf['steps'][2],wf['steps'][1]]+wf['steps'][3:])
         self.assertTrue(any('comes before its prerequisite' in p for p in validate_workflow(bad)))
         self.assertTrue(any('not in the workflow' in p for p in validate_workflow(dict(wf,edges=[{'from':'nowhere','to':'check-site-1','via':'x'}]))))
+    # 0.7.0-handlers: the kernel keeps the gate and gives up the effect (move-outs M2 + M3).
+    BUILD=('30_build_goal','31_build_theory','32_builder_components')
+    KERNEL_ONLY={'simulate_fact':ACTIONS['simulate_fact']}
+    def test_kernel_carries_no_constructor_or_artifact_branch(self):
+        # Counterexample: fails on 0.6.0, whose kernel named both kinds and accepted the constructor pack on its own.
+        src=(ROOT/'kernel'/'core.py').read_text()
+        for word in ('compile_candidate','emit_artifact','LOCAL_ARTIFACT','valid_contract'):self.assertNotIn(word,src)
+        import subprocess
+        alone=subprocess.run([sys.executable,'-I','-B','-c','import sys;sys.path.insert(0,sys.argv[1]);from kernel.core import ACTIONS;print(sorted(ACTIONS))',str(ROOT)],capture_output=True,text=True)
+        self.assertEqual(alone.stdout.strip(),"['simulate_fact']")
+        s=State(actions=dict(self.KERNEL_ONLY));s.apply(pack('30_build_goal'));s.apply(pack('31_build_theory'))
+        with self.assertRaises(ValueError):s.apply(pack('32_builder_components'))
+    def test_registry_refuses_overwrite_and_a_built_state_keeps_its_snapshot(self):
+        with self.assertRaises(ValueError):register('simulate_fact')(lambda s,m,mid,deps:{})
+        s=State();register('test_only_kind')(lambda s,m,mid,deps:{})
+        try:
+            self.assertNotIn('test_only_kind',s.actions);self.assertIn('test_only_kind',State().actions)
+            with self.assertRaises(ValueError):s.apply({'schema':'sutra-extension/2','id':'late','methods':[{'id':'x','effect':'y','action':'test_only_kind'}]})
+        finally:del ACTIONS['test_only_kind']
+    def test_handler_cannot_set_receipt_fields_or_run_before_prerequisites(self):
+        packs=[pack(n) for n in ('00_goal','01_domain','02_methods','03_approval','04_admission')]
+        s=State(actions={'simulate_fact':lambda s,m,mid,deps:{'status':'EXTERNAL_DONE'}})
+        for p in packs:s.apply(p)
+        with self.assertRaises(RuntimeError):Kernel(s).run_standing(execute=True)
+        self.assertEqual(s.fact('replacement_delivered')['truth'],'FALSE')
+        s=State.from_packs([pack(n) for n in ('00_goal','01_domain','02_methods','04_admission')]);k=Kernel(s)   # approval unknown
+        with self.assertRaises(RuntimeError):k._act({'actions':['ship-replacement@1']})
+        self.assertEqual(s.fact('replacement_delivered')['truth'],'FALSE');self.assertEqual(s.budget,{'compute':10,'money':10,'attention':3})
+    def test_moved_handlers_reproduce_0_6_0_receipts_and_trace_roots(self):
+        # Equivalence fixture recorded from the 0.6.0 kernel (323 lines) on 2026-11-10.
+        expect={'04_gates':('fcda9ffe8bd8d90c20cfef5c2381092c06b36923863a0559bdcf755d64489a46',['7598d51d1b92cfb4e724e82326c1214e01fea50cfdc56519b2929cc7148d6092'],'4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945'),
+                '15_constructor':('3f3766f4c3253f110ae95a7f5060b1c5fee1cc34d44b69d7a02f54563da64f50',['16d1f093ad71613175a161294b18c9175c84b96728729f9fd46fb475b76f103f','6c2479ca235c311dd5a50a932ec3d836664300574308e8eaa599dd3622e8f0b8','2085b32477666baec89212933622a82ca5dab32a6830c2d4e3b0dbaf77cfdfae','9ca25354c4aefab70b578e600b066b276d7d6cbdbf1d4027a3a8b8d8cbba0e09'],'f7d46d0f5ba4d9269c93d06ad0783c8fab3f4e7cd5133fc7fbf13149cf8214bf'),
+                '16_bad_constructor':('37b5e5068cf6366779df3b4d53559e7875b441c8f8421d1c95471ea08850e3da',['16d1f093ad71613175a161294b18c9175c84b96728729f9fd46fb475b76f103f','6c2479ca235c311dd5a50a932ec3d836664300574308e8eaa599dd3622e8f0b8','2085b32477666baec89212933622a82ca5dab32a6830c2d4e3b0dbaf77cfdfae','1b54ddfd68490e4ed25491525aa50995f8cf366cf152b014565814f25251c2ad'],'44e458c5220f3ab8d0925b250adf3e6fde9aad36e421e05b9777a5b071938041')}
+        for cid,_,_,files,execute,_ in CASES:
+            if cid not in expect:continue
+            r=Kernel(State.from_packs([pack(n) for n in files])).run_standing(execute=execute)['runs'][0]
+            self.assertEqual((r['trace_root_sha256'],[x['sha256'] for x in r['model_receipts']],digest(r['candidates'])),expect[cid],cid)
+        s=State();s.apply({'schema':'sutra-extension/2','id':'art','scope':'orgA/website','goals':['report_written'],
+            'evidence':[{'predicate':'pages_built','truth':'TRUE','verified':True,'source':'fixture','version':'1'}],
+            'methods':[{'id':'write-report@1','effect':'report_written','requires':['pages_built'],'provider':'local-provider',
+                        'grant':'action:write-report@1','cost':{'compute':1,'money':0,'attention':0},'action':'emit_artifact','approved':True,'artifact_title':'Site report'}],
+            'providers':{'local-provider':1},'grants':['action:write-report@1']})
+        r=Kernel(s).run_standing(execute=True)['runs'][0]
+        self.assertEqual((r['trace_root_sha256'],r['model_receipts'][0]['sha256'],r['model_receipts'][0]['artifact_sha256'],s.fact('report_written')['source']),
+            ('2bc9f551c90d021fcbbd5922ad9d23c98fb3e56dcde32c98edac9593a431f702','d91ddbb68f9681da5157bb05d4f3f906f774ee4dc73a7121bb9ccf58ea994212','538d9715aeedace8b1887e48521b0f116856b048b4a841c2fba5d79f8e7be710','LOCAL_ARTIFACT:write-report@1'))
+    def test_handlers_leave_grants_budget_providers_rules_and_methods_alone(self):
+        seen=[]
+        def watched(fn):
+            def run(s,m,mid,deps):
+                before=(sorted(s.grants),dict(s.budget),dict(s.providers),digest(s.rules),digest(s.methods));out=fn(s,m,mid,deps)
+                seen.append(before==(sorted(s.grants),dict(s.budget),dict(s.providers),digest(s.rules),digest(s.methods)));return out
+            return run
+        for cid,_,_,files,execute,_ in CASES:
+            s=State(actions={k:watched(f) for k,f in ACTIONS.items()})
+            for n in files:s.apply(pack(n))
+            Kernel(s).run_standing(execute=execute)
+        self.assertTrue(len(seen)>=20 and all(seen))
     def test_hash_chain_valid(self):
         c=State.from_packs([pack(n) for n in ('00_goal','01_domain','02_methods','03_approval','04_admission')]);r=Kernel(c).run_standing(execute=True)['runs'][0]
         for i,x in enumerate(r['trace']):

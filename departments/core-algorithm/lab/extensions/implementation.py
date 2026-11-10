@@ -51,7 +51,7 @@ def _rules(state, actions: list) -> list:
             rows.append({"tag": "ask", "line": f"{mid} needs grant {g} before it runs"})
         else:
             rows.append({"tag": "ask", "line": f"{mid} has no grant declared; ask before it runs"})
-    rows.append({"tag": "refuse", "line": "any action kind outside simulate_fact, emit_artifact, compile_candidate"})
+    rows.append({"tag": "refuse", "line": "any action kind without a registered handler (registered: " + ", ".join(sorted(getattr(state, "actions", {}))) + ")"})
     rows.extend({"tag": "always", "line": inv} for inv in INVARIANTS)
     return rows
 
