@@ -3205,7 +3205,7 @@ function artSub(g){
   return "The raw files behind the other views."; }
 const artEntries = n => `${n} entr${n === 1 ? "y" : "ies"}`;
 function artRowSub(x){ const by = x.maker ? esc(x.maker) : "Maker not recorded";
-  return ({charter: () => `${by} · ${plural((x.done_when || []).length, "done-when item")}`, realization: () => `${by} · ${plural((x.stages || []).length, "stage")}`,
+  return ({charter: () => `${by} · ${plural((x.done_when || []).length, "done-when item")}`, realization: () => `${by} · ${plural((x.stages || []).length, "stage")}`, deliverables: () => `${by} · ${plural((x.items || []).length, "type")}`,
     workflows: () => `${by} · ${plural(x.count || 0, "workflow")}`, style: () => `${by} · colours, fonts, spacing`,
     receipts: () => artEntries(x.count || 0), audits: () => plural((x.audits || []).length, "audit"), conditions: () => plural((x.items || []).length, "item"),
     shots: () => plural((x.shots || []).length, "image")}[x.kind] || (() => `${by} · ${plural((x.versions || []).length, "version")}${x.kind === "script" ? " · a script" : ""}`))(); }
@@ -3313,6 +3313,8 @@ const artSecTop = x => `<h2>${esc(x.name)}</h2><div class="aby">${x.maker ? "Mad
 const ARTKIND = {
   charter: {sum: x => `<div class="ablk"><h5>Who it is for</h5><p>${x.audience ? esc(x.audience) : artNR}</p></div>` + artStat([[(x.done_when || []).length, "done-when items"]]),
     human: x => `<div class="ablk"><h5>Done when (${(x.done_when || []).length})</h5>${artList(x.done_when || [], (t, i) => `<li><span class="mono empty">#${i + 1}</span><span>${esc(t)}</span></li>`)}</div>`},
+  deliverables: {sum: x => artStat([[(x.items || []).length, "types chosen"]]) + `<div class="ablk"><h5>Build order</h5><p>${(x.items || []).length ? (x.items || []).map(d => esc(d.type)).join(" → ") : artNR}</p></div>`,
+    human: x => `<div class="ablk"><h5>Deliverables (${(x.items || []).length})</h5>${artList(x.items || [], (d, i) => `<li><span class="mono empty">${i + 1}</span><span><b>${esc(d.type)}</b>${d.why ? ": " + esc(d.why) : ""}</span></li>`)}</div>`},
   realization: {sum: x => artStat([[x.zone, "certainty zone"], [x.confidence, "plan confidence"], [(x.stages || []).length, "stages"]])
       + `<div class="ablk"><h5>Stages</h5>${(x.stages || []).length ? artList(x.stages, (s, i) => `<li><span class="mono empty">${i + 1}</span><span>${esc(s)}</span></li>`) : `<p>${artNR}</p>`}</div>`,
     human: x => artFile(x.views.human.file)},

@@ -163,7 +163,8 @@ def served(d, name):
 # exactly once. Nothing names a run, a workflow or a stage: only file kinds (types.json) and the map's own fields.
 TREE_STATUS = {"filed": "filed", "done_unchecked": "checks did not pass", "fault": "failed", "left_open": "open", "running": "open",
                "waiting": "open", "waiting_on_you": "open", "not_made": "not made", "idle": "filed"}
-RECORD_MAKER = {"goal.json": "Client Lead (Identity)", "realization.json": "Adaptation (scored by the confidence judge)", "audits.json": "Quality Reviewer (Audit)", "receipts.jsonl": "Checker (automatic)",
+RECORD_MAKER = {"goal.json": "Client Lead (Identity)", "realization.json": "Adaptation (scored by the confidence judge)",
+                "deliverables.json": "Adaptation (scored by the confidence judge)", "audits.json": "Quality Reviewer (Audit)", "receipts.jsonl": "Checker (automatic)",
                 "chat.jsonl": "every function (the chat)", "calls.jsonl": "every function (AI calls)"}      # who writes each kind of record
 PROOF = ("receipts.jsonl", "audits.json", "conditions.json")
 RECORD_NAME = {"calls.jsonl": "AI calls", "outputs.jsonl": "Workflow outputs", "map.json": "Map data", "artifacts.json": "Artifact list",
@@ -289,6 +290,10 @@ def tree(d, m=None):
                 f"plan confidence {rz['plan_confidence']}" if rz.get("plan_confidence") is not None else ""]
         kids = [item("Realization plan (text)", "realization.md", {"function": "code"})] if os.path.isfile(os.path.join(d, "realization.md")) else []
         plan.append(item("Realization plan", "realization.json", {"function": RECORD_MAKER["realization.json"]}, note=" · ".join(x for x in note if x), children=kids))
+    dv = _read(d, "deliverables.json")
+    if isinstance(dv, dict):
+        plan.append(item("Deliverables", "deliverables.json", {"function": RECORD_MAKER["deliverables.json"]},
+                         note=", ".join(x["type"] for x in deliverable_items(dv))))
     wfs = _read(d, "workflows.json", []) or []
     if os.path.isfile(os.path.join(d, "workflows.json")):
         plan.append(item("Workflows", "workflows.json", {"function": "Validator (code)"}, note=f"{len(wfs)} workflows"))
@@ -458,6 +463,12 @@ def _wf_row(kind, vs, by, persona, last_audit, file, nodes):
             "ok": all(a["pass"] for a in audit) and all(c["pass"] for c in checks if c["workflow"] == vs[-1]), "nodes": nodes}      # the latest version's checks
 
 
+def deliverable_items(dv):
+    """The types the planner chose, in build order, each with its why (deliverables.json, J2_GENERIC=1)."""
+    return [{"type": str(x.get("type") if isinstance(x, dict) else x), "why": str((x.get("why") if isinstance(x, dict) else "") or "")}
+            for x in ((dv or {}).get("plan") or {}).get("deliverables") or []]
+
+
 def groups(d, m=None):
     """{"schema": "artifacts-groups/1", "site": {...}, "groups": [{id, label, rows}]} for a run folder (five empty groups when there is none)."""
     import j2_map
@@ -492,6 +503,10 @@ def groups(d, m=None):
                      "maker": fn(plan_items.get("Realization plan")), "text": "realization.md" if has("realization.md") else None,
                      "zone": (((rz.get("plan") or {}).get("certainty_assessment")) or {}).get("zone"), "confidence": rz.get("plan_confidence"),
                      "stages": list(rz.get("stages") or {}), "nodes": []})
+    dv = _read(d, "deliverables.json")
+    if isinstance(dv, dict):
+        plan.append({"id": "deliverables", "kind": "deliverables", "name": "Deliverables", "file": "deliverables.json",
+                     "maker": fn(plan_items.get("Deliverables")), "items": deliverable_items(dv), "nodes": []})
     if has("workflows.json"):
         cyc = {}
         for w in wfs:
@@ -682,7 +697,7 @@ def agent_view(d, row):
     return None
 
 
-HUMAN = {"charter": "list", "realization": "markdown", "workflows": "table", "guide": "markdown", "document": "markdown", "section": "page",
+HUMAN = {"charter": "list", "deliverables": "list", "realization": "markdown", "workflows": "table", "guide": "markdown", "document": "markdown", "section": "page",
          "script": "page", "style": "style", "receipts": "table", "audits": "chart", "audit": "list", "conditions": "list", "shots": "shots"}
 
 
