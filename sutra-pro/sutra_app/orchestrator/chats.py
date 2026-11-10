@@ -33,7 +33,7 @@ from sutra_app.orchestrator.models import ChatMessageOut, ChatSessionOut, NeedsY
 from sutra_app.orchestrator.records import ChatMessage, ChatSession
 from sutra_app.orchestrator.waiting import ask_state
 
-__all__ = ["ChatStore", "ChatTranscripts", "RESUME_MESSAGES", "TURN_PHASES", "PROVIDERS", "STEER_REF", "parse_options"]
+__all__ = ["ChatStore", "ChatTranscripts", "RESUME_MESSAGES", "TURN_PHASES", "PROVIDERS", "STEER_REF", "ASK_REF", "parse_options"]
 
 log = logging.getLogger(__name__)
 RESUME_MESSAGES = 20
@@ -41,6 +41,7 @@ MAX_LIMIT = 500
 TURN_PHASES = ("reading", "planning", "building")
 PROVIDERS = ("claude", "codex", "stub", "")
 STEER_REF = "steer:"            # the src_ref prefix of the owner's note to an agent (api/agent_chats.py): the one marker, since MessageMeta is J2's closed key set
+ASK_REF = "ask:"                # the src_ref prefix of the owner's question to a function and of its answer (agent_ask.py); the tail says which: `ask:<id>`, `ask:<id>:records`, `ask:<id>:model`
 # A question is answered by the owner line stored in its `answered_by`. An approval or choice card has no stored value: pressing one of its buttons
 # stores the owner's line as `choice:<card id>` (TurnRunner._store_user_line), and that line answered the card. Both are read here, from the rows,
 # so a page that loads the chat again (and an app that was restarted) draws the card closed. An approval whose change is no longer pending was
@@ -85,7 +86,21 @@ def _message_out(row: sqlite3.Row) -> ChatMessageOut:
         id=row["id"], session_id=row["session_id"], role=row["role"], who=row["who"], kind=row["kind"], text=row["text"],
         card=json.loads(row["card_json"]) if row["card_json"] else None, pause=row["pause"], answered_by=row["answered_by"],
         task_id=row["task_id"], state=row["state"], at=iso_z(row["at"]), blocks=_blocks_of(row["meta_json"]),
-        turn=_turn_of(row["src_ref"]), passed_on=_passed_on_of(row["session_id"], row["src_ref"]), steer=(row["src_ref"] or "").startswith(STEER_REF))
+        turn=_turn_of(row["src_ref"]), passed_on=_passed_on_of(row["session_id"], row["src_ref"]), steer=(row["src_ref"] or "").startswith(STEER_REF),
+        ask=_ask_of(row["src_ref"]))
+
+
+def _ask_of(src_ref: str | None) -> str | None:
+    """The part a line plays in a question to a function (D148), read from its `src_ref` like `steer`: None for any other line; `records` or `model` for an
+    answer (`ask:<id>:records`, `ask:<id>:model`: what the answer was made from); `q` for the owner's question (`ask:<id>`)."""
+    ref = src_ref or ""
+    if not ref.startswith(ASK_REF):
+        return None
+    if ref.endswith(":records"):
+        return "records"
+    if ref.endswith(":model"):
+        return "model"
+    return "q"
 
 
 def _passed_on_of(session_id: str, src_ref: str | None) -> int | None:
