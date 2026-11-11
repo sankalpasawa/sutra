@@ -6026,28 +6026,32 @@ def artifact_schemas():
     import shutil
     import subprocess
     import j2_artifact_models as AM
-    # (e) the drift test: the templates are the code's own sections, in code order, with the conditions they come from
+    # (e) the templates are each type's own sections, in the template's order, with the conditions they come from
+    PRD, HLD, LLD = (AM.doc_model(k) for k in ("prd", "hld", "lld"))
+    Design, WebsiteSection = AM.model_for("design", "Style guide"), AM.model_for("website", "Section")
     for kind, want in (("prd", j2.doc_sections("prd")), ("hld", j2.doc_sections("hld")), ("lld", j2.doc_sections("lld"))):
-        assert list(AM.SECTION_MODELS[kind]) == list(want), (kind, list(AM.SECTION_MODELS[kind]))
+        assert list(AM.section_models(kind)) == list(want), (kind, list(AM.section_models(kind)))
         conds = {c["id"] for c in j2.load_conditions(kind + ".json")}
         for sec in want:
-            named = AM.SECTION_CONDITIONS[kind][sec]
+            named = AM.section_conditions(kind, sec)
             assert named and set(named) <= conds, (kind, sec, named)
             assert AM.rule_names(kind, sec), (kind, sec, "every section names the rules code holds it to")
             assert AM.model_for(kind, sec).SECTION == sec, (kind, sec)
             assert AM.render_section(kind, sec, {}) is not None, (kind, sec, "every section renders")
-    assert list(AM.SECTION_MODELS["design"]) == ["Style guide"] and list(AM.SECTION_MODELS["website"]) == ["Section"]
-    assert AM.PRD.TEMPLATE == "PRD/1" and AM.Design.TEMPLATE == "Design/1" and AM.VERSION == 1
-    assert list(AM.PRD.model_fields) == ["problem", "users", "goals", "requirements", "success_metrics",
-                                         "out_of_scope", "assumptions"], list(AM.PRD.model_fields)
-    assert list(AM.HLD.model_fields)[:6] == ["purpose", "pages", "components", "data_flows", "hosting", "risks"]
-    assert list(AM.LLD.model_fields)[:6] == ["sections", "elements", "form_fields", "files", "responsive_rules",
-                                             "accessibility_rules"]
-    assert list(AM.WebsiteSection.model_fields)[:3] == ["id", "anchor", "implements"]
+    assert list(AM.section_models("design")) == ["Style guide"] and list(AM.section_models("website")) == ["Section"]
+    assert PRD.TEMPLATE == "PRD/1" and Design.TEMPLATE == "Design/1" and AM.VERSION == 1
+    assert (PRD.__name__, HLD.__name__, LLD.__name__, Design.__name__, WebsiteSection.__name__) == \
+        ("PRD", "HLD", "LLD", "Design", "WebsiteSection"), "the models keep the names the records show"
+    assert list(PRD.model_fields) == ["problem", "users", "goals", "requirements", "success_metrics",
+                                      "out_of_scope", "assumptions"], list(PRD.model_fields)
+    assert list(HLD.model_fields)[:6] == ["purpose", "pages", "components", "data_flows", "hosting", "risks"]
+    assert list(LLD.model_fields)[:6] == ["sections", "elements", "form_fields", "files", "responsive_rules",
+                                          "accessibility_rules"]
+    assert list(WebsiteSection.model_fields)[:3] == ["id", "anchor", "implements"]
     # (f) every transport schema: draft-07, closed objects, nothing the transport forbids, and the CLI accepts it
     chrome_free = ["minLength", "maxLength", "minItems", "maxItems", "pattern", "format", "$defs", "2020-12"]
     sizes = {}
-    for kind, by in AM.SECTION_MODELS.items():
+    for kind, by in ((k, AM.section_models(k)) for k in AM.kinds()):
         for sec, model in by.items():
             sch = AM.reply_schema(model, {})
             txt = json.dumps(sch)
@@ -6062,7 +6066,7 @@ def artifact_schemas():
             sizes[model.template()] = len(txt)
     if shutil.which("claude"):      # the CLI validates the schema before any model call: a bogus model costs nothing
         env = {k: v for k, v in os.environ.items() if k != "ANTHROPIC_API_KEY"}
-        for kind, by in AM.SECTION_MODELS.items():
+        for kind, by in ((k, AM.section_models(k)) for k in AM.kinds()):
             for sec, model in by.items():
                 p = subprocess.run(["claude", "-p", "--output-format", "json", "--json-schema",
                                     json.dumps(AM.reply_schema(model, {})), "--model", "no-such-model-xyz",
@@ -6109,7 +6113,7 @@ def artifact_schemas():
         assert os.path.isfile(f), f
         rec = json.load(open(f, encoding="utf-8"))
         assert rec["schema"] == AM.SCHEMA and rec["sections"] and rec["version"], rec.get("template")
-        assert rec["template"] == AM.DOC_MODELS[kind].TEMPLATE, (kind, rec["template"])
+        assert rec["template"] == AM.doc_model(kind).TEMPLATE, (kind, rec["template"])
         assert any(re.fullmatch(rf"{kind}-v\d+\.json", x) for x in os.listdir(os.path.join(run.dir, "site"))), kind
     for kind, secs in (("prd", j2.doc_sections("prd")), ("hld", j2.doc_sections("hld")), ("lld", j2.doc_sections("lld"))):
         text = open(os.path.join(run.dir, f"{kind}.md"), encoding="utf-8").read()
@@ -6249,7 +6253,7 @@ def artifact_schema_failures():
     # used to carry inside its "design" property; now every extra field is written with its definitions in place,
     # so every $ref in the reply schema resolves at the root, with the model's section or a library's in its place
     web = AM.model_for("website", "Section")
-    design = {k: v for k, v in AM.transport_schema(AM.Design).items() if k != "$schema"}
+    design = {k: v for k, v in AM.transport_schema(AM.model_for("design", "Style guide")).items() if k != "$schema"}
     assert set(design["definitions"]) >= {"Palette", "Fonts"} and '"$ref"' in json.dumps(design), design.keys()
     first = AM.reply_schema(web, {"design": design})
     for sch in (first, j2.J2Run._with_section(first, AM.transport_schema(web)), AM.reply_schema(web, {})):
@@ -6314,9 +6318,11 @@ def rules_split():
     import j2_artifact_models as AM
     import j2_rules as R
     # (d) every rule spec is data, names a known rule type, and its paths resolve against the model's fields
-    for (kind, section), specs in R.RULES.items():
+    RULES = R.all_rules()      # read from every type's generic.json: no rule is written in Python
+    assert not hasattr(R, "RULES") and not hasattr(R, "RULE_NAMES") and not hasattr(AM, "RULE_NAMES")
+    for (kind, section), specs in RULES.items():
         model = AM.model_for(kind, section)
-        assert model is not None and AM.SECTION_MODELS[kind][section] is model, (kind, section)
+        assert model is not None and AM.section_models(kind)[section] is model, (kind, section)
         assert json.loads(json.dumps(specs)) == specs, (kind, section, "the rules must be plain data")
         for spec in specs:
             assert spec["rule"] in R.RULE_TYPES, (kind, section, spec["rule"])
@@ -6330,30 +6336,31 @@ def rules_split():
             if spec.get("target"):      # "this.<path>" or "<doc>.<path>", and the field must exist there
                 where, _, tpath = spec["target"].partition(".")
                 assert where in ("this", "prd", "hld", "lld"), spec["target"]
-                target_model = AM.DOC_MODELS[kind if where == "this" else where]
+                target_model = AM.doc_model(kind if where == "this" else where)
                 assert tpath.split(".")[0].replace("[]", "") in target_model.model_fields, (spec["target"], kind)
             for key in ("prefix", "values", "prefix"):
                 if spec["rule"] in ("ids_sequential",) and key == "prefix":
                     assert spec.get("prefix"), spec
             if spec["rule"] == "enum":
                 assert spec.get("values") and all(isinstance(v, str) for v in spec["values"]), spec
-    assert set(R.RULES) == {(k, s) for k, by in AM.SECTION_MODELS.items() for s in by}, "every section has rules"
+    assert set(RULES) == {(k, s) for k in AM.kinds() for s in AM.section_models(k)} and all(RULES.values()), "every section has rules"
     # (e) the names a reader sees are the rules' own names, with nothing kept in step by hand
-    assert R.RULE_NAMES == {k: [r["name"] for r in v] for k, v in R.RULES.items()}
-    assert AM.RULE_NAMES == R.RULE_NAMES and AM.rule_names("hld", "Components") == R.rule_names("hld", "Components")
-    assert all(R.rules_count(k, s) == len(R.RULE_NAMES[(k, s)]) for k, s in R.RULES)
+    assert all(R.rule_names(k, s) == [r["name"] for r in v] == AM.rule_names(k, s) for (k, s), v in RULES.items())
+    assert AM.rule_names("hld", "Components") == R.rule_names("hld", "Components")
+    assert all(R.rules_count(k, s) == len(v) for (k, s), v in RULES.items())
     # the models carry no constraint any more: no validator beyond the website section's "html or head"
-    for kind, by in AM.SECTION_MODELS.items():
+    for kind, by in ((k, AM.section_models(k)) for k in AM.kinds()):
         for sec, model in by.items():
             checks = [n for n in dir(model) if n.startswith("_") and n in ("_order", "_refs", "_priority", "_hex",
                                                                            "_anchor", "_markup", "_css_safe", "_type")]
             assert not checks, (kind, sec, checks)
     assert not hasattr(AM, "rule_errors") and not hasattr(AM, "_ids_in_order"), "the constraints left the models"
     # the shape layer takes data the rules would refuse: ids out of order, a bad hex, an anchor pointing nowhere
-    ok, errs = AM.validate(AM.HLDComponents, {"components": [{"id": "C1", "name": "a", "responsibility": "b",
-                                                              "covers": ["R1"], "page": "P1"},
-                                                             {"id": "C3", "name": "c", "responsibility": "d",
-                                                              "covers": ["R9"], "page": "P9"}]})
+    HLDComponents, PRDRequirements = AM.model_for("hld", "Components"), AM.model_for("prd", "Requirements")
+    ok, errs = AM.validate(HLDComponents, {"components": [{"id": "C1", "name": "a", "responsibility": "b",
+                                                           "covers": ["R1"], "page": "P1"},
+                                                          {"id": "C3", "name": "c", "responsibility": "d",
+                                                           "covers": ["R9"], "page": "P9"}]})
     assert ok is not None and not errs, errs
     res = R.run_rules("hld", "Components", ok.model_dump(by_alias=True),
                       {"this": {"pages": [{"id": "P1"}]}, "prd": {"requirements": [{"id": "R1"}]}})
@@ -6371,10 +6378,10 @@ def rules_split():
     for data, want in (({"components": [{"id": "C1", "name": "a"}]}, "responsibility"),
                        ({"components": [], "extra": 1}, "extra"),
                        ({"components": [{"id": "C1", "name": "a", "responsibility": "b", "nope": 1}]}, "nope")):
-        bad, errs = AM.validate(AM.HLDComponents, data)
+        bad, errs = AM.validate(HLDComponents, data)
         assert bad is None and any(want in e for e in errs), (want, errs)
-    bad, errs = AM.validate(AM.PRDRequirements, {"requirements": [{"id": "R1", "statement": "s",
-                                                                   "priority": "maybe", "goals": []}]})
+    bad, errs = AM.validate(PRDRequirements, {"requirements": [{"id": "R1", "statement": "s",
+                                                                "priority": "maybe", "goals": []}]})
     assert bad is None and any("priority" in e for e in errs), errs      # the enum is shape now (Literal)
     # (b) the two saved demo runs, replayed in mock: same outcome, same layers, same evidence
     here = os.path.dirname(os.path.abspath(__file__))
@@ -7286,24 +7293,30 @@ def doc_prompts_unchanged():
 
 
 def doc_type_names():
-    """Every document type's sections, read from its template (artifacts/types.json points to templates/<type>/generic.json),
-    match j2_artifact_models (SECTION_MODELS, SECTION_CONDITIONS) and j2_template_lib (ARTIFACTS, DOCUMENT_ARTIFACTS,
-    FACT_FIELD_SECTIONS, generic_sections) for the types the models know, so the two never drift."""
+    """Every type's sections are read from its template (artifacts/types.json points to templates/<type>/generic.json),
+    and the models, the conditions, the rules and the template library all read the same file: j2_artifact_models
+    (section_models, section_conditions), j2_rules (rules_for) and j2_template_lib (artifacts, generic_sections,
+    takes_fact_fields) name the same sections, so none can drift from another."""
     import j2_artifact_models as AM
+    import j2_rules
     import j2_template_lib as TL
     import j2_types
     docs = ("prd", "hld", "lld")
-    assert set(docs) | {"website"} <= set(j2_types.names()) and TL.DOCUMENT_ARTIFACTS == docs
+    assert set(docs) | {"website"} <= set(j2_types.names())
+    assert TL.artifacts() == tuple(AM.kinds()) == ("prd", "hld", "lld", "design", "website", "business_report"), TL.artifacts()
+    assert [a for a in TL.artifacts() if TL.document_model(a)] == list(docs), "the types with a document-level template"
     for t in docs:
         secs = j2.doc_sections(t)
-        assert j2_types.sections(t) == secs == tuple(AM.SECTION_MODELS[t]) == tuple(AM.SECTION_CONDITIONS[t]), (t, secs)
-        assert [s for s in TL.generic_sections(t) if s != TL.DOCUMENT] == list(secs), t
+        assert j2_types.sections(t) == secs == tuple(AM.section_models(t)), (t, secs)
+        assert all(AM.section_conditions(t, s) and j2_rules.rules_for(t, s) for s in secs), t
+        assert [s for s in TL.generic_sections(t) if s != TL.DOCUMENT] == list(secs) and TL.generic_sections(t)[-1] == TL.DOCUMENT, t
         entry = next(x for x in json.load(open(j2_types.TYPES_PATH, encoding="utf-8"))["types"] if x["name"] == t)
         assert entry["template"] == f"templates/{t}/generic.json" and "sections" not in entry.get("workflow", {}), t
-    for t, s in TL.FACT_FIELD_SECTIONS:
-        assert s in AM.SECTION_MODELS[t] and (t == "website" or s in j2.doc_sections(t)), (t, s)
-    print("document type names: every document type's sections come from its template and match SECTION_MODELS, "
-          "SECTION_CONDITIONS, generic_sections and FACT_FIELD_SECTIONS ok")
+    facts = {(t, s) for t in TL.artifacts() for s in j2_types.sections(t) if TL.takes_fact_fields(t, s)}
+    assert facts == {("prd", "Requirements"), ("website", "Section")}, facts
+    assert j2_types.style_guide() == "design" and "design" not in j2_types.names(), "the page form names its style guide"
+    print("document type names: every type's sections come from its template, and the models, conditions, rules and "
+          "template library read that same file ok")
 
 
 def types_refused():
@@ -11922,6 +11935,240 @@ def lib_run(brief, budget=1400, patch=None):
     return run
 
 
+def generic_source():
+    """templates/<type>/generic.json is the single, hand-edited source of a type's sections, fields and rules.
+    (a) every generic.json is valid (the closed file shape, the template checks, rule paths, render lines and targets
+    that resolve) and builds working models, schemas, rules and renders; `python3 j2_template_lib.py` says the same;
+    (b) no Python repeats a type, a section, a model or an object: the four modules hold none of those names;
+    (c) editing a field in a test copy of templates/prd/generic.json changes the PRD's model, the schema a builder gets,
+    the checks and the rendered section, with no Python change, and the committed file is untouched;
+    (d) a bad hand edit is named by the check (an unknown key, a rule path, a render line or a target that names
+    nothing, a stale sha) instead of being half-used;
+    (e) the cross-document rules live in generic.json: the HLD's Components cite prd.requirements[].id and the LLD's
+    sections cite hld.components[].id, and changing the target in the copy changes what the rule checks."""
+    import ast
+    import copy as copy_
+    import subprocess
+    import j2_artifact_models as AM
+    import j2_rules as R
+    import j2_template_lib as L
+    import j2_types
+    here = os.path.dirname(os.path.abspath(__file__))
+    # (a) valid, and everything builds from the file
+    assert L.generic_problems() == [], L.generic_problems()
+    out = subprocess.run([sys.executable, os.path.join(here, "j2_template_lib.py")], capture_output=True, text=True, cwd=here)
+    assert out.returncode == 0 and "every generic.json is valid" in out.stdout and "problem:" not in out.stdout, out.stdout + out.stderr
+    n = 0
+    for kind in L.artifacts():
+        raw = json.load(open(j2_types.template_path(kind), encoding="utf-8"))
+        assert "generated" not in raw["from"] and not any(k in t for t in raw["templates"] for k in ("sha", "schema_sha")), kind
+        assert [t["section"] for t in raw["templates"] if t["section"] != L.DOCUMENT] == list(AM.section_models(kind)), kind
+        for t in raw["templates"]:
+            sec = t["section"]
+            model = L.generic_model(kind, sec)
+            g = L.generic(kind, sec)
+            assert [(f.alias or a) for a, f in model.model_fields.items()] == [f["name"] for f in t["fields"]] == [f.name for f in g.fields], (kind, sec)
+            req = {(f.alias or a) for a, f in model.model_fields.items() if f.is_required()}
+            assert req == {f["name"] for f in t["fields"] if f["required"]}, (kind, sec, req)
+            assert AM.transport_schema(model)["additionalProperties"] is False and g.sha == g.compute_sha(), (kind, sec)
+            if sec == L.DOCUMENT:
+                assert "objects" not in t and g.objects, "the document's objects come from its sections"
+                continue
+            assert R.rules_for(kind, sec) == t["rules"] == g.rules and AM.section_conditions(kind, sec) == t.get("conditions", []), (kind, sec)
+            assert model.template() == t["name"] and model.SECTION == sec and model.__name__ == t.get("model", model.__name__), (kind, sec)
+            assert (AM.render_section(kind, sec, {}) is not None) == ("render" in t), (kind, sec)
+            n += 1
+    # (b) nothing in Python repeats a type's sections or fields
+    names = set(L.artifacts())
+    for kind in L.artifacts():
+        for t in j2_types.template_file(kind):
+            names |= {t["section"], AM.model_name(t)} | {o["name"] for o in t.get("objects") or []}
+    names -= {L.DOCUMENT}      # the reserved name of the document-level template, not a section of any type
+    for f in ("j2_artifact_models.py", "j2_rules.py", "j2_template_lib.py", "j2_agent_views.py"):
+        tree = ast.parse(open(os.path.join(here, f), encoding="utf-8").read())
+        strings = {x.value for x in ast.walk(tree) if isinstance(x, ast.Constant) and isinstance(x.value, str)}
+        idents = {x.id for x in ast.walk(tree) if isinstance(x, ast.Name)} | {x.attr for x in ast.walk(tree) if isinstance(x, ast.Attribute)} \
+            | {x.name for x in ast.walk(tree) if isinstance(x, (ast.ClassDef, ast.FunctionDef))}
+        # audits.json keeps the LLD match of an audit under its own key "lld" (AuditResult.lld): a record's field, read as it is
+        record_keys = {"lld"} if f == "j2_agent_views.py" else set()
+        assert not ((names - record_keys) & (strings | idents)), (f, sorted((names - record_keys) & (strings | idents)))
+        gone = {"SECTION_MODELS", "DOC_MODELS", "SECTION_CONDITIONS", "RULES", "RULE_NAMES", "ARTIFACTS", "DOCUMENT_ARTIFACTS",
+                "FACT_FIELD_SECTIONS", "DOC_KINDS", "DELIVERED_MD", "OPTIONAL_FIELDS", "PRIORITIES", "FIELD_TYPES",
+                "write_generic", "generic_drift", "generic_file"}
+        assert not (gone & idents), (f, sorted(gone & idents))
+    # (c), (d), (e): a test copy of the templates
+    tmp = tempfile.mkdtemp(prefix="j2-generic-")
+    shutil.copytree(j2_types.TEMPLATES_DIR, os.path.join(tmp, "templates"))
+    real = j2_types.template_path("prd")
+    real_before = open(real, "rb").read()
+    keep_dir = j2_types.TEMPLATES_DIR
+    old_model, old_schema = AM.model_for("prd", "Requirements"), AM.transport_schema(AM.model_for("prd", "Requirements"))
+    data = {"requirements": [{"id": "R1", "statement": "Bakers can order", "priority": "must", "goals": []}]}
+    assert AM.validate(old_model, data)[1] == [] and "owner" not in json.dumps(old_schema)
+    j2_types.TEMPLATES_DIR = os.path.join(tmp, "templates")
+    j2_types.template.cache_clear()
+    path = j2_types.template_path("prd")
+    assert path.startswith(tmp), path
+    source = json.load(open(path, encoding="utf-8"))
+
+    def write(doc, kind="prd"):
+        with open(j2_types.template_path(kind), "w", encoding="utf-8") as f:
+            json.dump(doc, f, indent=2, ensure_ascii=False)
+        j2_types.template.cache_clear()
+
+    def section(doc, name):
+        return next(t for t in doc["templates"] if t["section"] == name)
+    try:
+        assert AM.model_for("prd", "Requirements") is old_model, "the same template gives the same class"
+        edit = copy_.deepcopy(source)
+        req = section(edit, "Requirements")
+        obj = next(o for o in req["objects"] if o["name"] == "Requirement")
+        next(f for f in obj["fields"] if f["name"] == "priority")["enum"] = ["must", "should", "could", "wont"]
+        obj["fields"].append({"name": "owner", "type": "string", "required": True, "nullable": False,
+                              "description": "the user group that owns this requirement"})
+        next(r for r in req["rules"] if r["rule"] == "enum")["values"].append("wont")
+        req["rules"].append({"rule": "not_empty", "path": "requirements[].owner", "name": "every requirement has an owner", "from": "P2"})
+        req["render"][0]["line"] = "{#}. **{id}** ({owner}): {statement:nodot} ({priority|must}).[ Serves {goals}.]"
+        write(edit)
+        assert L.generic_problems() == [], L.generic_problems()
+        model = AM.model_for("prd", "Requirements")
+        item = model.model_fields["requirements"].annotation.__args__[0]
+        assert model is not old_model and "owner" in item.model_fields and item.model_fields["owner"].is_required()
+        assert AM.validate(model, data)[1] == ["requirements.0.owner: Field required"], AM.validate(model, data)[1]
+        full = {"requirements": [{**data["requirements"][0], "owner": "bakers", "priority": "Wont"}]}
+        got, errs = AM.validate(model, AM.normalise(model, full))
+        assert not errs and got.requirements[0].priority == "wont", errs
+        assert AM.validate(old_model, full)[1], "the model built before the edit still refuses it"
+        sch = AM.transport_schema(model)
+        req_def = sch["definitions"]["Requirement"]
+        assert "owner" in req_def["required"] and req_def["properties"]["priority"]["enum"][-1] == "wont" and sch != old_schema
+        assert AM.schema_sha(AM.reply_schema(model, {})) != AM.schema_sha(AM.reply_schema(old_model, {}))
+        res = {r["name"]: r for r in R.run_rules("prd", "Requirements", {"requirements": [{**full["requirements"][0], "owner": ""}]}, {})}
+        assert len(res) == 4 and res["every requirement has an owner"]["pass"] is False and AM.rules_count("prd", "Requirements") == 4, res
+        assert res["priority is must, should or could"]["pass"] is True, "the rule reads the edited values"
+        md = AM.render_section("prd", "Requirements", got.model_dump(by_alias=True))
+        assert md == "## Requirements\n\n1. **R1** (bakers): Bakers can order (wont).\n", md
+        doc_item = AM.doc_model("prd").model_fields["requirements"].annotation.__args__[0]
+        assert "owner" in doc_item.model_fields, "the document model takes the section's object: nothing is typed twice"
+        g = L.generic("prd", "Requirements")
+        assert "owner" in [f.name for f in g.objects[0].fields] and g.rules[-1]["name"] == "every requirement has an owner"
+        assert "owner" in json.dumps(L.transport(g)) and "owner: str" in L.codegen(g), "the library reads the same edit"
+        # (d) a bad hand edit is named, not half-used
+        for bend, why in (
+                (lambda d: section(d, "Problem").update(sha="93a6"), "sha"),
+                (lambda d: section(d, "Problem")["fields"][0].update(type="text"), "type 'text' is not allowed"),
+                (lambda d: section(d, "Goals")["rules"][0].update(path="aims"), "'aims' is not a field of the template"),
+                (lambda d: section(d, "Goals")["rules"][0].update(rule="sorted"), "unknown rule type 'sorted'"),
+                (lambda d: section(d, "Goals")["render"][0].update(line="- {id}: {text}"), "'text' is not a field of the list's items"),
+                (lambda d: section(d, "Users")["render"][0].update(each="people"), "each 'people' is not a list field"),
+                (lambda d: section(d, "Requirements")["rules"][2].update(target="this.aims[].id"), "no section of prd has 'aims[].id'"),
+                (lambda d: section(d, "Requirements")["rules"][2].update(target="memo.goals[].id"), "target must start with this. or an artifact's name"),
+                (lambda d: section(d, "Out of scope").update(reply_optional=["nope"]), "reply_optional names 'nope'"),
+                (lambda d: d["templates"].append(copy_.deepcopy(section(d, "Goals"))), "a section appears twice"),
+                (lambda d: d.update(artifact="hld"), "the file is prd's")):
+            bent = copy_.deepcopy(source)
+            bend(bent)
+            write(bent)
+            bad = L.generic_problems(["prd"])
+            assert bad and any(why in x for x in bad), (why, bad)
+        # (e) the cross-document rules are data: the target in the file is what the rule checks
+        write(source)
+        assert L.generic_problems() == []
+        cites = {(k, s): r["target"] for (k, s), rs in R.all_rules().items() for r in rs
+                 if r["rule"] == "ref_exists" and not r["target"].startswith("this.")}
+        assert cites == {("hld", "Components"): "prd.requirements[].id", ("lld", "Pages and sections"): "hld.components[].id",
+                         ("website", "Section"): "lld.sections[].id"}, cites
+        comps = {"components": [{"id": "C1", "name": "a", "responsibility": "b", "covers": ["G1"], "page": ""}]}
+        docs = {"prd": {"requirements": [{"id": "R1"}], "goals": [{"id": "G1"}]}}
+        covers = lambda: next(r for r in R.run_rules("hld", "Components", comps, docs) if "covers" in r["name"])
+        assert covers()["pass"] is False and covers()["evidence"] == "C1 covers G1, which is not a requirement of the PRD"
+        hld = json.load(open(j2_types.template_path("hld"), encoding="utf-8"))
+        rule = next(r for r in section(hld, "Components")["rules"] if r.get("target") == "prd.requirements[].id")
+        rule.update(target="prd.goals[].id", fail_text="{id} covers {bad}, which is not a goal of the PRD")
+        write(hld, "hld")
+        assert L.generic_problems() == [] and covers()["pass"] is True and j2_types.cites("hld") == {"Components": ("prd", "goals", "covers")}
+    finally:
+        j2_types.TEMPLATES_DIR = keep_dir
+        j2_types.template.cache_clear()
+        shutil.rmtree(tmp, ignore_errors=True)
+    assert open(real, "rb").read() == real_before and AM.model_for("prd", "Requirements") is old_model
+    assert AM.transport_schema(AM.model_for("prd", "Requirements")) == old_schema and L.generic_problems() == []
+    print(f"generic source: {len(L.artifacts())} generic.json files valid, {n} section models, rules and renders built from them, no "
+          "type, section, model or object named in the four modules; an edited copy of the PRD's template changes its "
+          "model, schema, checks and rendering with no Python change; eleven bad edits named; the cross-document rules "
+          "follow the file ok")
+
+
+def new_type_models():
+    """A type made on the fly gets a complete generic.json (fields, a rule, render lines), so its sections have proper
+    models and checks, not only names: with J2_ARTIFACT_SCHEMA=1 a run of the new type and of the report type answers
+    with data that code validates, checks and renders, and ends Done. A template that would not check is never left."""
+    import j2_artifact_models as AM
+    import j2_template_lib as L
+    import j2_types
+    tmp = tempfile.mkdtemp(prefix="j2-types-")
+    shutil.copy(j2_types.TYPES_PATH, tmp)
+    shutil.copytree(j2_types.TEMPLATES_DIR, os.path.join(tmp, "templates"))
+    keep = (j2_types.TYPES_PATH, j2_types.TEMPLATES_DIR, os.environ.get("J2_ARTIFACT_SCHEMA"))
+    j2_types.TYPES_PATH, j2_types.TEMPLATES_DIR = os.path.join(tmp, "types.json"), os.path.join(tmp, "templates")
+    j2_types.template.cache_clear()
+    j2._data_type.cache_clear()
+    try:
+        j2_types.create("hiring_policy", "Hiring policy", ["Purpose", "Process"])
+        assert "hiring_policy" in L.artifacts() and L.generic_problems() == [], L.generic_problems()
+        raw = json.load(open(j2_types.template_path("hiring_policy"), encoding="utf-8"))
+        assert all(t["fields"] and t["rules"] and t["render"] and t["conditions"] for t in raw["templates"]), raw
+        model = AM.model_for("hiring_policy", "Process")
+        assert model.template() == "Hiring policy · Process" and list(model.model_fields) == ["text", "assumptions"]
+        assert AM.validate(model, {})[1] == ["text: Field required"] and AM.transport_schema(model)["required"] == ["text"]
+        assert [r["pass"] for r in AM.run_rules("hiring_policy", "Process", {"text": " "}, {})] == [False]
+        assert AM.render_section("hiring_policy", "Process", {"text": "Two interviews.", "assumptions": ["One panel"]}) == \
+            "## Process\n\nTwo interviews.\nAssumption: One panel\n"
+        g = L.generic("hiring_policy", "Process")
+        assert g.name == "Hiring policy · Process" and L.generic_ref("hiring_policy", "Process") == "hiring_policy/process@generic/1"
+        keep_for, types_before = j2_types.template_for, open(j2_types.TYPES_PATH, encoding="utf-8").read()
+        j2_types.template_for = lambda name, label, secs: {**keep_for(name, label, secs), "templates": [
+            {**t, "rules": [{"rule": "not_empty", "path": "body", "name": "x", "from": "C1"}]} for t in keep_for(name, label, secs)["templates"]]}
+        try:
+            j2_types.create("memo", "Memo", ["Summary"])
+            raise AssertionError("a template that doesn't check was kept")
+        except ValueError as e:
+            assert "'body' is not a field of the template" in str(e), str(e)
+        finally:
+            j2_types.template_for = keep_for
+        assert "memo" not in j2_types.names() and not os.path.exists(j2_types.template_path("memo")) \
+            and open(j2_types.TYPES_PATH, encoding="utf-8").read() == types_before
+        os.environ["J2_ARTIFACT_SCHEMA"] = "1"
+        for brief, kind in (("Write the hiring policy for Acme Labs, a small startup of twelve people in Pune. It covers who "
+                             "approves a hire and how candidates are interviewed.", "hiring_policy"),
+                            ("Write the quarterly report on sales for Petal House, a flower shop in Jaipur. It sums up what "
+                             "sold and what the owner should do next.", "business_report")):
+            os.environ["J2_OUTPUT"] = kind
+            try:
+                run = j2.J2Run()
+            finally:
+                os.environ.pop("J2_OUTPUT", None)
+            run.budget = 300
+            say(run, brief)
+            assert run.output == kind and run.schemas and run.outcome.startswith("Done"), (kind, run.output, run.outcome)
+            recs = art_recs(run)
+            assert recs and all(r["pass"] for r in recs) and {r["type"] for r in recs} == {"artifact-schema", "artifact-rules", "artifact-render"}, \
+                [(r["type"], r["evidence"]) for r in recs if not r["pass"]]
+            assert {r["template"] for r in recs} == {t["name"] for t in j2_types.template(kind)}, {r["template"] for r in recs}
+            data = json.load(open(os.path.join(run.dir, f"{kind}.json"), encoding="utf-8"))
+            md = open(os.path.join(run.dir, j2_types.info(kind)["file"]), encoding="utf-8").read()
+            assert list(data["sections"]) == list(j2_types.sections(kind)) and data["template"] == kind, data.get("template")
+            assert all(f"## {s}\n\n{d['text']}" in md for s, d in data["sections"].items()), "code rendered every section from its data"
+    finally:
+        j2_types.TYPES_PATH, j2_types.TEMPLATES_DIR = keep[:2]
+        os.environ.pop("J2_ARTIFACT_SCHEMA", None) if keep[2] is None else os.environ.update(J2_ARTIFACT_SCHEMA=keep[2])
+        j2_types.template.cache_clear()
+        j2._data_type.cache_clear()
+        shutil.rmtree(tmp, ignore_errors=True)
+    print("new type models: a type made on the fly has a valid generic.json with fields, a rule and render lines; its "
+          "sections and the report's are validated, checked and rendered from data and end Done; a bad template is taken back ok")
+
+
 def tpl_decisions(run):
     return json.load(open(os.path.join(run.dir, "templates.json"), encoding="utf-8"))["decisions"]
 
@@ -11936,7 +12183,8 @@ def template_library(demo=False):
     (c) a need with an extra field extends to v2, v1 unchanged and still compiling; (d) a generator that returns an
     invalid spec twice falls back to the generic and the run still ends Done; (e) unknown type, unknown rule type, a
     bad rule path, a dunder field and a dropped required field are refused and never stored; (f) every model.py
-    matches its runtime class and generic.json matches the models and RULES; (g) every builder's --json-schema
+    matches its runtime class, and every generic.json is valid and is what the models and rules are built from
+    (generic_source); (g) every builder's --json-schema
     section is its template's schema.json (shas in calls.jsonl); (h) the scores and decisions in templates.json follow
     the routing rules; (i) the tests use a temp J2_LIBRARY_DIR and the committed library/ is unchanged."""
     import copy as copy_
@@ -11952,26 +12200,14 @@ def template_library(demo=False):
     lib = tempfile.mkdtemp(prefix="j2-lib-")
     os.environ["J2_LIBRARY_DIR"] = lib
     try:
-        # (f) the generic layer is the models and the rules, never retyped
-        assert L.generic_drift() == [], L.generic_drift()
-        for art, by in j2.j2_artifact_models.SECTION_MODELS.items():
-            for sec, model in by.items():
+        # (f) the generic layer is generic.json, read and never retyped: the models and the rules are built from it
+        assert L.generic_problems() == [], L.generic_problems()
+        for art in L.artifacts():
+            for sec, model in j2.j2_artifact_models.section_models(art).items():
                 g = L.generic(art, sec)
                 assert [f.name for f in g.fields] == [(f.alias or n) for n, f in model.model_fields.items()], (art, sec)
                 assert g.rules == j2.j2_rules.rules_for(art, sec) and g.kind == "generic", (art, sec)
-        broken = json.load(open(os.path.join(L.GENERIC_DIR, "prd", "generic.json"), encoding="utf-8"))
-        broken["templates"][0]["fields"][0]["description"] = "retyped by hand"
-        keep_dir = L.GENERIC_DIR
-        tmpgen = tempfile.mkdtemp(prefix="j2-generic-")
-        L.write_generic(tmpgen)
-        json.dump(broken, open(os.path.join(tmpgen, "prd", "generic.json"), "w", encoding="utf-8"))
-        L.GENERIC_DIR = tmpgen
-        try:
-            drift = L.generic_drift()
-        finally:
-            L.GENERIC_DIR = keep_dir
-            shutil.rmtree(tmpgen, ignore_errors=True)
-        assert drift and "prd/Problem" in drift[0] and "fields" in drift[0], drift
+        generic_source()      # a hand edit of a copy changes the model and the checks; a bad edit is named
         # (a) flag unset: a schema run and a plain run write nothing to the library and record no template
         os.environ.pop("J2_TEMPLATE_LIBRARY", None)
         off = schema_run(BOUTIQUE_BRIEF)
@@ -12323,7 +12559,7 @@ def template_library(demo=False):
         for c in calls_file(r4):
             if c.get("artifact_schema"):
                 lb = c["artifact_schema"]["library"]
-                gen_sha = L.sha_of(j2.j2_artifact_models.transport_schema(j2.j2_artifact_models.WebsiteSection))
+                gen_sha = L.sha_of(j2.j2_artifact_models.transport_schema(j2.j2_artifact_models.model_for("website", "Section")))
                 assert lb["kind"] == "generic" and lb["sent_section_sha"] == gen_sha == lb["schema_sha"], lb
         os.environ["J2_LIBRARY_DIR"] = lib
         # (f) every model.py matches its runtime class; schema.json is the runtime transport; model.py is never imported
@@ -12348,7 +12584,7 @@ def template_library(demo=False):
         import j2_server
         assert "/api/library" in open(os.path.join(here, "j2_server.py"), encoding="utf-8").read()
         lv = L.library_view()
-        assert set(lv["groups"]) == set(L.ARTIFACTS) and lv["groups"]["website"]["Section"]["templates"]
+        assert set(lv["groups"]) == set(L.artifacts()) and lv["groups"]["website"]["Section"]["templates"]
         tv = L.template_view("prd", "requirements", L.slug(rs.name), 1)
         assert set(tv["files"]) == {"spec.json", "model.py", "schema.json", "meta.json"} and all(
             f["sha"] for f in tv["files"].values())
@@ -12372,7 +12608,7 @@ def template_library(demo=False):
             os.environ["J2_LIBRARY_DIR"] = keep_lib
         os.environ.pop("J2_TEMPLATE_LIBRARY", None)
     assert tree_sha(real_lib) == real_before, "the committed library/ is unchanged by tests"
-    print(f"template library: generic.json matches the models and RULES (a hand edit is caught); unset writes nothing; "
+    print(f"template library: every generic.json is valid and the models and rules are built from it (a bad hand edit is named); unset writes nothing; "
           f"Thread & Loom created {len(made1)} templates, run 2 reused all of them (rule a, no new version, used_by both "
           f"runs); Still Point Yoga created its own ({req['template']} with classes day/time/price) and reused no "
           f"boutique template; the fingerprint holds the needed fields, rule (a) reuses only a template with every needed field, a "
@@ -12616,6 +12852,11 @@ if __name__ == "__main__":
                       f"(score {d['score']}; {d.get('covers') or d['reason']})")
             print(f"  http://127.0.0.1:8773/?run={os.path.basename(demo.dir)}&view=detail&tab=library")
         sys.exit(0)
+    if "--generic-source" in sys.argv:        # python3 j2_flow_test.py --fast --generic-source: generic.json as the source only
+        doc_type_names()
+        generic_source()
+        new_type_models()
+        sys.exit(0)
     if "--template-library" in sys.argv:      # python3 j2_flow_test.py --fast [--browser] --template-library: this part only
         template_library()
         plain_unchanged()
@@ -12743,6 +12984,7 @@ if __name__ == "__main__":
             artifact_schemas()
             artifact_schema_failures()
             rules_split()
+            new_type_models()
             template_library()
         board_disabled()
         board_functions_off()
