@@ -3,7 +3,7 @@
  "artifact": "business_report",
  "kind": "generic",
  "version": 1,
- "from": "made by J2 for a new document type (j2_types.create)",
+ "from": "made by J2 for a new document type (j2_types.create); hand-edit it like any generic.json",
  "templates": [
   {
    "name": "Report · Summary",
@@ -12,6 +12,9 @@
    "version": 1,
    "kind": "generic",
    "description": "The generic Report Summary section",
+   "conditions": [
+    "C1"
+   ],
    "fields": [
     {
      "name": "text",
@@ -36,6 +39,16 @@
      "name": "the section is written",
      "from": "C1"
     }
+   ],
+   "render": [
+    {
+     "text": "{text}"
+    },
+    {
+     "each": "assumptions",
+     "line": "Assumption: {_}",
+     "after_body": true
+    }
    ]
   },
   {
@@ -45,6 +58,9 @@
    "version": 1,
    "kind": "generic",
    "description": "The generic Report Background section",
+   "conditions": [
+    "C1"
+   ],
    "fields": [
     {
      "name": "text",
@@ -69,6 +85,16 @@
      "name": "the section is written",
      "from": "C1"
     }
+   ],
+   "render": [
+    {
+     "text": "{text}"
+    },
+    {
+     "each": "assumptions",
+     "line": "Assumption: {_}",
+     "after_body": true
+    }
    ]
   },
   {
@@ -78,6 +104,9 @@
    "version": 1,
    "kind": "generic",
    "description": "The generic Report Findings section",
+   "conditions": [
+    "C1"
+   ],
    "fields": [
     {
      "name": "text",
@@ -102,6 +131,16 @@
      "name": "the section is written",
      "from": "C1"
     }
+   ],
+   "render": [
+    {
+     "text": "{text}"
+    },
+    {
+     "each": "assumptions",
+     "line": "Assumption: {_}",
+     "after_body": true
+    }
    ]
   },
   {
@@ -111,6 +150,9 @@
    "version": 1,
    "kind": "generic",
    "description": "The generic Report Recommendations section",
+   "conditions": [
+    "C1"
+   ],
    "fields": [
     {
      "name": "text",
@@ -135,6 +177,16 @@
      "name": "the section is written",
      "from": "C1"
     }
+   ],
+   "render": [
+    {
+     "text": "{text}"
+    },
+    {
+     "each": "assumptions",
+     "line": "Assumption: {_}",
+     "after_body": true
+    }
    ]
   },
   {
@@ -144,6 +196,9 @@
    "version": 1,
    "kind": "generic",
    "description": "The generic Report Next steps section",
+   "conditions": [
+    "C1"
+   ],
    "fields": [
     {
      "name": "text",
@@ -167,6 +222,16 @@
      "path": "text",
      "name": "the section is written",
      "from": "C1"
+    }
+   ],
+   "render": [
+    {
+     "text": "{text}"
+    },
+    {
+     "each": "assumptions",
+     "line": "Assumption: {_}",
+     "after_body": true
     }
    ]
   }

@@ -36,6 +36,7 @@ J2_FIXES (default 0) picks the mode, so findings can compare the two:
 """
 import copy
 from functools import lru_cache, partial, reduce
+from typing import List
 import html
 import html.parser
 import itertools
@@ -9152,7 +9153,7 @@ class J2Run:
                     out["this"][key] = out["this"][key] + value
                 else:
                     out["this"][key] = value
-        for other in ("prd", "hld", "lld"):
+        for other in (n for n in j2_types.names() if not is_page(n)):      # every document type, in types.json order
             mine = {}
             for data in (self.art_data.get(other) or {}).values():
                 mine.update({k: v for k, v in (data or {}).items() if k != "assumptions"})
@@ -9319,6 +9320,12 @@ class J2Run:
                        "responsive_rules": ["Every button and field is big enough to tap on a phone."],
                        "accessibility_rules": ["Every field has a visible label."]},
                    }[section]()
+        elif self.doc:      # a document type made of data only: the scripted text of its section, as the template's fields
+            md = self.out["mock_section"](w, self.goal)
+            m = re.search(rf"^## {re.escape(section)}\n+(.*?)(?=^## |\Z)", md, re.S | re.M)
+            text = (m.group(1) if m else re.sub(r"^## .*\n", "", md, flags=re.M)).strip()
+            sec = {(f.alias or n): (text if f.annotation is str else [text]) for n, f in model.model_fields.items()
+                   if f.is_required() and f.annotation in (str, List[str])}
         else:      # a page section: the scripted markup this mock already writes, as data
             head, body = mock_section(w, self.goal, self.sections, self._lld_slice_for(w),
                                       [x["anchor"] for x in self.blueprint["sections"]

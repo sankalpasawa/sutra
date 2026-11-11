@@ -267,18 +267,22 @@ def load(name, path=None):
 
 
 def template_for(name, label, secs):
-    """A new document type's template library entry (templates/<name>/generic.json): one generic template per section,
-    its text required, its assumptions optional."""
+    """A new document type's template library entry (templates/<name>/generic.json), complete enough to build each
+    section's model and checks from: one generic template per section, its text required and its assumptions optional,
+    the rule that the text is written, and the lines the data is rendered as. It is the type's source from then on: a
+    person may edit its fields, rules and render lines."""
     return {"schema": "template-library/1", "artifact": name, "kind": "generic", "version": 1,
-            "from": "made by J2 for a new document type (j2_types.create)",
+            "from": "made by J2 for a new document type (j2_types.create); hand-edit it like any generic.json",
             "templates": [{"name": f"{label} · {x}", "artifact": name, "section": x, "version": 1, "kind": "generic",
-                           "description": f"The generic {label} {x} section",
+                           "description": f"The generic {label} {x} section", "conditions": ["C1"],
                            "fields": [{"name": "text", "type": "string", "required": True, "nullable": False,
                                        "description": f"the {x} section, in the charter's own facts"},
                                       {"name": "assumptions", "type": "list[string]", "required": False, "nullable": False,
                                        "description": "facts you had to assume, each one line"}],
                            "objects": [], "rules": [{"rule": "not_empty", "path": "text", "name": "the section is written",
-                                                     "from": "C1"}]} for x in secs]}
+                                                     "from": "C1"}],
+                           "render": [{"text": "{text}"},
+                                      {"each": "assumptions", "line": "Assumption: {_}", "after_body": True}]} for x in secs]}
 
 
 def create_problems(name, label, secs, file, path=None):
@@ -307,7 +311,7 @@ def create(name, label, secs, file=None, path=None):
     if bad:
         raise ValueError(f"new type {name}: " + "; ".join(bad))
     p = path or TYPES_PATH
-    text = open(p, encoding="utf-8").read()
+    text = before = open(p, encoding="utf-8").read()
     entry = {"name": name, "kind": "type", "label": str(label).strip(), "tag": str(label).strip(), "color": "--other",
              "form": "document", "template": f"templates/{name}/generic.json", "file": file, "deliverable": True, "triggers": [], "groups": [], "depends_on": [],
              "made_by": "adaptation"}
@@ -322,4 +326,12 @@ def create(name, label, secs, file=None, path=None):
     with open(p, "w", encoding="utf-8") as f:
         f.write(text)
     template.cache_clear()
+    import j2_template_lib      # here, not at the top: the template library reads this module
+    bad = j2_template_lib.generic_problems([name])
+    if bad:      # a template that doesn't check is never left behind: the type is taken back
+        with open(p, "w", encoding="utf-8") as f:
+            f.write(before)
+        os.remove(os.path.join(d, "generic.json"))
+        template.cache_clear()
+        raise ValueError(f"new type {name}: its template is not valid: " + "; ".join(bad))
     return entry
