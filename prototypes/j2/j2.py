@@ -1722,8 +1722,10 @@ def gap_list(gaps, title=None):
 
 
 def for_agents(m):
-    """Test notes are for humans; to_requester replies are for the Requester. Agents get neither."""
-    return not m.get("test") and not m.get("requester_only")
+    """Test notes are for humans; to_requester replies are for the Requester. Agents get neither. Nor a line that names a
+    run template or its section templates (J2_RUN_TEMPLATES=1, humans_only): those names hold the business the
+    template was first made for, which the agents of a new business must not read."""
+    return not m.get("test") and not m.get("requester_only") and not m.get("humans_only")
 
 
 NUMBER_ASK = re.compile(r"\b(?:number|target|metric|how many|how much|percent(?:age)?|rate)\b|%", re.I)
@@ -3058,7 +3060,7 @@ class J2Run:
         self.post("system", f"Using run template {t['name']}: {n} of {t['total']} workflows"
                   + (f" ({', '.join(t['added'])} added: the chosen workflows depend on "
                      f"{'it' if len(t['added']) == 1 else 'them'})" if t["added"] else "") + ".",
-                  run_template={"id": t["id"], "selected": t["selected"], "of": t["total"]})
+                  run_template={"id": t["id"], "selected": t["selected"], "of": t["total"]}, humans_only=True)
         self.save("templates.json", {"schema": j2_template_lib.SCHEMA, "library": j2_template_lib.lib_dir(),
                                      "decisions": self.tpl_decisions, **self._run_tpl_record()})
         try:
@@ -3157,7 +3159,7 @@ class J2Run:
                   + (f"; added for done-when items the template does not cover: {', '.join(map(str, added))}" if added else "")
                   + (f"; not selected, so not built: {', '.join(map(str, skipped))}" if skipped else "")
                   + (f"; the plan has no workflow for {', '.join(missing)}" if missing else "") + ".",
-                  **({"warning": True} if missing else {}))
+                  humans_only=True, **({"warning": True} if missing else {}))
         return keep
 
     def _run_tpl_partial_done(self):
@@ -3176,7 +3178,7 @@ class J2Run:
         built = ", ".join(w["id"] for w in self.workflows if w["status"] == "done")
         self.post("system", f"Run template {t['name']}: only some of its {self.out['noun']} workflows were selected, and "
                             f"they are built ({built}). The parts not selected are not written, so the {self.out['noun']} "
-                            "is not complete and Audit's open items for them stay open.")
+                            "is not complete and Audit's open items for them stay open.", humans_only=True)
         if self.stages and self._next_stage():
             return
         self.post("identity", f"The workflows you selected are built ({len(t['selected'])} of {t['total']} in the run "
@@ -7818,7 +7820,9 @@ class J2Run:
             art_tpl = self._route_template(w, art_kind, art_model.SECTION or art_sec)
             if art_tpl is not None:
                 art_sec = art_tpl.section
-                art_model = j2_template_lib.build_model(art_tpl)
+                # J2_RUN_TEMPLATES=1: agents read the template by its section, not by the name of its first business
+                art_model = j2_template_lib.build_model(art_tpl, **({"label": f"the {art_tpl.section} template v{art_tpl.version}"}
+                                                                    if self.run_tpl else {}))
                 art_sec_schema = j2_template_lib.transport(art_tpl)
         attempt, failed, evidence, prev_sig, early, spec_stop = 0, [], "", set(), None, None
         while True:
@@ -9177,7 +9181,8 @@ class J2Run:
                     self._event("system", "template_save", f"{wid}: {type(e).__name__}: {e}")
         self.save("templates.json", {"schema": j2_template_lib.SCHEMA, "library": j2_template_lib.lib_dir(),
                                      "decisions": self.tpl_decisions, **self._run_tpl_record()})
-        self.post("system", template_line(wid, rec) + (f"; run template workflow {first['key']}" + (f", adapted from {rec['adapted_from']}" if rec.get("adapted_from") else "") if first else ""), template_route={k: rec.get(k) for k in ("workflow", "atom", "action", "template",
+        self.post("system", template_line(wid, rec) + (f"; run template workflow {first['key']}" + (f", adapted from {rec['adapted_from']}" if rec.get("adapted_from") else "") if first else ""),
+                  **({"humans_only": True} if self.run_tpl else {}), template_route={k: rec.get(k) for k in ("workflow", "atom", "action", "template",
                                                                           "version", "score")})
         self.tpl_cur = {"template": t, "rec": rec, "need": need}
         return t
@@ -9264,6 +9269,8 @@ class J2Run:
 
     def _tpl_ref(self):
         rec = (self.tpl_cur or {}).get("rec") or {}
+        if self.run_tpl and rec.get("kind") == "specialised":      # J2_RUN_TEMPLATES=1: receipts reach agents, so the template goes by its section there (templates.json keeps its name)
+            return {**{k: rec.get(k) for k in ("version", "kind", "action")}, "template": f"the {rec.get('section')} template"}
         return {k: rec.get(k) for k in ("template", "version", "kind", "action")}
 
     # ---- J2_ARTIFACT_SCHEMA=1 (artifact-schema/1): the data a builder sends, and the three layers code runs on it
