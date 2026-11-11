@@ -3482,7 +3482,7 @@ function rtSummary(u){
   const name = u.in_library ? `<a href="/library?view=templates&rt=${encodeURIComponent(u.id)}" data-rtlink="1">${esc(u.name)}</a>` : esc(u.name);
   return `<div class="artrow tplcard" data-rtsum="1"><div><b>Started from run template</b> ${name}: ${esc(u.selected)} of ${esc(u.of)} workflows`
     + ((u.added_stages || []).length ? `; <span class="empty">added, not in template: ${u.added_stages.map(esc).join(", ")}</span>` : "") + `</div>`
-    + part("documents", "Documents") + part("website", "Website") + `<div data-rtgen="1"><b>Generator calls:</b> ${esc(u.generator_calls)}</div></div>`;
+    + part("documents", "Documents") + part("pages", "Website") + `<div data-rtgen="1"><b>Generator calls:</b> ${esc(u.generator_calls)}</div></div>`;
 }
 const rtCell = d => d.from_template === true ? `${esc(d.template_workflow || "")}${d.adapted_from ? ` <span class="empty">adapted from ${esc(d.adapted_from)}</span>` : ""}`
   : d.from_template === false ? '<span class="empty">added, not in template</span>' : "";
@@ -3648,7 +3648,7 @@ function rtPane(row){
 function rtUsedBy(t){      // the runs that started from this run template, each with its counts and a link to its Library tab
   const us = t.used_by || [], cell = (u, g) => u.counts && typeof u.counts === "object" ? (u.counts[g] ? reuseCounts(u.counts[g], g) : '<span class="empty">none</span>') : '<span class="empty">not recorded</span>';
   return `<div class="ablk tplcard" data-rtusedby="1"><h5>Used by (${us.length})</h5>` + (us.length ? `<table class="maptable"><thead><tr><th>Run</th><th>Workflows</th><th>Documents</th><th>Website</th></tr></thead><tbody>`
-    + us.map(u => `<tr data-rtrun="${esc(u.run)}"><td><a href="${runHref(u.run)}">${esc(u.run)}</a></td><td>${esc(u.workflows)} of ${esc(u.of)}</td><td>${cell(u, "documents")}</td><td>${cell(u, "website")}</td></tr>`).join("") + `</tbody></table>`
+    + us.map(u => `<tr data-rtrun="${esc(u.run)}"><td><a href="${runHref(u.run)}">${esc(u.run)}</a></td><td>${esc(u.workflows)} of ${esc(u.of)}</td><td>${cell(u, "documents")}</td><td>${cell(u, "pages")}</td></tr>`).join("") + `</tbody></table>`
     : '<p class="empty">No run has started from this run template yet.</p>') + `</div>`;
 }
 const rtHref = (id, keys) => `/?view=simple&template=${encodeURIComponent(id)}&workflows=${encodeURIComponent(keys)}`;      // the new-run brief box, with the template and the workflows in the address

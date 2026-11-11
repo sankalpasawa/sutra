@@ -835,7 +835,7 @@ def run_templates(run_dir):
 
 
 def reuse_counts(decisions):
-    """A run's routing decisions counted for the page: per group ("documents" for document types, "website" for page
+    """A run's routing decisions counted for the page: per group ("documents" for document types, "pages" for page
     types; anything else, the style guide for one, is left out), how many were created, adapted (the recorded action
     "extended"), reused and generic, the total, and how many came from a run template (None when no decision says)."""
     out = {}
@@ -843,7 +843,7 @@ def reuse_counts(decisions):
         a = d.get("artifact")
         if a not in j2_types.names():
             continue
-        g = out.setdefault("documents" if j2_types.info(a)["form"] == "document" else "website",
+        g = out.setdefault("documents" if j2_types.info(a)["form"] == "document" else "pages",
                            {"created": 0, "adapted": 0, "reused": 0, "generic": 0, "total": 0, "from_template": None})
         k = {"extended": "adapted"}.get(d.get("action"), d.get("action"))
         if k in ("created", "adapted", "reused", "generic"):

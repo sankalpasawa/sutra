@@ -13589,7 +13589,7 @@ def reuse_display():
     use = L.run_template_use(made)
     assert use == {"id": "no-such", "name": "A <i>name</i>", "selected": 2, "of": 9, "added_stages": ["website"], "in_library": False, "generator_calls": 2,
                    "counts": {"documents": {"created": 1, "adapted": 1, "reused": 1, "generic": 0, "total": 3, "from_template": 2},
-                              "website": {"created": 1, "adapted": 0, "reused": 0, "generic": 1, "total": 2, "from_template": 0}}}, use
+                              "pages": {"created": 1, "adapted": 0, "reused": 0, "generic": 1, "total": 2, "from_template": 0}}}, use
     json.dump({"decisions": ds}, open(os.path.join(made, "templates.json"), "w", encoding="utf-8"))
     assert L.run_template_use(made) is None and L.run_template_use(os.path.join(tmp, "none")) is None, "no run template, nothing to show"
     assert L.reuse_counts([{k: v for k, v in d.items() if k != "from_template"} for d in ds])["documents"]["from_template"] is None, "not recorded stays not recorded"
@@ -13602,7 +13602,7 @@ def reuse_display():
     first = next((u for u in (live or {}).get("used_by") or [] if u["run"] == "j2-20261111-211339"), None)
     if first:      # the two live runs of 2026-11-11, collected into library/
         assert {k: first["counts"]["documents"][k] for k in ("created", "adapted", "reused", "generic")} == {"created": 0, "adapted": 24, "reused": 3, "generic": 0}, first
-        assert {k: first["counts"]["website"][k] for k in ("created", "adapted", "reused", "generic")} == {"created": 1, "adapted": 0, "reused": 0, "generic": 4}, first
+        assert {k: first["counts"]["pages"][k] for k in ("created", "adapted", "reused", "generic")} == {"created": 1, "adapted": 0, "reused": 0, "generic": 4}, first
     page = "skipped (Chrome not found, or --fast without --browser)"
     if not (BROWSER and j2.j2_check.find_chrome()):
         shutil.rmtree(tmp, ignore_errors=True)
@@ -13686,7 +13686,7 @@ def reuse_display():
             u2, r2 = shown(saved)
             assert "Still Point Yoga: PRD, HLD and LLD" in r2["sum"] and "17 of 17 workflows" in r2["sum"] and "added, not in template: website" in r2["sum"], r2["sum"]
             assert [r2["pills"][f"documents-{k}"][0] for k in ("created", "adapted", "reused")] == ["0 created", "24 adapted", "3 reused"], r2["pills"]
-            assert [r2["pills"][f"website-{k}"][0] for k in ("created", "generic")] == ["1 created", "4 generic"] and "added, not in template" in r2["groups"]["website"], r2["pills"]
+            assert [r2["pills"][f"pages-{k}"][0] for k in ("created", "generic")] == ["1 created", "4 generic"] and "added, not in template" in r2["groups"]["pages"], r2["pills"]
             assert "27 of 27 from the template" in r2["groups"]["documents"] and r2["gen"] == "Generator calls: 8", (r2["groups"], r2["gen"])
             assert r2["cells"].count("added, not in template") == 5 and "" in r2["cells"], "the five website rows; the style guide row says nothing"
             live_note = "j2-20261111-211339: 0 created, 24 adapted, 3 reused for the documents, 1 created and 4 generic for the website (added, not in template), 8 generator calls"
