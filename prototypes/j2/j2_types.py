@@ -8,7 +8,6 @@ A type that fails a check is refused with the reason (ValueError): a run never h
 import json
 import os
 import re
-from functools import lru_cache
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 TYPES_PATH = os.path.join(HERE, "artifacts", "types.json")
@@ -26,17 +25,73 @@ TEMPLATES_DIR = os.path.join(HERE, "templates")
 NAME_RE = re.compile(r"^[a-z][a-z0-9_]{1,40}$")
 
 
-@lru_cache(maxsize=None)
+def template_path(name, path=None):
+    """Where a type's template file is: artifacts/types.json points to it (templates/<name>/generic.json when it doesn't)."""
+    e = next((t for t in _read_types(path)["types"] if t.get("name") == name), {})
+    rel = e.get("template") or f"templates/{name}/generic.json"
+    return os.path.join(TEMPLATES_DIR, os.path.relpath(rel, "templates"))
+
+
+_TEMPLATES = {}
+
+
+def template_file(name):
+    """Every template of a type's generic.json, in file order, the document-level one included; () when the type has no
+    generic.json. The file is the hand-edited source of the type's sections, fields, rules and rendering: it is read
+    again only when it changed, so the entries stay the same objects until then (what is built from them is kept by them)."""
+    p = template_path(str(name or ""))
+    try:
+        st = os.stat(p)
+    except OSError:
+        return ()
+    key = (p, st.st_mtime_ns, st.st_size)
+    if key not in _TEMPLATES:
+        for k in [k for k in _TEMPLATES if k[0] == p]:
+            del _TEMPLATES[k]
+        try:
+            with open(p, encoding="utf-8") as f:
+                _TEMPLATES[key] = tuple(json.load(f)["templates"])
+        except (ValueError, KeyError, TypeError) as e:      # a hand edit that broke the file is named, with the file
+            raise ValueError(f"{p} is not a readable generic.json ({type(e).__name__}: {e})") from None
+    return _TEMPLATES[key]
+
+
 def template(name):
     """The section templates of a type's template library entry (templates/<name>/generic.json), in document order;
     the document-level template left out. () when the type has no generic.json."""
-    e = next((t for t in _read_types()["types"] if t.get("name") == name), {})      # types.json points to it
-    rel = e.get("template") or f"templates/{name}/generic.json"
-    p = os.path.join(TEMPLATES_DIR, os.path.relpath(rel, "templates"))
-    if not os.path.isfile(p):
-        return ()
-    with open(p, encoding="utf-8") as f:
-        return tuple(t for t in json.load(f)["templates"] if t.get("section") != DOCUMENT)
+    return tuple(t for t in template_file(name) if t.get("section") != DOCUMENT)
+
+
+template.cache_clear = _TEMPLATES.clear      # what a test calls after it points TEMPLATES_DIR at a copy
+
+
+def section_template(name, section):
+    """One section's template, by its exact name (None when the type has no such section)."""
+    return next((t for t in template(name) if t.get("section") == section), None)
+
+
+def document(name):
+    """The document-level template of a type (the whole document as one object), or None when its file has none."""
+    return next((t for t in template_file(name) if t.get("section") == DOCUMENT), None)
+
+
+def style_guide(path=None):
+    """The template a page's first builder fills for the style guide (the page form's "style_guide" in types.json)."""
+    return (_read_types(path).get("forms") or {}).get("page", {}).get("style_guide")
+
+
+def templated(path=None):
+    """Every name with a template file, in types.json order: each output type, and before the first type of a form the
+    style guide that form names. These are the artifacts the template library knows."""
+    d, out = _read_types(path), []
+    for t in d["types"]:
+        if t.get("kind") != "type":
+            continue
+        guide = ((d.get("forms") or {}).get(t.get("form")) or {}).get("style_guide")
+        for n in ([guide] if guide else []) + [t["name"]]:
+            if n not in out and os.path.isfile(template_path(n, path)):
+                out.append(n)
+    return out
 
 
 def sections(name):
@@ -92,6 +147,11 @@ def _read_types(path=None):
             _CACHE.clear()
             _CACHE[key] = json.load(f)
     return _CACHE[key]
+
+
+def entries(path=None):
+    """Every entry of types.json, output types and records, in file order."""
+    return list(_read_types(path)["types"])
 
 
 def names(path=None):
