@@ -606,12 +606,13 @@ def _obj_order(t):
     return AM.obj_order(t.objects)
 
 
-def build_model(t):
+def build_model(t, label=None):
     """The runtime class of a template, from its spec with pydantic.create_model (kept by content). model.py is never
-    imported for this."""
+    imported for this. label: what the builder and the receipts call it instead of its own name (a run template's
+    section template is named after the business it was first made for)."""
     if isinstance(t, dict):
         t = (SpecialisedTemplate if t.get("kind") == "specialised" else GenericTemplate).model_validate(t)
-    label = f"{t.name} v{t.version}"
+    label = label or f"{t.name} v{t.version}"
     return AM.build_class(class_name(t), label, t.section, t.fields, t.objects, optional=_optional_names(t), template=label)
 
 
@@ -1264,7 +1265,10 @@ def route(need, ctx, ask=None, first=None):
             if not bad:
                 break
         if not bad:
-            t, _, _ = store(SpecialisedTemplate.model_validate(data))
+            t, _, made = store(SpecialisedTemplate.model_validate(data))
+            if not made:      # an earlier run of this business already made this version
+                return done(t, "reused", score, f"adapted from {ref} before: version {t.version} already holds this "
+                                                "business's facts", rule="t", adapted_from=ref)
             return done(t, "extended", score, f"adapted from {ref}: the same section template, with this business's "
                                               "facts in place of the earlier ones", rule="t", adapted_from=ref)
         base["first_refused"] = "; ".join(bad)[:300]      # the adapted spec failed the checks: the usual routing
@@ -1838,7 +1842,7 @@ def _noun(business_type):
 
 
 def run_slots(run_dir):
-    """[(recorded text, slot name)] of one run, longest text first: every fact its charter and stage charters hold
+    """[(recorded text, slot name)] of one run, the name first, then in charter order: every fact its charter and stage charters hold
     (goal.json, stage-*.json), named by what kind of fact it is. The names are code's; the values never leave here."""
     goals = [_read(os.path.join(run_dir, "goal.json")) or {}]
     for n in sorted(os.listdir(run_dir)) if os.path.isdir(run_dir) else []:
@@ -1874,14 +1878,13 @@ def run_slots(run_dir):
                 add(f, "phone number")
             elif len(f.split()) <= 3 or (re.search(r"\d", f) and len(f.split()) <= 6):
                 add(f, "other facts")      # a short value of no known kind; a sentence is a statement, kept as words
-    out.sort(key=lambda x: -len(x[0]))
     return out
 
 
 def slotted(text, slots):
     """A recorded text with every recorded fact replaced by its slot, and a run's own id lists by theirs."""
     t = str(text or "")
-    for value, slot in slots:
+    for value, slot in sorted(slots, key=lambda x: -len(x[0])):      # the longest first: a fact inside another is not cut
         t = re.sub(re.escape(value), f"<{slot}>", t, flags=re.I)
     t = EMAIL_RE.sub("<email address>", t)
     t = PIN_RE.sub("<address>", t)

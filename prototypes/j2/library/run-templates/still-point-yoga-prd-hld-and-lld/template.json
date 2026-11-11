@@ -305,10 +305,10 @@
     }
   ],
   "facts_slots": [
+    "studio name",
     "address",
     "class list",
-    "email address",
-    "studio name"
+    "email address"
   ],
   "made_by": {
     "run": "j2-20261103-184249",

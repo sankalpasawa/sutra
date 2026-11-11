@@ -383,8 +383,8 @@
     }
   ],
   "facts_slots": [
-    "email address",
-    "business name"
+    "business name",
+    "email address"
   ],
   "made_by": {
     "run": "j2-20261103-161111-3",

@@ -1006,7 +1006,7 @@ svg path[data-edge].hot,svg.focusing path[data-edge].lit{opacity:1!important;str
 .libviews [role=tab]{border:1px solid var(--line);background:var(--panel);color:var(--ink);border-radius:8px;padding:3px 10px;font:inherit;cursor:pointer}.libviews [aria-selected="true"]{font-weight:700;border-color:var(--ink)}
 .librun{border:1px solid var(--line);border-radius:10px;padding:6px 12px;margin:8px 0;background:var(--panel)}.librun>summary{cursor:pointer}.librun .libgroup{margin:4px 0 4px 12px}.librun .libgroup b{display:inline-block;min-width:70px}
 .libbadge{border:1px solid var(--line);border-radius:10px;padding:0 8px;font-size:12px}.libbadge.mock{color:var(--validator);border-color:var(--validator)}.libbadge.live{color:var(--ok);border-color:var(--ok)}
-.rtuse{display:flex;flex-wrap:wrap;gap:8px 10px;align-items:center;margin:10px 0 4px}.rtuse .ghost{cursor:pointer;font:inherit}.rtuse .ghost.rtmain{border-color:var(--ink);font-weight:700}.rtuse .ghost:disabled{opacity:.5;cursor:not-allowed}
+.rtuse{display:flex;flex-wrap:wrap;gap:8px 10px;align-items:center;margin:10px 0 4px}.rtuse .ghost{cursor:pointer;font:inherit;text-decoration:none;display:inline-block}.rtuse .ghost.rtmain{border-color:var(--ink);font-weight:700}.rtuse .ghost[aria-disabled=true]{opacity:.5;cursor:not-allowed}
 .rtslots{margin:6px 0}.rtnote{font-size:12.5px;color:var(--muted);margin:2px 0 8px;min-height:1.2em}.rttable td:first-child{width:28px}.rttable th{white-space:nowrap}.rttable td:nth-child(4){min-width:120px}.rttable .linkbtn{text-align:left}.rttable tr.rtauto td{background:color-mix(in srgb,var(--line) 35%,transparent)}.rttable .mono{white-space:nowrap}
 #sview .srt{display:flex;flex-wrap:wrap;gap:6px 10px;align-items:center;margin:0 0 10px;padding:8px 12px;border:1px solid var(--s-line);border-radius:12px;background:var(--s-surface2);color:var(--s-ink);font-size:13.5px}#sview .srt[hidden]{display:none}#sview .srt small{color:var(--s-muted);flex-basis:100%}#sview .srt button{border:0;background:none;color:var(--s-muted);font:inherit;cursor:pointer;margin-left:auto}
 .tplmeta{margin:6px 0 8px;font-size:13px;color:var(--muted)}.tplmeta div{margin:2px 0}.tplmeta b{color:var(--ink)}.tplline{font-size:12.5px;color:var(--muted)}.tplline .code{color:var(--ink)}
@@ -3621,13 +3621,13 @@ function rtPane(row){
   return `<h2 data-rtname="1">${esc(t.name)}</h2><div class="aby">${esc(t.business_type)} · ${(t.stages || []).map(k => esc(rtStage(t, k))).join(", ")} · ${plural(wfs.length, "workflow")} ${libBadge(t.mock)} · made from <a href="${runHref(t.made_from_run)}">${esc(t.made_from_run)}</a></div>`
     + `<p class="empty">${esc(t.description || "")}</p>`
     + `<div class="rtslots">A new run is asked for: ${(t.facts_slots || []).map(x => `<span class="mappill">${esc(x)}</span>`).join(" ") || '<span class="empty">no facts recorded</span>'}</div>`
-    + `<div class="rtuse"><button type="button" class="ghost rtmain" data-rtuse="all">Use whole template</button><button type="button" class="ghost" data-rtuse="sel"${want.length ? "" : " disabled"}>Use selected workflows</button></div><div class="rtnote" data-rtnote="1">${note}</div>` + stages;
+    + `<div class="rtuse"><a class="ghost rtmain" data-rtuse="all" href="${esc(rtHref(t.id, "all"))}">Use whole template</a>`
+    + (want.length ? `<a class="ghost" data-rtuse="sel" href="${esc(rtHref(t.id, pick.chosen.join(",")))}">Use selected workflows</a>` : `<a class="ghost" data-rtuse="sel" role="link" aria-disabled="true">Use selected workflows</a>`)
+    + `</div><div class="rtnote" data-rtnote="1">${note}</div>` + stages;
 }
-async function rtUse(id, mode){      // both buttons open the new-run brief box with the template (and the workflows) in the address
-  const t = RTP.data[id]; if (!t || !t.workflows) return;
-  const keys = mode === "all" ? "all" : rtDeps(t.workflows, RTP.picked[id] || []).chosen.join(",");
-  if (!keys) return;
-  const go = `/?view=simple&template=${encodeURIComponent(id)}&workflows=${encodeURIComponent(keys)}`;
+const rtHref = (id, keys) => `/?view=simple&template=${encodeURIComponent(id)}&workflows=${encodeURIComponent(keys)}`;      // the new-run brief box, with the template and the workflows in the address
+async function rtUse(go){      // both buttons open the brief box; a live run that has started is put away first (it stays in Recent work), a running one is left alone
+  if (!go) return;
   try { const s = await (await fetch("/api/state?since=0", {cache: "no-store"})).json(), started = !!(s.chat || s.allChat || []).length;
     if (s.status === "running"){ const n = document.querySelector("[data-rtnote]"); if (n) n.textContent = "The team is working on a run. Start from this template when they pause or finish."; return; }
     if (started){ if (!confirm("Start a new project from this template? The current one stays in Recent work.")) return; await fetch("/api/reset", {method: "POST"}); } } catch (e) {}
@@ -3660,7 +3660,7 @@ async function loadCatalog(){
   $("pane-catalog").addEventListener("click", e => {
     const b = e.target.closest("[data-catview]"); if (b){ CAT.view = b.dataset.catview; LIB.open = LIB.view = null; $("pane-catalog").querySelectorAll("[data-catview]").forEach(x => x.setAttribute("aria-selected", String(x === b))); return paint($("catbody"), renderCatBody()); }
     const row = e.target.closest("[data-catrow]"); if (row){ const [k, ...rest] = row.dataset.catrow.split("|"); CAT.sel[k] = rest.join("|"); LIB.open = LIB.view = null; return paint($("catbody"), renderCatBody()); }
-    const use = e.target.closest("[data-rtuse]"); if (use){ const cur = rtCur(); if (cur) rtUse(cur.id, use.dataset.rtuse); return; }
+    const use = e.target.closest("[data-rtuse]"); if (use){ e.preventDefault(); if (use.getAttribute("aria-disabled") !== "true") rtUse(use.getAttribute("href")); return; }
     libClick(e); });
   $("pane-catalog").addEventListener("change", e => { const c = e.target.closest("[data-rtpick]"), cur = rtCur(); if (!c || !cur) return;
     const had = new Set(RTP.picked[cur.id] || []); if (c.checked) had.add(c.dataset.rtpick); else had.delete(c.dataset.rtpick);
