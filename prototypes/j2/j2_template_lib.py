@@ -1174,9 +1174,43 @@ def _prompt(need, gen, cands, hint, refused):
             + (f"\nYOUR LAST REPLY WAS REFUSED: {refused}. Fix that." if refused else ""))
 
 
-def route(need, ctx, ask=None):
+def adapt(gen, need, base, extras=True):
+    """The spec of a run template's section template made over for another business (route's first=): the generic
+    fields in this business's words with facts_used narrowed to ITS facts, the fields its own facts name, and the
+    fields the template added that hold no fact (no enum, described anew). Nothing of the template's first business is
+    carried: none of its facts, enums or descriptions. Deterministic, so no generator call and never a new template."""
+    spec = specialise(gen, need, name=base.name)
+    have = {f["name"] for f in spec["fields"]}
+    objs = {o.name: o for o in base.objects}
+    onames = {o["name"] for o in spec["objects"]}
+    plain = lambda fs: all(not f.enum for f in fs)
+    gnames = {f.name for f in gen.fields}
+    for f in base.fields if extras else []:
+        if f.name in have or f.name in gnames or f.enum:
+            continue
+        kind, obj = AM.parse_type(f.type)
+        if obj and (obj not in objs or not plain(objs[obj].fields)):
+            continue
+        g = f.model_copy(deep=True)
+        g.description = f"the {f.name.replace('_', ' ')} of {need['site']}'s {need['section']}"
+        spec["fields"].append(g.model_dump())
+        have.add(f.name)
+        if obj and obj not in onames:
+            o = objs[obj].model_copy(deep=True)
+            for x in o.fields:
+                x.description = f"the {x.name.replace('_', ' ')}"
+            spec["objects"].append(o.model_dump())
+            onames.add(obj)
+    spec["description"] = spec["description"] + f"; adapted from version {base.version} of this template"
+    return spec
+
+
+def route(need, ctx, ask=None, first=None):
     """Pick the template one workflow's builder fills. ctx: {run, workflow, atom, agent}. ask(system, user, mock,
-    schema) is the generator's one LLM call (None: the mock). Returns (template or None for generic, decision)."""
+    schema) is the generator's one LLM call (None: the mock). Returns (template or None for generic, decision).
+    first ({"template": "name@version"}, a run template's section template for this workflow) is the FIRST candidate:
+    the same facts and fields reuse it as it is; other facts make a new version of that same template (adapt, action
+    "extended" with adapted_from); a new template is never created while it exists."""
     gen = generic(need["artifact"], need["section"])
     cands = candidates(need)
     top = cands[0] if cands else None
@@ -1211,6 +1245,29 @@ def route(need, ctx, ask=None):
     # nothing to specialise: no facts and no extra fields -> the generic template, never a specialised one
     if not need["facts"] and not need["fields"]:
         return done(None, "generic", None, NOTHING_TO_SPECIALISE, rule="0")
+    t0 = get(first.get("template"), need["artifact"], need["section"]) if first else None
+    if t0 is not None:      # the run template's own section template comes first
+        ref = f"{t0.name}@{t0.version}"
+        row = {"facts": t0.context.facts_used, "fields": [f.name for f in t0.fields], "enums": _enums(t0)}
+        score = coverage(need, row)[0]
+        if set(need["facts"]) <= set(t0.context.facts_used) and all(has_field(need, row, n) for n in need["fields"]):
+            return done(t0, "reused", score, f"the run template's section template {ref}, as it is: the same facts "
+                                             "and fields", rule="t")
+        for extras in (True, False):      # with the fields the template added; if those fail the checks, without them
+            data = {**adapt(gen, need, t0, extras), "artifact": need["artifact"], "section": need["section"],
+                    "kind": "specialised", "extends": generic_ref(need["artifact"], need["section"]),
+                    "made_by": {"run": str(ctx.get("run") or ""), "workflow": str(ctx.get("workflow") or ""),
+                                "atom": str(ctx.get("atom") or ""), "agent": "code (adapted from a run template)"},
+                    "context": {"business_type": need["business_type"], "facts_used": list(need["facts"]),
+                                "fingerprint": need["fingerprint"]}}
+            bad = refusal(data)
+            if not bad:
+                break
+        if not bad:
+            t, _, _ = store(SpecialisedTemplate.model_validate(data))
+            return done(t, "extended", score, f"adapted from {ref}: the same section template, with this business's "
+                                              "facts in place of the earlier ones", rule="t", adapted_from=ref)
+        base["first_refused"] = "; ".join(bad)[:300]      # the adapted spec failed the checks: the usual routing
     # a) the same fingerprint, and the template has every needed field (with the needed values): this version
     hit = next((c for c in cands if c["fingerprint_match"] and c["has_fields"]), None)
     if hit:
@@ -1721,6 +1778,7 @@ class RunTemplateWorkflow(BaseModel):
     depends_on: List[str] = Field(default_factory=list)
     covers: List[str] = Field(default_factory=list)
     made_from: str = ""      # the workflow's id in the run it was made from
+    fix: bool = False        # it fixed an Audit finding of that run: not planned work, used again only if the finding comes back
 
 
 class RunTemplate(BaseModel):
@@ -1905,7 +1963,7 @@ def run_template_from_run(run_dir, name=None, description=None):
         rows.append({"key": key_of[w["id"]], "name": slotted(w.get("name"), slots), "stage": stage, "artifact": artifact,
                      "section": section, "section_template": ref, "section_template_kind": kind,
                      "depends_on": [], "covers": list(dict.fromkeys(slotted(c, slots) for c in w.get("covers_text") or [])),
-                     "made_from": w["id"], "_deps": [str(x) for x in w.get("dependencies") or []]})
+                     "made_from": w["id"], "fix": bool(w.get("fixes")), "_deps": [str(x) for x in w.get("dependencies") or []]})
     if not rows:
         raise ValueError(f"{rid}: no workflow finished, so there is nothing to bundle")
     stages = list(dict.fromkeys(r["stage"] for r in rows))

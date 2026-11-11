@@ -24,7 +24,8 @@
       "covers": [
         "Problem section states that <studio name> at <address> needs a page showing its classes and taking booking requests"
       ],
-      "made_from": "W-1"
+      "made_from": "W-1",
+      "fix": false
     },
     {
       "key": "W-2",
@@ -40,7 +41,8 @@
       "covers": [
         "Users section names the visitors who want to book a class and the studio team who receive bookings, with what each does"
       ],
-      "made_from": "W-2"
+      "made_from": "W-2",
+      "fix": false
     },
     {
       "key": "W-3",
@@ -56,7 +58,8 @@
       "covers": [
         "Goals section states that visitors can see the classes and send a booking, with no numeric target"
       ],
-      "made_from": "W-3"
+      "made_from": "W-3",
+      "fix": false
     },
     {
       "key": "W-4",
@@ -76,7 +79,8 @@
         "Requirements section states that payment is made at the studio and no online payment is taken",
         "Requirements section states that the page works on phones"
       ],
-      "made_from": "W-4"
+      "made_from": "W-4",
+      "fix": false
     },
     {
       "key": "W-5",
@@ -92,7 +96,8 @@
       "covers": [
         "Success metrics section states that success is that visitors can see the classes and send a booking, with no number"
       ],
-      "made_from": "W-5"
+      "made_from": "W-5",
+      "fix": false
     },
     {
       "key": "W-6",
@@ -109,7 +114,8 @@
         "Out of scope section lists teacher names, a phone number, an embedded map and online payment",
         "The document contains no detail beyond the brief and the answers"
       ],
-      "made_from": "W-6"
+      "made_from": "W-6",
+      "fix": false
     },
     {
       "key": "W-7",
@@ -123,7 +129,8 @@
       "covers": [
         "The Purpose and scope section is written for <studio name>"
       ],
-      "made_from": "W-8"
+      "made_from": "W-8",
+      "fix": false
     },
     {
       "key": "W-8",
@@ -139,7 +146,8 @@
       "covers": [
         "The Pages section is written for <studio name>"
       ],
-      "made_from": "W-9"
+      "made_from": "W-9",
+      "fix": false
     },
     {
       "key": "W-9",
@@ -156,7 +164,8 @@
       "covers": [
         "The Components section is written for <studio name>, and names every requirement (<requirement ids>) it covers"
       ],
-      "made_from": "W-10"
+      "made_from": "W-10",
+      "fix": false
     },
     {
       "key": "W-10",
@@ -172,7 +181,8 @@
       "covers": [
         "The Data flow section is written for <studio name>"
       ],
-      "made_from": "W-11"
+      "made_from": "W-11",
+      "fix": false
     },
     {
       "key": "W-11",
@@ -188,7 +198,8 @@
       "covers": [
         "The Hosting and deployment section is written for <studio name>"
       ],
-      "made_from": "W-12"
+      "made_from": "W-12",
+      "fix": false
     },
     {
       "key": "W-12",
@@ -204,7 +215,8 @@
       "covers": [
         "The Risks section is written for <studio name>"
       ],
-      "made_from": "W-13"
+      "made_from": "W-13",
+      "fix": false
     },
     {
       "key": "W-13",
@@ -220,7 +232,8 @@
       "covers": [
         "The Pages and sections section is written for <studio name>, and names every component (<component ids>) it implements"
       ],
-      "made_from": "W-19"
+      "made_from": "W-19",
+      "fix": false
     },
     {
       "key": "W-14",
@@ -236,7 +249,8 @@
       "covers": [
         "The Interactive elements section is written for <studio name>"
       ],
-      "made_from": "W-20"
+      "made_from": "W-20",
+      "fix": false
     },
     {
       "key": "W-15",
@@ -252,7 +266,8 @@
       "covers": [
         "The Form fields section is written for <studio name>"
       ],
-      "made_from": "W-21"
+      "made_from": "W-21",
+      "fix": false
     },
     {
       "key": "W-16",
@@ -268,7 +283,8 @@
       "covers": [
         "The File structure section is written for <studio name>"
       ],
-      "made_from": "W-22"
+      "made_from": "W-22",
+      "fix": false
     },
     {
       "key": "W-17",
@@ -284,7 +300,8 @@
       "covers": [
         "The Responsive and accessibility rules section is written for <studio name>"
       ],
-      "made_from": "W-23"
+      "made_from": "W-23",
+      "fix": false
     }
   ],
   "facts_slots": [

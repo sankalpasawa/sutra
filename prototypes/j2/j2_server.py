@@ -308,6 +308,8 @@ class Handler(http.server.BaseHTTPRequestHandler):
             text = (body.get("text") or "").strip()
             if not text:
                 return self._send(400, '{"error": "empty"}')
+            if body.get("template"):      # a new run from a run template (J2_RUN_TEMPLATES=1; ignored once the run has started)
+                RUN.set_run_template(str(body["template"]), body.get("workflows"))
             ok = RUN.user_says(text)
             return self._send(200 if ok else 409, json.dumps({"ok": ok}))
         if self.path == "/api/ask":              # a question to one function about a run, answered from its records (live or saved); nothing is written

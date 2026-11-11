@@ -22,7 +22,8 @@
       "covers": [
         "Visitors can browse products by category"
       ],
-      "made_from": "W-1"
+      "made_from": "W-1",
+      "fix": false
     },
     {
       "key": "W-2",
@@ -36,7 +37,8 @@
       "covers": [
         "Every product shows its id and price"
       ],
-      "made_from": "W-2"
+      "made_from": "W-2",
+      "fix": false
     },
     {
       "key": "W-3",
@@ -50,7 +52,8 @@
       "covers": [
         "Every product has an order button that opens a WhatsApp link with the product id and price"
       ],
-      "made_from": "W-3"
+      "made_from": "W-3",
+      "fix": false
     },
     {
       "key": "W-4",
@@ -64,7 +67,8 @@
       "covers": [
         "Visitors can filter products by size and price"
       ],
-      "made_from": "W-4"
+      "made_from": "W-4",
+      "fix": false
     },
     {
       "key": "W-5",
@@ -76,7 +80,8 @@
       "section_template_kind": "generic",
       "depends_on": [],
       "covers": [],
-      "made_from": "W-5"
+      "made_from": "W-5",
+      "fix": true
     }
   ],
   "facts_slots": [

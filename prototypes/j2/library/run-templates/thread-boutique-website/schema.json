@@ -56,6 +56,11 @@
           "default": "",
           "title": "Made From",
           "type": "string"
+        },
+        "fix": {
+          "default": false,
+          "title": "Fix",
+          "type": "boolean"
         }
       },
       "required": [
