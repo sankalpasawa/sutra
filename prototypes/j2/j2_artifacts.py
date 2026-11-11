@@ -21,9 +21,9 @@ MAX_BYTES = 2_000_000
 
 
 def load_types():
-    import j2_types      # its TYPES_PATH: a test may point it at a copy
-    with open(j2_types.TYPES_PATH, encoding="utf-8") as f:
-        d = json.load(f)
+    import copy
+    import j2_types      # its TYPES_PATH and LOCAL_TYPES_PATH: a test may point them at copies
+    d = copy.deepcopy(j2_types._read_types())      # types.json and the local types runs made
     forms = d.get("forms") or {}
     for t in d["types"]:      # a type made from its form (a new document type) takes the form's workflow
         f = (forms.get(t.get("form")) or {}).get("workflow")
