@@ -8188,12 +8188,20 @@ def doc_unchanged():
     briefs = (("prd", "Write a PRD for Campus Notes." + CAMPUS, 200), ("design docs", "Design docs for Campus Notes." + CAMPUS, 400),
               ("docs then site", DESIGN_BRIEF, 900))
     got = {}
-    for key, brief, budget in briefs:
-        d = digest(docs_run(brief, budget))
-        assert d["calls"] and d["outcome"].startswith("Done") and d["files"], (key, d["outcome"])
-        got[key] = hashlib.sha256(json.dumps(d, sort_keys=True).encode("utf-8")).hexdigest()[:12]
-        print(f"document run as recorded ({key}): {', '.join(d['docs'])}, {len(d['calls'])} calls, every prompt, the workflows, "
-              f"{len(d['files'])} document files, spend and outcome")
+    # the golden is the --fast one: with --browser the site stage ran the real render check, whose Chrome measurements
+    # reach the prompts, so "docs then site" differed on every machine; the runs here always use the fast fakes
+    C = j2.j2_check
+    keep = C.check, C.find_chrome, C.behavior, C.tap_targets
+    C.check, C.find_chrome, C.behavior, C.tap_targets = fake_check, (lambda: None), fake_behavior, fake_tap_targets
+    try:
+        for key, brief, budget in briefs:
+            d = digest(docs_run(brief, budget))
+            assert d["calls"] and d["outcome"].startswith("Done") and d["files"], (key, d["outcome"])
+            got[key] = hashlib.sha256(json.dumps(d, sort_keys=True).encode("utf-8")).hexdigest()[:12]
+            print(f"document run as recorded ({key}): {', '.join(d['docs'])}, {len(d['calls'])} calls, every prompt, the workflows, "
+                  f"{len(d['files'])} document files, spend and outcome")
+    finally:
+        C.check, C.find_chrome, C.behavior, C.tap_targets = keep
     assert got == DOC_RUN_GOLDEN, ("document runs changed", got)
 
 
