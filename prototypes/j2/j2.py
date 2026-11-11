@@ -2967,6 +2967,8 @@ def output_info(out, run_dir, audits, docset=None, page=None):
 def saved_def(kind, d):
     """output_def(kind); for a type the store no longer has (j2_types.recorded), what run folder d recorded of it: its
     label, its file, and its file's headings as its sections (its label when the file has none), no rubric."""
+    if kind is None:      # a run saved before its type was chosen (it stopped first): nothing to show of a type
+        return {"label": None, "file": None, "sections": (), "rubric": ()}
     r = j2_types.recorded(d).get(kind)
     if not r:
         return output_def(kind)

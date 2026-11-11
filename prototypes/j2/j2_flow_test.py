@@ -8302,6 +8302,14 @@ def types_constants():
           "artifacts/types.json ok")
 
 
+def saved_run_no_type():
+    """A run saved before its type was chosen (it stopped first) still opens: no type, no sections, no rubric."""
+    d = tempfile.mkdtemp(prefix="j2-notype-")
+    assert j2.saved_def(None, d) == {"label": None, "file": None, "sections": (), "rubric": ()}
+    shutil.rmtree(d, ignore_errors=True)
+    print("saved run with no type: opens with no type, sections or rubric ok")
+
+
 def doc_unchanged():
     """The document golden (the behaviour since step D): mock runs of a PRD, the design docs (PRD, HLD, LLD) and the design
     docs with the site after them (the LLD as the site's blueprint) give the recorded model calls (agent, system prompt,
@@ -13164,6 +13172,7 @@ if __name__ == "__main__":
             doc_planner_real()          # step 3c: realistic planner answers for documents
             forms_and_new_types()       # phase C: forms, and new types made on the fly
             report_type()               # step D: a type made of data only
+            saved_run_no_type()         # a run saved before its type was chosen
             local_types()               # types runs make are local; --promote moves one into types.json
             recommended_practice()      # labelled good practice, allowed by a type's data
             fix_sections()              # a document fix names its sections
