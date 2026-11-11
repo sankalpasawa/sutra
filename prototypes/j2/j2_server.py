@@ -90,6 +90,9 @@ class Handler(http.server.BaseHTTPRequestHandler):
             return self._send(200, json.dumps(run_list(), ensure_ascii=False))
         if u.path == "/api/runs":
             return self._send(200, json.dumps({"live": os.path.basename(RUN.dir), "runs": j2.list_runs()}))
+        if u.path == "/api/timing":     # Run settings' "Time per step": timing.json (live: built now)
+            t = j2.saved_timing(j2.saved_dir(run)) if run else RUN.timing()
+            return self._send(200, json.dumps(t, ensure_ascii=False)) if t else self._send(404, '{"error": "no timing"}')
         if u.path == "/api/call":       # one AI call in full, for the detail view's "full text" toggle
             d = j2.saved_dir(run) if run else RUN.dir
             rec = j2.call_record(d, int(q.get("id", "0") or 0))
@@ -138,7 +141,7 @@ class Handler(http.server.BaseHTTPRequestHandler):
             d = j2.saved_dir(run) if run else RUN.dir
             live = None
             if not run and RUN.status == "running" or (not run and RUN.paused):
-                live = {"snapshot": RUN.snapshot(), "stages": list(RUN.stages), "stage_words": j2.J2Run.STAGE_WORDS,
+                live = {"snapshot": RUN.snapshot(), "stages": list(RUN.stages), "stage_words": j2.J2Run.stage_words(),
                         "board": RUN.board}
             return self._send(200, json.dumps(j2_map.build(d if d and os.path.isdir(d) else None, live), ensure_ascii=False))
         if u.path == "/api/plan":       # the Workflows tab: the stages the Strategist chose and the replans (realization.json)
@@ -153,7 +156,7 @@ class Handler(http.server.BaseHTTPRequestHandler):
             return self._send(200, json.dumps(j2_template_lib.catalog_view(), ensure_ascii=False))
         if u.path.startswith("/api/library/"):      # one template version: /api/library/<artifact>/<section>/<slug>/v<N>
             parts = u.path[len("/api/library/"):].split("/")
-            ok = (len(parts) == 4 and parts[0] in j2_template_lib.ARTIFACTS
+            ok = (len(parts) == 4 and parts[0] in j2_template_lib.artifacts()
                   and all(re.fullmatch(r"[a-z0-9-]+", x) for x in parts[1:3]) and re.fullmatch(r"v\d+", parts[3]))
             d = j2.saved_dir(run) if run else RUN.dir
             d = d if d and os.path.isdir(d) else None
@@ -180,13 +183,13 @@ class Handler(http.server.BaseHTTPRequestHandler):
             return self._send(200, txt, "text/plain") if txt is not None else self._send(404, "not found", "text/plain")
         if u.path == "/api/artifacts/tree":      # the Artifacts tab as a tree (artifacts-tree/1), made from the same data as the Map
             d = j2.saved_dir(run) if run else RUN.dir
-            live = {"snapshot": RUN.snapshot(), "stages": list(RUN.stages), "stage_words": j2.J2Run.STAGE_WORDS, "board": RUN.board} \
+            live = {"snapshot": RUN.snapshot(), "stages": list(RUN.stages), "stage_words": j2.J2Run.stage_words(), "board": RUN.board} \
                 if not run and (RUN.status == "running" or RUN.paused) else None
             ok = d and os.path.isdir(d)
             return self._send(200, json.dumps(j2_artifacts.tree(d, j2_map.build(d, live)) if ok else j2_artifacts.tree(None), ensure_ascii=False))
         if u.path == "/api/artifacts/groups":      # the Artifacts section's four groups (artifacts-groups/1), from the run's own files
             d = j2.saved_dir(run) if run else RUN.dir
-            live = {"snapshot": RUN.snapshot(), "stages": list(RUN.stages), "stage_words": j2.J2Run.STAGE_WORDS, "board": RUN.board} \
+            live = {"snapshot": RUN.snapshot(), "stages": list(RUN.stages), "stage_words": j2.J2Run.stage_words(), "board": RUN.board} \
                 if not run and (RUN.status == "running" or RUN.paused) else None
             ok = d and os.path.isdir(d)
             return self._send(200, json.dumps(j2_artifacts.groups(d, j2_map.build(d, live)) if ok else j2_artifacts.groups(None), ensure_ascii=False))
@@ -225,9 +228,10 @@ class Handler(http.server.BaseHTTPRequestHandler):
             return self._send(200, json.dumps(out, ensure_ascii=False))
         if u.path == "/api/refs":       # ids the cards name, with their text: conditions/*.json and every output type's rubric
             conds = {}
-            for n in ("website", "prd", "hld", "lld"):
-                conds.update({c["id"]: c["text"] for c in j2.load_conditions(f"{n}.json")})
-            rub = {i: t for o in j2.OUTPUTS.values() for i, t in o.get("rubric") or ()}
+            kinds = j2.j2_types.names()      # every type, new ones too
+            for f in dict.fromkeys(j2.output_def(k)["conditions"] for k in kinds):
+                conds.update({c["id"]: c["text"] for c in j2.load_conditions(f)})
+            rub = {i: t for k in kinds for o in [j2.output_def(k)] for i, t in o.get("rubric") or ()}
             return self._send(200, json.dumps({"conditions": conds, "rubric": rub}, ensure_ascii=False))
         if u.path.startswith("/shot/"):        # the screenshot Audit looked at for site vN
             d, n = (j2.saved_dir(run) if run else RUN.dir), u.path.rsplit("/", 1)[-1]
@@ -238,7 +242,8 @@ class Handler(http.server.BaseHTTPRequestHandler):
                 return self._send(200, f.read(), "image/png")
         if u.path.startswith("/file/"):        # a document run's prd.md or prd.docx, to download
             d, name = (j2.saved_dir(run) if run else RUN.dir), u.path.rsplit("/", 1)[-1]
-            o = j2.OUTPUTS[j2.saved_output(d) if run else RUN.output]
+            kind = j2.saved_output(d) if run else RUN.output
+            o = j2.output_def(kind) if kind else {}      # no type chosen yet: no file of its own
             allowed = [o["file"], o["file"][:-3] + ".docx"] if o.get("file") else []
             allowed += [f for k in j2._read(d or "", "documents.json", {}) for f in (f"{k}.md", f"{k}.docx")]   # design documents
             path = os.path.join(d or "", name)
@@ -278,8 +283,9 @@ class Handler(http.server.BaseHTTPRequestHandler):
             return self._send(200, j2.md_html(text) if name.endswith(".md") else text, "text/html")
         if u.path.startswith("/site/"):
             if not RUN.sites:
-                return self._send(200, "<p style='font:15px system-ui;color:#667;padding:24px'>Your "
-                                       f"{'document' if RUN.doc else 'website'} will appear here once it's built.</p>",
+                what = "document" if RUN.doc else RUN.out["label"].lower() if RUN.out else None      # None: not chosen yet
+                return self._send(200, "<p style='font:15px system-ui;color:#667;padding:24px'>"
+                                       f"{f'Your {what}' if what else 'What you ask for'} will appear here once it's built.</p>",
                                   "text/html")
             key = u.path.rsplit("/", 1)[-1]
             i = len(RUN.sites) if key == "latest" else int(key.lstrip("v") or 0)

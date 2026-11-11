@@ -896,6 +896,7 @@ body:not(.simple) #dview{display:flex;flex:1;min-height:0}
 .rst.running::before{content:"";display:inline-block;width:6px;height:6px;border-radius:50%;background:var(--accent);margin-right:5px;animation:rpulse 1.2s infinite}@keyframes rpulse{50%{opacity:.3}}
 .runmore{margin:4px auto 2px;border:1px solid var(--line);background:var(--panel);color:var(--ink);border-radius:99px;padding:7px 16px;font:inherit;font-size:13px;cursor:pointer}
 .runnone{color:var(--muted);font-size:13px;padding:8px}
+#timing>p{margin:0;color:var(--muted);font-size:13px}#timing summary{cursor:pointer;font-size:13px;margin-top:6px}.timetbl{max-height:30vh;overflow:auto}.timetbl table{font-size:12.5px;margin:6px 0 0}.timetbl td,.timetbl th{border-bottom:1px solid var(--line);padding:2px 12px 2px 0;text-align:left}
 #dview:is([data-tab=runsettings],[data-tab=artifacts],[data-tab=catalog]) .dcol{overflow:hidden}#dview:is([data-tab=runsettings],[data-tab=artifacts],[data-tab=catalog]) main{grid-template-rows:minmax(0,1fr);flex:1;min-height:0}
 /* Artifacts: four groups; a list on the left and the chosen item on the right; the page fits the screen, only the list and the item scroll */
 #pane-artifacts,#pane-catalog{overflow:hidden}#dview #pane-artifacts,#dview #pane-catalog{max-width:none}#pane-artifacts:not([hidden]),#pane-catalog:not([hidden]){display:flex;flex-direction:column}#pane-catalog .agwrap{flex:1;min-height:0}.cattools{margin:0 0 12px}.tplview h3{display:flex;flex-wrap:wrap;gap:6px 10px;align-items:baseline}.tplview .tplmeta{margin:0 0 14px}
@@ -1129,7 +1130,7 @@ try { var tp = localStorage.getItem("j2theme"); document.documentElement.dataset
 <main>
   <section class="work">
     <div class="wbar"><div><button type="button" class="linkbtn" id="backmap" hidden>← Back to map</button><div class="wcrumb" id="wcrumb" hidden><span id="wcrumbs">Artifacts</span> <span aria-hidden="true">/</span> <b id="wcrumbg"></b></div><div class="wtl"><h2 class="wtitle" id="wtitle">Map</h2><span class="wcnt" id="wcnt" hidden></span></div><span class="wsub" id="wsub"></span></div><select id="ver" aria-label="Version"></select></div>
-    <div class="pane preview" id="pane-preview" hidden><div class="doclinks" id="doclinks" hidden></div><iframe id="frame" title="Website preview" src="/site/latest"></iframe></div>
+    <div class="pane preview" id="pane-preview" hidden><div class="doclinks" id="doclinks" hidden></div><iframe id="frame" title="Preview" src="/site/latest"></iframe></div>
     <div class="pane" id="pane-goal" hidden></div>
     <div class="pane" id="pane-workflows" hidden></div>
     <div class="pane" id="pane-planmap" hidden></div>
@@ -1153,6 +1154,7 @@ try { var tp = localStorage.getItem("j2theme"); document.documentElement.dataset
       <div class="runset">
         <section class="rsec" id="appear"><h3>Appearance</h3><p>Applies to this browser only.</p>
           <div class="themecards" role="group" aria-label="Appearance"><button type="button" data-themepick="light" aria-pressed="false"><span class="sw sw-l"></span>Light</button><button type="button" data-themepick="dark" aria-pressed="true"><span class="sw sw-d"></span>Dark</button><button type="button" data-themepick="system" aria-pressed="false"><span class="sw sw-s"></span>System</button></div></section>
+        <section class="rsec" id="timesec"><h3>This run: calls, tokens and time</h3><div id="timing"><p>Loading…</p></div></section>
         <section class="rsec runsec" aria-labelledby="runsh"><div class="rtop"><h3 id="runsh">Runs <small id="runcount"></small></h3><input type="search" id="runq" placeholder="Search runs" aria-label="Search runs by title, brief or run ID" autocomplete="off"><button type="button" class="newrun" id="reset">+ New run</button></div>
           <div class="rfil" role="group" aria-label="Filter by status"><button type="button" data-rf="all" aria-pressed="true">All <i></i></button><button type="button" data-rf="running" aria-pressed="false">Running <i></i></button><button type="button" data-rf="done" aria-pressed="false">Done <i></i></button><button type="button" data-rf="stopped" aria-pressed="false">Stopped <i></i></button></div>
           <div class="runlist" id="runlist"></div></section>
@@ -1185,7 +1187,7 @@ try { var tp = localStorage.getItem("j2theme"); document.documentElement.dataset
       <div class="waiting" id="waiting" hidden></div>
       <div class="quick" id="quick"></div>
       <div class="row">
-        <textarea id="box" placeholder="Describe the website you want. The agents take it from there…" aria-label="Message"></textarea>
+        <textarea id="box" placeholder="Describe what you want made. The agents take it from there…" aria-label="Message"></textarea>
         <button class="send" id="send">Send</button>
       </div>
       <div class="asknote" id="asknote" hidden>Answers from this run's records. It cannot change the run.</div>
@@ -1216,9 +1218,9 @@ function paint(el, html){
   open.forEach(k => { const d = el.querySelector(`details[data-key="${CSS.escape(k)}"]`); if (d) d.open = true; });
 }
 // Example briefs for both views: different kinds of business, so nothing assumes a cafe.
-const EXAMPLES = ["A website for my cafe", "A website for Sweet Crumbs Bakery in Pune: menu, cake orders, contact",
-  "A website for Petal & Stem, a florist in Jaipur: bouquets, same-day delivery, wedding flowers",
-  "A website for Asha Rao Photography, a wedding and portrait photographer in Mumbai: portfolio, packages, booking"];
+const EXAMPLES = ["A PRD for a food delivery app", "A hiring policy for my startup",
+  "A one-page website for Sweet Crumbs Bakery in Pune: menu, cake orders, contact",
+  "Design docs for a clinic booking app"];
 const PRD_EXAMPLES = ["Write a PRD for QuickQueue, a mobile app that lets clinic patients join a waiting line remotely. "
   + "Users: patients at small clinics and the front-desk staff who manage the line. Problem: patients wait 45 minutes on "
   + "average in crowded waiting rooms. Must-have features: join the queue from a phone, live position updates, SMS alert "
@@ -1287,7 +1289,7 @@ document.addEventListener("change", e => { if (e.target.id === "chthink"){ CHATT
 // Adaptation's feed (activity/1, /api/activity): its messages and hand-offs, each AI call, each planning decision, every judge round with the scores,
 // every revision and the changes it handled, all in the chat's own message style with a small label for the kind. A question typed here goes to
 // /api/ask and is answered from the run's records only; questions and answers sit in the same time order and are not saved.
-const boxHint = s => ASKMODE === "ask" ? `Ask ${who(CHATFN)[0]} about this run…` : s && s.paused ? "Answer your Client Lead's question…" : s && s.total ? "Ask your Client Lead for a change…" : "Describe the website you want. The agents take it from there…";
+const boxHint = s => ASKMODE === "ask" ? `Ask ${who(CHATFN)[0]} about this run…` : s && s.paused ? "Answer your Client Lead's question…" : s && s.total ? "Ask your Client Lead for a change…" : "Describe what you want made. The agents take it from there…";
 const FEED = {who: "", found: false, events: []}, QA = [];      // QA: this viewer's questions and the answers, per function
 let FEEDKEY = "", ASKMODE = "change";
 const FKIND = {call: "AI call", plan: "plan", wf: "workflow", judge: "judge", revise: "revision", change: "change"};
@@ -1684,7 +1686,6 @@ function tplLine(a, s){
 }
 // The same line for a deliverable's section (Artifacts tab, Documents view): the run's decision by artifact and the workflow
 // that wrote the section (its rewriter when one did), or by artifact and section heading; "style" is the design decision.
-const DECK_ART = {"work:prd": "prd", "work:hld": "hld", "work:lld": "lld", "work:website": "website"};
 function tplDecision(artifact, wid, section){
   const ds = (LIB.decisions || []).filter(d => d.artifact === artifact && (!wid || d.workflow === wid) && (!section || d.section === section));
   return ds.length ? ds[ds.length - 1] : null;
@@ -1817,7 +1818,7 @@ function idRuns(ids){        // W-1, W-2, W-3, W-5 -> "W-1 to W-3, W-5"; ids tha
 }
 function runSummary(s){
   const at = Object.values(s.atoms_v1 || {}), n = st => at.filter(a => st(a.status)).length;
-  const built = [...(s.docset_files || []).map(d => d.kind.toUpperCase()), ...(s.doc && !(s.docset_files || []).length && (s.files || []).length ? ["PRD"] : []), ...(s.versions ? ["website"] : [])];
+  const built = [...(s.docset_files || []).map(d => d.kind.toUpperCase()), ...(s.doc && !(s.docset_files || []).length && (s.files || []).length ? ["PRD"] : []), ...(s.versions ? [TYL("site", "page").toLowerCase()] : [])];
   return `<div class="runsum" data-summary><div><b>Outcome:</b> ${clip("sum-outcome", dv(s.outcome || s.status || "not started"), 160)}</div>`
     + `<div><b>Credits:</b> ${s.spent} of ${s.budget} used</div>`
     + `<div><b>Work atoms:</b> ${n(x => x === "closed")} closed · ${n(x => x === "verify_failed" || x === "abandoned")} failed · ${n(x => x !== "closed" && x !== "verify_failed" && x !== "abandoned")} open</div>`
@@ -2113,7 +2114,7 @@ function sCrew(s, M){
 // ---- what the run is doing, in one line
 function sTitle(s){ const g = s.goal || {}, first = (s.allChat || []).find(m => m.who === "user"), t = first ? String(first.text) : "", q = t.match(/["“]([^"”]{2,40})["”]/);
   return g.site_name || (q ? `${q[1]} ${sNoun(s)}` : t ? sChipLabel(t) : "Your project"); }
-const sNoun = s => (s.docset || []).length > 1 ? "design documents" : s.doc ? "document" : String(s.output_label || "website").toLowerCase();      // the run's own output type
+const sNoun = s => (s.docset || []).length > 1 ? "design documents" : s.doc ? "document" : String(s.output_label || TYL(s.output, "project")).toLowerCase();      // the run's own output type
 function sPhase(s, open){      // one plain sentence for where the run is; no names of agents, no ids
   const what = sNoun(s);
   if (failed(s)) return s.error || /^Crashed/.test(s.outcome || "") ? "Something went wrong. You can start over." : "The team stopped here. You can start over.";
@@ -2125,16 +2126,16 @@ function sPhase(s, open){      // one plain sentence for where the run is; no na
   return st === 0 ? "Reading your request" : st === 1 ? "Planning the work" : st === 2 ? (w ? `Building ${w.name.toLowerCase()}` : `Building your ${what}`)
     : s.doc ? "Checking the document" : "Checking it on a phone and a laptop";
 }
-const SCHIPS = ["A website for my bakery", "A PRD for a food delivery app", "Design docs for a clinic booking app"];      // what the team makes today: a website, one document, the three design documents
+const SCHIPS = ["A PRD for a food delivery app", "A hiring policy for my startup", "A website for my bakery", "Design docs for a clinic booking app"];      // what the team makes today: one document, a new kind of document, a page, the three design documents
 // start page: a small line icon per kind of work (fixed SVG, no outside text goes in)
-const SLICON = {website: `<svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="4.5" width="18" height="15" rx="2.5"/><path d="M3 9h18"/><circle cx="6.2" cy="6.8" r=".4"/><circle cx="8.4" cy="6.8" r=".4"/></svg>`,
+const SLICON = {page: `<svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="4.5" width="18" height="15" rx="2.5"/><path d="M3 9h18"/><circle cx="6.2" cy="6.8" r=".4"/><circle cx="8.4" cy="6.8" r=".4"/></svg>`,
   document: `<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M7.5 3H14l5 5v11.5a1.5 1.5 0 0 1-1.5 1.5h-10A1.5 1.5 0 0 1 6 19.5v-15A1.5 1.5 0 0 1 7.5 3z"/><path d="M14 3v5h5M9.5 13h6M9.5 16.5h4"/></svg>`,
   plan: `<svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3.5" y="5" width="17" height="15" rx="2.5"/><path d="M3.5 10h17M8 3v4M16 3v4M9 15l2 2 4-4"/></svg>`};
-const sKindOf = t => /plan|schedule|roadmap|calendar/i.test(t) ? "plan" : /spec|prd|doc|report|brief/i.test(t) ? "document" : "website";
+const sKindOf = t => /plan|schedule|roadmap|calendar/i.test(t) ? "plan" : /spec|prd|doc|report|brief|policy/i.test(t) ? "document" : "page";
 const sAgo = w => { const t = Date.parse(w); if (!t) return ""; const m = Math.max(0, (Date.now() - t) / 6e4);
   return m < 1 ? "just now" : m < 60 ? `${Math.round(m)}m ago` : m < 1440 ? `${Math.round(m / 60)}h ago` : m < 2880 ? "yesterday" : m < 43200 ? `${Math.round(m / 1440)}d ago` : new Date(t).toLocaleDateString(undefined, {day: "numeric", month: "short"}); };
 // the composer types example ideas with a blinking caret until you click in or start typing (still text when motion is reduced)
-const SGHOST = ["A one-page website for my coffee shop", "A PRD for a habit tracker app", "Design docs for a clinic booking app"];
+const SGHOST = ["A PRD for a habit tracker app", "A hiring policy for my startup", "A one-page website for my coffee shop", "Design docs for a clinic booking app"];
 let sghostT = 0, sghostI = 0;
 function sGhost(){ const g = $("sghost"), box = $("lform"), t = $("lbox"); clearTimeout(sghostT); if (!g) return;
   const on = !$("sland").hidden && !t.value && document.activeElement !== t; box.classList.toggle("ghosting", on); g.hidden = !on; if (!on) return;
@@ -2152,8 +2153,8 @@ const sFilesHTML = s => plainDocLinks(s);      // every design document's files,
 function sFinish(s){
   const q = runQ().replace("&", "?");
   const many = (s.docset || []).length > 1;      // design documents: the website (if any) and every document's files, in one list
-  const dl = many ? (!s.doc && s.versions ? `<a class="pri" href="/site/latest${q}" download="my-website.html">Download the website</a>` : "") + `<button type="button" data-files>All files (${(s.docset_files || []).length * 2})</button>`
-    : s.doc ? fileLinks(s) : `<a class="pri" href="/site/latest${q}" download="my-website.html">Download</a>`;
+  const dl = many ? (!s.doc && s.versions ? `<a class="pri" href="/site/latest${q}" download="${esc(s.page || "page")}.html">Download the ${esc(TYL("site", "page").toLowerCase())}</a>` : "") + `<button type="button" data-files>All files (${(s.docset_files || []).length * 2})</button>`
+    : s.doc ? fileLinks(s) : `<a class="pri" href="/site/latest${q}" download="${esc(s.output || "page")}.html">Download</a>`;
   const ic = d => `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${d}</svg>`;
   return `<span class="sfmsg"><span><i aria-hidden="true">✓</i>${esc(sPhase(s, []))}</span></span>${dl.replace(/(<a class="pri"[^>]*>)/, "$1" + ic('<path d="M12 4v11M7 10l5 5 5-5M5 20h14"/>'))}`
     + `<button type="button" data-share>${ic('<path d="M10 14a4 4 0 0 0 5.7 0l3-3a4 4 0 0 0-5.7-5.7l-1 1M14 10a4 4 0 0 0-5.7 0l-3 3a4 4 0 0 0 5.7 5.7l1-1"/>')}Copy share link</button><button type="button" data-full>${ic('<path d="M14 4h6v6M10 20H4v-6M20 4l-7 7M4 20l7-7"/>')}Open full view</button>`;
@@ -2244,7 +2245,7 @@ function renderSimple(s){
   $("sland").hidden = started; $("swork").hidden = !started; sThemeBtn(); sAutoPaint(s);
   if (!started){
     if ($("schips").__v !== "o:" + s.output){ $("schips").__v = "o:" + s.output; $("schips").innerHTML = SCHIPS.map(t => `<button type="button" data-brief="${esc(t)}" title="${esc(t)}">${SLICON[sKindOf(t)]}${esc(sChipLabel(t))}</button>`).join("");
-      $("lbox").placeholder = "e.g. A one-page website, a PRD, or design docs (PRD, HLD, LLD)"; }
+      $("lbox").placeholder = "e.g. A PRD, a policy, a one-page website, or design docs (PRD, HLD, LLD)"; }
     if (!SV.landKey){ SV.landKey = "1"; $("slfaces").innerHTML = SKEYS.map(k => face(k, 46, {prop: false, label: false})).join(""); sRecent(); setTimeout(sGhost); }
     return;
   }
@@ -2335,7 +2336,7 @@ function sRail(s, M, T){
 }
 function sPlanHTML(s, M){
   if (!M.parts.length) return `<li class="snone">${s.status === "running" ? "The plan appears here as the team writes it." : "No parts yet."}</li>`;
-  const groups = (s.docset || []).length ? ["prd", "hld", "lld", "site"] : [null], GN = {prd: "Product requirements", hld: "High-level design", lld: "Low-level design", site: "Website"};
+  const groups = (s.docset || []).length ? DOCGROUPS(s) : [null], GN = new Proxy({prd: "Product requirements", hld: "High-level design", lld: "Low-level design", site: "Page"}, {get: (o, k) => TYL(k, o[k])});
   return groups.map(g => { const ps = M.parts.filter(p => g === null || p.doc === g); if (!ps.length) return "";
     return (g ? `<li class="sgrp">${GN[g]}</li>` : "") + ps.map(p => { const ic = p.st === "done" ? "✓" : p.st === "ask" ? "?" : p.st === "bad" ? "!" : "", fresh = !SV.steps.has(p.sec); SV.steps.add(p.sec);
       const note = p.st === "doing" ? (p.fixing ? "being fixed" : "in progress") : p.st === "fix" ? "a fix is coming" : p.st === "bad" ? "couldn't be made" : p.fixes ? `fixed ${p.fixes === 1 ? "once" : p.fixes + " times"}` : "";
@@ -2353,10 +2354,10 @@ function sTabs(s){
   if (docs.length){
     docs.forEach(k => { const live = s.doc && s.output === k && s.versions > 0;
       if (live || have.has(k)) tabs.push({k, label: k.toUpperCase(), url: live ? `/site/v${s.versions}?x=1${q}` : `/doc/${k}?x=1${q}`, live: live && s.status === "running"}); });
-    if (!s.doc && s.versions > 0) tabs.push({k: "site", label: "Website", url: `/site/v${s.versions}?x=1${q}`, live: s.status === "running"});
-  } else if (s.versions > 0) tabs.push({k: s.doc ? s.output : "site", label: s.doc ? (s.output || "doc").toUpperCase() : "Website", url: `/site/v${s.versions}?x=1${q}`, live: s.status === "running"});
+    if (!s.doc && s.versions > 0) tabs.push({k: "site", label: TYL("site", "Page"), url: `/site/v${s.versions}?x=1${q}`, live: s.status === "running"});
+  } else if (s.versions > 0) tabs.push({k: s.doc ? s.output : "site", label: s.doc ? TYTAG(s.output, (s.output || "doc").toUpperCase()) : TYL("site", "Page"), url: `/site/v${s.versions}?x=1${q}`, live: s.status === "running"});
   // any other deliverable the run lists (artifacts/types.json: a page, a document, an image, data, code, a script): a readable view of it
-  (SV.arts.deliverables || []).forEach(d => { const k = "a:" + d.name; if (d.form === "page" || ["website", "prd", "hld", "lld"].includes(d.type) || tabs.some(t => t.k === d.type || t.k === d.name || t.k === k)) return;      // the site and the design documents have their own live tabs above
+  (SV.arts.deliverables || []).forEach(d => { const k = "a:" + d.name; if (d.form === "page" || ["prd", "hld", "lld"].includes(d.type) || tabs.some(t => t.k === d.type || t.k === d.name || t.k === k)) return;      // the site and the design documents have their own live tabs above
     tabs.push({k, label: d.label || d.name, url: `/view?name=${encodeURIComponent(d.file)}${q}`, art: d}); });
   tabs.push({k: "team", label: isReady(s) || s.saved ? "How it was made" : "Team at work", live: s.status === "running" && !tabs.length});
   return tabs;
@@ -2365,7 +2366,7 @@ function sViews(s, M, ready){
   const tabs = sTabs(s), outs = tabs.filter(t => t.k !== "team"), last = outs[outs.length - 1];
   // what to show: your pick while it exists, else the newest output (it switches as the work moves on), else the team at work
   let v = SV.pick && tabs.some(t => t.k === SV.pick) ? SV.pick : last ? last.k : "team";
-  if (last && SV.lastOut !== last.k && SV.view && !SV.pick && s.status === "running") sToast(last.k === "site" ? "The website is taking shape" : `The ${last.label} is being written`);
+  if (last && SV.lastOut !== last.k && SV.view && !SV.pick && s.status === "running") sToast(last.k === "site" ? `The ${TYL("site", "page").toLowerCase()} is taking shape` : `The ${last.label} is being written`);
   SV.lastOut = last ? last.k : "";
   SV.view = v;
   paint($("sviews"), tabs.map(t => `<button type="button" role="tab" data-view="${t.k}" aria-selected="${t.k === v}">${esc(t.label)}${t.live ? '<span class="pip" aria-hidden="true"></span>' : ""}</button>`).join(""));
@@ -2639,7 +2640,7 @@ function sTeamwork(s, M){      // the output is the map: a block per part, the t
     const note = p.st === "next" ? (live || (open.length && !s.saved) ? `${P.name} next` : "Not made in this run") : p.st === "bad" ? "Couldn't be made" : "";
     return `<button type="button" class="spart ${p.st}${fresh ? " fresh" : ""}" data-part="${esc(p.sec)}" style="--c:var(${P.c})">${tag}<span class="spn" aria-hidden="true">${String(n).padStart(2, "0")}</span><b>${esc(p.name)}</b>${p.st === "doing" || p.st === "fix" ? sTeamSketch(p.sec) : '<span class="sl" aria-hidden="true"><i></i><i></i><i></i></span>'}${note ? `<small>${esc(note)}</small>` : ""}</button>`; };
   if (M.parts.length){
-    const groups = (s.docset || []).length ? ["prd", "hld", "lld", "site"] : [null], GN = {prd: "Product requirements", hld: "High-level design", lld: "Low-level design", site: "Website"};
+    const groups = (s.docset || []).length ? DOCGROUPS(s) : [null], GN = new Proxy({prd: "Product requirements", hld: "High-level design", lld: "Low-level design", site: "Page"}, {get: (o, k) => TYL(k, o[k])});
     h += groups.map(gk => { const ps = M.parts.filter(p => gk === null || p.doc === gk); return ps.length ? (gk ? `<h3 class="smap-g">${GN[gk]}</h3>` : "") + `<div class="smap-parts">${ps.map(part).join("")}</div>` : ""; }).join("");
   } else if (live || (open.length && !s.saved)) h += `<div class="smap-parts"><div class="spart ${live ? "doing" : "ask"}" style="--c:var(--s-asha)"><span class="stag">${live ? CUR : ""}${face("asha", 20, {prop: false, label: false})}${live ? `Asha is ${stage(s) ? "planning" : "reading"} this${TY}` : "Waits on your answer"}</span><b>${!live ? "The plan comes right after your answer" : stage(s) ? "Splitting the work into parts" : "Reading what you asked for"}</b><span class="sl" aria-hidden="true"><i></i><i></i><i></i></span><small>The plan shows up here, part by part, with who makes each one.</small></div>`
     + `<div class="spart next"><b>&nbsp;</b><span class="sl" aria-hidden="true"><i></i><i></i><i></i></span></div><div class="spart next"><b>&nbsp;</b><span class="sl" aria-hidden="true"><i></i><i></i><i></i></span></div></div>`;
@@ -2651,7 +2652,7 @@ function sTeamwork(s, M){      // the output is the map: a block per part, the t
   const q = runQ().replace("&", "?"), dl = [];
   (s.docset_files || []).forEach(d => dl.push(`<a href="/file/${d.md}${q}" download>${face("mira", 22, {prop: false, label: false})}The ${esc(d.label)} (markdown)</a>`));
   if (!(s.docset || []).length) (s.files || []).forEach(f => dl.push(`<a href="/file/${f}${q}" download>${face("mira", 22, {prop: false, label: false})}${f.endsWith(".docx") ? "The Word file" : "The document (markdown)"}</a>`));
-  if (!s.doc && s.versions > 0) dl.push(`<button type="button" data-view="site">${face("dev", 22, {prop: false, label: false})}The website, version ${s.versions}</button>`);
+  if (!s.doc && s.versions > 0) dl.push(`<button type="button" data-view="site">${face("dev", 22, {prop: false, label: false})}The ${esc(TYL("site", "page").toLowerCase())}, version ${s.versions}</button>`);
   if (dl.length) h += `<section class="stw-sec"><h3>${ready || s.saved ? "What you got" : "Ready so far"}</h3><div class="sdocs">${dl.join("")}</div></section>`;
   // the activity log (OpenWork's "Worked for 12m · 8 steps"): the newest first, six at a time, the current step shimmering
   const talk = sTalk(s), mins = t => { const x = /^(\d\d?):(\d\d)/.exec(t || ""); return x ? +x[1] * 60 + +x[2] : null; };
@@ -2800,8 +2801,8 @@ function sChatOpen(on){ const a = $("sapp"); if (!a || !a.classList) return; a.c
 async function sRecent(){
   try { const r = await (await fetch("/api/runlist", {cache: "no-store"})).json(), runs = (r.runs || []).filter(x => x.title && x.title !== x.id && x.status !== "running").slice(0, 6);
     if (!runs.length) return;
-    $("srlist").innerHTML = runs.map(x => { const k = x.output === "prd" ? "document" : x.output === "plan" ? "plan" : "website", brief = String(x.brief || "").split("\n")[0].trim();
-      return `<a href="/?run=${encodeURIComponent(x.id)}&view=simple"><span class="slico">${SLICON[k]}</span><span class="sltxt"><b>${esc(x.title)}</b>${brief ? `<span>${esc(brief)}</span>` : ""}</span><small><span class="slwhat"><i class="slst${x.status === "done" ? " done" : ""}" aria-hidden="true"></i>${k === "document" ? "Document" : k === "plan" ? "Plan" : "Website"} · ${x.status === "done" ? "finished" : "stopped"} · </span><time datetime="${esc(String(x.when || ""))}">${esc(sAgo(x.when))}</time></small></a>`; }).join("");
+    $("srlist").innerHTML = runs.map(x => { const k = x.output === "plan" ? "plan" : TYFORM(x.output) === "page" ? "page" : "document", brief = String(x.brief || "").split("\n")[0].trim();
+      return `<a href="/?run=${encodeURIComponent(x.id)}&view=simple"><span class="slico">${SLICON[k]}</span><span class="sltxt"><b>${esc(x.title)}</b>${brief ? `<span>${esc(brief)}</span>` : ""}</span><small><span class="slwhat"><i class="slst${x.status === "done" ? " done" : ""}" aria-hidden="true"></i>${k === "document" ? "Document" : k === "plan" ? "Plan" : TYL(x.output, "Page")} · ${x.status === "done" ? "finished" : "stopped"} · </span><time datetime="${esc(String(x.when || ""))}">${esc(sAgo(x.when))}</time></small></a>`; }).join("");
     $("srecent").hidden = false; } catch (e) {}
 }
 async function sendText(text){
@@ -2930,6 +2931,14 @@ function quick(s){
   $("quick").innerHTML = items.map(t => `<button type="button">${esc(t)}</button>`).join("");
   [...$("quick").children].forEach(b => b.onclick = () => { $("box").value = b.textContent; send(); });
 }
+// J2_GENERIC=1: a type's label, tag or ready text from the run's own types (/api/state "types"), else today's word
+const GTYPE = k => (CTX && CTX.types && CTX.types[k === "site" ? CTX.page : k]) || null;      // "site": the run's page type (state "page")
+const TYL = (k, old) => (GTYPE(k) || {}).label || old;
+const TYTAG = (k, old) => (GTYPE(k) || {}).tag || old;
+const TYFORM = k => (GTYPE(k) || {}).form || (k === "site" ? "page" : "document");      // a run list icon: page or document
+const PAGENODE = id => /^work:/.test(id) && TYFORM(id.slice(5)) === "page";      // a Map work node of a page type
+const PAGEID = () => "work:" + ((CTX && CTX.page) || "page");      // the run's page node
+const DOCGROUPS = s => s.generic ? [...new Set(["prd", "hld", "lld", ...(s.docset || [])]), "site"] : ["prd", "hld", "lld", "site"];      // a new document type gets its own group
 async function poll(){
   try{
     const s = await (await fetch(`/api/state?since=${seen}${runQ()}`, {cache:"no-store"})).json();
@@ -2954,7 +2963,7 @@ async function poll(){
     $("box").disabled = busy && !canAsk; $("send").disabled = busy && !canAsk;
     $("mode").textContent = (viewRun || s.saved ? `run ${viewRun || s.saved} · ` : "") + (s.mock ? "mock functions" : `model: ${s.model}`) + ` · ${s.calls} AI calls · cycle ${s.cycle}` + ((((s.report || {}).metrics || {}).minutes) != null ? ` · ${s.report.metrics.minutes} min` : "") + (prioModel(s).total != null ? ` · budget ${prioModel(s).total} credits` : "");
     $("fixes").textContent = s.fixes ? "J2_FIXES=1 (fixes)" : "J2_FIXES=0 (baseline, as in the diagram)";
-    $("otype").textContent = `output: ${s.output_label}`;
+    $("otype").textContent = `output: ${s.output_label || "not chosen yet"}`;
     $("doclinks").hidden = !(s.doc || (s.docset || []).length) || !(s.files || []).length;
     $("pane-preview").classList.toggle("has-links", !$("doclinks").hidden);
     if (!$("doclinks").hidden) paint($("doclinks"), (s.docset || []).length > 1 ? `<b>Design documents</b> ${docLinks(s)}` : `<b>${esc(s.output_label)}</b> ${fileLinks(s)}`);
@@ -3049,6 +3058,7 @@ function showTab(name){
   $("backmap").hidden = name === "map" || crumb; $("wcrumbs").textContent = name === "planmap" ? "Adaptation" : name === "catalog" ? "Library" : "Artifacts"; if (name === "planmap") try { pmHead(); } catch (e) {}      // a ?tab=planmap link runs before the plan-map code
   ["wcrumb", "wcnt"].forEach(i => $(i).hidden = !crumb); document.querySelector("#dview .wbar").hidden = name === "map"; document.querySelector("#dview .work").classList.toggle("mapfit", name === "map"); railReveal(name);
   ["preview","goal","planmap","workflows","conflicts","priorities","timeline","audit","charter","docs","artifacts","board","library","catalog","story","map","style","lessons","playbooks","report","rundetails","runsettings"].forEach(t => $("pane-"+t).hidden = t !== name);
+  if (name === "runsettings" && typeof loadTiming === "function") loadTiming();      // fresh numbers each time it opens
 }
 document.querySelectorAll(".tabs [role=tab]").forEach(b => b.onclick = () => { if (b.dataset.tab === "workflows" && WFSTEP.length){ WFSTEP = []; if (state) paint($("pane-workflows"), renderWorkflows(state)); } showTab(b.dataset.tab); });
 showTab("map");
@@ -3099,7 +3109,7 @@ async function loadBoard(){
 const STORY = {entries: [], numbers: {}, facts: {}, flags: {}};
 let STORYCMP = {run: "", facts: null};        // the run picked for the compare card, and its own recorded facts
 const NR = '<span class="empty">not recorded</span>';
-const SCOL = {prd: "--prd", hld: "--hld", lld: "--lld", website: "--site"};      // the deliverable colours of the page
+const SCOL = new Proxy({}, {get: (o, k) => (GTYPE(k) || {}).color});      // the deliverable colours of the page: each type's own (types.json)
 const sTeam = x => { const p = MAPLABEL.story[x && x.tag] || null;      // the team label of a deliverable's builders
   return p ? `${p} (${esc(x.tag)})` : x && x.tag ? esc(x.tag) : "" ; };
 // who asked or answered: an atom with its team, or a function by name (a function owns no deliverable)
@@ -3130,7 +3140,8 @@ function sFlow(e){
     + "</ol>";
 }
 function sImpact(e){
-  const order = ["prd", "hld", "lld", "website"], label = {prd: "PRD", hld: "HLD", lld: "LLD", website: "Website"};
+  const order = [...new Set(["prd", "hld", "lld", ...Object.keys((CTX && CTX.types) || {})])],
+    label = new Proxy({prd: "PRD", hld: "HLD", lld: "LLD"}, {get: (o, k) => TYTAG(k, o[k])});
   const groups = order.concat("other").map(k => [k, e.impact.filter(x => (x.deliverable || "other") === k)]).filter(([, xs]) => xs.length);
   const reused = (e.reused_by || []).map(x => x.atom ? sChip(x)
     : `<span class="schip">${esc(fnName(x.id))} <span>function</span></span>`).join(" ");
@@ -3183,29 +3194,30 @@ $("pane-story").addEventListener("change", async e => {
 // fills the middle with a list on the left and the chosen item on the right. A file's text is fetched only when its item is opened (/api/artifact,
 // /api/code) and is escaped before it is drawn. What the run did not record says so ("Maker not recorded"); nothing is guessed.
 const artUrl = f => `/api/artifact?name=${encodeURIComponent(f)}${runQ()}`;
-const ARTGROUPS = [["plan", "Run plan"], ["guides", "Guides the makers read"], ["site", "Website sections"], ["documents", "Documents"], ["records", "Run records"]];
+const ARTGROUPS = [["plan", "Run plan"], ["guides", "Guides the makers read"], ["site", "Page sections"], ["documents", "Documents"], ["records", "Run records"]];
 const ARTMARK = {ok: `<span class="amark am-ok" role="img" aria-label="passed"><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M3.5 8.5l3 3 6-7"/></svg></span>`,
   warn: `<span class="amark am-warn" role="img" aria-label="needs a look"><svg viewBox="0 0 16 16" aria-hidden="true"><circle cx="8" cy="8" r="6.2"/><path d="M8 4.8v3.8M8 11v.4"/></svg></span>`};
 const artMark = ok => ok === undefined || ok === null ? "" : ARTMARK[ok ? "ok" : "warn"];
-const artGroup = k => ((ARTS.groups || {}).groups || []).find(g => g.id === k) || {id: k, label: (ARTGROUPS.find(x => x[0] === k) || [k, k])[1], rows: []};
+const artGroupLabel = (k, l) => k === "site" ? TYL("site", "Page") + " sections" : l;      // the page type's own label
+const artGroup = k => ((ARTS.groups || {}).groups || []).find(g => g.id === k) || {id: k, label: artGroupLabel(k, (ARTGROUPS.find(x => x[0] === k) || [k, k])[1]), rows: []};
 const artWords = s => String(s || "").replace(/-/g, " ");
 const artNR = '<span class="empty">not recorded</span>';
 function artCount(g){ const r = g.rows || [];
   if (g.id === "documents") return r.length ? plural(r.length, "document") : "no documents in this run";
   if (g.id === "guides") return r.length ? `${plural(r.length, "guide")} · ${plural(r.reduce((n, x) => n + (x.versions || []).length, 0), "version")}` : "no guides in this run";
   if (g.id === "site"){ const s = r.filter(x => x.kind !== "style"), k = s.filter(x => x.kind === "script").length;
-    return s.length ? plural(s.length - k, "section") + (k ? " · " + plural(k, "script") : "") : "no website in this run"; }
+    return s.length ? plural(s.length - k, "section") + (k ? " · " + plural(k, "script") : "") : `no ${TYL("site", "page").toLowerCase()} in this run`; }
   return r.length ? plural(r.length, g.id === "plan" ? "file" : "record") : "nothing recorded"; }
 function artSub(g){
   if (g.id === "documents") return "The PRD, HLD and LLD: each with its sections, its saved versions and its data file.";
   if (g.id === "plan") return "What the run set out to do and how it planned it.";
   if (g.id === "guides") return "Each guide, who wrote it, and how it was checked.";
-  if (g.id === "site"){ const s = (ARTS.groups || {}).site; return !s ? "This run built no website."
-    : `Website v${s.version != null ? s.version : "?"}: ` + (s.audit ? `the latest audit passes ${s.audit.passed} of ${s.audit.total} items.` : "no audit recorded."); }
+  if (g.id === "site"){ const s = (ARTS.groups || {}).site; return !s ? `This run built no ${TYL("site", "page").toLowerCase()}.`
+    : `${TYL("site", "Page")} v${s.version != null ? s.version : "?"}: ` + (s.audit ? `the latest audit passes ${s.audit.passed} of ${s.audit.total} items.` : "no audit recorded."); }
   return "The raw files behind the other views."; }
 const artEntries = n => `${n} entr${n === 1 ? "y" : "ies"}`;
 function artRowSub(x){ const by = x.maker ? esc(x.maker) : "Maker not recorded";
-  return ({charter: () => `${by} · ${plural((x.done_when || []).length, "done-when item")}`, realization: () => `${by} · ${plural((x.stages || []).length, "stage")}`,
+  return ({charter: () => `${by} · ${plural((x.done_when || []).length, "done-when item")}`, realization: () => `${by} · ${plural((x.stages || []).length, "stage")}`, deliverables: () => `${by} · ${plural((x.items || []).length, "type")}`,
     workflows: () => `${by} · ${plural(x.count || 0, "workflow")}`, style: () => `${by} · colours, fonts, spacing`,
     receipts: () => artEntries(x.count || 0), audits: () => plural((x.audits || []).length, "audit"), conditions: () => plural((x.items || []).length, "item"),
     shots: () => plural((x.shots || []).length, "image")}[x.kind] || (() => `${by} · ${plural((x.versions || []).length, "version")}${x.kind === "script" ? " · a script" : ""}`))(); }
@@ -3313,6 +3325,8 @@ const artSecTop = x => `<h2>${esc(x.name)}</h2><div class="aby">${x.maker ? "Mad
 const ARTKIND = {
   charter: {sum: x => `<div class="ablk"><h5>Who it is for</h5><p>${x.audience ? esc(x.audience) : artNR}</p></div>` + artStat([[(x.done_when || []).length, "done-when items"]]),
     human: x => `<div class="ablk"><h5>Done when (${(x.done_when || []).length})</h5>${artList(x.done_when || [], (t, i) => `<li><span class="mono empty">#${i + 1}</span><span>${esc(t)}</span></li>`)}</div>`},
+  deliverables: {sum: x => artStat([[(x.items || []).length, "types chosen"]]) + `<div class="ablk"><h5>Build order</h5><p>${(x.items || []).length ? (x.items || []).map(d => esc(d.type)).join(" → ") : artNR}</p></div>`,
+    human: x => `<div class="ablk"><h5>Deliverables (${(x.items || []).length})</h5>${artList(x.items || [], (d, i) => `<li><span class="mono empty">${i + 1}</span><span><b>${esc(d.type)}</b>${d.why ? ": " + esc(d.why) : ""}</span></li>`)}</div>`},
   realization: {sum: x => artStat([[x.zone, "certainty zone"], [x.confidence, "plan confidence"], [(x.stages || []).length, "stages"]])
       + `<div class="ablk"><h5>Stages</h5>${(x.stages || []).length ? artList(x.stages, (s, i) => `<li><span class="mono empty">${i + 1}</span><span>${esc(s)}</span></li>`) : `<p>${artNR}</p>`}</div>`,
     human: x => artFile(x.views.human.file)},
@@ -3359,9 +3373,9 @@ const artCur = () => { const g = artGroup(ARTS.g), rows = g.rows || []; return r
 function renderArtifacts(){
   if (!ARTS.groups) return '<p class="empty">Loading the artifacts…</p>';
   const g = artGroup(ARTS.g), rows = g.rows || [], x = artCur();
-  if (!x) return `<div class="agwrap"${g.id === "site" ? ' data-node="work:website" data-art="site/index.html"' : ""}><p class="empty">${g.id === "site" ? ((ARTS.groups || {}).site ? "This run recorded no sections for its website." : "This run built no website.")
+  if (!x) return `<div class="agwrap"${g.id === "site" ? ` data-node="${esc(PAGEID())}" data-art="site/index.html"` : ""}><p class="empty">${g.id === "site" ? ((ARTS.groups || {}).site ? `This run recorded no sections for its ${TYL("site", "page").toLowerCase()}.` : `This run built no ${TYL("site", "page").toLowerCase()}.`)
     : g.id === "guides" ? "This run wrote no guides." : "Nothing recorded yet."}</p></div>`;
-  return `<div class="agwrap" data-agroup="${esc(g.id)}"><div class="aglist" aria-label="${esc(g.label)}"${g.id === "site" ? ' data-node="work:website" data-art="site/index.html"' : ""}>${rows.map(r => artListRow(r, r === x)).join("")}</div>`
+  return `<div class="agwrap" data-agroup="${esc(g.id)}"><div class="aglist" aria-label="${esc(g.label)}"${g.id === "site" ? ` data-node="${esc(PAGEID())}" data-art="site/index.html"` : ""}>${rows.map(r => artListRow(r, r === x)).join("")}</div>`
     + `<div class="agpane" data-apane="${esc(x.id)}">${artPane(x)}</div></div>`; }
 function artHead(){ const g = artGroup(ARTS.g); $("wtitle").textContent = $("wcrumbg").textContent = g.label; $("wsub").textContent = $("wsub").title = artSub(g); $("wcnt").textContent = ARTS.groups ? artCount(g) : ""; $("wcnt").hidden = !ARTS.groups; }
 function artPaint(){ const p = $("pane-artifacts"), l = p.querySelector(".aglist"), top = l ? l.scrollTop : 0;
@@ -3384,12 +3398,12 @@ async function loadArtifacts(){
 }
 function railArtCounts(){      // the Artifacts panel of the rail: Preview and Documents, then the four groups with their counts
   const box = (RAIL || {}).open === "artifacts" && $("rflyart"); if (!box) return; const shown = !$("pane-artifacts").hidden;
-  box.innerHTML = `<p class="rnh">Artifacts</p>` + ARTGROUPS.map(([k, l]) => `<button type="button" class="rgo" data-artgo="${k}" aria-current="${shown && ARTS.g === k}">${esc(l)}<small>${ARTS.groups ? artCount(artGroup(k)) : "loading…"}</small></button>`).join(""); }
+  box.innerHTML = `<p class="rnh">Artifacts</p>` + ARTGROUPS.map(([k, l]) => `<button type="button" class="rgo" data-artgo="${k}" aria-current="${shown && ARTS.g === k}">${esc(artGroupLabel(k, l))}<small>${ARTS.groups ? artCount(artGroup(k)) : "loading…"}</small></button>`).join(""); }
 async function artOpenGroup(k, row){ ARTS.g = k; if (row) ARTS.sel[k] = row; ARTS.tab = "sum"; ARTS.ver = ""; showTab("artifacts"); if (!ARTS.groups) await loadArtifacts(); else { artPaint(); await artFetch(); } }
 function artLocate(id){      // the group and row a Map id lands on: a section's own row, else the row that holds the node, else the one with its file
   const rows = ((ARTS.groups || {}).groups || []).flatMap(g => g.rows.map(x => [g.id, x])), n = mapById(MAP)[id] || {};
   if (/^sec:/.test(id)){ const key = consParent(id) + "|" + id.split(":").pop(), hit = rows.find(([, x]) => x.section && x.deck + "|" + x.section === key); if (hit) return [hit[0], hit[1].id]; return artLocate(consParent(id)); }
-  const hit = rows.find(([, x]) => (x.nodes || []).includes(id)) || (id === "work:website" ? rows.find(([g]) => g === "site") : null)
+  const hit = rows.find(([, x]) => (x.nodes || []).includes(id)) || (PAGENODE(id) ? rows.find(([g]) => g === "site") : null)
     || rows.find(([, x]) => x.file && (x.file === n.file || (id === "work:charter" && x.file === "goal.json")));
   return hit ? [hit[0], hit[1].id] : null; }
 // Library (template-library/1, J2_TEMPLATE_LIBRARY=1): every template grouped by artifact and section, this run's
@@ -3626,7 +3640,7 @@ function mapShape(kind, st, c, x, y, w, h, col, thin){      // the ring of a dot
 function mapBadge(st, x, y){ return st === "fault" || isWait(st) ? `<g><circle cx="${x}" cy="${y}" r="8" fill="${st === "fault" ? "var(--bad)" : "var(--validator)"}"/><text x="${x}" y="${y + 4}" text-anchor="middle" style="fill:var(--on);font-weight:700">${st === "fault" ? "!" : "?"}</text></g>` : ""; }
 function mapLabelLines(t){ const w = String(t).split(" "), out = [""]; w.forEach(x => { const l = out[out.length - 1]; if (l && (l + " " + x).length > 17 && out.length < 2) out.push(x); else out[out.length - 1] = l ? l + " " + x : x; }); return out; }
 const mapGoLabel = n => n.status === "waiting_on_you" ? "Answer in Chat" : n.kind === "person" ? "Show what needs you" : n.kind === "engine" ? "Open these workflows"
-  : n.kind === "function" ? (n.id === "fn:identity" ? "Open Chat" : n.id === "fn:audit" ? "Open Audit findings" : "Show messages and calls") : n.tag === "Site" || n.id === "work:website" ? "Open the site preview" : n.id === "work:charter" ? "Open the Charter" : "Open the document";
+  : n.kind === "function" ? (n.id === "fn:identity" ? "Open Chat" : n.id === "fn:audit" ? "Open Audit findings" : "Show messages and calls") : PAGENODE(n.id) ? `Open the ${TYL(n.id.slice(5), "page").toLowerCase()} preview` : n.id === "work:charter" ? "Open the Charter" : "Open the document";
 const mapById = m => Object.fromEntries((m.nodes || []).map(n => [n.id, n]));
 const mapStepTo = (m, n) => { const e = (m.edges || []).find(x => x.kind === "step" && x.from === n.id); return e ? mapById(m)[e.to] : null; };      // the deliverable a step leads to
 const mapStepVerb = (m, n) => MAPLABEL.verb[n.label] || (mapStepTo(m, n) && MAPLABEL.verbTag[mapStepTo(m, n).tag]) || "working on";
@@ -4672,7 +4686,7 @@ function renderMap(m){
     else if (n.kind === "person") { r.push(MAPS[n.status], mapWords(n.detail)); toYou.forEach(e => r.push(e.from === "person:requester" ? `speaks to ${mapWords(name("fn:identity"))} · ${e.n}` : `${mapWords(name("fn:identity"))} speaks to you · ${e.n}`)); }
     else { r.push(n.version != null ? "v" + esc(n.version) : "version not recorded", MAPW[n.status], mapWords(n.detail), n.tag ? "kind: " + mapWords(n.tag) : "", (n.workflows || []).length ? `${plural(n.workflows.length, "workflow")}: ` + n.workflows.map(w => esc(w)).join(", ") : "");
       if (fns.length) { (wmade[n.id] || []).length ? r.push("made with: " + wmade[n.id].map(e => mapWords(nTxt(e))).join(", ")) : "";
-        r.push(n.id === "work:website" ? "which other function worked on this: not recorded" : (wmade[n.id] || []).length || n.status === "not_made" ? "" : "which function worked on this: not recorded"); }
+        r.push(PAGENODE(n.id) ? "which other function worked on this: not recorded" : (wmade[n.id] || []).length || n.status === "not_made" ? "" : "which function worked on this: not recorded"); }
       (ins[n.id] || []).forEach(g => r.push(`${mapWords(name(g.from))} ${givenTxt(g)}`)); (outs[n.id] || []).forEach(g => r.push(mapWords(givenTxt(g)))); }
     n.note && r.push(mapWords(n.note));      // the Charter: every team reads it
     return r.filter(Boolean).map(x => `<div class="sub">${x}</div>`).join("");
@@ -4695,7 +4709,7 @@ function renderMap(m){
       + (n.status === "fault" ? " <b>!</b>" : isWait(n.status) ? " <b>?</b>" : "")
       + `<div class="sub">${n.kind === "work" ? (n.version != null ? "v" + esc(n.version) : "version not recorded") + (MAPW[n.status] ? " · " + esc(MAPW[n.status]) : "") : esc(n.detail || "")}</div>`
       + (n.kind === "work" ? `<div class="sub">${mapWords(n.detail)}</div>` : "")
-      + (n.kind === "work" && fns.length ? ((wmade[n.id] || []).length ? `<div class="sub">made with: ${wmade[n.id].map(e => mapWords(nTxt(e))).join(", ")}</div>` : "") + (n.id === "work:website" ? '<div class="sub">which other function worked on this: not recorded</div>'
+      + (n.kind === "work" && fns.length ? ((wmade[n.id] || []).length ? `<div class="sub">made with: ${wmade[n.id].map(e => mapWords(nTxt(e))).join(", ")}</div>` : "") + (PAGENODE(n.id) ? '<div class="sub">which other function worked on this: not recorded</div>'
           : (wmade[n.id] || []).length || n.status === "not_made" ? "" : '<div class="sub">which function worked on this: not recorded</div>') : "")
       + (n.kind === "person" ? toYou.map(e => `<div class="sub">${e.from === "person:requester" ? "speaks to " + mapWords(name("fn:identity")) : mapWords(name("fn:identity")) + " speaks to you"} · ${e.n}</div>`).join("") : "")
       + (outs[n.id] || []).map(g => `<div class="sub">${mapWords(givenTxt(g))}</div>`).join("") + `</div>`;
@@ -4757,7 +4771,7 @@ function mapGo(id){
     if (n.id === "fn:identity") return focusChat();
     if (n.id === "fn:audit") return showTab("audit");
     MAPFILT = n.id; paintMap(); const d = $("pane-map").querySelector(".mapfilt"); if (d && d.scrollIntoView) d.scrollIntoView({block: "nearest"}); return; }
-  if (n.tag === "Site" || n.id === "work:website") return showTab("preview");
+  if (PAGENODE(n.id)) return showTab("preview");
   if (n.id === "work:charter") return showTab("charter");
   if (n.file) return openArtifact(n.file);
 }
@@ -5246,13 +5260,27 @@ function renderRuns(){
   $("runcount").textContent = L.length === RUNS.all.length ? plural(L.length, "run") : `${L.length} of ${plural(RUNS.all.length, "run")}`;
   L.slice(0, RUNS.show).forEach(x => { const G = runGroup(x.when); if (G !== g){ g = G; h += `<div class="rgrp">${G}</div>`; }
     const me = x.id === cur;
-    h += `<button type="button" class="runrow${me ? " cur" : ""}" data-openrun="${esc(x.id)}"${me ? ' aria-current="true"' : ""} aria-label="${esc(x.title)}, ${esc(x.id)}, ${esc(x.status)}${me ? ", open now" : ""}"><span class="ric">${RUNICON[x.output === "website" ? "web" : "doc"]}</span>`
+    h += `<button type="button" class="runrow${me ? " cur" : ""}" data-openrun="${esc(x.id)}"${me ? ' aria-current="true"' : ""} aria-label="${esc(x.title)}, ${esc(x.id)}, ${esc(x.status)}${me ? ", open now" : ""}"><span class="ric">${RUNICON[TYFORM(x.output) === "page" ? "web" : "doc"]}</span>`
       + `<span class="rmid"><span class="rt">${esc(x.title)}</span><code>${esc(x.id)}</code><span class="rm">${esc([runWhen(x.when), x.brief].filter(Boolean).join(" · "))}</span></span>`
       + `<span class="rr"><span class="rst ${esc(x.status)}">${esc(x.status)}</span><span class="ropen">${me ? "Open now" : "Open"}</span></span></button>`; });
   if (L.length > RUNS.show) h += `<button type="button" class="runmore" id="runmore">Show ${Math.min(20, L.length - RUNS.show)} more · ${L.length - RUNS.show} left</button>`;
   $("runlist").innerHTML = h || `<div class="runnone">No runs match.</div>`;
 }
 (async () => { try { const r = await (await fetch("/api/runlist", {cache: "no-store"})).json(); RUNS.all = r.runs || []; RUNS.live = r.live || ""; } catch (e) {} renderRuns(); })();
+// Run settings' "This run": timing.json (/api/timing, j2.timing_record): AI calls, tokens and seconds per step and per agent, code checks, Requester waits
+function timingHtml(t){
+  if (!t || !(t.rows || []).length) return `<p>No AI calls recorded yet.</p>`;
+  const a = t.ai, sec = x => (+x || 0).toFixed(1) + " s", tok = (i, o) => i || o ? `${(+i).toLocaleString()} in · ${(+o).toLocaleString()} out` : "not reported";
+  const name = r => r.kind === "wait" ? "Requester (answering)" : who(r.who)[0] + (r.kind === "checks" ? " checks (code)" : "");
+  return `<p>${plural(a.calls, "AI call")} · tokens ${tok(a.tokens_in, a.tokens_out)} · AI ${sec(a.seconds)} · checks ${sec(t.checks_seconds)} · waiting for the Requester ${sec(t.requester_wait_seconds)}${t.wall_seconds != null ? ` · run ${sec(t.wall_seconds)}` : ""}${t.from_calls_only ? " (from calls.jsonl: AI calls only)" : ""}</p>`
+    + `<details><summary>Per step (J2.a to J2.h) and agent</summary><div class="timetbl"><table><tr><th>Step</th><th>Who</th><th>AI calls</th><th>Tokens</th><th>Time</th></tr>`
+    + t.rows.map(r => `<tr><td>${esc(r.step || "–")}</td><td>${esc(name(r))}</td><td>${r.kind === "ai" ? r.calls : "–"}</td><td>${r.kind === "ai" ? tok(r.tokens_in, r.tokens_out) : "–"}</td><td>${sec(r.seconds)}</td></tr>`).join("")
+    + `</table></div></details>`;
+}
+async function loadTiming(){ let t = null;
+  try { const r = await fetch("/api/timing" + (viewRun ? "?run=" + encodeURIComponent(viewRun) : ""), {cache: "no-store"}); t = r.ok ? await r.json() : null; } catch (e) {}
+  $("timing").innerHTML = timingHtml(t); }
+loadTiming();
 $("runlist").addEventListener("click", e => {
   if (e.target.closest("#runmore")){ RUNS.show += 20; return renderRuns(); }
   const b = e.target.closest("[data-openrun]"); if (!b) return;

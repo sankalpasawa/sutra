@@ -3,7 +3,7 @@
   "artifact": "design",
   "kind": "generic",
   "version": 1,
-  "from": "j2_artifact_models.SECTION_MODELS, DOC_MODELS and j2_rules.RULES (generated: python3 j2_template_lib.py)",
+  "from": "hand-edited: this file is the source of this type's sections, their fields, rules and rendering. J2 builds each section's model and checks from it at load time (j2_artifact_models, j2_rules); python3 j2_template_lib.py checks every generic.json",
   "templates": [
     {
       "name": "Design/1 · Style guide",
@@ -12,6 +12,8 @@
       "version": 1,
       "kind": "generic",
       "description": "The generic Design/1 · Style guide template: the fixed layout of every design Style guide section, whatever the business",
+      "model": "Design",
+      "conditions": [],
       "fields": [
         {
           "name": "palette",
@@ -220,9 +222,7 @@
           "name": "the fonts url is a fonts.googleapis.com url or null",
           "from": "parse_style (j2.py)"
         }
-      ],
-      "sha": "f6292ae56816597866484071fd31ac3d91292b96143e2cc82420e25a13d7958a",
-      "schema_sha": "50e8c63252d8e9761d3679273c015da4ca4349e7b1593988033b77995903584c"
+      ]
     }
   ]
 }

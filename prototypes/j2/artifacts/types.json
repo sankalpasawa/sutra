@@ -12,6 +12,29 @@
       ]
     }
   },
+  "expect_kinds": {"section": "element-count", "element": "element-count", "facts": "facts-present", "file": "file-exists", "test": "named-test", "tap": "tap-targets", "heading": "heading-present", "ids": "ids-unique", "behavior": "behavior-steps"},
+  "forms": {
+    "_note": "How each form is built and checked, defined once. A type names its form; every field it leaves out comes from here ({name}, {label}, {noun} and {sections} are filled from the type). Room for \"script\" and \"action\": not built yet. browser_checks: the check types code runs in headless Chrome (the plan format lists the others; the atom rules describe these). cost.item_parts: a done-when item's words (regex) -> the rate-card part it costs at least, first match wins. expect_kinds: an expected-output kind -> the check type that verifies it.",
+    "page": {"builder": "builder.md", "file": "site/index.html", "preview": "html", "style_guide": "design",
+             "check_types": ["file-exists", "grep-count", "element-count", "named-test", "facts-present", "tap-targets", "behavior-steps"], "ready": "Your {lower} is ready.",
+             "browser_checks": ["tap-targets", "behavior-steps"]},
+    "document": {
+      "builder": "templates/document/builder.md", "file": "{name}.md", "template": "templates/{name}/generic.json", "preview": "markdown", "export": "docx",
+      "check_types": ["facts-present", "heading-present", "section-not-empty"],
+      "intake": "templates/document/intake.md", "charter_format": "templates/document/charter.txt", "atom_rules": "templates/document/atom_rules.md", "conditions": "document.json",
+      "rubric": [
+        {"id": "D-1", "text": "Every section does the job its name says, for the charter's audience"},
+        {"id": "D-2", "text": "Specific and checkable: names, numbers and rules are stated, not implied"},
+        {"id": "D-3", "text": "No invented facts: every fact comes from the brief or the Requester's answers, or is labelled \"Assumption:\"; the evidence quotes each unlabelled claim not in the brief"}
+      ],
+      "done": "Done: the {label} is workable. Every done-when item, rubric item and necessary condition passes.",
+      "ready": "Your document is ready.",
+      "cost": {"card": "rates_prd", "section_part": "doc_section",
+               "item_parts": [{"part": "requirements_section", "words": "requirement|components?\\b|pages and sections"}, {"part": "doc_section", "words": ""}]},
+      "workflow": {"template": "doc-sections", "refs": "^{name}\\.md(#|$)"},
+      "mock": {"charter": "mock_form_charter", "section": "mock_form_section", "atom": {}}
+    }
+  },
   "types": [
     {
       "name": "prd",
@@ -19,9 +42,26 @@
       "label": "Product requirements",
       "tag": "PRD",
       "color": "--prd",
-      "form": "doc",
+      "form": "document",
+      "template": "templates/prd/generic.json",
       "file": "prd.md",
       "export": "docx",
+      "output_label": "PRD document",
+      "noun": "PRD",
+      "rubric": [
+        {"id": "D-1", "text": "Every requirement is specific and testable"},
+        {"id": "D-2", "text": "Goals and success metrics are measurable"},
+        {"id": "D-3", "text": "Users and problem are consistent with the requirements"},
+        {"id": "D-4", "text": "Out of scope is explicit"},
+        {"id": "D-5", "text": "No invented facts: every fact comes from the brief or the Requester's answers, or is labelled \"Assumption:\"; the evidence quotes each unlabelled claim not in the brief"}
+      ],
+      "check_types": ["facts-present", "heading-present", "section-not-empty", "ids-unique"],
+      "done": "Done: the PRD is workable. Every done-when item, rubric item and necessary condition passes.",
+      "builder": "templates/prd/builder.md",
+      "intake": "templates/prd/intake.md",
+      "charter_format": "templates/prd/charter.txt",
+      "atom_rules": "templates/prd/atom_rules.md",
+      "mock": {"charter": "mock_prd_charter", "section": "mock_doc_section", "atom": "mock_doc_atom"},
       "deliverable": true,
       "triggers": [
         "\\bPRDs?\\b|\\bproduct\\s+requirements?\\b"
@@ -33,19 +73,14 @@
       "conditions": "prd.json",
       "workflow": {
         "template": "doc-sections",
-        "sections": [
-          "Problem",
-          "Users",
-          "Goals",
-          "Requirements",
-          "Success metrics",
-          "Out of scope"
-        ],
-        "builder": "python:PRD_BUILDER",
         "refs": "^prd\\.md(#|$)"
       },
       "cost": {
         "card": "rates_prd",
+        "section_part": "doc_section",
+        "section_parts": {
+          "Requirements": "requirements_section"
+        },
         "parts": {
           "doc_section": 5,
           "requirements_section": 1
@@ -58,9 +93,26 @@
       "label": "High-level design",
       "tag": "HLD",
       "color": "--hld",
-      "form": "doc",
+      "form": "document",
+      "template": "templates/hld/generic.json",
       "file": "hld.md",
       "export": "docx",
+      "output_label": "HLD document",
+      "noun": "HLD",
+      "rubric": [
+        {"id": "D-1", "text": "Every component has one clear responsibility"},
+        {"id": "D-2", "text": "The data flow names every form and integration the pages need"},
+        {"id": "D-3", "text": "Hosting, deployment and risks are explicit"},
+        {"id": "D-4", "text": "Consistent with the PRD: every requirement has a component"},
+        {"id": "D-5", "text": "No invented facts: every fact comes from the brief or the Requester's answers or the PRD, or is labelled \"Assumption:\"; the evidence quotes each unlabelled claim not in them"}
+      ],
+      "check_types": ["facts-present", "heading-present", "section-not-empty", "ids-unique"],
+      "done": "Done: the HLD is workable. Every done-when item, rubric item and necessary condition passes.",
+      "builder": "templates/hld/builder.md",
+      "intake": "templates/hld/intake.md",
+      "charter_format": "templates/hld/charter.txt",
+      "atom_rules": "templates/hld/atom_rules.md",
+      "mock": {"charter": "mock_prd_charter", "section": "mock_hld_section", "atom": {"Components": "C"}},
       "deliverable": true,
       "triggers": [
         "\\bHLDs?\\b|\\bhigh[- ]level\\s+design\\b|\\barchitecture\\s+overview\\b"
@@ -74,19 +126,14 @@
       "conditions": "hld.json",
       "workflow": {
         "template": "doc-sections",
-        "sections": [
-          "Purpose and scope",
-          "Pages",
-          "Components",
-          "Data flow",
-          "Hosting and deployment",
-          "Risks"
-        ],
-        "builder": "python:HLD_BUILDER",
         "refs": "^hld\\.md(#|$)"
       },
       "cost": {
         "card": "rates_prd",
+        "section_part": "doc_section",
+        "section_parts": {
+          "Components": "requirements_section"
+        },
         "parts": {
           "doc_section": 5,
           "requirements_section": 1
@@ -99,9 +146,26 @@
       "label": "Low-level design",
       "tag": "LLD",
       "color": "--lld",
-      "form": "doc",
+      "form": "document",
+      "template": "templates/lld/generic.json",
       "file": "lld.md",
       "export": "docx",
+      "output_label": "LLD document",
+      "noun": "LLD",
+      "rubric": [
+        {"id": "D-1", "text": "Every page section has an id and implements at least one component"},
+        {"id": "D-2", "text": "Every interactive element has a selector, a trigger and a behaviour"},
+        {"id": "D-3", "text": "Every form field has a type, a required flag and a validation rule"},
+        {"id": "D-4", "text": "Consistent with the HLD: every component is built by a section"},
+        {"id": "D-5", "text": "No invented facts: every fact comes from the brief or the Requester's answers or the earlier documents, or is labelled \"Assumption:\"; the evidence quotes each unlabelled claim"}
+      ],
+      "check_types": ["facts-present", "heading-present", "section-not-empty", "ids-unique"],
+      "done": "Done: the LLD is workable. Every done-when item, rubric item and necessary condition passes.",
+      "builder": "templates/lld/builder.md",
+      "intake": "templates/lld/intake.md",
+      "charter_format": "templates/lld/charter.txt",
+      "atom_rules": "templates/lld/atom_rules.md",
+      "mock": {"charter": "mock_prd_charter", "section": "mock_lld_section", "atom": {"Pages and sections": "S", "Interactive elements": "E", "Form fields": "F"}},
       "deliverable": true,
       "triggers": [
         "\\bLLDs?\\b|\\blow[- ]level\\s+design\\b|\\bdetailed\\s+design\\b"
@@ -116,18 +180,14 @@
       "conditions": "lld.json",
       "workflow": {
         "template": "doc-sections",
-        "sections": [
-          "Pages and sections",
-          "Interactive elements",
-          "Form fields",
-          "File structure",
-          "Responsive and accessibility rules"
-        ],
-        "builder": "python:LLD_BUILDER",
         "refs": "^lld\\.md(#|$)"
       },
       "cost": {
         "card": "rates_prd",
+        "section_part": "doc_section",
+        "section_parts": {
+          "Pages and sections": "requirements_section"
+        },
         "parts": {
           "doc_section": 4,
           "requirements_section": 1
@@ -143,6 +203,21 @@
       "form": "page",
       "file": "site/index.html",
       "export": null,
+      "noun": "site",
+      "rubric": [
+        {"id": "R-1", "text": "Consistent styling: the whole page follows the style guide (same fonts, colours, button and card styles)"},
+        {"id": "R-2", "text": "Readable contrast: text is easy to read against its background (WCAG AA)"},
+        {"id": "R-3", "text": "Clear hierarchy: one main heading, headings in order, the most important things stand out"},
+        {"id": "R-4", "text": "One obvious main action: a visitor can tell at once what to do next"},
+        {"id": "R-5", "text": "Easy navigation: a visitor can reach every section quickly, on a phone too"},
+        {"id": "R-6", "text": "Tap targets are big enough on phones (at least 44x44px; 24x24px for the cells or keys of a dense grid or keypad)"},
+        {"id": "R-7", "text": "Images have alt text"}
+      ],
+      "check_types": ["file-exists", "grep-count", "element-count", "named-test", "facts-present", "tap-targets", "behavior-steps"],
+      "done": "Done: the site is workable. Every done-when item passes with Audit's evidence and the render check is clean.",
+      "intake": "templates/website/intake.md",
+      "charter_format": "templates/website/charter.txt",
+      "plan": null,
       "deliverable": true,
       "triggers": [],
       "also_when": "site-words",
@@ -154,12 +229,11 @@
       "conditions": "website.json",
       "workflow": {
         "template": "site-parts",
-        "sections": [],
-        "builder": "builder.md",
         "refs": "\\.html?(#|$)"
       },
       "cost": {
         "card": "rates",
+        "item_parts": [{"part": "form", "words": "\\bform\\b|\\border|\\bbook(?:ing)?\\b|enquir|inquir|appointment|reserv|sign[- ]?up|subscribe"}, {"part": "interactive_feature", "words": "filter|search|sort|slider|carousel|calculator|toggle|\\btabs?\\b|interactive|animat"}, {"part": "styling", "words": "viewport|mobile|phone|responsive|horizontal scroll|\\b360\\s*px|\\b1280\\s*px|\\bcolou?rs?\\b|\\bfonts?\\b"}, {"part": "page_section", "words": ""}],
         "parts": {
           "styling": 1,
           "page_section": 3,
@@ -167,6 +241,7 @@
         }
       }
     },
+    {"name": "business_report", "kind": "type", "label": "Report", "tag": "Report", "color": "--other", "form": "document", "template": "templates/business_report/generic.json", "file": "business_report.md", "noun": "report", "deliverable": true, "triggers": ["\\b(?:sales|monthly|weekly|quarterly|annual|business|status|progress)\\s+report\\b|\\breport\\s+on\\b"], "groups": [], "depends_on": []},
     {
       "name": "screenshots",
       "kind": "record",
@@ -263,7 +338,7 @@
       "label": "Run report",
       "tag": "Other",
       "color": "--other",
-      "form": "doc",
+      "form": "document",
       "file": "report.md",
       "deliverable": false
     },
@@ -295,6 +370,16 @@
       "color": "--other",
       "form": "data",
       "file": "realization.json",
+      "deliverable": false
+    },
+    {
+      "name": "deliverables",
+      "kind": "record",
+      "label": "Deliverables",
+      "tag": "Other",
+      "color": "--other",
+      "form": "data",
+      "file": "deliverables.json",
       "deliverable": false
     },
     {
