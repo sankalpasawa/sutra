@@ -1106,7 +1106,8 @@ def simple_redesign():
         got = re.search(r"(\d+) of (\d+) parts built", out["sprog"])
         assert (got and (int(got[1]), int(got[2])) == (n, m_)) if m_ else not got, (label, out["sprog"], n, m_)
         assert out["plan"].count("data-go=") == m_, (label, "the plan lists every part once")
-        assert out["tabs"][-1] == "team" and all(k in ("site", "prd", "hld", "lld", "team") or k.startswith("a:") for k in out["tabs"]), (label, out["tabs"])
+        assert out["tabs"][-1] == "team" and all(k in ("site", "prd", "hld", "lld", "team") or k == s.get("output") or k.startswith("a:")
+                                                 for k in out["tabs"]), (label, out["tabs"])      # any type's own tab: a new one's too
         if s["versions"] and out["tabs"][0] != "team":
             assert re.match(r"/(site/v\d+|doc/\w+|view)\?", out["sframe"]) and (s.get("docset") or f"/site/v{s['versions']}?" in out["sframe"]), (label, "the newest output is shown", out["sframe"])
         if re.match(r"Done", s.get("outcome") or "") and not s.get("paused") and s["status"] != "running":
@@ -7570,7 +7571,8 @@ def forms_and_new_types():
     """Phase C (docs/remove-hardcoding-plan.md): every type has a form (page or document) defined once in
     types.json, which fills what the type leaves out; checks, the ready message and the stage words follow the form and
     the type's label; a stage may name its own builder persona (stages.json "skill"); and a deliverable no type fits is
-    made as a new document type, saved to types.json and the template library, built and checked, and reused next run."""
+    made as a new document type, saved to the local store (types.local.json and library/types/, git-ignored) with its
+    recommended_practice, built and checked, and reused next run; types.json is never written."""
     import j2_types
     import j2_artifacts as A
     T = json.load(open(j2_types.TYPES_PATH, encoding="utf-8"))
@@ -7582,11 +7584,14 @@ def forms_and_new_types():
     tmp = tempfile.mkdtemp(prefix="j2-types-")
     shutil.copy(j2_types.TYPES_PATH, tmp)
     shutil.copytree(j2_types.TEMPLATES_DIR, os.path.join(tmp, "templates"))
-    keep_paths = (j2_types.TYPES_PATH, j2_types.TEMPLATES_DIR)
+    keep_paths = (j2_types.TYPES_PATH, j2_types.TEMPLATES_DIR, j2_types.LOCAL_TYPES_PATH, j2_types.LOCAL_LIBRARY_DIR)
     keep_env = os.environ.pop("J2_GENERIC", None)
+    # the built-in types from a copy, and an empty local store: whatever types real runs made locally don't count here
     j2_types.TYPES_PATH, j2_types.TEMPLATES_DIR = os.path.join(tmp, "types.json"), os.path.join(tmp, "templates")
+    j2_types.LOCAL_TYPES_PATH, j2_types.LOCAL_LIBRARY_DIR = os.path.join(tmp, "types.local.json"), os.path.join(tmp, "library", "types")
     j2_types.template.cache_clear()
     j2._data_type.cache_clear()
+    builtin = open(j2_types.TYPES_PATH, encoding="utf-8").read()
     try:
         cp = j2_types.create_problems
         assert cp("", "X", ["A"], "x.md") and cp("prd", "X", ["A"], "x.md") == ["type prd already exists"]
@@ -7602,11 +7607,12 @@ def forms_and_new_types():
                    "which products grew or fell, and what the owner should do next month to sell more."))
         for name, label, secs, brief in briefs:
             before = j2_types.names()
+            practice = name == "hiring_policy"      # a policy may give labelled good practice; a report stays strict
             for rnd in (1, 2):      # the first run makes the type; the second names it and reuses it
                 run = j2.J2Run()
                 run.budget = 300
                 run.mock_deliverables = [{"type": name, "why": "no type fits", "new": {"label": label, "sections": secs,
-                                                                                    "file": f"{name}.md"}}] if rnd == 1 else [name]
+                                                                                    "file": f"{name}.md", "recommended_practice": practice}}] if rnd == 1 else [name]
                 say(run, brief)
                 made = [m["text"] for m in run.chat if m["text"].startswith(f"New type {name}")]
                 assert run.output == name and run.stages == [name] and run.doc, (name, run.output, run.stages)
@@ -7616,14 +7622,19 @@ def forms_and_new_types():
                 assert all(f"## {x}" in md for x in secs), md[:200]
                 conds = json.load(open(os.path.join(run.dir, "conditions.json"), encoding="utf-8"))
                 assert [c["id"] for c in conds] == ["C1", "C2", "C3", "C4"] and all(c["met"] for c in conds), conds
+                assert ("Recommended practice:" in conds[2]["text"]) == practice and "{practice}" not in conds[2]["text"], conds[2]
                 assert bool(made) == (rnd == 1), (rnd, made)
                 assert j2_types.names() == before + [name], j2_types.names()
                 g = A.groups(run.dir)
                 assert [r["name"] for x in g["groups"] if x["id"] == "documents" for r in x["rows"]] == [label], g["groups"]
                 assert any(m["text"].startswith(f"Documents asked for: the {label}") for m in run.chat)
-            entry = next(t for t in json.load(open(j2_types.TYPES_PATH, encoding="utf-8"))["types"] if t["name"] == name)
+            # made locally: types.local.json and library/types/<name>/; types.json and templates/ untouched
+            entry = next(t for t in json.load(open(j2_types.LOCAL_TYPES_PATH, encoding="utf-8"))["types"] if t["name"] == name)
             assert entry["form"] == "document" and entry["file"] == f"{name}.md" and j2_types.sections(name) == tuple(secs), entry
-            assert os.path.isfile(os.path.join(j2_types.TEMPLATES_DIR, name, "generic.json"))
+            assert entry.get("recommended_practice", False) is practice and j2_types.load(name)["recommended_practice"] is practice, entry
+            assert os.path.isfile(os.path.join(j2_types.LOCAL_LIBRARY_DIR, name, "generic.json"))
+            assert not os.path.exists(os.path.join(j2_types.TEMPLATES_DIR, name))
+            assert open(j2_types.TYPES_PATH, encoding="utf-8").read() == builtin, "a run never writes types.json"
             assert name not in ("prd", "website")
         # a stage may name its own builder persona; every stage names none today
         assert j2.STAGE_SKILLS == {}
@@ -7634,7 +7645,7 @@ def forms_and_new_types():
         ui = open(os.path.join(os.path.dirname(os.path.abspath(__file__)), "j2_ui.html"), encoding="utf-8").read()
         assert "const TYL = " in ui and 'TYL("site", "Page") + " sections"' in ui
     finally:
-        j2_types.TYPES_PATH, j2_types.TEMPLATES_DIR = keep_paths
+        j2_types.TYPES_PATH, j2_types.TEMPLATES_DIR, j2_types.LOCAL_TYPES_PATH, j2_types.LOCAL_LIBRARY_DIR = keep_paths
         j2_types.template.cache_clear()
         j2._data_type.cache_clear()
         j2.STAGE_SKILLS.clear()
@@ -7757,6 +7768,175 @@ def report_type():
     md = open(os.path.join(run.dir, "business_report.md"), encoding="utf-8").read()
     assert all(f"## {x}" in md for x in j2_types.sections("business_report")) and os.path.isfile(os.path.join(run.dir, "business_report.docx"))
     print("report type: chosen from its own trigger words, built with the template's five sections, checked and filed, no code names it ok")
+
+
+class _TypeStore:
+    """Point j2_types at a temp copy of types.json and templates/ and an empty local store; restore on exit."""
+    KEYS = ("TYPES_PATH", "TEMPLATES_DIR", "LOCAL_TYPES_PATH", "LOCAL_LIBRARY_DIR")
+
+    def __enter__(self):
+        import j2_types
+        self.t, self.tmp = j2_types, tempfile.mkdtemp(prefix="j2-store-")
+        self.keep = {k: getattr(j2_types, k) for k in self.KEYS}
+        shutil.copy(j2_types.TYPES_PATH, self.tmp)
+        shutil.copytree(j2_types.TEMPLATES_DIR, os.path.join(self.tmp, "templates"))
+        for k, v in zip(self.KEYS, ("types.json", "templates", "types.local.json", os.path.join("library", "types"))):
+            setattr(j2_types, k, os.path.join(self.tmp, v))
+        self._clear()
+        return j2_types
+
+    def _clear(self):
+        self.t.template.cache_clear()
+        j2._data_type.cache_clear()
+
+    def __exit__(self, *a):
+        for k, v in self.keep.items():
+            setattr(self.t, k, v)
+        self._clear()
+        shutil.rmtree(self.tmp, ignore_errors=True)
+
+
+def local_types():
+    """Types a run makes are local (git-ignored artifacts/types.local.json and library/types/<name>/generic.json):
+    create() writes only there and never types.json or templates/; the local types load after the built-ins (names,
+    template, load, the planner's type list, the Artifacts' types); a local type with a built-in's name is refused with
+    the reason; --promote moves one into types.json (before the records, one line) and templates/<name>/, and out of
+    the local store."""
+    import subprocess
+    import j2_realization as R
+    import j2_artifacts as A
+    here = os.path.dirname(os.path.abspath(__file__))
+    ign = subprocess.run(["git", "check-ignore", "artifacts/types.local.json", "library/types/x/generic.json"], cwd=here,
+                         capture_output=True, text=True).stdout.split()
+    assert ign == ["artifacts/types.local.json", "library/types/x/generic.json"], ign
+    with _TypeStore() as T:
+        builtin, before = open(T.TYPES_PATH, encoding="utf-8").read(), T.names()
+        e = T.create("staff_guide", "Staff guide", ["Purpose", "Rules"], practice=True)
+        assert open(T.TYPES_PATH, encoding="utf-8").read() == builtin and not os.path.exists(os.path.join(T.TEMPLATES_DIR, "staff_guide"))
+        assert e["template"] == "library/types/staff_guide/generic.json" and e["recommended_practice"] is True
+        assert json.load(open(T.LOCAL_TYPES_PATH, encoding="utf-8"))["types"] == [e]
+        assert os.path.isfile(os.path.join(T.LOCAL_LIBRARY_DIR, "staff_guide", "generic.json"))
+        assert T.names() == before + ["staff_guide"] and T.sections("staff_guide") == ("Purpose", "Rules")
+        assert T.load("staff_guide")["file"] == "staff_guide.md" and T.info("staff_guide")["label"] == "Staff guide"
+        assert "staff_guide" in [t["name"] for t in R.type_list()] and "staff_guide" in {t["name"] for t in A.load_types()["types"]}
+        # a built-in's name: refused when made, and refused when found in the local store
+        assert T.create_problems("prd", "X", ["A"], "x.md") == ["type prd already exists"]
+        assert T.create_problems("staff_guide", "X", ["A"], "x.md") == ["type staff_guide already exists"]
+        assert T.create_problems("plan_x", "X", ["A"], "x.md", practice="yes") == ["recommended_practice 'yes' must be true or false"]
+        T._write_local(T._read_local() + [{**e, "name": "prd", "label": "Not the PRD"}])
+        assert T.refused() == ["local type prd refused: types.json already has a type of that name (rename it in types.local.json)"]
+        assert T.names().count("prd") == 1 and T.info("prd")["label"] != "Not the PRD"
+        T._write_local([e])
+        # promote: into types.json (before the first record) and templates/, out of the local store
+        tpl = open(os.path.join(T.LOCAL_LIBRARY_DIR, "staff_guide", "generic.json"), encoding="utf-8").read()
+        T.promote("staff_guide")
+        text = open(T.TYPES_PATH, encoding="utf-8").read()
+        line = "    " + json.dumps({**e, "template": "templates/staff_guide/generic.json"}, ensure_ascii=False) + ",\n"
+        assert text == builtin.replace('    {\n      "name": "screenshots"', line + '    {\n      "name": "screenshots"', 1), "one line, before the records"
+        assert open(os.path.join(T.TEMPLATES_DIR, "staff_guide", "generic.json"), encoding="utf-8").read() == tpl
+        assert json.load(open(T.LOCAL_TYPES_PATH, encoding="utf-8"))["types"] == []
+        assert not os.path.exists(os.path.join(T.LOCAL_LIBRARY_DIR, "staff_guide"))
+        assert T.names() == before + ["staff_guide"] and T.sections("staff_guide") == ("Purpose", "Rules") and T.refused() == []
+        assert T.load("staff_guide")["recommended_practice"] is True
+        try:
+            T.promote("staff_guide")
+            raise AssertionError("promoted twice")
+        except ValueError as err:
+            assert "no local type" in str(err), err
+    r = subprocess.run([sys.executable, "j2_types.py", "--promote"], cwd=here, capture_output=True, text=True)
+    assert r.returncode and "usage" in r.stderr, r
+    print("local types: a type a run makes goes to the git-ignored local store, never types.json; it loads after the "
+          "built-ins; a built-in's name is refused with the reason; --promote moves it into types.json and templates/ ok")
+
+
+def recommended_practice():
+    """A type's data says whether it allows labelled "Recommended practice:" lines ("recommended_practice": true for a
+    policy, guide, plan or SOP); code only reads it. For such a type the builder, the no-invented-facts condition and
+    rubric item D-3 carry the form's practice_rule, and a labelled line of general good practice is not an invented
+    fact, while a number, name or law in it, or outside it, still is. A strict type (business_report, prd, website)
+    keeps its prompts as they were, and a "Recommended practice:" line is an invented fact there."""
+    with _TypeStore() as T:
+        T.create("staff_policy", "Staff policy", ["Purpose", "Rules"], practice=True)
+        rule = json.load(open(T.TYPES_PATH, encoding="utf-8"))["forms"]["document"]["practice_rule"]
+        pol, rep = j2.output_def("staff_policy"), j2.output_def("business_report")
+        assert pol["recommended_practice"] and pol["practice"] == rule and rule in pol["builder"] and rule in dict(pol["rubric"])["D-3"]
+        for o in (rep, j2.output_def("prd"), j2.output_def("website")):
+            assert not o["recommended_practice"] and o["practice"] == "" and "Recommended practice" not in o["builder"] + json.dumps(o["rubric"])
+            assert "{practice}" not in o["builder"] + json.dumps(o["rubric"])
+        conds = lambda o: j2.load_conditions(o["conditions"], o["practice"])
+        assert rule in conds(pol)[2]["text"] and conds(pol)[2]["practice"] is True
+        assert conds(rep)[2]["text"].endswith("or sits in an Assumption: line") and "practice" not in conds(rep)[2]
+        src = j2.squash("Acme Labs hiring: the referral bonus is 50,000 after 3 months")
+        base = ("## Purpose\n\nThis document sets how Acme Labs hires.\n\n## Rules\n\n"
+                "The referral bonus is 50,000 after 3 months.\n\nRecommended practice: ask every candidate the same questions.\n")
+        c3 = lambda o, doc: next(c for c in j2.check_conditions(conds(o), doc, {}, src, ("Purpose", "Rules")) if c["id"] == "C3")
+        assert c3(pol, base)["met"], c3(pol, base)
+        for extra, bad in (("Recommended practice: give feedback within 5 days.", "5"),
+                           ("Recommended practice: follow the Karnataka Shops Act.", "Karnataka"),
+                           ("Interviews take 90 minutes.", "90")):
+            got = c3(pol, base + "\n" + extra + "\n")
+            assert not got["met"] and bad in got["evidence"], (extra, got)
+        strict = c3(rep, base.replace("## Purpose", "## Summary").replace("## Rules", "## Findings"))
+        assert not strict["met"] and "Recommended practice: ask every candidate the same questions" in strict["evidence"], strict
+        assert c3(rep, base.replace("\nRecommended practice: ask every candidate the same questions.\n", ""))["met"]
+        # Adaptation states it for a new type: the deliverables format, the type list and the role file say so
+        import j2_realization as R
+        assert '"recommended_practice": bool' in R.plan_fmt([]) and "recommended_practice" in R.types_text([])
+        assert "recommended_practice" in open(os.path.join(j2.HERE, "agents", "j2", "adaptation.md"), encoding="utf-8").read()
+        code = "".join(open(os.path.join(j2.HERE, f), encoding="utf-8").read() for f in ("j2.py", "j2_types.py", "j2_realization.py"))
+        assert "staff_policy" not in code and "hiring_policy" not in code, "no code names a type that allows it"
+    print("recommended practice: read from the type's data; a policy's labelled good-practice line passes C3 while a "
+          "number, a law or an unsourced number elsewhere still fails; a strict type's prompts are unchanged and the "
+          "same line is an invented fact there ok")
+
+
+def fix_sections():
+    """A document fix the planner names no sections for gets them from code: the sections of the workflow it revises,
+    else the sections its failing items name; a fix that names its sections keeps them."""
+    run = j2.J2Run()
+    run.budget = 600
+    say(run, "Write the quarterly report on sales for Petal House, a flower shop in Jaipur. It sums up what sold, which bouquets "
+             "grew or fell this quarter, what we learned from the wedding season and what the owner should do next.")
+    assert run.doc and run.outcome.startswith("Done"), run.outcome
+    at = lambda w: [{k: v for k, v in a.items() if k != "id"} for a in w["atoms"]]
+    by = {w["name"]: w for w in run.workflows}
+    run.audits.append({"results": [{"id": "F-9", "criterion": "Recommendations: name the two bouquets to stock", "pass": False}],
+                       "extra_issues": []})
+    base = {"goal_gap": "fix", "parts": ["fix"], "outputs": [run.out["file"]], "completion_check": "fixed", "envelope": {"money_limit": 20}}
+    n = len(run.workflows)
+    run._register([{**base, "name": "Rewrite the findings", "revises": by["Write Findings"]["id"], "atoms": at(by["Write Findings"])},
+                   {**base, "name": "Fix item 9", "fixes": ["F-9"], "atoms": at(by["Write Recommendations"])},
+                   {**base, "name": "Fix the summary", "revises": by["Write Findings"]["id"], "sections": ["Summary"],
+                    "atoms": at(by["Write Summary"])}])
+    got = {w["name"]: w.get("sections") for w in run.workflows[n:]}
+    assert got == {"Rewrite the findings": ["Findings"], "Fix item 9": ["Recommendations"], "Fix the summary": ["Summary"]}, got
+    print("fix sections: a fix gets the sections of the workflow it revises, else those its failing items name ok")
+
+
+def run_list_local_type():
+    """Run settings > Runs (/api/runlist, j2_server.run_row) gives each run its type's label and form, a local type's
+    too, from j2_types; a run whose type this clone doesn't have gets none. The UI's run row shows the label and picks
+    the icon from the form."""
+    import j2_server
+    with _TypeStore() as T:
+        T.create("staff_guide", "Staff guide", ["Purpose", "Rules"])
+        runs = tempfile.mkdtemp(prefix="j2-runlist-")
+        keep = j2.RUNS_DIR
+        try:
+            for n, out in (("j2-20261111-120000", "staff_guide"), ("j2-20261111-120100", "gone_type"), ("j2-20261111-120200", "website")):
+                os.makedirs(os.path.join(runs, n))
+                with open(os.path.join(runs, n, "chat.jsonl"), "w", encoding="utf-8") as f:
+                    f.write(json.dumps({"meta": True, "output": out}) + "\n" + json.dumps({"who": "user", "text": "a brief"}) + "\n")
+                json.dump({"output_type": out, "status": "done"}, open(os.path.join(runs, n, "summary.json"), "w"))
+            j2.RUNS_DIR = runs
+            rows = {x["output"]: (x["label"], x["form"]) for x in j2_server.run_list()["runs"]}
+        finally:
+            j2.RUNS_DIR = keep
+            shutil.rmtree(runs, ignore_errors=True)
+        assert rows == {"staff_guide": ("Staff guide", "document"), "gone_type": ("", ""), "website": ("Website", "page")}, rows
+    ui = open(os.path.join(j2.HERE, "j2_ui.html"), encoding="utf-8").read()
+    assert 'RUNICON[(x.form || TYFORM(x.output)) === "page" ? "web" : "doc"]' in ui and "[x.label, runWhen(x.when), x.brief]" in ui
+    print("run list: each run's type label and form icon, a local type's too ok")
 
 
 def tap_dense():
@@ -9282,7 +9462,8 @@ def left_bar():
                 if a.startswith("sec:"):
                     return [f'data-sec="{htmllib.escape(":".join(a.split(":")[1:-1]) + "|" + a.split(":")[-1])}"'] + want_of(":".join(a.split(":")[1:-1]))
                 f_ = (map_arts.get(a) or {}).get("file")
-                return [f'data-node="{htmllib.escape(a)}"'] + ([f'data-art="{htmllib.escape(f_)}"'] if f_ else []) + (['data-art="goal.json"'] if a == "work:charter" else [])
+                return [f'data-node="{htmllib.escape(a)}"'] + ([f'data-art="{htmllib.escape(f_)}"'] if f_ else []) + (['data-art="goal.json"'] if a == "work:charter" else []) \
+                    + ([f'data-agrow="{htmllib.escape(a[5:])}"'] if a.startswith("work:") and a[5:] not in ("prd", "hld", "lld") else [])      # a new type's document: its Artifacts row (mapDeepTarget)
             for a in sorted(ids):
                 want = want_of(a)
                 doc = re.sub(r"^work:", "", ":".join(a.split(":")[1:-1]) if a.startswith("sec:") else a)
@@ -9832,7 +10013,10 @@ def run_settings():
     for x in got["runs"]:
         w_ = want(x["id"])
         assert x["status"] == ("running" if x["id"] == got["live"] and j2_server.RUN.status == "running" else w_["status"]) and x["title"] == w_["title"], (x, w_)
-        assert x["output"] in ("website", "prd", "hld", "lld", "docset", "") and re.fullmatch(r"\d{4}-\d\d-\d\dT\d\d:\d\d:\d\d", x["when"]), x
+        # a run's type: a built-in or local one (with its label and form), else one this clone no longer has (no label)
+        known = x["output"] in j2.j2_types.names()
+        assert (known or x["output"] in ("docset", "") or j2.j2_types.NAME_RE.match(x["output"])) and re.fullmatch(r"\d{4}-\d\d-\d\dT\d\d:\d\d:\d\d", x["when"]), x
+        assert (x["label"], x["form"]) == ((j2.j2_types.info(x["output"])["label"], j2.j2_types.info(x["output"])["form"]) if known else ("", "")), x
     counts = collections.Counter(x["status"] for x in got["runs"])
     chrome = j2.j2_check.find_chrome()
     if not (chrome and BROWSER and len(names) >= 50):
@@ -12703,6 +12887,10 @@ if __name__ == "__main__":
             doc_planner_real()          # step 3c: realistic planner answers for documents
             forms_and_new_types()       # phase C: forms, and new types made on the fly
             report_type()               # step D: a type made of data only
+            local_types()               # types runs make are local; --promote moves one into types.json
+            recommended_practice()      # labelled good practice, allowed by a type's data
+            fix_sections()              # a document fix names its sections
+            run_list_local_type()       # Run settings > Runs: a local type's label and icon
             page_type_from_data()       # a second page type made of data only
             tap_dense()                 # C7: dense grids and keypads at 24px
             planner_conditions()        # C8: the planner gets the conditions; N8 skipped for a single screen
