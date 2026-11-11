@@ -126,22 +126,7 @@ class Handler(http.server.BaseHTTPRequestHandler):
         if u.path == "/api/docs":       # the Documents tab: every document a run has (any document-form type), read-only
             d = j2.saved_dir(run) if run else RUN.dir
             d = d if d and os.path.isdir(d) else None                               # a missing run folder: the empty shape below
-            made = (j2._read(d, "documents.json", {}) if d else {}) if run else RUN.docs   # the documents run's record, with the workflows that built each
-            out = {}
-            for t in j2_artifacts.load_types(d)["types"]:      # in types.json order, local types and the run's recorded ones after
-                k = t["name"]
-                if t.get("kind") != "type" or t.get("form") != "document":
-                    continue
-                try:
-                    with open(os.path.join(d, t["file"]), encoding="utf-8") as f:
-                        text = f.read()
-                except (OSError, TypeError):
-                    text = None
-                if text is None and k not in made and (run or k not in RUN.docset):
-                    continue                                                        # not one of this run's documents
-                out[k] = {"asked": True, "text": text, "workflows": (made.get(k) or {}).get("workflows", []),
-                          "label": t.get("label") or k, "tag": t.get("tag") or t.get("label") or k, "color": t.get("color") or "--other"}
-            return self._send(200, json.dumps(out, ensure_ascii=False))
+            return self._send(200, json.dumps(docs_view(d, None if run else RUN), ensure_ascii=False))
         if u.path == "/api/map":        # the Map tab: the run's work in order (map/1); a running run is drawn from its live state
             d = j2.saved_dir(run) if run else RUN.dir
             live = None
@@ -367,6 +352,31 @@ def view_page(p):
 # done_with_open_items -> done; stopped, crashed, stuck, out_of_budget -> stopped); no summary.json -> stopped (it never finished), except the live
 # run while it runs -> running. title: goal.json "site_name", else the first sentence of goal.json "statement", else the run id. output: summary.json
 # "output_type" (the type the run ended with), else chat.jsonl's meta row "output" (the type it started with). brief: summary.json "brief", else the first user message in chat.jsonl. when: from the id.
+def docs_view(d, live=None):
+    """/api/docs: every document of a run, in types.json order (local types, then the run's recorded ones, after):
+    {type: {asked, text, workflows, label, tag, color}}. A document is the run's when its file exists, its record says
+    it was built (documents.json; live: RUN.docs) or the run asked for it (live: RUN.docset; saved: summary.json
+    design_documents.requested), written or not."""
+    made = (live.docs if live else j2._read(d, "documents.json", {}) if d else {}) or {}
+    asked = live.docset if live else ((((j2._read(d, "summary.json", {}) if d else {}) or {}).get("design_documents") or {})
+                                      .get("requested") or [])
+    out = {}
+    for t in j2_artifacts.load_types(d)["types"]:
+        k = t["name"]
+        if t.get("kind") != "type" or t.get("form") != "document":
+            continue
+        try:
+            with open(os.path.join(d, t["file"]), encoding="utf-8") as f:
+                text = f.read()
+        except (OSError, TypeError):
+            text = None
+        if text is None and k not in made and k not in asked:
+            continue                                                        # not one of this run's documents
+        out[k] = {"asked": True, "text": text, "workflows": (made.get(k) or {}).get("workflows", []),
+                  "label": t.get("label") or k, "tag": t.get("tag") or t.get("label") or k, "color": t.get("color") or "--other"}
+    return out
+
+
 def run_row(name, live_running=False):
     d = j2.saved_dir(name)
     if not d or not os.path.exists(os.path.join(d, "chat.jsonl")):

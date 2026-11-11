@@ -7256,13 +7256,15 @@ SAVED_DOC_RUNS = ("j2-20261013-165916", "j2-20261013-185235", "j2-20261015-19082
 # sections", not "Website sections" (a run with a page names it by its type's label); the same hashes with the old label.
 # Re-recorded 2026-11-11: "docs" of all 11 runs, for one intended change: /api/docs lists every document-form type a run
 # has, generically. Each listed document gains its type's label, tag and colour (types.json), and a PRD, HLD or LLD the run
-# did not ask for (asked false, no text, no workflows) is no longer listed (5 runs list PRD only, one PRD and HLD). Every
-# other field, and the order, is as before; groups, map and checks are unchanged.
+# did not ask for (asked false, no text, no workflows) is no longer listed (5 runs list PRD only, one PRD and HLD). A
+# document a saved run asked for (summary.json design_documents.requested) is listed written or not, as a live run's
+# docset is: j2-20261016-103256 asked for PRD, HLD and LLD and wrote the PRD, so its HLD and LLD are listed with asked
+# true (was false), still no text. Every other field, and the order, is as before; groups, map and checks are unchanged.
 SAVED_RUNS_GOLDEN = {
     "j2-20261013-165916": {"groups": "56f72a05aae1", "docs": "6601e796102b", "map": "d528979abf18", "checks": "95329398a439"},
     "j2-20261013-185235": {"groups": "da3ff2df8774", "docs": "99f5519109fe", "map": "d6fa33198569", "checks": "f89fefa931db"},
     "j2-20261015-190820": {"groups": "08478622a133", "docs": "368d98762ad8", "map": "d519759eb19e", "checks": "a84b857c2459"},
-    "j2-20261016-103256": {"groups": "4120e3312ca6", "docs": "1330a448ad80", "map": "f3a2b5346c06", "checks": "1f4d88d383f6"},
+    "j2-20261016-103256": {"groups": "4120e3312ca6", "docs": "7d807bd5d90f", "map": "f3a2b5346c06", "checks": "1f4d88d383f6"},
     "j2-20261016-160511": {"groups": "1b32b250385f", "docs": "08c63bcc18d9", "map": "edcb83e2f1dc", "checks": "294164497d2c"},
     "j2-20261021-141350": {"groups": "8b35dff7697a", "docs": "495b52ab3c6f", "map": "e6b756ed9025", "checks": "b26939a6ccce"},
     "j2-20261022-123744": {"groups": "ca346a1c6b9c", "docs": "ede89e663899", "map": "e38dbe427737", "checks": "762c35ff8650"},
@@ -9568,7 +9570,6 @@ def left_bar():
             summ, report, wfs = rd_("summary.json", {}), rd_("report.json", None), rd_("workflows.json", [])
             site = os.path.join(d, "site")
             versions = len([f for f in os.listdir(site) if re.fullmatch(r"v\d+\.(?:html|md)", f)]) if os.path.isdir(site) else 0
-            docfiles = [k for k in ("prd", "hld", "lld") if os.path.isfile(os.path.join(d, k + ".md"))]
             b_ = summ.get("budget") or {}
             snap = {"workflows": wfs, "chat": chat, "call_log": [], "conflicts": rd_("conflicts.json", []), "goal": rd_("goal.json", None), "stamped": True,
                     "page": j2.saved_page(d, None),      # the run's page type (/api/state "page"): its Artifacts site group is that node
@@ -9577,7 +9578,7 @@ def left_bar():
                     "lessons_used": (summ.get("lessons") or {}).get("used", []), "lessons_saved": (summ.get("lessons") or {}).get("saved", []),
                     "playbooks_used": (summ.get("playbooks") or {}).get("used", []), "playbook_saved": (summ.get("playbooks") or {}).get("saved"), "has_templates": os.path.isfile(os.path.join(d, "templates.json"))}
             t = A.tree(d, m)
-            docs_ = {k: {"asked": "", "text": open(os.path.join(d, k + ".md"), encoding="utf-8").read()} for k in docfiles}
+            docs_ = j2_server.docs_view(d)      # what /api/docs gives the page: the documents written, and those asked for and not written
             plan, planmap = M.plan_view(d), M.plan_map(d)
             gr = A.groups(d, m)
             out = render_node(snap, docs={"docs": docs_, "map": m, "railtabs": tabs, "plan": plan, "planmap": planmap, "artifacts": {"tree": t, "groups": gr}})
@@ -9649,7 +9650,7 @@ def left_bar():
             seen["with plan"] += plan["found"]
             # dimmed tabs: exactly those whose data this run lacks
             lacks = {"goal": not snap["goal"], "charter": not snap["goal"], "report": not report and not summ.get("outcome"), "workflows": not wfs, "priorities": not has, "timeline": not chat,
-                     "audit": not snap["audits"], "preview": not versions, "docs": not snap["docset"] and not docfiles, "artifacts": not any(g["count"] for g in t["groups"]),
+                     "audit": not snap["audits"], "preview": not versions, "docs": not snap["docset"] and not any(v["text"] for v in docs_.values()), "artifacts": not any(g["count"] for g in t["groups"]),
                      "lessons": not (snap["lessons_used"] or snap["lessons_saved"]), "playbooks": not (snap["playbooks_used"] or snap["playbook_saved"]),
                      "planmap": not planmap["found"]}
             dimmed = {t_["tab"] for x in model for t_ in x["tabs"] if t_["dim"]}
