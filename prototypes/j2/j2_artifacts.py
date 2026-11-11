@@ -32,6 +32,30 @@ def load_types():
     return d
 
 
+def page_types(types=None):
+    """The names of the types of the page form (types.json): what the Map and the groups call the site."""
+    return {t["name"] for t in (types or load_types())["types"] if t.get("kind") == "type" and t.get("form") == "page"}
+
+
+def is_page_node(node_id, types=None):
+    """A Map work node of a page type ("work:website")."""
+    return str(node_id).startswith("work:") and str(node_id)[5:] in page_types(types)
+
+
+def chosen(d):
+    """The types a run chose: its planner's (deliverables.json), its stages (stage-*.json), and the type its records
+    name (summary.json output_type, chat.jsonl's first line)."""
+    head = {}
+    try:
+        with open(os.path.join(d, "chat.jsonl"), encoding="utf-8") as f:
+            head = json.loads(f.readline() or "{}")
+    except (OSError, ValueError):
+        pass
+    stages = [m.group(1) for f in os.listdir(d) for m in [re.fullmatch(r"stage-(\w+)\.json", f)] if m]
+    return {str(x) for x in [*((_read(d, "deliverables.json", {}) or {}).get("deliverables") or []), *stages,
+                             (_read(d, "summary.json", {}) or {}).get("output_type"), head.get("output")] if x}
+
+
 def _read(d, name, default=None):
     try:
         with open(os.path.join(d, name), encoding="utf-8") as f:
@@ -102,7 +126,11 @@ def rows(d, types=None):
         return []
     atoms, docs, out = _atoms(d), _read(d, "documents.json", {}) or {}, []
     board = _board(d, atoms)
+    # page types share the page file: a run that chose one shows that one only
+    pages, mine = page_types(types), chosen(d)
     for t in types["types"]:
+        if t["name"] in pages and t["name"] not in mine and pages & mine:
+            continue
         files = [os.path.relpath(p, d) for p in sorted(glob.glob(os.path.join(d, t["file"])), key=_num)] \
             if "*" in t["file"] else [t["file"]] if os.path.isfile(os.path.join(d, t["file"])) else []
         wf = []
@@ -225,7 +253,7 @@ def code_text(d, deck, section=None):
         return None
     if section is None:
         p = os.path.join(d, "site", "index.html")
-        return open(p, encoding="utf-8").read() if deck == "work:website" and os.path.isfile(p) else None
+        return open(p, encoding="utf-8").read() if is_page_node(deck) and os.path.isfile(p) else None
     m = j2_map.build(d)
     src = sections_of(d, [n for n in m["nodes"] if n["id"] == deck]).get(deck)
     e = (src[1] if src else {}).get(section)
@@ -419,8 +447,8 @@ def tree_files(t):
 
 
 # ------------------------------------------------------------------------------------------------------------- the groups
-# The Artifacts section as four groups (artifacts-groups/1): Run plan, Guides the makers read, Website sections, Run records. A guide
-# is one row per output file and a website section one row per section in sections.json (its first workflow, then every workflow
+# The Artifacts section as four groups (artifacts-groups/1): Run plan, Guides the makers read, the page's sections ("Website
+# sections"), Run records. A guide is one row per output file and a page section one row per section in sections.json (its first workflow, then every workflow
 # that rewrote it, as versions). Makers are the Map's (j2_map.build); anything the run did not record is None, never guessed. File
 # contents are not included: the page fetches a file (/api/artifact) or a section's code (/api/code) only when it is opened.
 CHANGE = re.compile(r"\s*\(change (\d+)\)\s*$")
@@ -481,7 +509,7 @@ def groups(d, m=None):
     """{"schema": "artifacts-groups/1", "site": {...}, "groups": [{id, label, rows}]} for a run folder (five empty groups when there is none)."""
     import j2_map
     empty = [{"id": k, "label": lab, "rows": []} for k, lab in (("plan", "Run plan"), ("guides", "Guides the makers read"),
-                                                                ("site", "Website sections"), ("documents", "Documents"), ("records", "Run records"))]
+                                                                ("site", "Page sections"), ("documents", "Documents"), ("records", "Run records"))]
     if not d or not os.path.isdir(d):
         return {"schema": "artifacts-groups/1", "documents": {}, "site": None, "groups": empty}
     m = m or j2_map.build(d)
@@ -547,9 +575,9 @@ def groups(d, m=None):
         row["docs"] = [{"label": f"v{k}", "file": f, "workflow": vs[i] if match else None} for i, (k, f) in enumerate(olds)] + \
                       ([{"label": "current", "file": rel, "workflow": vs[-1]}] if rel else [])
         guides.append(row)
-    # 3 Website sections: one row per section (sections.json), its versions the workflows recorded on it; then the style guide
+    # 3 the page's sections: one row per section (sections.json), its versions the workflows recorded on it; then the style guide
     site = []
-    web = next((n for n in m["nodes"] if n["id"] == "work:website" and (n.get("status") != "not_made" or has("site/index.html"))), None)      # a document run keeps an unmade website node
+    web = next((n for n in m["nodes"] if is_page_node(n["id"]) and (n.get("status") != "not_made" or has("site/index.html"))), None)      # a document run keeps an unmade page node
     if web:
         for sid in sorted((k for k in secs if k in by), key=_num):
             e = secs[sid] if isinstance(secs[sid], dict) else {}
@@ -560,7 +588,7 @@ def groups(d, m=None):
             kind = "script" if p["js"] and not p["html"] and not p["css"] else "section"
             row = _wf_row(kind, vs, by, persona, last, "site/index.html" if has("site/index.html") else None, [])
             names = {str(by[v].get("name") or "") for v in vs}
-            row.update({"section": sid, "deck": "work:website", "owner": e.get("owner") or sid, "parts": p,
+            row.update({"section": sid, "deck": web["id"], "owner": e.get("owner") or sid, "parts": p,
                         "reused_by": [{"id": w["id"], "name": str(w.get("name") or "")} for w in wfs
                                       if w["id"] not in vs and names & {str(x) for x in w.get("dependencies") or []}] if kind == "script" else []})
             site.append(row)
@@ -569,7 +597,7 @@ def groups(d, m=None):
             mb = (st or {}).get("made_by") or {}
             site.append({"id": "style", "kind": "style", "name": "Style guide", "file": "style.json" if has("style.json") else None,
                          "maker": mb.get("persona"), "made_in": mb.get("workflows") or [], "read_by": (st or {}).get("read_by"),
-                         "section": "style" if "style" in secs else None, "deck": "work:website", "nodes": ["work:style"] if "work:style" in node_ids else []})
+                         "section": "style" if "style" in secs else None, "deck": web["id"], "nodes": ["work:style"] if "work:style" in node_ids else []})
     # 4 Run records: the check receipts, the audits, the necessary conditions and the screenshots
     rec = []
     if has("receipts.jsonl"):
@@ -642,7 +670,8 @@ def groups(d, m=None):
     return {"schema": "artifacts-groups/1", "documents": documents,
             "site": {"version": (web or {}).get("version"), "audit": {"version": last.get("version"), "passed": sum(1 for r in last.get("results") or [] if isinstance(r, dict) and r.get("pass")),
                                                                      "total": len(last.get("results") or [])} if last else None} if web else None,
-            "groups": [{**e, "rows": r} for e, r in zip(empty, (plan, guides, site, docs, rec))]}
+            "groups": [{**e, "rows": r, **({"label": f"{web['label']} sections"} if e["id"] == "site" and web else {})}
+                       for e, r in zip(empty, (plan, guides, site, docs, rec))]}
 
 
 # ------------------------------------------------------------------------------------------------------------- the views

@@ -7181,18 +7181,20 @@ SAVED_DOC_RUNS = ("j2-20261013-165916", "j2-20261013-185235", "j2-20261015-19082
                   "j2-20261023-120350", "j2-20261026-104018", "j2-20261027-130930")
 # Recorded 2026-11-10 (step 0 of docs/remove-hardcoding-plan.md). A view's hash changes only when what it shows for a
 # saved run changes; re-record on purpose, never to make the test pass.
+# Re-recorded 2026-11-11: "groups" of the six runs that built no page: their empty site group is labelled "Page
+# sections", not "Website sections" (a run with a page names it by its type's label); the same hashes with the old label.
 SAVED_RUNS_GOLDEN = {
-    "j2-20261013-165916": {"groups": "7941f580e973", "docs": "5d52f1ed34ec", "map": "d528979abf18", "checks": "95329398a439"},
-    "j2-20261013-185235": {"groups": "c05be390286c", "docs": "1ddcae0f0e75", "map": "d6fa33198569", "checks": "f89fefa931db"},
-    "j2-20261015-190820": {"groups": "2be496269550", "docs": "d679c04045e7", "map": "d519759eb19e", "checks": "a84b857c2459"},
-    "j2-20261016-103256": {"groups": "99f6853e8575", "docs": "37c8b29833ef", "map": "f3a2b5346c06", "checks": "1f4d88d383f6"},
+    "j2-20261013-165916": {"groups": "56f72a05aae1", "docs": "5d52f1ed34ec", "map": "d528979abf18", "checks": "95329398a439"},
+    "j2-20261013-185235": {"groups": "da3ff2df8774", "docs": "1ddcae0f0e75", "map": "d6fa33198569", "checks": "f89fefa931db"},
+    "j2-20261015-190820": {"groups": "08478622a133", "docs": "d679c04045e7", "map": "d519759eb19e", "checks": "a84b857c2459"},
+    "j2-20261016-103256": {"groups": "4120e3312ca6", "docs": "37c8b29833ef", "map": "f3a2b5346c06", "checks": "1f4d88d383f6"},
     "j2-20261016-160511": {"groups": "1b32b250385f", "docs": "ef9e272df4c6", "map": "edcb83e2f1dc", "checks": "294164497d2c"},
     "j2-20261021-141350": {"groups": "8b35dff7697a", "docs": "09504a9763ca", "map": "e6b756ed9025", "checks": "b26939a6ccce"},
     "j2-20261022-123744": {"groups": "ca346a1c6b9c", "docs": "671562441fc6", "map": "e38dbe427737", "checks": "762c35ff8650"},
     "j2-20261023-104150": {"groups": "1fc302de13a0", "docs": "4dd62f5cb4e1", "map": "180a39f9f978", "checks": "cd878d01266c"},
     "j2-20261023-120350": {"groups": "7c8ad9f43fcc", "docs": "f06206b108f1", "map": "8531c3b845fc", "checks": "0ec14094db92"},
-    "j2-20261026-104018": {"groups": "031a3b974f4a", "docs": "f9d6cc971436", "map": "35a1b79ff2b0", "checks": "92d491169a25"},
-    "j2-20261027-130930": {"groups": "2e243a013493", "docs": "9f690587f7c4", "map": "bad64fe59f9f", "checks": "cf4fa11161b5"},
+    "j2-20261026-104018": {"groups": "7bb9dcd4c186", "docs": "f9d6cc971436", "map": "35a1b79ff2b0", "checks": "92d491169a25"},
+    "j2-20261027-130930": {"groups": "f0c6808c173f", "docs": "9f690587f7c4", "map": "bad64fe59f9f", "checks": "cf4fa11161b5"},
 }
 # Recorded 2026-11-10 (step D): the document runs as they are now (doc_unchanged); re-record on purpose, never to pass
 DOC_RUN_GOLDEN = {"prd": "6a2e2b7c501d", "design docs": "ca6d04f799e4", "docs then site": "68306b02133b"}

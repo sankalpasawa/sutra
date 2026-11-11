@@ -185,9 +185,9 @@ def _work_lines(d, work, calls, docs, nr):
         m = re.fullmatch(r"stage-(\w+)\.json", f)
         if m:
             audits[m.group(1)] = len((_read(d, f, {}) or {}).get("audits") or [])
-    site = next((n for n in work if n["id"] == "work:website" and n.get("file")), None)
-    if site and "website" not in audits and isinstance(_read(d, "audits.json"), list):      # a plain site run has no stage file: its audits are audits.json
-        audits["website"] = len([a for a in _read(d, "audits.json") if (a or {}).get("kind") != "recheck"])
+    site = next((n for n in work if A.is_page_node(n["id"]) and n.get("file")), None)
+    if site and site["id"][5:] not in audits and isinstance(_read(d, "audits.json"), list):      # a plain page run has no stage file: its audits are audits.json
+        audits[site["id"][5:]] = len([a for a in _read(d, "audits.json") if (a or {}).get("kind") != "recheck"])
     out = []
     for n in work:
         if n["kind"] != "work" or n["status"] == "not_made":
