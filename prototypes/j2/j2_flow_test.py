@@ -7414,6 +7414,9 @@ def deliverables_generic():
     T = R.type_list()
     assert [t["name"] for t in T][:4] == ["prd", "hld", "lld", "website"] and next(t for t in T if t["name"] == "lld")["needs"] == ["prd", "hld"]
     assert next(t for t in T if t["name"] == "website")["needs"] == [], "a page reads documents when built; it needs none"
+    # a workflow serving a document names the sections it writes, from the type's own list
+    assert next(t for t in T if t["name"] == "prd")["sections"] == list(j2.doc_sections("prd")) and "sections" not in next(t for t in T if t["name"] == "website")
+    assert '"serves": str (the deliverable type it builds), "sections": [str] (when it serves a document type' in R.plan_fmt(T)
     brief = {"statement": "Write a hiring policy for a ten-person studio.", "brief": True}
     plan = lambda names: json.loads(R.deliverable_mocks(brief, names)["plan"](0))
     faults = lambda names: R.plan_faults(plan(names), brief, types=T)
@@ -7613,7 +7616,9 @@ def doc_planner_real():
         run = docs_run(brief, 400, planner([], FULL))
         why = " | ".join(x["reason"] for x in run.rejections)
         assert "the plan has no workflows" in why and run.outcome.startswith("Done"), (why, run.outcome)
-        bad = [{**FULL[0], "sections": None, "name": "Opening"}] + FULL[1:]
+        # (its words name no section either: one whose goal or steps name a section gets it filled, doc_sections_replay)
+        mute = {**FULL[0]["atoms"][0], "goal": "An opening is written", "how": {"kind": "AI", "agent": "Builder", "steps": "Write the opening"}}
+        bad = [{**FULL[0], "sections": None, "name": "Opening", "goal_gap": "Nothing opens it", "atoms": [mute]}] + FULL[1:]
         run = docs_run(brief, 400, planner(bad, bad))
         why = " | ".join(x["reason"] for x in run.rejections)
         assert "workflow 'Opening' names no section of the PRD" in why and "it names no section of the PRD (sections)" in why, why
@@ -7961,6 +7966,133 @@ def recommended_practice():
     print("recommended practice: read from the type's data; a policy's labelled good-practice line passes C3 while a "
           "number, a law or an unsourced number elsewhere still fails; a strict type's prompts are unchanged and the "
           "same line is an invented fact there ok")
+
+
+# runs/j2-20261111-124718 (a hiring policy, local type hiring_policy): the section names, and Adaptation's first proposal
+# (calls.jsonl row 3), trimmed: its facts-present checks and facts items are left out (their strings are that run's
+# charter wording). Priority's GRANT (row 4) echoed these same workflows with "sections" dropped and an envelope added.
+HP_SECTIONS = ["Purpose and scope", "Opening a role and approving it", "Interview stages", "Making and approving offers", "Referral bonus", "Diversity and fairness", "Candidate data retention", "Ownership and review"]
+HP_PROPOSAL = [
+    {"id": "hp-open", "name": "Purpose, scope and opening a role", "sections": ["Purpose and scope", "Opening a role and approving it"], "goal_gap": "The document has no purpose statement and no rules for opening and approving a role.", "outputs": ["## Purpose and scope", "## Opening a role and approving it"], "completion_check": "Both headings exist and are non-empty, and the exact facts about the agency and the request and approval chain appear.", "parts": ["doc_section", "doc_section"], "covers": [1, 2], "estimated_resources": {"money": 60, "calls": 2, "time_minutes": 10}, "atoms": [{"id": "a1", "goal": "Write the Purpose and scope and Opening a role and approving it sections from the charter facts only.", "constraints": ["No invented names, deadlines or extra approvers", "Use consistent role names: team lead, studio head, founder, HR"], "context": ["Charter items 1 and 2", "Sections: Purpose and scope; Opening a role and approving it"], "how": {"kind": "AI", "agent": "W-1 Builder", "steps": "Write '## Purpose and scope' (what the policy is for; covers hiring at the 40-person design agency in Pune) and '## Opening a role and approving it' (team lead requests; studio head and founder both approve before posting)."}, "expected_output": [{"text": "Purpose and scope heading", "kind": "heading", "target": "Purpose and scope"}, {"text": "Opening a role heading", "kind": "heading", "target": "Opening a role and approving it"}], "verification": [{"text": "Purpose heading present", "type": "heading-present", "target": "Purpose and scope", "expect": True}, {"text": "Purpose not empty", "type": "section-not-empty", "target": "Purpose and scope", "expect": 25}, {"text": "Opening heading present", "type": "heading-present", "target": "Opening a role and approving it", "expect": True}, {"text": "Opening not empty", "type": "section-not-empty", "target": "Opening a role and approving it", "expect": 25}]}]},
+    {"id": "hp-interview-offer", "name": "Interview stages and offers", "sections": ["Interview stages", "Making and approving offers"], "goal_gap": "The document does not list the interview steps or say who proposes and approves offers.", "outputs": ["## Interview stages", "## Making and approving offers"], "completion_check": "Both headings exist and are non-empty, and all six stages and the offer approval facts appear exactly.", "parts": ["doc_section", "doc_section"], "covers": [3, 4], "estimated_resources": {"money": 60, "calls": 2, "time_minutes": 10}, "atoms": [{"id": "a1", "goal": "Write the Interview stages and Making and approving offers sections in the Requester's order and wording.", "constraints": ["Stages in the given order", "No scoring methods, deadlines or extra approvers"], "context": ["Charter items 3 and 4", "Sections: Interview stages; Making and approving offers"], "how": {"kind": "AI", "agent": "W-2 Builder", "steps": "Write '## Interview stages' as a numbered list of the six steps in order, and '## Making and approving offers' (team lead and HR propose salary and level using pay bands; studio head approves; founder gives the final yes before the offer is sent)."}, "expected_output": [{"text": "Interview stages heading", "kind": "heading", "target": "Interview stages"}, {"text": "Offers heading", "kind": "heading", "target": "Making and approving offers"}], "verification": [{"text": "Interview heading", "type": "heading-present", "target": "Interview stages", "expect": True}, {"text": "Interview not empty", "type": "section-not-empty", "target": "Interview stages", "expect": 30}, {"text": "Offers heading", "type": "heading-present", "target": "Making and approving offers", "expect": True}, {"text": "Offers not empty", "type": "section-not-empty", "target": "Making and approving offers", "expect": 30}]}]},
+    {"id": "hp-referral-fair", "name": "Referral bonus and fairness", "sections": ["Referral bonus", "Diversity and fairness"], "goal_gap": "The document has no referral bonus rule and no fairness commitment.", "outputs": ["## Referral bonus", "## Diversity and fairness"], "completion_check": "Both headings exist and are non-empty, and the bonus fact appears exactly.", "parts": ["doc_section", "doc_section"], "covers": [5, 6], "estimated_resources": {"money": 60, "calls": 2, "time_minutes": 10}, "atoms": [{"id": "a1", "goal": "Write the Referral bonus and Diversity and fairness sections without invented figures or legal claims.", "constraints": ["No invented figures, laws or percentages", "No extra eligibility rules beyond the brief"], "context": ["Charter items 5 and 6", "Sections: Referral bonus; Diversity and fairness"], "how": {"kind": "AI", "agent": "W-3 Builder", "steps": "Write '## Referral bonus' (referral bonus of ₹30,000 after 3 months) and '## Diversity and fairness' (commitment to fair, consistent treatment of all candidates, same stages for every candidate)."}, "expected_output": [{"text": "Referral bonus heading", "kind": "heading", "target": "Referral bonus"}, {"text": "Diversity heading", "kind": "heading", "target": "Diversity and fairness"}], "verification": [{"text": "Referral heading", "type": "heading-present", "target": "Referral bonus", "expect": True}, {"text": "Referral not empty", "type": "section-not-empty", "target": "Referral bonus", "expect": 15}, {"text": "Fairness heading", "type": "heading-present", "target": "Diversity and fairness", "expect": True}, {"text": "Fairness not empty", "type": "section-not-empty", "target": "Diversity and fairness", "expect": 25}]}]},
+    {"id": "hp-data-owner", "name": "Data retention and ownership", "sections": ["Candidate data retention", "Ownership and review"], "goal_gap": "The document does not state how long candidate data is kept or who owns and reviews the policy.", "outputs": ["## Candidate data retention", "## Ownership and review"], "completion_check": "Both headings exist and are non-empty, and the retention and ownership facts appear exactly.", "parts": ["doc_section", "doc_section"], "covers": [7, 8], "estimated_resources": {"money": 60, "calls": 2, "time_minutes": 10}, "atoms": [{"id": "a1", "goal": "Write the Candidate data retention and Ownership and review sections from the charter facts only.", "constraints": ["No invented deletion procedures, laws or dates", "Name the HR manager as owner"], "context": ["Charter items 7 and 8", "Sections: Candidate data retention; Ownership and review"], "how": {"kind": "AI", "agent": "W-4 Builder", "steps": "Write '## Candidate data retention' (keeping candidate data for 12 months) and '## Ownership and review' (the HR manager owns the policy and reviews it yearly)."}, "expected_output": [{"text": "Retention heading", "kind": "heading", "target": "Candidate data retention"}, {"text": "Ownership heading", "kind": "heading", "target": "Ownership and review"}], "verification": [{"text": "Retention heading", "type": "heading-present", "target": "Candidate data retention", "expect": True}, {"text": "Retention not empty", "type": "section-not-empty", "target": "Candidate data retention", "expect": 15}, {"text": "Ownership heading", "type": "heading-present", "target": "Ownership and review", "expect": True}, {"text": "Ownership not empty", "type": "section-not-empty", "target": "Ownership and review", "expect": 15}]}]},
+]
+
+def _hp_run(proposal, grant, second=None):
+    """A mock run of the local hiring_policy type (HP_SECTIONS) whose first document plan is `proposal`, and whose
+    Priority grants `grant` (Priority's echo, "sections" dropped as in the run); `second`: Adaptation's answer when the
+    validator names unwritten sections.
+    Later calls are the mock's."""
+    import copy
+    n = {"a": 0, "p": 0}
+
+    def patch(run, orig):
+        def call(fn, fmt, task, mock, **k):
+            if fn == "adaptation" and "ITS SECTIONS" in task and not run.workflows and n["a"] == 0:
+                n["a"] += 1
+                body = {"say": "@Priority The plan.", "act": "PROPOSE", "next": "Priority", "left_out": [],
+                        "workflows": copy.deepcopy(proposal)}
+                return orig(fn, fmt, task, lambda: json.dumps(body), **k)
+            if fn == "adaptation" and second and "have no registered workflow" in task:
+                body = {"say": "@Priority The missing sections.", "act": "PROPOSE", "next": "Priority", "left_out": [],
+                        "workflows": copy.deepcopy(second)}
+                return orig(fn, fmt, task, lambda: json.dumps(body), **k)
+            if fn == "priority" and n["a"] and n["p"] < (2 if second else 1):
+                wfs = grant if n["p"] == 0 else second
+                n["p"] += 1
+                body = {"say": "@Adaptation GRANT.", "decision": "GRANT", "next": "Adaptation",
+                        "workflows": [{**{x: v for x, v in w.items() if x != "sections"},
+                                       "envelope": {"money_limit": 60, "model_call_limit": 3, "time_limit_minutes": 15,
+                                                    "retry_limit": 1, "stop_loss": "Stop at 60."}} for w in wfs]}
+                return orig(fn, fmt, task, lambda: json.dumps(body), **k)
+            return orig(fn, fmt, task, mock, **k)
+        return call
+    run = j2.J2Run()
+    run.budget = 400
+    run.mock_deliverables = ["hiring_policy"]
+    run.call = patch(run, run.call)
+    say(run, "Write a hiring policy for a 40-person design agency in Pune. Cover how a role is opened and approved, "
+             "interview stages, how offers are made and approved, a referral bonus of ₹30,000 after 3 months, "
+             "diversity and fairness, and keeping candidate data for 12 months. The HR manager owns the policy and "
+             "reviews it yearly.")
+    return run
+
+
+def doc_sections_replay():
+    """runs/j2-20261111-124718 replayed: Adaptation named the sections of all four workflows, Priority's GRANT echoed
+    them without "sections", and the validator refused "Purpose, scope and opening a role" and "Data retention and
+    ownership" as naming no section (and, the next cycle, "Data retention, ownership and review" as Audit's job), so 4
+    of 8 sections were never written. Now the sections Adaptation named are kept (an auto-fix), a workflow that names
+    none gets the ones its words name (an auto-fix), a review section is not Audit's job, and a section no registered
+    workflow writes is asked for once in the same cycle."""
+    with _TypeStore() as T:
+        T.create("hiring_policy", "Hiring policy", HP_SECTIONS, practice=True)
+        done = lambda run: open(os.path.join(run.dir, "hiring_policy.md"), encoding="utf-8").read()
+        refusals = lambda run: [e for e in run.events if e["type"] in ("refused", "role_refusal")
+                                 and not e["detail"].startswith("charter:")]      # the mock charter's own refusal
+        fixes = lambda run: json.load(open(os.path.join(run.dir, "autofix.json"), encoding="utf-8"))
+        # 1. the run's own replies: Priority drops "sections", the validator keeps Adaptation's
+        run = _hp_run(HP_PROPOSAL, HP_PROPOSAL)
+        assert run.outcome.startswith("Done"), run.outcome
+        assert all(f"## {x}" in done(run) for x in HP_SECTIONS) and not refusals(run), refusals(run)
+        assert {f["workflow"] for f in fixes(run) if f["kind"] == "sections"} == {w["name"] for w in HP_PROPOSAL}, fixes(run)
+        assert [w["sections"] for w in run.workflows[:4]] == [w["sections"] for w in HP_PROPOSAL]
+        # 2. no "sections" anywhere, and the name the run used next cycle: matched from the workflows' own words
+        bare = [{x: v for x, v in w.items() if x != "sections"} for w in HP_PROPOSAL]
+        bare[3]["name"] = "Data retention, ownership and review"
+        run = _hp_run(bare, bare)
+        assert run.outcome.startswith("Done") and all(f"## {x}" in done(run) for x in HP_SECTIONS), run.outcome
+        assert not refusals(run), refusals(run)
+        got = {}
+        for f in fixes(run):
+            if f["kind"] == "sections":
+                got.setdefault(f["workflow"], []).append(f["detail"])
+        assert got["Purpose, scope and opening a role"][0].endswith("name Purpose and scope, Opening a role and approving it"), got
+        assert got["Data retention, ownership and review"][0].endswith("Candidate data retention, Ownership and review"), got
+        assert got["Interview stages and offers"][0].endswith("Interview stages, Making and approving offers"), got
+        # 3. Priority grants three of four: the validator names the unwritten sections once, Adaptation proposes them
+        run = _hp_run(HP_PROPOSAL, HP_PROPOSAL[:3], HP_PROPOSAL[3:])
+        assert run.outcome.startswith("Done") and all(f"## {x}" in done(run) for x in HP_SECTIONS), run.outcome
+        asks = [m["text"] for m in run.chat if "No registered workflow writes" in m["text"]]
+        assert len(asks) == 1 and "Candidate data retention, Ownership and review" in asks[0], asks
+        assert [e["detail"] for e in run.events if e["type"] == "plan_gap"] == \
+            ["no workflow writes Candidate data retention, Ownership and review"]
+    print("hiring policy replay (runs/j2-20261111-124718): sections Priority dropped kept, sections matched from a "
+          "workflow's words, a review section not Audit's, an unwritten section asked for once; all 8 written ok")
+
+
+def section_matcher():
+    """match_sections: one name can name several sections; a name with no section's words matches none and is still
+    refused. The Audit-name rule: a document workflow writing a review section is not Audit's job; a standalone QA
+    review still is, named with the type's label."""
+    with _TypeStore() as T:
+        T.create("hiring_policy", "Hiring policy", HP_SECTIONS, practice=True)
+        m = lambda name, **w: j2.match_sections({"name": name, **w}, HP_SECTIONS)
+        assert m("Purpose, scope and opening a role") == ["Purpose and scope", "Opening a role and approving it"]
+        assert m("Data retention, ownership and review") == ["Candidate data retention", "Ownership and review"]
+        assert m("Interview stages and offers") == ["Interview stages"]
+        assert m("Interview stages and offers", atoms=[{"how": {"steps": "Write '## Making and approving offers'"}}]) == \
+            ["Interview stages", "Making and approving offers"]
+        assert m("QA review of the site") == [] and m("Polish the tone") == []
+        run = j2.J2Run()
+        run.set_output("hiring_policy")
+        run.realization = True
+        noun = run.out["noun"]
+        w = {"name": "Polish the tone", "goal_gap": "The tone is stiff", "parts": ["doc_section"], "covers": [],
+             "outputs": ["hiring_policy.md"], "completion_check": "It reads well"}
+        run._fill_sections(w)
+        assert "sections" not in w and not run.__dict__.get("autofixes")
+        assert run._audit_name("Data retention, ownership and review", {"name": "Data retention, ownership and review"}) is False
+        assert run._audit_name("Data retention, ownership and review") is False, "a list of topics ending in review"
+        assert run._audit_name("QA review of the site", {"name": "QA review of the site"}) is True
+        assert run._audit_name("final-review") and run._audit_name("site-audit")
+        out, _, _ = run._register([{"name": "QA review of the site", "goal_gap": "x", "outputs": ["x"],
+                                    "completion_check": "x", "parts": ["doc_section"]}])
+        assert run.rejections[-1]["reason"] == f"a check or report on the {noun} is Audit's job, not a workflow", run.rejections
+        assert noun == "Hiring policy"
+    print("section matcher: several sections from one name, none from unrelated words; a review section is not Audit's "
+          "job, a standalone QA review is, named with the type ok")
 
 
 def fix_sections():
@@ -13033,6 +13165,8 @@ if __name__ == "__main__":
             local_types()               # types runs make are local; --promote moves one into types.json
             recommended_practice()      # labelled good practice, allowed by a type's data
             fix_sections()              # a document fix names its sections
+            doc_sections_replay()       # runs/j2-20261111-124718: sections kept, matched, asked for; review not Audit's
+            section_matcher()           # sections from a workflow's words; the Audit-name rule for documents
             run_list_local_type()       # Run settings > Runs: a local type's label and icon
             deleted_local_type()        # a run whose local type was deleted still opens, with what it recorded
             page_type_from_data()       # a second page type made of data only

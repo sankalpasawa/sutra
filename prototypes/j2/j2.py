@@ -2426,6 +2426,32 @@ def wf_sections(w, secs):
     return [x for x in secs if x in own] or [x for x in secs if x.lower() in str(w.get("name")).lower()][:1]
 
 
+SEC_STOP = {"a", "an", "and", "the", "of", "to", "for", "in", "on", "or", "it", "its", "with", "by", "how", "what",
+            "who", "is", "are", "be", "section", "sections", "write", "writes", "document"}
+
+
+def match_sections(w, secs):
+    """The sections a workflow that names none in "sections" writes, read from its own words: its name, goal (goal_gap),
+    done-test (completion_check), outputs and its atoms' goal and how.steps. A section matches when its name appears
+    whole, or all its significant words do (stop words left out, a plural s ignored), or all but one of three or more.
+    One workflow may match several ("Purpose, scope and opening a role" writes Purpose and scope, and Opening a role
+    and approving it: runs/j2-20261111-124718)."""
+    atoms = [a for a in w.get("atoms") or [] if isinstance(a, dict)]
+    text = " ".join(str(x or "") for x in [w.get("name"), w.get("goal_gap"), w.get("goal"), w.get("completion_check"),
+                                           w.get("done_test"), *(w.get("outputs") or [])]
+                    + [str(a.get("goal") or "") + " " + str((a.get("how") or {}).get("steps") if isinstance(a.get("how"), dict)
+                                                           else "") for a in atoms]).lower()
+    words = lambda t: {x[:-1] if len(x) > 3 and x.endswith("s") else x for x in re.findall(r"[\w-]+", t.lower())} - SEC_STOP
+    have = words(text)
+    out = []
+    for x in secs:
+        sig = words(x)
+        hit = len(sig & have)
+        if x.lower() in text or (sig and hit == len(sig)) or (len(sig) >= 3 and hit >= len(sig) - 1):
+            out.append(x)
+    return out
+
+
 def doc_cites(kind):
     """{section: (cited type, its list, the citing field)}: the template's cross-document ref_exists rules."""
     return j2_types.cites(kind)
@@ -4158,6 +4184,7 @@ class J2Run:
         self.past_workflows += self.workflows
         self.workflows, self.sites, self.sections, self.audits, self.style = [], [], {}, [], None
         self.goal, self.stamped, self.proposed_atoms, self.p_refused = None, False, {}, {}
+        self.proposed_secs = {}
         self.fail_floor, self.feedback, self.drop_answer, self.adapt_idle, self.last_limit = 0, None, None, None, None
         self.write_lock = self.atom = None
         self.site_tag = kind + "-"
@@ -6531,6 +6558,8 @@ class J2Run:
         """J2.e before building: a plan that leaves a necessary condition with no workflow is flagged and Adaptation
         gets one retry. If the gap is still there, the plan goes ahead with a warning (Audit's check will show it)."""
         for retry in (True, False):
+            for w in r.get("workflows") if isinstance(r.get("workflows"), list) else []:
+                self._fill_sections(w)
             self._doc_remap(r)
             gaps = (self._plan_gaps(norm(r.get("workflows"))) if norm(r.get("workflows")) else []) + self._doc_plan_gaps(r)
             if not gaps:
@@ -7099,6 +7128,7 @@ class J2Run:
 
     def _agree(self, wfs):
         self.step = 5
+        first = self.doc and not self.workflows       # a document stage's first plan
         registered, refused, defaults = self._register(wfs)
         self.cycle_registered = self.cycle_registered or bool(registered)
         if self.conflict:
@@ -7116,14 +7146,39 @@ class J2Run:
                 msg += f" Envelope defaults applied: {'; '.join(defaults)}."
             msg += " Workflow agents: " + "; ".join(self._owns(w) for w in registered) + "."
             left = self._left_by_ruling()
-            self._say("validator", msg + f" Budget: {self.spent}/{self.budget} used.", "coordination", register=True,
+            missing = self._unwritten_sections() if first else []
+            if missing:
+                msg += (f" No registered workflow writes {', '.join(missing)}: Adaptation proposes the workflow(s) for "
+                        f"{'it' if len(missing) == 1 else 'them'} now.")
+            self._say("validator", msg + f" Budget: {self.spent}/{self.budget} used.",
+                      "adaptation" if missing else "coordination", register=True,
                       charged=sum(w["cost"] for w in registered))
             if left:
                 self._ask_after_audit(left)
+            if missing:
+                return self._handoff("adaptation", kind="propose", why=(
+                    f"Plan gap: the {self.out['noun']} sections {', '.join(missing)} have no registered workflow"
+                    + (f" (the validator rejected: {'; '.join(refused)})" if refused else "")
+                    + ". Propose the workflow(s) that write them, naming each in \"sections\"; the other sections are "
+                    "registered."))
             return self._handoff("coordination", kind="schedule")
         self._say("validator", f"Rejected: {'; '.join(refused) or 'the agreed set was empty'}. Adaptation reshapes or "
                                "parks it.", "adaptation", register=False)
         self._parked("the validator registered nothing")
+
+    def _unwritten_sections(self):
+        """Coverage after a document stage's first registration: the sections no registered workflow writes, once per
+        stage (one re-ask, never a loop). runs/j2-20261111-124718 found 4 of 8 missing only when the run failed."""
+        asked = self.__dict__.setdefault("cover_asked", set())
+        if self.output in asked:
+            return []
+        live = [x for x in self.workflows if x["status"] in ("registered", "held", "running", "done")]
+        have = {s for x in live for s in wf_sections(x, self.out["sections"])}
+        missing = [x for x in self.out["sections"] if x not in have]
+        if missing:
+            asked.add(self.output)
+            self._event("validator", "plan_gap", f"no workflow writes {', '.join(missing)}")
+        return missing
 
     def _waiting_work(self):
         return any(w["status"] in ("registered", "held") for w in self.workflows)
@@ -7134,10 +7189,17 @@ class J2Run:
     # three). Checking work starts with the audit word ("check-links", "qa-pass") or ends with it after no build verb
     # ("final-review", "site-audit").
     AUDIT_FIRST = re.compile(r"^\W*(?:audit\w*|check|self[- ]check|verif\w*|qa|review|report|test)\b", re.I)
-    AUDIT_LAST = re.compile(r"\b(?:audit\w*|check|verif\w*|qa|review|report|test)\W*$", re.I)
+    # ... and not as the last of a list of topics: "Data retention, ownership and review" writes a policy's review
+    # section (runs/j2-20261111-124718 refused it)
+    AUDIT_LAST = re.compile(r"(?<!\band )(?<!, )\b(?:audit\w*|check|verif\w*|qa|review|report|test)\W*$", re.I)
     BUILD_VERB = re.compile(r"^\W*(?:build|fix|add|make|create|implement|write|show|update|wire|style)\b", re.I)
 
-    def _audit_name(self, name):
+    def _audit_name(self, name, w=None):
+        """A workflow whose name says it checks or reports on the work (Audit's job). Never a document workflow that
+        writes named sections of the document (wf_sections: its "sections", given or filled by _fill_sections): its
+        section may be about reviewing or reporting (a policy's "Ownership and review")."""
+        if self.doc and isinstance(w, dict) and wf_sections(w, self.out["sections"]):
+            return False
         n = re.sub(r"\s*\(change \d+\)$", "", str(name or ""))
         if not getattr(self, "realization", False):
             return bool(self.CHECK_WORK.search(n))      # base J2 stays as it was
@@ -7172,6 +7234,30 @@ class J2Run:
         fixes.append({"cycle": self.cycle, "workflow": name, "kind": kind, "detail": detail})
         self._event("validator", "auto_fix", f"{name}: {detail}")
         self.save("autofix.json", fixes)
+
+    def _fill_sections(self, w):
+        """A document workflow with no "sections" list (Priority's GRANT echo drops it, or the planner left it out): the
+        sections it named when proposed, else the ones its own words name (match_sections), filled in and logged as an
+        auto-fix when that is more than its name alone gives (wf_sections). runs/j2-20261111-124718: the planner named
+        both sections of "Purpose, scope and opening a role", Priority echoed it without them, and the validator
+        refused it twice as naming no section. A fix or revision keeps code's own rule (_fix_sections)."""
+        if not self.doc or not isinstance(w, dict) or w.get("revises") or "fix" in (w.get("parts") or []):
+            return
+        secs, name = self.out["sections"], w.get("name") or "?"
+        known = self.__dict__.setdefault("proposed_secs", {})
+        if isinstance(w.get("sections"), list) and w["sections"]:
+            known[name] = list(w["sections"])
+            return
+        if known.get(name):
+            w["sections"] = list(known[name])
+            self._autofix(name, "sections", f"its reply here has no \"sections\"; kept the ones it was proposed with: "
+                                            f"{', '.join(known[name])}")
+            return
+        got = match_sections(w, secs)
+        if got and got != wf_sections(w, secs):
+            w["sections"] = known[name] = got
+            self._autofix(name, "sections", f"it named no section in \"sections\"; its name, goal and steps name "
+                                            f"{', '.join(got)}")
 
     PLAN_NAME =re.compile(r"^Revise W-\d+ |^Fix | \(change \d+(?:, round \d+)?\)$")
 
@@ -7315,6 +7401,7 @@ class J2Run:
             batch.sort(key=lambda x: plan_ix.get(x.get("name"), 10 ** 6))
         for w in batch:
             c, name = granted(w), w.get("name") or "?"
+            self._fill_sections(w)
             if self.change and self.change["phase"] == "plan" and name not in self.change["allowed"]:
                 refused.append(self._reject(name, f"it is not in the change plan of {self.change['id']} (change.json); "
                                                   "propose only the workflows the change plan names"))
@@ -7325,7 +7412,7 @@ class J2Run:
                 missing = [f for f in missing if not w.get(f)]
             atoms = normalise_checks(w.get("atoms") or self.proposed_atoms.get(name))   # Priority or a ruling may drop them
             no_atom = self._atom_problems({"name": name, "atoms": atoms, "outputs": w.get("outputs"),
-                                           "dependencies": w.get("dependencies")}, batch)
+                                           "dependencies": w.get("dependencies"), "sections": w.get("sections")}, batch)
             lld = [str(i) for i in (w.get("lld_sections") or self.proposed_lld.get(name) or [])] if self.blueprint else []
             unknown_lld = [i for i in lld if i not in {x["id"] for x in self.blueprint["sections"]}] if self.blueprint else []
             rc, unknown = price(w)
@@ -7336,7 +7423,8 @@ class J2Run:
                       and "fix" not in (w.get("parts") or []))
             parts_of = j2_types.section_parts(self.output) if writes and RATES else {}
             sec_min = sum(RATES.get(parts_of[x], 0) for x in writes) if len(writes) > 1 and parts_of else 0      # no rate card: no minimum
-            reason = ("a check or report on the site is Audit's job, not a workflow" if self._audit_name(name)
+            reason = (f"a check or report on the {self.out['noun'] if self.doc else 'site'} is Audit's job, not a workflow"
+                      if self._audit_name(name, w)
                       else f"required field(s) missing: {', '.join(missing)}" if missing
                       else "; ".join(no_atom) if no_atom
                       else f"it cites LLD section(s) that don't exist: {unknown_lld}" if unknown_lld
