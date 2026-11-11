@@ -6123,6 +6123,18 @@ class J2Run:
         return {"say": f"@Priority Change {self.change['id']}: the change plan, planning documents first.",
                 "act": "PROPOSE", "next": "Priority", "workflows": out, "left_out": self.change.get("left_out") or []}
 
+    def _fix_sections(self, w):
+        """The sections a document fix rewrites when its reply names none: those of the workflow it revises, else the
+        sections its failing items (fixes: audit finding ids) name."""
+        src = self._wf_any(str(w.get("revises") or "").upper())
+        secs = wf_sections(src, self.out["sections"]) if src else []
+        if not secs:
+            found = {r.get("id"): str(r.get("criterion") or "") + " " + str(r.get("note") or "") for a in self.audits[-1:]
+                     for r in (a.get("results") or []) + (a.get("extra_issues") or []) if isinstance(r, dict)}
+            said = " ".join(found.get(str(f), "") for f in w.get("fixes") or []).lower()
+            secs = [x for x in self.out["sections"] if x.lower() in said]
+        return secs
+
     def _wf_any(self, wid):
         return next((w for w in self._all_wfs() if w["id"] == wid), None) if wid else None
 
@@ -7309,6 +7321,10 @@ class J2Run:
             wf["atoms"] = [{**a, "id": f"{wf['id']}.a{n}"} for n, a in enumerate(atoms, 1)]
             if own:       # the document sections this workflow writes, as the planner named them
                 wf["sections"] = list(own)
+            elif self.doc and (w.get("revises") or "fix" in (w.get("parts") or [])):
+                wf["sections"] = self._fix_sections(w)      # a fix the planner named no sections for: code names them
+                if not wf["sections"]:
+                    del wf["sections"]
             if lld:       # the LLD slice is this workflow's spec: code adds the check that the page matches it
                 wf["lld_sections"] = lld
                 wf["atoms"][0]["verification"] = list(wf["atoms"][0].get("verification") or []) + [self._lld_check_for(lld)]
