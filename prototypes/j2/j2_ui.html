@@ -3452,7 +3452,7 @@ const LIB = {loaded: false, groups: {}, dir: "", decisions: [], open: null, mode
 const slugOf = t => String(t || "").toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "") || "template";
 async function loadLibrary(){
   try { const r = await fetch("/api/library", {cache: "no-store"}); if (r.ok){ const d = await r.json(); LIB.groups = d.groups || {}; LIB.dir = d.dir || ""; } } catch (e) {}
-  try { const r = await fetch(`/api/run-templates?${runQ().slice(1)}`, {cache: "no-store"}); if (r.ok) LIB.decisions = (await r.json()).decisions || []; } catch (e) {}
+  try { const r = await fetch(`/api/run-templates?${runQ().slice(1)}`, {cache: "no-store"}); if (r.ok){ const d = await r.json(); LIB.decisions = d.decisions || []; LIB.rt = d.run_template || null; } } catch (e) {}
   LIB.loaded = true; paint($("pane-library"), renderLibrary());
   if (state) paint($("pane-workflows"), renderWorkflows(state));      // the Template lines read the decisions just loaded
   if (ARTS.groups) artPaint();      // the Summary tab's Template block reads them too
@@ -3470,12 +3470,29 @@ const runHref = id => `/?run=${encodeURIComponent(id)}&view=detail&tab=library`;
 const libBadge = m => m === true ? '<span class="libbadge mock">mock</span>' : m === false ? '<span class="libbadge live">live</span>' : `<span class="libbadge">${esc(m || "not recorded")}</span>`;
 const libUses = u => (u || []).map(x => `${esc(x.run)} ${esc(x.workflow)}${x.action ? " (" + esc(x.action) + ")" : ""}`).join("<br>") || '<span class="empty">not used yet</span>';
 const libOpen = (art, sec, name, ver, text) => `<button type="button" class="linkbtn" data-tplopen="${esc(art)}|${esc(sec)}|${esc(name)}|${esc(ver)}">${text}</button>`;
+// A run started from a run template: the counts the Library tab and the /library "Used by" list show. "created" among the documents is
+// the number wanted at 0, so it is the one that stands out; a part the template does not have is "added, not in template", in the muted style.
+const reuseCounts = (c, group) => `<span class="mappill ${group === "documents" ? (c.created ? "waiting_on_you" : "checks") : ""}" data-rtc="${group}-created">${esc(c.created)} created</span>`
+  + ["adapted", "reused", "generic"].map(k => `<span class="mappill" data-rtc="${group}-${k}">${esc(c[k])} ${k}</span>`).join("");
+const reuseFrom = c => c.from_template === null || c.from_template === undefined ? "" : c.from_template === 0 ? '<span class="empty">added, not in template</span>'
+  : `<span class="empty">${esc(c.from_template)} of ${esc(c.total)} from the template</span>`;
+function rtSummary(u){
+  if (!u) return "";
+  const c = u.counts || {}, part = (g, label) => c[g] ? `<div data-rtgroup="${g}"><b>${label}:</b> ${reuseCounts(c[g], g)} ${reuseFrom(c[g])}</div>` : "";
+  const name = u.in_library ? `<a href="/library?view=templates&rt=${encodeURIComponent(u.id)}" data-rtlink="1">${esc(u.name)}</a>` : esc(u.name);
+  return `<div class="artrow tplcard" data-rtsum="1"><div><b>Started from run template</b> ${name}: ${esc(u.selected)} of ${esc(u.of)} workflows`
+    + ((u.added_stages || []).length ? `; <span class="empty">added, not in template: ${u.added_stages.map(esc).join(", ")}</span>` : "") + `</div>`
+    + part("documents", "Documents") + part("website", "Website") + `<div data-rtgen="1"><b>Generator calls:</b> ${esc(u.generator_calls)}</div></div>`;
+}
+const rtCell = d => d.from_template === true ? `${esc(d.template_workflow || "")}${d.adapted_from ? ` <span class="empty">adapted from ${esc(d.adapted_from)}</span>` : ""}`
+  : d.from_template === false ? '<span class="empty">added, not in template</span>' : "";
 function renderLibrary(){
-  const dec = LIB.decisions || [];
-  const table = dec.length ? `<table class="maptable" data-tpltable="1"><thead><tr><th>Workflow</th><th>Artifact · section</th><th>Action</th><th>Template</th><th>From</th><th>Score</th><th>Reason</th></tr></thead><tbody>`
+  const dec = LIB.decisions || [], rt = LIB.rt || null;
+  const table = dec.length ? `<table class="maptable" data-tpltable="1"><thead><tr><th>Workflow</th><th>Artifact · section</th><th>Action</th><th>Template</th>${rt ? "<th>Run template</th>" : ""}<th>From</th><th>Score</th><th>Reason</th></tr></thead><tbody>`
     + dec.map(d => `<tr data-tplrow="${esc(d.atom)}"${LIB.focus && LIB.focus === d.atom && d.artifact !== "design" ? ' class="tplfocus"' : ""}><td>${esc(d.workflow)}</td><td>${esc(d.artifact)} · ${esc(d.section)}</td><td>${esc(d.action)}</td>`
       + `<td>${d.source === "not recorded" ? `${esc(d.template)} v${esc(d.version)}` : libOpen(d.artifact, d.section, d.kind === "generic" ? "generic" : d.template, d.kind === "generic" ? 1 : d.version, `${esc(d.template)} v${esc(d.version)}`)}`
       + ` <a href="${libHref(d.artifact, d.section, d.kind === "generic" ? "generic" : d.template, d.kind === "generic" ? 1 : d.version)}" data-link="catalog" class="empty">library</a></td>`
+      + (rt ? `<td data-rtcell="1">${rtCell(d)}</td>` : "")
       + `<td data-tplsource="${esc(d.source || "")}">${d.source ? esc(d.source) : '<span class="empty">not recorded</span>'}</td>`
       + `<td>${d.score === null || d.score === undefined ? '<span class="empty">not recorded</span>' : esc(Number(d.score).toFixed(2))}</td><td>${esc(d.covers ? d.covers + "; " + d.reason : d.reason)}</td></tr>`).join("") + `</tbody></table>`
     : '<p class="empty">This run recorded no routing decisions.</p>';
@@ -3488,7 +3505,7 @@ function renderLibrary(){
           + ` <span class="empty">made by ${esc(v.made_by.run)} ${esc(v.made_by.workflow)} (${esc(v.made_by.agent)}) · ${esc(v.business_type)} · ${esc(v.fields.length)} fields</span>`
           + `<div class="empty">used by: ${libUses(v.used_by)}</div></div>`).join("") + `</div>`).join("")
       + `</div>`).join("") + `</details>`).join("");
-  return `<h3>This run's routing decisions</h3>${table}${LIB.open ? renderTplViewer() : ""}<h3>Templates <span class="empty">${esc(LIB.dir)}</span></h3>${groups || '<p class="empty">No templates.</p>'}`;
+  return `<h3>This run's routing decisions</h3>${rtSummary(rt)}${table}${LIB.open ? renderTplViewer() : ""}<h3>Templates <span class="empty">${esc(LIB.dir)}</span></h3>${groups || '<p class="empty">No templates.</p>'}`;
 }
 const TPLCODE = {};
 // The template viewer (a run's Templates tab and the shared library) has the same three tabs as every Artifacts row, drawn the same way:
@@ -3626,7 +3643,13 @@ function rtPane(row){
     + `<div class="rtslots">A new run is asked for: ${(t.facts_slots || []).map(x => `<span class="mappill">${esc(x)}</span>`).join(" ") || '<span class="empty">no facts recorded</span>'}</div>`
     + `<div class="rtuse"><a class="ghost rtmain" data-rtuse="all" href="${esc(rtHref(t.id, "all"))}">Use whole template</a>`
     + (want.length ? `<a class="ghost" data-rtuse="sel" href="${esc(rtHref(t.id, pick.chosen.join(",")))}">Use selected workflows</a>` : `<a class="ghost" data-rtuse="sel" role="link" aria-disabled="true">Use selected workflows</a>`)
-    + `</div><div class="rtnote" data-rtnote="1">${note}</div>` + stages;
+    + `</div><div class="rtnote" data-rtnote="1">${note}</div>` + stages + rtUsedBy(t);
+}
+function rtUsedBy(t){      // the runs that started from this run template, each with its counts and a link to its Library tab
+  const us = t.used_by || [], cell = (u, g) => u.counts && typeof u.counts === "object" ? (u.counts[g] ? reuseCounts(u.counts[g], g) : '<span class="empty">none</span>') : '<span class="empty">not recorded</span>';
+  return `<div class="ablk tplcard" data-rtusedby="1"><h5>Used by (${us.length})</h5>` + (us.length ? `<table class="maptable"><thead><tr><th>Run</th><th>Workflows</th><th>Documents</th><th>Website</th></tr></thead><tbody>`
+    + us.map(u => `<tr data-rtrun="${esc(u.run)}"><td><a href="${runHref(u.run)}">${esc(u.run)}</a></td><td>${esc(u.workflows)} of ${esc(u.of)}</td><td>${cell(u, "documents")}</td><td>${cell(u, "website")}</td></tr>`).join("") + `</tbody></table>`
+    : '<p class="empty">No run has started from this run template yet.</p>') + `</div>`;
 }
 const rtHref = (id, keys) => `/?view=simple&template=${encodeURIComponent(id)}&workflows=${encodeURIComponent(keys)}`;      // the new-run brief box, with the template and the workflows in the address
 async function rtUse(go){      // both buttons open the brief box; a live run that has started is put away first (it stays in Recent work), a running one is left alone

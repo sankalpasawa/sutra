@@ -834,6 +834,41 @@ def run_templates(run_dir):
     return out
 
 
+def reuse_counts(decisions):
+    """A run's routing decisions counted for the page: per group ("documents" for document types, "website" for page
+    types; anything else, the style guide for one, is left out), how many were created, adapted (the recorded action
+    "extended"), reused and generic, the total, and how many came from a run template (None when no decision says)."""
+    out = {}
+    for d in decisions or []:
+        a = d.get("artifact")
+        if a not in j2_types.names():
+            continue
+        g = out.setdefault("documents" if j2_types.info(a)["form"] == "document" else "website",
+                           {"created": 0, "adapted": 0, "reused": 0, "generic": 0, "total": 0, "from_template": None})
+        k = {"extended": "adapted"}.get(d.get("action"), d.get("action"))
+        if k in ("created", "adapted", "reused", "generic"):
+            g[k] += 1
+        g["total"] += 1
+        if "from_template" in d:
+            g["from_template"] = (g["from_template"] or 0) + (1 if d["from_template"] is True else 0)
+    return out
+
+
+def run_template_use(run_dir):
+    """What a run that started from a run template shows on its Library tab: the template (id, name, how many of its
+    workflows were selected, the stages added beyond it), the counts (reuse_counts) and the template generator's AI
+    calls in this run (template_calls.jsonl; no file, no call). None for a run without a run template."""
+    rec = _read(os.path.join(run_dir, "templates.json")) if run_dir else None
+    rt = (rec or {}).get("run_template")
+    if not isinstance(rt, dict) or not rt.get("id"):
+        return None
+    calls = os.path.join(run_dir, "template_calls.jsonl")
+    n = sum(1 for line in open(calls, encoding="utf-8") if line.strip()) if os.path.isfile(calls) else 0
+    return {"id": rt["id"], "name": rt.get("name") or rt["id"], "selected": len(rt.get("selected") or []), "of": rt.get("of"),
+            "added_stages": list(rt.get("added_stages") or []), "in_library": get_run_template(rt["id"]) is not None,
+            "generator_calls": n, "counts": reuse_counts(rec.get("decisions"))}
+
+
 def _source(run_dir, d):
     if run_saved_dir(run_dir, d):
         return "from this run"
@@ -2088,6 +2123,9 @@ def run_template_view(tid):
     for w in out["workflows"]:
         w["ref"] = section_template_ref(w)
     out["stage_labels"] = {k: (j2_types.info(k)["label"] if k in j2_types.names() else k) for k in rt.stages}
+    runs = index().get("runs") or {}      # a run that used it and was collected: its counts; otherwise not recorded
+    out["used_by"] = [{**u, "counts": reuse_counts(runs[u["run"]].get("decisions")) if u.get("run") in runs else NOT_RECORDED}
+                      for u in rt.used_by]
     return out
 
 
