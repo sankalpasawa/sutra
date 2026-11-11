@@ -13339,7 +13339,7 @@ def template_library(demo=False):
           "per version), shown from the run with an empty library, and \"not recorded\" when neither has it ok")
 
 
-RUN_TPL_CHECKPOINT = "3f7eabf6"   # main before run templates: a flag-off plain run is compared with it, prompt for prompt
+RUN_TPL_CHECKPOINT = "1d537295"   # main before run templates: a flag-off plain run is compared with it, prompt for prompt
 
 
 def run_templates():
