@@ -95,6 +95,7 @@ CHAT_FULL_CHARS = int(os.getenv("J2_CHAT_FULL_CHARS", "60000"))   # above this, 
 CHAT_TAIL = 40             # messages always shown in full once the chat is summarised
 SUMMARY_REFRESH = 20       # re-summarise once this many more messages have scrolled out of the tail
 SITE_LIMIT = 150_000       # characters of the site the workflow agents and Audit see
+INPUT_LIMIT = int(os.getenv("J2_INPUT_LIMIT", "20000"))   # characters of one file or depended-on section in a builder prompt
 SITE_WARN_BYTES = 60_000   # builder.md asks for a single page under ~60 KB
 DELAY = 0 if llm.MOCK else float(os.getenv("J2_DELAY", "2"))   # spacing for free-tier rate limits
 
@@ -8021,32 +8022,52 @@ class J2Run:
             return self._handoff("adaptation", kind="atom_failed", wid=fn, atoms=bad, attempt=attempt, owner_note=owner)
         self._handoff("coordination", kind="schedule")
 
-    def _artifact_inputs(self, w):
-        """The finished artifact workflows this workflow depends on, directly or through others (a fix also reads
-        what the workflow it revises read), in id order."""
-        by = {k: x for x in self._all_wfs() for k in (x.get("id"), x.get("name")) if k}
+    def _dep_wfs(self, w, revised=False):
+        """The workflows this workflow depends on, directly or through others (a fix also depends on what the workflow
+        it revises depends on; revised=True adds that workflow too), in id order. Dependencies name a workflow by id,
+        name or proposal id."""
+        by = {k: x for x in self._all_wfs() for k in (x.get("id"), x.get("name"), x.get("proposal_id")) if k}
         src = by.get(str(w.get("revises") or ""))
-        stack, seen, out = list(w.get("dependencies") or []) + list((src or {}).get("dependencies") or []), set(), []
+        stack = (list(w.get("dependencies") or []) + list((src or {}).get("dependencies") or [])
+                 + ([src["id"]] if revised and src else []))
+        seen, out = set(), []
         while stack:
             d = by.get(str(stack.pop()))
             if not d or d["id"] in seen or d["id"] == w["id"]:
                 continue
             seen.add(d["id"])
             stack += d.get("dependencies") or []
-            if self._file_wf(d) and d.get("status") == "done":
-                out.append(d)
+            out.append(d)
         return sorted(out, key=lambda x: as_int(str(x["id"])[2:]))
+
+    def _artifact_inputs(self, w):
+        """The finished artifact workflows this workflow depends on (_dep_wfs), in id order."""
+        return [d for d in self._dep_wfs(w) if self._file_wf(d) and d.get("status") == "done"]
+
+    def _capped(self, w, text, label, path):
+        """One input for a builder's prompt, cut at INPUT_LIMIT. A cut is never silent: the prompt says so (and where
+        the rest is, when the provider can read files), it is an event and a row of input_cuts.json."""
+        if len(text) <= INPUT_LIMIT:
+            return text
+        where = f"; read the rest at {path} if needed" if llm.can_read_files() else ""
+        cut = {"call": self.calls + 1, "workflow": w["id"], "input": label, "kept": INPUT_LIMIT, "chars": len(text)}
+        self.__dict__.setdefault("input_cuts", []).append(cut)
+        self.save("input_cuts.json", self.input_cuts)
+        self._event("coordination", "input_cut", f"{w['id']}: {label} cut at {INPUT_LIMIT:,} of {len(text):,} characters")
+        return text[:INPUT_LIMIT] + f"\n(cut at {INPUT_LIMIT} of {len(text)} characters{where})"
 
     def _artifact_context(self, w):
         """The text of every artifact this workflow reads, for its prompt ("" when it reads none)."""
         parts = []
         for d in self._artifact_inputs(w):
             f = artifact_path(d)
+            path = os.path.join(self.dir, f)
             try:
-                with open(os.path.join(self.dir, f), encoding="utf-8") as fh:
-                    parts.append(f"--- {f} (written by {d['id']} {d['name']}) ---\n{fh.read()[:6000]}")
+                with open(path, encoding="utf-8") as fh:
+                    text = fh.read()
             except OSError:
                 continue
+            parts.append(f"--- {f} (written by {d['id']} {d['name']}) ---\n{self._capped(w, text, f, path)}")
         return ("\nARTIFACTS YOU READ (written by the workflows you depend on; follow their 'Rules for later "
                 "workflows'):\n" + "\n".join(parts)) if parts else ""
 
@@ -8224,13 +8245,42 @@ class J2Run:
         return ("\nHLD SUMMARY (components): " + json.dumps([{k: c[k] for k in ("id", "name", "responsibility")} for c in comps],
                                                             ensure_ascii=False)) if comps else ""
 
+    DEP_WHY = "its section's full text was in this builder's prompt (a workflow it depends on wrote it)"
+
+    def _dep_sections(self, w):
+        """(prompt block, edges): the full text (head and body) of every section written by a workflow this one depends
+        on (_dep_wfs, with the one it revises), each capped like a file. Files are ARTIFACTS YOU READ, its own section
+        is YOUR SECTION NOW; neither is repeated. A section is read from its stage's sections map."""
+        parts, edges, seen = [], [], {w.get("section"), "style"}
+        current = {x["id"] for x in self.workflows}
+        for d in self._dep_wfs(w, revised=True):
+            sid = d.get("section")
+            if self._file_wf(d) or sid in seen:
+                continue
+            f, secs = ("sections.json", self.sections) if d["id"] in current else next(
+                ((f"stage-{a['stage']}.json", a["sections"]) for a in reversed(self.stage_archive)
+                 if sid in (a.get("sections") or {})), (None, {}))
+            x = secs.get(sid)
+            if not x or not (x.get("body") or x.get("head")):
+                continue
+            seen.add(sid)
+            text = "\n".join(t for t in (x.get("head"), x.get("body")) if t)
+            parts.append(f"--- section {sid} (written by {x.get('owner')}) ---\n"
+                         + self._capped(w, text, f"section {sid}", os.path.join(self.dir, f)))
+            o = self._wf_any(str(x.get("owner") or "").split(" ")[0]) or d
+            edges += [{"atom": a["id"], "why": self.DEP_WHY} for a in o.get("atoms") or []]
+        return ("\nSECTIONS YOU DEPEND ON (full text, read only; written by the workflows you depend on):\n"
+                + "\n".join(parts) if parts else ""), edges
+
     def _page_context(self, w, prev):
-        """What a builder sees of the rest of the site. Plain runs: the whole page (J2_SLIM=1: the manifest). With an
-        LLD: its own slice of it (its spec) and a short HLD summary instead of the page; J2_SLIM=1 adds the manifest."""
+        """What a builder sees of the rest of the site. Plain runs: the whole page (J2_SLIM=1: the sections it depends on
+        and the manifest). With an LLD: its own slice of it (its spec), the sections it depends on and a short HLD
+        summary instead of the page; J2_SLIM=1 adds the manifest."""
         manifest = ("\nOTHER SECTIONS (their atoms' agent_output; the rest of the page isn't shown): "
                     f"{json.dumps(self._manifest(w), ensure_ascii=False)}")
         lld = bool(self.blueprint and w.get("lld_sections"))
-        self._record_given(w, (self._slice_edges(w) if lld else []) + self._hld_edges()
+        deps, dep_edges = self._dep_sections(w) if lld or slim() else ("", [])
+        self._record_given(w, (self._slice_edges(w) if lld else []) + self._hld_edges() + dep_edges
                            + (self._manifest_edges(w) if slim() else []) + self._board_edges(),
                            whole=not lld and not slim())
         board = self._board_context()
@@ -8238,9 +8288,9 @@ class J2Run:
             return ("\nYOUR SPEC (the LLD sections you implement: build exactly these ids, selectors and form fields with "
                     "their behaviour; if one can't be built as written, report it in spec_conflict, never deviate "
                     f"silently): {json.dumps(self._lld_slice_for(w), ensure_ascii=False)}" + self._hld_summary()
-                    + (manifest if slim() else "") + board)
+                    + deps + (manifest if slim() else "") + board)
         if slim():
-            return manifest + self._hld_summary() + board
+            return deps + manifest + self._hld_summary() + board
         return f"\nTHE WHOLE SITE FILE NOW (v{len(self.sites)}, read only):\n{prev[:SITE_LIMIT]}" + self._hld_summary() + board
 
     # ---- atom/1 edges: what a builder's prompt actually held, recorded where the prompt is made (no prompt changes)
@@ -9062,8 +9112,9 @@ class J2Run:
     def _doc_prompt(self, w, brief, sid, mine, attempt, evidence, last_err, prev):
         """(reply format, task) for a document section's workflow agent: markdown for its own section only."""
         fn = w["id"]
-        self._record_given(w, self._chain_edges() + (self._manifest_edges(w) if slim() else []) + self._board_edges(),
-                           whole=not slim())
+        deps, dep_edges = self._dep_sections(w) if slim() else ("", [])
+        self._record_given(w, self._chain_edges() + dep_edges + (self._manifest_edges(w) if slim() else [])
+                           + self._board_edges(), whole=not slim())
         return ('First line: a JSON object {"say": str (one short line reporting to @Coordination: what you changed; '
                 'code runs your checks and reports them, so don\'t claim they pass), "human_output": str (1 to 3 plain sentences telling a person what you built; \"done.\" alone is rejected), "atom_human_output": str (1 or 2 plain sentences telling the Requester what this part created, in everyday words: no ids, no selectors, no \"units\"), "next": "Coordination", '
                 + (self.BOARD_FMT if j2_board.enabled() else '')
@@ -9081,7 +9132,7 @@ class J2Run:
                 + (f"\nATTEMPT {attempt} OF {MAX_CHECK_ATTEMPTS}. CODE RAN YOUR CHECKS ON YOUR LAST ATTEMPT AND THESE "
                    f"FAILED:\n{evidence}\nFix the section so they pass." if evidence else "")
                 + (f"\nYOUR LAST ATTEMPT WAS REJECTED: {last_err}. Fix that." if last_err else "")
-                + (f"\nOTHER SECTIONS (their atoms' agent_output; the rest isn't shown): "
+                + (f"{deps}\nOTHER SECTIONS (their atoms' agent_output; the rest isn't shown): "
                    f"{json.dumps(self._manifest(w), ensure_ascii=False)}" if slim() else
                    f"\nTHE WHOLE DOCUMENT NOW (v{len(self.sites)}, read only):\n{prev[:SITE_LIMIT]}")
                 + self._board_context())
