@@ -10003,7 +10003,9 @@ def chat_panel():
     def chat_of(n):
         f = os.path.join(repo, n, "chat.jsonl")
         return [json.loads(x) for x in open(f, encoding="utf-8") if x.strip()] if os.path.isfile(f) else []
-    long_ = next((n for n in reversed(names) if any(m.get("who") not in ("system", None) and not m.get("meta") and len(m.get("text") or "") > 280 for m in chat_of(n))), None)
+    # pinned: "the newest run with a long message" moved every time a real run was saved (runs/j2-20261111-124718);
+    # the search is the fallback for a clone without these runs
+    long_ = next((n for n in ("j2-20261111-013315", "j2-20261109-182842") if n in names), None) or next((n for n in reversed(names) if any(m.get("who") not in ("system", None) and not m.get("meta") and len(m.get("text") or "") > 280 for m in chat_of(n))), None)
     runs = list(dict.fromkeys([n for n in ("j2-20261026-174314", long_) if n and n in names])) or names[-1:]
     role = {"identity": "Client Lead", "adaptation": "Planner", "priority": "Budget lead", "coordination": "Scheduler", "audit": "Quality check", "validator": "checks before work starts", "user": "", "builder": "Builder"}
     head = "<script>window.__e = []; addEventListener('error', e => __e.push(String(e.message))); try { localStorage.clear(); } catch (x) {}</script>"
