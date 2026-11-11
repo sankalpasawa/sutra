@@ -36,6 +36,7 @@ J2_FIXES (default 0) picks the mode, so findings can compare the two:
 """
 import copy
 from functools import lru_cache, partial, reduce
+from typing import List
 import html
 import html.parser
 import itertools
@@ -2399,6 +2400,11 @@ def output_type(name=None):
 def output_def(kind):
     """What an output type is, read from artifacts/types.json and its files (j2_types)."""
     return _data_type(kind)
+
+
+def style_model():
+    """The model of the style guide a page's first builder writes (the template the page form names in types.json)."""
+    return j2_artifact_models.model_for(j2_types.style_guide(), None)
 
 
 def is_page(kind):
@@ -7821,7 +7827,7 @@ class J2Run:
                 extra = {}
                 if first:      # the first page builder also writes the style guide, so its reply carries the design
                     extra["design"] = {k: v for k, v in
-                                       j2_artifact_models.transport_schema(j2_artifact_models.Design).items()
+                                       j2_artifact_models.transport_schema(style_model()).items()
                                        if k != "$schema"}
                 schema = j2_artifact_models.reply_schema(art_model, extra)
                 if art_sec_schema is not None:      # the library template's schema.json is the section the builder fills
@@ -9227,7 +9233,7 @@ class J2Run:
         if j2_board.enabled():
             fields.append('"question": null|{"to": str, "about": str, "text": str}, "board_used": null|[str]')
         if first:
-            fields.append(f'"design": the {j2_artifact_models.Design.template()} object (you run first, so you write '
+            fields.append(f'"design": the {style_model().template()} object (you run first, so you write '
                           'the style guide)')
         return ("Answer with one JSON object only, following the schema you were given exactly: {" + ", ".join(fields)
                 + "}. No markdown, no fenced blocks, no headings: code renders the document from your data.")
@@ -9235,13 +9241,13 @@ class J2Run:
     def _artifact_task(self, kind, section, model, first):
         """What the builder is told about its template: the section it fills in and the rules code will check on the
         data (the ids, the references and the enum values the readers already enforce)."""
-        conds = (j2_artifact_models.SECTION_CONDITIONS.get(kind) or {}).get(section) or []
+        conds = j2_artifact_models.section_conditions(kind, section)
         return (f"\nYOUR TEMPLATE: {model.template()}. Send the data for {section} only, in the fields of the schema; "
                 "code writes the heading and the markdown, so write no heading and no markdown. Ids run in order "
                 "(G1, G2, ...; R1, R2, ...; C1, C2, ...; S1, S2, ...), every id you name in covers, goals or "
                 "implements must exist, and every fact comes from the charter or an earlier document"
                 + (f". Code checks it against {', '.join(conds)} as before." if conds else ".")
-                + (f"\nYou also send the style guide as \"design\" ({j2_artifact_models.Design.template()}): "
+                + (f"\nYou also send the style guide as \"design\" ({style_model().template()}): "
                    "palette hex colours, heading and body fonts, spacing, radius, button and card CSS." if first
                    else ""))
 
@@ -9277,19 +9283,19 @@ class J2Run:
         state["data"] = got
         guide = None
         if first:      # the first page builder also writes the style guide, as the design template
-            d, derrs = j2_artifact_models.validate(j2_artifact_models.Design, reply.get("design"))
+            d, derrs = j2_artifact_models.validate(style_model(), reply.get("design"))
             if derrs:
                 state["schema_errors"] = derrs
                 state["schema_ok"] = False
-                self._artifact_layer_fail(w, attempt, j2_artifact_models.Design.template(), derrs)
-                raise ValueError(f"the style guide doesn't follow {j2_artifact_models.Design.template()}: "
+                self._artifact_layer_fail(w, attempt, style_model().template(), derrs)
+                raise ValueError(f"the style guide doesn't follow {style_model().template()}: "
                                  + "; ".join(derrs))
             dd = d.model_dump(by_alias=True)
             dbad = j2_rules.failures(j2_rules.run_rules("design", "Style guide", dd, {}))
             if dbad:
                 state["schema_errors"], state["schema_ok"] = dbad, False
-                self._artifact_layer_fail(w, attempt, j2_artifact_models.Design.template(), dbad)
-                raise ValueError(f"the style guide doesn't follow {j2_artifact_models.Design.template()}: "
+                self._artifact_layer_fail(w, attempt, style_model().template(), dbad)
+                raise ValueError(f"the style guide doesn't follow {style_model().template()}: "
                                  + "; ".join(dbad))
             guide = j2_artifact_models.style_from_design(dd)
             self.art_data.setdefault("design", {})["Style guide"] = dd
@@ -9301,7 +9307,7 @@ class J2Run:
             state["schema_errors"] = [f"section: no renderer for {kind} {section!r}"]
             self._artifact_layer_fail(w, attempt, model.template(), state["schema_errors"], "artifact-render")
             raise ValueError(f"code cannot render {kind} {section!r}; the section name must be one of "
-                             + ", ".join(j2_artifact_models.SECTION_MODELS[kind]))
+                             + ", ".join(j2_types.sections(kind)))
         state["rendered"] = True
         return ("", body), guide
 
@@ -9318,7 +9324,7 @@ class J2Run:
                     out["this"][key] = out["this"][key] + value
                 else:
                     out["this"][key] = value
-        for other in ("prd", "hld", "lld"):
+        for other in (n for n in j2_types.names() if not is_page(n)):      # every document type, in types.json order
             mine = {}
             for data in (self.art_data.get(other) or {}).values():
                 mine.update({k: v for k, v in (data or {}).items() if k != "assumptions"})
@@ -9405,7 +9411,7 @@ class J2Run:
         data = self.art_data.get(kind)
         if not data:
             return
-        model = j2_artifact_models.DOC_MODELS.get(kind)
+        model = j2_artifact_models.doc_model(kind)
         rec = {"schema": j2_artifact_models.SCHEMA, "template": getattr(model, "TEMPLATE", kind),
                "artifact": kind, "version": version, "sections": data}
         self.save(f"{kind}.json", rec)
@@ -9485,6 +9491,12 @@ class J2Run:
                        "responsive_rules": ["Every button and field is big enough to tap on a phone."],
                        "accessibility_rules": ["Every field has a visible label."]},
                    }[section]()
+        elif self.doc:      # a document type made of data only: the scripted text of its section, as the template's fields
+            md = self.out["mock_section"](w, self.goal)
+            m = re.search(rf"^## {re.escape(section)}\n+(.*?)(?=^## |\Z)", md, re.S | re.M)
+            text = (m.group(1) if m else re.sub(r"^## .*\n", "", md, flags=re.M)).strip()
+            sec = {(f.alias or n): (text if f.annotation is str else [text]) for n, f in model.model_fields.items()
+                   if f.is_required() and f.annotation in (str, List[str])}
         else:      # a page section: the scripted markup this mock already writes, as data
             head, body = mock_section(w, self.goal, self.sections, self._lld_slice_for(w),
                                       [x["anchor"] for x in self.blueprint["sections"]

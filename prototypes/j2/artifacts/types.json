@@ -15,7 +15,7 @@
   "expect_kinds": {"section": "element-count", "element": "element-count", "facts": "facts-present", "file": "file-exists", "test": "named-test", "tap": "tap-targets", "heading": "heading-present", "ids": "ids-unique", "behavior": "behavior-steps"},
   "forms": {
     "_note": "How each form is built and checked, defined once. A type names its form; every field it leaves out comes from here ({name}, {label}, {noun} and {sections} are filled from the type; {practice} is the form's practice_rule for a type whose recommended_practice is true, else empty). Room for \"script\" and \"action\": not built yet. browser_checks: the check types code runs in headless Chrome (the plan format lists the others; the atom rules describe these). cost.item_parts: a done-when item's words (regex) -> the rate-card part it costs at least, first match wins. expect_kinds: an expected-output kind -> the check type that verifies it.",
-    "page": {"builder": "builder.md", "file": "site/index.html", "preview": "html",
+    "page": {"builder": "builder.md", "file": "site/index.html", "preview": "html", "style_guide": "design",
              "check_types": ["file-exists", "grep-count", "element-count", "named-test", "facts-present", "tap-targets", "behavior-steps"], "ready": "Your {lower} is ready.",
              "browser_checks": ["tap-targets", "behavior-steps"]},
     "document": {

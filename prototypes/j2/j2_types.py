@@ -10,7 +10,6 @@ import os
 import re
 import shutil
 import sys
-from functools import lru_cache
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 TYPES_PATH = os.path.join(HERE, "artifacts", "types.json")
@@ -33,18 +32,76 @@ LOCAL_LIBRARY_REL = "library/types"      # how a local entry's "template" names 
 NAME_RE = re.compile(r"^[a-z][a-z0-9_]{1,40}$")
 
 
-@lru_cache(maxsize=None)
+def template_path(name, path=None):
+    """Where a type's template file is: its entry points to it (templates/<name>/generic.json when it doesn't); a type a
+    run made (library/types/...) has it in the local library."""
+    e = next((t for t in _read_types(path)["types"] if t.get("name") == name), {})
+    rel = e.get("template") or f"templates/{name}/generic.json"
+    if rel.startswith(LOCAL_LIBRARY_REL + "/"):
+        return os.path.join(LOCAL_LIBRARY_DIR, os.path.relpath(rel, LOCAL_LIBRARY_REL))
+    return os.path.join(TEMPLATES_DIR, os.path.relpath(rel, "templates"))
+
+
+_TEMPLATES = {}
+
+
+def template_file(name):
+    """Every template of a type's generic.json, in file order, the document-level one included; () when the type has no
+    generic.json. The file is the hand-edited source of the type's sections, fields, rules and rendering: it is read
+    again only when it changed, so the entries stay the same objects until then (what is built from them is kept by them)."""
+    p = template_path(str(name or ""))
+    try:
+        st = os.stat(p)
+    except OSError:
+        return ()
+    key = (p, st.st_mtime_ns, st.st_size)
+    if key not in _TEMPLATES:
+        for k in [k for k in _TEMPLATES if k[0] == p]:
+            del _TEMPLATES[k]
+        try:
+            with open(p, encoding="utf-8") as f:
+                _TEMPLATES[key] = tuple(json.load(f)["templates"])
+        except (ValueError, KeyError, TypeError) as e:      # a hand edit that broke the file is named, with the file
+            raise ValueError(f"{p} is not a readable generic.json ({type(e).__name__}: {e})") from None
+    return _TEMPLATES[key]
+
+
 def template(name):
     """The section templates of a type's template library entry (templates/<name>/generic.json), in document order;
     the document-level template left out. () when the type has no generic.json."""
-    e = next((t for t in _read_types()["types"] if t.get("name") == name), {})      # types.json points to it
-    rel = e.get("template") or f"templates/{name}/generic.json"
-    local = rel.startswith(LOCAL_LIBRARY_REL + "/")      # a type a run made: its template is in the local library
-    p = os.path.join(LOCAL_LIBRARY_DIR if local else TEMPLATES_DIR, os.path.relpath(rel, LOCAL_LIBRARY_REL if local else "templates"))
-    if not os.path.isfile(p):
-        return ()
-    with open(p, encoding="utf-8") as f:
-        return tuple(t for t in json.load(f)["templates"] if t.get("section") != DOCUMENT)
+    return tuple(t for t in template_file(name) if t.get("section") != DOCUMENT)
+
+
+template.cache_clear = _TEMPLATES.clear      # what a test calls after it points TEMPLATES_DIR at a copy
+
+
+def section_template(name, section):
+    """One section's template, by its exact name (None when the type has no such section)."""
+    return next((t for t in template(name) if t.get("section") == section), None)
+
+
+def document(name):
+    """The document-level template of a type (the whole document as one object), or None when its file has none."""
+    return next((t for t in template_file(name) if t.get("section") == DOCUMENT), None)
+
+
+def style_guide(path=None):
+    """The template a page's first builder fills for the style guide (the page form's "style_guide" in types.json)."""
+    return (_read_types(path).get("forms") or {}).get("page", {}).get("style_guide")
+
+
+def templated(path=None):
+    """Every name with a template file, in types.json order: each output type, and before the first type of a form the
+    style guide that form names. These are the artifacts the template library knows."""
+    d, out = _read_types(path), []
+    for t in d["types"]:
+        if t.get("kind") != "type":
+            continue
+        guide = ((d.get("forms") or {}).get(t.get("form")) or {}).get("style_guide")
+        for n in ([guide] if guide else []) + [t["name"]]:
+            if n not in out and os.path.isfile(template_path(n, path)):
+                out.append(n)
+    return out
 
 
 def sections(name):
@@ -133,6 +190,11 @@ def _read_types(path=None):
 def refused(path=None):
     """Why each refused local type was left out ([] when none)."""
     return list(_read_types(path)["refused"])
+
+
+def entries(path=None):
+    """Every entry of types.json, output types and records, in file order."""
+    return list(_read_types(path)["types"])
 
 
 def names(path=None):
@@ -291,18 +353,22 @@ def load(name, path=None):
 
 
 def template_for(name, label, secs):
-    """A new document type's template library entry (templates/<name>/generic.json): one generic template per section,
-    its text required, its assumptions optional."""
+    """A new document type's template library entry (templates/<name>/generic.json), complete enough to build each
+    section's model and checks from: one generic template per section, its text required and its assumptions optional,
+    the rule that the text is written, and the lines the data is rendered as. It is the type's source from then on: a
+    person may edit its fields, rules and render lines."""
     return {"schema": "template-library/1", "artifact": name, "kind": "generic", "version": 1,
-            "from": "made by J2 for a new document type (j2_types.create)",
+            "from": "made by J2 for a new document type (j2_types.create); hand-edit it like any generic.json",
             "templates": [{"name": f"{label} · {x}", "artifact": name, "section": x, "version": 1, "kind": "generic",
-                           "description": f"The generic {label} {x} section",
+                           "description": f"The generic {label} {x} section", "conditions": ["C1"],
                            "fields": [{"name": "text", "type": "string", "required": True, "nullable": False,
                                        "description": f"the {x} section, in the charter's own facts"},
                                       {"name": "assumptions", "type": "list[string]", "required": False, "nullable": False,
                                        "description": "facts you had to assume, each one line"}],
                            "objects": [], "rules": [{"rule": "not_empty", "path": "text", "name": "the section is written",
-                                                     "from": "C1"}]} for x in secs]}
+                                                     "from": "C1"}],
+                           "render": [{"text": "{text}"},
+                                      {"each": "assumptions", "line": "Assumption: {_}", "after_body": True}]} for x in secs]}
 
 
 def create_problems(name, label, secs, file, path=None, practice=False):
@@ -352,10 +418,17 @@ def create(name, label, secs, file=None, path=None, practice=None):
              "form": "document", "template": f"{LOCAL_LIBRARY_REL}/{name}/generic.json", "file": file, "deliverable": True,
              "triggers": [], "groups": [], "depends_on": [], "made_by": "adaptation",
              **({"recommended_practice": True} if practice else {})}
-    _write_template(os.path.join(LOCAL_LIBRARY_DIR, name, "generic.json"),
-                    template_for(name, entry["label"], [str(x).strip() for x in secs]))
-    _write_local(_read_local() + [entry])
+    local, d = _read_local(), os.path.join(LOCAL_LIBRARY_DIR, name)
+    _write_template(os.path.join(d, "generic.json"), template_for(name, entry["label"], [str(x).strip() for x in secs]))
+    _write_local(local + [entry])
     template.cache_clear()
+    import j2_template_lib      # here, not at the top: the template library reads this module
+    bad = j2_template_lib.generic_problems([name])
+    if bad:      # a template that doesn't check is never left behind: the type is taken back
+        _write_local(local)
+        shutil.rmtree(d, ignore_errors=True)
+        template.cache_clear()
+        raise ValueError(f"new type {name}: its template is not valid: " + "; ".join(bad))
     return entry
 
 
@@ -367,6 +440,10 @@ def promote(name, path=None):
     if entry is None:
         raise ValueError(f"{name}: no local type of that name in {os.path.basename(LOCAL_TYPES_PATH)}")
     p = path or TYPES_PATH
+    import j2_template_lib      # here, not at the top: the template library reads this module
+    bad = j2_template_lib.generic_problems([name])      # checked while still local: a bad one is never promoted
+    if bad:
+        raise ValueError(f"{name}: its template is not valid: " + "; ".join(bad))
     text = open(p, encoding="utf-8").read()
     if name in {t.get("name") for t in json.loads(text)["types"]}:
         raise ValueError(f"{name}: {os.path.basename(p)} already has a type of that name")
