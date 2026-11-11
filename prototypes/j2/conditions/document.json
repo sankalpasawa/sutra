@@ -4,7 +4,7 @@
   "conditions": [
     {"id": "C1", "text": "Every section is present and not empty", "check": "sections-present", "min_words": 1},
     {"id": "C2", "text": "Every brief fact appears exactly", "check": "facts-present-all"},
-    {"id": "C3", "text": "No invented facts: every number, email and proper name comes from the charter or the Requester's answers, or sits in an Assumption: line", "check": "no-invented-facts", "names": true},
+    {"id": "C3", "text": "No invented facts: every number, email and proper name comes from the charter or the Requester's answers, or sits in an Assumption: line{practice}", "check": "no-invented-facts", "names": true},
     {"id": "C4", "text": "Nothing is \"to be confirmed\"", "check": "nothing-to-be-confirmed"}
   ]
 }

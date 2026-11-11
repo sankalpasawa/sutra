@@ -14,7 +14,7 @@
   },
   "expect_kinds": {"section": "element-count", "element": "element-count", "facts": "facts-present", "file": "file-exists", "test": "named-test", "tap": "tap-targets", "heading": "heading-present", "ids": "ids-unique", "behavior": "behavior-steps"},
   "forms": {
-    "_note": "How each form is built and checked, defined once. A type names its form; every field it leaves out comes from here ({name}, {label}, {noun} and {sections} are filled from the type). Room for \"script\" and \"action\": not built yet. browser_checks: the check types code runs in headless Chrome (the plan format lists the others; the atom rules describe these). cost.item_parts: a done-when item's words (regex) -> the rate-card part it costs at least, first match wins. expect_kinds: an expected-output kind -> the check type that verifies it.",
+    "_note": "How each form is built and checked, defined once. A type names its form; every field it leaves out comes from here ({name}, {label}, {noun} and {sections} are filled from the type; {practice} is the form's practice_rule for a type whose recommended_practice is true, else empty). Room for \"script\" and \"action\": not built yet. browser_checks: the check types code runs in headless Chrome (the plan format lists the others; the atom rules describe these). cost.item_parts: a done-when item's words (regex) -> the rate-card part it costs at least, first match wins. expect_kinds: an expected-output kind -> the check type that verifies it.",
     "page": {"builder": "builder.md", "file": "site/index.html", "preview": "html",
              "check_types": ["file-exists", "grep-count", "element-count", "named-test", "facts-present", "tap-targets", "behavior-steps"], "ready": "Your {lower} is ready.",
              "browser_checks": ["tap-targets", "behavior-steps"]},
@@ -22,10 +22,11 @@
       "builder": "templates/document/builder.md", "file": "{name}.md", "template": "templates/{name}/generic.json", "preview": "markdown", "export": "docx",
       "check_types": ["facts-present", "heading-present", "section-not-empty"],
       "intake": "templates/document/intake.md", "charter_format": "templates/document/charter.txt", "atom_rules": "templates/document/atom_rules.md", "conditions": "document.json",
+      "practice_rule": "; a line labelled \"Recommended practice:\" may give general good practice the brief does not state and is not an invented fact, but every number, name, price, date, law and claim about the business in it must still come from the charter or the Requester's answers",
       "rubric": [
         {"id": "D-1", "text": "Every section does the job its name says, for the charter's audience"},
         {"id": "D-2", "text": "Specific and checkable: names, numbers and rules are stated, not implied"},
-        {"id": "D-3", "text": "No invented facts: every fact comes from the brief or the Requester's answers, or is labelled \"Assumption:\"; the evidence quotes each unlabelled claim not in the brief"}
+        {"id": "D-3", "text": "No invented facts: every fact comes from the brief or the Requester's answers, or is labelled \"Assumption:\"; the evidence quotes each unlabelled claim not in the brief{practice}"}
       ],
       "done": "Done: the {label} is workable. Every done-when item, rubric item and necessary condition passes.",
       "ready": "Your document is ready.",
@@ -53,7 +54,7 @@
         {"id": "D-2", "text": "Goals and success metrics are measurable"},
         {"id": "D-3", "text": "Users and problem are consistent with the requirements"},
         {"id": "D-4", "text": "Out of scope is explicit"},
-        {"id": "D-5", "text": "No invented facts: every fact comes from the brief or the Requester's answers, or is labelled \"Assumption:\"; the evidence quotes each unlabelled claim not in the brief"}
+        {"id": "D-5", "text": "No invented facts: every fact comes from the brief or the Requester's answers, or is labelled \"Assumption:\"; the evidence quotes each unlabelled claim not in the brief{practice}"}
       ],
       "check_types": ["facts-present", "heading-present", "section-not-empty", "ids-unique"],
       "done": "Done: the PRD is workable. Every done-when item, rubric item and necessary condition passes.",

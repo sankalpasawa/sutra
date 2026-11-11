@@ -1229,9 +1229,13 @@ CONDITIONS_DIR = os.path.join(HERE, "conditions")
 TBC_WORDS = re.compile(r"to be confirmed|\bTB[CD]\b", re.I)
 
 
-def load_conditions(name):
+def load_conditions(name, practice=""):
+    """conditions/<name>'s conditions, "{practice}" in a text filled with the type's practice rule (j2_types
+    practice_rule: "" for a strict type); with a rule, the conditions say so ("practice": true)."""
     with open(os.path.join(CONDITIONS_DIR, name), encoding="utf-8") as f:
-        return json.load(f)["conditions"]
+        conds = json.load(f)["conditions"]
+    return [{**c, "text": c["text"].replace("{practice}", practice), **({"practice": True} if practice else {})}
+            if "{practice}" in c["text"] or practice else c for c in conds]
 
 
 def cond_skip(cond, goal):
@@ -1244,9 +1248,9 @@ def cond_skip(cond, goal):
     return str(w.get("why") or "it doesn't apply to this charter") if hit else None
 
 
-def conditions_for(name, goal):
+def conditions_for(name, goal, practice=""):
     """The necessary conditions of conditions/<name> that apply to this charter (cond_skip)."""
-    return [c for c in load_conditions(name) if not cond_skip(c, goal)]
+    return [c for c in load_conditions(name, practice) if not cond_skip(c, goal)]
 
 
 PHONE = re.compile(r"\+?\d[\d\s().-]{6,}\d")
@@ -1265,6 +1269,7 @@ def doc_numbers(text):
 
 ASSUMPTION = re.compile(r"\bAssumption:\s*(.+)", re.I)
 ASSUMPTIONS_HEADING = "Assumptions to confirm"
+PRACTICE = re.compile(r"\bRecommended practice:\s*(.+)", re.I)      # a type with "recommended_practice" allows these
 NO_ACTIONS = "have no actions in this version"
 WINDOW = re.compile(r"\b(?:per|a|an|each|every|over|within|during|in|by|after|for)\s+(?:the\s+)?(?:first\s+|next\s+)?"
                     r"(?:\d+\s+)?(?:days?|weeks?|months?|terms?|semesters?|quarters?|years?|hours?|sessions?|launch)\b|"
@@ -1372,7 +1377,11 @@ def condition_met(cond, doc, goal, source, sections, page=None, mech=None):
             doc = without_assumptions(doc)
             names = sorted(x for x in doc_names(doc) if not re.search(rf"\b{re.escape(x.lower())}\b", source))
             extra = sorted(x for x in doc_numbers(doc) if x.lower() not in src)
-            bad = extra + names
+            # "Recommended practice:" lines: general good practice, allowed only by a type whose data says so (the
+            # condition carries "practice"); their numbers and names are checked above like any line's
+            stray = [] if cond.get("practice") else [f"Recommended practice: {m.group(1).strip()[:60]} (this type allows none)"
+                                                      for ln in strip_md(doc).splitlines() if (m := PRACTICE.search(ln))]
+            bad = extra + names + stray
             return not bad, (f"not in the charter or the Requester's answers, and not marked Assumption: "
                              f"{', '.join(bad[:8])}" if bad else "every number, email and proper name comes from the "
                              "charter or the Requester's answers, or sits in an Assumption: line")
@@ -3892,7 +3901,8 @@ class J2Run:
         for name, spec in j2_realization.new_types(r["plan"]).items():      # a type no TYPES entry fits: made, kept
             if name in r["deliverables"] and name not in j2_types.names():
                 try:
-                    j2_types.create(name, spec.get("label"), spec.get("sections"), spec.get("file"))
+                    j2_types.create(name, spec.get("label"), spec.get("sections"), spec.get("file"),
+                                    practice=spec.get("recommended_practice"))
                 except ValueError as e:
                     self._event("adaptation", "new_type_refused", str(e))
                     continue
@@ -5776,7 +5786,7 @@ class J2Run:
                       + self._blueprint_plan() + self.ATOM_RULES
                       + f"\nNECESSARY CONDITIONS (code checks every one on the built {self.out['noun']}; it is workable "
                       "only when all are met, so your plan must build what each needs):\n"
-                      + "\n".join(f"{c['id']}: {c['text']}" for c in conditions_for(self.out["conditions"], self.goal)))
+                      + "\n".join(f"{c['id']}: {c['text']}" for c in conditions_for(self.out["conditions"], self.goal, self.out.get("practice", ""))))
         real, replan = None, self.real_replan
         changing = bool(self.change and self.change["phase"] == "plan")      # J2_CHANGE: the change plan is the task
         if self._realization_applies():
@@ -5900,7 +5910,8 @@ class J2Run:
                 f"another, reads that file. Its done_test names what the output must contain. Checking the whole "
                 f"{self.out['noun']} is Audit's job: never plan check, review, QA, test or report workflows."
                 f"\nNECESSARY CONDITIONS (code checks each one on the built {self.out['noun']}; plan the work each "
-                "needs):\n" + "\n".join(f"{c['id']}: {c['text']}" for c in conditions_for(self.out["conditions"], self.goal))
+                "needs):\n" + "\n".join(f"{c['id']}: {c['text']}" for c in conditions_for(self.out["conditions"], self.goal,
+                                                                                    self.out.get("practice", "")))
                 + "\nA goal that names a time, price, number or email needs a facts-present check or a named test.")
 
     def _realization_applies(self):
@@ -8542,7 +8553,7 @@ class J2Run:
         with open(path, encoding="utf-8") as f:
             text = f.read()
         goal = next((s["goal"] for s in reversed(self.stage_archive) if s.get("stage") == kind), self.goal)
-        conds = check_conditions(load_conditions(output_def(kind)["conditions"]), text, goal,
+        conds = check_conditions(load_conditions(output_def(kind)["conditions"], output_def(kind).get("practice", "")), text, goal,
                                  self._fact_source(goal), output_def(kind)["sections"])
         self.save(f"conditions-{kind}.json", conds)
         self.post("system", f"{kind.upper()} v{version} conditions after {qid} (checked by code): " + "; ".join(
@@ -9729,7 +9740,7 @@ class J2Run:
         A website is checked on its HTML (visible text for the facts) and its render check."""
         page = None if self.doc else built
         text = built if self.doc else " ".join(PageScan(built).visible)
-        conds = check_conditions(load_conditions(self.out["conditions"]), text, self.goal, self._fact_source(),
+        conds = check_conditions(load_conditions(self.out["conditions"], self.out.get("practice", "")), text, self.goal, self._fact_source(),
                                  self.out["sections"], page, mech)
         self.save("conditions.json", conds)
         if built:

@@ -151,13 +151,22 @@ def _merged(name, path=None):
         raise ValueError(f"{name}: unknown form {entry.get('form')!r}")
     noun = entry.get("noun") or entry.get("label") or name
     label = str(entry.get("label") or name)
+    rule = practice_rule(entry, form)
     fill = lambda v: (v.replace("{name}", name).replace("{label}", label).replace("{lower}", label.lower())
-                      .replace("{noun}", noun).replace("{sections}", ", ".join(sections(name))) if isinstance(v, str) else v)
+                      .replace("{noun}", noun).replace("{sections}", ", ".join(sections(name)))
+                      .replace("{practice}", rule) if isinstance(v, str) else v)
     out = {**{k: fill(v) for k, v in form.items() if k not in ("workflow", "cost")}, **entry, "noun": noun}
     out["workflow"] = {**{k: fill(v) for k, v in (form.get("workflow") or {}).items()}, **(entry.get("workflow") or {})}
     out["cost"] = {**(form.get("cost") or {}), **(entry.get("cost") or {})}
     out["_fill"] = fill
     return out
+
+
+def practice_rule(entry, form):
+    """What a type's prompts add at "{practice}" (the builder's Assumption rule, the no-invented-facts condition and
+    rubric item): its form's practice_rule when the type's data says "recommended_practice": true (a policy, guide,
+    plan or SOP), else "" (a strict type: its prompts unchanged)."""
+    return form.get("practice_rule") or "" if entry.get("recommended_practice") is True else ""
 
 
 def named(text, path=None, alone=False):
@@ -231,7 +240,9 @@ def load(name, path=None):
         raise ValueError(f"{name}: every rubric item needs an id and a text")
     out = {"label": entry.get("output_label") or entry["label"], "noun": entry["noun"],
            "sections": sections(name) if doc else (), "conditions": entry["conditions"],
-           "rubric": tuple((r["id"], r["text"]) for r in entry["rubric"]), "rates": entry["cost"]["card"],
+           "rubric": tuple((r["id"], r["text"].replace("{practice}", fill("{practice}"))) for r in entry["rubric"]),
+           "rates": entry["cost"]["card"], "recommended_practice": entry.get("recommended_practice") is True,
+           "practice": fill("{practice}"),
            "check_types": tuple(entry["check_types"]),
            "builder": fill(_text(entry["builder"])) if doc else entry["builder"],
            "export": entry.get("export"), "done": entry["done"]}
