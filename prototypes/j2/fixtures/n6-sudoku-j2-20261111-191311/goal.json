@@ -1,0 +1,65 @@
+{
+  "statement": "A friendly, uncluttered Sudoku game on a single web page for casual players who play quick games on their phone, with difficulty levels and beginner help that does not spoil the puzzle, and with no sign-up and no ads.",
+  "site_name": "Cozy Sudoku",
+  "audience": "Casual players who play a quick game on their phone, for example on a commute, including beginners.",
+  "standards": [
+    "Plain HTML, CSS and JavaScript in one file, no build step",
+    "Friendly, calm look that is less cluttered than typical Sudoku sites",
+    "Works on a 360px phone screen and a 1280px desktop screen",
+    "Large, easy-to-tap cells and buttons",
+    "Short, kind wording in messages"
+  ],
+  "rules": [
+    "No sign-up or login of any kind",
+    "No ads",
+    "Everything lives in one file",
+    "Invent no contact details, numbers or claims that are not in the brief",
+    "Hints must never reveal the digit for a cell"
+  ],
+  "done_when": [
+    "Cozy Sudoku's page shows the name Cozy Sudoku as its title and main heading",
+    "Cozy Sudoku is a single HTML file with its CSS and JavaScript inside it, with no sign-up or login form and no ads",
+    "Cozy Sudoku's page shows a 9 by 9 board with some digits given, and a visitor can select an empty cell and enter a digit from 1 to 9 by tapping",
+    "Cozy Sudoku's page offers Easy, Medium and Hard difficulty levels, and choosing one starts a new puzzle of that level",
+    "Cozy Sudoku's board has a notes mode where a visitor can pencil small candidate digits into a cell",
+    "Cozy Sudoku's page has an undo button that reverses the visitor's last move",
+    "Cozy Sudoku's page has a hint button that points the visitor to a cell to look at without showing the digit that belongs in it",
+    "Cozy Sudoku's board highlights a digit that repeats in the same row, column or box",
+    "Cozy Sudoku saves an unfinished game in the browser so a returning visitor can resume it or start a new one",
+    "Cozy Sudoku's page shows a friendly win message when the board is correctly completed",
+    "Cozy Sudoku's page shows only the board, the controls and short messages, with no other element",
+    "Cozy Sudoku's page has no horizontal overflow at 360px and at 1280px widths and its buttons are easy to tap",
+    "The page has no JavaScript errors, no horizontal overflow at 360px and 1280px, and every in-page link points to an existing section."
+  ],
+  "business_type": "puzzle game",
+  "visitor_needs": [
+    "Start a quick game right away with no sign-up",
+    "Choose a difficulty level",
+    "Get beginner help that does not spoil the puzzle",
+    "Play comfortably on a phone",
+    "Come back later and continue"
+  ],
+  "to_be_confirmed": [],
+  "dropped_from_brief": [],
+  "facts": [],
+  "charter_items": [
+    "Cozy Sudoku's page shows the name Cozy Sudoku as its title and main heading",
+    "Cozy Sudoku is a single HTML file with its CSS and JavaScript inside it, with no sign-up or login form and no ads",
+    "Cozy Sudoku's page shows a 9 by 9 board with some digits given, and a visitor can select an empty cell and enter a digit from 1 to 9 by tapping",
+    "Cozy Sudoku's page offers Easy, Medium and Hard difficulty levels, and choosing one starts a new puzzle of that level",
+    "Cozy Sudoku's board has a notes mode where a visitor can pencil small candidate digits into a cell",
+    "Cozy Sudoku's page has an undo button that reverses the visitor's last move",
+    "Cozy Sudoku's page has a hint button that points the visitor to a cell to look at without showing the digit that belongs in it",
+    "Cozy Sudoku's board highlights a digit that repeats in the same row, column or box",
+    "Cozy Sudoku saves an unfinished game in the browser so a returning visitor can resume it or start a new one",
+    "Cozy Sudoku's page shows a friendly win message when the board is correctly completed",
+    "Cozy Sudoku's page shows only the board, the controls and short messages, with no other element",
+    "Cozy Sudoku's page has no horizontal overflow at 360px and at 1280px widths and its buttons are easy to tap",
+    "The page has no JavaScript errors, no horizontal overflow at 360px and 1280px, and every in-page link points to an existing section."
+  ],
+  "core_items": [
+    "Cozy Sudoku's page shows the name Cozy Sudoku as its title and main heading",
+    "The page has no JavaScript errors, no horizontal overflow at 360px and 1280px, and every in-page link points to an existing section."
+  ],
+  "confirmed_facts": []
+}
