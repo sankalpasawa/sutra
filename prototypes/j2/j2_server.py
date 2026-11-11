@@ -242,7 +242,8 @@ class Handler(http.server.BaseHTTPRequestHandler):
                 return self._send(200, f.read(), "image/png")
         if u.path.startswith("/file/"):        # a document run's prd.md or prd.docx, to download
             d, name = (j2.saved_dir(run) if run else RUN.dir), u.path.rsplit("/", 1)[-1]
-            o = j2.output_def(j2.saved_output(d) if run else RUN.output)
+            kind = j2.saved_output(d) if run else RUN.output
+            o = j2.output_def(kind) if kind else {}      # no type chosen yet: no file of its own
             allowed = [o["file"], o["file"][:-3] + ".docx"] if o.get("file") else []
             allowed += [f for k in j2._read(d or "", "documents.json", {}) for f in (f"{k}.md", f"{k}.docx")]   # design documents
             path = os.path.join(d or "", name)
@@ -282,8 +283,9 @@ class Handler(http.server.BaseHTTPRequestHandler):
             return self._send(200, j2.md_html(text) if name.endswith(".md") else text, "text/html")
         if u.path.startswith("/site/"):
             if not RUN.sites:
-                return self._send(200, "<p style='font:15px system-ui;color:#667;padding:24px'>Your "
-                                       f"{'document' if RUN.doc else RUN.out['label'].lower()} will appear here once it's built.</p>",
+                what = "document" if RUN.doc else RUN.out["label"].lower() if RUN.out else None      # None: not chosen yet
+                return self._send(200, "<p style='font:15px system-ui;color:#667;padding:24px'>"
+                                       f"{f'Your {what}' if what else 'What you ask for'} will appear here once it's built.</p>",
                                   "text/html")
             key = u.path.rsplit("/", 1)[-1]
             i = len(RUN.sites) if key == "latest" else int(key.lstrip("v") or 0)

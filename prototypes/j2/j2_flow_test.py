@@ -173,6 +173,13 @@ if FAST:
         j2.j2_check.find_chrome = lambda: None      # the page-driving tests skip; screenshots aren't taken
 
 
+def page_run():
+    """A run whose website was chosen before its first message (as J2_OUTPUT or the start page choose it), for the
+    tests that drive a page run's functions directly instead of sending a brief (no type is chosen before one)."""
+    run = j2.J2Run()
+    run.set_output("website")
+    return run
+
 def say(run, text):
     assert run.user_says(text)
     while run.status != "waiting":
@@ -539,7 +546,7 @@ def below_floor():
     finally:
         j2.BUDGET_CAP = 2 * j2.BUDGET
     # only "add credits" would be possible (every left-out item is a core fact): stop here is the second option
-    run = j2.J2Run()
+    run = page_run()
     run.goal = {"done_when": ["The menu with prices is shown", "Opening hours are listed"]}
     run._identity_limit({"reason": "Priority's ruling", "left_out": run.goal["done_when"], "budget_needed": 20})
     assert run.paused["handoff"]["choices"] == ["continue", "ship"], run.paused["handoff"]
@@ -602,7 +609,7 @@ def thread_and_loom_core():
 
 def deferred_twice():
     """The same done-when item left out or refused in 2 rounds: Identity asks the Requester even though budget remains."""
-    run = j2.J2Run()
+    run = page_run()
     run.goal = {"done_when": ["The menu with prices is shown", "A lookbook section shows 3 styled outfits"],
                 "core_items": ["The menu with prices is shown"]}
     run.budget, look = 100, "A lookbook section shows 3 styled outfits"
@@ -2077,7 +2084,7 @@ def lone_rubric_failure():
 
 def pricing():
     """I: the validator ties price to the work, not to labels."""
-    run = j2.J2Run()
+    run = page_run()
     run.goal = j2.mock_charter(BREW_LAB)    # 1 menu, 2 hours, 3 address, 4 order (form), 5 beans, 6 loyalty, 7 phone
     run.budget, run.cycle = 500, 1
     base = {"goal_gap": "x", "outputs": ["index.html"], "completion_check": "y", "atoms": ATOM}
@@ -2141,7 +2148,7 @@ def unpaid_items():
         assert beans in run.paid_items() and run.outcome.startswith("Done"), run.outcome
         assert not any(r["verdict"] == "UNPAID" for r in run.audits[-1]["results"])
         # unit: an item a fix paid for (via its finding) isn't flagged; an undeclared one is
-        run = j2.J2Run()
+        run = page_run()
         run.goal = {"done_when": ["A", "B"]}
         run.audits = [{"results": [{"id": "F-2", "item": 2}]}]
         run.workflows = [{"status": "done", "covers": [1]}, {"status": "done", "fixes": ["F-2"]}]
@@ -2441,7 +2448,7 @@ def budget_cap():
     """The cap shows in the option text; an option that adds budget the cap won't allow is never offered, and
     "keep working" isn't offered when it can't fund anything or when it already changed nothing. When that leaves
     one option, code applies it instead of asking."""
-    run = j2.J2Run()
+    run = page_run()
     q = {"question": "More?", "options": ["Add more building", "Ship"], "budget": [30, 0]}
     run._ask_user("x", [q], "question")             # only the decision question may carry money
     assert "budget" not in run.paused["questions"][0], run.paused
@@ -2484,7 +2491,7 @@ def adaptation_idle():
     """runs/j2-20261008-110419 msgs 93-103: with less left than the cheapest part, Adaptation said it could propose
     nothing, Identity answered, and Adaptation was asked again, four times. Once it has said so, it isn't asked again
     until something changes (budget raised, item dropped, a new Requester answer); Identity asks the Requester."""
-    run = j2.J2Run()
+    run = page_run()
     run.goal = {"done_when": ["The menu with prices is shown", "Opening hours are listed"]}
     run.budget, run.spent = 40, 38
     asked = []
@@ -2637,7 +2644,7 @@ def simple_messages():
     assert t == ("The work is used up. We hit the limit after 3 rounds. The checklist list has 4 items. Which do you "
                  "want?"), t
     assert j2.to_requester("Done. What now?", question=False) == "Done."
-    run = j2.J2Run()
+    run = page_run()
     run._ask_user("Two things. What is your phone number?", [{"question": "What is your phone number?"},
                                                               {"question": "What are your hours?"}], "info")
     q = run.paused["questions"]
@@ -3392,7 +3399,7 @@ def website_conditions():
     assert j2.workable(bad) and all("necessary condition N8 not met" in x for x in j2.workable(bad)), j2.workable(bad)
 
     # the plan check: no workflow for the nav is flagged before anything is built
-    run = j2.J2Run()
+    run = page_run()
     assert [c["id"] for c in run._plan_gaps([{"name": "Menu section", "goal_gap": "the menu"}])] == ["N8"]
     assert run._plan_gaps([{"name": "Header", "goal_gap": "a nav bar to every section and a main action"}]) == []
     orig = run.call
@@ -3419,7 +3426,7 @@ def website_conditions():
     assert run.snapshot()["conditions"] == run.audits[-1]["conditions"]
 
     # Identity's question for a fact only the Requester knows: no "None", no internal ids, no agent-facing wording
-    run = j2.J2Run()
+    run = page_run()
     run.goal = {"done_when": ["Opening hours are listed", "Bookings never clash"]}
     fact = ("A measurable target for double-booked slots. The brief gives none, so any number would be invented. "
             "Alternatives: Requester supplies a target, or G2 is stated as covered by the requirement R5 instead of a "
@@ -3663,14 +3670,14 @@ def run_20261015_fixes():
     text = j2.J2Run.ATOM_RULES
     assert "THE VALIDATOR REQUIRES" in text and "goal_gap" in text and "completion_check" in text
     ex = json.loads(text.split("passes):\n", 1)[1])
-    run = j2.J2Run()
+    run = page_run()
     run.budget, run.goal = 500, {"done_when": ["A contact form is on the page"]}
     assert not run._atom_problems(ex), run._atom_problems(ex)
     reg, refused, _ = run._register([{**ex, "envelope": {"money_limit": 20}}])
     assert reg and not refused and not run.rejections, (refused, run.rejections)
 
     # 2: W-1 owns #register; W-2's check on #register fails with the same evidence twice: no attempt 3
-    run = j2.J2Run()
+    run = page_run()
     run.budget, run.goal = 500, {"done_when": ["a", "b"]}
     run.sections = {"W-1": {"owner": "W-1 Builder", "head": "", "body": '<section id="register">x</section>',
                             "workflow": "Placeholder"}}
@@ -3702,7 +3709,7 @@ def run_20261015_fixes():
 
     # 3: "done." alone is replaced by code's own sentence (no re-ask, validator_autofix_human); the next speaker is set
     # by code even when missing
-    run = j2.J2Run()
+    run = page_run()
     run.budget, run.goal = 500, {"done_when": ["a"]}
     reg, _, _ = run._register([{"name": "Hero", "goal_gap": "x", "outputs": ["y"], "completion_check": "z",
                                 "atoms": ATOM, "parts": ["fix"]}])
@@ -4780,7 +4787,7 @@ def missing_run_endpoints():
             return e.code, e.read().decode("utf-8")
     empty_docs = {k: {"asked": False, "text": None, "workflows": []} for k in ("prd", "hld", "lld")}
     try:
-        live = j2.J2Run()
+        live = page_run()
         j2_server.RUN = live
         keep_dir, live.dir = live.dir, os.path.join(tempfile.mkdtemp(prefix="j2-missing-"), "j2-never-written")
         for q in ("run=j2-20261020-144628", "run=j2-nope", "run=..%2F..", ""):         # saved ids that do not exist, a bad id, the live run
@@ -5175,7 +5182,7 @@ def charter_crash_fix():
                 "core": [True] * len(items), "to_be_confirmed": [], "dropped_from_brief": [], "facts": [],
                 "business_type": "studio", "visitor_needs": []}
 
-    run = j2.J2Run()
+    run = page_run()
     run.budget = 300
     run.request = "A one-page site for a yoga studio called Still Point Yoga."
     calls = {"n": 0}
@@ -5426,7 +5433,7 @@ def validator_fixes():
     assert "doesn't tell the builder to create" in j2.target_problem(".cat-filter-kurta", told, source, "element-count")
     # (2) a GRANT that echoes a workflow without its price keeps the price code computed for the table. The live
     # run had no rate card, so the price was Priority's envelope and the echo left nothing behind.
-    run, run2 = j2.J2Run(), j2.J2Run()
+    run, run2 = page_run(), page_run()
     j2.load_rates("website", card=False)      # the live run had no rate card: the price was Priority's envelope
     try:
         run.budget, run.spent = 150, 54
@@ -5458,7 +5465,7 @@ def validator_fixes():
     # (3) a board question for the Requester goes to Identity, not refused
     os.environ["J2_BOARD"] = "1"
     try:
-        run3 = j2.J2Run()
+        run3 = page_run()
         e = run3._ask_board("identity", {"to": "Requester", "about": "how to proceed after repeated failure",
                                          "text": "Keep going, leave those parts out, or stop now?"}, 1,
                             role="function")
@@ -5492,7 +5499,7 @@ def validator_autofix_target():
     """A1: a check that targets a class the atom's how or constraints never mention is accepted with a constraint
     telling the builder to create it (".level-btn", run evidence), logged in autofix.json; a charter fact as a target
     is still rejected."""
-    run = j2.J2Run()
+    run = page_run()
     a = {**j2.mock_atom({}), "expected_output": j2.mock_atom({})["expected_output"] + [
         {"text": "3 level buttons", "kind": "element", "target": ".level-btn", "count": 3}]}
     assert any("doesn't tell the builder to create" in x for x in j2.check_problems(j2.cover_expected(json.loads(
@@ -5515,7 +5522,7 @@ def validator_autofix_step():
     assert j2.j2_check.parse_step("expect-text #cell-0-0 5") == {"verb": "expect-text", "sel": "#cell-0-0", "arg": "5"}
     assert j2.fixed_step("expect-text #cell-0-0 ") == "expect-visible #cell-0-0" and j2.fixed_step("expect-text #a 5") is None
     assert j2.fixed_step("expect-number #total") is None
-    run = j2.J2Run()
+    run = page_run()
     how = {"kind": "AI", "agent": "Builder", "steps": "a button with id cell-try and a cell with id cell-0-0"}
     a = {**j2.mock_atom({}), "how": how, "expected_output": [
         {"text": "Tapping fills the cell", "kind": "behavior", "steps": ["click #cell-try", "expect-text #cell-0-0 "]}]}
@@ -5535,7 +5542,7 @@ def validator_autofix_plan_fields():
     """A3: a planned workflow whose proposal lacks goal_gap, outputs and completion_check is registered with them
     filled from its realization plan row (goal, done_test, the type's file), logged; an unplanned one is still
     refused."""
-    run = j2.J2Run()
+    run = page_run()
     run.budget, run.goal = 500, {"done_when": ["a"]}
     run.real_summary = {"proposal_brief": [{"name": "Board", "goal": "The board shows 81 cells", "covers": [1],
                                             "done_test": "81 cells are on the page", "after": []}]}
@@ -5555,7 +5562,7 @@ def validator_autofix_plan_fields():
 def validator_autofix_human():
     """A4: a builder's human_output over 3 sentences is cut to 3, "done." becomes code's sentence, an atom's over 2
     sentences is cut to 2 and a too-short one becomes code's sentence; no re-ask call; every fix logged."""
-    run = j2.J2Run()
+    run = page_run()
     run.budget, run.goal = 500, {"done_when": ["a"]}
     w = run._register([{"name": "Hero", "goal_gap": "x", "outputs": ["index.html"], "completion_check": "z",
                         "atoms": [j2.mock_atom({})], "parts": ["fix"]}])[0][0]
@@ -7785,7 +7792,7 @@ def planner_conditions():
     plans. N8 (nav and main action) doesn't apply to a single-screen app (conditions/website.json skip_when): skipped in
     the plan gap check and met with its reason in the condition check, kept for a multi-section site."""
     import j2_realization as R
-    run = j2.J2Run()
+    run = page_run()
     site = {"statement": "A one-page website for Little Fig, a cafe, with its menu, hours and a visit form",
             "business_type": "cafe", "done_when": ["Menu", "Hours"]}
     game = {"statement": "Build a friendly Sudoku game as a single web page", "business_type": "puzzle game",
@@ -9251,6 +9258,7 @@ def left_bar():
             docfiles = [k for k in ("prd", "hld", "lld") if os.path.isfile(os.path.join(d, k + ".md"))]
             b_ = summ.get("budget") or {}
             snap = {"workflows": wfs, "chat": chat, "call_log": [], "conflicts": rd_("conflicts.json", []), "goal": rd_("goal.json", None), "stamped": True,
+                    "page": j2.saved_page(d, None),      # the run's page type (/api/state "page"): its Artifacts site group is that node
                     "audits": [a for a in rd_("audits.json", []) if (a or {}).get("kind") != "recheck"], "report": report, "outcome": summ.get("outcome"), "versions": versions,
                     "docset": list(rd_("documents.json", {})), "style": rd_("style.json", None), "memory": False, "budget": b_.get("granted") or j2.BUDGET, "spent": b_.get("used") or 0,
                     "lessons_used": (summ.get("lessons") or {}).get("used", []), "lessons_saved": (summ.get("lessons") or {}).get("saved", []),

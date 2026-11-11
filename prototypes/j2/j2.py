@@ -2850,10 +2850,11 @@ def saved_snapshot(name, since=0):
 
 
 def saved_page(d, out):
-    """A saved run's page type: its output's, else one its planner chose or a stage file names; a run from before
-    deliverables.json that built a page (site/v*.html): a website."""
+    """A saved run's page type: its output's, else one its planner chose or its stages name (summary.json, stage files);
+    a run from before deliverables.json that built a page (site/v*.html): a website."""
     chose = (_read(d, "deliverables.json", {}) or {}).get("deliverables") or []
-    stages = [m.group(1) for f in sorted(os.listdir(d)) for m in [re.fullmatch(r"stage-(\w+)\.json", f)] if m]
+    stages = [m.group(1) for f in sorted(os.listdir(d)) for m in [re.fullmatch(r"stage-(\w+)\.json", f)] if m] + \
+        list(((_read(d, "summary.json", {}) or {}).get("design_documents") or {}).get("stages") or [])
     site = os.path.join(d, "site")
     built = os.path.isdir(site) and any(re.fullmatch(r"v\d+\.html", f) for f in os.listdir(site))
     return run_page([out, *chose, *stages]) or (LEGACY_OUTPUT if built and not chose else None)
@@ -2863,7 +2864,7 @@ def saved_output(d):
     """A saved run's output type, from the first line of its chat.jsonl, else (chosen after that line was written) its
     summary.json; a run from before output types has no "output" there: a website."""
     head = (_jsonl(d, "chat.jsonl")[:1] or [{}])[0] if d else {}
-    return output_type(head.get("output") or (_read(d, "summary.json", {}) or {}).get("output_type")
+    return output_type(head.get("output") or (_read(d, "summary.json", {}) if d else {}).get("output_type")
                        or (None if "output" in head else LEGACY_OUTPUT))
 
 
