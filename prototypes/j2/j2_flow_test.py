@@ -4653,7 +4653,8 @@ def output_tags():
     assert re.findall(r'data-otag="(\w+)" style="background:var\(--(\w+)\)"', legend) == [(k, k) for k in ("prd", "hld", "lld", "site", "other")]
     page = html_page()
     assert all(re.search(rf"--{k}:var\(--\w+\)", page) for k in ("prd", "hld", "lld", "site", "other"))
-    assert 'style="background:var(--prd)"><b>Product requirements' in render_node(snap, docs={"docs": {"prd": {"asked": True, "text": "- **R1**: x"}}})["docs"]
+    assert 'style="background:var(--prd)"><b>Product requirements' in render_node(snap, docs={"docs": {"prd": {"asked": True, "text": "- **R1**: x", **{k: next(
+        t for t in j2.j2_types._read_types()["types"] if t["name"] == "prd")[k] for k in ("label", "tag", "color")}}}})["docs"]      # as /api/docs gives it
     assert "Status is always a word as well as a colour" in legend and '<span class="pill ' in out
     # filter: only workflows with that type; the same click again (filter cleared) is the full list
     n_all = out.count('<details data-key="wf-')
@@ -4796,7 +4797,7 @@ def missing_run_endpoints():
             return r.status, r.read().decode("utf-8")
         except urllib.error.HTTPError as e:
             return e.code, e.read().decode("utf-8")
-    empty_docs = {k: {"asked": False, "text": None, "workflows": []} for k in ("prd", "hld", "lld")}
+    empty_docs = {}      # /api/docs: no run folder, no documents listed
     try:
         live = page_run()
         j2_server.RUN = live
