@@ -3050,7 +3050,8 @@ class J2Run:
         if not t:
             return {}
         return {"run_template": {"id": t["id"], "name": t["name"], "selected": t["selected"], "added": t["added"],
-                                 "of": t["total"], "plans": t["plans"], "workflows": t["workflows"]}}
+                                 "of": t["total"], "plans": t["plans"], "workflows": t["workflows"],
+                                 **({"added_stages": t["added_stages"]} if t.get("added_stages") else {})}}
 
     def _run_tpl_start(self, said):
         """Once, before the charter: say which run template is used, record it (templates.json, the template's
@@ -3074,8 +3075,18 @@ class J2Run:
             self.post("system", "The run template names no type J2 can build here, so Adaptation plans what to build.",
                       warning=True)
             return self._deliverables(said)
-        self.post("system", "The run template sets what is built: " + ", then ".join(self._sw(k) for k in stages) + ".")
-        return stages
+        extra = []
+        if n == t["total"]:      # the whole template: what the brief asks for beyond it is added, planned by Adaptation
+            was = self.outcome
+            asked = self._deliverables(said)
+            if asked is None:      # the planner named nothing buildable: the template's stages still stand
+                self.outcome = was
+            extra = [k for k in asked or [] if k not in t["stages"]]
+        t["added_stages"] = extra
+        self.post("system", "The run template sets what is built: " + ", then ".join(self._sw(k) for k in stages)
+                  + (". Added, not in template (the brief asks for " + and_list(self._sw(k) for k in extra)
+                     + "; Adaptation plans it)" if extra else "") + ".")
+        return stages + extra
 
     def _run_tpl_intake(self):
         """Added to Identity's J2.a task: the charter is for the NEW business; the template's slots are the facts to
@@ -3225,7 +3236,8 @@ class J2Run:
                              + str(rec.get("reason") or ""))
         row = {"workflow": w["id"], "template_workflow": first["key"] if first else None, "from_template": bool(first),
                "action": rec.get("action"), "template": f"{rec.get('template')}@{rec.get('version')}",
-               **({"adapted_from": rec["adapted_from"]} if rec.get("adapted_from") else {})}
+               **({"adapted_from": rec["adapted_from"]} if rec.get("adapted_from") else {}),
+               **({} if first else {"note": "added, not in template"})}
         t["workflows"] = [x for x in t["workflows"] if x["workflow"] != w["id"]] + [row]
 
     def set_output(self, out):
