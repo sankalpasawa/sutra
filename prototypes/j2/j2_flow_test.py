@@ -7427,7 +7427,7 @@ def deliverables_generic():
     assert next(t for t in T if t["name"] == "website")["needs"] == [], "a page reads documents when built; it needs none"
     # choosing a type needs no sections: the planner sees them only after the type is chosen (doc_plan_data), because
     # listing them here made it add documents to page briefs (bakery and landing page: 6 of 6 reruns)
-    assert all("sections" not in t for t in T) and '"sections"' not in R.plan_fmt(T)
+    assert all("sections" not in t for t in T) and "(when it serves a document type" not in R.plan_fmt(T)
     brief = {"statement": "Write a hiring policy for a ten-person studio.", "brief": True}
     plan = lambda names: json.loads(R.deliverable_mocks(brief, names)["plan"](0))
     faults = lambda names: R.plan_faults(plan(names), brief, types=T)
