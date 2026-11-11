@@ -371,7 +371,7 @@ def connections():
     floor) and impossible (cap below the floor). Adaptation proposes, Priority rules on every proposal, the validator
     registers or rejects with a reason, Coordination schedules, Audit checks what was built, and every run ends with
     a site built (the Requester always picks leave-out or keep going here). summary.json counts the links."""
-    j2.load_rates()
+    j2.load_rates("website")
     floor = sum(j2.item_min(c) for c in j2.mock_charter(BREW_LAB)["done_when"])
     assert floor == 70, floor
     for name, budget, cap in (("generous", 2 * floor, None), ("tight", floor - 15, None),
@@ -3034,8 +3034,8 @@ def prd_run():
                      ({"type": "section-not-empty", "target": "Users", "expect": 0}, "minimum word count")):
         bad = run._atom_problems({"atoms": [{**atom, "verification": [{"text": "x", **chk}]}]})
         assert len(bad) == 1 and why in bad[0], (chk, bad)
-    # a website run after it is a website again
-    assert j2.J2Run().output == "website" and "page_section" in j2.RATES
+    # a run after it has no type (and no rate card) until its planner chooses one
+    assert j2.J2Run().output is None and j2.RATES == {}
     show(run)
     return run
 

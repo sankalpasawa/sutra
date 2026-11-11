@@ -119,28 +119,30 @@ def _merged(name, path=None):
     return out
 
 
-def named(text, path=None):
+def named(text, path=None, alone=False):
     """The document types a text names by their own words (each type's triggers, or a group's pattern for all its
-    members), in types.json order, and then the page types it names (also_when: site-words), only when a document is
-    named too. Offline only: the planner's answer in mock runs."""
+    members), in types.json order, and then the page types it names: by their own triggers, else (none of those) the
+    page types that take the site words (also_when: site-words). The pages only when a document is named too, unless
+    alone. Offline only: the planner's answer in mock runs."""
     d, text = _read_types(path), str(text or "")
-    docs = [t["name"] for t in d["types"] if t.get("kind") == "type" and t.get("form") == "document"
-            and (any(re.search(x, text, re.I) for x in t.get("triggers") or [])
-                 or any(re.search((d.get("groups") or {}).get(g, {}).get("pattern", "$^"), text, re.I) for g in t.get("groups") or []))]
-    pages = [t["name"] for t in d["types"] if t.get("kind") == "type" and t.get("also_when") == "site-words"
-             and re.search(d.get("site_words") or "$^", text, re.I)]
-    return docs + pages if docs else []
+    hit = lambda t: (any(re.search(x, text, re.I) for x in t.get("triggers") or [])
+                     or any(re.search((d.get("groups") or {}).get(g, {}).get("pattern", "$^"), text, re.I) for g in t.get("groups") or []))
+    ts = [t for t in d["types"] if t.get("kind") == "type"]
+    docs = [t["name"] for t in ts if t.get("form") == "document" and hit(t)]
+    pages = [t["name"] for t in ts if t.get("form") == "page" and hit(t)] or \
+            [t["name"] for t in ts if t.get("also_when") == "site-words" and re.search(d.get("site_words") or "$^", text, re.I)]
+    return docs + pages if docs or alone else []
 
 
 def page_type(path=None):
-    """The first page type (the start type without J2_OUTPUT)."""
+    """The first page type in types.json (the mock planner's answer for a brief that names no type)."""
     return next(x["name"] for x in _read_types(path)["types"] if x.get("kind") == "type" and x.get("form") == "page")
 
 
 def default(path=None):
-    """The type a run starts as before the planner chooses: J2_OUTPUT (the start page), else the first page type."""
+    """The type chosen before the first message: J2_OUTPUT, else None (not chosen yet: the planner chooses)."""
     t = str(os.getenv("J2_OUTPUT") or "").strip().lower()
-    return t if t in names(path) else page_type(path)
+    return t if t in names(path) else None
 
 
 def form(name, path=None):

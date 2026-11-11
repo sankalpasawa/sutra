@@ -193,13 +193,14 @@ RATES_ON = os.getenv("J2_RATES", "1") != "0"
 RATES = {}      # agents/j2/rates.json, reloaded at each reset so edits apply without a restart
 
 
-def load_rates(output="website", card=True):
-    """The rate card for the run's output type (rates.json: "rates" for a website, "rates_prd" for a PRD). card=False:
-    no rate card, so each workflow costs Adaptation's own estimate (estimated_resources.money), as with J2_RATES=0."""
+def load_rates(output, card=True):
+    """The rate card for the run's output type (rates.json: the type's cost.card, e.g. "rates" for a website, "rates_prd"
+    for a PRD). card=False: no rate card, so each workflow costs Adaptation's own estimate (estimated_resources.money), as
+    with J2_RATES=0. output None (not chosen yet): no rate card until the planner chooses."""
     global RATES, OUTPUT
     RATES, OUTPUT = {}, output
     path = os.path.join(J2_DIR, "rates.json")
-    if card and RATES_ON and os.path.exists(path):
+    if output and card and RATES_ON and os.path.exists(path):
         with open(path, encoding="utf-8") as f:
             RATES = {k: int(v) for k, v in (json.load(f).get(output_def(output)["rates"]) or {}).items()}
 
@@ -210,11 +211,6 @@ def _rate_card(key):
         with open(path, encoding="utf-8") as f:
             return {k: int(v) for k, v in (json.load(f).get(key) or {}).items()}
     return {}
-
-
-def RATES_WEB():
-    """The website rate card, whatever output is current (the cost of a stage still to come)."""
-    return _rate_card("rates")
 
 
 def RATES_DOC():
@@ -239,6 +235,8 @@ def price(w):
 # item needs (the type's cost.item_parts in artifacts/types.json). ponytail: keyword match on the item text; first
 # match wins, the last entry (empty words) is the default.
 def item_kind(criterion):
+    if not OUTPUT:      # no type chosen yet: no rate card, so no part
+        return None
     return next(k for k, pat in output_def(OUTPUT)["item_parts"] if re.search(pat, str(criterion), re.I))
 
 
@@ -2317,14 +2315,15 @@ def stage_goal(kind, base, chain):
 # ---- what the department builds: one registry entry per output type. The flow, agents, budget, rulings, receipts
 # and the 3-attempt rule are shared; an entry says what is built and how it is checked. A document type (sections
 # set) is markdown assembled in section order, checked by code with no browser, and exported at the end.
-# A documents run that ends with the website: its details are asked once, before the first document (the answers go into the
-# charter every stage uses), and the website stage asks again only for what is genuinely missing.
-SITE_FIRST = ("\nA website will be built from these documents. In this same round, also ask the Requester (one question) "
-              "for the content details only they know that the website and its forms need and the brief lacks: for example "
+# A documents run that ends with a page: its details are asked once, before the first document (the answers go into the
+# charter every stage uses), and the page stage asks again only for what is genuinely missing. {page}: the page type's
+# label, lower case ("website").
+SITE_FIRST = ("\nA {page} will be built from these documents. In this same round, also ask the Requester (one question) "
+              "for the content details only they know that the {page} and its forms need and the brief lacks: for example "
               "menu items and prices, opening hours, the address, the phone number and email, and the fields a form should "
-              "ask for. Ask for them once, now: they go into the charter every document and the website use. Never invent "
+              "ask for. Ask for them once, now: they go into the charter every document and the {page} use. Never invent "
               "them. If the brief already gives them, ask nothing about them.")
-SITE_LATER = ("\nThe documents are written and the Requester was already asked for the website's details before them (see "
+SITE_LATER = ("\nThe documents are written and the Requester was already asked for the {page}'s details before them (see "
               "EARLIER QUESTIONS AND ANSWERS). Ask again only for what is genuinely missing; never repeat a question.")
 DOC_NOTE = ("\nOUTPUT TYPE: {label}. The department writes a markdown document, not a website: where a role file says "
             "site, website, page or HTML, read the document. There is no browser check, style guide or design rubric; "
@@ -2337,11 +2336,12 @@ WF_KINDS = "|".join(f'"{k}"' for k in expect_kinds(CHECK_TYPES))
 
 
 
-OUTPUT = "website"     # the current run's output type (set by load_rates at each reset; one run at a time, like NAMES)
+OUTPUT = None     # the current run's output type (set by load_rates; None until chosen; one run at a time, like NAMES)
+LEGACY_OUTPUT = "website"      # what every run saved before output types built (no "output" in its records)
 
 
 def output_type(name=None):
-    """A known output type (artifacts/types.json): name, else the start type (j2_types.default)."""
+    """A known output type (artifacts/types.json): name, else J2_OUTPUT, else None (not chosen yet: the planner chooses)."""
     t = str(name or "").strip().lower()
     return t if t in j2_types.names() else j2_types.default()
 
@@ -2568,7 +2568,7 @@ def workable(audit):
     ok = set(audit.get("accepted") or [])     # what the Requester finished with (_accept_open): ids, and item texts
     out = [f"done-when item {num(r)} ({r['id']} {r['verdict']}): {r['criterion']}" for r in audit["results"]
            if not r["pass"] and r["criterion"] not in ok]
-    if not is_page(audit.get("output", j2_types.page_type())):
+    if not is_page(audit.get("output", LEGACY_OUTPUT)):
         # A document: Audit accepts (every item and document rubric item passes) and every necessary condition is met.
         return (out + [f"document rubric {r['id']} ({r['verdict']}): {r['criterion']}" for r in audit.get("rubric", [])
                        if not r["pass"]]
@@ -2701,13 +2701,14 @@ def relevant_playbooks(pbs, business_type, text, n=MAX_PLAYBOOKS, include_test=F
 WORD = re.compile(r"[a-z]{4,}")
 
 
-def relevant_lessons(lessons, text, n=MAX_LESSONS, include_test=False, output="website"):
+def relevant_lessons(lessons, text, n=MAX_LESSONS, include_test=False, output=None):
     """The n lessons sharing the most words with the current gap; newest first on a tie. Test lessons (from a
-    J2_FORCE_AUDIT_FAIL run) are left out unless include_test (J2_MEMORY_TEST_LESSONS=1, demo runs only).
+    J2_FORCE_AUDIT_FAIL run) are left out unless include_test (J2_MEMORY_TEST_LESSONS=1, demo runs only). output: only
+    that type's lessons (a lesson saved without one is from a website run); None: every type's.
     ponytail: word overlap, swap for embeddings if the lesson file grows past a few hundred lines."""
     want = set(WORD.findall(text.lower()))
     lessons = [x for x in lessons if (include_test or not x.get("test")) and (llm.MOCK or not x.get("mock"))
-               and x.get("output", "website") == output]      # a PRD's lessons never reach a website, and back
+               and output in (None, x.get("output", LEGACY_OUTPUT))]      # a PRD's lessons never reach a page, and back
     scored = [(len(want & set(WORD.findall(" ".join(str(x.get(k, "")) for k in ("problem", "cause", "fix")).lower()))),
                i, x) for i, x in enumerate(lessons)]
     return [x for sc, i, x in sorted(scored, key=lambda t: (-t[0], -t[1])) if sc > 0][:n]
@@ -2842,28 +2843,48 @@ def saved_snapshot(name, since=0):
             "lanes": lanes(chat, wfs, None, None, "saved", None, 8, None), "call_log": calls,
             "workable": s.get("workable") if s else (workable(audits[-1]) if audits else None),
             "memory": False, "lessons": [], "lessons_used": (s.get("lessons") or {}).get("used", []),
-            "lessons_saved": (s.get("lessons") or {}).get("saved", []), "style": _read(d, "style.json"), "rubric": output_def("website")["rubric"],
+            "lessons_saved": (s.get("lessons") or {}).get("saved", []), "style": _read(d, "style.json"),
             "playbooks": [], "playbooks_used": (s.get("playbooks") or {}).get("used", []),
-            "playbook_saved": (s.get("playbooks") or {}).get("saved"), **output_info(out, d, audits, list(docs))}
+            "playbook_saved": (s.get("playbooks") or {}).get("saved"),
+            **output_info(out, d, audits, list(docs), saved_page(d, out))}
+
+
+def saved_page(d, out):
+    """A saved run's page type: its output's, else one its planner chose or a stage file names; a run from before
+    deliverables.json that built a page (site/v*.html): a website."""
+    chose = (_read(d, "deliverables.json", {}) or {}).get("deliverables") or []
+    stages = [m.group(1) for f in sorted(os.listdir(d)) for m in [re.fullmatch(r"stage-(\w+)\.json", f)] if m]
+    site = os.path.join(d, "site")
+    built = os.path.isdir(site) and any(re.fullmatch(r"v\d+\.html", f) for f in os.listdir(site))
+    return run_page([out, *chose, *stages]) or (LEGACY_OUTPUT if built and not chose else None)
 
 
 def saved_output(d):
-    """A saved run's output type, from the first line of its chat.jsonl (runs from before output types: website)."""
+    """A saved run's output type, from the first line of its chat.jsonl, else (chosen after that line was written) its
+    summary.json; a run from before output types has no "output" there: a website."""
     head = (_jsonl(d, "chat.jsonl")[:1] or [{}])[0] if d else {}
-    return output_type(head.get("output") or "website")
+    return output_type(head.get("output") or (_read(d, "summary.json", {}) or {}).get("output_type")
+                       or (None if "output" in head else LEGACY_OUTPUT))
 
 
 
 
-def output_info(out, run_dir, audits, docset=None):
+def run_page(kinds):
+    """The page type among a run's types (its output, then its stages), or None: what the views call the site."""
+    return next((k for k in kinds if k and is_page(k)), None)
+
+
+def output_info(out, run_dir, audits, docset=None, page=None):
     """What the page needs about the output type: its label, whether it is a document, the latest necessary
-    conditions and which exported files exist. A design-document run lists every document it has written."""
-    o = output_def(out)
+    conditions and which exported files exist. A design-document run lists every document it has written.
+    out None: not chosen yet (the planner chooses at the first message): no label, no rubric, no files.
+    page: the run's page type (run_page), if it has one."""
+    o = output_def(out) if out else {"label": None, "sections": (), "rubric": ()}
     docset = docset or []
     files = [f for f in ([o["file"], o["file"][:-3] + ".docx"] if o.get("file") else []) if os.path.exists(os.path.join(run_dir, f))]
     if docset:
         files = [f for k in docset for f in (f"{k}.md", f"{k}.docx") if os.path.exists(os.path.join(run_dir, f))]
-    return {"output": out, "output_label": o["label"], "doc": bool(o["sections"]),
+    return {"output": out, "output_label": o["label"], "doc": bool(o["sections"]), "page": page,
             "rubric": o["rubric"], "conditions": (audits[-1].get("conditions") if audits else None), "files": files,
             "docset": docset, "docset_files": [{"kind": k, "label": j2_types.info(k)["label"].lower(),
                                                 "md": f"{k}.md", "docx": f"{k}.docx"}
@@ -2961,7 +2982,7 @@ class J2Run:
         self.rejections = []        # every validator rejection, with its exact reason
         self.events, self.agent_turns, self.report, self.started = [], {}, None, None   # for the run report
         self.export_note = None     # a document's export at the end: None when written, else why not
-        self.set_output(output_type())       # J2_OUTPUT, read per run (also loads its rate card)
+        self.set_output(output_type())       # J2_OUTPUT, read per run (also loads its rate card); else None: the planner chooses
         self.cycle_limit = self.cycle_turns = 0
         self.summary, self.summary_upto = "", 0
         self.sections, self.write_lock, self.bargain = {}, None, None   # section id -> {owner, head, body, workflow}
@@ -2990,7 +3011,8 @@ class J2Run:
         self._begin_cycle(advance=False)
 
     def set_output(self, out):
-        """Pick what the department builds (OUTPUTS) before the first message: J2_OUTPUT, or the start page.
+        """Pick what the department builds before the first message: J2_OUTPUT, or the start page (None: not chosen yet,
+        the planner chooses at the first message).
         False once the run has started. Only what is built and checked changes; the flow is the same."""
         if self.chat or self.status == "running":
             return False
@@ -3000,11 +3022,15 @@ class J2Run:
     def _apply_output(self, out):
         """Switch what is built (set_output before the first message; a design-document run at each stage)."""
         self.output = output_type(out)
-        self.out = output_def(self.output)      # from artifacts/types.json (j2_types)
+        # from artifacts/types.json (j2_types); None until a type is chosen (no agent is called before that)
+        self.out = output_def(self.output) if self.output else None
         # how it is built and checked follows its form (page or document), not its name
-        self.doc = j2_types.info(self.output)["form"] == "document"
+        self.doc = bool(self.output) and j2_types.info(self.output)["form"] == "document"
         # J2_REALIZATION: no rate card; Adaptation estimates each workflow's budget (estimated_resources.money)
         load_rates(self.output, card=not (getattr(self, "realization", None) or realization_on()))
+        if not self.out:
+            self.WF_FMT, self.GRANT_FMT, self.ATOM_RULES = J2Run.WF_FMT, J2Run.GRANT_FMT, J2Run.ATOM_RULES
+            return
         types = "|".join(f'"{t}"' for t in self.out["check_types"])
         # A document's agents get its own check types, finding ids and atom rules; a website's prompts stay as they were.
         kinds = "|".join(f'"{k}"' for k in expect_kinds(self.out["check_types"]))
@@ -3076,7 +3102,7 @@ class J2Run:
                 "outcome": self.outcome,          # read-only, for the Simple view
                 "decide_for_me": self.auto, "auto_answers": self.auto_log,
                 "studio": self.studio_view(),     # the Simple view's parts, people and team stream (j2_studio.py, studio/1)
-                "style": self.style, "rubric": output_def("website")["rubric"],
+                "style": self.style,
                 "playbooks": load_playbooks() if self.memory else [], "playbooks_used": self.playbooks_used,
                 "playbook_saved": self.playbook_saved,
                 "mock": llm.MOCK, "model": None if llm.MOCK else llm.MODEL, "fixes": int(self.fixes),
@@ -3093,7 +3119,8 @@ class J2Run:
                 "workable": workable(self.audits[-1]) if self.audits else None,
                 "memory": self.memory, "lessons": load_lessons() if self.memory else [],
                 "lessons_used": self.lessons_used, "lessons_saved": [x["id"] for x in self.lessons_saved],
-                **output_info(self.output, self.dir, self.audits, [k for k in self.docset if k in self.docs])}
+                **output_info(self.output, self.dir, self.audits, [k for k in self.docset if k in self.docs],
+                              run_page([self.output, *self.stages]))}
 
     def studio_view(self):
         """studio/1 (j2_studio.build) from the whole run, not the poll's slice of the chat."""
@@ -3742,8 +3769,8 @@ class J2Run:
             self.step = 8
         if self.doc and self.sites and not self.paused:
             self._export()
-        self.post("system", (self.outcome or "Stopped.") + f" {self.out['noun'] if self.doc else 'Site'} "
-                  f"v{len(self.sites)} is in the preview. "
+        noun = (self.out["noun"] if self.doc else self.out["noun"][:1].upper() + self.out["noun"][1:]) if self.out else None
+        self.post("system", (self.outcome or "Stopped.") + (f" {noun} v{len(self.sites)} is in the preview. " if noun else " ")
                   + ("Answer Identity's question above to continue." if self.paused else
                      "Tell us if you want changes."))
         # summary.json first (code only): the reviewer call in _make_report can take minutes or hang, and the run
@@ -3851,9 +3878,13 @@ class J2Run:
         def offline(i):
             if self.mock_deliverables is not None:
                 return self.mock_deliverables(i) if callable(self.mock_deliverables) else self.mock_deliverables
-            return j2_types.named(" ".join(str(t or "") for t in said)) or [self.output]
+            text = " ".join(str(t or "") for t in said)
+            if self.output:      # chosen on the start page (J2_OUTPUT): the documents the brief names, else that type
+                return j2_types.named(text) or [self.output]
+            # ponytail: a brief that names no type gets the first page type, the mock planner's guess
+            return j2_types.named(text, alone=True) or [j2_types.page_type()]
         note = (f"\nThe Requester chose the {output_def(self.output)['label']} on the start page: include it."
-                if self.output != "website" else "")
+                if self.output else "")
         r = j2_realization.plan_goal(goal, web=False, log=lambda m: None, extra=note, types=types,
                                      mocks=j2_realization.deliverable_mocks(goal, offline))
         self.save("deliverables.json", r)      # its calls stay there: self.calls numbers calls.jsonl (documents.json ranges)
@@ -3941,6 +3972,11 @@ class J2Run:
     def _sw(self, k):
         """A stage in words (stage_words)."""
         return self.stage_words()[k]
+
+    def _page_word(self):
+        """The run's page type by its label, lower case ("website"); None when the run builds no page."""
+        k = run_page([self.output, *self.stages])
+        return j2_types.info(k)["label"].lower() if k else None
 
     def _page_ready(self):
         """The done message of a single output: its type's form's own ("Your website is ready.")."""
@@ -4070,7 +4106,7 @@ class J2Run:
         self.stage_calls0 = self.calls
         self._apply_output(kind)
         if is_page(kind):
-            self.post("system", "The documents are done. Now the website, built from them.")
+            self.post("system", f"The documents are done. Now the {self._page_word()}, built from them.")
             self.proposed_lld = {}
             if (self.chain.get("lld") or {}).get("sections"):       # only an LLD is a blueprint; an HLD alone is a summary
                 self.blueprint = copy.deepcopy(self.chain["lld"])
@@ -4140,7 +4176,7 @@ class J2Run:
             return
         self._deeds_finished()
 
-    GOAL_TAGS = {"prd": "PRD", "hld": "HLD", "lld": "LLD", "website": "Website"}
+    GOAL_TAGS = {"prd": "PRD", "hld": "HLD", "lld": "LLD"}      # and a page type by its label (_milestone)
 
     def _confirm_send(self, handoff):
         """J2_SEND_MODE=live: before the first email of a run, Identity asks the Requester once. True when the run paused;
@@ -4197,7 +4233,7 @@ class J2Run:
         if os.getenv("J2_MILESTONE_EMAILS", "0") != "1" and not j2_send.asks_updates(*said):
             return
         kind = self.stage_kind or self.output
-        tag = self.GOAL_TAGS.get(kind)
+        tag = self.GOAL_TAGS.get(kind) or (j2_types.info(kind)["label"] if is_page(kind) else None)
         if not tag or any(x["goal"] == tag for x in self.milestone_log):
             return
         cost = RATES_DEED().get("send_email", 0)
@@ -4333,7 +4369,7 @@ class J2Run:
                       + next_field(("user", "adaptation"), "Requester when you ask; Adaptation once the charter is "
                                    "recorded") + "}",
                       f"REQUESTER'S BRIEF: {self.request}\nEARLIER QUESTIONS AND ANSWERS: {json.dumps(self.intake)}\n"
-                      f"{feedback}\n" + (self.out["intake"] + (SITE_FIRST if "website" in self.stages and not change else "") if self.doc else
+                      f"{feedback}\n" + (self.out["intake"] + (SITE_FIRST.format(page=self._page_word()) if self._page_word() and not change else "") if self.doc else
                       self.out.get("intake") or "J2.a: is there enough information to work? You need enough to write the charter: "
                       "goal, audience, standards, rules and a checkable done-when list. Never invent a missing fact.\n"
                       "- Work out what kind of business this is and what its visitors usually need (for example a "
@@ -4357,7 +4393,7 @@ class J2Run:
                       "number of the done-when item it blocks: that item is not met until they confirm it. Done-when "
                       "may not refer to the Requester, Audit, verification, approval or launch. Keep everything the brief "
                       "asks for; if the charter leaves any of it out, list it in dropped_from_brief with the reason. "
-                      "Don't plan costs or resources.") + (SITE_LATER if self.docset and not self.doc and not change else "")
+                      "Don't plan costs or resources.") + (SITE_LATER.format(page=self._page_word()) if self.docset and not self.doc and not change else "")
                       + ("\nRecord the charter now (enough=true) from what you have." if last else ""), mock,
                       defaults=("Thanks, I have everything I need. I'm starting the build now.",
                                 "Charter is ready. Propose the first workflows."))
@@ -4859,7 +4895,7 @@ class J2Run:
 
     def _requester_noun(self, text):
         """A document run's Requester reads "document", never "site" or "website"."""
-        if not self.doc or "website" in self.stages:      # a website was asked for as well: it is named as one
+        if not self.doc or self._page_word():      # a page was asked for as well: it is named as one
             return text
         return re.sub(r"\b(?:web)?site(s?)\b", lambda m: ("Document" if m.group(0)[0].isupper() else "document")
                       + m.group(1), str(text), flags=re.I)
@@ -4944,7 +4980,7 @@ class J2Run:
             if self._next_stage():
                 return
         self.post("identity", ("We're finished. Kept as they were: " + "; ".join(self.open_docs) + "." if self.open_docs else
-                               "Your design documents are ready." if self.docset and self.stage_kind != "website" and
+                               "Your design documents are ready." if self.docset and not is_page(self.stage_kind) and
                                len(self.docset) > 1 else
                                r.get("to_requester") or r.get("say") or ("Your document is ready." if self.doc else
                                                                          self._page_ready())), done=True,
@@ -5184,7 +5220,7 @@ class J2Run:
                                                    "asked for is in it.", "to_agents": "", "clause": "done_when",
                                    "done": True, "next": "Requester"})
             if not fails:
-                return json.dumps({"to_requester": "@Requester Your website is ready. Everything you asked for is on "
+                return json.dumps({"to_requester": f"@Requester {self._page_ready()} Everything you asked for is on "
                                                    "the page, and it works on phones and computers.",
                                    "to_agents": "", "clause": "done_when", "done": True, "next": "Requester"})
             return json.dumps({"to_requester": "", "to_agents": "@Adaptation Not workable yet; the failing findings "
@@ -7659,7 +7695,7 @@ class J2Run:
                                     "belong to other workflows. After you write it, code runs every check in your work atoms' "
                                     f"verification on the whole page ({MAX_CHECK_ATTEMPTS} attempts)." + style_task
                                     + "\nDESIGN RUBRIC (Audit checks every section against it; follow it):\n"
-                                    + "\n".join(f"{rid} {txt}" for rid, txt in output_def("website")["rubric"][:6])
+                                    + "\n".join(f"{rid} {txt}" for rid, txt in self.out["rubric"][:6])
                                     + (f"\nYOUR SECTION NOW (last written by {mine['owner']}):\n```head\n{mine['head']}\n```\n"
                                        f"```section\n{mine['body']}\n```" if mine else "")
                                     + (f"\nATTEMPT {attempt} OF {MAX_CHECK_ATTEMPTS}. CODE RAN YOUR CHECKS ON YOUR LAST "
@@ -9649,7 +9685,7 @@ class J2Run:
                                         "phones render the page at desktop width") if phone else
                                        ("Section present in the page" if ok else "No section for this item")})
             n = sum(f["verdict"] == "NEEDS_REVISION" for f in fs)
-            rub = [{"id": rid, "verdict": "PASS", "evidence": "Mock: looks fine in the measurements"} for rid, _ in output_def("website")["rubric"]]
+            rub = [{"id": rid, "verdict": "PASS", "evidence": "Mock: looks fine in the measurements"} for rid, _ in self.out["rubric"]]
             # Checking a price item: Audit asks the workflow that built the products which attribute holds the
             # price, rather than guessing from the markup (board, J2_BOARD=1).
             changed = any(m.get("change") for m in self.chat)     # the demo's order: after the change request
@@ -9678,7 +9714,7 @@ class J2Run:
                       f"use BLOCKED_BY_EVIDENCE only for what neither it nor the code can show): {json.dumps(mech)}\n"
                       f"NECESSARY CONDITIONS (checked by code on the page; evidence): {json.dumps(conds, ensure_ascii=False)}\n"
                       f"DESIGN AND USABILITY RUBRIC (judge each item; a failing item is a normal finding): "
-                      f"{json.dumps(dict(output_def('website')['rubric']), ensure_ascii=False)}\nSTYLE GUIDE: {json.dumps(self.style, ensure_ascii=False)}"
+                      f"{json.dumps(dict(self.out['rubric']), ensure_ascii=False)}\nSTYLE GUIDE: {json.dumps(self.style, ensure_ascii=False)}"
                       f"\nDESIGN MEASUREMENTS (code, both widths): {json.dumps(mech.get('design'), ensure_ascii=False)}\n"
                       f"MEASURED PROBLEMS (code; you can't PASS these items): {json.dumps(measured, ensure_ascii=False)}\n"
                       + ("SCREENSHOT ATTACHED: the first screen at 360px (left) and 1280px (right). Judge R-1 to R-5 on "
@@ -9888,11 +9924,11 @@ class J2Run:
                       f"AUDIT CONFIRMED THESE FIXES WORKED (failing in v{prev['version']}, passing in v{cur['version']}): "
                       f"{json.dumps(fixed, ensure_ascii=False)}\nWORKFLOWS THAT RAN IN BETWEEN: "
                       f"{json.dumps(ran, ensure_ascii=False)}\nWrite one lesson per fixed problem for future runs on any "
-                      "website: the problem in general terms, its cause, and the fix that worked. One sentence each.", mock)
+                      f"{self._page_word() or self.out['noun']}: the problem in general terms, its cause, and the fix that worked. One sentence each.", mock)
         saved = []
         for x in [x for x in r.get("lessons") or [] if isinstance(x, dict) and x.get("problem") and x.get("fix")][:len(fixed)]:
             lesson = {"id": f"L-{self.run_id}-{len(self.lessons_saved) + 1}", "problem": str(x["problem"]),
-                      **({"output": self.output} if self.doc else {}),
+                      "output": self.output,
                       **({"test": True} if test else {}),
                       "cause": str(x.get("cause") or ""), "fix": str(x["fix"]), "run": self.run_id, "cycle": self.cycle,
                       "versions": [prev["version"], cur["version"]], "workflows": [w["id"] for w in ran],
