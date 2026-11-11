@@ -962,8 +962,35 @@ HEADING_CHECKS = ("heading-present", "section-not-empty")
 
 
 def heading_target(t):
-    """A heading check's target as heading text: leading "#" characters and spaces stripped ("## Problem" -> "Problem")."""
-    return re.sub(r"^[#\s]+", "", str(t or "")).strip()
+    """A heading check's target as heading text: leading "#" characters and spaces stripped ("## Problem" -> "Problem").
+    Only a string is heading text: anything else (a list of headings, a number) is "", never its repr as a heading
+    (runs/j2-20261111-095315 checked for a heading "['Purpose and scope', ...]"); split_heading_lists splits a list."""
+    return re.sub(r"^[#\s]+", "", t).strip() if isinstance(t, str) else ""
+
+
+def split_heading_lists(a):
+    """In place, an atom's heading checks (heading-present, section-not-empty) and heading expected-output items whose
+    target is a list of headings: one per heading (a check names one heading). The first keeps its place (and its item
+    number); the others follow at the end, so other items keep their numbers. Returns what was split, in words."""
+    done = []
+    if not isinstance(a, dict):
+        return done
+    for key, check_type in (("expected_output", lambda x: EXPECT_KINDS.get(x.get("kind"))), ("verification", lambda x: x.get("type"))):
+        xs = a.get(key) if isinstance(a.get(key), list) else []
+        for i, c in enumerate(list(xs)):
+            t = check_type(c) if isinstance(c, dict) else None
+            if t not in HEADING_CHECKS or not isinstance(c.get("target"), list):
+                continue
+            heads = list(dict.fromkeys(h for h in map(heading_target, c["target"]) if h))
+            if not heads:
+                continue      # no heading text in it: check_problems names the empty target
+            word = "section" if key == "expected_output" else "heading present" if t == "heading-present" else "not empty"
+            one = [{**c, "target": h, "text": f"The {h} section" if key == "expected_output" else f"{h} {word}"} for h in heads]
+            xs[xs.index(c)] = one[0]
+            xs += [{k: v for k, v in x.items() if k != "item"} for x in one[1:]]
+            done.append(f"{'expected output item' if key == 'expected_output' else t + ' check'} {c.get('text')!r} "
+                        f"targets a list of {len(heads)} headings, so it is {len(heads)}, one per heading")
+    return done
 
 
 # An expected-output item names one concrete thing that must exist when the atom is done; its kind says which check
@@ -1064,6 +1091,7 @@ def normalise_checks(atoms):
     """Every heading check's target in these atoms as heading text, and every expected-output item covered by a
     check, in place, so workflows.json and the receipts store the form the check runs on."""
     for a in atoms or []:
+        split_heading_lists(a)
         for c in (a.get("verification") if isinstance(a, dict) and isinstance(a.get("verification"), list) else []):
             if isinstance(c, dict) and c.get("type") in HEADING_CHECKS:
                 c["target"] = heading_target(c.get("target"))
@@ -6620,11 +6648,14 @@ class J2Run:
         return out
 
     def _fix_atoms(self, w, src, types, up, real):
-        """What the validator fixes in place instead of rejecting, each logged (_autofix): an "expect-text <selector>"
+        """What the validator fixes in place instead of rejecting, each logged (_autofix): a heading check or item whose
+        target is a list of headings becomes one per heading (split_heading_lists); an "expect-text <selector>"
         step with no value becomes "expect-visible <selector>" (fixed_step); a check or behaviour step that targets an
         id or class the how and constraints never mention gets a constraint telling the builder to create it."""
         name = w.get("name") or "?"
         for n, a in enumerate(w["atoms"], 1):
+            for what in split_heading_lists(a):
+                self._autofix(name, "heading_list", f"work atom {n}: {what}")
             steps = [x.get("steps") for x in a.get("expected_output") or [] if isinstance(x, dict)
                      and x.get("kind") == "behavior"] + [c.get("target") for c in a.get("verification") or []
                                                          if isinstance(c, dict) and c.get("type") == "behavior-steps"]

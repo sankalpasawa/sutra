@@ -5526,6 +5526,37 @@ def validator_autofix_target():
           "autofix.json; a charter fact is still rejected ok")
 
 
+def validator_heading_list():
+    """A heading check whose target is a list of headings (runs/j2-20261111-095315: Adaptation wrote one heading item,
+    "All 8 section headings exist", with the 8 headings as a list, and the check looked for the heading
+    "['Purpose and scope', ...]") is split by the validator into one check per heading, logged in autofix.json; a list
+    is never stringified into a heading (heading_target)."""
+    assert j2.heading_target(["Purpose", "Scope"]) == "" and j2.heading_target("## Scope") == "Scope" and j2.heading_target(None) == ""
+    assert not j2.doc_check({"type": "heading-present", "target": ["Purpose"]}, "## ['Purpose']\n\nx")["pass"], "never the list's text"
+    run = j2.J2Run()
+    run.set_output("prd")
+    run.goal = {"product_name": "QuickQueue", "done_when": []}
+    heads = list(j2.doc_sections("prd"))[:3]
+    fact = {"text": "Product name", "kind": "facts", "target": ["QuickQueue"]}
+    a = {**j2.mock_doc_atom({"name": "Fix"}),
+         "expected_output": [{"text": "All 3 section headings exist", "kind": "heading", "target": ["## " + heads[0], *heads[1:]]}, fact],
+         "verification": [{"text": "The three sections are not empty", "type": "section-not-empty", "target": heads, "expect": 5}]}
+    assert not run._atom_problems({"name": "Fix", "atoms": [a]}), run._atom_problems({"name": "Fix", "atoms": [a]})
+    assert [(x["kind"], x["target"]) for x in a["expected_output"]] == [("heading", heads[0]), ("facts", ["QuickQueue"])] + \
+        [("heading", h) for h in heads[1:]], a["expected_output"]
+    assert [(c["type"], c["target"], c["expect"]) for c in a["verification"]] == [("section-not-empty", h, 5) for h in heads], a["verification"]
+    assert a["verification"][0]["text"] == f"{heads[0]} not empty"
+    rows = autofixes(run)
+    assert [r["kind"] for r in rows] == ["heading_list", "heading_list"] and rows[0]["workflow"] == "Fix", rows
+    assert "targets a list of 3 headings, so it is 3, one per heading" in rows[0]["detail"], rows[0]
+    n = j2.normalise_checks([a])[0]      # covered: one heading-present per heading, item numbers kept
+    hp = [c for c in n["verification"] if c["type"] == "heading-present"]
+    assert sorted(c["target"] for c in hp) == sorted(heads) and all(isinstance(c.get("item"), int) for c in hp), hp
+    assert not run._atom_problems({"name": "Fix", "atoms": [a]}) and len(autofixes(run)) == 2, "split once"
+    print("validator heading list: a heading item or check with a list of headings is split into one per heading, "
+          "logged; a list is never a heading's text ok")
+
+
 def validator_autofix_step():
     """A2: 'expect-text #cell-0-0 ' (no value, runs/j2-20261109-182842) becomes 'expect-visible #cell-0-0' in the
     behaviour item and its check, logged; 'expect-text <sel> <value>' in one string still parses; an expect-number with
@@ -13096,6 +13127,7 @@ if __name__ == "__main__":
     owner_override()
     form_submit()
     validator_autofix_target()      # the validator fixes small things itself, logged in autofix.json
+    validator_heading_list()
     validator_autofix_step()
     validator_autofix_plan_fields()
     validator_autofix_human()
