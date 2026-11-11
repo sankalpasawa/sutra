@@ -2891,7 +2891,7 @@ def output_info(out, run_dir, audits, docset=None, page=None):
                                                for k in docset if os.path.exists(os.path.join(run_dir, f"{k}.md"))],
             # what the page shows of every type (labels, tags, forms), so no screen text assumes a website
             "generic": True, "types": {n: {k: j2_types.info(n)[k] for k in ("label", "form", "file", "ready")}
-                                           | {"tag": t.get("tag")} for n in j2_types.names()
+                                           | {"tag": t.get("tag"), "color": t.get("color")} for n in j2_types.names()
                                            for t in [next(x for x in j2_types._read_types()["types"] if x["name"] == n)]}}
 
 

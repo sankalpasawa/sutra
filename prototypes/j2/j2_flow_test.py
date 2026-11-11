@@ -7622,7 +7622,7 @@ def forms_and_new_types():
         assert run._builder_for("W-1") == "builder.md#build" and run._builder_for("identity") == run.out["builder"]
         j2.STAGE_SKILLS.clear()
         ui = open(os.path.join(os.path.dirname(os.path.abspath(__file__)), "j2_ui.html"), encoding="utf-8").read()
-        assert "const TYL = " in ui and 'TYL("website", "Website") + " sections"' in ui
+        assert "const TYL = " in ui and 'TYL("site", "Page") + " sections"' in ui
     finally:
         j2_types.TYPES_PATH, j2_types.TEMPLATES_DIR = keep_paths
         j2_types.template.cache_clear()
@@ -7636,6 +7636,98 @@ def forms_and_new_types():
           "made as a new document type, built, checked and filed, and reused on the next run; a bad new type is refused; a "
           "stage may name its builder persona; UI labels come from the type ok")
 
+
+def page_type_from_data():
+    """A web page is one type among others: a second page type made of data only (a temp copy of types.json with a
+    "landing_page" of the page form, its own label and trigger words) is chosen by a brief that names it, built as a page,
+    checked (code checks, render check, necessary conditions) and audited, and ends Done, with no code change. Before
+    the first message the run has no type (not chosen yet), and every label the state, the Artifacts groups and the Map
+    show is the landing page's own."""
+    import threading
+    import urllib.request
+    import j2_types
+    import j2_server
+    import j2_artifacts as A
+    import j2_map
+    import copy
+    tmp = tempfile.mkdtemp(prefix="j2-page-type-")
+    d = json.load(open(j2_types.TYPES_PATH, encoding="utf-8"))
+    web = next(t for t in d["types"] if t["name"] == "website")
+    lp = {**copy.deepcopy(web), "name": "landing_page", "label": "Landing page", "tag": "Landing", "noun": "landing page",
+          "triggers": [r"\blanding\s+page\b"], "depends_on": [],
+          "done": "Done: the landing page is workable. Every done-when item passes with Audit's evidence and the render check is clean."}
+    lp.pop("also_when")
+    d["types"].insert(d["types"].index(web) + 1, lp)
+    json.dump(d, open(os.path.join(tmp, "types.json"), "w", encoding="utf-8"), indent=1)
+    shutil.copytree(j2_types.TEMPLATES_DIR, os.path.join(tmp, "templates"))
+    keep_paths = (j2_types.TYPES_PATH, j2_types.TEMPLATES_DIR)
+    j2_types.TYPES_PATH, j2_types.TEMPLATES_DIR = os.path.join(tmp, "types.json"), os.path.join(tmp, "templates")
+    j2_types.template.cache_clear()
+    j2._data_type.cache_clear()
+    keep_run = j2_server.RUN
+    srv = None
+    try:
+        assert j2.is_page("landing_page") and j2_types.named("a landing page for my cafe", alone=True) == ["landing_page"]
+        assert j2_types.named("a website for my cafe", alone=True) == ["website"]      # the site words stay the website's
+        run = j2.J2Run()
+        run.budget = 300
+        # before the first message: no type, nothing that names one
+        st = run.snapshot()
+        assert run.output is None and run.out is None and not run.doc and j2.RATES == {}, (run.output, j2.RATES)
+        assert st["output"] is None and st["output_label"] is None and st["page"] is None and st["rubric"] == (), st["output"]
+        assert st["types"]["landing_page"]["label"] == "Landing page" and st["types"]["landing_page"]["form"] == "page"
+        j2_server.RUN = run
+        srv = j2_server.http.server.ThreadingHTTPServer(("127.0.0.1", 0), j2_server.Handler)
+        threading.Thread(target=srv.serve_forever, daemon=True).start()
+        base = f"http://127.0.0.1:{srv.server_address[1]}"
+        live = json.loads(urllib.request.urlopen(f"{base}/api/state").read().decode("utf-8"))
+        assert live["output"] is None and live["output_label"] is None and "Website" not in json.dumps(
+            {k: v for k, v in live.items() if k != "types"}), "nothing says Website before the choice"
+        say(run, "Make a landing page for Little Fig, a cafe in Pune. Show the menu with prices (filter coffee Rs 60, "
+                 "masala dosa Rs 90), the opening hours (8am to 6pm every day) and a visit form.")
+        finish(run)
+        assert run.output == "landing_page" and not run.doc and run.stages == [], (run.output, run.stages)
+        assert run.outcome == lp["done"], run.outcome
+        assert os.path.isfile(os.path.join(run.dir, "site", "index.html")) and run.sites
+        assert json.load(open(os.path.join(run.dir, "deliverables.json"), encoding="utf-8"))["deliverables"] == ["landing_page"]
+        a = run.audits[-1]
+        assert a["results"] and all(r["pass"] for r in a["results"]) and a.get("mechanical") is not None, a.get("results")
+        assert [r["id"] for r in a["rubric"]] == [r["id"] for r in lp["rubric"]]
+        assert json.load(open(os.path.join(run.dir, "conditions.json"), encoding="utf-8"))
+        receipts = [json.loads(x) for x in open(os.path.join(run.dir, "receipts.jsonl"), encoding="utf-8")]
+        assert any(r.get("type") == "file-exists" for r in receipts) and all(r.get("pass", r.get("met")) for r in receipts[-3:]), receipts[-3:]
+        texts = [m["text"] for m in run.chat]
+        assert any("Your landing page is ready." in t for t in texts), texts[-4:]
+        assert any(re.search(r"Landing page v\d+ is in the preview\.", t) for t in texts), texts[-2:]
+        assert not any("website" in t.lower() for t in texts if not t.startswith("Make a landing")), [t for t in texts if "website" in t.lower()]
+        # the labels the page shows: the state, the Artifacts groups, the Map, a saved copy
+        st = json.loads(urllib.request.urlopen(f"{base}/api/state").read().decode("utf-8"))
+        assert st["output"] == "landing_page" and st["output_label"] == "Landing page" and st["page"] == "landing_page", st["output_label"]
+        g = A.groups(run.dir)
+        assert next(x for x in g["groups"] if x["id"] == "site")["label"] == "Landing page sections", g["groups"]
+        assert {r["type"] for r in A.rows(run.dir) if r["form"] == "page"} == {"landing_page"}, "only the chosen page type"
+        m = j2_map.build(run.dir)
+        node = next(n for n in m["nodes"] if n["id"] == "work:landing_page")
+        assert node["label"] == "Landing page" and not any(n["id"] == "work:website" for n in m["nodes"]), [n["id"] for n in m["nodes"]]
+        saved = j2.saved_snapshot(os.path.basename(run.dir))
+        assert saved["output"] == "landing_page" and saved["output_label"] == "Landing page" and saved["page"] == "landing_page"
+        # J2_OUTPUT still chooses a type explicitly, with its rate card
+        os.environ["J2_OUTPUT"] = "landing_page"
+        try:
+            assert j2.J2Run().output == "landing_page" and "page_section" in j2.RATES
+        finally:
+            os.environ.pop("J2_OUTPUT")
+    finally:
+        if srv:
+            srv.shutdown()
+        j2_server.RUN = keep_run
+        j2_types.TYPES_PATH, j2_types.TEMPLATES_DIR = keep_paths
+        j2_types.template.cache_clear()
+        j2._data_type.cache_clear()
+        shutil.rmtree(tmp, ignore_errors=True)
+    print("page type from data: a made-up landing page type (page form, own label and triggers, temp types.json) is chosen "
+          "by a brief that names it, built, checked, audited and Done; no type before the first message; the state, "
+          "Artifacts groups, Map and saved run show its own label ok")
 
 def report_type():
     """A "report" document type made of data only (artifacts/types.json: business_report, and templates/business_report/
@@ -12600,6 +12692,7 @@ if __name__ == "__main__":
             doc_planner_real()          # step 3c: realistic planner answers for documents
             forms_and_new_types()       # phase C: forms, and new types made on the fly
             report_type()               # step D: a type made of data only
+            page_type_from_data()       # a second page type made of data only
             tap_dense()                 # C7: dense grids and keypads at 24px
             planner_conditions()        # C8: the planner gets the conditions; N8 skipped for a single screen
             types_constants()           # E: the validator constants from artifacts/types.json
