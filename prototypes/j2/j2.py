@@ -3276,6 +3276,11 @@ class J2Run:
                   humans_only=True, **({"warning": True} if missing else {}))
         return keep
 
+    def _run_tpl_partial(self):
+        """True when only some of this stage's template workflows were selected: the sections left unwritten are the
+        Requester's choice, not a plan gap (always False without a run template)."""
+        return bool(((self.run_tpl or {}).get("plans", {}).get(self.output) or {}).get("partial"))
+
     def _run_tpl_partial_done(self):
         """True when only some of this stage's template workflows were selected and every one of them has been built:
         the stage ends there (the rest was never asked for, so Audit's open items for it are not reworked)."""
@@ -7468,7 +7473,7 @@ class J2Run:
                 msg += f" Envelope defaults applied: {'; '.join(defaults)}."
             msg += " Workflow agents: " + "; ".join(self._owns(w) for w in registered) + "."
             left = self._left_by_ruling()
-            missing = self._unwritten_sections() if first else []
+            missing = self._unwritten_sections() if first and not self._run_tpl_partial() else []      # J2_RUN_TEMPLATES=1: not selected is not a gap
             if missing:
                 msg += (f" No registered workflow writes {', '.join(missing)}: Adaptation proposes the workflow(s) for "
                         f"{'it' if len(missing) == 1 else 'them'} now.")
