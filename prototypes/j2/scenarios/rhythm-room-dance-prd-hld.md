@@ -1,14 +1,14 @@
 # Rhythm Room Dance Studio: PRD and HLD only, from selected workflows of a run template
 
 A brief for a partial run: only the PRD and HLD workflows of the run template
-**Still Point Yoga: studio website** (`still-point-yoga-studio-website`). Every fact below is made up.
+**Still Point Yoga: PRD, HLD and LLD** (`still-point-yoga-prd-hld-and-lld`, made from a live run). Every fact below is made up.
 
 | | |
 |---|---|
-| Run template | `still-point-yoga-studio-website`, selected workflows W-1 to W-12 of 24 |
+| Run template | `still-point-yoga-prd-hld-and-lld`, selected workflows W-1 to W-12 of 17 |
 | Selected | W-1 to W-6 (PRD: Problem, Users, Goals, Requirements, Success metrics, Out of scope) and W-7 to W-12 (HLD: Purpose and scope, Pages, Components, Data flow, Hosting and deployment, Risks) |
-| Not selected | W-13 to W-17 (LLD) and W-18 to W-24 (website) |
-| Start page | `/?view=simple&template=still-point-yoga-studio-website&workflows=W-1,W-2,W-3,W-4,W-5,W-6,W-7,W-8,W-9,W-10,W-11,W-12` |
+| Not selected | W-13 to W-17 (LLD) |
+| Start page | `/?view=simple&template=still-point-yoga-prd-hld-and-lld&workflows=W-1,W-2,W-3,W-4,W-5,W-6,W-7,W-8,W-9,W-10,W-11,W-12` |
 | Flags | `J2_RUN_TEMPLATES=1 J2_TEMPLATE_LIBRARY=1`, and `J2_LIBRARY_DIR` set to a copy of `library/` |
 | Asked for | PRD and HLD only; no LLD, no website |
 | Success | about 0 templates created; 12 workflows, every one from the template |

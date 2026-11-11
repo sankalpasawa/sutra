@@ -12800,6 +12800,26 @@ def run_templates():
         assert pick.set_run_template(yoga, dep.key) and pick.run_tpl["selected"] == sorted(set(dep.depends_on) | {dep.key}, key=lambda k: int(k[2:])) \
             and pick.run_tpl["added"] == dep.depends_on, pick.run_tpl["selected"]
         assert j2.J2Run().set_run_template("no-such-template") is False
+        # (e) the whole of a documents-only template, for a brief that also asks for a site: the site stage is added,
+        # planned by Adaptation, and its workflows are recorded as added, not in template
+        docs_only = next(r["id"] for r in rows if "website" not in r["stages"] and "prd" in r["stages"])
+        dbase = L.get_run_template(docs_only)
+        r4 = j2.J2Run()
+        r4.budget = 1400
+        assert r4.set_run_template(docs_only)
+        say(r4, DESIGN_BRIEF)
+        finish(r4)
+        assert r4.outcome.startswith("Done") and r4.stages == dbase.stages + ["website"], (r4.outcome, r4.stages)
+        rec4 = json.load(open(os.path.join(r4.dir, "templates.json"), encoding="utf-8"))
+        assert rec4["run_template"]["added_stages"] == ["website"], rec4["run_template"].get("added_stages")
+        d_doc = [d for d in rec4["decisions"] if d["artifact"] in dbase.stages]
+        d_web = [d for d in rec4["decisions"] if d["artifact"] == "website"]
+        assert d_doc and all(d["from_template"] is True and d["action"] != "created" for d in d_doc), [(d["workflow"], d["action"], d["from_template"]) for d in d_doc]
+        assert d_web and all(d["from_template"] is False for d in d_web), [(d["workflow"], d["from_template"]) for d in d_web]
+        web_ids = {d["workflow"] for d in d_web}
+        assert all((x.get("note") == "added, not in template") == (x["workflow"] in web_ids) for x in rec4["run_template"]["workflows"])
+        assert any("Added, not in template (the brief asks for" in m["text"] for m in r4.chat if m["who"] == "system")
+        assert "website" not in rec4["run_template"]["plans"] and not any("RUN TEMPLATE, THE BASE PLAN" in c["prompt"] and c.get("stage") == "website" for c in calls_file(r4))
         page = "skipped (Chrome not found, or --fast without --browser)"
         if BROWSER and j2.j2_check.find_chrome():
             page = run_templates_page(lib, yoga, dep)
@@ -12814,7 +12834,8 @@ def run_templates():
     print(f"run templates: {len(rows)} in the library, valid, every section template opens; a made-up run bundles its finished workflows "
           f"with slots for its facts; saved runs rebuilt the same: {', '.join(seen) or 'none in this clone'}; a mock run of another "
           f"business from the yoga template created 0 templates ({acts.count('extended')} adapted, {acts.count('generic')} generic, "
-          f"every workflow from the template), the same brief again reused them all; W-1, W-2 selected ran only those; flag off "
+          f"every workflow from the template), the same brief again reused them all; W-1, W-2 selected ran only those; the whole "
+          f"documents-only template for a brief that also asks for a site added the site stage ({len(d_web)} workflows added, not in template); flag off "
           f"takes no template and changes no prompt; the page: {page} ok")
 
 

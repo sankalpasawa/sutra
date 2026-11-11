@@ -1,15 +1,17 @@
-# Iron Grove Fitness: studio website from a run template (whole)
+# Iron Grove Fitness: documents from a run template (whole), website added
 
-A brief for a new run that starts from the run template **Still Point Yoga: studio website**
-(`still-point-yoga-studio-website`, 24 workflows: PRD, HLD, LLD, website). Every fact below is made up.
+A brief for a new run that starts from the live-made run template **Still Point Yoga: PRD, HLD and LLD**
+(`still-point-yoga-prd-hld-and-lld`, 17 workflows: PRD, HLD, LLD). The brief also asks for a website, which the
+template does not have: Adaptation plans that stage and its workflows are recorded as "added, not in template".
+Every fact below is made up.
 
 | | |
 |---|---|
-| Run template | `still-point-yoga-studio-website`, whole (`workflows=all`) |
-| Start page | `/?view=simple&template=still-point-yoga-studio-website&workflows=all` |
+| Run template | `still-point-yoga-prd-hld-and-lld`, whole (`workflows=all`) |
+| Start page | `/?view=simple&template=still-point-yoga-prd-hld-and-lld&workflows=all` |
 | Flags | `J2_RUN_TEMPLATES=1 J2_TEMPLATE_LIBRARY=1`, and `J2_LIBRARY_DIR` set to a copy of `library/` |
 | Asked for | PRD, HLD, LLD and a one-page website |
-| Success | about 0 templates created; every workflow from the template |
+| Success | about 0 templates created for the documents, every document workflow from the template; the website workflows are added, not in template |
 
 ## Brief
 
