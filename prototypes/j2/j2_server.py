@@ -154,6 +154,12 @@ class Handler(http.server.BaseHTTPRequestHandler):
             return self._send(200, json.dumps(j2_template_lib.library_view(), ensure_ascii=False))
         if u.path == "/api/catalog":    # the /library page: the committed library and the runs that gave it templates (library/ only)
             return self._send(200, json.dumps(j2_template_lib.catalog_view(), ensure_ascii=False))
+        if u.path == "/api/run-template":       # one run template (run-template/1) with where each workflow's section template opens
+            tid = q.get("id") or ""
+            got = j2_template_lib.run_template_view(tid) if re.fullmatch(r"[a-z0-9-]+", tid) else None
+            if got:
+                got["enabled"] = os.environ.get("J2_RUN_TEMPLATES") == "1"
+            return self._send(200, json.dumps(got, ensure_ascii=False)) if got else self._send(404, '{"error": "no such run template"}')
         if u.path.startswith("/api/library/"):      # one template version: /api/library/<artifact>/<section>/<slug>/v<N>
             parts = u.path[len("/api/library/"):].split("/")
             ok = (len(parts) == 4 and parts[0] in j2_template_lib.artifacts()

@@ -1006,6 +1006,9 @@ svg path[data-edge].hot,svg.focusing path[data-edge].lit{opacity:1!important;str
 .libviews [role=tab]{border:1px solid var(--line);background:var(--panel);color:var(--ink);border-radius:8px;padding:3px 10px;font:inherit;cursor:pointer}.libviews [aria-selected="true"]{font-weight:700;border-color:var(--ink)}
 .librun{border:1px solid var(--line);border-radius:10px;padding:6px 12px;margin:8px 0;background:var(--panel)}.librun>summary{cursor:pointer}.librun .libgroup{margin:4px 0 4px 12px}.librun .libgroup b{display:inline-block;min-width:70px}
 .libbadge{border:1px solid var(--line);border-radius:10px;padding:0 8px;font-size:12px}.libbadge.mock{color:var(--validator);border-color:var(--validator)}.libbadge.live{color:var(--ok);border-color:var(--ok)}
+.rtuse{display:flex;flex-wrap:wrap;gap:8px 10px;align-items:center;margin:10px 0 4px}.rtuse .ghost{cursor:pointer;font:inherit}.rtuse .ghost.rtmain{border-color:var(--ink);font-weight:700}.rtuse .ghost:disabled{opacity:.5;cursor:not-allowed}
+.rtslots{margin:6px 0}.rtnote{font-size:12.5px;color:var(--muted);margin:2px 0 8px;min-height:1.2em}.rttable td:first-child{width:28px}.rttable th{white-space:nowrap}.rttable td:nth-child(4){min-width:120px}.rttable .linkbtn{text-align:left}.rttable tr.rtauto td{background:color-mix(in srgb,var(--line) 35%,transparent)}.rttable .mono{white-space:nowrap}
+#sview .srt{display:flex;flex-wrap:wrap;gap:6px 10px;align-items:center;margin:0 0 10px;padding:8px 12px;border:1px solid var(--s-line);border-radius:12px;background:var(--s-surface2);color:var(--s-ink);font-size:13.5px}#sview .srt[hidden]{display:none}#sview .srt small{color:var(--s-muted);flex-basis:100%}#sview .srt button{border:0;background:none;color:var(--s-muted);font:inherit;cursor:pointer;margin-left:auto}
 .tplmeta{margin:6px 0 8px;font-size:13px;color:var(--muted)}.tplmeta div{margin:2px 0}.tplmeta b{color:var(--ink)}.tplline{font-size:12.5px;color:var(--muted)}.tplline .code{color:var(--ink)}
 </style>
 <script>/* the viewer's Appearance before the first paint (Run settings sets it): light, dark or system; light by default */
@@ -1018,6 +1021,7 @@ try { var tp = localStorage.getItem("j2theme"); document.documentElement.dataset
       <button type="button" class="screwg" id="slandteam" aria-haspopup="dialog" aria-controls="steamcard" aria-label="See your team"><span class="slfaces" id="slfaces"></span><span class="slready"><i class="sldot" aria-hidden="true"></i><b>5 teammates ready</b><span class="sviewteam">Meet your team</span></span></button>
       <h1 class="sgreet" id="sgreet">What should we <em>make</em> today?</h1>
       <p class="shint">Describe it in a sentence. The team plans it, does the work and checks it for you.</p>
+      <div class="srt" id="srt" hidden></div>
       <form class="sbox" id="lform"><span class="sghost" id="sghost" aria-hidden="true"></span><textarea id="lbox" rows="2" aria-label="Describe what to build" placeholder="Describe what you want…"></textarea>
         <div class="sbrow"><div class="schips" id="schips"></div><button class="sgo" id="lsend" type="submit" disabled>Start<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12h14M13 6l6 6-6 6"/></svg></button></div></form>
       <div class="slrow"><button type="button" class="sauto" id="sautoland" role="switch" aria-checked="false" title="When this is on, the team answers its own questions with the suggested option and keeps going."><span class="ssw" aria-hidden="true"></span>Decide for me</button>
@@ -2246,6 +2250,7 @@ function renderSimple(s){
   if (!started){
     if ($("schips").__v !== "o:" + s.output){ $("schips").__v = "o:" + s.output; $("schips").innerHTML = SCHIPS.map(t => `<button type="button" data-brief="${esc(t)}" title="${esc(t)}">${SLICON[sKindOf(t)]}${esc(sChipLabel(t))}</button>`).join("");
       $("lbox").placeholder = "e.g. A PRD, a policy, a one-page website, or design docs (PRD, HLD, LLD)"; }
+    rtNewLoad();
     if (!SV.landKey){ SV.landKey = "1"; $("slfaces").innerHTML = SKEYS.map(k => face(k, 46, {prop: false, label: false})).join(""); sRecent(); setTimeout(sGhost); }
     return;
   }
@@ -2807,8 +2812,39 @@ async function sRecent(){
 }
 async function sendText(text){
   if (!text) return;
-  await fetch("/api/say", {method:"POST", headers:{"Content-Type":"application/json"}, body:JSON.stringify({text})});
+  await fetch("/api/say", {method:"POST", headers:{"Content-Type":"application/json"}, body:JSON.stringify(RTNEW.id && !RTNEW.sent ? {text, template: RTNEW.id, workflows: RTNEW.keys} : {text})});
+  if (RTNEW.id) RTNEW.sent = true;
 }
+// ---- a new run from a run template: /?template=<id>&workflows=<keys|all> (the library's "Use whole template" and "Use selected
+// workflows" buttons). The start page names the template above the brief box and starts the brief with the facts it asks for; the
+// first message carries the template and the workflows. Nothing of the template's first business is shown: slot names only.
+const RTNEW = (() => { const q = new URLSearchParams(location.search), keys = (q.get("workflows") || "").split(",").map(x => x.trim().toUpperCase()).filter(x => /^W-\d+$/.test(x));
+  return {id: q.get("template") || "", keys, info: null, sent: false}; })();
+const rtDeps = (wfs, keys) => { const all = wfs.map(w => w.key), dep = Object.fromEntries(wfs.map(w => [w.key, w.depends_on || []])), want = keys.filter(k => all.includes(k)), got = new Set(want), todo = [...want];
+  while (todo.length) for (const d of dep[todo.pop()] || []) if (!got.has(d)){ got.add(d); todo.push(d); }
+  return {chosen: all.filter(k => got.has(k)), added: all.filter(k => got.has(k) && !want.includes(k))}; };      // the same closure j2_template_lib.select_workflows makes
+async function rtNewLoad(){
+  if (!RTNEW.id || RTNEW.info) return;
+  RTNEW.info = {loading: true};
+  try { const r = await fetch(`/api/run-template?id=${encodeURIComponent(RTNEW.id)}`, {cache: "no-store"}); RTNEW.info = r.ok ? await r.json() : {error: true}; } catch (e) { RTNEW.info = {error: true}; }
+  rtNewPaint();
+}
+function rtNewPaint(){
+  const el = $("srt"), t = RTNEW.info; if (!el || !RTNEW.id || !t || t.loading) return;
+  if (t.error){ el.hidden = false; el.innerHTML = `<span>No run template named <b>${esc(RTNEW.id)}</b> is in the library. The brief runs without one.</span><button type="button" data-rtdrop="1" aria-label="Remove the run template">Remove</button>`; RTNEW.id = ""; return; }
+  const wfs = t.workflows || [], pick = RTNEW.keys.length ? rtDeps(wfs, RTNEW.keys) : {chosen: wfs.map(w => w.key), added: []};
+  RTNEW.keys = pick.chosen.length === wfs.length ? [] : pick.chosen;
+  el.hidden = false; el.dataset.rt = t.id; el.dataset.rtkeys = pick.chosen.join(",");
+  el.innerHTML = `<span>Run template: <b>${esc(t.name)}</b> · ${esc(pick.chosen.length)} of ${esc(wfs.length)} workflows${pick.chosen.length < wfs.length ? " (" + esc(pick.chosen.join(", ")) + ")" : ""}</span><button type="button" data-rtdrop="1" aria-label="Remove the run template">Remove</button>`
+    + (pick.added.length ? `<small>${esc(pick.added.join(", "))} added: the workflows you chose depend on ${pick.added.length === 1 ? "it" : "them"}.</small>` : "")
+    + (t.enabled ? "" : `<small>Run templates are off on this server (J2_RUN_TEMPLATES=1 turns them on), so this brief would run without the template.</small>`);
+  const box = $("lbox");
+  if (!box.value){ const slots = t.facts_slots || [];
+    box.value = "Use this run template for my business." + (slots.length ? "\n" + slots.map(x => `${x[0].toUpperCase() + x.slice(1)}: `).join("\n") : "");
+    box.dispatchEvent(new Event("input")); }
+}
+$("srt").addEventListener("click", e => { if (!e.target.closest("[data-rtdrop]")) return; RTNEW.id = ""; RTNEW.keys = []; $("srt").hidden = true;
+  try { const q = new URLSearchParams(location.search); q.delete("template"); q.delete("workflows"); history.replaceState(history.state, "", location.pathname + "?" + q); } catch (err) {} });
 ["sframe", "sframe2"].forEach(id => $(id).addEventListener("load", e => sFrameLoaded(e.target)));
 // start page: type, or pick an example; Decide for me; the team card
 $("lbox").addEventListener("input", () => { const t = $("lbox"); $("lsend").disabled = !t.value.trim(); t.style.height = "auto"; t.style.height = Math.min(180, Math.max(52, t.scrollHeight)) + "px"; });
@@ -3036,7 +3072,7 @@ function focusQuestion(id){
   el.tabIndex = -1; el.classList.add("flash"); if (el.scrollIntoView) el.scrollIntoView({block: "center"}); el.focus(); setTimeout(() => el.classList.remove("flash"), 2500); return true;
 }
 $("needs").addEventListener("click", e => { const b = e.target.closest("[data-needmsg]"); if (b) focusQuestion(b.dataset.needmsg); const g = e.target.closest("[data-gotab]"); if (g) showTab(g.dataset.gotab); });
-const TABHINT = {catalog: "Every run's templates, from the shared library.", preview: "What the team has built so far.", goal: "What you asked for and what the team took from it.",
+const TABHINT = {catalog: "Run templates first, then every run's section templates, from the shared library.", preview: "What the team has built so far.", goal: "What you asked for and what the team took from it.",
   planmap: "The goal, the stages the Strategist chose and the workflows under each: their certainty zone, the judge's score, and what a change revised.",
   workflows: "The stages the Strategist chose, the jobs the work was split into by cycle, and the budget.", priorities: "How the Prioritiser ranked the work each cycle, what it deferred and why, and the credits spent.", conflicts: "Where the agents disagreed and how it was settled.",
   timeline: "Every message, in order.", audit: "The checks run on each version of the site.", charter: "The list of things you confirmed.",
@@ -3508,7 +3544,7 @@ $("pane-library").addEventListener("click", libClick);
 // Artifacts layout: a list on the left (runs, or artifact sections), the chosen one on the right, and the same viewer as
 // the run's Templates (this run) tab in place of the details. Two views (by run, by artifact), a search box (business or
 // template name) and a "Hide mock" box (off by default). Deep links: ?view=artifact, ?business= / ?q=, ?mock=hide, ?open=.
-const CAT = {on: location.pathname === "/library", loaded: false, groups: {}, runs: [], dir: "", view: "run", q: "", hideMock: false, open: null, sel: {run: "", sec: ""}};
+const CAT = {on: location.pathname === "/library", loaded: false, groups: {}, runs: [], rts: [], dir: "", view: "templates", q: "", hideMock: false, open: null, sel: {run: "", sec: "", rt: ""}};
 const catMatch = (...texts) => { const q = CAT.q.trim().toLowerCase(); return !q || texts.some(t => String(t || "").toLowerCase().includes(q)); };
 const catCount = (r, a) => (r.counts || {})[a] || 0;
 const catItem = d => `<li data-catitem="${esc(d.workflow)}"><span class="mono empty">${esc(d.workflow)}</span><span>${esc(d.artifact)} · ${esc(d.section)} · `
@@ -3549,14 +3585,62 @@ function catSecPane(x){
         + t.versions.map(v => `<li class="tplver"><span>${libOpen(art, sec, t.name, v.version, "v" + esc(v.version))} ${libBadge(v.mock)}</span><span class="empty">made by <a href="${runHref(v.made_by.run)}">${esc(v.made_by.run)}</a> ${esc(v.made_by.workflow)}${v.made_by.date ? " · " + esc(v.made_by.date) : ""} · ${esc((v.business || {}).name || v.business_type || "not recorded")}${v.renumbered_from ? " · renumbered from " + esc(v.renumbered_from) : ""}<br>used by: ${libUses(v.used_by)}</span></li>`).join("") + `</ul></div>`).join("")
       : '<p class="empty">No specialised template yet.</p>');
 }
+// Run templates (run-template/1): one named template per finished run, bundling all its workflows. The list shows names only (name,
+// business type, stages, number of workflows, live or mock); an opened one shows its workflows by stage, each with its section
+// template (a link into the section templates below), and starts a new run from the whole template or from chosen workflows.
+const RTP = {data: {}, picked: {}};      // id -> the opened template (/api/run-template); id -> the keys the viewer ticked
+const rtStage = (t, k) => String(k).length <= 3 ? String(k).toUpperCase() : ((t.stage_labels || {})[k] || k);
+const rtRows = () => (CAT.rts || []).filter(t => !(CAT.hideMock && t.mock === true)).filter(t => catMatch(t.name, t.business_type, t.made_from_run));
+const rtCur = rows => { rows = rows || rtRows(); return rows.find(t => t.id === CAT.sel.rt) || rows[0] || null; };
+async function rtLoad(id){
+  if (!id || RTP.data[id]) return;
+  RTP.data[id] = {loading: true};
+  try { const r = await fetch(`/api/run-template?id=${encodeURIComponent(id)}`, {cache: "no-store"}); RTP.data[id] = r.ok ? await r.json() : {error: true}; } catch (e) { RTP.data[id] = {error: true}; }
+  if (CAT.view === "templates" && !LIB.open) paint($("catbody"), renderCatBody());
+}
+function renderCatTemplates(){
+  const rows = rtRows(); if (!rows.length) return '<p class="empty">No run template matches.</p>';
+  const cur = rtCur(rows);
+  return rows.map(t => catRow("rt|" + t.id, esc(t.name), `${esc(t.business_type)} · ${(t.stages || []).map(k => esc(rtStage(t, k))).join(", ")} · ${plural(t.workflows, "workflow")}`, libBadge(t.mock), t === cur)).join("");
+}
+function rtPane(row){
+  const t = RTP.data[row.id];
+  if (!t || t.loading){ rtLoad(row.id); return `<h2>${esc(row.name)}</h2><p class="empty">Opening the run template…</p>`; }
+  if (t.error) return `<h2>${esc(row.name)}</h2><p class="empty">Could not open this run template.</p>`;
+  const wfs = t.workflows || [], want = (RTP.picked[t.id] || []).filter(k => wfs.some(w => w.key === k)), pick = rtDeps(wfs, want), auto = new Set(pick.added);
+  const why = k => wfs.filter(w => pick.chosen.includes(w.key) && (w.depends_on || []).includes(k)).map(w => w.key);
+  const tplCell = w => w.ref && w.ref.in_library ? libOpen(w.ref.artifact, w.section, w.ref.slug === "generic" ? "generic" : w.section_template.replace(/@\d+$/, ""), w.ref.version, esc(w.section_template))
+    : `${esc(w.section_template)} <span class="empty">${w.ref ? "not in this library" : ""}</span>`;
+  const stages = (t.stages || []).map(k => { const mine = wfs.filter(w => w.stage === k);
+    return `<div class="ablk" data-rtstage="${esc(k)}"><h5>${esc(rtStage(t, k))} (${mine.length})</h5><table class="maptable rttable"><thead><tr><th></th><th>Key</th><th>Workflow</th><th>Section</th><th>Section template</th><th>Depends on</th></tr></thead><tbody>`
+      + mine.map(w => `<tr data-rtwf="${esc(w.key)}"${auto.has(w.key) ? ' class="rtauto"' : ""}><td><input type="checkbox" data-rtpick="${esc(w.key)}" aria-label="Select ${esc(w.key)} ${esc(w.name)}"${pick.chosen.includes(w.key) ? " checked" : ""}${auto.has(w.key) ? " disabled" : ""}></td>`
+        + `<td class="mono">${esc(w.key)}</td><td>${esc(w.name)}${(w.covers || []).length ? `<div class="empty">${w.covers.map(esc).join("<br>")}</div>` : ""}</td><td>${esc(w.section)}</td><td>${tplCell(w)}</td>`
+        + `<td>${(w.depends_on || []).map(esc).join(", ") || '<span class="empty">nothing</span>'}${auto.has(w.key) ? `<div class="empty">added: ${esc(why(w.key).join(", "))} depends on it</div>` : ""}</td></tr>`).join("") + `</tbody></table></div>`; }).join("");
+  const note = !want.length ? "Tick workflows to use only some of them. What they depend on is added for you." : `${plural(pick.chosen.length, "workflow")} of ${wfs.length} selected`
+    + (pick.added.length ? `; ${esc(pick.added.join(", "))} added because ${pick.added.length === 1 ? "a selected workflow depends on it" : "selected workflows depend on them"}` : "") + ".";
+  return `<h2 data-rtname="1">${esc(t.name)}</h2><div class="aby">${esc(t.business_type)} · ${(t.stages || []).map(k => esc(rtStage(t, k))).join(", ")} · ${plural(wfs.length, "workflow")} ${libBadge(t.mock)} · made from <a href="${runHref(t.made_from_run)}">${esc(t.made_from_run)}</a></div>`
+    + `<p class="empty">${esc(t.description || "")}</p>`
+    + `<div class="rtslots">A new run is asked for: ${(t.facts_slots || []).map(x => `<span class="mappill">${esc(x)}</span>`).join(" ") || '<span class="empty">no facts recorded</span>'}</div>`
+    + `<div class="rtuse"><button type="button" class="ghost rtmain" data-rtuse="all">Use whole template</button><button type="button" class="ghost" data-rtuse="sel"${want.length ? "" : " disabled"}>Use selected workflows</button></div><div class="rtnote" data-rtnote="1">${note}</div>` + stages;
+}
+async function rtUse(id, mode){      // both buttons open the new-run brief box with the template (and the workflows) in the address
+  const t = RTP.data[id]; if (!t || !t.workflows) return;
+  const keys = mode === "all" ? "all" : rtDeps(t.workflows, RTP.picked[id] || []).chosen.join(",");
+  if (!keys) return;
+  const go = `/?view=simple&template=${encodeURIComponent(id)}&workflows=${encodeURIComponent(keys)}`;
+  try { const s = await (await fetch("/api/state?since=0", {cache: "no-store"})).json(), started = !!(s.chat || s.allChat || []).length;
+    if (s.status === "running"){ const n = document.querySelector("[data-rtnote]"); if (n) n.textContent = "The team is working on a run. Start from this template when they pause or finish."; return; }
+    if (started){ if (!confirm("Start a new project from this template? The current one stays in Recent work.")) return; await fetch("/api/reset", {method: "POST"}); } } catch (e) {}
+  location.href = go;
+}
 function renderCatBody(){      // the list and the details pane; an open template takes the details pane
-  const byRun = CAT.view === "run", list = byRun ? renderCatRuns() : renderCatArtifacts(), cur = byRun ? catCurRun() : catCurSec();
-  const pane = LIB.open ? renderTplViewer() : !cur ? '<p class="empty">Nothing to show.</p>' : byRun ? catRunPane(cur) : catSecPane(cur);
-  return `<div class="agwrap" data-agroup="catalog"><div class="aglist" aria-label="${byRun ? "Runs" : "Artifact sections"}">${list}</div><div class="agpane" data-apane="${esc(cur ? (byRun ? cur.run : cur.art + "|" + cur.sec) : "")}">${pane}</div></div>`;
+  const v = CAT.view, list = v === "templates" ? renderCatTemplates() : v === "run" ? renderCatRuns() : renderCatArtifacts(), cur = v === "templates" ? rtCur() : v === "run" ? catCurRun() : catCurSec();
+  const pane = LIB.open ? renderTplViewer() : !cur ? '<p class="empty">Nothing to show.</p>' : v === "templates" ? rtPane(cur) : v === "run" ? catRunPane(cur) : catSecPane(cur);
+  return `<div class="agwrap" data-agroup="catalog"><div class="aglist" aria-label="${v === "templates" ? "Run templates" : v === "run" ? "Runs" : "Artifact sections"}">${list}</div><div class="agpane" data-apane="${esc(cur ? (v === "templates" ? cur.id : v === "run" ? cur.run : cur.art + "|" + cur.sec) : "")}">${pane}</div></div>`;
 }
 function catCounts(){ const secs = Object.values(CAT.groups || {}).flatMap(s => Object.values(s)); return [secs.reduce((n, g) => n + (g.templates || []).length, 0), secs.reduce((n, g) => n + (g.templates || []).reduce((k, t) => k + (t.versions || []).length, 0), 0)]; }
 function renderCatHead(){      // the tools above the list: the view, the search and the mock filter
-  return `<div class="libhead cattools"><div class="libviews" role="tablist" aria-label="View"><button type="button" role="tab" data-catview="run" aria-selected="${CAT.view === "run"}">By run</button> <button type="button" role="tab" data-catview="artifact" aria-selected="${CAT.view === "artifact"}">By artifact</button></div>`
+  return `<div class="libhead cattools"><div class="libviews" role="tablist" aria-label="View"><button type="button" role="tab" data-catview="templates" aria-selected="${CAT.view === "templates"}">Run templates</button> <button type="button" role="tab" data-catview="run" aria-selected="${CAT.view === "run"}">By run</button> <button type="button" role="tab" data-catview="artifact" aria-selected="${CAT.view === "artifact"}">By artifact</button></div>`
     + `<input type="search" id="catq" placeholder="Search by business or template name" aria-label="Search by business or template name" value="${esc(CAT.q)}">`
     + `<label><input type="checkbox" id="cathide"${CAT.hideMock ? " checked" : ""}> Hide mock</label></div><div id="catbody"></div>`;
 }
@@ -3564,10 +3648,10 @@ function catHead(){      // the Artifacts header: a breadcrumb, the title, a lin
   const [nt, nv] = catCounts();
   $("wcrumbs").textContent = "Library"; $("wcrumbg").textContent = "Shared"; $("wcrumb").hidden = false; $("backmap").hidden = true;
   $("wtitle").textContent = "Template library"; $("wsub").textContent = `Every run's templates, read from ${CAT.dir || "library/"}`; $("wsub").removeAttribute("title");
-  $("wcnt").textContent = `${nt} templates · ${nv} versions · ${(CAT.runs || []).length} runs`; $("wcnt").hidden = false;
+  $("wcnt").textContent = `${plural((CAT.rts || []).length, "run template")} · ${nt} templates · ${nv} versions · ${(CAT.runs || []).length} runs`; $("wcnt").hidden = false;
 }
 async function loadCatalog(){
-  try { const r = await fetch("/api/catalog", {cache: "no-store"}); if (r.ok){ const d = await r.json(); CAT.groups = d.groups || {}; CAT.runs = d.runs || []; CAT.dir = d.dir || ""; } } catch (e) {}
+  try { const r = await fetch("/api/catalog", {cache: "no-store"}); if (r.ok){ const d = await r.json(); CAT.groups = d.groups || {}; CAT.runs = d.runs || []; CAT.rts = d.run_templates || []; CAT.dir = d.dir || ""; } } catch (e) {}
   CAT.loaded = true;
   if (CAT.open){ const hit = catSecs().find(x => x.art === CAT.open[0] && slugOf(x.sec) === CAT.open[1]); if (hit) CAT.sel.sec = `${hit.art}|${hit.sec}`; }      // the deep link's section is the chosen row
   $("pane-catalog").innerHTML = renderCatHead(); paint($("catbody"), renderCatBody()); catHead();
@@ -3576,15 +3660,20 @@ async function loadCatalog(){
   $("pane-catalog").addEventListener("click", e => {
     const b = e.target.closest("[data-catview]"); if (b){ CAT.view = b.dataset.catview; LIB.open = LIB.view = null; $("pane-catalog").querySelectorAll("[data-catview]").forEach(x => x.setAttribute("aria-selected", String(x === b))); return paint($("catbody"), renderCatBody()); }
     const row = e.target.closest("[data-catrow]"); if (row){ const [k, ...rest] = row.dataset.catrow.split("|"); CAT.sel[k] = rest.join("|"); LIB.open = LIB.view = null; return paint($("catbody"), renderCatBody()); }
+    const use = e.target.closest("[data-rtuse]"); if (use){ const cur = rtCur(); if (cur) rtUse(cur.id, use.dataset.rtuse); return; }
     libClick(e); });
+  $("pane-catalog").addEventListener("change", e => { const c = e.target.closest("[data-rtpick]"), cur = rtCur(); if (!c || !cur) return;
+    const had = new Set(RTP.picked[cur.id] || []); if (c.checked) had.add(c.dataset.rtpick); else had.delete(c.dataset.rtpick);
+    RTP.picked[cur.id] = [...had]; paint($("catbody"), renderCatBody()); });
   if (CAT.open){ const [a, s, n, v] = CAT.open; openTemplate(a, s, n, v); }
 }
 if (CAT.on){
   document.body.classList.add("libpage"); document.title = "J2 template library";
   const q = new URLSearchParams(location.search);      // read before setView rewrites ?view=
-  CAT.q = q.get("business") || q.get("q") || ""; CAT.hideMock = q.get("mock") === "hide"; CAT.view = q.get("view") === "artifact" ? "artifact" : "run";
+  CAT.q = q.get("business") || q.get("q") || ""; CAT.hideMock = q.get("mock") === "hide"; CAT.view = ["artifact", "run", "templates"].includes(q.get("view")) ? q.get("view") : "templates";      // run templates first
+  CAT.sel.rt = q.get("rt") || "";      // ?rt=<id>: that run template opened
   const o = (q.get("open") || "").split("/");      // artifact/section-slug/template-slug/vN, as libHref writes it
-  if (o.length === 4 && /^v\d+$/.test(o[3])) CAT.open = [o[0], o[1], o[2], +o[3].slice(1)];
+  if (o.length === 4 && /^v\d+$/.test(o[3])){ CAT.open = [o[0], o[1], o[2], +o[3].slice(1)]; if (!q.get("view") || q.get("view") === "detail") CAT.view = "artifact"; }
   if (TPLMODE[q.get("tab")]) LIB.mode = TPLMODE[q.get("tab")];      // ?tab=sum|agent|human; the old template / readable still work
   // the detail view with the rail: the Library item is current; every other item, and Chat, go back to the run this page was opened from (?run=), or home
   const back = view => `/?${viewRun ? "run=" + encodeURIComponent(viewRun) + "&" : ""}view=${view}`;
@@ -5515,7 +5604,9 @@ function railOpen(id){
   else { const mine = new Set(it.secs.flatMap(k => (R.sec[k] || {tabs: []}).tabs.map(t => t.tab))), rank = t => RAILTABS.includes(t) ? RAILTABS.indexOf(t) : 99;
     railTabs().filter(b => mine.has(b.dataset.tab) && !(id === "artifacts" && b.dataset.tab === "artifacts")).sort((a, b) => rank(a.dataset.tab) - rank(b.dataset.tab)).forEach(b => list.appendChild(b));
     if (id === "artifacts"){ list.insertAdjacentHTML("beforeend", '<div class="rflyart" id="rflyart"></div>'); railArtCounts(); if (!ARTS.groups) loadArtifacts(); }
-    if (id === "library") list.insertAdjacentHTML("afterbegin", `<button type="button" class="rgo" data-catgo="/library${viewRun ? "?run=" + encodeURIComponent(viewRun) : ""}" aria-current="${CAT.on}">Shared library<small>every run's templates, from library/</small></button>`); }      // the shared catalog first, then this run's templates
+    if (id === "library"){ const rq = viewRun ? "&run=" + encodeURIComponent(viewRun) : "";
+      list.insertAdjacentHTML("afterbegin", `<button type="button" class="rgo" data-catgo="/library?view=templates${rq}" aria-current="${CAT.on && CAT.view === "templates"}">Run templates<small>one named template per run, with all its workflows</small></button>`
+        + `<button type="button" class="rgo" data-catgo="/library?view=run${rq}" aria-current="${CAT.on && CAT.view !== "templates"}">Shared library<small>every run's section templates, from library/</small></button>`); } }      // the shared catalog first, then this run's templates
   $("rfly").hidden = false;
   const f = $("rfly").querySelector(".rfl button, .rclose"); if (f) f.focus();
 }
