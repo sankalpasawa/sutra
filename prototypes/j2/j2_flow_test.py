@@ -4026,6 +4026,78 @@ def builder_context_trim():
           f"{len(revising)} with their own section); no other section's body; mock context unchanged ok ({old:,} characters)")
 
 
+def builder_inputs():
+    """A builder's prompt holds the full text of the sections written by the workflows it depends on (SECTIONS YOU DEPEND
+    ON: dependencies transitively, by id, name or proposal id; a fix also gets what the workflow it revises depends on),
+    never another section's body (only its manifest line). Files and depended-on sections over INPUT_LIMIT are cut with
+    a notice that points to the rest only when the provider can read files; every cut is an event and a row of
+    input_cuts.json, and the depended-on sections are given edges. Page and document builders alike."""
+    import llm
+    lim = j2.INPUT_LIMIT
+    run = j2.J2Run()
+    run.realization = True      # files are realization's (J2_REALIZATION is off in this suite)
+
+    def wf(i, deps=(), revises=None, outputs=None, status="done"):
+        j2.NAMES[f"W-{i}"] = f"Agent {i}"
+        return {"id": f"W-{i}", "proposal_id": f"p-{i}", "name": f"Workflow {i}", "section": f"W-{i}", "status": status,
+                "dependencies": list(deps), "revises": revises, "outputs": outputs or [j2.PAGE_FILE],
+                "atoms": [{"id": f"W-{i}.a1", "agent_output": {"atom": f"W-{i}.a1", "section": f"W-{i}"}}]}
+    w1, w2, w3, w4 = wf(1), wf(2, ["W-1"]), wf(3, ["p-1", "Workflow 4"]), wf(4, outputs=["artifacts/guide.md"])
+    w5 = {**wf(5, revises="W-2"), "section": "W-2"}      # a fix of W-2: writes W-2's section, gets what W-2 depends on
+    run.workflows = [w1, w2, w3, w4, w5]
+    dep_body = "DEP-BODY " + "d" * (lim + 50)
+    run.sections = {"W-1": {"owner": "W-1", "head": "<style>.dep-head{}</style>", "body": dep_body},
+                    "W-2": {"owner": "W-2", "head": "", "body": "OTHER-BODY " + "o" * 200}}
+    os.makedirs(os.path.join(run.dir, "artifacts"), exist_ok=True)
+    file_text = "FILE-START " + "f" * (lim + 5000)
+    with open(os.path.join(run.dir, "artifacts", "guide.md"), "w", encoding="utf-8") as f:
+        f.write(file_text)
+    keep = llm.can_read_files
+    try:
+        for reads in (False, True):
+            llm.can_read_files = lambda: reads
+            p = run._artifact_context(w3) + run._page_context(w3, "")
+            where = f"; read the rest at {os.path.join(run.dir, 'artifacts/guide.md')} if needed" if reads else ""
+            assert f"{file_text[:lim]}\n(cut at {lim} of {len(file_text)} characters{where})" in p, p[-300:]
+            assert "ARTIFACTS YOU READ" in p and p.count("FILE-START") == 1, "a file is under ARTIFACTS only"
+            block = p.split("SECTIONS YOU DEPEND ON", 1)[1].split("\nOTHER SECTIONS", 1)[0]
+            dep_text = "<style>.dep-head{}</style>\n" + dep_body
+            where = f"; read the rest at {os.path.join(run.dir, 'sections.json')} if needed" if reads else ""
+            assert f"{dep_text[:lim]}\n(cut at {lim} of {len(dep_text)} characters{where})" in block, block[:200]
+            assert "OTHER-BODY" not in p and '"W-2.a1"' in p.split("\nOTHER SECTIONS", 1)[1], "W-2: its manifest line only"
+    finally:
+        llm.can_read_files = keep
+    cuts = [e for e in run.events if e["type"] == "input_cut"]
+    rows = json.load(open(os.path.join(run.dir, "input_cuts.json")))
+    assert len(cuts) == len(rows) == 4 and {r["input"] for r in rows} == {"artifacts/guide.md", "section W-1"}, rows
+    edges = run.given["W-3"]["edges"]
+    assert {e["atom"] for e in edges if e["why"] == run.DEP_WHY} == {"W-1.a1"}, edges
+    # a fix: W-2's own section is YOUR SECTION NOW, not repeated; what W-2 depends on (W-1) is given
+    p5 = run._page_context(w5, "")
+    assert "DEP-BODY" in p5 and "OTHER-BODY" not in p5
+    assert "SECTIONS YOU DEPEND ON" not in run._page_context(w1, ""), "no dependencies, no block"
+    # the old path (J2_SLIM=0) gives the whole page: no block on top of it
+    os.environ["J2_SLIM"] = "0"
+    try:
+        assert "SECTIONS YOU DEPEND ON" not in run._page_context(w3, "<html>page</html>")
+    finally:
+        os.environ.pop("J2_SLIM", None)
+    # a document builder: the depended-on section's markdown, not the other section's
+    doc = j2.J2Run()
+    doc.doc, doc.goal = True, {}
+    doc.out = {"label": "test document", "sections": ["One", "Two"], "rubric": []}
+    a, b, c = wf(1), wf(2), wf(3, ["W-1"])
+    doc.workflows = [a, b, c]
+    doc.sections = {"W-1": {"owner": "W-1", "head": "", "body": "## One\nDOC-DEP text"},
+                    "W-2": {"owner": "W-2", "head": "", "body": "## Two\nDOC-OTHER text"}}
+    task = doc._doc_prompt(c, {}, "W-3", None, 1, "", "", "")[1]
+    assert "SECTIONS YOU DEPEND ON" in task and "## One\nDOC-DEP text" in task and "DOC-OTHER" not in task, task[-600:]
+    assert not [e for e in doc.events if e["type"] == "input_cut"], "nothing cut, nothing logged"
+    print(f"builder inputs: depended-on sections in full (head and body; markdown for a document), other sections by "
+          f"manifest only; a file and a section over {lim:,} cut with the notice (path only when the provider reads "
+          f"files), {len(rows)} cuts logged as events and input_cuts.json rows; given edges ok")
+
+
 def timing_records():
     """timing.json: written when a run stops or pauses; one row per (who, J2 step, kind): AI calls with their seconds and
     tokens (summing to calls.jsonl), code running checks, the Requester's answer time. /api/timing serves it and Run
@@ -13588,6 +13660,7 @@ if __name__ == "__main__":
             deliverables_generic()      # step 3: Adaptation chooses what to build
             builder_time_limit()        # J2_BUILDER_TIMEOUT: a stopped builder call, retried once, written once
             builder_context_trim()      # a real run's builder prompt: no chat, no other workflows
+            builder_inputs()            # depended-on sections in full, cut inputs noticed and logged
             timing_records()            # timing.json and Run settings' calls, tokens and time
             doc_plans_generic()         # step 3b: document plans from the template, not the fixed plan
             doc_planner_real()          # step 3c: realistic planner answers for documents
