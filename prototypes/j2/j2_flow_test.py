@@ -12669,7 +12669,8 @@ def library_page(run, lib):
     assert r["tabs"] == ["sum", "agent", "human"] and r["rules"] >= 1, r
     assert r["readable"] and r["chips"] >= 1 and '"html"' in r["example"], r
     assert r["files"] == ["spec.json", "schema.json", "model.py", "meta.json"] and r["copies"] == 4 and all(s.startswith("sha ") for s in r["shas"]), r
-    assert set(r["groups"]) == {"prd", "hld", "lld", "design", "website"} and r["card"], r
+    import j2_template_lib      # the groups are every artifact with a template (the report type too), read from the data
+    assert set(r["groups"]) == set(j2_template_lib.artifacts()) >= {"prd", "hld", "lld", "design", "website"} and r["card"], r
     assert r["sw"][0] <= r["sw"][1], ("no horizontal scroll", r["sw"])
     print(f"template library page: Templates (this run) tab shown for a run with decisions, {r['rows']} routing rows with reasons, a template opened on its "
           f"three tabs: Summary ({r['rules']} rules), Human-readable ({r['chips']} enum chips, an example from the run), Agent-readable (4 files, Copy and sha each); every row and the viewer say "
