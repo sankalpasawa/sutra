@@ -1,0 +1,374 @@
+{
+  "schema": "run-template/1",
+  "id": "still-point-yoga-studio-website",
+  "name": "Still Point Yoga: studio website",
+  "description": "Product requirements, High-level design, Low-level design and Website for a business: 24 workflows, as run j2-20261103-161111-3 (mock) finished them.",
+  "business_type": "business",
+  "made_from_run": "j2-20261103-161111-3",
+  "mock": true,
+  "stages": [
+    "prd",
+    "hld",
+    "lld",
+    "website"
+  ],
+  "workflows": [
+    {
+      "key": "W-1",
+      "name": "Write Problem",
+      "stage": "prd",
+      "artifact": "prd",
+      "section": "Problem",
+      "section_template": "Still Point Yoga Problem@1",
+      "section_template_kind": "specialised",
+      "depends_on": [],
+      "covers": [
+        "The Problem section states the problem <business name> solves"
+      ],
+      "made_from": "W-1"
+    },
+    {
+      "key": "W-2",
+      "name": "Write Users",
+      "stage": "prd",
+      "artifact": "prd",
+      "section": "Users",
+      "section_template": "Still Point Yoga Users@1",
+      "section_template_kind": "specialised",
+      "depends_on": [],
+      "covers": [
+        "The Users section says who the users are"
+      ],
+      "made_from": "W-2"
+    },
+    {
+      "key": "W-3",
+      "name": "Write Goals",
+      "stage": "prd",
+      "artifact": "prd",
+      "section": "Goals",
+      "section_template": "Still Point Yoga Goals@1",
+      "section_template_kind": "specialised",
+      "depends_on": [],
+      "covers": [
+        "The Goals section lists the goals as G1, G2, ..."
+      ],
+      "made_from": "W-3"
+    },
+    {
+      "key": "W-4",
+      "name": "Write Requirements",
+      "stage": "prd",
+      "artifact": "prd",
+      "section": "Requirements",
+      "section_template": "Still Point Yoga Requirements@1",
+      "section_template_kind": "specialised",
+      "depends_on": [],
+      "covers": [
+        "The Requirements section lists every must-have feature as R1, R2, ..."
+      ],
+      "made_from": "W-4"
+    },
+    {
+      "key": "W-5",
+      "name": "Write Success metrics",
+      "stage": "prd",
+      "artifact": "prd",
+      "section": "Success metrics",
+      "section_template": "Still Point Yoga Success metrics@1",
+      "section_template_kind": "specialised",
+      "depends_on": [],
+      "covers": [
+        "The Success metrics section gives a measurable metric for each goal"
+      ],
+      "made_from": "W-5"
+    },
+    {
+      "key": "W-6",
+      "name": "Write Out of scope",
+      "stage": "prd",
+      "artifact": "prd",
+      "section": "Out of scope",
+      "section_template": "Still Point Yoga Out of scope@1",
+      "section_template_kind": "specialised",
+      "depends_on": [],
+      "covers": [
+        "The Out of scope section says what the product won't do"
+      ],
+      "made_from": "W-6"
+    },
+    {
+      "key": "W-7",
+      "name": "Write Purpose and scope",
+      "stage": "hld",
+      "artifact": "hld",
+      "section": "Purpose and scope",
+      "section_template": "Still Point Yoga Purpose and scope@1",
+      "section_template_kind": "specialised",
+      "depends_on": [],
+      "covers": [
+        "The Purpose and scope section is written for <business name>"
+      ],
+      "made_from": "W-7"
+    },
+    {
+      "key": "W-8",
+      "name": "Write Pages",
+      "stage": "hld",
+      "artifact": "hld",
+      "section": "Pages",
+      "section_template": "Still Point Yoga Pages@1",
+      "section_template_kind": "specialised",
+      "depends_on": [],
+      "covers": [
+        "The Pages section is written for <business name>"
+      ],
+      "made_from": "W-8"
+    },
+    {
+      "key": "W-9",
+      "name": "Write Components",
+      "stage": "hld",
+      "artifact": "hld",
+      "section": "Components",
+      "section_template": "Still Point Yoga Components@1",
+      "section_template_kind": "specialised",
+      "depends_on": [
+        "W-4"
+      ],
+      "covers": [
+        "The Components section is written for <business name>, and names every requirement (<requirement ids>) it covers"
+      ],
+      "made_from": "W-9"
+    },
+    {
+      "key": "W-10",
+      "name": "Write Data flow",
+      "stage": "hld",
+      "artifact": "hld",
+      "section": "Data flow",
+      "section_template": "Still Point Yoga Data flow@1",
+      "section_template_kind": "specialised",
+      "depends_on": [],
+      "covers": [
+        "The Data flow section is written for <business name>"
+      ],
+      "made_from": "W-10"
+    },
+    {
+      "key": "W-11",
+      "name": "Write Hosting and deployment",
+      "stage": "hld",
+      "artifact": "hld",
+      "section": "Hosting and deployment",
+      "section_template": "Still Point Yoga Hosting and deployment@1",
+      "section_template_kind": "specialised",
+      "depends_on": [],
+      "covers": [
+        "The Hosting and deployment section is written for <business name>"
+      ],
+      "made_from": "W-11"
+    },
+    {
+      "key": "W-12",
+      "name": "Write Risks",
+      "stage": "hld",
+      "artifact": "hld",
+      "section": "Risks",
+      "section_template": "Still Point Yoga Risks@1",
+      "section_template_kind": "specialised",
+      "depends_on": [],
+      "covers": [
+        "The Risks section is written for <business name>"
+      ],
+      "made_from": "W-12"
+    },
+    {
+      "key": "W-13",
+      "name": "Write Pages and sections",
+      "stage": "lld",
+      "artifact": "lld",
+      "section": "Pages and sections",
+      "section_template": "Still Point Yoga Pages and sections@1",
+      "section_template_kind": "specialised",
+      "depends_on": [
+        "W-9"
+      ],
+      "covers": [
+        "The Pages and sections section is written for <business name>, and names every component (<component ids>) it implements"
+      ],
+      "made_from": "W-13"
+    },
+    {
+      "key": "W-14",
+      "name": "Write Interactive elements",
+      "stage": "lld",
+      "artifact": "lld",
+      "section": "Interactive elements",
+      "section_template": "Still Point Yoga Interactive elements@1",
+      "section_template_kind": "specialised",
+      "depends_on": [],
+      "covers": [
+        "The Interactive elements section is written for <business name>"
+      ],
+      "made_from": "W-14"
+    },
+    {
+      "key": "W-15",
+      "name": "Write Form fields",
+      "stage": "lld",
+      "artifact": "lld",
+      "section": "Form fields",
+      "section_template": "Still Point Yoga Form fields@1",
+      "section_template_kind": "specialised",
+      "depends_on": [],
+      "covers": [
+        "The Form fields section is written for <business name>"
+      ],
+      "made_from": "W-15"
+    },
+    {
+      "key": "W-16",
+      "name": "Write File structure",
+      "stage": "lld",
+      "artifact": "lld",
+      "section": "File structure",
+      "section_template": "Still Point Yoga File structure@1",
+      "section_template_kind": "specialised",
+      "depends_on": [],
+      "covers": [
+        "The File structure section is written for <business name>"
+      ],
+      "made_from": "W-16"
+    },
+    {
+      "key": "W-17",
+      "name": "Write Responsive and accessibility rules",
+      "stage": "lld",
+      "artifact": "lld",
+      "section": "Responsive and accessibility rules",
+      "section_template": "Still Point Yoga Responsive and accessibility rules@1",
+      "section_template_kind": "specialised",
+      "depends_on": [],
+      "covers": [
+        "The Responsive and accessibility rules section is written for <business name>"
+      ],
+      "made_from": "W-17"
+    },
+    {
+      "key": "W-18",
+      "name": "Scaffold and styling",
+      "stage": "website",
+      "artifact": "website",
+      "section": "Section",
+      "section_template": "WebsiteSection/1 · Section@1",
+      "section_template_kind": "generic",
+      "depends_on": [
+        "W-13"
+      ],
+      "covers": [],
+      "made_from": "W-18"
+    },
+    {
+      "key": "W-19",
+      "name": "Build section S1",
+      "stage": "website",
+      "artifact": "website",
+      "section": "Section",
+      "section_template": "Still Point Yoga section S1@1",
+      "section_template_kind": "specialised",
+      "depends_on": [
+        "W-13"
+      ],
+      "covers": [
+        "What the business offers is on the page"
+      ],
+      "made_from": "W-19"
+    },
+    {
+      "key": "W-20",
+      "name": "Build section S2",
+      "stage": "website",
+      "artifact": "website",
+      "section": "Section",
+      "section_template": "Still Point Yoga section S2@1",
+      "section_template_kind": "specialised",
+      "depends_on": [
+        "W-13"
+      ],
+      "covers": [
+        "How to get in touch is on the page"
+      ],
+      "made_from": "W-20"
+    },
+    {
+      "key": "W-21",
+      "name": "Build section S3",
+      "stage": "website",
+      "artifact": "website",
+      "section": "Section",
+      "section_template": "Still Point Yoga section S3@1",
+      "section_template_kind": "specialised",
+      "depends_on": [
+        "W-13"
+      ],
+      "covers": [],
+      "made_from": "W-21"
+    },
+    {
+      "key": "W-22",
+      "name": "Build section S4",
+      "stage": "website",
+      "artifact": "website",
+      "section": "Section",
+      "section_template": "Still Point Yoga section S4@1",
+      "section_template_kind": "specialised",
+      "depends_on": [
+        "W-13"
+      ],
+      "covers": [],
+      "made_from": "W-22"
+    },
+    {
+      "key": "W-23",
+      "name": "Build section S5",
+      "stage": "website",
+      "artifact": "website",
+      "section": "Section",
+      "section_template": "Still Point Yoga section S5@1",
+      "section_template_kind": "specialised",
+      "depends_on": [
+        "W-13"
+      ],
+      "covers": [],
+      "made_from": "W-23"
+    },
+    {
+      "key": "W-24",
+      "name": "Viewport fix",
+      "stage": "website",
+      "artifact": "website",
+      "section": "Section",
+      "section_template": "WebsiteSection/1 · Section@1",
+      "section_template_kind": "generic",
+      "depends_on": [
+        "W-13"
+      ],
+      "covers": [],
+      "made_from": "W-24"
+    }
+  ],
+  "facts_slots": [
+    "email address",
+    "business name"
+  ],
+  "made_by": {
+    "run": "j2-20261103-161111-3",
+    "date": "2026-11-03 16:11:11",
+    "provider": "not recorded",
+    "model": "not recorded",
+    "by": "j2_template_lib.run_template_from_run"
+  },
+  "used_by": [],
+  "created": "2026-11-11T15:46:42"
+}

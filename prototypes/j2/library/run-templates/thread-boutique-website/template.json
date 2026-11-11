@@ -1,0 +1,94 @@
+{
+  "schema": "run-template/1",
+  "id": "thread-boutique-website",
+  "name": "Thread: boutique website",
+  "description": "Website for a boutique: 5 workflows, as run j2-20261103-161111 (mock) finished them.",
+  "business_type": "boutique",
+  "made_from_run": "j2-20261103-161111",
+  "mock": true,
+  "stages": [
+    "website"
+  ],
+  "workflows": [
+    {
+      "key": "W-1",
+      "name": "Scaffold and styling",
+      "stage": "website",
+      "artifact": "website",
+      "section": "Section",
+      "section_template": "Thread Scaffold and styling@1",
+      "section_template_kind": "specialised",
+      "depends_on": [],
+      "covers": [
+        "Visitors can browse products by category"
+      ],
+      "made_from": "W-1"
+    },
+    {
+      "key": "W-2",
+      "name": "Products",
+      "stage": "website",
+      "artifact": "website",
+      "section": "Section",
+      "section_template": "Thread Products@1",
+      "section_template_kind": "specialised",
+      "depends_on": [],
+      "covers": [
+        "Every product shows its id and price"
+      ],
+      "made_from": "W-2"
+    },
+    {
+      "key": "W-3",
+      "name": "Order on WhatsApp",
+      "stage": "website",
+      "artifact": "website",
+      "section": "Section",
+      "section_template": "Thread Order on WhatsApp@1",
+      "section_template_kind": "specialised",
+      "depends_on": [],
+      "covers": [
+        "Every product has an order button that opens a WhatsApp link with the product id and price"
+      ],
+      "made_from": "W-3"
+    },
+    {
+      "key": "W-4",
+      "name": "Filter",
+      "stage": "website",
+      "artifact": "website",
+      "section": "Section",
+      "section_template": "Thread Filter@1",
+      "section_template_kind": "specialised",
+      "depends_on": [],
+      "covers": [
+        "Visitors can filter products by size and price"
+      ],
+      "made_from": "W-4"
+    },
+    {
+      "key": "W-5",
+      "name": "Viewport fix",
+      "stage": "website",
+      "artifact": "website",
+      "section": "Section",
+      "section_template": "WebsiteSection/1 · Section@1",
+      "section_template_kind": "generic",
+      "depends_on": [],
+      "covers": [],
+      "made_from": "W-5"
+    }
+  ],
+  "facts_slots": [
+    "boutique name"
+  ],
+  "made_by": {
+    "run": "j2-20261103-161111",
+    "date": "2026-11-03 16:11:11",
+    "provider": "not recorded",
+    "model": "not recorded",
+    "by": "j2_template_lib.run_template_from_run"
+  },
+  "used_by": [],
+  "created": "2026-11-11T15:46:42"
+}

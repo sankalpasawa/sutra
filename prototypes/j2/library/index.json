@@ -5116,5 +5116,54 @@
         "generic": 10
       }
     }
-  }
+  },
+  "run_templates": [
+    {
+      "id": "still-point-yoga-prd-hld-and-lld",
+      "name": "Still Point Yoga: PRD, HLD and LLD",
+      "description": "Product requirements, High-level design and Low-level design for a yoga studio: 17 workflows, as run j2-20261103-184249 (live) finished them.",
+      "business_type": "yoga studio",
+      "stages": [
+        "prd",
+        "hld",
+        "lld"
+      ],
+      "workflows": 17,
+      "mock": false,
+      "made_from_run": "j2-20261103-184249",
+      "created": "2026-11-11T15:46:42",
+      "used_by": 0
+    },
+    {
+      "id": "still-point-yoga-studio-website",
+      "name": "Still Point Yoga: studio website",
+      "description": "Product requirements, High-level design, Low-level design and Website for a business: 24 workflows, as run j2-20261103-161111-3 (mock) finished them.",
+      "business_type": "business",
+      "stages": [
+        "prd",
+        "hld",
+        "lld",
+        "website"
+      ],
+      "workflows": 24,
+      "mock": true,
+      "made_from_run": "j2-20261103-161111-3",
+      "created": "2026-11-11T15:46:42",
+      "used_by": 0
+    },
+    {
+      "id": "thread-boutique-website",
+      "name": "Thread: boutique website",
+      "description": "Website for a boutique: 5 workflows, as run j2-20261103-161111 (mock) finished them.",
+      "business_type": "boutique",
+      "stages": [
+        "website"
+      ],
+      "workflows": 5,
+      "mock": true,
+      "made_from_run": "j2-20261103-161111",
+      "created": "2026-11-11T15:46:42",
+      "used_by": 0
+    }
+  ]
 }
