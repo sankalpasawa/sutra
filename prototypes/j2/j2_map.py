@@ -242,7 +242,7 @@ def _board_note(row):
 def build(d, live=None):
     if not d or not os.path.isdir(d):
         return empty("run not found")
-    types = A.load_types()
+    types = A.load_types(d)
     by = {t["name"]: t for t in types["types"]}
     nr, built_from, ended = [], [], not live
     snap = (live or {}).get("snapshot") or {}

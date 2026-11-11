@@ -8,6 +8,8 @@ A type that fails a check is refused with the reason (ValueError): a run never h
 import json
 import os
 import re
+import shutil
+import sys
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 TYPES_PATH = os.path.join(HERE, "artifacts", "types.json")
@@ -22,13 +24,21 @@ TEXTS = {"intake": "intake", "charter_format": "charter_fmt", "atom_rules": "ato
 
 DOCUMENT = "Document"      # generic.json's document-level template, not a section
 TEMPLATES_DIR = os.path.join(HERE, "templates")
+# Types a run makes (j2_types.create) are local and git-ignored: their entries and their templates; --promote moves one
+# into types.json and templates/ for a pull request.
+LOCAL_TYPES_PATH = os.path.join(HERE, "artifacts", "types.local.json")
+LOCAL_LIBRARY_DIR = os.path.join(HERE, "library", "types")
+LOCAL_LIBRARY_REL = "library/types"      # how a local entry's "template" names LOCAL_LIBRARY_DIR
 NAME_RE = re.compile(r"^[a-z][a-z0-9_]{1,40}$")
 
 
 def template_path(name, path=None):
-    """Where a type's template file is: artifacts/types.json points to it (templates/<name>/generic.json when it doesn't)."""
+    """Where a type's template file is: its entry points to it (templates/<name>/generic.json when it doesn't); a type a
+    run made (library/types/...) has it in the local library."""
     e = next((t for t in _read_types(path)["types"] if t.get("name") == name), {})
     rel = e.get("template") or f"templates/{name}/generic.json"
+    if rel.startswith(LOCAL_LIBRARY_REL + "/"):
+        return os.path.join(LOCAL_LIBRARY_DIR, os.path.relpath(rel, LOCAL_LIBRARY_REL))
     return os.path.join(TEMPLATES_DIR, os.path.relpath(rel, "templates"))
 
 
@@ -138,15 +148,48 @@ def _text(rel):
 _CACHE = {}
 
 
+def _stamp(p):
+    return (p, os.path.getmtime(p), os.path.getsize(p)) if os.path.isfile(p) else (p, None, None)
+
+
+def _read_local():
+    """The types runs made (LOCAL_TYPES_PATH, git-ignored): [] when there are none."""
+    if not os.path.isfile(LOCAL_TYPES_PATH):
+        return []
+    with open(LOCAL_TYPES_PATH, encoding="utf-8") as f:
+        return json.load(f).get("types") or []
+
+
 def _read_types(path=None):
-    """types.json, read again only when the file changed (a new type is saved during a run)."""
+    """types.json with the local types (types.local.json) after its own types, before its records; read again only
+    when a file changed (a new type is saved during a run). A local type whose name is already taken is left out, with
+    the reason in "refused"."""
     p = path or TYPES_PATH
-    key = (p, os.path.getmtime(p), os.path.getsize(p))
+    key = _stamp(p) + _stamp(LOCAL_TYPES_PATH)
     if key not in _CACHE:
         with open(p, encoding="utf-8") as f:
-            _CACHE.clear()
-            _CACHE[key] = json.load(f)
+            d = json.load(f)
+        taken, local, refused = {t.get("name") for t in d["types"]}, [], []
+        for t in _read_local():
+            if t.get("name") in taken:
+                refused.append(f"local type {t.get('name')} refused: {os.path.basename(p)} already has a type of that "
+                               f"name (rename it in {os.path.basename(LOCAL_TYPES_PATH)})")
+                continue
+            taken.add(t.get("name"))
+            local.append({**t, "local": True})
+        at = next((i for i, t in enumerate(d["types"]) if t.get("kind") != "type"), len(d["types"]))
+        d["types"][at:at] = local
+        d["refused"] = refused
+        for r in refused:
+            print(f"j2_types: {r}", file=sys.stderr)
+        _CACHE.clear()
+        _CACHE[key] = d
     return _CACHE[key]
+
+
+def refused(path=None):
+    """Why each refused local type was left out ([] when none)."""
+    return list(_read_types(path)["refused"])
 
 
 def entries(path=None):
@@ -170,13 +213,22 @@ def _merged(name, path=None):
         raise ValueError(f"{name}: unknown form {entry.get('form')!r}")
     noun = entry.get("noun") or entry.get("label") or name
     label = str(entry.get("label") or name)
+    rule = practice_rule(entry, form)
     fill = lambda v: (v.replace("{name}", name).replace("{label}", label).replace("{lower}", label.lower())
-                      .replace("{noun}", noun).replace("{sections}", ", ".join(sections(name))) if isinstance(v, str) else v)
+                      .replace("{noun}", noun).replace("{sections}", ", ".join(sections(name)))
+                      .replace("{practice}", rule) if isinstance(v, str) else v)
     out = {**{k: fill(v) for k, v in form.items() if k not in ("workflow", "cost")}, **entry, "noun": noun}
     out["workflow"] = {**{k: fill(v) for k, v in (form.get("workflow") or {}).items()}, **(entry.get("workflow") or {})}
     out["cost"] = {**(form.get("cost") or {}), **(entry.get("cost") or {})}
     out["_fill"] = fill
     return out
+
+
+def practice_rule(entry, form):
+    """What a type's prompts add at "{practice}" (the builder's Assumption rule, the no-invented-facts condition and
+    rubric item): its form's practice_rule when the type's data says "recommended_practice": true (a policy, guide,
+    plan or SOP), else "" (a strict type: its prompts unchanged)."""
+    return form.get("practice_rule") or "" if entry.get("recommended_practice") is True else ""
 
 
 def named(text, path=None, alone=False):
@@ -230,6 +282,38 @@ def info(name, path=None):
             "preview": e.get("preview"), "ready": e.get("ready")}
 
 
+def recorded(d, path=None):
+    """The document types a run folder names that types.json and the local store no longer have (a local type deleted
+    after the run): {name: entry}, with the label and file the run recorded, so the run still opens. The label is
+    artifacts.json's row name (written when the run ends), else the planner's new type (deliverables.json), else
+    the name in words; the file is documents.json's, else artifacts.json's, else <name>.md. Nothing new is recorded:
+    runs already record both, so old runs open the same way."""
+    if not d or not os.path.isdir(d):
+        return {}
+
+    def rd(n):
+        try:
+            with open(os.path.join(d, n), encoding="utf-8") as f:
+                return json.load(f)
+        except (OSError, ValueError):
+            return None
+    docs, known, out = rd("documents.json"), set(names(path)), {}
+    if not isinstance(docs, dict) or not set(docs) - known:
+        return {}
+    arts = {r.get("type"): r for r in (rd("artifacts.json") or {}).get("rows") or [] if isinstance(r, dict) and r.get("kind") == "type"}
+    new = {x.get("type"): x.get("new") or {} for x in ((rd("deliverables.json") or {}).get("plan") or {}).get("deliverables") or []
+           if isinstance(x, dict) and isinstance(x.get("new"), dict)}
+    for k, v in docs.items():
+        if k in known or not NAME_RE.match(str(k)) or not isinstance(v, dict):
+            continue
+        a, n = arts.get(k) or {}, new.get(k) or {}
+        label = str(a.get("name") or n.get("label") or k.replace("_", " ").capitalize())
+        file = next((f for f in (v.get("file"), a.get("file"), n.get("file")) if isinstance(f, str) and re.fullmatch(r"[\w.-]+\.md", f)), f"{k}.md")
+        out[k] = {"name": k, "kind": "type", "label": label, "tag": label, "color": "--other", "form": "document", "file": file,
+                  "deliverable": True, "triggers": [], "groups": [], "depends_on": [], "recorded": True}
+    return out
+
+
 def load(name, path=None):
     entry = _merged(name, path)
     fill = entry.pop("_fill")
@@ -250,7 +334,9 @@ def load(name, path=None):
         raise ValueError(f"{name}: every rubric item needs an id and a text")
     out = {"label": entry.get("output_label") or entry["label"], "noun": entry["noun"],
            "sections": sections(name) if doc else (), "conditions": entry["conditions"],
-           "rubric": tuple((r["id"], r["text"]) for r in entry["rubric"]), "rates": entry["cost"]["card"],
+           "rubric": tuple((r["id"], r["text"].replace("{practice}", fill("{practice}"))) for r in entry["rubric"]),
+           "rates": entry["cost"]["card"], "recommended_practice": entry.get("recommended_practice") is True,
+           "practice": fill("{practice}"),
            "check_types": tuple(entry["check_types"]),
            "builder": fill(_text(entry["builder"])) if doc else entry["builder"],
            "export": entry.get("export"), "done": entry["done"]}
@@ -285,12 +371,13 @@ def template_for(name, label, secs):
                                       {"each": "assumptions", "line": "Assumption: {_}", "after_body": True}]} for x in secs]}
 
 
-def create_problems(name, label, secs, file, path=None):
-    """What a proposed new type lacks ([] when it can be made): a name, a form (document), a section, a file name."""
+def create_problems(name, label, secs, file, path=None, practice=False):
+    """What a proposed new type lacks ([] when it can be made): a name, a form (document), a section, a file name,
+    and recommended_practice true or false when given."""
     out = []
     if not NAME_RE.match(str(name or "")):
         out.append(f"name {name!r} must be lower case letters, digits and _ (2 to 41 characters)")
-    elif name in names(path):
+    elif name in names(path) or name in {t.get("name") for t in _read_local()}:
         out.append(f"type {name} already exists")
     if not str(label or "").strip():
         out.append("it needs a label")
@@ -300,38 +387,87 @@ def create_problems(name, label, secs, file, path=None):
         out.append("its sections must be unique, named, and not 'Document'")
     if not re.fullmatch(r"[a-z0-9_-]+\.md", str(file or "")):
         out.append(f"file {file!r} must be a .md file name")
+    if practice is not None and not isinstance(practice, bool):
+        out.append(f"recommended_practice {practice!r} must be true or false")
     return out
 
 
-def create(name, label, secs, file=None, path=None):
-    """Save a new document type: its entry in types.json (the document form fills the rest) and its template in the
-    template library, so the next run reuses it. ValueError with the reasons when it can't be made."""
+def _write_local(types):
+    os.makedirs(os.path.dirname(LOCAL_TYPES_PATH), exist_ok=True)
+    with open(LOCAL_TYPES_PATH, "w", encoding="utf-8") as f:
+        f.write('{\n  "types": [\n' + ",\n".join("    " + json.dumps(t, ensure_ascii=False) for t in types) + "\n  ]\n}\n")
+
+
+def _write_template(p, tpl):
+    os.makedirs(os.path.dirname(p), exist_ok=True)
+    with open(p, "w", encoding="utf-8") as f:
+        json.dump(tpl, f, indent=1, ensure_ascii=False)
+        f.write("\n")
+
+
+def create(name, label, secs, file=None, path=None, practice=None):
+    """Save a new document type, locally: its entry in types.local.json (the document form fills the rest) and its
+    template in the local library (library/types/<name>/generic.json), so the next run reuses it; --promote moves it
+    into types.json. practice: the type's recommended_practice (kept only when true). ValueError with the reasons
+    when it can't be made."""
     file = file or f"{name}.md"
-    bad = create_problems(name, label, secs, file, path)
+    bad = create_problems(name, label, secs, file, path, practice)
     if bad:
         raise ValueError(f"new type {name}: " + "; ".join(bad))
-    p = path or TYPES_PATH
-    text = before = open(p, encoding="utf-8").read()
     entry = {"name": name, "kind": "type", "label": str(label).strip(), "tag": str(label).strip(), "color": "--other",
-             "form": "document", "template": f"templates/{name}/generic.json", "file": file, "deliverable": True, "triggers": [], "groups": [], "depends_on": [],
-             "made_by": "adaptation"}
-    first_record = text.index('    {\n      "name": "screenshots"')
-    text = text[:first_record] + "    " + json.dumps(entry, ensure_ascii=False) + ",\n" + text[first_record:]
-    json.loads(text)
-    d = os.path.join(TEMPLATES_DIR, name)
-    os.makedirs(d, exist_ok=True)
-    with open(os.path.join(d, "generic.json"), "w", encoding="utf-8") as f:
-        json.dump(template_for(name, entry["label"], [str(x).strip() for x in secs]), f, indent=1, ensure_ascii=False)
-        f.write("\n")
-    with open(p, "w", encoding="utf-8") as f:
-        f.write(text)
+             "form": "document", "template": f"{LOCAL_LIBRARY_REL}/{name}/generic.json", "file": file, "deliverable": True,
+             "triggers": [], "groups": [], "depends_on": [], "made_by": "adaptation",
+             **({"recommended_practice": True} if practice else {})}
+    local, d = _read_local(), os.path.join(LOCAL_LIBRARY_DIR, name)
+    _write_template(os.path.join(d, "generic.json"), template_for(name, entry["label"], [str(x).strip() for x in secs]))
+    _write_local(local + [entry])
     template.cache_clear()
     import j2_template_lib      # here, not at the top: the template library reads this module
     bad = j2_template_lib.generic_problems([name])
     if bad:      # a template that doesn't check is never left behind: the type is taken back
-        with open(p, "w", encoding="utf-8") as f:
-            f.write(before)
-        os.remove(os.path.join(d, "generic.json"))
+        _write_local(local)
+        shutil.rmtree(d, ignore_errors=True)
         template.cache_clear()
         raise ValueError(f"new type {name}: its template is not valid: " + "; ".join(bad))
     return entry
+
+
+def promote(name, path=None):
+    """Move a local type into types.json (before the first record, one line, as create() wrote it) and its template
+    into templates/<name>/generic.json, and out of the local store: the change a pull request carries."""
+    local = _read_local()
+    entry = next((t for t in local if t.get("name") == name), None)
+    if entry is None:
+        raise ValueError(f"{name}: no local type of that name in {os.path.basename(LOCAL_TYPES_PATH)}")
+    p = path or TYPES_PATH
+    import j2_template_lib      # here, not at the top: the template library reads this module
+    bad = j2_template_lib.generic_problems([name])      # checked while still local: a bad one is never promoted
+    if bad:
+        raise ValueError(f"{name}: its template is not valid: " + "; ".join(bad))
+    text = open(p, encoding="utf-8").read()
+    if name in {t.get("name") for t in json.loads(text)["types"]}:
+        raise ValueError(f"{name}: {os.path.basename(p)} already has a type of that name")
+    src = os.path.join(LOCAL_LIBRARY_DIR, name, "generic.json")
+    with open(src, encoding="utf-8") as f:
+        tpl = json.load(f)
+    entry = {**entry, "template": f"templates/{name}/generic.json"}
+    first_record = text.index('    {\n      "name": "screenshots"')
+    text = text[:first_record] + "    " + json.dumps(entry, ensure_ascii=False) + ",\n" + text[first_record:]
+    json.loads(text)
+    _write_template(os.path.join(TEMPLATES_DIR, name, "generic.json"), tpl)
+    with open(p, "w", encoding="utf-8") as f:
+        f.write(text)
+    _write_local([t for t in local if t.get("name") != name])
+    shutil.rmtree(os.path.dirname(src), ignore_errors=True)
+    template.cache_clear()
+    return entry
+
+
+if __name__ == "__main__":      # python3 j2_types.py --promote <name>
+    if len(sys.argv) != 3 or sys.argv[1] != "--promote":
+        sys.exit("usage: python3 j2_types.py --promote <name>")
+    try:
+        e = promote(sys.argv[2])
+    except ValueError as err:
+        sys.exit(str(err))
+    print(f"promoted {e['name']}: artifacts/types.json and templates/{e['name']}/generic.json (commit them for a PR)")

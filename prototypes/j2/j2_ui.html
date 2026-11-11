@@ -1457,10 +1457,11 @@ function atomRow(a, k, w){
 }
 // Context and Constraints in plain words; a document item named on a card (PRD R2, S1) links to the Documents tab.
 let CTX = null, FOCUS = {};   // CTX: the state the cards are drawn from (charter items, sections); FOCUS: the item the Documents tab shows
-const DOCS = {};              // "prd" | "hld" | "lld" -> {asked, text} from /api/docs
-const DOC_KINDS = [["prd", "PRD", "Product requirements"], ["hld", "HLD", "High-level design"], ["lld", "LLD", "Low-level design"]];
+const DOCS = {};              // every document of the run (any document-form type, types.json order) -> {asked, text, workflows, label, tag, color} from /api/docs
+const docKinds = () => Object.entries(DOCS).map(([k, d]) => [k, d.tag || k.toUpperCase(), d.label || k, d.color || "--other"]);      // [kind, tag, label, colour]
+const DOC_KINDS = [["prd", "PRD", "Product requirements"], ["hld", "HLD", "High-level design"], ["lld", "LLD", "Low-level design"]];      // the Map's documents that open in Documents; another type's opens on its Artifacts row
 const ITEM_AT = /^\s*(?:[-*]\s+|\d+\.\s+)?\**([A-Z]{1,2}-?\d+)\**/;
-const docLine = id => { for (const [k] of DOC_KINDS){ const l = ((DOCS[k] || {}).text || "").split("\n").find(x => (x.match(ITEM_AT) || [])[1] === id);
+const docLine = id => { for (const [k] of docKinds()){ const l = ((DOCS[k] || {}).text || "").split("\n").find(x => (x.match(ITEM_AT) || [])[1] === id);
   if (l) return {kind: k, text: l.replace(ITEM_AT, "").replace(/^[\s:]+/, "").replace(/[`*]/g, "")}; } return null; };
 const docLink = (kind, id, label) => `<a href="#" data-doc="${kind}" data-item="${esc(id)}">${esc(label || id)}</a>`;
 const chLink = n => `<a href="#" data-charter="${n}">item ${n}</a>`;
@@ -1553,7 +1554,7 @@ function contextHTML(v, a, w){
     : ctxRow(label || (KIND_OF[id[0]] || "other").toUpperCase(), esc(id), true); };
   const dtext = (id, t) => clip(`ctx-${a && a.id}-${id}`, t);
   const shown = new Set();
-  const typed = new Map(), norm = t => String(t).replace(/\s+/g, " ").trim(), lineage = {impl: new Set(), serves: new Set()}, docsLoaded = () => DOC_KINDS.some(([k]) => (DOCS[k] || {}).text);
+  const typed = new Map(), norm = t => String(t).replace(/\s+/g, " ").trim(), lineage = {impl: new Set(), serves: new Set()}, docsLoaded = () => Object.values(DOCS).some(d => d && d.text);
   const lineRow = (label, ids) => { if (!ids.size) return []; const f = [...ids].map(id => ({id, d: docLine(id)})), ok = f.filter(x => x.d);
     const t = ok.map(x => ok.length > 1 ? `${x.id} ${x.d.text}` : x.d.text).join("; ");
     if (ok.length) typed.set(norm(t), docLink(ok[0].d.kind, ok[0].id, label + " " + f.map(x => x.id).join(", ")));
@@ -1624,14 +1625,15 @@ function docBody(kind, text){
 }
 const docItems = text => new Set(text.split("\n").map(l => (l.match(ITEM_AT) || [])[1]).filter(Boolean)).size;
 const docBuilt = d => (d.workflows || []).map(id => { const w = ((CTX && CTX.workflows) || []).find(x => x.id === id); return w ? `${id} ${w.name}` : id; }).join(", ");
-const docBlock = ([k, tag, name]) => { const d = DOCS[k];
+const docBlock = ([k, tag, name, color]) => { const d = DOCS[k];
   const meta = d && d.text ? [`${docItems(d.text)} items`].concat((d.workflows || []).length ? [`built by ${esc(docBuilt(d))}`] : []).join(" · ") : "";
-  const head = `<header class="dochead" style="background:var(--${k})"><b>${name}</b> <span class="code">${tag}</span>` + (meta ? `<span class="docmeta">${meta}</span>` : "") + "</header>";
+  const head = `<header class="dochead" style="background:var(${esc(color)})"><b>${esc(name)}</b> <span class="code">${esc(tag)}</span>` + (meta ? `<span class="docmeta">${meta}</span>` : "") + "</header>";
   return `<section class="doc" id="docblock-${k}" data-doc-kind="${k}">${head}<div class="docbody">` + (!d ? '<p class="empty">Loading…</p>'
     : d.text ? docBody(k, d.text) : d.asked ? '<p class="empty">Not written yet.</p>' : '<p class="empty">Not asked for in this run.</p>') + "</div></section>"; };
-const renderDocs = () => `<nav class="docjump" id="doc-top">Jump to <a href="#" data-tabjump="charter">Charter</a> ` + DOC_KINDS.map(([k, tag]) => `<a href="#" data-docjump="${k}"${(DOCS[k] || {}).text ? "" : ' class="empty"'}>${tag}</a>`).join(" ") + "</nav>"
-  + DOC_KINDS.map((x, i) => docBlock(x) + (i < DOC_KINDS.length - 1 ? `<div class="docdiv" data-div="${x[0]}"><span>End of ${x[1]}</span><span>Start of ${DOC_KINDS[i + 1][1]}</span><a href="#" data-docjump="top">Back to top</a></div>`
-    : `<div class="docdiv" data-div="${x[0]}"><span>End of ${x[1]}</span><a href="#" data-docjump="top">Back to top</a></div>`)).join("");
+const renderDocs = (ks = docKinds()) => `<nav class="docjump" id="doc-top">Jump to <a href="#" data-tabjump="charter">Charter</a> ` + ks.map(([k, tag]) => `<a href="#" data-docjump="${esc(k)}"${(DOCS[k] || {}).text ? "" : ' class="empty"'}>${esc(tag)}</a>`).join(" ") + "</nav>"
+  + (ks.length ? "" : '<p class="empty">No documents in this run.</p>')
+  + ks.map((x, i) => docBlock(x) + (i < ks.length - 1 ? `<div class="docdiv" data-div="${esc(x[0])}"><span>End of ${esc(x[1])}</span><span>Start of ${esc(ks[i + 1][1])}</span><a href="#" data-docjump="top">Back to top</a></div>`
+    : `<div class="docdiv" data-div="${esc(x[0])}"><span>End of ${esc(x[1])}</span><a href="#" data-docjump="top">Back to top</a></div>`)).join("");
 // The Charter tab: the items every agent works from, where the run stored their source, and which workflows cite each.
 let CHFOCUS = 0;
 const charterOf = s => { const g = (s && s.goal) || {}; return g.charter_items || g.done_when || []; };
@@ -3440,7 +3442,8 @@ function artLocate(id){      // the group and row a Map id lands on: a section's
   const rows = ((ARTS.groups || {}).groups || []).flatMap(g => g.rows.map(x => [g.id, x])), n = mapById(MAP)[id] || {};
   if (/^sec:/.test(id)){ const key = consParent(id) + "|" + id.split(":").pop(), hit = rows.find(([, x]) => x.section && x.deck + "|" + x.section === key); if (hit) return [hit[0], hit[1].id]; return artLocate(consParent(id)); }
   const hit = rows.find(([, x]) => (x.nodes || []).includes(id)) || (PAGENODE(id) ? rows.find(([g]) => g === "site") : null)
-    || rows.find(([, x]) => x.file && (x.file === n.file || (id === "work:charter" && x.file === "goal.json")));
+    || rows.find(([, x]) => x.file && (x.file === n.file || (id === "work:charter" && x.file === "goal.json")))
+    || (/^work:/.test(id) && !DOC_KINDS.some(x => "work:" + x[0] === id) ? rows.find(([g, x]) => g === "documents" && "work:" + x.id === id) : null);      // a new type's document
   return hit ? [hit[0], hit[1].id] : null; }
 // Library (template-library/1, J2_TEMPLATE_LIBRARY=1): every template grouped by artifact and section, this run's
 // routing decisions (templates.json), and a viewer with two modes: the four files as stored, or a readable card.
@@ -5215,7 +5218,9 @@ function consClick(e){
 function mapDeepTarget(kind, id){      // the places to look, best first: a section's own row, else its document's
   if (kind === "wf") return [`[data-wfrow="${CSS.escape(id)}"]`];
   if (/^sec:/.test(id)) return [`[data-sec="${CSS.escape(consParent(id) + "|" + id.split(":").pop())}"]`, ...mapDeepTarget("art", consParent(id))];
-  const n = mapById(MAP)[id]; return [`[data-node~="${CSS.escape(id)}"]`, n && n.file ? `[data-art="${CSS.escape(n.file)}"]` : "", id === "work:charter" ? '[data-art="goal.json"]' : ""].filter(Boolean);
+  const n = mapById(MAP)[id], doc = id.replace(/^work:/, "");      // a document of a type the Documents view doesn't show (a new type): its Artifacts row
+  return [`[data-node~="${CSS.escape(id)}"]`, n && n.file ? `[data-art="${CSS.escape(n.file)}"]` : "", id === "work:charter" ? '[data-art="goal.json"]' : "",
+    /^work:/.test(id) && !DOC_KINDS.some(x => x[0] === doc) ? `[data-agrow="${CSS.escape(doc)}"]` : ""].filter(Boolean);
 }
 async function mapOpenIn(kind, id){
   document.querySelectorAll(".dlhit").forEach(x => x.classList.remove("dlhit"));
@@ -5259,7 +5264,7 @@ let docsKey = null;
 (async () => { try { const r = await fetch("/api/refs"); if (r.ok){ Object.assign(REFS, await r.json()); if (state) paint($("pane-workflows"), renderWorkflows(state)); } } catch (e) {} })();
 async function loadDocs(){
   try { const r = await fetch(`/api/docs?${runQ().slice(1)}`, {cache:"no-store"});
-    if (r.ok) Object.assign(DOCS, await r.json()); } catch (e) {}
+    if (r.ok){ const got = await r.json(); Object.keys(DOCS).forEach(k => delete DOCS[k]); Object.assign(DOCS, got); } } catch (e) {}
   try { const r = await fetch(`/api/audits?${runQ().slice(1)}`, {cache:"no-store"});
     if (r.ok){ STAGE_AUDITS.length = 0; STAGE_AUDITS.push(...await r.json()); } } catch (e) {}
   if (state) paint($("pane-workflows"), renderWorkflows(state));
@@ -5349,8 +5354,8 @@ function renderRuns(){
   $("runcount").textContent = L.length === RUNS.all.length ? plural(L.length, "run") : `${L.length} of ${plural(RUNS.all.length, "run")}`;
   L.slice(0, RUNS.show).forEach(x => { const G = runGroup(x.when); if (G !== g){ g = G; h += `<div class="rgrp">${G}</div>`; }
     const me = x.id === cur;
-    h += `<button type="button" class="runrow${me ? " cur" : ""}" data-openrun="${esc(x.id)}"${me ? ' aria-current="true"' : ""} aria-label="${esc(x.title)}, ${esc(x.id)}, ${esc(x.status)}${me ? ", open now" : ""}"><span class="ric">${RUNICON[TYFORM(x.output) === "page" ? "web" : "doc"]}</span>`
-      + `<span class="rmid"><span class="rt">${esc(x.title)}</span><code>${esc(x.id)}</code><span class="rm">${esc([runWhen(x.when), x.brief].filter(Boolean).join(" · "))}</span></span>`
+    h += `<button type="button" class="runrow${me ? " cur" : ""}" data-openrun="${esc(x.id)}"${me ? ' aria-current="true"' : ""} aria-label="${esc(x.title)}, ${esc(x.id)}, ${esc(x.status)}${me ? ", open now" : ""}"><span class="ric" title="${esc(x.label || "")}">${RUNICON[(x.form || TYFORM(x.output)) === "page" ? "web" : "doc"]}</span>`
+      + `<span class="rmid"><span class="rt">${esc(x.title)}</span><code>${esc(x.id)}</code><span class="rm">${esc([x.label, runWhen(x.when), x.brief].filter(Boolean).join(" · "))}</span></span>`
       + `<span class="rr"><span class="rst ${esc(x.status)}">${esc(x.status)}</span><span class="ropen">${me ? "Open now" : "Open"}</span></span></button>`; });
   if (L.length > RUNS.show) h += `<button type="button" class="runmore" id="runmore">Show ${Math.min(20, L.length - RUNS.show)} more · ${L.length - RUNS.show} left</button>`;
   $("runlist").innerHTML = h || `<div class="runnone">No runs match.</div>`;
@@ -5414,7 +5419,7 @@ const RAILDIM = {goal: s => !s.goal && "no charter recorded", charter: s => !s.g
   planmap: s => !PLANMAP.found && "no plan record",
   workflows: s => !(s.workflows || []).length && "no workflows yet", priorities: s => !prioModel(s).has && "no ranking records", timeline: s => !(s.allChat || s.chat || []).length && "no messages recorded",
   audit: s => !(s.audits || []).length && "no audit yet", preview: s => !s.versions && "nothing built yet",
-  docs: s => !(s.docset || []).length && !["prd", "hld", "lld"].some(k => DOCS[k] && DOCS[k].text) && "this run made no documents",
+  docs: s => !(s.docset || []).length && !Object.values(DOCS).some(d => d && d.text) && "this run made no documents",
   artifacts: s => !((ARTS.tree || {}).groups || []).some(g => g.count) && "no artifacts listed",
   lessons: s => !(s.memory || (s.lessons_used || []).length || (s.lessons_saved || []).length) && "memory is off", playbooks: s => !(s.memory || (s.playbooks_used || []).length || s.playbook_saved) && "memory is off"};
 // Priorities, from the run's records: Priority's decisions in chat.jsonl (who priority, decision, cycle, text), the workflows it priced (workflows.json: cycle, cost, charged, status, purpose)

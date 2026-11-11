@@ -20,10 +20,14 @@ TEXT = {".md": "text/markdown", ".json": "application/json", ".jsonl": "text/pla
 MAX_BYTES = 2_000_000
 
 
-def load_types():
-    import j2_types      # its TYPES_PATH: a test may point it at a copy
-    with open(j2_types.TYPES_PATH, encoding="utf-8") as f:
-        d = json.load(f)
+def load_types(run=None):
+    """types.json and the local types runs made; with a run folder, also the document types that run recorded and the
+    store no longer has (j2_types.recorded: a deleted local type), after the others."""
+    import copy
+    import j2_types      # its TYPES_PATH and LOCAL_TYPES_PATH: a test may point them at copies
+    d = copy.deepcopy(j2_types._read_types())
+    at = next((i for i, t in enumerate(d["types"]) if t.get("kind") != "type"), len(d["types"]))
+    d["types"][at:at] = list(j2_types.recorded(run).values())
     forms = d.get("forms") or {}
     for t in d["types"]:      # a type made from its form (a new document type) takes the form's workflow
         f = (forms.get(t.get("form")) or {}).get("workflow")
@@ -121,7 +125,7 @@ def _board(d, atoms):
 def rows(d, types=None):
     """[{name, type, kind, form, file, deliverable, workflows, depends_on, version, sha256, time}] for a run folder,
     plus changed_by and rechecked_after when the message board changed or re-checked it."""
-    types = types or load_types()
+    types = types or load_types(d)
     if not d or not os.path.isdir(d):
         return []
     atoms, docs, out = _atoms(d), _read(d, "documents.json", {}) or {}, []
@@ -168,7 +172,7 @@ def write(d):
 def listing(d):
     """What the Artifacts tab shows: the saved artifacts.json when the run has one, else the same rows built by
     scanning the folder. Each row gets its type's label, tag, colour and how to open it."""
-    types = load_types()
+    types = load_types(d)
     by = {t["name"]: t for t in types["types"]}
     saved = _read(d, "artifacts.json") if d else None
     base = saved["rows"] if saved else rows(d, types)
@@ -275,7 +279,7 @@ def tree(d, m=None):
     if not d or not os.path.isdir(d):
         return {"schema": "artifacts-tree/1", "groups": []}
     m = m or j2_map.build(d)
-    lst, types = listing(d), {t["file"]: t for t in load_types()["types"] if "*" not in t["file"]}
+    lst, types = listing(d), {t["file"]: t for t in load_types(d)["types"] if "*" not in t["file"]}
     rowsby = {r["file"]: r for r in lst["deliverables"] + lst["records"]}
     by = {n["id"]: n for n in m["nodes"]}
     made_step = {e["to"]: by[e["from"]] for e in m["edges"] if e["kind"] == "step" and by.get(e["from"], {}).get("kind") == "engine"}
@@ -354,7 +358,7 @@ def tree(d, m=None):
                 persona_of.setdefault(w, n_.get("persona"))
     for n in deck:
         kids = []
-        t0 = next((x for x in load_types()["types"] if x["kind"] == "type" and f"work:{x['name']}" == n["id"]), None)
+        t0 = next((x for x in load_types(d)["types"] if x["kind"] == "type" and f"work:{x['name']}" == n["id"]), None)
         page = bool(t0 and t0["form"] == "page")
         rows_ = []
         for sid, e in (secs.get(n["id"], (None, {}))[1] or {}).items():
@@ -374,7 +378,7 @@ def tree(d, m=None):
             kids.append(full)
         if rows_:
             kids.append({"name": "Sections", "count": len(rows_), "collapsed": True, "children": rows_})
-        t = next((x for x in load_types()["types"] if x["kind"] == "type" and f"work:{x['name']}" == n["id"]), None)
+        t = next((x for x in load_types(d)["types"] if x["kind"] == "type" and f"work:{x['name']}" == n["id"]), None)
         site = os.path.join(d, "site")
         if t and os.path.isdir(site):
             pat = r"v(\d+)\.html" if t["form"] == "page" else rf"(?:{re.escape(t['name'])}-)?v(\d+)\.md"
@@ -559,7 +563,7 @@ def groups(d, m=None):
     secs = _read(d, "sections.json")
     secs = secs if isinstance(secs, dict) else {}
     out_of = lambda w: str((w.get("outputs") or [""])[0] or "")
-    files, delivered = {}, {t["file"] for t in load_types()["types"] if t["deliverable"]}      # a PRD, HLD or LLD is a deliverable (Documents), not a guide
+    files, delivered = {}, {t["file"] for t in load_types(d)["types"] if t["deliverable"]}      # a PRD, HLD or LLD is a deliverable (Documents), not a guide
     for w in sorted(wfs, key=lambda w: _num(w["id"])):
         o = out_of(w)
         if o.endswith(".md") and o not in delivered and w["id"] not in secs:
@@ -637,7 +641,7 @@ def groups(d, m=None):
                                "total": len((aud.get(f) or {}).get("results") or []) if f in aud else None} for f in shots]})
     # the documents (PRD, HLD, LLD) are in Documents, not here: each one's sections with their own heading, so a Map link can land on the heading,
     # and its three views
-    doc_types = [t for t in load_types()["types"] if t["deliverable"] and t["form"] == "document"]
+    doc_types = [t for t in load_types(d)["types"] if t["deliverable"] and t["form"] == "document"]
     decks = [n for n in m["nodes"] if n["id"] in {f"work:{t['name']}" for t in doc_types} and n.get("status") != "not_made"]
     documents = {t["name"]: {"sections": {}, "file": t["file"], "kind": "document"} for t in doc_types if has(t["file"])}
     for deck, (_, ss) in sections_of(d, decks).items():

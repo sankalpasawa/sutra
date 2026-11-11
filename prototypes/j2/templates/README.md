@@ -4,7 +4,9 @@
 them to and how their data is written as markdown. Edit the file by hand; no Python repeats it. At load time
 `j2_artifact_models.py` builds each section's Pydantic model from it, `j2_rules.py` reads each section's rules from it
 and `j2_template_lib.py` reads the generic templates the library specialises. `artifacts/types.json` points to the file
-(`"template"`), and a type J2 creates on the fly gets one written in the same shape.
+(`"template"`), and a type J2 creates on the fly gets one written in the same shape, in the git-ignored local
+library (`library/types/<type>/generic.json`, its entry in `artifacts/types.local.json`) until
+`python3 j2_types.py --promote <type>` moves both here and into `types.json`.
 
 Check every file after an edit:
 

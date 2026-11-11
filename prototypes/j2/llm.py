@@ -56,6 +56,14 @@ MOCK_DELAY = float(os.getenv("STUDIO_MOCK_DELAY", "0"))  # seconds per mock repl
 LOW_THINKING_BUDGET = int(os.getenv("GEMINI_LOW_THINKING", "0")) or None
 LAST_META = {}  # model, finish reason and token counts of the latest Gemini reply, saved with failed replies
 _client = None
+# Whether a provider's model can open files (the run folder) during a call. None can: claude-cli runs with --tools ""
+# in the temp folder, the Anthropic and Gemini calls send no tools. Set one True only when it gets a file-read tool.
+READS_FILES = {"claude-cli": False, "anthropic": False, "gemini": False}
+
+
+def can_read_files():
+    """True when the current provider can read a file a prompt points to (a cut input's full text)."""
+    return not MOCK and READS_FILES.get(PROVIDER, False)
 
 
 class CallTimeout(RuntimeError):
