@@ -275,13 +275,11 @@ def plan_faults(p, goal, items=None, types=None):
 
 def type_list(path=None):
     """The buildable types: name, label, form, file and needs (the types it is written from, which must be built
-    first: a document's depends_on); a document's sections, which a workflow serving it names. A page reads the
-    documents built before it as its blueprint and needs none."""
+    first: a document's depends_on). A page reads the documents built before it as its blueprint and needs none."""
     ts = [t for t in j2_types._read_types(path)["types"] if t.get("kind") == "type" and t.get("deliverable")]      # local ones too
     return [{"name": t["name"], "label": t["label"], "form": t["form"], "file": t.get("file"),
              "needs": list(t.get("depends_on") or []) if t["form"] == "document" else [],
-             "after": list(t.get("depends_on") or []),
-             **({"sections": list(j2_types.sections(t["name"]))} if t["form"] == "document" else {})} for t in ts]
+             "after": list(t.get("depends_on") or [])} for t in ts]
 
 
 def deliverables(p):
@@ -564,8 +562,7 @@ def plan_fmt(types=None, revise=False):
     f = PLAN_FMT
     if types is not None:
         f = f.replace('"inputs_from": [workflow name],', '"inputs_from": [workflow name], "serves": str (the '
-                      'deliverable type it builds), "sections": [str] (when it serves a document type: the sections of '
-                      'that type it writes, named as in TYPES; [] for a page),')[:-2] + DELIVERABLES_FMT
+                      'deliverable type it builds),')[:-2] + DELIVERABLES_FMT
     return f[:-2] + CHANGES_FMT if revise else f
 
 
