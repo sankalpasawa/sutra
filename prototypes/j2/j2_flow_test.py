@@ -4167,12 +4167,14 @@ def docs_tab():
             for k in got:
                 assert got[k]["asked"] and got[k]["text"] == open(os.path.join(run.dir, f"{k}.md"), encoding="utf-8").read(), k
                 assert got[k]["workflows"] == run.docs[k]["workflows"] and got[k]["workflows"], k
+                t = next(x for x in j2.j2_types._read_types()["types"] if x["name"] == k)      # its label, tag and colour from types.json
+                assert (got[k]["label"], got[k]["tag"], got[k]["color"]) == (t["label"], t["tag"], t["color"]), (k, got[k])
         for bad in ("?run=../..", "?run=nope"):                      # no path tricks: a run name only; anything else is an empty result
             got = json.load(urllib.request.urlopen(f"{base}/api/docs{bad}"))
-            assert all(v == {"asked": False, "text": None, "workflows": []} for v in got.values()), (bad, got)
-        j2_server.RUN = plain                                        # no document asked for: noted, no text
+            assert got == {}, (bad, got)
+        j2_server.RUN = plain                                        # no document asked for: none listed
         got = json.load(urllib.request.urlopen(f"{base}/api/docs"))
-        assert all(v == {"asked": False, "text": None, "workflows": []} for v in got.values()), got
+        assert got == {}, got
     finally:
         j2_server.RUN = keep
         srv.shutdown()
@@ -4186,10 +4188,11 @@ def docs_tab():
     w2 = snap["workflows"][1]
     snap["atoms_v1"][a["id"]]["depends_on"] = [{"atom": w2["atoms"][0]["id"], "why": "the section it wrote"}]
     snap["goal"]["charter_items"] = ["The page shows the menu", "The page shows the hours"]
+    lt = lambda k: {f: next(x for x in j2.j2_types._read_types()["types"] if x["name"] == k)[f] for f in ("label", "tag", "color")}      # as /api/docs gives them
     docs = {"docs": {"prd": {"asked": True, "workflows": ["W-1", "W-2"],
-                             "text": "# P\n\n- **G1**: Goal one\n2. **R2**: The pre-order form\n| G1 | 30 |\n"},
-                     "hld": {"asked": True, "text": "- **C1** Menu display: shows the menu\n- **C2** Form", "workflows": ["W-9"]},
-                     "lld": {"asked": True, "text": "- **S1** `#menu`: the menu with prices"}}, "focus": {"kind": "prd", "item": "R2"}}
+                             "text": "# P\n\n- **G1**: Goal one\n2. **R2**: The pre-order form\n| G1 | 30 |\n", **lt("prd")},
+                     "hld": {"asked": True, "text": "- **C1** Menu display: shows the menu\n- **C2** Form", "workflows": ["W-9"], **lt("hld")},
+                     "lld": {"asked": True, "text": "- **S1** `#menu`: the menu with prices", **lt("lld")}}, "focus": {"kind": "prd", "item": "R2"}}
     out = render_node(snap, docs=docs)
     card = out["cards"][w["id"]]
     card = card[card.index(f'data-key="atom-{a["id"]}"'):].split("Run details")[0]
@@ -4232,9 +4235,16 @@ def docs_tab():
     assert d.count('data-docjump="top"') == 3
     assert '<p class="dl hit" id="doc-prd-R2">' in d and '<p class="dl" id="doc-prd-G1">' in d and 'id="doc-lld-S1"' in d, d
     assert d.count('id="doc-prd-G1"') == 1 and '<h4 data-head="P">P</h4>' in d, "an item's first line only carries the id; a heading carries its text (a Map section link lands on it)"
-    docs["docs"]["hld"] = {"asked": False, "text": None, "workflows": []}
+    docs["docs"]["hld"] = {"asked": False, "text": None, "workflows": [], **lt("hld")}
     nd = render_node(snap, docs=docs)["docs"]
     assert "Not asked for in this run." in nd.split('data-doc-kind="hld"')[1].split("</section>")[0] and nd.count("End of HLD") == 1
+    # any document type, a local one too: its own label, tag and colour from /api/docs, after the others
+    docs["docs"]["hiring_rules"] = {"asked": True, "text": "## Who approves\n\nThe founder.", "workflows": [], "label": "Hiring <rules>", "tag": "Hiring", "color": "--other"}
+    nd = render_node(snap, docs=docs)["docs"]
+    assert re.findall(r'data-doc-kind="(\w+)"', nd) == ["prd", "hld", "lld", "hiring_rules"], nd
+    assert '<header class="dochead" style="background:var(--other)"><b>Hiring &lt;rules&gt;</b> <span class="code">Hiring</span>' in nd, nd
+    assert 'data-docjump="hiring_rules">Hiring</a>' in nd.split("<section")[0] and "End of LLD</span><span>Start of Hiring" in nd
+    assert "No documents in this run." in render_node(snap, docs={"docs": {}})["docs"]
     print("docs tab: Context in words, Constraints grouped (stored text unchanged, ungrouped in a plain list), document "
           "items linked, Documents tab render, /api/docs live and saved, 404 for bad runs, not-asked note ok")
 
@@ -4542,7 +4552,7 @@ def fresh_page_run():
                 return json.load(urllib.request.urlopen(base + path + (("&" if "?" in path else "?") + q if q else "")))
             st = get("/api/state?since=0")
             assert st.get("status") == "idle" and st["chat"] == [] and not st.get("error") and st["workflows"] == [], (q, list(st)[:6])
-            assert get("/api/audits") == [] and all(v["text"] is None and not v["asked"] for v in get("/api/docs").values()), q
+            assert get("/api/audits") == [] and get("/api/docs") == {}, q
             assert get("/api/preview?atom=W-1.a1") == {"anchor": None, "html": None}
             assert "conditions" in get("/api/refs") and get("/api/runs")["live"] == rid
         assert not os.path.exists(live.dir), "reading must not create the run folder"
@@ -4551,7 +4561,7 @@ def fresh_page_run():
             docs = {"docs": get("/api/docs"), "stage_audits": get("/api/audits")}
             out = render_node(st, docs=docs)
             assert out["charter"].endswith("No charter recorded yet.</p>") and out["cards"] == {}, out["charter"][-80:]
-            assert out["docs"].count("Not asked for in this run.") == 3 and "undefined" not in out["docs"] + out["charter"], out["docs"][:300]
+            assert "No documents in this run." in out["docs"] and "undefined" not in out["docs"] + out["charter"], out["docs"][:300]
             assert "Something went wrong" not in out["simple"] + out["docs"] + out["charter"]
         if j2.j2_check.find_chrome() and (BROWSER or not FAST):       # the real page: no error text in the page's own elements
             import subprocess
@@ -7191,18 +7201,22 @@ SAVED_DOC_RUNS = ("j2-20261013-165916", "j2-20261013-185235", "j2-20261015-19082
 # saved run changes; re-record on purpose, never to make the test pass.
 # Re-recorded 2026-11-11: "groups" of the six runs that built no page: their empty site group is labelled "Page
 # sections", not "Website sections" (a run with a page names it by its type's label); the same hashes with the old label.
+# Re-recorded 2026-11-11: "docs" of all 11 runs, for one intended change: /api/docs lists every document-form type a run
+# has, generically. Each listed document gains its type's label, tag and colour (types.json), and a PRD, HLD or LLD the run
+# did not ask for (asked false, no text, no workflows) is no longer listed (5 runs list PRD only, one PRD and HLD). Every
+# other field, and the order, is as before; groups, map and checks are unchanged.
 SAVED_RUNS_GOLDEN = {
-    "j2-20261013-165916": {"groups": "56f72a05aae1", "docs": "5d52f1ed34ec", "map": "d528979abf18", "checks": "95329398a439"},
-    "j2-20261013-185235": {"groups": "da3ff2df8774", "docs": "1ddcae0f0e75", "map": "d6fa33198569", "checks": "f89fefa931db"},
-    "j2-20261015-190820": {"groups": "08478622a133", "docs": "d679c04045e7", "map": "d519759eb19e", "checks": "a84b857c2459"},
-    "j2-20261016-103256": {"groups": "4120e3312ca6", "docs": "37c8b29833ef", "map": "f3a2b5346c06", "checks": "1f4d88d383f6"},
-    "j2-20261016-160511": {"groups": "1b32b250385f", "docs": "ef9e272df4c6", "map": "edcb83e2f1dc", "checks": "294164497d2c"},
-    "j2-20261021-141350": {"groups": "8b35dff7697a", "docs": "09504a9763ca", "map": "e6b756ed9025", "checks": "b26939a6ccce"},
-    "j2-20261022-123744": {"groups": "ca346a1c6b9c", "docs": "671562441fc6", "map": "e38dbe427737", "checks": "762c35ff8650"},
-    "j2-20261023-104150": {"groups": "1fc302de13a0", "docs": "4dd62f5cb4e1", "map": "180a39f9f978", "checks": "cd878d01266c"},
-    "j2-20261023-120350": {"groups": "7c8ad9f43fcc", "docs": "f06206b108f1", "map": "8531c3b845fc", "checks": "0ec14094db92"},
-    "j2-20261026-104018": {"groups": "7bb9dcd4c186", "docs": "f9d6cc971436", "map": "35a1b79ff2b0", "checks": "92d491169a25"},
-    "j2-20261027-130930": {"groups": "f0c6808c173f", "docs": "9f690587f7c4", "map": "bad64fe59f9f", "checks": "cf4fa11161b5"},
+    "j2-20261013-165916": {"groups": "56f72a05aae1", "docs": "6601e796102b", "map": "d528979abf18", "checks": "95329398a439"},
+    "j2-20261013-185235": {"groups": "da3ff2df8774", "docs": "99f5519109fe", "map": "d6fa33198569", "checks": "f89fefa931db"},
+    "j2-20261015-190820": {"groups": "08478622a133", "docs": "368d98762ad8", "map": "d519759eb19e", "checks": "a84b857c2459"},
+    "j2-20261016-103256": {"groups": "4120e3312ca6", "docs": "1330a448ad80", "map": "f3a2b5346c06", "checks": "1f4d88d383f6"},
+    "j2-20261016-160511": {"groups": "1b32b250385f", "docs": "08c63bcc18d9", "map": "edcb83e2f1dc", "checks": "294164497d2c"},
+    "j2-20261021-141350": {"groups": "8b35dff7697a", "docs": "495b52ab3c6f", "map": "e6b756ed9025", "checks": "b26939a6ccce"},
+    "j2-20261022-123744": {"groups": "ca346a1c6b9c", "docs": "ede89e663899", "map": "e38dbe427737", "checks": "762c35ff8650"},
+    "j2-20261023-104150": {"groups": "1fc302de13a0", "docs": "d3f5928bd2eb", "map": "180a39f9f978", "checks": "cd878d01266c"},
+    "j2-20261023-120350": {"groups": "7c8ad9f43fcc", "docs": "952eea241e51", "map": "8531c3b845fc", "checks": "0ec14094db92"},
+    "j2-20261026-104018": {"groups": "7bb9dcd4c186", "docs": "d18c7911c035", "map": "35a1b79ff2b0", "checks": "92d491169a25"},
+    "j2-20261027-130930": {"groups": "f0c6808c173f", "docs": "ab7c9eb79ffb", "map": "bad64fe59f9f", "checks": "cf4fa11161b5"},
 }
 # Recorded 2026-11-10 (step D): the document runs as they are now (doc_unchanged); re-record on purpose, never to pass
 # Re-recorded 2026-11-11 (DOC_RUN_GOLDEN and the *.system hashes below) for one intended text change only: team.md and
@@ -7937,6 +7951,69 @@ def run_list_local_type():
     ui = open(os.path.join(j2.HERE, "j2_ui.html"), encoding="utf-8").read()
     assert 'RUNICON[(x.form || TYFORM(x.output)) === "page" ? "web" : "doc"]' in ui and "[x.label, runWhen(x.when), x.brief]" in ui
     print("run list: each run's type label and form icon, a local type's too ok")
+
+
+def deleted_local_type():
+    """A run of a local type still opens after the type is deleted from the local store: its document row in Artifacts >
+    Documents, the Documents tab (/api/docs), the Map node, the run header (/api/state) and the run list fall back to the
+    label and file the run recorded (j2_types.recorded: documents.json, artifacts.json). A mock run of a temp local type,
+    then the store emptied; the saved hiring-policy run too when runs/ has it."""
+    import threading
+    import urllib.request
+    import j2_server
+    with _TypeStore() as T:
+        runs, keep, keep_env = tempfile.mkdtemp(prefix="j2-gone-type-"), j2.RUNS_DIR, os.environ.get("J2_GENERIC")
+        j2.RUNS_DIR, os.environ["J2_GENERIC"] = runs, "1"      # a run may make a new type (as forms_and_new_types)
+        srv, keep_live = None, j2_server.RUN
+        try:
+            run = j2.J2Run()
+            run.budget = 300
+            run.mock_deliverables = [{"type": "visit_rules", "why": "no type fits", "new": {"label": "Visit rules", "file": "visit_rules.md",
+                                                                                         "sections": ["Who may visit", "Hours"]}}]
+            say(run, "Write the visit rules for Green Leaf, a plant nursery of six people in Pune. They cover who may visit the "
+                     "greenhouse, the opening hours (9am to 5pm every day except Monday) and what visitors may not touch.")
+            assert run.output == "visit_rules" and run.outcome.startswith("Done"), run.outcome
+            j2_server.RUN = run      # the server's own live run may share this run's id (same second)
+            saved = os.path.join(j2.HERE, "runs", "j2-20261111-095315")
+            if os.path.isfile(os.path.join(saved, "documents.json")):      # runs/ is git-ignored: a clone may not have it
+                shutil.copytree(saved, os.path.join(runs, "j2-20261111-095315"))
+            T._write_local([])      # the local type is deleted: the store has nothing, its template is gone
+            shutil.rmtree(T.LOCAL_LIBRARY_DIR, ignore_errors=True)
+            T.template.cache_clear()
+            j2._data_type.cache_clear()
+            assert "visit_rules" not in T.names() and "hiring_policy" not in T.names()
+            srv = j2_server.http.server.ThreadingHTTPServer(("127.0.0.1", 0), j2_server.Handler)
+            threading.Thread(target=srv.serve_forever, daemon=True).start()
+            base = f"http://127.0.0.1:{srv.server_address[1]}"
+            cases = [(os.path.basename(run.dir), "visit_rules", "Visit rules")] + \
+                [("j2-20261111-095315", "hiring_policy", "Hiring policy")] * os.path.isdir(os.path.join(runs, "j2-20261111-095315"))
+            for rid, name, label in cases:
+                get = lambda p: json.loads(urllib.request.urlopen(f"{base}{p}{'&' if '?' in p else '?'}run={rid}").read().decode("utf-8"))
+                st = get("/api/state")
+                assert st["output"] == name and st["output_label"] == label and st["doc"], (rid, st["output"], st["output_label"])
+                assert st["types"][name]["label"] == label and st["docset_files"][0]["md"] == f"{name}.md", st["types"].get(name)
+                docs = get("/api/docs")
+                assert list(docs) == [name] and docs[name]["label"] == label and docs[name]["color"] == "--other" and docs[name]["text"], docs
+                g = get("/api/artifacts/groups")
+                assert [r["name"] for x in g["groups"] if x["id"] == "documents" for r in x["rows"]] == [label], g["groups"]
+                node = next(n for n in get("/api/map")["nodes"] if n["id"] == f"work:{name}")
+                assert node["label"] == label and node["file"] == f"{name}.md", node
+                assert [r["label"] for r in get("/api/artifacts")["deliverables"]] == [label]
+                row = next(x for x in j2_server.run_list()["runs"] if x["id"] == rid)
+                assert (row["label"], row["form"]) == (label, "document"), row
+                for p in ("/api/artifacts/tree", "/api/story", f"/doc/{name}"):
+                    urllib.request.urlopen(f"{base}{p}?run={rid}").read()      # opens, no server error
+        finally:
+            if srv:
+                srv.shutdown()
+            j2_server.RUN = keep_live
+            j2.RUNS_DIR = keep
+            os.environ.pop("J2_GENERIC", None)
+            if keep_env is not None:
+                os.environ["J2_GENERIC"] = keep_env
+            shutil.rmtree(runs, ignore_errors=True)
+    print(f"deleted local type: {len(cases)} run(s) whose type was deleted still open; Documents, Artifacts, Map, run header "
+          "and run list show the label and file the run recorded ok")
 
 
 def tap_dense():
@@ -12891,6 +12968,7 @@ if __name__ == "__main__":
             recommended_practice()      # labelled good practice, allowed by a type's data
             fix_sections()              # a document fix names its sections
             run_list_local_type()       # Run settings > Runs: a local type's label and icon
+            deleted_local_type()        # a run whose local type was deleted still opens, with what it recorded
             page_type_from_data()       # a second page type made of data only
             tap_dense()                 # C7: dense grids and keypads at 24px
             planner_conditions()        # C8: the planner gets the conditions; N8 skipped for a single screen

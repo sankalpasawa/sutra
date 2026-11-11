@@ -220,6 +220,38 @@ def info(name, path=None):
             "preview": e.get("preview"), "ready": e.get("ready")}
 
 
+def recorded(d, path=None):
+    """The document types a run folder names that types.json and the local store no longer have (a local type deleted
+    after the run): {name: entry}, with the label and file the run recorded, so the run still opens. The label is
+    artifacts.json's row name (written when the run ends), else the planner's new type (deliverables.json), else
+    the name in words; the file is documents.json's, else artifacts.json's, else <name>.md. Nothing new is recorded:
+    runs already record both, so old runs open the same way."""
+    if not d or not os.path.isdir(d):
+        return {}
+
+    def rd(n):
+        try:
+            with open(os.path.join(d, n), encoding="utf-8") as f:
+                return json.load(f)
+        except (OSError, ValueError):
+            return None
+    docs, known, out = rd("documents.json"), set(names(path)), {}
+    if not isinstance(docs, dict) or not set(docs) - known:
+        return {}
+    arts = {r.get("type"): r for r in (rd("artifacts.json") or {}).get("rows") or [] if isinstance(r, dict) and r.get("kind") == "type"}
+    new = {x.get("type"): x.get("new") or {} for x in ((rd("deliverables.json") or {}).get("plan") or {}).get("deliverables") or []
+           if isinstance(x, dict) and isinstance(x.get("new"), dict)}
+    for k, v in docs.items():
+        if k in known or not NAME_RE.match(str(k)) or not isinstance(v, dict):
+            continue
+        a, n = arts.get(k) or {}, new.get(k) or {}
+        label = str(a.get("name") or n.get("label") or k.replace("_", " ").capitalize())
+        file = next((f for f in (v.get("file"), a.get("file"), n.get("file")) if isinstance(f, str) and re.fullmatch(r"[\w.-]+\.md", f)), f"{k}.md")
+        out[k] = {"name": k, "kind": "type", "label": label, "tag": label, "color": "--other", "form": "document", "file": file,
+                  "deliverable": True, "triggers": [], "groups": [], "depends_on": [], "recorded": True}
+    return out
+
+
 def load(name, path=None):
     entry = _merged(name, path)
     fill = entry.pop("_fill")

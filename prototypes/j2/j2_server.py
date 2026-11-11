@@ -123,19 +123,24 @@ class Handler(http.server.BaseHTTPRequestHandler):
             return self._send(200, json.dumps({"changes": [{"id": c.get("id"), "request": str(c.get("request") or ""), "cycle": c.get("cycle"),
                                                             "revise": len(c.get("revise") or []), "new": len(c.get("new") or [])}
                                                            for c in rows if isinstance(c, dict)]}))
-        if u.path == "/api/docs":       # the Documents tab: prd.md, hld.md, lld.md of a run, read-only, only those names
+        if u.path == "/api/docs":       # the Documents tab: every document a run has (any document-form type), read-only
             d = j2.saved_dir(run) if run else RUN.dir
             d = d if d and os.path.isdir(d) else None                               # a missing run folder: the empty shape below
             made = (j2._read(d, "documents.json", {}) if d else {}) if run else RUN.docs   # the documents run's record, with the workflows that built each
             out = {}
-            for k in ("prd", "hld", "lld"):
+            for t in j2_artifacts.load_types(d)["types"]:      # in types.json order, local types and the run's recorded ones after
+                k = t["name"]
+                if t.get("kind") != "type" or t.get("form") != "document":
+                    continue
                 try:
-                    with open(os.path.join(d, f"{k}.md"), encoding="utf-8") as f:
+                    with open(os.path.join(d, t["file"]), encoding="utf-8") as f:
                         text = f.read()
                 except (OSError, TypeError):
                     text = None
-                out[k] = {"asked": text is not None or k in made or (not run and k in RUN.docset), "text": text,
-                          "workflows": (made.get(k) or {}).get("workflows", [])}
+                if text is None and k not in made and (run or k not in RUN.docset):
+                    continue                                                        # not one of this run's documents
+                out[k] = {"asked": True, "text": text, "workflows": (made.get(k) or {}).get("workflows", []),
+                          "label": t.get("label") or k, "tag": t.get("tag") or t.get("label") or k, "color": t.get("color") or "--other"}
             return self._send(200, json.dumps(out, ensure_ascii=False))
         if u.path == "/api/map":        # the Map tab: the run's work in order (map/1); a running run is drawn from its live state
             d = j2.saved_dir(run) if run else RUN.dir
@@ -376,7 +381,8 @@ def run_row(name, live_running=False):
     title = str(g.get("site_name") or "").strip() or (stmt[:70] + ("…" if len(stmt) > 70 else "")) or name
     m = re.search(r"(\d{4})(\d{2})(\d{2})-(\d{2})(\d{2})(\d{2})", name)
     out = s.get("output_type") or meta.get("output") or ""
-    t = j2.j2_types.info(out) if out in j2.j2_types.names() else {}      # its label and form, a local type's too
+    # its label and form, a local type's too; a type no longer in the store: what the run recorded (j2_types.recorded)
+    t = j2.j2_types.info(out) if out in j2.j2_types.names() else j2.j2_types.recorded(d).get(out) or {}
     return {"id": name, "title": title, "status": status, "output": out, "label": t.get("label") or "", "form": t.get("form") or "",
             "when": f"{m[1]}-{m[2]}-{m[3]}T{m[4]}:{m[5]}:{m[6]}" if m else "", "brief": str(s.get("brief") or first.get("text") or "")[:160]}
 

@@ -2829,6 +2829,8 @@ def saved_snapshot(name, since=0):
     versions = len([f for f in os.listdir(site) if re.fullmatch(r"v\d+\.(?:html|md)", f)]) if os.path.isdir(site) else 0
     docs = _read(d, "documents.json", {})
     out = output_type(s.get("output_type") or saved_output(d)) if docs else saved_output(d)
+    if s.get("output_type") in j2_types.recorded(d):      # its type was deleted since: what the run recorded of it
+        out = s["output_type"]
     calls = [{k: v for k, v in c.items() if k not in ("system", "prompt", "raw")} for c in _jsonl(d, "calls.jsonl")]
     b = s.get("budget") or {}
     return {"saved": name, "chat": chat[since:], "total": len(chat), "status": "saved", "thinking": None, "step": 8,
@@ -2844,7 +2846,7 @@ def saved_snapshot(name, since=0):
             "report": _read(d, "report.json"), "outcome": s.get("outcome"),
             "decide_for_me": bool((_read(d, "settings.json", {}) or {}).get("decide_for_me")),
             "studio": j2_studio.build({"workflows": wfs, "chat": chat, "status": "saved", "audits": audits, "saved": name, "output": out,
-                                       "doc": bool(output_def(out)["sections"])}, docs),
+                                       "doc": bool(saved_def(out, d)["sections"])}, docs),
             "auto_answers": [{"msg": m["id"], "answer": m["text"], "label": m.get("auto_label")} for m in chat if m.get("who") == "user" and m.get("auto")],
             "sections": [{"id": k, "owner": x["owner"], "workflow": x.get("workflow"),
                           "bytes": len((x["head"] + x["body"]).encode("utf-8"))} for k, x in sections.items()],
@@ -2889,20 +2891,37 @@ def output_info(out, run_dir, audits, docset=None, page=None):
     conditions and which exported files exist. A design-document run lists every document it has written.
     out None: not chosen yet (the planner chooses at the first message): no label, no rubric, no files.
     page: the run's page type (run_page), if it has one."""
-    o = output_def(out) if out else {"label": None, "sections": (), "rubric": ()}
+    o = saved_def(out, run_dir) if out else {"label": None, "sections": (), "rubric": ()}
+    rec = j2_types.recorded(run_dir)      # a type deleted since the run: its label and file as the run recorded them
+    label = lambda k: (rec[k] if k in rec else j2_types.info(k))["label"]
     docset = docset or []
     files = [f for f in ([o["file"], o["file"][:-3] + ".docx"] if o.get("file") else []) if os.path.exists(os.path.join(run_dir, f))]
     if docset:
         files = [f for k in docset for f in (f"{k}.md", f"{k}.docx") if os.path.exists(os.path.join(run_dir, f))]
     return {"output": out, "output_label": o["label"], "doc": bool(o["sections"]), "page": page,
             "rubric": o["rubric"], "conditions": (audits[-1].get("conditions") if audits else None), "files": files,
-            "docset": docset, "docset_files": [{"kind": k, "label": j2_types.info(k)["label"].lower(),
+            "docset": docset, "docset_files": [{"kind": k, "label": label(k).lower(),
                                                 "md": f"{k}.md", "docx": f"{k}.docx"}
                                                for k in docset if os.path.exists(os.path.join(run_dir, f"{k}.md"))],
             # what the page shows of every type (labels, tags, forms), so no screen text assumes a website
             "generic": True, "types": {n: {k: j2_types.info(n)[k] for k in ("label", "form", "file", "ready")}
                                            | {"tag": t.get("tag"), "color": t.get("color")} for n in j2_types.names()
-                                           for t in [next(x for x in j2_types._read_types()["types"] if x["name"] == n)]}}
+                                           for t in [next(x for x in j2_types._read_types()["types"] if x["name"] == n)]}
+                 | {n: {k: t.get(k) for k in ("label", "form", "file", "ready", "tag", "color")} for n, t in rec.items()}}
+
+
+def saved_def(kind, d):
+    """output_def(kind); for a type the store no longer has (j2_types.recorded), what run folder d recorded of it: its
+    label, its file, and its file's headings as its sections (its label when the file has none), no rubric."""
+    r = j2_types.recorded(d).get(kind)
+    if not r:
+        return output_def(kind)
+    try:
+        with open(os.path.join(d, r["file"]), encoding="utf-8") as f:
+            heads = tuple(m.group(1).strip() for m in re.finditer(r"(?m)^##\s+(.+)$", f.read()))
+    except OSError:
+        heads = ()
+    return {"label": r["label"], "file": r["file"], "sections": heads or (r["label"],), "rubric": ()}
 
 
 def atom_section_body(d, wfs, atom_id):
