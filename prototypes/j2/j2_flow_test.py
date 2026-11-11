@@ -7197,14 +7197,17 @@ SAVED_RUNS_GOLDEN = {
     "j2-20261027-130930": {"groups": "f0c6808c173f", "docs": "9f690587f7c4", "map": "bad64fe59f9f", "checks": "cf4fa11161b5"},
 }
 # Recorded 2026-11-10 (step D): the document runs as they are now (doc_unchanged); re-record on purpose, never to pass
-DOC_RUN_GOLDEN = {"prd": "6a2e2b7c501d", "design docs": "ca6d04f799e4", "docs then site": "68306b02133b"}
+# Re-recorded 2026-11-11 (DOC_RUN_GOLDEN and the *.system hashes below) for one intended text change only: team.md and
+# builder.md say "the deliverable" / "a page" / "the page file" where they said the website or the site. With those
+# two files as they were, the old hashes still pass.
+DOC_RUN_GOLDEN = {"prd": "4774d0993027", "design docs": "98bade7c665e", "docs then site": "1def6670c974"}
 DOC_PROMPTS_GOLDEN = {
     "prd.builder": "e971c88e727f", "prd.intake": "56b304946997",
-    "prd.charter_fmt": "eedccdf82d84", "prd.atom_rules": "b8a918ef6039", "prd.system": "55a8ffce8e22",
+    "prd.charter_fmt": "eedccdf82d84", "prd.atom_rules": "b8a918ef6039", "prd.system": "d09f06fa3181",
     "hld.builder": "5ed1a9d0887c", "hld.intake": "ac332d648468",
-    "hld.charter_fmt": "eedccdf82d84", "hld.atom_rules": "f03b53ec28a5", "hld.system": "c1b5d40d635c",
+    "hld.charter_fmt": "eedccdf82d84", "hld.atom_rules": "f03b53ec28a5", "hld.system": "ec72aa0a3d7b",
     "lld.builder": "a767f5b54bd4", "lld.intake": "7a7282e0c457",
-    "lld.charter_fmt": "eedccdf82d84", "lld.atom_rules": "4235ba453cd6", "lld.system": "f6ca8c0feffc",
+    "lld.charter_fmt": "eedccdf82d84", "lld.atom_rules": "4235ba453cd6", "lld.system": "f084658af51b",
 }
 
 
