@@ -317,6 +317,17 @@
     "model": "sonnet",
     "by": "j2_template_lib.run_template_from_run"
   },
-  "used_by": [],
+  "used_by": [
+    {
+      "run": "j2-20261111-211339",
+      "workflows": 17,
+      "of": 17
+    },
+    {
+      "run": "j2-20261111-215733",
+      "workflows": 12,
+      "of": 17
+    }
+  ],
   "created": "2026-11-11T15:46:42"
 }

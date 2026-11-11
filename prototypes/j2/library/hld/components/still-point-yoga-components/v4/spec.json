@@ -1,0 +1,117 @@
+{
+  "name": "Still Point Yoga Components",
+  "artifact": "hld",
+  "section": "Components",
+  "version": 4,
+  "kind": "specialised",
+  "description": "Components for Iron Grove Fitness (hld): the generic HLD/1 · Components fields plus facts_used, from 1 charter fact(s); adapted from version 2 of this template",
+  "fields": [
+    {
+      "name": "components",
+      "type": "list[Component]",
+      "required": true,
+      "description": "the components, C1, C2, ... in order; each names the PRD requirement ids it covers (for Iron Grove Fitness, a hld)",
+      "enum": null,
+      "nullable": false
+    },
+    {
+      "name": "assumptions",
+      "type": "list[string]",
+      "required": false,
+      "description": "the assumptions of Iron Grove Fitness's Components",
+      "enum": null,
+      "nullable": false
+    },
+    {
+      "name": "facts_used",
+      "type": "list[string]",
+      "required": false,
+      "description": "the charter facts this section is written from, copied exactly from Iron Grove Fitness's charter",
+      "enum": [
+        "Iron Grove Fitness"
+      ],
+      "nullable": false
+    },
+    {
+      "name": "booking_address",
+      "type": "string",
+      "required": true,
+      "description": "the booking address of Iron Grove Fitness's Components",
+      "enum": null,
+      "nullable": false
+    }
+  ],
+  "objects": [
+    {
+      "name": "Component",
+      "fields": [
+        {
+          "name": "id",
+          "type": "string",
+          "required": true,
+          "description": "C1, C2, ... in order",
+          "enum": null,
+          "nullable": false
+        },
+        {
+          "name": "name",
+          "type": "string",
+          "required": true,
+          "description": "the component name",
+          "enum": null,
+          "nullable": false
+        },
+        {
+          "name": "responsibility",
+          "type": "string",
+          "required": true,
+          "description": "its one responsibility, in one line",
+          "enum": null,
+          "nullable": false
+        },
+        {
+          "name": "covers",
+          "type": "list[string]",
+          "required": false,
+          "description": "the PRD requirement ids it covers, e.g. [\"R1\"]",
+          "enum": null,
+          "nullable": false
+        },
+        {
+          "name": "page",
+          "type": "string",
+          "required": false,
+          "description": "the page id it sits on, e.g. \"P1\"",
+          "enum": null,
+          "nullable": false
+        }
+      ]
+    }
+  ],
+  "rules": [
+    {
+      "rule": "enum",
+      "path": "facts_used[]",
+      "values": [
+        "Iron Grove Fitness"
+      ],
+      "from": "facts",
+      "name": "facts_used are facts of Iron Grove Fitness's charter"
+    }
+  ],
+  "sha": "155cd2f2ab03e25722f8966d065c22807f1e9950abec421474cd84c258c049c1",
+  "extends": "hld/components@generic/1",
+  "made_by": {
+    "run": "j2-20261111-211339",
+    "workflow": "W-13",
+    "atom": "W-13.a1",
+    "agent": "code (adapted from a run template)"
+  },
+  "context": {
+    "business_type": "hld",
+    "facts_used": [
+      "Iron Grove Fitness"
+    ],
+    "fingerprint": "0dddf93622bc40d584412066d131db29673b7304c912a08a1de385d8a949126f"
+  }
+}

@@ -110,9 +110,211 @@
             "run": "j2-20261103-184249",
             "where": "the run's copy"
           }
+        },
+        {
+          "version": 3,
+          "sha": "0748db3d4bef948a911e4c5242b32bc6f824aab220c6a3a0a6c637a858b674ce",
+          "schema_sha": "90037396dcb7dd57c662a71d98c1b71e4b5a81197a1067091ee117e64dbc0319",
+          "description": "Components for Iron Grove Fitness (hld): the generic HLD/1 · Components fields plus facts_used, from 2 charter fact(s); adapted from version 2 of this template",
+          "fingerprints": [
+            "dd503fe9325eb089dfbdd442d80492f95584b8b2105a108907a68161117986dd"
+          ],
+          "business_type": "hld",
+          "facts": [
+            "Iron Grove Fitness",
+            "The Components section is written for Iron Grove Fitness, and names every requirement (R1, R2, R3, R4, R5, R6, R7, R8, R9, R10, R11, R12, R13, R14) it covers"
+          ],
+          "fields": [
+            "components",
+            "assumptions",
+            "facts_used",
+            "booking_address"
+          ],
+          "enums": {
+            "facts_used": [
+              "Iron Grove Fitness",
+              "The Components section is written for Iron Grove Fitness, and names every requirement (R1, R2, R3, R4, R5, R6, R7, R8, R9, R10, R11, R12, R13, R14) it covers"
+            ]
+          },
+          "made_by": {
+            "run": "j2-20261111-211339",
+            "workflow": "W-9",
+            "atom": "W-9.a1",
+            "agent": "code (adapted from a run template)",
+            "date": "2026-11-11 21:13:39"
+          },
+          "used_by": [
+            {
+              "run": "j2-20261111-211339",
+              "workflow": "W-9",
+              "atom": "W-9.a1",
+              "action": "extended"
+            }
+          ],
+          "business": {
+            "name": "Iron Grove Fitness",
+            "type": "fitness studio"
+          },
+          "mock": false,
+          "collected_from": {
+            "run": "j2-20261111-211339",
+            "where": "the run's copy"
+          }
+        },
+        {
+          "version": 4,
+          "sha": "155cd2f2ab03e25722f8966d065c22807f1e9950abec421474cd84c258c049c1",
+          "schema_sha": "3c2bb7ea35fdfa60a133d20313ab5ff474630e7039e02cd32bf4dd8b039771c5",
+          "description": "Components for Iron Grove Fitness (hld): the generic HLD/1 · Components fields plus facts_used, from 1 charter fact(s); adapted from version 2 of this template",
+          "fingerprints": [
+            "0dddf93622bc40d584412066d131db29673b7304c912a08a1de385d8a949126f"
+          ],
+          "business_type": "hld",
+          "facts": [
+            "Iron Grove Fitness"
+          ],
+          "fields": [
+            "components",
+            "assumptions",
+            "facts_used",
+            "booking_address"
+          ],
+          "enums": {
+            "facts_used": [
+              "Iron Grove Fitness"
+            ]
+          },
+          "made_by": {
+            "run": "j2-20261111-211339",
+            "workflow": "W-13",
+            "atom": "W-13.a1",
+            "agent": "code (adapted from a run template)",
+            "date": "2026-11-11 21:13:39"
+          },
+          "used_by": [
+            {
+              "run": "j2-20261111-211339",
+              "workflow": "W-13",
+              "atom": "W-13.a1",
+              "action": "extended"
+            },
+            {
+              "run": "j2-20261111-211339",
+              "workflow": "W-14",
+              "atom": "W-14.a1",
+              "action": "reused"
+            }
+          ],
+          "business": {
+            "name": "Iron Grove Fitness",
+            "type": "fitness studio"
+          },
+          "mock": false,
+          "collected_from": {
+            "run": "j2-20261111-211339",
+            "where": "the run's copy"
+          }
+        },
+        {
+          "version": 5,
+          "sha": "452c09166a7ba074b8bbeaac03b05f58eb4c896f8f85514f5215d32e9df520d5",
+          "schema_sha": "314471cfd60ce1c0c6eb6e846e054ef884878197bc85e4e57bb61fc8134abc68",
+          "description": "Components for Rhythm Room Dance Studio (hld): the generic HLD/1 · Components fields plus facts_used, from 2 charter fact(s); adapted from version 2 of this template",
+          "fingerprints": [
+            "223f89be1f41aa7b93c75cd594ed949b09ffa18e083019d43b218a8648df03e9"
+          ],
+          "business_type": "hld",
+          "facts": [
+            "Rhythm Room Dance Studio",
+            "The Components section is written for Rhythm Room Dance Studio, and names every requirement (R1, R2, R3, R4, R5, R6, R7, R8, R9, R10, R11) it covers"
+          ],
+          "fields": [
+            "components",
+            "assumptions",
+            "facts_used",
+            "booking_address"
+          ],
+          "enums": {
+            "facts_used": [
+              "Rhythm Room Dance Studio",
+              "The Components section is written for Rhythm Room Dance Studio, and names every requirement (R1, R2, R3, R4, R5, R6, R7, R8, R9, R10, R11) it covers"
+            ]
+          },
+          "made_by": {
+            "run": "j2-20261111-215733",
+            "workflow": "W-9",
+            "atom": "W-9.a1",
+            "agent": "code (adapted from a run template)",
+            "date": "2026-11-11 21:57:33"
+          },
+          "used_by": [
+            {
+              "run": "j2-20261111-215733",
+              "workflow": "W-9",
+              "atom": "W-9.a1",
+              "action": "extended"
+            }
+          ],
+          "business": {
+            "name": "Rhythm Room Dance Studio",
+            "type": "hld"
+          },
+          "mock": false,
+          "collected_from": {
+            "run": "j2-20261111-215733",
+            "where": "the run's copy"
+          }
+        },
+        {
+          "version": 6,
+          "sha": "56346755b722d0da850502704e66b2adf424c111652d3f799d1c13c986861624",
+          "schema_sha": "b055d4a7febb03a07e26ab4e569a509b2966455348ec1af0f801ab13a05e3827",
+          "description": "Components for Rhythm Room Dance Studio (hld): the generic HLD/1 · Components fields plus facts_used, from 1 charter fact(s); adapted from version 2 of this template",
+          "fingerprints": [
+            "9e123522d3cf39be3a17c4ac3d7f4db905e750b70b60a24433c42c758efecde6"
+          ],
+          "business_type": "hld",
+          "facts": [
+            "Rhythm Room Dance Studio"
+          ],
+          "fields": [
+            "components",
+            "assumptions",
+            "facts_used",
+            "booking_address"
+          ],
+          "enums": {
+            "facts_used": [
+              "Rhythm Room Dance Studio"
+            ]
+          },
+          "made_by": {
+            "run": "j2-20261111-215733",
+            "workflow": "W-15",
+            "atom": "W-15.a1",
+            "agent": "code (adapted from a run template)",
+            "date": "2026-11-11 21:57:33"
+          },
+          "used_by": [
+            {
+              "run": "j2-20261111-215733",
+              "workflow": "W-15",
+              "atom": "W-15.a1",
+              "action": "extended"
+            }
+          ],
+          "business": {
+            "name": "Rhythm Room Dance Studio",
+            "type": "hld"
+          },
+          "mock": false,
+          "collected_from": {
+            "run": "j2-20261111-215733",
+            "where": "the run's copy"
+          }
         }
       ],
-      "description": "Components for Still Point Yoga (hld): each component C1, C2, ... states one responsibility, and together they cover every requirement R1 to R12 of the PRD and show the booking address."
+      "description": "Components for Rhythm Room Dance Studio (hld): the generic HLD/1 · Components fields plus facts_used, from 1 charter fact(s); adapted from version 2 of this template"
     },
     {
       "artifact": "hld",
@@ -191,9 +393,154 @@
             "type": "business"
           },
           "mock": true
+        },
+        {
+          "version": 2,
+          "sha": "009e97cbc146ebbd53b124f8b284d989d4b2b7a9bbf43f830e4046b7ab1fbc21",
+          "schema_sha": "fc004615f1edb771d3d997746f05c00543fc6c4f968c46537df59189b5e31b08",
+          "description": "Data flow for Iron Grove Fitness (hld): the generic HLD/1 · Data flow fields plus facts_used, from 2 charter fact(s); adapted from version 1 of this template",
+          "fingerprints": [
+            "8d8d36a04db50373e0b7e4991e567ad6e8111777b093f478feab664177368bbd"
+          ],
+          "business_type": "hld",
+          "facts": [
+            "Iron Grove Fitness",
+            "The Data flow section is written for Iron Grove Fitness"
+          ],
+          "fields": [
+            "data_flows",
+            "assumptions",
+            "facts_used"
+          ],
+          "enums": {
+            "facts_used": [
+              "Iron Grove Fitness",
+              "The Data flow section is written for Iron Grove Fitness"
+            ]
+          },
+          "made_by": {
+            "run": "j2-20261111-211339",
+            "workflow": "W-10",
+            "atom": "W-10.a1",
+            "agent": "code (adapted from a run template)",
+            "date": "2026-11-11 21:13:39"
+          },
+          "used_by": [
+            {
+              "run": "j2-20261111-211339",
+              "workflow": "W-10",
+              "atom": "W-10.a1",
+              "action": "extended"
+            }
+          ],
+          "business": {
+            "name": "Iron Grove Fitness",
+            "type": "fitness studio"
+          },
+          "mock": false,
+          "collected_from": {
+            "run": "j2-20261111-211339",
+            "where": "the run's copy"
+          }
+        },
+        {
+          "version": 3,
+          "sha": "0de4e60809313c2e56a0ff296671dff78325f4c554c5944246100373aa253b23",
+          "schema_sha": "8ce56a97f54a23db61cb805351527d1b090c0a5e0d3e1c8f695fc0afd3ef3ca5",
+          "description": "Data flow for Rhythm Room Dance Studio (hld): the generic HLD/1 · Data flow fields plus facts_used, from 2 charter fact(s); adapted from version 1 of this template",
+          "fingerprints": [
+            "366a948e4e3442862416051ebfc0b799f102931ded547f940c3a901cd0e40e8c"
+          ],
+          "business_type": "hld",
+          "facts": [
+            "Rhythm Room Dance Studio",
+            "The Data flow section is written for Rhythm Room Dance Studio"
+          ],
+          "fields": [
+            "data_flows",
+            "assumptions",
+            "facts_used"
+          ],
+          "enums": {
+            "facts_used": [
+              "Rhythm Room Dance Studio",
+              "The Data flow section is written for Rhythm Room Dance Studio"
+            ]
+          },
+          "made_by": {
+            "run": "j2-20261111-215733",
+            "workflow": "W-10",
+            "atom": "W-10.a1",
+            "agent": "code (adapted from a run template)",
+            "date": "2026-11-11 21:57:33"
+          },
+          "used_by": [
+            {
+              "run": "j2-20261111-215733",
+              "workflow": "W-10",
+              "atom": "W-10.a1",
+              "action": "extended"
+            }
+          ],
+          "business": {
+            "name": "Rhythm Room Dance Studio",
+            "type": "hld"
+          },
+          "mock": false,
+          "collected_from": {
+            "run": "j2-20261111-215733",
+            "where": "the run's copy"
+          }
+        },
+        {
+          "version": 4,
+          "sha": "957eab57e4fec8e1b572665b6e6dd972e45a64964aba78869ef4b4465251c7fc",
+          "schema_sha": "24aacb686b0cce2274662f62cf9b863a2f31edb48581cb8cd8dd3dd77082fee0",
+          "description": "Data flow for Rhythm Room Dance Studio (hld): the generic HLD/1 · Data flow fields plus facts_used, from 1 charter fact(s); adapted from version 1 of this template",
+          "fingerprints": [
+            "2f213fbf39153f4dad0b646fc8849065f3c25bcee0b35e006d80ebe04f29c651"
+          ],
+          "business_type": "hld",
+          "facts": [
+            "Rhythm Room Dance Studio"
+          ],
+          "fields": [
+            "data_flows",
+            "assumptions",
+            "facts_used"
+          ],
+          "enums": {
+            "facts_used": [
+              "Rhythm Room Dance Studio"
+            ]
+          },
+          "made_by": {
+            "run": "j2-20261111-215733",
+            "workflow": "W-13",
+            "atom": "W-13.a1",
+            "agent": "code (adapted from a run template)",
+            "date": "2026-11-11 21:57:33"
+          },
+          "used_by": [
+            {
+              "run": "j2-20261111-215733",
+              "workflow": "W-13",
+              "atom": "W-13.a1",
+              "action": "extended"
+            }
+          ],
+          "business": {
+            "name": "Rhythm Room Dance Studio",
+            "type": "hld"
+          },
+          "mock": false,
+          "collected_from": {
+            "run": "j2-20261111-215733",
+            "where": "the run's copy"
+          }
         }
       ],
-      "description": "Data flow for Still Point Yoga (hld): the generic HLD/1 · Data flow fields plus facts_used, from 2 charter fact(s)"
+      "description": "Data flow for Rhythm Room Dance Studio (hld): the generic HLD/1 · Data flow fields plus facts_used, from 1 charter fact(s); adapted from version 1 of this template"
     },
     {
       "artifact": "hld",
@@ -266,9 +613,154 @@
             "type": "business"
           },
           "mock": true
+        },
+        {
+          "version": 2,
+          "sha": "0dc4451fc4cdeaea1bae939e544a2fa55131ab9ec9e293573557cc01e9652737",
+          "schema_sha": "9b3cd066f03619bd31463fd1abf1b98af1d80bff57c4e88a55e02dfbe842a886",
+          "description": "Hosting and deployment for Iron Grove Fitness (hld): the generic HLD/1 · Hosting and deployment fields plus facts_used, from 2 charter fact(s); adapted from version 1 of this template",
+          "fingerprints": [
+            "681ceca3cff078efc85905d9201382488a195955c9bb08334a828b73b34040e6"
+          ],
+          "business_type": "hld",
+          "facts": [
+            "Iron Grove Fitness",
+            "The Hosting and deployment section is written for Iron Grove Fitness"
+          ],
+          "fields": [
+            "hosting",
+            "assumptions",
+            "facts_used"
+          ],
+          "enums": {
+            "facts_used": [
+              "Iron Grove Fitness",
+              "The Hosting and deployment section is written for Iron Grove Fitness"
+            ]
+          },
+          "made_by": {
+            "run": "j2-20261111-211339",
+            "workflow": "W-11",
+            "atom": "W-11.a1",
+            "agent": "code (adapted from a run template)",
+            "date": "2026-11-11 21:13:39"
+          },
+          "used_by": [
+            {
+              "run": "j2-20261111-211339",
+              "workflow": "W-11",
+              "atom": "W-11.a1",
+              "action": "extended"
+            }
+          ],
+          "business": {
+            "name": "Iron Grove Fitness",
+            "type": "fitness studio"
+          },
+          "mock": false,
+          "collected_from": {
+            "run": "j2-20261111-211339",
+            "where": "the run's copy"
+          }
+        },
+        {
+          "version": 3,
+          "sha": "561634d6738b4cd66f1312c86d075c4283ccc1f8e6c431d09cf975a6115ca72e",
+          "schema_sha": "412a7a62aa0fb6a64596224a7e70345bd598fdf889ab8c5cf5f410f3f6469b68",
+          "description": "Hosting and deployment for Iron Grove Fitness (hld): the generic HLD/1 · Hosting and deployment fields plus facts_used, from 1 charter fact(s); adapted from version 1 of this template",
+          "fingerprints": [
+            "0d1bc53a22cf65f5af90a2dde3d1f91caeadbbe936bd03a127fec6bc3709e1e6"
+          ],
+          "business_type": "hld",
+          "facts": [
+            "Iron Grove Fitness"
+          ],
+          "fields": [
+            "hosting",
+            "assumptions",
+            "facts_used"
+          ],
+          "enums": {
+            "facts_used": [
+              "Iron Grove Fitness"
+            ]
+          },
+          "made_by": {
+            "run": "j2-20261111-211339",
+            "workflow": "W-15",
+            "atom": "W-15.a1",
+            "agent": "code (adapted from a run template)",
+            "date": "2026-11-11 21:13:39"
+          },
+          "used_by": [
+            {
+              "run": "j2-20261111-211339",
+              "workflow": "W-15",
+              "atom": "W-15.a1",
+              "action": "extended"
+            }
+          ],
+          "business": {
+            "name": "Iron Grove Fitness",
+            "type": "fitness studio"
+          },
+          "mock": false,
+          "collected_from": {
+            "run": "j2-20261111-211339",
+            "where": "the run's copy"
+          }
+        },
+        {
+          "version": 4,
+          "sha": "6c6caf540f3888d2556bccbb1fdfc343ad62524897a94d35e2fd10552af5c265",
+          "schema_sha": "83262b1abe5ec513a8399d5bd0e33ef5a1b9f34565b8ea9ebb5caac58d7dd999",
+          "description": "Hosting and deployment for Rhythm Room Dance Studio (hld): the generic HLD/1 · Hosting and deployment fields plus facts_used, from 2 charter fact(s); adapted from version 1 of this template",
+          "fingerprints": [
+            "6d46e3b828c76dc6b25af34be3c2738fe71de42d3e2348014784305fc00c0e14"
+          ],
+          "business_type": "hld",
+          "facts": [
+            "Rhythm Room Dance Studio",
+            "The Hosting and deployment section is written for Rhythm Room Dance Studio"
+          ],
+          "fields": [
+            "hosting",
+            "assumptions",
+            "facts_used"
+          ],
+          "enums": {
+            "facts_used": [
+              "Rhythm Room Dance Studio",
+              "The Hosting and deployment section is written for Rhythm Room Dance Studio"
+            ]
+          },
+          "made_by": {
+            "run": "j2-20261111-215733",
+            "workflow": "W-11",
+            "atom": "W-11.a1",
+            "agent": "code (adapted from a run template)",
+            "date": "2026-11-11 21:57:33"
+          },
+          "used_by": [
+            {
+              "run": "j2-20261111-215733",
+              "workflow": "W-11",
+              "atom": "W-11.a1",
+              "action": "extended"
+            }
+          ],
+          "business": {
+            "name": "Rhythm Room Dance Studio",
+            "type": "hld"
+          },
+          "mock": false,
+          "collected_from": {
+            "run": "j2-20261111-215733",
+            "where": "the run's copy"
+          }
         }
       ],
-      "description": "Hosting and deployment for Still Point Yoga (hld): the generic HLD/1 · Hosting and deployment fields plus facts_used, from 2 charter fact(s)"
+      "description": "Hosting and deployment for Rhythm Room Dance Studio (hld): the generic HLD/1 · Hosting and deployment fields plus facts_used, from 2 charter fact(s); adapted from version 1 of this template"
     },
     {
       "artifact": "hld",
@@ -335,9 +827,107 @@
             "type": "business"
           },
           "mock": true
+        },
+        {
+          "version": 2,
+          "sha": "97a385147695ddab5560e08a3f2939c8f30e89aa22ac643255ffb9db5922b806",
+          "schema_sha": "e17573b3013cbe31364f1d9f21e8592afdb7a1e605ff52a2a9e0afb2a8e1988f",
+          "description": "Pages for Iron Grove Fitness (hld): the generic HLD/1 · Pages fields plus facts_used, from 2 charter fact(s); adapted from version 1 of this template",
+          "fingerprints": [
+            "43a6ffbf7374b270817c3884e6078915e21ae3bc4beea88ab13a60f50821a5ef"
+          ],
+          "business_type": "hld",
+          "facts": [
+            "Iron Grove Fitness",
+            "The Pages section is written for Iron Grove Fitness"
+          ],
+          "fields": [
+            "pages",
+            "assumptions",
+            "facts_used"
+          ],
+          "enums": {
+            "facts_used": [
+              "Iron Grove Fitness",
+              "The Pages section is written for Iron Grove Fitness"
+            ]
+          },
+          "made_by": {
+            "run": "j2-20261111-211339",
+            "workflow": "W-8",
+            "atom": "W-8.a1",
+            "agent": "code (adapted from a run template)",
+            "date": "2026-11-11 21:13:39"
+          },
+          "used_by": [
+            {
+              "run": "j2-20261111-211339",
+              "workflow": "W-8",
+              "atom": "W-8.a1",
+              "action": "extended"
+            }
+          ],
+          "business": {
+            "name": "Iron Grove Fitness",
+            "type": "fitness studio"
+          },
+          "mock": false,
+          "collected_from": {
+            "run": "j2-20261111-211339",
+            "where": "the run's copy"
+          }
+        },
+        {
+          "version": 3,
+          "sha": "76b7e3fc26924bcbc9b98da86fb0316efaaf1a12dc0c973085b59b890641cd17",
+          "schema_sha": "a3d8109e253389e52f4374b542140a3a565ab68a91bc78eb19cdcab4e87bd5b1",
+          "description": "Pages for Rhythm Room Dance Studio (hld): the generic HLD/1 · Pages fields plus facts_used, from 2 charter fact(s); adapted from version 1 of this template",
+          "fingerprints": [
+            "0afb93a2cca42c8cf84088dfd6057de4b28116a2ad32d5418e848ccdc1848465"
+          ],
+          "business_type": "hld",
+          "facts": [
+            "Rhythm Room Dance Studio",
+            "The Pages section is written for Rhythm Room Dance Studio"
+          ],
+          "fields": [
+            "pages",
+            "assumptions",
+            "facts_used"
+          ],
+          "enums": {
+            "facts_used": [
+              "Rhythm Room Dance Studio",
+              "The Pages section is written for Rhythm Room Dance Studio"
+            ]
+          },
+          "made_by": {
+            "run": "j2-20261111-215733",
+            "workflow": "W-8",
+            "atom": "W-8.a1",
+            "agent": "code (adapted from a run template)",
+            "date": "2026-11-11 21:57:33"
+          },
+          "used_by": [
+            {
+              "run": "j2-20261111-215733",
+              "workflow": "W-8",
+              "atom": "W-8.a1",
+              "action": "extended"
+            }
+          ],
+          "business": {
+            "name": "Rhythm Room Dance Studio",
+            "type": "hld"
+          },
+          "mock": false,
+          "collected_from": {
+            "run": "j2-20261111-215733",
+            "where": "the run's copy"
+          }
         }
       ],
-      "description": "Pages for Still Point Yoga (hld): the generic HLD/1 · Pages fields plus facts_used, from 2 charter fact(s)"
+      "description": "Pages for Rhythm Room Dance Studio (hld): the generic HLD/1 · Pages fields plus facts_used, from 2 charter fact(s); adapted from version 1 of this template"
     },
     {
       "artifact": "hld",
@@ -404,9 +994,107 @@
             "type": "business"
           },
           "mock": true
+        },
+        {
+          "version": 2,
+          "sha": "d1ab18f0149f9ceffc721b8fd653539df123960910ccf4fa76e3c0e587ea4d06",
+          "schema_sha": "d0f89ba5fa5b949b9dc900b64649edf9bc8f7f2a3e0b1ce221bed5c979770007",
+          "description": "Purpose and scope for Iron Grove Fitness (hld): the generic HLD/1 · Purpose and scope fields plus facts_used, from 2 charter fact(s); adapted from version 1 of this template",
+          "fingerprints": [
+            "37db06ac77907867de3e64700200f85d3bf812719caccc9c961e80890712174f"
+          ],
+          "business_type": "hld",
+          "facts": [
+            "Iron Grove Fitness",
+            "The Purpose and scope section is written for Iron Grove Fitness"
+          ],
+          "fields": [
+            "purpose",
+            "assumptions",
+            "facts_used"
+          ],
+          "enums": {
+            "facts_used": [
+              "Iron Grove Fitness",
+              "The Purpose and scope section is written for Iron Grove Fitness"
+            ]
+          },
+          "made_by": {
+            "run": "j2-20261111-211339",
+            "workflow": "W-7",
+            "atom": "W-7.a1",
+            "agent": "code (adapted from a run template)",
+            "date": "2026-11-11 21:13:39"
+          },
+          "used_by": [
+            {
+              "run": "j2-20261111-211339",
+              "workflow": "W-7",
+              "atom": "W-7.a1",
+              "action": "extended"
+            }
+          ],
+          "business": {
+            "name": "Iron Grove Fitness",
+            "type": "fitness studio"
+          },
+          "mock": false,
+          "collected_from": {
+            "run": "j2-20261111-211339",
+            "where": "the run's copy"
+          }
+        },
+        {
+          "version": 3,
+          "sha": "456852f44bd6942a9a0a3a92cd35c2a4d45758d83d0f0eee128c183dcce6a5bc",
+          "schema_sha": "f4b05bf094f38675920fa7fd91805056884751b1c4b85869f366950ad90e8169",
+          "description": "Purpose and scope for Rhythm Room Dance Studio (hld): the generic HLD/1 · Purpose and scope fields plus facts_used, from 2 charter fact(s); adapted from version 1 of this template",
+          "fingerprints": [
+            "b6a3b4d0bad7a811ad74db1074e12975f1bb1c49487db453e58fb3c1f21f8f62"
+          ],
+          "business_type": "hld",
+          "facts": [
+            "Rhythm Room Dance Studio",
+            "The Purpose and scope section is written for Rhythm Room Dance Studio"
+          ],
+          "fields": [
+            "purpose",
+            "assumptions",
+            "facts_used"
+          ],
+          "enums": {
+            "facts_used": [
+              "Rhythm Room Dance Studio",
+              "The Purpose and scope section is written for Rhythm Room Dance Studio"
+            ]
+          },
+          "made_by": {
+            "run": "j2-20261111-215733",
+            "workflow": "W-7",
+            "atom": "W-7.a1",
+            "agent": "code (adapted from a run template)",
+            "date": "2026-11-11 21:57:33"
+          },
+          "used_by": [
+            {
+              "run": "j2-20261111-215733",
+              "workflow": "W-7",
+              "atom": "W-7.a1",
+              "action": "extended"
+            }
+          ],
+          "business": {
+            "name": "Rhythm Room Dance Studio",
+            "type": "hld"
+          },
+          "mock": false,
+          "collected_from": {
+            "run": "j2-20261111-215733",
+            "where": "the run's copy"
+          }
         }
       ],
-      "description": "Purpose and scope for Still Point Yoga (hld): the generic HLD/1 · Purpose and scope fields plus facts_used, from 2 charter fact(s)"
+      "description": "Purpose and scope for Rhythm Room Dance Studio (hld): the generic HLD/1 · Purpose and scope fields plus facts_used, from 2 charter fact(s); adapted from version 1 of this template"
     },
     {
       "artifact": "hld",
@@ -485,9 +1173,154 @@
             "type": "business"
           },
           "mock": true
+        },
+        {
+          "version": 2,
+          "sha": "0d228f6e12a149bb607f29e215f24db461c02b57bb068cc5479774bd5a8c722e",
+          "schema_sha": "c755842f5bf156e0d190e89b1a6fb37e38e31a773f46137a2589bb75e7035f23",
+          "description": "Risks for Iron Grove Fitness (hld): the generic HLD/1 · Risks fields plus facts_used, from 2 charter fact(s); adapted from version 1 of this template",
+          "fingerprints": [
+            "bd34f1add83c04dc1e1376454e6385eacaba892b2942838e755d8c29990d7990"
+          ],
+          "business_type": "hld",
+          "facts": [
+            "Iron Grove Fitness",
+            "The Risks section is written for Iron Grove Fitness"
+          ],
+          "fields": [
+            "risks",
+            "assumptions",
+            "facts_used"
+          ],
+          "enums": {
+            "facts_used": [
+              "Iron Grove Fitness",
+              "The Risks section is written for Iron Grove Fitness"
+            ]
+          },
+          "made_by": {
+            "run": "j2-20261111-211339",
+            "workflow": "W-12",
+            "atom": "W-12.a1",
+            "agent": "code (adapted from a run template)",
+            "date": "2026-11-11 21:13:39"
+          },
+          "used_by": [
+            {
+              "run": "j2-20261111-211339",
+              "workflow": "W-12",
+              "atom": "W-12.a1",
+              "action": "extended"
+            }
+          ],
+          "business": {
+            "name": "Iron Grove Fitness",
+            "type": "fitness studio"
+          },
+          "mock": false,
+          "collected_from": {
+            "run": "j2-20261111-211339",
+            "where": "the run's copy"
+          }
+        },
+        {
+          "version": 3,
+          "sha": "7aa07f78168b714b022b13331c04f30563e791d38459000249cdeb710d73868f",
+          "schema_sha": "deedb2d418e357ed78560cbb7675c2af71aed5ed272c313ebc33b66189e6feaf",
+          "description": "Risks for Rhythm Room Dance Studio (hld): the generic HLD/1 · Risks fields plus facts_used, from 2 charter fact(s); adapted from version 1 of this template",
+          "fingerprints": [
+            "ec08b40acc9de1e6857d70d1fe761a3a5b0fb21a71cd72ea3746017436fa1dad"
+          ],
+          "business_type": "hld",
+          "facts": [
+            "Rhythm Room Dance Studio",
+            "The Risks section is written for Rhythm Room Dance Studio"
+          ],
+          "fields": [
+            "risks",
+            "assumptions",
+            "facts_used"
+          ],
+          "enums": {
+            "facts_used": [
+              "Rhythm Room Dance Studio",
+              "The Risks section is written for Rhythm Room Dance Studio"
+            ]
+          },
+          "made_by": {
+            "run": "j2-20261111-215733",
+            "workflow": "W-12",
+            "atom": "W-12.a1",
+            "agent": "code (adapted from a run template)",
+            "date": "2026-11-11 21:57:33"
+          },
+          "used_by": [
+            {
+              "run": "j2-20261111-215733",
+              "workflow": "W-12",
+              "atom": "W-12.a1",
+              "action": "extended"
+            }
+          ],
+          "business": {
+            "name": "Rhythm Room Dance Studio",
+            "type": "hld"
+          },
+          "mock": false,
+          "collected_from": {
+            "run": "j2-20261111-215733",
+            "where": "the run's copy"
+          }
+        },
+        {
+          "version": 4,
+          "sha": "866ec0ba048d7eabbf61f6c9a38d075f8170599735872f8d3245d177e6ee952d",
+          "schema_sha": "f376b6303a87a6514643ee25b96092ebe2e361816dac52958d2c8f49705d3c8c",
+          "description": "Risks for Rhythm Room Dance Studio (hld): the generic HLD/1 · Risks fields plus facts_used, from 1 charter fact(s); adapted from version 1 of this template",
+          "fingerprints": [
+            "08e60b9d008e7f9c8a1b788673378ec8e7be2e1f2d68ac0a1e1463a0cc47e746"
+          ],
+          "business_type": "hld",
+          "facts": [
+            "Rhythm Room Dance Studio"
+          ],
+          "fields": [
+            "risks",
+            "assumptions",
+            "facts_used"
+          ],
+          "enums": {
+            "facts_used": [
+              "Rhythm Room Dance Studio"
+            ]
+          },
+          "made_by": {
+            "run": "j2-20261111-215733",
+            "workflow": "W-14",
+            "atom": "W-14.a1",
+            "agent": "code (adapted from a run template)",
+            "date": "2026-11-11 21:57:33"
+          },
+          "used_by": [
+            {
+              "run": "j2-20261111-215733",
+              "workflow": "W-14",
+              "atom": "W-14.a1",
+              "action": "extended"
+            }
+          ],
+          "business": {
+            "name": "Rhythm Room Dance Studio",
+            "type": "hld"
+          },
+          "mock": false,
+          "collected_from": {
+            "run": "j2-20261111-215733",
+            "where": "the run's copy"
+          }
         }
       ],
-      "description": "Risks for Still Point Yoga (hld): the generic HLD/1 · Risks fields plus facts_used, from 2 charter fact(s)"
+      "description": "Risks for Rhythm Room Dance Studio (hld): the generic HLD/1 · Risks fields plus facts_used, from 1 charter fact(s); adapted from version 1 of this template"
     },
     {
       "artifact": "lld",
@@ -554,9 +1387,105 @@
             "type": "business"
           },
           "mock": true
+        },
+        {
+          "version": 2,
+          "sha": "92fcc7fd07a2cc98476c51d8b83a92b2554d4cb408931e6350a7a616b9cf9cac",
+          "schema_sha": "c00db36eae9c8f3d5cd708b8d68f881b9c26ff2aa1e3ecbd8c6a898b3c72b05b",
+          "description": "File structure for Iron Grove Fitness (lld): the generic LLD/1 · File structure fields plus facts_used, from 2 charter fact(s); adapted from version 1 of this template",
+          "fingerprints": [
+            "d1a0e2c58fe66aa1cafbe281a258d0bdf7dbfb73a97a00509e5f2c52fc61b512"
+          ],
+          "business_type": "lld",
+          "facts": [
+            "Iron Grove Fitness",
+            "The File structure section is written for Iron Grove Fitness"
+          ],
+          "fields": [
+            "files",
+            "assumptions",
+            "facts_used"
+          ],
+          "enums": {
+            "facts_used": [
+              "Iron Grove Fitness",
+              "The File structure section is written for Iron Grove Fitness"
+            ]
+          },
+          "made_by": {
+            "run": "j2-20261111-211339",
+            "workflow": "W-19",
+            "atom": "W-19.a1",
+            "agent": "code (adapted from a run template)",
+            "date": "2026-11-11 21:13:39"
+          },
+          "used_by": [
+            {
+              "run": "j2-20261111-211339",
+              "workflow": "W-19",
+              "atom": "W-19.a1",
+              "action": "extended"
+            }
+          ],
+          "business": {
+            "name": "Iron Grove Fitness",
+            "type": "fitness studio"
+          },
+          "mock": false,
+          "collected_from": {
+            "run": "j2-20261111-211339",
+            "where": "the run's copy"
+          }
+        },
+        {
+          "version": 3,
+          "sha": "79b79ac2ffc7f0a75f8260a3a3599634120ee0fe3b344dc574c1b4d46a4efba5",
+          "schema_sha": "27076855e0cc4da81f3efea29377c9765c49010cc0e8f1533dc85def2d5f69b0",
+          "description": "File structure for Iron Grove Fitness (lld): the generic LLD/1 · File structure fields plus facts_used, from 1 charter fact(s); adapted from version 1 of this template",
+          "fingerprints": [
+            "9308d6eb63b9543e8dd4010cbff5a5a8b4c1b842d64c3bc87a05643357337c28"
+          ],
+          "business_type": "lld",
+          "facts": [
+            "Iron Grove Fitness"
+          ],
+          "fields": [
+            "files",
+            "assumptions",
+            "facts_used"
+          ],
+          "enums": {
+            "facts_used": [
+              "Iron Grove Fitness"
+            ]
+          },
+          "made_by": {
+            "run": "j2-20261111-211339",
+            "workflow": "W-26",
+            "atom": "W-26.a1",
+            "agent": "code (adapted from a run template)",
+            "date": "2026-11-11 21:13:39"
+          },
+          "used_by": [
+            {
+              "run": "j2-20261111-211339",
+              "workflow": "W-26",
+              "atom": "W-26.a1",
+              "action": "extended"
+            }
+          ],
+          "business": {
+            "name": "Iron Grove Fitness",
+            "type": "fitness studio"
+          },
+          "mock": false,
+          "collected_from": {
+            "run": "j2-20261111-211339",
+            "where": "the run's copy"
+          }
         }
       ],
-      "description": "File structure for Still Point Yoga (lld): the generic LLD/1 · File structure fields plus facts_used, from 2 charter fact(s)"
+      "description": "File structure for Iron Grove Fitness (lld): the generic LLD/1 · File structure fields plus facts_used, from 1 charter fact(s); adapted from version 1 of this template"
     },
     {
       "artifact": "lld",
@@ -638,9 +1567,135 @@
             "type": "business"
           },
           "mock": true
+        },
+        {
+          "version": 2,
+          "sha": "30fcfe8c19fd062b2b8b286b1e60c0f434f354bdce21d04386032287fb945d09",
+          "schema_sha": "734317e6fcc1353c4e4867b2aa576cb9ee663ea1c9a91926b4fb020e1c087ff6",
+          "description": "Form fields for Iron Grove Fitness (lld): the generic LLD/1 · Form fields fields plus facts_used, from 2 charter fact(s); adapted from version 1 of this template",
+          "fingerprints": [
+            "440b33e9fabc8e88e9b80160a15081fbcebd3d6ab85811076147321c772366bb"
+          ],
+          "business_type": "lld",
+          "facts": [
+            "Iron Grove Fitness",
+            "The Form fields section is written for Iron Grove Fitness"
+          ],
+          "fields": [
+            "form_fields",
+            "assumptions",
+            "facts_used"
+          ],
+          "enums": {
+            "facts_used": [
+              "Iron Grove Fitness",
+              "The Form fields section is written for Iron Grove Fitness"
+            ],
+            "FormField.type": [
+              "text",
+              "email",
+              "tel",
+              "url",
+              "number",
+              "date",
+              "time",
+              "select",
+              "textarea",
+              "checkbox",
+              "radio",
+              "password",
+              "file"
+            ]
+          },
+          "made_by": {
+            "run": "j2-20261111-211339",
+            "workflow": "W-18",
+            "atom": "W-18.a1",
+            "agent": "code (adapted from a run template)",
+            "date": "2026-11-11 21:13:39"
+          },
+          "used_by": [
+            {
+              "run": "j2-20261111-211339",
+              "workflow": "W-18",
+              "atom": "W-18.a1",
+              "action": "extended"
+            }
+          ],
+          "business": {
+            "name": "Iron Grove Fitness",
+            "type": "fitness studio"
+          },
+          "mock": false,
+          "collected_from": {
+            "run": "j2-20261111-211339",
+            "where": "the run's copy"
+          }
+        },
+        {
+          "version": 3,
+          "sha": "37ef903ae5d852390a1af4beef2ed33eab780d3607683d69ce89dbcc03fd349e",
+          "schema_sha": "5f46b06863bb5c6b5e3138d45cce979fda91b22c80254718c302c31a30fdf98e",
+          "description": "Form fields for Iron Grove Fitness (lld): the generic LLD/1 · Form fields fields plus facts_used, from 1 charter fact(s); adapted from version 1 of this template",
+          "fingerprints": [
+            "2d285d7fd1b566dbca29224e869e4882619d4ed96a0d42286419a2d853721e8a"
+          ],
+          "business_type": "lld",
+          "facts": [
+            "Iron Grove Fitness"
+          ],
+          "fields": [
+            "form_fields",
+            "assumptions",
+            "facts_used"
+          ],
+          "enums": {
+            "facts_used": [
+              "Iron Grove Fitness"
+            ],
+            "FormField.type": [
+              "text",
+              "email",
+              "tel",
+              "url",
+              "number",
+              "date",
+              "time",
+              "select",
+              "textarea",
+              "checkbox",
+              "radio",
+              "password",
+              "file"
+            ]
+          },
+          "made_by": {
+            "run": "j2-20261111-211339",
+            "workflow": "W-25",
+            "atom": "W-25.a1",
+            "agent": "code (adapted from a run template)",
+            "date": "2026-11-11 21:13:39"
+          },
+          "used_by": [
+            {
+              "run": "j2-20261111-211339",
+              "workflow": "W-25",
+              "atom": "W-25.a1",
+              "action": "extended"
+            }
+          ],
+          "business": {
+            "name": "Iron Grove Fitness",
+            "type": "fitness studio"
+          },
+          "mock": false,
+          "collected_from": {
+            "run": "j2-20261111-211339",
+            "where": "the run's copy"
+          }
         }
       ],
-      "description": "Form fields for Still Point Yoga (lld): the generic LLD/1 · Form fields fields plus facts_used, from 2 charter fact(s)"
+      "description": "Form fields for Iron Grove Fitness (lld): the generic LLD/1 · Form fields fields plus facts_used, from 1 charter fact(s); adapted from version 1 of this template"
     },
     {
       "artifact": "lld",
@@ -707,9 +1762,111 @@
             "type": "business"
           },
           "mock": true
+        },
+        {
+          "version": 2,
+          "sha": "b1cc41a74f796bf46945717f2e89f958477e74b4fb62a9a9aca313e356c2304b",
+          "schema_sha": "d185d677949d7c092b00bc06200d351aee1696026191156639b082f315f78439",
+          "description": "Interactive elements for Iron Grove Fitness (lld): the generic LLD/1 · Interactive elements fields plus facts_used, from 2 charter fact(s); adapted from version 1 of this template",
+          "fingerprints": [
+            "5ef2e458cc593bcaeaf91b81be77bfa191ddda62beb48c58bce7a8c50894d8fd"
+          ],
+          "business_type": "lld",
+          "facts": [
+            "Iron Grove Fitness",
+            "The Interactive elements section is written for Iron Grove Fitness"
+          ],
+          "fields": [
+            "elements",
+            "assumptions",
+            "facts_used"
+          ],
+          "enums": {
+            "facts_used": [
+              "Iron Grove Fitness",
+              "The Interactive elements section is written for Iron Grove Fitness"
+            ]
+          },
+          "made_by": {
+            "run": "j2-20261111-211339",
+            "workflow": "W-17",
+            "atom": "W-17.a1",
+            "agent": "code (adapted from a run template)",
+            "date": "2026-11-11 21:13:39"
+          },
+          "used_by": [
+            {
+              "run": "j2-20261111-211339",
+              "workflow": "W-17",
+              "atom": "W-17.a1",
+              "action": "extended"
+            }
+          ],
+          "business": {
+            "name": "Iron Grove Fitness",
+            "type": "fitness studio"
+          },
+          "mock": false,
+          "collected_from": {
+            "run": "j2-20261111-211339",
+            "where": "the run's copy"
+          }
+        },
+        {
+          "version": 3,
+          "sha": "32c8c05ecd79faa6641661d02f245c7aab93f858d26055220dcf3c752396b32d",
+          "schema_sha": "1491f1aaeceaa952d3f206e84cc68248aa6467eb7b8fa15d8f5e28f16b9edc33",
+          "description": "Interactive elements for Iron Grove Fitness (lld): the generic LLD/1 · Interactive elements fields plus facts_used, from 1 charter fact(s); adapted from version 1 of this template",
+          "fingerprints": [
+            "20ea6b0950b7f9ff07e981dfd4a0de308c25bc2c6dc936258e4915854d976b4a"
+          ],
+          "business_type": "lld",
+          "facts": [
+            "Iron Grove Fitness"
+          ],
+          "fields": [
+            "elements",
+            "assumptions",
+            "facts_used"
+          ],
+          "enums": {
+            "facts_used": [
+              "Iron Grove Fitness"
+            ]
+          },
+          "made_by": {
+            "run": "j2-20261111-211339",
+            "workflow": "W-21",
+            "atom": "W-21.a1",
+            "agent": "code (adapted from a run template)",
+            "date": "2026-11-11 21:13:39"
+          },
+          "used_by": [
+            {
+              "run": "j2-20261111-211339",
+              "workflow": "W-21",
+              "atom": "W-21.a1",
+              "action": "extended"
+            },
+            {
+              "run": "j2-20261111-211339",
+              "workflow": "W-23",
+              "atom": "W-23.a1",
+              "action": "reused"
+            }
+          ],
+          "business": {
+            "name": "Iron Grove Fitness",
+            "type": "fitness studio"
+          },
+          "mock": false,
+          "collected_from": {
+            "run": "j2-20261111-211339",
+            "where": "the run's copy"
+          }
         }
       ],
-      "description": "Interactive elements for Still Point Yoga (lld): the generic LLD/1 · Interactive elements fields plus facts_used, from 2 charter fact(s)"
+      "description": "Interactive elements for Iron Grove Fitness (lld): the generic LLD/1 · Interactive elements fields plus facts_used, from 1 charter fact(s); adapted from version 1 of this template"
     },
     {
       "artifact": "lld",
@@ -829,9 +1986,105 @@
             "run": "j2-20261103-184249",
             "where": "the run's copy"
           }
+        },
+        {
+          "version": 3,
+          "sha": "492a5274809c3efdd03f0d6cdf22d10892abbe6256e01fd960f576b2ac2ab928",
+          "schema_sha": "a86b829f3787f1972113cf1ad1d07986804d3725c5cce9ddffcf13d9f6dd71c7",
+          "description": "Pages and sections for Iron Grove Fitness (lld): the generic LLD/1 · Pages and sections fields plus facts_used, from 2 charter fact(s); adapted from version 2 of this template",
+          "fingerprints": [
+            "0d6cbcecfcb3ec1111828c1fc42ed68e6a24d8274dd7a05845437ab29f321ec5"
+          ],
+          "business_type": "lld",
+          "facts": [
+            "Iron Grove Fitness",
+            "The Pages and sections section is written for Iron Grove Fitness, and names every component (C1, C2, C3, C4, C5, C6) it implements"
+          ],
+          "fields": [
+            "sections",
+            "assumptions",
+            "facts_used"
+          ],
+          "enums": {
+            "facts_used": [
+              "Iron Grove Fitness",
+              "The Pages and sections section is written for Iron Grove Fitness, and names every component (C1, C2, C3, C4, C5, C6) it implements"
+            ]
+          },
+          "made_by": {
+            "run": "j2-20261111-211339",
+            "workflow": "W-16",
+            "atom": "W-16.a1",
+            "agent": "code (adapted from a run template)",
+            "date": "2026-11-11 21:13:39"
+          },
+          "used_by": [
+            {
+              "run": "j2-20261111-211339",
+              "workflow": "W-16",
+              "atom": "W-16.a1",
+              "action": "extended"
+            }
+          ],
+          "business": {
+            "name": "Iron Grove Fitness",
+            "type": "fitness studio"
+          },
+          "mock": false,
+          "collected_from": {
+            "run": "j2-20261111-211339",
+            "where": "the run's copy"
+          }
+        },
+        {
+          "version": 4,
+          "sha": "28840b3af29de5822dc091c5e03edd4d65e5eb239fcda570244c1f2eaa6e2e32",
+          "schema_sha": "a515f109ab3cf6b67ae6ea243c85d2b69c37b245182f0402b5baef852e84956c",
+          "description": "Pages and sections for Iron Grove Fitness (lld): the generic LLD/1 · Pages and sections fields plus facts_used, from 1 charter fact(s); adapted from version 2 of this template",
+          "fingerprints": [
+            "f76d517cda1cf3ad5a8df9c20fe93e2cb3d5838b4ed92f544dac925008a85dd7"
+          ],
+          "business_type": "lld",
+          "facts": [
+            "Iron Grove Fitness"
+          ],
+          "fields": [
+            "sections",
+            "assumptions",
+            "facts_used"
+          ],
+          "enums": {
+            "facts_used": [
+              "Iron Grove Fitness"
+            ]
+          },
+          "made_by": {
+            "run": "j2-20261111-211339",
+            "workflow": "W-24",
+            "atom": "W-24.a1",
+            "agent": "code (adapted from a run template)",
+            "date": "2026-11-11 21:13:39"
+          },
+          "used_by": [
+            {
+              "run": "j2-20261111-211339",
+              "workflow": "W-24",
+              "atom": "W-24.a1",
+              "action": "extended"
+            }
+          ],
+          "business": {
+            "name": "Iron Grove Fitness",
+            "type": "fitness studio"
+          },
+          "mock": false,
+          "collected_from": {
+            "run": "j2-20261111-211339",
+            "where": "the run's copy"
+          }
         }
       ],
-      "description": "Pages and sections for Still Point Yoga (lld): the generic LLD/1 · Pages and sections fields plus facts_used, from 2 charter facts naming components C1 to C8"
+      "description": "Pages and sections for Iron Grove Fitness (lld): the generic LLD/1 · Pages and sections fields plus facts_used, from 1 charter fact(s); adapted from version 2 of this template"
     },
     {
       "artifact": "lld",
@@ -899,9 +2152,113 @@
             "type": "business"
           },
           "mock": true
+        },
+        {
+          "version": 2,
+          "sha": "8f3ccac94a34d3d2d94f6b90e527a4cf597586975cadbe5bf76b6bc02fb5bfe2",
+          "schema_sha": "1a4e164e97446cd2552d2402008d1e2c42866286857215d1c2886683f0f892d2",
+          "description": "Responsive and accessibility rules for Iron Grove Fitness (lld): the generic LLD/1 · Responsive and accessibility rules fields plus facts_used, from 2 charter fact(s); adapted from version 1 of this template",
+          "fingerprints": [
+            "0c82ac6a6480a5e9f877e764578f77b98dbfe8d55355226651df3ee17b8fd1dd"
+          ],
+          "business_type": "lld",
+          "facts": [
+            "Iron Grove Fitness",
+            "The Responsive and accessibility rules section is written for Iron Grove Fitness"
+          ],
+          "fields": [
+            "responsive_rules",
+            "accessibility_rules",
+            "assumptions",
+            "facts_used"
+          ],
+          "enums": {
+            "facts_used": [
+              "Iron Grove Fitness",
+              "The Responsive and accessibility rules section is written for Iron Grove Fitness"
+            ]
+          },
+          "made_by": {
+            "run": "j2-20261111-211339",
+            "workflow": "W-20",
+            "atom": "W-20.a1",
+            "agent": "code (adapted from a run template)",
+            "date": "2026-11-11 21:13:39"
+          },
+          "used_by": [
+            {
+              "run": "j2-20261111-211339",
+              "workflow": "W-20",
+              "atom": "W-20.a1",
+              "action": "extended"
+            }
+          ],
+          "business": {
+            "name": "Iron Grove Fitness",
+            "type": "fitness studio"
+          },
+          "mock": false,
+          "collected_from": {
+            "run": "j2-20261111-211339",
+            "where": "the run's copy"
+          }
+        },
+        {
+          "version": 3,
+          "sha": "3866786ee25bca47846c59940feaf1a9d9d6d5fe03cc6b04a5ebf62afe5bbfdc",
+          "schema_sha": "17f2241743dd76efa825752fc26a377cfc3469c815f2f69d35a72548d4be68b4",
+          "description": "Responsive and accessibility rules for Iron Grove Fitness (lld): the generic LLD/1 · Responsive and accessibility rules fields plus facts_used, from 1 charter fact(s); adapted from version 1 of this template",
+          "fingerprints": [
+            "45aa0146e7698db29dbb334a25d3c5978b3447557e40d87a3a9b541816131e03"
+          ],
+          "business_type": "lld",
+          "facts": [
+            "Iron Grove Fitness"
+          ],
+          "fields": [
+            "responsive_rules",
+            "accessibility_rules",
+            "assumptions",
+            "facts_used"
+          ],
+          "enums": {
+            "facts_used": [
+              "Iron Grove Fitness"
+            ]
+          },
+          "made_by": {
+            "run": "j2-20261111-211339",
+            "workflow": "W-22",
+            "atom": "W-22.a1",
+            "agent": "code (adapted from a run template)",
+            "date": "2026-11-11 21:13:39"
+          },
+          "used_by": [
+            {
+              "run": "j2-20261111-211339",
+              "workflow": "W-22",
+              "atom": "W-22.a1",
+              "action": "extended"
+            },
+            {
+              "run": "j2-20261111-211339",
+              "workflow": "W-27",
+              "atom": "W-27.a1",
+              "action": "reused"
+            }
+          ],
+          "business": {
+            "name": "Iron Grove Fitness",
+            "type": "fitness studio"
+          },
+          "mock": false,
+          "collected_from": {
+            "run": "j2-20261111-211339",
+            "where": "the run's copy"
+          }
         }
       ],
-      "description": "Responsive and accessibility rules for Still Point Yoga (lld): the generic LLD/1 · Responsive and accessibility rules fields plus facts_used, from 2 charter fact(s)"
+      "description": "Responsive and accessibility rules for Iron Grove Fitness (lld): the generic LLD/1 · Responsive and accessibility rules fields plus facts_used, from 1 charter fact(s); adapted from version 1 of this template"
     },
     {
       "artifact": "prd",
@@ -1122,9 +2479,143 @@
             "run": "j2-20261103-184249",
             "where": "the run's copy"
           }
+        },
+        {
+          "version": 3,
+          "sha": "f7be167c6a942be2c2278239ca647799bf1092b06658d8cafb2904e1236d2f67",
+          "schema_sha": "9a18f8714f0aee3786f68b1669e92a1a887f457eb6cb06edaf33d113e865d097",
+          "description": "Goals for Iron Grove Fitness (prd): the generic PRD/1 · Goals fields plus facts_used, from 11 charter fact(s); adapted from version 2 of this template",
+          "fingerprints": [
+            "8650ddcdc65e70f62ca2ce4cc0318c825492e543747655e2d3aad6d991b75744"
+          ],
+          "business_type": "prd",
+          "facts": [
+            "Friday 7:00 pm Kettlebell Class 650",
+            "Iron Grove Fitness",
+            "Monday 6:30 am Strength Basics 600",
+            "Payment is made at the studio",
+            "Saturday 8:00 am Weekend Bootcamp 800",
+            "The Goals section contains only goals the brief states: showing the weekly classes and prices and taking trial bookings",
+            "Tuesday 7:00 pm Circuit Hour 700",
+            "Unit 5, 21 Sample Street, Pune 411001",
+            "Wednesday 6:30 am Mobility Flow 500",
+            "bookings@irongrove.example",
+            "name, email, class, preferred date"
+          ],
+          "fields": [
+            "goals",
+            "assumptions",
+            "facts_used"
+          ],
+          "enums": {
+            "facts_used": [
+              "Friday 7:00 pm Kettlebell Class 650",
+              "Iron Grove Fitness",
+              "Monday 6:30 am Strength Basics 600",
+              "Payment is made at the studio",
+              "Saturday 8:00 am Weekend Bootcamp 800",
+              "The Goals section contains only goals the brief states: showing the weekly classes and prices and taking trial bookings",
+              "Tuesday 7:00 pm Circuit Hour 700",
+              "Unit 5, 21 Sample Street, Pune 411001",
+              "Wednesday 6:30 am Mobility Flow 500",
+              "bookings@irongrove.example",
+              "name, email, class, preferred date"
+            ]
+          },
+          "made_by": {
+            "run": "j2-20261111-211339",
+            "workflow": "W-3",
+            "atom": "W-3.a1",
+            "agent": "code (adapted from a run template)",
+            "date": "2026-11-11 21:13:39"
+          },
+          "used_by": [
+            {
+              "run": "j2-20261111-211339",
+              "workflow": "W-3",
+              "atom": "W-3.a1",
+              "action": "extended"
+            }
+          ],
+          "business": {
+            "name": "Iron Grove Fitness",
+            "type": "fitness studio"
+          },
+          "mock": false,
+          "collected_from": {
+            "run": "j2-20261111-211339",
+            "where": "the run's copy"
+          }
+        },
+        {
+          "version": 4,
+          "sha": "c5747f070bfe757ea81c7051c2277bbe1d02a5200023f5a94629517c0eee420d",
+          "schema_sha": "67dcc994105f6d12383ed74789a219dfe77c1bfdb49fd298c146e93858945ef2",
+          "description": "Goals for Rhythm Room Dance Studio (prd): the generic PRD/1 · Goals fields plus facts_used, from 11 charter fact(s); adapted from version 2 of this template",
+          "fingerprints": [
+            "2c199f6df446914befdcb3a608d4ba0735d132ea28488738dd256da2e0de3dd8"
+          ],
+          "business_type": "prd",
+          "facts": [
+            "3rd Floor, 8 Sample Lane, Bengaluru 560001",
+            "Monday 6:00 pm Salsa Beginners 700",
+            "Payment is made at the studio",
+            "Rhythm Room Dance Studio",
+            "Saturday 10:00 am Kids Hip Hop 500",
+            "Sunday 11:00 am Open Floor 400",
+            "The Goals section states a one-page website for Rhythm Room Dance Studio that lists classes and takes booking requests",
+            "Thursday 6:30 pm Contemporary 750",
+            "Wednesday 7:00 pm Bollywood Basics 600",
+            "hello@rhythmroom.example",
+            "name, email, class and preferred date"
+          ],
+          "fields": [
+            "goals",
+            "assumptions",
+            "facts_used"
+          ],
+          "enums": {
+            "facts_used": [
+              "3rd Floor, 8 Sample Lane, Bengaluru 560001",
+              "Monday 6:00 pm Salsa Beginners 700",
+              "Payment is made at the studio",
+              "Rhythm Room Dance Studio",
+              "Saturday 10:00 am Kids Hip Hop 500",
+              "Sunday 11:00 am Open Floor 400",
+              "The Goals section states a one-page website for Rhythm Room Dance Studio that lists classes and takes booking requests",
+              "Thursday 6:30 pm Contemporary 750",
+              "Wednesday 7:00 pm Bollywood Basics 600",
+              "hello@rhythmroom.example",
+              "name, email, class and preferred date"
+            ]
+          },
+          "made_by": {
+            "run": "j2-20261111-215733",
+            "workflow": "W-3",
+            "atom": "W-3.a1",
+            "agent": "code (adapted from a run template)",
+            "date": "2026-11-11 21:57:33"
+          },
+          "used_by": [
+            {
+              "run": "j2-20261111-215733",
+              "workflow": "W-3",
+              "atom": "W-3.a1",
+              "action": "extended"
+            }
+          ],
+          "business": {
+            "name": "Rhythm Room Dance Studio",
+            "type": "hld"
+          },
+          "mock": false,
+          "collected_from": {
+            "run": "j2-20261111-215733",
+            "where": "the run's copy"
+          }
         }
       ],
-      "description": "The '## Goals' section of the Still Point Yoga PRD. It has goal G1: visitors can see the classes and send a booking. No numeric target is set."
+      "description": "Goals for Rhythm Room Dance Studio (prd): the generic PRD/1 · Goals fields plus facts_used, from 11 charter fact(s); adapted from version 2 of this template"
     },
     {
       "artifact": "prd",
@@ -1329,9 +2820,145 @@
             "run": "j2-20261103-184249",
             "where": "the run's copy"
           }
+        },
+        {
+          "version": 3,
+          "sha": "7b30b1a5daa415c5960fdf5906063682bf3298d0d1db6624131dbce93a25aa3f",
+          "schema_sha": "758b4d68b9f2ee968c1b5bb8aea0caaf79ff1195dee68ee7ad5cb8227ad07eb6",
+          "description": "Out of scope for Iron Grove Fitness (prd): the generic PRD/1 · Out of scope fields plus facts_used, from 11 charter fact(s); adapted from version 2 of this template",
+          "fingerprints": [
+            "42ccae9abec7e4f39f6428895cba7e0e15c8c9f011633a35bd494dce6ac0622d"
+          ],
+          "business_type": "prd",
+          "facts": [
+            "Friday 7:00 pm Kettlebell Class 650",
+            "Iron Grove Fitness",
+            "Monday 6:30 am Strength Basics 600",
+            "Payment is made at the studio",
+            "Saturday 8:00 am Weekend Bootcamp 800",
+            "The Out of scope section lists online payment, a phone number, trainer names, an embedded map and any detail not in the brief",
+            "Tuesday 7:00 pm Circuit Hour 700",
+            "Unit 5, 21 Sample Street, Pune 411001",
+            "Wednesday 6:30 am Mobility Flow 500",
+            "bookings@irongrove.example",
+            "name, email, class, preferred date"
+          ],
+          "fields": [
+            "out_of_scope",
+            "assumptions",
+            "facts_used"
+          ],
+          "enums": {
+            "facts_used": [
+              "Friday 7:00 pm Kettlebell Class 650",
+              "Iron Grove Fitness",
+              "Monday 6:30 am Strength Basics 600",
+              "Payment is made at the studio",
+              "Saturday 8:00 am Weekend Bootcamp 800",
+              "The Out of scope section lists online payment, a phone number, trainer names, an embedded map and any detail not in the brief",
+              "Tuesday 7:00 pm Circuit Hour 700",
+              "Unit 5, 21 Sample Street, Pune 411001",
+              "Wednesday 6:30 am Mobility Flow 500",
+              "bookings@irongrove.example",
+              "name, email, class, preferred date"
+            ]
+          },
+          "made_by": {
+            "run": "j2-20261111-211339",
+            "workflow": "W-6",
+            "atom": "W-6.a1",
+            "agent": "code (adapted from a run template)",
+            "date": "2026-11-11 21:13:39"
+          },
+          "used_by": [
+            {
+              "run": "j2-20261111-211339",
+              "workflow": "W-6",
+              "atom": "W-6.a1",
+              "action": "extended"
+            }
+          ],
+          "business": {
+            "name": "Iron Grove Fitness",
+            "type": "fitness studio"
+          },
+          "mock": false,
+          "collected_from": {
+            "run": "j2-20261111-211339",
+            "where": "the run's copy"
+          }
+        },
+        {
+          "version": 4,
+          "sha": "ab502f7c9aa64abb751408f8589150d009eb14ae0ab7b774fb571b08f9e13006",
+          "schema_sha": "ce1cf77b48935fded966c3bf46dae127f419dcca81291110dc598b859a04ff75",
+          "description": "Out of scope for Rhythm Room Dance Studio (prd): the generic PRD/1 · Out of scope fields plus facts_used, from 12 charter fact(s); adapted from version 2 of this template",
+          "fingerprints": [
+            "36bb6f6fead43255dc90741183f24357a6c5d16b0d22de28d2da561524f80285"
+          ],
+          "business_type": "prd",
+          "facts": [
+            "3rd Floor, 8 Sample Lane, Bengaluru 560001",
+            "Monday 6:00 pm Salsa Beginners 700",
+            "Payment is made at the studio",
+            "Rhythm Room Dance Studio",
+            "Saturday 10:00 am Kids Hip Hop 500",
+            "Sunday 11:00 am Open Floor 400",
+            "The Out of scope section lists no phone number, no teacher names, no online payment and no embedded map",
+            "The Out of scope section states that no LLD is written and the website is not built",
+            "Thursday 6:30 pm Contemporary 750",
+            "Wednesday 7:00 pm Bollywood Basics 600",
+            "hello@rhythmroom.example",
+            "name, email, class and preferred date"
+          ],
+          "fields": [
+            "out_of_scope",
+            "assumptions",
+            "facts_used"
+          ],
+          "enums": {
+            "facts_used": [
+              "3rd Floor, 8 Sample Lane, Bengaluru 560001",
+              "Monday 6:00 pm Salsa Beginners 700",
+              "Payment is made at the studio",
+              "Rhythm Room Dance Studio",
+              "Saturday 10:00 am Kids Hip Hop 500",
+              "Sunday 11:00 am Open Floor 400",
+              "The Out of scope section lists no phone number, no teacher names, no online payment and no embedded map",
+              "The Out of scope section states that no LLD is written and the website is not built",
+              "Thursday 6:30 pm Contemporary 750",
+              "Wednesday 7:00 pm Bollywood Basics 600",
+              "hello@rhythmroom.example",
+              "name, email, class and preferred date"
+            ]
+          },
+          "made_by": {
+            "run": "j2-20261111-215733",
+            "workflow": "W-6",
+            "atom": "W-6.a1",
+            "agent": "code (adapted from a run template)",
+            "date": "2026-11-11 21:57:33"
+          },
+          "used_by": [
+            {
+              "run": "j2-20261111-215733",
+              "workflow": "W-6",
+              "atom": "W-6.a1",
+              "action": "extended"
+            }
+          ],
+          "business": {
+            "name": "Rhythm Room Dance Studio",
+            "type": "hld"
+          },
+          "mock": false,
+          "collected_from": {
+            "run": "j2-20261111-215733",
+            "where": "the run's copy"
+          }
         }
       ],
-      "description": "The '## Out of scope' section of the Still Point Yoga PRD: lists teacher names, a phone number, an embedded map and online payment as not included. Payment is made at the studio. No online payment is taken."
+      "description": "Out of scope for Rhythm Room Dance Studio (prd): the generic PRD/1 · Out of scope fields plus facts_used, from 12 charter fact(s); adapted from version 2 of this template"
     },
     {
       "artifact": "prd",
@@ -1464,9 +3091,143 @@
             "run": "j2-20261103-184249",
             "where": "the run's copy"
           }
+        },
+        {
+          "version": 3,
+          "sha": "977ed9475d2d0b0738b2cf624d82c58c6255b15e79bace55a93edb168b96d5b3",
+          "schema_sha": "33f82638b8616ffb0e707ec62418275b59dbaa36bf555f0b0d93b6b22e1c71e5",
+          "description": "Problem for Iron Grove Fitness (prd): the generic PRD/1 · Problem fields plus facts_used, from 11 charter fact(s); adapted from version 2 of this template",
+          "fingerprints": [
+            "ed0ea32372a419568f95fa22f477a15f2c693766f7c7f8aedfc18743924af51a"
+          ],
+          "business_type": "prd",
+          "facts": [
+            "Friday 7:00 pm Kettlebell Class 650",
+            "Iron Grove Fitness",
+            "Monday 6:30 am Strength Basics 600",
+            "Payment is made at the studio",
+            "Saturday 8:00 am Weekend Bootcamp 800",
+            "The Problem section states that the problem was not provided and does not state an invented problem",
+            "Tuesday 7:00 pm Circuit Hour 700",
+            "Unit 5, 21 Sample Street, Pune 411001",
+            "Wednesday 6:30 am Mobility Flow 500",
+            "bookings@irongrove.example",
+            "name, email, class, preferred date"
+          ],
+          "fields": [
+            "statement",
+            "assumptions",
+            "facts_used"
+          ],
+          "enums": {
+            "facts_used": [
+              "Friday 7:00 pm Kettlebell Class 650",
+              "Iron Grove Fitness",
+              "Monday 6:30 am Strength Basics 600",
+              "Payment is made at the studio",
+              "Saturday 8:00 am Weekend Bootcamp 800",
+              "The Problem section states that the problem was not provided and does not state an invented problem",
+              "Tuesday 7:00 pm Circuit Hour 700",
+              "Unit 5, 21 Sample Street, Pune 411001",
+              "Wednesday 6:30 am Mobility Flow 500",
+              "bookings@irongrove.example",
+              "name, email, class, preferred date"
+            ]
+          },
+          "made_by": {
+            "run": "j2-20261111-211339",
+            "workflow": "W-1",
+            "atom": "W-1.a1",
+            "agent": "code (adapted from a run template)",
+            "date": "2026-11-11 21:13:39"
+          },
+          "used_by": [
+            {
+              "run": "j2-20261111-211339",
+              "workflow": "W-1",
+              "atom": "W-1.a1",
+              "action": "extended"
+            }
+          ],
+          "business": {
+            "name": "Iron Grove Fitness",
+            "type": "fitness studio"
+          },
+          "mock": false,
+          "collected_from": {
+            "run": "j2-20261111-211339",
+            "where": "the run's copy"
+          }
+        },
+        {
+          "version": 4,
+          "sha": "4c50d004e38a724ee32d1c85482f6c620ce046e8aca4d04858020f93cb5b0d37",
+          "schema_sha": "2ae3e09f3ba3b8144f745f035ee87187c7445804924831cb0aee7cc19b5478cd",
+          "description": "Problem for Rhythm Room Dance Studio (prd): the generic PRD/1 · Problem fields plus facts_used, from 11 charter fact(s); adapted from version 2 of this template",
+          "fingerprints": [
+            "96f8143e1a87ffddefac0c226058abd8f8d2a890f41e259e89bb6ae35698f74f"
+          ],
+          "business_type": "prd",
+          "facts": [
+            "3rd Floor, 8 Sample Lane, Bengaluru 560001",
+            "Monday 6:00 pm Salsa Beginners 700",
+            "Payment is made at the studio",
+            "Rhythm Room Dance Studio",
+            "Saturday 10:00 am Kids Hip Hop 500",
+            "Sunday 11:00 am Open Floor 400",
+            "The Problem section says the problem is not provided and states no invented problem",
+            "Thursday 6:30 pm Contemporary 750",
+            "Wednesday 7:00 pm Bollywood Basics 600",
+            "hello@rhythmroom.example",
+            "name, email, class and preferred date"
+          ],
+          "fields": [
+            "statement",
+            "assumptions",
+            "facts_used"
+          ],
+          "enums": {
+            "facts_used": [
+              "3rd Floor, 8 Sample Lane, Bengaluru 560001",
+              "Monday 6:00 pm Salsa Beginners 700",
+              "Payment is made at the studio",
+              "Rhythm Room Dance Studio",
+              "Saturday 10:00 am Kids Hip Hop 500",
+              "Sunday 11:00 am Open Floor 400",
+              "The Problem section says the problem is not provided and states no invented problem",
+              "Thursday 6:30 pm Contemporary 750",
+              "Wednesday 7:00 pm Bollywood Basics 600",
+              "hello@rhythmroom.example",
+              "name, email, class and preferred date"
+            ]
+          },
+          "made_by": {
+            "run": "j2-20261111-215733",
+            "workflow": "W-1",
+            "atom": "W-1.a1",
+            "agent": "code (adapted from a run template)",
+            "date": "2026-11-11 21:57:33"
+          },
+          "used_by": [
+            {
+              "run": "j2-20261111-215733",
+              "workflow": "W-1",
+              "atom": "W-1.a1",
+              "action": "extended"
+            }
+          ],
+          "business": {
+            "name": "Rhythm Room Dance Studio",
+            "type": "hld"
+          },
+          "mock": false,
+          "collected_from": {
+            "run": "j2-20261111-215733",
+            "where": "the run's copy"
+          }
         }
       ],
-      "description": "Problem section of the Still Point Yoga PRD: states that the studio needs a page showing its classes and taking booking requests, with the studio name and address exactly as given."
+      "description": "Problem for Rhythm Room Dance Studio (prd): the generic PRD/1 · Problem fields plus facts_used, from 11 charter fact(s); adapted from version 2 of this template"
     },
     {
       "artifact": "prd",
@@ -1833,9 +3594,167 @@
             "run": "j2-20261103-184249",
             "where": "the run's copy"
           }
+        },
+        {
+          "version": 4,
+          "sha": "a5350a259d5298259167783a872bb9ad54a266dc86abc87baa7ddc764fa5c3d4",
+          "schema_sha": "560cf1f90b38868f67bba4fa46d08f8900b54f8f77b7238774e6afd489cb6897",
+          "description": "Requirements for Iron Grove Fitness (prd): the generic PRD/1 · Requirements fields plus facts_used, from 14 charter fact(s); adapted from version 3 of this template",
+          "fingerprints": [
+            "73bce4d8f822fecff960f8c6bd4621717a5b5c911beb972ceb382437cd66283c"
+          ],
+          "business_type": "prd",
+          "facts": [
+            "Friday 7:00 pm Kettlebell Class 650",
+            "Iron Grove Fitness",
+            "Monday 6:30 am Strength Basics 600",
+            "Payment is made at the studio",
+            "Saturday 8:00 am Weekend Bootcamp 800",
+            "The Requirements section describes the trial booking form with the fields name, email, class and preferred date, sent to bookings@irongrove.example",
+            "The Requirements section lists all five classes with their exact day, time, class name and price in rupees",
+            "The Requirements section states that no phone number and no trainer names are shown and that the page works on phones",
+            "The Requirements section states that the address Unit 5, 21 Sample Street, Pune 411001 is shown as text with no embedded map, and that payment is made at the studio with no online payment",
+            "Tuesday 7:00 pm Circuit Hour 700",
+            "Unit 5, 21 Sample Street, Pune 411001",
+            "Wednesday 6:30 am Mobility Flow 500",
+            "bookings@irongrove.example",
+            "name, email, class, preferred date"
+          ],
+          "fields": [
+            "requirements",
+            "assumptions",
+            "facts_used"
+          ],
+          "enums": {
+            "facts_used": [
+              "Friday 7:00 pm Kettlebell Class 650",
+              "Iron Grove Fitness",
+              "Monday 6:30 am Strength Basics 600",
+              "Payment is made at the studio",
+              "Saturday 8:00 am Weekend Bootcamp 800",
+              "The Requirements section describes the trial booking form with the fields name, email, class and preferred date, sent to bookings@irongrove.example",
+              "The Requirements section lists all five classes with their exact day, time, class name and price in rupees",
+              "The Requirements section states that no phone number and no trainer names are shown and that the page works on phones",
+              "The Requirements section states that the address Unit 5, 21 Sample Street, Pune 411001 is shown as text with no embedded map, and that payment is made at the studio with no online payment",
+              "Tuesday 7:00 pm Circuit Hour 700",
+              "Unit 5, 21 Sample Street, Pune 411001",
+              "Wednesday 6:30 am Mobility Flow 500",
+              "bookings@irongrove.example",
+              "name, email, class, preferred date"
+            ],
+            "Requirement.priority": [
+              "must",
+              "should",
+              "could"
+            ]
+          },
+          "made_by": {
+            "run": "j2-20261111-211339",
+            "workflow": "W-4",
+            "atom": "W-4.a1",
+            "agent": "code (adapted from a run template)",
+            "date": "2026-11-11 21:13:39"
+          },
+          "used_by": [
+            {
+              "run": "j2-20261111-211339",
+              "workflow": "W-4",
+              "atom": "W-4.a1",
+              "action": "extended"
+            }
+          ],
+          "business": {
+            "name": "Iron Grove Fitness",
+            "type": "fitness studio"
+          },
+          "mock": false,
+          "collected_from": {
+            "run": "j2-20261111-211339",
+            "where": "the run's copy"
+          }
+        },
+        {
+          "version": 5,
+          "sha": "6404a833ac8b4be0941e4b19765521980b7b4b304e54cb53230bf442573244d1",
+          "schema_sha": "0ca399ab8bc3b773a573f8f1786f2611373a784f37f0ff729346302f3151ab82",
+          "description": "Requirements for Rhythm Room Dance Studio (prd): the generic PRD/1 · Requirements fields plus facts_used, from 15 charter fact(s); adapted from version 3 of this template",
+          "fingerprints": [
+            "501c2c920d09d2bc7126d708a1b6daac25c53cf292ffdad0dfb1ae900a1d33b0"
+          ],
+          "business_type": "prd",
+          "facts": [
+            "3rd Floor, 8 Sample Lane, Bengaluru 560001",
+            "Monday 6:00 pm Salsa Beginners 700",
+            "Payment is made at the studio",
+            "Rhythm Room Dance Studio",
+            "Saturday 10:00 am Kids Hip Hop 500",
+            "Sunday 11:00 am Open Floor 400",
+            "The Requirements describe the booking form with the fields name, email, class and preferred date, sent to hello@rhythmroom.example",
+            "The Requirements list all five weekly classes with day, time, class name and price in rupees exactly as in the brief",
+            "The Requirements state that payment is made at the studio and no online payment is taken",
+            "The Requirements state that the address 3rd Floor, 8 Sample Lane, Bengaluru 560001 is shown as text with no embedded map",
+            "The Requirements state that the page must work on phones",
+            "Thursday 6:30 pm Contemporary 750",
+            "Wednesday 7:00 pm Bollywood Basics 600",
+            "hello@rhythmroom.example",
+            "name, email, class and preferred date"
+          ],
+          "fields": [
+            "requirements",
+            "assumptions",
+            "facts_used"
+          ],
+          "enums": {
+            "facts_used": [
+              "3rd Floor, 8 Sample Lane, Bengaluru 560001",
+              "Monday 6:00 pm Salsa Beginners 700",
+              "Payment is made at the studio",
+              "Rhythm Room Dance Studio",
+              "Saturday 10:00 am Kids Hip Hop 500",
+              "Sunday 11:00 am Open Floor 400",
+              "The Requirements describe the booking form with the fields name, email, class and preferred date, sent to hello@rhythmroom.example",
+              "The Requirements list all five weekly classes with day, time, class name and price in rupees exactly as in the brief",
+              "The Requirements state that payment is made at the studio and no online payment is taken",
+              "The Requirements state that the address 3rd Floor, 8 Sample Lane, Bengaluru 560001 is shown as text with no embedded map",
+              "The Requirements state that the page must work on phones",
+              "Thursday 6:30 pm Contemporary 750",
+              "Wednesday 7:00 pm Bollywood Basics 600",
+              "hello@rhythmroom.example",
+              "name, email, class and preferred date"
+            ],
+            "Requirement.priority": [
+              "must",
+              "should",
+              "could"
+            ]
+          },
+          "made_by": {
+            "run": "j2-20261111-215733",
+            "workflow": "W-4",
+            "atom": "W-4.a1",
+            "agent": "code (adapted from a run template)",
+            "date": "2026-11-11 21:57:33"
+          },
+          "used_by": [
+            {
+              "run": "j2-20261111-215733",
+              "workflow": "W-4",
+              "atom": "W-4.a1",
+              "action": "extended"
+            }
+          ],
+          "business": {
+            "name": "Rhythm Room Dance Studio",
+            "type": "hld"
+          },
+          "mock": false,
+          "collected_from": {
+            "run": "j2-20261111-215733",
+            "where": "the run's copy"
+          }
         }
       ],
-      "description": "Requirements section of the Still Point Yoga PRD: requirements R1, R2, ... covering the studio name and address as text, the five classes, the booking form, payment at the studio and phone use"
+      "description": "Requirements for Rhythm Room Dance Studio (prd): the generic PRD/1 · Requirements fields plus facts_used, from 15 charter fact(s); adapted from version 3 of this template"
     },
     {
       "artifact": "prd",
@@ -1907,9 +3826,143 @@
             "run": "j2-20261103-184249",
             "where": "the run's copy"
           }
+        },
+        {
+          "version": 2,
+          "sha": "c4ebe06f012565ebcb6b601ce19afbd8e5a50a276fd0fb1570f651397ca5f481",
+          "schema_sha": "ae08cb01093a3e1d8ec086a8b26c5c8146910f963c06db63e7569667348f6de2",
+          "description": "Success metrics for Iron Grove Fitness (prd): the generic PRD/1 · Success metrics fields plus facts_used, from 11 charter fact(s); adapted from version 1 of this template",
+          "fingerprints": [
+            "3384b029601af0283d31fc54dd59b67746549490b49f9dcb4463c32d634aface"
+          ],
+          "business_type": "prd",
+          "facts": [
+            "Friday 7:00 pm Kettlebell Class 650",
+            "Iron Grove Fitness",
+            "Monday 6:30 am Strength Basics 600",
+            "Payment is made at the studio",
+            "Saturday 8:00 am Weekend Bootcamp 800",
+            "The Success metrics section states that no success measure was provided and gives no invented number",
+            "Tuesday 7:00 pm Circuit Hour 700",
+            "Unit 5, 21 Sample Street, Pune 411001",
+            "Wednesday 6:30 am Mobility Flow 500",
+            "bookings@irongrove.example",
+            "name, email, class, preferred date"
+          ],
+          "fields": [
+            "success_metrics",
+            "assumptions",
+            "facts_used"
+          ],
+          "enums": {
+            "facts_used": [
+              "Friday 7:00 pm Kettlebell Class 650",
+              "Iron Grove Fitness",
+              "Monday 6:30 am Strength Basics 600",
+              "Payment is made at the studio",
+              "Saturday 8:00 am Weekend Bootcamp 800",
+              "The Success metrics section states that no success measure was provided and gives no invented number",
+              "Tuesday 7:00 pm Circuit Hour 700",
+              "Unit 5, 21 Sample Street, Pune 411001",
+              "Wednesday 6:30 am Mobility Flow 500",
+              "bookings@irongrove.example",
+              "name, email, class, preferred date"
+            ]
+          },
+          "made_by": {
+            "run": "j2-20261111-211339",
+            "workflow": "W-5",
+            "atom": "W-5.a1",
+            "agent": "code (adapted from a run template)",
+            "date": "2026-11-11 21:13:39"
+          },
+          "used_by": [
+            {
+              "run": "j2-20261111-211339",
+              "workflow": "W-5",
+              "atom": "W-5.a1",
+              "action": "extended"
+            }
+          ],
+          "business": {
+            "name": "Iron Grove Fitness",
+            "type": "fitness studio"
+          },
+          "mock": false,
+          "collected_from": {
+            "run": "j2-20261111-211339",
+            "where": "the run's copy"
+          }
+        },
+        {
+          "version": 3,
+          "sha": "7ae49277861ce96ddde18d386c22072a32ae06b8ec00b0470293f0d7087716a8",
+          "schema_sha": "c911b68545d5bb753d4f0245f6f90db937e4096f9ffe1483e9f10d25d5a78615",
+          "description": "Success metrics for Rhythm Room Dance Studio (prd): the generic PRD/1 · Success metrics fields plus facts_used, from 11 charter fact(s); adapted from version 1 of this template",
+          "fingerprints": [
+            "7ed117dd481db671b97ff7160edb74a6a42d8414d359b649141e687ec6432638"
+          ],
+          "business_type": "prd",
+          "facts": [
+            "3rd Floor, 8 Sample Lane, Bengaluru 560001",
+            "Monday 6:00 pm Salsa Beginners 700",
+            "Payment is made at the studio",
+            "Rhythm Room Dance Studio",
+            "Saturday 10:00 am Kids Hip Hop 500",
+            "Sunday 11:00 am Open Floor 400",
+            "The Success metrics section says no success measure was provided and states no invented number",
+            "Thursday 6:30 pm Contemporary 750",
+            "Wednesday 7:00 pm Bollywood Basics 600",
+            "hello@rhythmroom.example",
+            "name, email, class and preferred date"
+          ],
+          "fields": [
+            "success_metrics",
+            "assumptions",
+            "facts_used"
+          ],
+          "enums": {
+            "facts_used": [
+              "3rd Floor, 8 Sample Lane, Bengaluru 560001",
+              "Monday 6:00 pm Salsa Beginners 700",
+              "Payment is made at the studio",
+              "Rhythm Room Dance Studio",
+              "Saturday 10:00 am Kids Hip Hop 500",
+              "Sunday 11:00 am Open Floor 400",
+              "The Success metrics section says no success measure was provided and states no invented number",
+              "Thursday 6:30 pm Contemporary 750",
+              "Wednesday 7:00 pm Bollywood Basics 600",
+              "hello@rhythmroom.example",
+              "name, email, class and preferred date"
+            ]
+          },
+          "made_by": {
+            "run": "j2-20261111-215733",
+            "workflow": "W-5",
+            "atom": "W-5.a1",
+            "agent": "code (adapted from a run template)",
+            "date": "2026-11-11 21:57:33"
+          },
+          "used_by": [
+            {
+              "run": "j2-20261111-215733",
+              "workflow": "W-5",
+              "atom": "W-5.a1",
+              "action": "extended"
+            }
+          ],
+          "business": {
+            "name": "Rhythm Room Dance Studio",
+            "type": "hld"
+          },
+          "mock": false,
+          "collected_from": {
+            "run": "j2-20261111-215733",
+            "where": "the run's copy"
+          }
         }
       ],
-      "description": "Success metrics section of the Still Point Yoga PRD: success is that visitors can see the classes and send a booking, each metric names its goal, and no number is given."
+      "description": "Success metrics for Rhythm Room Dance Studio (prd): the generic PRD/1 · Success metrics fields plus facts_used, from 11 charter fact(s); adapted from version 1 of this template"
     },
     {
       "artifact": "prd",
@@ -2141,9 +4194,143 @@
             "run": "j2-20261103-162711",
             "where": "the run's copy"
           }
+        },
+        {
+          "version": 2,
+          "sha": "00508ca4b70a177ddd19452bc640d4f518f05092d042472deddb1b204a9d3c1e",
+          "schema_sha": "d1aab43408da04581d2ea767d3ffa21922d0ee8e2e2ce49bd1d6af8184f55d86",
+          "description": "Users for Iron Grove Fitness (prd): the generic PRD/1 · Users fields plus facts_used, from 11 charter fact(s); adapted from version 1 of this template",
+          "fingerprints": [
+            "ecdbab96a009208f1fc2147f33644fd6746f88bef0b72b77dcc802f99cc26da7"
+          ],
+          "business_type": "prd",
+          "facts": [
+            "Friday 7:00 pm Kettlebell Class 650",
+            "Iron Grove Fitness",
+            "Monday 6:30 am Strength Basics 600",
+            "Payment is made at the studio",
+            "Saturday 8:00 am Weekend Bootcamp 800",
+            "The Users section names the page visitors and the studio and gives only the actions listed in the brief",
+            "Tuesday 7:00 pm Circuit Hour 700",
+            "Unit 5, 21 Sample Street, Pune 411001",
+            "Wednesday 6:30 am Mobility Flow 500",
+            "bookings@irongrove.example",
+            "name, email, class, preferred date"
+          ],
+          "fields": [
+            "users",
+            "assumptions",
+            "facts_used"
+          ],
+          "enums": {
+            "facts_used": [
+              "Friday 7:00 pm Kettlebell Class 650",
+              "Iron Grove Fitness",
+              "Monday 6:30 am Strength Basics 600",
+              "Payment is made at the studio",
+              "Saturday 8:00 am Weekend Bootcamp 800",
+              "The Users section names the page visitors and the studio and gives only the actions listed in the brief",
+              "Tuesday 7:00 pm Circuit Hour 700",
+              "Unit 5, 21 Sample Street, Pune 411001",
+              "Wednesday 6:30 am Mobility Flow 500",
+              "bookings@irongrove.example",
+              "name, email, class, preferred date"
+            ]
+          },
+          "made_by": {
+            "run": "j2-20261111-211339",
+            "workflow": "W-2",
+            "atom": "W-2.a1",
+            "agent": "code (adapted from a run template)",
+            "date": "2026-11-11 21:13:39"
+          },
+          "used_by": [
+            {
+              "run": "j2-20261111-211339",
+              "workflow": "W-2",
+              "atom": "W-2.a1",
+              "action": "extended"
+            }
+          ],
+          "business": {
+            "name": "Iron Grove Fitness",
+            "type": "fitness studio"
+          },
+          "mock": false,
+          "collected_from": {
+            "run": "j2-20261111-211339",
+            "where": "the run's copy"
+          }
+        },
+        {
+          "version": 3,
+          "sha": "149a8cc7284b24effdd09b9b68c4d12675c2ede59c1e1af912dd2167370a663f",
+          "schema_sha": "e62bc5b1851eefb535f36ca7737f25aae49e12786f34b13c4c39b56d5d667ac4",
+          "description": "Users for Rhythm Room Dance Studio (prd): the generic PRD/1 · Users fields plus facts_used, from 11 charter fact(s); adapted from version 1 of this template",
+          "fingerprints": [
+            "45da685366ca585620e43483d4dae6048871c4a518521583ccaf69b1bdb401c6"
+          ],
+          "business_type": "prd",
+          "facts": [
+            "3rd Floor, 8 Sample Lane, Bengaluru 560001",
+            "Monday 6:00 pm Salsa Beginners 700",
+            "Payment is made at the studio",
+            "Rhythm Room Dance Studio",
+            "Saturday 10:00 am Kids Hip Hop 500",
+            "Sunday 11:00 am Open Floor 400",
+            "The Users section names visitors and the studio team and gives the actions the brief supports for each",
+            "Thursday 6:30 pm Contemporary 750",
+            "Wednesday 7:00 pm Bollywood Basics 600",
+            "hello@rhythmroom.example",
+            "name, email, class and preferred date"
+          ],
+          "fields": [
+            "users",
+            "assumptions",
+            "facts_used"
+          ],
+          "enums": {
+            "facts_used": [
+              "3rd Floor, 8 Sample Lane, Bengaluru 560001",
+              "Monday 6:00 pm Salsa Beginners 700",
+              "Payment is made at the studio",
+              "Rhythm Room Dance Studio",
+              "Saturday 10:00 am Kids Hip Hop 500",
+              "Sunday 11:00 am Open Floor 400",
+              "The Users section names visitors and the studio team and gives the actions the brief supports for each",
+              "Thursday 6:30 pm Contemporary 750",
+              "Wednesday 7:00 pm Bollywood Basics 600",
+              "hello@rhythmroom.example",
+              "name, email, class and preferred date"
+            ]
+          },
+          "made_by": {
+            "run": "j2-20261111-215733",
+            "workflow": "W-2",
+            "atom": "W-2.a1",
+            "agent": "code (adapted from a run template)",
+            "date": "2026-11-11 21:57:33"
+          },
+          "used_by": [
+            {
+              "run": "j2-20261111-215733",
+              "workflow": "W-2",
+              "atom": "W-2.a1",
+              "action": "extended"
+            }
+          ],
+          "business": {
+            "name": "Rhythm Room Dance Studio",
+            "type": "hld"
+          },
+          "mock": false,
+          "collected_from": {
+            "run": "j2-20261111-215733",
+            "where": "the run's copy"
+          }
         }
       ],
-      "description": "The Users section of the Still Point Yoga PRD: prospective students and the studio team, and what each does. Heading is exactly '## Users'."
+      "description": "Users for Rhythm Room Dance Studio (prd): the generic PRD/1 · Users fields plus facts_used, from 11 charter fact(s); adapted from version 1 of this template"
     },
     {
       "artifact": "prd",
@@ -2217,6 +4404,91 @@
         }
       ],
       "description": "Users for Still Point Yoga (prd): the generic PRD/1 · Users fields plus facts_used, from 7 charter fact(s)"
+    },
+    {
+      "artifact": "website",
+      "section": "Section",
+      "section_slug": "section",
+      "slug": "iron-grove-fitness-section-s2",
+      "name": "Iron Grove Fitness section S2",
+      "kind": "specialised",
+      "extends": "website/section@generic/1",
+      "versions": [
+        {
+          "version": 1,
+          "sha": "18664c21f45dc0c1c193bb9276e37cce1594e199348fe7ba49896353e05c2b49",
+          "schema_sha": "2b8fbfa64fa4319c7ea2a19e1481ba4c28b21eece2ed968016fad1a7e6a569fd",
+          "description": "Trial booking form section for Iron Grove Fitness: the generic WebsiteSection fields plus elements and form_fields, from the charter facts",
+          "fingerprints": [
+            "b334a7a416ef8257e8992c9a60bb26f2ae2910686b4d51808e9e67522b8edb89"
+          ],
+          "business_type": "fitness studio",
+          "facts": [
+            "Kettlebell Class",
+            "The trial booking form has the fields name, email, class and preferred date",
+            "The trial booking form sends the booking to bookings@irongrove.example",
+            "bookings@irongrove.example"
+          ],
+          "fields": [
+            "id",
+            "anchor",
+            "implements",
+            "html",
+            "head",
+            "selectors_used",
+            "facts_used",
+            "elements",
+            "form_fields"
+          ],
+          "enums": {
+            "facts_used": [
+              "Kettlebell Class",
+              "The trial booking form has the fields name, email, class and preferred date",
+              "The trial booking form sends the booking to bookings@irongrove.example",
+              "bookings@irongrove.example"
+            ],
+            "elements": [
+              "#booking-class",
+              "#booking-date",
+              "#booking-email",
+              "#booking-form",
+              "#booking-name",
+              "#booking-submit"
+            ],
+            "form_fields": [
+              "class",
+              "email",
+              "name",
+              "preferred_date"
+            ]
+          },
+          "made_by": {
+            "run": "j2-20261111-211339",
+            "workflow": "W-29",
+            "atom": "W-29.a1",
+            "agent": "template generator (claude-cli)",
+            "date": "2026-11-11 21:13:39"
+          },
+          "used_by": [
+            {
+              "run": "j2-20261111-211339",
+              "workflow": "W-29",
+              "atom": "W-29.a1",
+              "action": "created"
+            }
+          ],
+          "business": {
+            "name": "Iron Grove Fitness",
+            "type": "fitness studio"
+          },
+          "mock": false,
+          "collected_from": {
+            "run": "j2-20261111-211339",
+            "where": "the run's copy"
+          }
+        }
+      ],
+      "description": "Trial booking form section for Iron Grove Fitness: the generic WebsiteSection fields plus elements and form_fields, from the charter facts"
     },
     {
       "artifact": "website",
@@ -5115,9 +7387,974 @@
         "reused": 16,
         "generic": 10
       }
+    },
+    "j2-20261111-211339": {
+      "run": "j2-20261111-211339",
+      "date": "2026-11-11 21:13:39",
+      "business": "Iron Grove Fitness",
+      "business_type": "fitness studio",
+      "mock": false,
+      "provider": "claude-cli",
+      "model": "sonnet",
+      "library": "/tmp/j2-rt-lib",
+      "decisions": [
+        {
+          "workflow": "W-1",
+          "atom": "W-1.a1",
+          "artifact": "prd",
+          "section": "Problem",
+          "template": "Still Point Yoga Problem",
+          "version": 3,
+          "action": "extended",
+          "kind": "specialised",
+          "score": 0.0909,
+          "rule": "t",
+          "source": "the run's copy",
+          "ref": {
+            "artifact": "prd",
+            "section_slug": "problem",
+            "slug": "still-point-yoga-problem",
+            "version": 3
+          }
+        },
+        {
+          "workflow": "W-2",
+          "atom": "W-2.a1",
+          "artifact": "prd",
+          "section": "Users",
+          "template": "Still Point Yoga PRD Users",
+          "version": 2,
+          "action": "extended",
+          "kind": "specialised",
+          "score": 0.0909,
+          "rule": "t",
+          "source": "the run's copy",
+          "ref": {
+            "artifact": "prd",
+            "section_slug": "users",
+            "slug": "still-point-yoga-prd-users",
+            "version": 2
+          }
+        },
+        {
+          "workflow": "W-3",
+          "atom": "W-3.a1",
+          "artifact": "prd",
+          "section": "Goals",
+          "template": "Still Point Yoga PRD Goals",
+          "version": 3,
+          "action": "extended",
+          "kind": "specialised",
+          "score": 0.0909,
+          "rule": "t",
+          "source": "the run's copy",
+          "ref": {
+            "artifact": "prd",
+            "section_slug": "goals",
+            "slug": "still-point-yoga-prd-goals",
+            "version": 3
+          }
+        },
+        {
+          "workflow": "W-4",
+          "atom": "W-4.a1",
+          "artifact": "prd",
+          "section": "Requirements",
+          "template": "Still Point Yoga Requirements",
+          "version": 4,
+          "action": "extended",
+          "kind": "specialised",
+          "score": 0.0714,
+          "rule": "t",
+          "source": "the run's copy",
+          "ref": {
+            "artifact": "prd",
+            "section_slug": "requirements",
+            "slug": "still-point-yoga-requirements",
+            "version": 4
+          }
+        },
+        {
+          "workflow": "W-5",
+          "atom": "W-5.a1",
+          "artifact": "prd",
+          "section": "Success metrics",
+          "template": "Still Point Yoga PRD Success metrics",
+          "version": 2,
+          "action": "extended",
+          "kind": "specialised",
+          "score": 0.0909,
+          "rule": "t",
+          "source": "the run's copy",
+          "ref": {
+            "artifact": "prd",
+            "section_slug": "success-metrics",
+            "slug": "still-point-yoga-prd-success-metrics",
+            "version": 2
+          }
+        },
+        {
+          "workflow": "W-6",
+          "atom": "W-6.a1",
+          "artifact": "prd",
+          "section": "Out of scope",
+          "template": "Still Point Yoga PRD Out of scope",
+          "version": 3,
+          "action": "extended",
+          "kind": "specialised",
+          "score": 0.0909,
+          "rule": "t",
+          "source": "the run's copy",
+          "ref": {
+            "artifact": "prd",
+            "section_slug": "out-of-scope",
+            "slug": "still-point-yoga-prd-out-of-scope",
+            "version": 3
+          }
+        },
+        {
+          "workflow": "W-7",
+          "atom": "W-7.a1",
+          "artifact": "hld",
+          "section": "Purpose and scope",
+          "template": "Still Point Yoga Purpose and scope",
+          "version": 2,
+          "action": "extended",
+          "kind": "specialised",
+          "score": 0.0,
+          "rule": "t",
+          "source": "the run's copy",
+          "ref": {
+            "artifact": "hld",
+            "section_slug": "purpose-and-scope",
+            "slug": "still-point-yoga-purpose-and-scope",
+            "version": 2
+          }
+        },
+        {
+          "workflow": "W-8",
+          "atom": "W-8.a1",
+          "artifact": "hld",
+          "section": "Pages",
+          "template": "Still Point Yoga Pages",
+          "version": 2,
+          "action": "extended",
+          "kind": "specialised",
+          "score": 0.0,
+          "rule": "t",
+          "source": "the run's copy",
+          "ref": {
+            "artifact": "hld",
+            "section_slug": "pages",
+            "slug": "still-point-yoga-pages",
+            "version": 2
+          }
+        },
+        {
+          "workflow": "W-9",
+          "atom": "W-9.a1",
+          "artifact": "hld",
+          "section": "Components",
+          "template": "Still Point Yoga Components",
+          "version": 3,
+          "action": "extended",
+          "kind": "specialised",
+          "score": 0.0,
+          "rule": "t",
+          "source": "the run's copy",
+          "ref": {
+            "artifact": "hld",
+            "section_slug": "components",
+            "slug": "still-point-yoga-components",
+            "version": 3
+          }
+        },
+        {
+          "workflow": "W-10",
+          "atom": "W-10.a1",
+          "artifact": "hld",
+          "section": "Data flow",
+          "template": "Still Point Yoga Data flow",
+          "version": 2,
+          "action": "extended",
+          "kind": "specialised",
+          "score": 0.0,
+          "rule": "t",
+          "source": "the run's copy",
+          "ref": {
+            "artifact": "hld",
+            "section_slug": "data-flow",
+            "slug": "still-point-yoga-data-flow",
+            "version": 2
+          }
+        },
+        {
+          "workflow": "W-11",
+          "atom": "W-11.a1",
+          "artifact": "hld",
+          "section": "Hosting and deployment",
+          "template": "Still Point Yoga Hosting and deployment",
+          "version": 2,
+          "action": "extended",
+          "kind": "specialised",
+          "score": 0.0,
+          "rule": "t",
+          "source": "the run's copy",
+          "ref": {
+            "artifact": "hld",
+            "section_slug": "hosting-and-deployment",
+            "slug": "still-point-yoga-hosting-and-deployment",
+            "version": 2
+          }
+        },
+        {
+          "workflow": "W-12",
+          "atom": "W-12.a1",
+          "artifact": "hld",
+          "section": "Risks",
+          "template": "Still Point Yoga Risks",
+          "version": 2,
+          "action": "extended",
+          "kind": "specialised",
+          "score": 0.0,
+          "rule": "t",
+          "source": "the run's copy",
+          "ref": {
+            "artifact": "hld",
+            "section_slug": "risks",
+            "slug": "still-point-yoga-risks",
+            "version": 2
+          }
+        },
+        {
+          "workflow": "W-13",
+          "atom": "W-13.a1",
+          "artifact": "hld",
+          "section": "Components",
+          "template": "Still Point Yoga Components",
+          "version": 4,
+          "action": "extended",
+          "kind": "specialised",
+          "score": 0.0,
+          "rule": "t",
+          "source": "the run's copy",
+          "ref": {
+            "artifact": "hld",
+            "section_slug": "components",
+            "slug": "still-point-yoga-components",
+            "version": 4
+          }
+        },
+        {
+          "workflow": "W-14",
+          "atom": "W-14.a1",
+          "artifact": "hld",
+          "section": "Components",
+          "template": "Still Point Yoga Components",
+          "version": 4,
+          "action": "reused",
+          "kind": "specialised",
+          "score": 0.0,
+          "rule": "t",
+          "source": "the run's copy",
+          "ref": {
+            "artifact": "hld",
+            "section_slug": "components",
+            "slug": "still-point-yoga-components",
+            "version": 4
+          }
+        },
+        {
+          "workflow": "W-15",
+          "atom": "W-15.a1",
+          "artifact": "hld",
+          "section": "Hosting and deployment",
+          "template": "Still Point Yoga Hosting and deployment",
+          "version": 3,
+          "action": "extended",
+          "kind": "specialised",
+          "score": 0.0,
+          "rule": "t",
+          "source": "the run's copy",
+          "ref": {
+            "artifact": "hld",
+            "section_slug": "hosting-and-deployment",
+            "slug": "still-point-yoga-hosting-and-deployment",
+            "version": 3
+          }
+        },
+        {
+          "workflow": "W-16",
+          "atom": "W-16.a1",
+          "artifact": "lld",
+          "section": "Pages and sections",
+          "template": "Still Point Yoga Pages and sections",
+          "version": 3,
+          "action": "extended",
+          "kind": "specialised",
+          "score": 0.0,
+          "rule": "t",
+          "source": "the run's copy",
+          "ref": {
+            "artifact": "lld",
+            "section_slug": "pages-and-sections",
+            "slug": "still-point-yoga-pages-and-sections",
+            "version": 3
+          }
+        },
+        {
+          "workflow": "W-17",
+          "atom": "W-17.a1",
+          "artifact": "lld",
+          "section": "Interactive elements",
+          "template": "Still Point Yoga Interactive elements",
+          "version": 2,
+          "action": "extended",
+          "kind": "specialised",
+          "score": 0.0,
+          "rule": "t",
+          "source": "the run's copy",
+          "ref": {
+            "artifact": "lld",
+            "section_slug": "interactive-elements",
+            "slug": "still-point-yoga-interactive-elements",
+            "version": 2
+          }
+        },
+        {
+          "workflow": "W-18",
+          "atom": "W-18.a1",
+          "artifact": "lld",
+          "section": "Form fields",
+          "template": "Still Point Yoga Form fields",
+          "version": 2,
+          "action": "extended",
+          "kind": "specialised",
+          "score": 0.0,
+          "rule": "t",
+          "source": "the run's copy",
+          "ref": {
+            "artifact": "lld",
+            "section_slug": "form-fields",
+            "slug": "still-point-yoga-form-fields",
+            "version": 2
+          }
+        },
+        {
+          "workflow": "W-19",
+          "atom": "W-19.a1",
+          "artifact": "lld",
+          "section": "File structure",
+          "template": "Still Point Yoga File structure",
+          "version": 2,
+          "action": "extended",
+          "kind": "specialised",
+          "score": 0.0,
+          "rule": "t",
+          "source": "the run's copy",
+          "ref": {
+            "artifact": "lld",
+            "section_slug": "file-structure",
+            "slug": "still-point-yoga-file-structure",
+            "version": 2
+          }
+        },
+        {
+          "workflow": "W-20",
+          "atom": "W-20.a1",
+          "artifact": "lld",
+          "section": "Responsive and accessibility rules",
+          "template": "Still Point Yoga Responsive and accessibility rules",
+          "version": 2,
+          "action": "extended",
+          "kind": "specialised",
+          "score": 0.0,
+          "rule": "t",
+          "source": "the run's copy",
+          "ref": {
+            "artifact": "lld",
+            "section_slug": "responsive-and-accessibility-rules",
+            "slug": "still-point-yoga-responsive-and-accessibility-rules",
+            "version": 2
+          }
+        },
+        {
+          "workflow": "W-21",
+          "atom": "W-21.a1",
+          "artifact": "lld",
+          "section": "Interactive elements",
+          "template": "Still Point Yoga Interactive elements",
+          "version": 3,
+          "action": "extended",
+          "kind": "specialised",
+          "score": 0.0,
+          "rule": "t",
+          "source": "the run's copy",
+          "ref": {
+            "artifact": "lld",
+            "section_slug": "interactive-elements",
+            "slug": "still-point-yoga-interactive-elements",
+            "version": 3
+          }
+        },
+        {
+          "workflow": "W-22",
+          "atom": "W-22.a1",
+          "artifact": "lld",
+          "section": "Responsive and accessibility rules",
+          "template": "Still Point Yoga Responsive and accessibility rules",
+          "version": 3,
+          "action": "extended",
+          "kind": "specialised",
+          "score": 0.0,
+          "rule": "t",
+          "source": "the run's copy",
+          "ref": {
+            "artifact": "lld",
+            "section_slug": "responsive-and-accessibility-rules",
+            "slug": "still-point-yoga-responsive-and-accessibility-rules",
+            "version": 3
+          }
+        },
+        {
+          "workflow": "W-23",
+          "atom": "W-23.a1",
+          "artifact": "lld",
+          "section": "Interactive elements",
+          "template": "Still Point Yoga Interactive elements",
+          "version": 3,
+          "action": "reused",
+          "kind": "specialised",
+          "score": 0.0,
+          "rule": "t",
+          "source": "the run's copy",
+          "ref": {
+            "artifact": "lld",
+            "section_slug": "interactive-elements",
+            "slug": "still-point-yoga-interactive-elements",
+            "version": 3
+          }
+        },
+        {
+          "workflow": "W-24",
+          "atom": "W-24.a1",
+          "artifact": "lld",
+          "section": "Pages and sections",
+          "template": "Still Point Yoga Pages and sections",
+          "version": 4,
+          "action": "extended",
+          "kind": "specialised",
+          "score": 0.0,
+          "rule": "t",
+          "source": "the run's copy",
+          "ref": {
+            "artifact": "lld",
+            "section_slug": "pages-and-sections",
+            "slug": "still-point-yoga-pages-and-sections",
+            "version": 4
+          }
+        },
+        {
+          "workflow": "W-25",
+          "atom": "W-25.a1",
+          "artifact": "lld",
+          "section": "Form fields",
+          "template": "Still Point Yoga Form fields",
+          "version": 3,
+          "action": "extended",
+          "kind": "specialised",
+          "score": 0.0,
+          "rule": "t",
+          "source": "the run's copy",
+          "ref": {
+            "artifact": "lld",
+            "section_slug": "form-fields",
+            "slug": "still-point-yoga-form-fields",
+            "version": 3
+          }
+        },
+        {
+          "workflow": "W-26",
+          "atom": "W-26.a1",
+          "artifact": "lld",
+          "section": "File structure",
+          "template": "Still Point Yoga File structure",
+          "version": 3,
+          "action": "extended",
+          "kind": "specialised",
+          "score": 0.0,
+          "rule": "t",
+          "source": "the run's copy",
+          "ref": {
+            "artifact": "lld",
+            "section_slug": "file-structure",
+            "slug": "still-point-yoga-file-structure",
+            "version": 3
+          }
+        },
+        {
+          "workflow": "W-27",
+          "atom": "W-27.a1",
+          "artifact": "lld",
+          "section": "Responsive and accessibility rules",
+          "template": "Still Point Yoga Responsive and accessibility rules",
+          "version": 3,
+          "action": "reused",
+          "kind": "specialised",
+          "score": 0.0,
+          "rule": "t",
+          "source": "the run's copy",
+          "ref": {
+            "artifact": "lld",
+            "section_slug": "responsive-and-accessibility-rules",
+            "slug": "still-point-yoga-responsive-and-accessibility-rules",
+            "version": 3
+          }
+        },
+        {
+          "workflow": "W-28",
+          "atom": "W-28.a1",
+          "artifact": "website",
+          "section": "Section",
+          "template": "WebsiteSection/1 · Section",
+          "version": 1,
+          "action": "generic",
+          "kind": "generic",
+          "score": 0.0,
+          "rule": "e",
+          "source": "generic",
+          "ref": {
+            "artifact": "website",
+            "section_slug": "section",
+            "slug": "generic",
+            "version": 1
+          }
+        },
+        {
+          "workflow": "W-28",
+          "atom": "W-28.a1",
+          "artifact": "design",
+          "section": "Style guide",
+          "template": "Design/1 · Style guide",
+          "version": 1,
+          "action": "generic",
+          "kind": "generic",
+          "score": null,
+          "rule": "-",
+          "source": "generic",
+          "ref": {
+            "artifact": "design",
+            "section_slug": "style-guide",
+            "slug": "generic",
+            "version": 1
+          }
+        },
+        {
+          "workflow": "W-29",
+          "atom": "W-29.a1",
+          "artifact": "website",
+          "section": "Section",
+          "template": "Iron Grove Fitness section S2",
+          "version": 1,
+          "action": "created",
+          "kind": "specialised",
+          "score": 0.0,
+          "rule": "d",
+          "source": "the run's copy",
+          "ref": {
+            "artifact": "website",
+            "section_slug": "section",
+            "slug": "iron-grove-fitness-section-s2",
+            "version": 1
+          }
+        },
+        {
+          "workflow": "W-30",
+          "atom": "W-30.a1",
+          "artifact": "website",
+          "section": "Section",
+          "template": "WebsiteSection/1 · Section",
+          "version": 1,
+          "action": "generic",
+          "kind": "generic",
+          "score": 0.0,
+          "rule": "e",
+          "source": "generic",
+          "ref": {
+            "artifact": "website",
+            "section_slug": "section",
+            "slug": "generic",
+            "version": 1
+          }
+        },
+        {
+          "workflow": "W-31",
+          "atom": "W-31.a1",
+          "artifact": "website",
+          "section": "Section",
+          "template": "WebsiteSection/1 · Section",
+          "version": 1,
+          "action": "generic",
+          "kind": "generic",
+          "score": 0.0833,
+          "rule": "e",
+          "source": "generic",
+          "ref": {
+            "artifact": "website",
+            "section_slug": "section",
+            "slug": "generic",
+            "version": 1
+          }
+        },
+        {
+          "workflow": "W-32",
+          "atom": "W-32.a1",
+          "artifact": "website",
+          "section": "Section",
+          "template": "WebsiteSection/1 · Section",
+          "version": 1,
+          "action": "generic",
+          "kind": "generic",
+          "score": null,
+          "rule": "0",
+          "source": "generic",
+          "ref": {
+            "artifact": "website",
+            "section_slug": "section",
+            "slug": "generic",
+            "version": 1
+          }
+        }
+      ],
+      "counts": {
+        "created": 1,
+        "extended": 24,
+        "reused": 3,
+        "generic": 5
+      }
+    },
+    "j2-20261111-215733": {
+      "run": "j2-20261111-215733",
+      "date": "2026-11-11 21:57:33",
+      "business": "Rhythm Room Dance Studio",
+      "business_type": "hld",
+      "mock": false,
+      "provider": "claude-cli",
+      "model": "sonnet",
+      "library": "/tmp/j2-rt-lib",
+      "decisions": [
+        {
+          "workflow": "W-1",
+          "atom": "W-1.a1",
+          "artifact": "prd",
+          "section": "Problem",
+          "template": "Still Point Yoga Problem",
+          "version": 4,
+          "action": "extended",
+          "kind": "specialised",
+          "score": 0.1818,
+          "rule": "t",
+          "source": "the run's copy",
+          "ref": {
+            "artifact": "prd",
+            "section_slug": "problem",
+            "slug": "still-point-yoga-problem",
+            "version": 4
+          }
+        },
+        {
+          "workflow": "W-2",
+          "atom": "W-2.a1",
+          "artifact": "prd",
+          "section": "Users",
+          "template": "Still Point Yoga PRD Users",
+          "version": 3,
+          "action": "extended",
+          "kind": "specialised",
+          "score": 0.1818,
+          "rule": "t",
+          "source": "the run's copy",
+          "ref": {
+            "artifact": "prd",
+            "section_slug": "users",
+            "slug": "still-point-yoga-prd-users",
+            "version": 3
+          }
+        },
+        {
+          "workflow": "W-3",
+          "atom": "W-3.a1",
+          "artifact": "prd",
+          "section": "Goals",
+          "template": "Still Point Yoga PRD Goals",
+          "version": 4,
+          "action": "extended",
+          "kind": "specialised",
+          "score": 0.1818,
+          "rule": "t",
+          "source": "the run's copy",
+          "ref": {
+            "artifact": "prd",
+            "section_slug": "goals",
+            "slug": "still-point-yoga-prd-goals",
+            "version": 4
+          }
+        },
+        {
+          "workflow": "W-4",
+          "atom": "W-4.a1",
+          "artifact": "prd",
+          "section": "Requirements",
+          "template": "Still Point Yoga Requirements",
+          "version": 5,
+          "action": "extended",
+          "kind": "specialised",
+          "score": 0.1333,
+          "rule": "t",
+          "source": "the run's copy",
+          "ref": {
+            "artifact": "prd",
+            "section_slug": "requirements",
+            "slug": "still-point-yoga-requirements",
+            "version": 5
+          }
+        },
+        {
+          "workflow": "W-5",
+          "atom": "W-5.a1",
+          "artifact": "prd",
+          "section": "Success metrics",
+          "template": "Still Point Yoga PRD Success metrics",
+          "version": 3,
+          "action": "extended",
+          "kind": "specialised",
+          "score": 0.1818,
+          "rule": "t",
+          "source": "the run's copy",
+          "ref": {
+            "artifact": "prd",
+            "section_slug": "success-metrics",
+            "slug": "still-point-yoga-prd-success-metrics",
+            "version": 3
+          }
+        },
+        {
+          "workflow": "W-6",
+          "atom": "W-6.a1",
+          "artifact": "prd",
+          "section": "Out of scope",
+          "template": "Still Point Yoga PRD Out of scope",
+          "version": 4,
+          "action": "extended",
+          "kind": "specialised",
+          "score": 0.1667,
+          "rule": "t",
+          "source": "the run's copy",
+          "ref": {
+            "artifact": "prd",
+            "section_slug": "out-of-scope",
+            "slug": "still-point-yoga-prd-out-of-scope",
+            "version": 4
+          }
+        },
+        {
+          "workflow": "W-7",
+          "atom": "W-7.a1",
+          "artifact": "hld",
+          "section": "Purpose and scope",
+          "template": "Still Point Yoga Purpose and scope",
+          "version": 3,
+          "action": "extended",
+          "kind": "specialised",
+          "score": 0.0,
+          "rule": "t",
+          "source": "the run's copy",
+          "ref": {
+            "artifact": "hld",
+            "section_slug": "purpose-and-scope",
+            "slug": "still-point-yoga-purpose-and-scope",
+            "version": 3
+          }
+        },
+        {
+          "workflow": "W-8",
+          "atom": "W-8.a1",
+          "artifact": "hld",
+          "section": "Pages",
+          "template": "Still Point Yoga Pages",
+          "version": 3,
+          "action": "extended",
+          "kind": "specialised",
+          "score": 0.0,
+          "rule": "t",
+          "source": "the run's copy",
+          "ref": {
+            "artifact": "hld",
+            "section_slug": "pages",
+            "slug": "still-point-yoga-pages",
+            "version": 3
+          }
+        },
+        {
+          "workflow": "W-9",
+          "atom": "W-9.a1",
+          "artifact": "hld",
+          "section": "Components",
+          "template": "Still Point Yoga Components",
+          "version": 5,
+          "action": "extended",
+          "kind": "specialised",
+          "score": 0.0,
+          "rule": "t",
+          "source": "the run's copy",
+          "ref": {
+            "artifact": "hld",
+            "section_slug": "components",
+            "slug": "still-point-yoga-components",
+            "version": 5
+          }
+        },
+        {
+          "workflow": "W-10",
+          "atom": "W-10.a1",
+          "artifact": "hld",
+          "section": "Data flow",
+          "template": "Still Point Yoga Data flow",
+          "version": 3,
+          "action": "extended",
+          "kind": "specialised",
+          "score": 0.0,
+          "rule": "t",
+          "source": "the run's copy",
+          "ref": {
+            "artifact": "hld",
+            "section_slug": "data-flow",
+            "slug": "still-point-yoga-data-flow",
+            "version": 3
+          }
+        },
+        {
+          "workflow": "W-11",
+          "atom": "W-11.a1",
+          "artifact": "hld",
+          "section": "Hosting and deployment",
+          "template": "Still Point Yoga Hosting and deployment",
+          "version": 4,
+          "action": "extended",
+          "kind": "specialised",
+          "score": 0.0,
+          "rule": "t",
+          "source": "the run's copy",
+          "ref": {
+            "artifact": "hld",
+            "section_slug": "hosting-and-deployment",
+            "slug": "still-point-yoga-hosting-and-deployment",
+            "version": 4
+          }
+        },
+        {
+          "workflow": "W-12",
+          "atom": "W-12.a1",
+          "artifact": "hld",
+          "section": "Risks",
+          "template": "Still Point Yoga Risks",
+          "version": 3,
+          "action": "extended",
+          "kind": "specialised",
+          "score": 0.0,
+          "rule": "t",
+          "source": "the run's copy",
+          "ref": {
+            "artifact": "hld",
+            "section_slug": "risks",
+            "slug": "still-point-yoga-risks",
+            "version": 3
+          }
+        },
+        {
+          "workflow": "W-13",
+          "atom": "W-13.a1",
+          "artifact": "hld",
+          "section": "Data flow",
+          "template": "Still Point Yoga Data flow",
+          "version": 4,
+          "action": "extended",
+          "kind": "specialised",
+          "score": 0.0,
+          "rule": "t",
+          "source": "the run's copy",
+          "ref": {
+            "artifact": "hld",
+            "section_slug": "data-flow",
+            "slug": "still-point-yoga-data-flow",
+            "version": 4
+          }
+        },
+        {
+          "workflow": "W-14",
+          "atom": "W-14.a1",
+          "artifact": "hld",
+          "section": "Risks",
+          "template": "Still Point Yoga Risks",
+          "version": 4,
+          "action": "extended",
+          "kind": "specialised",
+          "score": 0.0,
+          "rule": "t",
+          "source": "the run's copy",
+          "ref": {
+            "artifact": "hld",
+            "section_slug": "risks",
+            "slug": "still-point-yoga-risks",
+            "version": 4
+          }
+        },
+        {
+          "workflow": "W-15",
+          "atom": "W-15.a1",
+          "artifact": "hld",
+          "section": "Components",
+          "template": "Still Point Yoga Components",
+          "version": 6,
+          "action": "extended",
+          "kind": "specialised",
+          "score": 0.0,
+          "rule": "t",
+          "source": "the run's copy",
+          "ref": {
+            "artifact": "hld",
+            "section_slug": "components",
+            "slug": "still-point-yoga-components",
+            "version": 6
+          }
+        }
+      ],
+      "counts": {
+        "created": 0,
+        "extended": 15,
+        "reused": 0,
+        "generic": 0
+      }
     }
   },
   "run_templates": [
+    {
+      "id": "iron-grove-fitness-prd-hld-lld-and-website",
+      "name": "Iron Grove Fitness: PRD, HLD, LLD and website",
+      "description": "Product requirements, High-level design, Low-level design and Website for a fitness studio: 20 workflows, as run j2-20261111-211339 (live) finished them.",
+      "business_type": "fitness studio",
+      "stages": [
+        "prd",
+        "hld",
+        "lld",
+        "website"
+      ],
+      "workflows": 20,
+      "mock": false,
+      "made_from_run": "j2-20261111-211339",
+      "created": "2026-11-11T22:16:22",
+      "used_by": 0
+    },
     {
       "id": "still-point-yoga-prd-hld-and-lld",
       "name": "Still Point Yoga: PRD, HLD and LLD",
@@ -5132,7 +8369,7 @@
       "mock": false,
       "made_from_run": "j2-20261103-184249",
       "created": "2026-11-11T15:46:42",
-      "used_by": 0
+      "used_by": 2
     },
     {
       "id": "still-point-yoga-studio-website",

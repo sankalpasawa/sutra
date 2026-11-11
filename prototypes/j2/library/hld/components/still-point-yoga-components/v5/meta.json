@@ -1,0 +1,37 @@
+{
+  "schema": "template-library/1",
+  "name": "Still Point Yoga Components",
+  "version": 5,
+  "sha": "452c09166a7ba074b8bbeaac03b05f58eb4c896f8f85514f5215d32e9df520d5",
+  "schema_sha": "314471cfd60ce1c0c6eb6e846e054ef884878197bc85e4e57bb61fc8134abc68",
+  "model_sha": "b1a811df3499e9c8631c157f583442a897b7e2b193a5a3e26800a8a9ecaf5fbd",
+  "class": "StillPointYogaComponentsV5",
+  "created": "2026-11-11T22:07:31",
+  "fingerprints": [
+    "223f89be1f41aa7b93c75cd594ed949b09ffa18e083019d43b218a8648df03e9"
+  ],
+  "made_by": {
+    "run": "j2-20261111-215733",
+    "workflow": "W-9",
+    "atom": "W-9.a1",
+    "agent": "code (adapted from a run template)",
+    "date": "2026-11-11 21:57:33"
+  },
+  "business": {
+    "name": "Rhythm Room Dance Studio",
+    "type": "hld"
+  },
+  "mock": false,
+  "collected_from": {
+    "run": "j2-20261111-215733",
+    "where": "the run's copy"
+  },
+  "used_by": [
+    {
+      "run": "j2-20261111-215733",
+      "workflow": "W-9",
+      "atom": "W-9.a1",
+      "action": "extended"
+    }
+  ]
+}

@@ -1,0 +1,139 @@
+{
+  "name": "Still Point Yoga Form fields",
+  "artifact": "lld",
+  "section": "Form fields",
+  "version": 3,
+  "kind": "specialised",
+  "description": "Form fields for Iron Grove Fitness (lld): the generic LLD/1 · Form fields fields plus facts_used, from 1 charter fact(s); adapted from version 1 of this template",
+  "fields": [
+    {
+      "name": "form_fields",
+      "type": "list[FormField]",
+      "required": true,
+      "description": "every form field, F1, F2, ... in order (for Iron Grove Fitness, a lld)",
+      "enum": null,
+      "nullable": false
+    },
+    {
+      "name": "assumptions",
+      "type": "list[string]",
+      "required": false,
+      "description": "the assumptions of Iron Grove Fitness's Form fields",
+      "enum": null,
+      "nullable": false
+    },
+    {
+      "name": "facts_used",
+      "type": "list[string]",
+      "required": false,
+      "description": "the charter facts this section is written from, copied exactly from Iron Grove Fitness's charter",
+      "enum": [
+        "Iron Grove Fitness"
+      ],
+      "nullable": false
+    }
+  ],
+  "objects": [
+    {
+      "name": "FormField",
+      "fields": [
+        {
+          "name": "id",
+          "type": "string",
+          "required": true,
+          "description": "F1, F2, ... in order",
+          "enum": null,
+          "nullable": false
+        },
+        {
+          "name": "form",
+          "type": "string",
+          "required": true,
+          "description": "the form's selector, e.g. \"#booking\"",
+          "enum": null,
+          "nullable": false
+        },
+        {
+          "name": "name",
+          "type": "string",
+          "required": true,
+          "description": "the field name attribute",
+          "enum": null,
+          "nullable": false
+        },
+        {
+          "name": "type",
+          "type": "string",
+          "required": true,
+          "description": "one of text, email, tel, url, number, date, time, select, textarea, checkbox, radio, password, file",
+          "enum": [
+            "text",
+            "email",
+            "tel",
+            "url",
+            "number",
+            "date",
+            "time",
+            "select",
+            "textarea",
+            "checkbox",
+            "radio",
+            "password",
+            "file"
+          ],
+          "nullable": false
+        },
+        {
+          "name": "required",
+          "type": "boolean",
+          "required": true,
+          "description": "true when the visitor must fill it in",
+          "enum": null,
+          "nullable": false
+        },
+        {
+          "name": "section",
+          "type": "string",
+          "required": false,
+          "description": "the section id the form sits in, e.g. \"S1\"",
+          "enum": null,
+          "nullable": false
+        },
+        {
+          "name": "validation",
+          "type": "string",
+          "required": false,
+          "description": "the validation rule in one line",
+          "enum": null,
+          "nullable": false
+        }
+      ]
+    }
+  ],
+  "rules": [
+    {
+      "rule": "enum",
+      "path": "facts_used[]",
+      "values": [
+        "Iron Grove Fitness"
+      ],
+      "from": "facts",
+      "name": "facts_used are facts of Iron Grove Fitness's charter"
+    }
+  ],
+  "sha": "37ef903ae5d852390a1af4beef2ed33eab780d3607683d69ce89dbcc03fd349e",
+  "extends": "lld/form-fields@generic/1",
+  "made_by": {
+    "run": "j2-20261111-211339",
+    "workflow": "W-25",
+    "atom": "W-25.a1",
+    "agent": "code (adapted from a run template)"
+  },
+  "context": {
+    "business_type": "lld",
+    "facts_used": [
+      "Iron Grove Fitness"
+    ],
+    "fingerprint": "2d285d7fd1b566dbca29224e869e4882619d4ed96a0d42286419a2d853721e8a"
+  }
+}
