@@ -4598,8 +4598,9 @@ class J2Run:
         unquoted = lambda d: re.sub(r"'[^']*'|\"[^\"]*\"|‘[^’]*’|“[^”]*”", "", str(d))
         bad = [d for d in g["done_when"] if self.NOT_CHECKABLE.search(unquoted(d))]
         if bad:
-            return False, ("these done-when items can't be checked by reading the site (they depend on the Requester, "
-                           "Audit, verification, approval or launch); rephrase them as something the site shows, and "
+            what = f"the {j2_types.info(self.output)['label'].lower()}" if self.output else "the output"      # the chosen type
+            return False, (f"these done-when items can't be checked by reading {what} (they depend on the Requester, "
+                           f"Audit, verification, approval or launch); rephrase them as something {what} shows, and "
                            "record a fact only the Requester can give in to_be_confirmed: " + json.dumps(bad))
         return True, "passes code checks"
 
@@ -7462,7 +7463,7 @@ class J2Run:
                   "purpose": w.get("purpose") or w.get("goal_gap", ""), "cost": c, "estimate": w.get("estimate", wf_cost(w)),
                   "envelope": env, "charged": True, "calls_used": 0, "retries_used": 0, "outputs": w.get("outputs"),
                   "completion_check": w.get("completion_check", ""), "dependencies": w.get("dependencies") or [],
-                  "status": "registered", "cycle": self.cycle}
+                  "status": "registered", "cycle": self.cycle, "kind": w.get("kind")}
             wf["atoms"] = [{**a, "id": f"{wf['id']}.a{n}"} for n, a in enumerate(atoms, 1)]
             if own:       # the document sections this workflow writes, as the planner named them
                 wf["sections"] = list(own)

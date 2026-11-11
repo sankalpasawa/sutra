@@ -7292,7 +7292,7 @@ SAVED_RUNS_GOLDEN = {
 # Re-recorded 2026-11-11 (DOC_RUN_GOLDEN only) for agents/j2/adaptation.md's proposal block naming kind and sections
 # (Adaptation's system prompt). With adaptation.md as it was: {"prd": "2c2d3402a6ca", "design docs": "94c750a4fcb0",
 # "docs then site": "6b28bcb5d3ff"}.
-DOC_RUN_GOLDEN = {"prd": "bf04a9e16971", "design docs": "4e0ee7b31e54", "docs then site": "fc8eb650d55b"}
+DOC_RUN_GOLDEN = {"prd": "c20ceec3eb79", "design docs": "bb6be08d829d", "docs then site": "5b0af94af498"}
 DOC_PROMPTS_GOLDEN = {
     "prd.builder": "e971c88e727f", "prd.intake": "56b304946997",
     "prd.charter_fmt": "eedccdf82d84", "prd.atom_rules": "b8a918ef6039", "prd.system": "d09f06fa3181",
@@ -8414,6 +8414,20 @@ def saved_run_no_type():
     assert j2.saved_def(None, d) == {"label": None, "file": None, "sections": (), "rubric": ()}
     shutil.rmtree(d, ignore_errors=True)
     print("saved run with no type: opens with no type, sections or rubric ok")
+
+
+def kind_stored_and_charter_label():
+    """A registered workflow keeps its kind in workflows.json; the charter refusal names the chosen type, never "site"."""
+    run = docs_run("Write a PRD for Campus Notes." + CAMPUS, 200)
+    saved = json.load(open(os.path.join(run.dir, "workflows.json"), encoding="utf-8"))
+    assert saved and all(w.get("kind") == "build" for w in saved), [(w["id"], w.get("kind")) for w in saved]
+    for kind, label in (("prd", "product requirements"), ("website", "website")):
+        r = j2.J2Run()
+        r.set_output(kind)
+        r.goal = {"statement": "x", "done_when": ["A is shown", "B is shown", "the page is approved by the Requester"]}
+        ok, why = r._stamp_check()
+        assert not ok and f"checked by reading the {label} " in why and f"something the {label} shows" in why and "the site" not in why, why
+    print("kind stored and charter label: registered workflows keep kind build; the charter refusal names the chosen type ok")
 
 
 def doc_unchanged():
@@ -13279,6 +13293,7 @@ if __name__ == "__main__":
             forms_and_new_types()       # phase C: forms, and new types made on the fly
             report_type()               # step D: a type made of data only
             saved_run_no_type()         # a run saved before its type was chosen
+            kind_stored_and_charter_label()   # kind kept on registered workflows; charter refusal by type label
             local_types()               # types runs make are local; --promote moves one into types.json
             recommended_practice()      # labelled good practice, allowed by a type's data
             fix_sections()              # a document fix names its sections
