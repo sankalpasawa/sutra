@@ -375,7 +375,9 @@ def run_row(name, live_running=False):
     stmt = re.split(r"(?<=[.!?])\s", str(g.get("statement") or "").strip())[0]
     title = str(g.get("site_name") or "").strip() or (stmt[:70] + ("…" if len(stmt) > 70 else "")) or name
     m = re.search(r"(\d{4})(\d{2})(\d{2})-(\d{2})(\d{2})(\d{2})", name)
-    return {"id": name, "title": title, "status": status, "output": s.get("output_type") or meta.get("output") or "",
+    out = s.get("output_type") or meta.get("output") or ""
+    t = j2.j2_types.info(out) if out in j2.j2_types.names() else {}      # its label and form, a local type's too
+    return {"id": name, "title": title, "status": status, "output": out, "label": t.get("label") or "", "form": t.get("form") or "",
             "when": f"{m[1]}-{m[2]}-{m[3]}T{m[4]}:{m[5]}:{m[6]}" if m else "", "brief": str(s.get("brief") or first.get("text") or "")[:160]}
 
 

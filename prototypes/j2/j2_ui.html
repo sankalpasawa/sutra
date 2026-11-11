@@ -3404,7 +3404,8 @@ function artLocate(id){      // the group and row a Map id lands on: a section's
   const rows = ((ARTS.groups || {}).groups || []).flatMap(g => g.rows.map(x => [g.id, x])), n = mapById(MAP)[id] || {};
   if (/^sec:/.test(id)){ const key = consParent(id) + "|" + id.split(":").pop(), hit = rows.find(([, x]) => x.section && x.deck + "|" + x.section === key); if (hit) return [hit[0], hit[1].id]; return artLocate(consParent(id)); }
   const hit = rows.find(([, x]) => (x.nodes || []).includes(id)) || (PAGENODE(id) ? rows.find(([g]) => g === "site") : null)
-    || rows.find(([, x]) => x.file && (x.file === n.file || (id === "work:charter" && x.file === "goal.json")));
+    || rows.find(([, x]) => x.file && (x.file === n.file || (id === "work:charter" && x.file === "goal.json")))
+    || (/^work:/.test(id) && !DOC_KINDS.some(x => "work:" + x[0] === id) ? rows.find(([g, x]) => g === "documents" && "work:" + x.id === id) : null);      // a new type's document
   return hit ? [hit[0], hit[1].id] : null; }
 // Library (template-library/1, J2_TEMPLATE_LIBRARY=1): every template grouped by artifact and section, this run's
 // routing decisions (templates.json), and a viewer with two modes: the four files as stored, or a readable card.
@@ -5126,7 +5127,9 @@ function consClick(e){
 function mapDeepTarget(kind, id){      // the places to look, best first: a section's own row, else its document's
   if (kind === "wf") return [`[data-wfrow="${CSS.escape(id)}"]`];
   if (/^sec:/.test(id)) return [`[data-sec="${CSS.escape(consParent(id) + "|" + id.split(":").pop())}"]`, ...mapDeepTarget("art", consParent(id))];
-  const n = mapById(MAP)[id]; return [`[data-node~="${CSS.escape(id)}"]`, n && n.file ? `[data-art="${CSS.escape(n.file)}"]` : "", id === "work:charter" ? '[data-art="goal.json"]' : ""].filter(Boolean);
+  const n = mapById(MAP)[id], doc = id.replace(/^work:/, "");      // a document of a type the Documents view doesn't show (a new type): its Artifacts row
+  return [`[data-node~="${CSS.escape(id)}"]`, n && n.file ? `[data-art="${CSS.escape(n.file)}"]` : "", id === "work:charter" ? '[data-art="goal.json"]' : "",
+    /^work:/.test(id) && !DOC_KINDS.some(x => x[0] === doc) ? `[data-agrow="${CSS.escape(doc)}"]` : ""].filter(Boolean);
 }
 async function mapOpenIn(kind, id){
   document.querySelectorAll(".dlhit").forEach(x => x.classList.remove("dlhit"));
@@ -5260,8 +5263,8 @@ function renderRuns(){
   $("runcount").textContent = L.length === RUNS.all.length ? plural(L.length, "run") : `${L.length} of ${plural(RUNS.all.length, "run")}`;
   L.slice(0, RUNS.show).forEach(x => { const G = runGroup(x.when); if (G !== g){ g = G; h += `<div class="rgrp">${G}</div>`; }
     const me = x.id === cur;
-    h += `<button type="button" class="runrow${me ? " cur" : ""}" data-openrun="${esc(x.id)}"${me ? ' aria-current="true"' : ""} aria-label="${esc(x.title)}, ${esc(x.id)}, ${esc(x.status)}${me ? ", open now" : ""}"><span class="ric">${RUNICON[TYFORM(x.output) === "page" ? "web" : "doc"]}</span>`
-      + `<span class="rmid"><span class="rt">${esc(x.title)}</span><code>${esc(x.id)}</code><span class="rm">${esc([runWhen(x.when), x.brief].filter(Boolean).join(" · "))}</span></span>`
+    h += `<button type="button" class="runrow${me ? " cur" : ""}" data-openrun="${esc(x.id)}"${me ? ' aria-current="true"' : ""} aria-label="${esc(x.title)}, ${esc(x.id)}, ${esc(x.status)}${me ? ", open now" : ""}"><span class="ric" title="${esc(x.label || "")}">${RUNICON[(x.form || TYFORM(x.output)) === "page" ? "web" : "doc"]}</span>`
+      + `<span class="rmid"><span class="rt">${esc(x.title)}</span><code>${esc(x.id)}</code><span class="rm">${esc([x.label, runWhen(x.when), x.brief].filter(Boolean).join(" · "))}</span></span>`
       + `<span class="rr"><span class="rst ${esc(x.status)}">${esc(x.status)}</span><span class="ropen">${me ? "Open now" : "Open"}</span></span></button>`; });
   if (L.length > RUNS.show) h += `<button type="button" class="runmore" id="runmore">Show ${Math.min(20, L.length - RUNS.show)} more · ${L.length - RUNS.show} left</button>`;
   $("runlist").innerHTML = h || `<div class="runnone">No runs match.</div>`;
