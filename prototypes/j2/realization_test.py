@@ -258,6 +258,7 @@ ok(any(r_["check"] == "artifacts/plan.md exists." and r_["pass"] for a in plan_w
 ok(any("FILE WORKFLOWS ON THE TABLE" in p and '"Plan"' in p and "fund them" in p for p in prompts),
    "Priority is told the file workflows are planned inputs to fund")
 rf = j2.J2Run()
+rf.set_output("website")      # a page run (the planner chooses at the first message; none is sent here)
 rf.realization = True
 fw = {"outputs": ["specs/plan.md"], "dependencies": [], "atoms": [{"goal": "The plan is written", "constraints": ["Only the file"],
       "context": ["charter goal"], "how": {"kind": "AI", "agent": "Builder", "steps": "Write specs/plan.md"},
@@ -295,6 +296,7 @@ ok(any("doesn't tell the builder to create" in x for x in j2.check_problems(atom
    and not j2.check_problems(atom, "", j2.CHECK_TYPES, j2.squash('"steps": "Create the 9x9 grid #board"')),
    "an id is unknown on its own, and known once an upstream workflow is told to create it")
 r2 = j2.J2Run()
+r2.set_output("website")
 up = {"name": "Grid", "dependencies": [], "atoms": [{"how": {"steps": "Create the grid #board"}, "constraints": []}]}
 down = {"name": "Hint", "dependencies": ["Grid"], "atoms": [atom]}
 ok("#board" in r2._upstream_told(down, [up, down]) and r2._upstream_told(up, [up, down]) == "",
@@ -315,6 +317,7 @@ ok(not j2.check_problems(rc, "", j2.CHECK_TYPES, ranges=True)
 up_grid = {"name": "Grid", "dependencies": [], "atoms": [grid]}
 helper = {"name": "Help", "dependencies": ["Grid"], "atoms": [{**grid, "how": {"steps": "Add #hint-btn"}}]}
 r3 = j2.J2Run()
+r3.set_output("website")
 r3.realization = True
 ok(not j2.check_problems(helper["atoms"][0], "", j2.CHECK_TYPES, r3._upstream_told(helper, [up_grid, helper]), ranges=True),
    "a range written by an upstream workflow counts for the workflows after it")
@@ -372,6 +375,7 @@ edit = {"outputs": ["index.html"], "dependencies": [], "atoms": [{
     "verification": [{"text": "Hint buttons are big enough", "type": "tap-targets", "target": "#hint-section", "expect": 44,
                       "item": 1}]}]}
 rv = j2.J2Run()
+rv.set_output("website")
 rv.realization = True
 e1 = copy.deepcopy(edit)
 ok(rv._atom_problems(e1) == [] and 'Create the element(s) "#hint-section" this atom\'s checks use.' in e1["atoms"][0]["constraints"],
@@ -415,6 +419,7 @@ ok(("facts", ["Sudoku"]) in kinds and ("heading", "Hint policy") in kinds and ("
    and not any(c.get("item") == 2 for c in doc["verification"]),
    "heading-like facts in a doc become heading items; a charter fact stays facts-present")
 rd = j2.J2Run()
+rd.set_output("website")
 rd.realization, rd.request = True, "Build me a Sudoku game"
 pw = {"name": "product-spec", "outputs": ["product-spec.md"], "dependencies": [], "atoms": [{
     **doc, "expected_output": [{"text": "The file", "kind": "file", "target": "product-spec.md"},
@@ -423,6 +428,7 @@ pw = {"name": "product-spec", "outputs": ["product-spec.md"], "dependencies": []
 ok(rd._atom_problems(pw) == [], "a planning doc with a heading in facts-present passes (120952 lost all 4 docs)")
 # Audit-name rule: only work that checks the site
 rn = j2.J2Run()
+rn.set_output("website")
 rn.realization = True
 ok([n for n in ("build-check", "build-mistake-check", "fix-nav-check-link", "product-spec (change 1)", "check-links",
                 "qa-pass", "final-review", "site-audit", "report") if rn._audit_name(n)]
