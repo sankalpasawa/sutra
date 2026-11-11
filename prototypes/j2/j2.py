@@ -7114,10 +7114,7 @@ class J2Run:
                 msg += f" Rejected: {'; '.join(refused)}."
             if defaults:
                 msg += f" Envelope defaults applied: {'; '.join(defaults)}."
-            msg += " Workflow agents: " + "; ".join(
-                f"{w['agent']} owns section {w['section']}" + (f" (rewrites it, was {self.sections[w['section']]['owner']})"
-                                                               if w["section"] in self.sections else "")
-                for w in registered) + "."
+            msg += " Workflow agents: " + "; ".join(self._owns(w) for w in registered) + "."
             left = self._left_by_ruling()
             self._say("validator", msg + f" Budget: {self.spent}/{self.budget} used.", "coordination", register=True,
                       charged=sum(w["cost"] for w in registered))
@@ -7154,6 +7151,19 @@ class J2Run:
         self._event("validator", "role_refusal" if "Audit's job" in reason else "refused", f"{name}: {reason}")
         self.post("system", f"Validator rejected '{name}': {reason}.", rejected=name)
         return f"{name} ({reason})"
+
+    def _owns(self, w):
+        """What a registered workflow's agent owns, in words: a document workflow names the section(s) it writes (its
+        "sections", wf_sections), a page workflow its section by name (the name of the workflow that made it), never
+        only the section's key, which is a workflow id (runs/j2-20261111-095315 said "W-2 Builder owns section W-1")."""
+        sec, prev = w["section"], self.sections.get(w["section"])
+        heads = wf_sections(w, self.out["sections"]) if self.doc and self.out and self.out.get("sections") else []
+        if heads:
+            what = f"the {heads[0]} section" if len(heads) == 1 else f"the {', '.join(heads[:-1])} and {heads[-1]} sections"
+        else:
+            what = f"the {(prev or {}).get('workflow') or w.get('name') or sec} section"
+        it = "them" if len(heads) > 1 else "it"
+        return f"{w['agent']} owns {what}" + (f" (rewrites {it}, was {prev['owner']})" if prev else "")
 
     def _autofix(self, name, kind, detail):
         """A small thing the validator fixed itself instead of rejecting (a rejection cost a whole re-ask): one row in

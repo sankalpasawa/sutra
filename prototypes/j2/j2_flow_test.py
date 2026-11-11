@@ -5557,6 +5557,28 @@ def validator_heading_list():
           "logged; a list is never a heading's text ok")
 
 
+def owns_message():
+    """The validator's "Workflow agents" line names what each agent owns in words: a document workflow the section(s)
+    it writes ("sections"), a page workflow its section by name, never a section key that is another workflow's id
+    (runs/j2-20261111-095315 said "W-2 Builder owns section W-1")."""
+    run = j2.J2Run()
+    run.set_output("prd")
+    secs = list(j2.doc_sections("prd"))
+    run.sections = {"W-1": {"owner": "W-1", "workflow": "Write the PRD", "head": "", "body": ""}}
+    fix = {"id": "W-2", "agent": "W-2 Builder", "section": "W-1", "name": "Fix the PRD", "sections": secs[:2]}
+    assert run._owns(fix) == f"W-2 Builder owns the {secs[0]} and {secs[1]} sections (rewrites them, was W-1)", run._owns(fix)
+    assert run._owns({**fix, "sections": secs[:1]}) == f"W-2 Builder owns the {secs[0]} section (rewrites it, was W-1)"
+    new = {"id": "W-3", "agent": "W-3 Builder", "section": "W-3", "name": f"Write {secs[2]}"}
+    assert run._owns(new) == f"W-3 Builder owns the {secs[2]} section", run._owns(new)
+    page = page_run()
+    page.sections = {"W-3": {"owner": "W-3", "workflow": "Menu with prices", "head": "", "body": ""}}
+    assert page._owns({"id": "W-5", "agent": "W-5 Builder", "section": "W-3", "name": "Fix the menu"}) == \
+        "W-5 Builder owns the Menu with prices section (rewrites it, was W-3)"
+    assert page._owns({"id": "W-6", "agent": "W-6 Builder", "section": "W-6", "name": "Opening hours"}) == "W-6 Builder owns the Opening hours section"
+    assert not any(re.search(r"owns (?:the )?section W-\d", w) for w in [run._owns(fix), run._owns(new)])
+    print("owns message: a fix names the sections it writes, a page section is named in words, never another workflow's id ok")
+
+
 def validator_autofix_step():
     """A2: 'expect-text #cell-0-0 ' (no value, runs/j2-20261109-182842) becomes 'expect-visible #cell-0-0' in the
     behaviour item and its check, logged; 'expect-text <sel> <value>' in one string still parses; an expect-number with
@@ -7253,7 +7275,10 @@ SAVED_RUNS_GOLDEN = {
 # Re-recorded 2026-11-11 (DOC_RUN_GOLDEN and the *.system hashes below) for one intended text change only: team.md and
 # builder.md say "the deliverable" / "a page" / "the page file" where they said the website or the site. With those
 # two files as they were, the old hashes still pass.
-DOC_RUN_GOLDEN = {"prd": "4774d0993027", "design docs": "98bade7c665e", "docs then site": "1def6670c974"}
+# Re-recorded 2026-11-11 (DOC_RUN_GOLDEN only) for one intended text change: the validator's "Workflow agents" line
+# names what each agent owns in words ("W-1 Builder owns the Problem section") instead of the section key ("owns section
+# W-1"); that chat line is in later prompts. With the old wording (J2Run._owns patched back) the old hashes still pass.
+DOC_RUN_GOLDEN = {"prd": "54a72c5e19eb", "design docs": "b52384e1bd6f", "docs then site": "07b8a6132a9a"}
 DOC_PROMPTS_GOLDEN = {
     "prd.builder": "e971c88e727f", "prd.intake": "56b304946997",
     "prd.charter_fmt": "eedccdf82d84", "prd.atom_rules": "b8a918ef6039", "prd.system": "d09f06fa3181",
@@ -13128,6 +13153,7 @@ if __name__ == "__main__":
     form_submit()
     validator_autofix_target()      # the validator fixes small things itself, logged in autofix.json
     validator_heading_list()
+    owns_message()                  # the validator's "owns" line names sections in words
     validator_autofix_step()
     validator_autofix_plan_fields()
     validator_autofix_human()
