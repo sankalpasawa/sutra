@@ -426,15 +426,17 @@ pw = {"name": "product-spec", "outputs": ["product-spec.md"], "dependencies": []
                                {"text": "Hint policy", "kind": "facts", "target": ["Hint policy"]}],
     "verification": [{"text": "The file exists", "type": "file-exists", "target": "product-spec.md", "expect": True, "item": 1}]}]}
 ok(rd._atom_problems(pw) == [], "a planning doc with a heading in facts-present passes (120952 lost all 4 docs)")
-# Audit-name rule: only work that checks the site
+# kind, not words: a workflow's "kind" decides whether it is Audit's job; its name ("build-check", "final-review") never does
 rn = j2.J2Run()
 rn.set_output("website")
 rn.realization = True
-ok([n for n in ("build-check", "build-mistake-check", "fix-nav-check-link", "product-spec (change 1)", "check-links",
-                "qa-pass", "final-review", "site-audit", "report") if rn._audit_name(n)]
-   == ["check-links", "qa-pass", "final-review", "site-audit", "report"]
-   and (setattr(rn, "realization", False) or rn._audit_name("build-check")),
-   "a Check button is a feature; check, QA and review workflows are still Audit's job (base J2 unchanged)")
+base = {"goal_gap": "x", "outputs": ["index.html"], "completion_check": "x", "parts": ["page_section"],
+        "envelope": {"money_limit": 10}}
+_, refused, _ = rn._register([{**base, "name": n, "kind": "build"} for n in ("check-links", "final-review", "report")]
+                             + [{**base, "name": "build-check", "kind": "audit"}])
+ok([r["workflow"] for r in rn.rejections if "Audit's job" in r["reason"]] == ["build-check"]
+   and "a check or report on the Website is Audit's job, not a workflow" in refused[-1],
+   "kind audit is Audit's job, whatever the name; a build workflow named check-links or final-review is not")
 
 # charter_text: to_be_confirmed holds {"criterion", "fact"} entries (a fact the Requester can't give yet); a live run crashed joining them
 tbc = R.charter_text({**GOAL, "to_be_confirmed": [{"criterion": "menu", "fact": "the menu prices"}, "older plain entry"]})

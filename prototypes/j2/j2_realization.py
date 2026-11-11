@@ -276,8 +276,7 @@ def plan_faults(p, goal, items=None, types=None):
 def type_list(path=None):
     """The buildable types: name, label, form, file and needs (the types it is written from, which must be built
     first: a document's depends_on). A page reads the documents built before it as its blueprint and needs none."""
-    with open(path or j2_types.TYPES_PATH, encoding="utf-8") as f:
-        ts = [t for t in json.load(f)["types"] if t.get("kind") == "type" and t.get("deliverable")]
+    ts = [t for t in j2_types._read_types(path)["types"] if t.get("kind") == "type" and t.get("deliverable")]      # local ones too
     return [{"name": t["name"], "label": t["label"], "form": t["form"], "file": t.get("file"),
              "needs": list(t.get("depends_on") or []) if t["form"] == "document" else [],
              "after": list(t.get("depends_on") or [])} for t in ts]
@@ -289,7 +288,8 @@ def deliverables(p):
 
 
 def new_types(p):
-    """{name: {"label", "sections", "file"}}: the deliverables that ask J2 to make a new type (document form)."""
+    """{name: {"label", "sections", "file", "recommended_practice"}}: the deliverables that ask J2 to make a new type
+    (document form)."""
     return {str(d.get("type")): d["new"] for d in lst((p or {}).get("deliverables"))
             if isinstance(d, dict) and isinstance(d.get("new"), dict)}
 
@@ -305,7 +305,8 @@ def deliverable_faults(p, types):
     out = [f"deliverable {n!r} is not a type in TYPES ({', '.join(by)}) and has no \"new\" type to make" for n in names
            if n not in by and n not in new]
     out += [f"new type {n}: {x}" for n, spec in new.items() if n not in by
-            for x in j2_types.create_problems(n, spec.get("label"), spec.get("sections"), spec.get("file"))]
+            for x in j2_types.create_problems(n, spec.get("label"), spec.get("sections"), spec.get("file"),
+                                              practice=spec.get("recommended_practice"))]
     out += [f"deliverable {n} appears twice" for n in sorted({n for n in names if names.count(n) > 1})]
     for i, n in enumerate(names):
         for d in by.get(n, {}).get("after", []):
@@ -551,7 +552,8 @@ PLAN_FMT = """{
 CHANGES_FMT = ',\n "changes": [{"workflow": str, "weakest": str, "remedy": str, "axis": "ask"|"research:find"|"research:method"|"certainty:analyze"|"certainty:experiment"|"certainty:stabilize"|"certainty:reread"|"realization:add"|"realization:deepen"|"realization:split"|"rewrite"}]\n}'
 REVISE_FMT = PLAN_FMT[:-2] + CHANGES_FMT
 DELIVERABLES_FMT = (',\n "deliverables": [{"type": str (a type name from TYPES, or a new name), "why": str (one clause), '
-                    '"new": {"label": str, "sections": [str], "file": str}|null (only for a new type)}] (build order: a '
+                    '"new": {"label": str, "sections": [str], "file": str, "recommended_practice": bool (true for a policy, guide, plan '
+                    'or SOP: labelled good-practice lines allowed)}|null (only for a new type)}] (build order: a '
                     'type after every type it needs)\n}')
 
 
@@ -635,7 +637,8 @@ def types_text(types):
             + "\nChoose the deliverables first: the types this brief needs, in build order. Every workflow serves one "
             "deliverable, and every deliverable is served by at least one workflow. When no type fits, make a new one: a "
             "deliverable whose type is a new name (lower case, _ between words) with \"new\": its label, its sections in "
-            "order and its file (<name>.md); J2 makes it as a document and keeps it for later runs.")
+            "order and its file (<name>.md), and recommended_practice: true for a policy, guide, plan or SOP (it may give "
+            "labelled good practice), else false; J2 makes it as a document and keeps it for later runs.")
 
 
 def _web_note(web):

@@ -29,3 +29,7 @@ graphify-out/
 .vscode/
 .idea/
 .DS_Store
+
+# Types runs make (j2_types.create): local until `python3 j2_types.py --promote <name>` moves one into types.json
+artifacts/types.local.json
+library/types/
