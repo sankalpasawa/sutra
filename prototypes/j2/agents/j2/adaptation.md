@@ -21,6 +21,8 @@ Every proposal must state:
 proposal:
   id: stable identifier
   goal_gap: observable difference between current and desired state
+  kind: build | audit   # build: makes or changes the output; audit: only checks or reports (Audit's job: refused)
+  sections: [section names]   # a document: the sections it writes, exactly as the type's template names them
   expected_outcome: reality or artifact the workflow will create
   inputs: declared inputs
   outputs: declared outputs
