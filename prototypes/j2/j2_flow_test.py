@@ -3353,6 +3353,61 @@ def prd_page():
         j2_server.RUN.reset()
 
 
+def n6_sources():
+    """N6 (no invented content): its source is the charter, the Requester's words and this run's approved documents,
+    and a stated range (N to M, from N to M, between N and M, N-M, N–M) sources every whole number in it, up to
+    RANGE_CAP. Replays run j2-20261111-191311 (fixtures/): its Sudoku board digits 2 to 8 come from the charter's
+    "1 to 9" and now pass."""
+    fx, clean = os.path.join(os.path.dirname(os.path.abspath(__file__)), "fixtures", "n6-sudoku-j2-20261111-191311"), {
+        "available": True, "js_errors": [], "phone": {"width": 360, "overflow_px": 0},
+        "desktop": {"width": 1280, "overflow_px": 0}}
+    read = lambda n: open(os.path.join(fx, n), encoding="utf-8").read()
+    site, prd = read("site.html"), read("prd.md")
+
+    def n6(source_docs=(("prd.md", prd),), page=site, goal=None):
+        run = page_run()
+        run.dir = tempfile.mkdtemp()
+        run.goal, run.chat = goal or json.loads(read("goal.json")), [{"who": "user", "text": read("brief.txt")}]
+        run.sites, run.docs = [page], {}
+        for name, text in source_docs:
+            with open(os.path.join(run.dir, name), "w", encoding="utf-8") as f:
+                f.write(text)
+            run.docs[name[:-3]] = {"file": name}
+        return next(c for c in run._conditions(page, clean) if c["id"] == "N6")
+
+    # 1. the replay: the run's own page, charter, brief and approved PRD; N6 used to fail on 2, 3, 4, 5, 6, 7, 8
+    r = n6()
+    assert r["met"], r
+    # 2. a number in no source still fails
+    r = n6(page=site.replace("</body>", "<p>Call 98765 43210 or win 42 coins</p></body>"))
+    assert not r["met"] and "42" in r["evidence"], r
+    # 3. a number only an approved document states is sourced; the same page without that document fails
+    page = site.replace("</body>", "<p>A game takes about 45 minutes</p></body>")
+    assert n6((("prd.md", prd + "\nA game takes about 45 minutes.\n"),), page)["met"]
+    assert not n6((("prd.md", prd),), page)["met"]
+    # the PRD's ids (R14) and list numbering source nothing
+    assert "**R14**" in prd and not n6(page=site.replace("</body>", "<p>14 levels</p></body>"))["met"]
+    # 4. a range over RANGE_CAP is not expanded: N and M count, the numbers between don't, and the evidence says so
+    src, skipped = j2.source_numbers("scores from 1 to 1000")
+    assert {"1", "1000"} <= src and "500" not in src and skipped == ["1 to 1000"], (src, skipped)
+    c = j2.load_conditions("website.json")
+    r = next(x for x in j2.check_conditions(c, "Score 500", {}, "scores from 1 to 1000", (), "<p>Score 500</p>", clean)
+             if x["id"] == "N6")
+    assert not r["met"] and "1 to 1000" in r["evidence"], r
+    # 5. "1 to 9" in an unrelated source sources 1 to 9 and nothing else; every range form; N >= M never expands
+    src = j2.source_numbers("Opening hours: 1 to 9")[0]
+    assert {str(n) for n in range(1, 10)} <= src and "10" not in src and "0" not in src, src
+    r = next(x for x in j2.check_conditions(c, "Room 7 or 10", {}, "Opening hours: 1 to 9", (), "<p>Room 7 or 10</p>",
+                                            clean) if x["id"] == "N6")
+    assert not r["met"] and "10" in r["evidence"] and "7" not in r["evidence"].split(":")[-1].split(", "), r
+    for text, want in [("from 2 to 4", "3"), ("between 2 and 4", "3"), ("2-4", "3"), ("2–4", "3")]:
+        assert want in j2.source_numbers(text)[0], text
+    for text in ["4 to 2", "3 to 3", "2 and 4", "1.5 to 3.5", "R1 to 3"]:
+        assert not ({"2", "3"} - set(text.replace("-", " ").split())) & j2.source_numbers(text)[0], text
+    print("N6: the Sudoku replay passes (board digits from the charter's '1 to 9'), a number in no source fails, an "
+          "approved document sources its numbers, a range over 100 isn't expanded, '1 to 9' doesn't source 10 ok")
+
+
 def website_conditions():
     """conditions/website.json: a page that breaks each of N1 to N8 is reported not met, with evidence; a plan with no
     workflow for the nav is flagged before building; workable() needs every condition; Identity's question for a
@@ -13650,6 +13705,7 @@ if __name__ == "__main__":
         website_conditions()
         print(f"J2_FIXES={mode}: website necessary conditions: N1 to N8 each reported not met with evidence, nav plan "
               "flagged before building, workable needs every condition, no None or internal ids for the Requester ok")
+        n6_sources()
         print(f"J2_FIXES={mode}: PRD output: mock PRD brief Done workable with prd.md and prd.docx, document checks pass "
               "and fail (duplicate R2 rejected), invented facts-present rejected, no browser check, no website "
               "conditions, P7 user groups, P8 window warning, assumptions labelled and listed, short names, heading targets "

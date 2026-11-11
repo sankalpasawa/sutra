@@ -1285,15 +1285,42 @@ def conditions_for(name, goal, practice=""):
 PHONE = re.compile(r"\+?\d[\d\s().-]{6,}\d")
 
 
+def without_ids(text):
+    """Markdown stripped, ids (R1, G2, D-1) and list numbering left out: the text whose numbers are stated facts."""
+    return re.sub(r"(?m)^\s*\d+[.)]\s", " ", re.sub(r"\b[A-Z]{1,3}-?\d+\b", " ", strip_md(text)))
+
+
 def doc_numbers(text):
     """Numbers and emails a document states, leaving out ids (R1, G2, D-1) and list numbering. A phone number (10 or
     more digits, or 8 or more after a +) counts as its digits, however it is spaced."""
     phones = {re.sub(r"\D", "", m) for m in PHONE.findall(str(text))
               if len(re.sub(r"\D", "", m)) >= (8 if m.startswith("+") else 10)}
     text = PHONE.sub(lambda m: " " if re.sub(r"\D", "", m.group(0)) in phones else m.group(0), str(text))
-    text = re.sub(r"\b[A-Z]{1,3}-?\d+\b", " ", strip_md(text))
-    text = re.sub(r"(?m)^\s*\d+[.)]\s", " ", text)
+    text = without_ids(text)
     return set(re.findall(r"\d+(?:[.,]\d+)*", text)) | set(EMAIL.findall(text)) | phones
+
+
+# A stated whole-number range: "N to M", "from N to M", "between N and M", "N-M", "N–M"
+NUM_RANGE = re.compile(r"(?<![\w.,])(\d+)\s*(?:to|and|[-–])\s*(\d+)(?![\d.,])", re.I)
+RANGE_CAP = 100
+
+
+def source_numbers(text):
+    """The numbers a source sources: doc_numbers, plus every whole number inside a stated range N < M. A range over
+    RANGE_CAP numbers is not expanded (only N and M count); those come back as skipped, "N to M", for the evidence."""
+    nums, skipped = doc_numbers(text), []
+    for m in NUM_RANGE.finditer(str(text)):
+        if m.group(0)[len(m.group(1)):].strip().lower().startswith("and") and not re.search(
+                r"\bbetween\s*$", str(text)[:m.start()], re.I):
+            continue                     # "N and M" is a range only after "between"
+        a, b = int(m.group(1)), int(m.group(2))
+        if a >= b:
+            continue
+        if b - a + 1 > RANGE_CAP:
+            skipped.append(f"{a} to {b}")
+        else:
+            nums |= {str(n) for n in range(a, b + 1)}
+    return nums, skipped
 
 
 ASSUMPTION = re.compile(r"\bAssumption:\s*(.+)", re.I)
@@ -1401,7 +1428,8 @@ def condition_met(cond, doc, goal, source, sections, page=None, mech=None):
         return not bad, (f"no measurement window: {'; '.join(bad)}" if bad else
                          f"each of the {len(num)} numeric metric(s) states a window" if num else "no numeric metrics")
     if k == "no-invented-facts":
-        src = doc_numbers(source)
+        src, skipped = source_numbers(source)
+        skip = f"; range(s) over {RANGE_CAP} numbers not expanded: {', '.join(skipped[:4])}" if skipped else ""
         if cond.get("names"):           # a document: Assumption: lines may go beyond the brief; proper names count too
             doc = without_assumptions(doc)
             names = sorted(x for x in doc_names(doc) if not re.search(rf"\b{re.escape(x.lower())}\b", source))
@@ -1413,14 +1441,14 @@ def condition_met(cond, doc, goal, source, sections, page=None, mech=None):
             bad = extra + names + stray
             return not bad, (f"not in the charter or the Requester's answers, and not marked Assumption: "
                              f"{', '.join(bad[:8])}" if bad else "every number, email and proper name comes from the "
-                             "charter or the Requester's answers, or sits in an Assumption: line")
+                             "charter or the Requester's answers, or sits in an Assumption: line") + skip
         if page is not None:      # a website: also the numbers and emails in its tel:, mailto:, wa.me links and form actions
             doc = " ".join([doc] + [v for t, a in PageScan(page).tags for n, v in a.items()
                                     if n in ("href", "action") and re.match(r"tel:|mailto:|https?://wa\.me/", v, re.I)])
         extra = sorted(x for x in doc_numbers(doc) if x.lower() not in src)
         return not extra, (f"not in the charter or the Requester's answers: {', '.join(extra[:8])}" if extra else
                            f"every number{', phone' if page is not None else ''} and email comes from the charter or "
-                           "the Requester's answers")
+                           "the Requester's answers") + skip
     if k == "nothing-to-be-confirmed":
         m, open_ = TBC_WORDS.search(str(doc)), g.get("to_be_confirmed") or []
         return not m and not open_, (f"the document says {m.group(0)!r}" if m else
@@ -6698,6 +6726,18 @@ class J2Run:
         return squash(" ".join(strings(goal or self.goal or {}) + [self.request] + [m["text"] for m in self.chat
                                                                                     if m["who"] == "user"]))
 
+    def _approved_docs_text(self):
+        """The approved documents of this run (documents.json: a stage that passed its audit), squashed, for N6's
+        source. The document being checked is left out, so it never sources itself."""
+        out = []
+        for d in self.docs.values():
+            path = os.path.join(self.dir, d["file"])
+            if (self.doc and d["file"] == self.out.get("file")) or not os.path.isfile(path):
+                continue
+            with open(path, encoding="utf-8") as f:
+                out.append(without_ids(f.read()))      # before squash: lowercase "r1" would read as a number
+        return squash(" ".join(out))
+
     def _atom_problems(self, w, pool=()):
         """J2.e's work-atom check: missing fields first; then the check rules (check_problems) for every atom. pool: the
         other workflows proposed with this one; an id a workflow it depends on is told to create counts as known."""
@@ -9912,8 +9952,8 @@ class J2Run:
         A website is checked on its HTML (visible text for the facts) and its render check."""
         page = None if self.doc else built
         text = built if self.doc else " ".join(PageScan(built).visible)
-        conds = check_conditions(load_conditions(self.out["conditions"], self.out.get("practice", "")), text, self.goal, self._fact_source(),
-                                 self.out["sections"], page, mech)
+        conds = check_conditions(load_conditions(self.out["conditions"], self.out.get("practice", "")), text, self.goal,
+                                 self._fact_source() + " " + self._approved_docs_text(), self.out["sections"], page, mech)
         self.save("conditions.json", conds)
         if built:
             self.post("system", "Necessary conditions (checked by code): " + "; ".join(
