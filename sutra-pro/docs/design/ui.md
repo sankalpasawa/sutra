@@ -68,6 +68,13 @@ flowchart LR
 ```
 - **Home** `/` (new, `home.html`): the J2 Simple skeleton (`#sview`, plus `#dview` holding only the rail). Left column = the org chat (`cs_org`). Right column (J2's preview slot `.sprev`) = Workflow graph | Org chart | Settings, chosen from the rail. Phone: J2's Chat | Preview toggle (`.stoggle`, `has-site`, `sp-preview`) reused by class name. One layout, no Detailed twin: rail items switch the right pane and the chat column never goes away.
 - **Department page** `/d/{dept}/` (the copied J2 page): Simple and Detailed views exactly as J2. The rail gains `← All teams`, Workflow graph, Org chart; node chats and the function drawer open in `#nodepanel`.
+- **The front door and the levels (one-front brief, 2026-11-12).** Home opens on `#front` (`front_door.js` renders, `home.js` fetches and clicks, `sutra-front.css` in the studio's `--s-*` look, light by default): the org slot ("Your org"), the level switch, "What should we make today?" (sends to `cs_org`, always Plan with Sutra), then Needs you (one card per `/api/needs-you` item and per Heads up problem: answer in place, Approve / Not now, Open the team), In progress and Done recently. Everything above (the org chat, the panes, the rail) is now the **workspace**, a second place of the same page (`<html data-place="front|ws">`, kept in `sutra:home:place` for Manager and Debug; a `?pane=`, `?node=` or `?change=` link opens it). The owner's **level** is `SutraCtx.level()` (`localStorage sutra:level`, `<html data-level>`, event `sutra:level`), one choice for every page:
+
+  | Level | Home adds | Team page |
+  |---|---|---|
+  | Simple | nothing; the workspace only as "Open the conversation" (the org chat alone) | the studio only: every way into the Detailed view is hidden (`sutra-panel.css`) and `dept_ext.js` `levelView()` keeps the Simple view |
+  | Manager | Org chart, Workflow graph, Team chats (the workspace, without Settings and Usage and log), a Chat button per team | the Detailed view too |
+  | Debug | Settings, Usage and log (`/console`), the whole Heads up lane, and the Raw AI chat entry (`#fd-rawchat` dispatches `sutra:raw-ai-chat`; the viewer that answers it is built in the agent views) | as Manager |
 
 ### 3.2 Files (under `~/Desktop/development/sutra-pro/`)
 

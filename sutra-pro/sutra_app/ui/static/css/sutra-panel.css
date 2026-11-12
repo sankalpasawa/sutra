@@ -527,3 +527,9 @@ button:not(:disabled):not(.cjump-btn):active,.lbtn:active,.fnchip:active{transfo
 @media (prefers-reduced-motion:reduce){
   *,*::before,*::after{animation-duration:.01ms!important;animation-iteration-count:1!important;transition-duration:.01ms!important;scroll-behavior:auto!important}
 }
+
+/* The owner's level (SutraCtx.level, <html data-level>; dept_ext.js levels()): at Simple a team page is its studio, so every way into the Detailed
+   view (and the template library, a Detailed page) is not shown. Manager and Debug show them all. */
+:root[data-level=simple] #slanddetail, :root[data-level=simple] #sdetail, :root[data-level=simple] #steamfull,
+:root[data-level=simple] #sview [data-detail], :root[data-level=simple] #sview [data-records],
+:root[data-level=simple] #sview a.slink[href^="library"], :root[data-level=simple] #sview .slsep { display: none !important; }

@@ -57,6 +57,7 @@ from websockets.sync.client import connect
 
 MAC_CHROME = "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome"
 THEMES = ("light", "dark", "system")
+LEVELS = ("simple", "manager", "debug")  # the owner's level (SutraCtx.level, localStorage sutra:level)
 SCHEMES = ("light", "dark")
 THEME_KEY = "j2theme"  # the localStorage key of both pages (ui.md section 3.2, browser storage)
 PNG_MAGIC = b"\x89PNG\r\n\x1a\n"
@@ -398,6 +399,7 @@ class Browser:
         self._requests: dict[str, tuple[str, str]] = {}
         self._load = threading.Event()
         self._theme_script: str | None = None
+        self._level_script: str | None = None
         self.dialogs: list[dict] = []  # alert, confirm and prompt boxes the page opened (all are accepted)
 
     # -- life cycle ---------------------------------------------------------------------------------------------------
@@ -683,6 +685,17 @@ class Browser:
         source = f"try {{ localStorage.setItem({json.dumps(THEME_KEY)}, {json.dumps(theme)}); }} catch (e) {{}}"
         self._theme_script = self._send("Page.addScriptToEvaluateOnNewDocument", {"source": source})["identifier"]
         self._send("Emulation.setEmulatedMedia", {"features": [{"name": "prefers-color-scheme", "value": scheme}]})
+
+    def set_level(self, level: str, place: str = "front") -> None:
+        """The owner's level (`simple`, `manager` or `debug`: localStorage sutra:level) and Home's place (`front`, the front door, or `ws`,
+        the workspace: sutra:home:place, kept for Manager and Debug) for the next page that opens. Takes effect on the next `goto` or `reload`."""
+        if level not in LEVELS or place not in ("front", "ws"):
+            raise ValueError(f"level must be one of {', '.join(LEVELS)} and place front or ws, not {level!r}, {place!r}")
+        if self._level_script is not None:
+            self._send("Page.removeScriptToEvaluateOnNewDocument", {"identifier": self._level_script})
+        source = (f"try {{ localStorage.setItem('sutra:level', {json.dumps(level)}); localStorage.setItem('sutra:home:place', {json.dumps(place)}); }} "
+                  "catch (e) {}")
+        self._level_script = self._send("Page.addScriptToEvaluateOnNewDocument", {"source": source})["identifier"]
 
     def set_size(self, width: int, height: int) -> None:
         if not (isinstance(width, int) and isinstance(height, int) and 100 <= width <= 5000 and 100 <= height <= 5000):

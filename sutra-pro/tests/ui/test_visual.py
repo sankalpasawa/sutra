@@ -152,6 +152,7 @@ def visual_browser():
     if chrome is None:
         pytest.skip("Chrome is not installed (set SUTRA_CHROME to its path)")
     with cdp.Browser(chrome) as instance:
+        instance.set_level("debug", "front")      # every view shown: home-start is the front door, ?pane= opens the workspace, a team page keeps its Detailed view
         yield instance
 
 

@@ -84,6 +84,8 @@
     // autoupdate: the "Check for updates automatically" setting (GET /api/ops/update-setting) and the switch's own busy flag and sentence
     auto: null, autoBusy: false, autoMsg: "",
     pillStale: false, pillSeq: 0,          // the org chat's pill is read again when its session may have moved (renderPill)
+    // the front door (front_door.js): the cards being answered, a refusal per card, Done recently opened up, a send from its box, the Raw AI chat note
+    front: {answering: {}, errors: {}, moreDone: false, sent: false, error: "", hookNote: ""},
   };
 
   /* ---------------------------------------------------------------- errors in words */
@@ -220,6 +222,7 @@
     S.departmentsLoaded = true;
     renderRail();
     renderChat();
+    renderFront();
     if (S.settings) paintEngine();
   }
 
@@ -326,6 +329,7 @@
     } else {
       changed = ctx.paint(el, root.ChatView.transcript(session, shown, view) + startHtml());
     }
+    renderFrontLatest();
     if (!changed) return;
     follow(el, shown, near);
   }
@@ -520,12 +524,14 @@
     el.hidden = !S.turn.seen || S.turn.phase === "error";
     ctx.paint(el, STAGES.map((x, i) => '<div class="' + (i < at ? "done" : i === at ? "on" : "") + '"><i></i>' + esc(x) + "</div>").join(""));
     $("sstatus").textContent = hasOwn(PHASE_SENTENCE, S.turn.phase) ? PHASE_SENTENCE[S.turn.phase] : "";
+    renderFrontLatest();
   }
 
   // The owner writes. The bubble shows at once (pending, dimmed); the box keeps its text until the server accepts the line, so a refusal (no usable
   // connector, too many waiting) loses nothing.
-  async function send(value, choice) {
-    if (!choice && directOn()) return sendDirect(value);
+  // opts.plan: the front door's box always plans with Sutra, whatever mode the workspace's box was left in.
+  async function send(value, choice, opts) {
+    if (!choice && !(isObj(opts) && opts.plan === true) && directOn()) return sendDirect(value);
     const body = text(value).trim();
     if (body === "" || S.blocked !== "" || (S.sending && !choice)) return false;
     const entry = {serverId: null, msg: {id: "local-" + (++S.localSeq), session_id: ORG, role: "user", who: "user", kind: "text", text: body, card: null,
@@ -698,6 +704,170 @@
         : (n === 0 ? '<span class="none">Nothing needs you right now.</span>' : "")) + lane + limitLines() + offerHtml());
     barBadge();
     renderSwitch();
+    renderFront();
+  }
+
+  /* ---------------------------------------------------------------- the front door (front_door.js; the one-front brief) */
+  // Home has two places: the front door (what needs you, what runs, what finished, a new project) and the workspace (the org chat, the panes, the rail).
+  // <html data-place> says which shows; Manager and Debug owners come back to the place they left, a Simple owner always to the front door.
+  const FD = () => root.FrontDoor || null;
+  const level = () => (ctx.level ? ctx.level() : "simple");
+  const place = () => (doc.documentElement.dataset.place === "ws" ? "ws" : "front");
+  const PLACE_KEY = "sutra:home:place";
+
+  function setPlace(where) {
+    const p = where === "ws" ? "ws" : "front";
+    doc.documentElement.dataset.place = p;
+    try { if (level() !== "simple") root.localStorage.setItem(PLACE_KEY, p); } catch (e) { /* storage may be blocked */ }
+    if (p === "ws" && S.graphView && S.graph) protect("graph redraw", () => S.graphView.update(S.graph));       // drawn while hidden: draw it at its size
+    if (p === "front") renderFront();
+    return p;
+  }
+
+  // The front door's state for FrontDoor: what is fetched already, plus the front's own marks.
+  function frontState() {
+    return {level: level(), needs: S.needs, heads: S.heads, seen: S.seen, departments: S.departments, elapsedMs: S.needsAt ? Date.now() - S.needsAt : 0,
+      loaded: S.needsLoaded && S.headsLoaded && S.departmentsLoaded, answering: S.front.answering, errors: S.front.errors, moreDone: S.front.moreDone};
+  }
+
+  // A repaint keeps what the owner typed in an answer box (and the focus in it): the boxes are found again by their message id.
+  function paintKeeping(el, html) {
+    if (!el) return false;
+    const typed = {};
+    let focus = "";
+    el.querySelectorAll("textarea[data-msg]").forEach(t => { typed[t.dataset.msg] = t.value; if (t === doc.activeElement) focus = t.dataset.msg; });
+    if (!ctx.paint(el, html)) return false;
+    el.querySelectorAll("textarea[data-msg]").forEach(t => { if (hasOwn(typed, t.dataset.msg)) t.value = typed[t.dataset.msg]; if (t.dataset.msg === focus) t.focus(); });
+    return true;
+  }
+
+  function renderFront() {
+    const fd = FD();
+    if (!fd || !$("front")) return;
+    protect("front door", () => {
+      const st = frontState();
+      paintKeeping($("fdneeds"), fd.needsHtml(st));
+      ctx.paint($("fdlists"), fd.listsHtml(st));
+      ctx.paint($("fddebug"), (S.front.hookNote && st.level === "debug" ? '<p class="fdcalm" role="status">' + esc(S.front.hookNote) + "</p>" : "") + fd.debugHtml(st));
+      const nav = fd.navHtml(st.level);
+      ctx.paint($("fdnav"), nav);
+      $("fdnav").hidden = nav === "";
+      doc.querySelectorAll("#fdlevel [data-level]").forEach(b => b.setAttribute("aria-pressed", String(b.dataset.level === st.level)));
+      renderFrontLatest();
+    });
+  }
+
+  // Under the box: after the owner started something here, the org chat's progress sentence and its last word (or the choice it waits on).
+  function renderFrontLatest() {
+    const fd = FD();
+    if (!fd || !$("fdlatest")) return;
+    const status = S.front.error || (S.front.sent && S.turn.active && hasOwn(PHASE_SENTENCE, S.turn.phase) ? PHASE_SENTENCE[S.turn.phase] : "");
+    ctx.paint($("fdlatest"), fd.latestHtml({show: S.front.sent || S.front.error !== "", status, messages: S.messages, answers: answersMap()}));
+  }
+
+  async function sendFront() {
+    const box = $("fdbox");
+    const body = text(box.value).trim();
+    if (body === "" || S.sending) return false;
+    S.front.sent = true;
+    S.front.error = "";
+    $("fdsend").disabled = true;
+    const ok = await send(body, null, {plan: true});
+    $("fdsend").disabled = false;
+    if (ok) { if (box.value.trim() === body) box.value = ""; }
+    else S.front.error = (S.banner && S.banner.text) || S.blocked || FAILED;
+    renderFrontLatest();
+    return ok;
+  }
+
+  // An answer to a team's question, from its card: to that team's own session (never cs_org), as answerNeeds does from the org chat.
+  async function answerFront(messageId, value) {
+    const body = text(value).trim();
+    const item = S.needs.find(n => isObj(n) && String(n.message_id) === String(messageId));
+    if (!item || body === "" || S.front.answering[item.message_id]) return false;
+    S.front.answering[item.message_id] = true;
+    delete S.front.errors[item.message_id];
+    renderFront();
+    try {
+      let sid = clean(item.session_id);
+      if (sid === "" || sid === ORG) {
+        const dept = await api.get("/api/departments/" + enc(clean(item.dept_id)));
+        sid = isObj(dept) ? clean(dept.session_id) : "";
+      }
+      if (sid === "") throw new Error("This team has no chat to answer in.");
+      await api.post("/api/chats/" + enc(sid) + "/messages", {text: body});
+      S.answers[item.message_id] = body;
+      await fetchNeeds().catch(handleFetchError);
+      return true;
+    } catch (e) {
+      S.front.errors[item.message_id] = e && e.code ? errorWords(e).text : clean(e && e.message) || FAILED;
+      return false;
+    } finally {
+      delete S.front.answering[item.message_id];
+      renderFront();
+    }
+  }
+
+  // Approve or Not now: the approval card's own button, pressed through the org chat (the same path as the card in the chat).
+  async function decideFront(messageId, label) {
+    const id = Number(messageId);
+    if (!Number.isInteger(id) || S.front.answering[id]) return false;
+    S.front.answering[id] = true;
+    delete S.front.errors[id];
+    S.answers[id] = label;
+    renderFront();
+    const ok = await send(label, {message_id: id, option: label});
+    delete S.front.answering[id];
+    if (!ok) S.front.errors[id] = (S.banner && S.banner.text) || FAILED;
+    await fetchNeeds().catch(handleFetchError);
+    renderFront();
+    return ok;
+  }
+
+  function onFrontClick(e) {
+    const lv = e.target.closest("#fdlevel [data-level]");
+    if (lv) { ctx.setLevel(lv.dataset.level); return; }
+    if (e.target.closest("#fdsend")) { sendFront(); return; }
+    const b = e.target.closest("button[data-act]");
+    if (!b || !$("front").contains(b)) return;
+    const act = b.dataset.act;
+    const card = b.closest(".fdcard");
+    if (act === "fd-option") answerFront(b.dataset.msg, "Option " + b.dataset.opt);
+    else if (act === "fd-answer") { const box = card && card.querySelector("textarea[data-msg]"); if (box) answerFront(b.dataset.msg, box.value); }
+    else if (act === "fd-approve" || act === "fd-decline") decideFront(b.dataset.msg, b.dataset.text || (act === "fd-approve" ? "Yes" : "No"));
+    else if (act === "fd-choose") { const id = Number(b.dataset.msg); if (Number.isInteger(id)) { S.answers[id] = b.dataset.text || ""; send(b.dataset.text || b.dataset.option, {message_id: id, option: b.dataset.option || b.dataset.text}).then(renderFrontLatest); } }
+    else if (act === "fd-retry" || act === "retry-task") retryTask(b.dataset.task, b);
+    else if (act === "fd-seen" || act === "headsup-seen") {
+      S.seen[text(b.dataset.task)] = true;
+      if (HV()) protect("seen", () => HV().saveSeen(storage(), S.seen, S.heads));
+      renderNeeds();
+    } else if (act === "fd-more") { S.front.moreDone = true; renderFront(); }
+    else if (act === "fd-chat" || act === "open-team-chat") { setPlace("ws"); openTeamChat(b.dataset.node, b.dataset.session || "", {}); }
+    else if (act === "fd-go") {
+      setPlace("ws");
+      if (b.dataset.pane === "chat") selectPane("chat");
+      else selectPane(b.dataset.pane, {group: b.dataset.pane === "settings" ? "appearance" : ""});
+    } else if (act === "fd-conversation") { setPlace("ws"); selectPane("chat"); }
+    else if (act === "fd-hook") {
+      // the Raw AI chat viewer is built elsewhere: a page that has it handles the event (and cancels it); until then, say where it will be
+      const ev = new root.CustomEvent("sutra:raw-ai-chat", {cancelable: true, detail: {from: "home"}});
+      if (doc.dispatchEvent(ev)) { S.front.hookNote = "The raw AI chat viewer is not in this version yet. It will open from here and from each agent's panel."; renderFront(); }
+    }
+  }
+
+  function wireFront() {
+    if (!$("front")) return;
+    $("front").addEventListener("click", onFrontClick);
+    $("fdbox").addEventListener("keydown", e => { if (e.key === "Enter" && !e.shiftKey && !e.isComposing) { e.preventDefault(); sendFront(); } });
+    $("front").addEventListener("keydown", e => {
+      const t = e.target;
+      if (t && t.matches && t.matches("textarea[data-msg]") && e.key === "Enter" && !e.shiftKey && !e.isComposing) { e.preventDefault(); answerFront(t.dataset.msg, t.value); }
+    });
+    if ($("gofront")) $("gofront").addEventListener("click", () => setPlace("front"));
+    doc.addEventListener("sutra:level", () => {
+      if (level() === "simple" && place() === "ws" && S.chat.sid !== ORG) showOrgChat();
+      renderFront();
+    });
   }
 
   // The tab title count and one desktop notice per new question or problem (chat_attention.js), once both lists have been read: what is
@@ -719,6 +889,14 @@
   // A notice was clicked: the window is in front already; show what it was about.
   function openAttention(item) {
     const ref = isObj(item) && isObj(item.ref) ? item.ref : {};
+    if (place() === "front") {                                                         // the front door has a card for it: bring that card into view
+      const card = (ref.kind === "question" || ref.kind === "approval") && $("fdneeds").querySelector('.fdcard[data-msg="' + String(ref.message_id).replace(/\D/g, "") + '"]');
+      const at = card || $("fdneeds");
+      if (at.scrollIntoView) at.scrollIntoView({block: "center"});
+      at.tabIndex = -1;
+      at.focus();
+      return;
+    }
     if (ref.kind === "question") { focusCard(ref.message_id); return; }
     if (ref.kind === "approval") {
       selectPane("chat", {focus: false});
@@ -931,7 +1109,7 @@
   /* ---------------------------------------------------------------- appearance and the left bar (J2's logic, keys j2theme and j2bar) */
   function themePref() {
     if (S.theme) return S.theme;
-    try { const p = root.localStorage.getItem("j2theme"); return ["light", "dark", "system"].includes(p) ? p : "dark"; } catch (e) { return "dark"; }
+    try { const p = root.localStorage.getItem("j2theme"); return ["light", "dark", "system"].includes(p) ? p : "light"; } catch (e) { return "light"; }
   }
 
   function themeApply() {
@@ -1566,6 +1744,7 @@
       if (root.ChatComposer ? root.ChatComposer.sendKey(e) : (e.key === "Enter" && !e.shiftKey && !e.isComposing)) { e.preventDefault(); send($("sbox").value); }
     });
     wireComfort();
+    wireFront();
     $("sbanner").addEventListener("click", e => {
       const b = e.target.closest("button");
       if (!b) return;
@@ -1641,12 +1820,13 @@
     renderNeeds();
     renderRail();
     renderBanner();
+    renderFront();
     if (S.pane === "settings") renderSettings();
   }
 
   const HomePage = {
     boot, loadAll, renderChat, send, answerNeeds, selectPane, renderRail, renderNeeds, onEvent, themeApply, barSet, renderSettings, saveEngine, testConnector,
-    signIn, cancelSignIn, errorWords, poll: pollAll, state: () => S, retryTask,
+    signIn, cancelSignIn, errorWords, poll: pollAll, state: () => S, retryTask, renderFront, setPlace, answerFront, decideFront, sendFront,
   };
   root.HomePage = HomePage;
   const start = () => protect("boot", () => boot().catch(e => { if (root.console) root.console.error("HomePage: boot failed", e); }));

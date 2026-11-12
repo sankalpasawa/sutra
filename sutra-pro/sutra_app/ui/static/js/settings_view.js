@@ -312,7 +312,7 @@
 
   /* ---------------------------------------------------------------- Appearance group */
   function appearanceHtml(pref) {
-    const now = THEMES.some(t => t[0] === pref) ? pref : "dark";
+    const now = THEMES.some(t => t[0] === pref) ? pref : "light";
     return '<section class="setgrp" data-group="appearance" aria-labelledby="set-appearance-h"><h3 id="set-appearance-h">' + GROUPS.appearance + "</h3>" +
       '<div class="appear"><span class="seg" role="group" aria-label="Appearance">' +
       THEMES.map(t => '<button type="button" data-themepick="' + t[0] + '" aria-pressed="' + (t[0] === now) + '">' + t[1] + "</button>").join("") +
