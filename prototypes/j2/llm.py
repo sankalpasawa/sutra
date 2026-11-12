@@ -8,6 +8,7 @@ Replies are streamed so the UI can show progress; pass on_progress(event) to rec
   {"note": str}                                    retries and model switches
 """
 import base64
+import hashlib
 import json
 import os
 import re
@@ -66,12 +67,37 @@ def can_read_files():
     return not MOCK and READS_FILES.get(PROVIDER, False)
 
 
+# Whether a provider can give one call tools that work in a folder (ask(tools=...), J2_AGENT_TOOLS). Only claude-cli:
+# the Anthropic and Gemini calls would need their own tool loop. Which tools, and the permission rules, come only from
+# the caller (a form's data in artifacts/types.json); nothing here names a tool.
+TOOLS = {"claude-cli": True, "anthropic": False, "gemini": False}
+TOOL_KEYS = ("tools", "allow", "cwd", "usd", "log_chars")
+# The CLI's own sandbox for every command a tool runs: writes only in the working folder, no network, no way out.
+# Not a tool list. Measured 2026-11-12 (tools/agent_tools_smoke.py): writes outside the folder and the network are
+# refused; a folder under the CLI's own temp folder (/private/tmp/claude-<uid>) is not protected, so a builder folder
+# lives in the run folder.
+CLI_SANDBOX = {"sandbox": {"enabled": True, "autoAllowBashIfSandboxed": True, "allowUnsandboxedCommands": False}}
+
+
+def can_use_tools():
+    """True when the current provider can run a call with tools in a folder."""
+    return not MOCK and TOOLS.get(PROVIDER, False)
+
+
+def _tool_problems(tools):
+    """Why a tools request can't be run ([] when it can): every key given, the lists not empty, the folder there."""
+    out = [f"tools needs {k}" for k in TOOL_KEYS if tools.get(k) in (None, "", [])]
+    if not out and not os.path.isdir(tools["cwd"]):
+        out.append(f"tools cwd {tools['cwd']} is not a folder")
+    return out
+
+
 class CallTimeout(RuntimeError):
     """A call ran past its time limit and was stopped: its reply, if one ever comes, is never returned."""
 
 
 def ask(system, user, mock, max_tokens=1500, effort="high", on_progress=None, json_mode=False, images=None,
-        schema=None, timeout=None):
+        schema=None, timeout=None, tools=None):
     """effort="low" caps Gemini thinking; use it for short structured replies.
     json_mode=True makes Gemini return a JSON object only (Claude follows the prompt's format).
     images: PNG paths sent with the prompt (Audit's screenshots); every provider takes them, mock ignores them.
@@ -80,17 +106,25 @@ def ask(system, user, mock, max_tokens=1500, effort="high", on_progress=None, js
     the schema is simple enough, else the schema in the prompt and code validates it. The reply is still returned as
     the JSON text, so nothing downstream changes. LAST_META["structured"] records what the provider did.
     timeout: seconds; past it the call is stopped (claude-cli: the process is killed; the streaming APIs: the request
-    times out or the stream is closed) and CallTimeout is raised. Mock ignores it."""
+    times out or the stream is closed) and CallTimeout is raised. Mock ignores it.
+    tools: None (every call today: no tools) or {"tools": [names], "allow": [permission rules], "cwd": folder,
+    "usd": cost limit, "log_chars": longest string kept in the tool log}, all from the caller's data and settings.
+    The call then runs in that folder with those tools only; LAST_META gets "tool_calls" (name, input, ok), "usd"
+    and "stop". Mock ignores it; a provider without tools (TOOLS) raises RuntimeError."""
     images = [p for p in images or [] if p and os.path.exists(p)]
     progress = on_progress or (lambda e: None)
     LAST_META.clear()   # each provider fills in what it reports (tokens included); mock reports nothing
+    if tools is not None and (bad := _tool_problems(tools)):
+        raise ValueError("; ".join(bad))
     if MOCK:
         return _stream_mock(mock(), progress)
+    if tools is not None and not TOOLS.get(PROVIDER, False):
+        raise RuntimeError(f"{PROVIDER} can't run a call with tools (llm.TOOLS)")
     if not timeout:
-        return _ask(system, user, max_tokens, effort, progress, json_mode, images, schema, None)
+        return _ask(system, user, max_tokens, effort, progress, json_mode, images, schema, None, tools)
     deadline = time.time() + timeout
     try:
-        return _ask(system, user, max_tokens, effort, progress, json_mode, images, schema, deadline)
+        return _ask(system, user, max_tokens, effort, progress, json_mode, images, schema, deadline, tools)
     except CallTimeout:
         raise
     except Exception as e:      # an SDK's own timeout error, or anything else that ends past the deadline
@@ -104,11 +138,11 @@ def _check_deadline(deadline):
         raise CallTimeout("time limit reached while streaming")
 
 
-def _ask(system, user, max_tokens, effort, progress, json_mode, images, schema, deadline):
+def _ask(system, user, max_tokens, effort, progress, json_mode, images, schema, deadline, tools=None):
     if PROVIDER == "gemini":
         return _ask_gemini(system, user, max_tokens, effort, progress, json_mode, images, schema, deadline)
     if PROVIDER == "claude-cli":
-        return _ask_claude_cli(system, user, effort, progress, images, schema, deadline)
+        return _ask_claude_cli(system, user, effort, progress, images, schema, deadline, tools)
     global _client
     if _client is None:
         import anthropic
@@ -142,14 +176,23 @@ def _blocks(user, images):
     return out + [{"type": "text", "text": user}]
 
 
-def _ask_claude_cli(system, user, effort, progress, images=None, schema=None, deadline=None):
+def _ask_claude_cli(system, user, effort, progress, images=None, schema=None, deadline=None, tools=None):
     """One non-interactive `claude -p` call with no tools, MCP, skills or settings: a plain completion.
     The CLI has no max-tokens flag, so the reply format in the prompt is what keeps replies short.
     With images the prompt goes in as one stream-json user message (image blocks + text) and the result line is read
-    from the stream-json output."""
+    from the stream-json output.
+    With tools (ask's tools): only the caller's tools and permission rules, run in its folder: --restricted keeps the
+    file tools in the folder and loads no user or project settings, --safe-mode loads no CLAUDE.md, hooks or plugins,
+    dontAsk refuses anything the rules don't allow, the sandbox (CLI_SANDBOX) keeps commands' writes in the folder and
+    blocks the network, --max-budget-usd stops the call past the cost limit (checked after each turn, so one turn may
+    go over). The output is stream-json, so every tool call is read back."""
     env = {k: v for k, v in os.environ.items() if k not in ("ANTHROPIC_API_KEY", "CLAUDECODE")}
-    io = (["--input-format", "stream-json", "--output-format", "stream-json", "--verbose"] if images
-          else ["--output-format", "json"])
+    io = ((["--input-format", "stream-json"] if images else [])
+          + (["--output-format", "stream-json", "--verbose"] if images or tools else ["--output-format", "json"]))
+    tool_args = ["--tools", ""] if tools is None else [
+        "--tools", ",".join(tools["tools"]), "--allowedTools", " ".join(tools["allow"]), "--restricted", "--safe-mode",
+        "--permission-mode", "dontAsk", "--permission-prompts", "none", "--settings", json.dumps(CLI_SANDBOX),
+        "--max-budget-usd", f"{float(tools['usd']):g}"]
     # A long system prompt goes in a temporary file: Windows refuses a command line over 32,767 characters (WinError 206)
     sysfile = None
     if len(system) > 20000:
@@ -157,13 +200,13 @@ def _ask_claude_cli(system, user, effort, progress, images=None, schema=None, de
             f.write(system)
             sysfile = f.name
     cmd = ["claude", "-p", *io, *(["--system-prompt-file", sysfile] if sysfile else ["--system-prompt", system]),
-           "--tools", "", "--model", MODEL,
+           *tool_args, "--model", MODEL,
            "--effort", "low" if effort == "low" else "high", "--no-session-persistence", "--strict-mcp-config",
            "--disable-slash-commands", "--setting-sources", ""]
     if schema:      # structured output: Claude Code validates the schema, then returns the object in structured_output
         cmd += ["--json-schema", json.dumps(schema, ensure_ascii=False)]
     try:
-        return _run_claude_cli(cmd, images, user, env, progress, schema, deadline)
+        return _run_claude_cli(cmd, images, user, env, progress, schema, deadline, tools)
     finally:
         if sysfile:
             try:
@@ -174,34 +217,83 @@ def _ask_claude_cli(system, user, effort, progress, images=None, schema=None, de
 
 def _cli_meta(d):
     """What `claude -p` reports about one call, kept with it (the structured-output verdict is added by the caller)."""
-    keep = LAST_META.get("structured")
+    keep = {k: LAST_META[k] for k in ("structured", "tool_calls", "usd", "denied", "stop") if k in LAST_META}
     LAST_META.clear()
     u = d.get("usage") or {}
     LAST_META.update(model=next(iter(d.get("modelUsage") or {}), MODEL), duration_ms=d.get("duration_ms"),
                      input_tokens=(u.get("input_tokens") or 0) + (u.get("cache_read_input_tokens") or 0)
                      + (u.get("cache_creation_input_tokens") or 0) if u else None,
                      output_tokens=u.get("output_tokens"))
-    if keep:
-        LAST_META["structured"] = keep
+    LAST_META.update(keep)
 
 
-def _run_claude_cli(cmd, images, user, env, progress, schema=None, deadline=None):
+def _short(v, limit):
+    """v for the tool log: a string longer than limit becomes its length and sha256 (a file's whole text stays in
+    the file), dicts and lists item by item."""
+    if isinstance(v, str) and len(v) > limit:
+        return {"chars": len(v), "sha256": hashlib.sha256(v.encode("utf-8")).hexdigest()}
+    if isinstance(v, dict):
+        return {k: _short(x, limit) for k, x in v.items()}
+    if isinstance(v, list):
+        return [_short(x, limit) for x in v]
+    return v
+
+
+def _stream_lines(text):
+    out = []
+    for x in (text or "").splitlines():
+        if x.strip().startswith("{"):
+            try:
+                out.append(json.loads(x))
+            except ValueError:
+                pass
+    return out
+
+
+def _tool_meta(lines, tools, d, stop=None):
+    """LAST_META's tool record of one call: every tool call as the CLI reported it (name, input, ok), in order, the
+    cost the CLI reports, how many calls its rules refused, and why it stopped (done, budget, timeout, or the CLI's
+    own subtype)."""
+    calls, by_id = [], {}
+    for x in lines:
+        m = x.get("message")      # a system event's message is a string
+        content = m.get("content") if isinstance(m, dict) else None
+        for c in content if isinstance(content, list) else []:
+            if not isinstance(c, dict):
+                continue
+            if x.get("type") == "assistant" and c.get("type") == "tool_use":
+                by_id[c.get("id")] = {"n": len(calls) + 1, "name": c.get("name"),
+                                      "input": _short(c.get("input"), int(tools["log_chars"])), "ok": None}
+                calls.append(by_id[c.get("id")])
+            elif x.get("type") == "user" and c.get("type") == "tool_result" and c.get("tool_use_id") in by_id:
+                by_id[c["tool_use_id"]]["ok"] = not c.get("is_error")
+    sub = d.get("subtype")
+    LAST_META.update(tool_calls=calls, usd=d.get("total_cost_usd"), denied=len(d.get("permission_denials") or []),
+                     stop=stop or ("done" if sub == "success" else "budget" if sub == "error_max_budget_usd"
+                                   else sub or "no result"))
+
+
+def _run_claude_cli(cmd, images, user, env, progress, schema=None, deadline=None, tools=None):
     stdin = (json.dumps({"type": "user", "message": {"role": "user", "content": _blocks(user, images)}}) + "\n"
              if images else user)
     last = None
-    for attempt in range(2):
+    # a call with tools is run once: a retry would start over on the files the first one wrote (the caller decides)
+    for attempt in range(1 if tools else 2):
         if deadline and time.time() >= deadline:
             raise CallTimeout("time limit reached before the CLI retry")
         try:
             # subprocess.run kills the process on timeout, so a stopped call can never reply later
             p = subprocess.run(cmd, input=stdin, capture_output=True, text=True, env=env,
                                timeout=max(0.1, deadline - time.time()) if deadline else 900,
-                               cwd=tempfile.gettempdir())
-            if images:   # stream-json: one JSON event per line; the reply is the "result" event
-                lines = [json.loads(x) for x in (p.stdout or "").splitlines() if x.strip().startswith("{")]
+                               cwd=tools["cwd"] if tools else tempfile.gettempdir())
+            lines = []
+            if images or tools:   # stream-json: one JSON event per line; the reply is the "result" event
+                lines = _stream_lines(p.stdout)
                 d = next((x for x in reversed(lines) if x.get("type") == "result"), {})
             else:
                 d = json.loads(p.stdout or "{}")
+            if tools:
+                _tool_meta(lines, tools, d)
             sub = d.get("subtype")
             if schema:
                 so = d.get("structured_output")
@@ -230,6 +322,9 @@ def _run_claude_cli(cmd, images, user, env, progress, schema=None, deadline=None
                 return text
             last = RuntimeError(f"claude -p failed (exit {p.returncode}): {(d.get('result') or p.stderr)[:300]}")
         except (subprocess.TimeoutExpired, json.JSONDecodeError) as e:
+            if tools and isinstance(e, subprocess.TimeoutExpired):      # the tool calls made before the kill
+                out = e.stdout.decode("utf-8", "replace") if isinstance(e.stdout, bytes) else e.stdout
+                _tool_meta(_stream_lines(out), tools, {}, stop="timeout")
             if deadline and isinstance(e, subprocess.TimeoutExpired):
                 raise CallTimeout("claude -p killed at the time limit") from e
             last = RuntimeError(f"claude -p failed: {type(e).__name__}")

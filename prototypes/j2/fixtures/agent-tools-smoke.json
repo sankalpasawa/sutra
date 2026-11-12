@@ -1,0 +1,7 @@
+{
+  "_note": "Step 0 of agent-tools (tools/agent_tools_smoke.py): the builder tools a form would declare. These fields move into artifacts/types.json forms when the folder form lands (step 2); code reads them, never names them. tools: the CLI's tool list; allow: its permission rules (the command tool only for the declared runner); test_runner: the command code runs a test with, {target} the test file; folder: the builder's folder inside the run folder.",
+  "tools": ["Read", "Write", "Edit", "Glob", "Bash"],
+  "allow": ["Read", "Write", "Edit", "Glob", "Bash(python3 *)"],
+  "test_runner": ["python3", "{target}"],
+  "folder": "agent"
+}

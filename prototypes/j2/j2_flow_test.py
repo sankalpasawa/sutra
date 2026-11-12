@@ -3938,6 +3938,84 @@ def slim_prompts():
     print(f"slim: both paths Done; prompt characters {sizes['0']:,} (old) -> {sizes['1']:,} (J2_SLIM=1) in the mock run")
 
 
+def agent_tools_cli():
+    """agent-tools step 0 (llm.ask tools=...): without tools a claude-cli call is the same command in the same temp
+    folder as before; with tools the tool list, permission rules, folder and cost limit come only from the caller (the
+    names here are made up: llm names no tool), the call runs once, and every tool call is read back from stream-json
+    (long strings kept as length and sha256). A missing key, or a provider without tools, is refused."""
+    import llm
+    import tempfile
+    keep = (llm.MOCK, llm.PROVIDER, llm.MODEL, llm.subprocess.run)
+    folder = tempfile.mkdtemp()
+    seen = []
+
+    def fake(stdout, rc=0):
+        def run(cmd, **kw):
+            seen.append((cmd, kw))
+            return type("P", (), {"stdout": stdout, "stderr": "", "returncode": rc})()
+        return run
+    try:
+        llm.MOCK, llm.PROVIDER, llm.MODEL = False, "claude-cli", "sonnet"
+        llm.subprocess.run = fake(json.dumps({"type": "result", "subtype": "success", "result": "hi"}))
+        assert llm.ask("s", "u", lambda: "x") == "hi"
+        cmd, kw = seen[-1]
+        assert cmd[cmd.index("--tools") + 1] == "" and "--restricted" not in cmd and "--max-budget-usd" not in cmd, cmd
+        assert cmd[cmd.index("--output-format") + 1] == "json" and kw["cwd"] == tempfile.gettempdir(), (cmd, kw)
+        assert "tool_calls" not in llm.LAST_META, llm.LAST_META
+
+        tools = {"tools": ["ToolA", "ToolB"], "allow": ["ToolA", "ToolB(run *)"], "cwd": folder, "usd": 0.5,
+                 "log_chars": 10}
+        lines = [{"type": "system", "subtype": "init", "message": "a string"},
+                 {"type": "assistant", "message": {"content": [{"type": "tool_use", "id": "t1", "name": "ToolA",
+                                                                "input": {"path": "a.py", "content": "x" * 50}}]}},
+                 {"type": "user", "message": {"content": [{"type": "tool_result", "tool_use_id": "t1", "is_error": False}]}},
+                 {"type": "assistant", "message": {"content": [{"type": "tool_use", "id": "t2", "name": "ToolB",
+                                                                "input": {"command": "run t.py"}}]}},
+                 {"type": "user", "message": {"content": [{"type": "tool_result", "tool_use_id": "t2", "is_error": True}]}},
+                 {"type": "result", "subtype": "success", "result": "done", "total_cost_usd": 0.02,
+                  "permission_denials": [{}]}]
+        seen.clear()
+        llm.subprocess.run = fake("\n".join(json.dumps(x) for x in lines))
+        assert llm.ask("s", "u", lambda: "x", tools=tools) == "done"
+        cmd, kw = seen[-1]
+        arg = lambda f: cmd[cmd.index(f) + 1]
+        assert arg("--tools") == "ToolA,ToolB" and arg("--allowedTools") == "ToolA ToolB(run *)", cmd
+        assert arg("--max-budget-usd") == "0.5" and arg("--permission-mode") == "dontAsk", cmd
+        assert {"--restricted", "--safe-mode"} <= set(cmd) and json.loads(arg("--settings"))["sandbox"]["enabled"], cmd
+        assert arg("--output-format") == "stream-json" and kw["cwd"] == folder, (cmd, kw)
+        tc = llm.LAST_META["tool_calls"]
+        assert [(c["n"], c["name"], c["ok"]) for c in tc] == [(1, "ToolA", True), (2, "ToolB", False)], tc
+        assert tc[0]["input"]["path"] == "a.py" and tc[0]["input"]["content"]["chars"] == 50, tc
+        assert (llm.LAST_META["usd"], llm.LAST_META["stop"], llm.LAST_META["denied"]) == (0.02, "done", 1), llm.LAST_META
+
+        seen.clear()
+        llm.subprocess.run = fake(json.dumps({"type": "result", "subtype": "error_max_budget_usd", "is_error": True}), 1)
+        try:
+            llm.ask("s", "u", lambda: "x", tools=tools)
+            raise AssertionError("a stopped call returned")
+        except RuntimeError:
+            pass
+        assert len(seen) == 1 and llm.LAST_META["stop"] == "budget", (len(seen), llm.LAST_META)
+
+        for bad, err in (({**tools, "usd": None}, ValueError), ({**tools, "cwd": folder + "-gone"}, ValueError)):
+            try:
+                llm.ask("s", "u", lambda: "x", tools=bad)
+                raise AssertionError(f"{bad} accepted")
+            except err:
+                pass
+        llm.PROVIDER = "gemini"
+        try:
+            llm.ask("s", "u", lambda: "x", tools=tools)
+            raise AssertionError("a provider without tools ran a tools call")
+        except RuntimeError:
+            pass
+        llm.MOCK = True
+        assert llm.ask("s", "u", lambda: "mocked", tools=tools) == "mocked" and not llm.can_use_tools()
+    finally:
+        llm.MOCK, llm.PROVIDER, llm.MODEL, llm.subprocess.run = keep
+        shutil.rmtree(folder, ignore_errors=True)
+
+
 def builder_time_limit():
     """J2_BUILDER_TIMEOUT (default 600 s): llm stops a call past its limit for claude-cli (the process is killed once, no
     internal retry) and the Anthropic stream (closed at the next piece, the late text never returned); without a limit
@@ -13776,6 +13854,7 @@ if __name__ == "__main__":
             doc_unchanged()        # the document golden
             deliverables_generic()      # step 3: Adaptation chooses what to build
             builder_time_limit()        # J2_BUILDER_TIMEOUT: a stopped builder call, retried once, written once
+            agent_tools_cli()           # agent-tools step 0: llm tools from the caller only; no tools = today's command
             builder_context_trim()      # a real run's builder prompt: no chat, no other workflows
             builder_inputs()            # depended-on sections in full, cut inputs noticed and logged
             timing_records()            # timing.json and Run settings' calls, tokens and time
