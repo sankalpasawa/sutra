@@ -1067,8 +1067,8 @@ def simple_view():
         return text
     try:
         os.environ["J2_FIXES"] = "0"
-        text = check(j2.J2Run(), "What should we make today?", "The team plans it, does the work and checks it for you.", "A website for my bakery",
-                     "A PRD for a food delivery app", "Design docs for a clinic booking app", site=False)
+        text = check(j2.J2Run(), "What should we make?", "Asha, Mira, Kabir, Dev and Nora are ready.", "a bakery website",
+                     "a PRD for a food delivery app", "design docs for a clinic app", site=False)
         assert "What to make" not in text and "build today" not in text, text[:300]
         run = j2.J2Run()
         say(run, "a website for my cafe")
@@ -2341,7 +2341,7 @@ def generalist_units():
             assert bad not in c["system"], (c["fn"], bad)
     with open(os.path.join(j2.HERE, "j2_ui.html"), encoding="utf-8") as f:
         ui = f.read()
-    assert "A hiring policy for my startup" in ui and "Design docs for a clinic booking app" in ui      # examples of more than websites
+    assert "A PRD for a food delivery app" in ui and "Design docs for a clinic booking app" in ui      # examples of more than websites
 
 
 def page():
