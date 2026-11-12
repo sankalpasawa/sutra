@@ -36,6 +36,7 @@ import json
 import os
 import re
 import sys
+import threading
 import time
 
 import atexit
@@ -180,10 +181,14 @@ def page_run():
     run.set_output("website")
     return run
 
-def say(run, text):
+def say(run, text, review=True):
+    """Send a message and wait until the result is shown; review=True also waits for the reviewer report written
+    after it (its files land after the run is complete)."""
     assert run.user_says(text)
     while run.status != "waiting":
         time.sleep(0.02)
+    if review and getattr(run, "review_thread", None):
+        run.review_thread.join()
 
 
 def show(run):
@@ -925,6 +930,62 @@ def summary_before_review():
     run._turn_coordination = lambda h: (_ for _ in ()).throw(RuntimeError("boom"))
     say(run, BREW_LAB)
     assert run.outcome.startswith("Crashed") and summary(run)["status"] == "crashed", run.outcome
+
+
+def review_after_result():
+    """The reviewer report is written after the result is shown: the run is waiting (complete) with report.json's
+    placeholder verdict while the reviewer still works; timing.json's wall time doesn't count it; its notes land in
+    report.json and report.md when done. A late review never overwrites a newer report."""
+    run = j2.J2Run()
+    gate, started = threading.Event(), threading.Event()
+
+    def review(metrics):
+        started.set()
+        assert gate.wait(10)
+        return {"verdict": "Reviewed late."}
+    run._review = review
+    say(run, BREW_LAB, review=False)
+    while run.paused and run.paused["kind"] == "limit":      # add_budget_if_asked, without waiting for the reviewer
+        say(run, "1", review=False)
+    assert started.wait(10) and run.status == "waiting" and run.review_thread.is_alive()
+    assert "writing its notes" in run.report["review"]["verdict"], run.report["review"]
+    with open(os.path.join(run.dir, "report.json"), encoding="utf-8") as f:
+        assert "writing its notes" in json.load(f)["review"]["verdict"]
+    wall = json.load(open(os.path.join(run.dir, "timing.json")))["wall_seconds"]
+    gate.set()
+    run.review_thread.join(10)
+    assert run.report["review"]["verdict"] == "Reviewed late." and run.report["metrics"]["ai_calls"] == run.calls + 1
+    with open(os.path.join(run.dir, "report.md"), encoding="utf-8") as f:
+        assert "Reviewed late." in f.read()
+    assert json.load(open(os.path.join(run.dir, "timing.json")))["wall_seconds"] == wall
+    # a newer report (a pause, or the next end) wins over a review that arrives after it
+    gate.clear()
+    run._make_report()
+    late = run.review_thread
+    run._make_report(review=False)
+    gate.set()
+    late.join(10)
+    assert "Paused for the Requester" in run.report["review"]["verdict"], run.report["review"]
+
+
+def delay_setting():
+    """J2_DELAY is a setting read per call: 0 when unset, the number when set; mock runs never wait. .env.example
+    documents 2 for free-tier rate limits, commented out so a copied .env keeps 0."""
+    old_mock, old = j2.llm.MOCK, os.environ.pop("J2_DELAY", None)
+    try:
+        j2.llm.MOCK = False
+        assert j2.call_delay() == 0.0
+        os.environ["J2_DELAY"] = "2"
+        assert j2.call_delay() == 2.0
+        j2.llm.MOCK = True
+        assert j2.call_delay() == 0.0
+    finally:
+        j2.llm.MOCK = old_mock
+        os.environ.pop("J2_DELAY", None)
+        if old is not None:
+            os.environ["J2_DELAY"] = old
+    with open(os.path.join(j2.HERE, ".env.example"), encoding="utf-8") as f:
+        assert "# J2_DELAY=2" in f.read().splitlines()
 
 
 # "Budget lead" is one of the team's role names (the team card showed it before the studio, the studio's Behind the scenes shows it); the
@@ -8140,10 +8201,10 @@ HP_PROPOSAL = [
     {"kind": "build", "id": "hp-data-owner", "name": "Data retention and ownership", "sections": ["Candidate data retention", "Ownership and review"], "goal_gap": "The document does not state how long candidate data is kept or who owns and reviews the policy.", "outputs": ["## Candidate data retention", "## Ownership and review"], "completion_check": "Both headings exist and are non-empty, and the retention and ownership facts appear exactly.", "parts": ["doc_section", "doc_section"], "covers": [7, 8], "estimated_resources": {"money": 60, "calls": 2, "time_minutes": 10}, "atoms": [{"id": "a1", "goal": "Write the Candidate data retention and Ownership and review sections from the charter facts only.", "constraints": ["No invented deletion procedures, laws or dates", "Name the HR manager as owner"], "context": ["Charter items 7 and 8", "Sections: Candidate data retention; Ownership and review"], "how": {"kind": "AI", "agent": "W-4 Builder", "steps": "Write '## Candidate data retention' (keeping candidate data for 12 months) and '## Ownership and review' (the HR manager owns the policy and reviews it yearly)."}, "expected_output": [{"text": "Retention heading", "kind": "heading", "target": "Candidate data retention"}, {"text": "Ownership heading", "kind": "heading", "target": "Ownership and review"}], "verification": [{"text": "Retention heading", "type": "heading-present", "target": "Candidate data retention", "expect": True}, {"text": "Retention not empty", "type": "section-not-empty", "target": "Candidate data retention", "expect": 15}, {"text": "Ownership heading", "type": "heading-present", "target": "Ownership and review", "expect": True}, {"text": "Ownership not empty", "type": "section-not-empty", "target": "Ownership and review", "expect": 15}]}]},
 ]
 
-def _hp_run(proposal, grant, second=None):
+def _hp_run(proposal, grant, second=None, builder=None):
     """A mock run of the local hiring_policy type (HP_SECTIONS) whose first document plan is `proposal`, and whose
     Priority grants `grant` (Priority's echo, "sections" and "kind" dropped); `second`: Adaptation's answer when the
-    validator names unwritten sections.
+    validator names unwritten sections; `builder(run, fn, raw)`: rewrites a workflow agent's mock reply.
     Later calls are the mock's."""
     import copy
     n = {"a": 0, "p": 0}
@@ -8167,6 +8228,8 @@ def _hp_run(proposal, grant, second=None):
                                        "envelope": {"money_limit": 60, "model_call_limit": 3, "time_limit_minutes": 15,
                                                     "retry_limit": 1, "stop_loss": "Stop at 60."}} for w in wfs]}
                 return orig(fn, fmt, task, lambda: json.dumps(body), **k)
+            if builder and j2.is_wf_agent(fn):
+                return builder(run, fn, orig(fn, fmt, task, mock, **k))
             return orig(fn, fmt, task, mock, **k)
         return call
     run = j2.J2Run()
@@ -8178,6 +8241,60 @@ def _hp_run(proposal, grant, second=None):
              "diversity and fairness, and keeping candidate data for 12 months. The HR manager owns the policy and "
              "reviews it yearly.")
     return run
+
+
+def section_checks():
+    """A document build keeps every section its workflow owns (its sections field), and ids-unique reads only those.
+    1. runs/j2-20261111-191311 W-3 replayed (fixtures/n6-sudoku-j2-20261111-191311: w3.json, prd-v3.md, prd-v4.md).
+       W-3 owned Problem, Users and Goals and checked only Problem. Attempt 2 (prd-v4) dropped Users and Goals: now
+       refused, both named. Attempt 1 (prd-v3) failed ids-unique G only because Success metrics cites G1 to G6 in
+       table rows: it passes now. A real duplicate inside an owned section still fails. md_ids is unchanged.
+    2. In a run: a builder whose atom checks only one of its two sections (as a fix's may: the validator's per-section
+       rule skips revises and fixes, j2.py _atom_problems) and whose first reply drops the other gets the reason and
+       another attempt, and the document ends with both."""
+    import copy
+    fx = os.path.join(os.path.dirname(os.path.abspath(__file__)), "fixtures", "n6-sudoku-j2-20261111-191311")
+    w3 = json.load(open(os.path.join(fx, "w3.json"), encoding="utf-8"))
+    v3, v4 = (open(os.path.join(fx, f), encoding="utf-8").read() for f in ("prd-v3.md", "prd-v4.md"))
+    run = j2.J2Run()
+    run.set_output("prd")
+    check = lambda page, **k: run._run_checks(copy.deepcopy(w3), 1, page, **k)
+    assert j2.md_ids(v3, "G") == [1, 2, 3, 4, 5, 6] * 2      # the whole document still counts the table's ids
+    assert check(v3) == [], [(r["check"], r["evidence"]) for r in check(v3)]
+    assert {r["target"] for r in run.receipts[-4:] if "this workflow owns" in str(r["check"])} == {"Users", "Goals"}, \
+        "only the owned sections no atom checks (Problem has W-3's own section-not-empty check)"
+    bad = check(v4)
+    assert {r["target"] for r in bad if r["type"] == "section-not-empty"} == {"Users", "Goals"}, bad
+    assert all("no heading" in r["evidence"] for r in bad if r["type"] == "section-not-empty"), bad
+    assert [r["evidence"] for r in bad if r["type"] == "ids-unique"] == \
+        ["no G1, G2, ... ids in the sections it owns (Problem, Users, Goals)"], bad
+    dup = check(v3.replace("- **G2**", "- **G1**", 1))      # a real duplicate, inside Goals
+    assert [(r["type"], r["evidence"]) for r in dup] == [("ids-unique", "duplicate id(s): G1")], dup
+    assert all(not r.get("owned_section") for r in check(v4, atoms=copy.deepcopy(w3["atoms"]))), \
+        "a single-atom re-check adds no owned-section checks"
+    # 2. the flow: refused with the reason, retried, both sections written
+    with _TypeStore() as T:
+        T.create("hiring_policy", "Hiring policy", HP_SECTIONS, practice=True)
+        drop, sent = HP_PROPOSAL[0]["sections"][1], []
+
+        def builder(run, fn, raw):
+            sent.append(fn)
+            if sent.count(fn) == 1 and fn == "W-1":      # checks only its first section; its first reply drops the second
+                a = run._wf(fn)["atoms"][0]
+                a["verification"] = [c for c in a["verification"] if c.get("target") != drop]
+                a["expected_output"] = [x for x in a.get("expected_output") or [] if x.get("target") != drop]
+                raw = re.sub(rf"## {re.escape(drop)}.*?(?=\n## |```)", "", raw, flags=re.S)
+            return raw
+        run = _hp_run(HP_PROPOSAL, HP_PROPOSAL, builder=builder)
+        recs = [r for r in run.receipts if r["atom"].startswith("W-1") and r.get("type") == "section-not-empty"
+                and r["target"] == drop]
+        assert [(r["attempt"], r["pass"]) for r in recs] == [(1, False), (2, True)], recs
+        assert "no heading" in recs[0]["evidence"] and sent.count("W-1") == 2, (recs[0], sent)
+        doc = open(os.path.join(run.dir, "hiring_policy.md"), encoding="utf-8").read()
+        assert f"## {drop}" in doc and run.outcome.startswith("Done"), run.outcome
+    print("section checks: a build keeps every section its workflow owns (Sudoku W-3 replay refused, a builder that "
+          "drops one retried), ids-unique reads only the owned sections (G1-G6 cited in a table pass, a real duplicate "
+          "fails) ok")
 
 
 def doc_sections_replay():
@@ -14192,6 +14309,7 @@ if __name__ == "__main__":
             local_types()               # types runs make are local; --promote moves one into types.json
             recommended_practice()      # labelled good practice, allowed by a type's data
             fix_sections()              # a document fix names its sections
+            section_checks()            # runs/j2-20261111-191311 W-3: owned sections kept; ids-unique on them only
             doc_sections_replay()       # runs/j2-20261111-124718: sections and kind carried, asked for; review not Audit's
             kind_and_sections()         # no word matching: sections and kind are fields; rejected, not unfunded
             new_type_sections()         # a new type with no template: the sections its plan declared
@@ -14294,6 +14412,8 @@ if __name__ == "__main__":
         intake_needs()
         playbooks()
         summary_before_review()
+        review_after_result()
+        delay_setting()
         prd_run()
         prd_checks()
         prd_groups_metrics_assumptions()

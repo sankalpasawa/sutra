@@ -97,7 +97,10 @@ SUMMARY_REFRESH = 20       # re-summarise once this many more messages have scro
 SITE_LIMIT = 150_000       # characters of the site the workflow agents and Audit see
 INPUT_LIMIT = int(os.getenv("J2_INPUT_LIMIT", "20000"))   # characters of one file or depended-on section in a builder prompt
 SITE_WARN_BYTES = 60_000   # builder.md asks for a single page under ~60 KB
-DELAY = 0 if llm.MOCK else float(os.getenv("J2_DELAY", "2"))   # spacing for free-tier rate limits
+def call_delay():
+    """J2_DELAY: seconds between AI calls (default 0). 2 suits free-tier rate limits (.env.example). Read per call so
+    tests can switch it; mock runs never wait."""
+    return 0.0 if llm.MOCK else float(os.environ.get("J2_DELAY") or 0)
 
 NAMES = {"validator": "Validator", "identity": "Identity", "adaptation": "Adaptation",
          "priority": "Priority", "coordination": "Coordination", "audit": "Audit", "user": "Requester (you)",
@@ -3598,8 +3601,8 @@ class J2Run:
                 + "\n".join(line(m) for m in recent))
 
     def _summarize(self, older):
-        if self.calls and DELAY:
-            time.sleep(DELAY)
+        if self.calls and call_delay():
+            time.sleep(call_delay())
         self.calls += 1
         new = [m for m in older[self.summary_upto:] if for_agents(m)]
         self.summary = llm.ask(
@@ -3671,8 +3674,8 @@ class J2Run:
             + (self._board_context() if board else "") \
             + (DOC_NOTE.format(label=self.out["label"]) if self.doc else "")
         system = system_prompt(fn, reply_format, self._builder_for(fn))
-        if self.calls and DELAY:
-            time.sleep(DELAY)
+        if self.calls and call_delay():
+            time.sleep(call_delay())
         self.calls += 1
         self.thinking = fn
         t0 = time.time()
@@ -4113,16 +4116,17 @@ class J2Run:
         self.post("system", (self.outcome or "Stopped.") + (f" {noun} v{len(self.sites)} is in the preview. " if noun else " ")
                   + ("Answer Identity's question above to continue." if self.paused else
                      "Tell us if you want changes."))
-        # summary.json first (code only): the reviewer call in _make_report can take minutes or hang, and the run
-        # must have its summary the moment it ends.
+        # summary.json first (code only), then the result is shown: the run is complete here. The reviewer call can
+        # take minutes or hang, so _make_report writes the report without it (code only) and runs it after, in its
+        # own thread; timing.json doesn't count it.
         if not self.paused:
             self._write_summary()
-        self._make_report(review=not self.paused)
         self.feedback = None
         if self.change and not self.paused:      # J2_CHANGE: the change ends with the run it was built in
             self.change["phase"] = "closed"
         self.wait_from = time.time() if self.paused else None
         self.save("timing.json", self.timing())
+        self._make_report(review=not self.paused)
         self.status = "waiting"
 
     def timing(self):
@@ -9883,15 +9887,32 @@ class J2Run:
         receipts."""
         site_dir, failed, doc = os.path.join(self.dir, "site"), [], self.doc if doc is None else doc
         t0 = time.time()
+        # the document sections this workflow owns: its sections field only (wf_sections), never its name or words
+        owned = wf_sections(w, (self.out or {}).get("sections") or []) if doc else []
 
         def one(c):
             if doc and c.get("type") == "file-exists" and self._file_wf(w):      # a file workflow: the file it wrote
                 f = artifact_path(w)
                 ok = os.path.isfile(os.path.join(self.dir, f))
                 return {"actual": ok, "pass": ok, "evidence": f"{f} {'exists' if ok else 'not found'} in the run"}
+            if owned and c.get("type") == "ids-unique":
+                # only the ids defined in the sections it owns: another section citing them (a metrics table keyed by
+                # goal id) is not a duplicate (runs/j2-20261111-191311 W-3 deleted Users and Goals over that)
+                mine = "\n\n".join(f"## {h}\n{md_section(page, h) or ''}" for h in owned)
+                res = run_check(c, site_dir, mine, doc)
+                return {**res, "evidence": res["evidence"].replace("in the document",
+                                                                   f"in the sections it owns ({', '.join(owned)})")}
             return run_check(c, site_dir, page, doc)
-        for a in atoms or w.get("atoms") or []:
-            ver = [c for c in a.get("verification") or [] if isinstance(c, dict)]
+        # A build must keep every section its workflow owns, present and not empty, whatever its atoms check
+        # (runs/j2-20261111-191311: W-3 owned Problem, Users and Goals, checked only Problem and dropped the other two).
+        # A failure goes back to the builder with this reason, like any failed check. Not on a single-atom re-check,
+        # and not for a section an atom already checks with section-not-empty (a first build always does: J2.e).
+        have = {heading_target(c.get("target")) for a in w.get("atoms") or [] for c in a.get("verification") or []
+                if isinstance(c, dict) and c.get("type") == "section-not-empty"}
+        kept = [{"text": f"The {h} section this workflow owns is present and not empty.", "type": "section-not-empty",
+                 "target": h, "expect": 1, "owned_section": True} for h in owned if h not in have] if atoms is None else []
+        for n, a in enumerate(atoms or w.get("atoms") or []):
+            ver = [c for c in a.get("verification") or [] if isinstance(c, dict)] + (kept if n == 0 else [])
             recs = [self._receipt(a, c, attempt, one(c), **extra) for c in ver]
             a["results"], a["attempts"] = recs, attempt
             self._expected_receipts(a, ver, recs, attempt, **extra)
@@ -10661,8 +10682,8 @@ class J2Run:
                               f"{c['resolved_by_identity']} by Identity, {c['asked_requester']} needed the Requester."],
                 "problems": [f"{sum(a['redirects'] for a in metrics['agents'].values())} illegal route pick(s) were redirected."],
                 "learnings": ["Mock replies are scripted, so these learnings only show the report works."]})
-        if self.calls and DELAY:
-            time.sleep(DELAY)
+        if self.calls and call_delay():
+            time.sleep(call_delay())
         self.calls += 1
         raw = llm.ask(
             "You review one test run of J2, a department of AI agents with strict roles (role files below). You are not "
@@ -10680,15 +10701,29 @@ class J2Run:
             return {"verdict": "The reviewer's reply wasn't valid JSON.", "raw": raw[:2000]}
 
     def _make_report(self, review=True):
-        """Metrics always; the reviewer call only when the run ends (not on every pause for the Requester)."""
+        """Metrics and report.json at once. The reviewer call (only when the run ends, not on every pause for the
+        Requester) runs after the result is shown, in its own thread (self.review_thread): its notes replace the
+        placeholder verdict when they arrive. A newer report (the next pause or end) wins over a late review."""
         metrics = self._metrics()
         self.thinking = None
+        metrics["ai_calls"] = self.calls + (1 if review else 0)      # counting the reviewer's call
+        self.report_gen = getattr(self, "report_gen", 0) + 1
+        self._save_report(metrics, {"verdict": "The reviewer is writing its notes; they appear here when done." if review
+                                    else "Paused for the Requester; the reviewer runs when the run ends."})
+        if review:
+            self.review_thread = threading.Thread(target=self._review_later, args=(metrics, self.report_gen),
+                                                  daemon=True)
+            self.review_thread.start()
+
+    def _review_later(self, metrics, gen):
         try:
-            review = self._review(metrics) if review else {"verdict": "Paused for the Requester; the reviewer runs "
-                                                                      "when the run ends."}
+            review = self._review(metrics)
         except Exception as e:  # noqa: BLE001  the metrics are still worth saving
             review = {"verdict": f"Reviewer call failed: {type(e).__name__}: {str(e)[:200]}"}
-        metrics["ai_calls"] = self.calls
+        if gen == self.report_gen:
+            self._save_report(metrics, review)
+
+    def _save_report(self, metrics, review):
         self.report = {"metrics": metrics, "review": review, "events": self.events,
                        "made": time.strftime("%Y-%m-%d %H:%M:%S")}
         self.save("report.json", self.report)
