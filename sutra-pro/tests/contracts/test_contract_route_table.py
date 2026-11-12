@@ -11,6 +11,7 @@ import pytest
 from fastapi import FastAPI
 
 from sutra_app.engine.api import MOUNT_MARK, mount
+from sutra_app.engine.api import rawchat
 from sutra_app.engine.api.ports import EngineServices
 from sutra_app.engine.spec import DEPT_ID_RE
 from sutra_app.orchestrator.api.deps import require_token
@@ -27,6 +28,13 @@ SETTINGS_PATH = "/api/engine/settings"
 CAPABILITIES_PATH = "/api/engine/capabilities"      # D126: what the engine can do (a read for the owner and the doctor; no page calls it, no team)
 # served by a package that has not merged yet (ORCH-8: health); the page calls them, no router of this repo has them
 NOT_MOUNTED_YET = {"/api/health"}
+RAWCHAT_PATHS = set(rawchat.PATHS)                   # Sutra's own: the Raw AI chat debugger's two GETs; not J2's, so not in J2_PATHS
+
+
+def not_in_engine_yet() -> set[str]:
+    """J2 routes the studio page calls that the vendored engine predates (sutra_ctx.js `NOT_IN_ENGINE_YET`): the page answers them itself."""
+    text = (UI / "static" / "js" / "sutra_ctx.js").read_text(encoding="utf-8")
+    return set(re.findall(r'"([^"]+)"', re.search(r"const NOT_IN_ENGINE_YET = \[(.*?)\];", text, re.S).group(1)))
 
 
 def j2_paths() -> tuple[list[str], list[str]]:
@@ -75,10 +83,11 @@ def test_the_engine_serves_exactly_the_j2_routes_the_page_lists_plus_the_two_set
     exact, prefixes = j2_paths()
     gets = {path for (method, path) in table if method == "GET"}
     posts = {path for (method, path) in table if method == "POST"}
+    gets -= RAWCHAT_PATHS
     templated = {path for path in gets if "{" in path}
     assert {path for (method, path) in table if method == "PUT"} == {SETTINGS_PATH}
     assert len(gets - {SETTINGS_PATH, CAPABILITIES_PATH}) == 31 and len(posts) == 7      # 31 GET paths (/site/{key} answers two rows), J2 sync 4's included
-    assert len(table) == 31 + 7 + 2 + 1                                                  # the settings GET and PUT and the capabilities GET
+    assert len(table) == 31 + 7 + 2 + 1 + len(RAWCHAT_PATHS)                                                 # the settings GET and PUT and the capabilities GET
     assert len(templated) == 5 and all(any(path.startswith(prefix) for prefix in prefixes) for path in templated)
     for prefix in prefixes:
         assert any(path.startswith(prefix) for path in templated), prefix
@@ -151,7 +160,7 @@ def test_no_two_routers_serve_the_same_method_and_path(world):
 
 def test_the_ui_alone_serves_the_pages(world):
     pages = {path for (_, path) in route_table(world.routers["ui"])}
-    assert pages == {"/", "/d/{dept}", "/d/{dept}/", "/d/{dept}/library", "/d/{dept}/library/", "/console", "/favicon.ico"}      # the library page is the team's (D141)
+    assert pages == {"/", "/d/{dept}", "/d/{dept}/", "/d/{dept}/library", "/d/{dept}/library/", "/d/{dept}/raw", "/console", "/favicon.ico"}      # the library page is the team's (D141)
     for name, router in world.routers.items():
         if name != "ui":
             assert not (pages & {path for (_, path) in route_table(router)}), name
@@ -218,7 +227,7 @@ def test_every_path_the_j2_page_calls_is_in_the_engine_table_and_in_the_ui_list(
     engine = {path for (_, path) in route_table(world.routers["engine"])}
     called = literal_paths(PAGE_FILES)
     assert called, "the scan found no path in the J2 page: the pattern is out of date"
-    for path in called:
+    for path in called - not_in_engine_yet():
         assert ui_matches(path) or path == SETTINGS_PATH, f"{path} is called by the J2 page but is not in sutra_ctx.js J2_PATHS"
         assert served(path, engine), f"{path} is called by the J2 page and the engine serves no such route"
 
@@ -235,7 +244,7 @@ def test_every_engine_route_is_called_by_a_page_or_a_view_script(world):
 def test_every_path_the_view_scripts_call_is_served_by_some_router(world):
     templates = all_templates(world)
     for path in literal_paths(STATIC_JS + PAGE_FILES):
-        if path in NOT_MOUNTED_YET:
+        if path in NOT_MOUNTED_YET | not_in_engine_yet():
             continue
         assert served(path, templates), f"{path} is called by a page script and no router serves it"
 
