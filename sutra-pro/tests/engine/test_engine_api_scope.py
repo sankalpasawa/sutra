@@ -66,7 +66,7 @@ def test_every_row_of_7_1_answers_at_the_root_with_dept_in_both_modes(api):
             assert got.status_code == (404 if path in NOT_FOUND else 200), (path, query, got.text[:200])
 
 
-def test_the_route_table_is_the_39_j2_rows_the_two_settings_routes_the_capabilities_route_and_nothing_under_d(api):
+def test_the_route_table_is_the_39_j2_rows_the_two_settings_routes_the_capabilities_route_the_raw_chat_routes_and_nothing_under_d(api):
     table = {(method.upper(), path) for path, item in api.app.openapi()["paths"].items() for method in item}
     gets = {"/api/state", "/api/runs", "/api/call", "/api/preview", "/api/docs", "/api/map", "/api/plan", "/api/library",
             "/api/library/{artifact}/{section}/{slug}/{version}", "/api/run-templates", "/api/artifacts", "/api/agent", "/api/code",
@@ -77,7 +77,8 @@ def test_the_route_table_is_the_39_j2_rows_the_two_settings_routes_the_capabilit
     assert len(gets) == 31 and len(POSTS) == 7                  # 32 GET rows and 7 POST rows: J2's 41 handlers less the page and d3
     assert table == {("GET", p) for p in gets} | {("POST", p) for p in POSTS} | {("GET", "/api/engine/settings"),
                                                                                   ("PUT", "/api/engine/settings"),
-                                                                                  ("GET", "/api/engine/capabilities")}
+                                                                                  ("GET", "/api/engine/capabilities"),
+                                                                                  ("GET", "/api/calls"), ("GET", "/api/agent-live")}
     assert not [path for _, path in table if path.startswith("/d/")]
 
 

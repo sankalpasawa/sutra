@@ -11,7 +11,7 @@ It serves no page, no static file and no cookie, and has no default team: `sutra
 from fastapi import APIRouter, FastAPI
 from fastapi.routing import APIRoute
 
-from . import commands, files, library, run_views, settings, state
+from . import commands, files, library, rawchat, run_views, settings, state
 from .ctx import dept_dependency
 from .ports import DeptLike, EngineServices
 from .reply import EngineError, error_response
@@ -43,6 +43,7 @@ def build_router(services) -> APIRouter:
     dept_dep = dept_dependency(services)
     for module in (state, run_views, library, files, commands):
         module.add_routes(router, services, dept_dep)
+    rawchat.add_routes(router, services, dept_dep)        # Sutra's own: the Raw AI chat debugger (/api/calls, /api/agent-live)
     settings.add_routes(router, services)
     return router
 

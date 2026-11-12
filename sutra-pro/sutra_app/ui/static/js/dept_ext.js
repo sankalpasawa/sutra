@@ -201,6 +201,18 @@
     return true;
   }
 
+  /* ---- the Raw AI chat debugger (raw_chat.js): its "Raw AI chat" button shows at the Debug level, and /d/{team}/raw opens it full screen;
+     J2's page is not edited, so its script is added from here */
+  function rawChat() {
+    const d = doc();
+    if (!d || !d.head || d.getElementById("raw_chat-js")) return false;
+    const tag = d.createElement("script");
+    tag.id = "raw_chat-js";
+    tag.src = "/ui/js/raw_chat.js";
+    d.head.appendChild(tag);
+    return true;
+  }
+
   function openNode(node) {
     const panel = drawers();
     if (!panel || !isObj(node) || clean(node.id) === "") return;
@@ -363,6 +375,7 @@
     pickers();
     attention();
     insight();
+    rawChat();
     const d = doc();
     if (d && typeof d.addEventListener === "function") {
       d.addEventListener("sutra:tab", e => onTab(isObj(e && e.detail) ? e.detail.name : ""));
