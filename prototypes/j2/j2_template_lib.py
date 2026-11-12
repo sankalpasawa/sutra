@@ -779,8 +779,43 @@ def load_dir(d):
 
 
 def load(artifact, section_slug, tslug, version):
-    """(spec, meta, files) of one stored library version, or None."""
-    return load_dir(os.path.join(lib_dir(), artifact, section_slug, tslug, f"v{version}"))
+    """(spec, meta, files) of one stored library version, or None. A version that was moved into another family
+    (move_versions: its row says renamed_from) opens where it is now, so an older reference still resolves."""
+    got = load_dir(os.path.join(lib_dir(), artifact, section_slug, tslug, f"v{version}"))
+    if got or tslug == "generic":
+        return got
+    now = moved_to(artifact, section_slug, tslug, version)
+    return load_dir(os.path.join(lib_dir(), artifact, section_slug, now[0], f"v{now[1]}")) if now else None
+
+
+def _old_ref(v):
+    """(slug, version) a moved version had before (its renamed_from), or None."""
+    name, _, n = str(v.get("renamed_from") or "").rpartition("@")
+    return (slug(name), int(n)) if name and n.isdigit() else None
+
+
+def moved_to(artifact, section_slug, tslug, version):
+    """(slug, version) where the version once stored as tslug v<version> is now, or None."""
+    try:
+        version = int(version)
+    except (TypeError, ValueError):
+        return None
+    for e in index()["templates"]:
+        if e["artifact"] == artifact and e["section_slug"] == section_slug:
+            for v in e["versions"]:
+                if _old_ref(v) == (tslug, version):
+                    return e["slug"], v["version"]
+    return None
+
+
+def _numbers_taken(idx, artifact, section, tslug):
+    """Every version number a family has or had: its versions, and the ones moved out of it. A number is never used
+    twice, so an old reference to a moved version can never mean a newer one."""
+    here = {v["version"] for e in idx["templates"] if e["artifact"] == artifact and e["section"] == section
+            and e["slug"] == tslug for v in e["versions"]}
+    gone = {_old_ref(v)[1] for e in idx["templates"] if e["artifact"] == artifact and e["section"] == section
+            for v in e["versions"] if (_old_ref(v) or ("",))[0] == tslug}
+    return here | gone
 
 
 # ---------------------------------------------------------------- a run's own copy of the templates it used
@@ -900,12 +935,17 @@ def get(ref, artifact, section):
         if e["artifact"] == artifact and e["section"] == section and (e["name"] == name or e["slug"] == slug(name)):
             v = next((x for x in e["versions"] if x["version"] == int(ver.lstrip("v"))), None)
             if not v:
-                return None
+                break
             got = load(artifact, slug(section), e["slug"], v["version"])
             if not got:
                 return None
             spec, meta, _ = got
             return SpecialisedTemplate.model_validate({**spec, "used_by": meta.get("used_by") or []})
+    now = moved_to(artifact, slug(section), slug(name), ver.lstrip("v"))      # moved into another family since: where it is now
+    if now:
+        got = load(artifact, slug(section), now[0], now[1])
+        if got:
+            return SpecialisedTemplate.model_validate({**got[0], "used_by": got[1].get("used_by") or []})
     return None
 
 
@@ -924,9 +964,9 @@ def store(t, fingerprint=None):
         same = next((v for v in entry["versions"] if v["sha"] == sha), None)
         if same:
             return get(f"{t.name}@{same['version']}", t.artifact, t.section), same["version"], False
-        version = max(v["version"] for v in entry["versions"]) + 1
+        version = max(_numbers_taken(idx, t.artifact, t.section, tslug)) + 1
     else:
-        version = 1
+        version = max(_numbers_taken(idx, t.artifact, t.section, tslug) or {0}) + 1
         entry = {"artifact": t.artifact, "section": t.section, "section_slug": slug(t.section), "slug": tslug,
                  "name": t.name, "kind": "specialised", "extends": t.extends, "versions": []}
         idx["templates"].append(entry)
@@ -1849,7 +1889,7 @@ def _place(idx, spec, meta, rid, d, where, facts_of):
         _add_use(entry, same, _use(rid, d), meta.get("fingerprints"))
         _provenance(entry, same, t, facts_of)
         return "same", entry, same
-    taken = {v["version"] for v in entry["versions"]}
+    taken = _numbers_taken(idx, t.artifact, t.section, tslug)
     renumbered = None
     version = int(spec.get("version") or 1)
     if version in taken:
@@ -1885,60 +1925,89 @@ def _place(idx, spec, meta, rid, d, where, facts_of):
 
 
 def rename_versions(artifact, section, name, versions, new_name):
-    """Move stored versions of one family into another family under a new name (versions adapted for a different
-    business, stored before adapted templates got their own family). The content is kept: fields, objects, rules and
-    context are the same; the name, the version number (the next free one in the new family) and so the shas change,
-    and "adapted from version N of this template" in the description is kept true (the new family's own number, or
-    "a template made for another business"). Each moved version
-    records renamed_from and adapted_from; the index's run rows follow. Returns [(old ref, new ref)]."""
+    """Move some versions of one family into another family (move_versions)."""
+    return move_versions([(artifact, section, name, n, new_name) for n in versions])
+
+
+def move_versions(plan):
+    """Move stored versions into other families: plan is [(artifact, section, name, version, new_name)] (versions
+    adapted for a different business, stored before adapted templates got their own family). The content is kept:
+    fields, objects, rules and context are the same; the name, the version number (the next free one in the new
+    family, in the order of the old numbers) and so the shas change, and "adapted from version N of this template" in
+    the description is kept true (the new family's own number, or "a template made for another business"). Each moved
+    version records renamed_from and adapted_from (through the moves of this plan and earlier ones); its used_by goes
+    with it; the index's run rows and the run templates' section_template references follow. A number left behind is
+    never used again (_numbers_taken) and still opens the moved version (load). Returns [(old ref, new ref)]."""
     idx = index()
-    old = next(e for e in idx["templates"] if e["artifact"] == artifact and e["section"] == section and e["slug"] == slug(name))
-    moves, done_ = {}, []
-    for n in sorted(versions):
+    entry = lambda art, sec, nm: next((e for e in idx["templates"] if e["artifact"] == art and e["section"] == sec and e["slug"] == slug(nm)), None)
+    plan = sorted(plan, key=lambda p: (p[0], p[1], p[4], p[2], p[3]))
+    moves, nxt = {}, {}
+    for art, sec, name, n, new_name in plan:      # 1: every new number, before any source is looked up
+        k = (art, sec, slug(new_name))
+        nxt[k] = nxt.get(k, max(_numbers_taken(idx, art, sec, slug(new_name)) or {0})) + 1
+        moves[(art, sec, f"{name}@{n}")] = f"{new_name}@{nxt[k]}"
+    earlier = {(e["artifact"], e["section"], v["renamed_from"]): f"{e['name']}@{v['version']}"
+               for e in idx["templates"] for v in e["versions"] if v.get("renamed_from")}
+    now = lambda art, sec, ref: moves.get((art, sec, ref)) or earlier.get((art, sec, ref)) or ref
+    out = []
+    for art, sec, name, n, new_name in plan:      # 2: the files, the index rows, the run rows
+        old = entry(art, sec, name)
         row = next(v for v in old["versions"] if v["version"] == n)
-        spec, meta, _ = load(artifact, slug(section), old["slug"], n)
+        spec, meta, _ = load_dir(vdir(art, sec, old["slug"], n))
         m = re.search(r"; adapted from version (\d+) of this template", spec.get("description") or "")
-        src = f"{name}@{m.group(1)}" if m else None
-        src = moves.get(src, src)
+        src = now(art, sec, meta.get("adapted_from") or f"{name}@{m.group(1)}") if m or meta.get("adapted_from") else None
+        version = int(moves[(art, sec, f"{name}@{n}")].rpartition("@")[2])
         mine = src and src.rpartition("@")[0] == new_name      # adapted from an earlier version of the new family itself
-        desc = spec["description"].replace(m.group(0), f"; adapted from version {src.rpartition('@')[2]} of this template" if mine else OTHER_FAMILY) \
-            if m else spec.get("description") or ""
+        desc = spec.get("description") or ""
+        if m:
+            desc = desc.replace(m.group(0), f"; adapted from version {src.rpartition('@')[2]} of this template" if mine else OTHER_FAMILY)
         t = SpecialisedTemplate.model_validate({**{k: v for k, v in spec.items() if k not in ("version", "sha")},
                                                 "name": new_name, "description": desc, "used_by": []})
-        new = next((e for e in idx["templates"] if e["artifact"] == artifact and e["section"] == section and e["slug"] == slug(new_name)), None)
+        new = entry(art, sec, new_name)
         if new is None:
             new = {**{k: old[k] for k in ("artifact", "section", "section_slug", "kind", "extends")}, "slug": slug(new_name),
                    "name": new_name, "versions": []}
             idx["templates"].append(new)
-        t.version, t.sha = max([v["version"] for v in new["versions"]] or [0]) + 1, t.compute_sha()
+        t.version, t.sha = version, t.compute_sha()
         schema, code = transport(t), codegen(t)
-        out = {**meta, "name": new_name, "version": t.version, "sha": t.sha, "schema_sha": sha_of(schema),
-               "model_sha": hashlib.sha256(code.encode("utf-8")).hexdigest(), "class": class_name(t),
-               "renamed_from": f"{name}@{n}", **({"adapted_from": src} if src else {})}
-        dst = vdir(artifact, section, slug(new_name), t.version)
+        notes = {"renamed_from": f"{name}@{n}", **({"adapted_from": src} if src else {})}
+        info = {**meta, "name": new_name, "version": version, "sha": t.sha, "schema_sha": sha_of(schema),
+                "model_sha": hashlib.sha256(code.encode("utf-8")).hexdigest(), "class": class_name(t), **notes}
+        dst = vdir(art, sec, slug(new_name), version)
         _write(os.path.join(dst, "spec.json"), t.model_dump(exclude={"used_by"}))
         _write(os.path.join(dst, "schema.json"), schema)
         _write(os.path.join(dst, "model.py"), code)
-        _write(os.path.join(dst, "meta.json"), out)
-        new["versions"].append({**row, "version": t.version, "sha": t.sha, "schema_sha": out["schema_sha"], "description": desc,
-                                "renamed_from": out["renamed_from"], **({"adapted_from": src} if src else {})})
-        new["description"] = desc
+        _write(os.path.join(dst, "meta.json"), info)
+        new["versions"].append({**row, "version": version, "sha": t.sha, "schema_sha": info["schema_sha"], "description": desc, **notes})
+        new["versions"].sort(key=lambda v: v["version"])
+        new["description"] = new["versions"][-1]["description"]
         old["versions"] = [v for v in old["versions"] if v["version"] != n]
-        shutil.rmtree(vdir(artifact, section, old["slug"], n))
-        moves[f"{name}@{n}"] = f"{new_name}@{t.version}"
+        shutil.rmtree(vdir(art, sec, old["slug"], n))
         for run in (idx.get("runs") or {}).values():
             for d in run.get("decisions") or []:
                 ref = d.get("ref") or {}
-                if d.get("artifact") == artifact and ref.get("slug") == old["slug"] and ref.get("version") == n:
-                    d.update(template=new_name, version=t.version, renamed_from=f"{name}@{n}",
-                             ref={**ref, "slug": slug(new_name), "version": t.version})
-        done_.append((f"{name}@{n}", f"{new_name}@{t.version}"))
-    if old["versions"]:
-        old["description"] = old["versions"][-1].get("description") or old.get("description")
-    else:
-        idx["templates"].remove(old)
+                if d.get("artifact") == art and ref.get("section_slug") == slug(sec) and ref.get("slug") == old["slug"] and ref.get("version") == n:
+                    d.update(template=new_name, version=version, renamed_from=f"{name}@{n}",
+                             ref={**ref, "slug": slug(new_name), "version": version})
+        if old["versions"]:
+            old["description"] = old["versions"][-1].get("description") or old.get("description")
+        else:
+            idx["templates"].remove(old)
+        out.append((f"{name}@{n}", f"{new_name}@{version}"))
     _save_index(idx)
-    return done_
+    root = os.path.join(lib_dir(), RUN_TEMPLATE_DIR)      # 3: the run templates name the versions where they are now
+    for tid in sorted(os.listdir(root)) if os.path.isdir(root) else []:
+        path = os.path.join(root, tid, "template.json")
+        data = _read(path)
+        changed = False
+        for w in (data or {}).get("workflows") or []:
+            ref = moves.get((w.get("artifact"), w.get("section"), w.get("section_template")))
+            if ref and w.get("section_template_kind") == "specialised":
+                w["section_template"], changed = ref, True
+        if changed:
+            RunTemplate.model_validate(data)
+            _write(path, data)
+    return out
 
 
 def collect(runs_dir, runs=None):

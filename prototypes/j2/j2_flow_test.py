@@ -13959,6 +13959,23 @@ def auto_reuse():
         assert versions(routed["template"]) == [1, 2] and versions(src_name) == before_src
         _, plain = L.route(L.make_need("website", "Section", "dance studio", ["Birch Hall"], "Birch Hall"), {"run": "j2-test-3", "workflow": "W-1", "atom": "W-1.a1"}, closest=False)
         assert "adapted_from" not in plain and "nearest" not in plain, "without the flag the router neither adapts the nearest nor renames"
+        # the committed library after move_versions: no family holds a version made for another business than the one it is named
+        # for; a moved version says where it came from, and its old name and number still open it; a number is never used twice
+        for e in L.index()["templates"]:
+            first = (min(e["versions"], key=lambda v: v["version"]).get("business") or {}).get("name")
+            assert all((v.get("business") or {}).get("name") in (None, first) or L._named_for(e["name"], v["business"]["name"]) for v in e["versions"]), e["name"]
+        moved = [(e, v) for e in L.index()["templates"] for v in e["versions"] if v.get("renamed_from")]
+        assert len(moved) >= 67 and all(L._named_for(e["name"], v["business"]["name"]) for e, v in moved), len(moved)
+        for e, v in moved:
+            was = L.get(v["renamed_from"], e["artifact"], e["section"])
+            assert was is not None and (was.name, was.version, was.sha) == (e["name"], v["version"], v["sha"]), (v["renamed_from"], e["name"])
+            assert not v.get("adapted_from") or L.get(v["adapted_from"], e["artifact"], e["section"]) is not None, v.get("adapted_from")
+        for r in L.run_template_list():
+            assert all(L.section_template_ref(w)["in_library"] for w in L.get_run_template(r["id"]).workflows), r["id"]
+        assert L.moved_to("prd", "problem", "still-point-yoga-problem", 3) == ("iron-grove-fitness-problem", 1) and L.moved_to("prd", "problem", "still-point-yoga-problem", 2) is None
+        spy = L.get("Still Point Yoga Problem@2", "prd", "Problem")
+        again_, n_, made_ = L.store(L.SpecialisedTemplate.model_validate({**spy.model_dump(exclude={"used_by", "version", "sha"}), "description": "a later version", "used_by": []}))
+        assert made_ and n_ == 7 and L.get("Still Point Yoga Problem@3", "prd", "Problem").name == "Iron Grove Fitness Problem", ("the numbers 3 to 6 moved out and are not used again", n_)
         old_facts = {f for e in L.index()["templates"] for v in e["versions"] for f in v.get("facts") or []}
         old_names = {e["name"] for e in L.index()["templates"] if e["kind"] == "specialised"}
         # (b) a pilates brief, no template chosen: the yoga run template is picked
@@ -13988,6 +14005,7 @@ def auto_reuse():
         assert r2.outcome.startswith("Done") and r2.stages == ["prd", "hld", "lld"] and {d["artifact"] for d in rec2["decisions"]} == {"prd", "hld", "lld"}, (r2.outcome, r2.stages)
         assert not rec2["run_template"].get("added_stages")
         # (d) a law firm, a PRD only: no similar run template; its sections are adapted from the nearest templates
+        before3 = {e["name"] for e in L.index()["templates"]}      # with the families the runs above made
         r3, rec3 = run_of(LAW_PRD, 400)
         a3 = rec3["auto_reuse"]
         assert r3.outcome.startswith("Done") and "run_template" not in rec3 and a3["picked"] is None and a3["match"] is None and a3["scores"][0]["score"] < 0.6, (r3.outcome, a3)
@@ -13997,7 +14015,7 @@ def auto_reuse():
         assert len(ds3) == 6 and {d["artifact"] for d in ds3} == {"prd"} and not any("from_template" in d for d in ds3), [(d["artifact"], d["action"]) for d in ds3]
         for d in ds3:
             assert d["action"] == "extended" and d["rule"] == "s" and d["adapted_from"] == f"{d['nearest']['name']}@{d['nearest']['version']}", d
-            assert d["adapted_from"].rpartition("@")[0] in old_names and d["template"].startswith("Hale Legal ") and d["template"] not in old_names and d["version"] == 1 and d["new_family"], d
+            assert d["adapted_from"].rpartition("@")[0] in before3 and d["template"].startswith("Hale Legal ") and d["template"] not in before3 and d["version"] == 1 and d["new_family"], d
             assert d["reason"].startswith(f"adapted from {d['adapted_from']}: the nearest {d['section']} template by fields"), d["reason"]
             spec = json.load(open(os.path.join(r3.dir, d["saved"], "spec.json"), encoding="utf-8"))
             body = json.dumps({k: spec[k] for k in ("description", "fields", "objects", "rules", "context")}).lower()
