@@ -15,9 +15,10 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 TYPES_PATH = os.path.join(HERE, "artifacts", "types.json")
 AGENTS_DIR = os.path.join(HERE, "agents", "j2")
 CONDITIONS_DIR = os.path.join(HERE, "conditions")
-FORMS = ("page", "document")      # room for "script" and "action": not built yet
-NEEDED = ("label", "noun", "form", "conditions", "rubric", "check_types", "done", "intake", "charter_format", "workflow", "cost")
+NEEDED = ("label", "noun", "form", "output", "conditions", "rubric", "check_types", "done", "intake", "charter_format", "workflow", "cost")
 DOC_NEEDED = ("file", "builder", "atom_rules")
+# What a form makes (its "output" in types.json) and what a form of that kind must declare. A form's name is never read.
+OUTPUTS = {"file": (), "folder": ("folder", "builder", "atom_rules", "tools", "allow", "test_runner")}
 EXPORTS = (None, "docx")
 TEXTS = {"intake": "intake", "charter_format": "charter_fmt", "atom_rules": "atom_rules"}      # field -> OUTPUTS key
 
@@ -209,14 +210,15 @@ def _merged(name, path=None):
     if entry is None:
         raise ValueError(f"{name}: no such output type in {os.path.basename(path or TYPES_PATH)}")
     form = (d.get("forms") or {}).get(entry.get("form"))
-    if entry.get("form") not in FORMS or not isinstance(form, dict):
+    if not isinstance(form, dict) or str(entry.get("form")).startswith("_"):      # the forms in types.json, its data only
         raise ValueError(f"{name}: unknown form {entry.get('form')!r}")
     noun = entry.get("noun") or entry.get("label") or name
     label = str(entry.get("label") or name)
     rule = practice_rule(entry, form)
+    runner = " ".join(map(str, entry.get("test_runner") or form.get("test_runner") or []))
     fill = lambda v: (v.replace("{name}", name).replace("{label}", label).replace("{lower}", label.lower())
                       .replace("{noun}", noun).replace("{sections}", ", ".join(sections(name)))
-                      .replace("{practice}", rule) if isinstance(v, str) else v)
+                      .replace("{practice}", rule).replace("{runner}", runner) if isinstance(v, str) else v)
     out = {**{k: fill(v) for k, v in form.items() if k not in ("workflow", "cost")}, **entry, "noun": noun}
     out["workflow"] = {**{k: fill(v) for k, v in (form.get("workflow") or {}).items()}, **(entry.get("workflow") or {})}
     out["cost"] = {**(form.get("cost") or {}), **(entry.get("cost") or {})}
@@ -279,7 +281,8 @@ def info(name, path=None):
     """What the views and messages need of a type: its form, label, file, preview and ready message."""
     e = _merged(name, path)
     return {"name": name, "form": e["form"], "label": e.get("label"), "noun": e["noun"], "file": e.get("file"),
-            "preview": e.get("preview"), "ready": e.get("ready")}
+            "preview": e.get("preview"), "ready": e.get("ready"), "output": e.get("output"),
+            "folder": e["_fill"](e["folder"]) if e.get("folder") else None}
 
 
 def recorded(d, path=None):
@@ -318,14 +321,24 @@ def load(name, path=None):
     entry = _merged(name, path)
     fill = entry.pop("_fill")
     doc = entry["form"] == "document"
-    bad = [k for k in NEEDED + (DOC_NEEDED if doc else ()) if entry.get(k) in (None, "", [])]
+    kind = entry.get("output")
+    if kind is not None and kind not in OUTPUTS:
+        raise ValueError(f"{name}: unknown output {kind!r} (one of {', '.join(OUTPUTS)})")
+    bad = [k for k in NEEDED + (DOC_NEEDED if doc else ()) + OUTPUTS.get(kind, ()) if entry.get(k) in (None, "", [])]
     if bad:
         raise ValueError(f"{name}: missing {', '.join(bad)}")
+    folder = kind == "folder"
+    if folder and not (isinstance(entry["tools"], list) and isinstance(entry["allow"], list)
+                       and all(isinstance(x, str) and x for x in entry["tools"] + entry["allow"])):
+        raise ValueError(f"{name}: tools and allow must be lists of names")
+    if folder and not any("{target}" in str(x) for x in entry["test_runner"]):
+        raise ValueError(f"{name}: test_runner must name {{target}}, the test file")
     if entry.get("export") not in EXPORTS:
         raise ValueError(f"{name}: unknown export {entry['export']!r}")
-    # a page's builder is a role file in agents/j2 (workflow.builder); a document's is its own text ("builder")
+    # a page's builder is a role file in agents/j2 (workflow.builder); a document's or a folder's is its own text
+    own = doc or folder
     files = {"conditions": os.path.join(CONDITIONS_DIR, entry["conditions"]),
-             "builder": os.path.join(HERE if doc else AGENTS_DIR, entry.get("builder") or ""),
+             "builder": os.path.join(HERE if own else AGENTS_DIR, entry.get("builder") or ""),
              **{k: os.path.join(HERE, entry[k]) for k in TEXTS if entry.get(k)}}
     missing = [k for k, p in files.items() if not os.path.isfile(p)]
     if missing:
@@ -338,15 +351,18 @@ def load(name, path=None):
            "rates": entry["cost"]["card"], "recommended_practice": entry.get("recommended_practice") is True,
            "practice": fill("{practice}"),
            "check_types": tuple(entry["check_types"]),
-           "builder": fill(_text(entry["builder"])) if doc else entry["builder"],
-           "export": entry.get("export"), "done": entry["done"]}
+           "builder": fill(_text(entry["builder"])) if own else entry["builder"],
+           "export": entry.get("export"), "done": entry["done"], "output": kind}
     out.update({key: fill(_text(entry[k])) for k, key in TEXTS.items() if entry.get(k)})
     # a done-when item's words -> the rate-card part it needs at least (cost.item_parts; first match wins)
     out["item_parts"] = tuple((x["part"], x["words"]) for x in entry["cost"].get("item_parts") or ())
     if doc:      # a page's file is the page form's own (site/index.html); a document names its own
         out["file"] = entry["file"]
-    else:      # the parts a page needs first, in order: its minimum cost (J2Run._stage_cost)
+    else:      # the parts a page or a folder needs first, in order: its minimum cost (J2Run._stage_cost)
         out["essentials"] = tuple(p for p, n in entry["cost"]["parts"].items() for _ in range(n))
+    if folder:      # the builder's folder in the run folder, and the tools, rules and runner it is given (data only)
+        out.update(folder=fill(entry["folder"]), tools=tuple(entry["tools"]), allow=tuple(entry["allow"]),
+                   test_runner=tuple(entry["test_runner"]))
     if entry.get("mock"):      # migration only: names of the mock functions in j2.py, which j2 resolves (j2.output_def)
         out["mock"] = dict(entry["mock"])
     return out

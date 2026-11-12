@@ -1,0 +1,11 @@
+{
+  "_note": "Necessary conditions for any type made from the agent form (artifacts/types.json forms.agent, output folder). Code checks each one on the builder's folder after every build, from the folder's files and the record of the builder's tool calls; it is workable only when all are met and Audit accepts. charter_fields: the charter fields whose every item must appear in the folder's text.",
+  "output": "agent",
+  "conditions": [
+    {"id": "C1", "text": "Every file the charter lists is in the folder", "check": "charter-files-present", "charter_field": "files"},
+    {"id": "C2", "text": "The test passed when the builder ran it in the sandbox", "check": "test-passed", "charter_field": "test"},
+    {"id": "C3", "text": "Nothing was written outside the folder", "check": "inside-folder"},
+    {"id": "C4", "text": "Every must-never-do item in the charter is stated in the folder's files", "check": "charter-fields-present", "charter_fields": ["never_do"]},
+    {"id": "C5", "text": "Nothing is \"to be confirmed\"", "check": "nothing-to-be-confirmed"}
+  ]
+}

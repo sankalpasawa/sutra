@@ -133,6 +133,19 @@ a real email is still never sent without you. "Detailed view" opens everything b
 rail on the left switches between Map, Chat (the Simple view) and Internals (the other tabs, including Board when the board is
 on). On a phone the rail runs along the bottom. Light by default; the moon button switches to dark.
 
+### Builder tools (agent-tools, off by default)
+
+`J2_AGENT_TOOLS=1` gives a builder tools only when its form in `artifacts/types.json` declares them (`tools`,
+`allow`), in its own folder inside the run folder. Every limit must be set; code has no defaults (working values are
+in `.env.example`). Check it live with `python3 tools/agent_tools_smoke.py`.
+
+**The sandbox is the security boundary, not the allow-list.** The Claude CLI's sandbox keeps every command the
+builder runs inside its folder, with no network. The allow-list (`allow`) only says which tools and commands are
+pre-approved: a rule for a test runner such as `Bash(python3 *)` lets that runner run any code (`python3 -c ...`).
+J2 never runs a builder's code outside the sandbox: a test result comes from the CLI's own record of the run. The
+builder folder must sit inside the run folder (`llm.py` refuses anything else); a folder under the CLI's own temp
+folder (`/private/tmp/claude-<uid>`) is not protected by the sandbox.
+
 ## Settings
 
 Set any of these before `python3 j2_server.py`, like the examples above.
@@ -163,6 +176,11 @@ Set any of these before `python3 j2_server.py`, like the examples above.
 | `J2_TEST_EMAIL` | unset | The only address a send may go to |
 | `J2_TEST_SLACK_TARGET` | unset
  | The only Slack target a send may go to |
+| `J2_AGENT_TOOLS` | off | `1` gives builders the tools their form declares (see "Builder tools") |
+| `J2_AGENT_USD` | none | Dollars one builder call may spend. Required with `J2_AGENT_TOOLS=1` |
+| `J2_AGENT_MAX_FILES` | none | Most files a builder's folder may hold after a call. Required with `J2_AGENT_TOOLS=1` |
+| `J2_AGENT_MAX_BYTES` | none | Most bytes a builder's folder may hold after a call. Required with `J2_AGENT_TOOLS=1` |
+| `J2_TOOL_LOG_CHARS` | none | Longest string kept as text in a call's tool log (longer: length and sha256). Required with `J2_AGENT_TOOLS=1` |
 
 ## Checks
 

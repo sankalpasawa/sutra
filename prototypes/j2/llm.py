@@ -71,11 +71,14 @@ def can_read_files():
 # the Anthropic and Gemini calls would need their own tool loop. Which tools, and the permission rules, come only from
 # the caller (a form's data in artifacts/types.json); nothing here names a tool.
 TOOLS = {"claude-cli": True, "anthropic": False, "gemini": False}
-TOOL_KEYS = ("tools", "allow", "cwd", "usd", "log_chars")
+TOOL_KEYS = ("tools", "allow", "cwd", "root", "usd", "log_chars")
 # The CLI's own sandbox for every command a tool runs: writes only in the working folder, no network, no way out.
 # Not a tool list. Measured 2026-11-12 (tools/agent_tools_smoke.py): writes outside the folder and the network are
 # refused; a folder under the CLI's own temp folder (/private/tmp/claude-<uid>) is not protected, so a builder folder
-# lives in the run folder.
+# must resolve inside the run folder ("root"), checked before every call.
+# SECURITY: the sandbox is what confines the command tool. The allow-list ("allow", e.g. a runner rule) is not a
+# security boundary: a rule for a runner lets that runner run any code ("python3 -c ..."). Never run a tools call
+# without CLI_SANDBOX, and never run a builder's code anywhere else (J2 reads the test result from the CLI's record).
 CLI_SANDBOX = {"sandbox": {"enabled": True, "autoAllowBashIfSandboxed": True, "allowUnsandboxedCommands": False}}
 
 
@@ -84,11 +87,20 @@ def can_use_tools():
     return not MOCK and TOOLS.get(PROVIDER, False)
 
 
+def inside(path, root):
+    """True when path resolves (symlinks followed) to a folder strictly inside root."""
+    p, r = os.path.realpath(path), os.path.realpath(root)
+    return p != r and p.startswith(r.rstrip(os.sep) + os.sep)
+
+
 def _tool_problems(tools):
-    """Why a tools request can't be run ([] when it can): every key given, the lists not empty, the folder there."""
+    """Why a tools request can't be run ([] when it can): every key given, the lists not empty, the folder there and
+    inside the run folder (root) once symlinks are resolved."""
     out = [f"tools needs {k}" for k in TOOL_KEYS if tools.get(k) in (None, "", [])]
     if not out and not os.path.isdir(tools["cwd"]):
         out.append(f"tools cwd {tools['cwd']} is not a folder")
+    elif not out and not inside(tools["cwd"], tools["root"]):
+        out.append(f"tools cwd {tools['cwd']} does not resolve inside the run folder {tools['root']}")
     return out
 
 
@@ -108,7 +120,8 @@ def ask(system, user, mock, max_tokens=1500, effort="high", on_progress=None, js
     timeout: seconds; past it the call is stopped (claude-cli: the process is killed; the streaming APIs: the request
     times out or the stream is closed) and CallTimeout is raised. Mock ignores it.
     tools: None (every call today: no tools) or {"tools": [names], "allow": [permission rules], "cwd": folder,
-    "usd": cost limit, "log_chars": longest string kept in the tool log}, all from the caller's data and settings.
+    "root": the run folder cwd must resolve inside, "usd": cost limit, "log_chars": longest string kept in the tool
+    log}, all from the caller's data and settings. Other keys are ignored.
     The call then runs in that folder with those tools only; LAST_META gets "tool_calls" (name, input, ok), "usd"
     and "stop". Mock ignores it; a provider without tools (TOOLS) raises RuntimeError."""
     images = [p for p in images or [] if p and os.path.exists(p)]

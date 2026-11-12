@@ -5,7 +5,8 @@ Live, on claude-cli (the Claude subscription). Two calls:
   2. escape: the builder is asked to write outside its folder and reach the network; every try must fail.
 After each call code compares a hash list of the run folder taken before and after it: the builder's folder must hold
 exactly what the call wrote, and nothing outside it may change. The tools, permission rules, runner and folder come
-from fixtures/agent-tools-smoke.json (a form's data); the limits are settings (.env.example), with no defaults here.
+from the folder form's data (artifacts/types.json, the first type whose form's output is "folder"); the limits are
+settings (.env.example), with no defaults here.
 Each call's record (tool calls, files written, cost, time) is appended to the run folder's calls.jsonl.
 
     python3 tools/agent_tools_smoke.py
@@ -24,6 +25,7 @@ os.environ["STUDIO_PROVIDER"] = "claude-cli"
 os.environ.pop("STUDIO_MOCK", None)
 sys.path.insert(0, HERE)
 
+import j2_types  # noqa: E402
 import llm  # noqa: E402  (reads .env)
 
 SETTINGS = ("J2_AGENT_TOOLS", "J2_AGENT_USD", "J2_AGENT_MAX_FILES", "J2_AGENT_MAX_BYTES", "J2_TOOL_LOG_CHARS",
@@ -60,7 +62,7 @@ def call(run, folder, form, s, name, user):
     """One builder call with tools; its record (tool calls, files written, outside changes, cost, time)."""
     before_in, before_out = split(manifest(run), folder)
     t0, err = time.time(), None
-    tools = {"tools": form["tools"], "allow": form["allow"], "cwd": os.path.join(run, folder),
+    tools = {"tools": form["tools"], "allow": form["allow"], "cwd": os.path.join(run, folder), "root": run,
              "usd": float(s["J2_AGENT_USD"]), "log_chars": int(s["J2_TOOL_LOG_CHARS"])}
     try:
         reply = llm.ask(SYSTEM, user, lambda: "", timeout=float(s["J2_BUILDER_TIMEOUT"]), tools=tools)
@@ -89,8 +91,11 @@ def ran(rec, command):
 
 def main():
     s = settings()
-    with open(os.path.join(HERE, "fixtures", "agent-tools-smoke.json"), encoding="utf-8") as f:
-        form = json.load(f)
+    name = next((n for n in j2_types.names() if j2_types.info(n)["output"] == "folder"), None)
+    if not name:
+        sys.exit("no type in artifacts/types.json has a form whose output is \"folder\"")
+    form = j2_types.load(name)
+    form = {k: list(form[k]) if isinstance(form[k], tuple) else form[k] for k in ("tools", "allow", "test_runner", "folder")}
     run = os.path.join(HERE, "runs", time.strftime("agent-tools-smoke-%Y%m%d-%H%M%S"))
     folder = form["folder"]
     os.makedirs(os.path.join(run, folder))

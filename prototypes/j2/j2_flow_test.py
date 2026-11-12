@@ -3946,7 +3946,9 @@ def agent_tools_cli():
     import llm
     import tempfile
     keep = (llm.MOCK, llm.PROVIDER, llm.MODEL, llm.subprocess.run)
-    folder = tempfile.mkdtemp()
+    root = tempfile.mkdtemp()
+    folder = os.path.join(root, "agent")
+    os.makedirs(folder)
     seen = []
 
     def fake(stdout, rc=0):
@@ -3963,8 +3965,8 @@ def agent_tools_cli():
         assert cmd[cmd.index("--output-format") + 1] == "json" and kw["cwd"] == tempfile.gettempdir(), (cmd, kw)
         assert "tool_calls" not in llm.LAST_META, llm.LAST_META
 
-        tools = {"tools": ["ToolA", "ToolB"], "allow": ["ToolA", "ToolB(run *)"], "cwd": folder, "usd": 0.5,
-                 "log_chars": 10}
+        tools = {"tools": ["ToolA", "ToolB"], "allow": ["ToolA", "ToolB(run *)"], "cwd": folder, "root": root,
+                 "usd": 0.5, "log_chars": 10}
         lines = [{"type": "system", "subtype": "init", "message": "a string"},
                  {"type": "assistant", "message": {"content": [{"type": "tool_use", "id": "t1", "name": "ToolA",
                                                                 "input": {"path": "a.py", "content": "x" * 50}}]}},
@@ -3997,12 +3999,21 @@ def agent_tools_cli():
             pass
         assert len(seen) == 1 and llm.LAST_META["stop"] == "budget", (len(seen), llm.LAST_META)
 
-        for bad, err in (({**tools, "usd": None}, ValueError), ({**tools, "cwd": folder + "-gone"}, ValueError)):
+        # the folder must resolve inside the run folder: not the run folder itself, not beside it, not by a symlink
+        other = tempfile.mkdtemp()
+        os.symlink(other, os.path.join(root, "link"))
+        seen.clear()
+        for bad in ({**tools, "usd": None}, {**tools, "root": None}, {**tools, "cwd": folder + "-gone"},
+                    {**tools, "cwd": root}, {**tools, "cwd": other}, {**tools, "cwd": os.path.join(root, "link")},
+                    {**tools, "cwd": os.path.join(folder, "..", "..")}):
             try:
                 llm.ask("s", "u", lambda: "x", tools=bad)
                 raise AssertionError(f"{bad} accepted")
-            except err:
+            except ValueError:
                 pass
+        assert not seen, "a refused tools call reached the CLI"
+        shutil.rmtree(other, ignore_errors=True)
+        assert llm.inside(folder, root) and not llm.inside(root, root) and not llm.inside(root + "-x", root)
         llm.PROVIDER = "gemini"
         try:
             llm.ask("s", "u", lambda: "x", tools=tools)
@@ -4013,7 +4024,115 @@ def agent_tools_cli():
         assert llm.ask("s", "u", lambda: "mocked", tools=tools) == "mocked" and not llm.can_use_tools()
     finally:
         llm.MOCK, llm.PROVIDER, llm.MODEL, llm.subprocess.run = keep
-        shutil.rmtree(folder, ignore_errors=True)
+        shutil.rmtree(root, ignore_errors=True)
+
+
+def agent_form():
+    """agent-tools step 2: the agent form is data only. Its type loads with output "folder", its folder, tools, rules
+    and runner from types.json, its builder text with {runner} filled; Adaptation can't choose it yet (deliverable
+    false). The other forms declare output "file" and load as before. A folder form missing tools, a runner without
+    {target} or an unknown output kind is refused."""
+    o = j2.j2_types.load("agent")
+    assert (o["output"], o["folder"], o["test_runner"]) == ("folder", "agent", ("python3", "{target}")), o
+    assert o["tools"] and o["allow"] and "{runner}" not in o["builder"] and "python3 {target}" in o["builder"], o
+    assert o["conditions"] == "agent.json" and os.path.isfile(os.path.join(j2.j2_types.CONDITIONS_DIR, "agent.json"))
+    assert "agent" not in [t["name"] for t in j2.j2_realization.type_list()]
+    assert {j2.j2_types.load(n)["output"] for n in ("prd", "website")} == {"file"}
+    assert all(k not in j2.j2_types.load("prd") for k in ("tools", "folder")), "a file form gets no tools"
+    with open(j2.j2_types.TYPES_PATH, encoding="utf-8") as f:
+        base = json.load(f)
+    tmp = tempfile.mkdtemp()
+    try:
+        for change, why in ((lambda f: f.pop("tools"), "missing tools"), (lambda f: f.update(test_runner=["python3"]), "{target}"),
+                            (lambda f: f.update(output="stream"), "unknown output")):
+            d = json.loads(json.dumps(base))
+            change(d["forms"]["agent"])
+            p = os.path.join(tmp, "types.json")
+            with open(p, "w", encoding="utf-8") as f:
+                json.dump(d, f)
+            try:
+                j2.j2_types.load("agent", p)
+                raise AssertionError(f"accepted: {why}")
+            except ValueError as e:
+                assert why in str(e) or why == "missing tools" and "tools" in str(e), (why, e)
+    finally:
+        shutil.rmtree(tmp, ignore_errors=True)
+    print("agent form: loads from data (folder, tools, rules, runner), not choosable yet, bad forms refused ok")
+
+
+def builder_tools_call():
+    """agent-tools step 1 (mock): J2Run._builder_tools gives a builder its form's tools only with J2_AGENT_TOOLS=1 and
+    every limit set (none for a form without tools); J2Run.call records the files written in the builder's folder in
+    calls.jsonl's "tools", ignores J2's own writes during the call, and raises BuilderToolFault for a change outside
+    the folder (event, warning, still logged) or a folder over a limit."""
+    names = ("J2_AGENT_TOOLS",) + j2.AGENT_SETTINGS
+    keep = {k: os.environ.get(k) for k in names}
+    try:
+        for k in names:
+            os.environ.pop(k, None)
+        site = page_run()
+        os.environ["J2_AGENT_TOOLS"] = "1"
+        assert site._builder_tools() is None, "a form without tools gets none"
+        run = j2.J2Run()
+        run.set_output("agent")
+        os.environ.pop("J2_AGENT_TOOLS")
+        assert run._builder_tools() is None, "off unless J2_AGENT_TOOLS=1"
+        os.environ["J2_AGENT_TOOLS"] = "1"
+        try:
+            run._builder_tools()
+            raise AssertionError("missing limits accepted")
+        except ValueError as e:
+            assert all(k in str(e) for k in j2.AGENT_SETTINGS), e
+        os.environ.update(J2_AGENT_USD="0.5", J2_AGENT_MAX_FILES="3", J2_AGENT_MAX_BYTES="1000", J2_TOOL_LOG_CHARS="100")
+        tools = run._builder_tools()
+        assert tools["cwd"] == os.path.join(run.dir, "agent") and tools["root"] == run.dir and os.path.isdir(tools["cwd"])
+        assert tools["tools"] == list(j2.output_def("agent")["tools"]) and tools["max_files"] == 3, tools
+
+        def writer(files, also=None):
+            def mock():
+                for name, text in files.items():
+                    with open(os.path.join(run.dir, name), "w", encoding="utf-8") as f:
+                        f.write(text)
+                if also:
+                    also()
+                return "built"
+            return mock
+        out = run.call("coordination", "Reply with one line.", "Build.",
+                       writer({"agent/a.py": "x = 1\n", "agent/test_a.py": "import a\n"},
+                              also=lambda: (run.save("sections.json", {}), run.post("system", "J2 writes meanwhile"))),
+                       json_reply=False, tools=tools)
+        assert out == "built"
+        rec = run.call_log[-1]["tools"]
+        assert [w["path"] for w in rec["files_written"]] == ["a.py", "test_a.py"] and not rec["outside"], rec
+        assert rec["cwd"] == "agent" and rec["folder_files"] == 2 and not rec["over_limits"], rec
+        row = j2._jsonl(run.dir, "calls.jsonl")[-1]
+        assert row["tools"]["files_written"] == rec["files_written"], row.get("tools")
+
+        n = len(run.call_log)
+        try:
+            run.call("coordination", "Reply with one line.", "Build.", writer({"agent/b.py": "", "escape.txt": "x"}),
+                     json_reply=False, tools=tools)
+            raise AssertionError("an outside write was accepted")
+        except j2.BuilderToolFault as e:
+            assert e.kind == "outside" and "escape.txt" in str(e), e
+        assert len(run.call_log) == n + 1 and run.call_log[-1]["tools"]["outside"] == ["escape.txt"]
+        assert any(e["type"] == "outside_write" for e in run.events) and "escape.txt" in run.chat[-1]["text"]
+
+        try:
+            run.call("coordination", "Reply with one line.", "Build.", writer({"agent/c.py": "", "agent/d.py": ""}),
+                     json_reply=False, tools=tools)
+            raise AssertionError("a folder over its file limit was accepted")
+        except j2.BuilderToolFault as e:
+            assert e.kind == "limits" and "J2_AGENT_MAX_FILES" in str(e), e
+        assert any(e["type"] == "tool_limits" for e in run.events)
+    finally:
+        for k, v in keep.items():
+            if v is None:
+                os.environ.pop(k, None)
+            else:
+                os.environ[k] = v
+    print("builder tools: off by default and without limits, the folder's writes in calls.jsonl, J2's own writes "
+          "ignored, an outside write and a full folder refused ok")
 
 
 def builder_time_limit():
@@ -7953,8 +8072,10 @@ def forms_and_new_types():
     import j2_types
     import j2_artifacts as A
     T = json.load(open(j2_types.TYPES_PATH, encoding="utf-8"))
-    assert set(T["forms"]) == {"_note", "page", "document"} and j2_types.FORMS == ("page", "document")
-    assert {t["form"] for t in T["types"] if t["kind"] == "type"} == {"page", "document"}
+    # the forms are types.json's own (no list in code), each saying what it makes: one file or a folder
+    assert set(T["forms"]) == {"_note", "page", "document", "agent"} and not hasattr(j2_types, "FORMS")
+    assert {k: f["output"] for k, f in T["forms"].items() if k != "_note"} == {"page": "file", "document": "file", "agent": "folder"}
+    assert {t["form"] for t in T["types"] if t["kind"] == "type"} == {"page", "document", "agent"}
     assert j2_types.load("website")["builder"] == T["forms"]["page"]["builder"] == "builder.md"
     assert j2_types.info("website")["ready"] == "Your website is ready." and j2_types.info("prd")["ready"] == "Your document is ready."
     # a new type's problems are named; a good one is made from the document form
@@ -13750,6 +13871,11 @@ def agent_views_page(d, name):
 
 
 if __name__ == "__main__":
+    # --skip a,b: those test functions are not run (each says so), e.g. tests that read local saved runs
+    if "--skip" in sys.argv:
+        for _name in sys.argv[sys.argv.index("--skip") + 1].split(","):
+            assert callable(globals().get(_name)), f"--skip: no test function {_name}"
+            globals()[_name] = (lambda n: lambda *a, **k: print(f"{n}: skipped (--skip)"))(_name)
     if "--template-demo" in sys.argv:
         # python3 j2_flow_test.py --fast --template-demo: the three template-library demo runs (template_library's
         # (b)), saved to runs/ with their templates in the committed library/ instead of the temp folders. Mock mode.
@@ -13855,6 +13981,8 @@ if __name__ == "__main__":
             deliverables_generic()      # step 3: Adaptation chooses what to build
             builder_time_limit()        # J2_BUILDER_TIMEOUT: a stopped builder call, retried once, written once
             agent_tools_cli()           # agent-tools step 0: llm tools from the caller only; no tools = today's command
+            agent_form()                # agent-tools step 2: the agent form, data only
+            builder_tools_call()        # agent-tools step 1: tools through J2Run.call, recorded, faults raised
             builder_context_trim()      # a real run's builder prompt: no chat, no other workflows
             builder_inputs()            # depended-on sections in full, cut inputs noticed and logged
             timing_records()            # timing.json and Run settings' calls, tokens and time

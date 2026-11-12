@@ -14,12 +14,12 @@
   },
   "expect_kinds": {"section": "element-count", "element": "element-count", "facts": "facts-present", "file": "file-exists", "test": "named-test", "tap": "tap-targets", "heading": "heading-present", "ids": "ids-unique", "behavior": "behavior-steps"},
   "forms": {
-    "_note": "How each form is built and checked, defined once. A type names its form; every field it leaves out comes from here ({name}, {label}, {noun} and {sections} are filled from the type; {practice} is the form's practice_rule for a type whose recommended_practice is true, else empty). Room for \"script\" and \"action\": not built yet. browser_checks: the check types code runs in headless Chrome (the plan format lists the others; the atom rules describe these). cost.item_parts: a done-when item's words (regex) -> the rate-card part it costs at least, first match wins. expect_kinds: an expected-output kind -> the check type that verifies it.",
-    "page": {"builder": "builder.md", "file": "site/index.html", "preview": "html", "style_guide": "design",
+    "_note": "How each form is built and checked, defined once. A type names its form; every field it leaves out comes from here ({name}, {label}, {noun} and {sections} are filled from the type; {practice} is the form's practice_rule for a type whose recommended_practice is true, else empty). output: what a form makes, \"file\" (one file) or \"folder\" (a folder of files its builder writes with the tools the form declares: tools is the CLI tool list, allow its permission rules, test_runner the command a test is run with, {target} the test file; J2_AGENT_TOOLS=1 only). browser_checks: the check types code runs in headless Chrome (the plan format lists the others; the atom rules describe these). cost.item_parts: a done-when item's words (regex) -> the rate-card part it costs at least, first match wins. expect_kinds: an expected-output kind -> the check type that verifies it.",
+    "page": {"output": "file", "builder": "builder.md", "file": "site/index.html", "preview": "html", "style_guide": "design",
              "check_types": ["file-exists", "grep-count", "element-count", "named-test", "facts-present", "tap-targets", "behavior-steps"], "ready": "Your {lower} is ready.",
              "browser_checks": ["tap-targets", "behavior-steps"]},
     "document": {
-      "builder": "templates/document/builder.md", "file": "{name}.md", "template": "templates/{name}/generic.json", "preview": "markdown", "export": "docx",
+      "output": "file", "builder": "templates/document/builder.md", "file": "{name}.md", "template": "templates/{name}/generic.json", "preview": "markdown", "export": "docx",
       "check_types": ["facts-present", "heading-present", "section-not-empty"],
       "intake": "templates/document/intake.md", "charter_format": "templates/document/charter.txt", "atom_rules": "templates/document/atom_rules.md", "conditions": "document.json",
       "practice_rule": "; a line labelled \"Recommended practice:\" may give general good practice the brief does not state and is not an invented fact, but every number, name, price, date, law and claim about the business in it must still come from the charter or the Requester's answers",
@@ -34,6 +34,24 @@
                "item_parts": [{"part": "requirements_section", "words": "requirement|components?\\b|pages and sections"}, {"part": "doc_section", "words": ""}]},
       "workflow": {"template": "doc-sections", "refs": "^{name}\\.md(#|$)"},
       "mock": {"charter": "mock_form_charter", "section": "mock_form_section", "atom": {}}
+    },
+    "agent": {
+      "output": "folder", "folder": "{name}", "file": "{name}/*", "builder": "templates/agent/builder.md", "preview": "folder", "export": null,
+      "tools": ["Read", "Write", "Edit", "Glob", "Bash"],
+      "allow": ["Read", "Write", "Edit", "Glob", "Bash(python3 *)"],
+      "test_runner": ["python3", "{target}"],
+      "check_types": ["file-exists", "test-passed", "inside-folder", "facts-present"],
+      "intake": "templates/agent/intake.md", "charter_format": "templates/agent/charter.txt", "atom_rules": "templates/agent/atom_rules.md", "conditions": "agent.json",
+      "rubric": [
+        {"id": "A-1", "text": "The {lower} does the one job the charter names, and nothing else"},
+        {"id": "A-2", "text": "It touches only what the charter says it may touch"},
+        {"id": "A-3", "text": "Every must-never-do item in the charter is enforced in the {lower}'s own instructions or code"},
+        {"id": "A-4", "text": "Its test exercises the main job, and it passed when the builder ran it in the sandbox"}
+      ],
+      "done": "Done: the {label} is workable. Its test passed in the sandbox and every done-when item, rubric item and necessary condition passes.",
+      "ready": "Your {lower} is ready.",
+      "cost": {"card": "rates_agent", "item_parts": [{"part": "agent_file", "words": ""}], "parts": {"agent_file": 2, "agent_test": 1}},
+      "workflow": {"template": "folder-files", "refs": "^{name}/"}
     }
   },
   "types": [
@@ -242,6 +260,7 @@
         }
       }
     },
+    {"name": "agent", "kind": "type", "label": "Agent", "tag": "Agent", "color": "--other", "form": "agent", "noun": "agent", "deliverable": false, "triggers": [], "groups": [], "depends_on": [], "_note": "deliverable false until the folder build path exists (agent-tools step 3): Adaptation can't choose it yet"},
     {"name": "business_report", "kind": "type", "label": "Report", "tag": "Report", "color": "--other", "form": "document", "template": "templates/business_report/generic.json", "file": "business_report.md", "noun": "report", "deliverable": true, "triggers": ["\\b(?:sales|monthly|weekly|quarterly|annual|business|status|progress)\\s+report\\b|\\breport\\s+on\\b"], "groups": [], "depends_on": []},
     {
       "name": "screenshots",

@@ -29,10 +29,13 @@ def load_types(run=None):
     at = next((i for i, t in enumerate(d["types"]) if t.get("kind") != "type"), len(d["types"]))
     d["types"][at:at] = list(j2_types.recorded(run).values())
     forms = d.get("forms") or {}
-    for t in d["types"]:      # a type made from its form (a new document type) takes the form's workflow
+    for t in d["types"]:      # a type made from its form (a new document type) takes the form's workflow and file
         f = (forms.get(t.get("form")) or {}).get("workflow")
         if t.get("kind") == "type" and f and "workflow" not in t:
             t["workflow"] = {k: v.replace("{name}", t["name"]) for k, v in f.items()}
+        fl = (forms.get(t.get("form")) or {}).get("file")
+        if t.get("kind") == "type" and fl and "file" not in t:
+            t["file"] = fl.replace("{name}", t["name"])
     return d
 
 

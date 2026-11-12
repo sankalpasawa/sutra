@@ -35,6 +35,7 @@ J2_FIXES (default 0) picks the mode, so findings can compare the two:
      (b) a change request after done goes to Identity at J2.a first, then J2.b.
 """
 import copy
+import hashlib
 from functools import lru_cache, partial, reduce
 from typing import List
 import html
@@ -476,6 +477,34 @@ def builder_timeout():
     """J2_BUILDER_TIMEOUT: seconds one builder AI call may take (default 600; 0 = no limit). Read per call so tests
     can switch it. Past it the call is stopped and retried once (J2Run.call)."""
     return float(os.environ.get("J2_BUILDER_TIMEOUT") or 600)
+
+
+# Builder tools (J2_AGENT_TOOLS=1): the settings a tools call needs, each required (no defaults in code: .env.example)
+AGENT_SETTINGS = ("J2_AGENT_USD", "J2_AGENT_MAX_FILES", "J2_AGENT_MAX_BYTES", "J2_TOOL_LOG_CHARS")
+
+
+class BuilderToolFault(RuntimeError):
+    """A builder call with tools whose result can't be used. kind "outside": it changed a file outside its folder;
+    nothing from it is used and its workflow is not tried again. kind "limits": its folder is over a limit set in the
+    settings; the attempt fails like a failed check."""
+
+    def __init__(self, kind, detail):
+        super().__init__(detail)
+        self.kind = kind
+
+
+def file_states(root):
+    """{path relative to root: (size, mtime_ns)} of every file under root: what a tools call is compared against."""
+    out = {}
+    for d, _, files in os.walk(root):
+        for f in files:
+            p = os.path.join(d, f)
+            try:
+                st = os.stat(p)
+            except OSError:
+                continue
+            out[os.path.relpath(p, root)] = (st.st_size, st.st_mtime_ns)
+    return out
 
 
 def step_id(step):
@@ -3044,6 +3073,9 @@ class J2Run:
             n += 1
         self.run_id = os.path.basename(self.dir)[3:]     # and separate ids (lesson and playbook ids use it)
         self.chat, self.workflows, self.conflicts, self.audits, self.sites = [], [], [], [], []
+        # the run-folder files J2 itself wrote since the last tools call began (save, chat): not a builder's writes.
+        # ponytail: by name, so a builder writing one of these during its call is caught by the sandbox, not here
+        self.wrote = set()
         # design documents (opt-in, code-detected): the stages of a run (PRD, HLD, LLD, then the site), each document's
         # agent_output, and what earlier stages left behind. Empty for every other run.
         self.docset, self.stages, self.stage_i, self.chain, self.docs = [], [], 0, {}, {}
@@ -3294,6 +3326,7 @@ class J2Run:
             self.events.append({"agent": "system", "type": "warning", "detail": text, "msg": m["id"], "cycle": self.cycle})
         self.chat.append(m)
         os.makedirs(self.dir, exist_ok=True)
+        self.wrote.add("chat.jsonl")
         with open(os.path.join(self.dir, "chat.jsonl"), "a", encoding="utf-8") as f:
             if m["id"] == 1:   # first line of the file: which mode and model produced this run
                 f.write(json.dumps({"meta": True, "run": self.run_id, "output": self.output, "j2_fixes": int(self.fixes),
@@ -3313,6 +3346,7 @@ class J2Run:
     def save(self, name, data):
         if name == "workflows.json" and self.past_workflows:
             data = self.past_workflows + data
+        self.wrote.add(os.path.normpath(name))      # J2's own write, never a builder's (_tool_record)
         os.makedirs(self.dir, exist_ok=True)
         with open(os.path.join(self.dir, name), "w", encoding="utf-8") as f:
             json.dump(data, f, indent=2, ensure_ascii=False)
@@ -3425,7 +3459,7 @@ class J2Run:
     REPLY_DEFAULTS = ("Thanks, got it. We're working on it now.", "Go ahead with the Requester's latest answer.")
 
     def call(self, fn, reply_format, task, mock, max_tokens=900, json_reply=True, images=None, defaults=None,
-             _retry=False, answer_only=False, schema=None, timeout=None):
+             _retry=False, answer_only=False, schema=None, timeout=None, tools=None):
         """One agent's AI call. Every JSON reply format gets a "reason" field. Each call is logged to calls.jsonl
         (inputs, reply, reason, tokens, time) and linked to the agent's next chat message for the detail view.
 
@@ -3436,7 +3470,12 @@ class J2Run:
 
         With J2_BOARD=1 every function's format gets the board fields the same way (board_question, board_used) and
         every function's prompt gets the answered entries (_board_context); answer_only is the board's own answer
-        call, which may not ask back."""
+        call, which may not ask back.
+
+        tools (a builder's build call: _builder_tools()): the call runs with them in the builder's folder. Code compares
+        the run folder before and after it: the record ("tools" in calls.jsonl) keeps every tool call, the files
+        written, the cost and why it stopped. A change outside the folder, or a folder over a limit, raises
+        BuilderToolFault after the call is logged (_tool_fault); a change outside wins over any other error."""
         board = j2_board.enabled() and json_reply and fn in FUNCTIONS and not answer_only
         if board and reply_format.rstrip().endswith("}") and '"board_question"' not in reply_format:
             reply_format = reply_format.rstrip()[:-1] + ", " + self.FN_BOARD_FMT + "}"
@@ -3453,11 +3492,12 @@ class J2Run:
         t0 = time.time()
         self.art_sent = schema is not None
         self.call_timeouts = 0
+        before = self._tool_start() if tools else None
         try:
             while True:
                 try:
                     raw = llm.ask(system, user, mock, max_tokens=max_tokens, effort="low" if json_reply else "high",
-                                  json_mode=json_reply, images=images, schema=schema, timeout=timeout)
+                                  json_mode=json_reply, images=images, schema=schema, timeout=timeout, tools=tools)
                     break
                 except llm.CallTimeout as e:
                     self.call_timeouts += 1
@@ -3469,8 +3509,15 @@ class J2Run:
                                                           "It is not tried again."), warning=True)
                     if not again:
                         raise
+        except Exception:
+            if tools:      # a stopped or failed call can still have written outside its folder: that is said first
+                rec = self._tool_record(tools, before)
+                if rec["outside"]:
+                    self._tool_fault(fn, rec)
+            raise
         finally:
             self.thinking = None
+        tool_rec = self._tool_record(tools, before) if tools else None
         reply = raw
         if json_reply:
             try:
@@ -3479,8 +3526,10 @@ class J2Run:
                 reply = {"say": raw[:400]}
             if llm.MOCK and not reply.get("reason"):
                 reply["reason"] = self.MOCK_REASON
-        self._log_call(fn, task, system, user, raw, reply if json_reply else None, time.time() - t0)
+        self._log_call(fn, task, system, user, raw, reply if json_reply else None, time.time() - t0, tool_rec)
         self.art_sent = False
+        if tool_rec:
+            self._tool_fault(fn, tool_rec)
         if images:
             self.call_log[-1]["images"] = [os.path.relpath(p, self.dir) for p in images]
         if fn == "identity" and json_reply and '"to_requester"' in reply_format and reply.get("enough") is not False:
@@ -3540,7 +3589,7 @@ class J2Run:
         out.append(["task", task[:280] + ("…" if len(task) > 280 else "")])
         return out
 
-    def _log_call(self, fn, task, system, user, raw, reply, secs):
+    def _log_call(self, fn, task, system, user, raw, reply, secs, tools=None):
         meta = dict(llm.LAST_META)
         art = None
         if self.schemas and self.art_schema and self.art_sent:      # the schema this call was sent, and what the provider said of it
@@ -3562,6 +3611,7 @@ class J2Run:
                "reason": reply.get("reason") if isinstance(reply, dict) else None,
                **({"atom": self.atom} if self.atom else {}),
                **({"timeouts": self.call_timeouts} if getattr(self, "call_timeouts", 0) else {}),
+               **({"tools": tools} if tools else {}),
                **({"artifact_schema": art} if art else {})}
         self.call_log.append(rec)
         self.pending_calls.setdefault(fn, []).append(rec["id"])
@@ -3569,6 +3619,69 @@ class J2Run:
         with open(os.path.join(self.dir, "calls.jsonl"), "a", encoding="utf-8") as f:
             f.write(json.dumps({**rec, "system": system, "prompt": user, "raw": raw}, ensure_ascii=False) + "\n")
         return rec
+
+    # ---- builder tools (J2_AGENT_TOOLS=1): what a form declares, given to its builder in its own folder
+    def _builder_tools(self):
+        """The tools a builder call gets: None unless J2_AGENT_TOOLS=1 and the current form declares tools (types.json);
+        then the form's tools and permission rules, the builder's folder inside the run folder, and the limits from the
+        settings (AGENT_SETTINGS, no defaults: a missing one is refused by name). A provider that can't give tools is
+        refused too. The time limit is the caller's timeout (builder_timeout)."""
+        if os.getenv("J2_AGENT_TOOLS") != "1" or not (self.out or {}).get("tools"):
+            return None
+        missing = [k for k in AGENT_SETTINGS if not str(os.getenv(k) or "").strip()]
+        if missing:
+            raise ValueError(f"builder tools need {', '.join(missing)} set (working values in .env.example)")
+        if not llm.MOCK and not llm.can_use_tools():
+            raise ValueError(f"{llm.PROVIDER} can't give a builder tools (llm.TOOLS)")
+        cwd = os.path.join(self.dir, self.out["folder"])
+        os.makedirs(cwd, exist_ok=True)
+        return {"tools": list(self.out["tools"]), "allow": list(self.out["allow"]), "cwd": cwd, "root": self.dir,
+                "usd": float(os.environ["J2_AGENT_USD"]), "log_chars": int(os.environ["J2_TOOL_LOG_CHARS"]),
+                "max_files": int(os.environ["J2_AGENT_MAX_FILES"]), "max_bytes": int(os.environ["J2_AGENT_MAX_BYTES"])}
+
+    def _tool_start(self):
+        """The run folder's files before a tools call; J2's own writes are counted from here."""
+        self.wrote = set()
+        os.makedirs(self.dir, exist_ok=True)
+        return file_states(self.dir)
+
+    def _tool_record(self, tools, before):
+        """A tools call's record, from code's comparison of the run folder and the CLI's tool calls (llm.LAST_META):
+        the files written or removed in the builder's folder (sha256 of each written), every changed file outside it
+        that J2 did not write, the folder's size against the limits, the tool calls, cost and stop reason."""
+        after = file_states(self.dir)
+        pre = os.path.relpath(tools["cwd"], self.dir) + os.sep
+        mine = lambda k: k.startswith(pre)
+        written = []
+        for k in sorted(after):
+            if mine(k) and before.get(k) != after[k]:
+                with open(os.path.join(self.dir, k), "rb") as f:
+                    written.append({"path": k[len(pre):], "bytes": after[k][0], "sha256": hashlib.sha256(f.read()).hexdigest()})
+        outside = sorted(k for k in set(before) | set(after)
+                         if not mine(k) and before.get(k) != after.get(k) and os.path.normpath(k) not in self.wrote)
+        held = [k for k in after if mine(k)]
+        size = sum(after[k][0] for k in held)
+        over = ([f"{len(held)} files, over J2_AGENT_MAX_FILES ({tools['max_files']})"] if len(held) > tools["max_files"]
+                else []) + ([f"{size} bytes, over J2_AGENT_MAX_BYTES ({tools['max_bytes']})"]
+                            if size > tools["max_bytes"] else [])
+        m = llm.LAST_META
+        return {"allowed": list(tools["allow"]), "cwd": pre.rstrip(os.sep), "calls": m.get("tool_calls") or [],
+                "usd": m.get("usd"), "stop": m.get("stop"), "denied": m.get("denied"), "files_written": written,
+                "removed": sorted(k[len(pre):] for k in before if mine(k) and k not in after), "outside": outside,
+                "folder_files": len(held), "folder_bytes": size, "over_limits": over}
+
+    def _tool_fault(self, fn, rec):
+        """Raise BuilderToolFault when a tools call changed anything outside its folder (an event and a warning; nothing
+        from the call is used) or left its folder over a limit (an event); else nothing."""
+        if rec["outside"]:
+            where = ", ".join(rec["outside"][:5]) + (f" and {len(rec['outside']) - 5} more" if len(rec["outside"]) > 5 else "")
+            self._event(fn, "outside_write", f"{fn}: changed outside its folder: {where}")
+            self.post("system", f"{fn} changed files outside its folder ({where}). Nothing from that call is used, and "
+                                "it is not tried again.", warning=True)
+            raise BuilderToolFault("outside", f"changed outside its folder: {where}")
+        if rec["over_limits"]:
+            self._event(fn, "tool_limits", f"{fn}: " + "; ".join(rec["over_limits"]))
+            raise BuilderToolFault("limits", "; ".join(rec["over_limits"]))
 
     # ------------------------------------------------------------------ routing
     def _pick(self, frm, wanted, allowed, fallback, why=""):
