@@ -36,6 +36,7 @@ import json
 import os
 import re
 import sys
+import threading
 import time
 
 import atexit
@@ -180,10 +181,14 @@ def page_run():
     run.set_output("website")
     return run
 
-def say(run, text):
+def say(run, text, review=True):
+    """Send a message and wait until the result is shown; review=True also waits for the reviewer report written
+    after it (its files land after the run is complete)."""
     assert run.user_says(text)
     while run.status != "waiting":
         time.sleep(0.02)
+    if review and getattr(run, "review_thread", None):
+        run.review_thread.join()
 
 
 def show(run):
@@ -925,6 +930,62 @@ def summary_before_review():
     run._turn_coordination = lambda h: (_ for _ in ()).throw(RuntimeError("boom"))
     say(run, BREW_LAB)
     assert run.outcome.startswith("Crashed") and summary(run)["status"] == "crashed", run.outcome
+
+
+def review_after_result():
+    """The reviewer report is written after the result is shown: the run is waiting (complete) with report.json's
+    placeholder verdict while the reviewer still works; timing.json's wall time doesn't count it; its notes land in
+    report.json and report.md when done. A late review never overwrites a newer report."""
+    run = j2.J2Run()
+    gate, started = threading.Event(), threading.Event()
+
+    def review(metrics):
+        started.set()
+        assert gate.wait(10)
+        return {"verdict": "Reviewed late."}
+    run._review = review
+    say(run, BREW_LAB, review=False)
+    while run.paused and run.paused["kind"] == "limit":      # add_budget_if_asked, without waiting for the reviewer
+        say(run, "1", review=False)
+    assert started.wait(10) and run.status == "waiting" and run.review_thread.is_alive()
+    assert "writing its notes" in run.report["review"]["verdict"], run.report["review"]
+    with open(os.path.join(run.dir, "report.json"), encoding="utf-8") as f:
+        assert "writing its notes" in json.load(f)["review"]["verdict"]
+    wall = json.load(open(os.path.join(run.dir, "timing.json")))["wall_seconds"]
+    gate.set()
+    run.review_thread.join(10)
+    assert run.report["review"]["verdict"] == "Reviewed late." and run.report["metrics"]["ai_calls"] == run.calls + 1
+    with open(os.path.join(run.dir, "report.md"), encoding="utf-8") as f:
+        assert "Reviewed late." in f.read()
+    assert json.load(open(os.path.join(run.dir, "timing.json")))["wall_seconds"] == wall
+    # a newer report (a pause, or the next end) wins over a review that arrives after it
+    gate.clear()
+    run._make_report()
+    late = run.review_thread
+    run._make_report(review=False)
+    gate.set()
+    late.join(10)
+    assert "Paused for the Requester" in run.report["review"]["verdict"], run.report["review"]
+
+
+def delay_setting():
+    """J2_DELAY is a setting read per call: 0 when unset, the number when set; mock runs never wait. .env.example
+    documents 2 for free-tier rate limits, commented out so a copied .env keeps 0."""
+    old_mock, old = j2.llm.MOCK, os.environ.pop("J2_DELAY", None)
+    try:
+        j2.llm.MOCK = False
+        assert j2.call_delay() == 0.0
+        os.environ["J2_DELAY"] = "2"
+        assert j2.call_delay() == 2.0
+        j2.llm.MOCK = True
+        assert j2.call_delay() == 0.0
+    finally:
+        j2.llm.MOCK = old_mock
+        os.environ.pop("J2_DELAY", None)
+        if old is not None:
+            os.environ["J2_DELAY"] = old
+    with open(os.path.join(j2.HERE, ".env.example"), encoding="utf-8") as f:
+        assert "# J2_DELAY=2" in f.read().splitlines()
 
 
 # "Budget lead" is one of the team's role names (the team card showed it before the studio, the studio's Behind the scenes shows it); the
@@ -13771,6 +13832,8 @@ if __name__ == "__main__":
         intake_needs()
         playbooks()
         summary_before_review()
+        review_after_result()
+        delay_setting()
         prd_run()
         prd_checks()
         prd_groups_metrics_assumptions()
