@@ -13645,6 +13645,14 @@ def reuse_display():
                  " r.cells = q('#pane-library [data-rtcell]').map(x => x.textContent); r.rows = q('#pane-library [data-tplrow]').length;"
                  " r.html = pane.querySelector('[data-tpltable]') ? pane.querySelector('h3').outerHTML + pane.querySelector('[data-tpltable]').outerHTML : '';"
                  " r.before = pane.firstElementChild.tagName + '|' + (pane.firstElementChild.nextElementSibling || {}).tagName; r.sw = [document.documentElement.scrollWidth, innerWidth];"
+                 " const pressed = a => q('#pane-library [' + a + '][aria-pressed=true]').map(x => x.getAttribute(a));"
+                 " r.chips = q('#pane-library [data-rtfilter]').map(x => x.textContent); r.scopes = q('#pane-library [data-rtscope]').map(x => x.textContent);"
+                 " r.pressed = [pressed('data-rtfilter'), pressed('data-rtscope')]; r.note = (pane.querySelector('[data-rtnote]') || {}).textContent || null;"
+                 " r.none = q('#pane-library [data-tplnone]').map(x => x.textContent); r.acts = q('#pane-library [data-tplrow] td:nth-child(3)').map(x => x.textContent);"
+                 " const press = sel => { const b = pane.querySelector(sel); if (!b) return null; b.focus(); b.click();"
+                 "   return {rows: q('#pane-library [data-tplrow]').length, none: q('#pane-library [data-tplnone]').length, search: location.search, pressed: [pressed('data-rtfilter'), pressed('data-rtscope')],"
+                 "           focus: document.activeElement === pane.querySelector(sel)}; };"
+                 " r.click = [press('[data-rtscope=\"documents\"]'), press('[data-rtfilter=\"reused\"]'), press('[data-rtfilter=\"all\"]'), press('[data-rtscope=\"all\"]')];"
                  " document.body.setAttribute('data-r', JSON.stringify(r)); })();")
         pages = {"now": open(os.path.join(here, "j2_ui.html"), encoding="utf-8").read()}
         old = subprocess.run(["git", "show", f"{REUSE_UI_CHECKPOINT}:prototypes/j2/j2_ui.html"], cwd=here, capture_output=True, text=True)
@@ -13658,10 +13666,10 @@ def reuse_display():
         srv = j2_server.http.server.ThreadingHTTPServer(("127.0.0.1", p_), j2_server.Handler)
         threading.Thread(target=srv.serve_forever, daemon=True).start()
 
-        def load(which, run_dir):
+        def load(which, run_dir, more=""):
             open(os.path.join(web, "j2_ui.html"), "w", encoding="utf-8").write(pages[which].replace("</body>", f"<script>setTimeout(() => {{ {steps} }}, 500)</script></body>"))
             dom = chrome_dom([chrome, "--headless=new", "--disable-gpu", "--window-size=1440,900", "--virtual-time-budget=30000", "--dump-dom",
-                              f"http://127.0.0.1:{p_}/?run={os.path.basename(run_dir)}&view=detail&tab=library"], capture_output=True, text=True, timeout=120).stdout
+                              f"http://127.0.0.1:{p_}/?run={os.path.basename(run_dir)}&view=detail&tab=library{more}"], capture_output=True, text=True, timeout=120).stdout
             hit = re.search(r'data-r="([^"]*)"', dom)
             assert hit, ("the page did not finish its steps", which, run_dir, dom[-300:])
             return json.loads(htmllib.unescape(hit.group(1)))
@@ -13681,6 +13689,33 @@ def reuse_display():
             return u, r
         u1, r1 = shown(from_tpl.dir)
         assert any(c.startswith("W-1") for c in r1["cells"]) and any("adapted from" in c for c in r1["cells"]), r1["cells"]
+
+        def filters(run_dir, first):
+            """The chips and the scope toggle of a run from a run template: every chip's count is the rows it shows, the choice comes
+            from the URL and goes back into it, the pressed ones say so, an empty choice says "none"."""
+            rows_ = L.reuse_rows(L.run_templates(run_dir))
+            want = lambda f, sc: [d for d in rows_ if (sc == "all" or d["group"] == {"documents": "documents", "website": "pages"}[sc]) and (f == "all" or d["kind_shown"] == f)]
+            assert first["chips"] == [f"{t} {len(want(k, 'all'))}" for k, t in (("all", "All"), ("created", "Created"), ("adapted", "Adapted"), ("reused", "Reused"), ("generic", "Generic"))], first["chips"]
+            assert first["scopes"] == ["All", "Documents", "Website"] and first["pressed"] == [["all"], ["all"]] and first["rows"] == len(rows_) and not first["none"], (first["scopes"], first["pressed"])
+            assert first["note"] == ("Adapted = the run template's section template, given this run's facts as a new version. "
+                                     "Created = no matching section in the run template."), first["note"]
+            c = first["click"]      # Documents, then Reused, then All, then the scope All: the rows, the URL and the pressed buttons follow each click
+            assert [x["rows"] for x in c] == [len(want("all", "documents")), len(want("reused", "documents")), len(want("all", "documents")), len(rows_)], c
+            assert [x["pressed"] for x in c] == [[["all"], ["documents"]], [["reused"], ["documents"]], [["all"], ["documents"]], [["all"], ["all"]]] and all(x["focus"] for x in c), c
+            assert "scope=documents" in c[0]["search"] and "filter=" not in c[0]["search"] and "filter=reused" in c[1]["search"] and "scope=documents" in c[1]["search"], c
+            assert "filter=" not in c[3]["search"] and "scope=" not in c[3]["search"] and "tab=library" in c[3]["search"], c[3]["search"]
+            out = {}
+            for f, sc in (("adapted", "documents"), ("reused", "documents"), ("created", "documents"), ("generic", "website"), ("all", "website")):
+                r = load("now", run_dir, f"&filter={f}&scope={sc}")
+                n = len(want(f, sc))
+                assert r["rows"] == n and r["pressed"] == [[f], [sc]] and r["none"] == ([] if n else ["none"]), (f, sc, r["rows"], n, r["pressed"], r["none"])
+                assert r["chips"][0] == f"All {len(want('all', sc))}" and r["sw"][0] <= r["sw"][1], (r["chips"], r["sw"])
+                assert f == "all" or set(r["acts"]) <= {{"adapted": "extended"}.get(f, f)}, (f, r["acts"])
+                out[(f, sc)] = n
+            bad = load("now", run_dir, "&filter=%3Cb%3E&scope=nothing")      # a value the page does not know: everything, nothing pressed wrongly
+            assert bad["rows"] == len(rows_) and bad["pressed"] == [["all"], ["all"]], bad["pressed"]
+            return out, len(rows_)
+        filters(from_tpl.dir, r1)
         live_note = "j2-20261111-211339 not in this clone"
         if saved:
             u2, r2 = shown(saved)
@@ -13689,16 +13724,23 @@ def reuse_display():
             assert [r2["pills"][f"pages-{k}"][0] for k in ("created", "generic")] == ["1 created", "4 generic"] and "added, not in template" in r2["groups"]["pages"], r2["pills"]
             assert "27 of 27 from the template" in r2["groups"]["documents"] and r2["gen"] == "Generator calls: 8", (r2["groups"], r2["gen"])
             assert r2["cells"].count("added, not in template") == 5 and "" in r2["cells"], "the five website rows; the style guide row says nothing"
-            live_note = "j2-20261111-211339: 0 created, 24 adapted, 3 reused for the documents, 1 created and 4 generic for the website (added, not in template), 8 generator calls"
+            f2, all2 = filters(saved, r2)
+            assert (f2[("adapted", "documents")], f2[("reused", "documents")], f2[("created", "documents")]) == (24, 3, 0) and all2 == r2["rows"] == 33, (f2, all2)
+            live_note = ("j2-20261111-211339: 0 created, 24 adapted, 3 reused for the documents, 1 created and 4 generic for the website (added, not in template), 8 generator calls; "
+                         f"its filters: Adapted + Documents 24 rows, Reused + Documents 3, Created + Documents none, All {all2} rows")
         p1 = load("now", plain.dir)
         assert p1["sum"] is None and p1["gen"] is None and not p1["cells"] and not p1["pills"] and p1["rows"] > 0, p1
+        assert not p1["chips"] and not p1["scopes"] and p1["note"] is None and not p1["none"], "a run without a run template has no filters"
+        p2 = load("now", plain.dir, "&filter=created&scope=website")
+        assert p2["rows"] == p1["rows"] and p2["html"] == p1["html"] and not p2["chips"], "and a filter in its URL changes nothing"
         assert p1["heads"] == ["Workflow", "Artifact · section", "Action", "Template", "From", "Score", "Reason"] and p1["before"] == "H3|TABLE", (p1["heads"], p1["before"])
         same = "checkpoint not in this clone"
         if "before" in pages:
             p0 = load("before", plain.dir)
             assert p0["html"] and p0["html"] == p1["html"], "a run without a run template: the heading and the table are the same markup as before"
             same = f"its heading and table are identical to checkpoint {REUSE_UI_CHECKPOINT}"
-        page = (f"a mock run from a run template shows the summary line (name, link, counts, generator calls) and a Run template column; {live_note}; "
+        page = (f"a mock run from a run template shows the summary line (name, link, counts, generator calls), the filter chips with their counts, the scope toggle "
+                f"(the URL keeps the choice, the pressed ones are marked, an empty choice says none) and a Run template column; {live_note}; "
                 f"a run without a run template shows no summary and no column, {same}")
     finally:
         if srv:
