@@ -161,8 +161,9 @@ def test_debug_adds_settings_usage_and_log_and_the_raw_ai_chat_hook(browser, fak
     assert texts(browser, "#fdnav .fdnavb") == ["Org chart", "Workflow graph", "Team chats", "Settings", "Usage and log", "Raw AI chat"]
     assert browser.js("document.querySelector('#fdnav a.fdnavb').getAttribute('href')") == "/console"
     assert on_screen(browser, "#fddebug .fddebug")                                    # the Heads up lane, in full
-    browser.click("#fd-rawchat")
-    browser.wait_for("document.getElementById('fddebug').textContent.includes('raw AI chat viewer')")
+    browser.click("#fd-rawchat")      # opens the viewer for the working team, or says no team has run yet
+    browser.wait_for("location.pathname.endsWith('/raw') || (document.getElementById('front') && document.getElementById('front').textContent.includes('No team has run yet'))")
+    load(browser, fake, level="debug")
     browser.click("#fdnav [data-pane=settings]")
     browser.wait_for("document.documentElement.dataset.place === 'ws'")
     assert on_screen(browser, "#pane-settings") and on_screen(browser, "#railsettings")
