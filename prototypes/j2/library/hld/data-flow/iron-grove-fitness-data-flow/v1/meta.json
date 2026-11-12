@@ -1,0 +1,39 @@
+{
+  "schema": "template-library/1",
+  "name": "Iron Grove Fitness Data flow",
+  "version": 1,
+  "sha": "1ead2b0283d9f0a84156a8fb7dea6314bc87ae0046bfcd879f101c686bf258c6",
+  "schema_sha": "fc004615f1edb771d3d997746f05c00543fc6c4f968c46537df59189b5e31b08",
+  "model_sha": "4ff5b150bfb74f9b5920c1e139dd0cee7dba45159d2fea5cddcbdde8ff48f553",
+  "class": "IronGroveFitnessDataFlowV1",
+  "created": "2026-11-11T21:25:28",
+  "fingerprints": [
+    "8d8d36a04db50373e0b7e4991e567ad6e8111777b093f478feab664177368bbd"
+  ],
+  "made_by": {
+    "run": "j2-20261111-211339",
+    "workflow": "W-10",
+    "atom": "W-10.a1",
+    "agent": "code (adapted from a run template)",
+    "date": "2026-11-11 21:13:39"
+  },
+  "business": {
+    "name": "Iron Grove Fitness",
+    "type": "fitness studio"
+  },
+  "mock": false,
+  "collected_from": {
+    "run": "j2-20261111-211339",
+    "where": "the run's copy"
+  },
+  "used_by": [
+    {
+      "run": "j2-20261111-211339",
+      "workflow": "W-10",
+      "atom": "W-10.a1",
+      "action": "extended"
+    }
+  ],
+  "renamed_from": "Still Point Yoga Data flow@2",
+  "adapted_from": "Still Point Yoga Data flow@1"
+}

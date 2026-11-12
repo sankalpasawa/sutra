@@ -1,0 +1,39 @@
+{
+  "schema": "template-library/1",
+  "name": "Iron Grove Fitness PRD Users",
+  "version": 1,
+  "sha": "dfbb82a029ed1942cdf388b7cad536799c332fdb24a8be46ee7a9eeba7f5b735",
+  "schema_sha": "d1aab43408da04581d2ea767d3ffa21922d0ee8e2e2ce49bd1d6af8184f55d86",
+  "model_sha": "cab2a70b5a8f08ce059339ee438556944f2c7b74d5763cb6417e61ce6f549507",
+  "class": "IronGroveFitnessPRDUsersV1",
+  "created": "2026-11-11T21:21:21",
+  "fingerprints": [
+    "ecdbab96a009208f1fc2147f33644fd6746f88bef0b72b77dcc802f99cc26da7"
+  ],
+  "made_by": {
+    "run": "j2-20261111-211339",
+    "workflow": "W-2",
+    "atom": "W-2.a1",
+    "agent": "code (adapted from a run template)",
+    "date": "2026-11-11 21:13:39"
+  },
+  "business": {
+    "name": "Iron Grove Fitness",
+    "type": "fitness studio"
+  },
+  "mock": false,
+  "collected_from": {
+    "run": "j2-20261111-211339",
+    "where": "the run's copy"
+  },
+  "used_by": [
+    {
+      "run": "j2-20261111-211339",
+      "workflow": "W-2",
+      "atom": "W-2.a1",
+      "action": "extended"
+    }
+  ],
+  "renamed_from": "Still Point Yoga PRD Users@2",
+  "adapted_from": "Still Point Yoga PRD Users@1"
+}

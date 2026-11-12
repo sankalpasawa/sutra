@@ -1,0 +1,90 @@
+{
+  "name": "Flow Pilates Studio Problem",
+  "artifact": "prd",
+  "section": "Problem",
+  "version": 2,
+  "kind": "specialised",
+  "description": "Problem for Flow Pilates Studio (prd): the generic PRD/1 · Problem fields plus facts_used, from 10 charter fact(s); adapted from a template made for another business",
+  "fields": [
+    {
+      "name": "statement",
+      "type": "string",
+      "required": true,
+      "description": "the problem the product solves, in the charter's own words (for Flow Pilates Studio, a prd)",
+      "enum": null,
+      "nullable": false
+    },
+    {
+      "name": "assumptions",
+      "type": "list[string]",
+      "required": false,
+      "description": "facts you had to assume, each one line (for Flow Pilates Studio, a prd)",
+      "enum": null,
+      "nullable": false
+    },
+    {
+      "name": "facts_used",
+      "type": "list[string]",
+      "required": false,
+      "description": "the charter facts this section is written from, copied exactly from Flow Pilates Studio's charter",
+      "enum": [
+        "Flow Pilates Studio",
+        "Friday 6:30 pm Stretch and Release 550",
+        "Monday 7:00 am Mat Basics 500",
+        "Payment is made at the studio",
+        "Saturday 9:00 am Weekend Mat Class 500",
+        "Tuesday 6:30 pm Reformer Flow 800",
+        "Unit 3, 9 Sample Lane, Pune 411004",
+        "Wednesday 7:00 am Core Strength 600",
+        "bookings@flowpilates.example",
+        "name, email, class, preferred date"
+      ],
+      "nullable": false
+    }
+  ],
+  "objects": [],
+  "rules": [
+    {
+      "rule": "enum",
+      "path": "facts_used[]",
+      "values": [
+        "Flow Pilates Studio",
+        "Friday 6:30 pm Stretch and Release 550",
+        "Monday 7:00 am Mat Basics 500",
+        "Payment is made at the studio",
+        "Saturday 9:00 am Weekend Mat Class 500",
+        "Tuesday 6:30 pm Reformer Flow 800",
+        "Unit 3, 9 Sample Lane, Pune 411004",
+        "Wednesday 7:00 am Core Strength 600",
+        "bookings@flowpilates.example",
+        "name, email, class, preferred date"
+      ],
+      "from": "facts",
+      "name": "facts_used are facts of Flow Pilates Studio's charter"
+    }
+  ],
+  "sha": "c12d88701b95969e50c862673c97780d36d35f8a9a10b367c2d76ff6389eeef6",
+  "extends": "prd/problem@generic/1",
+  "made_by": {
+    "run": "j2-20261112-150036",
+    "workflow": "W-7",
+    "atom": "W-7.a1",
+    "agent": "code (adapted from a run template)"
+  },
+  "context": {
+    "business_type": "prd",
+    "facts_used": [
+      "Flow Pilates Studio",
+      "Friday 6:30 pm Stretch and Release 550",
+      "Monday 7:00 am Mat Basics 500",
+      "Payment is made at the studio",
+      "Saturday 9:00 am Weekend Mat Class 500",
+      "Tuesday 6:30 pm Reformer Flow 800",
+      "Unit 3, 9 Sample Lane, Pune 411004",
+      "Wednesday 7:00 am Core Strength 600",
+      "bookings@flowpilates.example",
+      "name, email, class, preferred date"
+    ],
+    "fingerprint": "e3ab0c802aa38241d4468364f1bee9acb46cc072d7ef827f47b46a024615d514"
+  }
+}
