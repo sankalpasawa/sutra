@@ -1,0 +1,5 @@
+{
+ "_from": "runs/j2-20261103-132506 calls.jsonl call 131: Identity's reply the validator sent back for 'counter' (a feature name)",
+ "to_requester": "Got it: a daily puzzle that is the same for everyone each day, plus a streak counter for days in a row. I'll decide the details and tell you what I chose when it's done. The team is starting on it now.",
+ "to_agents": "@Adaptation Charter updated for change: add a daily puzzle and a streak counter (done-when items 18 to 21). Keep all items 1 to 17 as they are. Daily puzzle must come from the date alone, with no server, so everyone gets the same puzzle on the same date. The streak is kept in the browser only, with no sign-up and no tracking. Beginner help must still never reveal a digit, and each puzzle must have exactly one solution. Propose the smallest change that covers items 18 to 21. Page size is already over guidance, so keep growth minimal."
+}

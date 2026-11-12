@@ -1582,10 +1582,10 @@ def work_atoms():
     first = run.rejections[0]["workflow"]
     assert [x["workflow"] for x in run.rejections[:2]] == [first, first], run.rejections
     assert len([c for c in calls_of(run) if "THE VALIDATOR REJECTED" in c["prompt"]]) == 1
-    # dropping the scaffold left N8 (the nav) with no workflow: the plan is flagged and re-asked, and the clean reply
-    # brings it back
-    assert any(x["workflow"] == "plan" and "N8" in x["reason"] for x in run.rejections), run.rejections
-    assert first in [w["name"] for w in run.workflows if w["cycle"] == 1], first
+    # dropping the scaffold leaves N8 (the nav) with no workflow: a warning, so the plan is not flagged for it
+    assert not any(x["workflow"] == "plan" and "N8" in x["reason"] for x in run.rejections), run.rejections
+    # nothing gates the plan on N8 any more (a warning), so the dropped workflow is not brought back in cycle 1
+    assert first not in [w["name"] for w in run.workflows if w["cycle"] == 1], first
     # the validator itself: no atoms at all, or an empty verification list, is rejected with the field named
     reg, refused, _ = run._register([{"name": "Bare", "goal_gap": "x", "outputs": ["y"], "completion_check": "z",
                                       "parts": ["fix"], "fixes": ["F-9"]}])
@@ -2114,6 +2114,53 @@ def run_blockers_batch2():
     print("run blockers batch 2: A4 no word list on done-when items (6 runs' charters pass), A5 minimum from the form "
           "(agent 1, page and document 3) and shown to Identity ok")
 
+
+def run_blockers_batch3():
+    """Group A batch 3 (docs/hardcoding-inventory.md), replayed from the runs (fixtures/run-blockers). A8: no word
+    match decides that a goal needs a behavior item (182842 'conflict-highlight'). A9: nav-and-main-action (N8) is a
+    warning and a warning never gates a plan (182842, 184848). A10: a font name in quotes is a plain CSS value (184848
+    W-5). A12: an agent word ("counter") in Identity's words to the Requester is logged, not re-asked (132506); an
+    @agent still is. A14: "1. C8 starts the run." cites C8, it doesn't define it (165902 W-8)."""
+    fx = os.path.join(os.path.dirname(os.path.abspath(__file__)), "fixtures", "run-blockers")
+    read = lambda n: open(os.path.join(fx, n), encoding="utf-8").read()
+    # A8
+    at = json.loads(read("atom-182842.json"))
+    run = page_run()
+    run.goal = at["goal"]
+    probs = run._atom_problems(json.loads(json.dumps(at["workflow"])), [at["workflow"]])
+    assert not any("describes an action" in p for p in probs), probs
+    # A9
+    n8 = next(c for c in j2.load_conditions("website.json") if c["id"] == "N8")
+    assert n8["severity"] == "warn" and "skip_when" not in n8, n8
+    assert run._plan_gaps([{"name": "Board", "goal_gap": "the puzzle grid"}]) == []
+    # A10
+    g = j2.parse_style(read("style-184848.txt"))
+    assert '"Segoe UI"' in g["fonts"]["body"], g["fonts"]
+    for bad in ('x</style>', 'a{b', 'a"b', 'a\\b'):
+        try:
+            j2.parse_style(read("style-184848.txt").replace('"radius": "', '"radius": ' + json.dumps(bad)[:-1], 1))
+            assert False, bad
+        except ValueError:
+            pass
+    # A12
+    au = json.loads(read("audience-132506.json"))
+    run.call = lambda *a, **k: (_ for _ in ()).throw(AssertionError("re-asked"))
+    events = []
+    run._event = lambda fn, kind, text, **k: events.append(kind)
+    r = {"to_requester": au["to_requester"], "to_agents": au["to_agents"]}
+    assert run._check_audiences(r, "", "", None, 100, None, False) == r and events == ["audience_warning"], events
+    asked = []
+    run.call = lambda *a, **k: asked.append(1) or {"to_requester": "All set.", "to_agents": "Go on."}
+    run._check_audiences({"to_requester": "@Audit please check W-3.", "to_agents": "Go on."}, "", "", None, 100, None, False)
+    assert asked, "an @agent in the Requester's words is still re-asked"
+    # A14
+    hld = read("hld-165902.md").split("\n", 1)[1] + "\n" + read("dataflow-165902.md")
+    owned = "\n\n".join(f"## {h}\n{j2.md_section(hld, h)}" for h in ("Components", "Data flow"))
+    r = j2.doc_check({"type": "ids-unique", "target": "C"}, owned)
+    assert r["pass"], r
+    print("run blockers batch 3: A8 no action-word rule, A9 N8 a warning that never gates a plan, A10 quoted font "
+          "names, A12 agent words logged not re-asked, A14 numbered steps cite ids (182842, 184848, 132506, 165902 "
+          "replayed) ok")
 
 def calls_of(run):
     with open(os.path.join(run.dir, "calls.jsonl"), encoding="utf-8") as f:
@@ -3591,13 +3638,14 @@ def website_conditions():
     row = {"id": "F-1", "item": 1, "criterion": "Menu", "verdict": "PASS", "pass": True}
     audit = {"results": [row], "rubric": [], "mechanical": fake_check(good), "conditions": list(ok.values())}
     assert j2.workable(audit) == [], j2.workable(audit)
-    bad = {**audit, "conditions": list(check(*breaks["N8"]).values())}
-    assert j2.workable(bad) and all("necessary condition N8 not met" in x for x in j2.workable(bad)), j2.workable(bad)
+    bad = {**audit, "conditions": list(check(*breaks["N7"]).values())}
+    assert j2.workable(bad) and all("necessary condition N7 not met" in x for x in j2.workable(bad)), j2.workable(bad)
+    warn = {**audit, "conditions": list(check(*breaks["N8"]).values())}      # N8 is a heuristic: a warning only
+    assert j2.workable(warn) == [], j2.workable(warn)
 
-    # the plan check: no workflow for the nav is flagged before anything is built
+    # the plan check: a warning (N8) never gates a plan, so a plan with no nav is not flagged
     run = page_run()
-    assert [c["id"] for c in run._plan_gaps([{"name": "Menu section", "goal_gap": "the menu"}])] == ["N8"]
-    assert run._plan_gaps([{"name": "Header", "goal_gap": "a nav bar to every section and a main action"}]) == []
+    assert run._plan_gaps([{"name": "Menu section", "goal_gap": "the menu"}]) == []
     orig = run.call
 
     def call(fn, fmt, task, mock, **k):
@@ -3609,14 +3657,12 @@ def website_conditions():
     run.call = call
     say(run, BREW_LAB)
     finish(run)
-    i = next(n for n, m in enumerate(run.chat) if m["text"].startswith("Validator flagged the plan before building"))
-    assert "N8" in run.chat[i]["text"] and not any(m["who"].startswith("W-") for m in run.chat[:i]), run.chat[i]
-    retry = [c for c in calls_of(run) if c["fn"] == "adaptation" and "THE VALIDATOR FLAGGED YOUR PLAN" in c["prompt"]]
-    assert len(retry) == 1 and "N8" in retry[0]["prompt"], retry
-    assert "NECESSARY CONDITIONS" in retry[0]["prompt"] and "N8: A nav reaches every section" in retry[0]["prompt"]
+    assert not any(m["text"].startswith("Validator flagged the plan before building") for m in run.chat)
+    plan = next(c for c in calls_of(run) if c["fn"] == "adaptation")
+    assert "N8 (warning only): A nav reaches every section" in plan["prompt"] and j2.WARN_NOTE in plan["prompt"]
     assert run.outcome.startswith("Done"), run.outcome
     s = summary(run)
-    assert s["necessary_conditions"]["met"] == s["necessary_conditions"]["total"] == 9, s["necessary_conditions"]
+    assert s["necessary_conditions"]["total"] == 9, s["necessary_conditions"]
     saved = json.load(open(os.path.join(run.dir, "conditions.json"), encoding="utf-8"))
     assert [c["id"] for c in saved] == [f"N{i}" for i in range(1, 10)] and all(c["met"] for c in saved), saved
     assert run.snapshot()["conditions"] == run.audits[-1]["conditions"]
@@ -3718,18 +3764,10 @@ def behavior_steps():
         assert (got == [] if part is None else len(got) == 1 and part in got[0]), (steps, got)
     assert probs(good)[:0] == [] and "expected output item 1 behavior step 4" in probs(
         [*good[:3], "expect-number #total 950"])[0]
-    # an action goal needs a behaviour item; a document has no behaviour check
-    act = probs(["click #calc-go"], kind="facts")
-    assert any("describes an action ('calculator')" in x for x in probs(["x"], kind=None) + [
-        *j2.check_problems({"goal": "A calculator shows the total", "how": how, "expected_output": [],
-                            "verification": [{"text": "x", "type": "file-exists", "target": "index.html"}]}, src)]), act
-    for g in ("Shows the menu", "Update the menu section", "The menu section is updated with prices"):
-        assert not j2.check_problems({"goal": g, "how": how, "expected_output": [], "verification": []}, src), g
-    for g in ("Recalculates the total on change", "A self-updating countdown", "Reveals the size field",
-              "Shows or hides the guardian field", "T-shirt size shown only when T-shirt is yes",
-              "guardian name required only when the runner is under 18", "Guardian name required only if under 18",
-              "The size field is hidden unless T-shirt is yes", "Hide the size field"):
-        assert any("describes an action" in x for x in j2.check_problems(
+    # whether an action goal needs a behaviour item is Adaptation's call (run-blockers A8): no word match rejects it
+    for g in ("A calculator shows the total", "Shows the menu", "Recalculates the total on change",
+              "A self-updating countdown", "Reveals the size field", "Guardian name required only if under 18"):
+        assert not any("describes an action" in x for x in j2.check_problems(
             {"goal": g, "how": how, "expected_output": [], "verification": []}, src)), g
     assert "which no check can verify" in j2.expected_problems(
         {"expected_output": [{"text": "x", "kind": "behavior", "steps": ["click #a"]}]}, j2.DOC_CHECK_TYPES)[0]
@@ -7848,7 +7886,7 @@ SAVED_RUNS_GOLDEN = {
 # Re-recorded 2026-11-11 (DOC_RUN_GOLDEN only) for agents/j2/adaptation.md's proposal block naming kind and sections
 # (Adaptation's system prompt). With adaptation.md as it was: {"prd": "2c2d3402a6ca", "design docs": "94c750a4fcb0",
 # "docs then site": "6b28bcb5d3ff"}.
-DOC_RUN_GOLDEN = {"prd": "68deba040a32", "design docs": "7b76e60d93cc", "docs then site": "026e976b8e5a"}
+DOC_RUN_GOLDEN = {"prd": "68deba040a32", "design docs": "7b76e60d93cc", "docs then site": "ec32b20eff08"}
 DOC_PROMPTS_GOLDEN = {
     "prd.builder": "e971c88e727f", "prd.intake": "56b304946997",
     "prd.charter_fmt": "eedccdf82d84", "prd.atom_rules": "b8a918ef6039", "prd.system": "d09f06fa3181",
@@ -8965,8 +9003,8 @@ def tap_dense():
 
 def planner_conditions():
     """C8: the realization planner gets the necessary conditions that apply (id: text) and the number rule before it
-    plans. N8 (nav and main action) doesn't apply to a single-screen app (conditions/website.json skip_when): skipped in
-    the plan gap check and met with its reason in the condition check, kept for a multi-section site."""
+    plans. N8 (nav and main action) is a heuristic: a warning, listed as one, never in the plan gap check, for a
+    multi-section site and for a single-screen game alike (no word list decides which one it is)."""
     import j2_realization as R
     run = page_run()
     site = {"statement": "A one-page website for Little Fig, a cafe, with its menu, hours and a visit form",
@@ -8975,22 +9013,21 @@ def planner_conditions():
             "done_when": ["A 9x9 grid"]}
     run.goal = site
     task = R.plan_task(site, False, run._real_note())
-    assert "NECESSARY CONDITIONS" in task and "N8: A nav reaches every section, and the hero has one obvious main action" in task
+    assert "NECESSARY CONDITIONS" in task and "N8 (warning only): A nav reaches every section, and the hero has one obvious main action" in task
     assert "N1: The page opens (it parses, tags balanced)" in task, task
     assert "A goal that names a time, price, number or email needs a facts-present check or a named test." in task
-    assert [c["id"] for c in run._plan_gaps([{"name": "Menu section", "goal_gap": "the menu"}])] == ["N8"]
+    assert run._plan_gaps([{"name": "Menu section", "goal_gap": "the menu"}]) == []
     run.goal = game
-    assert "N8:" not in run._real_note() and "N7:" in run._real_note()
+    assert "N8 (warning only):" in run._real_note() and "N7:" in run._real_note()
     assert run._plan_gaps([{"name": "Grid", "goal_gap": "the grid"}]) == []
     page = "<!doctype html><html><body><main><h1>Sudoku</h1><button>New game</button></main></body></html>"
     conds = j2.load_conditions("website.json")
     by = lambda g: {c["id"]: c for c in j2.check_conditions(conds, "Sudoku", g, "", (), page, {})}
-    n8 = by(game)["N8"]
-    assert n8["met"] and n8["evidence"].startswith("does not apply: a single-screen app"), n8
-    assert not by(site)["N8"]["met"]
-    assert not j2.cond_skip(conds[-1], {"statement": "A website for Dice & Co, a board game cafe"})   # "unless": a website
-    print("planner conditions: the planner gets the conditions and the number rule; N8 skipped for a single-screen "
-          "game, kept for a multi-section site ok")
+    for g in (game, site):
+        n8 = by(g)["N8"]
+        assert not n8["met"] and n8["severity"] == "warn" and not j2.blocks(n8), n8
+    print("planner conditions: the planner gets the conditions and the number rule; N8 a warning for a game and a "
+          "site alike, never a plan gap ok")
 
 
 def types_constants():
@@ -14274,6 +14311,7 @@ if __name__ == "__main__":
         n6_sources()
         run_blockers_batch1()
         run_blockers_batch2()
+        run_blockers_batch3()
         print(f"J2_FIXES={mode}: PRD output: mock PRD brief Done workable with prd.md and prd.docx, document checks pass "
               "and fail (duplicate R2 rejected), invented facts-present rejected, no browser check, no website "
               "conditions, P7 user groups, P8 window warning, assumptions labelled and listed, short names, heading targets "

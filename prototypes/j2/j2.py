@@ -869,10 +869,6 @@ def check_problems(a, source, types=CHECK_TYPES, upstream="", ranges=False):
     if (FACT_VALUE if ranges else SPECIFIC).search(str(a.get("goal") or "")) and not any(
             isinstance(c, dict) and c.get("type") in ("facts-present", "named-test", "behavior-steps") for c in checks):
         out.append("its goal names a time, price, number or email but no check is facts-present or a named test")
-    if "behavior-steps" in types and (m := ACTION_GOAL.search(str(a.get("goal") or ""))) and not any(
-            isinstance(x, dict) and x.get("kind") == "behavior" for x in a.get("expected_output") or []):
-        out.append(f"its goal describes an action ({m.group(0)!r}) but no expected output item is a behavior that "
-                   "proves it works")
     return out
 
 
@@ -1064,8 +1060,10 @@ def md_words(text):
 def md_ids(text, prefix):
     """Ids defined in the text (R1, R2, ...): an id that starts a line, a list item or a table row, never one
     mentioned inside a sentence. Returned as numbers, in order."""
-    return [int(n) for n in re.findall(rf"(?m)^\s*(?:[-*+]\s+|\d+[.)]\s+|\|\s*)?(?:\*\*|__)?{re.escape(prefix)}-?(\d+)\b",
-                                       str(text))]
+    p = re.escape(prefix)
+    return [int(m[1] or m[2] or m[3]) for m in re.finditer(
+        rf"(?m)^\s*(?:(?:[-*+]\s+|\|\s*)?(?:\*\*|__)?{p}-?(\d+)\b"
+        rf"|\d+[.)]\s+(?:(?:\*\*|__){p}-?(\d+)\b|{p}-?(\d+)\s*:))", str(text))]
 
 
 HEADING_CHECKS = ("heading-present", "section-not-empty")
@@ -1829,9 +1827,13 @@ REPLY_FMT = ('"to_requester": str (to the Requester only, in plain words: what y
              'agent; the Requester never sees it)')
 AT_REQUESTER = re.compile(r"^\s*@Requester\b[,:]?\s*", re.I)
 # Agent content the Requester must never get, and user-facing content agents must never get (checked in call()).
-AGENT_CONTENT = re.compile(r"@(?!Requester\b)[A-Za-z]|\b[WFRC]-\d+\b|\bre-?pric|\b\d+\s*units?\b|\b(?:Adaptation|"
+# The markers are certain (an @mention, an internal id) and send a mixed reply back; the words are guesses
+# (heuristics: "counter" is also a feature name), logged as a warning and never re-asked.
+AGENT_MARK = re.compile(r"@(?!Requester\b)[A-Za-z]|\b[WFRC]-\d+\b")
+AGENT_CONTENT = re.compile(AGENT_MARK.pattern + r"|\bre-?pric|\b\d+\s*units?\b|\b(?:Adaptation|"
                            r"Priority|Coordination|Validator|Audit)\b|\b(?:workflows?|GRANT|COUNTER|REFUSE|envelope|"
                            r"rate[- ]card)\b", re.I)
+USER_MARK = re.compile(r"@Requester\b", re.I)
 USER_CONTENT = re.compile(r"@Requester\b|\bthank(?:s| you)\b|\bI(?:'ll| will) start\b|\bwould you like\b|"
                           r"\bdo you want\b|\byour (?:site|website|shop|store|business|brief)\b", re.I)
 PLAIN_WORDS = ((r"\bunits\b", "work credits"), (r"\bunit\b", "work credit"), (r"\bbuilding time\b", "work"), (r"\bdone[-_ ]when items?\b", "checklist items"),
@@ -2654,6 +2656,12 @@ STYLE_FMT = ('{"palette": {"primary": hex, "secondary": hex, "accent": hex, "bac
              '"notes": str (one line: why this suits the business)}')
 HEX = re.compile(r"#(?:[0-9a-fA-F]{3}){1,2}")
 CSS_SAFE = re.compile(r'^[^<>{}"\\]*$')   # values only: nothing that can close a rule, a tag or an attribute
+CSS_VALUE = re.compile(r'^[^<>{}\\]*$')     # a style value inside <style>: quotes allowed in pairs (a font name)
+
+
+def css_value_ok(v):
+    """A style guide value that can't close the rule or the style element: no <, >, {, } or \\, quotes in pairs."""
+    return bool(CSS_VALUE.match(v)) and v.count('"') % 2 == 0
 
 
 def parse_style(raw):
@@ -2672,8 +2680,9 @@ def parse_style(raw):
     flat = [str(v) for v in list(pal.values()) + [fonts.get("heading"), fonts.get("body"), g.get("radius"),
                                                   g.get("card")] + list((g.get("spacing") or {}).values())
             + list((g.get("buttons") or {}).values()) if v]
-    if not fonts.get("heading") or not fonts.get("body") or not all(CSS_SAFE.match(v) for v in flat):
-        raise ValueError('the style guide needs heading and body fonts, and plain CSS values (no <, >, {, }, " or \\)')
+    if not fonts.get("heading") or not fonts.get("body") or not all(css_value_ok(v) for v in flat):
+        raise ValueError('the style guide needs heading and body fonts, and plain CSS values (no <, >, {, } or \\; '
+                         'quotes in pairs)')
     url = str(fonts.get("google_fonts_url") or "")
     fonts["google_fonts_url"] = url if url.startswith("https://fonts.googleapis.com/") and CSS_SAFE.match(url) else None
     return g
@@ -3658,6 +3667,11 @@ class J2Run:
         bad = ([f"to_requester has agent content ({m.group(0)!r})"] if (m := AGENT_CONTENT.search(req)) else []) \
             + ([f"to_agents reads as user-facing ({m.group(0)!r})"] if (m := USER_CONTENT.search(ag)) else [])
         if not bad:
+            return r
+        if req and not AGENT_MARK.search(req) and not USER_MARK.search(ag):
+            # word guesses only, with words for the Requester already there: a warning, kept as written (a reply with
+            # no to_requester still goes the old way, so the Requester never ends up with no message)
+            self._event("identity", "audience_warning", "; ".join(bad))
             return r
         self._event("identity", "audience_mix", "; ".join(bad))
         if not retried:
@@ -6987,7 +7001,8 @@ class J2Run:
         text = json.dumps(list(wfs) + [w for w in self.workflows if w["status"] in ("registered", "held", "running", "done")],
                           ensure_ascii=False)
         gaps = [c for c in conditions_for(self.out["conditions"], self.goal)
-                if c.get("plan") and c["id"] not in met and not re.search(c["plan"], text, re.I)
+                if c.get("plan") and c.get("severity") != "warn" and c["id"] not in met
+                and not re.search(c["plan"], text, re.I)
                 and (not c.get("key") or (self.goal or {}).get("chain", {}).get(c["key"]))]   # a link needs the earlier document
         return gaps + self._lld_gaps(wfs)
 

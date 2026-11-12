@@ -9,7 +9,7 @@
     {"id": "N5", "text": "Nothing is \"to be confirmed\"", "check": "nothing-to-be-confirmed"},
     {"id": "N6", "text": "No invented content: every number, email and phone number on the page comes from the charter or the Requester's answers", "check": "no-invented-facts", "severity": "warn"},
     {"id": "N7", "text": "Every form has a submit control and a destination (action or mailto)", "check": "forms-have-destination"},
-    {"id": "N8", "text": "A nav reaches every section, and the hero has one obvious main action", "check": "nav-and-main-action", "plan": "\\bnav(?:igation|bar)?\\b|\\bmenu bar\\b|\\bjump links?\\b", "skip_when": {"charter": "single[- ]screen|\\b(?:game|puzzle|quiz|calculator|converter|timer|stopwatch)\\b", "unless": "\\bweb\\s?sites?\\b", "why": "a single-screen app (a game, puzzle, quiz or tool) has no sections to navigate"}},
+    {"id": "N8", "text": "A nav reaches every section, and the hero has one obvious main action", "check": "nav-and-main-action", "plan": "\\bnav(?:igation|bar)?\\b|\\bmenu bar\\b|\\bjump links?\\b", "severity": "warn"},
     {"id": "N9", "text": "Every charter fact appears exactly", "check": "facts-present-all", "severity": "warn"}
   ]
 }
