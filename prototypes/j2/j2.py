@@ -9640,15 +9640,32 @@ class J2Run:
         receipts."""
         site_dir, failed, doc = os.path.join(self.dir, "site"), [], self.doc if doc is None else doc
         t0 = time.time()
+        # the document sections this workflow owns: its sections field only (wf_sections), never its name or words
+        owned = wf_sections(w, (self.out or {}).get("sections") or []) if doc else []
 
         def one(c):
             if doc and c.get("type") == "file-exists" and self._file_wf(w):      # a file workflow: the file it wrote
                 f = artifact_path(w)
                 ok = os.path.isfile(os.path.join(self.dir, f))
                 return {"actual": ok, "pass": ok, "evidence": f"{f} {'exists' if ok else 'not found'} in the run"}
+            if owned and c.get("type") == "ids-unique":
+                # only the ids defined in the sections it owns: another section citing them (a metrics table keyed by
+                # goal id) is not a duplicate (runs/j2-20261111-191311 W-3 deleted Users and Goals over that)
+                mine = "\n\n".join(f"## {h}\n{md_section(page, h) or ''}" for h in owned)
+                res = run_check(c, site_dir, mine, doc)
+                return {**res, "evidence": res["evidence"].replace("in the document",
+                                                                   f"in the sections it owns ({', '.join(owned)})")}
             return run_check(c, site_dir, page, doc)
-        for a in atoms or w.get("atoms") or []:
-            ver = [c for c in a.get("verification") or [] if isinstance(c, dict)]
+        # A build must keep every section its workflow owns, present and not empty, whatever its atoms check
+        # (runs/j2-20261111-191311: W-3 owned Problem, Users and Goals, checked only Problem and dropped the other two).
+        # A failure goes back to the builder with this reason, like any failed check. Not on a single-atom re-check,
+        # and not for a section an atom already checks with section-not-empty (a first build always does: J2.e).
+        have = {heading_target(c.get("target")) for a in w.get("atoms") or [] for c in a.get("verification") or []
+                if isinstance(c, dict) and c.get("type") == "section-not-empty"}
+        kept = [{"text": f"The {h} section this workflow owns is present and not empty.", "type": "section-not-empty",
+                 "target": h, "expect": 1, "owned_section": True} for h in owned if h not in have] if atoms is None else []
+        for n, a in enumerate(atoms or w.get("atoms") or []):
+            ver = [c for c in a.get("verification") or [] if isinstance(c, dict)] + (kept if n == 0 else [])
             recs = [self._receipt(a, c, attempt, one(c), **extra) for c in ver]
             a["results"], a["attempts"] = recs, attempt
             self._expected_receipts(a, ver, recs, attempt, **extra)
