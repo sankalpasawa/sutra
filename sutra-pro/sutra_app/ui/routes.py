@@ -256,7 +256,7 @@ def build_router(
     version: str,
     pages_dir: Path = PAGES_DIR,
 ) -> APIRouter:
-    """The router of the pages: `/`, `/d/{dept}`, `/d/{dept}/library`, `/console` and `/favicon.ico`. `department` is `Services.department`; the pages
+    """The router of the pages: `/`, `/d/{dept}`, `/d/{dept}/library`, `/d/{dept}/raw` (the Raw AI chat), `/console` and `/favicon.ico`. `department` is `Services.department`; the pages
     are read from `pages_dir` (a parameter so tests run on a temp tree)."""
     BootContext(page="home", token=token, version=version)  # a bad token fails at mount time, not at the first view
     pages = Path(pages_dir)
@@ -303,6 +303,10 @@ def build_router(
     def dept_library_slash(dept: str, request: Request) -> Response:
         return _redirect(f"/d/{quote(dept, safe=':')}/library", request.url.query)
 
+    def dept_raw(dept: str) -> Response:
+        # The Raw AI chat debugger (raw_chat.js): the team page again, whose script opens the viewer full screen on this path; `?run=` picks the run.
+        return dept_page(dept)
+
     def console() -> Response:
         return serve(CONSOLE_PAGE, BootContext(page="console", token=token, version=version))
 
@@ -316,6 +320,7 @@ def build_router(
         ("/d/{dept}/", dept_page, "ui_dept"),
         ("/d/{dept}/library", dept_library, "ui_dept_library"),
         ("/d/{dept}/library/", dept_library_slash, "ui_dept_library_redirect"),
+        ("/d/{dept}/raw", dept_raw, "ui_dept_raw"),
         ("/console", console, "ui_console"),
         ("/favicon.ico", favicon, "ui_favicon"),
     ):
