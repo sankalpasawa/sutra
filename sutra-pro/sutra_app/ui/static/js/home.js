@@ -62,6 +62,10 @@
   const PHASE_AT = {reading_chart: 0, consulting_library: 1, planning: 2, applying: 3, handing_off: 3, done: 4};
   const PHASE_SENTENCE = {reading_chart: "Reading the org chart…", consulting_library: "Checking the model library…", planning: "Planning…",
     applying: "Setting up the team…", handing_off: "Handing the request over…", done: ""};
+  // The same moments in everyday words, for the front door at Simple (one line, no engine terms)
+  const PHASE_PLAIN = {reading_chart: "Reading your request…", consulting_library: "Working out who should make it…", planning: "Working out who should make it…",
+    applying: "Setting up your project…", handing_off: "Setting up your project…", done: ""};
+  const LAND_MS = 1600;                    // how long "Your project is set up" shows before a Simple owner is taken to it
   const STATUS_WORDS = {idle: "idle", running: "working", waiting: "waiting", waiting_on_you: "waiting on you", fault: "problem", filed: "done", done_unchecked: "done, not checked",
     left_open: "done, with open items", not_made: "not started"};
 
@@ -85,7 +89,7 @@
     auto: null, autoBusy: false, autoMsg: "",
     pillStale: false, pillSeq: 0,          // the org chat's pill is read again when its session may have moved (renderPill)
     // the front door (front_door.js): the cards being answered, a refusal per card, Done recently opened up, a send from its box, the Raw AI chat note
-    front: {answering: {}, errors: {}, moreDone: false, sent: false, error: "", hookNote: ""},
+    front: {answering: {}, errors: {}, moreDone: false, sent: false, error: "", hookNote: "", going: false},
   };
 
   /* ---------------------------------------------------------------- errors in words */
@@ -753,16 +757,30 @@
       ctx.paint($("fdnav"), nav);
       $("fdnav").hidden = nav === "";
       doc.querySelectorAll("#fdlevel [data-level]").forEach(b => b.setAttribute("aria-pressed", String(b.dataset.level === st.level)));
+      if ($("fdfaces") && $("fdfaces").childElementCount === 0 && fd.facesHtml) ctx.paint($("fdfaces"), fd.facesHtml());
       renderFrontLatest();
     });
   }
 
   // Under the box: after the owner started something here, the org chat's progress sentence and its last word (or the choice it waits on).
+  // At Simple, once the work has a home (a team took it), the owner is taken to that team's page by itself, once, after a moment on the card.
   function renderFrontLatest() {
     const fd = FD();
     if (!fd || !$("fdlatest")) return;
-    const status = S.front.error || (S.front.sent && S.turn.active && hasOwn(PHASE_SENTENCE, S.turn.phase) ? PHASE_SENTENCE[S.turn.phase] : "");
-    ctx.paint($("fdlatest"), fd.latestHtml({show: S.front.sent || S.front.error !== "", status, messages: S.messages, answers: answersMap()}));
+    const lv = level();
+    const words = lv === "simple" ? PHASE_PLAIN : PHASE_SENTENCE;
+    const status = S.front.sent && S.turn.active && hasOwn(words, S.turn.phase) ? words[S.turn.phase] : "";
+    const st = {show: S.front.sent || S.front.error !== "", level: lv, status, error: S.front.error, messages: S.messages, answers: answersMap(), going: S.front.going};
+    const href = S.front.sent && fd.landing ? fd.landing(st) : "";
+    if (href && lv === "simple" && place() === "front" && !S.front.going) {
+      S.front.going = true;
+      st.going = true;
+      root.setTimeout(() => {
+        if (level() === "simple" && place() === "front") root.location.assign(href);
+        else { S.front.going = false; renderFrontLatest(); }
+      }, LAND_MS);
+    }
+    ctx.paint($("fdlatest"), fd.latestHtml(st));
   }
 
   async function sendFront() {
@@ -771,6 +789,7 @@
     if (body === "" || S.sending) return false;
     S.front.sent = true;
     S.front.error = "";
+    S.front.going = false;
     $("fdsend").disabled = true;
     const ok = await send(body, null, {plan: true});
     $("fdsend").disabled = false;
@@ -828,6 +847,8 @@
     const lv = e.target.closest("#fdlevel [data-level]");
     if (lv) { ctx.setLevel(lv.dataset.level); return; }
     if (e.target.closest("#fdsend")) { sendFront(); return; }
+    const tryit = e.target.closest("[data-act=fd-try]");
+    if (tryit) { $("fdbox").value = tryit.dataset.text || tryit.textContent; $("fdbox").focus(); return; }
     const b = e.target.closest("button[data-act]");
     if (!b || !$("front").contains(b)) return;
     const act = b.dataset.act;

@@ -1,18 +1,32 @@
-/* sutra-front.css: Home's front door (front_door.js) and the levels (Simple, Manager, Debug) on Home. The studio's look: the --s-* tokens of the team
-   page's Simple view (copied into j2-shell.css), Fraunces for the one heading, DM Sans for the words, DM Mono for small facts. Every colour is a token,
-   so light and dark need no rule here. --s-line and --s-line2 are hairlines between things, not lines that carry meaning. */
+/* sutra-front.css: Home in the studio's look. The front door (front_door.js), the levels (Simple, Manager, Debug), the org chat workspace and the
+   welcome card all take the studio palette (light paper, ink, one navy accent, green for done, amber for "needs you") and its two type faces:
+   Bricolage Grotesque for headings, Figtree for words (vendor/fonts, served from this origin: the page works offline).
+   Every colour is a token, so light and dark need no rule here. --s-line and --s-line2 are hairlines between things, not lines that carry meaning.
+   tests/ui/js/front_door_css.test.js pins the palette and checks contrast. */
 
-/* The studio tokens this sheet uses, the same values as j2.css (Home keeps the frozen j2-shell.css, D138, so it does not load them).
-   tests/ui/js/front_door_css.test.js checks every value against j2.css, so the two never drift. */
+@font-face { font-family: "Figtree"; src: url("/ui/vendor/fonts/figtree.woff2") format("woff2"); font-weight: 300 900; font-style: normal; font-display: swap; }
+@font-face { font-family: "Bricolage Grotesque"; src: url("/ui/vendor/fonts/bricolage-grotesque.woff2") format("woff2"); font-weight: 200 800; font-style: normal; font-display: swap; }
+
+/* The tokens. Light is the studio's own palette (--bg #F3F1EC, --surface #FFFFFF, --ink #1F2421, --muted #686C66, --line #E2DED5, --accent #3D5A80,
+   --good #3E8E5E, --ask #D9822B). --good and --ask are fills and dots; their text shades (--s-goodink, --s-askink) and the amber line (--s-askline)
+   are darker so words keep 4.5:1 and lines 3:1; --s-muted2 is the workspace's quiet text, a shade darker so it keeps 4.5:1 on the graph's tinted
+   boxes. Dark is the same family at night. The --av-* colours draw the five faces. */
 :root {
-  --s-bg:#191816;--s-surface:#22211e;--s-surface2:#2a2825;--s-ink:#ece7df;--s-muted:#a7a095;--s-line:#35322d;--s-line2:#45413a;--s-accent:#7fb27f;
-  --s-accentink:#10140f;--s-good:#86c9a0;--s-goodbg:#1f2e25;--s-ask:#eba25a;--s-askline:#eba25a;--s-askbg:#33261a;--s-bad:#ef8f7a;
-  --s-shadow:rgb(0 0 0 / .5);--s-ring:rgb(255 255 255 / .06);
+  --s-bg:#171a18;--s-surface:#1f2320;--s-surface2:#262a27;--s-ink:#eceae4;--s-muted:#a5a8a1;--s-muted2:#a5a8a1;--s-line:#2e322f;--s-line2:#3d423e;
+  --s-accent:#9db8de;--s-accentink:#0f1724;--s-accentbg:#243246;--s-mebg:#26313f;
+  --s-good:#6fbf8b;--s-goodink:#8fd3a8;--s-goodbg:#1e2e24;--s-ask:#e89a4c;--s-askline:#e89a4c;--s-askink:#f0b070;--s-askbg:#33261a;--s-bad:#ef8f7a;
+  --s-shadow:rgb(0 0 0 / .5);--s-ring:rgb(255 255 255 / .06);--s-av:#2b302c;
+  --av-s1:#e8b48f;--av-h1:#2b1d16;--av-t1:#3d5a80;--av-s2:#f1c7a5;--av-h2:#7a3e1d;--av-t2:#c8553d;--av-s3:#c98e68;--av-h3:#1e1e1e;--av-t3:#2a9d8f;
+  --av-s4:#b07a55;--av-h4:#151515;--av-t4:#e9a23b;--av-s5:#f3d2b6;--av-h5:#b5651d;--av-t5:#6d597a;--av-line:#2b2b2b;
+  --s-display:"Bricolage Grotesque",system-ui,-apple-system,"Segoe UI",Arial,sans-serif;
+  --s-body:"Figtree",system-ui,-apple-system,"Segoe UI",Arial,sans-serif;
+  --s-mono:ui-monospace,"SF Mono",Menlo,monospace;
 }
 :root[data-theme=light] {
-  --s-bg:#fafaf7;--s-surface:#fff;--s-surface2:#f2f1ec;--s-ink:#1a1915;--s-muted:#5c5a52;--s-line:#e6e4dd;--s-line2:#d6d3ca;--s-accent:#4e814e;
-  --s-accentink:#fff;--s-good:#416c41;--s-goodbg:#e6efe0;--s-ask:#9a4e0c;--s-askline:#c8642a;--s-askbg:#fcebdd;--s-bad:#c2412d;
-  --s-shadow:rgb(26 25 21 / .18);--s-ring:rgb(26 25 21 / .06);
+  --s-bg:#F3F1EC;--s-surface:#FFFFFF;--s-surface2:#F8F6F2;--s-ink:#1F2421;--s-muted:#686C66;--s-muted2:#5A5E58;--s-line:#E2DED5;--s-line2:#D3CEC4;
+  --s-accent:#3D5A80;--s-accentink:#FFFFFF;--s-accentbg:#E8EDF4;--s-mebg:#E8EDF4;
+  --s-good:#3E8E5E;--s-goodink:#2C6B45;--s-goodbg:#E2F0E6;--s-ask:#D9822B;--s-askline:#B8661A;--s-askink:#93500E;--s-askbg:#FBEEDF;--s-bad:#B3412E;
+  --s-shadow:rgb(31 36 33 / .16);--s-ring:rgb(31 36 33 / .05);--s-av:#EFEAE1;
 }
 
 /* ---- which place of Home shows: the front door, or the workspace (the org chat, the panes, the rail). <html data-place> is set before the first paint. */
@@ -21,165 +35,260 @@
 :root[data-place=front] body.home #sview, :root[data-place=front] body.home #dview { display: none; }
 :root[data-place=front] body.home { background: var(--s-bg); }
 
-/* ---- the workspace at each level. Simple reaches it only through "Open the conversation": the org chat alone, no rail, no panes, no team tabs. */
+/* ---- the workspace in the studio's look: J2's own tokens (j2-shell.css, frozen) take the studio's values on Home, so the org chat, the rail,
+   the panes and the welcome card turn calm and navy without touching the frozen sheet. */
+body.home {
+  --bg:var(--s-bg);--panel:var(--s-surface);--panel2:var(--s-surface2);--node:var(--s-surface2);--ink:var(--s-ink);--user:var(--s-ink);--muted:var(--s-muted2);
+  --line:var(--s-line);--on:var(--s-accentink);--accent:var(--s-accent);--vio:var(--s-accent);--purple:var(--s-accent);--identity:var(--s-accent);
+  --sec:var(--s-accent);--sectext:var(--s-accent);--flowout:var(--s-accent);--ok:var(--s-goodink);--bad:var(--s-bad);
+  --validator:var(--s-askink);--system:var(--s-askink);--priority:var(--s-askink);--warm1:var(--s-askink);--team:var(--s-askink);
+  --mapbg:var(--s-surface2);--sky0:var(--s-surface);--sky1:var(--s-surface2);
+  --display:var(--s-display);--body:var(--s-body);--mono:var(--s-mono);
+  font-family: var(--s-body);
+}
+body.home .shead { background: var(--s-bg); border-bottom: 1px solid var(--s-line); min-height: 56px; padding-top: 10px; padding-bottom: 10px; }
+body.home .shead b { font: 700 18px/1.2 var(--s-display); color: var(--s-ink); }
+body.home .shead .meta { font: 500 13px/1.2 var(--s-body); color: var(--s-muted); }
+body.home .gofront { margin-right: 10px; white-space: nowrap; color: var(--s-ink); font: 600 14px/1 var(--s-body); text-decoration: none; padding: 8px 12px; border-radius: 9px; border: 1px solid var(--s-line); background: var(--s-surface); }
+body.home .schat { background: var(--s-bg); border-right: 1px solid var(--s-line); }
+body.home .smsgs { padding: 18px 20px; gap: 10px; }
+body.home .nmsg.sb { border-radius: 14px; padding: 10px 14px; font-size: 15px; line-height: 1.5; }
+body.home .nmsg.sb.team { background: var(--s-surface); color: var(--s-ink); border: 1px solid var(--s-line); }
+body.home .nmsg.sb.me { background: var(--s-mebg); color: var(--s-ink); }
+/* a card is its own box: no bubble around it */
+body.home .nmsg.sb.team[data-kind=card] { background: none; border: 0; padding: 0; }
+body.home .nmsg.sb.team[data-kind=card] > small { padding: 0 2px 4px; }
+body.home .nmsg .ncard { background: var(--s-surface); color: var(--s-ink); border: 1px solid var(--s-line); border-radius: 14px; }
+body.home .nmsg .ncard.ready { border-color: var(--s-good); }
+body.home .nmsg .ncard .lbtn { background: var(--s-surface2); color: var(--s-ink); border: 1px solid var(--s-line2); border-radius: 10px; font: 500 14px/1.2 var(--s-body); }
+body.home .nmsg.sb small { color: var(--s-muted); font: 600 12px/1.3 var(--s-body); letter-spacing: .02em; }
+body.home .scompose { background: var(--s-bg); border-top: 1px solid var(--s-line); padding: 12px 16px; }
+body.home .scompose textarea { background: var(--s-surface); color: var(--s-ink); border: 1px solid var(--s-line2); border-radius: 12px; font: 15px/1.5 var(--s-body); }
+body.home .scompose textarea:focus { outline: 2px solid var(--s-accent); outline-offset: 0; }
+body.home .send { background: var(--s-accent); color: var(--s-accentink); border-radius: 12px; font: 600 15px/1 var(--s-body); }
+/* the progress strip: a quiet hairline row, not a loud stepper */
+body.home .sprog { background: var(--s-bg); border-bottom: 1px solid var(--s-line); padding: 8px 20px 6px; gap: 6px; }
+body.home .sprog div { color: var(--s-muted); font: 500 11.5px/1.3 var(--s-body); }
+body.home .sprog div i { height: 3px; background: var(--s-line); margin-bottom: 4px; }
+body.home .sprog div.done i, body.home .sprog div.on i { background: var(--s-accent); }
+body.home .sprog div.on { color: var(--s-ink); }
+body.home .rail { background: var(--s-bg); }
+body.home .sright { background: var(--s-bg); }
+
+/* ---- the workspace at each level. Simple: the org chat alone at full width (no rail, no panes, no team tabs) and nothing technical: no progress
+   strip of internal steps, no "Plan with Sutra / Ask directly" switch, no model pill. */
 :root[data-level=simple] body.home #dview, :root[data-level=simple] body.home #sright, :root[data-level=simple] body.home #sview main > [role=tablist],
-:root[data-level=simple] body.home #cswitch { display: none; }
-:root[data-level=simple] body.home .schat { max-width: 860px; margin: 0 auto; width: 100%; }
+:root[data-level=simple] body.home #cswitch, :root[data-level=simple] body.home #sprog, :root[data-level=simple] body.home #sbar,
+:root[data-level=simple] body.home #spill, :root[data-level=simple] body.home #sstatus { display: none; }
+:root[data-level=simple] body.home #sview > main { grid-template-columns: minmax(0, 1fr); }
+:root[data-level=simple] body.home .schat { max-width: 860px; margin: 0 auto; width: 100%; border-right: 0; }
 /* Manager: the org chart, the workflow graph, each team's chat. Settings, Usage and log and the Heads up lane wait for Debug. */
 :root[data-level=manager] body.home #railsettings, :root[data-level=manager] body.home #railowner,
 :root[data-level=manager] body.home #needs .hulane { display: none; }
-body.home .gofront { margin-right: 10px; white-space: nowrap; }
+
+/* ---- the welcome card: light paper, the studio's type, the same four facts */
+body.home .swelcome { background: var(--s-bg); padding: 40px 16px; align-items: flex-start; }
+body.home .swbox { max-height: none; margin: auto 0; background: var(--s-surface); color: var(--s-ink); border: 1px solid var(--s-line); border-radius: 18px; padding: 28px 30px 22px; box-shadow: 0 24px 48px -32px var(--s-shadow); font: 15px/1.55 var(--s-body); }
+body.home .swbox h2 { font: 700 28px/1.2 var(--s-display); letter-spacing: -.01em; margin: 0 0 6px; color: var(--s-ink); }
+body.home .swlead { color: var(--s-muted); font-size: 15px; margin-bottom: 18px; }
+body.home .swfact { border-top: 1px solid var(--s-line); padding: 16px 0 6px; }
+body.home .swfact h3 { font: 600 17px/1.3 var(--s-display); color: var(--s-ink); gap: 10px; }
+body.home .swfact p, body.home .swmodels { font-size: 14px; line-height: 1.5; color: var(--s-ink); }
+body.home .swnum { width: 26px; height: 26px; border: 0; background: var(--s-accentbg); color: var(--s-accent); font: 700 13px/1 var(--s-body); }
+body.home .swwhy { color: var(--s-muted); }
+body.home .swbox code { background: var(--s-surface2); color: var(--s-ink); border: 1px solid var(--s-line); font: 500 12.5px var(--s-mono); }
+body.home .swacts { border-top: 1px solid var(--s-line); padding-top: 18px; margin-top: 16px; gap: 10px 16px; }
+body.home .swacts .swgot { background: var(--s-accent); color: var(--s-accentink); border: 0; border-radius: 12px; padding: 12px 24px; font: 600 15px/1 var(--s-body); }
+body.home .swacts .swlater { color: var(--s-accent); font: 600 14px/1 var(--s-body); }
+body.home .swacts .sethint { color: var(--s-muted); font-size: 13px; }
 
 /* ---- the front door */
 .front {
   background: var(--s-bg); color: var(--s-ink);
-  font: 15px/1.55 "DM Sans", system-ui, -apple-system, "Segoe UI", Arial, sans-serif;
+  font: 15px/1.55 var(--s-body);
 }
 .front :focus-visible { outline: 2px solid var(--s-accent); outline-offset: 2px; }
 /* j2-shell.css styles the bare header, main and textarea of the J2 page; the front door's own are plain boxes */
 .front main.fdmain { display: block; flex: none; min-height: 0; }
-.front header.fdhead { display: flex; padding: 0; border: 0; background: none; gap: 10px; flex-wrap: nowrap; }
+.front header.fdhead { display: flex; padding: 0; border: 0; background: none; gap: 12px; flex-wrap: nowrap; }
 .front textarea { height: auto; }
-.front .fdcompose textarea { border: 0; padding: 4px 0; background: none; }
+.front .fdcompose textarea { border: 0; padding: 0; background: none; }
 .fdtop {
   position: sticky; top: 0; z-index: 2; display: flex; align-items: center; gap: 16px; flex-wrap: wrap;
-  padding: 14px 28px; background: var(--s-bg); border-bottom: 1px solid var(--s-line);
+  padding: 16px 28px; background: var(--s-bg); border-bottom: 0;
 }
 .fdorg { display: flex; align-items: center; gap: 10px; min-width: 0; }
-.fdorg b { font: 600 16px/1.2 "DM Sans", system-ui, sans-serif; color: var(--s-ink); white-space: nowrap; }
-.fdmark {
-  display: grid; place-items: center; width: 28px; height: 28px; border-radius: 8px;
-  background: var(--s-accent); color: var(--s-accentink); font: 600 15px/1 Fraunces, Georgia, serif;
-}
+.fdorg b { font: 600 15px/1.2 var(--s-body); color: var(--s-ink); white-space: nowrap; }
+.fdmark { display: block; width: 12px; height: 12px; border-radius: 3px; background: var(--s-accent); }
 .fdnav { display: flex; gap: 4px; flex-wrap: wrap; flex: 1 1 auto; justify-content: center; }
 .fdnav[hidden] { display: none; }
 .fdnavb {
-  border: 0; background: none; color: var(--s-muted); font: 500 13.5px/1 "DM Sans", system-ui, sans-serif;
+  border: 0; background: none; color: var(--s-muted); font: 500 14px/1 var(--s-body);
   padding: 8px 10px; border-radius: 8px; cursor: pointer; text-decoration: none; white-space: nowrap;
 }
-.fdnavb:hover { background: var(--s-surface2); color: var(--s-ink); }
+.fdnavb:hover { background: var(--s-surface); color: var(--s-ink); }
 .fdlevel {
   margin-left: auto; display: inline-flex; padding: 3px; gap: 2px; border-radius: 999px;
   background: var(--s-surface2); border: 1px solid var(--s-line);
 }
 .fdlevel button {
-  border: 0; background: none; color: var(--s-muted); font: 500 13px/1 "DM Sans", system-ui, sans-serif;
-  padding: 7px 13px; border-radius: 999px; cursor: pointer;
+  border: 0; background: none; color: var(--s-muted); font: 500 13px/1 var(--s-body);
+  padding: 7px 12px; border-radius: 999px; cursor: pointer;
 }
 .fdlevel button[aria-pressed="true"] { background: var(--s-surface); color: var(--s-ink); box-shadow: 0 1px 3px var(--s-shadow); }
 
-.fdmain { max-width: 760px; margin: 0 auto; padding: 40px 24px 96px; }
-.fdtitle { font: 500 32px/1.2 Fraunces, Georgia, serif; letter-spacing: -.01em; margin: 0 0 16px; color: var(--s-ink); }
+.fdmain { max-width: 728px; margin: 0 auto; padding: 72px 24px 96px; }
+.fdtitle { font: 700 34px/1.15 var(--s-display); letter-spacing: -.015em; margin: 0 0 24px; color: var(--s-ink); }
 .fdcompose {
-  display: flex; gap: 10px; align-items: flex-end; padding: 12px 12px 12px 16px; border-radius: 16px;
-  background: var(--s-surface); border: 1px solid var(--s-line2); box-shadow: 0 6px 22px -14px var(--s-shadow);
+  display: flex; flex-direction: column; gap: 14px; padding: 20px 20px 14px; border-radius: 14px;
+  background: var(--s-surface); border: 1px solid var(--s-line2); box-shadow: 0 1px 2px var(--s-ring), 0 24px 48px -36px var(--s-shadow);
 }
 .fdcompose textarea {
-  flex: 1; min-height: 48px; max-height: 220px; resize: none; border: 0; outline: 0; background: none; color: var(--s-ink);
-  font: 16px/1.5 "DM Sans", system-ui, sans-serif; padding: 4px 0;
+  width: 100%; min-height: 72px; max-height: 240px; resize: none; border: 0; outline: 0; background: none; color: var(--s-ink);
+  font: 18px/1.5 var(--s-body);
 }
+.fdcompose textarea::placeholder { color: var(--s-muted); }
 .fdcompose:focus-within { border-color: var(--s-accent); }
+.fdcfoot { display: flex; align-items: center; gap: 12px; }
+.fdtry { margin: 0; flex: 1 1 auto; min-width: 0; color: var(--s-muted); font-size: 14px; }
+.fdtrylink { border: 0; background: none; padding: 0; color: var(--s-ink); font: 400 14px/1.4 var(--s-body); text-decoration: underline; text-decoration-color: var(--s-line2); text-underline-offset: 3px; cursor: pointer; }
+.fdtrylink:hover { text-decoration-color: var(--s-accent); }
 
 .fdbtn {
-  border-radius: 999px; padding: 8px 16px; cursor: pointer; font: 600 14px/1.2 "DM Sans", system-ui, sans-serif;
+  border-radius: 12px; padding: 11px 20px; cursor: pointer; font: 600 15px/1.2 var(--s-body); text-decoration: none; display: inline-flex; align-items: center; justify-content: center;
   border: 1px solid var(--s-line2); background: var(--s-surface); color: var(--s-ink);
 }
 .fdbtn:disabled { opacity: .55; cursor: default; }
 .fdyes { background: var(--s-accent); color: var(--s-accentink); border-color: var(--s-accent); }
+.fdyes:hover { box-shadow: 0 6px 16px -8px var(--s-shadow); }
+.fdstart { padding: 12px 28px; font-size: 16px; }
 .fdghost { background: none; color: var(--s-muted); border-color: transparent; }
 .fdghost:hover { color: var(--s-ink); }
-.fdopt:hover { border-color: var(--s-accent); }
-.fdopt:has(.fdoptwhy) { display: flex; flex-direction: column; align-items: flex-start; gap: 2px; text-align: left; border-radius: 12px; padding: 10px 14px; flex: 1 1 260px; }
-.fdoptwhy { font-weight: 400; font-size: 13.5px; color: var(--s-muted); }
+.fdopt { padding: 12px 18px; font-size: 15px; }
+.fdopt:hover { border-color: var(--s-accent); background: var(--s-accentbg); color: var(--s-ink); }
+.fdopt:has(.fdoptwhy) { display: flex; flex-direction: column; align-items: flex-start; gap: 2px; text-align: left; flex: 1 1 260px; }
+.fdoptwhy { font-weight: 400; font-size: 14px; color: var(--s-muted); }
 
-.fdlatest { margin-top: 14px; padding: 14px 16px; border-radius: 14px; background: var(--s-surface2); }
-.fdlatest .fdwho { display: block; margin-bottom: 4px; }
-.fdphase { margin: 0 0 6px; color: var(--s-muted); font: 400 13px/1.4 "DM Mono", ui-monospace, Menlo, monospace; }
-.fdlink { border: 0; background: none; padding: 0; margin-top: 6px; color: var(--s-good); font: 600 13.5px/1.4 "DM Sans", system-ui, sans-serif; cursor: pointer; text-decoration: underline; text-underline-offset: 3px; }
+/* the five faces under the box */
+.fdfaces { display: flex; align-items: center; justify-content: center; gap: 14px; flex-wrap: wrap; margin: 20px 0 0; }
+.fdfacerow { display: inline-flex; gap: 6px; }
+.fdface { display: block; flex: none; border-radius: 50%; }
+.fdteam { color: var(--s-muted); font-size: 14.5px; }
 
-.fdneeds { margin-top: 44px; }
+/* after a send: one calm card (what is happening now, a question, or the way to the work) */
+.fdlatest { margin-top: 24px; padding: 16px 18px; border-radius: 14px; background: var(--s-surface); border: 1px solid var(--s-line); display: flex; align-items: center; gap: 14px; flex-wrap: wrap; box-shadow: 0 1px 2px var(--s-ring); }
+.fdlatest > .fdwho { display: block; flex-basis: 100%; }
+.fdlatest > .fdsay, .fdlatest > .fdphase, .fdlatest > .fdcard, .fdlatest > .fdacts { flex-basis: 100%; }
+.fdlw { flex: 1 1 240px; min-width: 0; }
+.fdlh { display: block; font: 600 16px/1.3 var(--s-body); color: var(--s-ink); }
+.fdline { margin: 2px 0 0; color: var(--s-muted); display: flex; align-items: center; gap: 8px; overflow-wrap: anywhere; }
+.fdgo { margin: 4px 0 0; color: var(--s-goodink); font-size: 14px; font-weight: 600; }
+.fdlatest.fdready { border-color: var(--s-good); }
+.fdlatest.fdready .fdlh { color: var(--s-goodink); }
+.fdwatch { padding: 13px 24px; font-size: 16px; }
+.fdoops { border-color: var(--s-bad); }
+.fdspin { flex: none; width: 14px; height: 14px; border-radius: 50%; border: 2px solid var(--s-accent); border-top-color: transparent; }
+.fdphase { margin: 0 0 6px; color: var(--s-muted); font: 500 13px/1.4 var(--s-body); }
+.fdlink { border: 0; background: none; padding: 0; color: var(--s-accent); font: 600 14px/1.4 var(--s-body); cursor: pointer; text-decoration: underline; text-underline-offset: 3px; }
+.fdlatest .fdcard { margin-top: 6px; }
+#fdlatest > .fdcard { margin-top: 24px; }
+
+.fdneeds { margin-top: 48px; }
 .fdneeds:focus { outline: 0; }
-.fdh { font: 600 13px/1.2 "DM Sans", system-ui, sans-serif; text-transform: uppercase; letter-spacing: .08em; color: var(--s-muted); margin: 0 0 12px; display: flex; align-items: center; gap: 8px; }
-.fdcount { min-width: 20px; height: 20px; padding: 0 6px; border-radius: 999px; display: inline-grid; place-items: center; background: var(--s-askbg); color: var(--s-ask); font: 600 12px/1 "DM Sans", system-ui, sans-serif; letter-spacing: 0; }
-.fdcards { display: grid; gap: 12px; }
+.fdh { font: 600 14px/1.2 var(--s-body); color: var(--s-muted); margin: 0 0 12px; display: flex; align-items: center; gap: 8px; }
+.fdcount { min-width: 22px; height: 22px; padding: 0 7px; border-radius: 999px; display: inline-grid; place-items: center; background: var(--s-askbg); color: var(--s-askink); font: 700 12.5px/1 var(--s-body); }
+.fdcards { display: grid; gap: 14px; }
 .fdcard {
-  position: relative; padding: 16px 18px 14px 20px; border-radius: 14px; background: var(--s-surface);
-  border: 1px solid var(--s-line); box-shadow: 0 1px 2px var(--s-ring), 0 8px 24px -18px var(--s-shadow);
+  position: relative; padding: 18px 20px 16px; border-radius: 14px; background: var(--s-surface);
+  border: 1.5px solid var(--s-askline); box-shadow: 0 1px 2px var(--s-ring), 0 14px 32px -24px var(--s-shadow);
 }
-.fdcard::before { content: ""; position: absolute; left: 0; top: 14px; bottom: 14px; width: 3px; border-radius: 0 3px 3px 0; background: var(--s-askline); }
-.fdcard.fdappr::before { background: var(--s-accent); }
-.fdcard.fdprob::before { background: var(--s-bad); }
-.fdhead { display: flex; align-items: baseline; gap: 10px; margin-bottom: 6px; }
-.fdwho { font: 600 14px/1.3 "DM Sans", system-ui, sans-serif; color: var(--s-ink); }
-.fdhead .nwait { margin-left: auto; color: var(--s-muted); font: 400 12px/1.3 "DM Mono", ui-monospace, Menlo, monospace; white-space: nowrap; }
-.fdhead .nwait.stale { color: var(--s-ask); }
-.fdq { margin: 0 0 12px; font-size: 16px; line-height: 1.5; color: var(--s-ink); overflow-wrap: anywhere; }
+.fdcard.fdappr { border-color: var(--s-accent); }
+.fdcard.fdprob { border-color: var(--s-bad); }
+.fdhead { display: flex; align-items: center; gap: 12px; margin-bottom: 10px; }
+.fdhw { display: flex; flex-direction: column; min-width: 0; }
+.fdasker { font: 600 16px/1.3 var(--s-body); color: var(--s-ink); }
+.fdwho { font: 500 13.5px/1.3 var(--s-body); color: var(--s-muted); }
+.fdhead .nwait { margin-left: auto; color: var(--s-muted); font: 500 12.5px/1.3 var(--s-body); white-space: nowrap; }
+.fdhead .nwait.stale { color: var(--s-askink); }
+.fdq { margin: 0 0 14px; font-size: 17px; line-height: 1.5; color: var(--s-ink); overflow-wrap: anywhere; }
 .fdsay { margin: 0 0 3px; color: var(--s-muted); overflow-wrap: anywhere; }
 .fdsay + .fdq, .fdsay + .fdqs, .fdsay + .fdopts, .fdsay + .fdreply { margin-top: 10px; }
-.fdqs { margin: 0 0 14px; padding-left: 22px; color: var(--s-ink); font-size: 15.5px; }
+.fdqs { margin: 0 0 14px; padding-left: 22px; color: var(--s-ink); font-size: 16px; }
 .fdqs li { margin: 0 0 6px; padding-left: 2px; }
-.fdqs li::marker { color: var(--s-ask); font-weight: 600; }
-.fdopts, .fdacts { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+.fdqs li::marker { color: var(--s-askink); font-weight: 600; }
+.fdopts, .fdacts { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; }
 .fdopts { align-items: stretch; }
-.fdreply { display: flex; gap: 8px; align-items: flex-end; }
+.fdreply { display: flex; gap: 10px; align-items: flex-end; }
 .fdbox {
-  flex: 1; min-height: 40px; resize: vertical; border-radius: 10px; padding: 9px 12px; background: var(--s-bg); color: var(--s-ink);
-  border: 1px solid var(--s-line2); font: 15px/1.4 "DM Sans", system-ui, sans-serif;
+  flex: 1; min-height: 46px; resize: vertical; border-radius: 12px; padding: 11px 14px; background: var(--s-bg); color: var(--s-ink);
+  border: 1px solid var(--s-line2); font: 15.5px/1.4 var(--s-body);
 }
 .fdbox:focus { outline: 2px solid var(--s-accent); outline-offset: 0; }
-.fdfoot { margin-top: 10px; }
-.fdopen { color: var(--s-good); font-weight: 600; font-size: 13.5px; text-decoration: none; }
+.fdfoot { margin-top: 12px; }
+.fdopen { color: var(--s-accent); font-weight: 600; font-size: 14px; text-decoration: none; }
 .fdopen:hover { text-decoration: underline; text-underline-offset: 3px; }
 .fdacts .fdopen { padding: 0 6px; }
 .fderr { margin: 0 0 10px; color: var(--s-bad); font-size: 14px; }
 
-.fdempty { display: flex; gap: 14px; align-items: flex-start; padding: 20px; border-radius: 14px; background: var(--s-surface); border: 1px solid var(--s-line); }
-.fdempty b { font: 500 19px/1.3 Fraunces, Georgia, serif; color: var(--s-ink); }
-.fdempty p { margin: 4px 0 0; color: var(--s-muted); }
-.fdok { flex: 0 0 auto; width: 12px; height: 12px; margin-top: 7px; border-radius: 50%; background: var(--s-good); box-shadow: 0 0 0 5px var(--s-goodbg); }
+.fdempty { display: flex; gap: 14px; align-items: flex-start; padding: 18px 20px; border-radius: 14px; background: var(--s-surface); border: 1px solid var(--s-line); }
+.fdempty b { font: 600 16px/1.3 var(--s-body); color: var(--s-ink); }
+.fdempty p { margin: 2px 0 0; color: var(--s-muted); }
+.fdok { flex: 0 0 auto; width: 10px; height: 10px; margin-top: 7px; border-radius: 50%; background: var(--s-good); box-shadow: 0 0 0 4px var(--s-goodbg); }
 .fdcalm { margin: 0; color: var(--s-muted); }
 
-.fdlists { margin-top: 44px; display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 32px; }
+/* In progress and Done recently: hairline rows, the name on the left and its state on the right (the studio's Recent list) */
+.fdlists { margin-top: 48px; display: grid; grid-template-columns: minmax(0, 1fr); gap: 36px; }
+.fdlist .fdh { padding-bottom: 10px; margin: 0; border-bottom: 1px solid var(--s-line); }
 .fdrows { list-style: none; margin: 0; padding: 0; }
-.fdrow { display: flex; align-items: center; gap: 10px; padding: 10px 0; border-bottom: 1px solid var(--s-line); min-width: 0; }
-.fdrow:last-child { border-bottom: 0; }
-.fddot { flex: 0 0 auto; width: 8px; height: 8px; border-radius: 50%; background: var(--s-muted); }
-.fdrow.st-running .fddot { background: var(--s-accent); box-shadow: 0 0 0 4px var(--s-goodbg); }
-.fdrow.st-waiting_on_you .fddot, .fdrow.st-waiting .fddot { background: var(--s-askline); }
+.fdrow { display: flex; align-items: center; gap: 12px; padding: 12px 0; border-bottom: 1px solid var(--s-line); min-width: 0; }
+.fddot { flex: 0 0 auto; width: 8px; height: 8px; border-radius: 50%; background: var(--s-line2); }
+.fdrow.st-running .fddot { background: var(--s-accent); box-shadow: 0 0 0 4px var(--s-accentbg); }
+.fdrow.st-waiting_on_you .fddot, .fdrow.st-waiting .fddot { background: var(--s-ask); }
 .fdrow.st-fault .fddot { background: var(--s-bad); }
 .fdrow.st-filed .fddot, .fdrow.st-done_unchecked .fddot, .fdrow.st-left_open .fddot { background: var(--s-good); }
 .fdrowlink { flex: 1 1 auto; min-width: 0; display: flex; flex-direction: column; text-decoration: none; color: var(--s-ink); }
 a.fdrowlink:hover .fdname { text-decoration: underline; text-underline-offset: 3px; }
-.fdname { font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.fdname { font-weight: 500; font-size: 15.5px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .fdsub { color: var(--s-muted); font-size: 13.5px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.fdst { flex: 0 0 auto; color: var(--s-muted); font: 400 12px/1.3 "DM Mono", ui-monospace, Menlo, monospace; white-space: nowrap; }
-.fdchip { flex: 0 0 auto; border: 1px solid var(--s-line2); background: none; color: var(--s-ink); border-radius: 999px; padding: 4px 10px; font: 500 12.5px/1.2 "DM Sans", system-ui, sans-serif; cursor: pointer; }
-.fdmore { margin-top: 8px; border: 0; background: none; padding: 0; color: var(--s-good); font: 600 13.5px "DM Sans", system-ui, sans-serif; cursor: pointer; }
+.fdst { flex: 0 0 auto; color: var(--s-muted); font: 400 14px/1.3 var(--s-body); white-space: nowrap; }
+.fdrow.st-waiting_on_you .fdst { color: var(--s-askink); font-weight: 600; }
+.fdchip { flex: 0 0 auto; border: 1px solid var(--s-line2); background: none; color: var(--s-ink); border-radius: 999px; padding: 5px 12px; font: 500 13px/1.2 var(--s-body); cursor: pointer; }
+.fdmore { margin-top: 10px; border: 0; background: none; padding: 0; color: var(--s-accent); font: 600 14px var(--s-body); cursor: pointer; }
 .fdidle { margin-top: 28px; color: var(--s-muted); }
 .fdidle summary { cursor: pointer; font-size: 14px; }
 
 /* Debug: the whole Heads up lane (heads_up_view.js markup), in the studio's look */
-.fddebug { margin-top: 44px; padding: 18px; border-radius: 14px; border: 1px dashed var(--s-line2); background: var(--s-surface); }
+.fddebug { margin-top: 48px; padding: 18px; border-radius: 14px; border: 1px dashed var(--s-line2); background: var(--s-surface); }
 .fddebug .nylane { display: none; }
 .fddebug .huitem { display: flex; flex-wrap: wrap; gap: 6px 10px; align-items: baseline; padding: 10px 0; border-bottom: 1px solid var(--s-line); color: var(--s-ink); }
 .fddebug .huitem:last-child { border-bottom: 0; }
 .fddebug .hutext { flex: 1 1 260px; }
-.fddebug .huwhen, .fddebug .huwhy { color: var(--s-muted); font: 400 12px/1.3 "DM Mono", ui-monospace, Menlo, monospace; }
+.fddebug .huwhen, .fddebug .huwhy { color: var(--s-muted); font: 400 12px/1.3 var(--s-mono); }
 .fddebug .huacts { display: flex; gap: 8px; flex-wrap: wrap; }
-.fddebug .huacts button, .fddebug .humore { border: 1px solid var(--s-line2); background: none; color: var(--s-ink); border-radius: 999px; padding: 4px 10px; font: 500 12.5px "DM Sans", system-ui, sans-serif; cursor: pointer; }
-.fddebug .huacts a { color: var(--s-good); font-size: 13px; }
+.fddebug .huacts button, .fddebug .humore { border: 1px solid var(--s-line2); background: none; color: var(--s-ink); border-radius: 999px; padding: 4px 10px; font: 500 12.5px var(--s-body); cursor: pointer; }
+.fddebug .huacts a { color: var(--s-accent); font-size: 13px; }
 
 @media (max-width: 720px) {
-  .fdtop { padding: 10px 16px; gap: 10px; }
+  .fdtop { padding: 12px 16px; gap: 10px; }
   .fdnav { order: 3; flex-basis: 100%; justify-content: flex-start; overflow-x: auto; flex-wrap: nowrap; }
-  .fdlevel button { padding: 7px 10px; }
-  .fdmain { padding: 24px 16px 72px; }
-  .fdtitle { font-size: 26px; }
-  .fdlists { grid-template-columns: 1fr; gap: 28px; }
+  .fdlevel button { padding: 7px 9px; }
+  .fdmain { padding: 28px 16px 72px; }
+  .fdtitle { font-size: 28px; margin-bottom: 18px; }
+  .fdcompose { padding: 16px 16px 12px; }
+  .fdcompose textarea { font-size: 17px; }
+  .fdcfoot { flex-wrap: wrap; }
+  .fdstart { flex: 1 1 100%; }
+  .fdfaces { gap: 8px; }
+  .fdface { width: 34px; height: 34px; }
   .fdreply { flex-direction: column; align-items: stretch; }
   .fdhead { flex-wrap: wrap; }
+  .fdopts .fdbtn, .fdwatch { flex: 1 1 100%; }
+  body.home .smsgs { padding: 14px 12px; }
 }
 @media (prefers-reduced-motion: no-preference) {
-  .fdcard { animation: fdin var(--dur-base) var(--ease-out) both; }
+  .fdcard, .fdlatest { animation: fdin var(--dur-base) var(--ease-out) both; }
+  .fdspin { animation: fdspin calc(var(--dur-slow) * 4) linear infinite; }
   @keyframes fdin { from { opacity: 0; transform: translateY(4px); } }
+  @keyframes fdspin { to { transform: rotate(360deg); } }
 }
+body.home .railhead { font-family: var(--s-body); }

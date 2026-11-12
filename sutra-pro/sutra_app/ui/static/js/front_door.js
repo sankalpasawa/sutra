@@ -44,6 +44,40 @@
     done_unchecked: "done, not checked", left_open: "done, with open items", idle: "idle", not_made: "not started"};
   const word = status => (Object.prototype.hasOwnProperty.call(WORDS, status) ? WORDS[status] : "idle");
 
+  // What a status reads as at Simple: everyday words a first-time owner knows, no "team", "org" or engine terms.
+  const PLAIN = {running: "Being made", waiting: "Waiting its turn", waiting_on_you: "Needs your answer", fault: "Something broke", filed: "Done",
+    done_unchecked: "Done", left_open: "Done, with open items", idle: "Paused", not_made: "Not started", finished: "Done"};
+  const plain = (status, fallback) => (Object.prototype.hasOwnProperty.call(PLAIN, status) ? PLAIN[status] : fallback);
+
+  /* ---------------------------------------------------------------- the faces (the studio's five people, the same drawings as the team page) */
+  // A fixed table: nothing from the wire goes into the SVG. Colours are the --av-* and --s-av tokens of sutra-front.css.
+  const PEOPLE = {
+    asha: {name: "Asha", n: 1, hair: "bun"}, mira: {name: "Mira", n: 2, hair: "long"}, kabir: {name: "Kabir", n: 3, hair: "short"},
+    dev: {name: "Dev", n: 4, hair: "curly"}, nora: {name: "Nora", n: 5, hair: "bob"}};
+  const KEYS = ["asha", "mira", "kabir", "dev", "nora"];
+  function hairOf(style, h) {
+    return {bun: '<circle cx="32" cy="9" r="6" fill="' + h + '"/><path d="M18 26c0-10 6-15 14-15s14 5 14 15c-3-5-8-7-14-7s-11 2-14 7z" fill="' + h + '"/>',
+      long: '<path d="M17 28c0-11 6-17 15-17s15 6 15 17v14c-3 2-5 2-6 0V27c-3-4-6-5-9-5s-6 1-9 5v15c-1 2-3 2-6 0z" fill="' + h + '"/>',
+      short: '<path d="M19 25c-1-9 5-14 13-14s14 4 13 14c-2-4-6-6-13-6s-11 2-13 6z" fill="' + h + '"/>',
+      curly: [[22, 17], [28, 13], [35, 13], [41, 17], [20, 23], [44, 23]].map(([x, y]) => '<circle cx="' + x + '" cy="' + y + '" r="5.5" fill="' + h + '"/>').join(""),
+      bob: '<path d="M18 30c-1-12 5-19 14-19s15 7 14 19h-5c0-5-1-9-3-11-3 2-8 3-15 3-1 2-1 5-1 8z" fill="' + h + '"/>'}[style] || "";
+  }
+  function face(key, size) {
+    const p = PEOPLE[key] || PEOPLE.asha;
+    const skin = "var(--av-s" + p.n + ")", h = "var(--av-h" + p.n + ")", shirt = "var(--av-t" + p.n + ")";
+    const back = p.hair === "long" || p.hair === "bob";
+    return '<svg class="fdface" width="' + size + '" height="' + size + '" viewBox="0 0 64 64" aria-hidden="true"><circle cx="32" cy="32" r="31" fill="var(--s-av)"/>' +
+      (back ? hairOf(p.hair, h) : "") + '<path d="M12 64c1-11 9-17 20-17s19 6 20 17z" fill="' + shirt + '"/><rect x="28" y="38" width="8" height="9" rx="3" fill="' + skin + '"/>' +
+      '<circle cx="32" cy="27" r="13" fill="' + skin + '"/>' + (back ? '<path d="M20 24c3-4 7-5 12-5s9 1 12 5c-1-7-6-11-12-11s-11 4-12 11z" fill="' + h + '"/>' : hairOf(p.hair, h)) +
+      '<circle cx="27.5" cy="28" r="1.6" fill="var(--av-line)"/><circle cx="36.5" cy="28" r="1.6" fill="var(--av-line)"/>' +
+      '<path d="M28 33c2 2 6 2 8 0" stroke="var(--av-line)" stroke-width="1.5" fill="none" stroke-linecap="round"/></svg>';
+  }
+  // The row under the box: the five faces and who they are.
+  function facesHtml() {
+    return '<div class="fdfaces"><span class="fdfacerow">' + KEYS.map(k => face(k, 40)).join("") + '</span><span class="fdteam">' +
+      KEYS.slice(0, -1).map(k => PEOPLE[k].name).join(", ") + " and " + PEOPLE[KEYS[KEYS.length - 1]].name + " are ready.</span></div>";
+  }
+
   const HV = () => root.HeadsUpView || (typeof require === "function" ? safeRequire("./heads_up_view.js") : null);
   const CV = () => root.ChatView || (typeof require === "function" ? safeRequire("./chat_view.js") : null);
   function safeRequire(name) { try { return require(name); } catch (e) { return null; } }
@@ -114,7 +148,8 @@
       const yes = (Array.isArray(item.options) && clean(item.options[0])) || "Yes";
       const no = (Array.isArray(item.options) && clean(item.options[1])) || "No";
       return '<article class="fdcard fdappr" data-msg="' + esc(msg) + '" data-kind="approval">' +
-        '<header class="fdhead"><span class="fdwho">Approval</span>' + waited(item, o.elapsedMs) + "</header>" +
+        '<header class="fdhead">' + face("asha", 36) + '<span class="fdhw"><b class="fdasker">' + (o.level === "simple" ? "Asha needs your OK" : "Approval") +
+          '</b></span>' + waited(item, o.elapsedMs) + "</header>" +
         '<p class="fdq">' + esc(clean(item.text) || "A change to your org waits for your yes.") + "</p>" + err +
         '<div class="fdacts"><button type="button" class="fdbtn fdyes" data-act="fd-approve" data-msg="' + esc(msg) + '" data-text="' + esc(yes) + '"' + dis + ">Approve</button>" +
         '<button type="button" class="fdbtn fdghost" data-act="fd-decline" data-msg="' + esc(msg) + '" data-text="' + esc(no) + '"' + dis + ">Not now</button></div></article>";
@@ -136,7 +171,8 @@
         '<button type="button" class="fdbtn fdyes" data-act="fd-answer" data-msg="' + esc(msg) + '"' + dis + ">Send</button></div>";
     const open = dept ? '<a class="fdopen" href="' + esc(teamHref(dept)) + '">Open ' + esc(who) + "</a>" : "";
     return '<article class="fdcard fdask" data-msg="' + esc(msg) + '" data-kind="question"' + (dept ? ' data-dept="' + esc(dept) + '"' : "") + ">" +
-      '<header class="fdhead"><span class="fdwho">' + esc(who) + "</span>" + waited(item, o.elapsedMs) + "</header>" + body + err + answer +
+      '<header class="fdhead">' + face("asha", 36) + '<span class="fdhw"><b class="fdasker">' + (ask.qs.length > 1 ? "Asha needs " + ask.qs.length + " answers" : "Asha needs one answer") +
+      '</b><span class="fdwho">' + esc(who) + "</span></span>" + waited(item, o.elapsedMs) + "</header>" + body + err + answer +
       (open ? '<footer class="fdfoot">' + open + "</footer>" : "") + "</article>";
   }
 
@@ -173,15 +209,18 @@
     const needs = Array.isArray(s.needs) ? s.needs.filter(isObj) : [];
     const answering = isObj(s.answering) ? s.answering : {};
     const errors = isObj(s.errors) ? s.errors : {};
-    const cards = needs.map(i => needCard(i, {elapsedMs: s.elapsedMs, busy: answering[i.message_id] === true, error: errors[i.message_id]}))
+    const cards = needs.map(i => needCard(i, {level: s.level, elapsedMs: s.elapsedMs, busy: answering[i.message_id] === true, error: errors[i.message_id]}))
       .concat(problemsOf(s.heads, s.seen).map(problemCard)).filter(Boolean);
     const n = cards.length;
     if (!s.loaded) return '<h2 class="fdh">Needs you</h2><p class="fdcalm">Looking&hellip;</p>';
     if (n === 0) {
       const running = buckets(s.departments, s.heads, s.seen).running;
-      const now = running.length === 0 ? "Nothing is running." : running.length === 1 ? running[0].name + " is working." :
-        running.length + " teams are working: " + running.slice(0, 3).map(r => r.name).join(", ") + (running.length > 3 ? " and more" : "") + ".";
-      return '<h2 class="fdh">Needs you</h2><div class="fdempty"><span class="fdok" aria-hidden="true"></span><div><b>Nothing needs you right now</b><p>' + esc(now) + "</p></div></div>";
+      const simple = s.level === "simple";
+      // Simple with nothing made yet: no section at all, so the box is the one thing on the page
+      if (simple && !(Array.isArray(s.departments) && s.departments.some(isObj))) return "";
+      const now = running.length === 0 ? (simple ? "Nothing is being made right now." : "Nothing is running.") : running.length === 1 ? running[0].name + (simple ? " is being made." : " is working.") :
+        running.length + (simple ? " projects are being made: " : " teams are working: ") + running.slice(0, 3).map(r => r.name).join(", ") + (running.length > 3 ? " and more" : "") + ".";
+      return '<h2 class="fdh">Needs you</h2><div class="fdempty"><span class="fdok" aria-hidden="true"></span><div><b>Nothing needs you right now</b>' + (simple ? "" : "<p>" + esc(now) + "</p>") + "</div></div>";
     }
     return '<h2 class="fdh">Needs you <span class="fdcount">' + n + "</span></h2>" + '<div class="fdcards">' + cards.join("") + "</div>";
   }
@@ -195,8 +234,9 @@
     const name = '<span class="fdname">' + esc(r.name) + "</span>" + (sub ? '<span class="fdsub">' + esc(sub) + "</span>" : "");
     const main = href ? '<a class="fdrowlink" href="' + esc(href) + '">' + name + "</a>" : '<span class="fdrowlink">' + name + "</span>";
     const chat = at(level, "manager") && r.id ? '<button type="button" class="fdchip" data-act="fd-chat" data-node="' + esc(r.id) + '">Chat</button>' : "";
+    const words = level === "simple" ? plain(r.words === "finished" ? "finished" : r.status, r.words) : r.words;
     return '<li class="fdrow st-' + esc(r.status || "idle") + '"><i class="fddot" aria-hidden="true"></i>' + main +
-      '<small class="fdst">' + esc(when || r.words) + "</small>" + chat + "</li>";
+      '<small class="fdst">' + esc(when ? (level === "simple" ? "Done · " + when : when) : words) + "</small>" + chat + "</li>";
   }
 
   function listsHtml(state) {
@@ -206,12 +246,16 @@
     const done = s.moreDone === true ? b.done : b.done.slice(0, DONE_SHOWN);
     const more = b.done.length - done.length;
     const run = '<section class="fdlist" aria-labelledby="fd-run-h"><h2 class="fdh" id="fd-run-h">In progress</h2>' +
-      (b.running.length ? '<ul class="fdrows">' + b.running.map(r => teamRow(r, level, "run")).join("") + "</ul>" : '<p class="fdcalm">No team is working right now.</p>') + "</section>";
+      (b.running.length ? '<ul class="fdrows">' + b.running.map(r => teamRow(r, level, "run")).join("") + "</ul>" : '<p class="fdcalm">' + (level === "simple" ? "Nothing is being made right now." : "No team is working right now.") + "</p>") + "</section>";
     const fin = '<section class="fdlist" aria-labelledby="fd-done-h"><h2 class="fdh" id="fd-done-h">Done recently</h2>' +
       (done.length ? '<ul class="fdrows">' + done.map(r => teamRow(r, level, "done")).join("") + "</ul>" : '<p class="fdcalm">Finished work shows here.</p>') +
       (more > 0 ? '<button type="button" class="fdmore" data-act="fd-more">' + more + " more</button>" : "") + "</section>";
-    const idle = b.idle.length ? '<details class="fdidle" data-key="fd-idle"><summary>Other teams (' + b.idle.length + ")</summary><ul class=\"fdrows\">" +
+    const idle = b.idle.length ? '<details class="fdidle" data-key="fd-idle"><summary>' + (level === "simple" ? "Older projects" : "Other teams") + " (" + b.idle.length + ")</summary><ul class=\"fdrows\">" +
       b.idle.map(r => teamRow(r, level, "idle")).join("") + "</ul></details>" : "";
+    if (level === "simple") {                     // Simple shows a list only when it has something in it
+      const parts = (b.running.length ? run : "") + (done.length ? fin : "");
+      return (parts ? '<div class="fdlists">' + parts + "</div>" : "") + idle;
+    }
     return '<div class="fdlists">' + run + fin + "</div>" + idle;
   }
 
@@ -239,36 +283,82 @@
   }
 
   /* ---------------------------------------------------------------- the org chat's last word, after a send from here */
-  function latestHtml(state) {
-    const s = isObj(state) ? state : {};
-    const status = clean(s.status);
+  // What Sutra said back to the owner's last line: {reply, task, choice}. task is the first work card with a team (where the work now lives),
+  // choice the first choice card not answered yet.
+  function replyOf(s) {
     const list = Array.isArray(s.messages) ? s.messages.filter(isObj) : [];
-    // Sutra's answer to the owner's last line: its words, a team that took the work, and a choice it still waits on
     let from = list.length;
     while (from > 0 && list[from - 1].role !== "user") from -= 1;
     const reply = list.slice(from);
-    if (s.show !== true || (reply.length === 0 && !status)) return "";
+    const answered = m => isObj(s.answers) && Object.prototype.hasOwnProperty.call(s.answers, m.id);
+    const task = reply.find(m => isObj(m.card) && m.card.type === "task" && idOf(m.card.dept_id)) || null;
+    const choice = reply.find(m => isObj(m.card) && m.card.type === "choice" && Array.isArray(m.card.options) && !answered(m)) || null;
+    return {reply, task, choice};
+  }
+
+  // Where the front door's own send should take the owner: the team page of the work it started, or "" while there is none yet.
+  function landing(state) {
+    const r = replyOf(isObj(state) ? state : {});
+    return r.task ? teamHref(r.task.card.dept_id) : "";
+  }
+
+  // The choice card as a Needs you card: the question and one button per option. At Simple the question is put in everyday words.
+  function choiceCard(m, simple) {
+    const card = m.card;
+    const opts = card.options.filter(isObj);
+    const q = simple && /team/i.test(clean(card.question)) ? "Is this for one of your projects, or something new?" : clean(card.question);
+    const label = op => { const t = clean(op.label); return simple && /^(a new team|none of these)$/i.test(t) ? "Something new" : t; };
+    return '<article class="fdcard fdask fdchoice" data-msg="' + esc(String(m.id)) + '" data-kind="choice"><header class="fdhead">' + face("asha", 36) +
+      '<span class="fdhw"><b class="fdasker">Asha needs one answer</b><span class="fdwho">Before we start</span></span></header>' +
+      '<p class="fdq">' + esc(q) + '</p><div class="fdopts">' + opts.map(op => '<button type="button" class="fdbtn fdopt" data-act="fd-choose" data-msg="' +
+      esc(String(m.id)) + '" data-option="' + esc(clean(op.id) || clean(op.label)) + '" data-text="' + esc(clean(op.label)) + '">' + esc(label(op)) + "</button>").join("") +
+      "</div></article>";
+  }
+
+  // Simple: one calm card, one line. While Sutra works, what it is doing now; a question as a Needs you card; once the work has a home, a big
+  // "Watch it being built" that goes there (s.going: the page is on its way there by itself).
+  function latestSimple(s, r, status) {
+    if (r.choice) return choiceCard(r.choice, true);
+    if (r.task) {
+      const href = teamHref(r.task.card.dept_id);
+      const what = clean(r.task.card.title) || clean(r.task.card.dept_name) || "Your project";
+      return '<div class="fdlatest fdready" role="status">' + face("asha", 44) + '<div class="fdlw"><b class="fdlh">Your project is set up</b><p class="fdline">' +
+        esc(what.length > 120 ? what.slice(0, 117) + "…" : what) + "</p>" + (s.going === true ? '<p class="fdgo">Taking you there&hellip;</p>' : "") +
+        '</div><a class="fdbtn fdyes fdwatch" href="' + esc(href) + '">Watch it being built</a></div>';
+    }
+    if (clean(s.error)) return '<div class="fdlatest fdoops" role="alert"><div class="fdlw"><b class="fdlh">That did not go through</b><p class="fdline">' + esc(clean(s.error)) + "</p></div></div>";
+    if (!status && r.reply.length === 0) return "";
+    const said = r.reply.map(m => clean(CV() ? CV().stripTag(m.text) : m.text)).filter(Boolean).pop() || "";
+    const line = status || (said.length > 160 ? said.slice(0, 157) + "…" : said) || "Getting your project ready…";
+    return '<div class="fdlatest fdwork" role="status">' + face("asha", 44) + '<div class="fdlw"><b class="fdlh">' + (status ? "Asha is on it" : "Asha says") +
+      '</b><p class="fdline">' + (status ? '<i class="fdspin" aria-hidden="true"></i>' : "") + esc(line) + "</p></div></div>";
+  }
+
+  function latestHtml(state) {
+    const s = isObj(state) ? state : {};
+    const status = clean(s.status);
+    const r = replyOf(s);
+    if (s.show !== true || (r.reply.length === 0 && !status && !clean(s.error))) return "";
+    if (s.level === "simple") return latestSimple(s, r, status);
+    // Manager and Debug: Sutra's words, the team that took the work, a choice it waits on, and the way into the org chat
     const parts = [];
-    reply.forEach(m => {
+    r.reply.forEach(m => {
       const card = isObj(m.card) ? m.card : null;
-      const answered = isObj(s.answers) && Object.prototype.hasOwnProperty.call(s.answers, m.id);
       if (!card) {
         const said = clean(CV() ? CV().stripTag(m.text) : m.text);
         if (said) parts.push('<p class="fdsay">' + esc(said.length > 280 ? said.slice(0, 277) + "…" : said) + "</p>");
       } else if (card.type === "task" && idOf(card.dept_id)) {
         const who = clean(card.dept_name) || card.dept_id;
         parts.push('<p class="fdsay"><a class="fdopen" href="' + esc(teamHref(card.dept_id)) + '">' + esc(who) + "</a> is on it: " + esc(clean(card.title)) + "</p>");
-      } else if (card.type === "choice" && Array.isArray(card.options) && !answered) {
-        parts.push('<p class="fdq">' + esc(clean(card.question)) + '</p><div class="fdopts">' + card.options.filter(isObj).map(op => '<button type="button" class="fdbtn fdopt" data-act="fd-choose" data-msg="' +
-          esc(String(m.id)) + '" data-option="' + esc(clean(op.id) || clean(op.label)) + '" data-text="' + esc(clean(op.label)) + '">' + esc(clean(op.label)) + "</button>").join("") + "</div>");
       }
     });
-    const body = parts.join("");
-    return '<div class="fdlatest" role="status"><span class="fdwho">Sutra</span>' + (status ? '<p class="fdphase">' + esc(status) + "</p>" : "") + body +
-      '<button type="button" class="fdlink" data-act="fd-conversation">Open the conversation</button></div>';
+    const watch = r.task ? '<a class="fdbtn fdyes fdwatch" href="' + esc(teamHref(r.task.card.dept_id)) + '">Watch it being built</a>' : "";
+    const note = clean(s.status) || clean(s.error);
+    return '<div class="fdlatest" role="status"><span class="fdwho">Sutra</span>' + (note ? '<p class="fdphase">' + esc(note) + "</p>" : "") + parts.join("") +
+      (r.choice ? choiceCard(r.choice, false) : "") + '<div class="fdacts">' + watch + '<button type="button" class="fdlink" data-act="fd-conversation">Open the conversation</button></div></div>';
   }
 
-  const FrontDoor = {LEVELS, ORG, buckets, askOf, needCard, problemCard, needsHtml, listsHtml, navHtml, debugHtml, latestHtml, summary, count, levelAt: at};
+  const FrontDoor = {LEVELS, ORG, buckets, askOf, needCard, problemCard, needsHtml, listsHtml, navHtml, debugHtml, latestHtml, landing, facesHtml, face, summary, count, levelAt: at};
   if (typeof module === "object" && module !== null && module.exports) module.exports = FrontDoor;
   else root.FrontDoor = FrontDoor;
 })(globalThis);

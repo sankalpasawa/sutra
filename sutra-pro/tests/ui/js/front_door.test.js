@@ -112,9 +112,13 @@ test("In progress and Done recently link each team to its page; Manager adds a C
   const simple = FD.listsHtml(Object.assign({level: "simple"}, state));
   assert.match(simple, /In progress[\s\S]*href="\/d\/web\/\?view=simple"/);
   assert.match(simple, /Done recently[\s\S]*href="\/d\/docs\/\?view=simple"/);
-  assert.match(simple, /<details class="fdidle" data-key="fd-idle"><summary>Other teams \(1\)/);
-  assert.doesNotMatch(simple, /fd-chat/);
-  assert.match(FD.listsHtml(Object.assign({level: "manager"}, state)), /data-act="fd-chat" data-node="web"/);
+  assert.match(simple, /<details class="fdidle" data-key="fd-idle"><summary>Older projects \(1\)/);
+  assert.match(simple, /<small class="fdst">Being made<\/small>/);                 // everyday words at Simple
+  assert.doesNotMatch(simple, /fd-chat|teams?\b/i);
+  const manager = FD.listsHtml(Object.assign({level: "manager"}, state));
+  assert.match(manager, /data-act="fd-chat" data-node="web"/);
+  assert.match(manager, /<summary>Other teams \(1\)/);
+  assert.match(manager, /<small class="fdst">working<\/small>/);
 });
 
 test("Done recently shows five, then a button for the rest", () => {
@@ -160,4 +164,46 @@ test("after a send here: Sutra's reply to the last line, the team that took it, 
   assert.match(html, /data-act="fd-choose" data-msg="6" data-option="none" data-text="A new team"/);
   assert.match(html, /data-act="fd-conversation"/);
   assert.doesNotMatch(FD.latestHtml({show: true, messages, answers: {6: "Web"}}), /fd-choose/);       // a pressed choice is not offered again
+});
+
+test("Simple, after a send here: one calm line while Sutra works, a choice as a Needs you card in plain words, then Watch it being built", () => {
+  const sent = [{id: 3, role: "user", text: "A flyer"}];
+  const working = FD.latestHtml({show: true, level: "simple", messages: sent, status: "Setting up your project…"});
+  assert.match(working, /class="fdlatest fdwork"/);
+  assert.match(working, /Setting up your project…/);
+  assert.doesNotMatch(working, /fd-conversation|Reading the org chart|team/i);
+  const asking = sent.concat([{id: 6, role: "agent", text: "", card: {type: "choice", question: "Which team fits best?",
+    options: [{id: "web", label: "Web"}, {id: "none", label: "A new team"}]}}]);
+  const card = FD.latestHtml({show: true, level: "simple", messages: asking});
+  assert.match(card, /class="fdcard fdask fdchoice" data-msg="6"/);
+  assert.match(card, /Asha needs one answer/);
+  assert.match(card, /<p class="fdq">Is this for one of your projects, or something new\?<\/p>/);
+  assert.match(card, /data-act="fd-choose" data-msg="6" data-option="none" data-text="A new team">Something new<\/button>/);   // the server still gets its own label
+  assert.doesNotMatch(card, /fd-conversation/);
+  const done = sent.concat([{id: 5, role: "agent", text: "", card: {type: "task", dept_id: "web", dept_name: "Web", title: "A flyer"}}]);
+  assert.equal(FD.landing({messages: done}), "/d/web/?view=simple");
+  assert.equal(FD.landing({messages: asking}), "");
+  const ready = FD.latestHtml({show: true, level: "simple", messages: done, going: true});
+  assert.match(ready, /<a class="fdbtn fdyes fdwatch" href="\/d\/web\/\?view=simple">Watch it being built<\/a>/);
+  assert.match(ready, /Taking you there/);
+});
+
+test("the faces row names the five people, from a fixed table", () => {
+  const html = FD.facesHtml();
+  assert.equal((html.match(/<svg class="fdface"/g) || []).length, 5);
+  assert.match(html, /Asha, Mira, Kabir, Dev and Nora are ready\./);
+});
+
+test("a team's question says who asks in plain words: Asha needs one answer (or N answers)", () => {
+  assert.match(FD.needCard(question(7), {}), /<b class="fdasker">Asha needs one answer<\/b>/);
+  const three = FD.needCard(question(9, {text: "Before we start.\nPlease send these: Your name; Your city; Your colours"}), {});
+  assert.match(three, /Asha needs 3 answers/);
+  assert.match(FD.needCard(approval(11), {level: "simple"}), /Asha needs your OK/);
+});
+
+test("Simple with nothing made yet shows no Needs you and no lists: the box is the one thing to do", () => {
+  assert.equal(FD.needsHtml({loaded: true, level: "simple", needs: [], heads: [], departments: []}), "");
+  assert.equal(FD.listsHtml({level: "simple", departments: [], heads: []}), "");
+  assert.match(FD.needsHtml({loaded: true, level: "manager", needs: [], heads: [], departments: []}), /Nothing needs you right now/);
+  assert.match(FD.listsHtml({level: "manager", departments: [], heads: []}), /No team is working right now/);
 });

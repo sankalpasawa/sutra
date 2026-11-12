@@ -1,5 +1,5 @@
 "use strict";
-// sutra-front.css (Home's front door): its studio tokens are j2.css's own values, every colour is a token, and in both themes its text keeps 4.5:1
+// sutra-front.css (Home's front door): its light tokens are the studio palette, every colour is a token, and in both themes its text keeps 4.5:1
 // and its meaningful lines 3:1 on the studio's three surfaces (--s-bg, --s-surface, --s-surface2). contrast.test.js does the same for the other
 // Sutra sheets against J2's --bg/--panel/--panel2; the front door sits on the studio's surfaces instead.
 // Run with: node --test tests/ui/js/front_door_css.test.js
@@ -23,18 +23,7 @@ function block(css, sel) {
   return out;
 }
 
-function j2Sets() {
-  const css = read("j2.css");
-  const dark = {};
-  const light = {};
-  const darkBody = /:root\{color-scheme:dark;([^}]*)\}/.exec(css)[1];
-  const lightBody = /:root\[data-theme=light\]\{color-scheme:light;([^}]*)\}/.exec(css)[1];
-  for (const [body, into] of [[darkBody, dark], [lightBody, light]]) body.split(";").forEach(d => { const i = d.indexOf(":"); if (i > 0 && d.trim().startsWith("--s-")) into[d.slice(0, i).trim()] = d.slice(i + 1).trim(); });
-  return {dark, light};
-}
-
 const FRONT_SETS = {dark: block(FRONT, ":root"), light: block(FRONT, ":root[data-theme=light]")};
-const J2 = j2Sets();
 
 function rgb(v) {
   const t = String(v).trim().toLowerCase();
@@ -66,12 +55,32 @@ function rules() {
 }
 const firstVar = v => (/var\(--s-[\w-]+\)/.exec(v) || [""])[0];
 
-test("the studio tokens of sutra-front.css are j2.css's own values, in both themes", () => {
-  for (const theme of ["dark", "light"]) {
-    const mine = FRONT_SETS[theme];
-    assert.ok(Object.keys(mine).length >= 15, theme + ": the sheet defines its tokens");
-    for (const [k, v] of Object.entries(mine)) assert.equal(v, J2[theme][k], `${theme} ${k}`);
+// The studio palette (the design reference's tokens): the light theme of the front door is exactly these, so Home and the team studio read as
+// one product. Dark defines the same names.
+const PALETTE = {"--s-bg": "#F3F1EC", "--s-surface": "#FFFFFF", "--s-ink": "#1F2421", "--s-muted": "#686C66", "--s-line": "#E2DED5",
+  "--s-accent": "#3D5A80", "--s-good": "#3E8E5E", "--s-ask": "#D9822B"};
+test("the light tokens of sutra-front.css are the studio palette, and dark defines the same names", () => {
+  for (const [k, v] of Object.entries(PALETTE)) assert.equal(String(FRONT_SETS.light[k]).toUpperCase(), v, `light ${k}`);
+  const light = Object.keys(FRONT_SETS.light).filter(k => k.startsWith("--s-"));
+  assert.ok(light.length >= 15, "the sheet defines its tokens");
+  for (const k of light) assert.ok(k in FRONT_SETS.dark, `dark ${k}`);
+  assert.match(FRONT_SETS.dark["--s-display"] || "", /^"Bricolage Grotesque"/);
+  assert.match(FRONT_SETS.dark["--s-body"] || "", /^"Figtree"/);
+});
+
+test("the two faces are served from this origin (the page works offline)", () => {
+  const faces = [...FRONT.matchAll(/@font-face\s*\{([^}]*)\}/g)].map(m => m[1]);
+  assert.equal(faces.length, 2);
+  for (const f of faces) {
+    const url = /url\("([^"]+)"\)/.exec(f)[1];
+    assert.match(url, /^\/ui\/vendor\/fonts\/[\w-]+\.woff2$/);
+    assert.ok(fs.existsSync(path.join(CSS_DIR, "..", url.replace(/^\/ui\//, ""))), url);
   }
+});
+
+test("on Home the purple of the frozen sheet is gone: J2's accent tokens take the studio's navy", () => {
+  const home = block(FRONT, "body.home");
+  for (const k of ["--accent", "--vio", "--purple", "--identity"]) assert.equal(home[k], "var(--s-accent)", k);
 });
 
 test("no literal colour outside the two token blocks; every colour of a rule is a --s- token", () => {

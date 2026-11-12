@@ -20,7 +20,7 @@ try { var hq = new URLSearchParams(location.search), lv = localStorage.getItem("
      for a new project. The level (Simple, Manager, Debug; SutraCtx.level) adds the views below it: the workspace further down is where they open. -->
 <div id="front" class="front">
   <header class="fdtop">
-    <div class="fdorg" id="fdorg" data-slot="org-switcher"><span class="fdmark" aria-hidden="true">S</span><b id="fdorgname">Your org</b></div>
+    <div class="fdorg" id="fdorg" data-slot="org-switcher"><span class="fdmark" aria-hidden="true"></span><b id="fdorgname">Sutra</b></div>
     <nav class="fdnav" id="fdnav" aria-label="More views" hidden></nav>
     <div class="fdlevel" id="fdlevel" role="group" aria-label="How much to show">
       <button type="button" data-level="simple" aria-pressed="true" title="What needs you, what runs, what finished">Simple</button>
@@ -30,8 +30,10 @@ try { var hq = new URLSearchParams(location.search), lv = localStorage.getItem("
   </header>
   <main class="fdmain" id="fdmain">
     <section class="fdnew" aria-labelledby="fd-new-h">
-      <h1 class="fdtitle" id="fd-new-h">What should we make today?</h1>
-      <div class="fdcompose"><textarea id="fdbox" rows="2" aria-label="A new project" placeholder="Describe it in a sentence or two&hellip;" maxlength="20000"></textarea><button type="button" class="fdbtn fdyes" id="fdsend">Start</button></div>
+      <h1 class="fdtitle" id="fd-new-h">What should we make?</h1>
+      <div class="fdcompose"><textarea id="fdbox" rows="3" aria-label="A new project" placeholder="A one-page website for my cafe, with the menu and opening hours&hellip;" maxlength="20000"></textarea>
+        <div class="fdcfoot"><p class="fdtry">Try: <button type="button" class="fdtrylink" data-act="fd-try" data-text="A website for my cafe: menu, opening hours, how to find us">a cafe website</button> &middot; <button type="button" class="fdtrylink" data-act="fd-try" data-text="A one-page website for my bakery, with cake orders and contact">a bakery page</button></p><button type="button" class="fdbtn fdyes fdstart" id="fdsend">Start</button></div></div>
+      <div id="fdfaces"></div>
       <div id="fdlatest"></div>
     </section>
     <section class="fdneeds" id="fdneeds" aria-live="polite" tabindex="-1"></section>

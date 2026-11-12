@@ -54,7 +54,10 @@ def test_simple_shows_only_the_front_door_with_the_question_first(browser, fake)
     assert on_screen(browser, "#front") and on_screen(browser, "#fdbox")
     for hidden in ("#sview", "#dview", "#pane-graph", "#pane-chart", "#pane-settings", "#smsgs"):
         assert not on_screen(browser, hidden), hidden
-    assert texts(browser, "#fdorgname") == ["Your org"]
+    assert texts(browser, "#fdorgname") == ["Sutra"]                                   # no "org" at Simple
+    assert texts(browser, "#fd-new-h") == ["What should we make?"]
+    assert texts(browser, "#fdfaces .fdteam") == ["Asha, Mira, Kabir, Dev and Nora are ready."]
+    assert texts(browser, "#fdneeds .fdcard .fdasker") == ["Asha needs one answer"]
     assert browser.js("document.getElementById('fdnav').hidden")                       # Simple adds no views
     assert texts(browser, "#fdneeds .fdcard .fdwho") == ["Web"]
     assert texts(browser, "#fdneeds .fdcard .fdq") == ["Should the menu show prices?"]
@@ -99,9 +102,40 @@ def test_the_box_starts_a_new_project_through_the_org_chat(browser, fake):
 
 
 @browser_only
-def test_nothing_waits_reads_calm(browser, fake):
+def test_a_new_app_at_simple_shows_only_the_box_and_manager_reads_calm(browser, fake):
     load(browser, fake, stage="1")
+    assert texts(browser, "#fdneeds") == [""] and texts(browser, "#fdlists") == [""]   # nothing made yet: the box is the one thing to do
+    browser.click("#fdlevel [data-level=manager]")
+    browser.wait_for("document.documentElement.dataset.level === 'manager'")
     assert texts(browser, "#fdneeds .fdempty b") == ["Nothing needs you right now"]
+
+
+@browser_only
+def test_simple_takes_the_owner_to_the_team_page_once_a_team_has_the_work(browser, fake):
+    load(browser, fake, stage="1")
+    browser.expect_failed("/d/web/")                                                   # the fake serves no team page at stage 1
+    browser.js("""(() => { const S = HomePage.state(); S.front.sent = true;
+      S.messages.push({id: 900, role: "user", text: "A website for my cafe"}, {id: 901, role: "agent", text: "", card: {type: "task", dept_id: "web", dept_name: "Web", title: "A website for my cafe"}});
+      HomePage.renderFront(); })()""")
+    assert texts(browser, "#fdlatest .fdwatch") == ["Watch it being built"]
+    assert browser.js("document.querySelector('#fdlatest .fdwatch').getAttribute('href')") == "/d/web/?view=simple"
+    assert not browser.exists("#fdlatest [data-act=fd-conversation]")                  # Simple never lands in the org chat
+    browser.wait_for("location.pathname === '/d/web/'", timeout=10)
+
+
+@browser_only
+def test_simple_shows_sutras_question_as_a_card_on_the_front_door_in_plain_words(browser, fake):
+    load(browser, fake, stage="1")
+    browser.js("""(() => { const S = HomePage.state(); S.front.sent = true;
+      S.messages.push({id: 900, role: "user", text: "Add booking"}, {id: 902, role: "agent", text: "", card: {type: "choice", question: "Which team fits best?",
+        options: [{id: "web", label: "Web"}, {id: "none", label: "None of these"}]}});
+      HomePage.renderFront(); })()""")
+    assert texts(browser, "#fdlatest .fdq") == ["Is this for one of your projects, or something new?"]
+    assert texts(browser, "#fdlatest [data-act=fd-choose]") == ["Web", "Something new"]
+    browser.click("#fdlatest [data-act=fd-choose][data-option=none]")
+    browser.wait_for("HomePage.state().answers[902] === 'None of these'")
+    sent = posts(fake, "/api/chats/cs_org/messages")
+    assert sent and sent[0]["body"] == {"text": "None of these", "choice": {"message_id": 902, "option": "none"}}
 
 
 @browser_only
