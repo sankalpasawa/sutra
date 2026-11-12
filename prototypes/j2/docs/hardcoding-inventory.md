@@ -98,6 +98,8 @@ Each item was replayed on the current code from its run before it was changed; t
 | A3 | 165902 L3 on LLD v1, v2: fires | Fixed (batch 1): the LLD parser reads "trigger:", "behaviour:" and the field words with or without a colon |
 | A6 | 124718, 012507 (Priority dropped "sections"): **no longer fires** (`_carry` restores it). 165902, 155605, 095315 (first plan without "sections"): fires | Priority case: already fixed. First-plan case: fixed (batch 1): the workflow format of a type with sections has a "sections" field; the check stays (hard) |
 | A13 | 095315 C2 on v1, v2: fires | Fixed (batch 1): facts-present-all is a warning (split from nothing-to-be-confirmed in website N5 → N5 + N9 and HLD H6 → H6 + H7) |
+| A4 | The first charters of 165902, 011528, 155605, 095315, 013315 and 124718: fire | Fixed (batch 2): the NOT_CHECKABLE word list is deleted. Whether an item can be checked is Identity's call, judged by Audit; a fact only the Requester can give goes to to_be_confirmed |
+| A5 | 150327's two-item charter for the agent form: fires | Fixed (batch 2): each form declares min_done_when in types.json (page 3, document 3, agent 1), a required field; the validator reads it and Identity's charter format states it |
 
 Also in batch 1: groups-covered (P7) and components-have-responsibility (split from H3 into H8) are warnings, as heuristic
 conditions. Audit and the planners are told that a warning is a heuristic check that never blocks on its own.

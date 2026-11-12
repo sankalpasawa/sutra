@@ -4871,7 +4871,7 @@ class J2Run:
         r = self.call("identity", '{"say": str (when you ask: to the Requester), ' + REPLY_FMT + ' (when enough is '
                       'true), "enough": bool, "questions": [{"question": str, "options": [str] '
                       '(0-4)}] (when enough is false), "goal": ' + self.out.get("charter_fmt", self.CHARTER_FMT)
-                      + '|null (when enough is true), '
+                      + f'|null (when enough is true; done_when has at least {self.out["min_done_when"]} item(s)), '
                       + next_field(("user", "adaptation"), "Requester when you ask; Adaptation once the charter is "
                                    "recorded") + "}",
                       f"REQUESTER'S BRIEF: {self.request}\nEARLIER QUESTIONS AND ANSWERS: {json.dumps(self.intake)}\n"
@@ -5008,25 +5008,16 @@ class J2Run:
                 out.append({"criterion": c, "fact": str(x["fact"]).strip()})
         return out
 
-    # Done-when must be checkable from the site itself. These words mark items that depend on someone's later
-    # action or on the audit process.
-    NOT_CHECKABLE = re.compile(r"\b(requester|audit\w*|launch\w*|go(?:es|ing)? live|verif\w*|approv\w*|sign(?:ed)?[- ]?off)\b",
-                               re.I)
-
     def _stamp_check(self):
         g = self.goal or {}
         if not g.get("statement"):
             return False, "goal has no statement"
-        if len(g.get("done_when") or []) < 3:
-            return False, "fewer than 3 'done when' criteria"
-        # Quoted text is a label the site shows (e.g. 'sample, replace before launch'), not a dependency.
-        unquoted = lambda d: re.sub(r"'[^']*'|\"[^\"]*\"|‘[^’]*’|“[^”]*”", "", str(d))
-        bad = [d for d in g["done_when"] if self.NOT_CHECKABLE.search(unquoted(d))]
-        if bad:
-            what = f"the {j2_types.info(self.output)['label'].lower()}" if self.output else "the output"      # the chosen type
-            return False, (f"these done-when items can't be checked by reading {what} (they depend on the Requester, "
-                           f"Audit, verification, approval or launch); rephrase them as something {what} shows, and "
-                           "record a fact only the Requester can give in to_be_confirmed: " + json.dumps(bad))
+        # the form's minimum (types.json min_done_when); whether an item can be checked is Identity's call, judged
+        # by Audit (a fact only the Requester can give goes to to_be_confirmed), never read from its words
+        need = self.out["min_done_when"]
+        if len(g.get("done_when") or []) < need:
+            return False, (f"fewer than {need} 'done when' criteria (the {j2_types.info(self.output)['label'].lower()} "
+                           f"needs at least {need})")
         return True, "passes code checks"
 
     def _positions(self, c):

@@ -15,11 +15,11 @@
   "expect_kinds": {"section": "element-count", "element": "element-count", "facts": "facts-present", "file": "file-exists", "test": "named-test", "tap": "tap-targets", "heading": "heading-present", "ids": "ids-unique", "behavior": "behavior-steps"},
   "forms": {
     "_note": "How each form is built and checked, defined once. A type names its form; every field it leaves out comes from here ({name}, {label}, {noun} and {sections} are filled from the type; {practice} is the form's practice_rule for a type whose recommended_practice is true, else empty). output: what a form makes, \"file\" (one file) or \"folder\" (a folder of files its builder writes with the tools the form declares: tools is the CLI tool list, allow its permission rules, test_runner the command a test is run with, {target} the test file; J2_AGENT_TOOLS=1 only). browser_checks: the check types code runs in headless Chrome (the plan format lists the others; the atom rules describe these). cost.item_parts: a done-when item's words (regex) -> the rate-card part it costs at least, first match wins. expect_kinds: an expected-output kind -> the check type that verifies it.",
-    "page": {"output": "file", "builder": "builder.md", "file": "site/index.html", "preview": "html", "style_guide": "design",
+    "page": {"output": "file", "min_done_when": 3, "builder": "builder.md", "file": "site/index.html", "preview": "html", "style_guide": "design",
              "check_types": ["file-exists", "grep-count", "element-count", "named-test", "facts-present", "tap-targets", "behavior-steps"], "ready": "Your {lower} is ready.",
              "browser_checks": ["tap-targets", "behavior-steps"]},
     "document": {
-      "output": "file", "builder": "templates/document/builder.md", "file": "{name}.md", "template": "templates/{name}/generic.json", "preview": "markdown", "export": "docx",
+      "output": "file", "min_done_when": 3, "builder": "templates/document/builder.md", "file": "{name}.md", "template": "templates/{name}/generic.json", "preview": "markdown", "export": "docx",
       "check_types": ["facts-present", "heading-present", "section-not-empty"],
       "intake": "templates/document/intake.md", "charter_format": "templates/document/charter.txt", "atom_rules": "templates/document/atom_rules.md", "conditions": "document.json",
       "practice_rule": "; a line labelled \"Recommended practice:\" may give general good practice the brief does not state and is not an invented fact, but every number, name, price, date, law and claim about the business in it must still come from the charter or the Requester's answers",
@@ -36,7 +36,7 @@
       "mock": {"charter": "mock_form_charter", "section": "mock_form_section", "atom": {}}
     },
     "agent": {
-      "output": "folder", "folder": "{name}", "file": "{name}/*", "builder": "templates/agent/builder.md", "preview": "folder", "export": null,
+      "output": "folder", "min_done_when": 1, "folder": "{name}", "file": "{name}/*", "builder": "templates/agent/builder.md", "preview": "folder", "export": null,
       "tools": ["Read", "Write", "Edit", "Glob", "Bash"],
       "allow": ["Read", "Write", "Edit", "Glob", "Bash(python3 *)"],
       "test_runner": ["python3", "{target}"],

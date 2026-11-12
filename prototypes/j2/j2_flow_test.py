@@ -2086,6 +2086,35 @@ def run_blockers_batch1():
     print("run blockers batch 1: A1 closing section named to Audit, A2/A13 warnings, A3 colon read, A6 sections in "
           "the format (165902, 095315 replayed) ok")
 
+
+def run_blockers_batch2():
+    """Group A batch 2 (docs/hardcoding-inventory.md), replayed from the runs (fixtures/run-blockers/charters.json:
+    Identity's first charter in each, which the validator rejected). A4: no word list decides whether a done-when
+    item can be checked: the six charters with "Requester" or "approving" as product words pass. A5: the minimum is
+    the form's min_done_when (types.json), shown to Identity: run 150327's two-item charter for the agent form passes,
+    and a page or a document still needs 3."""
+    fx = os.path.join(os.path.dirname(os.path.abspath(__file__)), "fixtures", "run-blockers")
+    charters = json.load(open(os.path.join(fx, "charters.json"), encoding="utf-8"))
+    for run_id, kind in (("j2-20261112-165902", "prd"), ("j2-20261111-011528", "prd"), ("j2-20261111-155605", "prd"),
+                         ("j2-20261111-095315", "prd"), ("j2-20261111-013315", "prd"), ("j2-20261111-124718", "prd"),
+                         ("j2-20261112-150327", "agent")):
+        r = j2.J2Run()
+        r.set_output(kind)
+        r.goal = charters[run_id]
+        assert r._stamp_check() == (True, "passes code checks"), (run_id, r._stamp_check())
+    mins = {n: j2.j2_types.load(n)["min_done_when"] for n in j2.j2_types.names()}
+    assert mins["website"] == mins["prd"] == 3 and mins["agent"] == 1, mins
+    for kind in ("website", "prd"):
+        r = j2.J2Run()
+        r.set_output(kind)
+        r.goal = {"statement": "x", "done_when": charters["j2-20261112-150327"]["done_when"]}
+        assert not r._stamp_check()[0], kind
+    run = docs_run("Write a PRD for Campus Notes." + CAMPUS, 200)
+    assert any("done_when has at least 3 item(s)" in c["system"] + c["prompt"] for c in calls_of(run) if c["fn"] == "identity")
+    print("run blockers batch 2: A4 no word list on done-when items (6 runs' charters pass), A5 minimum from the form "
+          "(agent 1, page and document 3) and shown to Identity ok")
+
+
 def calls_of(run):
     with open(os.path.join(run.dir, "calls.jsonl"), encoding="utf-8") as f:
         return [json.loads(ln) for ln in f]
@@ -7819,7 +7848,7 @@ SAVED_RUNS_GOLDEN = {
 # Re-recorded 2026-11-11 (DOC_RUN_GOLDEN only) for agents/j2/adaptation.md's proposal block naming kind and sections
 # (Adaptation's system prompt). With adaptation.md as it was: {"prd": "2c2d3402a6ca", "design docs": "94c750a4fcb0",
 # "docs then site": "6b28bcb5d3ff"}.
-DOC_RUN_GOLDEN = {"prd": "f73f6a12000f", "design docs": "1050ebb6dccc", "docs then site": "c7910ff40c92"}
+DOC_RUN_GOLDEN = {"prd": "68deba040a32", "design docs": "7b76e60d93cc", "docs then site": "026e976b8e5a"}
 DOC_PROMPTS_GOLDEN = {
     "prd.builder": "e971c88e727f", "prd.intake": "56b304946997",
     "prd.charter_fmt": "eedccdf82d84", "prd.atom_rules": "b8a918ef6039", "prd.system": "d09f06fa3181",
@@ -9010,16 +9039,17 @@ def saved_run_no_type():
 
 
 def kind_stored_and_charter_label():
-    """A registered workflow keeps its kind in workflows.json; the charter refusal names the chosen type, never "site"."""
+    """A registered workflow keeps its kind in workflows.json; the charter refusal names the chosen type, never "site",
+    and the form's minimum."""
     run = docs_run("Write a PRD for Campus Notes." + CAMPUS, 200)
     saved = json.load(open(os.path.join(run.dir, "workflows.json"), encoding="utf-8"))
     assert saved and all(w.get("kind") == "build" for w in saved), [(w["id"], w.get("kind")) for w in saved]
     for kind, label in (("prd", "product requirements"), ("website", "website")):
         r = j2.J2Run()
         r.set_output(kind)
-        r.goal = {"statement": "x", "done_when": ["A is shown", "B is shown", "the page is approved by the Requester"]}
+        r.goal = {"statement": "x", "done_when": ["A is shown", "B is shown"]}
         ok, why = r._stamp_check()
-        assert not ok and f"checked by reading the {label} " in why and f"something the {label} shows" in why and "the site" not in why, why
+        assert not ok and f"the {label} needs at least 3" in why and "the site" not in why, why
     print("kind stored and charter label: registered workflows keep kind build; the charter refusal names the chosen type ok")
 
 
@@ -14243,6 +14273,7 @@ if __name__ == "__main__":
               "flagged before building, workable needs every condition, no None or internal ids for the Requester ok")
         n6_sources()
         run_blockers_batch1()
+        run_blockers_batch2()
         print(f"J2_FIXES={mode}: PRD output: mock PRD brief Done workable with prd.md and prd.docx, document checks pass "
               "and fail (duplicate R2 rejected), invented facts-present rejected, no browser check, no website "
               "conditions, P7 user groups, P8 window warning, assumptions labelled and listed, short names, heading targets "

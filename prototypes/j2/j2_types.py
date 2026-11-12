@@ -15,7 +15,7 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 TYPES_PATH = os.path.join(HERE, "artifacts", "types.json")
 AGENTS_DIR = os.path.join(HERE, "agents", "j2")
 CONDITIONS_DIR = os.path.join(HERE, "conditions")
-NEEDED = ("label", "noun", "form", "output", "conditions", "rubric", "check_types", "done", "intake", "charter_format", "workflow", "cost")
+NEEDED = ("label", "noun", "form", "output", "min_done_when", "conditions", "rubric", "check_types", "done", "intake", "charter_format", "workflow", "cost")
 DOC_NEEDED = ("file", "builder", "atom_rules")
 # What a form makes (its "output" in types.json) and what a form of that kind must declare. A form's name is never read.
 OUTPUTS = {"file": (), "folder": ("folder", "builder", "atom_rules", "tools", "allow", "test_runner")}
@@ -333,6 +333,8 @@ def load(name, path=None):
         raise ValueError(f"{name}: tools and allow must be lists of names")
     if folder and not any("{target}" in str(x) for x in entry["test_runner"]):
         raise ValueError(f"{name}: test_runner must name {{target}}, the test file")
+    if not (isinstance(entry["min_done_when"], int) and entry["min_done_when"] >= 1):
+        raise ValueError(f"{name}: min_done_when must be a whole number, at least 1")
     if entry.get("export") not in EXPORTS:
         raise ValueError(f"{name}: unknown export {entry['export']!r}")
     # a page's builder is a role file in agents/j2 (workflow.builder); a document's or a folder's is its own text
@@ -352,7 +354,8 @@ def load(name, path=None):
            "practice": fill("{practice}"),
            "check_types": tuple(entry["check_types"]),
            "builder": fill(_text(entry["builder"])) if own else entry["builder"],
-           "export": entry.get("export"), "done": entry["done"], "output": kind}
+           "export": entry.get("export"), "done": entry["done"], "output": kind,
+           "min_done_when": entry["min_done_when"]}
     out.update({key: fill(_text(entry[k])) for k, key in TEXTS.items() if entry.get(k)})
     # a done-when item's words -> the rate-card part it needs at least (cost.item_parts; first match wins)
     out["item_parts"] = tuple((x["part"], x["words"]) for x in entry["cost"].get("item_parts") or ())

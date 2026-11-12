@@ -1,0 +1,101 @@
+{
+ "j2-20261112-165902": {
+  "statement": "Write a PRD for the agent, an agent that runs every morning, watches team inboxes, finds important messages threads that have gone quiet on the team's side, and quietly reminds the right person on chat. It judges urgent versus can-wait, avoids pestering, helps get threads closed, and tells the Requester when someone keeps ignoring reminders.",
+  "done_when": [
+   "The Problem section states that important messages go unanswered and cites the 25 days data-access request example",
+   "The Users section names the team leads (about ten) and the Requester",
+   "The Users section says what each group does with the agent",
+   "The Goals section states that the agent reminds the right person on chat about quiet threads",
+   "The Requirements section lists watching team inboxes and spotting threads gone quiet on the team's side",
+   "The Requirements section covers telling urgent from can-wait threads",
+   "The Requirements section covers not pestering people with repeated reminders",
+   "The Requirements section covers telling the Requester when someone keeps ignoring reminders",
+   "The Requirements section covers running every morning on its own",
+   "The Requirements section covers shadow mode: nothing sent on the company's behalf until the Requester has seen it work",
+   "The Success metrics section sets 3 days as the longest an important messages may wait for a reply",
+   "The Success metrics section says this is checked daily",
+   "The Out of scope section lists what the agent does not do"
+  ]
+ },
+ "j2-20261111-011528": {
+  "statement": "A friendly, uncluttered Sudoku game on one web page for casual players who play quick games on their phones, with several difficulty levels and beginner help that does not give away the puzzle, and no sign-up and no ads.",
+  "done_when": [
+   "The Problem section states that existing Sudoku sites are cluttered and unfriendly for casual players.",
+   "The Users section names casual phone players who play quick games, such as on a commute.",
+   "The Users section names beginners and says what help they need.",
+   "The Goals section states that the game should feel friendlier and make players want to come back.",
+   "The Requirements section lists several named difficulty levels and what makes each different.",
+   "The Requirements section lists beginner help that does not reveal the solution.",
+   "The Requirements section states the game is one web page in one file and works well on a phone.",
+   "The Requirements section states there is no sign-up and no ads.",
+   "The Requirements section states each detail the department chose in the Requester's place.",
+   "The Success metrics section gives measures of whether players come back to play again.",
+   "The Success metrics section says what is counted for each measure.",
+   "The Out of scope section lists what the game will not include."
+  ]
+ },
+ "j2-20261111-155605": {
+  "statement": "Write a hiring policy for a 40-person design agency in Pune, covering how a role is opened and approved, interview stages, how offers are made and approved, a referral bonus, diversity and fairness, and candidate data retention. The HR manager owns the policy and reviews it yearly.",
+  "done_when": [
+   "Purpose and scope: states what the policy is for and that it covers hiring at the 40-person design agency in Pune, and who it applies to.",
+   "Opening a role and approving it: explains how a role is requested, who reviews it and who gives the final approval before it is advertised.",
+   "Interview stages: lists the three interview stages in order, who takes part in each and what each one checks.",
+   "Making and approving offers: explains who prepares the offer, who must approve it including the salary, and how it is sent to the candidate.",
+   "Referral bonus: states the ₹30,000 bonus paid after 3 months, who can refer, who is not eligible and how it is claimed and paid.",
+   "Diversity and fairness: sets out clear rules for fair, consistent and non-discriminatory hiring, including how interviews are kept consistent.",
+   "Candidate data retention: states that candidate data is kept for 12 months, who can see it and that it is deleted after that.",
+   "Ownership and review: names the HR manager as the policy owner and states that the policy is reviewed yearly."
+  ]
+ },
+ "j2-20261111-095315": {
+  "statement": "Write a hiring policy, as a markdown document, for a 25-person software startup in Bangalore. It covers how a role is opened and approved, the interview stages, how offers are made and approved, referral bonuses, diversity and fairness rules, how long candidate data is kept, and who owns and reviews the policy.",
+  "done_when": [
+   "Purpose and scope: states what the policy is for and that it applies to the 25-person software startup in Bangalore",
+   "Opening a role and approving it: states that the hiring manager requests the role and the department head and the CEO both approve before it is posted",
+   "Interview stages: lists in order the HR CV screen, 30-minute HR call, take-home task or technical round, 2 team interviews (role skills, then culture and values), final round with the department head, reference check, decision",
+   "Making and approving offers: states that the hiring manager and HR propose salary and job level using pay bands, the department head approves, and the CEO gives the final yes before the offer is sent",
+   "Referral bonus: states a ₹50,000 bonus paid after the referred hire completes 3 months",
+   "Diversity and fairness: sets out fair and non-discriminatory hiring rules that apply to every stage",
+   "Candidate data retention: states that candidate data is kept for 12 months",
+   "Ownership and review: names the HR lead as owner and states review every 6 months or sooner if hiring laws change"
+  ]
+ },
+ "j2-20261111-013315": {
+  "statement": "Write a PRD for a friendly, uncluttered Sudoku game on a single web page, made for casual players who play quick games on their phone, such as on a commute, and enjoy it enough to come back.",
+  "done_when": [
+   "The Problem section states that existing Sudoku sites are cluttered and unfriendly for quick casual play.",
+   "The Users section names casual players who play quick games on their phone, such as on a commute.",
+   "The Users section lists what casual players do in the product: play, choose a difficulty and use beginner help.",
+   "The Goals section states that the game should feel friendlier than cluttered Sudoku sites.",
+   "The Goals section states that players should enjoy the game enough to come back.",
+   "The Requirements section lists several difficulty levels.",
+   "The Requirements section lists beginner help that does not spoil the puzzle.",
+   "The Requirements section states that the game is a single web page in one file with no sign-up and no ads.",
+   "The Requirements section states that the game is made for comfortable play on a phone.",
+   "The Success metrics section states how players coming back is judged, without invented numbers.",
+   "The Out of scope section lists what the game does not include, such as accounts and ads.",
+   "The PRD records every choice made on the Requester's behalf."
+  ]
+ },
+ "j2-20261111-124718": {
+  "statement": "Write a hiring policy, as a markdown document, for a 40-person design agency in Pune. It covers how a role is opened and approved, the interview stages, how offers are made and approved, the referral bonus, diversity and fairness, and candidate data retention. The HR manager owns it and reviews it yearly.",
+  "done_when": [
+   "Purpose and scope: states what the policy is for and that it covers hiring at the 40-person design agency in Pune",
+   "Opening a role and approving it: the team lead requests it; the studio head and the founder both approve before it is posted",
+   "Interview stages: lists the six steps in order (CV and portfolio review by HR, 30-minute HR call, short paid design task, portfolio walkthrough with the team lead, final conversation with the studio head, reference check)",
+   "Making and approving offers: the team lead and HR propose salary and level using pay bands; the studio head approves; the founder gives the final yes before the offer is sent",
+   "Referral bonus: states the ₹30,000 bonus paid after 3 months",
+   "Diversity and fairness: states the agency's commitment to fair, consistent treatment of all candidates, with no invented figures or legal claims",
+   "Candidate data retention: states that candidate data is kept for 12 months",
+   "Ownership and review: states that the HR manager owns the policy and reviews it yearly"
+  ]
+ },
+ "j2-20261112-150327": {
+  "statement": "Build Greeter, a small Python agent that greets a user by name and logs each greeting to greetings.log in its own folder, with one test showing it works.",
+  "done_when": [
+   "greeter.py defines greet(name) that returns 'Hello, <name>!' and appends one line per greeting to greetings.log in its own folder, without using the network or touching any other file",
+   "test_greeter.py calls greet('Ada'), checks it returns 'Hello, Ada!' and checks greetings.log gained one line"
+  ]
+ },
+ "_from": "Identity's first charter in each run's calls.jsonl (statement and done_when only; product words replaced). The validator rejected each one."
+}
