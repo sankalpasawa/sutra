@@ -105,7 +105,7 @@ def probe() -> dict:
 
 def test_the_file_loads_in_node_and_starts_nothing(probe):
     assert probe["loads"]["init"] == "function"
-    assert probe["loads"]["keys"] == sorted(["init", "chip", "title", "onTab", "events", "drawers", "destroy", "state", "helpers"])
+    assert probe["loads"]["keys"] == sorted(["init", "chip", "title", "onTab", "events", "drawers", "destroy", "levelView", "state", "helpers"])
     assert probe["loads"]["helpers"] == ["bannerText", "titleText", "touchesDept"]
     assert probe["loads"]["started"] is False       # a module load is not a page start
 

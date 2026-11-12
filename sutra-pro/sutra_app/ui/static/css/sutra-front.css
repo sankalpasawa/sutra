@@ -1,0 +1,185 @@
+/* sutra-front.css: Home's front door (front_door.js) and the levels (Simple, Manager, Debug) on Home. The studio's look: the --s-* tokens of the team
+   page's Simple view (copied into j2-shell.css), Fraunces for the one heading, DM Sans for the words, DM Mono for small facts. Every colour is a token,
+   so light and dark need no rule here. --s-line and --s-line2 are hairlines between things, not lines that carry meaning. */
+
+/* The studio tokens this sheet uses, the same values as j2.css (Home keeps the frozen j2-shell.css, D138, so it does not load them).
+   tests/ui/js/front_door_css.test.js checks every value against j2.css, so the two never drift. */
+:root {
+  --s-bg:#191816;--s-surface:#22211e;--s-surface2:#2a2825;--s-ink:#ece7df;--s-muted:#a7a095;--s-line:#35322d;--s-line2:#45413a;--s-accent:#7fb27f;
+  --s-accentink:#10140f;--s-good:#86c9a0;--s-goodbg:#1f2e25;--s-ask:#eba25a;--s-askline:#eba25a;--s-askbg:#33261a;--s-bad:#ef8f7a;
+  --s-shadow:rgb(0 0 0 / .5);--s-ring:rgb(255 255 255 / .06);
+}
+:root[data-theme=light] {
+  --s-bg:#fafaf7;--s-surface:#fff;--s-surface2:#f2f1ec;--s-ink:#1a1915;--s-muted:#5c5a52;--s-line:#e6e4dd;--s-line2:#d6d3ca;--s-accent:#4e814e;
+  --s-accentink:#fff;--s-good:#416c41;--s-goodbg:#e6efe0;--s-ask:#9a4e0c;--s-askline:#c8642a;--s-askbg:#fcebdd;--s-bad:#c2412d;
+  --s-shadow:rgb(26 25 21 / .18);--s-ring:rgb(26 25 21 / .06);
+}
+
+/* ---- which place of Home shows: the front door, or the workspace (the org chat, the panes, the rail). <html data-place> is set before the first paint. */
+#front { display: none; }
+:root[data-place=front] body.home #front { display: block; flex: 1 1 auto; min-height: 0; overflow: auto; }
+:root[data-place=front] body.home #sview, :root[data-place=front] body.home #dview { display: none; }
+:root[data-place=front] body.home { background: var(--s-bg); }
+
+/* ---- the workspace at each level. Simple reaches it only through "Open the conversation": the org chat alone, no rail, no panes, no team tabs. */
+:root[data-level=simple] body.home #dview, :root[data-level=simple] body.home #sright, :root[data-level=simple] body.home #sview main > [role=tablist],
+:root[data-level=simple] body.home #cswitch { display: none; }
+:root[data-level=simple] body.home .schat { max-width: 860px; margin: 0 auto; width: 100%; }
+/* Manager: the org chart, the workflow graph, each team's chat. Settings, Usage and log and the Heads up lane wait for Debug. */
+:root[data-level=manager] body.home #railsettings, :root[data-level=manager] body.home #railowner,
+:root[data-level=manager] body.home #needs .hulane { display: none; }
+body.home .gofront { margin-right: 10px; white-space: nowrap; }
+
+/* ---- the front door */
+.front {
+  background: var(--s-bg); color: var(--s-ink);
+  font: 15px/1.55 "DM Sans", system-ui, -apple-system, "Segoe UI", Arial, sans-serif;
+}
+.front :focus-visible { outline: 2px solid var(--s-accent); outline-offset: 2px; }
+/* j2-shell.css styles the bare header, main and textarea of the J2 page; the front door's own are plain boxes */
+.front main.fdmain { display: block; flex: none; min-height: 0; }
+.front header.fdhead { display: flex; padding: 0; border: 0; background: none; gap: 10px; flex-wrap: nowrap; }
+.front textarea { height: auto; }
+.front .fdcompose textarea { border: 0; padding: 4px 0; background: none; }
+.fdtop {
+  position: sticky; top: 0; z-index: 2; display: flex; align-items: center; gap: 16px; flex-wrap: wrap;
+  padding: 14px 28px; background: var(--s-bg); border-bottom: 1px solid var(--s-line);
+}
+.fdorg { display: flex; align-items: center; gap: 10px; min-width: 0; }
+.fdorg b { font: 600 16px/1.2 "DM Sans", system-ui, sans-serif; color: var(--s-ink); white-space: nowrap; }
+.fdmark {
+  display: grid; place-items: center; width: 28px; height: 28px; border-radius: 8px;
+  background: var(--s-accent); color: var(--s-accentink); font: 600 15px/1 Fraunces, Georgia, serif;
+}
+.fdnav { display: flex; gap: 4px; flex-wrap: wrap; flex: 1 1 auto; justify-content: center; }
+.fdnav[hidden] { display: none; }
+.fdnavb {
+  border: 0; background: none; color: var(--s-muted); font: 500 13.5px/1 "DM Sans", system-ui, sans-serif;
+  padding: 8px 10px; border-radius: 8px; cursor: pointer; text-decoration: none; white-space: nowrap;
+}
+.fdnavb:hover { background: var(--s-surface2); color: var(--s-ink); }
+.fdlevel {
+  margin-left: auto; display: inline-flex; padding: 3px; gap: 2px; border-radius: 999px;
+  background: var(--s-surface2); border: 1px solid var(--s-line);
+}
+.fdlevel button {
+  border: 0; background: none; color: var(--s-muted); font: 500 13px/1 "DM Sans", system-ui, sans-serif;
+  padding: 7px 13px; border-radius: 999px; cursor: pointer;
+}
+.fdlevel button[aria-pressed="true"] { background: var(--s-surface); color: var(--s-ink); box-shadow: 0 1px 3px var(--s-shadow); }
+
+.fdmain { max-width: 760px; margin: 0 auto; padding: 40px 24px 96px; }
+.fdtitle { font: 500 32px/1.2 Fraunces, Georgia, serif; letter-spacing: -.01em; margin: 0 0 16px; color: var(--s-ink); }
+.fdcompose {
+  display: flex; gap: 10px; align-items: flex-end; padding: 12px 12px 12px 16px; border-radius: 16px;
+  background: var(--s-surface); border: 1px solid var(--s-line2); box-shadow: 0 6px 22px -14px var(--s-shadow);
+}
+.fdcompose textarea {
+  flex: 1; min-height: 48px; max-height: 220px; resize: none; border: 0; outline: 0; background: none; color: var(--s-ink);
+  font: 16px/1.5 "DM Sans", system-ui, sans-serif; padding: 4px 0;
+}
+.fdcompose:focus-within { border-color: var(--s-accent); }
+
+.fdbtn {
+  border-radius: 999px; padding: 8px 16px; cursor: pointer; font: 600 14px/1.2 "DM Sans", system-ui, sans-serif;
+  border: 1px solid var(--s-line2); background: var(--s-surface); color: var(--s-ink);
+}
+.fdbtn:disabled { opacity: .55; cursor: default; }
+.fdyes { background: var(--s-accent); color: var(--s-accentink); border-color: var(--s-accent); }
+.fdghost { background: none; color: var(--s-muted); border-color: transparent; }
+.fdghost:hover { color: var(--s-ink); }
+.fdopt:hover { border-color: var(--s-accent); }
+.fdopt:has(.fdoptwhy) { display: flex; flex-direction: column; align-items: flex-start; gap: 2px; text-align: left; border-radius: 12px; padding: 10px 14px; flex: 1 1 260px; }
+.fdoptwhy { font-weight: 400; font-size: 13.5px; color: var(--s-muted); }
+
+.fdlatest { margin-top: 14px; padding: 14px 16px; border-radius: 14px; background: var(--s-surface2); }
+.fdlatest .fdwho { display: block; margin-bottom: 4px; }
+.fdphase { margin: 0 0 6px; color: var(--s-muted); font: 400 13px/1.4 "DM Mono", ui-monospace, Menlo, monospace; }
+.fdlink { border: 0; background: none; padding: 0; margin-top: 6px; color: var(--s-good); font: 600 13.5px/1.4 "DM Sans", system-ui, sans-serif; cursor: pointer; text-decoration: underline; text-underline-offset: 3px; }
+
+.fdneeds { margin-top: 44px; }
+.fdneeds:focus { outline: 0; }
+.fdh { font: 600 13px/1.2 "DM Sans", system-ui, sans-serif; text-transform: uppercase; letter-spacing: .08em; color: var(--s-muted); margin: 0 0 12px; display: flex; align-items: center; gap: 8px; }
+.fdcount { min-width: 20px; height: 20px; padding: 0 6px; border-radius: 999px; display: inline-grid; place-items: center; background: var(--s-askbg); color: var(--s-ask); font: 600 12px/1 "DM Sans", system-ui, sans-serif; letter-spacing: 0; }
+.fdcards { display: grid; gap: 12px; }
+.fdcard {
+  position: relative; padding: 16px 18px 14px 20px; border-radius: 14px; background: var(--s-surface);
+  border: 1px solid var(--s-line); box-shadow: 0 1px 2px var(--s-ring), 0 8px 24px -18px var(--s-shadow);
+}
+.fdcard::before { content: ""; position: absolute; left: 0; top: 14px; bottom: 14px; width: 3px; border-radius: 0 3px 3px 0; background: var(--s-askline); }
+.fdcard.fdappr::before { background: var(--s-accent); }
+.fdcard.fdprob::before { background: var(--s-bad); }
+.fdhead { display: flex; align-items: baseline; gap: 10px; margin-bottom: 6px; }
+.fdwho { font: 600 14px/1.3 "DM Sans", system-ui, sans-serif; color: var(--s-ink); }
+.fdhead .nwait { margin-left: auto; color: var(--s-muted); font: 400 12px/1.3 "DM Mono", ui-monospace, Menlo, monospace; white-space: nowrap; }
+.fdhead .nwait.stale { color: var(--s-ask); }
+.fdq { margin: 0 0 12px; font-size: 16px; line-height: 1.5; color: var(--s-ink); overflow-wrap: anywhere; }
+.fdsay { margin: 0 0 3px; color: var(--s-muted); overflow-wrap: anywhere; }
+.fdsay + .fdq, .fdsay + .fdqs, .fdsay + .fdopts, .fdsay + .fdreply { margin-top: 10px; }
+.fdqs { margin: 0 0 14px; padding-left: 22px; color: var(--s-ink); font-size: 15.5px; }
+.fdqs li { margin: 0 0 6px; padding-left: 2px; }
+.fdqs li::marker { color: var(--s-ask); font-weight: 600; }
+.fdopts, .fdacts { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+.fdopts { align-items: stretch; }
+.fdreply { display: flex; gap: 8px; align-items: flex-end; }
+.fdbox {
+  flex: 1; min-height: 40px; resize: vertical; border-radius: 10px; padding: 9px 12px; background: var(--s-bg); color: var(--s-ink);
+  border: 1px solid var(--s-line2); font: 15px/1.4 "DM Sans", system-ui, sans-serif;
+}
+.fdbox:focus { outline: 2px solid var(--s-accent); outline-offset: 0; }
+.fdfoot { margin-top: 10px; }
+.fdopen { color: var(--s-good); font-weight: 600; font-size: 13.5px; text-decoration: none; }
+.fdopen:hover { text-decoration: underline; text-underline-offset: 3px; }
+.fdacts .fdopen { padding: 0 6px; }
+.fderr { margin: 0 0 10px; color: var(--s-bad); font-size: 14px; }
+
+.fdempty { display: flex; gap: 14px; align-items: flex-start; padding: 20px; border-radius: 14px; background: var(--s-surface); border: 1px solid var(--s-line); }
+.fdempty b { font: 500 19px/1.3 Fraunces, Georgia, serif; color: var(--s-ink); }
+.fdempty p { margin: 4px 0 0; color: var(--s-muted); }
+.fdok { flex: 0 0 auto; width: 12px; height: 12px; margin-top: 7px; border-radius: 50%; background: var(--s-good); box-shadow: 0 0 0 5px var(--s-goodbg); }
+.fdcalm { margin: 0; color: var(--s-muted); }
+
+.fdlists { margin-top: 44px; display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 32px; }
+.fdrows { list-style: none; margin: 0; padding: 0; }
+.fdrow { display: flex; align-items: center; gap: 10px; padding: 10px 0; border-bottom: 1px solid var(--s-line); min-width: 0; }
+.fdrow:last-child { border-bottom: 0; }
+.fddot { flex: 0 0 auto; width: 8px; height: 8px; border-radius: 50%; background: var(--s-muted); }
+.fdrow.st-running .fddot { background: var(--s-accent); box-shadow: 0 0 0 4px var(--s-goodbg); }
+.fdrow.st-waiting_on_you .fddot, .fdrow.st-waiting .fddot { background: var(--s-askline); }
+.fdrow.st-fault .fddot { background: var(--s-bad); }
+.fdrow.st-filed .fddot, .fdrow.st-done_unchecked .fddot, .fdrow.st-left_open .fddot { background: var(--s-good); }
+.fdrowlink { flex: 1 1 auto; min-width: 0; display: flex; flex-direction: column; text-decoration: none; color: var(--s-ink); }
+a.fdrowlink:hover .fdname { text-decoration: underline; text-underline-offset: 3px; }
+.fdname { font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.fdsub { color: var(--s-muted); font-size: 13.5px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.fdst { flex: 0 0 auto; color: var(--s-muted); font: 400 12px/1.3 "DM Mono", ui-monospace, Menlo, monospace; white-space: nowrap; }
+.fdchip { flex: 0 0 auto; border: 1px solid var(--s-line2); background: none; color: var(--s-ink); border-radius: 999px; padding: 4px 10px; font: 500 12.5px/1.2 "DM Sans", system-ui, sans-serif; cursor: pointer; }
+.fdmore { margin-top: 8px; border: 0; background: none; padding: 0; color: var(--s-good); font: 600 13.5px "DM Sans", system-ui, sans-serif; cursor: pointer; }
+.fdidle { margin-top: 28px; color: var(--s-muted); }
+.fdidle summary { cursor: pointer; font-size: 14px; }
+
+/* Debug: the whole Heads up lane (heads_up_view.js markup), in the studio's look */
+.fddebug { margin-top: 44px; padding: 18px; border-radius: 14px; border: 1px dashed var(--s-line2); background: var(--s-surface); }
+.fddebug .nylane { display: none; }
+.fddebug .huitem { display: flex; flex-wrap: wrap; gap: 6px 10px; align-items: baseline; padding: 10px 0; border-bottom: 1px solid var(--s-line); color: var(--s-ink); }
+.fddebug .huitem:last-child { border-bottom: 0; }
+.fddebug .hutext { flex: 1 1 260px; }
+.fddebug .huwhen, .fddebug .huwhy { color: var(--s-muted); font: 400 12px/1.3 "DM Mono", ui-monospace, Menlo, monospace; }
+.fddebug .huacts { display: flex; gap: 8px; flex-wrap: wrap; }
+.fddebug .huacts button, .fddebug .humore { border: 1px solid var(--s-line2); background: none; color: var(--s-ink); border-radius: 999px; padding: 4px 10px; font: 500 12.5px "DM Sans", system-ui, sans-serif; cursor: pointer; }
+.fddebug .huacts a { color: var(--s-good); font-size: 13px; }
+
+@media (max-width: 720px) {
+  .fdtop { padding: 10px 16px; gap: 10px; }
+  .fdnav { order: 3; flex-basis: 100%; justify-content: flex-start; overflow-x: auto; flex-wrap: nowrap; }
+  .fdlevel button { padding: 7px 10px; }
+  .fdmain { padding: 24px 16px 72px; }
+  .fdtitle { font-size: 26px; }
+  .fdlists { grid-template-columns: 1fr; gap: 28px; }
+  .fdreply { flex-direction: column; align-items: stretch; }
+  .fdhead { flex-wrap: wrap; }
+}
+@media (prefers-reduced-motion: no-preference) {
+  .fdcard { animation: fdin var(--dur-base) var(--ease-out) both; }
+  @keyframes fdin { from { opacity: 0; transform: translateY(4px); } }
+}

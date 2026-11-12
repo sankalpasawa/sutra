@@ -87,6 +87,7 @@
     tab: "",
     live: "offline",
     stream: null,
+    levelWatch: null,          // keeps a Simple-level page in its studio (levels())
     panel: null,
     graph: null,           // the GraphView handle
     chart: null,           // the OrgChartView handle
@@ -365,10 +366,36 @@
     return false;
   }
 
+  /* ---- the owner's level (SutraCtx.level, the one-front brief): at Simple a team page is its studio only. sutra-panel.css hides the ways into the
+     Detailed view (keyed on <html data-level>); this keeps the page in the Simple view when something else (a ?tab= link, J2's own code) asks for
+     the Detailed one. The template library is a Detailed page of its own and is left alone. Manager and Debug change nothing here. */
+  function levelView() {
+    const c = ctx();
+    const d = doc();
+    if (!c || typeof c.level !== "function" || c.level() !== "simple" || !d || !d.body) return false;
+    if (typeof c.onLibrary === "function" && c.onLibrary()) return false;
+    if (d.body.classList.contains("simple") || typeof root.setView !== "function") return false;
+    safely("setView", () => root.setView("simple", false));
+    return true;
+  }
+
+  function levels() {
+    const d = doc();
+    levelView();
+    if (!d || typeof d.addEventListener !== "function") return false;
+    d.addEventListener("sutra:level", levelView);
+    if (typeof root.MutationObserver === "function" && d.body) {
+      S.levelWatch = new root.MutationObserver(() => levelView());
+      S.levelWatch.observe(d.body, {attributes: true, attributeFilter: ["class"]});
+    }
+    return true;
+  }
+
   /* ---- start */
   function init() {
     if (S.started) return false;
     S.started = true;
+    levels();
     chip();
     title();
     drawers();
@@ -404,7 +431,7 @@
   }
 
   const DeptExt = {
-    init, chip, title, onTab, events, drawers, destroy,
+    init, chip, title, onTab, events, drawers, destroy, levelView,
     state: () => ({started: S.started, tab: S.tab, live: S.live, mounted: mounted(), fetches: Object.assign({}, S.fetches), panel: S.panel !== null, archived: S.archived}),
     helpers: {touchesDept, bannerText, titleText},
   };

@@ -347,7 +347,7 @@ def sheets_of(page: str) -> list[str]:
 
 def test_the_team_page_takes_the_regenerated_sheet_and_home_and_the_console_keep_the_frozen_one():
     assert sheets_of("j2_ui.html") == ["j2.css", "sutra-graph.css", "sutra-panel.css"]
-    assert sheets_of("home.html") == ["j2-shell.css", "sutra-graph.css", "sutra-panel.css", "sutra-shell.css"]
+    assert sheets_of("home.html") == ["j2-shell.css", "sutra-graph.css", "sutra-panel.css", "sutra-shell.css", "sutra-front.css"]       # + the front door
     assert sheets_of("console.html") == ["j2-shell.css", "sutra-panel.css", "sutra-console.css"]
     for page in ("j2_ui.html", "home.html", "console.html"):
         assert all((UI / "static" / "css" / name).is_file() for name in sheets_of(page)), page

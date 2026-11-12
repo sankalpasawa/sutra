@@ -606,3 +606,8 @@ body.rc-open .rc-open-btn{display:none}
   .rc-raw{margin-left:0}
   .rc-field select{max-width:150px}
 }
+/* The owner's level (SutraCtx.level, <html data-level>; dept_ext.js levels()): at Simple a team page is its studio, so every way into the Detailed
+   view (and the template library, a Detailed page) is not shown. Manager and Debug show them all. */
+:root[data-level=simple] #slanddetail, :root[data-level=simple] #sdetail, :root[data-level=simple] #steamfull,
+:root[data-level=simple] #sview [data-detail], :root[data-level=simple] #sview [data-records],
+:root[data-level=simple] #sview a.slink[href^="library"], :root[data-level=simple] #sview .slsep { display: none !important; }

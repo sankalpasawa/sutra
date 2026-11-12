@@ -200,7 +200,7 @@ test("the Appearance group has Light, Dark and System, and the chosen one is pre
   assert.match(html, /data-themepick="light" aria-pressed="true"/);
   assert.match(html, /data-themepick="dark" aria-pressed="false"/);
   assert.match(html, /data-themepick="system" aria-pressed="false"/);
-  assert.match(appearanceHtml("nonsense"), /data-themepick="dark" aria-pressed="true"/);   // dark is the default
+  assert.match(appearanceHtml("nonsense"), /data-themepick="light" aria-pressed="true"/);   // light is the default (the studio look, as the team pages)
 });
 
 /* ---------------------------------------------------------------- the PUT body */
