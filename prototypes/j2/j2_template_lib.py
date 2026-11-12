@@ -863,15 +863,23 @@ def reuse_counts(decisions):
 def run_template_use(run_dir):
     """What a run that started from a run template shows on its Library tab: the template (id, name, how many of its
     workflows were selected, the stages added beyond it), the counts (reuse_counts) and the template generator's AI
-    calls in this run (template_calls.jsonl; no file, no call). None for a run without a run template."""
+    calls in this run (template_calls.jsonl; no file, no call). None for a run without a run template.
+    J2_AUTO_REUSE=1: a template the run picked itself has "auto": True and its "match"; a run that found no similar
+    one is {"scratch": True, "best": the best-scoring template's name and score, or None} with the same counts."""
     rec = _read(os.path.join(run_dir, "templates.json")) if run_dir else None
     rt = (rec or {}).get("run_template")
-    if not isinstance(rt, dict) or not rt.get("id"):
-        return None
-    calls = os.path.join(run_dir, "template_calls.jsonl")
+    auto = (rec or {}).get("auto_reuse")
+    calls = os.path.join(run_dir, "template_calls.jsonl") if run_dir else ""
     n = sum(1 for line in open(calls, encoding="utf-8") if line.strip()) if os.path.isfile(calls) else 0
+    if not isinstance(rt, dict) or not rt.get("id"):
+        if not isinstance(auto, dict) or not auto:
+            return None
+        best = (auto.get("scores") or [None])[0]
+        return {"scratch": True, "best": {k: best.get(k) for k in ("id", "name", "score", "why_not") if k in best} if best else None,
+                "threshold": auto.get("threshold"), "generator_calls": n, "counts": reuse_counts(rec.get("decisions"))}
     return {"id": rt["id"], "name": rt.get("name") or rt["id"], "selected": len(rt.get("selected") or []), "of": rt.get("of"),
             "added_stages": list(rt.get("added_stages") or []), "in_library": get_run_template(rt["id"]) is not None,
+            **({"auto": True, "match": rt.get("match")} if rt.get("auto") else {}),
             "generator_calls": n, "counts": reuse_counts(rec.get("decisions"))}
 
 
