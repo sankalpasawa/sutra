@@ -1255,13 +1255,31 @@ def adapt(gen, need, base, extras=True):
     return spec
 
 
-def nearest(need, gen):
+def _same_business(mine, theirs):
+    """2: the same business type; 1: the same kind of business (the last word: "pilates studio" and "yoga studio");
+    0: another kind, or either one says nothing ("business", "not recorded", a document type)."""
+    said = lambda x: " ".join(re.findall(r"[a-z]+", str(x or "").lower()))
+    a, b = said(mine), said(theirs)
+    if _noun(a) == "business" or _noun(b) == "business":
+        return 0
+    return 2 if a == b else 1 if _noun(a) == _noun(b) else 0
+
+
+def nearest(need, gen, own=()):
     """J2_AUTO_REUSE=1: the stored template of the same artifact + section whose fields are nearest to what this need
     wants, whatever business it was made for. similarity = |wanted and its fields| / |wanted or its fields|, where
     wanted is the generic template's field names, the fields the need asks for, and facts_used when the need has
-    facts. Field names only: no fact is read. The highest similarity, then the newest version, then the name. None when
-    the library has no template for that section."""
+    facts. Field names only: no fact is read. On equal similarity (common for page sections, which share one section
+    name): (a) a version made for the same business type as the run, then for the same kind of business
+    (_same_business); (b) a section template of the run template this run follows (own: their names); (c) the newest
+    version; then the name. None when the library has no template for that section."""
+    return (nearest_ranked(need, gen, own) or [None])[0]
+
+
+def nearest_ranked(need, gen, own=()):
+    """Every stored version of the need's artifact + section, in the order nearest() prefers them."""
     want = {f.name for f in gen.fields} | set(need["fields"]) | ({"facts_used"} if need["facts"] else set())
+    own = set(own or ())
     out = []
     for e in index()["templates"]:
         if e["artifact"] != need["artifact"] or e["section"] != need["section"]:
@@ -1269,10 +1287,13 @@ def nearest(need, gen):
         for v in e["versions"]:
             have = set(v.get("fields") or [])
             sim = round(len(want & have) / len(want | have), 4) if want | have else 0.0
+            types = [x for x in ((v.get("business") or {}).get("type"), v.get("business_type")) if x]
             out.append({"name": e["name"], "version": v["version"], "similarity": sim,
-                        "business_type": (v.get("business") or {}).get("type") or v.get("business_type") or NOT_RECORDED})
-    out.sort(key=lambda c: (-c["similarity"], -int(c["version"]), c["name"]))
-    return out[0] if out else None
+                        "business_type": types[0] if types else NOT_RECORDED,
+                        "same_business": max([_same_business(need.get("business_type"), x) for x in types] or [0]),
+                        "own_section": e["name"] in own})
+    out.sort(key=lambda c: (-c["similarity"], -c["same_business"], -int(c["own_section"]), -int(c["version"]), c["name"]))
+    return out
 
 
 def route(need, ctx, ask=None, first=None, closest=None):
@@ -1371,10 +1392,13 @@ def route(need, ctx, ask=None, first=None, closest=None):
     why_new = ""
     if hint == "create" and (auto_reuse() if closest is None else closest):
         # J2_AUTO_REUSE=1: before a new template is made, the nearest one of this section, from any business, is adapted
-        near = nearest(need, gen)
+        rt = get_run_template(ctx["run_template"]) if ctx.get("run_template") else None      # the run template this run follows
+        own = {w.section_template.rpartition("@")[0] for w in (rt.workflows if rt else [])
+               if w.artifact == need["artifact"] and w.section == need["section"] and w.section_template_kind == "specialised"}
+        near = nearest(need, gen, own)
         t1 = get(f"{near['name']}@{near['version']}", need["artifact"], need["section"]) if near else None
         if t1 is not None:
-            base["nearest"] = {k: near[k] for k in ("name", "version", "similarity", "business_type")}
+            base["nearest"] = {k: near[k] for k in ("name", "version", "similarity", "business_type", "same_business", "own_section")}
             got = adapted(t1, "nearest_refused", "code (adapted from the nearest template)",
                           "the nearest template {ref}, as it is: the same facts and fields",
                           "adapted from {ref} before: version {version} already holds this business's facts",

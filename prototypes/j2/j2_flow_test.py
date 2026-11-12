@@ -13842,7 +13842,9 @@ def auto_reuse():
     """Auto-reuse (J2_AUTO_REUSE=1; implies J2_TEMPLATE_LIBRARY=1 and J2_RUN_TEMPLATES=1), mock runs into a copy of the library.
 
     (a) by code: the match formula (0.4 x stages + 0.3 x business + 0.3 x covers), which templates can be picked (the first
-    stage must be the run's first; a live run takes no mock-made template), and the nearest template by field names;
+    stage must be the run's first; a live run takes no mock-made template), and the nearest template by field names: when a
+    boutique's and a studio's page section tie, a studio's run gets the studio's (the same business type, then the same kind of
+    business, then a section of the run template the run follows, then the newest version);
     (b) a pilates brief with no template chosen picks the yoga run template (match 0.6 or more), says so, records the pick and
     every score, and creates no template: every workflow comes from the template; (c) a template with a stage the brief did not
     name builds that stage too; (d) a law-firm brief with only a PRD finds no similar run template, says so with the best
@@ -13901,6 +13903,35 @@ def auto_reuse():
         near = L.nearest(need, L.generic("prd", "Problem"))
         assert near and 0 < near["similarity"] <= 1 and L.get(f"{near['name']}@{near['version']}", "prd", "Problem") is not None, near
         assert L.nearest(L.make_need("prd", "No such section", "prd", ["x"], "x"), L.generic("prd", "Problem")) is None
+        # a tie on similarity (page sections share one section name): the same business type, then the same kind of business,
+        # then a section template of the run template the run follows, then the newest version, then the name
+        gen_page = L.generic("website", "Section")
+        same = [f.name for f in gen_page.fields]
+        tied = lambda name, btype, version=1, fields=None, **kw: {"artifact": "website", "section": "Section", "name": name, "slug": L.slug(name), "kind": "specialised",
+                                                                  "versions": [{"version": version, "fields": fields or same, "business_type": btype, **kw}]}
+        studio_need = L.make_need("website", "Section", "pilates studio", ["Flow Pilates"], "Flow Pilates")
+        real_index = L.index
+        try:
+            pool = [tied("Aari Shelf", "boutique", 3), tied("Calm Classes", "website", 1, business={"name": "Calm", "type": "yoga studio"})]
+            L.index = lambda: {"templates": pool}
+            old_rule = sorted(L.nearest_ranked(studio_need, gen_page), key=lambda c: (-c["similarity"], -int(c["version"]), c["name"]))[0]
+            got = L.nearest(studio_need, gen_page)
+            assert old_rule["name"] == "Aari Shelf" and {c["similarity"] for c in L.nearest_ranked(studio_need, gen_page)} == {1.0}, "a boutique and a studio template tie"
+            assert (got["name"], got["business_type"], got["same_business"]) == ("Calm Classes", "yoga studio", 1), ("the studio one wins", got)
+            pool.append(tied("Zed Corner", "pilates studio", 1))
+            assert L.nearest(studio_need, gen_page)["name"] == "Zed Corner" and L.nearest(studio_need, gen_page)["same_business"] == 2, "the same business type first"
+            pool[:] = [tied("Bend Hall", "dance studio", 4), tied("Calm Classes", "yoga studio", 1)]
+            assert L.nearest(studio_need, gen_page)["name"] == "Bend Hall" and L.nearest(studio_need, gen_page, own={"Calm Classes"})["name"] == "Calm Classes", "the run template's own section, then the newest version"
+            pool[:] = [tied("Aari Shelf", "boutique", 3, fields=same), tied("Calm Classes", "yoga studio", 1, fields=same[:-1])]
+            assert L.nearest(studio_need, gen_page)["name"] == "Aari Shelf", "a nearer template still comes before any tie-break"
+            assert [L._same_business(a, b) for a, b in (("Yoga Studio", "yoga studio"), ("pilates studio", "yoga studio"), ("florist", "boutique"), ("business", "business"), ("prd", "prd"), ("not recorded", "studio"))] == [2, 1, 0, 0, 0, 0]
+        finally:
+            L.index = real_index
+        dance = L.make_need("website", "Section", "dance studio", ["Maple Hall"], "Maple Hall")
+        tops = [c for c in L.nearest_ranked(dance, gen_page) if c["similarity"] == L.nearest(dance, gen_page)["similarity"]]
+        assert {"boutique"} & {c["business_type"] for c in tops} and L.nearest(dance, gen_page)["business_type"].endswith("studio"), "the committed library: a studio's page section is not adapted from a boutique's"
+        _, routed = L.route(dance, {"run": "j2-test", "workflow": "W-1", "atom": "W-1.a1"}, closest=True)
+        assert routed["action"] == "extended" and routed["rule"] == "s" and routed["nearest"]["business_type"].endswith("studio") and routed["nearest"]["same_business"] == 1, routed
         old_facts = {f for e in L.index()["templates"] for v in e["versions"] for f in v.get("facts") or []}
         old_names = {e["name"] for e in L.index()["templates"] if e["kind"] == "specialised"}
         # (b) a pilates brief, no template chosen: the yoga run template is picked
@@ -14028,7 +14059,8 @@ def auto_reuse():
             else:
                 os.environ[k] = v
         shutil.rmtree(tmp, ignore_errors=True)
-    print(f"auto-reuse: the match formula, which templates can be picked, the nearest template by fields; a pilates brief picks {yoga.name} "
+    print(f"auto-reuse: the match formula, which templates can be picked, the nearest template by fields (on a tie a studio's template before a boutique's, "
+          f"then the run template's own section, then the newest version); a pilates brief picks {yoga.name} "
           f"(match {a1['match']:.2f}) and creates no template; a template's unnamed stage is built too; a law-firm PRD finds no similar run template "
           f"(best {best['score']:.2f}) and adapts all 6 sections from the nearest templates with no name or fact of an earlier business in a prompt or a spec; "
           f"an empty library creates with the reason; flag off records nothing; the page: {page} ok")
