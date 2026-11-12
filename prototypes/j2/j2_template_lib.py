@@ -1224,12 +1224,12 @@ def _prompt(need, gen, cands, hint, refused):
             + (f"\nYOUR LAST REPLY WAS REFUSED: {refused}. Fix that." if refused else ""))
 
 
-def adapt(gen, need, base, extras=True):
+def adapt(gen, need, base, extras=True, name=None):
     """The spec of a run template's section template made over for another business (route's first=): the generic
     fields in this business's words with facts_used narrowed to ITS facts, the fields its own facts name, and the
     fields the template added that hold no fact (no enum, described anew). Nothing of the template's first business is
     carried: none of its facts, enums or descriptions. Deterministic, so no generator call and never a new template."""
-    spec = specialise(gen, need, name=base.name)
+    spec = specialise(gen, need, name=name or base.name)
     have = {f["name"] for f in spec["fields"]}
     objs = {o.name: o for o in base.objects}
     onames = {o["name"] for o in spec["objects"]}
@@ -1251,8 +1251,59 @@ def adapt(gen, need, base, extras=True):
                 x.description = f"the {x.name.replace('_', ' ')}"
             spec["objects"].append(o.model_dump())
             onames.add(obj)
-    spec["description"] = spec["description"] + f"; adapted from version {base.version} of this template"
+    spec["description"] = spec["description"] + (f"; adapted from version {base.version} of this template" if (name or base.name) == base.name
+                                                 else OTHER_FAMILY)
     return spec
+
+
+OTHER_FAMILY = "; adapted from a template made for another business"      # which one: adapted_from (meta.json, the index); never its name here
+
+
+def _named_for(name, business):
+    """True when a template's name starts with this business's name (its family is that business's)."""
+    a, b = slug(name), slug(business)
+    return bool(str(business or "").strip()) and business != NOT_RECORDED and (a == b or a.startswith(b + "-"))
+
+
+def family_business(base):
+    """The business a template family is named for: the longest recorded business name (the index rows' business, else
+    a recorded fact) that its name starts with and that leaves something after it. None when nothing recorded fits."""
+    e = next((e for e in index()["templates"] if e["artifact"] == base.artifact and e["section"] == base.section
+              and e["slug"] == slug(base.name)), None)
+    rows = (e or {}).get("versions") or []
+    cands = [(v.get("business") or {}).get("name") for v in rows] + [f for v in rows for f in v.get("facts") or []] \
+        + list(base.context.facts_used)
+    fits = [c for c in cands if c and _named_for(base.name, c) and slug(c) != slug(base.name)]
+    return max(fits, key=len) if fits else None
+
+
+def family_name(base, need):
+    """J2_AUTO_REUSE=1: the name an adapted template is stored under. Adapted for the business its family is named for:
+    the same name, so it is a new version of that family. Adapted for a DIFFERENT business: a new family named for the
+    run's business, "<this business> <what the old name said after its own business>" (Thread Filter, for Flow Pilates:
+    "Flow Pilates Filter"); when the old family's business is not recorded, "<this business> <the workflow's label or
+    the section>"."""
+    site = str(need.get("site") or "").strip()
+    if not site or site == NOT_RECORDED or _named_for(base.name, site):
+        return base.name
+    old = family_business(base)
+    tail = base.name[len(old):].strip() if old and base.name.lower().startswith(old.lower()) else ""
+    return f"{site} {tail or need.get('label') or need['section']}".strip()[:80]
+
+
+def note_version(t, **notes):
+    """Provenance notes (adapted_from, renamed_from) on a stored version: meta.json and its index row."""
+    d = vdir(t.artifact, t.section, slug(t.name), t.version)
+    meta = _read(os.path.join(d, "meta.json")) or {}
+    meta.update(notes)
+    _write(os.path.join(d, "meta.json"), meta)
+    idx = index()
+    for e in idx["templates"]:
+        if e["artifact"] == t.artifact and e["section"] == t.section and e["slug"] == slug(t.name):
+            for v in e["versions"]:
+                if v["version"] == t.version:
+                    v.update(notes)
+    _save_index(idx)
 
 
 def _same_business(mine, theirs):
@@ -1270,8 +1321,8 @@ def nearest(need, gen, own=()):
     wants, whatever business it was made for. similarity = |wanted and its fields| / |wanted or its fields|, where
     wanted is the generic template's field names, the fields the need asks for, and facts_used when the need has
     facts. Field names only: no fact is read. On equal similarity (common for page sections, which share one section
-    name): (a) a version made for the same business type as the run, then for the same kind of business
-    (_same_business); (b) a section template of the run template this run follows (own: their names); (c) the newest
+    name): (a) a family named for this run's business, then a version made for the same business type as the run, then
+    for the same kind of business (_same_business); (b) a section template of the run template this run follows (own: their names); (c) the newest
     version; then the name. None when the library has no template for that section."""
     return (nearest_ranked(need, gen, own) or [None])[0]
 
@@ -1290,7 +1341,8 @@ def nearest_ranked(need, gen, own=()):
             types = [x for x in ((v.get("business") or {}).get("type"), v.get("business_type")) if x]
             out.append({"name": e["name"], "version": v["version"], "similarity": sim,
                         "business_type": types[0] if types else NOT_RECORDED,
-                        "same_business": max([_same_business(need.get("business_type"), x) for x in types] or [0]),
+                        "same_business": 3 if _named_for(e["name"], need.get("site")) else
+                        max([_same_business(need.get("business_type"), x) for x in types] or [0]),
                         "own_section": e["name"] in own})
     out.sort(key=lambda c: (-c["similarity"], -c["same_business"], -int(c["own_section"]), -int(c["version"]), c["name"]))
     return out
@@ -1306,6 +1358,7 @@ def route(need, ctx, ask=None, first=None, closest=None):
     the same section is adapted the same way instead (rule "s", adapted_from); a template is created only when the
     library has none for that section, or the adapted one fails the checks, and the reason says which."""
     gen = generic(need["artifact"], need["section"])
+    closest = auto_reuse() if closest is None else closest
     cands = candidates(need)
     top = cands[0] if cands else None
     use = {"run": ctx.get("run"), "workflow": ctx.get("workflow"), "atom": ctx.get("atom")}
@@ -1349,8 +1402,10 @@ def route(need, ctx, ask=None, first=None, closest=None):
             return done(t0, "reused", score, as_is.format(ref=ref), rule="t" if key == "first_refused" else "s",
                         **({} if key == "first_refused" else {"adapted_from": ref}))
         rule = "t" if key == "first_refused" else "s"
+        # J2_AUTO_REUSE=1: adapted for another business, it is a new family named for this one (family_name)
+        name = family_name(t0, need) if closest else t0.name
         for extras in (True, False):      # with the fields the template added; if those fail the checks, without them
-            data = {**adapt(gen, need, t0, extras), "artifact": need["artifact"], "section": need["section"],
+            data = {**adapt(gen, need, t0, extras, name), "artifact": need["artifact"], "section": need["section"],
                     "kind": "specialised", "extends": generic_ref(need["artifact"], need["section"]),
                     "made_by": {"run": str(ctx.get("run") or ""), "workflow": str(ctx.get("workflow") or ""),
                                 "atom": str(ctx.get("atom") or ""), "agent": agent},
@@ -1363,6 +1418,11 @@ def route(need, ctx, ask=None, first=None, closest=None):
             t, _, made = store(SpecialisedTemplate.model_validate(data))
             if not made:      # an earlier run of this business already made this version
                 return done(t, "reused", score, before.format(ref=ref, version=t.version), rule=rule, adapted_from=ref)
+            if closest:
+                note_version(t, adapted_from=ref)
+            if name != t0.name:
+                return done(t, "extended", score, now.format(ref=ref) + f"; stored as {t.name}, this business's own family",
+                            rule=rule, adapted_from=ref, new_family=True)
             return done(t, "extended", score, now.format(ref=ref), rule=rule, adapted_from=ref)
         base[key] = "; ".join(bad)[:300]      # the adapted spec failed the checks: the usual routing
         return None
@@ -1390,7 +1450,7 @@ def route(need, ctx, ask=None, first=None, closest=None):
     hint = "extend" if top and top["score"] >= EXTEND_MIN else "create"
     rule = "c" if hint == "extend" else "d"
     why_new = ""
-    if hint == "create" and (auto_reuse() if closest is None else closest):
+    if hint == "create" and closest:
         # J2_AUTO_REUSE=1: before a new template is made, the nearest one of this section, from any business, is adapted
         rt = get_run_template(ctx["run_template"]) if ctx.get("run_template") else None      # the run template this run follows
         own = {w.section_template.rpartition("@")[0] for w in (rt.workflows if rt else [])
@@ -1777,6 +1837,14 @@ def _place(idx, spec, meta, rid, d, where, facts_of):
                  "name": t.name, "kind": "specialised", "extends": t.extends, "versions": [], "description": t.description}
         idx["templates"].append(entry)
     same = next((v for v in entry["versions"] if v["sha"] == sha), None)
+    moved = next(((e, v) for e in idx["templates"] for v in e["versions"]      # renamed since (rename_versions): it stays where it is
+                  if e["artifact"] == t.artifact and e["section"] == t.section and (v.get("made_by") or {}).get("run") == t.made_by.run
+                  and v.get("renamed_from") == f"{t.name}@{int(spec.get('version') or 1)}"), None) if not same else None
+    if moved:
+        if not entry["versions"]:
+            idx["templates"].remove(entry)
+        _add_use(moved[0], moved[1], {**_use(rid, d), "action": d.get("action")}, meta.get("fingerprints"))
+        return "same", moved[0], moved[1]
     if same:
         _add_use(entry, same, _use(rid, d), meta.get("fingerprints"))
         _provenance(entry, same, t, facts_of)
@@ -1798,7 +1866,8 @@ def _place(idx, spec, meta, rid, d, where, facts_of):
            "fingerprints": list(dict.fromkeys(list(meta.get("fingerprints") or []) + [t.context.fingerprint])),
            "made_by": {**t.made_by.model_dump(), "date": run_date(t.made_by.run)},
            "business": {"name": made["business"], "type": made["business_type"]}, "mock": made["mock"],
-           "collected_from": {"run": rid, "where": where}, "used_by": [_use(rid, d)]}
+           "collected_from": {"run": rid, "where": where}, "used_by": [_use(rid, d)],
+           **{k: meta[k] for k in ("adapted_from", "renamed_from") if meta.get(k)}}
     if renumbered:
         out["renumbered_from"] = renumbered
     dst = vdir(t.artifact, t.section, tslug, version)
@@ -1807,11 +1876,69 @@ def _place(idx, spec, meta, rid, d, where, facts_of):
     _write(os.path.join(dst, "model.py"), src)
     _write(os.path.join(dst, "meta.json"), out)
     row = {**_version_row(t, out), "made_by": out["made_by"], "business": out["business"], "mock": out["mock"],
-           "collected_from": out["collected_from"], **({"renumbered_from": renumbered} if renumbered else {})}
+           "collected_from": out["collected_from"], **({"renumbered_from": renumbered} if renumbered else {}),
+           **{k: out[k] for k in ("adapted_from", "renamed_from") if out.get(k)}}
     entry["versions"].append(row)
     entry["versions"].sort(key=lambda v: v["version"])
     entry["description"] = t.description
     return "renumbered" if renumbered else "added", entry, row
+
+
+def rename_versions(artifact, section, name, versions, new_name):
+    """Move stored versions of one family into another family under a new name (versions adapted for a different
+    business, stored before adapted templates got their own family). The content is kept: fields, objects, rules and
+    context are the same; the name, the version number (the next free one in the new family) and so the shas change,
+    and "adapted from version N of this template" in the description is kept true (the new family's own number, or
+    "a template made for another business"). Each moved version
+    records renamed_from and adapted_from; the index's run rows follow. Returns [(old ref, new ref)]."""
+    idx = index()
+    old = next(e for e in idx["templates"] if e["artifact"] == artifact and e["section"] == section and e["slug"] == slug(name))
+    moves, done_ = {}, []
+    for n in sorted(versions):
+        row = next(v for v in old["versions"] if v["version"] == n)
+        spec, meta, _ = load(artifact, slug(section), old["slug"], n)
+        m = re.search(r"; adapted from version (\d+) of this template", spec.get("description") or "")
+        src = f"{name}@{m.group(1)}" if m else None
+        src = moves.get(src, src)
+        mine = src and src.rpartition("@")[0] == new_name      # adapted from an earlier version of the new family itself
+        desc = spec["description"].replace(m.group(0), f"; adapted from version {src.rpartition('@')[2]} of this template" if mine else OTHER_FAMILY) \
+            if m else spec.get("description") or ""
+        t = SpecialisedTemplate.model_validate({**{k: v for k, v in spec.items() if k not in ("version", "sha")},
+                                                "name": new_name, "description": desc, "used_by": []})
+        new = next((e for e in idx["templates"] if e["artifact"] == artifact and e["section"] == section and e["slug"] == slug(new_name)), None)
+        if new is None:
+            new = {**{k: old[k] for k in ("artifact", "section", "section_slug", "kind", "extends")}, "slug": slug(new_name),
+                   "name": new_name, "versions": []}
+            idx["templates"].append(new)
+        t.version, t.sha = max([v["version"] for v in new["versions"]] or [0]) + 1, t.compute_sha()
+        schema, code = transport(t), codegen(t)
+        out = {**meta, "name": new_name, "version": t.version, "sha": t.sha, "schema_sha": sha_of(schema),
+               "model_sha": hashlib.sha256(code.encode("utf-8")).hexdigest(), "class": class_name(t),
+               "renamed_from": f"{name}@{n}", **({"adapted_from": src} if src else {})}
+        dst = vdir(artifact, section, slug(new_name), t.version)
+        _write(os.path.join(dst, "spec.json"), t.model_dump(exclude={"used_by"}))
+        _write(os.path.join(dst, "schema.json"), schema)
+        _write(os.path.join(dst, "model.py"), code)
+        _write(os.path.join(dst, "meta.json"), out)
+        new["versions"].append({**row, "version": t.version, "sha": t.sha, "schema_sha": out["schema_sha"], "description": desc,
+                                "renamed_from": out["renamed_from"], **({"adapted_from": src} if src else {})})
+        new["description"] = desc
+        old["versions"] = [v for v in old["versions"] if v["version"] != n]
+        shutil.rmtree(vdir(artifact, section, old["slug"], n))
+        moves[f"{name}@{n}"] = f"{new_name}@{t.version}"
+        for run in (idx.get("runs") or {}).values():
+            for d in run.get("decisions") or []:
+                ref = d.get("ref") or {}
+                if d.get("artifact") == artifact and ref.get("slug") == old["slug"] and ref.get("version") == n:
+                    d.update(template=new_name, version=t.version, renamed_from=f"{name}@{n}",
+                             ref={**ref, "slug": slug(new_name), "version": t.version})
+        done_.append((f"{name}@{n}", f"{new_name}@{t.version}"))
+    if old["versions"]:
+        old["description"] = old["versions"][-1].get("description") or old.get("description")
+    else:
+        idx["templates"].remove(old)
+    _save_index(idx)
+    return done_
 
 
 def collect(runs_dir, runs=None):

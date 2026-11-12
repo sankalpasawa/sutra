@@ -13844,7 +13844,9 @@ def auto_reuse():
     (a) by code: the match formula (0.4 x stages + 0.3 x business + 0.3 x covers), which templates can be picked (the first
     stage must be the run's first; a live run takes no mock-made template), and the nearest template by field names: when a
     boutique's and a studio's page section tie, a studio's run gets the studio's (the same business type, then the same kind of
-    business, then a section of the run template the run follows, then the newest version);
+    business, then a section of the run template the run follows, then the newest version); a template adapted for a DIFFERENT
+    business is a new family named for the run's business (version 1, adapted_from the original, action "extended"), and for
+    the SAME business a new version of its own family;
     (b) a pilates brief with no template chosen picks the yoga run template (match 0.6 or more), says so, records the pick and
     every score, and creates no template: every workflow comes from the template; (c) a template with a stage the brief did not
     name builds that stage too; (d) a law-firm brief with only a PRD finds no similar run template, says so with the best
@@ -13931,7 +13933,32 @@ def auto_reuse():
         tops = [c for c in L.nearest_ranked(dance, gen_page) if c["similarity"] == L.nearest(dance, gen_page)["similarity"]]
         assert {"boutique"} & {c["business_type"] for c in tops} and L.nearest(dance, gen_page)["business_type"].endswith("studio"), "the committed library: a studio's page section is not adapted from a boutique's"
         _, routed = L.route(dance, {"run": "j2-test", "workflow": "W-1", "atom": "W-1.a1"}, closest=True)
-        assert routed["action"] == "extended" and routed["rule"] == "s" and routed["nearest"]["business_type"].endswith("studio") and routed["nearest"]["same_business"] == 1, routed
+        assert routed["action"] == "extended" and routed["rule"] == "s" and routed["nearest"]["business_type"].endswith("studio") and routed["nearest"]["same_business"] in (1, 2), routed
+        # the name an adapted template is stored under. A DIFFERENT business: a new family named for the run's business, version 1,
+        # adapted_from the original, the action still "extended"; the original family gets no new version
+        thread = L.get("Thread Filter@1", "website", "Section")
+        assert L.family_business(thread) == "Thread" and L.family_name(thread, {"site": "Flow Pilates", "section": "Section"}) == "Flow Pilates Filter"
+        assert L.family_name(thread, {"site": "Thread", "section": "Section"}) == "Thread Filter" and L.family_name(thread, {"site": "not recorded", "section": "Section"}) == "Thread Filter"
+        src = routed["adapted_from"]
+        src_name, src_tail = src.rpartition("@")[0], src.rpartition("@")[0][len(L.family_business(L.get(src, "website", "Section"))):].strip()
+        versions = lambda name: sorted(v["version"] for e in L.index()["templates"] if e["name"] == name for v in e["versions"])
+        before_src = versions(src_name)
+        assert routed["template"] == f"Maple Hall {src_tail}" != src_name and routed["version"] == 1 and routed["new_family"] is True, (routed["template"], src)
+        assert versions(routed["template"]) == [1] and versions(src_name) == before_src, "a new family; the original is left as it was"
+        made_row = next(v for e in L.index()["templates"] if e["name"] == routed["template"] for v in e["versions"])
+        made_spec = L.get(f"{routed['template']}@1", "website", "Section")
+        assert made_row["adapted_from"] == src and made_spec.description.endswith(L.OTHER_FAMILY) and src_name not in made_spec.description and made_spec.context.facts_used == ["Maple Hall"], made_spec.description
+        # the SAME business again, with other facts: a new version of its own family (on a tie its own family comes first)
+        dance2 = L.make_need("website", "Section", "dance studio", ["Maple Hall", "Monday 6:00 pm Salsa 700"], "Maple Hall")
+        assert L.nearest(dance2, gen_page)["name"] == routed["template"] and L.nearest(dance2, gen_page)["same_business"] == 3
+        _, again = L.route(dance2, {"run": "j2-test-2", "workflow": "W-1", "atom": "W-1.a1"}, closest=True)
+        if again["rule"] == "s":      # adapted by code from its own family
+            assert (again["action"], again["template"], again["version"], again["adapted_from"]) == ("extended", routed["template"], 2, f"{routed['template']}@1") and "new_family" not in again, again
+        else:                          # the generator extended its own family (it covers half the need or more)
+            assert (again["action"], again["template"], again["version"]) == ("extended", routed["template"], 2), again
+        assert versions(routed["template"]) == [1, 2] and versions(src_name) == before_src
+        _, plain = L.route(L.make_need("website", "Section", "dance studio", ["Birch Hall"], "Birch Hall"), {"run": "j2-test-3", "workflow": "W-1", "atom": "W-1.a1"}, closest=False)
+        assert "adapted_from" not in plain and "nearest" not in plain, "without the flag the router neither adapts the nearest nor renames"
         old_facts = {f for e in L.index()["templates"] for v in e["versions"] for f in v.get("facts") or []}
         old_names = {e["name"] for e in L.index()["templates"] if e["kind"] == "specialised"}
         # (b) a pilates brief, no template chosen: the yoga run template is picked
@@ -13947,6 +13974,8 @@ def auto_reuse():
         assert not any(m_["text"].startswith("Using run template") for m_ in r1.chat), "the pick comes after the charter, said once"
         ds1 = [d for d in rec1["decisions"] if d["artifact"] != "design"]
         assert len(ds1) == len(yoga.workflows) and all(d["from_template"] is True and d["action"] in ("extended", "reused") for d in ds1), [(d["workflow"], d["action"]) for d in ds1]
+        assert all(d["template"].startswith("Flow Pilates ") and d["template"] not in old_names and d["adapted_from"].rpartition("@")[0] in old_names for d in ds1), \
+            [(d["template"], d.get("adapted_from")) for d in ds1 if not d["template"].startswith("Flow Pilates ")]
         assert L.get_run_template(yoga.id).used_by[-1] == {"run": os.path.basename(r1.dir), "workflows": len(yoga.workflows), "of": len(yoga.workflows)}
         use1 = L.run_template_use(r1.dir)
         assert use1["auto"] is True and use1["match"] == a1["match"] and use1["counts"]["documents"]["created"] == 0 and use1["counts"]["documents"]["from_template"] == len(ds1), use1
@@ -13967,7 +13996,8 @@ def auto_reuse():
         ds3 = rec3["decisions"]
         assert len(ds3) == 6 and {d["artifact"] for d in ds3} == {"prd"} and not any("from_template" in d for d in ds3), [(d["artifact"], d["action"]) for d in ds3]
         for d in ds3:
-            assert d["action"] == "extended" and d["rule"] == "s" and d["adapted_from"] == f"{d['nearest']['name']}@{d['nearest']['version']}" and d["template"] in old_names, d
+            assert d["action"] == "extended" and d["rule"] == "s" and d["adapted_from"] == f"{d['nearest']['name']}@{d['nearest']['version']}", d
+            assert d["adapted_from"].rpartition("@")[0] in old_names and d["template"].startswith("Hale Legal ") and d["template"] not in old_names and d["version"] == 1 and d["new_family"], d
             assert d["reason"].startswith(f"adapted from {d['adapted_from']}: the nearest {d['section']} template by fields"), d["reason"]
             spec = json.load(open(os.path.join(r3.dir, d["saved"], "spec.json"), encoding="utf-8"))
             body = json.dumps({k: spec[k] for k in ("description", "fields", "objects", "rules", "context")}).lower()
@@ -14060,7 +14090,8 @@ def auto_reuse():
                 os.environ[k] = v
         shutil.rmtree(tmp, ignore_errors=True)
     print(f"auto-reuse: the match formula, which templates can be picked, the nearest template by fields (on a tie a studio's template before a boutique's, "
-          f"then the run template's own section, then the newest version); a pilates brief picks {yoga.name} "
+          f"then the run template's own section, then the newest version), "
+          f"an adapted template is a new family for another business and a new version for the same one; a pilates brief picks {yoga.name} "
           f"(match {a1['match']:.2f}) and creates no template; a template's unnamed stage is built too; a law-firm PRD finds no similar run template "
           f"(best {best['score']:.2f}) and adapts all 6 sections from the nearest templates with no name or fact of an earlier business in a prompt or a spec; "
           f"an empty library creates with the reason; flag off records nothing; the page: {page} ok")
