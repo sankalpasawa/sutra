@@ -1605,6 +1605,15 @@ def blocks(c):
     return not c["met"] and c.get("severity") != "warn"
 
 
+WARN_NOTE = ('a condition with "severity": "warn" is a heuristic check, a guess from patterns or exact wording: its '
+             'evidence is for Audit to weigh, and it never blocks on its own')
+
+
+def cond_line(c):
+    """A condition as a planner reads it: its id, whether it is only a warning, its text."""
+    return f"{c['id']}{' (warning only)' if c.get('severity') == 'warn' else ''}: {c['text']}"
+
+
 def _page_parses(cond, page, mech):
     r = run_check({"type": "named-test", "target": "page-parses"}, "", page)
     return bool(r["pass"]), r["evidence"]
@@ -2373,15 +2382,15 @@ def parse_lld(doc):
     for ln in raw(sec_name("lld", "elements")):
         if m := re.match(r"\s*(?:[-*+]\s+)?(?:\*\*)?(E\d+)(?:\*\*)?\s+in\s+(S\d+)\s*:?\s*(.*)$", ln):
             t = tick(m[3])
-            tr, bh = re.search(r"trigger\s+([^;]+)", m[3]), re.search(r"behaviou?r\s+(.+)", m[3])
+            tr, bh = re.search(r"trigger\b\s*:?\s*([^;]+)", m[3]), re.search(r"behaviou?r\b\s*:?\s*(.+)", m[3])
             els.append({"id": m[1], "section": m[2], "selector": t[0] if t else None,
                         "trigger": tr[1].strip() if tr else None, "behaviour": bh[1].strip(" .") if bh else None})
     for ln in raw(sec_name("lld", "form_fields")):
         if m := re.match(r"\s*(?:[-*+]\s+)?(?:\*\*)?(F\d+)(?:\*\*)?\s+in\s+(S\d+)\s*,?\s*(.*)$", ln):
             t = tick(m[3])
             fld = re.search(r"field\s+`([^`]+)`", m[3])
-            ty, rq, va = (re.search(r"type\s+(\w+)", m[3]), re.search(r"required\s+(yes|no|true|false)\b", m[3], re.I),
-                          re.search(r"validation\s+(.+)", m[3]))
+            ty, rq, va = (re.search(r"type\b\s*:?\s*(\w+)", m[3]), re.search(r"required\b\s*:?\s*(yes|no|true|false)\b", m[3], re.I),
+                          re.search(r"validation\b\s*:?\s*(.+)", m[3]))
             flds.append({"id": m[1], "section": m[2], "form": next((x[1:] for x in t if x.startswith("#")), None),
                          "name": fld[1] if fld else None, "type": ty[1].lower() if ty else None,
                          "required": (rq[1].lower() in ("yes", "true")) if rq else None,
@@ -3282,7 +3291,9 @@ class J2Run:
         # A document's agents get its own check types, finding ids and atom rules; a website's prompts stay as they were.
         kinds = "|".join(f'"{k}"' for k in expect_kinds(self.out["check_types"]))
         doc_fmt = lambda f: f.replace(WF_TYPES, types).replace(WF_KINDS, kinds).replace(
-            ' (section/element only, default 1)', ' (leave out)').replace(', "steps": [str] (behavior only)', '').replace('"R-6"', f'"{self.out["rubric"][0][0]}", "P2"')
+            ' (section/element only, default 1)', ' (leave out)').replace(', "steps": [str] (behavior only)', '').replace('"R-6"', f'"{self.out["rubric"][0][0]}", "P2"').replace(
+            '"outputs": [str], ', '"outputs": [str], "sections": [str] (the section(s) it writes, named exactly as in '
+            'the section list), ')
         self.WF_FMT = doc_fmt(J2Run.WF_FMT) if self.doc else J2Run.WF_FMT
         self.GRANT_FMT = doc_fmt(J2Run.GRANT_FMT) if self.doc else J2Run.GRANT_FMT
         self.ATOM_RULES = self.out.get("atom_rules") or J2Run.ATOM_RULES
@@ -6289,8 +6300,8 @@ class J2Run:
                       + (doc_plan_data(self.output) if self.doc else "")
                       + self._blueprint_plan() + self.ATOM_RULES
                       + f"\nNECESSARY CONDITIONS (code checks every one on the built {self.out['noun']}; it is workable "
-                      "only when all are met, so your plan must build what each needs):\n"
-                      + "\n".join(f"{c['id']}: {c['text']}" for c in conditions_for(self.out["conditions"], self.goal, self.out.get("practice", ""))))
+                      "only when all are met, so your plan must build what each needs; " + WARN_NOTE + "):\n"
+                      + "\n".join(cond_line(c) for c in conditions_for(self.out["conditions"], self.goal, self.out.get("practice", ""))))
         real, replan = None, self.real_replan
         changing = bool(self.change and self.change["phase"] == "plan")      # J2_CHANGE: the change plan is the task
         if self._realization_applies():
@@ -6414,7 +6425,7 @@ class J2Run:
                 f"another, reads that file. Its done_test names what the output must contain. Checking the whole "
                 f"{self.out['noun']} is Audit's job: never plan a workflow that only checks, reviews, tests or reports on it."
                 f"\nNECESSARY CONDITIONS (code checks each one on the built {self.out['noun']}; plan the work each "
-                "needs):\n" + "\n".join(f"{c['id']}: {c['text']}" for c in conditions_for(self.out["conditions"], self.goal,
+                "needs; " + WARN_NOTE + "):\n" + "\n".join(cond_line(c) for c in conditions_for(self.out["conditions"], self.goal,
                                                                                     self.out.get("practice", "")))
                 + "\nA goal that names a time, price, number or email needs a facts-present check or a named test.")
 
@@ -9194,7 +9205,8 @@ class J2Run:
                                  self._fact_source(goal), output_def(kind)["sections"])
         self.save(f"conditions-{kind}.json", conds)
         self.post("system", f"{kind.upper()} v{version} conditions after {qid} (checked by code): " + "; ".join(
-            f"{c['id']} " + ("met" if c["met"] else f"NOT MET ({c['evidence']})") for c in conds), mechanical=True)
+            f"{c['id']} " + ("met" if c["met"] else f"{'WARNING' if c.get('severity') == 'warn' else 'NOT MET'} "
+                                                f"({c['evidence']})") for c in conds), mechanical=True)
         return conds
 
     def _save_audits(self):
@@ -10385,7 +10397,7 @@ class J2Run:
                          if (self.goal or {}).get("dropped_by_requester") else "")
                       + f"MECHANICAL CHECK (run by code in headless Chrome; treat as evidence, and "
                       f"use BLOCKED_BY_EVIDENCE only for what neither it nor the code can show): {json.dumps(mech)}\n"
-                      f"NECESSARY CONDITIONS (checked by code on the page; evidence): {json.dumps(conds, ensure_ascii=False)}\n"
+                      f"NECESSARY CONDITIONS (checked by code on the page; evidence; {WARN_NOTE}): {json.dumps(conds, ensure_ascii=False)}\n"
                       f"DESIGN AND USABILITY RUBRIC (judge each item; a failing item is a normal finding): "
                       f"{json.dumps(dict(self.out['rubric']), ensure_ascii=False)}\nSTYLE GUIDE: {json.dumps(self.style, ensure_ascii=False)}"
                       f"\nDESIGN MEASUREMENTS (code, both widths): {json.dumps(mech.get('design'), ensure_ascii=False)}\n"
@@ -10447,8 +10459,12 @@ class J2Run:
                       + (f"DROPPED BY THE REQUESTER (out of scope: file no finding for these): "
                          f"{json.dumps((self.goal or {}).get('dropped_by_requester'), ensure_ascii=False)}\n"
                          if (self.goal or {}).get("dropped_by_requester") else "")
-                      + f"NECESSARY CONDITIONS (checked by code on the text; evidence): {json.dumps(conds, ensure_ascii=False)}\n"
-                      f"DOCUMENT RUBRIC (judge each item from the text; a failing item is a normal finding): "
+                      + f"NECESSARY CONDITIONS (checked by code on the text; evidence; {WARN_NOTE}): {json.dumps(conds, ensure_ascii=False)}\n"
+                      + (f"ADDED BY CODE: the closing \"## {ASSUMPTIONS_HEADING}\" section lists every Assumption: line "
+                         "the builders wrote, gathered by code after their sections. No builder wrote it and none can "
+                         f"change it; it is not one of the {self.out['noun']}'s sections.\n"
+                         if md_section(doc, ASSUMPTIONS_HEADING) is not None else "")
+                      + f"DOCUMENT RUBRIC (judge each item from the text; a failing item is a normal finding): "
                       f"{json.dumps(dict(self.out['rubric']), ensure_ascii=False)}\nFACTS FROM THE BRIEF AND THE REQUESTER "
                       f"(anything else stated as fact is invented): {json.dumps(self.request, ensure_ascii=False)} "
                       f"{json.dumps([m['text'] for m in self.chat if m['who'] == 'user'], ensure_ascii=False)}\n"

@@ -86,6 +86,22 @@ Live runs only (provider claude-cli). Cost in dollars is known only for runs on 
 
 **Totals for group A (moderate confidence):** about 120 wasted calls across 12 runs. $7.29 is recorded, but only 11-12 runs record cost, so the real total is higher. A1 alone is 95% of the recorded dollars.
 
+### Status on branch `fix-run-blockers`
+
+Each item was replayed on the current code from its run before it was changed; the replay tests use
+`fixtures/run-blockers/`.
+
+| # | Replay before the fix | Status |
+|---|---|---|
+| A1 | 165902 HLD: code's closing section is the 7th heading | Fixed (batch 1): Audit's document prompt says the closing section is added by code from the builders' Assumption: lines and that no builder can change it |
+| A2 | 013315 N6 (Sudoku digits): **no longer fires** (stated ranges now source their numbers). 165902 H5 (component labels): fires | Numbers: already fixed. Names: fixed (batch 1): no-invented-facts is a warning in every conditions file |
+| A3 | 165902 L3 on LLD v1, v2: fires | Fixed (batch 1): the LLD parser reads "trigger:", "behaviour:" and the field words with or without a colon |
+| A6 | 124718, 012507 (Priority dropped "sections"): **no longer fires** (`_carry` restores it). 165902, 155605, 095315 (first plan without "sections"): fires | Priority case: already fixed. First-plan case: fixed (batch 1): the workflow format of a type with sections has a "sections" field; the check stays (hard) |
+| A13 | 095315 C2 on v1, v2: fires | Fixed (batch 1): facts-present-all is a warning (split from nothing-to-be-confirmed in website N5 → N5 + N9 and HLD H6 → H6 + H7) |
+
+Also in batch 1: groups-covered (P7) and components-have-responsibility (split from H3 into H8) are warnings, as heuristic
+conditions. Audit and the planners are told that a warning is a heuristic check that never blocks on its own.
+
 ### Not group A
 - **Fixed since the run.** grep-count counting CSS and JS mentions (132506), and element-count on a script-built page (182842, 184848, 132506): both fixed in e2a3cabe on 2026-11-11. Missing goal_gap, outputs and completion_check (182842): `_fill_from_plan` now fills them. A heading list stringified into one heading (095315). ids-unique on a metrics table (191311, 19 calls): scoped to the sections a workflow owns.
 - **The validator caught a real agent fault.** A reply naming no next speaker (`_usable`): 012507, 095315, 155605, 165902. `to_agents` tagged "@Requester" (`_check_audiences`): 013315, 095315, 165902, 191311. A wrong check type (013315). ids-unique R on a document that only cites R ids (165902 W-7): Adaptation chose that check.

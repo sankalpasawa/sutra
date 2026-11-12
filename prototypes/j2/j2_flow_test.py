@@ -2043,6 +2043,49 @@ def identity_prompt_is_plain():
 FLORIST = "A website for Petal & Stem, a florist in Jaipur"
 
 
+
+def run_blockers_batch1():
+    """Group A batch 1 (docs/hardcoding-inventory.md), replayed from the runs (fixtures/run-blockers; 165902 excerpts
+    with the product words replaced). A1: the closing assumptions section code adds is named to Audit. A2, A13: the
+    invented-facts and exact-wording checks are warnings Audit weighs, never blockers. A3: the LLD parser reads
+    "behaviour:" with a colon. A6: a document's workflow format has a "sections" field; a plan without it is still
+    flagged (the hard check stays)."""
+    fx = os.path.join(os.path.dirname(os.path.abspath(__file__)), "fixtures", "run-blockers")
+    read = lambda n: open(os.path.join(fx, n), encoding="utf-8").read()
+    # A1 (runs/j2-20261112-165902 HLD v2-v8): the builder sections, assembled by code, then audited
+    run = j2.J2Run()
+    run.set_output("hld")
+    run.dir = tempfile.mkdtemp()
+    crit = ["The HLD has exactly six sections."]
+    run.goal = {"statement": "a helper for team leads", "done_when": crit}
+    doc = j2.assemble_doc("the agent", {"W-1": {"body": read("hld-165902.md").split("\n", 1)[1]}}, run.out["sections"])
+    assert j2.md_section(doc, j2.ASSUMPTIONS_HEADING) is not None, "code adds the closing section"
+    run.sites = [doc]
+    _, extra = run._audit_doc(doc, crit)
+    prompt = [c for c in calls_of(run) if c["fn"] == "audit"][-1]["prompt"]
+    assert "ADDED BY CODE" in prompt and j2.ASSUMPTIONS_HEADING in prompt and j2.WARN_NOTE in prompt, prompt[-1500:]
+    # A2 (165902 H5 on the component labels the builder had marked as an assumption): a warning, not a blocker
+    h5 = next(c for c in extra["conditions"] if c["id"] == "H5")
+    assert not h5["met"] and h5["severity"] == "warn" and not j2.blocks(h5), h5
+    # A3 (165902 L3 on LLD v1 and v2): "behaviour:" with a colon is read
+    met, ev = j2.lld_condition("lld-elements", read("lld-elements-165902.md"))
+    assert met, ev
+    # A13 (runs/j2-20261111-095315 C2 on v1): the brief's facts in other words are a warning
+    c2 = next(c for c in j2.check_conditions(j2.load_conditions("document.json"), read("doc-v1-095315.md"),
+                                             json.loads(read("goal-095315.json")), "", []) if c["id"] == "C2")
+    assert not c2["met"] and not j2.blocks(c2), c2
+    # A6 (165902 call 4, 155605, 095315): the format names "sections"; the run's first plan, without it, is still flagged
+    run = j2.J2Run()
+    run.set_output("prd")
+    assert '"sections": [str]' in run.WF_FMT and '"sections": [str]' in run.GRANT_FMT
+    assert '"sections": [str]' not in page_run().WF_FMT
+    plan = json.loads(read("plan-165902.json"))["workflows"]
+    run.goal = {"done_when": [f"item {i}" for i in range(1, max(i for w in plan for i in w["covers"]) + 1)]}
+    gaps = run._doc_plan_gaps({"workflows": plan})
+    assert any('names no section of the PRD in "sections"' in g["why"] for g in gaps), gaps
+    print("run blockers batch 1: A1 closing section named to Audit, A2/A13 warnings, A3 colon read, A6 sections in "
+          "the format (165902, 095315 replayed) ok")
+
 def calls_of(run):
     with open(os.path.join(run.dir, "calls.jsonl"), encoding="utf-8") as f:
         return [json.loads(ln) for ln in f]
@@ -3175,7 +3218,8 @@ def prd_groups_metrics_assumptions():
     rows = j2.check_conditions(j2.load_conditions("prd.json"), doc, goal, src, j2.doc_sections("prd"))
     w = next(c for c in rows if c["id"] == "P8")
     assert w["severity"] == "warn" and not w["met"] and not j2.blocks(w), w
-    assert all("severity" not in c for c in rows if c["id"] != "P8")             # the others stay blocking
+    # the heuristic checks are warnings (P3 exact wording, P4 invented facts, P7 user groups); the others stay blocking
+    assert {c["id"] for c in rows if c.get("severity") == "warn"} == {"P3", "P4", "P7", "P8"}, rows
     audit = {"output": "prd", "results": [], "rubric": [], "mechanical": {}, "conditions": [w]}
     assert j2.workable(audit) == [], j2.workable(audit)
     # P4: a number or proper name not in the charter fails outside an Assumption: line and passes inside one
@@ -3474,7 +3518,7 @@ def website_conditions():
     workflow for the nav is flagged before building; workable() needs every condition; Identity's question for a
     fact shows no "None" and no internal id."""
     conds = j2.load_conditions("website.json")
-    assert [c["id"] for c in conds] == [f"N{i}" for i in range(1, 9)], conds
+    assert [c["id"] for c in conds] == [f"N{i}" for i in range(1, 10)], conds
     goal = {"site_name": "Little Fig", "facts": ["Little Fig", "+91 98765 43210"], "to_be_confirmed": []}
     src = j2.squash("Little Fig is open 8 to 10. Call +91 98765 43210 or write to hello@littlefig.in")
     good = ('<!doctype html><html><head><title>Little Fig</title></head><body><header id="hero"><nav>'
@@ -3498,7 +3542,8 @@ def website_conditions():
               "N5": (good, clean, {**goal, "to_be_confirmed": ["the opening hours"]}),
               "N6": (good.replace("<p>Open 8 to 10.</p>", "<p>Open 8 to 10. Free delivery over 500.</p>"), clean, goal),
               "N7": (good.replace(' action="mailto:hello@littlefig.in"', ""), clean, goal),
-              "N8": (good.replace('<a href="#menu">Menu</a> ', ""), clean, goal)}
+              "N8": (good.replace('<a href="#menu">Menu</a> ', ""), clean, goal),
+              "N9": (good, clean, {**goal, "facts": ["Koramangala"]})}
     for cid, (page, mech, g) in breaks.items():
         r = check(page, mech, g)[cid]
         assert not r["met"] and r["evidence"] and r["evidence"] != ok[cid]["evidence"], (cid, r)
@@ -3508,9 +3553,9 @@ def website_conditions():
     assert not r["met"] and "hero" in r["evidence"], r
     r = check(good, {"available": False, "note": "Chrome not found"})
     assert not r["N2"]["met"] and r["N2"]["evidence"].startswith("could not run"), r["N2"]
-    assert not check(good, clean, {**goal, "facts": ["Koramangala"]})["N5"]["met"]
-    assert ok["N5"]["evidence"].startswith("all 2 brief fact(s) appear"), ok["N5"]
-    r = check(good, clean, {**goal, "facts": []})["N5"]          # no facts list: the site name only, and it says so
+    assert ok["N9"]["evidence"].startswith("all 2 brief fact(s) appear"), ok["N9"]
+    assert check(*breaks["N9"])["N9"]["severity"] == "warn" and not j2.blocks(check(*breaks["N9"])["N9"])
+    r = check(good, clean, {**goal, "facts": []})["N9"]          # no facts list: the site name only, and it says so
     assert r["met"] and r["evidence"].startswith("no facts list; the site name 'Little Fig' appears"), r
 
     # workable(): Audit accepts and the render check is clean; every condition met, or not workable
@@ -3542,9 +3587,9 @@ def website_conditions():
     assert "NECESSARY CONDITIONS" in retry[0]["prompt"] and "N8: A nav reaches every section" in retry[0]["prompt"]
     assert run.outcome.startswith("Done"), run.outcome
     s = summary(run)
-    assert s["necessary_conditions"]["met"] == s["necessary_conditions"]["total"] == 8, s["necessary_conditions"]
+    assert s["necessary_conditions"]["met"] == s["necessary_conditions"]["total"] == 9, s["necessary_conditions"]
     saved = json.load(open(os.path.join(run.dir, "conditions.json"), encoding="utf-8"))
-    assert [c["id"] for c in saved] == [f"N{i}" for i in range(1, 9)] and all(c["met"] for c in saved), saved
+    assert [c["id"] for c in saved] == [f"N{i}" for i in range(1, 10)] and all(c["met"] for c in saved), saved
     assert run.snapshot()["conditions"] == run.audits[-1]["conditions"]
 
     # Identity's question for a fact only the Requester knows: no "None", no internal ids, no agent-facing wording
@@ -5393,7 +5438,7 @@ def docs_chain():
     run = docs_run("Design docs for Campus Notes." + CAMPUS, 400)
     assert run.outcome.startswith("Done"), run.outcome
     arch = {k: json.load(open(os.path.join(run.dir, f"stage-{k}.json"), encoding="utf-8")) for k in ("prd", "hld", "lld")}
-    for k, ids in (("hld", ["H1", "H2", "H3", "H4", "H5", "H6"]), ("lld", ["L1", "L2", "L3", "L4", "L5", "L6"])):
+    for k, ids in (("hld", [f"H{i}" for i in range(1, 9)]), ("lld", ["L1", "L2", "L3", "L4", "L5", "L6"])):
         conds = arch[k]["audits"][-1]["conditions"]
         assert [c["id"] for c in conds] == ids and all(c["met"] for c in conds), (k, conds)
     assert [c["id"] for c in arch["prd"]["audits"][-1]["conditions"]] == [f"P{i}" for i in range(1, 9)]
@@ -6209,7 +6254,7 @@ def board_doc_change():
     assert os.path.isfile(os.path.join(run.dir, "site", f"hld-v{up['to_version']}.md"))
     assert "mailto" in json.dumps(run.docs["hld"]["agent_output"]), "documents.json carries the new components"
     conds = json.load(open(os.path.join(run.dir, "conditions-hld.json"), encoding="utf-8"))
-    assert [c["id"] for c in conds] == ["H1", "H2", "H3", "H4", "H5", "H6"] and all(c["met"] for c in conds), conds
+    assert [c["id"] for c in conds] == [f"H{i}" for i in range(1, 9)] and all(c["met"] for c in conds), conds
     line = next((x for x in run.chat if x["who"] == "system" and "Re-checked:" in x["text"]
                  and f"HLD v{up['from_version']} -> v{up['to_version']} (Q-1)" in x["text"]), None)
     assert line and "sent to Adaptation" in line["text"], [x["text"] for x in run.chat if x["who"] == "system"][-4:]
@@ -7152,9 +7197,9 @@ def docs_repeat_failure():
     orig_cm = j2.condition_met
     holder = []
 
-    def failing_p4(cond, *a, **k):
-        if holder and cond.get("check") == "no-invented-facts" and holder[0].stage_kind == "prd":
-            return False, "not in the charter or the Requester's answers, and not marked Assumption: This"
+    def failing_p4(cond, *a, **k):      # P5, a hard condition (P4 is a warning since run-blockers batch 1)
+        if holder and cond.get("check") == "nothing-to-be-confirmed" and holder[0].stage_kind == "prd":
+            return False, "the document says 'TBC'"
         return orig_cm(cond, *a, **k)
 
     def lying(run, orig):
@@ -7181,7 +7226,7 @@ def docs_repeat_failure():
         assert "ship" in h["choices"] and "stop" in h["choices"], h["choices"]
         text = stage_question(run) + json.dumps(q)
         # item 2: the message is code's, with counts, and says which condition is unmet; no pass claim
-        assert re.search(r"\d+ of \d+ required conditions are met", text) and "Not met: No invented facts" in text, text
+        assert re.search(r"\d+ of \d+ required conditions are met", text) and "Not met: Nothing is" in text, text
         assert not re.search(r"checked and passes|all its parts", text), text
         # item 3: words about a document
         assert not re.search(r"\b(?:web)?site\b|missing parts", text, re.I), text
@@ -7191,7 +7236,7 @@ def docs_repeat_failure():
         say(run, str(h["choices"].index("ship") + 1))        # finish as it is: this document is accepted, the chain goes on
         assert list(run.docs) == ["prd", "hld", "lld"] and run.stage_kind == "lld", (list(run.docs), run.stage_kind, run.outcome)
         assert run.outcome.startswith("Done with open items") and "the product requirements" in run.outcome, run.outcome
-        assert "P4" not in run.outcome or "No invented facts" in run.outcome
+        assert "P5" not in run.outcome or "Nothing is" in run.outcome
         assert set(docs_files(run)) == {"hld.docx", "hld.md", "lld.docx", "lld.md", "prd.docx", "prd.md"}, docs_files(run)
         # stop the whole run: the rest is named as not made
         run = start(brief)
@@ -7774,7 +7819,7 @@ SAVED_RUNS_GOLDEN = {
 # Re-recorded 2026-11-11 (DOC_RUN_GOLDEN only) for agents/j2/adaptation.md's proposal block naming kind and sections
 # (Adaptation's system prompt). With adaptation.md as it was: {"prd": "2c2d3402a6ca", "design docs": "94c750a4fcb0",
 # "docs then site": "6b28bcb5d3ff"}.
-DOC_RUN_GOLDEN = {"prd": "c20ceec3eb79", "design docs": "bb6be08d829d", "docs then site": "5b0af94af498"}
+DOC_RUN_GOLDEN = {"prd": "f73f6a12000f", "design docs": "1050ebb6dccc", "docs then site": "c7910ff40c92"}
 DOC_PROMPTS_GOLDEN = {
     "prd.builder": "e971c88e727f", "prd.intake": "56b304946997",
     "prd.charter_fmt": "eedccdf82d84", "prd.atom_rules": "b8a918ef6039", "prd.system": "d09f06fa3181",
@@ -14197,6 +14242,7 @@ if __name__ == "__main__":
         print(f"J2_FIXES={mode}: website necessary conditions: N1 to N8 each reported not met with evidence, nav plan "
               "flagged before building, workable needs every condition, no None or internal ids for the Requester ok")
         n6_sources()
+        run_blockers_batch1()
         print(f"J2_FIXES={mode}: PRD output: mock PRD brief Done workable with prd.md and prd.docx, document checks pass "
               "and fail (duplicate R2 rejected), invented facts-present rejected, no browser check, no website "
               "conditions, P7 user groups, P8 window warning, assumptions labelled and listed, short names, heading targets "

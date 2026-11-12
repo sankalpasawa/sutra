@@ -1,0 +1,69 @@
+{
+  "statement": "Write a hiring policy, as a markdown document, for a 25-person software startup in Bangalore. It covers how a role is opened and approved, the interview stages, how offers are made and approved, referral bonuses, diversity and fairness rules, how long candidate data is kept, and who owns and reviews the policy.",
+  "product_name": "Hiring policy",
+  "audience": "Employees and hiring managers of a 25-person software startup in Bangalore, plus HR, department heads and the CEO who run and sign off on hiring.",
+  "facts": [
+    "25-person software startup",
+    "Bangalore",
+    "The hiring manager requests the opening; the department head and the CEO both approve before it is posted",
+    "Application and CV screen by HR",
+    "30-minute HR call",
+    "Take-home task or technical round",
+    "2 interviews with the team (role skills, then culture and values)",
+    "Final round with the department head",
+    "Reference check",
+    "Decision",
+    "The hiring manager and HR propose the salary and job level using our pay bands",
+    "The department head approves the offer",
+    "The CEO gives the final yes before the offer is sent",
+    "Referral bonus of ₹50,000 after the hire completes 3 months",
+    "Candidate data is kept for 12 months",
+    "The HR lead keeps this policy up to date",
+    "The policy is reviewed every 6 months, or sooner if hiring laws change"
+  ],
+  "standards": [
+    "Plain, clear language that a new employee can follow",
+    "Each section states who does what, in order",
+    "Every number and name matches the brief and the answers exactly",
+    "No invented facts; anything unknown is marked to be confirmed"
+  ],
+  "rules": [
+    "Use only facts from the brief and the Requester's answers",
+    "Write a markdown document, not a website",
+    "Sections in order: Purpose and scope, Opening a role and approving it, Interview stages, Making and approving offers, Referral bonus, Diversity and fairness, Candidate data retention, Ownership and review"
+  ],
+  "done_when": [
+    "Purpose and scope: states what the policy is for and that it applies to the 25-person software startup in Bangalore",
+    "Opening a role and approving it: the section names the hiring manager as the person who requests the role, and names the department head and the CEO as the two people who both sign off before the role is posted",
+    "Interview stages: lists in order the HR CV screen, 30-minute HR call, take-home task or technical round, 2 team interviews (role skills, then culture and values), final round with the department head, reference check, decision",
+    "Making and approving offers: the section shows, in order, that the hiring manager and HR propose salary and job level using pay bands, then the department head signs off, then the CEO gives the final yes before the offer is sent",
+    "Referral bonus: states a ₹50,000 bonus paid after the referred hire completes 3 months",
+    "Diversity and fairness: sets out fair and non-discriminatory hiring rules that apply to every stage",
+    "Candidate data retention: states that candidate data is kept for 12 months",
+    "Ownership and review: names the HR lead as owner and states review every 6 months or sooner if hiring laws change"
+  ],
+  "to_be_confirmed": [],
+  "dropped_from_brief": [],
+  "site_name": "Hiring policy",
+  "business_type": "hiring_policy",
+  "charter_items": [
+    "Purpose and scope: states what the policy is for and that it applies to the 25-person software startup in Bangalore",
+    "Opening a role and approving it: the section names the hiring manager as the person who requests the role, and names the department head and the CEO as the two people who both sign off before the role is posted",
+    "Interview stages: lists in order the HR CV screen, 30-minute HR call, take-home task or technical round, 2 team interviews (role skills, then culture and values), final round with the department head, reference check, decision",
+    "Making and approving offers: the section shows, in order, that the hiring manager and HR propose salary and job level using pay bands, then the department head signs off, then the CEO gives the final yes before the offer is sent",
+    "Referral bonus: states a ₹50,000 bonus paid after the referred hire completes 3 months",
+    "Diversity and fairness: sets out fair and non-discriminatory hiring rules that apply to every stage",
+    "Candidate data retention: states that candidate data is kept for 12 months",
+    "Ownership and review: names the HR lead as owner and states review every 6 months or sooner if hiring laws change"
+  ],
+  "core_items": [
+    "Purpose and scope: states what the policy is for and that it applies to the 25-person software startup in Bangalore",
+    "Opening a role and approving it: the section names the hiring manager as the person who requests the role, and names the department head and the CEO as the two people who both sign off before the role is posted",
+    "Interview stages: lists in order the HR CV screen, 30-minute HR call, take-home task or technical round, 2 team interviews (role skills, then culture and values), final round with the department head, reference check, decision",
+    "Making and approving offers: the section shows, in order, that the hiring manager and HR propose salary and job level using pay bands, then the department head signs off, then the CEO gives the final yes before the offer is sent",
+    "Referral bonus: states a ₹50,000 bonus paid after the referred hire completes 3 months",
+    "Diversity and fairness: sets out fair and non-discriminatory hiring rules that apply to every stage",
+    "Candidate data retention: states that candidate data is kept for 12 months",
+    "Ownership and review: names the HR lead as owner and states review every 6 months or sooner if hiring laws change"
+  ]
+}
