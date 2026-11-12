@@ -183,6 +183,8 @@
   }
 
   /* ---------------------------------------------------------------- the fetch wrapper for J2's own calls */
+  const NOT_IN_ENGINE_YET = ["/api/timing", "/api/run-template"];
+  const pathOf = url => (isRootRelative(url) ? URL_PARTS.exec(url)[1] : "");
   function methodOf(init) {
     const m = init?.method;
     return typeof m === "string" && m !== "" ? m.toUpperCase() : "GET";
@@ -232,6 +234,13 @@
     if (!win || typeof win.fetch !== "function" || win.fetch.sutraWrapped === true) return false;
     const original = win.fetch;
     const wrapped = function sutraFetch(input, init) {
+      // The studio page (pin b2d70b5) asks two routes the vendored engine (025e265) does not have yet: answer "not here" in place, so the page
+      // shows its own empty state and the browser logs no 404. They go to the engine once it syncs and J2_PATHS lists them.
+      const asked = pathOf(input);
+      if (NOT_IN_ENGINE_YET.includes(asked) && typeof root.Response === "function") {
+        return Promise.resolve(new root.Response('{"error":{"code":"not_in_engine","message":"This engine version does not record this yet."}}',
+          {status: 404, headers: {"Content-Type": "application/json"}}));
+      }
       const token = tokenOf();
       const signed = token !== "" && isRootRelative(input) && needsToken(methodOf(init));
       const first = original.call(win, withDept(input), signed ? withToken(init, token) : init);

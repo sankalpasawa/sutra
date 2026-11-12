@@ -6,39 +6,29 @@
 <meta name="color-scheme" content="light dark">
 <title>Sutra</title>
 <link rel="stylesheet" href="/ui/css/j2-shell.css">
-<link rel="stylesheet" href="/ui/css/sutra-graph.css"><link rel="stylesheet" href="/ui/css/sutra-panel.css"><link rel="stylesheet" href="/ui/css/sutra-shell.css"><link rel="stylesheet" href="/ui/css/sutra-front.css">
+<link rel="stylesheet" href="/ui/css/sutra-graph.css"><link rel="stylesheet" href="/ui/css/sutra-panel.css"><link rel="stylesheet" href="/ui/css/sutra-shell.css"><link rel="stylesheet" href="/ui/css/sutra-front.css"><link rel="stylesheet" href="/ui/css/project_rail.css">
 <!--SUTRA-BOOT-->
 <script src="/ui/js/sutra_ctx.js"></script>
 <script src="/ui/js/tab_heal.js"></script>
 <script>/* before the first paint: the viewer's Appearance (Settings sets it: light, dark or system; light by default, as the team pages; one choice for Home and
-   the team pages), and which place of Home shows: the front door, or the workspace (a deep link, or where a Manager or Debug owner was last; home.js keeps it) */
+   the team pages), and which place of Home shows: the front door, or the workspace (a deep link: ?pane=, ?node= or ?change=; or sutra:home:place "ws", which only the
+   browser tests set now and "Home" clears) */
 try { var tp = localStorage.getItem("j2theme"); document.documentElement.dataset.theme = tp === "dark" ? "dark" : tp === "system" && !matchMedia("(prefers-color-scheme: light)").matches ? "dark" : "light"; } catch (e) { document.documentElement.dataset.theme = "light"; }
-try { var hq = new URLSearchParams(location.search), lv = localStorage.getItem("sutra:level"); document.documentElement.dataset.place = hq.has("pane") || hq.has("node") || hq.has("change") || ((lv === "manager" || lv === "debug") && localStorage.getItem("sutra:home:place") === "ws") ? "ws" : "front"; } catch (e) { document.documentElement.dataset.place = "front"; }</script>
+try { var hq = new URLSearchParams(location.search); document.documentElement.dataset.place = hq.has("pane") || hq.has("node") || hq.has("change") || localStorage.getItem("sutra:home:place") === "ws" ? "ws" : "front"; } catch (e) { document.documentElement.dataset.place = "front"; }</script>
 </head>
 <body class="simple home">
-<!-- The front door (front_door.js, painted by home.js): one place to start. What needs you first, then what is running and what finished, and a box
-     for a new project. The level (Simple, Manager, Debug; SutraCtx.level) adds the views below it: the workspace further down is where they open. -->
+<!-- The front door (front_door.js, painted by home.js): one box to start a new project. Every project, and what needs the owner, is in the project
+     sidebar on the left (project_rail.js). Home has no Simple/Manager/Debug switch: it lives inside an open project (dept_ext.js). The workspace
+     further down (the org chat, the map, Settings) is the back room, reached by "Settings & logs" or from a project's Manager and Debug menu. -->
 <div id="front" class="front">
-  <header class="fdtop">
-    <div class="fdorg" id="fdorg" data-slot="org-switcher"><span class="fdmark" aria-hidden="true"></span><b id="fdorgname">Sutra</b></div>
-    <nav class="fdnav" id="fdnav" aria-label="More views" hidden></nav>
-    <div class="fdlevel" id="fdlevel" role="group" aria-label="How much to show">
-      <button type="button" data-level="simple" aria-pressed="true" title="What needs you, what runs, what finished">Simple</button>
-      <button type="button" data-level="manager" aria-pressed="false" title="Adds the org chart, the workflow graph, team chats and each team's Detailed view">Manager</button>
-      <button type="button" data-level="debug" aria-pressed="false" title="Adds settings, usage and log, the full Heads up lane and the raw AI chat">Debug</button>
-    </div>
-  </header>
   <main class="fdmain" id="fdmain">
     <section class="fdnew" aria-labelledby="fd-new-h">
       <h1 class="fdtitle" id="fd-new-h">What should we make?</h1>
       <div class="fdcompose"><textarea id="fdbox" rows="3" aria-label="A new project" placeholder="A one-page website for my cafe, with the menu and opening hours&hellip;" maxlength="20000"></textarea>
-        <div class="fdcfoot"><p class="fdtry">Try: <button type="button" class="fdtrylink" data-act="fd-try" data-text="A website for my cafe: menu, opening hours, how to find us">a cafe website</button> &middot; <button type="button" class="fdtrylink" data-act="fd-try" data-text="A one-page website for my bakery, with cake orders and contact">a bakery page</button></p><button type="button" class="fdbtn fdyes fdstart" id="fdsend">Start</button></div></div>
+        <div class="fdcfoot"><p class="fdtry">Try: <button type="button" class="fdtrylink" data-act="fd-try" data-text="A website for my cafe: menu, opening hours, how to find us">a cafe website</button> &middot; <button type="button" class="fdtrylink" data-act="fd-try" data-text="A one-page website for my bakery, with cake orders and contact">a bakery page</button></p><button type="button" class="fdbtn fdyes fdstart" id="fdsend">Go</button></div></div>
       <div id="fdfaces"></div>
       <div id="fdlatest"></div>
     </section>
-    <section class="fdneeds" id="fdneeds" aria-live="polite" tabindex="-1"></section>
-    <div id="fdlists"></div>
-    <div id="fddebug"></div>
   </main>
 </div>
 <!-- Home: the J2 Simple skeleton. Left, the org chat with the chat agent (the Root node's session cs_org). Right, J2's preview slot (.sprev.sright): what needs you,
@@ -133,6 +123,6 @@ try { var hq = new URLSearchParams(location.search), lv = localStorage.getItem("
 <script src="/ui/js/heads_up_view.js"></script>
 <script src="/ui/js/chat_attention.js"></script>
 <script src="/ui/js/welcome.js"></script>
-<script src="/ui/js/front_door.js"></script><script src="/ui/js/home.js"></script>
+<script src="/ui/js/front_door.js"></script><script src="/ui/js/project_rail.js"></script><script src="/ui/js/home.js"></script>
 </body>
 </html>

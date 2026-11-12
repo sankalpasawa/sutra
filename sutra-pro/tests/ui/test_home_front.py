@@ -1,15 +1,18 @@
-"""Home's front door and the owner's level in a real browser (the one-front brief: front_door.js, SutraCtx.level, home.js setPlace).
+"""Home's front door, the project sidebar and a project's view switch in a real browser (the approved layout: project_rail.js, home.js,
+dept_ext.js viewSwitch, SutraCtx.level).
 
 Runs only with SUTRA_BROWSER=1, against the fake backend (stages as in test_home.py: "1" a new app, "2" the Web team asks about the menu).
 What it proves:
 
-  simple     the front door is the page: what needs you (the Web question as a card with its options), In progress, the box; no graph, org chart,
-             settings or org chat on show
-  answers    an option pressed on the card goes to the TEAM's session (never cs_org); an approval's Approve goes through the org chat as its button
-  new        the box sends a new project to the org chat
-  levels     Manager adds the org chart, the workflow graph and team chats (opening the workspace, with a way back), Debug adds Settings, Usage and
-             log and the Raw AI chat hook; the choice is kept in localStorage sutra:level
-  phone      390 px wide: no sideways scroll
+  home       Home is the sidebar and "What should we make?": no Simple/Manager/Debug switch, no needs cards or lists in the main area; no graph,
+             org chart, settings or org chat on show
+  sidebar    New project, Needs you (the Web question, with its count, going to the project), Projects (plain words on hover), Settings & logs
+             (the back room: Settings, with a way back); an approval of no project goes to the org chart
+  new        the box sends a new project to the org chat; Sutra's question shows as a card; once a team has the work, its page opens
+  project    a team page carries the same sidebar with the project marked, and the view switch in the studio's top bar: Simple shows the studio
+             only, Manager adds the Detailed view and the org map, Debug adds the Raw AI chat and Usage and log; the choice is kept in
+             localStorage sutra:level and Home has none
+  phone      390 px wide: the sidebar folds behind a menu button; no sideways scroll
 """
 from __future__ import annotations
 
@@ -26,12 +29,19 @@ def q(css: str) -> str:
     return json.dumps(css)
 
 
-def load(browser, fake, *, stage="2", level="simple", place="front"):
+def load(browser, fake, *, stage="2", level="simple", place="front", path="/"):
     browser.set_level(level, place)
     fake.stage(stage)
-    browser.goto(fake.url + "/")
-    browser.wait_for("window.HomePage && HomePage.state().loaded === true && HomePage.state().departmentsLoaded")
-    fake.wait_subscribers(1)
+    browser.goto(fake.url + path)
+    if path == "/":
+        browser.wait_for("window.HomePage && HomePage.state().loaded === true && HomePage.state().departmentsLoaded")
+        fake.wait_subscribers(1)
+    browser.wait_for("document.getElementById('prail') !== null")
+
+
+def load_team(browser, fake, level="simple"):
+    load(browser, fake, level=level, path="/d/web/?view=simple")
+    browser.wait_for("document.getElementById('pviewsw') !== null && document.querySelector('#prail .pr-item') !== null")
 
 
 def texts(browser, css):
@@ -40,7 +50,7 @@ def texts(browser, css):
 
 def on_screen(browser, css) -> bool:
     return browser.js(f"(() => {{ const e = document.querySelector({q(css)}); if (!e) return false; const r = e.getBoundingClientRect(); "
-                      f"return getComputedStyle(e).display !== 'none' && r.width > 0 && r.height > 0; }})()")
+                      f"return getComputedStyle(e).display !== 'none' && getComputedStyle(e).visibility !== 'hidden' && r.width > 0 && r.height > 0; }})()")
 
 
 def posts(fake, prefix="/api/"):
@@ -48,46 +58,45 @@ def posts(fake, prefix="/api/"):
 
 
 @browser_only
-def test_simple_shows_only_the_front_door_with_the_question_first(browser, fake):
+def test_home_is_the_sidebar_and_the_box_with_no_level_switch(browser, fake):
     load(browser, fake)
-    assert browser.js("document.documentElement.dataset.level") == "simple"
-    assert on_screen(browser, "#front") and on_screen(browser, "#fdbox")
+    assert on_screen(browser, "#front") and on_screen(browser, "#fdbox") and on_screen(browser, "#prail")
     for hidden in ("#sview", "#dview", "#pane-graph", "#pane-chart", "#pane-settings", "#smsgs"):
         assert not on_screen(browser, hidden), hidden
-    assert texts(browser, "#fdorgname") == ["Sutra"]                                   # no "org" at Simple
+    for gone in ("#fdlevel", "#fdnav", "#fdneeds", "#fdlists", "#fddebug", "#pviewsw", "#front [data-level]"):      # the switch lives in a project only
+        assert not browser.exists(gone), gone
     assert texts(browser, "#fd-new-h") == ["What should we make?"]
+    assert texts(browser, "#fdsend") == ["Go"]
     assert texts(browser, "#fdfaces .fdteam") == ["Asha, Mira, Kabir, Dev and Nora are ready."]
-    assert texts(browser, "#fdneeds .fdcard .fdasker") == ["Asha needs one answer"]
-    assert browser.js("document.getElementById('fdnav').hidden")                       # Simple adds no views
-    assert texts(browser, "#fdneeds .fdcard .fdwho") == ["Web"]
-    assert texts(browser, "#fdneeds .fdcard .fdq") == ["Should the menu show prices?"]
-    assert texts(browser, "#fdneeds [data-act=fd-option]") == ["Yes, show the prices", "No, names only"]
-    assert browser.js("document.querySelector('#fdneeds .fdopen').getAttribute('href')") == "/d/web/?view=simple"
     assert browser.console_errors == []
 
 
 @browser_only
-def test_an_option_on_the_card_answers_in_the_teams_own_chat(browser, fake):
+def test_the_sidebar_lists_what_needs_you_and_every_project_in_plain_words(browser, fake):
     load(browser, fake)
-    browser.click("#fdneeds [data-act=fd-option][data-opt='1']")
-    browser.wait_for("HomePage.state().needs.length === 0")
-    sent = posts(fake, "/api/chats/")
-    assert [(r["path"], r["body"]) for r in sent] == [(f"/api/chats/{DEPT_SESSION}/messages", {"text": "Option 1"})]
-    browser.wait_for("document.querySelector('#fdneeds .fdempty') !== null")
-    assert "Nothing needs you right now" in texts(browser, "#fdneeds")[0]
+    browser.wait_for("document.getElementById('pr-needs-h') !== null")
+    assert texts(browser, "#pr-new") == ["New project"]
+    assert texts(browser, ".pr-head") == ["Needs you", "Projects"]
+    assert texts(browser, "#pr-needs-h + .pr-list .pr-name") == ["Web"]
+    assert texts(browser, "#pr-needs-h + .pr-list .pr-count") == ["1"]
+    assert browser.js("document.querySelector('#pr-proj-h + .pr-list .pr-item').getAttribute('title')") == "Needs your answer"
+    assert browser.js("document.querySelector('#pr-needs-h + .pr-list .pr-item').getAttribute('href')") == "/d/web/?view=simple"
+    assert texts(browser, "#pr-settings") == ["Settings & logs"]
+    assert not browser.exists("#prail [aria-current=page]")                            # Home: no project is open
+    # New project on Home goes to the box itself
+    browser.click("#pr-new")
+    browser.wait_for("document.activeElement === document.getElementById('fdbox')")
+    # an approval belongs to no project: it is "Your organisation", and it opens the org chart
+    browser.js("""ProjectRail.set({needs: [{message_id: 9, kind: "approval", dept_id: null, text: "Add a Design team?"}]})""")
+    assert texts(browser, "#pr-needs-h + .pr-list .pr-name") == ["Your organisation"]
+    assert browser.js("document.querySelector('#pr-needs-h + .pr-list .pr-item').getAttribute('href')") == "/?pane=chart"
 
 
 @browser_only
-def test_approve_presses_the_approval_cards_yes_through_the_org_chat(browser, fake):
+def test_a_new_app_shows_only_the_box_and_an_empty_project_list(browser, fake):
     load(browser, fake, stage="1")
-    browser.js("""(() => { const S = HomePage.state(); S.needs.push({message_id: 9, session_id: "cs_org", kind: "approval", dept_id: null, dept_name: "",
-      text: "Add a Design team?", options: ["Yes", "No"], asked_at: "2026-11-04T10:05:00Z", waiting_s: 90}); HomePage.renderFront(); })()""")
-    assert texts(browser, "#fdneeds .fdappr .fdq") == ["Add a Design team?"]
-    assert texts(browser, "#fdneeds .fdappr button") == ["Approve", "Not now"]
-    browser.click("#fdneeds [data-act=fd-approve]")
-    browser.wait_for("HomePage.state().front.answering[9] === undefined && HomePage.state().answers[9] === 'Yes'")
-    org = posts(fake, "/api/chats/cs_org/messages")
-    assert org and org[0]["body"] == {"text": "Yes", "choice": {"message_id": 9, "option": "Yes"}}
+    assert not browser.exists("#pr-needs-h")
+    assert texts(browser, "#prail .pr-empty") == ["Your projects show here."]
 
 
 @browser_only
@@ -102,16 +111,7 @@ def test_the_box_starts_a_new_project_through_the_org_chat(browser, fake):
 
 
 @browser_only
-def test_a_new_app_at_simple_shows_only_the_box_and_manager_reads_calm(browser, fake):
-    load(browser, fake, stage="1")
-    assert texts(browser, "#fdneeds") == [""] and texts(browser, "#fdlists") == [""]   # nothing made yet: the box is the one thing to do
-    browser.click("#fdlevel [data-level=manager]")
-    browser.wait_for("document.documentElement.dataset.level === 'manager'")
-    assert texts(browser, "#fdneeds .fdempty b") == ["Nothing needs you right now"]
-
-
-@browser_only
-def test_simple_takes_the_owner_to_the_team_page_once_a_team_has_the_work(browser, fake):
+def test_home_takes_the_owner_to_the_project_once_a_team_has_the_work(browser, fake):
     load(browser, fake, stage="1")
     browser.expect_failed("/d/web/")                                                   # the fake serves no team page at stage 1
     browser.js("""(() => { const S = HomePage.state(); S.front.sent = true;
@@ -119,12 +119,12 @@ def test_simple_takes_the_owner_to_the_team_page_once_a_team_has_the_work(browse
       HomePage.renderFront(); })()""")
     assert texts(browser, "#fdlatest .fdwatch") == ["Watch it being built"]
     assert browser.js("document.querySelector('#fdlatest .fdwatch').getAttribute('href')") == "/d/web/?view=simple"
-    assert not browser.exists("#fdlatest [data-act=fd-conversation]")                  # Simple never lands in the org chat
+    assert not browser.exists("#fdlatest [data-act=fd-conversation]")                  # Home never lands in the org chat
     browser.wait_for("location.pathname === '/d/web/'", timeout=10)
 
 
 @browser_only
-def test_simple_shows_sutras_question_as_a_card_on_the_front_door_in_plain_words(browser, fake):
+def test_sutras_question_shows_as_a_card_on_the_front_door_in_plain_words(browser, fake):
     load(browser, fake, stage="1")
     browser.js("""(() => { const S = HomePage.state(); S.front.sent = true;
       S.messages.push({id: 900, role: "user", text: "Add booking"}, {id: 902, role: "agent", text: "", card: {type: "choice", question: "Which team fits best?",
@@ -139,39 +139,64 @@ def test_simple_shows_sutras_question_as_a_card_on_the_front_door_in_plain_words
 
 
 @browser_only
-def test_manager_adds_the_org_chart_the_graph_and_team_chats_and_comes_back_home(browser, fake):
+def test_settings_and_logs_opens_the_back_room_with_a_way_home(browser, fake):
     load(browser, fake)
-    browser.click("#fdlevel [data-level=manager]")
-    browser.wait_for("document.documentElement.dataset.level === 'manager'")
-    assert browser.js("localStorage.getItem('sutra:level')") == "manager"
-    assert texts(browser, "#fdnav button") == ["Org chart", "Workflow graph", "Team chats"]
-    assert texts(browser, "#fdlists [data-act=fd-chat]") == ["Chat"]                  # each team's chat
-    browser.click("#fdnav [data-pane=chart]")
-    browser.wait_for("document.documentElement.dataset.place === 'ws'")
-    assert on_screen(browser, "#pane-chart") and not on_screen(browser, "#front")
-    assert not on_screen(browser, "#railsettings") and not on_screen(browser, "#railowner")   # Settings and Usage and log wait for Debug
+    browser.click("#pr-settings")
+    browser.wait_for("document.documentElement.dataset.place === 'ws' && HomePage.state().loaded === true")
+    assert on_screen(browser, "#pane-settings") and not on_screen(browser, "#front") and not on_screen(browser, "#prail")
     browser.click("#gofront")
     browser.wait_for("document.documentElement.dataset.place === 'front'")
-    assert on_screen(browser, "#front")
+    assert on_screen(browser, "#front") and on_screen(browser, "#prail") and browser.js("location.search") == ""
 
 
 @browser_only
-def test_debug_adds_settings_usage_and_log_and_the_raw_ai_chat_hook(browser, fake):
-    load(browser, fake, level="debug")
-    assert texts(browser, "#fdnav .fdnavb") == ["Org chart", "Workflow graph", "Team chats", "Settings", "Usage and log", "Raw AI chat"]
-    assert browser.js("document.querySelector('#fdnav a.fdnavb').getAttribute('href')") == "/console"
-    assert on_screen(browser, "#fddebug .fddebug")                                    # the Heads up lane, in full
-    browser.click("#fd-rawchat")      # opens the viewer for the working team, or says no team has run yet
-    browser.wait_for("location.pathname.endsWith('/raw') || (document.getElementById('front') && document.getElementById('front').textContent.includes('No team has run yet'))")
-    load(browser, fake, level="debug")
-    browser.click("#fdnav [data-pane=settings]")
-    browser.wait_for("document.documentElement.dataset.place === 'ws'")
-    assert on_screen(browser, "#pane-settings") and on_screen(browser, "#railsettings")
+def test_a_project_has_the_sidebar_and_its_own_view_switch_in_the_studio_bar(browser, fake):
+    load_team(browser, fake)
+    assert texts(browser, "#prail [aria-current=page] .pr-name") == ["Web"]           # the open project is marked
+    assert browser.js("document.getElementById('pviewsw').parentElement.matches('#sview .stop')")
+    assert texts(browser, "#pv-btn") == ["Simple"]
+    assert not on_screen(browser, "#shome") and not on_screen(browser, "#to-home-s")    # the sidebar's New project and list replace them (the strip stays as the pill's row)
+    assert not on_screen(browser, "#sdetail") and not on_screen(browser, "#rawchat-open")
+    browser.click("#pv-btn")
+    assert texts(browser, "#pv-menu .pv-opt b") == ["Simple", "Manager", "Debug"]
+    assert texts(browser, "#pv-menu .pv-link") == []                                   # Simple: the studio only
+    # Manager: the Detailed view and the org map
+    browser.click("#pv-menu .pv-opt[data-level=manager]")
+    browser.wait_for("document.documentElement.dataset.level === 'manager'")
+    assert browser.js("localStorage.getItem('sutra:level')") == "manager"
+    assert texts(browser, "#pv-btn") == ["Manager"]
+    assert on_screen(browser, "#sdetail")
+    browser.click("#pv-btn")
+    assert texts(browser, "#pv-menu .pv-link") == ["Detailed view", "Team chats", "Org chart", "Workflow graph"]
+    browser.click("#pv-menu .pv-link[data-go=detail]")
+    browser.wait_for("!document.body.classList.contains('simple')")
+    assert browser.js("document.getElementById('pviewsw').classList.contains('pv-inrail')")      # the switch stays reachable in the Detailed view: the sidebar's foot
+    assert browser.console_errors == []
 
 
 @browser_only
-def test_the_phone_has_no_sideways_scroll(browser, fake):
+def test_debug_adds_the_raw_ai_chat_and_usage_and_log_to_the_project(browser, fake):
+    load_team(browser, fake, level="debug")
+    browser.expect_failed("/api/calls")                                              # the fake serves no Raw AI chat calls
+    assert texts(browser, "#pv-btn") == ["Debug"]
+    assert on_screen(browser, "#rawchat-open")
+    browser.click("#pv-btn")
+    assert texts(browser, "#pv-menu .pv-link") == ["Detailed view", "Team chats", "Org chart", "Workflow graph", "Raw AI chat", "Usage and log"]
+    assert browser.js("document.querySelector('#pv-menu a.pv-link[href=\"/console\"]') !== null")
+    browser.click("#pv-menu .pv-link[data-go=raw]")
+    browser.wait_for("window.RawChat && RawChat.state().open === true")
+
+
+@browser_only
+def test_the_phone_folds_the_sidebar_behind_a_menu_button_and_has_no_sideways_scroll(browser, fake):
     browser.set_size(390, 844)
-    load(browser, fake, level="manager")
+    load(browser, fake)
     assert browser.js("document.documentElement.scrollWidth <= window.innerWidth + 1")
     assert browser.js("document.getElementById('front').scrollWidth <= document.getElementById('front').clientWidth + 1")
+    assert on_screen(browser, "#prailbtn") and not on_screen(browser, "#prail")
+    browser.click("#prailbtn")
+    browser.wait_for("document.body.classList.contains('prail-open')")
+    browser.wait_for("document.getElementById('prail').getBoundingClientRect().left >= 0")
+    assert on_screen(browser, "#prail") and browser.js("document.getElementById('prailbtn').getAttribute('aria-expanded')") == "true"
+    browser.js("document.querySelector('.pr-scrim').click()")
+    browser.wait_for("!document.body.classList.contains('prail-open')")

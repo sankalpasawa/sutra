@@ -712,58 +712,38 @@
   }
 
   /* ---------------------------------------------------------------- the front door (front_door.js; the one-front brief) */
-  // Home has two places: the front door (what needs you, what runs, what finished, a new project) and the workspace (the org chat, the panes, the rail).
-  // <html data-place> says which shows; Manager and Debug owners come back to the place they left, a Simple owner always to the front door.
+  // Home has two places: the front door (the project sidebar and "What should we make?") and the workspace, the back room (the org chat, the panes,
+  // the rail: Settings & logs). <html data-place> says which shows; only a deep link (?pane=, ?node=, ?change=) opens the workspace. Home has no
+  // level switch: Simple, Manager and Debug live inside an open project, so the front door always speaks in the plain words of Simple.
   const FD = () => root.FrontDoor || null;
-  const level = () => (ctx.level ? ctx.level() : "simple");
+  const level = () => "simple";
   const place = () => (doc.documentElement.dataset.place === "ws" ? "ws" : "front");
-  const PLACE_KEY = "sutra:home:place";
 
   function setPlace(where) {
     const p = where === "ws" ? "ws" : "front";
     doc.documentElement.dataset.place = p;
-    try { if (level() !== "simple") root.localStorage.setItem(PLACE_KEY, p); } catch (e) { /* storage may be blocked */ }
+    if (p === "front") {                       // back to the front door: drop the workspace's deep link from the address
+      try { if (root.location.search) root.history.replaceState(root.history.state, "", "/"); } catch (e) { /* no history (a stub) */ }
+      try { root.localStorage.removeItem("sutra:home:place"); } catch (e) { /* storage may be blocked */ }
+    }
     if (p === "ws" && S.graphView && S.graph) protect("graph redraw", () => S.graphView.update(S.graph));       // drawn while hidden: draw it at its size
     if (p === "front") renderFront();
     return p;
-  }
-
-  // The front door's state for FrontDoor: what is fetched already, plus the front's own marks.
-  function frontState() {
-    return {level: level(), needs: S.needs, heads: S.heads, seen: S.seen, departments: S.departments, elapsedMs: S.needsAt ? Date.now() - S.needsAt : 0,
-      loaded: S.needsLoaded && S.headsLoaded && S.departmentsLoaded, answering: S.front.answering, errors: S.front.errors, moreDone: S.front.moreDone};
-  }
-
-  // A repaint keeps what the owner typed in an answer box (and the focus in it): the boxes are found again by their message id.
-  function paintKeeping(el, html) {
-    if (!el) return false;
-    const typed = {};
-    let focus = "";
-    el.querySelectorAll("textarea[data-msg]").forEach(t => { typed[t.dataset.msg] = t.value; if (t === doc.activeElement) focus = t.dataset.msg; });
-    if (!ctx.paint(el, html)) return false;
-    el.querySelectorAll("textarea[data-msg]").forEach(t => { if (hasOwn(typed, t.dataset.msg)) t.value = typed[t.dataset.msg]; if (t.dataset.msg === focus) t.focus(); });
-    return true;
   }
 
   function renderFront() {
     const fd = FD();
     if (!fd || !$("front")) return;
     protect("front door", () => {
-      const st = frontState();
-      paintKeeping($("fdneeds"), fd.needsHtml(st));
-      ctx.paint($("fdlists"), fd.listsHtml(st));
-      ctx.paint($("fddebug"), (S.front.hookNote && st.level === "debug" ? '<p class="fdcalm" role="status">' + esc(S.front.hookNote) + "</p>" : "") + fd.debugHtml(st));
-      const nav = fd.navHtml(st.level);
-      ctx.paint($("fdnav"), nav);
-      $("fdnav").hidden = nav === "";
-      doc.querySelectorAll("#fdlevel [data-level]").forEach(b => b.setAttribute("aria-pressed", String(b.dataset.level === st.level)));
+      // every project and what needs the owner: the sidebar, fed from the lists Home reads anyway (no second stream)
+      if (root.ProjectRail && S.departmentsLoaded) root.ProjectRail.set({departments: S.departments, needs: S.needsLoaded ? S.needs : []});
       if ($("fdfaces") && $("fdfaces").childElementCount === 0 && fd.facesHtml) ctx.paint($("fdfaces"), fd.facesHtml());
       renderFrontLatest();
     });
   }
 
   // Under the box: after the owner started something here, the org chat's progress sentence and its last word (or the choice it waits on).
-  // At Simple, once the work has a home (a team took it), the owner is taken to that team's page by itself, once, after a moment on the card.
+  // Once the work has a home (a team took it), the owner is taken to that team's page by itself, once, after a moment on the card.
   function renderFrontLatest() {
     const fd = FD();
     if (!fd || !$("fdlatest")) return;
@@ -844,8 +824,6 @@
   }
 
   function onFrontClick(e) {
-    const lv = e.target.closest("#fdlevel [data-level]");
-    if (lv) { ctx.setLevel(lv.dataset.level); return; }
     if (e.target.closest("#fdsend")) { sendFront(); return; }
     const tryit = e.target.closest("[data-act=fd-try]");
     if (tryit) { $("fdbox").value = tryit.dataset.text || tryit.textContent; $("fdbox").focus(); return; }
@@ -889,10 +867,7 @@
       if (t && t.matches && t.matches("textarea[data-msg]") && e.key === "Enter" && !e.shiftKey && !e.isComposing) { e.preventDefault(); answerFront(t.dataset.msg, t.value); }
     });
     if ($("gofront")) $("gofront").addEventListener("click", () => setPlace("front"));
-    doc.addEventListener("sutra:level", () => {
-      if (level() === "simple" && place() === "ws" && S.chat.sid !== ORG) showOrgChat();
-      renderFront();
-    });
+    if (root.ProjectRail) protect("project sidebar", () => root.ProjectRail.mount({feed: false}));      // Home feeds it from its own reads
   }
 
   // The tab title count and one desktop notice per new question or problem (chat_attention.js), once both lists have been read: what is
@@ -914,12 +889,11 @@
   // A notice was clicked: the window is in front already; show what it was about.
   function openAttention(item) {
     const ref = isObj(item) && isObj(item.ref) ? item.ref : {};
-    if (place() === "front") {                                                         // the front door has a card for it: bring that card into view
-      const card = (ref.kind === "question" || ref.kind === "approval") && $("fdneeds").querySelector('.fdcard[data-msg="' + String(ref.message_id).replace(/\D/g, "") + '"]');
-      const at = card || $("fdneeds");
-      if (at.scrollIntoView) at.scrollIntoView({block: "center"});
-      at.tabIndex = -1;
-      at.focus();
+    if (place() === "front") {                                                         // the question is answered on its project's page
+      const dept = clean(ref.dept_id) || clean(isObj(item) ? item.dept_id : "");
+      if (ref.kind === "question" && dept) { root.location.assign("/d/" + enc(dept) + "/?view=simple"); return; }
+      const at = doc.getElementById("pr-needs-h") || doc.getElementById("prail");
+      if (at && at.focus) { at.tabIndex = -1; at.focus(); }
       return;
     }
     if (ref.kind === "question") { focusCard(ref.message_id); return; }
@@ -1705,7 +1679,8 @@
   function deepLink() {
     const q = new root.URLSearchParams(root.location.search);
     const pane = q.get("pane");
-    return {pane: pane === "chart" ? "chart" : (pane === "graph" || q.get("node") ? "graph" : (q.get("change") ? "chart" : "graph")),
+    // ?pane=settings is the sidebar's "Settings & logs"; ?pane=chat a project menu's "Team chats"
+    return {pane: pane === "chart" || pane === "settings" || pane === "chat" ? pane : (pane === "graph" || q.get("node") ? "graph" : (q.get("change") ? "chart" : "graph")),
       node: q.get("node") || "", change: q.get("change") || ""};
   }
 
@@ -1731,7 +1706,7 @@
     const link = deepLink();
     wire();
     wireFind();
-    selectPane(link.pane, {reveal: link.pane !== "graph" || !!link.node, focus: false});
+    selectPane(link.pane, {reveal: link.pane !== "graph" || !!link.node, focus: false, group: link.pane === "settings" ? "appearance" : ""});
     renderProgress();
     renderComposer();
     renderBar();

@@ -104,7 +104,7 @@ def test_the_page_loads_only_its_own_files_and_every_one_exists():
         assert (STATIC_DIR / "js" / name).is_file(), name
     for name in sheets:
         assert (STATIC_DIR / "css" / name).is_file(), name
-    assert sheets == ["j2-shell.css", "sutra-graph.css", "sutra-panel.css", "sutra-shell.css", "sutra-front.css"]       # the front door; D138: Home keeps the frozen sheet, not the team page's j2.css
+    assert sheets == ["j2-shell.css", "sutra-graph.css", "sutra-panel.css", "sutra-shell.css", "sutra-front.css", "project_rail.css"]       # the front door; D138: Home keeps the frozen sheet, not the team page's j2.css
     assert scripts[0] == "sutra_ctx.js" and scripts[-1] == "home.js"
     assert scripts.index("settings_view.js") < scripts.index("home.js")
     for earlier, later in (("sutra_events.js", "home.js"), ("graph_layout.js", "graph_view.js"), ("chart_marks.js", "orgchart_view.js"),

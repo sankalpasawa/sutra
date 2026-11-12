@@ -75,16 +75,8 @@ body.home .sprog div.on { color: var(--s-ink); }
 body.home .rail { background: var(--s-bg); }
 body.home .sright { background: var(--s-bg); }
 
-/* ---- the workspace at each level. Simple: the org chat alone at full width (no rail, no panes, no team tabs) and nothing technical: no progress
-   strip of internal steps, no "Plan with Sutra / Ask directly" switch, no model pill. */
-:root[data-level=simple] body.home #dview, :root[data-level=simple] body.home #sright, :root[data-level=simple] body.home #sview main > [role=tablist],
-:root[data-level=simple] body.home #cswitch, :root[data-level=simple] body.home #sprog, :root[data-level=simple] body.home #sbar,
-:root[data-level=simple] body.home #spill, :root[data-level=simple] body.home #sstatus { display: none; }
-:root[data-level=simple] body.home #sview > main { grid-template-columns: minmax(0, 1fr); }
-:root[data-level=simple] body.home .schat { max-width: 860px; margin: 0 auto; width: 100%; border-right: 0; }
-/* Manager: the org chart, the workflow graph, each team's chat. Settings, Usage and log and the Heads up lane wait for Debug. */
-:root[data-level=manager] body.home #railsettings, :root[data-level=manager] body.home #railowner,
-:root[data-level=manager] body.home #needs .hulane { display: none; }
+/* ---- the workspace is Home's back room ("Settings & logs" in the project sidebar, or a project's Manager and Debug menu): Home has no level, so
+   it shows whole whenever it is opened (the org chat, the panes, Settings, Usage and log). The level only changes a project's own page. */
 
 /* ---- the welcome card: light paper, the studio's type, the same four facts */
 body.home .swelcome { background: var(--s-bg); padding: 40px 16px; align-items: flex-start; }

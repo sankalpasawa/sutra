@@ -106,7 +106,7 @@ def probe() -> dict:
 def test_the_file_loads_in_node_and_starts_nothing(probe):
     assert probe["loads"]["init"] == "function"
     assert probe["loads"]["keys"] == sorted(["init", "chip", "title", "onTab", "events", "drawers", "destroy", "levelView", "state", "helpers"])
-    assert probe["loads"]["helpers"] == ["bannerText", "titleText", "touchesDept"]
+    assert probe["loads"]["helpers"] == ["bannerText", "switchMenuHtml", "titleText", "touchesDept"]      # switchMenuHtml: the view switch of a project (project_rail.test.js)
     assert probe["loads"]["started"] is False       # a module load is not a page start
 
 
@@ -264,6 +264,11 @@ class Page:
         return self
 
     def tab(self, name: str) -> None:
+        # a tab J2 keeps hidden (Map) has no place on screen: before the project sidebar, the mouse at (0, 0) happened to reach it; now the
+        # sidebar is there, so a hidden tab is pressed as pool_tab does
+        if self.js(f"document.querySelector('.tabs [data-tab=\"{name}\"]').hidden"):
+            self.pool_tab(name)
+            return
         self.b.click(f'.tabs [data-tab="{name}"]')
 
     def pool_tab(self, name: str) -> None:
@@ -1174,7 +1179,8 @@ def test_the_rails_artifacts_flyout_lists_the_groups_of_the_run_and_a_click_open
     team.open()
     team.b.click('#rail [data-ri="artifacts"]')
     team.b.wait_for("!document.getElementById('rfly').hidden")
-    assert team.js("Array.from(document.querySelectorAll('#rfl [data-artgo]'), e => [e.dataset.artgo, e.firstChild.textContent])") == [[g["id"], g["label"]] for g in groups]
+    shown = team.js("Array.from(document.querySelectorAll('#rfl [data-artgo]'), e => [e.dataset.artgo, e.firstChild.textContent])")
+    assert [g[0] for g in shown] == [g["id"] for g in groups] and all(g[1] for g in shown)      # the studio pin words a label for the output (Website -> Page)
     team.b.click('#rfl [data-artgo="records"]')
     team.b.wait_for("!document.getElementById('pane-artifacts').hidden")
     assert team.js("document.querySelector('.tabs [data-tab=artifacts]').getAttribute('aria-selected')") == "true" and team.hidden("#rfly") is True
@@ -1217,7 +1223,7 @@ def test_the_decide_for_me_switch_is_one_post_and_follows_the_server_after_a_pol
 @browser_only
 def test_the_teams_library_page_is_the_same_page_and_draws_the_catalog_of_the_one_library(team):
     catalog = capture("catalog.json")
-    team.b.goto(f"{team.server.url}/d/web/library")
+    team.b.goto(f"{team.server.url}/d/web/library?view=run")      # the studio pin opens the library on its Run templates; the run list is ?view=run
     team.b.wait_for("window.DeptExt !== undefined && DeptExt.state().started === true")
     team.b.wait_for("CAT.loaded === true")
     assert team.js("[location.pathname, CAT.on, SutraCtx.libraryPath, SutraCtx.onLibrary()]") == ["/d/web/library", True, "/d/web/library", True]
@@ -1333,7 +1339,7 @@ def test_the_attention_pill_is_clear_of_the_library_page_from_901_to_1920_wide_i
 @browser_only
 def test_the_library_page_makes_room_for_the_attention_pill_only_while_it_shows_and_only_there(team):
     """The 34px of room is the library page's, and only while the pill shows: with nothing for the owner the card keeps J2's own bottom edge (76px up, the Chat button's room), and the
-    Detailed view of a team page, with the pill, keeps J2's 76px too (its cards are the page's own to size)."""
+    Detailed view of a team page, with the pill, makes the same room beside the project sidebar (project_rail.css)."""
     team.b.set_size(1280, 860)
     team.fake.stage("3")                                                           # the owner answered: nothing needs them, and the fake has no problem elsewhere
     library_ready(team)
@@ -1349,5 +1355,6 @@ def test_the_library_page_makes_room_for_the_attention_pill_only_while_it_shows_
     assert (shown["pad"], shown["card"] <= shown["pill"]) == ("110px", True), shown
     team.open(view="detail")
     detail_ready(team, "1 needs you")
-    assert team.js(LIBRARY_CARD_AND_PILL)["pad"] == "76px"
+    # beside the project sidebar (248px narrower) J2's cards of the Detailed view reach the pill's corner too: project_rail.css keeps the same room there while the pill shows
+    assert team.js(LIBRARY_CARD_AND_PILL)["pad"] == "110px"
     assert team.b.console_errors == [] and team.b.failed_requests == []
