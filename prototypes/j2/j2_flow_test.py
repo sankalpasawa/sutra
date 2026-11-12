@@ -13676,6 +13676,161 @@ def run_templates():
           f"takes no template and changes no prompt; the page: {page} ok")
 
 
+REUSE_UI_CHECKPOINT = "93c8b318"   # run-templates before the reuse display: a run without a run template shows the same Library tab
+
+
+def reuse_display():
+    """The reuse display (a run started from a run template): the counts by code (reuse_counts, run_template_use: documents and
+    website apart, "extended" shown as adapted, the generator's calls, None without a run template), the "Used by" list of a run
+    template with each collected run's counts; and, with --browser, the run's Library tab: a mock run from a template shows the
+    summary line with the template's name and link, its counts, the generator calls and a Run template column; the saved live run
+    j2-20261111-211339 (when runs/ has it) shows 0 created, 24 adapted, 3 reused for the documents and 1 created, 4 generic for
+    the website, added, not in template; a run without a run template shows the tab exactly as before."""
+    import html as htmllib
+    import shutil
+    import socket
+    import subprocess
+    import threading
+    import j2_server
+    import j2_template_lib as L
+    here = os.path.dirname(os.path.abspath(__file__))
+    tmp = tempfile.mkdtemp(prefix="j2-reuse-")
+    made = os.path.join(tmp, "made")
+    os.makedirs(made)
+    dec = lambda wf, art, action, **k: {"workflow": wf, "atom": wf + ".a1", "artifact": art, "section": "S", "action": action, "template": "T <b>", "version": 1, "kind": "specialised", **k}
+    ds = [dec("W-1", "prd", "extended", from_template=True, template_workflow="W-1", adapted_from="T@1"), dec("W-2", "hld", "reused", from_template=True, template_workflow="W-7"),
+          dec("W-3", "lld", "created", from_template=False), dec("W-4", "website", "generic", from_template=False), dec("W-4", "design", "generic"), dec("W-5", "website", "created", from_template=False)]
+    json.dump({"decisions": ds, "run_template": {"id": "no-such", "name": "A <i>name</i>", "selected": ["W-1", "W-7"], "of": 9, "added_stages": ["website"]}},
+              open(os.path.join(made, "templates.json"), "w", encoding="utf-8"))
+    open(os.path.join(made, "template_calls.jsonl"), "w", encoding="utf-8").write('{"workflow": "W-3"}\n{"workflow": "W-5"}\n\n')
+    use = L.run_template_use(made)
+    assert use == {"id": "no-such", "name": "A <i>name</i>", "selected": 2, "of": 9, "added_stages": ["website"], "in_library": False, "generator_calls": 2,
+                   "counts": {"documents": {"created": 1, "adapted": 1, "reused": 1, "generic": 0, "total": 3, "from_template": 2},
+                              "pages": {"created": 1, "adapted": 0, "reused": 0, "generic": 1, "total": 2, "from_template": 0}}}, use
+    json.dump({"decisions": ds}, open(os.path.join(made, "templates.json"), "w", encoding="utf-8"))
+    assert L.run_template_use(made) is None and L.run_template_use(os.path.join(tmp, "none")) is None, "no run template, nothing to show"
+    assert L.reuse_counts([{k: v for k, v in d.items() if k != "from_template"} for d in ds])["documents"]["from_template"] is None, "not recorded stays not recorded"
+    for row in L.run_template_list():      # the committed run templates: every use listed, with the collected run's counts or "not recorded"
+        view = L.run_template_view(row["id"])
+        assert [u["run"] for u in view["used_by"]] == [u["run"] for u in L.get_run_template(row["id"]).used_by]
+        runs_ = L.index().get("runs") or {}
+        assert all((u["counts"] == L.reuse_counts(runs_[u["run"]]["decisions"])) if u["run"] in runs_ else u["counts"] == "not recorded" for u in view["used_by"]), view["used_by"]
+    live = L.run_template_view("still-point-yoga-prd-hld-and-lld")
+    first = next((u for u in (live or {}).get("used_by") or [] if u["run"] == "j2-20261111-211339"), None)
+    if first:      # the two live runs of 2026-11-11, collected into library/
+        assert {k: first["counts"]["documents"][k] for k in ("created", "adapted", "reused", "generic")} == {"created": 0, "adapted": 24, "reused": 3, "generic": 0}, first
+        assert {k: first["counts"]["pages"][k] for k in ("created", "adapted", "reused", "generic")} == {"created": 1, "adapted": 0, "reused": 0, "generic": 4}, first
+    page = "skipped (Chrome not found, or --fast without --browser)"
+    if not (BROWSER and j2.j2_check.find_chrome()):
+        shutil.rmtree(tmp, ignore_errors=True)
+        print(f"reuse display: counts by code (documents and website apart, extended shown as adapted, generator calls, none without a run template), "
+              f"Used by with each collected run's counts; the page: {page} ok")
+        return
+    chrome = j2.j2_check.find_chrome()
+    keep = {k: os.environ.get(k) for k in ("J2_LIBRARY_DIR", "J2_TEMPLATE_LIBRARY", "J2_RUN_TEMPLATES", "J2_ARTIFACT_SCHEMA")}
+    lib = os.path.join(tmp, "lib")
+    shutil.copytree(os.path.join(here, "library"), lib)
+    os.environ.update(J2_LIBRARY_DIR=lib, J2_TEMPLATE_LIBRARY="1", J2_RUN_TEMPLATES="1")
+    os.environ.pop("J2_ARTIFACT_SCHEMA", None)
+    keep_here, keep_run, keep_runs = j2_server.HERE, j2_server.RUN, j2.RUNS_DIR
+    srv = None
+    try:
+        tid = next(r["id"] for r in L.run_template_list() if r["mock"] is True and "website" in r["stages"] and "prd" in r["stages"])
+        from_tpl = j2.J2Run()
+        from_tpl.budget = 1400
+        assert from_tpl.set_run_template(tid, ["W-1", "W-2"])
+        say(from_tpl, DESIGN_BRIEF)
+        finish(from_tpl)
+        os.environ.pop("J2_RUN_TEMPLATES", None)
+        plain = j2.J2Run()
+        plain.budget = 400
+        say(plain, "Write a PRD for Campus Notes." + CAMPUS)
+        finish(plain)
+        assert tpl_decisions(plain) and L.run_template_use(plain.dir) is None and L.run_template_use(from_tpl.dir)["id"] == tid
+        runs_dir = os.path.join(tmp, "runs")
+        os.makedirs(runs_dir)
+        saved = os.path.join(here, "runs", "j2-20261111-211339")
+        saved = saved if os.path.isfile(os.path.join(saved, "templates.json")) else None
+        for d in [from_tpl.dir, plain.dir] + ([saved] if saved else []):
+            os.symlink(d, os.path.join(runs_dir, os.path.basename(d)))
+        steps = ("(async () => { const wait = ms => new Promise(r => setTimeout(r, ms)), q = s => [...document.querySelectorAll(s)], r = {}; await wait(3000);"
+                 " const pane = document.getElementById('pane-library'), sum = pane.querySelector('[data-rtsum]');"
+                 " r.sum = sum ? sum.textContent : null; r.link = sum && sum.querySelector('[data-rtlink]') ? sum.querySelector('[data-rtlink]').getAttribute('href') : null;"
+                 " r.pills = Object.fromEntries(q('#pane-library [data-rtsum] [data-rtc]').map(x => [x.dataset.rtc, [x.textContent, x.className]]));"
+                 " r.groups = Object.fromEntries(q('#pane-library [data-rtsum] [data-rtgroup]').map(x => [x.dataset.rtgroup, x.textContent]));"
+                 " r.gen = (pane.querySelector('[data-rtgen]') || {}).textContent || null; r.heads = q('#pane-library [data-tpltable] th').map(x => x.textContent);"
+                 " r.cells = q('#pane-library [data-rtcell]').map(x => x.textContent); r.rows = q('#pane-library [data-tplrow]').length;"
+                 " r.html = pane.querySelector('[data-tpltable]') ? pane.querySelector('h3').outerHTML + pane.querySelector('[data-tpltable]').outerHTML : '';"
+                 " r.before = pane.firstElementChild.tagName + '|' + (pane.firstElementChild.nextElementSibling || {}).tagName; r.sw = [document.documentElement.scrollWidth, innerWidth];"
+                 " document.body.setAttribute('data-r', JSON.stringify(r)); })();")
+        pages = {"now": open(os.path.join(here, "j2_ui.html"), encoding="utf-8").read()}
+        old = subprocess.run(["git", "show", f"{REUSE_UI_CHECKPOINT}:prototypes/j2/j2_ui.html"], cwd=here, capture_output=True, text=True)
+        if old.returncode == 0:
+            pages["before"] = old.stdout
+        port = socket.socket(); port.bind(("127.0.0.1", 0)); p_ = port.getsockname()[1]; port.close()
+        web = os.path.join(tmp, "web")
+        os.makedirs(web)
+        os.symlink(os.path.join(here, "vendor"), os.path.join(web, "vendor"))
+        j2_server.HERE, j2_server.RUN, j2.RUNS_DIR = web, j2.J2Run(), runs_dir
+        srv = j2_server.http.server.ThreadingHTTPServer(("127.0.0.1", p_), j2_server.Handler)
+        threading.Thread(target=srv.serve_forever, daemon=True).start()
+
+        def load(which, run_dir):
+            open(os.path.join(web, "j2_ui.html"), "w", encoding="utf-8").write(pages[which].replace("</body>", f"<script>setTimeout(() => {{ {steps} }}, 500)</script></body>"))
+            dom = chrome_dom([chrome, "--headless=new", "--disable-gpu", "--window-size=1440,900", "--virtual-time-budget=30000", "--dump-dom",
+                              f"http://127.0.0.1:{p_}/?run={os.path.basename(run_dir)}&view=detail&tab=library"], capture_output=True, text=True, timeout=120).stdout
+            hit = re.search(r'data-r="([^"]*)"', dom)
+            assert hit, ("the page did not finish its steps", which, run_dir, dom[-300:])
+            return json.loads(htmllib.unescape(hit.group(1)))
+
+        def shown(run_dir):
+            u, r = L.run_template_use(run_dir), load("now", run_dir)
+            assert r["sum"] and u["name"] in r["sum"] and f"{u['selected']} of {u['of']} workflows" in r["sum"], r["sum"]
+            assert r["link"] == f"/library?view=templates&rt={u['id']}" and r["gen"] == f"Generator calls: {u['generator_calls']}", (r["link"], r["gen"])
+            for g, c in u["counts"].items():
+                assert all(r["pills"][f"{g}-{k}"][0] == f"{c[k]} {k}" for k in ("created", "adapted", "reused", "generic")), (g, r["pills"])
+                assert (f"{c['from_template']} of {c['total']} from the template" if c["from_template"] else "added, not in template") in r["groups"][g], r["groups"]
+            mark = r["pills"]["documents-created"][1].split()
+            assert ("checks" in mark) == (u["counts"]["documents"]["created"] == 0) and ("waiting_on_you" in mark) == (u["counts"]["documents"]["created"] > 0), mark
+            assert all(set(v[1].split()) == {"mappill"} for k, v in r["pills"].items() if k != "documents-created"), "only the documents' created count stands out"
+            assert r["heads"] == ["Workflow", "Artifact · section", "Action", "Template", "Run template", "From", "Score", "Reason"] and len(r["cells"]) == r["rows"] > 0, r["heads"]
+            assert r["sw"][0] <= r["sw"][1], ("no sideways scroll", r["sw"])
+            return u, r
+        u1, r1 = shown(from_tpl.dir)
+        assert any(c.startswith("W-1") for c in r1["cells"]) and any("adapted from" in c for c in r1["cells"]), r1["cells"]
+        live_note = "j2-20261111-211339 not in this clone"
+        if saved:
+            u2, r2 = shown(saved)
+            assert "Still Point Yoga: PRD, HLD and LLD" in r2["sum"] and "17 of 17 workflows" in r2["sum"] and "added, not in template: website" in r2["sum"], r2["sum"]
+            assert [r2["pills"][f"documents-{k}"][0] for k in ("created", "adapted", "reused")] == ["0 created", "24 adapted", "3 reused"], r2["pills"]
+            assert [r2["pills"][f"pages-{k}"][0] for k in ("created", "generic")] == ["1 created", "4 generic"] and "added, not in template" in r2["groups"]["pages"], r2["pills"]
+            assert "27 of 27 from the template" in r2["groups"]["documents"] and r2["gen"] == "Generator calls: 8", (r2["groups"], r2["gen"])
+            assert r2["cells"].count("added, not in template") == 5 and "" in r2["cells"], "the five website rows; the style guide row says nothing"
+            live_note = "j2-20261111-211339: 0 created, 24 adapted, 3 reused for the documents, 1 created and 4 generic for the website (added, not in template), 8 generator calls"
+        p1 = load("now", plain.dir)
+        assert p1["sum"] is None and p1["gen"] is None and not p1["cells"] and not p1["pills"] and p1["rows"] > 0, p1
+        assert p1["heads"] == ["Workflow", "Artifact · section", "Action", "Template", "From", "Score", "Reason"] and p1["before"] == "H3|TABLE", (p1["heads"], p1["before"])
+        same = "checkpoint not in this clone"
+        if "before" in pages:
+            p0 = load("before", plain.dir)
+            assert p0["html"] and p0["html"] == p1["html"], "a run without a run template: the heading and the table are the same markup as before"
+            same = f"its heading and table are identical to checkpoint {REUSE_UI_CHECKPOINT}"
+        page = (f"a mock run from a run template shows the summary line (name, link, counts, generator calls) and a Run template column; {live_note}; "
+                f"a run without a run template shows no summary and no column, {same}")
+    finally:
+        if srv:
+            srv.shutdown()
+        j2_server.HERE, j2_server.RUN, j2.RUNS_DIR = keep_here, keep_run, keep_runs
+        for k, v in keep.items():
+            if v is None:
+                os.environ.pop(k, None)
+            else:
+                os.environ[k] = v
+        shutil.rmtree(tmp, ignore_errors=True)
+    print(f"reuse display: counts by code (documents and website apart, extended shown as adapted, generator calls, none without a run template), "
+          f"Used by with each collected run's counts; the page: {page} ok")
+
+
 def d_facts(run):
     """Every fact a run's own charters hold (the facts its templates may carry)."""
     out = set()
@@ -14014,6 +14169,10 @@ if __name__ == "__main__":
         sys.exit(0)
     if "--run-templates" in sys.argv:         # python3 j2_flow_test.py --fast [--browser] --run-templates: run templates only
         run_templates()
+        reuse_display()
+        sys.exit(0)
+    if "--reuse-display" in sys.argv:         # python3 j2_flow_test.py --fast [--browser] --reuse-display: the reuse display only
+        reuse_display()
         sys.exit(0)
     if "--template-library" in sys.argv:      # python3 j2_flow_test.py --fast [--browser] --template-library: this part only
         template_library()
@@ -14157,6 +14316,7 @@ if __name__ == "__main__":
             new_type_models()
             template_library()
             run_templates()
+            reuse_display()
         board_disabled()
         board_functions_off()
         os.environ["J2_BOARD"] = "1"

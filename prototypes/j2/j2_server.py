@@ -163,7 +163,8 @@ class Handler(http.server.BaseHTTPRequestHandler):
         if u.path == "/api/run-templates":      # this run's routing decisions (templates.json); none recorded: an empty list
             d = j2.saved_dir(run) if run else RUN.dir
             decs = j2_template_lib.run_templates(d) if d and os.path.isdir(d) else []
-            return self._send(200, json.dumps({"decisions": decs}, ensure_ascii=False))
+            use = j2_template_lib.run_template_use(d) if decs else None      # only a run started from a run template has it
+            return self._send(200, json.dumps({"decisions": decs, **({"run_template": use} if use else {})}, ensure_ascii=False))
         if u.path == "/api/artifacts":  # the Artifacts tab: deliverables, then evidence and records (artifacts/types.json)
             d = j2.saved_dir(run) if run else RUN.dir
             return self._send(200, json.dumps(j2_artifacts.listing(d if d and os.path.isdir(d) else None), ensure_ascii=False))
