@@ -8131,8 +8131,9 @@ class J2Run:
             if art_tpl is not None:
                 art_sec = art_tpl.section
                 # J2_RUN_TEMPLATES=1: agents read the template by its section, not by the name of its first business
+                # (J2_AUTO_REUSE=1 too: an adapted template keeps the name of the business it was first made for)
                 art_model = j2_template_lib.build_model(art_tpl, **({"label": f"the {art_tpl.section} template v{art_tpl.version}"}
-                                                                    if self.run_tpl else {}))
+                                                                    if self.run_tpl or auto_reuse_on() else {}))
                 art_sec_schema = j2_template_lib.transport(art_tpl)
         attempt, failed, evidence, prev_sig, early, spec_stop = 0, [], "", set(), None, None
         while True:
@@ -9541,8 +9542,9 @@ class J2Run:
                     self._event("system", "template_save", f"{wid}: {type(e).__name__}: {e}")
         self.save("templates.json", {"schema": j2_template_lib.SCHEMA, "library": j2_template_lib.lib_dir(),
                                      "decisions": self.tpl_decisions, **self._run_tpl_record()})
-        self.post("system", template_line(wid, rec) + (f"; run template workflow {first['key']}" + (f", adapted from {rec['adapted_from']}" if rec.get("adapted_from") else "") if first else ""),
-                  **({"humans_only": True} if self.run_tpl else {}), template_route={k: rec.get(k) for k in ("workflow", "atom", "action", "template",
+        self.post("system", template_line(wid, rec) + (f"; run template workflow {first['key']}" + (f", adapted from {rec['adapted_from']}" if rec.get("adapted_from") else "") if first
+                                                       else f"; adapted from {rec['adapted_from']}" if rec.get("adapted_from") else ""),
+                  **({"humans_only": True} if self.run_tpl or auto_reuse_on() else {}), template_route={k: rec.get(k) for k in ("workflow", "atom", "action", "template",
                                                                           "version", "score")})
         self.tpl_cur = {"template": t, "rec": rec, "need": need}
         return t
@@ -9629,7 +9631,7 @@ class J2Run:
 
     def _tpl_ref(self):
         rec = (self.tpl_cur or {}).get("rec") or {}
-        if self.run_tpl and rec.get("kind") == "specialised":      # J2_RUN_TEMPLATES=1: receipts reach agents, so the template goes by its section there (templates.json keeps its name)
+        if (self.run_tpl or auto_reuse_on()) and rec.get("kind") == "specialised":      # J2_RUN_TEMPLATES=1: receipts reach agents, so the template goes by its section there (templates.json keeps its name)
             return {**{k: rec.get(k) for k in ("version", "kind", "action")}, "template": f"the {rec.get('section')} template"}
         return {k: rec.get(k) for k in ("template", "version", "kind", "action")}
 
