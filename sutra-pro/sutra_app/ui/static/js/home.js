@@ -849,9 +849,13 @@
       else selectPane(b.dataset.pane, {group: b.dataset.pane === "settings" ? "appearance" : ""});
     } else if (act === "fd-conversation") { setPlace("ws"); selectPane("chat"); }
     else if (act === "fd-hook") {
-      // the Raw AI chat viewer is built elsewhere: a page that has it handles the event (and cancels it); until then, say where it will be
+      // the Raw AI chat viewer (raw_chat.js) lives on a team's page: open it for the team working now, else the one waiting on you, else the first team
       const ev = new root.CustomEvent("sutra:raw-ai-chat", {cancelable: true, detail: {from: "home"}});
-      if (doc.dispatchEvent(ev)) { S.front.hookNote = "The raw AI chat viewer is not in this version yet. It will open from here and from each agent's panel."; renderFront(); }
+      if (!doc.dispatchEvent(ev)) return;
+      const teams = S.departments || [], waiting = (S.needs || []).map(n => n && n.dept_id).find(Boolean);
+      const team = teams.find(d => d.live_task_id) || teams.find(d => d.id === waiting) || teams[0];
+      if (team) root.location.href = "/d/" + encodeURIComponent(team.id) + "/raw";
+      else { S.front.hookNote = "No team has run yet. The raw AI chat shows every AI call once a team starts work."; renderFront(); }
     }
   }
 

@@ -32,6 +32,12 @@ test("buckets: working, waiting and a problem are in progress; done states and f
   assert.equal(b.running[1].words, "waiting on you");
 });
 
+test("buckets: a team at work again is only in progress, not also done under an older finished run", () => {
+  const b = FD.buckets([dept("web", "waiting_on_you")], [head(1, "finished", {dept_id: "web", dept_name: "Web", title: "Site v1"})], {});
+  assert.deepEqual(b.running.map(r => r.id), ["web"]);
+  assert.deepEqual(b.done, []);
+});
+
 test("a question card: the team, how long it waited, the ask, a box and Send, and Open to the team page", () => {
   const html = FD.needCard(question(7), {elapsedMs: 0});
   assert.match(html, /class="fdcard fdask" data-msg="7" data-kind="question" data-dept="web"/);

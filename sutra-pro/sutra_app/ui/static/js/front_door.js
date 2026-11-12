@@ -65,7 +65,8 @@
     const fin = finished.map(h => ({id: idOf(h.dept_id), name: clean(h.dept_name) || idOf(h.dept_id) || "A team", status: "filed", words: "finished",
       work: clean(h.title) || clean(h.text), since: Number.isFinite(h.since_s) ? h.since_s : null}));
     const named = new Set(fin.map(f => f.id).filter(Boolean));
-    out.done = fin.concat(out.done.filter(d => !named.has(d.id)));
+    const busy = new Set(out.running.map(r => r.id));      // a team at work again shows once, in In progress, not also under an older finished run
+    out.done = fin.concat(out.done.filter(d => !named.has(d.id))).filter(d => !busy.has(d.id));
     out.idle = out.idle.filter(d => !named.has(d.id));
     return out;
   }
