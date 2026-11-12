@@ -2714,7 +2714,14 @@ def run_templates_on():
     """J2_RUN_TEMPLATES=1 (default off): a run may start from a run template (run-template/1, j2_template_lib): its
     selected workflows are the base plan, and each one's section template is the router's first candidate. Read per
     call, so one process can test both. Off: nothing below is reached and every prompt is as it was."""
-    return os.environ.get("J2_RUN_TEMPLATES") == "1"
+    return os.environ.get("J2_RUN_TEMPLATES") == "1" or auto_reuse_on()
+
+
+def auto_reuse_on():
+    """J2_AUTO_REUSE=1 (default off; implies J2_TEMPLATE_LIBRARY=1 and J2_RUN_TEMPLATES=1): a run started without a
+    run template picks a similar one itself once its first charter is written (_auto_reuse_pick), and the router adapts the
+    nearest existing section template before it creates one (j2_template_lib.route). Unset: nothing changes."""
+    return j2_template_lib.auto_reuse()
 
 
 def load_lessons():
@@ -3118,6 +3125,7 @@ class J2Run:
         self.tpl_routes, self.tpl_decisions, self.tpl_cur = {}, [], None
         self.style = None                              # the style guide, written by the first workflow that runs
         self.run_tpl = None                            # J2_RUN_TEMPLATES=1: the run template this run started from (set_run_template)
+        self.auto_pick = None                          # J2_AUTO_REUSE=1: the run templates scored after the first charter, and the one picked (_auto_reuse_pick)
         self.playbooks_used, self.playbook_saved = [], None
         self.lessons_used, self.lessons_saved = [], []
         self.fail_floor = 0          # audits before this index don't count for "same failure twice in a row"
@@ -3143,21 +3151,88 @@ class J2Run:
         rt = j2_template_lib.get_run_template(tid)
         if rt is None:
             return False
+        self._take_run_template(rt, keys)
+        return True
+
+    def _take_run_template(self, rt, keys=None):
+        """This run now follows the run template rt, whole or with the workflows in keys."""
         keys = keys.split(",") if isinstance(keys, str) else keys
         chosen, added = j2_template_lib.select_workflows(rt, [k for k in keys or [] if str(k).strip().lower() != "all"])
         self.run_tpl = {"id": rt.id, "name": rt.name, "total": len(rt.workflows), "selected": chosen, "added": added,
                         "rows": [w.model_dump() for w in rt.workflows], "stages": list(rt.stages),
                         "slots": list(rt.facts_slots), "names": {}, "used": {}, "plans": {}, "workflows": []}
-        return True
+
+    def _auto_reuse_pick(self):
+        """J2_AUTO_REUSE=1, once per run, when the first charter is stamped and the run has no run template: every run
+        template in the library is scored against the charter (j2_template_lib.match_run_templates: the stages asked
+        for, the business type, the done-when items against the template's slot-covers). The best usable one at
+        AUTO_MIN or above is taken exactly as if the Requester had chosen it whole: its stages are built, then the
+        stages the brief asks for beyond it. Below that the run starts from scratch. Either way the chat says which,
+        and templates.json keeps the choice and every score."""
+        if self.auto_pick is not None or not auto_reuse_on():
+            return
+        self.auto_pick = {}
+        if self.run_tpl:      # the Requester chose one
+            return
+        asked = [k for k in (self.stages or [self.output]) if k in j2_types.names()]
+        g = self.goal or {}
+        text = " ".join([self.request] + [x["answer"] for x in self.intake]
+                        + [str(g.get(k) or "") for k in ("statement", "site_name", "product_name", "audience")])
+        try:
+            scores = j2_template_lib.match_run_templates(asked, text, g.get("done_when"), live=not llm.MOCK)
+        except Exception as e:      # the library never blocks a run: it starts from scratch
+            self._event("system", "auto_reuse", f"run templates not scored: {type(e).__name__}: {e}")
+            scores = []
+        best = scores[0] if scores else None
+        pick = next((x for x in scores if x["eligible"] and x["score"] >= j2_template_lib.AUTO_MIN), None)
+        rt = j2_template_lib.get_run_template(pick["id"]) if pick else None
+        self.auto_pick = {"threshold": j2_template_lib.AUTO_MIN, "weights": dict(j2_template_lib.AUTO_WEIGHTS),
+                          "asked_stages": asked, "picked": rt.id if rt else None, "match": pick["score"] if rt else None,
+                          "scores": scores}
+        if rt is None:
+            self.post("system", (f"No similar run template (best {best['name']} {best['score']:.2f}"
+                                 + (f"; not usable: {best['why_not']}" if best.get("why_not") else "") + ")."
+                                 if best else "No similar run template (the library has none)."), humans_only=True)
+            self.save("templates.json", {"schema": j2_template_lib.SCHEMA, "library": j2_template_lib.lib_dir(),
+                                         "decisions": self.tpl_decisions, **self._run_tpl_record()})
+            return
+        self._take_run_template(rt)
+        t = self.run_tpl
+        t["auto"] = {"match": pick["score"]}
+        stages = [k for k in t["stages"] if k in j2_types.names()]
+        extra = [k for k in asked if k not in stages]
+        t["added_stages"] = extra
+        self.post("system", f"Using similar run template {t['name']} (match {pick['score']:.2f}).",
+                  run_template={"id": t["id"], "selected": t["selected"], "of": t["total"]}, humans_only=True)
+        try:
+            j2_template_lib.mark_run_template_used(t["id"], {"run": os.path.basename(self.dir), "workflows": t["total"],
+                                                             "of": t["total"]})
+        except Exception as e:      # the library's own record never blocks a run
+            self._event("system", "run_template", f"used_by not written: {type(e).__name__}: {e}")
+        docs = [k for k in stages + extra if j2_types.info(k)["form"] == "document"]
+        if docs and stages + extra != asked:      # the template has stages the brief did not name: they are built too
+            deeds = [k for k in self.stages if k in j2_send.DEEDS]
+            self.docset = docs
+            self.stages = docs + deeds + [k for k in stages + extra if k not in docs]
+            self.stage_i = 0
+            self.site_tag = self.stages[0] + "-" if len(self.stages) > 1 else ""
+            self.stage_checked = False
+        self.post("system", "The run template sets what is built: " + ", then ".join(self._sw(k) for k in stages)
+                  + (". Added, not in template (the brief asks for " + and_list(self._sw(k) for k in extra)
+                     + "; Adaptation plans it)" if extra else "") + ".")
+        self.save("templates.json", {"schema": j2_template_lib.SCHEMA, "library": j2_template_lib.lib_dir(),
+                                     "decisions": self.tpl_decisions, **self._run_tpl_record()})
 
     def _run_tpl_record(self):
         """What templates.json holds about the run template ({} without one, so the file is as it was)."""
         t = self.run_tpl
+        auto = {"auto_reuse": self.auto_pick} if self.auto_pick else {}      # J2_AUTO_REUSE=1: the scores and the pick
         if not t:
-            return {}
+            return auto
         return {"run_template": {"id": t["id"], "name": t["name"], "selected": t["selected"], "added": t["added"],
                                  "of": t["total"], "plans": t["plans"], "workflows": t["workflows"],
-                                 **({"added_stages": t["added_stages"]} if t.get("added_stages") else {})}}
+                                 **({"added_stages": t["added_stages"]} if t.get("added_stages") else {}),
+                                 **({"auto": True, "match": t["auto"]["match"]} if t.get("auto") else {})}, **auto}
 
     def _run_tpl_start(self, said):
         """Once, before the charter: say which run template is used, record it (templates.json, the template's
@@ -6355,6 +6430,8 @@ class J2Run:
     def _start_work(self, change, start):
         """After the charter is stamped: Adaptation proposes. A J2_CHANGE change goes to _turn_change, unless no item,
         rule or standard changed (no plan change: the run ends as it is) or the goal itself changed (a full re-plan)."""
+        if not change:
+            self._auto_reuse_pick()      # J2_AUTO_REUSE=1: once, after the first charter
         if not (change and self._change_applies(change)):
             return self._handoff("adaptation", **start)
         d = j2_change.charter_diff(self.real_base, self.goal)
@@ -8054,8 +8131,9 @@ class J2Run:
             if art_tpl is not None:
                 art_sec = art_tpl.section
                 # J2_RUN_TEMPLATES=1: agents read the template by its section, not by the name of its first business
+                # (J2_AUTO_REUSE=1 too: an adapted template keeps the name of the business it was first made for)
                 art_model = j2_template_lib.build_model(art_tpl, **({"label": f"the {art_tpl.section} template v{art_tpl.version}"}
-                                                                    if self.run_tpl else {}))
+                                                                    if self.run_tpl or auto_reuse_on() else {}))
                 art_sec_schema = j2_template_lib.transport(art_tpl)
         attempt, failed, evidence, prev_sig, early, spec_stop = 0, [], "", set(), None, None
         while True:
@@ -9433,6 +9511,8 @@ class J2Run:
         run_id = os.path.basename(self.dir)
         ctx = {"run": run_id, "workflow": wid, "atom": aid,
                "agent": "template generator (mock)" if llm.MOCK else f"template generator ({llm.PROVIDER})"}
+        if self.run_tpl and auto_reuse_on():      # J2_AUTO_REUSE=1: on a tie the router prefers this run template's own section templates
+            ctx["run_template"] = self.run_tpl["id"]
         self.tpl_cur = {"wid": wid}
         first = self._run_tpl_first(w, kind, section)      # J2_RUN_TEMPLATES=1: the run template's section template first
         try:
@@ -9464,8 +9544,9 @@ class J2Run:
                     self._event("system", "template_save", f"{wid}: {type(e).__name__}: {e}")
         self.save("templates.json", {"schema": j2_template_lib.SCHEMA, "library": j2_template_lib.lib_dir(),
                                      "decisions": self.tpl_decisions, **self._run_tpl_record()})
-        self.post("system", template_line(wid, rec) + (f"; run template workflow {first['key']}" + (f", adapted from {rec['adapted_from']}" if rec.get("adapted_from") else "") if first else ""),
-                  **({"humans_only": True} if self.run_tpl else {}), template_route={k: rec.get(k) for k in ("workflow", "atom", "action", "template",
+        self.post("system", template_line(wid, rec) + (f"; run template workflow {first['key']}" + (f", adapted from {rec['adapted_from']}" if rec.get("adapted_from") else "") if first
+                                                       else f"; adapted from {rec['adapted_from']}" if rec.get("adapted_from") else ""),
+                  **({"humans_only": True} if self.run_tpl or auto_reuse_on() else {}), template_route={k: rec.get(k) for k in ("workflow", "atom", "action", "template",
                                                                           "version", "score")})
         self.tpl_cur = {"template": t, "rec": rec, "need": need}
         return t
@@ -9552,7 +9633,7 @@ class J2Run:
 
     def _tpl_ref(self):
         rec = (self.tpl_cur or {}).get("rec") or {}
-        if self.run_tpl and rec.get("kind") == "specialised":      # J2_RUN_TEMPLATES=1: receipts reach agents, so the template goes by its section there (templates.json keeps its name)
+        if (self.run_tpl or auto_reuse_on()) and rec.get("kind") == "specialised":      # J2_RUN_TEMPLATES=1: receipts reach agents, so the template goes by its section there (templates.json keeps its name)
             return {**{k: rec.get(k) for k in ("version", "kind", "action")}, "template": f"the {rec.get('section')} template"}
         return {k: rec.get(k) for k in ("template", "version", "kind", "action")}
 

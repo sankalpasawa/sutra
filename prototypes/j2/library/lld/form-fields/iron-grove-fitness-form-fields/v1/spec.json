@@ -1,0 +1,142 @@
+{
+  "name": "Iron Grove Fitness Form fields",
+  "artifact": "lld",
+  "section": "Form fields",
+  "version": 1,
+  "kind": "specialised",
+  "description": "Form fields for Iron Grove Fitness (lld): the generic LLD/1 · Form fields fields plus facts_used, from 2 charter fact(s); adapted from a template made for another business",
+  "fields": [
+    {
+      "name": "form_fields",
+      "type": "list[FormField]",
+      "required": true,
+      "description": "every form field, F1, F2, ... in order (for Iron Grove Fitness, a lld)",
+      "enum": null,
+      "nullable": false
+    },
+    {
+      "name": "assumptions",
+      "type": "list[string]",
+      "required": false,
+      "description": "the assumptions of Iron Grove Fitness's Form fields",
+      "enum": null,
+      "nullable": false
+    },
+    {
+      "name": "facts_used",
+      "type": "list[string]",
+      "required": false,
+      "description": "the charter facts this section is written from, copied exactly from Iron Grove Fitness's charter",
+      "enum": [
+        "Iron Grove Fitness",
+        "The Form fields section is written for Iron Grove Fitness"
+      ],
+      "nullable": false
+    }
+  ],
+  "objects": [
+    {
+      "name": "FormField",
+      "fields": [
+        {
+          "name": "id",
+          "type": "string",
+          "required": true,
+          "description": "F1, F2, ... in order",
+          "enum": null,
+          "nullable": false
+        },
+        {
+          "name": "form",
+          "type": "string",
+          "required": true,
+          "description": "the form's selector, e.g. \"#booking\"",
+          "enum": null,
+          "nullable": false
+        },
+        {
+          "name": "name",
+          "type": "string",
+          "required": true,
+          "description": "the field name attribute",
+          "enum": null,
+          "nullable": false
+        },
+        {
+          "name": "type",
+          "type": "string",
+          "required": true,
+          "description": "one of text, email, tel, url, number, date, time, select, textarea, checkbox, radio, password, file",
+          "enum": [
+            "text",
+            "email",
+            "tel",
+            "url",
+            "number",
+            "date",
+            "time",
+            "select",
+            "textarea",
+            "checkbox",
+            "radio",
+            "password",
+            "file"
+          ],
+          "nullable": false
+        },
+        {
+          "name": "required",
+          "type": "boolean",
+          "required": true,
+          "description": "true when the visitor must fill it in",
+          "enum": null,
+          "nullable": false
+        },
+        {
+          "name": "section",
+          "type": "string",
+          "required": false,
+          "description": "the section id the form sits in, e.g. \"S1\"",
+          "enum": null,
+          "nullable": false
+        },
+        {
+          "name": "validation",
+          "type": "string",
+          "required": false,
+          "description": "the validation rule in one line",
+          "enum": null,
+          "nullable": false
+        }
+      ]
+    }
+  ],
+  "rules": [
+    {
+      "rule": "enum",
+      "path": "facts_used[]",
+      "values": [
+        "Iron Grove Fitness",
+        "The Form fields section is written for Iron Grove Fitness"
+      ],
+      "from": "facts",
+      "name": "facts_used are facts of Iron Grove Fitness's charter"
+    }
+  ],
+  "sha": "930a0b912e3fa8fe5f669924cde4aa6900e332c52cbdcd880042c22fd6b1bc68",
+  "extends": "lld/form-fields@generic/1",
+  "made_by": {
+    "run": "j2-20261111-211339",
+    "workflow": "W-18",
+    "atom": "W-18.a1",
+    "agent": "code (adapted from a run template)"
+  },
+  "context": {
+    "business_type": "lld",
+    "facts_used": [
+      "Iron Grove Fitness",
+      "The Form fields section is written for Iron Grove Fitness"
+    ],
+    "fingerprint": "440b33e9fabc8e88e9b80160a15081fbcebd3d6ab85811076147321c772366bb"
+  }
+}

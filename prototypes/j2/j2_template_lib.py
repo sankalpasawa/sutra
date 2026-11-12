@@ -66,8 +66,14 @@ def artifacts():
 
 
 def enabled():
-    """J2_TEMPLATE_LIBRARY=1 (default off). Read per call so tests can switch it."""
-    return os.environ.get("J2_TEMPLATE_LIBRARY") == "1"
+    """J2_TEMPLATE_LIBRARY=1 (default off); J2_AUTO_REUSE=1 implies it. Read per call so tests can switch it."""
+    return os.environ.get("J2_TEMPLATE_LIBRARY") == "1" or auto_reuse()
+
+
+def auto_reuse():
+    """J2_AUTO_REUSE=1 (default off): a run started without a run template picks a similar one by itself
+    (match_run_templates), and the router adapts the nearest existing section template before it creates one (nearest)."""
+    return os.environ.get("J2_AUTO_REUSE") == "1"
 
 
 def slug(text):
@@ -773,8 +779,43 @@ def load_dir(d):
 
 
 def load(artifact, section_slug, tslug, version):
-    """(spec, meta, files) of one stored library version, or None."""
-    return load_dir(os.path.join(lib_dir(), artifact, section_slug, tslug, f"v{version}"))
+    """(spec, meta, files) of one stored library version, or None. A version that was moved into another family
+    (move_versions: its row says renamed_from) opens where it is now, so an older reference still resolves."""
+    got = load_dir(os.path.join(lib_dir(), artifact, section_slug, tslug, f"v{version}"))
+    if got or tslug == "generic":
+        return got
+    now = moved_to(artifact, section_slug, tslug, version)
+    return load_dir(os.path.join(lib_dir(), artifact, section_slug, now[0], f"v{now[1]}")) if now else None
+
+
+def _old_ref(v):
+    """(slug, version) a moved version had before (its renamed_from), or None."""
+    name, _, n = str(v.get("renamed_from") or "").rpartition("@")
+    return (slug(name), int(n)) if name and n.isdigit() else None
+
+
+def moved_to(artifact, section_slug, tslug, version):
+    """(slug, version) where the version once stored as tslug v<version> is now, or None."""
+    try:
+        version = int(version)
+    except (TypeError, ValueError):
+        return None
+    for e in index()["templates"]:
+        if e["artifact"] == artifact and e["section_slug"] == section_slug:
+            for v in e["versions"]:
+                if _old_ref(v) == (tslug, version):
+                    return e["slug"], v["version"]
+    return None
+
+
+def _numbers_taken(idx, artifact, section, tslug):
+    """Every version number a family has or had: its versions, and the ones moved out of it. A number is never used
+    twice, so an old reference to a moved version can never mean a newer one."""
+    here = {v["version"] for e in idx["templates"] if e["artifact"] == artifact and e["section"] == section
+            and e["slug"] == tslug for v in e["versions"]}
+    gone = {_old_ref(v)[1] for e in idx["templates"] if e["artifact"] == artifact and e["section"] == section
+            for v in e["versions"] if (_old_ref(v) or ("",))[0] == tslug}
+    return here | gone
 
 
 # ---------------------------------------------------------------- a run's own copy of the templates it used
@@ -876,15 +917,23 @@ def reuse_counts(decisions):
 def run_template_use(run_dir):
     """What a run that started from a run template shows on its Library tab: the template (id, name, how many of its
     workflows were selected, the stages added beyond it), the counts (reuse_counts) and the template generator's AI
-    calls in this run (template_calls.jsonl; no file, no call). None for a run without a run template."""
+    calls in this run (template_calls.jsonl; no file, no call). None for a run without a run template.
+    J2_AUTO_REUSE=1: a template the run picked itself has "auto": True and its "match"; a run that found no similar
+    one is {"scratch": True, "best": the best-scoring template's name and score, or None} with the same counts."""
     rec = _read(os.path.join(run_dir, "templates.json")) if run_dir else None
     rt = (rec or {}).get("run_template")
-    if not isinstance(rt, dict) or not rt.get("id"):
-        return None
-    calls = os.path.join(run_dir, "template_calls.jsonl")
+    auto = (rec or {}).get("auto_reuse")
+    calls = os.path.join(run_dir, "template_calls.jsonl") if run_dir else ""
     n = sum(1 for line in open(calls, encoding="utf-8") if line.strip()) if os.path.isfile(calls) else 0
+    if not isinstance(rt, dict) or not rt.get("id"):
+        if not isinstance(auto, dict) or not auto:
+            return None
+        best = (auto.get("scores") or [None])[0]
+        return {"scratch": True, "best": {k: best.get(k) for k in ("id", "name", "score", "why_not") if k in best} if best else None,
+                "threshold": auto.get("threshold"), "generator_calls": n, "counts": reuse_counts(rec.get("decisions"))}
     return {"id": rt["id"], "name": rt.get("name") or rt["id"], "selected": len(rt.get("selected") or []), "of": rt.get("of"),
             "added_stages": list(rt.get("added_stages") or []), "in_library": get_run_template(rt["id"]) is not None,
+            **({"auto": True, "match": rt.get("match")} if rt.get("auto") else {}),
             "generator_calls": n, "counts": reuse_counts(rec.get("decisions"))}
 
 
@@ -905,12 +954,17 @@ def get(ref, artifact, section):
         if e["artifact"] == artifact and e["section"] == section and (e["name"] == name or e["slug"] == slug(name)):
             v = next((x for x in e["versions"] if x["version"] == int(ver.lstrip("v"))), None)
             if not v:
-                return None
+                break
             got = load(artifact, slug(section), e["slug"], v["version"])
             if not got:
                 return None
             spec, meta, _ = got
             return SpecialisedTemplate.model_validate({**spec, "used_by": meta.get("used_by") or []})
+    now = moved_to(artifact, slug(section), slug(name), ver.lstrip("v"))      # moved into another family since: where it is now
+    if now:
+        got = load(artifact, slug(section), now[0], now[1])
+        if got:
+            return SpecialisedTemplate.model_validate({**got[0], "used_by": got[1].get("used_by") or []})
     return None
 
 
@@ -929,9 +983,9 @@ def store(t, fingerprint=None):
         same = next((v for v in entry["versions"] if v["sha"] == sha), None)
         if same:
             return get(f"{t.name}@{same['version']}", t.artifact, t.section), same["version"], False
-        version = max(v["version"] for v in entry["versions"]) + 1
+        version = max(_numbers_taken(idx, t.artifact, t.section, tslug)) + 1
     else:
-        version = 1
+        version = max(_numbers_taken(idx, t.artifact, t.section, tslug) or {0}) + 1
         entry = {"artifact": t.artifact, "section": t.section, "section_slug": slug(t.section), "slug": tslug,
                  "name": t.name, "kind": "specialised", "extends": t.extends, "versions": []}
         idx["templates"].append(entry)
@@ -1229,12 +1283,12 @@ def _prompt(need, gen, cands, hint, refused):
             + (f"\nYOUR LAST REPLY WAS REFUSED: {refused}. Fix that." if refused else ""))
 
 
-def adapt(gen, need, base, extras=True):
+def adapt(gen, need, base, extras=True, name=None):
     """The spec of a run template's section template made over for another business (route's first=): the generic
     fields in this business's words with facts_used narrowed to ITS facts, the fields its own facts name, and the
     fields the template added that hold no fact (no enum, described anew). Nothing of the template's first business is
     carried: none of its facts, enums or descriptions. Deterministic, so no generator call and never a new template."""
-    spec = specialise(gen, need, name=base.name)
+    spec = specialise(gen, need, name=name or base.name)
     have = {f["name"] for f in spec["fields"]}
     objs = {o.name: o for o in base.objects}
     onames = {o["name"] for o in spec["objects"]}
@@ -1256,17 +1310,114 @@ def adapt(gen, need, base, extras=True):
                 x.description = f"the {x.name.replace('_', ' ')}"
             spec["objects"].append(o.model_dump())
             onames.add(obj)
-    spec["description"] = spec["description"] + f"; adapted from version {base.version} of this template"
+    spec["description"] = spec["description"] + (f"; adapted from version {base.version} of this template" if (name or base.name) == base.name
+                                                 else OTHER_FAMILY)
     return spec
 
 
-def route(need, ctx, ask=None, first=None):
+OTHER_FAMILY = "; adapted from a template made for another business"      # which one: adapted_from (meta.json, the index); never its name here
+
+
+def _named_for(name, business):
+    """True when a template's name starts with this business's name (its family is that business's)."""
+    a, b = slug(name), slug(business)
+    return bool(str(business or "").strip()) and business != NOT_RECORDED and (a == b or a.startswith(b + "-"))
+
+
+def family_business(base):
+    """The business a template family is named for: the longest recorded business name (the index rows' business, else
+    a recorded fact) that its name starts with and that leaves something after it. None when nothing recorded fits."""
+    e = next((e for e in index()["templates"] if e["artifact"] == base.artifact and e["section"] == base.section
+              and e["slug"] == slug(base.name)), None)
+    rows = (e or {}).get("versions") or []
+    cands = [(v.get("business") or {}).get("name") for v in rows] + [f for v in rows for f in v.get("facts") or []] \
+        + list(base.context.facts_used)
+    fits = [c for c in cands if c and _named_for(base.name, c) and slug(c) != slug(base.name)]
+    return max(fits, key=len) if fits else None
+
+
+def family_name(base, need):
+    """J2_AUTO_REUSE=1: the name an adapted template is stored under. Adapted for the business its family is named for:
+    the same name, so it is a new version of that family. Adapted for a DIFFERENT business: a new family named for the
+    run's business, "<this business> <what the old name said after its own business>" (Thread Filter, for Flow Pilates:
+    "Flow Pilates Filter"); when the old family's business is not recorded, "<this business> <the workflow's label or
+    the section>"."""
+    site = str(need.get("site") or "").strip()
+    if not site or site == NOT_RECORDED or _named_for(base.name, site):
+        return base.name
+    old = family_business(base)
+    tail = base.name[len(old):].strip() if old and base.name.lower().startswith(old.lower()) else ""
+    return f"{site} {tail or need.get('label') or need['section']}".strip()[:80]
+
+
+def note_version(t, **notes):
+    """Provenance notes (adapted_from, renamed_from) on a stored version: meta.json and its index row."""
+    d = vdir(t.artifact, t.section, slug(t.name), t.version)
+    meta = _read(os.path.join(d, "meta.json")) or {}
+    meta.update(notes)
+    _write(os.path.join(d, "meta.json"), meta)
+    idx = index()
+    for e in idx["templates"]:
+        if e["artifact"] == t.artifact and e["section"] == t.section and e["slug"] == slug(t.name):
+            for v in e["versions"]:
+                if v["version"] == t.version:
+                    v.update(notes)
+    _save_index(idx)
+
+
+def _same_business(mine, theirs):
+    """2: the same business type; 1: the same kind of business (the last word: "pilates studio" and "yoga studio");
+    0: another kind, or either one says nothing ("business", "not recorded", a document type)."""
+    said = lambda x: " ".join(re.findall(r"[a-z]+", str(x or "").lower()))
+    a, b = said(mine), said(theirs)
+    if _noun(a) == "business" or _noun(b) == "business":
+        return 0
+    return 2 if a == b else 1 if _noun(a) == _noun(b) else 0
+
+
+def nearest(need, gen, own=()):
+    """J2_AUTO_REUSE=1: the stored template of the same artifact + section whose fields are nearest to what this need
+    wants, whatever business it was made for. similarity = |wanted and its fields| / |wanted or its fields|, where
+    wanted is the generic template's field names, the fields the need asks for, and facts_used when the need has
+    facts. Field names only: no fact is read. On equal similarity (common for page sections, which share one section
+    name): (a) a family named for this run's business, then a version made for the same business type as the run, then
+    for the same kind of business (_same_business); (b) a section template of the run template this run follows (own: their names); (c) the newest
+    version; then the name. None when the library has no template for that section."""
+    return (nearest_ranked(need, gen, own) or [None])[0]
+
+
+def nearest_ranked(need, gen, own=()):
+    """Every stored version of the need's artifact + section, in the order nearest() prefers them."""
+    want = {f.name for f in gen.fields} | set(need["fields"]) | ({"facts_used"} if need["facts"] else set())
+    own = set(own or ())
+    out = []
+    for e in index()["templates"]:
+        if e["artifact"] != need["artifact"] or e["section"] != need["section"]:
+            continue
+        for v in e["versions"]:
+            have = set(v.get("fields") or [])
+            sim = round(len(want & have) / len(want | have), 4) if want | have else 0.0
+            types = [x for x in ((v.get("business") or {}).get("type"), v.get("business_type")) if x]
+            out.append({"name": e["name"], "version": v["version"], "similarity": sim,
+                        "business_type": types[0] if types else NOT_RECORDED,
+                        "same_business": 3 if _named_for(e["name"], need.get("site")) else
+                        max([_same_business(need.get("business_type"), x) for x in types] or [0]),
+                        "own_section": e["name"] in own})
+    out.sort(key=lambda c: (-c["similarity"], -c["same_business"], -int(c["own_section"]), -int(c["version"]), c["name"]))
+    return out
+
+
+def route(need, ctx, ask=None, first=None, closest=None):
     """Pick the template one workflow's builder fills. ctx: {run, workflow, atom, agent}. ask(system, user, mock,
     schema) is the generator's one LLM call (None: the mock). Returns (template or None for generic, decision).
     first ({"template": "name@version"}, a run template's section template for this workflow) is the FIRST candidate:
     the same facts and fields reuse it as it is; other facts make a new version of that same template (adapt, action
-    "extended" with adapted_from); a new template is never created while it exists."""
+    "extended" with adapted_from); a new template is never created while it exists.
+    closest (None: J2_AUTO_REUSE=1): where the usual routing would create a template, the nearest stored template of
+    the same section is adapted the same way instead (rule "s", adapted_from); a template is created only when the
+    library has none for that section, or the adapted one fails the checks, and the reason says which."""
     gen = generic(need["artifact"], need["section"])
+    closest = auto_reuse() if closest is None else closest
     cands = candidates(need)
     top = cands[0] if cands else None
     use = {"run": ctx.get("run"), "workflow": ctx.get("workflow"), "atom": ctx.get("atom")}
@@ -1300,19 +1451,23 @@ def route(need, ctx, ask=None, first=None):
     # nothing to specialise: no facts and no extra fields -> the generic template, never a specialised one
     if not need["facts"] and not need["fields"]:
         return done(None, "generic", None, NOTHING_TO_SPECIALISE, rule="0")
-    t0 = get(first.get("template"), need["artifact"], need["section"]) if first else None
-    if t0 is not None:      # the run template's own section template comes first
+    def adapted(t0, key, agent, as_is, before, now):
+        """t0 made over for this need (adapt): reused as it is when it already holds these facts and fields, else a
+        new version of that same template. None when the adapted spec fails the checks (base[key] says why)."""
         ref = f"{t0.name}@{t0.version}"
         row = {"facts": t0.context.facts_used, "fields": [f.name for f in t0.fields], "enums": _enums(t0)}
         score = coverage(need, row)[0]
         if set(need["facts"]) <= set(t0.context.facts_used) and all(has_field(need, row, n) for n in need["fields"]):
-            return done(t0, "reused", score, f"the run template's section template {ref}, as it is: the same facts "
-                                             "and fields", rule="t")
+            return done(t0, "reused", score, as_is.format(ref=ref), rule="t" if key == "first_refused" else "s",
+                        **({} if key == "first_refused" else {"adapted_from": ref}))
+        rule = "t" if key == "first_refused" else "s"
+        # J2_AUTO_REUSE=1: adapted for another business, it is a new family named for this one (family_name)
+        name = family_name(t0, need) if closest else t0.name
         for extras in (True, False):      # with the fields the template added; if those fail the checks, without them
-            data = {**adapt(gen, need, t0, extras), "artifact": need["artifact"], "section": need["section"],
+            data = {**adapt(gen, need, t0, extras, name), "artifact": need["artifact"], "section": need["section"],
                     "kind": "specialised", "extends": generic_ref(need["artifact"], need["section"]),
                     "made_by": {"run": str(ctx.get("run") or ""), "workflow": str(ctx.get("workflow") or ""),
-                                "atom": str(ctx.get("atom") or ""), "agent": "code (adapted from a run template)"},
+                                "atom": str(ctx.get("atom") or ""), "agent": agent},
                     "context": {"business_type": need["business_type"], "facts_used": list(need["facts"]),
                                 "fingerprint": need["fingerprint"]}}
             bad = refusal(data)
@@ -1321,11 +1476,25 @@ def route(need, ctx, ask=None, first=None):
         if not bad:
             t, _, made = store(SpecialisedTemplate.model_validate(data))
             if not made:      # an earlier run of this business already made this version
-                return done(t, "reused", score, f"adapted from {ref} before: version {t.version} already holds this "
-                                                "business's facts", rule="t", adapted_from=ref)
-            return done(t, "extended", score, f"adapted from {ref}: the same section template, with this business's "
-                                              "facts in place of the earlier ones", rule="t", adapted_from=ref)
-        base["first_refused"] = "; ".join(bad)[:300]      # the adapted spec failed the checks: the usual routing
+                return done(t, "reused", score, before.format(ref=ref, version=t.version), rule=rule, adapted_from=ref)
+            if closest:
+                note_version(t, adapted_from=ref)
+            if name != t0.name:
+                return done(t, "extended", score, now.format(ref=ref) + f"; stored as {t.name}, this business's own family",
+                            rule=rule, adapted_from=ref, new_family=True)
+            return done(t, "extended", score, now.format(ref=ref), rule=rule, adapted_from=ref)
+        base[key] = "; ".join(bad)[:300]      # the adapted spec failed the checks: the usual routing
+        return None
+
+    t0 = get(first.get("template"), need["artifact"], need["section"]) if first else None
+    if t0 is not None:      # the run template's own section template comes first
+        got = adapted(t0, "first_refused", "code (adapted from a run template)",
+                      "the run template's section template {ref}, as it is: the same facts and fields",
+                      "adapted from {ref} before: version {version} already holds this business's facts",
+                      "adapted from {ref}: the same section template, with this business's facts in place of the "
+                      "earlier ones")
+        if got:
+            return got
     # a) the same fingerprint, and the template has every needed field (with the needed values): this version
     hit = next((c for c in cands if c["fingerprint_match"] and c["has_fields"]), None)
     if hit:
@@ -1339,6 +1508,27 @@ def route(need, ctx, ask=None, first=None):
             return done(t, "reused", top["score"], f"coverage 1.0: {cov(top)}", rule="b")
     hint = "extend" if top and top["score"] >= EXTEND_MIN else "create"
     rule = "c" if hint == "extend" else "d"
+    why_new = ""
+    if hint == "create" and closest:
+        # J2_AUTO_REUSE=1: before a new template is made, the nearest one of this section, from any business, is adapted
+        rt = get_run_template(ctx["run_template"]) if ctx.get("run_template") else None      # the run template this run follows
+        own = {w.section_template.rpartition("@")[0] for w in (rt.workflows if rt else [])
+               if w.artifact == need["artifact"] and w.section == need["section"] and w.section_template_kind == "specialised"}
+        near = nearest(need, gen, own)
+        t1 = get(f"{near['name']}@{near['version']}", need["artifact"], need["section"]) if near else None
+        if t1 is not None:
+            base["nearest"] = {k: near[k] for k in ("name", "version", "similarity", "business_type", "same_business", "own_section")}
+            got = adapted(t1, "nearest_refused", "code (adapted from the nearest template)",
+                          "the nearest template {ref}, as it is: the same facts and fields",
+                          "adapted from {ref} before: version {version} already holds this business's facts",
+                          f"adapted from {{ref}}: the nearest {need['section']} template by fields "
+                          f"(similarity {near['similarity']:.2f}), with this business's facts only")
+            if got:
+                return got
+            why_new = (f"the nearest template {near['name']}@{near['version']} could not be adapted "
+                       f"({base['nearest_refused']}), so a new one is made; ")
+        else:
+            why_new = f"no template exists for {need['artifact']} {need['section']} in the library, so a new one is made; "
     refused, tries = None, []
     for attempt in (1, 2):
         mock = lambda: json.dumps(mock_generator(need, gen, cands, hint), ensure_ascii=False)
@@ -1352,6 +1542,8 @@ def route(need, ctx, ask=None, first=None):
             if t is not None:
                 act = {"reuse": "reused", "extend": "extended", "create": "created"}[action]
                 note = why or str(reply.get("reason") or "")
+                if action == "create":
+                    note = why_new + note
                 if act == "reused":
                     return done(t, act, score, note, rule="b", attempts=attempt, refused=tries)
                 over = action != reply.get("action")      # an extend below EXTEND_MIN, taken as a create
@@ -1704,11 +1896,19 @@ def _place(idx, spec, meta, rid, d, where, facts_of):
                  "name": t.name, "kind": "specialised", "extends": t.extends, "versions": [], "description": t.description}
         idx["templates"].append(entry)
     same = next((v for v in entry["versions"] if v["sha"] == sha), None)
+    moved = next(((e, v) for e in idx["templates"] for v in e["versions"]      # renamed since (rename_versions): it stays where it is
+                  if e["artifact"] == t.artifact and e["section"] == t.section and (v.get("made_by") or {}).get("run") == t.made_by.run
+                  and v.get("renamed_from") == f"{t.name}@{int(spec.get('version') or 1)}"), None) if not same else None
+    if moved:
+        if not entry["versions"]:
+            idx["templates"].remove(entry)
+        _add_use(moved[0], moved[1], {**_use(rid, d), "action": d.get("action")}, meta.get("fingerprints"))
+        return "same", moved[0], moved[1]
     if same:
         _add_use(entry, same, _use(rid, d), meta.get("fingerprints"))
         _provenance(entry, same, t, facts_of)
         return "same", entry, same
-    taken = {v["version"] for v in entry["versions"]}
+    taken = _numbers_taken(idx, t.artifact, t.section, tslug)
     renumbered = None
     version = int(spec.get("version") or 1)
     if version in taken:
@@ -1725,7 +1925,8 @@ def _place(idx, spec, meta, rid, d, where, facts_of):
            "fingerprints": list(dict.fromkeys(list(meta.get("fingerprints") or []) + [t.context.fingerprint])),
            "made_by": {**t.made_by.model_dump(), "date": run_date(t.made_by.run)},
            "business": {"name": made["business"], "type": made["business_type"]}, "mock": made["mock"],
-           "collected_from": {"run": rid, "where": where}, "used_by": [_use(rid, d)]}
+           "collected_from": {"run": rid, "where": where}, "used_by": [_use(rid, d)],
+           **{k: meta[k] for k in ("adapted_from", "renamed_from") if meta.get(k)}}
     if renumbered:
         out["renumbered_from"] = renumbered
     dst = vdir(t.artifact, t.section, tslug, version)
@@ -1734,11 +1935,98 @@ def _place(idx, spec, meta, rid, d, where, facts_of):
     _write(os.path.join(dst, "model.py"), src)
     _write(os.path.join(dst, "meta.json"), out)
     row = {**_version_row(t, out), "made_by": out["made_by"], "business": out["business"], "mock": out["mock"],
-           "collected_from": out["collected_from"], **({"renumbered_from": renumbered} if renumbered else {})}
+           "collected_from": out["collected_from"], **({"renumbered_from": renumbered} if renumbered else {}),
+           **{k: out[k] for k in ("adapted_from", "renamed_from") if out.get(k)}}
     entry["versions"].append(row)
     entry["versions"].sort(key=lambda v: v["version"])
     entry["description"] = t.description
     return "renumbered" if renumbered else "added", entry, row
+
+
+def rename_versions(artifact, section, name, versions, new_name):
+    """Move some versions of one family into another family (move_versions)."""
+    return move_versions([(artifact, section, name, n, new_name) for n in versions])
+
+
+def move_versions(plan):
+    """Move stored versions into other families: plan is [(artifact, section, name, version, new_name)] (versions
+    adapted for a different business, stored before adapted templates got their own family). The content is kept:
+    fields, objects, rules and context are the same; the name, the version number (the next free one in the new
+    family, in the order of the old numbers) and so the shas change, and "adapted from version N of this template" in
+    the description is kept true (the new family's own number, or "a template made for another business"). Each moved
+    version records renamed_from and adapted_from (through the moves of this plan and earlier ones); its used_by goes
+    with it; the index's run rows and the run templates' section_template references follow. A number left behind is
+    never used again (_numbers_taken) and still opens the moved version (load). Returns [(old ref, new ref)]."""
+    idx = index()
+    entry = lambda art, sec, nm: next((e for e in idx["templates"] if e["artifact"] == art and e["section"] == sec and e["slug"] == slug(nm)), None)
+    plan = sorted(plan, key=lambda p: (p[0], p[1], p[4], p[2], p[3]))
+    moves, nxt = {}, {}
+    for art, sec, name, n, new_name in plan:      # 1: every new number, before any source is looked up
+        k = (art, sec, slug(new_name))
+        nxt[k] = nxt.get(k, max(_numbers_taken(idx, art, sec, slug(new_name)) or {0})) + 1
+        moves[(art, sec, f"{name}@{n}")] = f"{new_name}@{nxt[k]}"
+    earlier = {(e["artifact"], e["section"], v["renamed_from"]): f"{e['name']}@{v['version']}"
+               for e in idx["templates"] for v in e["versions"] if v.get("renamed_from")}
+    now = lambda art, sec, ref: moves.get((art, sec, ref)) or earlier.get((art, sec, ref)) or ref
+    out = []
+    for art, sec, name, n, new_name in plan:      # 2: the files, the index rows, the run rows
+        old = entry(art, sec, name)
+        row = next(v for v in old["versions"] if v["version"] == n)
+        spec, meta, _ = load_dir(vdir(art, sec, old["slug"], n))
+        m = re.search(r"; adapted from version (\d+) of this template", spec.get("description") or "")
+        src = now(art, sec, meta.get("adapted_from") or f"{name}@{m.group(1)}") if m or meta.get("adapted_from") else None
+        version = int(moves[(art, sec, f"{name}@{n}")].rpartition("@")[2])
+        mine = src and src.rpartition("@")[0] == new_name      # adapted from an earlier version of the new family itself
+        desc = spec.get("description") or ""
+        if m:
+            desc = desc.replace(m.group(0), f"; adapted from version {src.rpartition('@')[2]} of this template" if mine else OTHER_FAMILY)
+        t = SpecialisedTemplate.model_validate({**{k: v for k, v in spec.items() if k not in ("version", "sha")},
+                                                "name": new_name, "description": desc, "used_by": []})
+        new = entry(art, sec, new_name)
+        if new is None:
+            new = {**{k: old[k] for k in ("artifact", "section", "section_slug", "kind", "extends")}, "slug": slug(new_name),
+                   "name": new_name, "versions": []}
+            idx["templates"].append(new)
+        t.version, t.sha = version, t.compute_sha()
+        schema, code = transport(t), codegen(t)
+        notes = {"renamed_from": f"{name}@{n}", **({"adapted_from": src} if src else {})}
+        info = {**meta, "name": new_name, "version": version, "sha": t.sha, "schema_sha": sha_of(schema),
+                "model_sha": hashlib.sha256(code.encode("utf-8")).hexdigest(), "class": class_name(t), **notes}
+        dst = vdir(art, sec, slug(new_name), version)
+        _write(os.path.join(dst, "spec.json"), t.model_dump(exclude={"used_by"}))
+        _write(os.path.join(dst, "schema.json"), schema)
+        _write(os.path.join(dst, "model.py"), code)
+        _write(os.path.join(dst, "meta.json"), info)
+        new["versions"].append({**row, "version": version, "sha": t.sha, "schema_sha": info["schema_sha"], "description": desc, **notes})
+        new["versions"].sort(key=lambda v: v["version"])
+        new["description"] = new["versions"][-1]["description"]
+        old["versions"] = [v for v in old["versions"] if v["version"] != n]
+        shutil.rmtree(vdir(art, sec, old["slug"], n))
+        for run in (idx.get("runs") or {}).values():
+            for d in run.get("decisions") or []:
+                ref = d.get("ref") or {}
+                if d.get("artifact") == art and ref.get("section_slug") == slug(sec) and ref.get("slug") == old["slug"] and ref.get("version") == n:
+                    d.update(template=new_name, version=version, renamed_from=f"{name}@{n}",
+                             ref={**ref, "slug": slug(new_name), "version": version})
+        if old["versions"]:
+            old["description"] = old["versions"][-1].get("description") or old.get("description")
+        else:
+            idx["templates"].remove(old)
+        out.append((f"{name}@{n}", f"{new_name}@{version}"))
+    _save_index(idx)
+    root = os.path.join(lib_dir(), RUN_TEMPLATE_DIR)      # 3: the run templates name the versions where they are now
+    for tid in sorted(os.listdir(root)) if os.path.isdir(root) else []:
+        path = os.path.join(root, tid, "template.json")
+        data = _read(path)
+        changed = False
+        for w in (data or {}).get("workflows") or []:
+            ref = moves.get((w.get("artifact"), w.get("section"), w.get("section_template")))
+            if ref and w.get("section_template_kind") == "specialised":
+                w["section_template"], changed = ref, True
+        if changed:
+            RunTemplate.model_validate(data)
+            _write(path, data)
+    return out
 
 
 def collect(runs_dir, runs=None):
@@ -2051,6 +2339,55 @@ def run_template_from_run(run_dir, name=None, description=None):
         "made_by": {"run": rid, "date": run_date(rid), "provider": facts["provider"], "model": facts["model"],
                     "by": "j2_template_lib.run_template_from_run"},
         "used_by": [], "created": time.strftime("%Y-%m-%dT%H:%M:%S")})
+
+
+AUTO_MIN = 0.6      # J2_AUTO_REUSE=1: the least match a run template needs to be picked
+AUTO_WEIGHTS = {"stages": 0.4, "business": 0.3, "covers": 0.3}
+VAGUE_TYPES = {"business", "company", "not", "recorded", "document", "the", "and", "for"}
+
+
+def run_template_match(rt, asked, text, done_when):
+    """How well a run template fits a run that has its first charter: match = 0.4 x stages + 0.3 x business + 0.3 x
+    covers, each from 0 to 1, rounded to two places.
+    stages: the stages asked for and the template's stages, shared / all (asked or in the template).
+    business: the share of the words of the template's business type (three letters or more; "business" and "not
+    recorded" say nothing) found in text (the brief, the answers, the charter's statement and name).
+    covers: for each done-when item of the charter, the best overlap with a slot-cover of the template's workflows of
+    the first stage asked for (shared words / the words of the shorter one; slots are dropped), averaged."""
+    a, t = set(asked or []), set(rt.stages)
+    stages = len(a & t) / len(a | t) if a | t else 0.0
+    toks = lambda x: set(re.findall(r"[a-z]{3,}", str(x or "").lower())) - VAGUE_TYPES
+    bw = toks(rt.business_type)
+    business = len(bw & toks(text)) / len(bw) if bw else 0.0
+    first = asked[0] if asked else None
+    covers = [c for c in (words(SLOT_RE.sub(" ", x)) for w in rt.workflows if w.stage == first and not w.fix
+                          for x in w.covers) if c]
+    items = [i for i in (words(d) for d in done_when or []) if i]
+    cov = sum(max((len(i & c) / min(len(i), len(c)) for c in covers), default=0.0) for i in items) / len(items) \
+        if items else 0.0
+    score = sum(AUTO_WEIGHTS[k] * v for k, v in (("stages", stages), ("business", business), ("covers", cov)))
+    return {"score": round(score, 2), "stages": round(stages, 2), "business": round(business, 2), "covers": round(cov, 2)}
+
+
+def match_run_templates(asked, text, done_when, live=False):
+    """J2_AUTO_REUSE=1: every run template in the library scored against a run (run_template_match), best first (then
+    by name). A template can be picked only when its first stage is the stage whose charter was just written (the run
+    cannot go back to an earlier stage), and, in a live run, only when a live run made it; "why_not" says which."""
+    out = []
+    for r in run_template_list():
+        rt = get_run_template(r["id"])
+        if rt is None:
+            continue
+        m = run_template_match(rt, asked, text, done_when)
+        why = ""
+        if not asked or not rt.stages or rt.stages[0] != asked[0]:
+            why = f"its first stage ({rt.stages[0] if rt.stages else 'none'}) is not this run's first ({asked[0] if asked else 'none'})"
+        elif live and rt.mock is not False:
+            why = "a mock run made it, so a live run does not start from it"
+        out.append({"id": rt.id, "name": rt.name, **m, "template_stages": list(rt.stages), "business_type": rt.business_type,
+                    "mock": rt.mock, "eligible": not why, **({"why_not": why} if why else {})})
+    out.sort(key=lambda x: (-x["score"], x["name"]))
+    return out
 
 
 def and_words(items):

@@ -19,7 +19,7 @@
       "stage": "prd",
       "artifact": "prd",
       "section": "Problem",
-      "section_template": "Still Point Yoga Problem@3",
+      "section_template": "Iron Grove Fitness Problem@1",
       "section_template_kind": "specialised",
       "depends_on": [],
       "covers": [
@@ -34,7 +34,7 @@
       "stage": "prd",
       "artifact": "prd",
       "section": "Users",
-      "section_template": "Still Point Yoga PRD Users@2",
+      "section_template": "Iron Grove Fitness PRD Users@1",
       "section_template_kind": "specialised",
       "depends_on": [
         "W-1"
@@ -51,7 +51,7 @@
       "stage": "prd",
       "artifact": "prd",
       "section": "Goals",
-      "section_template": "Still Point Yoga PRD Goals@3",
+      "section_template": "Iron Grove Fitness PRD Goals@1",
       "section_template_kind": "specialised",
       "depends_on": [
         "W-2"
@@ -68,7 +68,7 @@
       "stage": "prd",
       "artifact": "prd",
       "section": "Requirements",
-      "section_template": "Still Point Yoga Requirements@4",
+      "section_template": "Iron Grove Fitness Requirements@1",
       "section_template_kind": "specialised",
       "depends_on": [
         "W-3"
@@ -88,7 +88,7 @@
       "stage": "prd",
       "artifact": "prd",
       "section": "Success metrics",
-      "section_template": "Still Point Yoga PRD Success metrics@2",
+      "section_template": "Iron Grove Fitness PRD Success metrics@1",
       "section_template_kind": "specialised",
       "depends_on": [
         "W-3"
@@ -105,7 +105,7 @@
       "stage": "prd",
       "artifact": "prd",
       "section": "Out of scope",
-      "section_template": "Still Point Yoga PRD Out of scope@3",
+      "section_template": "Iron Grove Fitness PRD Out of scope@1",
       "section_template_kind": "specialised",
       "depends_on": [
         "W-4"
@@ -122,7 +122,7 @@
       "stage": "hld",
       "artifact": "hld",
       "section": "Purpose and scope",
-      "section_template": "Still Point Yoga Purpose and scope@2",
+      "section_template": "Iron Grove Fitness Purpose and scope@1",
       "section_template_kind": "specialised",
       "depends_on": [],
       "covers": [
@@ -137,7 +137,7 @@
       "stage": "hld",
       "artifact": "hld",
       "section": "Pages",
-      "section_template": "Still Point Yoga Pages@2",
+      "section_template": "Iron Grove Fitness Pages@1",
       "section_template_kind": "specialised",
       "depends_on": [
         "W-7"
@@ -154,7 +154,7 @@
       "stage": "hld",
       "artifact": "hld",
       "section": "Components",
-      "section_template": "Still Point Yoga Components@4",
+      "section_template": "Iron Grove Fitness Components@2",
       "section_template_kind": "specialised",
       "depends_on": [
         "W-8",
@@ -172,7 +172,7 @@
       "stage": "hld",
       "artifact": "hld",
       "section": "Data flow",
-      "section_template": "Still Point Yoga Data flow@2",
+      "section_template": "Iron Grove Fitness Data flow@1",
       "section_template_kind": "specialised",
       "depends_on": [
         "W-9"
@@ -189,7 +189,7 @@
       "stage": "hld",
       "artifact": "hld",
       "section": "Hosting and deployment",
-      "section_template": "Still Point Yoga Hosting and deployment@3",
+      "section_template": "Iron Grove Fitness Hosting and deployment@2",
       "section_template_kind": "specialised",
       "depends_on": [
         "W-10"
@@ -206,7 +206,7 @@
       "stage": "hld",
       "artifact": "hld",
       "section": "Risks",
-      "section_template": "Still Point Yoga Risks@2",
+      "section_template": "Iron Grove Fitness Risks@1",
       "section_template_kind": "specialised",
       "depends_on": [
         "W-11"
@@ -223,7 +223,7 @@
       "stage": "lld",
       "artifact": "lld",
       "section": "Pages and sections",
-      "section_template": "Still Point Yoga Pages and sections@3",
+      "section_template": "Iron Grove Fitness Pages and sections@1",
       "section_template_kind": "specialised",
       "depends_on": [
         "W-9"
@@ -240,7 +240,7 @@
       "stage": "lld",
       "artifact": "lld",
       "section": "Interactive elements",
-      "section_template": "Still Point Yoga Interactive elements@3",
+      "section_template": "Iron Grove Fitness Interactive elements@2",
       "section_template_kind": "specialised",
       "depends_on": [
         "W-13"
@@ -257,7 +257,7 @@
       "stage": "lld",
       "artifact": "lld",
       "section": "Form fields",
-      "section_template": "Still Point Yoga Form fields@3",
+      "section_template": "Iron Grove Fitness Form fields@2",
       "section_template_kind": "specialised",
       "depends_on": [
         "W-14"
@@ -274,7 +274,7 @@
       "stage": "lld",
       "artifact": "lld",
       "section": "File structure",
-      "section_template": "Still Point Yoga File structure@3",
+      "section_template": "Iron Grove Fitness File structure@2",
       "section_template_kind": "specialised",
       "depends_on": [
         "W-15"
@@ -291,7 +291,7 @@
       "stage": "lld",
       "artifact": "lld",
       "section": "Responsive and accessibility rules",
-      "section_template": "Still Point Yoga Responsive and accessibility rules@3",
+      "section_template": "Iron Grove Fitness Responsive and accessibility rules@2",
       "section_template_kind": "specialised",
       "depends_on": [
         "W-16"
@@ -375,6 +375,12 @@
     "model": "sonnet",
     "by": "j2_template_lib.run_template_from_run"
   },
-  "used_by": [],
+  "used_by": [
+    {
+      "run": "j2-20261112-150036",
+      "workflows": 20,
+      "of": 20
+    }
+  ],
   "created": "2026-11-11T22:16:22"
 }

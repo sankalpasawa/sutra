@@ -1,0 +1,39 @@
+{
+  "schema": "template-library/1",
+  "name": "Iron Grove Fitness PRD Goals",
+  "version": 1,
+  "sha": "cac171b9bab40ff13dff6e73f117b1be3fbb594e36a9d96d22b115159af88dd3",
+  "schema_sha": "9a18f8714f0aee3786f68b1669e92a1a887f457eb6cb06edaf33d113e865d097",
+  "model_sha": "f8c8bcd3244cb8c268e175dfd8d4100eac9787d4053195f85bc52c353aeec38c",
+  "class": "IronGroveFitnessPRDGoalsV1",
+  "created": "2026-11-11T21:21:36",
+  "fingerprints": [
+    "8650ddcdc65e70f62ca2ce4cc0318c825492e543747655e2d3aad6d991b75744"
+  ],
+  "made_by": {
+    "run": "j2-20261111-211339",
+    "workflow": "W-3",
+    "atom": "W-3.a1",
+    "agent": "code (adapted from a run template)",
+    "date": "2026-11-11 21:13:39"
+  },
+  "business": {
+    "name": "Iron Grove Fitness",
+    "type": "fitness studio"
+  },
+  "mock": false,
+  "collected_from": {
+    "run": "j2-20261111-211339",
+    "where": "the run's copy"
+  },
+  "used_by": [
+    {
+      "run": "j2-20261111-211339",
+      "workflow": "W-3",
+      "atom": "W-3.a1",
+      "action": "extended"
+    }
+  ],
+  "renamed_from": "Still Point Yoga PRD Goals@3",
+  "adapted_from": "Still Point Yoga PRD Goals@2"
+}

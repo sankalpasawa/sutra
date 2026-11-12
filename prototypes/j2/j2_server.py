@@ -148,7 +148,7 @@ class Handler(http.server.BaseHTTPRequestHandler):
             tid = q.get("id") or ""
             got = j2_template_lib.run_template_view(tid) if re.fullmatch(r"[a-z0-9-]+", tid) else None
             if got:
-                got["enabled"] = os.environ.get("J2_RUN_TEMPLATES") == "1"
+                got["enabled"] = os.environ.get("J2_RUN_TEMPLATES") == "1" or j2_template_lib.auto_reuse()
             return self._send(200, json.dumps(got, ensure_ascii=False)) if got else self._send(404, '{"error": "no such run template"}')
         if u.path.startswith("/api/library/"):      # one template version: /api/library/<artifact>/<section>/<slug>/v<N>
             parts = u.path[len("/api/library/"):].split("/")

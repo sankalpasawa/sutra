@@ -3501,12 +3501,16 @@ function rtSummary(u, dec){
   if (!u) return "";
   const c = u.counts || {}, part = (g, label) => c[g] ? `<div data-rtgroup="${g}"><b>${label}:</b> ${reuseCounts(c[g], g)} ${reuseFrom(c[g])}</div>` : "";
   const name = u.in_library ? `<a href="/library?view=templates&rt=${encodeURIComponent(u.id)}" data-rtlink="1">${esc(u.name)}</a>` : esc(u.name);
-  return `<div class="artrow tplcard" data-rtsum="1"><div><b>Started from run template</b> ${name}: ${esc(u.selected)} of ${esc(u.of)} workflows`
+  const match = x => esc(Number(x).toFixed(2));      // J2_AUTO_REUSE=1: the run picked the template itself, or found none similar and built from scratch
+  const lead = u.scratch ? `<b data-rtauto="scratch">Built from scratch</b>: no similar run template${u.best ? ` (best ${esc(u.best.name)} ${match(u.best.score)})` : ""}`
+    : `<b${u.auto ? ' data-rtauto="picked"' : ""}>${u.auto ? "Auto-picked run template" : "Started from run template"}</b> ${name}${u.auto ? ` (match ${match(u.match)})` : ""}: ${esc(u.selected)} of ${esc(u.of)} workflows`;
+  return `<div class="artrow tplcard" data-rtsum="1"><div>${lead}`
     + ((u.added_stages || []).length ? `; <span class="empty">added, not in template: ${u.added_stages.map(esc).join(", ")}</span>` : "") + `</div>`
     + part("documents", "Documents") + part("pages", "Website") + `<div data-rtgen="1"><b>Generator calls:</b> ${esc(u.generator_calls)}</div>${rtFilters(dec || [])}</div>`;
 }
-const rtCell = d => d.from_template === true ? `${esc(d.template_workflow || "")}${d.adapted_from ? ` <span class="empty">adapted from ${esc(d.adapted_from)}</span>` : ""}`
-  : d.from_template === false ? '<span class="empty">added, not in template</span>' : "";
+const rtFrom = d => d.adapted_from ? `<span class="empty">adapted from ${esc(d.adapted_from)}</span>` : "";      // the source of an adapted row, whichever way it was found
+const rtCell = d => d.from_template === true ? `${esc(d.template_workflow || "")}${d.adapted_from ? " " + rtFrom(d) : ""}`
+  : d.from_template === false ? `<span class="empty">added, not in template</span>${d.adapted_from ? " " + rtFrom(d) : ""}` : rtFrom(d);
 function renderLibrary(){
   const dec = LIB.decisions || [], rt = LIB.rt || null, rows = rt ? dec.filter(rtShown) : dec;
   const table = dec.length ? `<table class="maptable" data-tpltable="1"><thead><tr><th>Workflow</th><th>Artifact · section</th><th>Action</th><th>Template</th>${rt ? "<th>Run template</th>" : ""}<th>From</th><th>Score</th><th>Reason</th></tr></thead><tbody>`
