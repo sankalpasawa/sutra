@@ -45,7 +45,10 @@ import json
 import math
 import os
 import re
+import shlex
 import shutil
+import subprocess
+import tempfile
 import threading
 import time
 
@@ -480,7 +483,80 @@ def builder_timeout():
 
 
 # Builder tools (J2_AGENT_TOOLS=1): the settings a tools call needs, each required (no defaults in code: .env.example)
-AGENT_SETTINGS = ("J2_AGENT_USD", "J2_AGENT_MAX_FILES", "J2_AGENT_MAX_BYTES", "J2_TOOL_LOG_CHARS")
+AGENT_SETTINGS = ("J2_AGENT_USD", "J2_AGENT_MAX_FILES", "J2_AGENT_MAX_BYTES", "J2_TOOL_LOG_CHARS", "J2_SANDBOX_CMD")
+# Paths the sandbox runtime (srt) leaves writable by default; a rerun closes them (measured 2026-11-12, srt 0.0.81)
+SANDBOX_DENY_WRITE = ("/tmp/claude", "/private/tmp/claude")
+
+
+def sandbox_settings(folder):
+    """The sandbox runtime's settings for one test rerun: no network, nothing in the home folder readable but the
+    folder, writes only in the folder."""
+    return {"network": {"allowedDomains": [], "deniedDomains": []},
+            "filesystem": {"denyRead": ["~"], "allowRead": [folder], "allowWrite": [folder],
+                           "denyWrite": list(SANDBOX_DENY_WRITE)}}
+
+
+def sandbox_rerun(folder, runner, target, timeout):
+    """Run a builder's test again, independently, inside the sandbox runtime (J2_SANDBOX_CMD, e.g. srt): on a copy of
+    the folder made beside it in the run folder (the test may write; the folder itself is never changed), with
+    sandbox_settings, the form's runner ({target} = the test file) and the time limit. J2 never runs builder code any
+    other way. {"pass": True/False, or None when it could not run, "exit", "sha256" of the test file, "seconds",
+    "output" (the end of it), "evidence"}."""
+    cmd = str(os.getenv("J2_SANDBOX_CMD") or "").strip()
+    path = os.path.realpath(os.path.join(folder, str(target or "")))
+    if not cmd:
+        return {"pass": None, "exit": None, "evidence": "J2_SANDBOX_CMD is not set, so the test was not rerun"}
+    if not target or not llm.inside(path, folder) or not os.path.isfile(path):
+        return {"pass": False, "exit": None, "evidence": f"the test {target!r} is not a file in the folder"}
+    with open(path, "rb") as f:
+        sha = hashlib.sha256(f.read()).hexdigest()
+    argv = [str(x).replace("{target}", os.path.relpath(path, os.path.realpath(folder))) for x in runner]
+    parent = os.path.dirname(os.path.realpath(folder))
+    copy = tempfile.mkdtemp(prefix=".rerun-", dir=parent)
+    fd, conf = tempfile.mkstemp(prefix=".rerun-", suffix=".json", dir=parent)
+    t0 = time.time()
+    try:
+        shutil.copytree(folder, copy, dirs_exist_ok=True, symlinks=True)
+        with os.fdopen(fd, "w", encoding="utf-8") as f:
+            json.dump(sandbox_settings(copy), f)
+        p = subprocess.run(shlex.split(cmd) + ["-s", conf, "-c", shlex.join(argv)], cwd=copy, capture_output=True,
+                           text=True, timeout=timeout)
+        out = ((p.stdout or "") + (p.stderr or ""))[-1500:]
+        last = next((x.strip() for x in reversed(out.splitlines()) if x.strip()), "no output")
+        return {"pass": p.returncode == 0, "exit": p.returncode, "sha256": sha, "seconds": round(time.time() - t0, 2),
+                "output": out, "evidence": f"{shlex.join(argv)} exited {p.returncode} in the sandbox ({last[:160]})"}
+    except subprocess.TimeoutExpired:
+        return {"pass": False, "exit": None, "sha256": sha, "evidence": f"{shlex.join(argv)} ran past {timeout:g}s in the "
+                                                                         "sandbox and was stopped"}
+    except OSError as e:
+        return {"pass": None, "exit": None, "sha256": sha, "evidence": f"the sandbox could not start: {e}"}
+    finally:
+        shutil.rmtree(copy, ignore_errors=True)
+        try:
+            os.remove(conf)
+        except OSError:
+            pass
+
+
+def charter_list(goal, field):
+    """A charter field as a list of non-empty strings (a single string is a list of one)."""
+    v = (goal or {}).get(field)
+    return [str(x).strip() for x in (v if isinstance(v, list) else [v]) if str(x or "").strip()]
+
+
+def folder_text(folder, limit=2_000_000):
+    """Every text file in a folder, joined: what a facts check reads."""
+    out, n = [], 0
+    for d, _, files in os.walk(folder):
+        for f in sorted(files):
+            try:
+                with open(os.path.join(d, f), encoding="utf-8") as fh:
+                    t = fh.read(limit - n)
+            except (OSError, UnicodeDecodeError):
+                continue
+            out.append(t)
+            n += len(t)
+    return "\n".join(out)
 
 
 class BuilderToolFault(RuntimeError):
@@ -2185,6 +2261,28 @@ def mock_form_section(kind, w, goal):
                      "can act on.\n" for x in (wf_sections(w, secs) or secs[:1]))
 
 
+def mock_form_folder_charter(kind, text):
+    """Mock only: the charter of a type made from a folder form: a module, its test and an instructions file."""
+    m = re.search(r"\b(?:for|called)\s+([A-Z][\w']*(?:\s+[A-Z][\w']*)*)", text)
+    name, label = (m.group(1) if m else "the Requester"), j2_types.info(kind)["label"]
+    files = ["main.py", "test_main.py", "README.md"]
+    return {"statement": f"A {label.lower()} for {name}", "product_name": name, "site_name": name, "audience": "its users",
+            "facts": [], "standards": ["Plain and specific"], "rules": ["No invented facts"],
+            "may_touch": ["its own folder"], "never_do": ["Never write outside its own folder."], "files": files,
+            "test": "test_main.py", "done_when": [f"{f} is in the folder" for f in files] + ["Its test passes"],
+            "core": [True] * 4, "to_be_confirmed": [], "dropped_from_brief": [], "business_type": kind, "visitor_needs": []}
+
+
+def mock_form_folder_files(kind, goal):
+    """Mock only: the files a scripted folder builder writes (what its tools would write), from the mock charter."""
+    g = goal or {}
+    out = {f: f"# {f}\n" for f in g.get("files") or []}
+    out["main.py"] = 'def run(name):\n    return f"Hello, {name}!"\n'
+    out[g.get("test") or "test_main.py"] = 'import main\nassert main.run("Ada") == "Hello, Ada!"\nprint("ok")\n'
+    out["README.md"] = f"# {g.get('product_name') or 'Agent'}\n\n" + "".join(f"- {x}\n" for x in g.get("never_do") or [])
+    return out
+
+
 def mock_doc_section(w, goal):
     """Mock only: the markdown a scripted builder writes for the PRD section its workflow names."""
     many = wf_sections(w, doc_sections("prd"))
@@ -3171,6 +3269,8 @@ class J2Run:
         self.out = output_def(self.output) if self.output else None
         # how it is built and checked follows its form (page or document), not its name
         self.doc = bool(self.output) and j2_types.info(self.output)["form"] == "document"
+        # a form whose output is a folder (types.json "output"): built by _folder_stage, by a builder with tools
+        self.folder = bool(self.out) and self.out.get("output") == "folder"
         if self.doc and not self.out["sections"]:      # a new type with no template yet: the sections its plan declared
             self.out = {**self.out, "sections": tuple(self.__dict__.get("declared_secs", {}).get(self.output) or ())}
         # J2_REALIZATION: no rate card; Adaptation estimates each workflow's budget (estimated_resources.money)
@@ -3611,6 +3711,7 @@ class J2Run:
                "reason": reply.get("reason") if isinstance(reply, dict) else None,
                **({"atom": self.atom} if self.atom else {}),
                **({"timeouts": self.call_timeouts} if getattr(self, "call_timeouts", 0) else {}),
+               **({"usd": meta["usd"]} if meta.get("usd") is not None else {}),      # what the CLI says it cost
                **({"tools": tools} if tools else {}),
                **({"artifact_schema": art} if art else {})}
         self.call_log.append(rec)
@@ -3998,7 +4099,10 @@ class J2Run:
         if self.doc and self.sites and not self.paused:
             self._export()
         noun = (self.out["noun"] if self.doc else self.out["noun"][:1].upper() + self.out["noun"][1:]) if self.out else None
-        self.post("system", (self.outcome or "Stopped.") + (f" {noun} v{len(self.sites)} is in the preview. " if noun else " ")
+        where = " " if not noun or (self.folder and self.paused) else \
+            f" The {self.out['noun']} is in {self.out['folder']}/ in the run folder. " if self.folder else \
+            f" {noun} v{len(self.sites)} is in the preview. "
+        self.post("system", (self.outcome or "Stopped.") + where
                   + ("Answer Identity's question above to continue." if self.paused else
                      "Tell us if you want changes."))
         # summary.json first (code only), then the result is shown: the run is complete here. The reviewer call can
@@ -4409,6 +4513,160 @@ class J2Run:
             return
         self._deeds_finished()
 
+    # ---- a form whose output is a folder (types.json "output": "folder"; J2_AGENT_TOOLS=1)
+    FOLDER_FMT = ('{"say": str (to @Coordination: what you wrote and what the test printed), "human_output": str (1 to '
+                  '3 plain sentences for the Requester: what the folder now does), "next": "Coordination"}')
+
+    def _folder_stage(self):
+        """After the charter: one workflow, registered by code from the charter and the type's conditions file, whose
+        builder writes the folder with the tools its form declares (J2Run.call tools). After each attempt code checks
+        every condition on the folder (the test rerun in the sandbox, sandbox_rerun) and gives the failures back, up
+        to MAX_CHECK_ATTEMPTS. A write outside the folder stops it at once.
+        ponytail: no Adaptation plan, Priority or Audit for a folder yet; the conditions are its checks."""
+        self.step = 6
+        try:
+            tools = self._builder_tools()
+            if tools is None:
+                raise ValueError("its form gives the builder tools, which need J2_AGENT_TOOLS=1")
+        except ValueError as e:
+            self.post("system", f"The {self.out['label'].lower()} can't be built: {e}.", warning=True)
+            self.outcome, self.turn = f"Stopped: {e}.", None
+            return
+        g, label, folder = self.goal or {}, self.out["label"], self.out["folder"]
+        conds = {c["id"]: c for c in conditions_for(self.out["conditions"], g, self.out["practice"])}
+        self.past_workflows += self.workflows
+        self.workflows = []
+        wid = f"W-{len(self.past_workflows) + 1}"
+        aid = f"{wid}.a1"
+        files = next((charter_list(g, c["charter_field"]) for c in conds.values() if c["check"] == "charter-files-present"), [])
+        test = next((charter_list(g, c["charter_field"]) for c in conds.values() if c["check"] == "test-passed"), [""])[:1]
+        test = test[0] if test else ""
+        exact = [f for c in conds.values() if c["check"] == "charter-fields-present" for f in c.get("charter_fields") or []]
+        ver = [{"text": c["text"], "type": c["check"], "expect": True, "atom": aid, "condition": cid,
+                "target": c.get("charter_fields") or c.get("charter_field") or "."} for cid, c in conds.items()]
+        atom = {"id": aid, "goal": f"The {label.lower()} in {folder}/ meets every necessary condition",
+                "how": {"kind": "AI", "agent": f"{wid} Builder", "steps": files}, "constraints": ["only inside its folder"],
+                "context": ["charter"], "verification": ver,
+                "expected_output": [{"text": f"{f} is in the folder", "kind": "file", "target": f} for f in files]}
+        cost = sum(RATES.get(p, 0) for p in self.out.get("essentials") or ())
+        wf = {"id": wid, "proposal_id": None, "name": f"Build the {label.lower()}", "covers": [], "fixes": [],
+              "covers_text": [], "purpose": g.get("statement") or "", "cost": cost, "estimate": cost,
+              "envelope": {"money_limit": cost, "model_call_limit": MAX_CHECK_ATTEMPTS, "retry_limit": MAX_CHECK_ATTEMPTS - 1},
+              "charged": True, "calls_used": 0, "retries_used": 0, "outputs": [folder + "/"], "completion_check": "",
+              "dependencies": [], "status": "running", "cycle": self.cycle, "agent": f"{wid} Builder", "section": None,
+              "revises": None, "atoms": [atom]}
+        self.workflows = [wf]
+        add_workflow_agent(wid)
+        self._recalc_spent()
+        self.save("workflows.json", self.workflows)
+        runner = " ".join(str(x).replace("{target}", test) for x in self.out["test_runner"])
+        rules = "\n".join(f"- {c['id']} {c['text']}" for c in conds.values())
+        recs, evidence, failed, r, attempt, stop = [], "", [], {}, 0, None
+        self.atom = aid
+        while attempt < MAX_CHECK_ATTEMPTS:
+            attempt += 1
+            wf["calls_used"] += 1
+            task = (f"YOU ARE {wid} Builder, the agent for one registered workflow: {wf['name']}.\nYOUR FOLDER is your "
+                    f"working directory ({folder}/ in the run). Write exactly these files there: {json.dumps(files)}. "
+                    f"Then run the test with exactly this command: {runner}\n"
+                    + (f"Copy every item of the charter's {', '.join(exact)} word for word into the files. " if exact else "")
+                    + f"CHARTER: {json.dumps(g, ensure_ascii=False)}\nNECESSARY CONDITIONS (code checks each one on the "
+                    f"folder when you finish, and reruns the test in a sandbox):\n{rules}"
+                    + (f"\nATTEMPT {attempt} OF {MAX_CHECK_ATTEMPTS}. THESE FAILED ON YOUR LAST ATTEMPT:\n{evidence}\n"
+                       "Fix the folder so they pass." if evidence else ""))
+            try:
+                r = self.call(wid, self.FOLDER_FMT, task, lambda: self._mock_folder(tools["cwd"]), max_tokens=2000,
+                              timeout=builder_timeout(), tools=tools)
+                recs.append(self.call_log[-1].get("tools"))
+            except BuilderToolFault as e:
+                recs.append(self.call_log[-1].get("tools") if self.call_log and self.call_log[-1]["fn"] == wid else None)
+                if e.kind == "outside":
+                    stop = f"{wid} changed files outside its folder ({e})"
+                    break
+                evidence = f"- {e}"
+                continue
+            except RuntimeError as e:      # stopped at the time or cost limit, or the CLI failed
+                evidence = f"- your last call was stopped before it finished: {e}"
+                continue
+            failed = [x for x in self._folder_checks(wf, atom, attempt, conds, recs) if x["pass"] is not True]
+            if not failed:
+                break
+            evidence = "\n".join(f"- {x['check']}: {x['evidence']}" for x in failed)
+        self.atom = None
+        ok = not stop and atom.get("status") == "passed"
+        wf["status"], wf["version"] = ("done" if ok else "failed"), 1
+        self.save("workflows.json", self.workflows)
+        human = str((r or {}).get("human_output") or "").strip() if isinstance(r, dict) else ""
+        if ok:
+            self._say(wid, f"@Coordination {human or wf['name'] + ': done.'}", "coordination", None, workflow=wid,
+                      human_output=human, version=1, workflow_cost=wf["cost"])
+            self.post("identity", f"{j2_types.info(self.output)['ready']} {human}".strip(), done=True, to_user=True,
+                      next="user")
+            self.outcome = self.out["done"]
+            if self.stages and self._advance(self.stage_i + 1):
+                return
+        else:
+            why = stop or (evidence.replace("\n", " ") if evidence else "no usable attempt")
+            self.post("system", f"{wid} did not pass its checks after {attempt} attempt(s): {why}", warning=True)
+            self.outcome = f"Stopped: the {label.lower()} did not pass its checks after {attempt} attempt(s): {why}"
+        self.turn = None
+
+    def _mock_folder(self, cwd):
+        """Mock only: what a scripted builder's tools would write, then its reply."""
+        for name, text in self.out["mock_files"](self.goal).items():
+            p = os.path.join(cwd, name)
+            os.makedirs(os.path.dirname(p), exist_ok=True)
+            with open(p, "w", encoding="utf-8") as f:
+                f.write(text)
+        return json.dumps({"say": "@Coordination I wrote the folder and its test passed.", "human_output":
+                           "The folder now holds the agent, its instructions and a test that passes.", "next": "Coordination"})
+
+    def _folder_checks(self, wf, atom, attempt, conds, recs):
+        """Every condition on the builder's folder, by code, each a receipt: the charter's files present, the test
+        rerun in the sandbox (sandbox_rerun: its exit, the test's sha256 and time kept with the receipt), nothing
+        changed outside the folder in any call, every item of the named charter fields in the folder's text; any other
+        check through condition_met on that text."""
+        folder, g = os.path.join(self.dir, self.out["folder"]), self.goal or {}
+        text, out = folder_text(folder), []
+        for c in atom["verification"]:
+            k, cond, extra = c["type"], conds.get(c.get("condition")) or {}, {}
+            if k == "charter-files-present":
+                want = charter_list(g, c["target"])
+                miss = [f for f in want if not (llm.inside(os.path.join(folder, f), folder)
+                                                and os.path.isfile(os.path.join(folder, f)))]
+                res = {"actual": len(want) - len(miss), "pass": bool(want) and not miss,
+                       "evidence": (f"missing: {', '.join(miss)}" if miss else f"all {len(want)} files are in the folder")
+                       if want else f"the charter lists no {c['target']}"}
+            elif k == "test-passed":
+                t = (charter_list(g, c["target"]) or [""])[0]
+                rr = sandbox_rerun(folder, self.out["test_runner"], t, builder_timeout())
+                res = {"actual": rr.get("exit"), "pass": rr["pass"], "evidence": rr["evidence"]}
+                extra = {"rerun": {k2: rr.get(k2) for k2 in ("exit", "sha256", "seconds", "output")}}
+            elif k == "inside-folder":
+                bad = sorted({x for rec in recs if rec for x in rec.get("outside") or []})
+                res = {"actual": len(bad), "pass": not bad and any(recs),
+                       "evidence": f"changed outside the folder: {', '.join(bad)}" if bad else
+                       "no call changed anything outside the folder" if any(recs) else "no call was recorded"}
+            elif k == "charter-fields-present":
+                items = [x for f in c["target"] for x in charter_list(g, f)]
+                miss = [x for x in items if squash(x) not in squash(text)]
+                res = {"actual": len(items) - len(miss), "pass": not miss,
+                       "evidence": f"not in the folder's files: {'; '.join(miss)}" if miss else
+                       f"all {len(items)} item(s) are in the folder's files"}
+            else:
+                met, ev = condition_met(cond, text, g, "", ())
+                res = {"actual": met, "pass": met, "evidence": ev}
+            out.append(self._receipt(atom, c, attempt, res, **extra))
+        atom["results"], atom["attempts"] = out, attempt
+        atom["status"] = "failed" if any(x["pass"] is False for x in out) else \
+            "could not run" if any(x["pass"] is None for x in out) else "passed"
+        bad = [x for x in out if x["pass"] is not True]
+        self.post("system", f"Code ran {len(out)} check(s) for {wf['id']} (attempt {attempt} of {MAX_CHECK_ATTEMPTS}): "
+                  + ("; ".join(f"{x['check']} ({x['evidence']})" for x in bad) if bad else "all passed") + ".",
+                  checks=wf["id"])
+        self.save("workflows.json", self.workflows)
+        return out
+
     GOAL_TAGS = {"prd": "PRD", "hld": "HLD", "lld": "LLD"}      # and a page type by its label (_milestone)
 
     def _confirm_send(self, handoff):
@@ -4581,6 +4839,10 @@ class J2Run:
             if self.doc:
                 return json.dumps({"to_requester": "Thanks, I have everything I need. I'm starting the document now.",
                                    "to_agents": "@Adaptation Charter recorded for the PRD.", "enough": True,
+                                   "next": "Adaptation", "goal": self.out["mock_charter"](text)})
+            if self.out.get("mock_charter"):      # a type whose data names its own mock charter
+                return json.dumps({"to_requester": "Thanks, I have everything I need. I'm starting the build now.",
+                                   "to_agents": "@Adaptation Charter recorded from the brief.", "enough": True,
                                    "next": "Adaptation", "goal": self.out["mock_charter"](text)})
             if not self.intake and len(self.request.split()) < 25 and not last:
                 kind = guess_type(self.request)
@@ -6233,6 +6495,8 @@ class J2Run:
     def _start_work(self, change, start):
         """After the charter is stamped: Adaptation proposes. A J2_CHANGE change goes to _turn_change, unless no item,
         rule or standard changed (no plan change: the run ends as it is) or the goal itself changed (a full re-plan)."""
+        if self.folder and not change:      # a folder: one workflow from the charter, built with tools
+            return self._folder_stage()
         if not (change and self._change_applies(change)):
             return self._handoff("adaptation", **start)
         d = j2_change.charter_diff(self.real_base, self.goal)

@@ -146,6 +146,20 @@ J2 never runs a builder's code outside the sandbox: a test result comes from the
 builder folder must sit inside the run folder (`llm.py` refuses anything else); a folder under the CLI's own temp
 folder (`/private/tmp/claude-<uid>`) is not protected by the sandbox.
 
+Code checks a builder's test by running it again inside Anthropic's sandbox runtime (`srt`), on a copy of the folder:
+writes only in the copy, nothing in your home folder readable but the copy, no network. Install it once and point
+`J2_SANDBOX_CMD` at it:
+
+```bash
+npm install -g @anthropic-ai/sandbox-runtime@0.0.81      # Node 22.12 or later
+# Linux also needs: bubblewrap, socat, ripgrep (Ubuntu 24.04+: see the package README on user namespaces)
+J2_AGENT_TOOLS=1 J2_SANDBOX_CMD=srt J2_AGENT_USD=0.50 J2_AGENT_MAX_FILES=40 J2_AGENT_MAX_BYTES=500000 \
+  J2_TOOL_LOG_CHARS=2000 STUDIO_PROVIDER=claude-cli python3 j2_server.py
+```
+
+A test runner installed under your home folder (pyenv, a virtualenv) can't be read inside the sandbox: use one on
+the system path. Windows support in `srt` is alpha; J2's builder tools are untested there.
+
 ## Settings
 
 Set any of these before `python3 j2_server.py`, like the examples above.
@@ -180,6 +194,7 @@ Set any of these before `python3 j2_server.py`, like the examples above.
 | `J2_AGENT_USD` | none | Dollars one builder call may spend. Required with `J2_AGENT_TOOLS=1` |
 | `J2_AGENT_MAX_FILES` | none | Most files a builder's folder may hold after a call. Required with `J2_AGENT_TOOLS=1` |
 | `J2_AGENT_MAX_BYTES` | none | Most bytes a builder's folder may hold after a call. Required with `J2_AGENT_TOOLS=1` |
+| `J2_SANDBOX_CMD` | none | Command that reruns a builder's test in the sandbox runtime (e.g. `srt`). Required with `J2_AGENT_TOOLS=1` |
 | `J2_TOOL_LOG_CHARS` | none | Longest string kept as text in a call's tool log (longer: length and sha256). Required with `J2_AGENT_TOOLS=1` |
 
 ## Checks

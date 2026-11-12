@@ -276,7 +276,11 @@ def plan_faults(p, goal, items=None, types=None):
 def type_list(path=None):
     """The buildable types: name, label, form, file and needs (the types it is written from, which must be built
     first: a document's depends_on). A page reads the documents built before it as its blueprint and needs none."""
-    ts = [t for t in j2_types._read_types(path)["types"] if t.get("kind") == "type" and t.get("deliverable")]      # local ones too
+    d = j2_types._read_types(path)
+    # a type whose form gives its builder tools is buildable only with J2_AGENT_TOOLS=1 (the form's data says so)
+    tools_off = os.getenv("J2_AGENT_TOOLS") != "1"
+    ts = [t for t in d["types"] if t.get("kind") == "type" and t.get("deliverable")      # local ones too
+          and not (tools_off and ((d.get("forms") or {}).get(t.get("form")) or {}).get("tools"))]
     return [{"name": t["name"], "label": t["label"], "form": t["form"], "file": t.get("file"),
              "needs": list(t.get("depends_on") or []) if t["form"] == "document" else [],
              "after": list(t.get("depends_on") or [])} for t in ts]

@@ -51,7 +51,8 @@
       "done": "Done: the {label} is workable. Its test passed in the sandbox and every done-when item, rubric item and necessary condition passes.",
       "ready": "Your {lower} is ready.",
       "cost": {"card": "rates_agent", "item_parts": [{"part": "agent_file", "words": ""}], "parts": {"agent_file": 2, "agent_test": 1}},
-      "workflow": {"template": "folder-files", "refs": "^{name}/"}
+      "workflow": {"template": "folder-files", "refs": "^{name}/"},
+      "mock": {"charter": "mock_form_folder_charter", "files": "mock_form_folder_files"}
     }
   },
   "types": [
@@ -260,7 +261,7 @@
         }
       }
     },
-    {"name": "agent", "kind": "type", "label": "Agent", "tag": "Agent", "color": "--other", "form": "agent", "noun": "agent", "deliverable": false, "triggers": [], "groups": [], "depends_on": [], "_note": "deliverable false until the folder build path exists (agent-tools step 3): Adaptation can't choose it yet"},
+    {"name": "agent", "kind": "type", "label": "Agent", "tag": "Agent", "color": "--other", "form": "agent", "noun": "agent", "deliverable": true, "triggers": [], "groups": [], "depends_on": []},
     {"name": "business_report", "kind": "type", "label": "Report", "tag": "Report", "color": "--other", "form": "document", "template": "templates/business_report/generic.json", "file": "business_report.md", "noun": "report", "deliverable": true, "triggers": ["\\b(?:sales|monthly|weekly|quarterly|annual|business|status|progress)\\s+report\\b|\\breport\\s+on\\b"], "groups": [], "depends_on": []},
     {
       "name": "screenshots",

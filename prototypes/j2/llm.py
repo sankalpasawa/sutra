@@ -236,7 +236,7 @@ def _cli_meta(d):
     LAST_META.update(model=next(iter(d.get("modelUsage") or {}), MODEL), duration_ms=d.get("duration_ms"),
                      input_tokens=(u.get("input_tokens") or 0) + (u.get("cache_read_input_tokens") or 0)
                      + (u.get("cache_creation_input_tokens") or 0) if u else None,
-                     output_tokens=u.get("output_tokens"))
+                     output_tokens=u.get("output_tokens"), usd=d.get("total_cost_usd"))
     LAST_META.update(keep)
 
 

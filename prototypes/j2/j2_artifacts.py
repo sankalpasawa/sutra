@@ -14,7 +14,7 @@ import time
 HERE = os.path.dirname(os.path.abspath(__file__))
 TYPES_PATH = os.path.join(HERE, "artifacts", "types.json")
 OPEN = {"document": "text", "doc": "text",      # "doc": the form name saved runs recorded before Phase C
-         "data": "text", "page": "preview", "image": "image"}      # how the Artifacts tab shows a form
+         "data": "text", "page": "preview", "image": "image"}      # how the Artifacts tab shows a form; any other: text
 TEXT = {".md": "text/markdown", ".json": "application/json", ".jsonl": "text/plain", ".txt": "text/plain",
         ".html": "text/html", ".png": "image/png"}
 MAX_BYTES = 2_000_000
@@ -180,7 +180,7 @@ def listing(d):
     saved = _read(d, "artifacts.json") if d else None
     base = saved["rows"] if saved else rows(d, types)
     full = [{**r, "label": by[r["type"]]["label"], "tag": by[r["type"]]["tag"], "color": by[r["type"]]["color"],
-             "open": OPEN[r["form"]], "depends_on_labels": [by[x]["label"] for x in r["depends_on"] if x in by],
+             "open": OPEN.get(r["form"], "text"), "depends_on_labels": [by[x]["label"] for x in r["depends_on"] if x in by],
              "saved": bool(saved)} for r in base if r["type"] in by]
     return {"deliverables": [r for r in full if r["deliverable"]], "records": [r for r in full if not r["deliverable"]]}
 
@@ -672,6 +672,17 @@ def groups(d, m=None):
                                  + [{"workflow": None, "cycle": None, "purpose": "", "label": "current"}],
                      "docs": [{"label": f"v{k}", "file": f, "workflow": None} for k, f in olds]})      # the saved copies only: naming prd.md here would catch its Map link
         docs[-1]["ok"] = (agent_view(d, docs[-1]) or {}).get("valid") is True      # the row's mark: the document's data file validates (agent-views/1)
+    # a folder deliverable (its form's output is "folder"): one row holding its Map node and its files
+    import j2_types
+    for tt in load_types(d)["types"]:
+        if tt.get("kind") != "type" or not tt.get("deliverable") or tt["name"] not in j2_types.names() \
+                or j2_types.info(tt["name"]).get("output") != "folder":
+            continue
+        files = sorted(os.path.relpath(p_, d) for p_ in glob.glob(os.path.join(d, tt["file"])) if os.path.isfile(p_))
+        if files:
+            docs.append({"id": tt["name"], "kind": "folder", "name": tt.get("tag") or tt["label"], "file": files[0],
+                         "doc_file": None, "maker": None, "made_in": [], "sections": {}, "nodes": [f"work:{tt['name']}"],
+                         "versions": [], "docs": [{"label": os.path.basename(f), "file": f, "workflow": None} for f in files]})
     for x in plan + guides + site + docs + rec + list(documents.values()):
         x["views"] = views(d, x)
     return {"schema": "artifacts-groups/1", "documents": documents,
