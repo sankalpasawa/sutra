@@ -1,0 +1,113 @@
+{
+  "name": "Thread Filter",
+  "artifact": "website",
+  "section": "Section",
+  "version": 2,
+  "kind": "specialised",
+  "description": "Section for Flow Pilates Studio (pilates studio): the generic WebsiteSection/1 · Section fields, from 7 charter fact(s); adapted from version 1 of this template",
+  "fields": [
+    {
+      "name": "id",
+      "type": "string",
+      "required": true,
+      "description": "the section id of this workflow, as the task gives it (for Flow Pilates Studio, a pilates studio)",
+      "enum": null,
+      "nullable": false
+    },
+    {
+      "name": "anchor",
+      "type": "string",
+      "required": false,
+      "description": "the id attribute of the section element, with the #; \"\" when this workflow writes page-head tags only (for Flow Pilates Studio, a pilates studio)",
+      "enum": null,
+      "nullable": false
+    },
+    {
+      "name": "implements",
+      "type": "list[string]",
+      "required": false,
+      "description": "the LLD section ids this builds; empty when the run has no LLD (for Flow Pilates Studio, a pilates studio)",
+      "enum": null,
+      "nullable": false
+    },
+    {
+      "name": "html",
+      "type": "string",
+      "required": false,
+      "description": "the section's HTML only: no <html>, <head> or <body> tags; \"\" when this workflow writes page-head tags only (for Flow Pilates Studio, a pilates studio)",
+      "enum": null,
+      "nullable": false
+    },
+    {
+      "name": "head",
+      "type": "string",
+      "required": false,
+      "description": "page-head tags this section needs (meta, link, style or script only); \"\" when it needs none (for Flow Pilates Studio, a pilates studio)",
+      "enum": null,
+      "nullable": false
+    },
+    {
+      "name": "selectors_used",
+      "type": "list[string]",
+      "required": false,
+      "description": "the ids and classes you used (for Flow Pilates Studio, a pilates studio)",
+      "enum": null,
+      "nullable": false
+    },
+    {
+      "name": "facts_used",
+      "type": "list[string]",
+      "required": false,
+      "description": "the charter facts this section uses, copied exactly from Flow Pilates Studio's charter",
+      "enum": [
+        "Friday 6:30 pm Stretch and Release 550",
+        "Monday 7:00 am Mat Basics 500",
+        "Saturday 9:00 am Weekend Mat Class 500",
+        "The page shows a weekly class list with five classes, each with day, time, class name and price in rupees: Monday 7:00 am Mat Basics 500; Tuesday 6:30 pm Reformer Flow 800; Wednesday 7:00 am Core Strength 600; Friday 6:30 pm Stretch and Release 550; Saturday 9:00 am Weekend Mat Class 500.",
+        "The page shows the studio name 'Flow Pilates Studio'.",
+        "Tuesday 6:30 pm Reformer Flow 800",
+        "Wednesday 7:00 am Core Strength 600"
+      ],
+      "nullable": false
+    }
+  ],
+  "objects": [],
+  "rules": [
+    {
+      "rule": "enum",
+      "path": "facts_used[]",
+      "values": [
+        "Friday 6:30 pm Stretch and Release 550",
+        "Monday 7:00 am Mat Basics 500",
+        "Saturday 9:00 am Weekend Mat Class 500",
+        "The page shows a weekly class list with five classes, each with day, time, class name and price in rupees: Monday 7:00 am Mat Basics 500; Tuesday 6:30 pm Reformer Flow 800; Wednesday 7:00 am Core Strength 600; Friday 6:30 pm Stretch and Release 550; Saturday 9:00 am Weekend Mat Class 500.",
+        "The page shows the studio name 'Flow Pilates Studio'.",
+        "Tuesday 6:30 pm Reformer Flow 800",
+        "Wednesday 7:00 am Core Strength 600"
+      ],
+      "from": "facts",
+      "name": "facts_used are facts of Flow Pilates Studio's charter"
+    }
+  ],
+  "sha": "aad42b903a4761f7e81a545e9986f1380cf396e7d42994f1d142223793ff8ecb",
+  "extends": "website/section@generic/1",
+  "made_by": {
+    "run": "j2-20261112-150036",
+    "workflow": "W-30",
+    "atom": "W-30.a1",
+    "agent": "code (adapted from the nearest template)"
+  },
+  "context": {
+    "business_type": "pilates studio",
+    "facts_used": [
+      "Friday 6:30 pm Stretch and Release 550",
+      "Monday 7:00 am Mat Basics 500",
+      "Saturday 9:00 am Weekend Mat Class 500",
+      "The page shows a weekly class list with five classes, each with day, time, class name and price in rupees: Monday 7:00 am Mat Basics 500; Tuesday 6:30 pm Reformer Flow 800; Wednesday 7:00 am Core Strength 600; Friday 6:30 pm Stretch and Release 550; Saturday 9:00 am Weekend Mat Class 500.",
+      "The page shows the studio name 'Flow Pilates Studio'.",
+      "Tuesday 6:30 pm Reformer Flow 800",
+      "Wednesday 7:00 am Core Strength 600"
+    ],
+    "fingerprint": "eb75c59776a93359c431bfc39b16c8d071cd701f7219409bf91f6f3392ae5a04"
+  }
+}

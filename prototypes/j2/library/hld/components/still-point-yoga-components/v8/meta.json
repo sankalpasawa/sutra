@@ -1,0 +1,37 @@
+{
+  "schema": "template-library/1",
+  "name": "Still Point Yoga Components",
+  "version": 8,
+  "sha": "586c01dee847ee2e01b5e01c257c155cad4e80128f251964abc6f5cd28400208",
+  "schema_sha": "3c3f17083667177293323ba6d2216f72246b8c35faa017fb31fbadce70926d00",
+  "model_sha": "1b1e83c9edc837079125c7cf29e773c7190ccd590af62b453bf01029cc5fd4e0",
+  "class": "StillPointYogaComponentsV8",
+  "created": "2026-11-12T15:20:42",
+  "fingerprints": [
+    "31de9c094b2f2f2a99f1dbd75e89c8be92720450839b0832478a6940e8ab275d"
+  ],
+  "made_by": {
+    "run": "j2-20261112-150036",
+    "workflow": "W-21",
+    "atom": "W-21.a1",
+    "agent": "code (adapted from a run template)",
+    "date": "2026-11-12 15:00:36"
+  },
+  "business": {
+    "name": "Flow Pilates Studio",
+    "type": "pilates studio"
+  },
+  "mock": false,
+  "collected_from": {
+    "run": "j2-20261112-150036",
+    "where": "the run's copy"
+  },
+  "used_by": [
+    {
+      "run": "j2-20261112-150036",
+      "workflow": "W-21",
+      "atom": "W-21.a1",
+      "action": "extended"
+    }
+  ]
+}

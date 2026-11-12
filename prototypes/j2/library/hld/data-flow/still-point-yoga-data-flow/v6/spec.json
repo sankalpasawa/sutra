@@ -1,0 +1,101 @@
+{
+  "name": "Still Point Yoga Data flow",
+  "artifact": "hld",
+  "section": "Data flow",
+  "version": 6,
+  "kind": "specialised",
+  "description": "Data flow for Flow Pilates Studio (hld): the generic HLD/1 · Data flow fields plus facts_used, from 1 charter fact(s); adapted from version 2 of this template",
+  "fields": [
+    {
+      "name": "data_flows",
+      "type": "list[DataFlow]",
+      "required": true,
+      "description": "every flow the pages need, including each form (for Flow Pilates Studio, a hld)",
+      "enum": null,
+      "nullable": false
+    },
+    {
+      "name": "assumptions",
+      "type": "list[string]",
+      "required": false,
+      "description": "the assumptions of Flow Pilates Studio's Data flow",
+      "enum": null,
+      "nullable": false
+    },
+    {
+      "name": "facts_used",
+      "type": "list[string]",
+      "required": false,
+      "description": "the charter facts this section is written from, copied exactly from Flow Pilates Studio's charter",
+      "enum": [
+        "Flow Pilates Studio"
+      ],
+      "nullable": false
+    }
+  ],
+  "objects": [
+    {
+      "name": "DataFlow",
+      "fields": [
+        {
+          "name": "from",
+          "type": "string",
+          "required": true,
+          "description": "where the data comes from",
+          "enum": null,
+          "nullable": false
+        },
+        {
+          "name": "to",
+          "type": "string",
+          "required": true,
+          "description": "where it goes",
+          "enum": null,
+          "nullable": false
+        },
+        {
+          "name": "data",
+          "type": "string",
+          "required": true,
+          "description": "what is sent",
+          "enum": null,
+          "nullable": false
+        },
+        {
+          "name": "trigger",
+          "type": "string",
+          "required": true,
+          "description": "what starts it",
+          "enum": null,
+          "nullable": false
+        }
+      ]
+    }
+  ],
+  "rules": [
+    {
+      "rule": "enum",
+      "path": "facts_used[]",
+      "values": [
+        "Flow Pilates Studio"
+      ],
+      "from": "facts",
+      "name": "facts_used are facts of Flow Pilates Studio's charter"
+    }
+  ],
+  "sha": "aaba87bd4f42cd5c8de0588d46c860c09e515294dff8a083f0ea7f00252eff1d",
+  "extends": "hld/data-flow@generic/1",
+  "made_by": {
+    "run": "j2-20261112-150036",
+    "workflow": "W-16",
+    "atom": "W-16.a1",
+    "agent": "code (adapted from a run template)"
+  },
+  "context": {
+    "business_type": "hld",
+    "facts_used": [
+      "Flow Pilates Studio"
+    ],
+    "fingerprint": "8e5c3178992eb3914535c4df791bd1b743d7b56ae4f58735ebf117d545594432"
+  }
+}

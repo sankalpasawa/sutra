@@ -1,0 +1,132 @@
+{
+  "name": "Still Point Yoga Requirements",
+  "artifact": "prd",
+  "section": "Requirements",
+  "version": 7,
+  "kind": "specialised",
+  "description": "Requirements for Flow Pilates Studio (prd): the generic PRD/1 · Requirements fields plus facts_used, from 10 charter fact(s); adapted from version 4 of this template",
+  "fields": [
+    {
+      "name": "requirements",
+      "type": "list[Requirement]",
+      "required": true,
+      "description": "the requirements, R1, R2, ... in order (for Flow Pilates Studio, a prd)",
+      "enum": null,
+      "nullable": false
+    },
+    {
+      "name": "assumptions",
+      "type": "list[string]",
+      "required": false,
+      "description": "the assumptions of Flow Pilates Studio's Requirements",
+      "enum": null,
+      "nullable": false
+    },
+    {
+      "name": "facts_used",
+      "type": "list[string]",
+      "required": false,
+      "description": "the charter facts this section is written from, copied exactly from Flow Pilates Studio's charter",
+      "enum": [
+        "Flow Pilates Studio",
+        "Friday 6:30 pm Stretch and Release 550",
+        "Monday 7:00 am Mat Basics 500",
+        "Payment is made at the studio",
+        "Saturday 9:00 am Weekend Mat Class 500",
+        "Tuesday 6:30 pm Reformer Flow 800",
+        "Unit 3, 9 Sample Lane, Pune 411004",
+        "Wednesday 7:00 am Core Strength 600",
+        "bookings@flowpilates.example",
+        "name, email, class, preferred date"
+      ],
+      "nullable": false
+    }
+  ],
+  "objects": [
+    {
+      "name": "Requirement",
+      "fields": [
+        {
+          "name": "id",
+          "type": "string",
+          "required": true,
+          "description": "R1, R2, ... in order",
+          "enum": null,
+          "nullable": false
+        },
+        {
+          "name": "statement",
+          "type": "string",
+          "required": true,
+          "description": "what the product must do, naming the user group that does it",
+          "enum": null,
+          "nullable": false
+        },
+        {
+          "name": "priority",
+          "type": "string",
+          "required": true,
+          "description": "must, should or could",
+          "enum": [
+            "must",
+            "should",
+            "could"
+          ],
+          "nullable": false
+        },
+        {
+          "name": "goals",
+          "type": "list[string]",
+          "required": false,
+          "description": "the goal ids this requirement serves, e.g. [\"G1\"]",
+          "enum": null,
+          "nullable": false
+        }
+      ]
+    }
+  ],
+  "rules": [
+    {
+      "rule": "enum",
+      "path": "facts_used[]",
+      "values": [
+        "Flow Pilates Studio",
+        "Friday 6:30 pm Stretch and Release 550",
+        "Monday 7:00 am Mat Basics 500",
+        "Payment is made at the studio",
+        "Saturday 9:00 am Weekend Mat Class 500",
+        "Tuesday 6:30 pm Reformer Flow 800",
+        "Unit 3, 9 Sample Lane, Pune 411004",
+        "Wednesday 7:00 am Core Strength 600",
+        "bookings@flowpilates.example",
+        "name, email, class, preferred date"
+      ],
+      "from": "facts",
+      "name": "facts_used are facts of Flow Pilates Studio's charter"
+    }
+  ],
+  "sha": "4a3c71c14694a3792d3639a6701e29e7a2476ac38f7ee493015c9c2127b6ef8d",
+  "extends": "prd/requirements@generic/1",
+  "made_by": {
+    "run": "j2-20261112-150036",
+    "workflow": "W-9",
+    "atom": "W-9.a1",
+    "agent": "code (adapted from a run template)"
+  },
+  "context": {
+    "business_type": "prd",
+    "facts_used": [
+      "Flow Pilates Studio",
+      "Friday 6:30 pm Stretch and Release 550",
+      "Monday 7:00 am Mat Basics 500",
+      "Payment is made at the studio",
+      "Saturday 9:00 am Weekend Mat Class 500",
+      "Tuesday 6:30 pm Reformer Flow 800",
+      "Unit 3, 9 Sample Lane, Pune 411004",
+      "Wednesday 7:00 am Core Strength 600",
+      "bookings@flowpilates.example",
+      "name, email, class, preferred date"
+    ],
+    "fingerprint": "9903b6dcb7d29d0828107fc9cee288f94c925637ba9a0f6e876c183d0cb9db71"
+  }
+}

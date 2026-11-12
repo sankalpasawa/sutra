@@ -1,0 +1,37 @@
+{
+  "schema": "template-library/1",
+  "name": "Thread Filter",
+  "version": 3,
+  "sha": "4c0e4d0f7e6f348c5b2bcd2fbf094a020b5f931fdcfb51cbe78109c88f16bafe",
+  "schema_sha": "dde5b478be402edb5e26ca8ef003f6092f8db9110f52b4ba2a5e18d75443a3c1",
+  "model_sha": "6787c79f118df30d26905ff268428bd9fbede098b7c0a4e4002b08c4da2ba25d",
+  "class": "ThreadFilterV3",
+  "created": "2026-11-12T15:31:00",
+  "fingerprints": [
+    "c8a57419172e03e579da8480bb9cf112b7134867fd3950d2c605b3188a90048f"
+  ],
+  "made_by": {
+    "run": "j2-20261112-150036",
+    "workflow": "W-32",
+    "atom": "W-32.a1",
+    "agent": "code (adapted from the nearest template)",
+    "date": "2026-11-12 15:00:36"
+  },
+  "business": {
+    "name": "Flow Pilates Studio",
+    "type": "pilates studio"
+  },
+  "mock": false,
+  "collected_from": {
+    "run": "j2-20261112-150036",
+    "where": "the run's copy"
+  },
+  "used_by": [
+    {
+      "run": "j2-20261112-150036",
+      "workflow": "W-32",
+      "atom": "W-32.a1",
+      "action": "extended"
+    }
+  ]
+}

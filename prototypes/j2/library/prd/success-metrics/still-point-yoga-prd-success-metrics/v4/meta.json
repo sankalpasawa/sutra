@@ -1,0 +1,37 @@
+{
+  "schema": "template-library/1",
+  "name": "Still Point Yoga PRD Success metrics",
+  "version": 4,
+  "sha": "b3e21c621c5786da990c3b0c2f2d645060ac1a31963675bba4f32e269b5d25f4",
+  "schema_sha": "cb41d8c8f081aa28781e0972e0761dcac53ae0fe0582ca252604a39bba6a1a32",
+  "model_sha": "05d58a1d97937377846a1908a3ffe4d62163c13a44208a02b876a27c4f4fe9ea",
+  "class": "StillPointYogaPRDSuccessMetricsV4",
+  "created": "2026-11-12T15:07:55",
+  "fingerprints": [
+    "fcfb24c3de62a134025bab395400d358d6535c6e881d169dd0dc648d44c688e2"
+  ],
+  "made_by": {
+    "run": "j2-20261112-150036",
+    "workflow": "W-5",
+    "atom": "W-5.a1",
+    "agent": "code (adapted from a run template)",
+    "date": "2026-11-12 15:00:36"
+  },
+  "business": {
+    "name": "Flow Pilates Studio",
+    "type": "pilates studio"
+  },
+  "mock": false,
+  "collected_from": {
+    "run": "j2-20261112-150036",
+    "where": "the run's copy"
+  },
+  "used_by": [
+    {
+      "run": "j2-20261112-150036",
+      "workflow": "W-5",
+      "atom": "W-5.a1",
+      "action": "extended"
+    }
+  ]
+}

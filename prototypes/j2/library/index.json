@@ -312,9 +312,107 @@
             "run": "j2-20261111-215733",
             "where": "the run's copy"
           }
+        },
+        {
+          "version": 7,
+          "sha": "ea8132b531f4eaffa7754481acd972936e5530ab544d7fb9dc6e96ba4880dbc1",
+          "schema_sha": "d1eb61bbd081758a39ed1c8d90722f912d3b5a63a993215d16f2bb4c7a4dd0c5",
+          "description": "Components for Flow Pilates Studio (hld): the generic HLD/1 · Components fields plus facts_used, from 2 charter fact(s); adapted from version 4 of this template",
+          "fingerprints": [
+            "0930998e16afcf6a5597c76fac5acf7df6c845e0d2c0e749b0529c0819ab31dd"
+          ],
+          "business_type": "hld",
+          "facts": [
+            "Flow Pilates Studio",
+            "The Components section is written for Flow Pilates Studio, and names every requirement (R1, R2, R3, R4, R5, R6, R7, R8) it covers"
+          ],
+          "fields": [
+            "components",
+            "assumptions",
+            "facts_used",
+            "booking_address"
+          ],
+          "enums": {
+            "facts_used": [
+              "Flow Pilates Studio",
+              "The Components section is written for Flow Pilates Studio, and names every requirement (R1, R2, R3, R4, R5, R6, R7, R8) it covers"
+            ]
+          },
+          "made_by": {
+            "run": "j2-20261112-150036",
+            "workflow": "W-12",
+            "atom": "W-12.a1",
+            "agent": "code (adapted from a run template)",
+            "date": "2026-11-12 15:00:36"
+          },
+          "used_by": [
+            {
+              "run": "j2-20261112-150036",
+              "workflow": "W-12",
+              "atom": "W-12.a1",
+              "action": "extended"
+            }
+          ],
+          "business": {
+            "name": "Flow Pilates Studio",
+            "type": "pilates studio"
+          },
+          "mock": false,
+          "collected_from": {
+            "run": "j2-20261112-150036",
+            "where": "the run's copy"
+          }
+        },
+        {
+          "version": 8,
+          "sha": "586c01dee847ee2e01b5e01c257c155cad4e80128f251964abc6f5cd28400208",
+          "schema_sha": "3c3f17083667177293323ba6d2216f72246b8c35faa017fb31fbadce70926d00",
+          "description": "Components for Flow Pilates Studio (hld): the generic HLD/1 · Components fields plus facts_used, from 1 charter fact(s); adapted from version 4 of this template",
+          "fingerprints": [
+            "31de9c094b2f2f2a99f1dbd75e89c8be92720450839b0832478a6940e8ab275d"
+          ],
+          "business_type": "hld",
+          "facts": [
+            "Flow Pilates Studio"
+          ],
+          "fields": [
+            "components",
+            "assumptions",
+            "facts_used",
+            "booking_address"
+          ],
+          "enums": {
+            "facts_used": [
+              "Flow Pilates Studio"
+            ]
+          },
+          "made_by": {
+            "run": "j2-20261112-150036",
+            "workflow": "W-21",
+            "atom": "W-21.a1",
+            "agent": "code (adapted from a run template)",
+            "date": "2026-11-12 15:00:36"
+          },
+          "used_by": [
+            {
+              "run": "j2-20261112-150036",
+              "workflow": "W-21",
+              "atom": "W-21.a1",
+              "action": "extended"
+            }
+          ],
+          "business": {
+            "name": "Flow Pilates Studio",
+            "type": "pilates studio"
+          },
+          "mock": false,
+          "collected_from": {
+            "run": "j2-20261112-150036",
+            "where": "the run's copy"
+          }
         }
       ],
-      "description": "Components for Rhythm Room Dance Studio (hld): the generic HLD/1 · Components fields plus facts_used, from 1 charter fact(s); adapted from version 2 of this template"
+      "description": "Components for Flow Pilates Studio (hld): the generic HLD/1 · Components fields plus facts_used, from 1 charter fact(s); adapted from version 4 of this template"
     },
     {
       "artifact": "hld",
@@ -538,9 +636,117 @@
             "run": "j2-20261111-215733",
             "where": "the run's copy"
           }
+        },
+        {
+          "version": 5,
+          "sha": "c7b8b2c83877637375f9e2e4420786f9b18e5dd3b1e588a5ead24ed3c615a956",
+          "schema_sha": "72b8d0877c71741dc9cb2e1dc291a5d8323f36d89c6ccbd85401a8258f51ecba",
+          "description": "Data flow for Flow Pilates Studio (hld): the generic HLD/1 · Data flow fields plus facts_used, from 2 charter fact(s); adapted from version 2 of this template",
+          "fingerprints": [
+            "1cf389193813779657219c38156b182e37ac6c2dcfa544594b9113dc8d467d63"
+          ],
+          "business_type": "hld",
+          "facts": [
+            "Flow Pilates Studio",
+            "The Data flow section is written for Flow Pilates Studio"
+          ],
+          "fields": [
+            "data_flows",
+            "assumptions",
+            "facts_used"
+          ],
+          "enums": {
+            "facts_used": [
+              "Flow Pilates Studio",
+              "The Data flow section is written for Flow Pilates Studio"
+            ]
+          },
+          "made_by": {
+            "run": "j2-20261112-150036",
+            "workflow": "W-13",
+            "atom": "W-13.a1",
+            "agent": "code (adapted from a run template)",
+            "date": "2026-11-12 15:00:36"
+          },
+          "used_by": [
+            {
+              "run": "j2-20261112-150036",
+              "workflow": "W-13",
+              "atom": "W-13.a1",
+              "action": "extended"
+            }
+          ],
+          "business": {
+            "name": "Flow Pilates Studio",
+            "type": "pilates studio"
+          },
+          "mock": false,
+          "collected_from": {
+            "run": "j2-20261112-150036",
+            "where": "the run's copy"
+          }
+        },
+        {
+          "version": 6,
+          "sha": "aaba87bd4f42cd5c8de0588d46c860c09e515294dff8a083f0ea7f00252eff1d",
+          "schema_sha": "8ccd43de60b28f8f32dd9800b99eff057f753713bc51856736c20e8bd4520153",
+          "description": "Data flow for Flow Pilates Studio (hld): the generic HLD/1 · Data flow fields plus facts_used, from 1 charter fact(s); adapted from version 2 of this template",
+          "fingerprints": [
+            "8e5c3178992eb3914535c4df791bd1b743d7b56ae4f58735ebf117d545594432"
+          ],
+          "business_type": "hld",
+          "facts": [
+            "Flow Pilates Studio"
+          ],
+          "fields": [
+            "data_flows",
+            "assumptions",
+            "facts_used"
+          ],
+          "enums": {
+            "facts_used": [
+              "Flow Pilates Studio"
+            ]
+          },
+          "made_by": {
+            "run": "j2-20261112-150036",
+            "workflow": "W-16",
+            "atom": "W-16.a1",
+            "agent": "code (adapted from a run template)",
+            "date": "2026-11-12 15:00:36"
+          },
+          "used_by": [
+            {
+              "run": "j2-20261112-150036",
+              "workflow": "W-16",
+              "atom": "W-16.a1",
+              "action": "extended"
+            },
+            {
+              "run": "j2-20261112-150036",
+              "workflow": "W-20",
+              "atom": "W-20.a1",
+              "action": "reused"
+            },
+            {
+              "run": "j2-20261112-150036",
+              "workflow": "W-22",
+              "atom": "W-22.a1",
+              "action": "reused"
+            }
+          ],
+          "business": {
+            "name": "Flow Pilates Studio",
+            "type": "pilates studio"
+          },
+          "mock": false,
+          "collected_from": {
+            "run": "j2-20261112-150036",
+            "where": "the run's copy"
+          }
         }
       ],
-      "description": "Data flow for Rhythm Room Dance Studio (hld): the generic HLD/1 · Data flow fields plus facts_used, from 1 charter fact(s); adapted from version 1 of this template"
+      "description": "Data flow for Flow Pilates Studio (hld): the generic HLD/1 · Data flow fields plus facts_used, from 1 charter fact(s); adapted from version 2 of this template"
     },
     {
       "artifact": "hld",
@@ -758,9 +964,117 @@
             "run": "j2-20261111-215733",
             "where": "the run's copy"
           }
+        },
+        {
+          "version": 5,
+          "sha": "1bcec22ea8f1bfe96f1456158351269a131f28111e43653e9b4c5ef94d6ee7b4",
+          "schema_sha": "85f5aaf347a4175b11e661e20ea39a6d73416e6db02cfbb56798910cda0fd9b7",
+          "description": "Hosting and deployment for Flow Pilates Studio (hld): the generic HLD/1 · Hosting and deployment fields plus facts_used, from 2 charter fact(s); adapted from version 3 of this template",
+          "fingerprints": [
+            "6635b066917f81014158dac76c3eb12df666539d2e0b0178d9e1a0ce5b539179"
+          ],
+          "business_type": "hld",
+          "facts": [
+            "Flow Pilates Studio",
+            "The Hosting and deployment section is written for Flow Pilates Studio"
+          ],
+          "fields": [
+            "hosting",
+            "assumptions",
+            "facts_used"
+          ],
+          "enums": {
+            "facts_used": [
+              "Flow Pilates Studio",
+              "The Hosting and deployment section is written for Flow Pilates Studio"
+            ]
+          },
+          "made_by": {
+            "run": "j2-20261112-150036",
+            "workflow": "W-14",
+            "atom": "W-14.a1",
+            "agent": "code (adapted from a run template)",
+            "date": "2026-11-12 15:00:36"
+          },
+          "used_by": [
+            {
+              "run": "j2-20261112-150036",
+              "workflow": "W-14",
+              "atom": "W-14.a1",
+              "action": "extended"
+            }
+          ],
+          "business": {
+            "name": "Flow Pilates Studio",
+            "type": "pilates studio"
+          },
+          "mock": false,
+          "collected_from": {
+            "run": "j2-20261112-150036",
+            "where": "the run's copy"
+          }
+        },
+        {
+          "version": 6,
+          "sha": "11f507a98ecedab3e5fee90667950c977275a31a9c152e06699027e45cca3300",
+          "schema_sha": "acc7577384c9fa2e90438bdd24b9edc33acd4a1afcaa404c66eb8f26ea6a6897",
+          "description": "Hosting and deployment for Flow Pilates Studio (hld): the generic HLD/1 · Hosting and deployment fields plus facts_used, from 1 charter fact(s); adapted from version 3 of this template",
+          "fingerprints": [
+            "fe3e15bd7dd039cdb4a53d7a0c009db43299e2939fb3ef9beb5135c5e3a40e0a"
+          ],
+          "business_type": "hld",
+          "facts": [
+            "Flow Pilates Studio"
+          ],
+          "fields": [
+            "hosting",
+            "assumptions",
+            "facts_used"
+          ],
+          "enums": {
+            "facts_used": [
+              "Flow Pilates Studio"
+            ]
+          },
+          "made_by": {
+            "run": "j2-20261112-150036",
+            "workflow": "W-17",
+            "atom": "W-17.a1",
+            "agent": "code (adapted from a run template)",
+            "date": "2026-11-12 15:00:36"
+          },
+          "used_by": [
+            {
+              "run": "j2-20261112-150036",
+              "workflow": "W-17",
+              "atom": "W-17.a1",
+              "action": "extended"
+            },
+            {
+              "run": "j2-20261112-150036",
+              "workflow": "W-19",
+              "atom": "W-19.a1",
+              "action": "reused"
+            },
+            {
+              "run": "j2-20261112-150036",
+              "workflow": "W-23",
+              "atom": "W-23.a1",
+              "action": "reused"
+            }
+          ],
+          "business": {
+            "name": "Flow Pilates Studio",
+            "type": "pilates studio"
+          },
+          "mock": false,
+          "collected_from": {
+            "run": "j2-20261112-150036",
+            "where": "the run's copy"
+          }
         }
       ],
-      "description": "Hosting and deployment for Rhythm Room Dance Studio (hld): the generic HLD/1 · Hosting and deployment fields plus facts_used, from 2 charter fact(s); adapted from version 1 of this template"
+      "description": "Hosting and deployment for Flow Pilates Studio (hld): the generic HLD/1 · Hosting and deployment fields plus facts_used, from 1 charter fact(s); adapted from version 3 of this template"
     },
     {
       "artifact": "hld",
@@ -925,9 +1239,105 @@
             "run": "j2-20261111-215733",
             "where": "the run's copy"
           }
+        },
+        {
+          "version": 4,
+          "sha": "32acaf871edcbf9a9261d1d4f20da82faaa3a6e9fdc91edead05e1f411ab7bac",
+          "schema_sha": "fb8f52c5d9eb6f85cfc05dd694507fadbd7040824572cde18ec03569be542154",
+          "description": "Pages for Flow Pilates Studio (hld): the generic HLD/1 · Pages fields plus facts_used, from 2 charter fact(s); adapted from version 2 of this template",
+          "fingerprints": [
+            "7b66b2bdea7661b033e1da7389b1ffdc0ba29e5a6d8caf86ad413e16cfc5dac4"
+          ],
+          "business_type": "hld",
+          "facts": [
+            "Flow Pilates Studio",
+            "The Pages section is written for Flow Pilates Studio"
+          ],
+          "fields": [
+            "pages",
+            "assumptions",
+            "facts_used"
+          ],
+          "enums": {
+            "facts_used": [
+              "Flow Pilates Studio",
+              "The Pages section is written for Flow Pilates Studio"
+            ]
+          },
+          "made_by": {
+            "run": "j2-20261112-150036",
+            "workflow": "W-11",
+            "atom": "W-11.a1",
+            "agent": "code (adapted from a run template)",
+            "date": "2026-11-12 15:00:36"
+          },
+          "used_by": [
+            {
+              "run": "j2-20261112-150036",
+              "workflow": "W-11",
+              "atom": "W-11.a1",
+              "action": "extended"
+            }
+          ],
+          "business": {
+            "name": "Flow Pilates Studio",
+            "type": "pilates studio"
+          },
+          "mock": false,
+          "collected_from": {
+            "run": "j2-20261112-150036",
+            "where": "the run's copy"
+          }
+        },
+        {
+          "version": 5,
+          "sha": "d78d3804167eff84ed0b7fa5f9d28949610dd17aad8303ad49e19f36c17ca38e",
+          "schema_sha": "48556f1d2493c0c748681dbbf482023bc4c6ac4bf4bd715e26cc94fda6050285",
+          "description": "Pages for Flow Pilates Studio (hld): the generic HLD/1 · Pages fields plus facts_used, from 1 charter fact(s); adapted from version 2 of this template",
+          "fingerprints": [
+            "9e3c82b90653c101596028d82ec52db5f192d931d604ddd2f5739fc5d8d5082d"
+          ],
+          "business_type": "hld",
+          "facts": [
+            "Flow Pilates Studio"
+          ],
+          "fields": [
+            "pages",
+            "assumptions",
+            "facts_used"
+          ],
+          "enums": {
+            "facts_used": [
+              "Flow Pilates Studio"
+            ]
+          },
+          "made_by": {
+            "run": "j2-20261112-150036",
+            "workflow": "W-18",
+            "atom": "W-18.a1",
+            "agent": "code (adapted from a run template)",
+            "date": "2026-11-12 15:00:36"
+          },
+          "used_by": [
+            {
+              "run": "j2-20261112-150036",
+              "workflow": "W-18",
+              "atom": "W-18.a1",
+              "action": "extended"
+            }
+          ],
+          "business": {
+            "name": "Flow Pilates Studio",
+            "type": "pilates studio"
+          },
+          "mock": false,
+          "collected_from": {
+            "run": "j2-20261112-150036",
+            "where": "the run's copy"
+          }
         }
       ],
-      "description": "Pages for Rhythm Room Dance Studio (hld): the generic HLD/1 · Pages fields plus facts_used, from 2 charter fact(s); adapted from version 1 of this template"
+      "description": "Pages for Flow Pilates Studio (hld): the generic HLD/1 · Pages fields plus facts_used, from 1 charter fact(s); adapted from version 2 of this template"
     },
     {
       "artifact": "hld",
@@ -1092,9 +1502,58 @@
             "run": "j2-20261111-215733",
             "where": "the run's copy"
           }
+        },
+        {
+          "version": 4,
+          "sha": "6c9ac6f8490deaf5112b6ccda82a8b2653b45ddd4e748e195c434f799379ee74",
+          "schema_sha": "fef489168e902518f1550c6f316aa48a0e01c0cad3eca6d2719fcc6483c26967",
+          "description": "Purpose and scope for Flow Pilates Studio (hld): the generic HLD/1 · Purpose and scope fields plus facts_used, from 2 charter fact(s); adapted from version 2 of this template",
+          "fingerprints": [
+            "3e2246587aabab7d2f7ee8159a6426dea8412d87042ac649cf442e1cf6b4ebfc"
+          ],
+          "business_type": "hld",
+          "facts": [
+            "Flow Pilates Studio",
+            "The Purpose and scope section is written for Flow Pilates Studio"
+          ],
+          "fields": [
+            "purpose",
+            "assumptions",
+            "facts_used"
+          ],
+          "enums": {
+            "facts_used": [
+              "Flow Pilates Studio",
+              "The Purpose and scope section is written for Flow Pilates Studio"
+            ]
+          },
+          "made_by": {
+            "run": "j2-20261112-150036",
+            "workflow": "W-10",
+            "atom": "W-10.a1",
+            "agent": "code (adapted from a run template)",
+            "date": "2026-11-12 15:00:36"
+          },
+          "used_by": [
+            {
+              "run": "j2-20261112-150036",
+              "workflow": "W-10",
+              "atom": "W-10.a1",
+              "action": "extended"
+            }
+          ],
+          "business": {
+            "name": "Flow Pilates Studio",
+            "type": "pilates studio"
+          },
+          "mock": false,
+          "collected_from": {
+            "run": "j2-20261112-150036",
+            "where": "the run's copy"
+          }
         }
       ],
-      "description": "Purpose and scope for Rhythm Room Dance Studio (hld): the generic HLD/1 · Purpose and scope fields plus facts_used, from 2 charter fact(s); adapted from version 1 of this template"
+      "description": "Purpose and scope for Flow Pilates Studio (hld): the generic HLD/1 · Purpose and scope fields plus facts_used, from 2 charter fact(s); adapted from version 2 of this template"
     },
     {
       "artifact": "hld",
@@ -1318,9 +1777,105 @@
             "run": "j2-20261111-215733",
             "where": "the run's copy"
           }
+        },
+        {
+          "version": 5,
+          "sha": "04b026116daf798105605cd48edc5dcc174f65de142856a462c59d2944d36517",
+          "schema_sha": "f38063c2e0631de9d30f33b949bcd5087f189773b4721ba8483a08ccceb2ca46",
+          "description": "Risks for Flow Pilates Studio (hld): the generic HLD/1 · Risks fields plus facts_used, from 2 charter fact(s); adapted from version 2 of this template",
+          "fingerprints": [
+            "d4c2a993feb3aa743ad86158e022509fe46151cae62e53dcd4977be91bbefa06"
+          ],
+          "business_type": "hld",
+          "facts": [
+            "Flow Pilates Studio",
+            "The Risks section is written for Flow Pilates Studio"
+          ],
+          "fields": [
+            "risks",
+            "assumptions",
+            "facts_used"
+          ],
+          "enums": {
+            "facts_used": [
+              "Flow Pilates Studio",
+              "The Risks section is written for Flow Pilates Studio"
+            ]
+          },
+          "made_by": {
+            "run": "j2-20261112-150036",
+            "workflow": "W-15",
+            "atom": "W-15.a1",
+            "agent": "code (adapted from a run template)",
+            "date": "2026-11-12 15:00:36"
+          },
+          "used_by": [
+            {
+              "run": "j2-20261112-150036",
+              "workflow": "W-15",
+              "atom": "W-15.a1",
+              "action": "extended"
+            }
+          ],
+          "business": {
+            "name": "Flow Pilates Studio",
+            "type": "pilates studio"
+          },
+          "mock": false,
+          "collected_from": {
+            "run": "j2-20261112-150036",
+            "where": "the run's copy"
+          }
+        },
+        {
+          "version": 6,
+          "sha": "6c6297d7d52dc97a74f313e1047a1b97d823f7de0f208342c2dc7c4e1b6ae081",
+          "schema_sha": "6a74952a95abd4b367347c64c74ea0a4c579623e8a30b604a0ab6cf59eb605a8",
+          "description": "Risks for Flow Pilates Studio (hld): the generic HLD/1 · Risks fields plus facts_used, from 1 charter fact(s); adapted from version 2 of this template",
+          "fingerprints": [
+            "d1609c4144ada6edbca087926eaeaf43eb305bb906d51e81440b7c1d1de87d32"
+          ],
+          "business_type": "hld",
+          "facts": [
+            "Flow Pilates Studio"
+          ],
+          "fields": [
+            "risks",
+            "assumptions",
+            "facts_used"
+          ],
+          "enums": {
+            "facts_used": [
+              "Flow Pilates Studio"
+            ]
+          },
+          "made_by": {
+            "run": "j2-20261112-150036",
+            "workflow": "W-24",
+            "atom": "W-24.a1",
+            "agent": "code (adapted from a run template)",
+            "date": "2026-11-12 15:00:36"
+          },
+          "used_by": [
+            {
+              "run": "j2-20261112-150036",
+              "workflow": "W-24",
+              "atom": "W-24.a1",
+              "action": "extended"
+            }
+          ],
+          "business": {
+            "name": "Flow Pilates Studio",
+            "type": "pilates studio"
+          },
+          "mock": false,
+          "collected_from": {
+            "run": "j2-20261112-150036",
+            "where": "the run's copy"
+          }
         }
       ],
-      "description": "Risks for Rhythm Room Dance Studio (hld): the generic HLD/1 · Risks fields plus facts_used, from 1 charter fact(s); adapted from version 1 of this template"
+      "description": "Risks for Flow Pilates Studio (hld): the generic HLD/1 · Risks fields plus facts_used, from 1 charter fact(s); adapted from version 2 of this template"
     },
     {
       "artifact": "lld",
@@ -1483,9 +2038,58 @@
             "run": "j2-20261111-211339",
             "where": "the run's copy"
           }
+        },
+        {
+          "version": 4,
+          "sha": "25217d6ae7ac86c3f39ad3535de5e207ff36f465b970212745addafd5fcf71c1",
+          "schema_sha": "b9f47028b9738f3d0a2e791acc570c489533804885028caad637137a4ad52611",
+          "description": "File structure for Flow Pilates Studio (lld): the generic LLD/1 · File structure fields plus facts_used, from 2 charter fact(s); adapted from version 3 of this template",
+          "fingerprints": [
+            "9a968b3e1a8a1994c90624c307885459fb84dfd565d3384ed463cc34fa8b4615"
+          ],
+          "business_type": "lld",
+          "facts": [
+            "Flow Pilates Studio",
+            "The File structure section is written for Flow Pilates Studio"
+          ],
+          "fields": [
+            "files",
+            "assumptions",
+            "facts_used"
+          ],
+          "enums": {
+            "facts_used": [
+              "Flow Pilates Studio",
+              "The File structure section is written for Flow Pilates Studio"
+            ]
+          },
+          "made_by": {
+            "run": "j2-20261112-150036",
+            "workflow": "W-28",
+            "atom": "W-28.a1",
+            "agent": "code (adapted from a run template)",
+            "date": "2026-11-12 15:00:36"
+          },
+          "used_by": [
+            {
+              "run": "j2-20261112-150036",
+              "workflow": "W-28",
+              "atom": "W-28.a1",
+              "action": "extended"
+            }
+          ],
+          "business": {
+            "name": "Flow Pilates Studio",
+            "type": "pilates studio"
+          },
+          "mock": false,
+          "collected_from": {
+            "run": "j2-20261112-150036",
+            "where": "the run's copy"
+          }
         }
       ],
-      "description": "File structure for Iron Grove Fitness (lld): the generic LLD/1 · File structure fields plus facts_used, from 1 charter fact(s); adapted from version 1 of this template"
+      "description": "File structure for Flow Pilates Studio (lld): the generic LLD/1 · File structure fields plus facts_used, from 2 charter fact(s); adapted from version 3 of this template"
     },
     {
       "artifact": "lld",
@@ -1693,9 +2297,73 @@
             "run": "j2-20261111-211339",
             "where": "the run's copy"
           }
+        },
+        {
+          "version": 4,
+          "sha": "64fb6967620de4c07974ae32ec5d8b684c5747b1942d745eb315ccb8a79120be",
+          "schema_sha": "d0df2b4fbe9317dc5f3a6753e483721a4aa0f2b8191719fe42340eaf39079f4a",
+          "description": "Form fields for Flow Pilates Studio (lld): the generic LLD/1 · Form fields fields plus facts_used, from 2 charter fact(s); adapted from version 3 of this template",
+          "fingerprints": [
+            "0b5fefc4c7767940133337c1b84f7a1c0af5f8f8725aacdd20eb16f8981c7b8e"
+          ],
+          "business_type": "lld",
+          "facts": [
+            "Flow Pilates Studio",
+            "The Form fields section is written for Flow Pilates Studio"
+          ],
+          "fields": [
+            "form_fields",
+            "assumptions",
+            "facts_used"
+          ],
+          "enums": {
+            "facts_used": [
+              "Flow Pilates Studio",
+              "The Form fields section is written for Flow Pilates Studio"
+            ],
+            "FormField.type": [
+              "text",
+              "email",
+              "tel",
+              "url",
+              "number",
+              "date",
+              "time",
+              "select",
+              "textarea",
+              "checkbox",
+              "radio",
+              "password",
+              "file"
+            ]
+          },
+          "made_by": {
+            "run": "j2-20261112-150036",
+            "workflow": "W-27",
+            "atom": "W-27.a1",
+            "agent": "code (adapted from a run template)",
+            "date": "2026-11-12 15:00:36"
+          },
+          "used_by": [
+            {
+              "run": "j2-20261112-150036",
+              "workflow": "W-27",
+              "atom": "W-27.a1",
+              "action": "extended"
+            }
+          ],
+          "business": {
+            "name": "Flow Pilates Studio",
+            "type": "pilates studio"
+          },
+          "mock": false,
+          "collected_from": {
+            "run": "j2-20261112-150036",
+            "where": "the run's copy"
+          }
         }
       ],
-      "description": "Form fields for Iron Grove Fitness (lld): the generic LLD/1 · Form fields fields plus facts_used, from 1 charter fact(s); adapted from version 1 of this template"
+      "description": "Form fields for Flow Pilates Studio (lld): the generic LLD/1 · Form fields fields plus facts_used, from 2 charter fact(s); adapted from version 3 of this template"
     },
     {
       "artifact": "lld",
@@ -1864,9 +2532,58 @@
             "run": "j2-20261111-211339",
             "where": "the run's copy"
           }
+        },
+        {
+          "version": 4,
+          "sha": "fb2642ec067d0a551506c27ba3cea64db06871574d37f5f70d1588b2dece14cd",
+          "schema_sha": "662d1dabed8c7c58e36d12c86f8f191ec266943a4d0b6ca821aa4247cdff6272",
+          "description": "Interactive elements for Flow Pilates Studio (lld): the generic LLD/1 · Interactive elements fields plus facts_used, from 2 charter fact(s); adapted from version 3 of this template",
+          "fingerprints": [
+            "04f2d1a4aacf6a6313d5229147caeaf26b8ca3560e13fe90f021c5d57faa0804"
+          ],
+          "business_type": "lld",
+          "facts": [
+            "Flow Pilates Studio",
+            "The Interactive elements section is written for Flow Pilates Studio"
+          ],
+          "fields": [
+            "elements",
+            "assumptions",
+            "facts_used"
+          ],
+          "enums": {
+            "facts_used": [
+              "Flow Pilates Studio",
+              "The Interactive elements section is written for Flow Pilates Studio"
+            ]
+          },
+          "made_by": {
+            "run": "j2-20261112-150036",
+            "workflow": "W-26",
+            "atom": "W-26.a1",
+            "agent": "code (adapted from a run template)",
+            "date": "2026-11-12 15:00:36"
+          },
+          "used_by": [
+            {
+              "run": "j2-20261112-150036",
+              "workflow": "W-26",
+              "atom": "W-26.a1",
+              "action": "extended"
+            }
+          ],
+          "business": {
+            "name": "Flow Pilates Studio",
+            "type": "pilates studio"
+          },
+          "mock": false,
+          "collected_from": {
+            "run": "j2-20261112-150036",
+            "where": "the run's copy"
+          }
         }
       ],
-      "description": "Interactive elements for Iron Grove Fitness (lld): the generic LLD/1 · Interactive elements fields plus facts_used, from 1 charter fact(s); adapted from version 1 of this template"
+      "description": "Interactive elements for Flow Pilates Studio (lld): the generic LLD/1 · Interactive elements fields plus facts_used, from 2 charter fact(s); adapted from version 3 of this template"
     },
     {
       "artifact": "lld",
@@ -2082,9 +2799,58 @@
             "run": "j2-20261111-211339",
             "where": "the run's copy"
           }
+        },
+        {
+          "version": 5,
+          "sha": "ff96d2bddec8cedb07cd1c93d8f74f8d70223d720bf30ca817a0de3622b23b55",
+          "schema_sha": "5602e42d218d894330f158389b40e04f6250e1b093faf04af5d577af99643657",
+          "description": "Pages and sections for Flow Pilates Studio (lld): the generic LLD/1 · Pages and sections fields plus facts_used, from 2 charter fact(s); adapted from version 3 of this template",
+          "fingerprints": [
+            "68d03a9520d81f1075a1729d215a2162a21851ef94517605bfcd0f5df54dbb88"
+          ],
+          "business_type": "lld",
+          "facts": [
+            "Flow Pilates Studio",
+            "The Pages and sections section is written for Flow Pilates Studio, and names every component (C1, C2, C3, C4, C5, C6, C7) it implements"
+          ],
+          "fields": [
+            "sections",
+            "assumptions",
+            "facts_used"
+          ],
+          "enums": {
+            "facts_used": [
+              "Flow Pilates Studio",
+              "The Pages and sections section is written for Flow Pilates Studio, and names every component (C1, C2, C3, C4, C5, C6, C7) it implements"
+            ]
+          },
+          "made_by": {
+            "run": "j2-20261112-150036",
+            "workflow": "W-25",
+            "atom": "W-25.a1",
+            "agent": "code (adapted from a run template)",
+            "date": "2026-11-12 15:00:36"
+          },
+          "used_by": [
+            {
+              "run": "j2-20261112-150036",
+              "workflow": "W-25",
+              "atom": "W-25.a1",
+              "action": "extended"
+            }
+          ],
+          "business": {
+            "name": "Flow Pilates Studio",
+            "type": "pilates studio"
+          },
+          "mock": false,
+          "collected_from": {
+            "run": "j2-20261112-150036",
+            "where": "the run's copy"
+          }
         }
       ],
-      "description": "Pages and sections for Iron Grove Fitness (lld): the generic LLD/1 · Pages and sections fields plus facts_used, from 1 charter fact(s); adapted from version 2 of this template"
+      "description": "Pages and sections for Flow Pilates Studio (lld): the generic LLD/1 · Pages and sections fields plus facts_used, from 2 charter fact(s); adapted from version 3 of this template"
     },
     {
       "artifact": "lld",
@@ -2256,9 +3022,59 @@
             "run": "j2-20261111-211339",
             "where": "the run's copy"
           }
+        },
+        {
+          "version": 4,
+          "sha": "1f4f3beb8482a1c3ba94045e97b8b003261f4c12cd2f3ebdb68b0f0c611e2831",
+          "schema_sha": "f9d12182353598c558e438e91fa57574bf7cfd36c3349ba3b4736bf40d8ccf01",
+          "description": "Responsive and accessibility rules for Flow Pilates Studio (lld): the generic LLD/1 · Responsive and accessibility rules fields plus facts_used, from 2 charter fact(s); adapted from version 3 of this template",
+          "fingerprints": [
+            "e97fb139e9a41750efdf854ed842bc256326d69fc4e48778c90d885a7599d3e8"
+          ],
+          "business_type": "lld",
+          "facts": [
+            "Flow Pilates Studio",
+            "The Responsive and accessibility rules section is written for Flow Pilates Studio"
+          ],
+          "fields": [
+            "responsive_rules",
+            "accessibility_rules",
+            "assumptions",
+            "facts_used"
+          ],
+          "enums": {
+            "facts_used": [
+              "Flow Pilates Studio",
+              "The Responsive and accessibility rules section is written for Flow Pilates Studio"
+            ]
+          },
+          "made_by": {
+            "run": "j2-20261112-150036",
+            "workflow": "W-29",
+            "atom": "W-29.a1",
+            "agent": "code (adapted from a run template)",
+            "date": "2026-11-12 15:00:36"
+          },
+          "used_by": [
+            {
+              "run": "j2-20261112-150036",
+              "workflow": "W-29",
+              "atom": "W-29.a1",
+              "action": "extended"
+            }
+          ],
+          "business": {
+            "name": "Flow Pilates Studio",
+            "type": "pilates studio"
+          },
+          "mock": false,
+          "collected_from": {
+            "run": "j2-20261112-150036",
+            "where": "the run's copy"
+          }
         }
       ],
-      "description": "Responsive and accessibility rules for Iron Grove Fitness (lld): the generic LLD/1 · Responsive and accessibility rules fields plus facts_used, from 1 charter fact(s); adapted from version 1 of this template"
+      "description": "Responsive and accessibility rules for Flow Pilates Studio (lld): the generic LLD/1 · Responsive and accessibility rules fields plus facts_used, from 2 charter fact(s); adapted from version 3 of this template"
     },
     {
       "artifact": "prd",
@@ -2613,9 +3429,76 @@
             "run": "j2-20261111-215733",
             "where": "the run's copy"
           }
+        },
+        {
+          "version": 5,
+          "sha": "18754b3a66a707744f935a8f073521b3b04c96fca2b25a37fdd354117ee024c0",
+          "schema_sha": "298336c9d91301436415c215cddbd7630318794ba9f4235de9835eb00910f91f",
+          "description": "Goals for Flow Pilates Studio (prd): the generic PRD/1 · Goals fields plus facts_used, from 11 charter fact(s); adapted from version 3 of this template",
+          "fingerprints": [
+            "83e1d6d4553c56a832955e7a4ed834065d211e83faa9dd942b379d20bac0965c"
+          ],
+          "business_type": "prd",
+          "facts": [
+            "Flow Pilates Studio",
+            "Friday 6:30 pm Stretch and Release 550",
+            "Monday 7:00 am Mat Basics 500",
+            "Payment is made at the studio",
+            "Saturday 9:00 am Weekend Mat Class 500",
+            "The Goals section lists the goals of showing the weekly classes and taking booking requests",
+            "Tuesday 6:30 pm Reformer Flow 800",
+            "Unit 3, 9 Sample Lane, Pune 411004",
+            "Wednesday 7:00 am Core Strength 600",
+            "bookings@flowpilates.example",
+            "name, email, class, preferred date"
+          ],
+          "fields": [
+            "goals",
+            "assumptions",
+            "facts_used"
+          ],
+          "enums": {
+            "facts_used": [
+              "Flow Pilates Studio",
+              "Friday 6:30 pm Stretch and Release 550",
+              "Monday 7:00 am Mat Basics 500",
+              "Payment is made at the studio",
+              "Saturday 9:00 am Weekend Mat Class 500",
+              "The Goals section lists the goals of showing the weekly classes and taking booking requests",
+              "Tuesday 6:30 pm Reformer Flow 800",
+              "Unit 3, 9 Sample Lane, Pune 411004",
+              "Wednesday 7:00 am Core Strength 600",
+              "bookings@flowpilates.example",
+              "name, email, class, preferred date"
+            ]
+          },
+          "made_by": {
+            "run": "j2-20261112-150036",
+            "workflow": "W-3",
+            "atom": "W-3.a1",
+            "agent": "code (adapted from a run template)",
+            "date": "2026-11-12 15:00:36"
+          },
+          "used_by": [
+            {
+              "run": "j2-20261112-150036",
+              "workflow": "W-3",
+              "atom": "W-3.a1",
+              "action": "extended"
+            }
+          ],
+          "business": {
+            "name": "Flow Pilates Studio",
+            "type": "pilates studio"
+          },
+          "mock": false,
+          "collected_from": {
+            "run": "j2-20261112-150036",
+            "where": "the run's copy"
+          }
         }
       ],
-      "description": "Goals for Rhythm Room Dance Studio (prd): the generic PRD/1 · Goals fields plus facts_used, from 11 charter fact(s); adapted from version 2 of this template"
+      "description": "Goals for Flow Pilates Studio (prd): the generic PRD/1 · Goals fields plus facts_used, from 11 charter fact(s); adapted from version 3 of this template"
     },
     {
       "artifact": "prd",
@@ -2956,9 +3839,76 @@
             "run": "j2-20261111-215733",
             "where": "the run's copy"
           }
+        },
+        {
+          "version": 5,
+          "sha": "fb200208a3fceed4e9be6ec0048bd5d21de5224a7c5ad21dfb504e345363fbc0",
+          "schema_sha": "cf4bd873a4fc9954c1332a5c1a1ccef8f9bdeffa33eb7d42455809d991b738d3",
+          "description": "Out of scope for Flow Pilates Studio (prd): the generic PRD/1 · Out of scope fields plus facts_used, from 11 charter fact(s); adapted from version 3 of this template",
+          "fingerprints": [
+            "fba2b32d5d58fc1646925722557970ab60f81feb33ff0966d5b66691f400fe18"
+          ],
+          "business_type": "prd",
+          "facts": [
+            "Flow Pilates Studio",
+            "Friday 6:30 pm Stretch and Release 550",
+            "Monday 7:00 am Mat Basics 500",
+            "Payment is made at the studio",
+            "Saturday 9:00 am Weekend Mat Class 500",
+            "The Out of scope section lists phone number, teacher names, embedded map and online payment",
+            "Tuesday 6:30 pm Reformer Flow 800",
+            "Unit 3, 9 Sample Lane, Pune 411004",
+            "Wednesday 7:00 am Core Strength 600",
+            "bookings@flowpilates.example",
+            "name, email, class, preferred date"
+          ],
+          "fields": [
+            "out_of_scope",
+            "assumptions",
+            "facts_used"
+          ],
+          "enums": {
+            "facts_used": [
+              "Flow Pilates Studio",
+              "Friday 6:30 pm Stretch and Release 550",
+              "Monday 7:00 am Mat Basics 500",
+              "Payment is made at the studio",
+              "Saturday 9:00 am Weekend Mat Class 500",
+              "The Out of scope section lists phone number, teacher names, embedded map and online payment",
+              "Tuesday 6:30 pm Reformer Flow 800",
+              "Unit 3, 9 Sample Lane, Pune 411004",
+              "Wednesday 7:00 am Core Strength 600",
+              "bookings@flowpilates.example",
+              "name, email, class, preferred date"
+            ]
+          },
+          "made_by": {
+            "run": "j2-20261112-150036",
+            "workflow": "W-6",
+            "atom": "W-6.a1",
+            "agent": "code (adapted from a run template)",
+            "date": "2026-11-12 15:00:36"
+          },
+          "used_by": [
+            {
+              "run": "j2-20261112-150036",
+              "workflow": "W-6",
+              "atom": "W-6.a1",
+              "action": "extended"
+            }
+          ],
+          "business": {
+            "name": "Flow Pilates Studio",
+            "type": "pilates studio"
+          },
+          "mock": false,
+          "collected_from": {
+            "run": "j2-20261112-150036",
+            "where": "the run's copy"
+          }
         }
       ],
-      "description": "Out of scope for Rhythm Room Dance Studio (prd): the generic PRD/1 · Out of scope fields plus facts_used, from 12 charter fact(s); adapted from version 2 of this template"
+      "description": "Out of scope for Flow Pilates Studio (prd): the generic PRD/1 · Out of scope fields plus facts_used, from 11 charter fact(s); adapted from version 3 of this template"
     },
     {
       "artifact": "prd",
@@ -3225,9 +4175,141 @@
             "run": "j2-20261111-215733",
             "where": "the run's copy"
           }
+        },
+        {
+          "version": 5,
+          "sha": "c90eb45143b07bbb7d8d09006f8d25bc956e8e1c34975987f48c2b023158dac1",
+          "schema_sha": "a9aec070f491bbabdc9d94b11fd43e18bb5f4a68895da004f683a2a474624e4f",
+          "description": "Problem for Flow Pilates Studio (prd): the generic PRD/1 · Problem fields plus facts_used, from 11 charter fact(s); adapted from version 3 of this template",
+          "fingerprints": [
+            "1c191d99fa925c5794ad0b73c1fc08645278b3a22d396db0c120dcba39e878ea"
+          ],
+          "business_type": "prd",
+          "facts": [
+            "Flow Pilates Studio",
+            "Friday 6:30 pm Stretch and Release 550",
+            "Monday 7:00 am Mat Basics 500",
+            "Payment is made at the studio",
+            "Saturday 9:00 am Weekend Mat Class 500",
+            "The Problem section states that no problem statement was provided and contains no invented problem",
+            "Tuesday 6:30 pm Reformer Flow 800",
+            "Unit 3, 9 Sample Lane, Pune 411004",
+            "Wednesday 7:00 am Core Strength 600",
+            "bookings@flowpilates.example",
+            "name, email, class, preferred date"
+          ],
+          "fields": [
+            "statement",
+            "assumptions",
+            "facts_used"
+          ],
+          "enums": {
+            "facts_used": [
+              "Flow Pilates Studio",
+              "Friday 6:30 pm Stretch and Release 550",
+              "Monday 7:00 am Mat Basics 500",
+              "Payment is made at the studio",
+              "Saturday 9:00 am Weekend Mat Class 500",
+              "The Problem section states that no problem statement was provided and contains no invented problem",
+              "Tuesday 6:30 pm Reformer Flow 800",
+              "Unit 3, 9 Sample Lane, Pune 411004",
+              "Wednesday 7:00 am Core Strength 600",
+              "bookings@flowpilates.example",
+              "name, email, class, preferred date"
+            ]
+          },
+          "made_by": {
+            "run": "j2-20261112-150036",
+            "workflow": "W-1",
+            "atom": "W-1.a1",
+            "agent": "code (adapted from a run template)",
+            "date": "2026-11-12 15:00:36"
+          },
+          "used_by": [
+            {
+              "run": "j2-20261112-150036",
+              "workflow": "W-1",
+              "atom": "W-1.a1",
+              "action": "extended"
+            }
+          ],
+          "business": {
+            "name": "Flow Pilates Studio",
+            "type": "pilates studio"
+          },
+          "mock": false,
+          "collected_from": {
+            "run": "j2-20261112-150036",
+            "where": "the run's copy"
+          }
+        },
+        {
+          "version": 6,
+          "sha": "554a81ea957d73c469fdf3b06f93e62c85a8e014f02efab46af01fe66b5d8c93",
+          "schema_sha": "2e5d12a8768fb383f36a8a8790822e72d380f1fb010c4a69dbc7e03c232bb312",
+          "description": "Problem for Flow Pilates Studio (prd): the generic PRD/1 · Problem fields plus facts_used, from 10 charter fact(s); adapted from version 3 of this template",
+          "fingerprints": [
+            "e3ab0c802aa38241d4468364f1bee9acb46cc072d7ef827f47b46a024615d514"
+          ],
+          "business_type": "prd",
+          "facts": [
+            "Flow Pilates Studio",
+            "Friday 6:30 pm Stretch and Release 550",
+            "Monday 7:00 am Mat Basics 500",
+            "Payment is made at the studio",
+            "Saturday 9:00 am Weekend Mat Class 500",
+            "Tuesday 6:30 pm Reformer Flow 800",
+            "Unit 3, 9 Sample Lane, Pune 411004",
+            "Wednesday 7:00 am Core Strength 600",
+            "bookings@flowpilates.example",
+            "name, email, class, preferred date"
+          ],
+          "fields": [
+            "statement",
+            "assumptions",
+            "facts_used"
+          ],
+          "enums": {
+            "facts_used": [
+              "Flow Pilates Studio",
+              "Friday 6:30 pm Stretch and Release 550",
+              "Monday 7:00 am Mat Basics 500",
+              "Payment is made at the studio",
+              "Saturday 9:00 am Weekend Mat Class 500",
+              "Tuesday 6:30 pm Reformer Flow 800",
+              "Unit 3, 9 Sample Lane, Pune 411004",
+              "Wednesday 7:00 am Core Strength 600",
+              "bookings@flowpilates.example",
+              "name, email, class, preferred date"
+            ]
+          },
+          "made_by": {
+            "run": "j2-20261112-150036",
+            "workflow": "W-7",
+            "atom": "W-7.a1",
+            "agent": "code (adapted from a run template)",
+            "date": "2026-11-12 15:00:36"
+          },
+          "used_by": [
+            {
+              "run": "j2-20261112-150036",
+              "workflow": "W-7",
+              "atom": "W-7.a1",
+              "action": "extended"
+            }
+          ],
+          "business": {
+            "name": "Flow Pilates Studio",
+            "type": "pilates studio"
+          },
+          "mock": false,
+          "collected_from": {
+            "run": "j2-20261112-150036",
+            "where": "the run's copy"
+          }
         }
       ],
-      "description": "Problem for Rhythm Room Dance Studio (prd): the generic PRD/1 · Problem fields plus facts_used, from 11 charter fact(s); adapted from version 2 of this template"
+      "description": "Problem for Flow Pilates Studio (prd): the generic PRD/1 · Problem fields plus facts_used, from 10 charter fact(s); adapted from version 3 of this template"
     },
     {
       "artifact": "prd",
@@ -3752,9 +4834,157 @@
             "run": "j2-20261111-215733",
             "where": "the run's copy"
           }
+        },
+        {
+          "version": 6,
+          "sha": "da043ba57e7d5e417a1820e191b15ee1488469189e036d611e308bbb78d5c9e9",
+          "schema_sha": "840beee0d6596dce95f0c3d93650239fa7b2ad5cb981ed147ee7341cd4893ed9",
+          "description": "Requirements for Flow Pilates Studio (prd): the generic PRD/1 · Requirements fields plus facts_used, from 14 charter fact(s); adapted from version 4 of this template",
+          "fingerprints": [
+            "68ba0808dd5c0464cbc38920dabc00d1f8b4e45300a4486dc49bc0346bb68705"
+          ],
+          "business_type": "prd",
+          "facts": [
+            "Flow Pilates Studio",
+            "Friday 6:30 pm Stretch and Release 550",
+            "Monday 7:00 am Mat Basics 500",
+            "Payment is made at the studio",
+            "Saturday 9:00 am Weekend Mat Class 500",
+            "The Requirements section gives the address Unit 3, 9 Sample Lane, Pune 411004 as text with no map, and states that payment is made at the studio with no online payment",
+            "The Requirements section lists all five classes with exact day, time, class name and price in rupees",
+            "The Requirements section specifies the booking form with the fields name, email, class and preferred date, sent to bookings@flowpilates.example",
+            "The Requirements section states that the page must work on phones",
+            "Tuesday 6:30 pm Reformer Flow 800",
+            "Unit 3, 9 Sample Lane, Pune 411004",
+            "Wednesday 7:00 am Core Strength 600",
+            "bookings@flowpilates.example",
+            "name, email, class, preferred date"
+          ],
+          "fields": [
+            "requirements",
+            "assumptions",
+            "facts_used"
+          ],
+          "enums": {
+            "facts_used": [
+              "Flow Pilates Studio",
+              "Friday 6:30 pm Stretch and Release 550",
+              "Monday 7:00 am Mat Basics 500",
+              "Payment is made at the studio",
+              "Saturday 9:00 am Weekend Mat Class 500",
+              "The Requirements section gives the address Unit 3, 9 Sample Lane, Pune 411004 as text with no map, and states that payment is made at the studio with no online payment",
+              "The Requirements section lists all five classes with exact day, time, class name and price in rupees",
+              "The Requirements section specifies the booking form with the fields name, email, class and preferred date, sent to bookings@flowpilates.example",
+              "The Requirements section states that the page must work on phones",
+              "Tuesday 6:30 pm Reformer Flow 800",
+              "Unit 3, 9 Sample Lane, Pune 411004",
+              "Wednesday 7:00 am Core Strength 600",
+              "bookings@flowpilates.example",
+              "name, email, class, preferred date"
+            ],
+            "Requirement.priority": [
+              "must",
+              "should",
+              "could"
+            ]
+          },
+          "made_by": {
+            "run": "j2-20261112-150036",
+            "workflow": "W-4",
+            "atom": "W-4.a1",
+            "agent": "code (adapted from a run template)",
+            "date": "2026-11-12 15:00:36"
+          },
+          "used_by": [
+            {
+              "run": "j2-20261112-150036",
+              "workflow": "W-4",
+              "atom": "W-4.a1",
+              "action": "extended"
+            }
+          ],
+          "business": {
+            "name": "Flow Pilates Studio",
+            "type": "pilates studio"
+          },
+          "mock": false,
+          "collected_from": {
+            "run": "j2-20261112-150036",
+            "where": "the run's copy"
+          }
+        },
+        {
+          "version": 7,
+          "sha": "4a3c71c14694a3792d3639a6701e29e7a2476ac38f7ee493015c9c2127b6ef8d",
+          "schema_sha": "09965d9bce6ddcb79756a3b167f52582ed0ed6e79b601721df3040e01fd75b8b",
+          "description": "Requirements for Flow Pilates Studio (prd): the generic PRD/1 · Requirements fields plus facts_used, from 10 charter fact(s); adapted from version 4 of this template",
+          "fingerprints": [
+            "9903b6dcb7d29d0828107fc9cee288f94c925637ba9a0f6e876c183d0cb9db71"
+          ],
+          "business_type": "prd",
+          "facts": [
+            "Flow Pilates Studio",
+            "Friday 6:30 pm Stretch and Release 550",
+            "Monday 7:00 am Mat Basics 500",
+            "Payment is made at the studio",
+            "Saturday 9:00 am Weekend Mat Class 500",
+            "Tuesday 6:30 pm Reformer Flow 800",
+            "Unit 3, 9 Sample Lane, Pune 411004",
+            "Wednesday 7:00 am Core Strength 600",
+            "bookings@flowpilates.example",
+            "name, email, class, preferred date"
+          ],
+          "fields": [
+            "requirements",
+            "assumptions",
+            "facts_used"
+          ],
+          "enums": {
+            "facts_used": [
+              "Flow Pilates Studio",
+              "Friday 6:30 pm Stretch and Release 550",
+              "Monday 7:00 am Mat Basics 500",
+              "Payment is made at the studio",
+              "Saturday 9:00 am Weekend Mat Class 500",
+              "Tuesday 6:30 pm Reformer Flow 800",
+              "Unit 3, 9 Sample Lane, Pune 411004",
+              "Wednesday 7:00 am Core Strength 600",
+              "bookings@flowpilates.example",
+              "name, email, class, preferred date"
+            ],
+            "Requirement.priority": [
+              "must",
+              "should",
+              "could"
+            ]
+          },
+          "made_by": {
+            "run": "j2-20261112-150036",
+            "workflow": "W-9",
+            "atom": "W-9.a1",
+            "agent": "code (adapted from a run template)",
+            "date": "2026-11-12 15:00:36"
+          },
+          "used_by": [
+            {
+              "run": "j2-20261112-150036",
+              "workflow": "W-9",
+              "atom": "W-9.a1",
+              "action": "extended"
+            }
+          ],
+          "business": {
+            "name": "Flow Pilates Studio",
+            "type": "pilates studio"
+          },
+          "mock": false,
+          "collected_from": {
+            "run": "j2-20261112-150036",
+            "where": "the run's copy"
+          }
         }
       ],
-      "description": "Requirements for Rhythm Room Dance Studio (prd): the generic PRD/1 · Requirements fields plus facts_used, from 15 charter fact(s); adapted from version 3 of this template"
+      "description": "Requirements for Flow Pilates Studio (prd): the generic PRD/1 · Requirements fields plus facts_used, from 10 charter fact(s); adapted from version 4 of this template"
     },
     {
       "artifact": "prd",
@@ -3960,9 +5190,76 @@
             "run": "j2-20261111-215733",
             "where": "the run's copy"
           }
+        },
+        {
+          "version": 4,
+          "sha": "b3e21c621c5786da990c3b0c2f2d645060ac1a31963675bba4f32e269b5d25f4",
+          "schema_sha": "cb41d8c8f081aa28781e0972e0761dcac53ae0fe0582ca252604a39bba6a1a32",
+          "description": "Success metrics for Flow Pilates Studio (prd): the generic PRD/1 · Success metrics fields plus facts_used, from 11 charter fact(s); adapted from version 2 of this template",
+          "fingerprints": [
+            "fcfb24c3de62a134025bab395400d358d6535c6e881d169dd0dc648d44c688e2"
+          ],
+          "business_type": "prd",
+          "facts": [
+            "Flow Pilates Studio",
+            "Friday 6:30 pm Stretch and Release 550",
+            "Monday 7:00 am Mat Basics 500",
+            "Payment is made at the studio",
+            "Saturday 9:00 am Weekend Mat Class 500",
+            "The Success metrics section states that no success measure was provided and contains no invented number",
+            "Tuesday 6:30 pm Reformer Flow 800",
+            "Unit 3, 9 Sample Lane, Pune 411004",
+            "Wednesday 7:00 am Core Strength 600",
+            "bookings@flowpilates.example",
+            "name, email, class, preferred date"
+          ],
+          "fields": [
+            "success_metrics",
+            "assumptions",
+            "facts_used"
+          ],
+          "enums": {
+            "facts_used": [
+              "Flow Pilates Studio",
+              "Friday 6:30 pm Stretch and Release 550",
+              "Monday 7:00 am Mat Basics 500",
+              "Payment is made at the studio",
+              "Saturday 9:00 am Weekend Mat Class 500",
+              "The Success metrics section states that no success measure was provided and contains no invented number",
+              "Tuesday 6:30 pm Reformer Flow 800",
+              "Unit 3, 9 Sample Lane, Pune 411004",
+              "Wednesday 7:00 am Core Strength 600",
+              "bookings@flowpilates.example",
+              "name, email, class, preferred date"
+            ]
+          },
+          "made_by": {
+            "run": "j2-20261112-150036",
+            "workflow": "W-5",
+            "atom": "W-5.a1",
+            "agent": "code (adapted from a run template)",
+            "date": "2026-11-12 15:00:36"
+          },
+          "used_by": [
+            {
+              "run": "j2-20261112-150036",
+              "workflow": "W-5",
+              "atom": "W-5.a1",
+              "action": "extended"
+            }
+          ],
+          "business": {
+            "name": "Flow Pilates Studio",
+            "type": "pilates studio"
+          },
+          "mock": false,
+          "collected_from": {
+            "run": "j2-20261112-150036",
+            "where": "the run's copy"
+          }
         }
       ],
-      "description": "Success metrics for Rhythm Room Dance Studio (prd): the generic PRD/1 · Success metrics fields plus facts_used, from 11 charter fact(s); adapted from version 1 of this template"
+      "description": "Success metrics for Flow Pilates Studio (prd): the generic PRD/1 · Success metrics fields plus facts_used, from 11 charter fact(s); adapted from version 2 of this template"
     },
     {
       "artifact": "prd",
@@ -4328,9 +5625,141 @@
             "run": "j2-20261111-215733",
             "where": "the run's copy"
           }
+        },
+        {
+          "version": 4,
+          "sha": "d197050f78e58bbead71a3e9730eb8e68ffcc114e99dea3cbb950428dff252cb",
+          "schema_sha": "f7dd8855e94b2080ecfbad3b5fa8df9ad4c5be0c92be78a87f50ad00195dc133",
+          "description": "Users for Flow Pilates Studio (prd): the generic PRD/1 · Users fields plus facts_used, from 11 charter fact(s); adapted from version 2 of this template",
+          "fingerprints": [
+            "57bb725ee4c4346b2e935ff25eeeb42f533103aa8ef6ee85c3507ec6675cc36f"
+          ],
+          "business_type": "prd",
+          "facts": [
+            "Flow Pilates Studio",
+            "Friday 6:30 pm Stretch and Release 550",
+            "Monday 7:00 am Mat Basics 500",
+            "Payment is made at the studio",
+            "Saturday 9:00 am Weekend Mat Class 500",
+            "The Users section names Visitors and the Studio team and says what each does",
+            "Tuesday 6:30 pm Reformer Flow 800",
+            "Unit 3, 9 Sample Lane, Pune 411004",
+            "Wednesday 7:00 am Core Strength 600",
+            "bookings@flowpilates.example",
+            "name, email, class, preferred date"
+          ],
+          "fields": [
+            "users",
+            "assumptions",
+            "facts_used"
+          ],
+          "enums": {
+            "facts_used": [
+              "Flow Pilates Studio",
+              "Friday 6:30 pm Stretch and Release 550",
+              "Monday 7:00 am Mat Basics 500",
+              "Payment is made at the studio",
+              "Saturday 9:00 am Weekend Mat Class 500",
+              "The Users section names Visitors and the Studio team and says what each does",
+              "Tuesday 6:30 pm Reformer Flow 800",
+              "Unit 3, 9 Sample Lane, Pune 411004",
+              "Wednesday 7:00 am Core Strength 600",
+              "bookings@flowpilates.example",
+              "name, email, class, preferred date"
+            ]
+          },
+          "made_by": {
+            "run": "j2-20261112-150036",
+            "workflow": "W-2",
+            "atom": "W-2.a1",
+            "agent": "code (adapted from a run template)",
+            "date": "2026-11-12 15:00:36"
+          },
+          "used_by": [
+            {
+              "run": "j2-20261112-150036",
+              "workflow": "W-2",
+              "atom": "W-2.a1",
+              "action": "extended"
+            }
+          ],
+          "business": {
+            "name": "Flow Pilates Studio",
+            "type": "pilates studio"
+          },
+          "mock": false,
+          "collected_from": {
+            "run": "j2-20261112-150036",
+            "where": "the run's copy"
+          }
+        },
+        {
+          "version": 5,
+          "sha": "848fb7be8b7a9557f45ed42ddcf56cf10ce6bad1d19e6cc9f5408d30fc4cad21",
+          "schema_sha": "5063c3ba8747476b63f28b7ef6760ed024987dccdea3be7e78aa0ff5c59c1608",
+          "description": "Users for Flow Pilates Studio (prd): the generic PRD/1 · Users fields plus facts_used, from 10 charter fact(s); adapted from version 2 of this template",
+          "fingerprints": [
+            "8d3dbb982e3b496d483bdf4ab244b09556c3454cdf3a14000be9363e45c85ac3"
+          ],
+          "business_type": "prd",
+          "facts": [
+            "Flow Pilates Studio",
+            "Friday 6:30 pm Stretch and Release 550",
+            "Monday 7:00 am Mat Basics 500",
+            "Payment is made at the studio",
+            "Saturday 9:00 am Weekend Mat Class 500",
+            "Tuesday 6:30 pm Reformer Flow 800",
+            "Unit 3, 9 Sample Lane, Pune 411004",
+            "Wednesday 7:00 am Core Strength 600",
+            "bookings@flowpilates.example",
+            "name, email, class, preferred date"
+          ],
+          "fields": [
+            "users",
+            "assumptions",
+            "facts_used"
+          ],
+          "enums": {
+            "facts_used": [
+              "Flow Pilates Studio",
+              "Friday 6:30 pm Stretch and Release 550",
+              "Monday 7:00 am Mat Basics 500",
+              "Payment is made at the studio",
+              "Saturday 9:00 am Weekend Mat Class 500",
+              "Tuesday 6:30 pm Reformer Flow 800",
+              "Unit 3, 9 Sample Lane, Pune 411004",
+              "Wednesday 7:00 am Core Strength 600",
+              "bookings@flowpilates.example",
+              "name, email, class, preferred date"
+            ]
+          },
+          "made_by": {
+            "run": "j2-20261112-150036",
+            "workflow": "W-8",
+            "atom": "W-8.a1",
+            "agent": "code (adapted from a run template)",
+            "date": "2026-11-12 15:00:36"
+          },
+          "used_by": [
+            {
+              "run": "j2-20261112-150036",
+              "workflow": "W-8",
+              "atom": "W-8.a1",
+              "action": "extended"
+            }
+          ],
+          "business": {
+            "name": "Flow Pilates Studio",
+            "type": "pilates studio"
+          },
+          "mock": false,
+          "collected_from": {
+            "run": "j2-20261112-150036",
+            "where": "the run's copy"
+          }
         }
       ],
-      "description": "Users for Rhythm Room Dance Studio (prd): the generic PRD/1 · Users fields plus facts_used, from 11 charter fact(s); adapted from version 1 of this template"
+      "description": "Users for Flow Pilates Studio (prd): the generic PRD/1 · Users fields plus facts_used, from 10 charter fact(s); adapted from version 2 of this template"
     },
     {
       "artifact": "prd",
@@ -4486,9 +5915,89 @@
             "run": "j2-20261111-211339",
             "where": "the run's copy"
           }
+        },
+        {
+          "version": 2,
+          "sha": "ba20c371dda27ee01bb7433e938b72c776836dd574e8f4621d3653f469ccdd4d",
+          "schema_sha": "d6670f7246509254393f52598726d8a05dfb17cb2ee184fbf5bc4dd5a68f46af",
+          "description": "Section for Flow Pilates Studio (pilates studio): the generic WebsiteSection/1 · Section fields plus booking_form_fields, elements, form_fields, from 4 charter fact(s); adapted from version 1 of this template",
+          "fingerprints": [
+            "6fe2cf9ba24f3466f1f4e711ad618481342eb301dd1d5e2bdbad9407c953c366"
+          ],
+          "business_type": "pilates studio",
+          "facts": [
+            "Saturday 9:00 am Weekend Mat Class 500",
+            "The page has a class booking form with the fields name, email, class and preferred date.",
+            "The page's booking form sends the booking to bookings@flowpilates.example.",
+            "bookings@flowpilates.example"
+          ],
+          "fields": [
+            "id",
+            "anchor",
+            "implements",
+            "html",
+            "head",
+            "selectors_used",
+            "facts_used",
+            "booking_form_fields",
+            "elements",
+            "form_fields"
+          ],
+          "enums": {
+            "facts_used": [
+              "Saturday 9:00 am Weekend Mat Class 500",
+              "The page has a class booking form with the fields name, email, class and preferred date.",
+              "The page's booking form sends the booking to bookings@flowpilates.example.",
+              "bookings@flowpilates.example"
+            ],
+            "booking_form_fields": [
+              "name",
+              "email",
+              "class",
+              "preferred date"
+            ],
+            "elements": [
+              "#booking-form",
+              "#booking-submit",
+              "#booking-class",
+              "#booking-name",
+              "#booking-email",
+              "#booking-date"
+            ],
+            "form_fields": [
+              "name",
+              "email",
+              "class",
+              "preferred_date"
+            ]
+          },
+          "made_by": {
+            "run": "j2-20261112-150036",
+            "workflow": "W-31",
+            "atom": "W-31.a1",
+            "agent": "code (adapted from a run template)",
+            "date": "2026-11-12 15:00:36"
+          },
+          "used_by": [
+            {
+              "run": "j2-20261112-150036",
+              "workflow": "W-31",
+              "atom": "W-31.a1",
+              "action": "extended"
+            }
+          ],
+          "business": {
+            "name": "Flow Pilates Studio",
+            "type": "pilates studio"
+          },
+          "mock": false,
+          "collected_from": {
+            "run": "j2-20261112-150036",
+            "where": "the run's copy"
+          }
         }
       ],
-      "description": "Trial booking form section for Iron Grove Fitness: the generic WebsiteSection fields plus elements and form_fields, from the charter facts"
+      "description": "Section for Flow Pilates Studio (pilates studio): the generic WebsiteSection/1 · Section fields plus booking_form_fields, elements, form_fields, from 4 charter fact(s); adapted from version 1 of this template"
     },
     {
       "artifact": "website",
@@ -4881,9 +6390,135 @@
             "type": "boutique"
           },
           "mock": true
+        },
+        {
+          "version": 2,
+          "sha": "aad42b903a4761f7e81a545e9986f1380cf396e7d42994f1d142223793ff8ecb",
+          "schema_sha": "9e05c831de495cb33456e2bdf45480d60ba396253d97c751fea89ff055e6acc5",
+          "description": "Section for Flow Pilates Studio (pilates studio): the generic WebsiteSection/1 · Section fields, from 7 charter fact(s); adapted from version 1 of this template",
+          "fingerprints": [
+            "eb75c59776a93359c431bfc39b16c8d071cd701f7219409bf91f6f3392ae5a04"
+          ],
+          "business_type": "pilates studio",
+          "facts": [
+            "Friday 6:30 pm Stretch and Release 550",
+            "Monday 7:00 am Mat Basics 500",
+            "Saturday 9:00 am Weekend Mat Class 500",
+            "The page shows a weekly class list with five classes, each with day, time, class name and price in rupees: Monday 7:00 am Mat Basics 500; Tuesday 6:30 pm Reformer Flow 800; Wednesday 7:00 am Core Strength 600; Friday 6:30 pm Stretch and Release 550; Saturday 9:00 am Weekend Mat Class 500.",
+            "The page shows the studio name 'Flow Pilates Studio'.",
+            "Tuesday 6:30 pm Reformer Flow 800",
+            "Wednesday 7:00 am Core Strength 600"
+          ],
+          "fields": [
+            "id",
+            "anchor",
+            "implements",
+            "html",
+            "head",
+            "selectors_used",
+            "facts_used"
+          ],
+          "enums": {
+            "facts_used": [
+              "Friday 6:30 pm Stretch and Release 550",
+              "Monday 7:00 am Mat Basics 500",
+              "Saturday 9:00 am Weekend Mat Class 500",
+              "The page shows a weekly class list with five classes, each with day, time, class name and price in rupees: Monday 7:00 am Mat Basics 500; Tuesday 6:30 pm Reformer Flow 800; Wednesday 7:00 am Core Strength 600; Friday 6:30 pm Stretch and Release 550; Saturday 9:00 am Weekend Mat Class 500.",
+              "The page shows the studio name 'Flow Pilates Studio'.",
+              "Tuesday 6:30 pm Reformer Flow 800",
+              "Wednesday 7:00 am Core Strength 600"
+            ]
+          },
+          "made_by": {
+            "run": "j2-20261112-150036",
+            "workflow": "W-30",
+            "atom": "W-30.a1",
+            "agent": "code (adapted from the nearest template)",
+            "date": "2026-11-12 15:00:36"
+          },
+          "used_by": [
+            {
+              "run": "j2-20261112-150036",
+              "workflow": "W-30",
+              "atom": "W-30.a1",
+              "action": "extended"
+            }
+          ],
+          "business": {
+            "name": "Flow Pilates Studio",
+            "type": "pilates studio"
+          },
+          "mock": false,
+          "collected_from": {
+            "run": "j2-20261112-150036",
+            "where": "the run's copy"
+          }
+        },
+        {
+          "version": 3,
+          "sha": "4c0e4d0f7e6f348c5b2bcd2fbf094a020b5f931fdcfb51cbe78109c88f16bafe",
+          "schema_sha": "dde5b478be402edb5e26ca8ef003f6092f8db9110f52b4ba2a5e18d75443a3c1",
+          "description": "Section for Flow Pilates Studio (pilates studio): the generic WebsiteSection/1 · Section fields, from 7 charter fact(s); adapted from version 2 of this template",
+          "fingerprints": [
+            "c8a57419172e03e579da8480bb9cf112b7134867fd3950d2c605b3188a90048f"
+          ],
+          "business_type": "pilates studio",
+          "facts": [
+            "The page has no JavaScript errors, no horizontal overflow at 360px and 1280px, and every in-page link points to an existing section.",
+            "The page has no horizontal overflow at 360px and at 1280px, so it works on phones.",
+            "The page shows no phone number.",
+            "The page shows no teacher names.",
+            "The page shows the studio address 'Unit 3, 9 Sample Lane, Pune 411004' as text, with no embedded map.",
+            "The page states that payment is made at the studio and that no online payment is taken.",
+            "Unit 3, 9 Sample Lane, Pune 411004"
+          ],
+          "fields": [
+            "id",
+            "anchor",
+            "implements",
+            "html",
+            "head",
+            "selectors_used",
+            "facts_used"
+          ],
+          "enums": {
+            "facts_used": [
+              "The page has no JavaScript errors, no horizontal overflow at 360px and 1280px, and every in-page link points to an existing section.",
+              "The page has no horizontal overflow at 360px and at 1280px, so it works on phones.",
+              "The page shows no phone number.",
+              "The page shows no teacher names.",
+              "The page shows the studio address 'Unit 3, 9 Sample Lane, Pune 411004' as text, with no embedded map.",
+              "The page states that payment is made at the studio and that no online payment is taken.",
+              "Unit 3, 9 Sample Lane, Pune 411004"
+            ]
+          },
+          "made_by": {
+            "run": "j2-20261112-150036",
+            "workflow": "W-32",
+            "atom": "W-32.a1",
+            "agent": "code (adapted from the nearest template)",
+            "date": "2026-11-12 15:00:36"
+          },
+          "used_by": [
+            {
+              "run": "j2-20261112-150036",
+              "workflow": "W-32",
+              "atom": "W-32.a1",
+              "action": "extended"
+            }
+          ],
+          "business": {
+            "name": "Flow Pilates Studio",
+            "type": "pilates studio"
+          },
+          "mock": false,
+          "collected_from": {
+            "run": "j2-20261112-150036",
+            "where": "the run's copy"
+          }
         }
       ],
-      "description": "Section for Thread (boutique): the generic WebsiteSection/1 · Section fields, from 1 charter fact(s)"
+      "description": "Section for Flow Pilates Studio (pilates studio): the generic WebsiteSection/1 · Section fields, from 7 charter fact(s); adapted from version 2 of this template"
     },
     {
       "artifact": "website",
@@ -8335,6 +9970,651 @@
         "reused": 0,
         "generic": 0
       }
+    },
+    "j2-20261112-150036": {
+      "run": "j2-20261112-150036",
+      "date": "2026-11-12 15:00:36",
+      "business": "Flow Pilates Studio",
+      "business_type": "pilates studio",
+      "mock": false,
+      "provider": "claude-cli",
+      "model": "sonnet",
+      "library": "/tmp/j2-auto-lib",
+      "decisions": [
+        {
+          "workflow": "W-1",
+          "atom": "W-1.a1",
+          "artifact": "prd",
+          "section": "Problem",
+          "template": "Still Point Yoga Problem",
+          "version": 5,
+          "action": "extended",
+          "kind": "specialised",
+          "score": 0.1818,
+          "rule": "t",
+          "source": "the run's copy",
+          "ref": {
+            "artifact": "prd",
+            "section_slug": "problem",
+            "slug": "still-point-yoga-problem",
+            "version": 5
+          }
+        },
+        {
+          "workflow": "W-2",
+          "atom": "W-2.a1",
+          "artifact": "prd",
+          "section": "Users",
+          "template": "Still Point Yoga PRD Users",
+          "version": 4,
+          "action": "extended",
+          "kind": "specialised",
+          "score": 0.1818,
+          "rule": "t",
+          "source": "the run's copy",
+          "ref": {
+            "artifact": "prd",
+            "section_slug": "users",
+            "slug": "still-point-yoga-prd-users",
+            "version": 4
+          }
+        },
+        {
+          "workflow": "W-3",
+          "atom": "W-3.a1",
+          "artifact": "prd",
+          "section": "Goals",
+          "template": "Still Point Yoga PRD Goals",
+          "version": 5,
+          "action": "extended",
+          "kind": "specialised",
+          "score": 0.1818,
+          "rule": "t",
+          "source": "the run's copy",
+          "ref": {
+            "artifact": "prd",
+            "section_slug": "goals",
+            "slug": "still-point-yoga-prd-goals",
+            "version": 5
+          }
+        },
+        {
+          "workflow": "W-4",
+          "atom": "W-4.a1",
+          "artifact": "prd",
+          "section": "Requirements",
+          "template": "Still Point Yoga Requirements",
+          "version": 6,
+          "action": "extended",
+          "kind": "specialised",
+          "score": 0.1429,
+          "rule": "t",
+          "source": "the run's copy",
+          "ref": {
+            "artifact": "prd",
+            "section_slug": "requirements",
+            "slug": "still-point-yoga-requirements",
+            "version": 6
+          }
+        },
+        {
+          "workflow": "W-5",
+          "atom": "W-5.a1",
+          "artifact": "prd",
+          "section": "Success metrics",
+          "template": "Still Point Yoga PRD Success metrics",
+          "version": 4,
+          "action": "extended",
+          "kind": "specialised",
+          "score": 0.1818,
+          "rule": "t",
+          "source": "the run's copy",
+          "ref": {
+            "artifact": "prd",
+            "section_slug": "success-metrics",
+            "slug": "still-point-yoga-prd-success-metrics",
+            "version": 4
+          }
+        },
+        {
+          "workflow": "W-6",
+          "atom": "W-6.a1",
+          "artifact": "prd",
+          "section": "Out of scope",
+          "template": "Still Point Yoga PRD Out of scope",
+          "version": 5,
+          "action": "extended",
+          "kind": "specialised",
+          "score": 0.1818,
+          "rule": "t",
+          "source": "the run's copy",
+          "ref": {
+            "artifact": "prd",
+            "section_slug": "out-of-scope",
+            "slug": "still-point-yoga-prd-out-of-scope",
+            "version": 5
+          }
+        },
+        {
+          "workflow": "W-7",
+          "atom": "W-7.a1",
+          "artifact": "prd",
+          "section": "Problem",
+          "template": "Still Point Yoga Problem",
+          "version": 6,
+          "action": "extended",
+          "kind": "specialised",
+          "score": 0.2,
+          "rule": "t",
+          "source": "the run's copy",
+          "ref": {
+            "artifact": "prd",
+            "section_slug": "problem",
+            "slug": "still-point-yoga-problem",
+            "version": 6
+          }
+        },
+        {
+          "workflow": "W-8",
+          "atom": "W-8.a1",
+          "artifact": "prd",
+          "section": "Users",
+          "template": "Still Point Yoga PRD Users",
+          "version": 5,
+          "action": "extended",
+          "kind": "specialised",
+          "score": 0.2,
+          "rule": "t",
+          "source": "the run's copy",
+          "ref": {
+            "artifact": "prd",
+            "section_slug": "users",
+            "slug": "still-point-yoga-prd-users",
+            "version": 5
+          }
+        },
+        {
+          "workflow": "W-9",
+          "atom": "W-9.a1",
+          "artifact": "prd",
+          "section": "Requirements",
+          "template": "Still Point Yoga Requirements",
+          "version": 7,
+          "action": "extended",
+          "kind": "specialised",
+          "score": 0.2,
+          "rule": "t",
+          "source": "the run's copy",
+          "ref": {
+            "artifact": "prd",
+            "section_slug": "requirements",
+            "slug": "still-point-yoga-requirements",
+            "version": 7
+          }
+        },
+        {
+          "workflow": "W-10",
+          "atom": "W-10.a1",
+          "artifact": "hld",
+          "section": "Purpose and scope",
+          "template": "Still Point Yoga Purpose and scope",
+          "version": 4,
+          "action": "extended",
+          "kind": "specialised",
+          "score": 0.0,
+          "rule": "t",
+          "source": "the run's copy",
+          "ref": {
+            "artifact": "hld",
+            "section_slug": "purpose-and-scope",
+            "slug": "still-point-yoga-purpose-and-scope",
+            "version": 4
+          }
+        },
+        {
+          "workflow": "W-11",
+          "atom": "W-11.a1",
+          "artifact": "hld",
+          "section": "Pages",
+          "template": "Still Point Yoga Pages",
+          "version": 4,
+          "action": "extended",
+          "kind": "specialised",
+          "score": 0.0,
+          "rule": "t",
+          "source": "the run's copy",
+          "ref": {
+            "artifact": "hld",
+            "section_slug": "pages",
+            "slug": "still-point-yoga-pages",
+            "version": 4
+          }
+        },
+        {
+          "workflow": "W-12",
+          "atom": "W-12.a1",
+          "artifact": "hld",
+          "section": "Components",
+          "template": "Still Point Yoga Components",
+          "version": 7,
+          "action": "extended",
+          "kind": "specialised",
+          "score": 0.0,
+          "rule": "t",
+          "source": "the run's copy",
+          "ref": {
+            "artifact": "hld",
+            "section_slug": "components",
+            "slug": "still-point-yoga-components",
+            "version": 7
+          }
+        },
+        {
+          "workflow": "W-13",
+          "atom": "W-13.a1",
+          "artifact": "hld",
+          "section": "Data flow",
+          "template": "Still Point Yoga Data flow",
+          "version": 5,
+          "action": "extended",
+          "kind": "specialised",
+          "score": 0.0,
+          "rule": "t",
+          "source": "the run's copy",
+          "ref": {
+            "artifact": "hld",
+            "section_slug": "data-flow",
+            "slug": "still-point-yoga-data-flow",
+            "version": 5
+          }
+        },
+        {
+          "workflow": "W-14",
+          "atom": "W-14.a1",
+          "artifact": "hld",
+          "section": "Hosting and deployment",
+          "template": "Still Point Yoga Hosting and deployment",
+          "version": 5,
+          "action": "extended",
+          "kind": "specialised",
+          "score": 0.0,
+          "rule": "t",
+          "source": "the run's copy",
+          "ref": {
+            "artifact": "hld",
+            "section_slug": "hosting-and-deployment",
+            "slug": "still-point-yoga-hosting-and-deployment",
+            "version": 5
+          }
+        },
+        {
+          "workflow": "W-15",
+          "atom": "W-15.a1",
+          "artifact": "hld",
+          "section": "Risks",
+          "template": "Still Point Yoga Risks",
+          "version": 5,
+          "action": "extended",
+          "kind": "specialised",
+          "score": 0.0,
+          "rule": "t",
+          "source": "the run's copy",
+          "ref": {
+            "artifact": "hld",
+            "section_slug": "risks",
+            "slug": "still-point-yoga-risks",
+            "version": 5
+          }
+        },
+        {
+          "workflow": "W-16",
+          "atom": "W-16.a1",
+          "artifact": "hld",
+          "section": "Data flow",
+          "template": "Still Point Yoga Data flow",
+          "version": 6,
+          "action": "extended",
+          "kind": "specialised",
+          "score": 0.0,
+          "rule": "t",
+          "source": "the run's copy",
+          "ref": {
+            "artifact": "hld",
+            "section_slug": "data-flow",
+            "slug": "still-point-yoga-data-flow",
+            "version": 6
+          }
+        },
+        {
+          "workflow": "W-17",
+          "atom": "W-17.a1",
+          "artifact": "hld",
+          "section": "Hosting and deployment",
+          "template": "Still Point Yoga Hosting and deployment",
+          "version": 6,
+          "action": "extended",
+          "kind": "specialised",
+          "score": 0.0,
+          "rule": "t",
+          "source": "the run's copy",
+          "ref": {
+            "artifact": "hld",
+            "section_slug": "hosting-and-deployment",
+            "slug": "still-point-yoga-hosting-and-deployment",
+            "version": 6
+          }
+        },
+        {
+          "workflow": "W-18",
+          "atom": "W-18.a1",
+          "artifact": "hld",
+          "section": "Pages",
+          "template": "Still Point Yoga Pages",
+          "version": 5,
+          "action": "extended",
+          "kind": "specialised",
+          "score": 0.0,
+          "rule": "t",
+          "source": "the run's copy",
+          "ref": {
+            "artifact": "hld",
+            "section_slug": "pages",
+            "slug": "still-point-yoga-pages",
+            "version": 5
+          }
+        },
+        {
+          "workflow": "W-19",
+          "atom": "W-19.a1",
+          "artifact": "hld",
+          "section": "Hosting and deployment",
+          "template": "Still Point Yoga Hosting and deployment",
+          "version": 6,
+          "action": "reused",
+          "kind": "specialised",
+          "score": 0.0,
+          "rule": "t",
+          "source": "the run's copy",
+          "ref": {
+            "artifact": "hld",
+            "section_slug": "hosting-and-deployment",
+            "slug": "still-point-yoga-hosting-and-deployment",
+            "version": 6
+          }
+        },
+        {
+          "workflow": "W-20",
+          "atom": "W-20.a1",
+          "artifact": "hld",
+          "section": "Data flow",
+          "template": "Still Point Yoga Data flow",
+          "version": 6,
+          "action": "reused",
+          "kind": "specialised",
+          "score": 0.0,
+          "rule": "t",
+          "source": "the run's copy",
+          "ref": {
+            "artifact": "hld",
+            "section_slug": "data-flow",
+            "slug": "still-point-yoga-data-flow",
+            "version": 6
+          }
+        },
+        {
+          "workflow": "W-21",
+          "atom": "W-21.a1",
+          "artifact": "hld",
+          "section": "Components",
+          "template": "Still Point Yoga Components",
+          "version": 8,
+          "action": "extended",
+          "kind": "specialised",
+          "score": 0.0,
+          "rule": "t",
+          "source": "the run's copy",
+          "ref": {
+            "artifact": "hld",
+            "section_slug": "components",
+            "slug": "still-point-yoga-components",
+            "version": 8
+          }
+        },
+        {
+          "workflow": "W-22",
+          "atom": "W-22.a1",
+          "artifact": "hld",
+          "section": "Data flow",
+          "template": "Still Point Yoga Data flow",
+          "version": 6,
+          "action": "reused",
+          "kind": "specialised",
+          "score": 0.0,
+          "rule": "t",
+          "source": "the run's copy",
+          "ref": {
+            "artifact": "hld",
+            "section_slug": "data-flow",
+            "slug": "still-point-yoga-data-flow",
+            "version": 6
+          }
+        },
+        {
+          "workflow": "W-23",
+          "atom": "W-23.a1",
+          "artifact": "hld",
+          "section": "Hosting and deployment",
+          "template": "Still Point Yoga Hosting and deployment",
+          "version": 6,
+          "action": "reused",
+          "kind": "specialised",
+          "score": 0.0,
+          "rule": "t",
+          "source": "the run's copy",
+          "ref": {
+            "artifact": "hld",
+            "section_slug": "hosting-and-deployment",
+            "slug": "still-point-yoga-hosting-and-deployment",
+            "version": 6
+          }
+        },
+        {
+          "workflow": "W-24",
+          "atom": "W-24.a1",
+          "artifact": "hld",
+          "section": "Risks",
+          "template": "Still Point Yoga Risks",
+          "version": 6,
+          "action": "extended",
+          "kind": "specialised",
+          "score": 0.0,
+          "rule": "t",
+          "source": "the run's copy",
+          "ref": {
+            "artifact": "hld",
+            "section_slug": "risks",
+            "slug": "still-point-yoga-risks",
+            "version": 6
+          }
+        },
+        {
+          "workflow": "W-25",
+          "atom": "W-25.a1",
+          "artifact": "lld",
+          "section": "Pages and sections",
+          "template": "Still Point Yoga Pages and sections",
+          "version": 5,
+          "action": "extended",
+          "kind": "specialised",
+          "score": 0.0,
+          "rule": "t",
+          "source": "the run's copy",
+          "ref": {
+            "artifact": "lld",
+            "section_slug": "pages-and-sections",
+            "slug": "still-point-yoga-pages-and-sections",
+            "version": 5
+          }
+        },
+        {
+          "workflow": "W-26",
+          "atom": "W-26.a1",
+          "artifact": "lld",
+          "section": "Interactive elements",
+          "template": "Still Point Yoga Interactive elements",
+          "version": 4,
+          "action": "extended",
+          "kind": "specialised",
+          "score": 0.0,
+          "rule": "t",
+          "source": "the run's copy",
+          "ref": {
+            "artifact": "lld",
+            "section_slug": "interactive-elements",
+            "slug": "still-point-yoga-interactive-elements",
+            "version": 4
+          }
+        },
+        {
+          "workflow": "W-27",
+          "atom": "W-27.a1",
+          "artifact": "lld",
+          "section": "Form fields",
+          "template": "Still Point Yoga Form fields",
+          "version": 4,
+          "action": "extended",
+          "kind": "specialised",
+          "score": 0.0,
+          "rule": "t",
+          "source": "the run's copy",
+          "ref": {
+            "artifact": "lld",
+            "section_slug": "form-fields",
+            "slug": "still-point-yoga-form-fields",
+            "version": 4
+          }
+        },
+        {
+          "workflow": "W-28",
+          "atom": "W-28.a1",
+          "artifact": "lld",
+          "section": "File structure",
+          "template": "Still Point Yoga File structure",
+          "version": 4,
+          "action": "extended",
+          "kind": "specialised",
+          "score": 0.0,
+          "rule": "t",
+          "source": "the run's copy",
+          "ref": {
+            "artifact": "lld",
+            "section_slug": "file-structure",
+            "slug": "still-point-yoga-file-structure",
+            "version": 4
+          }
+        },
+        {
+          "workflow": "W-29",
+          "atom": "W-29.a1",
+          "artifact": "lld",
+          "section": "Responsive and accessibility rules",
+          "template": "Still Point Yoga Responsive and accessibility rules",
+          "version": 4,
+          "action": "extended",
+          "kind": "specialised",
+          "score": 0.0,
+          "rule": "t",
+          "source": "the run's copy",
+          "ref": {
+            "artifact": "lld",
+            "section_slug": "responsive-and-accessibility-rules",
+            "slug": "still-point-yoga-responsive-and-accessibility-rules",
+            "version": 4
+          }
+        },
+        {
+          "workflow": "W-30",
+          "atom": "W-30.a1",
+          "artifact": "website",
+          "section": "Section",
+          "template": "Thread Filter",
+          "version": 2,
+          "action": "extended",
+          "kind": "specialised",
+          "score": 0.0,
+          "rule": "s",
+          "source": "the run's copy",
+          "ref": {
+            "artifact": "website",
+            "section_slug": "section",
+            "slug": "thread-filter",
+            "version": 2
+          }
+        },
+        {
+          "workflow": "W-30",
+          "atom": "W-30.a1",
+          "artifact": "design",
+          "section": "Style guide",
+          "template": "Design/1 · Style guide",
+          "version": 1,
+          "action": "generic",
+          "kind": "generic",
+          "score": null,
+          "rule": "-",
+          "source": "generic",
+          "ref": {
+            "artifact": "design",
+            "section_slug": "style-guide",
+            "slug": "generic",
+            "version": 1
+          }
+        },
+        {
+          "workflow": "W-31",
+          "atom": "W-31.a1",
+          "artifact": "website",
+          "section": "Section",
+          "template": "Iron Grove Fitness section S2",
+          "version": 2,
+          "action": "extended",
+          "kind": "specialised",
+          "score": 0.2857,
+          "rule": "t",
+          "source": "the run's copy",
+          "ref": {
+            "artifact": "website",
+            "section_slug": "section",
+            "slug": "iron-grove-fitness-section-s2",
+            "version": 2
+          }
+        },
+        {
+          "workflow": "W-32",
+          "atom": "W-32.a1",
+          "artifact": "website",
+          "section": "Section",
+          "template": "Thread Filter",
+          "version": 3,
+          "action": "extended",
+          "kind": "specialised",
+          "score": 0.0,
+          "rule": "s",
+          "source": "the run's copy",
+          "ref": {
+            "artifact": "website",
+            "section_slug": "section",
+            "slug": "thread-filter",
+            "version": 3
+          }
+        }
+      ],
+      "counts": {
+        "created": 0,
+        "extended": 28,
+        "reused": 4,
+        "generic": 1
+      }
     }
   },
   "run_templates": [
@@ -8353,7 +10633,7 @@
       "mock": false,
       "made_from_run": "j2-20261111-211339",
       "created": "2026-11-11T22:16:22",
-      "used_by": 0
+      "used_by": 1
     },
     {
       "id": "still-point-yoga-prd-hld-and-lld",
