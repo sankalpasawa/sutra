@@ -1,10 +1,10 @@
 {
-  "name": "Thread Filter",
+  "name": "Flow Pilates Studio Filter",
   "artifact": "website",
   "section": "Section",
-  "version": 3,
+  "version": 1,
   "kind": "specialised",
-  "description": "Section for Flow Pilates Studio (pilates studio): the generic WebsiteSection/1 · Section fields, from 7 charter fact(s); adapted from version 2 of this template",
+  "description": "Section for Flow Pilates Studio (pilates studio): the generic WebsiteSection/1 · Section fields, from 7 charter fact(s); adapted from a template made for another business",
   "fields": [
     {
       "name": "id",
@@ -60,13 +60,13 @@
       "required": false,
       "description": "the charter facts this section uses, copied exactly from Flow Pilates Studio's charter",
       "enum": [
-        "The page has no JavaScript errors, no horizontal overflow at 360px and 1280px, and every in-page link points to an existing section.",
-        "The page has no horizontal overflow at 360px and at 1280px, so it works on phones.",
-        "The page shows no phone number.",
-        "The page shows no teacher names.",
-        "The page shows the studio address 'Unit 3, 9 Sample Lane, Pune 411004' as text, with no embedded map.",
-        "The page states that payment is made at the studio and that no online payment is taken.",
-        "Unit 3, 9 Sample Lane, Pune 411004"
+        "Friday 6:30 pm Stretch and Release 550",
+        "Monday 7:00 am Mat Basics 500",
+        "Saturday 9:00 am Weekend Mat Class 500",
+        "The page shows a weekly class list with five classes, each with day, time, class name and price in rupees: Monday 7:00 am Mat Basics 500; Tuesday 6:30 pm Reformer Flow 800; Wednesday 7:00 am Core Strength 600; Friday 6:30 pm Stretch and Release 550; Saturday 9:00 am Weekend Mat Class 500.",
+        "The page shows the studio name 'Flow Pilates Studio'.",
+        "Tuesday 6:30 pm Reformer Flow 800",
+        "Wednesday 7:00 am Core Strength 600"
       ],
       "nullable": false
     }
@@ -77,37 +77,37 @@
       "rule": "enum",
       "path": "facts_used[]",
       "values": [
-        "The page has no JavaScript errors, no horizontal overflow at 360px and 1280px, and every in-page link points to an existing section.",
-        "The page has no horizontal overflow at 360px and at 1280px, so it works on phones.",
-        "The page shows no phone number.",
-        "The page shows no teacher names.",
-        "The page shows the studio address 'Unit 3, 9 Sample Lane, Pune 411004' as text, with no embedded map.",
-        "The page states that payment is made at the studio and that no online payment is taken.",
-        "Unit 3, 9 Sample Lane, Pune 411004"
+        "Friday 6:30 pm Stretch and Release 550",
+        "Monday 7:00 am Mat Basics 500",
+        "Saturday 9:00 am Weekend Mat Class 500",
+        "The page shows a weekly class list with five classes, each with day, time, class name and price in rupees: Monday 7:00 am Mat Basics 500; Tuesday 6:30 pm Reformer Flow 800; Wednesday 7:00 am Core Strength 600; Friday 6:30 pm Stretch and Release 550; Saturday 9:00 am Weekend Mat Class 500.",
+        "The page shows the studio name 'Flow Pilates Studio'.",
+        "Tuesday 6:30 pm Reformer Flow 800",
+        "Wednesday 7:00 am Core Strength 600"
       ],
       "from": "facts",
       "name": "facts_used are facts of Flow Pilates Studio's charter"
     }
   ],
-  "sha": "4c0e4d0f7e6f348c5b2bcd2fbf094a020b5f931fdcfb51cbe78109c88f16bafe",
+  "sha": "039100fc0f16c13c1c6df558bc1c11652004b012cdeeb440bdb3734e9447c11f",
   "extends": "website/section@generic/1",
   "made_by": {
     "run": "j2-20261112-150036",
-    "workflow": "W-32",
-    "atom": "W-32.a1",
+    "workflow": "W-30",
+    "atom": "W-30.a1",
     "agent": "code (adapted from the nearest template)"
   },
   "context": {
     "business_type": "pilates studio",
     "facts_used": [
-      "The page has no JavaScript errors, no horizontal overflow at 360px and 1280px, and every in-page link points to an existing section.",
-      "The page has no horizontal overflow at 360px and at 1280px, so it works on phones.",
-      "The page shows no phone number.",
-      "The page shows no teacher names.",
-      "The page shows the studio address 'Unit 3, 9 Sample Lane, Pune 411004' as text, with no embedded map.",
-      "The page states that payment is made at the studio and that no online payment is taken.",
-      "Unit 3, 9 Sample Lane, Pune 411004"
+      "Friday 6:30 pm Stretch and Release 550",
+      "Monday 7:00 am Mat Basics 500",
+      "Saturday 9:00 am Weekend Mat Class 500",
+      "The page shows a weekly class list with five classes, each with day, time, class name and price in rupees: Monday 7:00 am Mat Basics 500; Tuesday 6:30 pm Reformer Flow 800; Wednesday 7:00 am Core Strength 600; Friday 6:30 pm Stretch and Release 550; Saturday 9:00 am Weekend Mat Class 500.",
+      "The page shows the studio name 'Flow Pilates Studio'.",
+      "Tuesday 6:30 pm Reformer Flow 800",
+      "Wednesday 7:00 am Core Strength 600"
     ],
-    "fingerprint": "c8a57419172e03e579da8480bb9cf112b7134867fd3950d2c605b3188a90048f"
+    "fingerprint": "eb75c59776a93359c431bfc39b16c8d071cd701f7219409bf91f6f3392ae5a04"
   }
 }

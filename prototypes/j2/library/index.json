@@ -5838,6 +5838,148 @@
       "artifact": "website",
       "section": "Section",
       "section_slug": "section",
+      "kind": "specialised",
+      "extends": "website/section@generic/1",
+      "slug": "flow-pilates-studio-filter",
+      "name": "Flow Pilates Studio Filter",
+      "versions": [
+        {
+          "version": 1,
+          "sha": "039100fc0f16c13c1c6df558bc1c11652004b012cdeeb440bdb3734e9447c11f",
+          "schema_sha": "9e05c831de495cb33456e2bdf45480d60ba396253d97c751fea89ff055e6acc5",
+          "description": "Section for Flow Pilates Studio (pilates studio): the generic WebsiteSection/1 · Section fields, from 7 charter fact(s); adapted from a template made for another business",
+          "fingerprints": [
+            "eb75c59776a93359c431bfc39b16c8d071cd701f7219409bf91f6f3392ae5a04"
+          ],
+          "business_type": "pilates studio",
+          "facts": [
+            "Friday 6:30 pm Stretch and Release 550",
+            "Monday 7:00 am Mat Basics 500",
+            "Saturday 9:00 am Weekend Mat Class 500",
+            "The page shows a weekly class list with five classes, each with day, time, class name and price in rupees: Monday 7:00 am Mat Basics 500; Tuesday 6:30 pm Reformer Flow 800; Wednesday 7:00 am Core Strength 600; Friday 6:30 pm Stretch and Release 550; Saturday 9:00 am Weekend Mat Class 500.",
+            "The page shows the studio name 'Flow Pilates Studio'.",
+            "Tuesday 6:30 pm Reformer Flow 800",
+            "Wednesday 7:00 am Core Strength 600"
+          ],
+          "fields": [
+            "id",
+            "anchor",
+            "implements",
+            "html",
+            "head",
+            "selectors_used",
+            "facts_used"
+          ],
+          "enums": {
+            "facts_used": [
+              "Friday 6:30 pm Stretch and Release 550",
+              "Monday 7:00 am Mat Basics 500",
+              "Saturday 9:00 am Weekend Mat Class 500",
+              "The page shows a weekly class list with five classes, each with day, time, class name and price in rupees: Monday 7:00 am Mat Basics 500; Tuesday 6:30 pm Reformer Flow 800; Wednesday 7:00 am Core Strength 600; Friday 6:30 pm Stretch and Release 550; Saturday 9:00 am Weekend Mat Class 500.",
+              "The page shows the studio name 'Flow Pilates Studio'.",
+              "Tuesday 6:30 pm Reformer Flow 800",
+              "Wednesday 7:00 am Core Strength 600"
+            ]
+          },
+          "made_by": {
+            "run": "j2-20261112-150036",
+            "workflow": "W-30",
+            "atom": "W-30.a1",
+            "agent": "code (adapted from the nearest template)",
+            "date": "2026-11-12 15:00:36"
+          },
+          "used_by": [
+            {
+              "run": "j2-20261112-150036",
+              "workflow": "W-30",
+              "atom": "W-30.a1",
+              "action": "extended"
+            }
+          ],
+          "business": {
+            "name": "Flow Pilates Studio",
+            "type": "pilates studio"
+          },
+          "mock": false,
+          "collected_from": {
+            "run": "j2-20261112-150036",
+            "where": "the run's copy"
+          },
+          "renamed_from": "Thread Filter@2",
+          "adapted_from": "Thread Filter@1"
+        },
+        {
+          "version": 2,
+          "sha": "c410f5529469187471eb33e9c271c29b4556d1d117c7766077157df997e0bd3a",
+          "schema_sha": "dde5b478be402edb5e26ca8ef003f6092f8db9110f52b4ba2a5e18d75443a3c1",
+          "description": "Section for Flow Pilates Studio (pilates studio): the generic WebsiteSection/1 · Section fields, from 7 charter fact(s); adapted from version 1 of this template",
+          "fingerprints": [
+            "c8a57419172e03e579da8480bb9cf112b7134867fd3950d2c605b3188a90048f"
+          ],
+          "business_type": "pilates studio",
+          "facts": [
+            "The page has no JavaScript errors, no horizontal overflow at 360px and 1280px, and every in-page link points to an existing section.",
+            "The page has no horizontal overflow at 360px and at 1280px, so it works on phones.",
+            "The page shows no phone number.",
+            "The page shows no teacher names.",
+            "The page shows the studio address 'Unit 3, 9 Sample Lane, Pune 411004' as text, with no embedded map.",
+            "The page states that payment is made at the studio and that no online payment is taken.",
+            "Unit 3, 9 Sample Lane, Pune 411004"
+          ],
+          "fields": [
+            "id",
+            "anchor",
+            "implements",
+            "html",
+            "head",
+            "selectors_used",
+            "facts_used"
+          ],
+          "enums": {
+            "facts_used": [
+              "The page has no JavaScript errors, no horizontal overflow at 360px and 1280px, and every in-page link points to an existing section.",
+              "The page has no horizontal overflow at 360px and at 1280px, so it works on phones.",
+              "The page shows no phone number.",
+              "The page shows no teacher names.",
+              "The page shows the studio address 'Unit 3, 9 Sample Lane, Pune 411004' as text, with no embedded map.",
+              "The page states that payment is made at the studio and that no online payment is taken.",
+              "Unit 3, 9 Sample Lane, Pune 411004"
+            ]
+          },
+          "made_by": {
+            "run": "j2-20261112-150036",
+            "workflow": "W-32",
+            "atom": "W-32.a1",
+            "agent": "code (adapted from the nearest template)",
+            "date": "2026-11-12 15:00:36"
+          },
+          "used_by": [
+            {
+              "run": "j2-20261112-150036",
+              "workflow": "W-32",
+              "atom": "W-32.a1",
+              "action": "extended"
+            }
+          ],
+          "business": {
+            "name": "Flow Pilates Studio",
+            "type": "pilates studio"
+          },
+          "mock": false,
+          "collected_from": {
+            "run": "j2-20261112-150036",
+            "where": "the run's copy"
+          },
+          "renamed_from": "Thread Filter@3",
+          "adapted_from": "Flow Pilates Studio Filter@1"
+        }
+      ],
+      "description": "Section for Flow Pilates Studio (pilates studio): the generic WebsiteSection/1 · Section fields, from 7 charter fact(s); adapted from version 1 of this template"
+    },
+    {
+      "artifact": "website",
+      "section": "Section",
+      "section_slug": "section",
       "slug": "iron-grove-fitness-section-s2",
       "name": "Iron Grove Fitness section S2",
       "kind": "specialised",
@@ -6390,135 +6532,9 @@
             "type": "boutique"
           },
           "mock": true
-        },
-        {
-          "version": 2,
-          "sha": "aad42b903a4761f7e81a545e9986f1380cf396e7d42994f1d142223793ff8ecb",
-          "schema_sha": "9e05c831de495cb33456e2bdf45480d60ba396253d97c751fea89ff055e6acc5",
-          "description": "Section for Flow Pilates Studio (pilates studio): the generic WebsiteSection/1 · Section fields, from 7 charter fact(s); adapted from version 1 of this template",
-          "fingerprints": [
-            "eb75c59776a93359c431bfc39b16c8d071cd701f7219409bf91f6f3392ae5a04"
-          ],
-          "business_type": "pilates studio",
-          "facts": [
-            "Friday 6:30 pm Stretch and Release 550",
-            "Monday 7:00 am Mat Basics 500",
-            "Saturday 9:00 am Weekend Mat Class 500",
-            "The page shows a weekly class list with five classes, each with day, time, class name and price in rupees: Monday 7:00 am Mat Basics 500; Tuesday 6:30 pm Reformer Flow 800; Wednesday 7:00 am Core Strength 600; Friday 6:30 pm Stretch and Release 550; Saturday 9:00 am Weekend Mat Class 500.",
-            "The page shows the studio name 'Flow Pilates Studio'.",
-            "Tuesday 6:30 pm Reformer Flow 800",
-            "Wednesday 7:00 am Core Strength 600"
-          ],
-          "fields": [
-            "id",
-            "anchor",
-            "implements",
-            "html",
-            "head",
-            "selectors_used",
-            "facts_used"
-          ],
-          "enums": {
-            "facts_used": [
-              "Friday 6:30 pm Stretch and Release 550",
-              "Monday 7:00 am Mat Basics 500",
-              "Saturday 9:00 am Weekend Mat Class 500",
-              "The page shows a weekly class list with five classes, each with day, time, class name and price in rupees: Monday 7:00 am Mat Basics 500; Tuesday 6:30 pm Reformer Flow 800; Wednesday 7:00 am Core Strength 600; Friday 6:30 pm Stretch and Release 550; Saturday 9:00 am Weekend Mat Class 500.",
-              "The page shows the studio name 'Flow Pilates Studio'.",
-              "Tuesday 6:30 pm Reformer Flow 800",
-              "Wednesday 7:00 am Core Strength 600"
-            ]
-          },
-          "made_by": {
-            "run": "j2-20261112-150036",
-            "workflow": "W-30",
-            "atom": "W-30.a1",
-            "agent": "code (adapted from the nearest template)",
-            "date": "2026-11-12 15:00:36"
-          },
-          "used_by": [
-            {
-              "run": "j2-20261112-150036",
-              "workflow": "W-30",
-              "atom": "W-30.a1",
-              "action": "extended"
-            }
-          ],
-          "business": {
-            "name": "Flow Pilates Studio",
-            "type": "pilates studio"
-          },
-          "mock": false,
-          "collected_from": {
-            "run": "j2-20261112-150036",
-            "where": "the run's copy"
-          }
-        },
-        {
-          "version": 3,
-          "sha": "4c0e4d0f7e6f348c5b2bcd2fbf094a020b5f931fdcfb51cbe78109c88f16bafe",
-          "schema_sha": "dde5b478be402edb5e26ca8ef003f6092f8db9110f52b4ba2a5e18d75443a3c1",
-          "description": "Section for Flow Pilates Studio (pilates studio): the generic WebsiteSection/1 · Section fields, from 7 charter fact(s); adapted from version 2 of this template",
-          "fingerprints": [
-            "c8a57419172e03e579da8480bb9cf112b7134867fd3950d2c605b3188a90048f"
-          ],
-          "business_type": "pilates studio",
-          "facts": [
-            "The page has no JavaScript errors, no horizontal overflow at 360px and 1280px, and every in-page link points to an existing section.",
-            "The page has no horizontal overflow at 360px and at 1280px, so it works on phones.",
-            "The page shows no phone number.",
-            "The page shows no teacher names.",
-            "The page shows the studio address 'Unit 3, 9 Sample Lane, Pune 411004' as text, with no embedded map.",
-            "The page states that payment is made at the studio and that no online payment is taken.",
-            "Unit 3, 9 Sample Lane, Pune 411004"
-          ],
-          "fields": [
-            "id",
-            "anchor",
-            "implements",
-            "html",
-            "head",
-            "selectors_used",
-            "facts_used"
-          ],
-          "enums": {
-            "facts_used": [
-              "The page has no JavaScript errors, no horizontal overflow at 360px and 1280px, and every in-page link points to an existing section.",
-              "The page has no horizontal overflow at 360px and at 1280px, so it works on phones.",
-              "The page shows no phone number.",
-              "The page shows no teacher names.",
-              "The page shows the studio address 'Unit 3, 9 Sample Lane, Pune 411004' as text, with no embedded map.",
-              "The page states that payment is made at the studio and that no online payment is taken.",
-              "Unit 3, 9 Sample Lane, Pune 411004"
-            ]
-          },
-          "made_by": {
-            "run": "j2-20261112-150036",
-            "workflow": "W-32",
-            "atom": "W-32.a1",
-            "agent": "code (adapted from the nearest template)",
-            "date": "2026-11-12 15:00:36"
-          },
-          "used_by": [
-            {
-              "run": "j2-20261112-150036",
-              "workflow": "W-32",
-              "atom": "W-32.a1",
-              "action": "extended"
-            }
-          ],
-          "business": {
-            "name": "Flow Pilates Studio",
-            "type": "pilates studio"
-          },
-          "mock": false,
-          "collected_from": {
-            "run": "j2-20261112-150036",
-            "where": "the run's copy"
-          }
         }
       ],
-      "description": "Section for Flow Pilates Studio (pilates studio): the generic WebsiteSection/1 · Section fields, from 7 charter fact(s); adapted from version 2 of this template"
+      "description": "Section for Thread (boutique): the generic WebsiteSection/1 · Section fields, from 1 charter fact(s)"
     },
     {
       "artifact": "website",
@@ -10537,8 +10553,8 @@
           "atom": "W-30.a1",
           "artifact": "website",
           "section": "Section",
-          "template": "Thread Filter",
-          "version": 2,
+          "template": "Flow Pilates Studio Filter",
+          "version": 1,
           "action": "extended",
           "kind": "specialised",
           "score": 0.0,
@@ -10547,9 +10563,10 @@
           "ref": {
             "artifact": "website",
             "section_slug": "section",
-            "slug": "thread-filter",
-            "version": 2
-          }
+            "slug": "flow-pilates-studio-filter",
+            "version": 1
+          },
+          "renamed_from": "Thread Filter@2"
         },
         {
           "workflow": "W-30",
@@ -10594,8 +10611,8 @@
           "atom": "W-32.a1",
           "artifact": "website",
           "section": "Section",
-          "template": "Thread Filter",
-          "version": 3,
+          "template": "Flow Pilates Studio Filter",
+          "version": 2,
           "action": "extended",
           "kind": "specialised",
           "score": 0.0,
@@ -10604,9 +10621,10 @@
           "ref": {
             "artifact": "website",
             "section_slug": "section",
-            "slug": "thread-filter",
-            "version": 3
-          }
+            "slug": "flow-pilates-studio-filter",
+            "version": 2
+          },
+          "renamed_from": "Thread Filter@3"
         }
       ],
       "counts": {
