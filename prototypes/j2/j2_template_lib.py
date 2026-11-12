@@ -834,18 +834,37 @@ def run_templates(run_dir):
     return out
 
 
+def decision_group(d):
+    """The group a routing decision is counted in: "documents" for a document type, "pages" for a page type, None for
+    anything else (the style guide for one)."""
+    a = d.get("artifact")
+    if a not in j2_types.names():
+        return None
+    return "documents" if j2_types.info(a)["form"] == "document" else "pages"
+
+
+def decision_kind(d):
+    """A routing decision's action as the page names it: the recorded "extended" is shown as "adapted"."""
+    return {"extended": "adapted"}.get(d.get("action"), d.get("action"))
+
+
+def reuse_rows(decisions):
+    """The decisions of a run started from a run template, each with the group and the kind the Library tab's filters
+    read (decision_group, decision_kind)."""
+    return [{**d, "group": decision_group(d), "kind_shown": decision_kind(d)} for d in decisions or []]
+
+
 def reuse_counts(decisions):
     """A run's routing decisions counted for the page: per group ("documents" for document types, "pages" for page
     types; anything else, the style guide for one, is left out), how many were created, adapted (the recorded action
     "extended"), reused and generic, the total, and how many came from a run template (None when no decision says)."""
     out = {}
     for d in decisions or []:
-        a = d.get("artifact")
-        if a not in j2_types.names():
+        group = decision_group(d)
+        if group is None:
             continue
-        g = out.setdefault("documents" if j2_types.info(a)["form"] == "document" else "pages",
-                           {"created": 0, "adapted": 0, "reused": 0, "generic": 0, "total": 0, "from_template": None})
-        k = {"extended": "adapted"}.get(d.get("action"), d.get("action"))
+        g = out.setdefault(group, {"created": 0, "adapted": 0, "reused": 0, "generic": 0, "total": 0, "from_template": None})
+        k = decision_kind(d)
         if k in ("created", "adapted", "reused", "generic"):
             g[k] += 1
         g["total"] += 1

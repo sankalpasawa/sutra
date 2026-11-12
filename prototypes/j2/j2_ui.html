@@ -3476,25 +3476,47 @@ const reuseCounts = (c, group) => `<span class="mappill ${group === "documents" 
   + ["adapted", "reused", "generic"].map(k => `<span class="mappill" data-rtc="${group}-${k}">${esc(c[k])} ${k}</span>`).join("");
 const reuseFrom = c => c.from_template === null || c.from_template === undefined ? "" : c.from_template === 0 ? '<span class="empty">added, not in template</span>'
   : `<span class="empty">${esc(c.from_template)} of ${esc(c.total)} from the template</span>`;
-function rtSummary(u){
+// Its filters (?filter=adapted&scope=documents): a chip per action with the count of rows it shows in the chosen scope, and a scope
+// toggle. Each row carries its group and the kind shown (reuse_rows); the style guide row has no group, so only the scope "All" shows it.
+const RTKINDS = [["all", "All"], ["created", "Created"], ["adapted", "Adapted"], ["reused", "Reused"], ["generic", "Generic"]];
+const RTSCOPES = [["all", "All", null], ["documents", "Documents", "documents"], ["website", "Website", "pages"]];
+(() => { const q = new URLSearchParams(location.search), pick = (list, v) => list.some(x => x[0] === v) ? v : "all";
+  LIB.filter = pick(RTKINDS, (q.get("filter") || "").toLowerCase()); LIB.scope = pick(RTSCOPES, (q.get("scope") || "").toLowerCase()); })();
+const rtInScope = d => LIB.scope === "all" || d.group === RTSCOPES.find(x => x[0] === LIB.scope)[2];
+const rtShown = d => rtInScope(d) && (LIB.filter === "all" || d.kind_shown === LIB.filter);
+function rtFilters(dec){
+  const mine = dec.filter(rtInScope), n = k => k === "all" ? mine.length : mine.filter(d => d.kind_shown === k).length;
+  return `<div data-rtfilters="1"><div class="seg" role="group" aria-label="Scope">${RTSCOPES.map(([k, t]) => `<button type="button" data-rtscope="${k}" aria-pressed="${LIB.scope === k}">${t}</button>`).join("")}</div></div>`
+    + `<div class="rfil" role="group" aria-label="Show rows by action">${RTKINDS.map(([k, t]) => `<button type="button" data-rtfilter="${k}" aria-pressed="${LIB.filter === k}">${t} <i>${esc(n(k))}</i></button>`).join("")}</div>`
+    + `<div class="empty" data-rtnote="1">Adapted = the run template's section template, given this run's facts as a new version. Created = no matching section in the run template.</div>`;
+}
+function rtPick(key, value){      // a chip or a scope button: keep the choice in the URL, repaint, and leave the focus on the button pressed
+  LIB[key] = value;
+  try { const q = new URLSearchParams(location.search); for (const k of ["filter", "scope"]){ if (LIB[k] === "all") q.delete(k); else q.set(k, LIB[k]); }
+    history.replaceState(history.state, "", location.pathname + "?" + q + location.hash); } catch (e) {}
+  paint(LIB.pane(), LIB.render());
+  const b = LIB.pane().querySelector(`[data-rt${key}="${value}"]`); if (b) b.focus();
+}
+function rtSummary(u, dec){
   if (!u) return "";
   const c = u.counts || {}, part = (g, label) => c[g] ? `<div data-rtgroup="${g}"><b>${label}:</b> ${reuseCounts(c[g], g)} ${reuseFrom(c[g])}</div>` : "";
   const name = u.in_library ? `<a href="/library?view=templates&rt=${encodeURIComponent(u.id)}" data-rtlink="1">${esc(u.name)}</a>` : esc(u.name);
   return `<div class="artrow tplcard" data-rtsum="1"><div><b>Started from run template</b> ${name}: ${esc(u.selected)} of ${esc(u.of)} workflows`
     + ((u.added_stages || []).length ? `; <span class="empty">added, not in template: ${u.added_stages.map(esc).join(", ")}</span>` : "") + `</div>`
-    + part("documents", "Documents") + part("pages", "Website") + `<div data-rtgen="1"><b>Generator calls:</b> ${esc(u.generator_calls)}</div></div>`;
+    + part("documents", "Documents") + part("pages", "Website") + `<div data-rtgen="1"><b>Generator calls:</b> ${esc(u.generator_calls)}</div>${rtFilters(dec || [])}</div>`;
 }
 const rtCell = d => d.from_template === true ? `${esc(d.template_workflow || "")}${d.adapted_from ? ` <span class="empty">adapted from ${esc(d.adapted_from)}</span>` : ""}`
   : d.from_template === false ? '<span class="empty">added, not in template</span>' : "";
 function renderLibrary(){
-  const dec = LIB.decisions || [], rt = LIB.rt || null;
+  const dec = LIB.decisions || [], rt = LIB.rt || null, rows = rt ? dec.filter(rtShown) : dec;
   const table = dec.length ? `<table class="maptable" data-tpltable="1"><thead><tr><th>Workflow</th><th>Artifact · section</th><th>Action</th><th>Template</th>${rt ? "<th>Run template</th>" : ""}<th>From</th><th>Score</th><th>Reason</th></tr></thead><tbody>`
-    + dec.map(d => `<tr data-tplrow="${esc(d.atom)}"${LIB.focus && LIB.focus === d.atom && d.artifact !== "design" ? ' class="tplfocus"' : ""}><td>${esc(d.workflow)}</td><td>${esc(d.artifact)} · ${esc(d.section)}</td><td>${esc(d.action)}</td>`
+    + rows.map(d => `<tr data-tplrow="${esc(d.atom)}"${LIB.focus && LIB.focus === d.atom && d.artifact !== "design" ? ' class="tplfocus"' : ""}><td>${esc(d.workflow)}</td><td>${esc(d.artifact)} · ${esc(d.section)}</td><td>${esc(d.action)}</td>`
       + `<td>${d.source === "not recorded" ? `${esc(d.template)} v${esc(d.version)}` : libOpen(d.artifact, d.section, d.kind === "generic" ? "generic" : d.template, d.kind === "generic" ? 1 : d.version, `${esc(d.template)} v${esc(d.version)}`)}`
       + ` <a href="${libHref(d.artifact, d.section, d.kind === "generic" ? "generic" : d.template, d.kind === "generic" ? 1 : d.version)}" data-link="catalog" class="empty">library</a></td>`
       + (rt ? `<td data-rtcell="1">${rtCell(d)}</td>` : "")
       + `<td data-tplsource="${esc(d.source || "")}">${d.source ? esc(d.source) : '<span class="empty">not recorded</span>'}</td>`
-      + `<td>${d.score === null || d.score === undefined ? '<span class="empty">not recorded</span>' : esc(Number(d.score).toFixed(2))}</td><td>${esc(d.covers ? d.covers + "; " + d.reason : d.reason)}</td></tr>`).join("") + `</tbody></table>`
+      + `<td>${d.score === null || d.score === undefined ? '<span class="empty">not recorded</span>' : esc(Number(d.score).toFixed(2))}</td><td>${esc(d.covers ? d.covers + "; " + d.reason : d.reason)}</td></tr>`).join("")
+      + (rows.length ? "" : `<tr data-tplnone="1"><td colspan="8"><span class="empty">none</span></td></tr>`) + `</tbody></table>`
     : '<p class="empty">This run recorded no routing decisions.</p>';
   const groups = Object.entries(LIB.groups || {}).map(([art, secs]) => `<details class="artgroup" open data-libart="${esc(art)}"><summary><h3>${esc(art.toUpperCase())}</h3></summary>`
     + Object.entries(secs).map(([sec, g]) => `<div class="artrow" data-libsec="${esc(art)}|${esc(sec)}"><b>${esc(sec)}</b>`
@@ -3505,7 +3527,7 @@ function renderLibrary(){
           + ` <span class="empty">made by ${esc(v.made_by.run)} ${esc(v.made_by.workflow)} (${esc(v.made_by.agent)}) · ${esc(v.business_type)} · ${esc(v.fields.length)} fields</span>`
           + `<div class="empty">used by: ${libUses(v.used_by)}</div></div>`).join("") + `</div>`).join("")
       + `</div>`).join("") + `</details>`).join("");
-  return `<h3>This run's routing decisions</h3>${rtSummary(rt)}${table}${LIB.open ? renderTplViewer() : ""}<h3>Templates <span class="empty">${esc(LIB.dir)}</span></h3>${groups || '<p class="empty">No templates.</p>'}`;
+  return `<h3>This run's routing decisions</h3>${rtSummary(rt, dec)}${table}${LIB.open ? renderTplViewer() : ""}<h3>Templates <span class="empty">${esc(LIB.dir)}</span></h3>${groups || '<p class="empty">No templates.</p>'}`;
 }
 const TPLCODE = {};
 // The template viewer (a run's Templates tab and the shared library) has the same three tabs as every Artifacts row, drawn the same way:
@@ -3556,6 +3578,8 @@ async function libClick(e){
   const op = e.target.closest("[data-tplopen]"); if (op){ const [a, s, n, v] = op.dataset.tplopen.split("|"); return openTemplate(a, s, n, +v); }
   const m = e.target.closest("[data-tplmode]"); if (m){ LIB.mode = TPLMODE[m.dataset.tplmode] || "sum"; return paint(LIB.pane(), LIB.render()); }
   if (e.target.closest("[data-tplclose]")){ LIB.open = LIB.view = null; return paint(LIB.pane(), LIB.render()); }
+  const rf = e.target.closest("[data-rtfilter]"); if (rf) return rtPick("filter", rf.dataset.rtfilter);
+  const rs = e.target.closest("[data-rtscope]"); if (rs) return rtPick("scope", rs.dataset.rtscope);
   const c = e.target.closest("[data-tplcopy]"); if (c){ try { await navigator.clipboard.writeText(TPLCODE[c.dataset.tplcopy] || ""); c.textContent = "Copied"; } catch (err) { c.textContent = "Copy failed"; } }
 }
 $("pane-library").addEventListener("click", libClick);
