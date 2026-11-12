@@ -1,0 +1,109 @@
+{
+  "name": "Still Point Yoga Interactive elements",
+  "artifact": "lld",
+  "section": "Interactive elements",
+  "version": 3,
+  "kind": "specialised",
+  "description": "Interactive elements for Iron Grove Fitness (lld): the generic LLD/1 · Interactive elements fields plus facts_used, from 1 charter fact(s); adapted from version 1 of this template",
+  "fields": [
+    {
+      "name": "elements",
+      "type": "list[Element]",
+      "required": true,
+      "description": "every interactive element, E1, E2, ... in order (for Iron Grove Fitness, a lld)",
+      "enum": null,
+      "nullable": false
+    },
+    {
+      "name": "assumptions",
+      "type": "list[string]",
+      "required": false,
+      "description": "the assumptions of Iron Grove Fitness's Interactive elements",
+      "enum": null,
+      "nullable": false
+    },
+    {
+      "name": "facts_used",
+      "type": "list[string]",
+      "required": false,
+      "description": "the charter facts this section is written from, copied exactly from Iron Grove Fitness's charter",
+      "enum": [
+        "Iron Grove Fitness"
+      ],
+      "nullable": false
+    }
+  ],
+  "objects": [
+    {
+      "name": "Element",
+      "fields": [
+        {
+          "name": "id",
+          "type": "string",
+          "required": true,
+          "description": "E1, E2, ... in order",
+          "enum": null,
+          "nullable": false
+        },
+        {
+          "name": "section",
+          "type": "string",
+          "required": true,
+          "description": "the section id it sits in, e.g. \"S1\"",
+          "enum": null,
+          "nullable": false
+        },
+        {
+          "name": "selector",
+          "type": "string",
+          "required": true,
+          "description": "its selector, e.g. \"#book-now\"",
+          "enum": null,
+          "nullable": false
+        },
+        {
+          "name": "trigger",
+          "type": "string",
+          "required": true,
+          "description": "what the visitor does, e.g. \"click\"",
+          "enum": null,
+          "nullable": false
+        },
+        {
+          "name": "behaviour",
+          "type": "string",
+          "required": true,
+          "description": "what happens then",
+          "enum": null,
+          "nullable": false
+        }
+      ]
+    }
+  ],
+  "rules": [
+    {
+      "rule": "enum",
+      "path": "facts_used[]",
+      "values": [
+        "Iron Grove Fitness"
+      ],
+      "from": "facts",
+      "name": "facts_used are facts of Iron Grove Fitness's charter"
+    }
+  ],
+  "sha": "32c8c05ecd79faa6641661d02f245c7aab93f858d26055220dcf3c752396b32d",
+  "extends": "lld/interactive-elements@generic/1",
+  "made_by": {
+    "run": "j2-20261111-211339",
+    "workflow": "W-21",
+    "atom": "W-21.a1",
+    "agent": "code (adapted from a run template)"
+  },
+  "context": {
+    "business_type": "lld",
+    "facts_used": [
+      "Iron Grove Fitness"
+    ],
+    "fingerprint": "20ea6b0950b7f9ff07e981dfd4a0de308c25bc2c6dc936258e4915854d976b4a"
+  }
+}

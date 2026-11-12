@@ -606,12 +606,13 @@ def _obj_order(t):
     return AM.obj_order(t.objects)
 
 
-def build_model(t):
+def build_model(t, label=None):
     """The runtime class of a template, from its spec with pydantic.create_model (kept by content). model.py is never
-    imported for this."""
+    imported for this. label: what the builder and the receipts call it instead of its own name (a run template's
+    section template is named after the business it was first made for)."""
     if isinstance(t, dict):
         t = (SpecialisedTemplate if t.get("kind") == "specialised" else GenericTemplate).model_validate(t)
-    label = f"{t.name} v{t.version}"
+    label = label or f"{t.name} v{t.version}"
     return AM.build_class(class_name(t), label, t.section, t.fields, t.objects, optional=_optional_names(t), template=label)
 
 
@@ -1174,9 +1175,43 @@ def _prompt(need, gen, cands, hint, refused):
             + (f"\nYOUR LAST REPLY WAS REFUSED: {refused}. Fix that." if refused else ""))
 
 
-def route(need, ctx, ask=None):
+def adapt(gen, need, base, extras=True):
+    """The spec of a run template's section template made over for another business (route's first=): the generic
+    fields in this business's words with facts_used narrowed to ITS facts, the fields its own facts name, and the
+    fields the template added that hold no fact (no enum, described anew). Nothing of the template's first business is
+    carried: none of its facts, enums or descriptions. Deterministic, so no generator call and never a new template."""
+    spec = specialise(gen, need, name=base.name)
+    have = {f["name"] for f in spec["fields"]}
+    objs = {o.name: o for o in base.objects}
+    onames = {o["name"] for o in spec["objects"]}
+    plain = lambda fs: all(not f.enum for f in fs)
+    gnames = {f.name for f in gen.fields}
+    for f in base.fields if extras else []:
+        if f.name in have or f.name in gnames or f.enum:
+            continue
+        kind, obj = AM.parse_type(f.type)
+        if obj and (obj not in objs or not plain(objs[obj].fields)):
+            continue
+        g = f.model_copy(deep=True)
+        g.description = f"the {f.name.replace('_', ' ')} of {need['site']}'s {need['section']}"
+        spec["fields"].append(g.model_dump())
+        have.add(f.name)
+        if obj and obj not in onames:
+            o = objs[obj].model_copy(deep=True)
+            for x in o.fields:
+                x.description = f"the {x.name.replace('_', ' ')}"
+            spec["objects"].append(o.model_dump())
+            onames.add(obj)
+    spec["description"] = spec["description"] + f"; adapted from version {base.version} of this template"
+    return spec
+
+
+def route(need, ctx, ask=None, first=None):
     """Pick the template one workflow's builder fills. ctx: {run, workflow, atom, agent}. ask(system, user, mock,
-    schema) is the generator's one LLM call (None: the mock). Returns (template or None for generic, decision)."""
+    schema) is the generator's one LLM call (None: the mock). Returns (template or None for generic, decision).
+    first ({"template": "name@version"}, a run template's section template for this workflow) is the FIRST candidate:
+    the same facts and fields reuse it as it is; other facts make a new version of that same template (adapt, action
+    "extended" with adapted_from); a new template is never created while it exists."""
     gen = generic(need["artifact"], need["section"])
     cands = candidates(need)
     top = cands[0] if cands else None
@@ -1211,6 +1246,32 @@ def route(need, ctx, ask=None):
     # nothing to specialise: no facts and no extra fields -> the generic template, never a specialised one
     if not need["facts"] and not need["fields"]:
         return done(None, "generic", None, NOTHING_TO_SPECIALISE, rule="0")
+    t0 = get(first.get("template"), need["artifact"], need["section"]) if first else None
+    if t0 is not None:      # the run template's own section template comes first
+        ref = f"{t0.name}@{t0.version}"
+        row = {"facts": t0.context.facts_used, "fields": [f.name for f in t0.fields], "enums": _enums(t0)}
+        score = coverage(need, row)[0]
+        if set(need["facts"]) <= set(t0.context.facts_used) and all(has_field(need, row, n) for n in need["fields"]):
+            return done(t0, "reused", score, f"the run template's section template {ref}, as it is: the same facts "
+                                             "and fields", rule="t")
+        for extras in (True, False):      # with the fields the template added; if those fail the checks, without them
+            data = {**adapt(gen, need, t0, extras), "artifact": need["artifact"], "section": need["section"],
+                    "kind": "specialised", "extends": generic_ref(need["artifact"], need["section"]),
+                    "made_by": {"run": str(ctx.get("run") or ""), "workflow": str(ctx.get("workflow") or ""),
+                                "atom": str(ctx.get("atom") or ""), "agent": "code (adapted from a run template)"},
+                    "context": {"business_type": need["business_type"], "facts_used": list(need["facts"]),
+                                "fingerprint": need["fingerprint"]}}
+            bad = refusal(data)
+            if not bad:
+                break
+        if not bad:
+            t, _, made = store(SpecialisedTemplate.model_validate(data))
+            if not made:      # an earlier run of this business already made this version
+                return done(t, "reused", score, f"adapted from {ref} before: version {t.version} already holds this "
+                                                "business's facts", rule="t", adapted_from=ref)
+            return done(t, "extended", score, f"adapted from {ref}: the same section template, with this business's "
+                                              "facts in place of the earlier ones", rule="t", adapted_from=ref)
+        base["first_refused"] = "; ".join(bad)[:300]      # the adapted spec failed the checks: the usual routing
     # a) the same fingerprint, and the template has every needed field (with the needed values): this version
     hit = next((c for c in cands if c["fingerprint_match"] and c["has_fields"]), None)
     if hit:
@@ -1684,11 +1745,379 @@ def catalog_view():
     view = library_view()
     runs = index().get("runs") or {}
     rows = sorted(runs.values(), key=lambda r: r.get("date") or "", reverse=True)
-    return {"schema": SCHEMA, "dir": view["dir"], "groups": view["groups"], "runs": rows}
+    return {"schema": SCHEMA, "dir": view["dir"], "run_templates": run_template_list(), "groups": view["groups"],
+            "runs": rows}
 
 
-if __name__ == "__main__":      # python3 j2_template_lib.py: check every templates/<artifact>/generic.json; --collect: the catalog
-    if "--collect" in sys.argv:
+# ---------------------------------------------------------------- run templates (run-template/1): one named template per finished run
+# A run template bundles ALL the workflows of one finished run, so a new run starts from a name, not from single sections:
+#     library/run-templates/<id>/{template.json, schema.json}, listed in library/index.json under "run_templates".
+# It is made from the run's own records only (workflows.json, templates.json, goal.json and the stage goals): each workflow
+# with its stage, its section and the section template its builder filled ("name@version", as the library holds it). The
+# done-when texts keep their shape but not the business: every recorded fact is replaced by a slot (<studio name>), and
+# facts_slots lists the slot names only. `python3 j2_template_lib.py --run-template <run_dir> --name "<name>"` builds one.
+RUN_TEMPLATE_SCHEMA = "run-template/1"
+RUN_TEMPLATE_DIR = "run-templates"
+KEY_RE = re.compile(r"^W-\d+$")
+EMAIL_RE = re.compile(r"[\w.+-]+@[\w-]+(?:\.[\w-]+)+")
+PHONE_RE = re.compile(r"\+?\d[\d ()-]{8,}\d")
+PIN_RE = re.compile(r"\b\d{6}\b")
+PLACE_RE = re.compile(r"\b(?:floor|street|road|lane|avenue|nagar|block|sector|building)\b", re.I)
+DAY_TIME_RE = re.compile(r"\b(?:mon|tue|wed|thu|fri|sat|sun)[a-z]*\b.*\b\d{1,2}[:.]\d{2}\b", re.I)
+ID_LIST_RE = re.compile(r"\(([A-Z])\d+(?:, [A-Z]\d+)*\)")
+SLOT_RE = re.compile(r"<([a-z][a-z ]*)>")
+
+
+class RunTemplateWorkflow(BaseModel):
+    """One workflow of a run template. section_template is "name@version" as the library holds it (the generic layout's
+    own name when the run's builder filled the generic one); covers are done-when texts with slots, never facts."""
+    model_config = ConfigDict(extra="forbid")
+    key: str
+    name: str
+    stage: str
+    artifact: str
+    section: str
+    section_template: str
+    section_template_kind: Literal["generic", "specialised", "not recorded"] = NOT_RECORDED
+    depends_on: List[str] = Field(default_factory=list)
+    covers: List[str] = Field(default_factory=list)
+    made_from: str = ""      # the workflow's id in the run it was made from
+    fix: bool = False        # it fixed an Audit finding of that run: not planned work, used again only if the finding comes back
+
+
+class RunTemplate(BaseModel):
+    """run-template/1: closed, checked at every write (keys W-1.., in order, each once; depends_on names earlier keys;
+    every workflow's stage is one of stages; no slot is used that facts_slots does not list)."""
+    model_config = ConfigDict(extra="forbid")
+    schema_: str = Field(RUN_TEMPLATE_SCHEMA, alias="schema")
+    id: str
+    name: str
+    description: str = ""
+    business_type: str = NOT_RECORDED
+    made_from_run: str
+    mock: Any = NOT_RECORDED      # True (a mock run), False (a live run) or "not recorded"
+    stages: List[str]
+    workflows: List[RunTemplateWorkflow]
+    facts_slots: List[str] = Field(default_factory=list)
+    made_by: Dict[str, Any] = Field(default_factory=dict)
+    used_by: List[Dict[str, Any]] = Field(default_factory=list)
+    created: str = ""
+
+    @model_validator(mode="after")
+    def _checked(self):
+        bad = []
+        if self.id != slug(self.id) or not self.name.strip():
+            bad.append("id must be a slug and name must be given")
+        keys = [w.key for w in self.workflows]
+        if keys != [f"W-{i}" for i in range(1, len(keys) + 1)]:
+            bad.append("workflow keys must run W-1, W-2, ... in order")
+        for i, w in enumerate(self.workflows):
+            if w.stage not in self.stages:
+                bad.append(f"{w.key}: stage {w.stage!r} is not one of the template's stages")
+            late = [d for d in w.depends_on if d not in keys[:i]]
+            if late:
+                bad.append(f"{w.key}: depends_on {late} names no earlier workflow")
+        order = [w.stage for w in self.workflows]
+        if [s for i, s in enumerate(order) if i == 0 or order[i - 1] != s] != self.stages:
+            bad.append("the workflows must be grouped by stage, in the order of stages")
+        if self.mock not in (True, False, NOT_RECORDED):
+            bad.append("mock must be true, false or \"not recorded\"")
+        used = {m for w in self.workflows for t in [w.name] + w.covers for m in SLOT_RE.findall(t)}
+        extra = sorted(used - set(self.facts_slots) - set(ID_SLOTS.values()))
+        if extra:
+            bad.append(f"slots used but not listed in facts_slots: {extra}")
+        if bad:
+            raise ValueError("; ".join(bad))
+        return self
+
+
+ID_SLOTS = {"R": "requirement ids", "C": "component ids", "G": "goal ids", "S": "section ids"}
+
+
+def _noun(business_type):
+    """The word a business is called by in a slot: the last word of its recorded type ("yoga studio" -> studio); a run
+    that recorded no real type (a type name, "business") is a business."""
+    w = re.findall(r"[a-z]+", str(business_type or "").lower())
+    return w[-1] if w and w[-1] not in set(j2_types.names()) | {"business", "recorded", "document"} else "business"
+
+
+def run_slots(run_dir):
+    """[(recorded text, slot name)] of one run, the name first, then in charter order: every fact its charter and stage charters hold
+    (goal.json, stage-*.json), named by what kind of fact it is. The names are code's; the values never leave here."""
+    goals = [_read(os.path.join(run_dir, "goal.json")) or {}]
+    for n in sorted(os.listdir(run_dir)) if os.path.isdir(run_dir) else []:
+        if re.fullmatch(r"stage-[\w-]+\.json", n):
+            goals.append((_read(os.path.join(run_dir, n)) or {}).get("goal") or {})
+    main = goals[0]
+    noun = _noun(main.get("business_type"))
+    text = " ".join(json.dumps(g, ensure_ascii=False) for g in goals).lower()
+    sched = "class list" if re.search(r"\bclass(?:es)?\b", text) else "schedule"
+    out, seen = [], set()
+
+    def add(value, slot):
+        value = str(value or "").strip()
+        if len(value) > 2 and value.lower() not in seen:
+            seen.add(value.lower())
+            out.append((value, slot))
+    for g in goals:
+        for k in ("site_name", "product_name"):
+            if g.get(k) and g[k] != "Document":
+                add(g[k], f"{noun} name")
+    for g in goals:
+        for f in g.get("facts") or []:
+            f = str(f or "").strip()
+            for m in EMAIL_RE.findall(f):
+                add(m, "email address")
+            if f.lower() in seen or EMAIL_RE.fullmatch(f):
+                continue
+            if DAY_TIME_RE.search(f) and len(f.split()) <= 10:
+                add(f, sched)
+            elif (PIN_RE.search(f) or PLACE_RE.search(f)) and len(f.split()) <= 14 and "," in f:
+                add(f, "address")
+            elif PHONE_RE.fullmatch(f):
+                add(f, "phone number")
+            elif len(f.split()) <= 3 or (re.search(r"\d", f) and len(f.split()) <= 6):
+                add(f, "other facts")      # a short value of no known kind; a sentence is a statement, kept as words
+    return out
+
+
+def slotted(text, slots):
+    """A recorded text with every recorded fact replaced by its slot, and a run's own id lists by theirs."""
+    t = str(text or "")
+    for value, slot in sorted(slots, key=lambda x: -len(x[0])):      # the longest first: a fact inside another is not cut
+        t = re.sub(re.escape(value), f"<{slot}>", t, flags=re.I)
+    t = EMAIL_RE.sub("<email address>", t)
+    t = PIN_RE.sub("<address>", t)
+    t = ID_LIST_RE.sub(lambda m: f"(<{ID_SLOTS.get(m.group(1), 'ids')}>)", t)
+    return re.sub(r"(<[a-z ]+>)(?:(?:,| and|, and)? \1)+", r"\1", t).strip()
+
+
+def _stage_of(w, decs, docs, slots_by_file):
+    """(stage, artifact, section, decision) of a recorded workflow: its routing decision (templates.json), else the
+    document that lists it (documents.json), else the type whose file it wrote."""
+    mine = [d for d in decs if d.get("workflow") == w["id"]]
+    own = [d for d in mine if d.get("artifact") in j2_types.names()] or mine
+    if own:
+        d = own[-1]
+        return d["artifact"], d["artifact"], d["section"], d
+    for kind, rec in (docs or {}).items():
+        if w["id"] in (rec.get("workflows") or []):
+            return kind, kind, NOT_RECORDED, None
+    for o in w.get("outputs") or []:
+        if str(o) in slots_by_file:
+            return slots_by_file[str(o)], slots_by_file[str(o)], NOT_RECORDED, None
+    return None, None, NOT_RECORDED, None
+
+
+def _library_ref(rid, d):
+    """("name@version", kind) of a decision's template as the library holds it now: the version the catalog gave it
+    (a collected run's ref, which may be renumbered), else the run's own number when the library has that version."""
+    if d is None:
+        return NOT_RECORDED, NOT_RECORDED
+    if d.get("kind") == "generic":
+        return f"{d.get('template')}@{d.get('version') or AM.VERSION}", "generic"
+    row = ((index().get("runs") or {}).get(rid) or {}).get("decisions") or []
+    hit = next((x for x in row if x.get("workflow") == d.get("workflow") and x.get("artifact") == d.get("artifact")
+                and x.get("template") == d.get("template") and x.get("ref")), None)
+    version = hit["ref"]["version"] if hit else d.get("version")
+    return f"{d.get('template')}@{version}", "specialised"
+
+
+def run_template_from_run(run_dir, name=None, description=None):
+    """A RunTemplate built from a saved run's records (nothing is written; save_run_template stores it). Every workflow
+    that finished and is not a revision of another is in it, in run order; a workflow that failed and was redone by a
+    revision that finished is in it once, with the template the revision filled. Stages with no finished workflow are
+    left out. Raises ValueError when the run has nothing to bundle."""
+    run_dir = os.path.abspath(run_dir).rstrip(os.sep)
+    rid = os.path.basename(run_dir)
+    wfs = _read(os.path.join(run_dir, "workflows.json")) or []
+    if not wfs:
+        raise ValueError(f"{rid}: no workflows.json, so there is nothing to bundle")
+    decs = (_read(os.path.join(run_dir, "templates.json")) or {}).get("decisions") or []
+    docs = _read(os.path.join(run_dir, "documents.json")) or {}
+    facts = run_facts(run_dir)
+    slots = run_slots(run_dir)
+    by_file = {os.path.basename(j2_types.info(k)["file"]): k for k in j2_types.names()}
+    by_id = {w["id"]: w for w in wfs}
+
+    def root(w):      # the workflow a chain of revisions started from
+        seen = set()
+        while w.get("revises") in by_id and w["id"] not in seen:
+            seen.add(w["id"])
+            w = by_id[w["revises"]]
+        return w
+    last_done = {}      # root id -> the last finished workflow of its chain (its decision is the one that held)
+    for w in wfs:
+        if w.get("status") == "done":
+            last_done[root(w)["id"]] = w
+    rows, key_of, prop = [], {}, {}
+    for w in wfs:
+        if w["id"] not in last_done or w.get("revises") in by_id:
+            continue
+        stage, artifact, section, d = _stage_of(last_done[w["id"]], decs, docs, by_file)
+        if stage is None:
+            stage, artifact, section, d = _stage_of(w, decs, docs, by_file)
+        if stage is None:
+            continue
+        ref, kind = _library_ref(rid, d)
+        key_of[w["id"]] = f"W-{len(rows) + 1}"
+        if w.get("proposal_id"):
+            prop[str(w["proposal_id"])] = w["id"]
+        rows.append({"key": key_of[w["id"]], "name": slotted(w.get("name"), slots), "stage": stage, "artifact": artifact,
+                     "section": section, "section_template": ref, "section_template_kind": kind,
+                     "depends_on": [], "covers": list(dict.fromkeys(slotted(c, slots) for c in w.get("covers_text") or [])),
+                     "made_from": w["id"], "fix": bool(w.get("fixes")), "_deps": [str(x) for x in w.get("dependencies") or []]})
+    if not rows:
+        raise ValueError(f"{rid}: no workflow finished, so there is nothing to bundle")
+    stages = list(dict.fromkeys(r["stage"] for r in rows))
+    rows.sort(key=lambda r: stages.index(r["stage"]))      # stable: run order inside a stage
+    for i, r in enumerate(rows):
+        key_of[r["made_from"]] = r["key"] = f"W-{i + 1}"
+    earlier = {}
+    for r in rows:
+        deps = [key_of.get(prop.get(x, x)) for x in r.pop("_deps")]
+        cite = j2_types.cites(r["stage"]).get(r["section"]) if r["stage"] in j2_types.names() else None
+        if cite:      # a section that cites an earlier document's ids needs the workflow that wrote that list
+            sec = next((t["section"] for t in j2_types.template(cite[0]) if any(f["name"] == cite[1] for f in t["fields"])), None)
+            deps += [x["key"] for x in rows if x["stage"] == cite[0] and x["section"] == sec]
+        r["depends_on"] = [k for k in dict.fromkeys(deps) if k in earlier]
+        earlier[r["key"]] = r
+    used = {m for r in rows for t in [r["name"]] + r["covers"] for m in SLOT_RE.findall(t)}
+    fact_slots = [s for s in dict.fromkeys(slot for _, slot in slots) if s != "other facts" or s in used]
+    fact_slots += sorted(used - set(fact_slots) - set(ID_SLOTS.values()))
+    labels = and_words([j2_types.info(k)["label"] if k in j2_types.names() else k for k in stages])
+    live = "mock" if facts["mock"] is True else "live" if facts["mock"] is False else NOT_RECORDED
+    name = str(name or f"{facts['business']}: {labels}").strip()
+    return RunTemplate.model_validate({
+        "schema": RUN_TEMPLATE_SCHEMA, "id": slug(name), "name": name,
+        "description": description or (f"{labels} for a {facts['business_type']}: {len(rows)} workflows, as run "
+                                       f"{rid} ({live}) finished them."),
+        "business_type": facts["business_type"], "made_from_run": rid, "mock": facts["mock"], "stages": stages,
+        "workflows": rows, "facts_slots": fact_slots,
+        "made_by": {"run": rid, "date": run_date(rid), "provider": facts["provider"], "model": facts["model"],
+                    "by": "j2_template_lib.run_template_from_run"},
+        "used_by": [], "created": time.strftime("%Y-%m-%dT%H:%M:%S")})
+
+
+def and_words(items):
+    items = [str(x) for x in items]
+    return items[0] if len(items) == 1 else ", ".join(items[:-1]) + " and " + items[-1] if items else ""
+
+
+def run_template_dir(tid):
+    return os.path.join(lib_dir(), RUN_TEMPLATE_DIR, slug(tid))
+
+
+def _run_template_row(rt):
+    return {"id": rt.id, "name": rt.name, "description": rt.description, "business_type": rt.business_type,
+            "stages": list(rt.stages), "workflows": len(rt.workflows), "mock": rt.mock, "made_from_run": rt.made_from_run,
+            "created": rt.created, "used_by": len(rt.used_by)}
+
+
+def save_run_template(rt):
+    """Write library/run-templates/<id>/template.json and schema.json, and list it in index.json ("run_templates").
+    Built again from the same run under the same name, it keeps its created time and its used_by."""
+    rt = RunTemplate.model_validate(rt.model_dump(by_alias=True) if isinstance(rt, BaseModel) else rt)
+    old = get_run_template(rt.id)
+    if old is not None:
+        if old.made_from_run != rt.made_from_run:
+            raise ValueError(f"a run template named {old.name!r} exists, made from {old.made_from_run}; choose another name")
+        rt.created, rt.used_by = old.created, old.used_by
+    d = run_template_dir(rt.id)
+    _write(os.path.join(d, "template.json"), rt.model_dump(by_alias=True))
+    _write(os.path.join(d, "schema.json"), RunTemplate.model_json_schema(by_alias=True))
+    idx = index()
+    idx["run_templates"] = sorted([r for r in idx.get("run_templates") or [] if r.get("id") != rt.id]
+                                  + [_run_template_row(rt)], key=lambda r: r["name"].lower())
+    _save_index(idx)
+    return rt
+
+
+def get_run_template(tid):
+    """A stored RunTemplate by id (or by its name), or None."""
+    tid = str(tid or "")
+    row = next((r for r in index().get("run_templates") or [] if tid in (r.get("id"), r.get("name"))), None)
+    data = _read(os.path.join(run_template_dir(row["id"] if row else tid), "template.json")) if (row or tid == slug(tid)) else None
+    try:
+        return RunTemplate.model_validate(data) if data else None
+    except ValueError:
+        return None
+
+
+def run_template_list():
+    """The names first: one row per run template (name, business type, stages, number of workflows, live or mock)."""
+    return list(index().get("run_templates") or [])
+
+
+def select_workflows(rt, keys=None):
+    """(the chosen keys in template order, the keys added because a chosen one depends on them). No keys: all."""
+    all_keys = [w.key for w in rt.workflows]
+    want = [k for k in dict.fromkeys(str(x).strip().upper() for x in keys or []) if k in all_keys]
+    if not want:
+        return all_keys, []
+    deps = {w.key: w.depends_on for w in rt.workflows}
+    chosen, todo = set(want), list(want)
+    while todo:
+        for d in deps[todo.pop()]:
+            if d not in chosen:
+                chosen.add(d)
+                todo.append(d)
+    return [k for k in all_keys if k in chosen], [k for k in all_keys if k in chosen and k not in want]
+
+
+def section_template_ref(w):
+    """Where a run template's workflow's section template opens in the library ({artifact, section_slug, slug,
+    version}), and whether the library has it; None for "not recorded"."""
+    w = w if isinstance(w, dict) else w.model_dump()
+    name, _, ver = str(w.get("section_template") or "").rpartition("@")
+    if not name or not ver.isdigit() or w.get("section_template_kind") == NOT_RECORDED:
+        return None
+    if w["section_template_kind"] == "generic":
+        return {"artifact": w["artifact"], "section_slug": slug(w["section"]), "slug": "generic", "version": 1,
+                "in_library": generic(w["artifact"], w["section"]) is not None}
+    return {"artifact": w["artifact"], "section_slug": slug(w["section"]), "slug": slug(name), "version": int(ver),
+            "in_library": load(w["artifact"], slug(w["section"]), slug(name), int(ver)) is not None}
+
+
+def run_template_view(tid):
+    """GET /api/run-template?id=: one run template with, per workflow, where its section template opens."""
+    rt = get_run_template(tid)
+    if rt is None:
+        return None
+    out = rt.model_dump(by_alias=True)
+    for w in out["workflows"]:
+        w["ref"] = section_template_ref(w)
+    out["stage_labels"] = {k: (j2_types.info(k)["label"] if k in j2_types.names() else k) for k in rt.stages}
+    return out
+
+
+def mark_run_template_used(tid, use):
+    """A run that started from a run template, added to its used_by (template.json and the index row), once."""
+    rt = get_run_template(tid)
+    if rt is None:
+        return None
+    if use not in rt.used_by:
+        rt.used_by.append(use)
+        _write(os.path.join(run_template_dir(rt.id), "template.json"), rt.model_dump(by_alias=True))
+        idx = index()
+        for r in idx.get("run_templates") or []:
+            if r.get("id") == rt.id:
+                r["used_by"] = len(rt.used_by)
+        _save_index(idx)
+    return rt
+
+
+if __name__ == "__main__":      # python3 j2_template_lib.py: check every templates/<artifact>/generic.json; --collect: the catalog;
+    # --run-template <run_dir> --name "<name>": a run template from a saved run
+    if "--run-template" in sys.argv:      # --run-template <run_dir> [--name "<name>"]: one run template from a saved run
+        made = save_run_template(run_template_from_run(
+            sys.argv[sys.argv.index("--run-template") + 1],
+            name=sys.argv[sys.argv.index("--name") + 1] if "--name" in sys.argv else None))
+        kind = "mock" if made.mock is True else "live" if made.mock is False else made.mock
+        print(f"{made.name} ({made.id}): {len(made.workflows)} workflows, stages {', '.join(made.stages)}, {kind}, "
+              f"from {made.made_from_run}; slots: {', '.join(made.facts_slots) or 'none'}")
+        print(f"  {os.path.join(run_template_dir(made.id), 'template.json')}")
+    elif "--collect" in sys.argv:
         runs_dir = sys.argv[sys.argv.index("--runs") + 1] if "--runs" in sys.argv else os.path.join(HERE, "runs")
         for r in collect(runs_dir):
             print(f"{r['run']} ({'mock' if r['mock'] is True else 'live' if r['mock'] is False else r['mock']}, {r['business']}): "

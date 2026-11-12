@@ -1,0 +1,37 @@
+{
+  "schema": "template-library/1",
+  "name": "Still Point Yoga PRD Success metrics",
+  "version": 3,
+  "sha": "7ae49277861ce96ddde18d386c22072a32ae06b8ec00b0470293f0d7087716a8",
+  "schema_sha": "c911b68545d5bb753d4f0245f6f90db937e4096f9ffe1483e9f10d25d5a78615",
+  "model_sha": "ed4d283eaa64a468040dd6f195d1e26ea213e62bb09cd743bf7f42b3a2e06704",
+  "class": "StillPointYogaPRDSuccessMetricsV3",
+  "created": "2026-11-11T22:00:42",
+  "fingerprints": [
+    "7ed117dd481db671b97ff7160edb74a6a42d8414d359b649141e687ec6432638"
+  ],
+  "made_by": {
+    "run": "j2-20261111-215733",
+    "workflow": "W-5",
+    "atom": "W-5.a1",
+    "agent": "code (adapted from a run template)",
+    "date": "2026-11-11 21:57:33"
+  },
+  "business": {
+    "name": "Rhythm Room Dance Studio",
+    "type": "hld"
+  },
+  "mock": false,
+  "collected_from": {
+    "run": "j2-20261111-215733",
+    "where": "the run's copy"
+  },
+  "used_by": [
+    {
+      "run": "j2-20261111-215733",
+      "workflow": "W-5",
+      "atom": "W-5.a1",
+      "action": "extended"
+    }
+  ]
+}

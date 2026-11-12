@@ -1,0 +1,37 @@
+{
+  "schema": "template-library/1",
+  "name": "Still Point Yoga Hosting and deployment",
+  "version": 3,
+  "sha": "561634d6738b4cd66f1312c86d075c4283ccc1f8e6c431d09cf975a6115ca72e",
+  "schema_sha": "412a7a62aa0fb6a64596224a7e70345bd598fdf889ab8c5cf5f410f3f6469b68",
+  "model_sha": "41e815b91781dd177f9dc375cdc75bb2f25dfdf6f30cd354e171fc722092e14c",
+  "class": "StillPointYogaHostingAndDeploymentV3",
+  "created": "2026-11-11T21:32:01",
+  "fingerprints": [
+    "0d1bc53a22cf65f5af90a2dde3d1f91caeadbbe936bd03a127fec6bc3709e1e6"
+  ],
+  "made_by": {
+    "run": "j2-20261111-211339",
+    "workflow": "W-15",
+    "atom": "W-15.a1",
+    "agent": "code (adapted from a run template)",
+    "date": "2026-11-11 21:13:39"
+  },
+  "business": {
+    "name": "Iron Grove Fitness",
+    "type": "fitness studio"
+  },
+  "mock": false,
+  "collected_from": {
+    "run": "j2-20261111-211339",
+    "where": "the run's copy"
+  },
+  "used_by": [
+    {
+      "run": "j2-20261111-211339",
+      "workflow": "W-15",
+      "atom": "W-15.a1",
+      "action": "extended"
+    }
+  ]
+}

@@ -1,0 +1,85 @@
+{
+  "name": "Still Point Yoga File structure",
+  "artifact": "lld",
+  "section": "File structure",
+  "version": 3,
+  "kind": "specialised",
+  "description": "File structure for Iron Grove Fitness (lld): the generic LLD/1 · File structure fields plus facts_used, from 1 charter fact(s); adapted from version 1 of this template",
+  "fields": [
+    {
+      "name": "files",
+      "type": "list[FileEntry]",
+      "required": true,
+      "description": "every file of the build (for Iron Grove Fitness, a lld)",
+      "enum": null,
+      "nullable": false
+    },
+    {
+      "name": "assumptions",
+      "type": "list[string]",
+      "required": false,
+      "description": "the assumptions of Iron Grove Fitness's File structure",
+      "enum": null,
+      "nullable": false
+    },
+    {
+      "name": "facts_used",
+      "type": "list[string]",
+      "required": false,
+      "description": "the charter facts this section is written from, copied exactly from Iron Grove Fitness's charter",
+      "enum": [
+        "Iron Grove Fitness"
+      ],
+      "nullable": false
+    }
+  ],
+  "objects": [
+    {
+      "name": "FileEntry",
+      "fields": [
+        {
+          "name": "path",
+          "type": "string",
+          "required": true,
+          "description": "the file path, e.g. \"index.html\"",
+          "enum": null,
+          "nullable": false
+        },
+        {
+          "name": "purpose",
+          "type": "string",
+          "required": true,
+          "description": "what it holds",
+          "enum": null,
+          "nullable": false
+        }
+      ]
+    }
+  ],
+  "rules": [
+    {
+      "rule": "enum",
+      "path": "facts_used[]",
+      "values": [
+        "Iron Grove Fitness"
+      ],
+      "from": "facts",
+      "name": "facts_used are facts of Iron Grove Fitness's charter"
+    }
+  ],
+  "sha": "79b79ac2ffc7f0a75f8260a3a3599634120ee0fe3b344dc574c1b4d46a4efba5",
+  "extends": "lld/file-structure@generic/1",
+  "made_by": {
+    "run": "j2-20261111-211339",
+    "workflow": "W-26",
+    "atom": "W-26.a1",
+    "agent": "code (adapted from a run template)"
+  },
+  "context": {
+    "business_type": "lld",
+    "facts_used": [
+      "Iron Grove Fitness"
+    ],
+    "fingerprint": "9308d6eb63b9543e8dd4010cbff5a5a8b4c1b842d64c3bc87a05643357337c28"
+  }
+}

@@ -1,0 +1,144 @@
+{
+  "name": "Still Point Yoga Requirements",
+  "artifact": "prd",
+  "section": "Requirements",
+  "version": 4,
+  "kind": "specialised",
+  "description": "Requirements for Iron Grove Fitness (prd): the generic PRD/1 · Requirements fields plus facts_used, from 14 charter fact(s); adapted from version 3 of this template",
+  "fields": [
+    {
+      "name": "requirements",
+      "type": "list[Requirement]",
+      "required": true,
+      "description": "the requirements, R1, R2, ... in order (for Iron Grove Fitness, a prd)",
+      "enum": null,
+      "nullable": false
+    },
+    {
+      "name": "assumptions",
+      "type": "list[string]",
+      "required": false,
+      "description": "the assumptions of Iron Grove Fitness's Requirements",
+      "enum": null,
+      "nullable": false
+    },
+    {
+      "name": "facts_used",
+      "type": "list[string]",
+      "required": false,
+      "description": "the charter facts this section is written from, copied exactly from Iron Grove Fitness's charter",
+      "enum": [
+        "Friday 7:00 pm Kettlebell Class 650",
+        "Iron Grove Fitness",
+        "Monday 6:30 am Strength Basics 600",
+        "Payment is made at the studio",
+        "Saturday 8:00 am Weekend Bootcamp 800",
+        "The Requirements section describes the trial booking form with the fields name, email, class and preferred date, sent to bookings@irongrove.example",
+        "The Requirements section lists all five classes with their exact day, time, class name and price in rupees",
+        "The Requirements section states that no phone number and no trainer names are shown and that the page works on phones",
+        "The Requirements section states that the address Unit 5, 21 Sample Street, Pune 411001 is shown as text with no embedded map, and that payment is made at the studio with no online payment",
+        "Tuesday 7:00 pm Circuit Hour 700",
+        "Unit 5, 21 Sample Street, Pune 411001",
+        "Wednesday 6:30 am Mobility Flow 500",
+        "bookings@irongrove.example",
+        "name, email, class, preferred date"
+      ],
+      "nullable": false
+    }
+  ],
+  "objects": [
+    {
+      "name": "Requirement",
+      "fields": [
+        {
+          "name": "id",
+          "type": "string",
+          "required": true,
+          "description": "R1, R2, ... in order",
+          "enum": null,
+          "nullable": false
+        },
+        {
+          "name": "statement",
+          "type": "string",
+          "required": true,
+          "description": "what the product must do, naming the user group that does it",
+          "enum": null,
+          "nullable": false
+        },
+        {
+          "name": "priority",
+          "type": "string",
+          "required": true,
+          "description": "must, should or could",
+          "enum": [
+            "must",
+            "should",
+            "could"
+          ],
+          "nullable": false
+        },
+        {
+          "name": "goals",
+          "type": "list[string]",
+          "required": false,
+          "description": "the goal ids this requirement serves, e.g. [\"G1\"]",
+          "enum": null,
+          "nullable": false
+        }
+      ]
+    }
+  ],
+  "rules": [
+    {
+      "rule": "enum",
+      "path": "facts_used[]",
+      "values": [
+        "Friday 7:00 pm Kettlebell Class 650",
+        "Iron Grove Fitness",
+        "Monday 6:30 am Strength Basics 600",
+        "Payment is made at the studio",
+        "Saturday 8:00 am Weekend Bootcamp 800",
+        "The Requirements section describes the trial booking form with the fields name, email, class and preferred date, sent to bookings@irongrove.example",
+        "The Requirements section lists all five classes with their exact day, time, class name and price in rupees",
+        "The Requirements section states that no phone number and no trainer names are shown and that the page works on phones",
+        "The Requirements section states that the address Unit 5, 21 Sample Street, Pune 411001 is shown as text with no embedded map, and that payment is made at the studio with no online payment",
+        "Tuesday 7:00 pm Circuit Hour 700",
+        "Unit 5, 21 Sample Street, Pune 411001",
+        "Wednesday 6:30 am Mobility Flow 500",
+        "bookings@irongrove.example",
+        "name, email, class, preferred date"
+      ],
+      "from": "facts",
+      "name": "facts_used are facts of Iron Grove Fitness's charter"
+    }
+  ],
+  "sha": "a5350a259d5298259167783a872bb9ad54a266dc86abc87baa7ddc764fa5c3d4",
+  "extends": "prd/requirements@generic/1",
+  "made_by": {
+    "run": "j2-20261111-211339",
+    "workflow": "W-4",
+    "atom": "W-4.a1",
+    "agent": "code (adapted from a run template)"
+  },
+  "context": {
+    "business_type": "prd",
+    "facts_used": [
+      "Friday 7:00 pm Kettlebell Class 650",
+      "Iron Grove Fitness",
+      "Monday 6:30 am Strength Basics 600",
+      "Payment is made at the studio",
+      "Saturday 8:00 am Weekend Bootcamp 800",
+      "The Requirements section describes the trial booking form with the fields name, email, class and preferred date, sent to bookings@irongrove.example",
+      "The Requirements section lists all five classes with their exact day, time, class name and price in rupees",
+      "The Requirements section states that no phone number and no trainer names are shown and that the page works on phones",
+      "The Requirements section states that the address Unit 5, 21 Sample Street, Pune 411001 is shown as text with no embedded map, and that payment is made at the studio with no online payment",
+      "Tuesday 7:00 pm Circuit Hour 700",
+      "Unit 5, 21 Sample Street, Pune 411001",
+      "Wednesday 6:30 am Mobility Flow 500",
+      "bookings@irongrove.example",
+      "name, email, class, preferred date"
+    ],
+    "fingerprint": "73bce4d8f822fecff960f8c6bd4621717a5b5c911beb972ceb382437cd66283c"
+  }
+}
