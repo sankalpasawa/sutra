@@ -9511,6 +9511,8 @@ class J2Run:
         run_id = os.path.basename(self.dir)
         ctx = {"run": run_id, "workflow": wid, "atom": aid,
                "agent": "template generator (mock)" if llm.MOCK else f"template generator ({llm.PROVIDER})"}
+        if self.run_tpl and auto_reuse_on():      # J2_AUTO_REUSE=1: on a tie the router prefers this run template's own section templates
+            ctx["run_template"] = self.run_tpl["id"]
         self.tpl_cur = {"wid": wid}
         first = self._run_tpl_first(w, kind, section)      # J2_RUN_TEMPLATES=1: the run template's section template first
         try:
