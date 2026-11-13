@@ -8,8 +8,7 @@ Where a literal has an owner, the owner is named here with the reason, and the t
     capabilities/project.py   `project`: the capability's own type, defined once as `TYPE` (D128); everything else reads `project.TYPE`
     forms.py                  `document`: J2's form word, defined once as `DOCUMENT`, with `is_document()` (D168)
     capabilities/select.py    `project`: the id of a RULE of the selection table, not a type (`RULE_PROJECT`)
-
-and one file of another lane that still spells a form word, listed until that lane merges (PENDING)."""
+"""
 import re
 from pathlib import Path
 
@@ -29,9 +28,6 @@ OWNERS = {                                               # file (relative to sut
     "engine/forms.py": {"document": 1},                   # DOCUMENT = "document"
     "engine/capabilities/select.py": {"project": 1},      # RULE_PROJECT = "project"
 }
-PENDING = {                                              # lane U's file: reads the form word three times; row 6 of table 8 moves it to `forms` there
-    "engine/views.py": {"document": 3},
-}
 
 
 def rel(path: Path) -> str:
@@ -49,7 +45,7 @@ def spelled(path: Path) -> dict:
 def test_no_quoted_type_name_and_no_type_table(path):
     text = path.read_text(encoding="utf-8")
     assert not TABLE.search(text), f"{path.name} reads a table of types"
-    allowed = {**PENDING, **OWNERS}.get(rel(path), {})
+    allowed = OWNERS.get(rel(path), {})
     for name, count in spelled(path).items():
         assert count <= allowed.get(name, 0), f"{path.name} spells the type or form name {name!r} {count} time(s); allowed {allowed.get(name, 0)}"
 
@@ -64,9 +60,3 @@ def test_the_list_covers_the_files_the_design_names():
 def test_every_owner_still_spells_what_it_owns_exactly_that_often():
     for file, owned in OWNERS.items():
         assert spelled(APP / file) == owned, f"{file}: an owner that no longer needs its literal must give it up (or one that needs more must say why)"
-
-
-def test_the_pending_exemption_is_an_upper_bound_that_the_other_lane_removes_when_it_moves_the_word_to_forms():
-    for file, owned in PENDING.items():
-        found = spelled(APP / file)
-        assert all(found.get(name, 0) <= count for name, count in owned.items()), f"{file} spells more than the exemption allows"

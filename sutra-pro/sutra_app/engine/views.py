@@ -35,7 +35,7 @@ from dataclasses import dataclass
 from typing import Any, Callable, Dict, List, Mapping, Optional, Protocol, Tuple, Union
 
 from . import j2, j2_agent, j2_artifacts, j2_map, j2_story, j2_studio, j2_template_lib, llm
-from . import capabilities
+from . import capabilities, forms
 from .paths import pid_alive
 from .spec import (RUN_TEMPLATE_KEY_CHARS, RUN_TEMPLATE_KEYS_MAX, RUN_TEMPLATE_WORKFLOWS_MAX, EngineSettings, is_run_template_id,
                    run_template_keys)
@@ -406,7 +406,7 @@ def docs(ctx: RunCtx, q: dict) -> Reply:
     out = {}
     for t in j2_artifacts.load_types(d)["types"]:
         k = t["name"]
-        if t.get("kind") != "type" or t.get("form") != "document":
+        if t.get("kind") != "type" or not forms.is_document(t):
             continue
         try:
             with open(os.path.join(d, t["file"]), encoding="utf-8") as f:
@@ -549,7 +549,7 @@ def artifacts_groups(ctx: RunCtx, q: dict) -> Reply:
         added = [r for r in rows if r["id"] not in have]          # never a second row, and never over J2's own entry
         docs["rows"] += added
         body["documents"] = {**(body.get("documents") or {}),
-                             **{r["id"]: {"sections": {}, "file": r["file"], "kind": "document"} for r in added}}
+                             **{r["id"]: {"sections": {}, "file": r["file"], "kind": forms.DOCUMENT} for r in added}}
     return _json(body)
 
 
@@ -713,7 +713,7 @@ def _stub_noun(live: dict) -> str:
     """What the live page stub calls the thing being built: the run's type label in lower case, `document` for a document form with no label, and
     `result` while no type is chosen (nothing is assumed, D165)."""
     label = str(live.get("out_label") or "").strip().lower()
-    return label or ("document" if live.get("doc") else "result")
+    return label or (forms.DOCUMENT if live.get("doc") else "result")
 
 
 def site_live(ctx: RunCtx, q: dict) -> Reply:
