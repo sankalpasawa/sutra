@@ -87,7 +87,32 @@ store. Do not edit Kaivan's files: `j2_template_lib.py`, `library/`, `templates/
 `j2_artifact_models.py`, the Library tab. If `decision_group` or anything there must change, write exactly what is
 needed as a note for the founder to send him. After: `--fast`, mock release check.
 
-**Status:** waiting on Kaivan's change below. Resume when it is in main.
+**Status (2026-11-13, after merging his library cleanup, `afa6881b`):** still blocked for real runs.
+
+| Note item | In main? | Detail |
+|---|---|---|
+| 1. `_stage_of` places a folder run's workflows | Partly | He matches a workflow's `outputs` against `"<folder>/"` (`j2_template_lib.py:2368`). His fixture writes `outputs: ["script/"]`, so `folder_reuse` passes. Real runs record `outputs` relative to the folder (`["sort_files.py"]`, `["copy_files.py"]`), so `run_template_from_run` still raises "no workflow finished" on j2-20261113-195301, j2-20261113-195303 and j2-20261113-164130. The `"deliverable"` fallback is not in. |
+| 2. `decision_group` counts a folder type as pages | Yes | It returns the type's `group`, else its form (`j2_template_lib.py:899`): a folder type is counted under its own form. |
+| 3. `assumptions_section` | Kept | `j2_template_lib.py:470`, unchanged. |
+
+**Still to ask him (send this):**
+
+> Thanks for the library cleanup. One thing from the note is still open: `_stage_of` finds a folder run's
+> workflows only when their `outputs` start with the folder (`"script/..."`, as your fixture has). Real runs record
+> outputs relative to the folder (`"sort_files.py"`), so `run_template_from_run` still raises "no workflow finished"
+> on every real folder run (e.g. runs j2-20261113-195301 and j2-20261113-195303). Could you add the fallback from the
+> note, before the last `return` of `_stage_of`:
+>
+> ```python
+>     if w.get("deliverable") in j2_types.names():      # the type the workflow serves (workflows.json), any form
+>         return w["deliverable"], w["deliverable"], NOT_RECORDED, None
+> ```
+>
+> We'll write `"deliverable"` on every workflow from our side when you say it's in. Also: since our step 6a,
+> `types.json` has no built-in folder type (a run makes one, kept in `artifacts/types.local.json`), so a check over
+> `j2_types.names()` sees this machine's local types too; we narrowed one line of `library_cleanup` to the file's
+> own types in our merge. And `sutra_library` fails on a machine whose saved run recorded "phone" as a charter value
+> (run j2-20261111-013315 here): "phone" is also a generic word on the templates shelf.
 
 ### Note for Kaivan (to send)
 
