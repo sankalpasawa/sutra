@@ -666,6 +666,17 @@ class AgentDoc(Wire):
 
 # ============================================ artifacts/1 and artifacts-tree/1 ================================================
 
+class ReusedFrom(Value):
+    """A section this run served from an earlier run (the content door, J2_ARTIFACT_LIBRARY=1; j2_artifacts.rows, from reuse.json):
+    the workflow that owns it here, its section, the source run and the source's workflow and run template key."""
+
+    workflow: Id
+    section: Optional[Id] = None
+    run: Optional[Id] = None
+    source_workflow: Optional[Id] = None
+    key: Optional[Id] = None
+
+
 class ArtifactRow(Value):
     """One thing the run made, a deliverable (`kind` type) or a record (j2_artifacts.rows)."""
 
@@ -682,6 +693,7 @@ class ArtifactRow(Value):
     rechecked_after: Optional[seq(Id, 500)] = None
     sha256: Optional[Annotated[str, StringConstraints(pattern=r"^[0-9a-f]{64}$")]] = None
     time: Optional[Id] = None
+    reused_from: Optional[seq(ReusedFrom, 500)] = None          # the content door only: absent on every other run
 
 
 class ArtifactsDoc(Wire):

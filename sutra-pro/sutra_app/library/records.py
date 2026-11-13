@@ -45,7 +45,8 @@ from .workflow import registered_from_j2
 
 __all__ = [
     "RECORD_MODES", "RECORD_FAMILIES", "UNCHECKED", "RecordRejected", "Route", "route_for", "check_record", "gate_record",
-    "record_mode", "Receipt", "CallLog", "ArtifactData", "ChainRow", "RunObject", "RunList",
+    "record_mode", "Receipt", "CallLog", "ArtifactData", "ChainRow", "RunObject", "RunList", "ArtifactReuse", "ReuseDecision",
+    "ReuseSource", "REUSE_SCHEMA",
 ]
 
 log = logging.getLogger("sutra.library")
@@ -53,6 +54,7 @@ log = logging.getLogger("sutra.library")
 RECORD_MODES: Final = ("log", "strict")
 MAX_WARNINGS_SHOWN: Final = 3        # violations a log-mode warning names; the rest is counted
 ARTIFACT_SCHEMA: Final = "artifact-schema/1"    # the "schema" key of <kind>.json (J2 j2_artifact_models.SCHEMA)
+REUSE_SCHEMA: Final = "artifact-reuse/1"        # the "schema" key of reuse.json (J2 j2_artifact_lib.SCHEMA, the content door)
 MAX_LIST: Final = 5000               # rows of a list file (workflows, audits, conflicts, conditions, chain, change)
 
 Text = Annotated[str, StringConstraints(max_length=100_000)]
@@ -186,8 +188,65 @@ class ArtifactData(Value):
         return {"schema": ARTIFACT_SCHEMA, **self.model_dump(by_alias=True, mode="json")}
 
 
+class ReuseSource(Value):
+    """The section a content-door decision points at: the source run and its workflow, the sha of the served data, the template
+    it was made with, and what the source stage's audit and receipts said (J2 `j2_artifact_lib.door`)."""
+
+    run: Short
+    workflow: Short
+    key: Optional[Short] = None
+    sha: Annotated[str, StringConstraints(pattern=r"^[0-9a-f]{64}$")]
+    template: Optional[Line] = None
+    fingerprint: Optional[Annotated[str, StringConstraints(max_length=128)]] = None
+    audit: Annotated[str, StringConstraints(min_length=1, max_length=40)]
+    receipts_passed: Annotated[list[Optional[Line]], Field(max_length=500)] = []
+
+
+class ReuseDecision(Value):
+    """One content decision of reuse.json (J2 `_content_route`, `_serve_done`): for one document workflow, the door (reuse, adapt,
+    build or unknown), the rule that chose it and why. `held` and `refunded` are set when a served section passed its checks
+    and its charge went back to the budget."""
+
+    run: Short
+    t: Annotated[str, StringConstraints(min_length=1, max_length=40)]
+    workflow: Short
+    atom: Annotated[str, StringConstraints(max_length=200)] = ""
+    artifact: ArtifactName
+    section: Annotated[str, StringConstraints(min_length=1, max_length=80)]
+    run_template: Optional[Annotated[str, StringConstraints(max_length=80)]] = None
+    key: Optional[Short] = None
+    held: bool
+    door: Literal["reuse", "adapt", "build", "unknown"]
+    rule: Annotated[str, StringConstraints(min_length=1, max_length=40)]
+    reason: Text
+    source: Optional[ReuseSource] = None
+    refunded: Optional[Annotated[int, Field(ge=0)]] = None
+
+
+class ArtifactReuse(Value):
+    """reuse.json: the content door's decisions for a run (`artifact-reuse/1`), written only when J2_ARTIFACT_LIBRARY is on. `schema`
+    is checked and not stored; `to_json()` puts it back."""
+
+    library: Annotated[str, StringConstraints(min_length=1, max_length=1000)]
+    runs: Annotated[str, StringConstraints(min_length=1, max_length=1000)]
+    decisions: Annotated[list[ReuseDecision], Field(max_length=MAX_LIST)] = []
+
+    @model_validator(mode="before")
+    @classmethod
+    def _schema_key(cls, data: Any) -> Any:
+        if isinstance(data, Mapping) and "schema" in data:
+            if data["schema"] != REUSE_SCHEMA:
+                raise ValueError(f"schema must be {REUSE_SCHEMA!r}, not {data['schema']!r}")
+            data = {k: v for k, v in data.items() if k != "schema"}
+        return data
+
+    def to_json(self) -> dict[str, Any]:
+        return {"schema": REUSE_SCHEMA, **self.model_dump(by_alias=True, mode="json")}
+
+
 for _name, _cls in (("condition_result", ConditionResult), ("run_file.object", RunObject), ("run_file.list", RunList),
-                    ("chain_row", ChainRow), ("receipt", Receipt), ("call_log", CallLog), ("artifact_data", ArtifactData)):
+                    ("chain_row", ChainRow), ("receipt", Receipt), ("call_log", CallLog), ("artifact_data", ArtifactData),
+                    ("artifact_reuse", ArtifactReuse)):
     REGISTRY.register_payload(_name, 1, _cls)
 
 
@@ -293,7 +352,7 @@ def _p_receipt(name: str, data: Any) -> Prepared:
 
 def _p_chat(name: str, data: Any) -> Prepared:
     d = _object(data)
-    return _p_run_object(name, d) if d.get("meta") is True else [("run_message", d)]       # the first line is the run header
+    return [("run_header", d)] if d.get("meta") is True else [("run_message", d)]       # the first line is the run header
 
 
 def _p_templates_file(name: str, data: Any) -> Prepared:
@@ -352,6 +411,7 @@ ROUTES: Final[tuple[Route, ...]] = (
     _r("templates/<artifact>/<section>/<slug>@v<N>/spec.json", _TPL + r"/spec\.json", "template", _p_template_spec),
     _r("templates/<artifact>/<section>/<slug>@v<N>/meta.json", _TPL + r"/meta\.json", "template.meta", _p_one("template.meta")),
     _r("templates/<artifact>/<section>/<slug>@v<N>/schema.json", _TPL + r"/schema\.json", "run_file.object", _p_run_object),
+    _r("reuse.json", r"reuse\.json", "artifact_reuse", _p_one("artifact_reuse")),        # the content door (J2 sync 6), flag on only
     _r("chain.json", r"chain\.json", "chain_row (rows)", _p_each("chain_row"), rows=True),
     _r("documents.json", r"documents\.json", "run_file.object", _p_run_object),
     _r("sections.json", r"sections\.json", "run_file.object", _p_run_object),
