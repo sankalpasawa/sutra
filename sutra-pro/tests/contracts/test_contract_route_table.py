@@ -82,8 +82,8 @@ def test_the_engine_serves_exactly_the_j2_routes_the_page_lists_plus_the_two_set
     assert len(templated) == 5 and all(any(path.startswith(prefix) for prefix in prefixes) for path in templated)
     for prefix in prefixes:
         assert any(path.startswith(prefix) for path in templated), prefix
-    assert (gets | posts) - templated - {SETTINGS_PATH, CAPABILITIES_PATH} == set(exact)     # the page's list and the table name the same 33
-    assert len(exact) == 33 and len(prefixes) == 5
+    assert (gets | posts) - templated - {SETTINGS_PATH, CAPABILITIES_PATH} == set(exact)     # the page's list and the table name the same 34 (33 + /api/timing, sync 5)
+    assert len(exact) == 34 and len(prefixes) == 5
 
 
 def test_no_route_copy_under_a_team_path_and_no_team_header_or_cookie(world):

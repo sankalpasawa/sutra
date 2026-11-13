@@ -34,7 +34,7 @@ def test_a_fresh_run_on_the_real_repository_has_every_row_and_is_deterministic()
     second = bt.build_document(ROOT, merges={"E0": ["abc1234"]})
     assert bt.dump_json(first) == bt.dump_json(second)
     assert bt.render_markdown(first) == bt.render_markdown(second)
-    assert first["counts"]["endpoints"] == 41 and first["counts"]["chips"] == 15 and first["counts"]["steps"] == 7
+    assert first["counts"]["endpoints"] == 42 and first["counts"]["chips"] == 15 and first["counts"]["steps"] == 7
     assert first["counts"]["endpoints"] == handler_count()        # one row per handler of engine/views.py (J2 sync 4: 41)
     headings = bt.parse_decisions((ROOT / "docs" / "DECISIONS.md").read_text(encoding="utf-8"))
     assert [row["id"] for row in first["decisions"]] == [d["id"] for d in headings]
