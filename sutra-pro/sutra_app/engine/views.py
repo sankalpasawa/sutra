@@ -37,7 +37,8 @@ from typing import Any, Callable, Dict, List, Mapping, Optional, Protocol, Tuple
 from . import j2, j2_agent, j2_artifacts, j2_map, j2_story, j2_studio, j2_template_lib, llm
 from . import capabilities
 from .paths import pid_alive
-from .spec import EngineSettings
+from .spec import (RUN_TEMPLATE_KEY_CHARS, RUN_TEMPLATE_KEYS_MAX, RUN_TEMPLATE_WORKFLOWS_MAX, EngineSettings, is_run_template_id,
+                   run_template_keys)
 
 capabilities.register(j2)        # D126: the API process, the stdlib adapter and the tests see the same outputs as the run process
 
@@ -739,39 +740,31 @@ def _no_commands() -> Reply:
     return _json({"error": "this adapter has no command object"}, 501)
 
 
-SAY_MAX_KEYS, SAY_KEY_CHARS, SAY_WORKFLOWS_CHARS = 40, 20, 400      # the last is the longest text a task setting takes (D182, `TaskSettings`)
-
-
 def _say_template(body: dict) -> Tuple[Optional[str], Optional[str], Optional[str]]:
-    """(template, workflows, the violation) of a `POST /api/say` body (J2 sync 6, D182). `template` is a run template id
-    (`[a-z0-9-]{1,80}`); `workflows` is `all`, a comma list of workflow keys or a list of keys (at most 40 keys of at most 20 characters),
-    and comes back as `all` or one comma list. An absent or empty value is None; `workflows` without a template is dropped (J2 does the
-    same: its server reads `workflows` only when a template is named). The violation is the 400's text."""
+    """(template, workflows, the violation) of a `POST /api/say` body (J2 sync 6, D182). `template` is a run template id; `workflows` is `all`,
+    a comma list of workflow keys or a list of keys, and comes back as `all` or one comma list. An absent or empty value is None; `workflows`
+    without a template is dropped (J2 does the same: its server reads `workflows` only when a template is named). The limits are the task
+    setting's (`spec.py`: `RUN_TEMPLATE_*`, one owner), so a body this route takes is a body the task takes. The violation is the 400's text."""
     template = body.get("template")
     if template is None or template == "":
         return None, None, None
-    if not isinstance(template, str) or not re.fullmatch(r"[a-z0-9-]{1,80}", template):
+    if not is_run_template_id(template):
         return None, None, "template must be a run template id: lower-case letters, digits and hyphens, up to 80 characters"
     raw = body.get("workflows")
     if raw is None or raw == "" or raw == []:
         return template, None, None
-    if isinstance(raw, str):
-        keys = [k.strip() for k in raw.split(",")]
-    elif isinstance(raw, list) and all(isinstance(k, str) for k in raw):
-        keys = [k.strip() for k in raw]
-    else:
+    if isinstance(raw, list) and all(isinstance(k, str) for k in raw):
+        raw = ",".join(k.strip() for k in raw)
+    elif not isinstance(raw, str):
         return None, None, "workflows must be all, a comma list of workflow keys, or a list of keys"
-    if len(keys) > SAY_MAX_KEYS:
-        return None, None, f"workflows: at most {SAY_MAX_KEYS} keys"
-    bad = next((k for k in keys if not re.fullmatch(r"[A-Za-z0-9_-]{1,20}", k)), None)
-    if bad is not None:
-        return None, None, f"workflows: {bad[:SAY_KEY_CHARS + 1]!r} is not a workflow key (letters, digits, - and _, up to {SAY_KEY_CHARS} characters)"
-    seen: set = set()      # J2 reads the keys case-blind: each key once, in the order given, and `all` only when it is the whole list
-    named = [k for k in keys if k.lower() != "all" and not (k.lower() in seen or seen.add(k.lower()))]
-    joined = ",".join(named) or "all"
-    if len(joined) > SAY_WORKFLOWS_CHARS:
-        return None, None, f"workflows: at most {SAY_WORKFLOWS_CHARS} characters in all"
-    return template, joined, None
+    if len(raw) > RUN_TEMPLATE_WORKFLOWS_MAX:
+        return None, None, f"workflows: at most {RUN_TEMPLATE_WORKFLOWS_MAX} characters in all"
+    keys = run_template_keys(raw)
+    if keys is None:
+        return None, None, (f"workflows: at most {RUN_TEMPLATE_KEYS_MAX} keys, each of letters, digits, - _ and ., up to {RUN_TEMPLATE_KEY_CHARS} characters")
+    seen: set = {"all"}      # J2 reads the keys case-blind: each key once, in the order given, and `all` only when it is the whole list
+    keys = [k for k in keys if k.lower() not in seen and not seen.add(k.lower())]
+    return template, ",".join(keys) or "all", None
 
 
 def say(ctx: RunCtx, body: dict) -> Reply:

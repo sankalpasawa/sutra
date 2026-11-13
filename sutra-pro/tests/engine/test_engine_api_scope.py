@@ -269,9 +269,9 @@ def test_a_data_folder_that_holds_a_library_shows_its_templates_through_api_libr
     shutil.copytree(SEED_LIBRARY, api.data / "library")
     library = api.client.get("/api/library?dept=web").json()
     found = specialised(library["groups"])
-    assert len(found) == 32 and library["dir"] == str(api.data / "library")
+    assert len(found) == 81 and library["dir"] == str(api.data / "library")
     catalog = api.client.get("/api/catalog?dept=sales").json()
-    assert len(catalog["runs"]) == 8 and len(specialised(catalog["groups"])) == 32 and catalog["dir"] == str(api.data / "library"), "one library for every team"
+    assert len(catalog["runs"]) == 11 and len(specialised(catalog["groups"])) == 81 and catalog["dir"] == str(api.data / "library"), "one library for every team"
     t = found[0]
     item = api.client.get(f"/api/library/{t['artifact']}/{t['section_slug']}/{t['slug']}/v{t['versions'][0]['version']}?dept=web")
     assert item.status_code == 200 and item.json()["template"]["name"] == t["name"]
@@ -282,13 +282,83 @@ def test_a_data_folder_that_holds_a_library_shows_its_templates_through_api_libr
 def test_the_environment_of_the_server_is_what_it_was_after_every_library_call_even_one_that_fails(api, monkeypatch):
     monkeypatch.setenv("J2_LIBRARY_DIR", "elsewhere")
     shutil.copytree(SEED_LIBRARY, api.data / "library")
-    for path in ("/api/library", "/api/catalog", "/api/library/prd/goals/none/v1", "/api/library/nope/x/y/v1", "/api/run-templates"):
+    monkeypatch.setenv("J2_RUNS_DIR", "elsewhere-too")
+    for path in ("/api/library", "/api/catalog", "/api/library/prd/goals/none/v1", "/api/library/nope/x/y/v1", "/api/run-templates", "/api/run-template?id=thread-boutique-website"):
         api.client.get(f"{path}?dept=web")
-        assert os.environ["J2_LIBRARY_DIR"] == "elsewhere", path
+        assert os.environ["J2_LIBRARY_DIR"] == "elsewhere" and os.environ["J2_RUNS_DIR"] == "elsewhere-too", path
     original = views.j2_template_lib.catalog_view
     monkeypatch.setattr(views.j2_template_lib, "catalog_view", lambda: (_ for _ in ()).throw(RuntimeError("boom")))
-    assert api.client.get("/api/catalog?dept=web").status_code == 500 and os.environ["J2_LIBRARY_DIR"] == "elsewhere"
+    assert api.client.get("/api/catalog?dept=web").status_code == 500 and os.environ["J2_LIBRARY_DIR"] == "elsewhere" and os.environ["J2_RUNS_DIR"] == "elsewhere-too"
     monkeypatch.setattr(views.j2_template_lib, "catalog_view", original)
+
+
+def write_engine(path, **values):
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(json.dumps(values), encoding="utf-8")
+
+
+def test_the_catalog_of_a_team_is_read_over_that_teams_runs_folder_and_no_other(api, monkeypatch):
+    """D184: the Artifacts shelf lists the finished runs of the asking team only, so `J2_RUNS_DIR` is the team's `runs/` for the call."""
+    shutil.copytree(SEED_LIBRARY, api.data / "library")
+    seen = []
+    original = views.j2_template_lib.catalog_view
+    monkeypatch.setattr(views.j2_template_lib, "catalog_view", lambda: seen.append((os.environ.get("J2_LIBRARY_DIR"), os.environ.get("J2_RUNS_DIR"))) or original())
+    for dept in ("web", "sales", "web"):
+        assert api.client.get(f"/api/catalog?dept={dept}").status_code == 200
+    assert [runs for _, runs in seen] == [str(api.data / "departments" / dept / "runs") for dept in ("web", "sales", "web")]
+    assert {lib for lib, _ in seen} == {str(api.data / "library")}, "the library is one"
+
+
+RT_PATH = "/api/run-template?id=thread-boutique-website"
+
+
+def test_run_template_says_enabled_from_the_teams_settings_whatever_the_servers_environment_holds(api, monkeypatch):
+    from sutra_app.engine.paths import DataPaths
+    shutil.copytree(SEED_LIBRARY, api.data / "library")
+    for name in ("J2_RUN_TEMPLATES", "J2_AUTO_REUSE", "J2_ARTIFACT_LIBRARY"):
+        monkeypatch.delenv(name, raising=False)
+    enabled = lambda dept: (lambda r: (r.status_code, r.json().get("enabled")))(api.client.get(f"{RT_PATH}&dept={dept}"))
+    assert enabled("web") == (200, False) == enabled("sales"), "off by default"
+    for name in ("J2_RUN_TEMPLATES", "J2_AUTO_REUSE", "J2_ARTIFACT_LIBRARY"):
+        monkeypatch.setenv(name, "1")
+    assert enabled("web") == (200, False), "the server's own environment is not a layer"
+    for name in ("J2_RUN_TEMPLATES", "J2_AUTO_REUSE", "J2_ARTIFACT_LIBRARY"):
+        monkeypatch.delenv(name)
+    write_engine(DataPaths.for_dept(api.data, "web").dept_engine_json, run_templates=True)
+    assert enabled("web") == (200, True) and enabled("sales") == (200, False), "one team's switch is that team's"
+    write_engine(DataPaths.for_dept(api.data, "web").dept_engine_json)
+    write_engine(DataPaths.for_dept(api.data, "sales").dept_engine_json, auto_reuse=True)
+    assert enabled("sales") == (200, True) and enabled("web") == (200, False), "implied by Reuse earlier work (D178), stored as it was"
+    write_engine(DataPaths.for_dept(api.data, "sales").dept_engine_json, artifact_library=True)
+    assert enabled("sales") == (200, True), "the content door implies auto-reuse, which implies run templates"
+    write_engine(DataPaths.for_dept(api.data, "sales").dept_engine_json)
+    write_engine(DataPaths.for_dept(api.data, "web").engine_json, run_templates=True)
+    assert enabled("web") == (200, True) and enabled("sales") == (200, True), "the all-teams file"
+    write_engine(DataPaths.for_dept(api.data, "sales").dept_engine_json, run_templates=False)
+    assert enabled("sales") == (200, False), "a team can switch it off again"
+
+
+def test_run_template_of_an_unknown_or_malformed_id_is_404_and_needs_a_team(api):
+    shutil.copytree(SEED_LIBRARY, api.data / "library")
+    for tid in ("nothing-here", "Thread", "a_b", ""):
+        got = api.client.get(f"/api/run-template?id={tid}&dept=web")
+        assert (got.status_code, got.json()) == (404, {"error": "no such run template"}), tid
+    assert api.client.get(RT_PATH).json() == {"error": "dept_required"}
+    assert api.client.get(RT_PATH + "&dept=nope").status_code == 404
+
+
+def test_say_takes_a_run_template_and_refuses_a_malformed_one_with_400_before_anything_is_delivered(api):
+    delivered = []
+    api.svc.deliver_to_department = lambda dept, text, settings=None: delivered.append((dept, text, settings)) or SimpleNamespace(delivered="task")
+    ok = api.client.post("/api/say?dept=web", json={"text": "a site", "template": "thread-boutique-website", "workflows": "w-1, W-2"}, headers=TOKEN)
+    assert (ok.status_code, ok.json()) == (200, {"ok": True})
+    assert delivered == [("web", "a site", {"J2_RUN_TEMPLATE": "thread-boutique-website", "J2_RUN_TEMPLATE_WORKFLOWS": "w-1,W-2"})]
+    delivered.clear()
+    for body in ({"template": "Bad id"}, {"template": 5}, {"template": "a", "workflows": "W 1"}, {"template": "a", "workflows": {"a": 1}},
+                 {"template": "a", "workflows": [f"W-{n}" for n in range(41)]}):
+        got = api.client.post("/api/say?dept=web", json={"text": "x", **body}, headers=TOKEN)
+        assert got.status_code == 400 and list(got.json()) == ["error"], body
+    assert delivered == [], "nothing refused reaches the orchestrator"
 
 
 def test_two_teams_asking_at_once_read_the_one_library_without_mixing_the_environment(api, monkeypatch):
@@ -308,4 +378,4 @@ def test_two_teams_asking_at_once_read_the_one_library_without_mixing_the_enviro
         thread.start()
     for thread in threads:
         thread.join(30)
-    assert not errors and results == [8] * 40 and os.environ.get("J2_LIBRARY_DIR") is None
+    assert not errors and results == [11] * 40 and os.environ.get("J2_LIBRARY_DIR") is None

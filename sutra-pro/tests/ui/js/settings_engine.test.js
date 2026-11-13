@@ -164,7 +164,8 @@ test("the reuse switches and the reviewer pair are five more rows: four toggles 
 test("a switch that is on only because another is on says so, shows the stored value, and is not pinned by a save", () => {
   const answer = clone(FOR_ALL);
   answer.global = Object.assign({}, answer.global, {auto_reuse: true});
-  answer.effective = Object.assign({}, answer.defaults, answer.global, {run_templates: true, template_library: true, artifact_schema: true});
+  answer.effective = Object.assign({}, answer.defaults, answer.global);      // as stored
+  answer.effective_flags = {auto_reuse: true, run_templates: true, template_library: true, artifact_schema: true};      // as the engine will run
   const found = rows(engineHtml(answer, {scope: ""}));
   assert.match(found.auto_reuse, /data-source="all"/);
   assert.doesNotMatch(found.auto_reuse, /data-implied/, "the owner's own choice is not implied");

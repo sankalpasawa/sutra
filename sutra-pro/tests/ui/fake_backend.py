@@ -647,7 +647,8 @@ class FakeState:
         view = {"schema": es["schema"], "defaults": copy.deepcopy(es["defaults"]), "global": copy.deepcopy(self.layers["global"])}
         if dept:
             view["department"] = copy.deepcopy(layer)
-        view["effective"] = imply_flags({**es["defaults"], **self.layers["global"], **layer})       # sync 6 (D178): what a run would use, the implied flags included
+        view["effective"] = {**es["defaults"], **self.layers["global"], **layer}
+        view["effective_flags"] = {k: v for k, v in imply_flags(view["effective"]).items() if k in FLAG_NAMES}       # sync 6 (D178): what J2 will run with; `effective` stays as stored
         view["editable"], view["locked"] = list(es["editable"]), list(es["locked"])
         view["output_types"] = copy.deepcopy(es.get("output_types", []))        # D166: the choices of the pages, from the data
         if dept:                                                # sync 4 (D139): what the team's next run would use, the start page's choice included
@@ -1138,6 +1139,9 @@ J2_GET_PATHS = (    # the GET names of J2_EXACT (sutra_ctx.js); sync 4 added pla
 RUN_TEMPLATE_ID = re.compile(r"[a-z0-9-]+")
 RUN_TEMPLATES_DIR = Path(__file__).resolve().parents[2] / "sutra_app" / "engine" / "seed" / "library" / "run-templates"
 IMPLIED = (("auto_reuse", "artifact_library"), ("run_templates", "auto_reuse"), ("template_library", "auto_reuse"), ("artifact_schema", "template_library"))      # D178, J2's own chain, in order
+
+
+FLAG_NAMES = ("auto_reuse", "run_templates", "template_library", "artifact_schema")      # EffectiveFlags
 
 
 def imply_flags(values: dict) -> dict:
@@ -1697,7 +1701,7 @@ def register_j2(app: FastAPI, state: FakeState) -> None:
         found = RUN_TEMPLATE_ID.fullmatch(id) and RUN_TEMPLATES_DIR / id / "template.json"
         if not found or not found.is_file():
             raise J2Reject(404, {"error": "no such run template"})
-        flags = state.settings_view(dept)["effective"]
+        flags = state.settings_view(dept)["effective_flags"]
         return JSONResponse({**json.loads(found.read_text(encoding="utf-8")), "enabled": bool(flags["run_templates"])}, headers=secure)
 
     @app.get("/api/library")

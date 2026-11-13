@@ -1270,11 +1270,11 @@ def test_engine_settings_get_has_the_documented_shape_for_all_teams_and_for_one(
     fake.stage("2")
     es = load("engine-settings.json")
     everyone = ok(fake, "/api/engine/settings")
-    assert set(everyone) == {"schema", "defaults", "global", "effective", "editable", "locked", "output_types"}  # no `department` without dept
+    assert set(everyone) == {"schema", "defaults", "global", "effective", "effective_flags", "editable", "locked", "output_types"}  # no `department` without dept; sync 6 (D178): effective_flags
     assert everyone["defaults"] == es["defaults"] and everyone["global"] == es["global"]
     assert everyone["effective"] == {**es["defaults"], **es["global"]} and everyone["editable"] == es["editable"]
     one = ok(fake, "/api/engine/settings", dept="web")
-    assert set(one) == {"schema", "defaults", "global", "department", "effective", "editable", "locked", "output_types", "next_run"}   # sync 4 (D139): what the next run would use
+    assert set(one) == {"schema", "defaults", "global", "department", "effective", "effective_flags", "editable", "locked", "output_types", "next_run"}   # sync 4 (D139): what the next run would use
     assert one["department"] == es["department"] and one["effective"] == es["effective"]
     assert one["next_run"] == {"output": es["effective"]["output"]} == {"output": "auto"}     # nothing chosen on the start page: the team's own setting
     error_of(fake.get("/api/engine/settings", dept="nosuch"), 404, "not_found")
@@ -2593,17 +2593,18 @@ def test_the_fake_says_the_effective_flags_with_the_implication_chain_of_the_eng
     names = ("auto_reuse", "run_templates", "template_library", "artifact_schema", "artifact_library")
     fake.stage("full")
 
-    def effective_with(field):
+    def flags_with(field):
         status, answer = fake.request("PUT", "/api/engine/settings?dept=web", {"set": {field: True}}, token=True)
         assert status == 200, answer
         assert fake.request("PUT", "/api/engine/settings?dept=web", {"unset": [field]}, token=True)[0] == 200
-        return {n: answer["effective"][n] for n in names}
-    assert effective_with("run_templates") == {"auto_reuse": False, "run_templates": True, "template_library": False, "artifact_schema": False, "artifact_library": False}
-    assert effective_with("auto_reuse") == {"auto_reuse": True, "run_templates": True, "template_library": True, "artifact_schema": True, "artifact_library": False}
-    assert effective_with("artifact_library") == dict.fromkeys(names, True)
-    assert effective_with("template_library")["run_templates"] is False
+        assert answer["effective"][field] is True and all(answer["effective"][n] is False for n in names if n != field), "`effective` is what was stored"
+        return {n: answer["effective_flags"][n] for n in names if n != "artifact_library"}
+    assert flags_with("run_templates") == {"auto_reuse": False, "run_templates": True, "template_library": False, "artifact_schema": False}
+    assert flags_with("auto_reuse") == {"auto_reuse": True, "run_templates": True, "template_library": True, "artifact_schema": True}
+    assert flags_with("artifact_library") == dict.fromkeys(("auto_reuse", "run_templates", "template_library", "artifact_schema"), True)
+    assert flags_with("template_library")["run_templates"] is False
     stored = ok(fake, "/api/engine/settings", dept="web")
-    assert stored["effective"]["auto_reuse"] is False and "auto_reuse" not in stored["department"], "an implied flag is never written back"
+    assert stored["effective"]["auto_reuse"] is False and stored["effective_flags"]["auto_reuse"] is False and "auto_reuse" not in stored["department"]
 
 
 def test_the_fake_answers_one_run_template_with_enabled_from_the_teams_settings(fake_server, fake):

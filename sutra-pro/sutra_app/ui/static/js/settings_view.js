@@ -220,14 +220,12 @@
     return scopedAnswer(settings) ? Object.assign({}, defaults, isObj(settings.global) ? settings.global : {}) : defaults;
   }
   const listOf = v => (Array.isArray(v) ? v.filter(f => typeof f === "string") : []);
-  // What the owner stored for a field (this layer, else the layers below it), never what the engine works out from it.
-  const storedOf = (settings, field) => (hasOwn(layerOf(settings), field) ? layerOf(settings)[field] : baseOf(settings)[field]);
-  // A switch that is off as stored but on in `effective`: the engine turned it on because another is on (D178: Reuse earlier work implies run
-  // templates and the template library, the template library implies the artifact schema). The stored value stays what the owner chose.
+  // A switch that is off as stored (`effective`: what the owner chose) but on in `effective_flags` (what the engine will run with): another switch turned it on
+  // (D178: Reuse earlier work implies run templates and the template library, the template library implies the artifact schema). The stored value stays shown.
   function impliedOf(settings, field) {
-    const defaults = isObj(settings.defaults) ? settings.defaults : {};
     const effective = isObj(settings.effective) ? settings.effective : {};
-    return typeof defaults[field] === "boolean" && effective[field] === true && storedOf(settings, field) === false;
+    const flags = isObj(settings.effective_flags) ? settings.effective_flags : {};
+    return flags[field] === true && effective[field] === false;
   }
 
   // engineBody(settings, form) -> {set, unset}. `form` maps a field to what the page holds now. Only editable fields are looked at, only a
@@ -244,7 +242,7 @@
       if (!hasOwn(form, field)) return;
       const parsed = parseValue(kindOf(field, defaults), form[field], field, settings);
       if (!parsed.ok) return;
-      const start = impliedOf(settings, field) ? false : (hasOwn(effective, field) ? effective[field] : defaults[field]);      // an implied switch starts from what was stored
+      const start = hasOwn(effective, field) ? effective[field] : defaults[field];      // what is stored, also for an implied switch
       if (same(parsed.value, start === undefined ? null : start)) return;
       if (same(parsed.value, base[field] === undefined ? null : base[field]) && hasOwn(layer, field)) body.unset.push(field);
       else body.set[field] = parsed.value;
@@ -319,7 +317,7 @@
     const id = "setf-" + field;
     const source = sourceOf(settings, field);
     const implied = impliedOf(settings, field);
-    const value = hasOwn(shown, field) ? shown[field] : (implied ? false : (hasOwn(effective, field) ? effective[field] : defaults[field]));
+    const value = hasOwn(shown, field) ? shown[field] : (hasOwn(effective, field) ? effective[field] : defaults[field]);
     return '<div class="setfield" data-field="' + esc(field) + '" data-locked="false" data-kind="' + kind + '" data-source="' + source + '"' + (implied ? ' data-implied="true"' : "") + ">" +
       '<label class="setlabel" for="' + id + '">' + esc(label) + "</label>" + fieldInput(field, kind, value, id, settings) +
       (SOURCE_TAG[source] ? '<span class="settag">' + SOURCE_TAG[source] + "</span>" : "") +

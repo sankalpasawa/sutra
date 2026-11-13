@@ -873,6 +873,8 @@ def test_say_carries_a_run_template_and_its_workflows_to_the_command_object_and_
     assert call(w, "say", ctx, text="a site", template="thread-boutique-website", workflows="w-1, W-2,W-1").code == 200
     assert call(w, "say", ctx, text="a site", template="thread-boutique-website", workflows=["W-3", "all", "W-4"]).code == 200
     assert call(w, "say", ctx, text="a site", template="thread-boutique-website").code == 200
+    assert call(w, "say", ctx, text="a site", template="thread-boutique-website", workflows="W-1,,W-2.1").code == 200, "an empty entry is dropped, a dot is a key character"
+    assert cmd.calls.pop() == ("say", "a site", "thread-boutique-website", "W-1,W-2.1")
     assert cmd.calls == [("say", "a site", "thread-boutique-website", "all"), ("say", "a site", "thread-boutique-website", "w-1,W-2"),
                          ("say", "a site", "thread-boutique-website", "W-3,W-4"), ("say", "a site", "thread-boutique-website", None)]
     cmd.calls.clear()
@@ -885,7 +887,7 @@ def test_say_carries_a_run_template_and_its_workflows_to_the_command_object_and_
 
 @pytest.mark.parametrize("body", [
     {"template": "Thread"}, {"template": "a_b"}, {"template": "x" * 81}, {"template": 5}, {"template": ["a"]}, {"template": "a b"},
-    {"template": "a", "workflows": "W 1"}, {"template": "a", "workflows": "W-1,,W-2"}, {"template": "a", "workflows": ["W-1", 2]},
+    {"template": "a", "workflows": "W 1"}, {"template": "a", "workflows": ["W-1", 2]},
     {"template": "a", "workflows": 7}, {"template": "a", "workflows": {"W-1": 1}}, {"template": "a", "workflows": "x" * 21},
     {"template": "a", "workflows": [f"W-{n}" for n in range(41)]}, {"template": "a", "workflows": ",".join(f"K{n:04d}" for n in range(300))},
 ])
