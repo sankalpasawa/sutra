@@ -77,8 +77,8 @@ def test_the_engine_serves_exactly_the_j2_routes_the_page_lists_plus_the_two_set
     posts = {path for (method, path) in table if method == "POST"}
     templated = {path for path in gets if "{" in path}
     assert {path for (method, path) in table if method == "PUT"} == {SETTINGS_PATH}
-    assert len(gets - {SETTINGS_PATH, CAPABILITIES_PATH}) == 31 and len(posts) == 7      # 31 GET paths (/site/{key} answers two rows), J2 sync 4's included
-    assert len(table) == 31 + 7 + 2 + 1                                                  # the settings GET and PUT and the capabilities GET
+    assert len(gets - {SETTINGS_PATH, CAPABILITIES_PATH}) == 32 and len(posts) == 7      # 32 GET paths (/site/{key} answers two rows), J2 sync 4's and /api/timing (sync 5) included
+    assert len(table) == 32 + 7 + 2 + 1                                                  # the settings GET and PUT and the capabilities GET
     assert len(templated) == 5 and all(any(path.startswith(prefix) for prefix in prefixes) for path in templated)
     for prefix in prefixes:
         assert any(path.startswith(prefix) for path in templated), prefix

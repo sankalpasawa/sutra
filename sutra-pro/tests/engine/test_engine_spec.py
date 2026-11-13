@@ -620,7 +620,7 @@ def test_the_table_is_the_design_as_it_was_written():
     """Section 8 of engine.md, transcribed. Change a row on purpose and this digest changes with it (and so must the design);
     `test_every_symbol_and_file_of_the_table_exists_in_j2` below checks the names against J2 itself."""
     blob = json.dumps([dataclasses.asdict(f) for f in FEATURES], sort_keys=True, separators=(",", ":"))
-    assert hashlib.sha256(blob.encode()).hexdigest() == "b7d8eab5100022ec08503149bc42fa2cfa977c7fbb35b17c50b42c48a0091e7d"
+    assert hashlib.sha256(blob.encode()).hexdigest() == "48bf1aaa846c66ad50bd4054d0eee184f53bf2f67d7d19349efcb74314366dfa"
 
 
 J2_CHECKOUT = os.environ.get("SUTRA_J2_CHECKOUT")

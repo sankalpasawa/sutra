@@ -140,7 +140,8 @@ class DeptCommands:
         if ctxmod.current_ref(self.services, self.dept_id, page) is not None:        # a message exists: J2 refuses
             return False, self._output_of_current(page)
         kind = _output_type(out)
-        ctxmod.write_page(self.services.data_dir, self.dept_id, next_settings={**page.next_settings, "J2_OUTPUT": kind})
+        rest = {k: v for k, v in page.next_settings.items() if k != "J2_OUTPUT"}        # an unknown type pins nothing: the planner chooses
+        ctxmod.write_page(self.services.data_dir, self.dept_id, next_settings={**rest, **({"J2_OUTPUT": kind} if kind else {})})
         return True, kind
 
     def reset(self) -> bool:
