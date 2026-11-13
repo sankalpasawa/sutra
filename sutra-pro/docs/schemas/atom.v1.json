@@ -23,6 +23,27 @@
       "title": "AtomEdge",
       "type": "object"
     },
+    "AtomReply": {
+      "additionalProperties": false,
+      "description": "The last reply a function's turn got from the model, as the layer saw it (D157): the reply object printed with two-space\nindents and cut to `REPLY_TEXT_MAX` characters, `clipped` saying it was cut. It sits on the atom beside `produced` (the plain\nwords of what the turn made or did) and is what the owner's card shows as \"The reply\". An atom stored before D157 has none.",
+      "properties": {
+        "clipped": {
+          "default": false,
+          "title": "Clipped",
+          "type": "boolean"
+        },
+        "text": {
+          "maxLength": 4000,
+          "title": "Text",
+          "type": "string"
+        }
+      },
+      "required": [
+        "text"
+      ],
+      "title": "AtomReply",
+      "type": "object"
+    },
     "Check": {
       "additionalProperties": false,
       "description": "One declared check. `text` is the plain sentence people read; `relevance` says why the check tests the goal (None =\nnot given: `open_atom` fills in a default); `results` has one entry per close run.",
@@ -632,6 +653,17 @@
       "anyOf": [
         {
           "$ref": "#/$defs/Refusal"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null
+    },
+    "reply": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/AtomReply"
         },
         {
           "type": "null"

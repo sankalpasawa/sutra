@@ -9,8 +9,8 @@ from factories_atom import (
     verify_failed_atom, work,
 )
 from sutra_app.library.atom import (
-    MAX_ATTEMPTS, Atom, AtomError, Card, Check, CheckResult, Constraint, Refusal, Seen, Transition, abandon_atom, atom_display_state,
-    build_card, card, close_atom, open_atom,
+    MAX_ATTEMPTS, Atom, AtomError, AtomReply, Card, Check, CheckResult, Constraint, OutputItem, Refusal, Seen, Transition, abandon_atom,
+    atom_display_state, build_card, card, close_atom, open_atom,
 )
 from sutra_app.library.gate import GATE
 
@@ -343,6 +343,56 @@ def test_seen_is_a_closed_value():
     for bad in ({"work": "skill"}, {"model": ""}, {"note": "x" * 201}, {"colour": 1}):
         with pytest.raises(ValidationError):
             Seen(**bad)
+
+
+# ---- Seen hands over what the turn produced (D157) -----------------------------------------------------------------------
+
+MADE = OutputItem(verb="make", name="a proposal of 2 workflows: W-1 Build the page, W-2 Write the copy", form="record", ref="workflows.json")
+SAID = OutputItem(verb="do", name="posted 1 message to Priority", form="message", ref="chat")
+REPLY = AtomReply(text='{\n  "act": "PROPOSE"\n}')
+
+
+def test_a_close_that_passes_records_what_the_turn_produced_and_its_reply():
+    a = opened()
+    t = close_atom(a, results_for(a, 0), 120, seen=Seen(work="llm", produced=[MADE, SAID], reply=REPLY))
+    assert (t.outcome, t.atom.state) == ("closed", "closed")
+    assert t.atom.produced == [MADE, SAID] and t.atom.reply == REPLY
+    assert a.produced == [] and a.reply is None                                  # the atom it started from is not touched
+    assert GATE.check("atom", t.atom).model == t.atom
+
+
+def test_a_failed_try_keeps_the_last_reply_and_the_next_sight_of_the_turn_replaces_it():
+    a = opened()
+    failed = close_atom(a, results_for(a, 1), 120, seen=Seen(produced=[SAID], reply=AtomReply(text="first")))
+    assert failed.outcome == "verify_failed" and failed.atom.state == "open"
+    assert failed.atom.reply.text == "first" and failed.atom.produced == [SAID]
+    again = close_atom(failed.atom, results_for(failed.atom, 1), 130, seen=Seen(produced=[MADE], reply=AtomReply(text="second", clipped=True)))
+    assert again.atom.attempt == 2 and again.atom.reply == AtomReply(text="second", clipped=True) and again.atom.produced == [MADE]
+
+
+def test_an_abandoned_atom_records_what_the_turn_had_made_so_far():
+    a = opened()
+    gone = abandon_atom(a, "run ended: stopped", 130, code="run_ended", seen=Seen(produced=[SAID], reply=REPLY))
+    assert gone.outcome == "abandoned" and gone.atom.produced == [SAID] and gone.atom.reply == REPLY
+    assert gone.atom.state == "abandoned" and GATE.check("atom", gone.atom).model == gone.atom
+
+
+def test_an_abandon_after_a_failed_close_keeps_what_the_failed_close_recorded_when_the_sight_adds_nothing():
+    a = opened()
+    failed = close_atom(a, results_for(a, 1), 120, seen=Seen(produced=[MADE], reply=REPLY))
+    gone = abandon_atom(failed.atom, "verify failed: reply-valid: missing", 130, code="verify_failed", seen=Seen(work="llm"))
+    assert gone.atom.produced == [MADE] and gone.atom.reply == REPLY and atom_display_state(gone.atom) == "verify_failed"
+    assert close_atom(opened(), results_for(opened(), 0), 120, seen=Seen()).atom.reply is None
+    assert close_atom(opened(), results_for(opened(), 0), 120).atom.produced == []
+
+
+def test_the_output_a_sight_carries_is_not_applied_to_a_refusal_and_is_bounded():
+    t = abandon_atom(closed(), "why", 130, seen=Seen(produced=[SAID], reply=REPLY))
+    assert t.refusal.code == "not_open" and t.atom.produced == [] and t.atom.reply is None
+    with pytest.raises(ValidationError):
+        Seen(produced=[SAID] * 41)
+    with pytest.raises(ValidationError):
+        Seen(reply={"text": "x" * 4001})
 
 
 # ---- Transition and cards ------------------------------------------------------------------------------------------------

@@ -11,7 +11,12 @@
    normalize() is the only code that knows the names of the wire: goal, task (a string, or an object with `summary`), context, constraints,
    wait_on, hands_to and stats of a function node; id, schema, state, goal, attempt, ts_open, ts_closed, body and usage of an atom; and in
    a body the names of the library Atom (constraints[].text, context[], work.dispatch_kind, work.agent, verify.checks[], outputs, closed_by,
-   reason, refusal, model) or of J2's atom/1 view (verification[], defined_output, how). `atom_count` and every unknown key are ignored.
+   reason, refusal, model, produced, reply{text, clipped}) or of J2's atom/1 view (verification[], defined_output, how, output, notes).
+   `atom_count` and every unknown key are ignored.
+
+   What an atom produced (D157) is in the Result block, above the Reason: an "Output" row (the plain words the layer recorded in `produced`; for
+   a builder, `output` with its form and where it is) and, for a function turn, "The reply" (the last reply the model gave, preformatted and
+   escaped, in a fold). An atom with nothing recorded says so; a refused atom never ran and has no Output row.
 
    A classic script with ONE global, FnodeView (see sutra_ctx.js for why); in node it is module.exports. */
 (function (root) {
@@ -236,6 +241,18 @@
 
   const countsOr = v => (finite(v) && v >= 0 ? v : null);
 
+  /* What an atom produced (D157): the items of `produced` (a function atom) or `output` (a builder's atom/1), each {verb, name, form, ref}. */
+  const madeOf = list => (Array.isArray(list) ? list : []).map(o => (typeof o === "string" ? {verb: "", name: clean(o), form: "", ref: ""} :
+    (isObj(o) ? {verb: clean(o.verb), name: clean(o.name), form: clean(o.form), ref: clean(o.ref)} : null))).filter(o => o !== null && o.name !== "");
+
+  // The reply of a turn: the text as the layer printed it (new lines kept, other control characters dropped), at most REPLY_SHOWN characters.
+  const REPLY_SHOWN = 20000;
+  function replyOf(value) {
+    if (!isObj(value) || typeof value.text !== "string") return null;
+    const whole = value.text.replace(/\r\n?/g, "\n").replace(/[\u0000-\u0008\u000b\u000c\u000e-\u001f\u007f]/g, "");
+    return {text: whole.slice(0, REPLY_SHOWN), clipped: value.clipped === true || whole.length > REPLY_SHOWN};
+  }
+
   // normalizeAtom(raw AtomOut) -> the atom as the card draws it. `state` is the display word of the wire; `status` only stands in for it in
   // old fixtures. Anything missing gives an empty list or null, never an error.
   function normalizeAtom(raw) {
@@ -257,6 +274,7 @@
       builder, constraints: items(body.constraints), context: items(body.context),
       kind, agent: clean(builder ? how.agent : work.agent), models: modelsOf(a.usage, body),
       outputs: builder ? items(body.defined_output) : items(body.outputs).slice(0, 1),
+      made: madeOf(builder ? body.output : body.produced), reply: builder ? null : replyOf(body.reply), notes: builder ? clean(body.notes) : "",
       checks, refusal, reason: clean(body.reason), usage, concern: concernOf(checks),
     };
   }
@@ -296,13 +314,44 @@
     return a.checks.map(c => '<div class="acheck"' + (c.template ? ' data-template="' + esc(c.template) + '"' : "") + '><p class="asent">' + esc(c.sentence) + "</p>" + triesHtml(a, c) + "</div>").join("");
   }
 
+  // Where a builder's output lives, in plain words: "site/index.html#hero" is "site/index.html, section hero"; any other ref is shown as it is.
+  function refWords(ref) {
+    const hash = ref.indexOf("#");
+    return hash > 0 && hash < ref.length - 1 ? ref.slice(0, hash) + ", section " + ref.slice(hash + 1) : ref;
+  }
+
+  // One thing the atom made or did. A function turn's sentence is plain words already; a builder's item says what it is and where it lives:
+  // "Hero section (page, site/index.html, section hero)".
+  function madeItemHtml(a, m) {
+    const tail = a.builder ? [m.form, refWords(m.ref)].filter(Boolean).join(", ") : "";
+    return "<li>" + esc(m.name) + (tail ? ' <span class="empty">(' + esc(tail) + ")</span>" : "") + "</li>";
+  }
+
+  // The Output row: what the atom produced, in plain words. A refused atom never ran, so it has none; an atom that is just open has made nothing yet;
+  // any other atom with nothing recorded is one from before the layer recorded it (or a builder that made nothing).
+  function outputHtml(a) {
+    if (a.state === "refused") return "";
+    const made = Array.isArray(a.made) ? a.made : [];
+    if (made.length > 0) return '<div class="arow aoutput" data-row="output"><b>Output</b> <ul class="alist">' + made.map(m => madeItemHtml(a, m)).join("") + "</ul></div>";
+    const none = a.state === "open" && a.attempt === 0 ? "nothing yet" : "not recorded for this atom";
+    return '<div class="arow aoutput" data-row="output"><b>Output</b> <span class="empty">' + none + "</span></div>";
+  }
+
+  // The reply the model gave in the turn: preformatted and escaped, in a fold the owner opens (and that stays open when the card is drawn again).
+  function replyHtml(a) {
+    if (a.state === "refused" || !isObj(a.reply) || typeof a.reply.text !== "string") return "";
+    const cut = a.reply.clipped === true ? ' <span class="empty">(shortened to its first ' + group(a.reply.text.length) + " characters)</span>" : "";
+    return '<details class="areply" data-row="reply" data-key="reply-' + esc(a.id) + '"><summary>The reply' + cut + '</summary><pre class="areplytext">' + esc(a.reply.text) + "</pre></details>";
+  }
+
   function resultHtml(a) {
     const pill = pillText(a);
     const cost = usageText(a.usage);
     const keepsReason = a.reason !== "" && (a.state === "abandoned" || a.state === "verify_failed");
-    return '<span class="apill st-' + esc(a.state || "unknown") + '">' + esc(pill) + "</span>" +
+    return '<span class="apill st-' + esc(a.state || "unknown") + '">' + esc(pill) + "</span>" + outputHtml(a) + replyHtml(a) +
       (a.concern ? '<div class="arow aconcern"><b>Concern on record</b> ' + esc(a.concern.text) + "</div>" : "") +
       (keepsReason ? '<div class="arow areason"><b>Reason</b> ' + esc(a.reason) + "</div>" : "") +
+      (a.notes ? '<div class="arow anotes" data-row="notes"><b>Notes</b> ' + esc(a.notes) + "</div>" : "") +
       (cost ? '<div class="arow acost">' + esc(cost) + "</div>" : "");
   }
 

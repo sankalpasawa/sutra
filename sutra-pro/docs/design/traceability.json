@@ -1,7 +1,7 @@
 {
  "schema": "traceability/1",
  "counts": {
-  "decisions": 157,
+  "decisions": 158,
   "packages": 78,
   "endpoints": 41,
   "chips": 15,
@@ -346,6 +346,7 @@
     "D154",
     "D155",
     "D156",
+    "D157",
     "D158"
    ],
    "modules": [
@@ -3437,6 +3438,24 @@
    "status": "implemented",
    "superseded_by": [],
    "diagram": "label \"replies read, long text cut and recorded\", pill on band:DEPARTMENT RUNTIME."
+  },
+  {
+   "id": "D157",
+   "title": "A work atom records what its turn produced, the plain words and the model's last reply; the store scrubs them and the card's Result block shows them",
+   "packages": [
+    "CT-1",
+    "GAP-DEMO",
+    "GAP-E2E",
+    "GAP-E2E-UI",
+    "GAP-W1",
+    "L4",
+    "ORCH-3",
+    "UI-0",
+    "UI-6"
+   ],
+   "status": "implemented",
+   "superseded_by": [],
+   "diagram": "label \"atom card shows output and the reply\", pill on Workflow graph store."
   }
  ],
  "packages": [

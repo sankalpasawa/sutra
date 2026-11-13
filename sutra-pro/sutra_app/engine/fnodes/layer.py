@@ -24,6 +24,11 @@ stopping the run on a rejected record is the strict mode's whole point. The laye
 Every transition is written, synchronously, as one `atom` event (`atom_event`): the library's `Checked[Atom]` body, its Card
 and, at the end of an atom, its LedgerRow. The Projector on the server turns those lines into rows.
 
+What a turn produced (D157): every transition of the atom of a turn (a failed try, the close, an abandon, also the run ending
+mid-turn) carries the plain words of what the turn has made or done so far (`Atom.produced`) and the last reply the model gave
+(`Atom.reply`), both read from the turn buffer by `output.py` and handed over in `Seen`. A transition with no turn behind it (a
+stale atom replaced, an atom the server abandons when the run ends) carries what the atom already held.
+
 Warn-and-log scope (section 5.4): a message by a function with no open atom, and a record outside what the function writes
 (`WRITE_TERMS` maps the prose of `FunctionSpec.writes` to the record files it means), write one `layer.touches_miss` line
 and block nothing.
@@ -48,6 +53,7 @@ from .checks import CheckRunner, TurnBuffer
 from .declare import declare, declare_question
 from .evidence import RECORD_NAMES, read_records
 from .ids import AtomIds, node_id_of, run_overhead_id
+from .output import manual_output, turn_output
 
 __all__ = ["FunctionNodeHooks", "factory", "NODE_MODES", "WRITE_TERMS", "writable_records", "SCHEMA"]
 
@@ -179,11 +185,22 @@ class FunctionNodeHooks(EventHooks):
         return False
 
     def _seen(self, atom: Atom, buf: Optional[TurnBuffer]) -> Seen:
-        """What the turn did, to correct a wrong guess of the declared work kind and to stamp the model."""
-        if atom.work.dispatch_kind == "manual" or buf is None:
+        """What the turn did, to correct a wrong guess of the declared work kind, to stamp the model and (D157) to record what the
+        turn produced: the plain words of what it made or did, and the last reply the model gave. The manual atom of a question is
+        done by the owner, so what it produced is their answer. Recording the output can never stop an atom from closing: a turn
+        the words cannot be made of writes a `layer.error` line and the atom closes without them."""
+        if buf is None:
             return Seen()
+        manual = atom.work.dispatch_kind == "manual"
+        try:
+            produced, reply = (manual_output(buf), None) if manual else turn_output(buf)
+        except Exception as exc:      # noqa: BLE001
+            self._layer_error("output", exc)
+            produced, reply = [], None
+        if manual:
+            return Seen(produced=produced)
         model = buf.model
-        return Seen(work="llm" if buf.calls else "bash", model=clip(model, 80) if model else None)
+        return Seen(work="llm" if buf.calls else "bash", model=clip(model, 80) if model else None, produced=produced, reply=reply)
 
     def _abandon(self, node: str, atom: Atom, reason: str, code: str, seen: Optional[Seen] = None) -> None:
         tr = abandon_atom(atom, reason, self._now(), code=code, seen=seen)

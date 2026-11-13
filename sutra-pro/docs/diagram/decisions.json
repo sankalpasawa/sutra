@@ -780,6 +780,11 @@
   "anchor": "band:DEPARTMENT RUNTIME"
  },
  {
+  "id": "D157",
+  "label": "atom card shows output and the reply",
+  "anchor": "Workflow graph store"
+ },
+ {
   "id": "D158",
   "label": "replies read, long text cut and recorded",
   "anchor": "band:DEPARTMENT RUNTIME"

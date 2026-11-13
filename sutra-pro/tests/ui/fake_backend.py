@@ -588,6 +588,15 @@ class FakeState:
                 atom["body"]["closed_by"] = "verify"
                 for check in atom["body"]["verify"]["checks"]:
                     check["results"].append({"attempt": atom["attempt"], "exit_code": 0, "evidence": "ok"})
+                # the third try's reply and what the turn made (D157): the layer records both on the closing transition, replacing the failed try's
+                atom["body"]["produced"] = [
+                    {"verb": "make", "name": "the charter: Coffee shop landing page, 4 done-when items", "form": "charter", "ref": "goal.json"},
+                    {"verb": "do", "name": "posted 1 message to Adaptation", "form": "message", "ref": "chat"}]
+                atom["body"]["reply"] = {"text": json.dumps({
+                    "say": "@Adaptation Charter recorded from the brief and the answers.", "enough": True,
+                    "goal": {"kind": "site", "site_name": "Coffee shop landing page", "statement": "A one-page site for a coffee shop",
+                             "done_when": ["The menu is on the page", "Opening hours are shown", "The address is shown", "A phone number is shown"]},
+                    "to_requester": "Thanks, I have what I need.", "next": "Adaptation"}, indent=2), "clipped": False}
                 atom["usage"] = {"calls": 9, "usd": 0.32, "tokens_in": 5400, "tokens_out": 1620}
         return atoms
 

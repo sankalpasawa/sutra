@@ -208,6 +208,16 @@ def test_the_whole_first_day_walk_on_the_real_app(app, browser):
     heading = texts(browser, ".fnsec[data-sec=atoms] h4")[0]
     assert heading.startswith("Work atoms (") and heading != "Work atoms (0)", heading
     assert live.one("SELECT count(*) FROM atoms WHERE node_id = 'web.identity'") == int(heading[len("Work atoms ("):-1])
+    # what each turn produced (D157): every card of the real drawer says it, and the turn that asked a model shows its reply behind a fold
+    cards = browser.count(".fnsec[data-sec=atoms] details.atomcard")
+    assert cards >= 3 and browser.count(".fnsec[data-sec=atoms] .aoutput") == cards
+    said = texts(browser, ".fnsec[data-sec=atoms] .aoutput li")
+    assert any(t.startswith("the charter: ") for t in said) and any(t.startswith("you answered: ") for t in said) and "decided the goal is reached" in said, said
+    assert not any("not recorded" in t for t in texts(browser, ".fnsec[data-sec=atoms] .aoutput"))
+    browser.click(".fnsec[data-sec=atoms] details.atomcard:first-of-type > summary")                  # the newest atom: Identity's verdict that the goal is reached
+    browser.click(".fnsec[data-sec=atoms] details.atomcard:first-of-type .areply summary")
+    reply = json.loads(browser.js("document.querySelector('.fnsec[data-sec=atoms] details.atomcard .areplytext').textContent"))
+    assert reply["done"] is True and reply["next"] == "Requester"                                      # the reply the engine's mock model sent
     clean(browser, "identity atoms")
     browser.click("[data-npclose]")
 
