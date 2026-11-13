@@ -223,6 +223,11 @@ details.atomcard>summary{cursor:pointer;display:flex;flex-wrap:wrap;align-items:
 .arow{margin:4px 0 0;font-size:13px}
 .arow>b{color:var(--muted);margin-right:4px}
 .acost{color:var(--muted)}
+/* what the atom produced (D157): the Output row, and the reply the model gave in a fold (preformatted, wrapped, never wider than the card) */
+.aoutput>.alist{margin-top:2px}
+.areply{margin:6px 0 0;font-size:13px}
+.areply>summary{cursor:pointer;color:var(--muted)}
+.areplytext{margin:4px 0 0;padding:8px 10px;max-height:320px;overflow:auto;border:1px solid var(--line);border-radius:6px;background:var(--panel2);color:var(--ink);font:12px/1.45 var(--mono);white-space:pre-wrap;overflow-wrap:anywhere}
 
 /* ---- a team that was merged away: its page keeps the history but takes no new line (docs/design/ui.md 6.7) */
 body.archived .scompose,body.archived #sbox,body.archived #ssend,body.archived #sform,body.archived #box,body.archived #send,body.archived .outsel,
@@ -346,6 +351,7 @@ body.nodeopen #dview .chat,body.nodeopen .chatfab{visibility:hidden}
 .agent-dot[data-state="past"]{background:transparent;border:1px solid var(--muted)}
 .agent-state{color:var(--muted);font-size:12px}
 .agent-usage{color:var(--muted);font-size:12px;font-family:var(--mono)}
+.agent-purposes{flex:1 1 100%;display:flex;flex-wrap:wrap;gap:2px 14px;padding-left:17px;color:var(--muted);font-size:12px;font-family:var(--mono)}
 .agentlive .alive-tool{display:inline-block;margin-left:8px;font:500 12px var(--mono);color:var(--muted)}
 .agentlive .alive-note{margin-left:8px;color:var(--muted);font-size:12px}
 .cstream{margin:6px 0;color:var(--ink)}

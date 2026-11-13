@@ -13857,6 +13857,806 @@ def template_library(demo=False):
           "per version), shown from the run with an empty library, and \"not recorded\" when neither has it ok")
 
 
+RUN_TPL_CHECKPOINT = "5439b91e"   # agent-tools just before main's run templates merged in (main's own base was 1d537295,
+# which predates agent-tools' prompt changes): a flag-off plain run is compared with it, prompt for prompt
+
+
+def run_templates():
+    """Run templates (run-template/1, J2_RUN_TEMPLATES=1): one named template per finished run, reused by new runs.
+
+    (a) run_template_from_run gives a valid RunTemplate with every finished workflow, in stage order, each with its
+    section template, and no recorded fact in a name, a cover or a slot (a made-up run here; the saved runs
+    j2-20261103-184249 and j2-20261103-161111-3 too when runs/ has them); the committed library's three run templates
+    are valid and every section template they name opens in the library; (b) a mock run from the yoga template for
+    another business creates no template: every workflow is from the template, adapted (extended) or generic where
+    the template's own was generic, and no fact of the first business reaches the new versions; the same brief again
+    reuses them; (c) "Use selected workflows" with W-1, W-2 runs only those; what a chosen workflow depends on is added;
+    (d) flag off: no template is taken, nothing is recorded, no prompt changes (plain_unchanged against main);
+    (e) the page: the names first, an opened template by stage, both buttons prefill the brief box (--browser)."""
+    import copy as copy_
+    import shutil
+    import j2_template_lib as L
+    here = os.path.dirname(os.path.abspath(__file__))
+    real_lib = os.path.join(here, "library")
+    real_before = tree_sha(real_lib)
+    keep = {k: os.environ.get(k) for k in ("J2_LIBRARY_DIR", "J2_TEMPLATE_LIBRARY", "J2_RUN_TEMPLATES", "J2_ARTIFACT_SCHEMA")}
+    lib = tempfile.mkdtemp(prefix="j2-rt-lib-")
+    shutil.rmtree(lib)
+    shutil.copytree(real_lib, lib)
+    os.environ["J2_LIBRARY_DIR"] = lib
+    try:
+        # (a) the committed run templates: valid, listed, every section template opens
+        rows = L.run_template_list()
+        assert len(rows) >= 3 and all(r["name"] and r["stages"] and r["workflows"] for r in rows), rows
+        assert {r["mock"] for r in rows} == {True, False}, "live and mock are marked"
+        for r in rows:
+            rt = L.get_run_template(r["id"])
+            assert rt is not None and L.get_run_template(rt.name).id == rt.id and len(rt.workflows) == r["workflows"]
+            assert json.load(open(os.path.join(L.run_template_dir(rt.id), "schema.json"), encoding="utf-8")) == \
+                L.RunTemplate.model_json_schema(by_alias=True)
+            view = L.run_template_view(rt.id)
+            assert all(w["ref"] and w["ref"]["in_library"] for w in view["workflows"]), [w["key"] for w in view["workflows"] if not (w["ref"] or {}).get("in_library")]
+            assert all(not re.search(r"@|\d{6}", " ".join([w.name] + w.covers)) for w in rt.workflows), rt.id
+        assert L.catalog_view()["run_templates"] == rows
+        # a made-up finished run: every finished workflow once, the failed one through its revision, facts as slots
+        fake = tempfile.mkdtemp(prefix="j2-20260101-000000-")
+        facts = ["Maple Hall", "12 Lake Road, Pune 411001", "Monday 6:00 pm Salsa 700", "hello@maplehall.example"]
+        dump = lambda n, o: json.dump(o, open(os.path.join(fake, n), "w", encoding="utf-8"))
+        dump("goal.json", {"site_name": "Maple Hall", "business_type": "dance studio", "facts": facts,
+                           "done_when": ["x"], "visitor_needs": ["See the classes"]})
+        wf = lambda i, name, covers, status="done", **kw: {"id": f"W-{i}", "proposal_id": f"p{i}", "name": name, "covers_text": covers,
+                                                         "status": status, "dependencies": [], "outputs": ["prd.md"], **kw}
+        dump("workflows.json", [
+            wf(1, "Write Problem", ["The Problem section says why Maple Hall at 12 Lake Road, Pune 411001 needs a page"]),
+            wf(2, "Write Requirements", ["Requirements lists Monday 6:00 pm Salsa 700 and hello@maplehall.example"], status="failed", dependencies=["p1"]),
+            wf(3, "Requirements again", ["x"], revises="W-2"),
+            wf(4, "Write Components", ["Components for Maple Hall cover (R1, R2)"], outputs=["hld.md"]),
+            wf(5, "Never built", ["x"], status="held")])
+        dec = lambda w, art, sec, tpl, kind="specialised": {"workflow": w, "artifact": art, "section": sec, "template": tpl, "version": 1, "kind": kind, "action": "created"}
+        dump("templates.json", {"decisions": [dec("W-1", "prd", "Problem", "Maple Problem"), dec("W-2", "prd", "Requirements", "Maple Req"),
+                                              dec("W-3", "prd", "Requirements", "Maple Req 2"), dec("W-4", "hld", "Components", "HLD/1 · Components", "generic")]})
+        open(os.path.join(fake, "chat.jsonl"), "w", encoding="utf-8").write(json.dumps({"meta": True, "mock": True}) + "\n")
+        rt = L.run_template_from_run(fake, name="Maple Hall: documents")
+        assert [(w.key, w.made_from, w.stage, w.section, w.section_template) for w in rt.workflows] == [
+            ("W-1", "W-1", "prd", "Problem", "Maple Problem@1"), ("W-2", "W-2", "prd", "Requirements", "Maple Req 2@1"),
+            ("W-3", "W-4", "hld", "Components", "HLD/1 · Components@1")], [(w.key, w.made_from, w.section_template) for w in rt.workflows]
+        assert rt.workflows[1].depends_on == ["W-1"] and rt.workflows[2].depends_on == ["W-2"], "a recorded dependency, and the section the HLD's Components cite"
+        assert rt.stages == ["prd", "hld"] and rt.mock is True and rt.business_type == "dance studio" and rt.id == "maple-hall-documents"
+        text = json.dumps([[w.name] + w.covers for w in rt.workflows] + rt.facts_slots)
+        assert not any(f.lower() in text.lower() for f in facts), text
+        assert rt.facts_slots == ["studio name", "address", "class list", "email address"], rt.facts_slots
+        assert rt.workflows[0].covers == ["The Problem section says why <studio name> at <address> needs a page"], rt.workflows[0].covers
+        assert rt.workflows[2].covers == ["Components for <studio name> cover (<requirement ids>)"], rt.workflows[2].covers
+        saved = L.save_run_template(rt)
+        again = L.save_run_template(L.run_template_from_run(fake, name="Maple Hall: documents"))
+        assert again.created == saved.created and [r["id"] for r in L.run_template_list()].count(rt.id) == 1, "built again: the same template, once"
+        assert L.select_workflows(rt, ["W-3"]) == (["W-1", "W-2", "W-3"], ["W-1", "W-2"]) and L.select_workflows(rt) == (["W-1", "W-2", "W-3"], [])
+        for bad in ({"id": "Not A Slug"}, {"stages": ["hld", "prd"]}, {"facts_slots": []}):
+            try:
+                L.RunTemplate.model_validate({**rt.model_dump(by_alias=True), **bad})
+                raise AssertionError(f"accepted {bad}")
+            except ValueError:
+                pass
+        shutil.rmtree(os.path.join(lib, L.RUN_TEMPLATE_DIR, rt.id))
+        idx = L.index()
+        idx["run_templates"] = [r for r in idx["run_templates"] if r["id"] != rt.id]
+        L._save_index(idx)
+        # the saved runs the committed templates were made from, when this clone has them
+        seen = []
+        for rid, n in (("j2-20261103-184249", 17), ("j2-20261103-161111-3", 24)):
+            d = os.path.join(here, "runs", rid)
+            if not os.path.isfile(os.path.join(d, "workflows.json")):
+                continue
+            made = L.run_template_from_run(d)
+            done_roots = {w["id"] for w in json.load(open(os.path.join(d, "workflows.json"), encoding="utf-8"))
+                          if w["status"] == "done" and not w.get("revises")}
+            assert len(made.workflows) == n and done_roots <= {w.made_from for w in made.workflows}, (rid, len(made.workflows))
+            text = json.dumps([[w.name] + w.covers for w in made.workflows] + made.facts_slots).lower()      # a section template keeps its own name
+            leaked = [v for v, _ in L.run_slots(d) if v.lower() in text]
+            assert not leaked, (rid, leaked)
+            stored = next(L.get_run_template(r["id"]) for r in rows if r["made_from_run"] == rid)
+            assert [w.model_dump() for w in stored.workflows] == [w.model_dump() for w in made.workflows] and stored.facts_slots == made.facts_slots, rid
+            seen.append(rid)
+        # (d) flag off: no template is taken and nothing changes
+        yoga = next(r["id"] for r in rows if r["mock"] is True and "website" in r["stages"] and "prd" in r["stages"])
+        os.environ["J2_TEMPLATE_LIBRARY"] = "1"
+        os.environ.pop("J2_ARTIFACT_SCHEMA", None)
+        os.environ.pop("J2_RUN_TEMPLATES", None)
+        off = j2.J2Run()
+        off.budget = 400
+        assert off.set_run_template(yoga) is False and off.run_tpl is None
+        say(off, "Write a PRD for Campus Notes." + CAMPUS)
+        finish(off)
+        rec = json.load(open(os.path.join(off.dir, "templates.json"), encoding="utf-8"))
+        assert set(rec) == {"schema", "library", "decisions"} and not any("from_template" in d or "run_template" in d for d in rec["decisions"])
+        assert not any("run template" in str(c.get("prompt")).lower() for c in calls_file(off)) and not any("run template" in m["text"].lower() for m in off.chat)
+        assert L.get_run_template(yoga).used_by == []
+        # (b) a mock run from the yoga template for another business
+        os.environ["J2_RUN_TEMPLATES"] = "1"
+        base = L.get_run_template(yoga)
+        old_facts = {f for w in base.workflows if w.section_template_kind == "specialised"
+                     for f in L.get(w.section_template, w.artifact, w.section).context.facts_used}
+
+        def from_template(brief, keys=None, budget=1400):
+            run = j2.J2Run()
+            run.budget = budget
+            assert run.set_run_template(yoga, keys)
+            say(run, brief)
+            finish(run)
+            return run
+        r1 = from_template(DESIGN_BRIEF)
+        assert r1.outcome.startswith("Done") and r1.stages == base.stages, (r1.outcome, r1.stages)
+        rec = json.load(open(os.path.join(r1.dir, "templates.json"), encoding="utf-8"))
+        ds = [d for d in rec["decisions"] if d["artifact"] != "design"]
+        acts = [d["action"] for d in ds]
+        assert acts.count("created") == 0 and all(d["from_template"] is True for d in ds), [(d["workflow"], d["action"], d.get("from_template")) for d in ds]
+        by_key = {w.key: w for w in base.workflows}
+        for d in ds:
+            row = by_key[d["template_workflow"]]
+            assert row.stage == d["artifact"] and row.section == d["section"], d
+            if d["action"] == "generic":
+                assert row.section_template_kind == "generic" or not d["facts"], d
+            else:
+                assert d["action"] in ("extended", "reused") and d["adapted_from"] == row.section_template and d["rule"] == "t", d
+                assert d["template"] == row.section_template.rpartition("@")[0], "a new version of the same template, never a new one"
+                spec = json.load(open(os.path.join(r1.dir, d["saved"], "spec.json"), encoding="utf-8"))
+                body = json.dumps({k: spec[k] for k in ("description", "fields", "objects", "rules", "context")}).lower()
+                gone = [f for f in old_facts if f not in d_facts(r1) and len(f) > 12 and f.lower() in body]
+                assert not gone, (d["workflow"], gone)
+        assert acts.count("extended") >= 15, acts
+        rtrec = rec["run_template"]
+        assert rtrec["id"] == yoga and rtrec["of"] == len(base.workflows) == len(rtrec["selected"]) and not rtrec["added"]
+        assert {x["workflow"] for x in rtrec["workflows"]} == {d["workflow"] for d in ds} and all(x["from_template"] for x in rtrec["workflows"])
+        assert all(not p["partial"] and not p["added"] and not p["not_selected"] for p in rtrec["plans"].values()) and set(rtrec["plans"]) == set(base.stages)
+        line = next(m["text"] for m in r1.chat if m["who"] == "system" and m["text"].startswith("Using run template"))
+        assert line == f"Using run template {base.name}: {len(base.workflows)} of {len(base.workflows)} workflows.", line
+        intake = [c for c in calls_file(r1) if c["fn"] == "identity" and "A RUN TEMPLATE IS USED" in c["prompt"]]
+        assert intake and all(s_ in intake[0]["prompt"] for s_ in base.facts_slots), "Identity is told which facts to ask for"
+        plans = [c for c in calls_file(r1) if c["fn"] == "adaptation" and "RUN TEMPLATE, THE BASE PLAN" in c["prompt"]]
+        assert len(plans) >= len(base.stages), len(plans)
+        mine = d_facts(r1) | {c for w in base.workflows for c in w.covers}      # the template's own covers hold slots, not facts: Adaptation reads them
+        leaked = sorted({f for c in calls_file(r1) for f in old_facts if f not in mine and len(f) > 12 and f.lower() in c["prompt"].lower()})
+        assert not leaked, ("no fact of the template's first business reaches a prompt", leaked)
+        assert L.get_run_template(yoga).used_by == [{"run": os.path.basename(r1.dir), "workflows": len(base.workflows), "of": len(base.workflows)}]
+        # the same brief again: the adapted versions are reused, nothing new is stored
+        idx1 = copy_.deepcopy(L.index())
+        r2 = from_template(DESIGN_BRIEF)
+        ds2 = [d for d in tpl_decisions(r2) if d["artifact"] != "design"]
+        assert r2.outcome.startswith("Done") and {d["action"] for d in ds2} <= {"reused", "generic"} and all(d["from_template"] for d in ds2), \
+            [(d["workflow"], d["action"]) for d in ds2]
+        vers = lambda idx: sorted((e["name"], v["version"], v["sha"]) for e in idx["templates"] for v in e["versions"])
+        assert vers(idx1) == vers(L.index()), "run 2 made no new version"
+        # (c) selected workflows: only those run; what a chosen one depends on is added
+        r3 = from_template(DESIGN_BRIEF, ["W-1", "W-2"])
+        assert [(w["name"], w["status"]) for w in r3._all_wfs()] == [("Write Problem", "done"), ("Write Users", "done")], [(w["name"], w["status"]) for w in r3._all_wfs()]
+        assert r3.outcome.startswith("Done: the selected workflows") and r3.stages == ["prd"], (r3.outcome, r3.stages)
+        rec3 = json.load(open(os.path.join(r3.dir, "templates.json"), encoding="utf-8"))["run_template"]
+        assert rec3["selected"] == ["W-1", "W-2"] and rec3["of"] == len(base.workflows) and rec3["plans"]["prd"]["partial"] and \
+            len(rec3["plans"]["prd"]["not_selected"]) == 4, rec3
+        assert any(m["text"].startswith(f"Using run template {base.name}: 2 of {len(base.workflows)} workflows") for m in r3.chat)
+        dep = next(w for w in base.workflows if w.depends_on)
+        pick = j2.J2Run()
+        assert pick.set_run_template(yoga, dep.key) and pick.run_tpl["selected"] == sorted(set(dep.depends_on) | {dep.key}, key=lambda k: int(k[2:])) \
+            and pick.run_tpl["added"] == dep.depends_on, pick.run_tpl["selected"]
+        assert j2.J2Run().set_run_template("no-such-template") is False
+        # (e) the whole of a documents-only template, for a brief that also asks for a site: the site stage is added,
+        # planned by Adaptation, and its workflows are recorded as added, not in template
+        docs_only = next(r["id"] for r in rows if "website" not in r["stages"] and "prd" in r["stages"])
+        dbase = L.get_run_template(docs_only)
+        r4 = j2.J2Run()
+        r4.budget = 1400
+        assert r4.set_run_template(docs_only)
+        say(r4, DESIGN_BRIEF)
+        finish(r4)
+        assert r4.outcome.startswith("Done") and r4.stages == dbase.stages + ["website"], (r4.outcome, r4.stages)
+        rec4 = json.load(open(os.path.join(r4.dir, "templates.json"), encoding="utf-8"))
+        assert rec4["run_template"]["added_stages"] == ["website"], rec4["run_template"].get("added_stages")
+        d_doc = [d for d in rec4["decisions"] if d["artifact"] in dbase.stages]
+        d_web = [d for d in rec4["decisions"] if d["artifact"] == "website"]
+        assert d_doc and all(d["from_template"] is True and d["action"] != "created" for d in d_doc), [(d["workflow"], d["action"], d["from_template"]) for d in d_doc]
+        assert d_web and all(d["from_template"] is False for d in d_web), [(d["workflow"], d["from_template"]) for d in d_web]
+        web_ids = {d["workflow"] for d in d_web}
+        assert all((x.get("note") == "added, not in template") == (x["workflow"] in web_ids) for x in rec4["run_template"]["workflows"])
+        assert any("Added, not in template (the brief asks for" in m["text"] for m in r4.chat if m["who"] == "system")
+        assert "website" not in rec4["run_template"]["plans"] and not any("RUN TEMPLATE, THE BASE PLAN" in c["prompt"] and c.get("stage") == "website" for c in calls_file(r4))
+        page = "skipped (Chrome not found, or --fast without --browser)"
+        if BROWSER and j2.j2_check.find_chrome():
+            page = run_templates_page(lib, yoga, dep)
+    finally:
+        for k, v in keep.items():
+            if v is None:
+                os.environ.pop(k, None)
+            else:
+                os.environ[k] = v
+    assert tree_sha(real_lib) == real_before, "the committed library/ is unchanged by tests"
+    plain_unchanged(RUN_TPL_CHECKPOINT)
+    print(f"run templates: {len(rows)} in the library, valid, every section template opens; a made-up run bundles its finished workflows "
+          f"with slots for its facts; saved runs rebuilt the same: {', '.join(seen) or 'none in this clone'}; a mock run of another "
+          f"business from the yoga template created 0 templates ({acts.count('extended')} adapted, {acts.count('generic')} generic, "
+          f"every workflow from the template), the same brief again reused them all; W-1, W-2 selected ran only those; the whole "
+          f"documents-only template for a brief that also asks for a site added the site stage ({len(d_web)} workflows added, not in template); flag off "
+          f"takes no template and changes no prompt; the page: {page} ok")
+
+
+REUSE_UI_CHECKPOINT = "93c8b318"   # run-templates before the reuse display: a run without a run template shows the same Library tab
+
+
+def reuse_display():
+    """The reuse display (a run started from a run template): the counts by code (reuse_counts, run_template_use: documents and
+    website apart, "extended" shown as adapted, the generator's calls, None without a run template), the "Used by" list of a run
+    template with each collected run's counts; and, with --browser, the run's Library tab: a mock run from a template shows the
+    summary line with the template's name and link, its counts, the generator calls and a Run template column; the saved live run
+    j2-20261111-211339 (when runs/ has it) shows 0 created, 24 adapted, 3 reused for the documents and 1 created, 4 generic for
+    the website, added, not in template; a run without a run template shows the tab exactly as before."""
+    import html as htmllib
+    import shutil
+    import socket
+    import subprocess
+    import threading
+    import j2_server
+    import j2_template_lib as L
+    here = os.path.dirname(os.path.abspath(__file__))
+    tmp = tempfile.mkdtemp(prefix="j2-reuse-")
+    made = os.path.join(tmp, "made")
+    os.makedirs(made)
+    dec = lambda wf, art, action, **k: {"workflow": wf, "atom": wf + ".a1", "artifact": art, "section": "S", "action": action, "template": "T <b>", "version": 1, "kind": "specialised", **k}
+    ds = [dec("W-1", "prd", "extended", from_template=True, template_workflow="W-1", adapted_from="T@1"), dec("W-2", "hld", "reused", from_template=True, template_workflow="W-7"),
+          dec("W-3", "lld", "created", from_template=False), dec("W-4", "website", "generic", from_template=False), dec("W-4", "design", "generic"), dec("W-5", "website", "created", from_template=False)]
+    json.dump({"decisions": ds, "run_template": {"id": "no-such", "name": "A <i>name</i>", "selected": ["W-1", "W-7"], "of": 9, "added_stages": ["website"]}},
+              open(os.path.join(made, "templates.json"), "w", encoding="utf-8"))
+    open(os.path.join(made, "template_calls.jsonl"), "w", encoding="utf-8").write('{"workflow": "W-3"}\n{"workflow": "W-5"}\n\n')
+    use = L.run_template_use(made)
+    assert use == {"id": "no-such", "name": "A <i>name</i>", "selected": 2, "of": 9, "added_stages": ["website"], "in_library": False, "generator_calls": 2,
+                   "counts": {"documents": {"created": 1, "adapted": 1, "reused": 1, "generic": 0, "total": 3, "from_template": 2},
+                              "pages": {"created": 1, "adapted": 0, "reused": 0, "generic": 1, "total": 2, "from_template": 0}}}, use
+    json.dump({"decisions": ds}, open(os.path.join(made, "templates.json"), "w", encoding="utf-8"))
+    assert L.run_template_use(made) is None and L.run_template_use(os.path.join(tmp, "none")) is None, "no run template, nothing to show"
+    assert L.reuse_counts([{k: v for k, v in d.items() if k != "from_template"} for d in ds])["documents"]["from_template"] is None, "not recorded stays not recorded"
+    for row in L.run_template_list():      # the committed run templates: every use listed, with the collected run's counts or "not recorded"
+        view = L.run_template_view(row["id"])
+        assert [u["run"] for u in view["used_by"]] == [u["run"] for u in L.get_run_template(row["id"]).used_by]
+        runs_ = L.index().get("runs") or {}
+        assert all((u["counts"] == L.reuse_counts(runs_[u["run"]]["decisions"])) if u["run"] in runs_ else u["counts"] == "not recorded" for u in view["used_by"]), view["used_by"]
+    live = L.run_template_view("still-point-yoga-prd-hld-and-lld")
+    first = next((u for u in (live or {}).get("used_by") or [] if u["run"] == "j2-20261111-211339"), None)
+    if first:      # the two live runs of 2026-11-11, collected into library/
+        assert {k: first["counts"]["documents"][k] for k in ("created", "adapted", "reused", "generic")} == {"created": 0, "adapted": 24, "reused": 3, "generic": 0}, first
+        assert {k: first["counts"]["pages"][k] for k in ("created", "adapted", "reused", "generic")} == {"created": 1, "adapted": 0, "reused": 0, "generic": 4}, first
+    page = "skipped (Chrome not found, or --fast without --browser)"
+    if not (BROWSER and j2.j2_check.find_chrome()):
+        shutil.rmtree(tmp, ignore_errors=True)
+        print(f"reuse display: counts by code (documents and website apart, extended shown as adapted, generator calls, none without a run template), "
+              f"Used by with each collected run's counts; the page: {page} ok")
+        return
+    chrome = j2.j2_check.find_chrome()
+    keep = {k: os.environ.get(k) for k in ("J2_LIBRARY_DIR", "J2_TEMPLATE_LIBRARY", "J2_RUN_TEMPLATES", "J2_ARTIFACT_SCHEMA")}
+    lib = os.path.join(tmp, "lib")
+    shutil.copytree(os.path.join(here, "library"), lib)
+    os.environ.update(J2_LIBRARY_DIR=lib, J2_TEMPLATE_LIBRARY="1", J2_RUN_TEMPLATES="1")
+    os.environ.pop("J2_ARTIFACT_SCHEMA", None)
+    keep_here, keep_run, keep_runs = j2_server.HERE, j2_server.RUN, j2.RUNS_DIR
+    srv = None
+    try:
+        tid = next(r["id"] for r in L.run_template_list() if r["mock"] is True and "website" in r["stages"] and "prd" in r["stages"])
+        from_tpl = j2.J2Run()
+        from_tpl.budget = 1400
+        assert from_tpl.set_run_template(tid, ["W-1", "W-2"])
+        say(from_tpl, DESIGN_BRIEF)
+        finish(from_tpl)
+        os.environ.pop("J2_RUN_TEMPLATES", None)
+        plain = j2.J2Run()
+        plain.budget = 400
+        say(plain, "Write a PRD for Campus Notes." + CAMPUS)
+        finish(plain)
+        assert tpl_decisions(plain) and L.run_template_use(plain.dir) is None and L.run_template_use(from_tpl.dir)["id"] == tid
+        runs_dir = os.path.join(tmp, "runs")
+        os.makedirs(runs_dir)
+        saved = os.path.join(here, "runs", "j2-20261111-211339")
+        saved = saved if os.path.isfile(os.path.join(saved, "templates.json")) else None
+        for d in [from_tpl.dir, plain.dir] + ([saved] if saved else []):
+            os.symlink(d, os.path.join(runs_dir, os.path.basename(d)))
+        steps = ("(async () => { const wait = ms => new Promise(r => setTimeout(r, ms)), q = s => [...document.querySelectorAll(s)], r = {}; await wait(3000);"
+                 " const pane = document.getElementById('pane-library'), sum = pane.querySelector('[data-rtsum]');"
+                 " r.sum = sum ? sum.textContent : null; r.link = sum && sum.querySelector('[data-rtlink]') ? sum.querySelector('[data-rtlink]').getAttribute('href') : null;"
+                 " r.pills = Object.fromEntries(q('#pane-library [data-rtsum] [data-rtc]').map(x => [x.dataset.rtc, [x.textContent, x.className]]));"
+                 " r.groups = Object.fromEntries(q('#pane-library [data-rtsum] [data-rtgroup]').map(x => [x.dataset.rtgroup, x.textContent]));"
+                 " r.gen = (pane.querySelector('[data-rtgen]') || {}).textContent || null; r.heads = q('#pane-library [data-tpltable] th').map(x => x.textContent);"
+                 " r.cells = q('#pane-library [data-rtcell]').map(x => x.textContent); r.rows = q('#pane-library [data-tplrow]').length;"
+                 " r.html = pane.querySelector('[data-tpltable]') ? pane.querySelector('h3').outerHTML + pane.querySelector('[data-tpltable]').outerHTML : '';"
+                 " r.before = pane.firstElementChild.tagName + '|' + (pane.firstElementChild.nextElementSibling || {}).tagName; r.sw = [document.documentElement.scrollWidth, innerWidth];"
+                 " const pressed = a => q('#pane-library [' + a + '][aria-pressed=true]').map(x => x.getAttribute(a));"
+                 " r.chips = q('#pane-library [data-rtfilter]').map(x => x.textContent); r.scopes = q('#pane-library [data-rtscope]').map(x => x.textContent);"
+                 " r.pressed = [pressed('data-rtfilter'), pressed('data-rtscope')]; r.note = (pane.querySelector('[data-rtnote]') || {}).textContent || null;"
+                 " r.none = q('#pane-library [data-tplnone]').map(x => x.textContent); r.acts = q('#pane-library [data-tplrow] td:nth-child(3)').map(x => x.textContent);"
+                 " const press = sel => { const b = pane.querySelector(sel); if (!b) return null; b.focus(); b.click();"
+                 "   return {rows: q('#pane-library [data-tplrow]').length, none: q('#pane-library [data-tplnone]').length, search: location.search, pressed: [pressed('data-rtfilter'), pressed('data-rtscope')],"
+                 "           focus: document.activeElement === pane.querySelector(sel)}; };"
+                 " r.click = [press('[data-rtscope=\"documents\"]'), press('[data-rtfilter=\"reused\"]'), press('[data-rtfilter=\"all\"]'), press('[data-rtscope=\"all\"]')];"
+                 " document.body.setAttribute('data-r', JSON.stringify(r)); })();")
+        pages = {"now": open(os.path.join(here, "j2_ui.html"), encoding="utf-8").read()}
+        old = subprocess.run(["git", "show", f"{REUSE_UI_CHECKPOINT}:prototypes/j2/j2_ui.html"], cwd=here, capture_output=True, text=True)
+        if old.returncode == 0:
+            pages["before"] = old.stdout
+        port = socket.socket(); port.bind(("127.0.0.1", 0)); p_ = port.getsockname()[1]; port.close()
+        web = os.path.join(tmp, "web")
+        os.makedirs(web)
+        os.symlink(os.path.join(here, "vendor"), os.path.join(web, "vendor"))
+        j2_server.HERE, j2_server.RUN, j2.RUNS_DIR = web, j2.J2Run(), runs_dir
+        srv = j2_server.http.server.ThreadingHTTPServer(("127.0.0.1", p_), j2_server.Handler)
+        threading.Thread(target=srv.serve_forever, daemon=True).start()
+
+        def load(which, run_dir, more=""):
+            open(os.path.join(web, "j2_ui.html"), "w", encoding="utf-8").write(pages[which].replace("</body>", f"<script>setTimeout(() => {{ {steps} }}, 500)</script></body>"))
+            dom = chrome_dom([chrome, "--headless=new", "--disable-gpu", "--window-size=1440,900", "--virtual-time-budget=30000", "--dump-dom",
+                              f"http://127.0.0.1:{p_}/?run={os.path.basename(run_dir)}&view=detail&tab=library{more}"], capture_output=True, text=True, timeout=120).stdout
+            hit = re.search(r'data-r="([^"]*)"', dom)
+            assert hit, ("the page did not finish its steps", which, run_dir, dom[-300:])
+            return json.loads(htmllib.unescape(hit.group(1)))
+
+        def shown(run_dir):
+            u, r = L.run_template_use(run_dir), load("now", run_dir)
+            assert r["sum"] and u["name"] in r["sum"] and f"{u['selected']} of {u['of']} workflows" in r["sum"], r["sum"]
+            assert r["link"] == f"/library?view=templates&rt={u['id']}" and r["gen"] == f"Generator calls: {u['generator_calls']}", (r["link"], r["gen"])
+            for g, c in u["counts"].items():
+                assert all(r["pills"][f"{g}-{k}"][0] == f"{c[k]} {k}" for k in ("created", "adapted", "reused", "generic")), (g, r["pills"])
+                assert (f"{c['from_template']} of {c['total']} from the template" if c["from_template"] else "added, not in template") in r["groups"][g], r["groups"]
+            mark = r["pills"]["documents-created"][1].split()
+            assert ("checks" in mark) == (u["counts"]["documents"]["created"] == 0) and ("waiting_on_you" in mark) == (u["counts"]["documents"]["created"] > 0), mark
+            assert all(set(v[1].split()) == {"mappill"} for k, v in r["pills"].items() if k != "documents-created"), "only the documents' created count stands out"
+            assert r["heads"] == ["Workflow", "Artifact · section", "Action", "Template", "Run template", "From", "Score", "Reason"] and len(r["cells"]) == r["rows"] > 0, r["heads"]
+            assert r["sw"][0] <= r["sw"][1], ("no sideways scroll", r["sw"])
+            return u, r
+        u1, r1 = shown(from_tpl.dir)
+        assert any(c.startswith("W-1") for c in r1["cells"]) and any("adapted from" in c for c in r1["cells"]), r1["cells"]
+
+        def filters(run_dir, first):
+            """The chips and the scope toggle of a run from a run template: every chip's count is the rows it shows, the choice comes
+            from the URL and goes back into it, the pressed ones say so, an empty choice says "none"."""
+            rows_ = L.reuse_rows(L.run_templates(run_dir))
+            want = lambda f, sc: [d for d in rows_ if (sc == "all" or d["group"] == {"documents": "documents", "website": "pages"}[sc]) and (f == "all" or d["kind_shown"] == f)]
+            assert first["chips"] == [f"{t} {len(want(k, 'all'))}" for k, t in (("all", "All"), ("created", "Created"), ("adapted", "Adapted"), ("reused", "Reused"), ("generic", "Generic"))], first["chips"]
+            assert first["scopes"] == ["All", "Documents", "Website"] and first["pressed"] == [["all"], ["all"]] and first["rows"] == len(rows_) and not first["none"], (first["scopes"], first["pressed"])
+            assert first["note"] == ("Adapted = the run template's section template, given this run's facts as a new version. "
+                                     "Created = no matching section in the run template."), first["note"]
+            c = first["click"]      # Documents, then Reused, then All, then the scope All: the rows, the URL and the pressed buttons follow each click
+            assert [x["rows"] for x in c] == [len(want("all", "documents")), len(want("reused", "documents")), len(want("all", "documents")), len(rows_)], c
+            assert [x["pressed"] for x in c] == [[["all"], ["documents"]], [["reused"], ["documents"]], [["all"], ["documents"]], [["all"], ["all"]]] and all(x["focus"] for x in c), c
+            assert "scope=documents" in c[0]["search"] and "filter=" not in c[0]["search"] and "filter=reused" in c[1]["search"] and "scope=documents" in c[1]["search"], c
+            assert "filter=" not in c[3]["search"] and "scope=" not in c[3]["search"] and "tab=library" in c[3]["search"], c[3]["search"]
+            out = {}
+            for f, sc in (("adapted", "documents"), ("reused", "documents"), ("created", "documents"), ("generic", "website"), ("all", "website")):
+                r = load("now", run_dir, f"&filter={f}&scope={sc}")
+                n = len(want(f, sc))
+                assert r["rows"] == n and r["pressed"] == [[f], [sc]] and r["none"] == ([] if n else ["none"]), (f, sc, r["rows"], n, r["pressed"], r["none"])
+                assert r["chips"][0] == f"All {len(want('all', sc))}" and r["sw"][0] <= r["sw"][1], (r["chips"], r["sw"])
+                assert f == "all" or set(r["acts"]) <= {{"adapted": "extended"}.get(f, f)}, (f, r["acts"])
+                out[(f, sc)] = n
+            bad = load("now", run_dir, "&filter=%3Cb%3E&scope=nothing")      # a value the page does not know: everything, nothing pressed wrongly
+            assert bad["rows"] == len(rows_) and bad["pressed"] == [["all"], ["all"]], bad["pressed"]
+            return out, len(rows_)
+        filters(from_tpl.dir, r1)
+        live_note = "j2-20261111-211339 not in this clone"
+        if saved:
+            u2, r2 = shown(saved)
+            assert "Still Point Yoga: PRD, HLD and LLD" in r2["sum"] and "17 of 17 workflows" in r2["sum"] and "added, not in template: website" in r2["sum"], r2["sum"]
+            assert [r2["pills"][f"documents-{k}"][0] for k in ("created", "adapted", "reused")] == ["0 created", "24 adapted", "3 reused"], r2["pills"]
+            assert [r2["pills"][f"pages-{k}"][0] for k in ("created", "generic")] == ["1 created", "4 generic"] and "added, not in template" in r2["groups"]["pages"], r2["pills"]
+            assert "27 of 27 from the template" in r2["groups"]["documents"] and r2["gen"] == "Generator calls: 8", (r2["groups"], r2["gen"])
+            assert r2["cells"].count("added, not in template") == 5 and "" in r2["cells"], "the five website rows; the style guide row says nothing"
+            f2, all2 = filters(saved, r2)
+            assert (f2[("adapted", "documents")], f2[("reused", "documents")], f2[("created", "documents")]) == (24, 3, 0) and all2 == r2["rows"] == 33, (f2, all2)
+            live_note = ("j2-20261111-211339: 0 created, 24 adapted, 3 reused for the documents, 1 created and 4 generic for the website (added, not in template), 8 generator calls; "
+                         f"its filters: Adapted + Documents 24 rows, Reused + Documents 3, Created + Documents none, All {all2} rows")
+        p1 = load("now", plain.dir)
+        assert p1["sum"] is None and p1["gen"] is None and not p1["cells"] and not p1["pills"] and p1["rows"] > 0, p1
+        assert not p1["chips"] and not p1["scopes"] and p1["note"] is None and not p1["none"], "a run without a run template has no filters"
+        p2 = load("now", plain.dir, "&filter=created&scope=website")
+        assert p2["rows"] == p1["rows"] and p2["html"] == p1["html"] and not p2["chips"], "and a filter in its URL changes nothing"
+        assert p1["heads"] == ["Workflow", "Artifact · section", "Action", "Template", "From", "Score", "Reason"] and p1["before"] == "H3|TABLE", (p1["heads"], p1["before"])
+        same = "checkpoint not in this clone"
+        if "before" in pages:
+            p0 = load("before", plain.dir)
+            assert p0["html"] and p0["html"] == p1["html"], "a run without a run template: the heading and the table are the same markup as before"
+            same = f"its heading and table are identical to checkpoint {REUSE_UI_CHECKPOINT}"
+        page = (f"a mock run from a run template shows the summary line (name, link, counts, generator calls), the filter chips with their counts, the scope toggle "
+                f"(the URL keeps the choice, the pressed ones are marked, an empty choice says none) and a Run template column; {live_note}; "
+                f"a run without a run template shows no summary and no column, {same}")
+    finally:
+        if srv:
+            srv.shutdown()
+        j2_server.HERE, j2_server.RUN, j2.RUNS_DIR = keep_here, keep_run, keep_runs
+        for k, v in keep.items():
+            if v is None:
+                os.environ.pop(k, None)
+            else:
+                os.environ[k] = v
+        shutil.rmtree(tmp, ignore_errors=True)
+    print(f"reuse display: counts by code (documents and website apart, extended shown as adapted, generator calls, none without a run template), "
+          f"Used by with each collected run's counts; the page: {page} ok")
+
+
+AUTO_REUSE_BASE = "5439b91e"   # agent-tools just before main's auto-reuse merged in (main's own base was 52cd2f42):
+# with J2_AUTO_REUSE unset a plain run is the same, prompt for prompt
+PILATES_DOCS = (YOGA_BRIEF.replace("Still Point Yoga", "Flow Pilates").replace("Strength Yoga", "Strength Reformer").replace("yoga", "pilates")
+                .replace("stillpoint", "flowpilates").replace("and then build the website for", "for")
+                .replace(" The documents and the website must agree with each other.", ""))
+LAW_PRD = "Write a PRD for Hale Legal, a law firm." + CAMPUS
+
+
+def auto_reuse():
+    """Auto-reuse (J2_AUTO_REUSE=1; implies J2_TEMPLATE_LIBRARY=1 and J2_RUN_TEMPLATES=1), mock runs into a copy of the library.
+
+    (a) by code: the match formula (0.4 x stages + 0.3 x business + 0.3 x covers), which templates can be picked (the first
+    stage must be the run's first; a live run takes no mock-made template), and the nearest template by field names: when a
+    boutique's and a studio's page section tie, a studio's run gets the studio's (the same business type, then the same kind of
+    business, then a section of the run template the run follows, then the newest version); a template adapted for a DIFFERENT
+    business is a new family named for the run's business (version 1, adapted_from the original, action "extended"), and for
+    the SAME business a new version of its own family;
+    (b) a pilates brief with no template chosen picks the yoga run template (match 0.6 or more), says so, records the pick and
+    every score, and creates no template: every workflow comes from the template; (c) a template with a stage the brief did not
+    name builds that stage too; (d) a law-firm brief with only a PRD finds no similar run template, says so with the best
+    score, and its PRD sections are adapted from the nearest templates, not created: no fact and no name of the earlier
+    businesses reaches the new versions or an agent's prompt; (e) with no template for a section in the library, one is
+    created and the reason says so; (f) flag off: no pick, no nearest template, nothing recorded (and plain_unchanged);
+    (g) the Library tab says "Auto-picked run template <name> (match 0.xx)" or "Built from scratch", and each adapted row
+    names its source (--browser)."""
+    import html as htmllib
+    import shutil
+    import socket
+    import threading
+    import j2_server
+    import j2_template_lib as L
+    here = os.path.dirname(os.path.abspath(__file__))
+    real_lib = os.path.join(here, "library")
+    real_before = tree_sha(real_lib)
+    flags = ("J2_LIBRARY_DIR", "J2_TEMPLATE_LIBRARY", "J2_RUN_TEMPLATES", "J2_ARTIFACT_SCHEMA", "J2_AUTO_REUSE")
+    keep = {k: os.environ.get(k) for k in flags}
+    tmp = tempfile.mkdtemp(prefix="j2-auto-")
+    lib = os.path.join(tmp, "lib")
+    shutil.copytree(real_lib, lib)
+    for k in flags[1:]:
+        os.environ.pop(k, None)
+    os.environ["J2_LIBRARY_DIR"] = lib
+    keep_min = L.AUTO_MIN
+    keep_here, keep_run, keep_runs = j2_server.HERE, j2_server.RUN, j2.RUNS_DIR
+    srv = None
+    page = "skipped (Chrome not found, or --fast without --browser)"
+
+    def run_of(brief, budget=1400):
+        run = j2.J2Run()
+        run.budget = budget
+        say(run, brief)
+        finish(run)
+        return run, json.load(open(os.path.join(run.dir, "templates.json"), encoding="utf-8"))
+    try:
+        # (a) the formula, the templates that can be picked, the nearest template
+        assert not L.auto_reuse() and not L.enabled() and not j2.run_templates_on() and not j2.auto_reuse_on()
+        os.environ["J2_AUTO_REUSE"] = "1"
+        assert L.auto_reuse() and L.enabled() and j2.run_templates_on() and j2.auto_reuse_on(), "the flag implies the other two"
+        yoga = L.get_run_template("still-point-yoga-prd-hld-and-lld")
+        cover = next(c for w in yoga.workflows if w.stage == "prd" for c in w.covers)
+        m = L.run_template_match(yoga, ["prd", "hld", "lld"], "a small yoga studio", [L.SLOT_RE.sub("Somewhere", cover)])
+        assert m == {"score": 1.0, "stages": 1.0, "business": 1.0, "covers": 1.0}, m
+        m = L.run_template_match(yoga, ["prd"], "a law firm", ["Nothing alike whatsoever"])
+        assert m == {"score": 0.13, "stages": 0.33, "business": 0.0, "covers": 0.0}, m
+        m = L.run_template_match(yoga, ["prd", "hld", "lld", "website"], "a pilates studio", [])
+        assert (m["stages"], m["business"], m["covers"], m["score"]) == (0.75, 0.5, 0.0, 0.45), m
+        rows = L.match_run_templates(["website"], "a boutique", ["Visitors can browse products by category"])
+        assert [r["id"] for r in rows] == [r["id"] for r in sorted(rows, key=lambda r: (-r["score"], r["name"]))] and len(rows) == len(L.run_template_list())
+        assert all(r["eligible"] == (r["template_stages"][0] == "website") and ("why_not" in r) == (not r["eligible"]) for r in rows), rows
+        live = L.match_run_templates(["prd", "hld", "lld"], "a yoga studio", [], live=True)
+        assert all(r["eligible"] == (r["mock"] is False) for r in live) and any("mock run made it" in r.get("why_not", "") for r in live), live
+        need = L.make_need("prd", "Problem", "prd", ["Hale Legal", "A fact of its own"], "Hale Legal")
+        near = L.nearest(need, L.generic("prd", "Problem"))
+        assert near and 0 < near["similarity"] <= 1 and L.get(f"{near['name']}@{near['version']}", "prd", "Problem") is not None, near
+        assert L.nearest(L.make_need("prd", "No such section", "prd", ["x"], "x"), L.generic("prd", "Problem")) is None
+        # a tie on similarity (page sections share one section name): the same business type, then the same kind of business,
+        # then a section template of the run template the run follows, then the newest version, then the name
+        gen_page = L.generic("website", "Section")
+        same = [f.name for f in gen_page.fields]
+        tied = lambda name, btype, version=1, fields=None, **kw: {"artifact": "website", "section": "Section", "name": name, "slug": L.slug(name), "kind": "specialised",
+                                                                  "versions": [{"version": version, "fields": fields or same, "business_type": btype, **kw}]}
+        studio_need = L.make_need("website", "Section", "pilates studio", ["Flow Pilates"], "Flow Pilates")
+        real_index = L.index
+        try:
+            pool = [tied("Aari Shelf", "boutique", 3), tied("Calm Classes", "website", 1, business={"name": "Calm", "type": "yoga studio"})]
+            L.index = lambda: {"templates": pool}
+            old_rule = sorted(L.nearest_ranked(studio_need, gen_page), key=lambda c: (-c["similarity"], -int(c["version"]), c["name"]))[0]
+            got = L.nearest(studio_need, gen_page)
+            assert old_rule["name"] == "Aari Shelf" and {c["similarity"] for c in L.nearest_ranked(studio_need, gen_page)} == {1.0}, "a boutique and a studio template tie"
+            assert (got["name"], got["business_type"], got["same_business"]) == ("Calm Classes", "yoga studio", 1), ("the studio one wins", got)
+            pool.append(tied("Zed Corner", "pilates studio", 1))
+            assert L.nearest(studio_need, gen_page)["name"] == "Zed Corner" and L.nearest(studio_need, gen_page)["same_business"] == 2, "the same business type first"
+            pool[:] = [tied("Bend Hall", "dance studio", 4), tied("Calm Classes", "yoga studio", 1)]
+            assert L.nearest(studio_need, gen_page)["name"] == "Bend Hall" and L.nearest(studio_need, gen_page, own={"Calm Classes"})["name"] == "Calm Classes", "the run template's own section, then the newest version"
+            pool[:] = [tied("Aari Shelf", "boutique", 3, fields=same), tied("Calm Classes", "yoga studio", 1, fields=same[:-1])]
+            assert L.nearest(studio_need, gen_page)["name"] == "Aari Shelf", "a nearer template still comes before any tie-break"
+            assert [L._same_business(a, b) for a, b in (("Yoga Studio", "yoga studio"), ("pilates studio", "yoga studio"), ("florist", "boutique"), ("business", "business"), ("prd", "prd"), ("not recorded", "studio"))] == [2, 1, 0, 0, 0, 0]
+        finally:
+            L.index = real_index
+        dance = L.make_need("website", "Section", "dance studio", ["Maple Hall"], "Maple Hall")
+        tops = [c for c in L.nearest_ranked(dance, gen_page) if c["similarity"] == L.nearest(dance, gen_page)["similarity"]]
+        assert {"boutique"} & {c["business_type"] for c in tops} and L.nearest(dance, gen_page)["business_type"].endswith("studio"), "the committed library: a studio's page section is not adapted from a boutique's"
+        _, routed = L.route(dance, {"run": "j2-test", "workflow": "W-1", "atom": "W-1.a1"}, closest=True)
+        assert routed["action"] == "extended" and routed["rule"] == "s" and routed["nearest"]["business_type"].endswith("studio") and routed["nearest"]["same_business"] in (1, 2), routed
+        # the name an adapted template is stored under. A DIFFERENT business: a new family named for the run's business, version 1,
+        # adapted_from the original, the action still "extended"; the original family gets no new version
+        thread = L.get("Thread Filter@1", "website", "Section")
+        assert L.family_business(thread) == "Thread" and L.family_name(thread, {"site": "Flow Pilates", "section": "Section"}) == "Flow Pilates Filter"
+        assert L.family_name(thread, {"site": "Thread", "section": "Section"}) == "Thread Filter" and L.family_name(thread, {"site": "not recorded", "section": "Section"}) == "Thread Filter"
+        src = routed["adapted_from"]
+        src_name, src_tail = src.rpartition("@")[0], src.rpartition("@")[0][len(L.family_business(L.get(src, "website", "Section"))):].strip()
+        versions = lambda name: sorted(v["version"] for e in L.index()["templates"] if e["name"] == name for v in e["versions"])
+        before_src = versions(src_name)
+        assert routed["template"] == f"Maple Hall {src_tail}" != src_name and routed["version"] == 1 and routed["new_family"] is True, (routed["template"], src)
+        assert versions(routed["template"]) == [1] and versions(src_name) == before_src, "a new family; the original is left as it was"
+        made_row = next(v for e in L.index()["templates"] if e["name"] == routed["template"] for v in e["versions"])
+        made_spec = L.get(f"{routed['template']}@1", "website", "Section")
+        assert made_row["adapted_from"] == src and made_spec.description.endswith(L.OTHER_FAMILY) and src_name not in made_spec.description and made_spec.context.facts_used == ["Maple Hall"], made_spec.description
+        # the SAME business again, with other facts: a new version of its own family (on a tie its own family comes first)
+        dance2 = L.make_need("website", "Section", "dance studio", ["Maple Hall", "Monday 6:00 pm Salsa 700"], "Maple Hall")
+        assert L.nearest(dance2, gen_page)["name"] == routed["template"] and L.nearest(dance2, gen_page)["same_business"] == 3
+        _, again = L.route(dance2, {"run": "j2-test-2", "workflow": "W-1", "atom": "W-1.a1"}, closest=True)
+        if again["rule"] == "s":      # adapted by code from its own family
+            assert (again["action"], again["template"], again["version"], again["adapted_from"]) == ("extended", routed["template"], 2, f"{routed['template']}@1") and "new_family" not in again, again
+        else:                          # the generator extended its own family (it covers half the need or more)
+            assert (again["action"], again["template"], again["version"]) == ("extended", routed["template"], 2), again
+        assert versions(routed["template"]) == [1, 2] and versions(src_name) == before_src
+        _, plain = L.route(L.make_need("website", "Section", "dance studio", ["Birch Hall"], "Birch Hall"), {"run": "j2-test-3", "workflow": "W-1", "atom": "W-1.a1"}, closest=False)
+        assert "adapted_from" not in plain and "nearest" not in plain, "without the flag the router neither adapts the nearest nor renames"
+        # the committed library after move_versions: no family holds a version made for another business than the one it is named
+        # for; a moved version says where it came from, and its old name and number still open it; a number is never used twice
+        for e in L.index()["templates"]:
+            first = (min(e["versions"], key=lambda v: v["version"]).get("business") or {}).get("name")
+            assert all((v.get("business") or {}).get("name") in (None, first) or L._named_for(e["name"], v["business"]["name"]) for v in e["versions"]), e["name"]
+        moved = [(e, v) for e in L.index()["templates"] for v in e["versions"] if v.get("renamed_from")]
+        assert len(moved) >= 67 and all(L._named_for(e["name"], v["business"]["name"]) for e, v in moved), len(moved)
+        for e, v in moved:
+            was = L.get(v["renamed_from"], e["artifact"], e["section"])
+            assert was is not None and (was.name, was.version, was.sha) == (e["name"], v["version"], v["sha"]), (v["renamed_from"], e["name"])
+            assert not v.get("adapted_from") or L.get(v["adapted_from"], e["artifact"], e["section"]) is not None, v.get("adapted_from")
+        for r in L.run_template_list():
+            assert all(L.section_template_ref(w)["in_library"] for w in L.get_run_template(r["id"]).workflows), r["id"]
+        assert L.moved_to("prd", "problem", "still-point-yoga-problem", 3) == ("iron-grove-fitness-problem", 1) and L.moved_to("prd", "problem", "still-point-yoga-problem", 2) is None
+        spy = L.get("Still Point Yoga Problem@2", "prd", "Problem")
+        again_, n_, made_ = L.store(L.SpecialisedTemplate.model_validate({**spy.model_dump(exclude={"used_by", "version", "sha"}), "description": "a later version", "used_by": []}))
+        assert made_ and n_ == 7 and L.get("Still Point Yoga Problem@3", "prd", "Problem").name == "Iron Grove Fitness Problem", ("the numbers 3 to 6 moved out and are not used again", n_)
+        old_facts = {f for e in L.index()["templates"] for v in e["versions"] for f in v.get("facts") or []}
+        old_names = {e["name"] for e in L.index()["templates"] if e["kind"] == "specialised"}
+        # (b) a pilates brief, no template chosen: the yoga run template is picked
+        r1, rec1 = run_of(PILATES_DOCS)
+        a1, rt1 = rec1["auto_reuse"], rec1["run_template"]
+        assert r1.outcome.startswith("Done") and r1.stages == ["prd", "hld", "lld"], (r1.outcome, r1.stages)
+        assert a1["picked"] == rt1["id"] == yoga.id and "Yoga" in rt1["name"] and rt1["auto"] is True and rt1["match"] == a1["match"] >= a1["threshold"] == 0.6, (a1["picked"], a1["match"])
+        assert a1["weights"] == {"stages": 0.4, "business": 0.3, "covers": 0.3} and a1["asked_stages"] == ["prd", "hld", "lld"]
+        assert {x["id"] for x in a1["scores"]} == {r["id"] for r in L.run_template_list()} and a1["scores"][0]["id"] == yoga.id, [x["id"] for x in a1["scores"]]
+        assert all(abs(x["score"] - round(0.4 * x["stages"] + 0.3 * x["business"] + 0.3 * x["covers"], 2)) <= 0.011 for x in a1["scores"]), a1["scores"]
+        line = f"Using similar run template {yoga.name} (match {a1['match']:.2f})."
+        assert [m_["text"] for m_ in r1.chat if m_["text"].startswith("Using similar run template")] == [line], line
+        assert not any(m_["text"].startswith("Using run template") for m_ in r1.chat), "the pick comes after the charter, said once"
+        ds1 = [d for d in rec1["decisions"] if d["artifact"] != "design"]
+        assert len(ds1) == len(yoga.workflows) and all(d["from_template"] is True and d["action"] in ("extended", "reused") for d in ds1), [(d["workflow"], d["action"]) for d in ds1]
+        assert all(d["template"].startswith("Flow Pilates ") and d["template"] not in old_names and d["adapted_from"].rpartition("@")[0] in old_names for d in ds1), \
+            [(d["template"], d.get("adapted_from")) for d in ds1 if not d["template"].startswith("Flow Pilates ")]
+        assert L.get_run_template(yoga.id).used_by[-1] == {"run": os.path.basename(r1.dir), "workflows": len(yoga.workflows), "of": len(yoga.workflows)}
+        use1 = L.run_template_use(r1.dir)
+        assert use1["auto"] is True and use1["match"] == a1["match"] and use1["counts"]["documents"]["created"] == 0 and use1["counts"]["documents"]["from_template"] == len(ds1), use1
+        assert not any("yoga" in c["prompt"].lower() for c in calls_file(r1)), "the template's first business reaches no prompt"
+        # (c) a template stage the brief did not name is built too (as if the Requester had chosen the template whole)
+        L.AUTO_MIN = 0.5
+        r2, rec2 = run_of(PILATES_DOCS.replace("Create the design documents (PRD, HLD and LLD) for", "Write the PRD and the HLD for"))
+        L.AUTO_MIN = keep_min
+        assert rec2["auto_reuse"]["asked_stages"] == ["prd", "hld"] and 0.5 <= rec2["auto_reuse"]["match"] < 0.6 and rec2["auto_reuse"]["picked"] == yoga.id, rec2["auto_reuse"]["match"]
+        assert r2.outcome.startswith("Done") and r2.stages == ["prd", "hld", "lld"] and {d["artifact"] for d in rec2["decisions"]} == {"prd", "hld", "lld"}, (r2.outcome, r2.stages)
+        assert not rec2["run_template"].get("added_stages")
+        # (d) a law firm, a PRD only: no similar run template; its sections are adapted from the nearest templates
+        before3 = {e["name"] for e in L.index()["templates"]}      # with the families the runs above made
+        r3, rec3 = run_of(LAW_PRD, 400)
+        a3 = rec3["auto_reuse"]
+        assert r3.outcome.startswith("Done") and "run_template" not in rec3 and a3["picked"] is None and a3["match"] is None and a3["scores"][0]["score"] < 0.6, (r3.outcome, a3)
+        best = a3["scores"][0]
+        assert [m_["text"] for m_ in r3.chat if "similar run template" in m_["text"]] == [f"No similar run template (best {best['name']} {best['score']:.2f})."], best
+        ds3 = rec3["decisions"]
+        assert len(ds3) == 6 and {d["artifact"] for d in ds3} == {"prd"} and not any("from_template" in d for d in ds3), [(d["artifact"], d["action"]) for d in ds3]
+        for d in ds3:
+            assert d["action"] == "extended" and d["rule"] == "s" and d["adapted_from"] == f"{d['nearest']['name']}@{d['nearest']['version']}", d
+            assert d["adapted_from"].rpartition("@")[0] in before3 and d["template"].startswith("Hale Legal ") and d["template"] not in before3 and d["version"] == 1 and d["new_family"], d
+            assert d["reason"].startswith(f"adapted from {d['adapted_from']}: the nearest {d['section']} template by fields"), d["reason"]
+            spec = json.load(open(os.path.join(r3.dir, d["saved"], "spec.json"), encoding="utf-8"))
+            body = json.dumps({k: spec[k] for k in ("description", "fields", "objects", "rules", "context")}).lower()
+            gone = [f for f in old_facts if f not in d_facts(r3) and len(f) > 12 and f.lower() in body]
+            assert not gone and spec["made_by"]["agent"] == "code (adapted from the nearest template)", (d["workflow"], gone)
+        assert not os.path.isfile(os.path.join(r3.dir, "template_calls.jsonl")), "adapting is code: the generator is not called"
+        said = [m_["text"] for m_ in r3.chat if " template: " in m_["text"]]
+        assert len(said) == 6 and all("; adapted from " in t for t in said) and all(m_.get("humans_only") for m_ in r3.chat if " template: " in m_["text"]), said
+        names3 = {d["template"] for d in ds3} | {"Still Point Yoga", "Iron Grove", "Rhythm Room"}
+        leaked = sorted({n for c in calls_file(r3) for n in names3 if n.lower() in (c["system"] + c["prompt"]).lower()})
+        assert not leaked, ("an adapted template's name reaches no agent", leaked)
+        use3 = L.run_template_use(r3.dir)
+        assert use3["scratch"] is True and use3["best"]["name"] == best["name"] and use3["counts"]["documents"] == {"created": 0, "adapted": 6, "reused": 0, "generic": 0, "total": 6, "from_template": None}, use3
+        r3b, rec3b = run_of(LAW_PRD, 400)      # the same brief again: the adapted versions are there
+        assert all(d["action"] == "reused" for d in rec3b["decisions"]), [(d["action"], d["rule"]) for d in rec3b["decisions"]]
+        # (e) no template for the section: one is created, and the reason says why
+        bare = os.path.join(tmp, "bare")
+        os.makedirs(bare)
+        os.environ["J2_LIBRARY_DIR"] = bare
+        r4, rec4 = run_of(LAW_PRD, 400)
+        assert rec4["auto_reuse"]["scores"] == [] and rec4["auto_reuse"]["picked"] is None and any(m_["text"] == "No similar run template (the library has none)." for m_ in r4.chat)
+        made = [d for d in rec4["decisions"] if d["action"] == "created"]
+        assert made and all(d["reason"].startswith(f"no template exists for prd {d['section']} in the library, so a new one is made; ") for d in made), [d["reason"] for d in rec4["decisions"]]
+        assert all(d["action"] in ("created", "generic") for d in rec4["decisions"]), [(d["action"], d["reason"]) for d in rec4["decisions"]]
+        os.environ["J2_LIBRARY_DIR"] = lib
+        # (f) flag off: no pick, no nearest template, nothing recorded
+        os.environ.pop("J2_AUTO_REUSE", None)
+        os.environ["J2_TEMPLATE_LIBRARY"] = "1"
+        lib2 = os.path.join(tmp, "lib2")
+        shutil.copytree(real_lib, lib2)
+        os.environ["J2_LIBRARY_DIR"] = lib2
+        r5, rec5 = run_of(LAW_PRD.replace("Hale Legal", "Orchard Legal"), 400)
+        assert set(rec5) == {"schema", "library", "decisions"} and r5.auto_pick is None and r5.run_tpl is None, sorted(rec5)
+        assert not any(d.get("rule") == "s" or "nearest" in d or "adapted_from" in d for d in rec5["decisions"]) and any(d["action"] == "created" for d in rec5["decisions"]), [(d["action"], d["rule"]) for d in rec5["decisions"]]
+        assert not any("run template" in m_["text"].lower() or m_.get("humans_only") for m_ in r5.chat) and L.run_template_use(r5.dir) is None
+        os.environ["J2_LIBRARY_DIR"] = lib
+        os.environ.pop("J2_TEMPLATE_LIBRARY", None)
+        # (g) the Library tab
+        if BROWSER and j2.j2_check.find_chrome():
+            chrome = j2.j2_check.find_chrome()
+            os.environ["J2_AUTO_REUSE"] = "1"
+            runs_dir = os.path.join(tmp, "runs")
+            os.makedirs(runs_dir)
+            for r in (r1, r3):
+                os.symlink(r.dir, os.path.join(runs_dir, os.path.basename(r.dir)))
+            steps = ("(async () => { const wait = ms => new Promise(r => setTimeout(r, ms)), q = s => [...document.querySelectorAll(s)], r = {}; await wait(3000);"
+                     " const pane = document.getElementById('pane-library'), sum = pane.querySelector('[data-rtsum]');"
+                     " r.sum = sum ? sum.firstElementChild.textContent : null; r.auto = (pane.querySelector('[data-rtauto]') || {dataset: {}}).dataset.rtauto || null;"
+                     " r.link = sum && sum.querySelector('[data-rtlink]') ? sum.querySelector('[data-rtlink]').getAttribute('href') : null;"
+                     " r.pills = Object.fromEntries(q('#pane-library [data-rtsum] [data-rtc]').map(x => [x.dataset.rtc, x.textContent]));"
+                     " r.heads = q('#pane-library [data-tpltable] th').map(x => x.textContent); r.cells = q('#pane-library [data-rtcell]').map(x => x.textContent);"
+                     " r.rows = q('#pane-library [data-tplrow]').length; r.sw = [document.documentElement.scrollWidth, innerWidth];"
+                     " document.body.setAttribute('data-r', JSON.stringify(r)); })();")
+            port = socket.socket(); port.bind(("127.0.0.1", 0)); p_ = port.getsockname()[1]; port.close()
+            web = os.path.join(tmp, "web")
+            os.makedirs(web)
+            os.symlink(os.path.join(here, "vendor"), os.path.join(web, "vendor"))
+            ui = open(os.path.join(here, "j2_ui.html"), encoding="utf-8").read()
+            open(os.path.join(web, "j2_ui.html"), "w", encoding="utf-8").write(ui.replace("</body>", f"<script>setTimeout(() => {{ {steps} }}, 500)</script></body>"))
+            j2_server.HERE, j2_server.RUN, j2.RUNS_DIR = web, j2.J2Run(), runs_dir
+            srv = j2_server.http.server.ThreadingHTTPServer(("127.0.0.1", p_), j2_server.Handler)
+            threading.Thread(target=srv.serve_forever, daemon=True).start()
+
+            def load(run):
+                dom = chrome_dom([chrome, "--headless=new", "--disable-gpu", "--window-size=1440,900", "--virtual-time-budget=30000", "--dump-dom",
+                                  f"http://127.0.0.1:{p_}/?run={os.path.basename(run.dir)}&view=detail&tab=library"], capture_output=True, text=True, timeout=120).stdout
+                hit = re.search(r'data-r="([^"]*)"', dom)
+                assert hit, ("the page did not finish its steps", run.dir, dom[-300:])
+                return json.loads(htmllib.unescape(hit.group(1)))
+            g1 = load(r1)
+            assert g1["auto"] == "picked" and g1["sum"] == f"Auto-picked run template {yoga.name} (match {a1['match']:.2f}): {len(yoga.workflows)} of {len(yoga.workflows)} workflows", g1["sum"]
+            assert g1["link"] == f"/library?view=templates&rt={yoga.id}" and g1["pills"]["documents-created"] == "0 created" and g1["rows"] == len(ds1) == len(g1["cells"]), g1
+            assert all(re.match(r"W-\d+", c) for c in g1["cells"]) and sum("adapted from" in c for c in g1["cells"]) == sum(1 for d in ds1 if d.get("adapted_from")) > 0, g1["cells"]
+            g3 = load(r3)
+            assert g3["auto"] == "scratch" and g3["sum"] == f"Built from scratch: no similar run template (best {best['name']} {best['score']:.2f})" and g3["link"] is None, g3["sum"]
+            assert g3["pills"]["documents-created"] == "0 created" and g3["pills"]["documents-adapted"] == "6 adapted" and g3["rows"] == 6, g3["pills"]
+            assert g3["cells"] == [f"adapted from {d['adapted_from']}" for d in ds3] and "Run template" in g3["heads"], g3["cells"]
+            assert g1["sw"][0] <= g1["sw"][1] and g3["sw"][0] <= g3["sw"][1], "no sideways scroll"
+            page = "an auto-picked run shows \"Auto-picked run template <name> (match 0.xx)\", a run with none shows \"Built from scratch\" with the best score, each adapted row names its source"
+        assert tree_sha(real_lib) == real_before, "the committed library is untouched"
+    finally:
+        if srv:
+            srv.shutdown()
+        L.AUTO_MIN = keep_min
+        j2_server.HERE, j2_server.RUN, j2.RUNS_DIR = keep_here, keep_run, keep_runs
+        for k, v in keep.items():
+            if v is None:
+                os.environ.pop(k, None)
+            else:
+                os.environ[k] = v
+        shutil.rmtree(tmp, ignore_errors=True)
+    print(f"auto-reuse: the match formula, which templates can be picked, the nearest template by fields (on a tie a studio's template before a boutique's, "
+          f"then the run template's own section, then the newest version), "
+          f"an adapted template is a new family for another business and a new version for the same one; a pilates brief picks {yoga.name} "
+          f"(match {a1['match']:.2f}) and creates no template; a template's unnamed stage is built too; a law-firm PRD finds no similar run template "
+          f"(best {best['score']:.2f}) and adapts all 6 sections from the nearest templates with no name or fact of an earlier business in a prompt or a spec; "
+          f"an empty library creates with the reason; flag off records nothing; the page: {page} ok")
+
+
+def d_facts(run):
+    """Every fact a run's own charters hold (the facts its templates may carry)."""
+    out = set()
+    for n in os.listdir(run.dir):
+        if n == "goal.json" or n.startswith("stage-"):
+            g = json.load(open(os.path.join(run.dir, n), encoding="utf-8"))
+            g = g.get("goal", g)
+            out |= {str(f) for f in g.get("facts") or []} | {str(c) for c in g.get("done_when") or []}
+    for d in tpl_decisions(run):
+        p = os.path.join(run.dir, d.get("saved") or "", "spec.json")
+        if d.get("kind") == "specialised" and os.path.isfile(p):
+            out |= set(json.load(open(p, encoding="utf-8"))["context"]["facts_used"])
+    return out
+
+
+def run_templates_page(lib, tid, dep):
+    """--browser: /library in headless Chrome shows the run templates first (names only); an opened one lists its
+    workflows by stage with a link to each section template; ticking a workflow adds what it depends on, with a note;
+    both buttons lead to the start page's brief box with the template and the workflows, and the box is prefilled."""
+    import html as htmllib
+    import shutil
+    import socket
+    import threading
+    import urllib.parse
+    import j2_server
+    import j2_template_lib as L
+    here = os.path.dirname(os.path.abspath(__file__))
+    ui = open(os.path.join(here, "j2_ui.html"), encoding="utf-8").read()
+    chrome = j2.j2_check.find_chrome()
+    rt = L.get_run_template(tid)
+    steps = ("(async () => { const wait = ms => new Promise(r => setTimeout(r, ms)), q = s => [...document.querySelectorAll(s)], r = {}; await wait(2500);"
+             " if (location.pathname === '/library'){"
+             "  r.tabs = q('[data-catview]').map(x => x.textContent.trim()); r.cur = (document.querySelector('[data-catview][aria-selected=true]') || {}).textContent;"
+             "  r.names = q('[data-catrow] .agt b').map(x => x.textContent); r.subs = q('[data-catrow] .agt span').map(x => x.textContent); r.badges = q('[data-catrow] .libbadge').map(x => x.textContent);"
+             f"  document.querySelector('[data-catrow=\"rt|{tid}\"]').click(); await wait(1500);"
+             "  r.head = (document.querySelector('[data-rtname]') || {}).textContent || ''; r.stages = q('[data-rtstage]').map(x => [x.dataset.rtstage, x.querySelector('h5').textContent, x.querySelectorAll('[data-rtwf]').length]);"
+             "  r.cols = q('[data-rtstage]')[0] ? [...q('[data-rtstage]')[0].querySelectorAll('th')].map(x => x.textContent) : []; r.links = q('[data-rtwf] [data-tplopen]').length;"
+             "  r.whole = document.querySelector('[data-rtuse=all]').getAttribute('href'); r.selOff = document.querySelector('[data-rtuse=sel]').getAttribute('aria-disabled');"
+             f"  const box = document.querySelector('[data-rtpick=\"{dep.key}\"]'); box.checked = true; box.dispatchEvent(new Event('change', {{bubbles: true}})); await wait(300);"
+             "  r.sel = document.querySelector('[data-rtuse=sel]').getAttribute('href'); r.auto = q('tr.rtauto').map(x => x.dataset.rtwf); r.note = document.querySelector('[data-rtnote]').textContent;"
+             "  r.autoBox = q('tr.rtauto input').map(x => [x.checked, x.disabled]);"
+             "  q('[data-rtwf] [data-tplopen]')[0].click(); await wait(1500); r.viewer = (document.querySelector('#tplviewer h3') || {}).textContent || '';"
+             "  r.sw = [document.documentElement.scrollWidth, innerWidth];"
+             " } else {"
+             "  r.chip = (document.getElementById('srt') || {}).textContent || ''; r.hidden = document.getElementById('srt').hidden; r.keys = document.getElementById('srt').dataset.rtkeys || '';"
+             "  r.box = document.getElementById('lbox').value; r.send = document.getElementById('lsend').disabled; r.land = document.getElementById('sland').hidden; }"
+             " document.body.setAttribute('data-r', JSON.stringify(r)); })();")
+    port = socket.socket(); port.bind(("127.0.0.1", 0)); p_ = port.getsockname()[1]; port.close()
+    tmp = tempfile.mkdtemp(prefix="j2-rt-page-")
+    os.symlink(os.path.join(here, "vendor"), os.path.join(tmp, "vendor"))
+    open(os.path.join(tmp, "j2_ui.html"), "w", encoding="utf-8").write(ui.replace("</body>", f"<script>setTimeout(() => {{ {steps} }}, 500)</script></body>"))
+    keep_here, keep_run = j2_server.HERE, j2_server.RUN
+    j2_server.HERE, j2_server.RUN = tmp, j2.J2Run()      # a fresh live run: the start page is shown
+    srv = j2_server.http.server.ThreadingHTTPServer(("127.0.0.1", p_), j2_server.Handler)
+    threading.Thread(target=srv.serve_forever, daemon=True).start()
+    prof = tempfile.mkdtemp(prefix="j2-rtprof-")
+
+    def load(path):
+        dom = chrome_dom([chrome, "--headless=new", "--disable-gpu", f"--user-data-dir={prof}", "--no-first-run", "--window-size=1440,900",
+                          "--virtual-time-budget=30000", "--dump-dom", f"http://127.0.0.1:{p_}{path}"], capture_output=True, text=True, timeout=120).stdout
+        hit = re.search(r'data-r="([^"]*)"', dom)
+        assert hit, ("the page did not finish its steps", path, dom[-300:])
+        return json.loads(htmllib.unescape(hit.group(1)))
+    try:
+        r = load("/library")
+        assert r["tabs"][0] == "Run templates" and r["cur"] == "Run templates", r["tabs"]
+        rows = L.run_template_list()
+        assert r["names"] == [x["name"] for x in rows] and len(r["badges"]) == len(rows) and set(r["badges"]) == {"live", "mock"}, r["names"]
+        assert all(f"{x['workflows']} workflow" in s_ and x["business_type"] in s_ for x, s_ in zip(rows, r["subs"])), r["subs"]
+        assert r["head"] == rt.name and [s_[0] for s_ in r["stages"]] == rt.stages, (r["head"], r["stages"])
+        assert [s_[2] for s_ in r["stages"]] == [sum(1 for w in rt.workflows if w.stage == k) for k in rt.stages] and r["stages"][0][1].startswith("PRD"), r["stages"]
+        assert r["cols"][1:] == ["Key", "Workflow", "Section", "Section template", "Depends on"] and r["links"] == len(rt.workflows), (r["cols"], r["links"])
+        want = lambda keys: f"/?view=simple&template={tid}&workflows={urllib.parse.quote(keys, safe='')}"
+        chosen, added = L.select_workflows(rt, [dep.key])
+        assert r["whole"] == want("all") and r["selOff"] == "true" and r["sel"] == want(",".join(chosen)), (r["whole"], r["sel"])
+        assert r["auto"] == added and all(c and d for c, d in r["autoBox"]) and added[0] in r["note"] and "depends on" in r["note"], (r["auto"], r["note"])
+        assert r["viewer"].startswith(rt.workflows[0].section_template.rpartition("@")[0]), r["viewer"]
+        assert r["sw"][0] <= r["sw"][1], ("no horizontal scroll", r["sw"])
+        for href, n in ((r["whole"], len(rt.workflows)), (r["sel"], len(chosen))):
+            b = load(href)
+            assert not b["hidden"] and not b["land"] and rt.name in b["chip"] and f"{n} of {len(rt.workflows)} workflows" in b["chip"], b
+            assert b["keys"] == ",".join(chosen if n < len(rt.workflows) else [w.key for w in rt.workflows]), b["keys"]
+            assert b["box"].startswith("Use this run template for my business.") and all(s_.lower() in b["box"].lower() for s_ in rt.facts_slots) \
+                and not b["send"] and rt.name.split(":")[0] not in b["box"], b["box"]
+            assert "depend on" not in b["chip"], b["chip"]      # the library already added what the chosen ones depend on
+        b = load(f"/?view=simple&template={tid}&workflows={dep.key}")      # an address with only the chosen workflow: the page adds the rest and says so
+        assert b["keys"] == ",".join(chosen) and "depend on" in b["chip"] and added[0] in b["chip"], b
+    finally:
+        srv.shutdown()
+        j2_server.HERE, j2_server.RUN = keep_here, keep_run
+        shutil.rmtree(tmp, ignore_errors=True)
+        shutil.rmtree(prof, ignore_errors=True)
+    return (f"Run templates first ({len(rows)} names with business type, stages, workflows and live or mock), {rt.name} opened with "
+            f"{len(rt.workflows)} workflows by stage and a link to each section template, {dep.key} ticked adds {', '.join(added)} with a note, "
+            "both buttons prefill the brief box")
+
+
 def library_page(run, lib):
     """--browser: the Templates (this run) tab on a saved run, in headless Chrome: the routing table, a template opened on its three
     tabs (Summary with the rules; Human-readable with enum chips and this run's example; Agent-readable with four files, Copy buttons
@@ -14101,6 +14901,17 @@ if __name__ == "__main__":
         generic_source()
         new_type_models()
         sys.exit(0)
+    if "--run-templates" in sys.argv:         # python3 j2_flow_test.py --fast [--browser] --run-templates: run templates only
+        run_templates()
+        reuse_display()
+        sys.exit(0)
+    if "--auto-reuse" in sys.argv:            # python3 j2_flow_test.py --fast [--browser] --auto-reuse: auto-reuse only
+        auto_reuse()
+        plain_unchanged(AUTO_REUSE_BASE)      # flag off: prompt for prompt as main before auto-reuse
+        sys.exit(0)
+    if "--reuse-display" in sys.argv:         # python3 j2_flow_test.py --fast [--browser] --reuse-display: the reuse display only
+        reuse_display()
+        sys.exit(0)
     if "--template-library" in sys.argv:      # python3 j2_flow_test.py --fast [--browser] --template-library: this part only
         template_library()
         plain_unchanged()
@@ -14246,6 +15057,10 @@ if __name__ == "__main__":
             rules_split()
             new_type_models()
             template_library()
+            run_templates()
+            reuse_display()
+            auto_reuse()
+            plain_unchanged(AUTO_REUSE_BASE)
         board_disabled()
         board_functions_off()
         os.environ["J2_BOARD"] = "1"

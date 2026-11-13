@@ -17,7 +17,8 @@ of at most 2,000 characters, an archived team 403, J2's own records-only answer 
 its own for that run, the question and the answer stored as two lines of that session (`ask` is "q", "records" or "model" on the wire, as `ChatMessageOut.ask`)
 and announced as `chat.message` events, so the node panel and J2's chat panel read one transcript; a second question while one is being answered is 409
 `busy`. `GET /api/engine/settings?dept=` carries `next_run.output` (the start page's choice, else the team's setting), `GET /api/teams/{dept}/agents` rows carry
-`usage.by_purpose`, and `GET /api/usage/summary?by=dept|fn|provider|day|atom|session|purpose` groups the same numbers. `/d/{dept}/library` is the real UI router's.
+`usage.by_purpose` (`{purpose: {calls, usd}}` for the purposes the agent was charged for, none for a purpose with no call, as the real route builds it), and
+`GET /api/usage/summary?by=dept|fn|provider|day|atom|session|purpose&session_id=&since=` groups the same numbers. `/d/{dept}/library` is the real UI router's.
 
 The state is a STAGE of the story the fixtures tell:
 
@@ -72,6 +73,7 @@ import time
 import urllib.error
 import urllib.request
 from dataclasses import dataclass
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Callable, NamedTuple
 from urllib.parse import urlencode
@@ -110,7 +112,7 @@ ENGINE_ENUMS = {"output": ("auto", "website", "prd", "hld", "lld", "project"), "
 ENGINE_MIN = {"budget": 1, "max_cycles": 1, "max_turns": 1, "chat_full_chars": 1000, "budget_cap": 1}
 J2_FUNCS = (*FUNCTIONS, "validator")  # J2's six functions (j2_agent.FUNCS): the ones GET /api/activity and POST /api/ask know
 ASK_CHARS = 2000  # the longest question: the ceiling of a note to an agent (views.ASK_CHARS)
-PURPOSES = ("agent_turn", "judge", "plan", "agent_chat")  # what `usage.by_purpose` of an agent's row names (D145)
+PURPOSES = ("agent_turn", "judge", "plan", "agent_chat")  # the purposes the fake's story has calls for: what `usage.by_purpose` of an agent's row names (D145, D159)
 NOT_WRITTEN = "<p style='font:15px system-ui;color:#667;padding:24px'>This isn't written yet.</p>"   # j2_server.view_page for a file the run does not list
 SUMMARY_BY = ("dept", "fn", "provider", "day", "atom", "session", "purpose")  # GET /api/usage/summary?by=
 NO_KEY = "(none)"  # the group of a ledger row that has no value for the key (orchestrator/usage.py)
@@ -588,6 +590,15 @@ class FakeState:
                 atom["body"]["closed_by"] = "verify"
                 for check in atom["body"]["verify"]["checks"]:
                     check["results"].append({"attempt": atom["attempt"], "exit_code": 0, "evidence": "ok"})
+                # the third try's reply and what the turn made (D157): the layer records both on the closing transition, replacing the failed try's
+                atom["body"]["produced"] = [
+                    {"verb": "make", "name": "the charter: Coffee shop landing page, 4 done-when items", "form": "charter", "ref": "goal.json"},
+                    {"verb": "do", "name": "posted 1 message to Adaptation", "form": "message", "ref": "chat"}]
+                atom["body"]["reply"] = {"text": json.dumps({
+                    "say": "@Adaptation Charter recorded from the brief and the answers.", "enough": True,
+                    "goal": {"kind": "site", "site_name": "Coffee shop landing page", "statement": "A one-page site for a coffee shop",
+                             "done_when": ["The menu is on the page", "Opening hours are shown", "The address is shown", "A phone number is shown"]},
+                    "to_requester": "Thanks, I have what I need.", "next": "Adaptation"}, indent=2), "clipped": False}
                 atom["usage"] = {"calls": 9, "usd": 0.32, "tokens_in": 5400, "tokens_out": 1620}
         return atoms
 
@@ -2381,16 +2392,17 @@ def spread(total: int, weights: list[int]) -> list[int]:
 
 
 def usage_of(agent: str, calls: int, usd: float, tokens_in: int, tokens_out: int, asked: dict | None = None) -> dict:
-    """The `usage` of one agent's row: the totals a row always had, plus `by_purpose` (`{agent_turn, judge, plan, agent_chat}`, each with `calls` and `usd`, all
-    four always there). The turns' calls are split by `PURPOSE_SPLIT`; the model answers booked since (`asked`: calls and usd) are the `agent_chat` calls and
-    are added on top of the totals, as the ledger would count them."""
+    """The `usage` of one agent's row: the totals a row always had, plus `by_purpose` as the real route builds it (`team_agents`): `{purpose: {calls, usd}}` for each
+    purpose the agent was charged for, in the order of the ledger (by purpose), and no key for a purpose with no call (`agent_chat` is there only once a model has
+    answered). The turns' calls are split by `PURPOSE_SPLIT`; the model answers booked since (`asked`: calls and usd) are the `agent_chat` calls and are added on top
+    of the totals, as the ledger would count them."""
     split = PURPOSE_SPLIT.get(agent, {})
-    cells = {p: {"calls": split.get(p, 0), "usd": round(usd * split.get(p, 0) / calls, 4) if calls else 0.0} for p in PURPOSES}
-    cells["agent_turn"] = {"calls": calls - sum(split.values()), "usd": round(usd - sum(c["usd"] for p, c in cells.items() if p != "agent_turn"), 4)}
+    cells = {p: {"calls": n, "usd": round(usd * n / calls, 4)} for p, n in split.items() if n and calls}
+    cells["agent_turn"] = {"calls": calls - sum(c["calls"] for c in cells.values()), "usd": round(usd - sum(c["usd"] for c in cells.values()), 4)}
     asked = asked or {"calls": 0, "usd": 0.0}
     cells["agent_chat"] = {"calls": asked["calls"], "usd": round(asked["usd"], 4)}
     return {"calls": calls + asked["calls"], "usd": round(usd + asked["usd"], 4), "tokens_in": tokens_in + asked["calls"] * ASK_TOKENS[0],
-            "tokens_out": tokens_out + asked["calls"] * ASK_TOKENS[1], "by_purpose": cells}
+            "tokens_out": tokens_out + asked["calls"] * ASK_TOKENS[1], "by_purpose": {p: cell for p, cell in sorted(cells.items()) if cell["calls"] > 0}}
 
 
 def past_agent_rows(state: FakeState) -> list[dict]:
@@ -2427,31 +2439,50 @@ def agent_rows(state: FakeState, run: str | None) -> list[dict]:
     return out
 
 
+_ISO_TIME = re.compile(r"\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z")
+MAX_EPOCH = 253_402_300_799  # 9999-12-31T23:59:59Z, the last second the real route takes (orchestrator/usage.py)
+
+
+def since_seconds(text: str) -> int:
+    """`since` as the real route reads it (`parse_since` of orchestrator/usage.py): whole epoch seconds up to the year 9999, or an ISO time like 2026-11-04T10:00:06Z;
+    anything else is a ValueError (the route answers 422 `query.since`)."""
+    if text.isdigit():
+        seconds = int(text)
+    elif _ISO_TIME.fullmatch(text):
+        seconds = int(datetime.strptime(text, "%Y-%m-%dT%H:%M:%SZ").replace(tzinfo=timezone.utc).timestamp())
+    else:
+        raise ValueError(f"not a time: {text[:40]!r}")
+    if not 0 <= seconds <= MAX_EPOCH:
+        raise ValueError(f"not a time: {text[:40]} seconds is outside the years 1970 to 9999")
+    return seconds
+
+
 def usage_ledger(state: FakeState) -> list[dict]:
     """The usage rows of the fake's story, one per agent and purpose: what GET /api/usage/summary groups. They are cut from the agents' rows, so the two views of
-    the usage agree (the calls, the dollars and the tokens of a row are the sum of its ledger rows)."""
+    the usage agree (the calls, the dollars and the tokens of a row are the sum of its ledger rows). A row has the time of its agent's last line (`at`, and `day`)."""
     out = []
-    for run_id, rows, day in ((LIVE_RUN["run_id"], agent_rows(state, None), "2026-11-04"), (PAST_RUN["run_id"], past_agent_rows(state), "2026-11-03")):
+    for run_id, rows, when in ((LIVE_RUN["run_id"], agent_rows(state, None), "2026-11-04T10:20:00Z"), (PAST_RUN["run_id"], past_agent_rows(state), "2026-11-03T09:30:00Z")):
         for row in rows:
             usage = row["usage"]
-            calls = [usage["by_purpose"][p]["calls"] for p in PURPOSES]
+            calls = [usage["by_purpose"].get(p, {"calls": 0})["calls"] for p in PURPOSES]
             tin, tout = spread(usage["tokens_in"], calls), spread(usage["tokens_out"], calls)
             for i, purpose in enumerate(PURPOSES):
-                cell = usage["by_purpose"][purpose]
-                if cell["calls"]:
-                    out.append({"purpose": purpose, "fn": row["agent"] if row["kind"] == "function" else None, "session_id": row["session_id"], "day": day,
-                                "calls": cell["calls"], "usd": cell["usd"], "tokens_in": tin[i], "tokens_out": tout[i],
+                cell = usage["by_purpose"].get(purpose)
+                if cell is not None:
+                    out.append({"purpose": purpose, "fn": row["agent"] if row["kind"] == "function" else None, "session_id": row["session_id"], "day": when[:10],
+                                "at": since_seconds(when), "calls": cell["calls"], "usd": cell["usd"], "tokens_in": tin[i], "tokens_out": tout[i],
                                 "atom": None if purpose == "agent_turn" else overhead_atom_id(run_id)})     # judging, planning and answering are overhead, not a work atom (D59)
     return out
 
 
-def usage_summary(state: FakeState, by: str, session_id: str | None = None) -> list[dict]:
-    """GET /api/usage/summary: calls and sums per `by`, in key order; a row without a key is grouped under `(none)` (and sorts first, as in the ledger's SQL)."""
+def usage_summary(state: FakeState, by: str, session_id: str | None = None, since: int | None = None) -> list[dict]:
+    """GET /api/usage/summary: calls and sums per `by`, in key order; a row without a key is grouped under `(none)` (and sorts first, as in the ledger's SQL). `session_id`
+    limits the rows to one chat session and `since` (epoch seconds) to the rows at or after it, as in the real route."""
     key = {"dept": lambda e: "web", "fn": lambda e: e["fn"], "provider": lambda e: "claude", "day": lambda e: e["day"], "atom": lambda e: e["atom"],
            "session": lambda e: e["session_id"], "purpose": lambda e: e["purpose"]}[by]
     groups: dict[str | None, dict] = {}
     for entry in usage_ledger(state):
-        if session_id is not None and entry["session_id"] != session_id:
+        if (session_id is not None and entry["session_id"] != session_id) or (since is not None and entry["at"] < since):
             continue
         group = groups.setdefault(key(entry), {"calls": 0, "usd": 0.0, "tokens_in": 0, "tokens_out": 0})
         for field in ("calls", "usd", "tokens_in", "tokens_out"):
@@ -2652,12 +2683,17 @@ def register_agent_chats(app: FastAPI, state: FakeState) -> None:
         return JSONResponse({"over": state.ag["over"], "run_pick": state.ag["run_pick"], "team": state.ag["team"], "notes": state.ag["notes"]})
 
     @app.get("/api/usage/summary")
-    def usage_summary_route(by: str = "dept", session_id: str | None = None, include_stub: bool = False):
-        """The usage grouped as the real route groups it (dept, fn, provider, day, atom, session) and, since sync 4 (D145), by purpose; stub rows do not exist here."""
+    def usage_summary_route(by: str = "dept", session_id: str | None = None, since: str | None = None, include_stub: bool = False):
+        """The usage grouped as the real route groups it (dept, fn, provider, day, atom, session and, since 0.3.3 (D159), purpose), over the window `since` (epoch seconds
+        or an ISO time; a bad one is 422 `query.since`); stub rows do not exist here."""
         if by not in SUMMARY_BY:
             raise ApiError(422, "validation", "The request did not pass validation.",
                            {"violations": [violation("query.by", "literal_error", f"by must be one of {', '.join(SUMMARY_BY)}")]})
-        return JSONResponse({"groups": usage_summary(state, by, session_id)})
+        try:
+            floor = since_seconds(since) if since is not None else None
+        except ValueError as exc:
+            raise ApiError(422, "validation", "The request did not pass validation.", {"violations": [violation("query.since", "bad_time", str(exc))]}) from None
+        return JSONResponse({"groups": usage_summary(state, by, session_id, floor)})
 
     @app.post("/__fake/ask")
     async def ask_control(request: Request):

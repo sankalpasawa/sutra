@@ -1,0 +1,142 @@
+{
+  "name": "Iron Grove Fitness section S2",
+  "artifact": "website",
+  "section": "Section",
+  "version": 1,
+  "kind": "specialised",
+  "description": "Trial booking form section for Iron Grove Fitness: the generic WebsiteSection fields plus elements and form_fields, from the charter facts",
+  "fields": [
+    {
+      "name": "id",
+      "type": "string",
+      "required": true,
+      "description": "the section id of this workflow, as the task gives it",
+      "enum": null,
+      "nullable": false
+    },
+    {
+      "name": "anchor",
+      "type": "string",
+      "required": false,
+      "description": "the id attribute of the trial booking section element, with the #",
+      "enum": null,
+      "nullable": false
+    },
+    {
+      "name": "implements",
+      "type": "list[string]",
+      "required": false,
+      "description": "the LLD section ids this builds",
+      "enum": null,
+      "nullable": false
+    },
+    {
+      "name": "html",
+      "type": "string",
+      "required": false,
+      "description": "the trial booking section's HTML only: no <html>, <head> or <body> tags",
+      "enum": null,
+      "nullable": false
+    },
+    {
+      "name": "head",
+      "type": "string",
+      "required": false,
+      "description": "page-head tags this section needs (meta, link, style or script only); empty when none",
+      "enum": null,
+      "nullable": false
+    },
+    {
+      "name": "selectors_used",
+      "type": "list[string]",
+      "required": false,
+      "description": "the ids and classes used in the trial booking form",
+      "enum": null,
+      "nullable": false
+    },
+    {
+      "name": "facts_used",
+      "type": "list[string]",
+      "required": false,
+      "description": "the charter facts this section shows, copied exactly",
+      "enum": [
+        "Kettlebell Class",
+        "The trial booking form has the fields name, email, class and preferred date",
+        "The trial booking form sends the booking to bookings@irongrove.example",
+        "bookings@irongrove.example"
+      ],
+      "nullable": false
+    },
+    {
+      "name": "elements",
+      "type": "list[string]",
+      "required": false,
+      "description": "the booking form elements this section contains",
+      "enum": [
+        "#booking-class",
+        "#booking-date",
+        "#booking-email",
+        "#booking-form",
+        "#booking-name",
+        "#booking-submit"
+      ],
+      "nullable": false
+    },
+    {
+      "name": "form_fields",
+      "type": "list[string]",
+      "required": false,
+      "description": "the fields of the trial booking form",
+      "enum": [
+        "class",
+        "email",
+        "name",
+        "preferred_date"
+      ],
+      "nullable": false
+    }
+  ],
+  "objects": [],
+  "rules": [
+    {
+      "rule": "html_no_page_tags",
+      "name": "the html has no <html>, <head> or <body> tags",
+      "from": "parse_section (j2.py)",
+      "path": [
+        "html",
+        "head"
+      ]
+    },
+    {
+      "rule": "anchor_selector",
+      "name": "the anchor is an id selector",
+      "from": "parse_section (j2.py)",
+      "path": "anchor"
+    },
+    {
+      "rule": "ref_exists",
+      "name": "implements points at a section id of the LLD",
+      "from": "N8",
+      "path": "implements",
+      "target": "lld.sections[].id"
+    }
+  ],
+  "sha": "18664c21f45dc0c1c193bb9276e37cce1594e199348fe7ba49896353e05c2b49",
+  "extends": "website/section@generic/1",
+  "made_by": {
+    "run": "j2-20261111-211339",
+    "workflow": "W-29",
+    "atom": "W-29.a1",
+    "agent": "template generator (claude-cli)"
+  },
+  "context": {
+    "business_type": "fitness studio",
+    "facts_used": [
+      "Kettlebell Class",
+      "The trial booking form has the fields name, email, class and preferred date",
+      "The trial booking form sends the booking to bookings@irongrove.example",
+      "bookings@irongrove.example"
+    ],
+    "fingerprint": "b334a7a416ef8257e8992c9a60bb26f2ae2910686b4d51808e9e67522b8edb89"
+  }
+}

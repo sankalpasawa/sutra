@@ -1,0 +1,88 @@
+{
+  "name": "Iron Grove Fitness Risks",
+  "artifact": "hld",
+  "section": "Risks",
+  "version": 1,
+  "kind": "specialised",
+  "description": "Risks for Iron Grove Fitness (hld): the generic HLD/1 · Risks fields plus facts_used, from 2 charter fact(s); adapted from a template made for another business",
+  "fields": [
+    {
+      "name": "risks",
+      "type": "list[Risk]",
+      "required": true,
+      "description": "each risk with its mitigation (for Iron Grove Fitness, a hld)",
+      "enum": null,
+      "nullable": false
+    },
+    {
+      "name": "assumptions",
+      "type": "list[string]",
+      "required": false,
+      "description": "the assumptions of Iron Grove Fitness's Risks",
+      "enum": null,
+      "nullable": false
+    },
+    {
+      "name": "facts_used",
+      "type": "list[string]",
+      "required": false,
+      "description": "the charter facts this section is written from, copied exactly from Iron Grove Fitness's charter",
+      "enum": [
+        "Iron Grove Fitness",
+        "The Risks section is written for Iron Grove Fitness"
+      ],
+      "nullable": false
+    }
+  ],
+  "objects": [
+    {
+      "name": "Risk",
+      "fields": [
+        {
+          "name": "risk",
+          "type": "string",
+          "required": true,
+          "description": "the risk, one line",
+          "enum": null,
+          "nullable": false
+        },
+        {
+          "name": "mitigation",
+          "type": "string",
+          "required": true,
+          "description": "what is done about it",
+          "enum": null,
+          "nullable": false
+        }
+      ]
+    }
+  ],
+  "rules": [
+    {
+      "rule": "enum",
+      "path": "facts_used[]",
+      "values": [
+        "Iron Grove Fitness",
+        "The Risks section is written for Iron Grove Fitness"
+      ],
+      "from": "facts",
+      "name": "facts_used are facts of Iron Grove Fitness's charter"
+    }
+  ],
+  "sha": "2c69cee00a0f017c47d461b316f225e827429d2f1b9944b4bdae78ac71a5dc2f",
+  "extends": "hld/risks@generic/1",
+  "made_by": {
+    "run": "j2-20261111-211339",
+    "workflow": "W-12",
+    "atom": "W-12.a1",
+    "agent": "code (adapted from a run template)"
+  },
+  "context": {
+    "business_type": "hld",
+    "facts_used": [
+      "Iron Grove Fitness",
+      "The Risks section is written for Iron Grove Fitness"
+    ],
+    "fingerprint": "bd34f1add83c04dc1e1376454e6385eacaba892b2942838e755d8c29990d7990"
+  }
+}

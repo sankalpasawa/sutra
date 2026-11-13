@@ -144,6 +144,12 @@ class Handler(http.server.BaseHTTPRequestHandler):
             return self._send(200, json.dumps(j2_template_lib.library_view(), ensure_ascii=False))
         if u.path == "/api/catalog":    # the /library page: the committed library and the runs that gave it templates (library/ only)
             return self._send(200, json.dumps(j2_template_lib.catalog_view(), ensure_ascii=False))
+        if u.path == "/api/run-template":       # one run template (run-template/1) with where each workflow's section template opens
+            tid = q.get("id") or ""
+            got = j2_template_lib.run_template_view(tid) if re.fullmatch(r"[a-z0-9-]+", tid) else None
+            if got:
+                got["enabled"] = os.environ.get("J2_RUN_TEMPLATES") == "1" or j2_template_lib.auto_reuse()
+            return self._send(200, json.dumps(got, ensure_ascii=False)) if got else self._send(404, '{"error": "no such run template"}')
         if u.path.startswith("/api/library/"):      # one template version: /api/library/<artifact>/<section>/<slug>/v<N>
             parts = u.path[len("/api/library/"):].split("/")
             ok = (len(parts) == 4 and parts[0] in j2_template_lib.artifacts()
@@ -157,7 +163,10 @@ class Handler(http.server.BaseHTTPRequestHandler):
         if u.path == "/api/run-templates":      # this run's routing decisions (templates.json); none recorded: an empty list
             d = j2.saved_dir(run) if run else RUN.dir
             decs = j2_template_lib.run_templates(d) if d and os.path.isdir(d) else []
-            return self._send(200, json.dumps({"decisions": decs}, ensure_ascii=False))
+            use = j2_template_lib.run_template_use(d) if decs else None      # only a run started from a run template has it
+            if use:      # its rows carry the group and the kind the filters read
+                decs = j2_template_lib.reuse_rows(decs)
+            return self._send(200, json.dumps({"decisions": decs, **({"run_template": use} if use else {})}, ensure_ascii=False))
         if u.path == "/api/artifacts":  # the Artifacts tab: deliverables, then evidence and records (artifacts/types.json)
             d = j2.saved_dir(run) if run else RUN.dir
             return self._send(200, json.dumps(j2_artifacts.listing(d if d and os.path.isdir(d) else None), ensure_ascii=False))
@@ -292,6 +301,8 @@ class Handler(http.server.BaseHTTPRequestHandler):
             text = (body.get("text") or "").strip()
             if not text:
                 return self._send(400, '{"error": "empty"}')
+            if body.get("template"):      # a new run from a run template (J2_RUN_TEMPLATES=1; ignored once the run has started)
+                RUN.set_run_template(str(body["template"]), body.get("workflows"))
             ok = RUN.user_says(text)
             return self._send(200 if ok else 409, json.dumps({"ok": ok}))
         if self.path == "/api/ask":              # a question to one function about a run, answered from its records (live or saved); nothing is written

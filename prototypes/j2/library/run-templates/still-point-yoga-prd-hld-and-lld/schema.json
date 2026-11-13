@@ -1,0 +1,161 @@
+{
+  "$defs": {
+    "RunTemplateWorkflow": {
+      "additionalProperties": false,
+      "description": "One workflow of a run template. section_template is \"name@version\" as the library holds it (the generic layout's\nown name when the run's builder filled the generic one); covers are done-when texts with slots, never facts.",
+      "properties": {
+        "key": {
+          "title": "Key",
+          "type": "string"
+        },
+        "name": {
+          "title": "Name",
+          "type": "string"
+        },
+        "stage": {
+          "title": "Stage",
+          "type": "string"
+        },
+        "artifact": {
+          "title": "Artifact",
+          "type": "string"
+        },
+        "section": {
+          "title": "Section",
+          "type": "string"
+        },
+        "section_template": {
+          "title": "Section Template",
+          "type": "string"
+        },
+        "section_template_kind": {
+          "default": "not recorded",
+          "enum": [
+            "generic",
+            "specialised",
+            "not recorded"
+          ],
+          "title": "Section Template Kind",
+          "type": "string"
+        },
+        "depends_on": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Depends On",
+          "type": "array"
+        },
+        "covers": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Covers",
+          "type": "array"
+        },
+        "made_from": {
+          "default": "",
+          "title": "Made From",
+          "type": "string"
+        },
+        "fix": {
+          "default": false,
+          "title": "Fix",
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "key",
+        "name",
+        "stage",
+        "artifact",
+        "section",
+        "section_template"
+      ],
+      "title": "RunTemplateWorkflow",
+      "type": "object"
+    }
+  },
+  "additionalProperties": false,
+  "description": "run-template/1: closed, checked at every write (keys W-1.., in order, each once; depends_on names earlier keys;\nevery workflow's stage is one of stages; no slot is used that facts_slots does not list).",
+  "properties": {
+    "schema": {
+      "default": "run-template/1",
+      "title": "Schema",
+      "type": "string"
+    },
+    "id": {
+      "title": "Id",
+      "type": "string"
+    },
+    "name": {
+      "title": "Name",
+      "type": "string"
+    },
+    "description": {
+      "default": "",
+      "title": "Description",
+      "type": "string"
+    },
+    "business_type": {
+      "default": "not recorded",
+      "title": "Business Type",
+      "type": "string"
+    },
+    "made_from_run": {
+      "title": "Made From Run",
+      "type": "string"
+    },
+    "mock": {
+      "default": "not recorded",
+      "title": "Mock"
+    },
+    "stages": {
+      "items": {
+        "type": "string"
+      },
+      "title": "Stages",
+      "type": "array"
+    },
+    "workflows": {
+      "items": {
+        "$ref": "#/$defs/RunTemplateWorkflow"
+      },
+      "title": "Workflows",
+      "type": "array"
+    },
+    "facts_slots": {
+      "items": {
+        "type": "string"
+      },
+      "title": "Facts Slots",
+      "type": "array"
+    },
+    "made_by": {
+      "additionalProperties": true,
+      "title": "Made By",
+      "type": "object"
+    },
+    "used_by": {
+      "items": {
+        "additionalProperties": true,
+        "type": "object"
+      },
+      "title": "Used By",
+      "type": "array"
+    },
+    "created": {
+      "default": "",
+      "title": "Created",
+      "type": "string"
+    }
+  },
+  "required": [
+    "id",
+    "name",
+    "made_from_run",
+    "stages",
+    "workflows"
+  ],
+  "title": "RunTemplate",
+  "type": "object"
+}

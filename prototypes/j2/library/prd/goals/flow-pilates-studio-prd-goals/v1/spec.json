@@ -1,0 +1,115 @@
+{
+  "name": "Flow Pilates Studio PRD Goals",
+  "artifact": "prd",
+  "section": "Goals",
+  "version": 1,
+  "kind": "specialised",
+  "description": "Goals for Flow Pilates Studio (prd): the generic PRD/1 · Goals fields plus facts_used, from 11 charter fact(s); adapted from a template made for another business",
+  "fields": [
+    {
+      "name": "goals",
+      "type": "list[Goal]",
+      "required": true,
+      "description": "the goals, G1, G2, ... in order (for Flow Pilates Studio, a prd)",
+      "enum": null,
+      "nullable": false
+    },
+    {
+      "name": "assumptions",
+      "type": "list[string]",
+      "required": false,
+      "description": "the assumptions of Flow Pilates Studio's Goals",
+      "enum": null,
+      "nullable": false
+    },
+    {
+      "name": "facts_used",
+      "type": "list[string]",
+      "required": false,
+      "description": "the charter facts this section is written from, copied exactly from Flow Pilates Studio's charter",
+      "enum": [
+        "Flow Pilates Studio",
+        "Friday 6:30 pm Stretch and Release 550",
+        "Monday 7:00 am Mat Basics 500",
+        "Payment is made at the studio",
+        "Saturday 9:00 am Weekend Mat Class 500",
+        "The Goals section lists the goals of showing the weekly classes and taking booking requests",
+        "Tuesday 6:30 pm Reformer Flow 800",
+        "Unit 3, 9 Sample Lane, Pune 411004",
+        "Wednesday 7:00 am Core Strength 600",
+        "bookings@flowpilates.example",
+        "name, email, class, preferred date"
+      ],
+      "nullable": false
+    }
+  ],
+  "objects": [
+    {
+      "name": "Goal",
+      "fields": [
+        {
+          "name": "id",
+          "type": "string",
+          "required": true,
+          "description": "G1, G2, ... in order",
+          "enum": null,
+          "nullable": false
+        },
+        {
+          "name": "statement",
+          "type": "string",
+          "required": true,
+          "description": "the goal in one line",
+          "enum": null,
+          "nullable": false
+        }
+      ]
+    }
+  ],
+  "rules": [
+    {
+      "rule": "enum",
+      "path": "facts_used[]",
+      "values": [
+        "Flow Pilates Studio",
+        "Friday 6:30 pm Stretch and Release 550",
+        "Monday 7:00 am Mat Basics 500",
+        "Payment is made at the studio",
+        "Saturday 9:00 am Weekend Mat Class 500",
+        "The Goals section lists the goals of showing the weekly classes and taking booking requests",
+        "Tuesday 6:30 pm Reformer Flow 800",
+        "Unit 3, 9 Sample Lane, Pune 411004",
+        "Wednesday 7:00 am Core Strength 600",
+        "bookings@flowpilates.example",
+        "name, email, class, preferred date"
+      ],
+      "from": "facts",
+      "name": "facts_used are facts of Flow Pilates Studio's charter"
+    }
+  ],
+  "sha": "0a74201b6c48c7b75be8c11505956381d8a3d559478efd00dca9c354e79fd9cf",
+  "extends": "prd/goals@generic/1",
+  "made_by": {
+    "run": "j2-20261112-150036",
+    "workflow": "W-3",
+    "atom": "W-3.a1",
+    "agent": "code (adapted from a run template)"
+  },
+  "context": {
+    "business_type": "prd",
+    "facts_used": [
+      "Flow Pilates Studio",
+      "Friday 6:30 pm Stretch and Release 550",
+      "Monday 7:00 am Mat Basics 500",
+      "Payment is made at the studio",
+      "Saturday 9:00 am Weekend Mat Class 500",
+      "The Goals section lists the goals of showing the weekly classes and taking booking requests",
+      "Tuesday 6:30 pm Reformer Flow 800",
+      "Unit 3, 9 Sample Lane, Pune 411004",
+      "Wednesday 7:00 am Core Strength 600",
+      "bookings@flowpilates.example",
+      "name, email, class, preferred date"
+    ],
+    "fingerprint": "83e1d6d4553c56a832955e7a4ed834065d211e83faa9dd942b379d20bac0965c"
+  }
+}
