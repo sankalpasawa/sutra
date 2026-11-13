@@ -2,7 +2,7 @@
 
 python3 tools/release_check.py [--cap USD] [--ledger PATH] [--mock]
 
-A brief passes when its run ends with an outcome starting "Done". Spend is read from each run's calls.jsonl
+A brief passes only when its run ends "Done:" (workable); "Done with open items" fails. Spend is read from each run's calls.jsonl
 (the "usd" the CLI reports). The ledger keeps the total across checks: --cap is the most all checks together may
 spend; each brief gets an equal share of what is left and is stopped when it passes its share. Exit code 0 only
 when every brief passed and the cap was not reached.
@@ -10,9 +10,15 @@ when every brief passed and the cap was not reached.
 import argparse, glob, json, os, subprocess, sys, time
 
 HERE = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-BRIEFS = ["a landing page for a coffee shop",
+BRIEFS = ["A landing page for Bean There, a coffee shop at 12 Park Road. Open 7am-6pm daily. "
+          "Menu: espresso £2.50, flat white £3.20, croissant £2.80.",
           "a hiring policy for a small startup",
           "a script that copies files from one folder to another, with a test"]
+
+
+def passed(r):
+    """Workable only: "Done: ..." passes; "Done with open items: ..." and everything else fails."""
+    return str(r.get("outcome") or "").startswith("Done:")
 
 
 def spent(run_dir):
@@ -92,9 +98,9 @@ def main():
         ledger["checks"].append({"at": time.strftime("%Y-%m-%d %H:%M"), "usd": round(usd, 3), "results": res})
         os.makedirs(os.path.dirname(x.ledger), exist_ok=True)
         json.dump(ledger, open(x.ledger, "w"), indent=1)
-    ok = all(str(r.get("outcome") or "").startswith("Done") for r in res)
+    ok = all(passed(r) for r in res)
     for r in res:
-        print(f"{'PASS' if str(r.get('outcome') or '').startswith('Done') else 'FAIL'}  ${r['usd']:.2f}  "
+        print(f"{'PASS' if passed(r) else 'FAIL'}  ${r['usd']:.2f}  "
               f"{r.get('secs', '?')}s  {r['brief']}\n      {r.get('outcome')}  ({os.path.basename(r.get('run') or '')})")
     print(f"this check ${usd:.2f}; all live checks ${used + (0 if x.mock else usd):.2f} of ${x.cap:.2f}")
     if any(r.get("capped") for r in res):
