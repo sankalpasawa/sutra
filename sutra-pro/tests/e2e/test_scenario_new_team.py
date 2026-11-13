@@ -140,6 +140,32 @@ def test_function_atoms_exist_for_every_function_with_cards_and_one_ledger_row_p
     assert len(live.get("/api/atoms/log")) == len(ledger)
 
 
+def test_every_function_atom_of_the_real_run_says_what_its_turn_produced_and_an_ai_turn_carries_the_reply_it_got(journey, live):
+    """D157, end to end with nothing replayed: the engine process and its layer wrote the words and the reply, the real projector and store kept them,
+    and the atom route serves them in the shape the page reads."""
+    atoms = [live.get(f"/api/atoms/{row['id']}") for row in live.rows("SELECT id FROM atoms WHERE schema = 'work-atom/0.3' ORDER BY rowid")]
+    assert len(atoms) >= 5
+    said: dict[str, list[str]] = {fn: [] for fn in FUNCTIONS}
+    for atom in atoms:
+        body = atom["body"]
+        assert body["produced"], atom["id"]                                                  # the layer recorded the turn, whatever it did
+        assert all(set(item) == {"verb", "name", "form", "ref"} and item["name"] for item in body["produced"]), atom["id"]
+        said[atom["node_id"].rpartition(".")[2]] += [item["name"] for item in body["produced"]]
+        if body["work"]["dispatch_kind"] == "llm":                                           # an AI turn: the reply the model gave, printed
+            reply = body["reply"]
+            assert set(reply) == {"text", "clipped"} and reply["text"].startswith("{") and len(reply["text"]) <= 4000, atom["id"]
+            assert reply["clipped"] or isinstance(json.loads(reply["text"]), dict), atom["id"]
+        else:                                                                                # code and the owner give no reply
+            assert body["reply"] is None, atom["id"]
+    assert any(n.startswith("the charter: ") for n in said["identity"]) and any(n.startswith("asked you ") for n in said["identity"])
+    assert any(n.startswith("you answered: ") for n in said["identity"])                       # the manual atom of Identity's question
+    assert any(n.startswith("a proposal of ") for n in said["adaptation"]) and any(n.startswith(("GRANT", "COUNTER")) for n in said["priority"])
+    assert any(n.startswith("scheduled ") for n in said["coordination"]) and any("findings and rubric rows: " in n for n in said["audit"])
+    assert any(n.startswith("decided the goal is reached") for n in said["identity"]) and any(n.startswith("code posted ") for n in said["coordination"])
+    drawer = live.get("/api/graph/nodes/web.audit")["atoms"]
+    assert drawer and all(atom["body"]["produced"] for atom in drawer)                      # the drawer's route serves the same words
+
+
 def test_identity_asked_needs_you_listed_it_and_the_answer_in_the_department_chat_continued_the_run(journey, live):
     [need] = journey.needs
     assert (need["kind"], need["dept_id"], need["text"]) == ("question", "web", journey.question)
