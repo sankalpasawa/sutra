@@ -579,15 +579,16 @@ def test_read_settings_file(tmp_path):
 # ---- FEATURES ---------------------------------------------------------------------------------------------------------
 
 CHIPS = ["Workflow builder agents", "Code validator", "Confidence judge", "Budget and rate card", "Memory", "Message board",
-         "Document chain", "Site build and checks", "Sends and deeds", "Run views", "Template library", "Charter change",
+         "Document chain", "Site build and checks", "Sends and deeds", "Run views", "Template library", "Run templates and auto-reuse",
+         "Content door", "Charter change",
          "Artifact schemas", "Story and agent views", "Plan and priorities"]
 
 
-def test_the_table_has_eight_steps_fifteen_chips_and_one_row_of_extras():
+def test_the_table_has_eight_steps_seventeen_chips_and_one_row_of_extras():
     assert [f.id for f in FEATURES if f.kind == "step"] == list(STEP_IDS) == ["J2.a", "J2.b", "J2.c", "J2.d", "J2.e", "J2.f", "J2.g", "J2.h"]
     assert [f.chip for f in FEATURES if f.kind == "chip"] == CHIPS
     assert [f.kind for f in FEATURES if f.kind not in ("step", "chip")] == ["extra"]
-    assert len(FEATURES) == 24
+    assert len(FEATURES) == 26
     assert FEATURES[-1].chip.startswith("Also: run report and reviewer, owner override, test switches, docx export, redaction, saved runs")
 
 
@@ -602,7 +603,8 @@ def test_the_flags_of_a_feature_are_real_settings():
     for feature in FEATURES:
         assert set(feature.flags) <= set(EngineSettings.model_fields), feature.id
     assert by_id()["judge"].flags == ("realization", "change")
-    assert by_id()["extras"].flags == ("force_audit_fail", "force_audit_note", "force_question")
+    assert by_id()["extras"].flags == ("force_audit_fail", "force_audit_note", "force_question", "reviewer", "reviewer_wait")
+    assert by_id()["run_templates"].flags == ("run_templates", "auto_reuse") and by_id()["content_door"].flags == ("artifact_library",)
 
 
 def test_files_are_relative_and_symbols_live_in_the_features_files():
@@ -634,7 +636,7 @@ def test_the_table_is_the_design_as_it_was_written():
     """Section 8 of engine.md, transcribed. Change a row on purpose and this digest changes with it (and so must the design);
     `test_every_symbol_and_file_of_the_table_exists_in_j2` below checks the names against J2 itself."""
     blob = json.dumps([dataclasses.asdict(f) for f in FEATURES], sort_keys=True, separators=(",", ":"))
-    assert hashlib.sha256(blob.encode()).hexdigest() == "48bf1aaa846c66ad50bd4054d0eee184f53bf2f67d7d19349efcb74314366dfa"
+    assert hashlib.sha256(blob.encode()).hexdigest() == "38f0525f81cb13d7d0f2263e69c9343ab531a5c06139ed3d2cecdef371541488"
 
 
 J2_CHECKOUT = os.environ.get("SUTRA_J2_CHECKOUT")
