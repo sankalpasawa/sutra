@@ -1,8 +1,7 @@
 # remove-restrictions: plan and status
 
 Branch `remove-restrictions`. Written 2026-11-13 so a new session can pick up. The original plan was in a session
-that ended on a login error; steps 0–5 below are recovered from commits and the founder's answers. **Steps 6–9:
-scope not recovered. Ask the founder before starting them; do not guess.**
+that ended on a login error; steps 0–4 are recovered from commits, steps 5–9 and the standing rules are the founder's.
 
 ## Test cadence (founder, 2026-11-13)
 
@@ -44,6 +43,36 @@ Out of scope: the Library tab and RTSCOPES (Kaivan owns them). Do not change the
 
 After step 5: `--fast --browser` (no `tail`) and the live release check.
 
-## Steps 6–9
+## Step 6: library
 
-Scope not recovered. Ask the founder.
+Folder and workspace runs save and reuse through Kaivan's `run_template_from_run` and `save_run_template`; no second
+store. Do not edit Kaivan's files: `j2_template_lib.py`, `library/`, `templates/`, `j2_agent_views.py`,
+`j2_artifact_models.py`, the Library tab. If `decision_group` or anything there must change, write exactly what is
+needed as a note for the founder to send him. After: `--fast`, mock release check.
+
+## Step 7: run for real
+
+When a brief asks to act on real files, the workflow states the command and the folder. The Requester approves in
+chat. Code, not an agent, checks that exact approval. Then the command runs with write access to that one folder
+only, with a receipt in `receipts.jsonl`. After: `--fast`, live release check.
+
+## Step 8: delete dead code
+
+Delete page/document code the general path no longer uses, plus tests that only checked it, each listed in the
+commit message. After: `--fast`, mock release check.
+
+## Step 9: SETUP.md for teammates
+
+claude-cli and Node versions, installs, every `.env` line (including `J2_SANDBOX_CMD` and the limit defaults),
+tested from a fresh clone. After: `--fast`, `--fast --browser`, live release check.
+
+## Standing rules
+
+| Rule | Detail |
+|---|---|
+| No new names in code | No new type, form, tool or keyword names in code |
+| `--fast` | After every step |
+| `--fast --browser` | Only after steps 5 and 9 (no `tail`) |
+| Live release check | Only after steps 5, 7 and 9 |
+| Mock release check | After steps 6 and 8 |
+| Spend | Hard $60 cap across all live checks (`runs/release/ledger.json`) |
