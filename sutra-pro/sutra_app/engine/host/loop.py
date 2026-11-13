@@ -49,13 +49,14 @@ from ..spec import EngineSettings, is_output_name, SettingsError, TaskSpec, read
 from .heartbeat import Heartbeat, heartbeat_interval
 from .inbox import Inbox
 
-__all__ = ["main", "Host", "StartFailed", "TICK_S", "STOP_WAIT_S", "DEAD_THREAD_GRACE_S", "DEFAULT_HOOKS", "outcome_status",
+__all__ = ["main", "Host", "StartFailed", "TICK_S", "STOP_WAIT_S", "DEAD_THREAD_GRACE_S", "REVIEWER_SETTLE_S", "DEFAULT_HOOKS", "outcome_status",
            "EXIT_OK", "EXIT_BAD_TASK", "EXIT_START_FAILED", "EXIT_INTERNAL", "EXIT_TERM"]
 
 EXIT_OK, EXIT_BAD_TASK, EXIT_START_FAILED, EXIT_INTERNAL, EXIT_TERM = 0, 2, 3, 70, 143
 TICK_S = 0.15                      # the inbox is polled every 150 ms
 STOP_WAIT_S = 4.0                  # how long a stop waits for the run thread (the whole stop finishes inside 6 s)
 DEAD_THREAD_GRACE_S = 1.0          # status "running" with nobody holding the run lock for this long: the run thread died
+REVIEWER_SETTLE_S = 0.25           # after a late reviewer was discarded: how long its thread may take to leave a write it had already begun (D179)
 DEFAULT_HOOKS = "sutra_app.engine.fnodes.layer:factory"
 STOP_OUTCOME = "Stopped: stopped on request"
 TERM_OUTCOME = "Stopped: the process was asked to stop (SIGTERM)"
@@ -134,6 +135,7 @@ class Host:
         self._terminate = threading.Event()
         self._ended = False
         self._thread_exc: Optional[BaseException] = None
+        self._reviewer_late = False                 # the reviewer outlived `reviewer_wait` and was discarded (D179)
         self._dead_since: Optional[float] = None
         self._saved_hook = None
         self._saved_sigterm = None
@@ -450,7 +452,9 @@ class Host:
                                                   selection=self.selection, has_folder=self.has_folder)
         capabilities.install(self.context)                         # the tag and progress hooks every model call of this process runs
         self.publisher = StatePublisher(self.writer, paths.run_dir)
-        self.hooks = HostHooks(self._make_hooks(self.publisher.notify), self.publisher, self.context)
+        inner = self._make_hooks(self.publisher.notify)
+        inner.reviewer = bool(self.settings.reviewer)              # P19 asks `review_enabled()`; the setting is the host's (D179)
+        self.hooks = HostHooks(inner, self.publisher, self.context)
         self.run = j2.J2Run(run_dir=str(paths.run_dir), run_id=task.run_id[3:], hooks=self.hooks)
         self.context.run = self.run
         self.publisher.attach(self.run)
@@ -761,8 +765,10 @@ class Host:
             self.trace("publish.error", {"where": "stop summary file", "error": clip(str(err), 300)})
 
     def _conclude(self, status: str, outcome: str, code: Optional[str]) -> None:
-        """Final publish, then `run.ended`: the publisher and the heartbeat are stopped first, so nothing follows it."""
+        """The reviewer is awaited (capped), then the final publish and `run.ended`: the publisher and the heartbeat are stopped first, so
+        nothing follows it."""
         self.inbox.close()
+        self._join_reviewer()                      # D179: the run folder must be stable before anything collects, publishes or closes the writer
         self.publisher.stop()
         from . import finish
         finish.run_steps(self, status)             # D142, D143: the steps of a run that ended well; the heartbeat still beats
@@ -772,6 +778,30 @@ class Host:
         except Exception as err:  # noqa: BLE001
             self.trace("publish.error", {"where": "final", "error": clip(f"{type(err).__name__}: {err}", 300)})
         self._emit_ended(status, clip(outcome, 2000), code)
+
+    def _join_reviewer(self) -> None:
+        """J2 writes `report.json`, `report.md` and `artifacts.json` once more when the reviewer's notes arrive, from a thread it does not name or
+        offer to join (`J2Run.review_thread`). Wait for it for at most `reviewer_wait` seconds, with the publisher and the heartbeat still running
+        (a stop or SIGTERM waits no longer than a stop does: the port is closed, so the call ends). A reviewer that is still going after that is
+        discarded: bumping `report_gen` makes J2's own `_review_later` save nothing, the placeholder stays in the report, and one `reviewer.late`
+        trace line says so. Nothing is written for the run after `run.ended`."""
+        run = self.run
+        thread = getattr(run, "review_thread", None)
+        if thread is None or not thread.is_alive():
+            return
+        wait = float(self.settings.reviewer_wait) if self.settings is not None else 0.0
+        if self.stopping.is_set():
+            wait = min(wait, STOP_WAIT_S)
+        started = time.monotonic()
+        if wait > 0:
+            thread.join(wait)
+        if not thread.is_alive():
+            return
+        run.report_gen = getattr(run, "report_gen", 0) + 1       # J2: `if gen == self.report_gen: self._save_report(...)`
+        self._reviewer_late = True
+        self.trace("reviewer.late", {"waited": round(time.monotonic() - started, 3), "reviewer_wait": wait,
+                                     "result": "discarded: the report keeps its placeholder"})
+        thread.join(REVIEWER_SETTLE_S)
 
     def _close_port(self) -> None:
         try:
@@ -786,6 +816,11 @@ class Host:
 
         def hook(args):
             if args.thread is not None and args.thread.name.startswith("sutra-"):
+                return self._saved_hook(args)
+            if args.thread is not None and args.thread is getattr(self.run, "review_thread", None):
+                # J2's reviewer thread is not the run: its failure (a write after the host closed its writer, a bad report) is a trace line and a
+                # stderr traceback, never a crashed run (`_save_report` is outside the thread's own try, D179)
+                self.trace("reviewer.error", {"error": clip(f"{type(args.exc_value).__name__}: {args.exc_value}", 300), "late": self._reviewer_late})
                 return self._saved_hook(args)
             self._thread_exc = args.exc_value
             self._saved_hook(args)

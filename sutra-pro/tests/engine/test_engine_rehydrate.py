@@ -102,6 +102,16 @@ def say(run, text, timeout=60.0):
     while run.status != "waiting":
         assert time.time() < deadline, "the run did not stop"
         time.sleep(0.003)
+    stable(run)
+
+
+def stable(run, timeout=30.0):
+    """What the host does at a run end (D179): J2's reviewer thread writes `report.json`, `report.md` and `artifacts.json` once more after the
+    run is `waiting`; wait for it, so a test that compares a finished folder with itself later compares a folder nothing writes to."""
+    thread = getattr(run, "review_thread", None)
+    if thread is not None:
+        thread.join(timeout)
+        assert not thread.is_alive(), "the reviewer did not finish"
 
 
 def tree_sha(folder: Path) -> dict:
