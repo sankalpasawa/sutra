@@ -1237,8 +1237,9 @@ def test_activity_is_one_functions_feed_from_the_run_folder(w):
 
 def test_catalog_is_the_one_global_library_and_does_not_read_the_run(w):
     body = jbody(call(w, "catalog", idle_ctx(w)))
-    assert set(body) == {"schema", "dir", "groups", "runs"} and body == w.j2.j2_template_lib.catalog_view()
+    assert set(body) == {"schema", "dir", "run_templates", "groups", "runs", "artifacts", "shelf"} and body == w.j2.j2_template_lib.catalog_view()
     assert body["groups"] and body["runs"], "the seed library names the runs that gave it templates"
+    assert len(body["run_templates"]) == 4 and {"run_templates", "types"} <= set(body["shelf"]), "sync 6: the run templates and the second shelf"
     for ctx in (live_ctx(w, w.site), saved_ctx(w, SITE_ID), saved_ctx(w, "j2-20200101-000000")):
         assert jbody(call(w, "catalog", ctx)) == body
 
@@ -1422,7 +1423,7 @@ def test_the_library_views_point_j2_at_the_contexts_library_for_one_call_and_put
     ctx = idle_ctx(w, library=str(tmp_path / "data-library"))
     monkeypatch.delenv("J2_LIBRARY_DIR")                                    # the server process has none
     seed_runs = jbody(call(w, "catalog", ctx))["runs"]
-    assert len(seed_runs) == 8 and jbody(call(w, "catalog", ctx))["dir"] == str(tmp_path / "data-library")
+    assert len(seed_runs) == 11 and jbody(call(w, "catalog", ctx))["dir"] == str(tmp_path / "data-library")
     assert os.environ.get("J2_LIBRARY_DIR") is None, "put back: it was not set"
     monkeypatch.setenv("J2_LIBRARY_DIR", str(w.base / "library"))
     special = [t for sections in jbody(call(w, "library", ctx))["groups"].values() for slot in sections.values()
@@ -1540,6 +1541,43 @@ def test_the_stdlib_adapter_routes_run_template_and_says_with_a_template(w, monk
     assert w.server.ask("POST", "/api/say", {"text": "two"})[0] == 200
     assert w.server.ask("POST", "/api/say", {"text": "three", "template": "Bad"})[0] == 400
     assert said == [("tpl", "a-b", "W-1,W-2"), ("say", "one"), ("say", "two")]
+
+
+def test_the_artifacts_shelf_of_a_team_lists_its_own_finished_runs_and_no_other_teams(w, tmp_path, monkeypatch):
+    """D184: two teams over one global library. Team A holds the two finished runs of the fixture, team B none; each sees only its own, and the
+    templates, the run templates and the `runs` rows of the index are the same for both."""
+    lib = tmp_path / "data-library"
+    shutil.copytree(REPO / "sutra_app" / "engine" / "seed" / "library", lib)
+    monkeypatch.delenv("J2_LIBRARY_DIR")
+    monkeypatch.delenv("J2_RUNS_DIR")
+    team_b_runs = tmp_path / "team-b" / "runs"
+    team_b_runs.mkdir(parents=True)
+    ask = lambda runs: jbody(call(w, "catalog", w.views.RunCtx("idle", None, None, str(runs), None, w.memory, snap={}, library=str(lib))))
+    a, b = ask(w.runs_dir), ask(team_b_runs)
+    mine = {x["id"] for x in a["artifacts"]}
+    assert len(mine) == 2, "team A's two finished runs are on its shelf"
+    assert b["artifacts"] == [], "team B has no finished run: its shelf is empty, not team A's"
+    assert {k: a[k] for k in ("groups", "run_templates", "runs")} == {k: b[k] for k in ("groups", "run_templates", "runs")}, "the library is one"
+    assert [t["type"] for t in a["shelf"]["types"]] == [t["type"] for t in b["shelf"]["types"]] and a["shelf"]["schema"] == b["shelf"]["schema"]
+
+    assert "J2_RUNS_DIR" not in os.environ and "J2_LIBRARY_DIR" not in os.environ, "both put back"
+    assert ask(w.runs_dir)["artifacts"] == a["artifacts"], "asking again, after the other team, gives the first answer"
+
+
+def test_the_run_template_view_reads_the_seeds_run_templates_through_the_real_j2(w, tmp_path, monkeypatch):
+    lib = tmp_path / "data-library"
+    shutil.copytree(REPO / "sutra_app" / "engine" / "seed" / "library", lib)
+    monkeypatch.delenv("J2_LIBRARY_DIR")
+    ids = sorted(p.name for p in (lib / "run-templates").iterdir())
+    assert ids == ["iron-grove-fitness-prd-hld-lld-and-website", "still-point-yoga-prd-hld-and-lld", "still-point-yoga-studio-website", "thread-boutique-website"]
+    ctx = lambda on: w.views.RunCtx("idle", None, None, str(w.runs_dir), None, w.memory, snap={}, library=str(lib), run_templates_on=on)
+    off, on = (jbody(call(w, "run_template", ctx(flag), id="thread-boutique-website")) for flag in (False, True))
+    assert off["enabled"] is False and on["enabled"] is True and {k: v for k, v in off.items() if k != "enabled"} == {k: v for k, v in on.items() if k != "enabled"}
+    assert off["id"] == "thread-boutique-website" and len(off["workflows"]) == 5 and all("ref" in x for x in off["workflows"])
+    assert off["stage_labels"] and isinstance(off["used_by"], list)
+    assert call(w, "run_template", ctx(True), id="no-such-template").code == 404
+    monkeypatch.setenv("J2_RUN_TEMPLATES", "1")
+    assert jbody(call(w, "run_template", ctx(False), id="thread-boutique-website"))["enabled"] is False, "the server's environment says nothing"
 
 
 def test_the_asking_cap_of_a_question_is_the_note_cap_of_the_orchestrator(w):
