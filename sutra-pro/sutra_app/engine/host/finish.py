@@ -11,7 +11,7 @@ steps below, in this order; a stopped or crashed run gets none.
                   Agent-readable tab shows, each file checked by its model. J2 builds them only by hand
                   (`python -m sutra_app.engine.j2_agent_views build <run folder>`).
     catalog       `j2_template_lib.collect(<team runs folder>, runs=[<this run>])` under the library lock (P10): the templates this run
-                  stored reach the catalog. Only when the engine setting `template_library` is on, the run is not a mock run (a scripted
+                  stored reach the catalog. Only when the template library is on for the run (`EngineSettings.effective()`, D178: `auto_reuse` turns it on in J2 too), the run is not a mock run (a scripted
                   run teaches the library nothing) and it stored templates. A lock that stays taken for the whole wait skips the step.
 
 The steps run in the engine process (D14: files only, the server never writes the library) and every one of them is guarded. An exception,
@@ -65,7 +65,7 @@ def agent_views(host) -> dict:
 def catalog(host) -> dict:
     """This run's templates into the catalog (D142), under the library lock. `collect` writes `index.json` and version folders with no
     lock of its own (P10 wraps only `store` and `mark_used`), so the whole read-modify-write happens inside `_library_lock()`."""
-    if not host.settings.template_library:
+    if not host.settings.effective().template_library:
         raise Skip("the template library is off for this run")
     if host.mock:
         raise Skip("a mock run teaches the library nothing")

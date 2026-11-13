@@ -32,8 +32,10 @@ __all__ = ["ProjectCapability", "PROJECT_SECTIONS", "PROJECT_RUBRIC", "CONDITION
 PROJECT_SECTIONS = ("Findings", "Changes", "Confirmation", "Open items", "Outcome")
 DATA = Path(__file__).resolve().parent / "data"
 CONDITIONS_FILE = str(DATA / "project.json")
-# A project has no data model and no template, so both are switched off for it (the host says so in a trace line).
-FORCE = {"artifact_schema": False, "template_library": False}
+# A project has no data model, no template and no run template, so the whole chain is switched off for it (the host says so in a trace line):
+# `EngineSettings.effective()` is false for all four when these five are, because J2 would otherwise turn `template_library` on again through
+# `auto_reuse`, and the content door would serve document text into a run that works in the owner's folder (D178).
+FORCE = {"artifact_schema": False, "template_library": False, "run_templates": False, "auto_reuse": False, "artifact_library": False}
 CHECK_TYPES = ("facts-present", "heading-present", "section-not-empty", "ids-unique")      # what the document atom rules let a check use here
 
 PROJECT_RUBRIC = (
