@@ -47,6 +47,7 @@ import tempfile
 os.environ["STUDIO_MOCK"] = "1"
 os.environ["J2_MEMORY"] = "0"        # clean runs: the memory tests turn it on
 os.environ["J2_REALIZATION"] = "0"   # the classic path (realization is on by default; realization_test.py covers it)
+os.environ["J2_AGENT_TOOLS"] = "0"   # the section path a provider without tools keeps; general_path() turns tools on
 # Every memory file of this test session lives in a temp folder, set before j2 is imported, so no test can write
 # lessons or playbooks into the real memory/ (it once wrote 109 mock cafe playbooks there; a live run reused one).
 SESSION_MEMORY = tempfile.mkdtemp(prefix="j2-test-memory-")
@@ -4161,7 +4162,8 @@ def agent_form():
         if keep is not None:
             os.environ["J2_AGENT_TOOLS"] = keep
     assert {j2.j2_types.load(n)["output"] for n in ("prd", "website")} == {"file"}
-    assert all(k not in j2.j2_types.load("prd") for k in ("tools", "folder")), "a file form gets no tools"
+    assert j2.j2_types.load("prd")["tools"] == j2.j2_types.load("agent")["tools"] and "folder" not in j2.j2_types.load("prd"), \
+        "every form's builder gets builder_tools; only a folder form names its folder"
     with open(j2.j2_types.TYPES_PATH, encoding="utf-8") as f:
         base = json.load(f)
     tmp = tempfile.mkdtemp()
@@ -4184,6 +4186,44 @@ def agent_form():
     print("agent form: loads from data (folder, tools, rules, runner), choosable only with tools on, bad forms refused ok")
 
 
+def general_path():
+    """remove-restrictions step 2 (mock, tools on): a website, a PRD and an agent each go Adaptation -> Priority ->
+    Coordination -> builders writing files in the output folder with tools -> Audit, and end Done; the page's folder is
+    published to site/, the PRD's main file to its path; an agent's conditions are checked on its folder (its test
+    rerun in the sandbox); no workflow takes the old section reply."""
+    keep = os.environ.get("J2_AGENT_TOOLS")
+    os.environ["J2_AGENT_TOOLS"] = "1"
+    try:
+        out = {}
+        for t, brief in (("website", BREW_LAB), ("prd", PRD_BRIEF)):
+            os.environ["J2_OUTPUT"] = t
+            try:
+                run = j2.J2Run()
+                say(run, brief)
+                finish(run)
+            finally:
+                os.environ.pop("J2_OUTPUT")
+            assert run.outcome.startswith("Done"), (t, run.outcome)
+            assert all(w["status"] == "done" for w in run.workflows if w["cycle"] == run.cycle), t
+            rows = calls_file(run)
+            assert all(r.get("tools") for r in rows if j2.is_wf_agent(r["fn"])), "every build call ran with tools"
+            assert not any("YOU OWN SECTION" in r["prompt"] for r in rows), "no section reply on the general path"
+            out[t] = run
+        assert os.path.isfile(os.path.join(out["website"].dir, "out", "index.html"))
+        assert open(os.path.join(out["website"].dir, "site", "index.html")).read() == out["website"].sites[-1]
+        assert open(os.path.join(out["prd"].dir, "prd.md")).read() == out["prd"].sites[-1]
+        warn = {"type": "grep-count", "file": "index.html", "target": "never-on-the-page", "expect": 5, "text": "x"}
+        w = out["website"].workflows[0]
+        a = {"id": "W-x.a1", "verification": [warn]}
+        assert not out["website"]._run_checks(w, 1, out["website"].sites[-1], atoms=[a], folder=out["website"]._out_dir()), \
+            "an advisory check never fails a build"
+        assert a["results"][0]["pass"] and a["results"][0]["evidence"].startswith("warning"), a["results"]
+    finally:
+        os.environ["J2_AGENT_TOOLS"] = keep
+    print("general path: website and PRD Done with every build written by a tools builder in the output folder, "
+          "published to site/ and prd.md; an advisory check warns, never fails ok")
+
+
 def builder_tools_call():
     """agent-tools step 1 (mock): J2Run._builder_tools gives a builder its form's tools with tools on (offline only with
     J2_AGENT_TOOLS=1), each limit its setting or default (none for a form without tools); J2Run.call records the files written in the builder's folder in
@@ -4196,7 +4236,7 @@ def builder_tools_call():
             os.environ.pop(k, None)
         site = page_run()
         os.environ["J2_AGENT_TOOLS"] = "1"
-        assert site._builder_tools() is None, "a form without tools gets none"
+        assert site._builder_tools()["cwd"] == os.path.join(site.dir, "out"), "a page builder works in the output folder"
         run = j2.J2Run()
         run.set_output("agent")
         os.environ.pop("J2_AGENT_TOOLS")
@@ -4264,71 +4304,6 @@ conf = json.load(open(a[a.index("-s") + 1]))
 open("seen-settings.json", "w").write(json.dumps(conf))
 sys.exit(subprocess.run(a[a.index("-c") + 1], shell=True).returncode)
 """
-
-
-def folder_run():
-    """agent-tools step 3 (mock): a brief of a folder type runs the folder stage. One workflow from the charter and the
-    conditions file; the builder (its tools scripted by the mock) writes the folder; code checks the five conditions,
-    each a receipt, the test rerun through J2_SANDBOX_CMD on a copy (the copy's settings: writes only there, no
-    network, the paths srt leaves open closed); the run ends Done. A build that keeps failing stops after
-    MAX_CHECK_ATTEMPTS with the evidence; a write outside the folder stops at once.
-    sandbox_rerun refuses a test outside the folder."""
-    names = ("J2_AGENT_TOOLS",) + j2.AGENT_SETTINGS
-    keep = {k: os.environ.get(k) for k in names}
-    tmp = tempfile.mkdtemp()
-    fake = os.path.join(tmp, "fake_srt.py")
-    with open(fake, "w", encoding="utf-8") as f:
-        f.write(FAKE_SRT)
-    brief = "A small agent called Greeter that greets a user by name and logs each greeting."
-
-    def run_with(files=None):
-        run = j2.J2Run()
-        run.set_output("agent")
-        if files is not None:
-            run.out = {**run.out, "mock_files": files}
-        say(run, brief, review=False)
-        return run
-    try:
-        os.environ.update(J2_AGENT_TOOLS="1", J2_AGENT_USD="0.5", J2_AGENT_MAX_FILES="20", J2_AGENT_MAX_BYTES="100000",
-                          J2_TOOL_LOG_CHARS="200", J2_SANDBOX_CMD=f"{sys.executable} {fake}")
-        run = run_with()
-        assert run.outcome.startswith("Done"), run.outcome
-        w = run.workflows[0]
-        assert w["status"] == "done" and w["outputs"] == ["agent/"] and len(w["atoms"][0]["verification"]) == 5, w
-        recs = [r for r in run.receipts if r.get("check")]
-        assert len(recs) == 5 and all(r["pass"] for r in recs), recs
-        test = next(r for r in recs if r["type"] == "test-passed")
-        assert test["rerun"]["exit"] == 0 and len(test["rerun"]["sha256"]) == 64 and "ok" in test["rerun"]["output"], test
-        assert sorted(os.listdir(os.path.join(run.dir, "agent"))) == ["README.md", "main.py", "test_main.py"]
-        assert not [f for f in os.listdir(run.dir) if f.startswith(".rerun-")], "the rerun copy is removed"
-        row = next(c for c in reversed(j2._jsonl(run.dir, "calls.jsonl")) if c["fn"] == "W-1")
-        assert len(row["tools"]["files_written"]) == 3 and not row["tools"]["outside"], row["tools"]
-        conf = j2.sandbox_settings("/x")
-        assert conf["network"]["allowedDomains"] == [] and conf["filesystem"]["allowWrite"] == ["/x"]
-        assert set(j2.SANDBOX_DENY_WRITE) <= set(conf["filesystem"]["denyWrite"]) and "~" in conf["filesystem"]["denyRead"]
-
-        bad = run_with(lambda g: {"main.py": "x = 1\n", "test_main.py": "raise SystemExit(1)\n"})
-        assert bad.outcome.startswith("Stopped") and "exited 1" in bad.outcome, bad.outcome
-        assert bad.workflows[0]["calls_used"] == j2.MAX_CHECK_ATTEMPTS and bad.workflows[0]["status"] == "failed"
-
-        out = run_with(lambda g: {"main.py": "", "../escape.txt": "x"})
-        assert out.outcome.startswith("Stopped") and "outside its folder" in out.outcome, out.outcome
-        assert out.workflows[0]["calls_used"] == 1, "an outside write is never retried"
-
-        d = os.path.join(tmp, "f")
-        os.makedirs(d)
-        os.environ["J2_SANDBOX_CMD"] = f"{sys.executable} {fake}"
-        r = j2.sandbox_rerun(d, ["python3", "{target}"], "../t.py", 5)
-        assert r["pass"] is False and "not a file in the folder" in r["evidence"], r
-    finally:
-        for k, v in keep.items():
-            if v is None:
-                os.environ.pop(k, None)
-            else:
-                os.environ[k] = v
-        shutil.rmtree(tmp, ignore_errors=True)
-    print("folder run: one workflow from the charter, five conditions as receipts, the test rerun in the sandbox on a "
-          "copy, Done; failing build stopped after its attempts; outside write stopped at once ok")
 
 
 def builder_time_limit():
@@ -14990,7 +14965,7 @@ if __name__ == "__main__":
             agent_tools_cli()           # agent-tools step 0: llm tools from the caller only; no tools = today's command
             agent_form()                # agent-tools step 2: the agent form, data only
             builder_tools_call()        # agent-tools step 1: tools through J2Run.call, recorded, faults raised
-            folder_run()                # agent-tools step 3: the folder stage, offline
+            general_path()              # remove-restrictions step 2: every brief through one path, builders with tools
             builder_context_trim()      # a real run's builder prompt: no chat, no other workflows
             builder_inputs()            # depended-on sections in full, cut inputs noticed and logged
             timing_records()            # timing.json and Run settings' calls, tokens and time

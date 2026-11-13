@@ -939,6 +939,13 @@ class PageScan(html.parser.HTMLParser):
                 or (kind != "#" and name in a.get("class", "").split())]
 
 
+def with_base(page, folder):
+    """The page with a <base> naming its folder, so a page checked from a temporary file finds its relative files."""
+    tag = f'<base href="file://{os.path.realpath(folder)}/">'
+    m = re.search(r"<head\b[^>]*>", page or "", re.I)
+    return page[:m.end()] + tag + page[m.end():] if m else tag + (page or "")
+
+
 def run_check(c, site_dir, page, doc=False):
     """{actual, pass, evidence} for one check against the built site (doc=True: page is a markdown document). Code
     only."""
@@ -1594,6 +1601,10 @@ def condition_met(cond, doc, goal, source, sections, page=None, mech=None):
     if k in ("lld-ids-unique", "lld-elements", "lld-fields"):
         return lld_condition(k, doc)
     return False, f"no code check named {k!r}"
+
+
+# conditions checked on an output folder's files (J2Run._folder_condition), not on its text
+FOLDER_CHECKS = ("charter-files-present", "test-passed", "inside-folder", "charter-fields-present")
 
 
 def check_conditions(conds, doc, goal, source, sections, page=None, mech=None):
@@ -3597,7 +3608,7 @@ class J2Run:
         self.out = output_def(self.output) if self.output else None
         # how it is built and checked follows its form (page or document), not its name
         self.doc = bool(self.output) and j2_types.info(self.output)["form"] == "document"
-        # a form whose output is a folder (types.json "output"): built by _folder_stage, by a builder with tools
+        # a form whose output is a folder (types.json "output"): its conditions are checked on the folder (_folder_condition)
         self.folder = bool(self.out) and self.out.get("output") == "folder"
         if self.doc and not self.out["sections"]:      # a new type with no template yet: the sections its plan declared
             self.out = {**self.out, "sections": tuple(self.__dict__.get("declared_secs", {}).get(self.output) or ())}
@@ -4066,7 +4077,7 @@ class J2Run:
             return None
         if not llm.MOCK and not llm.can_use_tools():
             raise ValueError(f"{llm.PROVIDER} can't give a builder tools (llm.TOOLS)")
-        cwd = os.path.join(self.dir, self.out["folder"])
+        cwd = self._out_dir()
         os.makedirs(cwd, exist_ok=True)
         return {"tools": list(self.out["tools"]), "allow": list(self.out["allow"]), "cwd": cwd, "root": self.dir,
                 "usd": float(agent_setting("J2_AGENT_USD")), "log_chars": int(agent_setting("J2_TOOL_LOG_CHARS")),
@@ -4559,13 +4570,14 @@ class J2Run:
             if name in r["deliverables"] and name not in j2_types.names():
                 try:
                     j2_types.create(name, spec.get("label"), spec.get("sections"), spec.get("file"),
-                                    practice=spec.get("recommended_practice"))
+                                    practice=spec.get("recommended_practice"), form=spec.get("form"))
                 except ValueError as e:
                     self._event("adaptation", "new_type_refused", str(e))
                     continue
                 self._event("adaptation", "new_type", f"{name}: {', '.join(spec.get('sections') or [])}")
-                self.post("system", f"New type {name} ({spec.get('label')}): made as a document with the sections "
-                                    f"{', '.join(spec.get('sections') or [])}, and saved for later runs.")
+                self.post("system", f"New type {name} ({spec.get('label')}): made in the {spec.get('form') or 'default'} "
+                                    "form" + (f" with the sections {', '.join(spec.get('sections'))}" if spec.get("sections")
+                                              else "") + ", and saved for later runs.")
         known = j2_types.names()
         chosen = [k for k in dict.fromkeys(r["deliverables"]) if k in known]
         if r["plan_faults"]:
@@ -4635,7 +4647,7 @@ class J2Run:
             skill = STAGE_SKILLS.get(str((self._wf(fn) or {}).get("stage") or ""))
             if skill:
                 return skill
-        return self.out["builder"]
+        return getattr(self, "tools_builder", None) or self.out["builder"]
 
     def _sw(self, k):
         """A stage in words (stage_words)."""
@@ -4844,160 +4856,6 @@ class J2Run:
         if self._advance(self.stage_i + 1):
             return
         self._deeds_finished()
-
-    # ---- a form whose output is a folder (types.json "output": "folder"; J2_AGENT_TOOLS=1)
-    FOLDER_FMT = ('{"say": str (to @Coordination: what you wrote and what the test printed), "human_output": str (1 to '
-                  '3 plain sentences for the Requester: what the folder now does), "next": "Coordination"}')
-
-    def _folder_stage(self):
-        """After the charter: one workflow, registered by code from the charter and the type's conditions file, whose
-        builder writes the folder with the tools its form declares (J2Run.call tools). After each attempt code checks
-        every condition on the folder (the test rerun in the sandbox, sandbox_rerun) and gives the failures back, up
-        to MAX_CHECK_ATTEMPTS. A write outside the folder stops it at once.
-        ponytail: no Adaptation plan, Priority or Audit for a folder yet; the conditions are its checks."""
-        self.step = 6
-        try:
-            tools = self._builder_tools()
-            if tools is None:
-                raise ValueError("its form gives the builder tools, which are off (J2_AGENT_TOOLS=0)")
-        except ValueError as e:
-            self.post("system", f"The {self.out['label'].lower()} can't be built: {e}.", warning=True)
-            self.outcome, self.turn = f"Stopped: {e}.", None
-            return
-        g, label, folder = self.goal or {}, self.out["label"], self.out["folder"]
-        conds = {c["id"]: c for c in conditions_for(self.out["conditions"], g, self.out["practice"])}
-        self.past_workflows += self.workflows
-        self.workflows = []
-        wid = f"W-{len(self.past_workflows) + 1}"
-        aid = f"{wid}.a1"
-        files = next((charter_list(g, c["charter_field"]) for c in conds.values() if c["check"] == "charter-files-present"), [])
-        test = next((charter_list(g, c["charter_field"]) for c in conds.values() if c["check"] == "test-passed"), [""])[:1]
-        test = test[0] if test else ""
-        exact = [f for c in conds.values() if c["check"] == "charter-fields-present" for f in c.get("charter_fields") or []]
-        ver = [{"text": c["text"], "type": c["check"], "expect": True, "atom": aid, "condition": cid,
-                "target": c.get("charter_fields") or c.get("charter_field") or "."} for cid, c in conds.items()]
-        atom = {"id": aid, "goal": f"The {label.lower()} in {folder}/ meets every necessary condition",
-                "how": {"kind": "AI", "agent": f"{wid} Builder", "steps": files}, "constraints": ["only inside its folder"],
-                "context": ["charter"], "verification": ver,
-                "expected_output": [{"text": f"{f} is in the folder", "kind": "file", "target": f} for f in files]}
-        cost = sum(RATES.get(p, 0) for p in self.out.get("essentials") or ())
-        wf = {"id": wid, "proposal_id": None, "name": f"Build the {label.lower()}", "covers": [], "fixes": [],
-              "covers_text": [], "purpose": g.get("statement") or "", "cost": cost, "estimate": cost,
-              "envelope": {"money_limit": cost, "model_call_limit": MAX_CHECK_ATTEMPTS, "retry_limit": MAX_CHECK_ATTEMPTS - 1},
-              "charged": True, "calls_used": 0, "retries_used": 0, "outputs": [folder + "/"], "completion_check": "",
-              "dependencies": [], "status": "running", "cycle": self.cycle, "agent": f"{wid} Builder", "section": None,
-              "revises": None, "atoms": [atom]}
-        self.workflows = [wf]
-        add_workflow_agent(wid)
-        self._recalc_spent()
-        self.save("workflows.json", self.workflows)
-        runner = " ".join(str(x).replace("{target}", test) for x in self.out["test_runner"])
-        rules = "\n".join(f"- {c['id']} {c['text']}" for c in conds.values())
-        recs, evidence, failed, r, attempt, stop = [], "", [], {}, 0, None
-        self.atom = aid
-        while attempt < MAX_CHECK_ATTEMPTS:
-            attempt += 1
-            wf["calls_used"] += 1
-            task = (f"YOU ARE {wid} Builder, the agent for one registered workflow: {wf['name']}.\nYOUR FOLDER is your "
-                    f"working directory ({folder}/ in the run). Write exactly these files there: {json.dumps(files)}. "
-                    f"Then run the test with exactly this command: {runner}\n"
-                    + (f"Copy every item of the charter's {', '.join(exact)} word for word into the files. " if exact else "")
-                    + f"CHARTER: {json.dumps(g, ensure_ascii=False)}\nNECESSARY CONDITIONS (code checks each one on the "
-                    f"folder when you finish, and reruns the test in a sandbox):\n{rules}"
-                    + (f"\nATTEMPT {attempt} OF {MAX_CHECK_ATTEMPTS}. THESE FAILED ON YOUR LAST ATTEMPT:\n{evidence}\n"
-                       "Fix the folder so they pass." if evidence else ""))
-            try:
-                r = self.call(wid, self.FOLDER_FMT, task, lambda: self._mock_folder(tools["cwd"]), max_tokens=2000,
-                              timeout=builder_timeout(), tools=tools)
-                recs.append(self.call_log[-1].get("tools"))
-            except BuilderToolFault as e:
-                recs.append(self.call_log[-1].get("tools") if self.call_log and self.call_log[-1]["fn"] == wid else None)
-                if e.kind == "outside":
-                    stop = f"{wid} changed files outside its folder ({e})"
-                    break
-                evidence = f"- {e}"
-                continue
-            except RuntimeError as e:      # stopped at the time or cost limit, or the CLI failed
-                evidence = f"- your last call was stopped before it finished: {e}"
-                continue
-            failed = [x for x in self._folder_checks(wf, atom, attempt, conds, recs) if x["pass"] is not True]
-            if not failed:
-                break
-            evidence = "\n".join(f"- {x['check']}: {x['evidence']}" for x in failed)
-        self.atom = None
-        ok = not stop and atom.get("status") == "passed"
-        wf["status"], wf["version"] = ("done" if ok else "failed"), 1
-        self.save("workflows.json", self.workflows)
-        human = str((r or {}).get("human_output") or "").strip() if isinstance(r, dict) else ""
-        if ok:
-            self._say(wid, f"@Coordination {human or wf['name'] + ': done.'}", "coordination", None, workflow=wid,
-                      human_output=human, version=1, workflow_cost=wf["cost"])
-            self.post("identity", f"{j2_types.info(self.output)['ready']} {human}".strip(), done=True, to_user=True,
-                      next="user")
-            self.outcome = self.out["done"]
-            if self.stages and self._advance(self.stage_i + 1):
-                return
-        else:
-            why = stop or (evidence.replace("\n", " ") if evidence else "no usable attempt")
-            self.post("system", f"{wid} did not pass its checks after {attempt} attempt(s): {why}", warning=True)
-            self.outcome = f"Stopped: the {label.lower()} did not pass its checks after {attempt} attempt(s): {why}"
-        self.turn = None
-
-    def _mock_folder(self, cwd):
-        """Mock only: what a scripted builder's tools would write, then its reply."""
-        for name, text in self.out["mock_files"](self.goal).items():
-            p = os.path.join(cwd, name)
-            os.makedirs(os.path.dirname(p), exist_ok=True)
-            with open(p, "w", encoding="utf-8") as f:
-                f.write(text)
-        return json.dumps({"say": "@Coordination I wrote the folder and its test passed.", "human_output":
-                           "The folder now holds the agent, its instructions and a test that passes.", "next": "Coordination"})
-
-    def _folder_checks(self, wf, atom, attempt, conds, recs):
-        """Every condition on the builder's folder, by code, each a receipt: the charter's files present, the test
-        rerun in the sandbox (sandbox_rerun: its exit, the test's sha256 and time kept with the receipt), nothing
-        changed outside the folder in any call, every item of the named charter fields in the folder's text; any other
-        check through condition_met on that text."""
-        folder, g = os.path.join(self.dir, self.out["folder"]), self.goal or {}
-        text, out = folder_text(folder), []
-        for c in atom["verification"]:
-            k, cond, extra = c["type"], conds.get(c.get("condition")) or {}, {}
-            if k == "charter-files-present":
-                want = charter_list(g, c["target"])
-                miss = [f for f in want if not (llm.inside(os.path.join(folder, f), folder)
-                                                and os.path.isfile(os.path.join(folder, f)))]
-                res = {"actual": len(want) - len(miss), "pass": bool(want) and not miss,
-                       "evidence": (f"missing: {', '.join(miss)}" if miss else f"all {len(want)} files are in the folder")
-                       if want else f"the charter lists no {c['target']}"}
-            elif k == "test-passed":
-                t = (charter_list(g, c["target"]) or [""])[0]
-                rr = sandbox_rerun(folder, self.out["test_runner"], t, builder_timeout())
-                res = {"actual": rr.get("exit"), "pass": rr["pass"], "evidence": rr["evidence"]}
-                extra = {"rerun": {k2: rr.get(k2) for k2 in ("exit", "sha256", "seconds", "output")}}
-            elif k == "inside-folder":
-                bad = sorted({x for rec in recs if rec for x in rec.get("outside") or []})
-                res = {"actual": len(bad), "pass": not bad and any(recs),
-                       "evidence": f"changed outside the folder: {', '.join(bad)}" if bad else
-                       "no call changed anything outside the folder" if any(recs) else "no call was recorded"}
-            elif k == "charter-fields-present":
-                items = [x for f in c["target"] for x in charter_list(g, f)]
-                miss = [x for x in items if squash(x) not in squash(text)]
-                res = {"actual": len(items) - len(miss), "pass": not miss,
-                       "evidence": f"not in the folder's files: {'; '.join(miss)}" if miss else
-                       f"all {len(items)} item(s) are in the folder's files"}
-            else:
-                met, ev = condition_met(cond, text, g, "", ())
-                res = {"actual": met, "pass": met, "evidence": ev}
-            out.append(self._receipt(atom, c, attempt, res, **extra))
-        atom["results"], atom["attempts"] = out, attempt
-        atom["status"] = "failed" if any(x["pass"] is False for x in out) else \
-            "could not run" if any(x["pass"] is None for x in out) else "passed"
-        bad = [x for x in out if x["pass"] is not True]
-        self.post("system", f"Code ran {len(out)} check(s) for {wf['id']} (attempt {attempt} of {MAX_CHECK_ATTEMPTS}): "
-                  + ("; ".join(f"{x['check']} ({x['evidence']})" for x in bad) if bad else "all passed") + ".",
-                  checks=wf["id"])
-        self.save("workflows.json", self.workflows)
-        return out
 
     GOAL_TAGS = {"prd": "PRD", "hld": "HLD", "lld": "LLD"}      # and a page type by its label (_milestone)
 
@@ -6825,8 +6683,6 @@ class J2Run:
     def _start_work(self, change, start):
         """After the charter is stamped: Adaptation proposes. A J2_CHANGE change goes to _turn_change, unless no item,
         rule or standard changed (no plan change: the run ends as it is) or the goal itself changed (a full re-plan)."""
-        if self.folder and not change:      # a folder: one workflow from the charter, built with tools
-            return self._folder_stage()
         if not change:
             self._auto_reuse_pick()      # J2_AUTO_REUSE=1: once, after the first charter
         if not (change and self._change_applies(change)):
@@ -7496,6 +7352,26 @@ class J2Run:
                     if new := fixed_step(st):
                         lst[i] = new
                         self._autofix(name, "behavior_step", f"work atom {n}: step {st!r} has no value, so it is {new!r}")
+            kinds = expect_kinds(types)      # an item no check of this output verifies: kept as a constraint, not rejected
+            xs = a.get("expected_output") if isinstance(a.get("expected_output"), list) else []
+            odd = [x for x in xs if isinstance(x, dict) and x.get("kind") not in kinds and x.get("kind") != "behavior"
+                   and str(x.get("text") or "").strip()]
+            if odd and self._general():
+                a["expected_output"] = [x for x in xs if x not in odd]
+                cons = a.get("constraints")
+                a["constraints"] = (list(cons) if isinstance(cons, list) else [cons] if cons else []) + [
+                    f"Expected: {x['text']}" for x in odd]
+                self._autofix(name, "unchecked_expected", f"work atom {n}: {len(odd)} expected output item(s) of a kind "
+                                                         "this output has no check for kept as constraints (Audit judges them)")
+            ver = a.get("verification") if isinstance(a.get("verification"), list) else []
+            bad = [c for c in ver if isinstance(c, dict) and c.get("type") not in types]
+            if bad and self._general():      # a check this output doesn't run: kept as a constraint, not rejected
+                a["verification"] = [c for c in ver if c not in bad]
+                cons = a.get("constraints")
+                a["constraints"] = (list(cons) if isinstance(cons, list) else [cons] if cons else []) + [
+                    f"Expected: {c.get('text') or c.get('type')}" for c in bad]
+                self._autofix(name, "unrun_check", f"work atom {n}: {len(bad)} check(s) of a type this output doesn't "
+                                                   "run kept as constraints (Audit judges them)")
             if expected_problems(a, types):
                 continue
             probs = check_problems(cover_expected(copy.deepcopy(a)), src, types, up, ranges=real)
@@ -7523,7 +7399,7 @@ class J2Run:
     def _file_wf(self, w):
         """A workflow whose output is a file later workflows read (J2_REALIZATION website runs only; a document run's
         workflows write sections of its document as before)."""
-        return bool(getattr(self, "realization", False)) and not self.doc and is_artifact(w)
+        return bool(getattr(self, "realization", False)) and not self.doc and is_artifact(w) and not self._general()
 
     def _next_wf_id(self, name, plan_ix=None):
         """The id a newly registered workflow gets: W-<its place in the realization plan> when it is planned and that id
@@ -8513,6 +8389,8 @@ class J2Run:
         self.atom = (w.get("atoms") or [{}])[0].get("id")     # its AI calls are tagged with the atom they build
         if self._file_wf(w):
             return self._run_artifact(w, brief, max_calls)
+        if self._general():      # the general path: the builder writes files with its tools
+            return self._run_tools(w, brief, max_calls)
         art_kind, art_sec, art_model = None, None, None
         if self.schemas:      # J2_ARTIFACT_SCHEMA=1: this workflow's own template (a document section, or a page section)
             art_kind = self.output if self.doc else "website"
@@ -8903,6 +8781,170 @@ class J2Run:
                     a["status"] = "failed"
             self.post("system", f"{', '.join(bad)} failed its checks on all {attempt} attempts. Code sends the receipts "
                                 "to Adaptation, which decides whether the check or the artifact is wrong.")
+            return self._handoff("adaptation", kind="atom_failed", wid=fn, atoms=bad, attempt=attempt, owner_note="")
+        self._handoff("coordination", kind="schedule")
+
+    # ---- the general path (tools on, llm.tools_on): every builder writes files in the run's output folder with its
+    # tools; code publishes the result where the checks, Audit and the views read it, and runs the work atoms' checks
+    TOOLS_FMT = ('{"say": str (one short line to @Coordination: what you wrote; code runs your checks, so don\'t claim '
+                 'they pass), "human_output": str (1 to 3 plain sentences telling a person what you built), '
+                 '"atom_human_output": str (1 or 2 plain sentences in everyday words: no ids, no selectors), '
+                 '"next": "Coordination"}')
+
+    def _general(self):
+        """True when builders work with tools (the general path); a provider that can't give tools keeps the old one."""
+        try:
+            return self._builder_tools() is not None
+        except ValueError:
+            return False
+
+    def _out_dir(self):
+        """The run's output folder: the form's folder, else builder_tools' (types.json)."""
+        return os.path.join(self.dir, self.out.get("folder") or j2_types.builder_tools().get("folder") or "out")
+
+    def _main_file(self):
+        """The output's main file in the folder (its form's file name), None for a folder of files."""
+        f = os.path.basename(str(self.out.get("entry_file") or ""))
+        return None if not f or "*" in f else f
+
+    def _out_text(self):
+        """What the checks and Audit read: the main file, else every text file in the folder."""
+        d, m = self._out_dir(), self._main_file()
+        if m and os.path.isfile(os.path.join(d, m)):
+            with open(os.path.join(d, m), encoding="utf-8", errors="replace") as f:
+                return f.read()
+        out = []
+        for root, dirs, files in os.walk(d):
+            dirs[:] = sorted(x for x in dirs if not x.startswith(".") and x != "__pycache__")
+            for name in sorted(files):
+                p = os.path.join(root, name)
+                try:
+                    with open(p, encoding="utf-8") as f:
+                        out.append(f"--- {os.path.relpath(p, d)} ---\n{f.read()}")
+                except (OSError, UnicodeDecodeError):
+                    out.append(f"--- {os.path.relpath(p, d)} --- (not text)")
+        return "\n".join(out)
+
+    def _publish_out(self, text):
+        """A new version of the output: in sites, and where the rest of J2 reads it (a document's main file at its
+        path, an html main file's folder copied into site/), with the version's copy in site/."""
+        self.sites.append(text)
+        d, m, n = self._out_dir(), self._main_file(), len(self.sites)
+        os.makedirs(os.path.join(self.dir, "site"), exist_ok=True)
+        if self.doc:
+            names = (self.out["file"], f"site/{self.site_tag}v{n}.md")
+        elif m and self.out.get("output") != "folder":
+            shutil.copytree(d, os.path.join(self.dir, "site"), dirs_exist_ok=True)
+            names = (f"site/v{n}{os.path.splitext(m)[1]}",)
+        else:
+            names = ()
+        for name in names:
+            with open(os.path.join(self.dir, name), "w", encoding="utf-8") as f:
+                f.write(text)
+
+    def _mock_tools(self, w, cwd):
+        """Mock only: what a scripted builder's tools would write (the form's mock files, a document's sections, or a
+        page naming every done-when item), then its reply."""
+        g, m = self.goal or {}, self._main_file()
+        crit = g.get("done_when") or []
+        if self.out.get("mock_files"):
+            files = self.out["mock_files"](g)
+        elif self.doc:      # the form's mock sections, each workflow's replacing its own
+            p = os.path.join(cwd, m)
+            have = open(p, encoding="utf-8").read() if os.path.isfile(p) else ""
+            parts = {h: f"## {h}\n{b}" for lv, h, b in md_sections(have) if lv == 2}
+            parts.update({h: f"## {h}\n{b}" for lv, h, b in md_sections(self.out["mock_section"](w, g)) if lv == 2})
+            order = list(self.out["sections"])
+            files = {m: "\n\n".join(parts[h].rstrip() for h in sorted(parts, key=lambda h: order.index(h)
+                                                                        if h in order else len(order))) + "\n"}
+        else:
+            files = {m or "index.html": '<!doctype html><html><head><meta name="viewport" content="width=device-width, '
+                     'initial-scale=1"><title>' + html.escape(str(g.get("site_name") or "Site")) + "</title><style>nav a{display:inline-block;min-width:48px;min-height:48px}</style></head><body>"
+                     + "<h1>" + html.escape(str(g.get("site_name") or "Site")) + "</h1><nav>" + "".join(
+                         f'<a href="#i{self._no(c)}">{self._no(c)}</a> ' for c in crit) + "</nav>"
+                     + "".join(f'<section id="i{self._no(c)}" data-item="{self._no(c)}"><h2>{html.escape(c)}</h2></section>' for c in crit)
+                     + "</body></html>"}
+        for name, text in files.items():
+            p = os.path.join(cwd, name)
+            os.makedirs(os.path.dirname(p), exist_ok=True)
+            with open(p, "w", encoding="utf-8") as f:
+                f.write(text)
+        return json.dumps({"say": f"@Coordination {w['id']} wrote its files.", "human_output": f"I wrote {w['name']}.",
+                           "atom_human_output": "This adds a working part of the result.", "next": "Coordination"})
+
+    def _run_tools(self, w, brief, max_calls):
+        """One workflow on the general path: its builder writes and edits files in the output folder with its tools,
+        then code runs its work atoms' checks on the folder (advisory checks warn, never fail), up to
+        MAX_CHECK_ATTEMPTS attempts, and reports to Coordination like any workflow (or hands the receipts to Adaptation
+        after the last failed attempt). A change outside the folder fails the workflow at once."""
+        fn, tools = w["id"], self._builder_tools()
+        cwd, main, label = tools["cwd"], self._main_file(), self.out["label"]
+        runner = " ".join(self.out.get("test_runner") or ())
+        guide = self.out["builder"] if (self.doc or self.out.get("output") == "folder") else ""
+        task0 = (f"YOU ARE {NAMES[fn]}, the agent for one registered workflow.\nYOUR WORKFLOW: "
+                 f"{json.dumps(brief, ensure_ascii=False)}\nTHE OUTPUT is a {label}, built in your working directory "
+                 f"({os.path.relpath(cwd, self.dir)}/ in the run), as the workflows before you left it."
+                 + (f" Its main file is {main}." if main else "")
+                 + (f" Its sections, in this order, each a level-2 heading in {main}: {', '.join(self.out['sections'])}."
+                    if self.out.get("sections") else "")
+                 + (f" Run a test with: {runner} ({{target}} = the test file)." if runner else "")
+                 + f"\nCHARTER: {json.dumps(self.goal or {}, ensure_ascii=False)}"
+                 + ("\nRUBRIC (Audit judges the result against it):\n" + "\n".join(f"{i} {t}" for i, t in self.out["rubric"]))
+                 + (f"\nGUIDANCE FOR A {label.upper()} (where it speaks of a reply's sections or code assembling them, "
+                    f"write into the files instead):\n{guide}" if guide else "")
+                 + self._artifact_context(w))
+        attempt, evidence, r, failed, stop = 0, "", {}, [], None
+        self.tools_builder = j2_types.builder_tools().get("builder")
+        try:
+            while attempt < MAX_CHECK_ATTEMPTS and w["calls_used"] < max_calls + attempt:
+                attempt += 1
+                w["calls_used"] += 1
+                try:
+                    r = self.call(fn, self.TOOLS_FMT, task0 + (
+                        f"\nATTEMPT {attempt} OF {MAX_CHECK_ATTEMPTS}. THESE CHECKS FAILED ON YOUR LAST ATTEMPT:\n"
+                        f"{evidence}\nFix the files so they pass." if evidence else ""),
+                        lambda: self._mock_tools(w, cwd), max_tokens=4000, timeout=builder_timeout(), tools=tools)
+                except BuilderToolFault as e:
+                    if e.kind == "outside":
+                        stop = f"it changed files outside its folder ({e})"
+                        break
+                    evidence = f"- {e}"
+                    continue
+                except RuntimeError as e:      # stopped at the time or cost limit, or the CLI failed
+                    evidence = f"- your last call was stopped before it finished: {e}"
+                    continue
+                text = self._out_text()
+                self._publish_out(text)
+                failed = self._run_checks(w, attempt, text, folder=cwd)
+                if not failed:
+                    break
+                evidence = "\n".join(f"- {x['check']} ({x['type']} {x['target']}, expect {x['expect']}): "
+                                     f"{x['evidence']}" for x in failed)
+        finally:
+            self.tools_builder = None
+        self.write_lock = self.atom = None
+        meta = r if isinstance(r, dict) else {}
+        if stop or not self.sites:
+            w["status"] = "failed"
+            why = stop or f"no usable build after {attempt} attempt(s)"
+            self.post("system", f"{fn} failed: {why}.", warning=True)
+            self._say(fn, f"@Coordination {fn} failed: {why}.", "coordination", None, workflow=fn)
+            self._event(fn, "limit_fail", f"{fn}: {why}")
+            self.save("workflows.json", self.workflows)
+            return self._handoff("coordination", kind="schedule")
+        human = self._human_output(w, meta, w.get("section"))
+        self._atom_outputs(w, meta, attempt)
+        w["status"], w["version"] = "done", len(self.sites)
+        self.save("workflows.json", self.workflows)
+        self._say(fn, f"@Coordination {human}", "coordination", None, workflow=fn, human_output=human,
+                  version=len(self.sites), section=w.get("section"), workflow_cost=w["cost"])
+        if failed:
+            bad = sorted({x["atom"] for x in failed})
+            for a in w["atoms"]:
+                if a["id"] in bad:
+                    a["status"] = "failed"
+            self.post("system", f"{', '.join(bad)} failed its checks on all {attempt} attempts. Code sends the receipts "
+                                "to Adaptation, which decides whether the check or the build is wrong.")
             return self._handoff("adaptation", kind="atom_failed", wid=fn, atoms=bad, attempt=attempt, owner_note="")
         self._handoff("coordination", kind="schedule")
 
@@ -10361,16 +10403,33 @@ class J2Run:
             with open(os.path.join(self.dir, "receipts.jsonl"), "a", encoding="utf-8") as f:
                 f.write(json.dumps(rec, ensure_ascii=False) + "\n")
 
-    def _run_checks(self, w, attempt, page, atoms=None, doc=None, **extra):
+    def _run_checks(self, w, attempt, page, atoms=None, doc=None, folder=None, **extra):
         """Code runs every check of the workflow's atoms on the built site (doc=True: page is a markdown document, as
         for an artifact workflow); each result is a receipt and the atom keeps its latest ones. Returns the failed
         receipts."""
-        site_dir, failed, doc = os.path.join(self.dir, "site"), [], self.doc if doc is None else doc
+        site_dir, failed, doc = folder or os.path.join(self.dir, "site"), [], self.doc if doc is None else doc
+        advisory = set((self.out or {}).get("advisory_checks") or ()) if folder else set()
         t0 = time.time()
         # the document sections this workflow owns: its sections field only (wf_sections), never its name or words
         owned = wf_sections(w, (self.out or {}).get("sections") or []) if doc else []
 
         def one(c):
+            res = one_check(c)
+            if c.get("type") in advisory and res.get("pass") is False:      # a guess, never a gate: a warning
+                return {**res, "pass": True, "warning": True, "evidence": f"warning (advisory): {res.get('evidence')}"}
+            return res
+
+        def one_check(c):
+            if folder and c.get("type") in ("file-exists", "test-passed", "inside-folder"):
+                if c["type"] == "inside-folder":      # a change outside the folder stops the build before any check
+                    return {"actual": True, "pass": True, "evidence": "nothing changed outside the folder"}
+                if c["type"] == "test-passed":
+                    if not self.out.get("test_runner"):
+                        return {"actual": None, "pass": None, "evidence": "this output's form names no test runner"}
+                    t = c.get("target")
+                    rr = sandbox_rerun(folder, self.out["test_runner"], t[0] if isinstance(t, list) else t, 120)
+                    return {"actual": rr.get("exit"), "pass": rr["pass"], "evidence": rr["evidence"]}
+                return run_check(c, folder, page, False)
             if doc and c.get("type") == "file-exists" and self._file_wf(w):      # a file workflow: the file it wrote
                 f = artifact_path(w)
                 ok = os.path.isfile(os.path.join(self.dir, f))
@@ -10390,7 +10449,8 @@ class J2Run:
         have = {heading_target(c.get("target")) for a in w.get("atoms") or [] for c in a.get("verification") or []
                 if isinstance(c, dict) and c.get("type") == "section-not-empty"}
         kept = [{"text": f"The {h} section this workflow owns is present and not empty.", "type": "section-not-empty",
-                 "target": h, "expect": 1, "owned_section": True} for h in owned if h not in have] if atoms is None else []
+                 "target": h, "expect": 1, "owned_section": True} for h in owned if h not in have] \
+            if atoms is None and not folder else []
         for n, a in enumerate(atoms or w.get("atoms") or []):
             ver = [c for c in a.get("verification") or [] if isinstance(c, dict)] + (kept if n == 0 else [])
             recs = [self._receipt(a, c, attempt, one(c), **extra) for c in ver]
@@ -10600,7 +10660,7 @@ class J2Run:
         site = self.sites[-1] if self.sites else ""
         crit = (self.goal or {}).get("done_when", [])
         extra = {}
-        if self.doc:      # a document: code checks the necessary conditions; no browser, screenshot or design rubric
+        if self.doc or self.folder:      # a document or a folder: text checks; no browser, screenshot or design rubric
             r, extra = self._audit_doc(site, crit)
             mech, shot, measured = {}, None, {}
         else:
@@ -10677,6 +10737,8 @@ class J2Run:
     def _audit_site(self, site, crit):
         """J2.g for a website: the render check and screenshot in headless Chrome, then Audit's call.
         Returns (reply, render check, screenshot path, measured design problems, necessary conditions)."""
+        if site and self._general():      # files beside the page (styles, scripts, images) resolve from site/
+            site = with_base(site, os.path.join(self.dir, "site"))
         mech = j2_check.check(site) if site else {"available": False, "note": "no site built yet"}
         if site:
             self.post("system", j2_check.summary(mech) + f" (site v{len(self.sites)})", mechanical=True)
@@ -10742,6 +10804,31 @@ class J2Run:
                       max_tokens=1600, images=[shot] if shot else None)
         return r, mech, shot, measured, conds
 
+    def _folder_condition(self, c):
+        """(met, evidence) of one folder condition (FOLDER_CHECKS) on the output folder; its data (charter_field,
+        charter_fields) from the conditions file."""
+        folder, g = self._out_dir(), self.goal or {}
+        cond = next((x for x in load_conditions(self.out["conditions"], self.out.get("practice", ""))
+                     if x["id"] == c["id"]), {})
+        k = c["check"]
+        if k == "charter-files-present":
+            want = charter_list(g, cond.get("charter_field"))
+            miss = [f for f in want if not (llm.inside(os.path.join(folder, f), folder)
+                                            and os.path.isfile(os.path.join(folder, f)))]
+            return (bool(want) and not miss, (f"missing: {', '.join(miss)}" if miss else
+                                              f"all {len(want)} files are in the folder") if want else
+                    f"the charter lists no {cond.get('charter_field')}")
+        if k == "test-passed":
+            t = (charter_list(g, cond.get("charter_field")) or [""])[0]
+            rr = sandbox_rerun(folder, self.out.get("test_runner") or (), t, builder_timeout())
+            return rr["pass"] is True, rr["evidence"]
+        if k == "inside-folder":      # a build that changed anything outside its folder is stopped before this
+            return True, "no build changed anything outside the folder"
+        items = [x for f in cond.get("charter_fields") or () for x in charter_list(g, f)]
+        miss = [x for x in items if squash(x) not in squash(folder_text(folder))]
+        return not miss, (f"not in the folder's files: {'; '.join(miss)}" if miss else
+                          f"all {len(items)} item(s) are in the folder's files")
+
     def _conditions(self, built, mech=None):
         """Code checks the output's necessary conditions on the latest build, saves conditions.json and posts the list.
         A website is checked on its HTML (visible text for the facts) and its render check."""
@@ -10749,6 +10836,10 @@ class J2Run:
         text = built if self.doc else " ".join(PageScan(built).visible)
         conds = check_conditions(load_conditions(self.out["conditions"], self.out.get("practice", "")), text, self.goal,
                                  self._fact_source() + " " + self._approved_docs_text(), self.out["sections"], page, mech)
+        if self.folder:      # a folder's own conditions, checked on its files and its test rerun in the sandbox
+            for c in conds:
+                if c["check"] in FOLDER_CHECKS:
+                    c["met"], c["evidence"] = self._folder_condition(c)
         self.save("conditions.json", conds)
         if built:
             self.post("system", "Necessary conditions (checked by code): " + "; ".join(
@@ -10776,7 +10867,7 @@ class J2Run:
                            f"No {sec} section with text"})
             n = sum(f["verdict"] != "PASS" for f in fs)
             return json.dumps({"say": "@Identity All criteria pass." if not n else f"@Identity {n} finding needs revision.",
-                               "read": f"Read {self.out['file']} v{len(self.sites)}: {read}", "findings": fs,
+                               "read": f"Read {self.out.get('file') or 'the folder'} v{len(self.sites)}: {read}", "findings": fs,
                                "rubric": [{"id": rid, "verdict": "PASS", "evidence": "Mock: read from the text"}
                                           for rid, _ in self.out["rubric"]], "next": "Identity"})
         r = self.call("audit", '{"say": str, "read": str (what you read: each section and roughly how long it is), '
@@ -10802,8 +10893,9 @@ class J2Run:
                       f"{json.dumps(dict(self.out['rubric']), ensure_ascii=False)}\nFACTS FROM THE BRIEF AND THE REQUESTER "
                       f"(anything else stated as fact is invented): {json.dumps(self.request, ensure_ascii=False)} "
                       f"{json.dumps([m['text'] for m in self.chat if m['who'] == 'user'], ensure_ascii=False)}\n"
-                      f"Say in read what you read. {self.out['label'].upper()} v{len(self.sites)} (markdown):\n"
-                      f"{doc[:SITE_LIMIT]}", mock, max_tokens=1600)
+                      f"Say in read what you read. {self.out['label'].upper()} v{len(self.sites)} "
+                      + ("(markdown):\n" if self.doc else "(every file in its folder, each after a --- path --- line):\n")
+                      + doc[:SITE_LIMIT], mock, max_tokens=1600)
         if not str(r.get("read") or "").strip():
             self._event("audit", "invalid_move", "didn't say what it read")
         return r, {"output": self.output, "conditions": conds, "read": str(r.get("read") or "").strip() or None}

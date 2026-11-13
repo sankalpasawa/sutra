@@ -72,7 +72,8 @@ def main():
     # release runs stay out of runs/ itself: the flow tests read every saved run there
     rdir = os.path.join(HERE, "runs", "release-mock" if x.mock else "release")
     os.makedirs(rdir, exist_ok=True)
-    env = {**os.environ, "J2_RUNS_DIR": rdir, **({"STUDIO_MOCK": "1"} if x.mock else {})}
+    # no lessons or playbooks written to memory/
+    env = {**os.environ, "J2_RUNS_DIR": rdir, "J2_MEMORY": "0", **({"STUDIO_MOCK": "1"} if x.mock else {})}
     share = left / len(BRIEFS)
     procs = []
     for i, b in enumerate(BRIEFS):

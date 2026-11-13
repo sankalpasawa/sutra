@@ -310,7 +310,7 @@ def deliverable_faults(p, types):
            if n not in by and n not in new]
     out += [f"new type {n}: {x}" for n, spec in new.items() if n not in by
             for x in j2_types.create_problems(n, spec.get("label"), spec.get("sections"), spec.get("file"),
-                                              practice=spec.get("recommended_practice"))]
+                                              practice=spec.get("recommended_practice"), form=spec.get("form"))]
     out += [f"deliverable {n} appears twice" for n in sorted({n for n in names if names.count(n) > 1})]
     for i, n in enumerate(names):
         for d in by.get(n, {}).get("after", []):
@@ -556,7 +556,8 @@ PLAN_FMT = """{
 CHANGES_FMT = ',\n "changes": [{"workflow": str, "weakest": str, "remedy": str, "axis": "ask"|"research:find"|"research:method"|"certainty:analyze"|"certainty:experiment"|"certainty:stabilize"|"certainty:reread"|"realization:add"|"realization:deepen"|"realization:split"|"rewrite"}]\n}'
 REVISE_FMT = PLAN_FMT[:-2] + CHANGES_FMT
 DELIVERABLES_FMT = (',\n "deliverables": [{"type": str (a type name from TYPES, or a new name), "why": str (one clause), '
-                    '"new": {"label": str, "sections": [str], "file": str, "recommended_practice": bool (true for a policy, guide, plan '
+                    '"new": {"label": str, "form": str (one of FORMS), "sections": [str] (a form with sections only), '
+                    '"file": str (a form with sections only), "recommended_practice": bool (true for a policy, guide, plan '
                     'or SOP: labelled good-practice lines allowed)}|null (only for a new type)}] (build order: a '
                     'type after every type it needs)\n}')
 
@@ -640,9 +641,11 @@ def types_text(types):
             "built, so they go before it):\n" + "\n".join(json.dumps(t, ensure_ascii=False) for t in types)
             + "\nChoose the deliverables first: the types this brief needs, in build order. Every workflow serves one "
             "deliverable, and every deliverable is served by at least one workflow. When no type fits, make a new one: a "
-            "deliverable whose type is a new name (lower case, _ between words) with \"new\": its label, its sections in "
-            "order and its file (<name>.md), and recommended_practice: true for a policy, guide, plan or SOP (it may give "
-            "labelled good practice), else false; J2 makes it as a document and keeps it for later runs.")
+            "deliverable whose type is a new name (lower case, _ between words) with \"new\": its label, its form from "
+            "FORMS, for a form with sections its sections in order and its file (<name>.md), and recommended_practice: "
+            "true for a policy, guide, plan or SOP (it may give labelled good practice), else false; J2 makes it in that "
+            "form and keeps it for later runs.\nFORMS (how a type is built):\n"
+            + "\n".join(f"{k}: {v.get('about')}" for k, v in j2_types.forms().items()))
 
 
 def _web_note(web):
