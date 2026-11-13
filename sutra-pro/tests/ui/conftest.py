@@ -106,6 +106,10 @@ def browser() -> Iterator["cdp.Browser"]:  # noqa: F821  (cdp is imported lazily
     if chrome is None:
         pytest.skip("Chrome is not installed (set SUTRA_CHROME to its path)")
     with cdp.Browser(chrome) as instance:
+        # Debug, in Home's workspace: every view the tests written before the front door drive (the org chat, the panes, Settings, a team's
+        # Detailed view) is shown at that level. The front door's own tests (test_home_front.py) call set_level("simple") and the like.
+        if hasattr(instance, "set_level"):                                  # a stand-in Browser (test_fake_backend's own) has none
+            instance.set_level("debug", "ws")
         yield instance
         failed = instance.failed_requests
         assert not failed, f"requests failed during the test (announce them with browser.expect_failed): {failed}"

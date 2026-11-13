@@ -43,6 +43,9 @@ J2_API = ["state", "runs", "runlist", "changes", "call", "preview", "docs", "map
           "artifacts", "artifacts/tree", "artifacts/groups", "artifact", "agent", "activity", "record", "code", "story", "board", "audits", "refs",
           "say", "ask", "output", "settings", "reset", "playbooks/clear", "lessons/clear"]
 NOT_FETCHED = {"output"}
+# The studio pin (b2d70b5) fetches two routes the vendored engine (025e265) does not have yet: Run settings' timing and one run template.
+# They are not in SutraCtx.J2_PATHS, so they reach no engine and the page shows its own "could not load" state until the engine syncs.
+NOT_IN_ENGINE_YET = {"timing", "run-template"}
 EXTERNAL_REF = re.compile(r"""(?:src|href|action|poster|data-src)\s*=\s*["']\s*(?:https?:)?//""", re.IGNORECASE)
 INLINE_SCRIPT = re.compile(r"<script>(.*?)</script>", re.DOTALL)
 # D138: Home and the console keep the style sheet of the previous sync, frozen. The whole file (one comment line of its own, then the old
@@ -63,8 +66,8 @@ PAGE = read(UI / "pages" / "j2_ui.html")
 # A fragment sometimes spans a neighbouring line: that pins where the new text was put.
 # ----------------------------------------------------------------------------------------------------------------------
 EDIT_IDS = ["E1", "E2a", "E2b", "E2c", "E3", "E4", "E5", "E6a", "E6b", "E7", "E8", "E9", "E9b", "E10", "E11", "E12", "E13a", "E13b", "E13c", "E13d",
-            "E19", "E20a", "E20b", "E20c", "E20d", "E20e", "E20f", "E20g", "E20h", "E20i", "E21", "E22", "E23"]
-COUNTS = {edit: 1 for edit in EDIT_IDS} | {"E13b": 3, "E20d": 2, "E20i": 2}
+            "E19", "E20a", "E20b", "E20c", "E20d", "E20e", "E20f", "E20g", "E20h", "E20i", "E20j", "E20k", "E21", "E22", "E23"]
+COUNTS = {edit: 1 for edit in EDIT_IDS} | {"E13b": 3, "E20d": 2, "E20f": 2, "E20i": 2}
 E1_HEAD = ('<link rel="stylesheet" href="/ui/css/j2.css">\n'
            '<link rel="stylesheet" href="/ui/css/sutra-graph.css"><link rel="stylesheet" href="/ui/css/sutra-panel.css">\n'
            "<!--SUTRA-BOOT-->\n"
@@ -76,7 +79,7 @@ E5_STRIP = ('<div id="sview">\n'
 E6A_SHOWTAB = ('const full = name === "map" || name === "graph" || name === "orgchart"; document.querySelector("#dview .wbar").hidden = full;'
                ' document.querySelector("#dview .work").classList.toggle("mapfit", full); railReveal(name);')
 E6B_PANES = ('"report","rundetails","runsettings","graph","orgchart"].forEach(t => $("pane-"+t).hidden = t !== name);\n'
-             "  SutraCtx.tab(name);\n}")
+             "  SutraCtx.tab(name);\n")
 RAIL_NAV = '<nav class="rail tabs" id="rail" aria-label="Detailed view sections">\n'
 E7_HOME = (RAIL_NAV + '  <div class="railhome">\n'
            '    <a class="ri s-home" href="/" id="to-home" aria-label="All teams, back to Home" data-name="All teams" data-role="back to Home">')
@@ -94,8 +97,8 @@ E21_HYDRATE = ("Object.assign(FEED, v); } } catch (e) {}\n"
 CASES = {
     "E1": ([(E1_HEAD, 1)], ['<link rel="stylesheet" href="https://fonts.googleapis.com', "<style>\n/* Theme", ":root{color-scheme:dark", "</style>\n<script>/* the viewer",
                             "run-settings.css"]),
-    "E2a": ([(f'<iframe id="frame" title="Website preview" data-src="/site/latest" sandbox="{SANDBOX}"></iframe>', 1)],
-            ['title="Website preview" src=']),
+    "E2a": ([(f'<iframe id="frame" title="Preview" data-src="/site/latest" sandbox="{SANDBOX}"></iframe>', 1)],
+            ['title="Preview" src=']),
     "E2b": ([(f'<iframe id="sframe" title="Your result" sandbox="{SANDBOX}"></iframe>', 1)],
             ['<iframe id="sframe" title="Your result"></iframe>']),
     "E2c": ([(f'<iframe id="sframe2" class="next" title="Your result, next version" tabindex="-1" aria-hidden="true" sandbox="{SANDBOX}"></iframe>', 1)],
@@ -128,7 +131,7 @@ CASES = {
     "E13b": ([("no pricing records", 3)], ["no ranking records"]),
     "E13c": ([("No pricing records in this run", 1)], ["No ranking records"]),
     "E13d": ([("Funded, in registration order; Coordination sets the run order", 1)], ["Funded, in the order it ranked them"]),
-    "E19": ([('<div class="slrow"><div class="soutpick" id="soutpick"></div><button type="button" class="sauto" id="sautoland"', 1)],
+    "E19": ([('<div class="slrow"><div class="soutpick" id="soutpick"></div><button type="button" class="screwg" id="slandteam"', 1)],
             ['<div class="slrow"><button', 'id="outsel"', "OUTS", "EFFOUT", "PICKEDOUT"]),
     "E20a": ([("`${SutraCtx.libraryPath}?q=${encodeURIComponent(t.name)}`", 1)], ["`/library?q="]),
     "E20b": ([("const libHref = (art, sec, name, ver) => `${SutraCtx.libraryPath}?open=", 1)], ["`/library?open="]),
@@ -137,10 +140,12 @@ CASES = {
     "E20d": ([("SutraCtx.onLibrary()", 2), ("if (SutraCtx.onLibrary()) return;", 1), ("const CAT = {on: SutraCtx.onLibrary(), ", 1)],
              ['location.pathname === "/library"']),
     "E20e": ([("const back = view => `${SutraCtx.pagePath}?${viewRun", 1)], ["const back = view => `/?${viewRun"]),
-    "E20f": ([('data-catgo="${SutraCtx.libraryPath}${viewRun', 1)], ['data-catgo="/library']),
-    "E20g": ([('<a class="slink" href="library?view=detail">Template library</a>', 1)], ['href="/library?view=detail"']),
+    "E20f": ([('data-catgo="${SutraCtx.libraryPath}?view=', 2)], ['data-catgo="/library']),
+    "E20g": ([('<a class="slq" href="library?view=detail">Template library</a>', 1)], ['href="/library?view=detail"']),
     "E20h": ([('`<a href="${SutraCtx.pagePath}?run=${encodeURIComponent(x.id)}&view=simple">', 1)], ['`<a href="/?run=']),
     "E20i": ([('location.href = SutraCtx.pagePath + "?view=simple"', 2)], ['location.href = "/?view=simple"']),
+    "E20j": ([('`<a href="${SutraCtx.libraryPath}?view=templates&rt=', 1)], ['`<a href="/library?view=templates']),
+    "E20k": ([("const rtHref = (id, keys) => `${SutraCtx.pagePath}?view=simple&template=", 1)], ["`/?view=simple&template="]),
     "E21": ([(E21_HYDRATE, 1)], ["Object.assign(FEED, v); } } catch (e) {}\n  paintFeed();"]),
     "E22": ([('runsettings: "appearance and saved runs"};', 1)], ["appearance, what to build, saved runs"]),
     "E23": ([("/* no web fonts in the app (UI-D3): the studio's Google Fonts link is not added to a generated document */ }", 1)],
@@ -165,9 +170,9 @@ def test_edit_is_in_the_committed_page(case):
 
 
 def test_there_are_thirty_three_edits_and_every_one_has_a_case_here():
-    assert len(EDIT_IDS) == len(set(EDIT_IDS)) == 33 and sorted(CASES) == sorted(EDIT_IDS)
-    assert [COUNTS[f"E13{letter}"] for letter in "abcd"] == [1, 3, 1, 1] and COUNTS["E20d"] == COUNTS["E20i"] == 2
-    assert sum(1 for count in COUNTS.values() if count == 1) == 30
+    assert len(EDIT_IDS) == len(set(EDIT_IDS)) == 35 and sorted(CASES) == sorted(EDIT_IDS)
+    assert [COUNTS[f"E13{letter}"] for letter in "abcd"] == [1, 3, 1, 1] and COUNTS["E20d"] == COUNTS["E20f"] == COUNTS["E20i"] == 2
+    assert sum(1 for count in COUNTS.values() if count == 1) == 31
 
 
 def test_the_retired_edits_left_nothing_behind():
@@ -222,7 +227,7 @@ def test_no_external_url_in_the_markup_and_no_cdn():
 
 def test_every_link_of_the_markup_is_a_hash_a_root_path_a_relative_library_link_or_one_of_the_page_s_own_url_helpers():
     hrefs = re.findall(r'href="([^"]*)"', PAGE)
-    own = ("${artUrl(", "${libHref(", "${runHref(", "${href}", "${SutraCtx.pagePath}")      # template expressions over the helpers E4 and E20 made team-aware
+    own = ("${artUrl(", "${libHref(", "${runHref(", "${href}", "${SutraCtx.pagePath}", "${SutraCtx.libraryPath}", "${esc(rtHref(")      # template expressions over the helpers E4 and E20 made team-aware
     odd = [h for h in hrefs if h != "#" and not h.startswith(("/", "data:image/svg+xml,")) and not h.startswith(own)]
     assert odd == ["library?view=detail"], odd                       # E20g: the start page's static link is relative to the team's page, /d/<id>/
     assert not any(h.startswith("?") for h in hrefs)                  # J2's old relative "?view=" links are gone
@@ -270,7 +275,7 @@ def test_the_simple_view_strip_is_above_the_start_page_and_the_output_place_is_i
     sland = sview[sview.index('id="sland"'):]
     row = sland[sland.index('<div class="slrow">'):]
     assert sland.index('id="lform"') < sland.index('id="schips"') < sland.index('<div class="slrow">')      # J2's chips are examples inside the form
-    assert row.index('id="soutpick"') < row.index('id="sautoland"') < row.index('class="slsep"') < row.index('id="slanddetail"')
+    assert row.index('id="soutpick"') < row.index('id="slandteam"') < row.index('id="sautoland"') < row.index('id="slanddetail"')
     assert row.count('id="soutpick"') == 1 and PAGE.count('id="soutpick"') == 1
     studio = PAGE[PAGE.index('<section class="swork"'):PAGE.index('<div id="dview">')]
     assert 'id="soutpick"' not in studio and 'class="steamstrip"' not in studio                         # only the start page and the top of the view carry them
@@ -306,7 +311,7 @@ def fetch_sites(script: str) -> list[str]:
 
 def test_every_fetch_goes_to_a_j2_route_or_through_artUrl_so_the_wrapper_covers_the_whole_page():
     sites = fetch_sites(INLINE_SCRIPT.findall(PAGE)[1])
-    assert len(sites) == 37 and sites.count("artUrl(f)") == 1
+    assert len(sites) == 42 and sites.count("artUrl(f)") == 1
     routes = set()
     for site in sites:
         if site == "artUrl(f)":
@@ -317,6 +322,8 @@ def test_every_fetch_goes_to_a_j2_route_or_through_artUrl_so_the_wrapper_covers_
         route = path.group(1)
         assert route.startswith("/api/"), site
         if route == "/api/library/":                                  # one template version: /api/library/<artifact>/<section>/<slug>/v<N>
+            continue
+        if route[len("/api/"):] in NOT_IN_ENGINE_YET:
             continue
         assert route[len("/api/"):] in J2_API, site
         routes.add(route[len("/api/"):])
@@ -347,7 +354,7 @@ def sheets_of(page: str) -> list[str]:
 
 def test_the_team_page_takes_the_regenerated_sheet_and_home_and_the_console_keep_the_frozen_one():
     assert sheets_of("j2_ui.html") == ["j2.css", "sutra-graph.css", "sutra-panel.css"]
-    assert sheets_of("home.html") == ["j2-shell.css", "sutra-graph.css", "sutra-panel.css", "sutra-shell.css"]
+    assert sheets_of("home.html") == ["j2-shell.css", "sutra-graph.css", "sutra-panel.css", "sutra-shell.css", "sutra-front.css", "project_rail.css"]       # + the front door
     assert sheets_of("console.html") == ["j2-shell.css", "sutra-panel.css", "sutra-console.css"]
     for page in ("j2_ui.html", "home.html", "console.html"):
         assert all((UI / "static" / "css" / name).is_file() for name in sheets_of(page)), page
@@ -409,8 +416,8 @@ document.documentElement.dataset.theme = "dark";</script>
 <div id="sview">
   <section class="sland" id="sland" aria-label="Start">
     <form class="sbox" id="lform"><textarea id="lbox"></textarea><div class="sbrow"><div class="schips" id="schips"></div><button class="sgo" id="lsend" type="submit">Start</button></div></form>
-    <div class="slrow"><button type="button" class="sauto" id="sautoland" role="switch" aria-checked="false">Decide for me</button>
-      <span class="slsep" aria-hidden="true"></span><a class="slink" href="/library?view=detail">Template library</a><button type="button" class="slink" id="slanddetail">Detailed view</button></div>
+    <div class="slrow"><button type="button" class="screwg" id="slandteam">Your team</button><button type="button" class="sauto" id="sautoland" role="switch" aria-checked="false">Decide for me</button>
+      <span class="slsep" aria-hidden="true"></span><a class="slq" href="/library?view=detail">Template library</a><button type="button" class="slink" id="slanddetail">Detailed view</button></div>
   </section>
   <section class="swork" id="swork" hidden>
     <div class="sprev" id="sprevbox"><iframe id="sframe" title="Your result"></iframe><iframe id="sframe2" class="next" title="Your result, next version" tabindex="-1" aria-hidden="true"></iframe></div>
@@ -422,7 +429,7 @@ document.documentElement.dataset.theme = "dark";</script>
   <button type="button" class="ri s-chat" id="gochat"><span class="rlbl">Simple view</span></button>
   <div class="rfly" id="rfly" hidden><div class="railsub" id="railsub"></div></div>
 </nav>
-    <div class="pane preview" id="pane-preview" hidden><iframe id="frame" title="Website preview" src="/site/latest"></iframe></div>
+    <div class="pane preview" id="pane-preview" hidden><iframe id="frame" title="Preview" src="/site/latest"></iframe></div>
     <div class="pane" id="pane-map"></div>
     <div class="pane" id="pane-style" hidden></div>
 <aside id="agentdrawer" class="agentdrawer" hidden role="dialog" aria-labelledby="adtitle"></aside>
@@ -447,7 +454,7 @@ function sFrameSetup(f){
   const d = sDoc(f); if (!d) return;
   if (!d.getElementById("j2s-style")){ const st = d.createElement("style"); st.id = "j2s-style";
     (d.head || d.body).appendChild(st);
-    if (d.querySelector("h2") && !d.querySelector("[class]")){ const fl = d.createElement("link"); fl.rel = "stylesheet"; fl.href = "https://fonts.googleapis.com/css2?family=DM+Sans:opsz,wght@9..40,400;9..40,600&family=Fraunces:opsz,wght@9..144,500;9..144,600&display=swap"; (d.head || d.body).appendChild(fl); } }
+    { const fl = d.createElement("link"); fl.rel = "stylesheet"; fl.href = "https://fonts.googleapis.com/css2?family=Figtree:wght@400;500;600;700&family=Bricolage+Grotesque:opsz,wght@12..96,600;12..96,700&display=swap"; (d.head || d.body).appendChild(fl); } }
 }
 const motionKey = svg => {
   return `j2pos:${(typeof viewRun !== "undefined" && viewRun) || "live"}:${v}`; };
@@ -466,7 +473,10 @@ function setView(v){
 }
 const CAT = {on: location.pathname === "/library", loaded: false};
 const back = view => `/?${viewRun ? "run=" + encodeURIComponent(viewRun) + "&" : ""}view=${view}`;
-const railItem = `<button type="button" class="rgo" data-catgo="/library${viewRun ? "?run=" + encodeURIComponent(viewRun) : ""}" aria-current="${CAT.on}">Shared library</button>`;
+const railItem = `<button type="button" class="rgo" data-catgo="/library?view=templates${rq}">Run templates</button>`
+  + `<button type="button" class="rgo" data-catgo="/library?view=run${rq}" aria-current="${CAT.on}">Shared library</button>`;
+const rtName = u => `<a href="/library?view=templates&rt=${encodeURIComponent(u.id)}" data-rtlink="1">${u.name}</a>`;
+const rtHref = (id, keys) => `/?view=simple&template=${encodeURIComponent(id)}&workflows=${encodeURIComponent(keys)}`;
 const RAILDIM = {priorities: s => !prioModel(s).has && "no ranking records"};
 function prioModel(s){ return {status: !has ? "no ranking records" : "some"}; }
 function renderPriorities(s){
@@ -591,7 +601,7 @@ def test_check_is_quiet_about_files_in_step_and_writes_nothing(ported, capsys):
     j2, root = ported
     before = tree(root)
     code, out, err = run(capsys, "--j2", j2, "--root", root, "--check")
-    assert (code, err) == (0, "") and out.startswith("ok: the 33 anchors of the page edits match their counts, ")
+    assert (code, err) == (0, "") and out.startswith("ok: the 35 anchors of the page edits match their counts, ")
     assert "and the 7 committed files equal a fresh port of J2 " in out
     assert tree(root) == before
 
@@ -684,7 +694,7 @@ def test_an_anchor_that_appears_twice_is_drift_too(tmp_path, capsys):
 
 
 def test_each_of_the_three_iframes_has_its_own_edit(tmp_path, capsys):
-    j2 = make_j2(tmp_path, page=(('<iframe id="frame" title="Website preview" src="/site/latest"></iframe>', ""),))
+    j2 = make_j2(tmp_path, page=(('<iframe id="frame" title="Preview" src="/site/latest"></iframe>', ""),))
     code, _, err = run(capsys, "--j2", j2, "--root", tmp_path / "repo")
     assert code == 1 and "  E2a: expected 1 match, found 0\n" in err and "E2b" not in err and "E2c" not in err
     j2 = make_j2(tmp_path / "b", page=(('<iframe id="sframe" title="Your result"></iframe>', '<iframe id="sframe" title="Your result" src="/site/latest"></iframe>'),))
@@ -818,7 +828,7 @@ def test_e13_words_are_the_four_pairs_of_the_design_and_the_script_prints_them_a
 
 def test_the_edit_table_has_the_design_ids_and_counts():
     assert [(edit.id, edit.count) for edit in port.PAGE_EDITS] == [(edit, COUNTS[edit]) for edit in EDIT_IDS]
-    assert len(port.PAGE_EDITS) == 33
+    assert len(port.PAGE_EDITS) == 35
     assert [(e.id, e.count) for e in port.RENDER_EDITS] == [("H1", 1), ("H2", 1), ("H3", 1)]
     assert [(e.id, e.count) for e in port.LAYOUT_EDITS] == [("H1", 1)]
     for retired in ("RUN_SETTINGS_EDITS", "OUTPUT_EDITS", "RUN_SETTINGS_CSS"):
@@ -849,5 +859,5 @@ def test_a_fresh_port_of_the_real_j2_equals_the_committed_files_and_leaves_j2_al
     before = [p.read_bytes() for p in watched]
     code, out, err = run(capsys, "--j2", j2, "--commit", PIN, "--check")
     assert (code, err) == (0, ""), out + err
-    assert out.startswith("ok: the 33 anchors of the page edits match their counts, and the 7 committed files equal a fresh port of J2 ")
+    assert out.startswith("ok: the 35 anchors of the page edits match their counts, and the 7 committed files equal a fresh port of J2 ")
     assert [p.read_bytes() for p in watched] == before

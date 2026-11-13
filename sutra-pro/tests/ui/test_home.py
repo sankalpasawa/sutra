@@ -104,7 +104,7 @@ def test_the_page_loads_only_its_own_files_and_every_one_exists():
         assert (STATIC_DIR / "js" / name).is_file(), name
     for name in sheets:
         assert (STATIC_DIR / "css" / name).is_file(), name
-    assert sheets == ["j2-shell.css", "sutra-graph.css", "sutra-panel.css", "sutra-shell.css"]       # D138: Home keeps the frozen sheet, not the team page's j2.css
+    assert sheets == ["j2-shell.css", "sutra-graph.css", "sutra-panel.css", "sutra-shell.css", "sutra-front.css", "project_rail.css"]       # the front door; D138: Home keeps the frozen sheet, not the team page's j2.css
     assert scripts[0] == "sutra_ctx.js" and scripts[-1] == "home.js"
     assert scripts.index("settings_view.js") < scripts.index("home.js")
     for earlier, later in (("sutra_events.js", "home.js"), ("graph_layout.js", "graph_view.js"), ("chart_marks.js", "orgchart_view.js"),
@@ -566,15 +566,15 @@ def test_the_left_bar_opens_and_closes_and_remembers_on_a_wide_screen(browser, f
 def test_appearance_sets_the_theme_for_both_pages_and_keeps_it(browser, fake):
     load(browser, fake)
     browser.click('#rail [data-pane="settings"][data-group="appearance"]')
-    present(browser, '[data-themepick="light"]')
-    assert browser.js("document.documentElement.dataset.theme") == "dark"                  # dark is the default
-    browser.click('[data-themepick="light"]')
-    assert browser.js("document.documentElement.dataset.theme") == "light"
-    assert browser.js("localStorage.getItem('j2theme')") == "light"                         # J2's key: the team pages read it too
-    assert attrs(browser, "[data-themepick]", "aria-pressed") == ["true", "false", "false"]
+    present(browser, '[data-themepick="dark"]')
+    assert browser.js("document.documentElement.dataset.theme") == "light"                 # light is the default (the studio look of the front door and the team pages)
+    browser.click('[data-themepick="dark"]')
+    assert browser.js("document.documentElement.dataset.theme") == "dark"
+    assert browser.js("localStorage.getItem('j2theme')") == "dark"                          # J2's key: the team pages read it too
+    assert attrs(browser, "[data-themepick]", "aria-pressed") == ["false", "true", "false"]
     browser.reload()
     browser.wait_for("HomePage.state().loaded === true")
-    assert browser.js("document.documentElement.dataset.theme") == "light"
+    assert browser.js("document.documentElement.dataset.theme") == "dark"
     browser.click('#rail [data-pane="settings"][data-group="appearance"]')
     browser.click('[data-themepick="system"]')
     assert browser.js("localStorage.getItem('j2theme')") == "system"

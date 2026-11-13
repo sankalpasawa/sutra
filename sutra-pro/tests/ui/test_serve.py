@@ -691,11 +691,11 @@ def test_favicon_answers_204(client):
 
 
 def test_the_routes_answer_get_and_head_only(client):
-    for path in ("/", "/d/web/", "/d/web", "/d/web/library", "/d/web/library/", "/console", "/favicon.ico"):
+    for path in ("/", "/d/web/", "/d/web", "/d/web/library", "/d/web/library/", "/d/web/raw", "/console", "/favicon.ico"):
         for method in ("POST", "PUT", "PATCH", "DELETE"):
             assert client.request(method, path).status_code == 405, (method, path)
     router = build_router(token=TOKEN, department=Lookup(), version=VERSION)
-    assert {route.path for route in router.routes} == {"/", "/d/{dept}", "/d/{dept}/", "/d/{dept}/library", "/d/{dept}/library/", "/console",
+    assert {route.path for route in router.routes} == {"/", "/d/{dept}", "/d/{dept}/", "/d/{dept}/library", "/d/{dept}/library/", "/d/{dept}/raw", "/console",
                                                        "/favicon.ico"}
     for route in router.routes:
         assert set(route.methods) == {"GET", "HEAD"}
@@ -773,7 +773,7 @@ def test_a_team_called_library_keeps_its_page_and_has_a_library_page_of_its_own(
     assert client.get("/d/library/library/").headers["location"] == "/d/library/library"
     assert lookup.asked == ["library"] * 4                              # the two GETs of each page; the redirects ask nobody
     assert [name for path, _, name in route_table(app) if path.startswith("/d/")] == [
-        "ui_dept_redirect", "ui_dept", "ui_dept_library", "ui_dept_library_redirect"]
+        "ui_dept_redirect", "ui_dept", "ui_dept_library", "ui_dept_library_redirect", "ui_dept_raw"]
 
 
 def test_the_library_page_is_read_and_hashed_once_with_the_team_page(pages, static, monkeypatch):
@@ -1334,3 +1334,10 @@ def test_chrome_blocks_an_inline_script_the_hashes_do_not_name(tmp_path):
     with LiveServer(app) as server:
         dom = chrome_dom(chrome, f"http://127.0.0.1:{server.port}/page", tmp_path / "profile")
     assert paragraph(dom) == "blocked", dom[:600]  # the changed script did not run
+
+
+def test_the_raw_ai_chat_path_is_the_team_page_and_an_unknown_team_is_404(client):
+    got = client.get("/d/web/raw?run=j2-x")
+    assert got.status_code == 200 and boot_of(got.text)["dept"] == "web" and boot_of(got.text)["page"] == "dept"
+    assert client.get("/d/nope/raw").status_code == 404
+    assert client.get("/d/web/raw/x").status_code == 404

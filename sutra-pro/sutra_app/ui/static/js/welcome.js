@@ -163,7 +163,8 @@
     });
     doc.body.appendChild(el);
     const primary = el.querySelector('[data-act="welcome-gotit"]');
-    if (primary && typeof primary.focus === "function") primary.focus();
+    // the card is read from its top: focusing "Got it" (at the bottom) must not scroll the heading out of view
+    if (primary && typeof primary.focus === "function") primary.focus({preventScroll: true});
     return {el, gotIt, notNow, close, isOpen: () => open};
   }
 

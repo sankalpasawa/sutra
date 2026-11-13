@@ -185,16 +185,16 @@
       "sha256": "57d0a7825b371337438d5894163ac88a235d970402ebadb1dba8f94e027e0cb0"
     },
     "golden-journeyhtml.json": {
-      "bytes": 18340,
-      "sha256": "b2dbb84550cee3f6d7a8df6e25b7820c3baae6a5519479c4698bfb03a9385d8c"
+      "bytes": 12114,
+      "sha256": "e960764b4c829eef1cafade3390b6e4dd65503cda8ca71f4e9efb1407b7c0001"
     },
     "golden-layout.json": {
       "bytes": 24794,
       "sha256": "665ebf33105d69863a39652243d797cf08f1383baa673a24e0fb40f6b5c63580"
     },
     "golden-map.json": {
-      "bytes": 47765,
-      "sha256": "685316688508e90d5446ba8097436a0412fd96e29d77d27f321f7859ecfe732a"
+      "bytes": 47691,
+      "sha256": "eedfa3a9f5916acf7f88208f7b8efe4c14c1b57a142f05c14194eeaefa6e4bc7"
     },
     "golden-msgfns.json": {
       "bytes": 893,
@@ -253,16 +253,16 @@
       "sha256": "cf179d0a35d91facf36730d74a4dcadcae8716db3b2bda8bb6faa19eb8aa4e65"
     },
     "golden-teamwork.json": {
-      "bytes": 18322,
-      "sha256": "4d7e82bb22c6515d422697b75d04ebd189ee102f7b0ad98f54eafd5f9c3e79ba"
+      "bytes": 12096,
+      "sha256": "a3a3df01f006125fb480ad4e53e719b93499cf7a165b2acdaf6840eb74611b06"
     },
     "golden-views.json": {
-      "bytes": 198,
-      "sha256": "78ef268e2a0b79791ab4d3d8c56b658227d8c52c8f8ec3834cb33bfab644c6f1"
+      "bytes": 195,
+      "sha256": "0029aaca41548f1eed2e5063167e6ca8ac04ab8c1e81d04e8b34d15b247ec7d2"
     },
     "golden-workflows.json": {
-      "bytes": 48216,
-      "sha256": "10c8a992c27826419fe7b6643154613c542259fdf04b5766d31c1aa34100e8d3"
+      "bytes": 48213,
+      "sha256": "a8061dc6bbd19bebcca8d8b00d94dd5252b8b768d5872932758600bbf797c13b"
     },
     "library.json": {
       "bytes": 78336,

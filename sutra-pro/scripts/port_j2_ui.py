@@ -15,13 +15,13 @@ file would be ported) into a new, empty folder:
 `--j2` is always such an extraction. `--commit` names the commit it was taken from: a `git archive` folder is not a repository, so
 the script cannot ask git; without the flag it asks git about the folder and says "unknown" when that fails.
 
-The page is J2's `j2_ui.html` with 33 edits (E1 to E13, E19 to E23; the letters E2a to E2c, E9b and E20a to E20i count). Every edit is `Edit(id, old, new, count)`:
+The page is J2's `j2_ui.html` with 35 edits (E1 to E13, E19 to E23; the letters E2a to E2c, E9b and E20a to E20k count). Every edit is `Edit(id, old, new, count)`:
 `old` is a literal or a compiled regex and `count` is the number of places it must match in J2's file. Every count is checked against
 J2's own text first, so no edit anchors on another edit's output. A count that is not met means J2 changed under the port: the port
 stops, names every edit that no longer matches and writes nothing. Re-port; never hand-edit the copy.
 
 What it writes, under `sutra_app/ui/` of the repository the script lives in (or `--root`):
-    pages/j2_ui.html            the page after the 33 edits
+    pages/j2_ui.html            the page after the 35 edits
     pages/j2_ui_render.js       J2's render harness, three small changes (sutra_ctx.js runs first; d3 and its tag test move)
     pages/j2_graph_layout.js    J2's layout harness, one change (sutra_ctx.js runs first)
     static/css/j2.css           the page's `<style>` block, byte for byte (the leading newline included)
@@ -154,8 +154,8 @@ _E21_OLD = _lines("for (const k of Object.keys(FEED)) delete FEED[k]; Object.ass
 _LIBRARY_PATH = "location.pathname === \"/library\""
 # E23: the studio adds a Google Fonts link to a generated document when it can read the frame (sFrameSetup). The app has no CDN and no web font
 # (UI-D3, the same reason E1 drops J2's own link), and under the frame sandbox (D83) the document cannot be read, so the line never ran here.
-_E23_OLD = ('if (d.querySelector("h2") && !d.querySelector("[class]")){ const fl = d.createElement("link"); fl.rel = "stylesheet"; '
-            'fl.href = "https://fonts.googleapis.com/css2?family=DM+Sans:opsz,wght@9..40,400;9..40,600&family=Fraunces:opsz,wght@9..144,500;9..144,600&display=swap"; '
+_E23_OLD = ('{ const fl = d.createElement("link"); fl.rel = "stylesheet"; '
+            'fl.href = "https://fonts.googleapis.com/css2?family=Figtree:wght@400;500;600;700&family=Bricolage+Grotesque:opsz,wght@12..96,600;12..96,700&display=swap"; '
             '(d.head || d.body).appendChild(fl); }')
 
 PAGE_EDITS: tuple[Edit, ...] = (
@@ -216,12 +216,15 @@ PAGE_EDITS: tuple[Edit, ...] = (
          "const runHref = id => `${SutraCtx.pagePath}?run=${encodeURIComponent(id)}&view=detail&tab=library`;", 1),
     Edit("E20d", _LIBRARY_PATH, "SutraCtx.onLibrary()", 2),       # `setView` and the catalog's `CAT.on`
     Edit("E20e", "const back = view => `/?${viewRun", "const back = view => `${SutraCtx.pagePath}?${viewRun", 1),
-    Edit("E20f", 'data-catgo="/library${viewRun', 'data-catgo="${SutraCtx.libraryPath}${viewRun', 1),
+    Edit("E20f", 'data-catgo="/library?view=', 'data-catgo="${SutraCtx.libraryPath}?view=', 2),      # Run templates and Shared library
     # the studio's start page: a static link (no script can write the team into markup, so it is relative: /d/<id>/ gives /d/<id>/library, and
     # J2's own root gives /library), the Recent work list, and New project, which goes back to the start page
-    Edit("E20g", '<a class="slink" href="/library?view=detail">Template library</a>', '<a class="slink" href="library?view=detail">Template library</a>', 1),
+    Edit("E20g", '<a class="slq" href="/library?view=detail">Template library</a>', '<a class="slq" href="library?view=detail">Template library</a>', 1),
     Edit("E20h", '`<a href="/?run=${encodeURIComponent(x.id)}&view=simple">', '`<a href="${SutraCtx.pagePath}?run=${encodeURIComponent(x.id)}&view=simple">', 1),
     Edit("E20i", 'location.href = "/?view=simple"', 'location.href = SutraCtx.pagePath + "?view=simple"', 2),
+    # the run templates (studio pin b2d70b5): a template's name links to its page in the library, and Use opens the start page with it
+    Edit("E20j", '`<a href="/library?view=templates&rt=', '`<a href="${SutraCtx.libraryPath}?view=templates&rt=', 1),
+    Edit("E20k", "const rtHref = (id, keys) => `/?view=simple&template=", "const rtHref = (id, keys) => `${SutraCtx.pagePath}?view=simple&template=", 1),
     # E21: the function chat's questions and answers are lines of the function's own session (D148): loadFeed fills J2's QA list from it
     Edit("E21", _E21_OLD,
          _lines("for (const k of Object.keys(FEED)) delete FEED[k]; Object.assign(FEED, v); } } catch (e) {}",

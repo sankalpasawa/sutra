@@ -1,1 +1,1 @@
-"<button type=\"button\" role=\"tab\" data-view=\"site\" aria-selected=\"true\">Website</button><button type=\"button\" role=\"tab\" data-view=\"team\" aria-selected=\"false\">Team at work</button>"
+"<button type=\"button\" role=\"tab\" data-view=\"site\" aria-selected=\"true\">Page</button><button type=\"button\" role=\"tab\" data-view=\"team\" aria-selected=\"false\">Team at work</button>"

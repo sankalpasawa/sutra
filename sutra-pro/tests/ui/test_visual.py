@@ -34,6 +34,7 @@ SETTLE_S = 0.25                      # a resized graph or panel repaints on the 
 
 # The graph box of a filed node paints a 14 % green over --panel and J2's --muted second line on it reads 4.2:1 in the dark set (UI-4 owns
 # graph_render.js and sutra-graph.css; docs/notes/UI-9.md). It is the one finding of the audit that is allowed, and only in the dark theme.
+# Home no longer has it (its workspace takes the studio tokens of sutra-front.css); the team pages keep J2's own --muted.
 KNOWN_GAPS = {("dark", "tsub", "st-filed")}
 MIN_RATIO = 4.0                      # a known gap must still be close to its recorded value: a worse one is a new finding
 
@@ -152,6 +153,7 @@ def visual_browser():
     if chrome is None:
         pytest.skip("Chrome is not installed (set SUTRA_CHROME to its path)")
     with cdp.Browser(chrome) as instance:
+        instance.set_level("debug", "front")      # every view shown: home-start is the front door, ?pane= opens the workspace, a team page keeps its Detailed view
         yield instance
 
 
@@ -189,8 +191,8 @@ def test_one_page_in_every_theme_and_width(page, fake, fake_server, visual_brows
             assert result["measured"] > 3, (where, result)                  # the audit looked at text: an empty audit proves nothing
             failures = [f for f in result["failures"] if not is_known_gap(expected, f)]
             assert failures == [], (where, json.dumps(failures))
-            if page == "home-graph" and expected == "dark" and width == 1440:                 # the allowed finding is still there: the day it is fixed, KNOWN_GAPS must go
-                assert len(result["failures"]) >= 1, (where, "KNOWN_GAPS is stale: the graph's filed box now reads well in dark")
+            if page == "home-graph":                    # Home's studio tokens (sutra-front.css, --s-muted2) close the gap there: it must stay closed
+                assert result["failures"] == [], (where, "the graph's filed box reads below 4.5:1 on Home again", json.dumps(result["failures"]))
             shot = browser.shot(screens_dir / png_name(page, label, width))
             assert shot.stat().st_size > 2000, where
         assert browser.console_errors == [], (page, label, browser.console_errors)

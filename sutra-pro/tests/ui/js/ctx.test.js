@@ -95,8 +95,8 @@ test("J2's page script can declare its own top-level names after it (no lexical 
 test("the public surface is exactly the one the design lists", () => {
   const { SutraCtx } = load(browser());
   assert.deepEqual(Object.keys(SutraCtx).sort(),
-    ["ApiError", "J2_PATHS", "api", "boot", "currentTab", "dept", "esc", "installFetch", "libraryPath", "onLibrary", "pagePath", "paint", "run", "tab",
-      "withDept"]);
+    ["ApiError", "J2_PATHS", "LEVELS", "LEVEL_KEY", "api", "boot", "currentTab", "dept", "esc", "installFetch", "level", "levelAt", "libraryPath", "onLibrary",
+      "pagePath", "paint", "run", "setLevel", "tab", "withDept"]);
   assert.deepEqual(Object.keys(SutraCtx.api).sort(), ["del", "get", "post", "put"]);
   for (const name of ["run", "esc", "paint", "tab", "installFetch", "withDept", "onLibrary"]) assert.equal(typeof SutraCtx[name], "function", name);
   for (const name of ["pagePath", "libraryPath"]) assert.equal(typeof SutraCtx[name], "string", name);
@@ -1134,4 +1134,60 @@ test("the script loads in J2's stub DOM and the page's own names do not clash wi
   assert.equal(vm.runInContext("SutraCtx.run()", sandbox), "");
   // J2's page script then declares its own names without a clash
   vm.runInContext(`const esc = s => s, paint = () => {}, $ = id => id, md = 1, who = 2, col = 3, WHO = {}, isWf = 5; function poll(){}`, sandbox);
+});
+
+// ------------------------------------------------------------------------------------------------------------------
+// The owner's level (sutra:level): read, stored, put on <html data-level>, announced, and a Simple team page opens in its studio
+// ------------------------------------------------------------------------------------------------------------------
+function storageWith(init = {}) {
+  const data = Object.assign({}, init);
+  return {data, getItem: k => (Object.prototype.hasOwnProperty.call(data, k) ? data[k] : null), setItem: (k, v) => { data[k] = String(v); }};
+}
+
+test("the level is simple by default and for an unknown word, and it lands on <html data-level> at load", () => {
+  for (const [stored, want] of [[undefined, "simple"], ["debug", "debug"], ["manager", "manager"], ["root", "simple"]]) {
+    const html = {dataset: {}};
+    const store = storageWith(stored === undefined ? {} : {"sutra:level": stored});
+    const home = Object.assign({}, BOOT, {page: "home"});
+    const sandbox = load(browser({pathname: "/", localStorage: store, document: documentWith(home, {documentElement: html})}));
+    assert.equal(sandbox.SutraCtx.level(), want);
+    assert.equal(html.dataset.level, want);
+  }
+});
+
+test("setLevel stores, marks the page and announces sutra:level; levelAt compares in the order simple, manager, debug", () => {
+  const html = {dataset: {}};
+  const fired = [];
+  const store = storageWith();
+  const document = documentWith(BOOT, {documentElement: html, dispatchEvent: e => fired.push(e)});
+  const sandbox = load(browser({localStorage: store, document, CustomEvent: function (type, init) { this.type = type; this.detail = init.detail; }}));
+  const ctx = sandbox.SutraCtx;
+  assert.equal(ctx.setLevel("manager"), "manager");
+  assert.equal(store.data["sutra:level"], "manager");
+  assert.equal(html.dataset.level, "manager");
+  assert.deepEqual(fired.map(e => [e.type, e.detail.level]), [["sutra:level", "manager"]]);
+  assert.equal(ctx.levelAt("simple"), true);
+  assert.equal(ctx.levelAt("manager"), true);
+  assert.equal(ctx.levelAt("debug"), false);
+  assert.equal(ctx.setLevel("nonsense"), "simple");
+});
+
+test("a team page at Simple asks J2 for its Simple view: j2view and ?view say simple before J2's script runs", () => {
+  const store = storageWith({"j2view": "detail"});
+  const replaced = [];
+  load(browser({search: "?view=detail&run=r1", localStorage: store, history: {state: null, replaceState: (s, t, url) => replaced.push(url)}}));
+  assert.equal(store.data.j2view, "simple");
+  assert.deepEqual(replaced, ["/d/web/?view=simple&run=r1"]);
+  // Manager leaves the team page as J2 has it
+  const kept = storageWith({"sutra:level": "manager", "j2view": "detail"});
+  const none = [];
+  load(browser({search: "?view=detail", localStorage: kept, history: {state: null, replaceState: (s, t, url) => none.push(url)}}));
+  assert.equal(kept.data.j2view, "detail");
+  assert.deepEqual(none, []);
+});
+
+test("no storage at all (blocked, a stub): the level reads simple and nothing throws", () => {
+  const sandbox = load(browser({localStorage: {getItem() { throw new Error("blocked"); }, setItem() { throw new Error("blocked"); }}}));
+  assert.equal(sandbox.SutraCtx.level(), "simple");
+  assert.equal(sandbox.SutraCtx.setLevel("debug"), "debug");
 });

@@ -105,6 +105,11 @@ def test_data_dir_variable_wins_then_checkout_then_home(monkeypatch, tmp_path):
     assert config.default_data_dir({}) == tmp_path / "home" / ".sutra-pro"
 
 
+def test_a_relative_data_dir_becomes_absolute(monkeypatch, tmp_path):
+    monkeypatch.chdir(tmp_path)                                                   # a team's engine runs elsewhere: `--data-dir ./x` crashed every run
+    assert load(data_dir=Path("./demo-data")).data_dir == tmp_path.resolve() / "demo-data"
+
+
 def test_env_file_defaults_to_the_project_dot_env_and_honours_the_variable():
     assert config.default_env_file({}) == config.project_root() / ".env"
     assert config.default_env_file({"SUTRA_ENV_FILE": "/x/y.env"}) == Path("/x/y.env")
