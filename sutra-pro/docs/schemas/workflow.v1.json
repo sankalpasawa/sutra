@@ -970,16 +970,17 @@
           "type": "string"
         },
         "output": {
-          "default": "website",
-          "enum": [
-            "website",
-            "prd",
-            "hld",
-            "lld",
-            "project"
+          "anyOf": [
+            {
+              "pattern": "^[a-z][a-z0-9_]{1,40}$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
           ],
-          "title": "Output",
-          "type": "string"
+          "default": null,
+          "title": "Output"
         },
         "outputs": {
           "items": {
@@ -1044,6 +1045,17 @@
           "title": "Schema Version",
           "type": "integer"
         },
+        "sections": {
+          "default": [],
+          "items": {
+            "maxLength": 200,
+            "minLength": 1,
+            "type": "string"
+          },
+          "maxItems": 60,
+          "title": "Sections",
+          "type": "array"
+        },
         "stage": {
           "anyOf": [
             {
@@ -1093,6 +1105,22 @@
           ],
           "default": null,
           "title": "Trigger"
+        },
+        "work_kind": {
+          "anyOf": [
+            {
+              "enum": [
+                "build",
+                "audit"
+              ],
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Work Kind"
         }
       },
       "required": [
@@ -1366,16 +1394,17 @@
           "type": "string"
         },
         "output": {
-          "default": "website",
-          "enum": [
-            "website",
-            "prd",
-            "hld",
-            "lld",
-            "project"
+          "anyOf": [
+            {
+              "pattern": "^[a-z][a-z0-9_]{1,40}$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
           ],
-          "title": "Output",
-          "type": "string"
+          "default": null,
+          "title": "Output"
         },
         "outputs": {
           "items": {
@@ -1460,6 +1489,17 @@
           "maxLength": 40,
           "title": "Section",
           "type": "string"
+        },
+        "sections": {
+          "default": [],
+          "items": {
+            "maxLength": 200,
+            "minLength": 1,
+            "type": "string"
+          },
+          "maxItems": 60,
+          "title": "Sections",
+          "type": "array"
         },
         "send_error": {
           "anyOf": [
@@ -1554,6 +1594,22 @@
           ],
           "default": null,
           "title": "Version"
+        },
+        "work_kind": {
+          "anyOf": [
+            {
+              "enum": [
+                "build",
+                "audit"
+              ],
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Work Kind"
         }
       },
       "required": [

@@ -159,7 +159,7 @@ def test_every_json_file_of_a_mock_run_is_accepted_in_strict_mode(golden):
     assert {"goal.json, goal.v<N>.json", "workflows.json", "atoms.json", "audits.json", "conflicts.json", "conditions*.json",
             "style.json", "receipts.jsonl", "chat.jsonl", "calls.jsonl", "templates.json", "map.json", "board.json",
             "artifacts.json", "summary.json", "chain.json", "documents.json", "sections.json", "stage-<kind>.json",
-            "report.json", "settings.json", "realization.json", "<prd|hld|lld|design|website>.json, site/<kind>-v<N>.json",
+            "report.json", "settings.json", "realization.json", "<kind>.json, site/<kind>-v<N>.json",
             "templates/<artifact>/<section>/<slug>@v<N>/spec.json", "templates/<artifact>/<section>/<slug>@v<N>/meta.json",
             "templates/<artifact>/<section>/<slug>@v<N>/schema.json"} <= seen_routes
 
@@ -280,7 +280,9 @@ SPEC_FILES = ["settings.json", "goal.json", "goal.v2.json", "workflows.json", "a
               "board.json", "artifacts.json", "summary.json", "chat.jsonl", "calls.jsonl", "templates.json",
               "templates/website/section/brew-lab-core@v2/spec.json", "templates/website/section/brew-lab-core@v2/meta.json",
               "templates/website/section/brew-lab-core@v2/schema.json", "prd.json", "site/website-v3.json", "chain.json",
-              "documents.json", "sections.json", "stage-prd.json", "report.json", "change.json", "./goal.json"]
+              "documents.json", "sections.json", "stage-prd.json", "report.json", "change.json", "./goal.json",
+              "timing.json", "autofix.json", "deliverables.json", "input_cuts.json", "stage-business_report.json",
+              "business_report.json", "site/business_report-v2.json"]
 
 
 @pytest.mark.parametrize("name", SPEC_FILES)
@@ -288,7 +290,7 @@ def test_the_catalogue_knows_the_file(name):
     assert R.route_for(name) is not None
 
 
-@pytest.mark.parametrize("name", ["", "other.json", "../goal.json", "a/../goal.json", "/tmp/goal.json", "goal.json.bak",
+@pytest.mark.parametrize("name", ["", "Other.json", "../goal.json", "a/../goal.json", "/tmp/goal.json", "goal.json.bak",
                                   "templates/website/section/x/spec.json", "templates/website/section/x@v1/model.json"])
 def test_the_catalogue_does_not_know_the_file(name):
     assert R.route_for(name) is None
@@ -296,6 +298,15 @@ def test_the_catalogue_does_not_know_the_file(name):
 
 def test_a_windows_style_path_is_read_as_a_path_inside_the_run():
     assert R.route_for("templates\\website\\section\\x@v1\\spec.json") is R.route_for("templates/website/section/x@v1/spec.json")
+
+
+def test_a_name_of_the_shape_of_a_type_file_is_a_type_file_only_when_it_says_so():
+    """The type names are data (D172): `<name>.json` is checked as a type's data file when it carries the schema key of
+    one, and is otherwise a file the catalogue does not know (left alone in log mode, refused in strict mode)."""
+    assert R.route_for("other.json").family == "artifact_data"
+    assert R.check_record("other.json", {"a": 1}) is None
+    assert R.gate_record("other.json", {"a": 1}, mode="log") is None
+    assert rejected("other.json", {"a": 1}).violations[0].code == "unknown_file"
 
 
 def test_every_wire_file_is_in_the_catalogue_with_its_payload():
@@ -458,8 +469,8 @@ def test_conflicts_and_conditions_are_checked_row_by_row(golden):
 
 def test_style_json_is_the_design_style_guide(golden):
     style = first(golden["site"] / "run", "style.json")
-    assert R.gate_record("style.json", style, mode="strict").family == "artifact.design.style-guide"
-    assert rejected("style.json", mutated(style, "radius", 10)).violations
+    assert R.gate_record("style.json", style, mode="strict").family == "run_file.object"        # a type's style guide is data (D171)
+    assert rejected("style.json", ["not", "an", "object"]).violations
 
 
 LESSON = {"id": "L-j2-20261104-100004-7f3a-1", "problem": "No menu: the menu is missing", "cause": "The first build left it out",
@@ -495,15 +506,38 @@ def test_calls_jsonl_lines_carry_the_call_and_its_texts(golden):
     assert rejected("calls.jsonl", {**call, "surprise": 1}).violations
 
 
-def test_artifact_data_checks_each_section_against_its_model(golden):
+def test_artifact_data_is_checked_by_shape_for_any_type(golden):
     prd = first(golden["prd"] / "run", "prd.json")
     assert R.gate_record("prd.json", prd, mode="strict").family == "artifact_data"
     assert R.gate_record("site/prd-v6.json", prd, mode="strict") is not None
     assert says(rejected("prd.json", {**prd, "schema": "artifact-schema/9"}), "", "schema must be")
-    assert says(rejected("prd.json", mutated(prd, "sections", "Mystery", {"a": 1})), "sections.Mystery", "not a section")
-    assert rejected("prd.json", mutated(prd, "sections", "Requirements", "requirements", 0, "priority", "urgent")).violations
-    assert rejected("prd.json", {**prd, "artifact": "site"}).violations
-    assert R.gate_record("prd.json", mutated(prd, "sections", "Problem", "a_template_field", "x"), mode="strict") is not None   # a template's own field is not judged
+    assert R.gate_record("prd.json", mutated(prd, "sections", "Mystery", {"a": 1}), mode="strict") is not None      # a section is a name: the type's template is J2's
+    assert rejected("prd.json", {**prd, "artifact": "Site"}).violations                                           # the kind is a name by shape
+    assert rejected("prd.json", mutated(prd, "sections", "Problem", "not an object")).violations
+    assert rejected("prd.json", {**prd, "sections": {"": {"a": 1}}}).violations
+
+
+def test_a_document_of_a_type_that_is_not_one_of_the_first_three_is_accepted_everywhere(golden):
+    """A type J2 reads from data (here `business_report`): its data file, its site copy and its stage file are checked."""
+    prd = first(golden["prd"] / "run", "prd.json")
+    report = {**prd, "template": "Report/1", "artifact": "business_report", "sections": {"Summary": {"text": "t", "assumptions": []}}}
+    assert R.gate_record("business_report.json", report, mode="strict").family == "artifact_data"
+    assert R.gate_record("site/business_report-v2.json", report, mode="strict") is not None
+    assert R.gate_record("stage-business_report.json", {"kind": "business_report", "sections": []}, mode="strict").family == "run_file.object"
+
+
+def test_the_four_files_a_run_of_sync_5_writes_are_accepted_in_strict_mode():
+    timing = {"total_seconds": 12.5, "steps": [{"fn": "identity", "step": 1, "seconds": 1.2, "tokens": {"in": 10, "out": 5}}]}
+    assert R.gate_record("timing.json", timing, mode="strict").family == "run_file.object"
+    deliverables = {"deliverables": ["a_type"], "reason": "the brief asks for one document", "new": []}
+    assert R.gate_record("deliverables.json", deliverables, mode="strict").family == "run_file.object"
+    fixes = [{"cycle": 1, "workflow": "W-1", "kind": "heading_list", "detail": "work atom 1: a heading list was repaired"}]
+    assert R.check_record("autofix.json", fixes)[0].family == "run_file.list"
+    cuts = [{"call": 3, "workflow": "W-2", "input": "the requirements document", "kept": 20000, "chars": 31000}]
+    assert R.check_record("input_cuts.json", cuts)[0].family == "run_file.list"
+    for name, bad in (("timing.json", [1]), ("deliverables.json", [1]), ("autofix.json", {"a": 1}), ("input_cuts.json", {"a": 1})):
+        assert rejected(name, bad).violations, name
+    assert R.check_record("autofix.json", []) is not None and R.check_record("input_cuts.json", []) is not None
 
 
 def test_a_document_file_and_its_site_copy_have_the_same_shape(golden):
@@ -549,7 +583,7 @@ def test_all_imports_every_module_and_registers_the_catalogue_payloads():
                  "realization", "run_summary", "receipt", "call_log", "condition_result", "artifact_data", "chain_row",
                  "run_file.object", "run_file.list", "template.file", "template.meta", "template.decision", "template.run"):
         assert name in families, name
-    assert len([f for f in families if f.startswith("artifact.")]) == 22                # 19 sections and 3 documents
+    assert not [f for f in families if f.startswith("artifact.")]               # the section models are retired (D171)
 
 
 def test_all_does_not_freeze_the_registry_and_freeze_closes_it():
@@ -583,7 +617,7 @@ def library_classes():
 
 def test_every_library_string_and_list_is_bounded():
     classes = library_classes()
-    assert len(classes) > 70
+    assert len(classes) > 55
     assert {name: unbounded_fields(cls) for cls, _ in classes.items() if unbounded_fields(cls) for name in [cls.__name__]} == {}
 
 

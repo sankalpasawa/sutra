@@ -2,7 +2,7 @@
 
     from sutra_app.library import all as library        # or: import sutra_app.library.all
 
-The order is the dependency order of the design (section 17, risk 10): foundations, then the models, then `artifacts` before
+The order is the dependency order of the design (section 17, risk 10): foundations, then the models, then `rules` and
 `templates`, then `wire` (L9), then the catalogue `records` (which registers the payloads only it reads) and the schema router
 `api`. `export` imports this module to find the registry, so `docs/schemas/` is exactly what is registered here.
 
@@ -11,7 +11,7 @@ This module does NOT freeze the registry at import. The orchestrator registers f
 which module the process imported first. The process that builds the app calls `freeze()` once everything is imported.
 """
 from . import (  # noqa: F401  (imported for what they register)
-    artifacts, atom, base, chat, department, evaluation, functions, gate, goal, node, org_chart, records, registry, replies,
+    atom, base, chat, department, evaluation, functions, gate, goal, node, org_chart, records, registry, replies,
     templates, types, wire, workflow,
 )
 from . import api  # noqa: F401  (after records: the router checks with the catalogue's registry)

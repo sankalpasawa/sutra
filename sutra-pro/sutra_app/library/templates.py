@@ -1,14 +1,14 @@
 """template-library/1: the Template bases and their pure checks (library design section 9.2).
 
-Every artifact section has a GENERIC template (the fixed layout of its artifact type, built from the section model and its
-rules, never retyped) and, per workflow, a SPECIALISED template the engine generates from the workflow's context. This
+Every artifact section has a GENERIC template (the fixed layout of its artifact type: J2 keeps it as data, in
+`templates/<type>/generic.json`, and this library holds no copy of it) and, per workflow, a SPECIALISED template the
+engine generates from the workflow's context. This
 module owns what a template IS and what makes one valid; the engine keeps the router, the library directory, codegen and
 the prompts (it imports this module, never the other way round).
 
     FieldSpec, ObjectSpec, MadeBy, Context, Use     the parts
     GenericTemplate, SpecialisedTemplate            family "template", kinds generic and specialised (closed, frozen)
     shape_problems, rule_problems, resolve, keeps_problems, refusal      the checks: lists of reasons, never a raise
-    generic, from_model, generic_file, write_generic, generic_drift      the generic layer, from the models and RULES
     build_model, transport, validate                the runtime class from a spec (pydantic.create_model), its draft-07
                                                     transport schema, and (data) -> (dict or None, errors)
     TemplateMeta, TemplateDecision, RunTemplate, TemplatesFile           the files of a run's own copy (J2 sync 33aeeda)
@@ -20,37 +20,31 @@ error (`resolve`); every string and list is bounded; the built runtime class is 
 are. The `sha` of a template is J2's (sha256 of `content()` with the rules in their J2 dict form), so templates stored by
 J2 keep their shas. codegen (model.py) stays with the engine.
 """
+import copy
 import hashlib
 import json
-import os
 import re
-import types
 from collections.abc import Mapping
-from pathlib import Path
-from typing import Annotated, Any, ClassVar, Literal, Optional, Self, Union, get_args, get_origin
+from typing import Annotated, Any, ClassVar, Literal, Optional, Self
 
 from pydantic import Field, StringConstraints, create_model, model_validator
 
-from .artifacts import SECTION_MODELS, VERSION, slug
-from .artifacts.models import OPTIONAL_FIELDS
-from .artifacts.render import errors_of, normalise
-from .artifacts.render import validate as validate_data
-from .artifacts.rules import RULE_TYPES, RuleSpec, rules_for, spec_problems
-from .base import Record, Value, unwrap_annotation
+from .base import Record, Value
 from .registry import REGISTRY, record, transport_schema
-from .registry import schema_sha as sha_of_schema
+from .rules import RULE_TYPES, RuleSpec, spec_problems
+from .types import ArtifactName
 
 __all__ = [
-    "SCHEMA", "ARTIFACTS", "MAX_FIELDS", "RUN_TEMPLATE_FILES", "TemplateArtifact", "FieldSpec", "ObjectSpec", "MadeBy",
+    "SCHEMA", "VERSION", "MAX_FIELDS", "RUN_TEMPLATE_FILES", "TemplateArtifact", "FieldSpec", "ObjectSpec", "MadeBy",
     "Context", "Use", "Template", "GenericTemplate", "SpecialisedTemplate", "TemplateMeta", "TemplateCandidate",
     "TemplateDecision", "RunTemplate", "TemplatesFile", "sha_of", "generic_ref", "shape_problems", "rule_problems",
-    "resolve", "keeps_problems", "refusal", "from_model", "generic", "spec_json", "generic_file", "write_generic",
-    "generic_drift", "templates_dir", "class_name", "build_model", "transport", "validate", "run_tpl_rel",
+    "resolve", "keeps_problems", "refusal", "spec_json", "slug", "errors_of", "normalise", "class_name", "build_model",
+    "transport", "validate", "run_tpl_rel",
 ]
 
 SCHEMA = "template-library/1"
-ARTIFACTS = ("prd", "hld", "lld", "design", "website")
-TemplateArtifact = Literal["prd", "hld", "lld", "design", "website"]
+VERSION = 1
+TemplateArtifact = ArtifactName          # the name of an output type, by shape: the types are data
 MAX_FIELDS = 25
 NAME_RE = re.compile(r"^[A-Za-z][A-Za-z0-9_]*$")
 OBJ_RE = re.compile(r"^[A-Z][A-Za-z0-9]*$")
@@ -71,6 +65,43 @@ Text2000 = Annotated[str, StringConstraints(max_length=2000)]
 def sha_of(obj: Any) -> str:
     """J2's `sha_of`: sha256 of the object as sorted-key JSON."""
     return hashlib.sha256(json.dumps(obj, sort_keys=True, ensure_ascii=False).encode("utf-8")).hexdigest()
+
+
+def slug(text) -> str:
+    """J2's `slug` (j2_template_lib): lowercase, runs of anything else become one "-", "template" for nothing."""
+    return re.sub(r"[^a-z0-9]+", "-", str(text or "").lower()).strip("-") or "template"
+
+
+def errors_of(e):
+    """The error lines of a pydantic error, in its own words ("where: message"), so a retry can quote them."""
+    out = []
+    for err in getattr(e, "errors", lambda: [])() or []:
+        where = ".".join(str(x) for x in err.get("loc") or ()) or "section"
+        out.append(f"{where}: {err.get('msg')}")
+    return out or [str(e).splitlines()[0]]
+
+
+def normalise(model, data: Any):
+    """Enum values read case-insensitively and written back in the model's own casing, before validation. The enums are
+    the model's `ENUMS` (a template's own enum fields, set by `build_model`)."""
+    if not isinstance(data, dict):
+        return data
+    d = copy.deepcopy(data)
+    enums = getattr(model, "ENUMS", None) or {}
+
+    def walk(node):
+        if isinstance(node, list):
+            for x in node:
+                walk(x)
+        elif isinstance(node, dict):
+            for k, v in list(node.items()):
+                if k in enums and isinstance(v, str):
+                    low = v.strip().lower()
+                    node[k] = next((x for x in enums[k] if x.lower() == low), v)
+                else:
+                    walk(v)
+    walk(d)
+    return d
 
 
 # ---------------------------------------------------------------- the parts
@@ -154,14 +185,15 @@ class Template(Record):
 
 @record
 class GenericTemplate(Template):
-    """The generic layer: one per (artifact, section), built from the section model and RULES."""
+    """The generic layer: one per (artifact, section), as J2 keeps it in `templates/<type>/generic.json`."""
 
     kind: Literal["generic"] = "generic"
 
 
 @record
 class SpecialisedTemplate(Template):
-    """A workflow's own template: extends one generic and keeps every required field of it."""
+    """A workflow's own template: extends one generic. That it keeps every required field of the generic is
+    `keeps_problems(generic, template)`, checked by whoever holds the generic (J2's file); this library holds none."""
 
     kind: Literal["specialised"] = "specialised"
     extends: Annotated[str, StringConstraints(min_length=1, max_length=200)]
@@ -174,12 +206,6 @@ class SpecialisedTemplate(Template):
         want = generic_ref(self.artifact, self.section)
         if self.extends != want:
             raise ValueError(f"extends must be {want!r}, not {self.extends!r}")
-        gen = generic(self.artifact, self.section)
-        if gen is None:
-            raise ValueError(f"there is no generic template for {self.artifact} {self.section!r}")
-        bad = keeps_problems(gen, self)
-        if bad:
-            raise ValueError("; ".join(bad))
         return self
 
 
@@ -380,67 +406,6 @@ def refusal(data):
         return [re.sub(r"^section: (?:Value error, )?", "", x) for x in errors_of(e)]
 
 
-# ---------------------------------------------------------------- the generic layer, from the models (never retyped)
-def _ann(annotation):
-    """(type string, enum, nullable, object model or None) for a model field's annotation."""
-    nullable = False
-    annotation = unwrap_annotation(annotation)[0]
-    origin, args = get_origin(annotation), get_args(annotation)
-    if origin in (Union, types.UnionType) and type(None) in args:      # Optional[X]
-        nullable = True
-        annotation = unwrap_annotation(next(a for a in args if a is not type(None)))[0]
-        origin, args = get_origin(annotation), get_args(annotation)
-    if origin is Literal:
-        return "string", [str(a) for a in args], nullable, None
-    if origin is list:
-        inner = unwrap_annotation(args[0])[0]
-        if get_origin(inner) is Literal:
-            return "list[string]", [str(a) for a in get_args(inner)], nullable, None
-        if inner is str:
-            return "list[string]", None, nullable, None
-        return f"list[{inner.__name__}]", None, nullable, inner
-    if annotation is str:
-        return "string", None, nullable, None
-    if annotation is int:
-        return "integer", None, nullable, None
-    if annotation is bool:
-        return "boolean", None, nullable, None
-    return annotation.__name__, None, nullable, annotation
-
-
-def from_model(model):
-    """(fields, objects) of a pydantic section model, read from the model itself."""
-    objects, order = {}, []
-
-    def fields_of(m):
-        out = []
-        for name, f in m.model_fields.items():
-            typ, enum, nullable, obj = _ann(f.annotation)
-            if obj is not None and obj.__name__ not in objects:
-                objects[obj.__name__] = None
-                objects[obj.__name__] = fields_of(obj)
-                order.append(obj.__name__)
-            out.append(FieldSpec(name=f.alias or name, type=typ, required=f.is_required(),
-                                 description=f.description or "", enum=enum, nullable=nullable))
-        return out
-    fields = fields_of(model)
-    return fields, [ObjectSpec(name=n, fields=objects[n]) for n in order]
-
-
-def generic(artifact, section):
-    """The GenericTemplate of one section, built from its model and its rules (None when there is no model)."""
-    model = (SECTION_MODELS.get(artifact) or {}).get(section)
-    if model is None:
-        return None
-    fields, objects = from_model(model)
-    t = GenericTemplate(name=model.template(), artifact=artifact, section=section, version=VERSION,
-                        description=f"The generic {model.template()} template: the fixed layout of every "
-                                    f"{artifact.upper() if artifact in ('prd', 'hld', 'lld') else artifact} "
-                                    f"{section} section, whatever the business",
-                        fields=fields, objects=objects, rules=rules_for(artifact, section))
-    return t.evolve(sha=t.compute_sha())
-
-
 def spec_json(t) -> dict[str, Any]:
     """spec.json as J2 writes it: a generic without its empty keys, a specialised one without `used_by` (that lives in
     meta.json); rules as J2 dicts; no `schema_version` (the library's own, not part of J2's file)."""
@@ -452,63 +417,11 @@ def spec_json(t) -> dict[str, Any]:
     return data
 
 
-def generic_file(artifact):
-    """templates/<artifact>/generic.json as it must be: every section of the artifact, in the models' order."""
-    ts = [generic(artifact, s) for s in SECTION_MODELS[artifact]]
-    return {"schema": SCHEMA, "artifact": artifact, "kind": "generic", "version": VERSION,
-            "from": "sutra_app.library.artifacts (SECTION_MODELS and RULES; generated by write_generic)",
-            "templates": [{**spec_json(t), "schema_sha": sha_of_schema(transport_schema(SECTION_MODELS[artifact][t.section]))}
-                          for t in ts]}
-
-
-def templates_dir(explicit=None) -> Path:
-    """Where the generated generic.json files go: the argument, else SUTRA_TEMPLATES_DIR, else docs/schemas/templates of
-    the checkout. They are documentation and a drift guard; nothing reads them at run time."""
-    chosen = explicit or os.environ.get("SUTRA_TEMPLATES_DIR")
-    return Path(chosen) if chosen else Path(__file__).resolve().parents[2] / "docs" / "schemas" / "templates"
-
-
-def write_generic(root=None):
-    out = []
-    for a in ARTIFACTS:
-        p = templates_dir(root) / a / "generic.json"
-        p.parent.mkdir(parents=True, exist_ok=True)
-        p.write_text(json.dumps(generic_file(a), indent=2, ensure_ascii=False) + "\n", encoding="utf-8", newline="\n")
-        out.append(str(p))
-    return out
-
-
-def generic_drift(root=None):
-    """Every disagreement between the generic.json files under `root` and the models + RULES ([] when none)."""
-    out = []
-    for a in ARTIFACTS:
-        p = templates_dir(root) / a / "generic.json"
-        if not p.exists():
-            out.append(f"{p} is missing")
-            continue
-        try:
-            have = json.loads(p.read_text(encoding="utf-8"))
-        except ValueError:
-            out.append(f"{p} is not JSON")
-            continue
-        want = generic_file(a)
-        if have != want:
-            hs = {t.get("section"): t for t in have.get("templates") or [] if isinstance(t, dict)}
-            before = len(out)
-            for t in want["templates"]:
-                h = hs.get(t["section"])
-                if h != t:
-                    keys = sorted(k for k in set(t) | set(h or {}) if (h or {}).get(k) != t.get(k))
-                    out.append(f"{a}/{t['section']}: generic.json differs from the models/RULES in {', '.join(keys)}")
-            if len(out) == before:
-                out.append(f"{a}: generic.json differs from the models/RULES")
-    return out
-
-
 # ---------------------------------------------------------------- runtime: the class is built from the spec
 class TemplateBase(Value):
     TEMPLATE: ClassVar[str] = "template"
     SECTION: ClassVar[str] = ""
+    ENUMS: ClassVar[dict] = {}
 
     @classmethod
     def template(cls) -> str:
@@ -594,24 +507,34 @@ def _as_template(t):
     return cls.model_validate(t)
 
 
-def _optional_names(t):
-    """The transport marks a field optional when the generic's transport does (OPTIONAL_FIELDS), or when the template
-    added it as not required."""
-    gen = generic(t.artifact, t.section)
-    gnames = {f.name for f in gen.fields} | {f.name for o in gen.objects for f in o.fields} if gen else set()
-    added = {f.name for f in t.fields if not f.required and f.name not in gnames}
-    added |= {f.name for o in t.objects for f in o.fields if not f.required and f.name not in gnames}
-    return frozenset(OPTIONAL_FIELDS | added)
+def _optional_names(t, reply_optional=(), generic=None):
+    """The transport marks a field optional when the caller names it (`reply_optional`: what the type's generic.json says
+    a reply may leave out, J2's own list; the library holds none) or when the template added it as not required. Which
+    fields are the generic's own is the caller's `generic` (a template); without one, every field the template says is not
+    required counts as added."""
+    own = {f.name for f in generic.fields} | {f.name for o in generic.objects for f in o.fields} if generic is not None else set()
+    added = {f.name for f in t.fields if not f.required and f.name not in own}
+    added |= {f.name for o in t.objects for f in o.fields if not f.required and f.name not in own}
+    return frozenset(added | set(reply_optional))
 
 
-def build_model(t):
+def _enums(t):
+    """{field name: allowed values} of every string enum field of the template, for `normalise`."""
+    out = {}
+    for f in [*t.fields, *(f for o in t.objects for f in o.fields)]:
+        if f.enum:
+            out.setdefault(f.name, list(f.enum))
+    return out
+
+
+def build_model(t, reply_optional=(), generic=None):
     """The runtime class of a template, from its spec with pydantic.create_model (cached by the sha of its content). model.py is never
-    imported for this. Every class carries the template's optional names as its `TRANSPORT_OPTIONAL`."""
+    imported for this. Every class carries the template's optional names as its `TRANSPORT_OPTIONAL` (see `_optional_names`)."""
     t = _as_template(t)
-    key = (t.compute_sha(), t.version, t.name)          # never the stored sha: a stale one must not find another class
+    optional = _optional_names(t, reply_optional, generic)
+    key = (t.compute_sha(), t.version, t.name, optional)          # never the stored sha: a stale one must not find another class
     if key in _BUILT:
         return _BUILT[key]
-    optional = _optional_names(t)
     classes, objs = {}, _objs(t)
     for n in _obj_order(t):
         classes[n] = create_model(n, __base__=TemplateBase,
@@ -622,6 +545,7 @@ def build_model(t):
                        **{_attr(f.name): (_py_type(f, classes), Field(**_field_args(f))) for f in t.fields})
     cls.TEMPLATE = f"{t.name} v{t.version}"
     cls.SECTION = t.section
+    cls.ENUMS = _enums(t)
     cls.TRANSPORT_OPTIONAL = optional
     if len(_BUILT) >= _BUILT_MAX:
         _BUILT.pop(next(iter(_BUILT)))
@@ -629,28 +553,22 @@ def build_model(t):
     return cls
 
 
-def transport(t):
+def transport(t, reply_optional=(), generic=None):
     """schema.json: the draft-07 transport schema of a template (definitions, closed objects, nothing the transport
-    forbids), from its runtime class."""
-    return transport_schema(build_model(_as_template(t)))
+    forbids), from its runtime class. `reply_optional` and `generic`: see `_optional_names`."""
+    return transport_schema(build_model(_as_template(t), reply_optional, generic))
 
 
 def validate(t, data):
-    """(dict or None, [errors]): the template's runtime class, then the generic model on the generic fields (so the
-    generic's shape - the website section's html-or-head - still holds)."""
+    """(dict or None, [errors]): the template's runtime class on the data, enum casing normalised first. Whatever the
+    generic adds beyond fields (J2's `requires_one_of`) is J2's check, run by the engine on its own generic file."""
     t = _as_template(t)
     model = build_model(t)
-    obj, errs = validate_data(model, normalise(model, data))
-    if errs:
-        return None, errs
-    got = obj.model_dump(by_alias=True)
-    gmodel = (SECTION_MODELS.get(t.artifact) or {}).get(t.section)
-    if gmodel is not None:
-        gnames = {(f.alias or n) for n, f in gmodel.model_fields.items()}
-        _, gerrs = validate_data(gmodel, normalise(gmodel, {k: v for k, v in got.items() if k in gnames}))
-        if gerrs:
-            return None, gerrs
-    return got, []
+    try:
+        obj = model.model_validate(normalise(model, data))
+    except Exception as e:
+        return None, errors_of(e)
+    return obj.model_dump(by_alias=True), []
 
 
 # ---------------------------------------------------------------- a run's own copy of the templates it used (J2 33aeeda)

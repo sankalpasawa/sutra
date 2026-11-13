@@ -1,6 +1,6 @@
-"""artifact-rules/1: the template rules as data, one list per (kind, section), run by a small fixed set of checks.
+"""artifact-rules/1: the template rules as data, run by a small fixed set of checks.
 
-Port of J2's `j2_rules.py` (library design section 9.3). The split it completes: the models (`models.py`) say what
+Port of J2's `j2_rules.py` (library design section 9.3). The split it completes: a template's fields say what
 SHAPE an artifact's data has (fields, types, required or optional, enums); everything else (ids in order, references that
 point at an id that exists, hex colours, plain CSS, page tags, anchors) is a rule here, written as a `RuleSpec`. Rules are
 data, so a generic or generated template carries its own list without new code.
@@ -10,15 +10,14 @@ One function per rule type (`RULE_TYPES`), paths in a simple syntax:
     "components"                a list field
     "components[].covers"       a field of every item of a list
     "palette.*"                 every value of an object
-`run_rules` answers for every rule in the list and never raises: {"rule", "name", "from", "pass", "evidence"}, where
+`run_specs` answers for every rule in the list and never raises: {"rule", "name", "from", "pass", "evidence"}, where
 `pass` is True, False, or None when the run recorded nothing to check it against ("not recorded", never a pass).
 
 Targets of `ref_exists` are "this.<path>" (the document this section belongs to, as the run has recorded it so far) or
-"prd.<path>" / "hld.<path>" / "lld.<path>" (an earlier document).
+"<artifact>.<path>" (an earlier document: the name of an artifact type, read from the data, never listed here).
 
-What differs from J2: `RULES` holds `RuleSpec` objects (validated at import, so a typo fails the import) instead of
-dicts; the 12 rule functions work on the plain J2 dict (`RuleSpec.as_j2()`), unchanged; `run_specs` takes `RuleSpec`
-objects or J2 dicts and, where J2 raised on an item that is neither, reports it as an unknown rule.
+What differs from J2: a rule is a `RuleSpec` object instead of a dict; the 12 rule functions work on the plain J2
+dict (`RuleSpec.as_j2()`), unchanged; `run_specs` takes `RuleSpec` objects or J2 dicts and, where J2 raised on an item that is neither, reports it as an unknown rule.
 """
 import re
 from collections.abc import Mapping
@@ -26,12 +25,11 @@ from typing import Annotated, Any, Literal, Self, get_args
 
 from pydantic import Field, StringConstraints, model_validator
 
-from ..base import Value
+from .base import Value
 
 __all__ = [
-    "SCHEMA", "NOT_RECORDED", "HEX", "CSS_SAFE", "PAGE_TAGS", "ANCHOR", "PRIORITIES", "FIELD_TYPES", "RULE_TYPES",
-    "RULE_KEYS", "RULE_NEEDS", "SINGLE_PATH", "RuleName", "RuleSpec", "RULES", "RULE_NAMES", "spec_problems", "walk",
-    "rules_for", "rule_names", "rules_count", "run_rules", "run_specs", "failures",
+    "SCHEMA", "NOT_RECORDED", "HEX", "CSS_SAFE", "PAGE_TAGS", "ANCHOR", "RULE_TYPES",
+    "RULE_KEYS", "RULE_NEEDS", "SINGLE_PATH", "RuleName", "RuleSpec", "spec_problems", "walk", "run_specs", "failures",
 ]
 
 SCHEMA = "artifact-rules/1"
@@ -287,7 +285,7 @@ if not set(get_args(RuleName)) == set(RULE_TYPES) == set(RULE_NEEDS):      # thr
 
 _Text = Annotated[str, StringConstraints(min_length=1, max_length=300)]
 _Path = Annotated[str, StringConstraints(min_length=1, max_length=200)]
-_THIS_DOC = re.compile(r"^(this|prd|hld|lld)\.")
+_THIS_DOC = re.compile(r"^(this|[a-z][a-z0-9_]*)\.")      # "this" or an artifact name, by shape: the data names the types
 
 
 def spec_problems(rule: Any, n: int | None = None) -> list[str]:
@@ -314,13 +312,13 @@ def spec_problems(rule: Any, n: int | None = None) -> list[str]:
     if typ == "enum" and not (isinstance(rule.get("values"), list) and all(isinstance(v, str) for v in rule["values"])):
         out.append(f"{head} (enum): values must be a list of strings")
     if typ == "ref_exists" and not _THIS_DOC.match(str(rule.get("target") or "")):
-        out.append(f"{head} (ref_exists): target must start with this., prd., hld. or lld.")
+        out.append(f"{head} (ref_exists): target must start with this. or an artifact's name")
     return out
 
 
 class RuleSpec(Value):
     """One rule as data: the J2 dict shape (the wire key `from` is `from_` in Python). A spec that a rule type cannot
-    run (a missing key, a list where one path is needed, a target outside this/prd/hld/lld) is refused when it is
+    run (a missing key, a list where one path is needed, a target that is not this. or an artifact's name) is refused when it is
     built, with J2's wording; whether its paths resolve to a field is a `Template` check (`templates.resolve`)."""
 
     rule: RuleName
@@ -358,142 +356,8 @@ class RuleSpec(Value):
         return self.model_dump(by_alias=True, exclude_none=True, exclude_defaults=True)
 
 
-# ---------------------------------------------------------------- the rules, as data
-# One list per (kind, section). "name" is the rule as a reader sees it, "from" the condition or the code it comes
-# from. A template that carries its own rules carries exactly this shape.
-PRIORITIES = ["must", "should", "could"]
-FIELD_TYPES = ["text", "email", "tel", "url", "number", "date", "time", "select", "textarea", "checkbox", "radio",
-               "password", "file"]
-
-_RULES = {
-    ("prd", "Problem"): [
-        {"rule": "not_empty", "path": "statement", "name": "the problem statement is given", "from": "P1"}],
-    ("prd", "Users"): [
-        {"rule": "not_empty", "path": "users[].group", "name": "every user group is named", "from": "P7"},
-        {"rule": "one_of_present", "path": ["users[].actions", "users[].needs"],
-         "name": "every group says what it does or what it needs", "from": "P7"}],
-    ("prd", "Goals"): [
-        {"rule": "ids_sequential", "path": "goals", "prefix": "G",
-         "name": "ids G1, G2, ... unique and in order", "from": "P6"}],
-    ("prd", "Requirements"): [
-        {"rule": "ids_sequential", "path": "requirements", "prefix": "R",
-         "name": "ids R1, R2, ... unique and in order", "from": "P2"},
-        {"rule": "enum", "path": "requirements[].priority", "values": PRIORITIES,
-         "name": "priority is must, should or could", "from": "P2"},
-        {"rule": "ref_exists", "path": "requirements[].goals", "target": "this.goals[].id",
-         "name": "goals point at a goal id of this document", "from": "P6"}],
-    ("prd", "Success metrics"): [
-        {"rule": "ref_exists", "path": "success_metrics[].goal", "target": "this.goals[].id",
-         "name": "every metric names a goal id of this document", "from": "P6"}],
-    ("prd", "Out of scope"): [
-        {"rule": "not_empty", "path": "out_of_scope", "name": "the out-of-scope lines are given", "from": "P1"}],
-    ("hld", "Purpose and scope"): [
-        {"rule": "not_empty", "path": "purpose", "name": "the purpose is given", "from": "H1"}],
-    ("hld", "Pages"): [
-        {"rule": "ids_sequential", "path": "pages", "prefix": "P",
-         "name": "ids P1, P2, ... unique and in order", "from": "H1"}],
-    ("hld", "Components"): [
-        {"rule": "ids_sequential", "path": "components", "prefix": "C",
-         "name": "ids C1, C2, ... unique and in order", "from": "H3"},
-        {"rule": "not_empty", "path": "components[].responsibility",
-         "name": "every component states its responsibility", "from": "H3"},
-        {"rule": "ref_exists", "path": "components[].page", "target": "this.pages[].id",
-         "name": "page points at a page id of this document", "from": "H1"},
-        {"rule": "ref_exists", "path": "components[].covers", "target": "prd.requirements[].id",
-         "required_target": True, "fail_text": "{id} covers {bad}, which is not a requirement of the PRD",
-         "missing_text": "{id}: the PRD's requirement ids are not recorded, so Covers can't be checked",
-         "name": "covers points at a requirement id of the PRD", "from": "H4"}],
-    ("hld", "Data flow"): [
-        {"rule": "not_empty", "path": ["data_flows[].from", "data_flows[].to", "data_flows[].data",
-                                       "data_flows[].trigger"],
-         "name": "every flow has from, to, data and trigger", "from": "H1"}],
-    ("hld", "Hosting and deployment"): [
-        {"rule": "not_empty", "path": "hosting.kind", "name": "the hosting kind is given", "from": "H1"}],
-    ("hld", "Risks"): [
-        {"rule": "not_empty", "path": ["risks[].risk", "risks[].mitigation"],
-         "name": "every risk has a mitigation", "from": "H1"}],
-    ("lld", "Pages and sections"): [
-        {"rule": "ids_sequential", "path": "sections", "prefix": "S",
-         "name": "ids S1, S2, ... unique and in order", "from": "L2"},
-        {"rule": "anchor_selector", "path": "sections[].anchor", "name": "every section has an anchor",
-         "from": "L2"},
-        {"rule": "ref_exists", "path": "sections[].implements", "target": "hld.components[].id",
-         "required_target": True, "fail_text": "{id} implements {bad}, which is not a component of the HLD",
-         "missing_text": "{id}: the HLD's component ids are not recorded, so Implements can't be checked",
-         "name": "implements points at a component id of the HLD", "from": "L5"}],
-    ("lld", "Interactive elements"): [
-        {"rule": "ids_sequential", "path": "elements", "prefix": "E",
-         "name": "ids E1, E2, ... unique and in order", "from": "L2"},
-        {"rule": "not_empty", "path": ["elements[].selector", "elements[].trigger", "elements[].behaviour"],
-         "name": "every element has a selector, a trigger and a behaviour", "from": "L3"},
-        {"rule": "ref_exists", "path": "elements[].section", "target": "this.sections[].id",
-         "name": "section points at a section id of this document", "from": "L2"}],
-    ("lld", "Form fields"): [
-        {"rule": "ids_sequential", "path": "form_fields", "prefix": "F",
-         "name": "ids F1, F2, ... unique and in order", "from": "L2"},
-        {"rule": "not_empty", "path": ["form_fields[].name", "form_fields[].type"],
-         "name": "every field has a name, a type and a required flag", "from": "L4"},
-        {"rule": "enum", "path": "form_fields[].type", "values": FIELD_TYPES,
-         "name": "type is one of " + ", ".join(FIELD_TYPES[:4]) + ", ...", "from": "L4"},
-        {"rule": "ref_exists", "path": "form_fields[].section", "target": "this.sections[].id",
-         "name": "section points at a section id of this document", "from": "L2"}],
-    ("lld", "File structure"): [
-        {"rule": "not_empty", "path": ["files[].path", "files[].purpose"],
-         "name": "every file has a path and a purpose", "from": "L1"}],
-    ("lld", "Responsive and accessibility rules"): [
-        {"rule": "one_of_present", "path": ["responsive_rules", "accessibility_rules"],
-         "name": "the rules are given", "from": "L1"}],
-    ("design", "Style guide"): [
-        {"rule": "hex", "path": "palette.*", "name": "every palette colour is a hex colour",
-         "from": "parse_style (j2.py)"},
-        {"rule": "not_empty", "path": ["fonts.heading", "fonts.body"], "name": "heading and body fonts are given",
-         "from": "parse_style (j2.py)"},
-        {"rule": "css_safe", "path": ["palette", "fonts.heading", "fonts.body", "spacing", "radius", "buttons",
-                                      "card"], "name": "every value is plain CSS", "from": "parse_style (j2.py)"},
-        {"rule": "url_prefix", "path": "fonts.google_fonts_url", "prefix": "https://fonts.googleapis.com/",
-         "name": "the fonts url is a fonts.googleapis.com url or null", "from": "parse_style (j2.py)"}],
-    ("website", "Section"): [
-        {"rule": "html_no_page_tags", "path": ["html", "head"],
-         "name": "the html has no <html>, <head> or <body> tags", "from": "parse_section (j2.py)"},
-        {"rule": "anchor_selector", "path": "anchor", "name": "the anchor is an id selector",
-         "from": "parse_section (j2.py)"},
-        {"rule": "anchor_in_html", "anchor_path": "anchor", "html_path": "html",
-         "name": "the anchor points at an element in the html", "from": "N4"},
-        {"rule": "ref_exists", "path": "implements", "target": "lld.sections[].id",
-         "fail_text": "{id} implements {bad}, which is not a section of the LLD",
-         "name": "implements points at a section id of the LLD", "from": "N8"}],
-}
-# Built here, at import: a typo in the data above fails the import with the pydantic error of the rule.
-RULES: dict[tuple[str, str], list[RuleSpec]] = {
-    key: [RuleSpec.model_validate(r) for r in specs] for key, specs in _RULES.items()}
-# The names a reader sees, derived from the rules themselves: there is no second list to keep in step.
-RULE_NAMES = {key: [r.name for r in specs] for key, specs in RULES.items()}
-
-
-def rules_for(kind, section) -> list[RuleSpec]:
-    """The rule specs of one section ([] when the template fixes none)."""
-    return list(RULES.get((str(kind or ""), str(section or "")), []))
-
-
-def rule_names(kind, section) -> list[str]:
-    return [r.name for r in rules_for(kind, section)]
-
-
-def rules_count(kind, section, data=None) -> int:
-    """How many rules this section is held to, so a receipt can say "n of m"."""
-    return len(RULES.get((str(kind or ""), str(section or "")), []))
-
-
-def run_rules(kind, section, data, docs=None):
-    """Every rule of this section, answered: [{"rule", "name", "from", "pass", "evidence"}]. Nothing raises: a rule
-    whose own check breaks is reported as not recorded with the reason. docs holds what the run recorded - {"this":
-    this document's data so far, "prd": ..., "hld": ..., "lld": ...} - and a target it has nothing for is
-    "not recorded", never a pass."""
-    return run_specs(rules_for(kind, section), data, docs)
-
-
 def run_specs(specs, data, docs=None):
-    """run_rules for a given list of rule specs (`RuleSpec` objects or J2 dicts: a template carries its own)."""
+    """Every rule of a list of rule specs, answered (`RuleSpec` objects or J2 dicts: a template carries its own)."""
     out = []
     for item in specs or []:
         spec = item.as_j2() if isinstance(item, RuleSpec) else (dict(item) if isinstance(item, Mapping) else {})
