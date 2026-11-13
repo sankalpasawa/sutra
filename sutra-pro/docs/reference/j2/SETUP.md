@@ -153,7 +153,12 @@ Set any of these before `python3 j2_server.py`, like the examples above.
 | `J2_LIMIT_ADD` | 30 | Budget "keep working" adds when the budget runs out |
 | `J2_RATES` | 1 | `0` turns the rate card off |
 | `J2_SLIM` | on | Builders get their own section plus a short list of the other sections, not the whole page. `0` turns it off |
-| `J2_RUNS_DIR` | `runs/` | Folder runs are saved to |
+| `J2_RUNS_DIR` | `runs/` | Folder runs are saved to. The library's Artifacts shelf and the content door read finished runs from it |
+| `J2_RUN_TEMPLATES` | 0 | `1` lets a run start from a run template (a finished run's plan, `library/run-templates/`); each of its workflows' section templates is the router's first candidate |
+| `J2_AUTO_REUSE` | 0 | `1` (implies `J2_RUN_TEMPLATES=1` and `J2_TEMPLATE_LIBRARY=1`): after the first charter the run picks the most similar run template itself (match 0.6 or more), and the router adapts the nearest section template before creating one |
+| `J2_ARTIFACT_LIBRARY` | 0 | `1` (implies `J2_AUTO_REUSE=1`): the content door. Before a document section's builder runs, the section the run template's source run wrote for the same workflow is served when the inputs match (or when the template fits as it is, for another business), validated, rule-checked, rendered and receipted like a built one; it costs no model call and its charge is refunded. A near fit becomes the builder's draft. Decisions in `reuse.json`; a source run not pulled yet is "unknown" and builds as today |
+| `J2_PUSH_RUNS` | 0 | `1` commits and pushes the run folder when a run ends (`git add`, `commit`, `pull --rebase`, `push` from the repo root); a failure is one line in the chat, never a stop |
+| `J2_RUN_BY` | git `user.name` | Who ran it, written in the run's first chat line (`by`) |
 | `J2_CHROME` | auto | Path to Chrome for Audit screenshots (`CHROME_PATH` is read too, after it) |
 | `J2_OVERRIDE_KEY` | unset | Owner override key, set in `.env` only (see `README.md`) |
 | `J2_BOARD` | off | `1` turns on the message board |

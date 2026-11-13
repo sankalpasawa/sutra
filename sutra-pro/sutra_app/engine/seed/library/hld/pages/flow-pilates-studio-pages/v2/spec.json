@@ -1,0 +1,101 @@
+{
+  "name": "Flow Pilates Studio Pages",
+  "artifact": "hld",
+  "section": "Pages",
+  "version": 2,
+  "kind": "specialised",
+  "description": "Pages for Flow Pilates Studio (hld): the generic HLD/1 · Pages fields plus facts_used, from 1 charter fact(s); adapted from a template made for another business",
+  "fields": [
+    {
+      "name": "pages",
+      "type": "list[Page]",
+      "required": true,
+      "description": "the pages, P1, P2, ... in order (for Flow Pilates Studio, a hld)",
+      "enum": null,
+      "nullable": false
+    },
+    {
+      "name": "assumptions",
+      "type": "list[string]",
+      "required": false,
+      "description": "the assumptions of Flow Pilates Studio's Pages",
+      "enum": null,
+      "nullable": false
+    },
+    {
+      "name": "facts_used",
+      "type": "list[string]",
+      "required": false,
+      "description": "the charter facts this section is written from, copied exactly from Flow Pilates Studio's charter",
+      "enum": [
+        "Flow Pilates Studio"
+      ],
+      "nullable": false
+    }
+  ],
+  "objects": [
+    {
+      "name": "Page",
+      "fields": [
+        {
+          "name": "id",
+          "type": "string",
+          "required": true,
+          "description": "P1, P2, ... in order",
+          "enum": null,
+          "nullable": false
+        },
+        {
+          "name": "name",
+          "type": "string",
+          "required": true,
+          "description": "the page name",
+          "enum": null,
+          "nullable": false
+        },
+        {
+          "name": "purpose",
+          "type": "string",
+          "required": true,
+          "description": "what the page is for",
+          "enum": null,
+          "nullable": false
+        },
+        {
+          "name": "implements",
+          "type": "list[string]",
+          "required": false,
+          "description": "the PRD requirement ids this page carries",
+          "enum": null,
+          "nullable": false
+        }
+      ]
+    }
+  ],
+  "rules": [
+    {
+      "rule": "enum",
+      "path": "facts_used[]",
+      "values": [
+        "Flow Pilates Studio"
+      ],
+      "from": "facts",
+      "name": "facts_used are facts of Flow Pilates Studio's charter"
+    }
+  ],
+  "sha": "472a50dbb95c1a3208c24c2d0c5d0c7331ea82e50e71818b9fdab8fc4dbc10ce",
+  "extends": "hld/pages@generic/1",
+  "made_by": {
+    "run": "j2-20261112-150036",
+    "workflow": "W-18",
+    "atom": "W-18.a1",
+    "agent": "code (adapted from a run template)"
+  },
+  "context": {
+    "business_type": "hld",
+    "facts_used": [
+      "Flow Pilates Studio"
+    ],
+    "fingerprint": "9e3c82b90653c101596028d82ec52db5f192d931d604ddd2f5739fc5d8d5082d"
+  }
+}

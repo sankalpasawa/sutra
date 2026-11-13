@@ -1,16 +1,16 @@
 #!/usr/bin/env python3
 """Vendor the J2 prototype's engine into `sutra_app/engine/` (work package E1; engine design 3.1 and 3.4, decision D13).
 
-    scripts/py scripts/vendor_j2.py --source /path/to/extraction --commit 1d537295... [--dest .] [--check]
+    scripts/py scripts/vendor_j2.py --source /path/to/extraction --commit 1adb8ecd... [--dest .] [--check]
 
-Since sync 4 (D136), and in sync 5 (D160) again, the source is the folder `prototypes/j2` of this repository at the pinned sutra commit, extracted with
+Since sync 4 (D136), and in syncs 5 and 6 (D160, D176) again, the source is the folder `prototypes/j2` of this repository at the pinned sutra commit, extracted with
 `git archive <commit> prototypes/j2 | tar -x --strip-components=2 -C <new, empty folder>` (never the working tree).
 
 What it does, in this order, and nothing else:
 
   1. reads the J2 files from `--source`, an extraction of `prototypes/j2` at ONE commit (a plain folder, so an edited working
      tree, a `.pyc` or a stray file is never vendored), with `--commit` naming the commit it was taken from;
-  2. copies the 18 code modules and applies the numbered patches (P1 to P5, P7 to P12 and P14 to P18; no P6, no P13) as exact
+  2. copies the 19 code modules and applies the numbered patches (P1 to P5, P7 to P12, P14 to P19; no P6, no P13) as exact
      text edits: every edit names its old text and how often it must occur, so a J2 change under an anchor stops the run
      instead of producing a silently different file (P1 is a counted rule over every import line, see `apply_p1`; P15 is a
      data patch: see `scrub_seed_index`);
@@ -38,13 +38,13 @@ from pathlib import Path
 from typing import Optional
 
 REPO = Path(__file__).resolve().parent.parent
-BASELINE = "1d537295eb11cb034956fa9d8a4026eaa1e3f44e"        # tag cut-off/2026-11-12 (sync 5, D160)
-BASELINE_TREE = "30c71fea4679716c9f48d297ee4b2c3463eeebfd"   # `git rev-parse <BASELINE>:prototypes/j2`
-PREVIOUS_BASELINES = ("9200cf6", "33aeeda", "025e265c")       # commits the earlier syncs took the J2 prototype at (025e265c: sync 4): history only, never a source
+BASELINE = "1adb8ecd8fa8eef47fb7a0fc63a1616f556cdfeb"        # main (sync 6, D176): J2 has not tagged it; the tag name is added here when it does
+BASELINE_TREE = "9a7cb34c028248de7d3b436647f8baf39be6f77e"   # `git rev-parse <BASELINE>:prototypes/j2`
+PREVIOUS_BASELINES = ("9200cf6", "33aeeda", "025e265c", "1d537295")       # commits the earlier syncs took the J2 prototype at (025e265c: sync 4, 1d537295: sync 5, tag cut-off/2026-11-12): history only, never a source
 DESIGNED_AGAINST = "ce2631f"                                  # the design documents' line numbers (`j2.py:n`) are those of this commit: history only
 J2_ENV = "SUTRA_J2_CHECKOUT"
 
-CODE = ("j2.py", "j2_agent.py", "j2_agent_models.py", "j2_agent_views.py", "j2_artifact_models.py", "j2_artifacts.py",
+CODE = ("j2.py", "j2_agent.py", "j2_agent_models.py", "j2_agent_views.py", "j2_artifact_lib.py", "j2_artifact_models.py", "j2_artifacts.py",
         "j2_board.py", "j2_change.py", "j2_check.py", "j2_map.py", "j2_realization.py", "j2_rules.py", "j2_schema.py",
         "j2_send.py", "j2_story.py", "j2_studio.py", "j2_template_lib.py", "j2_types.py")
 ROLE_FILES = ("team.md", "identity.md", "adaptation.md", "priority.md", "coordination.md", "audit.md", "builder.md",
@@ -53,7 +53,8 @@ TREES = (("conditions", "sutra_app/engine/conditions", ()),       # (J2 folder, 
          ("templates", "sutra_app/engine/templates", ("templates/README.md",)))      # D161: whole trees, no type is named here
 REF_TOP = ("README.md", "SETUP.md")
 REF_DOCS = ("atom-schema.json", "atom-schema.md", "map-schema.md", "realization-schema.json", "realization-axis.md",
-            "j2-handoff.md", "j2-prompts.md", "j2-test-plan.md", "agent-views-j2-proposal.md")
+            "j2-handoff.md", "j2-prompts.md", "j2-test-plan.md", "agent-views-j2-proposal.md",
+            "hardcoding-inventory.md", "library-reuse-order.md")
 REF_TREES = ("docs/superpowers",)
 MANAGED = ("sutra_app/engine/agents", "sutra_app/engine/conditions", "sutra_app/engine/artifacts",
            "sutra_app/engine/templates", "sutra_app/engine/seed", "docs/reference/j2")      # stale files in these are removed
@@ -67,7 +68,7 @@ class VendorError(Exception):
 # ---- the patches --------------------------------------------------------------------------------------------------
 @dataclass(frozen=True)
 class Edit:
-    patch: str          # "P1" .. "P16" (P15 is the data patch below, not an Edit)
+    patch: str          # "P1" .. "P19" (P15 is the data patch below, not an Edit)
     file: str
     old: str
     new: str
@@ -75,12 +76,12 @@ class Edit:
 
 
 P1_NOTE = ("sibling imports become package-relative by one counted rule over every code line (not comment) of every code module "
-           "(40 lines, `P1_COUNTS`): `import j2_x[ as Y]` and `import llm` -> `from . import ...` (indentation kept), `from j2_x import y` "
+           "(42 lines, `P1_COUNTS`): `import j2_x[ as Y]` and `import llm` -> `from . import ...` (indentation kept), `from j2_x import y` "
            "-> `from .j2_x import y`; `j2_agent_views.py` also loses its `sys.path` insert (an anchor edit)")
 
 # P1 (D162): the rule's expected number of changed lines per code module (a module not named here must have none). A J2 change
 # that adds or removes a sibling import changes a count and stops the run, like a missing anchor.
-P1_COUNTS = {"j2.py": 14, "j2_agent_views.py": 4, "j2_artifact_models.py": 2, "j2_artifacts.py": 5, "j2_change.py": 2,
+P1_COUNTS = {"j2.py": 15, "j2_agent_views.py": 4, "j2_artifact_lib.py": 1, "j2_artifact_models.py": 2, "j2_artifacts.py": 5, "j2_change.py": 2,
              "j2_map.py": 2, "j2_realization.py": 2, "j2_rules.py": 1, "j2_story.py": 2, "j2_template_lib.py": 4, "j2_types.py": 2}
 _P1_IMPORT = re.compile(r"^([ \t]*)import (j2_[a-z0-9_]+|llm)((?:[ \t]+as[ \t]+\w+)?)(?=[ \t]*(?:#.*)?$)", re.M)
 _P1_FROM = re.compile(r"^([ \t]*)from (j2_[a-z0-9_]+) import ", re.M)
@@ -458,16 +459,16 @@ def saved_snapshot_dir(d, name, since=0):
     COST_KEYS ='''),
     # ---- P9, P7: call()
     Edit("P9", "j2.py", r'''        system = system_prompt(fn, reply_format, self._builder_for(fn))
-        if self.calls and DELAY:
-            time.sleep(DELAY)
+        if self.calls and call_delay():
+            time.sleep(call_delay())
         self.calls += 1
         self.thinking = fn
 ''', r'''        system = system_prompt(fn, reply_format, self._builder_for(fn))
         if self._observed():      # P9: empty unless a node-context file names text for this function
             addendum = self._hook("system_addendum", fn)
             system += addendum if isinstance(addendum, str) else ""
-        if self.calls and DELAY:
-            time.sleep(DELAY)
+        if self.calls and call_delay():
+            time.sleep(call_delay())
         self.calls += 1
         self.thinking = fn
 '''),
@@ -588,10 +589,12 @@ def saved_snapshot_dir(d, name, since=0):
             if self.board_failed''', r'''            self._dispatch_turn()      # P8: the turn, between turn_started and turn_finished
             if self.board_failed'''),
     Edit("P8", "j2.py", r'''        self.save("timing.json", self.timing())
+        self._make_report(review=not self.paused)
         self.status = "waiting"
 
     def timing(self):
 ''', r'''        self.save("timing.json", self.timing())
+        self._make_report(review=not self.paused)
         self.status = "waiting"
         self._run_status()      # P8
 
@@ -605,10 +608,10 @@ def saved_snapshot_dir(d, name, since=0):
     Edit("P7", "j2.py", r'''        raw = llm.ask(
             "You review one test run of J2, a department''', r'''        raw = _ask(self._ask_tag("reviewer", "review"),
             "You review one test run of J2, a department'''),
-    # ---- P7 (sync 5): the planner call `_deliverables` now runs in `_plan_stages`, before Adaptation's turn: no function or step on it
-    Edit("P7", "j2.py", r'''        chosen = self._deliverables(said)
+    # ---- P7 (sync 5, sync 6): the planner call (`_deliverables`, or `_run_tpl_start` which calls it) runs in `_plan_stages`, before Adaptation's turn: no function or step on it
+    Edit("P7", "j2.py", r'''        chosen = self._run_tpl_start(said) if self.run_tpl else self._deliverables(said)      # J2_RUN_TEMPLATES=1: the template's stages
 ''', r'''        with llm.tagged(function="adaptation", step=2, cycle=self.cycle, stage=self.stage_kind or self.output):      # P7: Adaptation's planner call, made before its turn
-            chosen = self._deliverables(said)
+            chosen = self._run_tpl_start(said) if self.run_tpl else self._deliverables(said)      # J2_RUN_TEMPLATES=1: the template's stages
 '''),
     # ---- P14: an output that says `single` is never swapped for the documents a brief names (the project output, D128)
     Edit("P14", "j2.py", r'''        if self.stages or self.goal:
@@ -622,6 +625,23 @@ def saved_snapshot_dir(d, name, since=0):
 '''),
     Edit("P16", "j2.py", '''                self.save("settings.json", {"decide_for_me": True})
 ''', '''                self.save("settings.json", {**(_read(self.dir, "settings.json", {}) or {}), "decide_for_me": True})      # P16
+'''),
+    # ---- P19 (sync 6, D179): the host's reviewer switch; only an explicit False turns the reviewer off
+    Edit("P19", "j2.py", r'''        metrics = self._metrics()
+        self.thinking = None
+        metrics["ai_calls"] = self.calls + (1 if review else 0)      # counting the reviewer's call
+        self.report_gen = getattr(self, "report_gen", 0) + 1
+        self._save_report(metrics, {"verdict": "The reviewer is writing its notes; they appear here when done." if review
+                                    else "Paused for the Requester; the reviewer runs when the run ends."})
+''', r'''        off = review and self._hook("review_enabled") is False      # P19: the host's reviewer setting; only an explicit False switches it off
+        review = review and not off
+        metrics = self._metrics()
+        self.thinking = None
+        metrics["ai_calls"] = self.calls + (1 if review else 0)      # counting the reviewer's call
+        self.report_gen = getattr(self, "report_gen", 0) + 1
+        self._save_report(metrics, {"verdict": "The reviewer is writing its notes; they appear here when done." if review
+                                    else "The reviewer is switched off in this team's settings." if off
+                                    else "Paused for the Requester; the reviewer runs when the run ends."})
 '''),
 )
 
@@ -694,6 +714,27 @@ def _store(t, fingerprint=None):
 def _mark_used(t, use, fingerprint=None):
     """Append a use (run, workflow, atom, action) to the version's meta.json and the index; and the need's
     fingerprint, so the same need reuses it next time."""
+'''),
+    # ---- P10 (sync 6, D181): the two more runtime writers of the index
+    Edit("P10", "j2_template_lib.py", r'''def note_version(t, **notes):
+    """Provenance notes (adapted_from, renamed_from) on a stored version: meta.json and its index row."""
+''', r'''def note_version(t, **notes):
+    with _library_lock():       # P10
+        return _note_version(t, **notes)
+
+
+def _note_version(t, **notes):
+    """Provenance notes (adapted_from, renamed_from) on a stored version: meta.json and its index row."""
+'''),
+    Edit("P10", "j2_template_lib.py", r'''def mark_run_template_used(tid, use):
+    """A run that started from a run template, added to its used_by (template.json and the index row), once."""
+''', r'''def mark_run_template_used(tid, use):
+    with _library_lock():       # P10
+        return _mark_run_template_used(tid, use)
+
+
+def _mark_run_template_used(tid, use):
+    """A run that started from a run template, added to its used_by (template.json and the index row), once."""
 '''),
     # ---- P12: Windows (D101), nothing else
     Edit("P12", "j2_template_lib.py", "import os\nimport re\nimport shutil\n", "import os\nfrom sutra_app import oslayer\nimport re\nimport shutil\n"),
@@ -820,10 +861,11 @@ PATCH_NOTES = {
     "P3": "`J2Run.__init__(*, run_dir=None, run_id=None, hooks=None)`: the host names the run folder and id (the first `reset` takes them; `run_id` without `run_dir` is an error; default id = folder name without `j2-`, as before); `self.hooks` defaults to `NullHooks()`",
     "P4": "`user_says` returns False at once when the run holds its lock (J2 took the lock before it looked at the status and then waited, 1.21 s measured, and started a new turn); new `apply_override(cmd)`: the same non-blocking lock around `_override`, for the host (the server checked the key)",
     "P5": "explicit-path variants, the old constants as defaults: `saved_dir(name, runs_dir=None)`, `list_runs(limit=60, runs_dir=None)`, `saved_snapshot_dir(d, name, since=0)` (called by `saved_snapshot`), `load/save/clear_lessons(path=None)`, `load/save/clear_playbooks(path=None)`",
-    "P7": "every `llm.ask` is inside a tagged block: `J2Run.call` (function, step, cycle, stage, call_no, builder atom), the chat summary, the template generator and the reviewer through `_ask(...)` (`_ask` passes `timeout` on; since sync 5 `call` keeps J2's retry loop and `except llm.CallTimeout`); the planner call `_deliverables` of `_plan_stages`, made before the turn of Adaptation, runs in `llm.tagged(function=\"adaptation\", step=2, ...)`; the planner and judge (`Session.ask`, j2_realization.py) name role and purpose and inherit the turn's function; each hook-observed turn runs inside `llm.tagged(function, step, cycle, stage)`",
-    "P8": "hook calls (`NullHooks` by default, nothing is built for it): `post` (`message_posted`, not for ASK_REQUESTER), `_ask_user` (`message_posted(m, questions=)` once `paused` is set), `save` (`record_saved`), `_log_call` (`call_finished`; `calls.jsonl` also gains `provider` and `usd`), the turn dispatch (`turn_started`, `turn_finished` through `_dispatch_turn`), `user_says` and both run ends (`run_status`), the crash path (`run_error`); a hook error goes to stderr unless it is fatal (`fatal = True` or a class named RecordRejected)",
-    "P9": "`call` appends `system_addendum(fn)` to the system prompt: empty unless the hooks have a node-context file",
-    "P10": "`store` and `mark_used` of the template library run inside an exclusive lock on `<library>/.lock` (`oslayer.try_lock`: `flock`, or `msvcrt.locking` on Windows) (waits `LOCK_WAIT_S` = 30 s, then raises `LibraryBusy(RuntimeError)`, which `_route_template` already turns into the generic template); the originals are kept as `_store` and `_mark_used`",
+    "P7": "every `llm.ask` is inside a tagged block: `J2Run.call` (function, step, cycle, stage, call_no, builder atom), the chat summary, the template generator and the reviewer through `_ask(...)` (`_ask` passes `timeout` on; since sync 5 `call` keeps J2's retry loop and `except llm.CallTimeout`); the planner call of `_plan_stages` (`_run_tpl_start` for a run template, which calls `_deliverables` itself, or `_deliverables`: one expression, so both paths), made before the turn of Adaptation, runs in `llm.tagged(function=\"adaptation\", step=2, ...)`; the planner and judge (`Session.ask`, j2_realization.py) name role and purpose and inherit the turn's function; each hook-observed turn runs inside `llm.tagged(function, step, cycle, stage)`",
+    "P8": "hook calls (`NullHooks` by default, nothing is built for it): `post` (`message_posted`, not for ASK_REQUESTER), `_ask_user` (`message_posted(m, questions=)` once `paused` is set), `save` (`record_saved`), `_log_call` (`call_finished`; `calls.jsonl` also gains `provider` and `usd`), the turn dispatch (`turn_started`, `turn_finished` through `_dispatch_turn`), `user_says` and both run ends (`run_status`; since sync 6 the first fires after `_make_report` has started the reviewer thread, so the host joins that thread, D179), the crash path (`run_error`); a hook error goes to stderr unless it is fatal (`fatal = True` or a class named RecordRejected)",
+    "P9": "`call` appends `system_addendum(fn)` to the system prompt: empty unless the hooks have a node-context file (anchored on the delay lines of `call` only, `if self.calls and call_delay():`; the two other `call_delay()` sites, in `_summarize` and the reviewer call, are not under a patch)",
+    "P10": "`store`, `mark_used`, `note_version` and `mark_run_template_used` (sync 6, D181: four writers) of the template library run inside an exclusive lock on `<library>/.lock` (`oslayer.try_lock`: `flock`, or `msvcrt.locking` on Windows) (waits `LOCK_WAIT_S` = 30 s, then raises `LibraryBusy(RuntimeError)`, which `_route_template` already turns into the generic template); the originals are kept as `_store`, `_mark_used`, `_note_version` and `_mark_run_template_used` (a wrapper never calls another wrapper: the lock is not reentrant); `save_run_template`, `move_versions` and the module's `__main__` commands are developer tools and stay unpatched",
+    "P19": "`_make_report` asks `self._hook(\"review_enabled\")` (sync 6, D179): only an explicit `False` switches the reviewer off (no thread, `ai_calls` without the reviewer's call) and the run report then says \"The reviewer is switched off in this team's settings.\"; under `NullHooks` `_hook` returns `None`, so a bare J2 and a host without the hook behave as before",
     "P11": "`J2Run.rehydrate(src_dir)` delegates to `rehydrate.py`",
     "P12": "Windows (D101), nothing else: `j2_check.find_chrome` also looks in the Windows install folders of Chrome, `j2_check._chrome` decodes Chrome's output as UTF-8 with replacement, `j2_template_lib` writes its index with `oslayer.replace` (a rename that waits out a reader) and takes its library lock through `oslayer` (P10), records a template's saved path with `/` on every system (`run_tpl_rel`) and splits it on either separator when it checks for `..` (`run_saved_dir`)",
     "P14": "`J2Run._plan_stages` returns early for an output that says `single` (`if self.stages or self.goal or (self.out or {}).get(\"single\"):`, guarded since sync 5 because `_plan_stages` runs while `out` is still `None`): named documents in a brief (\"update the PRD in the repo\") do not swap the project output for a PRD stage chain, and a host-pinned project run makes no planner call (D129). No other output has `single`. The output itself is registered by `sutra_app/engine/capabilities/` through P18 (Sutra's own files, not J2's)",
@@ -994,23 +1036,27 @@ def _pnum(patch: str) -> int:
 
 
 def render_vendored_md(commit: str, rows, ranges) -> str:
-    tree = f" (tree of `prototypes/j2`: `{BASELINE_TREE}`, the tag `cut-off/2026-11-12`)" if commit == BASELINE else ""      # the tree id belongs to the pinned commit only
+    tree = f" (tree of `prototypes/j2`: `{BASELINE_TREE}`, J2's main, not tagged)" if commit == BASELINE else ""      # the tree id belongs to the pinned commit only
     out = [
         "# Vendored J2 engine",
         "",
         f"Source: the J2 prototype as it is kept in this repository's own copy `prototypes/j2`, at the sutra commit `{commit}`{tree}, "
-        f"extracted with `git archive {commit} prototypes/j2 | tar -x --strip-components=2 -C <empty folder>` (sync 5, D160). That "
+        f"extracted with `git archive {commit} prototypes/j2 | tar -x --strip-components=2 -C <empty folder>` (sync 6, D176). That "
         "extraction, given to the script with `--source` and `--commit`, is the only source of every file below, never the working tree. "
         f"History, not a source: the earlier syncs took the J2 prototype at the commits `{PREVIOUS_BASELINES[0]}` and "
-        f"`{PREVIOUS_BASELINES[1]}` and `{PREVIOUS_BASELINES[2]}` (sync 4); the design documents cite the line numbers (`j2.py:n`) of `{DESIGNED_AGAINST}`, and everything "
+        f"`{PREVIOUS_BASELINES[1]}` and `{PREVIOUS_BASELINES[2]}` (sync 4) and `{PREVIOUS_BASELINES[3]}` (sync 5, the tag `cut-off/2026-11-12`); the design documents cite the line numbers (`j2.py:n`) of `{DESIGNED_AGAINST}`, and everything "
         "after `j2.py:8313` has moved. Patches are located by anchor text, never by line.",
         "",
         "Copied into `sutra_app/engine/` with the same module names; every change to a J2 file is one of the numbered patches "
         "below and nothing else (decision D13). Prompts stay byte-identical. There is no P6 (the design's table skips it) and no "
-        "P13 (retired in sync 4, D140: its code is Sutra's own `engine/runlist.py`); P19 is reserved for a late-judge switch (D145, D162). "
+        "P13 (retired in sync 4, D140: its code is Sutra's own `engine/runlist.py`); P20 is reserved for a late-judge switch (D145, D162, D180). "
         "Sync 5 (D160 to D163): the pin moved to the tag `cut-off/2026-11-12`; the types are vendored as data (`conditions/` and "
         "`templates/` as whole trees, D161); P1 is a counted rule, P7, P8, P9, P12 and P14 were repaired, P2 gained a third edit, "
         "P17 and P18 are new (D162). "
+        "Sync 6 (D176 to D181): the pin moved to J2 main `1adb8ecd` (J2 has not tagged it; the tag name is added when it does); the "
+        "seven commits labelled \"needs owner review\" (run templates, auto-reuse) are carried inert behind `J2_RUN_TEMPLATES` and "
+        "`J2_AUTO_REUSE`; P1 (15 lines in `j2.py`, one in the new `j2_artifact_lib.py`, 41 in all), P7, P8 and P9 were re-anchored, "
+        "P10 covers two more writers of the library index, P19 is new (the reviewer switch). "
         "This file is written by `scripts/vendor_j2.py`; `scripts/py scripts/vendor_j2.py --source <the extraction> --commit "
         f"{commit} --check` re-derives every file below from the J2 source and fails on any difference.",
         "",

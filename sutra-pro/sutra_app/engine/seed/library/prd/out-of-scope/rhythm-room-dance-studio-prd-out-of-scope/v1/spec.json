@@ -1,0 +1,96 @@
+{
+  "name": "Rhythm Room Dance Studio PRD Out of scope",
+  "artifact": "prd",
+  "section": "Out of scope",
+  "version": 1,
+  "kind": "specialised",
+  "description": "Out of scope for Rhythm Room Dance Studio (prd): the generic PRD/1 · Out of scope fields plus facts_used, from 12 charter fact(s); adapted from a template made for another business",
+  "fields": [
+    {
+      "name": "out_of_scope",
+      "type": "list[string]",
+      "required": true,
+      "description": "what the product will not do, one line each (for Rhythm Room Dance Studio, a prd)",
+      "enum": null,
+      "nullable": false
+    },
+    {
+      "name": "assumptions",
+      "type": "list[string]",
+      "required": false,
+      "description": "the assumptions of Rhythm Room Dance Studio's Out of scope",
+      "enum": null,
+      "nullable": false
+    },
+    {
+      "name": "facts_used",
+      "type": "list[string]",
+      "required": false,
+      "description": "the charter facts this section is written from, copied exactly from Rhythm Room Dance Studio's charter",
+      "enum": [
+        "3rd Floor, 8 Sample Lane, Bengaluru 560001",
+        "Monday 6:00 pm Salsa Beginners 700",
+        "Payment is made at the studio",
+        "Rhythm Room Dance Studio",
+        "Saturday 10:00 am Kids Hip Hop 500",
+        "Sunday 11:00 am Open Floor 400",
+        "The Out of scope section lists no phone number, no teacher names, no online payment and no embedded map",
+        "The Out of scope section states that no LLD is written and the website is not built",
+        "Thursday 6:30 pm Contemporary 750",
+        "Wednesday 7:00 pm Bollywood Basics 600",
+        "hello@rhythmroom.example",
+        "name, email, class and preferred date"
+      ],
+      "nullable": false
+    }
+  ],
+  "objects": [],
+  "rules": [
+    {
+      "rule": "enum",
+      "path": "facts_used[]",
+      "values": [
+        "3rd Floor, 8 Sample Lane, Bengaluru 560001",
+        "Monday 6:00 pm Salsa Beginners 700",
+        "Payment is made at the studio",
+        "Rhythm Room Dance Studio",
+        "Saturday 10:00 am Kids Hip Hop 500",
+        "Sunday 11:00 am Open Floor 400",
+        "The Out of scope section lists no phone number, no teacher names, no online payment and no embedded map",
+        "The Out of scope section states that no LLD is written and the website is not built",
+        "Thursday 6:30 pm Contemporary 750",
+        "Wednesday 7:00 pm Bollywood Basics 600",
+        "hello@rhythmroom.example",
+        "name, email, class and preferred date"
+      ],
+      "from": "facts",
+      "name": "facts_used are facts of Rhythm Room Dance Studio's charter"
+    }
+  ],
+  "sha": "5567e0ba332e86430a98d81f49569b29b97f80404fbb883b6a7c09dbfcb3c4af",
+  "extends": "prd/out-of-scope@generic/1",
+  "made_by": {
+    "run": "j2-20261111-215733",
+    "workflow": "W-6",
+    "atom": "W-6.a1",
+    "agent": "code (adapted from a run template)"
+  },
+  "context": {
+    "business_type": "prd",
+    "facts_used": [
+      "3rd Floor, 8 Sample Lane, Bengaluru 560001",
+      "Monday 6:00 pm Salsa Beginners 700",
+      "Payment is made at the studio",
+      "Rhythm Room Dance Studio",
+      "Saturday 10:00 am Kids Hip Hop 500",
+      "Sunday 11:00 am Open Floor 400",
+      "The Out of scope section lists no phone number, no teacher names, no online payment and no embedded map",
+      "The Out of scope section states that no LLD is written and the website is not built",
+      "Thursday 6:30 pm Contemporary 750",
+      "Wednesday 7:00 pm Bollywood Basics 600",
+      "hello@rhythmroom.example",
+      "name, email, class and preferred date"
+    ],
+    "fingerprint": "36bb6f6fead43255dc90741183f24357a6c5d16b0d22de28d2da561524f80285"
+  }
+}

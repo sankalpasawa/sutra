@@ -68,8 +68,15 @@ def artifacts():
 
 
 def enabled():
-    """J2_TEMPLATE_LIBRARY=1 (default off). Read per call so tests can switch it."""
-    return os.environ.get("J2_TEMPLATE_LIBRARY") == "1"
+    """J2_TEMPLATE_LIBRARY=1 (default off); J2_AUTO_REUSE=1 implies it. Read per call so tests can switch it."""
+    return os.environ.get("J2_TEMPLATE_LIBRARY") == "1" or auto_reuse()
+
+
+def auto_reuse():
+    """J2_AUTO_REUSE=1 (default off): a run started without a run template picks a similar one by itself
+    (match_run_templates), and the router adapts the nearest existing section template before it creates one (nearest).
+    J2_ARTIFACT_LIBRARY=1 (the content door, j2_artifact_lib) implies it: a served section needs a run template."""
+    return os.environ.get("J2_AUTO_REUSE") == "1" or os.environ.get("J2_ARTIFACT_LIBRARY") == "1"
 
 
 def slug(text):
@@ -608,12 +615,13 @@ def _obj_order(t):
     return AM.obj_order(t.objects)
 
 
-def build_model(t):
+def build_model(t, label=None):
     """The runtime class of a template, from its spec with pydantic.create_model (kept by content). model.py is never
-    imported for this."""
+    imported for this. label: what the builder and the receipts call it instead of its own name (a run template's
+    section template is named after the business it was first made for)."""
     if isinstance(t, dict):
         t = (SpecialisedTemplate if t.get("kind") == "specialised" else GenericTemplate).model_validate(t)
-    label = f"{t.name} v{t.version}"
+    label = label or f"{t.name} v{t.version}"
     return AM.build_class(class_name(t), label, t.section, t.fields, t.objects, optional=_optional_names(t), template=label)
 
 
@@ -774,8 +782,43 @@ def load_dir(d):
 
 
 def load(artifact, section_slug, tslug, version):
-    """(spec, meta, files) of one stored library version, or None."""
-    return load_dir(os.path.join(lib_dir(), artifact, section_slug, tslug, f"v{version}"))
+    """(spec, meta, files) of one stored library version, or None. A version that was moved into another family
+    (move_versions: its row says renamed_from) opens where it is now, so an older reference still resolves."""
+    got = load_dir(os.path.join(lib_dir(), artifact, section_slug, tslug, f"v{version}"))
+    if got or tslug == "generic":
+        return got
+    now = moved_to(artifact, section_slug, tslug, version)
+    return load_dir(os.path.join(lib_dir(), artifact, section_slug, now[0], f"v{now[1]}")) if now else None
+
+
+def _old_ref(v):
+    """(slug, version) a moved version had before (its renamed_from), or None."""
+    name, _, n = str(v.get("renamed_from") or "").rpartition("@")
+    return (slug(name), int(n)) if name and n.isdigit() else None
+
+
+def moved_to(artifact, section_slug, tslug, version):
+    """(slug, version) where the version once stored as tslug v<version> is now, or None."""
+    try:
+        version = int(version)
+    except (TypeError, ValueError):
+        return None
+    for e in index()["templates"]:
+        if e["artifact"] == artifact and e["section_slug"] == section_slug:
+            for v in e["versions"]:
+                if _old_ref(v) == (tslug, version):
+                    return e["slug"], v["version"]
+    return None
+
+
+def _numbers_taken(idx, artifact, section, tslug):
+    """Every version number a family has or had: its versions, and the ones moved out of it. A number is never used
+    twice, so an old reference to a moved version can never mean a newer one."""
+    here = {v["version"] for e in idx["templates"] if e["artifact"] == artifact and e["section"] == section
+            and e["slug"] == tslug for v in e["versions"]}
+    gone = {_old_ref(v)[1] for e in idx["templates"] if e["artifact"] == artifact and e["section"] == section
+            for v in e["versions"] if (_old_ref(v) or ("",))[0] == tslug}
+    return here | gone
 
 
 # ---------------------------------------------------------------- a run's own copy of the templates it used
@@ -831,8 +874,113 @@ def run_templates(run_dir):
     rec = _read(os.path.join(run_dir, "templates.json")) if run_dir else None
     out = []
     for d in (rec or {}).get("decisions") or []:
-        out.append({**d, "source": _source(run_dir, d)})
+        group = decision_group(d, run_dir)      # read here, where the run folder is known (a type only the run recorded)
+        out.append({**d, "source": _source(run_dir, d), **({"group": group} if group else {})})
     return out
+
+
+def type_data(name, run_dir=None):
+    """What the library reads of a type, from data only: its entry in artifacts/types.json (an output type or a record,
+    the local types included) with every field it leaves out taken from its form's entry, "{name}" filled in. A type
+    types.json does not have is read from the run's own record of it (artifacts.json's row for that type). None when
+    neither names it. No form or type name is compared anywhere: the fields say what the type is ("form", "output",
+    "folder", "file", "label")."""
+    d = j2_types._read_types()
+    e = next((t for t in d["types"] if t.get("name") == name), None)
+    if e is None and run_dir:
+        rows = (_read(os.path.join(run_dir, "artifacts.json")) or {}).get("rows") or []
+        e = next((r for r in rows if isinstance(r, dict) and r.get("type") == name and r.get("kind") == "type"), None)
+        e = {**e, "label": e.get("label") or e.get("name"), "name": name} if e else None
+    if e is None:
+        return None
+    form = (d.get("forms") or {}).get(e.get("form"))
+    out = {**(form if isinstance(form, dict) else {}), **e}
+    return {k: (v.replace("{name}", str(name)) if isinstance(v, str) else v) for k, v in out.items()}
+
+
+def decision_group(d, run_dir=None):
+    """The group a routing decision is counted in: its type's "group" when the type data gives one, else its form's name
+    as artifacts/types.json has it (type_data). Any type has one: a document, a page, a folder of files, an image.
+    None for an artifact that is no type (a form's style guide for one)."""
+    t = type_data(d.get("artifact"), run_dir)
+    return (t.get("group") or t.get("form") or None) if t else None
+
+
+def decision_scopes(decisions, run_dir=None):
+    """The scope buttons of a run's Library tab, from type data: one per group its decisions fall in, in the order of
+    types.json. A group with one type is labelled by that type's label; a group with several by its form's "label" when
+    types.json gives one, else by the form's name. [{"key": the group, "label": ..., "types": [...]}]."""
+    seen = {}
+    for dec in decisions or []:
+        g = decision_group(dec, run_dir)
+        if g is not None:
+            seen.setdefault(g, {})[dec.get("artifact")] = True
+    order = [t.get("name") for t in j2_types.entries()]
+    rank = lambda g: min([order.index(a) if a in order else len(order) for a in seen[g]])
+    forms = j2_types._read_types().get("forms") or {}
+    out = []
+    for g in sorted(seen, key=rank):
+        kinds = list(seen[g])
+        one = type_data(kinds[0], run_dir) if len(kinds) == 1 else None
+        form = forms.get(g) if isinstance(forms.get(g), dict) else {}
+        out.append({"key": g, "label": str((one or {}).get("label") or form.get("label") or g.replace("_", " ").capitalize()),
+                    "types": kinds})
+    return out
+
+
+def decision_kind(d):
+    """A routing decision's action as the page names it: the recorded "extended" is shown as "adapted"."""
+    return {"extended": "adapted"}.get(d.get("action"), d.get("action"))
+
+
+def reuse_rows(decisions, run_dir=None):
+    """The decisions of a run started from a run template, each with the group and the kind the Library tab's filters
+    read (decision_group, decision_kind)."""
+    return [{**d, "group": d.get("group") or decision_group(d, run_dir), "kind_shown": decision_kind(d)} for d in decisions or []]
+
+
+def reuse_counts(decisions, run_dir=None):
+    """A run's routing decisions counted for the page: per group (decision_group: the type's form as types.json names
+    it; an artifact that is no type, the style guide for one, is left out), how many were created, adapted (the recorded action
+    "extended"), reused and generic, the total, and how many came from a run template (None when no decision says)."""
+    out = {}
+    for d in decisions or []:
+        group = decision_group(d, run_dir)
+        if group is None:
+            continue
+        g = out.setdefault(group, {"created": 0, "adapted": 0, "reused": 0, "generic": 0, "total": 0, "from_template": None})
+        k = decision_kind(d)
+        if k in ("created", "adapted", "reused", "generic"):
+            g[k] += 1
+        g["total"] += 1
+        if "from_template" in d:
+            g["from_template"] = (g["from_template"] or 0) + (1 if d["from_template"] is True else 0)
+    return out
+
+
+def run_template_use(run_dir):
+    """What a run that started from a run template shows on its Library tab: the template (id, name, how many of its
+    workflows were selected, the stages added beyond it), the counts (reuse_counts) and the template generator's AI
+    calls in this run (template_calls.jsonl; no file, no call). None for a run without a run template.
+    J2_AUTO_REUSE=1: a template the run picked itself has "auto": True and its "match"; a run that found no similar
+    one is {"scratch": True, "best": the best-scoring template's name and score, or None} with the same counts."""
+    rec = _read(os.path.join(run_dir, "templates.json")) if run_dir else None
+    rt = (rec or {}).get("run_template")
+    auto = (rec or {}).get("auto_reuse")
+    calls = os.path.join(run_dir, "template_calls.jsonl") if run_dir else ""
+    n = sum(1 for line in open(calls, encoding="utf-8") if line.strip()) if os.path.isfile(calls) else 0
+    if not isinstance(rt, dict) or not rt.get("id"):
+        if not isinstance(auto, dict) or not auto:
+            return None
+        best = (auto.get("scores") or [None])[0]
+        return {"scratch": True, "best": {k: best.get(k) for k in ("id", "name", "score", "why_not") if k in best} if best else None,
+                "threshold": auto.get("threshold"), "generator_calls": n, "counts": reuse_counts(rec.get("decisions"), run_dir),
+                "scopes": decision_scopes(rec.get("decisions"), run_dir)}
+    return {"id": rt["id"], "name": rt.get("name") or rt["id"], "selected": len(rt.get("selected") or []), "of": rt.get("of"),
+            "added_stages": list(rt.get("added_stages") or []), "in_library": get_run_template(rt["id"]) is not None,
+            **({"auto": True, "match": rt.get("match")} if rt.get("auto") else {}),
+            "generator_calls": n, "counts": reuse_counts(rec.get("decisions"), run_dir),
+            "scopes": decision_scopes(rec.get("decisions"), run_dir)}
 
 
 def _source(run_dir, d):
@@ -840,6 +988,8 @@ def _source(run_dir, d):
         return "from this run"
     if d.get("kind") == "generic":
         return "from library" if generic(d.get("artifact"), d.get("section")) else "not recorded"
+    if d.get("kind") == "run-template":      # a folder of files made from a run template: the run template is the source
+        return "from library" if get_run_template(d.get("template")) else "not recorded"
     return "from library" if load(d["artifact"], slug(d["section"]), slug(d["template"]), d["version"]) else "not recorded"
 
 
@@ -852,12 +1002,17 @@ def get(ref, artifact, section):
         if e["artifact"] == artifact and e["section"] == section and (e["name"] == name or e["slug"] == slug(name)):
             v = next((x for x in e["versions"] if x["version"] == int(ver.lstrip("v"))), None)
             if not v:
-                return None
+                break
             got = load(artifact, slug(section), e["slug"], v["version"])
             if not got:
                 return None
             spec, meta, _ = got
             return SpecialisedTemplate.model_validate({**spec, "used_by": meta.get("used_by") or []})
+    now = moved_to(artifact, slug(section), slug(name), ver.lstrip("v"))      # moved into another family since: where it is now
+    if now:
+        got = load(artifact, slug(section), now[0], now[1])
+        if got:
+            return SpecialisedTemplate.model_validate({**got[0], "used_by": got[1].get("used_by") or []})
     return None
 
 
@@ -910,9 +1065,9 @@ def _store(t, fingerprint=None):
         same = next((v for v in entry["versions"] if v["sha"] == sha), None)
         if same:
             return get(f"{t.name}@{same['version']}", t.artifact, t.section), same["version"], False
-        version = max(v["version"] for v in entry["versions"]) + 1
+        version = max(_numbers_taken(idx, t.artifact, t.section, tslug)) + 1
     else:
-        version = 1
+        version = max(_numbers_taken(idx, t.artifact, t.section, tslug) or {0}) + 1
         entry = {"artifact": t.artifact, "section": t.section, "section_slug": slug(t.section), "slug": tslug,
                  "name": t.name, "kind": "specialised", "extends": t.extends, "versions": []}
         idx["templates"].append(entry)
@@ -968,15 +1123,40 @@ def _mark_used(t, use, fingerprint=None):
 
 
 # ---------------------------------------------------------------- the need: what a workflow's section must carry
-LIST_EACH = re.compile(r"(\w+),? each with ([\w ,'-]+?)(?:\s+in\s+[\w ]+)?\.?$", re.I)
-LIST_FIELDS = re.compile(r"(\w+) form with the fields ([\w ,'-]+?)\.?$", re.I)
-STOP = {"the", "and", "with", "this", "that", "page", "section", "every", "each", "from", "into", "their", "they",
-        "what", "when", "have", "has", "shows", "show", "lists", "list", "written", "must", "work", "works", "on",
-        "for", "its", "are", "is", "a", "an", "of", "to", "in", "as"}
+SETTINGS_PATH = os.path.join(HERE, "templates", "library-settings.json")
+_SETTINGS = {}
+
+
+def settings():
+    """templates/library-settings.json (library-settings/1): the word list, the fact shapes and the routing numbers
+    the library works with. Read again only when the file changes; code holds none of them."""
+    key = (os.path.getmtime(SETTINGS_PATH), os.path.getsize(SETTINGS_PATH))
+    if _SETTINGS.get("key") != key:
+        with open(SETTINGS_PATH, encoding="utf-8") as f:
+            data = json.load(f)
+        _SETTINGS.update(key=key, data=data, stop=set(data["stop_words"]),
+                         facts=[(re.compile(x["pattern"], re.I), x) for x in data["fact_fields"]])
+    return _SETTINGS["data"]
+
+
+def routing(name):
+    """One routing number or rule of the settings file ("extend_min", "generator_attempts", ...)."""
+    return settings()["routing"][name]
+
+
+def routing_rules():
+    """The routing rules as the generator reads them: the settings file's sentences with its own numbers in them."""
+    r = settings()["routing"]
+    fill = {**{k: v for k, v in r.items() if not isinstance(v, (dict, list))},
+            "reuse_without_asking_coverage": r["reuse_without_asking"]["coverage"]}
+    return [str(x).format(**fill) for x in r["rules"]]
 
 
 def words(text):
-    return {w for w in re.findall(r"[a-z0-9]+", str(text or "").lower()) if len(w) > 3 and w not in STOP}
+    """The words two texts are compared by: lower case, at least min_word_length letters, none of the stop words (both
+    from the settings file)."""
+    least = settings()["min_word_length"]
+    return {w for w in re.findall(r"[a-z0-9]+", str(text or "").lower()) if len(w) >= least and w not in _SETTINGS["stop"]}
 
 
 def _ident(text):
@@ -985,39 +1165,43 @@ def _ident(text):
 
 
 def _split_list(text):
-    return [x.strip() for x in re.split(r",\s*|\s+and\s+", text) if x.strip()]
+    return [x.strip() for x in re.split(settings()["list_separator"], text) if x.strip()]
 
 
 def fact_fields(facts):
-    """The fields the charter's own facts name, deterministically: "<things>, each with a, b and c" is a list of
-    objects with those fields; "<x> form with the fields a, b and c" is a list of those names. Every name and value is
-    copied from a fact; nothing is invented. [(FieldSpec, [ObjectSpec])]."""
+    """The fields the charter's own facts name, deterministically, by the fact shapes of the settings file (fact_fields:
+    the first pattern that matches a fact is used). "objects": a list of objects, one field per listed name; "values": a
+    list of the listed names as an enum. Every name and value is copied from a fact; nothing is invented.
+    [(FieldSpec, [ObjectSpec])]."""
+    settings()
     out, seen = [], set()
     for fact in facts:
-        m = LIST_EACH.search(fact)
-        if m:
-            noun, attrs = _ident(m.group(1)), [_ident(a) for a in _split_list(m.group(2))]
-            attrs = [a for a in dict.fromkeys(attrs) if NAME_RE.match(a)]
-            if noun not in seen and attrs and NAME_RE.match(noun):
-                seen.add(noun)
-                obj = "".join(p.title() for p in noun.split("_")) + "Item"
-                out.append((FieldSpec(name=noun, type=f"list[{obj}]", required=False,
-                                      description=f"{fact}; one item each, copied from the charter ([] when the "
-                                                  "charter doesn't list them)"),
-                            [ObjectSpec(name=obj, fields=[FieldSpec(name=a, type="string", required=True,
-                                                                    description=f"the {a.replace('_', ' ')}, as the "
-                                                                                "charter gives it")
-                                                          for a in attrs])]))
+        hit = next(((m, x) for rx, x in _SETTINGS["facts"] for m in [rx.search(fact)] if m), None)
+        if hit is None:
             continue
-        m = LIST_FIELDS.search(fact)
-        if m:
-            name = _ident(m.group(1)) + "_form_fields"
+        m, x = hit
+        noun = _ident(m.group(1))
+        fill = {"noun": noun, "Noun": "".join(p.title() for p in noun.split("_")), "word": m.group(1), "fact": fact}
+        name = x["name"].format(**fill)
+        if name in seen or not NAME_RE.match(name):
+            continue
+        if x["makes"] == "objects":
+            attrs = [a for a in dict.fromkeys(_ident(a) for a in _split_list(m.group(2))) if NAME_RE.match(a)]
+            if not attrs:
+                continue
+            obj = x["object"].format(**fill)
+            seen.add(name)
+            out.append((FieldSpec(name=name, type=f"list[{obj}]", required=False, description=x["description"].format(**fill)),
+                        [ObjectSpec(name=obj, fields=[FieldSpec(name=a, type="string", required=True,
+                                                                description=x["item_description"].format(item=a.replace("_", " "), **fill))
+                                                      for a in attrs])]))
+        else:
             vals = list(dict.fromkeys(_split_list(m.group(2))))
-            if name not in seen and vals and NAME_RE.match(name):
-                seen.add(name)
-                out.append((FieldSpec(name=name, type="list[string]", required=False, enum=vals,
-                                      description=f"the fields of the {m.group(1)} form this section names, from the "
-                                                  f"charter: {fact}"), []))
+            if not vals:
+                continue
+            seen.add(name)
+            out.append((FieldSpec(name=name, type="list[string]", required=False, enum=vals,
+                                  description=x["description"].format(**fill)), []))
     return out
 
 
@@ -1194,11 +1378,12 @@ def mock_generator(need, gen, cands, hint):
                 "spec": specialise(gen, need, base=base),
                 "reason": f"{top['name']} v{top['version']} covers {top['score']:.0%} of the need; adding the rest"}
     return {"action": "create", "template": None, "spec": specialise(gen, need),
-            "reason": "no template in the library covers half of this need"}
+            "reason": f"no template in the library covers {routing('extend_min')} of this need"}
 
 
 def _prompt(need, gen, cands, hint, refused):
-    show = [{k: c[k] for k in ("name", "version", "score", "description", "fields", "enums")} for c in cands[:3]]
+    show = [{k: c[k] for k in ("name", "version", "score", "description", "fields", "enums")}
+            for c in cands[:int(routing("candidates_shown"))]]
     return ("You write the specialised template one J2 workflow's builder will fill. Reply with one JSON object "
             "following the schema.\nTHE NEED: " + json.dumps({k: v for k, v in need.items() if not k.startswith("_")},
                                                               ensure_ascii=False)
@@ -1207,7 +1392,10 @@ def _prompt(need, gen, cands, hint, refused):
             + json.dumps(gen.model_dump(exclude={"sha"}), ensure_ascii=False)
             + "\nTOP CANDIDATES IN THE LIBRARY, scored by code (coverage of the need's facts and fields): "
             + json.dumps(show, ensure_ascii=False)
-            + f"\nCODE SUGGESTS: {hint}. reuse = an existing name@version as it is (coverage must be at least 0.5); "
+            + "\nTHE ROUTING RULES code holds every reply to (you decide; code only checks, and refuses with the reason):\n- "
+            + "\n- ".join(routing_rules())
+            + f"\nCODE SUGGESTS: {hint} (a suggestion from the scores; the choice is yours). reuse = an existing "
+              "name@version as it is; "
               "extend = a new version of that template (template = its name@version, spec = the whole new spec); "
               "create = a new template (template null). Allowed field types: string, integer, boolean, list[string], "
               f"list[<Object>], <Object> (objects defined in objects); at most {MAX_FIELDS} fields; rule types: "
@@ -1215,10 +1403,146 @@ def _prompt(need, gen, cands, hint, refused):
             + (f"\nYOUR LAST REPLY WAS REFUSED: {refused}. Fix that." if refused else ""))
 
 
-def route(need, ctx, ask=None):
+def adapt(gen, need, base, extras=True, name=None):
+    """The spec of a run template's section template made over for another business (route's first=): the generic
+    fields in this business's words with facts_used narrowed to ITS facts, the fields its own facts name, and the
+    fields the template added that hold no fact (no enum, described anew). Nothing of the template's first business is
+    carried: none of its facts, enums or descriptions. Deterministic, so no generator call and never a new template."""
+    spec = specialise(gen, need, name=name or base.name)
+    have = {f["name"] for f in spec["fields"]}
+    objs = {o.name: o for o in base.objects}
+    onames = {o["name"] for o in spec["objects"]}
+    plain = lambda fs: all(not f.enum for f in fs)
+    gnames = {f.name for f in gen.fields}
+    for f in base.fields if extras else []:
+        if f.name in have or f.name in gnames or f.enum:
+            continue
+        kind, obj = AM.parse_type(f.type)
+        if obj and (obj not in objs or not plain(objs[obj].fields)):
+            continue
+        g = f.model_copy(deep=True)
+        g.description = f"the {f.name.replace('_', ' ')} of {need['site']}'s {need['section']}"
+        spec["fields"].append(g.model_dump())
+        have.add(f.name)
+        if obj and obj not in onames:
+            o = objs[obj].model_copy(deep=True)
+            for x in o.fields:
+                x.description = f"the {x.name.replace('_', ' ')}"
+            spec["objects"].append(o.model_dump())
+            onames.add(obj)
+    spec["description"] = spec["description"] + (f"; adapted from version {base.version} of this template" if (name or base.name) == base.name
+                                                 else OTHER_FAMILY)
+    return spec
+
+
+OTHER_FAMILY = "; adapted from a template made for another business"      # which one: adapted_from (meta.json, the index); never its name here
+
+
+def _named_for(name, business):
+    """True when a template's name starts with this business's name (its family is that business's)."""
+    a, b = slug(name), slug(business)
+    return bool(str(business or "").strip()) and business != NOT_RECORDED and (a == b or a.startswith(b + "-"))
+
+
+def family_business(base):
+    """The business a template family is named for: the longest recorded business name (the index rows' business, else
+    a recorded fact) that its name starts with and that leaves something after it. None when nothing recorded fits."""
+    e = next((e for e in index()["templates"] if e["artifact"] == base.artifact and e["section"] == base.section
+              and e["slug"] == slug(base.name)), None)
+    rows = (e or {}).get("versions") or []
+    cands = [(v.get("business") or {}).get("name") for v in rows] + [f for v in rows for f in v.get("facts") or []] \
+        + list(base.context.facts_used)
+    fits = [c for c in cands if c and _named_for(base.name, c) and slug(c) != slug(base.name)]
+    return max(fits, key=len) if fits else None
+
+
+def family_name(base, need):
+    """J2_AUTO_REUSE=1: the name an adapted template is stored under. Adapted for the business its family is named for:
+    the same name, so it is a new version of that family. Adapted for a DIFFERENT business: a new family named for the
+    run's business, "<this business> <what the old name said after its own business>" (Thread Filter, for Flow Pilates:
+    "Flow Pilates Filter"); when the old family's business is not recorded, "<this business> <the workflow's label or
+    the section>"."""
+    site = str(need.get("site") or "").strip()
+    if not site or site == NOT_RECORDED or _named_for(base.name, site):
+        return base.name
+    old = family_business(base)
+    tail = base.name[len(old):].strip() if old and base.name.lower().startswith(old.lower()) else ""
+    return f"{site} {tail or need.get('label') or need['section']}".strip()[:80]
+
+
+def note_version(t, **notes):
+    with _library_lock():       # P10
+        return _note_version(t, **notes)
+
+
+def _note_version(t, **notes):
+    """Provenance notes (adapted_from, renamed_from) on a stored version: meta.json and its index row."""
+    d = vdir(t.artifact, t.section, slug(t.name), t.version)
+    meta = _read(os.path.join(d, "meta.json")) or {}
+    meta.update(notes)
+    _write(os.path.join(d, "meta.json"), meta)
+    idx = index()
+    for e in idx["templates"]:
+        if e["artifact"] == t.artifact and e["section"] == t.section and e["slug"] == slug(t.name):
+            for v in e["versions"]:
+                if v["version"] == t.version:
+                    v.update(notes)
+    _save_index(idx)
+
+
+def _same_business(mine, theirs):
+    """2: both charters recorded the same business type (the charter's own field, compared whole: case and punctuation
+    aside); 0: they differ, or either one recorded none (the settings file's no_business_type values, or a type's
+    name). No word of a business type is read on its own."""
+    said = lambda x: " ".join(re.findall(r"[a-z0-9]+", str(x or "").lower()))
+    a, b = said(mine), said(theirs)
+    says_nothing = {said(x) for x in settings()["no_business_type"]} | {said(n) for n in j2_types.names()}
+    return 2 if a and a == b and a not in says_nothing else 0
+
+
+def nearest(need, gen, own=()):
+    """J2_AUTO_REUSE=1: the stored template of the same artifact + section whose fields are nearest to what this need
+    wants, whatever business it was made for. similarity = |wanted and its fields| / |wanted or its fields|, where
+    wanted is the generic template's field names, the fields the need asks for, and facts_used when the need has
+    facts. Field names only: no fact is read. On equal similarity (common for page sections, which share one section
+    name): (a) a family named for this run's business, then a version whose charter recorded the same business
+    type as this run's (_same_business); (b) a section template of the run template this run follows (own: their names); (c) the newest
+    version; then the name. None when the library has no template for that section."""
+    return (nearest_ranked(need, gen, own) or [None])[0]
+
+
+def nearest_ranked(need, gen, own=()):
+    """Every stored version of the need's artifact + section, in the order nearest() prefers them."""
+    want = {f.name for f in gen.fields} | set(need["fields"]) | ({"facts_used"} if need["facts"] else set())
+    own = set(own or ())
+    out = []
+    for e in index()["templates"]:
+        if e["artifact"] != need["artifact"] or e["section"] != need["section"]:
+            continue
+        for v in e["versions"]:
+            have = set(v.get("fields") or [])
+            sim = round(len(want & have) / len(want | have), 4) if want | have else 0.0
+            types = [x for x in ((v.get("business") or {}).get("type"), v.get("business_type")) if x]
+            out.append({"name": e["name"], "version": v["version"], "similarity": sim,
+                        "business_type": types[0] if types else NOT_RECORDED,
+                        "same_business": 3 if _named_for(e["name"], need.get("site")) else
+                        max([_same_business(need.get("business_type"), x) for x in types] or [0]),
+                        "own_section": e["name"] in own})
+    out.sort(key=lambda c: (-c["similarity"], -c["same_business"], -int(c["own_section"]), -int(c["version"]), c["name"]))
+    return out
+
+
+def route(need, ctx, ask=None, first=None, closest=None):
     """Pick the template one workflow's builder fills. ctx: {run, workflow, atom, agent}. ask(system, user, mock,
-    schema) is the generator's one LLM call (None: the mock). Returns (template or None for generic, decision)."""
+    schema) is the generator's one LLM call (None: the mock). Returns (template or None for generic, decision).
+    first ({"template": "name@version"}, a run template's section template for this workflow) is the FIRST candidate:
+    the same facts and fields reuse it as it is; other facts make a new version of that same template (adapt, action
+    "extended" with adapted_from); a new template is never created while it exists.
+    closest (None: J2_AUTO_REUSE=1): where the usual routing would create a template, the nearest stored template of
+    the same section is adapted the same way instead (rule "s", adapted_from); a template is created only when the
+    library has none for that section, or the adapted one fails the checks, and the reason says which."""
     gen = generic(need["artifact"], need["section"])
+    closest = auto_reuse() if closest is None else closest
     cands = candidates(need)
     top = cands[0] if cands else None
     use = {"run": ctx.get("run"), "workflow": ctx.get("workflow"), "atom": ctx.get("atom")}
@@ -1252,21 +1576,89 @@ def route(need, ctx, ask=None):
     # nothing to specialise: no facts and no extra fields -> the generic template, never a specialised one
     if not need["facts"] and not need["fields"]:
         return done(None, "generic", None, NOTHING_TO_SPECIALISE, rule="0")
+    def adapted(t0, key, agent, as_is, before, now):
+        """t0 made over for this need (adapt): reused as it is when it already holds these facts and fields, else a
+        new version of that same template. None when the adapted spec fails the checks (base[key] says why)."""
+        ref = f"{t0.name}@{t0.version}"
+        row = {"facts": t0.context.facts_used, "fields": [f.name for f in t0.fields], "enums": _enums(t0)}
+        score = coverage(need, row)[0]
+        if set(need["facts"]) <= set(t0.context.facts_used) and all(has_field(need, row, n) for n in need["fields"]):
+            return done(t0, "reused", score, as_is.format(ref=ref), rule="t" if key == "first_refused" else "s",
+                        **({} if key == "first_refused" else {"adapted_from": ref}))
+        rule = "t" if key == "first_refused" else "s"
+        # J2_AUTO_REUSE=1: adapted for another business, it is a new family named for this one (family_name)
+        name = family_name(t0, need) if closest else t0.name
+        for extras in (True, False):      # with the fields the template added; if those fail the checks, without them
+            data = {**adapt(gen, need, t0, extras, name), "artifact": need["artifact"], "section": need["section"],
+                    "kind": "specialised", "extends": generic_ref(need["artifact"], need["section"]),
+                    "made_by": {"run": str(ctx.get("run") or ""), "workflow": str(ctx.get("workflow") or ""),
+                                "atom": str(ctx.get("atom") or ""), "agent": agent},
+                    "context": {"business_type": need["business_type"], "facts_used": list(need["facts"]),
+                                "fingerprint": need["fingerprint"]}}
+            bad = refusal(data)
+            if not bad:
+                break
+        if not bad:
+            t, _, made = store(SpecialisedTemplate.model_validate(data))
+            if not made:      # an earlier run of this business already made this version
+                return done(t, "reused", score, before.format(ref=ref, version=t.version), rule=rule, adapted_from=ref)
+            if closest:
+                note_version(t, adapted_from=ref)
+            if name != t0.name:
+                return done(t, "extended", score, now.format(ref=ref) + f"; stored as {t.name}, this business's own family",
+                            rule=rule, adapted_from=ref, new_family=True)
+            return done(t, "extended", score, now.format(ref=ref), rule=rule, adapted_from=ref)
+        base[key] = "; ".join(bad)[:300]      # the adapted spec failed the checks: the usual routing
+        return None
+
+    t0 = get(first.get("template"), need["artifact"], need["section"]) if first else None
+    if t0 is not None:      # the run template's own section template comes first
+        got = adapted(t0, "first_refused", "code (adapted from a run template)",
+                      "the run template's section template {ref}, as it is: the same facts and fields",
+                      "adapted from {ref} before: version {version} already holds this business's facts",
+                      "adapted from {ref}: the same section template, with this business's facts in place of the "
+                      "earlier ones")
+        if got:
+            return got
     # a) the same fingerprint, and the template has every needed field (with the needed values): this version
-    hit = next((c for c in cands if c["fingerprint_match"] and c["has_fields"]), None)
+    hit = next((c for c in cands if c["fingerprint_match"] and c["has_fields"]), None) \
+        if routing("reuse_without_asking")["same_need"] else None
     if hit:
         t = get(f"{hit['name']}@{hit['version']}", need["artifact"], need["section"])
         if t:
             return done(t, "reused", hit["score"], f"same fingerprint: {cov(hit)}", rule="a")
     # b) a candidate that covers everything
-    if top and top["score"] >= 1.0:
+    full = routing("reuse_without_asking")["coverage"]
+    if top and top["score"] >= full:
         t = get(f"{top['name']}@{top['version']}", need["artifact"], need["section"])
         if t:
-            return done(t, "reused", top["score"], f"coverage 1.0: {cov(top)}", rule="b")
-    hint = "extend" if top and top["score"] >= EXTEND_MIN else "create"
+            return done(t, "reused", top["score"], f"coverage {full}: {cov(top)}", rule="b")
+    hint = "extend" if top and top["score"] >= routing("extend_min") else "create"
     rule = "c" if hint == "extend" else "d"
+    why_new = ""
+    if hint == "create" and closest:
+        # J2_AUTO_REUSE=1: before a new template is made, the nearest one of this section, from any business, is adapted
+        rt = get_run_template(ctx["run_template"]) if ctx.get("run_template") else None      # the run template this run follows
+        own = {w.section_template.rpartition("@")[0] for w in (rt.workflows if rt else [])
+               if w.artifact == need["artifact"] and w.section == need["section"] and w.section_template_kind == "specialised"}
+        near = nearest(need, gen, own)
+        t1 = get(f"{near['name']}@{near['version']}", need["artifact"], need["section"]) if near else None
+        if t1 is not None:
+            base["nearest"] = {k: near[k] for k in ("name", "version", "similarity", "business_type", "same_business", "own_section")}
+            got = adapted(t1, "nearest_refused", "code (adapted from the nearest template)",
+                          "the nearest template {ref}, as it is: the same facts and fields",
+                          "adapted from {ref} before: version {version} already holds this business's facts",
+                          f"adapted from {{ref}}: the nearest {need['section']} template by fields "
+                          f"(similarity {near['similarity']:.2f}), with this business's facts only")
+            if got:
+                return got
+            why_new = (f"the nearest template {near['name']}@{near['version']} could not be adapted "
+                       f"({base['nearest_refused']}), so a new one is made; ")
+        else:
+            why_new = f"no template exists for {need['artifact']} {need['section']} in the library, so a new one is made; "
     refused, tries = None, []
-    for attempt in (1, 2):
+    attempts = int(routing("generator_attempts"))
+    for attempt in range(1, attempts + 1):
         mock = lambda: json.dumps(mock_generator(need, gen, cands, hint), ensure_ascii=False)
         try:
             raw = ask(GEN_SYSTEM, _prompt(need, gen, cands, hint, refused), mock, meta_schema()) if ask else mock()
@@ -1278,30 +1670,32 @@ def route(need, ctx, ask=None):
             if t is not None:
                 act = {"reuse": "reused", "extend": "extended", "create": "created"}[action]
                 note = why or str(reply.get("reason") or "")
+                if action == "create":
+                    note = why_new + note
                 if act == "reused":
                     return done(t, act, score, note, rule="b", attempts=attempt, refused=tries)
-                over = action != reply.get("action")      # an extend below EXTEND_MIN, taken as a create
-                return done(t, act, score if act == "extended" or over else (top["score"] if top else 0.0), note,
-                            rule="d" if over else rule, attempts=attempt, refused=tries,
-                            **({"overruled": True} if over else {}))
+                # the action is the generator's own: a reply that broke a routing rule was refused above, never changed
+                return done(t, act, score if act == "extended" else (top["score"] if top else 0.0), note,
+                            rule="c" if act == "extended" else "d", attempts=attempt, refused=tries)
             refused = why
         tries.append(refused)
     return done(None, "generic", top["score"] if top else 0.0,
-                f"the generated spec failed the checks twice ({'; '.join(str(x) for x in tries)[:300]}), so the "
-                "builder fills the generic template", rule="e", attempts=2, refused=tries)
+                f"the generator's reply was refused {attempts} times ({'; '.join(str(x) for x in tries)[:300]}), so the "
+                "builder fills the generic template", rule="e", attempts=attempts, refused=tries)
 
 
 NOTHING_TO_SPECIALISE = "no facts or extra fields to specialise"
-EXTEND_MIN = 0.5      # a candidate must cover at least half of the need to be extended (or reused)
+EXTEND_MIN = routing("extend_min")      # the settings file's number, under its old name (read it with routing())
 GEN_SYSTEM = ("You are J2's template generator. You write closed JSON templates for one business, in its own words, "
               "from its recorded facts only. Code checks every reply and refuses anything outside the rules.")
 
 
 def _accept(reply, need, gen, cands, ctx):
-    """(template or None, reason, score, action). Code re-checks everything: a reuse must exist at that version (and
-    is overruled when its coverage is below 0.5); an extend must name a candidate, and one whose coverage is below 0.5
-    is overruled to a create (the action returned is the one taken, with the candidate's score as its number); every
-    spec passes the checks."""
+    """(template or None, reason, score, action). Code checks the reply against the routing rules the generator was
+    told (routing_rules) and the template checks, and refuses what breaks one, with the rule as the reason: a reuse
+    must name a candidate that covers at least reuse_min; an extend must name a candidate that covers at least
+    extend_min; a create must not take a candidate's name. Code never changes the action or the name: the generator
+    is asked again with the reason, and decides."""
     action = reply.get("action") if isinstance(reply, dict) else None
     if action not in ("reuse", "extend", "create"):
         return None, f"action {action!r} is not reuse, extend or create", 0.0, action
@@ -1311,30 +1705,28 @@ def _accept(reply, need, gen, cands, ctx):
         t = get(ref, need["artifact"], need["section"]) if c else None
         if t is None:
             return None, f"reuse names {ref!r}, which is not in the library at that version", 0.0, action
-        if c["score"] < 0.5:
-            return None, (f"code overruled the reuse of {ref}: its coverage is {c['score']:.2f}, below 0.5"), 0.0, action
+        least = routing("reuse_min")
+        if c["score"] < least:
+            return None, (f"the reuse of {ref} breaks a rule: it covers {c['score']:.2f} of the need and a reuse needs "
+                          f"at least {least}; extend a candidate that covers enough, or create a new template"), 0.0, action
         return t, f"the generator reused {ref} (coverage {c['score']:.2f})", c["score"], action
     spec = reply.get("spec")
     if not isinstance(spec, dict):
         return None, f"{action} needs a spec", 0.0, action
-    score, why = 0.0, None
+    score = 0.0
     if action == "extend":
         ref = str(reply.get("template") or "")
         c = next((c for c in cands if f"{c['name']}@{c['version']}" == ref), None)
         if c is None:
             return None, f"extend names {ref!r}, which is not a candidate", 0.0, action
-        score = c["score"]
-        if score < EXTEND_MIN:      # under half the need: not a new version of that template, a new template
-            action, why = "create", f"overruled: coverage {score} < {EXTEND_MIN} (the generator's extend of {ref})"
-        else:
-            spec = {**spec, "name": c["name"]}
-    if action == "create":
-        taken = lambda name: any(c["name"] == name or c["slug"] == slug(name) for c in cands)
-        if taken(spec.get("name")) and why is None:
-            return None, f"a template named {spec.get('name')!r} exists; extend it instead", 0.0, action
-        n = 2
-        while taken(spec.get("name")):      # an overruled extend keeps the generator's name, numbered to be its own
-            spec, n = {**spec, "name": f"{reply['spec'].get('name')} {n}"}, n + 1
+        score, least = c["score"], routing("extend_min")
+        if score < least:      # under the least: said to the generator, who chooses again (never made a create by code)
+            return None, (f"the extend of {ref} breaks a rule: it covers {score} of the need and an extend needs at "
+                          f"least {least}; create a new template under a name no candidate has"), 0.0, action
+        spec = {**spec, "name": c["name"]}
+    if action == "create" and any(c["name"] == spec.get("name") or c["slug"] == slug(spec.get("name")) for c in cands):
+        return None, (f"a template named {spec.get('name')!r} exists; extend it, or create under a name no candidate "
+                      "has (code does not rename)"), 0.0, action
     data = {"name": spec.get("name"), "artifact": need["artifact"], "section": need["section"], "kind": "specialised",
             "description": spec.get("description") or "", "fields": spec.get("fields") or [],
             "objects": spec.get("objects") or [], "rules": [_norm_rule(r) for r in spec.get("rules") or []],
@@ -1352,7 +1744,7 @@ def _accept(reply, need, gen, cands, ctx):
     if bad:
         return None, "; ".join(bad)[:400], 0.0, action
     t, _, _ = store(SpecialisedTemplate.model_validate(data))
-    return t, why or str(reply.get("reason") or ""), score, action
+    return t, str(reply.get("reason") or ""), score, action
 
 
 # ---------------------------------------------------------------- mock builder data, and the readable view
@@ -1453,7 +1845,8 @@ def template_view(artifact, section_slug, tslug, version, run_dir=None):
                     "readable": None, "source": "not recorded", "saved": d.get("saved")}
         return None
     got = _library_view_of(artifact, section_slug, tslug, version)
-    return {**got, "source": "from library"} if got else None
+    # "shelf": the same template as Shelf 2 shows it (structure only, with the outputs made from it)
+    return {**got, "source": "from library", "shelf": template_skeleton(f"{artifact}/{section_slug}/{tslug}/v{version}")} if got else None
 
 
 def _library_view_of(artifact, section_slug, tslug, version):
@@ -1630,11 +2023,19 @@ def _place(idx, spec, meta, rid, d, where, facts_of):
                  "name": t.name, "kind": "specialised", "extends": t.extends, "versions": [], "description": t.description}
         idx["templates"].append(entry)
     same = next((v for v in entry["versions"] if v["sha"] == sha), None)
+    moved = next(((e, v) for e in idx["templates"] for v in e["versions"]      # renamed since (rename_versions): it stays where it is
+                  if e["artifact"] == t.artifact and e["section"] == t.section and (v.get("made_by") or {}).get("run") == t.made_by.run
+                  and v.get("renamed_from") == f"{t.name}@{int(spec.get('version') or 1)}"), None) if not same else None
+    if moved:
+        if not entry["versions"]:
+            idx["templates"].remove(entry)
+        _add_use(moved[0], moved[1], {**_use(rid, d), "action": d.get("action")}, meta.get("fingerprints"))
+        return "same", moved[0], moved[1]
     if same:
         _add_use(entry, same, _use(rid, d), meta.get("fingerprints"))
         _provenance(entry, same, t, facts_of)
         return "same", entry, same
-    taken = {v["version"] for v in entry["versions"]}
+    taken = _numbers_taken(idx, t.artifact, t.section, tslug)
     renumbered = None
     version = int(spec.get("version") or 1)
     if version in taken:
@@ -1651,7 +2052,8 @@ def _place(idx, spec, meta, rid, d, where, facts_of):
            "fingerprints": list(dict.fromkeys(list(meta.get("fingerprints") or []) + [t.context.fingerprint])),
            "made_by": {**t.made_by.model_dump(), "date": run_date(t.made_by.run)},
            "business": {"name": made["business"], "type": made["business_type"]}, "mock": made["mock"],
-           "collected_from": {"run": rid, "where": where}, "used_by": [_use(rid, d)]}
+           "collected_from": {"run": rid, "where": where}, "used_by": [_use(rid, d)],
+           **{k: meta[k] for k in ("adapted_from", "renamed_from") if meta.get(k)}}
     if renumbered:
         out["renumbered_from"] = renumbered
     dst = vdir(t.artifact, t.section, tslug, version)
@@ -1660,11 +2062,98 @@ def _place(idx, spec, meta, rid, d, where, facts_of):
     _write(os.path.join(dst, "model.py"), src)
     _write(os.path.join(dst, "meta.json"), out)
     row = {**_version_row(t, out), "made_by": out["made_by"], "business": out["business"], "mock": out["mock"],
-           "collected_from": out["collected_from"], **({"renumbered_from": renumbered} if renumbered else {})}
+           "collected_from": out["collected_from"], **({"renumbered_from": renumbered} if renumbered else {}),
+           **{k: out[k] for k in ("adapted_from", "renamed_from") if out.get(k)}}
     entry["versions"].append(row)
     entry["versions"].sort(key=lambda v: v["version"])
     entry["description"] = t.description
     return "renumbered" if renumbered else "added", entry, row
+
+
+def rename_versions(artifact, section, name, versions, new_name):
+    """Move some versions of one family into another family (move_versions)."""
+    return move_versions([(artifact, section, name, n, new_name) for n in versions])
+
+
+def move_versions(plan):
+    """Move stored versions into other families: plan is [(artifact, section, name, version, new_name)] (versions
+    adapted for a different business, stored before adapted templates got their own family). The content is kept:
+    fields, objects, rules and context are the same; the name, the version number (the next free one in the new
+    family, in the order of the old numbers) and so the shas change, and "adapted from version N of this template" in
+    the description is kept true (the new family's own number, or "a template made for another business"). Each moved
+    version records renamed_from and adapted_from (through the moves of this plan and earlier ones); its used_by goes
+    with it; the index's run rows and the run templates' section_template references follow. A number left behind is
+    never used again (_numbers_taken) and still opens the moved version (load). Returns [(old ref, new ref)]."""
+    idx = index()
+    entry = lambda art, sec, nm: next((e for e in idx["templates"] if e["artifact"] == art and e["section"] == sec and e["slug"] == slug(nm)), None)
+    plan = sorted(plan, key=lambda p: (p[0], p[1], p[4], p[2], p[3]))
+    moves, nxt = {}, {}
+    for art, sec, name, n, new_name in plan:      # 1: every new number, before any source is looked up
+        k = (art, sec, slug(new_name))
+        nxt[k] = nxt.get(k, max(_numbers_taken(idx, art, sec, slug(new_name)) or {0})) + 1
+        moves[(art, sec, f"{name}@{n}")] = f"{new_name}@{nxt[k]}"
+    earlier = {(e["artifact"], e["section"], v["renamed_from"]): f"{e['name']}@{v['version']}"
+               for e in idx["templates"] for v in e["versions"] if v.get("renamed_from")}
+    now = lambda art, sec, ref: moves.get((art, sec, ref)) or earlier.get((art, sec, ref)) or ref
+    out = []
+    for art, sec, name, n, new_name in plan:      # 2: the files, the index rows, the run rows
+        old = entry(art, sec, name)
+        row = next(v for v in old["versions"] if v["version"] == n)
+        spec, meta, _ = load_dir(vdir(art, sec, old["slug"], n))
+        m = re.search(r"; adapted from version (\d+) of this template", spec.get("description") or "")
+        src = now(art, sec, meta.get("adapted_from") or f"{name}@{m.group(1)}") if m or meta.get("adapted_from") else None
+        version = int(moves[(art, sec, f"{name}@{n}")].rpartition("@")[2])
+        mine = src and src.rpartition("@")[0] == new_name      # adapted from an earlier version of the new family itself
+        desc = spec.get("description") or ""
+        if m:
+            desc = desc.replace(m.group(0), f"; adapted from version {src.rpartition('@')[2]} of this template" if mine else OTHER_FAMILY)
+        t = SpecialisedTemplate.model_validate({**{k: v for k, v in spec.items() if k not in ("version", "sha")},
+                                                "name": new_name, "description": desc, "used_by": []})
+        new = entry(art, sec, new_name)
+        if new is None:
+            new = {**{k: old[k] for k in ("artifact", "section", "section_slug", "kind", "extends")}, "slug": slug(new_name),
+                   "name": new_name, "versions": []}
+            idx["templates"].append(new)
+        t.version, t.sha = version, t.compute_sha()
+        schema, code = transport(t), codegen(t)
+        notes = {"renamed_from": f"{name}@{n}", **({"adapted_from": src} if src else {})}
+        info = {**meta, "name": new_name, "version": version, "sha": t.sha, "schema_sha": sha_of(schema),
+                "model_sha": hashlib.sha256(code.encode("utf-8")).hexdigest(), "class": class_name(t), **notes}
+        dst = vdir(art, sec, slug(new_name), version)
+        _write(os.path.join(dst, "spec.json"), t.model_dump(exclude={"used_by"}))
+        _write(os.path.join(dst, "schema.json"), schema)
+        _write(os.path.join(dst, "model.py"), code)
+        _write(os.path.join(dst, "meta.json"), info)
+        new["versions"].append({**row, "version": version, "sha": t.sha, "schema_sha": info["schema_sha"], "description": desc, **notes})
+        new["versions"].sort(key=lambda v: v["version"])
+        new["description"] = new["versions"][-1]["description"]
+        old["versions"] = [v for v in old["versions"] if v["version"] != n]
+        shutil.rmtree(vdir(art, sec, old["slug"], n))
+        for run in (idx.get("runs") or {}).values():
+            for d in run.get("decisions") or []:
+                ref = d.get("ref") or {}
+                if d.get("artifact") == art and ref.get("section_slug") == slug(sec) and ref.get("slug") == old["slug"] and ref.get("version") == n:
+                    d.update(template=new_name, version=version, renamed_from=f"{name}@{n}",
+                             ref={**ref, "slug": slug(new_name), "version": version})
+        if old["versions"]:
+            old["description"] = old["versions"][-1].get("description") or old.get("description")
+        else:
+            idx["templates"].remove(old)
+        out.append((f"{name}@{n}", f"{new_name}@{version}"))
+    _save_index(idx)
+    root = os.path.join(lib_dir(), RUN_TEMPLATE_DIR)      # 3: the run templates name the versions where they are now
+    for tid in sorted(os.listdir(root)) if os.path.isdir(root) else []:
+        path = os.path.join(root, tid, "template.json")
+        data = _read(path)
+        changed = False
+        for w in (data or {}).get("workflows") or []:
+            ref = moves.get((w.get("artifact"), w.get("section"), w.get("section_template")))
+            if ref and w.get("section_template_kind") == "specialised":
+                w["section_template"], changed = ref, True
+        if changed:
+            RunTemplate.model_validate(data)
+            _write(path, data)
+    return out
 
 
 def collect(runs_dir, runs=None):
@@ -1720,16 +2209,1061 @@ def collect(runs_dir, runs=None):
 
 
 def catalog_view():
-    """GET /api/catalog: the library page outside any run, from library/ only: the templates grouped by artifact and
-    section (the generic layer included) and every run that gave templates, newest first."""
+    """GET /api/catalog: the library page outside any run. From library/: the templates grouped by artifact and section
+    (the generic layer included), every run that gave templates, newest first, and Shelf 2 ("shelf": the run templates
+    and every type with its sections, as skeleton rows). From the runs folder: Shelf 1 ("artifacts": every whole
+    artifact a saved run produced; none on a fresh clone)."""
     view = library_view()
     runs = index().get("runs") or {}
     rows = sorted(runs.values(), key=lambda r: r.get("date") or "", reverse=True)
-    return {"schema": SCHEMA, "dir": view["dir"], "groups": view["groups"], "runs": rows}
+    shelf = shelf_templates()      # the /library page's two shelves (shelf/1), from the same door: no route of their own
+    return {"schema": SCHEMA, "dir": view["dir"], "run_templates": run_template_list(), "groups": view["groups"],
+            "runs": rows, "artifacts": shelf_artifacts()["artifacts"],
+            "shelf": {"schema": SHELF_SCHEMA, "run_templates": shelf["run_templates"], "types": shelf["types"]}}
 
 
-if __name__ == "__main__":      # python3 j2_template_lib.py: check every templates/<artifact>/generic.json; --collect: the catalog
-    if "--collect" in sys.argv:
+# ---------------------------------------------------------------- run templates (run-template/1): one named template per finished run
+# A run template bundles ALL the workflows of one finished run, so a new run starts from a name, not from single sections:
+#     library/run-templates/<id>/{template.json, schema.json}, listed in library/index.json under "run_templates".
+# It is made from the run's own records only (workflows.json, templates.json, goal.json and the stage goals): each workflow
+# with its stage, its section and the section template its builder filled ("name@version", as the library holds it). The
+# done-when texts keep their shape but not the business: every recorded fact is replaced by a slot (<studio name>), and
+# facts_slots lists the slot names only. `python3 j2_template_lib.py --run-template <run_dir> --name "<name>"` builds one.
+RUN_TEMPLATE_SCHEMA = "run-template/1"
+RUN_TEMPLATE_DIR = "run-templates"
+KEY_RE = re.compile(r"^W-\d+$")
+EMAIL_RE = re.compile(r"[\w.+-]+@[\w-]+(?:\.[\w-]+)+")
+PHONE_RE = re.compile(r"\+?\d[\d ()-]{8,}\d")
+PIN_RE = re.compile(r"\b\d{6}\b")
+PLACE_RE = re.compile(r"\b(?:floor|street|road|lane|avenue|nagar|block|sector|building)\b", re.I)
+DAY_TIME_RE = re.compile(r"\b(?:mon|tue|wed|thu|fri|sat|sun)[a-z]*\b.*\b\d{1,2}[:.]\d{2}\b", re.I)
+ID_LIST_RE = re.compile(r"\(([A-Z])\d+(?:, [A-Z]\d+)*\)")
+SLOT_RE = re.compile(r"<([a-z][a-z ]*)>")
+
+
+class RunTemplateWorkflow(BaseModel):
+    """One workflow of a run template. section_template is "name@version" as the library holds it (the generic layout's
+    own name when the run's builder filled the generic one); covers are done-when texts with slots, never facts."""
+    model_config = ConfigDict(extra="forbid")
+    key: str
+    name: str
+    stage: str
+    artifact: str
+    section: str
+    section_template: str
+    section_template_kind: Literal["generic", "specialised", "not recorded"] = NOT_RECORDED
+    depends_on: List[str] = Field(default_factory=list)
+    covers: List[str] = Field(default_factory=list)
+    made_from: str = ""      # the workflow's id in the run it was made from
+    fix: bool = False        # it fixed an Audit finding of that run: not planned work, used again only if the finding comes back
+
+
+class RunTemplate(BaseModel):
+    """run-template/1: closed, checked at every write (keys W-1.., in order, each once; depends_on names earlier keys;
+    every workflow's stage is one of stages; no slot is used that facts_slots does not list)."""
+    model_config = ConfigDict(extra="forbid")
+    schema_: str = Field(RUN_TEMPLATE_SCHEMA, alias="schema")
+    id: str
+    name: str
+    description: str = ""
+    business_type: str = NOT_RECORDED
+    made_from_run: str
+    mock: Any = NOT_RECORDED      # True (a mock run), False (a live run) or "not recorded"
+    stages: List[str]
+    workflows: List[RunTemplateWorkflow]
+    facts_slots: List[str] = Field(default_factory=list)
+    # stage -> what a stage whose output is a folder of files made: {"folder", "files": [paths inside it], "test"}.
+    # Structure only (names of files, never their text). A stage whose output is one file has no entry.
+    outputs: Dict[str, Dict[str, Any]] = Field(default_factory=dict)
+    made_by: Dict[str, Any] = Field(default_factory=dict)
+    used_by: List[Dict[str, Any]] = Field(default_factory=list)
+    created: str = ""
+
+    @model_validator(mode="after")
+    def _checked(self):
+        bad = []
+        for stage, o in self.outputs.items():
+            files = o.get("files")
+            if stage not in self.stages or not isinstance(files, list) or not files \
+                    or any(not isinstance(f, str) or not f or f.startswith(("/", "..")) or "/../" in f for f in files):
+                bad.append(f"outputs[{stage!r}] must name a stage and list its files, as paths inside its folder")
+        if self.id != slug(self.id) or not self.name.strip():
+            bad.append("id must be a slug and name must be given")
+        keys = [w.key for w in self.workflows]
+        if keys != [f"W-{i}" for i in range(1, len(keys) + 1)]:
+            bad.append("workflow keys must run W-1, W-2, ... in order")
+        for i, w in enumerate(self.workflows):
+            if w.stage not in self.stages:
+                bad.append(f"{w.key}: stage {w.stage!r} is not one of the template's stages")
+            late = [d for d in w.depends_on if d not in keys[:i]]
+            if late:
+                bad.append(f"{w.key}: depends_on {late} names no earlier workflow")
+        order = [w.stage for w in self.workflows]
+        if [s for i, s in enumerate(order) if i == 0 or order[i - 1] != s] != self.stages:
+            bad.append("the workflows must be grouped by stage, in the order of stages")
+        if self.mock not in (True, False, NOT_RECORDED):
+            bad.append("mock must be true, false or \"not recorded\"")
+        used = {m for w in self.workflows for t in [w.name] + w.covers for m in SLOT_RE.findall(t)}
+        extra = sorted(used - set(self.facts_slots) - set(ID_SLOTS.values()))
+        if extra:
+            bad.append(f"slots used but not listed in facts_slots: {extra}")
+        if bad:
+            raise ValueError("; ".join(bad))
+        return self
+
+
+ID_SLOTS = {"R": "requirement ids", "C": "component ids", "G": "goal ids", "S": "section ids"}
+
+
+def _noun(business_type):
+    """The word a business is called by in a slot: the last word of its recorded type ("yoga studio" -> studio); a run
+    that recorded no real type (a type name, "business") is a business."""
+    w = re.findall(r"[a-z]+", str(business_type or "").lower())
+    return w[-1] if w and w[-1] not in set(j2_types.names()) | {"business", "recorded", "document"} else "business"
+
+
+def run_slots(run_dir):
+    """[(recorded text, slot name)] of one run, the name first, then in charter order: every fact its charter and stage charters hold
+    (goal.json, stage-*.json), named by what kind of fact it is. The names are code's; the values never leave here."""
+    goals = [_read(os.path.join(run_dir, "goal.json")) or {}]
+    for n in sorted(os.listdir(run_dir)) if os.path.isdir(run_dir) else []:
+        if re.fullmatch(r"stage-[\w-]+\.json", n):
+            goals.append((_read(os.path.join(run_dir, n)) or {}).get("goal") or {})
+    main = goals[0]
+    noun = _noun(main.get("business_type"))
+    text = " ".join(json.dumps(g, ensure_ascii=False) for g in goals).lower()
+    sched = "class list" if re.search(r"\bclass(?:es)?\b", text) else "schedule"
+    out, seen = [], set()
+
+    def add(value, slot):
+        value = str(value or "").strip()
+        if len(value) > 2 and value.lower() not in seen:
+            seen.add(value.lower())
+            out.append((value, slot))
+    for g in goals:
+        for k in ("site_name", "product_name"):
+            if g.get(k) and g[k] != "Document":
+                add(g[k], f"{noun} name")
+    for g in goals:
+        for f in g.get("facts") or []:
+            f = str(f or "").strip()
+            for m in EMAIL_RE.findall(f):
+                add(m, "email address")
+            if f.lower() in seen or EMAIL_RE.fullmatch(f):
+                continue
+            if DAY_TIME_RE.search(f) and len(f.split()) <= 10:
+                add(f, sched)
+            elif (PIN_RE.search(f) or PLACE_RE.search(f)) and len(f.split()) <= 14 and "," in f:
+                add(f, "address")
+            elif PHONE_RE.fullmatch(f):
+                add(f, "phone number")
+            elif len(f.split()) <= 3 or (re.search(r"\d", f) and len(f.split()) <= 6):
+                add(f, "other facts")      # a short value of no known kind; a sentence is a statement, kept as words
+    return out
+
+
+def slotted(text, slots):
+    """A recorded text with every recorded fact replaced by its slot, and a run's own id lists by theirs."""
+    t = str(text or "")
+    for value, slot in sorted(slots, key=lambda x: -len(x[0])):      # the longest first: a fact inside another is not cut
+        t = re.sub(re.escape(value), f"<{slot}>", t, flags=re.I)
+    t = EMAIL_RE.sub("<email address>", t)
+    t = PIN_RE.sub("<address>", t)
+    t = ID_LIST_RE.sub(lambda m: f"(<{ID_SLOTS.get(m.group(1), 'ids')}>)", t)
+    return re.sub(r"(<[a-z ]+>)(?:(?:,| and|, and)? \1)+", r"\1", t).strip()
+
+
+def run_types(run_dir):
+    """{type name: type_data} of every output type a run can have made: the types of artifacts/types.json, then the
+    types only the run's own artifacts.json records."""
+    names = list(j2_types.names())
+    for r in (_read(os.path.join(run_dir, "artifacts.json")) or {}).get("rows") or []:
+        if isinstance(r, dict) and r.get("kind") == "type" and r.get("type") and r["type"] not in names:
+            names.append(r["type"])
+    return {n: t for n in names for t in [type_data(n, run_dir)] if t}
+
+
+def folder_of(t):
+    """The folder a type's builder writes its files in, inside the run folder (the type data's "folder"), else None: a
+    type with one is a folder of files, whatever it is called."""
+    f = str((t or {}).get("folder") or "").strip().strip("/")
+    return f if f and not f.startswith(".") and ".." not in f.split("/") else None
+
+
+def folder_files(run_dir, folder):
+    """The files of a run's output folder, as sorted paths inside it (hidden files and caches left out)."""
+    root, out = os.path.join(run_dir, folder), []
+    for d, dirs, files in os.walk(root):
+        dirs[:] = sorted(x for x in dirs if not x.startswith((".", "__")))
+        out += [os.path.relpath(os.path.join(d, f), root).replace(os.sep, "/") for f in files if not f.startswith(".")]
+    return sorted(out)
+
+
+def _stage_of(w, decs, docs, slots_by_file):
+    """(stage, artifact, section, decision) of a recorded workflow: its routing decision (templates.json), else the
+    document that lists it (documents.json), else the type whose file it wrote (or whose folder it wrote in)."""
+    mine = [d for d in decs if d.get("workflow") == w["id"]]
+    own = [d for d in mine if d.get("artifact") in j2_types.names()] or mine
+    if own:
+        d = own[-1]
+        return d["artifact"], d["artifact"], d["section"], d
+    for kind, rec in (docs or {}).items():
+        if w["id"] in (rec.get("workflows") or []):
+            return kind, kind, NOT_RECORDED, None
+    for o in w.get("outputs") or []:
+        hit = slots_by_file.get(str(o)) or slots_by_file.get(str(o).split("/")[0] + "/")
+        if hit:
+            return hit, hit, NOT_RECORDED, None
+    return None, None, NOT_RECORDED, None
+
+
+def _library_ref(rid, d):
+    """("name@version", kind) of a decision's template as the library holds it now: the version the catalog gave it
+    (a collected run's ref, which may be renumbered), else the run's own number when the library has that version."""
+    if d is None:
+        return NOT_RECORDED, NOT_RECORDED
+    if d.get("kind") == "generic":
+        return f"{d.get('template')}@{d.get('version') or AM.VERSION}", "generic"
+    row = ((index().get("runs") or {}).get(rid) or {}).get("decisions") or []
+    hit = next((x for x in row if x.get("workflow") == d.get("workflow") and x.get("artifact") == d.get("artifact")
+                and x.get("template") == d.get("template") and x.get("ref")), None)
+    if hit:      # the catalog's own reference: the family (a moved version is in another one now) and the number it has there
+        e = next((e for e in index()["templates"] if e["artifact"] == d.get("artifact") and e["slug"] == hit["ref"].get("slug")
+                  and e["section_slug"] == hit["ref"].get("section_slug")), None)
+        return f"{e['name'] if e else d.get('template')}@{hit['ref']['version']}", "specialised"
+    return f"{d.get('template')}@{d.get('version')}", "specialised"
+
+
+def run_template_from_run(run_dir, name=None, description=None):
+    """A RunTemplate built from a saved run's records (nothing is written; save_run_template stores it). Every workflow
+    that finished and is not a revision of another is in it, in run order; a workflow that failed and was redone by a
+    revision that finished is in it once, with the template the revision filled. Stages with no finished workflow are
+    left out. Raises ValueError when the run has nothing to bundle."""
+    run_dir = os.path.abspath(run_dir).rstrip(os.sep)
+    rid = os.path.basename(run_dir)
+    wfs = _read(os.path.join(run_dir, "workflows.json")) or []
+    if not wfs:
+        raise ValueError(f"{rid}: no workflows.json, so there is nothing to bundle")
+    decs = (_read(os.path.join(run_dir, "templates.json")) or {}).get("decisions") or []
+    docs = _read(os.path.join(run_dir, "documents.json")) or {}
+    facts = run_facts(run_dir)
+    slots = run_slots(run_dir)
+    types = run_types(run_dir)
+    by_file = {os.path.basename(str(t["file"])): k for k, t in types.items() if t.get("file") and not folder_of(t)}
+    by_file.update({folder_of(t) + "/": k for k, t in types.items() if folder_of(t)})      # a folder of files: "<folder>/"
+    by_id = {w["id"]: w for w in wfs}
+
+    def root(w):      # the workflow a chain of revisions started from
+        seen = set()
+        while w.get("revises") in by_id and w["id"] not in seen:
+            seen.add(w["id"])
+            w = by_id[w["revises"]]
+        return w
+    last_done = {}      # root id -> the last finished workflow of its chain (its decision is the one that held)
+    for w in wfs:
+        if w.get("status") == "done":
+            last_done[root(w)["id"]] = w
+    rows, key_of, prop = [], {}, {}
+    for w in wfs:
+        if w["id"] not in last_done or w.get("revises") in by_id:
+            continue
+        stage, artifact, section, d = _stage_of(last_done[w["id"]], decs, docs, by_file)
+        if stage is None:
+            stage, artifact, section, d = _stage_of(w, decs, docs, by_file)
+        if stage is None:
+            continue
+        ref, kind = _library_ref(rid, d)
+        key_of[w["id"]] = f"W-{len(rows) + 1}"
+        if w.get("proposal_id"):
+            prop[str(w["proposal_id"])] = w["id"]
+        rows.append({"key": key_of[w["id"]], "name": slotted(w.get("name"), slots), "stage": stage, "artifact": artifact,
+                     "section": section, "section_template": ref, "section_template_kind": kind,
+                     "depends_on": [], "covers": list(dict.fromkeys(slotted(c, slots) for c in w.get("covers_text") or [])),
+                     "made_from": w["id"], "fix": bool(w.get("fixes")), "_deps": [str(x) for x in w.get("dependencies") or []]})
+    if not rows:
+        raise ValueError(f"{rid}: no workflow finished, so there is nothing to bundle")
+    stages = list(dict.fromkeys(r["stage"] for r in rows))
+    rows.sort(key=lambda r: stages.index(r["stage"]))      # stable: run order inside a stage
+    for i, r in enumerate(rows):
+        key_of[r["made_from"]] = r["key"] = f"W-{i + 1}"
+    earlier = {}
+    for r in rows:
+        deps = [key_of.get(prop.get(x, x)) for x in r.pop("_deps")]
+        cite = j2_types.cites(r["stage"]).get(r["section"]) if r["stage"] in j2_types.names() else None
+        if cite:      # a section that cites an earlier document's ids needs the workflow that wrote that list
+            sec = next((t["section"] for t in j2_types.template(cite[0]) if any(f["name"] == cite[1] for f in t["fields"])), None)
+            deps += [x["key"] for x in rows if x["stage"] == cite[0] and x["section"] == sec]
+        r["depends_on"] = [k for k in dict.fromkeys(deps) if k in earlier]
+        earlier[r["key"]] = r
+    used = {m for r in rows for t in [r["name"]] + r["covers"] for m in SLOT_RE.findall(t)}
+    fact_slots = [s for s in dict.fromkeys(slot for _, slot in slots) if s != "other facts" or s in used]
+    fact_slots += sorted(used - set(fact_slots) - set(ID_SLOTS.values()))
+    labels = and_words([str((types.get(k) or {}).get("label") or k) for k in stages])
+    live = "mock" if facts["mock"] is True else "live" if facts["mock"] is False else NOT_RECORDED
+    goal = _read(os.path.join(run_dir, "goal.json")) or {}
+    outputs = {}
+    for k in stages:      # a stage that made a folder of files: the names of its files (and its test, when the charter names one)
+        folder = folder_of(types.get(k))
+        files = folder_files(run_dir, folder) if folder else []
+        if files:
+            test = str(goal.get("test") or "")
+            outputs[k] = {"folder": folder, "files": files, **({"test": test} if test in files else {})}
+    name = str(name or f"{facts['business']}: {labels}").strip()
+    return RunTemplate.model_validate({
+        "schema": RUN_TEMPLATE_SCHEMA, "id": slug(name), "name": name,
+        "description": description or (f"{labels} for a {facts['business_type']}: {len(rows)} workflows, as run "
+                                       f"{rid} ({live}) finished them."),
+        "business_type": facts["business_type"], "made_from_run": rid, "mock": facts["mock"], "stages": stages,
+        "workflows": rows, "facts_slots": fact_slots, "outputs": outputs,
+        "made_by": {"run": rid, "date": run_date(rid), "provider": facts["provider"], "model": facts["model"],
+                    "by": "j2_template_lib.run_template_from_run"},
+        "used_by": [], "created": time.strftime("%Y-%m-%dT%H:%M:%S")})
+
+
+AUTO_MIN = 0.6      # J2_AUTO_REUSE=1: the least match a run template needs to be picked
+AUTO_WEIGHTS = {"stages": 0.4, "business": 0.3, "covers": 0.3}
+VAGUE_TYPES = {"business", "company", "not", "recorded", "document", "the", "and", "for"}
+
+
+def run_template_match(rt, asked, text, done_when):
+    """How well a run template fits a run that has its first charter: match = 0.4 x stages + 0.3 x business + 0.3 x
+    covers, each from 0 to 1, rounded to two places.
+    stages: the stages asked for and the template's stages, shared / all (asked or in the template).
+    business: the share of the words of the template's business type (three letters or more; "business" and "not
+    recorded" say nothing) found in text (the brief, the answers, the charter's statement and name).
+    covers: for each done-when item of the charter, the best overlap with a slot-cover of the template's workflows of
+    the first stage asked for (shared words / the words of the shorter one; slots are dropped), averaged."""
+    a, t = set(asked or []), set(rt.stages)
+    stages = len(a & t) / len(a | t) if a | t else 0.0
+    toks = lambda x: set(re.findall(r"[a-z]{3,}", str(x or "").lower())) - VAGUE_TYPES
+    bw = toks(rt.business_type)
+    business = len(bw & toks(text)) / len(bw) if bw else 0.0
+    first = asked[0] if asked else None
+    covers = [c for c in (words(SLOT_RE.sub(" ", x)) for w in rt.workflows if w.stage == first and not w.fix
+                          for x in w.covers) if c]
+    items = [i for i in (words(d) for d in done_when or []) if i]
+    cov = sum(max((len(i & c) / min(len(i), len(c)) for c in covers), default=0.0) for i in items) / len(items) \
+        if items else 0.0
+    score = sum(AUTO_WEIGHTS[k] * v for k, v in (("stages", stages), ("business", business), ("covers", cov)))
+    return {"score": round(score, 2), "stages": round(stages, 2), "business": round(business, 2), "covers": round(cov, 2)}
+
+
+def match_run_templates(asked, text, done_when, live=False):
+    """J2_AUTO_REUSE=1: every run template in the library scored against a run (run_template_match), best first (then
+    by name). A template can be picked only when its first stage is the stage whose charter was just written (the run
+    cannot go back to an earlier stage), and, in a live run, only when a live run made it; "why_not" says which."""
+    out = []
+    for r in run_template_list():
+        rt = get_run_template(r["id"])
+        if rt is None:
+            continue
+        m = run_template_match(rt, asked, text, done_when)
+        why = ""
+        if not asked or not rt.stages or rt.stages[0] != asked[0]:
+            why = f"its first stage ({rt.stages[0] if rt.stages else 'none'}) is not this run's first ({asked[0] if asked else 'none'})"
+        elif live and rt.mock is not False:
+            why = "a mock run made it, so a live run does not start from it"
+        out.append({"id": rt.id, "name": rt.name, **m, "template_stages": list(rt.stages), "business_type": rt.business_type,
+                    "mock": rt.mock, "eligible": not why, **({"why_not": why} if why else {})})
+    out.sort(key=lambda x: (-x["score"], x["name"]))
+    return out
+
+
+def and_words(items):
+    items = [str(x) for x in items]
+    return items[0] if len(items) == 1 else ", ".join(items[:-1]) + " and " + items[-1] if items else ""
+
+
+def run_template_dir(tid):
+    return os.path.join(lib_dir(), RUN_TEMPLATE_DIR, slug(tid))
+
+
+def _run_template_row(rt):
+    return {"id": rt.id, "name": rt.name, "description": rt.description, "business_type": rt.business_type,
+            "stages": list(rt.stages), "workflows": len(rt.workflows), "mock": rt.mock, "made_from_run": rt.made_from_run,
+            "created": rt.created, "used_by": len(rt.used_by)}
+
+
+def save_run_template(rt):
+    """Write library/run-templates/<id>/template.json and schema.json, and list it in index.json ("run_templates").
+    Built again from the same run under the same name, it keeps its created time and its used_by."""
+    rt = RunTemplate.model_validate(rt.model_dump(by_alias=True) if isinstance(rt, BaseModel) else rt)
+    old = get_run_template(rt.id)
+    if old is not None:
+        if old.made_from_run != rt.made_from_run:
+            raise ValueError(f"a run template named {old.name!r} exists, made from {old.made_from_run}; choose another name")
+        rt.created, rt.used_by = old.created, old.used_by
+    d = run_template_dir(rt.id)
+    _write(os.path.join(d, "template.json"), rt.model_dump(by_alias=True))
+    _write(os.path.join(d, "schema.json"), RunTemplate.model_json_schema(by_alias=True))
+    idx = index()
+    idx["run_templates"] = sorted([r for r in idx.get("run_templates") or [] if r.get("id") != rt.id]
+                                  + [_run_template_row(rt)], key=lambda r: r["name"].lower())
+    _save_index(idx)
+    return rt
+
+
+def get_run_template(tid):
+    """A stored RunTemplate by id (or by its name), or None."""
+    tid = str(tid or "")
+    row = next((r for r in index().get("run_templates") or [] if tid in (r.get("id"), r.get("name"))), None)
+    data = _read(os.path.join(run_template_dir(row["id"] if row else tid), "template.json")) if (row or tid == slug(tid)) else None
+    try:
+        return RunTemplate.model_validate(data) if data else None
+    except ValueError:
+        return None
+
+
+def run_template_list():
+    """The names first: one row per run template (name, business type, stages, number of workflows, live or mock)."""
+    return list(index().get("run_templates") or [])
+
+
+def select_workflows(rt, keys=None):
+    """(the chosen keys in template order, the keys added because a chosen one depends on them). No keys: all."""
+    all_keys = [w.key for w in rt.workflows]
+    want = [k for k in dict.fromkeys(str(x).strip().upper() for x in keys or []) if k in all_keys]
+    if not want:
+        return all_keys, []
+    deps = {w.key: w.depends_on for w in rt.workflows}
+    chosen, todo = set(want), list(want)
+    while todo:
+        for d in deps[todo.pop()]:
+            if d not in chosen:
+                chosen.add(d)
+                todo.append(d)
+    return [k for k in all_keys if k in chosen], [k for k in all_keys if k in chosen and k not in want]
+
+
+def section_template_ref(w):
+    """Where a run template's workflow's section template opens in the library ({artifact, section_slug, slug,
+    version}), and whether the library has it; None for "not recorded"."""
+    w = w if isinstance(w, dict) else w.model_dump()
+    name, _, ver = str(w.get("section_template") or "").rpartition("@")
+    if not name or not ver.isdigit() or w.get("section_template_kind") == NOT_RECORDED:
+        return None
+    if w["section_template_kind"] == "generic":
+        return {"artifact": w["artifact"], "section_slug": slug(w["section"]), "slug": "generic", "version": 1,
+                "in_library": generic(w["artifact"], w["section"]) is not None}
+    return {"artifact": w["artifact"], "section_slug": slug(w["section"]), "slug": slug(name), "version": int(ver),
+            "in_library": load(w["artifact"], slug(w["section"]), slug(name), int(ver)) is not None}
+
+
+def run_template_view(tid):
+    """GET /api/run-template?id=: one run template with, per workflow, where its section template opens."""
+    rt = get_run_template(tid)
+    if rt is None:
+        return None
+    out = rt.model_dump(by_alias=True)
+    for w in out["workflows"]:
+        w["ref"] = section_template_ref(w)
+    out["stage_labels"] = {k: str((type_data(k) or {}).get("label") or k) for k in rt.stages}
+    runs = index().get("runs") or {}      # a run that used it and was collected: its counts; otherwise not recorded
+    out["used_by"] = [{**u, "counts": reuse_counts(runs[u["run"]].get("decisions")) if u.get("run") in runs else NOT_RECORDED,
+                       **({"scopes": decision_scopes(runs[u["run"]].get("decisions"))} if u.get("run") in runs else {})}
+                      for u in rt.used_by]
+    out["shelf"] = run_template_skeleton(rt.id)      # the same run template as Shelf 2 shows it (structure only)
+    return out
+
+
+def folder_decision(rt, stage, files, ctx):
+    """The routing decision of a stage that makes a folder of files, in a run that follows run template rt: the same
+    record a section's decision is (templates.json "decisions"), so the Library tab counts it. "reused" when the run's
+    files are the template's files; "extended" (shown as adapted) when it has them all and more; "created" when the
+    template has no folder for that stage, or the run left one of its files out. ctx: {run, workflow, atom}."""
+    want = list(((rt.outputs if rt else {}) or {}).get(stage, {}).get("files") or [])
+    have = sorted(str(f) for f in files or [])
+    missing, extra = [f for f in want if f not in have], [f for f in have if f not in want]
+    if not want:
+        action, why = "created", "the run template has no folder of files for this stage"
+    elif missing:
+        action, why = "created", f"the run template's files were not all made (missing {and_words(missing)})"
+    elif extra:
+        action, why = "extended", f"the run template's {len(want)} files, and {and_words(extra)} added"
+    else:
+        action, why = "reused", f"the run template's {len(want)} files, each made again for this run"
+    w = next((x for x in (rt.workflows if rt else []) if x.stage == stage), None)
+    return {"run": ctx.get("run"), "workflow": ctx.get("workflow"), "atom": ctx.get("atom"), "artifact": stage,
+            "section": w.section if w else NOT_RECORDED, "action": action, "template": rt.name if rt else NOT_RECORDED,
+            "version": 1, "kind": "run-template", "score": round(len([f for f in want if f in have]) / len(want), 4) if want else 0.0,
+            "reason": why, "files": have, "from_template": bool(want) and not missing,
+            **({"template_workflow": f"{w.key} {w.name}"} if w and want and not missing else {})}
+
+
+def mark_run_template_used(tid, use):
+    with _library_lock():       # P10
+        return _mark_run_template_used(tid, use)
+
+
+def _mark_run_template_used(tid, use):
+    """A run that started from a run template, added to its used_by (template.json and the index row), once."""
+    rt = get_run_template(tid)
+    if rt is None:
+        return None
+    if use not in rt.used_by:
+        rt.used_by.append(use)
+        _write(os.path.join(run_template_dir(rt.id), "template.json"), rt.model_dump(by_alias=True))
+        idx = index()
+        for r in idx.get("run_templates") or []:
+            if r.get("id") == rt.id:
+                r["used_by"] = len(rt.used_by)
+        _save_index(idx)
+    return rt
+
+
+# ---------------------------------------------------------------- the Sutra library: two shelves (shelf/1)
+# Shelf 1, Artifacts: one entry per WHOLE artifact a run produced, read from the local runs folder when the page asks
+# (never copied into library/, never committed). Its sections nest inside it, each with the template it was made from.
+# Shelf 2, Artifact templates: structure only. Run templates first, then every artifact type of artifacts/types.json
+# with its sections, and under each section the generic skeleton, then the business variants as skeletons: every fact
+# the maker run's charter recorded is replaced by a slot, so no business value is shown. Every template lists the
+# outputs made from it (Shelf 1), and every artifact names the templates it was made from (Shelf 2).
+# find_artifact(need) and find_template(need) give the reuse order: a finished artifact first, then a template.
+SHELF_SCHEMA = "shelf/1"
+SHELF_MAX_TEXT = 400_000      # the most text of one file a view carries
+
+
+def runs_root(root=None):
+    """The folder of saved runs: the one given, else J2_RUNS_DIR, else runs/ beside this file (as j2.py reads it)."""
+    return root or os.environ.get("J2_RUNS_DIR") or os.path.join(HERE, "runs")
+
+
+def _run_dirs(root=None):
+    """Every saved run folder that recorded a charter or its workflows, newest first."""
+    root = runs_root(root)
+    names = sorted((n for n in os.listdir(root) if RUN_ID.match(n)), reverse=True) if os.path.isdir(root) else []
+    return [os.path.join(root, n) for n in names
+            if os.path.isfile(os.path.join(root, n, "goal.json")) or os.path.isfile(os.path.join(root, n, "workflows.json"))]
+
+
+def _run_dir(rid, root=None):
+    """A saved run's folder by its id (only a name a run id has, inside the runs folder), else None."""
+    d = os.path.join(runs_root(root), str(rid or ""))
+    return d if RUN_ID.match(str(rid or "")) and "/" not in str(rid) and os.path.isdir(d) else None
+
+
+def _text(path):
+    try:
+        with open(path, encoding="utf-8") as f:
+            return f.read(SHELF_MAX_TEXT + 1)
+    except (OSError, UnicodeDecodeError):
+        return None
+
+
+# ---- slots: the charter's own facts, named by the charter field that holds them (no word or pattern decides a name)
+def charter_slots(run_dir=None, extra=()):
+    """[(value, slot name)] of one run's charter: every fact its goal.json and stage charters recorded, named by the
+    field that holds it. A field the settings file lists under slots.named gives its own name ("site_name" ->
+    <site name>); an entry of a list the settings file lists under slots.listed is named by the list and its place
+    ("facts" -> <fact 3>). extra: more (value, slot) pairs, a template's own recorded business name for one. Values
+    that record nothing (slots.skip, and no_business_type) are left out. The values never leave this function's
+    callers as text: only the slot names are shown."""
+    conf = settings()["slots"]
+    said = lambda x: " ".join(str(x or "").lower().split())
+    skip = {said(x) for x in conf["skip"] + settings()["no_business_type"]} | {said(n) for n in j2_types.names()}
+    goals = []
+    if run_dir and os.path.isdir(run_dir):
+        goals.append(_read(os.path.join(run_dir, "goal.json")) or {})
+        for n in sorted(os.listdir(run_dir)):
+            if re.fullmatch(r"stage-[\w-]+\.json", n):
+                goals.append((_read(os.path.join(run_dir, n)) or {}).get("goal") or {})
+    out, seen = [], set()
+
+    def add(value, slot):
+        value = str(value or "").strip()
+        if len(value) >= conf["min_length"] and said(value) not in seen and said(value) not in skip:
+            seen.add(said(value))
+            out.append((value, slot))
+    for value, slot in extra or ():
+        add(value, slot)
+    for g in goals:
+        for k in conf["named"]:
+            if isinstance(g.get(k), str):
+                add(g[k], k.replace("_", " "))
+    place = {}
+    for g in goals:
+        for k in conf["listed"]:
+            one = k[:-1] if k.endswith("s") else k
+            for v in g.get(k) or []:
+                if isinstance(v, str) and said(v) not in seen:
+                    place[k] = place.get(k, 0) + 1
+                    add(v, f"{one.replace('_', ' ')} {place[k]}")
+    return out
+
+
+def with_slots(text, slots):
+    """A text with every charter value replaced by its slot, in one pass: the longest value first (a value inside
+    another is not cut), whole values only (600 inside 1600 is left alone), whatever the case. A slot already in the
+    text (<site name>) is left as it is, so a value is never replaced inside a slot's own name."""
+    t = str(text or "")
+    by = {}
+    for value, slot in slots:
+        by.setdefault(value.lower(), slot)      # the first name a value was given holds
+    if not by or not t:
+        return t
+    values = sorted(by, key=lambda v: -len(v))
+    rx = re.compile(r"<[A-Za-z0-9 ]+>|(?<![A-Za-z0-9])(?:" + "|".join(re.escape(v) for v in values) + r")(?![A-Za-z0-9])", re.I)
+    return rx.sub(lambda m: m.group(0) if m.group(0).startswith("<") else f"<{by[m.group(0).lower()]}>", t)
+
+
+def _structure_words():
+    """The text of the generic layer (every templates/<type>/generic.json template, lower case): the words the
+    structure itself is written in. A charter value that is one of them ("name", "email": a form's field names a
+    charter listed) is structure, not a business value, and stays readable on the templates shelf."""
+    return json.dumps([generic(a, sec).model_dump() for a in artifacts() for sec in generic_sections(a)], ensure_ascii=False).lower()
+
+
+def _business_only(slots, structure=None):
+    """slots without the values the generic layer itself uses (_structure_words)."""
+    text = _structure_words() if structure is None else structure
+    return [(v, s) for v, s in slots
+            if not re.search(r"(?<![a-z0-9])" + re.escape(v.lower()) + r"(?![a-z0-9])", text)]
+
+
+_SLOTS = {}
+
+
+def _all_slots(root=None):
+    """Every business value any run's charter or any stored version recorded, for the text of a template another
+    run made (an adapted_from, a description carried over): [(value, slot)]. A named field keeps its name
+    (<site name>); a listed fact is <fact>, not numbered, since the number is the maker run's own. Read again only when
+    a run folder or the library index changed."""
+    dirs = _run_dirs(root)
+    stamp = lambda p: os.path.getmtime(p) if os.path.exists(p) else None
+    key = (runs_root(root), lib_dir(), stamp(os.path.join(lib_dir(), "index.json")), tuple((d, stamp(os.path.join(d, "goal.json"))) for d in dirs))
+    if _SLOTS.get("key") == key:
+        return list(_SLOTS["rows"])
+    out, seen = [], set()
+    first = settings()["slots"]["named"][0].replace("_", " ")
+    rows = [(d, ()) for d in dirs] + [(None, [((r.get("business") or ""), first)]) for r in (index().get("runs") or {}).values()]
+    rows += [(None, [((v.get("business") or {}).get("name"), first)] + [(f, "fact") for f in v.get("facts") or []])
+             for e in index()["templates"] for v in e["versions"]]
+    for d, extra in rows:
+        for value, slot in charter_slots(d, extra):
+            if value.lower() not in seen:
+                seen.add(value.lower())
+                out.append((value, re.sub(r" \d+$", "", slot)))
+    out = _business_only(out)
+    _SLOTS.update(key=key, rows=out)
+    return list(out)
+
+
+def _maker_slots(meta, spec, root=None):
+    """The slots of the run that made a template version: that run's charter when its folder is here, the business
+    name the library recorded with the version, and the charter facts the version itself records (facts_used)."""
+    rid = ((meta or {}).get("made_by") or (spec or {}).get("made_by") or {}).get("run")
+    biz = ((meta or {}).get("business") or {}).get("name")
+    first = settings()["slots"]["named"][0].replace("_", " ")
+    own = charter_slots(_run_dir(rid, root), [(biz, first)] if biz else ())
+    have = {v.lower() for v, _ in own}
+    more = [f for f in ((spec or {}).get("context") or {}).get("facts_used") or [] if isinstance(f, str) and f.lower() not in have]
+    return _business_only(own + [(f, "fact") for f in more if len(f.strip()) >= settings()["slots"]["min_length"]])
+
+
+def skeleton(spec, slots):
+    """A template's structure with no business value in it: its fields, objects and rules as they are; its name and
+    every description with the charter's values replaced by slots; every enum (a list of values a business gave)
+    replaced by one slot named for its field; the facts it was made from as a count only."""
+    fix = lambda x: with_slots(x, slots)
+    slot_of = lambda name: f"<{str(name).replace('_', ' ')}>"
+
+    def field(f):
+        out = {k: f[k] for k in ("name", "type", "required", "nullable") if k in f}
+        out["description"] = fix(f.get("description"))
+        if f.get("enum"):
+            out["enum"] = [slot_of(f.get("name"))]
+        return out
+
+    def rule(r):
+        r = dict(r)
+        if "values" in r:
+            r["values"] = [slot_of(r.get("path") or r.get("name") or "values")]
+        return {k: (fix(v) if isinstance(v, str) and k in ("name", "from") else v) for k, v in r.items()}
+    facts = (spec.get("context") or {}).get("facts_used") or []
+    return {"name": fix(spec.get("name")), "version": spec.get("version"), "kind": spec.get("kind"),
+            "artifact": spec.get("artifact"), "section": spec.get("section"),
+            **({"extends": spec["extends"]} if spec.get("extends") else {}),
+            "description": fix(spec.get("description")),
+            "fields": [field(f) for f in spec.get("fields") or []],
+            "objects": [{"name": o.get("name"), "fields": [field(f) for f in o.get("fields") or []]} for o in spec.get("objects") or []],
+            "rules": [rule(r) for r in spec.get("rules") or []],
+            **({"facts": f"<{len(facts)} facts of the business>"} if spec.get("kind") == "specialised" else {})}
+
+
+# ---- Shelf 1: whole artifacts, from the runs folder
+def template_key(artifact, section, name=None, version=1):
+    """How both shelves name one template: "<artifact>/<section slug>/<template slug>/v<N>" ("generic" for the generic
+    one), the same path the library opens it by."""
+    return f"{artifact}/{slug(section)}/{slug(name) if name else 'generic'}/v{version if name else 1}"
+
+
+def _decision_template(rid, k, d):
+    """{name, version, kind, key, in_library} of the template a routing decision filled, as the library holds it now
+    (a renumbered or moved version resolves to where it is)."""
+    sec = d.get("section")
+    if d.get("kind") == "generic" or not d.get("template"):
+        g = generic(k, sec)
+        return {"name": g.name if g else d.get("template") or NOT_RECORDED, "version": 1, "kind": "generic",
+                "key": template_key(k, sec), "in_library": g is not None}
+    ref, _ = _library_ref(rid, d)
+    name, _, ver = ref.rpartition("@")
+    ver = int(ver) if str(ver).isdigit() else d.get("version")
+    now = moved_to(k, slug(sec), slug(name), ver)
+    tslug, ver = now if now else (slug(name), ver)
+    e = next((e for e in index()["templates"] if e["artifact"] == k and e["section_slug"] == slug(sec) and e["slug"] == tslug), None)
+    here = bool(e) and any(int(v["version"]) == int(ver) for v in e["versions"])
+    return {"name": e["name"] if e else name, "version": ver, "kind": "specialised",
+            "key": f"{k}/{slug(sec)}/{tslug}/v{ver}", "in_library": here}
+
+
+def _repeats(k):
+    """True for a type whose template has one section template, filled once per workflow (no whole-artifact one)."""
+    try:
+        return len(j2_types.sections(k)) == 1 and j2_types.document(k) is None
+    except (OSError, ValueError, KeyError):
+        return False
+
+
+def run_artifacts(run_dir):
+    """The whole artifacts one run produced: one entry per output type whose file (or folder of files) is in the run
+    folder, with the run's business and date, its checks, the template the whole artifact was made from and, nested,
+    its sections, each with the template its builder filled."""
+    run_dir = os.path.abspath(run_dir).rstrip(os.sep)
+    rid = os.path.basename(run_dir)
+    facts = run_facts(run_dir)
+    rec = _read(os.path.join(run_dir, "templates.json")) or {}
+    decs = rec.get("decisions") or []
+    wfs = _read(os.path.join(run_dir, "workflows.json")) or []
+    names = {str(w.get("id")): str(w.get("name") or "") for w in wfs if isinstance(w, dict)}
+    summary = _read(os.path.join(run_dir, "summary.json")) or {}
+    rows = {r.get("type"): r for r in (_read(os.path.join(run_dir, "artifacts.json")) or {}).get("rows") or [] if isinstance(r, dict)}
+    rt = rec.get("run_template") if isinstance(rec.get("run_template"), dict) else None
+    rt_lib = get_run_template(rt["id"]) if rt and rt.get("id") else None
+    out = []
+    for k, t in run_types(run_dir).items():
+        folder = folder_of(t)
+        files = folder_files(run_dir, folder) if folder else []
+        file = str(t.get("file") or "")
+        if not (files if folder else file and "*" not in file and os.path.isfile(os.path.join(run_dir, file))):
+            continue
+        known = k in artifacts()
+        secs, seen = [], {}
+        for d in decs:
+            if d.get("artifact") != k or d.get("kind") == "run-template":
+                continue
+            key = (d.get("section"), d.get("workflow")) if known and _repeats(k) else (d.get("section"),)
+            row = {"section": d.get("section"), "workflow": d.get("workflow"), "label": names.get(str(d.get("workflow")), ""),
+                   "action": decision_kind(d), "template": _decision_template(rid, k, d)}
+            if key in seen:
+                secs[seen[key]] = row      # a later decision for the same section (a revision): the one that held
+            else:
+                seen[key] = len(secs)
+                secs.append(row)
+        if not secs and known:      # a run that recorded no routing: the sections its data file holds, from the generic layout
+            data = (_read(os.path.join(run_dir, f"{k}.json")) or {}).get("sections") or {}
+            for sec in generic_sections(k):
+                if sec in data and sec != DOCUMENT:
+                    secs.append({"section": sec, "workflow": None, "label": "", "action": "generic",
+                                 "template": _decision_template(rid, k, {"section": sec, "kind": "generic"})})
+        whole = None
+        if known and DOCUMENT in generic_sections(k):
+            whole = _decision_template(rid, k, {"section": DOCUMENT, "kind": "generic"})
+        elif known and _repeats(k):
+            whole = _decision_template(rid, k, {"section": generic_sections(k)[0], "kind": "generic"})
+        from_rt = None
+        if rt_lib is not None and k in rt_lib.stages:
+            from_rt = {"id": rt_lib.id, "name": rt_lib.name, "key": f"rt/{rt_lib.id}", "auto": bool(rt.get("auto"))}
+        mine = [w for w in wfs if isinstance(w, dict) and str(w.get("id")) in set(map(str, (rows.get(k) or {}).get("workflows") or []))]
+        checks = {"workflows": {"done": sum(1 for w in mine if w.get("status") == "done"), "of": len(mine)} if mine else NOT_RECORDED}
+        if summary.get("output_type") == k:
+            for name in ("conditions", "necessary_conditions"):
+                c = summary.get(name)
+                if isinstance(c, dict) and "met" in c and "total" in c:
+                    checks["conditions"] = {"met": c["met"], "of": c["total"]}
+                    break
+            dw = summary.get("done_when")
+            if isinstance(dw, list) and dw:
+                checks["done_when"] = {"passed": sum(1 for x in dw if isinstance(x, dict) and (x.get("pass") is True or str(x.get("verdict")).upper() == "PASS")), "of": len(dw)}
+        valid = (_read(os.path.join(run_dir, f"{k}.json")) or {}).get("valid") if not folder else None
+        if isinstance(valid, bool):
+            checks["data_valid"] = valid
+        data_file = f"{k}.json" if not folder and os.path.isfile(os.path.join(run_dir, f"{k}.json")) else file if file.endswith(".json") else None
+        listing = {"folder": folder, "files": [{"path": f, "bytes": os.path.getsize(os.path.join(run_dir, folder, f)),
+                                                 "sha256": hashlib.sha256(open(os.path.join(run_dir, folder, f), "rb").read()).hexdigest()} for f in files]} if folder else None
+        out.append({"id": f"{rid}/{k}", "run": rid, "type": k, "label": str(t.get("label") or k), "tag": str(t.get("tag") or ""),
+                    "data_file": data_file, "listing": listing,
+                    "business": facts["business"], "business_type": facts["business_type"], "date": facts["date"], "mock": facts["mock"],
+                    "status": summary.get("status") or NOT_RECORDED, "checks": checks,
+                    "file": (folder + "/") if folder else file, "files": files, "preview": t.get("preview") or ("folder" if folder else None),
+                    "made_from": whole, "run_template": from_rt, "sections": secs})
+    return out
+
+
+_ARTS = {}
+
+
+def _all_artifacts(root=None):
+    """Every run's whole artifacts, read again only when a run folder, the library index or the types file changed."""
+    dirs = _run_dirs(root)
+    stamp = lambda p: os.path.getmtime(p) if os.path.exists(p) else None
+    key = (runs_root(root), lib_dir(), stamp(os.path.join(lib_dir(), "index.json")), stamp(j2_types.TYPES_PATH),
+           tuple((d, stamp(d), stamp(os.path.join(d, "templates.json")), stamp(os.path.join(d, "summary.json"))) for d in dirs))
+    if _ARTS.get("key") != key:
+        _ARTS.update(key=key, rows=[a for d in dirs for a in run_artifacts(d)])
+    return [dict(a) for a in _ARTS["rows"]]
+
+
+def outputs_by_template(arts):
+    """{template key: [the artifacts made from it]}: the whole artifact for its own template and its run template, and
+    each section for the template its builder filled. Shelf 2's "Outputs made from this template"."""
+    out = {}
+    for a in arts:
+        base = {"id": a["id"], "run": a["run"], "type": a["type"], "label": a["label"]}
+        for key in [x["key"] for x in (a["made_from"], a["run_template"]) if x]:
+            out.setdefault(key, []).append(base)
+        for s in a["sections"]:
+            out.setdefault(s["template"]["key"], []).append({**base, "section": s["section"], **({"workflow": s["workflow"]} if s.get("workflow") else {})})
+    return out
+
+
+def shelf_artifacts(run=None, root=None):
+    """Shelf 1: every whole artifact of every saved run, newest run first. run: the entries of that run are marked."""
+    arts = _all_artifacts(root)
+    for a in arts:
+        a["highlight"] = bool(run) and a["run"] == run
+    return {"schema": SHELF_SCHEMA, "shelf": "artifacts", "run": run or None, "runs_dir": os.path.basename(runs_root(root).rstrip(os.sep)),
+            "artifacts": arts}
+
+
+def artifact_view(aid, root=None):
+    """One whole artifact with its three views. Summary: the entry (run, business, date, checks, what it was made
+    from, its sections). Agent-readable: its data as JSON (a folder: the list of its files with their sha256, then
+    each file). Human-readable: the artifact as a person reads it (the document, the page, or the folder's files)."""
+    rid, _, k = str(aid or "").partition("/")
+    d = _run_dir(rid, root)
+    a = next((x for x in run_artifacts(d) if x["type"] == k), None) if d else None
+    if a is None:
+        return None
+    cut = lambda t: t if t is None or len(t) <= SHELF_MAX_TEXT else t[:SHELF_MAX_TEXT] + "\n… (cut: the file is longer)"
+    if a["files"]:
+        folder = a["file"].rstrip("/")
+        texts = [(f, _text(os.path.join(d, folder, f))) for f in a["files"]]
+        agent = [{"name": "files.json", "text": json.dumps(a["listing"], indent=2, ensure_ascii=False)}] \
+            + [{"name": f, "text": cut(t)} for f, t in texts if t is not None and f.endswith(".json")]
+        human = {"format": "files", "files": [{"path": f, "text": cut(t) if t is not None else None} for f, t in texts]}
+    else:
+        data = os.path.join(d, f"{k}.json")
+        agent = [{"name": f"{k}.json", "text": cut(_text(data))}] if os.path.isfile(data) else \
+            [{"name": a["file"], "text": cut(_text(os.path.join(d, a["file"])))}] if a["file"].endswith(".json") else []
+        human = {"format": a["preview"] or "text", "file": a["file"], "text": cut(_text(os.path.join(d, a["file"])))}
+    return {"schema": SHELF_SCHEMA, "summary": a, "agent": agent, "human": human}
+
+
+# ---- Shelf 2: artifact templates, structure only
+def shelf_templates(run=None, root=None):
+    """Shelf 2: the run templates, then every artifact type with its sections; under each section the generic template
+    first, then the business variants, their names with slots in place of the business. Each row has how many outputs
+    were made from it. run: what that run made ("made") or filled ("used") is marked."""
+    arts = _all_artifacts(root)
+    made_from = outputs_by_template(arts)
+    everyone = _all_slots(root)
+    used = {s["template"]["key"] for a in arts if run and a["run"] == run for s in a["sections"]} \
+        | {x["key"] for a in arts if run and a["run"] == run for x in (a["made_from"], a["run_template"]) if x}
+    mark = lambda key, maker=None: "made" if run and maker == run else "used" if key in used else None
+    slots_of = {}
+
+    def slots(rid, biz):
+        if (rid, biz) not in slots_of:
+            slots_of[(rid, biz)] = charter_slots(_run_dir(rid, root), [(biz, settings()["slots"]["named"][0].replace("_", " "))] if biz else ()) + everyone
+        return slots_of[(rid, biz)]
+    types = []
+    for a in artifacts():
+        t = type_data(a) or {}
+        secs = []
+        for sec in generic_sections(a):
+            g = generic(a, sec)
+            gkey = template_key(a, sec)
+            variants = []
+            for e in index()["templates"]:
+                if e["artifact"] != a or e["section"] != sec:
+                    continue
+                for v in e["versions"]:
+                    rid = (v.get("made_by") or {}).get("run")
+                    key = f"{a}/{slug(sec)}/{e['slug']}/v{v['version']}"
+                    variants.append({"key": key, "name": with_slots(e["name"], slots(rid, (v.get("business") or {}).get("name"))),
+                                     "version": v["version"], "mock": v.get("mock", NOT_RECORDED), "made_by_run": rid,
+                                     "fields": len(v.get("fields") or []), "outputs": len(made_from.get(key) or []),
+                                     "highlight": mark(key, rid)})
+            secs.append({"section": sec, "whole": sec == DOCUMENT,
+                         "generic": {"key": gkey, "name": g.name, "version": 1, "fields": len(g.fields),
+                                     "outputs": len(made_from.get(gkey) or []), "highlight": mark(gkey)},
+                         "variants": variants})
+        types.append({"type": a, "label": str(t.get("label") or a.replace("_", " ").capitalize()), "tag": str(t.get("tag") or ""),
+                      "is_type": bool(t), "sections": secs})
+    rts = []
+    for r in run_template_list():
+        key = f"rt/{r['id']}"
+        s = slots(r.get("made_from_run"), None)
+        rts.append({"id": r["id"], "key": key, "name": with_slots(r["name"], s), "stages": r.get("stages") or [],
+                    "workflows": r.get("workflows"), "mock": r.get("mock"), "made_from_run": r.get("made_from_run"),
+                    "outputs": len(made_from.get(key) or []), "highlight": mark(key, r.get("made_from_run"))})
+    return {"schema": SHELF_SCHEMA, "shelf": "templates", "run": run or None, "run_templates": rts, "types": types}
+
+
+def template_skeleton(key, root=None):
+    """One section template of Shelf 2 with its three views, structure only. Summary: what it is, the run that made it,
+    and the outputs made from it (Shelf 1). Agent-readable: its skeleton as JSON. Human-readable: its fields, objects
+    and rules as a person reads them, from the same skeleton."""
+    parts = str(key or "").split("/")
+    if len(parts) != 4 or not re.fullmatch(r"v\d+", parts[3]):
+        return None
+    a, sslug, tslug, version = parts[0], parts[1], parts[2], int(parts[3][1:])
+    got = _library_view_of(a, sslug, tslug, version) if a in artifacts() else None
+    if not got:
+        return None
+    spec, meta = got["template"], got["meta"] or {}
+    now = f"{a}/{sslug}/{slug(spec['name']) if spec.get('kind') == 'specialised' else 'generic'}/v{spec.get('version') if spec.get('kind') == 'specialised' else 1}"
+    everyone = _all_slots(root)
+    slots = (_maker_slots(meta, spec, root) + everyone) if spec.get("kind") == "specialised" else []
+    sk = skeleton(spec, slots)
+    link = lambda ref: None if not ref else {"name": with_slots(str(ref).rpartition("@")[0], everyone), "version": str(ref).rpartition("@")[2],
+                                             "key": f"{a}/{sslug}/{slug(str(ref).rpartition('@')[0])}/v{str(ref).rpartition('@')[2]}"}
+    outs = outputs_by_template(_all_artifacts(root)).get(now) or []
+    mb = meta.get("made_by") or spec.get("made_by") or {}
+    summary = {"key": now, "name": sk["name"], "version": sk["version"], "kind": sk["kind"], "artifact": a, "section": spec.get("section"),
+               "extends": spec.get("extends"), "generic_key": template_key(a, spec.get("section")),
+               "made_by": {k: mb.get(k) for k in ("run", "workflow", "date") if mb.get(k)} if sk["kind"] == "specialised" else None,
+               "mock": meta.get("mock", NOT_RECORDED) if sk["kind"] == "specialised" else None,
+               "adapted_from": link(meta.get("adapted_from")), "fields": len(sk["fields"]), "outputs": outs}
+    return {"schema": SHELF_SCHEMA, "summary": summary, "agent": [{"name": "skeleton.json", "text": json.dumps(sk, indent=2, ensure_ascii=False)}],
+            "human": {"format": "fields", "skeleton": sk}}
+
+
+def run_template_skeleton(tid, root=None):
+    """One run template of Shelf 2 with its three views. Summary: the whole bundle (its stages and workflows, as the
+    run template pane shows them) and the outputs made from it. Agent-readable: its skeleton as JSON (no business name,
+    no use list). Human-readable: stage by stage, each workflow with what it covers, in slots."""
+    rt = get_run_template(tid)
+    if rt is None:
+        return None
+    slots = charter_slots(_run_dir(rt.made_from_run, root)) + _all_slots(root)
+    fix = lambda x: with_slots(x, slots)
+    ref = lambda w: section_template_ref(w)
+    wfs = [{"key": w.key, "name": fix(w.name), "stage": w.stage, "section": w.section,
+            "section_template": fix(w.section_template), "section_template_kind": w.section_template_kind,
+            "template_key": (lambda r: f"{r['artifact']}/{r['section_slug']}/{r['slug']}/v{r['version']}" if r else None)(ref(w)),
+            "depends_on": list(w.depends_on), "covers": [fix(c) for c in w.covers], "fix": w.fix} for w in rt.workflows]
+    sk = {"schema": RUN_TEMPLATE_SCHEMA, "id": "<run template id>", "name": fix(rt.name), "stages": list(rt.stages),
+          "facts_slots": list(rt.facts_slots), "outputs": rt.outputs, "workflows": wfs}
+    outs = outputs_by_template(_all_artifacts(root)).get(f"rt/{rt.id}") or []
+    labels = {k: str((type_data(k) or {}).get("label") or k) for k in rt.stages}
+    summary = {"key": f"rt/{rt.id}", "id": rt.id, "name": sk["name"], "kind": "run-template", "stages": list(rt.stages), "stage_labels": labels,
+               "workflows": len(wfs), "mock": rt.mock, "made_by": {"run": rt.made_from_run, "date": run_date(rt.made_from_run)},
+               "facts_slots": list(rt.facts_slots), "outputs": outs}
+    shown = {**sk, "workflows": [{k: v for k, v in w.items() if k != "template_key"} for w in wfs]}      # a template's address holds its stored name: a link, never text
+    return {"schema": SHELF_SCHEMA, "summary": summary, "agent": [{"name": "skeleton.json", "text": json.dumps(shown, indent=2, ensure_ascii=False)}],
+            "human": {"format": "run-template", "skeleton": sk, "stage_labels": labels}}
+
+
+def shelf_view(q, root=None):
+    """One door to both shelves, for a server route of their own (GET /api/shelf: not there yet; today the page reads
+    /api/catalog, /api/library/<key> and /api/run-template, which carry the same data). q: {"view": "artifacts" | "templates", "run": a run id to mark,
+    "artifact": "<run>/<type>" for one artifact, "template": a template key or "rt/<id>" for one template}."""
+    get = lambda k: str((q or {}).get(k) or "")
+    run = get("run") if RUN_ID.match(get("run")) else None
+    if get("artifact"):
+        return artifact_view(get("artifact"), root)
+    if get("template").startswith("rt/"):
+        return run_template_skeleton(get("template")[3:], root) if re.fullmatch(r"[a-z0-9-]+", get("template")[3:]) else None
+    if get("template"):
+        return template_skeleton(get("template"), root) if re.fullmatch(r"[a-z0-9_]+/[a-z0-9-]+/[a-z0-9-]+/v\d+", get("template")) else None
+    return shelf_artifacts(run, root) if get("view") == "artifacts" else shelf_templates(run, root)
+
+
+# ---- the reuse order: a finished artifact first, then a template (docs/library-reuse-order.md)
+def find_artifact(need, root=None):
+    """Finished artifacts a new piece of work could start from, best first, each with its reasons. need: {"artifact":
+    the type (required), "section": a section it must have, "business_type", "site", "text": the brief or done-when
+    items, "facts": [...]}. A candidate is a whole artifact of the same type in the runs folder. score = 0.5 x same
+    business (1 when the charter recorded the same business type or the same name, else 0) + 0.5 x words (the share of
+    the need's words found in that run's charter). Nothing is chosen here: the caller, or the agent, decides."""
+    k, sec = need.get("artifact"), need.get("section")
+    want = words(" ".join([str(need.get("text") or "")] + [str(f) for f in need.get("facts") or []]))
+    out = []
+    for a in _all_artifacts(root):
+        if a["type"] != k or (sec and not any(s["section"] == sec for s in a["sections"])):
+            continue
+        goal = _read(os.path.join(runs_root(root), a["run"], "goal.json")) or {}
+        same_type = _same_business(need.get("business_type"), a["business_type"]) == 2
+        same_name = bool(need.get("site")) and slug(need.get("site")) == slug(a["business"])
+        have = words(" ".join([str(goal.get("statement") or "")] + [str(x) for x in goal.get("done_when") or []]))
+        share = round(len(want & have) / len(want), 4) if want else 0.0
+        c = a["checks"]
+        reasons = [f"a finished {a['label']} of run {a['run']}",
+                   "the same business" if same_name else f"the same business type ({a['business_type']})" if same_type
+                   else f"another business type ({a['business_type']})",
+                   f"{len(want & have)} of {len(want)} of the need's words are in its charter" if want else "the need gave no words to compare"]
+        if isinstance(c.get("conditions"), dict):
+            reasons.append(f"{c['conditions']['met']} of {c['conditions']['of']} necessary conditions met")
+        if isinstance(c.get("workflows"), dict):
+            reasons.append(f"{c['workflows']['done']} of {c['workflows']['of']} workflows finished")
+        reasons.append("a mock run made it" if a["mock"] is True else "a live run made it" if a["mock"] is False else "live or mock not recorded")
+        hit = next((s for s in a["sections"] if s["section"] == sec), None) if sec else None
+        out.append({"kind": "artifact", "ref": a["id"], "run": a["run"], "type": k, "score": round(0.5 * (same_type or same_name) + 0.5 * share, 4),
+                    "reasons": reasons, **({"section_template": hit["template"]["key"]} if hit else {})})
+    out.sort(key=lambda c: (-c["score"], c["ref"]), reverse=False)
+    return out
+
+
+def find_template(need, root=None):
+    """Templates a new piece of work could fill, best first, each with its reasons. With a "section": the stored
+    section templates of that artifact and section (score = coverage of the need's facts and fields, then how near
+    its fields are), and the generic one last. Without one: the run templates (run_template_match on the need's
+    text). Nothing is chosen here."""
+    k, sec = need.get("artifact"), need.get("section")
+    out = []
+    if not sec:
+        for m in match_run_templates([k], str(need.get("text") or ""), need.get("done_when") or []):
+            out.append({"kind": "run-template", "ref": m["id"], "key": f"rt/{m['id']}", "score": m["score"],
+                        "reasons": [f"stages {m['stages']:.2f}, business {m['business']:.2f}, covers {m['covers']:.2f}",
+                                    m.get("why_not") or "its first stage is the one asked for"]})
+        return out
+    n = make_need(k, sec, need.get("business_type"), need.get("facts") or [], need.get("site"))
+    gen = generic(k, sec)
+    near = {(c["name"], int(c["version"])): c for c in (nearest_ranked(n, gen) if gen else [])}
+    for c in candidates(n):
+        nr = near.get((c["name"], int(c["version"]))) or {}
+        reasons = [f"covers {c['facts_covered']} of {len(n['facts'])} facts" + (f" and {c['fields_covered']} of {len(n['fields'])} fields" if n["fields"] else "")]
+        if c["fingerprint_match"]:
+            reasons.append("the same need made it")
+        if nr:
+            reasons.append(f"its fields are {nr['similarity']:.2f} like the ones needed")
+            reasons.append("made for the same business" if nr["same_business"] else f"made for another business type ({nr['business_type']})")
+        out.append({"kind": "template", "ref": f"{c['name']}@{c['version']}", "key": f"{k}/{slug(sec)}/{c['slug']}/v{c['version']}",
+                    "score": c["score"], "similarity": nr.get("similarity", 0.0), "reasons": reasons})
+    out.sort(key=lambda c: (-c["score"], -c["similarity"], c["ref"]))
+    if gen is not None:
+        out.append({"kind": "template", "ref": f"{gen.name}@1", "key": template_key(k, sec), "score": 0.0, "similarity": 0.0,
+                    "reasons": ["the generic layout of this section: always there, holds no business"]})
+    return out
+
+
+def find(need, root=None):
+    """The reuse order for one need: finished artifacts first, then templates. {"order", "artifacts", "templates"}."""
+    return {"order": ["artifact", "template"], "artifacts": find_artifact(need, root), "templates": find_template(need, root)}
+
+
+if __name__ == "__main__":      # python3 j2_template_lib.py: check every templates/<artifact>/generic.json; --collect: the catalog;
+    # --run-template <run_dir> --name "<name>": a run template from a saved run
+    if "--run-template" in sys.argv:      # --run-template <run_dir> [--name "<name>"]: one run template from a saved run
+        made = save_run_template(run_template_from_run(
+            sys.argv[sys.argv.index("--run-template") + 1],
+            name=sys.argv[sys.argv.index("--name") + 1] if "--name" in sys.argv else None))
+        kind = "mock" if made.mock is True else "live" if made.mock is False else made.mock
+        print(f"{made.name} ({made.id}): {len(made.workflows)} workflows, stages {', '.join(made.stages)}, {kind}, "
+              f"from {made.made_from_run}; slots: {', '.join(made.facts_slots) or 'none'}")
+        print(f"  {os.path.join(run_template_dir(made.id), 'template.json')}")
+    elif "--collect" in sys.argv:
         runs_dir = sys.argv[sys.argv.index("--runs") + 1] if "--runs" in sys.argv else os.path.join(HERE, "runs")
         for r in collect(runs_dir):
             print(f"{r['run']} ({'mock' if r['mock'] is True else 'live' if r['mock'] is False else r['mock']}, {r['business']}): "

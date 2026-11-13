@@ -1,0 +1,39 @@
+{
+  "schema": "template-library/1",
+  "name": "Flow Pilates Studio Purpose and scope",
+  "version": 1,
+  "sha": "9f01bbd8170677aaa2f29b323b7e3c432ece833121ade04134df7397ca8a3e61",
+  "schema_sha": "fef489168e902518f1550c6f316aa48a0e01c0cad3eca6d2719fcc6483c26967",
+  "model_sha": "0e532e88bfd32db82c878c59d20a8fae0c401a846abba1b646f8870ecd630835",
+  "class": "FlowPilatesStudioPurposeAndScopeV1",
+  "created": "2026-11-12T15:12:23",
+  "fingerprints": [
+    "3e2246587aabab7d2f7ee8159a6426dea8412d87042ac649cf442e1cf6b4ebfc"
+  ],
+  "made_by": {
+    "run": "j2-20261112-150036",
+    "workflow": "W-10",
+    "atom": "W-10.a1",
+    "agent": "code (adapted from a run template)",
+    "date": "2026-11-12 15:00:36"
+  },
+  "business": {
+    "name": "Flow Pilates Studio",
+    "type": "pilates studio"
+  },
+  "mock": false,
+  "collected_from": {
+    "run": "j2-20261112-150036",
+    "where": "the run's copy"
+  },
+  "used_by": [
+    {
+      "run": "j2-20261112-150036",
+      "workflow": "W-10",
+      "atom": "W-10.a1",
+      "action": "extended"
+    }
+  ],
+  "renamed_from": "Still Point Yoga Purpose and scope@4",
+  "adapted_from": "Iron Grove Fitness Purpose and scope@1"
+}
