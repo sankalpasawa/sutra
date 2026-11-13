@@ -1,0 +1,41 @@
+{
+  "statement": "A script for Northwind Archive that copies every file of one folder into another, keeping sub-folders.",
+  "product_name": "Northwind Archive",
+  "site_name": "Northwind Archive",
+  "audience": "the archive's office staff",
+  "business_type": "records archive",
+  "facts": [
+    "Northwind Archive",
+    "scans-inbox",
+    "scans-shelf"
+  ],
+  "standards": [
+    "Plain Python 3, standard library only"
+  ],
+  "rules": [
+    "No invented facts"
+  ],
+  "may_touch": [
+    "its own folder"
+  ],
+  "never_do": [
+    "Never delete a file.",
+    "Never write outside the folder it copies to."
+  ],
+  "files": [
+    "README.md",
+    "copy_files.py",
+    "test_copy_files.py"
+  ],
+  "test": "test_copy_files.py",
+  "done_when": [
+    "copy_files.py copies every file from scans-inbox to scans-shelf, keeping sub-folders",
+    "A file already there with the same bytes is left alone",
+    "test_copy_files.py is in the folder",
+    "README.md says how to run it",
+    "Its test passes"
+  ],
+  "to_be_confirmed": [],
+  "dropped_from_brief": [],
+  "visitor_needs": []
+}

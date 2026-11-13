@@ -1,0 +1,75 @@
+[
+  {
+    "id": "W-1",
+    "proposal_id": "W-1",
+    "name": "Northwind Archive file copier",
+    "covers": [
+      1,
+      2,
+      3,
+      4,
+      5
+    ],
+    "fixes": [],
+    "covers_text": [
+      "copy_files.py copies every file from scans-inbox to scans-shelf, keeping sub-folders",
+      "A file already there with the same bytes is left alone",
+      "test_copy_files.py is in the folder",
+      "README.md says how to run it",
+      "Its test passes"
+    ],
+    "purpose": "The folder has no script yet.",
+    "cost": 30,
+    "estimate": 30,
+    "charged": true,
+    "calls_used": 1,
+    "retries_used": 0,
+    "outputs": [
+      "script/"
+    ],
+    "completion_check": "python3 test_copy_files.py prints ok",
+    "dependencies": [],
+    "status": "done",
+    "cycle": 1,
+    "atoms": [
+      {
+        "id": "W-1.a1",
+        "goal": "The script in script/ meets every necessary condition",
+        "how": {
+          "kind": "AI",
+          "agent": "W-1 Builder",
+          "steps": [
+            "README.md",
+            "copy_files.py",
+            "test_copy_files.py"
+          ]
+        },
+        "constraints": [
+          "only inside its folder"
+        ],
+        "expected_output": [
+          {
+            "text": "README.md is in the folder",
+            "kind": "file",
+            "target": "README.md"
+          },
+          {
+            "text": "copy_files.py is in the folder",
+            "kind": "file",
+            "target": "copy_files.py"
+          },
+          {
+            "text": "test_copy_files.py is in the folder",
+            "kind": "file",
+            "target": "test_copy_files.py"
+          }
+        ]
+      }
+    ],
+    "section": "W-1",
+    "revises": null,
+    "agent": "W-1 Builder",
+    "last_check": "test passed",
+    "version": 1
+  }
+]

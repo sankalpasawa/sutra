@@ -1,0 +1,36 @@
+{
+  "_note": "Settings of the template library (j2_template_lib.py reads this file; nothing here is repeated in code). no_business_type: what a charter's business_type holds when it recorded none (two such values are never the same business). slots: the charter fields whose values the library shows as slots on the templates shelf; a field under named gives the slot its own name (site_name -> <site name>), an entry of a list under listed is named by the list and its place (facts -> <fact 3>); skip: values that record nothing. stop_words and min_word_length: the words words() leaves out when two texts are compared. fact_fields: the shapes of a charter fact that name fields; the first pattern that matches a fact is used, {noun} is group 1 as an identifier, {Noun} the same in title case, {word} group 1 as written, {fact} the whole fact, {item} one listed name. routing: the numbers the router holds the template generator to; the generator is told each one in its prompt (routing.rules), and a reply that breaks one is refused with the rule, never changed by code.",
+  "schema": "library-settings/1",
+  "min_word_length": 4,
+  "stop_words": ["the", "and", "with", "this", "that", "page", "section", "every", "each", "from", "into", "their", "they",
+                 "what", "when", "have", "has", "shows", "show", "lists", "list", "written", "must", "work", "works", "on",
+                 "for", "its", "are", "is", "a", "an", "of", "to", "in", "as"],
+  "no_business_type": ["business", "not recorded", "document"],
+  "slots": {"named": ["site_name", "product_name", "business_type"], "listed": ["facts"], "skip": ["not provided", "none", "n/a"], "min_length": 3},
+  "list_separator": ",\\s*|\\s+and\\s+",
+  "fact_fields": [
+    {"makes": "objects",
+     "pattern": "(\\w+),? each with ([\\w ,'-]+?)(?:\\s+in\\s+[\\w ]+)?\\.?$",
+     "name": "{noun}", "object": "{Noun}Item",
+     "description": "{fact}; one item each, copied from the charter ([] when the charter doesn't list them)",
+     "item_description": "the {item}, as the charter gives it"},
+    {"makes": "values",
+     "pattern": "(\\w+) form with the fields ([\\w ,'-]+?)\\.?$",
+     "name": "{noun}_form_fields",
+     "description": "the fields of the {word} form this section names, from the charter: {fact}"}
+  ],
+  "routing": {
+    "reuse_min": 0.5,
+    "extend_min": 0.5,
+    "reuse_without_asking": {"same_need": true, "coverage": 1.0},
+    "generator_attempts": 2,
+    "candidates_shown": 3,
+    "rules": [
+      "Code reuses a template without asking you when the same need made it, or when it covers {reuse_without_asking_coverage} of the need; you are asked only when neither holds.",
+      "reuse: the template must be one of the candidates and cover at least {reuse_min} of the need.",
+      "extend: the template must be one of the candidates and cover at least {extend_min} of the need; below that, create a new template instead.",
+      "create: the name must not be the name of a candidate; code never renames a template.",
+      "A reply that breaks a rule is refused and you are asked once more with the reason; after {generator_attempts} refused replies the builder fills the generic template."
+    ]
+  }
+}

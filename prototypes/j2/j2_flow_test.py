@@ -70,6 +70,8 @@ import j2_artifacts  # noqa: E402
 for _k in ("J2_SEND_MODE", *j2.j2_send.SMTP_VARS, "J2_SEND_CAP"):      # .env is never used here: the tests never send a real email
     os.environ.pop(_k, None)
 ATOM = [j2.mock_atom({})]            # a complete work atom for workflows a test registers directly
+# The groups a run's routing decisions are counted in are the forms of artifacts/types.json, read here from the same data
+DOCS, PAGES = j2.j2_types.info("prd")["form"], j2.j2_types.info("website")["form"]
 
 BREW_LAB = ("A one-page website for Brew Lab, a small specialty coffee shop in Indiranagar, Bengaluru. Visitors should "
             "see the menu with prices, the opening hours, and where to find us, and be able to pre-order a coffee for "
@@ -13939,35 +13941,50 @@ def template_library(demo=False):
         assert L.transport(v1) == json.load(open(os.path.join(v1_dir, "schema.json"), encoding="utf-8")), "v1 compiles"
         again, rec2 = L.route(need, {"run": "extend-test-2", "workflow": "W-4", "atom": "W-4.a1"})
         assert rec2["action"] == "reused" and again.version == 2, rec2
-        # (c2) the extend threshold: an "extend" the generator sends for a candidate covering under 0.5 is overruled
-        # to a create, with that coverage as the record's score, in its reason and in the chat line; at 0.5 and above
-        # it stays an extend with the same number
+        # (c2) the extend threshold (templates/library-settings.json, routing.extend_min): an "extend" the generator sends for
+        # a candidate covering under it is REFUSED with the rule, and the generator is asked again. Code never makes it a
+        # create and never renames it: the generator creates under a name of its own (the refusal stays on record), or it
+        # insists and the builder fills the generic template. At the threshold and above it stays an extend, same number.
         keep_cands, gen_req = L.candidates, L.generic("prd", "Requirements")
+        least = L.routing("extend_min")
+        assert least == L.EXTEND_MIN == 0.5 == L.routing("reuse_min") and L.routing("generator_attempts") == 2
         made = []
-        for sc, want in ((0.08, "created"), (0.5, "extended"), (0.8, "extended")):
+        for sc, want in ((0.08, "created"), (0.08, "generic"), (0.5, "extended"), (0.8, "extended")):
             L.candidates = lambda n, sc=sc: [{**c, "score": sc, "fingerprint_match": False}
                                              for c in keep_cands(n) if c["name"] == rs.name][:1]
+            asked = []
             try:
                 cands = L.candidates(need)
                 ref = f"{cands[0]['name']}@{cands[0]['version']}"
                 ext = L.mock_generator(need, gen_req, cands, "extend")
                 assert ext["action"] == "extend" and ext["template"] == ref, ext
-                tX, rX = L.route(need, {"run": "threshold-test", "workflow": "W-4", "atom": "W-4.a1"},
-                                 ask=lambda system, user, mock, schema: json.dumps(ext))
+                own = {"action": "create", "template": None, "reason": "under the least, so a template of its own",
+                       "spec": L.specialise(gen_req, need, name=f"{rs.name} for the trial")}
+
+                def ask(system, user, mock, schema, ext=ext, own=own, want=want, asked=asked):
+                    asked.append(user)
+                    return json.dumps(own if want == "created" and len(asked) > 1 else ext)
+                tX, rX = L.route(need, {"run": "threshold-test", "workflow": "W-4", "atom": "W-4.a1"}, ask=ask)
             finally:
                 L.candidates = keep_cands
             assert rX["action"] == want and rX["score"] == sc, (sc, rX["action"], rX["score"], rX["reason"])
+            assert all(rule in asked[0] for rule in L.routing_rules()) and f"at least {least}" in asked[0], "the generator is told every routing rule"
+            assert "overruled" not in rX and "overruled" not in rX["reason"], rX
             line = j2.template_line("W-4", rX)
+            why = f"the extend of {ref} breaks a rule: it covers {sc} of the need and an extend needs at least {least}"
             if want == "created":
-                assert rX["reason"].startswith(f"overruled: coverage {sc} < 0.5") and rX["overruled"] is True \
-                    and rX["rule"] == "d", rX
-                assert tX.name != rs.name and tX.version == 1 and tX.name.startswith(rs.name), tX.name
-                assert line == f"W-4 template: created {tX.name} v1 ({rX['reason']})", line
+                assert len(asked) == 2 and rX["refused"] and rX["refused"][0].startswith(why) and f"YOUR LAST REPLY WAS REFUSED: {why}" in asked[1], (rX["refused"], asked[1][-300:])
+                assert rX["rule"] == "d" and rX["attempts"] == 2 and tX.name == own["spec"]["name"] and tX.version == 1, "the generator's own name, as it wrote it"
+                assert line == f"W-4 template: created {tX.name} v1 ({rX['covers']})" and rX["reason"] == own["reason"], (line, rX["reason"])
                 made.append(tX)
+            elif want == "generic":
+                assert tX is None and len(asked) == 2 and rX["rule"] == "e" and rX["attempts"] == 2 and len(rX["refused"]) == 2 \
+                    and all(x.startswith(why) for x in rX["refused"]), rX
             else:
-                assert "overruled" not in rX and "overruled" not in rX["reason"] and rX["rule"] == "c", rX
+                assert len(asked) == 1 and not rX["refused"] and rX["rule"] == "c", rX
                 assert tX.name == rs.name and line.startswith(f"W-4 template: extended {rs.name} v") \
                     and f"covers {len(need['facts'])} of {len(need['facts'])} facts" in line, line
+        assert not any(c["name"].startswith(rs.name + " ") and c["name"][-1].isdigit() for c in L.candidates(need)), "no numbered copy of a name is ever made"
         assert len(made) == 1 and L.get(f"{made[0].name}@1", "prd", "Requirements") is not None, "the create is stored"
         # fix 1: the fingerprint includes the sorted needed field names
         fa = L.fingerprint("website", "Section", "boutique", ["f1"], ["form_fields", "elements"])
@@ -14379,11 +14396,12 @@ def reuse_display():
     open(os.path.join(made, "template_calls.jsonl"), "w", encoding="utf-8").write('{"workflow": "W-3"}\n{"workflow": "W-5"}\n\n')
     use = L.run_template_use(made)
     assert use == {"id": "no-such", "name": "A <i>name</i>", "selected": 2, "of": 9, "added_stages": ["website"], "in_library": False, "generator_calls": 2,
-                   "counts": {"documents": {"created": 1, "adapted": 1, "reused": 1, "generic": 0, "total": 3, "from_template": 2},
-                              "pages": {"created": 1, "adapted": 0, "reused": 0, "generic": 1, "total": 2, "from_template": 0}}}, use
+                   "counts": {DOCS: {"created": 1, "adapted": 1, "reused": 1, "generic": 0, "total": 3, "from_template": 2},
+                              PAGES: {"created": 1, "adapted": 0, "reused": 0, "generic": 1, "total": 2, "from_template": 0}},
+                   "scopes": [{"key": DOCS, "label": DOCS.capitalize(), "types": list(dict.fromkeys(d["artifact"] for d in ds if d["artifact"] != "website" and L.decision_group(d)))}, {"key": PAGES, "label": j2.j2_types.info("website")["label"], "types": ["website"]}]}, use
     json.dump({"decisions": ds}, open(os.path.join(made, "templates.json"), "w", encoding="utf-8"))
     assert L.run_template_use(made) is None and L.run_template_use(os.path.join(tmp, "none")) is None, "no run template, nothing to show"
-    assert L.reuse_counts([{k: v for k, v in d.items() if k != "from_template"} for d in ds])["documents"]["from_template"] is None, "not recorded stays not recorded"
+    assert L.reuse_counts([{k: v for k, v in d.items() if k != "from_template"} for d in ds])[DOCS]["from_template"] is None, "not recorded stays not recorded"
     for row in L.run_template_list():      # the committed run templates: every use listed, with the collected run's counts or "not recorded"
         view = L.run_template_view(row["id"])
         assert [u["run"] for u in view["used_by"]] == [u["run"] for u in L.get_run_template(row["id"]).used_by]
@@ -14392,8 +14410,8 @@ def reuse_display():
     live = L.run_template_view("still-point-yoga-prd-hld-and-lld")
     first = next((u for u in (live or {}).get("used_by") or [] if u["run"] == "j2-20261111-211339"), None)
     if first:      # the two live runs of 2026-11-11, collected into library/
-        assert {k: first["counts"]["documents"][k] for k in ("created", "adapted", "reused", "generic")} == {"created": 0, "adapted": 24, "reused": 3, "generic": 0}, first
-        assert {k: first["counts"]["pages"][k] for k in ("created", "adapted", "reused", "generic")} == {"created": 1, "adapted": 0, "reused": 0, "generic": 4}, first
+        assert {k: first["counts"][DOCS][k] for k in ("created", "adapted", "reused", "generic")} == {"created": 0, "adapted": 24, "reused": 3, "generic": 0}, first
+        assert {k: first["counts"][PAGES][k] for k in ("created", "adapted", "reused", "generic")} == {"created": 1, "adapted": 0, "reused": 0, "generic": 4}, first
     page = "skipped (Chrome not found, or --fast without --browser)"
     if not (BROWSER and j2.j2_check.find_chrome()):
         shutil.rmtree(tmp, ignore_errors=True)
@@ -14443,7 +14461,7 @@ def reuse_display():
                  " const press = sel => { const b = pane.querySelector(sel); if (!b) return null; b.focus(); b.click();"
                  "   return {rows: q('#pane-library [data-tplrow]').length, none: q('#pane-library [data-tplnone]').length, search: location.search, pressed: [pressed('data-rtfilter'), pressed('data-rtscope')],"
                  "           focus: document.activeElement === pane.querySelector(sel)}; };"
-                 " r.click = [press('[data-rtscope=\"documents\"]'), press('[data-rtfilter=\"reused\"]'), press('[data-rtfilter=\"all\"]'), press('[data-rtscope=\"all\"]')];"
+                 " r.click = [press('[data-rtscope=\"" + DOCS + "\"]'), press('[data-rtfilter=\"reused\"]'), press('[data-rtfilter=\"all\"]'), press('[data-rtscope=\"all\"]')];"
                  " document.body.setAttribute('data-r', JSON.stringify(r)); })();")
         pages = {"now": open(os.path.join(here, "j2_ui.html"), encoding="utf-8").read()}
         old = subprocess.run(["git", "show", f"{REUSE_UI_CHECKPOINT}:prototypes/j2/j2_ui.html"], cwd=here, capture_output=True, text=True)
@@ -14472,9 +14490,9 @@ def reuse_display():
             for g, c in u["counts"].items():
                 assert all(r["pills"][f"{g}-{k}"][0] == f"{c[k]} {k}" for k in ("created", "adapted", "reused", "generic")), (g, r["pills"])
                 assert (f"{c['from_template']} of {c['total']} from the template" if c["from_template"] else "added, not in template") in r["groups"][g], r["groups"]
-            mark = r["pills"]["documents-created"][1].split()
-            assert ("checks" in mark) == (u["counts"]["documents"]["created"] == 0) and ("waiting_on_you" in mark) == (u["counts"]["documents"]["created"] > 0), mark
-            assert all(set(v[1].split()) == {"mappill"} for k, v in r["pills"].items() if k != "documents-created"), "only the documents' created count stands out"
+            mark = r["pills"][f"{DOCS}-created"][1].split()
+            assert ("checks" in mark) == (u["counts"][DOCS]["created"] == 0) and ("waiting_on_you" in mark) == (u["counts"][DOCS]["created"] > 0), mark
+            assert all(set(v[1].split()) == {"mappill"} for k, v in r["pills"].items() if k != f"{DOCS}-created"), "only the created count of a group the template covers stands out"
             assert r["heads"] == ["Workflow", "Artifact · section", "Action", "Template", "Run template", "From", "Score", "Reason"] and len(r["cells"]) == r["rows"] > 0, r["heads"]
             assert r["sw"][0] <= r["sw"][1], ("no sideways scroll", r["sw"])
             return u, r
@@ -14485,22 +14503,23 @@ def reuse_display():
             """The chips and the scope toggle of a run from a run template: every chip's count is the rows it shows, the choice comes
             from the URL and goes back into it, the pressed ones say so, an empty choice says "none"."""
             rows_ = L.reuse_rows(L.run_templates(run_dir))
-            want = lambda f, sc: [d for d in rows_ if (sc == "all" or d["group"] == {"documents": "documents", "website": "pages"}[sc]) and (f == "all" or d["kind_shown"] == f)]
+            want = lambda f, sc: [d for d in rows_ if (sc == "all" or d["group"] == sc) and (f == "all" or d["kind_shown"] == f)]
             assert first["chips"] == [f"{t} {len(want(k, 'all'))}" for k, t in (("all", "All"), ("created", "Created"), ("adapted", "Adapted"), ("reused", "Reused"), ("generic", "Generic"))], first["chips"]
-            assert first["scopes"] == ["All", "Documents", "Website"] and first["pressed"] == [["all"], ["all"]] and first["rows"] == len(rows_) and not first["none"], (first["scopes"], first["pressed"])
+            assert first["scopes"] == ["All"] + [x["label"] for x in L.run_template_use(run_dir)["scopes"]] and first["pressed"] == [["all"], ["all"]] and first["rows"] == len(rows_) and not first["none"], (first["scopes"], first["pressed"])
             assert first["note"] == ("Adapted = the run template's section template, given this run's facts as a new version. "
                                      "Created = no matching section in the run template."), first["note"]
             c = first["click"]      # Documents, then Reused, then All, then the scope All: the rows, the URL and the pressed buttons follow each click
-            assert [x["rows"] for x in c] == [len(want("all", "documents")), len(want("reused", "documents")), len(want("all", "documents")), len(rows_)], c
-            assert [x["pressed"] for x in c] == [[["all"], ["documents"]], [["reused"], ["documents"]], [["all"], ["documents"]], [["all"], ["all"]]] and all(x["focus"] for x in c), c
-            assert "scope=documents" in c[0]["search"] and "filter=" not in c[0]["search"] and "filter=reused" in c[1]["search"] and "scope=documents" in c[1]["search"], c
+            assert [x["rows"] for x in c] == [len(want("all", DOCS)), len(want("reused", DOCS)), len(want("all", DOCS)), len(rows_)], c
+            assert [x["pressed"] for x in c] == [[["all"], [DOCS]], [["reused"], [DOCS]], [["all"], [DOCS]], [["all"], ["all"]]] and all(x["focus"] for x in c), c
+            assert f"scope={DOCS}" in c[0]["search"] and "filter=" not in c[0]["search"] and "filter=reused" in c[1]["search"] and f"scope={DOCS}" in c[1]["search"], c
             assert "filter=" not in c[3]["search"] and "scope=" not in c[3]["search"] and "tab=library" in c[3]["search"], c[3]["search"]
             out = {}
-            for f, sc in (("adapted", "documents"), ("reused", "documents"), ("created", "documents"), ("generic", "website"), ("all", "website")):
+            for f, sc in (("adapted", DOCS), ("reused", DOCS), ("created", DOCS), ("generic", PAGES), ("all", PAGES)):
                 r = load("now", run_dir, f"&filter={f}&scope={sc}")
-                n = len(want(f, sc))
-                assert r["rows"] == n and r["pressed"] == [[f], [sc]] and r["none"] == ([] if n else ["none"]), (f, sc, r["rows"], n, r["pressed"], r["none"])
-                assert r["chips"][0] == f"All {len(want('all', sc))}" and r["sw"][0] <= r["sw"][1], (r["chips"], r["sw"])
+                eff = sc if sc in {x["key"] for x in L.run_template_use(run_dir)["scopes"]} else "all"      # a group this run has no decision in is not offered: everything
+                n = len(want(f, eff))
+                assert r["rows"] == n and r["pressed"] == [[f], [eff]] and r["none"] == ([] if n else ["none"]), (f, sc, r["rows"], n, r["pressed"], r["none"])
+                assert r["chips"][0] == f"All {len(want('all', eff))}" and r["sw"][0] <= r["sw"][1], (r["chips"], r["sw"])
                 assert f == "all" or set(r["acts"]) <= {{"adapted": "extended"}.get(f, f)}, (f, r["acts"])
                 out[(f, sc)] = n
             bad = load("now", run_dir, "&filter=%3Cb%3E&scope=nothing")      # a value the page does not know: everything, nothing pressed wrongly
@@ -14511,18 +14530,18 @@ def reuse_display():
         if saved:
             u2, r2 = shown(saved)
             assert "Still Point Yoga: PRD, HLD and LLD" in r2["sum"] and "17 of 17 workflows" in r2["sum"] and "added, not in template: website" in r2["sum"], r2["sum"]
-            assert [r2["pills"][f"documents-{k}"][0] for k in ("created", "adapted", "reused")] == ["0 created", "24 adapted", "3 reused"], r2["pills"]
-            assert [r2["pills"][f"pages-{k}"][0] for k in ("created", "generic")] == ["1 created", "4 generic"] and "added, not in template" in r2["groups"]["pages"], r2["pills"]
-            assert "27 of 27 from the template" in r2["groups"]["documents"] and r2["gen"] == "Generator calls: 8", (r2["groups"], r2["gen"])
+            assert [r2["pills"][f"{DOCS}-{k}"][0] for k in ("created", "adapted", "reused")] == ["0 created", "24 adapted", "3 reused"], r2["pills"]
+            assert [r2["pills"][f"{PAGES}-{k}"][0] for k in ("created", "generic")] == ["1 created", "4 generic"] and "added, not in template" in r2["groups"][PAGES], r2["pills"]
+            assert "27 of 27 from the template" in r2["groups"][DOCS] and r2["gen"] == "Generator calls: 8", (r2["groups"], r2["gen"])
             assert r2["cells"].count("added, not in template") == 5 and "" in r2["cells"], "the five website rows; the style guide row says nothing"
             f2, all2 = filters(saved, r2)
-            assert (f2[("adapted", "documents")], f2[("reused", "documents")], f2[("created", "documents")]) == (24, 3, 0) and all2 == r2["rows"] == 33, (f2, all2)
+            assert (f2[("adapted", DOCS)], f2[("reused", DOCS)], f2[("created", DOCS)]) == (24, 3, 0) and all2 == r2["rows"] == 33, (f2, all2)
             live_note = ("j2-20261111-211339: 0 created, 24 adapted, 3 reused for the documents, 1 created and 4 generic for the website (added, not in template), 8 generator calls; "
                          f"its filters: Adapted + Documents 24 rows, Reused + Documents 3, Created + Documents none, All {all2} rows")
         p1 = load("now", plain.dir)
         assert p1["sum"] is None and p1["gen"] is None and not p1["cells"] and not p1["pills"] and p1["rows"] > 0, p1
         assert not p1["chips"] and not p1["scopes"] and p1["note"] is None and not p1["none"], "a run without a run template has no filters"
-        p2 = load("now", plain.dir, "&filter=created&scope=website")
+        p2 = load("now", plain.dir, "&filter=created&scope=" + PAGES)
         assert p2["rows"] == p1["rows"] and p2["html"] == p1["html"] and not p2["chips"], "and a filter in its URL changes nothing"
         assert p1["heads"] == ["Workflow", "Artifact · section", "Action", "Template", "From", "Score", "Reason"] and p1["before"] == "H3|TABLE", (p1["heads"], p1["before"])
         same = "checkpoint not in this clone"
@@ -14553,6 +14572,407 @@ PILATES_DOCS = (YOGA_BRIEF.replace("Still Point Yoga", "Flow Pilates").replace("
                 .replace("stillpoint", "flowpilates").replace("and then build the website for", "for")
                 .replace(" The documents and the website must agree with each other.", ""))
 LAW_PRD = "Write a PRD for Hale Legal, a law firm." + CAMPUS
+
+
+def library_cleanup():
+    """The library decides nothing by a type, form, section, business or word in code:
+    (a) a routing decision's group is its type's form as artifacts/types.json has it, for any type (a record's too); an artifact
+        that is no type has none; the scope buttons come from the same data;
+    (b) the word list, the fact shapes and the routing numbers are templates/library-settings.json's, and the generator reads the
+        routing rules in its prompt;
+    (c) two business types are the same only when the charters recorded the same one (no shared word counts);
+    (d) the agent views pick their types from the templates and the types file, and the checked-in text of the library's own
+        files names no form."""
+    import j2_agent_views as V
+    import j2_template_lib as L
+    import j2_types
+    data = json.load(open(os.path.join(j2.HERE, "artifacts", "types.json"), encoding="utf-8"))
+    for t in data["types"]:      # (a) every entry of the types file has a group, read from the file
+        assert L.decision_group({"artifact": t["name"]}) == (t.get("group") or t["form"]), t["name"]
+    assert L.decision_group({"artifact": j2_types.style_guide()}) is None and L.decision_group({"artifact": "no_such_type"}) is None
+    builtin = [t for t in data["types"] if t.get("kind") == "type"]      # the file's types: the local store (runs' new types) varies by machine
+    assert {L.decision_group({"artifact": t["name"]}) for t in builtin} == {t.get("group") or t["form"] for t in builtin}
+    decs = [{"artifact": "website"}, {"artifact": "hld"}, {"artifact": "prd"}, {"artifact": j2_types.style_guide()}]
+    sc = L.decision_scopes(decs)
+    assert sc == [{"key": DOCS, "label": DOCS.capitalize(), "types": ["hld", "prd"]}, {"key": PAGES, "label": j2_types.info("website")["label"], "types": ["website"]}], sc
+    assert L.decision_scopes([{"artifact": "prd"}])[0]["label"] == j2_types.info("prd")["label"], "one type in a group: its own label"
+    # (b) the settings file is the only place the numbers and words live
+    st = json.load(open(L.SETTINGS_PATH, encoding="utf-8"))
+    assert st["schema"] == "library-settings/1" and L.settings() == st and L.routing("extend_min") == st["routing"]["extend_min"]
+    assert L.words("The page shows every class") == {"class"} and "page" in st["stop_words"], L.words("The page shows every class")
+    src = open(os.path.join(j2.HERE, "j2_template_lib.py"), encoding="utf-8").read()
+    for gone in ("LIST_EACH", "LIST_FIELDS", "STOP = {", "each with (", "form with the fields (", "< 0.5", "documents\" if", "\"pages\""):
+        assert gone not in src, f"{gone!r} is still in j2_template_lib.py"
+    ff = L.fact_fields(["Classes, each with day, time and price", "Booking form with the fields name, email and class.", "No pattern here"])
+    assert [(f.name, f.type, f.enum) for f, _ in ff] == [("classes", "list[ClassesItem]", None), ("booking_form_fields", "list[string]", ["name", "email", "class"])], ff
+    assert [x.name for x in ff[0][1][0].fields] == ["day", "time", "price"]
+    need = L.make_need("prd", "Requirements", "yoga studio", ["Classes, each with day, time and price"], "Calm")
+    prompt = L._prompt(need, L.generic("prd", "Requirements"), [], "create", None)
+    assert all(r in prompt for r in L.routing_rules()) and len(L.routing_rules()) == len(st["routing"]["rules"]) and "{" not in " ".join(L.routing_rules())
+    assert "code never renames a template" in prompt and "the choice is yours" in prompt
+    # (c) the business type is compared whole
+    assert L._same_business("Yoga studio", "yoga  Studio") == 2 and L._same_business("pilates studio", "yoga studio") == 0
+    assert all(L._same_business(x, x) == 0 for x in st["no_business_type"] + list(j2_types.names()))
+    # (d) the agent views: types by their templates
+    assert V.doc_kinds() == tuple(n for n in j2_types.names() if len(j2_types.sections(n)) > 1 or j2_types.document(n))
+    assert V.repeating_kinds() == tuple(n for n in j2_types.names() if len(j2_types.sections(n)) == 1 and not j2_types.document(n))
+    assert set(V.doc_kinds()) | set(V.repeating_kinds()) == {n for n in j2_types.names() if j2_types.sections(n)} and V.style_guides() == (j2_types.style_guide(),)
+    vsrc = open(os.path.join(j2.HERE, "j2_agent_views.py"), encoding="utf-8").read()
+    assert '== "document"' not in vsrc and "page_type()" not in vsrc and 'sid == "style"' not in vsrc and '"site/sections' not in vsrc
+    ui = open(os.path.join(j2.HERE, "j2_ui.html"), encoding="utf-8").read()
+    assert "RTSCOPES" not in ui and 'part("documents"' not in ui and "<th>Documents</th><th>Website</th>" not in ui
+    print("library cleanup: a decision's group and the scope buttons come from artifacts/types.json (every entry has a group); the word "
+          "list, fact shapes and routing numbers are templates/library-settings.json's and the generator reads the rules; a business "
+          "type is compared whole; the agent views read templates and types, not form names: OK")
+
+
+def folder_reuse():
+    """A run whose output is a folder of files is saved as a run template, and a second mock run reuses it. The first run is
+    fixtures/folder-run (a copy-files script, its test and a README, written by one workflow into script/; its type is recorded
+    by the run itself, in artifacts.json, not by artifacts/types.json). The run template holds the folder's structure only (the
+    names of its files and its test). The second run, for another business, finds the template by match, writes the same files
+    (the mock builder), its test passes, and its Library tab counts one folder reused from the template."""
+    import subprocess
+    import j2_template_lib as L
+    src = os.path.join(j2.HERE, "fixtures", "folder-run", "j2-20261113-090000")
+    files = ["README.md", "copy_files.py", "test_copy_files.py"]
+    tmp = tempfile.mkdtemp(prefix="j2-folder-")
+    keep = os.environ.get("J2_LIBRARY_DIR")
+    os.environ["J2_LIBRARY_DIR"] = os.path.join(tmp, "library")
+    put = lambda d, n, o: json.dump(o, open(os.path.join(d, n), "w", encoding="utf-8"), indent=2)
+    try:
+        t = L.type_data("script", src)
+        assert L.type_data("script") is None and t["form"] == "script" and t["label"] == "Script", "the run's own record names the type"
+        assert L.folder_of(t) == "script" and L.folder_of(L.type_data("prd")) is None and L.folder_of({"folder": "../x"}) is None
+        assert L.folder_files(src, "script") == files and L.decision_group({"artifact": "script"}, src) == "script"
+        # 1. saved as a run template
+        rt = L.run_template_from_run(src)
+        assert rt.stages == ["script"] and len(rt.workflows) == 1 and rt.workflows[0].artifact == "script" and rt.mock is True, rt
+        assert rt.outputs == {"script": {"folder": "script", "files": files, "test": "test_copy_files.py"}}, rt.outputs
+        goal = json.load(open(os.path.join(src, "goal.json"), encoding="utf-8"))
+        body = json.dumps([w.model_dump() for w in rt.workflows] + [rt.outputs, rt.facts_slots])
+        assert not [f for f in goal["facts"] if f in body], "structure only: no fact of the first business in its workflows or outputs"
+        L.save_run_template(rt)
+        d = L.run_template_dir(rt.id)
+        got = L.get_run_template(rt.id)
+        assert got.outputs == rt.outputs and "outputs" in json.load(open(os.path.join(d, "schema.json"), encoding="utf-8"))["properties"]
+        assert [r["id"] for r in L.run_template_list()] == [rt.id] and L.run_template_view(rt.id)["stage_labels"] == {"script": "script"}
+        for bad in ({"script": {"files": []}}, {"script": {"files": ["../x.py"]}}, {"prd": {"files": ["a"]}}):
+            try:
+                L.RunTemplate.model_validate({**rt.model_dump(by_alias=True), "outputs": bad})
+                raise AssertionError(f"outputs {bad} must be refused")
+            except ValueError:
+                pass
+        # 2. a second mock run, for another business, with no template named: the match finds it
+        brief = "Write a script for Harbor Clinic, a dental clinic, that copies every file from intake to records."
+        dw = ["copy_files.py copies every file from intake to records, keeping sub-folders", "test_copy_files.py is in the folder", "Its test passes"]
+        scores = L.match_run_templates(["script"], brief, dw)
+        assert scores[0]["id"] == rt.id and scores[0]["eligible"] and scores[0]["score"] >= L.AUTO_MIN, scores
+        picked = L.get_run_template(scores[0]["id"])
+        plan = picked.outputs["script"]
+        rid2 = "j2-20261113-100000"
+        run2 = os.path.join(tmp, "runs", rid2)
+        os.makedirs(os.path.join(run2, plan["folder"]))
+        for f in plan["files"]:      # the mock builder: each file the template names, written for this business
+            text = open(os.path.join(src, "script", f), encoding="utf-8").read().replace(goal["site_name"], "Harbor Clinic")
+            open(os.path.join(run2, plan["folder"], f), "w", encoding="utf-8").write(text)
+        ran = subprocess.run([sys.executable, "-B", plan["test"]], cwd=os.path.join(run2, plan["folder"]), capture_output=True, text=True, timeout=60)
+        assert ran.returncode == 0 and ran.stdout.strip() == "ok", (ran.returncode, ran.stdout, ran.stderr)
+        assert goal["site_name"] not in open(os.path.join(run2, "script", "README.md"), encoding="utf-8").read()
+        put(run2, "goal.json", {**goal, "site_name": "Harbor Clinic", "product_name": "Harbor Clinic", "business_type": "dental clinic",
+                                "facts": ["Harbor Clinic", "intake", "records"], "done_when": dw, "statement": brief})
+        put(run2, "workflows.json", [{"id": "W-1", "name": "Harbor Clinic file copier", "covers_text": dw, "outputs": [plan["folder"] + "/"],
+                                      "status": "done", "dependencies": [], "fixes": [], "revises": None}])
+        put(run2, "artifacts.json", {"rows": [{**L.type_data("script", src), "type": "script", "name": "Script"}]})
+        open(os.path.join(run2, "chat.jsonl"), "w", encoding="utf-8").write(json.dumps({"meta": True, "mock": True, "provider": "mock", "model": "mock"}) + "\n")
+        dec = L.folder_decision(picked, "script", L.folder_files(run2, plan["folder"]), {"run": rid2, "workflow": "W-1", "atom": "W-1.a1"})
+        assert (dec["action"], dec["kind"], dec["from_template"], dec["score"], dec["template"]) == ("reused", "run-template", True, 1.0, rt.name), dec
+        put(run2, "templates.json", {"schema": L.SCHEMA, "decisions": [dec],
+                                     "run_template": {"id": picked.id, "name": picked.name, "selected": ["W-1"], "of": 1, "added_stages": [],
+                                                      "auto": True, "match": scores[0]["score"]}})
+        L.mark_run_template_used(picked.id, {"run": rid2, "workflows": 1, "of": 1})
+        use = L.run_template_use(run2)
+        assert use["id"] == rt.id and use["in_library"] and use["auto"] is True and use["generator_calls"] == 0, use
+        assert use["counts"] == {"script": {"created": 0, "adapted": 0, "reused": 1, "generic": 0, "total": 1, "from_template": 1}}, use["counts"]
+        assert use["scopes"] == [{"key": "script", "label": "Script", "types": ["script"]}], use["scopes"]
+        row = L.reuse_rows(L.run_templates(run2), run2)[0]
+        assert (row["group"], row["kind_shown"], row["source"]) == ("script", "reused", "from library"), row
+        assert L.get_run_template(rt.id).used_by == [{"run": rid2, "workflows": 1, "of": 1}]
+        # more files than the template: adapted; one left out: created; no folder in the template: created
+        more = L.folder_decision(picked, "script", files + ["notes.md"], {})
+        less = L.folder_decision(picked, "script", files[:2], {})
+        assert (more["action"], L.decision_kind(more), more["from_template"]) == ("extended", "adapted", True) and "notes.md added" in more["reason"], more
+        assert (less["action"], less["from_template"]) == ("created", False) and "test_copy_files.py" in less["reason"], less
+        assert L.folder_decision(picked, "prd", ["a.md"], {})["action"] == "created"
+        # the second run bundles to the same structure, under its own name
+        rt2 = L.run_template_from_run(run2)
+        assert rt2.outputs == rt.outputs and rt2.id != rt.id and "Harbor Clinic" in rt2.name and rt2.business_type == "dental clinic", rt2
+        # a run whose output is one file has no folder entry: the committed run templates read as before
+        os.environ.pop("J2_LIBRARY_DIR")
+        assert all(L.get_run_template(r["id"]).outputs == {} for r in L.run_template_list()), "no stored run template has a folder"
+    finally:
+        os.environ.pop("J2_LIBRARY_DIR", None)
+        if keep is not None:
+            os.environ["J2_LIBRARY_DIR"] = keep
+        shutil.rmtree(tmp, ignore_errors=True)
+    print(f"folder reuse: the fixture run's folder ({', '.join(files)}) is saved as run template {rt.id}; a second mock run for another "
+          f"business finds it (match {scores[0]['score']:.2f}), writes the same files, its test passes, and its Library tab counts "
+          "1 reused from the template: OK")
+
+
+def sutra_library():
+    """The Sutra library: one real copy with a link to it, and two shelves on /library.
+    (a) location: library at the top of the repo is a link to prototypes/j2/library; both paths give the same files, sha for sha,
+        and nothing in the library changes while the shelves are read;
+    (b) Shelf 1, Artifacts: one entry per whole artifact a run produced, read from the runs folder; a folder of files shows too
+        (its files in Human-readable, files.json in Agent-readable); sections nest inside their artifact;
+    (c) Shelf 2, Artifact templates: the run templates, then every type with its sections nested under it, the generic skeleton
+        first, then the variants; no business value any run's charter recorded is on it; every artifact links to templates that
+        exist and that list it back;
+    (d) find_artifact and find_template give candidates with reasons, artifacts first;
+    (e) the page (--browser): /library?view=artifacts and ?view=templates, one three-tab view per item, ?run= marks what a run
+        produced or used, a section template's old link still opens."""
+    import html as htmllib
+    import socket
+    import subprocess
+    import threading
+    import j2_server
+    import j2_template_lib as L
+    import j2_types
+    here = j2.HERE
+    RUNS_ENV = os.environ.get("J2_RUNS_DIR")
+    repo = os.path.dirname(os.path.dirname(here))
+    real = os.path.join(here, "library")
+
+    def tree(root):
+        rows = []
+        for d, _, files in os.walk(root):
+            rows += [(os.path.relpath(os.path.join(d, f), root), hashlib.sha256(open(os.path.join(d, f), "rb").read()).hexdigest()) for f in files if f != ".DS_Store"]
+        return hashlib.sha256(json.dumps(sorted(rows)).encode()).hexdigest(), len(rows)
+    # (a) one copy, two paths
+    link = os.path.join(repo, "library")
+    assert os.path.islink(link) and os.readlink(link) == "prototypes/j2/library" and os.path.realpath(link) == os.path.realpath(real), "library is a link to prototypes/j2/library"
+    before = tree(real)
+    assert tree(link + os.sep) == before and before[1] > 0, "the same files, sha for sha, through both paths"
+    mode = subprocess.run(["git", "ls-files", "-s", "library"], cwd=repo, capture_output=True, text=True).stdout.split()
+    assert not mode or mode[0] == "120000", ("git keeps the link as a link, not a copy", mode)
+    # (b) Shelf 1 on the test's own runs folder: the folder fixture, and a second run that reused its run template
+    src = os.path.join(here, "fixtures", "folder-run", "j2-20261113-090000")
+    tmp = tempfile.mkdtemp(prefix="j2-shelf-")
+    runs = os.path.join(tmp, "runs")
+    keep = os.environ.get("J2_LIBRARY_DIR")
+    put = lambda d, n, o: json.dump(o, open(os.path.join(d, n), "w", encoding="utf-8"), indent=2)
+    page = "skipped (Chrome not found, or --fast without --browser)"
+    try:
+        os.environ["J2_LIBRARY_DIR"] = os.path.join(tmp, "library")
+        rid1, rid2 = "j2-20261113-090000", "j2-20261113-100000"
+        shutil.copytree(src, os.path.join(runs, rid1))
+        rt = L.save_run_template(L.run_template_from_run(os.path.join(runs, rid1)))
+        run2 = os.path.join(runs, rid2)
+        shutil.copytree(os.path.join(src, "script"), os.path.join(run2, "script"))
+        goal1 = json.load(open(os.path.join(src, "goal.json"), encoding="utf-8"))
+        put(run2, "goal.json", {**goal1, "site_name": "Harbor Clinic", "product_name": "Harbor Clinic", "business_type": "dental clinic", "facts": ["Harbor Clinic", "intake-desk", "records-room"]})
+        put(run2, "workflows.json", [{"id": "W-1", "name": "Harbor Clinic file copier", "covers_text": [], "outputs": ["script/"], "status": "done", "dependencies": [], "fixes": [], "revises": None}])
+        put(run2, "artifacts.json", {"rows": [{**L.type_data("script", src), "type": "script", "name": "Script", "workflows": ["W-1"]}]})
+        put(run2, "templates.json", {"schema": L.SCHEMA, "run_template": {"id": rt.id, "name": rt.name, "selected": ["W-1"], "of": 1, "added_stages": []},
+                                     "decisions": [L.folder_decision(rt, "script", L.folder_files(run2, "script"), {"run": rid2, "workflow": "W-1", "atom": "W-1.a1"})]})
+        s1 = L.shelf_artifacts(rid2, runs)
+        assert [a["id"] for a in s1["artifacts"]] == [f"{rid2}/script", f"{rid1}/script"] and [a["highlight"] for a in s1["artifacts"]] == [True, False], s1["artifacts"]
+        second, first = s1["artifacts"]
+        assert first["files"] == ["README.md", "copy_files.py", "test_copy_files.py"] and first["preview"] == "folder" and first["label"] == "Script" and first["mock"] is True, first
+        assert first["made_from"] is None and first["run_template"] is None and first["checks"]["conditions"] == {"met": 3, "of": 3} and first["checks"]["done_when"] == {"passed": 5, "of": 5}, first
+        assert second["run_template"] == {"id": rt.id, "name": rt.name, "key": f"rt/{rt.id}", "auto": False} and second["business"] == "Harbor Clinic", second
+        v1 = L.artifact_view(first["id"], runs)
+        assert v1["human"]["format"] == "files" and [f["path"] for f in v1["human"]["files"]] == first["files"] and "def copy_files(src, dst)" in v1["human"]["files"][1]["text"], v1["human"]["format"]
+        listing = json.loads(v1["agent"][0]["text"])
+        assert v1["agent"][0]["name"] == "files.json" and [f["path"] for f in listing["files"]] == first["files"] and all(len(f["sha256"]) == 64 for f in listing["files"]), listing
+        os.environ["J2_RUNS_DIR"] = runs      # what the page is given: /api/catalog, /api/run-template and /api/library/<key> carry the shelves
+        try:
+            cat = L.catalog_view()
+            assert [a["id"] for a in cat["artifacts"]] == [second["id"], first["id"]] and cat["artifacts"][1]["listing"] == listing and cat["artifacts"][1]["data_file"] is None, cat["artifacts"]
+            assert cat["shelf"]["schema"] == "shelf/1" and [r_["id"] for r_ in cat["shelf"]["run_templates"]] == [rt.id] and {"groups", "runs", "run_templates"} <= set(cat), "the catalog keeps what it had"
+            assert L.run_template_view(rt.id)["shelf"]["summary"]["outputs"][0]["id"] == second["id"] and L.template_view("prd", "problem", "generic", 1)["shelf"]["summary"]["key"] == "prd/problem/generic/v1"
+        finally:
+            os.environ.pop("J2_RUNS_DIR", None)
+            if os.environ.get("J2_RUNS_DIR") is None and RUNS_ENV is not None:
+                os.environ["J2_RUNS_DIR"] = RUNS_ENV
+        assert L.artifact_view("j2-20261113-090000/prd", runs) is None and L.artifact_view("../x/script", runs) is None and L.shelf_view({"artifact": "nope"}, runs) is None
+        sk = L.run_template_skeleton(rt.id, runs)
+        assert [o["id"] for o in sk["summary"]["outputs"]] == [second["id"]], "the run template lists the artifact made from it, and that artifact names the run template"
+        assert sk["human"]["skeleton"]["outputs"] == rt.outputs and sk["summary"]["name"] == "<site name>: Script", sk["summary"]["name"]
+        shelf2 = json.dumps([L.shelf_templates(rid2, runs), sk], ensure_ascii=False)
+        assert "Northwind" not in shelf2 and "Harbor Clinic" not in shelf2 and "scans-inbox" not in shelf2, "no business value of either run on Shelf 2"
+        t2 = L.shelf_templates(rid2, runs)
+        assert [(r_["id"], r_["highlight"], r_["outputs"]) for r_ in t2["run_templates"]] == [(rt.id, "used", 1)], t2["run_templates"]
+        assert L.shelf_templates(rid1, runs)["run_templates"][0]["highlight"] == "made"
+        # (c) Shelf 2's shape, from the types file and the templates: every type, its sections nested, the generic one first
+        assert [t["type"] for t in t2["types"]] == list(L.artifacts()) and all(t["label"] == (j2_types.info(t["type"])["label"] if t["type"] in j2_types.names() else t["label"]) for t in t2["types"])
+        for t in t2["types"]:
+            assert [x["section"] for x in t["sections"]] == list(L.generic_sections(t["type"])) and all(x["generic"]["key"] == L.template_key(t["type"], x["section"]) for x in t["sections"]), t["type"]
+        prd = next(t for t in t2["types"] if t["type"] == "prd")
+        assert [x["section"] for x in prd["sections"]] == list(L.generic_sections("prd")) and prd["label"] == "Product requirements", "PRD -> Problem, Users, Goals, ...: sections under their type, never a flat list"
+        g = L.template_skeleton("prd/problem/generic/v1", runs)
+        assert g["summary"]["kind"] == "generic" and g["agent"][0]["name"] == "skeleton.json" and g["human"]["format"] == "fields" and g["human"]["skeleton"]["fields"], g["summary"]
+        assert L.template_skeleton("prd/problem/no-such/v1", runs) is None and L.shelf_view({"template": "../../etc/passwd"}, runs) is None
+        # slots: a charter value is replaced whole, the longest first, once; a slot's own name is never cut
+        slots = L.charter_slots(os.path.join(runs, rid1))
+        assert slots[0] == ("Northwind Archive", "site name") and ("records archive", "business type") in slots and ("scans-inbox", "fact 1") in slots, slots
+        assert L.with_slots("Northwind Archive copies scans-inbox; 1scans-inbox9 stays; <site name> stays", slots) == "<site name> copies <fact 1>; 1scans-inbox9 stays; <site name> stays"
+        spec = {"name": "Northwind Archive Files", "version": 2, "kind": "specialised", "artifact": "prd", "section": "Problem", "description": "Files of Northwind Archive",
+                "fields": [{"name": "folders", "type": "list[string]", "required": True, "description": "from scans-inbox", "enum": ["scans-inbox", "scans-shelf"]}],
+                "objects": [], "rules": [{"rule": "enum", "path": "folders", "values": ["scans-inbox"]}], "context": {"facts_used": ["scans-inbox", "scans-shelf"]}}
+        sk2 = L.skeleton(spec, slots)
+        assert sk2["name"] == "<site name> Files" and sk2["fields"][0]["enum"] == ["<folders>"] and sk2["fields"][0]["description"] == "from <fact 1>" \
+            and sk2["rules"][0]["values"] == ["<folders>"] and sk2["facts"] == "<2 facts of the business>" and "scans" not in json.dumps(sk2), sk2
+        # (d) the reuse order: artifacts first, then templates, each with reasons
+        need = {"artifact": "script", "business_type": "dental clinic", "site": "Harbor Clinic", "text": "copy every file from one folder to another, keeping sub-folders"}
+        found = L.find(need, runs)
+        assert found["order"] == ["artifact", "template"] and [c["ref"] for c in found["artifacts"]] == [second["id"], first["id"]], found["artifacts"]
+        assert found["artifacts"][0]["score"] > found["artifacts"][1]["score"] and "the same business" in found["artifacts"][0]["reasons"] and all(c["reasons"] and c["kind"] == "artifact" for c in found["artifacts"])
+        assert [(c["kind"], c["ref"]) for c in found["templates"]] == [("run-template", rt.id)] and found["templates"][0]["reasons"], found["templates"]
+        sec = L.find_template({"artifact": "prd", "section": "Problem", "business_type": "dental clinic", "facts": ["Harbor Clinic"], "site": "Harbor Clinic"}, runs)
+        assert sec[-1]["key"] == "prd/problem/generic/v1" and sec[-1]["score"] == 0.0 and L.find_artifact({"artifact": "prd"}, runs) == [], sec
+        doc = open(os.path.join(here, "docs", "library-reuse-order.md"), encoding="utf-8").read()
+        assert "find_artifact(need)" in doc and "find_template(need)" in doc and "Sankalp" in doc and "Rubak" in doc
+        # the committed library and the saved runs on this computer (when there are any)
+        os.environ.pop("J2_LIBRARY_DIR")
+        live = "no saved runs here: the committed library alone"
+        saved = os.path.join(here, "runs")      # the saved runs beside the code (the tests' own J2_RUNS_DIR is a temp folder)
+        arts = L.shelf_artifacts(None, saved)["artifacts"]
+        tp = L.shelf_templates(None, saved)
+        keys = [x["generic"]["key"] for t in tp["types"] for x in t["sections"]] + [v["key"] for t in tp["types"] for x in t["sections"] for v in x["variants"]]
+        assert len(keys) == len(set(keys)) and len(keys) - sum(len(t["sections"]) for t in tp["types"]) == sum(len(e["versions"]) for e in L.index()["templates"]), "every stored version is on the shelf once, under its type and section"
+        views = {k: L.template_skeleton(k, saved) for k in keys}
+        rts = {r_["id"]: L.run_template_skeleton(r_["id"], saved) for r_ in tp["run_templates"]}
+        assert all(views.values()) and all(rts.values()) and all(set(v) >= {"summary", "agent", "human"} for v in list(views.values()) + list(rts.values())), "every template opens, with its three views"
+        # no business value: every value any run's charter or any stored version recorded, except the words the generic layer itself uses
+        structure = L._structure_words()
+        values = {v.lower() for d in L._run_dirs(saved) for v, _ in L.charter_slots(d)} | {str((v.get("business") or {}).get("name") or "").lower() for e in L.index()["templates"] for v in e["versions"]}
+        values = {v for v, _ in L._business_only([(v, "") for v in values if len(v) >= 3], structure)}
+        def shown_(o):      # every text the shelf shows. Not shown as text: a template's address (the folder it is stored in), and the names of slots
+            if isinstance(o, dict):
+                if str(o.get("name", "")).endswith(".json") and isinstance(o.get("text"), str):
+                    return shown_(json.loads(o["text"]))
+                return " | ".join(shown_(v) for k, v in o.items() if k not in ("key", "generic_key", "template_key", "id", "facts_slots"))
+            return " | ".join(shown_(v) for v in o) if isinstance(o, list) else str(o)
+        text = re.sub(r"<[A-Za-z0-9 ]+>", " ", shown_([tp, list(views.values()), list(rts.values())])).lower()
+        leaked = sorted(v for v in values if v in text and re.search(r"(?<![a-z0-9])" + re.escape(v) + r"(?![a-z0-9])", text))
+        assert not leaked, ("a business value is on Shelf 2", leaked[:10])
+        assert all(v["agent"][0]["name"] == "skeleton.json" and "sha" not in json.loads(v["agent"][0]["text"]) for v in views.values()), "the skeleton, never the stored files"
+        if arts:      # every artifact links to templates that exist and that list it back
+            outs = L.outputs_by_template(arts)
+            n_links = 0
+            for a in arts:
+                for key in [x["key"] for x in (a["made_from"],) if x] + [x["template"]["key"] for x in a["sections"] if x["template"]["in_library"]]:
+                    assert key in views and a["id"] in [o["id"] for o in views[key]["summary"]["outputs"]], (a["id"], key)
+                    n_links += 1
+                if a["run_template"]:
+                    assert a["id"] in [o["id"] for o in rts[a["run_template"]["id"]]["summary"]["outputs"]], a["id"]
+                assert a["made_from"] is not None or a["type"] not in L.artifacts(), (a["id"], "a type with a template names the whole artifact's template")
+            assert all(o["id"] in {a["id"] for a in arts} for rows_ in outs.values() for o in rows_)
+            live = f"{len(arts)} artifacts of {len({a['run'] for a in arts})} saved runs, {n_links} links to templates and back, {len(values)} business values checked"
+        marked = "j2-20261111-211339"
+        if any(a["run"] == marked for a in arts):
+            m = L.shelf_templates(marked, saved)
+            mprd = next(t for t in m["types"] if t["type"] == "prd")
+            made = [v for x in mprd["sections"] for v in x["variants"] if v["highlight"] == "made"]
+            assert len(made) == sum(1 for e in L.index()["templates"] if e["artifact"] == "prd" for v in e["versions"] if (v.get("made_by") or {}).get("run") == marked) > 0, made
+            assert all(v["outputs"] >= 1 and v["name"].startswith("<site name>") for v in made) and mprd["sections"][-1]["generic"]["highlight"] == "used", "that run's own templates are marked, each with its outputs"
+            assert [a["highlight"] for a in L.shelf_artifacts(marked, saved)["artifacts"]] == [a["run"] == marked for a in arts]
+        assert tree(real) == before, "reading the shelves changes nothing in library/"
+        # (e) the page
+        chrome = j2.j2_check.find_chrome() if BROWSER else None
+        if chrome:
+            os.environ["J2_LIBRARY_DIR"] = os.path.join(tmp, "library")
+            ui = open(os.path.join(here, "j2_ui.html"), encoding="utf-8").read()
+            steps = ("(async () => { const wait = ms => new Promise(r => setTimeout(r, ms)), q = s => [...document.querySelectorAll(s)], r = {}, at = (el, a) => el ? el.getAttribute(a) : null; await wait(3500);"
+                     " r.tabs = q('[data-catview]').map(x => x.textContent.trim()); r.cur = (document.querySelector('[data-catview][aria-selected=true]') || {}).textContent;"
+                     " const list = document.querySelector('.aglist'); r.list = list ? [...list.children].map(x => x.classList.contains('shelfhead') ? 'H:' + x.dataset.shelfhead : 'R:' + x.dataset.catrow + (x.dataset.hl ? '*' + x.dataset.hl : '')) : [];"
+                     " r.on = at(document.querySelector('.aglist .agrow.on'), 'data-catrow'); r.path = (document.querySelector('[data-shelfpath], [data-shelftitle], [data-rtname]') || {}).textContent || '';"
+                     " r.views = q('[data-shelfview]').map(x => [x.dataset.shelfview, [...x.querySelectorAll('[data-shelftab]')].map(b => b.textContent), at(x.querySelector('[data-shelftab][aria-selected=true]'), 'data-shelftab')]);"
+                     " r.items = q('[data-shelfrow]').map(x => [x.dataset.shelfrow, x.dataset.hl || '']); r.groups = q('[data-shelfgroup]').map(x => x.dataset.shelfgroup);"
+                     " r.made = q('[data-shelfmade]').map(x => [x.dataset.shelfmade, x.textContent, at(x.querySelector('a'), 'href')]); r.secs = q('[data-shelfsec]').map(x => [x.dataset.shelfsec, at(x.querySelector('a'), 'href')]);"
+                     " r.outs = q('[data-shelfouts] a').map(x => x.getAttribute('href')); r.files = q('[data-shelffile]').map(x => [x.dataset.shelffile, x.querySelector('pre').textContent]); r.paths = q('[data-shelffilepath]').map(x => x.dataset.shelffilepath);"
+                     " r.human = at(document.querySelector('[data-shelfhuman]'), 'data-shelfhuman'); r.skeleton = at(document.querySelector('[data-shelfskeleton]'), 'data-shelfskeleton'); r.marks = q('[data-shelfmark]').map(x => x.dataset.shelfmark);"
+                     " r.old = q('#pane-catalog #tplviewer, #pane-catalog [data-tplmode], #pane-catalog [data-tplopen]').length; r.text = document.getElementById('pane-catalog').innerText; r.search = location.search;"
+                     " r.bundle = q('[data-shelfbundle] [data-rtstage]').length; r.use = at(document.querySelector('[data-rtuse=all]'), 'href'); r.title = document.getElementById('wtitle').textContent; r.sw = [document.documentElement.scrollWidth, innerWidth];"
+                     " document.body.setAttribute('data-r', JSON.stringify(r)); })();")
+            port = socket.socket(); port.bind(("127.0.0.1", 0)); p_ = port.getsockname()[1]; port.close()
+            web = tempfile.mkdtemp(prefix="j2-shelf-page-")
+            os.symlink(os.path.join(here, "vendor"), os.path.join(web, "vendor"))
+            open(os.path.join(web, "j2_ui.html"), "w", encoding="utf-8").write(ui.replace("</body>", f"<script>setTimeout(() => {{ {steps} }}, 500)</script></body>"))
+            keep_here, keep_run, keep_runs, keep_env = j2_server.HERE, j2_server.RUN, j2.RUNS_DIR, os.environ.get("J2_RUNS_DIR")
+            j2_server.HERE, j2_server.RUN = web, j2.J2Run()
+            srv = j2_server.http.server.ThreadingHTTPServer(("127.0.0.1", p_), j2_server.Handler)
+            threading.Thread(target=srv.serve_forever, daemon=True).start()
+            prof = tempfile.mkdtemp(prefix="j2-shelfprof-")
+
+            def load(path):
+                dom = chrome_dom([chrome, "--headless=new", "--disable-gpu", f"--user-data-dir={prof}", "--no-first-run", "--window-size=1440,900",
+                                  "--virtual-time-budget=30000", "--dump-dom", f"http://127.0.0.1:{p_}{path}"], capture_output=True, text=True, timeout=120).stdout
+                hit = re.search(r'data-r="([^"]*)"', dom)
+                assert hit, ("the page did not finish its steps", path, dom[-300:])
+                return json.loads(htmllib.unescape(hit.group(1)))
+            three = ["Summary", "Agent-readable", "Human-readable"]
+            one_view = lambda r_: len(r_["views"]) == 1 and r_["views"][0][1] == three and r_["tabs"] == ["Artifacts", "Artifact templates"] and r_["old"] == 0 and r_["sw"][0] <= r_["sw"][1]
+            try:
+                j2.RUNS_DIR = os.environ["J2_RUNS_DIR"] = runs      # the server's runs folder and the library's, as one setting gives both
+                a1 = load(f"/library?view=artifacts&run={rid2}")      # Shelf 1: the marked run's artifact is the one shown
+                assert a1["cur"] == "Artifacts" and a1["title"] == "Artifacts" and a1["list"] == [f"R:art|{rid2}/script*run", f"R:art|{rid1}/script"] and a1["on"] == f"art|{rid2}/script", a1["list"]
+                assert one_view(a1) and a1["views"][0][2] == "sum" and a1["marks"] == ["run"] and "Harbor Clinic" in a1["path"], (a1["views"], a1["marks"])
+                assert [m_[0] for m_ in a1["made"]] == ["whole", "rt"] and "no template recorded" in a1["made"][0][1] and a1["made"][1][2] == f"/library?view=templates&run={rid2}&rt={rt.id}", a1["made"]
+                assert "3 of 3 necessary conditions met" not in a1["text"] and "A folder of 3 files" in a1["text"], a1["text"][-400:]
+                a2 = load(f"/library?view=artifacts&open={rid1}/script&tab=human")      # a folder of files: the list of its files (nothing is run)
+                assert one_view(a2) and a2["views"][0][2] == "human" and a2["human"] == "files" and a2["paths"] == first["files"] and "A folder of 3 files" in a2["text"], (a2["human"], a2["paths"])
+                assert "3 of 3 necessary conditions met" in load(f"/library?view=artifacts&open={rid1}/script")["text"]
+                a3 = load(f"/library?view=artifacts&open={rid1}/script&tab=agent")
+                assert one_view(a3) and [f[0] for f in a3["files"]] == ["files.json"] and json.loads(a3["files"][0][1])["folder"] == "script", a3["files"]
+                t1 = load(f"/library?view=templates&run={rid2}")      # Shelf 2: run templates first, then each type with its sections nested
+                heads = [x for x in t1["list"] if x.startswith("H:")]
+                assert t1["cur"] == "Artifact templates" and heads == ["H:rt"] + [f"H:type|{a}" for a in L.artifacts()] and t1["list"][1] == f"R:rt|{rt.id}*used", (heads, t1["list"][:3])
+                at_prd = t1["list"].index("H:type|prd")
+                assert t1["list"][at_prd + 1: at_prd + 1 + len(L.generic_sections("prd"))] == [f"R:sec|prd|{x}" for x in L.generic_sections("prd")], "PRD -> its sections, nested under the type"
+                assert one_view(t1) and t1["views"][0][0] == f"rt/{rt.id}" and t1["marks"] == ["used"] and t1["outs"] == [f"/library?view=artifacts&run={rid2}&open={rid2}/script"], (t1["views"], t1["outs"])
+                assert t1["bundle"] == 1 and t1["use"] == f"/?view=simple&template={rt.id}&workflows=all" and "Northwind" not in t1["text"] and "Harbor" not in t1["text"] and "<site name>: Script" in t1["path"], t1["path"]
+                t2_ = load(f"/library?view=templates&rt={rt.id}&tab=human")
+                assert one_view(t2_) and t2_["skeleton"] == "run-template" and "A folder of files: README.md, copy_files.py, test_copy_files.py; test test_copy_files.py" in t2_["text"] and "Northwind" not in t2_["text"], t2_["text"][-300:]
+                t3 = load("/library?open=prd/problem/generic/v1&tab=human")      # the link the run's Library tab writes still opens that template
+                assert one_view(t3) and t3["cur"] == "Artifact templates" and t3["on"] == "sec|prd|Problem" and t3["path"].replace("→", ">") == "Product requirements > Problem", (t3["on"], t3["path"])
+                assert t3["groups"] == ["generic", "variants"] and t3["items"] == [["prd/problem/generic/v1", ""]] and t3["skeleton"] == "1" and t3["views"][0][2] == "human", (t3["groups"], t3["items"])
+                assert load("/library?view=artifact")["cur"] == "Artifact templates" and load("/library?view=run")["cur"] == "Artifacts", "the older view names open the shelf that took their place"
+                page = (f"Shelf 1 lists the two folder artifacts with {rid2}'s marked, a folder shows the list of its 3 files (Human-readable) and files.json (Agent-readable); Shelf 2 lists the run template, "
+                        f"then {len(L.artifacts())} types with their sections nested; one Summary / Agent-readable / Human-readable view per item")
+                os.environ.pop("J2_LIBRARY_DIR")
+                j2.RUNS_DIR = os.environ["J2_RUNS_DIR"] = saved
+                if any(a["run"] == marked for a in arts):      # the committed library and the saved live run
+                    r5 = load(f"/library?view=templates&run={marked}")
+                    at_prd = r5["list"].index("H:type|prd")
+                    rows5 = r5["list"][at_prd + 1: at_prd + 1 + len(L.generic_sections("prd"))]
+                    assert [x.split("*")[0] for x in rows5] == [f"R:sec|prd|{x}" for x in L.generic_sections("prd")] and all("*" in x for x in rows5), rows5
+                    assert one_view(r5) and r5["on"] == "sec|prd|Problem" and "made" in [i[1] for i in r5["items"]] and r5["items"][0][0] == "prd/problem/generic/v1", (r5["on"], r5["items"])
+                    assert r5["views"][0][0].startswith("prd/problem/") and "made" in r5["marks"] and any(f"open={marked}/prd" in h for h in r5["outs"]), (r5["views"], r5["outs"])
+                    assert "Iron Grove" not in r5["text"] and "Still Point" not in r5["text"] and "<site name> Problem" in r5["text"] and r5["path"].startswith("Product requirements"), r5["path"]
+                    r6 = load(f"/library?view=artifacts&open={marked}/prd")
+                    assert one_view(r6) and r6["made"][0][2] == f"/library?view=templates&open=prd/document/generic/v1" and len(r6["secs"]) == 6 and all(h and h.startswith("/library?view=templates&open=prd/") for _, h in r6["secs"]), (r6["made"], r6["secs"])
+                    assert load(f"/library?view=artifacts&open={marked}/prd&tab=human")["human"] == "markdown" and load(f"/library?view=artifacts&open={marked}/website&tab=human")["human"] == "html"
+                    page += f"; {marked}: PRD -> its 7 sections, its own templates marked with their outputs, no business name on the shelf"
+            finally:
+                srv.shutdown()
+                j2_server.HERE, j2_server.RUN, j2.RUNS_DIR = keep_here, keep_run, keep_runs
+                os.environ.pop("J2_RUNS_DIR", None)
+                if keep_env is not None:
+                    os.environ["J2_RUNS_DIR"] = keep_env
+                shutil.rmtree(web, ignore_errors=True)
+                shutil.rmtree(prof, ignore_errors=True)
+        assert tree(real) == before, "and the page changes nothing in library/"
+    finally:
+        os.environ.pop("J2_LIBRARY_DIR", None)
+        if keep is not None:
+            os.environ["J2_LIBRARY_DIR"] = keep
+        shutil.rmtree(tmp, ignore_errors=True)
+    print(f"sutra library: library -> prototypes/j2/library, {before[1]} files with the same sha through both paths, unchanged after the shelves were read; "
+          f"Shelf 1 shows a folder of files and nests sections; Shelf 2 has {len(keys)} templates under {len(tp['types'])} types, every one opens with three views and "
+          f"holds no business value; find_artifact and find_template give candidates with reasons ({live}); the page: {page}: OK")
 
 
 def auto_reuse():
@@ -14622,8 +15042,8 @@ def auto_reuse():
         near = L.nearest(need, L.generic("prd", "Problem"))
         assert near and 0 < near["similarity"] <= 1 and L.get(f"{near['name']}@{near['version']}", "prd", "Problem") is not None, near
         assert L.nearest(L.make_need("prd", "No such section", "prd", ["x"], "x"), L.generic("prd", "Problem")) is None
-        # a tie on similarity (page sections share one section name): the same business type, then the same kind of business,
-        # then a section template of the run template the run follows, then the newest version, then the name
+        # a tie on similarity (page sections share one section name): the same business type as the charter recorded it (whole,
+        # no word of it compared on its own), then a section template of the run template the run follows, then the newest version, then the name
         gen_page = L.generic("website", "Section")
         same = [f.name for f in gen_page.fields]
         tied = lambda name, btype, version=1, fields=None, **kw: {"artifact": "website", "section": "Section", "name": name, "slug": L.slug(name), "kind": "specialised",
@@ -14636,21 +15056,22 @@ def auto_reuse():
             old_rule = sorted(L.nearest_ranked(studio_need, gen_page), key=lambda c: (-c["similarity"], -int(c["version"]), c["name"]))[0]
             got = L.nearest(studio_need, gen_page)
             assert old_rule["name"] == "Aari Shelf" and {c["similarity"] for c in L.nearest_ranked(studio_need, gen_page)} == {1.0}, "a boutique and a studio template tie"
-            assert (got["name"], got["business_type"], got["same_business"]) == ("Calm Classes", "yoga studio", 1), ("the studio one wins", got)
+            assert (got["name"], got["business_type"], got["same_business"]) == ("Aari Shelf", "boutique", 0), ("\"pilates studio\" and \"yoga studio\" share a word, not a business type: the newest wins", got)
             pool.append(tied("Zed Corner", "pilates studio", 1))
             assert L.nearest(studio_need, gen_page)["name"] == "Zed Corner" and L.nearest(studio_need, gen_page)["same_business"] == 2, "the same business type first"
             pool[:] = [tied("Bend Hall", "dance studio", 4), tied("Calm Classes", "yoga studio", 1)]
             assert L.nearest(studio_need, gen_page)["name"] == "Bend Hall" and L.nearest(studio_need, gen_page, own={"Calm Classes"})["name"] == "Calm Classes", "the run template's own section, then the newest version"
             pool[:] = [tied("Aari Shelf", "boutique", 3, fields=same), tied("Calm Classes", "yoga studio", 1, fields=same[:-1])]
             assert L.nearest(studio_need, gen_page)["name"] == "Aari Shelf", "a nearer template still comes before any tie-break"
-            assert [L._same_business(a, b) for a, b in (("Yoga Studio", "yoga studio"), ("pilates studio", "yoga studio"), ("florist", "boutique"), ("business", "business"), ("prd", "prd"), ("not recorded", "studio"))] == [2, 1, 0, 0, 0, 0]
+            assert [L._same_business(a, b) for a, b in (("Yoga Studio", "yoga studio"), ("pilates studio", "yoga studio"), ("florist", "boutique"), ("business", "business"), ("prd", "prd"), ("not recorded", "studio"))] == [2, 0, 0, 0, 0, 0]
         finally:
             L.index = real_index
         dance = L.make_need("website", "Section", "dance studio", ["Maple Hall"], "Maple Hall")
         tops = [c for c in L.nearest_ranked(dance, gen_page) if c["similarity"] == L.nearest(dance, gen_page)["similarity"]]
-        assert {"boutique"} & {c["business_type"] for c in tops} and L.nearest(dance, gen_page)["business_type"].endswith("studio"), "the committed library: a studio's page section is not adapted from a boutique's"
+        near_d = L.nearest(dance, gen_page)      # the committed library has no dance studio's page section: nothing is "the same business", so the newest of the tied ones
+        assert len({c["business_type"] for c in tops}) > 1 and near_d["same_business"] == 0 and near_d["version"] == max(c["version"] for c in tops), (near_d, tops)
         _, routed = L.route(dance, {"run": "j2-test", "workflow": "W-1", "atom": "W-1.a1"}, closest=True)
-        assert routed["action"] == "extended" and routed["rule"] == "s" and routed["nearest"]["business_type"].endswith("studio") and routed["nearest"]["same_business"] in (1, 2), routed
+        assert routed["action"] == "extended" and routed["rule"] == "s" and routed["nearest"]["name"] == near_d["name"] and routed["nearest"]["same_business"] == 0, routed
         # the name an adapted template is stored under. A DIFFERENT business: a new family named for the run's business, version 1,
         # adapted_from the original, the action still "extended"; the original family gets no new version
         thread = L.get("Thread Filter@1", "website", "Section")
@@ -14712,7 +15133,7 @@ def auto_reuse():
             [(d["template"], d.get("adapted_from")) for d in ds1 if not d["template"].startswith("Flow Pilates ")]
         assert L.get_run_template(yoga.id).used_by[-1] == {"run": os.path.basename(r1.dir), "workflows": len(yoga.workflows), "of": len(yoga.workflows)}
         use1 = L.run_template_use(r1.dir)
-        assert use1["auto"] is True and use1["match"] == a1["match"] and use1["counts"]["documents"]["created"] == 0 and use1["counts"]["documents"]["from_template"] == len(ds1), use1
+        assert use1["auto"] is True and use1["match"] == a1["match"] and use1["counts"][DOCS]["created"] == 0 and use1["counts"][DOCS]["from_template"] == len(ds1), use1
         assert not any("yoga" in c["prompt"].lower() for c in calls_file(r1)), "the template's first business reaches no prompt"
         # (c) a template stage the brief did not name is built too (as if the Requester had chosen the template whole)
         L.AUTO_MIN = 0.5
@@ -14745,7 +15166,7 @@ def auto_reuse():
         leaked = sorted({n for c in calls_file(r3) for n in names3 if n.lower() in (c["system"] + c["prompt"]).lower()})
         assert not leaked, ("an adapted template's name reaches no agent", leaked)
         use3 = L.run_template_use(r3.dir)
-        assert use3["scratch"] is True and use3["best"]["name"] == best["name"] and use3["counts"]["documents"] == {"created": 0, "adapted": 6, "reused": 0, "generic": 0, "total": 6, "from_template": None}, use3
+        assert use3["scratch"] is True and use3["best"]["name"] == best["name"] and use3["counts"][DOCS] == {"created": 0, "adapted": 6, "reused": 0, "generic": 0, "total": 6, "from_template": None}, use3
         r3b, rec3b = run_of(LAW_PRD, 400)      # the same brief again: the adapted versions are there
         assert all(d["action"] == "reused" for d in rec3b["decisions"]), [(d["action"], d["rule"]) for d in rec3b["decisions"]]
         # (e) no template for the section: one is created, and the reason says why
@@ -14804,11 +15225,11 @@ def auto_reuse():
                 return json.loads(htmllib.unescape(hit.group(1)))
             g1 = load(r1)
             assert g1["auto"] == "picked" and g1["sum"] == f"Auto-picked run template {yoga.name} (match {a1['match']:.2f}): {len(yoga.workflows)} of {len(yoga.workflows)} workflows", g1["sum"]
-            assert g1["link"] == f"/library?view=templates&rt={yoga.id}" and g1["pills"]["documents-created"] == "0 created" and g1["rows"] == len(ds1) == len(g1["cells"]), g1
+            assert g1["link"] == f"/library?view=templates&rt={yoga.id}" and g1["pills"][f"{DOCS}-created"] == "0 created" and g1["rows"] == len(ds1) == len(g1["cells"]), g1
             assert all(re.match(r"W-\d+", c) for c in g1["cells"]) and sum("adapted from" in c for c in g1["cells"]) == sum(1 for d in ds1 if d.get("adapted_from")) > 0, g1["cells"]
             g3 = load(r3)
             assert g3["auto"] == "scratch" and g3["sum"] == f"Built from scratch: no similar run template (best {best['name']} {best['score']:.2f})" and g3["link"] is None, g3["sum"]
-            assert g3["pills"]["documents-created"] == "0 created" and g3["pills"]["documents-adapted"] == "6 adapted" and g3["rows"] == 6, g3["pills"]
+            assert g3["pills"][f"{DOCS}-created"] == "0 created" and g3["pills"][f"{DOCS}-adapted"] == "6 adapted" and g3["rows"] == 6, g3["pills"]
             assert g3["cells"] == [f"adapted from {d['adapted_from']}" for d in ds3] and "Run template" in g3["heads"], g3["cells"]
             assert g1["sw"][0] <= g1["sw"][1] and g3["sw"][0] <= g3["sw"][1], "no sideways scroll"
             page = "an auto-picked run shows \"Auto-picked run template <name> (match 0.xx)\", a run with none shows \"Built from scratch\" with the best score, each adapted row names its source"
@@ -14824,7 +15245,7 @@ def auto_reuse():
             else:
                 os.environ[k] = v
         shutil.rmtree(tmp, ignore_errors=True)
-    print(f"auto-reuse: the match formula, which templates can be picked, the nearest template by fields (on a tie a studio's template before a boutique's, "
+    print(f"auto-reuse: the match formula, which templates can be picked, the nearest template by fields (on a tie the charter's business type compared whole, "
           f"then the run template's own section, then the newest version), "
           f"an adapted template is a new family for another business and a new version for the same one; a pilates brief picks {yoga.name} "
           f"(match {a1['match']:.2f}) and creates no template; a template's unnamed stage is built too; a law-firm PRD finds no similar run template "
@@ -14868,12 +15289,12 @@ def run_templates_page(lib, tid, dep):
              "  r.names = q('[data-catrow] .agt b').map(x => x.textContent); r.subs = q('[data-catrow] .agt span').map(x => x.textContent); r.badges = q('[data-catrow] .libbadge').map(x => x.textContent);"
              f"  document.querySelector('[data-catrow=\"rt|{tid}\"]').click(); await wait(1500);"
              "  r.head = (document.querySelector('[data-rtname]') || {}).textContent || ''; r.stages = q('[data-rtstage]').map(x => [x.dataset.rtstage, x.querySelector('h5').textContent, x.querySelectorAll('[data-rtwf]').length]);"
-             "  r.cols = q('[data-rtstage]')[0] ? [...q('[data-rtstage]')[0].querySelectorAll('th')].map(x => x.textContent) : []; r.links = q('[data-rtwf] [data-tplopen]').length;"
+             "  r.cols = q('[data-rtstage]')[0] ? [...q('[data-rtstage]')[0].querySelectorAll('th')].map(x => x.textContent) : []; r.links = q('[data-rtwf] [data-shelflink=template]').length;"
              "  r.whole = document.querySelector('[data-rtuse=all]').getAttribute('href'); r.selOff = document.querySelector('[data-rtuse=sel]').getAttribute('aria-disabled');"
              f"  const box = document.querySelector('[data-rtpick=\"{dep.key}\"]'); box.checked = true; box.dispatchEvent(new Event('change', {{bubbles: true}})); await wait(300);"
              "  r.sel = document.querySelector('[data-rtuse=sel]').getAttribute('href'); r.auto = q('tr.rtauto').map(x => x.dataset.rtwf); r.note = document.querySelector('[data-rtnote]').textContent;"
              "  r.autoBox = q('tr.rtauto input').map(x => [x.checked, x.disabled]);"
-             "  q('[data-rtwf] [data-tplopen]')[0].click(); await wait(1500); r.viewer = (document.querySelector('#tplviewer h3') || {}).textContent || '';"
+             "  r.viewer = q('[data-rtwf] [data-shelflink=template]')[0].getAttribute('href');"
              "  r.sw = [document.documentElement.scrollWidth, innerWidth];"
              " } else {"
              "  r.chip = (document.getElementById('srt') || {}).textContent || ''; r.hidden = document.getElementById('srt').hidden; r.keys = document.getElementById('srt').dataset.rtkeys || '';"
@@ -14897,18 +15318,21 @@ def run_templates_page(lib, tid, dep):
         return json.loads(htmllib.unescape(hit.group(1)))
     try:
         r = load("/library")
-        assert r["tabs"][0] == "Run templates" and r["cur"] == "Run templates", r["tabs"]
+        assert r["tabs"] == ["Artifacts", "Artifact templates"] and r["cur"] == "Artifact templates", r["tabs"]
         rows = L.run_template_list()
-        assert r["names"] == [x["name"] for x in rows] and len(r["badges"]) == len(rows) and set(r["badges"]) == {"live", "mock"}, r["names"]
-        assert all(f"{x['workflows']} workflow" in s_ and x["business_type"] in s_ for x, s_ in zip(rows, r["subs"])), r["subs"]
-        assert r["head"] == rt.name and [s_[0] for s_ in r["stages"]] == rt.stages, (r["head"], r["stages"])
+        shown = L.shelf_templates()["run_templates"]      # the run templates come first on the templates shelf, their names with a slot in place of the business
+        assert r["names"][:len(rows)] == [x["name"] for x in shown] and [x["id"] for x in shown] == [x["id"] for x in rows] and len(r["badges"]) == len(rows) and set(r["badges"]) == {"live", "mock"}, r["names"]
+        assert all(f"{x['workflows']} workflow" in s_ for x, s_ in zip(rows, r["subs"])) and not any(x["name"].split(":")[0] in " ".join(r["names"]) for x in rows), r["subs"]
+        head = next(x["name"] for x in shown if x["id"] == tid)
+        assert r["head"].startswith(head) and "<" in head and [s_[0] for s_ in r["stages"]] == rt.stages, (r["head"], r["stages"])
         assert [s_[2] for s_ in r["stages"]] == [sum(1 for w in rt.workflows if w.stage == k) for k in rt.stages] and r["stages"][0][1].startswith("PRD"), r["stages"]
         assert r["cols"][1:] == ["Key", "Workflow", "Section", "Section template", "Depends on"] and r["links"] == len(rt.workflows), (r["cols"], r["links"])
         want = lambda keys: f"/?view=simple&template={tid}&workflows={urllib.parse.quote(keys, safe='')}"
         chosen, added = L.select_workflows(rt, [dep.key])
         assert r["whole"] == want("all") and r["selOff"] == "true" and r["sel"] == want(",".join(chosen)), (r["whole"], r["sel"])
         assert r["auto"] == added and all(c and d for c, d in r["autoBox"]) and added[0] in r["note"] and "depends on" in r["note"], (r["auto"], r["note"])
-        assert r["viewer"].startswith(rt.workflows[0].section_template.rpartition("@")[0]), r["viewer"]
+        ref0 = L.section_template_ref(rt.workflows[0])      # a workflow's section template is a link to that template on the same shelf
+        assert r["viewer"] == f"/library?view=templates&open={ref0['artifact']}/{ref0['section_slug']}/{ref0['slug']}/v{ref0['version']}", r["viewer"]
         assert r["sw"][0] <= r["sw"][1], ("no horizontal scroll", r["sw"])
         for href, n in ((r["whole"], len(rt.workflows)), (r["sel"], len(chosen))):
             b = load(href)
@@ -15181,6 +15605,13 @@ if __name__ == "__main__":
         auto_reuse()
         plain_unchanged(AUTO_REUSE_BASE)      # flag off: prompt for prompt as main before auto-reuse
         sys.exit(0)
+    if "--library-cleanup" in sys.argv:       # python3 j2_flow_test.py --fast --library-cleanup: the library cleanup and the folder run only
+        library_cleanup()
+        folder_reuse()
+        sys.exit(0)
+    if "--sutra-library" in sys.argv:         # python3 j2_flow_test.py --fast [--browser] --sutra-library: the two shelves only
+        sutra_library()
+        sys.exit(0)
     if "--reuse-display" in sys.argv:         # python3 j2_flow_test.py --fast [--browser] --reuse-display: the reuse display only
         reuse_display()
         sys.exit(0)
@@ -15338,6 +15769,9 @@ if __name__ == "__main__":
             reuse_display()
             auto_reuse()
             plain_unchanged(AUTO_REUSE_BASE)
+            library_cleanup()
+            folder_reuse()
+            sutra_library()
         board_disabled()
         board_functions_off()
         os.environ["J2_BOARD"] = "1"
