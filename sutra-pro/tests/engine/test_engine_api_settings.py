@@ -40,7 +40,7 @@ def codes(got):
 def test_get_without_dept_shows_the_global_scope(api):
     api.glob.write_text(json.dumps({"budget": 80}))
     body = api.client.get(URL).json()
-    assert set(body) == {"schema", "defaults", "global", "effective", "editable", "locked"}
+    assert set(body) == {"schema", "defaults", "global", "effective", "editable", "locked", "output_types"}
     assert body["schema"] == SETTINGS_SCHEMA == "engine-settings/1"
     assert body["defaults"] == EngineSettings().model_dump() and body["global"] == {"budget": 80}
     assert body["effective"] == {**EngineSettings().model_dump(), "budget": 80}
@@ -62,7 +62,7 @@ def test_with_a_team_the_body_says_what_the_next_run_would_use_and_without_one_i
     body = api.client.get(URL + "?dept=web").json()
     assert body["next_run"] == {"output": "auto"} == {"output": EngineSettings().output}, "the default: the engine picks (D129)"
     assert "next_run" not in api.client.get(URL).json(), "the global scope is no run"
-    assert set(body) == {"schema", "defaults", "global", "department", "next_run", "effective", "editable", "locked"}
+    assert set(body) == {"schema", "defaults", "global", "department", "next_run", "effective", "editable", "locked", "output_types"}
 
 
 def test_next_run_layers_the_files_and_the_start_pages_choice_and_effective_does_not(api):
@@ -237,3 +237,63 @@ def test_helpers_pick_the_file_and_apply_changes_without_http(api):
     assert settings_file(api.data, None) == api.glob and settings_file(api.data, "web") == api.web
     apply_change(api.data, "web", {"set": {"budget": 12}})
     assert settings_view(api.data, "web")["effective"]["budget"] == 12
+
+
+# ---- J2 sync 5: output choices from the data, the builder time limit, the local type store (D163, D166, D169) -------------------------------
+def test_output_types_are_the_data_in_file_order_with_the_datas_labels_and_a_pin_flag(api):
+    from sutra_app.engine import j2
+    rows = api.client.get(URL).json()["output_types"]
+    assert [r["name"] for r in rows] == j2.j2_types.names()
+    assert all(set(r) == {"name", "label", "form", "pin"} and r["label"] and r["form"] in ("page", "document") for r in rows)
+    by = {r["name"]: r for r in rows}
+    assert by["project"] == {"name": "project", "label": "Project work", "form": "document", "pin": True}, "a host type may be pinned"
+    entries = {e["name"]: e for e in j2.j2_types.entries() if e.get("kind") == "type"}
+    assert all(r["pin"] == (bool(entries[r["name"]].get("deliverable")) or bool(entries[r["name"]].get("host"))) for r in rows)
+
+
+def test_a_type_the_data_gains_is_a_choice_with_no_code_change(api, tmp_path, monkeypatch):
+    from sutra_app.engine import j2
+    store = tmp_path / "types"
+    monkeypatch.setattr(j2.j2_types, "LOCAL_TYPES_PATH", str(store / "types.local.json"))
+    monkeypatch.setattr(j2.j2_types, "LOCAL_LIBRARY_DIR", str(store / "templates"))
+    j2.j2_types.template.cache_clear()
+    j2.j2_types.create("field_guide", "Field guide", ["Birds", "Trees"])
+    rows = {r["name"]: r for r in api.client.get(URL).json()["output_types"]}
+    assert rows["field_guide"] == {"name": "field_guide", "label": "Field guide", "form": "document", "pin": True}
+    assert put(api, {"set": {"output": "field_guide"}}, "web").status_code == 200
+
+
+def test_an_output_of_the_right_shape_that_is_not_a_type_is_a_violation_row_and_auto_is_always_fine(api):
+    got = put(api, {"set": {"output": "no_such_type"}}, "web")
+    assert got.status_code == 422 and ("set.output", "unknown_output") in codes(got)
+    assert "known:" in got.json()["error"]["details"]["violations"][0]["message"]
+    assert put(api, {"set": {"output": "auto"}}, "web").status_code == 200
+    assert put(api, {"set": {"output": "Bad Name"}}, "web").status_code == 422
+
+
+def test_the_builder_time_limit_is_editable_and_zero_is_allowed(api):
+    assert "builder_timeout" in EDITABLE_FIELDS and "builder_timeout" not in LOCKED_FIELDS
+    assert api.client.get(URL).json()["defaults"]["builder_timeout"] == 600
+    assert put(api, {"set": {"builder_timeout": 90.5}}, "web").status_code == 200
+    assert put(api, {"set": {"builder_timeout": 0}}, "web").status_code == 200
+    assert api.client.get(URL + "?dept=web").json()["effective"]["builder_timeout"] == 0
+    assert put(api, {"set": {"builder_timeout": -1}}, "web").status_code == 422
+
+
+def test_the_capabilities_answer_lists_the_names_of_the_data_in_file_order(api):
+    from sutra_app.engine import j2
+    assert api.client.get("/api/engine/capabilities").json()["outputs"] == j2.j2_types.names()
+
+
+def test_the_api_process_keeps_the_local_type_store_in_the_data_folder_not_in_the_package(tmp_path):
+    """A fresh interpreter that imports the API package first: `j2_types` reads `J2_TYPES_DIR` at import, so the export must come before J2."""
+    import subprocess
+    import sys
+    code = ("import sutra_app.engine.api\nfrom sutra_app.engine import j2\n"
+            "print(j2.j2_types.LOCAL_TYPES_PATH); print(j2.j2_types.LOCAL_LIBRARY_DIR)")
+    env = {**os.environ, "SUTRA_DATA_DIR": str(tmp_path), "PYTHONPATH": os.pathsep.join(sys.path)}
+    env.pop("J2_TYPES_DIR", None)
+    done = subprocess.run([sys.executable, "-c", code], capture_output=True, text=True, timeout=120, env=env)
+    assert done.returncode == 0, done.stderr
+    paths = done.stdout.split()
+    assert paths[0] == str(tmp_path / "types" / "types.local.json") and paths[1] == str(tmp_path / "types" / "templates")

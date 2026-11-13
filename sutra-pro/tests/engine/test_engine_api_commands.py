@@ -139,8 +139,8 @@ def test_output_after_a_message_is_409_and_names_the_runs_output(api):
     got = api.client.post("/api/output?dept=web", json={"type": "hld"}, headers=TOKEN)
     assert (got.status_code, got.json()) == (409, {"ok": False, "output": "prd"})
     assert api.page().next_settings == {}
-    api.svc.add_run("sales")                                     # no snapshot yet: the page's own choice, else the website
-    assert api.client.post("/api/output?dept=sales", json={"type": "hld"}, headers=TOKEN).json() == {"ok": False, "output": "website"}
+    api.svc.add_run("sales")                                     # no snapshot yet: the page's own choice, else no type (D165)
+    assert api.client.post("/api/output?dept=sales", json={"type": "hld"}, headers=TOKEN).json() == {"ok": False, "output": None}
 
 
 def test_output_is_allowed_again_after_a_reset(api):

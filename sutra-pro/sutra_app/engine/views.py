@@ -465,7 +465,7 @@ def library_item(ctx: RunCtx, q: dict) -> Reply:
     """One template version: `artifact`, `section`, `slug` and `version` ("v3") of /api/library/<a>/<s>/<slug>/v<N>. A run that
     used it serves its own copy first (J2 sync 2026-11-04): the view passes the run folder."""
     artifact, section, slug, version = (str(q.get(k) or "") for k in ("artifact", "section", "slug", "version"))
-    ok = (artifact in j2_template_lib.ARTIFACTS and all(re.fullmatch(r"[a-z0-9-]+", x) for x in (section, slug))
+    ok = (artifact in j2_template_lib.artifacts() and all(re.fullmatch(r"[a-z0-9-]+", x) for x in (section, slug))
           and re.fullmatch(r"v[0-9]+", version))
     d = _dir(ctx)
     with _library(ctx):
