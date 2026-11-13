@@ -640,7 +640,8 @@ def types_text(types):
     return ("TYPES you can build (needs: the types it is written from, built first; after: types it reads when they are "
             "built, so they go before it):\n" + "\n".join(json.dumps(t, ensure_ascii=False) for t in types)
             + "\nChoose the deliverables first: the types this brief needs, in build order. Every workflow serves one "
-            "deliverable, and every deliverable is served by at least one workflow. When no type fits, make a new one: a "
+            "deliverable, and every deliverable is served by at least one workflow. A form is how a type is built, not a "
+            "type: when no type in TYPES names what this brief makes, make a new one, named for what it makes: a "
             "deliverable whose type is a new name (lower case, _ between words) with \"new\": its label, its form from "
             "FORMS, for a form with sections its sections in order and its file (<name>.md), and recommended_practice: "
             "true when the type is guidance people follow (it may give labelled good practice), else false; J2 makes it in that "

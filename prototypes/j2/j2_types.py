@@ -326,9 +326,10 @@ def recorded(d, path=None):
         except (OSError, ValueError):
             return None
     docs, known, out = rd("documents.json"), set(names(path)), {}
-    if not isinstance(docs, dict) or not set(docs) - known:
-        return {}
     arts = {r.get("type"): r for r in (rd("artifacts.json") or {}).get("rows") or [] if isinstance(r, dict) and r.get("kind") == "type"}
+    docs = docs if isinstance(docs, dict) else {}
+    if not (set(docs) | set(arts)) - known:
+        return {}
     new = {x.get("type"): x.get("new") or {} for x in ((rd("deliverables.json") or {}).get("plan") or {}).get("deliverables") or []
            if isinstance(x, dict) and isinstance(x.get("new"), dict)}
     for k, v in docs.items():
@@ -339,6 +340,14 @@ def recorded(d, path=None):
         file = next((f for f in (v.get("file"), a.get("file"), n.get("file")) if isinstance(f, str) and re.fullmatch(r"[\w.-]+\.md", f)), f"{k}.md")
         out[k] = {"name": k, "kind": "type", "label": label, "tag": label, "color": "--other", "form": "document", "file": file,
                   "deliverable": True, "triggers": [], "groups": [], "depends_on": [], "recorded": True}
+    fs = forms(path)
+    for k, a in arts.items():      # a type of any other form the run built (artifacts.json): its form's own file
+        if k in known or k in out or not NAME_RE.match(str(k)) or a.get("form") not in fs:
+            continue
+        label = str(a.get("name") or k.replace("_", " ").capitalize())
+        out[k] = {"name": k, "kind": "type", "label": label, "tag": label, "color": "--other", "form": a["form"],
+                  "file": str(fs[a["form"]].get("file") or "").replace("{name}", k), "deliverable": True, "triggers": [],
+                  "groups": [], "depends_on": [], "recorded": True}
     return out
 
 

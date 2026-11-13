@@ -182,6 +182,34 @@ def page_run():
     run.set_output("website")
     return run
 
+# TEST ONLY: types.json has no built-in folder type (remove-restrictions 6a): Adaptation makes one named for what the
+# run makes. Tests that need one make it the same way (j2_types.create in the folder form), in a temp local store.
+FT = "copy_script"
+
+
+def with_folder_type(fn):
+    """Run a test with the folder type FT made (form "agent", label "Script"), and the local store put back after."""
+    import functools
+
+    @functools.wraps(fn)
+    def run(*a, **k):
+        T = j2.j2_types
+        keep, tmp = T.LOCAL_TYPES_PATH, tempfile.mkdtemp(prefix="j2-ft-")
+        T.LOCAL_TYPES_PATH = os.path.join(tmp, "types.local.json")
+        T.template.cache_clear()
+        j2._data_type.cache_clear()
+        try:
+            T.create(FT, "Script", None, form="agent")
+            j2._data_type.cache_clear()
+            return fn(*a, **k)
+        finally:
+            T.LOCAL_TYPES_PATH = keep
+            T.template.cache_clear()
+            j2._data_type.cache_clear()
+            shutil.rmtree(tmp, ignore_errors=True)
+    return run
+
+
 def say(run, text, review=True):
     """Send a message and wait until the result is shown; review=True also waits for the reviewer report written
     after it (its files land after the run is complete)."""
@@ -2088,6 +2116,7 @@ def run_blockers_batch1():
           "the format (165902, 095315 replayed) ok")
 
 
+@with_folder_type
 def run_blockers_batch2():
     """Group A batch 2 (docs/hardcoding-inventory.md), replayed from the runs (fixtures/run-blockers/charters.json:
     Identity's first charter in each, which the validator rejected). A4: no word list decides whether a done-when
@@ -2098,13 +2127,13 @@ def run_blockers_batch2():
     charters = json.load(open(os.path.join(fx, "charters.json"), encoding="utf-8"))
     for run_id, kind in (("j2-20261112-165902", "prd"), ("j2-20261111-011528", "prd"), ("j2-20261111-155605", "prd"),
                          ("j2-20261111-095315", "prd"), ("j2-20261111-013315", "prd"), ("j2-20261111-124718", "prd"),
-                         ("j2-20261112-150327", "agent")):
+                         ("j2-20261112-150327", FT)):
         r = j2.J2Run()
         r.set_output(kind)
         r.goal = charters[run_id]
         assert r._stamp_check() == (True, "passes code checks"), (run_id, r._stamp_check())
     mins = {n: j2.j2_types.load(n)["min_done_when"] for n in j2.j2_types.names()}
-    assert mins["website"] == mins["prd"] == 3 and mins["agent"] == 1, mins
+    assert mins["website"] == mins["prd"] == 3 and mins[FT] == 1, mins
     for kind in ("website", "prd"):
         r = j2.J2Run()
         r.set_output(kind)
@@ -4143,26 +4172,27 @@ def agent_tools_cli():
         shutil.rmtree(root, ignore_errors=True)
 
 
+@with_folder_type
 def agent_form():
     """agent-tools step 2: the agent form is data only. Its type loads with output "folder", its folder, tools, rules
     and runner from types.json, its builder text with {runner} filled; Adaptation can't choose it yet (deliverable
     false). The other forms declare output "file" and load as before. A folder form missing tools, a runner without
     {target} or an unknown output kind is refused."""
-    o = j2.j2_types.load("agent")
-    assert (o["output"], o["folder"], o["test_runner"]) == ("folder", "agent", ("python3", "{target}")), o
+    o = j2.j2_types.load(FT)
+    assert (o["output"], o["folder"], o["test_runner"]) == ("folder", FT, ("python3", "{target}")), o
     assert o["tools"] and o["allow"] and "{runner}" not in o["builder"] and "python3 {target}" in o["builder"], o
     assert o["conditions"] == "agent.json" and os.path.isfile(os.path.join(j2.j2_types.CONDITIONS_DIR, "agent.json"))
     keep = os.environ.pop("J2_AGENT_TOOLS", None)
     try:      # a form that gives its builder tools is choosable only with J2_AGENT_TOOLS=1
-        assert "agent" not in [t["name"] for t in j2.j2_realization.type_list()]
+        assert FT not in [t["name"] for t in j2.j2_realization.type_list()]
         os.environ["J2_AGENT_TOOLS"] = "1"
-        assert "agent" in [t["name"] for t in j2.j2_realization.type_list()]
+        assert FT in [t["name"] for t in j2.j2_realization.type_list()]
     finally:
         os.environ.pop("J2_AGENT_TOOLS", None)
         if keep is not None:
             os.environ["J2_AGENT_TOOLS"] = keep
     assert {j2.j2_types.load(n)["output"] for n in ("prd", "website")} == {"file"}
-    assert j2.j2_types.load("prd")["tools"] == j2.j2_types.load("agent")["tools"] and "folder" not in j2.j2_types.load("prd"), \
+    assert j2.j2_types.load("prd")["tools"] == j2.j2_types.load(FT)["tools"] and "folder" not in j2.j2_types.load("prd"), \
         "every form's builder gets builder_tools; only a folder form names its folder"
     with open(j2.j2_types.TYPES_PATH, encoding="utf-8") as f:
         base = json.load(f)
@@ -4177,7 +4207,7 @@ def agent_form():
             with open(p, "w", encoding="utf-8") as f:
                 json.dump(d, f)
             try:
-                j2.j2_types.load("agent", p)
+                j2.j2_types.load(FT, p)
                 raise AssertionError(f"accepted: {why}")
             except ValueError as e:
                 assert why in str(e) or why == "missing tools" and "tools" in str(e), (why, e)
@@ -4250,6 +4280,7 @@ def missing_capabilities():
     print("missing capabilities: builders with tools are told to plan a script and its test for a missing capability ok")
 
 
+@with_folder_type
 def one_artifact_view():
     """remove-restrictions step 5: a folder deliverable's Artifacts row has the Template line, its conditions (the sandboxed
     test's result among them), warnings apart from failed checks, and every file with the workflow that made it; a file
@@ -4309,7 +4340,7 @@ def one_artifact_view():
     assert len(probs) == 1 and "£9" in probs[0] and "test_source_unchanged" not in probs[0], probs
     # C2: code reruns the test itself (sandbox_rerun) and its evidence says so; a rerun that could not run says only why
     agent = j2.J2Run()
-    agent.set_output("agent")
+    agent.set_output(FT)
     agent.goal = {"done_when": ["a"], "files": ["main.py"], "test": "test_main.py"}
     keep_rr = j2.sandbox_rerun
     try:
@@ -4324,6 +4355,49 @@ def one_artifact_view():
           "failures, files by maker, a file opened on Human-readable; no Documents tab; runs by their type's label ok")
 
 
+@with_folder_type
+def folder_types_named():
+    """remove-restrictions 6a: types.json has no built-in folder type. With tools on, a folder brief's deliverable is
+    a new type the planner names for what it makes, in the folder form (j2_types.create, kept in the local store);
+    the planner is told a form is not a type; a new type with no form is refused. A saved run of a folder type the
+    store no longer has still opens: its type from artifacts.json, its form's file, no sections, its folder row."""
+    import shutil
+    assert not [t for t in json.load(open(j2.j2_types.TYPES_PATH))["types"]
+                if (j2.j2_types.forms().get(t.get("form")) or {}).get("output") == "folder"], "no built-in folder type"
+    assert "A form is how a type is built, not a type" in j2.j2_realization.types_text(j2.j2_realization.type_list())
+    keep = os.environ.get("J2_AGENT_TOOLS")
+    try:
+        os.environ["J2_AGENT_TOOLS"] = "1"
+        run = j2.J2Run()
+        run.mock_deliverables = [{"type": "file_sorter", "why": "a script that sorts files, with its test",
+                                  "new": {"label": "File sorter", "form": "agent"}}]
+        assert run._deliverables(["A script that sorts my downloads by type, with a test."]) == ["file_sorter"]
+        assert j2.j2_types.info("file_sorter")["label"] == "File sorter" and j2.j2_types.info("file_sorter")["output"] == "folder"
+        run.mock_deliverables = [{"type": "file_mover", "why": "x", "new": {"label": "File mover"}}]
+        assert "file_mover" not in (run._deliverables(["A script that moves files."]) or []) and "file_mover" not in j2.j2_types.names(), \
+            "a new type that names no form is refused, never given one"
+    finally:
+        os.environ["J2_AGENT_TOOLS"] = keep
+    d = tempfile.mkdtemp(prefix="j2-oldfolder-")
+    try:
+        os.makedirs(os.path.join(d, "greeter"))
+        open(os.path.join(d, "greeter", "greet.py"), "w").write("print('hi')\n")
+        json.dump({"output_type": "greeter"}, open(os.path.join(d, "summary.json"), "w"))
+        json.dump({"rows": [{"type": "greeter", "kind": "type", "form": "agent", "file": "greeter/greet.py", "name": "Greeter",
+                                       "deliverable": True, "workflows": [], "depends_on": [], "version": None}]},
+                  open(os.path.join(d, "artifacts.json"), "w"))
+        rec = j2.j2_types.recorded(d)["greeter"]
+        assert (rec["form"], rec["file"], rec["label"]) == ("agent", "greeter/*", "Greeter"), rec
+        assert j2.saved_def("greeter", d)["sections"] == (), "a folder has no sections"
+        row = next(x for G in j2_artifacts.groups(d)["groups"] if G["id"] == "documents" for x in G["rows"])
+        assert row["kind"] == "folder" and [f["name"] for f in row["files"]] == ["greet.py"], row
+    finally:
+        shutil.rmtree(d, ignore_errors=True)
+    print("folder types named: no built-in folder type; a folder brief's type is made and named by the planner, in the "
+          "folder form; a new type with no form refused; an old run of a deleted folder type still opens ok")
+
+
+@with_folder_type
 def guesses_warn():
     """remove-restrictions step 3: on the general path a guess never blocks. A validator guess (a number in a check's
     label that differs from its expect) is logged as a warning and the workflow is kept; on the section path it still
@@ -4343,7 +4417,7 @@ def guesses_warn():
         conds = run._conditions("<html><body>To be confirmed</body></html>", {})
         assert conds and all(c.get("severity") == "warn" for c in conds), conds
         agent = j2.J2Run()
-        agent.set_output("agent")
+        agent.set_output(FT)
         agent.goal = {"done_when": ["a"], "files": ["main.py"], "test": "test_main.py"}
         gated = {c["id"] for c in agent._conditions("") if c.get("severity") != "warn"}
         assert gated == {"C1", "C2", "C3"}, gated
@@ -4361,6 +4435,7 @@ def guesses_warn():
           "path); only facts gate as conditions; the closing assumptions section only when the template asks ok")
 
 
+@with_folder_type
 def builder_tools_call():
     """agent-tools step 1 (mock): J2Run._builder_tools gives a builder its form's tools with tools on (offline only with
     J2_AGENT_TOOLS=1), each limit its setting or default (none for a form without tools); J2Run.call records the files written in the builder's folder in
@@ -4375,7 +4450,7 @@ def builder_tools_call():
         os.environ["J2_AGENT_TOOLS"] = "1"
         assert site._builder_tools()["cwd"] == os.path.join(site.dir, "out"), "a page builder works in the output folder"
         run = j2.J2Run()
-        run.set_output("agent")
+        run.set_output(FT)
         os.environ.pop("J2_AGENT_TOOLS")
         assert run._builder_tools() is None, "off unless J2_AGENT_TOOLS=1"
         os.environ["J2_AGENT_TOOLS"] = "1"
@@ -4383,8 +4458,8 @@ def builder_tools_call():
         os.environ.update(J2_AGENT_USD="0.5", J2_AGENT_MAX_FILES="3", J2_AGENT_MAX_BYTES="1000", J2_TOOL_LOG_CHARS="100",
                           J2_SANDBOX_CMD="unused")
         tools = run._builder_tools()
-        assert tools["cwd"] == os.path.join(run.dir, "agent") and tools["root"] == run.dir and os.path.isdir(tools["cwd"])
-        assert tools["tools"] == list(j2.output_def("agent")["tools"]) and tools["max_files"] == 3, tools
+        assert tools["cwd"] == os.path.join(run.dir, FT) and tools["root"] == run.dir and os.path.isdir(tools["cwd"])
+        assert tools["tools"] == list(j2.output_def(FT)["tools"]) and tools["max_files"] == 3, tools
 
         def writer(files, also=None):
             def mock():
@@ -4396,19 +4471,19 @@ def builder_tools_call():
                 return "built"
             return mock
         out = run.call("coordination", "Reply with one line.", "Build.",
-                       writer({"agent/a.py": "x = 1\n", "agent/test_a.py": "import a\n"},
+                       writer({f"{FT}/a.py": "x = 1\n", f"{FT}/test_a.py": "import a\n"},
                               also=lambda: (run.save("sections.json", {}), run.post("system", "J2 writes meanwhile"))),
                        json_reply=False, tools=tools)
         assert out == "built"
         rec = run.call_log[-1]["tools"]
         assert [w["path"] for w in rec["files_written"]] == ["a.py", "test_a.py"] and not rec["outside"], rec
-        assert rec["cwd"] == "agent" and rec["folder_files"] == 2 and not rec["over_limits"], rec
+        assert rec["cwd"] == FT and rec["folder_files"] == 2 and not rec["over_limits"], rec
         row = j2._jsonl(run.dir, "calls.jsonl")[-1]
         assert row["tools"]["files_written"] == rec["files_written"], row.get("tools")
 
         n = len(run.call_log)
         try:
-            run.call("coordination", "Reply with one line.", "Build.", writer({"agent/b.py": "", "escape.txt": "x"}),
+            run.call("coordination", "Reply with one line.", "Build.", writer({f"{FT}/b.py": "", "escape.txt": "x"}),
                      json_reply=False, tools=tools)
             raise AssertionError("an outside write was accepted")
         except j2.BuilderToolFault as e:
@@ -4417,7 +4492,7 @@ def builder_tools_call():
         assert any(e["type"] == "outside_write" for e in run.events) and "escape.txt" in run.chat[-1]["text"]
 
         try:
-            run.call("coordination", "Reply with one line.", "Build.", writer({"agent/c.py": "", "agent/d.py": ""}),
+            run.call("coordination", "Reply with one line.", "Build.", writer({f"{FT}/c.py": "", f"{FT}/d.py": ""}),
                      json_reply=False, tools=tools)
             raise AssertionError("a folder over its file limit was accepted")
         except j2.BuilderToolFault as e:
@@ -8390,7 +8465,7 @@ def forms_and_new_types():
     # the forms are types.json's own (no list in code), each saying what it makes: one file or a folder
     assert set(T["forms"]) == {"_note", "page", "document", "agent"} and not hasattr(j2_types, "FORMS")
     assert {k: f["output"] for k, f in T["forms"].items() if k != "_note"} == {"page": "file", "document": "file", "agent": "folder"}
-    assert {t["form"] for t in T["types"] if t["kind"] == "type"} == {"page", "document", "agent"}
+    assert {t["form"] for t in T["types"] if t["kind"] == "type"} == {"page", "document"}, "no built-in folder type: Adaptation names one"
     assert j2_types.load("website")["builder"] == T["forms"]["page"]["builder"] == "builder.md"
     assert j2_types.info("website")["ready"] == "Your website is ready." and j2_types.info("prd")["ready"] == "Your document is ready."
     # a new type's problems are named; a good one is made from the document form
@@ -9758,6 +9833,7 @@ def map_logic():
             plan = {p_.get("name"): p_ for p_ in (((rd("realization.json") or {}).get("plan") or {}).get("workflows") or []) if isinstance(p_, dict)}
             atoms = {a["id"]: a for a in (rd("atoms.json") or {}).get("atoms", [])}
             m = M.build(d)
+            run_types = {t["name"]: t["label"] for t in A.load_types(d)["types"]}
             by = {n["id"]: n for n in m["nodes"]}
             holds = {}
             for n in m["nodes"]:
@@ -9838,7 +9914,8 @@ def map_logic():
             for n in m["nodes"]:
                 if n["kind"] != "work":
                     continue
-                ok = {types.get(n.get("file")), M.file_label(n.get("file")) if n.get("file") else None, by_type.get(n["id"].split(":")[1])}
+                ok = {types.get(n.get("file")), M.file_label(n.get("file")) if n.get("file") else None, by_type.get(n["id"].split(":")[1]),
+                      run_types.get(n["id"].split(":")[1])}      # a type the store no longer has: what the run recorded
                 if not n.get("file"):
                     ok.add(n.get("output"))      # planned, nothing written yet: named by its stage's output
                 ok |= {(wfs.get(w) or {}).get("name") for w in n.get("workflows") or []}
@@ -11192,10 +11269,12 @@ def run_settings():
     for x in got["runs"]:
         w_ = want(x["id"])
         assert x["status"] == ("running" if x["id"] == got["live"] and j2_server.RUN.status == "running" else w_["status"]) and x["title"] == w_["title"], (x, w_)
-        # a run's type: a built-in or local one (with its label and form), else one this clone no longer has (no label)
+        # a run's type: a built-in or local one (with its label and form), else one this clone no longer has (its recorded label, else none)
         known = x["output"] in j2.j2_types.names()
         assert (known or x["output"] in ("docset", "") or j2.j2_types.NAME_RE.match(x["output"])) and re.fullmatch(r"\d{4}-\d\d-\d\dT\d\d:\d\d:\d\d", x["when"]), x
-        assert (x["label"], x["form"]) == ((j2.j2_types.info(x["output"])["label"], j2.j2_types.info(x["output"])["form"]) if known else ("", "")), x
+        rec = j2.j2_types.recorded(os.path.join(repo, x["id"])).get(x["output"]) or {}      # a type the store no longer has: what the run recorded
+        assert (x["label"], x["form"]) == ((j2.j2_types.info(x["output"])["label"], j2.j2_types.info(x["output"])["form"]) if known
+                                           else (rec.get("label") or "", rec.get("form") or "")), x
     counts = collections.Counter(x["status"] for x in got["runs"])
     chrome = j2.j2_check.find_chrome()
     if not (chrome and BROWSER and len(names) >= 50):
@@ -15115,6 +15194,7 @@ if __name__ == "__main__":
             guesses_warn()              # remove-restrictions step 3: a guess warns, never blocks
             missing_capabilities()      # remove-restrictions step 4: a missing capability becomes a planned script
             one_artifact_view()         # remove-restrictions step 5: one artifact view, every output file, warnings apart
+            folder_types_named()        # remove-restrictions 6a: a folder output gets a type named for what it makes
             builder_context_trim()      # a real run's builder prompt: no chat, no other workflows
             builder_inputs()            # depended-on sections in full, cut inputs noticed and logged
             timing_records()            # timing.json and Run settings' calls, tokens and time

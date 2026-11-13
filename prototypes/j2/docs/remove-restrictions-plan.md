@@ -27,6 +27,9 @@ Release check pass rule (`43bc2095`): a brief passes only on an outcome starting
 | 4 | `4ca95c96` | A missing capability becomes a planned script with its own test (`templates/atom_rules.md`); realization planner may search the web with tools on | `--fast` only |
 | — | `43bc2095` | Release check: coffee shop brief gives its facts (Bean There, 12 Park Road, hours, menu with prices); only `Done:` passes | Mock 3/3 |
 | 5 | `fb430a31` | UI: one artifact view (no Documents tab), every output-folder file with its maker, Template line, conditions with the sandboxed test, warnings apart from failures, runs by type label | Live 3/3 Done, $2.12 (total $12.95 of $60); `--fast` and `--fast --browser` pass |
+| audit | `feb5361a` | Hard-coding audit fixes; C2 title | `--fast` |
+| — | `9dc8ad0a` | The planner names a new type's form; note for Kaivan | `--fast` |
+| 6a | (this commit) | No built-in folder type: a folder output gets a type the planner names for what it makes; old runs of a deleted type still open | `--fast`, mock 3/3 |
 | 5 follow-up | `16ae61f7` | Group by what the run made, Preview its main output, final-attempt failures, C2 evidence says code reran the test, code names not flagged as facts, Template line first | `--fast`, `--fast --browser` |
 
 ## Step 5: UI
@@ -45,7 +48,12 @@ Out of scope: the Library tab and RTSCOPES (Kaivan owns them). Do not change the
 
 After step 5: `--fast --browser` (no `tail`) and the live release check.
 
-## Step 6a: a folder output gets a type that names what was made (plan, not started)
+## Step 6a: a folder output gets a type that names what was made (done)
+
+Done as planned except 6a.4: the offline mock planner already picks the page type for every brief that names no
+type, so the mock release check is unchanged (3/3) and needed no folder-type mock. 6a.5 went further than planned:
+`j2_types.recorded` now covers a deleted type of any form from `artifacts.json`, and `saved_def` gives a folder no
+sections.
 
 **Why it goes before step 6.** Step 6 saves and reuses runs by their type. Done first, a saved script run is
 reused as a "Copy script", not as any folder output under the generic "Agent".
@@ -127,6 +135,25 @@ needed as a note for the founder to send him. After: `--fast`, mock release chec
 When a brief asks to act on real files, the workflow states the command and the folder. The Requester approves in
 chat. Code, not an agent, checks that exact approval. Then the command runs with write access to that one folder
 only, with a receipt in `receipts.jsonl`. After: `--fast`, live release check.
+
+### Design (proposed, waiting for the founder's go-ahead)
+
+| # | What | Who decides | File (owner) |
+|---|---|---|---|
+| 7.1 | The planner may add a real run to a folder deliverable: `"real_run": {"command": [argv], "folder": "<absolute path>", "why": str}` on the workflow that runs the built script. Whether a brief asks to act on real files is the planner's call (no keywords) | Adaptation | prompt text in a new data file `artifacts/real_run.md`, named by `types.json` `builder_tools.real_run` (Disha) |
+| 7.2 | Validator (code): the folder is an absolute path the brief or the Requester's answers name word for word, it exists and is a folder, and it is not the home folder, `/`, the repo or the run folder; argv[0] is the form's runner program (`test_runner[0]`); every other argument is inside the built output folder or the stated folder. Anything else is refused back to Adaptation | code (guardrail) | `j2.py` |
+| 7.3 | After the deliverable is workable (tests passed in the sandbox), code posts the exact command and folder in chat with a one-time code, and asks: "Reply exactly: RUN <code>". Decide for me never answers it; nothing runs until the Requester does | code | `j2.py` |
+| 7.4 | Code compares the Requester's next message with `RUN <code>` exactly (trimmed). Anything else: not run, and said so. A second request needs a new code | code (guardrail) | `j2.py` |
+| 7.5 | On approval: run `J2_SANDBOX_CMD` with settings like `sandbox_settings`: no network; reads the built output folder and the stated folder; writes only the stated folder; the builder's time limit | code (guardrail) | `j2.py` |
+| 7.6 | Receipt in `receipts.jsonl`: `{"kind": "real_run", "command", "folder", "code", "approved_msg", "sha256" of each built file run, "exit", "output" (its end), "seconds", "t", "by": "code"}`; a chat line with the result. A refusal or an expired code gets a receipt too | code | `j2.py` |
+| 7.7 | UI: the receipt shows in the deliverable's Summary (like the conditions); the approval request is a Needs-you card | UI | `j2_ui.html`, `j2_artifacts.py` |
+| 7.8 | Tests: a mock run with a real-run workflow; wrong reply, Decide for me, a folder the brief doesn't name, `..` in an argument, a write outside the folder (with the fake sandbox: the settings are checked, not enforced) are each refused; the exact reply runs it once with a receipt | n/a | `j2_flow_test.py` |
+
+**Known limit:** one folder, read and write. A command that reads one folder and writes another (copy A to B) needs
+two folders: allow a `"reads"` list (read only) next to `"folder"` (the only write)? Founder's call.
+
+**Release check:** the three briefs ask for no real run, so the live check after step 7 only shows nothing else
+broke. A brief that does (e.g. "sort the files in /tmp/j2-sort-demo") would test it live; add it?
 
 ## Step 8: delete dead code
 

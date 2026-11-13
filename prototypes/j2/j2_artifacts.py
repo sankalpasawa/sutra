@@ -675,8 +675,8 @@ def groups(d, m=None):
     # a folder deliverable (its form's output is "folder"): one row holding its Map node and its files
     import j2_types
     for tt in load_types(d)["types"]:
-        if tt.get("kind") != "type" or not tt.get("deliverable") or tt["name"] not in j2_types.names() \
-                or j2_types.info(tt["name"]).get("output") != "folder":
+        if tt.get("kind") != "type" or not tt.get("deliverable") \
+                or (j2_types.forms().get(tt.get("form")) or {}).get("output") != "folder":      # its form's data, a recorded type's too
             continue
         files = sorted(os.path.relpath(p_, d) for p_ in glob.glob(os.path.join(d, tt["file"])) if os.path.isfile(p_))
         if files:

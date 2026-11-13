@@ -3192,6 +3192,8 @@ def saved_def(kind, d):
     r = j2_types.recorded(d).get(kind)
     if not r:
         return output_def(kind)
+    if not (j2_types.forms().get(r["form"]) or {}).get("template"):      # a form without sections (a folder): none
+        return {"label": r["label"], "file": r["file"], "sections": (), "rubric": ()}
     try:
         with open(os.path.join(d, r["file"]), encoding="utf-8") as f:
             heads = tuple(m.group(1).strip() for m in re.finditer(r"(?m)^##\s+(.+)$", f.read()))

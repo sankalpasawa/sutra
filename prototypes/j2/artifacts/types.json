@@ -266,7 +266,6 @@
         }
       }
     },
-    {"name": "agent", "kind": "type", "label": "Agent", "tag": "Agent", "color": "--other", "form": "agent", "noun": "agent", "deliverable": true, "triggers": [], "groups": [], "depends_on": []},
     {"name": "business_report", "kind": "type", "label": "Report", "tag": "Report", "color": "--other", "form": "document", "template": "templates/business_report/generic.json", "file": "business_report.md", "noun": "report", "deliverable": true, "triggers": ["\\b(?:sales|monthly|weekly|quarterly|annual|business|status|progress)\\s+report\\b|\\breport\\s+on\\b"], "groups": [], "depends_on": []},
     {
       "name": "screenshots",
