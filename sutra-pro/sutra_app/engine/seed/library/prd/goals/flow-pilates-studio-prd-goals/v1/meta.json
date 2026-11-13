@@ -1,0 +1,39 @@
+{
+  "schema": "template-library/1",
+  "name": "Flow Pilates Studio PRD Goals",
+  "version": 1,
+  "sha": "0a74201b6c48c7b75be8c11505956381d8a3d559478efd00dca9c354e79fd9cf",
+  "schema_sha": "298336c9d91301436415c215cddbd7630318794ba9f4235de9835eb00910f91f",
+  "model_sha": "3e5e6b9d7b7ba9d4de0187c4ba77cecaa6cd313b1f2d8b7d065b303f9bd9c369",
+  "class": "FlowPilatesStudioPRDGoalsV1",
+  "created": "2026-11-12T15:07:21",
+  "fingerprints": [
+    "83e1d6d4553c56a832955e7a4ed834065d211e83faa9dd942b379d20bac0965c"
+  ],
+  "made_by": {
+    "run": "j2-20261112-150036",
+    "workflow": "W-3",
+    "atom": "W-3.a1",
+    "agent": "code (adapted from a run template)",
+    "date": "2026-11-12 15:00:36"
+  },
+  "business": {
+    "name": "Flow Pilates Studio",
+    "type": "pilates studio"
+  },
+  "mock": false,
+  "collected_from": {
+    "run": "j2-20261112-150036",
+    "where": "the run's copy"
+  },
+  "used_by": [
+    {
+      "run": "j2-20261112-150036",
+      "workflow": "W-3",
+      "atom": "W-3.a1",
+      "action": "extended"
+    }
+  ],
+  "renamed_from": "Still Point Yoga PRD Goals@5",
+  "adapted_from": "Iron Grove Fitness PRD Goals@1"
+}

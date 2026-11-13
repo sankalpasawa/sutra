@@ -1,0 +1,56 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "additionalProperties": false,
+  "properties": {
+    "id": {
+      "description": "the section id of this workflow, as the task gives it (for Flow Pilates Studio, a pilates studio)",
+      "type": "string"
+    },
+    "anchor": {
+      "description": "the id attribute of the section element, with the #; \"\" when this workflow writes page-head tags only (for Flow Pilates Studio, a pilates studio)",
+      "type": "string"
+    },
+    "implements": {
+      "description": "the LLD section ids this builds; empty when the run has no LLD (for Flow Pilates Studio, a pilates studio)",
+      "items": {
+        "type": "string"
+      },
+      "type": "array"
+    },
+    "html": {
+      "description": "the section's HTML only: no <html>, <head> or <body> tags; \"\" when this workflow writes page-head tags only (for Flow Pilates Studio, a pilates studio)",
+      "type": "string"
+    },
+    "head": {
+      "description": "page-head tags this section needs (meta, link, style or script only); \"\" when it needs none (for Flow Pilates Studio, a pilates studio)",
+      "type": "string"
+    },
+    "selectors_used": {
+      "description": "the ids and classes you used (for Flow Pilates Studio, a pilates studio)",
+      "items": {
+        "type": "string"
+      },
+      "type": "array"
+    },
+    "facts_used": {
+      "description": "the charter facts this section uses, copied exactly from Flow Pilates Studio's charter",
+      "items": {
+        "enum": [
+          "The page has no JavaScript errors, no horizontal overflow at 360px and 1280px, and every in-page link points to an existing section.",
+          "The page has no horizontal overflow at 360px and at 1280px, so it works on phones.",
+          "The page shows no phone number.",
+          "The page shows no teacher names.",
+          "The page shows the studio address 'Unit 3, 9 Sample Lane, Pune 411004' as text, with no embedded map.",
+          "The page states that payment is made at the studio and that no online payment is taken.",
+          "Unit 3, 9 Sample Lane, Pune 411004"
+        ],
+        "type": "string"
+      },
+      "type": "array"
+    }
+  },
+  "required": [
+    "id"
+  ],
+  "type": "object"
+}

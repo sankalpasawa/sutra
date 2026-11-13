@@ -1,0 +1,66 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "additionalProperties": false,
+  "properties": {
+    "goals": {
+      "description": "the goals, G1, G2, ... in order (for Iron Grove Fitness, a prd)",
+      "items": {
+        "$ref": "#/definitions/Goal"
+      },
+      "type": "array"
+    },
+    "assumptions": {
+      "description": "the assumptions of Iron Grove Fitness's Goals",
+      "items": {
+        "type": "string"
+      },
+      "type": "array"
+    },
+    "facts_used": {
+      "description": "the charter facts this section is written from, copied exactly from Iron Grove Fitness's charter",
+      "items": {
+        "enum": [
+          "Friday 7:00 pm Kettlebell Class 650",
+          "Iron Grove Fitness",
+          "Monday 6:30 am Strength Basics 600",
+          "Payment is made at the studio",
+          "Saturday 8:00 am Weekend Bootcamp 800",
+          "The Goals section contains only goals the brief states: showing the weekly classes and prices and taking trial bookings",
+          "Tuesday 7:00 pm Circuit Hour 700",
+          "Unit 5, 21 Sample Street, Pune 411001",
+          "Wednesday 6:30 am Mobility Flow 500",
+          "bookings@irongrove.example",
+          "name, email, class, preferred date"
+        ],
+        "type": "string"
+      },
+      "type": "array"
+    }
+  },
+  "required": [
+    "goals",
+    "assumptions",
+    "facts_used"
+  ],
+  "type": "object",
+  "definitions": {
+    "Goal": {
+      "additionalProperties": false,
+      "properties": {
+        "id": {
+          "description": "G1, G2, ... in order",
+          "type": "string"
+        },
+        "statement": {
+          "description": "the goal in one line",
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "statement"
+      ],
+      "type": "object"
+    }
+  }
+}
