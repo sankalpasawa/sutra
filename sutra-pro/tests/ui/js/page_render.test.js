@@ -198,11 +198,11 @@ test("with a department and a run the URLs carry the run first and the departmen
 
 test("the page's own first calls reach J2's routes with the department once, with and without a run", () => {
   // the start page's output select is a Sutra module (output_pick.js): the page's own script no longer asks /api/engine/settings
-  assert.deepEqual(dept().fetched, ["/api/refs?dept=web", "/api/runs?dept=web", "/api/runlist?dept=web", "/api/state?since=0&dept=web",
-    "/api/artifacts?x=1&dept=web"]);
+  assert.deepEqual(dept().fetched, ["/api/refs?dept=web", "/api/runs?dept=web", "/api/runlist?dept=web", "/api/timing?dept=web",
+    "/api/state?since=0&dept=web", "/api/artifacts?x=1&dept=web"]);
   // a saved run also asks for its change requests (the build journey's stops) before the artifacts
   assert.deepEqual(dept({location: {search: `?run=${RUN}`}}).fetched,
-    ["/api/refs?dept=web", "/api/runs?dept=web", "/api/runlist?dept=web", `/api/state?since=0&run=${RUN}&dept=web`,
+    ["/api/refs?dept=web", "/api/runs?dept=web", "/api/runlist?dept=web", `/api/timing?run=${RUN}&dept=web`, `/api/state?since=0&run=${RUN}&dept=web`,
       `/api/changes?x=1&run=${RUN}&dept=web`, `/api/artifacts?x=1&run=${RUN}&dept=web`]);
 });
 
@@ -211,7 +211,7 @@ test("without a department the page is J2's: SutraCtx is there and empty, nothin
   assert.equal(alone.run("typeof SutraCtx"), "object");
   assert.equal(alone.run("SutraCtx.dept"), "");
   assert.equal(alone.run("typeof fetch.sutraWrapped"), "undefined");
-  assert.deepEqual(alone.fetched, ["/api/refs", "/api/runs", "/api/runlist", "/api/state?since=0", "/api/artifacts?x=1"]);
+  assert.deepEqual(alone.fetched, ["/api/refs", "/api/runs", "/api/runlist", "/api/timing", "/api/state?since=0", "/api/artifacts?x=1"]);
   assert.ok(!JSON.stringify(alone.out).includes("dept="));
 });
 
@@ -287,7 +287,7 @@ test("E4: the finish card of a finished run links to the preview with the run fi
   const alone = finish({}), web = finish({boot: BOOT, location: {pathname: "/d/web/"}});
   const run = finish({boot: BOOT, location: {pathname: "/d/web/", search: `?run=${RUN}`}});
   for (const card of [alone, web, run]) {
-    assert.ok(card.includes("Copy share link") && card.includes("Open full view") && card.includes('download="my-website.html"'));
+    assert.ok(card.includes("Copy share link") && card.includes("Open full view") && card.includes(`download="${readJson(fixture("state.json")).page}.html"`));
   }
   assert.ok(alone.includes('href="/site/latest"') && web.includes('href="/site/latest?dept=web"'));
   assert.ok(run.includes(`href="/site/latest?run=${RUN}&dept=web"`));

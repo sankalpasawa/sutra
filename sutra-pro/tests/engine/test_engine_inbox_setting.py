@@ -115,6 +115,9 @@ def test_the_switch_can_be_turned_off_again_with_a_second_line(j2, make_run_dir)
     if running.code is None:
         append_inbox(run_dir, 2, "setting", decide_for_me=False)
         wait_until(lambda: running.host.run.auto is False or running.code is not None, what="the switch off")
+        assert running.host.run.auto is False
+        if running.code is None:
+            append_inbox(run_dir, 3, "stop")     # off again, the run may wait at its next question: the owner stops it
     assert running.wait(60) == 0
 
 

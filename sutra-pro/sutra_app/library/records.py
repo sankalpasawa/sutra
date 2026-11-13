@@ -34,13 +34,13 @@ from pydantic import Field, JsonValue, StringConstraints, ValidationError, model
 from pydantic_core import InitErrorDetails
 
 from . import (  # noqa: F401  (imported for what they register)
-    artifacts, atom, chat, department, evaluation, functions, goal, node, org_chart, templates, wire, workflow,
+    atom, chat, department, evaluation, functions, goal, node, org_chart, templates, wire, workflow,
 )
 from .base import Value
 from .evaluation import ConditionResult
 from .gate import GATE, Checked, GateError
 from .registry import REGISTRY, RegistryError
-from .types import AtomId, JsonObject, Violation, clip, violation, violations_from_validation_error
+from .types import ArtifactName, AtomId, JsonObject, Violation, clip, violation, violations_from_validation_error
 from .workflow import registered_from_j2
 
 __all__ = [
@@ -165,10 +165,11 @@ def _problems(title: str, found: list[tuple[tuple[str | int, ...], str]]) -> Val
 class ArtifactData(Value):
     """<kind>.json and site/<kind>-vN.json: the data beside a document, written by code from what the builders sent
     (J2 `_save_artifact_data`). `schema` is checked and not stored (a field of that name would need an alias that is not a
-    Python keyword, design rule 7); `to_json()` puts it back. Each section is checked as the library model of that section."""
+    Python keyword, design rule 7); `to_json()` puts it back. The kind is a name by shape and each section is a bounded
+    JSON object: which sections a type has, and their fields, are the type's template in J2's data (D171), not code here."""
 
     template: Annotated[str, StringConstraints(min_length=1, max_length=80)]
-    artifact: Literal["prd", "hld", "lld", "design", "website"]
+    artifact: ArtifactName
     version: Annotated[int, Field(ge=1, le=999_999)]
     sections: Annotated[dict[Annotated[str, StringConstraints(min_length=1, max_length=80)], JsonObject], Field(max_length=40)]
 
@@ -180,27 +181,6 @@ class ArtifactData(Value):
                 raise ValueError(f"schema must be {ARTIFACT_SCHEMA!r}, not {data['schema']!r}")
             data = {k: v for k, v in data.items() if k != "schema"}
         return data
-
-    @model_validator(mode="after")
-    def _sections_follow_their_models(self) -> "ArtifactData":
-        found: list[tuple[tuple[str | int, ...], str]] = []
-        known = artifacts.SECTION_MODELS[self.artifact]
-        for name, data in self.sections.items():
-            model = known.get(name)
-            if model is None:
-                found.append((("sections", name), f"{name!r} is not a section of a {self.artifact} (it has {', '.join(known)})"))
-                continue
-            # a specialised template adds fields of its own (J2_TEMPLATE_LIBRARY=1): the generic model judges the generic
-            # fields only, as J2's own `j2_template_lib.validate` does
-            own = {(f.alias or n) for n, f in model.model_fields.items()}
-            try:
-                model.model_validate_json(json.dumps({k: v for k, v in data.items() if k in own}, ensure_ascii=False))
-            except ValidationError as exc:
-                for err in exc.errors(include_url=False, include_input=False):
-                    found.append((("sections", name, *err["loc"]), str(err["msg"])))
-        if found:
-            raise _problems("ArtifactData", found)
-        return self
 
     def to_json(self) -> dict[str, Any]:
         return {"schema": ARTIFACT_SCHEMA, **self.model_dump(by_alias=True, mode="json")}
@@ -346,10 +326,12 @@ class Route:
     family: str
     prepare: Callable[[str, Any], Prepared]
     rows: bool = False            # a list file (or an envelope of documents): `gate_record` returns None, paths name the row
+    by_content: bool = False      # the name alone does not decide (a type's data file is `<type>.json`): the file must say so
 
 
-def _r(label: str, regex: str, family: str, prepare: Callable[[str, Any], Prepared], rows: bool = False) -> Route:
-    return Route(label, re.compile(regex), family, prepare, rows)
+def _r(label: str, regex: str, family: str, prepare: Callable[[str, Any], Prepared], rows: bool = False,
+       by_content: bool = False) -> Route:
+    return Route(label, re.compile(regex), family, prepare, rows, by_content)
 
 
 _TPL = r"templates/[a-z0-9-]+/[a-z0-9-]+/[a-z0-9-]+@v[0-9]+"        # a run's copy of one template version (J2 33aeeda)
@@ -361,7 +343,7 @@ ROUTES: Final[tuple[Route, ...]] = (
     _r("audits.json", r"audits\.json", "evaluation:result|recheck (rows)", _p_audits, rows=True),
     _r("conflicts.json", r"conflicts\.json", "conflict (rows)", _p_each("conflict"), rows=True),
     _r("conditions*.json", r"conditions(-[a-z0-9]+)?\.json", "condition_result (rows)", _p_each("condition_result"), rows=True),
-    _r("style.json", r"style\.json", "artifact.design.style-guide", _p_one("artifact.design.style-guide")),
+    _r("style.json", r"style\.json", "run_file.object", _p_run_object),               # a page type's style guide, as data
     _r("memory/lessons.jsonl", r"(memory/)?lessons\.jsonl", "lesson", _p_lines("lesson", kind="lesson")),
     _r("receipts.jsonl", r"receipts\.jsonl", "receipt", _p_receipt),
     _r("chat.jsonl", r"chat\.jsonl", "run_message", _p_chat),
@@ -370,16 +352,22 @@ ROUTES: Final[tuple[Route, ...]] = (
     _r("templates/<artifact>/<section>/<slug>@v<N>/spec.json", _TPL + r"/spec\.json", "template", _p_template_spec),
     _r("templates/<artifact>/<section>/<slug>@v<N>/meta.json", _TPL + r"/meta\.json", "template.meta", _p_one("template.meta")),
     _r("templates/<artifact>/<section>/<slug>@v<N>/schema.json", _TPL + r"/schema\.json", "run_file.object", _p_run_object),
-    _r("<prd|hld|lld|design|website>.json, site/<kind>-v<N>.json", r"(site/)?(prd|hld|lld|design|website)(-v[0-9]+)?\.json",
-       "artifact_data", _p_one("artifact_data")),
     _r("chain.json", r"chain\.json", "chain_row (rows)", _p_each("chain_row"), rows=True),
     _r("documents.json", r"documents\.json", "run_file.object", _p_run_object),
     _r("sections.json", r"sections\.json", "run_file.object", _p_run_object),
-    _r("stage-<kind>.json", r"stage-[a-z]+\.json", "run_file.object", _p_run_object),
+    _r("stage-<kind>.json", r"stage-[a-z][a-z0-9_]*\.json", "run_file.object", _p_run_object),
     _r("report.json", r"report\.json", "run_file.object", _p_run_object),
     _r("change.json", r"change\.json", "run_file.list", _p_run_list),
     _r("settings.json", r"settings\.json", "run_file.object", _p_run_object),      # Decide for me (J2 sync 4): {"decide_for_me": bool}
+    _r("timing.json", r"timing\.json", "run_file.object", _p_run_object),          # time per step (J2 sync 5)
+    _r("autofix.json", r"autofix\.json", "run_file.list", _p_run_list),            # what the validator fixed itself
+    _r("deliverables.json", r"deliverables\.json", "run_file.object", _p_run_object),   # the planner's choice of types
+    _r("input_cuts.json", r"input_cuts\.json", "run_file.list", _p_run_list),      # a builder input cut at the limit
     *(_r(file, re.escape(file), family, _p_one(family)) for file, family in wire.WIRE_FILES.items()),
+    # last, so every exact name above wins: a type's data file is `<type>.json` (the type is a name by shape, read from
+    # J2's data, never listed here)
+    _r("<kind>.json, site/<kind>-v<N>.json", r"(site/)?[a-z][a-z0-9_]{1,40}(-v[0-9]+)?\.json",
+       "artifact_data", _p_one("artifact_data"), by_content=True),
 )
 
 # file => family, the catalogue as library design section 10 shows it
@@ -410,6 +398,11 @@ def route_for(name: str) -> Optional[Route]:
     return next((r for r in ROUTES if r.pattern.fullmatch(text)), None)
 
 
+def _claims_artifact_data(data: Any) -> bool:
+    """A `<kind>.json` is a type's data file when it carries the `schema` key of one (any version: a wrong one is refused)."""
+    return isinstance(data, Mapping) and str(data.get("schema", "")).startswith("artifact-schema/")
+
+
 def is_unchecked(name: str) -> bool:
     text = _normal(name)
     return any(p.fullmatch(text) for p, _ in UNCHECKED)
@@ -436,6 +429,8 @@ def check_record(name: str, data: Any) -> Optional[list[Checked]]:
     route = route_for(name)
     if route is None:
         return None
+    if route.by_content and not _claims_artifact_data(data):
+        return None                      # a name of the right shape that is not a type's data file: not in the catalogue
     try:
         prepared = route.prepare(_normal(name), _plain(data))
     except (TypeError, ValueError, RecursionError) as exc:

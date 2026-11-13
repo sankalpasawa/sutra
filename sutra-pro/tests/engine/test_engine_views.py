@@ -40,7 +40,7 @@ PRD_BRIEF = ("Write a PRD for QuickQueue, a mobile app that lets clinic patients
 NAMES = {"index", "vendor", "state", "runs", "call", "preview", "docs", "map", "plan", "library", "library_item", "run_templates",
          "artifacts", "agent", "code", "artifacts_tree", "artifact", "story", "board", "audits", "refs", "shot", "file", "site",
          "say", "playbooks_clear", "lessons_clear", "output", "reset", "runlist", "changes", "plan_map", "activity", "catalog",
-         "artifacts_groups", "ask", "record", "doc", "view", "settings"}
+         "artifacts_groups", "ask", "record", "doc", "view", "settings", "timing"}
 
 
 def load_recorder():
@@ -289,11 +289,11 @@ def test_the_recorder_reproduces_the_golden_from_an_extraction_of_prototypes_j2(
 
 
 # ---- the registry ------------------------------------------------------------------------------------------------------
-def test_the_views_are_the_41_handlers_of_the_design(w):
+def test_the_views_are_the_42_handlers_of_the_design(w):
     v = w.views
     assert set(v.VIEWS) == NAMES and all(callable(f) for f in v.VIEWS.values())
     assert v.VIEWS["site"] is v.site and callable(v.site_saved) and callable(v.site_live)
-    assert v.HANDLER_COUNT == 41 == len(v.VIEWS) - 1 + 2          # "site" has two rows (saved and live), one entry
+    assert v.HANDLER_COUNT == 42 == len(v.VIEWS) - 1 + 2          # "site" has two rows (saved and live), one entry
     assert not hasattr(v, "PATCH_VIEWS"), "runlist and changes are J2's own routes: no view is a patch's"
     assert v.LIVE_VIEWS <= set(v.VIEWS) and {"artifacts_groups", "record"} <= v.LIVE_VIEWS
 
@@ -301,7 +301,7 @@ def test_the_views_are_the_41_handlers_of_the_design(w):
 # ---- publishing: live_state, read_published, idle_snapshot ------------------------------------------------------------
 def test_live_state_builds_the_snapshot_and_the_live_dict_of_a_run(w):
     snap, live = w.views.live_state(w.site)
-    assert snap == {**w.site.snapshot(0), "saved": None} and len(snap) == 60 and len(w.site.snapshot(0)) == 59
+    assert snap == {**w.site.snapshot(0), "saved": None} and len(snap) == 63 and len(w.site.snapshot(0)) == 62
     assert set(live) == {"schema", "pid", "at", "output", "doc", "out_label", "docset", "stages", "stage_i", "docs", "board",
                          "site_tag", "sites"}
     assert live["schema"] == "engine-live/1" and live["pid"] == os.getpid() and live["sites"] == len(w.site.sites) > 0
@@ -332,8 +332,8 @@ def test_read_published_reads_both_files_and_the_pid(w, tmp_path):
 def test_idle_snapshot_has_the_keys_of_a_fresh_j2_snapshot(w):
     fresh = w.j2.J2Run().snapshot(0)
     idle = w.views.idle_snapshot(w.views.EngineSettings(), w.memory, "j2-idle")
-    assert set(idle) == set(fresh) and len(idle) == 59
-    assert idle["chat"] == [] and idle["status"] == "idle" and idle["output"] == "website"
+    assert set(idle) == set(fresh) and len(idle) == 62
+    assert idle["chat"] == [] and idle["status"] == "idle" and idle["output"] is None, "no default type (D165)"
 
 
 def test_idle_snapshot_overlays_the_departments_settings_and_restores_j2s_globals(w, tmp_path, monkeypatch):
@@ -527,14 +527,15 @@ def test_preview_of_a_document_atom_renders_its_section(w):
 def test_docs_shows_which_documents_were_asked_for(w):
     for ctx in (live_ctx(w, w.prd), saved_ctx(w, PRD_ID)):
         body = jbody(call(w, "docs", ctx))
-        assert set(body) == {"prd", "hld", "lld"} and body["prd"]["asked"] is True and body["prd"]["text"].startswith("# QuickQueue")
-        assert body["prd"]["workflows"] and body["hld"] == {"asked": False, "text": None, "workflows": []}
-    site = jbody(call(w, "docs", live_ctx(w, w.site)))
-    assert all(v == {"asked": False, "text": None, "workflows": []} for v in site.values())
+        assert set(body) == {"prd"} and body["prd"]["asked"] is True and body["prd"]["text"].startswith("# QuickQueue")
+        assert body["prd"]["workflows"] and set(body["prd"]) == {"asked", "text", "workflows", "label", "tag", "color"}
+        assert (body["prd"]["label"], body["prd"]["tag"]) == ("Product requirements", "PRD"), "the data's own words (D168)"
+    assert jbody(call(w, "docs", live_ctx(w, w.site))) == {}, "J2's docs_view lists only the documents a run has or asked for"
     live = live_ctx(w, w.site)
     live.extras = {**live.extras, "docset": ["hld"]}
-    assert jbody(call(w, "docs", live))["hld"] == {"asked": True, "text": None, "workflows": []}, "asked but not yet written"
-    assert jbody(call(w, "docs", idle_ctx(w)))["prd"]["asked"] is False
+    got = jbody(call(w, "docs", live))["hld"]
+    assert (got["asked"], got["text"], got["workflows"]) == (True, None, []), "asked but not yet written"
+    assert jbody(call(w, "docs", idle_ctx(w))) == {}
 
 
 def test_map_is_drawn_live_only_while_the_run_runs_or_is_paused(w, monkeypatch):
@@ -551,7 +552,7 @@ def test_map_is_drawn_live_only_while_the_run_runs_or_is_paused(w, monkeypatch):
     seen.clear()
     call(w, "map", ctx)
     live = seen[0]
-    assert set(live) == {"snapshot", "stages", "stage_words", "board"} and live["stage_words"] == w.j2.J2Run.STAGE_WORDS
+    assert set(live) == {"snapshot", "stages", "stage_words", "board"} and live["stage_words"] == w.j2.J2Run.stage_words()
     assert live["snapshot"]["status"] == "running" and live["board"] == ctx.extras["board"]
     seen.clear()
     call(w, "map", saved_ctx(w, SITE_ID))
@@ -816,10 +817,10 @@ def test_a_live_document_is_rendered_from_markdown(w):
 
 def test_before_anything_is_built_the_live_site_is_a_stub(w):
     stub = text_of(call(w, "site", idle_ctx(w), key="latest"))
-    assert "Your website will appear here" in stub
+    assert "Your result will appear here" in stub, "no type chosen: nothing is assumed (D165)"
     ctx = live_ctx(w, w.prd)
     ctx.extras = {**ctx.extras, "sites": 0}
-    assert "Your document will appear here" in text_of(call(w, "site", ctx, key="v1"))
+    assert "Your prd document will appear here" in text_of(call(w, "site", ctx, key="v1")), "the run's own label"
 
 
 def test_a_saved_site_serves_latest_or_a_version_or_a_stub(w):
@@ -975,7 +976,7 @@ def test_the_adapter_resets_and_sets_the_output_of_its_run(w, monkeypatch):
     fresh.status = "running"
     assert w.server.ask("POST", "/api/reset", {}) == (409, "application/json; charset=utf-8", b'{"ok": false}')
     fresh.status = "waiting"
-    assert w.server.ask("POST", "/api/reset", {})[0] == 200 and fresh.output == "website"
+    assert w.server.ask("POST", "/api/reset", {})[0] == 200 and fresh.output is None
 
 
 def test_the_adapter_serves_the_page_and_d3_only_from_a_given_folder(w, monkeypatch, tmp_path):
@@ -1052,7 +1053,7 @@ def test_the_route_table_of_the_adapter_names_a_view_for_every_get_path(w):
                                      "/api/docs", "/api/map", "/api/plan", "/api/plan-map", "/api/library", "/api/library/a/b/c/v1", "/api/catalog",
                                      "/api/run-templates", "/api/artifacts", "/api/agent", "/api/activity", "/api/record", "/api/code",
                                      "/api/artifacts/tree", "/api/artifacts/groups", "/api/artifact", "/api/story", "/api/board", "/api/audits",
-                                     "/api/refs", "/shot/1", "/file/x", "/doc/x", "/view", "/site/latest")}
+                                     "/api/refs", "/shot/1", "/file/x", "/doc/x", "/view", "/site/latest", "/api/timing")}
     assert reached == every_get, "every GET view is reached by some path of the adapter, and no other"
 
 
@@ -1099,7 +1100,7 @@ def write_runs_fixture(runs_dir):
 def test_the_golden_has_runlist_and_changes_recorded_from_j2s_own_server():
     assert {"runlist", "changes"} <= set(GOLD["get"]["live"]) and "patched" not in GOLD
     assert set(GOLD["get"]["live"]["runlist"]["keys"]) == {"live", "runs", "runs[].id", "runs[].title", "runs[].status",
-                                                          "runs[].output", "runs[].when", "runs[].brief"}
+                                                          "runs[].output", "runs[].label", "runs[].form", "runs[].when", "runs[].brief"}
     assert GOLD["get"]["live"]["changes"]["keys"] == ["changes"]
 
 
@@ -1418,7 +1419,8 @@ def test_the_stdlib_adapter_serves_the_new_routes(w, monkeypatch):
     status, ctype, body = srv.ask("GET", "/view?name=site/v1.html")
     assert (status, ctype.split(";")[0]) == (200, "text/html") and body == w.site.sites[0].encode("utf-8") or status == 200
     assert b"isn't written yet" in srv.ask("GET", "/doc/prd")[2]
-    assert srv.ask("GET", "/library")[0] == 404, "J2's /library is the page, which this adapter has only when it was given a folder"
+    # J2's /library is the page, which this adapter has only when J2's page files are found (an extraction named by SUTRA_J2_CHECKOUT has them)
+    assert srv.ask("GET", "/library")[0] == (200 if os.environ.get("SUTRA_J2_CHECKOUT") else 404)
 
 
 def test_the_stdlib_adapter_answers_a_question_from_the_records_and_never_asks_a_model(w, monkeypatch):
@@ -1454,3 +1456,34 @@ def test_the_stdlib_adapter_sets_and_reads_the_switch_of_its_run(w, monkeypatch)
     assert post({}) == {"ok": True, "decide_for_me": True}
     assert post({"decide_for_me": False}) == {"ok": True, "decide_for_me": False} and fresh.auto is False
     assert w.server.json("/api/state")["decide_for_me"] is False
+
+
+# ---- J2 sync 5: /api/timing, a run with no type, the data's types (D167, D168) -------------------------------------------------------------
+def test_timing_is_a_saved_runs_timing_json_else_rebuilt_from_its_calls_else_404(w, tmp_path):
+    d = tmp_path / "runs" / "j2-20261104-100000-aaaa"
+    d.mkdir(parents=True)
+    ctx = w.views.RunCtx("saved", d.name, str(d), str(tmp_path / "runs"), d.name, w.memory)
+    got = call(w, "timing", ctx)
+    assert (got.code, json.loads(got.body)) == (404, {"error": "no timing"})
+    (d / "timing.json").write_text(json.dumps({"total_s": 3, "steps": []}), encoding="utf-8")
+    got = call(w, "timing", ctx)
+    assert (got.code, json.loads(got.body)) == (200, {"total_s": 3, "steps": []})
+    missing = w.views.RunCtx("saved", "j2-nope", None, str(tmp_path / "runs"), d.name, w.memory)
+    assert call(w, "timing", missing).code == 404
+    assert call(w, "timing", idle_ctx(w)).code == 404
+
+
+def test_the_empty_live_state_has_no_type_and_a_run_with_no_type_publishes_null(w):
+    assert w.views.EMPTY_LIVE["output"] is None and w.views.EMPTY_LIVE["out_label"] is None and w.views.EMPTY_LIVE["doc"] is False
+    run = w.j2.J2Run()
+    assert run.output is None and run.out is None
+    snap, live = w.views.live_state(run)
+    assert (live["output"], live["out_label"], live["doc"]) == (None, None, False)
+    json.dumps(snap), json.dumps(live)
+
+
+def test_refs_and_file_read_the_data_so_a_registered_type_and_a_new_one_are_in_them(w):
+    body = jbody(call(w, "refs", idle_ctx(w)))
+    assert "PJ-1" in body["rubric"] and "PJ1" in body["conditions"], "the project type (host-registered) is in the refs"
+    assert all(i in body["rubric"] for i in ("D-1", "D-5")), "the document types' rubrics"
+    assert call(w, "file", idle_ctx(w), name="prd.md").code == 404, "no type: no file of its own, no crash"

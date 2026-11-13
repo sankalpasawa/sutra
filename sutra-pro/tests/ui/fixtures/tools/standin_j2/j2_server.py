@@ -45,6 +45,7 @@ SIMPLE = {
     "/api/story": {"schema": "story/1"},
     "/api/audits": [],
     "/api/refs": {"conditions": {}, "rubric": {}},
+    "/api/timing": {"wall_seconds": 0.0, "ai": {"calls": 0, "seconds": 0.0, "tokens_in": 0, "tokens_out": 0}, "by_step": [], "by_agent": []},
 }
 
 

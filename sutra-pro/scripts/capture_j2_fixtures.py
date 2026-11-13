@@ -110,6 +110,7 @@ ROUTE_FILES = {
     "story.json": "/api/story",
     "audits.json": "/api/audits",
     "refs.json": "/api/refs",
+    "timing.json": "/api/timing",     # Run settings' "Time per step" (J2 sync 5, D173)
     "site-latest.html": "/site/latest",
     # the Studio view's readable pages: a document's tab (the mock website run wrote none: J2's "not written yet" page), the site and one
     # record of the run, as `/view?name=` shows a file of the run's artifact list

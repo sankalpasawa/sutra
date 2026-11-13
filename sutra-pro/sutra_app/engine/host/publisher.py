@@ -246,7 +246,7 @@ class StatePublisher:
     # ---- the events ------------------------------------------------------------------------------------------------------
     def _emit(self, snap: dict, live: dict, j2, j2_map) -> int:
         running = snap.get("status") == "running" or bool(snap.get("paused"))
-        arg = {"snapshot": snap, "stages": list(live.get("stages") or []), "stage_words": j2.J2Run.STAGE_WORDS,
+        arg = {"snapshot": snap, "stages": list(live.get("stages") or []), "stage_words": j2.J2Run.stage_words(),
                "board": live.get("board")} if running else None
         built = j2_map.build(self.run.dir, arg)
         pending: list[tuple[tuple, str, dict]] = []

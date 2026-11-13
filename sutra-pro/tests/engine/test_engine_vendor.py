@@ -18,11 +18,12 @@ REPO = Path(__file__).resolve().parents[2]
 ENGINE = REPO / "sutra_app" / "engine"
 MD = ENGINE / "VENDORED.md"
 SEED_INDEX = ENGINE / "seed" / "library" / "index.json"
-PIN = "025e265c594564f47a2365874cd5a5cc5d0d20a6"          # sync 4 (D136): the sutra commit that last touched prototypes/j2
-PIN_TREE = "21c67045fe3230c1ab9be381c2f21465ea91849c"     # `git rev-parse <PIN>:prototypes/j2`
-FILES = 208                                               # what the script builds from that extraction, VENDORED.md included
+PIN = "1d537295eb11cb034956fa9d8a4026eaa1e3f44e"          # sync 5 (D160): the tag cut-off/2026-11-12, a sutra commit that touched prototypes/j2
+PIN_TREE = "30c71fea4679716c9f48d297ee4b2c3463eeebfd"     # `git rev-parse <PIN>:prototypes/j2`
+FILES = 229                                               # what the script builds from that extraction, VENDORED.md included
 CODE = ("j2", "j2_agent", "j2_agent_models", "j2_agent_views", "j2_artifact_models", "j2_artifacts", "j2_board", "j2_change",
-        "j2_check", "j2_map", "j2_realization", "j2_rules", "j2_schema", "j2_send", "j2_story", "j2_studio", "j2_template_lib")
+        "j2_check", "j2_map", "j2_realization", "j2_rules", "j2_schema", "j2_send", "j2_story", "j2_studio", "j2_template_lib",
+        "j2_types")
 SIBLINGS = set(CODE) | {"llm", "rehydrate"}
 ROLE_FILES = {"team.md", "identity.md", "adaptation.md", "priority.md", "coordination.md", "audit.md", "builder.md",
               "confidence-judge.md", "rates.json", "stages.json"}
@@ -85,11 +86,16 @@ def test_every_vendored_module_imports_in_a_clean_process(tmp_path):
 # ---- the data files -----------------------------------------------------------------------------------------------------
 def test_the_data_files_are_all_there():
     assert {p.name for p in (ENGINE / "agents" / "j2").iterdir()} == ROLE_FILES
-    assert {p.name for p in (ENGINE / "conditions").iterdir()} == {"hld.json", "lld.json", "prd.json", "website.json"}
+    assert {p.name for p in (ENGINE / "conditions").iterdir()} == {"document.json", "hld.json", "lld.json", "prd.json",
+                                                                    "website.json"}
     for generic in (ENGINE / "templates").glob("*/generic.json"):
         json.loads(generic.read_text(encoding="utf-8"))
     assert sorted(p.parent.name for p in (ENGINE / "templates").glob("*/generic.json")) == \
-        ["design", "hld", "lld", "prd", "website"]
+        ["business_report", "design", "hld", "lld", "prd", "website"]
+    # D161: the whole tree is vendored (18 type text files in sync 5), but for templates/README.md
+    assert sum(1 for p in (ENGINE / "templates").rglob("*") if p.is_file()) == 24 and not (ENGINE / "templates" / "README.md").exists()
+    assert sorted(p.name for p in (ENGINE / "templates" / "document").iterdir()) == \
+        ["atom_rules.md", "builder.md", "charter.txt", "intake.md"]
     types = json.loads((ENGINE / "artifacts" / "types.json").read_text(encoding="utf-8"))
     assert types, "artifacts/types.json is empty"
     seed = ENGINE / "seed" / "library"
@@ -116,7 +122,8 @@ def test_the_manifest_carries_the_engine_data():
 def test_vendored_md_names_the_pinned_commit_the_tree_and_the_extraction_recipe():
     """D136: the one source is prototypes/j2 of this repository at a sutra commit and tree id, extracted with git archive."""
     head = MD.read_text(encoding="utf-8").split("## Patches")[0]
-    assert f"at the sutra commit `{PIN}` (tree of `prototypes/j2`: `{PIN_TREE}`)" in head
+    assert f"at the sutra commit `{PIN}` (tree of `prototypes/j2`: `{PIN_TREE}`, the tag `cut-off/2026-11-12`)" in head
+    assert "(sync 5, D160)" in head
     assert f"`git archive {PIN} prototypes/j2 | tar -x --strip-components=2 -C <empty folder>`" in head
     assert "the only source of every file below" in head
     assert f"--source <the extraction> --commit {PIN} --check" in head
@@ -125,8 +132,8 @@ def test_vendored_md_names_the_pinned_commit_the_tree_and_the_extraction_recipe(
 def test_the_older_commit_ids_in_the_header_are_history_and_never_a_source():
     head = MD.read_text(encoding="utf-8").split("## Patches")[0]
     history = head.split("History, not a source:")[1].split("Patches are located")[0]
-    assert "`9200cf6`" in history and "`33aeeda`" in history and "`ce2631f`" in history
-    assert not any(old in head.split("History, not a source:")[0] for old in ("9200cf6", "33aeeda", "ce2631f"))
+    assert all(f"`{old}`" in history for old in ("9200cf6", "33aeeda", "025e265c", "ce2631f"))
+    assert not any(old in head.split("History, not a source:")[0] for old in ("9200cf6", "33aeeda", "025e265c", "ce2631f"))
 
 
 def test_the_vendoring_script_pins_the_same_commit_and_tree_as_the_header():
@@ -134,7 +141,7 @@ def test_the_vendoring_script_pins_the_same_commit_and_tree_as_the_header():
     module = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(module)
     assert (module.BASELINE, module.BASELINE_TREE) == (PIN, PIN_TREE)
-    assert len(module.CODE) == 17 and tuple(Path(n).stem for n in module.CODE) == CODE
+    assert len(module.CODE) == 18 and tuple(Path(n).stem for n in module.CODE) == CODE
 
 
 def test_every_recorded_vendored_hash_matches_the_file():
@@ -157,11 +164,13 @@ def test_every_vendored_file_is_listed_and_every_listed_file_exists():
     assert on_disk == listed
 
 
-def test_the_patch_table_has_p1_to_p16_without_p6_and_p13():
-    """P6 never existed; P13 (the run list and the change list) was retired into engine/runlist.py in sync 4 (D140)."""
+def test_the_patch_table_has_p1_to_p18_without_p6_and_p13():
+    """P6 never existed; P13 (the run list and the change list) was retired into engine/runlist.py in sync 4 (D140); P17 and
+    P18 are new in sync 5 (D162); P19 is only reserved."""
     table = MD.read_text(encoding="utf-8").split("## Files")[0]
     ids = re.findall(r"^\| (P\d+) \|", table, re.M)
-    assert ids == [f"P{n}" for n in range(1, 17) if n not in (6, 13)]
+    assert ids == [f"P{n}" for n in range(1, 19) if n not in (6, 13)]
+    assert "P19" not in ids
     used = {p for _, _, patches, _, _ in rows() for p in patches.split(",") if p != "-"}
     assert used == set(ids)
 
@@ -169,11 +178,14 @@ def test_the_patch_table_has_p1_to_p16_without_p6_and_p13():
 def test_a_patch_listed_for_a_file_leaves_its_mark_in_it():
     marks = {"P3": ("j2.py", "run_dir=None"), "P4": ("j2.py", "def apply_override"), "P9": ("j2.py", "system_addendum"),
              "P10": ("j2_template_lib.py", "class LibraryBusy"), "P11": ("j2.py", "def rehydrate"),
-             "P14": ("j2.py", 'self.out.get("single")'),
+             "P14": ("j2.py", '(self.out or {}).get("single")'),
+             "P17": ("j2_types.py", "def _create"), "P18": ("j2_types.py", "def register"),
+             "P2 ": ("j2_types.py", "J2_AGENTS_DIR"),
              "P16": ("j2.py", '{**(_read(self.dir, "settings.json", {}) or {}), "decide_for_me": True}'),
              "P2": ("j2_realization.py", "J2_AGENTS_DIR")}
     by_file = {Path(v).name: patches.split(",") for v, _, patches, _, _ in rows() if v.endswith(".py")}
     for patch, (name, text) in marks.items():
+        patch = patch.strip()
         assert patch in by_file[name], (patch, name)
         assert text in (ENGINE / name).read_text(encoding="utf-8"), (patch, text)
 
@@ -200,8 +212,44 @@ def test_p1_j2_imports_the_studio_module_relative_and_the_studio_module_imports_
 def test_p1_j2_agent_views_has_no_sys_path_insert_and_imports_its_three_siblings_relative():
     tree = ast.parse((ENGINE / "j2_agent_views.py").read_text(encoding="utf-8"))
     relative = sorted(n.names[0].name for n in ast.walk(tree) if isinstance(n, ast.ImportFrom) and n.level == 1)
-    assert relative == ["j2_agent_models", "j2_artifact_models", "j2_template_lib"]
+    assert relative == ["j2_agent_models", "j2_artifact_models", "j2_template_lib", "j2_types"]
     assert "sys.path" not in (ENGINE / "j2_agent_views.py").read_text(encoding="utf-8")
+
+
+def vendor_module():
+    spec = importlib.util.spec_from_file_location("vendor_j2_p1_under_test", REPO / "scripts" / "vendor_j2.py")
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
+def test_p1_is_a_counted_rule_over_forty_import_lines():
+    """D162: one rule for every code module, with the number of lines it changes recorded per file."""
+    module = vendor_module()
+    assert sum(module.P1_COUNTS.values()) == 40 and set(module.P1_COUNTS) <= {f"{n}.py" for n in CODE}
+    for name in CODE:
+        text = (ENGINE / f"{name}.py").read_text(encoding="utf-8")
+        assert len(module.p1_lines(text)) == module.P1_COUNTS.get(f"{name}.py", 0), name
+
+
+def test_p1_a_changed_count_stops_the_run_like_a_missing_anchor():
+    module = vendor_module()
+    with pytest.raises(module.VendorError, match="P1 expects 1 import line"):
+        module.apply_p1("import j2_types\nimport j2_map\n", "j2_rules.py")        # one more than recorded
+    with pytest.raises(module.VendorError, match="P1 expects 0 import line"):
+        module.apply_p1("import j2_x\n", "j2_board.py")                            # a module that has none
+
+
+def test_p1_the_rule_rewrites_every_form_and_leaves_comments_alone():
+    module = vendor_module()
+    module.P1_COUNTS["probe.py"] = 4
+    try:
+        text, n = module.apply_p1("import j2_x\nimport j2_y as Y      # why\n    import llm\nfrom j2_z import w, v\n"
+                                  "# import j2_q\nimport json\n", "probe.py")
+    finally:
+        del module.P1_COUNTS["probe.py"]
+    assert n == 4 and text == ("from . import j2_x\nfrom . import j2_y as Y      # why\n    from . import llm\n"
+                               "from .j2_z import w, v\n# import j2_q\nimport json\n")
 
 
 HOME_PATH = re.compile(r"/(?:Users|home)/[A-Za-z0-9_.-]+")        # a pattern, never a path (R5)

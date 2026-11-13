@@ -40,13 +40,13 @@ def runs(tmp_path) -> Path:
 
 
 # ---- run_row ------------------------------------------------------------------------------------------------------------
-def test_a_row_has_exactly_the_six_keys_of_run_settings(runs):
+def test_a_row_has_exactly_the_eight_keys_of_run_settings(runs):
     make_run(runs, "j2-20261104-100004", summary={"status": "done", "output_type": "website", "brief": "A cafe site"},
              goal={"site_name": "Brew Lab"})
     row = runlist.run_row("j2-20261104-100004", str(runs))
     assert row == {"id": "j2-20261104-100004", "title": "Brew Lab", "status": "done", "output": "website",
-                   "when": "2026-11-04T10:00:04", "brief": "A cafe site"}
-    assert list(row) == ["id", "title", "status", "output", "when", "brief"]
+                   "label": "Website", "form": "page", "when": "2026-11-04T10:00:04", "brief": "A cafe site"}
+    assert list(row) == ["id", "title", "status", "output", "label", "form", "when", "brief"]
 
 
 @pytest.mark.parametrize("status, expected", [("done", "done"), ("done_with_open_items", "done"), ("stopped", "stopped"),
@@ -211,3 +211,33 @@ def test_the_module_imports_only_the_standard_library_and_the_vendored_j2():
         elif isinstance(node, ast.ImportFrom):
             found |= {f"{'.' * node.level}{node.module or ''} {a.name}".strip() for a in node.names}
     assert found == {"json", "os", "re", ". j2"}
+
+
+# ---- a run with no type, and a type the store lost (J2 sync 5, D167) -----------------------------------------------------------------
+def test_a_run_that_stopped_before_a_type_was_chosen_is_a_row_with_no_type(runs):
+    """J2's `saved_run_no_type`: no summary, no meta output: the row opens with empty output, label and form."""
+    make_run(runs, "j2-20261104-100005", first_user="make me something")
+    row = runlist.run_row("j2-20261104-100005", str(runs))
+    assert (row["output"], row["label"], row["form"], row["status"], row["brief"]) == ("", "", "", "stopped", "make me something")
+    assert runlist.run_list(str(runs))["runs"][0]["label"] == ""
+
+
+def test_a_meta_row_with_a_null_output_is_a_run_with_no_type(runs):
+    make_run(runs, "j2-20261104-100006", meta_output=None, first_user="hello")
+    assert runlist.run_row("j2-20261104-100006", str(runs))["output"] == ""
+
+
+def test_a_type_the_data_does_not_know_keeps_the_label_the_run_recorded(runs):
+    d = make_run(runs, "j2-20261104-100007", summary={"status": "done", "output_type": "gone_type"})
+    (d / "documents.json").write_text(json.dumps({"gone_type": {"file": "gone_type.md"}}), encoding="utf-8")
+    (d / "artifacts.json").write_text(json.dumps({"rows": [{"kind": "type", "type": "gone_type", "name": "Field guide"}]}), encoding="utf-8")
+    row = runlist.run_row("j2-20261104-100007", str(runs))
+    assert (row["output"], row["label"], row["form"]) == ("gone_type", "Field guide", "document")
+
+
+def test_a_registered_type_has_its_own_label_and_form(runs):
+    from sutra_app.engine import capabilities, j2
+    capabilities.register(j2)
+    make_run(runs, "j2-20261104-100008", summary={"status": "done", "output_type": "project"})
+    row = runlist.run_row("j2-20261104-100008", str(runs))
+    assert (row["label"], row["form"]) == ("Project work", "document")

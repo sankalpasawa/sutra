@@ -139,7 +139,7 @@ def test_create_title_defaults_to_the_first_words_of_the_text(tenv):
 
 def test_create_refuses_bad_settings_with_422_and_stores_nothing(tenv):
     before = tenv.one("SELECT count(*) FROM tasks")
-    for bad in ({"J2_SEND_MODE": "live"}, {"J2_OUTPUT": "pdf"}, {"J2_BUDGET": "0"}, {"J2_FIXES": "2"}):
+    for bad in ({"J2_SEND_MODE": "live"}, {"J2_OUTPUT": "Not A Type"}, {"J2_BUDGET": "0"}, {"J2_FIXES": "2"}):
         with pytest.raises(AppError) as caught:
             tenv.new(settings=bad)
         assert caught.value.code == "validation"

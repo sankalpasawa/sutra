@@ -161,6 +161,15 @@ def rows(d, types=None):
     built = {r["type"] for r in out}
     for r in out:      # what it depends on in this run: only the types that were built
         r["depends_on"] = [x for x in r["depends_on"] if x in built]
+    # J2_ARTIFACT_LIBRARY=1 (reuse.json): the sections this run served from an earlier run, by the workflow that owns them
+    served = {x.get("workflow"): x for x in (_read(d, "reuse.json", {}) or {}).get("decisions") or []
+              if isinstance(x, dict) and x.get("door") == "reuse" and x.get("held")}
+    for r in out:
+        hits = [{"workflow": wid, "section": served[wid].get("section"), "run": (served[wid].get("source") or {}).get("run"),
+                 "source_workflow": (served[wid].get("source") or {}).get("workflow"), "key": served[wid].get("key")}
+                for wid in r.get("workflows") or [] if wid in served]
+        if hits:
+            r["reused_from"] = hits
     return out
 
 

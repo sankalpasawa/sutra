@@ -398,6 +398,8 @@ live.json    {"schema":"engine-live/1","pid":48211,"at":"2026-11-04T10:00:41Z","
 - e *Invalid JSON*: a model reply that is not JSON follows J2's own fallbacks (`call()` keeps `{"say": raw[:400]}`, j2.py:3171-3175; builders retry inside their envelope). A bad `inbox.jsonl` line is skipped with an `inbox.skipped` trace line; a missing run directory or an invalid `task.json` ends the run as crashed with code `start_failed`, exit 2 [S1-contracts-11]; a torn `snapshot.json` cannot occur (atomic rename), and a missing one means idle.
 - f *Disk error* writing the run folder: `OSError` in `post` takes path a. *Chrome missing*: J2's behaviour, the render check "could not run" and the site is never workable (README.md:247). *Library busy for 30 s*: P10, generic template. *Record rejected* (library strict mode): `RecordRejected` has `fatal = True`, so it crashes the run through path a; in log mode it only writes a `record.warning` trace line.
 **F8 Two departments at once.** Each has its own process, folders, memory, environment, `NAMES`, `RATES`, `OUTPUT`. The only shared writable store is the library (P10).
+**Sync 5 (D165-D169):** there is no default output type (`Selection.output` may be `None`: J2's planner picks per run); `GET /api/engine/settings` carries `output_types` (`name`, `label`, `form`, `pin`) and `builder_timeout`; a new view `GET /api/timing` (time per step, `timing.json`, the 42nd route, 34 page names) joins the J2 routes; the run list and the state give `label` and `form` and tolerate a run with no type. Everything below that names `prd`, `hld`, `lld` or `website` as the closed set describes sync 4; the as-built note of record is `docs/design/j2-sync-5.md`.
+
 **F9 Reset and output on the start page.** `POST /api/output?dept=web {type}`: allowed while the page has no run (idle) and writes `page.json.next_settings.J2_OUTPUT`; otherwise 409 (J2: `set_output` is refused once a message exists, j2.py:2883). `POST /api/reset?dept=web` calls `stop_live(dept)`: False (a task is starting or running; nothing is touched) gives 409 `{"ok":false}` (J2, j2_server.py:264); True (nothing of the department is starting or running afterwards; a task waiting for the owner was stopped through the normal ladder with the outcome "reset by you", queued and blocked tasks were cancelled) writes `page.json.since_run` = the latest run id (atomic) and answers 200 `{"ok":true}`. No other state is cleared and history is never deleted (tasks, run folders, the department chat), so `resolve` returns idle until the next task; the history stays in `/api/runs`. The next task after a reset is a fresh run: `_follow_up` reads `since_run` and does not seed from, or make a child of, a run at or before it (no `seed_from`, no `parent_run_id`, no framing from an old open question); a run made after the reset is continued again [S1-contracts-04][S3-web-12].
 
 ## 7. Endpoints
@@ -411,7 +413,7 @@ live.json    {"schema":"engine-live/1","pid":48211,"at":"2026-11-04T10:00:41Z","
 | 4 | `runs` GET `/api/runs` (:86) | none | `{live:<run id or "">, runs:[{id,status,brief}]}` (60, newest first, folders with chat.jsonl), this department only | disk |
 | 5 | `call` GET `/api/call` (:88) | `id:int`, `run` | the calls.jsonl record (`id,fn,step,cycle,t,seconds,model,tokens,chars,inputs,reply,reason,system,prompt,raw`) or 404 `{"error":"no such call"}` | disk |
 | 6 | `preview` GET `/api/preview` (:92) | `atom`, `run` | `{anchor, html}` | live |
-| 7 | `docs` GET `/api/docs` (:108) | `run` | `{prd,hld,lld: {asked,text,workflows}}` | live |
+| 7 | `docs` GET `/api/docs` (:108) | `run` | `{<type>: {asked,text,workflows,label,tag,color}}` for every document-form type of the run (J2's `docs_view`, D168; sync 5) | live |
 | 8 | `map` GET `/api/map` (:122) | `run` | map/1 `{schema,run,nodes,edges,teams,workflows,status,legend,constellations,live,built_from,not_recorded}` | live |
 | 9 | `plan` GET `/api/plan` (:129) | `run` | `plan_view` `{found,...}` | disk |
 | 10 | `library` GET `/api/library` (:132) | none | `{schema, dir, groups}` | global |
@@ -425,7 +427,7 @@ live.json    {"schema":"engine-live/1","pid":48211,"at":"2026-11-04T10:00:41Z","
 | 18 | `story` GET `/api/story` (:173) | `run` | story/1 | live |
 | 19 | `board` GET `/api/board` (:180) | `run` | board/1 `{schema, entries}` | live |
 | 20 | `audits` GET `/api/audits` (:186) | `run` | `[{stage,cycle,results,extra_issues,rubric,conditions}]` | disk |
-| 21 | `refs` GET `/api/refs` (:196) | none | `{conditions:{id:text}, rubric:{id:text}}` | static |
+| 21 | `refs` GET `/api/refs` (:196) | none | `{conditions:{id:text}, rubric:{id:text}}` over every type of `j2_types.names()` (D168; sync 5) | static |
 | 22 | `shot` GET `/shot/{n}` (:202) | `run` | PNG of `site/shots/v{n}.png`, else 404 | disk |
 | 23 | `file` GET `/file/{name}` (:209) | `run` | md or docx download; only names the output allows | live |
 | 24 | `site` GET `/site/{key}` with `run` (:221) | `latest` or `vN` | the saved page (html: sandboxed), or the "No site in this run" stub [S3-web-14] | disk |

@@ -168,7 +168,7 @@ def test_task_settings_are_the_engines_seven_keys_and_nothing_else():
     assert tuple(TaskSettings.model_fields) == TASK_SETTING_KEYS
     ok = TaskSettings.model_validate({"J2_BUDGET": "100000", "J2_FIXES": "1", "J2_OUTPUT": "lld"})
     assert ok.model_dump() == {"J2_OUTPUT": "lld", "J2_BUDGET": "100000", "J2_FIXES": "1"}            # unset keys are left out
-    for bad_value in ({"J2_SEND_MODE": "live"}, {"J2_OUTPUT": "pdf"}, {"J2_BUDGET": "0"}, {"J2_BUDGET": "100001"}, {"J2_BUDGET": "abc"},
+    for bad_value in ({"J2_SEND_MODE": "live"}, {"J2_OUTPUT": "Not A Type"}, {"J2_BUDGET": "0"}, {"J2_BUDGET": "100001"}, {"J2_BUDGET": "abc"},
                       {"J2_BUDGET": "007"}, {"J2_BUDGET_CAP": "1.5"}, {"J2_FIXES": "2"}, {"J2_MEMORY": True}, {"J2_BUDGET": 5}):
         with pytest.raises(ValidationError):
             TaskSettings.model_validate(bad_value)

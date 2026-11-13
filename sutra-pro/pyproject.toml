@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "sutra-pro"
-version = "0.3.3"
+version = "0.4.0"
 description = "The new Sutra app: a chat on top of one global org chart, five agentic function nodes per department, and a Claude / Codex connector layer."
 requires-python = ">=3.11"
 dependencies = [

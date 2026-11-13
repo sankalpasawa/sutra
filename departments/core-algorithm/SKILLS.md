@@ -11,5 +11,8 @@
 | Reflection and structural reuse | Evidence-backed pattern/reuse proposals | `PROPOSED_ONLY` |
 | J2 projection | Read-only `atom/1`-shaped plan projection | Not a live J2 adapter |
 | Implementation generation | Plan + state to workflow shape (`W-<goal>.json`), atoms, scaffold (done-when lines, go/ask/refuse/always rules, five functions), page | `PROPOSED_ONLY`; deterministic; 3 unit tests + 2 independent checks (0.3.0) |
+| Standards as rules | A checklist over a workflow JSON becomes verified evidence rows (an evidence adapter); the standard is an approved rule | Cases 25 to 27 (0.5.0) |
+| Action kinds | A registered kind owns an effect and may carry hooks (check, plan, settle); the kernel keeps the gate and the receipt | Constructor and artifact handlers with byte-identical receipts (0.7.0); hooks (0.8.0) |
+| Human ask | A step asks a named party and the run waits; waiting is a plan; the stamp is bound to the issued receipt; a decision is final | Case 29 and the `ask_events` record (0.8.0) |
 
 A skill or domain rule is a versioned extension. It cannot change core authorization or proof semantics by changing its own JSON.

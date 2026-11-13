@@ -154,7 +154,7 @@ Set any of these before `python3 j2_server.py`, like the examples above.
 | `J2_RATES` | 1 | `0` turns the rate card off |
 | `J2_SLIM` | on | Builders get their own section plus a short list of the other sections, not the whole page. `0` turns it off |
 | `J2_RUNS_DIR` | `runs/` | Folder runs are saved to |
-| `J2_CHROME` | auto | Path to Chrome for Audit screenshots |
+| `J2_CHROME` | auto | Path to Chrome for Audit screenshots (`CHROME_PATH` is read too, after it) |
 | `J2_OVERRIDE_KEY` | unset | Owner override key, set in `.env` only (see `README.md`) |
 | `J2_BOARD` | off | `1` turns on the message board |
 | `J2_FORCE_QUESTION` | off | Mock-only test switch: a comma list of askers, each asking one question. A function (`identity`, `adaptation`, `priority`, `coordination`, `audit`) or a builder (workflow id or role word) |

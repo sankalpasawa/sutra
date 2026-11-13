@@ -63,6 +63,8 @@ Suppose a standing goal is `order_fulfilled(order_7)`. An approved rule provides
 | Learning/formation | Propose reusable Methods, rules or patterns | Promote its own rules, verifier or kernel |
 | J2 adapter | Map proposed plan to J2 atom/map contracts | Claim a projection is executed J2 work |
 | Implementation generator | Turn a plan into a runnable workflow shape (sutra-native user-kit), atoms, a department scaffold and a page | Execute anything, register itself, or mark a step done |
+| Action kind | Perform the effect of a registered kind, check its methods at load, say when its effect is pending, keep its own books after a run | Skip the gate, set the receipt's own fields, or touch grants, budget, providers, rules or methods |
+| Ask and stamp | Park a run on a question to a named party; write the answer as a decision | Answer for someone else, reopen a decision with an ordinary row, or count as external proof |
 
 ## Four linked interpretations
 
@@ -70,6 +72,6 @@ Suppose a standing goal is `order_fulfilled(order_7)`. An approved rule provides
 
 ## Honest status
 
-Current `lab/` has 25 authored deterministic cases, 54 passing local unit tests and 31 independent trace/fixture checks. It is **not** an independently generalizing agent, full condition theorem prover, autonomous code generator, production J2 adapter, real external action service or Native v1–v5 proof. The original Sutra Core v0.2.2 and separate v0.3.0 candidate remain independent historical tracks.
+The current `lab/` states its build label and its counts of cases, unit tests and independent checks in [lab/README.md](lab/README.md). It is **not** an independently generalizing agent, full condition theorem prover, autonomous code generator, production J2 adapter, real external action service or Native v1–v5 proof. The original Sutra Core v0.2.2 and separate v0.3.0 candidate remain independent historical tracks.
 
 Read [CHARTER.md](CHARTER.md) for boundaries and [lab/README.md](lab/README.md) for an exact reproducible experiment.

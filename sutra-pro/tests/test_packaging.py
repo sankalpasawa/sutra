@@ -108,7 +108,6 @@ DOCS_SCHEMAS = REPO / "docs" / "schemas"
 # generators and checkers that write or diff docs/schemas on request (never on the way to serving a page); the reason is the entry
 GENERATORS = {
     "library/export.py": "the `export` command writes (or with --check diffs) docs/schemas",
-    "library/templates.py": "`write_generic_templates` writes docs/schemas/templates when asked",
 }
 
 

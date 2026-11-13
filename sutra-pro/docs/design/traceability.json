@@ -1,14 +1,14 @@
 {
  "schema": "traceability/1",
  "counts": {
-  "decisions": 159,
+  "decisions": 175,
   "packages": 78,
-  "endpoints": 41,
+  "endpoints": 42,
   "chips": 15,
   "steps": 7,
   "owner_rules": 7
  },
- "max_decision": 159,
+ "max_decision": 175,
  "owner_rules": [
   {
    "rule": "This is a new app, no relation to the old sutra-ui. Its design is the J2 prototype's design.",
@@ -348,7 +348,23 @@
     "D156",
     "D157",
     "D158",
-    "D159"
+    "D159",
+    "D160",
+    "D161",
+    "D162",
+    "D163",
+    "D164",
+    "D165",
+    "D166",
+    "D167",
+    "D168",
+    "D169",
+    "D170",
+    "D171",
+    "D172",
+    "D173",
+    "D174",
+    "D175"
    ],
    "modules": [
     "docs/DECISIONS.md",
@@ -1491,6 +1507,22 @@
     "settings",
     "settings_read"
    ],
+   "tests": [
+    "tests/engine/test_engine_views.py",
+    "tests/engine/golden/api_shapes.json",
+    "tests/engine/test_engine_api_scope.py",
+    "tests/contracts/test_contract_route_table.py"
+   ]
+  },
+  {
+   "n": 42,
+   "name": "timing",
+   "method": "GET",
+   "path": "/api/timing",
+   "handler": "sutra_app/engine/views.py",
+   "adapter": "sutra_app/engine/api/state.py",
+   "in_ui_list": true,
+   "golden_keys": [],
    "tests": [
     "tests/engine/test_engine_views.py",
     "tests/engine/golden/api_shapes.json",
@@ -3432,18 +3464,6 @@
    "diagram": "label \"stop ladder: identity first\", pill on band:DEPARTMENT RUNTIME."
   },
   {
-   "id": "D158",
-   "title": "A reply the closed model would refuse for its length, its ids or J2's check shape is read, not failed: texts are cut and recorded RECOVERED",
-   "packages": [
-    "GAP-TUNE",
-    "L1",
-    "L3"
-   ],
-   "status": "implemented",
-   "superseded_by": [],
-   "diagram": "label \"replies read, long text cut and recorded\", pill on band:DEPARTMENT RUNTIME."
-  },
-  {
    "id": "D157",
    "title": "A work atom records what its turn produced, the plain words and the model's last reply; the store scrubs them and the card's Result block shows them",
    "packages": [
@@ -3462,6 +3482,18 @@
    "diagram": "label \"atom card shows output and the reply\", pill on Workflow graph store."
   },
   {
+   "id": "D158",
+   "title": "A reply the closed model would refuse for its length, its ids or J2's check shape is read, not failed: texts are cut and recorded RECOVERED",
+   "packages": [
+    "GAP-TUNE",
+    "L1",
+    "L3"
+   ],
+   "status": "implemented",
+   "superseded_by": [],
+   "diagram": "label \"replies read, long text cut and recorded\", pill on band:DEPARTMENT RUNTIME."
+  },
+  {
    "id": "D159",
    "title": "Usage by purpose is read in three places: a grouping and a window of the usage routes, a mapping on every Agents row, and a table in the console (builds what D145 planned)",
    "packages": [
@@ -3473,6 +3505,178 @@
    "status": "implemented",
    "superseded_by": [],
    "diagram": "label \"usage by purpose: route, agents, console\", pill on Usage and cost ledger."
+  },
+  {
+   "id": "D160",
+   "title": "The pin moves to J2 `cut-off/2026-11-12` (`1d537295`); the source stays the extraction of this repository's `prototypes/j2`",
+   "packages": [
+    "E1"
+   ],
+   "status": "implemented",
+   "superseded_by": [],
+   "diagram": "label \"J2 pin: cut-off 2026-11-12\", pill on band:DEPARTMENT RUNTIME."
+  },
+  {
+   "id": "D161",
+   "title": "The vendoring script copies types as data: `templates/**`, `conditions/*.json`, `artifacts/types.json`; it names no type",
+   "packages": [
+    "E1"
+   ],
+   "status": "implemented",
+   "superseded_by": [],
+   "diagram": "label \"types vendored as data\", pill on band:DEPARTMENT RUNTIME."
+  },
+  {
+   "id": "D162",
+   "title": "Patches P1 to P16 are accounted for; P17 and P18 are new; P14 gets a guard; P19 is the new reserve",
+   "packages": [
+    "E1"
+   ],
+   "status": "implemented",
+   "superseded_by": [],
+   "diagram": "label \"patch table P1-P18\", pill on band:DEPARTMENT RUNTIME."
+  },
+  {
+   "id": "D163",
+   "title": "Types a run makes are kept per user in the data folder, under a lock (patch P17)",
+   "packages": [
+    "E4",
+    "GAP-W1"
+   ],
+   "status": "implemented",
+   "superseded_by": [],
+   "diagram": "label \"local types in the data folder\", pill on band:DEPARTMENT RUNTIME."
+  },
+  {
+   "id": "D164",
+   "title": "The project output is a host-registered document type; capabilities add types through one hook (patch P18)",
+   "packages": [],
+   "status": "documented only",
+   "superseded_by": [],
+   "diagram": "label \"project = host-registered type\", pill on band:DEPARTMENT RUNTIME."
+  },
+  {
+   "id": "D165",
+   "title": "The engine has no default output type: an unclaimed brief is left to J2's planner",
+   "packages": [
+    "E2",
+    "E4",
+    "GAP-W1"
+   ],
+   "status": "implemented",
+   "superseded_by": [],
+   "diagram": "label \"no default type\", pill on band:DEPARTMENT RUNTIME."
+  },
+  {
+   "id": "D166",
+   "title": "Output names are checked by shape in `spec.py` and by the data where J2 is loaded; the page builds its choices from the engine's answer",
+   "packages": [
+    "E0",
+    "E4",
+    "GAP-W1",
+    "ORCH-1",
+    "UI-0",
+    "UI-7"
+   ],
+   "status": "implemented",
+   "superseded_by": [],
+   "diagram": "label \"output choices from the data\", pill on band:EXPERIENCE."
+  },
+  {
+   "id": "D167",
+   "title": "A run with no type opens everywhere; old runs open through the records, not through names",
+   "packages": [
+    "E2",
+    "GAP-E1B"
+   ],
+   "status": "implemented",
+   "superseded_by": [],
+   "diagram": "label \"runs without a type open\", pill on band:EXPERIENCE."
+  },
+  {
+   "id": "D168",
+   "title": "Documents, references, files, stage words and timing are views on J2's data",
+   "packages": [
+    "E2",
+    "E4",
+    "E5",
+    "UI-0"
+   ],
+   "status": "implemented",
+   "superseded_by": [],
+   "diagram": "label \"views read the types\", pill on band:EXPERIENCE."
+  },
+  {
+   "id": "D169",
+   "title": "`builder_timeout` is an engine setting end to end",
+   "packages": [
+    "CT-1",
+    "E4",
+    "UI-0",
+    "UI-7"
+   ],
+   "status": "implemented",
+   "superseded_by": [],
+   "diagram": "label \"builder time limit setting\", pill on band:EXPERIENCE."
+  },
+  {
+   "id": "D170",
+   "title": "The `llm` shim carries `timeout`, `CallTimeout` and `can_read_files`",
+   "packages": [
+    "E0",
+    "E3"
+   ],
+   "status": "implemented",
+   "superseded_by": [],
+   "diagram": "label \"llm shim: timeout\", pill on band:DEPARTMENT RUNTIME."
+  },
+  {
+   "id": "D171",
+   "title": "The library's mirrors of J2's former section models are retired; template artifact names are data",
+   "packages": [
+    "L7",
+    "L8"
+   ],
+   "status": "implemented",
+   "superseded_by": [],
+   "diagram": "label \"template models from data\", pill on band:EXPERIENCE."
+  },
+  {
+   "id": "D172",
+   "title": "The record catalogue knows the new run files and reads kinds by shape",
+   "packages": [
+    "L5",
+    "L8"
+   ],
+   "status": "implemented",
+   "superseded_by": [],
+   "diagram": "label \"records: timing, autofix, cuts\", pill on band:DEPARTMENT RUNTIME."
+  },
+  {
+   "id": "D173",
+   "title": "The page is regenerated, the fixtures re-captured, the route pins move to 34",
+   "packages": [],
+   "status": "documented only",
+   "superseded_by": [],
+   "diagram": "label \"page regenerated for sync 5\", pill on band:EXPERIENCE."
+  },
+  {
+   "id": "D174",
+   "title": "Goldens move only through the recorders; the legacy flow test is a three-way merge",
+   "packages": [
+    "E5"
+   ],
+   "status": "implemented",
+   "superseded_by": [],
+   "diagram": "label \"goldens by recorder only\", pill on band:DEPARTMENT RUNTIME."
+  },
+  {
+   "id": "D175",
+   "title": "One release, 0.4.0; the later J2 work stays out",
+   "packages": [],
+   "status": "documented only",
+   "superseded_by": [],
+   "diagram": "label \"release 0.4.0\", pill on band:DEPARTMENT RUNTIME."
   }
  ],
  "packages": [

@@ -18,6 +18,6 @@
  },
  "expect": {
   "ok": false,
-  "evidence": "these done-when items can't be checked by reading the site (they depend on the Requester, Audit, verification, approval or launch); rephrase them as something the site shows, and record a fact only the Requester can give in to_be_confirmed: [\"The Requester approves the design\"]"
+  "evidence": "these done-when items can't be checked by reading the output (they depend on the Requester, Audit, verification, approval or launch); rephrase them as something the output shows, and record a fact only the Requester can give in to_be_confirmed: [\"The Requester approves the design\"]"
  }
 }

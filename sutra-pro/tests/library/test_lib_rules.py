@@ -1,22 +1,38 @@
-"""The rules as data (library design 9.3; WP L7): J2's 12 rule functions and `RULES`, with a `RuleSpec` model in front.
+"""The rules as data (library design 9.3; WP L7): J2's 12 rule functions, with a `RuleSpec` model in front.
 
-Parity data: tests/library/fixtures/artifacts/cases.json holds, for every (kind, section) of J2's RULES, J2's own `run_rules`
-answer on the good payload and on bad variants, with and without the documents the run recorded (100 cases, made once by
-build_artifact_cases.py). The library must give the same list, evidence text included."""
+The rules of a section are DATA in J2 (`templates/<type>/generic.json`, D171); the library holds none. Parity data:
+tests/library/fixtures/artifacts/cases.json holds, for every (kind, section) of J2's rules, J2's own `run_rules` answer on
+the good payload and on bad variants, with and without the documents the run recorded (100 cases, made once by
+build_artifact_cases.py), and the folder fixtures/artifacts/generic/ holds the generic.json files those rules were read from
+(a frozen copy, read-only). The library, given those rules as specs, must give the same list, evidence text included."""
 import json
 from pathlib import Path
 
 import pytest
 from pydantic import ValidationError
 
-from sutra_app.library.artifacts import rules as R
-from sutra_app.library.artifacts import SECTION_MODELS
-from sutra_app.library.artifacts.rules import (
-    RULE_NAMES, RULE_TYPES, RULES, RuleSpec, failures, rule_names, rules_count, rules_for, run_rules, run_specs, spec_problems, walk,
-)
+from sutra_app.library.rules import RULE_TYPES, RuleSpec, failures, run_specs, spec_problems, walk
 
-CASES = json.loads((Path(__file__).parent / "fixtures" / "artifacts" / "cases.json").read_text(encoding="utf-8"))
+FIXTURES = Path(__file__).parent / "fixtures" / "artifacts"
+CASES = json.loads((FIXTURES / "cases.json").read_text(encoding="utf-8"))
 RULE_CASES = CASES["rules"]
+
+
+def _specs() -> dict[tuple[str, str], list[RuleSpec]]:
+    """(kind, section) -> the rules of that section, from the frozen generic.json files."""
+    out = {}
+    for path in sorted((FIXTURES / "generic").glob("*/generic.json")):
+        file = json.loads(path.read_text(encoding="utf-8"))
+        for entry in file["templates"]:
+            out[(file["artifact"], entry["section"])] = [RuleSpec.model_validate(r) for r in entry.get("rules") or []]
+    return out
+
+
+RULES = {key: value for key, value in _specs().items() if value}
+
+
+def run_rules(kind, section, data, docs=None):
+    return run_specs(RULES.get((kind, section), []), data, docs)
 
 
 def problems(data) -> list[tuple[str, str]]:
@@ -56,40 +72,11 @@ def test_ids_unique_is_a_rule_type_a_template_may_use():
     assert run_specs([spec], {})[0]["pass"] is None
 
 
-def test_rules_is_one_list_of_specs_per_section_model_and_the_names_are_j2s():
-    assert set(RULES) == {(k, s) for k, by in SECTION_MODELS.items() for s in by}
+def test_the_rules_of_the_frozen_generic_files_are_specs_with_j2s_names():
     assert sum(len(v) for v in RULES.values()) == 38
     assert all(isinstance(r, RuleSpec) for v in RULES.values() for r in v)
-    assert {f"{k}/{s}": names for (k, s), names in RULE_NAMES.items()} == CASES["rule_names"]
-
-
-def test_a_rule_path_never_names_a_field_the_model_lacks():
-    """Every rule of RULES is checked against its section model by the generic template (templates.resolve), so a typo in a
-    path fails there; here the first segment of each path is looked up directly."""
-    for (kind, section), specs in RULES.items():
-        fields = set(SECTION_MODELS[kind][section].model_fields)
-        for spec in specs:
-            for key in ("path", "anchor_path", "html_path"):
-                value = getattr(spec, key)
-                for path in value if isinstance(value, list) else [value] if value else []:
-                    assert path.split(".")[0].removesuffix("[]") in fields, (kind, section, path)
-
-
-# ---------------------------------------------------------------- the lookups
-def test_rules_for_gives_the_specs_of_one_section_as_a_new_list():
-    first = rules_for("prd", "Goals")
-    assert [r.rule for r in first] == ["ids_sequential"]
-    first.append("junk")
-    assert len(rules_for("prd", "Goals")) == 1
-    assert rules_for("prd", "Nothing") == [] and rules_for(None, None) == []
-
-
-def test_rule_names_and_rules_count():
-    assert rule_names("hld", "Components") == [
-        "ids C1, C2, ... unique and in order", "every component states its responsibility",
-        "page points at a page id of this document", "covers points at a requirement id of the PRD"]
-    assert rules_count("hld", "Components") == 4 and rules_count("website", "Section", {"x": 1}) == 4
-    assert rules_count("prd", "Nothing") == 0
+    assert {f"{k}/{s}": [r.name for r in specs] for (k, s), specs in RULES.items()} == {
+        key: names for key, names in CASES["rule_names"].items() if names}
 
 
 def test_failures_are_the_evidence_of_the_failed_rules_in_order():
@@ -130,7 +117,6 @@ def test_a_rule_whose_check_breaks_is_reported_with_the_reason():
 def test_no_specs_and_no_data_are_fine():
     assert run_specs(None, None) == [] and run_specs([], {}) == []
     assert run_rules("prd", "Problem", None)[0]["pass"] is False
-    assert run_rules("nothing", "nothing", {}) == []
 
 
 def test_a_target_the_run_has_not_recorded_is_not_recorded_unless_it_is_required():
@@ -185,7 +171,7 @@ def test_an_unknown_rule_type_is_a_value_error_in_j2s_words():
 
 def test_a_rule_missing_what_its_type_needs_is_refused():
     assert message({k: v for k, v in SPEC.items() if k != "prefix"}) == "rule (ids_sequential): prefix is missing"
-    assert message({"rule": "ref_exists", "path": "a", "name": "n", "from": "f"}) == "rule (ref_exists): target is missing; rule (ref_exists): target must start with this., prd., hld. or lld."
+    assert message({"rule": "ref_exists", "path": "a", "name": "n", "from": "f"}) == "rule (ref_exists): target is missing; rule (ref_exists): target must start with this. or an artifact's name"
     assert message({"rule": "enum", "path": "a", "name": "n", "from": "f"}) == "rule (enum): values is missing; rule (enum): values must be a list of strings"
     assert message({"rule": "anchor_in_html", "anchor_path": "a", "name": "n", "from": "f"}) == "rule (anchor_in_html): html_path is missing"
     assert message({"rule": "not_empty", "name": "n", "from": "f"}) == "rule (not_empty): path is missing"
@@ -197,11 +183,12 @@ def test_a_rule_that_takes_one_path_refuses_a_list():
     assert message({"rule": "hex", "path": ["a"], "name": "n", "from": "f"}) == "rule (hex): path must be one path"
 
 
-def test_a_ref_exists_target_starts_with_a_document_name():
+def test_a_ref_exists_target_starts_with_this_or_an_artifact_name_by_shape():
     base = {"rule": "ref_exists", "path": "a", "name": "n", "from": "f"}
-    assert message({**base, "target": "foo.x"}) == "rule (ref_exists): target must start with this., prd., hld. or lld."
-    assert message({**base, "target": "this"}) == "rule (ref_exists): target must start with this., prd., hld. or lld."
-    for good in ("this.a", "prd.a", "hld.a", "lld.a"):
+    want = "rule (ref_exists): target must start with this. or an artifact's name"
+    for bad in ("Foo.x", "this", "1abc.x", "a-b.x", ".x"):
+        assert message({**base, "target": bad}) == want, bad
+    for good in ("this.a", "prd.a", "hld.a", "business_report.a", "x1.a"):        # a name is a shape: the data names the types
         assert RuleSpec.model_validate({**base, "target": good}).target == good
 
 
@@ -241,10 +228,8 @@ def test_spec_problems_wording_with_and_without_a_position():
     assert spec_problems({"rule": ["x"]}) == ["rule: unknown rule type ['x'] (known: " + ", ".join(sorted(RULE_TYPES)) + ")"]
 
 
-def test_rules_are_built_and_checked_at_import():
-    """A typo in the data fails the import: building the same data again from a broken copy raises."""
-    broken = [dict(r.as_j2()) for r in RULES[("prd", "Goals")]]
-    broken[0]["rule"] = "ids_sequental"
+def test_a_typo_in_a_rule_is_refused_when_the_spec_is_built():
+    broken = dict(RULES[("prd", "Goals")][0].as_j2())
+    broken["rule"] = "ids_sequental"
     with pytest.raises(ValidationError, match="unknown rule type 'ids_sequental'"):
-        RuleSpec.model_validate(broken[0])
-    assert isinstance(RULES, dict) and all(isinstance(k, tuple) and len(k) == 2 for k in RULES)
+        RuleSpec.model_validate(broken)

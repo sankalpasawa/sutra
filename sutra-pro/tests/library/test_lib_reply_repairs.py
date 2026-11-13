@@ -6,8 +6,7 @@ import pytest
 
 pytest.importorskip("sutra_app.engine")
 
-from sutra_app.engine import j2  # noqa: E402
-from sutra_app.engine.capabilities.project import CONDITIONS_FILE, ProjectCapability  # noqa: E402
+from sutra_app.engine import capabilities, j2, j2_types  # noqa: E402
 from sutra_app.library.evaluation import ConditionResult, RubricResult  # noqa: E402
 from sutra_app.library.functions import REPLY_CLASSES, RubricRow  # noqa: E402
 from sutra_app.library.replies import ReplyInvalid, ReplyParser  # noqa: E402
@@ -17,7 +16,9 @@ GOAL = {"statement": "S", "site_name": "N", "done_when": ["a", "b", "c"]}
 
 
 def outputs() -> dict:
-    return {**j2.OUTPUTS, **{n: s.to_j2() for n, s in ProjectCapability().outputs().items()}}
+    """Every output type J2 knows, read from the data (types.json, the local types and what the capabilities register)."""
+    capabilities.register(j2)
+    return {name: j2.output_def(name) for name in j2_types.names()}
 
 
 def report(rubric):
@@ -50,7 +51,7 @@ def test_a_rubric_id_still_needs_its_shape(bad):
 
 
 def test_the_project_conditions_file_ids_are_the_ones_the_model_accepts():
-    for cond in j2.load_conditions(CONDITIONS_FILE):
+    for cond in j2.load_conditions(outputs()["project"]["conditions"]):
         assert ConditionResult.model_validate({"id": cond["id"], "met": False, "evidence": "e"}).id == cond["id"]
 
 

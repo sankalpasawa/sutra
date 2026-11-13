@@ -771,7 +771,7 @@ def test_the_start_page_offers_what_to_make_a_pick_is_one_post_and_a_reload_show
     team.open(view="simple")
     team.b.wait_for("!!document.getElementById('outsel')")
     assert team.js("document.getElementById('outsel').value") == "auto"
-    assert team.js("Array.from(document.querySelectorAll('#outsel option'), o => o.value)") == ["auto", "website", "prd", "project"]
+    assert team.js("Array.from(document.querySelectorAll('#outsel option'), o => o.value)") == ["auto", "prd", "hld", "lld", "website", "business_report", "project"]
     assert "dept=web" in team.requests("/api/engine/settings")[0]["query"]           # what the team's next run makes: asked of the team, not of all teams
     team.js("(() => { const s = document.getElementById('outsel'); s.value = 'prd'; s.dispatchEvent(new Event('change', {bubbles: true})); })()")
     team.wait_requests("/api/output", 1)

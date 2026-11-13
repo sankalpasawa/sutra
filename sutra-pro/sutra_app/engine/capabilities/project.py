@@ -1,14 +1,15 @@
 """The `project` output and its capability (engine design 2.3, D128): work in the owner's own folder, run by the one engine.
 
-"Project work" is a document-flow output (its `sections` are set), so the whole flow is inherited unchanged: Identity's intake and charter,
+"Project work" is a document-form type (D164), so the whole flow is inherited unchanged: Identity's intake and charter,
 Adaptation's plan, Priority's pricing, the builders, Audit, the three attempts, the necessary conditions, receipts, atoms, the function
 nodes and the map. The "document" is the work report; each builder does its section's work with its file tools in the folder and reports
 it. Audit looks in the folder itself (`CallTag.workspace`: Audit reads, a builder of this output edits; the owner's access setting caps
 both). The one vendored change it needs is patch P14 (`single`: named documents in the brief do not swap the output).
 
-Everything here is data and small functions: the texts below are the output's own prompts, the conditions are the file
-`data/project.json` (an absolute name, so `j2.load_conditions` finds it without touching the vendored `conditions/` folder), and the
-mocks are what the offline mode answers. J2 is imported lazily, inside `outputs()`, so importing this module reads no environment.
+Everything here is data and small functions: the output's own prompts, its conditions and its template are the flat files
+`data/project.*` (absolute names, so `j2_types.load` finds them without touching the vendored `conditions/` or `templates/` folders; each
+ends with exactly one newline, which J2 strips), and the mocks are what the offline mode answers. The capability registers the type with
+`j2_types.register` (patch P18) beside its callables. J2 is imported lazily, inside `outputs()`, so importing this module reads no environment.
 """
 import json
 import os
@@ -21,7 +22,7 @@ from .base import Capability, EngineContext, OutputSpec, Selection
 from .select import choose_output
 
 __all__ = ["ProjectCapability", "PROJECT_SECTIONS", "PROJECT_RUBRIC", "CONDITIONS_FILE", "PROJECT_INTAKE", "PROJECT_PLAN",
-           "PROJECT_BUILDER", "EARLIER_MAX", "project_spec", "mock_project_charter", "mock_project_section", "earlier_report",
+           "PROJECT_BUILDER", "DATA", "CHECK_TYPES", "EARLIER_MAX", "project_spec", "mock_project_charter", "mock_project_section", "earlier_report",
            "earlier_context", "bind_data_dir"]
 
 # The design names the third section "Verification". J2's own validator refuses that word: a done-when item may not contain it
@@ -29,9 +30,11 @@ __all__ = ["ProjectCapability", "PROJECT_SECTIONS", "PROJECT_RUBRIC", "CONDITION
 # (`J2Run.CHECK_WORK`); and the offline mock plan of a document has no costs while the realization pass is on. So the section is called
 # "Confirmation": the same content (what was checked in the folder, how, and what could not be), a word the validator lets through.
 PROJECT_SECTIONS = ("Findings", "Changes", "Confirmation", "Open items", "Outcome")
-CONDITIONS_FILE = str(Path(__file__).resolve().parent / "data" / "project.json")
+DATA = Path(__file__).resolve().parent / "data"
+CONDITIONS_FILE = str(DATA / "project.json")
 # A project has no data model and no template, so both are switched off for it (the host says so in a trace line).
 FORCE = {"artifact_schema": False, "template_library": False}
+CHECK_TYPES = ("facts-present", "heading-present", "section-not-empty", "ids-unique")      # what the document atom rules let a check use here
 
 PROJECT_RUBRIC = (
     ("PJ-1", "Every finding names the file or command it comes from"),
@@ -41,50 +44,32 @@ PROJECT_RUBRIC = (
     ("PJ-5", "No invented facts: a claim beyond a file that was read or the request is labelled \"Assumption:\""),
 )
 
-PROJECT_INTAKE = (
-    "J2.a for project work in the owner's working folder. Look at the folder with your file tools before you ask anything. Ask only "
-    "what the folder and its instructions cannot answer (enough=false, 1 to 3 questions); never ask what a file says. If the prompt says "
-    "no working folder is set, set enough=false and ask the owner to choose one in Settings, under Connectors, in Working folder, and to "
-    "say the request again. Record the charter from the brief, the answers and what you read; `product_name` is the project (folder or "
-    "repository) name; `features` are the changes or checks asked; `facts` are exact names the owner used. done_when: one checkable item "
-    "per section. Keep everything the brief asks for. Don't plan costs.\n"
-    "- What the brief asks decides the goal. A brief that asks to update, implement, fix, change or add something means the goal includes "
-    "making that change in the folder: `features` name it and the done_when item for the Changes section names the files to change. A brief "
-    "that only asks to look, list, check or report stays a report: that item says no change was asked.\n"
-    "- The folder's access is what the working folder text says the owner allowed. Your own tools only read because you plan; that is not a "
-    "limit of the run, so never put it in the charter. Write \"Folder is read-only\" in constraints or rules only when that text says the "
-    "owner chose read only. Then, if the brief asks for a change, the goal is the report: it says plainly that changes cannot be made, "
-    "gives the exact edits file by file, and says how to allow changes (Settings, under Working folder). When changes are allowed, never "
-    "write that files are not changed.\n"
-    "- When your instructions hold the team's earlier report, it is what the team already did for this owner. A question about it (where "
-    "are the changes, what did you find, how can I read it) is answered from it in your one reply, naming the files it names, and needs "
-    "no change in the folder: record that answer as the goal. Do not ask which project the owner means when the report names the project, "
-    "the folder or the files.")
 
+
+def _data(name: str) -> str:
+    """A text file of this capability, its text exactly (the one newline that ends the file is not part of it, as J2 reads it)."""
+    text = (DATA / name).read_text(encoding="utf-8")
+    return text[:-1] if text.endswith("\n") else text
+
+
+PROJECT_INTAKE = _data("project.intake.md")
+PROJECT_BUILDER = _data("project.builder.md")
+
+# The project's plan guidance: J2 builds a document's plan text from the type's template now, so this is the capability's own addendum to
+# Adaptation (the one place a capability adds text without touching J2's prompts), not a replacement of J2's plan text.
 PROJECT_PLAN = (
-    "\nTHE OUTPUT IS A PROJECT WORK REPORT (markdown). Plan one workflow per section in this order: "
+    "Plan one workflow per section in this order: "
     f"{', '.join(PROJECT_SECTIONS)}, named \"Write <Section>\" (for example \"Write Confirmation\"); each has one work atom whose how.steps names its "
-    "`## <Section>` heading. Findings reads the folder; "
+    "`## <Section>` heading, and each names the section it writes in `sections`. Findings reads the folder; "
     "Changes makes exactly the changes the charter asks for; Confirmation checks them; price with the document rate card.")
-
-PROJECT_BUILDER = (
-    "Workflow agent for one section of a project work report. You work in the owner's folder with your file tools. Findings: read and "
-    "report what you saw, naming each file. Changes: make the smallest change that does what the charter asks, follow the project's own "
-    "instructions, then list each on its own line as - `path`: what changed; never commit; never describe a change instead of making it; "
-    "when your tools are read-only (the owner chose read only) write 'No changes were made: the folder is read only for the team.' and, when "
-    "the charter asks for a change, give the exact edits file by file and say how to allow changes (Settings, under Working folder). "
-    "Confirmation: look at the files and `git diff`/`git status` and say what you confirmed "
-    "and what you could not (you cannot run tests). Open items: what is left and why. Outcome: three sentences from the other sections. "
-    "Reply with the section only, starting with `## <Section>`, in markdown, and never inside a code fence of its own. A block inside the section "
-    "(an edit, a diff, a command's output) is fenced with three tildes (~~~), never three backticks, so it cannot end the section early. Claims "
-    "beyond a file you read or the charter start with `Assumption:`.")
 
 ADDENDA = {
     "identity": ("Project work: look before you ask. Read the working folder with your file tools first, and ask the owner only what the "
                  "folder and its instructions cannot answer. This is not a website: never ask about pages, menus or visitors. Your tools only "
                  "read, because you plan: the builders change files when the owner allowed it, and the working folder text says whether he or "
                  "she did, so plan for what the team can do and never write your own tools' limit into the charter as the run's."),
-    "adaptation": f"Project work: plan the five sections only ({', '.join(PROJECT_SECTIONS)}), one workflow each, in that order.",
+    "adaptation": (f"Project work: plan the five sections only ({', '.join(PROJECT_SECTIONS)}), one workflow each, in that order. "
+                   f"The output is a project work report (markdown). {PROJECT_PLAN}"),
     "audit": ("Project work: check every change the report claims against the folder with your tools: read the file and look at `git diff` and "
               "`git status`. A change the report claims that the folder does not show has not been made; a change the charter asked for that "
               "the folder does not show is not done, whatever the report says; a change the request did not ask for fails the rubric. You "
@@ -179,33 +164,15 @@ def earlier_context(fn: str, ctx: EngineContext) -> str:
 
 
 def project_spec(j2) -> OutputSpec:
-    """The output's spec, built from the J2 module that is running (its charter format, rate card and atom helper)."""
+    """The output's spec: its text files are the capability's own data files, its mock atom is built by the J2 module that is running."""
     return OutputSpec(
-        label="Project work", noun="report", sections=PROJECT_SECTIONS, conditions=CONDITIONS_FILE, rubric=PROJECT_RUBRIC,
-        rates="rates_prd", check_types=j2.DOC_CHECK_TYPES, builder=PROJECT_BUILDER, export=None, file="project.md",
-        intake=PROJECT_INTAKE, charter_fmt=j2.PRD_CHARTER_FMT, plan=PROJECT_PLAN, atom_rules=_atom_rules(j2.PRD_ATOM_RULES),
+        name="project", label="Project work", noun="report", file="project.md", sections=PROJECT_SECTIONS, rubric=PROJECT_RUBRIC,
+        check_types=CHECK_TYPES, done="Done: the project work report is workable. Every done-when item, rubric item and necessary condition passes.",
+        conditions=CONDITIONS_FILE, builder=str(DATA / "project.builder.md"), intake=str(DATA / "project.intake.md"),
+        charter_format=str(DATA / "project.charter.txt"), atom_rules=str(DATA / "project.atom_rules.md"),
+        template=str(DATA / "project.generic.json"), tag="Project",
         mock_charter=mock_project_charter, mock_section=mock_project_section, mock_atom=j2.doc_atom_for(PROJECT_SECTIONS, {}),
-        done="Done: the project work report is workable. Every done-when item, rubric item and necessary condition passes.",
         single=True, workspace="edit", deliver=True)
-
-
-# `PRD_ATOM_RULES` with the sentences about ids taken out (a project report has no R1, R2, ... ids): the only check types left are
-# heading-present, section-not-empty and facts-present. Each pair must match J2's text exactly, or the registration stops.
-_ATOM_EDITS = (
-    (' ids (target: the id prefix, "R" for requirement ids R1, R2, ...),', ""),
-    (' ids-unique (target: an id prefix, "R" for R1, R2, ...; expect true);', ""),
-    ("in the PRD when", "in the report when"),
-    ("on the PRD after", "on the report after"),
-)
-
-
-def _atom_rules(prd_rules: str) -> str:
-    text = prd_rules
-    for old, new in _ATOM_EDITS:
-        if old not in text:
-            raise RuntimeError(f"the project output's atom rules no longer match J2's PRD_ATOM_RULES: {old[:60]!r}")
-        text = text.replace(old, new)
-    return text
 
 
 # ---- mocks (offline mode; no folder is ever read) -------------------------------------------------------------------------

@@ -177,3 +177,27 @@ tested from a fresh clone. After: `--fast`, `--fast --browser`, live release che
 | Live release check | Only after steps 5, 7 and 9 |
 | Mock release check | After steps 6 and 8 |
 | Spend | Hard $60 cap across all live checks (`runs/release/ledger.json`) |
+
+## Merge with main (2026-11-13)
+
+Merged `origin/main` (Rubak's content door `ea85e686`, spec `86c710b6`, docs `1adb8ecd`; Kaivan's sync 5). One
+conflict (`J2Run.__init__`: our `reused_from` and his `art_lib`/`content_*` fields), both kept. `runs/` is tracked on
+main now: local runs show as untracked; never `git add -A` or `runs/`.
+
+**Content door vs our step 6 reuse.** No overlap in code: both follow the same run template (Kaivan's) and read its
+source run, but the door runs only for a document section (`self.doc`, a section template), and `_reuse_folder` only
+for a folder plan in the template. Differences in what each guards: the door checks the source stage's audit, the
+input fingerprint, another business's values (adapt with slots), and refunds a served section; `_reuse_folder` copies
+the files with none of these, and code's checks then run before any builder. `J2_ARTIFACT_LIBRARY=1` implies
+`J2_AUTO_REUSE=1`, so it can also start folder reuse.
+
+**For Rubak: document- or page-only assumptions in the content door** (not changed by us):
+
+| # | Where | Assumption |
+|---|---|---|
+| 1 | `j2.py` builder loop: `self.art_lib and self.doc and art_model ...` | Only document sections; a page or folder run never gets a door |
+| 2 | `j2_artifact_lib.source_section` | Source data is `<kind>.json` `sections[section]` (the section schema); a folder's files are not a source |
+| 3 | `j2_artifact_lib.door` | Rules read the section-template router's `action` (`reused`/`extended`); a folder has `folder_decision`, no section template |
+| 4 | `j2_artifact_lib.stage_audit` | Pass/fail from `stage-<kind>.json` or `summary.json` done-when; ignores necessary conditions and a real run's receipt |
+| 5 | `J2Run._serve_rollback` | Rolls back `self.sections`, `self.sites`, `sections.json`; files a builder wrote in `out/` are not rolled back |
+| 6 | `_serve_content`, `chat_line`, `j2_artifacts.rows` `reused_from` | Words and keys say "section" |
