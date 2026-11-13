@@ -76,7 +76,7 @@ E5_STRIP = ('<div id="sview">\n'
 E6A_SHOWTAB = ('const full = name === "map" || name === "graph" || name === "orgchart"; document.querySelector("#dview .wbar").hidden = full;'
                ' document.querySelector("#dview .work").classList.toggle("mapfit", full); railReveal(name);')
 E6B_PANES = ('"report","rundetails","runsettings","graph","orgchart"].forEach(t => $("pane-"+t).hidden = t !== name);\n'
-             "  SutraCtx.tab(name);\n}")
+             "  SutraCtx.tab(name);\n")
 RAIL_NAV = '<nav class="rail tabs" id="rail" aria-label="Detailed view sections">\n'
 E7_HOME = (RAIL_NAV + '  <div class="railhome">\n'
            '    <a class="ri s-home" href="/" id="to-home" aria-label="All teams, back to Home" data-name="All teams" data-role="back to Home">')
@@ -94,8 +94,8 @@ E21_HYDRATE = ("Object.assign(FEED, v); } } catch (e) {}\n"
 CASES = {
     "E1": ([(E1_HEAD, 1)], ['<link rel="stylesheet" href="https://fonts.googleapis.com', "<style>\n/* Theme", ":root{color-scheme:dark", "</style>\n<script>/* the viewer",
                             "run-settings.css"]),
-    "E2a": ([(f'<iframe id="frame" title="Website preview" data-src="/site/latest" sandbox="{SANDBOX}"></iframe>', 1)],
-            ['title="Website preview" src=']),
+    "E2a": ([(f'<iframe id="frame" title="Preview" data-src="/site/latest" sandbox="{SANDBOX}"></iframe>', 1)],
+            ['title="Preview" src=']),
     "E2b": ([(f'<iframe id="sframe" title="Your result" sandbox="{SANDBOX}"></iframe>', 1)],
             ['<iframe id="sframe" title="Your result"></iframe>']),
     "E2c": ([(f'<iframe id="sframe2" class="next" title="Your result, next version" tabindex="-1" aria-hidden="true" sandbox="{SANDBOX}"></iframe>', 1)],
@@ -306,7 +306,7 @@ def fetch_sites(script: str) -> list[str]:
 
 def test_every_fetch_goes_to_a_j2_route_or_through_artUrl_so_the_wrapper_covers_the_whole_page():
     sites = fetch_sites(INLINE_SCRIPT.findall(PAGE)[1])
-    assert len(sites) == 37 and sites.count("artUrl(f)") == 1
+    assert len(sites) == 38 and sites.count("artUrl(f)") == 1
     routes = set()
     for site in sites:
         if site == "artUrl(f)":
@@ -320,7 +320,7 @@ def test_every_fetch_goes_to_a_j2_route_or_through_artUrl_so_the_wrapper_covers_
             continue
         assert route[len("/api/"):] in J2_API, site
         routes.add(route[len("/api/"):])
-    assert routes == set(J2_API) - NOT_FETCHED                       # 32 routes, and never /api/output (output_pick.js posts it)
+    assert routes == set(J2_API) - NOT_FETCHED                       # 33 routes, and never /api/output (output_pick.js posts it)
     assert "const artUrl = f => `/api/artifact?name=${encodeURIComponent(f)}${runQ()}`;" in PAGE
 
 
@@ -422,7 +422,7 @@ document.documentElement.dataset.theme = "dark";</script>
   <button type="button" class="ri s-chat" id="gochat"><span class="rlbl">Simple view</span></button>
   <div class="rfly" id="rfly" hidden><div class="railsub" id="railsub"></div></div>
 </nav>
-    <div class="pane preview" id="pane-preview" hidden><iframe id="frame" title="Website preview" src="/site/latest"></iframe></div>
+    <div class="pane preview" id="pane-preview" hidden><iframe id="frame" title="Preview" src="/site/latest"></iframe></div>
     <div class="pane" id="pane-map"></div>
     <div class="pane" id="pane-style" hidden></div>
 <aside id="agentdrawer" class="agentdrawer" hidden role="dialog" aria-labelledby="adtitle"></aside>
@@ -684,7 +684,7 @@ def test_an_anchor_that_appears_twice_is_drift_too(tmp_path, capsys):
 
 
 def test_each_of_the_three_iframes_has_its_own_edit(tmp_path, capsys):
-    j2 = make_j2(tmp_path, page=(('<iframe id="frame" title="Website preview" src="/site/latest"></iframe>', ""),))
+    j2 = make_j2(tmp_path, page=(('<iframe id="frame" title="Preview" src="/site/latest"></iframe>', ""),))
     code, _, err = run(capsys, "--j2", j2, "--root", tmp_path / "repo")
     assert code == 1 and "  E2a: expected 1 match, found 0\n" in err and "E2b" not in err and "E2c" not in err
     j2 = make_j2(tmp_path / "b", page=(('<iframe id="sframe" title="Your result"></iframe>', '<iframe id="sframe" title="Your result" src="/site/latest"></iframe>'),))

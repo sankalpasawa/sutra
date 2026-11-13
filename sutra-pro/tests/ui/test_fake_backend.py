@@ -670,7 +670,10 @@ def test_engine_settings_follow_the_engine_sections_field_list():
               "force_audit_note", "force_question", "memory_test_lessons"]  # engine.md LOCKED_FIELDS
     assert settings["locked"] == locked
     assert settings["editable"] == [f for f in settings["defaults"] if f not in locked]
-    assert len(settings["defaults"]) == 31
+    assert len(settings["defaults"]) == 32 and settings["defaults"]["builder_timeout"] == 600.0       # J2 sync 5 (D169)
+    types = settings["output_types"]                                                  # D166: the pages' choices; the names are data
+    assert types and all(set(t) == {"name", "label", "form", "pin"} and isinstance(t["pin"], bool) for t in types)
+    assert len({t["name"] for t in types}) == len(types) and {t["form"] for t in types} <= {"page", "document"}
     assert settings["defaults"]["send_mode"] == "dry-run" and settings["defaults"]["budget"] == 100
     assert settings["defaults"]["delay"] == 0.0 and settings["defaults"]["realization"] is True and settings["defaults"]["board"] is False
     assert settings["effective"] == {**settings["defaults"], **settings["global"], **settings["department"]}
@@ -1265,11 +1268,11 @@ def test_engine_settings_get_has_the_documented_shape_for_all_teams_and_for_one(
     fake.stage("2")
     es = load("engine-settings.json")
     everyone = ok(fake, "/api/engine/settings")
-    assert set(everyone) == {"schema", "defaults", "global", "effective", "editable", "locked"}  # no `department` without dept
+    assert set(everyone) == {"schema", "defaults", "global", "effective", "editable", "locked", "output_types"}  # no `department` without dept
     assert everyone["defaults"] == es["defaults"] and everyone["global"] == es["global"]
     assert everyone["effective"] == {**es["defaults"], **es["global"]} and everyone["editable"] == es["editable"]
     one = ok(fake, "/api/engine/settings", dept="web")
-    assert set(one) == {"schema", "defaults", "global", "department", "effective", "editable", "locked", "next_run"}   # sync 4 (D139): what the next run would use
+    assert set(one) == {"schema", "defaults", "global", "department", "effective", "editable", "locked", "output_types", "next_run"}   # sync 4 (D139): what the next run would use
     assert one["department"] == es["department"] and one["effective"] == es["effective"]
     assert one["next_run"] == {"output": es["effective"]["output"]} == {"output": "auto"}     # nothing chosen on the start page: the team's own setting
     error_of(fake.get("/api/engine/settings", dept="nosuch"), 404, "not_found")
@@ -1299,7 +1302,8 @@ def test_engine_settings_put_sets_unsets_and_answers_like_the_get(fake):
     ("nope", 1, "is not a setting"),
     ("send_mode", "live", "only be changed by hand"),
     ("chrome", "/x", "only be changed by hand"),
-    ("output", "poster", "must be one of auto, website, prd, hld, lld, project"),
+    ("output", "poster", "unknown output type poster"),
+    ("output", "Poster", "must be auto or a type name"),
     ("fixes", 2, "must be one of 0, 1"),
     ("fixes", True, "must be one of 0, 1"),
     ("rates", "yes", "must be true or false"),
@@ -2374,7 +2378,7 @@ J2_GETS = [  # the GET handlers of j2_server.py (ENG 7.1 rows 3-25, then sync 4'
     "/api/state", "/api/runs", "/api/call?id=1", "/api/preview?atom=W-2.a1", "/api/docs", "/api/map", "/api/plan", "/api/library",
     "/api/library/website/hero/classic/v1", "/api/run-templates", "/api/artifacts", "/api/agent?who=identity",
     "/api/code?deck=a&section=b", "/api/artifacts/tree", "/api/artifact?name=site/index.html", "/api/story", "/api/board",
-    "/api/audits", "/api/refs", "/shot/1", "/file/prd.md", "/site/latest", "/site/v1",
+    "/api/audits", "/api/refs", "/api/timing", "/shot/1", "/file/prd.md", "/site/latest", "/site/v1",
     "/api/plan-map", "/api/activity?who=adaptation", "/api/catalog", "/api/artifacts/groups", "/api/runlist", "/api/changes",
     "/api/record?sec=nothing", "/doc/prd", "/view?name=site/index.html",
 ]
@@ -2385,7 +2389,7 @@ J2_JSON_FILES = {  # the routes that answer a capture byte for byte
     "/api/run-templates": "run-templates.json", "/api/artifacts": "artifacts.json", "/api/artifacts/tree": "artifacts-tree.json",
     "/api/story": "story.json", "/api/board": "board.json", "/api/audits": "audits.json", "/api/library": "library.json",
     "/api/refs": "refs.json", "/api/plan-map": "plan-map.json", "/api/catalog": "catalog.json", "/api/artifacts/groups": "artifacts-groups.json",
-    "/api/runlist": "runlist.json", "/api/changes": "changes.json",
+    "/api/runlist": "runlist.json", "/api/changes": "changes.json", "/api/timing": "timing.json",
 }
 BAD_DEPTS = [None, "", "Web", "WEB", "w", "web_1", "1web", "a b", "web/../x", "x" * 41, "web."]  # none passes DEPT_ID_RE
 J2_SANDBOX = "sandbox allow-scripts allow-forms allow-popups; frame-ancestors 'self'"  # D83
@@ -2429,9 +2433,9 @@ def test_the_j2_routes_the_fake_registers_are_the_ones_the_client_wrapper_adds_d
     assert prefixed >= {"/api/library/{artifact}/{section}/{slug}/{ver}", "/site/{key}", "/file/{name}", "/shot/{n}"}
     assert prefixed <= {"/api/library/{artifact}/{section}/{slug}/{ver}", "/site/{key}", "/file/{name}", "/shot/{n}", "/doc/{name}"}
     assert {(m, p) for m, p in registered if p in fb.J2_POST_PATHS} == {("POST", p) for p in fb.J2_POST_PATHS} and len(fb.J2_POST_PATHS) == 7
-    # 23 GET and 5 POST handlers of engine.md 7.1; sync 4 added nine GET (the plan map, a feed, the catalog, the groups, the run list, the changes, a record,
+    # 23 GET and 5 POST handlers of engine.md 7.1; sync 5 added /api/timing; sync 4 added nine GET (the plan map, a feed, the catalog, the groups, the run list, the changes, a record,
     # a document page, a view page) and two POST (ask, settings)
-    assert len(J2_GETS) + len(J2_POSTS) == 28 + 9 + 2
+    assert len(J2_GETS) + len(J2_POSTS) == 29 + 9 + 2
 
 
 @pytest.mark.parametrize("path", J2_GETS)
@@ -2595,14 +2599,14 @@ def test_say_with_a_body_that_is_not_json_is_the_422_envelope(fake_server, fake)
     assert status == 422 and json.loads(raw)["error"]["code"] == "validation"
 
 
-def test_output_takes_one_of_the_four_kinds_and_otherwise_answers_409_with_website(fake_server, fake):
+def test_output_takes_one_of_the_types_the_engine_lists_and_otherwise_answers_409_with_the_team_default(fake_server, fake):
     fake.stage("2")
     for kind in ("website", "prd", "hld", "lld"):
         status, _, raw = j2_post(fake_server, "/api/output", {"type": kind})
         assert (status, json.loads(raw)) == (200, {"ok": True, "output": kind})
     for body in ({"type": "poster"}, {}, {"type": 3}, [], {"type": None}):
         status, _, raw = j2_post(fake_server, "/api/output", body)
-        assert (status, json.loads(raw)) == (409, {"ok": False, "output": "website"}), body
+        assert (status, json.loads(raw)) == (409, {"ok": False, "output": "auto"}), body
 
 
 def test_reset_is_refused_while_the_team_works_and_clears_the_clear_routes_say_how_many(fake_server, fake):
@@ -4938,7 +4942,7 @@ def test_check_checkout_refuses_what_is_not_an_extraction_of_j2_a_python_that_ca
 
 
 # ---- a whole capture of the stand-in ------------------------------------------------------------------------------------------
-STANDIN_FILES = 77  # 22 route files + 7 agent views + 7 feeds + 6 answers + 4 records (2 parts, 2 deliverables) + 4 derived inputs + 26 goldens + the manifest
+STANDIN_FILES = 78  # 23 route files + 7 agent views + 7 feeds + 6 answers + 4 records (2 parts, 2 deliverables) + 4 derived inputs + 26 goldens + the manifest
 
 
 def test_the_capture_of_the_stand_in_makes_the_files_the_committed_set_has(standin):
@@ -5264,7 +5268,7 @@ def test_every_route_every_agent_view_every_feed_every_record_and_every_answer_i
                             + [f"activity-{who}.json" for who in J2_FUNCS] + ["activity-unknown.json"]
                             + ["record-W-1.json", "record-W-2.json", "record-art-Website.json", "record-art-Menu-card.json"]
                             + [f"ask-{who}.json" for who in J2_FUNCS])
-    assert len(capture.ROUTE_FILES) == 22 and len(routes) == 22 + 7 + 7 + 4 + 6
+    assert len(capture.ROUTE_FILES) == 23 and len(routes) == 23 + 7 + 7 + 4 + 6
 
 
 def test_a_preview_route_that_does_not_answer_200_stops_the_capture(server):
@@ -5433,7 +5437,7 @@ def test_the_run_list_and_the_changes_are_j2s_captures_and_a_team_is_asked_for(f
     status, _, raw = j2_get(fake_server, "/api/runlist", dept="web")
     body = json.loads(raw)
     assert status == 200 and list(body) == ["live", "runs"] and body["runs"], body
-    assert set(body["runs"][0]) == {"id", "title", "status", "output", "when", "brief"} and body["runs"][0]["when"] == "2026-11-04T10:00:04"
+    assert set(body["runs"][0]) == {"id", "title", "status", "output", "label", "form", "when", "brief"} and body["runs"][0]["when"] == "2026-11-04T10:00:04"
     assert json.loads(j2_get(fake_server, "/api/changes", dept="web")[2]) == {"changes": []}
     for path in ("/api/runlist", "/api/changes"):
         assert j2_get(fake_server, path)[0] == 400 and j2_get(fake_server, path, dept="nosuch")[0] == 404
