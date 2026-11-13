@@ -1,20 +1,22 @@
 """Reflect on immutable local traces, proposing (never installing) new templates and axes.
 Since 0.4.0-shrink (program move-out M1) the per-run learning of the kernel lives here too: `Learner`."""
 from collections import Counter,defaultdict
-from kernel.core import digest
+from kernel.core import digest,Kernel
+from extensions.implementation import whole_plan   # what ran, what was skipped as already true, what is waited on, what is still to run
 
 def reflect(runs:list[dict])->dict:
-    signatures=Counter(' -> '.join(r.get('actions',[])) for r in runs if r.get('actions'))
+    runs=[r for r in runs if r.get('work_state')!='waiting']   # a run that waits is part of a plan, not a composition to reuse
+    signatures=Counter(' -> '.join(whole_plan(r)) for r in runs if r.get('actions'))
     patterns=[]
     for sig,n in sorted(signatures.items()):
         if n>=2:
-            relevant=[r for r in runs if ' -> '.join(r['actions'])==sig]
+            relevant=[r for r in runs if ' -> '.join(whole_plan(r))==sig]
             patterns.append({'kind':'COMPRESSION_CANDIDATE','signature':sig,'support':n,
                              'status':'PROPOSED_ONLY','source_traces':[r['trace_root_sha256'] for r in relevant],
                              'reexpandable':True,'gate':'held-out usefulness, independent checks and external approval'})
     fanins=[]
     for r in runs:
-        actions=r.get('actions',[])
+        actions=whole_plan(r)
         if len(actions)>=3:
             fanins.append({'kind':'DEPENDENCY_PATTERN_CANDIDATE','actions':actions,
                            'status':'PROPOSED_ONLY','source_trace':r['trace_root_sha256'],
@@ -47,14 +49,17 @@ class Learner:
 
     def learn(self,result:dict)->list[dict]:
         if not self.enabled:return []
-        signature=' -> '.join(result.get('actions',[]))
+        signature=' -> '.join(whole_plan(result))   # the composition is the whole plan, also when a step was skipped as already true
         if result.get('status')=='LOCAL_MODEL_EFFECTS_RECORDED' and signature:
             n=self.signatures.get(signature,0)+1
             self.signatures[signature]=n
             return [{'kind':'REUSE_COMPOSITION','signature':signature,'observations':n,
                      'status':'PROPOSED_ONLY','gate':'independent held-out verification + approval'}]
-        if result.get('work_state')=='blocked':
-            return [{'kind':'INVESTIGATE_GAP','gap':result.get('status'),
+        gap=result.get('status')
+        if gap=='REFUSED':   # a person's no is an answer, not a gap; what else stopped the run still is one, named by the kernel's own rank
+            gap=next((r for r in Kernel.RANK if r!='REFUSED' and r in result.get('stop_reasons',[])),None)
+        if result.get('work_state')=='blocked' and gap:
+            return [{'kind':'INVESTIGATE_GAP','gap':gap,
                      'status':'PROPOSED_ONLY','gate':'independent evidence + authorization'}]
         return []
 
@@ -67,7 +72,7 @@ class Learner:
 
 def minimal_graph_diff(before:dict,after:dict)->dict:
     # Design view, NOT real world graph. Stable action IDs support selective comparison.
-    b=set(before.get('actions',[]));a=set(after.get('actions',[]))
+    b=set(whole_plan(before));a=set(whole_plan(after))
     return {'retained':sorted(a&b),'added':sorted(a-b),'retired':sorted(b-a),
             'status':'DESIGN_DIFF_ONLY','source_trace_before':before.get('trace_root_sha256'),
             'source_trace_after':after.get('trace_root_sha256')}
