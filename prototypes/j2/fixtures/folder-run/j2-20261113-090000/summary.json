@@ -1,0 +1,60 @@
+{
+  "run": "20261113-090000",
+  "output_type": "script",
+  "status": "done",
+  "mock": true,
+  "provider": "mock",
+  "model": "mock",
+  "brief": "Write a script for Northwind Archive that copies every file from scans-inbox to scans-shelf.",
+  "business_type": "records archive",
+  "outcome": "Done: the script is workable. Its test passed in the sandbox and every done-when item passes.",
+  "conditions": {
+    "met": 3,
+    "total": 3,
+    "warnings": 0,
+    "list": [
+      {
+        "id": "F1",
+        "met": true,
+        "evidence": "README.md, copy_files.py and test_copy_files.py are in script/"
+      },
+      {
+        "id": "F2",
+        "met": true,
+        "evidence": "python3 test_copy_files.py: exit 0, printed ok"
+      },
+      {
+        "id": "F3",
+        "met": true,
+        "evidence": "no file outside script/ changed"
+      }
+    ]
+  },
+  "done_when": [
+    {
+      "item": 1,
+      "criterion": "copy_files.py copies every file from scans-inbox to scans-shelf, keeping sub-folders",
+      "pass": true
+    },
+    {
+      "item": 2,
+      "criterion": "A file already there with the same bytes is left alone",
+      "pass": true
+    },
+    {
+      "item": 3,
+      "criterion": "test_copy_files.py is in the folder",
+      "pass": true
+    },
+    {
+      "item": 4,
+      "criterion": "README.md says how to run it",
+      "pass": true
+    },
+    {
+      "item": 5,
+      "criterion": "Its test passes",
+      "pass": true
+    }
+  ]
+}
