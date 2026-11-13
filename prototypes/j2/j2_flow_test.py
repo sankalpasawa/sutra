@@ -4683,7 +4683,8 @@ def folder_run_reused():
     """remove-restrictions step 6: a folder run's workflows record their outputs from the run folder (<folder>/<file>),
     so j2_template_lib.run_template_from_run finds the type they belong to; the run is saved as a run template; a
     second run that follows it starts from the template's files (copied from the saved run), code checks them first,
-    and no builder is called: the copy script is reused, not rebuilt. Its decision is "reused" (Library tab counts)."""
+    and no builder is called: the copy script is reused, not rebuilt. Its decision is "reused" (Library tab counts).
+    Only from a source run that ended workable (its last audit passes); otherwise nothing is copied and it is built fresh."""
     import j2_template_lib as L
     tmp = tempfile.mkdtemp(prefix="j2-reuse-")
     keep_env = {k: os.environ.get(k) for k in ("J2_LIBRARY_DIR", "J2_RUN_TEMPLATES", "J2_AGENT_TOOLS")}
@@ -4720,6 +4721,24 @@ def folder_run_reused():
         files = ["README.md", "copy_files.py", "test_copy_files.py"]
         assert rt.stages == [FT] and rt.outputs[FT]["files"] == files, (rt.stages, rt.outputs)
         L.save_run_template(rt)
+        # a source run that did not end workable (its last audit fails, or no audit): nothing copied, built fresh
+        aud = os.path.join(r1, "audits.json")
+        good = open(aud).read()
+        assert j2.ended_workable(r1)
+        bad = json.loads(good)
+        bad[-1]["results"][0]["verdict"] = "FAIL"
+        bad[-1]["results"][0]["pass"] = False
+        for text in (json.dumps(bad), None):
+            os.remove(aud) if text is None else open(aud, "w").write(text)
+            assert not j2.ended_workable(r1)
+            run3 = j2.J2Run()
+            run3.set_output(FT)
+            run3.goal = {"statement": "copy", "done_when": ["files copied"]}
+            assert run3.set_run_template(rt.id)
+            os.makedirs(run3._out_dir(), exist_ok=True)
+            assert run3._reuse_folder({"id": "W-1", "atoms": [{"id": "W-1.a1"}]}, run3._out_dir()) is None
+            assert os.listdir(run3._out_dir()) == [] and any(e["type"] == "reuse_skipped" for e in run3.events)
+        open(aud, "w").write(good)
         # run 2 follows it: the files are copied in and checked; no builder call
         run2 = j2.J2Run()
         run2.set_output(FT)

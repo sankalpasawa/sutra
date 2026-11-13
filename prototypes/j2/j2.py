@@ -3198,6 +3198,17 @@ def lanes(chat, workflows, thinking, turn, status, paused, step, write_lock):
 SAVED = re.compile(r"j2-[\w-]+")
 
 
+def ended_workable(run_dir):
+    """A saved run ended workable: its last audit (audits.json, the board's re-checks left out) passes workable().
+    False when there is no audit to read."""
+    try:
+        with open(os.path.join(run_dir or "", "audits.json"), encoding="utf-8") as f:
+            a = [x for x in json.load(f) if isinstance(x, dict) and x.get("kind") != "recheck"]
+    except (OSError, ValueError, TypeError):
+        return False
+    return bool(a) and workable(a[-1]) == []
+
+
 def saved_dir(name):
     """A saved run's folder, or None. Only names like j2-20261007-101500 inside RUNS_DIR (no path tricks)."""
     if not SAVED.fullmatch(str(name or "")):
@@ -9107,6 +9118,9 @@ class J2Run:
             return self.reused_from
         src = os.path.join(saved_dir(t.get("from_run")) or "", plan.get("folder") or "")
         if any(os.scandir(cwd)) or not all(os.path.isfile(os.path.join(src, f)) for f in plan["files"]):
+            return None
+        if not ended_workable(saved_dir(t.get("from_run"))):      # only a source that ended workable; else build fresh
+            self._event("code", "reuse_skipped", f"{w['id']}: run {t.get('from_run')} did not end workable; built fresh")
             return None
         for f in plan["files"]:
             os.makedirs(os.path.dirname(os.path.join(cwd, f)) or cwd, exist_ok=True)
