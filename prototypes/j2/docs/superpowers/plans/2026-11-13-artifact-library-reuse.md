@@ -1,7 +1,7 @@
 # Artifact Library Reuse Implementation Plan
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or
-> superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
+> superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [x]`) syntax for tracking.
 
 **Goal:** When a run follows a run template and the source run's section was written from exactly this workflow's
 inputs, restore that section's structured data from the source run, validate, rule-check, render and receipt it as
@@ -65,10 +65,10 @@ task is new and decided).
 
 ### Task 0: Branch and baseline
 
-- [ ] `git fetch origin && git switch -c artifact-library origin/main`
-- [ ] Record `python realization_test.py` count and that the named flow tests pass on main. Record builder call
+- [x] `git fetch origin && git switch -c artifact-library origin/main`
+- [x] Record `python realization_test.py` count and that the named flow tests pass on main. Record builder call
   counts of the pilates and yoga mock runs with the flag off (the ceilings for Task 6).
-- [ ] Commit "Artifact library: spec and plan".
+- [x] Commit "Artifact library: spec and plan".
 
 ### Task 1: `j2_artifact_lib.py`: locate the source section (code)
 
@@ -87,7 +87,7 @@ Pattern source: `j2_template_lib.py` `runs_root` :2674, `get_run_template` (:255
   - data: `<src_run>/<kind>.json` `sections[section]`; `sha = sha_of(data)`.
   - audit: `<src_run>/stage-<kind>.json` audits or `summary.json` status; `receipts_passed` from `receipts.jsonl`
     for `src_wf`'s last attempt.
-- [ ] Tests on a fixture run folder under `fixtures/` (copy of a mock document run with `prd.json`, `templates.json`,
+- [x] Tests on a fixture run folder under `fixtures/` (copy of a mock document run with `prd.json`, `templates.json`,
   `receipts.jsonl`, `summary.json`): found; row without `made_from` -> `None`; folder missing -> `SourceUnreadable`;
   broken JSON -> `SourceUnreadable`; `enabled()` on -> `auto_reuse()`, `run_templates_on()`, template library
   `enabled()` all True. Commit.
@@ -107,7 +107,7 @@ Pattern source: `j2_template_lib.py` `runs_root` :2674, `get_run_template` (:255
 | present | `rec["action"] in ("created", "generic")` | build | new |
 | `None` | any | build ("no source section") | none |
 
-- [ ] One test per row, plus: router `reused` under rule a/b/s with a different fingerprint -> reuse with rule
+- [x] One test per row, plus: router `reused` under rule a/b/s with a different fingerprint -> reuse with rule
   `cross`, not `same`; `None` `first` -> build ("no run template"). Commit.
 
 ### Task 3: `j2.py` hook, the served attempt, the draft (code)
@@ -128,33 +128,33 @@ Pattern source: `j2_template_lib.py` `runs_root` :2674, `get_run_template` (:255
   attempt; after it fails the draft is dropped and the door is recorded `build`. `limit` and `MAX_CHECK_ATTEMPTS`
   untouched.
 - Document workflows only (`self.doc`); page workflows record `build` with reason "pages: phase 2".
-- [ ] Flow test `content_reuse_same_brief`: one brief twice into copies of `library/` and `runs/` with the flag; run 2
+- [x] Flow test `content_reuse_same_brief`: one brief twice into copies of `library/` and `runs/` with the flag; run 2
   auto-picks run 1's template; assert door `reuse` rule `same` on every document workflow, `calls_used == 0`,
   receipts for artifact-schema, artifact-rules, artifact-render and the atom checks present and passing, audit
   passes, and `self.spent` drops by each reused workflow's cost (Priority's budget line shows it).
-- [ ] Flow test `content_cross_client`: the pilates brief over the yoga template; for each document workflow assert
+- [x] Flow test `content_cross_client`: the pilates brief over the yoga template; for each document workflow assert
   the door is `reuse` rule `cross` when the restored section passes every check, else `adapt` with the failing
   receipt named (`no-invented-facts` or artifact-rules); no yoga word in any final section or prompt; calls <= the
   Task 0 ceiling; refunds only on the `reuse` rows.
-- [ ] Flow test `content_failed_rules`: alter the source run's `prd.json` so a section cites ids this run's PRD does
+- [x] Flow test `content_failed_rules`: alter the source run's `prd.json` so a section cites ids this run's PRD does
   not have; assert artifact-rules fails on the served attempt, chain `reuse -> adapt -> build`, calls <= ceiling.
-- [ ] Commit.
+- [x] Commit.
 
 ### Task 4: Runs pushed to Git (config and one post-run step; decided 13 Nov)
 
 **Files:** `.gitignore` (the `runs/` rule), `SETUP.md`, `j2.py` (the Done path near `_write_summary` :10646).
 
-- [ ] `.gitignore`: remove `runs/`; keep `memory/`, `_backup/`, `projects/`, `*.log`. Everything in a run folder
+- [x] `.gitignore`: remove `runs/`; keep `memory/`, `_backup/`, `projects/`, `*.log`. Everything in a run folder
   travels for now (founder: "push everything, segregation later"); note the large files (`calls.jsonl`,
   `site/shots/*.png`) in SETUP so the decision to trim them later is a one-line change.
-- [ ] Post-run push behind `J2_PUSH_RUNS=1`: after `_write_summary`, `git add runs/<id> && git commit -m "run <id>
+- [x] Post-run push behind `J2_PUSH_RUNS=1`: after `_write_summary`, `git add runs/<id> && git commit -m "run <id>
   (<provider>, <business>)" && git pull --rebase && git push`, each step in a try/except that posts one system line
   on failure and never stops the run. Off by default in tests (`plain_unchanged` must not touch git).
-- [ ] The run's author: `chat.jsonl` meta line gets `by` (git `user.name`) so the shelf can segregate later.
-- [ ] SETUP: rows for `J2_RUNS_DIR` (the shelf and the content check read it) and `J2_PUSH_RUNS`.
-- [ ] Test: a mock run with `J2_PUSH_RUNS=1` in a throwaway git repo leaves one commit containing the run folder;
+- [x] The run's author: `chat.jsonl` meta line gets `by` (git `user.name`) so the shelf can segregate later.
+- [x] SETUP: rows for `J2_RUNS_DIR` (the shelf and the content check read it) and `J2_PUSH_RUNS`.
+- [x] Test: a mock run with `J2_PUSH_RUNS=1` in a throwaway git repo leaves one commit containing the run folder;
   with the flag off, no commit.
-- [ ] Commit.
+- [x] Commit.
 
 ### Task 5: Visibility (code)
 
@@ -171,17 +171,29 @@ Pattern source: `j2_template_lib.py` `runs_root` :2674, `get_run_template` (:255
 
 ### Task 6: Flow tests, the remaining spec scenarios (tests)
 
-- [ ] `plain_unchanged` with flag off: no `reuse.json`, call counts equal main.
-- [ ] `content_flag_implies`: with only `J2_ARTIFACT_LIBRARY=1`, the implied paths are on inside a mock run.
-- [ ] `content_source_missing`: delete the source run folder mid-run; every decision `unknown`; run completes.
+- [x] `plain_unchanged` with flag off: no `reuse.json`, call counts equal main.
+- [x] `content_flag_implies`: with only `J2_ARTIFACT_LIBRARY=1`, the implied paths are on inside a mock run.
+- [x] `content_source_missing`: delete the source run folder mid-run; every decision `unknown`; run completes.
 - [ ] `content_one_item_changed`: sections covering the changed item are `adapt`, others `reuse`.
 - [ ] `content_no_template`: the law-firm PRD -> all `build`, reason "no run template".
-- [ ] Commit.
+- [x] Commit.
 
 ### Task 7: Docs and version (docs)
 
-- [ ] README: replace "Here every workflow is custom" (README.md:635) with plan, shape and content reuse and their
+- [x] README: replace "Here every workflow is custom" (README.md:635) with plan, shape and content reuse and their
   flags; one line on `find` as the plan-time search that Adaptation will call.
-- [ ] SETUP.md: rows for `J2_RUN_TEMPLATES`, `J2_AUTO_REUSE` (missing today) and `J2_ARTIFACT_LIBRARY`.
-- [ ] RELEASES.md: entry under the next version (protocol change: reuse-before-build).
+- [x] SETUP.md: rows for `J2_RUN_TEMPLATES`, `J2_AUTO_REUSE` (missing today) and `J2_ARTIFACT_LIBRARY`.
+- [x] RELEASES.md: entry under the next version (protocol change: reuse-before-build).
 - [ ] Commit; open PR `artifact-library` -> `main`.
+
+---
+
+## Status, 13 Nov 2026 (executed on branch `artifact-library`)
+
+| Done | Where |
+|---|---|
+| Tasks 0 to 4, 6 (five of eight scenarios), 7 | `j2_artifact_lib.py` (new), `j2.py` (hook, served attempt, rollback, refund, draft, push, author), `j2_template_lib.py` (flag implication), `j2_artifacts.py` (`reused_from`), `.gitignore`, `SETUP.md`, `README.md`, `RELEASES.md` |
+| Tests | `artifact_lib_test.py` 33 checks; `content_door_test.py` 44 checks: flag implication, source missing (unknown), same brief served (17 sections, 0 calls, refunded, three receipt layers), cross-client (17 adapted from slotted drafts, no source name in a prompt, calls <= flag off), broken source (served -> adapt), flag off |
+| Guard added during execution | a cross-client section that holds the source business's values (or a part of one, 8+ chars) is not served; door `adapt`, rule `cross-facts`, draft slotted. Found by the test: a served section would have carried the yoga studio's address into a pilates document |
+
+Left for a follow-up: the Library tab content column and the Artifacts tab badge (`reuse.json` is read by `j2_artifacts.rows`; the page does not show it yet); the `content_one_item_changed` and `content_no_template` scenarios; `plain_unchanged` is skipped on this clone (its checkpoint commit is absent); the PR.
