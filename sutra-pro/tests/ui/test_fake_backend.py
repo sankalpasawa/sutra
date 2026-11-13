@@ -800,7 +800,7 @@ def test_the_j2_captures_hold_the_routes_feeds_and_answers_that_j2_added_in_sync
     runlist = load("runlist.json")
     assert list(runlist) == ["live", "runs"] and [r["id"] for r in runlist["runs"]] == [runlist["live"]] == [load("runs.json")["live"]]
     catalog = load("catalog.json")
-    assert catalog["schema"] == "template-library/1" and catalog["dir"] == "library" and catalog["groups"] and len(catalog["runs"]) == 8
+    assert catalog["schema"] == "template-library/1" and catalog["dir"] == "library" and catalog["groups"] and len(catalog["runs"]) == 11
     for who in J2_FUNCS:  # one feed and one answer per function, from the records of the same run
         feed, answer = load(f"activity-{who}.json"), load(f"ask-{who}.json")
         assert feed["schema"] == "activity/1" and feed["who"] == who and feed["found"] is True and feed["events"], who
@@ -817,7 +817,7 @@ def test_no_j2_capture_holds_an_absolute_home_folder_path():
     home = re.compile(rb"(?:/Users|/home)/[^/\s\"'\\]+/")
     assert [p.name for p in sorted(J2_FIXTURES.iterdir()) if p.is_file() and home.search(p.read_bytes())] == []
     libraries = [run.get("library") for run in json.loads((J2_FIXTURES / "catalog.json").read_bytes())["runs"]]
-    assert libraries.count("not recorded") == 6 and sorted(v for v in libraries if v != "not recorded") == ["/tmp/j2-live-library", "/tmp/j2-live-library-2"]
+    assert libraries.count("not recorded") == 6 and sorted(v for v in libraries if v != "not recorded") == ["/tmp/j2-auto-lib", "/tmp/j2-live-library", "/tmp/j2-live-library-2", "/tmp/j2-rt-lib", "/tmp/j2-rt-lib"]
 
 
 def test_the_graph_run_ids_extend_the_run_id_j2_recorded():
@@ -4936,7 +4936,9 @@ def test_the_j2_process_gets_a_scrubbed_environment_and_nothing_of_the_developer
     assert env["J2_MEMORY_FILE"] == str(tmp_path / "lessons.jsonl") and env["J2_PLAYBOOK_FILE"] == str(tmp_path / "playbooks.jsonl")
     assert env["PYTHONDONTWRITEBYTECODE"] == "1" and env["PYTHONHASHSEED"] == "0" and env["PYTHONUTF8"] == "1"
     assert set(env) == {"PATH", "LANG", "LC_ALL", "SYSTEMROOT", "TEMP", "TMP", "HOME", "TZ", "STUDIO_MOCK", "J2_CHROME", "J2_MEMORY", "J2_RUNS_DIR",
-                        "J2_MEMORY_FILE", "J2_PLAYBOOK_FILE", "PYTHONDONTWRITEBYTECODE", "PYTHONHASHSEED", "PYTHONUTF8"}
+                        "J2_MEMORY_FILE", "J2_PLAYBOOK_FILE", "PYTHONDONTWRITEBYTECODE", "PYTHONHASHSEED", "PYTHONUTF8",
+                        "J2_RUN_BY", "J2_PUSH_RUNS"}
+    assert env["J2_RUN_BY"] == "sutra-pro" and env["J2_PUSH_RUNS"] == "0"      # D190: pinned in every recorder
     assert capture.scrubbed_env(tmp_path, {"PATH": "/bin"})["PATH"] == "/bin" and "LANG" not in capture.scrubbed_env(tmp_path, {"PATH": "/bin"})
 
 
