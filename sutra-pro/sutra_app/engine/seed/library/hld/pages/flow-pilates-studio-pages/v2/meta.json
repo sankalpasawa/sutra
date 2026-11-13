@@ -1,0 +1,39 @@
+{
+  "schema": "template-library/1",
+  "name": "Flow Pilates Studio Pages",
+  "version": 2,
+  "sha": "472a50dbb95c1a3208c24c2d0c5d0c7331ea82e50e71818b9fdab8fc4dbc10ce",
+  "schema_sha": "48556f1d2493c0c748681dbbf482023bc4c6ac4bf4bd715e26cc94fda6050285",
+  "model_sha": "fb944f3adde0eb8bcd806493830cff120a0e89326f273eab19c3c3fe689aba81",
+  "class": "FlowPilatesStudioPagesV2",
+  "created": "2026-11-12T15:18:08",
+  "fingerprints": [
+    "9e3c82b90653c101596028d82ec52db5f192d931d604ddd2f5739fc5d8d5082d"
+  ],
+  "made_by": {
+    "run": "j2-20261112-150036",
+    "workflow": "W-18",
+    "atom": "W-18.a1",
+    "agent": "code (adapted from a run template)",
+    "date": "2026-11-12 15:00:36"
+  },
+  "business": {
+    "name": "Flow Pilates Studio",
+    "type": "pilates studio"
+  },
+  "mock": false,
+  "collected_from": {
+    "run": "j2-20261112-150036",
+    "where": "the run's copy"
+  },
+  "used_by": [
+    {
+      "run": "j2-20261112-150036",
+      "workflow": "W-18",
+      "atom": "W-18.a1",
+      "action": "extended"
+    }
+  ],
+  "renamed_from": "Still Point Yoga Pages@5",
+  "adapted_from": "Iron Grove Fitness Pages@1"
+}
