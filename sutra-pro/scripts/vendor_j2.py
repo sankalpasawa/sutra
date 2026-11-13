@@ -567,7 +567,7 @@ def saved_snapshot_dir(d, name, since=0):
                     self._write_summary()      # code only, before the slow reviewer call
 ''', r'''                self.post("system", f"Stopped: {self.error}")
                 self.outcome = f"Crashed: {self.error}"
-                self._hook("run_error", getattr(e, "code", "internal") if isinstance(e, _ModelError) else "internal", self.error)
+                self._hook("run_error", getattr(e, "code", "internal") if isinstance(e, (_ModelError, llm.CallTimeout)) else "internal", self.error)
                 try:
                     self._write_summary()      # code only, before the slow reviewer call
 '''),

@@ -78,6 +78,8 @@ class CallTimeout(RuntimeError):
     """J2's own name for a model call stopped at its time limit (`J2Run.call` retries it once). Raised by `ask` for a
     `ModelError` with code `timeout`; the original is `__cause__`. D170."""
 
+    code = "timeout"          # what the P8 run_error hook reports when a timed-out call ends the run
+
 
 def can_read_files() -> bool:
     """J2 asks whether the agent can read files at a path; here it never can: the agents' file tools are bound to the owner's
