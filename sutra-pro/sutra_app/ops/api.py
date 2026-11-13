@@ -2,12 +2,13 @@
 
     GET /api/ops/info                              version, schema, data folder, sizes, uptime, live tasks, engine settings source
     GET /api/ops/doctor[?refresh=1]                the doctor's checks (no model call), cached 30 s
-    GET /api/ops/usage?period=today|7d|30d|all&include_stub=0|1     totals, providers, days, teams, functions, top ten atoms by cost
+    GET /api/ops/usage?period=today|7d|30d|all&include_stub=0|1     totals, providers, days, teams, functions, purposes, top ten atoms by cost
     GET /api/ops/diagnostics                       a zip for a bug report; needs the X-Sutra-Token header although it is a GET
 
 All four are reads and answer in the usual error envelope. `router` is mounted by `create_app` when this module exists
-(`main._mount_ops_api`). The usage route exists because `/api/usage/summary` has no time window, and the period picker of the console
-needs one; every other panel of the console reads the orchestrator's existing routes.
+(`main._mount_ops_api`). The usage route exists because the period picker of the console needs one report for a period in one request (totals, the basis of
+each dollar figure, the team names, the dearest atoms); the by-purpose rows are the store's own (`UsageStore.summary("purpose", since=...)`, the same rows
+as `GET /api/usage/summary?by=purpose&since=`, D159). Every other panel of the console reads the orchestrator's existing routes.
 
 The diagnostics zip holds `info.json`, `doctor.json`, `server-log-tail.txt` (the last 2 000 lines of `server.log`), `settings.json`
 (`Settings.public()`), `schema-versions.json`, `departments.json` (folder names and sizes) and `README.txt`. It never holds a chat, a
@@ -217,9 +218,14 @@ def _add(a: int | float | None, b: int | float | None) -> int | float | None:
     return b if a is None else (a if b is None else a + b)
 
 
+def _dearest_first(groups: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Groups with a dollar figure first, the dearest on top; then the ones with tokens only, the most tokens first; then by key (the order of the top atoms)."""
+    return sorted(groups, key=lambda g: (g["usd"] is None, -(g["usd"] or 0.0), -((g["tokens_in"] or 0) + (g["tokens_out"] or 0)), g["key"]))
+
+
 def usage_report(services: Any, period: str, include_stub: bool, now: int) -> dict[str, Any]:
-    """Usage over `period`: totals, per provider (with the basis of the dollar figure), per day, per team and function, and the ten atoms
-    that cost most. Stub rows are left out unless `include_stub`. A sum is null when every row's part is null."""
+    """Usage over `period`: totals, per provider (with the basis of the dollar figure), per day, per team and function, per purpose (what the calls were for,
+    the dearest first, D159) and the ten atoms that cost most. Stub rows are left out unless `include_stub`. A sum is null when every row's part is null."""
     since = period_start(period, now)
     where, args = [], []
     if since is not None:
@@ -270,6 +276,8 @@ def usage_report(services: Any, period: str, include_stub: bool, now: int) -> di
         if team["usd"] is not None:
             team["usd"] = round(team["usd"], 6)
 
+    purposes = _dearest_first(services.usage.summary("purpose", include_stub=include_stub, since=since))
+
     top = []
     atom_clause = (clause + " AND " if clause else " WHERE ") + "u.atom_id IS NOT NULL"
     for r in conn.execute(
@@ -281,7 +289,7 @@ def usage_report(services: Any, period: str, include_stub: bool, now: int) -> di
                     "team_href": f"/d/{dept}/?tab={FN_TABS[fn]}" if dept and fn in FN_TABS else None,
                     "node_href": f"/?pane=graph&node={r['node']}" if r["node"] else None})
     return {"period": period, "since": iso_z(since) if since is not None else None, "include_stub": include_stub, "totals": totals,
-            "providers": list(providers.values()), "days": days, "teams": list(teams.values()), "functions": functions, "atoms": top}
+            "providers": list(providers.values()), "days": days, "teams": list(teams.values()), "functions": functions, "purposes": purposes, "atoms": top}
 
 
 # ---- diagnostics ---------------------------------------------------------------------------------------------------------------

@@ -242,6 +242,56 @@ def test_the_agents_tab_lists_the_team_opens_an_agents_own_chat_and_switches_run
     assert not browser.console_errors
 
 
+AGENT_LINES = """Object.fromEntries(Array.from(document.querySelectorAll('.agent'), a =>
+  [a.querySelector('.agent-name').textContent, Array.from(a.querySelectorAll('.agent-purpose'), p => p.textContent)]))"""
+FIVE = ("Identity", "Adaptation", "Priority", "Coordination", "Audit")
+
+
+@pytest.mark.browser
+def test_the_agents_tab_says_how_many_calls_were_judging_under_an_agents_usage_and_no_line_for_an_agent_with_none(fake, browser):
+    """D159: `usage.by_purpose` of the agents rows (the fake serves it as the real route does) becomes "judging N calls, $x" (the late judge's plan and judge calls) under the
+    usage of the agent that has some; the others have no line. The lines sit on a row of their own below the usage, inside the row."""
+    load(browser, fake)
+    open_node(browser, "web", tab="agents")
+    present(browser, ".agents-list .agent")
+    lines = browser.js(AGENT_LINES)
+    assert {name: lines[name] for name in FIVE} == {"Identity": [], "Adaptation": ["judging 2 calls, $0.01"], "Priority": ["judging 2 calls, $0.01"],
+                                                    "Coordination": ["judging 2 calls, $0.02"], "Audit": []}                         # Coordination: one judge call and one plan call
+    assert all(not v for k, v in lines.items() if k not in FIVE), lines                                                              # the workflows only worked
+    assert browser.count(".agent .agent-purposes") == 3 and browser.count(".agent [data-line='questions']") == 0                      # nobody was asked anything
+    assert texts(browser, ".agent-usage")[1] == "3 calls, $0.02" and "judging" not in texts(browser, ".agent-usage")[1]               # the usage line is as it was
+    assert browser.js("document.querySelector(\"[data-line='judging']\").title") == "Calls that planned or judged a workflow in this agent's turn"
+    box = browser.js("""(() => {
+      const row = Array.from(document.querySelectorAll('.agent')).find(a => a.querySelector('.agent-name').textContent === 'Priority');
+      const usage = row.querySelector('.agent-usage').getBoundingClientRect(), lines = row.querySelector('.agent-purposes').getBoundingClientRect(), mine = row.getBoundingClientRect();
+      return {below: lines.top >= usage.bottom - 1, inside: lines.left >= mine.left - 1 && lines.right <= mine.right + 1 && lines.bottom <= mine.bottom + 1, sideways: document.documentElement.scrollWidth > innerWidth};
+    })()""")
+    assert box == {"below": True, "inside": True, "sideways": False}
+    assert not browser.console_errors
+
+
+@pytest.mark.browser
+def test_a_question_asked_in_a_functions_chat_adds_its_questions_line_to_the_agents_tab(fake, browser):
+    """The whole path of D147 to D149 and D159: the owner asks Audit in its chat, the model answers (booked as one `agent_chat` call of Audit's session), and the Agents tab
+    says "questions 1 call, $0.02" under Audit's usage, next to the lines the judging calls already had."""
+    load(browser, fake)
+    assert fake.request("POST", "/__fake/ask", {"mode": "model", "text": "Item 4 was not met: the footer has no phone number."}, token=False)[0] == 200
+    open_node(browser, "web.audit")
+    present(browser, ".nnotehost .nnote-text")
+    browser.click('[data-act="box-mode"][data-mode="ask"]')
+    present(browser, ".nask-text")
+    browser.type(".nask-text", "Which check failed?")
+    browser.click('[data-act="ask"]')
+    browser.wait_for("Array.from(document.querySelectorAll('.nmsgs')).some(e => e.textContent.includes('the footer has no phone number'))")
+    open_node(browser, "web", tab="agents")
+    present(browser, ".agents-list .agent")
+    lines = browser.js(AGENT_LINES)
+    assert lines["Audit"] == ["questions 1 call, $0.02"]
+    assert lines["Priority"] == ["judging 2 calls, $0.01"] and lines["Identity"] == []                                                # nobody else's row moved
+    assert texts(browser, ".agent-usage")[4].startswith("7 calls, $0.07")                                                             # Audit's six turns and the answer: the usage line counts it too
+    assert not browser.console_errors
+
+
 @pytest.mark.browser
 def test_an_agents_live_work_shows_while_it_works_and_goes_when_its_line_arrives(fake, browser):
     load(browser, fake)

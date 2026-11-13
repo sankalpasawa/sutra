@@ -4,7 +4,8 @@
     usage.record(usage_in)               # the connector router's `UsageSink`: one row per model request, returns the row id
     usage.record(usage_in, tx=tx)        # the same inside the Projector's transaction (a transaction cannot nest)
     usage.rows(task_id="tsk_...", ...)   # UsageOut[] plus totals over the same filter
-    usage.summary("atom")                # groups by dept, fn, provider, day, atom or session (a chat session: per agent per run, D130)
+    usage.summary("atom")                # groups by dept, fn, provider, day, atom, session (a chat session: per agent per run, D130) or purpose (D159)
+    usage.summary("purpose", since=t)    # what the calls were for (agent_turn, plan, judge, agent_chat, ...); `since` (epoch seconds) is the window of every grouping
     usage.rows(session_id="cs_...")      # the filter by one chat session; `summary(..., session_id=)` takes it too
 
 `UsageIn` is defined once in `sutra_app.connectors.usage` and imported here, and only here. A row is built from it as a library
@@ -32,13 +33,13 @@ from sutra_app.orchestrator.records import UsageRecord
 __all__ = ["UsageStore", "UsageGroup", "SUMMARY_KEYS", "NO_KEY", "parse_since"]
 
 log = logging.getLogger(__name__)
-SUMMARY_KEYS = ("dept", "fn", "provider", "day", "atom", "session")
+SUMMARY_KEYS = ("dept", "fn", "provider", "day", "atom", "session", "purpose")
 NO_KEY = "(none)"
 MAX_ROWS = 500
 _COLUMNS = ("id, at, provider, model, purpose, session_id, node_id, task_id, dept_id, fn, step, atom_id, usd, tokens_in, tokens_out, "
             "seconds, ok, how, call_ref, detail_json")
 _GROUP_SQL = {"dept": "dept_id", "fn": "fn", "provider": "provider", "day": "strftime('%Y-%m-%d', at, 'unixepoch')", "atom": "atom_id",
-              "session": "session_id"}
+              "session": "session_id", "purpose": "purpose"}
 _LINKS = (("session_id", "chat_sessions"), ("node_id", "graph_nodes"), ("task_id", "tasks"), ("dept_id", "departments"))
 
 UsageGroup = dict[str, Any]
@@ -174,13 +175,14 @@ class UsageStore:
             (*args, max(0, int(after)), max(1, min(int(limit), MAX_ROWS)))).fetchall()
         return [_out(r) for r in paged], _totals(totals)
 
-    def summary(self, by: Literal["dept", "fn", "provider", "day", "atom", "session"], *, include_stub: bool = False, limit: int = MAX_ROWS,
-                session_id: str | None = None) -> list[UsageGroup]:
+    def summary(self, by: Literal["dept", "fn", "provider", "day", "atom", "session", "purpose"], *, include_stub: bool = False, limit: int = MAX_ROWS,
+                session_id: str | None = None, since: int | None = None) -> list[UsageGroup]:
         """Calls and sums per `by`, in key order; a row without a key is grouped under `(none)`. A sum is null when every row's
-        part is null. The days are UTC dates. `session_id` limits the rows to one chat session first."""
+        part is null. The days are UTC dates. `session_id` limits the rows to one chat session first and `since` (epoch seconds) to
+        the rows at or after it. `purpose` is what the call was for: the ledger's open word (`agent_turn`, `plan`, `judge`, `agent_chat`, ...)."""
         if by not in _GROUP_SQL:
             raise ValueError(f"usage is grouped by {', '.join(SUMMARY_KEYS)}, not {by!r}")
-        where, args = self._where(task_id=None, dept_id=None, fn=None, since=None, include_stub=include_stub, session_id=session_id)
+        where, args = self._where(task_id=None, dept_id=None, fn=None, since=since, include_stub=include_stub, session_id=session_id)
         key = _GROUP_SQL[by]
         found = self.db.conn().execute(
             f"SELECT {key} AS k, count(*) AS calls, sum(usd) AS usd, sum(tokens_in) AS tin, sum(tokens_out) AS tout FROM usage_ledger{where}"

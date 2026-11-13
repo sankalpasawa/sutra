@@ -69,10 +69,10 @@ def done(world):
     return world
 
 
-def add_usage(c, at, provider="claude", usd=None, tin=None, tout=None, dept="web", fn=None, atom=None, node=None, detail=None, ref=None):
+def add_usage(c, at, provider="claude", usd=None, tin=None, tout=None, dept="web", fn=None, atom=None, node=None, detail=None, ref=None, purpose="agent_turn"):
     c.db.conn().execute(
         "INSERT INTO usage_ledger(at, provider, model, purpose, dept_id, fn, atom_id, node_id, usd, tokens_in, tokens_out, ok, how, call_ref, detail_json)"
-        " VALUES (?,?,?,?,?,?,?,?,?,?,?,1,'native',?,?)", (at, provider, "m", "agent_turn", dept, fn, atom, node, usd, tin, tout, ref, detail))
+        " VALUES (?,?,?,?,?,?,?,?,?,?,?,1,'native',?,?)", (at, provider, "m", purpose, dept, fn, atom, node, usd, tin, tout, ref, detail))
 
 
 def at_of_first_row(c, at):
@@ -312,7 +312,73 @@ def test_the_usage_route_takes_period_and_include_stub_and_refuses_a_bad_period(
 def test_an_empty_ledger_gives_zeros_and_empty_lists(world):
     report = world.client.get("/api/ops/usage", params={"period": "today"}).json()
     assert report["totals"] == {"calls": 0, "usd": None, "tokens_in": None, "tokens_out": None}
-    assert (report["providers"], report["days"], report["teams"], report["functions"], report["atoms"]) == ([], [], [], [], [])
+    assert (report["providers"], report["days"], report["teams"], report["functions"], report["purposes"], report["atoms"]) == ([], [], [], [], [], [])
+
+
+def seed_purposes(c):
+    """On top of `seed`: a judge call and a Codex planner call today, an answer in a chat 5 days ago, a summary 20 days ago and a stub row of its own purpose today."""
+    seed(c)
+    add_usage(c, NOW - 120, usd=0.4, tin=300, tout=60, fn="priority", purpose="judge", ref="pj")
+    add_usage(c, NOW - 130, provider="codex", tin=9000, tout=900, fn="priority", purpose="plan", ref="pp")
+    add_usage(c, NOW - 5 * DAY, usd=0.2, tin=100, tout=10, fn="audit", purpose="agent_chat", ref="pq")
+    add_usage(c, NOW - 20 * DAY, usd=7.0, tin=1, tout=1, purpose="summary", ref="ps")
+    add_usage(c, NOW - 30, provider="stub", usd=0.0, tin=3, tout=3, purpose="chat_plan", ref="pc")
+    return c
+
+
+def test_purposes_are_grouped_with_their_sums_the_dearest_first_and_a_purpose_with_no_dollars_comes_last(done):
+    """D159: the console's table of usage by purpose: what the calls were for, with the sums of every other table, in the order of the top atoms."""
+    seed_purposes(done)
+    month = ops_api.usage_report(done.services, "30d", False, NOW)["purposes"]
+    assert [p["key"] for p in month] == ["summary", "agent_turn", "judge", "agent_chat", "plan"]                         # 7.00, 0.575, 0.40, 0.20, then tokens only
+    by = {p["key"]: p for p in month}
+    assert by["agent_turn"] == {"key": "agent_turn", "calls": 13, "usd": pytest.approx(0.575), "tokens_in": 3300, "tokens_out": 460}     # the Codex call adds tokens, no dollars
+    assert by["judge"] == {"key": "judge", "calls": 1, "usd": 0.4, "tokens_in": 300, "tokens_out": 60}
+    assert by["plan"] == {"key": "plan", "calls": 1, "usd": None, "tokens_in": 9000, "tokens_out": 900}                  # only Codex: no dollar figure, as in every table
+    assert set(by["judge"]) == set(by["plan"]) == {"key", "calls", "usd", "tokens_in", "tokens_out"}
+    totals = ops_api.usage_report(done.services, "30d", False, NOW)["totals"]
+    assert sum(p["calls"] for p in month) == totals["calls"]
+    assert sum(p["tokens_in"] for p in month) == totals["tokens_in"] and sum(p["tokens_out"] for p in month) == totals["tokens_out"]
+    assert round(sum(p["usd"] or 0 for p in month), 6) == totals["usd"]
+    assert [p["key"] for p in ops_api.usage_report(done.services, "all", False, NOW)["purposes"]][:2] == ["summary", "agent_turn"]      # the 40-day row of seed is agent_turn's
+
+
+def test_purposes_follow_the_period_and_the_stub_switch_like_every_other_table(done):
+    seed_purposes(done)
+    today = ops_api.usage_report(done.services, "today", False, NOW)["purposes"]
+    assert [(p["key"], p["calls"]) for p in today] == [("judge", 1), ("agent_turn", 11), ("plan", 1)]                   # 0.40, 0.075, tokens only; the 5- and 20-day rows are out
+    week = ops_api.usage_report(done.services, "7d", False, NOW)["purposes"]
+    assert [p["key"] for p in week] == ["agent_turn", "judge", "agent_chat", "plan"] and {p["key"]: p["calls"] for p in week}["agent_turn"] == 12
+    stubbed = ops_api.usage_report(done.services, "today", True, NOW)
+    assert [(p["key"], p["calls"]) for p in stubbed["purposes"]] == [("judge", 1), ("agent_turn", 12), ("chat_plan", 1), ("plan", 1)]     # the stub rows: a purpose of its own and a call of agent_turn's
+    assert sum(p["calls"] for p in stubbed["purposes"]) == stubbed["totals"]["calls"]
+    assert "chat_plan" not in [p["key"] for p in ops_api.usage_report(done.services, "today", False, NOW)["purposes"]]
+
+
+def test_a_purpose_row_exactly_at_the_start_of_the_period_counts_and_one_second_earlier_does_not(done):
+    at_of_first_row(done, MIDNIGHT)
+    assert [(p["key"], p["calls"]) for p in ops_api.usage_report(done.services, "today", False, NOW)["purposes"]] == [("agent_turn", 1)]
+    at_of_first_row(done, MIDNIGHT - 1)
+    assert ops_api.usage_report(done.services, "today", False, NOW)["purposes"] == []
+
+
+def test_the_report_has_the_same_rows_as_the_summary_route_by_purpose_over_the_same_window(done):
+    seed_purposes(done)
+    for period in ("today", "7d", "30d", "all"):
+        for stub in (False, True):
+            mine = ops_api.usage_report(done.services, period, stub, NOW)["purposes"]
+            theirs = done.services.usage.summary("purpose", include_stub=stub, since=ops_api.period_start(period, NOW))
+            assert sorted(mine, key=lambda p: p["key"]) == theirs, (period, stub)
+
+
+def test_the_usage_route_answers_the_purposes_and_a_purpose_nobody_listed_is_a_row_like_any_other(done):
+    seed_purposes(done)
+    add_usage(done, int(done.services.clock.now()) - 5, usd=0.05, tin=1, tout=1, purpose="from_a_later_release", ref="later")
+    body = done.client.get("/api/ops/usage", params={"period": "all"}).json()
+    keys = [p["key"] for p in body["purposes"]]
+    assert keys[0] == "summary" and "from_a_later_release" in keys and "chat_plan" not in keys                           # never hidden, stub rows still out
+    assert {p["key"] for p in done.client.get("/api/ops/usage", params={"period": "all", "include_stub": 1}).json()["purposes"]} == set(keys) | {"chat_plan"}
+    assert body["purposes"] == ops_api.usage_report(done.services, "all", False, int(done.services.clock.now()))["purposes"]
 
 
 # ============================================ diagnostics ====================================================================

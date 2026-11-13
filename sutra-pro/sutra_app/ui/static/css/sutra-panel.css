@@ -351,6 +351,7 @@ body.nodeopen #dview .chat,body.nodeopen .chatfab{visibility:hidden}
 .agent-dot[data-state="past"]{background:transparent;border:1px solid var(--muted)}
 .agent-state{color:var(--muted);font-size:12px}
 .agent-usage{color:var(--muted);font-size:12px;font-family:var(--mono)}
+.agent-purposes{flex:1 1 100%;display:flex;flex-wrap:wrap;gap:2px 14px;padding-left:17px;color:var(--muted);font-size:12px;font-family:var(--mono)}
 .agentlive .alive-tool{display:inline-block;margin-left:8px;font:500 12px var(--mono);color:var(--muted)}
 .agentlive .alive-note{margin-left:8px;color:var(--muted);font-size:12px}
 .cstream{margin:6px 0;color:var(--ink)}

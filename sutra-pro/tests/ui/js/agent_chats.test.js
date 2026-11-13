@@ -150,6 +150,68 @@ test("the usage words are short and leave out nothing that was not spent", () =>
   assert.equal(AC.usageWords(null), "");
 });
 
+// ---- usage by purpose (D159): "judging N calls, $x" and "questions N calls, $x" under an agent's usage ---------------------------------------------------
+
+const BY = {agent_turn: {calls: 2, usd: 0.02}, judge: {calls: 1, usd: 0.02}, plan: {calls: 1, usd: null}, agent_chat: {calls: 1, usd: 0.0625}};
+const lines = usage => AC.purposeLines(usage).map(l => l.text);
+
+test("judging adds the late judge's two purposes, plan and judge; questions is the answers in the agent's chat; the agent's own turns are neither", () => {
+  assert.deepEqual(lines({calls: 5, usd: 0.1025, by_purpose: BY}), ["judging 2 calls, $0.02", "questions 1 call, $0.06"]);
+  assert.deepEqual(AC.purposeLines({by_purpose: BY}).map(l => [l.key, l.calls, l.usd]), [["judging", 2, 0.02], ["questions", 1, 0.0625]]);
+  assert.deepEqual(lines({by_purpose: {judge: {calls: 3, usd: 0.5}, plan: {calls: 2, usd: 0.25}}}), ["judging 5 calls, $0.75"]);        // dollars add up across the two purposes
+  assert.deepEqual(lines({by_purpose: {plan: {calls: 1, usd: 0.004}}}), ["judging 1 call, $0.0040"]);                              // the words of usageWords: a fraction of a cent has four places
+  assert.deepEqual(lines({by_purpose: {agent_turn: {calls: 4, usd: 1}, summary: {calls: 1, usd: 1}, change: {calls: 1, usd: 1}}}), []);
+  assert.deepEqual(AC.purposeLines({by_purpose: {agent_chat: {calls: 2, usd: 0.04}, judge: {calls: 1, usd: null}}}).map(l => l.key), ["judging", "questions"]);   // always in this order
+});
+
+test("a line is drawn only when its calls are above zero, and a call with no price says the calls and no dollars", () => {
+  assert.deepEqual(lines({by_purpose: {judge: {calls: 0, usd: 0}, agent_chat: {calls: 0, usd: null}}}), []);
+  assert.deepEqual(lines({by_purpose: {judge: {calls: 0, usd: 0}, plan: {calls: 2, usd: 0.1}}}), ["judging 2 calls, $0.10"]);          // a purpose with no calls adds nothing
+  assert.deepEqual(lines({by_purpose: {judge: {calls: 2, usd: null}}}), ["judging 2 calls"]);                                       // Codex reports tokens only
+  assert.deepEqual(lines({by_purpose: {judge: {calls: 2, usd: 0}}}), ["judging 2 calls"]);
+  assert.deepEqual(lines({by_purpose: {judge: {calls: 1, usd: null}, plan: {calls: 1, usd: 0.3}}}), ["judging 2 calls, $0.30"]);     // one priced part is enough for a figure
+});
+
+test("an older server's row, an empty mapping and anything that is not a mapping of counts draw nothing", () => {
+  for (const usage of [undefined, null, {}, {calls: 3, usd: 0.04}, {by_purpose: {}}, {by_purpose: null}, {by_purpose: []}, {by_purpose: "judge"}, "x", 5]) {
+    assert.deepEqual(AC.purposeLines(usage), [], JSON.stringify(usage));
+  }
+  const odd = {by_purpose: {judge: null, plan: "2", agent_chat: {calls: "1", usd: 1}}};
+  assert.deepEqual(AC.purposeLines(odd), []);
+  assert.deepEqual(lines({by_purpose: {judge: {calls: -3, usd: 1}, plan: {calls: NaN, usd: 1}, agent_chat: {calls: Infinity, usd: 1}}}), []);
+  assert.deepEqual(lines({by_purpose: {judge: {calls: 2, usd: "0.5"}}}), ["judging 2 calls"]);                                     // a price that is not a number is no price
+  assert.deepEqual(lines({by_purpose: JSON.parse('{"__proto__": {"calls": 9}, "constructor": {"calls": 9}}')}), []);                 // only the three words are read
+});
+
+test("the list puts the two lines under the agent's usage, in one place, and says what each means", () => {
+  const html = AC.list([row({usage: {calls: 5, usd: 0.1025, tokens_in: 605, tokens_out: 121, by_purpose: BY}})]);
+  assert.match(html, /<span class="agent-usage">5 calls, \$0\.10<\/span><span class="agent-purposes">/);
+  assert.match(html, /<span class="agent-purpose" data-line="judging" title="[^"]+">judging 2 calls, \$0\.02<\/span><span class="agent-purpose" data-line="questions" title="[^"]+">questions 1 call, \$0\.06<\/span><\/span><\/li>/);
+  assert.equal((html.match(/class="agent-purposes"/g) || []).length, 1);
+  assert.ok(html.indexOf('class="agent-usage"') < html.indexOf('class="agent-purposes"') && html.indexOf('class="agent-purposes"') < html.indexOf("</li>"));
+});
+
+test("an agent with no judging and no questions has no line, whether the server knows by_purpose or not", () => {
+  for (const usage of [{calls: 3, usd: 0.04, tokens_in: 100, tokens_out: 20}, {calls: 3, usd: 0.04, by_purpose: {agent_turn: {calls: 3, usd: 0.04}}}, {calls: 0, usd: null, by_purpose: {}}]) {
+    const html = AC.list([row({usage})]);
+    assert.doesNotMatch(html, /agent-purpose|judging|questions/);
+  }
+  assert.match(AC.list([row({usage: {calls: 3, usd: 0.04}})]), /3 calls, \$0\.04/);                                                // the usage line is as it was
+  const onlyQuestions = AC.list([row({usage: {calls: 1, usd: 0.02, by_purpose: {agent_chat: {calls: 1, usd: 0.02}}}})]);
+  assert.match(onlyQuestions, /data-line="questions"/);
+  assert.doesNotMatch(onlyQuestions, /data-line="judging"/);
+});
+
+test("a past run's row and a workflow's row draw their lines as a live function's does, and nothing from the mapping's keys reaches the markup", () => {
+  const past = AC.list([row({status: "archived", live: false, state: "filed", usage: {calls: 4, usd: 0.1, by_purpose: {judge: {calls: 1, usd: 0.05}}}})]);
+  assert.match(past, /data-state="past"[\s\S]*judging 1 call, \$0\.05/);
+  const step = AC.list([row({agent: "W-1", label: "Menu page", kind: "step", usage: {calls: 2, usd: 0.02, by_purpose: {judge: {calls: 1, usd: 0.01}}}})]);
+  assert.match(step, /<h4 class="agents-h">Workflows<\/h4>[\s\S]*judging 1 call, \$0\.01/);
+  const hostile = AC.list([row({usage: {calls: 3, usd: 1, by_purpose: {'<img src=x onerror="alert(1)">': {calls: 3, usd: 1}, judge: {calls: 1, usd: 0.01}}}})]);
+  assert.doesNotMatch(hostile, /<img|onerror/);
+  assert.match(hostile, /judging 1 call, \$0\.01/);
+});
+
 // ---- Ask: a question to a function, beside the note (J2 sync 4, D147 and D148) -----------------------------------------------------------------
 
 test("a function's box shows the note by default and offers the Ask mode; a step's chat keeps the note box as it was", () => {

@@ -1,14 +1,14 @@
 {
  "schema": "traceability/1",
  "counts": {
-  "decisions": 158,
+  "decisions": 159,
   "packages": 78,
   "endpoints": 41,
   "chips": 15,
   "steps": 7,
   "owner_rules": 7
  },
- "max_decision": 158,
+ "max_decision": 159,
  "owner_rules": [
   {
    "rule": "This is a new app, no relation to the old sutra-ui. Its design is the J2 prototype's design.",
@@ -347,7 +347,8 @@
     "D155",
     "D156",
     "D157",
-    "D158"
+    "D158",
+    "D159"
    ],
    "modules": [
     "docs/DECISIONS.md",
@@ -3294,10 +3295,12 @@
    "id": "D145",
    "title": "The late judge stays on by default with no patch; its records are accepted; its cost stays readable in the usage ledger",
    "packages": [
+    "CT-1",
     "E3",
     "L3",
     "L8",
     "L9",
+    "ORCH-3",
     "UI-0"
    ],
    "status": "implemented",
@@ -3321,6 +3324,7 @@
     "E2",
     "E4",
     "GAP-DEMO",
+    "ORCH-3",
     "UI-0",
     "UI-6"
    ],
@@ -3456,6 +3460,19 @@
    "status": "implemented",
    "superseded_by": [],
    "diagram": "label \"atom card shows output and the reply\", pill on Workflow graph store."
+  },
+  {
+   "id": "D159",
+   "title": "Usage by purpose is read in three places: a grouping and a window of the usage routes, a mapping on every Agents row, and a table in the console (builds what D145 planned)",
+   "packages": [
+    "CT-1",
+    "GAP-CONSOLE",
+    "ORCH-3",
+    "UI-0"
+   ],
+   "status": "implemented",
+   "superseded_by": [],
+   "diagram": "label \"usage by purpose: route, agents, console\", pill on Usage and cost ledger."
   }
  ],
  "packages": [
