@@ -792,3 +792,34 @@ conditions. Audit and the planners are told that a warning is a heuristic check 
 - `MAX_CHECK_ATTEMPTS` is marked a decision because it overrides the retry limit Priority sets for each workflow. The value stays as it is on this branch, as already agreed.
 - The folder-stage rows (`_folder_stage` j2.py:4498-4603) describe the step-3 code. The step-3b plan removes them.
 - Keep/agent labels and B/C groups are the reviewers' calls, and I checked the group A rows against the runs. A row marked B can still need its own data field once page and document go through the general path.
+
+## Library cleanup (branch `library-cleanup`)
+
+What happened to the library rows above, and to four more places the same rule covers. "Fixed" means the choice is
+now read from data or made by the agent; "kept" means code still holds it, as a setting the agent is told or as a
+guardrail. Line numbers in the rows above are as of the survey commit; the symbols are the way to find the code now.
+Settings are in `templates/library-settings.json`; `j2_flow_test.py` tests `library_cleanup` and `folder_reuse` cover
+every row.
+
+| Item | Fixed / kept | Reason |
+|---|---|---|
+| `decision_group` (documents / pages branch) | Fixed: data | The group is the type's `group`, else its `form`, read from its entry in `artifacts/types.json` (`type_data`). Every entry has one, records included. A type only a run recorded is read from that run's `artifacts.json`. |
+| `_same_business` (last word of the business type) | Fixed: charter field | Two business types are the same only when both charters recorded the same `business_type`, compared whole. No word of it is read alone. Values that record none are listed in settings (`no_business_type`). |
+| `RTSCOPES` in the Library tab | Fixed: data | The server sends `scopes` (`decision_scopes`): one per group the run's decisions fall in, labelled from the type data. The page holds no type or form name. |
+| Run templates of folder outputs (`run_template_from_run`, `save_run_template`) | Fixed: data | A type whose data has a `folder` is a folder of files. The run template keeps the folder's file names and its test in `outputs`; `folder_decision` records a second run's reuse. |
+| `LIST_EACH`, `LIST_FIELDS`, `fact_fields` | Fixed: data | The two fact shapes, the names they make and their descriptions are entries of `fact_fields` in settings. Code loops over them. They are still patterns: a pattern-free version needs the generator to propose the fields, which is a prompt change in `j2.py`. |
+| `STOP`, `words` | Fixed: data | The word list and the least word length are in settings (`stop_words`, `min_word_length`). `j2.py` still picks a workflow's charter facts by shared words through `words()`: left for Disha. |
+| `coverage`, `route`: reuse without asking | Kept: setting, agent told | `routing.reuse_without_asking` (the same need, or coverage 1.0). An identical need then costs no model call. The generator's prompt states the rule; turning both off sends every reuse to the generator. |
+| `route`: two generator attempts, then the generic template | Kept: guardrail | It bounds the cost of a bad reply. The number is `routing.generator_attempts`, and the prompt states it. |
+| `EXTEND_MIN`, `_accept` overruling an extend into a create | Fixed: agent decides | The number stays (`routing.extend_min`, `routing.reuse_min`) and is in the generator's prompt. A reply under it is refused with the rule and the generator is asked again; code no longer changes the action. The decision keeps the refusal (`refused`). |
+| `_accept`: silent `<name> 2` rename | Fixed: removed | Code never renames. A create under a taken name is refused with the reason, and the generator picks the name. |
+| `j2_agent_views.doc_kinds` (`form == "document"`) | Fixed: data | Types are picked by their template: one that names its sections (more than one section template, or a whole-artifact template) is built section by section. |
+| `j2_agent_views.build_design` (page form only) | Fixed: data | Every style guide any form names is built (`style_guides`, from `j2_types.templated`). |
+| `j2_agent_views.build_sections` (`page_type()`, `"style"` by name) | Fixed: data | Every type whose template has one repeating section template is built; its file path comes from the type data; an entry of `sections.json` that is no workflow of the run is skipped. |
+
+Left as it is, and why:
+
+- `AUTO_MIN`, `AUTO_WEIGHTS`, `VAGUE_TYPES` (`run_template_match`): numbers and a word list in code. Not in this PR's list; they move to settings the same way.
+- `run_slots`, `_noun` (slot names such as `<studio name>` from the last word of the business type and from address, time and phone patterns): replaced on branch `sutra-library` by slots named from charter fields.
+- `build_design` still looks for `style.json`, the file name `j2.py` writes.
+- The Library tab still skips the row focus for `d.artifact !== "design"` (one comparison in `renderLibrary`).
