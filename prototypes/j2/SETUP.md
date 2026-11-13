@@ -37,11 +37,12 @@ python3 -m venv .venv
 source .venv/bin/activate
 pip install -r requirements.txt
 cp .env.example .env        # optional: fill in only what you use. .env is never committed
-python3 j2_flow_test.py --fast --skip map_focus,graph_map,left_bar_toggle,artifacts_groups,warm_ui,map_motion,sutra_library
+python3 j2_flow_test.py --fast --skip map_focus,graph_map,left_bar_toggle,artifacts_groups,warm_ui,map_motion,sutra_library,map_tab,left_bar,map_shapes
 ```
 
-The last line checks the clone offline (mock agents, no cost, about 7 minutes). The skipped tests read saved runs
-in `runs/`, which a fresh clone does not have.
+The last line checks the clone offline (mock agents, no cost, about 5 minutes). The skipped tests read saved runs
+in `runs/`, which a fresh clone does not have (checked from a fresh clone, 2026-11-13). Once you have saved runs of
+your own, drop `map_tab,left_bar,map_shapes` from the list.
 
 ### Every line of `.env.example`
 
