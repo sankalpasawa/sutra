@@ -1,6 +1,7 @@
 """The patches of the vendored J2 (work package E1, engine design 3.4): P2 role-file folder, P3 explicit run folder and id,
 P4 non-blocking user_says and apply_override, P5 explicit-path memory and saved-run functions, P7 tagged model calls,
-P8 hooks, P9 the system addendum, P16 Decide for me's settings file. J2 runs in mock mode with its Chrome checks faked (as J2's own `--fast` flow does), so a
+P8 hooks, P9 the system addendum, P14 `single` with no type, P16 Decide for me's settings file, P17 the local type store and
+P18 host type registration (sync 5). J2 runs in mock mode with its Chrome checks faked (as J2's own `--fast` flow does), so a
 whole Brew Lab run takes about a tenth of a second. P1 (imports) and P10 (the library lock) are in test_engine_vendor.py and
 test_engine_library_lock.py, P11 (rehydrate) in test_engine_rehydrate.py."""
 import contextlib
@@ -20,7 +21,7 @@ import pytest
 ENGINE = "sutra_app.engine"
 J2_MODULES = ("j2", "j2_agent", "j2_agent_models", "j2_agent_views", "j2_artifact_models", "j2_artifacts", "j2_board", "j2_change",
               "j2_check", "j2_map", "j2_realization", "j2_rules", "j2_schema", "j2_send", "j2_story", "j2_studio", "j2_template_lib",
-              "rehydrate")
+              "j2_types", "rehydrate")
 BREW_LAB = ("A one-page website for Brew Lab, a small specialty coffee shop in Indiranagar, Bengaluru. Visitors should "
             "see the menu with prices, the opening hours, and where to find us, and be able to pre-order a coffee for "
             "pickup. It should feel warm and modern and work well on a phone. Include a section about our beans and the "
@@ -355,6 +356,8 @@ def test_p2_j2_agents_dir_replaces_the_folder(tmp_path):
         (custom / f.name).write_text(text + ("\nCUSTOM-MARKER-X\n" if f.name == "identity.md" else ""), encoding="utf-8")
     with fresh_j2(tmp_path / "env", J2_AGENTS_DIR=custom) as mod:
         assert mod.J2_DIR == str(custom) and mod.j2_realization.AGENTS == str(custom)
+        assert mod.j2_types.AGENTS_DIR == str(custom), "P2, third edit: a page type's builder is a role file"
+        assert os.path.join(mod.j2_types.AGENTS_DIR, mod.j2_types.load("website")["builder"]) == str(custom / "builder.md")
         assert "CUSTOM-MARKER-X" in mod.system_prompt("identity", "{}")
         assert "CUSTOM-MARKER-X" not in mod.system_prompt("audit", "{}")
 
@@ -446,7 +449,8 @@ def hooked_run(j2, make_run, mock_mode, texts=(BREW_LAB,), **kw):
 def test_p8_a_hooked_run_pairs_every_turn_start_with_its_finish(j2, make_run, mock_mode):
     run, rec = hooked_run(j2, make_run, mock_mode)
     names = [c[0] for c in rec.calls]
-    assert names[:3] == ["message_posted", "run_status", "turn_started"] and names[-1] == "run_status"
+    assert names[:4] == ["message_posted", "run_status", "record_saved", "turn_started"] and names[-1] == "run_status"
+    assert rec.calls[2][1] == "deliverables.json", "J2's planner call of _plan_stages (sync 5) saves its answer before the first turn"
     open_turn, numbers = None, []
     for c in rec.calls:
         if c[0] == "turn_started":
@@ -821,3 +825,204 @@ def test_p16_the_records_hook_gets_the_merged_file(j2, make_run):
     say(run, BREW_LAB)
     saved = [data for name, data in [c[1:3] for c in rec.calls if c[0] == "record_saved"] if name == "settings.json"]
     assert saved == [{**HOST_SETTINGS, "decide_for_me": True}]
+
+
+# ---- P7 (timeout): a builder's call that times out is retried once, through the shim ----------------------------------------
+def timing_out_port(times):
+    """A capturing port that raises a ModelTimeout for the first `times` builder requests."""
+    from sutra_app.engine.port import ModelTimeout
+    port = captured_port()
+    real, left = port.complete, [times]
+
+    def complete(req, on_progress=None):
+        if req.tag.function.startswith("W-") and left[0] > 0:
+            left[0] -= 1
+            port.requests.append(req)
+            raise ModelTimeout("took too long")
+        return real(req, on_progress)
+    port.complete = complete
+    return port
+
+
+def test_p7_only_builder_calls_carry_the_builder_time_limit_to_the_port(j2, make_run, mock_mode):
+    run, port = tagged_run(j2, make_run, mock_mode)
+    limited = [r for r in port.requests if r.timeout_s is not None]
+    assert limited and all(r.tag.function.startswith("W-") and r.timeout_s == 600.0 for r in limited)
+    assert all(r.timeout_s is None for r in port.requests if not r.tag.function.startswith("W-"))
+
+
+def test_p7_a_builder_call_that_times_out_once_is_retried_and_the_run_goes_on(j2, make_run, mock_mode):
+    port = timing_out_port(1)
+    mock_mode.configure(port, mock=True, base_tag=base_tag())
+    run = make_run()
+    say(run, BREW_LAB)
+    timeouts = [e for e in run.events if e["type"] == "builder_timeout"]
+    assert len(timeouts) == 1 and "retried once" in timeouts[0]["detail"]
+    assert run.error is None and run.done
+
+
+def test_p7_a_builder_call_that_times_out_twice_is_not_retried_again(j2, make_run, mock_mode):
+    port = timing_out_port(2)
+    mock_mode.configure(port, mock=True, base_tag=base_tag())
+    run = make_run()
+    say(run, BREW_LAB)
+    timeouts = [e for e in run.events if e["type"] == "builder_timeout"]
+    assert len(timeouts) == 2 and "not retried again" in timeouts[1]["detail"]
+    assert "retried once" in timeouts[0]["detail"] and run.error is None, "J2 handles the second stop itself (j2.py): the envelope retries"
+
+
+# ---- P14: a `single` output keeps its output and makes no planner call; no output yet is not an error ---------------------------
+def test_p14_a_run_with_no_output_yet_plans_its_stages_without_crashing(j2, make_run, mock_mode):
+    port = captured_port()
+    mock_mode.configure(port, mock=True, base_tag=base_tag())
+    run = make_run()
+    assert run.out is None
+    say(run, BREW_LAB)
+    assert run.error is None and run.out is not None, "the planner chose the type"
+
+
+def test_p14_a_single_output_returns_before_the_planner_call(j2, make_run, mock_mode):
+    port = captured_port()
+    mock_mode.configure(port, mock=True, base_tag=base_tag())
+    run = make_run()
+    run.out, run.request = {"single": True}, "update the PRD in the repo"
+    run._plan_stages()
+    assert port.requests == [] and not run.stages and not run.goal
+
+
+# ---- P17 and P18: j2_types (sync 5) ---------------------------------------------------------------------------------------------
+@pytest.fixture
+def jt(tmp_path):
+    """A fresh j2_types whose local store is under tmp_path/store (J2_TYPES_DIR is read when the module is imported)."""
+    with fresh_j2(tmp_path / "env", J2_TYPES_DIR=tmp_path / "store") as mod:
+        yield mod.j2_types
+
+
+SECTIONS = ["Beans", "Water"]
+
+
+def package_dir(jt):
+    return Path(jt.__file__).parent
+
+
+def test_p17_with_the_store_set_create_writes_under_it_and_nothing_under_the_package(jt, tmp_path):
+    store, package = tmp_path / "store", package_dir(jt)
+    before = sorted(p.relative_to(package).as_posix() for p in package.rglob("*") if p.is_file())
+    assert jt.LOCAL_TYPES_PATH == str(store / "types.local.json") and jt.LOCAL_LIBRARY_DIR == str(store / "templates")
+    entry = jt.create("brew_notes", "Brew notes", SECTIONS)
+    assert entry["name"] == "brew_notes" and "brew_notes" in jt.names()
+    assert (store / "types.local.json").is_file() and (store / "templates" / "brew_notes" / "generic.json").is_file()
+    assert Path(jt.template_path("brew_notes")) == store / "templates" / "brew_notes" / "generic.json"
+    assert sorted(p.relative_to(package).as_posix() for p in package.rglob("*") if p.is_file()) == before
+    assert not (package / "artifacts" / "types.local.json").exists() and not (package / "library" / "types").exists()
+    assert not list(store.glob("*.tmp")), "the temp file of the atomic write is gone"
+
+
+def test_p17_without_the_store_j2s_own_places_apply(tmp_path):
+    with fresh_j2(tmp_path / "env") as mod:
+        t = mod.j2_types
+        assert t.LOCAL_TYPES_PATH == str(Path(t.__file__).parent / "artifacts" / "types.local.json")
+        assert t.LOCAL_LIBRARY_DIR == str(Path(t.__file__).parent / "library" / "types")
+
+
+def test_p17_a_held_lock_gives_a_value_error_and_writes_nothing(jt, tmp_path, monkeypatch):
+    from sutra_app import oslayer
+    monkeypatch.setattr(jt, "TYPES_LOCK_WAIT_S", 0.2)
+    store = tmp_path / "store"
+    store.mkdir()
+    fd = os.open(store / ".lock", os.O_RDWR | oslayer.O_BINARY | os.O_CREAT, 0o600)
+    try:
+        assert oslayer.try_lock(fd)
+        with pytest.raises(ValueError, match="locked by another run"):
+            jt.create("brew_notes", "Brew notes", SECTIONS)
+    finally:
+        oslayer.unlock(fd)
+        os.close(fd)
+    assert not (store / "types.local.json").exists()
+    assert jt.create("brew_notes", "Brew notes", SECTIONS)["name"] == "brew_notes", "free again"
+
+
+def test_p17_two_threads_creating_different_types_lose_neither(jt, tmp_path):
+    errors, names = [], ["alpha_notes", "beta_notes", "gamma_notes", "delta_notes"]
+
+    def make(name):
+        try:
+            jt.create(name, name.replace("_", " ").title(), SECTIONS)
+        except Exception as e:  # noqa: BLE001
+            errors.append(e)
+    threads = [threading.Thread(target=make, args=(n,)) for n in names]
+    for t in threads:
+        t.start()
+    for t in threads:
+        t.join(30)
+    assert errors == []
+    saved = json.loads((tmp_path / "store" / "types.local.json").read_text(encoding="utf-8"))["types"]
+    assert sorted(t["name"] for t in saved) == sorted(names)
+    assert all((tmp_path / "store" / "templates" / n / "generic.json").is_file() for n in names)
+
+
+def host_entry(tmp_path, jt, name="host_doc", owner="tests", **extra):
+    template = tmp_path / f"{name}.generic.json"
+    template.write_text(json.dumps(jt.template_for(name, "Host doc", SECTIONS), indent=1) + "\n", encoding="utf-8")
+    return {"name": name, "kind": "type", "label": "Host doc", "tag": "Host", "color": "--other", "form": "document",
+            "template": str(template), "file": f"{name}.md", "deliverable": False, "triggers": [], "groups": [],
+            "depends_on": [], "host": owner, **extra}
+
+
+def test_p18_a_registered_type_is_known_chosen_by_default_and_carries_its_extras(jt, tmp_path, monkeypatch):
+    calls = lambda: "mock"
+    jt.register(host_entry(tmp_path, jt), {"single": True, "workspace": "edit", "mock_charter": calls})
+    assert "host_doc" in jt.names()
+    monkeypatch.setenv("J2_OUTPUT", "host_doc")
+    assert jt.default() == "host_doc"
+    out = jt.load("host_doc")
+    assert out["single"] is True and out["workspace"] == "edit" and out["mock_charter"] is calls
+    assert out["sections"] == tuple(SECTIONS) and out["file"] == "host_doc.md"
+    assert jt.load("website").get("single") is None, "the extras belong to the type that registered them"
+
+
+def test_p18_a_host_type_is_not_a_planner_choice_and_not_a_template_library_artifact(jt, tmp_path):
+    jt.register(host_entry(tmp_path, jt))
+    realization = importlib.import_module(f"{ENGINE}.j2_realization")
+    assert "host_doc" not in jt.templated()
+    assert "host_doc" not in str(realization.type_list())
+    assert "website" in jt.templated()
+
+
+def test_p18_every_entry_stays_json_serialisable_with_a_callable_in_the_extras(jt, tmp_path):
+    jt.register(host_entry(tmp_path, jt), {"single": True, "mock_atom": lambda *a: {}})
+    json.dumps(jt.entries())
+    json.dumps(jt.HOST["host_doc"]["entry"])
+    arts = importlib.import_module(f"{ENGINE}.j2_artifacts")
+    json.dumps(arts.load_types())
+
+
+def test_p18_a_name_the_data_has_is_refused_the_same_owner_replaces_another_owner_is_refused(jt, tmp_path):
+    with pytest.raises(ValueError, match="already a type"):
+        jt.register(host_entry(tmp_path, jt, name="website"))
+    jt.register(host_entry(tmp_path, jt, label="First"))
+    jt.register(host_entry(tmp_path, jt, label="Second"))
+    assert [e["label"] for e in jt.entries() if e["name"] == "host_doc"] == ["Second"] and list(jt.HOST) == ["host_doc"]
+    with pytest.raises(ValueError, match="already registered by tests"):
+        jt.register(host_entry(tmp_path, jt, owner="someone_else"))
+
+
+def test_p18_an_entry_must_be_a_type_with_a_good_name_and_an_owner(jt, tmp_path):
+    good = host_entry(tmp_path, jt)
+    for bad, why in (({**good, "kind": "record"}, "kind: type"), ({**good, "name": "Bad Name"}, "must match"),
+                     ({**{k: v for k, v in good.items() if k != "host"}}, "owner"), ({**good, "x": object()}, "JSON-safe")):
+        with pytest.raises(ValueError, match=why):
+            jt.register(bad)
+    assert jt.HOST == {}
+
+
+def test_p18_a_local_type_with_a_host_name_is_refused_by_create(jt, tmp_path):
+    jt.register(host_entry(tmp_path, jt))
+    with pytest.raises(ValueError):
+        jt.create("host_doc", "Host doc", SECTIONS)
+
+
+def test_p18_register_clears_the_cache_so_the_type_shows_at_once(jt, tmp_path):
+    before = jt.names()
+    jt.register(host_entry(tmp_path, jt))
+    assert set(jt.names()) == set(before) | {"host_doc"}
