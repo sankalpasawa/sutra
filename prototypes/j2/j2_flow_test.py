@@ -4548,6 +4548,8 @@ def run_for_real():
         assert j2.real_run_problems(rr, source, (), "/nowhere/run")[0].startswith("this output's form names no runner")
         fake = os.path.join(tools, "srt.py")
         open(fake, "w").write(FAKE_SRT)
+        open(os.path.join(real, "keep.txt"), "w").write("k")
+        open(os.path.join(real, "gone.txt"), "w").write("g")
         os.environ["J2_SANDBOX_CMD"] = f"python3 {fake}"
 
         def made_run():
@@ -4556,7 +4558,9 @@ def run_for_real():
             run.goal = {"statement": "sort", "done_when": ["sorted"]}
             os.makedirs(run._out_dir(), exist_ok=True)
             open(os.path.join(run._out_dir(), "sort.py"), "w").write(
-                "import sys, os\nopen(os.path.join(sys.argv[1], 'sorted.txt'), 'w').write('done')\n")
+                "import sys, os\nopen(os.path.join(sys.argv[1], 'sorted.txt'), 'w').write('done')\n"
+                "open(os.path.join(sys.argv[1], 'keep.txt'), 'a').write('more')\n"
+                "os.remove(os.path.join(sys.argv[1], 'gone.txt'))\n")
             run.workflows = [{"id": "W-1", "name": "sorter", "status": "done", "real_run": rr, "atoms": []}]
             run.post("user", "Sort my files")
             assert run._ask_real_run({}) and run.paused["kind"] == "real_run" and run._auto_pick() is None, \
@@ -4564,6 +4568,12 @@ def run_for_real():
             code = run.real_runs_asked["W-1"]
             ask = next(m["text"] for m in reversed(run.chat) if m.get("real_run") == "W-1")
             assert f"RUN {code}" in ask and "python3 sort.py " + real in ask and f"Writes only: {real}" in ask, ask
+            # the dry run before the code: on copies, its counts and paths shown; the real folder untouched
+            assert "dry run on a copy: exit 0; 1 created, 1 deleted, 1 changed" in ask and "Created (1): sorted.txt" in ask \
+                and "Changed (1): keep.txt" in ask and "Deleted (1): gone.txt" in ask, ask
+            assert sorted(os.listdir(real)) == ["gone.txt", "keep.txt"] and open(os.path.join(real, "keep.txt")).read() == "k", \
+                "the dry run never touches the real folder"
+            assert not [x for x in os.listdir(os.path.dirname(run._out_dir())) if x.startswith(".dryrun-")], "copies removed"
             return run, code
         receipts = lambda run: [json.loads(x) for x in open(os.path.join(run.dir, "receipts.jsonl")) if '"real_run"' in x]
         for reply, auto in (("yes", False), (None, True)):      # a loose yes; the exact code, but sent by Decide for me
@@ -4580,6 +4590,7 @@ def run_for_real():
         run._identity_real_run({"wid": "W-1", "answer": f"  RUN {code} ", "r": {}})
         r = receipts(run)[-1]
         assert r["approved"] and r["ran"] and r["exit"] == 0 and open(os.path.join(real, "sorted.txt")).read() == "done", r
+        assert sorted(os.listdir(real)) == ["keep.txt", "sorted.txt"] and r["dry_run"]["deleted"] == ["gone.txt"], r
         assert r["command"] == rr["command"] and r["folder"] == real and r["sha256"].get("sort.py"), r
         seen = json.load(open(os.path.join(run._out_dir(), "seen-settings.json")))
         assert seen["filesystem"]["allowWrite"] == [os.path.realpath(real)] and seen["network"]["allowedDomains"] == [] \

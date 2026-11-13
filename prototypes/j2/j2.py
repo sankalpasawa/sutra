@@ -591,6 +591,51 @@ def real_run(out_dir, rr, timeout):
         os.unlink(conf)
 
 
+def _tree(root):
+    """{relative path: sha256} of every file under root."""
+    out = {}
+    for r, _, fs in os.walk(root):
+        for f in fs:
+            p = os.path.join(r, f)
+            with open(p, "rb") as fh:
+                out[os.path.relpath(p, root).replace(os.sep, "/")] = hashlib.sha256(fh.read()).hexdigest()
+    return out
+
+
+def real_run_dry(out_dir, rr, timeout):
+    """The real run, first on copies: the stated folder and its read-only folders copied beside the run's output
+    folder, the command's paths pointed at the copies, run once in the sandbox (real_run) writing only the copy of
+    the folder. What it would do to the folder: {"ran", "exit", "created", "changed", "deleted" (paths in the folder),
+    "evidence"}. The real folders are never touched; the copies are removed after."""
+    tmp = tempfile.mkdtemp(prefix=".dryrun-", dir=os.path.dirname(os.path.realpath(out_dir)))
+    try:
+        roots = [rr["folder"]] + list(rr.get("reads") or [])
+        copies = [os.path.join(tmp, f"f{i}") for i in range(len(roots))]
+        for r, c in zip(roots, copies):
+            shutil.copytree(r, c, symlinks=True)
+        swap = sorted(((p, c) for r, c in zip(roots, copies) for p in {r.rstrip("/"), os.path.realpath(r)}),
+                      key=lambda x: -len(x[0]))      # the longest prefix first
+
+        def moved(x):
+            k, eq, v = x.partition("=") if "=" in x and not os.path.isabs(x) else ("", "", x)
+            for p, c in swap:
+                if v == p or v.startswith(p + "/"):
+                    v = c + v[len(p):]
+                    break
+            return k + eq + v
+        before = _tree(copies[0])
+        res = real_run(out_dir, {**rr, "folder": copies[0], "reads": copies[1:], "command": [moved(x) for x in rr["command"]]},
+                       timeout)
+        after = _tree(copies[0])
+        d = {"created": sorted(set(after) - set(before)), "deleted": sorted(set(before) - set(after)),
+             "changed": sorted(k for k in set(before) & set(after) if before[k] != after[k])}
+        counts = ", ".join(f"{len(v)} {k}" for k, v in d.items())
+        return {"ran": res.get("ran"), "exit": res.get("exit"), **d,
+                "evidence": (f"dry run on a copy: exit {res.get('exit')}; {counts}" if res.get("ran") else res["evidence"])}
+    finally:
+        shutil.rmtree(tmp, ignore_errors=True)
+
+
 def sandbox_rerun(folder, runner, target, timeout):
     """Run a builder's test again, independently, inside the sandbox runtime (J2_SANDBOX_CMD, e.g. srt): on a copy of
     the folder made beside it in the run folder (the test may write; the folder itself is never changed), with
@@ -3341,6 +3386,7 @@ class J2Run:
         self.milestone_log = []      # milestone emails (J2_MILESTONE_EMAILS=1, or the brief asks for updates by email): one per goal reached
         self.send_confirm = None     # J2_SEND_MODE=live: the Requester's answer (True/False) to "send real emails?", asked once a run
         self.real_runs_asked = {}    # step 7: workflow id -> the one-time code its real run was asked for with
+        self.real_runs_dry = {}      # step 7: workflow id -> its dry run on copies (real_run_dry), shown before the code
         self.open_docs = []          # documents the Requester accepted as they were, with what was still not right
         self.given = {}              # workflow id -> {"edges": [{atom, why}], "whole": bool}: what its builder's prompt held (atom/1)
         self.board = j2_board.new_board()   # board/1 (j2_board.py): questions and answers, behind J2_BOARD=1
@@ -5005,9 +5051,14 @@ class J2Run:
             return False
         rr, code = w["real_run"], secrets.token_hex(3)
         self.real_runs_asked[w["id"]] = code
+        dry = self.real_runs_dry[w["id"]] = real_run_dry(self._out_dir(), rr, builder_timeout())
+        show = lambda k: (f"\n{k.capitalize()} ({len(dry.get(k) or [])}): " + ", ".join((dry.get(k) or [])[:10])
+                          + (" ..." if len(dry.get(k) or []) > 10 else "")) if dry.get(k) else ""
         self.post("system", f"{w['id']} wants to run what it built on your own files.\nCommand: {shlex.join(rr['command'])}\n"
                             f"Writes only: {rr['folder']}" + (f"\nReads only: {', '.join(rr['reads'])}" if rr.get("reads") else "")
-                            + f"\nWhy: {rr.get('why') or 'not given'}\nTo run it, reply exactly: RUN {code}\n"
+                            + f"\nWhy: {rr.get('why') or 'not given'}\nWhat it would do, from a {dry['evidence']}"
+                            + show("created") + show("changed") + show("deleted")
+                            + f"\nTo run it, reply exactly: RUN {code}\n"
                             "Any other reply: it is not run.", real_run=w["id"])
         self._ask_user("One of the workflows wants to run what it built on your files. The exact command is above.",
                        [{"question": "Run it for real?"}], "real_run", handoff={"kind": "real_run", "r": r, "wid": w["id"]})
@@ -5024,6 +5075,7 @@ class J2Run:
         with open(os.path.join(self.dir, "receipts.jsonl"), "a", encoding="utf-8") as f:
             f.write(json.dumps({"type": "real_run", "workflow": h.get("wid"), **(w or {}).get("real_run", {}), "code": code,
                                 "approved": ok, "answer_msg": last.get("id"), **res,
+                                "dry_run": {k: v for k, v in self.real_runs_dry.get(h.get("wid"), {}).items() if k != "evidence"},
                                 "t": time.strftime("%Y-%m-%dT%H:%M:%S"), "by": "code"}, ensure_ascii=False) + "\n")
         self._event("code", "real_run", f"{h.get('wid')}: {res['evidence']}")
         self.post("system", ("Ran for real: " if res.get("ran") else "") + res["evidence"] + ".",

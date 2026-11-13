@@ -131,8 +131,8 @@ broke. A brief that does (e.g. "sort the files in /tmp/j2-sort-demo") would test
 
 ### Paused (founder, 2026-11-13, at 85% of weekly usage)
 
-- Dry run before the RUN code: run the command on a copy of the stated folders in the sandbox and show what would be
-  created, changed or deleted, with counts; then ask for the code. With a test.
+- ~~Dry run before the RUN code~~: done (`j2.real_run_dry`; the ask shows "dry run on a copy: exit N; X created,
+  Y deleted, Z changed" and the paths; the real run's receipt keeps the dry run's lists).
 
 ## Step 8: delete dead code (paused, founder, 2026-11-13)
 
