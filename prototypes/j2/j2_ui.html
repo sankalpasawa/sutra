@@ -3084,8 +3084,10 @@ const TABHINT = {catalog: "Run templates first, then every run's section templat
   board: "Questions the functions and the builders asked, who answered them, and who reused them (recorded data only).",
   story: "What each question on the message board did, step by step, read from this run's own records.",
   library: "Every artifact template: the generic layout and the templates made for each business, and how this run chose them."};
+const artMain = () => { try { return (ARTS.groups || {}).main; } catch (e) { return null; } };      // the run's main output (j2_artifacts.groups "main"): Preview shows it when no page was built
 function showTab(name){
-  if (name === "docs") return artOpenGroup("documents");      // one artifact view everywhere: the old Documents tab's links land on Artifacts
+  if (name === "docs") return artOpenGroup("documents");
+  if (name === "preview" && !((typeof state !== "undefined" && state) || {}).versions && artMain()) return artOpenGroup("documents", artMain());      // one artifact view everywhere: the old Documents tab's links land on Artifacts
   if ($("dview")) $("dview").dataset.tab = name;
   document.querySelectorAll(".tabs [role=tab]").forEach(x => x.setAttribute("aria-selected", x.dataset.tab === name));
   const tb = document.querySelector(`.tabs [data-tab="${name}"]`);
@@ -3241,13 +3243,14 @@ const artGroup = k => ((ARTS.groups || {}).groups || []).find(g => g.id === k) |
 const artWords = s => String(s || "").replace(/-/g, " ");
 const artNR = '<span class="empty">not recorded</span>';
 function artCount(g){ const r = g.rows || [];
-  if (g.id === "documents") return r.length ? plural(r.length, "document") : "no documents in this run";
+  if (g.id === "documents"){ const nf = r.filter(x => x.kind === "folder").reduce((n, x) => n + (x.files || []).length, 0), nd = r.filter(x => x.kind !== "folder").length;
+    return [nd ? plural(nd, "document") : "", nf ? plural(nf, "file") : ""].filter(Boolean).join(" · ") || "nothing made in this run"; }
   if (g.id === "guides") return r.length ? `${plural(r.length, "guide")} · ${plural(r.reduce((n, x) => n + (x.versions || []).length, 0), "version")}` : "no guides in this run";
   if (g.id === "site"){ const s = r.filter(x => x.kind !== "style"), k = s.filter(x => x.kind === "script").length;
     return s.length ? plural(s.length - k, "section") + (k ? " · " + plural(k, "script") : "") : `no ${TYL("site", "page").toLowerCase()} in this run`; }
   return r.length ? plural(r.length, g.id === "plan" ? "file" : "record") : "nothing recorded"; }
 function artSub(g){
-  if (g.id === "documents") return "The PRD, HLD and LLD: each with its sections, its saved versions and its data file.";
+  if (g.id === "documents") return "What the run made: each with the template that made it, its conditions and checks, and its files.";
   if (g.id === "plan") return "What the run set out to do and how it planned it.";
   if (g.id === "guides") return "Each guide, who wrote it, and how it was checked.";
   if (g.id === "site"){ const s = (ARTS.groups || {}).site; return !s ? `This run built no ${TYL("site", "page").toLowerCase()}.`
@@ -3407,6 +3410,10 @@ function artDeliv(x){ const cs = x.conditions || [], ws = x.warnings || [];
       + `${c.warn && !c.met ? ' <span class="empty">(warning only)</span>' : ""}<span class="aev">${esc(c.evidence || "")}</span></span></li>`)}</div>` : "")
     + (ws.length ? `<div class="ablk"><h5>Warnings (${ws.length})</h5><p class="empty">Advice and guesses: they never fail the build.</p>`
       + artList(ws, w => `<li>${ARTMARK.warn}<span>${w.from ? `<span class="mono empty">${esc(w.from)}</span> ` : ""}${esc(w.text)}</span></li>`) + "</div>" : "")
+    + ((x.failed_checks || []).length ? `<div class="ablk"><h5>Checks failed (${x.failed_checks.length})</h5>${artList(x.failed_checks, c => `<li>${artMark(false)}<span><span class="mono empty">${esc(c.atom)}</span> ${esc(c.check)}`
+      + ` <span class="empty">(attempt ${esc(c.attempt)}, its last)</span><span class="aev">${esc(c.evidence)}</span></span></li>`)}</div>` : "")
+    + ((x.retried || []).length ? `<div class="ablk"><h5>Failed, then passed on a retry (${x.retried.length})</h5>${artList(x.retried, c => `<li>${artMark(true)}<span><span class="mono empty">${esc(c.atom)}</span> ${esc(c.check)}`
+      + ` <span class="empty">(attempt ${esc(c.attempt)} failed)</span><span class="aev">${esc(c.evidence)}</span></span></li>`)}</div>` : "")
     + artFiles(x); }
 function artFolder(x){ const fs = x.files || [], f = fs.some(y => y.file === ARTS.ver) ? ARTS.ver : (fs[0] || {}).file;
   return `<div class="avers" role="group" aria-label="File"><span class="empty">File</span>${fs.map(y => `<button type="button" data-afile="${esc(y.file)}" aria-pressed="${y.file === f}">${esc(y.name)}</button>`).join("")}</div>`
@@ -3425,7 +3432,7 @@ const artTpl = x => x.kind === "section" || x.kind === "script" ? `<div class="a
   : "template" in x ? `<div class="ablk"><h5>Template</h5><p class="tplline">Template: ${x.template ? `<span class="code">${esc(x.template)}</span>` : '<span class="empty">not recorded</span>'}</p></div>` : "";
 function artPane(x){ const k = ARTKIND[x.kind] || {}, v = x.views || {}, tab = artTab(ARTTABS, "sum");
   return (k.top ? k.top(x) : `<h2>${esc(x.name)}</h2>${artBy(x, x.file)}`) + artTabs(ARTTABS)
-    + (tab === "agent" ? artAgent(x) : tab === "human" ? (v.human && k.human ? k.human(x) : artNotSaved) : (k.sum ? k.sum(x) : "") + artTpl(x)); }
+    + (tab === "agent" ? artAgent(x) : tab === "human" ? (v.human && k.human ? k.human(x) : artNotSaved) : artTpl(x) + (k.sum ? k.sum(x) : "")); }
 const artCur = () => { const g = artGroup(ARTS.g), rows = g.rows || []; return rows.find(r => r.id === ARTS.sel[g.id]) || rows[0] || null; };
 function renderArtifacts(){
   if (!ARTS.groups) return '<p class="empty">Loading the artifacts…</p>';
@@ -3455,7 +3462,7 @@ async function loadArtifacts(){
 }
 function railArtCounts(){      // the Artifacts panel of the rail: Preview and Documents, then the four groups with their counts
   const box = (RAIL || {}).open === "artifacts" && $("rflyart"); if (!box) return; const shown = !$("pane-artifacts").hidden;
-  box.innerHTML = `<p class="rnh">Artifacts</p>` + ARTGROUPS.map(([k, l]) => `<button type="button" class="rgo" data-artgo="${k}" aria-current="${shown && ARTS.g === k}">${esc(artGroupLabel(k, l))}<small>${ARTS.groups ? artCount(artGroup(k)) : "loading…"}</small></button>`).join(""); }
+  box.innerHTML = `<p class="rnh">Artifacts</p>` + ARTGROUPS.filter(([k]) => !ARTS.groups || artGroup(k).rows.length).map(([k, l]) => `<button type="button" class="rgo" data-artgo="${k}" aria-current="${shown && ARTS.g === k}">${esc(artGroupLabel(k, l))}<small>${ARTS.groups ? artCount(artGroup(k)) : "loading…"}</small></button>`).join(""); }
 async function artOpenGroup(k, row){ ARTS.g = k; if (row) ARTS.sel[k] = row; ARTS.tab = "sum"; ARTS.ver = ""; showTab("artifacts"); if (!ARTS.groups) await loadArtifacts(); else { artPaint(); await artFetch(); } }
 function artLocate(id){      // the group and row a Map id lands on: a section's own row, else the row that holds the node, else the one with its file
   const rows = ((ARTS.groups || {}).groups || []).flatMap(g => g.rows.map(x => [g.id, x])), n = mapById(MAP)[id] || {};
@@ -5487,7 +5494,7 @@ function auditFindings(audits){      // a finding is a check that failed in some
 const RAILDIM = {goal: s => !s.goal && "no charter recorded", charter: s => !s.goal && "no charter recorded", report: s => !s.report && !s.outcome && "no report yet",
   planmap: s => !PLANMAP.found && "no plan record",
   workflows: s => !(s.workflows || []).length && "no workflows yet", priorities: s => !prioModel(s).has && "no ranking records", timeline: s => !(s.allChat || s.chat || []).length && "no messages recorded",
-  audit: s => !(s.audits || []).length && "no audit yet", preview: s => !s.versions && "nothing built yet",
+  audit: s => !(s.audits || []).length && "no audit yet", preview: s => !s.versions && !artMain() && "nothing built yet",
   docs: s => !(s.docset || []).length && !Object.values(DOCS).some(d => d && d.text) && "this run made no documents",
   artifacts: s => !((ARTS.tree || {}).groups || []).some(g => g.count) && "no artifacts listed",
   lessons: s => !(s.memory || (s.lessons_used || []).length || (s.lessons_saved || []).length) && "memory is off", playbooks: s => !(s.memory || (s.playbooks_used || []).length || s.playbook_saved) && "memory is off"};

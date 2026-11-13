@@ -827,6 +827,9 @@ def range_ids(told):
 GUESS = "\x00guess:"
 
 
+CODE_NAME = re.compile(r"(?=[^\s]*(?:_|\.\w|\(\)|[a-z][A-Z]))[A-Za-z_][\w.]*(?:\(\))?")      # test_source_unchanged, copy_files.py, run(), makeCopy
+
+
 def check_problems(a, source, types=CHECK_TYPES, upstream="", ranges=False, tag=False):
     """J2.e's rules for one atom's checks. source: the charter and the Requester's answers, squashed. types: the
     check types the output allows (a website's, or DOC_CHECK_TYPES for a document). upstream: the how and constraints
@@ -864,7 +867,9 @@ def check_problems(a, source, types=CHECK_TYPES, upstream="", ranges=False, tag=
                 if "behavior-steps" in types else ""))
         elif t == "facts-present":
             facts = target if isinstance(target, list) else [target]
-            bad = [f for f in facts if not str(f or "").strip() or squash(f) not in source]
+            # a name the atom is told to write in its own code (a function, a file, a variable) is the builder's, not a fact
+            own = lambda f: bool(CODE_NAME.fullmatch(str(f).strip())) and squash(f) in told
+            bad = [f for f in facts if not str(f or "").strip() or (squash(f) not in source and not own(f))]
             if bad:
                 out.append(f"{g}{lab} facts-present lists {bad}, not found in the charter or the Requester's answers")
         elif t == "behavior-steps":
@@ -10848,7 +10853,8 @@ class J2Run:
         if k == "test-passed":
             t = (charter_list(g, cond.get("charter_field")) or [""])[0]
             rr = sandbox_rerun(folder, self.out.get("test_runner") or (), t, builder_timeout())
-            return rr["pass"] is True, rr["evidence"]
+            return rr["pass"] is True, ("code reran the test itself, on a copy of the folder, not the builder's own run: "
+                                        + rr["evidence"]) if rr["pass"] is not None else rr["evidence"]
         if k == "inside-folder":      # a build that changed anything outside its folder is stopped before this
             return True, "no build changed anything outside the folder"
         items = [x for f in cond.get("charter_fields") or () for x in charter_list(g, f)]

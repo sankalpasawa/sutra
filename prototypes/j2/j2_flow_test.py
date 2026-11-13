@@ -4263,19 +4263,27 @@ def one_artifact_view():
         w("receipts.jsonl", "\n".join(json.dumps(r) for r in (
             {"atom": "W-1.a1", "check": "convert.py exists", "target": "convert.py", "pass": True},
             {"atom": "W-1.a1", "check": "tap targets", "target": "x", "pass": True, "warning": True, "evidence": "warning (advisory): small"},
-            {"atom": "W-1.a1", "check": "test_convert.py exists", "target": "test_convert.py", "pass": False})) + "\n")
-        w("autofix.json", json.dumps([{"workflow": "W-1", "kind": "guess_warning", "detail": "says 8 but expects 9"}]))
+            {"atom": "W-1.a1", "check": "test_convert.py exists", "target": "test_convert.py", "pass": False},
+            {"atom": "W-1.a1", "check": "facts", "target": "x", "pass": False, "attempt": 1, "evidence": "missing: a"},
+            {"atom": "W-1.a1", "check": "facts", "target": "x", "pass": True, "attempt": 2})) + "\n")
+        w("autofix.json", json.dumps([{"workflow": "W-1", "kind": "guess_warning", "detail": "lists ['a', 'b'], says 8 but expects 9"},
+                                      {"workflow": "W-1", "kind": "guess_warning", "detail": "lists ['a'], says 8 but expects 9"}]))
         g = j2_artifacts.groups(d)
         row = next(x for G in g["groups"] if G["id"] == "documents" for x in G["rows"])
         assert row["kind"] == "folder" and row["folder"] == out and row["template"], row
         assert [f["name"] for f in row["files"]] == ["convert.py", "index.html", "test_convert.py"], row["files"]
         assert [x["id"] for x in row["files"][0]["made_by"]] == ["W-1"] and row["failed"] == 1 and len(row["warnings"]) == 2, row
+        assert [c["check"] for c in row["failed_checks"]] == ["test_convert.py exists"] and [c["check"] for c in row["retried"]] == ["facts"], \
+            "a check counts as failed only on its last attempt; one that passed on a retry is listed apart"
+        docs_g = next(G for G in g["groups"] if G["id"] == "documents")
+        assert docs_g["label"] == j2.j2_types.info("website")["label"] and g["main"] == "website", (docs_g["label"], g["main"])
         assert j2_artifacts.served(d, f"{out}/convert.py"), "its files are served"
         art = lambda tab, ver="": render_node({"workflows": [], "chat": []}, docs={"docs": {}, "artifacts": {
             "groups": g, "g": "documents", "sel": {}, "tab": tab, "ver": ver}})["artifacts"]
         s = art("sum")
+        assert s.index('<div class="ablk"><h5>Template</h5>') < s.index('class="astat"'), "the Template line is first in Summary"
         for want in ("Template: <span class=\"code\">" + row["template"], "exited 0 in the sandbox", "(warning only)", "Warnings (2)",
-                     "says 8 but expects 9", "checks failed", 'data-afile="' + out + '/convert.py"', "W-1</span> make_converter"):
+                     "says 8 but expects 9", "checks failed", "Checks failed (1)", "Failed, then passed on a retry (1)", 'data-afile="' + out + '/convert.py"', "W-1</span> make_converter"):
             assert want in s, (want, s[s.find("Files ("):][:700])
         h = art("human", f"{out}/test_convert.py")
         assert f'src="/view?name={out}%2Ftest_convert.py"' in h and 'aria-pressed="true">test_convert.py' in h, h[:600]
@@ -4284,6 +4292,27 @@ def one_artifact_view():
     ui = open(os.path.join(j2.HERE, "j2_ui.html"), encoding="utf-8").read()
     assert 'data-tab="docs"' not in ui and 'if (name === "docs") return artOpenGroup("documents")' in ui
     assert 'esc(x.label || (k === "plan"' in ui and '"Document" : k === "plan"' not in ui
+    assert "ARTGROUPS.filter(([k]) => !ARTS.groups || artGroup(k).rows.length)" in ui, "empty groups are hidden"
+    assert 'if (name === "preview" && !((typeof state !== "undefined" && state) || {}).versions && artMain()) return artOpenGroup("documents", artMain());' in ui
+    # a name the atom is told to write in its own code is not a fact; a fact the how invents still is
+    a = {"how": {"steps": "define test_source_unchanged and set the price to £9"}, "constraints": [],
+         "verification": [{"text": "names", "type": "facts-present", "target": ["test_source_unchanged"], "expect": True},
+                          {"text": "price", "type": "facts-present", "target": ["£9"], "expect": True}]}
+    probs = j2.check_problems(a, j2.squash("a copy script"), types=["facts-present"])
+    assert len(probs) == 1 and "£9" in probs[0] and "test_source_unchanged" not in probs[0], probs
+    # C2: code reruns the test itself (sandbox_rerun) and its evidence says so; a rerun that could not run says only why
+    agent = j2.J2Run()
+    agent.set_output("agent")
+    agent.goal = {"done_when": ["a"], "files": ["main.py"], "test": "test_main.py"}
+    keep_rr = j2.sandbox_rerun
+    try:
+        j2.sandbox_rerun = lambda *a, **k: {"pass": True, "evidence": "python3 test_main.py exited 0 in the sandbox (OK)"}
+        c2 = next(c for c in agent._conditions("") if c["id"] == "C2")
+        assert c2["evidence"].startswith("code reran the test itself") and "exited 0" in c2["evidence"], c2
+        j2.sandbox_rerun = lambda *a, **k: {"pass": None, "evidence": "J2_SANDBOX_CMD is not set, so the test was not rerun"}
+        assert next(c for c in agent._conditions("") if c["id"] == "C2")["evidence"].startswith("J2_SANDBOX_CMD")
+    finally:
+        j2.sandbox_rerun = keep_rr
     print("one artifact view: a folder row with its Template line, conditions with the sandboxed test, warnings apart from "
           "failures, files by maker, a file opened on Human-readable; no Documents tab; runs by their type's label ok")
 
@@ -7933,18 +7962,22 @@ SAVED_DOC_RUNS = ("j2-20261013-165916", "j2-20261013-185235", "j2-20261015-19082
 # Re-recorded 2026-11-13 (remove-restrictions step 5): "groups" of all 11 runs. Additive only, checked value by value against
 # the previous j2_artifacts.groups: each Documents row gains "template", "conditions", "warnings" and "failed". No field
 # that was there changed; docs, map and checks are unchanged.
+# Re-recorded 2026-11-13 (step 5 review): "groups" of all 11 runs. The deliverables group is named by the types the run
+# made (types.json labels: "Product requirements · High-level design", not "Documents"); "failed" counts a check's last
+# attempt only (a first attempt that passed on a retry moves to "retried"); rows gain type_label, failed_checks and
+# retried, the groups "main". Every other value is as before; docs, map and checks are unchanged.
 SAVED_RUNS_GOLDEN = {
-    "j2-20261013-165916": {"groups": "e2c4084a1f1a", "docs": "6601e796102b", "map": "d528979abf18", "checks": "95329398a439"},
-    "j2-20261013-185235": {"groups": "4bdd6da40c5b", "docs": "99f5519109fe", "map": "d6fa33198569", "checks": "f89fefa931db"},
-    "j2-20261015-190820": {"groups": "21e977031755", "docs": "368d98762ad8", "map": "d519759eb19e", "checks": "a84b857c2459"},
-    "j2-20261016-103256": {"groups": "bfc8fc3436f3", "docs": "7d807bd5d90f", "map": "f3a2b5346c06", "checks": "1f4d88d383f6"},
-    "j2-20261016-160511": {"groups": "2221e6117c56", "docs": "08c63bcc18d9", "map": "edcb83e2f1dc", "checks": "294164497d2c"},
-    "j2-20261021-141350": {"groups": "34d7d0affdbe", "docs": "495b52ab3c6f", "map": "e6b756ed9025", "checks": "b26939a6ccce"},
-    "j2-20261022-123744": {"groups": "f265870fc5fa", "docs": "ede89e663899", "map": "e38dbe427737", "checks": "762c35ff8650"},
-    "j2-20261023-104150": {"groups": "2179c64617ed", "docs": "d3f5928bd2eb", "map": "180a39f9f978", "checks": "cd878d01266c"},
-    "j2-20261023-120350": {"groups": "2fc58c6ca062", "docs": "952eea241e51", "map": "8531c3b845fc", "checks": "0ec14094db92"},
-    "j2-20261026-104018": {"groups": "3e76ae416bb0", "docs": "d18c7911c035", "map": "35a1b79ff2b0", "checks": "92d491169a25"},
-    "j2-20261027-130930": {"groups": "59ab76e28b98", "docs": "ab7c9eb79ffb", "map": "bad64fe59f9f", "checks": "cf4fa11161b5"},
+    "j2-20261013-165916": {"groups": "f9454ddaf057", "docs": "6601e796102b", "map": "d528979abf18", "checks": "95329398a439"},
+    "j2-20261013-185235": {"groups": "97cfc9d49150", "docs": "99f5519109fe", "map": "d6fa33198569", "checks": "f89fefa931db"},
+    "j2-20261015-190820": {"groups": "b4dd5db84a50", "docs": "368d98762ad8", "map": "d519759eb19e", "checks": "a84b857c2459"},
+    "j2-20261016-103256": {"groups": "46be7c1b818f", "docs": "7d807bd5d90f", "map": "f3a2b5346c06", "checks": "1f4d88d383f6"},
+    "j2-20261016-160511": {"groups": "ba54190bef48", "docs": "08c63bcc18d9", "map": "edcb83e2f1dc", "checks": "294164497d2c"},
+    "j2-20261021-141350": {"groups": "e3ff87da9140", "docs": "495b52ab3c6f", "map": "e6b756ed9025", "checks": "b26939a6ccce"},
+    "j2-20261022-123744": {"groups": "c8dc8dbfeef9", "docs": "ede89e663899", "map": "e38dbe427737", "checks": "762c35ff8650"},
+    "j2-20261023-104150": {"groups": "78908f39d942", "docs": "d3f5928bd2eb", "map": "180a39f9f978", "checks": "cd878d01266c"},
+    "j2-20261023-120350": {"groups": "35b4eb0a0b02", "docs": "952eea241e51", "map": "8531c3b845fc", "checks": "0ec14094db92"},
+    "j2-20261026-104018": {"groups": "261f30d9ae98", "docs": "d18c7911c035", "map": "35a1b79ff2b0", "checks": "92d491169a25"},
+    "j2-20261027-130930": {"groups": "f3781f8375c5", "docs": "ab7c9eb79ffb", "map": "bad64fe59f9f", "checks": "cf4fa11161b5"},
 }
 # Recorded 2026-11-10 (step D): the document runs as they are now (doc_unchanged); re-record on purpose, never to pass
 # Re-recorded 2026-11-11 (DOC_RUN_GOLDEN and the *.system hashes below) for one intended text change only: team.md and
@@ -10652,7 +10685,7 @@ def left_bar():
             seen["with plan"] += plan["found"]
             # dimmed tabs: exactly those whose data this run lacks
             lacks = {"goal": not snap["goal"], "charter": not snap["goal"], "report": not report and not summ.get("outcome"), "workflows": not wfs, "priorities": not has, "timeline": not chat,
-                     "audit": not snap["audits"], "preview": not versions, "artifacts": not any(g["count"] for g in t["groups"]),
+                     "audit": not snap["audits"], "preview": not versions and not gr.get("main"), "artifacts": not any(g["count"] for g in t["groups"]),
                      "lessons": not (snap["lessons_used"] or snap["lessons_saved"]), "playbooks": not (snap["playbooks_used"] or snap["playbook_saved"]),
                      "planmap": not planmap["found"]}
             dimmed = {t_["tab"] for x in model for t_ in x["tabs"] if t_["dim"]}

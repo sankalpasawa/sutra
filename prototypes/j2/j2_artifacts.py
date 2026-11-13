@@ -691,15 +691,18 @@ def groups(d, m=None):
             mine.update(folder=out_dir, files=row["files"])
         else:
             docs.append(row)
-    extras = _deliverable_extras(d)
+    extras, lab = _deliverable_extras(d), {t["name"]: t.get("label") or t["name"] for t in load_types(d)["types"]}
     for x in docs:
-        x.update(extras, template=_template_of(d, x["id"]))
+        x.update(extras, template=_template_of(d, x["id"]), type_label=lab.get(x["id"]) or x["name"])
+    made = list(dict.fromkeys(x["type_label"] for x in docs))      # the deliverables group is named by what the run made
+    main = next((x["id"] for x in docs if x["id"] == own), docs[0]["id"] if docs else None)
     for x in plan + guides + site + docs + rec + list(documents.values()):
         x["views"] = views(d, x)
-    return {"schema": "artifacts-groups/1", "documents": documents,
+    return {"schema": "artifacts-groups/1", "documents": documents, "main": main,
             "site": {"version": (web or {}).get("version"), "audit": {"version": last.get("version"), "passed": sum(1 for r in last.get("results") or [] if isinstance(r, dict) and r.get("pass")),
                                                                      "total": len(last.get("results") or [])} if last else None} if web else None,
-            "groups": [{**e, "rows": r, **({"label": f"{web['label']} sections"} if e["id"] == "site" and web else {})}
+            "groups": [{**e, "rows": r, **({"label": f"{web['label']} sections"} if e["id"] == "site" and web else {}),
+                        **({"label": " · ".join(made)} if e["id"] == "documents" and made else {})}
                        for e, r in zip(empty, (plan, guides, site, docs, rec))]}
 
 
@@ -759,13 +762,22 @@ def _deliverable_extras(d):
                 continue
             if isinstance(r, dict) and "pass" in r:
                 recs.append(r)
-    warns = [{"from": r.get("atom") or "", "text": f"{r.get('check') or r.get('type') or ''}: {r.get('evidence') or ''}"}
-             for r in recs if r.get("warning") is True]
-    warns += [{"from": a.get("workflow") or "", "text": a.get("detail") or ""} for a in _read(d, "autofix.json", []) or []
-              if isinstance(a, dict) and a.get("kind") == "guess_warning"]
+    last = {}
+    for r in recs:      # receipts are in run order: the last one for an atom's check is its final attempt
+        last[(r.get("atom"), r.get("check") or r.get("type"))] = r
+    row = lambda r: {"atom": r.get("atom") or "", "check": r.get("check") or r.get("type") or "", "attempt": r.get("attempt"),
+                     "evidence": r.get("evidence") or ""}
+    failed = [row(r) for r in last.values() if r.get("pass") is False]
+    retried = [row(r) for r in recs if r.get("pass") is False and last[(r.get("atom"), r.get("check") or r.get("type"))].get("pass") is True]
+    warns = {}
+    for w in ([{"from": r.get("atom") or "", "text": f"{r.get('check') or r.get('type') or ''}: {r.get('evidence') or ''}"}
+               for r in recs if r.get("warning") is True]
+              + [{"from": a.get("workflow") or "", "text": a.get("detail") or ""} for a in _read(d, "autofix.json", []) or []
+                 if isinstance(a, dict) and a.get("kind") == "guess_warning"]):
+        warns[(w["from"], re.sub(r"\[[^\]]*\]", "[]", w["text"]))] = w      # one per place: a later planning attempt's replaces it
     return {"conditions": [{"id": c.get("id"), "text": c.get("text"), "met": c.get("met"), "evidence": c.get("evidence"),
                             "warn": c.get("severity") == "warn"} for c in conds],
-            "warnings": warns, "failed": sum(1 for r in recs if r.get("pass") is False)}
+            "warnings": list(warns.values()), "failed": len(failed), "failed_checks": failed, "retried": retried}
 
 
 def _template_of(d, name):
