@@ -732,3 +732,25 @@ def test_a_run_template_id_has_the_shape_of_a_folder_name(value, ok):
                                              ("all,w1", ["all", "w1"])])
 def test_the_workflow_keys_of_a_request(value, expected):
     assert run_template_keys(value) == expected
+
+
+# ---- the defaults that copy J2's (D188, rule R-1 exception) ---------------------------------------------------------------------------------------
+def test_every_default_that_has_a_j2_module_constant_equals_it_in_a_clean_process():
+    """`spec.py` is read before J2 exists (the host resolves the settings, exports the environment, then imports J2), so it cannot read J2's values;
+    the copy stays and this one test reads J2's own constants, in a process with no J2_* variable, and compares each. `delay` is the deliberate
+    difference (J2 paces itself with 2 s outside mock mode; the router paces here), kept out by name."""
+    import subprocess
+    import sys
+    code = ("import json\nimport sutra_app.engine.j2 as j\n"
+            "print(json.dumps({'budget': j.BUDGET, 'budget_cap': j.BUDGET_CAP, 'max_cycles': j.MAX_CYCLES, 'limit_add': j.LIMIT_ADD, "
+            "'bargain_minutes': j.BARGAIN_MINUTES, 'bargain_calls': j.BARGAIN_CALLS, 'max_turns': j.MAX_TURNS, 'chat_full_chars': j.CHAT_FULL_CHARS, "
+            "'rates': j.RATES_ON, 'tap_min': j.j2_check.TAP_MIN}))\n")
+    env = {"PATH": os.environ.get("PATH", ""), "HOME": os.environ.get("HOME", ""), "STUDIO_MOCK": "1",
+           "PYTHONPATH": os.pathsep.join(p for p in sys.path if p)}
+    done = subprocess.run([sys.executable, "-c", code], capture_output=True, text=True, timeout=120, env=env)
+    assert done.returncode == 0, done.stderr
+    theirs = json.loads(done.stdout.strip().splitlines()[-1])
+    ours = EngineSettings()
+    assert theirs.pop("budget_cap") == 2 * ours.budget and ours.budget_cap is None, "unset means twice the budget, as J2 reads it"
+    assert theirs == {name: getattr(ours, name) for name in theirs}, "a J2 default moved: update spec.py, its tests and docs/ENVIRONMENT.md together"
+    assert ours.delay == 0.0, "the one deliberate difference"
