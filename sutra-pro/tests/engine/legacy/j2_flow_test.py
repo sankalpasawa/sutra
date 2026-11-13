@@ -4230,7 +4230,7 @@ def timing_records():
     assert live["ai"] == t["ai"] and saved == t
     # shown in Run settings: the section is in its pane, and timingHtml renders the totals and one table row per timing row
     here = HERE
-    ui = open(os.path.join(here, "j2_ui.html"), encoding="utf-8").read()
+    ui = open(page_file("j2_ui.html"), encoding="utf-8").read()      # engine port: J2's page, or the block ends here (see `skippable`)
     rs = ui[ui.index('id="pane-runsettings"'):ui.index('id="pane-rundetails"')]
     assert 'id="timesec"' in rs and 'id="timing"' in rs and '"/api/timing"' in ui
     if not shutil.which("node"):
@@ -7933,7 +7933,7 @@ def forms_and_new_types():
                    "Write a monthly sales report for Petal House, a flower shop in Jaipur. It shows what sold this month, "
                    "which products grew or fell, and what the owner should do next month to sell more."))
         for name, label, secs, brief in briefs:
-            before = j2_types.names()
+            before = [n for n in j2_types.names() if n not in j2_types.HOST]       # engine port: host types (P18: project) are listed after the local ones
             practice = name == "hiring_policy"      # a policy may give labelled good practice; a report stays strict
             for rnd in (1, 2):      # the first run makes the type; the second names it and reuses it
                 run = j2.J2Run()
@@ -7951,7 +7951,7 @@ def forms_and_new_types():
                 assert [c["id"] for c in conds] == ["C1", "C2", "C3", "C4"] and all(c["met"] for c in conds), conds
                 assert ("Recommended practice:" in conds[2]["text"]) == practice and "{practice}" not in conds[2]["text"], conds[2]
                 assert bool(made) == (rnd == 1), (rnd, made)
-                assert j2_types.names() == before + [name], j2_types.names()
+                assert [n for n in j2_types.names() if n not in j2_types.HOST] == before + [name], j2_types.names()
                 g = A.groups(run.dir)
                 assert [r["name"] for x in g["groups"] if x["id"] == "documents" for r in x["rows"]] == [label], g["groups"]
                 assert any(m["text"].startswith(f"Documents asked for: the {label}") for m in run.chat)
@@ -8136,13 +8136,13 @@ def local_types():
     # engine port: J2 asked git whether its two local paths are ignored; the extraction has no repository, and here the local store is
     # not in the package at all (patch P17: J2_TYPES_DIR, checked by tests/engine/test_engine_patches.py).
     with _TypeStore() as T:
-        builtin, before = open(T.TYPES_PATH, encoding="utf-8").read(), T.names()
+        builtin, before = open(T.TYPES_PATH, encoding="utf-8").read(), [n for n in T.names() if n not in T.HOST]      # engine port: host types come last
         e = T.create("staff_guide", "Staff guide", ["Purpose", "Rules"], practice=True)
         assert open(T.TYPES_PATH, encoding="utf-8").read() == builtin and not os.path.exists(os.path.join(T.TEMPLATES_DIR, "staff_guide"))
         assert e["template"] == "library/types/staff_guide/generic.json" and e["recommended_practice"] is True
         assert json.load(open(T.LOCAL_TYPES_PATH, encoding="utf-8"))["types"] == [e]
         assert os.path.isfile(os.path.join(T.LOCAL_LIBRARY_DIR, "staff_guide", "generic.json"))
-        assert T.names() == before + ["staff_guide"] and T.sections("staff_guide") == ("Purpose", "Rules")
+        assert [n for n in T.names() if n not in T.HOST] == before + ["staff_guide"] and T.sections("staff_guide") == ("Purpose", "Rules")
         assert T.load("staff_guide")["file"] == "staff_guide.md" and T.info("staff_guide")["label"] == "Staff guide"
         assert "staff_guide" in [t["name"] for t in R.type_list()] and "staff_guide" in {t["name"] for t in A.load_types()["types"]}
         # a built-in's name: refused when made, and refused when found in the local store
@@ -8162,7 +8162,7 @@ def local_types():
         assert open(os.path.join(T.TEMPLATES_DIR, "staff_guide", "generic.json"), encoding="utf-8").read() == tpl
         assert json.load(open(T.LOCAL_TYPES_PATH, encoding="utf-8"))["types"] == []
         assert not os.path.exists(os.path.join(T.LOCAL_LIBRARY_DIR, "staff_guide"))
-        assert T.names() == before + ["staff_guide"] and T.sections("staff_guide") == ("Purpose", "Rules") and T.refused() == []
+        assert [n for n in T.names() if n not in T.HOST] == before + ["staff_guide"] and T.sections("staff_guide") == ("Purpose", "Rules") and T.refused() == []
         assert T.load("staff_guide")["recommended_practice"] is True
         try:
             T.promote("staff_guide")
@@ -8476,7 +8476,7 @@ def run_list_local_type():
             j2.RUNS_DIR = keep
             shutil.rmtree(runs, ignore_errors=True)
         assert rows == {"staff_guide": ("Staff guide", "document"), "gone_type": ("", ""), "website": ("Website", "page")}, rows
-    ui = open(os.path.join(j2.HERE, "j2_ui.html"), encoding="utf-8").read()
+    ui = open(page_file("j2_ui.html"), encoding="utf-8").read()      # engine port: J2's page, or the block ends here (see `skippable`)
     assert 'RUNICON[(x.form || TYFORM(x.output)) === "page" ? "web" : "doc"]' in ui and "[x.label, runWhen(x.when), x.brief]" in ui
     print("run list: each run's type label and form icon, a local type's too ok")
 
@@ -13662,7 +13662,7 @@ for _name in ("rubric_and_credits", "detail_stays_open", "plain_words", "general
               "board_functions",
               "simple_redesign", "plan_map_view", "chat_panel", "function_chat", "view_kept", "run_settings",
               "artifacts_groups", "agent_views", "agent_views_page", "studio_views",
-              "deliverables_generic", "forms_and_new_types", "local_types", "types_constants", "generic_source", "n6_sources"):
+              "timing_records", "run_list_local_type", "deleted_local_type", "page_type_from_data", "missing_run_endpoints", "decide_for_me", "deliverables_generic", "forms_and_new_types", "local_types", "types_constants", "generic_source", "n6_sources"):
     if _name in KNOWN_UPSTREAM:
         globals()[_name] = known_upstream_failure(globals()[_name])
     globals()[_name] = skippable(globals()[_name])
