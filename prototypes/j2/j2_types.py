@@ -245,7 +245,7 @@ def forms(path=None):
 def builder_tools(path=None):
     """types.json "builder_tools": every builder's tools, rules, guidance text and default output folder."""
     d = dict(_read_types(path).get("builder_tools") or {})
-    for k in ("builder", "atom_rules"):      # prompt files: their text
+    for k in ("builder", "atom_rules", "real_run"):      # prompt files: their text
         if d.get(k):
             d[k] = _text(d[k])
     return d

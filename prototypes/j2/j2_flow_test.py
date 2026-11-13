@@ -4518,6 +4518,82 @@ sys.exit(subprocess.run(a[a.index("-c") + 1], shell=True).returncode)
 """
 
 
+@with_folder_type
+def run_for_real():
+    """remove-restrictions step 7: a planned real run is checked by code (real_run_problems: the form's runner, absolute
+    folders the brief names, not /, home, the repo or the run folder, no argument climbing out); when the deliverable
+    is workable code posts the exact command with a one-time code and the run pauses (Decide for me never answers);
+    only the exact reply RUN <code>, typed by the Requester, runs it once in the sandbox, writing only that folder;
+    every answer leaves a receipt, which the deliverable's Summary shows."""
+    real = tempfile.mkdtemp(prefix="j2-real-")      # the Requester's folder: outside the repo and the home folder
+    src = tempfile.mkdtemp(prefix="j2-real-src-")
+    tools = tempfile.mkdtemp(prefix="j2-fake-srt-")
+    keep = {k: os.environ.get(k) for k in ("J2_SANDBOX_CMD", "J2_AGENT_TOOLS")}
+    try:
+        source = j2.squash(f"Sort the files in {real} into folders by type, reading samples from {src}, and run it.")
+        runner = ("python3", "{target}")
+        rr = {"command": ["python3", "sort.py", real], "folder": real, "reads": [src], "why": "sort them"}
+        P = lambda x, **kw: j2.real_run_problems({**rr, **x}, source, runner, "/nowhere/run")
+        assert P({}) == [], P({})
+        assert any("must start with python3" in x for x in P({"command": ["bash", "sort.sh"]}))
+        assert any("absolute path" in x for x in P({"folder": "sorted"}))
+        assert any("not named in the brief" in x for x in P({"folder": tempfile.gettempdir()}))
+        assert any("climbs out" in x for x in P({"command": ["python3", "../x.py"]}))
+        assert any("outside its folders" in x for x in P({"command": ["python3", "sort.py", "/etc"]}))
+        home = os.path.expanduser("~")
+        assert any("may not be" in x for x in j2.real_run_problems({**rr, "folder": home}, j2.squash(home), runner, "/nowhere/run"))
+        assert any("may not be" in x for x in j2.real_run_problems({**rr, "folder": j2.HERE}, j2.squash(j2.HERE), runner, "/nowhere/run"))
+        assert j2.real_run_problems(rr, source, (), "/nowhere/run")[0].startswith("this output's form names no runner")
+        fake = os.path.join(tools, "srt.py")
+        open(fake, "w").write(FAKE_SRT)
+        os.environ["J2_SANDBOX_CMD"] = f"python3 {fake}"
+
+        def made_run():
+            run = j2.J2Run()
+            run.set_output(FT)
+            run.goal = {"statement": "sort", "done_when": ["sorted"]}
+            os.makedirs(run._out_dir(), exist_ok=True)
+            open(os.path.join(run._out_dir(), "sort.py"), "w").write(
+                "import sys, os\nopen(os.path.join(sys.argv[1], 'sorted.txt'), 'w').write('done')\n")
+            run.workflows = [{"id": "W-1", "name": "sorter", "status": "done", "real_run": rr, "atoms": []}]
+            run.post("user", "Sort my files")
+            assert run._ask_real_run({}) and run.paused["kind"] == "real_run" and run._auto_pick() is None, \
+                "the run waits for the Requester; Decide for me never answers"
+            code = run.real_runs_asked["W-1"]
+            ask = next(m["text"] for m in reversed(run.chat) if m.get("real_run") == "W-1")
+            assert f"RUN {code}" in ask and "python3 sort.py " + real in ask and f"Writes only: {real}" in ask, ask
+            return run, code
+        receipts = lambda run: [json.loads(x) for x in open(os.path.join(run.dir, "receipts.jsonl")) if '"real_run"' in x]
+        for reply, auto in (("yes", False), (None, True)):      # a loose yes; the exact code, but sent by Decide for me
+            run, code = made_run()
+            text = reply or f"RUN {code}"
+            run.post("user", text, auto=auto)
+            run.paused = None
+            run._identity_real_run({"wid": "W-1", "answer": text, "r": {}})
+            r = receipts(run)[-1]
+            assert not r["approved"] and not r["ran"] and not os.path.exists(os.path.join(real, "sorted.txt")), r
+        run, code = made_run()
+        run.post("user", f"  RUN {code} ")
+        run.paused = None
+        run._identity_real_run({"wid": "W-1", "answer": f"  RUN {code} ", "r": {}})
+        r = receipts(run)[-1]
+        assert r["approved"] and r["ran"] and r["exit"] == 0 and open(os.path.join(real, "sorted.txt")).read() == "done", r
+        assert r["command"] == rr["command"] and r["folder"] == real and r["sha256"].get("sort.py"), r
+        seen = json.load(open(os.path.join(run._out_dir(), "seen-settings.json")))
+        assert seen["filesystem"]["allowWrite"] == [os.path.realpath(real)] and seen["network"]["allowedDomains"] == [] \
+            and os.path.realpath(src) in seen["filesystem"]["allowRead"], seen
+        row = next(x for G in j2_artifacts.groups(run.dir)["groups"] if G["id"] == "documents" for x in G["rows"])
+        assert [x["approved"] for x in row["real_runs"]] == [True], row["real_runs"]
+        assert "real_run" in j2.AUTO_ASK and "Run for real (" in open(os.path.join(j2.HERE, "j2_ui.html"), encoding="utf-8").read()
+    finally:
+        for k, v in keep.items():
+            os.environ.pop(k, None) if v is None else os.environ.__setitem__(k, v)
+        for d in (real, src, tools):
+            shutil.rmtree(d, ignore_errors=True)
+    print("run for real: a planned real run checked by code; the exact command posted with a one-time code; a loose yes "
+          "or Decide for me runs nothing; the exact reply runs it once, writing only its folder, with a receipt ok")
+
+
 def builder_time_limit():
     """J2_BUILDER_TIMEOUT (default 600 s): llm stops a call past its limit for claude-cli (the process is killed once, no
     internal retry) and the Anthropic stream (closed at the next piece, the late text never returned); without a limit
@@ -8048,18 +8124,20 @@ SAVED_DOC_RUNS = ("j2-20261013-165916", "j2-20261013-185235", "j2-20261015-19082
 # made (types.json labels: "Product requirements · High-level design", not "Documents"); "failed" counts a check's last
 # attempt only (a first attempt that passed on a retry moves to "retried"); rows gain type_label, failed_checks and
 # retried, the groups "main". Every other value is as before; docs, map and checks are unchanged.
+# Re-recorded 2026-11-13 (step 7): "groups" of all 11 runs: each deliverable row gains "real_runs": [] (none of these
+# runs ran anything for real). Nothing else changed.
 SAVED_RUNS_GOLDEN = {
-    "j2-20261013-165916": {"groups": "f9454ddaf057", "docs": "6601e796102b", "map": "d528979abf18", "checks": "95329398a439"},
-    "j2-20261013-185235": {"groups": "97cfc9d49150", "docs": "99f5519109fe", "map": "d6fa33198569", "checks": "f89fefa931db"},
-    "j2-20261015-190820": {"groups": "b4dd5db84a50", "docs": "368d98762ad8", "map": "d519759eb19e", "checks": "a84b857c2459"},
-    "j2-20261016-103256": {"groups": "46be7c1b818f", "docs": "7d807bd5d90f", "map": "f3a2b5346c06", "checks": "1f4d88d383f6"},
-    "j2-20261016-160511": {"groups": "ba54190bef48", "docs": "08c63bcc18d9", "map": "edcb83e2f1dc", "checks": "294164497d2c"},
-    "j2-20261021-141350": {"groups": "e3ff87da9140", "docs": "495b52ab3c6f", "map": "e6b756ed9025", "checks": "b26939a6ccce"},
-    "j2-20261022-123744": {"groups": "c8dc8dbfeef9", "docs": "ede89e663899", "map": "e38dbe427737", "checks": "762c35ff8650"},
-    "j2-20261023-104150": {"groups": "78908f39d942", "docs": "d3f5928bd2eb", "map": "180a39f9f978", "checks": "cd878d01266c"},
-    "j2-20261023-120350": {"groups": "35b4eb0a0b02", "docs": "952eea241e51", "map": "8531c3b845fc", "checks": "0ec14094db92"},
-    "j2-20261026-104018": {"groups": "261f30d9ae98", "docs": "d18c7911c035", "map": "35a1b79ff2b0", "checks": "92d491169a25"},
-    "j2-20261027-130930": {"groups": "f3781f8375c5", "docs": "ab7c9eb79ffb", "map": "bad64fe59f9f", "checks": "cf4fa11161b5"},
+    "j2-20261013-165916": {"groups": "c4bd54621dc3", "docs": "6601e796102b", "map": "d528979abf18", "checks": "95329398a439"},
+    "j2-20261013-185235": {"groups": "1f1e2c007e08", "docs": "99f5519109fe", "map": "d6fa33198569", "checks": "f89fefa931db"},
+    "j2-20261015-190820": {"groups": "f62fe2c84aa2", "docs": "368d98762ad8", "map": "d519759eb19e", "checks": "a84b857c2459"},
+    "j2-20261016-103256": {"groups": "ad95cdbd9d43", "docs": "7d807bd5d90f", "map": "f3a2b5346c06", "checks": "1f4d88d383f6"},
+    "j2-20261016-160511": {"groups": "7df531b3cf15", "docs": "08c63bcc18d9", "map": "edcb83e2f1dc", "checks": "294164497d2c"},
+    "j2-20261021-141350": {"groups": "ba0d907380a6", "docs": "495b52ab3c6f", "map": "e6b756ed9025", "checks": "b26939a6ccce"},
+    "j2-20261022-123744": {"groups": "da36a1dc1e65", "docs": "ede89e663899", "map": "e38dbe427737", "checks": "762c35ff8650"},
+    "j2-20261023-104150": {"groups": "fbe62ddaf317", "docs": "d3f5928bd2eb", "map": "180a39f9f978", "checks": "cd878d01266c"},
+    "j2-20261023-120350": {"groups": "61067be330e3", "docs": "952eea241e51", "map": "8531c3b845fc", "checks": "0ec14094db92"},
+    "j2-20261026-104018": {"groups": "4982aa2c04aa", "docs": "d18c7911c035", "map": "35a1b79ff2b0", "checks": "92d491169a25"},
+    "j2-20261027-130930": {"groups": "d8f90c34293c", "docs": "ab7c9eb79ffb", "map": "bad64fe59f9f", "checks": "cf4fa11161b5"},
 }
 # Recorded 2026-11-10 (step D): the document runs as they are now (doc_unchanged); re-record on purpose, never to pass
 # Re-recorded 2026-11-11 (DOC_RUN_GOLDEN and the *.system hashes below) for one intended text change only: team.md and
@@ -15195,6 +15273,7 @@ if __name__ == "__main__":
             missing_capabilities()      # remove-restrictions step 4: a missing capability becomes a planned script
             one_artifact_view()         # remove-restrictions step 5: one artifact view, every output file, warnings apart
             folder_types_named()        # remove-restrictions 6a: a folder output gets a type named for what it makes
+            run_for_real()              # remove-restrictions step 7: a real run only on the Requester's exact approval
             builder_context_trim()      # a real run's builder prompt: no chat, no other workflows
             builder_inputs()            # depended-on sections in full, cut inputs noticed and logged
             timing_records()            # timing.json and Run settings' calls, tokens and time

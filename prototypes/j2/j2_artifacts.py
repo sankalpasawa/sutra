@@ -753,7 +753,7 @@ def _deliverable_extras(d):
     among them when the form has one), the warnings (an advisory check's receipt, a validator guess in autofix.json) and
     how many checks by code failed."""
     conds = [c for c in _read(d, "conditions.json", []) or [] if isinstance(c, dict)]
-    recs = []
+    recs, runs = [], []
     if os.path.isfile(os.path.join(d, "receipts.jsonl")):
         for line in open(os.path.join(d, "receipts.jsonl"), encoding="utf-8"):
             try:
@@ -762,6 +762,9 @@ def _deliverable_extras(d):
                 continue
             if isinstance(r, dict) and "pass" in r:
                 recs.append(r)
+            elif isinstance(r, dict) and r.get("type") == "real_run":      # step 7: a build run for real, or refused
+                runs.append({k: r.get(k) for k in ("workflow", "command", "folder", "reads", "approved", "ran", "exit",
+                                                   "evidence", "t")})
     last = {}
     for r in recs:      # receipts are in run order: the last one for an atom's check is its final attempt
         last[(r.get("atom"), r.get("check") or r.get("type"))] = r
@@ -777,7 +780,8 @@ def _deliverable_extras(d):
         warns[(w["from"], re.sub(r"\[[^\]]*\]", "[]", w["text"]))] = w      # one per place: a later planning attempt's replaces it
     return {"conditions": [{"id": c.get("id"), "text": c.get("text"), "met": c.get("met"), "evidence": c.get("evidence"),
                             "warn": c.get("severity") == "warn"} for c in conds],
-            "warnings": list(warns.values()), "failed": len(failed), "failed_checks": failed, "retried": retried}
+            "warnings": list(warns.values()), "failed": len(failed), "failed_checks": failed, "retried": retried,
+            "real_runs": runs}
 
 
 def _template_of(d, name):

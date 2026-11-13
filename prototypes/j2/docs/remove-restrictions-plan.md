@@ -29,7 +29,8 @@ Release check pass rule (`43bc2095`): a brief passes only on an outcome starting
 | 5 | `fb430a31` | UI: one artifact view (no Documents tab), every output-folder file with its maker, Template line, conditions with the sandboxed test, warnings apart from failures, runs by type label | Live 3/3 Done, $2.12 (total $12.95 of $60); `--fast` and `--fast --browser` pass |
 | audit | `feb5361a` | Hard-coding audit fixes; C2 title | `--fast` |
 | — | `9dc8ad0a` | The planner names a new type's form; note for Kaivan | `--fast` |
-| 6a | (this commit) | No built-in folder type: a folder output gets a type the planner names for what it makes; old runs of a deleted type still open | `--fast`, mock 3/3 |
+| 6a | `50ffeb87` | No built-in folder type: a folder output gets a type the planner names for what it makes; old runs of a deleted type still open | `--fast`, mock 3/3 |
+| 7 | (this commit) | Run for real: planned by Adaptation, checked by code, run only on the exact reply RUN <code>, sandboxed, writing one folder, receipt in receipts.jsonl | Live 4/4 Done, $6.04 (total $18.98 of $60); the demo folder sorted for real |
 | 5 follow-up | `16ae61f7` | Group by what the run made, Preview its main output, final-attempt failures, C2 evidence says code reran the test, code names not flagged as facts, Template line first | `--fast`, `--fast --browser` |
 
 ## Step 5: UI
@@ -136,7 +137,7 @@ When a brief asks to act on real files, the workflow states the command and the 
 chat. Code, not an agent, checks that exact approval. Then the command runs with write access to that one folder
 only, with a receipt in `receipts.jsonl`. After: `--fast`, live release check.
 
-### Design (proposed, waiting for the founder's go-ahead)
+### Design (approved 2026-11-13; built, with a read-only "reads" list and a fourth live brief)
 
 | # | What | Who decides | File (owner) |
 |---|---|---|---|

@@ -3414,6 +3414,9 @@ function artDeliv(x){ const cs = x.conditions || [], ws = x.warnings || [];
       + ` <span class="empty">(attempt ${esc(c.attempt)}, its last)</span><span class="aev">${esc(c.evidence)}</span></span></li>`)}</div>` : "")
     + ((x.retried || []).length ? `<div class="ablk"><h5>Failed, then passed on a retry (${x.retried.length})</h5>${artList(x.retried, c => `<li>${artMark(true)}<span><span class="mono empty">${esc(c.atom)}</span> ${esc(c.check)}`
       + ` <span class="empty">(attempt ${esc(c.attempt)} failed)</span><span class="aev">${esc(c.evidence)}</span></span></li>`)}</div>` : "")
+    + ((x.real_runs || []).length ? `<div class="ablk"><h5>Run for real (${x.real_runs.length})</h5>${artList(x.real_runs, r => `<li>${artMark(r.ran ? r.exit === 0 : null)}<span>`
+      + `<span class="mono">${esc((r.command || []).join(" "))}</span> <span class="empty">writes only ${esc(r.folder || "")}${(r.reads || []).length ? `, reads ${esc(r.reads.join(", "))}` : ""}`
+      + ` · ${r.approved ? "approved by you" : "not approved"}</span><span class="aev">${esc(r.evidence || "")}</span></span></li>`)}</div>` : "")
     + artFiles(x); }
 function artFolder(x){ const fs = x.files || [], f = fs.some(y => y.file === ARTS.ver) ? ARTS.ver : (fs[0] || {}).file;
   return `<div class="avers" role="group" aria-label="File"><span class="empty">File</span>${fs.map(y => `<button type="button" data-afile="${esc(y.file)}" aria-pressed="${y.file === f}">${esc(y.name)}</button>`).join("")}</div>`

@@ -1,10 +1,10 @@
 {
   "_note": "Artifact types, step 1. j2.py's flow does not read this file; tests/test files compare it with the Python it mirrors (prd/hld/lld/website) and the Artifacts tab reads it. kind type = a deliverable the department builds; kind record = evidence the run keeps. A file with * lists every match. Regexes are case-insensitive.",
   "schema": "artifact-types/1",
-  "builder_tools": {"_note": "Claude's built-in tools, given to every builder in its own folder (a form may set its own tools and allow). builder: the guidance every builder with tools gets; atom_rules: what Adaptation's atom rules add for every form when builders have tools (missing capabilities); folder: the run's output folder for a form that names none. tools: the CLI tool list; allow: its permission rules; WebFetch(domain:*) also opens the sandbox's network to any host. Reads stay fenced to the folder by code (llm.cli_settings).",
+  "builder_tools": {"_note": "Claude's built-in tools, given to every builder in its own folder (a form may set its own tools and allow). builder: the guidance every builder with tools gets; atom_rules: what Adaptation's atom rules add for every form when builders have tools (missing capabilities); real_run: what they add for a form with a test runner (running a build for real, step 7); folder: the run's output folder for a form that names none. tools: the CLI tool list; allow: its permission rules; WebFetch(domain:*) also opens the sandbox's network to any host. Reads stay fenced to the folder by code (llm.cli_settings).",
     "tools": ["Read", "Write", "Edit", "Glob", "Grep", "Bash", "WebSearch", "WebFetch"],
     "allow": ["Read", "Write", "Edit", "Glob", "Grep", "Bash", "WebSearch", "WebFetch", "WebFetch(domain:*)"],
-    "builder": "templates/builder.md", "atom_rules": "templates/atom_rules.md", "folder": "out"},
+    "builder": "templates/builder.md", "atom_rules": "templates/atom_rules.md", "real_run": "artifacts/real_run.md", "folder": "out"},
   "site_words": "\\b(?:web\\s?)?sites?\\b|\\bweb\\s?pages?\\b|\\blanding\\s+page\\b",
   "groups": {
     "design-docs": {

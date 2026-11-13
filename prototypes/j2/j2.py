@@ -45,6 +45,7 @@ import json
 import math
 import os
 import re
+import secrets
 import shlex
 import shutil
 import subprocess
@@ -143,13 +144,14 @@ PAUSES = {"info": "J2.a: not enough information to work yet",
           "audit": "J2.h: a done-when item only the Requester can close",
           "fact": "J2.g: a fact only the Requester knows",
           "limit": "a safety limit was hit: add budget, drop the failing items or ship as is",
-          "send_confirm": "J2_SEND_MODE=live: may real emails go to the test address in this run"}
+          "send_confirm": "J2_SEND_MODE=live: may real emails go to the test address in this run",
+          "real_run": "may a built script run for real on the Requester's folder (exact reply only)"}
 TO_USER = re.compile(r"@(?:requester|user)\b", re.I)
 
 # Decide for me (the Simple view's switch, POST /api/settings): while it is on, an open question to the Requester is
 # answered by code the moment the run pauses, the way a click would answer it, and the run goes on. Real-world side
 # effects are never decided for you (AUTO_ASK); after AUTO_CAP answers in one run the next question waits for you.
-AUTO_ASK = {"send_confirm"}
+AUTO_ASK = {"send_confirm", "real_run"}
 AUTO_CAP = int(os.getenv("J2_AUTO_CAP") or 6)
 AUTO_ASSUME = ("Decide for me: go with sensible, typical choices for anything I haven't told you, "
                "and list them as assumptions I can check later.")
@@ -501,6 +503,92 @@ def sandbox_settings(folder):
     return {"network": {"allowedDomains": [], "deniedDomains": []},
             "filesystem": {"denyRead": ["~"], "allowRead": [folder], "allowWrite": [folder],
                            "denyWrite": list(SANDBOX_DENY_WRITE)}}
+
+
+def _repo_root():
+    p = HERE
+    while p != os.path.dirname(p) and not os.path.exists(os.path.join(p, ".git")):
+        p = os.path.dirname(p)
+    return p if os.path.exists(os.path.join(p, ".git")) else HERE
+
+
+def real_run_problems(rr, source, runner, run_dir):
+    """Why a planned real run may not be asked for ([] when it may): its command starts with the form's runner, every
+    folder is absolute, exists, is named in the brief or the Requester's answers (source, squashed) and is not /, the
+    home folder, the repo, the run folder or a folder holding one of them; no argument climbs out (..) or names an
+    absolute path outside its folders. A guardrail: code never runs anything the Requester has not approved."""
+    if not isinstance(rr, dict):
+        return ["real_run must be an object: command, folder, reads, why"]
+    if not runner:
+        return ["this output's form names no runner, so nothing it builds can be run for real"]
+    out, cmd, folder, reads = [], rr.get("command"), rr.get("folder"), rr.get("reads") or []
+    if not (isinstance(cmd, list) and cmd and all(isinstance(x, str) and x.strip() for x in cmd)):
+        out.append("real_run command must be a list of strings (the program, then its arguments)")
+        cmd = []
+    elif cmd[0] != runner[0]:
+        out.append(f"real_run command must start with {runner[0]} (the form's runner), not {cmd[0]!r}")
+    if not isinstance(reads, list) or not all(isinstance(x, str) for x in reads):
+        out.append("real_run reads must be a list of folders")
+        reads = []
+    home, repo, rd = (os.path.realpath(x) for x in (os.path.expanduser("~"), _repo_root(), run_dir))
+    within = lambda a, b: a == b or llm.inside(a, b)      # a folder counts as within itself
+    roots = []
+    for f in [folder] + reads:
+        if not (isinstance(f, str) and os.path.isabs(f)):
+            out.append(f"real_run folder {f!r} must be an absolute path")
+            continue
+        p = os.path.realpath(f)
+        # named whole: a parent of a named folder is not named (the path ends there, or at a space or a sentence's end)
+        if not re.search(re.escape(squash(f).rstrip("/")) + r"/?(?=$|[\s,;:)'\"]|\.(?:\s|$))", source):
+            out.append(f"real_run folder {f} is not named in the brief or the Requester's answers: ask for it")
+        if not os.path.isdir(p):
+            out.append(f"real_run folder {f} is not an existing folder")
+        elif p in ("/", home) or within(p, repo) or within(p, rd) or any(within(x, p) for x in (home, repo, rd)):
+            out.append(f"real_run folder {f} may not be /, the home folder, the repo, the run folder or a folder holding one")
+        roots.append(p)
+    for x in cmd[1:]:
+        v = x.split("=", 1)[-1]
+        if ".." in re.split(r"[/\\]", v):
+            out.append(f"real_run argument {x!r} climbs out of its folder (..)")
+        elif os.path.isabs(v) and not any(within(os.path.realpath(v), r) for r in roots):
+            out.append(f"real_run argument {x!r} names a path outside its folders")
+    return out
+
+
+def real_run(out_dir, rr, timeout):
+    """Run an approved real run once, inside the sandbox runtime (J2_SANDBOX_CMD): no network; reads the built folder,
+    the stated folder and its read-only folders; writes only the stated folder; the builder's time limit; the command
+    from the built folder. {"ran", "exit", "output" (its end), "seconds", "sha256" of the built files it names,
+    "evidence"}."""
+    cmd = agent_setting("J2_SANDBOX_CMD")
+    if not cmd:
+        return {"ran": False, "exit": None, "evidence": "J2_SANDBOX_CMD is not set, so nothing was run"}
+    out_dir, folder = os.path.realpath(out_dir), os.path.realpath(rr["folder"])
+    reads = [os.path.realpath(x) for x in rr.get("reads") or []]
+    shas = {}
+    for x in rr["command"][1:]:
+        p = os.path.join(out_dir, x)
+        if not os.path.isabs(x) and os.path.isfile(p):
+            with open(p, "rb") as f:
+                shas[x] = hashlib.sha256(f.read()).hexdigest()
+    fd, conf = tempfile.mkstemp(prefix=".realrun-", suffix=".json", dir=os.path.dirname(out_dir))
+    t0 = time.time()
+    try:
+        with os.fdopen(fd, "w", encoding="utf-8") as f:
+            json.dump({"network": {"allowedDomains": [], "deniedDomains": []},
+                       "filesystem": {"denyRead": ["~"], "allowRead": [out_dir, folder] + reads, "allowWrite": [folder],
+                                      "denyWrite": list(SANDBOX_DENY_WRITE)}}, f)
+        p = subprocess.run(shlex.split(cmd) + ["-s", conf, "-c", shlex.join(rr["command"])], cwd=out_dir,
+                           capture_output=True, text=True, timeout=timeout)
+        out = ((p.stdout or "") + (p.stderr or ""))[-1500:]
+        last = next((x.strip() for x in reversed(out.splitlines()) if x.strip()), "no output")
+        return {"ran": True, "exit": p.returncode, "output": out, "seconds": round(time.time() - t0, 2), "sha256": shas,
+                "evidence": f"{shlex.join(rr['command'])} exited {p.returncode} in the sandbox, writing only {folder} ({last[:160]})"}
+    except subprocess.TimeoutExpired:
+        return {"ran": True, "exit": None, "sha256": shas, "seconds": round(time.time() - t0, 2),
+                "evidence": f"{shlex.join(rr['command'])} ran past {timeout:g}s in the sandbox and was stopped"}
+    finally:
+        os.unlink(conf)
 
 
 def sandbox_rerun(folder, runner, target, timeout):
@@ -1846,7 +1934,7 @@ DECISION_FMT = ('"decision": "continue"|"drop"|"ship"|"stop"|null (null if the a
                 'leave out)')
 BUILT_CLAIM = re.compile(r"\b(?:now has|already has|so far the (?:page|site) has|the (?:page|site) has|is built|"
                          r"(?:we|I)(?:'ve| have)? (?:built|added)|has been (?:built|added))\b", re.I)
-DECISION_PAUSES = ("limit", "conflict", "ruling_budget", "send_confirm")    # the Requester decides; info/fact/question only inform
+DECISION_PAUSES = ("limit", "conflict", "ruling_budget", "send_confirm", "real_run")    # the Requester decides; info/fact/question only inform
 ONLY_PICK = re.compile(r"\s*(option\s*)?[1-9]\s*[.:)]?\s*", re.I)
 
 
@@ -3252,6 +3340,7 @@ class J2Run:
         self.deed_log, self.deed_seen = [], set()      # send deeds done (note, result) and the notices already given
         self.milestone_log = []      # milestone emails (J2_MILESTONE_EMAILS=1, or the brief asks for updates by email): one per goal reached
         self.send_confirm = None     # J2_SEND_MODE=live: the Requester's answer (True/False) to "send real emails?", asked once a run
+        self.real_runs_asked = {}    # step 7: workflow id -> the one-time code its real run was asked for with
         self.open_docs = []          # documents the Requester accepted as they were, with what was still not right
         self.given = {}              # workflow id -> {"edges": [{atom, why}], "whole": bool}: what its builder's prompt held (atom/1)
         self.board = j2_board.new_board()   # board/1 (j2_board.py): questions and answers, behind J2_BOARD=1
@@ -3649,6 +3738,8 @@ class J2Run:
         self.ATOM_RULES = self.out.get("atom_rules") or J2Run.ATOM_RULES
         if llm.tools_on() and self.out.get("tools"):      # the general path: builders with tools (builder_tools.atom_rules)
             self.ATOM_RULES += "\n" + (j2_types.builder_tools().get("atom_rules") or "")
+            if self.out.get("test_runner"):      # a form whose builds can be run: how to plan a real run (step 7)
+                self.ATOM_RULES += "\n" + (j2_types.builder_tools().get("real_run") or "")
 
     def _begin_cycle(self, advance=True):
         if advance:
@@ -4494,7 +4585,8 @@ class J2Run:
         return {"intake": self._identity_intake, "stage_decision": self._stage_decision, "resolve": self._identity_resolve, "approval": self._identity_approval,
                 "audit": self._identity_audit, "requester_answered": self._identity_hears_requester,
                 "ruling_budget": self._identity_ruling_budget, "limit": self._identity_limit,
-                "send_confirm": self._identity_send_confirm}.get(h.get("kind"), self._identity_question)(h)
+                "send_confirm": self._identity_send_confirm,
+                "real_run": self._identity_real_run}.get(h.get("kind"), self._identity_question)(h)
 
     CHARTER_FMT = ('{"statement": str, "site_name": str, "audience": str, "standards": [str], "rules": [str], '
                    '"done_when": [str] (one outcome per item: one thing the site shows or lets a visitor do, that '
@@ -4900,6 +4992,40 @@ class J2Run:
                   "Got it. No real emails: every send in this run stays a dry run.", to_user=True, next="user")
         if h.get("deed"):
             return self._deed_stage(h["deed"])
+        self._goal_done(h.get("r") or {})
+
+    def _ask_real_run(self, r):
+        """Step 7: the next done workflow with a planned real run not yet asked about. Code posts its exact command and
+        folders and a one-time code; the run pauses (real_run: Decide for me never answers it). True when it paused."""
+        w = next((x for x in self.workflows if x.get("real_run") and x["status"] == "done"
+                  and x["id"] not in self.real_runs_asked), None)
+        if w is None:
+            return False
+        rr, code = w["real_run"], secrets.token_hex(3)
+        self.real_runs_asked[w["id"]] = code
+        self.post("system", f"{w['id']} wants to run what it built on your own files.\nCommand: {shlex.join(rr['command'])}\n"
+                            f"Writes only: {rr['folder']}" + (f"\nReads only: {', '.join(rr['reads'])}" if rr.get("reads") else "")
+                            + f"\nWhy: {rr.get('why') or 'not given'}\nTo run it, reply exactly: RUN {code}\n"
+                            "Any other reply: it is not run.", real_run=w["id"])
+        self._ask_user("One of the workflows wants to run what it built on your files. The exact command is above.",
+                       [{"question": "Run it for real?"}], "real_run", handoff={"kind": "real_run", "r": r, "wid": w["id"]})
+        return True
+
+    def _identity_real_run(self, h):
+        """Step 7: code, not an agent, compares the Requester's reply with RUN <code> exactly. Only then the command runs,
+        once, in the sandbox (real_run). Either way a receipt goes to receipts.jsonl and the run goes on to its end."""
+        w, code = self._wf(h.get("wid")), self.real_runs_asked.get(h.get("wid"))
+        last = next((m for m in reversed(self.chat) if m["who"] == "user"), {})
+        ok = bool(w and code) and not last.get("auto") and str(h.get("answer") or "").strip() == f"RUN {code}"
+        res = real_run(self._out_dir(), w["real_run"], builder_timeout()) if ok else \
+            {"ran": False, "exit": None, "evidence": "not run: the reply was not exactly RUN " + str(code)}
+        with open(os.path.join(self.dir, "receipts.jsonl"), "a", encoding="utf-8") as f:
+            f.write(json.dumps({"type": "real_run", "workflow": h.get("wid"), **(w or {}).get("real_run", {}), "code": code,
+                                "approved": ok, "answer_msg": last.get("id"), **res,
+                                "t": time.strftime("%Y-%m-%dT%H:%M:%S"), "by": "code"}, ensure_ascii=False) + "\n")
+        self._event("code", "real_run", f"{h.get('wid')}: {res['evidence']}")
+        self.post("system", ("Ran for real: " if res.get("ran") else "") + res["evidence"] + ".",
+                  warning=bool(res.get("ran") and res.get("exit") != 0))
         self._goal_done(h.get("r") or {})
 
     def _send_args(self, atom):
@@ -5690,6 +5816,8 @@ class J2Run:
         """The site or a document is workable (r: Identity's reply): its milestone email, then the next stage or the end.
         When the email is the first live send, the run pauses to ask the Requester and the answer comes back here."""
         if self._milestone(r):                 # a goal reached: its email (when milestone emails are on); never stops the run
+            return
+        if self._ask_real_run(r):              # step 7: a planned real run waits for the Requester's exact approval
             return
         if self.stages:                    # a design-document run: the next stage starts, or the last one is recorded
             self.post("system", f"The {self.out['noun']} is workable: every check passes.")
@@ -8130,6 +8258,12 @@ class J2Run:
                   "envelope": env, "charged": True, "calls_used": 0, "retries_used": 0, "outputs": w.get("outputs"),
                   "completion_check": w.get("completion_check", ""), "dependencies": w.get("dependencies") or [],
                   "status": "registered", "cycle": self.cycle, "kind": w.get("kind")}
+            if w.get("real_run") is not None:      # step 7: checked here, asked for when the deliverable is workable
+                bad = real_run_problems(w["real_run"], self._fact_source(), self.out.get("test_runner"), self.dir)
+                if bad:
+                    refused.append(self._reject(name, "; ".join(bad)))
+                    continue
+                wf["real_run"] = {k: w["real_run"].get(k) for k in ("command", "folder", "reads", "why")}
             wf["atoms"] = [{**a, "id": f"{wf['id']}.a{n}"} for n, a in enumerate(atoms, 1)]
             if own:       # the document sections this workflow writes, as the planner named them
                 wf["sections"] = list(own)
