@@ -14044,6 +14044,261 @@ def folder_reuse():
           "1 reused from the template: OK")
 
 
+def sutra_library():
+    """The Sutra library: one real copy with a link to it, and two shelves on /library.
+    (a) location: library at the top of the repo is a link to prototypes/j2/library; both paths give the same files, sha for sha,
+        and nothing in the library changes while the shelves are read;
+    (b) Shelf 1, Artifacts: one entry per whole artifact a run produced, read from the runs folder; a folder of files shows too
+        (its files in Human-readable, files.json in Agent-readable); sections nest inside their artifact;
+    (c) Shelf 2, Artifact templates: the run templates, then every type with its sections nested under it, the generic skeleton
+        first, then the variants; no business value any run's charter recorded is on it; every artifact links to templates that
+        exist and that list it back;
+    (d) find_artifact and find_template give candidates with reasons, artifacts first;
+    (e) the page (--browser): /library?view=artifacts and ?view=templates, one three-tab view per item, ?run= marks what a run
+        produced or used, a section template's old link still opens."""
+    import html as htmllib
+    import socket
+    import subprocess
+    import threading
+    import j2_server
+    import j2_template_lib as L
+    import j2_types
+    here = j2.HERE
+    RUNS_ENV = os.environ.get("J2_RUNS_DIR")
+    repo = os.path.dirname(os.path.dirname(here))
+    real = os.path.join(here, "library")
+
+    def tree(root):
+        rows = []
+        for d, _, files in os.walk(root):
+            rows += [(os.path.relpath(os.path.join(d, f), root), hashlib.sha256(open(os.path.join(d, f), "rb").read()).hexdigest()) for f in files if f != ".DS_Store"]
+        return hashlib.sha256(json.dumps(sorted(rows)).encode()).hexdigest(), len(rows)
+    # (a) one copy, two paths
+    link = os.path.join(repo, "library")
+    assert os.path.islink(link) and os.readlink(link) == "prototypes/j2/library" and os.path.realpath(link) == os.path.realpath(real), "library is a link to prototypes/j2/library"
+    before = tree(real)
+    assert tree(link + os.sep) == before and before[1] > 0, "the same files, sha for sha, through both paths"
+    mode = subprocess.run(["git", "ls-files", "-s", "library"], cwd=repo, capture_output=True, text=True).stdout.split()
+    assert not mode or mode[0] == "120000", ("git keeps the link as a link, not a copy", mode)
+    # (b) Shelf 1 on the test's own runs folder: the folder fixture, and a second run that reused its run template
+    src = os.path.join(here, "fixtures", "folder-run", "j2-20261113-090000")
+    tmp = tempfile.mkdtemp(prefix="j2-shelf-")
+    runs = os.path.join(tmp, "runs")
+    keep = os.environ.get("J2_LIBRARY_DIR")
+    put = lambda d, n, o: json.dump(o, open(os.path.join(d, n), "w", encoding="utf-8"), indent=2)
+    page = "skipped (Chrome not found, or --fast without --browser)"
+    try:
+        os.environ["J2_LIBRARY_DIR"] = os.path.join(tmp, "library")
+        rid1, rid2 = "j2-20261113-090000", "j2-20261113-100000"
+        shutil.copytree(src, os.path.join(runs, rid1))
+        rt = L.save_run_template(L.run_template_from_run(os.path.join(runs, rid1)))
+        run2 = os.path.join(runs, rid2)
+        shutil.copytree(os.path.join(src, "script"), os.path.join(run2, "script"))
+        goal1 = json.load(open(os.path.join(src, "goal.json"), encoding="utf-8"))
+        put(run2, "goal.json", {**goal1, "site_name": "Harbor Clinic", "product_name": "Harbor Clinic", "business_type": "dental clinic", "facts": ["Harbor Clinic", "intake-desk", "records-room"]})
+        put(run2, "workflows.json", [{"id": "W-1", "name": "Harbor Clinic file copier", "covers_text": [], "outputs": ["script/"], "status": "done", "dependencies": [], "fixes": [], "revises": None}])
+        put(run2, "artifacts.json", {"rows": [{**L.type_data("script", src), "type": "script", "name": "Script", "workflows": ["W-1"]}]})
+        put(run2, "templates.json", {"schema": L.SCHEMA, "run_template": {"id": rt.id, "name": rt.name, "selected": ["W-1"], "of": 1, "added_stages": []},
+                                     "decisions": [L.folder_decision(rt, "script", L.folder_files(run2, "script"), {"run": rid2, "workflow": "W-1", "atom": "W-1.a1"})]})
+        s1 = L.shelf_artifacts(rid2, runs)
+        assert [a["id"] for a in s1["artifacts"]] == [f"{rid2}/script", f"{rid1}/script"] and [a["highlight"] for a in s1["artifacts"]] == [True, False], s1["artifacts"]
+        second, first = s1["artifacts"]
+        assert first["files"] == ["README.md", "copy_files.py", "test_copy_files.py"] and first["preview"] == "folder" and first["label"] == "Script" and first["mock"] is True, first
+        assert first["made_from"] is None and first["run_template"] is None and first["checks"]["conditions"] == {"met": 3, "of": 3} and first["checks"]["done_when"] == {"passed": 5, "of": 5}, first
+        assert second["run_template"] == {"id": rt.id, "name": rt.name, "key": f"rt/{rt.id}", "auto": False} and second["business"] == "Harbor Clinic", second
+        v1 = L.artifact_view(first["id"], runs)
+        assert v1["human"]["format"] == "files" and [f["path"] for f in v1["human"]["files"]] == first["files"] and "def copy_files(src, dst)" in v1["human"]["files"][1]["text"], v1["human"]["format"]
+        listing = json.loads(v1["agent"][0]["text"])
+        assert v1["agent"][0]["name"] == "files.json" and [f["path"] for f in listing["files"]] == first["files"] and all(len(f["sha256"]) == 64 for f in listing["files"]), listing
+        os.environ["J2_RUNS_DIR"] = runs      # what the page is given: /api/catalog, /api/run-template and /api/library/<key> carry the shelves
+        try:
+            cat = L.catalog_view()
+            assert [a["id"] for a in cat["artifacts"]] == [second["id"], first["id"]] and cat["artifacts"][1]["listing"] == listing and cat["artifacts"][1]["data_file"] is None, cat["artifacts"]
+            assert cat["shelf"]["schema"] == "shelf/1" and [r_["id"] for r_ in cat["shelf"]["run_templates"]] == [rt.id] and {"groups", "runs", "run_templates"} <= set(cat), "the catalog keeps what it had"
+            assert L.run_template_view(rt.id)["shelf"]["summary"]["outputs"][0]["id"] == second["id"] and L.template_view("prd", "problem", "generic", 1)["shelf"]["summary"]["key"] == "prd/problem/generic/v1"
+        finally:
+            os.environ.pop("J2_RUNS_DIR", None)
+            if os.environ.get("J2_RUNS_DIR") is None and RUNS_ENV is not None:
+                os.environ["J2_RUNS_DIR"] = RUNS_ENV
+        assert L.artifact_view("j2-20261113-090000/prd", runs) is None and L.artifact_view("../x/script", runs) is None and L.shelf_view({"artifact": "nope"}, runs) is None
+        sk = L.run_template_skeleton(rt.id, runs)
+        assert [o["id"] for o in sk["summary"]["outputs"]] == [second["id"]], "the run template lists the artifact made from it, and that artifact names the run template"
+        assert sk["human"]["skeleton"]["outputs"] == rt.outputs and sk["summary"]["name"] == "<site name>: Script", sk["summary"]["name"]
+        shelf2 = json.dumps([L.shelf_templates(rid2, runs), sk], ensure_ascii=False)
+        assert "Northwind" not in shelf2 and "Harbor Clinic" not in shelf2 and "scans-inbox" not in shelf2, "no business value of either run on Shelf 2"
+        t2 = L.shelf_templates(rid2, runs)
+        assert [(r_["id"], r_["highlight"], r_["outputs"]) for r_ in t2["run_templates"]] == [(rt.id, "used", 1)], t2["run_templates"]
+        assert L.shelf_templates(rid1, runs)["run_templates"][0]["highlight"] == "made"
+        # (c) Shelf 2's shape, from the types file and the templates: every type, its sections nested, the generic one first
+        assert [t["type"] for t in t2["types"]] == list(L.artifacts()) and all(t["label"] == (j2_types.info(t["type"])["label"] if t["type"] in j2_types.names() else t["label"]) for t in t2["types"])
+        for t in t2["types"]:
+            assert [x["section"] for x in t["sections"]] == list(L.generic_sections(t["type"])) and all(x["generic"]["key"] == L.template_key(t["type"], x["section"]) for x in t["sections"]), t["type"]
+        prd = next(t for t in t2["types"] if t["type"] == "prd")
+        assert [x["section"] for x in prd["sections"]] == list(L.generic_sections("prd")) and prd["label"] == "Product requirements", "PRD -> Problem, Users, Goals, ...: sections under their type, never a flat list"
+        g = L.template_skeleton("prd/problem/generic/v1", runs)
+        assert g["summary"]["kind"] == "generic" and g["agent"][0]["name"] == "skeleton.json" and g["human"]["format"] == "fields" and g["human"]["skeleton"]["fields"], g["summary"]
+        assert L.template_skeleton("prd/problem/no-such/v1", runs) is None and L.shelf_view({"template": "../../etc/passwd"}, runs) is None
+        # slots: a charter value is replaced whole, the longest first, once; a slot's own name is never cut
+        slots = L.charter_slots(os.path.join(runs, rid1))
+        assert slots[0] == ("Northwind Archive", "site name") and ("records archive", "business type") in slots and ("scans-inbox", "fact 1") in slots, slots
+        assert L.with_slots("Northwind Archive copies scans-inbox; 1scans-inbox9 stays; <site name> stays", slots) == "<site name> copies <fact 1>; 1scans-inbox9 stays; <site name> stays"
+        spec = {"name": "Northwind Archive Files", "version": 2, "kind": "specialised", "artifact": "prd", "section": "Problem", "description": "Files of Northwind Archive",
+                "fields": [{"name": "folders", "type": "list[string]", "required": True, "description": "from scans-inbox", "enum": ["scans-inbox", "scans-shelf"]}],
+                "objects": [], "rules": [{"rule": "enum", "path": "folders", "values": ["scans-inbox"]}], "context": {"facts_used": ["scans-inbox", "scans-shelf"]}}
+        sk2 = L.skeleton(spec, slots)
+        assert sk2["name"] == "<site name> Files" and sk2["fields"][0]["enum"] == ["<folders>"] and sk2["fields"][0]["description"] == "from <fact 1>" \
+            and sk2["rules"][0]["values"] == ["<folders>"] and sk2["facts"] == "<2 facts of the business>" and "scans" not in json.dumps(sk2), sk2
+        # (d) the reuse order: artifacts first, then templates, each with reasons
+        need = {"artifact": "script", "business_type": "dental clinic", "site": "Harbor Clinic", "text": "copy every file from one folder to another, keeping sub-folders"}
+        found = L.find(need, runs)
+        assert found["order"] == ["artifact", "template"] and [c["ref"] for c in found["artifacts"]] == [second["id"], first["id"]], found["artifacts"]
+        assert found["artifacts"][0]["score"] > found["artifacts"][1]["score"] and "the same business" in found["artifacts"][0]["reasons"] and all(c["reasons"] and c["kind"] == "artifact" for c in found["artifacts"])
+        assert [(c["kind"], c["ref"]) for c in found["templates"]] == [("run-template", rt.id)] and found["templates"][0]["reasons"], found["templates"]
+        sec = L.find_template({"artifact": "prd", "section": "Problem", "business_type": "dental clinic", "facts": ["Harbor Clinic"], "site": "Harbor Clinic"}, runs)
+        assert sec[-1]["key"] == "prd/problem/generic/v1" and sec[-1]["score"] == 0.0 and L.find_artifact({"artifact": "prd"}, runs) == [], sec
+        doc = open(os.path.join(here, "docs", "library-reuse-order.md"), encoding="utf-8").read()
+        assert "find_artifact(need)" in doc and "find_template(need)" in doc and "Sankalp" in doc and "Rubak" in doc
+        # the committed library and the saved runs on this computer (when there are any)
+        os.environ.pop("J2_LIBRARY_DIR")
+        live = "no saved runs here: the committed library alone"
+        saved = os.path.join(here, "runs")      # the saved runs beside the code (the tests' own J2_RUNS_DIR is a temp folder)
+        arts = L.shelf_artifacts(None, saved)["artifacts"]
+        tp = L.shelf_templates(None, saved)
+        keys = [x["generic"]["key"] for t in tp["types"] for x in t["sections"]] + [v["key"] for t in tp["types"] for x in t["sections"] for v in x["variants"]]
+        assert len(keys) == len(set(keys)) and len(keys) - sum(len(t["sections"]) for t in tp["types"]) == sum(len(e["versions"]) for e in L.index()["templates"]), "every stored version is on the shelf once, under its type and section"
+        views = {k: L.template_skeleton(k, saved) for k in keys}
+        rts = {r_["id"]: L.run_template_skeleton(r_["id"], saved) for r_ in tp["run_templates"]}
+        assert all(views.values()) and all(rts.values()) and all(set(v) >= {"summary", "agent", "human"} for v in list(views.values()) + list(rts.values())), "every template opens, with its three views"
+        # no business value: every value any run's charter or any stored version recorded, except the words the generic layer itself uses
+        structure = L._structure_words()
+        values = {v.lower() for d in L._run_dirs(saved) for v, _ in L.charter_slots(d)} | {str((v.get("business") or {}).get("name") or "").lower() for e in L.index()["templates"] for v in e["versions"]}
+        values = {v for v, _ in L._business_only([(v, "") for v in values if len(v) >= 3], structure)}
+        def shown_(o):      # every text the shelf shows. Not shown as text: a template's address (the folder it is stored in), and the names of slots
+            if isinstance(o, dict):
+                if str(o.get("name", "")).endswith(".json") and isinstance(o.get("text"), str):
+                    return shown_(json.loads(o["text"]))
+                return " | ".join(shown_(v) for k, v in o.items() if k not in ("key", "generic_key", "template_key", "id", "facts_slots"))
+            return " | ".join(shown_(v) for v in o) if isinstance(o, list) else str(o)
+        text = re.sub(r"<[A-Za-z0-9 ]+>", " ", shown_([tp, list(views.values()), list(rts.values())])).lower()
+        leaked = sorted(v for v in values if v in text and re.search(r"(?<![a-z0-9])" + re.escape(v) + r"(?![a-z0-9])", text))
+        assert not leaked, ("a business value is on Shelf 2", leaked[:10])
+        assert all(v["agent"][0]["name"] == "skeleton.json" and "sha" not in json.loads(v["agent"][0]["text"]) for v in views.values()), "the skeleton, never the stored files"
+        if arts:      # every artifact links to templates that exist and that list it back
+            outs = L.outputs_by_template(arts)
+            n_links = 0
+            for a in arts:
+                for key in [x["key"] for x in (a["made_from"],) if x] + [x["template"]["key"] for x in a["sections"] if x["template"]["in_library"]]:
+                    assert key in views and a["id"] in [o["id"] for o in views[key]["summary"]["outputs"]], (a["id"], key)
+                    n_links += 1
+                if a["run_template"]:
+                    assert a["id"] in [o["id"] for o in rts[a["run_template"]["id"]]["summary"]["outputs"]], a["id"]
+                assert a["made_from"] is not None or a["type"] not in L.artifacts(), (a["id"], "a type with a template names the whole artifact's template")
+            assert all(o["id"] in {a["id"] for a in arts} for rows_ in outs.values() for o in rows_)
+            live = f"{len(arts)} artifacts of {len({a['run'] for a in arts})} saved runs, {n_links} links to templates and back, {len(values)} business values checked"
+        marked = "j2-20261111-211339"
+        if any(a["run"] == marked for a in arts):
+            m = L.shelf_templates(marked, saved)
+            mprd = next(t for t in m["types"] if t["type"] == "prd")
+            made = [v for x in mprd["sections"] for v in x["variants"] if v["highlight"] == "made"]
+            assert len(made) == sum(1 for e in L.index()["templates"] if e["artifact"] == "prd" for v in e["versions"] if (v.get("made_by") or {}).get("run") == marked) > 0, made
+            assert all(v["outputs"] >= 1 and v["name"].startswith("<site name>") for v in made) and mprd["sections"][-1]["generic"]["highlight"] == "used", "that run's own templates are marked, each with its outputs"
+            assert [a["highlight"] for a in L.shelf_artifacts(marked, saved)["artifacts"]] == [a["run"] == marked for a in arts]
+        assert tree(real) == before, "reading the shelves changes nothing in library/"
+        # (e) the page
+        chrome = j2.j2_check.find_chrome() if BROWSER else None
+        if chrome:
+            os.environ["J2_LIBRARY_DIR"] = os.path.join(tmp, "library")
+            ui = open(os.path.join(here, "j2_ui.html"), encoding="utf-8").read()
+            steps = ("(async () => { const wait = ms => new Promise(r => setTimeout(r, ms)), q = s => [...document.querySelectorAll(s)], r = {}, at = (el, a) => el ? el.getAttribute(a) : null; await wait(3500);"
+                     " r.tabs = q('[data-catview]').map(x => x.textContent.trim()); r.cur = (document.querySelector('[data-catview][aria-selected=true]') || {}).textContent;"
+                     " const list = document.querySelector('.aglist'); r.list = list ? [...list.children].map(x => x.classList.contains('shelfhead') ? 'H:' + x.dataset.shelfhead : 'R:' + x.dataset.catrow + (x.dataset.hl ? '*' + x.dataset.hl : '')) : [];"
+                     " r.on = at(document.querySelector('.aglist .agrow.on'), 'data-catrow'); r.path = (document.querySelector('[data-shelfpath], [data-shelftitle], [data-rtname]') || {}).textContent || '';"
+                     " r.views = q('[data-shelfview]').map(x => [x.dataset.shelfview, [...x.querySelectorAll('[data-shelftab]')].map(b => b.textContent), at(x.querySelector('[data-shelftab][aria-selected=true]'), 'data-shelftab')]);"
+                     " r.items = q('[data-shelfrow]').map(x => [x.dataset.shelfrow, x.dataset.hl || '']); r.groups = q('[data-shelfgroup]').map(x => x.dataset.shelfgroup);"
+                     " r.made = q('[data-shelfmade]').map(x => [x.dataset.shelfmade, x.textContent, at(x.querySelector('a'), 'href')]); r.secs = q('[data-shelfsec]').map(x => [x.dataset.shelfsec, at(x.querySelector('a'), 'href')]);"
+                     " r.outs = q('[data-shelfouts] a').map(x => x.getAttribute('href')); r.files = q('[data-shelffile]').map(x => [x.dataset.shelffile, x.querySelector('pre').textContent]); r.paths = q('[data-shelffilepath]').map(x => x.dataset.shelffilepath);"
+                     " r.human = at(document.querySelector('[data-shelfhuman]'), 'data-shelfhuman'); r.skeleton = at(document.querySelector('[data-shelfskeleton]'), 'data-shelfskeleton'); r.marks = q('[data-shelfmark]').map(x => x.dataset.shelfmark);"
+                     " r.old = q('#pane-catalog #tplviewer, #pane-catalog [data-tplmode], #pane-catalog [data-tplopen]').length; r.text = document.getElementById('pane-catalog').innerText; r.search = location.search;"
+                     " r.bundle = q('[data-shelfbundle] [data-rtstage]').length; r.use = at(document.querySelector('[data-rtuse=all]'), 'href'); r.title = document.getElementById('wtitle').textContent; r.sw = [document.documentElement.scrollWidth, innerWidth];"
+                     " document.body.setAttribute('data-r', JSON.stringify(r)); })();")
+            port = socket.socket(); port.bind(("127.0.0.1", 0)); p_ = port.getsockname()[1]; port.close()
+            web = tempfile.mkdtemp(prefix="j2-shelf-page-")
+            os.symlink(os.path.join(here, "vendor"), os.path.join(web, "vendor"))
+            open(os.path.join(web, "j2_ui.html"), "w", encoding="utf-8").write(ui.replace("</body>", f"<script>setTimeout(() => {{ {steps} }}, 500)</script></body>"))
+            keep_here, keep_run, keep_runs, keep_env = j2_server.HERE, j2_server.RUN, j2.RUNS_DIR, os.environ.get("J2_RUNS_DIR")
+            j2_server.HERE, j2_server.RUN = web, j2.J2Run()
+            srv = j2_server.http.server.ThreadingHTTPServer(("127.0.0.1", p_), j2_server.Handler)
+            threading.Thread(target=srv.serve_forever, daemon=True).start()
+            prof = tempfile.mkdtemp(prefix="j2-shelfprof-")
+
+            def load(path):
+                dom = chrome_dom([chrome, "--headless=new", "--disable-gpu", f"--user-data-dir={prof}", "--no-first-run", "--window-size=1440,900",
+                                  "--virtual-time-budget=30000", "--dump-dom", f"http://127.0.0.1:{p_}{path}"], capture_output=True, text=True, timeout=120).stdout
+                hit = re.search(r'data-r="([^"]*)"', dom)
+                assert hit, ("the page did not finish its steps", path, dom[-300:])
+                return json.loads(htmllib.unescape(hit.group(1)))
+            three = ["Summary", "Agent-readable", "Human-readable"]
+            one_view = lambda r_: len(r_["views"]) == 1 and r_["views"][0][1] == three and r_["tabs"] == ["Artifacts", "Artifact templates"] and r_["old"] == 0 and r_["sw"][0] <= r_["sw"][1]
+            try:
+                j2.RUNS_DIR = os.environ["J2_RUNS_DIR"] = runs      # the server's runs folder and the library's, as one setting gives both
+                a1 = load(f"/library?view=artifacts&run={rid2}")      # Shelf 1: the marked run's artifact is the one shown
+                assert a1["cur"] == "Artifacts" and a1["title"] == "Artifacts" and a1["list"] == [f"R:art|{rid2}/script*run", f"R:art|{rid1}/script"] and a1["on"] == f"art|{rid2}/script", a1["list"]
+                assert one_view(a1) and a1["views"][0][2] == "sum" and a1["marks"] == ["run"] and "Harbor Clinic" in a1["path"], (a1["views"], a1["marks"])
+                assert [m_[0] for m_ in a1["made"]] == ["whole", "rt"] and "no template recorded" in a1["made"][0][1] and a1["made"][1][2] == f"/library?view=templates&run={rid2}&rt={rt.id}", a1["made"]
+                assert "3 of 3 necessary conditions met" not in a1["text"] and "A folder of 3 files" in a1["text"], a1["text"][-400:]
+                a2 = load(f"/library?view=artifacts&open={rid1}/script&tab=human")      # a folder of files: the list of its files (nothing is run)
+                assert one_view(a2) and a2["views"][0][2] == "human" and a2["human"] == "files" and a2["paths"] == first["files"] and "A folder of 3 files" in a2["text"], (a2["human"], a2["paths"])
+                assert "3 of 3 necessary conditions met" in load(f"/library?view=artifacts&open={rid1}/script")["text"]
+                a3 = load(f"/library?view=artifacts&open={rid1}/script&tab=agent")
+                assert one_view(a3) and [f[0] for f in a3["files"]] == ["files.json"] and json.loads(a3["files"][0][1])["folder"] == "script", a3["files"]
+                t1 = load(f"/library?view=templates&run={rid2}")      # Shelf 2: run templates first, then each type with its sections nested
+                heads = [x for x in t1["list"] if x.startswith("H:")]
+                assert t1["cur"] == "Artifact templates" and heads == ["H:rt"] + [f"H:type|{a}" for a in L.artifacts()] and t1["list"][1] == f"R:rt|{rt.id}*used", (heads, t1["list"][:3])
+                at_prd = t1["list"].index("H:type|prd")
+                assert t1["list"][at_prd + 1: at_prd + 1 + len(L.generic_sections("prd"))] == [f"R:sec|prd|{x}" for x in L.generic_sections("prd")], "PRD -> its sections, nested under the type"
+                assert one_view(t1) and t1["views"][0][0] == f"rt/{rt.id}" and t1["marks"] == ["used"] and t1["outs"] == [f"/library?view=artifacts&run={rid2}&open={rid2}/script"], (t1["views"], t1["outs"])
+                assert t1["bundle"] == 1 and t1["use"] == f"/?view=simple&template={rt.id}&workflows=all" and "Northwind" not in t1["text"] and "Harbor" not in t1["text"] and "<site name>: Script" in t1["path"], t1["path"]
+                t2_ = load(f"/library?view=templates&rt={rt.id}&tab=human")
+                assert one_view(t2_) and t2_["skeleton"] == "run-template" and "A folder of files: README.md, copy_files.py, test_copy_files.py; test test_copy_files.py" in t2_["text"] and "Northwind" not in t2_["text"], t2_["text"][-300:]
+                t3 = load("/library?open=prd/problem/generic/v1&tab=human")      # the link the run's Library tab writes still opens that template
+                assert one_view(t3) and t3["cur"] == "Artifact templates" and t3["on"] == "sec|prd|Problem" and t3["path"].replace("→", ">") == "Product requirements > Problem", (t3["on"], t3["path"])
+                assert t3["groups"] == ["generic", "variants"] and t3["items"] == [["prd/problem/generic/v1", ""]] and t3["skeleton"] == "1" and t3["views"][0][2] == "human", (t3["groups"], t3["items"])
+                assert load("/library?view=artifact")["cur"] == "Artifact templates" and load("/library?view=run")["cur"] == "Artifacts", "the older view names open the shelf that took their place"
+                page = (f"Shelf 1 lists the two folder artifacts with {rid2}'s marked, a folder shows the list of its 3 files (Human-readable) and files.json (Agent-readable); Shelf 2 lists the run template, "
+                        f"then {len(L.artifacts())} types with their sections nested; one Summary / Agent-readable / Human-readable view per item")
+                os.environ.pop("J2_LIBRARY_DIR")
+                j2.RUNS_DIR = os.environ["J2_RUNS_DIR"] = saved
+                if any(a["run"] == marked for a in arts):      # the committed library and the saved live run
+                    r5 = load(f"/library?view=templates&run={marked}")
+                    at_prd = r5["list"].index("H:type|prd")
+                    rows5 = r5["list"][at_prd + 1: at_prd + 1 + len(L.generic_sections("prd"))]
+                    assert [x.split("*")[0] for x in rows5] == [f"R:sec|prd|{x}" for x in L.generic_sections("prd")] and all("*" in x for x in rows5), rows5
+                    assert one_view(r5) and r5["on"] == "sec|prd|Problem" and "made" in [i[1] for i in r5["items"]] and r5["items"][0][0] == "prd/problem/generic/v1", (r5["on"], r5["items"])
+                    assert r5["views"][0][0].startswith("prd/problem/") and "made" in r5["marks"] and any(f"open={marked}/prd" in h for h in r5["outs"]), (r5["views"], r5["outs"])
+                    assert "Iron Grove" not in r5["text"] and "Still Point" not in r5["text"] and "<site name> Problem" in r5["text"] and r5["path"].startswith("Product requirements"), r5["path"]
+                    r6 = load(f"/library?view=artifacts&open={marked}/prd")
+                    assert one_view(r6) and r6["made"][0][2] == f"/library?view=templates&open=prd/document/generic/v1" and len(r6["secs"]) == 6 and all(h and h.startswith("/library?view=templates&open=prd/") for _, h in r6["secs"]), (r6["made"], r6["secs"])
+                    assert load(f"/library?view=artifacts&open={marked}/prd&tab=human")["human"] == "markdown" and load(f"/library?view=artifacts&open={marked}/website&tab=human")["human"] == "html"
+                    page += f"; {marked}: PRD -> its 7 sections, its own templates marked with their outputs, no business name on the shelf"
+            finally:
+                srv.shutdown()
+                j2_server.HERE, j2_server.RUN, j2.RUNS_DIR = keep_here, keep_run, keep_runs
+                os.environ.pop("J2_RUNS_DIR", None)
+                if keep_env is not None:
+                    os.environ["J2_RUNS_DIR"] = keep_env
+                shutil.rmtree(web, ignore_errors=True)
+                shutil.rmtree(prof, ignore_errors=True)
+        assert tree(real) == before, "and the page changes nothing in library/"
+    finally:
+        os.environ.pop("J2_LIBRARY_DIR", None)
+        if keep is not None:
+            os.environ["J2_LIBRARY_DIR"] = keep
+        shutil.rmtree(tmp, ignore_errors=True)
+    print(f"sutra library: library -> prototypes/j2/library, {before[1]} files with the same sha through both paths, unchanged after the shelves were read; "
+          f"Shelf 1 shows a folder of files and nests sections; Shelf 2 has {len(keys)} templates under {len(tp['types'])} types, every one opens with three views and "
+          f"holds no business value; find_artifact and find_template give candidates with reasons ({live}); the page: {page}: OK")
+
+
 def auto_reuse():
     """Auto-reuse (J2_AUTO_REUSE=1; implies J2_TEMPLATE_LIBRARY=1 and J2_RUN_TEMPLATES=1), mock runs into a copy of the library.
 
@@ -14358,12 +14613,12 @@ def run_templates_page(lib, tid, dep):
              "  r.names = q('[data-catrow] .agt b').map(x => x.textContent); r.subs = q('[data-catrow] .agt span').map(x => x.textContent); r.badges = q('[data-catrow] .libbadge').map(x => x.textContent);"
              f"  document.querySelector('[data-catrow=\"rt|{tid}\"]').click(); await wait(1500);"
              "  r.head = (document.querySelector('[data-rtname]') || {}).textContent || ''; r.stages = q('[data-rtstage]').map(x => [x.dataset.rtstage, x.querySelector('h5').textContent, x.querySelectorAll('[data-rtwf]').length]);"
-             "  r.cols = q('[data-rtstage]')[0] ? [...q('[data-rtstage]')[0].querySelectorAll('th')].map(x => x.textContent) : []; r.links = q('[data-rtwf] [data-tplopen]').length;"
+             "  r.cols = q('[data-rtstage]')[0] ? [...q('[data-rtstage]')[0].querySelectorAll('th')].map(x => x.textContent) : []; r.links = q('[data-rtwf] [data-shelflink=template]').length;"
              "  r.whole = document.querySelector('[data-rtuse=all]').getAttribute('href'); r.selOff = document.querySelector('[data-rtuse=sel]').getAttribute('aria-disabled');"
              f"  const box = document.querySelector('[data-rtpick=\"{dep.key}\"]'); box.checked = true; box.dispatchEvent(new Event('change', {{bubbles: true}})); await wait(300);"
              "  r.sel = document.querySelector('[data-rtuse=sel]').getAttribute('href'); r.auto = q('tr.rtauto').map(x => x.dataset.rtwf); r.note = document.querySelector('[data-rtnote]').textContent;"
              "  r.autoBox = q('tr.rtauto input').map(x => [x.checked, x.disabled]);"
-             "  q('[data-rtwf] [data-tplopen]')[0].click(); await wait(1500); r.viewer = (document.querySelector('#tplviewer h3') || {}).textContent || '';"
+             "  r.viewer = q('[data-rtwf] [data-shelflink=template]')[0].getAttribute('href');"
              "  r.sw = [document.documentElement.scrollWidth, innerWidth];"
              " } else {"
              "  r.chip = (document.getElementById('srt') || {}).textContent || ''; r.hidden = document.getElementById('srt').hidden; r.keys = document.getElementById('srt').dataset.rtkeys || '';"
@@ -14387,18 +14642,21 @@ def run_templates_page(lib, tid, dep):
         return json.loads(htmllib.unescape(hit.group(1)))
     try:
         r = load("/library")
-        assert r["tabs"][0] == "Run templates" and r["cur"] == "Run templates", r["tabs"]
+        assert r["tabs"] == ["Artifacts", "Artifact templates"] and r["cur"] == "Artifact templates", r["tabs"]
         rows = L.run_template_list()
-        assert r["names"] == [x["name"] for x in rows] and len(r["badges"]) == len(rows) and set(r["badges"]) == {"live", "mock"}, r["names"]
-        assert all(f"{x['workflows']} workflow" in s_ and x["business_type"] in s_ for x, s_ in zip(rows, r["subs"])), r["subs"]
-        assert r["head"] == rt.name and [s_[0] for s_ in r["stages"]] == rt.stages, (r["head"], r["stages"])
+        shown = L.shelf_templates()["run_templates"]      # the run templates come first on the templates shelf, their names with a slot in place of the business
+        assert r["names"][:len(rows)] == [x["name"] for x in shown] and [x["id"] for x in shown] == [x["id"] for x in rows] and len(r["badges"]) == len(rows) and set(r["badges"]) == {"live", "mock"}, r["names"]
+        assert all(f"{x['workflows']} workflow" in s_ for x, s_ in zip(rows, r["subs"])) and not any(x["name"].split(":")[0] in " ".join(r["names"]) for x in rows), r["subs"]
+        head = next(x["name"] for x in shown if x["id"] == tid)
+        assert r["head"].startswith(head) and "<" in head and [s_[0] for s_ in r["stages"]] == rt.stages, (r["head"], r["stages"])
         assert [s_[2] for s_ in r["stages"]] == [sum(1 for w in rt.workflows if w.stage == k) for k in rt.stages] and r["stages"][0][1].startswith("PRD"), r["stages"]
         assert r["cols"][1:] == ["Key", "Workflow", "Section", "Section template", "Depends on"] and r["links"] == len(rt.workflows), (r["cols"], r["links"])
         want = lambda keys: f"/?view=simple&template={tid}&workflows={urllib.parse.quote(keys, safe='')}"
         chosen, added = L.select_workflows(rt, [dep.key])
         assert r["whole"] == want("all") and r["selOff"] == "true" and r["sel"] == want(",".join(chosen)), (r["whole"], r["sel"])
         assert r["auto"] == added and all(c and d for c, d in r["autoBox"]) and added[0] in r["note"] and "depends on" in r["note"], (r["auto"], r["note"])
-        assert r["viewer"].startswith(rt.workflows[0].section_template.rpartition("@")[0]), r["viewer"]
+        ref0 = L.section_template_ref(rt.workflows[0])      # a workflow's section template is a link to that template on the same shelf
+        assert r["viewer"] == f"/library?view=templates&open={ref0['artifact']}/{ref0['section_slug']}/{ref0['slug']}/v{ref0['version']}", r["viewer"]
         assert r["sw"][0] <= r["sw"][1], ("no horizontal scroll", r["sw"])
         for href, n in ((r["whole"], len(rt.workflows)), (r["sel"], len(chosen))):
             b = load(href)
@@ -14670,6 +14928,9 @@ if __name__ == "__main__":
         library_cleanup()
         folder_reuse()
         sys.exit(0)
+    if "--sutra-library" in sys.argv:         # python3 j2_flow_test.py --fast [--browser] --sutra-library: the two shelves only
+        sutra_library()
+        sys.exit(0)
     if "--reuse-display" in sys.argv:         # python3 j2_flow_test.py --fast [--browser] --reuse-display: the reuse display only
         reuse_display()
         sys.exit(0)
@@ -14820,6 +15081,7 @@ if __name__ == "__main__":
             plain_unchanged(AUTO_REUSE_BASE)
             library_cleanup()
             folder_reuse()
+            sutra_library()
         board_disabled()
         board_functions_off()
         os.environ["J2_BOARD"] = "1"
