@@ -8407,10 +8407,10 @@ def forms_and_new_types():
     builtin = open(j2_types.TYPES_PATH, encoding="utf-8").read()
     try:
         cp = j2_types.create_problems
-        assert cp("", "X", ["A"], "x.md") and cp("prd", "X", ["A"], "x.md") == ["type prd already exists"]
-        assert cp("policy", "Policy", [], "policy.md") == ["it needs at least one section"]
-        assert cp("policy", "Policy", ["A"], "policy.html") == ["file 'policy.html' must be a .md file name"]
-        assert cp("policy", "", ["A", "A"], "policy.md") == ["it needs a label", "its sections must be unique, named, and not 'Document'"]
+        assert cp("", "X", ["A"], "x.md", form="document") and cp("prd", "X", ["A"], "x.md", form="document") == ["type prd already exists"]
+        assert cp("policy", "Policy", [], "policy.md", form="document") == ["it needs at least one section"]
+        assert cp("policy", "Policy", ["A"], "policy.html", form="document") == ["file 'policy.html' must be a .md file name"]
+        assert cp("policy", "", ["A", "A"], "policy.md", form="document") == ["it needs a label", "its sections must be unique, named, and not 'Document'"]
         os.environ["J2_GENERIC"] = "1"
         briefs = (("hiring_policy", "Hiring policy", ["Purpose", "Roles and approvals", "Process", "Fair hiring rules"],
                    "Write a hiring policy for Acme Labs, a small startup of twelve people in Pune. It covers who approves a "
@@ -8424,7 +8424,7 @@ def forms_and_new_types():
             for rnd in (1, 2):      # the first run makes the type; the second names it and reuses it
                 run = j2.J2Run()
                 run.budget = 300
-                run.mock_deliverables = [{"type": name, "why": "no type fits", "new": {"label": label, "sections": secs,
+                run.mock_deliverables = [{"type": name, "why": "no type fits", "new": {"label": label, "form": "document", "sections": secs,
                                                                                     "file": f"{name}.md", "recommended_practice": practice}}] if rnd == 1 else [name]
                 say(run, brief)
                 made = [m["text"] for m in run.chat if m["text"].startswith(f"New type {name}")]
@@ -8624,7 +8624,7 @@ def local_types():
     assert ign == ["artifacts/types.local.json", "library/types/x/generic.json"], ign
     with _TypeStore() as T:
         builtin, before = open(T.TYPES_PATH, encoding="utf-8").read(), T.names()
-        e = T.create("staff_guide", "Staff guide", ["Purpose", "Rules"], practice=True)
+        e = T.create("staff_guide", "Staff guide", ["Purpose", "Rules"], practice=True, form="document")
         assert open(T.TYPES_PATH, encoding="utf-8").read() == builtin and not os.path.exists(os.path.join(T.TEMPLATES_DIR, "staff_guide"))
         assert e["template"] == "library/types/staff_guide/generic.json" and e["recommended_practice"] is True
         assert json.load(open(T.LOCAL_TYPES_PATH, encoding="utf-8"))["types"] == [e]
@@ -8633,9 +8633,10 @@ def local_types():
         assert T.load("staff_guide")["file"] == "staff_guide.md" and T.info("staff_guide")["label"] == "Staff guide"
         assert "staff_guide" in [t["name"] for t in R.type_list()] and "staff_guide" in {t["name"] for t in A.load_types()["types"]}
         # a built-in's name: refused when made, and refused when found in the local store
-        assert T.create_problems("prd", "X", ["A"], "x.md") == ["type prd already exists"]
-        assert T.create_problems("staff_guide", "X", ["A"], "x.md") == ["type staff_guide already exists"]
-        assert T.create_problems("plan_x", "X", ["A"], "x.md", practice="yes") == ["recommended_practice 'yes' must be true or false"]
+        assert T.create_problems("prd", "X", ["A"], "x.md", form="document") == ["type prd already exists"]
+        assert T.create_problems("staff_guide", "X", ["A"], "x.md", form="document") == ["type staff_guide already exists"]
+        assert T.create_problems("plan_x", "X", ["A"], "x.md", practice="yes", form="document") == ["recommended_practice 'yes' must be true or false"]
+        assert T.create_problems("plan_x", "X", ["A"], "x.md")[0].startswith("it needs its form: one of FORMS"), "code never picks a form"
         T._write_local(T._read_local() + [{**e, "name": "prd", "label": "Not the PRD"}])
         assert T.refused() == ["local type prd refused: types.json already has a type of that name (rename it in types.local.json)"]
         assert T.names().count("prd") == 1 and T.info("prd")["label"] != "Not the PRD"
@@ -8669,7 +8670,7 @@ def recommended_practice():
     fact, while a number, name or law in it, or outside it, still is. A strict type (business_report, prd, website)
     keeps its prompts as they were, and a "Recommended practice:" line is an invented fact there."""
     with _TypeStore() as T:
-        T.create("staff_policy", "Staff policy", ["Purpose", "Rules"], practice=True)
+        T.create("staff_policy", "Staff policy", ["Purpose", "Rules"], practice=True, form="document")
         rule = json.load(open(T.TYPES_PATH, encoding="utf-8"))["forms"]["document"]["practice_rule"]
         pol, rep = j2.output_def("staff_policy"), j2.output_def("business_report")
         assert pol["recommended_practice"] and pol["practice"] == rule and rule in pol["builder"] and rule in dict(pol["rubric"])["D-3"]
@@ -8788,7 +8789,7 @@ def section_checks():
         "a single-atom re-check adds no owned-section checks"
     # 2. the flow: refused with the reason, retried, both sections written
     with _TypeStore() as T:
-        T.create("hiring_policy", "Hiring policy", HP_SECTIONS, practice=True)
+        T.create("hiring_policy", "Hiring policy", HP_SECTIONS, practice=True, form="document")
         drop, sent = HP_PROPOSAL[0]["sections"][1], []
 
         def builder(run, fn, raw):
@@ -8820,7 +8821,7 @@ def doc_sections_replay():
     for once in the same cycle."""
     import copy
     with _TypeStore() as T:
-        T.create("hiring_policy", "Hiring policy", HP_SECTIONS, practice=True)
+        T.create("hiring_policy", "Hiring policy", HP_SECTIONS, practice=True, form="document")
         done = lambda run: open(os.path.join(run.dir, "hiring_policy.md"), encoding="utf-8").read()
         refusals = lambda run: [e for e in run.events if e["type"] in ("refused", "role_refusal")
                                  and not e["detail"].startswith("charter:")]      # the mock charter's own refusal
@@ -8857,7 +8858,7 @@ def kind_and_sections():
     as rejected by the validator, not unfunded; heading checks name each section exactly."""
     import copy
     with _TypeStore() as T:
-        T.create("hiring_policy", "Hiring policy", HP_SECTIONS, practice=True)
+        T.create("hiring_policy", "Hiring policy", HP_SECTIONS, practice=True, form="document")
         run = j2.J2Run()
         run.set_output("hiring_policy")
         run.budget = 400
@@ -8888,7 +8889,7 @@ def kind_and_sections():
     # missing kind: one retry, then dropped; its sections are "rejected by the validator: no kind" in the plan gap and
     # in the decision list, never "unfunded"
     with _TypeStore() as T:
-        T.create("hiring_policy", "Hiring policy", HP_SECTIONS, practice=True)
+        T.create("hiring_policy", "Hiring policy", HP_SECTIONS, practice=True, form="document")
         nokind = copy.deepcopy(HP_PROPOSAL)
         del nokind[3]["kind"]
         seen = {"a": 0}
@@ -8974,7 +8975,7 @@ def new_type_sections():
         secs = ["Purpose", "Visiting hours", "House rules"]
         run = j2.J2Run()
         run.mock_deliverables = [{"type": "visit_rules", "why": "no type fits", "new": {
-            "label": "Visit rules", "file": "visit_rules.md", "sections": secs}}]
+            "label": "Visit rules", "form": "document", "file": "visit_rules.md", "sections": secs}}]
         assert run._deliverables(["Write the visit rules for the Lotus care home."]) == ["visit_rules"]
         shutil.rmtree(os.path.join(T.LOCAL_LIBRARY_DIR, "visit_rules"))      # no template: only the plan's declaration
         T.template.cache_clear()
@@ -9003,7 +9004,7 @@ def run_list_local_type():
     the icon from the form."""
     import j2_server
     with _TypeStore() as T:
-        T.create("staff_guide", "Staff guide", ["Purpose", "Rules"])
+        T.create("staff_guide", "Staff guide", ["Purpose", "Rules"], form="document")
         runs = tempfile.mkdtemp(prefix="j2-runlist-")
         keep = j2.RUNS_DIR
         try:
@@ -9038,7 +9039,7 @@ def deleted_local_type():
         try:
             run = j2.J2Run()
             run.budget = 300
-            run.mock_deliverables = [{"type": "visit_rules", "why": "no type fits", "new": {"label": "Visit rules", "file": "visit_rules.md",
+            run.mock_deliverables = [{"type": "visit_rules", "why": "no type fits", "new": {"label": "Visit rules", "form": "document", "file": "visit_rules.md",
                                                                                          "sections": ["Who may visit", "Hours"]}}]
             say(run, "Write the visit rules for Green Leaf, a plant nursery of six people in Pune. They cover who may visit the "
                      "greenhouse, the opening hours (9am to 5pm every day except Monday) and what visitors may not touch.")
@@ -13465,7 +13466,7 @@ def new_type_models():
     j2_types.template.cache_clear()
     j2._data_type.cache_clear()
     try:
-        j2_types.create("hiring_policy", "Hiring policy", ["Purpose", "Process"])
+        j2_types.create("hiring_policy", "Hiring policy", ["Purpose", "Process"], form="document")
         assert "hiring_policy" in L.artifacts() and L.generic_problems() == [], L.generic_problems()
         raw = json.load(open(j2_types.template_path("hiring_policy"), encoding="utf-8"))
         assert all(t["fields"] and t["rules"] and t["render"] and t["conditions"] for t in raw["templates"]), raw
@@ -13481,7 +13482,7 @@ def new_type_models():
         j2_types.template_for = lambda name, label, secs: {**keep_for(name, label, secs), "templates": [
             {**t, "rules": [{"rule": "not_empty", "path": "body", "name": "x", "from": "C1"}]} for t in keep_for(name, label, secs)["templates"]]}
         try:
-            j2_types.create("memo", "Memo", ["Summary"])
+            j2_types.create("memo", "Memo", ["Summary"], form="document")
             raise AssertionError("a template that doesn't check was kept")
         except ValueError as e:
             assert "'body' is not a field of the template" in str(e), str(e)

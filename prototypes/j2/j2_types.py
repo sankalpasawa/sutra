@@ -24,7 +24,6 @@ TEXTS = {"intake": "intake", "charter_format": "charter_fmt", "atom_rules": "ato
 
 
 DOCUMENT = "Document"      # generic.json's document-level template, not a section
-DOCUMENT_FORM = "document"      # the form a new type gets when its plan names none (the one J2 made before forms)
 TEMPLATES_DIR = os.path.join(HERE, "templates")
 # Types a run makes (j2_types.create) are local and git-ignored: their entries and their templates; --promote moves one
 # into types.json and templates/ for a pull request.
@@ -421,11 +420,12 @@ def template_for(name, label, secs):
 
 
 def create_problems(name, label, secs, file, path=None, practice=False, form=None):
-    """What a proposed new type lacks ([] when it can be made): a name, a form from types.json (document when none
-    is given), for a form with a section template a section and a .md file name, and recommended_practice true or
-    false when given."""
-    out, form = [], form or DOCUMENT_FORM
-    fs = forms(path)
+    """What a proposed new type lacks ([] when it can be made): a name, its form from types.json (the planner names
+    it; code never picks one), for a form with a section template a section and a .md file name, and
+    recommended_practice true or false when given."""
+    out, fs = [], forms(path)
+    if not form:
+        return [f"it needs its form: one of FORMS ({', '.join(fs)})"]
     if form not in fs:
         return [f"form {form!r} is not one of {', '.join(fs)}"]
     if not NAME_RE.match(str(name or "")):
@@ -466,7 +466,6 @@ def create(name, label, secs, file=None, path=None, practice=None, form=None):
     template in the local library (library/types/<name>/generic.json), so the next run reuses it; --promote moves it
     into types.json. practice: the type's recommended_practice (kept only when true). ValueError with the reasons
     when it can't be made."""
-    form = form or DOCUMENT_FORM
     bad = create_problems(name, label, secs, file or f"{name}.md", path, practice, form)
     if bad:
         raise ValueError(f"new type {name}: " + "; ".join(bad))
