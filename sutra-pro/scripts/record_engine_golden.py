@@ -44,7 +44,7 @@ import time
 from pathlib import Path
 
 REPO = Path(__file__).resolve().parent.parent
-BASELINE = "025e265c594564f47a2365874cd5a5cc5d0d20a6"       # the sutra commit whose `prototypes/j2` the goldens are recorded from (sync 4, D136)
+BASELINE = "1d537295eb11cb034956fa9d8a4026eaa1e3f44e"       # the sutra commit whose `prototypes/j2` the goldens are recorded from (sync 5, D160: cut-off/2026-11-12)
 OUT_DIR = REPO / "tests" / "engine" / "golden"
 SCHEMA = "prompts-golden/1"
 FILE = "prompts_{}.json"
