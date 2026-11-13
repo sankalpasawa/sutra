@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""The difference of record between `prototypes/j2` and Sutra Pro as committed (J2 sync 4, lane V0).
+"""The difference of record between `prototypes/j2` and Sutra Pro as committed (J2 sync 4, lane V0; sync 5, D161).
 
     scripts/py scripts/j2_diff_of_record.py                           # print the report; exit 0 (2 when the arguments are wrong)
     scripts/py scripts/j2_diff_of_record.py --check                   # the same report; exit 0 only when nothing is left to decide or take
@@ -150,6 +150,15 @@ _DOC_PDF_AT = "engine design 3.2 (docs/*.pdf)"
 _DOC_PICTURE = ("the Graphviz source and the SVG render of realization-axis.md. The vendored realization-axis.md names the .dot "
                 "file as its picture, so that reference is dead in Sutra Pro.")
 _DOC_PICTURE_AT = "none: engine design 3.2 lists html, png, jpg and pdf only (D91's 'explainer pages' may mean these too)"
+_README_TPL = ("the README of J2's `templates/` folder (how to add a type): a note for J2's developers, read by no code. The folder itself "
+               "is vendored as a whole tree (sync 5, D161), so a type J2 adds arrives with no change to the script.")
+_TOOLS = ("J2's own command-line checkers of its deliverables and document plans (`tools/`): developer tools that run J2's checks on "
+          "a saved run; no J2 module imports them and nothing in Sutra Pro calls them.")
+_FIXTURE = ("the saved Sudoku run (N6 'no invented content') that J2's flow test replays: test data of J2's own script. The legacy copy "
+            "in tests/engine/legacy/ reads it from SUTRA_J2_CHECKOUT, an extraction of this folder, and prints a skip reason without one.")
+_FOLLOWUPS = ("J2's working note of the word-based decisions still to review (`docs/word-matching-followups.md`): a to-do list of J2's "
+              "maintainers, not an engine file; the 13 items are out of scope of sync 5.")
+_SYNC5_AT = "docs/design/j2-sync-5.md D161 (named exclusions)"
 
 EXCLUDED: tuple[Exclusion, ...] = (
     Exclusion("studio.py", "older studio", _STUDIO, _STUDIO_AT),
@@ -183,6 +192,10 @@ EXCLUDED: tuple[Exclusion, ...] = (
     Exclusion("docs/*.pdf", "design docs (PDF)", _DOC_PDF, _DOC_PDF_AT),
     Exclusion("docs/*.svg", "diagram picture", _DOC_PICTURE, _DOC_PICTURE_AT),
     Exclusion("docs/*.dot", "diagram picture", _DOC_PICTURE, _DOC_PICTURE_AT),
+    Exclusion("templates/README.md", "J2 developer notes", _README_TPL, _SYNC5_AT),
+    Exclusion("tools/*", "J2 developer tools", _TOOLS, _SYNC5_AT),
+    Exclusion("fixtures/n6-sudoku-*", "J2 test fixtures", _FIXTURE, _SYNC5_AT),
+    Exclusion("docs/word-matching-followups.md", "J2 developer notes", _FOLLOWUPS, _SYNC5_AT),
 )
 
 
