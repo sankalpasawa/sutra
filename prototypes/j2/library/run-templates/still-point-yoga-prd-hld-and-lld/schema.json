@@ -130,6 +130,14 @@
       "title": "Facts Slots",
       "type": "array"
     },
+    "outputs": {
+      "additionalProperties": {
+        "additionalProperties": true,
+        "type": "object"
+      },
+      "title": "Outputs",
+      "type": "object"
+    },
     "made_by": {
       "additionalProperties": true,
       "title": "Made By",
