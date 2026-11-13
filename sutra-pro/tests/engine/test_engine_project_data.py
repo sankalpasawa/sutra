@@ -63,6 +63,7 @@ def test_the_type_entry_is_json_safe_names_its_owner_and_is_not_a_planner_choice
     assert json.loads(json.dumps(entry)) == entry                # no callable in it
     assert (entry["kind"], entry["form"], entry["deliverable"], entry["host"]) == ("type", "document", False, "project")
     assert entry["triggers"] == [] and entry["groups"] == [] and entry["depends_on"] == [] and entry["export"] is None
+    assert entry["mock"] == {}, "the document form's mock names must not replace the capability's own mocks (extras)"
     assert entry["cost"] == {"item_parts": [{"part": "doc_section", "words": ""}]}
     assert entry["file"] == "project.md" and entry["check_types"] == list(CHECK_TYPES)
     assert [r["id"] for r in entry["rubric"]] == ["PJ-1", "PJ-2", "PJ-3", "PJ-4", "PJ-5"]

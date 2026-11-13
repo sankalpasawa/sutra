@@ -14,7 +14,7 @@ from sutra_app.engine.api import mount
 from sutra_app.engine.capabilities import EngineContext, Capability, register
 from sutra_app.connectors.workdir import WorkFolder
 from sutra_app.engine.capabilities import project as project_module
-from sutra_app.engine.capabilities.project import (CONDITIONS_FILE, PROJECT_BUILDER, PROJECT_INTAKE, PROJECT_RUBRIC, PROJECT_SECTIONS,
+from sutra_app.engine.capabilities.project import (CHECK_TYPES, CONDITIONS_FILE, DATA, PROJECT_BUILDER, PROJECT_INTAKE, PROJECT_RUBRIC, PROJECT_SECTIONS,
                                                    ProjectCapability, mock_project_charter, mock_project_section, project_spec)
 from sutra_app.engine.spec import EngineSettings
 
@@ -55,38 +55,55 @@ def go(run_dir, port_cls=TaggingPort):
     return running, seen["port"]
 
 
+def running_systems(run_dir):
+    """The system text of every call the run made (calls.jsonl)."""
+    return [json.loads(line)["system"] for line in (run_dir / "calls.jsonl").read_text(encoding="utf-8").splitlines() if line.strip()]
+
+
 def headings(text):
     return re.findall(r"(?m)^## (.+)$", text)
 
 
 # ---- the output is registered through the registry ---------------------------------------------------------------------------
-def test_the_registry_adds_the_project_output_and_leaves_the_others_alone(j2):
-    before = {k: dict(v) for k, v in j2.OUTPUTS.items()}
+def test_the_registry_adds_the_project_type_and_leaves_the_others_alone(j2):
+    before = {n: j2.output_def(n) for n in j2.j2_types.names() if n != "project"}
     register(j2)
-    assert set(j2.OUTPUTS) == set(before) | {"project"}
-    assert {k: dict(j2.OUTPUTS[k]) for k in before} == before
-    out = j2.OUTPUTS["project"]
+    names = j2.j2_types.names()
+    assert names.count("project") == 1 and [n for n in names if n != "project"] == list(before)
+    assert {n: j2.output_def(n) for n in before} == before
+    out = j2.output_def("project")
     assert (out["label"], out["noun"], out["file"], out["export"]) == ("Project work", "report", "project.md", None)
-    assert list(out["sections"]) == SECTIONS and out["rates"] == "rates_prd" and out["check_types"] == j2.DOC_CHECK_TYPES
-    assert out["single"] is True and out["workspace"] == "edit" and out["capability"] == "project"
-    assert out["charter_fmt"] is j2.PRD_CHARTER_FMT and out["builder"] == PROJECT_BUILDER and not out["builder"].endswith(".md")
+    assert list(out["sections"]) == SECTIONS and out["rates"] == "rates_prd" and out["check_types"] == tuple(CHECK_TYPES)
+    assert out["single"] is True and out["workspace"] == "edit" and out["deliver"] is True
+    assert out["charter_fmt"] == (DATA / "project.charter.txt").read_text(encoding="utf-8")[:-1]
+    assert out["intake"] == PROJECT_INTAKE and out["builder"] == PROJECT_BUILDER
     assert callable(out["mock_charter"]) and callable(out["mock_section"]) and callable(out["mock_atom"])
+    assert out["mock_charter"] is mock_project_charter, "the capability's own mock, not the document form's"
+
+
+def test_the_project_type_is_no_planners_choice_and_no_template_librarys_artifact(j2):
+    register(j2)
+    entry = next(e for e in j2.j2_types.entries() if e.get("name") == "project")
+    assert entry["deliverable"] is False and entry["host"] == "project" and "project" not in j2.j2_types.templated()
+    assert json.loads(json.dumps(entry)) == entry, "no callable in an entry that a route may dump"
+    for kind in j2.j2_types.names():
+        assert j2.j2_types.info(kind)["name"] == kind
 
 
 def test_no_other_output_has_single_so_p14_changes_nothing_for_them(j2):
     register(j2)
-    assert [k for k, v in j2.OUTPUTS.items() if v.get("single")] == ["project"]
+    assert [k for k in j2.j2_types.names() if j2.output_def(k).get("single")] == ["project"]
 
 
 def test_the_conditions_are_the_capabilitys_own_file_outside_the_vendored_folder(j2):
     register(j2)
-    conds = j2.load_conditions(j2.OUTPUTS["project"]["conditions"])
+    conds = j2.load_conditions(j2.output_def("project")["conditions"])
     assert [(c["id"], c["check"], c.get("severity")) for c in conds] == [
         ("PJ1", "sections-present", None), ("PJ2", "nothing-to-be-confirmed", None), ("PJ3", "facts-present-all", "warn")]
-    assert j2.OUTPUTS["project"]["conditions"] == CONDITIONS_FILE and "/capabilities/data/" in CONDITIONS_FILE.replace("\\", "/")
+    assert j2.output_def("project")["conditions"] == CONDITIONS_FILE and "/capabilities/data/" in CONDITIONS_FILE.replace("\\", "/")
     import os
     assert os.path.isabs(CONDITIONS_FILE)
-    assert sorted(p.name for p in (__import__("pathlib").Path(j2.CONDITIONS_DIR)).iterdir()) == ["hld.json", "lld.json", "prd.json", "website.json"]
+    assert "project.json" not in sorted(p.name for p in (__import__("pathlib").Path(j2.j2_types.CONDITIONS_DIR)).iterdir())
 
 
 def test_the_rubric_has_the_five_items_of_the_design():
@@ -95,7 +112,7 @@ def test_the_rubric_has_the_five_items_of_the_design():
 
 
 def test_the_atom_rules_keep_the_prd_wording_without_ids_and_say_report(j2):
-    rules = project_spec(j2).atom_rules
+    rules = project_module._data("project.atom_rules.md")
     assert "ids-unique" not in rules and "ids (target" not in rules and "R1" not in rules and "PRD" not in rules
     assert "heading-present" in rules and "section-not-empty" in rules and "facts-present" in rules
 
@@ -172,10 +189,10 @@ def test_named_documents_in_the_brief_do_not_flip_a_project_run_into_a_prd_chain
     assert summary["output_type"] == "project" and "design_documents" not in summary
 
 
-def test_the_third_section_avoids_the_words_j2s_validator_refuses_in_a_workflow_name_or_a_done_when_item(j2):
-    """The design says Verification; J2's `CHECK_WORK` and `NOT_CHECKABLE` refuse that word (see PROJECT_SECTIONS), so the section is Confirmation."""
+def test_the_third_section_avoids_the_words_j2s_validator_refuses_in_a_done_when_item(j2):
+    """The design says Verification; J2's `NOT_CHECKABLE` refuses that word in a done-when item (see PROJECT_SECTIONS), so the section is Confirmation."""
     for section in PROJECT_SECTIONS:
-        assert not j2.J2Run.CHECK_WORK.search(f"Write {section}") and not j2.J2Run.NOT_CHECKABLE.search(f"The {section} section is written")
+        assert not j2.J2Run.NOT_CHECKABLE.search(f"The {section} section is written")
     assert "Verification" not in PROJECT_SECTIONS
 
 
@@ -188,8 +205,7 @@ def test_with_artifact_schema_and_the_template_library_on_a_project_run_still_wo
     assert trace(run_dir, "output.selected")[0]
     assert events(run_dir)[-1]["status"] in ("done", "done_with_open_items")
     assert not list(run_dir.glob("site/*.json")), "no artifact-schema section files: that machinery is off for a project run"
-    built = json.loads((run_dir / "project.json").read_text())     # the finish step's agent-readable form of project.md (D143), not J2's artifact-schema data
-    assert built["schema"] == "agent-views/1" and built["model"] == "GenericGuide" and built["valid"] is True
+    assert not (run_dir / "project.json").exists(), "J2 sync 5 treats every document type alike: no artifact-schema data, so no project.json guide"
 
 
 def test_other_outputs_keep_the_flags_the_owner_turned_on(j2, make_run_dir, data_dir):
@@ -202,11 +218,11 @@ def test_other_outputs_keep_the_flags_the_owner_turned_on(j2, make_run_dir, data
     running.wait(60)
     answerer.stop()
     settings = json.loads((run_dir / "settings.json").read_text())
-    assert settings["output"] == "website" and settings["artifact_schema"] is True and settings["template_library"] is True
+    assert settings["output"] == "auto" and settings["artifact_schema"] is True and settings["template_library"] is True
 
 
 # ---- selection, end to end in the host ---------------------------------------------------------------------------------------
-def test_a_florist_site_is_a_website_run_with_no_line_in_the_chat(j2, make_run_dir):
+def test_a_florist_site_is_left_to_the_planner_with_no_line_in_the_chat(j2, make_run_dir):
     run_dir = make_run_dir(user_text="build a florist site", settings=QUIET)
     running = Running(run_dir, "--mock")
     from test_engine_host import Answerer, VAGUE
@@ -214,20 +230,21 @@ def test_a_florist_site_is_a_website_run_with_no_line_in_the_chat(j2, make_run_d
     assert running.wait(60) == 0
     answerer.stop()
     record = json.loads((run_dir / "output.json").read_text())
-    assert (record["output"], record["rule"], record["choice"]) == ("website", "deliver", "auto")
+    assert (record["output"], record["rule"], record["choice"], record["reason"]) == (None, "planner", "auto", "the team's planner chooses")
     assert not [m for m in chat(run_dir) if "project work" in m["text"]]
-    assert json.loads((run_dir / "settings.json").read_text())["output"] == "website"
+    assert json.loads((run_dir / "settings.json").read_text())["output"] == "auto"
+    assert trace(run_dir, "output.selected")[0]["data"]["output"] is None
 
 
-def test_a_team_with_no_folder_and_no_project_words_gets_exactly_what_it_always_got(j2, make_run_dir):
+def test_a_team_with_no_folder_and_no_project_words_gets_a_page_the_planner_chose(j2, make_run_dir):
     run_dir = make_run_dir(user_text="a website for my cafe", settings=QUIET)
     running = Running(run_dir, "--mock")
     from test_engine_host import Answerer, VAGUE
     answerer = Answerer(run_dir, VAGUE[1:])
     assert running.wait(60) == 0
     answerer.stop()
-    assert json.loads((run_dir / "output.json").read_text())["rule"] == "deliver"
-    assert (run_dir / "site" / "index.html").exists()
+    assert json.loads((run_dir / "output.json").read_text())["rule"] == "planner"
+    assert (run_dir / "site" / "index.html").exists(), "J2's planner chose the page type"
     assert not [m for m in chat(run_dir) if m["text"].startswith(("Working on this as", "Treating this as"))]
 
 
@@ -328,7 +345,7 @@ def test_the_project_addenda_reach_identity_adaptation_and_audit_only_in_a_proje
     assert builders and all("Workflow agent for one section of a project work report" in s for s in builders if "Reply format" in s)
 
 
-def test_a_website_run_has_no_project_text_in_any_prompt(j2, make_run_dir):
+def test_a_run_the_planner_chose_has_no_project_text_in_any_prompt(j2, make_run_dir):
     run_dir = make_run_dir(user_text="build a florist site for Petal and Stem in Jaipur with bouquets, same-day delivery, wedding flowers, "
                                      "a contact form and opening hours, warm and simple, working well on phones", settings=QUIET)
     running = Running(run_dir, "--mock", make_port=make_port_of(TaggingPort))
@@ -336,7 +353,8 @@ def test_a_website_run_has_no_project_text_in_any_prompt(j2, make_run_dir):
     answerer = Answerer(run_dir, VAGUE[1:])
     running.wait(60)
     answerer.stop()
-    assert json.loads((run_dir / "output.json").read_text())["output"] == "website"
+    assert json.loads((run_dir / "output.json").read_text())["output"] is None
+    assert not [s for s in running_systems(run_dir) if "## Project work" in s]
 
 
 # ---- honest capability text (D135): what the owner allowed reaches the charter and the team's own words ---------------------------------------------
@@ -536,8 +554,8 @@ def test_refs_names_the_project_conditions_and_rubric(api):
     assert {"W1", "P1"} <= set(got["conditions"]) | {"W1", "P1"}
 
 
-def test_the_start_pages_output_command_accepts_auto_and_project_and_nothing_else(api, fake_services):
-    for kind, expect in (("auto", "auto"), ("project", "project"), ("prd", "prd"), ("pdf", "website"), ("", "website")):
+def test_the_start_pages_output_command_accepts_auto_and_a_type_of_the_data_and_pins_nothing_else(api, fake_services):
+    for kind, expect in (("auto", "auto"), ("project", "project"), ("prd", "prd"), ("pdf", None), ("", None)):
         got = api.post("/api/output?dept=web", json={"type": kind}, headers={"X-Sutra-Token": "fake-token-fake-token-0123"})
         assert got.status_code == 200 and got.json() == {"ok": True, "output": expect}, (kind, got.text)
 
@@ -560,15 +578,15 @@ def test_a_project_runs_report_is_a_row_of_the_documents_group_with_the_summary_
     go(run_dir)
     ref = register_run(fake_services, run_dir)
     body, rows = documents_of(api, ref)
-    assert [r["id"] for r in rows] == ["project"]
+    assert [r["id"] for r in rows] == ["project"], "J2 lists project.md itself; the capability's row is the fallback and is never a second one (D164)"
     row = rows[0]
     assert (row["kind"], row["name"], row["file"], row["doc_file"], row["nodes"], row["ok"]) == \
         ("document", "Project work report", "project.md", "project.md", [], True), "a report is not a Map node: nothing links to it"
     assert row["views"] == {"summary": True,
-                            "agent": {"format": "json", "file": "project.json", "schema": "agent-views/1", "model": "GenericGuide", "valid": True},
-                            "human": {"format": "markdown", "file": "project.md"}}, "the finish step wrote project.json beside the report"
+                            "agent": {"format": "text", "file": "project.md", "schema": None, "model": None, "valid": None},
+                            "human": {"format": "markdown", "file": "project.md"}}, "no artifact-schema data: the agent tab reads the markdown"
     assert body["documents"] == {"project": {"sections": {}, "file": "project.md", "kind": "document"}}
-    for name, start in (("project.md", "# The project"), ("project.json", "{")):
+    for name, start in (("project.md", "# The project"),):
         got = api.get(f"/api/artifact?dept=web&run={ref.run_id}&name={name}")
         assert got.status_code == 200 and got.text.lstrip().startswith(start), f"{name} is served: the tree lists every file of a run folder"
     page = api.get(f"/view?dept=web&run={ref.run_id}&name=project.md")
@@ -592,7 +610,7 @@ def test_a_website_run_and_a_prd_run_made_by_the_host_get_no_extra_row(j2, make_
 def test_a_capability_that_registers_a_second_output_with_a_report_file_is_listed_with_no_code_of_its_own(j2, make_run_dir, api, fake_services):
     """The registry's hook is the whole mechanism: a test capability adds an output with a `file`, and its run shows the row."""
     from sutra_app.engine.capabilities import OutputSpec
-    thing = OutputSpec(label="Thing", noun="note", sections=("One",), conditions="x.json", rubric=(("T-1", "t"),), rates="rates_prd",
+    thing = OutputSpec(name="thing", label="Thing", noun="note", sections=("One",), conditions="x.json", rubric=(("T-1", "t"),),
                        check_types=("heading-present",), builder="b", file="thing.md", done="Done")
 
     class Adds(Capability):
@@ -611,7 +629,6 @@ def test_a_capability_that_registers_a_second_output_with_a_report_file_is_liste
         chat_file.write_text("\n".join([json.dumps({**first, "output": "thing"}), *lines[1:]]) + "\n", encoding="utf-8")
         ref = register_run(fake_services, run_dir)
         from sutra_app.engine import views
-        views.j2.OUTPUTS["thing"] = j2.OUTPUTS["thing"]                       # the API process reads the same registry the run process built
         with pytest.MonkeyPatch.context() as mp:
             mp.setattr(capabilities, "CAPABILITIES", (*capabilities.CAPABILITIES, Adds()))
             _, rows = documents_of(api, ref)
@@ -620,4 +637,45 @@ def test_a_capability_that_registers_a_second_output_with_a_report_file_is_liste
         assert (row["name"], row["file"]) == ("Thing note", "thing.md") and row["views"]["human"] == {"format": "markdown", "file": "thing.md"}
     finally:
         capabilities.SPECS.pop("thing", None)
-        __import__("sutra_app.engine.views", fromlist=["j2"]).j2.OUTPUTS.pop("thing", None)
+        j2.j2_types.HOST.pop("thing", None)
+        j2.j2_types._CACHE.clear()
+
+
+# ---- J2 sync 5: the project run keeps its prompts and makes no planner call (D164, D165) ----------------------------------------------------
+def test_a_project_run_makes_no_planner_call_and_its_prompts_carry_the_capabilitys_own_texts(j2, make_run_dir):
+    run_dir = make_run_dir(user_text=BRIEF, settings=QUIET)
+    go(run_dir)
+    assert not (run_dir / "deliverables.json").exists(), "P14: a host-pinned project run is free of J2's deliverables planner (D129)"
+    calls = [json.loads(line) for line in (run_dir / "calls.jsonl").read_text(encoding="utf-8").splitlines() if line.strip()]
+    assert [c["fn"] for c in calls].count("adaptation") >= 1
+    systems = {c["fn"]: c["system"] for c in calls}
+    charter = (DATA / "project.charter.txt").read_text(encoding="utf-8")[:-1]
+    identity = [c for c in calls if c["fn"] == "identity"]
+    assert any(PROJECT_INTAKE in c["prompt"] for c in identity), "the intake text is in Identity's prompt"
+    assert any(charter in c["system"] for c in identity), "the charter format is in Identity's reply format"
+    builders = [c["system"] for c in calls if c["fn"].startswith("W-")]
+    assert builders and all(PROJECT_BUILDER in s for s in builders)
+    assert project_module.PROJECT_PLAN in systems["adaptation"], "the plan guidance moved into Adaptation's addendum"
+    assert "## Project work" in systems["audit"]
+
+
+def test_the_atom_rules_and_the_charter_still_equal_the_vendored_prd_texts_with_the_four_edits(j2):
+    """The drift guard that `_atom_rules` was: fails loudly when J2's text under the project's copy moves (deviation 1: the prd type's files)."""
+    from pathlib import Path
+    templates = Path(j2.j2_types.HERE) / "templates" / "prd"
+    edits = ((' ids (target: the id prefix, "R" for requirement ids R1, R2, ...),', ""),
+             (' ids-unique (target: an id prefix, "R" for R1, R2, ...; expect true);', ""),
+             ("in the PRD when", "in the report when"), ("on the PRD after", "on the report after"))
+    rules = (templates / "atom_rules.md").read_text(encoding="utf-8")
+    rules = rules[:-1] if rules.endswith("\n") else rules
+    for old, new in edits:
+        assert old in rules, old
+        rules = rules.replace(old, new)
+    assert project_module._data("project.atom_rules.md") == rules
+    charter = (templates / "charter.txt").read_text(encoding="utf-8")
+    assert project_module._data("project.charter.txt") == (charter[:-1] if charter.endswith("\n") else charter)
+
+
+def test_the_template_file_equals_what_j2_writes_for_a_new_type_of_the_five_sections(j2):
+    assert json.loads((DATA / "project.generic.json").read_text(encoding="utf-8")) == \
+        j2.j2_types.template_for("project", "Project work", list(PROJECT_SECTIONS))

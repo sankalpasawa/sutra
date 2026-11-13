@@ -87,6 +87,7 @@ class OutputSpec:
                 "rubric": [{"id": i, "text": t} for i, t in self.rubric], "check_types": list(self.check_types), "done": self.done,
                 "conditions": self.conditions, "builder": self.builder, "intake": self.intake, "charter_format": self.charter_format,
                 "atom_rules": self.atom_rules, "deliverable": False, "triggers": [], "groups": [], "depends_on": [],
+                "mock": {},         # empty on purpose: the document form's own mock names would override the mocks of `extras()` in `j2._data_type`
                 "cost": {"item_parts": [{"part": "doc_section", "words": ""}]}, "host": owner}
 
     def extras(self) -> dict:
