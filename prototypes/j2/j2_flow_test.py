@@ -4243,6 +4243,51 @@ def missing_capabilities():
     print("missing capabilities: builders with tools are told to plan a script and its test for a missing capability ok")
 
 
+def one_artifact_view():
+    """remove-restrictions step 5: a folder deliverable's Artifacts row has the Template line, its conditions (the sandboxed
+    test's result among them), warnings apart from failed checks, and every file with the workflow that made it; a file
+    opens on the Human-readable tab. The builders' output folder of the run's own type gets the same row. No Documents
+    tab: its links open Artifacts. The recent-runs list uses the type's label."""
+    import shutil
+    d = tempfile.mkdtemp(prefix="j2-onev-")
+    try:
+        w = lambda f, t: (os.makedirs(os.path.dirname(os.path.join(d, f)) or d, exist_ok=True), open(os.path.join(d, f), "w").write(t))
+        out = j2.j2_types.builder_tools()["folder"]
+        w("summary.json", json.dumps({"output_type": "website"}))
+        w("workflows.json", json.dumps([{"id": "W-1", "name": "make_converter", "purpose": "a converter the page needs"}]))
+        w(f"{out}/index.html", "<h1>x</h1>")
+        w(f"{out}/convert.py", "print(1)")
+        w(f"{out}/test_convert.py", "assert 1")
+        w("conditions.json", json.dumps([{"id": "C2", "text": "The test passed", "met": True, "evidence": "exited 0 in the sandbox"},
+                                         {"id": "N5", "text": "A guess", "met": False, "severity": "warn", "evidence": "maybe"}]))
+        w("receipts.jsonl", "\n".join(json.dumps(r) for r in (
+            {"atom": "W-1.a1", "check": "convert.py exists", "target": "convert.py", "pass": True},
+            {"atom": "W-1.a1", "check": "tap targets", "target": "x", "pass": True, "warning": True, "evidence": "warning (advisory): small"},
+            {"atom": "W-1.a1", "check": "test_convert.py exists", "target": "test_convert.py", "pass": False})) + "\n")
+        w("autofix.json", json.dumps([{"workflow": "W-1", "kind": "guess_warning", "detail": "says 8 but expects 9"}]))
+        g = j2_artifacts.groups(d)
+        row = next(x for G in g["groups"] if G["id"] == "documents" for x in G["rows"])
+        assert row["kind"] == "folder" and row["folder"] == out and row["template"], row
+        assert [f["name"] for f in row["files"]] == ["convert.py", "index.html", "test_convert.py"], row["files"]
+        assert [x["id"] for x in row["files"][0]["made_by"]] == ["W-1"] and row["failed"] == 1 and len(row["warnings"]) == 2, row
+        assert j2_artifacts.served(d, f"{out}/convert.py"), "its files are served"
+        art = lambda tab, ver="": render_node({"workflows": [], "chat": []}, docs={"docs": {}, "artifacts": {
+            "groups": g, "g": "documents", "sel": {}, "tab": tab, "ver": ver}})["artifacts"]
+        s = art("sum")
+        for want in ("Template: <span class=\"code\">" + row["template"], "exited 0 in the sandbox", "(warning only)", "Warnings (2)",
+                     "says 8 but expects 9", "checks failed", 'data-afile="' + out + '/convert.py"', "W-1</span> make_converter"):
+            assert want in s, (want, s[s.find("Files ("):][:700])
+        h = art("human", f"{out}/test_convert.py")
+        assert f'src="/view?name={out}%2Ftest_convert.py"' in h and 'aria-pressed="true">test_convert.py' in h, h[:600]
+    finally:
+        shutil.rmtree(d, ignore_errors=True)
+    ui = open(os.path.join(j2.HERE, "j2_ui.html"), encoding="utf-8").read()
+    assert 'data-tab="docs"' not in ui and 'if (name === "docs") return artOpenGroup("documents")' in ui
+    assert 'esc(x.label || (k === "plan"' in ui and '"Document" : k === "plan"' not in ui
+    print("one artifact view: a folder row with its Template line, conditions with the sandboxed test, warnings apart from "
+          "failures, files by maker, a file opened on Human-readable; no Documents tab; runs by their type's label ok")
+
+
 def guesses_warn():
     """remove-restrictions step 3: on the general path a guess never blocks. A validator guess (a number in a check's
     label that differs from its expect) is logged as a warning and the workflow is kept; on the section path it still
@@ -7885,18 +7930,21 @@ SAVED_DOC_RUNS = ("j2-20261013-165916", "j2-20261013-185235", "j2-20261015-19082
 # document a saved run asked for (summary.json design_documents.requested) is listed written or not, as a live run's
 # docset is: j2-20261016-103256 asked for PRD, HLD and LLD and wrote the PRD, so its HLD and LLD are listed with asked
 # true (was false), still no text. Every other field, and the order, is as before; groups, map and checks are unchanged.
+# Re-recorded 2026-11-13 (remove-restrictions step 5): "groups" of all 11 runs. Additive only, checked value by value against
+# the previous j2_artifacts.groups: each Documents row gains "template", "conditions", "warnings" and "failed". No field
+# that was there changed; docs, map and checks are unchanged.
 SAVED_RUNS_GOLDEN = {
-    "j2-20261013-165916": {"groups": "56f72a05aae1", "docs": "6601e796102b", "map": "d528979abf18", "checks": "95329398a439"},
-    "j2-20261013-185235": {"groups": "da3ff2df8774", "docs": "99f5519109fe", "map": "d6fa33198569", "checks": "f89fefa931db"},
-    "j2-20261015-190820": {"groups": "08478622a133", "docs": "368d98762ad8", "map": "d519759eb19e", "checks": "a84b857c2459"},
-    "j2-20261016-103256": {"groups": "4120e3312ca6", "docs": "7d807bd5d90f", "map": "f3a2b5346c06", "checks": "1f4d88d383f6"},
-    "j2-20261016-160511": {"groups": "1b32b250385f", "docs": "08c63bcc18d9", "map": "edcb83e2f1dc", "checks": "294164497d2c"},
-    "j2-20261021-141350": {"groups": "8b35dff7697a", "docs": "495b52ab3c6f", "map": "e6b756ed9025", "checks": "b26939a6ccce"},
-    "j2-20261022-123744": {"groups": "ca346a1c6b9c", "docs": "ede89e663899", "map": "e38dbe427737", "checks": "762c35ff8650"},
-    "j2-20261023-104150": {"groups": "1fc302de13a0", "docs": "d3f5928bd2eb", "map": "180a39f9f978", "checks": "cd878d01266c"},
-    "j2-20261023-120350": {"groups": "7c8ad9f43fcc", "docs": "952eea241e51", "map": "8531c3b845fc", "checks": "0ec14094db92"},
-    "j2-20261026-104018": {"groups": "7bb9dcd4c186", "docs": "d18c7911c035", "map": "35a1b79ff2b0", "checks": "92d491169a25"},
-    "j2-20261027-130930": {"groups": "f0c6808c173f", "docs": "ab7c9eb79ffb", "map": "bad64fe59f9f", "checks": "cf4fa11161b5"},
+    "j2-20261013-165916": {"groups": "e2c4084a1f1a", "docs": "6601e796102b", "map": "d528979abf18", "checks": "95329398a439"},
+    "j2-20261013-185235": {"groups": "4bdd6da40c5b", "docs": "99f5519109fe", "map": "d6fa33198569", "checks": "f89fefa931db"},
+    "j2-20261015-190820": {"groups": "21e977031755", "docs": "368d98762ad8", "map": "d519759eb19e", "checks": "a84b857c2459"},
+    "j2-20261016-103256": {"groups": "bfc8fc3436f3", "docs": "7d807bd5d90f", "map": "f3a2b5346c06", "checks": "1f4d88d383f6"},
+    "j2-20261016-160511": {"groups": "2221e6117c56", "docs": "08c63bcc18d9", "map": "edcb83e2f1dc", "checks": "294164497d2c"},
+    "j2-20261021-141350": {"groups": "34d7d0affdbe", "docs": "495b52ab3c6f", "map": "e6b756ed9025", "checks": "b26939a6ccce"},
+    "j2-20261022-123744": {"groups": "f265870fc5fa", "docs": "ede89e663899", "map": "e38dbe427737", "checks": "762c35ff8650"},
+    "j2-20261023-104150": {"groups": "2179c64617ed", "docs": "d3f5928bd2eb", "map": "180a39f9f978", "checks": "cd878d01266c"},
+    "j2-20261023-120350": {"groups": "2fc58c6ca062", "docs": "952eea241e51", "map": "8531c3b845fc", "checks": "0ec14094db92"},
+    "j2-20261026-104018": {"groups": "3e76ae416bb0", "docs": "d18c7911c035", "map": "35a1b79ff2b0", "checks": "92d491169a25"},
+    "j2-20261027-130930": {"groups": "59ab76e28b98", "docs": "ab7c9eb79ffb", "map": "bad64fe59f9f", "checks": "cf4fa11161b5"},
 }
 # Recorded 2026-11-10 (step D): the document runs as they are now (doc_unchanged); re-record on purpose, never to pass
 # Re-recorded 2026-11-11 (DOC_RUN_GOLDEN and the *.system hashes below) for one intended text change only: team.md and
@@ -10604,7 +10652,7 @@ def left_bar():
             seen["with plan"] += plan["found"]
             # dimmed tabs: exactly those whose data this run lacks
             lacks = {"goal": not snap["goal"], "charter": not snap["goal"], "report": not report and not summ.get("outcome"), "workflows": not wfs, "priorities": not has, "timeline": not chat,
-                     "audit": not snap["audits"], "preview": not versions, "docs": not snap["docset"] and not any(v["text"] for v in docs_.values()), "artifacts": not any(g["count"] for g in t["groups"]),
+                     "audit": not snap["audits"], "preview": not versions, "artifacts": not any(g["count"] for g in t["groups"]),
                      "lessons": not (snap["lessons_used"] or snap["lessons_saved"]), "playbooks": not (snap["playbooks_used"] or snap["playbook_saved"]),
                      "planmap": not planmap["found"]}
             dimmed = {t_["tab"] for x in model for t_ in x["tabs"] if t_["dim"]}
@@ -10642,7 +10690,7 @@ def left_bar():
             flat = [t_ for v in rs_["items"].values() for t_ in v]
             assert sorted(flat) == sorted(tabs) and rs_["items"]["map"] == [], (name, "every tab in exactly one rail item", sorted(set(tabs) ^ set(flat)))
             assert rs_["items"]["priority"] == ["priorities", "conflicts"] and sorted(rs_["items"]["identity"]) == ["charter", "goal", "report"] and sorted(rs_["items"]["settings"]) == ["rundetails", "runsettings"], (name, rs_["items"])
-            assert rs_["items"]["library"] == ["library"] and sorted(rs_["items"]["artifacts"]) == ["artifacts", "docs", "preview"], (name, "Library is its own rail item; Artifacts keeps Preview, Documents, Artifacts", rs_["items"])
+            assert rs_["items"]["library"] == ["library"] and sorted(rs_["items"]["artifacts"]) == ["artifacts", "preview"], (name, "Library is its own rail item; Artifacts keeps Preview and Artifacts (documents are rows there)", rs_["items"])
             assert rs_["st"]["library"] == ("templates you can reuse" if snap.get("has_templates") else "no templates in this run"), (name, rs_["st"]["library"])
             settled_ = sum(1 for c in conf if c.get("status") == "settled"); open_ = len(conf) - settled_
             wantP = " · ".join(x for x in [f"{spent} of {total} credits" if has else "no ranking records", f"{ndef} deferred" if ndef else "",
@@ -10751,7 +10799,7 @@ def left_bar_toggle():
     threading.Thread(target=srv.serve_forever, daemon=True).start()
     base, seen = f"http://127.0.0.1:{srv.server_address[1]}", 0
     want_tabs = {"identity": ["goal", "charter", "report"], "adaptation": ["planmap", "workflows", "lessons", "playbooks"], "priority": ["priorities", "conflicts"], "coordination": ["timeline", "board", "story"],
-                 "audit": ["audit"], "artifacts": ["preview", "docs"], "library": ["library"], "settings": ["rundetails", "runsettings"], "map": [], "actions": []}
+                 "audit": ["audit"], "artifacts": ["preview"], "library": ["library"], "settings": ["rundetails", "runsettings"], "map": [], "actions": []}
     try:
         for run in runs:
             sends = [n for n in M.build(os.path.join(repo, run))["nodes"] if n["kind"] == "work" and n.get("tag") == "Send"]
@@ -11357,7 +11405,7 @@ def artifacts_groups():
             r = json.loads(htmllib.unescape(hit.group(1)))
             assert not r["err"], (w, r["err"])
             nv = sum(len(x["versions"]) for x in counts["guides"]["rows"])
-            assert r["fly"][0] == ["preview", "docs"] and [x for x in r["fly"][1] if not x.startswith("Documents|")] == [f"Run plan|3 files", f"Guides the makers read|5 guides · {nv} versions", "Website sections|13 sections · 1 script", f"Run records|{4 + n_audits} records"] \
+            assert r["fly"][0] == ["preview"] and [x for x in r["fly"][1] if not x.startswith("Documents|")] == [f"Run plan|3 files", f"Guides the makers read|5 guides · {nv} versions", "Website sections|13 sections · 1 script", f"Run records|{4 + n_audits} records"] \
                 and any(x.startswith("Documents|") for x in r["fly"][1]), r["fly"]      # agent-views/1: the Documents group sits between the sections and the records, (w, r["fly"])
             assert r["f0"] == 0 and r["f1"] == ["artifacts/product-plan.md", "artifacts/architecture.md"] and r["f2"] == 3 and r["f3"] == 4, (w, "a file loads only when its item opens (a group opens its first item)", r["f0"], r["f1"], r["f2"], r["f3"])
             assert r["heads"]["guides"][:2] == ["Guides the makers read", "Each guide, who wrote it, and how it was checked."] and r["heads"]["guides"][2] is True, (w, r["heads"])
@@ -11390,13 +11438,14 @@ def artifacts_groups():
     repo = os.path.join(here, "runs")
     docruns = [n for n in sorted(os.listdir(repo)) if any(os.path.isfile(os.path.join(repo, n, k + ".md")) for k in ("prd", "hld", "lld"))]
     dprobe = ("(async () => { const q = s => [...document.querySelectorAll(s)], wait = ms => new Promise(r => setTimeout(r, ms)), S = id => document.getElementById(id), r = {docs: {}, links: [], err: []};"
-              " const vis = () => q('#dview .pane').filter(p => !p.hidden).map(p => p.id.slice(5)).join(','), inview = e => { const b = e.getBoundingClientRect(), p = S('pane-docs').getBoundingClientRect(); return b.top >= p.top - 2 && b.top < p.bottom; };"
+              " const vis = () => q('#dview .pane').filter(p => !p.hidden).map(p => p.id.slice(5)).join(','), inview = e => { const b = e.getBoundingClientRect(), p = S('pane-artifacts').getBoundingClientRect(); return b.top >= p.top - 2 && b.top < p.bottom; };"
               " for (let i = 0; i < 80 && !document.querySelector('#rail [data-ri=artifacts]'); i++) await wait(100); await wait(800);"
-              " document.querySelector('#rail [data-ri=artifacts]').click(); await wait(300); q('#rfl [data-tab=docs]')[0].click(); for (let i = 0; i < 50 && !q('#pane-docs .docbody h4').length; i++) await wait(100);"
-              " r.pane = vis(); for (const b of q('#pane-docs [data-doc-kind]')) r.docs[b.dataset.docKind] = q('#docblock-' + b.dataset.docKind + ' [data-head]').map(h => h.dataset.head);"
+              " showTab('docs'); for (let i = 0; i < 50 && !ARTS.groups; i++) await wait(100); r.pane = vis();"
+              " for (const x of artGroup('documents').rows.filter(x => x.kind === 'document')){ await docOpen(x.id, ''); for (let i = 0; i < 30 && !q('#pane-artifacts .agpane .amd h2').length; i++) await wait(100);"
+              "   r.docs[x.id] = q('#pane-artifacts .agpane .amd :is(h1,h2,h3,h4)').map(h => h.textContent.trim()); }"
               " for (let i = 0; i < 50 && !ARTS.groups; i++) await wait(100); const D = (ARTS.groups || {}).documents || {};"
               " for (const k of Object.keys(D)){ showTab('map'); let el = await mapOpenIn('art', 'work:' + k); r.links.push(['work:' + k, vis(), el ? el.id : '', '']);"
-              "   for (const [sid, h] of Object.entries(D[k].sections)){ showTab('map'); el = await mapOpenIn('art', 'sec:work:' + k + ':' + sid); r.links.push([sid, vis(), el ? (el.dataset.head || el.id) : '', h, el ? inview(el) && el.classList.contains('dlhit') && !!el.closest('#docblock-' + k) : false]); } }"
+              "   for (const [sid, h] of Object.entries(D[k].sections)){ showTab('map'); el = await mapOpenIn('art', 'sec:work:' + k + ':' + sid); r.links.push([sid, vis(), el ? el.textContent.trim() : '', h, el ? inview(el) && !!el.closest('#pane-artifacts') : false]); } }"
               " r.groups = D; r.err = __e.slice(); document.body.setAttribute('data-r', JSON.stringify(r)); })()")
     page = ui.replace("<head>", "<head><script>window.__e = []; addEventListener('error', e => __e.push(String(e.message)));</script>", 1).replace("</body>", "<script>setTimeout(() => { " + dprobe + " }, 1500)</script></body>")
     tmp = tempfile.mkdtemp(prefix="j2-docs-")
@@ -11415,14 +11464,14 @@ def artifacts_groups():
             r = json.loads(htmllib.unescape(hit.group(1)))
             made = [k for k in ("prd", "hld", "lld") if os.path.isfile(os.path.join(repo, n, k + ".md"))]
             heads = {k: [l[3:].strip() for l in open(os.path.join(repo, n, k + ".md"), encoding="utf-8") if l.startswith("## ")] for k in made}
-            assert not r["err"] and r["pane"] == "docs", (n, r["err"], r["pane"])
-            assert all(r["docs"].get(k) and set(heads[k]) <= set(r["docs"][k]) for k in made), (n, "the Documents entry shows every document and its sections", r["docs"], heads)
+            assert not r["err"] and r["pane"] == "artifacts", (n, r["err"], r["pane"])
+            assert all(r["docs"].get(k) and set(heads[k]) <= set(r["docs"][k]) for k in made), (n, "the document's Artifacts row shows it and its sections", r["docs"], heads)
             assert set(r["groups"]) <= set(made) and all(set(v["sections"].values()) <= set(heads[k]) for k, v in r["groups"].items()), (n, r["groups"])
             for x in r["links"]:
                 if x[0].startswith("work:"):
-                    assert x[1] == "docs" and x[2] == "docblock-" + x[0][5:], (n, "a document's Map link opens it in Documents", x)
+                    assert x[1] == "artifacts", (n, "a document's Map link opens its Artifacts row", x)
                 else:
-                    assert x[1] == "docs" and x[2] == x[3] and x[4], (n, "a section's Map link lands on its heading in Documents, lit and in view", x)
+                    assert x[1] == "artifacts" and x[2] == x[3] and x[4], (n, "a section's Map link lands on its heading in the Artifacts row, in view", x)
                     nsec += 1
     finally:
         srv.shutdown()
@@ -12475,7 +12524,7 @@ def map_tab():
     ui = open(os.path.join(os.path.dirname(os.path.abspath(__file__)), "j2_ui.html"), encoding="utf-8").read()
     assert "@media (max-width:600px){.mapsvgwrap{display:none}.mapcards{display:block}}" in ui and ".mapcards{display:none}" in ui
     assert ".mapsvg{width:100%;height:clamp(440px,64vh,760px)" in ui and "st-running{border-style:double" in ui and "st-left_open{border-style:dashed" in ui
-    assert ui.index('data-ri="map"') < ui.index('id="gochat"') < ui.index('data-ri="identity"') < ui.index('id="railsub"') < ui.index('data-tab="docs"') < ui.index('data-tab="artifacts"') < ui.index('data-tab="lessons"'), "Map is the first rail item; every tab sits in the rail's panel"
+    assert ui.index('data-ri="map"') < ui.index('id="gochat"') < ui.index('data-ri="identity"') < ui.index('id="railsub"') < ui.index('data-tab="artifacts"') < ui.index('data-tab="lessons"'), "Map is the first rail item; every tab sits in the rail's panel"
     empty = render_node(snap, docs={"docs": {}, "map": {"nodes": [], "edges": []}})["map"]
     assert "Nothing to draw yet." in empty
     real = render_node(snap, docs={"docs": {}, "map": saved})["map"]
@@ -12610,13 +12659,13 @@ def map_tab():
     rail = ui[ui.index('<nav class="rail tabs"'):ui.index("</nav>", ui.index('<nav class="rail tabs"'))]
     top, inside = rail.split('id="railsub"')
     # the Board story is the first entry under Internals (shown only when the run has a board); the rest are the old order
-    old_tabs = ["story", "preview", "goal", "planmap", "workflows", "conflicts", "priorities", "timeline", "audit", "charter", "docs", "artifacts", "board", "library", "lessons", "playbooks", "report", "rundetails", "runsettings"]      # the Style guide is under Artifacts > Specs
+    old_tabs = ["story", "preview", "goal", "planmap", "workflows", "conflicts", "priorities", "timeline", "audit", "charter", "artifacts", "board", "library", "lessons", "playbooks", "report", "rundetails", "runsettings"]      # the Style guide is under Artifacts > Specs
     assert re.findall(r'data-ri="(\w+)"', top) == ["map", "identity", "adaptation", "priority", "coordination", "audit", "artifacts", "actions", "library", "settings"] and 'id="gochat"' in top and 'id="internals"' not in top and "Internals" not in rail, "the icon rail: Map, Chat, the five functions, Artifacts, Actions, Library, Settings; no Internals folder"
     assert re.findall(r'data-tab="(\w+)"', inside) == ["map"] + old_tabs, "every tab is in the rail's panel pool, in the old order"
     assert top.count("<svg") == 11, "an icon for every rail item"
     dvh = ui[ui.index('<div id="dview">'):ui.index('<dialog id="detail">')]
     panes = re.findall(r'<div class="pane[^"]*" id="pane-(\w+)"( hidden)?', dvh)
-    assert [n for n, h in panes if not h] == ["map"] and {n for n, _ in panes} == set(old_tabs) | {"map", "style", "catalog"}, "the home shows only the Map pane; every old pane still exists (catalog: the shared template library, /library)"
+    assert [n for n, h in panes if not h] == ["map"] and {n for n, _ in panes} == set(old_tabs) | {"map", "style", "catalog", "docs"}, "the home shows only the Map pane; every old pane still exists (catalog: the shared template library, /library)"
     assert dvh.index('id="needs"') < dvh.index('<section class="work">') < dvh.index('<section class="chat" id="chatp"'), "Needs you, then the Map, then the Chat"
     assert "@media (max-width:900px){#dview .dcol{overflow:auto}#dview main{grid-template-columns:minmax(0,1fr)" in ui and "@media (max-width:600px){.mapsvgwrap{display:none}.mapcards{display:block}}" in ui, "stacked below 900px; map cards at 600px"
     # Needs you: every open question, a plain line each, a button into the Chat; nothing waiting says so
@@ -12871,7 +12920,7 @@ def map_tab():
         assert n["person:requester"]["asked"] == "9999" and n["fn:identity"]["asked"] == "9999", n      # waiting on you: straight to the question in the Chat
         assert n["fn:adaptation"] == {"pane": "map", "asked": "", "wf": "", "filt": "fn:adaptation", "art": ""}, n      # the other functions: the tables under the Map, filtered to them
         assert n["fn:audit"]["pane"] == "audit" and n["step:prd>hld"]["pane"] == "workflows" and n["step:prd>hld"]["wf"] == ",".join(sw), n
-        assert n["work:prd"]["pane"] == "docs" and n["work:prd"]["art"] == "docblock-prd" and n["work:website"]["pane"] == "preview" and n["work:charter"]["pane"] == "charter", n
+        assert n["work:prd"]["pane"] == "artifacts" and n["work:website"]["pane"] == "preview" and n["work:charter"]["pane"] == "charter", n
         assert a["wfnote"] is True and a["wfcleared"] == 0, a      # "Show all" clears the step filter
         assert b["none"].startswith("Needs you 0 Nothing needs you right now.") and b["none"].endswith("See report|0") and b["person"] == "needs" and b["chats"] == 1 and b["railchat"] == 1 and b["toggled"] is True, b
         # the rail's Chat opens the Simple view with the rail kept and Chat lit; Map goes back to the unchanged home; same run, same messages, no reload
@@ -15024,6 +15073,7 @@ if __name__ == "__main__":
             general_path()              # remove-restrictions step 2: every brief through one path, builders with tools
             guesses_warn()              # remove-restrictions step 3: a guess warns, never blocks
             missing_capabilities()      # remove-restrictions step 4: a missing capability becomes a planned script
+            one_artifact_view()         # remove-restrictions step 5: one artifact view, every output file, warnings apart
             builder_context_trim()      # a real run's builder prompt: no chat, no other workflows
             builder_inputs()            # depended-on sections in full, cut inputs noticed and logged
             timing_records()            # timing.json and Run settings' calls, tokens and time

@@ -680,9 +680,20 @@ def groups(d, m=None):
             continue
         files = sorted(os.path.relpath(p_, d) for p_ in glob.glob(os.path.join(d, tt["file"])) if os.path.isfile(p_))
         if files:
-            docs.append({"id": tt["name"], "kind": "folder", "name": tt.get("tag") or tt["label"], "file": files[0],
-                         "doc_file": None, "maker": None, "made_in": [], "sections": {}, "nodes": [f"work:{tt['name']}"],
-                         "versions": [], "docs": [{"label": os.path.basename(f), "file": f, "workflow": None} for f in files]})
+            docs.append(_folder_row(d, tt, files, os.path.dirname(tt["file"]), by))
+    # the general path: the builders' output folder (types.json builder_tools.folder) of the run's own type, unless a row above holds it
+    out_dir, own = (j2_types.builder_tools().get("folder") or "").strip("/"), _run_type(d)
+    files = [f for f in _all_files(d) if out_dir and f.startswith(out_dir + "/")]
+    if files and own and not any(x.get("folder") == out_dir for x in docs):
+        tt = next((x for x in load_types(d)["types"] if x["name"] == own), {"name": own, "label": own})
+        row, mine = _folder_row(d, tt, files, out_dir, by), next((x for x in docs if x["id"] == own), None)
+        if mine:      # a document row already: the folder's files join it
+            mine.update(folder=out_dir, files=row["files"])
+        else:
+            docs.append(row)
+    extras = _deliverable_extras(d)
+    for x in docs:
+        x.update(extras, template=_template_of(d, x["id"]))
     for x in plan + guides + site + docs + rec + list(documents.values()):
         x["views"] = views(d, x)
     return {"schema": "artifacts-groups/1", "documents": documents,
@@ -690,6 +701,85 @@ def groups(d, m=None):
                                                                      "total": len(last.get("results") or [])} if last else None} if web else None,
             "groups": [{**e, "rows": r, **({"label": f"{web['label']} sections"} if e["id"] == "site" and web else {})}
                        for e, r in zip(empty, (plan, guides, site, docs, rec))]}
+
+
+def _run_type(d):
+    """The type the run ended with (summary.json "output_type"), else the one it started with (chat.jsonl's meta row)."""
+    t = (_read(d, "summary.json", {}) or {}).get("output_type") if isinstance(_read(d, "summary.json"), dict) else None
+    if t:
+        return t
+    try:
+        with open(os.path.join(d, "chat.jsonl"), encoding="utf-8") as f:
+            first = json.loads(f.readline() or "{}")
+        return first.get("output") if first.get("meta") else None
+    except (OSError, ValueError):
+        return None
+
+
+def _made_by(d, by):
+    """{file name as a check named it: [workflow ids]}: the workflows whose checks (receipts.jsonl) named a file."""
+    out = {}
+    for line in (open(os.path.join(d, "receipts.jsonl"), encoding="utf-8") if os.path.isfile(os.path.join(d, "receipts.jsonl")) else []):
+        try:
+            r = json.loads(line)
+        except ValueError:
+            continue
+        wid = str(r.get("atom") or "").split(".")[0]
+        if isinstance(r, dict) and isinstance(r.get("target"), str) and wid in by:
+            out.setdefault(r["target"], [])
+            if wid not in out[r["target"]]:
+                out[r["target"]].append(wid)
+    return out
+
+
+def _folder_row(d, tt, files, folder, by):
+    """One Documents row for a folder of built files: each file with the workflows whose checks named it."""
+    made = _made_by(d, by)
+    rel = lambda f: f[len(folder) + 1:] if folder and f.startswith(folder + "/") else f
+    wf = lambda f: [{"id": w, "name": by[w].get("name") or "", "purpose": by[w].get("purpose") or ""}
+                    for w in made.get(rel(f)) or made.get(os.path.basename(f)) or []]
+    return {"id": tt["name"], "kind": "folder", "name": tt.get("tag") or tt.get("label") or tt["name"], "file": files[0], "folder": folder,
+            "doc_file": None, "maker": None, "made_in": sorted({w["id"] for f in files for w in wf(f)}), "sections": {},
+            "nodes": [f"work:{tt['name']}"], "versions": [],
+            "docs": [{"label": rel(f), "file": f, "workflow": None} for f in files],
+            "files": [{"name": rel(f), "file": f, "made_by": wf(f)} for f in files]}
+
+
+def _deliverable_extras(d):
+    """What every deliverable row's Summary shows: the necessary conditions (conditions.json, the sandboxed test's result
+    among them when the form has one), the warnings (an advisory check's receipt, a validator guess in autofix.json) and
+    how many checks by code failed."""
+    conds = [c for c in _read(d, "conditions.json", []) or [] if isinstance(c, dict)]
+    recs = []
+    if os.path.isfile(os.path.join(d, "receipts.jsonl")):
+        for line in open(os.path.join(d, "receipts.jsonl"), encoding="utf-8"):
+            try:
+                r = json.loads(line)
+            except ValueError:
+                continue
+            if isinstance(r, dict) and "pass" in r:
+                recs.append(r)
+    warns = [{"from": r.get("atom") or "", "text": f"{r.get('check') or r.get('type') or ''}: {r.get('evidence') or ''}"}
+             for r in recs if r.get("warning") is True]
+    warns += [{"from": a.get("workflow") or "", "text": a.get("detail") or ""} for a in _read(d, "autofix.json", []) or []
+              if isinstance(a, dict) and a.get("kind") == "guess_warning"]
+    return {"conditions": [{"id": c.get("id"), "text": c.get("text"), "met": c.get("met"), "evidence": c.get("evidence"),
+                            "warn": c.get("severity") == "warn"} for c in conds],
+            "warnings": warns, "failed": sum(1 for r in recs if r.get("pass") is False)}
+
+
+def _template_of(d, name):
+    """The template that made a type's output, relative to this folder: the type's own template file, else its form's builder text."""
+    import j2_types
+    p = j2_types.template_path(name)
+    if os.path.isfile(p):
+        return os.path.relpath(p, HERE)
+    e = next((t for t in load_types(d)["types"] if t["name"] == name), {})
+    b = (j2_types.forms().get(e.get("form")) or {}).get("builder") or ""
+    for c in (b, f"templates/{name}/{b}"):
+        if b and os.path.isfile(os.path.join(HERE, c)):
+            return c
+    return None
 
 
 # ------------------------------------------------------------------------------------------------------------- the views
@@ -754,7 +844,7 @@ def agent_view(d, row):
 
 
 HUMAN = {"charter": "list", "deliverables": "list", "realization": "markdown", "workflows": "table", "guide": "markdown", "document": "markdown", "section": "page",
-         "script": "page", "style": "style", "receipts": "table", "audits": "chart", "audit": "list", "conditions": "list", "shots": "shots"}
+         "script": "page", "style": "style", "receipts": "table", "audits": "chart", "audit": "list", "conditions": "list", "shots": "shots", "folder": "files"}
 
 
 def human_view(d, row):

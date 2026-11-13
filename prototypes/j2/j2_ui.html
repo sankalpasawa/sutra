@@ -1116,7 +1116,6 @@ try { var tp = localStorage.getItem("j2theme"); document.documentElement.dataset
       <button role="tab" data-tab="timeline" aria-selected="false">Timeline</button>
       <button role="tab" data-tab="audit" aria-selected="false">Audit</button>
       <button role="tab" data-tab="charter" aria-selected="false">Charter</button>
-      <button role="tab" data-tab="docs" aria-selected="false">Documents</button>
       <button role="tab" data-tab="artifacts" aria-selected="false">Artifacts</button>
       <button role="tab" id="tab-board" data-tab="board" aria-selected="false" hidden>Board</button>
       <button role="tab" id="tab-library" data-tab="library" aria-selected="false" hidden>Templates (this run)</button>
@@ -2809,7 +2808,7 @@ async function sRecent(){
   try { const r = await (await fetch("/api/runlist", {cache: "no-store"})).json(), runs = (r.runs || []).filter(x => x.title && x.title !== x.id && x.status !== "running").slice(0, 6);
     if (!runs.length) return;
     $("srlist").innerHTML = runs.map(x => { const k = x.output === "plan" ? "plan" : TYFORM(x.output) === "page" ? "page" : "document", brief = String(x.brief || "").split("\n")[0].trim();
-      return `<a href="/?run=${encodeURIComponent(x.id)}&view=simple"><span class="slico">${SLICON[k]}</span><span class="sltxt"><b>${esc(x.title)}</b>${brief ? `<span>${esc(brief)}</span>` : ""}</span><small><span class="slwhat"><i class="slst${x.status === "done" ? " done" : ""}" aria-hidden="true"></i>${k === "document" ? "Document" : k === "plan" ? "Plan" : TYL(x.output, "Page")} · ${x.status === "done" ? "finished" : "stopped"} · </span><time datetime="${esc(String(x.when || ""))}">${esc(sAgo(x.when))}</time></small></a>`; }).join("");
+      return `<a href="/?run=${encodeURIComponent(x.id)}&view=simple"><span class="slico">${SLICON[k]}</span><span class="sltxt"><b>${esc(x.title)}</b>${brief ? `<span>${esc(brief)}</span>` : ""}</span><small><span class="slwhat"><i class="slst${x.status === "done" ? " done" : ""}" aria-hidden="true"></i>${esc(x.label || (k === "plan" ? "Plan" : TYL(x.output, "Page")))} · ${x.status === "done" ? "finished" : "stopped"} · </span><time datetime="${esc(String(x.when || ""))}">${esc(sAgo(x.when))}</time></small></a>`; }).join("");
     $("srecent").hidden = false; } catch (e) {}
 }
 async function sendText(text){
@@ -3086,6 +3085,7 @@ const TABHINT = {catalog: "Run templates first, then every run's section templat
   story: "What each question on the message board did, step by step, read from this run's own records.",
   library: "Every artifact template: the generic layout and the templates made for each business, and how this run chose them."};
 function showTab(name){
+  if (name === "docs") return artOpenGroup("documents");      // one artifact view everywhere: the old Documents tab's links land on Artifacts
   if ($("dview")) $("dview").dataset.tab = name;
   document.querySelectorAll(".tabs [role=tab]").forEach(x => x.setAttribute("aria-selected", x.dataset.tab === name));
   const tb = document.querySelector(`.tabs [data-tab="${name}"]`);
@@ -3395,7 +3395,25 @@ const ARTKIND = {
     human: x => `<div class="ashots">${x.shots.map(s => `<a class="ashot" href="${artUrl(s.file)}" target="_blank" rel="noopener"><img loading="lazy" alt="Screenshot ${esc(s.file.split("/").pop())}" src="${artUrl(s.file)}">`
       + `<span class="mono">${esc(s.file.split("/").pop())}${s.total ? ` · ${s.passed}/${s.total}` : ""}</span></a>`).join("")}</div>`}};
 ARTKIND.script = ARTKIND.section;
-ARTKIND.document = ARTKIND.guide;      // agent-views/1: a PRD / HLD / LLD row reads like a guide (the markdown, its saved versions); the data file is its Agent-readable tab
+// a deliverable's Summary (remove-restrictions step 5): its necessary conditions with their evidence (a sandboxed test's result
+// among them), warnings apart from failed checks (an advisory check, a validator guess: they never fail a build), and the files
+// its builders wrote, each with the workflows that made it; a file opens on the Human-readable tab, code as text, images as images
+const artFiles = x => (x.files || []).length ? `<div class="ablk"><h5>Files (${x.files.length})${x.folder ? ` in <span class="mono">${esc(x.folder)}/</span>` : ""}</h5>`
+  + artList(x.files, f => `<li><button type="button" class="linkbtn mono" data-afile="${esc(f.file)}">${esc(f.name)}</button><span>${(f.made_by || []).length
+    ? "made by " + f.made_by.map(w => `<span class="mono" title="${esc(w.purpose)}">${esc(w.id)}</span> ${esc(artWords(w.name))}`).join(", ") : '<span class="empty">maker not recorded</span>'}</span></li>`) + "</div>" : "";
+function artDeliv(x){ const cs = x.conditions || [], ws = x.warnings || [];
+  return artStat([[cs.filter(c => c.met).length, "conditions met"], [cs.filter(c => !c.met && !c.warn).length, "conditions not met"], [ws.length, "warnings"], [x.failed, "checks failed"]])
+    + (cs.length ? `<div class="ablk"><h5>Necessary conditions (${cs.length})</h5>${artList(cs, c => `<li>${artMark(c.met)}<span><span class="mono empty">${esc(c.id)}</span> ${esc(c.text)}`
+      + `${c.warn && !c.met ? ' <span class="empty">(warning only)</span>' : ""}<span class="aev">${esc(c.evidence || "")}</span></span></li>`)}</div>` : "")
+    + (ws.length ? `<div class="ablk"><h5>Warnings (${ws.length})</h5><p class="empty">Advice and guesses: they never fail the build.</p>`
+      + artList(ws, w => `<li>${ARTMARK.warn}<span>${w.from ? `<span class="mono empty">${esc(w.from)}</span> ` : ""}${esc(w.text)}</span></li>`) + "</div>" : "")
+    + artFiles(x); }
+function artFolder(x){ const fs = x.files || [], f = fs.some(y => y.file === ARTS.ver) ? ARTS.ver : (fs[0] || {}).file;
+  return `<div class="avers" role="group" aria-label="File"><span class="empty">File</span>${fs.map(y => `<button type="button" data-afile="${esc(y.file)}" aria-pressed="${y.file === f}">${esc(y.name)}</button>`).join("")}</div>`
+    + (f ? `<iframe class="asecview" data-afileview="${esc(f)}" sandbox="allow-same-origin" title="${esc(f)}" src="/view?name=${encodeURIComponent(f)}${runQ()}"></iframe>` : artNotSaved); }
+ARTKIND.folder = {top: x => `<h2>${esc(x.name)}</h2>${artBy(x, null, x.folder ? ` · <span class="mono">${esc(x.folder)}/</span>` : "")}`, sum: artDeliv, human: artFolder};
+ARTKIND.document = {...ARTKIND.guide, sum: x => artGuideSum(x) + artDeliv(x),
+  human: x => ARTS.ver && (x.files || []).some(y => y.file === ARTS.ver) ? artFolder(x) : artGuideDoc(x)};      // agent-views/1: a PRD / HLD / LLD row reads like a guide (the markdown, its saved versions); the data file is its Agent-readable tab
 ARTKIND.audit = {sum: x => artStat([[x.passed, "items passing"], [x.total == null ? null : x.total - x.passed, "items failing"], [x.cycle, "cycle"], [x.version, "version"]]) + (x.all_pass === true ? '<p class="empty">Every item passed.</p>' : ""),
   human: x => { const f = x.views.human.file, w = artWait(ARTTEXT[f]); if (w) return w; const a = artJson(f), dd = (a || {}).data || {}, fs = dd.findings || [];
     return !a ? '<p class="empty">Could not read this audit.</p>' : `<div class="ablk"><h5>Goal</h5><p>${esc(dd.goal || "")}</p></div><div class="ablk"><h5>Method</h5><p>${esc(dd.method || "")}</p></div><div class="ablk"><h5>Findings (${fs.length})</h5>`
@@ -3403,7 +3421,8 @@ ARTKIND.audit = {sum: x => artStat([[x.passed, "items passing"], [x.total == nul
 // the Summary tab's Template block (library catalog, part 4): a website section's routing decision is the one its current owner made
 // (the rewriter when one did); the Style guide row shows the design decision. PRD / HLD / LLD sections carry theirs in the Documents view.
 const artTpl = x => x.kind === "section" || x.kind === "script" ? `<div class="ablk"><h5>Template</h5><p>${tplSecLine("website", x.owner || x.section, null)}</p></div>`
-  : x.kind === "style" ? `<div class="ablk"><h5>Template</h5><p>${tplSecLine("design", null, "Style guide")}</p></div>` : "";
+  : x.kind === "style" ? `<div class="ablk"><h5>Template</h5><p>${tplSecLine("design", null, "Style guide")}</p></div>`
+  : "template" in x ? `<div class="ablk"><h5>Template</h5><p class="tplline">Template: ${x.template ? `<span class="code">${esc(x.template)}</span>` : '<span class="empty">not recorded</span>'}</p></div>` : "";
 function artPane(x){ const k = ARTKIND[x.kind] || {}, v = x.views || {}, tab = artTab(ARTTABS, "sum");
   return (k.top ? k.top(x) : `<h2>${esc(x.name)}</h2>${artBy(x, x.file)}`) + artTabs(ARTTABS)
     + (tab === "agent" ? artAgent(x) : tab === "human" ? (v.human && k.human ? k.human(x) : artNotSaved) : (k.sum ? k.sum(x) : "") + artTpl(x)); }
@@ -3423,7 +3442,7 @@ async function artFetch(){      // the text the open tab shows: the file views.a
   const x = artCur(); if (!x) return; const files = [], v = x.views || {}, ag = ARTS.tab === "agent" && v.agent, hu = ARTS.tab === "human" && v.human;
   if ((x.kind === "guide" || x.kind === "style") && x.file) files.push(x.file);
   if (ag && ag.format !== "code") files.push(ag.file);
-  if (hu && !["list", "chart", "shots"].includes(hu.format)) files.push(x.kind === "guide" && ARTS.ver ? ARTS.ver : hu.file);
+  if (hu && !["list", "chart", "shots", "files"].includes(hu.format)) files.push(x.kind === "guide" && ARTS.ver ? ARTS.ver : hu.file);
   const ck = x.section && x.deck && ((ag && ag.format === "code") || (hu && ["page", "style"].includes(hu.format))) ? x.deck + "|" + x.section : "", want = files.filter(f => ARTTEXT[f] === undefined);
   if (!want.length && !(ck && CODE[ck] === undefined)) return;
   await Promise.all([...want.map(async f => { try { const r = await fetch(artUrl(f), {cache: "no-store"}); ARTTEXT[f] = r.ok ? await r.text() : null; } catch (e) { ARTTEXT[f] = null; } }),
@@ -3743,6 +3762,7 @@ $("pane-artifacts").addEventListener("click", async e => {
   const r = e.target.closest("[data-agrow]"); if (r){ ARTS.sel[ARTS.g] = r.dataset.agrow; ARTS.tab = "sum"; ARTS.ver = ""; artPaint(); const p = $("pane-artifacts").querySelector(".agpane"); if (p) p.scrollTop = 0; return artFetch(); }
   const t = e.target.closest("[data-atab]"); if (t){ ARTS.tab = t.dataset.atab; artPaint(); return artFetch(); }
   const v = e.target.closest("[data-aver]"); if (v){ ARTS.ver = v.dataset.aver; artPaint(); return artFetch(); }
+  const af = e.target.closest("[data-afile]"); if (af){ ARTS.tab = "human"; ARTS.ver = af.dataset.afile; artPaint(); return artFetch(); }
   const j = e.target.closest("[data-ajump]"); if (j){ ARTS.tab = "human"; ARTS.ver = ""; artPaint(); await artFetch(); const h = document.getElementById("ah-" + j.dataset.ajump); if (h) h.scrollIntoView({block: "start"}); } });
 // Map: read-only drawing of a run, from /api/map (map/1). renderMap(map) is one pure function: inline SVG for wide screens and a card
 // list for 600px and under. Status is never colour alone: solid = filed and checked, dashed = left open, double = running now, thick red
@@ -4888,11 +4908,11 @@ function renderMap(m){
   const CG = CONS.id ? consSun(m) : null;      // the solar system, when one is open
   return `<div class="mapwrap">${head}${CG ? consView(m, CG) : `<div class="mapsvgwrap" data-view="${MAPVIEW === "line" ? "line" : "tree"}">${MAPVIEW === "line" ? `<div class="treebar linebar"><button type="button" class="linkbtn" data-linezoom="1.5" aria-label="Zoom in">+</button><button type="button" class="linkbtn" data-linezoom="0.6667" aria-label="Zoom out">&minus;</button><button type="button" class="linkbtn" data-linefit>Fit</button><span class="sub" data-linez></span><span class="sub">Drag to pan, scroll or pinch to zoom.</span></div>` : ""}${MAPVIEW === "line" ? `<div class="linecard">${svg}<details class="maplay" data-key="maplay"${MAPLAY ? " open" : ""}><summary>Legend${gaps.length ? ` · ${gaps.length} not recorded` : ""}</summary><div class="maplaybody">${legList}${nr}</div></details></div>` : svg}${treeHtml(m, MAPVIEW === "line" ? "" : panel)}${MAPVIEW === "line" ? panel : ""}${under}</div>`}${cards}${MAPVIEW === "line" ? `<div class="legnarrow">${legend}${nr}</div>` : legend + nr}</div>`;
 }
-async function docOpen(k, sid){      // a document, or one section of it (by the heading its section starts with: j2_artifacts.groups' documents), in Documents
-  document.querySelectorAll(".dlhit").forEach(x => x.classList.remove("dlhit")); showTab("docs");
-  if (!DOCS[k] || !$("docblock-" + k)) await loadDocs(); else paint($("pane-docs"), renderDocs());
-  const head = sid && ((((ARTS.groups || {}).documents || {})[k] || {}).sections || {})[sid], block = $("docblock-" + k); if (!block) return null;
-  const el = (head && block.querySelector(`[data-head="${CSS.escape(head)}"]`)) || block; el.classList.add("dlhit"); el.scrollIntoView({block: "start"}); return el; }
+async function docOpen(k, sid){      // a document, or one section of it (by the heading its section starts with: j2_artifacts.groups' documents): its Artifacts row, Human-readable tab
+  await artOpenGroup("documents", k); ARTS.tab = "human"; artPaint(); await artFetch();
+  const head = sid && ((((ARTS.groups || {}).documents || {})[k] || {}).sections || {})[sid], pane = $("pane-artifacts").querySelector(".agpane"); if (!pane) return null;
+  const el = (head && [...pane.querySelectorAll("h1,h2,h3,h4,h5,h6")].find(h => h.textContent.trim() === head)) || pane;
+  if (el.scrollIntoView) el.scrollIntoView({block: "start"}); return el; }
 async function openArtifact(f){      // a file from the Map: the item that holds it (a guide on its Read document tab); a PRD, HLD or LLD in Documents
   if (!ARTS.groups) await loadArtifacts();
   const hit = ((ARTS.groups || {}).groups || []).flatMap(g => g.rows.map(x => [g.id, x])).find(([, x]) => x.file === f || (x.docs || []).some(d => d.file === f));
@@ -5337,9 +5357,7 @@ document.addEventListener("click", e => { const a = e.target.closest("[data-wfca
   [`wf-${a.dataset.wfcard}`, ...((w && w.atoms) || []).map(x => `atom-${x.id}`)].forEach(k => { const d = document.querySelector(`details[data-key="${CSS.escape(k)}"]`); if (d) d.open = true; });
   const d = document.querySelector(`details[data-key="atom-${CSS.escape((w && w.atoms && w.atoms[0] || {}).id || "")}"]`); if (d && d.scrollIntoView) d.scrollIntoView({block: "start"}); });
 $("pane-workflows").addEventListener("click", e => { const a = e.target.closest("[data-doc]"); if (!a) return;
-  e.preventDefault(); FOCUS = {kind: a.dataset.doc, item: a.dataset.item};
-  paint($("pane-docs"), renderDocs()); showTab("docs");
-  const t = document.getElementById(`doc-${FOCUS.kind}-${FOCUS.item}`); if (t && t.scrollIntoView) t.scrollIntoView({block: "center"}); });
+  e.preventDefault(); FOCUS = {kind: a.dataset.doc, item: a.dataset.item}; docOpen(a.dataset.doc, ""); });
 async function send(){
   const text = $("box").value.trim(); if (!text) return;
   $("box").value = "";
@@ -5611,7 +5629,7 @@ function railModel(s, m, tabs){
 // in a section not listed here (Other) shows under Settings, so no tab is ever lost.
 var RAILITEMS = {map: {secs: []}, identity: {secs: ["identity"], col: "--mid"}, adaptation: {secs: ["adaptation"], col: "--m1"}, priority: {secs: ["priority", "conflicts"], col: "--m2"},
   coordination: {secs: ["coordination"], col: "--m3"}, audit: {secs: ["audit"], col: "--m5"}, artifacts: {secs: ["artifacts"]}, actions: {secs: ["actions"]}, library: {secs: ["library"]}, settings: {secs: ["settings", "other"]}};
-var RAILTABS = ["goal", "charter", "report", "planmap", "workflows", "lessons", "playbooks", "priorities", "conflicts", "timeline", "board", "story", "audit", "preview", "docs", "artifacts", "library", "rundetails", "runsettings"];
+var RAILTABS = ["goal", "charter", "report", "planmap", "workflows", "lessons", "playbooks", "priorities", "conflicts", "timeline", "board", "story", "audit", "preview", "artifacts", "library", "rundetails", "runsettings"];
 var TABSUB = {goal: "what you asked for", charter: "the done-when list", report: "the summary at the end", planmap: "goal, stages and workflows", workflows: "the jobs, by stage and cycle", lessons: "what earlier runs taught",
   playbooks: "plans reused from earlier runs", priorities: "what comes first and the budget", conflicts: "where the team disagreed", timeline: "what happened when", board: "messages between the team",
   story: "the board as a story", audit: "the checks on each version", preview: "the latest version", docs: "the design documents", artifacts: "files and records", library: "start a run from a saved template",
