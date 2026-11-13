@@ -37,7 +37,7 @@ PRD_BRIEF = ("Write a PRD for QuickQueue, a mobile app that lets clinic patients
              "alert when 2 patients are ahead, staff dashboard to call the next patient. Constraints: works on low-end "
              "Android phones; no patient health data stored. Success: average in-room wait under 10 minutes; 60% of "
              "patients join remotely within 3 months.")
-NAMES = {"index", "vendor", "state", "runs", "call", "preview", "docs", "map", "plan", "library", "library_item", "run_templates",
+NAMES = {"index", "vendor", "state", "runs", "call", "preview", "docs", "map", "plan", "library", "library_item", "run_template", "run_templates",
          "artifacts", "agent", "code", "artifacts_tree", "artifact", "story", "board", "audits", "refs", "shot", "file", "site",
          "say", "playbooks_clear", "lessons_clear", "output", "reset", "runlist", "changes", "plan_map", "activity", "catalog",
          "artifacts_groups", "ask", "record", "doc", "view", "settings", "timing"}
@@ -139,8 +139,8 @@ class FakeCommands:
         self.results = {"say": say, "accept": accept, "reset": reset}
         self.output, self.calls, self.ask_error, self.switch = output, [], ask_error, switch
 
-    def say(self, text):
-        self.calls.append(("say", text))
+    def say(self, text, template=None, workflows=None):
+        self.calls.append(("say", text) if template is None else ("say", text, template, workflows))
         return self.results["say"]
 
     def ask(self, who, question, run_id):
@@ -289,11 +289,11 @@ def test_the_recorder_reproduces_the_golden_from_an_extraction_of_prototypes_j2(
 
 
 # ---- the registry ------------------------------------------------------------------------------------------------------
-def test_the_views_are_the_42_handlers_of_the_design(w):
+def test_the_views_are_the_43_handlers_of_the_design(w):
     v = w.views
     assert set(v.VIEWS) == NAMES and all(callable(f) for f in v.VIEWS.values())
     assert v.VIEWS["site"] is v.site and callable(v.site_saved) and callable(v.site_live)
-    assert v.HANDLER_COUNT == 42 == len(v.VIEWS) - 1 + 2          # "site" has two rows (saved and live), one entry
+    assert v.HANDLER_COUNT == 43 == len(v.VIEWS) - 1 + 2          # "site" has two rows (saved and live), one entry
     assert not hasattr(v, "PATCH_VIEWS"), "runlist and changes are J2's own routes: no view is a patch's"
     assert v.LIVE_VIEWS <= set(v.VIEWS) and {"artifacts_groups", "record"} <= v.LIVE_VIEWS
 
@@ -866,6 +866,41 @@ def test_say_validates_the_text_and_reports_busy(w):
     assert (busy.code, json.loads(busy.body)) == (409, {"ok": False})
 
 
+def test_say_carries_a_run_template_and_its_workflows_to_the_command_object_and_nothing_else_changes(w):
+    cmd = FakeCommands()
+    ctx = idle_ctx(w, commands=cmd)
+    assert call(w, "say", ctx, text="a site", template="thread-boutique-website", workflows="all").code == 200
+    assert call(w, "say", ctx, text="a site", template="thread-boutique-website", workflows="w-1, W-2,W-1").code == 200
+    assert call(w, "say", ctx, text="a site", template="thread-boutique-website", workflows=["W-3", "all", "W-4"]).code == 200
+    assert call(w, "say", ctx, text="a site", template="thread-boutique-website").code == 200
+    assert cmd.calls == [("say", "a site", "thread-boutique-website", "all"), ("say", "a site", "thread-boutique-website", "w-1,W-2"),
+                         ("say", "a site", "thread-boutique-website", "W-3,W-4"), ("say", "a site", "thread-boutique-website", None)]
+    cmd.calls.clear()
+    assert call(w, "say", ctx, text="a site", template="", workflows="W-1").code == 200
+    assert call(w, "say", ctx, text="a site", workflows="W-1", template=None).code == 200
+    assert cmd.calls == [("say", "a site")] * 2, "no template: the old call, and workflows alone are dropped (J2 reads them only with a template)"
+    busy = call(w, "say", idle_ctx(w, commands=FakeCommands(say=False)), text="hi", template="a-b")
+    assert (busy.code, json.loads(busy.body)) == (409, {"ok": False})
+
+
+@pytest.mark.parametrize("body", [
+    {"template": "Thread"}, {"template": "a_b"}, {"template": "x" * 81}, {"template": 5}, {"template": ["a"]}, {"template": "a b"},
+    {"template": "a", "workflows": "W 1"}, {"template": "a", "workflows": "W-1,,W-2"}, {"template": "a", "workflows": ["W-1", 2]},
+    {"template": "a", "workflows": 7}, {"template": "a", "workflows": {"W-1": 1}}, {"template": "a", "workflows": "x" * 21},
+    {"template": "a", "workflows": [f"W-{n}" for n in range(41)]}, {"template": "a", "workflows": ",".join(f"K{n:04d}" for n in range(300))},
+])
+def test_say_refuses_a_malformed_run_template_or_workflow_list_with_the_violation_and_never_starts_the_run(w, body):
+    cmd = FakeCommands()
+    r = call(w, "say", idle_ctx(w, commands=cmd), text="hello", **body)
+    assert r.code == 400 and list(json.loads(r.body)) == ["error"] and json.loads(r.body)["error"], body
+    assert cmd.calls == [], "a refused body never reaches the run"
+
+
+def test_say_without_a_command_object_is_501_and_an_empty_text_is_still_400_first(w):
+    assert call(w, "say", idle_ctx(w), text="hi", template="a").code == 501
+    assert json.loads(call(w, "say", idle_ctx(w), text=" ", template="BAD").body) == {"error": "empty"}
+
+
 def test_output_reports_whether_the_type_was_accepted(w):
     cmd = FakeCommands(output="prd")
     ok = call(w, "output", idle_ctx(w, commands=cmd), type="prd")
@@ -1042,16 +1077,16 @@ def test_the_route_table_of_the_adapter_names_a_view_for_every_get_path(w):
     assert route("/doc/prd") == ("doc", {"name": "prd"}) and route("/view") == ("view", {})
     assert route("/site/latest") == ("site", {"key": "latest"}) and route("/nothing") is None
     names = {route(p)[0] for p in ("/api/state", "/api/runs", "/api/call", "/api/preview", "/api/docs", "/api/map", "/api/plan",
-                                   "/api/run-templates", "/api/artifacts", "/api/agent", "/api/code", "/api/artifact", "/api/story",
+                                   "/api/run-templates", "/api/run-template", "/api/artifacts", "/api/agent", "/api/code", "/api/artifact", "/api/story",
                                    "/api/board", "/api/audits", "/api/refs")}
-    assert names == {"state", "runs", "call", "preview", "docs", "map", "plan", "run_templates", "artifacts", "agent", "code",
+    assert names == {"state", "runs", "call", "preview", "docs", "map", "plan", "run_templates", "run_template", "artifacts", "agent", "code",
                      "artifact", "story", "board", "audits", "refs"}
     assert {route(p)[0] for p in ("/api/runlist", "/api/changes", "/api/plan-map", "/api/catalog", "/api/activity", "/api/artifacts/groups",
                                   "/api/record")} == {"runlist", "changes", "plan_map", "catalog", "activity", "artifacts_groups", "record"}
     every_get = {view for view in NAMES if view not in ("say", "ask", "settings", "playbooks_clear", "lessons_clear", "output", "reset")}
     reached = {route(p)[0] for p in ("/", "/vendor/d3.min.js", "/api/state", "/api/runs", "/api/runlist", "/api/changes", "/api/call", "/api/preview",
                                      "/api/docs", "/api/map", "/api/plan", "/api/plan-map", "/api/library", "/api/library/a/b/c/v1", "/api/catalog",
-                                     "/api/run-templates", "/api/artifacts", "/api/agent", "/api/activity", "/api/record", "/api/code",
+                                     "/api/run-templates", "/api/run-template", "/api/artifacts", "/api/agent", "/api/activity", "/api/record", "/api/code",
                                      "/api/artifacts/tree", "/api/artifacts/groups", "/api/artifact", "/api/story", "/api/board", "/api/audits",
                                      "/api/refs", "/shot/1", "/file/x", "/doc/x", "/view", "/site/latest", "/api/timing")}
     assert reached == every_get, "every GET view is reached by some path of the adapter, and no other"
@@ -1405,6 +1440,111 @@ def test_a_data_folder_without_a_library_shows_no_specialised_template_and_the_v
     assert jbody(call(w, "catalog", ctx))["runs"] == []
     assert call(w, "library_item", ctx, artifact="prd", section="goals", slug="nothing", version="v1").code == 404
     assert jbody(call(w, "run_templates", ctx)) == {"decisions": []}
+
+
+# ---- J2 sync 6: the run template views and the team's runs folder (D183, D184) -------------------------------------------------
+def seen_env(monkeypatch, w, *names):
+    """Replace the three J2 readers the views call with spies that record the environment they were called under."""
+    seen = []
+
+    def spy(label, answer):
+        def fn(*args, **kw):
+            seen.append((label, {n: os.environ.get(n) for n in names}))
+            return answer
+        return fn
+    return seen, spy
+
+
+def test_the_library_views_also_point_j2s_runs_folder_at_the_asking_teams_runs_and_put_it_back(w, tmp_path, monkeypatch):
+    lib, runs = tmp_path / "data-library", tmp_path / "team-a" / "runs"
+    seen, spy = seen_env(monkeypatch, w, "J2_LIBRARY_DIR", "J2_RUNS_DIR")
+    monkeypatch.setattr(w.j2.j2_template_lib, "catalog_view", spy("catalog", {"artifacts": []}))
+    monkeypatch.setenv("J2_RUNS_DIR", "elsewhere")
+    ctx = w.views.RunCtx("idle", None, None, str(runs), None, w.memory, snap={}, library=str(lib))
+    assert jbody(call(w, "catalog", ctx)) == {"artifacts": []}
+    assert seen == [("catalog", {"J2_LIBRARY_DIR": str(lib), "J2_RUNS_DIR": str(runs)})]
+    assert os.environ["J2_RUNS_DIR"] == "elsewhere", "put back: it was another folder"
+    monkeypatch.delenv("J2_RUNS_DIR")
+    call(w, "catalog", ctx)
+    assert "J2_RUNS_DIR" not in os.environ, "put back: it was not set"
+    seen.clear()
+    call(w, "catalog", w.views.RunCtx("idle", None, None, str(runs), None, w.memory, snap={}))
+    assert seen[0][1]["J2_RUNS_DIR"] is None, "no library given (the stdlib adapter): J2's own resolution of both, nothing is set"
+
+
+def test_two_teams_asking_in_turn_each_see_their_own_runs_and_neither_leaks_into_the_other(w, tmp_path, monkeypatch):
+    seen, spy = seen_env(monkeypatch, w, "J2_RUNS_DIR")
+    monkeypatch.setattr(w.j2.j2_template_lib, "catalog_view", spy("catalog", {}))
+    for team in ("a", "b", "a"):
+        call(w, "catalog", w.views.RunCtx("idle", None, None, str(tmp_path / team / "runs"), None, w.memory, snap={}, library=str(tmp_path / "lib")))
+    assert [e["J2_RUNS_DIR"] for _, e in seen] == [str(tmp_path / t / "runs") for t in "aba"]
+
+
+def test_run_template_answers_the_view_plus_enabled_from_the_contexts_flag_and_never_from_the_environment(w, tmp_path, monkeypatch):
+    seen, spy = seen_env(monkeypatch, w, "J2_LIBRARY_DIR")
+    row = {"schema": "run-template/1", "id": "thread-boutique-website", "workflows": []}
+    monkeypatch.setattr(w.j2.j2_template_lib, "run_template_view", spy("view", dict(row)), raising=False)
+    ctx = lambda on: w.views.RunCtx("idle", None, None, str(w.runs_dir), None, w.memory, snap={}, library=str(tmp_path / "lib"), run_templates_on=on)
+    for env in ({}, {"J2_RUN_TEMPLATES": "1", "J2_AUTO_REUSE": "1", "J2_ARTIFACT_LIBRARY": "1"}):
+        for key in ("J2_RUN_TEMPLATES", "J2_AUTO_REUSE", "J2_ARTIFACT_LIBRARY"):
+            monkeypatch.delenv(key, raising=False)
+        for key, value in env.items():
+            monkeypatch.setenv(key, value)
+        assert jbody(call(w, "run_template", ctx(False), id="thread-boutique-website")) == {**row, "enabled": False}, env
+        assert jbody(call(w, "run_template", ctx(True), id="thread-boutique-website")) == {**row, "enabled": True}, env
+    assert seen[0] == ("view", {"J2_LIBRARY_DIR": str(tmp_path / "lib")}), "read under the library of the data folder"
+    assert w.views.RunCtx("idle", None, None, "", None, w.memory).run_templates_on is False, "off unless the team's settings say so"
+
+
+@pytest.mark.parametrize("tid", ["", "Thread", "a b", "a/b", "../x", "a_b", "a.b", "é", "x" * 90 + "!"])
+def test_run_template_refuses_an_id_that_is_not_lowercase_letters_digits_and_hyphens_without_asking_j2(w, monkeypatch, tid):
+    monkeypatch.setattr(w.j2.j2_template_lib, "run_template_view", lambda t: pytest.fail("J2 was asked for " + t), raising=False)
+    r = call(w, "run_template", idle_ctx(w), id=tid)
+    assert (r.code, json.loads(r.body)) == (404, {"error": "no such run template"})
+    assert call(w, "run_template", idle_ctx(w)).code == 404, "no id at all"
+
+
+def test_run_template_of_an_unknown_id_is_404_and_a_non_string_id_is_too(w, monkeypatch):
+    monkeypatch.setattr(w.j2.j2_template_lib, "run_template_view", lambda t: None, raising=False)
+    for tid in ("nothing-here", ["a"], 5):
+        r = call(w, "run_template", idle_ctx(w), id=tid)
+        assert (r.code, json.loads(r.body)) == (404, {"error": "no such run template"}), tid
+
+
+def test_run_templates_adds_the_run_template_and_the_reuse_rows_only_for_a_run_that_has_one(w, monkeypatch):
+    lib = w.j2.j2_template_lib
+    rows = [{"template": "t", "version": 1, "source": "from library"}]
+    monkeypatch.setattr(lib, "run_templates", lambda d: list(rows))
+    monkeypatch.setattr(lib, "run_template_use", lambda d: None, raising=False)
+    monkeypatch.setattr(lib, "reuse_rows", lambda decs, run_dir=None: pytest.fail("rows are widened only for a run template"), raising=False)
+    ctx = live_ctx(w, w.site)
+    assert jbody(call(w, "run_templates", ctx)) == {"decisions": rows}, "no run template: J2's answer as before"
+    use = {"id": "thread-boutique-website", "name": "Thread", "selected": 5, "of": 5}
+    monkeypatch.setattr(lib, "run_template_use", lambda d: dict(use), raising=False)
+    monkeypatch.setattr(lib, "reuse_rows", lambda decs, run_dir=None: [{**d, "group": "website", "kind_shown": "reused"} for d in decs], raising=False)
+    assert jbody(call(w, "run_templates", ctx)) == {"decisions": [{**rows[0], "group": "website", "kind_shown": "reused"}], "run_template": use}
+    monkeypatch.setattr(lib, "run_templates", lambda d: [])
+    monkeypatch.setattr(lib, "run_template_use", lambda d: pytest.fail("a run without decisions has no use"), raising=False)
+    assert jbody(call(w, "run_templates", ctx)) == {"decisions": []}
+    assert jbody(call(w, "run_templates", idle_ctx(w))) == {"decisions": []}
+
+
+def test_the_stdlib_adapter_routes_run_template_and_says_with_a_template(w, monkeypatch):
+    assert w.j2_server.route("/api/run-template") == ("run_template", {})
+    said = []
+    fresh = w.j2.J2Run(run_dir=w.base / "runs" / "j2-unused")
+    monkeypatch.setattr(fresh, "set_run_template", lambda tid, keys=None: said.append(("tpl", tid, keys)) or True, raising=False)
+    monkeypatch.setattr(fresh, "user_says", lambda text: said.append(("say", text)) or True)
+    monkeypatch.setattr(w.j2_server, "RUN", fresh)
+    assert w.server.ask("POST", "/api/say", {"text": "one", "template": "a-b", "workflows": "W-1,W-2"})[0] == 200
+    assert w.server.ask("POST", "/api/say", {"text": "two"})[0] == 200
+    assert w.server.ask("POST", "/api/say", {"text": "three", "template": "Bad"})[0] == 400
+    assert said == [("tpl", "a-b", "W-1,W-2"), ("say", "one"), ("say", "two")]
+
+
+def test_the_asking_cap_of_a_question_is_the_note_cap_of_the_orchestrator(w):
+    from sutra_app.orchestrator.agent_sessions import NOTE_CHARS
+    assert w.views.ASK_CHARS == NOTE_CHARS, "the engine cannot import the orchestrator, so the one copy is pinned here (D188 R-1)"
 
 
 # ---- the stdlib adapter serves the new routes, and answers a question from the records only --------------------------------------
