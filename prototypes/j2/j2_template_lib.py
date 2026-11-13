@@ -72,8 +72,9 @@ def enabled():
 
 def auto_reuse():
     """J2_AUTO_REUSE=1 (default off): a run started without a run template picks a similar one by itself
-    (match_run_templates), and the router adapts the nearest existing section template before it creates one (nearest)."""
-    return os.environ.get("J2_AUTO_REUSE") == "1"
+    (match_run_templates), and the router adapts the nearest existing section template before it creates one (nearest).
+    J2_ARTIFACT_LIBRARY=1 (the content door, j2_artifact_lib) implies it: a served section needs a run template."""
+    return os.environ.get("J2_AUTO_REUSE") == "1" or os.environ.get("J2_ARTIFACT_LIBRARY") == "1"
 
 
 def slug(text):
