@@ -1419,7 +1419,8 @@ def test_the_stdlib_adapter_serves_the_new_routes(w, monkeypatch):
     status, ctype, body = srv.ask("GET", "/view?name=site/v1.html")
     assert (status, ctype.split(";")[0]) == (200, "text/html") and body == w.site.sites[0].encode("utf-8") or status == 200
     assert b"isn't written yet" in srv.ask("GET", "/doc/prd")[2]
-    assert srv.ask("GET", "/library")[0] == 404, "J2's /library is the page, which this adapter has only when it was given a folder"
+    # J2's /library is the page, which this adapter has only when J2's page files are found (an extraction named by SUTRA_J2_CHECKOUT has them)
+    assert srv.ask("GET", "/library")[0] == (200 if os.environ.get("SUTRA_J2_CHECKOUT") else 404)
 
 
 def test_the_stdlib_adapter_answers_a_question_from_the_records_and_never_asks_a_model(w, monkeypatch):
