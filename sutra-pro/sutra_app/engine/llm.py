@@ -5,7 +5,9 @@ J2 called a model provider here. This shim sends every call through one seam ins
 `ScriptedPort`, J2's mock mode). The five J2 call sites keep their syntax (they only gain a `tagged(...)` block); the
 host calls `configure(...)` BEFORE the vendored `j2` module is imported because J2 reads `MOCK` at import.
 
-    ask            J2's signature plus a keyword `tag`; the reply text, stripped (unstripped in mock mode, as J2)
+    ask            J2's signature (`timeout` included) plus a keyword `tag`; the reply text, stripped (unstripped in mock mode, as J2)
+    CallTimeout    what `ask` raises when the port reports a timeout (J2's `except llm.CallTimeout`, D170)
+    can_read_files False: the agents' file tools are bound to the owner's working folder, never to a run folder (D170)
     LAST_META      cleared before each call, then filled from the result (model, provider, tokens, usd, duration_ms,
                    structured); a mock call leaves it empty, as J2's did
     MOCK, PROVIDER, MODEL    what J2 reads; fixed by `configure`. In mock mode PROVIDER and MODEL are None, as in J2
@@ -40,7 +42,7 @@ from .port import (
 )
 
 __all__ = [
-    "ask", "configure", "tagged", "current_tag", "bind_atom", "bound_atom", "env_mock", "step_label", "ScriptedPort",
+    "ask", "CallTimeout", "can_read_files", "configure", "tagged", "current_tag", "bind_atom", "bound_atom", "env_mock", "step_label", "ScriptedPort",
     "EmptyReply", "extract_json", "close_json", "extract_html", "partial_html", "LAST_META", "MOCK", "PROVIDER", "MODEL",
     "MOCK_ENV", "TAG_HOOKS", "PROGRESS_HOOKS",
 ]
@@ -70,6 +72,17 @@ _DEFAULT_PORT: Optional["ScriptedPort"] = None     # mock mode with no port conf
 _BASE_TAG: CallTag = CallTag()
 _BOUND_ATOM: Optional[str] = None
 _TAG: ContextVar[Optional[CallTag]] = ContextVar("sutra_engine_call_tag", default=None)
+
+
+class CallTimeout(RuntimeError):
+    """J2's own name for a model call stopped at its time limit (`J2Run.call` retries it once). Raised by `ask` for a
+    `ModelError` with code `timeout`; the original is `__cause__`. D170."""
+
+
+def can_read_files() -> bool:
+    """J2 asks whether the agent can read files at a path; here it never can: the agents' file tools are bound to the owner's
+    working folder, never to a run folder, so J2's "read the rest at <path>" hint would point at nothing (D170)."""
+    return False
 
 
 class EmptyReply(ModelError):
@@ -193,10 +206,12 @@ def _hooked_progress(tag: CallTag, on_progress: Optional[Callable[[dict], None]]
 
 
 def ask(system, user, mock, max_tokens=1500, effort="high", on_progress=None, json_mode=False, images=None,
-        schema=None, *, tag=None) -> str:
+        schema=None, timeout=None, *, tag=None) -> str:
     """One model call. `mock` is J2's scripted reply (a callable); only the stub path calls it. `images` are PNG paths and
     the ones that do not exist are dropped. `schema` is a JSON Schema the reply should follow (advisory: the engine checks
-    the reply itself). `tag` names the call; default `current_tag()`. Raises a `ModelError` when the port does."""
+    the reply itself). `timeout` is J2's per-call limit in seconds (D170): it becomes `CompletionRequest.timeout_s`, which the
+    router honours and cuts to the envelope's deadline; a `ModelError` with code `timeout` is re-raised as `CallTimeout`.
+    `tag` names the call; default `current_tag()`. Raises a `ModelError` when the port does."""
     images = [p for p in images or [] if p and os.path.exists(p)]
     LAST_META.clear()
     port = _active_port()
@@ -205,8 +220,14 @@ def ask(system, user, mock, max_tokens=1500, effort="high", on_progress=None, js
         tag = tag.model_copy(update={"atom": _BOUND_ATOM})
     tag = _hooked_tag(tag)
     request = CompletionRequest(system=system, user=user, max_tokens=max_tokens, effort=effort, json_mode=json_mode,
-                                images=images, json_schema=schema, tag=tag, allowance=None, scripted=mock)
-    result = port.complete(request, _hooked_progress(tag, on_progress))
+                                images=images, json_schema=schema, timeout_s=timeout or None, tag=tag, allowance=None,
+                                scripted=mock)
+    try:
+        result = port.complete(request, _hooked_progress(tag, on_progress))
+    except ModelError as exc:
+        if exc.code == "timeout":
+            raise CallTimeout(str(exc)) from exc
+        raise
     if MOCK:                          # J2 reported nothing for a mock reply, and returned it as it was
         return result.text
     meta = {"model": result.model, "provider": result.provider, "input_tokens": result.input_tokens,

@@ -104,6 +104,11 @@ class DataPaths:
         return self.data_dir / "library"
 
     @property
+    def types_dir(self) -> Path:
+        """The user's local output types: the ones runs make (`types.local.json`, `templates/`, `.lock`), D163."""
+        return self.data_dir / "types"
+
+    @property
     def agents_dir(self) -> Path:
         return self.data_dir / "agents" / "j2"
 
@@ -151,9 +156,10 @@ class DataPaths:
 
     def j2_env(self) -> dict[str, str]:
         """The path variables the host exports before it imports J2: where this department's runs and memory are, the
-        global library, and the role-file override folder when it exists."""
+        global library, the user's local types folder (P17, D163), and the role-file override folder when it exists."""
         env = {"J2_RUNS_DIR": str(self.runs_dir), "J2_MEMORY_FILE": str(self.lessons_file),
-               "J2_PLAYBOOK_FILE": str(self.playbooks_file), "J2_LIBRARY_DIR": str(self.library_dir)}
+               "J2_PLAYBOOK_FILE": str(self.playbooks_file), "J2_LIBRARY_DIR": str(self.library_dir),
+               "J2_TYPES_DIR": str(self.types_dir)}
         if self.agents_dir.is_dir():
             env["J2_AGENTS_DIR"] = str(self.agents_dir)
         return env
