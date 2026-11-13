@@ -4643,6 +4643,10 @@ def real_run_checks():
         for covers, checks, why in (([1, 2], [2], "so no workflow covers it"), ([1], [9], "not a done-when item")):
             reg, refused, _ = made_run()._register([wf(covers, checks)])
             assert not reg and any(why in str(x) for x in refused), (reg, refused)
+        later = {"name": "Later", "goal_gap": "x", "outputs": ["more.py"], "completion_check": "z", "covers": [2],
+                 "parts": ["agent_file"], "atoms": [{**atom, "id": "a2"}]}      # a workflow after it in the plan covers item 2
+        reg, refused, _ = made_run()._register([wf([1], [2]), later])
+        assert "Builder" not in [x["name"] for x in reg] and any("so no workflow covers it" in str(x) for x in refused), (reg, refused)
         for reply, ends in (("RUN {code}", "Done:"), ("yes", "Done with open items")):
             run = made_run()
             reg, refused, _ = run._register([wf([1], [2])])

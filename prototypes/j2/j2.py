@@ -8268,6 +8268,7 @@ class J2Run:
         plan_ix = {x["name"]: i for i, x in enumerate((self.real_summary or {}).get("proposal_brief") or [])}
         if plan_ix:
             batch.sort(key=lambda x: plan_ix.get(x.get("name"), 10 ** 6))
+        planned = covered | {i for x in batch for i in self._covers(x)}    # every item the plan's workflows cover
         for w in batch:
             c, name = granted(w), w.get("name") or "?"
             if self.change and self.change["phase"] == "plan" and name not in self.change["allowed"]:
@@ -8347,8 +8348,7 @@ class J2Run:
                 bad = ([f"real_run checks {checks!r} must be a list of done-when item numbers"] if not isinstance(checks, list)
                        else [f"real_run checks item {i}, which is not a done-when item" for i in checks if as_int(i) not in at]
                        + [f"done-when item {i} is checked by the real run's receipt, so no workflow covers it"
-                          for i in checks if as_int(i) in {as_int(x) for x in w.get("covers") or []}
-                          or at.get(as_int(i)) in covered])
+                          for i in checks if at.get(as_int(i)) in planned])
                 if bad:
                     refused.append(self._reject(name, "; ".join(bad)))
                     continue
