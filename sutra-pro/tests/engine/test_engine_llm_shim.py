@@ -55,12 +55,14 @@ class Recorder:
 # ---- the call syntax ------------------------------------------------------------------------------------------------
 
 def test_ask_signature_is_j2s_plus_a_keyword_only_tag():
+    """J2's own signature, `timeout` (sync 5, D170) included."""
     sig = inspect.signature(llm.ask)
     params = list(sig.parameters.values())
     assert [p.name for p in params] == ["system", "user", "mock", "max_tokens", "effort", "on_progress", "json_mode", "images",
-                                        "schema", "tag"]
+                                        "schema", "timeout", "tag"]
     assert {p.name: p.default for p in params if p.default is not p.empty} == {
-        "max_tokens": 1500, "effort": "high", "on_progress": None, "json_mode": False, "images": None, "schema": None, "tag": None}
+        "max_tokens": 1500, "effort": "high", "on_progress": None, "json_mode": False, "images": None, "schema": None,
+        "timeout": None, "tag": None}
     assert all(p.kind is p.POSITIONAL_OR_KEYWORD for p in params[:-1])
     assert params[-1].kind is params[-1].KEYWORD_ONLY
 
@@ -114,13 +116,52 @@ def test_a_real_empty_reply_is_an_error_like_j2s_providers():
 
 
 def test_a_port_error_passes_through_unchanged():
-    err = ModelTimeout("took too long")
+    err = ModelError("the model is broken")
     llm.configure(Recorder(err))
     llm.LAST_META["stale"] = 1
-    with pytest.raises(ModelTimeout) as caught:
+    with pytest.raises(ModelError) as caught:
         llm.ask("s", "u", lambda: "mock")
     assert caught.value is err
     assert llm.LAST_META == {}
+
+
+# ---- timeout, CallTimeout and can_read_files (D170) -----------------------------------------------------------------------
+
+def test_timeout_becomes_the_requests_timeout_s_and_none_or_zero_is_no_limit():
+    port = Recorder()
+    llm.configure(port)
+    llm.ask("s", "u", None, timeout=45)
+    llm.ask("s", "u", None)
+    llm.ask("s", "u", None, timeout=0)
+    assert [r.timeout_s for r in port.requests] == [45.0, None, None]
+
+
+def test_a_timeout_error_of_the_port_is_raised_as_call_timeout_with_the_cause_kept():
+    err = ModelTimeout("took too long")
+    llm.configure(Recorder(err))
+    llm.LAST_META["stale"] = 1
+    with pytest.raises(llm.CallTimeout, match="took too long") as caught:
+        llm.ask("s", "u", lambda: "mock")
+    assert caught.value.__cause__ is err and isinstance(caught.value, RuntimeError) and not isinstance(caught.value, ModelError)
+    assert llm.LAST_META == {}
+    assert "CallTimeout" in llm.__all__ and "can_read_files" in llm.__all__
+
+
+def test_every_other_error_code_is_unchanged_next_to_a_timeout_limit():
+    err = NoModelAvailable("none")
+    llm.configure(Recorder(err))
+    with pytest.raises(NoModelAvailable) as caught:
+        llm.ask("s", "u", None, timeout=5)
+    assert caught.value is err
+
+
+def test_can_read_files_is_false_in_every_mode_and_reads_files_is_not_defined():
+    assert llm.can_read_files() is False
+    llm.configure(Recorder(provider="claude"))
+    assert llm.can_read_files() is False
+    llm.configure(mock=True)
+    assert llm.can_read_files() is False
+    assert not hasattr(llm, "READS_FILES")
 
 
 def test_bad_arguments_fail_before_the_port_is_called():
