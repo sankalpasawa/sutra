@@ -820,6 +820,6 @@ every row.
 Left as it is, and why:
 
 - `AUTO_MIN`, `AUTO_WEIGHTS`, `VAGUE_TYPES` (`run_template_match`): numbers and a word list in code. Not in this PR's list; they move to settings the same way.
-- `run_slots`, `_noun` (slot names such as `<studio name>` from the last word of the business type and from address, time and phone patterns): replaced on branch `sutra-library` by slots named from charter fields.
+- `run_slots`, `_noun` (slot names such as `<studio name>` from the last word of the business type and from address, time and phone patterns): still used when a run template is built. Branch `sutra-library` shows templates with slots named from charter fields (`charter_slots`) instead.
 - `build_design` still looks for `style.json`, the file name `j2.py` writes.
 - The Library tab still skips the row focus for `d.artifact !== "design"` (one comparison in `renderLibrary`).

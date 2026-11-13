@@ -14314,7 +14314,7 @@ def auto_reuse():
             else:
                 os.environ[k] = v
         shutil.rmtree(tmp, ignore_errors=True)
-    print(f"auto-reuse: the match formula, which templates can be picked, the nearest template by fields (on a tie a studio's template before a boutique's, "
+    print(f"auto-reuse: the match formula, which templates can be picked, the nearest template by fields (on a tie the charter's business type compared whole, "
           f"then the run template's own section, then the newest version), "
           f"an adapted template is a new family for another business and a new version for the same one; a pilates brief picks {yoga.name} "
           f"(match {a1['match']:.2f}) and creates no template; a template's unnamed stage is built too; a law-firm PRD finds no similar run template "
