@@ -58,6 +58,8 @@ def register(j2, capabilities=None) -> None:
         for name, spec in cap.outputs().items():
             if name in pending:
                 raise CapabilityConflict(f"the output {name!r} is registered by both {pending[name][0].name!r} and {cap.name!r}")
+            if not isinstance(spec, OutputSpec) or spec.name != name:
+                raise CapabilityConflict(f"the output {name!r} of capability {cap.name!r} must be an OutputSpec named {name!r}")
             pending[name] = (cap, spec)
     known = set(types.names())
     for name, (cap, _spec) in pending.items():
