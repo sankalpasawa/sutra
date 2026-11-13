@@ -138,3 +138,13 @@ def test_the_folders_the_engine_keeps_in_a_department_are_the_ones_the_sweep_lea
 def test_no_secret_is_a_setting_and_no_locked_field_is_a_task_key():
     assert not [name for name in EngineSettings.model_fields if re.search(r"KEY|TOKEN|SECRET|PASSWORD", name, re.I)]
     assert not {ENV_NAMES[name] for name in LOCKED_FIELDS} & set(TASK_SETTING_KEYS)
+
+
+def test_the_builder_time_limit_is_an_engine_setting_the_task_cannot_carry_and_the_settings_file_can(tmp_path):
+    """J2 sync 5 (D169): `J2_BUILDER_TIMEOUT` is editable in `engine.json` and exported to J2, and it is not one of the eight task keys."""
+    assert ENV_NAMES["builder_timeout"] == "J2_BUILDER_TIMEOUT" and "builder_timeout" in EDITABLE_FIELDS
+    assert "J2_BUILDER_TIMEOUT" not in TASK_SETTING_KEYS
+    with pytest.raises(ValueError):
+        TaskSettings.model_validate({"J2_BUILDER_TIMEOUT": "60"})
+    assert EngineSettings.layered({}, {"builder_timeout": 45}, None, {}).to_env()["J2_BUILDER_TIMEOUT"] == "45"
+    assert EngineSettings().to_env()["J2_BUILDER_TIMEOUT"] == "600"
