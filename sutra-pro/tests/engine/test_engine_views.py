@@ -1100,7 +1100,7 @@ def write_runs_fixture(runs_dir):
 def test_the_golden_has_runlist_and_changes_recorded_from_j2s_own_server():
     assert {"runlist", "changes"} <= set(GOLD["get"]["live"]) and "patched" not in GOLD
     assert set(GOLD["get"]["live"]["runlist"]["keys"]) == {"live", "runs", "runs[].id", "runs[].title", "runs[].status",
-                                                          "runs[].output", "runs[].when", "runs[].brief"}
+                                                          "runs[].output", "runs[].label", "runs[].form", "runs[].when", "runs[].brief"}
     assert GOLD["get"]["live"]["changes"]["keys"] == ["changes"]
 
 
