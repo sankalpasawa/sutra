@@ -1,4 +1,4 @@
-"""The 41 handlers of J2's server as plain functions (work package E2, engine design 4.6 and 7.1; J2 sync 4 added `plan_map`,
+"""The 42 handlers of J2's server as plain functions (work package E2, engine design 4.6 and 7.1; J2 sync 4 added `plan_map`,
 `activity`, `catalog`, `artifacts_groups`, `ask`, `record`, `doc`, `view` and `settings`, D140: `runlist` and `changes` are J2's own
 routes now).
 
@@ -48,7 +48,7 @@ DOCX = "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
 PROCESS_GONE = "The department process stopped (exit unknown). Try again."      # engine design 4.6
 SNAPSHOT_FILE, LIVE_FILE = "snapshot.json", "live.json"
 PNG = "image/png"
-HANDLER_COUNT = 41        # J2's rows of engine design 7.1: 34 GET rows ("site" has two, saved and live, and one entry in VIEWS) and 7 POST rows
+HANDLER_COUNT = 42        # J2's rows of engine design 7.1 and `timing` (J2 sync 5, D168): 35 GET rows ("site" has two, saved and live, and one entry in VIEWS) and 7 POST rows
 ASK_CHARS = 2000          # the longest question `ask` takes: as long as a note to an agent (D147)
 
 
@@ -109,7 +109,7 @@ class Published:
     alive: bool
 
 
-EMPTY_LIVE = {"schema": "engine-live/1", "pid": None, "at": "", "output": "website", "doc": False, "out_label": "Website",
+EMPTY_LIVE = {"schema": "engine-live/1", "pid": None, "at": "", "output": None, "doc": False, "out_label": None,
               "docset": [], "stages": [], "stage_i": 0, "docs": {}, "board": {"schema": "board/1", "entries": []},
               "site_tag": "", "sites": 0}
 
@@ -124,7 +124,7 @@ def live_state(run) -> Tuple[dict, dict]:
     reads per request."""
     snap = {**run.snapshot(0), "saved": None}
     live = {"schema": "engine-live/1", "pid": os.getpid(), "at": _now(), "output": run.output, "doc": bool(run.doc),
-            "out_label": run.out["label"], "docset": list(run.docset), "stages": list(run.stages), "stage_i": run.stage_i,
+            "out_label": (run.out or {}).get("label"), "docset": list(run.docset), "stages": list(run.stages), "stage_i": run.stage_i,
             "docs": run.docs, "board": run.board, "site_tag": run.site_tag, "sites": len(run.sites)}
     return snap, live
 
@@ -252,7 +252,7 @@ def _live_map_input(ctx: RunCtx) -> Optional[dict]:
     snap = effective_snapshot(ctx)
     if not _running_or_paused(snap):
         return None
-    return {"snapshot": snap, "stages": list(_live_dict(ctx)["stages"]), "stage_words": j2.J2Run.STAGE_WORDS,
+    return {"snapshot": snap, "stages": list(_live_dict(ctx)["stages"]), "stage_words": j2.J2Run.stage_words(),
             "board": _live_dict(ctx)["board"]}
 
 
@@ -384,20 +384,48 @@ def preview(ctx: RunCtx, q: dict) -> Reply:
 
 
 def docs(ctx: RunCtx, q: dict) -> Reply:
-    """The Documents tab: prd.md, hld.md, lld.md of a run, read-only, only those names."""
+    """The Documents tab: every document a run has, of any document-form type, read-only (J2's `docs_view`, D168), in `types.json` order
+    (local types, then the run's recorded ones): `{type: {asked, text, workflows, label, tag, color}}`. A document is the run's when its file
+    exists, its record says it was built (`documents.json`; live: the run's) or the run asked for it (live: its docset; saved: `summary.json`
+    `design_documents.requested`), written or not."""
     d = _dir(ctx)
-    live = _live_dict(ctx)
-    made = (j2._read(d, "documents.json", {}) if d else {}) if _saved(ctx) else live["docs"]
+    d = d if d and os.path.isdir(d) else None                               # a missing run folder: the empty shape
+    live = None if _saved(ctx) else _live_dict(ctx)
+    made = (live["docs"] if live else j2._read(d, "documents.json", {}) if d else {}) or {}
+    asked = live["docset"] if live else ((((j2._read(d, "summary.json", {}) if d else {}) or {}).get("design_documents") or {})
+                                         .get("requested") or [])
     out = {}
-    for k in ("prd", "hld", "lld"):
+    for t in j2_artifacts.load_types(d)["types"]:
+        k = t["name"]
+        if t.get("kind") != "type" or t.get("form") != "document":
+            continue
         try:
-            with open(os.path.join(d, f"{k}.md"), encoding="utf-8") as f:
+            with open(os.path.join(d, t["file"]), encoding="utf-8") as f:
                 text = f.read()
         except (OSError, TypeError):
             text = None
-        out[k] = {"asked": text is not None or k in made or (not _saved(ctx) and k in live["docset"]), "text": text,
-                  "workflows": (made.get(k) or {}).get("workflows", [])}
+        if text is None and k not in made and k not in asked:
+            continue                                                        # not one of this run's documents
+        out[k] = {"asked": True, "text": text, "workflows": (made.get(k) or {}).get("workflows", []),
+                  "label": t.get("label") or k, "tag": t.get("tag") or t.get("label") or k, "color": t.get("color") or "--other"}
     return _json(out)
+
+
+def timing(ctx: RunCtx, q: dict) -> Reply:
+    """Run settings' "Time per step" (J2 sync 5, D168): the run folder's `timing.json` (a run from before it, or a live run that has not saved it
+    yet: rebuilt from `calls.jsonl`, AI calls only, `from_calls_only`); 404 `{"error": "no timing"}` when there is none."""
+    if _saved(ctx):
+        d = _dir(ctx)
+        t = j2.saved_timing(d) if d and os.path.isdir(d) else None
+    else:
+        t = _live_timing(ctx)
+    return _json(t) if t else _json({"error": "no timing"}, 404)
+
+
+def _live_timing(ctx: RunCtx) -> Optional[dict]:
+    """The live run's timing: the API process has no `J2Run` (the host process holds it), so it reads what the run left in its folder."""
+    d = _dir(ctx)
+    return j2.saved_timing(d) if d and os.path.isdir(d) else None
 
 
 def map(ctx: RunCtx, q: dict) -> Reply:       # noqa: A001 - the row's name
@@ -599,11 +627,13 @@ def audits(ctx: RunCtx, q: dict) -> Reply:
 
 
 def refs(ctx: RunCtx, q: dict) -> Reply:
-    """Ids the cards name, with their text: conditions/*.json and every output type's rubric."""
+    """Ids the cards name, with their text: conditions/*.json and every output type's rubric (the types are the data's: J2's `types.json`, the
+    local types and the types a capability registered, D168)."""
     conds = {}
-    for o in j2.OUTPUTS.values():       # every registered output's conditions file (a capability's is an absolute name: load_conditions joins it as it is)
-        conds.update({c["id"]: c["text"] for c in j2.load_conditions(o["conditions"])})
-    rub = {i: t for o in j2.OUTPUTS.values() for i, t in o.get("rubric") or ()}
+    kinds = j2.j2_types.names()
+    for f in dict.fromkeys(j2.output_def(k)["conditions"] for k in kinds):      # a capability's is an absolute name: load_conditions joins it as it is
+        conds.update({c["id"]: c["text"] for c in j2.load_conditions(f)})
+    rub = {i: t for k in kinds for o in [j2.output_def(k)] for i, t in o.get("rubric") or ()}
     return _json({"conditions": conds, "rubric": rub})
 
 
@@ -622,7 +652,7 @@ def file(ctx: RunCtx, q: dict) -> Reply:
     """A document run's prd.md or prd.docx, to download; only the names the output allows."""
     d, name = _dir(ctx), str(q.get("name") or "")
     out = j2.saved_output(d) if _saved(ctx) else _live_dict(ctx)["output"]
-    o = j2.OUTPUTS.get(out) or j2.OUTPUTS["website"]
+    o = j2.output_def(out) if out else {}          # no type chosen yet: no file of its own
     allowed = [o["file"], o["file"][:-3] + ".docx"] if o.get("file") else []
     allowed += [f for k in j2._read(d or "", "documents.json", {}) for f in (f"{k}.md", f"{k}.docx")]   # design documents
     path = os.path.join(d or "", name)
@@ -647,13 +677,20 @@ def site_saved(ctx: RunCtx, q: dict) -> Reply:
     return Reply(200, j2.md_html(text) if name.endswith(".md") else text, "text/html")
 
 
+def _stub_noun(live: dict) -> str:
+    """What the live page stub calls the thing being built: the run's type label in lower case, `document` for a document form with no label, and
+    `result` while no type is chosen (nothing is assumed, D165)."""
+    label = str(live.get("out_label") or "").strip().lower()
+    return label or ("document" if live.get("doc") else "result")
+
+
 def site_live(ctx: RunCtx, q: dict) -> Reply:
     """Row 25: the live page (markdown rendered for documents) or the "will appear" stub; 404 out of range."""
     live = _live_dict(ctx)
     n = live["sites"]
     if not n:
         return Reply(200, "<p style='font:15px system-ui;color:#667;padding:24px'>Your "
-                          f"{'document' if live['doc'] else 'website'} will appear here once it's built.</p>", "text/html")
+                          f"{_stub_noun(live)} will appear here once it's built.</p>", "text/html")
     key = str(q.get("key") or "")
     i = n if key == "latest" else _int(key.lstrip("v") or 0, 0)         # J2: int(key.lstrip("v") or 0)
     if not 1 <= i <= n:
@@ -737,7 +774,7 @@ def reset(ctx: RunCtx, body: dict) -> Reply:
 VIEWS: Dict[str, Callable[[RunCtx, dict], Reply]] = {fn.__name__: fn for fn in (
     index, vendor, state, runs, call, preview, docs, map, plan, library, library_item, run_templates, artifacts, agent, code,
     artifacts_tree, artifact, story, board, audits, refs, shot, file, site, say, playbooks_clear, lessons_clear, output, reset,
-    runlist, changes, plan_map, activity, catalog, artifacts_groups, ask, record, doc, view, settings)}
+    runlist, changes, plan_map, activity, catalog, artifacts_groups, ask, record, doc, view, settings, timing)}
 
 # What a request needs from the live run (the stdlib adapter builds `live_state` only for these; the others read the folder).
 LIVE_VIEWS = frozenset({"state", "runlist", "preview", "docs", "map", "artifacts_tree", "artifacts_groups", "record", "story", "board",
