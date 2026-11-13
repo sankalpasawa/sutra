@@ -6,7 +6,8 @@ Forms: in the phone frame each form is filled with sample values and submitted (
 fails when it has no submit control, throws a JS error on submit, or never fires its submit event although every
 field is valid. Sample values a field's own rules reject (e.g. a pattern) are reported, not counted as a failure.
 Design measurements for Audit's rubric (design()): text contrast against its background (WCAG AA: 4.5, or 3 for
-large text), tap targets under TAP_MIN px at phone width (inline links inside text are exempt), images without alt,
+large text), tap targets under TAP_MIN px at phone width (inline links inside text are exempt; a dense control needs
+TAP_DENSE px, see DENSE_JS), images without alt,
 h1 count and skipped heading levels, fonts in use, nav and in-page links, styled actions on the first screen.
 screenshot() renders both widths side by side into one PNG for Audit to look at.
 Headless Chrome won't make a window narrower than 500px, so each width is an iframe inside a wrapper page.
@@ -22,6 +23,16 @@ import tempfile
 
 WIDTHS = {"phone": 360, "desktop": 1280}
 TAP_MIN = int(os.getenv("J2_TAP_MIN", "44"))   # px; WCAG 2.5.5 (AAA) and the common phone guideline
+# Dense controls (a grid's cells, a keypad's keys) need TAP_DENSE px, the WCAG 2.2 AA minimum (2.5.8): 9 x 44px cells
+# don't fit a 360px phone. Rule: a control is dense when DENSE_COUNT or more tap targets of its own tag sit at its own
+# level: its siblings (a row of cells), or the children of its parent's siblings (a keypad of rows, a table's cells),
+# not counted under the body. A lone button, or one beside a grid, keeps TAP_MIN.
+TAP_DENSE, DENSE_COUNT = 24, 9
+DENSE_JS = ("const denseOf = (d, sel) => el => { const p = el.parentElement, g = p && p.parentElement,"
+            f" many = xs => xs.filter(x => x.tagName === el.tagName && x.matches(sel)).length >= {DENSE_COUNT};"
+            " return !!p && (many([...p.children]) || (!!g && g !== d.body && g !== d.documentElement"
+            " && many([...g.children].flatMap(c => [...c.children])))); };"
+            f" const needOf = (dense, min) => el => dense(el) ? Math.min(min, {TAP_DENSE}) : min;")
 CAPTURE = ("<script>window.__j2e=[];addEventListener('error',e=>__j2e.push(String(e.message||e)));"
            "addEventListener('unhandledrejection',e=>__j2e.push('Unhandled promise rejection: '+String(e.reason)));"
            "</script>")
@@ -32,6 +43,7 @@ let left = frames.length;
 const SAMPLE = {email:'test@example.com', tel:'5550100', number:'1', range:'1', date:'2030-01-15', time:'10:00',
   'datetime-local':'2030-01-15T10:00', month:'2030-01', week:'2030-W03', url:'https://example.com', color:'#336699'};
 const TAP_MIN = %d;
+%s
 function design(w, phone){
   const d = w.document, cs = el => w.getComputedStyle(el);
   const vis = el => { const r = el.getBoundingClientRect(), c = cs(el); return r.width > 0 && r.height > 0 && c.visibility !== 'hidden' && c.display !== 'none' && +c.opacity !== 0; };
@@ -59,9 +71,10 @@ function design(w, phone){
       .filter(el => { const v = rgb(cs(el).backgroundColor); return v.length && (v.length < 4 || v[3] > 0); })
       .map(el => (el.textContent || '').trim().slice(0, 30)).slice(0, 8)};
   if (phone){
-    const small = [...d.querySelectorAll('a[href],button,input:not([type=hidden]),select,textarea,[role=button]')].filter(vis)
+    const TAPS = 'a[href],button,input:not([type=hidden]),select,textarea,[role=button]', need = needOf(denseOf(d, TAPS), TAP_MIN);
+    const small = [...d.querySelectorAll(TAPS)].filter(vis)
       .filter(el => !(el.tagName === 'A' && cs(el).display === 'inline' && el.closest('p,li,td,span')))   // links inside text are exempt
-      .map(el => [el, el.getBoundingClientRect()]).filter(([, r]) => r.height < TAP_MIN || r.width < TAP_MIN);
+      .map(el => [el, el.getBoundingClientRect()]).filter(([el, r]) => r.height < need(el) || r.width < need(el));
     out.small_tap_targets = {min_px: TAP_MIN, count: small.length, examples: small.slice(0, 6).map(([el, r]) =>
       `${el.tagName.toLowerCase()} "${(el.textContent || el.value || el.name || '').trim().slice(0, 25)}" ${Math.round(r.width)}x${Math.round(r.height)}`)};
   }
@@ -136,7 +149,7 @@ def _chrome(cmd, timeout, text=True):
 def find_chrome():
     if os.getenv("J2_CHROME", "").lower() in ("none", "off", "0"):      # J2_CHROME=none: run as if Chrome is missing
         return None
-    for p in (os.getenv("J2_CHROME"), "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome",
+    for p in (os.getenv("J2_CHROME"), os.getenv("CHROME_PATH"), "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome",
               shutil.which("google-chrome"), shutil.which("chromium"), shutil.which("chromium-browser")):
         if p and os.path.exists(p):
             return p
@@ -167,7 +180,7 @@ def check(html):
         frames = "".join(f'<iframe data-name="{n}"{" data-forms=1" if n == "phone" else ""} src="site.html" '
                          f'style="width:{w}px;height:900px;border:0"></iframe>' for n, w in WIDTHS.items())
         with open(os.path.join(tmp, "wrap.html"), "w", encoding="utf-8") as f:
-            f.write(WRAPPER % (frames, TAP_MIN))
+            f.write(WRAPPER % (frames, TAP_MIN, DENSE_JS))
         m = None
         for attempt in range(2):       # one retry: a rare Chrome hang mustn't count as "the site failed the check"
             try:
@@ -207,7 +220,8 @@ def check(html):
 
 
 TAP_WRAPPER = """<!doctype html><html><body><iframe src="site.html" style="width:360px;height:900px;border:0"></iframe>
-<script>const f = document.querySelector('iframe');
+<script>%s
+const f = document.querySelector('iframe');
 f.addEventListener('load', () => setTimeout(() => { let out;
   try {
     const w = f.contentWindow, d = w.document, cs = el => w.getComputedStyle(el), sel = %s, min = %d;
@@ -227,8 +241,9 @@ f.addEventListener('load', () => setTimeout(() => { let out;
         if (+cs(e).opacity === 0) e.style.setProperty('opacity', '1', 'important'); } }
     const els = taps.filter(vis)
       .filter(el => !(el.tagName === 'A' && cs(el).display === 'inline' && el.closest('p,li,td,span')));   // links in text are exempt
-    const small = els.map(el => [el, el.getBoundingClientRect()]).filter(([, r]) => r.height < min || r.width < min);
-    out = {roots: roots.length, checked: els.length, revealed, small_count: small.length, small: small.slice(0, 6).map(([el, r]) =>
+    const dense = denseOf(d, TAP), need = needOf(dense, min);
+    const small = els.map(el => [el, el.getBoundingClientRect()]).filter(([el, r]) => r.height < need(el) || r.width < need(el));
+    out = {roots: roots.length, checked: els.length, dense: els.filter(dense).length, revealed, small_count: small.length, small: small.slice(0, 6).map(([el, r]) =>
       `${el.tagName.toLowerCase()} "${(el.textContent || el.value || el.name || '').trim().slice(0, 25)}" ${Math.round(r.width)}x${Math.round(r.height)}`)};
   } catch (e) { out = {error: String(e)}; }
   document.body.setAttribute('data-j2', JSON.stringify(out)); }, 300));
@@ -237,7 +252,8 @@ f.addEventListener('load', () => setTimeout(() => { let out;
 
 def tap_targets(html, selector, min_px=TAP_MIN):
     """Tap targets inside the elements matching selector, measured in headless Chrome at 360px (phone width):
-    {available, roots, checked, small_count, small}. Links inside running text are exempt, as in the R-6 check."""
+    {available, roots, checked, dense, small_count, small}. Links inside running text are exempt, as in the R-6 check;
+    a dense control (DENSE_JS: a grid's cell, a keypad's key) needs min(min_px, TAP_DENSE)."""
     chrome = find_chrome()
     if not chrome:
         return {"available": False, "note": "Chrome not found (set J2_CHROME)"}
@@ -245,7 +261,7 @@ def tap_targets(html, selector, min_px=TAP_MIN):
         with open(os.path.join(tmp, "site.html"), "w", encoding="utf-8") as f:
             f.write(html)
         with open(os.path.join(tmp, "wrap.html"), "w", encoding="utf-8") as f:
-            f.write(TAP_WRAPPER % (json.dumps(selector), int(min_px)))
+            f.write(TAP_WRAPPER % (DENSE_JS, json.dumps(selector), int(min_px)))
         for _ in range(2):             # one retry, as in check(): a Chrome hang isn't a failed check
             try:
                 p = run_chrome([chrome, "--headless=new", "--disable-gpu", "--allow-file-access-from-files",
@@ -519,6 +535,7 @@ f.addEventListener('load', () => setTimeout(async () => { const out = [];
   for (const o of ops){ let r;
     try { const all = [...d.querySelectorAll(o.sel || 'body')], el = all[0];
       if (o.do === 'wait') { await sleep(o.ms); r = {v: true}; }
+      else if (o.read === 'count') r = {v: all.length};
       else if (!el) r = {missing: true};
       else if (o.do === 'set') { const val = String(o.val), lc = val.toLowerCase();
         if (el.tagName === 'SELECT') { const opt = [...el.options].find(x => x.value.toLowerCase() === lc || x.textContent.trim().toLowerCase() === lc);
@@ -565,6 +582,14 @@ def behavior(html, ops):
                                .replace("&gt;", ">"))
                 return {"available": True, **r}
     return {"available": False, "note": "Chrome ran but the page never reported (twice)"}
+
+
+def rendered_count(html, selector):
+    """How many elements match selector once the page's scripts have run (the behaviour driver, headless Chrome), or
+    None when it couldn't run. A grid drawn by script counts 0 in the static HTML (".cell": 0 of 81 expected)."""
+    r = behavior(html, [{"read": "count", "sel": selector}])
+    v = ((r.get("results") or [{}])[0] or {}).get("v") if r.get("available") else None
+    return v if type(v) is int else None
 
 
 if __name__ == "__main__":   # python j2_check.py site.html [...]: print the mechanical check for each file

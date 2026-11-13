@@ -1,0 +1,39 @@
+{
+  "schema": "template-library/1",
+  "name": "Iron Grove Fitness Purpose and scope",
+  "version": 1,
+  "sha": "85b352040b5fbd8931ff9308a2dfbd207b071820163e37d0dd8dbb4d2d8a73be",
+  "schema_sha": "d0f89ba5fa5b949b9dc900b64649edf9bc8f7f2a3e0b1ce221bed5c979770007",
+  "model_sha": "8f4873f510acd02f0811685ec461c20008fd9f3908ff84d0abaafb5cd3a03fc8",
+  "class": "IronGroveFitnessPurposeAndScopeV1",
+  "created": "2026-11-11T21:24:41",
+  "fingerprints": [
+    "37db06ac77907867de3e64700200f85d3bf812719caccc9c961e80890712174f"
+  ],
+  "made_by": {
+    "run": "j2-20261111-211339",
+    "workflow": "W-7",
+    "atom": "W-7.a1",
+    "agent": "code (adapted from a run template)",
+    "date": "2026-11-11 21:13:39"
+  },
+  "business": {
+    "name": "Iron Grove Fitness",
+    "type": "fitness studio"
+  },
+  "mock": false,
+  "collected_from": {
+    "run": "j2-20261111-211339",
+    "where": "the run's copy"
+  },
+  "used_by": [
+    {
+      "run": "j2-20261111-211339",
+      "workflow": "W-7",
+      "atom": "W-7.a1",
+      "action": "extended"
+    }
+  ],
+  "renamed_from": "Still Point Yoga Purpose and scope@2",
+  "adapted_from": "Still Point Yoga Purpose and scope@1"
+}

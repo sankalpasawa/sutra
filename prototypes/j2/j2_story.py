@@ -19,9 +19,9 @@ SCHEMA = "story/1"
 STEPS = ("doubt", "ask", "answer", "change", "recheck")
 
 
-def _tags():
-    """deliverable type -> its tag (PRD, HLD, LLD, Site), from artifacts/types.json."""
-    return {t["name"]: t["tag"] for t in A.load_types()["types"]}
+def _tags(d=None):
+    """deliverable type -> its tag (PRD, HLD, LLD, Site), from artifacts/types.json (and the types run d recorded)."""
+    return {t["name"]: t["tag"] for t in A.load_types(d)["types"]}
 
 
 def _atom_places(rows, docs, atoms, tags):
@@ -73,7 +73,7 @@ def build(d, live=None):
     rows = [r for r in A.rows(d) if r["kind"] == "type"]
     atoms = list(((live or {}).get("snapshot") or {}).get("atoms_v1", {}).values()) if live else A._atoms(d)
     docs, summary = _read(d, "documents.json", {}) or {}, _read(d, "summary.json", {}) or {}
-    receipts, tags = _jsonl(d, "receipts.jsonl"), _tags()
+    receipts, tags = _jsonl(d, "receipts.jsonl"), _tags(d)
     head = (_jsonl(d, "chat.jsonl")[:1] or [{}])[0]
     names = {v["id"]: v.get("name") for v in atoms}
     place, nr = _atom_places(rows, docs, atoms, tags), []
