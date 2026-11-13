@@ -101,7 +101,7 @@ run), code checks them before any builder call, and the decision is "reused" (`J
 | 1. `_stage_of` for folder runs | Not needed: we now record outputs as `<folder>/<file>`, which his `_stage_of` matches |
 | 2. `decision_group` counts a folder type as pages | Fixed in main: the type's `group`, else its form |
 | 3. `assumptions_section` (`j2_template_lib.py:470`) | Kept in main |
-| 4. Builder guidance line in `templates/builder.md` ("never run on the Requester's folders; code does that after approval") | Paused (founder, usage); tell him when it is written, as `templates/` is his |
+| 4. Builder guidance line in `templates/builder.md` ("never run on the Requester's folders; code does that after approval") | Written by us (founder's call); tell him, as `templates/` is his |
 | Tests | `library_cleanup` narrowed to `types.json`'s own types in our merge; `sutra_library` fails on a machine whose saved run recorded "phone" as a charter value |
 
 ## Step 7: run for real
@@ -133,7 +133,6 @@ broke. A brief that does (e.g. "sort the files in /tmp/j2-sort-demo") would test
 
 - Dry run before the RUN code: run the command on a copy of the stated folders in the sandbox and show what would be
   created, changed or deleted, with counts; then ask for the code. With a test.
-- The builder guidance line in `templates/builder.md` (above).
 
 ## Step 8: delete dead code (paused, founder, 2026-11-13)
 

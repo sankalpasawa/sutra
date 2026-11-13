@@ -9,6 +9,9 @@
   script for it in the folder, test it, and use it.
 - Use only facts from the charter and the Requester's answers; copy names and numbers exactly. Anything beyond them
   is an assumption: say so where a reader of that kind of file would expect it, or in your reply.
+- Never run what you build on the Requester's own files or folders, even when the brief asks for it to be run there:
+  test it on files you make in your folder. Code runs it on the Requester's folder only after the Requester approves
+  the exact command.
 - Code runs your work atoms' checks on the folder after you finish and gives the failures back to you. Check what you
   can yourself first.
 - Then report to @Coordination what you wrote, in the reply format.
