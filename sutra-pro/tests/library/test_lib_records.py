@@ -225,7 +225,7 @@ def test_a_run_without_decide_for_me_writes_no_settings_file(golden):
 def test_the_first_chat_line_is_a_run_header_and_every_other_line_a_run_message(golden):
     chat = lines(golden["site"] / "run", "chat.jsonl")
     assert chat[0].get("meta") is True and all("who" in line for line in chat[1:])
-    assert R.gate_record("chat.jsonl", chat[0], mode="strict").family == "run_file.object"      # open JSON, not a message
+    assert R.gate_record("chat.jsonl", chat[0], mode="strict").family == "run_header"           # the run header, not a message
     assert R.gate_record("chat.jsonl", chat[1], mode="strict").family == "run_message"
 
 

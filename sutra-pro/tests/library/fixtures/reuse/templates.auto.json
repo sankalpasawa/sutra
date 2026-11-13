@@ -1,0 +1,437 @@
+{
+ "schema": "template-library/1",
+ "library": "library",
+ "decisions": [
+  {
+   "run": "j2-20261113-230803",
+   "t": "2026-11-13T23:08:03",
+   "workflow": "W-1",
+   "atom": "W-1.a1",
+   "artifact": "prd",
+   "section": "Problem",
+   "fingerprint": "7722cb9f4489654aa64c81e8e368884ea1b9535bb10355075b9c8e749c4591fc",
+   "facts": 7,
+   "fields": 0,
+   "needed_fields": [],
+   "needed_enums": {},
+   "candidates": [
+    {
+     "name": "Still Point Yoga Problem",
+     "version": 1,
+     "score": 1.0,
+     "fingerprint_match": true,
+     "has_fields": true
+    },
+    {
+     "name": "Still Point Yoga Problem",
+     "version": 2,
+     "score": 0.1429,
+     "fingerprint_match": false,
+     "has_fields": true
+    },
+    {
+     "name": "Still Point Yoga Problem, Users and Goals",
+     "version": 1,
+     "score": 0.1429,
+     "fingerprint_match": false,
+     "has_fields": true
+    }
+   ],
+   "action": "extended",
+   "template": "Still Point Yoga Problem",
+   "version": 7,
+   "kind": "specialised",
+   "score": 0.1429,
+   "reason": "adapted from Still Point Yoga Problem@2: the same section template, with this business's facts in place of the earlier ones",
+   "rule": "t",
+   "adapted_from": "Still Point Yoga Problem@2",
+   "covers": "covers 7 of 7 facts",
+   "schema_sha": "f2f6191a5d45e49e38315bbfeb87a9c9aa294e2c9f1240e24f1bee3ccbc9a979",
+   "run_template": "still-point-yoga-prd-hld-and-lld",
+   "from_template": true,
+   "template_workflow": "W-1",
+   "saved": "templates/prd/problem/still-point-yoga-problem@v7"
+  },
+  {
+   "run": "j2-20261113-230803",
+   "t": "2026-11-13T23:08:03",
+   "workflow": "W-7",
+   "atom": "W-7.a1",
+   "artifact": "hld",
+   "section": "Purpose and scope",
+   "fingerprint": "6f3772eec4f6407973eda97cffb66fac6577c054bb6dd4533ad2ff720e84c263",
+   "facts": 2,
+   "fields": 0,
+   "needed_fields": [],
+   "needed_enums": {},
+   "candidates": [
+    {
+     "name": "Still Point Yoga Purpose and scope",
+     "version": 1,
+     "score": 1.0,
+     "fingerprint_match": true,
+     "has_fields": true
+    },
+    {
+     "name": "Flow Pilates Studio Purpose and scope",
+     "version": 1,
+     "score": 0.0,
+     "fingerprint_match": false,
+     "has_fields": true
+    },
+    {
+     "name": "Iron Grove Fitness Purpose and scope",
+     "version": 1,
+     "score": 0.0,
+     "fingerprint_match": false,
+     "has_fields": true
+    }
+   ],
+   "action": "reused",
+   "template": "Still Point Yoga Purpose and scope",
+   "version": 1,
+   "kind": "specialised",
+   "score": 1.0,
+   "reason": "the run template's section template Still Point Yoga Purpose and scope@1, as it is: the same facts and fields",
+   "rule": "t",
+   "covers": "covers 2 of 2 facts",
+   "schema_sha": "9fa6bb91938dbc4fd31a17571a88dc2ddc09094285ec6eca59a4d421b35e4493",
+   "run_template": "still-point-yoga-prd-hld-and-lld",
+   "from_template": true,
+   "template_workflow": "W-7",
+   "saved": "templates/hld/purpose-and-scope/still-point-yoga-purpose-and-scope@v1"
+  },
+  {
+   "run": "j2-20261113-230806",
+   "t": "2026-11-13T23:08:07",
+   "workflow": "W-1",
+   "atom": "W-1.a1",
+   "artifact": "prd",
+   "section": "Problem",
+   "fingerprint": "80a550a0d7af95532252a320b554ea9b2b08c0ce11fcaf60255c3f6f8e9393fd",
+   "facts": 7,
+   "fields": 0,
+   "needed_fields": [],
+   "needed_enums": {},
+   "candidates": [
+    {
+     "name": "Still Point Yoga Problem",
+     "version": 7,
+     "score": 0.4286,
+     "fingerprint_match": false,
+     "has_fields": true
+    },
+    {
+     "name": "Still Point Yoga Problem",
+     "version": 1,
+     "score": 0.4286,
+     "fingerprint_match": false,
+     "has_fields": true
+    },
+    {
+     "name": "Flow Pilates Studio Problem",
+     "version": 2,
+     "score": 0.0,
+     "fingerprint_match": false,
+     "has_fields": true
+    }
+   ],
+   "action": "extended",
+   "template": "Flow Pilates Problem",
+   "version": 1,
+   "kind": "specialised",
+   "score": 0.4286,
+   "reason": "adapted from Still Point Yoga Problem@7: the same section template, with this business's facts in place of the earlier ones; stored as Flow Pilates Problem, this business's own family",
+   "rule": "t",
+   "adapted_from": "Still Point Yoga Problem@7",
+   "new_family": true,
+   "covers": "covers 7 of 7 facts",
+   "schema_sha": "da548707ef1b5d88921005da9ef7d3ef6665c4970734d7b3b0f6e7d2951af890",
+   "run_template": "a-rerun-of-still-point-yoga",
+   "from_template": true,
+   "template_workflow": "W-1",
+   "saved": "templates/prd/problem/flow-pilates-problem@v1"
+  }
+ ],
+ "run_template": {
+  "id": "still-point-yoga-prd-hld-and-lld",
+  "name": "Still Point Yoga: PRD, HLD and LLD",
+  "selected": [
+   "W-1",
+   "W-2",
+   "W-3",
+   "W-4",
+   "W-5",
+   "W-6",
+   "W-7",
+   "W-8",
+   "W-9",
+   "W-10",
+   "W-11",
+   "W-12",
+   "W-13",
+   "W-14",
+   "W-15",
+   "W-16",
+   "W-17"
+  ],
+  "added": [],
+  "of": 17,
+  "plans": {
+   "prd": {
+    "followed": [
+     "W-1",
+     "W-2",
+     "W-3",
+     "W-4",
+     "W-5",
+     "W-6"
+    ],
+    "missing": [],
+    "added": [],
+    "not_selected": [],
+    "partial": false
+   },
+   "hld": {
+    "followed": [
+     "W-7",
+     "W-8",
+     "W-9",
+     "W-10",
+     "W-11",
+     "W-12"
+    ],
+    "missing": [],
+    "added": [],
+    "not_selected": [],
+    "partial": false
+   },
+   "lld": {
+    "followed": [
+     "W-13",
+     "W-14",
+     "W-15",
+     "W-16",
+     "W-17"
+    ],
+    "missing": [],
+    "added": [],
+    "not_selected": [],
+    "partial": false
+   }
+  },
+  "workflows": [
+   {
+    "workflow": "W-1",
+    "template_workflow": "W-1",
+    "from_template": true,
+    "action": "extended",
+    "template": "Still Point Yoga Problem@7",
+    "adapted_from": "Still Point Yoga Problem@2"
+   },
+   {
+    "workflow": "W-2",
+    "template_workflow": "W-2",
+    "from_template": true,
+    "action": "extended",
+    "template": "Still Point Yoga PRD Users@6",
+    "adapted_from": "Still Point Yoga PRD Users@1"
+   },
+   {
+    "workflow": "W-3",
+    "template_workflow": "W-3",
+    "from_template": true,
+    "action": "extended",
+    "template": "Still Point Yoga PRD Goals@6",
+    "adapted_from": "Still Point Yoga PRD Goals@2"
+   },
+   {
+    "workflow": "W-4",
+    "template_workflow": "W-4",
+    "from_template": true,
+    "action": "extended",
+    "template": "Still Point Yoga Requirements@8",
+    "adapted_from": "Still Point Yoga Requirements@3"
+   },
+   {
+    "workflow": "W-5",
+    "template_workflow": "W-5",
+    "from_template": true,
+    "action": "extended",
+    "template": "Still Point Yoga PRD Success metrics@5",
+    "adapted_from": "Still Point Yoga PRD Success metrics@1"
+   },
+   {
+    "workflow": "W-6",
+    "template_workflow": "W-6",
+    "from_template": true,
+    "action": "extended",
+    "template": "Still Point Yoga PRD Out of scope@6",
+    "adapted_from": "Still Point Yoga PRD Out of scope@2"
+   },
+   {
+    "workflow": "W-7",
+    "template_workflow": "W-7",
+    "from_template": true,
+    "action": "reused",
+    "template": "Still Point Yoga Purpose and scope@1"
+   },
+   {
+    "workflow": "W-8",
+    "template_workflow": "W-8",
+    "from_template": true,
+    "action": "reused",
+    "template": "Still Point Yoga Pages@1"
+   },
+   {
+    "workflow": "W-9",
+    "template_workflow": "W-9",
+    "from_template": true,
+    "action": "extended",
+    "template": "Still Point Yoga Components@9",
+    "adapted_from": "Still Point Yoga Components@2"
+   },
+   {
+    "workflow": "W-10",
+    "template_workflow": "W-10",
+    "from_template": true,
+    "action": "reused",
+    "template": "Still Point Yoga Data flow@1"
+   },
+   {
+    "workflow": "W-11",
+    "template_workflow": "W-11",
+    "from_template": true,
+    "action": "reused",
+    "template": "Still Point Yoga Hosting and deployment@1"
+   },
+   {
+    "workflow": "W-12",
+    "template_workflow": "W-12",
+    "from_template": true,
+    "action": "reused",
+    "template": "Still Point Yoga Risks@1"
+   },
+   {
+    "workflow": "W-13",
+    "template_workflow": "W-13",
+    "from_template": true,
+    "action": "extended",
+    "template": "Still Point Yoga Pages and sections@6",
+    "adapted_from": "Still Point Yoga Pages and sections@2"
+   },
+   {
+    "workflow": "W-14",
+    "template_workflow": "W-14",
+    "from_template": true,
+    "action": "reused",
+    "template": "Still Point Yoga Interactive elements@1"
+   },
+   {
+    "workflow": "W-15",
+    "template_workflow": "W-15",
+    "from_template": true,
+    "action": "reused",
+    "template": "Still Point Yoga Form fields@1"
+   },
+   {
+    "workflow": "W-16",
+    "template_workflow": "W-16",
+    "from_template": true,
+    "action": "reused",
+    "template": "Still Point Yoga File structure@1"
+   },
+   {
+    "workflow": "W-17",
+    "template_workflow": "W-17",
+    "from_template": true,
+    "action": "reused",
+    "template": "Still Point Yoga Responsive and accessibility rules@1"
+   }
+  ],
+  "auto": true,
+  "match": 0.85
+ },
+ "auto_reuse": {
+  "threshold": 0.6,
+  "weights": {
+   "stages": 0.4,
+   "business": 0.3,
+   "covers": 0.3
+  },
+  "asked_stages": [
+   "prd",
+   "hld",
+   "lld"
+  ],
+  "picked": "still-point-yoga-prd-hld-and-lld",
+  "match": 0.85,
+  "scores": [
+   {
+    "id": "still-point-yoga-prd-hld-and-lld",
+    "name": "Still Point Yoga: PRD, HLD and LLD",
+    "score": 0.85,
+    "stages": 1.0,
+    "business": 1.0,
+    "covers": 0.5,
+    "template_stages": [
+     "prd",
+     "hld",
+     "lld"
+    ],
+    "business_type": "yoga studio",
+    "mock": false,
+    "eligible": true
+   },
+   {
+    "id": "iron-grove-fitness-prd-hld-lld-and-website",
+    "name": "Iron Grove Fitness: PRD, HLD, LLD and website",
+    "score": 0.61,
+    "stages": 0.75,
+    "business": 0.5,
+    "covers": 0.53,
+    "template_stages": [
+     "prd",
+     "hld",
+     "lld",
+     "website"
+    ],
+    "business_type": "fitness studio",
+    "mock": false,
+    "eligible": true
+   },
+   {
+    "id": "still-point-yoga-studio-website",
+    "name": "Still Point Yoga: studio website",
+    "score": 0.6,
+    "stages": 0.75,
+    "business": 0.0,
+    "covers": 1.0,
+    "template_stages": [
+     "prd",
+     "hld",
+     "lld",
+     "website"
+    ],
+    "business_type": "business",
+    "mock": true,
+    "eligible": true
+   },
+   {
+    "id": "thread-boutique-website",
+    "name": "Thread: boutique website",
+    "score": 0.0,
+    "stages": 0.0,
+    "business": 0.0,
+    "covers": 0.0,
+    "template_stages": [
+     "website"
+    ],
+    "business_type": "boutique",
+    "mock": true,
+    "eligible": false,
+    "why_not": "its first stage (website) is not this run's first (prd)"
+   }
+  ]
+ }
+}

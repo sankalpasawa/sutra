@@ -354,7 +354,7 @@ def test_config_init_without_the_flag_and_with_json(tmp_path, capsys):
     assert "J2_OVERRIDE_KEY=" not in [l.split("#")[0].strip() for l in (tmp_path / "x.env").read_text().splitlines() if l.startswith("J2")]
 
 
-def test_config_sync_library_adds_what_is_missing_and_is_idempotent(tmp_path, capsys):
+def test_config_sync_library_adds_what_is_missing_and_is_idempotent(tmp_path, capsys, sync5_seed):
     data = tmp_path / "d"
     doctor.sync_seed_library(data)
     import shutil
@@ -363,12 +363,13 @@ def test_config_sync_library_adds_what_is_missing_and_is_idempotent(tmp_path, ca
     code, out, _ = call(capsys, "config", "sync-library", *data_args(tmp_path))
     assert code == 0 and f"Added {len(goals)} template(s): " + ", ".join(goals) in out
     code, out, _ = call(capsys, "config", "sync-library", "--json", *data_args(tmp_path))
-    assert json.loads(out) == {"added": [], "templates": [], "versions": [], "filled": {}, "skipped": [], "runs": []}
+    assert json.loads(out) == {"added": [], "templates": [], "versions": [], "filled": {}, "skipped": [], "runs": [],
+                              "run_templates": [], "renamed": {}}
     code, out, _ = call(capsys, "config", "sync-library", *data_args(tmp_path))
     assert code == 0 and "The library already has every seed template and version." in out
 
 
-def test_config_sync_library_reports_templates_versions_provenance_and_runs(tmp_path, capsys):
+def test_config_sync_library_reports_templates_versions_provenance_and_runs(tmp_path, capsys, sync5_seed):
     seedlib.previous_library(tmp_path / "d")                                    # an install from before the seed grew
     code, out, _ = call(capsys, "config", "sync-library", *data_args(tmp_path))
     assert code == 0
