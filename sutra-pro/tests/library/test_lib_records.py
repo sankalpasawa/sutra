@@ -77,6 +77,9 @@ HARNESS = textwrap.dedent(r'''
     while run.status != "waiting" or run.lock.locked():      # the lock is held while Decide for me answers and goes on
         assert time.time() < end, "the run did not stop"
         time.sleep(0.003)
+    reviewer = getattr(run, "review_thread", None)      # J2 writes the report and artifacts.json after "waiting" from a thread (sync 6): wait as the host does (D179)
+    if reviewer is not None:
+        reviewer.join(60)
     shutil.copytree(run.dir, out / "run")
     (out / "run_templates.json").write_text(json.dumps(j2_template_lib.run_templates(str(run.dir))))
 ''')
