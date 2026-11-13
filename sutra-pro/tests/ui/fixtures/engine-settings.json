@@ -20,6 +20,9 @@
     "board": false,
     "artifact_schema": false,
     "template_library": false,
+    "run_templates": false,
+    "auto_reuse": false,
+    "artifact_library": false,
     "send_mode": "dry-run",
     "send_cap": 10,
     "milestone_emails": false,
@@ -32,7 +35,9 @@
     "force_question": "",
     "memory_test_lessons": false,
     "workspace": "auto",
-    "builder_timeout": 600.0
+    "builder_timeout": 600.0,
+    "reviewer": true,
+    "reviewer_wait": 120.0
   },
   "global": {
     "budget": 120,
@@ -61,6 +66,9 @@
     "board": false,
     "artifact_schema": false,
     "template_library": false,
+    "run_templates": false,
+    "auto_reuse": false,
+    "artifact_library": false,
     "send_mode": "dry-run",
     "send_cap": 10,
     "milestone_emails": false,
@@ -73,7 +81,9 @@
     "force_question": "",
     "memory_test_lessons": false,
     "workspace": "auto",
-    "builder_timeout": 600.0
+    "builder_timeout": 600.0,
+    "reviewer": true,
+    "reviewer_wait": 120.0
   },
   "editable": [
     "output",
@@ -95,9 +105,14 @@
     "board",
     "artifact_schema",
     "template_library",
+    "run_templates",
+    "auto_reuse",
+    "artifact_library",
     "tap_min",
     "workspace",
-    "builder_timeout"
+    "builder_timeout",
+    "reviewer",
+    "reviewer_wait"
   ],
   "locked": [
     "send_mode",

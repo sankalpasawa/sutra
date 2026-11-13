@@ -1,6 +1,6 @@
 """Which team and which run a request is about (work package E4, engine design 7.2, S1-contracts-01, S3-web-12).
 
-FastAPI `TestClient` over the `fake_services` fixture of conftest: J2's 39 data routes at the root with `?dept=` (the 41 handlers of
+FastAPI `TestClient` over the `fake_services` fixture of conftest: J2's 40 data routes at the root with `?dept=` (the 42 handlers of
 `views.py` less the page and d3, which the UI serves), the team named nowhere else, the run named by `?run=` (saved, read-only) or
 found through `resolve_run` (live, else idle)."""
 import json
@@ -20,13 +20,14 @@ from sutra_app.engine.spec import EngineSettings
 
 TOKEN = {"X-Sutra-Token": "fake-token-fake-token-0123"}
 GET_PATHS = ["/api/state", "/api/runs", "/api/call?id=1", "/api/preview?atom=a", "/api/docs", "/api/map", "/api/plan", "/api/library",
-             "/api/library/website/hero/main/v1", "/api/run-templates", "/api/artifacts", "/api/agent?who=identity",
+             "/api/library/website/hero/main/v1", "/api/run-templates", "/api/run-template?id=thread-boutique-website", "/api/artifacts", "/api/agent?who=identity",
              "/api/code?deck=a&section=b", "/api/artifacts/tree", "/api/artifact?name=x", "/api/story", "/api/board", "/api/audits",
              "/api/refs", "/shot/1", "/file/prd.md", "/site/latest", "/site/v1", "/api/runlist", "/api/changes",
              "/api/plan-map", "/api/activity?who=adaptation", "/api/catalog", "/api/artifacts/groups",         # the last seven: J2 sync 4
              "/api/record?sec=W-1", "/doc/prd", "/view?name=goal.json", "/api/timing"]
 NOT_FOUND = {"/api/call?id=1", "/api/library/website/hero/main/v1", "/api/code?deck=a&section=b", "/api/artifact?name=x", "/shot/1",
-             "/file/prd.md", "/api/record?sec=W-1", "/api/timing"}           # the view's own 404 for a run with nothing in it
+             "/file/prd.md", "/api/record?sec=W-1", "/api/timing",
+             "/api/run-template?id=thread-boutique-website"}           # the view's own 404 for a run with nothing in it (here also: a data folder with no library)
 POSTS = ["/api/say", "/api/ask", "/api/settings", "/api/playbooks/clear", "/api/lessons/clear", "/api/output", "/api/reset"]
 BODIES = {"/api/say": {"text": "hello"}, "/api/ask": {"who": "adaptation", "q": "why?"}, "/api/settings": {"decide_for_me": True},
           "/api/output": {"type": "prd"}}
@@ -66,15 +67,15 @@ def test_every_row_of_7_1_answers_at_the_root_with_dept_in_both_modes(api):
             assert got.status_code == (404 if path in NOT_FOUND else 200), (path, query, got.text[:200])
 
 
-def test_the_route_table_is_the_39_j2_rows_the_two_settings_routes_the_capabilities_route_and_nothing_under_d(api):
+def test_the_route_table_is_the_40_j2_rows_the_two_settings_routes_the_capabilities_route_and_nothing_under_d(api):
     table = {(method.upper(), path) for path, item in api.app.openapi()["paths"].items() for method in item}
     gets = {"/api/state", "/api/runs", "/api/call", "/api/preview", "/api/docs", "/api/map", "/api/plan", "/api/library",
-            "/api/library/{artifact}/{section}/{slug}/{version}", "/api/run-templates", "/api/artifacts", "/api/agent", "/api/code",
+            "/api/library/{artifact}/{section}/{slug}/{version}", "/api/run-templates", "/api/run-template", "/api/artifacts", "/api/agent", "/api/code",
             "/api/artifacts/tree", "/api/artifact", "/api/story", "/api/board", "/api/audits", "/api/refs", "/shot/{n}",
             "/file/{name}", "/site/{key}", "/api/runlist", "/api/changes",
             "/api/plan-map", "/api/activity", "/api/catalog", "/api/artifacts/groups",
-            "/api/record", "/doc/{name}", "/view", "/api/timing"}              # 32 GET paths: /site/{key} answers rows 24 and 25
-    assert len(gets) == 32 and len(POSTS) == 7                  # 32 GET rows and 7 POST rows: J2's 41 handlers less the page and d3
+            "/api/record", "/doc/{name}", "/view", "/api/timing"}              # 33 GET paths: /site/{key} answers rows 24 and 25
+    assert len(gets) == 33 and len(POSTS) == 7                  # 33 GET rows and 7 POST rows: J2's 42 handlers less the page and d3
     assert table == {("GET", p) for p in gets} | {("POST", p) for p in POSTS} | {("GET", "/api/engine/settings"),
                                                                                   ("PUT", "/api/engine/settings"),
                                                                                   ("GET", "/api/engine/capabilities")}

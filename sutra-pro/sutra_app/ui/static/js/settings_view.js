@@ -99,7 +99,12 @@
     change: ["Change requests", "Allow a change request on a finished run"],
     board: ["Board story", "Show the Board and its story"],
     artifact_schema: ["Artifact schema", "Check artifacts against their schema"],
-    template_library: ["Template library", "Builders use the template library. While this is off, the catalog's \"By run\" list shows J2's eight development runs only."],
+    template_library: ["Template library", "Builders use the template library. While this is off, the catalog's \"By run\" list shows J2's development runs only."],
+    run_templates: ["Start from a run template", "A new run may start from a run template: the plan of an earlier run, whole or in part. Off by default; the Use buttons of the template library work only when this is on."],
+    auto_reuse: ["Reuse earlier work", "After the first charter the team picks a similar run template by itself and adapts the nearest section template before it makes a new one. Off by default. Turns on the template library and run templates with it."],
+    artifact_library: ["Reuse finished sections", "A section that an earlier run of this team already finished is served from that run, with no AI call. Off by default. Turns on Reuse earlier work with it."],
+    reviewer: ["Reviewer notes", "When a run ends, a reviewer reads the run and writes notes on its report. This costs one more AI call per run; switch it off to save it."],
+    reviewer_wait: ["Wait for the reviewer (seconds)", "How long a finished run waits for the reviewer's notes before it shows Done; later notes are dropped. 0 means do not wait"],
     tap_min: ["Smallest tap target (px)", "The least size a button may have on a phone"],
     send_mode: ["Email sending", "dry-run writes no email"],
     send_cap: ["Emails per run", ""],
@@ -120,8 +125,17 @@
   const OUTPUT_AUTO = "Let the team decide";
   const NAME_SHAPE = /^[a-z][a-z0-9_]{1,40}$/;       // J2's own shape of a type name: what the page accepts when the engine has not listed its types
   const FLAGS01 = freeze(["fixes"]);                   // 0 or 1 on the wire, a toggle on the page
-  const FLOATS = freeze(["bargain_minutes", "delay", "builder_timeout"]); // JSON cannot tell 15.0 from 15, so the float fields are named
+  const FLOATS = freeze(["bargain_minutes", "delay", "builder_timeout", "reviewer_wait"]); // JSON cannot tell 15.0 from 15, so the float fields are named
   const NULLABLE = freeze(["budget_cap"]);             // empty means "not set" (null)
+  // Sub-groups of the Engine group (J2 sync 6, D177 and D179): the fields that sit together under a heading, after the rest. Layout only: a field named here
+  // that the engine does not list is not drawn, and a field of the engine that is named nowhere stays in the main list.
+  const SUBGROUPS = freeze([
+    freeze({id: "reuse", title: "Reuse (experimental)", note: "Each of these is off by default. They let a run start from, adapt or copy what earlier runs made.",
+      fields: freeze(["run_templates", "auto_reuse", "artifact_library"])}),
+    freeze({id: "report", title: "Run report", note: "What happens at the end of a run.", fields: freeze(["reviewer", "reviewer_wait"])}),
+  ]);
+  const SUBGROUPED = freeze([].concat(...SUBGROUPS.map(g => g.fields)));
+  const IMPLIED_TAG = "on (implied by Reuse earlier work)";
   const GROUPS = freeze({appearance: "Appearance", connectors: "Connectors", engine: "Engine", models: "Default model", about: "About"});
   const POLICY_PATH = "/api/connectors/policy";
   const MODELS_PATH = "/api/connectors/models";
@@ -206,6 +220,15 @@
     return scopedAnswer(settings) ? Object.assign({}, defaults, isObj(settings.global) ? settings.global : {}) : defaults;
   }
   const listOf = v => (Array.isArray(v) ? v.filter(f => typeof f === "string") : []);
+  // What the owner stored for a field (this layer, else the layers below it), never what the engine works out from it.
+  const storedOf = (settings, field) => (hasOwn(layerOf(settings), field) ? layerOf(settings)[field] : baseOf(settings)[field]);
+  // A switch that is off as stored but on in `effective`: the engine turned it on because another is on (D178: Reuse earlier work implies run
+  // templates and the template library, the template library implies the artifact schema). The stored value stays what the owner chose.
+  function impliedOf(settings, field) {
+    const defaults = isObj(settings.defaults) ? settings.defaults : {};
+    const effective = isObj(settings.effective) ? settings.effective : {};
+    return typeof defaults[field] === "boolean" && effective[field] === true && storedOf(settings, field) === false;
+  }
 
   // engineBody(settings, form) -> {set, unset}. `form` maps a field to what the page holds now. Only editable fields are looked at, only a
   // changed one is sent, and a field that goes back to the value of the layer below is removed from this layer (when this layer holds it) instead
@@ -221,7 +244,7 @@
       if (!hasOwn(form, field)) return;
       const parsed = parseValue(kindOf(field, defaults), form[field], field, settings);
       if (!parsed.ok) return;
-      const start = hasOwn(effective, field) ? effective[field] : defaults[field];
+      const start = impliedOf(settings, field) ? false : (hasOwn(effective, field) ? effective[field] : defaults[field]);      // an implied switch starts from what was stored
       if (same(parsed.value, start === undefined ? null : start)) return;
       if (same(parsed.value, base[field] === undefined ? null : base[field]) && hasOwn(layer, field)) body.unset.push(field);
       else body.set[field] = parsed.value;
@@ -295,10 +318,12 @@
     const [label, hint] = textOf(field);
     const id = "setf-" + field;
     const source = sourceOf(settings, field);
-    const value = hasOwn(shown, field) ? shown[field] : (hasOwn(effective, field) ? effective[field] : defaults[field]);
-    return '<div class="setfield" data-field="' + esc(field) + '" data-locked="false" data-kind="' + kind + '" data-source="' + source + '">' +
+    const implied = impliedOf(settings, field);
+    const value = hasOwn(shown, field) ? shown[field] : (implied ? false : (hasOwn(effective, field) ? effective[field] : defaults[field]));
+    return '<div class="setfield" data-field="' + esc(field) + '" data-locked="false" data-kind="' + kind + '" data-source="' + source + '"' + (implied ? ' data-implied="true"' : "") + ">" +
       '<label class="setlabel" for="' + id + '">' + esc(label) + "</label>" + fieldInput(field, kind, value, id, settings) +
       (SOURCE_TAG[source] ? '<span class="settag">' + SOURCE_TAG[source] + "</span>" : "") +
+      (implied ? '<span class="settag setimplied">' + IMPLIED_TAG + "</span>" : "") +
       (hint ? '<span class="sethint">' + esc(hint) + "</span>" : "") +
       (errors[field] ? '<span class="seterr" role="alert">' + esc(errors[field]) + "</span>" : "") + "</div>";
   }
@@ -320,6 +345,13 @@
       options.map(o => '<option value="' + esc(o.id) + '"' + (o.id === chosen ? " selected" : "") + ">" + esc(o.name) + "</option>").join("") + "</select></label>";
   }
 
+  function subgroupHtml(group, editable, settings, errors, values) {
+    const fields = group.fields.filter(f => editable.includes(f));
+    if (fields.length === 0) return "";
+    return '<h4 class="setsub" data-subgroup="' + group.id + '">' + esc(group.title) + '</h4><p class="setnote">' + esc(group.note) + "</p>" +
+      '<div class="setfields">' + fields.map(f => editableRow(settings, f, errors, values)).join("") + "</div>";
+  }
+
   function engineHtml(settings, options) {
     const o = isObj(options) ? options : {};
     const errors = isObj(o.errors) ? o.errors : {};
@@ -334,7 +366,8 @@
     return head + '<p class="setnote">' + NOTE_NEXT_RUN + (scoped ? " These values are for this team only." : " These values are for every team.") + "</p>" +
       scopeSelect(o.scope, o.departments) +
       (errors[""] ? '<p class="seterr setgen" role="alert">' + esc(errors[""]) + "</p>" : "") +
-      '<div class="setfields">' + editable.map(f => editableRow(settings, f, errors, values)).join("") + "</div>" +
+      '<div class="setfields">' + editable.filter(f => !SUBGROUPED.includes(f)).map(f => editableRow(settings, f, errors, values)).join("") + "</div>" +
+      SUBGROUPS.map(g => subgroupHtml(g, editable, settings, errors, values)).join("") +
       (locked.length ? '<h4 class="setsub">Locked</h4><div class="setfields setlocked">' + locked.map(f => lockedRow(settings, f, lockedNote(o.dataDir))).join("") + "</div>" : "") +
       '<div class="setacts"><button type="button" class="ghost" data-act="save-engine"' + (o.busy === true ? " disabled" : "") + ">Save</button>" +
       '<span class="setstatus" role="status">' + (o.saved === true ? "Saved. " + NOTE_NEXT_RUN : "") + "</span></div></section>";
