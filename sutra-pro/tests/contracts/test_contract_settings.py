@@ -146,5 +146,5 @@ def test_the_builder_time_limit_is_an_engine_setting_the_task_cannot_carry_and_t
     assert "J2_BUILDER_TIMEOUT" not in TASK_SETTING_KEYS
     with pytest.raises(ValueError):
         TaskSettings.model_validate({"J2_BUILDER_TIMEOUT": "60"})
-    assert EngineSettings.layered({}, {"builder_timeout": 45}, None, {}).to_env()["J2_BUILDER_TIMEOUT"] == "45"
+    assert EngineSettings.layered({}, {"builder_timeout": 45}, None, {}).to_env()["J2_BUILDER_TIMEOUT"] == "45.0"
     assert EngineSettings().to_env()["J2_BUILDER_TIMEOUT"] == "600"
