@@ -16,7 +16,7 @@ from typing import Annotated, Any, Literal, Union
 
 from pydantic import Field, StringConstraints, TypeAdapter, ValidationError, field_validator, model_serializer, model_validator
 
-from sutra_app.engine.spec import DEPT_ID_RE, OUTPUT_NAMES, RUN_ID_RE, TASK_SCHEMA, TASK_SETTING_KEYS
+from sutra_app.engine.spec import DEPT_ID_RE, OUTPUT_NAME_RE, RUN_ID_RE, TASK_SCHEMA, TASK_SETTING_KEYS
 from sutra_app.library.chat import ChatBlock
 from sutra_app.library.base import Value, nested_models, unwrap_annotation
 from sutra_app.library.node import GraphNodeId, NodeState
@@ -588,7 +588,7 @@ class TaskSettings(Value):
     left out of the dump. Anything else is refused (closed class), so a model reply or web request cannot reach live email,
     a Chrome path or a forced audit failure."""
 
-    J2_OUTPUT: Literal[OUTPUT_NAMES] | None = None
+    J2_OUTPUT: Annotated[str, StringConstraints(pattern=rf"^(auto|{OUTPUT_NAME_RE})$")] | None = None      # `auto` or a type name by shape (D166)
     J2_BUDGET: Annotated[str, StringConstraints(max_length=6)] | None = None
     J2_BUDGET_CAP: Annotated[str, StringConstraints(max_length=6)] | None = None
     J2_FIXES: Literal["0", "1"] | None = None

@@ -1,7 +1,7 @@
 """J2's stdlib HTTP server, kept for the legacy tests and single-run development (work package E2, engine design 3.1).
 
 The application never uses it: uvicorn serves the FastAPI routes of `engine/api`, and `python -m sutra_app` does not start this
-module. It is a thin adapter over `views.py`, which holds the one implementation of the 41 handlers: it picks the view from the
+module. It is a thin adapter over `views.py`, which holds the one implementation of the 42 handlers: it picks the view from the
 path, builds the `RunCtx` of the one global run `RUN` (state read from the live `J2Run` per request, no files) and sends the
 `Reply`. Every text body goes through `redact()`. A question (`POST /api/ask`) is answered from the run's records, always: this
 adapter has no model port, and no path of this tree calls `llm.ask` for an answer (J2 sync 4, D147).
@@ -60,7 +60,7 @@ def route(path):
              "/api/catalog": "catalog", "/api/run-templates": "run_templates", "/api/artifacts": "artifacts", "/api/agent": "agent",
              "/api/activity": "activity", "/api/record": "record", "/api/code": "code", "/api/artifacts/tree": "artifacts_tree",
              "/api/artifacts/groups": "artifacts_groups", "/api/artifact": "artifact", "/api/story": "story", "/api/board": "board",
-             "/api/audits": "audits", "/api/refs": "refs", "/api/runlist": "runlist", "/api/changes": "changes", "/view": "view"}
+             "/api/audits": "audits", "/api/refs": "refs", "/api/runlist": "runlist", "/api/changes": "changes", "/api/timing": "timing", "/view": "view"}
     if path in fixed:
         return fixed[path], {}
     if path.startswith("/api/library/"):      # /api/library/<artifact>/<section>/<slug>/v<N>

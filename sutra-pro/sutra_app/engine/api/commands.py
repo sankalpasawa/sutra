@@ -140,7 +140,8 @@ class DeptCommands:
         if ctxmod.current_ref(self.services, self.dept_id, page) is not None:        # a message exists: J2 refuses
             return False, self._output_of_current(page)
         kind = _output_type(out)
-        ctxmod.write_page(self.services.data_dir, self.dept_id, next_settings={**page.next_settings, "J2_OUTPUT": kind})
+        rest = {k: v for k, v in page.next_settings.items() if k != "J2_OUTPUT"}        # an unknown type pins nothing: the planner chooses
+        ctxmod.write_page(self.services.data_dir, self.dept_id, next_settings={**rest, **({"J2_OUTPUT": kind} if kind else {})})
         return True, kind
 
     def reset(self) -> bool:
@@ -159,12 +160,11 @@ class DeptCommands:
         return _output_type(out)
 
 
-def _output_type(out: Any) -> str:
-    """J2's `output_type` and the one the engine adds: `auto` (the engine picks the output for the brief when the run starts, D129) or any
-    registered output; anything else is the website (the process environment is not consulted). `j2.output_type` alone would turn `auto`
-    into the website."""
+def _output_type(out: Any) -> Optional[str]:
+    """The type a run is pinned to: `auto` (the engine picks the output for the brief when the run starts, D129) or a type the data knows;
+    anything else is None (no type: J2's planner chooses; there is no default type, D165; the process environment is not consulted)."""
     name = str(out or "").strip().lower()
-    return name if name == "auto" or name in j2.OUTPUTS else "website"
+    return name if name == "auto" or name in j2.j2_types.names() else None
 
 
 async def read_json_body(request: Request) -> Optional[dict]:

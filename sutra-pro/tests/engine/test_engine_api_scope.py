@@ -24,9 +24,9 @@ GET_PATHS = ["/api/state", "/api/runs", "/api/call?id=1", "/api/preview?atom=a",
              "/api/code?deck=a&section=b", "/api/artifacts/tree", "/api/artifact?name=x", "/api/story", "/api/board", "/api/audits",
              "/api/refs", "/shot/1", "/file/prd.md", "/site/latest", "/site/v1", "/api/runlist", "/api/changes",
              "/api/plan-map", "/api/activity?who=adaptation", "/api/catalog", "/api/artifacts/groups",         # the last seven: J2 sync 4
-             "/api/record?sec=W-1", "/doc/prd", "/view?name=goal.json"]
+             "/api/record?sec=W-1", "/doc/prd", "/view?name=goal.json", "/api/timing"]
 NOT_FOUND = {"/api/call?id=1", "/api/library/website/hero/main/v1", "/api/code?deck=a&section=b", "/api/artifact?name=x", "/shot/1",
-             "/file/prd.md", "/api/record?sec=W-1"}           # the view's own 404 for a run with nothing in it
+             "/file/prd.md", "/api/record?sec=W-1", "/api/timing"}           # the view's own 404 for a run with nothing in it
 POSTS = ["/api/say", "/api/ask", "/api/settings", "/api/playbooks/clear", "/api/lessons/clear", "/api/output", "/api/reset"]
 BODIES = {"/api/say": {"text": "hello"}, "/api/ask": {"who": "adaptation", "q": "why?"}, "/api/settings": {"decide_for_me": True},
           "/api/output": {"type": "prd"}}
@@ -73,8 +73,8 @@ def test_the_route_table_is_the_39_j2_rows_the_two_settings_routes_the_capabilit
             "/api/artifacts/tree", "/api/artifact", "/api/story", "/api/board", "/api/audits", "/api/refs", "/shot/{n}",
             "/file/{name}", "/site/{key}", "/api/runlist", "/api/changes",
             "/api/plan-map", "/api/activity", "/api/catalog", "/api/artifacts/groups",
-            "/api/record", "/doc/{name}", "/view"}              # 31 GET paths: /site/{key} answers rows 24 and 25
-    assert len(gets) == 31 and len(POSTS) == 7                  # 32 GET rows and 7 POST rows: J2's 41 handlers less the page and d3
+            "/api/record", "/doc/{name}", "/view", "/api/timing"}              # 32 GET paths: /site/{key} answers rows 24 and 25
+    assert len(gets) == 32 and len(POSTS) == 7                  # 32 GET rows and 7 POST rows: J2's 41 handlers less the page and d3
     assert table == {("GET", p) for p in gets} | {("POST", p) for p in POSTS} | {("GET", "/api/engine/settings"),
                                                                                   ("PUT", "/api/engine/settings"),
                                                                                   ("GET", "/api/engine/capabilities")}

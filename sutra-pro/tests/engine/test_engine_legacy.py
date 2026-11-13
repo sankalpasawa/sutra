@@ -1,7 +1,8 @@
 """J2's own scripts, ported, as subprocess suites (work package E5, engine design 9, ENG-01 and ENG-10).
 
 `tests/engine/legacy/` holds `j2_flow_test.py`, `change_test.py`, `realization_test.py` and `j2_replay_size.py` from `prototypes/j2` at
-the commit `EXPECTED.json` names (sync 4: 025e265c), with only the edits the engine design lists (sibling imports point to
+the commit `EXPECTED.json` names (sync 5: 1d537295, the tag cut-off/2026-11-12; made by a three-way merge, D174: base = J2's
+file at 025e265c, ours = the sync 4 copy, theirs = J2 at the new pin), with only the edits the engine design lists (sibling imports point to
 `sutra_app.engine`; J2's page, harness files and saved runs are read from `SUTRA_J2_CHECKOUT`, an extraction of `prototypes/j2` at that
 commit, and the block that needs them prints a skip reason when it is unset; the copy has no saved runs, so the blocks that need them
 print one with the extraction too; no git history; no real `claude`). Each script runs here in a child process with a clean environment
@@ -64,14 +65,82 @@ def run_python(code: str, tmp_path, **extra_env) -> subprocess.CompletedProcess:
 
 # ---- the recorded minimums --------------------------------------------------------------------------------------------------
 def test_expected_json_records_the_pin_and_the_minimums():
-    assert set(EXPECTED) == {"j2_commit", "j2_flow_test_sha256", "flow_fast_ok_lines", "flow_fast_ok_lines_with_extraction", "change_checks",
-                             "realization_checks", "skip_lines_with_extraction"}
-    assert EXPECTED["j2_commit"].startswith("025e265c") and re.fullmatch(r"[0-9a-f]{40}", EXPECTED["j2_commit"])
+    assert set(EXPECTED) == {"j2_commit", "j2_flow_test_sha256", "legacy_flow_test_sha256", "flow_fast_ok_lines",
+                             "flow_fast_ok_lines_with_extraction", "change_checks", "realization_checks", "skip_lines_with_extraction",
+                             "known_upstream_failures"}
+    assert EXPECTED["j2_commit"] == "1d537295eb11cb034956fa9d8a4026eaa1e3f44e"
     assert EXPECTED["j2_commit"] in VENDORED_MD.read_text(encoding="utf-8"), "the scripts and the vendored engine are the same J2"
-    assert re.fullmatch(r"[0-9a-f]{64}", EXPECTED["j2_flow_test_sha256"])
+    assert re.fullmatch(r"[0-9a-f]{64}", EXPECTED["j2_flow_test_sha256"]) and re.fullmatch(r"[0-9a-f]{64}", EXPECTED["legacy_flow_test_sha256"])
+    assert EXPECTED["known_upstream_failures"] == ["map_focus", "graph_map", "warm_ui"]
     assert EXPECTED["change_checks"] >= 192 and EXPECTED["realization_checks"] >= 98       # J2's own numbers (engine.md 9; realization +1 at 025e265c)
     assert EXPECTED["flow_fast_ok_lines"] >= 60 and EXPECTED["flow_fast_ok_lines_with_extraction"] > EXPECTED["flow_fast_ok_lines"]
     assert EXPECTED["skip_lines_with_extraction"] and all(isinstance(x, str) and x for x in EXPECTED["skip_lines_with_extraction"])
+
+
+def test_the_merged_flow_copy_is_the_one_the_pin_test_names():
+    """D174: the copy is one file; any edit to it (a new merge, a skip) moves this hash and must be recorded with EXPECTED.json."""
+    assert hashlib.sha256((LEGACY / "j2_flow_test.py").read_bytes()).hexdigest() == EXPECTED["legacy_flow_test_sha256"]
+
+
+# The J2 blocks that came with sync 5 (cut-off/2026-11-12), and what each needs of J2's own files: they sit in the `skippable` list.
+J2_SYNC5_BLOCKS = ("autofixes", "builder_context_trim", "builder_inputs", "builder_time_limit", "check_grep_markup", "check_rendered_count",
+                   "deleted_local_type", "deliverables_generic", "doc_planner_real", "doc_plans_generic", "doc_prompts_unchanged",
+                   "doc_sections_replay", "doc_type_names", "doc_unchanged", "fix_sections", "forms_and_new_types", "generic_source",
+                   "kind_and_sections", "kind_stored_and_charter_label", "local_types", "n6_sources", "new_type_models",
+                   "new_type_sections", "owns_message", "page_run", "page_type_from_data", "planner_conditions",
+                   "recommended_practice", "report_type", "run_list_local_type", "saved_run_no_type", "saved_runs_render", "tap_dense",
+                   "timing_records", "types_constants", "types_refused", "validator_autofix_human", "validator_autofix_plan_fields",
+                   "validator_autofix_step", "validator_autofix_target", "validator_heading_list")
+J2_SYNC5_NEEDS_J2_FILES = ("deliverables_generic", "forms_and_new_types", "generic_source", "local_types", "n6_sources", "types_constants")
+
+
+def test_every_j2_block_of_sync_5_is_defined_and_called():
+    text = (LEGACY / "j2_flow_test.py").read_text(encoding="utf-8")
+    wrapped = text[text.index("for _name in ("):text.index("globals()[_name] = skippable")]
+    for name in J2_SYNC5_BLOCKS:
+        assert re.search(rf"(?m)^def {name}\(", text), (name, "defined")
+        assert len(re.findall(rf"\b{name}\(", text)) >= 2, (name, "called by the main flow or by another block")
+    for name in J2_SYNC5_NEEDS_J2_FILES:
+        assert f'"{name}"' in wrapped, (name, "reads J2's own files: it needs `skippable`")
+
+
+def test_the_three_known_upstream_failures_are_named_and_a_fourth_still_fails(tmp_path):
+    """D174: map_focus, graph_map and warm_ui fail in J2's own run at the pin: each ends with a printed reason, nothing else does."""
+    text = (LEGACY / "j2_flow_test.py").read_text(encoding="utf-8")
+    assert 'KNOWN_UPSTREAM = ("map_focus", "graph_map", "warm_ui")' in text
+    assert '"map_focus"' in text[text.index("for _name in ("):] and "known upstream failure at cut-off/2026-11-12" in text
+    res = run_python("""
+        import os
+        import j2_flow_test as F
+
+        def known():
+            raise AssertionError("J2's own failure")
+
+        def other():
+            raise AssertionError("a real failure")
+        F.skippable(F.known_upstream_failure(known))()
+        print("KNOWN-SKIPPED")
+        try:
+            F.skippable(F.known_upstream_failure(other))()
+        except F.NeedsPage:
+            raise SystemExit("not skippable")
+        except Exception:
+            raise SystemExit("raised")
+        """, tmp_path)
+    assert "skipped the rest of known: known upstream failure at cut-off/2026-11-12 (AssertionError: J2's own failure)" in res.stdout
+    assert "KNOWN-SKIPPED" in res.stdout
+    # a block that is not wrapped as a known failure still fails the script: only `known_upstream_failure` turns a failure into a skip
+    res = run_python("""
+        import j2_flow_test as F
+
+        def other():
+            raise AssertionError("a real failure")
+        try:
+            F.skippable(other)()
+        except AssertionError as e:
+            print("RAISED", e)
+        """, tmp_path)
+    assert "RAISED a real failure" in res.stdout
 
 
 def test_every_j2_block_of_sync_4_is_defined_called_and_guarded():

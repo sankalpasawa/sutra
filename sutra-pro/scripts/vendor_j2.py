@@ -1,20 +1,21 @@
 #!/usr/bin/env python3
 """Vendor the J2 prototype's engine into `sutra_app/engine/` (work package E1; engine design 3.1 and 3.4, decision D13).
 
-    scripts/py scripts/vendor_j2.py --source /path/to/extraction --commit 025e265c... [--dest .] [--check]
+    scripts/py scripts/vendor_j2.py --source /path/to/extraction --commit 1d537295... [--dest .] [--check]
 
-Since sync 4 (D136) the source is the folder `prototypes/j2` of this repository at the pinned sutra commit, extracted with
+Since sync 4 (D136), and in sync 5 (D160) again, the source is the folder `prototypes/j2` of this repository at the pinned sutra commit, extracted with
 `git archive <commit> prototypes/j2 | tar -x --strip-components=2 -C <new, empty folder>` (never the working tree).
 
 What it does, in this order, and nothing else:
 
   1. reads the J2 files from `--source`, an extraction of `prototypes/j2` at ONE commit (a plain folder, so an edited working
      tree, a `.pyc` or a stray file is never vendored), with `--commit` naming the commit it was taken from;
-  2. copies the 17 code modules and applies the numbered patches (P1 to P5, P7 to P12 and P14 to P16; no P6, no P13) as exact
+  2. copies the 18 code modules and applies the numbered patches (P1 to P5, P7 to P12 and P14 to P18; no P6, no P13) as exact
      text edits: every edit names its old text and how often it must occur, so a J2 change under an anchor stops the run
-     instead of producing a silently different file (P15 is a data patch: see `scrub_seed_index`);
-  3. copies the data files byte for byte: role files, conditions, artifact types, generic templates, the seed template
-     library (but for P15) and the reference docs;
+     instead of producing a silently different file (P1 is a counted rule over every import line, see `apply_p1`; P15 is a
+     data patch: see `scrub_seed_index`);
+  3. copies the data files byte for byte: role files, the whole `conditions/` and `templates/` trees (types are data, D161:
+     no type name is listed here), `artifacts/types.json`, the seed template library (but for P15) and the reference docs;
   4. writes `sutra_app/engine/VENDORED.md`: the commit, the sha256 of every J2 file and of its vendored copy, and the patch
      list with the line ranges the patches ended up on.
 
@@ -37,19 +38,19 @@ from pathlib import Path
 from typing import Optional
 
 REPO = Path(__file__).resolve().parent.parent
-BASELINE = "025e265c594564f47a2365874cd5a5cc5d0d20a6"        # sutra commit that last touched prototypes/j2 (sync 4, D136)
-BASELINE_TREE = "21c67045fe3230c1ab9be381c2f21465ea91849c"   # `git rev-parse <BASELINE>:prototypes/j2`
-PREVIOUS_BASELINES = ("9200cf6", "33aeeda")                   # commits the earlier syncs took the J2 prototype at: history only, never a source
+BASELINE = "1d537295eb11cb034956fa9d8a4026eaa1e3f44e"        # tag cut-off/2026-11-12 (sync 5, D160)
+BASELINE_TREE = "30c71fea4679716c9f48d297ee4b2c3463eeebfd"   # `git rev-parse <BASELINE>:prototypes/j2`
+PREVIOUS_BASELINES = ("9200cf6", "33aeeda", "025e265c")       # commits the earlier syncs took the J2 prototype at (025e265c: sync 4): history only, never a source
 DESIGNED_AGAINST = "ce2631f"                                  # the design documents' line numbers (`j2.py:n`) are those of this commit: history only
 J2_ENV = "SUTRA_J2_CHECKOUT"
 
 CODE = ("j2.py", "j2_agent.py", "j2_agent_models.py", "j2_agent_views.py", "j2_artifact_models.py", "j2_artifacts.py",
         "j2_board.py", "j2_change.py", "j2_check.py", "j2_map.py", "j2_realization.py", "j2_rules.py", "j2_schema.py",
-        "j2_send.py", "j2_story.py", "j2_studio.py", "j2_template_lib.py")
+        "j2_send.py", "j2_story.py", "j2_studio.py", "j2_template_lib.py", "j2_types.py")
 ROLE_FILES = ("team.md", "identity.md", "adaptation.md", "priority.md", "coordination.md", "audit.md", "builder.md",
               "confidence-judge.md", "rates.json", "stages.json")          # agents/j2/ without the never-read _placeholders/
-CONDITIONS = ("hld.json", "lld.json", "prd.json", "website.json")
-GENERIC_TEMPLATES = tuple(f"{a}/generic.json" for a in ("design", "hld", "lld", "prd", "website"))
+TREES = (("conditions", "sutra_app/engine/conditions", ()),       # (J2 folder, vendored folder, excluded paths below the J2 folder)
+         ("templates", "sutra_app/engine/templates", ("templates/README.md",)))      # D161: whole trees, no type is named here
 REF_TOP = ("README.md", "SETUP.md")
 REF_DOCS = ("atom-schema.json", "atom-schema.md", "map-schema.md", "realization-schema.json", "realization-axis.md",
             "j2-handoff.md", "j2-prompts.md", "j2-test-plan.md", "agent-views-j2-proposal.md")
@@ -73,8 +74,33 @@ class Edit:
     count: int = 1      # how often `old` must occur
 
 
-P1_NOTE = ("sibling imports become package-relative: `import x` -> `from . import x`, `from x import y` -> `from .x import y`; "
-           "`j2_agent_views.py` also loses its `sys.path` insert")
+P1_NOTE = ("sibling imports become package-relative by one counted rule over every code line (not comment) of every code module "
+           "(40 lines, `P1_COUNTS`): `import j2_x[ as Y]` and `import llm` -> `from . import ...` (indentation kept), `from j2_x import y` "
+           "-> `from .j2_x import y`; `j2_agent_views.py` also loses its `sys.path` insert (an anchor edit)")
+
+# P1 (D162): the rule's expected number of changed lines per code module (a module not named here must have none). A J2 change
+# that adds or removes a sibling import changes a count and stops the run, like a missing anchor.
+P1_COUNTS = {"j2.py": 14, "j2_agent_views.py": 4, "j2_artifact_models.py": 2, "j2_artifacts.py": 5, "j2_change.py": 2,
+             "j2_map.py": 2, "j2_realization.py": 2, "j2_rules.py": 1, "j2_story.py": 2, "j2_template_lib.py": 4, "j2_types.py": 2}
+_P1_IMPORT = re.compile(r"^([ \t]*)import (j2_[a-z0-9_]+|llm)((?:[ \t]+as[ \t]+\w+)?)(?=[ \t]*(?:#.*)?$)", re.M)
+_P1_FROM = re.compile(r"^([ \t]*)from (j2_[a-z0-9_]+) import ", re.M)
+_P1_DONE = re.compile(r"^[ \t]*from \.(?:j2_[a-z0-9_]+ import |[ \t]+import (?:j2_[a-z0-9_]+|llm)\b)", re.M)      # a changed line, as it reads afterwards
+
+
+def apply_p1(text: str, name: str):
+    """P1: the sibling imports of one code module made package-relative. (new text, number of lines changed); a count that
+    differs from P1_COUNTS raises VendorError."""
+    text, a = _P1_IMPORT.subn(r"\1from . import \2\3", text)
+    text, b = _P1_FROM.subn(r"\1from .\2 import ", text)
+    want = P1_COUNTS.get(name, 0)
+    if a + b != want:
+        raise VendorError(f"{name}: P1 expects {want} import line(s) to change, found {a + b}")
+    return text, a + b
+
+
+def p1_lines(text: str):
+    """The line numbers of the lines apply_p1 made (found again in the finished text)."""
+    return [text.count("\n", 0, m.start()) + 1 for m in _P1_DONE.finditer(text)]
 
 J2_EDITS = (
     # ---- imports (P1) and what the other patches import
@@ -84,32 +110,9 @@ import threading
 import sys
 import threading
 '''),
-    Edit("P1", "j2.py", r'''import j2_artifacts
-import j2_artifact_models
-import j2_board
-import j2_change
-import j2_check
-import j2_map
-import j2_realization
-import j2_rules
-import j2_schema
-import j2_send
-import j2_studio
-import j2_template_lib
-import llm
-''', r'''from . import j2_artifacts
-from . import j2_artifact_models
-from . import j2_board
-from . import j2_change
-from . import j2_check
-from . import j2_map
-from . import j2_realization
-from . import j2_rules
-from . import j2_schema
-from . import j2_send
-from . import j2_studio
-from . import j2_template_lib
-from . import llm
+    # P1's rule (apply_p1) has already made the sibling imports package-relative when these edits run
+    Edit("P8", "j2.py", r'''from . import llm
+''', r'''from . import llm
 from . import hooks as _hooks                    # P3, P8: NullHooks, TurnInfo, CallInfo, TurnOutcome
 from .port import ModelError as _ModelError      # P8: the code of a failed model call, for run_error
 '''),
@@ -454,12 +457,12 @@ def saved_snapshot_dir(d, name, since=0):
 
     COST_KEYS ='''),
     # ---- P9, P7: call()
-    Edit("P9", "j2.py", r'''        system = system_prompt(fn, reply_format, self.out["builder"])
+    Edit("P9", "j2.py", r'''        system = system_prompt(fn, reply_format, self._builder_for(fn))
         if self.calls and DELAY:
             time.sleep(DELAY)
         self.calls += 1
         self.thinking = fn
-''', r'''        system = system_prompt(fn, reply_format, self.out["builder"])
+''', r'''        system = system_prompt(fn, reply_format, self._builder_for(fn))
         if self._observed():      # P9: empty unless a node-context file names text for this function
             addendum = self._hook("system_addendum", fn)
             system += addendum if isinstance(addendum, str) else ""
@@ -468,17 +471,13 @@ def saved_snapshot_dir(d, name, since=0):
         self.calls += 1
         self.thinking = fn
 '''),
-    Edit("P7", "j2.py", r'''        try:
-            raw = llm.ask(system, user, mock, max_tokens=max_tokens, effort="low" if json_reply else "high",
-                          json_mode=json_reply, images=images, schema=schema)
-        finally:
-            self.thinking = None
-''', r'''        try:
-            raw = _ask(self._ask_tag(fn, "agent_turn", self.calls, self.atom or None), system, user, mock,
-                       max_tokens=max_tokens, effort="low" if json_reply else "high", json_mode=json_reply, images=images,
-                       schema=schema)
-        finally:
-            self.thinking = None
+    Edit("P7", "j2.py", r'''                    raw = llm.ask(system, user, mock, max_tokens=max_tokens, effort="low" if json_reply else "high",
+                                  json_mode=json_reply, images=images, schema=schema, timeout=timeout)
+                    break
+''', r'''                    raw = _ask(self._ask_tag(fn, "agent_turn", self.calls, self.atom or None), system, user, mock,
+                               max_tokens=max_tokens, effort="low" if json_reply else "high", json_mode=json_reply,
+                               images=images, schema=schema, timeout=timeout)
+                    break
 '''),
     Edit("P7", "j2.py", r'''        self.summary = llm.ask(
             "You keep a running summary of a team's group chat.''', r'''        self.summary = _ask(self._ask_tag("summariser", "summary"),
@@ -588,15 +587,15 @@ def saved_snapshot_dir(d, name, since=0):
                 getattr(self, "_turn_" + self.turn)(self.handoff)
             if self.board_failed''', r'''            self._dispatch_turn()      # P8: the turn, between turn_started and turn_finished
             if self.board_failed'''),
-    Edit("P8", "j2.py", r'''            self.change["phase"] = "closed"
+    Edit("P8", "j2.py", r'''        self.save("timing.json", self.timing())
         self.status = "waiting"
 
-    # ------------------------------------------------------------------ Identity
-''', r'''            self.change["phase"] = "closed"
+    def timing(self):
+''', r'''        self.save("timing.json", self.timing())
         self.status = "waiting"
         self._run_status()      # P8
 
-    # ------------------------------------------------------------------ Identity
+    def timing(self):
 '''),
     # ---- P7: the template generator and the reviewer
     Edit("P7", "j2.py", r'''        raw = llm.ask(system, user, mock, max_tokens=8000, effort="low", json_mode=True, schema=schema)
@@ -606,10 +605,15 @@ def saved_snapshot_dir(d, name, since=0):
     Edit("P7", "j2.py", r'''        raw = llm.ask(
             "You review one test run of J2, a department''', r'''        raw = _ask(self._ask_tag("reviewer", "review"),
             "You review one test run of J2, a department'''),
+    # ---- P7 (sync 5): the planner call `_deliverables` now runs in `_plan_stages`, before Adaptation's turn: no function or step on it
+    Edit("P7", "j2.py", r'''        chosen = self._deliverables(said)
+''', r'''        with llm.tagged(function="adaptation", step=2, cycle=self.cycle, stage=self.stage_kind or self.output):      # P7: Adaptation's planner call, made before its turn
+            chosen = self._deliverables(said)
+'''),
     # ---- P14: an output that says `single` is never swapped for the documents a brief names (the project output, D128)
     Edit("P14", "j2.py", r'''        if self.stages or self.goal:
             return
-        said = [self.request] + [x["answer"] for x in self.intake]''', r'''        if self.stages or self.goal or self.out.get("single"):      # P14: `single` outputs (project work) keep their output
+        said = [self.request] + [x["answer"] for x in self.intake]''', r'''        if self.stages or self.goal or (self.out or {}).get("single"):      # P14: `single` outputs (project work) keep their output; no output yet: none
             return
         said = [self.request] + [x["answer"] for x in self.intake]'''),
     # ---- P16: Decide for me's two writes of settings.json add their key to the file the host wrote there; they no longer replace it
@@ -622,25 +626,9 @@ def saved_snapshot_dir(d, name, since=0):
 )
 
 OTHER_EDITS = (
-    # ---- P1 in the other modules
-    Edit("P1", "j2_artifact_models.py", "import j2_rules\n", "from . import j2_rules\n"),
-    Edit("P1", "j2_artifacts.py", "        import j2_schema\n", "        from . import j2_schema\n"),
-    Edit("P1", "j2_artifacts.py", "    import j2_map\n", "    from . import j2_map\n", count=3),      # three lazy imports: the third is in groups()
-    # j2_agent_models.py has no sibling import; j2_agent_views.py (D143) puts its folder on sys.path and imports three siblings flat
-    Edit("P1", "j2_agent_views.py",
-         "HERE = os.path.dirname(os.path.abspath(__file__))\nif HERE not in sys.path:\n    sys.path.insert(0, HERE)\n"
-         "import j2_agent_models as G      # noqa: E402\nimport j2_artifact_models as AM      # noqa: E402\n"
-         "import j2_template_lib as L      # noqa: E402\n",
-         "HERE = os.path.dirname(os.path.abspath(__file__))\nfrom . import j2_agent_models as G\n"
-         "from . import j2_artifact_models as AM\nfrom . import j2_template_lib as L\n"),
-    Edit("P1", "j2_change.py", "import llm\nimport j2_realization as R\n", "from . import llm\nfrom . import j2_realization as R\n"),
-    Edit("P1", "j2_map.py", "import j2_artifacts as A\nimport j2_realization as R\n",
-         "from . import j2_artifacts as A\nfrom . import j2_realization as R\n"),
-    Edit("P1", "j2_story.py", "import j2_artifacts as A\nfrom j2_map import _jsonl, _read",
-         "from . import j2_artifacts as A\nfrom .j2_map import _jsonl, _read"),
-    Edit("P1", "j2_realization.py", "import llm\n\nHERE =", "from . import llm\n\nHERE ="),
-    Edit("P1", "j2_template_lib.py", "import j2_artifact_models as AM\nimport j2_rules\n",
-         "from . import j2_artifact_models as AM\nfrom . import j2_rules\n"),
+    # ---- P1 in the other modules: the rule (apply_p1) did the imports; the sys.path insert of j2_agent_views is an anchor edit
+    Edit("P1", "j2_agent_views.py", "if HERE not in sys.path:\n    sys.path.insert(0, HERE)\n",
+         "# P1: the siblings are package-relative, nothing is put on the import path\n"),
     # ---- P2: j2_realization
     Edit("P2", "j2_realization.py", 'AGENTS = os.path.join(HERE, "agents", "j2")\n',
          'AGENTS = os.getenv("J2_AGENTS_DIR") or os.path.join(HERE, "agents", "j2")     # P2: J2_AGENTS_DIR replaces the folder\n'),
@@ -708,7 +696,7 @@ def _mark_used(t, use, fingerprint=None):
     fingerprint, so the same need reuses it next time."""
 '''),
     # ---- P12: Windows (D101), nothing else
-    Edit("P12", "j2_template_lib.py", "import keyword\nimport os\nimport re\n", "import keyword\nimport os\nfrom sutra_app import oslayer\nimport re\n"),
+    Edit("P12", "j2_template_lib.py", "import os\nimport re\nimport shutil\n", "import os\nfrom sutra_app import oslayer\nimport re\nimport shutil\n"),
     Edit("P12", "j2_template_lib.py", "        f.write(text)\n    os.replace(tmp, path)\n", "        f.write(text)\n    oslayer.replace(tmp, path)\n"),
     Edit("P12", "j2_template_lib.py", '''    return os.path.join("templates", rec["artifact"], slug(rec["section"]), f"{slug(rec['template'])}@v{rec['version']}")\n''',
          '''    return "/".join(("templates", rec["artifact"], slug(rec["section"]), f"{slug(rec['template'])}@v{rec['version']}"))     # P12: a path in a record is POSIX on every system\n'''),
@@ -717,28 +705,131 @@ def _mark_used(t, use, fingerprint=None):
          '''    # start_new_session is ignored on Windows. The output is decoded as UTF-8 whatever the console code page is.
     decoding = {"encoding": "utf-8", "errors": "replace"} if text else {}
     p = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=text, start_new_session=True, **decoding)\n'''),
-    Edit("P12", "j2_check.py", '''    for p in (os.getenv("J2_CHROME"), "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome",\n''',
+    Edit("P12", "j2_check.py", '''    for p in (os.getenv("J2_CHROME"), os.getenv("CHROME_PATH"), "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome",\n''',
          '''    windows = [os.path.join(root, "Google", "Chrome", "Application", "chrome.exe")
                for root in (os.getenv(name) for name in ("PROGRAMFILES", "PROGRAMFILES(X86)", "PROGRAMW6432", "LOCALAPPDATA")) if root]
-    for p in (os.getenv("J2_CHROME"), "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome", *windows,\n'''),
+    for p in (os.getenv("J2_CHROME"), os.getenv("CHROME_PATH"), "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome", *windows,\n'''),
+    # ---- P2 (third edit), P17 and P18: j2_types.py
+    Edit("P17", "j2_types.py", "import shutil\nimport sys\n\nHERE = os.path.dirname(os.path.abspath(__file__))\n",
+         "import shutil\nimport sys\nimport time\nfrom sutra_app import oslayer      # P17: the lock and the atomic replace\n\nHERE = os.path.dirname(os.path.abspath(__file__))\n"),
+    Edit("P2", "j2_types.py", 'AGENTS_DIR = os.path.join(HERE, "agents", "j2")\n',
+         'AGENTS_DIR = os.getenv("J2_AGENTS_DIR") or os.path.join(HERE, "agents", "j2")     # P2: a page type\'s builder is a role file\n'),
+    Edit("P17", "j2_types.py", '''LOCAL_TYPES_PATH = os.path.join(HERE, "artifacts", "types.local.json")
+LOCAL_LIBRARY_DIR = os.path.join(HERE, "library", "types")
+''', '''_STORE = os.getenv("J2_TYPES_DIR")      # P17: the host's per-user folder for the types runs make; unset: J2's own places
+LOCAL_TYPES_PATH = os.path.join(_STORE, "types.local.json") if _STORE else os.path.join(HERE, "artifacts", "types.local.json")
+LOCAL_LIBRARY_DIR = os.path.join(_STORE, "templates") if _STORE else os.path.join(HERE, "library", "types")
+TYPES_LOCK_WAIT_S = 30.0      # P17: the most `create` waits for the store lock
+'''),
+    Edit("P18", "j2_types.py", '''NAME_RE = re.compile(r"^[a-z][a-z0-9_]{1,40}$")
+''', '''NAME_RE = re.compile(r"^[a-z][a-z0-9_]{1,40}$")
+
+# P18: output types the host registers in its own process (the project output): name -> {"entry": json-safe entry,
+# "extras": what data cannot carry (callables, flags), handed to output_def unchanged}. Never written to a file.
+HOST = {}
+
+
+def register(entry, extras=None):
+    """P18: add a host type. `entry` is a JSON-safe `kind: "type"` entry whose name NAME_RE accepts and that names its owner
+    in entry["host"]. A name types.json or the local store already has is refused (ValueError); the same owner registering
+    the same name again replaces its entry; another owner is refused. `extras` (callables, flags) ride beside the entry."""
+    try:
+        entry = json.loads(json.dumps(entry))      # a copy, and the proof that it is JSON-safe
+    except (TypeError, ValueError) as e:
+        raise ValueError(f"host type: the entry is not JSON-safe ({e})") from None
+    if not isinstance(entry, dict) or entry.get("kind") != "type":
+        raise ValueError("host type: the entry must be an object with kind: type")
+    name, owner = entry.get("name"), entry.get("host")
+    if not NAME_RE.match(str(name or "")):
+        raise ValueError(f"host type {name!r}: the name must match {NAME_RE.pattern}")
+    if not isinstance(owner, str) or not owner:
+        raise ValueError(f"host type {name}: the entry must name its owner in \\"host\\"")
+    with open(TYPES_PATH, encoding="utf-8") as f:
+        taken = {t.get("name") for t in json.load(f)["types"]} | {t.get("name") for t in _read_local()}
+    if name in taken:
+        raise ValueError(f"host type {name}: the name is already a type of {os.path.basename(TYPES_PATH)} or of the local store")
+    if name in HOST and HOST[name]["entry"].get("host") != owner:
+        raise ValueError(f"host type {name}: already registered by {HOST[name]['entry'].get('host')}")
+    HOST[name] = {"entry": entry, "extras": dict(extras or {})}
+    _CACHE.clear()
+'''),
+    Edit("P18", "j2_types.py", '''        d["types"][at:at] = local
+''', '''        d["types"][at:at] = local + [e["entry"] for e in HOST.values()]      # P18
+'''),
+    Edit("P18", "j2_types.py", '''    rel = e.get("template") or f"templates/{name}/generic.json"
+    if rel.startswith(LOCAL_LIBRARY_REL + "/"):
+''', '''    rel = e.get("template") or f"templates/{name}/generic.json"
+    if os.path.isabs(rel):      # P18: a host type's template is a file of the host
+        return rel
+    if rel.startswith(LOCAL_LIBRARY_REL + "/"):
+'''),
+    Edit("P18", "j2_types.py", '''        out["mock"] = dict(entry["mock"])
+    return out
+''', '''        out["mock"] = dict(entry["mock"])
+    out.update(HOST.get(name, {}).get("extras") or {})      # P18: the keys J2 cannot read from data (single, workspace, mocks)
+    return out
+'''),
+    Edit("P18", "j2_types.py", '''        if t.get("kind") != "type":
+            continue
+        guide = ((d.get("forms")''', '''        if t.get("kind") != "type" or t.get("name") in HOST:      # P18: a host type is not a template-library artifact
+            continue
+        guide = ((d.get("forms")'''),
+    Edit("P17", "j2_types.py", '''def _write_local(types):
+    os.makedirs(os.path.dirname(LOCAL_TYPES_PATH), exist_ok=True)
+    with open(LOCAL_TYPES_PATH, "w", encoding="utf-8") as f:
+        f.write('{\\n  "types": [\\n' + ",\\n".join("    " + json.dumps(t, ensure_ascii=False) for t in types) + "\\n  ]\\n}\\n")
+''', '''def _write_local(types):
+    os.makedirs(os.path.dirname(LOCAL_TYPES_PATH), exist_ok=True)
+    tmp = LOCAL_TYPES_PATH + ".tmp"      # P17: a temp file and a replace, so a reader never sees half a file
+    with open(tmp, "w", encoding="utf-8") as f:
+        f.write('{\\n  "types": [\\n' + ",\\n".join("    " + json.dumps(t, ensure_ascii=False) for t in types) + "\\n  ]\\n}\\n")
+    oslayer.replace(tmp, LOCAL_TYPES_PATH)
+'''),
+    Edit("P17", "j2_types.py", '''def create(name, label, secs, file=None, path=None, practice=None):
+    """Save a new document type, locally:''', '''def create(name, label, secs, file=None, path=None, practice=None):
+    """P17: `_create` inside an exclusive lock on <store>/.lock (oslayer.try_lock, as P10): the whole read-modify-write is one
+    step across runs and processes. Waits TYPES_LOCK_WAIT_S; a busy lock is a ValueError, which J2 already turns into the
+    event new_type_refused."""
+    store = os.path.dirname(LOCAL_TYPES_PATH)
+    os.makedirs(store, exist_ok=True)
+    fd = os.open(os.path.join(store, ".lock"), os.O_RDWR | oslayer.O_BINARY | os.O_CREAT, 0o600)
+    try:
+        deadline = time.monotonic() + TYPES_LOCK_WAIT_S
+        while not oslayer.try_lock(fd):
+            if time.monotonic() >= deadline:
+                raise ValueError(f"new type {name}: the local type store is locked by another run "
+                                 f"(waited {TYPES_LOCK_WAIT_S:g} s)") from None
+            time.sleep(0.05)
+        try:
+            return _create(name, label, secs, file, path, practice)
+        finally:
+            oslayer.unlock(fd)
+    finally:
+        os.close(fd)
+
+
+def _create(name, label, secs, file=None, path=None, practice=None):
+    """Save a new document type, locally:'''),
 )
 
 EDITS = J2_EDITS + OTHER_EDITS
 
 PATCH_NOTES = {
     "P1": P1_NOTE,
-    "P2": "role files: `J2_DIR` (j2.py) and `AGENTS` (j2_realization.py) are `J2_AGENTS_DIR` or the package copy `agents/j2/`; conditions, `artifacts/types.json` and `templates/` stay package-relative; `J2_RUNS_DIR`, `J2_MEMORY_FILE`, `J2_PLAYBOOK_FILE` and `J2_LIBRARY_DIR` were already environment-driven",
+    "P2": "role files: `J2_DIR` (j2.py), `AGENTS` (j2_realization.py) and `AGENTS_DIR` (j2_types.py: a page type's builder is a role file) are `J2_AGENTS_DIR` or the package copy `agents/j2/`; conditions, `artifacts/types.json` and `templates/` stay package-relative; `J2_RUNS_DIR`, `J2_MEMORY_FILE`, `J2_PLAYBOOK_FILE` and `J2_LIBRARY_DIR` were already environment-driven",
     "P3": "`J2Run.__init__(*, run_dir=None, run_id=None, hooks=None)`: the host names the run folder and id (the first `reset` takes them; `run_id` without `run_dir` is an error; default id = folder name without `j2-`, as before); `self.hooks` defaults to `NullHooks()`",
     "P4": "`user_says` returns False at once when the run holds its lock (J2 took the lock before it looked at the status and then waited, 1.21 s measured, and started a new turn); new `apply_override(cmd)`: the same non-blocking lock around `_override`, for the host (the server checked the key)",
     "P5": "explicit-path variants, the old constants as defaults: `saved_dir(name, runs_dir=None)`, `list_runs(limit=60, runs_dir=None)`, `saved_snapshot_dir(d, name, since=0)` (called by `saved_snapshot`), `load/save/clear_lessons(path=None)`, `load/save/clear_playbooks(path=None)`",
-    "P7": "every `llm.ask` is inside a tagged block: `J2Run.call` (function, step, cycle, stage, call_no, builder atom), the chat summary, the template generator and the reviewer through `_ask(...)`; the planner and judge (`Session.ask`, j2_realization.py) name role and purpose and inherit the turn's function; each hook-observed turn runs inside `llm.tagged(function, step, cycle, stage)`",
+    "P7": "every `llm.ask` is inside a tagged block: `J2Run.call` (function, step, cycle, stage, call_no, builder atom), the chat summary, the template generator and the reviewer through `_ask(...)` (`_ask` passes `timeout` on; since sync 5 `call` keeps J2's retry loop and `except llm.CallTimeout`); the planner call `_deliverables` of `_plan_stages`, made before the turn of Adaptation, runs in `llm.tagged(function=\"adaptation\", step=2, ...)`; the planner and judge (`Session.ask`, j2_realization.py) name role and purpose and inherit the turn's function; each hook-observed turn runs inside `llm.tagged(function, step, cycle, stage)`",
     "P8": "hook calls (`NullHooks` by default, nothing is built for it): `post` (`message_posted`, not for ASK_REQUESTER), `_ask_user` (`message_posted(m, questions=)` once `paused` is set), `save` (`record_saved`), `_log_call` (`call_finished`; `calls.jsonl` also gains `provider` and `usd`), the turn dispatch (`turn_started`, `turn_finished` through `_dispatch_turn`), `user_says` and both run ends (`run_status`), the crash path (`run_error`); a hook error goes to stderr unless it is fatal (`fatal = True` or a class named RecordRejected)",
     "P9": "`call` appends `system_addendum(fn)` to the system prompt: empty unless the hooks have a node-context file",
     "P10": "`store` and `mark_used` of the template library run inside an exclusive lock on `<library>/.lock` (`oslayer.try_lock`: `flock`, or `msvcrt.locking` on Windows) (waits `LOCK_WAIT_S` = 30 s, then raises `LibraryBusy(RuntimeError)`, which `_route_template` already turns into the generic template); the originals are kept as `_store` and `_mark_used`",
     "P11": "`J2Run.rehydrate(src_dir)` delegates to `rehydrate.py`",
     "P12": "Windows (D101), nothing else: `j2_check.find_chrome` also looks in the Windows install folders of Chrome, `j2_check._chrome` decodes Chrome's output as UTF-8 with replacement, `j2_template_lib` writes its index with `oslayer.replace` (a rename that waits out a reader) and takes its library lock through `oslayer` (P10), records a template's saved path with `/` on every system (`run_tpl_rel`) and splits it on either separator when it checks for `..` (`run_saved_dir`)",
-    "P14": "`J2Run._plan_stages` returns early for an output that says `single` (`if self.stages or self.goal or self.out.get(\"single\"):`): named documents in a brief (\"update the PRD in the repo\") do not swap the project output for a PRD stage chain. No other output has `single`, so every other run, prompt and golden is unchanged. The output itself is registered by `sutra_app/engine/capabilities/` (Sutra's own files, not J2's)",
+    "P14": "`J2Run._plan_stages` returns early for an output that says `single` (`if self.stages or self.goal or (self.out or {}).get(\"single\"):`, guarded since sync 5 because `_plan_stages` runs while `out` is still `None`): named documents in a brief (\"update the PRD in the repo\") do not swap the project output for a PRD stage chain, and a host-pinned project run makes no planner call (D129). No other output has `single`. The output itself is registered by `sutra_app/engine/capabilities/` through P18 (Sutra's own files, not J2's)",
     "P16": "Decide for me's two writes of `settings.json` (`set_auto`, and the one at the start of `_run_safe`) add `decide_for_me` to what the file holds instead of replacing it: the engine host writes its resolved engine settings to the same file before J2 starts, and that dump now survives (`saved_snapshot` keeps reading `decide_for_me` from the same file)",
+    "P17": "`j2_types.py`: the types a run makes (`create`) are kept where the host says (`J2_TYPES_DIR`: `types.local.json` and `templates/<name>/generic.json` below it; unset: J2's own places, so J2's flow test and developer use are unchanged); `_write_local` writes a temp file and `oslayer.replace`s it; `create` runs the original (now `_create`) inside an exclusive lock on `<store>/.lock` (`oslayer.try_lock`, waits `TYPES_LOCK_WAIT_S` = 30 s; a busy lock is a `ValueError`, which `J2Run._deliverables` already turns into the event `new_type_refused`). `promote` (a developer command) is not changed (D163)",
+    "P18": "`j2_types.py`: host type registration (D164): `HOST` and `register(entry, extras=None)` (a JSON-safe `kind: \"type\"` entry that names its owner in `host`; a name of `types.json` or of the local store is refused; the same owner again replaces; another owner is refused), `_read_types` adds the host entries after the local types, `template_path` accepts an absolute path, `load` returns the registered `extras` (keys data cannot carry: `single`, `workspace`, `deliver`, the mocks), `templated` skips a host type",
     "P15": "seed data: the six `runs[].library` values of `library/index.json` that held a J2 developer's absolute home-folder path become `not recorded` (R5: no absolute home path in any file of this product); nothing reads the field; the two `/tmp/` values stay",
 }
 
@@ -845,26 +936,30 @@ def build(src: Source):
         raw = src.read(name)
         mine = [e for e in EDITS if e.file == name]
         try:
-            text, found = apply_edits(raw.decode("utf-8"), mine, name=name)
+            text, p1 = apply_p1(raw.decode("utf-8"), name)
+            text, found = apply_edits(text, mine, name=name)
         except UnicodeDecodeError as exc:
             raise VendorError(f"{name} is not UTF-8: {exc}") from None
+        if p1:
+            found.setdefault("P1", []).extend((n, n) for n in p1_lines(text))
+            found["P1"].sort()
         for patch, spans in found.items():
             ranges.setdefault(patch, []).extend(f"{name}:{a}-{b}" if a != b else f"{name}:{a}" for a, b in spans)
-        add(f"sutra_app/engine/{name}", name, text.encode("utf-8"), raw, sorted({e.patch for e in mine}, key=_pnum))
+        add(f"sutra_app/engine/{name}", name, text.encode("utf-8"), raw,
+            sorted({e.patch for e in mine} | ({"P1"} if p1 else set()), key=_pnum))
     unknown = {e.file for e in EDITS} - set(CODE)
     if unknown:
         raise VendorError(f"edits for files that are not vendored: {sorted(unknown)}")
     for name in ROLE_FILES:
         data = src.read(f"agents/j2/{name}")
         add(f"sutra_app/engine/agents/j2/{name}", f"agents/j2/{name}", data, data)
-    for name in CONDITIONS:
-        data = src.read(f"conditions/{name}")
-        add(f"sutra_app/engine/conditions/{name}", f"conditions/{name}", data, data)
     data = src.read("artifacts/types.json")
     add("sutra_app/engine/artifacts/types.json", "artifacts/types.json", data, data)
-    for name in GENERIC_TEMPLATES:
-        data = src.read(f"templates/{name}")
-        add(f"sutra_app/engine/templates/{name}", f"templates/{name}", data, data)
+    for folder, vendored, excluded in TREES:      # D161: types are data; every file of the tree, no name listed
+        for rel in src.tree(folder):
+            if rel not in excluded:
+                data = src.read(rel)
+                add(f"{vendored}/{rel[len(folder) + 1:]}", rel, data, data)
     patched_index = False
     for rel in src.tree("library"):
         data = src.read(rel)
@@ -899,20 +994,23 @@ def _pnum(patch: str) -> int:
 
 
 def render_vendored_md(commit: str, rows, ranges) -> str:
-    tree = f" (tree of `prototypes/j2`: `{BASELINE_TREE}`)" if commit == BASELINE else ""      # the tree id belongs to the pinned commit only
+    tree = f" (tree of `prototypes/j2`: `{BASELINE_TREE}`, the tag `cut-off/2026-11-12`)" if commit == BASELINE else ""      # the tree id belongs to the pinned commit only
     out = [
         "# Vendored J2 engine",
         "",
         f"Source: the J2 prototype as it is kept in this repository's own copy `prototypes/j2`, at the sutra commit `{commit}`{tree}, "
-        f"extracted with `git archive {commit} prototypes/j2 | tar -x --strip-components=2 -C <empty folder>` (sync 4, D136). That "
+        f"extracted with `git archive {commit} prototypes/j2 | tar -x --strip-components=2 -C <empty folder>` (sync 5, D160). That "
         "extraction, given to the script with `--source` and `--commit`, is the only source of every file below, never the working tree. "
         f"History, not a source: the earlier syncs took the J2 prototype at the commits `{PREVIOUS_BASELINES[0]}` and "
-        f"`{PREVIOUS_BASELINES[1]}`; the design documents cite the line numbers (`j2.py:n`) of `{DESIGNED_AGAINST}`, and everything "
+        f"`{PREVIOUS_BASELINES[1]}` and `{PREVIOUS_BASELINES[2]}` (sync 4); the design documents cite the line numbers (`j2.py:n`) of `{DESIGNED_AGAINST}`, and everything "
         "after `j2.py:8313` has moved. Patches are located by anchor text, never by line.",
         "",
         "Copied into `sutra_app/engine/` with the same module names; every change to a J2 file is one of the numbered patches "
         "below and nothing else (decision D13). Prompts stay byte-identical. There is no P6 (the design's table skips it) and no "
-        "P13 (retired in sync 4, D140: its code is Sutra's own `engine/runlist.py`). "
+        "P13 (retired in sync 4, D140: its code is Sutra's own `engine/runlist.py`); P19 is reserved for a late-judge switch (D145, D162). "
+        "Sync 5 (D160 to D163): the pin moved to the tag `cut-off/2026-11-12`; the types are vendored as data (`conditions/` and "
+        "`templates/` as whole trees, D161); P1 is a counted rule, P7, P8, P9, P12 and P14 were repaired, P2 gained a third edit, "
+        "P17 and P18 are new (D162). "
         "This file is written by `scripts/vendor_j2.py`; `scripts/py scripts/vendor_j2.py --source <the extraction> --commit "
         f"{commit} --check` re-derives every file below from the J2 source and fails on any difference.",
         "",
@@ -930,7 +1028,7 @@ def render_vendored_md(commit: str, rows, ranges) -> str:
             "| Vendored path | J2 path | Patches | J2 sha256 | Vendored sha256 |", "|---|---|---|---|---|"]
     for dest, origin, patches, original, vendored in rows:
         out.append(f"| `{dest}` | `{origin}` | {patches or '-'} | `{original}` | `{vendored}` |")
-    out += ["", "Not vendored (engine design 3.2): the older studio (`studio.py`, `server.py`, `ui.html`, `mock_site.py`, "
+    out += ["", "Not vendored (engine design 3.2): `templates/README.md`, `tools/`, `fixtures/n6-sudoku-*` and `docs/word-matching-followups.md` (working notes and tools of J2, D161), the older studio (`studio.py`, `server.py`, `ui.html`, `mock_site.py`, "
                 "`agents/{product,design,development,team}.md`), the budget-conflict demo (`negotiate*`, `scenarios/`), "
                 "`agents/j2/_placeholders/`, the saved runs, the IDE and environment files, the page and its scripts "
                 "(`j2_ui.html`, `j2_ui_render.js`, `j2_graph_layout.js`, `vendor/`: the UI package ports them), "
@@ -975,7 +1073,7 @@ def write(files: dict, dest: Path) -> None:
 
 
 def main(argv=None) -> int:
-    ap = argparse.ArgumentParser(description="Vendor the J2 engine from an extraction of prototypes/j2 into sutra_app/engine/ (WP E1, sync 4).")
+    ap = argparse.ArgumentParser(description="Vendor the J2 engine from an extraction of prototypes/j2 into sutra_app/engine/ (WP E1, sync 5).")
     ap.add_argument("--source", default=os.environ.get(J2_ENV),
                     help=f"an extraction of this repository's prototypes/j2 (see the module docstring); default: ${J2_ENV}")
     ap.add_argument("--commit", default=None,

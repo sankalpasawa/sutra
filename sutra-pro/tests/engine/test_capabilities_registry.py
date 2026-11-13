@@ -22,9 +22,9 @@ def ctx(**settings) -> EngineContext:
     return EngineContext(task=SimpleNamespace(), settings=EngineSettings(**settings), paths=SimpleNamespace(), data_dir=None)
 
 
-def spec(label="Thing", **kw) -> OutputSpec:
-    return OutputSpec(label=label, noun="thing", sections=("One",), conditions="x.json", rubric=(("T-1", "t"),), rates="rates_prd",
-                      check_types=("heading-present",), builder="b", file="thing.md", done="Done", **kw)
+def spec(label="Thing", name="thing", **kw) -> OutputSpec:
+    return OutputSpec(name=name, label=label, noun="thing", sections=("One",), conditions="/x/x.json", rubric=(("T-1", "t"),),
+                      check_types=("heading-present",), builder="/x/b.md", file="thing.md", done="Done", **kw)
 
 
 class Adds(Capability):
@@ -35,9 +35,26 @@ class Adds(Capability):
         return self._outputs
 
 
+class FakeTypes:
+    """`j2_types` as patch P18 gives it: `names()`, `HOST` and `register(entry, extras)`, with J2's refusals as `ValueError`."""
+
+    def __init__(self, *own):
+        self.own, self.HOST = list(own), {}
+
+    def names(self):
+        return [*self.own, *self.HOST]
+
+    def register(self, entry, extras=None):
+        name, owner = entry["name"], entry.get("host")
+        if name in self.own or (name in self.HOST and self.HOST[name]["entry"].get("host") != owner):
+            raise ValueError(f"{name}: a type of that name exists")
+        json.dumps(entry)                         # an entry is JSON-safe: the callables ride in `extras`
+        self.HOST[name] = {"entry": entry, "extras": dict(extras or {})}
+
+
 class FakeJ2:
-    def __init__(self, **outs):
-        self.OUTPUTS = dict(outs)
+    def __init__(self, *own):
+        self.j2_types = FakeTypes(*own)
 
 
 class RecordingPort:
@@ -68,63 +85,73 @@ def test_the_registry_is_a_fixed_tuple_in_a_fixed_order_with_the_workspace_first
     assert len(set(names)) == len(names) and all(names)
 
 
-def test_register_adds_an_output_and_remembers_its_spec():
-    j2 = FakeJ2(website={"label": "Website"})
+def test_register_adds_a_type_with_its_owner_and_remembers_its_spec():
+    j2 = FakeJ2("website")
     register(j2, [Adds("a", {"thing": spec()})])
-    assert j2.OUTPUTS["thing"]["label"] == "Thing" and j2.OUTPUTS["thing"]["capability"] == "a"
-    assert j2.OUTPUTS["thing"]["workspace"] == "read" and j2.OUTPUTS["thing"]["single"] is False
-    assert SPECS["thing"].label == "Thing"
+    got = j2.j2_types.HOST["thing"]
+    assert got["entry"]["label"] == "Thing" and got["entry"]["host"] == "a" and got["entry"]["deliverable"] is False
+    assert got["extras"] == {"single": False, "workspace": "read", "deliver": False}
+    assert SPECS["thing"].label == "Thing" and j2.j2_types.names() == ["website", "thing"]
     SPECS.pop("thing")
 
 
 def test_register_is_idempotent():
     j2, caps = FakeJ2(), [Adds("a", {"thing": spec()})]
     register(j2, caps)
-    first = j2.OUTPUTS["thing"]
     register(j2, caps)
-    assert j2.OUTPUTS["thing"] is first and list(j2.OUTPUTS) == ["thing"]
+    assert list(j2.j2_types.HOST) == ["thing"]
     SPECS.pop("thing", None)
 
 
-def test_an_output_that_the_engine_already_has_is_a_conflict():
-    j2 = FakeJ2(website={"label": "Website"})
+def test_a_type_that_the_engine_already_has_is_a_conflict():
+    j2 = FakeJ2("website")
     with pytest.raises(CapabilityConflict, match="website"):
-        register(j2, [Adds("a", {"website": spec()})])
-    assert j2.OUTPUTS == {"website": {"label": "Website"}}
+        register(j2, [Adds("a", {"website": spec(name="website")})])
+    assert j2.j2_types.HOST == {}
 
 
-def test_an_output_that_another_capability_added_is_a_conflict_and_nothing_is_added():
+def test_a_type_that_another_capability_added_is_a_conflict_and_nothing_is_added():
     j2 = FakeJ2()
     register(j2, [Adds("a", {"thing": spec("A")})])
-    before = dict(j2.OUTPUTS)
+    before = dict(j2.j2_types.HOST)
     with pytest.raises(CapabilityConflict, match="thing"):
-        register(j2, [Adds("b", {"other": spec("O"), "thing": spec("B")})])
-    assert j2.OUTPUTS == before and "other" not in j2.OUTPUTS            # all or nothing
+        register(j2, [Adds("b", {"other": spec("O", name="other"), "thing": spec("B")})])
+    assert j2.j2_types.HOST == before and "other" not in j2.j2_types.HOST            # all or nothing
     SPECS.pop("thing", None)
 
 
 def test_two_capabilities_naming_the_same_output_in_one_registration_conflict():
     with pytest.raises(CapabilityConflict, match="both"):
-        register(FakeJ2(), [Adds("a", {"t": spec()}), Adds("b", {"t": spec()})])
+        register(FakeJ2(), [Adds("a", {"t": spec(name="t")}), Adds("b", {"t": spec(name="t")})])
 
 
-def test_the_real_registry_registers_into_the_real_j2_and_never_touches_the_four_outputs():
+def test_an_output_must_be_a_spec_of_its_own_name():
+    with pytest.raises(CapabilityConflict, match="OutputSpec"):
+        register(FakeJ2(), [Adds("a", {"thing": {"label": "plain"}})])
+    with pytest.raises(CapabilityConflict, match="named"):
+        register(FakeJ2(), [Adds("a", {"other": spec()})])
+
+
+def test_the_real_registry_registers_into_the_real_j2_and_never_touches_the_types_of_the_data():
     from sutra_app.engine import j2
-    before = {k: dict(v) for k, v in j2.OUTPUTS.items() if k in ("website", "prd", "hld", "lld")}
+    before = list(j2.j2_types.names())
     register(j2)
     register(j2)
-    assert {k: dict(j2.OUTPUTS[k]) for k in before} == before
+    names = j2.j2_types.names()
+    assert [n for n in names if n != "project"] == [n for n in before if n != "project"] and names.count("project") == 1
+    assert j2.j2_types.HOST["project"]["entry"]["host"] == "project"
 
 
 def test_an_output_spec_says_what_it_can_do_and_refuses_a_bad_workspace():
-    assert spec().workspace == "read" and spec(workspace="edit").to_j2()["workspace"] == "edit"
-    assert spec(single=True).to_j2()["single"] is True
+    assert spec().workspace == "read" and spec(workspace="edit").extras()["workspace"] == "edit"
+    assert spec(single=True).extras()["single"] is True
+    assert spec().to_type_entry("a")["form"] == "document"
     with pytest.raises(ValueError):
         spec(workspace="write")
 
 
 # ---- hooks reach every output and every agent call ------------------------------------------------------------------
-@pytest.mark.parametrize("stage", ["website", "prd", "hld", "lld", None])
+@pytest.mark.parametrize("stage", ["website", "prd", "hld", "lld", "any_new_type", None])
 def test_the_workspace_hook_runs_for_every_output(port, stage):
     install(ctx())
     llm.ask("s", "u", None, tag=CallTag(function="identity", stage=stage))
@@ -283,7 +310,7 @@ def test_the_row_is_in_the_shape_of_j2s_own_document_rows(tmp_path):
 def test_an_output_that_is_not_this_capabilitys_gets_no_row_even_when_the_file_is_there(tmp_path):
     run = report_run(tmp_path)
     cap = Adds("a", {"thing": spec()})
-    for output in ("website", "prd", "hld", "lld", "other", "", None):
+    for output in ("other", "another", "", None):
         assert cap.documents(output, run) == [], output
     assert Adds("empty").documents("thing", run) == [], "a capability with no output has no report"
 
@@ -294,11 +321,11 @@ def test_no_file_no_run_or_an_empty_file_is_no_row_or_a_row_that_is_not_ok(tmp_p
     assert cap.documents("thing", None) == [] and cap.documents("thing", str(tmp_path / "nowhere")) == []
     empty = cap.documents("thing", report_run(tmp_path, text="", folder="j2-empty"))
     assert len(empty) == 1 and empty[0]["ok"] is False, "an empty report is listed, and not marked ok"
-    assert Adds("b", {"nofile": OutputSpec(label="N", noun="n", file=None)}).documents("nofile", tmp_path) == []
+    assert Adds("b", {"nofile": OutputSpec(name="nofile", label="N", noun="n", file="")}).documents("nofile", tmp_path) == []
 
 
 def test_an_output_given_as_a_plain_dict_has_its_row_too(tmp_path):
-    plain = {"label": "Plain", "noun": "note", "file": "plain.md"}
+    plain = {"label": "Plain", "noun": "note", "file": "plain.md"}        # `documents` reads a dict as well as a spec; `register` takes specs only
     rows = Adds("a", {"plain": plain}).documents("plain", report_run(tmp_path, name="plain.md"))
     assert [(r["id"], r["name"], r["file"]) for r in rows] == [("plain", "Plain note", "plain.md")]
 
@@ -337,7 +364,7 @@ def test_the_real_registry_gives_a_row_for_the_project_report_and_none_for_j2s_o
     rows = documents("project", run)
     assert [(r["id"], r["name"], r["file"]) for r in rows] == [("project", "Project work report", "project.md")]
     assert rows[0]["views"]["human"] == {"format": "markdown", "file": "project.md"}
-    for own in ("website", "prd", "hld", "lld", "", None):
+    for own in ("other", "", None):
         assert documents(own, run) == [], own
 
 
@@ -349,13 +376,16 @@ def test_asking_for_rows_imports_j2_only_when_a_row_is_built_and_the_package_sti
     assert not [n for n in top if "j2" in ast.dump(n)], "base.py imports no J2 module at the top"
 
 
-def test_the_context_names_the_concrete_output(llm_reset):
+def test_the_context_names_the_concrete_output_and_none_while_no_type_is_chosen(llm_reset):
     c = ctx()
-    assert c.output == "website"
+    assert c.output is None
+    c.selection = capabilities.Selection(None, "planner", "the team's planner chooses")
+    assert c.output is None
     c.selection = capabilities.Selection("prd", "owner", "you chose it")
     assert c.output == "prd"
     c.run = SimpleNamespace(output="hld")
     assert c.output == "hld"
+    assert ctx(output="prd").output == "prd"
 
 
 @pytest.fixture
@@ -373,7 +403,8 @@ def test_get_engine_capabilities_lists_what_the_engine_can_do(api):
     assert body["schema"] == CAPABILITIES_SCHEMA == "engine-capabilities/1"
     assert body == json.loads(json.dumps(capabilities_view()))
     assert [c["name"] for c in body["capabilities"]] == [c.name for c in CAPABILITIES]
-    assert {"website", "prd", "hld", "lld"} <= set(body["outputs"])
+    from sutra_app.engine import j2
+    assert body["outputs"] == j2.j2_types.names() and "project" in body["outputs"], "the names of the data, in file order"
     assert all(isinstance(c["outputs"], list) and isinstance(c["settings"], list) for c in body["capabilities"])
 
 
