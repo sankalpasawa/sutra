@@ -1,7 +1,7 @@
 {
   "name": "sutra-pro-desktop",
   "productName": "Sutra Pro",
-  "version": "0.3.2",
+  "version": "0.3.3",
   "description": "The desktop app of Sutra Pro: a window around the local server, which runs on the Python that ships inside the app.",
   "main": "src/main.js",
   "private": true,
