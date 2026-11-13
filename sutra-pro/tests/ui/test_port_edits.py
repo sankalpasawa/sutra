@@ -2,7 +2,7 @@
 
 Three groups, none of them needs a browser or the J2 source:
   1. the committed files (sutra_app/ui/pages/j2_ui.html, static/css/j2.css, static/vendor/*, the two harness copies, and the frozen
-     static/css/j2-shell.css that Home and the console keep): edit by edit (the 33 page edits) against a table written out here, and
+     static/css/j2-shell.css that Home and the console keep): edit by edit (the 40 page edits) against a table written out here, and
      the invariants the design lists;
   2. scripts/port_j2_ui.py on a miniature J2 built below: the same table holds for what the script produces, J2 drift stops the
      port, `--check`, `--commit`, J2 is never written, two ports give the same bytes;
@@ -37,9 +37,9 @@ _spec.loader.exec_module(port)
 SANDBOX = "allow-scripts allow-forms allow-popups"
 MODULES = ["sutra_events", "graph_layout", "chart_marks", "graph_render", "graph_view", "orgchart_view", "fnode_view",
            "chat_view", "node_panel", "function_chat", "output_pick", "dept_ext"]
-# The 33 exact data routes under /api/ of J2's server (sutra_ctx.js J2_EXACT has them and /view, the studio's output page), written out again
-# here. The page calls 32 of them: /api/output is posted by output_pick.js, not by the page (and /view is a frame's address, not a fetch).
-J2_API = ["state", "runs", "runlist", "changes", "call", "preview", "docs", "map", "plan", "plan-map", "library", "catalog", "run-templates",
+# The 34 exact data routes under /api/ of J2's server (sutra_ctx.js J2_EXACT has them and /view, the studio's output page), written out again
+# here. The page calls 33 of them: /api/output is posted by output_pick.js, not by the page (and /view is a frame's address, not a fetch).
+J2_API = ["state", "runs", "runlist", "changes", "call", "preview", "docs", "map", "plan", "plan-map", "library", "catalog", "run-templates", "run-template",
           "artifacts", "artifacts/tree", "artifacts/groups", "artifact", "agent", "activity", "record", "code", "story", "board", "audits", "refs",
           "timing", "say", "ask", "output", "settings", "reset", "playbooks/clear", "lessons/clear"]
 NOT_FETCHED = {"output"}
@@ -63,7 +63,8 @@ PAGE = read(UI / "pages" / "j2_ui.html")
 # A fragment sometimes spans a neighbouring line: that pins where the new text was put.
 # ----------------------------------------------------------------------------------------------------------------------
 EDIT_IDS = ["E1", "E2a", "E2b", "E2c", "E3", "E4", "E5", "E6a", "E6b", "E7", "E8", "E9", "E9b", "E10", "E11", "E12", "E13a", "E13b", "E13c", "E13d",
-            "E19", "E20a", "E20b", "E20c", "E20d", "E20e", "E20f", "E20g", "E20h", "E20i", "E21", "E22", "E23"]
+            "E19", "E20a", "E20b", "E20c", "E20d", "E20e", "E20f1", "E20f2", "E20g", "E20h", "E20i", "E21", "E22", "E23",
+            "E24a", "E24b", "E24c", "E24d", "E24e", "E24f"]
 COUNTS = {edit: 1 for edit in EDIT_IDS} | {"E13b": 3, "E20d": 2, "E20i": 2}
 E1_HEAD = ('<link rel="stylesheet" href="/ui/css/j2.css">\n'
            '<link rel="stylesheet" href="/ui/css/sutra-graph.css"><link rel="stylesheet" href="/ui/css/sutra-panel.css">\n'
@@ -137,10 +138,21 @@ CASES = {
     "E20d": ([("SutraCtx.onLibrary()", 2), ("if (SutraCtx.onLibrary()) return;", 1), ("const CAT = {on: SutraCtx.onLibrary(), ", 1)],
              ['location.pathname === "/library"']),
     "E20e": ([("const back = view => `${SutraCtx.pagePath}?${viewRun", 1)], ["const back = view => `/?${viewRun"]),
-    "E20f": ([('data-catgo="${SutraCtx.libraryPath}${viewRun', 1)], ['data-catgo="/library']),
+    "E20f1": ([('data-catgo="${SutraCtx.libraryPath}?view=artifacts${rq}"', 1)], ['data-catgo="/library?view=artifacts']),
+    "E20f2": ([('data-catgo="${SutraCtx.libraryPath}?view=templates${rq}"', 1)], ['data-catgo="/library?view=templates']),
     "E20g": ([('<a class="slink" href="library?view=detail">Template library</a>', 1)], ['href="/library?view=detail"']),
     "E20h": ([('`<a href="${SutraCtx.pagePath}?run=${encodeURIComponent(x.id)}&view=simple">', 1)], ['`<a href="/?run=']),
     "E20i": ([('location.href = SutraCtx.pagePath + "?view=simple"', 2)], ['location.href = "/?view=simple"']),
+    # E24 (sync 6, D191): the root-absolute URLs J2 added for the shelves and the run templates
+    "E24a": ([("const shelfHref = (view, open, extra) => `${SutraCtx.libraryPath}?view=", 1)], ["const shelfHref = (view, open, extra) => `/library"]),
+    "E24b": ([('history.replaceState(history.state, "", SutraCtx.libraryPath + "?" + q.toString()', 1)], ['history.replaceState(history.state, "", "/library?"']),
+    "E24c": ([('<a href="${SutraCtx.libraryPath}?view=templates&rt=${encodeURIComponent(u.id)}" data-rtlink="1">', 1)],
+             ['<a href="/library?view=templates&rt=']),
+    "E24d": ([("`${SutraCtx.libraryPath}?view=artifacts&run=${encodeURIComponent(s.made_by.run)}`)}\">${esc(s.made_by.run)}</a>` : nr", 1)],
+             ["`/library?view=artifacts&run=${encodeURIComponent(s.made_by.run)}`)}\">${esc(s.made_by.run)}</a>` : nr"]),
+    "E24e": ([("`${SutraCtx.libraryPath}?view=artifacts&run=${encodeURIComponent(s.made_by.run)}`)}\">${esc(s.made_by.run)}</a> ${esc(s.made_by.workflow", 1)],
+             ["`/library?view=artifacts&run=${encodeURIComponent(s.made_by.run)}`)}\">${esc(s.made_by.run)}</a> ${esc(s.made_by.workflow"]),
+    "E24f": ([("const rtHref = (id, keys) => `${SutraCtx.pagePath}?view=simple&template=", 1)], ["const rtHref = (id, keys) => `/?view=simple"]),
     "E21": ([(E21_HYDRATE, 1)], ["Object.assign(FEED, v); } } catch (e) {}\n  paintFeed();"]),
     "E22": ([('runsettings: "appearance and saved runs"};', 1)], ["appearance, what to build, saved runs"]),
     "E23": ([("/* no web fonts in the app (UI-D3): the studio's Google Fonts link is not added to a generated document */ }", 1)],
@@ -164,10 +176,10 @@ def test_edit_is_in_the_committed_page(case):
     check_case(PAGE, case)
 
 
-def test_there_are_thirty_three_edits_and_every_one_has_a_case_here():
-    assert len(EDIT_IDS) == len(set(EDIT_IDS)) == 33 and sorted(CASES) == sorted(EDIT_IDS)
+def test_there_are_forty_edits_and_every_one_has_a_case_here():
+    assert len(EDIT_IDS) == len(set(EDIT_IDS)) == 40 and sorted(CASES) == sorted(EDIT_IDS)
     assert [COUNTS[f"E13{letter}"] for letter in "abcd"] == [1, 3, 1, 1] and COUNTS["E20d"] == COUNTS["E20i"] == 2
-    assert sum(1 for count in COUNTS.values() if count == 1) == 30
+    assert sum(1 for count in COUNTS.values() if count == 1) == 37
 
 
 def test_the_retired_edits_left_nothing_behind():
@@ -222,7 +234,8 @@ def test_no_external_url_in_the_markup_and_no_cdn():
 
 def test_every_link_of_the_markup_is_a_hash_a_root_path_a_relative_library_link_or_one_of_the_page_s_own_url_helpers():
     hrefs = re.findall(r'href="([^"]*)"', PAGE)
-    own = ("${artUrl(", "${libHref(", "${runHref(", "${href}", "${SutraCtx.pagePath}")      # template expressions over the helpers E4 and E20 made team-aware
+    own = ("${artUrl(", "${libHref(", "${runHref(", "${href}", "${SutraCtx.pagePath}", "${SutraCtx.libraryPath}",
+           "${esc(shelfHref(", "${esc(runHref(", "${esc(rtHref(", "${esc(`${SutraCtx.libraryPath}")      # template expressions over the helpers E4 and E20 made team-aware
     odd = [h for h in hrefs if h != "#" and not h.startswith(("/", "data:image/svg+xml,")) and not h.startswith(own)]
     assert odd == ["library?view=detail"], odd                       # E20g: the start page's static link is relative to the team's page, /d/<id>/
     assert not any(h.startswith("?") for h in hrefs)                  # J2's old relative "?view=" links are gone
@@ -306,7 +319,7 @@ def fetch_sites(script: str) -> list[str]:
 
 def test_every_fetch_goes_to_a_j2_route_or_through_artUrl_so_the_wrapper_covers_the_whole_page():
     sites = fetch_sites(INLINE_SCRIPT.findall(PAGE)[1])
-    assert len(sites) == 38 and sites.count("artUrl(f)") == 1
+    assert len(sites) == 45 and sites.count("artUrl(f)") == 1
     routes = set()
     for site in sites:
         if site == "artUrl(f)":
@@ -320,7 +333,7 @@ def test_every_fetch_goes_to_a_j2_route_or_through_artUrl_so_the_wrapper_covers_
             continue
         assert route[len("/api/"):] in J2_API, site
         routes.add(route[len("/api/"):])
-    assert routes == set(J2_API) - NOT_FETCHED                       # 33 routes, and never /api/output (output_pick.js posts it)
+    assert routes == set(J2_API) - NOT_FETCHED                       # 34 routes, and never /api/output (output_pick.js posts it)
     assert "const artUrl = f => `/api/artifact?name=${encodeURIComponent(f)}${runQ()}`;" in PAGE
 
 
@@ -330,7 +343,7 @@ def test_the_page_uses_no_transport_the_fetch_wrapper_could_not_cover_and_none_t
     # the studio has one timer (a function, never a string: nothing for the CSP to allow) and J2's favicon is the one data: URL
     assert PAGE.count("setInterval") == 1 and re.search(r"setInterval\(\(\) =>", PAGE) and not re.search(r"setInterval\([\"'`]", PAGE)
     assert re.findall(r"data:image/[\w+]+,", PAGE) == ["data:image/svg+xml,"] and '<link rel="icon" href="data:image/svg+xml,' in PAGE
-    assert PAGE.count("localStorage") == 23 and PAGE.count("navigator.clipboard") == 3
+    assert PAGE.count("localStorage") == 23 and PAGE.count("navigator.clipboard") == 4
 
 
 def test_the_style_sheet_is_the_moved_style_block_and_the_page_holds_none_of_it():
@@ -466,7 +479,15 @@ function setView(v){
 }
 const CAT = {on: location.pathname === "/library", loaded: false};
 const back = view => `/?${viewRun ? "run=" + encodeURIComponent(viewRun) + "&" : ""}view=${view}`;
-const railItem = `<button type="button" class="rgo" data-catgo="/library${viewRun ? "?run=" + encodeURIComponent(viewRun) : ""}" aria-current="${CAT.on}">Shared library</button>`;
+const rq = viewRun ? "&run=" + encodeURIComponent(viewRun) : "";
+const railItem = `<button type="button" class="rgo" data-catgo="/library?view=artifacts${rq}" aria-current="${CAT.on}">Artifacts</button>`
+  + `<button type="button" class="rgo" data-catgo="/library?view=templates${rq}" aria-current="${CAT.on}">Artifact templates</button>`;
+const shelfHref = (view, open, extra) => `/library?view=${view}${open ? "&open=" + open : ""}${extra || ""}`;
+const rtHref = (id, keys) => `/?view=simple&template=${encodeURIComponent(id)}&workflows=${encodeURIComponent(keys)}`;
+const catUrl = q => history.replaceState(history.state, "", "/library?" + q.toString().replace(/%2F/g, "/"));
+const rtName = u => `<a href="/library?view=templates&rt=${encodeURIComponent(u.id)}" data-rtlink="1">${esc(u.name)}</a>`;
+const madeRun = s => shelfRow("Made from run", s.made_by && s.made_by.run ? `<a href="${esc(`/library?view=artifacts&run=${encodeURIComponent(s.made_by.run)}`)}">${esc(s.made_by.run)}</a>` : nr);
+const madeBy = s => shelfRow("Made by run", s.made_by && s.made_by.run ? `<a href="${esc(`/library?view=artifacts&run=${encodeURIComponent(s.made_by.run)}`)}">${esc(s.made_by.run)}</a> ${esc(s.made_by.workflow || "")}` : nr);
 const RAILDIM = {priorities: s => !prioModel(s).has && "no ranking records"};
 function prioModel(s){ return {status: !has ? "no ranking records" : "some"}; }
 function renderPriorities(s){
@@ -591,7 +612,7 @@ def test_check_is_quiet_about_files_in_step_and_writes_nothing(ported, capsys):
     j2, root = ported
     before = tree(root)
     code, out, err = run(capsys, "--j2", j2, "--root", root, "--check")
-    assert (code, err) == (0, "") and out.startswith("ok: the 33 anchors of the page edits match their counts, ")
+    assert (code, err) == (0, "") and out.startswith("ok: the 40 anchors of the page edits match their counts, ")
     assert "and the 7 committed files equal a fresh port of J2 " in out
     assert tree(root) == before
 
@@ -818,7 +839,7 @@ def test_e13_words_are_the_four_pairs_of_the_design_and_the_script_prints_them_a
 
 def test_the_edit_table_has_the_design_ids_and_counts():
     assert [(edit.id, edit.count) for edit in port.PAGE_EDITS] == [(edit, COUNTS[edit]) for edit in EDIT_IDS]
-    assert len(port.PAGE_EDITS) == 33
+    assert len(port.PAGE_EDITS) == 40
     assert [(e.id, e.count) for e in port.RENDER_EDITS] == [("H1", 1), ("H2", 1), ("H3", 1)]
     assert [(e.id, e.count) for e in port.LAYOUT_EDITS] == [("H1", 1)]
     for retired in ("RUN_SETTINGS_EDITS", "OUTPUT_EDITS", "RUN_SETTINGS_CSS"):
@@ -849,5 +870,5 @@ def test_a_fresh_port_of_the_real_j2_equals_the_committed_files_and_leaves_j2_al
     before = [p.read_bytes() for p in watched]
     code, out, err = run(capsys, "--j2", j2, "--commit", PIN, "--check")
     assert (code, err) == (0, ""), out + err
-    assert out.startswith("ok: the 33 anchors of the page edits match their counts, and the 7 committed files equal a fresh port of J2 ")
+    assert out.startswith("ok: the 40 anchors of the page edits match their counts, and the 7 committed files equal a fresh port of J2 ")
     assert [p.read_bytes() for p in watched] == before

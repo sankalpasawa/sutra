@@ -152,7 +152,7 @@ def effective_settings(data_dir, dept_id: str, page: Optional[PageState] = None)
         return EngineSettings()
 
 
-def build_ctx(services, dept_id: str, run: Optional[str] = None, *, commands=None) -> RunCtx:
+def build_ctx(services, dept_id: str, run: Optional[str] = None, *, commands=None, flags: bool = False) -> RunCtx:
     paths = DataPaths.for_dept(services.data_dir, dept_id)
     memory = MemoryPaths(str(paths.lessons_file), str(paths.playbooks_file))
     page = read_page(services.data_dir, dept_id)
@@ -161,6 +161,8 @@ def build_ctx(services, dept_id: str, run: Optional[str] = None, *, commands=Non
     decide = {"1": True, "0": False}.get(page.next_settings.get("J2_DECIDE_FOR_ME", ""))        # the owner's choice for the next run, if any
     common = dict(runs_dir=str(paths.runs_dir), live_id=live_id, memory=memory, dept_id=dept_id, commands=commands,
                   library=str(paths.library_dir), decide_for_me=decide)           # the library is the one global one (D26), not the server's J2 folder
+    if flags:      # J2 sync 6 (D183): whether a run of this team may start from a run template, from its settings (never the server's os.environ); only the view that says it asks
+        common["run_templates_on"] = effective_settings(services.data_dir, dept_id, page).effective().run_templates
     if run:
         ref = services.resolve_run(run, dept_id) if re.fullmatch(RUN_PARAM_RE, run) else None
         if ref is None or getattr(ref, "dept_id", dept_id) != dept_id or ref.run_id != run:
@@ -181,7 +183,7 @@ def serve(services, view: str, request: Request, dept_id: str, extra: Optional[M
     """One J2 route: the view `view` over the request's context, as a response. Path parts (`extra`) become query entries,
     as `views` expects. A write (`body` is not None) is about the team's current state and ignores `?run=`."""
     query = {**first_values(request), **(extra or {})}
-    ctx = build_ctx(services, dept_id, None if body is not None else query.get("run"), commands=commands)
+    ctx = build_ctx(services, dept_id, None if body is not None else query.get("run"), commands=commands, flags=view == "run_template")
     return to_response(VIEWS[view](ctx, query if body is None else body), services.redact)
 
 

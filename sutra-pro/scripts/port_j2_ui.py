@@ -15,13 +15,13 @@ file would be ported) into a new, empty folder:
 `--j2` is always such an extraction. `--commit` names the commit it was taken from: a `git archive` folder is not a repository, so
 the script cannot ask git; without the flag it asks git about the folder and says "unknown" when that fails.
 
-The page is J2's `j2_ui.html` with 33 edits (E1 to E13, E19 to E23; the letters E2a to E2c, E9b and E20a to E20i count). Every edit is `Edit(id, old, new, count)`:
+The page is J2's `j2_ui.html` with 40 edits (E1 to E13, E19 to E24; the letters E2a to E2c, E9b, E20a to E20i with E20f1 and E20f2, and E24a to E24f count). Every edit is `Edit(id, old, new, count)`:
 `old` is a literal or a compiled regex and `count` is the number of places it must match in J2's file. Every count is checked against
 J2's own text first, so no edit anchors on another edit's output. A count that is not met means J2 changed under the port: the port
 stops, names every edit that no longer matches and writes nothing. Re-port; never hand-edit the copy.
 
 What it writes, under `sutra_app/ui/` of the repository the script lives in (or `--root`):
-    pages/j2_ui.html            the page after the 33 edits
+    pages/j2_ui.html            the page after the 40 edits
     pages/j2_ui_render.js       J2's render harness, three small changes (sutra_ctx.js runs first; d3 and its tag test move)
     pages/j2_graph_layout.js    J2's layout harness, one change (sutra_ctx.js runs first)
     static/css/j2.css           the page's `<style>` block, byte for byte (the leading newline included)
@@ -216,7 +216,9 @@ PAGE_EDITS: tuple[Edit, ...] = (
          "const runHref = id => `${SutraCtx.pagePath}?run=${encodeURIComponent(id)}&view=detail&tab=library`;", 1),
     Edit("E20d", _LIBRARY_PATH, "SutraCtx.onLibrary()", 2),       # `setView` and the catalog's `CAT.on`
     Edit("E20e", "const back = view => `/?${viewRun", "const back = view => `${SutraCtx.pagePath}?${viewRun", 1),
-    Edit("E20f", 'data-catgo="/library${viewRun', 'data-catgo="${SutraCtx.libraryPath}${viewRun', 1),
+    # E20f: the Artifacts and Artifact templates buttons of the run list (J2 sync 6 made the one anchor two buttons)
+    Edit("E20f1", 'data-catgo="/library?view=artifacts${rq}"', 'data-catgo="${SutraCtx.libraryPath}?view=artifacts${rq}"', 1),
+    Edit("E20f2", 'data-catgo="/library?view=templates${rq}"', 'data-catgo="${SutraCtx.libraryPath}?view=templates${rq}"', 1),
     # the studio's start page: a static link (no script can write the team into markup, so it is relative: /d/<id>/ gives /d/<id>/library, and
     # J2's own root gives /library), the Recent work list, and New project, which goes back to the start page
     Edit("E20g", '<a class="slink" href="/library?view=detail">Template library</a>', '<a class="slink" href="library?view=detail">Template library</a>', 1),
@@ -230,6 +232,16 @@ PAGE_EDITS: tuple[Edit, ...] = (
     # E22: J2's own hint of the Run settings item still says the pane has "what to build"; it has Appearance and the saved runs
     Edit("E22", 'runsettings: "appearance, what to build, saved runs"};', 'runsettings: "appearance and saved runs"};', 1),
     Edit("E23", _E23_OLD, "/* no web fonts in the app (UI-D3): the studio's Google Fonts link is not added to a generated document */", 1),
+    # E24 (sync 6, D191): the new root-absolute URLs of the shelves and of the run templates; each would leave the team's page for the studio's root
+    Edit("E24a", 'const shelfHref = (view, open, extra) => `/library?view=', 'const shelfHref = (view, open, extra) => `${SutraCtx.libraryPath}?view=', 1),
+    Edit("E24b", 'history.replaceState(history.state, "", "/library?" + q.toString()', 'history.replaceState(history.state, "", SutraCtx.libraryPath + "?" + q.toString()', 1),
+    Edit("E24c", '<a href="/library?view=templates&rt=${encodeURIComponent(u.id)}" data-rtlink="1">',
+         '<a href="${SutraCtx.libraryPath}?view=templates&rt=${encodeURIComponent(u.id)}" data-rtlink="1">', 1),
+    Edit("E24d", '`<a href="${esc(`/library?view=artifacts&run=${encodeURIComponent(s.made_by.run)}`)}">${esc(s.made_by.run)}</a>` : nr',
+         '`<a href="${esc(`${SutraCtx.libraryPath}?view=artifacts&run=${encodeURIComponent(s.made_by.run)}`)}">${esc(s.made_by.run)}</a>` : nr', 1),
+    Edit("E24e", '`<a href="${esc(`/library?view=artifacts&run=${encodeURIComponent(s.made_by.run)}`)}">${esc(s.made_by.run)}</a> ${esc(s.made_by.workflow',
+         '`<a href="${esc(`${SutraCtx.libraryPath}?view=artifacts&run=${encodeURIComponent(s.made_by.run)}`)}">${esc(s.made_by.run)}</a> ${esc(s.made_by.workflow', 1),
+    Edit("E24f", 'const rtHref = (id, keys) => `/?view=simple&template=', 'const rtHref = (id, keys) => `${SutraCtx.pagePath}?view=simple&template=', 1),
 )
 
 # The harnesses. Their command lines and JSON output do not change (docs/design/ui.md section 5, "The two harnesses").
