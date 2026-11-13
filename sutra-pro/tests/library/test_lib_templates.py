@@ -105,13 +105,29 @@ def test_a_generic_spec_of_j2_is_accepted_and_written_back_as_j2s_file():
 J2_ENTRY_ONLY = ("sha", "schema_sha", "render", "model", "conditions", "fact_fields", "reply_optional", "requires_one_of")
 
 
+def plain_entry(data, entry):
+    """The library's GenericTemplate form of a generic.json entry: J2's own keys set aside, and for the Document entry (which
+    names the section models' objects without listing them) the objects taken from the sections, as J2 does."""
+    plain = {k: v for k, v in entry.items() if k not in J2_ENTRY_ONLY}
+    if "objects" not in plain:
+        merged = {}
+        for other in data["templates"]:
+            for obj in other.get("objects") or []:
+                merged.setdefault(obj["name"], obj)
+            if other.get("model") and other["section"] != entry["section"]:           # a section's own model is an object here
+                merged.setdefault(other["model"], {"name": other["model"], "fields": other["fields"]})
+        plain["objects"] = list(merged.values())
+    plain.setdefault("rules", [])
+    return plain
+
+
 @pytest.mark.parametrize("artifact", ["prd", "hld", "lld"])
 def test_the_document_generic_of_a_prd_hld_or_lld_loads_through_the_library_models(artifact):
     """agent-views/1: the whole document as one object, the last entry of the vendored templates/<artifact>/generic.json."""
     data = json.loads((ENGINE_TEMPLATES / artifact / "generic.json").read_text(encoding="utf-8"))
     document = data["templates"][-1]
     assert [x["section"] for x in data["templates"]].count("Document") == 1 and document["section"] == "Document"
-    plain = {k: v for k, v in document.items() if k not in J2_ENTRY_ONLY}
+    plain = plain_entry(data, document)
     g = T.GenericTemplate.model_validate(plain)
     g = g.evolve(sha=g.compute_sha())
     assert (g.kind, g.artifact, g.section, g.version) == ("generic", artifact, "Document", 1)
@@ -125,8 +141,7 @@ def test_every_generic_entry_of_the_vendored_tree_is_a_generic_template(artifact
     data = json.loads((ENGINE_TEMPLATES / artifact / "generic.json").read_text(encoding="utf-8"))
     assert data["artifact"] == artifact
     for entry in data["templates"]:
-        plain = {k: v for k, v in entry.items() if k not in J2_ENTRY_ONLY}
-        g = T.GenericTemplate.model_validate(plain)
+        g = T.GenericTemplate.model_validate(plain_entry(data, entry))
         assert (g.artifact, g.section) == (artifact, entry["section"])
 
 
