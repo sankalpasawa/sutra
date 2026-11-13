@@ -41,7 +41,7 @@
     }
   },
   "additionalProperties": false,
-  "description": "A row of GET /api/run-templates: the decision plus where its template can be read from now.",
+  "description": "A row of GET /api/run-templates: the decision plus where its template can be read from now. From J2 1adb8ecd (`reuse_rows`)\nthe row also has the `group` its artifact type is counted in (null for an artifact that is no type: a form's style guide) and\nthe action as the page names it (`kind_shown`: the recorded \"extended\" is shown as \"adapted\").",
   "properties": {
     "action": {
       "enum": [
@@ -201,6 +201,19 @@
       "default": null,
       "title": "From Template"
     },
+    "group": {
+      "anyOf": [
+        {
+          "maxLength": 80,
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Group"
+    },
     "kind": {
       "enum": [
         "generic",
@@ -208,6 +221,24 @@
       ],
       "title": "Kind",
       "type": "string"
+    },
+    "kind_shown": {
+      "anyOf": [
+        {
+          "enum": [
+            "created",
+            "adapted",
+            "reused",
+            "generic"
+          ],
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Kind Shown"
     },
     "nearest": {
       "anyOf": [

@@ -699,9 +699,13 @@ class TemplateDecision(Value):
 
 
 class RunTemplate(TemplateDecision):
-    """A row of GET /api/run-templates: the decision plus where its template can be read from now."""
+    """A row of GET /api/run-templates: the decision plus where its template can be read from now. From J2 1adb8ecd (`reuse_rows`)
+    the row also has the `group` its artifact type is counted in (null for an artifact that is no type: a form's style guide) and
+    the action as the page names it (`kind_shown`: the recorded "extended" is shown as "adapted")."""
 
     source: Literal["from this run", "from library", "not recorded"]
+    group: Optional[Line80] = None
+    kind_shown: Optional[Literal["created", "adapted", "reused", "generic"]] = None
 
 
 class RunTemplateUse(Value):

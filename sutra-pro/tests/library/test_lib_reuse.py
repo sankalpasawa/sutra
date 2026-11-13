@@ -234,5 +234,6 @@ def test_every_run_template_of_the_seed_validates_against_the_bundle():
     for path in paths:
         data = json.loads(path.read_text(encoding="utf-8"))
         parsed = RunTemplateBundle.model_validate(data)
-        assert parsed.id == path.parent.name and parsed.to_json() == data, path
+        again = parsed.to_json()
+        assert parsed.id == path.parent.name and all(again[k] == v for k, v in data.items()), path      # a key J2 left out comes back as its default
         assert (path.parent / "schema.json").is_file()
