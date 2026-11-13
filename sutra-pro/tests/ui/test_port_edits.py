@@ -37,11 +37,11 @@ _spec.loader.exec_module(port)
 SANDBOX = "allow-scripts allow-forms allow-popups"
 MODULES = ["sutra_events", "graph_layout", "chart_marks", "graph_render", "graph_view", "orgchart_view", "fnode_view",
            "chat_view", "node_panel", "function_chat", "output_pick", "dept_ext"]
-# The 32 exact data routes under /api/ of J2's server (sutra_ctx.js J2_EXACT has them and /view, the studio's output page), written out again
-# here. The page calls 31 of them: /api/output is posted by output_pick.js, not by the page (and /view is a frame's address, not a fetch).
+# The 33 exact data routes under /api/ of J2's server (sutra_ctx.js J2_EXACT has them and /view, the studio's output page), written out again
+# here. The page calls 32 of them: /api/output is posted by output_pick.js, not by the page (and /view is a frame's address, not a fetch).
 J2_API = ["state", "runs", "runlist", "changes", "call", "preview", "docs", "map", "plan", "plan-map", "library", "catalog", "run-templates",
           "artifacts", "artifacts/tree", "artifacts/groups", "artifact", "agent", "activity", "record", "code", "story", "board", "audits", "refs",
-          "say", "ask", "output", "settings", "reset", "playbooks/clear", "lessons/clear"]
+          "timing", "say", "ask", "output", "settings", "reset", "playbooks/clear", "lessons/clear"]
 NOT_FETCHED = {"output"}
 EXTERNAL_REF = re.compile(r"""(?:src|href|action|poster|data-src)\s*=\s*["']\s*(?:https?:)?//""", re.IGNORECASE)
 INLINE_SCRIPT = re.compile(r"<script>(.*?)</script>", re.DOTALL)
@@ -320,7 +320,7 @@ def test_every_fetch_goes_to_a_j2_route_or_through_artUrl_so_the_wrapper_covers_
             continue
         assert route[len("/api/"):] in J2_API, site
         routes.add(route[len("/api/"):])
-    assert routes == set(J2_API) - NOT_FETCHED                       # 31 routes, and never /api/output (output_pick.js posts it)
+    assert routes == set(J2_API) - NOT_FETCHED                       # 32 routes, and never /api/output (output_pick.js posts it)
     assert "const artUrl = f => `/api/artifact?name=${encodeURIComponent(f)}${runQ()}`;" in PAGE
 
 

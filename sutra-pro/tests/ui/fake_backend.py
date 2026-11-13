@@ -108,7 +108,13 @@ HOSTS = ("127.0.0.1", "localhost")
 TASK_STATUS = {"running": "running", "waiting_on_you": "waiting_user", "filed": "done", "left_open": "done_with_open_items",
                "fault": "crashed", "idle": "queued", "not_made": "queued", "waiting": "running", "done_unchecked": "done"}
 SANDBOX = "sandbox allow-scripts allow-forms allow-popups; frame-ancestors 'self'"  # generated HTML (S3-web-14)
-ENGINE_ENUMS = {"output": ("auto", "website", "prd", "hld", "lld", "project"), "workspace": ("auto", "off"), "fixes": (0, 1), "send_mode": ("dry-run", "mock", "live")}
+ENGINE_ENUMS = {"workspace": ("auto", "off"), "fixes": (0, 1), "send_mode": ("dry-run", "mock", "live")}    # `output` is not here: its names are the fixture's `output_types` (D166)
+OUTPUT_NAME_RE = re.compile(r"^[a-z][a-z0-9_]{1,40}$")      # J2's own shape of a type name (spec.py): what a pinned output must look like
+
+
+def output_names(es: dict) -> tuple[str, ...]:
+    """What the fake's engine accepts as `output`: `auto` and every type of the fixture's `output_types` that can be pinned, in its order."""
+    return ("auto", *(t["name"] for t in es.get("output_types", []) if t.get("pin")))
 ENGINE_MIN = {"budget": 1, "max_cycles": 1, "max_turns": 1, "chat_full_chars": 1000, "budget_cap": 1}
 J2_FUNCS = (*FUNCTIONS, "validator")  # J2's six functions (j2_agent.FUNCS): the ones GET /api/activity and POST /api/ask know
 ASK_CHARS = 2000  # the longest question: the ceiling of a note to an agent (views.ASK_CHARS)
@@ -642,6 +648,7 @@ class FakeState:
             view["department"] = copy.deepcopy(layer)
         view["effective"] = {**es["defaults"], **self.layers["global"], **layer}
         view["editable"], view["locked"] = list(es["editable"]), list(es["locked"])
+        view["output_types"] = copy.deepcopy(es.get("output_types", []))        # D166: the choices of the pages, from the data
         if dept:                                                # sync 4 (D139): what the team's next run would use, the start page's choice included
             view["next_run"] = {"output": self.next_output.get(dept) or view["effective"]["output"]}
         return view
@@ -684,6 +691,10 @@ class FakeState:
         if field in es["locked"]:
             return ("locked_field", f"{field} can only be changed by hand in engine.json")
         default = es["defaults"][field]
+        if field == "output":       # the real route: the shape in spec.py, the membership where J2 is loaded
+            if not isinstance(value, str) or (value != "auto" and not OUTPUT_NAME_RE.match(value)):
+                return ("invalid_value", "output must be auto or a type name (lower case letters, digits and _)")
+            return None if value in output_names(es) else ("invalid_value", f"output: unknown output type {value} (known: {', '.join(output_names(es)[1:])})")
         if field in ENGINE_ENUMS:
             return None if value in ENGINE_ENUMS[field] and not isinstance(value, bool) else (
                 "invalid_value", f"{field} must be one of {', '.join(map(str, ENGINE_ENUMS[field]))}")
@@ -1119,7 +1130,7 @@ def _parse_body(raw: bytes) -> Any:
 J2_GET_PATHS = (    # the GET names of J2_EXACT (sutra_ctx.js); sync 4 added plan-map, activity, catalog, artifacts/groups, runlist, changes and record
     "/api/state", "/api/runs", "/api/call", "/api/preview", "/api/docs", "/api/map", "/api/plan", "/api/library",
     "/api/run-templates", "/api/artifacts", "/api/agent", "/api/code", "/api/artifacts/tree", "/api/artifact", "/api/story",
-    "/api/board", "/api/audits", "/api/refs",
+    "/api/board", "/api/audits", "/api/refs", "/api/timing",     # sync 5 (D168): Run settings' time per step
     "/api/plan-map", "/api/activity", "/api/catalog", "/api/artifacts/groups", "/api/runlist", "/api/changes",
     "/api/record",               # the studio redesign (pin 025e265): the record of a part or of a deliverable
 )
@@ -1680,6 +1691,14 @@ def register_j2(app: FastAPI, state: FakeState) -> None:
         scope(dept, None)
         return raw_json("refs.json")
 
+    @app.get("/api/timing")
+    def j2_timing(dept: str | None = None, run: str | None = None):
+        """timing.json of the live run or of a saved one (J2 `/api/timing`); a run that has none is J2's own 404 `{"error": "no timing"}`."""
+        scope(dept, run)
+        if j2.raw("timing.json") is None:
+            raise J2Reject(404, {"error": "no timing"})
+        return raw_json("timing.json")
+
     @app.get("/api/activity")
     def j2_activity(who: str = "", dept: str | None = None, run: str | None = None):
         """One function's feed (activity/1). A function of J2's six answers its capture; anyone else gets the capture of a name J2 does not know (the run's step
@@ -1807,8 +1826,8 @@ def register_j2(app: FastAPI, state: FakeState) -> None:
         kind = body.get("type") if isinstance(body, dict) else None
         if state.output_locked:                              # a message exists: J2 refuses, and says what the run makes
             raise J2Reject(409, {"ok": False, "output": state.settings_view(dept)["next_run"]["output"]})
-        if kind not in ENGINE_ENUMS["output"]:
-            raise J2Reject(409, {"ok": False, "output": "website"})
+        if kind not in output_names(state.fx.engine_settings):
+            raise J2Reject(409, {"ok": False, "output": state.settings_view(dept)["effective"]["output"]})
         state.next_output[dept or ""] = kind                 # page.json next_settings.J2_OUTPUT: GET /api/engine/settings?dept= says it in next_run
         return JSONResponse({"ok": True, "output": kind}, headers=secure)
 
