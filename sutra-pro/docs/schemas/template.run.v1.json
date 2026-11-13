@@ -1,5 +1,6 @@
 {
   "$defs": {
+    "JsonValue": {},
     "TemplateCandidate": {
       "additionalProperties": false,
       "properties": {
@@ -51,6 +52,19 @@
       ],
       "title": "Action",
       "type": "string"
+    },
+    "adapted_from": {
+      "anyOf": [
+        {
+          "maxLength": 200,
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Adapted From"
     },
     "artifact": {
       "pattern": "^[a-z][a-z0-9_]{1,40}$",
@@ -105,6 +119,24 @@
       "default": null,
       "title": "Covers"
     },
+    "door": {
+      "anyOf": [
+        {
+          "enum": [
+            "reuse",
+            "adapt",
+            "build",
+            "unknown"
+          ],
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Door"
+    },
     "facts": {
       "anyOf": [
         {
@@ -144,6 +176,31 @@
       "default": null,
       "title": "Fingerprint"
     },
+    "first_refused": {
+      "anyOf": [
+        {
+          "maxLength": 2000,
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "First Refused"
+    },
+    "from_template": {
+      "anyOf": [
+        {
+          "type": "boolean"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "From Template"
+    },
     "kind": {
       "enum": [
         "generic",
@@ -151,6 +208,34 @@
       ],
       "title": "Kind",
       "type": "string"
+    },
+    "nearest": {
+      "anyOf": [
+        {
+          "additionalProperties": {
+            "$ref": "#/$defs/JsonValue"
+          },
+          "type": "object"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Nearest"
+    },
+    "nearest_refused": {
+      "anyOf": [
+        {
+          "maxLength": 2000,
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Nearest Refused"
     },
     "needed_enums": {
       "additionalProperties": {
@@ -175,6 +260,18 @@
       "maxItems": 100,
       "title": "Needed Fields",
       "type": "array"
+    },
+    "new_family": {
+      "anyOf": [
+        {
+          "type": "boolean"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "New Family"
     },
     "reason": {
       "maxLength": 2000,
@@ -230,6 +327,19 @@
       ],
       "default": null,
       "title": "Run"
+    },
+    "run_template": {
+      "anyOf": [
+        {
+          "maxLength": 80,
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Run Template"
     },
     "saved": {
       "anyOf": [
@@ -302,6 +412,19 @@
       "minLength": 1,
       "title": "Template",
       "type": "string"
+    },
+    "template_workflow": {
+      "anyOf": [
+        {
+          "maxLength": 80,
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Template Workflow"
     },
     "version": {
       "anyOf": [
