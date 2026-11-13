@@ -15,7 +15,7 @@ import argparse, glob, json, os, re, subprocess, sys, tempfile, time
 HERE = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 BRIEFS = ["A landing page for Bean There, a coffee shop at 12 Park Road. Open 7am-6pm daily. "
           "Menu: espresso £2.50, flat white £3.20, croissant £2.80.",
-          "a hiring policy for a small startup",
+          "a hiring policy for Brightpath, a 12-person software startup",
           "a script that copies files from one folder to another, with a test"]
 REAL_BRIEF = ("Sort the files in {folder} into subfolders named for each file's extension (a.txt into txt/, b.csv into "
               "csv/), with a test, and run it on that folder.")

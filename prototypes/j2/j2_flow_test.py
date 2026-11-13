@@ -4608,6 +4608,73 @@ def run_for_real():
 
 
 @with_folder_type
+def real_run_checks():
+    """remove-restrictions step 7 gap: a done-when item only the real run can meet is never covered by a builder workflow;
+    the real run names it in "checks" (code refuses one a workflow also covers, or that is no item). Audit's verdict on
+    it waits (workable skips it) until the real run's receipt decides it: approved and exit 0 passes and the run ends
+    "Done:"; any other reply leaves it failing and the run "Done with open items". The atom rules say so."""
+    assert "never assigned to a builder" in j2.j2_types.builder_tools()["atom_rules"]
+    assert '"checks"' in j2.j2_types.builder_tools()["real_run"]
+    real = tempfile.mkdtemp(prefix="j2-real-")
+    tools = tempfile.mkdtemp(prefix="j2-fake-srt-")
+    keep = {k: os.environ.get(k) for k in ("J2_SANDBOX_CMD",)}
+    try:
+        fake = os.path.join(tools, "srt.py")
+        open(fake, "w").write(FAKE_SRT)
+        os.environ["J2_SANDBOX_CMD"] = f"python3 {fake}"
+        crit = ["the script is built and its test passes", f"the script has been run on {real}"]
+
+        def made_run():
+            run = j2.J2Run()
+            run.set_output(FT)
+            run.request = f"Build a script and run it on {real}"
+            run.goal, run.budget = {"statement": "x", "done_when": list(crit)}, 300
+            os.makedirs(run._out_dir(), exist_ok=True)
+            open(os.path.join(run._out_dir(), "go.py"), "w").write(
+                "import sys, os\nopen(os.path.join(sys.argv[1], 'done.txt'), 'w').write('1')\n")
+            return run
+        atom = {"id": "a1", "goal": "build go.py", "context": ["charter item 1"], "constraints": ["only the folder"],
+                "how": {"kind": "AI", "agent": "Builder", "steps": "write go.py"},
+                "expected_output": [{"text": "go.py exists", "kind": "file", "target": "go.py"}],
+                "verification": [{"text": "go.py exists", "type": "file-exists", "target": "go.py", "expect": True}]}
+        rr = {"command": ["python3", "go.py", real], "folder": real, "why": "x"}
+        wf = lambda covers, checks: {"name": "Builder", "goal_gap": "x", "outputs": ["go.py"], "completion_check": "z",
+                                     "covers": covers, "parts": ["agent_file"] * len(covers), "atoms": [atom], "real_run": {**rr, "checks": checks}}
+        for covers, checks, why in (([1, 2], [2], "so no workflow covers it"), ([1], [9], "not a done-when item")):
+            reg, refused, _ = made_run()._register([wf(covers, checks)])
+            assert not reg and any(why in str(x) for x in refused), (reg, refused)
+        for reply, ends in (("RUN {code}", "Done:"), ("yes", "Done with open items")):
+            run = made_run()
+            reg, refused, _ = run._register([wf([1], [2])])
+            assert reg and not refused and run.workflows[0]["real_run"]["checks"] == [2], refused
+            run.workflows[0]["status"] = "done"
+            assert run._real_run_items(pending=True) == [crit[1]]
+            res = [{"id": f"F-{i}", "item": i, "criterion": c, "pass": i == 1, "verdict": "PASS" if i == 1 else "FAIL",
+                    "note": ""} for i, c in enumerate(crit, 1)]
+            audit = {"output": FT, "results": res, "rubric": [], "conditions": [], "after_real_run": run._real_run_items(True)}
+            assert j2.workable(audit) == [] and j2.workable({**audit, "after_real_run": []}), "the item waits for the run"
+            run.audits = [audit]
+            run.post("user", "go")
+            assert run._ask_real_run({})
+            text = reply.format(code=run.real_runs_asked[run.workflows[0]["id"]])
+            run.post("user", text)
+            run.paused = None
+            run._identity_real_run({"wid": run.workflows[0]["id"], "answer": text, "r": {}})
+            item = run.audits[-1]["results"][1]
+            assert item["pass"] is (ends == "Done:") and "real run receipt" in item["note"], item
+            assert not run.audits[-1]["after_real_run"] and str(run.outcome).startswith(ends), run.outcome
+            if os.path.exists(os.path.join(real, "done.txt")):
+                os.remove(os.path.join(real, "done.txt"))
+    finally:
+        for k, v in keep.items():
+            os.environ.pop(k, None) if v is None else os.environ.__setitem__(k, v)
+        for d in (real, tools):
+            shutil.rmtree(d, ignore_errors=True)
+    print("real run checks: an item only the real run meets is covered by no builder, waits in Audit, and is decided by "
+          "the receipt; the run is workable only after an approved run ok")
+
+
+@with_folder_type
 def folder_run_reused():
     """remove-restrictions step 6: a folder run's workflows record their outputs from the run folder (<folder>/<file>),
     so j2_template_lib.run_template_from_run finds the type they belong to; the run is saved as a run template; a
@@ -15757,6 +15824,7 @@ if __name__ == "__main__":
             one_artifact_view()         # remove-restrictions step 5: one artifact view, every output file, warnings apart
             folder_types_named()        # remove-restrictions 6a: a folder output gets a type named for what it makes
             run_for_real()              # remove-restrictions step 7: a real run only on the Requester's exact approval
+            real_run_checks()           # step 7 gap: an item only the real run meets is decided by its receipt
             folder_run_reused()         # remove-restrictions step 6: a folder run saved and reused, not rebuilt
             builder_context_trim()      # a real run's builder prompt: no chat, no other workflows
             builder_inputs()            # depended-on sections in full, cut inputs noticed and logged

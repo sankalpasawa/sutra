@@ -2968,6 +2968,7 @@ def workable(audit):
         return ["no site has been audited yet"]
     num = lambda r: r["id"][2:] if FINDING_ID.fullmatch(str(r["id"])) else r["item"]    # F-n is charter item n
     ok = set(audit.get("accepted") or [])     # what the Requester finished with (_accept_open): ids, and item texts
+    ok |= set(audit.get("after_real_run") or [])    # step 7: items only the approved real run meets; its receipt decides them
     out = [f"done-when item {num(r)} ({r['id']} {r['verdict']}): {r['criterion']}" for r in audit["results"]
            if not r["pass"] and r["criterion"] not in ok]
     if not is_page(audit.get("output", LEGACY_OUTPUT)):
@@ -3387,6 +3388,7 @@ class J2Run:
         self.send_confirm = None     # J2_SEND_MODE=live: the Requester's answer (True/False) to "send real emails?", asked once a run
         self.real_runs_asked = {}    # step 7: workflow id -> the one-time code its real run was asked for with
         self.real_runs_dry = {}      # step 7: workflow id -> its dry run on copies (real_run_dry), shown before the code
+        self.real_runs_done = {}     # step 7: workflow id -> True when its real run was approved and exited 0 (its receipt)
         self.open_docs = []          # documents the Requester accepted as they were, with what was still not right
         self.given = {}              # workflow id -> {"edges": [{atom, why}], "whole": bool}: what its builder's prompt held (atom/1)
         self.board = j2_board.new_board()   # board/1 (j2_board.py): questions and answers, behind J2_BOARD=1
@@ -5042,6 +5044,14 @@ class J2Run:
             return self._deed_stage(h["deed"])
         self._goal_done(h.get("r") or {})
 
+    def _real_run_items(self, pending=False):
+        """Step 7: the done-when items (texts) planned real runs check ("checks"); pending: only those whose run has no
+        receipt yet. A builder never meets them; the real run's receipt does, after the Requester's approval."""
+        at, crit = self._item_at(), (self.goal or {}).get("done_when") or []
+        return [crit[at[n] - 1] for w in self.workflows if w.get("real_run")
+                and not (pending and w["id"] in self.real_runs_done)
+                for n in w["real_run"].get("checks") or [] if n in at and at[n] <= len(crit)]
+
     def _ask_real_run(self, r):
         """Step 7: the next done workflow with a planned real run not yet asked about. Code posts its exact command and
         folders and a one-time code; the run pauses (real_run: Decide for me never answers it). True when it paused."""
@@ -5080,6 +5090,16 @@ class J2Run:
         self._event("code", "real_run", f"{h.get('wid')}: {res['evidence']}")
         self.post("system", ("Ran for real: " if res.get("ran") else "") + res["evidence"] + ".",
                   warning=bool(res.get("ran") and res.get("exit") != 0))
+        passed = self.real_runs_done[h.get("wid")] = bool(ok and res.get("ran") and res.get("exit") == 0)
+        items = set(self._real_run_items()) - set(self._real_run_items(pending=True))
+        if self.audits and items:      # the items this run checks: decided by its receipt, never by a builder or Audit
+            last = self.audits[-1]
+            for x in last["results"]:
+                if x["criterion"] in items:
+                    x.update({"pass": passed, "verdict": "PASS" if passed else "FAIL",
+                              "note": f"real run receipt ({h.get('wid')}): {res['evidence']}"})
+            last["after_real_run"] = [t for t in last.get("after_real_run") or [] if t not in items]
+            self._save_audits()
         self._goal_done(h.get("r") or {})
 
     def _send_args(self, atom):
@@ -5889,6 +5909,8 @@ class J2Run:
                         else self.out["done"])
         if self.accepted and not self.open_docs:
             self.outcome += f" Still open, accepted as it is by the Requester: {'; '.join(self.accepted)}."
+        if self.real_runs_done and self.audits and (fails := workable(self.audits[-1])):    # step 7: workable only after the run
+            self.outcome = f"Done with open items: the real run did not pass. Still not workable: {'; '.join(fails)}."
         self.turn = None
         if self.memory and not self.docset:
             self._save_playbook()
@@ -8320,7 +8342,18 @@ class J2Run:
                 if bad:
                     refused.append(self._reject(name, "; ".join(bad)))
                     continue
+                checks = w["real_run"].get("checks") or []
+                at = self._item_at()
+                bad = ([f"real_run checks {checks!r} must be a list of done-when item numbers"] if not isinstance(checks, list)
+                       else [f"real_run checks item {i}, which is not a done-when item" for i in checks if as_int(i) not in at]
+                       + [f"done-when item {i} is checked by the real run's receipt, so no workflow covers it"
+                          for i in checks if as_int(i) in {as_int(x) for x in w.get("covers") or []}
+                          or at.get(as_int(i)) in covered])
+                if bad:
+                    refused.append(self._reject(name, "; ".join(bad)))
+                    continue
                 wf["real_run"] = {k: w["real_run"].get(k) for k in ("command", "folder", "reads", "why")}
+                wf["real_run"]["checks"] = [as_int(i) for i in checks]
             wf["atoms"] = [{**a, "id": f"{wf['id']}.a{n}"} for n, a in enumerate(atoms, 1)]
             if own:       # the document sections this workflow writes, as the planner named them
                 wf["sections"] = list(own)
@@ -10946,6 +10979,8 @@ class J2Run:
             audit["lld"] = self._lld_compare(site)
         if self.accepted:
             audit["accepted"] = list(self.accepted)
+        if pend := self._real_run_items(pending=True):
+            audit["after_real_run"] = pend
         self.audits.append(audit)
         self._save_audits()
         nxt, note = self._pick("audit", r.get("next"), ("identity",), "identity",
