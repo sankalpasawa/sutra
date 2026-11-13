@@ -144,7 +144,20 @@ tests with `J2_AGENT_TOOLS=0`) and the page/document mock builders; deleting the
 Delete page/document code the general path no longer uses, plus tests that only checked it, each listed in the
 commit message. After: `--fast`, mock release check.
 
-## Step 9: SETUP.md for teammates
+## Step 9: SETUP.md for teammates (done: `3fccd1fb`, `56b6a50a`; checks below)
+
+Results (2026-11-13): a fresh clone passes `--fast` with the skip list SETUP.md gives. `--fast` passes here.
+`--fast --browser` fails twice in the full suite at `map_tab`'s home probe (Chrome passes its 180 s limit); `map_tab`
+passes alone, after the tests added since the last passing browser run, and after Kaivan's new tests: open, cause
+not found. Live release check 2/4 ($4.91; all live checks $23.89 of $60):
+
+| Brief | Result | Why |
+|---|---|---|
+| Bean There page | Done | |
+| Hiring policy | Done with open items | The brief names no company; this time the charter asked for a "[Company name]" placeholder, which stays to be confirmed. Passed in the two checks before |
+| Copy script | Done | |
+| File sorter | Done with open items | The charter made "has been run on the folder" a done-when item, and the plan gave it to a builder workflow (W-4) instead of a `real_run`. A builder can't write to the Requester's folder (its sandbox, and now `templates/builder.md`), and the real run is asked for only after the deliverable is workable, so that item can never pass before it. Design gap to fix: a done-when item that needs the real run must be checked by the real run's receipt, after it |
+
 
 claude-cli and Node versions, installs, every `.env` line (including `J2_SANDBOX_CMD` and the limit defaults),
 tested from a fresh clone. After: `--fast`, `--fast --browser`, live release check.
