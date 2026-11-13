@@ -115,7 +115,9 @@ def test_a_stop_line_ends_the_process_inside_six_seconds_while_a_slow_call_is_ru
     run_dir = make_run_dir(user_text=BREW_LAB, settings=QUIET)
     proc = spawn(run_dir, STUDIO_MOCK_DELAY="60")             # every scripted reply takes a minute
     procs.append(proc)
-    wait_until(lambda: trace(run_dir, "turn.started"), what="a turn with a call in flight")
+    # with no output type chosen J2's planner call (the deliverables call) comes before the first turn (sync 5), so the call in
+    # flight is not inside a turn: the function nodes appearing means the run is up and the slow call is the one it is waiting on
+    wait_until(lambda: [e for e in events(run_dir) if e["t"] == "node"], what="the run up, with a slow call in flight")
     time.sleep(0.3)
     started = time.time()
     append_inbox(run_dir, 1, "stop")
