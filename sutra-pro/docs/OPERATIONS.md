@@ -59,6 +59,7 @@ and runs are the part that grows.
   logs/server.log (+ .1 to .5)       the server log, rotated at 5 MB, five old files kept                         up to 30 MB in all
   backups/                           sutra-pro-backup-*.tar.gz (newest 7 kept) and pre-upgrade-*.sqlite3        0.06 MB for a new folder
   library/                           the template library (index.json and one folder per template)               ~0.5 MB seeded
+  types/                             engine-owned: the types a run made (types.local.json, templates/<name>/) and their .lock    tiny
   agents/j2/                         engine-owned: the agent prompts a run reads
   connectors/policy.json             optional connector routing policy (the app ships a default)                 tiny
   departments/<team>/
@@ -66,7 +67,7 @@ and runs are the part that grows.
     engine.json                      optional per-team engine settings                                            tiny
     page.json, memory/               the team page's since-run mark; lessons and playbooks                        small
     runs/<run id>/                   one folder per run: the team's records, as the J2 prototype writes them
-      task.json  inbox.jsonl  events.jsonl  trace.jsonl  snapshot.json  live.json  settings.json
+      task.json  inbox.jsonl  events.jsonl  trace.jsonl  snapshot.json  live.json  settings.json  timing.json  autofix.json
       chat.jsonl  calls.jsonl  map.json  report.json  summary.json  goal.json  workflows.json  atoms.json
       run.stdout.log  run.stderr.log
       site/ (page versions, documents, shots/)  artifacts/                                                       ~0.08 MB for a mock run; MBs with screenshots

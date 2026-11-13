@@ -39,7 +39,7 @@ next only through files, the closed library models, or the one model seam `make_
 | ONE global org chart; tasks reuse, add to or rearrange it, never one per workflow | D26, D42, D43, D44, D67, D68, D70 | `library/org_chart.py`, `orchestrator/chart.py`, `chart_rules.py`, `agent/planner.py` | `tests/library/test_lib_org_chart.py`, `tests/orchestrator/test_chart_store.py` |
 | Five function nodes: goal, constraints, context, work atom, `verify` is the teeth | D49 to D66 | `engine/fnodes/`, `library/node.py`, `atom.py`, `functions.py`, `orchestrator/atoms.py` | `tests/engine/test_engine_fn_*.py`, `tests/library/test_lib_atom*.py` |
 | Connector layer with a Claude and a Codex connector, CLI first | D7, D17, D27 to D38 | `sutra_app/connectors/` | `tests/connectors/` (fake CLIs, stub) |
-| Everything in the J2 prototype is present | D4, D13, D25, D46, D47, D84, D90, D91 | `engine/features.py`, `views.py`, `api/`, `library/artifacts` | `tests/engine/test_engine_features.py`, `_views.py`, `_prompts.py`, `_legacy.py`, `tests/contracts/` |
+| Everything in the J2 prototype is present | D4, D13, D25, D46, D47, D84, D90, D91 | `engine/features.py`, `views.py`, `api/`, `library/artifacts` (retired in sync 5, D171) | `tests/engine/test_engine_features.py`, `_views.py`, `_prompts.py`, `_legacy.py`, `tests/contracts/` |
 | Local only: bind 127.0.0.1, never push, never open PRs | D1, D11, D81, D89 | `main.py` (loopback Host guard), `scripts/wt.sh` | `tests/orchestrator/test_api_security.py`, `tests/test_build_plan.py` |
 | Every decision documented, in the design and as a badge on the diagram | D1 to D97 | `docs/DECISIONS.md`, `docs/diagram/decisions.json`, `gen.py` | `tests/contracts/test_contract_diagram_strings.py`, `tests/test_traceability.py` |
 
@@ -83,7 +83,7 @@ From `docs/design/gaps.md` (low findings, no package unless noted) and `docs/not
 
 - G18 `enforce` mode is reserved: "verify is the teeth" is observed, not enforced (D52); `SUTRA_NODES=enforce` raises. Decide after the live false-failure rate is known.
 - G19 Quota and cooldown knowledge is per process; a new run re-learns it with one failed call.
-- G20 The architecture diagram has a key label (and a pill where a box exists) for every decision of `docs/diagram/decisions.json`: D1 to D156, and `tests/test_diagram_decisions.py` fails when `docs/DECISIONS.md` and that file differ; `gen.py` sizes its key from that file since J2 sync 4; the published copy of the figure is a Claude artifact and is refreshed by hand.
+- G20 The architecture diagram has a key label (and a pill where a box exists) for every decision of `docs/diagram/decisions.json`: D1 to D175, and `tests/test_diagram_decisions.py` fails when `docs/DECISIONS.md` and that file differ; `gen.py` sizes its key from that file since J2 sync 4; the published copy of the figure is a Claude artifact and is refreshed by hand.
 - G21 Excluded J2 material (older studio, negotiation demo, explainer pages) is recorded by D91, not ported.
 - G22 One accepted contrast exception (dark, filed node second line, 4.22:1) in `tests/ui/js/contrast.test.js`.
 - G23 No spend circuit breaker across the whole app; the subscription quota is the real limit (D38).

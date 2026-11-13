@@ -793,5 +793,85 @@
   "id": "D159",
   "label": "usage by purpose: route, agents, console",
   "anchor": "Usage and cost ledger"
+ },
+ {
+  "id": "D160",
+  "label": "J2 pin: cut-off 2026-11-12",
+  "anchor": "band:DEPARTMENT RUNTIME"
+ },
+ {
+  "id": "D161",
+  "label": "types vendored as data",
+  "anchor": "band:DEPARTMENT RUNTIME"
+ },
+ {
+  "id": "D162",
+  "label": "patch table P1-P18",
+  "anchor": "band:DEPARTMENT RUNTIME"
+ },
+ {
+  "id": "D163",
+  "label": "local types in the data folder",
+  "anchor": "band:DEPARTMENT RUNTIME"
+ },
+ {
+  "id": "D164",
+  "label": "project = host-registered type",
+  "anchor": "band:DEPARTMENT RUNTIME"
+ },
+ {
+  "id": "D165",
+  "label": "no default type",
+  "anchor": "band:DEPARTMENT RUNTIME"
+ },
+ {
+  "id": "D166",
+  "label": "output choices from the data",
+  "anchor": "band:EXPERIENCE"
+ },
+ {
+  "id": "D167",
+  "label": "runs without a type open",
+  "anchor": "band:EXPERIENCE"
+ },
+ {
+  "id": "D168",
+  "label": "views read the types",
+  "anchor": "band:EXPERIENCE"
+ },
+ {
+  "id": "D169",
+  "label": "builder time limit setting",
+  "anchor": "band:EXPERIENCE"
+ },
+ {
+  "id": "D170",
+  "label": "llm shim: timeout",
+  "anchor": "band:DEPARTMENT RUNTIME"
+ },
+ {
+  "id": "D171",
+  "label": "template models from data",
+  "anchor": "band:EXPERIENCE"
+ },
+ {
+  "id": "D172",
+  "label": "records: timing, autofix, cuts",
+  "anchor": "band:DEPARTMENT RUNTIME"
+ },
+ {
+  "id": "D173",
+  "label": "page regenerated for sync 5",
+  "anchor": "band:EXPERIENCE"
+ },
+ {
+  "id": "D174",
+  "label": "goldens by recorder only",
+  "anchor": "band:DEPARTMENT RUNTIME"
+ },
+ {
+  "id": "D175",
+  "label": "release 0.4.0",
+  "anchor": "band:DEPARTMENT RUNTIME"
  }
 ]

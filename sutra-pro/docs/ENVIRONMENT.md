@@ -45,7 +45,7 @@ two `engine.json` files. A run does not pass the server's own `J2_*` variables o
 
 | Variable | Field | Default | Locked | Task | Meaning |
 |---|---|---|---|---|---|
-| `J2_OUTPUT` | `output` | `auto` | no | yes | what the team builds: `auto` (the engine decides from the brief and the working folder: project work for a project, else the website or the document asked for), `website`, `prd`, `hld`, `lld` or `project` |
+| `J2_OUTPUT` | `output` | `auto` | no | yes | what the team builds: `auto` (the owner's pick is kept; project work is chosen for a project or a working folder; otherwise J2's planner picks the type from `artifacts/types.json` for each run, there is no default type, D165) or the name of any type J2 knows (a lower-case name of 2 to 41 letters, digits and underscores, checked against the data when J2 loads: `GET /api/engine/settings` lists them in `output_types`, D166); the retired `J2_GENERIC` is gone |
 | `J2_WORKSPACE` | `workspace` | `auto` | no | no | `auto`: every agent of the engine may read the owner's working folder (project work may change it, within the owner's access setting); `off`: none |
 | `J2_FIXES` | `fixes` | `0` | no | yes | `1` turns on the two flow fixes of the J2 loop |
 | `J2_BUDGET` | `budget` | `100` | no | yes | starting budget in work credits; a full documents-plus-website run needs 500 or more |
@@ -61,6 +61,7 @@ two `engine.json` files. A run does not pass the server's own `J2_*` variables o
 | `J2_SLIM` | `slim` | `1` | no | yes | builders get their own section plus a short list of the others, not the whole page; `0` turns it off |
 | `J2_MEMORY` | `memory` | `1` | no | yes | `0`: lessons and playbooks are neither read nor written |
 | `J2_DECIDE_FOR_ME` | `decide_for_me` | `0` | no | yes | the team answers its own questions with the suggested option and keeps going (the Simple view's Decide for me); `1` turns it on |
+| `J2_BUILDER_TIMEOUT` | `builder_timeout` | `600` | no | no | seconds a builder's AI call may run before it is stopped and tried once more; `0` means no limit (J2 sync 5, D169) |
 | `J2_REALIZATION` | `realization` | `1` | no | no | Adaptation's first plan of a website goes through realization and certainty, and a separate judge scores each workflow |
 | `J2_CHANGE` | `change` | `0` | no | no | `1`: the charter of the last full plan is kept and a change request is handled as a change |
 | `J2_BOARD` | `board` | `0` | no | no | `1`: the message board between the function nodes |
@@ -108,6 +109,8 @@ These are optional, mostly for the Mac launcher, for development and for tests.
 | `CLAUDE_CLI_MODEL` | `unset` | the same, under J2's old name |
 | `SUTRA_NODES` | `on` | `off` runs the engine without the function-node layer (no atoms); `enforce` is reserved and refused |
 | `SUTRA_HOOKS` | `sutra_app.engine.fnodes.layer:factory` | `package.module:function` that builds the engine's hooks (tests) |
+| `J2_TYPES_DIR` | `<data>/types` | where J2 keeps the types a run makes (`types.local.json` and `templates/<name>/`); the host sets it for every engine process and the server exports it before it first imports J2 (D163); do not set it by hand |
+| `CHROME_PATH` | `unset` | J2's own name for the Chrome path (read by the vendored engine since sync 5, patch P12); `J2_CHROME` above is the app's field and wins |
 | `SUTRA_RECORDS` | `log` | `log` or `strict`: whether a record that fails the library's checks is only logged or refused |
 | `SUTRA_RECORDS_HOOK` | `sutra_app.library.records:gate_record` | `package.module:function` that validates records |
 | `SUTRA_HEARTBEAT_S` | `5` | seconds between the heartbeat lines of a running engine; a bad value means 5 |
