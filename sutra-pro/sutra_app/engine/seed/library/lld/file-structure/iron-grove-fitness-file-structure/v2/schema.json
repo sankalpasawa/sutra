@@ -1,0 +1,53 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "additionalProperties": false,
+  "properties": {
+    "files": {
+      "description": "every file of the build (for Iron Grove Fitness, a lld)",
+      "items": {
+        "$ref": "#/definitions/FileEntry"
+      },
+      "type": "array"
+    },
+    "assumptions": {
+      "description": "the assumptions of Iron Grove Fitness's File structure",
+      "items": {
+        "type": "string"
+      },
+      "type": "array"
+    },
+    "facts_used": {
+      "description": "the charter facts this section is written from, copied exactly from Iron Grove Fitness's charter",
+      "items": {
+        "type": "string"
+      },
+      "type": "array"
+    }
+  },
+  "required": [
+    "files",
+    "assumptions",
+    "facts_used"
+  ],
+  "type": "object",
+  "definitions": {
+    "FileEntry": {
+      "additionalProperties": false,
+      "properties": {
+        "path": {
+          "description": "the file path, e.g. \"index.html\"",
+          "type": "string"
+        },
+        "purpose": {
+          "description": "what it holds",
+          "type": "string"
+        }
+      },
+      "required": [
+        "path",
+        "purpose"
+      ],
+      "type": "object"
+    }
+  }
+}

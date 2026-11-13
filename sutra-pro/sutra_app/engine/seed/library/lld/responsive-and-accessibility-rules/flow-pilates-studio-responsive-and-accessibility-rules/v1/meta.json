@@ -1,0 +1,39 @@
+{
+  "schema": "template-library/1",
+  "name": "Flow Pilates Studio Responsive and accessibility rules",
+  "version": 1,
+  "sha": "60502330fc0c3141695f92ba0997e35ec780d1e1e189a530ce2a425693cd345b",
+  "schema_sha": "f9d12182353598c558e438e91fa57574bf7cfd36c3349ba3b4736bf40d8ccf01",
+  "model_sha": "6437e4cc5f8c883cdbfa8460f7eaeb56ba0c44b9334cee382f63d56c83e89f59",
+  "class": "FlowPilatesStudioResponsiveAndAccessibilityRulesV1",
+  "created": "2026-11-12T15:27:01",
+  "fingerprints": [
+    "e97fb139e9a41750efdf854ed842bc256326d69fc4e48778c90d885a7599d3e8"
+  ],
+  "made_by": {
+    "run": "j2-20261112-150036",
+    "workflow": "W-29",
+    "atom": "W-29.a1",
+    "agent": "code (adapted from a run template)",
+    "date": "2026-11-12 15:00:36"
+  },
+  "business": {
+    "name": "Flow Pilates Studio",
+    "type": "pilates studio"
+  },
+  "mock": false,
+  "collected_from": {
+    "run": "j2-20261112-150036",
+    "where": "the run's copy"
+  },
+  "used_by": [
+    {
+      "run": "j2-20261112-150036",
+      "workflow": "W-29",
+      "atom": "W-29.a1",
+      "action": "extended"
+    }
+  ],
+  "renamed_from": "Still Point Yoga Responsive and accessibility rules@4",
+  "adapted_from": "Iron Grove Fitness Responsive and accessibility rules@2"
+}
