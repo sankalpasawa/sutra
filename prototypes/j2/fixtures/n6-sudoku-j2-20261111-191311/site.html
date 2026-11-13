@@ -1,0 +1,624 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Cozy Sudoku</title>
+<!-- J2:style head start (owner W-7) -->
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Nunito:wght@400;600;700;800&amp;display=swap"><style>:root{--j2-primary:#3F6B57;--j2-secondary:#8A5A44;--j2-accent:#B84A33;--j2-background:#FBF6EE;--j2-surface:#FFFFFF;--j2-text:#2E3A34;--j2-muted:#5E6B63;--j2-font-heading:'Nunito', system-ui, -apple-system, 'Segoe UI', sans-serif;--j2-font-body:'Nunito', system-ui, -apple-system, 'Segoe UI', sans-serif;--j2-space:8px;--j2-section:48px;--j2-radius:12px;}body{margin:0;font-family:var(--j2-font-body);color:var(--j2-text);background:var(--j2-background)}h1,h2,h3,h4{font-family:var(--j2-font-heading)}.j2-btn{display:inline-block;background:#3F6B57;color:#FFFFFF;border:2px solid #3F6B57;border-radius:12px;min-height:48px;padding:10px 20px;font-weight:700;font-size:1rem;cursor:pointer}.j2-btn-secondary{display:inline-block;background:#FFFFFF;color:#3F6B57;border:2px solid #3F6B57;border-radius:12px;min-height:48px;padding:10px 20px;font-weight:700;font-size:1rem;cursor:pointer}.j2-card{background:#FFFFFF;border-radius:12px;box-shadow:0 2px 12px rgba(46,58,52,0.10);padding:16px}</style>
+<!-- J2:style head end -->
+<!-- J2:W-7 head start (owner W-7) -->
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<!-- J2:W-7 head end -->
+</head>
+<body>
+<!-- J2:W-7 start (owner W-7) -->
+<section id="board-section" aria-labelledby="title">
+<style>
+#board-section{box-sizing:border-box;max-width:520px;margin:0 auto;padding:20px 16px 28px;font-family:var(--j2-font-body,'Nunito',system-ui,sans-serif);color:var(--j2-text,#2E3A34);text-align:center}
+#board-section *{box-sizing:border-box}
+#board-section #title{font-family:var(--j2-font-heading,'Nunito',system-ui,sans-serif);font-size:clamp(1.9rem,7vw,2.6rem);font-weight:800;line-height:1.15;margin:0 0 14px;color:var(--j2-primary,#3F6B57)}
+#board-section #levels{display:flex;gap:8px;margin:0 auto 14px;max-width:460px}
+#board-section #levels button{flex:1 1 0;min-width:0;min-height:48px;padding:8px 4px;font-size:1rem;font-family:inherit}
+#board-section #levels button.active{background:var(--j2-primary,#3F6B57);color:#FFFFFF;border-color:var(--j2-primary,#3F6B57)}
+#board-section #board{display:grid;grid-template-columns:repeat(9,minmax(0,1fr));grid-template-rows:repeat(9,minmax(0,1fr));width:100%;max-width:460px;aspect-ratio:1/1;margin:0 auto 14px;border:3px solid var(--j2-primary,#3F6B57);border-radius:var(--j2-radius,12px);overflow:hidden;background:var(--j2-surface,#FFFFFF);box-shadow:0 2px 12px rgba(46,58,52,0.10)}
+#board-section .cell{appearance:none;-webkit-appearance:none;position:relative;display:flex;align-items:center;justify-content:center;min-width:0;min-height:0;margin:0;padding:0;border:0;border-right:1px solid #CBD5CD;border-bottom:1px solid #CBD5CD;border-radius:0;background:var(--j2-surface,#FFFFFF);color:var(--j2-primary,#3F6B57);font-family:inherit;font-size:clamp(1.1rem,5.4vw,1.7rem);font-weight:700;line-height:1;cursor:pointer;touch-action:manipulation;-webkit-tap-highlight-color:transparent}
+#board-section .cell.box-r{border-right:2px solid var(--j2-primary,#3F6B57)}
+#board-section .cell.box-b{border-bottom:2px solid var(--j2-primary,#3F6B57)}
+#board-section .cell:nth-child(9n){border-right:0}
+#board-section .cell:nth-child(n+73){border-bottom:0}
+#board-section .cell.given{background:#F3EEE4;color:var(--j2-text,#2E3A34);font-weight:800;cursor:default}
+#board-section .cell.selected{background:#DCEBDD;box-shadow:inset 0 0 0 3px var(--j2-accent,#B84A33)}
+#board-section .cell:focus-visible{outline:3px solid var(--j2-accent,#B84A33);outline-offset:-3px}
+#board-section #keypad{display:flex;flex-wrap:wrap;justify-content:center;gap:6px;width:100%;max-width:460px;margin:0 auto 12px}
+#board-section #keypad .key{flex:0 0 calc((100% - 24px) / 5);min-width:44px;min-height:52px;padding:6px 0;font-family:inherit;font-size:1.5rem;font-weight:800;touch-action:manipulation}
+#board-section #keypad .key:active{transform:scale(0.97)}
+#board-section #levels button:focus-visible,#board-section .key:focus-visible{outline:3px solid var(--j2-accent,#B84A33);outline-offset:2px}
+#board-section #message{min-height:1.5em;margin:0;font-size:1rem;color:var(--j2-muted,#5E6B63)}
+@media (min-width:520px){
+#board-section #keypad .key{flex:0 0 calc((100% - 48px) / 9)}
+}
+</style>
+
+<h1 id="title">Cozy Sudoku</h1>
+
+<div id="levels" role="group" aria-label="Difficulty level">
+<button type="button" id="level-easy" class="j2-btn j2-btn-secondary" aria-pressed="false">Easy</button>
+<button type="button" id="level-medium" class="j2-btn j2-btn-secondary" aria-pressed="false">Medium</button>
+<button type="button" id="level-hard" class="j2-btn j2-btn-secondary" aria-pressed="false">Hard</button>
+</div>
+
+<div id="board" role="group" aria-label="Sudoku board">
+<button type="button" class="cell"></button><button type="button" class="cell"></button><button type="button" class="cell"></button><button type="button" class="cell"></button><button type="button" class="cell"></button><button type="button" class="cell"></button><button type="button" class="cell"></button><button type="button" class="cell"></button><button type="button" class="cell"></button>
+<button type="button" class="cell"></button><button type="button" class="cell"></button><button type="button" class="cell"></button><button type="button" class="cell"></button><button type="button" class="cell"></button><button type="button" class="cell"></button><button type="button" class="cell"></button><button type="button" class="cell"></button><button type="button" class="cell"></button>
+<button type="button" class="cell"></button><button type="button" class="cell"></button><button type="button" class="cell"></button><button type="button" class="cell"></button><button type="button" class="cell"></button><button type="button" class="cell"></button><button type="button" class="cell"></button><button type="button" class="cell"></button><button type="button" class="cell"></button>
+<button type="button" class="cell"></button><button type="button" class="cell"></button><button type="button" class="cell"></button><button type="button" class="cell"></button><button type="button" class="cell"></button><button type="button" class="cell"></button><button type="button" class="cell"></button><button type="button" class="cell"></button><button type="button" class="cell"></button>
+<button type="button" class="cell"></button><button type="button" class="cell"></button><button type="button" class="cell"></button><button type="button" class="cell"></button><button type="button" class="cell"></button><button type="button" class="cell"></button><button type="button" class="cell"></button><button type="button" class="cell"></button><button type="button" class="cell"></button>
+<button type="button" class="cell"></button><button type="button" class="cell"></button><button type="button" class="cell"></button><button type="button" class="cell"></button><button type="button" class="cell"></button><button type="button" class="cell"></button><button type="button" class="cell"></button><button type="button" class="cell"></button><button type="button" class="cell"></button>
+<button type="button" class="cell"></button><button type="button" class="cell"></button><button type="button" class="cell"></button><button type="button" class="cell"></button><button type="button" class="cell"></button><button type="button" class="cell"></button><button type="button" class="cell"></button><button type="button" class="cell"></button><button type="button" class="cell"></button>
+<button type="button" class="cell"></button><button type="button" class="cell"></button><button type="button" class="cell"></button><button type="button" class="cell"></button><button type="button" class="cell"></button><button type="button" class="cell"></button><button type="button" class="cell"></button><button type="button" class="cell"></button><button type="button" class="cell"></button>
+<button type="button" class="cell"></button><button type="button" class="cell"></button><button type="button" class="cell"></button><button type="button" class="cell"></button><button type="button" class="cell"></button><button type="button" class="cell"></button><button type="button" class="cell"></button><button type="button" class="cell"></button><button type="button" class="cell"></button>
+</div>
+
+<div id="keypad" role="group" aria-label="Number keys">
+<button type="button" class="key j2-btn" data-digit="1">1</button>
+<button type="button" class="key j2-btn" data-digit="2">2</button>
+<button type="button" class="key j2-btn" data-digit="3">3</button>
+<button type="button" class="key j2-btn" data-digit="4">4</button>
+<button type="button" class="key j2-btn" data-digit="5">5</button>
+<button type="button" class="key j2-btn" data-digit="6">6</button>
+<button type="button" class="key j2-btn" data-digit="7">7</button>
+<button type="button" class="key j2-btn" data-digit="8">8</button>
+<button type="button" class="key j2-btn" data-digit="9">9</button>
+</div>
+
+<p id="message" role="status" aria-live="polite"></p>
+
+<script>
+(function () {
+  document.title = 'Cozy Sudoku';
+
+  var LEVELS = {
+    easy:   { label: 'Easy',   givens: 40 },
+    medium: { label: 'Medium', givens: 32 },
+    hard:   { label: 'Hard',   givens: 27 }
+  };
+
+  var cells = Array.prototype.slice.call(document.querySelectorAll('#board .cell'));
+  var keys = Array.prototype.slice.call(document.querySelectorAll('#keypad .key'));
+  var msg = document.getElementById('message');
+  var levelButtons = {
+    easy: document.getElementById('level-easy'),
+    medium: document.getElementById('level-medium'),
+    hard: document.getElementById('level-hard')
+  };
+
+  /* ---------- puzzle generation ---------- */
+  function boxOf(i) { return ((i / 27) | 0) * 3 + (((i % 9) / 3) | 0); }
+  function pop(m) { var n = 0; while (m) { n += m & 1; m >>= 1; } return n; }
+  function shuffle(a) {
+    for (var i = a.length - 1; i > 0; i--) {
+      var j = Math.floor(Math.random() * (i + 1));
+      var t = a[i]; a[i] = a[j]; a[j] = t;
+    }
+    return a;
+  }
+
+  // Backtracking search with fewest-candidates-first. Counts solutions up to `limit`.
+  function search(g, limit, rnd) {
+    var rows = [0, 0, 0, 0, 0, 0, 0, 0, 0], cols = rows.slice(), boxes = rows.slice();
+    var i, bit;
+    for (i = 0; i < 81; i++) {
+      if (g[i]) {
+        bit = 1 << (g[i] - 1);
+        rows[(i / 9) | 0] |= bit; cols[i % 9] |= bit; boxes[boxOf(i)] |= bit;
+      }
+    }
+    var count = 0, first = null;
+    function rec() {
+      var best = -1, bestMask = 0, bestN = 10, k, m, n;
+      for (k = 0; k < 81; k++) {
+        if (g[k] === 0) {
+          m = ~(rows[(k / 9) | 0] | cols[k % 9] | boxes[boxOf(k)]) & 511;
+          n = pop(m);
+          if (n < bestN) {
+            best = k; bestMask = m; bestN = n;
+            if (n === 0) return;
+          }
+        }
+      }
+      if (best < 0) { count++; if (!first) first = g.slice(); return; }
+      var r = (best / 9) | 0, c = best % 9, bx = boxOf(best), ds = [], d;
+      for (d = 0; d < 9; d++) { if (bestMask & (1 << d)) ds.push(d); }
+      if (rnd) shuffle(ds);
+      for (var x = 0; x < ds.length; x++) {
+        var b = 1 << ds[x];
+        g[best] = ds[x] + 1;
+        rows[r] |= b; cols[c] |= b; boxes[bx] |= b;
+        rec();
+        g[best] = 0;
+        rows[r] &= ~b; cols[c] &= ~b; boxes[bx] &= ~b;
+        if (count >= limit) return;
+      }
+    }
+    rec();
+    return { count: count, first: first };
+  }
+
+  function makePuzzle(level) {
+    var empty = [];
+    for (var i = 0; i < 81; i++) empty.push(0);
+    var solution = search(empty, 1, true).first;
+    var puzzle = solution.slice();
+    var order = [];
+    for (i = 0; i < 81; i++) order.push(i);
+    shuffle(order);
+    var givens = 81, target = LEVELS[level].givens;
+    for (var k = 0; k < order.length && givens > target; k++) {
+      var idx = order[k], keep = puzzle[idx];
+      puzzle[idx] = 0;
+      if (search(puzzle.slice(), 2, false).count !== 1) {
+        puzzle[idx] = keep;
+      } else {
+        givens--;
+      }
+    }
+    return { puzzle: puzzle, solution: solution };
+  }
+
+  /* ---------- game state (the single source of truth) ---------- */
+  var state = {
+    level: 'easy',
+    solution: [],
+    values: [],
+    given: [],
+    selected: -1,
+    select: function (i) {
+      state.selected = i;
+      if (i >= 0 && state.given[i]) {
+        say('That one is a clue. Try an empty square.');
+      } else {
+        say('');
+      }
+      render();
+    },
+    setDigit: function (d) {
+      var i = state.selected;
+      if (i < 0) { say('Tap an empty square first.'); return false; }
+      if (state.given[i]) { say('That one is a clue. Try an empty square.'); return false; }
+      state.values[i] = (state.values[i] === d) ? 0 : d;
+      say('');
+      render();
+      notify();
+      return true;
+    }
+  };
+
+  function say(text) { msg.textContent = text; }
+
+  function notify() {
+    try { document.dispatchEvent(new CustomEvent('cozy:change', { detail: state })); } catch (e) { /* ignore */ }
+  }
+
+  /* ---------- drawing ---------- */
+  cells.forEach(function (cell, i) {
+    var row = (i / 9) | 0, col = i % 9;
+    cell.setAttribute('data-index', i);
+    if (col === 2 || col === 5) cell.classList.add('box-r');
+    if (row === 2 || row === 5) cell.classList.add('box-b');
+    var span = document.createElement('span');
+    span.className = 'digit';
+    cell.appendChild(span);
+    cell.addEventListener('click', function () { state.select(i); });
+  });
+
+  function render() {
+    for (var i = 0; i < 81; i++) {
+      var cell = cells[i], v = state.values[i] || 0;
+      var span = cell.querySelector('.digit');
+      if (span) span.textContent = v ? String(v) : '';
+      cell.classList.toggle('given', !!state.given[i]);
+      cell.classList.toggle('selected', i === state.selected);
+      var label = 'Row ' + (((i / 9) | 0) + 1) + ', column ' + ((i % 9) + 1) + ', ' +
+        (state.given[i] ? 'clue ' + v : (v ? 'your digit ' + v : 'empty'));
+      cell.setAttribute('aria-label', label);
+      cell.setAttribute('aria-pressed', i === state.selected ? 'true' : 'false');
+    }
+  }
+
+  function startNew(level) {
+    if (!LEVELS[level]) level = 'easy';
+    var made = makePuzzle(level);
+    state.level = level;
+    state.solution = made.solution;
+    state.values = made.puzzle.slice();
+    state.given = made.puzzle.map(function (v) { return v !== 0; });
+    state.selected = -1;
+    Object.keys(levelButtons).forEach(function (key) {
+      var on = key === level;
+      levelButtons[key].classList.toggle('active', on);
+      levelButtons[key].setAttribute('aria-pressed', on ? 'true' : 'false');
+    });
+    render();
+    say('New ' + LEVELS[level].label + ' puzzle. Tap an empty square to begin.');
+    notify();
+  }
+
+  /* ---------- events ---------- */
+  Object.keys(levelButtons).forEach(function (key) {
+    levelButtons[key].addEventListener('click', function () { startNew(key); });
+  });
+
+  keys.forEach(function (k) {
+    k.addEventListener('click', function () {
+      state.setDigit(parseInt(k.getAttribute('data-digit'), 10));
+    });
+  });
+
+  document.addEventListener('keydown', function (e) {
+    if (e.ctrlKey || e.metaKey || e.altKey) return;
+    var t = e.target;
+    if (t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.isContentEditable)) return;
+    if (e.key >= '1' && e.key <= '9') {
+      state.setDigit(parseInt(e.key, 10));
+    } else if ((e.key === 'Backspace' || e.key === 'Delete' || e.key === '0') && state.selected >= 0 && !state.given[state.selected]) {
+      state.values[state.selected] = 0; render(); notify();
+    } else if (e.key.indexOf('Arrow') === 0 && state.selected >= 0) {
+      var r = (state.selected / 9) | 0, c = state.selected % 9;
+      if (e.key === 'ArrowUp') r = Math.max(0, r - 1);
+      if (e.key === 'ArrowDown') r = Math.min(8, r + 1);
+      if (e.key === 'ArrowLeft') c = Math.max(0, c - 1);
+      if (e.key === 'ArrowRight') c = Math.min(8, c + 1);
+      state.selected = r * 9 + c; render(); cells[state.selected].focus();
+      e.preventDefault();
+    }
+  });
+
+  /* Let other parts of the page reach the game. */
+  window.cozy = { state: state, render: render, newGame: startNew, say: say, notify: notify, cells: cells };
+
+  startNew('easy');
+})();
+</script>
+</section>
+<!-- J2:W-7 end -->
+<!-- J2:W-8 start (owner W-8) -->
+<section id="aids" aria-label="Helpers">
+<style>
+#aids{box-sizing:border-box;max-width:520px;margin:0 auto;padding:0 16px 32px;font-family:var(--j2-font-body,'Nunito',system-ui,sans-serif);color:var(--j2-text,#2E3A34);text-align:center}
+#aids *{box-sizing:border-box}
+#aids [hidden]{display:none !important}
+#aids button{appearance:none;-webkit-appearance:none;min-height:48px;min-width:44px;padding:8px 6px;font-family:inherit;font-size:1rem;font-weight:700;line-height:1.2;border:2px solid var(--j2-primary,#3F6B57);border-radius:var(--j2-radius,12px);background:var(--j2-surface,#FFFFFF);color:var(--j2-primary,#3F6B57);cursor:pointer;touch-action:manipulation}
+#aids button.j2-btn:not(.j2-btn-secondary){background:var(--j2-primary,#3F6B57);color:#FFFFFF}
+#aids button:focus-visible{outline:3px solid var(--j2-accent,#B84A33);outline-offset:2px}
+#aids button:active{transform:scale(0.97)}
+#aids button[aria-disabled="true"]{opacity:0.6;cursor:default}
+#aids > div[aria-label="Game helpers"]{display:flex;gap:8px;max-width:460px;margin:0 auto 12px}
+#aids > div[aria-label="Game helpers"] button{flex:1 1 0;min-width:0}
+#aids #notes-toggle.on{background:var(--j2-primary,#3F6B57);color:#FFFFFF}
+#aids #resume-bar{max-width:460px;margin:0 auto 12px;padding:16px;background:var(--j2-surface,#FFFFFF);border-radius:var(--j2-radius,12px);box-shadow:0 2px 12px rgba(46,58,52,0.10)}
+#aids #resume-bar p{margin:0 0 12px;font-size:1.05rem;font-weight:700;color:var(--j2-text,#2E3A34)}
+#aids #resume-bar div{display:flex;gap:8px}
+#aids #resume-bar button{flex:1 1 0;min-width:0}
+#aids #win-message{max-width:460px;margin:0 auto;padding:16px;background:var(--j2-surface,#FFFFFF);border:3px solid var(--j2-primary,#3F6B57);border-radius:var(--j2-radius,12px);box-shadow:0 2px 12px rgba(46,58,52,0.10);font-family:var(--j2-font-heading,'Nunito',system-ui,sans-serif);font-size:1.2rem;font-weight:800;line-height:1.35;color:var(--j2-primary,#3F6B57)}
+#board-section .cell.conflict{background:rgba(184,74,51,0.12);color:var(--j2-accent,#B84A33)}
+#board-section .cell[data-hint]{background:rgba(63,107,87,0.22);box-shadow:inset 0 0 0 3px var(--j2-primary,#3F6B57)}
+#board-section .cell > i[data-notes]{position:absolute;top:2px;right:2px;bottom:2px;left:2px;display:grid;grid-template-columns:repeat(3,1fr);grid-template-rows:repeat(3,1fr);font-style:normal;font-size:clamp(0.55rem,2.6vw,0.8rem);font-weight:700;line-height:1;color:var(--j2-muted,#5E6B63);pointer-events:none}
+#board-section .cell > i[data-notes] span{display:flex;align-items:center;justify-content:center}
+@media (prefers-reduced-motion:no-preference){
+#board-section .cell[data-hint]{animation:aids-pulse 1.2s ease-in-out 3}
+}
+@keyframes aids-pulse{0%,100%{box-shadow:inset 0 0 0 3px var(--j2-primary,#3F6B57)}50%{box-shadow:inset 0 0 0 6px var(--j2-primary,#3F6B57)}}
+</style>
+
+<div id="resume-bar" role="group" aria-label="Saved game" hidden>
+<p>Welcome back! Your last game is waiting.</p>
+<div>
+<button type="button" id="resume-btn" class="j2-btn">Resume game</button>
+<button type="button" id="newgame-btn" class="j2-btn j2-btn-secondary">New game</button>
+</div>
+</div>
+
+<div role="group" aria-label="Game helpers">
+<button type="button" id="notes-toggle" class="j2-btn j2-btn-secondary" aria-pressed="false">Notes</button>
+<button type="button" id="undo-btn" class="j2-btn j2-btn-secondary" aria-disabled="true">Undo</button>
+<button type="button" id="hint-btn" class="j2-btn j2-btn-secondary">Hint</button>
+</div>
+
+<p id="win-message" role="status" hidden>You did it! Every square fits. Pick a level above whenever you want another puzzle.</p>
+
+<script>
+(function () {
+  var cozy = window.cozy;
+  if (!cozy || !cozy.state) { return; }
+  var state = cozy.state;
+  var cells = cozy.cells;
+  var KEY = 'cozy-sudoku-save';
+
+  var notesBtn = document.getElementById('notes-toggle');
+  var undoBtn = document.getElementById('undo-btn');
+  var hintBtn = document.getElementById('hint-btn');
+  var resumeBar = document.getElementById('resume-bar');
+  var resumeBtn = document.getElementById('resume-btn');
+  var newBtn = document.getElementById('newgame-btn');
+  var winMsg = document.getElementById('win-message');
+
+  var notesOn = false;
+  var history = [];
+  var last = null;
+  var puzzleKey = '';
+  var noteEls = [];
+  var hintCell = -1;
+  var savedGame = null;
+
+  /* ---------- helpers ---------- */
+  function zeros() { var a = [], i; for (i = 0; i < 81; i++) { a.push(0); } return a; }
+  function boxOf(i) { return ((i / 27) | 0) * 3 + (((i % 9) / 3) | 0); }
+  function peers(i, j) { return ((i / 9) | 0) === ((j / 9) | 0) || i % 9 === j % 9 || boxOf(i) === boxOf(j); }
+  function keyOf() {
+    return (state.solution || []).join('') + '|' + (state.given || []).map(function (g) { return g ? 1 : 0; }).join('');
+  }
+  function snap() { return { values: state.values.slice(), notes: state.notes.slice() }; }
+  function pushHistory(s) { history.push(s); if (history.length > 300) { history.shift(); } }
+
+  function isSolved() {
+    var i;
+    if (!state.solution || state.solution.length !== 81 || !state.values || state.values.length !== 81) { return false; }
+    for (i = 0; i < 81; i++) { if (state.values[i] !== state.solution[i]) { return false; } }
+    return true;
+  }
+  function hasProgress() {
+    var i;
+    for (i = 0; i < 81; i++) {
+      if ((!state.given[i] && state.values[i]) || state.notes[i]) { return true; }
+    }
+    return false;
+  }
+
+  /* ---------- note elements inside each cell ---------- */
+  cells.forEach(function (cell) {
+    var el = document.createElement('i');
+    var spans = [], d, s;
+    el.setAttribute('data-notes', '');
+    el.setAttribute('aria-hidden', 'true');
+    for (d = 1; d <= 9; d++) { s = document.createElement('span'); el.appendChild(s); spans.push(s); }
+    cell.appendChild(el);
+    noteEls.push(spans);
+  });
+
+  /* ---------- drawing: repeats and notes ---------- */
+  function refresh() {
+    var v = state.values, i, j, d, bad, spans, show;
+    for (i = 0; i < 81; i++) {
+      bad = false;
+      if (v[i]) {
+        for (j = 0; j < 81; j++) {
+          if (j !== i && v[j] === v[i] && peers(i, j)) { bad = true; break; }
+        }
+      }
+      cells[i].classList.toggle('conflict', bad);
+      spans = noteEls[i];
+      show = !v[i] && state.notes[i];
+      for (d = 1; d <= 9; d++) {
+        spans[d - 1].textContent = (show && (state.notes[i] & (1 << (d - 1)))) ? String(d) : '';
+      }
+    }
+  }
+
+  function updateUndo() { undoBtn.setAttribute('aria-disabled', history.length ? 'false' : 'true'); }
+
+  function updateWin() {
+    var s = isSolved();
+    if (s && winMsg.hidden) {
+      winMsg.hidden = false;
+      try { winMsg.scrollIntoView({ block: 'nearest' }); } catch (e) { /* ignore */ }
+    } else if (!s) {
+      winMsg.hidden = true;
+    }
+  }
+
+  function clearHint() {
+    if (hintCell >= 0 && cells[hintCell]) { cells[hintCell].removeAttribute('data-hint'); }
+    hintCell = -1;
+  }
+
+  function updateLevels() {
+    ['easy', 'medium', 'hard'].forEach(function (l) {
+      var b = document.getElementById('level-' + l);
+      if (b) {
+        var on = l === state.level;
+        b.classList.toggle('active', on);
+        b.setAttribute('aria-pressed', on ? 'true' : 'false');
+      }
+    });
+  }
+
+  /* ---------- saving ---------- */
+  function save() {
+    try {
+      if (isSolved() || !hasProgress()) { localStorage.removeItem(KEY); return; }
+      localStorage.setItem(KEY, JSON.stringify({
+        level: state.level,
+        solution: state.solution,
+        values: state.values,
+        given: state.given.map(function (g) { return g ? 1 : 0; }),
+        notes: state.notes
+      }));
+    } catch (e) { /* saving is optional */ }
+  }
+
+  function okArr(a, min, max) {
+    var i;
+    if (!Array.isArray(a) || a.length !== 81) { return false; }
+    for (i = 0; i < 81; i++) {
+      if (typeof a[i] !== 'number' || a[i] < min || a[i] > max || a[i] % 1 !== 0) { return false; }
+    }
+    return true;
+  }
+
+  function loadSaved() {
+    var raw, s, i, done = true;
+    try { raw = localStorage.getItem(KEY); } catch (e) { return null; }
+    if (!raw) { return null; }
+    try { s = JSON.parse(raw); } catch (e2) { return null; }
+    if (!s || typeof s.level !== 'string' || !document.getElementById('level-' + s.level)) { return null; }
+    if (!okArr(s.solution, 1, 9) || !okArr(s.values, 0, 9) || !okArr(s.given, 0, 1) || !okArr(s.notes, 0, 511)) { return null; }
+    for (i = 0; i < 81; i++) {
+      if (s.given[i] && s.values[i] !== s.solution[i]) { return null; }
+      if (s.values[i] !== s.solution[i]) { done = false; }
+    }
+    if (done) { return null; }
+    return s;
+  }
+
+  /* ---------- reacting to changes made by the board ---------- */
+  function onChange() {
+    var k = keyOf(), v = state.values, i, j, changed = false, n;
+    if (k !== puzzleKey) {
+      puzzleKey = k;
+      history = [];
+      state.notes = zeros();
+      last = snap();
+      clearHint();
+      winMsg.hidden = true;
+      resumeBar.hidden = true;
+      refresh(); updateUndo(); save();
+      return;
+    }
+    for (i = 0; i < 81; i++) { if (v[i] !== last.values[i]) { changed = true; break; } }
+    if (changed) {
+      pushHistory(last);
+      n = state.notes;
+      for (i = 0; i < 81; i++) {
+        if (v[i] !== last.values[i] && v[i]) {
+          n[i] = 0;
+          for (j = 0; j < 81; j++) { if (j !== i && peers(i, j)) { n[j] &= ~(1 << (v[i] - 1)); } }
+        }
+      }
+      last = snap();
+      clearHint();
+      resumeBar.hidden = true;
+    }
+    refresh(); updateUndo(); updateWin(); save();
+  }
+
+  /* ---------- wrap the board's actions (notes mode, hint clearing) ---------- */
+  var origSet = state.setDigit;
+  state.setDigit = function (d) {
+    var i;
+    if (!notesOn) { return origSet.call(state, d); }
+    i = state.selected;
+    if (i < 0) { cozy.say('Tap an empty square first.'); return false; }
+    if (state.given[i]) { cozy.say('That one is a clue. Try an empty square.'); return false; }
+    if (state.values[i]) { cozy.say('Clear this square first to pencil in notes.'); return false; }
+    pushHistory(snap());
+    state.notes[i] ^= (1 << (d - 1));
+    last = snap();
+    cozy.say('');
+    refresh(); updateUndo(); save();
+    return true;
+  };
+
+  var origSelect = state.select;
+  state.select = function (i) {
+    clearHint();
+    origSelect.call(state, i);
+  };
+
+  /* ---------- buttons ---------- */
+  notesBtn.addEventListener('click', function () {
+    notesOn = !notesOn;
+    notesBtn.classList.toggle('on', notesOn);
+    notesBtn.setAttribute('aria-pressed', notesOn ? 'true' : 'false');
+    cozy.say(notesOn ? 'Notes on. Numbers you tap will be pencilled in small.' : 'Notes off. Numbers go in as answers.');
+  });
+
+  undoBtn.addEventListener('click', function () {
+    var s;
+    if (!history.length) { cozy.say('Nothing to undo yet.'); return; }
+    s = history.pop();
+    state.values = s.values.slice();
+    state.notes = s.notes.slice();
+    last = snap();
+    clearHint();
+    cozy.render();
+    cozy.say('Undone. Take your time.');
+    cozy.notify();
+  });
+
+  hintBtn.addEventListener('click', function () {
+    var target = -1, wrong = false, best = 10, i, j, used, n, bit;
+    if (isSolved()) { cozy.say('This puzzle is already solved. Well done!'); return; }
+    for (i = 0; i < 81; i++) {
+      if (!state.given[i] && state.values[i] && state.values[i] !== state.solution[i]) { target = i; wrong = true; break; }
+    }
+    if (target < 0) {
+      for (i = 0; i < 81; i++) {
+        if (state.values[i]) { continue; }
+        used = 0;
+        for (j = 0; j < 81; j++) {
+          if (state.values[j] && peers(i, j)) { used |= 1 << (state.values[j] - 1); }
+        }
+        n = 0;
+        for (bit = 0; bit < 9; bit++) { if (!(used & (1 << bit))) { n++; } }
+        if (n < best) { best = n; target = i; }
+      }
+    }
+    if (target < 0) { cozy.say('Everything looks fine so far. Keep going!'); return; }
+    state.select(target);
+    hintCell = target;
+    cells[target].setAttribute('data-hint', '');
+    cozy.say(wrong
+      ? 'Something in the highlighted square does not fit yet. Take another look.'
+      : 'Have a look at the highlighted square. See which numbers its row, column and box already have.');
+  });
+
+  resumeBtn.addEventListener('click', function () {
+    var s = savedGame;
+    if (!s) { resumeBar.hidden = true; return; }
+    state.level = s.level;
+    state.solution = s.solution.slice();
+    state.values = s.values.slice();
+    state.given = s.given.map(function (g) { return !!g; });
+    state.notes = s.notes.slice();
+    state.selected = -1;
+    puzzleKey = keyOf();
+    history = [];
+    last = snap();
+    savedGame = null;
+    clearHint();
+    winMsg.hidden = true;
+    resumeBar.hidden = true;
+    updateLevels();
+    cozy.render();
+    cozy.say('Welcome back! Your game is just as you left it.');
+    cozy.notify();
+  });
+
+  newBtn.addEventListener('click', function () {
+    savedGame = null;
+    resumeBar.hidden = true;
+    cozy.newGame(state.level);
+  });
+
+  document.addEventListener('keydown', function (e) {
+    if (e.ctrlKey || e.metaKey || e.altKey) { return; }
+    if (e.key === 'n' || e.key === 'N') { notesBtn.click(); }
+    else if (e.key === 'u' || e.key === 'U') { undoBtn.click(); }
+  });
+
+  /* ---------- start up ---------- */
+  state.notes = zeros();
+  puzzleKey = keyOf();
+  last = snap();
+  refresh();
+  updateUndo();
+  document.addEventListener('cozy:change', onChange);
+
+  savedGame = loadSaved();
+  if (savedGame) { resumeBar.hidden = false; }
+})();
+</script>
+</section>
+<!-- J2:W-8 end -->
+</body>
+</html>

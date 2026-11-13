@@ -80,7 +80,8 @@
   /* ---------------------------------------------------------------- the engine fields */
   // [label, hint] for every field of EngineSettings (sutra_app/engine/spec.py). A field this table does not know is shown under its own name.
   const FIELD_TEXT = freeze({
-    output: ["What to build", "The kind of result a new run makes; \"Let the team decide\" picks it from the request"],
+    output: ["What to build", "The kind of result a new run makes; \"Let the team decide\" lets the team's planner choose it from the request"],
+    builder_timeout: ["Builder time limit (seconds)", "A builder's AI call that runs longer is stopped and tried once more; 0 means no limit"],
     fixes: ["Fix pass", "Let a run make a second pass to repair what the checks refused"],
     budget: ["Budget", "Work credits one run may spend"],
     budget_cap: ["Budget cap", "The most a run may spend; empty means twice the budget"],
@@ -98,7 +99,7 @@
     change: ["Change requests", "Allow a change request on a finished run"],
     board: ["Board story", "Show the Board and its story"],
     artifact_schema: ["Artifact schema", "Check artifacts against their schema"],
-    template_library: ["Template library", "Builders use the template library"],
+    template_library: ["Template library", "Builders use the template library. While this is off, the catalog's \"By run\" list shows J2's eight development runs only."],
     tap_min: ["Smallest tap target (px)", "The least size a button may have on a phone"],
     send_mode: ["Email sending", "dry-run writes no email"],
     send_cap: ["Emails per run", ""],
@@ -112,12 +113,14 @@
     memory_test_lessons: ["Test lessons", "A test switch"],
     workspace: ["Working folder for agents", "Let the team's agents look at your working folder (about 3,000 more tokens per call)"],
   });
-  const CHOICES = freeze({output: freeze(["auto", "website", "prd", "hld", "lld", "project"]), workspace: freeze(["auto", "off"])});
+  // Closed lists the page knows. `output` is not one of them: its choices are the engine's own answer (`output_types`, D166), never a list here.
+  const CHOICES = freeze({workspace: freeze(["auto", "off"])});
   // What the owner reads on a choice's option (the value sent stays the engine's own word).
-  const CHOICE_LABELS = freeze({output: freeze({auto: "Let the team decide", project: "Project work"}),
-    workspace: freeze({auto: "Agents read the working folder", off: "Agents do not read it"})});
+  const CHOICE_LABELS = freeze({workspace: freeze({auto: "Agents read the working folder", off: "Agents do not read it"})});
+  const OUTPUT_AUTO = "Let the team decide";
+  const NAME_SHAPE = /^[a-z][a-z0-9_]{1,40}$/;       // J2's own shape of a type name: what the page accepts when the engine has not listed its types
   const FLAGS01 = freeze(["fixes"]);                   // 0 or 1 on the wire, a toggle on the page
-  const FLOATS = freeze(["bargain_minutes", "delay"]); // JSON cannot tell 15.0 from 15, so the float fields are named
+  const FLOATS = freeze(["bargain_minutes", "delay", "builder_timeout"]); // JSON cannot tell 15.0 from 15, so the float fields are named
   const NULLABLE = freeze(["budget_cap"]);             // empty means "not set" (null)
   const GROUPS = freeze({appearance: "Appearance", connectors: "Connectors", engine: "Engine", models: "Default model", about: "About"});
   const POLICY_PATH = "/api/connectors/policy";
@@ -128,8 +131,31 @@
   const textOf = field => (hasOwn(FIELD_TEXT, field) ? FIELD_TEXT[field] : [field.replace(/_/g, " "), ""]);
 
   // The kind of control a field gets, from its default: toggle (boolean), flag (0/1), choice (a closed list), int, float, nullint (int or empty), text.
+  const isChoice = field => field === "output" || hasOwn(CHOICES, field);
+
+  // The values a choice field offers: a closed list, or for `output` "auto" and every type the engine says can be pinned (`output_types` of the settings
+  // answer), in the data's order. null when the engine did not list its types (an older answer): the page then checks the shape only.
+  function pinnable(settings) {
+    const list = isObj(settings) && Array.isArray(settings.output_types) ? settings.output_types : null;
+    if (list === null) return null;
+    return list.filter(t => isObj(t) && t.pin === true && clean(t.name) !== "").map(t => ({name: clean(t.name), label: clean(t.label) || clean(t.name)}));
+  }
+  function choicesOf(field, settings) {
+    if (field !== "output") return CHOICES[field].slice();
+    const types = pinnable(settings);
+    return ["auto"].concat((types || []).map(t => t.name).filter(n => n !== "auto"));
+  }
+  function choiceLabel(field, value, settings) {
+    if (field === "output") {
+      if (value === "auto") return OUTPUT_AUTO;
+      const found = (pinnable(settings) || []).find(t => t.name === value);
+      return found ? found.label : String(value);
+    }
+    return hasOwn(CHOICE_LABELS, field) && hasOwn(CHOICE_LABELS[field], value) ? CHOICE_LABELS[field][value] : String(value);
+  }
+
   function kindOf(field, defaults) {
-    if (hasOwn(CHOICES, field)) return "choice";
+    if (isChoice(field)) return "choice";
     if (FLAGS01.includes(field)) return "flag";
     if (NULLABLE.includes(field)) return "nullint";
     const v = isObj(defaults) ? defaults[field] : undefined;
@@ -138,8 +164,9 @@
     return "text";
   }
 
-  // parseValue(kind, raw, field) -> {ok, value}. A form hands strings (an input's value) or ready values; anything that does not read is not ok.
-  function parseValue(kind, raw, field) {
+  // parseValue(kind, raw, field, settings) -> {ok, value}. A form hands strings (an input's value) or ready values; anything that does not read is not ok.
+  // `settings` is the engine answer, which holds the types an output may be pinned to.
+  function parseValue(kind, raw, field, settings) {
     switch (kind) {
       case "toggle":
         if (typeof raw === "boolean") return {ok: true, value: raw};
@@ -151,7 +178,9 @@
         if (raw === "0" || raw === "1") return {ok: true, value: Number(raw)};
         return {ok: false};
       case "choice":
-        return typeof raw === "string" && CHOICES[field].includes(raw) ? {ok: true, value: raw} : {ok: false};
+        if (typeof raw !== "string") return {ok: false};
+        if (field === "output" && pinnable(settings) === null) return raw === "auto" || NAME_SHAPE.test(raw) ? {ok: true, value: raw} : {ok: false};
+        return choicesOf(field, settings).includes(raw) ? {ok: true, value: raw} : {ok: false};
       case "int":
       case "float": {
         const s = typeof raw === "number" ? String(raw) : (typeof raw === "string" ? raw.trim() : "");
@@ -161,7 +190,7 @@
       }
       case "nullint":
         if (raw === null || raw === undefined || (typeof raw === "string" && raw.trim() === "")) return {ok: true, value: null};
-        return parseValue("int", raw, field);
+        return parseValue("int", raw, field, settings);
       default:
         return typeof raw === "string" ? {ok: true, value: raw} : {ok: false};
     }
@@ -190,7 +219,7 @@
     const layer = layerOf(settings);
     listOf(settings.editable).forEach(field => {
       if (!hasOwn(form, field)) return;
-      const parsed = parseValue(kindOf(field, defaults), form[field], field);
+      const parsed = parseValue(kindOf(field, defaults), form[field], field, settings);
       if (!parsed.ok) return;
       const start = hasOwn(effective, field) ? effective[field] : defaults[field];
       if (same(parsed.value, start === undefined ? null : start)) return;
@@ -208,7 +237,7 @@
     listOf(settings.editable).forEach(field => {
       if (!hasOwn(form, field)) return;
       const kind = kindOf(field, defaults);
-      if (!parseValue(kind, form[field], field).ok) {
+      if (!parseValue(kind, form[field], field, settings).ok) {
         problems[field] = kind === "int" || kind === "nullint" ? "Write a whole number." : (kind === "float" ? "Write a number." : "This value is not valid.");
       }
     });
@@ -235,13 +264,14 @@
   /* ---------------------------------------------------------------- Engine group */
   const showValue = v => (v === null || v === undefined || v === "" ? "(empty)" : (v === true ? "on" : (v === false ? "off" : String(v))));
 
-  function fieldInput(field, kind, value, id) {
+  function fieldInput(field, kind, value, id, settings) {
     const common = ' id="' + id + '" name="' + esc(field) + '" data-input="' + esc(field) + '"';
     if (kind === "toggle") return '<input type="checkbox"' + common + (value === true ? " checked" : "") + ">";
     if (kind === "flag") return '<input type="checkbox"' + common + (value === 1 || value === true ? " checked" : "") + ">";
     if (kind === "choice") {
-      const options = CHOICES[field].includes(value) ? CHOICES[field] : CHOICES[field].concat(value === undefined || value === null ? [] : [String(value)]);
-      return "<select" + common + ">" + options.map(o => '<option value="' + esc(o) + '"' + (o === value ? " selected" : "") + ">" + esc(hasOwn(CHOICE_LABELS, field) && hasOwn(CHOICE_LABELS[field], o) ? CHOICE_LABELS[field][o] : o) + "</option>").join("") + "</select>";
+      const list = choicesOf(field, settings);
+      const options = list.includes(value) ? list : list.concat(value === undefined || value === null ? [] : [String(value)]);
+      return "<select" + common + ">" + options.map(o => '<option value="' + esc(o) + '"' + (o === value ? " selected" : "") + ">" + esc(choiceLabel(field, o, settings)) + "</option>").join("") + "</select>";
     }
     if (kind === "int" || kind === "nullint") {
       return '<input type="number" step="1" inputmode="numeric"' + common + ' value="' + (value === null || value === undefined ? "" : esc(value)) + '"' +
@@ -267,7 +297,7 @@
     const source = sourceOf(settings, field);
     const value = hasOwn(shown, field) ? shown[field] : (hasOwn(effective, field) ? effective[field] : defaults[field]);
     return '<div class="setfield" data-field="' + esc(field) + '" data-locked="false" data-kind="' + kind + '" data-source="' + source + '">' +
-      '<label class="setlabel" for="' + id + '">' + esc(label) + "</label>" + fieldInput(field, kind, value, id) +
+      '<label class="setlabel" for="' + id + '">' + esc(label) + "</label>" + fieldInput(field, kind, value, id, settings) +
       (SOURCE_TAG[source] ? '<span class="settag">' + SOURCE_TAG[source] + "</span>" : "") +
       (hint ? '<span class="sethint">' + esc(hint) + "</span>" : "") +
       (errors[field] ? '<span class="seterr" role="alert">' + esc(errors[field]) + "</span>" : "") + "</div>";

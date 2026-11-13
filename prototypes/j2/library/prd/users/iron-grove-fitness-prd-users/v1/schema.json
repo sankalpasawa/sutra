@@ -1,0 +1,70 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "additionalProperties": false,
+  "properties": {
+    "users": {
+      "description": "every user group the charter names (for Iron Grove Fitness, a prd)",
+      "items": {
+        "$ref": "#/definitions/UserGroup"
+      },
+      "type": "array"
+    },
+    "assumptions": {
+      "description": "the assumptions of Iron Grove Fitness's Users",
+      "items": {
+        "type": "string"
+      },
+      "type": "array"
+    },
+    "facts_used": {
+      "description": "the charter facts this section is written from, copied exactly from Iron Grove Fitness's charter",
+      "items": {
+        "enum": [
+          "Friday 7:00 pm Kettlebell Class 650",
+          "Iron Grove Fitness",
+          "Monday 6:30 am Strength Basics 600",
+          "Payment is made at the studio",
+          "Saturday 8:00 am Weekend Bootcamp 800",
+          "The Users section names the page visitors and the studio and gives only the actions listed in the brief",
+          "Tuesday 7:00 pm Circuit Hour 700",
+          "Unit 5, 21 Sample Street, Pune 411001",
+          "Wednesday 6:30 am Mobility Flow 500",
+          "bookings@irongrove.example",
+          "name, email, class, preferred date"
+        ],
+        "type": "string"
+      },
+      "type": "array"
+    }
+  },
+  "required": [
+    "users"
+  ],
+  "type": "object",
+  "definitions": {
+    "UserGroup": {
+      "additionalProperties": false,
+      "properties": {
+        "group": {
+          "description": "the name of this user group, as the charter names it",
+          "type": "string"
+        },
+        "needs": {
+          "description": "what this group needs from the product",
+          "type": "string"
+        },
+        "actions": {
+          "description": "what this group does on the page; empty when this group has no actions in this version",
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        }
+      },
+      "required": [
+        "group"
+      ],
+      "type": "object"
+    }
+  }
+}

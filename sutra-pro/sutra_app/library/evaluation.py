@@ -25,7 +25,7 @@ from pydantic_core import InitErrorDetails
 
 from .base import Record, Value
 from .registry import record
-from .types import AtomId, FindingId, JsonObject
+from .types import ArtifactName, AtomId, FindingId, JsonObject
 
 __all__ = [
     "PLAN_GATE", "PASSING_VERDICTS", "Evaluation", "Finding", "RubricResult", "ConditionResult", "LldMismatch",
@@ -111,7 +111,7 @@ class RubricResult(Value):
     """One row of the design rubric (R-1 to R-7, a website) or the document rubric (D-1 to D-5), as code stores it
     (J2:9186). `item` repeats the id, `criterion` is the rubric text, `rubric` is true, `severity` is "medium"."""
 
-    id: Annotated[str, StringConstraints(pattern=r"^[RD]-[0-9]+$", max_length=12)]
+    id: Annotated[str, StringConstraints(pattern=r"^[A-Z]{1,4}-[0-9]+$", max_length=12)]       # R-n, D-n and the project's PJ-n (D158)
     verdict: RubricVerdict
     note: Evidence
     passed: bool = Field(alias="pass")
@@ -132,7 +132,7 @@ class ConditionResult(Value):
     """A necessary condition checked by code (conditions/*.json, J2:1296 `check_conditions`). A "warn" condition is shown
     and never blocks. `check` names the code check, or several of them."""
 
-    id: Annotated[str, StringConstraints(pattern=r"^[A-Z][0-9]+$", max_length=8)]
+    id: Annotated[str, StringConstraints(pattern=r"^[A-Z]{1,4}[0-9]+$", max_length=8)]       # N1, P1, H1, L1 and the project's PJ1 (D158)
     text: Criterion = ""
     check: Annotated[str, StringConstraints(min_length=1, max_length=80)] | Annotated[
         list[Annotated[str, StringConstraints(min_length=1, max_length=80)]], Field(max_length=8)] | None = None
@@ -174,7 +174,7 @@ class ResultEvaluation(Evaluation):
     screenshot: Annotated[str, StringConstraints(min_length=1, max_length=500)] | None = None
     all_pass: bool
     accepted: Annotated[list[Annotated[str, StringConstraints(min_length=1, max_length=600)]], Field(max_length=200)] = []
-    output: Literal["website", "prd", "hld", "lld", "project"] | None = None              # set for a document's audit
+    output: ArtifactName | None = None                                         # set for a document's audit (a name by shape)
     read: Evidence | None = None                                               # what Audit says it read (a document)
     lld: LldComparison | None = None
 

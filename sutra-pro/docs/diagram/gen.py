@@ -53,7 +53,8 @@ LOW = f'<g transform="translate(0,{DY})">'
 XP = 90                      # v6: the Experience band gains a second row for the Console page; everything under it moves down by this
 SH = 60                      # v6: the connector band gains the stub box; the providers band moves down by this
 OPX = 94                     # v6: the Operator box sits under the chat-flow key, in the server column
-KEYH = 396                   # height of the decisions key under the figure (109 entries in 4 columns of 28 rows)
+DEC = json.loads(pathlib.Path(__file__).with_name("decisions.json").read_text())
+KEYH = round(48 + (-(-len(DEC) // 4) - 1) * 12.6 + 8)   # height of the decisions key under the figure: its entries in 4 columns, 12.6 a row (396 for 109 entries)
 W, H0 = 1300, 1140 + DY + EX + XP + OPX
 H = H0 + 8 + KEYH + 10
 a(f'<svg viewBox="0 0 {W} {H}" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Sutra app architecture: the user chat interface and its Simple and Detailed J2 views and the Console page sit on a chat agent that, for every task, checks the one global org chart and reuses, adds to or rearranges it as the need arises, and hands the task to the Identity node of the department; the agent references the Python interface library and builds workflows and a graph through a connector layer; the department runtime runs the five J2 functions as agentic graph nodes, five per department, each with its own chat session and its own goal, task, context, work atom, verify and constraints, where every turn of a node is one work atom that opens, works, closes through a check run by code, or is refused or abandoned, and whose events update the workflow graph and the chat sessions and are kept in an append-only atom log; a connector router, which records cost per atom, picks between a Claude connector and a Codex connector, both children of a ModelConnector base class; server state holds the workflow graph with atoms per node, chat sessions, department records including the global org chart, the atom log, artifacts, the template library and a cost ledger; an Operator box lists the sutra-pro commands, and a stub connector with a demo reply book serves the offline mode.">')
@@ -354,7 +355,6 @@ a('</g>')   # end of the EX group
 a('</g>')   # end of the DY group
 a('</g>')   # end of the XP group
 # ---------- Decisions: a pill of D-numbers on every box they concern, and the full key at the bottom
-DEC = json.loads(pathlib.Path(__file__).with_name("decisions.json").read_text())
 by_anchor = {}
 for d in DEC:
     if d["anchor"]:
@@ -367,7 +367,8 @@ PLACE = {
     "One global org chart": ("tl", 0, 0, 3),          # badge 7 sits inside the top-right corner
     "Interface library (Python models)": ("tl", 0, 0, 3),   # chat-flow badge 3 sits on the top-right corner
     "Workflow graph store": ("br", 0, 0, 3),          # arrow F rises from the top edge
-    "Chat sessions": ("tl", 0, 0, 3),
+    "Chat sessions": ("tl", 0, 0, 2),                 # the row of the Workflow graph store above starts at x=1147; three ids and "+N" would end at 1154
+    "band:CONNECTOR LAYER": ("tr", 0, 0, 3),          # arrow D (claude cli + python models) runs down x=122, through the end of a row at the top left
 }
 def pills(name, ids):
     ax, ay, aw, ah = ANCH[name]

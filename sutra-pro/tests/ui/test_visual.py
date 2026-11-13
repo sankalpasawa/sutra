@@ -143,7 +143,7 @@ def audit(browser, scope: str) -> dict:
 
 def is_known_gap(theme: str, failure: dict) -> bool:
     classes = failure["cls"].split()
-    return any((theme, c, b) in KNOWN_GAPS and failure["ratio"] >= MIN_RATIO for c in classes for b in failure["box"].split())
+    return failure["ratio"] >= MIN_RATIO and any((theme, c, b) in KNOWN_GAPS for c in classes for b in failure["box"].split())
 
 
 @pytest.fixture(scope="module")

@@ -463,6 +463,12 @@ class LiveApp:
     def write(self, session: str, text: str, **extra: Any) -> httpx.Response:
         return self.post(f"/api/chats/{session}/messages", {"text": text, **extra})
 
+    def welcome_seen(self) -> None:
+        """The owner said Got it to the welcome card (the real route, with the real token). A new data folder shows that card on Home: a full-screen dialog
+        over the whole page, so a browser test that is not about the card calls this before it opens Home, or its clicks land on the card."""
+        response = self.post("/api/ops/welcome/seen")
+        assert response.status_code == 200 and response.json() == {"seen": True}, response.text
+
     def say(self, text: str, *script: Any, wait: bool = True) -> int:
         """The owner writes in the org chat; the scripted model answers with `script`; returns the message id once the turn is over."""
         if script:

@@ -86,7 +86,7 @@
  },
  {
   "id": "D18",
-  "label": "settings: 2 files + 7 task keys · edit in Settings",
+  "label": "settings: 2 files + 8 task keys · edit in Settings",
   "anchor": "J2 chips"
  },
  {
@@ -520,6 +520,61 @@
   "anchor": null
  },
  {
+  "id": "D105",
+  "label": "one provider seam below every surface",
+  "anchor": "Connector router"
+ },
+ {
+  "id": "D106",
+  "label": "old Sutra: ported, not embedded",
+  "anchor": null
+ },
+ {
+  "id": "D107",
+  "label": "dropped and later: see design",
+  "anchor": null
+ },
+ {
+  "id": "D108",
+  "label": "transcript: segments, blocks, search, archive",
+  "anchor": "Chat sessions"
+ },
+ {
+  "id": "D109",
+  "label": "egress scrub (chat: replace, J2: observe)",
+  "anchor": "Connector router"
+ },
+ {
+  "id": "D110",
+  "label": "carry-over: window per model, J2 caps stay",
+  "anchor": "Connector router"
+ },
+ {
+  "id": "D111",
+  "label": "provider per chat; one mechanism",
+  "anchor": "Chat sessions"
+ },
+ {
+  "id": "D112",
+  "label": "DeepSeek later (D7)",
+  "anchor": "band:CONNECTOR LAYER"
+ },
+ {
+  "id": "D113",
+  "label": "old chats: import command, read only",
+  "anchor": "Operator"
+ },
+ {
+  "id": "D114",
+  "label": "J2 sync 2 and 3 (D114)",
+  "anchor": "J2 chips"
+ },
+ {
+  "id": "D115",
+  "label": "direct chat composer (D115)",
+  "anchor": "band:EXPERIENCE"
+ },
+ {
   "id": "D116",
   "label": "Electron window around the local server",
   "anchor": "Desktop app · Electron window"
@@ -618,5 +673,205 @@
   "id": "D135",
   "label": "your report in the team's chat",
   "anchor": "Chat sessions"
+ },
+ {
+  "id": "D136",
+  "label": "J2 sync 4: prototypes/j2 @025e265",
+  "anchor": "J2 chips"
+ },
+ {
+  "id": "D137",
+  "label": "J2 page re-ported (33 edits, D137)",
+  "anchor": "User chat interface · J2 Simple view"
+ },
+ {
+  "id": "D138",
+  "label": "Home and console keep J2's previous stylesheet",
+  "anchor": "band:EXPERIENCE"
+ },
+ {
+  "id": "D139",
+  "label": "start page: choose what to make",
+  "anchor": "band:EXPERIENCE"
+ },
+ {
+  "id": "D140",
+  "label": "J2 routes: one implementation, P13 retired",
+  "anchor": "J2 chips"
+ },
+ {
+  "id": "D141",
+  "label": "/d/{dept}/library over the one library",
+  "anchor": "Template library"
+ },
+ {
+  "id": "D142",
+  "label": "run end: collect into the catalog",
+  "anchor": "Template library"
+ },
+ {
+  "id": "D143",
+  "label": "run end: agent-readable JSON",
+  "anchor": "Department records"
+ },
+ {
+  "id": "D144",
+  "label": "seed library: add, never overwrite",
+  "anchor": "Template library"
+ },
+ {
+  "id": "D145",
+  "label": "late judge on, no patch",
+  "anchor": "Usage and cost ledger"
+ },
+ {
+  "id": "D146",
+  "label": "report row from the capability",
+  "anchor": "band:DEPARTMENT RUNTIME"
+ },
+ {
+  "id": "D147",
+  "label": "ask a function: a turn of its own session",
+  "anchor": "Chat sessions"
+ },
+ {
+  "id": "D148",
+  "label": "one transcript per agent",
+  "anchor": "Chat sessions"
+ },
+ {
+  "id": "D149",
+  "label": "answer: own pick, scrubbed, booked",
+  "anchor": "Connector router"
+ },
+ {
+  "id": "D150",
+  "label": "goldens only by recorder",
+  "anchor": "Department records"
+ },
+ {
+  "id": "D151",
+  "label": "new J2 views pinned by shape goldens",
+  "anchor": null
+ },
+ {
+  "id": "D152",
+  "label": "Decide for me: one settings.json, P16",
+  "anchor": "band:DEPARTMENT RUNTIME"
+ },
+ {
+  "id": "D153",
+  "label": "pin at the Studio tip, sandbox kept",
+  "anchor": "User chat interface · J2 Simple view"
+ },
+ {
+  "id": "D154",
+  "label": "prototypes/j2 is the only J2 source",
+  "anchor": "J2 chips"
+ },
+ {
+  "id": "D155",
+  "label": "Sutra's sheet keeps panels and motion",
+  "anchor": "band:EXPERIENCE"
+ },
+ {
+  "id": "D156",
+  "label": "stop ladder: identity first",
+  "anchor": "band:DEPARTMENT RUNTIME"
+ },
+ {
+  "id": "D157",
+  "label": "atom card shows output and the reply",
+  "anchor": "Workflow graph store"
+ },
+ {
+  "id": "D158",
+  "label": "replies read, long text cut and recorded",
+  "anchor": "band:DEPARTMENT RUNTIME"
+ },
+ {
+  "id": "D159",
+  "label": "usage by purpose: route, agents, console",
+  "anchor": "Usage and cost ledger"
+ },
+ {
+  "id": "D160",
+  "label": "J2 pin: cut-off 2026-11-12",
+  "anchor": "band:DEPARTMENT RUNTIME"
+ },
+ {
+  "id": "D161",
+  "label": "types vendored as data",
+  "anchor": "band:DEPARTMENT RUNTIME"
+ },
+ {
+  "id": "D162",
+  "label": "patch table P1-P18",
+  "anchor": "band:DEPARTMENT RUNTIME"
+ },
+ {
+  "id": "D163",
+  "label": "local types in the data folder",
+  "anchor": "band:DEPARTMENT RUNTIME"
+ },
+ {
+  "id": "D164",
+  "label": "project = host-registered type",
+  "anchor": "band:DEPARTMENT RUNTIME"
+ },
+ {
+  "id": "D165",
+  "label": "no default type",
+  "anchor": "band:DEPARTMENT RUNTIME"
+ },
+ {
+  "id": "D166",
+  "label": "output choices from the data",
+  "anchor": "band:EXPERIENCE"
+ },
+ {
+  "id": "D167",
+  "label": "runs without a type open",
+  "anchor": "band:EXPERIENCE"
+ },
+ {
+  "id": "D168",
+  "label": "views read the types",
+  "anchor": "band:EXPERIENCE"
+ },
+ {
+  "id": "D169",
+  "label": "builder time limit setting",
+  "anchor": "band:EXPERIENCE"
+ },
+ {
+  "id": "D170",
+  "label": "llm shim: timeout",
+  "anchor": "band:DEPARTMENT RUNTIME"
+ },
+ {
+  "id": "D171",
+  "label": "template models from data",
+  "anchor": "band:EXPERIENCE"
+ },
+ {
+  "id": "D172",
+  "label": "records: timing, autofix, cuts",
+  "anchor": "band:DEPARTMENT RUNTIME"
+ },
+ {
+  "id": "D173",
+  "label": "page regenerated for sync 5",
+  "anchor": "band:EXPERIENCE"
+ },
+ {
+  "id": "D174",
+  "label": "goldens by recorder only",
+  "anchor": "band:DEPARTMENT RUNTIME"
+ },
+ {
+  "id": "D175",
+  "label": "release 0.4.0",
+  "anchor": "band:DEPARTMENT RUNTIME"
  }
 ]

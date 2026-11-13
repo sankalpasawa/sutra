@@ -1,16 +1,20 @@
 #!/usr/bin/env python3
 """Record the prompt goldens into `tests/engine/golden/prompts_*.json` (work package E5, engine design 9, requirement ENG-01).
 
-    scripts/py scripts/record_engine_golden.py --source /path/to/J2_Prototype [--commit 33aeeda...] [--out-dir DIR]
+    scripts/py scripts/record_engine_golden.py --source "$J2SRC" [--commit <sha>] [--out-dir DIR]
                                                [--scenario NAME ...] [--check] [--engine]
 
-Runs six mock-mode scenarios against J2 itself (git archive of `--commit` into a temp folder when `--source` is a git repository, so
-an edited working tree never matters) in a child process, with every J2 path under a temp folder and J2's Chrome checks faked as its
-own `--fast` flow does. Per scenario it keeps the outcome, the spend, the hash of the last page, the hashes of the sections and of the
-workflows and, for every model call in order, `[function, sha(system), sha(prompt)]` (12 hex characters of the sha256 of the text with
-its ISO timestamps replaced by `T`: the same normalisation as J2's `plain_unchanged`). The engine is expected to ask the model for
-exactly the same text in the same order: `tests/engine/test_engine_prompts.py` runs the same scenarios against the vendored engine
-and compares.
+`$J2SRC` is an extraction of this repository's own `prototypes/j2` at the pinned sutra commit (docs/design/j2-sync-4.md 2.2):
+
+    J2SRC="$(mktemp -d)"; git archive <sha> prototypes/j2 | tar -x --strip-components=2 -C "$J2SRC"
+
+Runs seven mock-mode scenarios against J2 itself (the extraction as it is: a plain folder, never the working tree, so an edited file or
+a `.pyc` cannot matter; `--commit`, by default `BASELINE`, only names the commit it was extracted from and is recorded as `j2_commit`)
+in a child process, with every J2 path under a temp folder and J2's Chrome checks faked as its own `--fast` flow does. Per scenario it
+keeps the outcome, the spend, the hash of the last page, the hashes of the sections and of the workflows and, for every model call in
+order, `[function, sha(system), sha(prompt)]` (12 hex characters of the sha256 of the text with its ISO timestamps replaced by `T`: the
+same normalisation as J2's `plain_unchanged`). The engine is expected to ask the model for exactly the same text in the same order:
+`tests/engine/test_engine_prompts.py` runs the same scenarios against the vendored engine and compares.
 
     brewlab_fixes0    the Brew Lab brief, J2_FIXES=0, realization off (the classic path of J2's flow test)
     brewlab_fixes1    the same with J2_FIXES=1
@@ -18,6 +22,10 @@ and compares.
     prd               J2_OUTPUT=prd with the QuickQueue brief (a document run, no website)
     design_docs       "write the design docs first": PRD, HLD and LLD in a chain, then the website, budget 900
     template_library  J2_TEMPLATE_LIBRARY=1 with the Thread & Loom boutique brief into an empty library
+    agent_answer      the `realization` run, then one question to Adaptation through `j2_agent.answer` with a stub in place of the
+                      model: the one prompt J2's agent view adds. Its last call is `["adaptation", sha(system), sha(user)]`; the
+                      user text lists the run's records, so the child fixes J2's time-of-day stamp (`time.strftime("%H:%M:%S")`)
+                      and `feed_digest` ignores the wall-clock seconds in it, see `freeze_time_of_day` and `feed_digest`
 
 `--engine` records the vendored engine's run instead (to compare by eye or to bootstrap): it writes nothing unless `--out-dir` is
 given. `--check` records again and exits 1 when a file differs. The module is imported by the test for `SCENARIOS`, `engine_result`
@@ -36,7 +44,7 @@ import time
 from pathlib import Path
 
 REPO = Path(__file__).resolve().parent.parent
-BASELINE = "33aeeda639cd7bf828d5361273a8a153ebc63a36"
+BASELINE = "1d537295eb11cb034956fa9d8a4026eaa1e3f44e"       # the sutra commit whose `prototypes/j2` the goldens are recorded from (sync 5, D160: cut-off/2026-11-12)
 OUT_DIR = REPO / "tests" / "engine" / "golden"
 SCHEMA = "prompts-golden/1"
 FILE = "prompts_{}.json"
@@ -60,7 +68,8 @@ BOUTIQUE_BRIEF = ("make a website for my cousin's clothing boutique called Threa
                   "and order on whatsapp (+91 00000 11111). it should feel earthy and elegant and work well on phones")
 
 COMMON_ENV = {"STUDIO_MOCK": "1", "J2_MEMORY": "0", "J2_REALIZATION": "0"}
-# name -> flags, the brief and the budget the run is given (J2 starts with 100; a document or library run is given more, as the flow test does)
+# name -> flags, the brief and the budget the run is given (J2 starts with 100; a document or library run is given more, as the flow test does).
+# "ask": after the run, this question to this function through `j2_agent.answer` (a stub for the model), recorded as one more call.
 SCENARIOS = {
     "brewlab_fixes0": {"env": {"J2_FIXES": "0"}, "brief": BREW_LAB, "budget": None},
     "brewlab_fixes1": {"env": {"J2_FIXES": "1"}, "brief": BREW_LAB, "budget": None},
@@ -68,8 +77,11 @@ SCENARIOS = {
     "prd": {"env": {"J2_FIXES": "0", "J2_OUTPUT": "prd"}, "brief": PRD_BRIEF, "budget": None},
     "design_docs": {"env": {"J2_FIXES": "0"}, "brief": BREW_LAB + " Write the design docs first." + BREW_FACTS, "budget": 900},
     "template_library": {"env": {"J2_FIXES": "0", "J2_TEMPLATE_LIBRARY": "1"}, "brief": BOUTIQUE_BRIEF, "budget": 1400},
+    "agent_answer": {"env": {"J2_FIXES": "0", "J2_REALIZATION": "1"}, "brief": BREW_LAB, "budget": None,
+                     "ask": {"who": "adaptation", "q": "Why was W-3 scored below the gate?"}},
 }
 TIME_RE = re.compile(r"\d{4}-\d\d-\d\dT\d\d:\d\d:\d\d")
+SECONDS_RE = re.compile(r"\b\d+(?:\.\d+)? s\b")
 
 
 def dump(result: dict) -> str:
@@ -83,6 +95,41 @@ def dump(result: dict) -> str:
 def digest(text) -> str:
     """12 hex characters of the sha256 of `text` with every ISO timestamp (to the second) replaced by `T`."""
     return hashlib.sha256(TIME_RE.sub("T", str(text)).encode()).hexdigest()[:12]
+
+
+def feed_digest(text) -> str:
+    """`digest` for the user text of a function's answer. It lists the run's AI calls with their wall-clock seconds (` · 0.0 s`, and
+    ` · 0 s` in the planning line), which a slow or busy machine can round to another number: each `N s` becomes `<s>` before hashing."""
+    return digest(SECONDS_RE.sub("<s>", str(text)))
+
+
+def freeze_time_of_day() -> None:
+    """J2 stamps every chat line and AI call with the time of day (`time.strftime("%H:%M:%S")`, no date), and a function's feed is sorted
+    by that stamp, so a run that crosses a second boundary lists the same records in another order and the answer's prompt differs
+    from run to run. This fixes that one format at `12:00:00`, as if the whole run took less than a second; every other format (the
+    ISO stamps, the run id) stays real. The same call is made for J2's and for the engine's run, before either starts."""
+    real = time.strftime
+    time.strftime = lambda fmt, *args: "12:00:00" if fmt == "%H:%M:%S" else real(fmt, *args)
+
+
+def ask_call(kind: str, run_dir: str, ask: dict) -> list:
+    """Put the question `ask["q"]` to function `ask["who"]` about the run in `run_dir` through `j2_agent.answer`, with a stub in place of
+    the model, and return the call the stub saw as `[who, sha(system), sha(user)]`. J2's own answer goes through `ask(system, user,
+    records_only, max_tokens=700, effort="low")`; the child fails when that call is made another way or answered another way."""
+    if kind == "j2":
+        import j2_agent
+    else:
+        from sutra_app.engine import j2_agent
+    seen = []
+
+    def stub(system, user, records_only, max_tokens=None, effort=None):
+        seen.append((system, user, max_tokens, effort, callable(records_only)))
+        return "  The records say so.  "
+
+    got = j2_agent.answer(run_dir, ask["who"], ask["q"], ask=stub)
+    assert len(seen) == 1 and seen[0][2:] == (700, "low", True), ("the model was asked once, with 700 tokens, low effort and the records fallback", seen)
+    assert got == {"who": ask["who"], "answer": "The records say so.", "from": "model"}, got
+    return [ask["who"], digest(seen[0][0]), feed_digest(seen[0][1])]
 
 
 # ---------------------------------------------------------------------------------------------------------------- the child
@@ -100,6 +147,8 @@ def child(kind: str, folder: str, name: str, work: str) -> int:
     else:
         sys.path.insert(0, str(REPO))
         from sutra_app.engine import j2, j2_check
+    if spec.get("ask"):
+        freeze_time_of_day()
 
     def fake_check(html):          # J2's --fast stub: the render check without a browser
         st = j2_check.static_checks(html)
@@ -126,13 +175,16 @@ def child(kind: str, folder: str, name: str, work: str) -> int:
             break
         say(run, "Option 2" if run.paused["kind"] == "conflict" else "1")
     rows = [json.loads(line) for line in open(os.path.join(run.dir, "calls.jsonl"), encoding="utf-8") if line.strip()]
+    calls = [[c["fn"], digest(c["system"]), digest(c["prompt"])] for c in rows]
+    if spec.get("ask"):
+        calls.append(ask_call(kind, run.dir, spec["ask"]))
     out = {"schema": SCHEMA, "scenario": name, "env": {**COMMON_ENV, **spec["env"]}, "brief_sha": digest(spec["brief"]),
            "budget": spec["budget"], "outcome": run.outcome, "spent": run.spent,
            "site": digest(run.sites[-1]) if run.sites else None,
            "sections": digest(json.dumps(run.sections, sort_keys=True, default=str)),
            "workflows": digest(json.dumps([{k: v for k, v in w.items() if k != "t"} for w in run.workflows], sort_keys=True,
                                           default=str)),
-           "calls": [[c["fn"], digest(c["system"]), digest(c["prompt"])] for c in rows]}
+           "calls": calls}
     print(json.dumps(out, sort_keys=True))
     return 0
 
@@ -161,14 +213,12 @@ def engine_result(name: str) -> dict:
 
 
 def checkout_of(source, commit):
-    """(folder to run J2 from, temp folder to remove or None, full commit)."""
+    """(folder to run J2 from, temp folder to remove or None, commit). `source` is an extraction of `prototypes/j2` (see the module
+    docstring), used as it is; `commit` is only the name recorded as `j2_commit`. Anything else stops here with the extraction recipe."""
     source = Path(source).resolve()
-    if (source / ".git").exists():
-        tmp = Path(tempfile.mkdtemp(prefix="j2-golden-src-"))
-        arch = subprocess.run(["git", "-C", str(source), "archive", commit], capture_output=True, check=True).stdout
-        subprocess.run(["tar", "-x", "-C", str(tmp)], input=arch, check=True)
-        full = subprocess.run(["git", "-C", str(source), "rev-parse", commit], capture_output=True, text=True, check=True).stdout.strip()
-        return tmp, tmp, full
+    if not (source / "j2.py").is_file():
+        raise SystemExit(f"--source {source} holds no j2.py: it must be an extraction of prototypes/j2, "
+                         "`git archive <sha> prototypes/j2 | tar -x --strip-components=2 -C <empty folder>`")
     return source, None, commit
 
 
@@ -201,8 +251,11 @@ def record(source, commit, names) -> dict:
 
 def main(argv=None):
     ap = argparse.ArgumentParser(description=__doc__.split("\n")[0])
-    ap.add_argument("--source", default=os.environ.get("SUTRA_J2_CHECKOUT"), help="a J2_Prototype checkout")
-    ap.add_argument("--commit", default=BASELINE)
+    ap.add_argument("--source", default=os.environ.get("SUTRA_J2_CHECKOUT"),
+                    help="an extraction of this repository's prototypes/j2: git archive <sha> prototypes/j2 | tar -x --strip-components=2 -C "
+                         "<empty folder> (default: $SUTRA_J2_CHECKOUT, which names such a folder)")
+    ap.add_argument("--commit", default=BASELINE, help="the sutra commit the extraction was made from, recorded as j2_commit "
+                                                       "(default: the pin of the last sync)")
     ap.add_argument("--out-dir", default=None)
     ap.add_argument("--scenario", action="append", choices=sorted(SCENARIOS))
     ap.add_argument("--check", action="store_true", help="record again and exit 1 when a file differs")

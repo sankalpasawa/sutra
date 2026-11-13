@@ -38,15 +38,16 @@ def test_a_model_error_ends_the_run_as_crashed_with_its_code_and_a_stopped_messa
     port = make_port_of(RaisingPort, cls("the model said no"))
     assert Running(brew, "--mock", make_port=port).wait() == 0, "a crash that was handled is still a normal end of the process"
     ended = crashed_end(brew)
+    shown = "CallTimeout" if cls.__name__ == "ModelTimeout" else cls.__name__     # the shim raises a timeout as J2's own CallTimeout (D170), the code stays "timeout"
     assert ended["status"] == "crashed" and ended["code"] == code
-    assert ended["outcome"] == f"Crashed: {cls.__name__}: the model said no"
+    assert ended["outcome"] == f"Crashed: {shown}: the model said no"
     stopped = [m for m in chat(brew) if m["who"] == "system" and m["text"].startswith("Stopped:")]
-    assert stopped and stopped[0]["text"] == f"Stopped: {cls.__name__}: the model said no"
+    assert stopped and stopped[0]["text"] == f"Stopped: {shown}: the model said no"
     assert any(e["text"] == stopped[0]["text"] for e in of(events(brew), "say")), "the page and the watcher can show it"
     summary = json.loads((brew / "summary.json").read_text())
     assert summary["status"] == "crashed" and summary["outcome"] == ended["outcome"]
     snapshot = json.loads((brew / "snapshot.json").read_text())
-    assert snapshot["status"] == "waiting" and snapshot["error"] == f"{cls.__name__}: the model said no"
+    assert snapshot["status"] == "waiting" and snapshot["error"] == f"{shown}: the model said no"
     parse_event(ended, strict=True)
 
 

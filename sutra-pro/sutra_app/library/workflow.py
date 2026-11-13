@@ -25,12 +25,12 @@ from pydantic_core import InitErrorDetails
 from .atom import AtomDraft, Check, Constraint, ExpectedItem, Verify, Work
 from .base import Record, Value
 from .registry import record
-from .types import NodeId, WorkflowId, clip
+from .types import ArtifactName, NodeId, WorkflowId, clip
 
 __all__ = [
     "FailureAction", "Resources", "Envelope", "Step", "AIStep", "CodeStep", "AssignmentStep", "Workflow", "TaskWorkflow",
     "DeptWorkflow", "ProposedWorkflow", "RegisteredWorkflow", "Research", "Experiment", "StageId", "ZoneName",
-    "ENVELOPE_KEYS", "WorkflowError", "to_j2", "from_j2", "registered_from_j2",
+    "ENVELOPE_KEYS", "WorkflowError", "to_j2", "from_j2", "check_fields_from_j2", "registered_from_j2",
 ]
 
 FailureAction = Literal["rollback", "escalate", "pause", "abort", "continue"]      # ADR-011's closed five
@@ -206,7 +206,7 @@ class TaskWorkflow(Workflow):
 
 
 _DEPT_HOUSEKEEPING = frozenset({"schema_version", "failure_policy", "output", "inputs", "capabilities", "risks", "trigger",
-                                "authority_touched"})
+                                "authority_touched", "work_kind", "sections"})
 
 
 class DeptWorkflow(Workflow):
@@ -228,7 +228,9 @@ class DeptWorkflow(Workflow):
     fixes: Annotated[list[Line40], Field(max_length=20)] = []                       # Audit finding ids
     revises: Line40 | None = None
     estimated_resources: Resources = Field(default_factory=Resources)
-    output: Literal["website", "prd", "hld", "lld", "project"] = "website"
+    output: ArtifactName | None = None                                              # the output type it writes, a name by shape (D172)
+    work_kind: Literal["build", "audit"] | None = None                              # J2's `kind` of a workflow (the model's `kind` is its discriminator)
+    sections: Annotated[list[Line200], Field(max_length=60)] = []                   # the section(s) of a document it writes
     # role-file fields (ROLE:adaptation:20-37), absent from J2's reply format
     inputs: Annotated[list[Line200], Field(max_length=10)] = []
     capabilities: Annotated[list[Line200], Field(max_length=10)] = []
@@ -327,7 +329,7 @@ class RegisteredWorkflow(DeptWorkflow):
     hold_override: bool = False
     approval_asked: bool = False
     style_guide: bool = False
-    version: Count | None = None
+    version: Annotated[int, Field(ge=0)] | None = None      # the site version the work ended at: 0 for work that makes none (the Plan workflow)
     artifact: Annotated[str, StringConstraints(max_length=300)] | None = None
 
     @model_validator(mode="after")
@@ -355,7 +357,11 @@ def _count(expect: Any) -> int:
     return max(expect, 1) if isinstance(expect, int) and not isinstance(expect, bool) else 1
 
 
-def _check_from_j2(c: Mapping[str, Any]) -> Check:
+def check_fields_from_j2(c: Mapping[str, Any]) -> dict[str, Any]:
+    """J2's check `{text, type, target, expect}` as the fields of a `Check`. A check that already has `template` is the
+    library's own shape and is returned as it is."""
+    if "template" in c:
+        return dict(c)
     template, target, expect = c.get("type"), c.get("target"), c.get("expect")
     expect = expect if isinstance(expect, (bool, int)) else None
     items = [str(x) for x in (target if isinstance(target, list) else [] if target is None else [target]) if str(x)]
@@ -363,7 +369,11 @@ def _check_from_j2(c: Mapping[str, Any]) -> Check:
         args = [*items[:1], str(c.get("file") or _DEFAULT_FILE), str(_count(expect))] if items else []
     else:
         args = items
-    return Check(template=template, args=args, text=str(c.get("text") or ""), expect=expect)
+    return {"template": template, "args": args, "text": str(c.get("text") or ""), "expect": expect}
+
+
+def _check_from_j2(c: Mapping[str, Any]) -> Check:
+    return Check(**check_fields_from_j2(c))
 
 
 def _check_to_j2(check: Check) -> dict[str, Any]:
@@ -432,9 +442,11 @@ def _dept_fields_from_j2(d: Mapping[str, Any]) -> dict[str, Any]:
     out: dict[str, Any] = {"name": d.get("name"), "goal_gap": d.get("goal_gap"), "outputs": d.get("outputs"),
                            "completion_check": d.get("completion_check"), "steps": steps}
     for key in ("expected_outcome", "dependencies", "parts", "covers", "fixes", "revises", "output", "inputs", "capabilities",
-                "risks", "trigger", "authority_touched"):
+                "risks", "trigger", "authority_touched", "sections"):
         if d.get(key) is not None:
             out[key] = d[key]
+    if d.get("kind") in ("build", "audit"):                  # J2's `kind` of a workflow; a department row's own is never one of these
+        out["work_kind"] = d["kind"]
     resources = d.get("estimated_resources")
     if isinstance(resources, Mapping):
         out["estimated_resources"] = {k: v for k, v in resources.items() if k in ("money", "calls", "time_minutes") and v is not None}
@@ -490,8 +502,12 @@ def to_j2(w: ProposedWorkflow | RegisteredWorkflow) -> dict[str, Any]:
     for key in ("revises", "trigger", "authority_touched"):
         if getattr(w, key) is not None:
             out[key] = getattr(w, key)
-    if w.output != "website":
+    if w.output is not None:
         out["output"] = w.output
+    if w.work_kind is not None:
+        out["kind"] = w.work_kind
+    if w.sections:
+        out["sections"] = list(w.sections)
     if w.estimated_resources != Resources():
         out["estimated_resources"] = w.estimated_resources.model_dump()
     if w.envelope is not None:

@@ -1,0 +1,88 @@
+{
+  "name": "Flow Pilates Studio File structure",
+  "artifact": "lld",
+  "section": "File structure",
+  "version": 1,
+  "kind": "specialised",
+  "description": "File structure for Flow Pilates Studio (lld): the generic LLD/1 · File structure fields plus facts_used, from 2 charter fact(s); adapted from a template made for another business",
+  "fields": [
+    {
+      "name": "files",
+      "type": "list[FileEntry]",
+      "required": true,
+      "description": "every file of the build (for Flow Pilates Studio, a lld)",
+      "enum": null,
+      "nullable": false
+    },
+    {
+      "name": "assumptions",
+      "type": "list[string]",
+      "required": false,
+      "description": "the assumptions of Flow Pilates Studio's File structure",
+      "enum": null,
+      "nullable": false
+    },
+    {
+      "name": "facts_used",
+      "type": "list[string]",
+      "required": false,
+      "description": "the charter facts this section is written from, copied exactly from Flow Pilates Studio's charter",
+      "enum": [
+        "Flow Pilates Studio",
+        "The File structure section is written for Flow Pilates Studio"
+      ],
+      "nullable": false
+    }
+  ],
+  "objects": [
+    {
+      "name": "FileEntry",
+      "fields": [
+        {
+          "name": "path",
+          "type": "string",
+          "required": true,
+          "description": "the file path, e.g. \"index.html\"",
+          "enum": null,
+          "nullable": false
+        },
+        {
+          "name": "purpose",
+          "type": "string",
+          "required": true,
+          "description": "what it holds",
+          "enum": null,
+          "nullable": false
+        }
+      ]
+    }
+  ],
+  "rules": [
+    {
+      "rule": "enum",
+      "path": "facts_used[]",
+      "values": [
+        "Flow Pilates Studio",
+        "The File structure section is written for Flow Pilates Studio"
+      ],
+      "from": "facts",
+      "name": "facts_used are facts of Flow Pilates Studio's charter"
+    }
+  ],
+  "sha": "94addf18fcf932cb37dda292e0d56d278c7c2b35ac9c749b8d2aa3a82634d676",
+  "extends": "lld/file-structure@generic/1",
+  "made_by": {
+    "run": "j2-20261112-150036",
+    "workflow": "W-28",
+    "atom": "W-28.a1",
+    "agent": "code (adapted from a run template)"
+  },
+  "context": {
+    "business_type": "lld",
+    "facts_used": [
+      "Flow Pilates Studio",
+      "The File structure section is written for Flow Pilates Studio"
+    ],
+    "fingerprint": "9a968b3e1a8a1994c90624c307885459fb84dfd565d3384ed463cc34fa8b4615"
+  }
+}

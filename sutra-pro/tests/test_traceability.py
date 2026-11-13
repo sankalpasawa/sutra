@@ -1,6 +1,7 @@
 """The traceability generator (GAP-TRACE): the check on the real repository, the parsers on small fixtures, the rows on a tiny repository."""
 import importlib.util
 import json
+import re
 import textwrap
 from pathlib import Path
 
@@ -10,6 +11,13 @@ ROOT = Path(__file__).resolve().parent.parent
 _spec = importlib.util.spec_from_file_location("build_traceability", ROOT / "scripts" / "build_traceability.py")
 bt = importlib.util.module_from_spec(_spec)
 _spec.loader.exec_module(bt)
+
+
+def handler_count() -> int:
+    """`HANDLER_COUNT` of sutra_app/engine/views.py, read as text (importing the module would import J2 into the test process)."""
+    found = re.search(r"^HANDLER_COUNT = (\d+)", (ROOT / "sutra_app" / "engine" / "views.py").read_text(encoding="utf-8"), re.M)
+    assert found, "HANDLER_COUNT is not where the test looks for it"
+    return int(found.group(1))
 
 
 # ---- the real repository ---------------------------------------------------------------------------------------------------------
@@ -26,10 +34,11 @@ def test_a_fresh_run_on_the_real_repository_has_every_row_and_is_deterministic()
     second = bt.build_document(ROOT, merges={"E0": ["abc1234"]})
     assert bt.dump_json(first) == bt.dump_json(second)
     assert bt.render_markdown(first) == bt.render_markdown(second)
-    assert first["counts"]["endpoints"] == 30 and first["counts"]["chips"] == 15 and first["counts"]["steps"] == 7
+    assert first["counts"]["endpoints"] == 42 and first["counts"]["chips"] == 15 and first["counts"]["steps"] == 7
+    assert first["counts"]["endpoints"] == handler_count()        # one row per handler of engine/views.py (J2 sync 4: 41)
     headings = bt.parse_decisions((ROOT / "docs" / "DECISIONS.md").read_text(encoding="utf-8"))
     assert [row["id"] for row in first["decisions"]] == [d["id"] for d in headings]
-    assert [row["n"] for row in first["endpoints"]] == list(range(1, 31))
+    assert [row["n"] for row in first["endpoints"]] == list(range(1, handler_count() + 1))
     assert [p["id"] for p in first["packages"]] == sorted((p["id"] for p in first["packages"]), key=bt.natural)
     e0 = next(p for p in first["packages"] if p["id"] == "E0")
     assert e0["status"] == "merged" and e0["merge_commits"] == ["abc1234"]
@@ -377,7 +386,7 @@ def test_the_markdown_has_one_table_per_kind_of_row_and_pipes_in_text_are_escape
     doc = bt.build_document(_mini(tmp_path), merges={"A1": ["abc1234"]})
     doc["decisions"][0]["title"] = "a | b"
     text = bt.render_markdown(doc)
-    for heading in ("## A. Owner rules", "## B. The seven draw.io steps", "## C. The 15 chips", "## D. The 30 J2 endpoints", "## E. Decisions",
+    for heading in ("## A. Owner rules", "## B. The seven draw.io steps", "## C. The 15 chips", "## D. The J2 endpoints", "## E. Decisions",
                     "## F. Work packages"):
         assert heading in text
     assert "a \\| b" in text and "| A1 |" in text and "abc1234" in text and "pending" in text

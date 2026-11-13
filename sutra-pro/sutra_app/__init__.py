@@ -4,4 +4,4 @@ One chat on top of one global org chart. Every department runs the five J2 funct
 (goal, task, context, work atom). Model calls go through a connector layer (Claude, Codex).
 """
 
-__version__ = "0.2.1"
+__version__ = "0.4.0"

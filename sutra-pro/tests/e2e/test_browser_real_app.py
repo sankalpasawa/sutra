@@ -79,6 +79,22 @@ def app(tmp_path):
             live.kill_engines()
 
 
+@pytest.fixture()
+def claude_app(tmp_path):
+    """The real app with the real connector router over the fake `claude` (`offline=False`), its owner past the welcome card. It is stopped when the test is over,
+    AFTER the `browser` fixture checked the requests of the page: stopped inside the test, the page's event stream is refused while that check runs."""
+    cli = FakeCliBin(tmp_path)
+    live = LiveApp(tmp_path, cli=cli, connector_name="auto", offline=False).start()
+    live.welcome_seen()
+    try:
+        yield live, cli
+    finally:
+        try:
+            live.stop()
+        finally:
+            live.kill_engines()
+
+
 @pytest.mark.browser
 def test_the_whole_first_day_walk_on_the_real_app(app, browser):
     live = app
@@ -90,6 +106,18 @@ def test_the_whole_first_day_walk_on_the_real_app(app, browser):
     assert len(attrs(browser, "[data-brief]", "data-brief")) == 4 and BRIEF in attrs(browser, "[data-brief]", "data-brief")
     assert texts(browser, "#smsgs .nmsg")[0].endswith("Hello. Tell me what you need and I will give it to the right team.")
     clean(browser, "home start page")
+
+    # 1b. a new folder shows the welcome card: a full-screen dialog over the page with four facts read from this machine. "Got it" is kept by the server for good
+    present(browser, "#swelcome .swbox")
+    assert texts(browser, "#swelcome h2") == ["Welcome to Sutra"] and browser.count("#swelcome .swfact") == 4
+    assert attrs(browser, "#swelcome .swmodel", "data-state") == ["stub"]                           # offline: the built-in stub answers, no model is called
+    assert texts(browser, "#swelcome .swdir")[0].endswith("/data")                                  # the data folder of this app, as this machine has it
+    assert browser.js("document.activeElement.getAttribute('data-act')") == "welcome-gotit"          # the focus is on the button that says it
+    clean(browser, "welcome card")
+    browser.click('#swelcome [data-act="welcome-gotit"]')                                            # (a click on anything behind the card would be refused by the driver)
+    browser.wait_for("!document.getElementById('swelcome')")
+    assert live.get("/api/ops/welcome") == {"seen": True, "facts": None}                             # the server kept it: the card does not come back
+    clean(browser, "welcome card closed")
 
     # 2. send a brief: progress, chart_change and task cards, the chart marks "added", the graph draws the team
     browser.js("window.__sameDocument = true")
@@ -116,7 +144,7 @@ def test_the_whole_first_day_walk_on_the_real_app(app, browser):
     browser.press("Enter")
     browser.wait_for("!document.getElementById('nodepanel').hidden && document.getElementById('nptitle').textContent === 'Adaptation'")
     present(browser, ".nnote")
-    assert texts(browser, ".nnote") == ["Read-only: this is the working log of Web \u00b7 Adaptation."]
+    assert texts(browser, ".nnote") == ["Read-only: this is the working log of Adaptation \u00b7 Cafe page."]       # a function's chat is titled `<Function> \u00b7 <the task's title>` (agent_sessions.session_title)
     assert browser.js("document.querySelector('.ncomposer').hidden") is True
     session = live.session_of("web.adaptation")
     assert live.get(f"/api/chats/{session}")["writable"] is False
@@ -180,6 +208,16 @@ def test_the_whole_first_day_walk_on_the_real_app(app, browser):
     heading = texts(browser, ".fnsec[data-sec=atoms] h4")[0]
     assert heading.startswith("Work atoms (") and heading != "Work atoms (0)", heading
     assert live.one("SELECT count(*) FROM atoms WHERE node_id = 'web.identity'") == int(heading[len("Work atoms ("):-1])
+    # what each turn produced (D157): every card of the real drawer says it, and the turn that asked a model shows its reply behind a fold
+    cards = browser.count(".fnsec[data-sec=atoms] details.atomcard")
+    assert cards >= 3 and browser.count(".fnsec[data-sec=atoms] .aoutput") == cards
+    said = texts(browser, ".fnsec[data-sec=atoms] .aoutput li")
+    assert any(t.startswith("the charter: ") for t in said) and any(t.startswith("you answered: ") for t in said) and "decided the goal is reached" in said, said
+    assert not any("not recorded" in t for t in texts(browser, ".fnsec[data-sec=atoms] .aoutput"))
+    browser.click(".fnsec[data-sec=atoms] details.atomcard:first-of-type > summary")                  # the newest atom: Identity's verdict that the goal is reached
+    browser.click(".fnsec[data-sec=atoms] details.atomcard:first-of-type .areply summary")
+    reply = json.loads(browser.js("document.querySelector('.fnsec[data-sec=atoms] details.atomcard .areplytext').textContent"))
+    assert reply["done"] is True and reply["next"] == "Requester"                                      # the reply the engine's mock model sent
     clean(browser, "identity atoms")
     browser.click("[data-npclose]")
 
@@ -189,16 +227,17 @@ def test_the_whole_first_day_walk_on_the_real_app(app, browser):
     assert browser.js("location.pathname") == "/d/web/" and browser.js("document.title") == "Web · Sutra"
     assert browser.js(f"performance.getEntriesByType('resource').every(e => e.name.startsWith({q(live.base_url)}))")        # offline: every file is the app's own
     clean(browser, "team page")
-    browser.click("#to-detail")
+    assert browser.js("document.body.classList.contains('simple')") is True                      # the studio is the page's own start (J2 sync 4)
+    browser.click("#sdetail")                                                                # the Detailed view's button
     browser.wait_for("!document.body.classList.contains('simple')")
-    assert shown(browser, '.tabs [data-tab="map"]')
-    browser.click('.tabs [data-tab="map"]')
-    present(browser, "#pane-map .mapsvg")
+    present(browser, "#pane-map .mapsvg")                                                    # the Map is where the Detailed view starts (its own tab button is a hidden one now)
     assert shown(browser, "#pane-map") and not shown(browser, "#pane-library")
-    assert browser.js("document.querySelector('.tabs [data-tab=map]').getAttribute('aria-selected')") == "true"
     clean(browser, "detailed view and map")
-    assert shown(browser, '.tabs [data-tab="library"]')                                      # the tab is there because this run recorded its routing decisions
-    browser.click('.tabs [data-tab="library"]')
+    browser.click('#rail [data-ri="library"]')                                               # the Library's item of the rail opens its fly-out ...
+    browser.wait_for("!document.getElementById('rfly').hidden")                              # (a fixed box has no offsetParent, so `shown` cannot say)
+    assert texts(browser, "#rflyh span") == ["Library"]
+    assert shown(browser, '#rfly [data-tab="library"]')                                      # ... with the run's templates: there because this run recorded its routing decisions
+    browser.click('#rfly [data-tab="library"]')
     present(browser, "#pane-library [data-tplrow]")
     assert shown(browser, "#pane-library") and not shown(browser, "#pane-map")
     sources = attrs(browser, "#pane-library [data-tplsource]", "data-tplsource")
@@ -207,10 +246,12 @@ def test_the_whole_first_day_walk_on_the_real_app(app, browser):
     assert list(copies.glob("*/templates.json")), "the run recorded its routing decisions"
     first = attrs(browser, "#pane-library table [data-tplopen]", "data-tplopen")[0]
     browser.click("#pane-library table [data-tplopen]")
-    present(browser, "#tplviewer [data-tplreadable]")
+    present(browser, "#tplviewer [data-tplmeta]")                                            # the viewer opens on its Summary (J2 sync 4), with the source in its heading
     assert shown(browser, "#tplviewer")
     assert "from this run" in texts(browser, "#tplviewer h3")[0] and first.split("|")[2] in texts(browser, "#tplviewer h3")[0]
-    browser.click('#tplviewer [data-tplmode="template"]')
+    browser.click('#tplviewer [data-tplmode="human"]')                                       # Human-readable: the fields of the template, as a table
+    present(browser, "#tplviewer [data-tplreadable]")
+    browser.click('#tplviewer [data-tplmode="agent"]')                                       # Agent-readable: the files of the template, as stored
     present(browser, "#tplviewer [data-tplfile]")
     assert len(attrs(browser, "#tplviewer [data-tplfile]", "data-tplfile")) >= 1
     clean(browser, "library")
@@ -247,24 +288,17 @@ def test_the_whole_first_day_walk_on_the_real_app(app, browser):
 
 
 @pytest.mark.browser
-def test_the_connector_test_of_settings_makes_a_real_call_through_the_router_to_the_fake_claude(tmp_path, browser):
+def test_the_connector_test_of_settings_makes_a_real_call_through_the_router_to_the_fake_claude(claude_app, browser):
     """The stub refuses Test (above); with the real router over the fake `claude` the same button makes one tiny call and says "Worked in ... s"."""
-    cli = FakeCliBin(tmp_path)
-    live = LiveApp(tmp_path, cli=cli, connector_name="auto", offline=False).start()
-    try:
-        browser.goto(live.base_url + "/")
-        browser.wait_for("window.HomePage && HomePage.state().loaded === true")
-        browser.click('#rail [data-pane="settings"][data-group="connectors"]')
-        present(browser, '#set-connectors [data-provider="claude"] [data-act="test"]')
-        assert texts(browser, '#set-connectors [data-provider="claude"] .setchip') == ["Ready"]
-        calls = len(cli.calls("claude"))
-        browser.click('#set-connectors [data-provider="claude"] [data-act="test"]')
-        browser.wait_for("document.querySelector('#set-connectors [data-provider=claude] .settest').dataset.step === 'ok'")
-        assert browser.js("document.querySelector('#set-connectors [data-provider=claude] .settest').textContent").startswith("Worked in ")
-        assert len(cli.calls("claude")) == calls + 1                                          # exactly one process call, and it was the Test
-        clean(browser, "connector test")
-    finally:
-        try:
-            live.stop()
-        finally:
-            live.kill_engines()
+    live, cli = claude_app
+    browser.goto(live.base_url + "/")
+    browser.wait_for("window.HomePage && HomePage.state().loaded === true")
+    browser.click('#rail [data-pane="settings"][data-group="connectors"]')
+    present(browser, '#set-connectors [data-provider="claude"] [data-act="test"]')
+    assert texts(browser, '#set-connectors [data-provider="claude"] .setchip') == ["Ready"]
+    calls = len(cli.calls("claude"))
+    browser.click('#set-connectors [data-provider="claude"] [data-act="test"]')
+    browser.wait_for("document.querySelector('#set-connectors [data-provider=claude] .settest').dataset.step === 'ok'")
+    assert browser.js("document.querySelector('#set-connectors [data-provider=claude] .settest').textContent").startswith("Worked in ")
+    assert len(cli.calls("claude")) == calls + 1                                          # exactly one process call, and it was the Test
+    clean(browser, "connector test")

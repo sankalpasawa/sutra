@@ -5,6 +5,7 @@ gate) loads `/console` in headless Chrome against a real server with seeded usag
 """
 from __future__ import annotations
 
+import ast
 import base64
 import contextlib
 import hashlib
@@ -12,6 +13,7 @@ import json
 import re
 import threading
 import time
+import warnings
 from pathlib import Path
 
 import pytest
@@ -20,6 +22,8 @@ from fastapi.testclient import TestClient
 from pydantic import ValidationError
 
 from sutra_app.config import Settings
+from sutra_app.connectors.router import PICK_PURPOSES
+from sutra_app.engine.capabilities.agents import LIVE_PURPOSES
 from sutra_app.main import create_app
 from sutra_app.orchestrator.testing.fake_engine import FakeLauncher
 from sutra_app.orchestrator.testing.scripted import ScriptedConnector
@@ -113,6 +117,48 @@ def test_home_has_one_plain_link_to_the_console_in_the_rail():
     assert len(links) == 1 and "Usage and log" in links[0] and "data-pane" not in links[0]
     rail = re.search(r'<nav class="rail tabs" id="rail".*?</nav>', source, re.S).group(0)
     assert links[0] in rail and 'id="railteams"' not in links[0]
+
+
+APP = Path(__file__).resolve().parents[2] / "sutra_app"
+PURPOSE_WORD = re.compile(r"^[a-z_]{1,24}$")        # the ledger's rule for a purpose (connectors.usage.PURPOSE_PATTERN)
+
+
+def purposes_the_app_writes() -> set[str]:
+    """Every purpose word the app's code gives a model call, read from its sources: a `purpose="x"` argument, a `"purpose": "x"` entry of a context, an assignment to a
+    variable called `purpose` (a conditional's every branch) and the second argument of the engine's `_ask_tag(fn, purpose)`. The grouping column of `usage.py` is no purpose."""
+    def leaves(node: ast.AST) -> list[str]:
+        if isinstance(node, ast.Constant) and isinstance(node.value, str):
+            return [node.value]
+        return leaves(node.body) + leaves(node.orelse) if isinstance(node, ast.IfExp) else []
+
+    found: set[str] = set()
+    for path in sorted(APP.rglob("*.py")):
+        if path == APP / "orchestrator" / "usage.py" or "seed" in path.parts:
+            continue
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore")                        # J2's own files hold an escape (a backslash-d in j2_check.py) that Python warns about on every parse
+            tree = ast.parse(path.read_text(encoding="utf-8"))
+        for node in ast.walk(tree):
+            if isinstance(node, ast.keyword) and node.arg == "purpose":
+                found.update(leaves(node.value))
+            elif isinstance(node, ast.Dict):
+                found.update(w for k, v in zip(node.keys, node.values) if isinstance(k, ast.Constant) and k.value == "purpose" for w in leaves(v))
+            elif isinstance(node, ast.Assign) and any(isinstance(t, ast.Name) and t.id == "purpose" for t in node.targets):
+                found.update(leaves(node.value))
+            elif isinstance(node, ast.Call) and getattr(node.func, "attr", getattr(node.func, "id", "")) == "_ask_tag" and len(node.args) >= 2:
+                found.update(leaves(node.args[1]))
+    return {word for word in found if PURPOSE_WORD.match(word)}
+
+
+def test_the_console_has_plain_words_for_every_purpose_the_app_writes():
+    """D159: the table of usage by purpose names each purpose in the owner's words (`PURPOSE_WORDS` of console_view.js; any other word shows as itself, so nothing is hidden). A new
+    purpose in the engine, the router or the orchestrator fails here until it has its words; a name for a purpose nobody writes any more is kept (older rows of the ledger hold it)."""
+    source = (STATIC_DIR / "js" / "console_view.js").read_text(encoding="utf-8")
+    named = set(re.findall(r'(\w+): "', re.search(r"const PURPOSE_WORDS = freeze\(\{(.*?)\}\);", source, re.S).group(1)))
+    written = purposes_the_app_writes()
+    assert {"agent_turn", "plan", "judge", "agent_chat", "chat_plan", "connector_test"} <= written                    # the scan sees the purposes of the engine, the chat agent, the answers and Settings
+    assert set(PICK_PURPOSES) | set(LIVE_PURPOSES) <= written
+    assert written <= named, f"purposes with no words in console_view.js (PURPOSE_WORDS): {sorted(written - named)}"
 
 
 def test_the_js_and_css_of_the_console_are_in_the_static_folder():
@@ -214,9 +260,13 @@ def seed(services):
         conn.execute("INSERT INTO atom_ledger(atom_id, node_id, status, body, ts) VALUES (?,?,?,?,?)",
                      (f"a-seed-{n:02d}", body["node_id"], status, json.dumps(body), now - (30 - n) * 60))
     detail = json.dumps({"usd_basis": "reported", "billing": "subscription"})
-    for n, (provider, usd) in enumerate((("claude", 0.25), ("claude", 0.5), ("codex", None))):
+    # (provider, usd, purpose, seconds ago): the first three are the calls of the first test (a Claude total of $0.75 in the last 7 days); the rest are what the table by purpose
+    # shows: a Codex call with no dollars, a word no list has, a summary 20 days ago (inside 30 days, outside 7) and a stub row (shown only when the toggle is on)
+    calls = (("claude", 0.25, "agent_turn", 0), ("claude", 0.5, "judge", 60), ("codex", None, "agent_chat", 120), ("codex", None, "plan", 180), ("claude", None, "from_a_later_release", 240),
+             ("claude", 0.1, "summary", 20 * 86400), ("stub", None, "chat_plan", 300))
+    for n, (provider, usd, purpose, ago) in enumerate(calls):
         conn.execute("INSERT INTO usage_ledger(at, provider, model, purpose, fn, atom_id, usd, tokens_in, tokens_out, ok, how, call_ref, detail_json)"
-                     " VALUES (?,?,?,?,?,?,?,?,?,1,'native',?,?)", (now - n * 60, provider, "m", "agent_turn", "audit", f"a-seed-{n:02d}", usd, 100, 20, f"seed{n}", detail))
+                     " VALUES (?,?,?,?,?,?,?,?,?,1,'native',?,?)", (now - ago, provider, "m", purpose, "audit", f"a-seed-{n:02d}", usd, 100, 20, f"seed{n}", detail))
 
 
 @pytest.fixture
@@ -250,3 +300,85 @@ def test_the_console_paints_its_three_panels_and_the_log_filters_and_opens_a_car
     browser.click("#c-log .lrow button")
     browser.wait_for("document.querySelector('#c-card').textContent.includes('goal number')")
     assert [e for e in browser.console_errors if "404" not in e] == []
+
+
+@pytest.mark.browser
+def test_the_console_draws_the_table_by_purpose_in_plain_words_and_it_follows_the_period_and_the_stub_toggle(real_server, browser):
+    """D159: "Usage by purpose" sits in the Usage and cost panel under the table by team; each row is a purpose in the owner's words with its calls, dollars and tokens (a call
+    with no price leaves its dollars blank, a word the page has no name for shows as itself), the dearest first; the period picker and the stub toggle change its rows."""
+    browser.goto(real_server + "/console")
+    browser.wait_for("window.ConsolePage && ConsolePage.state().usage !== null && document.querySelectorAll('#c-usage .cpurpose').length >= 5")
+    table = "#c-usage table.cpurposes"
+    assert browser.text(f"{table} caption") == "Usage by purpose"
+    assert browser.js("Array.from(document.querySelectorAll('#c-usage table')).map(t => t.querySelector('caption').textContent)") == ["By team and function", "Usage by purpose", "Top ten atoms by cost"]
+    rows = lambda: browser.js(f"Array.from(document.querySelectorAll('{table} tbody tr'), r => Array.from(r.children, c => c.textContent.trim()))")  # noqa: E731
+    assert browser.js(f"Array.from(document.querySelectorAll('{table} thead th'), c => c.textContent)") == ["Purpose", "Calls", "USD", "Tokens in", "Tokens out"]
+    assert rows() == [["Judging workflows", "1", "$0.50", "100", "20"], ["Agents at work", "1", "$0.25", "100", "20"], ["Questions to agents", "1", "", "100", "20"],
+                      ["from_a_later_release", "1", "", "100", "20"], ["Planning workflows", "1", "", "100", "20"]]               # 7 days, stub rows left out; Codex's rows have no dollars
+    assert browser.js(f"document.querySelector('{table} [data-purpose=judge] th').title") == "judge"                                # the ledger's word, for whoever matches the table to a row
+    assert browser.js(f"document.querySelector('{table} [data-purpose=from_a_later_release] th').hasAttribute('title')") is False   # a word the page does not know is its own name
+    browser.click("#c-usage [data-act='period'][data-period='30d']")                                                              # the period picker: the summary 20 days ago comes in
+    browser.wait_for(f"!!document.querySelector('{table} [data-purpose=summary]')")
+    assert [r[0] for r in rows()] == ["Judging workflows", "Agents at work", "Chat summaries", "Questions to agents", "from_a_later_release", "Planning workflows"]   # $0.50, 0.25, 0.10, then no dollars
+    assert "chat_plan" not in browser.js(f"Array.from(document.querySelectorAll('{table} tr[data-purpose]'), r => r.dataset.purpose).join()")
+    browser.click("#c-usage [data-act='stub']")                                                                                   # the stub toggle: the stub row's purpose comes in
+    browser.wait_for(f"!!document.querySelector('{table} [data-purpose=chat_plan]')")
+    assert browser.text(f"{table} [data-purpose=chat_plan] th") == "Chat with Sutra"
+    browser.click("#c-usage [data-act='period'][data-period='7d']")
+    browser.wait_for(f"!document.querySelector('{table} [data-purpose=summary]')")
+    assert browser.count(f"{table} tbody tr") == 6                                                                                # back in 7 days: five purposes and the stub row's
+    assert browser.console_errors == []
+
+
+# The header's three links ("Usage and cost", "Atom log", "Health") are found by what they are (the nav's accessible name and their targets), not by a class: the chat's "new messages
+# below" pill is a zero-height box of its own (`.cjump`, sutra-panel.css) and the nav had that class too, so it was drawn at no height and its links hung out of it.
+HEADER_NAV = 'header.shead nav[aria-label="On this page"]'
+HEADER_LINKS = [("Usage and cost", "#c-usage"), ("Atom log", "#c-log"), ("Health", "#c-health")]
+HEADER_BOXES = r"""(() => {
+  const head = document.querySelector("header.shead"), nav = head.querySelector('nav[aria-label="On this page"]');
+  const box = el => { const r = el.getBoundingClientRect(); return {left: r.left, top: r.top, right: r.right, bottom: r.bottom}; };
+  const within = (a, b) => a.left >= b.left - .5 && a.right <= b.right + .5 && a.top >= b.top - .5 && a.bottom <= b.bottom + .5;
+  const h = box(head), n = box(nav), t = box(head.querySelector("#stitle")), first = box(nav.querySelector("a"));
+  return {
+    width: innerWidth, head: [h.left, h.top, h.right, h.bottom].map(Math.round), nav: [n.left, n.top, n.right, n.bottom].map(Math.round),
+    navInHeader: within(n, h), sideways: document.documentElement.scrollWidth > innerWidth,
+    middles: [Math.round((t.top + t.bottom) / 2), Math.round((first.top + first.bottom) / 2)],                          // the title's and the first link's, from the top
+    links: Array.from(nav.querySelectorAll("a"), a => {
+      const b = box(a), at = document.elementFromPoint((b.left + b.right) / 2, (b.top + b.bottom) / 2);
+      return {text: a.textContent, href: a.getAttribute("href"), box: [b.left, b.top, b.right, b.bottom].map(Math.round), inNav: within(b, n), inHeader: within(b, h),
+              reached: !!at && a.contains(at)};
+    }),
+  };
+})()"""
+
+
+@pytest.mark.browser
+def test_the_headers_links_sit_inside_the_header_in_both_themes_and_take_their_clicks(real_server, browser):
+    """At 480px and under the header wraps and its links drop to a row under the title. They were drawn on a box of no height (the chat's rule for the pill of new messages
+    reached the nav through the one class name), so they hung 8px out of the header, over the panels' edge (320, 375 and 480px, light and dark); from 520px they sat 10px below the
+    title's line. Now each link is inside the nav's box, the nav inside the header's, a click in the middle of a link reaches it, and a real click goes to its panel and stays on the console."""
+    problems: list[tuple] = []
+    for theme in ("light", "dark"):
+        browser.set_theme(theme)
+        for width in (320, 375, 480, 1280):
+            browser.set_size(width, 812)
+            browser.goto(real_server + "/console")
+            browser.wait_for("window.ConsolePage && ConsolePage.state().log.loaded === true")
+            seen = browser.js(HEADER_BOXES)
+            if [(link["text"], link["href"]) for link in seen["links"]] != HEADER_LINKS:
+                problems.append((theme, width, "the links are not the three of the header", seen["links"]))
+                continue
+            for link in seen["links"]:
+                if not (link["inNav"] and link["inHeader"] and link["reached"]):
+                    problems.append((theme, width, link["text"], "box", link["box"], "nav", seen["nav"], "header", seen["head"], "reached", link["reached"]))
+            if not seen["navInHeader"] or seen["sideways"]:
+                problems.append((theme, width, "nav in header", seen["navInHeader"], "sideways", seen["sideways"], seen["nav"], seen["head"]))
+            if width == 1280 and abs(seen["middles"][0] - seen["middles"][1]) > 2:
+                problems.append((theme, width, "the links are not on the title's line", seen["middles"]))        # one row: the nav is centred on it like the title
+            for text, panel in HEADER_LINKS:
+                browser.click(f'{HEADER_NAV} a[href="{panel}"]')                             # a real click in the middle of the link
+                here = browser.js("location.pathname + location.hash")
+                if here != "/console" + panel:
+                    problems.append((theme, width, f"a click on {text} went to {here}"))
+    assert problems == [], problems
+    assert browser.console_errors == []

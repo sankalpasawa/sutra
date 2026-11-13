@@ -3,7 +3,7 @@
   "artifact": "website",
   "kind": "generic",
   "version": 1,
-  "from": "j2_artifact_models.SECTION_MODELS and j2_rules.RULES (generated: python3 j2_template_lib.py)",
+  "from": "hand-edited: this file is the source of this type's sections, their fields, rules and rendering. J2 builds each section's model and checks from it at load time (j2_artifact_models, j2_rules); python3 j2_template_lib.py checks every generic.json",
   "templates": [
     {
       "name": "WebsiteSection/1 · Section",
@@ -12,6 +12,13 @@
       "version": 1,
       "kind": "generic",
       "description": "The generic WebsiteSection/1 · Section template: the fixed layout of every website Section section, whatever the business",
+      "model": "WebsiteSection",
+      "conditions": [
+        "N1",
+        "N4",
+        "N8"
+      ],
+      "fact_fields": true,
       "fields": [
         {
           "name": "id",
@@ -64,6 +71,15 @@
         }
       ],
       "objects": [],
+      "requires_one_of": [
+        {
+          "fields": [
+            "html",
+            "head"
+          ],
+          "message": "a section must have html, or head tags when it writes only those"
+        }
+      ],
       "rules": [
         {
           "rule": "html_no_page_tags",
@@ -95,9 +111,7 @@
           "name": "implements points at a section id of the LLD",
           "from": "N8"
         }
-      ],
-      "sha": "33e0918f136738d42418bf1679f0e788bb88795eb003ff669f17dc449d50d1e9",
-      "schema_sha": "288ee020b61f054b6236c9f7697e9b3b62d650f4993f5629151eec9f6cca67bb"
+      ]
     }
   ]
 }

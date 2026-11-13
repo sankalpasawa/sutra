@@ -31,7 +31,7 @@ sutra-pro import-old-chats    # bring the old Sutra app's chats in (a dry run un
 | `sutra-pro config show` | `--data-dir D`, `--json`, `--dept D` | the effective values and their source |
 | `sutra-pro config set FIELD VALUE` | `--data-dir D`, `--json`, `--dept D` | the only way to set a locked engine setting |
 | `sutra-pro config init` | `--data-dir D`, `--json`, `--generate-override-key` | writes a commented `.env` template (mode 600); never overwrites |
-| `sutra-pro config sync-library` | `--data-dir D`, `--json` | copies seed templates the data library lacks |
+| `sutra-pro config sync-library` | `--data-dir D`, `--json` | adds what the seed has and the data library lacks (templates, versions, provenance keys, runs rows) and never overwrites; the server does the same once per seed at start |
 | `sutra-pro backup` | `--data-dir D`, `--json`, `--to DIR`, `--no-runs`, `--include-env` | `--include-env` is refused |
 | `sutra-pro restore FILE` | `--data-dir D`, `--json` | the server must be stopped |
 | `sutra-pro prune` | `--data-dir D`, `--json`, `--older-than AGE`, `--dry-run`, `--yes` | a dry run unless `--yes` |
@@ -59,6 +59,7 @@ and runs are the part that grows.
   logs/server.log (+ .1 to .5)       the server log, rotated at 5 MB, five old files kept                         up to 30 MB in all
   backups/                           sutra-pro-backup-*.tar.gz (newest 7 kept) and pre-upgrade-*.sqlite3        0.06 MB for a new folder
   library/                           the template library (index.json and one folder per template)               ~0.5 MB seeded
+  types/                             engine-owned: the types a run made (types.local.json, templates/<name>/) and their .lock    tiny
   agents/j2/                         engine-owned: the agent prompts a run reads
   connectors/policy.json             optional connector routing policy (the app ships a default)                 tiny
   departments/<team>/
@@ -66,7 +67,7 @@ and runs are the part that grows.
     engine.json                      optional per-team engine settings                                            tiny
     page.json, memory/               the team page's since-run mark; lessons and playbooks                        small
     runs/<run id>/                   one folder per run: the team's records, as the J2 prototype writes them
-      task.json  inbox.jsonl  events.jsonl  trace.jsonl  snapshot.json  live.json  settings.json
+      task.json  inbox.jsonl  events.jsonl  trace.jsonl  snapshot.json  live.json  settings.json  timing.json  autofix.json
       chat.jsonl  calls.jsonl  map.json  report.json  summary.json  goal.json  workflows.json  atoms.json
       run.stdout.log  run.stderr.log
       site/ (page versions, documents, shots/)  artifacts/                                                       ~0.08 MB for a mock run; MBs with screenshots
@@ -149,13 +150,17 @@ compacts the database (`VACUUM`) while holding the instance lock.
 Open `/console` (menu: Owner, "Usage and log"). Three parts:
 
 - **Usage and cost**: a period (today, 7 days, 30 days, all; UTC dates) and a stub toggle. Tiles for calls, Claude cost in USD and Codex tokens; a bar per day; a table by team and
-  function; the ten dearest atoms, each linking to its team page or graph node; each connector with its quota state and next reset. Claude's USD is "notional" for a subscription
+  function; a table by purpose (what the calls were for, in plain words: agents at work, planning and judging workflows, questions to agents, and so on; it follows the period and the stub toggle);
+  the ten dearest atoms, each linking to its team page or graph node; each connector with its quota state and next reset. Claude's USD is "notional" for a subscription
   (what the same calls would cost on the API, not a bill). Codex reports tokens; a USD figure appears only when the policy file carries a rate card for the model.
 - **Atom log**: the append-only ledger of every atom transition, newest first, 25 to a page, filtered by node, state, check or date.
 - **Health**: the facts (version, uptime, ports, data folder, schema versions), the doctor checks with *Check again*, and *Download diagnostics* (a zip with the info, the doctor result, the last
   2000 log lines, public settings, schema versions and folder sizes; no chat, prompt, site file, `.env` or `engine.json` value).
 
-The same data is served by `GET /api/ops/info`, `/api/ops/doctor`, `/api/ops/usage?period=` and `/api/ops/diagnostics` (the last needs the `X-Sutra-Token` header), and by the older `/api/usage/summary?by=dept|fn|provider|day|atom` and `/api/atoms/log`.
+The late judge (J2's check of a workflow after the first plan; it is on by default) is billed like any other call: what it cost is the rows "Planning workflows" and "Judging workflows" of the table by purpose,
+and "judging N calls, $x" under each agent in a team's Agents tab, where "questions N calls, $x" is what the answers in that agent's chat cost.
+
+The same data is served by `GET /api/ops/info`, `/api/ops/doctor`, `/api/ops/usage?period=` and `/api/ops/diagnostics` (the last needs the `X-Sutra-Token` header), and by the older `/api/usage/summary?by=dept|fn|provider|day|atom|session|purpose` (with `since=` for a window) and `/api/atoms/log`.
 
 ## 8. One instance per data folder
 

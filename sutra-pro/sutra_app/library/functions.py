@@ -34,7 +34,7 @@ from .goal import DocGoalDraft, Question, SiteGoalDraft, TbcAnswer, goal_kind
 from .registry import record
 from .replies import tolerate
 from .types import AtomId, FindingId, FunctionName, JsonObject, WorkflowId
-from .workflow import ProposedWorkflow, StageId, WorkflowError, ZoneName, from_j2
+from .workflow import ProposedWorkflow, StageId, WorkflowError, ZoneName, check_fields_from_j2, from_j2
 
 __all__ = [
     "ZONES", "SIGNALS", "Signal", "Signals", "Certainty", "certainty_zone", "signal_answer", "Analysis", "Dispute", "LeftOut",
@@ -304,8 +304,13 @@ class FindingRow(Value):
     needs_requester_fact: Text300 | None = None
 
 
+# A rubric item id: a short capital prefix, a dash, a number. R-n (a website), D-n (a document) and PJ-n (project work, D158);
+# a test reads every id the registered outputs carry, so a new output with another prefix is caught.
+RUBRIC_ID_PATTERN: Final = r"^[A-Z]{1,4}-[0-9]{1,3}$"
+
+
 class RubricRow(Value):
-    id: Annotated[str, StringConstraints(pattern=r"^[RD]-[0-9]{1,3}$")]
+    id: Annotated[str, StringConstraints(pattern=RUBRIC_ID_PATTERN)]
     verdict: Literal["PASS", "PASS_WITH_WARNING", "NEEDS_REVISION"]
     evidence: Text1000 = ""
 
@@ -366,14 +371,18 @@ class Intake(IdentityReply):
     to_agents: Text600 = ""
     next: Literal["Requester", "Adaptation"]
 
-    @model_validator(mode="before")
     @classmethod
-    def _goal_kind_from_its_shape(cls, data: Any) -> Any:
+    def read_wire(cls, data: Any) -> Any:
         """J2's charter has no `kind` key (goal.py): a goal without one is a document's when it names a product, else a site's."""
         goal = data.get("goal") if isinstance(data, Mapping) else None
         if isinstance(goal, Mapping) and "kind" not in goal:
             return {**data, "goal": {**goal, "kind": goal_kind(goal)}}
         return data
+
+    @model_validator(mode="before")
+    @classmethod
+    def _goal_kind_from_its_shape(cls, data: Any) -> Any:
+        return cls.read_wire(data)
 
     @model_validator(mode="after")
     def _enough_or_ask(self) -> Self:
@@ -561,6 +570,20 @@ class AtomVerdict(AdaptationReply):
     """J2 (J2:8802-8806): a work atom failed its checks. Is the check wrong (send the corrected checks) or the build?"""
 
     kind: Literal["atom_verdict"] = "atom_verdict"
+
+    @classmethod
+    def read_wire(cls, data: Any) -> Any:
+        """J2 words a corrected check `{text, type, target, expect}` (its atom format); the class holds `Check`s. Read the first."""
+        items = data.get("verification") if isinstance(data, Mapping) else None
+        if isinstance(items, list) and any(isinstance(c, Mapping) and "template" not in c for c in items):
+            return {**data, "verification": [check_fields_from_j2(c) if isinstance(c, Mapping) else c for c in items]}
+        return data
+
+    @model_validator(mode="before")
+    @classmethod
+    def _read_j2_checks(cls, data: Any) -> Any:
+        return cls.read_wire(data)
+
     verdict: Literal["CHECK_WRONG", "BUILD_WRONG"]
     atom: AtomId
     verification: Annotated[list[Check], Field(max_length=12)] = []

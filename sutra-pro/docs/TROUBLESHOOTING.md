@@ -106,7 +106,7 @@ Each entry: what you see, what the app did about it, what you do.
 - **warn** "already runs on ...": a second launch only opens the first. `sutra-pro open` shows it, `sutra-pro stop` stops it. If `sutra-pro stop` says the pid is gone yet the folder is locked, another process holds `app.lock`; look at `lsof <data>/app.lock`.
 
 ### Doctor: `library`
-- **warn** "N seed template(s) are missing": a newer version ships templates your library lacks. Fix: `sutra-pro config sync-library` (adds only what is missing, never overwrites).
+- **warn** "N seed template(s) and M seed version(s) are missing": a newer version ships templates or versions your library lacks (the server also adds them at start, once per seed). Fix: `sutra-pro config sync-library` (adds only what is missing and fills provenance only where it is absent; it never overwrites or renumbers, and a version whose number your library holds for another spec is left alone and listed). A library whose `index.json` cannot be read gets a warning that says so: restore the file from a backup, the sync never replaces an index it cannot read.
 
 ### Doctor: `browser`
 - **warn** "only Chrome is measured": your default browser is not Chrome and Chrome is not installed. The app works, but the pages were checked in Chrome only. Install Chrome, or open the address in Chrome yourself.

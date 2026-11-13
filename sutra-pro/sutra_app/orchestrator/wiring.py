@@ -26,6 +26,7 @@ from typing import Any
 import sutra_app
 from sutra_app.config import Settings
 from sutra_app.connectors.chat_port import RouterChatPort
+from sutra_app.connectors.egress import scrubbed
 from sutra_app.orchestrator.agent_sessions import session_of
 from sutra_app.connectors.factory import build_router as build_connector_router
 from sutra_app.connectors.orchestrator_port import AsyncConnector
@@ -37,6 +38,7 @@ from sutra_app.orchestrator import records as _records  # noqa: F401  (registers
 from sutra_app.orchestrator.agent.agent import ChatAgent
 from sutra_app.orchestrator.agent.demo import demo_book
 from sutra_app.orchestrator.agent.runner import TurnRunner
+from sutra_app.orchestrator.agent_ask import AgentAsk
 from sutra_app.orchestrator.atoms import AtomStore
 from sutra_app.orchestrator.chart import ChartStore
 from sutra_app.orchestrator.attachments import Attachments
@@ -76,6 +78,8 @@ class AppServices(Services):
     attachments: Any = None            # the attachment service (ABS-4)
     recurring: Any = None              # the schedules of recurring work and their ticker (GAP2 routines-limits)
     limits: Any = None                 # the monthly spending limit and the plan-window guard, TaskService's start gate (GAP2 routines-limits)
+    agent_chat: Any = None             # `AgentAsk.turn`: a function's question as a turn of its own chat session, for POST /api/ask (J2 sync 4, D147); the engine's routes read it optionally
+    send_setting: Any = None           # what the engine's POST /api/settings calls: a setting as an inbox line to the team's live run (J2 sync 4)
     reconciled: ReconcileReport | None = None
     swept: int = 0
     refreshed: int = 0
@@ -151,7 +155,7 @@ def build_services(settings: Settings, *, connector: Any = None, launcher: Any =
     chats = ChatStore(db)
     departments = DepartmentStore(db, settings.data_dir)
     chart = ChartStore(db, graph=graph, chats=chats, data_dir=settings.data_dir, departments=departments, ids=ids)
-    atoms = AtomStore(db, chats=chats, graph=graph)
+    atoms = AtomStore(db, chats=chats, graph=graph, scrub=lambda text: scrubbed(text, redactor))      # a turn's words and reply are the model's text (D157)
     usage = UsageStore(db, chats=chats)
     store = TaskStore(db, settings.data_dir)
     taskgraph = TaskGraph(store, graph, ids=ids)
@@ -177,6 +181,7 @@ def build_services(settings: Settings, *, connector: Any = None, launcher: Any =
     limits = Limits(settings.data_dir / LIMITS_FILE, db, quotas=lambda: {name: router.health.quota(name) for name in ("claude", "codex")},
                     clock=clock, offline=settings.offline or router_settings.connector == "stub")
     tasks.start_gate = limits.gate
+    agent_chat = AgentAsk(db=db, tasks=tasks, chats=chats, router=router, chat_port=chat_port, limits=limits, redact=redactor, clock=clock).turn
     agent = ChatAgent(port, chart, redact=redactor, clock=clock, attempts=settings.chat_attempts, timeout=settings.chat_timeout,
                       notes=prompt_notes(db, redactor, clock))                 # the owner's notes, in the decide and assign prompts (GAP2 rules-notes)
     runner = TurnRunner(db=db, chart=chart, chats=chats, tasks=tasks, agent=agent, connector=port,
@@ -187,7 +192,7 @@ def build_services(settings: Settings, *, connector: Any = None, launcher: Any =
         projector=projector, watcher=watcher, runner=runner, connector=port, launcher=launcher,
         resolve_run=tasks.resolve_run, department=departments.row, deliver_to_department=tasks.deliver_to_department,
         stop_live=tasks.stop_live, connector_router=router, chat_port=chat_port, attachments=attachments, recurring=recurring,
-        limits=limits)
+        limits=limits, agent_chat=agent_chat, send_setting=tasks.send_setting)
 
 
 # ---- startup steps --------------------------------------------------------------------------------------------------------------
@@ -211,14 +216,17 @@ def refresh_function_nodes(services: Services) -> int:
 
 
 async def start_services(services: AppServices) -> AppServices:
-    """Orchestrator 5.1 steps 2, 3, 5, 6 and 7, in this order: migrate; bootstrap the chart when there is no root; sweep empty
+    """Orchestrator 5.1 steps 2, 3, 5, 6 and 7, in this order: migrate; sync an existing template library with the seed (D144: adds what a
+    newer seed has, once per seed, never overwrites, never stops the start); bootstrap the chart when there is no root; sweep empty
     department folders and refresh stale function nodes; reconcile the tasks a previous run left (ends with `server.resync`
     restart) and close the org-chat requests it accepted and never answered (`TurnRunner.recover`); the scheduler's catch-up tick and loop
     (recurring.py: one run for the time the app was away); start queued work.
     Idempotent: a second start finds the root, nothing to sweep, nothing stale."""
     if services.started:
         return services
+    from sutra_app.ops.doctor import sync_seed_once         # the ops package is not imported by `import sutra_app` (D144)
     await run_blocking(services.db.migrate)
+    await run_blocking(sync_seed_once, services.settings.data_dir)          # an existing template library gains what a newer seed has, once per seed; never raises
     await run_blocking(services.chart.bootstrap)
     services.tasks.bind_loop(asyncio.get_running_loop())
     services.swept = await run_blocking(services.departments.sweep)

@@ -75,6 +75,7 @@ def app(tmp_path):
     cli = FakeCliBin(tmp_path)
     cli.sequence["claude"] = "slow,hang,ok"        # Claude's calls: the first streams slowly, the second hangs (Stop), then answers at once
     live = LiveApp(tmp_path, cli=cli, connector_name="auto", offline=False).start()
+    live.welcome_seen()                                    # the card of a new folder would cover the page these tests click
     try:
         yield live, cli
     finally:

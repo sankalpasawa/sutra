@@ -8,19 +8,21 @@ What is tested here, in this order:
      reads, the error envelope, the token / Origin / Host rules, the event stream (hello, replay, resync, topics, ring),
      what the owner's lines do (the scripted stories of a first brief and of an answer);
   3. its test-only controls (`/__fake/emit|fixture|fail|log|state|reset|page|mount`);
-  4. J2's 28 data routes at the root with `?dept=`;
+  4. J2's data routes at the root with `?dept=` (the 28 of engine.md 7.1 and what sync 4 added: the plan map, the feeds, the catalog, the Artifacts groups,
+     the run list and changes, the studio's records and pages, the Decide for me switch, and `POST /api/ask` with the lines it stores);
   5. the real UI package mounted on it (pages, boot block, CSP, static files) and the fixtures folder as an option;
   6. `cdp.py`: the Chrome driver against a stand-in DevTools endpoint and a stand-in Chrome program (no Chrome needed);
      `conftest.py`: its marker and fixtures, run under a copy of it; and, in tests marked `browser` (they run only with
      `SUTRA_BROWSER=1`), the driver and the fake with the app's own client scripts in a real Chrome;
-  7. `scripts/capture_j2_fixtures.py`: against a stand-in J2 checkout (no J2 needed) and, when `SUTRA_J2_CHECKOUT` names
-     one, against the real J2 (a drift check of the committed captures).
+  7. `scripts/capture_j2_fixtures.py`: against a stand-in J2 folder (no J2 needed) and, when `SUTRA_J2_CHECKOUT` names an
+     extraction of prototypes/j2 at the pinned commit, against the real J2 (a drift check of the committed captures).
 
 The stand-ins live in `fixtures/tools/` (`fake_devtools.py`, `standin_j2/`). Expected values come from the design (ui.md,
 orchestrator.md, library.md, engine.md), written out below, and not from the code under test.
 """
 from __future__ import annotations
 
+import argparse
 import base64
 import contextlib
 import copy
@@ -49,6 +51,7 @@ from fastapi.routing import iter_route_contexts
 import cdp
 import fake_backend as fb
 from fake_backend import FakeClient
+from sutra_app.library.types import overhead_atom_id
 
 REPO = Path(__file__).resolve().parents[2]
 UI_TESTS = Path(__file__).resolve().parent
@@ -61,6 +64,11 @@ import fake_devtools as fdt  # noqa: E402  (after the path line above)
 
 # ---- the design's vocabulary, written out here on purpose --------------------------------------------------------------
 FUNCTIONS = ("identity", "adaptation", "priority", "coordination", "audit")
+J2_FUNCS = (*FUNCTIONS, "validator")  # J2's own six: the names /api/activity and /api/ask serve (the validator is code)
+# what J2's render harness printed that page_render.test.js compares (the seven of the first capture, then the Simple view's, the chat
+# panel's and the Studio view's), and the layout harness last: the manifest lists them in this order (docs/design/j2-sync-4.md 4.8)
+J2_GOLDENS = ("simple", "sprog", "workflows", "rail", "needs", "map", "agent", "finish", "journey", "journeyhtml", "sframe", "needids",
+              "railst", "planmap", "msgfns", "feed", "teamwork", "plan", "team", "status", "views", "files", "parts", "tabs", "inline", "layout")
 STATUS_WORDS = ("idle", "running", "waiting", "waiting_on_you", "fault", "filed", "done_unchecked", "left_open", "not_made")  # J2 map/1
 FUNCTION_STATUS_WORDS = STATUS_WORDS[:5]  # a function node uses the first five
 EDGE_KINDS = ("contains", "has_function", "has_step", "handoff", "depends_on", "speaks_to", "step")
@@ -662,7 +670,10 @@ def test_engine_settings_follow_the_engine_sections_field_list():
               "force_audit_note", "force_question", "memory_test_lessons"]  # engine.md LOCKED_FIELDS
     assert settings["locked"] == locked
     assert settings["editable"] == [f for f in settings["defaults"] if f not in locked]
-    assert len(settings["defaults"]) == 31
+    assert len(settings["defaults"]) == 32 and settings["defaults"]["builder_timeout"] == 600.0       # J2 sync 5 (D169)
+    types = settings["output_types"]                                                  # D166: the pages' choices; the names are data
+    assert types and all(set(t) == {"name", "label", "form", "pin"} and isinstance(t["pin"], bool) for t in types)
+    assert len({t["name"] for t in types}) == len(types) and {t["form"] for t in types} <= {"page", "document"}
     assert settings["defaults"]["send_mode"] == "dry-run" and settings["defaults"]["budget"] == 100
     assert settings["defaults"]["delay"] == 0.0 and settings["defaults"]["realization"] is True and settings["defaults"]["board"] is False
     assert settings["effective"] == {**settings["defaults"], **settings["global"], **settings["department"]}
@@ -765,9 +776,8 @@ def test_the_j2_captures_hold_a_small_finished_mock_run_and_the_goldens_of_the_p
     assert len((J2_FIXTURES / "state.json").read_bytes()) < 150_000  # R4: small enough to commit
     assert state["mock"] is True and state["status"] == "waiting" and state["workflows"] and state["chat"]
     manifest = json.loads((J2_FIXTURES / "MANIFEST.json").read_text(encoding="utf-8"))
-    assert manifest["harness"]["goldens"] == [f"golden-{k}.json" for k in
-                                              ("simple", "sprog", "workflows", "rail", "needs", "map", "agent", "layout")]
-    for key in ("simple", "sprog", "workflows", "rail", "needs", "map", "agent", "layout"):
+    assert manifest["harness"]["goldens"] == [f"golden-{k}.json" for k in J2_GOLDENS]
+    for key in J2_GOLDENS:
         assert (J2_FIXTURES / f"golden-{key}.json").is_file()
     rail = json.loads((J2_FIXTURES / "golden-rail.json").read_bytes())
     assert isinstance(rail, list) and {"conflicts", "identity", "audit"} <= {section["id"] for section in rail}
@@ -776,6 +786,36 @@ def test_the_j2_captures_hold_a_small_finished_mock_run_and_the_goldens_of_the_p
         assert agent["schema"] == "agent/1" and agent["found"] is True
     assert json.loads((J2_FIXTURES / "agent-unknown.json").read_bytes())["found"] is False
     assert "<title>Brew Lab</title>" in (J2_FIXTURES / "site-latest.html").read_text(encoding="utf-8")
+
+
+def test_the_j2_captures_hold_the_routes_feeds_and_answers_that_j2_added_in_sync_4():
+    load = lambda name: json.loads((J2_FIXTURES / name).read_bytes())  # noqa: E731
+    plan_map = load("plan-map.json")  # J2's plan-map/1 carries no schema key
+    assert plan_map["found"] is True and len(plan_map["workflows"]) == 6 and plan_map["stages"] and plan_map["changes"] == []
+    groups = load("artifacts-groups.json")
+    assert groups["schema"] == "artifacts-groups/1" and [g["id"] for g in groups["groups"]] == ["plan", "guides", "site", "documents", "records"]
+    assert load("changes.json") == {"changes": []}  # the mock brief has no change request
+    runlist = load("runlist.json")
+    assert list(runlist) == ["live", "runs"] and [r["id"] for r in runlist["runs"]] == [runlist["live"]] == [load("runs.json")["live"]]
+    catalog = load("catalog.json")
+    assert catalog["schema"] == "template-library/1" and catalog["dir"] == "library" and catalog["groups"] and len(catalog["runs"]) == 8
+    for who in J2_FUNCS:  # one feed and one answer per function, from the records of the same run
+        feed, answer = load(f"activity-{who}.json"), load(f"ask-{who}.json")
+        assert feed["schema"] == "activity/1" and feed["who"] == who and feed["found"] is True and feed["events"], who
+        assert set(answer) == {"who", "answer", "from"} and answer["who"] == who and answer["from"] == "records", who
+        assert answer["answer"].startswith("From the records:"), who
+    unknown = load("activity-unknown.json")  # a name J2 does not know: the run's step names are still there, and no event
+    assert (unknown["schema"], unknown["who"], unknown["persona"], unknown["found"], unknown["events"]) == ("activity/1", "nobody", "", False, [])
+    assert set(unknown["names"]) == {f"W-{n}" for n in range(1, 7)}
+
+
+def test_no_j2_capture_holds_an_absolute_home_folder_path():
+    """R5: the catalog fixture shows six of J2's own development runs; the capture made the home-folder paths of the machine they ran on
+    `not recorded` (the rule of patch P15 of the vendoring) and refuses any other."""
+    home = re.compile(rb"(?:/Users|/home)/[^/\s\"'\\]+/")
+    assert [p.name for p in sorted(J2_FIXTURES.iterdir()) if p.is_file() and home.search(p.read_bytes())] == []
+    libraries = [run.get("library") for run in json.loads((J2_FIXTURES / "catalog.json").read_bytes())["runs"]]
+    assert libraries.count("not recorded") == 6 and sorted(v for v in libraries if v != "not recorded") == ["/tmp/j2-live-library", "/tmp/j2-live-library-2"]
 
 
 def test_the_graph_run_ids_extend_the_run_id_j2_recorded():
@@ -1228,12 +1268,13 @@ def test_engine_settings_get_has_the_documented_shape_for_all_teams_and_for_one(
     fake.stage("2")
     es = load("engine-settings.json")
     everyone = ok(fake, "/api/engine/settings")
-    assert set(everyone) == {"schema", "defaults", "global", "effective", "editable", "locked"}  # no `department` without dept
+    assert set(everyone) == {"schema", "defaults", "global", "effective", "editable", "locked", "output_types"}  # no `department` without dept
     assert everyone["defaults"] == es["defaults"] and everyone["global"] == es["global"]
     assert everyone["effective"] == {**es["defaults"], **es["global"]} and everyone["editable"] == es["editable"]
     one = ok(fake, "/api/engine/settings", dept="web")
-    assert set(one) == {"schema", "defaults", "global", "department", "effective", "editable", "locked"}
+    assert set(one) == {"schema", "defaults", "global", "department", "effective", "editable", "locked", "output_types", "next_run"}   # sync 4 (D139): what the next run would use
     assert one["department"] == es["department"] and one["effective"] == es["effective"]
+    assert one["next_run"] == {"output": es["effective"]["output"]} == {"output": "auto"}     # nothing chosen on the start page: the team's own setting
     error_of(fake.get("/api/engine/settings", dept="nosuch"), 404, "not_found")
     error_of(fake.get("/api/engine/settings", dept="Not A Team"), 404, "not_found")
 
@@ -1261,7 +1302,8 @@ def test_engine_settings_put_sets_unsets_and_answers_like_the_get(fake):
     ("nope", 1, "is not a setting"),
     ("send_mode", "live", "only be changed by hand"),
     ("chrome", "/x", "only be changed by hand"),
-    ("output", "poster", "must be one of auto, website, prd, hld, lld, project"),
+    ("output", "poster", "unknown output type poster"),
+    ("output", "Poster", "must be auto or a type name"),
     ("fixes", 2, "must be one of 0, 1"),
     ("fixes", True, "must be one of 0, 1"),
     ("rates", "yes", "must be true or false"),
@@ -1439,6 +1481,8 @@ WRITES = [  # every non-GET route that is not a test control: (method, a concret
     ("POST", "/api/say?dept=web", {"text": "x"}, "/api/say"),
     ("POST", "/api/output?dept=web", {"type": "website"}, "/api/output"),
     ("POST", "/api/reset?dept=web", {}, "/api/reset"),
+    ("POST", "/api/ask?dept=web", {"who": "adaptation", "q": "Why?"}, "/api/ask"),
+    ("POST", "/api/settings?dept=web", {"decide_for_me": True}, "/api/settings"),
     ("POST", "/api/playbooks/clear?dept=web", {}, "/api/playbooks/clear"),
     ("POST", "/api/lessons/clear?dept=web", {}, "/api/lessons/clear"),
 ]
@@ -1912,6 +1956,61 @@ def test_page_refuses_a_bad_registration(fake, spec):
     error_of(fake.request("POST", "/__fake/page", spec), 422, "validation")
 
 
+# ---- what Home reads on load besides the story: the owner's notes and the pill of a chat, answered as the real routes answer -------------------
+# Both used to be missing or off, so every test of Home had to announce a failure the product never has (a 404 for the pill of the org chat, a 404 for the
+# notes a Settings group reads). The expected shapes are the real models, which the real routes build their answers from (`ProviderPill` is closed: a key it
+# has not is an error; `NoteOut` is not, so the fake's control keeps only its fields).
+def test_the_owners_notes_are_listed_as_the_real_route_lists_them(fake):
+    from sutra_app.orchestrator.notes import GROUP_WORDS, GROUPS, NOTE_CHARS, PER_GROUP, NotesOut
+
+    answer = ok(fake, "/api/notes")
+    assert NotesOut.model_validate(answer).model_dump(mode="json") == answer               # the real model reads it and writes it back unchanged
+    assert answer == {"notes": [], "groups": [{"id": g, "label": GROUP_WORDS[g]} for g in GROUPS], "per_group": PER_GROUP, "max_chars": NOTE_CHARS}
+    assert [g["id"] for g in answer["groups"]] == ["about-you", "work", "preferences"]     # what the page's three lists are named after (notes_view.js)
+    assert fake.request("GET", "/api/notes", token=False)[0] == 200                         # a read needs no token
+
+
+def test_the_notes_a_test_sets_are_listed_by_group_then_id_and_a_row_the_real_route_could_not_send_is_refused(fake):
+    rows = [{"id": 2, "group": "preferences", "text": "Plain words.", "expires": None, "expired": False},
+            {"id": 5, "group": "about-you", "text": "I run a cafe.", "expires": "2020-01-01", "expired": True},
+            {"id": 3, "group": "about-you", "text": "The door is blue.", "expires": None, "expired": False}]
+    assert fake.request("POST", "/__fake/notes", {"notes": rows}) == (200, {"notes": 3})
+    assert [(n["id"], n["group"]) for n in ok(fake, "/api/notes")["notes"]] == [(3, "about-you"), (5, "about-you"), (2, "preferences")]
+    assert ok(fake, "/api/notes")["notes"][1]["expired"] is True                           # an expired note is listed and says so, never dropped
+    for bad in ({"id": "x", "group": "work", "text": "t", "expires": None, "expired": False},          # an id that is not a number
+                {"id": 1, "group": "work", "text": "t", "expires": None},                                   # no `expired`
+                {"id": 1, "group": "gossip", "text": "t", "expires": None, "expired": False}):           # a group the real store does not keep
+        error_of(fake.request("POST", "/__fake/notes", {"notes": [bad]}), 422, "validation")
+    error_of(fake.request("POST", "/__fake/notes", {}), 422, "validation")
+    assert len(ok(fake, "/api/notes")["notes"]) == 3                                        # a refused control changed nothing
+    fake.reset()
+    assert ok(fake, "/api/notes")["notes"] == []
+
+
+def test_the_pill_of_every_chat_the_fake_knows_is_served_in_the_real_shape(fake_server, fake):
+    from sutra_app.connectors.chat_models import ProviderPill
+
+    fake.stage("full")
+    sessions = sorted(fake_server.state.session_ids())
+    assert "cs_org" in sessions and len(sessions) > 5                                       # the org chat, the teams, the functions
+    for sid in sessions:
+        answer = ok(fake, f"/api/chats/{sid}/providers")
+        assert set(answer) == {"providers", "chosen", "kind", "agent", "own", "effective"}, sid          # chat_v2.py: what the route sends
+        assert [p["name"] for p in answer["providers"]] == ["claude", "codex"], sid
+        for entry in answer["providers"]:
+            ProviderPill.model_validate(entry)                                              # the real model: closed, so a key it has not is an error
+        assert set(answer["effective"]) == {"provider", "model", "effort", "source"}, sid
+    assert ok(fake, "/api/chats/cs_org/providers")["kind"] == "org"
+
+
+def test_a_chat_the_fake_does_not_know_has_no_pill_and_the_control_takes_the_route_away_until_the_next_reset(fake):
+    error_of(fake.get("/api/chats/cs_nobody/providers"), 404, "not_found")                  # the real route: NotFound for a session that is not there
+    assert fake.request("POST", "/__fake/pill", {"on": False})[1]["pill"] is False
+    error_of(fake.get("/api/chats/cs_org/providers"), 404, "not_found")                     # for a test of a page whose pill read fails
+    fake.reset()
+    assert ok(fake, "/api/chats/cs_org/providers")["providers"][0]["name"] == "claude"
+
+
 # ---- the owner writes: POST /api/chats/{sid}/messages and the scripted stories it starts ---------------------------------------------
 def all_events(fake_server) -> list[dict]:
     """Everything in the ring, with `server.hello` first (once=1 replays from the start and closes)."""
@@ -2273,21 +2372,24 @@ def test_fixtures_of_other_shapes_work_too(tmp_path, make_fake_server):
 
 
 # =====================================================================================================================
-# 4. J2's 28 data routes at the root, the team in ?dept=
+# 4. J2's data routes at the root, the team in ?dept=
 # =====================================================================================================================
-J2_GETS = [  # the 23 GET handlers of j2_server.py (ENG 7.1 rows 3-25), each as a concrete path
+J2_GETS = [  # the GET handlers of j2_server.py (ENG 7.1 rows 3-25, then sync 4's), each as a concrete path
     "/api/state", "/api/runs", "/api/call?id=1", "/api/preview?atom=W-2.a1", "/api/docs", "/api/map", "/api/plan", "/api/library",
     "/api/library/website/hero/classic/v1", "/api/run-templates", "/api/artifacts", "/api/agent?who=identity",
     "/api/code?deck=a&section=b", "/api/artifacts/tree", "/api/artifact?name=site/index.html", "/api/story", "/api/board",
-    "/api/audits", "/api/refs", "/shot/1", "/file/prd.md", "/site/latest", "/site/v1",
+    "/api/audits", "/api/refs", "/api/timing", "/shot/1", "/file/prd.md", "/site/latest", "/site/v1",
+    "/api/plan-map", "/api/activity?who=adaptation", "/api/catalog", "/api/artifacts/groups", "/api/runlist", "/api/changes",
+    "/api/record?sec=nothing", "/doc/prd", "/view?name=site/index.html",
 ]
 J2_POSTS = [("/api/say", {"text": "hello"}), ("/api/playbooks/clear", {}), ("/api/lessons/clear", {}), ("/api/output", {"type": "website"}),
-            ("/api/reset", {})]
+            ("/api/reset", {}), ("/api/ask", {"who": "adaptation", "q": "Why?"}), ("/api/settings", {"decide_for_me": True})]
 J2_JSON_FILES = {  # the routes that answer a capture byte for byte
     "/api/runs": "runs.json", "/api/docs": "docs.json", "/api/map": "map.json", "/api/plan": "plan.json",
     "/api/run-templates": "run-templates.json", "/api/artifacts": "artifacts.json", "/api/artifacts/tree": "artifacts-tree.json",
     "/api/story": "story.json", "/api/board": "board.json", "/api/audits": "audits.json", "/api/library": "library.json",
-    "/api/refs": "refs.json",
+    "/api/refs": "refs.json", "/api/plan-map": "plan-map.json", "/api/catalog": "catalog.json", "/api/artifacts/groups": "artifacts-groups.json",
+    "/api/runlist": "runlist.json", "/api/changes": "changes.json", "/api/timing": "timing.json",
 }
 BAD_DEPTS = [None, "", "Web", "WEB", "w", "web_1", "1web", "a b", "web/../x", "x" * 41, "web."]  # none passes DEPT_ID_RE
 J2_SANDBOX = "sandbox allow-scripts allow-forms allow-popups; frame-ancestors 'self'"  # D83
@@ -2317,16 +2419,23 @@ def test_the_j2_routes_the_fake_registers_are_the_ones_the_client_wrapper_adds_d
                           text=True, timeout=30)
     assert done.returncode == 0, done.stderr
     paths = json.loads(done.stdout)
-    assert len(paths["exact"]) == 23 and paths["prefixes"] == ["/api/library/", "/site/", "/file/", "/shot/"]
+    assert {"/api/ask", "/api/plan-map", "/api/activity", "/api/catalog", "/api/artifacts/groups", "/api/runlist", "/api/changes"} <= set(paths["exact"])
+    assert "patched" not in paths                                   # P13 is retired (D140): runlist and changes are J2's own routes now
     registered = {(method, ctx.path) for ctx in iter_route_contexts(fake_server.app.routes) for method in (ctx.methods or ())
                   if method in ("GET", "POST") and not ctx.path.startswith("/__fake/")}
-    exact = {path for _, path in registered if path in paths["exact"]}
-    assert exact == set(paths["exact"]), "every path the wrapper adds ?dept= to has a route in the fake, and the reverse"
-    assert fb.J2_PATH_SET == frozenset(paths["exact"])  # the paths whose forced failures have J2's body shape
+    # the pages the Simple view puts in its frame build their own ?dept= (E4), so whether the wrapper lists them does not matter here
+    fetches = set(paths["exact"]) - set(fb.J2_PAGE_PATHS)
+    exact = {path for _, path in registered if path in fetches}
+    assert exact == fetches, "every path the wrapper adds ?dept= to has a route in the fake, and the reverse"
+    assert fb.J2_PATH_SET == frozenset(fetches)  # the paths whose forced failures have J2's body shape
+    assert {path for _, path in registered if path in fb.J2_PAGE_PATHS} == set(fb.J2_PAGE_PATHS) and "/doc/{name}" in {path for _, path in registered}
     prefixed = {path for _, path in registered if any(path.startswith(prefix) for prefix in paths["prefixes"])}
-    assert prefixed == {"/api/library/{artifact}/{section}/{slug}/{ver}", "/site/{key}", "/file/{name}", "/shot/{n}"}
-    assert {(m, p) for m, p in registered if p in fb.J2_POST_PATHS} == {("POST", p) for p in fb.J2_POST_PATHS} and len(fb.J2_POST_PATHS) == 5
-    assert len(J2_GETS) + len(J2_POSTS) == 28  # ENG 7.1: 23 GET and 5 POST handlers
+    assert prefixed >= {"/api/library/{artifact}/{section}/{slug}/{ver}", "/site/{key}", "/file/{name}", "/shot/{n}"}
+    assert prefixed <= {"/api/library/{artifact}/{section}/{slug}/{ver}", "/site/{key}", "/file/{name}", "/shot/{n}", "/doc/{name}"}
+    assert {(m, p) for m, p in registered if p in fb.J2_POST_PATHS} == {("POST", p) for p in fb.J2_POST_PATHS} and len(fb.J2_POST_PATHS) == 7
+    # 23 GET and 5 POST handlers of engine.md 7.1; sync 5 added /api/timing; sync 4 added nine GET (the plan map, a feed, the catalog, the groups, the run list, the changes, a record,
+    # a document page, a view page) and two POST (ask, settings)
+    assert len(J2_GETS) + len(J2_POSTS) == 29 + 9 + 2
 
 
 @pytest.mark.parametrize("path", J2_GETS)
@@ -2392,7 +2501,7 @@ def test_a_run_is_a_saved_view_of_a_run_the_team_has_and_nothing_else(fake_serve
     status, _, raw = j2_get(fake_server, "/api/state", dept="web", run="j2-19990101-000000-0000")
     assert (status, json.loads(raw)) == (404, {"error": "no such run"})  # J2's own body for the state route
     for path in J2_GETS[1:]:
-        if path.startswith(("/api/library", "/api/refs")):
+        if path.startswith(("/api/library", "/api/refs", "/api/catalog")):
             continue  # global: J2 ignores `run` there
         status, _, raw = j2_get(fake_server, path, dept="web", run="j2-19990101-000000-0000")
         assert status == 404, path
@@ -2490,14 +2599,14 @@ def test_say_with_a_body_that_is_not_json_is_the_422_envelope(fake_server, fake)
     assert status == 422 and json.loads(raw)["error"]["code"] == "validation"
 
 
-def test_output_takes_one_of_the_four_kinds_and_otherwise_answers_409_with_website(fake_server, fake):
+def test_output_takes_one_of_the_types_the_engine_lists_and_otherwise_answers_409_with_the_team_default(fake_server, fake):
     fake.stage("2")
     for kind in ("website", "prd", "hld", "lld"):
         status, _, raw = j2_post(fake_server, "/api/output", {"type": kind})
         assert (status, json.loads(raw)) == (200, {"ok": True, "output": kind})
     for body in ({"type": "poster"}, {}, {"type": 3}, [], {"type": None}):
         status, _, raw = j2_post(fake_server, "/api/output", body)
-        assert (status, json.loads(raw)) == (409, {"ok": False, "output": "website"}), body
+        assert (status, json.loads(raw)) == (409, {"ok": False, "output": "auto"}), body
 
 
 def test_reset_is_refused_while_the_team_works_and_clears_the_clear_routes_say_how_many(fake_server, fake):
@@ -2516,6 +2625,482 @@ def test_a_forced_failure_on_a_j2_write_has_j2s_body(fake_server, fake):
     fake.fail("/api/say", 503, code="busy_starting")
     status, _, raw = j2_post(fake_server, "/api/say", {"text": "x"})
     assert (status, json.loads(raw)) == (503, {"error": "busy_starting"})
+
+
+# ---- sync 4: the feeds, the records and pages of the studio, the Decide for me switch -------------------------------------------------------------------
+def j2_capture(name: str):
+    return json.loads((J2_FIXTURES / name).read_bytes())
+
+
+@pytest.mark.parametrize("who", J2_FUNCS)
+def test_activity_answers_the_captured_feed_of_each_of_j2s_six_functions(fake_server, fake, who):
+    fake.stage("2")
+    status, headers, raw = j2_get(fake_server, "/api/activity", dept="web", who=who)
+    assert status == 200 and raw == (J2_FIXTURES / f"activity-{who}.json").read_bytes() and json.loads(raw)["who"] == who
+    assert headers["content-type"].startswith("application/json") and headers["x-content-type-options"] == "nosniff"
+
+
+def test_activity_of_anyone_else_is_the_capture_of_a_name_j2_does_not_know_with_the_name_asked_for(fake_server, fake):
+    fake.stage("2")
+    unknown = j2_capture("activity-unknown.json")
+    for who in ("zed", "W-1", "", "../identity"):
+        status, _, raw = j2_get(fake_server, "/api/activity", dept="web", who=who)
+        assert status == 200 and json.loads(raw) == {**unknown, "who": who}, who
+    assert json.loads(j2_get(fake_server, "/api/activity", dept="web")[2]) == {**unknown, "who": ""}
+
+
+@pytest.fixture()
+def studio_server(tmp_path, make_fake_server):
+    """The fake with a few captures of the studio's routes made up here (small, valid, and unlike any real record), so the routes are proved whatever the committed
+    captures hold: a part's record, a deliverable's record, one document page and one view page."""
+    folder = fixtures_copy(tmp_path)
+    (folder / "j2" / "record-S-1.json").write_text(json.dumps({"schema": "studio/1", "sec": "S-1", "name": "Hero"}), encoding="utf-8")
+    (folder / "j2" / "record-art-site-index.html.json").write_text(json.dumps({"schema": "studio/1", "name": "site/index.html"}), encoding="utf-8")
+    (folder / "j2" / "doc-prd.html").write_text("<!doctype html><title>PRD</title><h1>A made-up PRD</h1>", encoding="utf-8")
+    (folder / "j2" / "view-notes-todo.md.html").write_text("<!doctype html><title>todo</title><p>todo</p>", encoding="utf-8")
+    server = make_fake_server(fixtures_dir=folder)
+    server.client.stage("2")
+    return server
+
+
+def test_a_record_is_the_capture_of_its_part_or_its_deliverable_and_otherwise_j2s_404(studio_server):
+    url = studio_server.url
+    status, headers, raw = j2_get(studio_server, "/api/record", dept="web", sec="S-1")
+    assert status == 200 and json.loads(raw) == {"schema": "studio/1", "sec": "S-1", "name": "Hero"}
+    assert headers["content-type"].startswith("application/json") and headers["x-content-type-options"] == "nosniff"
+    status, _, raw = j2_get(studio_server, "/api/record", dept="web", art="site/index.html")      # a deliverable: the file name is made safe (site-index.html)
+    assert status == 200 and json.loads(raw) == {"schema": "studio/1", "name": "site/index.html"}
+    for query in ({"sec": "S-9"}, {"art": "nothing.md"}, {}, {"sec": ""}, {"sec": "../S-1"}):
+        status, _, raw = j2_get(studio_server, "/api/record", dept="web", **query)
+        assert (status, json.loads(raw)) == (404, {"error": "no such part"}), query              # J2's own body for an unknown part (and for no question at all)
+    assert j2_get(studio_server, "/api/record", dept="web", sec="S-1", run="j2-20261104-100004-7f3a")[0] == 200      # a saved run of the team
+    assert j2_get(studio_server, "/api/record", dept="web", sec="S-1", run="j2-19990101-000000-0000")[0] == 404      # D73: any other run is not found
+    assert raw_request(url, "GET", "/api/record?sec=S-1")[0] == 400                                # no team: dept_required
+
+
+def test_the_pages_of_the_studio_come_sandboxed_and_a_file_that_is_not_written_is_j2s_own_line(studio_server):
+    for path in ("/doc/prd", "/view?name=notes/todo.md"):
+        status, headers, raw = j2_get(studio_server, path.split("?")[0], dept="web", **({"name": "notes/todo.md"} if "?" in path else {}))
+        assert status == 200 and headers["content-type"].startswith("text/html"), path
+        assert headers["content-security-policy"] == J2_SANDBOX and headers["x-content-type-options"] == "nosniff" and headers["referrer-policy"] == "no-referrer"
+        assert raw.startswith(b"<!doctype html>"), path
+    for path, params in (("/doc/hld", {}), ("/view", {"name": "never.txt"}), ("/view", {})):
+        status, headers, raw = j2_get(studio_server, path, dept="web", **params)
+        assert (status, raw) == (200, fb.NOT_WRITTEN.encode()), (path, params)              # J2 answers 200 and says so, as the page puts it in its frame
+        assert headers["content-security-policy"] == J2_SANDBOX
+    assert j2_get(studio_server, "/doc/prd", dept="web", run="j2-19990101-000000-0000")[0] == 404
+    assert raw_request(studio_server.url, "GET", "/doc/prd")[0] == 400 and raw_request(studio_server.url, "GET", "/view?name=x")[0] == 400
+
+
+def test_every_part_and_deliverable_the_captured_state_names_has_its_record_in_the_captures(fake_server, fake):
+    """The studio's captures are complete: the fake answers a record for each part of the captured state and for each deliverable the artifacts listing names,
+    and a page for each file the listing says the page opens (scripts/capture_j2_fixtures.py makes them with the state)."""
+    fake.stage("2")
+    studio = j2_capture("state.json")["studio"]
+    assert studio["schema"] == "studio/1" and studio["parts"], "state.json holds no studio: the captures were made before the studio redesign"
+    for part in studio["parts"]:
+        status, _, raw = j2_get(fake_server, "/api/record", dept="web", sec=part["sec"])
+        assert status == 200, part["sec"]
+        assert (json.loads(raw)["sec"], json.loads(raw)["name"]) == (part["sec"], part["name"])
+    deliverables = j2_capture("artifacts.json")["deliverables"]
+    assert deliverables
+    for row in deliverables:
+        status, _, raw = j2_get(fake_server, "/api/record", dept="web", art=row["name"])
+        assert status == 200, row["name"]
+        assert json.loads(raw)["name"] == row["name"]
+        status, _, page = j2_get(fake_server, "/view", dept="web", name=row["file"])
+        assert status == 200 and page != fb.NOT_WRITTEN.encode(), row["file"]
+
+
+def test_decide_for_me_is_a_switch_the_state_reports_back(fake_server, fake):
+    fake.stage("2")
+    captured = bool(j2_capture("state.json").get("decide_for_me", False))
+    reads = lambda: json.loads(j2_get(fake_server, "/api/state", dept="web")[2]).get("decide_for_me", False)  # noqa: E731
+    assert reads() is captured
+    assert j2_post(fake_server, "/api/settings", {})[0] == 200 and reads() is captured                # no key: nothing changes (J2 answers the switch as it is)
+    status, _, raw = j2_post(fake_server, "/api/settings", {"decide_for_me": True})
+    assert (status, json.loads(raw)) == (200, {"ok": True, "decide_for_me": True}) and reads() is True
+    assert json.loads(j2_post(fake_server, "/api/settings", {"other": 1})[2]) == {"ok": True, "decide_for_me": True}
+    assert json.loads(j2_post(fake_server, "/api/settings", {"decide_for_me": 0})[2]) == {"ok": True, "decide_for_me": False} and reads() is False
+    fake.stage("full")
+    j2_post(fake_server, "/api/settings", {"decide_for_me": True})
+    assert reads() is True
+    assert json.loads(j2_get(fake_server, "/api/state", dept="content")[2]).get("decide_for_me", False) is captured      # a switch is a team's own
+    fake.reset()
+    fake.stage("2")
+    assert reads() is captured                                                                           # reset with the story
+
+
+# ---- sync 4: POST /api/ask and the two lines it stores ---------------------------------------------------------------------------------------------------
+ASK = "/api/ask"
+
+
+def ask(fake_server, who="adaptation", q="Why was W-3 scored below the gate?", run="", dept="web", **extra):
+    body = {"who": who, "q": q, **({"run": run} if run is not None else {}), **extra}
+    status, _, raw = j2_post(fake_server, ASK, body, dept=dept)
+    return status, json.loads(raw)
+
+
+def agent_rows_of(fake, run=None):
+    return {row["agent"]: row for row in ok(fake, "/api/teams/web/agents", **({"run": run} if run else {}))}
+
+
+def lines_of(fake, sid):
+    return ok(fake, f"/api/chats/{sid}/messages")["messages"]
+
+
+def test_a_question_to_something_that_is_not_a_function_or_too_long_is_j2s_400(fake_server, fake):
+    fake.stage("full")
+    for who in ("zed", "W-1", "", "Identity", "ADAPTATION", "web.identity"):
+        assert ask(fake_server, who) == (400, {"error": "not a function"}), who
+    assert j2_post(fake_server, ASK, {"q": "no one asked"})[0] == 400 and j2_post(fake_server, ASK, [])[0] == 400
+    assert ask(fake_server, q="x" * 2001) == (400, {"error": "question too long"})
+    assert ask(fake_server, q=" " + "x" * 2000 + " ")[0] == 200                                         # the ceiling is on what is left after trimming, as the engine's
+    sid = agent_rows_of(fake)["adaptation"]["session_id"]
+    assert [m["text"] for m in lines_of(fake, sid) if m.get("ask")] == ["x" * 2000, "From the records:"[:0] + j2_capture("ask-adaptation.json")["answer"]]
+
+
+def test_a_question_to_a_function_with_a_session_is_answered_from_the_records_and_stored_as_two_lines_of_that_session(fake_server, fake):
+    fake.stage("full")
+    rows = agent_rows_of(fake)
+    sid = rows["adaptation"]["session_id"]
+    before = lines_of(fake, sid)
+    captured = j2_capture("ask-adaptation.json")
+    status, body = ask(fake_server, q="  Why was W-3\n scored   below the gate?  ")
+    assert status == 200 and set(body) == {"who", "answer", "from", "session_id", "question_id", "answer_id"}
+    assert (body["who"], body["answer"], body["from"], body["session_id"]) == ("adaptation", captured["answer"], "records", sid)
+    after = lines_of(fake, sid)
+    assert after[: len(before)] == before and len(after) == len(before) + 2                               # the lines are added to the transcript, never in place of one
+    question, answer = after[-2:]
+    assert (question["id"], answer["id"]) == (body["question_id"], body["answer_id"]) and answer["id"] == question["id"] + 1
+    assert (question["role"], question["who"], question["kind"], question["text"], question["ask"]) == (
+        "user", "user", "text", "Why was W-3 scored below the gate?", "q")                              # whitespace is one space, as `DeptCommands.ask` writes it
+    assert (answer["role"], answer["who"], answer["kind"], answer["text"], answer["ask"]) == ("agent", "adaptation", "text", captured["answer"], "records")
+    assert {k for k in question} == MESSAGE_KEYS | {"ask"} and {k for k in answer} == MESSAGE_KEYS | {"ask"}
+    assert question["task_id"] == answer["task_id"] == rows["adaptation"]["task_id"] and RE_TS.match(question["at"]) and question["at"] <= answer["at"]
+    assert all("ask" not in m for m in before)                                                          # a line that is no part of a question has no `ask`
+    assert ok(fake, f"/api/chats/{sid}")["last_message_id"] == answer["id"]
+
+
+@pytest.mark.parametrize("who", FUNCTIONS)
+def test_each_of_the_five_functions_keeps_its_own_transcript_of_questions(fake_server, fake, who):
+    fake.stage("full")
+    rows = agent_rows_of(fake)
+    sids = {row["session_id"] for row in rows.values()}
+    status, body = ask(fake_server, who)
+    assert status == 200 and body["session_id"] == rows[who]["session_id"] and body["answer"] == j2_capture(f"ask-{who}.json")["answer"]
+    for other in sids - {body["session_id"]}:
+        assert not any("ask" in m for m in lines_of(fake, other)), other                                # the question is in one session only
+
+
+def test_both_lines_are_announced_the_question_first_so_the_node_panel_and_j2s_panel_read_one_transcript(fake_server, fake):
+    fake.stage("full")
+    sid = agent_rows_of(fake)["audit"]["session_id"]
+    with Stream(fake_server.url, "/api/events?topics=chat,usage") as stream:
+        status, body = ask(fake_server, "audit", "Which check failed?")
+        frames = [f for f in stream.until("chat.message") + stream.until("chat.message") if f.get("event") == "chat.message"]
+    assert status == 200 and len(frames) == 2
+    first, second = (f["data"] for f in frames)
+    assert first["session_id"] == second["session_id"] == sid
+    assert (first["message"]["id"], first["message"]["ask"], first["message"]["role"]) == (body["question_id"], "q", "user")      # the event carries the line as the read does
+    assert (second["message"]["id"], second["message"]["ask"], second["message"]["who"]) == (body["answer_id"], "records", "audit")
+    assert first["message"] in lines_of(fake, sid) and second["message"] in lines_of(fake, sid)
+
+
+def test_a_function_with_no_session_of_its_own_is_answered_and_nothing_is_stored(fake_server, fake):
+    fake.stage("full")
+    before = {sid: len(lines_of(fake, sid)) for sid in (row["session_id"] for row in agent_rows_of(fake).values())}
+    status, body = ask(fake_server, "validator")                                                          # the validator is code: it has no session
+    assert (status, body) == (200, j2_capture("ask-validator.json"))
+    status, body = ask(fake_server, "adaptation", run=fb.PAST_RUN["run_id"])                              # the earlier run has Identity's and Audit's chats only
+    assert (status, body) == (200, j2_capture("ask-adaptation.json"))
+    status, body = ask(fake_server, "adaptation", dept="content")                                         # the fake keeps agents for the Web team
+    assert (status, body) == (200, j2_capture("ask-adaptation.json"))
+    assert {sid: len(lines_of(fake, sid)) for sid in before} == before
+    assert ask(fake_server, q="   ") == (200, {"who": "adaptation", "answer": "", "from": "records"})      # nothing asked is nothing stored: J2's own empty answer
+    assert {sid: len(lines_of(fake, sid)) for sid in before} == before
+
+
+def test_an_earlier_runs_function_chat_takes_the_question_though_it_is_archived(fake_server, fake):
+    fake.stage("full")
+    status, body = ask(fake_server, "identity", run=fb.PAST_RUN["run_id"])
+    assert status == 200 and body["session_id"] == "cs_past_identity"
+    shown = ok(fake, "/api/chats/cs_past_identity")
+    assert shown["status"] == "archived" and shown["writable"] is False                                   # the session stays read-only: only this route writes there
+    lines = lines_of(fake, "cs_past_identity")
+    assert [(m["role"], m.get("ask")) for m in lines[-2:]] == [("user", "q"), ("agent", "records")] and lines[-1]["task_id"] == fb.PAST_RUN["task_id"]
+    assert agent_rows_of(fake, fb.PAST_RUN["run_id"])["identity"]["session_id"] == "cs_past_identity"
+    error_of(fake.request("POST", "/api/chats/cs_past_identity/steer", {"text": "a note"}, token=True), 409, "not_running")   # a note is another box, and the run is over
+
+
+def test_a_run_the_fake_does_not_know_is_the_current_run_as_the_engine_reads_it(fake_server, fake):
+    fake.stage("full")
+    sid = agent_rows_of(fake)["priority"]["session_id"]
+    for run in ("", "j2-20261104-100004-7f3a", fb.LIVE_RUN["run_id"], "j2-not-a-run", "../x"):
+        status, body = ask(fake_server, "priority", run=run)
+        assert status == 200 and body["session_id"] == sid, run
+    assert len([m for m in lines_of(fake, sid) if m.get("ask") == "q"]) == 5
+
+
+def test_an_archived_team_takes_no_question(fake_server, fake, monkeypatch):
+    fake.stage("full")
+
+    class Row:
+        id, name, archived = "web", "Web", True
+
+    monkeypatch.setattr(fb._Services, "department", lambda self, dept_id: Row() if dept_id == "web" else None)
+    status, _, raw = j2_post(fake_server, ASK, {"who": "adaptation", "q": "Why?"})
+    assert status == 403 and json.loads(raw)["error"]["code"] == "read_only"                              # the engine's envelope for a write to a merged team
+    sid = agent_rows_of(fake)["adaptation"]["session_id"]
+    assert not any("ask" in m for m in lines_of(fake, sid))
+
+
+def test_the_ask_control_sets_how_the_next_questions_are_answered_and_reset_puts_it_back(fake_server, fake):
+    fake.stage("full")
+    sid = agent_rows_of(fake)["coordination"]["session_id"]
+    records = j2_capture("ask-coordination.json")["answer"]
+    assert fake.post("/__fake/ask", {"mode": "offline"}, token=False)[1] == {"mode": "offline", "text": None, "note": None, "delay": 0.0, "fail": None}
+    status, body = ask(fake_server, "coordination")
+    assert status == 200 and body["note"] == "No model is connected." and (body["answer"], body["from"]) == (records, "records")
+    assert lines_of(fake, sid)[-1]["ask"] == "records"                                                    # offline: both lines are stored all the same
+    fake.post("/__fake/ask", {"mode": "offline", "note": "Your monthly limit is reached."}, token=False)
+    assert ask(fake_server, "coordination")[1]["note"] == "Your monthly limit is reached."
+    fake.post("/__fake/ask", {"mode": "failed", "note": None}, token=False)
+    status, body = ask(fake_server, "coordination")
+    assert body["note"].startswith("The model could not answer (") and body["note"].endswith("this is from the records only.") and body["from"] == "records"
+    fake.post("/__fake/ask", {"mode": "records", "note": None}, token=False)
+    assert "note" not in ask(fake_server, "coordination")[1]
+    for bad in ({"mode": "guess"}, {"delay": -1}, {"delay": 31}, {"delay": True}, {"text": 5}, {"extra": 1}, {"fail": 200}, {"fail": "busy"}, []):
+        assert fake.post("/__fake/ask", bad, token=False)[0] == 422, bad
+    fake.post("/__fake/ask", {"mode": "offline", "delay": 2}, token=False)
+    fake.reset()
+    fake.stage("full")
+    assert fake.post("/__fake/ask", {}, token=False)[1] == {"mode": "records", "text": None, "note": None, "delay": 0.0, "fail": None}
+    assert not any("ask" in m for m in lines_of(fake, sid))                                               # the lines go with the story, as every other line does
+
+
+def test_a_model_answer_is_stored_as_the_models_and_booked_to_the_agent_as_one_agent_chat_call(fake_server, fake):
+    fake.stage("full")
+    rows = agent_rows_of(fake)
+    sid, usage = rows["audit"]["session_id"], rows["audit"]["usage"]
+    assert "agent_chat" not in usage["by_purpose"]                                                       # no call, no key: as the real route has it
+    fake.post("/__fake/ask", {"mode": "model", "text": "Item 4 was not met: the footer has no phone number."}, token=False)
+    with Stream(fake_server.url, "/api/events?topics=usage") as stream:
+        status, body = ask(fake_server, "audit", "Which check failed?")
+        recorded = stream.until("usage.recorded")[-1]["data"]
+    assert status == 200 and (body["answer"], body["from"]) == ("Item 4 was not met: the footer has no phone number.", "model") and "note" not in body
+    lines = lines_of(fake, sid)
+    assert [(m["role"], m["ask"]) for m in lines[-2:]] == [("user", "q"), ("agent", "model")] and lines[-1]["text"] == body["answer"]
+    row = recorded["row"]
+    assert (row["purpose"], row["session_id"], row["fn"], row["dept_id"], row["task_id"]) == ("agent_chat", sid, "audit", "web", fb.LIVE_RUN["task_id"])
+    assert row["atom_id"] == overhead_atom_id(fb.LIVE_RUN["run_id"]) and row["usd"] == fb.ASK_CALL_USD         # an answer is overhead, never a work atom (D59)
+    after = agent_rows_of(fake)["audit"]["usage"]
+    assert after["by_purpose"]["agent_chat"] == {"calls": 1, "usd": fb.ASK_CALL_USD}
+    assert after["calls"] == usage["calls"] + 1 and after["usd"] == pytest.approx(usage["usd"] + fb.ASK_CALL_USD)
+    assert after["tokens_in"] == usage["tokens_in"] + fb.ASK_TOKENS[0] and after["tokens_out"] == usage["tokens_out"] + fb.ASK_TOKENS[1]
+    assert recorded["task_total"]["calls"] == sum(r["usage"]["calls"] for r in agent_rows_of(fake).values())
+    fake.post("/__fake/ask", {"mode": "model", "text": None}, token=False)                                # no text: the answer says what it was asked
+    assert ask(fake_server, "audit", "Which check failed?")[1]["answer"] == "From its records: Which check failed?"
+    assert agent_rows_of(fake)["audit"]["usage"]["by_purpose"]["agent_chat"]["calls"] == 2
+    assert sum(g["calls"] for g in ok(fake, "/api/usage/summary", by="purpose")["groups"] if g["key"] == "agent_chat") == 2
+
+
+def test_a_second_question_to_a_session_that_is_still_being_answered_is_409_busy(fake_server, fake):
+    fake.stage("full")
+    sid = agent_rows_of(fake)["adaptation"]["session_id"]
+    fake.post("/__fake/ask", {"delay": 0.8}, token=False)
+    first: list = []
+    thread = threading.Thread(target=lambda: first.append(ask(fake_server, "adaptation", "First?")))
+    thread.start()
+    deadline = time.monotonic() + 5
+    while not any(m.get("ask") == "q" for m in lines_of(fake, sid)):                                      # the question line is stored before the answer is made
+        assert time.monotonic() < deadline, "the first question was never stored"
+        time.sleep(0.02)
+    assert ask(fake_server, "adaptation", "Second?") == (409, {"error": "busy"})
+    assert ask(fake_server, "priority", "Another function?")[0] == 200                                    # one question at a time per session, not per team
+    thread.join(10)
+    assert first and first[0][0] == 200 and [m["text"] for m in lines_of(fake, sid) if m.get("ask") == "q"] == ["First?"]
+    assert ask(fake_server, "adaptation", "Third?")[0] == 200                                             # the busy mark is gone with the answer
+
+
+def test_an_interrupted_question_stays_without_an_answer_and_frees_the_session(fake_server, fake):
+    fake.stage("full")
+    sid = agent_rows_of(fake)["priority"]["session_id"]
+    fake.post("/__fake/ask", {"mode": "interrupted"}, token=False)
+    status, body = ask(fake_server, "priority", "Will this be answered?")
+    assert status == 500 and body["error"]["code"] == "internal"
+    lines = lines_of(fake, sid)
+    assert [(m["role"], m.get("ask")) for m in lines if m.get("ask")] == [("user", "q")]                    # J2's panel says "No answer was stored." for it
+    fake.post("/__fake/ask", {"mode": "records"}, token=False)
+    assert ask(fake_server, "priority", "And now?")[0] == 200                                              # the session is free again
+
+
+def test_a_refusal_the_test_asks_for_happens_once_before_anything_is_stored(fake_server, fake):
+    fake.stage("full")
+    sid = agent_rows_of(fake)["audit"]["session_id"]
+    before = lines_of(fake, sid)
+    assert fake.post("/__fake/ask", {"fail": 409}, token=False)[1]["fail"] == 409
+    assert ask(fake_server, "audit") == (409, {"error": "busy"}) and lines_of(fake, sid) == before                 # J2's busy, and nothing stored
+    assert ask(fake_server, "audit")[0] == 200                                                                  # once
+    fake.post("/__fake/ask", {"fail": 500}, token=False)
+    assert ask(fake_server, "audit", q="  ") == (200, {"who": "audit", "answer": "", "from": "records"})        # nothing asked: nothing refused, and it stays for the next
+    assert ask(fake_server, "audit") == (500, {"error": "failed"})
+
+
+# ---- sync 4: usage by purpose, in the agents rows and in the summary ------------------------------------------------------------------------------------
+def test_an_agents_usage_names_its_calls_by_purpose_and_they_add_up(fake):
+    fake.stage("full")
+    for run in (None, fb.PAST_RUN["run_id"]):
+        for agent, row in agent_rows_of(fake, run).items():
+            usage = row["usage"]
+            assert set(usage) == {"calls", "usd", "tokens_in", "tokens_out", "by_purpose"}, agent
+            cells = usage["by_purpose"]
+            assert list(cells) == sorted(cells) and set(cells) <= set(fb.PURPOSES), agent                      # the ledger's order (by purpose); only the purposes the agent was charged for
+            assert all(set(cell) == {"calls", "usd"} and cell["calls"] > 0 for cell in cells.values())
+            assert sum(c["calls"] for c in cells.values()) == usage["calls"], agent
+            assert sum(c["usd"] for c in cells.values()) == pytest.approx(usage["usd"], abs=1e-3), agent
+    rows = agent_rows_of(fake)
+    assert {a: r["usage"]["by_purpose"]["judge"]["calls"] for a, r in rows.items() if "judge" in r["usage"]["by_purpose"]} == {"priority": 2, "coordination": 1}
+    assert {a: r["usage"]["by_purpose"]["plan"]["calls"] for a, r in rows.items() if "plan" in r["usage"]["by_purpose"]} == {"adaptation": 2, "coordination": 1}
+    assert all("agent_chat" not in r["usage"]["by_purpose"] for r in rows.values())                       # nobody has been asked anything
+    assert rows["identity"]["usage"]["by_purpose"] == {"agent_turn": {"calls": 2, "usd": 0.01}}            # an agent that only worked: its turns, and nothing else named
+    assert rows["coordination"]["usage"]["by_purpose"] == {"agent_turn": {"calls": 3, "usd": 0.024}, "judge": {"calls": 1, "usd": 0.008}, "plan": {"calls": 1, "usd": 0.008}}
+    assert [(r["usage"]["calls"], r["usage"]["usd"]) for r in rows.values()][:5] == [(2, 0.01), (3, 0.02), (4, 0.03), (5, 0.04), (6, 0.05)]      # the totals a row always had
+
+
+def test_the_usage_summary_groups_the_same_numbers_by_purpose_and_by_the_ledgers_other_keys(fake):
+    fake.stage("full")
+    rows = [*agent_rows_of(fake).values(), *agent_rows_of(fake, fb.PAST_RUN["run_id"]).values()]
+    total = {"calls": sum(r["usage"]["calls"] for r in rows), "usd": sum(r["usage"]["usd"] for r in rows),
+             "tokens_in": sum(r["usage"]["tokens_in"] for r in rows), "tokens_out": sum(r["usage"]["tokens_out"] for r in rows)}
+    for by in ("purpose", "fn", "session", "day", "dept", "provider", "atom"):
+        groups = ok(fake, "/api/usage/summary", by=by)["groups"]
+        assert groups and all(set(g) == {"key", "calls", "usd", "tokens_in", "tokens_out"} for g in groups), by
+        assert [g["key"] for g in groups] == sorted(g["key"] for g in groups) or groups[0]["key"] == "(none)", by       # key order, a row with no key first
+        assert sum(g["calls"] for g in groups) == total["calls"] and sum(g["usd"] for g in groups) == pytest.approx(total["usd"], abs=1e-3), by
+        assert sum(g["tokens_in"] for g in groups) == total["tokens_in"] and sum(g["tokens_out"] for g in groups) == total["tokens_out"], by
+    purposes = {g["key"]: g for g in ok(fake, "/api/usage/summary", by="purpose")["groups"]}
+    assert set(purposes) == {"agent_turn", "judge", "plan"} and purposes["judge"]["calls"] == 3 and purposes["plan"]["calls"] == 3      # agent_chat has no row until a model answers
+    assert {g["key"] for g in ok(fake, "/api/usage/summary", by="provider")["groups"]} == {"claude"}
+    assert {g["key"] for g in ok(fake, "/api/usage/summary", by="day")["groups"]} == {"2026-11-03", "2026-11-04"}
+    atoms = {g["key"]: g for g in ok(fake, "/api/usage/summary", by="atom")["groups"]}
+    assert atoms["(none)"]["calls"] == purposes["agent_turn"]["calls"]                                     # a turn's calls have atoms of their own; judging and planning are overhead
+    assert atoms[overhead_atom_id(fb.LIVE_RUN["run_id"])]["calls"] == purposes["judge"]["calls"] + purposes["plan"]["calls"]
+    assert next(iter(atoms)) == "(none)"                                                                   # a row without a key sorts first, as in the ledger's SQL
+
+
+def test_the_real_model_reads_every_grouping_of_the_summary_and_writes_it_back_unchanged(fake):
+    """The expected shape is the real model, which the real route builds its answer from: a key the fake added, or one it lacked, would fail here."""
+    from sutra_app.orchestrator.api.usage import UsageSummary
+    fake.stage("full")
+    for by in fb.SUMMARY_BY:
+        answer = ok(fake, "/api/usage/summary", by=by)
+        assert UsageSummary.model_validate(answer).model_dump(mode="json") == answer and answer["groups"], by
+
+
+def test_the_summary_takes_a_window_and_reads_it_as_the_real_route_does(fake):
+    from sutra_app.orchestrator.usage import parse_since
+    fake.stage("full")
+    live, past = "2026-11-04T10:20:00Z", "2026-11-03T09:30:00Z"                                            # when the agents of the live run and of the earlier run last spoke
+    keys = lambda **q: {g["key"]: g["calls"] for g in ok(fake, "/api/usage/summary", by="purpose", **q)["groups"]}  # noqa: E731
+    everything = keys()
+    assert keys(since=past) == everything and keys(since=live) == keys(since=str(parse_since(live)))        # a row exactly at `since` counts; ISO or seconds
+    assert sum(everything.values()) > sum(keys(since=live).values()) > 0                                    # the earlier run's rows are out of the live window
+    assert keys(since="2026-11-04T10:20:01Z") == {} == keys(since="4102444800")
+    assert sum(g["calls"] for g in ok(fake, "/api/usage/summary", by="day", since=live)["groups"]) == sum(keys(since=live).values())     # every grouping has it
+
+
+def test_the_fakes_reading_of_since_is_the_real_ones_for_every_text(fake):
+    """Parity, text by text: the number the real `parse_since` makes of it is the one the fake makes, or both refuse (the route answers 422 `query.since`)."""
+    from sutra_app.orchestrator.usage import parse_since
+    fake.stage("full")
+    texts = ("0", "1793786400", "253402300799", "253402300800", "99999999999999999999", "-1", "1e3", "", " 5", "5 ", "yesterday", "2026-11-04T10:00:06Z", "9999-12-31T23:59:59Z",
+             "10000-01-01T00:00:00Z", "2026-11-04", "2026-11-04T10:20:00", "2026-13-01T00:00:00Z", "2026-11-04T10:00:06+00:00", "\u0663", "\u00b2")
+    for text in texts:
+        try:
+            real = parse_since(text)
+        except ValueError:
+            real = None
+        try:
+            mine = fb.since_seconds(text)
+        except ValueError:
+            mine = None
+        assert mine == real, text
+        status, body = fake.get("/api/usage/summary", by="purpose", since=text)
+        assert status == (200 if real is not None else 422), text
+        if real is None:
+            assert body["error"]["code"] == "validation" and body["error"]["details"]["violations"][0]["path"] == "query.since", text
+            assert body["error"]["details"]["violations"][0]["code"] == "bad_time", text
+
+
+def test_the_summary_of_one_session_and_a_bad_grouping(fake):
+    fake.stage("full")
+    sid = agent_rows_of(fake)["coordination"]["session_id"]
+    groups = ok(fake, "/api/usage/summary", by="purpose", session_id=sid)["groups"]
+    assert {g["key"]: g["calls"] for g in groups} == {"agent_turn": 3, "judge": 1, "plan": 1}
+    assert ok(fake, "/api/usage/summary", by="purpose", session_id="cs_nobody") == {"groups": []}
+    assert ok(fake, "/api/usage/summary") == ok(fake, "/api/usage/summary", by="dept") == {"groups": [{
+        "key": "web", **{k: v for k, v in ok(fake, "/api/usage/summary", by="dept")["groups"][0].items() if k != "key"}}]}                    # dept is the default
+    error = error_of(fake.get("/api/usage/summary", by="colour"), 422, "validation")
+    assert error["details"]["violations"][0]["path"] == "query.by"
+    assert ok(fake, "/api/usage/summary", by="fn", include_stub=1) == ok(fake, "/api/usage/summary", by="fn")                          # no stub rows exist here
+
+
+# ---- sync 4 (D139): what the next run makes -------------------------------------------------------------------------------------------------------------------
+def test_next_run_is_the_start_pages_choice_else_the_teams_setting_else_the_default(fake_server, fake):
+    fake.stage("2")
+    nxt = lambda: ok(fake, "/api/engine/settings", dept="web")["next_run"]  # noqa: E731
+    assert nxt() == {"output": "auto"} and "next_run" not in ok(fake, "/api/engine/settings")              # a team's view only: "all teams" has no next run
+    fake.request("PUT", "/api/engine/settings?dept=web", {"set": {"output": "prd"}}, token=True)
+    assert nxt() == {"output": "prd"}                                                                       # the team's own setting
+    assert json.loads(j2_post(fake_server, "/api/output", {"type": "website"})[2]) == {"ok": True, "output": "website"}
+    assert nxt() == {"output": "website"}                                                                   # what was picked on the start page wins
+    assert ok(fake, "/api/engine/settings", dept="web")["effective"]["output"] == "prd"                    # and the setting is untouched: a pick is for the next run only
+    assert j2_post(fake_server, "/api/output", {"type": "poster"})[0] == 409 and nxt() == {"output": "website"}   # a refused pick changes nothing
+    for kind in ("auto", "project", "hld"):
+        j2_post(fake_server, "/api/output", {"type": kind})
+        assert nxt() == {"output": kind}
+    status, answer = fake.request("PUT", "/api/engine/settings?dept=web", {"set": {"budget": 99}}, token=True)
+    assert answer["next_run"] == {"output": "hld"}                                                          # the answer of a save is the same view
+
+
+def test_a_team_that_has_started_closes_the_choice_and_a_follow_up_clears_it(fake_server, fake):
+    fake.stage("2")
+    assert fake.post("/__fake/output", {"locked": "yes"}, token=False)[0] == 422 and fake.post("/__fake/output", {}, token=False)[0] == 422
+    assert fake.post("/__fake/output", {"locked": True}, token=False)[1] == {"locked": True}
+    status, _, raw = j2_post(fake_server, "/api/output", {"type": "prd"})
+    assert (status, json.loads(raw)) == (409, {"ok": False, "output": "auto"})                              # 409 names what the run makes
+    assert ok(fake, "/api/engine/settings", dept="web")["next_run"] == {"output": "auto"}
+    fake.post("/__fake/output", {"locked": False}, token=False)
+    assert j2_post(fake_server, "/api/output", {"type": "prd"})[0] == 200
+    fake.stage("full")
+    j2_post(fake_server, "/api/output", {"type": "prd"}, dept="content")
+    assert ok(fake, "/api/engine/settings", dept="content")["next_run"] == {"output": "prd"}
+    assert j2_post(fake_server, "/api/say", {"text": "Add a gallery"}, dept="content")[0] == 200            # a follow-up created a task: the pick has been used
+    assert ok(fake, "/api/engine/settings", dept="content")["next_run"] == {"output": "auto"}
+    fake.reset()
+    fake.stage("2")
+    fake.post("/__fake/output", {"locked": True}, token=False)
+    fake.reset()
+    fake.stage("2")
+    assert j2_post(fake_server, "/api/output", {"type": "prd"})[0] == 200                                   # reset with the story
+
+
+# ---- the file runs as a script (the motion probe starts it by hand) ---------------------------------------------------------------------------------------------
+def test_the_file_runs_as_a_script_so_a_page_can_be_looked_at_by_hand(monkeypatch):
+    """`scripts/py tests/ui/fake_backend.py --port 8791 --stage full` once failed with a NameError: its main guard sat above the agent-sessions block, which was
+    not defined yet when the guard ran. Run the file as a program with the server stubbed out: it must build the app and serve it."""
+    import runpy
+
+    served: dict = {}
+    monkeypatch.setattr(fb.uvicorn, "run", lambda app, **kw: served.update(app=app, **kw))
+    monkeypatch.setattr(sys, "argv", ["fake_backend.py", "--port", "8791", "--stage", "full"])
+    with pytest.raises(SystemExit) as stopped:
+        runpy.run_path(fb.__file__, run_name="__main__")
+    assert stopped.value.code == 0 and served["port"] == 8791 and served["host"] == "127.0.0.1"
+    assert served["app"].state.fake.stages()["graph"] == "full"
+    source = Path(fb.__file__).read_text(encoding="utf-8").rstrip().splitlines()
+    assert source[-2:] == ['if __name__ == "__main__":', "    raise SystemExit(main())"]                       # the guard is the last statement: nothing is defined after it
 
 
 # =====================================================================================================================
@@ -3082,15 +3667,46 @@ def test_exists_count_and_text_put_the_selector_into_the_script_as_a_json_string
     assert tab.count("#none") == 0 and tab.exists("#none") is False
 
 
+def aimed(x, y, *, ok=True, hit="button#go"):
+    """What the page's aiming script answers (`Browser._AIM`): the middle of the element once it held still, and the topmost element there."""
+    return {"x": x, "y": y, "steady": True, "ok": ok, "hit": hit}
+
+
 def test_click_scrolls_to_the_element_and_presses_and_releases_the_mouse_at_its_middle(tab, devtools):
     quoted = json.dumps("#go")
-    devtools.hook = lambda expression: [120.5, 80] if quoted in expression and "scrollIntoView" in expression else None
+    seen = []
+
+    def page(expression):
+        seen.append(expression)
+        return aimed(120.5, 80) if quoted in expression and "scrollIntoView" in expression else None
+
+    devtools.hook = page
     tab.click("#go")
+    assert "scrollIntoView" in seen[0] and "elementFromPoint" in seen[0] and "requestAnimationFrame" in seen[0]      # one script: scroll, hold still, ask what is on top
     assert devtools.calls("Input.dispatchMouseEvent") == [
         {"type": "mouseMoved", "x": 120.5, "y": 80.0},
         {"type": "mousePressed", "x": 120.5, "y": 80.0, "button": "left", "clickCount": 1},
         {"type": "mouseReleased", "x": 120.5, "y": 80.0, "button": "left", "clickCount": 1},
     ]
+
+
+def test_click_waits_while_a_cover_is_on_top_and_clicks_where_the_element_is_once_it_is_free(tab, devtools):
+    answers = iter([aimed(10, 20, ok=False, hit="div#swelcome.swelcome"), aimed(10, 20, ok=False, hit="div#swelcome.swelcome"), aimed(11, 21)])
+    devtools.hook = lambda expression: next(answers) if "elementFromPoint" in expression else None
+    tab.click("#go")
+    assert [(c["type"], c["x"], c["y"]) for c in devtools.calls("Input.dispatchMouseEvent")] == [("mouseMoved", 11.0, 21.0), ("mousePressed", 11.0, 21.0), ("mouseReleased", 11.0, 21.0)]
+    assert not list(answers)                                                    # all three answers were used: it asked again after each cover
+
+
+def test_click_on_an_element_that_stays_covered_names_what_covers_it_and_sends_no_mouse_event(tab, devtools):
+    devtools.hook = lambda expression: aimed(10.4, 20.6, ok=False, hit="div#swelcome.swelcome") if "elementFromPoint" in expression else None
+    with pytest.raises(cdp.BrowserError, match=r"^a click on '#go' would not reach it: div#swelcome\.swelcome is on top of it, at \(10, 21\), after 0\.2 s$"):
+        tab.click("#go", timeout=0.2)
+    assert devtools.calls("Input.dispatchMouseEvent") == []
+    devtools.hook = lambda expression: aimed(5, 900, ok=False, hit=None) if "elementFromPoint" in expression else None
+    with pytest.raises(cdp.BrowserError, match="its middle is outside the window"):
+        tab.click("#go", timeout=0.1)
+    assert devtools.calls("Input.dispatchMouseEvent") == []
 
 
 def test_hover_moves_the_mouse_to_the_middle_of_the_element_and_does_not_press(tab, devtools):
@@ -3931,6 +4547,28 @@ def test_the_driver_clicks_types_presses_waits_and_takes_a_picture_in_a_real_chr
     assert browser.console_errors == []
 
 
+COVER_HTML = """<!doctype html><html><head><meta charset="utf-8"><title>Cover</title><!--SUTRA-BOOT--></head><body style="margin:0">
+<button id="go" style="position:absolute;left:100px;top:100px;width:120px;height:40px">Go</button>
+<div id="cover" class="veil" style="position:fixed;inset:0;background:rgba(0,0,0,.1)"><h3 style="margin:100px 0 0 100px">A card</h3></div>
+<div id="out"></div>
+<script>document.getElementById('go').addEventListener('click', function (e) { document.getElementById('out').textContent = 'clicked at ' + Math.round(e.clientX); });</script>
+</body></html>"""
+
+
+@pytest.mark.browser
+def test_a_click_a_cover_would_take_is_refused_by_name_and_a_button_that_is_still_moving_is_clicked_where_it_stops(browser, fake):
+    """The welcome card of Home is a full-screen dialog: a click on the page behind it used to do nothing and the test waited 40 s for the effect. And a button
+    that moves between the reading of its place and the press (a pane still filling in) was clicked at the place it had left."""
+    browser.goto(fake.page("cover", COVER_HTML))
+    with pytest.raises(cdp.BrowserError, match=r"^a click on '#go' would not reach it: h3 in div#cover\.veil is on top of it, at \(160, 120\), after 0\.5 s$"):
+        browser.click("#go", timeout=0.5)                                          # what is hit is the card's heading: it is named with the card it is in
+    assert browser.text("#out") == ""
+    browser.js("document.getElementById('cover').remove()")
+    browser.js("(() => { const b = document.getElementById('go'); b.style.transition = 'left 300ms linear'; b.style.left = '500px'; })()")        # slides while it is aimed at
+    browser.click("#go")
+    assert browser.text("#out") == "clicked at 560"                             # the middle of the button where it stopped (500 + 120 / 2), not where it was
+
+
 @pytest.mark.browser
 def test_the_theme_and_the_size_reach_the_next_page(browser, fake):
     url = fake.page("probe", PROBE_HTML)
@@ -3985,7 +4623,7 @@ def test_console_errors_failed_requests_dialogs_and_csp_violations_are_collected
 
 
 STUB_VIEWS = {
-    "graph_layout.js": "", "chart_marks.js": "", "graph_render.js": "", "fnode_view.js": "", "chat_view.js": "", "fluid.js": "",
+    "graph_layout.js": "", "chart_marks.js": "", "graph_render.js": "", "fnode_view.js": "", "chat_view.js": "", "fluid.js": "", "chat_scroll.js": "", "chat_draft.js": "",
     "graph_view.js": "window.GraphView = {create: function (host, opts) { window.__gv = {host: host, opts: opts, updates: [], live: []};"
                      " return {update: function (g) { window.__gv.updates.push(g); }, setLive: function (s) { window.__gv.live.push(s); }}; }};",
     "orgchart_view.js": "window.OrgChartView = {create: function (host, opts) { window.__ov = {host: host, opts: opts, updates: []};"
@@ -4125,9 +4763,10 @@ def standin_checkout(root: Path, *, repository: bool = True) -> Path:
 
 
 def quick_capture(j2: Path, **overrides):
-    options = {"brief": capture.BRIEF, "max_state_bytes": capture.MAX_STATE_BYTES, "timeout": 30}
+    options = {"brief": capture.BRIEF, "max_state_bytes": capture.MAX_STATE_BYTES, "timeout": 30, "commit": None}
     options.update(overrides)
-    return capture.capture(j2, sys.executable, NODE, options["brief"], options["max_state_bytes"], options["timeout"], log=lambda text: None)
+    return capture.capture(j2, sys.executable, NODE, options["brief"], options["max_state_bytes"], options["timeout"], log=lambda text: None,
+                           commit=options["commit"])
 
 
 @pytest.fixture(scope="module")
@@ -4164,6 +4803,59 @@ def test_rail_tabs_reads_the_tab_names_of_the_sections_not_the_buttons_before_th
             '<button data-tab="goal"></button><button role="tab" data-tab="workflows" aria-selected="false"></button>'
             '<button data-tab="run_settings"></button></div></nav><button data-tab="outside"></button>')
     assert capture.rail_tabs(page) == ["goal", "workflows", "run_settings"]
+
+
+def test_rail_tabs_leaves_out_the_map_tab_that_the_page_keeps_in_the_rails_panel():
+    """J2's page since the icon rail: every tab button sits in #railsub, the Map's first (hidden); the Map has its own rail item."""
+    page = ('<nav class="rail tabs" id="rail" aria-label="x"><button data-ri="map"></button><div class="railsub" id="railsub">'
+            '<div class="rpool"><button role="tab" data-tab="map" hidden></button><button role="tab" data-tab="story" hidden></button>'
+            '<button role="tab" data-tab="planmap"></button></div></div></nav><button data-tab="outside"></button>')
+    assert capture.rail_tabs(page) == ["story", "planmap"]
+
+
+def test_the_home_folder_paths_of_j2s_development_machine_are_not_recorded_and_no_other_is_let_through():
+    body = (b'{"runs": [{"run": "a", "library": "/Users/someone/dev/library"}, {"run": "b", "library": "/home/someone/dev/library"}, '
+            b'{"run": "c", "library": "/tmp/j2-live-library"}], "dir": "library"}')
+    assert capture.scrub_home_paths(body) == (b'{"runs": [{"run": "a", "library": "not recorded"}, {"run": "b", "library": "not recorded"}, '
+                                              b'{"run": "c", "library": "/tmp/j2-live-library"}], "dir": "library"}')
+    assert capture.scrub_home_paths(b'{"a": 1}') == b'{"a": 1}'  # nothing to change: the same bytes
+    capture.refuse_home_paths({"ok.json": b'{"library": "not recorded", "p": "/tmp/x/y/", "u": "/home"}'})  # none of these is a home folder
+    with pytest.raises(capture.CaptureError, match=r"^an absolute home-folder path \(rule R5: none in any file of this product\) is in: a\.json, c\.html$"):
+        capture.refuse_home_paths({"c.html": b"<p>/Users/me/x</p>", "ok.json": b"{}", "a.json": b'{"where": "/home/me/dev"}'})
+
+
+def test_a_folders_digest_lists_every_file_by_content_and_ignores_a_git_folder(tmp_path):
+    (tmp_path / "a").mkdir()
+    (tmp_path / "a" / "one.txt").write_bytes(b"1")
+    (tmp_path / "two.txt").write_bytes(b"2")
+    (tmp_path / ".git").mkdir()
+    (tmp_path / ".git" / "HEAD").write_bytes(b"ref")
+    expected = {"a/one.txt": hashlib.sha256(b"1").hexdigest(), "two.txt": hashlib.sha256(b"2").hexdigest()}
+    assert capture.folder_digest(tmp_path) == expected
+    (tmp_path / "two.txt").write_bytes(b"changed")
+    assert capture.folder_digest(tmp_path) != expected and list(capture.folder_digest(tmp_path)) == ["a/one.txt", "two.txt"]
+    assert capture.folder_digest(tmp_path / "nowhere") == {}
+
+
+def test_the_parts_and_deliverables_of_the_studio_view_name_their_records():
+    state = json.dumps({"studio": {"parts": [{"sec": "W-1"}, {"name": "no sec"}, {"sec": "Intro/Hero"}]}}).encode()
+    assert capture.record_secs(state) == ["W-1", "Intro/Hero"]
+    assert capture.record_secs(b"{}") == [] and capture.record_secs(b'{"studio": null}') == []
+    assert capture.record_arts(json.dumps({"deliverables": [{"name": "Website"}, {"type": "x"}, {"name": "Menu card"}]}).encode()) == ["Website", "Menu card"]
+    assert capture.record_arts(b"{}") == []
+    assert capture.file_part("Menu card") == "Menu-card" and capture.file_part("Intro/Hero") == "Intro-Hero" and capture.file_part("W-1") == "W-1"
+    assert capture.file_part("  a b.c_d ") == "a-b.c_d"
+
+
+def test_the_commit_option_takes_a_full_commit_id_and_nothing_else():
+    pin = "025e265c594564f47a2365874cd5a5cc5d0d20a6"
+    assert capture.commit_id(pin) == pin
+    for bad in ("025e265", "main", pin.upper(), pin + "0", ""):
+        with pytest.raises(argparse.ArgumentTypeError, match="is not a full commit id"):
+            capture.commit_id(bad)
+    assert capture.build_parser().parse_args(["--j2", "/j2", "--commit", pin]).commit == pin
+    with pytest.raises(SystemExit):
+        capture.build_parser().parse_args(["--j2", "/j2", "--commit", "main"])
 
 
 def test_atom_ids_lists_each_atom_of_the_state_once_in_order():
@@ -4230,14 +4922,14 @@ def test_git_missing_is_none(tmp_path, monkeypatch):
     assert capture.git(tmp_path, "status") is None
 
 
-def test_check_checkout_refuses_what_is_not_a_j2_checkout_a_python_that_cannot_run_or_a_missing_node(tmp_path):
+def test_check_checkout_refuses_what_is_not_an_extraction_of_j2_a_python_that_cannot_run_or_a_missing_node(tmp_path):
     j2 = standin_checkout(tmp_path, repository=False)
     capture.check_checkout(j2, sys.executable, "/usr/bin/node")  # nothing is run here: the names are enough
     with pytest.raises(capture.CaptureError, match=r"^--j2 .*nowhere is not a folder$"):
         capture.check_checkout(tmp_path / "nowhere", sys.executable, "node")
     (j2 / "j2_graph_layout.js").unlink()
     (j2 / "j2_ui_render.js").unlink()
-    with pytest.raises(capture.CaptureError, match=r"is not a J2 checkout: missing j2_ui_render\.js, j2_graph_layout\.js$"):
+    with pytest.raises(capture.CaptureError, match=r"is not an extraction of prototypes/j2: missing j2_ui_render\.js, j2_graph_layout\.js$"):
         capture.check_checkout(j2, sys.executable, "node")
     j2 = standin_checkout(tmp_path / "again", repository=False)
     with pytest.raises(capture.CaptureError, match=r"^--j2-python .*no-python is not an executable file$"):
@@ -4250,10 +4942,16 @@ def test_check_checkout_refuses_what_is_not_a_j2_checkout_a_python_that_cannot_r
 
 
 # ---- a whole capture of the stand-in ------------------------------------------------------------------------------------------
+STANDIN_FILES = 78  # 23 route files + 7 agent views + 7 feeds + 6 answers + 4 records (2 parts, 2 deliverables) + 4 derived inputs + 26 goldens + the manifest
+
+
 def test_the_capture_of_the_stand_in_makes_the_files_the_committed_set_has(standin):
     j2, files = standin
     committed = {p.name for p in J2_FIXTURES.iterdir() if p.is_file()}
-    assert set(files) == committed and len(files) == 34
+    families = lambda names: {n for n in names if not n.startswith("record-")}  # noqa: E731  (one record per part and per deliverable: the stand-in has others)
+    assert families(files) == families(committed) and len(files) == STANDIN_FILES
+    assert {n for n in files if n.startswith("record-")} == {"record-W-1.json", "record-W-2.json", "record-art-Website.json", "record-art-Menu-card.json"}
+    assert any(n.startswith("record-W-") for n in committed) and any(n.startswith("record-art-") for n in committed)
     assert all(isinstance(data, bytes) for data in files.values())
 
 
@@ -4267,6 +4965,27 @@ def test_the_routes_are_saved_as_the_server_answered_them(standin):
     assert json.loads(files["agent-unknown.json"]) == {"schema": "agent/1", "who": "nobody", "found": False}
     state = json.loads(files["state.json"])
     assert state["status"] == "waiting" and state["total"] == 3 and state["brief"] == capture.BRIEF  # the run was asked and had answered
+
+
+def test_the_routes_feeds_answers_and_records_of_sync_4_are_saved_as_the_server_answered_them(standin):
+    j2, files = standin
+    load = lambda name: json.loads(files[name])  # noqa: E731
+    assert load("changes.json") == {"changes": []} and load("plan-map.json") == {"found": False}
+    assert load("artifacts-groups.json")["schema"] == "artifacts-groups/1" and load("runlist.json")["live"] == "j2-standin-run"
+    assert files["doc-prd.html"] == b"<p>This isn't written yet.</p>"
+    assert files["view-site.html"] == b"<p>view of site/index.html</p>" and files["view-goal.html"] == b"<p>view of goal.json</p>"
+    for who in J2_FUNCS:  # J2's six functions: a feed and an answer to the one question
+        assert load(f"activity-{who}.json") == {"schema": "activity/1", "who": who, "found": True, "events": []}
+        assert load(f"ask-{who}.json") == {"who": who, "answer": "From the records: " + capture.ASK_QUESTION, "from": "records"}
+    assert load("activity-unknown.json") == {"schema": "activity/1", "who": "nobody", "found": False, "events": []}
+    assert load("record-W-1.json") == {"schema": "studio/1", "sec": "W-1", "name": "Part W-1"}
+    assert load("record-art-Menu-card.json") == {"schema": "studio/1", "art": "Menu card"}  # a deliverable's name, made a file name
+
+
+def test_the_catalog_is_saved_with_the_home_folder_paths_not_recorded(standin):
+    j2, files = standin
+    assert [run["library"] for run in json.loads(files["catalog.json"])["runs"]] == ["not recorded", "/tmp/standin-library"]
+    assert not any(b"/Users/" in data for data in files.values())  # the made-up home path of the stand-in's catalog is in no file
 
 
 def test_the_j2_process_ran_in_its_folder_under_a_frozen_clock_in_a_scrubbed_environment(standin):
@@ -4298,19 +5017,27 @@ def test_the_previews_are_asked_for_once_per_atom_and_only_those_with_a_page_are
 def test_the_harness_inputs_are_made_from_the_routes_and_the_pages_rail(standin):
     j2, files = standin
     docs = json.loads(files["render-docs.json"])
-    assert set(docs) == {"docs", "map", "railtabs", "plan", "artifacts", "agent"}
-    assert docs["railtabs"] == ["goal", "workflows", "audit"] and docs["map"] == json.loads(files["map.json"])
+    assert set(docs) == {"docs", "map", "railtabs", "plan", "planmap", "activity", "changes", "journey", "msgs", "arts", "artifacts", "agent"}
+    assert docs["railtabs"] == ["goal", "workflows", "audit"] and docs["map"] == json.loads(files["map.json"])  # the Map's own tab is left out
     assert docs["docs"] == json.loads(files["docs.json"]) and docs["plan"] == json.loads(files["plan.json"])
     assert docs["agent"] == json.loads(files["agent-identity.json"])
-    assert docs["artifacts"] == {**json.loads(files["artifacts.json"]), "tree": json.loads(files["artifacts-tree.json"])}
+    assert docs["planmap"] == json.loads(files["plan-map.json"]) and docs["activity"] == json.loads(files["activity-adaptation.json"])  # Adaptation's feed
+    assert docs["changes"] == [] and docs["journey"] is True and docs["msgs"] == json.loads(files["state.json"])["chat"]
+    assert docs["arts"] == json.loads(files["artifacts.json"])  # what the Studio view reads at /api/artifacts
+    assert docs["artifacts"] == {"tree": json.loads(files["artifacts-tree.json"]), "groups": json.loads(files["artifacts-groups.json"])}
     assert json.loads(files["maps.json"]) == {"j2-standin-run": json.loads(files["map.json"])}  # keyed by the map's own run id
 
 
 def test_the_goldens_are_what_the_page_harnesses_printed(standin):
     j2, files = standin
-    golden = {key: json.loads(files[f"golden-{key}.json"]) for key in ("simple", "sprog", "workflows", "rail", "needs", "map", "agent", "layout")}
-    assert golden == {"simple": "chat:1", "sprog": "status:waiting", "workflows": "W-1:2,W-2:2", "rail": ["goal", "workflows", "audit"],
-                      "needs": "", "map": "nodes:1", "agent": "identity", "layout": [{"run": "j2-standin-run", "nodes": 1}]}
+    golden = {key: json.loads(files[f"golden-{key}.json"]) for key in J2_GOLDENS}
+    assert golden == {
+        "simple": "chat:1", "sprog": "status:waiting", "workflows": "W-1:2,W-2:2", "rail": ["goal", "workflows", "audit"],
+        "needs": "", "map": "nodes:1", "agent": "identity", "finish": "", "journey": {"stops": 0}, "journeyhtml": "journey:0",
+        "sframe": "/site/v0?t=1793786404000",  # the page puts the time in it: node's clock is frozen at the capture's (in ms)
+        "needids": [], "railst": {"tabs": 3}, "planmap": "planmap:false", "msgfns": [["you"]], "feed": "feed:adaptation:0",
+        "teamwork": "teamwork:1", "plan": "plan:2", "team": "team:2", "status": "status:waiting", "views": "views:deliverables,records",
+        "files": "", "parts": ["W-1", "W-2"], "tabs": ["site", "team"], "inline": "", "layout": [{"run": "j2-standin-run", "nodes": 1}]}
     assert files["golden-simple.json"] == b'"chat:1"'  # compact one-line JSON
 
 
@@ -4321,17 +5048,22 @@ def test_the_manifest_names_the_commit_the_brief_the_clock_and_every_other_file(
     assert manifest["schema"] == "j2-fixtures/1" and manifest["mock"] is True and manifest["brief"] == capture.BRIEF
     assert manifest["j2_commit"] == git_in(j2, "rev-parse", "HEAD").strip() and manifest["clock"] == capture.FIXED_TIME
     assert manifest["harness"] == {"page": "j2_ui.html", "render": ["state.json", "previews.json", "render-docs.json"], "layout": ["maps.json"],
-                                   "goldens": [f"golden-{k}.json" for k in ("simple", "sprog", "workflows", "rail", "needs", "map", "agent", "layout")]}
+                                   "goldens": [f"golden-{k}.json" for k in J2_GOLDENS]}
     assert list(manifest["files"]) == sorted(manifest["files"]) and set(manifest["files"]) == set(files) - {"MANIFEST.json"}
     for name, info in manifest["files"].items():
         assert info == {"bytes": len(files[name]), "sha256": hashlib.sha256(files[name]).hexdigest()}, name
 
 
-def test_a_checkout_that_is_not_a_repository_has_no_commit_in_the_manifest(tmp_path):
+def test_a_checkout_that_is_not_a_repository_has_no_commit_in_the_manifest_unless_one_is_given(tmp_path):
     j2 = standin_checkout(tmp_path, repository=False)
     manifest = json.loads(capture.manifest(j2, "a brief", {"a.json": b"1"}))
     assert manifest["j2_commit"] is None and manifest["brief"] == "a brief" and manifest["files"] == {
         "a.json": {"bytes": 1, "sha256": hashlib.sha256(b"1").hexdigest()}}
+    pin = "025e265c594564f47a2365874cd5a5cc5d0d20a6"  # an extraction made by `git archive` knows its commit only from --commit
+    assert json.loads(capture.manifest(j2, "a brief", {"a.json": b"1"}, pin))["j2_commit"] == pin
+    repository = standin_checkout(tmp_path / "repo")
+    assert json.loads(capture.manifest(repository, "b", {}, pin))["j2_commit"] == pin  # the given commit wins over the folder's own HEAD
+    assert json.loads(capture.manifest(repository, "b", {}))["j2_commit"] == git_in(repository, "rev-parse", "HEAD").strip()
 
 
 # ---- the capture does not touch J2, and says so when it did ---------------------------------------------------------------------
@@ -4346,9 +5078,22 @@ def test_a_j2_that_writes_into_its_own_folder_is_caught(tmp_path):
 
 
 @needs_node
+def test_a_j2_extraction_that_is_written_into_is_caught_by_the_content_of_its_files(tmp_path):
+    """An extraction made by `git archive` is not a repository: `git status` has nothing to say, the digest of its files does."""
+    j2 = standin_checkout(tmp_path, repository=False)
+    assert capture.checkout_state(j2) is None
+    with pytest.raises(capture.CaptureError) as caught:
+        quick_capture(j2, brief="STRAY: write a file")
+    assert str(caught.value) == "the J2 folder changed during the capture (files added, removed or changed): stray.txt"
+    (j2 / "stray.txt").unlink()
+    assert len(quick_capture(j2)) == STANDIN_FILES  # and without the write the same folder is fine: no repository, no commit
+    assert json.loads(quick_capture(j2, commit="025e265c594564f47a2365874cd5a5cc5d0d20a6")["MANIFEST.json"])["j2_commit"] == "025e265c594564f47a2365874cd5a5cc5d0d20a6"
+
+
+@needs_node
 def test_a_checkout_with_uncommitted_edits_is_fine_when_the_capture_leaves_them_alone(quiet):
     j2, files = quiet
-    assert capture.checkout_state(j2) == " M j2_server.py\n" and len(files) == 34  # captured with the edit in place, and still there
+    assert capture.checkout_state(j2) == " M j2_server.py\n" and len(files) == STANDIN_FILES  # captured with the edit in place, and still there
 
 
 # ---- the J2 server as a child process --------------------------------------------------------------------------------------------
@@ -4502,6 +5247,12 @@ def test_a_state_over_the_limit_is_refused_with_the_limit_in_the_message(server)
     ("/api/refs", r"^GET /api/refs answered 404$"),
     ("/api/agent?who=nobody", r"^GET /api/agent\?who=nobody answered 404$"),
     ("/api/state", r"^GET /api/state answered 404$"),
+    ("/api/plan-map", r"^GET /api/plan-map answered 404$"),
+    ("/api/activity?who=audit", r"^GET /api/activity\?who=audit answered 404$"),
+    ("/api/record?sec=W-2", r"^GET /api/record\?sec=W-2 answered 404$"),
+    ("/api/record?art=Menu%20card", r"^GET /api/record\?art=Menu card answered 404$"),  # a name with a space is asked for quoted
+    ("/view?name=goal.json", r"^GET /view\?name=goal\.json answered 404$"),
+    ("/api/ask", r"^POST /api/ask \(who identity\) answered 404$"),  # a POST path can be broken too
 ])
 def test_a_route_that_does_not_answer_200_stops_the_capture_and_names_it(server, path, message):
     capture.run_team(server, "a brief", 20)
@@ -4510,10 +5261,14 @@ def test_a_route_that_does_not_answer_200_stops_the_capture_and_names_it(server,
         capture.collect_routes(server, 100_000)
 
 
-def test_every_route_and_every_agent_view_is_asked_for_once(server):
+def test_every_route_every_agent_view_every_feed_every_record_and_every_answer_is_asked_for_once(server):
     capture.run_team(server, "a brief", 20)
     routes = capture.collect_routes(server, 100_000)
-    assert list(routes) == list(capture.ROUTE_FILES) + [f"agent-{who}.json" for who in (*FUNCTIONS, "W-1")] + ["agent-unknown.json"]
+    assert list(routes) == (list(capture.ROUTE_FILES) + [f"agent-{who}.json" for who in (*FUNCTIONS, "W-1")] + ["agent-unknown.json"]
+                            + [f"activity-{who}.json" for who in J2_FUNCS] + ["activity-unknown.json"]
+                            + ["record-W-1.json", "record-W-2.json", "record-art-Website.json", "record-art-Menu-card.json"]
+                            + [f"ask-{who}.json" for who in J2_FUNCS])
+    assert len(capture.ROUTE_FILES) == 23 and len(routes) == 23 + 7 + 7 + 4 + 6
 
 
 def test_a_preview_route_that_does_not_answer_200_stops_the_capture(server):
@@ -4530,7 +5285,7 @@ def test_a_preview_route_that_does_not_answer_200_stops_the_capture(server):
 def standin_parts(standin):
     """The routes and previews of the stand-in as `collect_routes` and `collect_previews` hand them over, for the tests of `derive`."""
     j2, files = standin
-    routes = {name: data for name, data in files.items() if name in capture.ROUTE_FILES or name.startswith("agent-")}
+    routes = {name: data for name, data in files.items() if name in capture.ROUTE_FILES or name.startswith(("agent-", "activity-", "ask-", "record-"))}
     previews = {atom: {"anchor": "a-1", "html": html} for atom, html in json.loads(files["previews.json"]).items()}
     return j2, routes, previews
 
@@ -4542,9 +5297,8 @@ def test_derive_makes_the_same_goldens_again_from_the_same_routes(standin, stand
     derived = capture.derive(j2, NODE, routes, previews, tmp_path)
     assert {name: derived[name] for name in derived} == {name: files[name] for name in derived}
     assert capture.derive(j2, NODE, routes, previews, tmp_path) == derived  # and again in the same working folder
-    assert set(derived) == {"previews.json", "preview-replies.json", "render-docs.json", "maps.json", "golden-simple.json", "golden-sprog.json",
-                            "golden-workflows.json", "golden-rail.json", "golden-needs.json", "golden-map.json", "golden-agent.json",
-                            "golden-layout.json"}
+    assert set(derived) == {"previews.json", "preview-replies.json", "render-docs.json", "maps.json"} | {f"golden-{key}.json" for key in J2_GOLDENS}
+    assert "golden-sframe.json" in derived and derived["golden-sframe.json"] == b'"/site/v0?t=1793786404000"'  # the harness ran on the frozen clock
 
 
 @needs_node
@@ -4614,11 +5368,18 @@ def test_a_j2_that_moved_to_a_new_commit_but_gives_the_same_bytes_is_not_drift(s
     out = tmp_path / "out"
     capture.write_files(out, files)
     manifest = json.loads(files["MANIFEST.json"])
-    moved = {**files, "MANIFEST.json": (json.dumps({**manifest, "j2_commit": "33aeeda639cd7bf828d5361273a8a153ebc63a36"}, indent=2) + "\n").encode()}
+    moved = {**files, "MANIFEST.json": (json.dumps({**manifest, "j2_commit": "abcdef0123456789abcdef0123456789abcdef01"}, indent=2) + "\n").encode()}
     monkeypatch.setattr(capture, "capture", lambda *args, **kwargs: moved)
     common = ["--j2", str(j2), "--j2-python", sys.executable, "--out", str(out), "--check"]
     assert capture.main(common) == 0
-    assert capsys.readouterr().out == f"ok: 33 files equal a fresh capture; J2 moved on ({manifest['j2_commit'][:7]} captured, 33aeeda now) and gives the same bytes\n"
+    assert capsys.readouterr().out == (f"ok: {len(files) - 1} files equal a fresh capture; J2 moved on ({manifest['j2_commit'][:7]} captured, "
+                                       "abcdef0 now) and gives the same bytes\n")
+    unknown = {**files, "MANIFEST.json": (json.dumps({**manifest, "j2_commit": None}, indent=2) + "\n").encode()}  # an extraction and no --commit
+    monkeypatch.setattr(capture, "capture", lambda *args, **kwargs: unknown)
+    assert capture.main(common) == 0
+    assert capsys.readouterr().out == (f"ok: {len(files) - 1} files equal a fresh capture (no --commit given: the committed manifest's commit "
+                                       f"{manifest['j2_commit'][:7]} is not compared)\n")
+    monkeypatch.setattr(capture, "capture", lambda *args, **kwargs: moved)
     changed = {**moved, "board.json": b"[]"}  # a file differs as well: that is drift whatever the commit
     changed["MANIFEST.json"] = capture.manifest(j2, capture.BRIEF, {k: v for k, v in changed.items() if k != "MANIFEST.json"})
     monkeypatch.setattr(capture, "capture", lambda *args, **kwargs: changed)
@@ -4655,26 +5416,28 @@ def test_run_as_a_program_a_second_capture_equals_the_first_and_the_checkout_sta
     capture.write_files(out, files)
     base = [sys.executable, str(SCRIPT), "--j2", str(j2), "--j2-python", sys.executable, "--out", str(out), "--timeout", "30", "--check"]
     checked = subprocess.run(base, capture_output=True, text=True, timeout=120)  # another process, another port, another scratch folder
-    assert (checked.returncode, checked.stdout.strip().splitlines()[-1], checked.stderr) == (0, "ok: 34 files equal a fresh capture", "")
+    assert (checked.returncode, checked.stdout.strip().splitlines()[-1], checked.stderr) == (0, f"ok: {STANDIN_FILES} files equal a fresh capture", "")
     assert capture.checkout_state(j2) == before
 
 
-@pytest.mark.skipif(not os.environ.get("SUTRA_J2_CHECKOUT"), reason="set SUTRA_J2_CHECKOUT to a J2 checkout (and SUTRA_J2_PYTHON if its venv is elsewhere)")
+@pytest.mark.skipif(not os.environ.get("SUTRA_J2_CHECKOUT"),
+                    reason="set SUTRA_J2_CHECKOUT to an extraction of prototypes/j2 at the pinned commit (and SUTRA_J2_COMMIT to that commit)")
 def test_the_committed_j2_captures_equal_a_fresh_capture_of_the_real_j2(capsys):
     j2 = Path(os.environ["SUTRA_J2_CHECKOUT"])
-    python = os.environ.get("SUTRA_J2_PYTHON") or str(j2 / "venv" / "bin" / "python")
-    before = capture.checkout_state(j2)
-    assert capture.main(["--j2", str(j2), "--j2-python", python, "--check"]) == 0, capsys.readouterr().err
-    assert capture.checkout_state(j2) == before  # J2 is read-only for the app: nothing was written there
+    before = capture.folder_digest(j2)
+    commit = ["--commit", os.environ["SUTRA_J2_COMMIT"]] if os.environ.get("SUTRA_J2_COMMIT") else []
+    # J2's server runs on this Python, the project's own virtualenv: J2's mock mode needs only the standard library and pydantic
+    assert capture.main(["--j2", str(j2), *commit, "--check"]) == 0, capsys.readouterr().err
+    assert capture.folder_digest(j2) == before  # J2 is read-only for the app: nothing was written there
 
 
-# ---- patch P13: the fake's /api/runlist and /api/changes (the engine's own shapes, not captured from J2) -------------------------
-def test_the_fake_answers_the_two_p13_routes_per_team(fake_server, fake):
+# ---- the run list and the changes: J2's own routes since sync 4 (D140), so captures like the rest ------------------------------
+def test_the_run_list_and_the_changes_are_j2s_captures_and_a_team_is_asked_for(fake_server, fake):
     fake.stage("2")
     status, _, raw = j2_get(fake_server, "/api/runlist", dept="web")
     body = json.loads(raw)
     assert status == 200 and list(body) == ["live", "runs"] and body["runs"], body
-    assert set(body["runs"][0]) == {"id", "title", "status", "output", "when", "brief"} and body["runs"][0]["when"] == "2026-11-04T10:00:04"
+    assert set(body["runs"][0]) == {"id", "title", "status", "output", "label", "form", "when", "brief"} and body["runs"][0]["when"] == "2026-11-04T10:00:04"
     assert json.loads(j2_get(fake_server, "/api/changes", dept="web")[2]) == {"changes": []}
     for path in ("/api/runlist", "/api/changes"):
         assert j2_get(fake_server, path)[0] == 400 and j2_get(fake_server, path, dept="nosuch")[0] == 404

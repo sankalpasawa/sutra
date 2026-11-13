@@ -1,8 +1,9 @@
 """Rows 31 and 32: the engine settings the owner edits in Settings (engine design 7.1, S1-contracts-03, D18).
 
-    GET /api/engine/settings[?dept=]   {schema, defaults, global, department (only with dept), effective, editable, locked}
+    GET /api/engine/settings[?dept=]   {schema, defaults, global, department and next_run (only with dept), effective, editable, locked}
     PUT /api/engine/settings[?dept=]   {"set": {field: value}, "unset": [field]}   (token required)
-    GET /api/engine/capabilities       {schema, capabilities: [{name, outputs, settings}], outputs}: what the engine can do (D126)
+    GET /api/engine/capabilities       {schema, capabilities: [{name, outputs, settings}], outputs}: what the engine can do (D126); `outputs`
+                                       are the names of the types in the data (`j2_types.names()`), in file order
 
 Without `dept` the file is `data/engine.json`, with it `data/departments/<dept>/engine.json`. A file holds field names (partial,
 J2's defaults fill the rest). PUT checks every new value strictly against `EngineSettings` (closed, no secret is a field),
@@ -10,6 +11,15 @@ refuses unknown and `LOCKED_FIELDS` (live email, recipients, the Chrome path, th
 `validation`, proves the whole file still validates, and writes it by temp file and rename with mode 0600. A change applies to
 the NEXT run of that scope: the host reads the files once at start and writes `<run>/settings.json`. These are new routes, so
 errors are the envelope `{error: {code, message, details}}`; an unreadable settings file is 422 `validation` naming the file.
+
+With a team the body also has `next_run` (J2 sync 4, D139): what the team's next run would use, the start page's choice included
+(`ctx.effective_settings`: `engine.json`, the team's file and `page.json` layered). Today it holds `output`, which the start page's
+"What should we make?" select shows, so a reload shows what was picked. Additive: nothing else of the body changes.
+
+J2 sync 5 (D166): the body also has `output_types`, `[{name, label, form, pin}]` in `types.json` order: every type the owner may pin (`pin`
+is true for a type the planner lists and for a type a capability registered), with the data's own labels, so the pages build their choices
+from it and name no type. `output` is `auto` or a name of the right shape (`spec.py`); that the name is a type that exists is checked here,
+where J2 is loaded: `set.output` of an unknown name is a violation row.
 """
 import json
 import os
@@ -28,7 +38,7 @@ from .. import capabilities
 from ..paths import DataPaths
 from ..spec import EDITABLE_FIELDS, LOCKED_FIELDS, SETTINGS_SCHEMA, EngineSettings, SettingsError, read_settings_file
 from .commands import read_json_body
-from .ctx import dept_dependency
+from .ctx import dept_dependency, effective_settings
 from .reply import json_reply, to_response, validation
 
 __all__ = ["add_routes", "settings_view", "apply_change", "settings_file", "capabilities_view", "CAPABILITIES_SCHEMA"]
@@ -65,7 +75,23 @@ def settings_view(data_dir, dept_id: Optional[str]) -> dict:
     if dept_id:
         body["department"] = dept_file
     body.update(effective=effective.model_dump(), editable=list(EDITABLE_FIELDS), locked=list(LOCKED_FIELDS))
+    body["output_types"] = output_types()
+    if dept_id:
+        body["next_run"] = {"output": effective_settings(data_dir, dept_id).output}
     return body
+
+
+def _types():
+    """J2's type module with the capabilities' types registered (importing `views` registers them: one implementation for every process)."""
+    from .. import j2, views  # noqa: F401
+    return j2.j2_types
+
+
+def output_types() -> list[dict]:
+    """`[{name, label, form, pin}]`: every output type in the data, in order, for the pages' choices (D166)."""
+    return [{"name": e["name"], "label": str(e.get("label") or e["name"]), "form": str(e.get("form") or ""),
+             "pin": bool(e.get("deliverable")) or bool(e.get("host"))}
+            for e in _types().entries() if e.get("kind") == "type"]
 
 
 CAPABILITIES_SCHEMA = "engine-capabilities/1"
@@ -73,8 +99,7 @@ CAPABILITIES_SCHEMA = "engine-capabilities/1"
 
 def capabilities_view() -> dict:
     """The body of GET /api/engine/capabilities: the registry's own description, and every output name the engine accepts."""
-    from .. import j2
-    return {"schema": CAPABILITIES_SCHEMA, "capabilities": capabilities.describe(), "outputs": sorted(j2.OUTPUTS)}
+    return {"schema": CAPABILITIES_SCHEMA, "capabilities": capabilities.describe(), "outputs": list(_types().names())}
 
 
 def _errors(prefix: str, exc: ValidationError) -> list[dict]:
@@ -109,6 +134,9 @@ def apply_change(data_dir, dept_id: Optional[str], body: Any) -> None:
         checked = EngineSettings.model_validate(to_set, strict=True)
     except ValidationError as exc:
         raise validation(_errors("set", exc)) from None
+    if "output" in to_set and checked.output != "auto" and checked.output not in _types().names():
+        raise validation([_violation("set.output", "unknown_output",
+                                     f"{checked.output} is not an output type (known: {', '.join(_types().names())})")])
     path = settings_file(data_dir, dept_id)
     with _WRITE_LOCK:
         current = _read(path)

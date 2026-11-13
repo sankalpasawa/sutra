@@ -228,6 +228,33 @@ def test_usage_summary_groups_and_refuses_an_unknown_grouping(client, world):
     error_of(client.get("/api/usage/summary", params={"by": "colour"}), 422, "validation")
 
 
+def test_usage_summary_by_purpose_is_a_grouping_like_the_others_with_the_window_the_session_and_the_stub_switch(client, world):
+    """D159: `by=purpose` is the ledger's open word for what a call was for; the rows have the shape of every other grouping."""
+    store = UsageStore(world.db)
+    sid = world.session_of["web"]
+    store.record(uin(purpose="agent_turn", call_ref="1", usd=0.5, tokens_in=10, tokens_out=2))
+    store.record(uin(purpose="judge", session_id=sid, call_ref="2", usd=0.25, tokens_in=20, tokens_out=3))
+    store.record(uin(purpose="plan", session_id=sid, provider="codex", usd=None, call_ref="3", tokens_in=5, tokens_out=1))
+    store.record(uin(purpose="chat_plan", provider="stub", call_ref="4", how="stub", usd=None, tokens_in=1, tokens_out=1))
+    body = client.get("/api/usage/summary", params={"by": "purpose"}).json()
+    assert UsageSummary.model_validate(body) and set(body) == {"groups"}
+    assert [g["key"] for g in body["groups"]] == ["agent_turn", "judge", "plan"]                                         # key order; the stub row's purpose is left out
+    assert all(set(g) == {"key", "calls", "usd", "tokens_in", "tokens_out"} for g in body["groups"])
+    assert body["groups"][1] == {"key": "judge", "calls": 1, "usd": 0.25, "tokens_in": 20, "tokens_out": 3}
+    assert body["groups"][2] == {"key": "plan", "calls": 1, "usd": None, "tokens_in": 5, "tokens_out": 1}               # Codex: tokens and no dollars
+    stubbed = client.get("/api/usage/summary", params={"by": "purpose", "include_stub": 1}).json()
+    assert [g["key"] for g in stubbed["groups"]] == ["agent_turn", "chat_plan", "judge", "plan"] and UsageSummary.model_validate(stubbed)
+    assert [g["key"] for g in client.get("/api/usage/summary", params={"by": "purpose", "session_id": sid}).json()["groups"]] == ["judge", "plan"]
+    # the window: epoch seconds or an ISO time, the same words as GET /api/usage; every grouping has it
+    assert len(client.get("/api/usage/summary", params={"by": "purpose", "since": "2026-11-04T00:00:00Z"}).json()["groups"]) == 3
+    assert client.get("/api/usage/summary", params={"by": "purpose", "since": "4102444800"}).json() == {"groups": []}
+    assert client.get("/api/usage/summary", params={"by": "dept", "since": "4102444800"}).json() == {"groups": []}
+    error = error_of(client.get("/api/usage/summary", params={"by": "purpose", "since": "yesterday"}), 422, "validation")
+    assert error["details"]["violations"][0]["path"] == "query.since" and error["details"]["violations"][0]["code"] == "bad_time"
+    error_of(client.get("/api/usage/summary", params={"by": "purpose", "since": "9" * 40}), 422, "validation")          # a number that is no time is refused, not a 500
+    error_of(client.get("/api/usage/summary", params={"by": "purpose", "since": "1" * 41}), 422, "validation")          # and so is a longer one
+
+
 # ---- all routes ------------------------------------------------------------------------------------------------------------------------
 
 def test_every_route_is_a_read_that_needs_no_token(client):

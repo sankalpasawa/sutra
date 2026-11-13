@@ -1,13 +1,17 @@
 """J2's own scripts, ported, as subprocess suites (work package E5, engine design 9, ENG-01 and ENG-10).
 
-`tests/engine/legacy/` holds `j2_flow_test.py`, `change_test.py`, `realization_test.py` and `j2_replay_size.py` from J2 `33aeeda` with
-only the edits the engine design lists (sibling imports point to `sutra_app.engine`; J2's page, harness files and saved runs are read
-from `SUTRA_J2_CHECKOUT` and the block that needs them prints a skip reason when it is unset; no git history; no real `claude`). Each
-script runs here in a child process with a clean environment and a temp folder as its working directory, because it sets J2's
-environment at import and mutates module state. The flow script takes minutes and is marked slow (`SUTRA_SLOW=1`); the two small
-scripts take a few seconds and run in every gate. The other tests check the edits themselves: the skip mechanism, the generated PNG,
-the paths that follow `SUTRA_J2_CHECKOUT`, and `scripts/engine_gate.sh`.
+`tests/engine/legacy/` holds `j2_flow_test.py`, `change_test.py`, `realization_test.py` and `j2_replay_size.py` from `prototypes/j2` at
+the commit `EXPECTED.json` names (sync 5: 1d537295, the tag cut-off/2026-11-12; made by a three-way merge, D174: base = J2's
+file at 025e265c, ours = the sync 4 copy, theirs = J2 at the new pin), with only the edits the engine design lists (sibling imports point to
+`sutra_app.engine`; J2's page, harness files and saved runs are read from `SUTRA_J2_CHECKOUT`, an extraction of `prototypes/j2` at that
+commit, and the block that needs them prints a skip reason when it is unset; the copy has no saved runs, so the blocks that need them
+print one with the extraction too; no git history; no real `claude`). Each script runs here in a child process with a clean environment
+and a temp folder as its working directory, because it sets J2's environment at import and mutates module state. The flow script takes
+minutes and is marked slow (`SUTRA_SLOW=1`); the two small scripts take a few seconds and run in every gate. The other tests check the
+edits themselves: the skip mechanism, the generated PNG, the paths that follow `SUTRA_J2_CHECKOUT`, the list of J2 blocks, and
+`scripts/engine_gate.sh`.
 """
+import hashlib
 import json
 import os
 import re
@@ -22,7 +26,21 @@ HERE = Path(__file__).resolve().parent
 REPO = HERE.parent.parent
 LEGACY = HERE / "legacy"
 GATE = REPO / "scripts" / "engine_gate.sh"
+VENDORED_MD = REPO / "sutra_app" / "engine" / "VENDORED.md"
 EXPECTED = json.loads((LEGACY / "EXPECTED.json").read_text(encoding="utf-8"))
+EXTRACTION = os.environ.get("SUTRA_J2_CHECKOUT")        # an extraction of prototypes/j2 at the pinned commit, for the tests that need J2's page
+
+# The J2 blocks that came with sync 4 (prototypes/j2 at 00efb179, then the studio redesign at 025e265c): name -> the first words of the line each
+# prints, whether it ran through or says why it stopped.
+J2_NEW_BLOCKS = {
+    "late_judge_run": "late judge:", "plan_map_view": "plan map:", "simple_redesign": "simple redesign:", "chat_panel": "chat panel:",
+    "function_chat": "function chat:", "view_kept": "view kept:", "run_settings": "run settings:", "artifacts_groups": "artifacts groups:",
+    "agent_views": "agent views:", "decide_for_me": "decide for me:", "studio_model": "studio model:", "studio_views": "studio views:",
+}
+# The ones (and the helper agent_views_page) that read J2's page, its render harness, Chrome or saved runs: they sit in the script's
+# `skippable` list, so that without them they end with a printed reason instead of an error.
+J2_PAGE_BLOCKS = ("simple_redesign", "plan_map_view", "chat_panel", "function_chat", "view_kept", "run_settings", "artifacts_groups",
+                  "agent_views", "agent_views_page", "studio_views")
 
 
 def clean_env(**extra) -> dict:
@@ -46,11 +64,94 @@ def run_python(code: str, tmp_path, **extra_env) -> subprocess.CompletedProcess:
 
 
 # ---- the recorded minimums --------------------------------------------------------------------------------------------------
-def test_expected_json_records_the_three_minimums():
-    assert set(EXPECTED) == {"j2_commit", "flow_fast_ok_lines", "change_checks", "realization_checks"}
-    assert EXPECTED["j2_commit"].startswith("9200cf6")
-    assert EXPECTED["change_checks"] >= 192 and EXPECTED["realization_checks"] >= 97       # J2's own numbers (engine.md 9)
-    assert EXPECTED["flow_fast_ok_lines"] >= 60
+def test_expected_json_records_the_pin_and_the_minimums():
+    assert set(EXPECTED) == {"j2_commit", "j2_flow_test_sha256", "legacy_flow_test_sha256", "flow_fast_ok_lines",
+                             "flow_fast_ok_lines_with_extraction", "change_checks", "realization_checks", "skip_lines_with_extraction",
+                             "known_upstream_failures"}
+    assert EXPECTED["j2_commit"] == "1d537295eb11cb034956fa9d8a4026eaa1e3f44e"
+    assert EXPECTED["j2_commit"] in VENDORED_MD.read_text(encoding="utf-8"), "the scripts and the vendored engine are the same J2"
+    assert re.fullmatch(r"[0-9a-f]{64}", EXPECTED["j2_flow_test_sha256"]) and re.fullmatch(r"[0-9a-f]{64}", EXPECTED["legacy_flow_test_sha256"])
+    assert EXPECTED["known_upstream_failures"] == ["map_focus", "graph_map", "warm_ui"]
+    assert EXPECTED["change_checks"] >= 192 and EXPECTED["realization_checks"] >= 98       # J2's own numbers (engine.md 9; realization +1 at 025e265c)
+    assert EXPECTED["flow_fast_ok_lines"] >= 60 and EXPECTED["flow_fast_ok_lines_with_extraction"] > EXPECTED["flow_fast_ok_lines"]
+    assert EXPECTED["skip_lines_with_extraction"] and all(isinstance(x, str) and x for x in EXPECTED["skip_lines_with_extraction"])
+
+
+def test_the_merged_flow_copy_is_the_one_the_pin_test_names():
+    """D174: the copy is one file; any edit to it (a new merge, a skip) moves this hash and must be recorded with EXPECTED.json."""
+    assert hashlib.sha256((LEGACY / "j2_flow_test.py").read_bytes()).hexdigest() == EXPECTED["legacy_flow_test_sha256"]
+
+
+# The J2 blocks that came with sync 5 (cut-off/2026-11-12), and what each needs of J2's own files: they sit in the `skippable` list.
+J2_SYNC5_BLOCKS = ("autofixes", "builder_context_trim", "builder_inputs", "builder_time_limit", "check_grep_markup", "check_rendered_count",
+                   "deleted_local_type", "deliverables_generic", "doc_planner_real", "doc_plans_generic", "doc_prompts_unchanged",
+                   "doc_sections_replay", "doc_type_names", "doc_unchanged", "fix_sections", "forms_and_new_types", "generic_source",
+                   "kind_and_sections", "kind_stored_and_charter_label", "local_types", "n6_sources", "new_type_models",
+                   "new_type_sections", "owns_message", "page_run", "page_type_from_data", "planner_conditions",
+                   "recommended_practice", "report_type", "run_list_local_type", "saved_run_no_type", "saved_runs_render", "tap_dense",
+                   "timing_records", "types_constants", "types_refused", "validator_autofix_human", "validator_autofix_plan_fields",
+                   "validator_autofix_step", "validator_autofix_target", "validator_heading_list")
+J2_SYNC5_NEEDS_J2_FILES = ("deliverables_generic", "forms_and_new_types", "generic_source", "local_types", "n6_sources", "types_constants")
+
+
+def test_every_j2_block_of_sync_5_is_defined_and_called():
+    text = (LEGACY / "j2_flow_test.py").read_text(encoding="utf-8")
+    wrapped = text[text.index("for _name in ("):text.index("globals()[_name] = skippable")]
+    for name in J2_SYNC5_BLOCKS:
+        assert re.search(rf"(?m)^def {name}\(", text), (name, "defined")
+        assert len(re.findall(rf"\b{name}\(", text)) >= 2, (name, "called by the main flow or by another block")
+    for name in J2_SYNC5_NEEDS_J2_FILES:
+        assert f'"{name}"' in wrapped, (name, "reads J2's own files: it needs `skippable`")
+
+
+def test_the_three_known_upstream_failures_are_named_and_a_fourth_still_fails(tmp_path):
+    """D174: map_focus, graph_map and warm_ui fail in J2's own run at the pin: each ends with a printed reason, nothing else does."""
+    text = (LEGACY / "j2_flow_test.py").read_text(encoding="utf-8")
+    assert 'KNOWN_UPSTREAM = ("map_focus", "graph_map", "warm_ui")' in text
+    assert '"map_focus"' in text[text.index("for _name in ("):] and "known upstream failure at cut-off/2026-11-12" in text
+    res = run_python("""
+        import os
+        import j2_flow_test as F
+
+        def known():
+            raise AssertionError("J2's own failure")
+
+        def other():
+            raise AssertionError("a real failure")
+        F.skippable(F.known_upstream_failure(known))()
+        print("KNOWN-SKIPPED")
+        try:
+            F.skippable(F.known_upstream_failure(other))()
+        except F.NeedsPage:
+            raise SystemExit("not skippable")
+        except Exception:
+            raise SystemExit("raised")
+        """, tmp_path)
+    assert "skipped the rest of known: known upstream failure at cut-off/2026-11-12 (AssertionError: J2's own failure)" in res.stdout
+    assert "KNOWN-SKIPPED" in res.stdout
+    # a block that is not wrapped as a known failure still fails the script: only `known_upstream_failure` turns a failure into a skip
+    res = run_python("""
+        import j2_flow_test as F
+
+        def other():
+            raise AssertionError("a real failure")
+        try:
+            F.skippable(other)()
+        except AssertionError as e:
+            print("RAISED", e)
+        """, tmp_path)
+    assert "RAISED a real failure" in res.stdout
+
+
+def test_every_j2_block_of_sync_4_is_defined_called_and_guarded():
+    text = (LEGACY / "j2_flow_test.py").read_text(encoding="utf-8")
+    main = text[text.index('if __name__ == "__main__":'):]
+    wrapped = text[text.index("for _name in ("):text.index("globals()[_name] = skippable")]
+    for name in J2_NEW_BLOCKS:
+        assert re.search(rf"(?m)^def {name}\(", text), (name, "defined")
+        assert re.search(rf"(?m)^\s+{name}\(\)\s*$", main), (name, "called by the main flow")
+    for name in J2_PAGE_BLOCKS:
+        assert re.search(rf"(?m)^def {name}\(", text) and f'"{name}"' in wrapped, (name, "reads the page, Chrome or saved runs: it needs `skippable`")
 
 
 def test_the_four_scripts_are_there_and_use_the_engine_package():
@@ -84,7 +185,31 @@ def test_flow_script_fast_passes(tmp_path):
     tail = res.stdout.strip().splitlines()[-1:] or [""]
     assert res.returncode == 0, res.stdout[-1500:] + res.stderr[-2500:]
     assert tail == ["j2 flow checks passed"] and "Traceback" not in res.stdout + res.stderr
-    assert sum(1 for line in res.stdout.splitlines() if line.endswith(" ok")) >= EXPECTED["flow_fast_ok_lines"]
+    lines = res.stdout.splitlines()
+    assert sum(1 for line in lines if line.endswith(" ok")) >= EXPECTED["flow_fast_ok_lines"]
+    for name, first_words in J2_NEW_BLOCKS.items():          # without J2's page a block runs through or says why it stopped
+        assert any(x.startswith(first_words) or x.startswith(f"  skipped the rest of {name}:") for x in lines), (name, first_words)
+
+
+@pytest.mark.slow
+@pytest.mark.skipif(not (EXTRACTION and (Path(EXTRACTION) / "j2_flow_test.py").is_file()),
+                    reason="set SUTRA_J2_CHECKOUT to an extraction of prototypes/j2 at the pinned commit")
+def test_flow_script_fast_with_an_extraction_of_the_pin_runs_every_j2_block(tmp_path):
+    """J2's page and harness files are there (the copy has no saved runs): every J2 block of sync 4 runs through and prints its line, the
+    blocks that need saved runs print the lines EXPECTED.json lists, and the count of lines ending ' ok' holds."""
+    flow = (Path(EXTRACTION) / "j2_flow_test.py").read_bytes()
+    assert hashlib.sha256(flow).hexdigest() == EXPECTED["j2_flow_test_sha256"], \
+        f"SUTRA_J2_CHECKOUT is not an extraction of prototypes/j2 at {EXPECTED['j2_commit']}"
+    res = run_script(["j2_flow_test.py", "--fast"], tmp_path, timeout=900, SUTRA_J2_CHECKOUT=EXTRACTION)
+    lines = res.stdout.splitlines()
+    assert res.returncode == 0, res.stdout[-1500:] + res.stderr[-2500:]
+    assert lines[-1:] == ["j2 flow checks passed"] and "Traceback" not in res.stdout + res.stderr
+    assert sum(1 for line in lines if line.endswith(" ok")) >= EXPECTED["flow_fast_ok_lines_with_extraction"]
+    for name, first_words in J2_NEW_BLOCKS.items():
+        assert any(x.startswith(first_words) for x in lines), (name, "printed no line of its own")
+        assert not any(x.startswith(f"  skipped the rest of {name}:") for x in lines), (name, "stopped at the page or the saved runs")
+    for text in EXPECTED["skip_lines_with_extraction"]:
+        assert any(text in x for x in lines), (text, "a block that needs saved runs did not say so")
 
 
 @pytest.mark.slow
@@ -154,6 +279,18 @@ def test_the_checkout_variable_names_where_j2_files_are_read(tmp_path):
     assert res.returncode == 0, res.stderr[-1500:]
     assert "PAGE True True" in res.stdout and "MISSING j2_graph_layout.js not found" in res.stdout
     assert f"RUN {fake}/runs/j2-20261015-114723" in res.stdout
+
+
+def test_server_run_list_is_j2s_run_list_over_the_engines_runlist(tmp_path):
+    res = run_python("""
+        import os
+        import j2_flow_test as F
+        from sutra_app.engine import j2_server
+        got = F.server_run_list()
+        print("LIST", sorted(got), got["runs"], got["live"] == os.path.basename(j2_server.RUN.dir))
+        """, tmp_path)
+    assert res.returncode == 0, res.stderr[-1500:]
+    assert "LIST ['live', 'runs'] [] True" in res.stdout          # a temp runs folder with no run in it, the live run's id
 
 
 def test_replay_size_run_defaults_to_this_folder_without_a_checkout(tmp_path):

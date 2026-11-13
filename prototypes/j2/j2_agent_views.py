@@ -3,9 +3,10 @@
 Each artifact of a run folder gets a Pydantic-validated JSON where j2_artifacts.agent_view() looks for it, so the
 Artifacts pane's Agent-readable tab shows its model, its schema and the real "valid" mark:
   guides       artifacts/<name>.md        -> artifacts/<name>.json            (j2_agent_models.Guide and its kinds)
-  documents    prd.md / hld.md / lld.md   -> prd.json / hld.json / lld.json   (artifact-schema/1 data, "model" and "valid" added)
-  style guide  style.json                 -> design.json                      (artifact-schema/1 Design, "model" and "valid" added)
-  sections     site/index.html            -> site/sections/<id>.json          (artifact-schema/1 WebsiteSection)
+  documents    <type>.md                  -> <type>.json                      (artifact-schema/1 data, "model" and "valid" added)
+  style guide  style.json                 -> <style guide>.json               (artifact-schema/1 data, "model" and "valid" added)
+  sections     site/index.html            -> site/sections/<id>.json          (artifact-schema/1 page section)
+The document types, their files, the page type and the style guide are the ones artifacts/types.json and the templates name.
   records      goal.json, workflows.json, receipts.jsonl, conditions.json -> agent/<name>.json
   audits       audits.json                -> agent/audits/A-1.json, A-2.json, ...
 Data a run did not save is written as "not recorded"; nothing is guessed, and "valid" is always the result of the
@@ -24,9 +25,38 @@ if HERE not in sys.path:
 import j2_agent_models as G      # noqa: E402
 import j2_artifact_models as AM      # noqa: E402
 import j2_template_lib as L      # noqa: E402
+import j2_types      # noqa: E402
 
 RUNS_DIR = os.environ.get("J2_RUNS_DIR") or os.path.join(HERE, "runs")
-DELIVERED_MD = ("prd.md", "hld.md", "lld.md", "report.md")      # documents and the report are not guides
+
+
+def _named_sections(kind):
+    """True when a type's template (templates/<type>/generic.json) names its sections: more than one section template,
+    or a template for the whole artifact. A template with one section template repeats it, once per workflow (the rule
+    j2_artifact_models.model_for already follows). The template says which; no form or type name is read."""
+    return j2_types.document(kind) is not None or len(j2_types.sections(kind)) > 1
+
+
+def doc_kinds():
+    """The types built section by named section, in the order of artifacts/types.json (_named_sections)."""
+    return tuple(n for n in j2_types.names() if j2_types.sections(n) and _named_sections(n))
+
+
+def repeating_kinds():
+    """The types whose one section template is filled once per workflow, in the order of artifacts/types.json."""
+    return tuple(n for n in j2_types.names() if j2_types.sections(n) and not _named_sections(n))
+
+
+def style_guides():
+    """Every style guide a form of artifacts/types.json names and that has a template (j2_types.templated lists a guide
+    before the first type of its form): whichever forms declare one."""
+    return tuple(n for n in j2_types.templated() if n not in j2_types.names())
+
+
+def delivered_md():
+    """The markdown files a run delivers or keeps as a record (each document type's file, the run report): not guides."""
+    files = [j2_types.info(t["name"])["file"] if t.get("kind") == "type" else t.get("file") for t in j2_types.entries()]
+    return tuple(f for f in files if f and f.endswith(".md") and "/" not in f)
 
 
 def _read_json(p, default=None):
@@ -112,7 +142,7 @@ def guide_files(d, workflows):
             seen.add(rel)
             out.append((rel, by_out.get(rel) or by_out.get(os.path.basename(rel))))
     for o, wid in by_out.items():
-        if o.endswith(".md") and os.path.basename(o) not in DELIVERED_MD and "/" not in o and o not in seen \
+        if o.endswith(".md") and os.path.basename(o) not in delivered_md() and "/" not in o and o not in seen \
                 and os.path.isfile(os.path.join(d, o)):
             seen.add(o)
             out.append((o, wid))
@@ -139,7 +169,6 @@ def build_guides(d, workflows, facts):
 
 
 # ---------------------------------------------------------------------------------------------------- step 2: documents
-DOC_KINDS = ("prd", "hld", "lld")
 _ID_ATTR = re.compile(r'\sid="([^"]+)"')
 _CLASS_ATTR = re.compile(r'\sclass="([^"]+)"')
 
@@ -177,7 +206,7 @@ def _validate_sections(d, kind, sections, decs):
     template the run routed it to (the specialised class, then the generic model on its fields), as j2.py did at the time."""
     out = {}
     for name, data in (sections or {}).items():
-        gmodel = (AM.SECTION_MODELS.get(kind) or {}).get(name)
+        gmodel = AM.section_models(kind).get(name)
         if gmodel is None:
             out[name] = {"model": None, "template": None, "valid": False, "errors": [f"no model for a {kind} section named {name!r}"], "from": None}
             continue
@@ -192,9 +221,14 @@ def _validate_sections(d, kind, sections, decs):
     return out
 
 
+def _doc_model_name(kind):
+    """The name of an artifact's whole-document model (the type's own name when its template has none)."""
+    return getattr(AM.doc_model(kind), "__name__", None) or kind
+
+
 def _stamp(rec, kind, validation):
     """The top-level keys the Agent-readable tab reads, added to an artifact-schema/1 data file; every existing key kept."""
-    rec["model"] = AM.DOC_MODELS[kind].__name__
+    rec["model"] = _doc_model_name(kind)
     rec["valid"] = bool(validation) and all(v["valid"] for v in validation.values())
     rec["validation"] = validation
     rec["agent_views"] = G.SCHEMA
@@ -202,59 +236,81 @@ def _stamp(rec, kind, validation):
 
 
 def build_documents(d, decs):
-    """prd.json / hld.json / lld.json beside each document: artifact-schema/1 data (the builders' own replies), each
-    section validated against its model, and "model" / "valid" added at the top. A document with a .md and no data
-    file is reported, not invented."""
+    """<type>.json beside each document: artifact-schema/1 data (the builders' own replies), each section validated
+    against its model, and "model" / "valid" added at the top. A document with a .md and no data file is reported, not
+    invented."""
     results = []
-    for kind in DOC_KINDS:
-        md, data = os.path.join(d, f"{kind}.md"), os.path.join(d, f"{kind}.json")
+    for kind in doc_kinds():
+        info = j2_types.info(kind)
+        md, data = os.path.join(d, info["file"]), os.path.join(d, f"{kind}.json")
         if not os.path.isfile(md):
             continue
         rec = _read_json(data)
         if not isinstance(rec, dict) or not isinstance(rec.get("sections"), dict):
-            results.append(_result(f"document: {kind.upper()}", AM.DOC_MODELS[kind].__name__, f"{kind}.json", False,
+            results.append(_result(f"document: {info['noun']}", _doc_model_name(kind), f"{kind}.json", False,
                                    "not recorded: the run saved no artifact-schema data for this document"))
             continue
         validation = _validate_sections(d, kind, rec["sections"], decs)
         _write_json(data, _stamp(rec, kind, validation))
-        missing = [s for s in AM.SECTION_MODELS[kind] if s not in rec["sections"]]
-        results.append(_result(f"document: {kind.upper()}", rec["model"], f"{kind}.json", rec["valid"],
+        missing = [s for s in j2_types.sections(kind) if s not in rec["sections"]]
+        results.append(_result(f"document: {info['noun']}", rec["model"], f"{kind}.json", rec["valid"],
                                ("sections not recorded: " + ", ".join(missing)) if missing else ""))
     return results
 
 
 def build_design(d, decs):
-    """design.json (Design/1, the style guide's data): validated, "model" and "valid" added; the style row reads it."""
-    data = os.path.join(d, "design.json")
-    if not os.path.isfile(os.path.join(d, "style.json")) and not os.path.isfile(data):
-        return []
-    rec = _read_json(data)
-    if not isinstance(rec, dict) or not isinstance(rec.get("sections"), dict):
-        return [_result("style guide", "Design", "design.json", False, "not recorded: the run saved no artifact-schema data for the style guide")]
-    validation = _validate_sections(d, "design", rec["sections"], decs)
-    _write_json(data, _stamp(rec, "design", validation))
-    return [_result("style guide", "Design", "design.json", rec["valid"], "")]
+    """<style guide>.json for every style guide a form names (style_guides): the guide's data as its template, validated,
+    "model" and "valid" added; the style row reads it. A run that made no guide has no row."""
+    results = []
+    for kind in style_guides():
+        name, model = f"{kind}.json", _doc_model_name(kind)
+        data = os.path.join(d, name)
+        if not os.path.isfile(os.path.join(d, "style.json")) and not os.path.isfile(data):
+            continue
+        rec = _read_json(data)
+        if not isinstance(rec, dict) or not isinstance(rec.get("sections"), dict):
+            results.append(_result("style guide", model, name, False, "not recorded: the run saved no artifact-schema data for the style guide"))
+            continue
+        validation = _validate_sections(d, kind, rec["sections"], decs)
+        _write_json(data, _stamp(rec, kind, validation))
+        results.append(_result("style guide", model, name, rec["valid"], ""))
+    return results
 
 
 def build_sections(d, decs):
-    """site/sections/<id>.json for every website section in sections.json: the builder's own data when website.json
-    kept it (J2 keeps the last reply), else the section as the page holds it, marked so; validated as a WebsiteSection."""
-    secs = _read_json(os.path.join(d, "sections.json"), {}) or {}
-    if not isinstance(secs, dict) or not os.path.isfile(os.path.join(d, "site", "index.html")):
+    """<the type's folder>/sections/<id>.json for every section a workflow built of each type that repeats one section
+    template (repeating_kinds), from sections.json: the builder's own data when the type's data file kept it (J2 keeps
+    the last reply), else the section as the built file holds it, marked so; validated as the type's section model.
+    An entry of sections.json that no workflow of the run owns under its own id (the style guide's) is not a section."""
+    results = []
+    for kind in repeating_kinds():
+        results += _build_sections_of(d, decs, kind)
+    return results
+
+
+def _build_sections_of(d, decs, page):
+    model = AM.model_for(page, None)
+    built = str(j2_types.info(page).get("file") or "")
+    if model is None or not built:      # the type has no template or no file: nothing to validate a section against
         return []
+    section = model.SECTION
+    secs = _read_json(os.path.join(d, "sections.json"), {}) or {}
+    if not isinstance(secs, dict) or not os.path.isfile(os.path.join(d, built)):
+        return []
+    made = {str(w.get("id")) for w in _read_json(os.path.join(d, "workflows.json"), []) or [] if isinstance(w, dict)}
     saved = {}
-    for e in ((_read_json(os.path.join(d, "website.json"), {}) or {}).get("sections") or {}).values():
+    for e in ((_read_json(os.path.join(d, f"{page}.json"), {}) or {}).get("sections") or {}).values():
         if isinstance(e, dict) and e.get("id"):
             saved[str(e["id"])] = e
     results = []
     for sid, e in secs.items():
-        if sid == "style" or not isinstance(e, dict):
+        if not isinstance(e, dict) or (made and sid not in made):
             continue
         body, head = str(e.get("body") or ""), str(e.get("head") or "")
         if sid in saved:
-            data = {k: v for k, v in saved[sid].items() if k in AM.WebsiteSection.model_fields}
-            extra = {k: v for k, v in saved[sid].items() if k not in AM.WebsiteSection.model_fields}
-            source = {"file": "website.json", "built_by": "j2_agent_views.py", "from": "the builder's reply", **({"also": extra} if extra else {})}
+            data = {k: v for k, v in saved[sid].items() if k in model.model_fields}
+            extra = {k: v for k, v in saved[sid].items() if k not in model.model_fields}
+            source = {"file": f"{page}.json", "built_by": "j2_agent_views.py", "from": "the builder's reply", **({"also": extra} if extra else {})}
             note = ""
         else:
             ids = _ID_ATTR.findall(body)
@@ -265,19 +321,19 @@ def build_sections(d, decs):
                       "not_recorded": ["implements", "facts_used"]}
             note = "implements, facts_used not recorded (built from the page)"
         if sid in saved:
-            t, where = _template_for(d, decs, "website", "Section", workflow=sid)
+            t, where = _template_for(d, decs, page, section, workflow=sid)
             if t is not None:
                 got, errs = L.validate(t, data)
                 env = {"schema": AM.SCHEMA, "model": L.class_name(t), "template": f"{t.name} v{t.version}", "valid": not errs, "errors": errs,
                        "source": {**source, "checked_against": where}, "data": got if got is not None else data}
             else:
-                env = G.envelope(AM.WebsiteSection, AM.normalise(AM.WebsiteSection, data), {**source, "checked_against": where})
+                env = G.envelope(model, AM.normalise(model, data), {**source, "checked_against": where})
         else:
-            env = G.envelope(AM.WebsiteSection, data, source)
+            env = G.envelope(model, data, source)
         env["schema"] = AM.SCHEMA
-        out = f"site/sections/{sid}.json"
+        out = f"{os.path.dirname(built) or '.'}/sections/{sid}.json"
         _write_json(os.path.join(d, out), env)
-        results.append(_result(f"website section {sid}", env.get("model") or "WebsiteSection", out, env["valid"], note))
+        results.append(_result(f"{page} section {sid}", env.get("model") or model.__name__, out, env["valid"], note))
     return results
 
 

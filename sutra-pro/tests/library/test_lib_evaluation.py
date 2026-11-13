@@ -137,7 +137,7 @@ def test_a_rubric_row_can_be_blocked_by_evidence_or_withdrawn(verdict, passed):
 
 
 @pytest.mark.parametrize("change, where, code", [
-    ({"id": "X-1"}, "id", "string_pattern_mismatch"), ({"id": "R-"}, "id", "string_pattern_mismatch"),
+    ({"id": "X1"}, "id", "string_pattern_mismatch"), ({"id": "R-"}, "id", "string_pattern_mismatch"),
     ({"verdict": "POLICY_CONCERN", "pass": False}, "verdict", "literal_error"),
     ({"verdict": "PASS", "pass": False}, "pass", "value_error"), ({"note": ""}, "note", "value_error"),
     ({"severity": "huge"}, "severity", "literal_error"), ({"colour": 1}, "colour", "extra_forbidden"),
@@ -164,7 +164,7 @@ def test_a_condition_as_code_checks_it():
 
 
 @pytest.mark.parametrize("change, expected", [
-    ({"id": "n1"}, [("id", "string_pattern_mismatch")]), ({"id": "NN1"}, [("id", "string_pattern_mismatch")]),
+    ({"id": "n1"}, [("id", "string_pattern_mismatch")]), ({"id": "NNNNN1"}, [("id", "string_pattern_mismatch")]),
     ({"id": "N"}, [("id", "string_pattern_mismatch")]), ({"severity": "error"}, [("severity", "literal_error")]),
     ({"met": "yes"}, [("met", "bool_type")]), ({"verdict": "PASS"}, [("verdict", "extra_forbidden")]),
     ({"assumptions": ["a"] * 101}, [("assumptions", "too_long")]),
@@ -194,7 +194,8 @@ def test_a_document_audit_entry_names_its_output_and_what_audit_read():
                 read="Read prd.md v6: Problem (15 words); Users (31 words)")
     model = GATE.check("evaluation", doc).model
     assert (model.output, model.mechanical, model.conditions[1].severity) == ("prd", {}, "warn")
-    assert ("output", "literal_error") in problems(ResultEvaluation, {**doc, "output": "pdf"})
+    assert ("output", "string_pattern_mismatch") in problems(ResultEvaluation, {**doc, "output": "PDF"})      # a name by shape
+    assert GATE.check("evaluation", {**doc, "output": "business_report"}).model.output == "business_report"
 
 
 def test_an_entry_can_carry_the_lld_comparison_and_what_the_requester_accepted():

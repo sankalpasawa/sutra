@@ -224,7 +224,8 @@ def test_workflow_bounds_and_policy():
     ({"completion_check": ""}, "completion_check", "string_too_short"),
     ({"goal_gap": ""}, "goal_gap", "string_too_short"),
     ({"name": ""}, "name", "string_too_short"),
-    ({"output": "pdf"}, "output", "literal_error"),
+    ({"output": "PDF"}, "output", "string_pattern_mismatch"),
+    ({"work_kind": "plan"}, "work_kind", "literal_error"),
     ({"authority_touched": "world"}, "authority_touched", "literal_error"),
     ({"estimated_resources": {"money": -1}}, "estimated_resources.money", "greater_than_equal"),
     ({"colour": "red"}, "colour", "extra_forbidden"),
@@ -427,6 +428,25 @@ def test_registered_row_round_trips_through_to_j2():
         assert out[key] == ROW[key], key
     assert out["atoms"][0]["verification"] == ROW["atoms"][0]["verification"]
     assert registered_from_j2(out) == w
+
+
+def test_a_row_of_sync_5_carries_kind_and_sections_as_work_kind_and_sections():
+    """J2 now stores `kind` ("build" or "audit") and `sections` on a workflow; the model's own `kind` is its discriminator,
+    so J2's is `work_kind` (D172). Both round-trip, and a row without them keeps working."""
+    row = {**ROW, "kind": "build", "sections": ["Summary", "Findings"], "output": "business_report"}
+    w = registered_from_j2(row)
+    assert (w.work_kind, w.sections, w.output, w.kind) == ("build", ["Summary", "Findings"], "business_report", "registered")
+    out = to_j2(w)
+    assert (out["kind"], out["sections"], out["output"]) == ("build", ["Summary", "Findings"], "business_report")
+    assert registered_from_j2(out) == w
+    audit = registered_from_j2({**ROW, "kind": "audit"})
+    assert audit.work_kind == "audit" and audit.sections == [] and to_j2(audit)["kind"] == "audit" and "sections" not in to_j2(audit)
+    plain = registered_from_j2(ROW)
+    assert (plain.work_kind, plain.sections, plain.output) == (None, [], None)                    # no default type any more
+    assert "kind" not in to_j2(plain) and "output" not in to_j2(plain) and "sections" not in to_j2(plain)
+    proposed = from_j2({**EXAMPLE_WORKFLOW, "kind": "build", "sections": ["Summary"]})
+    assert (proposed.work_kind, proposed.sections) == ("build", ["Summary"]) and to_j2(proposed)["kind"] == "build"
+    assert registered_from_j2({**ROW, "kind": "registered"}).work_kind is None                    # the model's own word is not J2's
 
 
 def test_a_legacy_row_without_atoms_is_refused_and_purpose_fills_goal_gap():

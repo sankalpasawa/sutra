@@ -321,8 +321,8 @@ def fresh_j2(base: Path):
     """The vendored J2 imported anew in mock mode with its paths under `base`; the modules are put back afterwards."""
     from sutra_app.engine import llm
     package = importlib.import_module(ENGINE)
-    names = ("j2", "j2_agent", "j2_artifact_models", "j2_artifacts", "j2_board", "j2_change", "j2_check", "j2_map", "j2_realization",
-             "j2_rules", "j2_schema", "j2_send", "j2_story", "j2_template_lib", "rehydrate")
+    names = ("j2", "j2_agent", "j2_agent_models", "j2_agent_views", "j2_artifact_models", "j2_artifacts", "j2_board", "j2_change", "j2_check",
+             "j2_map", "j2_realization", "j2_rules", "j2_schema", "j2_send", "j2_story", "j2_studio", "j2_template_lib", "rehydrate")
     saved = {name: (sys.modules.pop(f"{ENGINE}.{name}", None), package.__dict__.pop(name, None)) for name in names}
     with pytest.MonkeyPatch.context() as mp:
         for name in list(os.environ):
@@ -375,8 +375,22 @@ STAMP_GOALS = [
 
 @pytest.mark.parametrize("goal", STAMP_GOALS, ids=lambda g: json.dumps(g)[:50])
 def test_stamp_check_equals_j2s_stamp_check(j2, goal):
-    stand_in = types.SimpleNamespace(goal=goal, NOT_CHECKABLE=j2.J2Run.NOT_CHECKABLE)
-    assert stamp_check(goal) == j2.J2Run._stamp_check(stand_in)
+    """With no type chosen, and with each type of the data (J2 names what is built by the type's label; the check reads `turn.stage`)."""
+    for output in (None, *j2.j2_types.names()):
+        stand_in = types.SimpleNamespace(goal=goal, NOT_CHECKABLE=j2.J2Run.NOT_CHECKABLE, output=output)
+        assert stamp_check(goal, output) == j2.J2Run._stamp_check(stand_in), output
+
+
+def test_the_charter_stamp_names_what_is_built_by_the_stage_type(j2):
+    goal = {"statement": "s", "done_when": ["a", "b", "Requester signs off"]}
+    name = next(n for n in j2.j2_types.names() if j2.is_page(n))
+    ev = build_evidence("charter-stamp", {"turn": {"function": "identity", "kind": "intake", "stage": name},
+                                          "reply": {"enough": True}, "records": {"goal.json": goal}, "saved": ["goal.json"]})
+    why = REGISTRY.run("charter-stamp", ev, ()).evidence
+    assert f"reading the {j2.j2_types.info(name)['label'].lower()}" in why
+    bare = build_evidence("charter-stamp", {"turn": {"function": "identity", "kind": "intake"}, "reply": {"enough": True},
+                                            "records": {"goal.json": goal}, "saved": ["goal.json"]})
+    assert "reading the output" in REGISTRY.run("charter-stamp", bare, ()).evidence
 
 
 def _row(i, verdict="PASS", **kw):
@@ -403,12 +417,25 @@ AUDITS = [
     {"output": "prd", "results": [_row(1, "NEEDS_REVISION")], "rubric": [{"id": "D-1", "verdict": "NEEDS_REVISION", "criterion": "x", "pass": False}],
      "conditions": [{"id": "NC-2", "text": "t", "evidence": "e", "met": False}]},
     {"output": "hld", "results": [_row(1)], "rubric": [], "conditions": []},
+    {"output": "business_report", "results": [_row(1, "NEEDS_REVISION")], "rubric": [{"id": "D-1", "verdict": "NEEDS_REVISION", "criterion": "x", "pass": False}],
+     "conditions": [{"id": "C1-1", "text": "t", "evidence": "e", "met": False}]},        # a type the code never names: a document by its form
+    {"output": "website", "results": [_row(1)], "mechanical": {"available": False, "note": "no Chrome"}},
+    {"output": None, "results": [_row(1, "NEEDS_REVISION")], "rubric": [], "conditions": []},         # a run with no type is no page
 ]
 
 
 @pytest.mark.parametrize("audit", AUDITS, ids=lambda a: json.dumps(a)[:50])
 def test_workable_problems_equal_j2s_workable(j2, audit):
     assert workable_problems(audit) == j2.workable(audit)
+
+
+def test_a_missing_output_means_what_j2_means_by_it_and_the_form_is_read_from_the_data(j2):
+    page = next(n for n in j2.j2_types.names() if j2.is_page(n))
+    document = next(n for n in j2.j2_types.names() if not j2.is_page(n))
+    audit = {"results": [_row(1)], "mechanical": {"available": False, "note": "no Chrome"}}
+    assert any("render check" in x for x in workable_problems(audit)) and workable_problems({**audit, "output": page}) == workable_problems(audit)
+    assert not any("render check" in x for x in workable_problems({**audit, "output": document}))
+    assert workable_problems({**audit, "output": document}) == j2.workable({**audit, "output": document})
 
 
 def test_design_problems_are_j2_checks_own_function(j2):

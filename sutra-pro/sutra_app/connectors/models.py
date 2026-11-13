@@ -110,7 +110,9 @@ class Message(M):
 
 
 class RouteContext(M):
-    """Who a call is for and what it may spend. `avoid` is soft: those providers are tried last."""
+    """Who a call is for and what it may spend. `avoid` is soft: those providers are tried last. `pick` is the owner's pick for this call, resolved by
+    the caller (own, then run, then team: `agent_sessions.effective`): the router uses it for the purposes an agent's pick governs, also when the call
+    belongs to a session (D149); None leaves the choice to the session's own provider or the policy."""
 
     model_config = ConfigDict(extra="forbid", arbitrary_types_allowed=True)
 
@@ -119,6 +121,7 @@ class RouteContext(M):
     node_id: Optional[str] = None
     allowance: Allowance = Field(default_factory=Allowance)
     avoid: list[Provider] = []
+    pick: Optional[Pick] = None
 
 
 with warnings.catch_warnings():

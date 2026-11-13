@@ -28,13 +28,58 @@ body.nodeopen #pane-map .mappanel{display:none}
 .nempty{margin:8px 0}
 
 /* ---- gap attention: the org-wide "N need you" pill in a corner of a team page and the console (attention_pill.js; Home has its strip). Below the
-   drawer (z-index 60); on a phone it sits under the header, clear of the message box and its Send button. The pulse is for a count that went up. */
+   drawer (z-index 60); at 900px and under it rides in a row at the top of the page (each page keeps that row free, below), clear of the message box and its Send button on a phone.
+   The pulse is for a count that went up. The name `apill` is also the status pill of an atom card (a span in `.atomcard`, further down); each set of rules is for its own place, so
+   that neither draws the other. Where the pill rides in a row at the top (a phone or tablet width, the Simple view's strip) it has no padding above and below: a corner chip's 6px
+   made it 34px tall, which covered the tops of the buttons under that row (0.3.1; until then the atoms' rules drew it as a 21px box, and the places it rides at the top were fitted to that). */
 .apillhost{position:fixed;right:16px;bottom:16px;z-index:50}
 .apillhost[hidden]{display:none}
 .apill{display:inline-flex;align-items:baseline;gap:6px;padding:6px 14px;border:1px solid var(--accent);border-radius:99px;background:var(--panel);color:var(--ink);font-size:13.5px;font-weight:600;text-decoration:none}
 .apill small{color:var(--muted);font-weight:400}
 .apill:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
-@media (max-width:900px){.apillhost{bottom:auto;top:58px;right:12px}}
+@media (max-width:900px){.apillhost{bottom:auto;top:58px;right:12px}.apillhost .apill{padding-top:0;padding-bottom:0}}
+/* J2's Chat button is fixed to the bottom right of the Detailed view (22px from the right, 18px from the bottom, about 40px tall; 452px from the right while the chat is
+   open) and the pill sat on it and took the click. The pill rides above the button and moves left with it (a transform, the compositor's). Not at 900px and under (it rides
+   at the top there, below), not in the Simple view (the button is not drawn), not where there is no button (the console). J2 sync 4, E3. */
+@media (min-width:901px){
+  body:not(.simple):has(#chatfab) .apillhost{right:22px;bottom:68px;transition:transform var(--dur-base) var(--ease-out)}
+  body:not(.simple):has(#dview.chaton) .apillhost{transform:translateX(-430px)}
+  /* The library page of a team (/d/<team>/library). J2 stops the card of the catalog 76px above the bottom of the window (room for the Chat button), and the pill, 34px tall and
+     10px above that button, was 26px inside the card: it covered the catalog's last row buttons (which rows depends on the height of the window, the lists scroll inside the card).
+     While the pill shows, the page keeps room for it under the card, which ends 8px above the pill (110px = 68 + 34 + 8); the pill does not move. This page only: the cards of the
+     other tabs are J2's to size (0.3.2). */
+  body.libpage:has(.apillhost:not([hidden])) #dview main{padding-bottom:110px}
+}
+/* The Detailed view at 900px and under. The pill rode at 58px from the top, "under the header", and the Detailed view has none: there it sat on J2's Needs you box, over the question
+   and, from 414 to 900px wide, over the "Answer in Chat" button, where a click in the button's middle went to the pill and so to Home (0.3.2). The page keeps a row for it instead,
+   above that box, as the Simple view does for its strip: the pill is 22px tall (see above) at 4px from the top, and the column of the page (`.dcol`, which scrolls at this width)
+   starts 32px down, 6px under the pill; the column's first box, Needs you, gives up J2's gutter above it (24px, 12px under 601px) for that. Only while the pill shows (:has), so a page
+   with nothing for the owner is J2's to the pixel. J2's chat is a panel over the page at this width (from 8 or 16px down: no row above it), and while it is open the pill drops 52px
+   to ride under the panel's header, where it was (a transform, the compositor's; at 56px it clears the panel's filter buttons, at the old 58px it sat 2px on them at 480px and under). */
+@media (max-width:900px){
+  body:not(.simple):has(#chatfab) .apillhost{top:4px;transition:transform var(--dur-base) var(--ease-out)}
+  body:not(.simple):has(#chatfab):has(.apillhost:not([hidden])) #dview .dcol{padding-top:32px}
+  body:not(.simple):has(#chatfab):has(.apillhost:not([hidden])) #dview .needs{margin-top:0}
+  body:not(.simple):has(#dview.chaton) .apillhost{transform:translateY(52px)}
+}
+/* The console at 600px and under. Its header wraps there: the three links ("Usage and cost", "Atom log", "Health") drop to a row under the title, and that was where the pill rode, over
+   "Atom log" and "Health" at 320px and over "Health" up to 375px (0.3.2). The links are 207px wide and the pill up to 172px, so they cannot share a row at 320px: the header gets a row
+   above its own for the pill, 4px from the top, with its content 32px down, only while the pill shows. Over 600px the header is one row and the pill rides under it, as before. */
+@media (max-width:600px){
+  body.console:has(.apillhost:not([hidden])) .apillhost{top:4px}
+  body.console:has(.apillhost:not([hidden])) .shead{padding-top:32px}
+}
+/* The Simple view (the studio) is full-bleed, so no corner of it is free: the finish bar (Open full view) and Asha's message box take the lower right, the toolbar
+   (Decide for me, the dark-mode button, Open the site) the upper right, and on a phone the dock the bottom, and the pill sat on one of them at every width (found by the
+   live check of J2 sync 4). The one row with nothing of J2's in it is the team strip at the very top (ours: "All teams" and the team's name, at the left), so in the Simple view
+   the pill rides at the right end of that row, above the toolbar. Nothing opens over that row (Asha's panel and the sheets start below the toolbar), so it never has to
+   move and has no transition to budget. The strip keeps clear of it (140px for "1 needs you", 204px when it says what to try again too: the pill's width, 14px of
+   margin and some room for a wider font): a long team name wraps instead of running under the pill. The row is 27px tall and the toolbar's buttons start right under it,
+   which is why the pill has no padding above and below here (see above). */
+body.simple .apillhost{top:4px;bottom:auto;right:14px}
+body.simple .apillhost .apill{padding-top:0;padding-bottom:0}
+body.simple:has(.apillhost:not([hidden])) #sview>.steamstrip{padding-right:140px}
+body.simple:has(.apillhost:not([hidden]) .apill small) #sview>.steamstrip{padding-right:204px}
 /* the pulse is a ring that grows and fades (transform and opacity: the compositor's), not an outline that is painted bigger each frame */
 .apill{position:relative}
 @media (prefers-reduced-motion:no-preference){.apill.fresh::after{content:"";position:absolute;inset:-3px;border:3px solid var(--accent);border-radius:inherit;pointer-events:none;animation:apillpulse calc(var(--dur-slow)*4) var(--ease-out) 2}}
@@ -50,10 +95,20 @@ body.nodeopen #pane-map .mappanel{display:none}
 .nearlier ul{margin:4px 0 0;padding-left:18px}
 .nmsgs{flex:1 1 auto;min-height:140px;overflow:auto;display:flex;flex-direction:column;gap:10px;padding:2px 2px 10px}
 .nmsg{overflow-wrap:anywhere}
-.nmsg.sb{max-width:92%}
+/* The bubbles and the answer buttons of a chat are the panel's own: J2's sheet had them for every page until the studio, which scopes them to its Simple view
+   (#sview .sb, #sview .qcard .opts), so the drawer, which sits outside it, carries the same rules (J2 sync 4, D138). */
+.nmsg.sb{max-width:92%;padding:9px 12px;border-radius:12px;white-space:pre-wrap;word-wrap:break-word}
+.nmsg.sb.team{background:var(--panel);border:1px solid var(--line);align-self:flex-start}
+.nmsg.sb.me{background:var(--accent);color:var(--on);align-self:flex-end}
+.nmsg .opts{display:flex;flex-direction:column;gap:6px;margin-top:8px}
+.nmsg .opts button{text-align:left;border:1px solid var(--accent);background:var(--panel);color:var(--ink);border-radius:9px;padding:8px 11px;font-size:14px}
+.nmsg .opts button:hover{background:var(--panel2)}
 .nmsg.sb small{display:block;margin-bottom:2px;font-weight:600;color:var(--accent)}
 .nmsg.pending{opacity:.6}
 .nmsg.sb .npassed{font-weight:400;font-size:12px;color:inherit;opacity:.85}
+/* the owner's question to a function and its answer (D148): the label on the owner's line, and where the answer came from */
+.nmsg.sb .nask{font-weight:400;font-size:12px;color:inherit;opacity:.85}
+.nmsg .nasksrc{display:block;margin-top:4px;font-size:12px;color:var(--muted)}
 .nmsg[data-kind="card"]{align-self:stretch;max-width:100%;background:none;border:0;padding:0}
 .nmsg[data-kind="card"]>small{margin:0 0 3px 2px}
 .nmsg[data-kind="card"] .ncard{max-width:100%}
@@ -159,23 +214,59 @@ details.atomcard>summary{cursor:pointer;display:flex;flex-wrap:wrap;align-items:
 .try-failed{color:var(--bad)}
 .try-passed{color:var(--ok)}
 .try-pending,.try-deferred,.try-unrun{color:var(--muted)}
-.apill{display:inline-block;border:1px solid var(--line);border-radius:10px;padding:0 9px;font-size:12.5px}
-.apill.st-closed{border-color:var(--ok);color:var(--ok)}
-.apill.st-verify_failed{border-color:var(--bad);color:var(--bad)}
-.apill.st-open{border-color:var(--accent);color:var(--accent)}
-.apill.st-refused{border-color:var(--validator);color:var(--validator)}
+/* the status pill of an atom card; scoped to the card because the attention pill (above) has the same class name */
+.atomcard .apill{display:inline-block;border:1px solid var(--line);border-radius:10px;padding:0 9px;font-size:12.5px}
+.atomcard .apill.st-closed{border-color:var(--ok);color:var(--ok)}
+.atomcard .apill.st-verify_failed{border-color:var(--bad);color:var(--bad)}
+.atomcard .apill.st-open{border-color:var(--accent);color:var(--accent)}
+.atomcard .apill.st-refused{border-color:var(--validator);color:var(--validator)}
 .arow{margin:4px 0 0;font-size:13px}
 .arow>b{color:var(--muted);margin-right:4px}
 .acost{color:var(--muted)}
+/* what the atom produced (D157): the Output row, and the reply the model gave in a fold (preformatted, wrapped, never wider than the card) */
+.aoutput>.alist{margin-top:2px}
+.areply{margin:6px 0 0;font-size:13px}
+.areply>summary{cursor:pointer;color:var(--muted)}
+.areplytext{margin:4px 0 0;padding:8px 10px;max-height:320px;overflow:auto;border:1px solid var(--line);border-radius:6px;background:var(--panel2);color:var(--ink);font:12px/1.45 var(--mono);white-space:pre-wrap;overflow-wrap:anywhere}
 
 /* ---- a team that was merged away: its page keeps the history but takes no new line (docs/design/ui.md 6.7) */
-body.archived .scompose,body.archived #sbox,body.archived #ssend,body.archived #box,body.archived #send,body.archived .outsel{display:none}
+body.archived .scompose,body.archived #sbox,body.archived #ssend,body.archived #sform,body.archived #box,body.archived #send,body.archived .outsel,
+body.archived #lform,body.archived #lbox,body.archived #lsend,body.archived .schips,body.archived #soutpick,body.archived #sauto,body.archived #sautoland,body.archived #shome{display:none}
 
-/* ---- the department page's rail: back to all teams, and which team this is */
-.railhome{display:flex;flex-wrap:wrap;align-items:baseline;gap:4px 10px;padding:8px 12px 10px;border-bottom:1px solid var(--line)}
-.railhome a{color:var(--muted);font-size:13px;text-decoration:none}
-.railhome a:hover,.railhome a:focus-visible{color:var(--ink);text-decoration:underline}
-.railhome b{font:700 14px var(--display);color:var(--ink);overflow-wrap:anywhere}
+/* ---- the library page of a team (/d/<team>/library) has no run, and J2's script hides the Needs you box there with the `hidden` attribute ("no run here: nothing needs you"). J2's own
+   `.needs{display:flex}` is an author rule, so it beat the browser's `[hidden]{display:none}` and an empty bordered box (18px: the padding and the border) was drawn above the catalog (0.3.2).
+   Only that page ever sets the attribute (a team page and Home paint into the box and never hide it, and the Simple view hides the whole Detailed view as before), so nothing else changes. */
+.needs[hidden]{display:none}
+
+/* ---- the department page's strip at the top of J2's icon rail (D137): back to all teams, which team this is, and the two Sutra panes. It is the rail's own size:
+   84 px wide, icons 64 x 58 px with J2's hover label, so the team's name is one short line (its whole name is the title) */
+#rail .railhome{display:flex;flex-direction:column;align-items:center;gap:4px;width:100%}
+#rail .railhome a.ri{text-decoration:none}
+#rail .railhome .ri svg{width:30px;height:30px;fill:none;stroke:currentColor;stroke-width:2.2;stroke-linecap:round;stroke-linejoin:round}
+#rail .railhome .ri[aria-selected="true"]{border-bottom-color:transparent;background:var(--panel2)}
+#rail .rdept{display:block;max-width:76px;padding:0 4px;font:700 11px/1.3 var(--body);color:var(--ink);text-align:center;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+@media (max-width:600px){#rail .rdept{max-width:56px}}
+
+/* the same strip at the top of the Simple view (the studio): "All teams" and the team's name, above the start page and the studio */
+#sview>.steamstrip{flex:none;display:flex;align-items:baseline;gap:10px;padding:8px 14px 0;font-size:13px}
+#sview>.steamstrip a{color:var(--s-muted,var(--muted));text-decoration:none}
+#sview>.steamstrip a:hover,#sview>.steamstrip a:focus-visible{color:var(--s-ink,var(--ink));text-decoration:underline}
+#sview>.steamstrip b{font:700 14px var(--s-display,var(--display));color:var(--s-ink,var(--ink));overflow-wrap:anywhere}
+/* J2's "How the team works" link is drawn in --s-accent, which reads 4.39:1 on the rail in the light theme (14px text needs 4.5); a fifth of the ink colour in it reads 5.7:1 and 7+ in dark */
+#sview .srailfoot .slink{color:color-mix(in srgb,var(--s-accent) 80%,var(--s-ink))}
+
+/* the node panel (z 60) opens over J2's chat panel and its button (z 30 and 31): hidden, they are no stray tab stop behind the dialog, and Esc closes the panel only */
+body.nodeopen #dview .chat,body.nodeopen .chatfab{visibility:hidden}
+
+/* "What should we make?" on the start page (output_pick.js, D139): the first thing in the row under the box, in the look of the chips above it */
+.soutpick{display:flex;flex-wrap:wrap;align-items:center;justify-content:center;gap:6px 8px;font-size:13px;color:var(--s-muted,var(--muted))}
+.soutpick:empty{display:none}
+.soutpick label{white-space:nowrap}
+.outsel{border:1px solid var(--edge);background:var(--s-surface2,var(--panel2));color:var(--s-ink,var(--ink));border-radius:999px;padding:5px 12px;font:inherit;font-size:13px;cursor:pointer}
+.outsel:hover:not(:disabled){border-color:var(--s-accent,var(--accent))}
+.outsel:disabled{opacity:.6;cursor:default}
+.soutnote{flex:1 1 100%;text-align:center;font-size:12px;color:var(--s-muted,var(--muted))}
+.soutnote[hidden]{display:none}
 
 /* ---- the plan meters of a provider (GAP-providers, plan_meter.js): Settings > Connectors and /console. A bar per usage window; the percent is
    green under 80 %, amber from 80 % and red from 95 %; J2's tokens only (--validator is J2's amber) */
@@ -232,8 +323,14 @@ body.archived .scompose,body.archived #sbox,body.archived #ssend,body.archived #
 .nnotehost[hidden]{display:none}
 .nnote-l{display:block;color:var(--muted);font-size:12px;margin:0 0 4px}
 .nnotebox .row{display:flex;gap:8px;align-items:flex-end}
-.nnote-text{flex:1 1 auto;min-width:0;min-height:56px;max-height:160px;resize:vertical;background:var(--panel2);color:var(--ink);border:1px solid var(--line);border-radius:8px;padding:6px 8px;font:inherit}
-.nnote-text:focus-visible{outline:2px solid var(--accent);outline-offset:1px}
+.nnote-text,.nask-text{flex:1 1 auto;min-width:0;min-height:56px;max-height:160px;resize:vertical;background:var(--panel2);color:var(--ink);border:1px solid var(--line);border-radius:8px;padding:6px 8px;font:inherit}
+.nnote-text:focus-visible,.nask-text:focus-visible{outline:2px solid var(--accent);outline-offset:1px}
+/* a function's box has two modes, Note and Ask (D148): the switch is the composer's own (.ccmode), a question that is out says so and waits */
+.nboxmode{margin:0 0 6px}
+.ccmode-opt:disabled{color:var(--muted);cursor:default}
+.naskbox .nnote-l{color:var(--ink)}
+.nask-wait{color:var(--accent)}
+.nask-note{color:var(--ink)}
 .nnotebox .row .send{height:56px}
 .nnote-help,.nnote-over{display:block;margin:4px 0 0;color:var(--muted);font-size:12px}
 .agentsview{padding:4px 0}
@@ -254,6 +351,7 @@ body.archived .scompose,body.archived #sbox,body.archived #ssend,body.archived #
 .agent-dot[data-state="past"]{background:transparent;border:1px solid var(--muted)}
 .agent-state{color:var(--muted);font-size:12px}
 .agent-usage{color:var(--muted);font-size:12px;font-family:var(--mono)}
+.agent-purposes{flex:1 1 100%;display:flex;flex-wrap:wrap;gap:2px 14px;padding-left:17px;color:var(--muted);font-size:12px;font-family:var(--mono)}
 .agentlive .alive-tool{display:inline-block;margin-left:8px;font:500 12px var(--mono);color:var(--muted)}
 .agentlive .alive-note{margin-left:8px;color:var(--muted);font-size:12px}
 .cstream{margin:6px 0;color:var(--ink)}
@@ -402,6 +500,34 @@ button:not(:disabled):not(.cjump-btn):active,.lbtn:active,.fnchip:active{transfo
    (a reads or makes line that is hovered or focused) still march, because they say something */
 .treesvg .tnodes>.tnode,.consvg .cnodes>.cnode,.mapsvg .mapnode{animation:none}
 .consvg .cline.spoke{animation:none}
+
+/* J2's studio sheet (j2.css, never edited) transitions paint and layout properties in a few places (box-shadow, width, filter, margin-right, right, left),
+   animates blur, rings and a sweeping bar with them, and says `transition: all` in three. D122 keeps all of that on the compositor, so these rules, which
+   load after it and name J2's own selectors, keep what moves on transform, opacity and colour and let the rest change at once. A keyframes rule of the same
+   name replaces J2's. tests/ui/js/motion_css.test.js proves that every such declaration of J2's sheet has its rule here. */
+@keyframes slrise{from{opacity:0;transform:translateY(8px)}}
+@keyframes sblur{from{opacity:.4;transform:translate(-50%,8px)}}
+@keyframes sblurin{from{opacity:0;transform:translateY(8px)}}
+@keyframes sping{0%,100%{opacity:1;transform:scale(1)}50%{opacity:.55;transform:scale(1.35)}}
+@keyframes sping2{0%,100%{opacity:1;transform:scale(1)}50%{opacity:.55;transform:scale(1.4)}}
+@keyframes sload{0%{transform:translateX(-100%)}100%{transform:translateX(250%)}}
+#sview .sbox{transition:border-color var(--dur-base) var(--ease-out)}
+#sview .sgo{transition:transform var(--dur-fast) var(--ease-out),opacity var(--dur-base) var(--ease-out)}
+#sview .srlist a{transition:background-color var(--dur-fast) var(--ease-out)}
+#sview .stop .shome,#sview .stop .stheme,#sview .stop .sbtn,#sview .stop .sauto{transition:none}
+#sview .sbar i,#sview .smbar>i>i,#sview .sprog .fill{transition:none}
+#sview .smate,#sview .sstep,#sview .sframe,#sview .qcard .pri{transition:none}
+#sview .sprev iframe{transition:opacity var(--dur-base) var(--ease-out)}
+#sview .spart{transition:border-color var(--dur-slow) var(--ease-out),transform var(--dur-base) var(--ease-out)}
+#sview .sdesk{transition:border-color var(--dur-slow) var(--ease-out),transform var(--dur-slow) var(--ease-out)}
+#sview .sartc{transition:border-color var(--dur-fast) var(--ease-out),transform var(--dur-base) var(--ease-out)}
+#sview .qcard .own input{transition:border-color var(--dur-fast) var(--ease-out)}
+#sview .stoast{transition:transform var(--dur-slow) var(--ease-out),opacity var(--dur-slow) var(--ease-out)}
+#sview .sback span{transition:color var(--dur-base) var(--ease-out),border-color var(--dur-base) var(--ease-out),background-color var(--dur-base) var(--ease-out)}
+#sview .sjdone{transition:stroke var(--dur-slow) var(--ease-out)}
+#sview .sjdot{transition:fill var(--dur-base) var(--ease-out),stroke var(--dur-base) var(--ease-out)}
+#dview .dcol{transition:none}
+.chatfab{transition:transform var(--dur-base) var(--ease-out)}
 
 /* prefers-reduced-motion: no motion at all, on every Sutra page (the custom properties above are 0 as well) */
 @media (prefers-reduced-motion:reduce){

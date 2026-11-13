@@ -13,15 +13,51 @@ import time
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 TYPES_PATH = os.path.join(HERE, "artifacts", "types.json")
-OPEN = {"doc": "text", "data": "text", "page": "preview", "image": "image"}      # how the Artifacts tab shows a form
+OPEN = {"document": "text", "doc": "text",      # "doc": the form name saved runs recorded before Phase C
+         "data": "text", "page": "preview", "image": "image"}      # how the Artifacts tab shows a form
 TEXT = {".md": "text/markdown", ".json": "application/json", ".jsonl": "text/plain", ".txt": "text/plain",
         ".html": "text/html", ".png": "image/png"}
 MAX_BYTES = 2_000_000
 
 
-def load_types():
-    with open(TYPES_PATH, encoding="utf-8") as f:
-        return json.load(f)
+def load_types(run=None):
+    """types.json and the local types runs made; with a run folder, also the document types that run recorded and the
+    store no longer has (j2_types.recorded: a deleted local type), after the others."""
+    import copy
+    import j2_types      # its TYPES_PATH and LOCAL_TYPES_PATH: a test may point them at copies
+    d = copy.deepcopy(j2_types._read_types())
+    at = next((i for i, t in enumerate(d["types"]) if t.get("kind") != "type"), len(d["types"]))
+    d["types"][at:at] = list(j2_types.recorded(run).values())
+    forms = d.get("forms") or {}
+    for t in d["types"]:      # a type made from its form (a new document type) takes the form's workflow
+        f = (forms.get(t.get("form")) or {}).get("workflow")
+        if t.get("kind") == "type" and f and "workflow" not in t:
+            t["workflow"] = {k: v.replace("{name}", t["name"]) for k, v in f.items()}
+    return d
+
+
+def page_types(types=None):
+    """The names of the types of the page form (types.json): what the Map and the groups call the site."""
+    return {t["name"] for t in (types or load_types())["types"] if t.get("kind") == "type" and t.get("form") == "page"}
+
+
+def is_page_node(node_id, types=None):
+    """A Map work node of a page type ("work:website")."""
+    return str(node_id).startswith("work:") and str(node_id)[5:] in page_types(types)
+
+
+def chosen(d):
+    """The types a run chose: its planner's (deliverables.json), its stages (stage-*.json), and the type its records
+    name (summary.json output_type, chat.jsonl's first line)."""
+    head = {}
+    try:
+        with open(os.path.join(d, "chat.jsonl"), encoding="utf-8") as f:
+            head = json.loads(f.readline() or "{}")
+    except (OSError, ValueError):
+        pass
+    stages = [m.group(1) for f in os.listdir(d) for m in [re.fullmatch(r"stage-(\w+)\.json", f)] if m]
+    return {str(x) for x in [*((_read(d, "deliverables.json", {}) or {}).get("deliverables") or []), *stages,
+                             (_read(d, "summary.json", {}) or {}).get("output_type"), head.get("output")] if x}
 
 
 def _read(d, name, default=None):
@@ -89,12 +125,16 @@ def _board(d, atoms):
 def rows(d, types=None):
     """[{name, type, kind, form, file, deliverable, workflows, depends_on, version, sha256, time}] for a run folder,
     plus changed_by and rechecked_after when the message board changed or re-checked it."""
-    types = types or load_types()
+    types = types or load_types(d)
     if not d or not os.path.isdir(d):
         return []
     atoms, docs, out = _atoms(d), _read(d, "documents.json", {}) or {}, []
     board = _board(d, atoms)
+    # page types share the page file: a run that chose one shows that one only
+    pages, mine = page_types(types), chosen(d)
     for t in types["types"]:
+        if t["name"] in pages and t["name"] not in mine and pages & mine:
+            continue
         files = [os.path.relpath(p, d) for p in sorted(glob.glob(os.path.join(d, t["file"])), key=_num)] \
             if "*" in t["file"] else [t["file"]] if os.path.isfile(os.path.join(d, t["file"])) else []
         wf = []
@@ -118,6 +158,15 @@ def rows(d, types=None):
     built = {r["type"] for r in out}
     for r in out:      # what it depends on in this run: only the types that were built
         r["depends_on"] = [x for x in r["depends_on"] if x in built]
+    # J2_ARTIFACT_LIBRARY=1 (reuse.json): the sections this run served from an earlier run, by the workflow that owns them
+    served = {x.get("workflow"): x for x in (_read(d, "reuse.json", {}) or {}).get("decisions") or []
+              if isinstance(x, dict) and x.get("door") == "reuse" and x.get("held")}
+    for r in out:
+        hits = [{"workflow": wid, "section": served[wid].get("section"), "run": (served[wid].get("source") or {}).get("run"),
+                 "source_workflow": (served[wid].get("source") or {}).get("workflow"), "key": served[wid].get("key")}
+                for wid in r.get("workflows") or [] if wid in served]
+        if hits:
+            r["reused_from"] = hits
     return out
 
 
@@ -132,7 +181,7 @@ def write(d):
 def listing(d):
     """What the Artifacts tab shows: the saved artifacts.json when the run has one, else the same rows built by
     scanning the folder. Each row gets its type's label, tag, colour and how to open it."""
-    types = load_types()
+    types = load_types(d)
     by = {t["name"]: t for t in types["types"]}
     saved = _read(d, "artifacts.json") if d else None
     base = saved["rows"] if saved else rows(d, types)
@@ -163,7 +212,8 @@ def served(d, name):
 # exactly once. Nothing names a run, a workflow or a stage: only file kinds (types.json) and the map's own fields.
 TREE_STATUS = {"filed": "filed", "done_unchecked": "checks did not pass", "fault": "failed", "left_open": "open", "running": "open",
                "waiting": "open", "waiting_on_you": "open", "not_made": "not made", "idle": "filed"}
-RECORD_MAKER = {"goal.json": "Client Lead (Identity)", "realization.json": "Adaptation (scored by the confidence judge)", "audits.json": "Quality Reviewer (Audit)", "receipts.jsonl": "Checker (automatic)",
+RECORD_MAKER = {"goal.json": "Client Lead (Identity)", "realization.json": "Adaptation (scored by the confidence judge)",
+                "deliverables.json": "Adaptation (scored by the confidence judge)", "audits.json": "Quality Reviewer (Audit)", "receipts.jsonl": "Checker (automatic)",
                 "chat.jsonl": "every function (the chat)", "calls.jsonl": "every function (AI calls)"}      # who writes each kind of record
 PROOF = ("receipts.jsonl", "audits.json", "conditions.json")
 RECORD_NAME = {"calls.jsonl": "AI calls", "outputs.jsonl": "Workflow outputs", "map.json": "Map data", "artifacts.json": "Artifact list",
@@ -216,7 +266,7 @@ def code_text(d, deck, section=None):
         return None
     if section is None:
         p = os.path.join(d, "site", "index.html")
-        return open(p, encoding="utf-8").read() if deck == "work:website" and os.path.isfile(p) else None
+        return open(p, encoding="utf-8").read() if is_page_node(deck) and os.path.isfile(p) else None
     m = j2_map.build(d)
     src = sections_of(d, [n for n in m["nodes"] if n["id"] == deck]).get(deck)
     e = (src[1] if src else {}).get(section)
@@ -238,7 +288,7 @@ def tree(d, m=None):
     if not d or not os.path.isdir(d):
         return {"schema": "artifacts-tree/1", "groups": []}
     m = m or j2_map.build(d)
-    lst, types = listing(d), {t["file"]: t for t in load_types()["types"] if "*" not in t["file"]}
+    lst, types = listing(d), {t["file"]: t for t in load_types(d)["types"] if "*" not in t["file"]}
     rowsby = {r["file"]: r for r in lst["deliverables"] + lst["records"]}
     by = {n["id"]: n for n in m["nodes"]}
     made_step = {e["to"]: by[e["from"]] for e in m["edges"] if e["kind"] == "step" and by.get(e["from"], {}).get("kind") == "engine"}
@@ -289,6 +339,10 @@ def tree(d, m=None):
                 f"plan confidence {rz['plan_confidence']}" if rz.get("plan_confidence") is not None else ""]
         kids = [item("Realization plan (text)", "realization.md", {"function": "code"})] if os.path.isfile(os.path.join(d, "realization.md")) else []
         plan.append(item("Realization plan", "realization.json", {"function": RECORD_MAKER["realization.json"]}, note=" · ".join(x for x in note if x), children=kids))
+    dv = _read(d, "deliverables.json")
+    if isinstance(dv, dict):
+        plan.append(item("Deliverables", "deliverables.json", {"function": RECORD_MAKER["deliverables.json"]},
+                         note=", ".join(x["type"] for x in deliverable_items(dv))))
     wfs = _read(d, "workflows.json", []) or []
     if os.path.isfile(os.path.join(d, "workflows.json")):
         plan.append(item("Workflows", "workflows.json", {"function": "Validator (code)"}, note=f"{len(wfs)} workflows"))
@@ -313,7 +367,7 @@ def tree(d, m=None):
                 persona_of.setdefault(w, n_.get("persona"))
     for n in deck:
         kids = []
-        t0 = next((x for x in load_types()["types"] if x["kind"] == "type" and f"work:{x['name']}" == n["id"]), None)
+        t0 = next((x for x in load_types(d)["types"] if x["kind"] == "type" and f"work:{x['name']}" == n["id"]), None)
         page = bool(t0 and t0["form"] == "page")
         rows_ = []
         for sid, e in (secs.get(n["id"], (None, {}))[1] or {}).items():
@@ -333,7 +387,7 @@ def tree(d, m=None):
             kids.append(full)
         if rows_:
             kids.append({"name": "Sections", "count": len(rows_), "collapsed": True, "children": rows_})
-        t = next((x for x in load_types()["types"] if x["kind"] == "type" and f"work:{x['name']}" == n["id"]), None)
+        t = next((x for x in load_types(d)["types"] if x["kind"] == "type" and f"work:{x['name']}" == n["id"]), None)
         site = os.path.join(d, "site")
         if t and os.path.isdir(site):
             pat = r"v(\d+)\.html" if t["form"] == "page" else rf"(?:{re.escape(t['name'])}-)?v(\d+)\.md"
@@ -406,8 +460,8 @@ def tree_files(t):
 
 
 # ------------------------------------------------------------------------------------------------------------- the groups
-# The Artifacts section as four groups (artifacts-groups/1): Run plan, Guides the makers read, Website sections, Run records. A guide
-# is one row per output file and a website section one row per section in sections.json (its first workflow, then every workflow
+# The Artifacts section as four groups (artifacts-groups/1): Run plan, Guides the makers read, the page's sections ("Website
+# sections"), Run records. A guide is one row per output file and a page section one row per section in sections.json (its first workflow, then every workflow
 # that rewrote it, as versions). Makers are the Map's (j2_map.build); anything the run did not record is None, never guessed. File
 # contents are not included: the page fetches a file (/api/artifact) or a section's code (/api/code) only when it is opened.
 CHANGE = re.compile(r"\s*\(change (\d+)\)\s*$")
@@ -458,11 +512,17 @@ def _wf_row(kind, vs, by, persona, last_audit, file, nodes):
             "ok": all(a["pass"] for a in audit) and all(c["pass"] for c in checks if c["workflow"] == vs[-1]), "nodes": nodes}      # the latest version's checks
 
 
+def deliverable_items(dv):
+    """The types the planner chose, in build order, each with its why (deliverables.json)."""
+    return [{"type": str(x.get("type") if isinstance(x, dict) else x), "why": str((x.get("why") if isinstance(x, dict) else "") or "")}
+            for x in ((dv or {}).get("plan") or {}).get("deliverables") or []]
+
+
 def groups(d, m=None):
     """{"schema": "artifacts-groups/1", "site": {...}, "groups": [{id, label, rows}]} for a run folder (five empty groups when there is none)."""
     import j2_map
     empty = [{"id": k, "label": lab, "rows": []} for k, lab in (("plan", "Run plan"), ("guides", "Guides the makers read"),
-                                                                ("site", "Website sections"), ("documents", "Documents"), ("records", "Run records"))]
+                                                                ("site", "Page sections"), ("documents", "Documents"), ("records", "Run records"))]
     if not d or not os.path.isdir(d):
         return {"schema": "artifacts-groups/1", "documents": {}, "site": None, "groups": empty}
     m = m or j2_map.build(d)
@@ -492,6 +552,10 @@ def groups(d, m=None):
                      "maker": fn(plan_items.get("Realization plan")), "text": "realization.md" if has("realization.md") else None,
                      "zone": (((rz.get("plan") or {}).get("certainty_assessment")) or {}).get("zone"), "confidence": rz.get("plan_confidence"),
                      "stages": list(rz.get("stages") or {}), "nodes": []})
+    dv = _read(d, "deliverables.json")
+    if isinstance(dv, dict):
+        plan.append({"id": "deliverables", "kind": "deliverables", "name": "Deliverables", "file": "deliverables.json",
+                     "maker": fn(plan_items.get("Deliverables")), "items": deliverable_items(dv), "nodes": []})
     if has("workflows.json"):
         cyc = {}
         for w in wfs:
@@ -508,7 +572,7 @@ def groups(d, m=None):
     secs = _read(d, "sections.json")
     secs = secs if isinstance(secs, dict) else {}
     out_of = lambda w: str((w.get("outputs") or [""])[0] or "")
-    files, delivered = {}, {t["file"] for t in load_types()["types"] if t["deliverable"]}      # a PRD, HLD or LLD is a deliverable (Documents), not a guide
+    files, delivered = {}, {t["file"] for t in load_types(d)["types"] if t["deliverable"]}      # a PRD, HLD or LLD is a deliverable (Documents), not a guide
     for w in sorted(wfs, key=lambda w: _num(w["id"])):
         o = out_of(w)
         if o.endswith(".md") and o not in delivered and w["id"] not in secs:
@@ -524,9 +588,9 @@ def groups(d, m=None):
         row["docs"] = [{"label": f"v{k}", "file": f, "workflow": vs[i] if match else None} for i, (k, f) in enumerate(olds)] + \
                       ([{"label": "current", "file": rel, "workflow": vs[-1]}] if rel else [])
         guides.append(row)
-    # 3 Website sections: one row per section (sections.json), its versions the workflows recorded on it; then the style guide
+    # 3 the page's sections: one row per section (sections.json), its versions the workflows recorded on it; then the style guide
     site = []
-    web = next((n for n in m["nodes"] if n["id"] == "work:website" and (n.get("status") != "not_made" or has("site/index.html"))), None)      # a document run keeps an unmade website node
+    web = next((n for n in m["nodes"] if is_page_node(n["id"]) and (n.get("status") != "not_made" or has("site/index.html"))), None)      # a document run keeps an unmade page node
     if web:
         for sid in sorted((k for k in secs if k in by), key=_num):
             e = secs[sid] if isinstance(secs[sid], dict) else {}
@@ -537,7 +601,7 @@ def groups(d, m=None):
             kind = "script" if p["js"] and not p["html"] and not p["css"] else "section"
             row = _wf_row(kind, vs, by, persona, last, "site/index.html" if has("site/index.html") else None, [])
             names = {str(by[v].get("name") or "") for v in vs}
-            row.update({"section": sid, "deck": "work:website", "owner": e.get("owner") or sid, "parts": p,
+            row.update({"section": sid, "deck": web["id"], "owner": e.get("owner") or sid, "parts": p,
                         "reused_by": [{"id": w["id"], "name": str(w.get("name") or "")} for w in wfs
                                       if w["id"] not in vs and names & {str(x) for x in w.get("dependencies") or []}] if kind == "script" else []})
             site.append(row)
@@ -546,7 +610,7 @@ def groups(d, m=None):
             mb = (st or {}).get("made_by") or {}
             site.append({"id": "style", "kind": "style", "name": "Style guide", "file": "style.json" if has("style.json") else None,
                          "maker": mb.get("persona"), "made_in": mb.get("workflows") or [], "read_by": (st or {}).get("read_by"),
-                         "section": "style" if "style" in secs else None, "deck": "work:website", "nodes": ["work:style"] if "work:style" in node_ids else []})
+                         "section": "style" if "style" in secs else None, "deck": web["id"], "nodes": ["work:style"] if "work:style" in node_ids else []})
     # 4 Run records: the check receipts, the audits, the necessary conditions and the screenshots
     rec = []
     if has("receipts.jsonl"):
@@ -586,7 +650,7 @@ def groups(d, m=None):
                                "total": len((aud.get(f) or {}).get("results") or []) if f in aud else None} for f in shots]})
     # the documents (PRD, HLD, LLD) are in Documents, not here: each one's sections with their own heading, so a Map link can land on the heading,
     # and its three views
-    doc_types = [t for t in load_types()["types"] if t["deliverable"] and t["form"] == "doc"]
+    doc_types = [t for t in load_types(d)["types"] if t["deliverable"] and t["form"] == "document"]
     decks = [n for n in m["nodes"] if n["id"] in {f"work:{t['name']}" for t in doc_types} and n.get("status") != "not_made"]
     documents = {t["name"]: {"sections": {}, "file": t["file"], "kind": "document"} for t in doc_types if has(t["file"])}
     for deck, (_, ss) in sections_of(d, decks).items():
@@ -607,7 +671,8 @@ def groups(d, m=None):
         # the copies only: the page routes a Map link by the node's file (prd.md), and the PRD's must keep landing on the Documents view;
         # the human view reads doc_file (the current document), so the text shown is always the current one
         same = olds and _same_file(d, olds[-1][1], info["file"])
-        docs.append({"id": name, "kind": "document", "name": name.upper(), "file": olds[-1][1] if same else None, "doc_file": info["file"], "maker": mb.get("persona"),
+        tag = next((t.get("tag") for t in doc_types if t["name"] == name), None) or name.upper()      # PRD, HLD, LLD, or a new type's label
+        docs.append({"id": name, "kind": "document", "name": tag, "file": olds[-1][1] if same else None, "doc_file": info["file"], "maker": mb.get("persona"),
                      "made_in": mb.get("workflows") or [], "sections": info["sections"], "nodes": [],      # no Map node: a PRD / HLD / LLD link keeps landing on the Documents view
                      "versions": [{"workflow": None, "cycle": None, "purpose": "", "label": f"v{k}"} for k, _ in olds]
                                  + [{"workflow": None, "cycle": None, "purpose": "", "label": "current"}],
@@ -618,7 +683,8 @@ def groups(d, m=None):
     return {"schema": "artifacts-groups/1", "documents": documents,
             "site": {"version": (web or {}).get("version"), "audit": {"version": last.get("version"), "passed": sum(1 for r in last.get("results") or [] if isinstance(r, dict) and r.get("pass")),
                                                                      "total": len(last.get("results") or [])} if last else None} if web else None,
-            "groups": [{**e, "rows": r} for e, r in zip(empty, (plan, guides, site, docs, rec))]}
+            "groups": [{**e, "rows": r, **({"label": f"{web['label']} sections"} if e["id"] == "site" and web else {})}
+                       for e, r in zip(empty, (plan, guides, site, docs, rec))]}
 
 
 # ------------------------------------------------------------------------------------------------------------- the views
@@ -682,14 +748,14 @@ def agent_view(d, row):
     return None
 
 
-HUMAN = {"charter": "list", "realization": "markdown", "workflows": "table", "guide": "markdown", "document": "markdown", "section": "page",
+HUMAN = {"charter": "list", "deliverables": "list", "realization": "markdown", "workflows": "table", "guide": "markdown", "document": "markdown", "section": "page",
          "script": "page", "style": "style", "receipts": "table", "audits": "chart", "audit": "list", "conditions": "list", "shots": "shots"}
 
 
 def human_view(d, row):
     """What a person reads: the rendered view the pane drew before the tabs, from the file it was drawn from; None when nothing was saved."""
     k = row.get("kind")
-    f = {"realization": row.get("text"), "shots": ((row.get("shots") or [{}])[0]).get("file"), "document": row.get("doc_file")}.get(k, row.get("file"))
+    f = {"realization": row.get("text"), "shots": ((row.get("shots") or [{}])[0]).get("file"), "document": row.get("doc_file") or row.get("file")}.get(k, row.get("file"))      # a Documents row reads doc_file; a documents entry (no doc_file) its own file
     return {"format": HUMAN[k], "file": f} if k in HUMAN and _ok(d, f) else None
 
 

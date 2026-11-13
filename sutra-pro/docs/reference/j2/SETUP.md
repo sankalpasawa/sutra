@@ -127,9 +127,11 @@ Sends (a test email or Slack message asked for in the brief, and milestone email
 is not built yet. They go only to `J2_TEST_EMAIL` or `J2_TEST_SLACK_TARGET`, never to an address in the brief. With
 the variable unset, nothing is sent. Asking in the brief ("email me updates") also turns milestone emails on.
 
-The page opens in the Simple view. "See how it works" opens the Detailed view, which starts on the Map. The rail
-on the left switches between Map, Chat (the Simple view) and Internals (the other tabs, including Board when the
-board is on). On a phone the rail runs along the bottom.
+The page opens in the Simple view (the studio): your work in the middle, your team and the plan on the left, Asha (your
+Client Lead) on the right. Turn on **Decide for me** (start page or top bar) if you'd rather the team answers its own questions;
+a real email is still never sent without you. "Detailed view" opens everything behind the scenes, starting on the Map. The
+rail on the left switches between Map, Chat (the Simple view) and Internals (the other tabs, including Board when the board is
+on). On a phone the rail runs along the bottom. Light by default; the moon button switches to dark.
 
 ## Settings
 
@@ -152,7 +154,7 @@ Set any of these before `python3 j2_server.py`, like the examples above.
 | `J2_RATES` | 1 | `0` turns the rate card off |
 | `J2_SLIM` | on | Builders get their own section plus a short list of the other sections, not the whole page. `0` turns it off |
 | `J2_RUNS_DIR` | `runs/` | Folder runs are saved to |
-| `J2_CHROME` | auto | Path to Chrome for Audit screenshots |
+| `J2_CHROME` | auto | Path to Chrome for Audit screenshots (`CHROME_PATH` is read too, after it) |
 | `J2_OVERRIDE_KEY` | unset | Owner override key, set in `.env` only (see `README.md`) |
 | `J2_BOARD` | off | `1` turns on the message board |
 | `J2_FORCE_QUESTION` | off | Mock-only test switch: a comma list of askers, each asking one question. A function (`identity`, `adaptation`, `priority`, `coordination`, `audit`) or a builder (workflow id or role word) |

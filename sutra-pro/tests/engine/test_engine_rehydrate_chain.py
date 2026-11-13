@@ -67,6 +67,15 @@ def docs_chain(j2, tmp_path_factory):
     return make_finished(j2, tmp_path_factory.mktemp("chain-docs"), RUN_B, DOCS_ONLY)
 
 
+REPORT = ("Write a quarterly business report on sales for Brew Lab, a small specialty coffee shop's one-page ordering page." + FACTS)
+
+
+@pytest.fixture(scope="module")
+def report_chain(j2, tmp_path_factory):
+    """A finished run of a document type the engine's code has never named (J2's data lists it): J2's own object, still alive."""
+    return make_finished(j2, tmp_path_factory.mktemp("chain-report"), "j2-20261104-100003-7f3a", REPORT)
+
+
 @pytest.fixture
 def new_run(j2, tmp_path):
     """A fresh J2Run in a new run folder that holds the files the host makes (task.json and friends)."""
@@ -325,7 +334,40 @@ def test_a_chain_run_may_start_with_a_document_output_but_a_plain_document_run_m
     shutil.copytree(source, plain_doc)
     for p in list(plain_doc.glob("stage-*.json")) + [plain_doc / "documents.json"]:
         p.unlink()
-    assert refused(new_run(), plain_doc) == "the earlier run built a prd, not a website"
+    assert refused(new_run(), plain_doc) == "the earlier run has no page and no document chain"
+
+
+# ---- a document type that is none of the first three (D167) ----------------------------------------------------------------
+def test_a_finished_run_of_any_document_type_continues_by_form_not_by_name(report_chain, j2, new_run):
+    old = report_chain
+    assert old.doc and old.output not in ("prd", "hld", "lld") and j2.j2_types.info(old.output)["form"] == "document"
+    follow = new_run()
+    follow.rehydrate(old.dir)
+    for name in CHAIN_ATTRS:
+        assert plain(getattr(follow, name)) == plain(getattr(old, name)), name
+    assert follow.output == old.output and follow.doc is True and follow.blueprint is None
+    say(follow, "add a short note on next quarter", timeout=120)
+    assert follow.outcome.startswith("Done"), follow.outcome
+
+
+def test_a_stage_that_is_no_type_in_the_data_is_refused(report_chain, j2, new_run, tmp_path):
+    source = copy_of(report_chain, tmp_path)
+    summary = json.loads((source / "summary.json").read_text())
+    summary["design_documents"]["requested"] = ["not_a_known_type"]
+    (source / "summary.json").write_text(json.dumps(summary))
+    assert "names unknown stages" in refused(new_run(), source)
+
+
+def test_the_page_stages_blueprint_is_the_chain_document_that_has_the_blueprint_shape(site_chain, j2, new_run):
+    """Not a name: the first of the page type's `depends_on` whose record has sections with an id, an anchor and what they implement."""
+    old = site_chain
+    follow = new_run()
+    follow.rehydrate(old.dir)
+    assert follow.blueprint == old.blueprint and follow.blueprint["sections"]
+    entry = next(e for e in j2.j2_types.entries() if e.get("kind") == "type" and e.get("name") == follow.output)
+    shaped = [d for d in entry["depends_on"] if follow.chain.get(d, {}).get("sections")]
+    assert shaped and follow.blueprint == follow.chain[shaped[0]]
+    assert all({"id", "anchor", "implements"} <= set(s) for s in follow.blueprint["sections"])
 
 
 # ---- the split of the workflows ---------------------------------------------------------------------------------------------

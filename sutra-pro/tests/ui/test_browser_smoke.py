@@ -165,9 +165,14 @@ def test_the_whole_first_day_walk(story, browser):
     assert browser.js("document.title") == "Web \u00b7 Sutra"
     origin = story.url
     assert browser.js(f"performance.getEntriesByType('resource').every(e => e.name.startsWith({q(origin)}))")        # offline: every file is the app's own
+    assert browser.js("document.body.classList.contains('simple')") is True                    # the studio is the page's own start
+    assert browser.text("#deptchip-s") == "Web" and browser.js("document.getElementById('to-home-s').getAttribute('href')") == "/"
     clean(browser, "team page")
 
-    # 8. the Workflow graph tab draws, the Org chart tab shows its marks
+    # 8. the Detailed view's button opens the rail, whose strip has the two tabs: the Workflow graph draws, the Org chart shows its marks
+    browser.click("#sdetail")
+    browser.wait_for("!document.body.classList.contains('simple')")
+    assert browser.text("#deptchip") == "Web" and browser.js("document.getElementById('to-home').getAttribute('href')") == "/"
     browser.click('.tabs [data-tab="graph"]')
     browser.wait_for("document.querySelectorAll('#pane-graph g.wnode').length > 0")
     browser.click('.tabs [data-tab="orgchart"]')

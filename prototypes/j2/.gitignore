@@ -10,9 +10,9 @@ __pycache__/
 *.pyc
 .pytest_cache/
 
-# Local run output and state (runs/ holds chat logs and AI calls; memory/ holds lessons)
-# Runs already committed stay tracked; this only stops new run folders from being added.
-runs/
+# Local state (memory/ holds lessons). Runs are NOT ignored since 13 Nov 2026: a finished run is pushed to Git
+# (J2_PUSH_RUNS=1) so that anyone's library shelf has it. To trim later, ignore single file names here
+# (runs/*/calls.jsonl holds every prompt and reply; runs/*/site/shots/ the screenshots).
 memory/
 _backup/
 projects/
@@ -29,3 +29,7 @@ graphify-out/
 .vscode/
 .idea/
 .DS_Store
+
+# Types runs make (j2_types.create): local until `python3 j2_types.py --promote <name>` moves one into types.json
+artifacts/types.local.json
+library/types/

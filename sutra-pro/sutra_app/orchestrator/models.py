@@ -16,7 +16,7 @@ from typing import Annotated, Any, Literal, Union
 
 from pydantic import Field, StringConstraints, TypeAdapter, ValidationError, field_validator, model_serializer, model_validator
 
-from sutra_app.engine.spec import DEPT_ID_RE, OUTPUT_NAMES, RUN_ID_RE, TASK_SCHEMA, TASK_SETTING_KEYS
+from sutra_app.engine.spec import DEPT_ID_RE, OUTPUT_NAME_RE, RUN_ID_RE, TASK_SCHEMA, TASK_SETTING_KEYS
 from sutra_app.library.chat import ChatBlock
 from sutra_app.library.base import Value, nested_models, unwrap_annotation
 from sutra_app.library.node import GraphNodeId, NodeState
@@ -408,10 +408,12 @@ class ChatMessageOut(Value):
     turn: Annotated[int, Field(ge=1)] | None = None                       # a direct-chat reply: the id of the owner's line it answers
     passed_on: Annotated[int, Field(ge=1)] | None = None                  # the owner's line the org chat passed on to this team: the id of the original in cs_org
     steer: bool = False                                                    # the owner's note to an agent (POST /api/chats/{sid}/steer, D132): its src_ref is `steer:<id>`
+    ask: Literal["q", "records", "model"] | None = None                    # the owner's question to a function (q) and its answer, made from its records or by a model
+                                                                           # (POST /api/ask, D148): the src_ref is `ask:<id>`, `ask:<id>:records` or `ask:<id>:model`
 
     @model_serializer(mode="wrap")
     def _blocks_only_when_there_are_some(self, handler: Any) -> dict[str, Any]:
-        """The wire shape of a message without blocks (or a turn, or a pass-on) is what it always was: the keys are left out when empty."""
+        """The wire shape of a message without blocks (or a turn, a pass-on, a note or a question) is what it always was: the keys are left out when empty."""
         data = handler(self)
         if not data.get("blocks"):
             data.pop("blocks", None)
@@ -421,6 +423,8 @@ class ChatMessageOut(Value):
             data.pop("passed_on", None)
         if not data.get("steer"):
             data.pop("steer", None)
+        if data.get("ask") is None:
+            data.pop("ask", None)
         return data
 
 
@@ -580,17 +584,18 @@ _INT_SETTING = re.compile(r"[1-9][0-9]{0,5}")
 
 
 class TaskSettings(Value):
-    """The seven task keys a request may carry (D18, S1-contracts-03), all text as J2 reads its environment. A key left unset is
+    """The eight task keys a request may carry (D18, S1-contracts-03; J2 sync 4 added the Decide for me switch), all text as J2 reads its environment. A key left unset is
     left out of the dump. Anything else is refused (closed class), so a model reply or web request cannot reach live email,
     a Chrome path or a forced audit failure."""
 
-    J2_OUTPUT: Literal[OUTPUT_NAMES] | None = None
+    J2_OUTPUT: Annotated[str, StringConstraints(pattern=rf"^(auto|{OUTPUT_NAME_RE})$")] | None = None      # `auto` or a type name by shape (D166)
     J2_BUDGET: Annotated[str, StringConstraints(max_length=6)] | None = None
     J2_BUDGET_CAP: Annotated[str, StringConstraints(max_length=6)] | None = None
     J2_FIXES: Literal["0", "1"] | None = None
     J2_MEMORY: Literal["0", "1"] | None = None
     J2_SLIM: Literal["0", "1"] | None = None
     J2_RATES: Literal["0", "1"] | None = None
+    J2_DECIDE_FOR_ME: Literal["0", "1"] | None = None
 
     @field_validator("J2_BUDGET", "J2_BUDGET_CAP")
     @classmethod

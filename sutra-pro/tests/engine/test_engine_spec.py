@@ -170,10 +170,10 @@ def test_task_spec_settings_need_text_values():
             task(settings=bad)
 
 
-def test_the_seven_task_keys_are_the_ones_the_orchestrator_allows():
-    assert TASK_SETTING_KEYS == ("J2_OUTPUT", "J2_BUDGET", "J2_BUDGET_CAP", "J2_FIXES", "J2_MEMORY", "J2_SLIM", "J2_RATES")
+def test_the_eight_task_keys_are_the_ones_the_orchestrator_allows():
+    assert TASK_SETTING_KEYS == ("J2_OUTPUT", "J2_BUDGET", "J2_BUDGET_CAP", "J2_FIXES", "J2_MEMORY", "J2_SLIM", "J2_RATES", "J2_DECIDE_FOR_ME")
     assert all(re.fullmatch(SETTING_KEY_RE, key) for key in TASK_SETTING_KEYS)
-    assert all(ENV_NAMES[name] in TASK_SETTING_KEYS for name in ("output", "budget", "budget_cap", "fixes", "memory", "slim", "rates"))
+    assert all(ENV_NAMES[name] in TASK_SETTING_KEYS for name in ("output", "budget", "budget_cap", "fixes", "memory", "slim", "rates", "decide_for_me"))
     assert not set(TASK_SETTING_KEYS) & {ENV_NAMES[name] for name in LOCKED_FIELDS}
 
 
@@ -226,13 +226,15 @@ J2_DEFAULTS = {
     "force_question": "",             # :2844
     "memory_test_lessons": False,     # :2848 == "1"
     "workspace": "auto",              # D127: Sutra's own, not J2's: the workspace capability
+    "builder_timeout": 600,           # J2 sync 5: j2.py `float(os.environ.get("J2_BUILDER_TIMEOUT") or 600)`: seconds one builder AI call may take, 0 = no limit
+    "decide_for_me": False,           # J2 sync 4: j2.py `os.getenv("J2_DECIDE_FOR_ME") == "1"`: the Simple view's switch is off until it is turned on
 }
 
 
 def test_engine_settings_default_to_j2s_values():
     assert EngineSettings().model_dump() == J2_DEFAULTS
     assert list(EngineSettings.model_fields) == list(J2_DEFAULTS)
-    assert len(J2_DEFAULTS) == 31
+    assert len(J2_DEFAULTS) == 33
 
 
 def test_the_flags_that_are_on_in_j2_are_on_and_the_others_off():
@@ -256,7 +258,9 @@ def test_no_setting_is_a_secret():
 
 
 @pytest.mark.parametrize("field, good, bad", [
-    ("output", ["website", "prd", "hld", "lld"], ["Website", "docs", "", None, 3]),
+    ("output", ["auto", "website", "prd", "hld", "lld", "project", "business_report"],
+     ["Website", "", None, 3, "a", "has space", "x" * 42, "1abc", "../x"]),         # `auto` or a name by shape, never a closed list (D166)
+    ("builder_timeout", [0, 0.5, 600, 3600.0], [-1, "slow", None, float("nan"), float("inf")]),
     ("fixes", [0, 1], [2, -1, "yes"]),
     ("budget", [1, 100, 100000], [0, -5, 100001, "many", 1.5]),
     ("budget_cap", [None, 1, 100000], [0, 100001, "x"]),
@@ -299,7 +303,7 @@ def test_the_ten_locked_fields():
 
 def test_editable_is_everything_else_in_field_order():
     assert EDITABLE_FIELDS == tuple(f for f in EngineSettings.model_fields if f not in LOCKED_FIELDS)
-    assert len(EDITABLE_FIELDS) == 21 and not set(EDITABLE_FIELDS) & set(LOCKED_FIELDS)
+    assert len(EDITABLE_FIELDS) == 23 and not set(EDITABLE_FIELDS) & set(LOCKED_FIELDS)
     assert SETTINGS_SCHEMA == "engine-settings/1"
 
 
@@ -314,7 +318,8 @@ J2_VARIABLES = {     # engine.md 4.4: the J2 variables that become fields
     "send_cap": "J2_SEND_CAP", "milestone_emails": "J2_MILESTONE_EMAILS", "test_email": "J2_TEST_EMAIL",
     "test_slack_target": "J2_TEST_SLACK_TARGET", "tap_min": "J2_TAP_MIN", "chrome": "J2_CHROME",
     "force_audit_fail": "J2_FORCE_AUDIT_FAIL", "force_audit_note": "J2_FORCE_AUDIT_NOTE", "force_question": "J2_FORCE_QUESTION",
-    "memory_test_lessons": "J2_MEMORY_TEST_LESSONS", "workspace": "J2_WORKSPACE"}
+    "memory_test_lessons": "J2_MEMORY_TEST_LESSONS", "workspace": "J2_WORKSPACE", "builder_timeout": "J2_BUILDER_TIMEOUT",
+    "decide_for_me": "J2_DECIDE_FOR_ME"}
 
 
 def test_every_field_has_its_j2_variable():
@@ -325,7 +330,8 @@ NON_DEFAULT = dict(output="prd", fixes=1, budget=250, budget_cap=400, max_cycles
                    max_turns=9, chat_full_chars=1000, delay=0.5, rates=False, slim=False, memory=False, realization=False, change=True,
                    board=True, artifact_schema=True, template_library=True, send_mode="mock", send_cap=0, milestone_emails=True,
                    test_email="me@example.com", test_slack_target="#tests", tap_min=48, chrome="/opt/chrome", force_audit_fail=2,
-                   force_audit_note="forced", force_question="why?", memory_test_lessons=True, workspace="off")
+                   force_audit_note="forced", force_question="why?", memory_test_lessons=True, workspace="off", builder_timeout=30.0,
+                   decide_for_me=True)
 
 
 def test_to_env_of_the_defaults_leaves_out_the_empty_values():
@@ -337,7 +343,7 @@ def test_to_env_of_the_defaults_leaves_out_the_empty_values():
                    "J2_DELAY": "0.0", "J2_RATES": "1", "J2_SLIM": "1", "J2_MEMORY": "1", "J2_REALIZATION": "1", "J2_CHANGE": "0",
                    "J2_BOARD": "0", "J2_ARTIFACT_SCHEMA": "0", "J2_TEMPLATE_LIBRARY": "0", "J2_SEND_MODE": "dry-run",
                    "J2_SEND_CAP": "10", "J2_MILESTONE_EMAILS": "0", "J2_TAP_MIN": "44", "J2_FORCE_AUDIT_FAIL": "0",
-                   "J2_MEMORY_TEST_LESSONS": "0", "J2_WORKSPACE": "auto"}
+                   "J2_MEMORY_TEST_LESSONS": "0", "J2_WORKSPACE": "auto", "J2_BUILDER_TIMEOUT": "600", "J2_DECIDE_FOR_ME": "0"}
 
 
 def test_to_env_for_every_field():
@@ -350,7 +356,16 @@ def test_to_env_for_every_field():
                    "J2_SEND_MODE": "mock", "J2_SEND_CAP": "0", "J2_MILESTONE_EMAILS": "1", "J2_TEST_EMAIL": "me@example.com",
                    "J2_TEST_SLACK_TARGET": "#tests", "J2_TAP_MIN": "48", "J2_CHROME": "/opt/chrome", "J2_FORCE_AUDIT_FAIL": "2",
                    "J2_FORCE_AUDIT_NOTE": "forced", "J2_FORCE_QUESTION": "why?", "J2_MEMORY_TEST_LESSONS": "1",
-                   "J2_WORKSPACE": "off"}
+                   "J2_WORKSPACE": "off", "J2_BUILDER_TIMEOUT": "30.0", "J2_DECIDE_FOR_ME": "1"}
+
+
+def test_the_builder_time_limit_takes_zero_for_no_limit_and_a_bad_value_names_its_variable():
+    assert EngineSettings.layered({"J2_BUILDER_TIMEOUT": "0"}, None, None, {}).builder_timeout == 0
+    assert float(EngineSettings(builder_timeout=0).to_env()["J2_BUILDER_TIMEOUT"]) == 0, "zero is not empty: J2 reads 0 as no limit"
+    assert EngineSettings.layered({}, {"builder_timeout": 90}, None, {}).builder_timeout == 90
+    for bad in ("soon", "-1", "nan"):
+        with pytest.raises(SettingsError, match="J2_BUILDER_TIMEOUT"):
+            EngineSettings.layered({"J2_BUILDER_TIMEOUT": bad}, None, None, {})
 
 
 @pytest.mark.parametrize("field", list(EngineSettings.model_fields))
@@ -479,9 +494,9 @@ def test_floats_in_the_environment():
 def test_words_in_the_environment_are_folded_like_j2_does():
     s = EngineSettings.layered({"J2_OUTPUT": " PRD ", "J2_SEND_MODE": "Live"}, None, None, {})
     assert (s.output, s.send_mode) == ("prd", "live")
-    for var in ("J2_OUTPUT", "J2_SEND_MODE"):
+    for var, bad in (("J2_OUTPUT", "not a name"), ("J2_SEND_MODE", "wiki")):
         with pytest.raises(SettingsError, match=var):
-            EngineSettings.layered({var: "wiki"}, None, None, {})
+            EngineSettings.layered({var: bad}, None, None, {})
 
 
 def test_fixes_takes_the_flag_words_and_nothing_else():
@@ -497,7 +512,7 @@ def test_text_settings_keep_their_spaces():
 
 def test_every_problem_of_a_layer_is_reported_at_once():
     with pytest.raises(SettingsError) as caught:
-        EngineSettings.layered({"J2_BOARD": "maybe", "J2_MAX_CYCLES": "abc", "J2_OUTPUT": "wiki"}, None, None, {})
+        EngineSettings.layered({"J2_BOARD": "maybe", "J2_MAX_CYCLES": "abc", "J2_OUTPUT": "not a name"}, None, None, {})
     message = str(caught.value)
     assert all(name in message for name in ("J2_BOARD", "J2_MAX_CYCLES", "J2_OUTPUT"))
 
@@ -515,7 +530,7 @@ def test_a_bad_value_in_a_file_is_an_error_naming_the_file_and_field():
     with pytest.raises(SettingsError, match=r"data/engine\.json: budget: "):
         EngineSettings.layered({}, {"budget": "lots"}, None, {})
     with pytest.raises(SettingsError, match=r"the department's engine\.json: output: "):
-        EngineSettings.layered({}, None, {"output": "wiki"}, {})
+        EngineSettings.layered({}, None, {"output": "not a name"}, {})
 
 
 def test_a_file_that_is_not_an_object_is_an_error():
@@ -605,7 +620,7 @@ def test_the_table_is_the_design_as_it_was_written():
     """Section 8 of engine.md, transcribed. Change a row on purpose and this digest changes with it (and so must the design);
     `test_every_symbol_and_file_of_the_table_exists_in_j2` below checks the names against J2 itself."""
     blob = json.dumps([dataclasses.asdict(f) for f in FEATURES], sort_keys=True, separators=(",", ":"))
-    assert hashlib.sha256(blob.encode()).hexdigest() == "b7d8eab5100022ec08503149bc42fa2cfa977c7fbb35b17c50b42c48a0091e7d"
+    assert hashlib.sha256(blob.encode()).hexdigest() == "48bf1aaa846c66ad50bd4054d0eee184f53bf2f67d7d19349efcb74314366dfa"
 
 
 J2_CHECKOUT = os.environ.get("SUTRA_J2_CHECKOUT")

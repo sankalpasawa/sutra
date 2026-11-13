@@ -32,6 +32,7 @@ from sutra_app.library.gate import GATE, Checked, GateError
 from sutra_app.library.node import load_function_specs
 from sutra_app.library.registry import REGISTRY, RegistryError
 from sutra_app.library.wire import WIRE_FILES, WIRE_PAYLOADS
+from sutra_app.library.workflow import registered_from_j2
 
 REPO = Path(__file__).resolve().parents[2]
 
@@ -52,6 +53,12 @@ HARNESS = textwrap.dedent(r'''
            "J2_PLAYBOOK_FILE": base / "memory" / "playbooks.jsonl", "J2_LIBRARY_DIR": base / "library"}
     if scenario == "board":
         env["J2_FORCE_QUESTION"] = "identity,adaptation,priority,coordination,audit,W-2,W-3,W-4,W-5,hours,menu"
+    if scenario == "late":      # realization on and a forced audit failure: the late judge scores the fix Priority is shown (sync 4, D145)
+        env.update(J2_REALIZATION="1", J2_FORCE_AUDIT_FAIL="1")
+        del env["J2_FORCE_QUESTION"]
+    if scenario == "auto":      # Decide for me answers the questions a vague brief raises, in the Requester's name (sync 4)
+        env.update(J2_DECIDE_FOR_ME="1")
+        del env["J2_FORCE_QUESTION"]
     for key, value in env.items():
         os.environ[key] = str(value)
     from sutra_app.engine import llm
@@ -63,9 +70,11 @@ HARNESS = textwrap.dedent(r'''
     if scenario == "prd":
         run.set_output("prd")
         brief = "Write a PRD for QuickQueue, a mobile app that lets clinic patients join a waiting line remotely. Users: patients at small clinics and the front-desk staff who manage the line. Problem: patients wait 45 minutes on average in crowded waiting rooms. Must-have features: join the queue from a phone, live position updates, SMS alert when 2 patients are ahead, staff dashboard to call the next patient. Constraints: works on low-end Android phones; no patient health data stored. Success: average in-room wait under 10 minutes; 60% of patients join remotely within 3 months."
+    if scenario == "auto":
+        brief = "a website for my cafe"
     assert run.user_says(brief) is True
     end = time.time() + 90
-    while run.status != "waiting":
+    while run.status != "waiting" or run.lock.locked():      # the lock is held while Decide for me answers and goes on
         assert time.time() < end, "the run did not stop"
         time.sleep(0.003)
     shutil.copytree(run.dir, out / "run")
@@ -86,7 +95,7 @@ def run_scenario(scenario: str, folder: Path) -> Path:
 @pytest.fixture(scope="module")
 def golden(tmp_path_factory) -> dict[str, Path]:
     base = tmp_path_factory.mktemp("records")
-    return {name: run_scenario(name, base / name) for name in ("site", "prd", "board")}
+    return {name: run_scenario(name, base / name) for name in ("site", "prd", "board", "late", "auto")}
 
 
 def documents(run_dir: Path):
@@ -150,9 +159,67 @@ def test_every_json_file_of_a_mock_run_is_accepted_in_strict_mode(golden):
     assert {"goal.json, goal.v<N>.json", "workflows.json", "atoms.json", "audits.json", "conflicts.json", "conditions*.json",
             "style.json", "receipts.jsonl", "chat.jsonl", "calls.jsonl", "templates.json", "map.json", "board.json",
             "artifacts.json", "summary.json", "chain.json", "documents.json", "sections.json", "stage-<kind>.json",
-            "report.json", "<prd|hld|lld|design|website>.json, site/<kind>-v<N>.json",
+            "report.json", "settings.json", "realization.json", "<kind>.json, site/<kind>-v<N>.json",
             "templates/<artifact>/<section>/<slug>@v<N>/spec.json", "templates/<artifact>/<section>/<slug>@v<N>/meta.json",
             "templates/<artifact>/<section>/<slug>@v<N>/schema.json"} <= seen_routes
+
+
+LATE_KEYS = {"workflow", "revises", "t", "cycle", "calls", "seconds", "score", "weakest", "missing", "rounds", "ready", "zone", "stage", "note"}
+
+
+def test_a_forced_failure_run_with_the_late_judge_is_accepted_in_strict_mode_and_really_holds_the_new_records(golden):
+    """D145: with realization on, the fix a forced audit failure brings is scored by the late judge. The strict test above passed every file
+    and line of this run; this one proves the run holds what strict mode used to refuse: `late`, the chat line that names it with `judge`,
+    and the workflow row with `judge`, `stage_from`, `certainty` and `certainty_from`."""
+    run = golden["late"] / "run"
+    real = first(run, "realization.json")
+    assert real["late"] and all(set(entry) == LATE_KEYS for entry in real["late"])
+    judged = [m for m in lines(run, "chat.jsonl") if "judge" in m]
+    assert [m["judge"] for m in judged] == [e["workflow"] for e in real["late"]] and all(m["who"] == "system" for m in judged)
+    rows = first(run, "workflows.json")
+    row = next(w for w in rows if w["name"] == real["late"][0]["workflow"])
+    assert row["judge"]["score"] == real["late"][0]["score"] and {"stage_from", "certainty", "certainty_from"} <= set(row)
+    assert R.gate_record("workflows.json", rows, mode="strict") is None
+    assert [r["version"] for r in rows if r["name"] == "Plan"] == [0], "the Plan workflow makes no site version"
+
+
+def test_a_registered_late_row_is_accepted_and_keeps_the_keys_the_workflow_model_has(golden):
+    """`registered_from_j2` copies named keys only: J2's judge, stage_from and certainty_from are its own record of the placement and are not
+    part of the library's workflow, but the row passes, with its stage, version and what it revises."""
+    run = golden["late"] / "run"
+    rows = first(run, "workflows.json")
+    row = next(w for w in rows if "judge" in w)
+    kept = registered_from_j2(row)
+    assert (kept.id, kept.stage, kept.version, kept.revises) == (row["id"], row["stage"], row["version"], row["revises"])
+    assert not {"judge", "stage_from", "certainty_from"} & set(kept.model_dump())
+    plan = registered_from_j2(next(w for w in rows if w["name"] == "Plan"))
+    assert plan.version == 0, "version 0 is the Plan workflow of a realization run"
+
+
+def test_a_workflow_version_may_be_zero_and_never_negative(golden):
+    row = next(w for w in first(golden["late"] / "run", "workflows.json") if w["name"] == "Plan")
+    assert registered_from_j2({**row, "version": 0}).version == 0
+    with pytest.raises(Exception) as error:
+        registered_from_j2({**row, "version": -1})
+    assert "version" in str(error.value)
+
+
+def test_decide_for_me_leaves_settings_json_and_flagged_answers_that_strict_mode_accepts(golden):
+    """Sync 4: switched on, Decide for me writes settings.json and posts the Requester's answers with `auto` and `auto_label`."""
+    run = golden["auto"] / "run"
+    assert first(run, "settings.json") == {"decide_for_me": True}
+    route = R.route_for("settings.json")
+    assert route.family == "run_file.object" and route.label == "settings.json"
+    assert R.gate_record("settings.json", {"decide_for_me": True}, mode="strict").family == "run_file.object"
+    assert R.gate_record("settings.json", {"decide_for_me": False}, mode="strict").family == "run_file.object"
+    answers = [m for m in lines(run, "chat.jsonl") if m.get("who") == "user" and m.get("auto")]      # `auto` is older: code's own system lines carry it too
+    assert answers and all(m.get("auto_label") for m in answers)
+    for line in answers:
+        assert R.gate_record("chat.jsonl", line, mode="strict").family == "run_message"
+
+
+def test_a_run_without_decide_for_me_writes_no_settings_file(golden):
+    assert not (golden["site"] / "run" / "settings.json").exists() and not (golden["late"] / "run" / "settings.json").exists()
 
 
 def test_the_first_chat_line_is_a_run_header_and_every_other_line_a_run_message(golden):
@@ -208,12 +275,14 @@ def test_a_template_file_with_the_old_schema_string_is_refused(golden):
 
 
 # ============================================ the catalogue =================================================================
-SPEC_FILES = ["goal.json", "goal.v2.json", "workflows.json", "atoms.json", "audits.json", "conflicts.json", "conditions.json",
+SPEC_FILES = ["settings.json", "goal.json", "goal.v2.json", "workflows.json", "atoms.json", "audits.json", "conflicts.json", "conditions.json",
               "conditions-prd.json", "style.json", "memory/lessons.jsonl", "receipts.jsonl", "realization.json", "map.json",
               "board.json", "artifacts.json", "summary.json", "chat.jsonl", "calls.jsonl", "templates.json",
               "templates/website/section/brew-lab-core@v2/spec.json", "templates/website/section/brew-lab-core@v2/meta.json",
               "templates/website/section/brew-lab-core@v2/schema.json", "prd.json", "site/website-v3.json", "chain.json",
-              "documents.json", "sections.json", "stage-prd.json", "report.json", "change.json", "./goal.json"]
+              "documents.json", "sections.json", "stage-prd.json", "report.json", "change.json", "./goal.json",
+              "timing.json", "autofix.json", "deliverables.json", "input_cuts.json", "stage-business_report.json",
+              "business_report.json", "site/business_report-v2.json"]
 
 
 @pytest.mark.parametrize("name", SPEC_FILES)
@@ -221,7 +290,7 @@ def test_the_catalogue_knows_the_file(name):
     assert R.route_for(name) is not None
 
 
-@pytest.mark.parametrize("name", ["", "other.json", "../goal.json", "a/../goal.json", "/tmp/goal.json", "goal.json.bak",
+@pytest.mark.parametrize("name", ["", "Other.json", "../goal.json", "a/../goal.json", "/tmp/goal.json", "goal.json.bak",
                                   "templates/website/section/x/spec.json", "templates/website/section/x@v1/model.json"])
 def test_the_catalogue_does_not_know_the_file(name):
     assert R.route_for(name) is None
@@ -229,6 +298,15 @@ def test_the_catalogue_does_not_know_the_file(name):
 
 def test_a_windows_style_path_is_read_as_a_path_inside_the_run():
     assert R.route_for("templates\\website\\section\\x@v1\\spec.json") is R.route_for("templates/website/section/x@v1/spec.json")
+
+
+def test_a_name_of_the_shape_of_a_type_file_is_a_type_file_only_when_it_says_so():
+    """The type names are data (D172): `<name>.json` is checked as a type's data file when it carries the schema key of
+    one, and is otherwise a file the catalogue does not know (left alone in log mode, refused in strict mode)."""
+    assert R.route_for("other.json").family == "artifact_data"
+    assert R.check_record("other.json", {"a": 1}) is None
+    assert R.gate_record("other.json", {"a": 1}, mode="log") is None
+    assert rejected("other.json", {"a": 1}).violations[0].code == "unknown_file"
 
 
 def test_every_wire_file_is_in_the_catalogue_with_its_payload():
@@ -391,8 +469,8 @@ def test_conflicts_and_conditions_are_checked_row_by_row(golden):
 
 def test_style_json_is_the_design_style_guide(golden):
     style = first(golden["site"] / "run", "style.json")
-    assert R.gate_record("style.json", style, mode="strict").family == "artifact.design.style-guide"
-    assert rejected("style.json", mutated(style, "radius", 10)).violations
+    assert R.gate_record("style.json", style, mode="strict").family == "run_file.object"        # a type's style guide is data (D171)
+    assert rejected("style.json", ["not", "an", "object"]).violations
 
 
 LESSON = {"id": "L-j2-20261104-100004-7f3a-1", "problem": "No menu: the menu is missing", "cause": "The first build left it out",
@@ -428,15 +506,38 @@ def test_calls_jsonl_lines_carry_the_call_and_its_texts(golden):
     assert rejected("calls.jsonl", {**call, "surprise": 1}).violations
 
 
-def test_artifact_data_checks_each_section_against_its_model(golden):
+def test_artifact_data_is_checked_by_shape_for_any_type(golden):
     prd = first(golden["prd"] / "run", "prd.json")
     assert R.gate_record("prd.json", prd, mode="strict").family == "artifact_data"
     assert R.gate_record("site/prd-v6.json", prd, mode="strict") is not None
     assert says(rejected("prd.json", {**prd, "schema": "artifact-schema/9"}), "", "schema must be")
-    assert says(rejected("prd.json", mutated(prd, "sections", "Mystery", {"a": 1})), "sections.Mystery", "not a section")
-    assert rejected("prd.json", mutated(prd, "sections", "Requirements", "requirements", 0, "priority", "urgent")).violations
-    assert rejected("prd.json", {**prd, "artifact": "site"}).violations
-    assert R.gate_record("prd.json", mutated(prd, "sections", "Problem", "a_template_field", "x"), mode="strict") is not None   # a template's own field is not judged
+    assert R.gate_record("prd.json", mutated(prd, "sections", "Mystery", {"a": 1}), mode="strict") is not None      # a section is a name: the type's template is J2's
+    assert rejected("prd.json", {**prd, "artifact": "Site"}).violations                                           # the kind is a name by shape
+    assert rejected("prd.json", mutated(prd, "sections", "Problem", "not an object")).violations
+    assert rejected("prd.json", {**prd, "sections": {"": {"a": 1}}}).violations
+
+
+def test_a_document_of_a_type_that_is_not_one_of_the_first_three_is_accepted_everywhere(golden):
+    """A type J2 reads from data (here `business_report`): its data file, its site copy and its stage file are checked."""
+    prd = first(golden["prd"] / "run", "prd.json")
+    report = {**prd, "template": "Report/1", "artifact": "business_report", "sections": {"Summary": {"text": "t", "assumptions": []}}}
+    assert R.gate_record("business_report.json", report, mode="strict").family == "artifact_data"
+    assert R.gate_record("site/business_report-v2.json", report, mode="strict") is not None
+    assert R.gate_record("stage-business_report.json", {"kind": "business_report", "sections": []}, mode="strict").family == "run_file.object"
+
+
+def test_the_four_files_a_run_of_sync_5_writes_are_accepted_in_strict_mode():
+    timing = {"total_seconds": 12.5, "steps": [{"fn": "identity", "step": 1, "seconds": 1.2, "tokens": {"in": 10, "out": 5}}]}
+    assert R.gate_record("timing.json", timing, mode="strict").family == "run_file.object"
+    deliverables = {"deliverables": ["a_type"], "reason": "the brief asks for one document", "new": []}
+    assert R.gate_record("deliverables.json", deliverables, mode="strict").family == "run_file.object"
+    fixes = [{"cycle": 1, "workflow": "W-1", "kind": "heading_list", "detail": "work atom 1: a heading list was repaired"}]
+    assert R.check_record("autofix.json", fixes)[0].family == "run_file.list"
+    cuts = [{"call": 3, "workflow": "W-2", "input": "the requirements document", "kept": 20000, "chars": 31000}]
+    assert R.check_record("input_cuts.json", cuts)[0].family == "run_file.list"
+    for name, bad in (("timing.json", [1]), ("deliverables.json", [1]), ("autofix.json", {"a": 1}), ("input_cuts.json", {"a": 1})):
+        assert rejected(name, bad).violations, name
+    assert R.check_record("autofix.json", []) is not None and R.check_record("input_cuts.json", []) is not None
 
 
 def test_a_document_file_and_its_site_copy_have_the_same_shape(golden):
@@ -455,6 +556,7 @@ def test_the_open_files_are_bounded_json_of_the_right_outer_shape(golden):
     run = golden["prd"] / "run"
     assert R.check_record("documents.json", first(run, "documents.json"))[0].family == "run_file.object"
     assert R.check_record("change.json", [{"id": "CH-1"}])[0].family == "run_file.list"
+    assert R.check_record("settings.json", {"decide_for_me": True})[0].family == "run_file.object"
     deep = {}
     node = deep
     for _ in range(40):
@@ -481,7 +583,7 @@ def test_all_imports_every_module_and_registers_the_catalogue_payloads():
                  "realization", "run_summary", "receipt", "call_log", "condition_result", "artifact_data", "chain_row",
                  "run_file.object", "run_file.list", "template.file", "template.meta", "template.decision", "template.run"):
         assert name in families, name
-    assert len([f for f in families if f.startswith("artifact.")]) == 22                # 19 sections and 3 documents
+    assert not [f for f in families if f.startswith("artifact.")]               # the section models are retired (D171)
 
 
 def test_all_does_not_freeze_the_registry_and_freeze_closes_it():
@@ -515,7 +617,7 @@ def library_classes():
 
 def test_every_library_string_and_list_is_bounded():
     classes = library_classes()
-    assert len(classes) > 70
+    assert len(classes) > 55
     assert {name: unbounded_fields(cls) for cls, _ in classes.items() if unbounded_fields(cls) for name in [cls.__name__]} == {}
 
 

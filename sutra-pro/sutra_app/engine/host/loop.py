@@ -45,7 +45,7 @@ from ..hooks import EventHooks, load_validator
 from ..paths import DataPaths, RunDirError, load_env_file
 from ..port import CallTag, ModelError, PortSpec
 from ..rehydrate import HOST_FILES
-from ..spec import OUTPUT_NAMES, EngineSettings, SettingsError, TaskSpec, read_settings_file
+from ..spec import EngineSettings, is_output_name, SettingsError, TaskSpec, read_settings_file
 from .heartbeat import Heartbeat, heartbeat_interval
 from .inbox import Inbox
 
@@ -197,7 +197,7 @@ class Host:
         path = self.paths.run_dir / "chat.jsonl"
         lines = []
         if not path.exists():
-            chosen = self.settings.output if self.settings and self.settings.output != "auto" else "website"
+            chosen = self.settings.output if self.settings and self.settings.output != "auto" else None       # no type chosen yet (D165)
             lines.append({"meta": True, "run": self.paths.run_id[3:], "output": chosen,
                           "j2_fixes": int(self.settings.fixes) if self.settings else 0, "force_audit_fail": None,
                           "force_question": None, "test_lessons": None,
@@ -267,6 +267,8 @@ class Host:
         except OSError as exc:
             raise StartFailed(f"settings.json cannot be written: {exc}") from None
         os.environ.update(self.settings.to_env())
+        if self.settings.output == "auto":
+            os.environ.pop("J2_OUTPUT", None)          # no type chosen: J2 leaves it to its planner (D165)
         os.environ.update(paths.j2_env())
         if self.mock:
             os.environ["STUDIO_MOCK"] = "1"
@@ -301,7 +303,7 @@ class Host:
                 found = pick(row) if isinstance(row, dict) else None
             except (OSError, ValueError, IndexError):
                 continue
-            if found in OUTPUT_NAMES and found != "auto":
+            if is_output_name(found):          # the shape only: whether the type still exists is checked where J2 is loaded (D166)
                 return found
         return None
 
@@ -317,7 +319,7 @@ class Host:
         selection = capabilities.select_output(task.user_text, context)
         forced = {name: value for name, value in capabilities.forced_settings(selection.output).items()
                   if getattr(settings, name, value) != value}
-        self.settings = settings.model_copy(update={"output": selection.output, **forced})
+        self.settings = settings.model_copy(update={"output": selection.output or "auto", **forced})      # no type: J2's planner chooses (D165)
         self.selection, self.has_folder = selection, has_folder
         record = {"choice": settings.output, "output": selection.output, "rule": selection.rule, "reason": selection.reason,
                   "folder": has_folder}
@@ -416,11 +418,34 @@ class Host:
             self._hooks_off(target, exc)
             return plain()
 
+    def _check_output_known(self, j2) -> None:
+        """The chosen type must exist in the data (J2's `types.json`, the local types, a registered capability type): an unknown one the owner pinned
+        is a refused start that says what is known, never a silent default (D166). A follow-up of a type that is gone (a deleted local type) is left to
+        J2's planner instead, with one trace line."""
+        chosen = self.selection.output if self.selection is not None else None
+        known = j2.j2_types.names()
+        if chosen is None or chosen in known:
+            return
+        if self.selection.rule == "followup":
+            self.trace("output.unknown", {"output": chosen, "known": known, "action": "the team's planner chooses"})
+            self.selection = type(self.selection)(None, "planner", "the type of the earlier run no longer exists: the team's planner chooses")
+            self.settings = self.settings.model_copy(update={"output": "auto"})
+            os.environ.pop("J2_OUTPUT", None)
+            try:
+                _atomic_write(self.paths.settings_json, json.dumps(self.settings.model_dump(), indent=2) + "\n")
+                _atomic_write(self.paths.run_dir / "output.json", json.dumps(
+                    {"choice": "auto", "output": None, "rule": self.selection.rule, "reason": self.selection.reason, "folder": self.has_folder}, indent=2) + "\n")
+            except OSError as exc:
+                self.trace("publish.error", {"where": "output.json", "error": clip(str(exc), 300)})
+            return
+        raise StartFailed(f"unknown output type {chosen} (known: {', '.join(known)})", chat=True)
+
     def _make_run(self) -> None:
         from .publisher import HostHooks, StatePublisher           # these import J2: the environment is set by now
         task, paths = self.task, self.paths
         from .. import capabilities, j2
         capabilities.register(j2)                                  # D126: the engine's own outputs, before any J2Run exists
+        self._check_output_known(j2)
         self.context = capabilities.EngineContext(task=task, settings=self.settings, paths=paths, data_dir=paths.data_dir,
                                                   selection=self.selection, has_folder=self.has_folder)
         capabilities.install(self.context)                         # the tag and progress hooks every model call of this process runs
@@ -533,7 +558,7 @@ class Host:
         if self.selection is not None:
             from ..capabilities.select import chat_line
             said = chat_line(self.selection, self.has_folder)
-            if said:                                   # project work only: a website selection posts nothing, so existing runs are unchanged
+            if said:                                   # project work only: any other selection posts nothing, so existing runs are unchanged
                 lines.append(said)
         if self._function_nodes_off:
             lines.append(f"function nodes are off: {self._function_nodes_off}")
@@ -739,6 +764,8 @@ class Host:
         """Final publish, then `run.ended`: the publisher and the heartbeat are stopped first, so nothing follows it."""
         self.inbox.close()
         self.publisher.stop()
+        from . import finish
+        finish.run_steps(self, status)             # D142, D143: the steps of a run that ended well; the heartbeat still beats
         self.heartbeat.stop()
         try:
             self.publisher.final()

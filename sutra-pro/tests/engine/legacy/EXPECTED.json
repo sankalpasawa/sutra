@@ -1,6 +1,32 @@
 {
  "change_checks": 192,
- "flow_fast_ok_lines": 67,
- "j2_commit": "9200cf626e5c05032caefda4f96b694284efdc5e",
- "realization_checks": 97
+ "flow_fast_ok_lines": 93,
+ "flow_fast_ok_lines_with_extraction": 131,
+ "j2_commit": "1d537295eb11cb034956fa9d8a4026eaa1e3f44e",
+ "j2_flow_test_sha256": "a77f88951e8a4ab3b359e9acf40d48dc5244eaa12ad9c4f98218d9c74c7a7634",
+ "known_upstream_failures": [
+  "map_focus",
+  "graph_map",
+  "warm_ui"
+ ],
+ "legacy_flow_test_sha256": "2f999d1a6800472898ddf63d6bcf45ff5fa983fa9df77cdccad87967781ac190",
+ "realization_checks": 98,
+ "skip_lines_with_extraction": [
+  "replay test skipped: runs/j2-20261015-114723 not found",
+  "skipped the rest of left_bar: no saved runs",
+  "skipped the rest of graph_map: no saved runs",
+  "skipped the rest of map_shapes: no saved runs",
+  "map tree: runs 174314, 155610 and 130930 not in runs/",
+  "map: every workflow placed or listed in 0 saved runs",
+  "agent views: skipped (no saved test run in runs/)",
+  "artifacts groups: static checks ok (skipped the rest: runs/j2-20261103-132506 not found)",
+  "rules split: j2-20261030-003100 isn't in this clone",
+  "icon rail: static checks ok (browser steps skipped",
+  "chat panel: static checks ok (browser steps skipped",
+  "function chat: static checks ok (browser steps skipped",
+  "view kept: static checks ok (browser steps skipped",
+  "run settings: no old controls, Appearance cards; run list = the records on 0 runs",
+  "saved runs render: skipped (not in runs/:",
+  "board story view: j2-20261027-012148 isn't in this clone"
+ ]
 }

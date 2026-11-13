@@ -1,0 +1,52 @@
+{
+ "id": "W-3",
+ "name": "Fix Problem wording (no invented quantity)",
+ "revises": "W-1",
+ "sections": [
+  "Problem",
+  "Users",
+  "Goals"
+ ],
+ "section": "W-1",
+ "fixes": [
+  "D-5"
+ ],
+ "atoms": [
+  {
+   "id": "W-3.a1",
+   "verification": [
+    {
+     "text": "Problem heading is present",
+     "type": "heading-present",
+     "target": "Problem",
+     "expect": true,
+     "item": 1
+    },
+    {
+     "text": "Problem section is not empty",
+     "type": "section-not-empty",
+     "target": "Problem",
+     "expect": 30
+    },
+    {
+     "text": "Product name and brief facts appear exactly",
+     "type": "facts-present",
+     "target": [
+      "Cozy Sudoku",
+      "no sign-up",
+      "no ads"
+     ],
+     "expect": true,
+     "item": 2
+    },
+    {
+     "text": "Goal ids are unique",
+     "type": "ids-unique",
+     "target": "G",
+     "expect": true,
+     "item": 3
+    }
+   ]
+  }
+ ]
+}

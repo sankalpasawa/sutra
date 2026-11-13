@@ -16,8 +16,7 @@ HOLD = {"guard": {"enabled": True, "level": "hold", "holding": True, "line": "Cl
 
 
 def open_home(browser, fake, stage="1"):
-    """The fake backend has no GET /api/chats/{sid}/providers (the provider pill of ABS-9): that one 404 is announced here, as the attention tests do."""
-    browser.expect_failed("/api/chats/cs_org/providers", 404)
+    """Home on one stage."""
     load(browser, fake, stage=stage)
 
 
@@ -96,7 +95,6 @@ def status_of(browser, group):
 def test_saved_goes_as_soon_as_a_field_of_its_group_is_edited_again(browser, fake):
     """QA firstrun-settings: "Saved." stayed on screen beside a new value that the server did not have (Limits, Notifications and Engine; a group is not
     repainted while the owner types in it, so the line has to be cleared in place)."""
-    browser.expect_failed("/api/notes", 404)                                                         # the fake serves no notes
     open_home(browser, fake)
     open_settings(browser, "limits")
     browser.type("#set-limits [data-input=monthly_usd]", "5")
@@ -125,7 +123,6 @@ def test_saved_goes_as_soon_as_a_field_of_its_group_is_edited_again(browser, fak
 @browser_only
 def test_enter_in_a_settings_field_presses_the_save_of_its_group(browser, fake):
     """QA firstrun-settings: there is no <form>, so Enter did nothing in Limits, Notifications or Engine and a keyboard-only owner had to Tab to Save."""
-    browser.expect_failed("/api/notes", 404)                                                         # the fake serves no notes
     open_home(browser, fake)
     open_settings(browser, "limits")
     browser.type("#set-limits [data-input=monthly_usd]", "1234")
@@ -171,7 +168,6 @@ def test_a_write_the_heal_cannot_rescue_says_to_reload_the_page_beside_its_field
     printed the server's "A valid X-Sutra-Token header is required for this request". The fake's real pages hold the first token, so the heal reads the
     same one again and gives up, as it does inside its 60 seconds; Notes and the chat already said "Reload it from the app"."""
     plain = "This page was opened without its access token. Reload it from the app."
-    browser.expect_failed("/api/notes", 404)                                                         # the fake serves no notes (the Settings tests of this package know it)
     for path in ("/api/limits", "/api/ops/attention", "/api/ops/update-check"):
         browser.expect_failed(path, 401)
     open_home(browser, fake)
@@ -223,7 +219,6 @@ def test_the_notifications_group_sends_both_times_and_the_cap_and_refuses_equal_
 def test_quiet_right_now_follows_the_pages_clock_not_the_servers_reading_at_the_last_fetch(browser, fake):
     """QA recurring-limits: the line kept saying what the server said when the page last read it. The fake answers quiet_now: false whatever the window is,
     so a window around the browser's own minute can only read as quiet through the page's twin of the rule."""
-    browser.expect_failed("/api/notes", 404)                                  # the fake backend has no notes route (the rules-notes package; not this test's business)
     open_home(browser, fake)
     open_settings(browser, "notices")
     minute = browser.js("(() => { const d = new Date(); return d.getHours() * 60 + d.getMinutes(); })()")
@@ -284,7 +279,6 @@ def focused(browser):
 @browser_only
 def test_the_keyboard_keeps_its_place_in_the_recurring_group_after_each_action(browser, fake):
     """QA recurring-limits: every action repainted the group and focus fell to the page; after Remove the confirm could not be reached from the keyboard."""
-    browser.expect_failed("/api/notes", 404)
     open_home(browser, fake, "full")
     fake.request("POST", "/__fake/recurring", {"items": [REC]})
     open_settings(browser, "recurring")
@@ -314,7 +308,6 @@ def test_the_keyboard_keeps_its_place_in_the_recurring_group_after_each_action(b
 
 @browser_only
 def test_enter_in_the_limit_and_notice_fields_saves_like_the_button(browser, fake):
-    browser.expect_failed("/api/notes", 404)
     open_home(browser, fake)
     open_settings(browser, "limits")
     browser.type("#set-limits [data-input=monthly_usd]", "77")

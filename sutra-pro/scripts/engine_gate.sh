@@ -6,8 +6,11 @@
 #                                     scripts import each other), all at the same time; exit 0 only when every one passes
 #   SUTRA_BROWSER=1 scripts/engine_gate.sh
 #                                     also j2_flow_test.py --fast --browser (needs Chrome and node; skipped, with a line, otherwise)
-#   SUTRA_J2_CHECKOUT=/path/to/J2_Prototype scripts/engine_gate.sh
-#                                     the blocks that need J2's page, harness files and saved runs run too (they take much longer)
+#   SUTRA_J2_CHECKOUT=/path/to/the/extraction scripts/engine_gate.sh
+#                                     an extraction of prototypes/j2 at the commit EXPECTED.json names (git archive <commit> prototypes/j2 |
+#                                     tar -x --strip-components=2 -C <empty folder>): the blocks that need J2's page and harness files run
+#                                     too; the ones that need saved runs still print a skip line (the copy has no runs/; EXPECTED.json
+#                                     lists those lines)
 #
 # What counts as green: exit 0; for the flow script also the last line "j2 flow checks passed", no Traceback, and at least as many
 # lines ending " ok" as tests/engine/legacy/EXPECTED.json records; "N checks passed" with N at least the recorded number for the others.

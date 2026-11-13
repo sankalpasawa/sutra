@@ -68,7 +68,9 @@ CONNECTOR_MODES = ("auto", "claude", "codex", "stub")
 TRANSCRIPT_LIMIT = 20                 # `resume_info` gives at most 20 messages (ORCH 3.4), so the carry-over cap rarely bites
 NEW_MESSAGE_LABEL = "New message:"    # separates the carry-over block from the message in the first prompt of a new session
 _STUB_CONCURRENCY = 64
-PICK_PURPOSES = ("agent_turn", "plan", "judge")   # the calls an agent's own pick governs (D131); summary, template, review and change keep the policy
+# the calls an agent's own pick governs (D131); summary, template, review and change keep the policy. `agent_chat` is the owner's question to a function
+# (orchestrator/agent_ask.py, D149): a call of that function's own session, so it carries the pick the caller resolved (`RouteContext.pick`)
+PICK_PURPOSES = ("agent_turn", "plan", "judge", "agent_chat")
 _SESSION_ID = re.compile(SESSION_ID_PATTERN)
 
 # the words of the note "claude out of quota, answered by codex" (J2 llm.py:173,187)
@@ -464,10 +466,17 @@ class Router:
             return None
 
     def _pick_for(self, req: Any) -> Optional[Pick]:
-        """The owner's pick for the agent this call is tagged for (D131): only for a call that belongs to no chat session and whose purpose is an
-        agent's own work. Read afresh for every request, so a change applies from the agent's next call, never in the middle of one. Never raises."""
+        """The owner's pick for the agent this call is tagged for (D131), for a call whose purpose is an agent's own work (`PICK_PURPOSES`). A pick the
+        caller resolved and put in the context (`ctx.pick`: the question to a function, whose session carries its own pick, D149) is used as it is, session
+        or not. Otherwise only a call that belongs to no chat session has one: the engine's reader (`agent_pick`) is asked afresh for every request, so a
+        change applies from the agent's next call, never in the middle of one. Never raises."""
         ctx = getattr(req, "ctx", None)
-        if self.agent_pick is None or ctx is None or ctx.session_id or ctx.tag.purpose not in PICK_PURPOSES:
+        if ctx is None or ctx.tag.purpose not in PICK_PURPOSES:
+            return None
+        given = getattr(ctx, "pick", None)
+        if given is not None:
+            return given if given.provider else None             # an empty provider is "Default": nobody chose, the session or the policy answers
+        if self.agent_pick is None or ctx.session_id:
             return None
         try:
             pick = self.agent_pick(ctx.tag)
@@ -479,10 +488,14 @@ class Router:
     def _plan(self, resolved: Resolved, req: Any, pinned: Optional[str] = None) -> Plan:
         chosen = pick = None
         if pinned is None:
-            pinned = chosen = self._chosen_for(req)
-            if chosen is None:
+            if getattr(req.ctx, "pick", None) is not None:         # the caller's own cascade (own, run, team) already took the session's provider into account: it decides
                 pick = self._pick_for(req)
                 pinned = pick.provider if pick is not None else None
+            if pick is None:
+                pinned = chosen = self._chosen_for(req)
+                if chosen is None:
+                    pick = self._pick_for(req)
+                    pinned = pick.provider if pick is not None else None
         order = list(resolved.order)
         if self._restrict is not None:
             order = [self._restrict]
@@ -521,7 +534,7 @@ class Router:
         if pick is not None and pick.provider not in usable:      # the owner's pick cannot run: the policy answers, and the usage row says so
             reason = dict(skipped).get(pick.provider) or (f"this app is set to use only {self._restrict}" if self._restrict else "not configured")
             miss = (pick.provider, _short(reason))
-            self._emit("connector.choice_unavailable", {"session_id": None, "agent": req.ctx.tag.function, "wanted": pick.provider,
+            self._emit("connector.choice_unavailable", {"session_id": req.ctx.session_id, "agent": req.ctx.tag.function, "wanted": pick.provider,
                                                          "reason": reason, "used": usable[0]})
         return Plan(order=tuple(usable), skipped=tuple(skipped), resolved=resolved, models=models, tools=tools, pick=pick, pick_miss=miss)
 

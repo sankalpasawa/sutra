@@ -22,12 +22,13 @@ class EditSpec(Capability):
     name = "edits"
 
     def outputs(self):
-        return {"editing": OutputSpec(label="Editing", noun="e", workspace="edit")}
+        return {"editing": OutputSpec(name="editing", label="Editing", noun="e", file="editing.md", workspace="edit")}
 
 
 @pytest.fixture
 def edit_output():
-    register(SimpleNamespace(OUTPUTS={}), [EditSpec()])
+    types = SimpleNamespace(names=lambda: [], HOST={}, register=lambda entry, extras=None: None)       # the P18 hook, as far as `register` uses it
+    register(SimpleNamespace(j2_types=types), [EditSpec()])
     yield "editing"
     SPECS.pop("editing", None)
 
@@ -221,7 +222,7 @@ def test_host_hooks_append_every_capabilitys_addendum_after_the_inner_text(monke
     monkeypatch.setattr(capabilities, "CAPABILITIES", (Says(),))
     inner = SimpleNamespace(system_addendum=lambda fn: "\n\n## Node context\nnote")
     hooks = HostHooks(inner, publisher=None, context=ctx())
-    assert hooks.system_addendum("audit") == "\n\n## Node context\nnote\n\n## Says\naudit in website"
+    assert hooks.system_addendum("audit") == "\n\n## Node context\nnote\n\n## Says\naudit in None"
 
 
 def test_host_hooks_without_a_context_return_the_inner_text_only():

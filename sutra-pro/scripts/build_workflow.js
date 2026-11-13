@@ -13,7 +13,9 @@ export const meta = {
 const A = (args && Object.keys(args).length ? args : (typeof EMBEDDED_ARGS !== 'undefined' ? EMBEDDED_ARGS : {}))
 const APP = A.app || '~/Desktop/development/sutra-pro'
 const WT = APP + '-wt'
-const J2 = '~/Desktop/development/J2_Prototype'
+// an extraction of `prototypes/j2` (git archive <commit> prototypes/j2 | tar -x --strip-components=2 -C <new empty folder>): the plan's `j2` argument,
+// else the environment variable SUTRA_J2_CHECKOUT (the one scripts/vendor_j2.py reads). There is no default: a path under a home folder is one machine's.
+const J2 = A.j2 || (typeof process !== 'undefined' && process.env && process.env.SUTRA_J2_CHECKOUT) || ''
 const PLUGIN = '~/Desktop/development/sutra/marketplace/plugin'
 const WPS = A.wps || []
 const ALREADY = new Set(A.alreadyMerged || [])
@@ -70,7 +72,10 @@ let nulls = 0
 let HALT = false
 const noteResult = r => { if (r) nulls = 0; else if (++nulls >= 3 && !HALT) { HALT = true; log('HALT: three agents in a row returned nothing; no new work is started') } return r }
 
-const RULES = `RULES. The repo is ${APP} (local git, branch main). Local only: never push, never open PRs, never run release scripts, touch nothing outside ${APP}, its worktree folder ${WT} and /tmp. The J2 prototype at ${J2} and the Sutra plugin at ${PLUGIN} are READ-ONLY sources (never the plugin's sutra-ui folder). The owner is asleep: decide on your own, never ask a question, and write every decision and deviation down. Run Python only through scripts/py of the checkout you work in (it puts that checkout's code first and pins TMPDIR); never the system python for project code. Test files must have project-unique basenames unless their folder has an __init__.py (tests/test_layout.py enforces it).`
+const SOURCES = J2
+  ? `The J2 prototype (an extraction of prototypes/j2) at ${J2} and the Sutra plugin at ${PLUGIN} are READ-ONLY sources (never the plugin's sutra-ui folder).`
+  : `No J2 folder is given for this run (SUTRA_J2_CHECKOUT names an extraction of prototypes/j2 when there is one). The Sutra plugin at ${PLUGIN} is a READ-ONLY source (never the plugin's sutra-ui folder).`
+const RULES = `RULES. The repo is ${APP} (local git, branch main). Local only: never push, never open PRs, never run release scripts, touch nothing outside ${APP}, its worktree folder ${WT} and /tmp. ${SOURCES} The owner is asleep: decide on your own, never ask a question, and write every decision and deviation down. Run Python only through scripts/py of the checkout you work in (it puts that checkout's code first and pins TMPDIR); never the system python for project code. Test files must have project-unique basenames unless their folder has an __init__.py (tests/test_layout.py enforces it).`
 
 function devPrompt(wp, attempt, prior) {
   const spec = wp.spec ? ('\nFULL SPEC (given by the caller; it adds to the section file for this package):\n' + wp.spec + '\n') : ''

@@ -158,7 +158,9 @@ def build_ctx(services, dept_id: str, run: Optional[str] = None, *, commands=Non
     page = read_page(services.data_dir, dept_id)
     current = current_ref(services, dept_id, page)
     live_id = current.run_id if current is not None else ""
-    common = dict(runs_dir=str(paths.runs_dir), live_id=live_id, memory=memory, dept_id=dept_id, commands=commands)
+    decide = {"1": True, "0": False}.get(page.next_settings.get("J2_DECIDE_FOR_ME", ""))        # the owner's choice for the next run, if any
+    common = dict(runs_dir=str(paths.runs_dir), live_id=live_id, memory=memory, dept_id=dept_id, commands=commands,
+                  library=str(paths.library_dir), decide_for_me=decide)           # the library is the one global one (D26), not the server's J2 folder
     if run:
         ref = services.resolve_run(run, dept_id) if re.fullmatch(RUN_PARAM_RE, run) else None
         if ref is None or getattr(ref, "dept_id", dept_id) != dept_id or ref.run_id != run:

@@ -1,4 +1,4 @@
-"""Settings across sections (S1-contracts-03): the seven task keys the orchestrator validates, the two `engine.json` layers the engine
+"""Settings across sections (S1-contracts-03): the eight task keys the orchestrator validates, the two `engine.json` layers the engine
 host reads, the Settings routes that edit them, and the dangerous switches that stay out of every web path."""
 import json
 import os
@@ -18,16 +18,17 @@ from sutra_app.orchestrator.models import TaskSettings
 from .test_contract_world import World, clock, db, events, ids, settings, tenv, world  # noqa: F401  (fixtures used by name)
 
 PATH = "/api/engine/settings"
-GOOD = {"J2_OUTPUT": "lld", "J2_BUDGET": "55", "J2_BUDGET_CAP": "99", "J2_FIXES": "1", "J2_MEMORY": "0", "J2_SLIM": "0", "J2_RATES": "0"}
+GOOD = {"J2_OUTPUT": "lld", "J2_BUDGET": "55", "J2_BUDGET_CAP": "99", "J2_FIXES": "1", "J2_MEMORY": "0", "J2_SLIM": "0", "J2_RATES": "0",
+        "J2_DECIDE_FOR_ME": "1"}
 FIELD_OF = {env: name for name, env in ENV_NAMES.items()}
 
 
 # ---- the task keys: orchestrator (writer) against engine (reader) -----------------------------------------------------------------
 
-def test_the_seven_keys_are_the_same_list_on_both_sides():
+def test_the_eight_keys_are_the_same_list_on_both_sides():
     assert tuple(TaskSettings.model_fields) == TASK_SETTING_KEYS
-    assert len(TASK_SETTING_KEYS) == 7
-    assert [FIELD_OF[key] for key in TASK_SETTING_KEYS] == ["output", "budget", "budget_cap", "fixes", "memory", "slim", "rates"]
+    assert len(TASK_SETTING_KEYS) == 8
+    assert [FIELD_OF[key] for key in TASK_SETTING_KEYS] == ["output", "budget", "budget_cap", "fixes", "memory", "slim", "rates", "decide_for_me"]
 
 
 def test_what_the_orchestrator_accepts_the_engine_reads_as_the_same_values():
@@ -35,13 +36,13 @@ def test_what_the_orchestrator_accepts_the_engine_reads_as_the_same_values():
     assert task == GOOD
     effective = EngineSettings.layered({}, None, None, task)
     assert (effective.output, effective.budget, effective.budget_cap, effective.fixes) == ("lld", 55, 99, 1)
-    assert (effective.memory, effective.slim, effective.rates) == (False, False, False)
+    assert (effective.memory, effective.slim, effective.rates, effective.decide_for_me) == (False, False, False, True)
 
 
 @pytest.mark.parametrize("key, value, ok", [
     ("J2_BUDGET", "1", True), ("J2_BUDGET", "100000", True), ("J2_BUDGET", "0", False), ("J2_BUDGET", "100001", False),
     ("J2_BUDGET", "12.5", False), ("J2_BUDGET", "-3", False), ("J2_BUDGET_CAP", "1", True), ("J2_BUDGET_CAP", "100000", True),
-    ("J2_BUDGET_CAP", "0", False), ("J2_BUDGET_CAP", "100001", False), ("J2_OUTPUT", "prd", True), ("J2_OUTPUT", "deck", False),
+    ("J2_BUDGET_CAP", "0", False), ("J2_BUDGET_CAP", "100001", False), ("J2_OUTPUT", "prd", True), ("J2_OUTPUT", "business_report", True), ("J2_OUTPUT", "9deck", False), ("J2_OUTPUT", "a", False),
     ("J2_FIXES", "1", True), ("J2_FIXES", "2", False), ("J2_RATES", "0", True), ("J2_RATES", "2", False)])
 def test_both_sides_draw_the_line_at_the_same_value(key, value, ok):
     def writer() -> bool:
@@ -137,3 +138,13 @@ def test_the_folders_the_engine_keeps_in_a_department_are_the_ones_the_sweep_lea
 def test_no_secret_is_a_setting_and_no_locked_field_is_a_task_key():
     assert not [name for name in EngineSettings.model_fields if re.search(r"KEY|TOKEN|SECRET|PASSWORD", name, re.I)]
     assert not {ENV_NAMES[name] for name in LOCKED_FIELDS} & set(TASK_SETTING_KEYS)
+
+
+def test_the_builder_time_limit_is_an_engine_setting_the_task_cannot_carry_and_the_settings_file_can(tmp_path):
+    """J2 sync 5 (D169): `J2_BUILDER_TIMEOUT` is editable in `engine.json` and exported to J2, and it is not one of the eight task keys."""
+    assert ENV_NAMES["builder_timeout"] == "J2_BUILDER_TIMEOUT" and "builder_timeout" in EDITABLE_FIELDS
+    assert "J2_BUILDER_TIMEOUT" not in TASK_SETTING_KEYS
+    with pytest.raises(ValueError):
+        TaskSettings.model_validate({"J2_BUILDER_TIMEOUT": "60"})
+    assert EngineSettings.layered({}, {"builder_timeout": 45}, None, {}).to_env()["J2_BUILDER_TIMEOUT"] == "45.0"
+    assert EngineSettings().to_env()["J2_BUILDER_TIMEOUT"] == "600"

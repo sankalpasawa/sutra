@@ -1,0 +1,39 @@
+{
+  "schema": "template-library/1",
+  "name": "Flow Pilates Studio section S2",
+  "version": 1,
+  "sha": "fa828e1c83fa058b9716fa7435cdb198f730e6511564842e07a219b5764c77a0",
+  "schema_sha": "d6670f7246509254393f52598726d8a05dfb17cb2ee184fbf5bc4dd5a68f46af",
+  "model_sha": "fe05ee51d22c79e54c7002cfc715cd0993b0a30f78bde9da5f319faadf3ece05",
+  "class": "FlowPilatesStudioSectionS2V1",
+  "created": "2026-11-12T15:29:37",
+  "fingerprints": [
+    "6fe2cf9ba24f3466f1f4e711ad618481342eb301dd1d5e2bdbad9407c953c366"
+  ],
+  "made_by": {
+    "run": "j2-20261112-150036",
+    "workflow": "W-31",
+    "atom": "W-31.a1",
+    "agent": "code (adapted from a run template)",
+    "date": "2026-11-12 15:00:36"
+  },
+  "business": {
+    "name": "Flow Pilates Studio",
+    "type": "pilates studio"
+  },
+  "mock": false,
+  "collected_from": {
+    "run": "j2-20261112-150036",
+    "where": "the run's copy"
+  },
+  "used_by": [
+    {
+      "run": "j2-20261112-150036",
+      "workflow": "W-31",
+      "atom": "W-31.a1",
+      "action": "extended"
+    }
+  ],
+  "renamed_from": "Iron Grove Fitness section S2@2",
+  "adapted_from": "Iron Grove Fitness section S2@1"
+}
