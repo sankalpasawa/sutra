@@ -277,10 +277,10 @@ def type_list(path=None):
     """The buildable types: name, label, form, file and needs (the types it is written from, which must be built
     first: a document's depends_on). A page reads the documents built before it as its blueprint and needs none."""
     d = j2_types._read_types(path)
-    # a type whose form gives its builder tools is buildable only with J2_AGENT_TOOLS=1 (the form's data says so)
-    tools_off = os.getenv("J2_AGENT_TOOLS") != "1"
+    # a type whose form gives its builder tools is buildable only with tools on (llm.tools_on)
+    tools_off = not llm.tools_on()
     ts = [t for t in d["types"] if t.get("kind") == "type" and t.get("deliverable")      # local ones too
-          and not (tools_off and ((d.get("forms") or {}).get(t.get("form")) or {}).get("tools"))]
+          and not (tools_off and ((d.get("forms") or {}).get(t.get("form")) or {}).get("output") == "folder")]
     return [{"name": t["name"], "label": t["label"], "form": t["form"], "file": t.get("file"),
              "needs": list(t.get("depends_on") or []) if t["form"] == "document" else [],
              "after": list(t.get("depends_on") or [])} for t in ts]

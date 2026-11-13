@@ -482,8 +482,15 @@ def builder_timeout():
     return float(os.environ.get("J2_BUILDER_TIMEOUT") or 600)
 
 
-# Builder tools (J2_AGENT_TOOLS=1): the settings a tools call needs, each required (no defaults in code: .env.example)
-AGENT_SETTINGS = ("J2_AGENT_USD", "J2_AGENT_MAX_FILES", "J2_AGENT_MAX_BYTES", "J2_TOOL_LOG_CHARS", "J2_SANDBOX_CMD")
+# Builder tools (on unless J2_AGENT_TOOLS=0; llm.tools_on): the limits a tools call runs with, each a setting with this
+# default (.env.example)
+AGENT_DEFAULTS = {"J2_AGENT_USD": "2.00", "J2_AGENT_MAX_FILES": "200", "J2_AGENT_MAX_BYTES": "5000000",
+                  "J2_TOOL_LOG_CHARS": "2000", "J2_SANDBOX_CMD": "srt"}
+AGENT_SETTINGS = tuple(AGENT_DEFAULTS)
+
+
+def agent_setting(k):
+    return str(os.getenv(k) or "").strip() or AGENT_DEFAULTS[k]
 # Paths the sandbox runtime (srt) leaves writable by default; a rerun closes them (measured 2026-11-12, srt 0.0.81)
 SANDBOX_DENY_WRITE = ("/tmp/claude", "/private/tmp/claude")
 
@@ -502,7 +509,7 @@ def sandbox_rerun(folder, runner, target, timeout):
     sandbox_settings, the form's runner ({target} = the test file) and the time limit. J2 never runs builder code any
     other way. {"pass": True/False, or None when it could not run, "exit", "sha256" of the test file, "seconds",
     "output" (the end of it), "evidence"}."""
-    cmd = str(os.getenv("J2_SANDBOX_CMD") or "").strip()
+    cmd = agent_setting("J2_SANDBOX_CMD")
     path = os.path.realpath(os.path.join(folder, str(target or "")))
     if not cmd:
         return {"pass": None, "exit": None, "evidence": "J2_SANDBOX_CMD is not set, so the test was not rerun"}
@@ -4051,22 +4058,19 @@ class J2Run:
 
     # ---- builder tools (J2_AGENT_TOOLS=1): what a form declares, given to its builder in its own folder
     def _builder_tools(self):
-        """The tools a builder call gets: None unless J2_AGENT_TOOLS=1 and the current form declares tools (types.json);
+        """The tools a builder call gets: None when tools are off (llm.tools_on) or the current form has none (types.json);
         then the form's tools and permission rules, the builder's folder inside the run folder, and the limits from the
-        settings (AGENT_SETTINGS, no defaults: a missing one is refused by name). A provider that can't give tools is
+        settings (agent_setting). A provider that can't give tools is
         refused too. The time limit is the caller's timeout (builder_timeout)."""
-        if os.getenv("J2_AGENT_TOOLS") != "1" or not (self.out or {}).get("tools"):
+        if not llm.tools_on() or not (self.out or {}).get("tools"):
             return None
-        missing = [k for k in AGENT_SETTINGS if not str(os.getenv(k) or "").strip()]
-        if missing:
-            raise ValueError(f"builder tools need {', '.join(missing)} set (working values in .env.example)")
         if not llm.MOCK and not llm.can_use_tools():
             raise ValueError(f"{llm.PROVIDER} can't give a builder tools (llm.TOOLS)")
         cwd = os.path.join(self.dir, self.out["folder"])
         os.makedirs(cwd, exist_ok=True)
         return {"tools": list(self.out["tools"]), "allow": list(self.out["allow"]), "cwd": cwd, "root": self.dir,
-                "usd": float(os.environ["J2_AGENT_USD"]), "log_chars": int(os.environ["J2_TOOL_LOG_CHARS"]),
-                "max_files": int(os.environ["J2_AGENT_MAX_FILES"]), "max_bytes": int(os.environ["J2_AGENT_MAX_BYTES"])}
+                "usd": float(agent_setting("J2_AGENT_USD")), "log_chars": int(agent_setting("J2_TOOL_LOG_CHARS")),
+                "max_files": int(agent_setting("J2_AGENT_MAX_FILES")), "max_bytes": int(agent_setting("J2_AGENT_MAX_BYTES"))}
 
     def _tool_start(self):
         """The run folder's files before a tools call; J2's own writes are counted from here."""
@@ -4855,7 +4859,7 @@ class J2Run:
         try:
             tools = self._builder_tools()
             if tools is None:
-                raise ValueError("its form gives the builder tools, which need J2_AGENT_TOOLS=1")
+                raise ValueError("its form gives the builder tools, which are off (J2_AGENT_TOOLS=0)")
         except ValueError as e:
             self.post("system", f"The {self.out['label'].lower()} can't be built: {e}.", warning=True)
             self.outcome, self.turn = f"Stopped: {e}.", None

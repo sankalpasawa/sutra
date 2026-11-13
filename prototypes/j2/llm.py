@@ -72,14 +72,31 @@ def can_read_files():
 # the caller (a form's data in artifacts/types.json); nothing here names a tool.
 TOOLS = {"claude-cli": True, "anthropic": False, "gemini": False}
 TOOL_KEYS = ("tools", "allow", "cwd", "root", "usd", "log_chars")
-# The CLI's own sandbox for every command a tool runs: writes only in the working folder, no network, no way out.
-# Not a tool list. Measured 2026-11-12 (tools/agent_tools_smoke.py): writes outside the folder and the network are
+# The CLI's own sandbox for every command a tool runs: writes only in the builder's folder, reads fenced to that folder
+# and the system paths outside the home folder (the repo's .env, ~/.ssh and every other run are under it), no way out.
+# The network is whatever the caller's permission rules open (types.json "builder_tools": a WebFetch domain rule also
+# opens the sandbox's host list). Measured 2026-11-12 (tools/agent_tools_smoke.py): writes outside the folder are
 # refused; a folder under the CLI's own temp folder (/private/tmp/claude-<uid>) is not protected, so a builder folder
 # must resolve inside the run folder ("root"), checked before every call.
-# SECURITY: the sandbox is what confines the command tool. The allow-list ("allow", e.g. a runner rule) is not a
-# security boundary: a rule for a runner lets that runner run any code ("python3 -c ..."). Never run a tools call
-# without CLI_SANDBOX, and never run a builder's code anywhere else (J2 reads the test result from the CLI's record).
+# SECURITY: the sandbox is what confines the command tool. The allow-list is not a security boundary: a rule for a
+# runner lets that runner run any code. Never run a tools call without cli_settings, and never run a builder's code
+# anywhere else (J2 reads the test result from the CLI's record).
 CLI_SANDBOX = {"sandbox": {"enabled": True, "autoAllowBashIfSandboxed": True, "allowUnsandboxedCommands": False}}
+
+
+def cli_settings(tools):
+    """The --settings of one tools call: CLI_SANDBOX with reads fenced (home folder denied, the builder's folder and
+    any extra folder allowed back), writes only in the folder (and the extra one), the caller's rules as allow rules,
+    and the file tools refused outside the working folders."""
+    folders = [os.path.realpath(tools["cwd"])] + [os.path.realpath(x) for x in tools.get("extra") or []]
+    sb = {**CLI_SANDBOX["sandbox"], "filesystem": {"denyRead": ["~/"], "allowRead": folders, "allowWrite": folders}}
+    return {"sandbox": sb, "permissions": {"allow": list(tools["allow"]), "additionalDirectories": folders[1:],
+                                           "blockReadsOutsideWorkingDirectories": True}}
+
+
+def tools_on():
+    """Builders get tools unless J2_AGENT_TOOLS=0; offline (mock) only when J2_AGENT_TOOLS=1."""
+    return (os.getenv("J2_AGENT_TOOLS") or ("0" if MOCK else "1")) == "1"
 
 
 def can_use_tools():
@@ -196,15 +213,15 @@ def _ask_claude_cli(system, user, effort, progress, images=None, schema=None, de
     from the stream-json output.
     With tools (ask's tools): only the caller's tools and permission rules, run in its folder: --restricted keeps the
     file tools in the folder and loads no user or project settings, --safe-mode loads no CLAUDE.md, hooks or plugins,
-    dontAsk refuses anything the rules don't allow, the sandbox (CLI_SANDBOX) keeps commands' writes in the folder and
-    blocks the network, --max-budget-usd stops the call past the cost limit (checked after each turn, so one turn may
+    dontAsk refuses anything the rules don't allow, the sandbox (cli_settings) keeps commands' writes in the folder and
+    their reads out of the home folder, the network is what the rules open, --max-budget-usd stops the call past the cost limit (checked after each turn, so one turn may
     go over). The output is stream-json, so every tool call is read back."""
     env = {k: v for k, v in os.environ.items() if k not in ("ANTHROPIC_API_KEY", "CLAUDECODE")}
     io = ((["--input-format", "stream-json"] if images else [])
           + (["--output-format", "stream-json", "--verbose"] if images or tools else ["--output-format", "json"]))
     tool_args = ["--tools", ""] if tools is None else [
         "--tools", ",".join(tools["tools"]), "--allowedTools", " ".join(tools["allow"]), "--restricted", "--safe-mode",
-        "--permission-mode", "dontAsk", "--permission-prompts", "none", "--settings", json.dumps(CLI_SANDBOX),
+        "--permission-mode", "dontAsk", "--permission-prompts", "none", "--settings", json.dumps(cli_settings(tools)),
         "--max-budget-usd", f"{float(tools['usd']):g}"]
     # A long system prompt goes in a temporary file: Windows refuses a command line over 32,767 characters (WinError 206)
     sysfile = None

@@ -4096,6 +4096,9 @@ def agent_tools_cli():
         assert arg("--tools") == "ToolA,ToolB" and arg("--allowedTools") == "ToolA ToolB(run *)", cmd
         assert arg("--max-budget-usd") == "0.5" and arg("--permission-mode") == "dontAsk", cmd
         assert {"--restricted", "--safe-mode"} <= set(cmd) and json.loads(arg("--settings"))["sandbox"]["enabled"], cmd
+        fs = json.loads(arg("--settings"))["sandbox"]["filesystem"]      # reads fenced: home denied, the folder only
+        assert fs["denyRead"] == ["~/"] and fs["allowRead"] == fs["allowWrite"] == [os.path.realpath(folder)], fs
+        assert json.loads(arg("--settings"))["permissions"]["allow"] == ["ToolA", "ToolB(run *)"], cmd
         assert arg("--output-format") == "stream-json" and kw["cwd"] == folder, (cmd, kw)
         tc = llm.LAST_META["tool_calls"]
         assert [(c["n"], c["name"], c["ok"]) for c in tc] == [(1, "ToolA", True), (2, "ToolB", False)], tc
@@ -4163,10 +4166,11 @@ def agent_form():
         base = json.load(f)
     tmp = tempfile.mkdtemp()
     try:
-        for change, why in ((lambda f: f.pop("tools"), "missing tools"), (lambda f: f.update(test_runner=["python3"]), "{target}"),
-                            (lambda f: f.update(output="stream"), "unknown output")):
+        for change, why in ((lambda d: d.pop("builder_tools"), "missing tools"),
+                            (lambda d: d["forms"]["agent"].update(test_runner=["python3"]), "{target}"),
+                            (lambda d: d["forms"]["agent"].update(output="stream"), "unknown output")):
             d = json.loads(json.dumps(base))
-            change(d["forms"]["agent"])
+            change(d)
             p = os.path.join(tmp, "types.json")
             with open(p, "w", encoding="utf-8") as f:
                 json.dump(d, f)
@@ -4181,8 +4185,8 @@ def agent_form():
 
 
 def builder_tools_call():
-    """agent-tools step 1 (mock): J2Run._builder_tools gives a builder its form's tools only with J2_AGENT_TOOLS=1 and
-    every limit set (none for a form without tools); J2Run.call records the files written in the builder's folder in
+    """agent-tools step 1 (mock): J2Run._builder_tools gives a builder its form's tools with tools on (offline only with
+    J2_AGENT_TOOLS=1), each limit its setting or default (none for a form without tools); J2Run.call records the files written in the builder's folder in
     calls.jsonl's "tools", ignores J2's own writes during the call, and raises BuilderToolFault for a change outside
     the folder (event, warning, still logged) or a folder over a limit."""
     names = ("J2_AGENT_TOOLS",) + j2.AGENT_SETTINGS
@@ -4198,11 +4202,7 @@ def builder_tools_call():
         os.environ.pop("J2_AGENT_TOOLS")
         assert run._builder_tools() is None, "off unless J2_AGENT_TOOLS=1"
         os.environ["J2_AGENT_TOOLS"] = "1"
-        try:
-            run._builder_tools()
-            raise AssertionError("missing limits accepted")
-        except ValueError as e:
-            assert all(k in str(e) for k in j2.AGENT_SETTINGS), e
+        assert run._builder_tools()["usd"] == float(j2.AGENT_DEFAULTS["J2_AGENT_USD"]), "an unset limit is its default"
         os.environ.update(J2_AGENT_USD="0.5", J2_AGENT_MAX_FILES="3", J2_AGENT_MAX_BYTES="1000", J2_TOOL_LOG_CHARS="100",
                           J2_SANDBOX_CMD="unused")
         tools = run._builder_tools()
@@ -4271,8 +4271,8 @@ def folder_run():
     conditions file; the builder (its tools scripted by the mock) writes the folder; code checks the five conditions,
     each a receipt, the test rerun through J2_SANDBOX_CMD on a copy (the copy's settings: writes only there, no
     network, the paths srt leaves open closed); the run ends Done. A build that keeps failing stops after
-    MAX_CHECK_ATTEMPTS with the evidence; a write outside the folder stops at once; a missing setting stops before
-    any call. sandbox_rerun refuses a test outside the folder and says so when there is no sandbox."""
+    MAX_CHECK_ATTEMPTS with the evidence; a write outside the folder stops at once.
+    sandbox_rerun refuses a test outside the folder."""
     names = ("J2_AGENT_TOOLS",) + j2.AGENT_SETTINGS
     keep = {k: os.environ.get(k) for k in names}
     tmp = tempfile.mkdtemp()
@@ -4315,14 +4315,8 @@ def folder_run():
         assert out.outcome.startswith("Stopped") and "outside its folder" in out.outcome, out.outcome
         assert out.workflows[0]["calls_used"] == 1, "an outside write is never retried"
 
-        os.environ.pop("J2_SANDBOX_CMD")
-        none = run_with()
-        assert none.outcome.startswith("Stopped") and "J2_SANDBOX_CMD" in none.outcome, none.outcome
-        assert not [c for c in none.call_log if c["fn"] == "W-1"], "no builder call without every setting"
-
         d = os.path.join(tmp, "f")
         os.makedirs(d)
-        assert j2.sandbox_rerun(d, ["python3", "{target}"], "t.py", 5)["pass"] is None      # no sandbox: not run
         os.environ["J2_SANDBOX_CMD"] = f"{sys.executable} {fake}"
         r = j2.sandbox_rerun(d, ["python3", "{target}"], "../t.py", 5)
         assert r["pass"] is False and "not a file in the folder" in r["evidence"], r
@@ -4334,7 +4328,7 @@ def folder_run():
                 os.environ[k] = v
         shutil.rmtree(tmp, ignore_errors=True)
     print("folder run: one workflow from the charter, five conditions as receipts, the test rerun in the sandbox on a "
-          "copy, Done; failing build stopped after its attempts; outside write stopped at once; missing setting refused ok")
+          "copy, Done; failing build stopped after its attempts; outside write stopped at once ok")
 
 
 def builder_time_limit():

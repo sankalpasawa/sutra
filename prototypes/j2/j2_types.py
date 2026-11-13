@@ -219,7 +219,8 @@ def _merged(name, path=None):
     fill = lambda v: (v.replace("{name}", name).replace("{label}", label).replace("{lower}", label.lower())
                       .replace("{noun}", noun).replace("{sections}", ", ".join(sections(name)))
                       .replace("{practice}", rule).replace("{runner}", runner) if isinstance(v, str) else v)
-    out = {**{k: fill(v) for k, v in form.items() if k not in ("workflow", "cost")}, **entry, "noun": noun}
+    bt = {k: v for k, v in (d.get("builder_tools") or {}).items() if k in ("tools", "allow")}      # every builder's default
+    out = {**bt, **{k: fill(v) for k, v in form.items() if k not in ("workflow", "cost")}, **entry, "noun": noun}
     out["workflow"] = {**{k: fill(v) for k, v in (form.get("workflow") or {}).items()}, **(entry.get("workflow") or {})}
     out["cost"] = {**(form.get("cost") or {}), **(entry.get("cost") or {})}
     out["_fill"] = fill
