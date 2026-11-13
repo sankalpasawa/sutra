@@ -2,12 +2,14 @@
 output, with nothing routed in front of it.
 
     CAPABILITIES   the fixed tuple of capabilities; adding the next one is one module and one line here
-    register(j2)   once per process, after J2 is imported and before `J2Run` exists: merges every capability's outputs into `j2.OUTPUTS`
-                   (idempotent; a name that already exists raises `CapabilityConflict`, so no capability can replace another)
+    register(j2)   once per process, after J2 is imported and before `J2Run` exists: registers every capability's outputs as types with
+                   `j2_types.register` (patch P18; idempotent; a name that already exists raises `CapabilityConflict`, so no capability can
+                   replace another)
     install(ctx)   once per run process: each `install(ctx)`, then the tag and progress hooks go into `llm.TAG_HOOKS` / `llm.PROGRESS_HOOKS`,
                    which `llm.ask` runs for every call of every output
     addenda(fn, ctx)  every capability's system text for agent `fn`
-    documents(output, run_dir)  every capability's Artifacts rows for the report of a run of `output` (the Documents group, D146)
+    documents(output, run_dir)  every capability's Artifacts rows for the report of a run of `output`: the fallback of the Documents group,
+                   whose row J2 now lists itself (D146, amended by D164)
     describe()     what `GET /api/engine/capabilities` answers: the registry is the only way the host, the API and the tests learn what
                    the engine can do
 
@@ -19,13 +21,11 @@ import sys
 from typing import Optional
 
 from .. import llm
-from ..spec import OUTPUT_NAMES      # the ONE list of output names a setting may hold: defined in spec.py, which this package may import and
-#                                      which must not import it back; `auto` leaves the choice to `select_output`
 from .base import Capability, CapabilityConflict, EngineContext, OutputSpec, Selection, SPECS, output_spec
 from .project import ProjectCapability
 from .workspace import WorkspaceCapability
 
-__all__ = ["CAPABILITIES", "OUTPUT_NAMES", "Capability", "CapabilityConflict", "EngineContext", "OutputSpec", "Selection", "SPECS",
+__all__ = ["CAPABILITIES", "Capability", "CapabilityConflict", "EngineContext", "OutputSpec", "Selection", "SPECS",
            "output_spec", "register", "install", "addenda", "documents", "describe", "capability_hooks", "select_output",
            "forced_settings"]
 
@@ -49,24 +49,27 @@ def _caps(capabilities) -> tuple:
 
 
 def register(j2, capabilities=None) -> None:
-    """Merge every capability's outputs into `j2.OUTPUTS`. All or nothing: a conflict raises before anything is added. Registering the
-    same capability twice is a no-op (the entry is marked with the capability's name); an entry that is not ours is a conflict."""
-    pending: dict[str, tuple[Capability, dict, Optional[OutputSpec]]] = {}
+    """Register every capability's outputs as types (`j2.j2_types.register`, patch P18), the entry beside its callables. All or nothing: a
+    conflict raises before anything is registered. Registering the same capability twice is a no-op in effect (the same owner replaces its
+    own entry); a name that is not ours (J2's own, a local type, another capability's) is a conflict."""
+    types = j2.j2_types
+    pending: dict[str, tuple[Capability, OutputSpec]] = {}
     for cap in _caps(capabilities):
         for name, spec in cap.outputs().items():
             if name in pending:
                 raise CapabilityConflict(f"the output {name!r} is registered by both {pending[name][0].name!r} and {cap.name!r}")
-            entry = spec.to_j2() if isinstance(spec, OutputSpec) else dict(spec)
-            pending[name] = (cap, {**entry, "capability": cap.name}, spec if isinstance(spec, OutputSpec) else None)
-    for name, (cap, entry, _spec) in pending.items():
-        have = j2.OUTPUTS.get(name)
-        if have is not None and have.get("capability") != cap.name:
+            pending[name] = (cap, spec)
+    known = set(types.names())
+    for name, (cap, _spec) in pending.items():
+        owner = (types.HOST.get(name) or {}).get("entry", {}).get("host")
+        if name in known and owner != cap.name:
             raise CapabilityConflict(f"the output {name!r} (capability {cap.name!r}) already exists in the engine")
-    for name, (cap, entry, spec) in pending.items():
-        if name not in j2.OUTPUTS:
-            j2.OUTPUTS[name] = entry
-        if spec is not None:
-            SPECS[name] = spec
+    for name, (cap, spec) in pending.items():
+        try:
+            types.register(spec.to_type_entry(cap.name), spec.extras())
+        except ValueError as exc:
+            raise CapabilityConflict(f"the output {name!r} (capability {cap.name!r}) was refused: {exc}") from None
+        SPECS[name] = spec
 
 
 def capability_hooks(ctx: EngineContext, capabilities=None) -> tuple[list, list]:
@@ -99,16 +102,16 @@ def install(ctx: EngineContext, capabilities=None) -> None:
 
 
 def select_output(brief: str, ctx: EngineContext, capabilities=None) -> Selection:
-    """The output for this brief: the first capability that votes, else the website (what a team with no folder and no project words
-    always got). `ctx.settings.output` is the choice the owner made (`auto` when they made none)."""
+    """The output for this brief: the first capability that votes, else none: the team's planner chooses (D165). `ctx.settings.output` is
+    the choice the owner made (`auto` when they made none)."""
     for cap in _caps(capabilities):
         vote = cap.select(brief, ctx)
         if vote is not None:
             return vote
-    return Selection("website", "default", "no capability voted for another output")
+    return Selection(None, "planner", "the team's planner chooses")
 
 
-def forced_settings(output: str, capabilities=None) -> dict:
+def forced_settings(output: Optional[str], capabilities=None) -> dict:
     """The engine settings (`{field: value}`) fixed for a run of `output`. Asked before J2 is imported. The first capability to name a field
     wins, so no capability can undo another's."""
     fixed: dict = {}
@@ -131,9 +134,10 @@ def addenda(fn: str, ctx: EngineContext, capabilities=None) -> str:
     return out
 
 
-def documents(output: str, run_dir, capabilities=None) -> list:
+def documents(output: Optional[str], run_dir, capabilities=None) -> list:
     """Every capability's Artifacts rows for the report of a run of `output` in `run_dir`, in registry order (D146): `[]` for J2's own
-    outputs (no capability registered them), the report row for an output a capability added. A capability that fails adds nothing:
+    types and for no type (no capability registered them), the report row for an output a capability added. The caller merges these with
+    J2's own Documents rows by id, J2's row first (D164). A capability that fails adds nothing:
     the Artifacts pane is polled and must not break because one hook did."""
     rows: list = []
     for cap in _caps(capabilities):
@@ -152,7 +156,7 @@ def describe(capabilities=None) -> list:
     for cap in _caps(capabilities):
         outs = []
         for name, spec in cap.outputs().items():
-            data = spec.to_j2() if isinstance(spec, OutputSpec) else dict(spec)
+            data = {**spec.to_type_entry(cap.name), **spec.extras()} if isinstance(spec, OutputSpec) else dict(spec)
             outs.append({"name": name, "label": data.get("label", name), "workspace": data.get("workspace", "read"),
                          "single": bool(data.get("single", False))})
         rows.append({"name": cap.name, "outputs": outs, "settings": cap.settings()})

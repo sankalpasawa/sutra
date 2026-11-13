@@ -1,0 +1,239 @@
+{
+ "schema": "template-library/1",
+ "artifact": "project",
+ "kind": "generic",
+ "version": 1,
+ "from": "made by J2 for a new document type (j2_types.create); hand-edit it like any generic.json",
+ "templates": [
+  {
+   "name": "Project work · Findings",
+   "artifact": "project",
+   "section": "Findings",
+   "version": 1,
+   "kind": "generic",
+   "description": "The generic Project work Findings section",
+   "conditions": [
+    "C1"
+   ],
+   "fields": [
+    {
+     "name": "text",
+     "type": "string",
+     "required": true,
+     "nullable": false,
+     "description": "the Findings section, in the charter's own facts"
+    },
+    {
+     "name": "assumptions",
+     "type": "list[string]",
+     "required": false,
+     "nullable": false,
+     "description": "facts you had to assume, each one line"
+    }
+   ],
+   "objects": [],
+   "rules": [
+    {
+     "rule": "not_empty",
+     "path": "text",
+     "name": "the section is written",
+     "from": "C1"
+    }
+   ],
+   "render": [
+    {
+     "text": "{text}"
+    },
+    {
+     "each": "assumptions",
+     "line": "Assumption: {_}",
+     "after_body": true
+    }
+   ]
+  },
+  {
+   "name": "Project work · Changes",
+   "artifact": "project",
+   "section": "Changes",
+   "version": 1,
+   "kind": "generic",
+   "description": "The generic Project work Changes section",
+   "conditions": [
+    "C1"
+   ],
+   "fields": [
+    {
+     "name": "text",
+     "type": "string",
+     "required": true,
+     "nullable": false,
+     "description": "the Changes section, in the charter's own facts"
+    },
+    {
+     "name": "assumptions",
+     "type": "list[string]",
+     "required": false,
+     "nullable": false,
+     "description": "facts you had to assume, each one line"
+    }
+   ],
+   "objects": [],
+   "rules": [
+    {
+     "rule": "not_empty",
+     "path": "text",
+     "name": "the section is written",
+     "from": "C1"
+    }
+   ],
+   "render": [
+    {
+     "text": "{text}"
+    },
+    {
+     "each": "assumptions",
+     "line": "Assumption: {_}",
+     "after_body": true
+    }
+   ]
+  },
+  {
+   "name": "Project work · Confirmation",
+   "artifact": "project",
+   "section": "Confirmation",
+   "version": 1,
+   "kind": "generic",
+   "description": "The generic Project work Confirmation section",
+   "conditions": [
+    "C1"
+   ],
+   "fields": [
+    {
+     "name": "text",
+     "type": "string",
+     "required": true,
+     "nullable": false,
+     "description": "the Confirmation section, in the charter's own facts"
+    },
+    {
+     "name": "assumptions",
+     "type": "list[string]",
+     "required": false,
+     "nullable": false,
+     "description": "facts you had to assume, each one line"
+    }
+   ],
+   "objects": [],
+   "rules": [
+    {
+     "rule": "not_empty",
+     "path": "text",
+     "name": "the section is written",
+     "from": "C1"
+    }
+   ],
+   "render": [
+    {
+     "text": "{text}"
+    },
+    {
+     "each": "assumptions",
+     "line": "Assumption: {_}",
+     "after_body": true
+    }
+   ]
+  },
+  {
+   "name": "Project work · Open items",
+   "artifact": "project",
+   "section": "Open items",
+   "version": 1,
+   "kind": "generic",
+   "description": "The generic Project work Open items section",
+   "conditions": [
+    "C1"
+   ],
+   "fields": [
+    {
+     "name": "text",
+     "type": "string",
+     "required": true,
+     "nullable": false,
+     "description": "the Open items section, in the charter's own facts"
+    },
+    {
+     "name": "assumptions",
+     "type": "list[string]",
+     "required": false,
+     "nullable": false,
+     "description": "facts you had to assume, each one line"
+    }
+   ],
+   "objects": [],
+   "rules": [
+    {
+     "rule": "not_empty",
+     "path": "text",
+     "name": "the section is written",
+     "from": "C1"
+    }
+   ],
+   "render": [
+    {
+     "text": "{text}"
+    },
+    {
+     "each": "assumptions",
+     "line": "Assumption: {_}",
+     "after_body": true
+    }
+   ]
+  },
+  {
+   "name": "Project work · Outcome",
+   "artifact": "project",
+   "section": "Outcome",
+   "version": 1,
+   "kind": "generic",
+   "description": "The generic Project work Outcome section",
+   "conditions": [
+    "C1"
+   ],
+   "fields": [
+    {
+     "name": "text",
+     "type": "string",
+     "required": true,
+     "nullable": false,
+     "description": "the Outcome section, in the charter's own facts"
+    },
+    {
+     "name": "assumptions",
+     "type": "list[string]",
+     "required": false,
+     "nullable": false,
+     "description": "facts you had to assume, each one line"
+    }
+   ],
+   "objects": [],
+   "rules": [
+    {
+     "rule": "not_empty",
+     "path": "text",
+     "name": "the section is written",
+     "from": "C1"
+    }
+   ],
+   "render": [
+    {
+     "text": "{text}"
+    },
+    {
+     "each": "assumptions",
+     "line": "Assumption: {_}",
+     "after_body": true
+    }
+   ]
+  }
+ ]
+}
