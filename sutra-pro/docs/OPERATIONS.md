@@ -149,13 +149,17 @@ compacts the database (`VACUUM`) while holding the instance lock.
 Open `/console` (menu: Owner, "Usage and log"). Three parts:
 
 - **Usage and cost**: a period (today, 7 days, 30 days, all; UTC dates) and a stub toggle. Tiles for calls, Claude cost in USD and Codex tokens; a bar per day; a table by team and
-  function; the ten dearest atoms, each linking to its team page or graph node; each connector with its quota state and next reset. Claude's USD is "notional" for a subscription
+  function; a table by purpose (what the calls were for, in plain words: agents at work, planning and judging workflows, questions to agents, and so on; it follows the period and the stub toggle);
+  the ten dearest atoms, each linking to its team page or graph node; each connector with its quota state and next reset. Claude's USD is "notional" for a subscription
   (what the same calls would cost on the API, not a bill). Codex reports tokens; a USD figure appears only when the policy file carries a rate card for the model.
 - **Atom log**: the append-only ledger of every atom transition, newest first, 25 to a page, filtered by node, state, check or date.
 - **Health**: the facts (version, uptime, ports, data folder, schema versions), the doctor checks with *Check again*, and *Download diagnostics* (a zip with the info, the doctor result, the last
   2000 log lines, public settings, schema versions and folder sizes; no chat, prompt, site file, `.env` or `engine.json` value).
 
-The same data is served by `GET /api/ops/info`, `/api/ops/doctor`, `/api/ops/usage?period=` and `/api/ops/diagnostics` (the last needs the `X-Sutra-Token` header), and by the older `/api/usage/summary?by=dept|fn|provider|day|atom` and `/api/atoms/log`.
+The late judge (J2's check of a workflow after the first plan; it is on by default) is billed like any other call: what it cost is the rows "Planning workflows" and "Judging workflows" of the table by purpose,
+and "judging N calls, $x" under each agent in a team's Agents tab, where "questions N calls, $x" is what the answers in that agent's chat cost.
+
+The same data is served by `GET /api/ops/info`, `/api/ops/doctor`, `/api/ops/usage?period=` and `/api/ops/diagnostics` (the last needs the `X-Sutra-Token` header), and by the older `/api/usage/summary?by=dept|fn|provider|day|atom|session|purpose` (with `since=` for a window) and `/api/atoms/log`.
 
 ## 8. One instance per data folder
 

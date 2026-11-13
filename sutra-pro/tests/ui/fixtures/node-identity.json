@@ -182,7 +182,19 @@
         "outputs": [
           "goal.json"
         ],
-        "touches": []
+        "touches": [],
+        "produced": [
+          {
+            "verb": "do",
+            "name": "said: I need one more answer.",
+            "form": "reply",
+            "ref": "the reply"
+          }
+        ],
+        "reply": {
+          "text": "{\n  \"say\": \"I need one more answer.\",\n  \"enough\": false,\n  \"to_requester\": \"What should the cafe page show first?\",\n  \"next\": \"Requester\"\n}",
+          "clipped": false
+        }
       },
       "usage": {
         "calls": 7,
@@ -392,7 +404,25 @@
         "touches": [],
         "closed_by": "manual-override",
         "abandon_code": "verify_failed",
-        "reason": "verify failed: charter-stamp: Charter rejected: fewer than 3 'done when' criteria."
+        "reason": "verify failed: charter-stamp: Charter rejected: fewer than 3 'done when' criteria.",
+        "produced": [
+          {
+            "verb": "make",
+            "name": "the charter: Coffee shop landing page, 2 done-when items",
+            "form": "charter",
+            "ref": "the reply"
+          },
+          {
+            "verb": "do",
+            "name": "posted 1 message to Adaptation",
+            "form": "message",
+            "ref": "chat"
+          }
+        ],
+        "reply": {
+          "text": "{\n  \"say\": \"@Adaptation Charter recorded from the brief.\",\n  \"enough\": true,\n  \"goal\": {\n    \"kind\": \"site\",\n    \"site_name\": \"Coffee shop landing page\",\n    \"statement\": \"A one-page site for a coffee shop\",\n    \"done_when\": [\n      \"The menu is on the page\",\n      \"Opening hours are shown\"\n    ]\n  },\n  \"to_requester\": \"Thanks, I have what I need.\",\n  \"to_agents\": \"@Adaptation Start with the menu.\",\n  \"next\": \"Adaptation\"\n}",
+          "clipped": false
+        }
       },
       "usage": {
         "calls": 4,
@@ -500,7 +530,25 @@
           "to_user"
         ],
         "touches": [],
-        "closed_by": "verify"
+        "closed_by": "verify",
+        "produced": [
+          {
+            "verb": "do",
+            "name": "read your answer: carry on",
+            "form": "decision",
+            "ref": "chat"
+          },
+          {
+            "verb": "do",
+            "name": "posted 1 message to you",
+            "form": "message",
+            "ref": "chat"
+          }
+        ],
+        "reply": {
+          "text": "{\n  \"clause\": \"The owner chose the menu first.\",\n  \"decision\": \"continue\",\n  \"say\": \"@Adaptation The owner wants the menu first.\",\n  \"to_requester\": \"Thanks, the menu comes first.\",\n  \"next\": \"Adaptation\"\n}",
+          "clipped": false
+        }
       },
       "usage": {
         "calls": 5,

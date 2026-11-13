@@ -2879,7 +2879,7 @@ def test_a_model_answer_is_stored_as_the_models_and_booked_to_the_agent_as_one_a
     fake.stage("full")
     rows = agent_rows_of(fake)
     sid, usage = rows["audit"]["session_id"], rows["audit"]["usage"]
-    assert usage["by_purpose"]["agent_chat"] == {"calls": 0, "usd": 0.0}
+    assert "agent_chat" not in usage["by_purpose"]                                                       # no call, no key: as the real route has it
     fake.post("/__fake/ask", {"mode": "model", "text": "Item 4 was not met: the footer has no phone number."}, token=False)
     with Stream(fake_server.url, "/api/events?topics=usage") as stream:
         status, body = ask(fake_server, "audit", "Which check failed?")
@@ -2949,15 +2949,18 @@ def test_an_agents_usage_names_its_calls_by_purpose_and_they_add_up(fake):
     for run in (None, fb.PAST_RUN["run_id"]):
         for agent, row in agent_rows_of(fake, run).items():
             usage = row["usage"]
-            assert set(usage) == {"calls", "usd", "tokens_in", "tokens_out", "by_purpose"} and list(usage["by_purpose"]) == list(fb.PURPOSES), agent
+            assert set(usage) == {"calls", "usd", "tokens_in", "tokens_out", "by_purpose"}, agent
             cells = usage["by_purpose"]
-            assert all(set(cell) == {"calls", "usd"} for cell in cells.values())
+            assert list(cells) == sorted(cells) and set(cells) <= set(fb.PURPOSES), agent                      # the ledger's order (by purpose); only the purposes the agent was charged for
+            assert all(set(cell) == {"calls", "usd"} and cell["calls"] > 0 for cell in cells.values())
             assert sum(c["calls"] for c in cells.values()) == usage["calls"], agent
             assert sum(c["usd"] for c in cells.values()) == pytest.approx(usage["usd"], abs=1e-3), agent
     rows = agent_rows_of(fake)
-    assert {a: r["usage"]["by_purpose"]["judge"]["calls"] for a, r in rows.items() if r["usage"]["by_purpose"]["judge"]["calls"]} == {"priority": 2, "coordination": 1}
-    assert {a: r["usage"]["by_purpose"]["plan"]["calls"] for a, r in rows.items() if r["usage"]["by_purpose"]["plan"]["calls"]} == {"adaptation": 2, "coordination": 1}
-    assert all(r["usage"]["by_purpose"]["agent_chat"]["calls"] == 0 for r in rows.values())               # nobody has been asked anything
+    assert {a: r["usage"]["by_purpose"]["judge"]["calls"] for a, r in rows.items() if "judge" in r["usage"]["by_purpose"]} == {"priority": 2, "coordination": 1}
+    assert {a: r["usage"]["by_purpose"]["plan"]["calls"] for a, r in rows.items() if "plan" in r["usage"]["by_purpose"]} == {"adaptation": 2, "coordination": 1}
+    assert all("agent_chat" not in r["usage"]["by_purpose"] for r in rows.values())                       # nobody has been asked anything
+    assert rows["identity"]["usage"]["by_purpose"] == {"agent_turn": {"calls": 2, "usd": 0.01}}            # an agent that only worked: its turns, and nothing else named
+    assert rows["coordination"]["usage"]["by_purpose"] == {"agent_turn": {"calls": 3, "usd": 0.024}, "judge": {"calls": 1, "usd": 0.008}, "plan": {"calls": 1, "usd": 0.008}}
     assert [(r["usage"]["calls"], r["usage"]["usd"]) for r in rows.values()][:5] == [(2, 0.01), (3, 0.02), (4, 0.03), (5, 0.04), (6, 0.05)]      # the totals a row always had
 
 
@@ -2980,6 +2983,50 @@ def test_the_usage_summary_groups_the_same_numbers_by_purpose_and_by_the_ledgers
     assert atoms["(none)"]["calls"] == purposes["agent_turn"]["calls"]                                     # a turn's calls have atoms of their own; judging and planning are overhead
     assert atoms[overhead_atom_id(fb.LIVE_RUN["run_id"])]["calls"] == purposes["judge"]["calls"] + purposes["plan"]["calls"]
     assert next(iter(atoms)) == "(none)"                                                                   # a row without a key sorts first, as in the ledger's SQL
+
+
+def test_the_real_model_reads_every_grouping_of_the_summary_and_writes_it_back_unchanged(fake):
+    """The expected shape is the real model, which the real route builds its answer from: a key the fake added, or one it lacked, would fail here."""
+    from sutra_app.orchestrator.api.usage import UsageSummary
+    fake.stage("full")
+    for by in fb.SUMMARY_BY:
+        answer = ok(fake, "/api/usage/summary", by=by)
+        assert UsageSummary.model_validate(answer).model_dump(mode="json") == answer and answer["groups"], by
+
+
+def test_the_summary_takes_a_window_and_reads_it_as_the_real_route_does(fake):
+    from sutra_app.orchestrator.usage import parse_since
+    fake.stage("full")
+    live, past = "2026-11-04T10:20:00Z", "2026-11-03T09:30:00Z"                                            # when the agents of the live run and of the earlier run last spoke
+    keys = lambda **q: {g["key"]: g["calls"] for g in ok(fake, "/api/usage/summary", by="purpose", **q)["groups"]}  # noqa: E731
+    everything = keys()
+    assert keys(since=past) == everything and keys(since=live) == keys(since=str(parse_since(live)))        # a row exactly at `since` counts; ISO or seconds
+    assert sum(everything.values()) > sum(keys(since=live).values()) > 0                                    # the earlier run's rows are out of the live window
+    assert keys(since="2026-11-04T10:20:01Z") == {} == keys(since="4102444800")
+    assert sum(g["calls"] for g in ok(fake, "/api/usage/summary", by="day", since=live)["groups"]) == sum(keys(since=live).values())     # every grouping has it
+
+
+def test_the_fakes_reading_of_since_is_the_real_ones_for_every_text(fake):
+    """Parity, text by text: the number the real `parse_since` makes of it is the one the fake makes, or both refuse (the route answers 422 `query.since`)."""
+    from sutra_app.orchestrator.usage import parse_since
+    fake.stage("full")
+    texts = ("0", "1793786400", "253402300799", "253402300800", "99999999999999999999", "-1", "1e3", "", " 5", "5 ", "yesterday", "2026-11-04T10:00:06Z", "9999-12-31T23:59:59Z",
+             "10000-01-01T00:00:00Z", "2026-11-04", "2026-11-04T10:20:00", "2026-13-01T00:00:00Z", "2026-11-04T10:00:06+00:00", "\u0663", "\u00b2")
+    for text in texts:
+        try:
+            real = parse_since(text)
+        except ValueError:
+            real = None
+        try:
+            mine = fb.since_seconds(text)
+        except ValueError:
+            mine = None
+        assert mine == real, text
+        status, body = fake.get("/api/usage/summary", by="purpose", since=text)
+        assert status == (200 if real is not None else 422), text
+        if real is None:
+            assert body["error"]["code"] == "validation" and body["error"]["details"]["violations"][0]["path"] == "query.since", text
+            assert body["error"]["details"]["violations"][0]["code"] == "bad_time", text
 
 
 def test_the_summary_of_one_session_and_a_bad_grouping(fake):

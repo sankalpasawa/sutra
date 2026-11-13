@@ -75,7 +75,7 @@
         },
         "id": {
           "maxLength": 8,
-          "pattern": "^[A-Z][0-9]+$",
+          "pattern": "^[A-Z]{1,4}[0-9]+$",
           "title": "Id",
           "type": "string"
         },
@@ -704,7 +704,7 @@
         },
         "id": {
           "maxLength": 12,
-          "pattern": "^[RD]-[0-9]+$",
+          "pattern": "^[A-Z]{1,4}-[0-9]+$",
           "title": "Id",
           "type": "string"
         },
