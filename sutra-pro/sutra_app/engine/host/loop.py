@@ -45,7 +45,9 @@ from ..hooks import EventHooks, load_validator
 from ..paths import DataPaths, RunDirError, load_env_file
 from ..port import CallTag, ModelError, PortSpec
 from ..rehydrate import HOST_FILES
-from ..spec import EngineSettings, is_output_name, SettingsError, TaskSpec, read_settings_file
+from ..spec import (
+    EngineSettings, is_output_name, is_run_template_id, run_template_keys, SettingsError, TaskSpec, read_settings_file,
+)
 from .heartbeat import Heartbeat, heartbeat_interval
 from .inbox import Inbox
 
@@ -559,11 +561,14 @@ class Host:
         self.writer.emit(run_started_event(pid=os.getpid(), mock=self.mock, seed=seed))
         self.heartbeat = Heartbeat(self.writer, heartbeat_interval())
         self.heartbeat.start()                     # the first beat follows run.started at once
+        said_of_template = self._take_run_template(seed)          # before any line is posted: J2 refuses once the chat has a line
         if self.selection is not None:
             from ..capabilities.select import chat_line
             said = chat_line(self.selection, self.has_folder)
             if said:                                   # project work only: any other selection posts nothing, so existing runs are unchanged
                 lines.append(said)
+        if said_of_template:
+            lines.append(said_of_template)
         if self._function_nodes_off:
             lines.append(f"function nodes are off: {self._function_nodes_off}")
         if task.framing.strip():
@@ -584,6 +589,47 @@ class Host:
             if code is not None:
                 return code
             self._terminate.wait(TICK_S)
+
+    # ---- a run template named by the request (D182) ------------------------------------------------------------------------------------
+    def _take_run_template(self, seed: str) -> Optional[str]:
+        """The task may name a run template (`J2_RUN_TEMPLATE`, with `J2_RUN_TEMPLATE_WORKFLOWS`: `all` or a comma list), which the page's "Use whole
+        template" and "Use selected workflows" links send. Called after `run.started` and before the first line is posted, because
+        `J2Run.set_run_template` is False once the chat has a line. A follow-up (any seed) ignores both keys: the earlier run's plan is the plan.
+
+        Returns None when the task names none, else the one `system` line for the chat ONLY when the template was not used ("The run template <id>
+        was not used: <reason>; the team starts from scratch."); a used template speaks through J2's own chat line. A refusal is never a refused
+        start: the run goes on from scratch, and one `run_template.requested` trace line keeps the choice and the answer."""
+        named = self.task.settings.get("J2_RUN_TEMPLATE")
+        if not named or self.task.seed_from or seed != "none":
+            return None
+        wanted = named if is_run_template_id(named) else None
+        keys = run_template_keys(self.task.settings.get("J2_RUN_TEMPLATE_WORKFLOWS", "all"))
+        label = named if wanted else "that name"
+        if wanted is None:
+            why = "it is not a run template id"
+        elif keys is None:
+            why = "the list of workflows is not valid"
+        elif not self.settings.effective().run_templates:
+            why = "run templates are switched off in this team's settings"
+        else:
+            why = None
+            try:
+                from .. import j2_template_lib
+                if j2_template_lib.get_run_template(wanted) is None:
+                    why = "the library has no run template with that id"
+            except Exception as exc:  # noqa: BLE001 - the library never blocks a start
+                why = f"the library could not be read ({type(exc).__name__})"
+        taken = False
+        if why is None:
+            try:
+                taken = bool(self.run.set_run_template(wanted, keys or None))
+            except Exception as exc:  # noqa: BLE001
+                why = f"the engine could not take it ({type(exc).__name__})"
+            else:
+                why = None if taken else "the engine did not take it"
+        self.trace("run_template.requested", {"id": clip(str(named), 80), "workflows": clip(str(self.task.settings.get("J2_RUN_TEMPLATE_WORKFLOWS", "all")), 200),
+                                              "taken": taken, "why": why})
+        return None if taken else f"The run template {label} was not used: {why}; the team starts from scratch."
 
     # ---- what the run leaves for the owner (D135) -------------------------------------------------------------------------------
     def _delivers(self) -> bool:
