@@ -17,7 +17,7 @@ import pytest
 ENGINE = "sutra_app.engine"
 J2_MODULES = ("j2", "j2_agent", "j2_agent_models", "j2_agent_views", "j2_artifact_models", "j2_artifacts", "j2_board", "j2_change",
               "j2_check", "j2_map", "j2_realization", "j2_rules", "j2_schema", "j2_send", "j2_story", "j2_studio", "j2_template_lib",
-              "rehydrate")
+              "j2_types", "rehydrate")
 BREW_LAB = ("A one-page website for Brew Lab, a small specialty coffee shop in Indiranagar, Bengaluru. Visitors should "
             "see the menu with prices, the opening hours, and where to find us, and be able to pre-order a coffee for "
             "pickup. It should feel warm and modern and work well on a phone. Include a section about our beans and the "
@@ -192,7 +192,7 @@ def test_rehydrate_sets_exactly_the_listed_attributes(j2, finished, new_run):
     follow.rehydrate(finished.dir)
     after = vars(follow)
     changed = {k for k in after if after[k] is not before.get(k) and after[k] != before.get(k)}
-    assert changed <= set(R.RESTORED) and {"chat", "goal", "workflows", "sites", "done", "status", "outcome", "request"} <= changed
+    assert changed <= set(R.RESTORED) | set(R.RESTORED_TYPE) and {"chat", "goal", "workflows", "sites", "done", "status", "outcome", "request"} <= changed
     assert not (set(R.RESTORED_REALIZATION) & changed), "no realization.json: no real*"
     assert set(after) == set(before), "no attribute was added"
 
@@ -348,11 +348,46 @@ def test_a_done_with_open_items_source_is_allowed(j2, source, new_run):
     assert follow.outcome == "Done with open items: shipped as is."
 
 
-def test_a_source_whose_output_is_not_a_website_is_refused(j2, source, new_run):
+def test_a_source_whose_output_is_not_a_page_and_that_has_no_document_chain_is_refused(j2, source, new_run):
     rows = (source / "chat.jsonl").read_text().splitlines()
     rows[0] = json.dumps({**json.loads(rows[0]), "output": "prd"})
     (source / "chat.jsonl").write_text("\n".join(rows) + "\n")
-    assert refused(new_run(), source) == "the earlier run built a prd, not a website"
+    assert refused(new_run(), source) == "the earlier run has no page and no document chain"
+
+
+def test_a_run_that_chose_no_type_is_refused_as_having_no_page_and_no_chain(j2, source, new_run):
+    """A run that stopped before the planner chose a type has `output: null` in its header (J2's `saved_run_no_type`): no page, no chain."""
+    rows = (source / "chat.jsonl").read_text().splitlines()
+    rows[0] = json.dumps({**json.loads(rows[0]), "output": None})
+    (source / "chat.jsonl").write_text("\n".join(rows) + "\n")
+    summary = json.loads((source / "summary.json").read_text())
+    summary.pop("output_type", None)
+    (source / "summary.json").write_text(json.dumps(summary))
+    assert refused(new_run(), source) == "the earlier run has no page and no document chain"
+
+
+def test_a_page_type_is_read_from_the_data_not_from_a_name(j2, source, new_run):
+    """The earlier run's header names a type that J2's data lists as a page: it continues, whatever the name is."""
+    names = [n for n in j2.j2_types.names() if j2.is_page(n)]
+    assert names
+    rows = (source / "chat.jsonl").read_text().splitlines()
+    rows[0] = json.dumps({**json.loads(rows[0]), "output": names[0]})
+    (source / "chat.jsonl").write_text("\n".join(rows) + "\n")
+    follow = new_run()
+    follow.rehydrate(source)
+    assert follow.output == names[0] and follow.doc is False
+
+
+def test_a_classic_follow_up_takes_the_earlier_runs_type_when_nothing_was_chosen_for_it(j2, source, new_run):
+    follow = new_run()
+    assert follow.out is None                                     # no default type: nothing is chosen until the planner or the host does
+    follow.rehydrate(source)
+    assert follow.output == j2.saved_output(str(source)) and follow.out is not None and j2.is_page(follow.output)
+    pinned = new_run()
+    pinned.set_output(follow.output)
+    out = pinned.out
+    pinned.rehydrate(source)
+    assert pinned.out is out                                      # a type the host already pinned is left as it is
 
 
 def test_a_source_without_a_chat_header_is_refused(j2, source, new_run):
