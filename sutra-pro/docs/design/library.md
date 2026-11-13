@@ -246,8 +246,8 @@ Department(Record) FAMILY "department": id: NodeId (= the OrgNode id) · home_di
 Finding(Value) (the stored audit row, J2:8864-8909): id: FindingId · item: int≥0? · criterion: str · verdict: Literal[PASS,PASS_WITH_WARNING,NEEDS_REVISION,BLOCKED_BY_EVIDENCE,POLICY_CONCERN,TO_BE_CONFIRMED]
   · severity: Literal[low,medium,high,critical]? · confidence: Literal[low,medium,high]? · note: S(0,1000) · needs_requester_fact: str? · passed: bool (alias "pass") · audit_id: str?
   V: PASS and PASS_WITH_WARNING need a non-empty note (audit.md, J2:9068) · passed is true exactly for those two verdicts
-RubricResult(Value): id: ^[RD]-\d+$ · verdict: Literal[PASS,PASS_WITH_WARNING,NEEDS_REVISION] · note: str · passed: bool (alias "pass")
-ConditionResult(Value): id: ^[A-Z]\d+$ · met: bool · evidence: str · severity: Literal[warn]?
+RubricResult(Value): id: ^[A-Z]{1,4}-\d+$ (R-n, D-n, the project's PJ-n; D158) · verdict: Literal[PASS,PASS_WITH_WARNING,NEEDS_REVISION] · note: str · passed: bool (alias "pass")
+ConditionResult(Value): id: ^[A-Z]{1,4}\d+$ (N1, P1, H1, L1, the project's PJ1; D158) · met: bool · evidence: str · severity: Literal[warn]?
 ResultEvaluation kind "result" (= the J2 audit entry, J2:8959-8962): cycle, version: int≥1 · results: [Finding]≥1 · extra_issues: [Finding] · rubric: [RubricResult]
   · conditions: [ConditionResult] · mechanical: JsonObject (opaque, owned by j2_check) · screenshot: str? · all_pass: bool · accepted: [str]
   V: finding ids unique · all_pass == (all results passed, all rubric passed, no unmet non-warn condition): the stored flag may not lie
