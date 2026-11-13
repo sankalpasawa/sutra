@@ -1,5 +1,63 @@
-# J2 sync 6: Sutra Pro takes over J2 main `1adb8ecd` (design and lane plan)
+# J2 sync 6 as built: Sutra Pro 0.5.0 takes over J2 main `1adb8ecd` (note of record)
 
+_Status: As built, release 0.5.0 (not pushed, not tagged) · Date: 2026-11-13 · Pin: commit `1adb8ecd8fa8eef47fb7a0fc63a1616f556cdfeb`, tree `9a7cb34c028248de7d3b436647f8baf39be6f77e` · Branch `release/0.5.0` = lanes V, L, E, U merged, then the integrator._
+
+This section is the note of record. The design as proposed follows it unchanged, below the line "Design as proposed". Decisions D176 to D193 are in `docs/DECISIONS.md` in their as-built text (D182 with the route's amendment), D194 to D200 are the shared-library design (`docs/design/shared-library.md`). The lane notes `docs/notes/J2S6-{v,l,e,u}.md` hold the detail.
+
+## A. What was built
+
+- **V** (vendoring): tree of 516 files at the new pin (`sutra_app/engine/seed` 437 files, `templates/` 25 with `library-settings.json`, 19 code modules with `j2_artifact_lib.py`); patches re-anchored and extended; the four recorders pin `J2_RUN_BY=sutra-pro` and `J2_PUSH_RUNS=0`; goldens re-recorded (seven prompt goldens differ in `j2_commit` only); the legacy flow test is a three-way merge with 0 conflicts and 11 new J2 blocks.
+- **L** (library): `reuse.json` row and closed models for the new run files and keys, `RunHeader`, `RunTemplateBundle`; the seed sync adds run templates, their folders and provenance keys, additive. Measured on the 0.4.0 seed: 81 families, 107 versions, 4 run templates, 437 files, nothing lost.
+- **E** (engine): five settings (`run_templates`, `auto_reuse`, `artifact_library`, `reviewer`, `reviewer_wait`), `effective()`, `J2_PUSH_RUNS`/`J2_RUN_BY` fixed by the host, the reviewer join with cap (P19), the `say` carrier (two task-only keys), the follow-up rule, the hard-coded cleanup (`forms.py`, the two data files, lazy reads of J2 in the function-node registry), two new feature chips.
+- **U** (views and page): `GET /api/run-template`, team-scoped Artifacts shelf, `POST /api/say` with `template` and `workflows`, the regenerated page (40 edits), the Engine settings page (37 rows), route pins at 43 handlers and 35 exact paths.
+- **Integrator**: shared documents, `decisions.json` (D1 to D200), traceability (200 decisions, 43 endpoints, 17 chips), the version, the verification list of section 9 (results in `docs/ai`-free form in the release commit messages and the final report).
+
+## B. Deviations from the design (from the lane notes)
+
+1. **Settings answer** (E): the existing key `effective` stays (the stored values, resolved); the implied values are the new key `effective_flags`. The page reads `effective_flags` (`impliedOf` in `settings_view.js`).
+2. **Form check at registration** (E): `forms.check_forms(j2_types)` is called by `capabilities.register(j2)`, not at import; the host imports capabilities before it exports J2's environment.
+3. **Reviewer** (E): a 0.25 s settle after a discard; the excepthook never makes a reviewer failure the run's crash.
+4. **Guard `PENDING`** (E): one pending entry for `views.py`; the integrator removed it (see C).
+5. **P1 changes 42 lines, not 41** (V): 40 + 2; `P1_COUNTS` is the script's own count.
+6. **Seed index** (V): five `/tmp/...` library values remain next to the six scrubbed home paths; P15 still finds exactly six.
+7. **`HANDLER_COUNT` stays a literal** (U): table 8 row 12 asked for a computed value; `test_traceability.py` reads it as text. `ASK_CHARS` stays a copy with a parity test.
+8. **`say` limits** (U/E): 40 keys of 20 characters cannot fit 400 characters; the 400-character limit decides.
+9. **E20f** (U): one anchor fails at the pin (the Library button is now two); it is E20f1 and E20f2, plus E24a to E24f (D191): 40 edits, 7 files.
+10. **`TemplateMeta`, `RunHeader`** (L): also learn the four sync 4 provenance keys; the run header is its own closed model, not a `RunMessage`. `door` of `TemplateDecision` is in the design and was not seen in any mock run.
+11. **`scripts/engine_gate.sh`** (V): still runs only the four old legacy scripts; the two new ones run in `tests/engine/test_engine_legacy.py`.
+
+## C. Patch statuses (as in `sutra_app/engine/VENDORED.md`)
+
+| Patch | Status at 1adb8ecd |
+|---|---|
+| P1 | re-anchored: `CODE` gains `j2_artifact_lib.py`; 42 lines |
+| P2, P3, P4, P5, P11, P12, P14, P15, P16, P17, P18 | applied unchanged (P15: six home paths) |
+| P7 | re-anchored (the planner expression, one statement) |
+| P8 | re-anchored (run-end anchor includes the `_make_report` line) |
+| P9 | re-anchored (`call_delay()` in the delay lines of `call` only) |
+| P10 | extended: four writers (`store`, `mark_used`, `note_version`, `mark_run_template_used`) |
+| P19 | new: the reviewer switch (`review_enabled` hook) |
+| P20 | reserved (the late-judge switch of D145) |
+| P6, P13 | none: the design's table skips P6; P13 was retired in sync 4 (D140), its code is `engine/runlist.py` |
+
+## D. Not done, and why
+
+- J2's group-A hard-coding fixes: they live on J2's branch `fix-run-blockers`, not in main (D189); they arrive with a later pin.
+- Parallel builds, scripts and actions, a "save this run as a run template" owner action, cross-team sharing (the publish gate of D197): later work, see `shared-library.md`.
+- A real-model run of `auto_reuse` and the content door (item 8 of section 9): no connector with quota was used; the by-hand check with a real model stays open.
+- The memory store and the external catalogue (D196, D199) are designed, not built.
+
+## E. Three open questions for J2's maintainers
+
+1. **Tag.** J2 has not tagged `1adb8ecd`; the pin is the full commit. Please tag it (the tag name is then added to `vendor_j2.py` and `VENDORED.md` as a comment) and review the seven "needs owner review" commits that are carried inert.
+2. **The shared-library maintainer.** What does the shared-library maintainer already hold (contract text, seam list, tag policy)? Section 6 and D195 to D200 of `shared-library.md` are drafts for that person to correct.
+3. **Inventory fixes on a J2 branch.** The group-A fixes of the 547-row inventory live on `fix-run-blockers`, not in main: should the next pin wait for them, or move to main as it is? The ten reports of section 11 below stay as listed.
+
+---
+
+# Design as proposed (unchanged)
+
+# J2 sync 6: Sutra Pro takes over J2 main `1adb8ecd` (design and lane plan)
 _Status: Proposed · Date: 2026-11-13 · Branch: `lane/s6-library-docs` (release 0.4.0 plus the two library documents) · Source: commit `1adb8ecd8fa8eef47fb7a0fc63a1616f556cdfeb` of this repository, tree of `prototypes/j2` `9a7cb34c028248de7d3b436647f8baf39be6f77e` · Replaces: the sync 5 pin `1d537295eb11cb034956fa9d8a4026eaa1e3f44e` (tag `cut-off/2026-11-12`) · Decisions: D176 to D193 (written into `docs/DECISIONS.md` by the integrator from the lane notes) · Ships as: 0.5.0 · Companion: `docs/design/shared-library.md` (D194 onward)_
 
 Paths are relative to `sutra-pro/` unless they start with `prototypes/`. `$J2SRC` is the extraction of the new pin: `git archive 1adb8ecd8fa8eef47fb7a0fc63a1616f556cdfeb prototypes/j2 | tar -x --strip-components=2 -C "$J2SRC"` (a new, empty folder, never the working tree; D154). The scratch trial vendoring that the analyst made is a read-only reference for numbers; nothing is copied from it.

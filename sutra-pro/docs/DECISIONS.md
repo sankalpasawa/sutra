@@ -1235,3 +1235,191 @@ Decided by Claude on its own, on the dates shown. The owner can veto any of them
 - Why: speed; one release carries the whole wire change once.
 - Rejected: a release per lane (the wire is not usable until all three are merged).
 - Diagram: label "release 0.4.0", pill on band:DEPARTMENT RUNTIME.
+
+## D176 — The pin moves to J2 main `1adb8ecd`; the source stays the extraction of this repository's `prototypes/j2`
+- Sources: D136, D154, D160, `docs/design/j2-sync-5.md`.
+- Decided: `scripts/vendor_j2.py` takes `BASELINE = 1adb8ecd8fa8eef47fb7a0fc63a1616f556cdfeb` and tree `9a7cb34c028248de7d3b436647f8baf39be6f77e`; `VENDORED.md` names it "sync 6" (the header says "J2's main, not tagged"); the sync 5 pin (`1d537295`) joins `PREVIOUS_BASELINES`. J2 has not tagged the commit; its maintainers are asked (D189), and the tag name is added as a comment when they do. The tree is 516 files (the design said 514 plus two documents: the two documents are in the 516; `sutra_app/engine/seed` 437, `templates/` 25 with `library-settings.json`, 19 code modules with `j2_artifact_lib.py`). The seven commits labelled "needs owner review" are carried inert behind `J2_RUN_TEMPLATES` and `J2_AUTO_REUSE`.
+- Why: the owner's task is "J2 sync 6"; the commit is a fixed point; the flag-off behaviour was measured byte-neutral (seven prompt goldens differ in `j2_commit` only).
+- Rejected: waiting for a tag; vendoring a branch tip (D154); carrying only part of the span (the content door, the shelves and the run templates share `j2_template_lib.py`).
+- Diagram: label "J2 pin: main 1adb8ecd", pill on band:DEPARTMENT RUNTIME.
+
+## D177 — The reuse flags are Engine settings; `J2_PUSH_RUNS` and `J2_RUN_BY` are fixed values of the host
+- Sources: D129 (settings layers), D152 (an environment variable with no field does nothing), D169, `docs/design/j2-sync-5.md` section 7.
+- Decided: `EngineSettings` gains `run_templates`, `auto_reuse` and `artifact_library` (bool, default `False`, editable, env names `J2_RUN_TEMPLATES`, `J2_AUTO_REUSE`, `J2_ARTIFACT_LIBRARY` by the existing rule). `DataPaths.j2_env()` exports `J2_PUSH_RUNS=0` and `J2_RUN_BY=sutra-pro` (constants `FIXED_PUSH_RUNS`, `FIXED_RUN_BY`); the host applies it after the settings, so it wins over the inherited environment; they are not fields, so no settings file, task key or environment can change them. `docs/ENVIRONMENT.md` has the three rows in the commit of their fields, and says in prose that the two fixed values are the host's.
+- Why: J2 only reads its environment, the host is what sets it; the page has the buttons, so the owner needs the switch; a fixed `J2_RUN_BY` keeps the OS or git user name out of `chat.jsonl` and removes a `git config` subprocess per run; a pushed run folder is the one J2 flag that writes outside the data folder.
+- Rejected: leaving the variables to the environment (D152); exposing `J2_PUSH_RUNS` read-only; `J2_RUN_BY` from the owner's name (a personal identifier in run data).
+- Diagram: label "reuse flags are settings", pill on band:EXPERIENCE.
+
+## D178 — Implied flags are computed once by `EngineSettings.effective()`; the finish step and the project force read it
+- Sources: D142, D164, J2 `j2_template_lib.enabled`, `auto_reuse`, `j2.run_templates_on`, `artifact_schema_on`.
+- Decided: `EngineSettings.effective()` returns a frozen `EffectiveFlags(auto_reuse, run_templates, template_library, artifact_schema)`: `auto_reuse = auto_reuse or artifact_library`; `run_templates = run_templates or auto_reuse`; `template_library = template_library or auto_reuse`; `artifact_schema = artifact_schema or template_library`. The stored settings are not rewritten. `GET /api/engine/settings` keeps `effective` (the stored values, resolved) and adds `effective_flags` (the object above); a row that is on only by implication is `effective_flags[x] and not effective[x]`. `host/finish.py` calls `effective()`. The project capability's `FORCE` sets all five of `run_templates`, `auto_reuse`, `artifact_library`, `artifact_schema` and `template_library` to `False`, so the chain is off for a project run (the `output.selected` trace line lists them under `forced`).
+- Why: J2 does the implying inside the run, the app must agree without a second copy of the rule; a project has no template and the content door would serve document text into a working-folder run.
+- Rejected: normalising the stored settings (the owner's file would change under them); forcing only `template_library` for project (J2's chain would turn it on again through `auto_reuse`); replacing the `effective` key of the answer (two contract tests pin it).
+- Diagram: label "implied flags: effective()", pill on band:DEPARTMENT RUNTIME.
+
+## D179 — The reviewer: on by default, two settings, a host that waits (capped) and discards a late result; patch P19
+- Sources: D142, D143, J2 `_make_report`, `_review_later`, `report_gen`.
+- Decided: `EngineSettings` gains `reviewer` (bool, `True`, `J2_REVIEWER`, read by the host, not by J2) and `reviewer_wait` (float seconds, `120`, `ge=0`, `J2_REVIEWER_WAIT`, `0` = do not wait). `hooks.review_enabled() -> bool` (`NullHooks` True; `EventHooks` returns its `reviewer` attribute, which the host sets from the setting; `HostHooks` forwards). In `Host._conclude`, first after `inbox.close()` and before `publisher.stop()`, `_join_reviewer` joins `run.review_thread` (when alive) for at most `reviewer_wait` seconds (at most `STOP_WAIT_S` when the run is being stopped); past the cap it increments `run.report_gen` (J2's `_review_later` then saves nothing), writes one `reviewer.late` trace line and joins the thread for `REVIEWER_SETTLE_S` (0.25 s) so a write already begun finishes before the finish steps. A failure of the review thread is a `reviewer.error` trace line and a stderr traceback, never the run's crash.
+- Why: the host decides when a run ended and must make the folder stable before it collects, publishes and closes its writer; J2 already has the supersede counter, so no J2 text beyond the switch is needed.
+- Rejected: leaving the thread unjoined; a patch that names or joins the thread; default off; a hidden constant for the wait.
+- Diagram: label "reviewer: join, cap, switch (P19)", pill on band:DEPARTMENT RUNTIME.
+
+## D180 — P1, P7, P8, P9 are re-anchored; P19 is new; the late-judge reserve is P20
+- Sources: D13, D136, D145, D162, section 5 of the design.
+- Decided: applies P2, P3, P4, P5, P11, P12, P14, P15 (still exactly six home paths), P16, P17, P18; conflict fixed P1 (`CODE` gains `j2_artifact_lib.py`; `P1_COUNTS` `j2.py` 15, `j2_artifact_lib.py` 1: the rule changes **42** lines, not 41 as the design said: 40 + 2), P7 (the planner expression, one statement), P8 (the run-end anchor now includes the `_make_report` line), P9 (`call_delay()` in the delay lines of `call` only); extended P10 (D181); new P19 (the reviewer switch). The reserve of D145 moves from P19 to P20.
+- Why: every changed anchor is explained by a J2 change; the reviewer switch is the one place where J2 gives the host no seam.
+- Rejected: dropping P8's run-end hook; a regex for P7/P8/P9 (an anchor that stops the run when J2 moves is the safety).
+- Diagram: label "patch table P1-P19", pill on band:DEPARTMENT RUNTIME.
+
+## D181 — P10 covers the two runtime writers J2 added: `note_version` and `mark_run_template_used`
+- Sources: D26, D142, P10, J2 `j2_template_lib.py`.
+- Decided: both are wrappers that take `_library_lock()` around the original, kept as `_note_version` and `_mark_run_template_used`, as `store` and `mark_used` are. `save_run_template`, `move_versions` and the `__main__` commands are developer tools and stay unpatched; `collect` is run by the host under the lock. Tests: `tests/engine/test_engine_library_lock.py` has a static test (over `j2_template_lib.py`) that exactly the four wrappers take the lock and that none of them (and not `collect`) can reach a function that takes it, a guard that no other function writes the index (`_save_index`) outside the lock, a busy-lock test for the two new writers and a two-process test (one run template used 25 times while 25 versions get notes: no row lost).
+- Why: both read the index, change it and write it back; two runs adapting templates or using one run template could lose a row.
+- Rejected: one lock around the whole of `route` (deadlock for 30 s); a Sutra-side lock in the host.
+- Diagram: label "library lock covers 4 writers", pill on Template library.
+
+## D182 — The `say` carrier is in scope: `template` and `workflows` travel as two task-only settings keys; the start page gets no control of its own
+- Sources: D18, D129, `TASK_SETTING_KEYS`, `TaskSettings`, J2 `POST /api/say` (`RUN.set_run_template`), J2 `set_run_template`.
+- Decided: `POST /api/say` accepts `template` and `workflows` (the route is lane U's; the shape rules are `spec.RUN_TEMPLATE_ID_RE`, `spec.run_template_keys`). `DeptCommands.say(text, template=None, workflows=None)` adds `J2_RUN_TEMPLATE` and `J2_RUN_TEMPLATE_WORKFLOWS` to the settings of that one delivery (never to `page.json`). `TASK_SETTING_KEYS` and `TaskSettings` have ten keys; the last two are not `EngineSettings` fields, so `layered()` ignores them and they cannot reach J2's environment. The host calls `set_run_template` after `run.started` and before the first line is posted (J2 refuses once the chat has a line), for a first run only; a refusal is one system line "The run template <id> was not used: <reason>; the team starts from scratch." and a `run_template.requested` trace line, never a refused start. A follow-up ignores both keys.
+- Why: the page's links must work, not silently start without the template; the settings channel is validated, stored in the task and visible to the engine without a new column.
+- Rejected: hiding the buttons; a new `RunSpec` field and a new `deliver_to_department` parameter; a start-page picker.
+- Diagram: label "say carries run template", pill on band:EXPERIENCE.
+- As built (the route, lane U): `views.say` validates the two keys with the constants and helpers of `spec.py` (`is_run_template_id`, `run_template_keys`, `RUN_TEMPLATE_*`), so a body the route takes is a body the task takes; one owner for the limits. An absent or empty `template` is the old call (`commands.say(text)`: a command object without the new arguments keeps working); `workflows` without a template is dropped, as in J2's server; the keys are read case-blind, each once, `all` only when it is the whole list, and the result is `all` or one comma list. A malformed template or list is 400 `{"error": "<the violation>"}` before the run is touched; an empty text is still 400 `{"error": "empty"}` first. `Commands.say(text, template=None, workflows=None)` is the Protocol; the stdlib adapter calls `RUN.set_run_template(template, workflows)` before `user_says`.
+
+## D183 — The run-template views read the team's resolved settings, never the server's environment
+- Sources: D129, D141, D178, J2 `GET /api/run-template`, `GET /api/run-templates`.
+- Decided: `views.run_template(ctx, q)` (route `GET /api/run-template?id=`, the 43rd handler; `HANDLER_COUNT` 43; `J2_EXACT` +1) answers `j2_template_lib.run_template_view(id)` plus `enabled = ctx.run_templates_on`; an id that is not `[a-z0-9-]+`, or J2 does not know, is 404 `{"error": "no such run template"}` (J2 is not asked for a malformed id). `RunCtx.run_templates_on` (default `False`) is filled by `api/ctx.py` `build_ctx(..., flags=True)` from `effective_settings(...).effective().run_templates` (the layers `data/engine.json` < the team's `engine.json` < `page.json`; so `auto_reuse` and `artifact_library` imply it, D178); `serve` asks for it only for this view (the other views are polled every second and do not need it). The stdlib adapter fills it from `j2.run_templates_on()`, J2's own switch, since that process is the run. `views.run_templates` adds `run_template` (J2's `run_template_use`, only when the run has decisions and a run template) and widens the rows with `reuse_rows(decs)` exactly when J2's server does. No view reads `os.environ["J2_RUN_TEMPLATES"]`.
+- Why: the flags are the team's settings; the API process has none of them.
+- Rejected: setting the variable in the API process per call (a global switch for all teams); computing `enabled` in the page; computing the flag on every request (a per-poll read of three settings files).
+- Diagram: label "run template views: team settings", pill on band:EXPERIENCE.
+
+## D184 — The Artifacts shelf is team-scoped: `J2_RUNS_DIR` is the team's runs folder for the call
+- Sources: D26, D141, J2 `shelf_artifacts`, `runs_root`.
+- Decided: `views._library(ctx)` sets `J2_LIBRARY_DIR` (the one global library) and `J2_RUNS_DIR` (`ctx.runs_dir`, the asking team's `runs/`) together, under the existing lock, and puts both back whatever the call does (also an exception, and an old value that was another folder). With `ctx.library` None (the stdlib adapter) nothing is set. `GET /api/catalog` therefore lists the asking team's finished artifacts only; the templates, the run templates, the `runs` rows of the index and the shelf's skeleton rows stay global (D26). On Shelf 2, the per-template `outputs` counts come from the same team's runs. The catalog handler's docstring and `api/library.py` say so (D141's "nothing of the team is read" is amended: the team picks the page and the runs shelf).
+- Why: a finished document holds the business's own facts.
+- Rejected: all teams' runs; a per-install shelf with a filter.
+- Diagram: label "artifact shelf per team", pill on Template library.
+
+## D185 — The seed sync adds run templates, their folders and the two provenance keys; it stays additive
+- Sources: D144, D26, `ops/doctor.py` `_apply_seed`, `_fill`, J2 seed (`run_templates`, `renamed_from`, `adapted_from`).
+- Decided: `_apply_seed` also syncs the index key `run_templates`, per seed id: the library has row and folder (present: left alone, its `used_by` is the library's own),
+  the row only (restore: the seed's folder is copied back), the folder only (adopt: its `template.json` is the seed's, by id and `made_from_run`; any other folder is
+  reported and kept), neither (add: folder `library/run-templates/<id>/` and row). An id that is not a slug, a seed row without a folder and a `run_templates` value that is not a list
+  are reported `skipped`. `_fill` adds `renamed_from` and `adapted_from` to a present version's row and `meta.json` when absent, never changes one that is there. A seed family
+  J2 renamed is added under the seed's name beside the old one (nothing is moved or renamed on disk) and its added versions are listed in the report's `renamed`. The report
+  gains `run_templates` and `renamed`; `missing_seed_run_templates`, the doctor check and `config sync-library` count them. A first run and `_seed_whole` copy the whole seed; the
+  marker (`.seed-sync`, the sha of the seed index) changes with the seed index, so an install syncs once at its next start.
+- Why: existing installs must gain what is new without losing what they made; J2's resolver already opens an old reference through `renamed_from`.
+- Rejected: following J2's renames on disk (changes what an old run points at); skipping a version whose sha exists under the old name (the new J2 routing and the seed's run templates name the new family).
+- Diagram: label "seed library: + run templates", pill on Template library.
+
+## D186 — The records catalogue and the closed models learn the new run files and keys; J2's run-template bundle is `RunTemplateBundle`
+- Sources: D47, D172, D151, `docs/design/library.md` sections 9 and 10.
+- Decided: `records.py` has a row for `reuse.json` (`artifact-reuse/1`, closed `ArtifactReuse`). `TemplatesFile` gains `run_template` and `auto_reuse`; `TemplateDecision` gains `run_template`,
+  `from_template`, `template_workflow`, `adapted_from`, `new_family`, `first_refused`, `nearest`, `nearest_refused`, `door`; `TemplateMeta` (closed) gains `renamed_from`, `adapted_from` and the provenance
+  keys of a library version (`made_by` with `date`, `business`, `mock`, `collected_from`); `MessageMeta` (closed) gains `humans_only`, `run_template`, `content_door`; `RunTemplate` (a row of
+  `GET /api/run-templates`) gains `group` and `kind_shown`; an artifact row gains `reused_from`. The first line of `chat.jsonl` is a closed `RunHeader` (`by` is a name, never a path). The new closed class
+  `RunTemplateBundle` (payload `run_template.bundle`, J2's `run-template/1`) validates `library/run-templates/<id>/template.json` with J2's own checks; the existing `RunTemplate` keeps its name.
+  `docs/schemas/` is regenerated by the export. Each key was found by strict-mode validation of mock runs of the vendored J2 with the flags off, on and with the content door; a test repeats that
+  (`tests/library/test_lib_reuse_runs.py`). Default log mode only warns; strict mode is what the tests run.
+- Why: the library's closed models are what makes `GATE.check` mean something; every key J2 adds and the model refuses is a strict-mode failure of a run.
+- Rejected: leaving the new files in `UNCHECKED` (D172's reason); renaming the existing `RunTemplate` (a published payload name and schema file); checking the run header as a `RunMessage` (it is not a message).
+- Diagram: label "records: reuse, run template bundle", pill on band:DEPARTMENT RUNTIME.
+
+## D187 — A follow-up never re-fires auto-reuse and does not restore the run template
+- Sources: D135, `rehydrate.py`, J2 `_auto_reuse_pick`, `set_run_template`.
+- Decided: `rehydrate.py` sets `run.auto_pick = {}` for a continued run (J2's own "already decided" marker) and leaves `run_tpl` as `None`. Both are named beside `RESTORED_CHAIN` (`RESTORED_REUSE`, `NOT_RESTORED_REUSE`), with the reason: the earlier run's template shaped its first plan; a follow-up is a change request on finished work.
+- Why: without the marker a follow-up that stamps a charter would score the run templates again and could swap the plan under finished work.
+- Rejected: restoring `run_tpl` from `templates.json` (its rows and per-workflow state would steer stages that are already done).
+- Diagram: label "follow-up: no auto-reuse", pill on band:EXPERIENCE.
+
+## D188 — The Sutra-side hard-coded behaviour is cleaned by three rules, applied to a list; what stays is named
+- Sources: the owner's refactoring task, D165, D166, "agents decide, code validates", `docs/design/function-nodes.md`.
+- Decided: three rules. (R-1) A value that is J2's is read from J2 where the layer already imports J2, lazily at first use (`fnodes/registry.py`: `gate()`, `not_checkable()`, `agent_content()`, `user_content()`, `j2_routes()`); where a layer cannot import J2 (`spec.py`) a copy stays, with one parity test in a clean process. (R-2) A value that is a decision leaves code: the word table to `capabilities/data/project.words.json`; the type name has one owner, `project.TYPE`; J2's two form words have one owner, `engine/forms.py`, whose `check_forms` runs at registration. (R-3) A limit stays a named, commented constant with one owner: the follow-up limits are `capabilities/data/project.limits.json`, `AGENT_PURPOSES` is defined once in `hooks.py`, and `ENDED_WELL` reads `events.END_STATUSES`. `tests/engine/test_engine_no_type_names.py` is widened to `website|prd|hld|lld|document|project|business_report` over every `*.py` of `sutra_app/engine/` and `sutra_app/library/` except the 19 vendored J2 modules, with the owners listed by count and reason and one pending entry for a file of the views lane.
+- Why: the owner asked for the cleaner design; the three rules separate what J2 owns from what the host decides from what is only a size.
+- Rejected: moving every number into settings; deleting the parity of `J2_STRINGS` before J2 posts them as data; a model call to choose `project`; an import-time form check (the host imports the capabilities before it exports J2's environment).
+- Diagram: label "hard-coded cleanup: 3 rules", pill on band:DEPARTMENT RUNTIME.
+
+## D189 — J2's own hard-coded behaviour is reported to J2's maintainers, not patched; the group-A fixes are adopted at the pin that contains them
+- Sources: the owner's rule "no app-side fixes of upstream", the handoff of sync 5 ("write it down and send it"), J2 `docs/hardcoding-inventory.md` (547 rows: 357 decisions, 190 guardrails; NAME 160, FORCED 243, HIDDEN 47, KEYWORD 104).
+- Decided: `docs/reference/j2/docs/hardcoding-inventory.md` and `library-reuse-order.md` are carried as reference documents (`REF_DOCS`, byte copies). The lane V note ends with the list for J2's maintainers (section 11 below). The group-A fixes (A4 `NOT_CHECKABLE` deleted, A5 `min_done_when`, A8 `ACTION_GOAL`, A10 quotes in CSS) are on J2's branch `fix-run-blockers` and not in main: the app does nothing about them now. At the sync whose pin contains A4, `fnodes/registry.py` loses its `NOT_CHECKABLE` read together with the check that uses it, in the same lane, and the parity tests that read J2's symbol say so by failing at import.
+- Why: patching J2 in the copy makes two truths; the app's layer reads J2's symbols so it breaks loudly, not silently, when J2 moves.
+- Rejected: a patch P-n for each inventory row (545 recorded edits of upstream text).
+- Diagram: label "J2 hard-coding: reported", pill on band:DEPARTMENT RUNTIME.
+
+## D190 — Goldens and fixtures move only through the recorders; `J2_RUN_BY` is pinned in every recorder
+- Sources: D150, D174, R5.
+- Decided: the recorders (`record_engine_golden.py`, `record_api_shapes.py`, `record_fn_golden.py`, `capture_j2_fixtures.py`) set `J2_RUN_BY=sutra-pro` and `J2_PUSH_RUNS=0` in the environment they build, and keep both out of the recorded `env` (so a golden is not changed by the pin). Measured: the seven prompt goldens differ from their predecessors in `j2_commit` only; `record_fn_golden --check` is current; `api_shapes.json` changes in `j2_commit` and in the keys of `get.*.catalog`, `library`, `library_item` and `run_templates` (new shelf, artifacts, run template and provenance keys) and nowhere else. The legacy flow test is a three-way merge again (base: J2's file at `1d537295`, ours: the sync 5 copy, theirs: the extraction): 0 conflicts. `change_test.py`, `realization_test.py` and `j2_replay_size.py` did not change upstream. `EXPECTED.json` records the pin, the new hashes and the numbers.
+- Why: the goldens are the proof that the pin changed nothing a team can see with the flags off.
+- Rejected: re-recording by hand; carrying files without a ruling.
+- Diagram: label "goldens by recorder only", pill on band:DEPARTMENT RUNTIME.
+
+## D191 — The page is regenerated by the script: 40 edits, E20f split, E24a to E24f added
+- Sources: D137, D173, `scripts/port_j2_ui.py`.
+- Decided: of J2's `1adb8ecd` page only anchor E20f failed (`data-catgo="/library${viewRun`, now two buttons): it is E20f1 and E20f2 (`${SutraCtx.libraryPath}?view=artifacts${rq}` and `...templates${rq}`). Six edits are added for root-absolute URLs the page must not follow: E24a `shelfHref`, E24b `catUrl`'s `replaceState`, E24c the run-template link of the Library tab (`rtSummary`), E24d and E24e the "Made from run" and "Made by run" links of the shelves (two anchors, one per row), E24f `rtHref` (`/?view=simple&template=..&workflows=..` to `SutraCtx.pagePath`). 33 + 1 + 6 = 40 edits, 7 files, `--check` green against the extraction. The page's own `/file/`, `/site/` and `/api/` paths are the client wrapper's (prefixes in `J2_PREFIXES`), unchanged. `sutra_ctx.js` `J2_EXACT` gains `/api/run-template` (35 exact paths; the stale "33" in its comment is corrected). `tests/ui/test_port_edits.py` has a case per edit, a miniature line per new anchor and the fetch count (45 sites, 34 `/api/` routes); `page_render.test.js` proves the E24 helpers give a team path with a team and J2's own without one.
+- Why: the page is generated; a root-absolute link would leave the team's page.
+- Rejected: leaving the links; hand edits.
+- Diagram: label "page regenerated for sync 6", pill on band:EXPERIENCE.
+
+## D192 — The diff of record decides every new file; two reference documents and two tests are carried
+- Sources: D161, D154, `scripts/j2_diff_of_record.py`.
+- Decided: `hardcoding-inventory.md` and `library-reuse-order.md` join `REF_DOCS` (carried, byte copies); `artifact_lib_test.py` and `content_door_test.py` are carried as legacy copies (`tests/engine/legacy/`, `LEGACY_NAMES`) because the merged flow test does not exercise `j2_artifact_lib` (no mention of it; checked by search and by the 77 checks the two scripts add), with the engine imports and J2's committed library read as the engine's seed library; `fixtures/folder-run/**` is excluded (named, with a reason): it is test data of the flow test's `folder_reuse`, read from `SUTRA_J2_CHECKOUT`; `j2_server.py` and `j2_ui.html` stay as before. `j2_diff_of_record.py --check` reports 0 undecided.
+- Why: a file without a ruling is how a sync forgets something.
+- Rejected: carrying J2's server; skipping the content-door tests (they are the only tests of that module).
+- Diagram: none (tooling).
+
+## D193 — One release, 0.5.0, in one merge order; the flags ship off
+- Sources: D100, D175.
+- Decided: lanes V, L, E, U merge in the order of section 8, the integrator then writes the as-built note (`docs/design/j2-sync-6.md` gets its section A to G in front of this design, as sync 5's did), `docs/DECISIONS.md`, the diagram key, `docs/TRACEABILITY.md`, `docs/ENVIRONMENT.md` (five rows), the counts of `tests/test_traceability.py` (43 endpoints), and the version 0.5.0 (`pyproject.toml`, `sutra_app/__init__.py`, `desktop/package.json`, `desktop/package-lock.json`); `scripts/check_release_tag.py sutra-pro-v0.5.0` passes. The three reuse flags and the content door ship off; the reviewer ships on. Amended: D129 (a pinned non-project type gets J2's planner call also through `_run_tpl_start`; the project type is never given a run template, D178), D141 (the team picks the runs shelf), D142 (the catalog step reads `effective()`), D145 (late-judge reserve P20), D162 (P19 used), D175 (0.4.0 history).
+- Why: one wire change, once.
+- Rejected: shipping the settings and the vendoring separately (the page already has the buttons).
+- Diagram: label "release 0.5.0", pill on band:DEPARTMENT RUNTIME.
+
+## D194 — The shared library is J2's library data plus the contract; the app's stores sit beside it, not in it
+- Sources: D26, D141, D144, D161, `docs/design/library.md`, `memory-evaluation.md`, `external-software-plan.md`.
+- Decided: "shared library" names J2's `library/` (seed and run-time), `templates/**`, `artifacts/types.json` and the rules that drive them, shared between the J2 prototype and Sutra Pro. App records (memory items, catalogue entries, atoms, usage) are never written into `library/`. The Interface library keeps its own meaning (closed models and the gate).
+- Why: one name for four things caused the "two meanings of library" confusion the memory evaluation already warns about; a library folder that holds only J2's data can be merged by rules at every sync.
+- Rejected: a new top-level "shared library" folder in the app (a second copy of J2's tree); putting memory and catalogue tables in `library/index.json` (J2's file, J2's keys).
+- Diagram: label "shared library = J2 data + contract", pill on Template library.
+
+## D195 — Ownership is split by role, the contract is a document, a file and a test, and its text belongs to the shared-library maintainer
+- Sources: the owner's task, section 6, `docs/design/j2-sync-6.md` D189.
+- Decided: the J2 library maintainers own J2's data, code, flags, pin tags and hard-coded behaviour; the app team owns vendoring, settings, scope, records, seed sync, UI and the two new stores; the shared-library maintainer owns the contract text and the design of sharing beyond a team; the owner approves what is shared and decides defaults. A change to what the app reads from J2 changes the contract document, `library-contract.json` and `test_j2_library_contract.py` in one change.
+- Why: two people working on the same library need one place that says who may change what and what the other side can rely on; a test makes the promise cheaper than a meeting.
+- Rejected: ownership by file path only (the paths overlap at the seed and the patches); a shared-library maintainer who owns the app's vendoring (the app team already carries the goldens and the patch table).
+- Diagram: label "library ownership by role", pill on Template library.
+
+## D196 — Memory and the external catalogue are separate app-side stores behind the gate, with one write path and one scope vocabulary
+- Sources: `memory-evaluation.md` Decisions A to E, `external-software-plan.md` Decisions C and D, D7, D26.
+- Decided: `memory_item/1` and `external_software/1` are closed families in the Interface library, stored as tables in the app's SQLite, never in J2's `library/`. Models propose, `GATE.check` and the scrub admit, the owner edits and approves. Both key their scope on chart NodeIds. Memory is recalled into a run through the capability addendum and the node-context file (P9), the lessons and playbooks seam stays P5, and the catalogue's enabled entries reach a run through the engine host. Neither serves content into an artifact.
+- Why: one write path and one scope vocabulary mean one set of tests and one backup; separate storage means a library sync cannot lose a memory and a memory migration cannot corrupt a template.
+- Rejected: memory as a J2 library kind (it holds facts, not structure); the catalogue inside the template library (it holds references to software, not section specs); a third-party memory layer with its own write path.
+- Diagram: label "memory + catalogue: app stores, one gate", pill on Interface library.
+
+## D197 — Nothing is shared beyond a team by default; sharing is a later, owner-triggered publish step with scrubbing
+- Sources: D184, D26, `docs/design/j2-sync-6.md` section 10 (business names in family names), the owner's rule that nothing is pushed unless asked.
+- Decided: finished artifacts and run folders stay in the team that made them; the content door and the Artifacts shelf read the team's own runs. Templates are one store because they are structure, with business values replaced by slots on the shelf. A "publish" step (step 7) is designed by the shared-library maintainer: the owner picks one item, the scrub removes business names and any secret shape, the record keeps provenance, and the item enters a shared place that other teams may read; nothing is published by a flag or a schedule.
+- Why: a finished document holds the business's own facts; a family name can carry a business name; sharing must be a visible act.
+- Rejected: a global shelf with a filter (disclosure one click away); automatic sharing of run templates made by live runs.
+- Diagram: label "no sharing without publish", pill on Template library.
+
+## D198 — The sync follows one procedure of ten steps, each with a check that fails loudly
+- Sources: D136, D154, D160, D176, D190, section 8.
+- Decided: the procedure of section 8 is the sync's definition of done; a J2 tag starts it, the app team runs it, the shared-library maintainer reads the contract report; the as-built note names every patch verdict and every item reported upstream.
+- Why: sync 5 and sync 6 both found, by running the checks, what the analysis did not say; a fixed list keeps the next sync from skipping one.
+- Rejected: syncing on a calendar (a pin of flag-gated work can wait); a sync without the contract test (the contract would be prose).
+- Diagram: label "sync procedure, 10 checks", pill on Template library.
+
+## D199 — The `template` kind of external software stays a plain catalogue row in v1
+- Sources: `external-software-plan.md` open question 7, D194.
+- Decided: an external entry of kind `template` is listed, described and approved like any other, and gives no routing or matching; a template from outside enters the J2 library only by a maintainer's review through the seed path and the contract test. Whether the router may reuse external templates is a later question for the J2 library maintainers.
+- Why: the router's matching is J2's and flag-gated; a second way into the library would bypass the contract.
+- Rejected: importing external templates at run time (a write into the global library from a catalogue entry).
+- Diagram: label "external template: row only", pill on Interface library.
+
+## D200 — The J2 library maintainers are asked to move the remaining constants into data and to add three seams
+- Sources: D188, D189, `j2-sync-6.md` section 11, J2 `docs/hardcoding-inventory.md`.
+- Decided: `AUTO_MIN`, `AUTO_WEIGHTS`, `VAGUE_TYPES`, the `style.json` lookup, `run_slots` and `_noun` move into `templates/library-settings.json` (they are decisions and numbers about reuse, which the library's cleanup already moved for 11 of 13 rows); a runs-folder argument for `catalog_view` and the shelves; a public way to wait for the reviewer thread; an argument for `enabled` in the run-template view. The app does not patch any of it; it adopts the data when a pin contains it.
+- Why: the owner's refactoring rule applied to the library: decisions in data with one owner; the app's per-call environment switching is a workaround the seams remove.
+- Rejected: patching the copy (two truths); leaving the constants in code (the app cannot show or tune them).
+- Diagram: label "J2 asked: constants to data, 3 seams", pill on Template library.
