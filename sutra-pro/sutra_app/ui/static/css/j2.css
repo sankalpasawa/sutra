@@ -888,6 +888,7 @@ body:not(.simple) #dview{display:flex;flex:1;min-height:0}
 .rst.running::before{content:"";display:inline-block;width:6px;height:6px;border-radius:50%;background:var(--accent);margin-right:5px;animation:rpulse 1.2s infinite}@keyframes rpulse{50%{opacity:.3}}
 .runmore{margin:4px auto 2px;border:1px solid var(--line);background:var(--panel);color:var(--ink);border-radius:99px;padding:7px 16px;font:inherit;font-size:13px;cursor:pointer}
 .runnone{color:var(--muted);font-size:13px;padding:8px}
+#timing>p{margin:0;color:var(--muted);font-size:13px}#timing summary{cursor:pointer;font-size:13px;margin-top:6px}.timetbl{max-height:30vh;overflow:auto}.timetbl table{font-size:12.5px;margin:6px 0 0}.timetbl td,.timetbl th{border-bottom:1px solid var(--line);padding:2px 12px 2px 0;text-align:left}
 #dview:is([data-tab=runsettings],[data-tab=artifacts],[data-tab=catalog]) .dcol{overflow:hidden}#dview:is([data-tab=runsettings],[data-tab=artifacts],[data-tab=catalog]) main{grid-template-rows:minmax(0,1fr);flex:1;min-height:0}
 /* Artifacts: four groups; a list on the left and the chosen item on the right; the page fits the screen, only the list and the item scroll */
 #pane-artifacts,#pane-catalog{overflow:hidden}#dview #pane-artifacts,#dview #pane-catalog{max-width:none}#pane-artifacts:not([hidden]),#pane-catalog:not([hidden]){display:flex;flex-direction:column}#pane-catalog .agwrap{flex:1;min-height:0}.cattools{margin:0 0 12px}.tplview h3{display:flex;flex-wrap:wrap;gap:6px 10px;align-items:baseline}.tplview .tplmeta{margin:0 0 14px}
