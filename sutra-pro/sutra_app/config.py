@@ -189,6 +189,8 @@ class Settings(BaseModel):
         for field, value in overrides.items():
             if value is not None:
                 values[field] = value
+        # absolute: a team's engine runs in another working directory and is handed paths under this folder (`--data-dir ./x` crashed every run)
+        values["data_dir"] = Path(os.path.abspath(Path(values["data_dir"]).expanduser()))
         if "override_key" not in values:
             key = env.get(OVERRIDE_KEY_NAME)
             if key is None:
