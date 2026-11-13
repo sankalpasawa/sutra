@@ -557,8 +557,8 @@ CHANGES_FMT = ',\n "changes": [{"workflow": str, "weakest": str, "remedy": str, 
 REVISE_FMT = PLAN_FMT[:-2] + CHANGES_FMT
 DELIVERABLES_FMT = (',\n "deliverables": [{"type": str (a type name from TYPES, or a new name), "why": str (one clause), '
                     '"new": {"label": str, "form": str (one of FORMS), "sections": [str] (a form with sections only), '
-                    '"file": str (a form with sections only), "recommended_practice": bool (true for a policy, guide, plan '
-                    'or SOP: labelled good-practice lines allowed)}|null (only for a new type)}] (build order: a '
+                    '"file": str (a form with sections only), "recommended_practice": bool (true when the type is guidance '
+                    'people follow, where labelled good-practice lines help)}|null (only for a new type)}] (build order: a '
                     'type after every type it needs)\n}')
 
 
@@ -643,7 +643,7 @@ def types_text(types):
             "deliverable, and every deliverable is served by at least one workflow. When no type fits, make a new one: a "
             "deliverable whose type is a new name (lower case, _ between words) with \"new\": its label, its form from "
             "FORMS, for a form with sections its sections in order and its file (<name>.md), and recommended_practice: "
-            "true for a policy, guide, plan or SOP (it may give labelled good practice), else false; J2 makes it in that "
+            "true when the type is guidance people follow (it may give labelled good practice), else false; J2 makes it in that "
             "form and keeps it for later runs.\nFORMS (how a type is built):\n"
             + "\n".join(f"{k}: {v.get('about')}" for k, v in j2_types.forms().items()))
 

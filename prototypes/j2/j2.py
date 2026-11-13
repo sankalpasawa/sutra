@@ -3625,7 +3625,7 @@ class J2Run:
         # from artifacts/types.json (j2_types); None until a type is chosen (no agent is called before that)
         self.out = output_def(self.output) if self.output else None
         # how it is built and checked follows its form (page or document), not its name
-        self.doc = bool(self.output) and j2_types.info(self.output)["form"] == "document"
+        self.doc = bool(self.output) and bool(j2_types.forms().get(j2_types.info(self.output)["form"], {}).get("template"))
         # a form whose output is a folder (types.json "output"): its conditions are checked on the folder (_folder_condition)
         self.folder = bool(self.out) and self.out.get("output") == "folder"
         if self.doc and not self.out["sections"]:      # a new type with no template yet: the sections its plan declared
@@ -7382,8 +7382,7 @@ class J2Run:
                         self._autofix(name, "behavior_step", f"work atom {n}: step {st!r} has no value, so it is {new!r}")
             kinds = expect_kinds(types)      # an item no check of this output verifies: kept as a constraint, not rejected
             xs = a.get("expected_output") if isinstance(a.get("expected_output"), list) else []
-            odd = [x for x in xs if isinstance(x, dict) and x.get("kind") not in kinds and x.get("kind") != "behavior"
-                   and str(x.get("text") or "").strip()]
+            odd = [x for x in xs if isinstance(x, dict) and x.get("kind") not in kinds and str(x.get("text") or "").strip()]
             if odd and self._general():
                 a["expected_output"] = [x for x in xs if x not in odd]
                 cons = a.get("constraints")
@@ -8829,7 +8828,7 @@ class J2Run:
 
     def _out_dir(self):
         """The run's output folder: the form's folder, else builder_tools' (types.json)."""
-        return os.path.join(self.dir, self.out.get("folder") or j2_types.builder_tools().get("folder") or "out")
+        return os.path.join(self.dir, self.out.get("folder") or j2_types.builder_tools()["folder"])
 
     def _main_file(self):
         """The output's main file in the folder (its form's file name), None for a folder of files."""
@@ -8844,7 +8843,7 @@ class J2Run:
                 return f.read()
         out = []
         for root, dirs, files in os.walk(d):
-            dirs[:] = sorted(x for x in dirs if not x.startswith(".") and x != "__pycache__")
+            dirs[:] = sorted(x for x in dirs if not x.startswith("."))
             for name in sorted(files):
                 p = os.path.join(root, name)
                 try:
@@ -8912,7 +8911,7 @@ class J2Run:
         fn, tools = w["id"], self._builder_tools()
         cwd, main, label = tools["cwd"], self._main_file(), self.out["label"]
         runner = " ".join(self.out.get("test_runner") or ())
-        guide = self.out["builder"] if (self.doc or self.out.get("output") == "folder") else ""
+        guide = self.out["builder"]
         task0 = (f"YOU ARE {NAMES[fn]}, the agent for one registered workflow.\nYOUR WORKFLOW: "
                  f"{json.dumps(brief, ensure_ascii=False)}\nTHE OUTPUT is a {label}, built in your working directory "
                  f"({os.path.relpath(cwd, self.dir)}/ in the run), as the workflows before you left it."
@@ -10459,7 +10458,7 @@ class J2Run:
                     if not self.out.get("test_runner"):
                         return {"actual": None, "pass": None, "evidence": "this output's form names no test runner"}
                     t = c.get("target")
-                    rr = sandbox_rerun(folder, self.out["test_runner"], t[0] if isinstance(t, list) else t, 120)
+                    rr = sandbox_rerun(folder, self.out["test_runner"], t[0] if isinstance(t, list) else t, builder_timeout())
                     return {"actual": rr.get("exit"), "pass": rr["pass"], "evidence": rr["evidence"]}
                 return run_check(c, folder, page, False)
             if doc and c.get("type") == "file-exists" and self._file_wf(w):      # a file workflow: the file it wrote

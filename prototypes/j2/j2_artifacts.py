@@ -788,10 +788,7 @@ def _template_of(d, name):
         return os.path.relpath(p, HERE)
     e = next((t for t in load_types(d)["types"] if t["name"] == name), {})
     b = (j2_types.forms().get(e.get("form")) or {}).get("builder") or ""
-    for c in (b, f"templates/{name}/{b}"):
-        if b and os.path.isfile(os.path.join(HERE, c)):
-            return c
-    return None
+    return b if b and os.path.isfile(os.path.join(HERE, b)) else None
 
 
 # ------------------------------------------------------------------------------------------------------------- the views

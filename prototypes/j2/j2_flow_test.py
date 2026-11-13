@@ -4208,6 +4208,8 @@ def general_path():
             rows = calls_file(run)
             assert all(r.get("tools") for r in rows if j2.is_wf_agent(r["fn"])), "every build call ran with tools"
             assert not any("YOU OWN SECTION" in r["prompt"] for r in rows), "no section reply on the general path"
+            assert all("GUIDANCE FOR A" in r["prompt"] for r in rows if r.get("tools") and j2.is_wf_agent(r["fn"])), \
+                (t, "every form's builder text reaches its tools builder (no branch on the form)")
             out[t] = run
         assert os.path.isfile(os.path.join(out["website"].dir, "out", "index.html"))
         assert open(os.path.join(out["website"].dir, "site", "index.html")).read() == out["website"].sites[-1]
@@ -4240,6 +4242,11 @@ def missing_capabilities():
         assert "MISSING CAPABILITIES" not in page_run().ATOM_RULES
     finally:
         os.environ["J2_AGENT_TOOLS"] = keep
+    # a document is a form with a section template (its data), not a form's name
+    for t in j2.j2_types.names():
+        r = j2.J2Run()
+        r.set_output(t)
+        assert r.doc == bool(j2.j2_types.forms()[j2.j2_types.info(t)["form"]].get("template")), t
     print("missing capabilities: builders with tools are told to plan a script and its test for a missing capability ok")
 
 
