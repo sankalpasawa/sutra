@@ -25,7 +25,7 @@ from pydantic_core import InitErrorDetails
 
 from .base import Record, Value
 from .registry import record
-from .types import AtomId, FindingId, JsonObject
+from .types import ArtifactName, AtomId, FindingId, JsonObject
 
 __all__ = [
     "PLAN_GATE", "PASSING_VERDICTS", "Evaluation", "Finding", "RubricResult", "ConditionResult", "LldMismatch",
@@ -174,7 +174,7 @@ class ResultEvaluation(Evaluation):
     screenshot: Annotated[str, StringConstraints(min_length=1, max_length=500)] | None = None
     all_pass: bool
     accepted: Annotated[list[Annotated[str, StringConstraints(min_length=1, max_length=600)]], Field(max_length=200)] = []
-    output: Literal["website", "prd", "hld", "lld", "project"] | None = None              # set for a document's audit
+    output: ArtifactName | None = None                                         # set for a document's audit (a name by shape)
     read: Evidence | None = None                                               # what Audit says it read (a document)
     lld: LldComparison | None = None
 

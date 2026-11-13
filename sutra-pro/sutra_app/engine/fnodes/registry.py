@@ -154,9 +154,19 @@ CheckFn = Callable[[Evidence, tuple[str, ...]], Outcome]
 
 # ---- ports of J2's own code -------------------------------------------------------------------------------------------
 
-def stamp_check(goal: Optional[Mapping]) -> tuple[bool, str]:
+def _what(output: Optional[str]) -> str:
+    """How J2's message names what is built: "the <label of the chosen type>" (its label, from the data), "the output" when no type is chosen."""
+    if output:
+        from sutra_app.engine import j2_types
+        if output in j2_types.names():
+            return f"the {j2_types.info(output)['label'].lower()}"
+    return "the output"
+
+
+def stamp_check(goal: Optional[Mapping], output: Optional[str] = None) -> tuple[bool, str]:
     """`J2Run._stamp_check`: (passes, why). The charter has a statement, at least 3 done-when items, and none that depends
-    on the Requester, Audit, verification, approval or launch (quoted text is a label the site shows, not a dependency)."""
+    on the Requester, Audit, verification, approval or launch (quoted text is a label the output shows, not a dependency).
+    `output` is the run's chosen type (J2's `self.output`): it only changes the words of the refusal."""
     g = goal or {}
     if not g.get("statement"):
         return False, "goal has no statement"
@@ -165,8 +175,9 @@ def stamp_check(goal: Optional[Mapping]) -> tuple[bool, str]:
     unquoted = lambda d: _QUOTED.sub("", str(d))
     bad = [d for d in g["done_when"] if NOT_CHECKABLE.search(unquoted(d))]
     if bad:
-        return False, ("these done-when items can't be checked by reading the site (they depend on the Requester, "
-                       "Audit, verification, approval or launch); rephrase them as something the site shows, and "
+        what = _what(output)
+        return False, (f"these done-when items can't be checked by reading {what} (they depend on the Requester, "
+                       f"Audit, verification, approval or launch); rephrase them as something {what} shows, and "
                        "record a fact only the Requester can give in to_be_confirmed: " + json.dumps(bad))
     return True, "passes code checks"
 
@@ -174,6 +185,19 @@ def stamp_check(goal: Optional[Mapping]) -> tuple[bool, str]:
 def _blocks(c: Mapping) -> bool:
     """j2.py `blocks`: an unmet condition that stops workable() (a warning never does)."""
     return not c["met"] and c.get("severity") != "warn"
+
+
+def _is_page(kind) -> bool:
+    """j2.py `is_page`: the kind is an output type of the page form, read from the data (artifacts/types.json and the local types). J2 is
+    imported when a verdict is asked for, not when this module loads, so the J2 environment is the one the process set."""
+    from sutra_app.engine import j2
+    return j2.is_page(kind)
+
+
+def _legacy_output() -> str:
+    """j2.py `LEGACY_OUTPUT`: what an audit saved before output types means by its missing `output` (J2's own word, not ours)."""
+    from sutra_app.engine import j2
+    return j2.LEGACY_OUTPUT
 
 
 def workable_problems(audit: Optional[Mapping]) -> list[str]:
@@ -184,7 +208,7 @@ def workable_problems(audit: Optional[Mapping]) -> list[str]:
     ok = set(audit.get("accepted") or [])
     out = [f"done-when item {num(r)} ({r['id']} {r['verdict']}): {r['criterion']}" for r in audit["results"]
            if not r["pass"] and r["criterion"] not in ok]
-    if audit.get("output", "website") != "website":
+    if not _is_page(audit.get("output", _legacy_output())):
         return (out + [f"document rubric {r['id']} ({r['verdict']}): {r['criterion']}" for r in audit.get("rubric", [])
                        if not r["pass"]]
                 + [f"necessary condition {c['id']} not met: {c['text']} ({c['evidence']})"
@@ -293,7 +317,7 @@ def charter_stamp(ev: Evidence, args: tuple[str, ...]) -> Outcome:
     goal = ev.records.get("goal.json")
     if not isinstance(goal, dict):
         return _missing("goal.json holds no charter")
-    passed, why = stamp_check(goal)
+    passed, why = stamp_check(goal, ev.turn.stage)
     if passed:
         return _ok(f"statement present, {_plural(len(goal['done_when']), 'done-when item')}")
     if any(CHARTER_ACCEPTED in text for text in ev.system_texts()):

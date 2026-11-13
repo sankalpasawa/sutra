@@ -33,7 +33,7 @@
   const J2_EXACT = ["/api/state", "/api/runs", "/api/runlist", "/api/changes", "/api/call", "/api/preview", "/api/docs", "/api/map",
     "/api/plan", "/api/plan-map", "/api/library", "/api/catalog", "/api/run-templates", "/api/artifacts", "/api/artifacts/tree",
     "/api/artifacts/groups", "/api/artifact", "/api/agent", "/api/activity", "/api/record", "/api/code", "/api/story", "/api/board",
-    "/api/audits", "/api/refs", "/api/say", "/api/ask", "/api/output", "/api/settings", "/api/reset", "/api/playbooks/clear",
+    "/api/audits", "/api/refs", "/api/timing", "/api/say", "/api/ask", "/api/output", "/api/settings", "/api/reset", "/api/playbooks/clear",
     "/api/lessons/clear", "/view"];
   const J2_PREFIXES = ["/api/library/", "/site/", "/file/", "/shot/", "/doc/"];
   const J2_EXACT_SET = new Set(J2_EXACT);

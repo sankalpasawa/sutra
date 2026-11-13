@@ -31,7 +31,8 @@
     "force_audit_note": "",
     "force_question": "",
     "memory_test_lessons": false,
-    "workspace": "auto"
+    "workspace": "auto",
+    "builder_timeout": 600.0
   },
   "global": {
     "budget": 120,
@@ -71,7 +72,8 @@
     "force_audit_note": "",
     "force_question": "",
     "memory_test_lessons": false,
-    "workspace": "auto"
+    "workspace": "auto",
+    "builder_timeout": 600.0
   },
   "editable": [
     "output",
@@ -94,7 +96,8 @@
     "artifact_schema",
     "template_library",
     "tap_min",
-    "workspace"
+    "workspace",
+    "builder_timeout"
   ],
   "locked": [
     "send_mode",
@@ -107,5 +110,43 @@
     "force_audit_note",
     "force_question",
     "memory_test_lessons"
+  ],
+  "output_types": [
+    {
+      "name": "prd",
+      "label": "Product requirements",
+      "form": "document",
+      "pin": true
+    },
+    {
+      "name": "hld",
+      "label": "High-level design",
+      "form": "document",
+      "pin": true
+    },
+    {
+      "name": "lld",
+      "label": "Low-level design",
+      "form": "document",
+      "pin": true
+    },
+    {
+      "name": "website",
+      "label": "Website",
+      "form": "page",
+      "pin": true
+    },
+    {
+      "name": "business_report",
+      "label": "Report",
+      "form": "document",
+      "pin": true
+    },
+    {
+      "name": "project",
+      "label": "Project work",
+      "form": "document",
+      "pin": true
+    }
   ]
 }

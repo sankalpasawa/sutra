@@ -289,7 +289,7 @@ def test_a_question_stored_in_the_functions_chat_shows_in_j2s_chat_panel_and_in_
 
 @pytest.mark.browser
 def test_the_start_page_offers_what_should_we_make_and_a_pick_is_one_post_with_the_team(page_server, browser):
-    """D139: output_pick.js fills the placeholder the port leaves in the landing: the four choices, the one the team's settings give, and a change is one
+    """D139, D166: output_pick.js fills the placeholder the port leaves in the landing: the choices (the engine's `output_types`, with the data's labels), the one the team's settings give, and a change is one
     POST /api/output with the type and the team. (A started team hides the landing, so the select is read and changed in the page, not clicked.)"""
     client = page_server.client
     client.reset()
@@ -300,7 +300,8 @@ def test_the_start_page_offers_what_should_we_make_and_a_pick_is_one_post_with_t
     browser.wait_for("!!document.getElementById('outsel')", timeout=15)
     assert texts(browser, '#soutpick label') == ["What should we make?"]
     assert browser.js("Array.from(document.getElementById('outsel').options, o => [o.value, o.text])") == [
-        ["auto", "Let the team decide"], ["website", "Website"], ["prd", "PRD document"], ["project", "Project work"]]
+        ["auto", "Let the team decide"], ["prd", "Product requirements"], ["hld", "High-level design"], ["lld", "Low-level design"],
+        ["website", "Website"], ["business_report", "Report"], ["project", "Project work"]]
     assert browser.js("document.getElementById('outsel').value") == "auto"
     assert browser.js("document.getElementById('soutpick').parentElement.className") == "slrow"                  # the first thing in the row under the box
     browser.js("(() => { const s = document.getElementById('outsel'); s.value = 'prd'; s.dispatchEvent(new Event('change', {bubbles: true})); })()")

@@ -605,13 +605,7 @@
         "output": {
           "anyOf": [
             {
-              "enum": [
-                "website",
-                "prd",
-                "hld",
-                "lld",
-                "project"
-              ],
+              "pattern": "^[a-z][a-z0-9_]{1,40}$",
               "type": "string"
             },
             {

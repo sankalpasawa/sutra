@@ -370,7 +370,7 @@ test("tab() turns a name that is not a string into a string", () => {
 // ------------------------------------------------------------------------------------------------------------------
 const J2_EXACT = ["/api/state", "/api/runs", "/api/runlist", "/api/changes", "/api/call", "/api/preview", "/api/docs", "/api/map", "/api/plan",
   "/api/plan-map", "/api/library", "/api/catalog", "/api/run-templates", "/api/artifacts", "/api/artifacts/tree", "/api/artifacts/groups",
-  "/api/artifact", "/api/agent", "/api/activity", "/api/record", "/api/code", "/api/story", "/api/board", "/api/audits", "/api/refs", "/api/say",
+  "/api/artifact", "/api/agent", "/api/activity", "/api/record", "/api/code", "/api/story", "/api/board", "/api/audits", "/api/refs", "/api/timing", "/api/say",
   "/api/ask", "/api/output", "/api/settings", "/api/reset", "/api/playbooks/clear", "/api/lessons/clear", "/view"];
 const J2_PREFIXES = ["/api/library/", "/site/", "/file/", "/shot/", "/doc/"];
 const ORCHESTRATOR = ["/api/chart", "/api/chart/changes", "/api/chart/changes/chg-0002/decision", "/api/graph", "/api/graph/nodes/web.identity",
@@ -380,11 +380,11 @@ const ORCHESTRATOR = ["/api/chart", "/api/chart/changes", "/api/chart/changes/ch
   "/api/connectors/codex/sign-in/abc", "/api/schemas/atom/1", "/api/schemas/validate", "/api/tasks", "/api/tasks/tsk_a1b2c3d4e5f6",
   "/api/tasks/tsk_a1b2c3d4e5f6/stop", "/api/usage", "/api/usage/summary", "/api/runs/j2-20261104-100004-7f3a", "/openapi.json"];
 
-test("J2_PATHS lists the 33 exact pathnames (32 under /api/ and the studio's /view) and the five prefixes of j2_server.py", () => {
+test("J2_PATHS lists the 34 exact pathnames (33 under /api/ and the studio's /view) and the five prefixes of j2_server.py", () => {
   const { J2_PATHS } = load(browser()).SutraCtx;
-  assert.equal(J2_EXACT.length, 33);
-  assert.equal(new Set(J2_EXACT).size, 33);
-  assert.equal(J2_EXACT.filter(p => p.startsWith("/api/")).length, 32);
+  assert.equal(J2_EXACT.length, 34);
+  assert.equal(new Set(J2_EXACT).size, 34);
+  assert.equal(J2_EXACT.filter(p => p.startsWith("/api/")).length, 33);
   assert.deepEqual(plain(J2_PATHS.exact).sort(), [...J2_EXACT].sort());
   assert.deepEqual(plain(J2_PATHS.prefixes), J2_PREFIXES);
   assert.ok(Object.isFrozen(J2_PATHS) && Object.isFrozen(J2_PATHS.exact) && Object.isFrozen(J2_PATHS.prefixes));

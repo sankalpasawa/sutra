@@ -1,11 +1,13 @@
-/* output_pick.js - "What should we make?" on the start page of a team (J2 sync 4; docs/design/j2-sync-4.md D139 and 4.4).
+/* output_pick.js - "What should we make?" on the start page of a team (J2 sync 4; docs/design/j2-sync-4.md D139 and 4.4; J2 sync 5, D166).
 
    The J2 start page no longer has a way to choose what a run makes, so the choice moved to a placeholder the port puts in the landing (page edit E19,
    `<div class="soutpick" id="soutpick"></div>`, before the chips) and this module fills it. The landing hides itself once the team has a run, and the
    placeholder with it, so the choice is only ever shown before the first message.
 
-     optionsFor(current)    [[value, label]]: Let the team decide (auto), Website, PRD document, Project work; a value outside those four (an HLD, for one)
-                            is added after them, so the choice that is in force is shown, not lost.
+     typesOf(settings)      the types the owner may pin, from `output_types` of GET /api/engine/settings: [{name, label, form, pin}] in the data's order
+                            (`types.json`, the user's own types, the types a capability registers). The page names no type: the choices ARE the data.
+     optionsFor(current, types)   [[value, label]]: Let the team decide (auto) first, then every type of `types` that can be pinned, with the data's own label;
+                            a value that is not among them (a type the data no longer lists) is added after them, so the choice in force is shown, not lost.
      outputOf(settings)     what the team's next run would make: `next_run.output` of GET /api/engine/settings?dept= (the start page's own pick included, so
                             a reload shows it), else the team's default `effective.output`, else "auto".
      html(state)            the markup: <label for="outsel">What should we make?</label> <select id="outsel" class="outsel"> and a status line for a refusal.
@@ -17,7 +19,7 @@
      start()                on a team page whose boot block does not call the team archived and that has #soutpick; an archived team gets nothing built
                             (and sutra-panel.css hides the placeholder anyway). Self-starting in a page; in node nothing starts by itself.
 
-   Settings, Engine keeps the team's default (D129: `auto`); this is the per-request choice. A classic script with ONE global, OutputPick (see sutra_ctx.js
+   Settings, Engine keeps the team's default (D129: `auto`; with no default type the planner chooses, D165); this is the per-request choice. A classic script with ONE global, OutputPick (see sutra_ctx.js
    for why); in node it is module.exports. */
 (function (root) {
   "use strict";
@@ -31,20 +33,29 @@
   const enc = encodeURIComponent;
 
   const QUESTION = "What should we make?";
-  const OPTIONS = Object.freeze([["auto", "Let the team decide"], ["website", "Website"], ["prd", "PRD document"], ["project", "Project work"]]);
-  const OTHER = Object.freeze({hld: "HLD document", lld: "LLD document"});        // outputs the engine accepts that the start page does not list
+  const AUTO = Object.freeze(["auto", "Let the team decide"]);
   const STARTED = "The team has started; choose before the first message.";
   const FAILED = "That did not work. Try again.";
 
-  const labelOf = value => {
-    const found = OPTIONS.find(o => o[0] === value);
-    return found ? found[1] : (hasOwn(OTHER, value) ? OTHER[value] : value);
+  // The types the settings answer lists, cleaned: a row without a name is dropped, a missing label is the name, and `pin` must be true to be offered.
+  function typesOf(settings) {
+    const list = isObj(settings) && Array.isArray(settings.output_types) ? settings.output_types : [];
+    return list.filter(t => isObj(t) && clean(t.name) !== "").map(t => ({name: clean(t.name), label: clean(t.label) || clean(t.name), form: clean(t.form), pin: t.pin === true}));
+  }
+
+  const labelOf = (value, types) => {
+    if (value === AUTO[0]) return AUTO[1];
+    const found = (Array.isArray(types) ? types : []).find(t => isObj(t) && t.name === value);
+    return found ? (clean(found.label) || value) : value;
   };
 
-  function optionsFor(current) {
+  function optionsFor(current, types) {
     const now = clean(current);
-    const list = OPTIONS.map(o => o.slice());
-    if (now !== "" && !list.some(o => o[0] === now)) list.push([now, labelOf(now)]);
+    const list = [AUTO.slice()];
+    (Array.isArray(types) ? types : []).forEach(t => {
+      if (isObj(t) && t.pin === true && clean(t.name) !== "" && !list.some(o => o[0] === clean(t.name))) list.push([clean(t.name), clean(t.label) || clean(t.name)]);
+    });
+    if (now !== "" && !list.some(o => o[0] === now)) list.push([now, labelOf(now, types)]);
     return list;
   }
 
@@ -58,10 +69,11 @@
 
   function html(state) {
     const s = isObj(state) ? state : {};
+    const types = Array.isArray(s.types) ? s.types : [];
     const now = clean(s.output) || "auto";
     const note = clean(s.note);
     return '<label for="outsel">' + esc(QUESTION) + '</label><select id="outsel" class="outsel" aria-describedby="soutnote"' + (s.locked === true ? " disabled" : "") + ">" +
-      optionsFor(now).map(o => '<option value="' + esc(o[0]) + '"' + (o[0] === now ? " selected" : "") + ">" + esc(o[1]) + "</option>").join("") + "</select>" +
+      optionsFor(now, types).map(o => '<option value="' + esc(o[0]) + '"' + (o[0] === now ? " selected" : "") + ">" + esc(o[1]) + "</option>").join("") + "</select>" +
       '<span class="soutnote" id="soutnote" role="status"' + (note === "" ? " hidden" : "") + ">" + esc(note) + "</span>";
   }
 
@@ -74,9 +86,9 @@
     const o = isObj(options) ? options : {};
     const api = o.api;
     const dept = clean(o.dept);
-    const S = {output: "auto", locked: false, note: "", busy: false, loaded: false, destroyed: false};
+    const S = {output: "auto", types: [], locked: false, note: "", busy: false, loaded: false, destroyed: false};
 
-    const view = () => ({output: S.output, locked: S.locked || S.busy, note: S.note});
+    const view = () => ({output: S.output, types: S.types, locked: S.locked || S.busy, note: S.note});
 
     // The first paint writes the markup; after that the elements are changed in place, so the select keeps the keyboard's focus.
     function paint() {
@@ -110,6 +122,7 @@
       }
       if (S.destroyed) return false;
       S.output = outputOf(got);
+      S.types = typesOf(got);
       S.loaded = true;
       paint();
       return true;
@@ -163,7 +176,7 @@
     return started;
   }
 
-  const OutputPick = {OPTIONS, QUESTION, STARTED, optionsFor, labelOf, outputOf, html, mount, start};
+  const OutputPick = {AUTO, QUESTION, STARTED, typesOf, optionsFor, labelOf, outputOf, html, mount, start};
   if (typeof module === "object" && module !== null && module.exports) {
     module.exports = OutputPick;
   } else {

@@ -98,12 +98,41 @@ test("budget_cap, which is not set by default, is an empty number field", () => 
   assert.match(inputOf(found.budget_cap)[0], /value=""/);
 });
 
-test("the kind of build is a choice among the six the engine accepts, and the engine decides by default", () => {
+test("the kind of build is a choice among the types the engine lists (output_types), and the team decides by default", () => {
   const row = rows(engineHtml(FOR_ALL, {})).output;
   assert.match(row, /<select\b/);
-  ["auto", "website", "prd", "hld", "lld", "project"].forEach(v => assert.match(row, new RegExp(`<option value="${v}"`)));
+  ["auto", "prd", "hld", "lld", "website", "business_report", "project"].forEach(v => assert.match(row, new RegExp(`<option value="${v}"`)));
   assert.match(row, /<option value="auto" selected>Let the team decide</);
   assert.match(row, /<option value="project">Project work</);
+  assert.match(row, /<option value="business_report">Report</);                      // the label is the data's
+  assert.deepEqual([...row.matchAll(/<option value="([^"]*)"/g)].map(m => m[1]), ["auto", "prd", "hld", "lld", "website", "business_report", "project"]);
+});
+
+test("a type the engine adds is a choice with no change to the page, and one it cannot pin is not offered", () => {
+  const more = clone(FOR_ALL);
+  more.output_types = [{name: "policy_note", label: "Policy note", form: "document", pin: true}, {name: "planner_only", label: "Planner", form: "document", pin: false}];
+  const row = rows(engineHtml(more, {})).output;
+  assert.deepEqual([...row.matchAll(/<option value="([^"]*)"/g)].map(m => m[1]), ["auto", "policy_note"]);
+  assert.match(row, /<option value="policy_note">Policy note</);
+  assert.deepEqual(engineBody(more, {output: "policy_note"}).set, {output: "policy_note"});
+  assert.deepEqual(SettingsView.formProblems(more, {output: "planner_only"}), {output: "This value is not valid."});
+  const none = clone(FOR_ALL);
+  delete none.output_types;                                                          // an answer that does not list its types: the shape is all the page checks
+  assert.deepEqual(engineBody(none, {output: "any_name"}).set, {output: "any_name"});
+  assert.deepEqual(SettingsView.formProblems(none, {output: "Not A Name"}), {output: "This value is not valid."});
+  assert.deepEqual([...rows(engineHtml(none, {})).output.matchAll(/<option value="([^"]*)"/g)].map(m => m[1]), ["auto"]);
+});
+
+test("the builder time limit is a number field with its label and hint (D169), and 0 means no limit", () => {
+  const row = rows(engineHtml(FOR_ALL, {})).builder_timeout;
+  assert.match(row, /<label class="setlabel" for="setf-builder_timeout">Builder time limit \(seconds\)<\/label>/);
+  assert.match(inputOf(row)[0], /type="number" step="any"/);
+  assert.match(inputOf(row)[0], /value="600"/);
+  assert.match(row, /A builder&#39;s AI call that runs longer is stopped and tried once more; 0 means no limit/);
+  assert.deepEqual(engineBody(FOR_ALL, {builder_timeout: "0"}).set, {builder_timeout: 0});
+  assert.deepEqual(engineBody(FOR_ALL, {builder_timeout: "90.5"}).set, {builder_timeout: 90.5});
+  assert.deepEqual(engineBody(FOR_ALL, {builder_timeout: "600"}), {set: {}, unset: []});
+  assert.deepEqual(SettingsView.formProblems(FOR_ALL, {builder_timeout: "slow"}), {builder_timeout: "Write a number."});
 });
 
 test("the template library flag says what the catalog's By run list shows while it is off (D142)", () => {

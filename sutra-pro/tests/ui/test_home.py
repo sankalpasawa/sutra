@@ -741,10 +741,10 @@ def test_a_connector_event_refetches_the_health_once(browser, fake):
 def test_the_engine_group_shows_editable_fields_and_locked_ones_read_only(browser, fake):
     load(browser, fake)
     open_settings(browser, "engine")
-    browser.wait_for("document.querySelectorAll('#set-engine .setfield').length === 31")          # the 31 settings of engine.json (`workspace`, D127, was the 31st)
+    browser.wait_for("document.querySelectorAll('#set-engine .setfield').length === 32")          # the 32 settings of engine.json (`workspace`, D127, was the 31st; `builder_timeout`, D169, is the 32nd)
     assert browser.count('.setfield[data-locked="false"] input[type="checkbox"]') == 9          # rates slim memory realization change board artifact_schema template_library fixes
     assert browser.count('.setfield[data-locked="false"] select') == 2                          # output and workspace
-    assert browser.count('.setfield[data-locked="false"] input[type="number"]') == 10
+    assert browser.count('.setfield[data-locked="false"] input[type="number"]') == 11                          # ... and the builder time limit (D169)
     assert browser.count('.setfield[data-locked="true"]') == 10
     assert browser.count('.setfield[data-locked="true"] input, .setfield[data-locked="true"] select') == 0
     browser.wait_for("document.querySelector('.setfield[data-locked=true] .setlock').textContent.indexOf('/data/sutra-pro/engine.json') >= 0")      # the fake's data folder, read from About's info

@@ -1,8 +1,9 @@
 """The Template bases and their pure checks (library design 9.2; WP L7), ported from J2's j2_template_lib (baseline 33aeeda).
 
-Parity data: tests/library/fixtures/artifacts/ holds J2's five committed templates/<artifact>/generic.json files and four
-templates stored in J2's library/ (spec.json, schema.json, meta.json), copied by build_artifact_cases.py. The library must
-rebuild the generic files exactly, give a stored spec the sha J2 gave it and its transport schema J2's schema.json.
+Parity data: tests/library/fixtures/artifacts/ holds J2's five committed templates/<artifact>/generic.json files (a frozen
+copy, the test data of the generic layer: the library holds no generic of its own, D171) and four templates stored in J2's
+library/ (spec.json, schema.json, meta.json), copied by build_artifact_cases.py. The library must accept a generic file's
+entries, give a stored spec the sha J2 gave it and its transport schema J2's schema.json.
 One declared difference: a one-value enum (`facts_used` narrowed to one fact) stays a constraint in the transport schema
 (L1 keeps `const` as an enum; J2 dropped it); the thread-filter test shows it is the only difference."""
 import copy
@@ -13,16 +14,33 @@ import pytest
 from pydantic import ValidationError
 
 from sutra_app.library import templates as T
-from sutra_app.library.artifacts import SECTION_MODELS, RULES
 from sutra_app.library.base import aliased_fields, unbounded_fields
 from sutra_app.library.gate import GATE, GateError
 from sutra_app.library.registry import REGISTRY, is_transport_safe, schema_sha
 
 FIX = Path(__file__).parent / "fixtures" / "artifacts"
 ENGINE_TEMPLATES = Path(__file__).resolve().parents[2] / "sutra_app" / "engine" / "templates"      # the vendored generics
-SECTIONS = [(a, s) for a, by in SECTION_MODELS.items() for s in by]
+# the names a reply may leave out in the five frozen generic files (J2's `reply_optional`, which the generic.json of that pin
+# did not carry): test data, since the library holds no such list
+REPLY_OPTIONAL = frozenset({
+    "assumptions", "google_fonts_url", "notes", "window", "target", "validation", "page", "head", "anchor", "html",
+    "selectors_used", "facts_used", "implements", "covers", "goals", "actions", "needs", "responsive_rules",
+    "accessibility_rules", "out_of_scope", "risks", "data_flows", "files"})
+GENERIC_FILES = {p.parent.name: json.loads(p.read_text(encoding="utf-8")) for p in sorted((FIX / "generic").glob("*/generic.json"))}
+SECTIONS = [(a, e["section"]) for a, f in GENERIC_FILES.items() for e in f["templates"]]
 STORED = ["prd/requirements/still-point-yoga-requirements", "hld/components/still-point-yoga-components",
           "lld/form-fields/still-point-yoga-form-fields", "website/section/thread-filter"]
+
+
+def generic(artifact, section):
+    """The GenericTemplate of one entry of the frozen generic.json of `artifact` (test data)."""
+    entry = next(e for e in GENERIC_FILES[artifact]["templates"] if e["section"] == section)
+    return T.GenericTemplate.model_validate({k: v for k, v in entry.items() if k != "schema_sha"})
+
+
+def keeps(data):
+    """What `keeps_problems` says of a prd Requirements spec against its generic (the generic is the caller's, D171)."""
+    return T.keeps_problems(generic("prd", "Requirements"), T.SpecialisedTemplate.model_validate(data))
 
 
 def stored(rel):
@@ -60,43 +78,18 @@ def one_error(data) -> str:
     return got[0]
 
 
-# ---------------------------------------------------------------- the generic layer equals J2's
-@pytest.mark.parametrize("artifact", T.ARTIFACTS)
-def test_generic_file_rebuilds_j2s_committed_file(artifact):
-    committed = json.loads((FIX / "generic" / artifact / "generic.json").read_text(encoding="utf-8"))
-    made = T.generic_file(artifact)
-    assert made["templates"] == committed["templates"]
-    assert {k: v for k, v in made.items() if k not in ("templates", "from")} == {k: v for k, v in committed.items() if k not in ("templates", "from")}
-
-
-@pytest.mark.parametrize("artifact,section", SECTIONS)
-def test_a_generic_template_is_built_from_its_model_and_rules(artifact, section):
-    g = T.generic(artifact, section)
-    model = SECTION_MODELS[artifact][section]
-    assert (g.kind, g.name, g.version, g.rules) == ("generic", model.template(), 1, RULES[(artifact, section)])
+# ---------------------------------------------------------------- the generic layer is J2's data, not the library's
+@pytest.mark.parametrize("artifact,section", SECTIONS, ids=[f"{a}/{s}" for a, s in SECTIONS])
+def test_every_entry_of_a_frozen_generic_file_is_a_generic_template(artifact, section):
+    g = generic(artifact, section)
+    assert (g.kind, g.artifact, g.section, g.version) == ("generic", artifact, section, 1)
     assert g.sha == g.compute_sha() and len(g.sha) == 64
-    assert [f.name for f in g.fields] == [f.alias or n for n, f in model.model_fields.items()]
     assert g.model_dump()["kind"] == "generic" and GATE.check("template", g).kind == "generic"
 
 
-def test_generic_says_none_when_there_is_no_model():
-    assert T.generic("prd", "Nothing") is None and T.generic("nothing", "Problem") is None
-
-
-def test_from_model_reads_types_enums_nullables_and_parts():
-    fields, objects = T.from_model(SECTION_MODELS["design"]["Style guide"])
-    by = {f.name: f for f in fields}
-    assert (by["palette"].type, by["palette"].required) == ("Palette", True)
-    assert (by["notes"].required, by["notes"].type) == (False, "string")
-    assert [o.name for o in objects] == ["Palette", "Fonts", "Spacing", "Buttons"]
-    fonts = {f.name: f for f in objects[1].fields}
-    assert (fonts["google_fonts_url"].nullable, fonts["google_fonts_url"].type) == (True, "string")
-    req = {o.name: o for o in T.from_model(SECTION_MODELS["prd"]["Requirements"])[1]}["Requirement"]
-    assert {f.name: f for f in req.fields}["priority"].enum == ["must", "should", "could"]
-    hosting = {f.name: f for f in T.from_model(SECTION_MODELS["hld"]["Hosting and deployment"])[0]}["hosting"]
-    assert hosting.type == "Hosting" and hosting.required is True
-    flow = {o.name: o for o in T.from_model(SECTION_MODELS["hld"]["Data flow"])[1]}["DataFlow"]
-    assert [f.name for f in flow.fields][0] == "from"                          # the wire key, not from_
+def test_the_library_holds_no_generic_layer_of_its_own():
+    for gone in ("generic", "generic_file", "write_generic", "generic_drift", "from_model", "templates_dir", "ARTIFACTS"):
+        assert not hasattr(T, gone), gone
 
 
 def test_a_generic_spec_of_j2_is_accepted_and_written_back_as_j2s_file():
@@ -106,29 +99,50 @@ def test_a_generic_spec_of_j2_is_accepted_and_written_back_as_j2s_file():
     assert T.spec_json(g) == plain and g.schema_version == 1
 
 
-# ---------------------------------------------------------------- the Document generics of J2 sync 4 (the whole PRD, HLD or LLD)
+# ---------------------------------------------------------------- the Document generics (the whole PRD, HLD or LLD)
+# keys of a generic.json ENTRY that are J2's own: how J2 builds its models, checks and rendering. The library's closed
+# GenericTemplate is the template itself (fields, objects, rules), which is what J2's own runtime GenericTemplate is.
+J2_ENTRY_ONLY = ("sha", "schema_sha", "render", "model", "conditions", "fact_fields", "reply_optional", "requires_one_of")
+
+
+def plain_entry(data, entry):
+    """The library's GenericTemplate form of a generic.json entry: J2's own keys set aside, and for the Document entry (which
+    names the section models' objects without listing them) the objects taken from the sections, as J2 does."""
+    plain = {k: v for k, v in entry.items() if k not in J2_ENTRY_ONLY}
+    if "objects" not in plain:
+        merged = {}
+        for other in data["templates"]:
+            for obj in other.get("objects") or []:
+                merged.setdefault(obj["name"], obj)
+            if other.get("model") and other["section"] != entry["section"]:           # a section's own model is an object here
+                merged.setdefault(other["model"], {"name": other["model"], "fields": other["fields"]})
+        plain["objects"] = list(merged.values())
+    plain.setdefault("rules", [])
+    return plain
+
+
 @pytest.mark.parametrize("artifact", ["prd", "hld", "lld"])
 def test_the_document_generic_of_a_prd_hld_or_lld_loads_through_the_library_models(artifact):
-    """agent-views/1: the whole document as one object, the last entry of the vendored templates/<artifact>/generic.json. The library's
-    closed GenericTemplate holds it once the two keys that are J2's own are set aside: `schema_sha` (derived, as for every section) and
-    `render` (the renderer's layout, which no library model has). J2's sha is the library's own."""
+    """agent-views/1: the whole document as one object, the last entry of the vendored templates/<artifact>/generic.json."""
     data = json.loads((ENGINE_TEMPLATES / artifact / "generic.json").read_text(encoding="utf-8"))
     document = data["templates"][-1]
     assert [x["section"] for x in data["templates"]].count("Document") == 1 and document["section"] == "Document"
-    plain = {k: v for k, v in document.items() if k not in ("schema_sha", "render")}
+    plain = plain_entry(data, document)
     g = T.GenericTemplate.model_validate(plain)
+    g = g.evolve(sha=g.compute_sha())
     assert (g.kind, g.artifact, g.section, g.version) == ("generic", artifact, "Document", 1)
-    assert g.sha == g.compute_sha() == document["sha"] and T.spec_json(g) == plain
-    assert GATE.check("template", plain).kind == "generic"
-    render = document["render"]
-    assert (render["format"], render["file"], render["title"].startswith(f"# {artifact.upper()}/1")) == ("markdown", f"{artifact}.md", True)
-    assert [s["template"] for s in render["sections"]] == [x["name"] for x in data["templates"][:-1]], "one rendered section per section template"
+    assert T.spec_json(g) == {**plain, "sha": g.sha} and len(g.sha) == 64
+    assert GATE.check("template", {**plain, "sha": g.sha}).kind == "generic"
 
 
-@pytest.mark.parametrize("artifact", ["design", "website"])
-def test_a_design_or_website_generic_has_no_document_entry(artifact):
+@pytest.mark.parametrize("artifact", sorted(p.name for p in ENGINE_TEMPLATES.iterdir() if (p / "generic.json").is_file()))
+def test_every_generic_entry_of_the_vendored_tree_is_a_generic_template(artifact):
+    """Every type's generic.json (a type J2 adds later too: the glob names none) holds entries the library can read."""
     data = json.loads((ENGINE_TEMPLATES / artifact / "generic.json").read_text(encoding="utf-8"))
-    assert "Document" not in [x["section"] for x in data["templates"]]
+    assert data["artifact"] == artifact
+    for entry in data["templates"]:
+        g = T.GenericTemplate.model_validate(plain_entry(data, entry))
+        assert (g.artifact, g.section) == (artifact, entry["section"])
 
 
 # ---------------------------------------------------------------- the registry
@@ -174,14 +188,15 @@ def test_a_stored_j2_template_is_accepted_and_keeps_its_sha(rel):
 def test_the_transport_schema_of_a_stored_template_is_j2s(rel):
     data, schema, meta = stored(rel)
     t = T.SpecialisedTemplate.model_validate(data)
-    assert T.transport(t) == schema and T.transport(data) == schema
-    assert schema_sha(T.transport(t)) == meta["schema_sha"]
-    assert is_transport_safe(T.transport(t)) == []
+    gen = generic(data["artifact"], data["section"])                  # the caller holds the generic: its fields are not "added"
+    assert T.transport(t, REPLY_OPTIONAL, gen) == schema and T.transport(data, REPLY_OPTIONAL, gen) == schema
+    assert schema_sha(T.transport(t, REPLY_OPTIONAL, gen)) == meta["schema_sha"]
+    assert is_transport_safe(T.transport(t, REPLY_OPTIONAL, gen)) == []
 
 
 def test_a_one_value_enum_stays_a_constraint_where_j2_lost_it():
     data, schema, meta = stored(STORED[3])
-    mine = T.transport(data)
+    mine = T.transport(data, REPLY_OPTIONAL, generic(data["artifact"], data["section"]))
     items = mine["properties"]["facts_used"]["items"]
     assert items == {"type": "string", "enum": ["Visitors can filter products by size and price"]}
     del items["enum"]
@@ -293,7 +308,7 @@ def test_resolve_follows_fields_objects_and_lists():
     t = T.SpecialisedTemplate.model_validate(spec())
     for path in ("requirements", "requirements[]", "requirements[].priority", "facts_used[]", "classes[].day", "assumptions[]"):
         assert T.resolve(t, path) is None, path
-    g = T.generic("design", "Style guide")
+    g = generic("design", "Style guide")
     for path in ("palette.primary", "palette.*", "fonts.google_fonts_url", "buttons.primary", "card", "notes"):
         assert T.resolve(g, path) is None, path
 
@@ -333,7 +348,7 @@ def test_a_rule_path_outside_the_template_is_a_template_error_with_the_rule_posi
 
 def test_rule_problems_takes_specs_and_j2_dicts_and_adds_the_path_check():
     t = T.SpecialisedTemplate.model_validate(spec())
-    shipped = list(RULES[("prd", "Requirements")])
+    shipped = list(generic("prd", "Requirements").rules)
     assert T.rule_problems(t, shipped) == []
     assert T.rule_problems(t, [r.as_j2() for r in shipped]) == []
     out = T.rule_problems(t, [{"rule": "enum", "path": "x", "name": "n"}, "junk", {"rule": "nope"},
@@ -355,56 +370,53 @@ def test_extends_names_the_generic_of_its_section():
     assert T.generic_ref("hld", "Hosting and deployment") == "hld/hosting-and-deployment@generic/1"
 
 
-def test_there_must_be_a_generic_to_extend():
-    out = spec(section="Nothing", extends="prd/nothing@generic/1")
-    assert one_error(out).endswith("there is no generic template for prd 'Nothing'")
-
-
-def test_the_artifact_is_one_of_five():
-    assert any("literal_error" in x or "Input should be" in x for x in refused(spec(artifact="doc")))
+def test_the_artifact_is_a_name_by_shape_and_no_list():
+    assert any("String should match pattern" in x for x in refused(spec(artifact="Doc")))
+    assert any("String should match pattern" in x for x in refused(spec(artifact="a")))
+    assert refused(spec(artifact="business_report", extends="business_report/requirements@generic/1")) == []     # any name by shape
 
 
 def test_keeps_a_required_field_of_the_generic():
     out = spec()
     out["fields"] = [f for f in out["fields"] if f["name"] != "requirements"]
-    assert one_error(out).endswith("requirements: the generic's required field 'requirements' is dropped")
+    assert keeps(out) == ["requirements: the generic's required field 'requirements' is dropped"]
     out = spec()
     out["fields"][0]["required"] = False
-    assert one_error(out).endswith("requirements: required in the generic, so it stays required")
+    assert keeps(out) == ["requirements: required in the generic, so it stays required"]
     out = spec()
     out["fields"][0]["type"] = "list[string]"
-    assert one_error(out).endswith("requirements: type 'list[string]' doesn't keep the generic's 'list[Requirement]'")
+    assert keeps(out) == ["requirements: type 'list[string]' doesn't keep the generic's 'list[Requirement]'"]
 
 
 def test_an_optional_field_of_the_generic_may_be_dropped():
     out = spec()
     out["fields"] = [f for f in out["fields"] if f["name"] != "assumptions"]
-    assert refused(out) == []
+    assert keeps(out) == [] and refused(out) == []
 
 
 def test_an_enum_may_only_narrow_the_generics():
     out = spec()
     out["objects"][0]["fields"][2]["enum"] = ["must", "should"]
-    assert refused(out) == []
+    assert keeps(out) == []
     out["objects"][0]["fields"][2]["enum"] = ["must", "never"]
-    assert one_error(out).endswith("requirements.priority: the enum may only narrow the generic's (must, should, could)")
+    assert keeps(out) == ["requirements.priority: the enum may only narrow the generic's (must, should, could)"]
     out["objects"][0]["fields"][2]["enum"] = None
-    assert one_error(out).endswith("requirements.priority: the enum may only narrow the generic's (must, should, could)")
+    assert keeps(out) == ["requirements.priority: the enum may only narrow the generic's (must, should, could)"]
 
 
 def test_the_parts_of_an_object_are_kept_too():
     out = spec()
     out["objects"][0]["fields"] = [f for f in out["objects"][0]["fields"] if f["name"] != "statement"]
-    assert one_error(out).endswith("requirements.statement: the generic's required field 'statement' is dropped")
+    assert keeps(out) == ["requirements.statement: the generic's required field 'statement' is dropped"]
     out = spec()
     out["objects"][0]["name"] = "Req"
     out["fields"][0]["type"] = "list[Req]"
     out["objects"][0]["fields"][0]["required"] = False
-    assert one_error(out).endswith("requirements.id: required in the generic, so it stays required")
+    assert keeps(out) == ["requirements.id: required in the generic, so it stays required"]
 
 
 def test_keeps_problems_on_models_directly():
-    gen = T.generic("prd", "Requirements")
+    gen = generic("prd", "Requirements")
     sp = T.SpecialisedTemplate.model_validate(spec())
     assert T.keeps_problems(gen, sp) == []
     raw = sp.model_copy(update={"fields": [f for f in sp.fields if f.name != "requirements"]})       # not re-checked: model_copy
@@ -484,8 +496,9 @@ def test_a_field_the_template_added_as_optional_is_optional_in_the_transport_sch
     t = T.SpecialisedTemplate.model_validate(with_fields(field("extra_note"), field("must_have", required=True)))
     schema = T.transport(t)
     assert "extra_note" not in schema["required"] and "must_have" in schema["required"]
-    assert "requirements" in schema["required"] and "assumptions" not in schema["required"]     # the generic's own optional set
+    assert "requirements" in schema["required"] and "assumptions" not in schema["required"]     # not required in the template
     assert "facts_used" not in schema["required"]
+    assert "requirements" not in T.transport(t, {"requirements"})["required"]               # a name the generic's reply_optional gives
 
 
 def test_an_added_optional_part_field_is_optional_in_the_parts_schema_too():
@@ -497,10 +510,10 @@ def test_an_added_optional_part_field_is_optional_in_the_parts_schema_too():
 
 def test_the_transport_schema_of_a_generic_template_is_safe_and_the_same_from_a_dict():
     for artifact, section in SECTIONS:
-        g = T.generic(artifact, section)
-        assert is_transport_safe(T.transport(g)) == []
-        assert T.transport(g.model_dump()) == T.transport(g)
-        assert list(T.transport(g)["properties"]) == [f.name for f in g.fields]
+        g = generic(artifact, section)
+        assert is_transport_safe(T.transport(g, REPLY_OPTIONAL, g)) == []
+        assert T.transport(g.model_dump(), REPLY_OPTIONAL, g) == T.transport(g, REPLY_OPTIONAL, g)
+        assert list(T.transport(g, REPLY_OPTIONAL, g)["properties"]) == [f.name for f in g.fields]
 
 
 # ---------------------------------------------------------------- validate: the template, then the generic model
@@ -512,83 +525,29 @@ def test_validate_gives_the_data_back_as_a_dict_or_the_errors():
     assert got is None and errors and errors[0].startswith("facts_used.0:")
 
 
-def test_validate_also_holds_the_generic_models_own_shape_rules():
-    """The template makes `html` optional; the website section model still needs html or head."""
+def test_validate_holds_the_templates_shape_and_leaves_requires_one_of_to_j2():
+    """The template makes `html` optional. J2's generic entry says "html or head" (`requires_one_of`): J2 runs that check
+    on its own file, the library has no copy of it, so a section without either passes here."""
     data, _, _ = stored(STORED[3])
     got, errors = T.validate(data, {"id": "S1", "html": "<p>x</p>"})
     assert errors == [] and got["html"] == "<p>x</p>"
-    got, errors = T.validate(data, {"id": "S1"})
-    assert got is None and errors == ["section: Value error, a section must have html, or head tags when it writes only those"]
+    assert T.validate(data, {"id": "S1"})[1] == []
+    got, errors = T.validate(data, {"id": 5})
+    assert got is None and errors and errors[0].startswith("id:")
+
+
+def test_enum_casing_is_normalised_from_the_templates_own_enums():
+    model = T.build_model(spec())
+    assert model.ENUMS["priority"] == ["must", "should", "could"]
+    assert T.normalise(model, {"requirements": [{"priority": " MUST "}]}) == {"requirements": [{"priority": "must"}]}
+    assert T.normalise(model, "junk") == "junk"
+    assert T.errors_of(ValueError("one\ntwo")) == ["one"]
 
 
 def test_validate_takes_a_generic_template_and_a_model():
-    g = T.generic("prd", "Goals")
+    g = generic("prd", "Goals")
     assert T.validate(g, {"goals": [{"id": "G1", "statement": "x"}]})[1] == []
     assert T.validate(g.model_dump(), {"goals": "G1"})[1] == ["goals: Input should be a valid list"]
-
-
-# ---------------------------------------------------------------- generic.json files: write and drift
-def test_write_generic_writes_five_files_and_drift_finds_none(tmp_path):
-    written = T.write_generic(tmp_path)
-    assert [Path(p).relative_to(tmp_path).as_posix() for p in written] == [f"{a}/generic.json" for a in T.ARTIFACTS]
-    assert T.generic_drift(tmp_path) == []
-    text = (tmp_path / "prd" / "generic.json").read_text(encoding="utf-8")
-    assert text.endswith("}\n") and json.loads(text) == T.generic_file("prd")
-
-
-def test_drift_names_what_differs(tmp_path):
-    T.write_generic(tmp_path)
-    path = tmp_path / "lld" / "generic.json"
-    data = json.loads(path.read_text(encoding="utf-8"))
-    data["templates"][1]["description"] = "changed"
-    data["templates"][2]["sha"] = "0" * 64
-    path.write_text(json.dumps(data), encoding="utf-8")
-    assert T.generic_drift(tmp_path) == [
-        "lld/Interactive elements: generic.json differs from the models/RULES in description",
-        "lld/Form fields: generic.json differs from the models/RULES in sha"]
-    data["templates"] = data["templates"][:3]
-    data["templates"][1]["description"] = T.generic_file("lld")["templates"][1]["description"]
-    data["templates"][2]["sha"] = T.generic_file("lld")["templates"][2]["sha"]
-    path.write_text(json.dumps(data), encoding="utf-8")
-    assert T.generic_drift(tmp_path)[0].startswith("lld/File structure: generic.json differs")
-
-
-def test_drift_when_only_the_header_differs(tmp_path):
-    T.write_generic(tmp_path)
-    path = tmp_path / "hld" / "generic.json"
-    data = json.loads(path.read_text(encoding="utf-8"))
-    data["version"] = 2
-    path.write_text(json.dumps(data), encoding="utf-8")
-    assert T.generic_drift(tmp_path) == ["hld: generic.json differs from the models/RULES"]
-
-
-def test_drift_reports_a_missing_or_unreadable_file(tmp_path):
-    T.write_generic(tmp_path)
-    (tmp_path / "prd" / "generic.json").unlink()
-    (tmp_path / "design" / "generic.json").write_text("{not json", encoding="utf-8")
-    out = T.generic_drift(tmp_path)
-    assert out == [f"{tmp_path / 'prd' / 'generic.json'} is missing", f"{tmp_path / 'design' / 'generic.json'} is not JSON"]
-
-
-def test_the_templates_dir_is_the_argument_then_the_environment_then_docs(monkeypatch, tmp_path):
-    monkeypatch.delenv("SUTRA_TEMPLATES_DIR", raising=False)
-    default = T.templates_dir()
-    assert default.parts[-3:] == ("docs", "schemas", "templates") and (default.parents[2] / "sutra_app").is_dir()
-    monkeypatch.setenv("SUTRA_TEMPLATES_DIR", str(tmp_path / "env"))
-    assert T.templates_dir() == tmp_path / "env"
-    assert T.templates_dir(tmp_path / "arg") == tmp_path / "arg"
-    T.write_generic()
-    assert (tmp_path / "env" / "prd" / "generic.json").is_file()
-
-
-def test_the_generated_files_of_the_checkout_do_not_drift(monkeypatch):
-    """docs/schemas/templates is written by write_generic (the schema export of L8 calls it); once it exists it must match."""
-    monkeypatch.delenv("SUTRA_TEMPLATES_DIR", raising=False)
-    directory = T.templates_dir()
-    if not directory.is_dir():
-        assert len(T.generic_drift()) == 5          # not generated yet: every file is reported missing
-        return
-    assert T.generic_drift() == []
 
 
 # ---------------------------------------------------------------- a run's own copy (J2 33aeeda)
@@ -642,7 +601,7 @@ def test_saved_is_the_relative_path_of_a_copy_inside_the_run(saved):
 
 
 def test_a_decision_is_closed_and_typed():
-    for bad in ({"action": "reuse"}, {"kind": "special"}, {"artifact": "doc"}, {"extra": 1}, {"version": 0}, {"attempts": 0}, {"score": "high"}):
+    for bad in ({"action": "reuse"}, {"kind": "special"}, {"artifact": "Doc"}, {"extra": 1}, {"version": 0}, {"attempts": 0}, {"score": "high"}):
         with pytest.raises(ValidationError):
             T.TemplateDecision.model_validate({**DECISION, **bad})
 
@@ -669,7 +628,7 @@ def test_templates_json_is_a_checked_file_that_writes_its_schema_key_back():
 
 
 def test_meta_of_a_generic_copy_says_kind_generic_and_has_no_uses():
-    g = T.generic("prd", "Goals")
+    g = generic("prd", "Goals")
     meta = {"schema": "template-library/1", "name": g.name, "version": 1, "kind": "generic", "sha": g.sha, "schema_sha": "a" * 64,
             "model_sha": "b" * 64, "used_by": []}
     m = T.TemplateMeta.model_validate(meta)

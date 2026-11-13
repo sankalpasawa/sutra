@@ -53,13 +53,7 @@
           "type": "string"
         },
         "artifact": {
-          "enum": [
-            "prd",
-            "hld",
-            "lld",
-            "design",
-            "website"
-          ],
+          "pattern": "^[a-z][a-z0-9_]{1,40}$",
           "title": "Artifact",
           "type": "string"
         },

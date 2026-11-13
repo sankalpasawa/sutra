@@ -194,7 +194,8 @@ def test_a_document_audit_entry_names_its_output_and_what_audit_read():
                 read="Read prd.md v6: Problem (15 words); Users (31 words)")
     model = GATE.check("evaluation", doc).model
     assert (model.output, model.mechanical, model.conditions[1].severity) == ("prd", {}, "warn")
-    assert ("output", "literal_error") in problems(ResultEvaluation, {**doc, "output": "pdf"})
+    assert ("output", "string_pattern_mismatch") in problems(ResultEvaluation, {**doc, "output": "PDF"})      # a name by shape
+    assert GATE.check("evaluation", {**doc, "output": "business_report"}).model.output == "business_report"
 
 
 def test_an_entry_can_carry_the_lld_comparison_and_what_the_requester_accepted():

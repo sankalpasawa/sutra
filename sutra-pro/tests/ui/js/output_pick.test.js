@@ -11,7 +11,13 @@ const SOURCE = path.resolve(__dirname, "../../../sutra_app/ui/static/js/output_p
 const OP = require(SOURCE);
 
 const flush = () => new Promise(r => setImmediate(r));
-const settings = (nextOutput, effective = "auto") => ({schema: "engine-settings/1", global: {}, effective: {output: effective}, next_run: nextOutput === undefined ? undefined : {output: nextOutput}});
+// The types the engine lists (`output_types`, D166): test data, in the data's order. The page names none of them; `business_report` is one it has never heard of
+// and `planner_only` cannot be pinned.
+const TYPES = [{name: "website", label: "Website", form: "page", pin: true}, {name: "prd", label: "PRD document", form: "document", pin: true},
+  {name: "business_report", label: "Business report", form: "document", pin: true}, {name: "planner_only", label: "Planner only", form: "document", pin: false},
+  {name: "project", label: "Project work", form: "document", pin: true}];
+const settings = (nextOutput, effective = "auto", types = TYPES) => ({schema: "engine-settings/1", global: {}, effective: {output: effective}, output_types: types,
+  next_run: nextOutput === undefined ? undefined : {output: nextOutput}});
 const refused = (status, message = "") => Object.assign(new Error(message || "The app answered " + status + "."), {status, code: "http_" + status});
 
 function fakeApi({get = settings("auto"), post = null} = {}) {
@@ -49,21 +55,35 @@ const pick = async (host, value) => { host.select.value = value; host.listeners.
 
 // ---- pure parts --------------------------------------------------------------------------------------------------------------------------
 
-test("the four things a team can make, in the order of the start page", () => {
-  assert.deepEqual(OP.optionsFor("auto"), [["auto", "Let the team decide"], ["website", "Website"], ["prd", "PRD document"], ["project", "Project work"]]);
-  assert.deepEqual(OP.optionsFor("").map(o => o[0]), ["auto", "website", "prd", "project"]);
-  assert.deepEqual(OP.optionsFor(null).map(o => o[0]), ["auto", "website", "prd", "project"]);
+test("the choices are Let the team decide, then every type the engine says can be pinned, in the data's order and with the data's labels", () => {
+  assert.deepEqual(OP.optionsFor("auto", TYPES), [["auto", "Let the team decide"], ["website", "Website"], ["prd", "PRD document"],
+    ["business_report", "Business report"], ["project", "Project work"]]);
+  assert.deepEqual(OP.optionsFor("", TYPES).map(o => o[0]), ["auto", "website", "prd", "business_report", "project"]);
+  assert.deepEqual(OP.optionsFor(null, TYPES).map(o => o[0]), ["auto", "website", "prd", "business_report", "project"]);
   assert.equal(OP.QUESTION, "What should we make?");
+  assert.deepEqual(OP.optionsFor("auto", []), [["auto", "Let the team decide"]]);           // no list, no type: the page names none of its own
+  assert.deepEqual(OP.optionsFor("auto"), [["auto", "Let the team decide"]]);
+  assert.deepEqual(OP.optionsFor("auto", [{name: "x_one", pin: true}]), [["auto", "Let the team decide"], ["x_one", "x_one"]]);       // a missing label is the name
 });
 
-test("a choice outside the four is added after them, so it is shown and not lost", () => {
-  assert.deepEqual(OP.optionsFor("hld").slice(4), [["hld", "HLD document"]]);
-  assert.deepEqual(OP.optionsFor("lld").slice(4), [["lld", "LLD document"]]);
-  assert.deepEqual(OP.optionsFor("slides").slice(4), [["slides", "slides"]]);
-  assert.equal(OP.optionsFor("hld").length, 5);
-  assert.equal(OP.optionsFor("prd").length, 4);
-  OP.optionsFor("x").push(["y", "y"]);
-  assert.equal(OP.optionsFor("x").length, 5);                                      // the list is a copy: nothing a caller does changes the four
+test("typesOf reads output_types from the settings answer and drops what has no name", () => {
+  assert.deepEqual(OP.typesOf(settings("auto")).map(t => t.name), ["website", "prd", "business_report", "planner_only", "project"]);
+  assert.deepEqual(OP.typesOf({output_types: [null, {label: "x"}, {name: " ok_one ", label: " Ok ", form: "page", pin: true}, "junk"]}),
+    [{name: "ok_one", label: "Ok", form: "page", pin: true}]);
+  assert.deepEqual(OP.typesOf({}), []);
+  assert.deepEqual(OP.typesOf(null), []);
+  assert.deepEqual(OP.typesOf({output_types: "x"}), []);
+});
+
+test("a choice that is not among the types is added after them, so it is shown and not lost", () => {
+  assert.deepEqual(OP.optionsFor("planner_only", TYPES).slice(5), [["planner_only", "Planner only"]]);          // known, but not pinnable: shown with its label
+  assert.deepEqual(OP.optionsFor("gone_type", TYPES).slice(5), [["gone_type", "gone_type"]]);
+  assert.equal(OP.optionsFor("prd", TYPES).length, 5);
+  OP.optionsFor("x", TYPES).push(["y", "y"]);
+  assert.equal(OP.optionsFor("x", TYPES).length, 6);                                 // the list is a copy: nothing a caller does changes the data
+  assert.equal(OP.labelOf("business_report", TYPES), "Business report");
+  assert.equal(OP.labelOf("auto", TYPES), "Let the team decide");
+  assert.equal(OP.labelOf("nope", TYPES), "nope");
 });
 
 test("what the next run would make comes from next_run, else from the team's default, else it is auto", () => {
@@ -77,18 +97,20 @@ test("what the next run would make comes from next_run, else from the team's def
 });
 
 test("the markup is a label tied to a select, with the choice in force marked and the status line empty", () => {
-  const html = OP.html({output: "prd"});
+  const html = OP.html({output: "prd", types: TYPES});
   assert.match(html, /^<label for="outsel">What should we make\?<\/label><select id="outsel" class="outsel" aria-describedby="soutnote">/);
   assert.match(html, /<option value="auto">Let the team decide<\/option>/);
   assert.match(html, /<option value="prd" selected>PRD document<\/option>/);
   assert.equal((html.match(/ selected>/g) || []).length, 1);
   assert.match(html, /<span class="soutnote" id="soutnote" role="status" hidden><\/span>$/);
   assert.match(OP.html({}), /<option value="auto" selected>/);
-  assert.match(OP.html({output: "hld"}), /<option value="hld" selected>HLD document<\/option>/);
+  assert.match(OP.html({output: "gone_type", types: TYPES}), /<option value="gone_type" selected>gone_type<\/option>/);
+  assert.match(OP.html({output: "auto", types: TYPES}), /<option value="business_report">Business report<\/option>/);
+  assert.doesNotMatch(OP.html({output: "auto", types: TYPES}), /planner_only/);
 });
 
 test("a locked select is disabled and a note is said in the status line", () => {
-  const html = OP.html({output: "auto", locked: true, note: OP.STARTED});
+  const html = OP.html({output: "auto", types: TYPES, locked: true, note: OP.STARTED});
   assert.match(html, /<select id="outsel" class="outsel" aria-describedby="soutnote" disabled>/);
   assert.match(html, /<span class="soutnote" id="soutnote" role="status">The team has started; choose before the first message\.<\/span>/);
   assert.equal(OP.STARTED, "The team has started; choose before the first message.");
@@ -222,13 +244,32 @@ test("a pick that is already the choice, or one made while a request is out, sen
   assert.equal(h2.select.disabled, false);
 });
 
-test("a choice outside the four that the engine answers with is shown, not lost", async () => {
+test("a choice outside the engine's list that it answers with is shown, not lost", async () => {
   const host = fakeHost();
-  const handle = OP.mount(host, {api: fakeApi({post: {ok: true, output: "hld"}}), dept: "web"});
+  const handle = OP.mount(host, {api: fakeApi({post: {ok: true, output: "gone_type"}}), dept: "web"});
   await handle.first;
   await pick(host, "prd");
-  assert.equal(host.select.value, "hld");
-  assert.match(host.innerHTML, /<option value="hld" selected>HLD document<\/option>/);
+  assert.equal(host.select.value, "gone_type");
+  assert.match(host.innerHTML, /<option value="gone_type" selected>gone_type<\/option>/);
+});
+
+test("a type the page has never heard of is a choice like any other, because the choices are the engine's answer", async () => {
+  const api = fakeApi({get: settings("auto")});
+  const host = fakeHost();
+  const handle = OP.mount(host, {api, dept: "web"});
+  await handle.first;
+  assert.match(host.innerHTML, /<option value="business_report">Business report<\/option>/);
+  await pick(host, "business_report");
+  assert.deepEqual(api.calls[1], {method: "POST", path: "/api/output?dept=web", body: {type: "business_report"}});
+  assert.equal(host.select.value, "business_report");
+  assert.deepEqual(handle.state(), {output: "business_report", locked: false, note: "", busy: false, loaded: true});
+});
+
+test("a settings answer without output_types leaves only Let the team decide, and what is in force", async () => {
+  const host = fakeHost();
+  const handle = OP.mount(host, {api: fakeApi({get: {effective: {output: "prd"}}}), dept: "web"});
+  await handle.first;
+  assert.deepEqual([...host.innerHTML.matchAll(/<option value="([^"]*)"/g)].map(m => m[1]), ["auto", "prd"]);
 });
 
 test("a destroyed placeholder paints nothing more", async () => {
