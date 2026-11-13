@@ -137,7 +137,7 @@ def test_a_rubric_row_can_be_blocked_by_evidence_or_withdrawn(verdict, passed):
 
 
 @pytest.mark.parametrize("change, where, code", [
-    ({"id": "X-1"}, "id", "string_pattern_mismatch"), ({"id": "R-"}, "id", "string_pattern_mismatch"),
+    ({"id": "X1"}, "id", "string_pattern_mismatch"), ({"id": "R-"}, "id", "string_pattern_mismatch"),
     ({"verdict": "POLICY_CONCERN", "pass": False}, "verdict", "literal_error"),
     ({"verdict": "PASS", "pass": False}, "pass", "value_error"), ({"note": ""}, "note", "value_error"),
     ({"severity": "huge"}, "severity", "literal_error"), ({"colour": 1}, "colour", "extra_forbidden"),
@@ -164,7 +164,7 @@ def test_a_condition_as_code_checks_it():
 
 
 @pytest.mark.parametrize("change, expected", [
-    ({"id": "n1"}, [("id", "string_pattern_mismatch")]), ({"id": "NN1"}, [("id", "string_pattern_mismatch")]),
+    ({"id": "n1"}, [("id", "string_pattern_mismatch")]), ({"id": "NNNNN1"}, [("id", "string_pattern_mismatch")]),
     ({"id": "N"}, [("id", "string_pattern_mismatch")]), ({"severity": "error"}, [("severity", "literal_error")]),
     ({"met": "yes"}, [("met", "bool_type")]), ({"verdict": "PASS"}, [("verdict", "extra_forbidden")]),
     ({"assumptions": ["a"] * 101}, [("assumptions", "too_long")]),

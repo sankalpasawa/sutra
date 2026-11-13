@@ -30,7 +30,7 @@ from .types import NodeId, WorkflowId, clip
 __all__ = [
     "FailureAction", "Resources", "Envelope", "Step", "AIStep", "CodeStep", "AssignmentStep", "Workflow", "TaskWorkflow",
     "DeptWorkflow", "ProposedWorkflow", "RegisteredWorkflow", "Research", "Experiment", "StageId", "ZoneName",
-    "ENVELOPE_KEYS", "WorkflowError", "to_j2", "from_j2", "registered_from_j2",
+    "ENVELOPE_KEYS", "WorkflowError", "to_j2", "from_j2", "check_fields_from_j2", "registered_from_j2",
 ]
 
 FailureAction = Literal["rollback", "escalate", "pause", "abort", "continue"]      # ADR-011's closed five
@@ -355,7 +355,11 @@ def _count(expect: Any) -> int:
     return max(expect, 1) if isinstance(expect, int) and not isinstance(expect, bool) else 1
 
 
-def _check_from_j2(c: Mapping[str, Any]) -> Check:
+def check_fields_from_j2(c: Mapping[str, Any]) -> dict[str, Any]:
+    """J2's check `{text, type, target, expect}` as the fields of a `Check`. A check that already has `template` is the
+    library's own shape and is returned as it is."""
+    if "template" in c:
+        return dict(c)
     template, target, expect = c.get("type"), c.get("target"), c.get("expect")
     expect = expect if isinstance(expect, (bool, int)) else None
     items = [str(x) for x in (target if isinstance(target, list) else [] if target is None else [target]) if str(x)]
@@ -363,7 +367,11 @@ def _check_from_j2(c: Mapping[str, Any]) -> Check:
         args = [*items[:1], str(c.get("file") or _DEFAULT_FILE), str(_count(expect))] if items else []
     else:
         args = items
-    return Check(template=template, args=args, text=str(c.get("text") or ""), expect=expect)
+    return {"template": template, "args": args, "text": str(c.get("text") or ""), "expect": expect}
+
+
+def _check_from_j2(c: Mapping[str, Any]) -> Check:
+    return Check(**check_fields_from_j2(c))
 
 
 def _check_to_j2(check: Check) -> dict[str, Any]:

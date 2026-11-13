@@ -239,13 +239,16 @@ def reply_valid(ev: Evidence, args: tuple[str, ...]) -> Outcome:
     best: Optional[ReplyInvalid] = None
     for kind in [k for k in kinds.split("|") if k]:
         try:
-            _PARSER.parse(family, ev.reply, kind=kind)
+            parsed = _PARSER.parse(family, ev.reply, kind=kind, clip_text=True)
         except ReplyInvalid as exc:
             if best is None or len(exc.violations) < len(best.violations):
                 best = exc
         except RegistryError as exc:
             return _fail(f"{family}/{kind} is not a registered reply: {exc}")
         else:
+            if parsed.clipped:      # D158: a text over its cap is read cut to it, and the cut is a concern on record
+                shown = ", ".join(parsed.clipped[:6]) + (f" and {len(parsed.clipped) - 6} more" if len(parsed.clipped) > 6 else "")
+                return _ok(f"text over its limit, read cut to it: {shown}", changed=tuple(parsed.clipped))
             return _ok("ok")
     if best is None:
         return _fail(f"no reply kind named in {kinds!r}")
