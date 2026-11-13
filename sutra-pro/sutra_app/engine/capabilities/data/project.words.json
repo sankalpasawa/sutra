@@ -1,0 +1,15 @@
+{
+  "_note": "The one word table of the engine (D165, D188 R-2): words that can only mean project work, and what the owner is told they asked about. Whole words, any case; the first entry that matches names the reason, in this order. `weak` entries (bug, source) count only when nothing continues an earlier run. A planner that can choose a host type would retire this file.",
+  "words": [
+    {"pattern": "repositor(?:y|ies)|repos?", "reason": "a repository"},
+    {"pattern": "code\\s?bases?|source\\s+code", "reason": "the codebase"},
+    {"pattern": "pull\\s+requests?|merge\\s+requests?", "reason": "a pull request"},
+    {"pattern": "git|branch(?:es)?|commits?|committ?ed|diffs?", "reason": "git"},
+    {"pattern": "CLAUDE\\.md|AGENTS\\.md", "reason": "the project's instructions file"},
+    {"pattern": "(?:the|my|our|this)\\s+(?:working\\s+|project\\s+)?folder|working\\s+folder", "reason": "your folder"},
+    {"pattern": "(?:the|my|our)\\s+(?:app|application|project|site|website|product)(?:'s|s'?)?\\s+(?:code|source)", "reason": "the app's code"},
+    {"pattern": "source", "reason": "the source", "weak": true},
+    {"pattern": "refactor(?:s|ed|ing)?", "reason": "a refactor"},
+    {"pattern": "bugs?", "reason": "a bug", "weak": true}
+  ]
+}

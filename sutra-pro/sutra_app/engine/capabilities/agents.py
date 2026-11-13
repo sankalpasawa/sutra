@@ -19,6 +19,8 @@ import uuid
 from pathlib import Path
 from typing import Any, Callable, Optional
 
+from ..hooks import AGENT_PURPOSES
+
 try:
     from .base import Capability
 except ModuleNotFoundError as _missing:                    # pragma: no cover  (the registry is merged by another branch: stand alone until then)
@@ -58,7 +60,7 @@ LIVE_FILE = "agent_live.json"
 LIVE_SCHEMA = "agent-live/1"
 LIVE_TAIL = 4000                       # characters of an agent's reply kept (the end of it: what it is writing now)
 LIVE_INTERVAL = 0.25                   # seconds: the file is rewritten at most four times a second
-LIVE_PURPOSES = ("agent_turn", "plan", "judge")      # an agent's own work; a helper call (summary, template, review) is not shown as the agent's
+LIVE_PURPOSES = AGENT_PURPOSES                       # an agent's own work; a helper call (summary, template, review) is not shown as the agent's
 TOOL_CHARS = 200
 
 

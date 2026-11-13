@@ -27,7 +27,7 @@ class EditSpec(Capability):
 
 @pytest.fixture
 def edit_output():
-    types = SimpleNamespace(names=lambda: [], HOST={}, register=lambda entry, extras=None: None)       # the P18 hook, as far as `register` uses it
+    types = SimpleNamespace(names=lambda: [], HOST={}, register=lambda entry, extras=None: None, FORMS=("page", "document"))       # the P18 hook, as far as `register` uses it
     register(SimpleNamespace(j2_types=types), [EditSpec()])
     yield "editing"
     SPECS.pop("editing", None)

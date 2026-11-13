@@ -6,7 +6,7 @@ OBSERVES. The one exception is `system_addendum`, the only hook that can change 
 `node_context_file` names text for a function. A hook that raises is caught by J2 and written to stderr, unless the
 exception carries `fatal = True` or is named `RecordRejected` (the library's strict mode): then the run stops.
 
-    NullHooks    does nothing (J2Run's default)
+    NullHooks    does nothing (J2Run's default); `review_enabled()` is True
     EventHooks   writes the `say` events and the trace lines and wakes the publisher; the base class of the function-node
                  layer `fnodes.layer.FunctionNodeHooks` (WP E6)
 
@@ -28,9 +28,13 @@ from .events import EventWriter, say_event
 
 __all__ = [
     "TurnInfo", "CallInfo", "TurnOutcome", "EngineHooks", "NullHooks", "EventHooks", "is_fatal", "load_validator",
-    "DEFAULT_RECORDS_HOOK", "RECORD_MODES", "ADDENDUM_HEADING",
+    "DEFAULT_RECORDS_HOOK", "RECORD_MODES", "ADDENDUM_HEADING", "AGENT_PURPOSES",
 ]
 
+# The purposes (the `purpose` of a `CallTag`, patch P7) that are an agent's own work: its turn, the plan Adaptation makes, the judge's score. Every other
+# call (summary, template, review, change, chat) is a helper. One definition for the capabilities that treat the two kinds apart (D188, R-3): the
+# workspace (helpers get no folder) and the live view (a helper is not shown as the agent's work).
+AGENT_PURPOSES = ("agent_turn", "plan", "judge")
 ADDENDUM_HEADING = "\n\n## Node context\n"
 DEFAULT_RECORDS_HOOK = "sutra_app.library.records:gate_record"
 RECORD_MODES = ("log", "strict")
@@ -109,6 +113,8 @@ class EngineHooks(Protocol):
 
     def system_addendum(self, fn: str) -> str: ...                    # "" by default; the only hook that can change a prompt
 
+    def review_enabled(self) -> bool: ...                             # J2 sync 6 (P19, D179): False switches the end-of-run reviewer off; True by default
+
 
 class NullHooks:
     """Every hook does nothing; `record_saved` has no warnings and `system_addendum` is empty."""
@@ -140,6 +146,9 @@ class NullHooks:
     def system_addendum(self, fn: str) -> str:
         return ""
 
+    def review_enabled(self) -> bool:
+        return True
+
 
 def is_fatal(exc: BaseException) -> bool:
     """P8's rule: an exception stops the run when it carries `fatal = True` or its class is named `RecordRejected`."""
@@ -165,6 +174,7 @@ class EventHooks(NullHooks):
         self.node_context_file = None if node_context_file is None else Path(node_context_file)
         self.last_error: Optional[tuple[str, str]] = None      # (code, message) of the last run_error
         self._addendum_seen: set[str] = set()
+        self.reviewer = True                                   # the `reviewer` setting (D179): the host sets it after the hooks are built; J2 asks `review_enabled()`
 
     def trace(self, type: str, data: Optional[Mapping] = None) -> dict:
         """One line of trace.jsonl; subclasses (the layer's `layer.error`, `atom.refused`) write theirs through here."""
@@ -228,6 +238,11 @@ class EventHooks(NullHooks):
             return ""
         text = texts.get(fn)
         return ADDENDUM_HEADING + text if isinstance(text, str) and text.strip() else ""
+
+    def review_enabled(self) -> bool:
+        """Patch P19: J2's `_make_report` asks before it starts the reviewer. Only an explicit False (the team's `reviewer` setting is off) switches
+        it off; `NullHooks` answers True, and under `NullHooks` J2's own `_hook` returns None, which is not False, so a bare J2 keeps its reviewer."""
+        return bool(self.reviewer)
 
     def _validate(self, name: str, data: Any) -> list[str]:
         if self.validator is None:

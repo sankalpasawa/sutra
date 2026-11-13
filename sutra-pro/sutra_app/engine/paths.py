@@ -19,9 +19,12 @@ from typing import Optional
 
 from .spec import DEPT_ID_RE, is_dept_id, is_run_id
 
-__all__ = ["DataPaths", "RunDirError", "SMTP_VARS", "load_env_file", "default_env_file", "default_data_dir", "project_root", "pid_alive"]
+__all__ = ["DataPaths", "RunDirError", "SMTP_VARS", "FIXED_PUSH_RUNS", "FIXED_RUN_BY", "load_env_file", "default_env_file", "default_data_dir", "project_root", "pid_alive"]
 
 SMTP_VARS = ("J2_SMTP_HOST", "J2_SMTP_PORT", "J2_SMTP_USER", "J2_SMTP_PASSWORD", "J2_SMTP_FROM")   # j2_send.py:94
+
+FIXED_PUSH_RUNS = "0"          # J2_PUSH_RUNS: never push a run folder (D177); not a setting, so no file, task key or environment can change it
+FIXED_RUN_BY = "sutra-pro"     # J2_RUN_BY: the author line of chat.jsonl, never the user's name (D177)
 
 
 class RunDirError(ValueError):
@@ -155,11 +158,15 @@ class DataPaths:
         return self._run("upstream")
 
     def j2_env(self) -> dict[str, str]:
-        """The path variables the host exports before it imports J2: where this department's runs and memory are, the
-        global library, the user's local types folder (P17, D163), and the role-file override folder when it exists."""
+        """The variables the host exports before it imports J2 and that no setting can change: where this department's runs and memory are, the
+        global library, the user's local types folder (P17, D163), the role-file override folder when it exists, and two fixed values (D177).
+        `J2_PUSH_RUNS=0`: Sutra never pushes a run folder (J2 would run git add, commit, pull and push with the owner's credentials).
+        `J2_RUN_BY=sutra-pro`: the name in the first line of `chat.jsonl`, so neither the operating system's nor git's user name goes into run
+        data (J2 runs `git config user.name` at every start when it is unset). The host applies this dict after `to_env()`, last, and
+        `os.environ.update` replaces what a developer shell exported."""
         env = {"J2_RUNS_DIR": str(self.runs_dir), "J2_MEMORY_FILE": str(self.lessons_file),
                "J2_PLAYBOOK_FILE": str(self.playbooks_file), "J2_LIBRARY_DIR": str(self.library_dir),
-               "J2_TYPES_DIR": str(self.types_dir)}
+               "J2_TYPES_DIR": str(self.types_dir), "J2_PUSH_RUNS": FIXED_PUSH_RUNS, "J2_RUN_BY": FIXED_RUN_BY}
         if self.agents_dir.is_dir():
             env["J2_AGENTS_DIR"] = str(self.agents_dir)
         return env

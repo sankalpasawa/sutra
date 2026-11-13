@@ -5,7 +5,9 @@ D147).
 to act; here that object is `DeptCommands`, which acts through the orchestrator:
 
     say      `deliver_to_department(dept, text, settings=page.next_settings)`; Busy is 409 `{"ok": false}`; the start page's
-             output choice is cleared once a delivery created a task
+             output choice is cleared once a delivery created a task. J2 sync 6 (D182): `say(text, template, workflows)` adds the two
+             task-only keys `J2_RUN_TEMPLATE` and `J2_RUN_TEMPLATE_WORKFLOWS` to the settings of this one delivery (never to `page.json`),
+             and the engine host starts the run from that run template; a follow-up ignores them
     ask      a question to one function about a run: J2's `j2_agent.answer`, asked of the function's own chat session when the
              orchestrator offers a turn for it (`services.agent_chat`, optional: `ports.AgentChatTurn`), else from the run's records
     settings the Simple view's Decide for me switch (`{decide_for_me}`): a live run gets the inbox line `{"kind": "setting", "decide_for_me": bool}`
@@ -96,9 +98,17 @@ class DeptCommands:
                 return ref
         return ctxmod.current_ref(self.services, self.dept_id)
 
-    def say(self, text: str) -> bool:
+    def say(self, text: str, template: Optional[str] = None, workflows: Any = None) -> bool:
+        """Deliver the owner's words. `template` is a run template's id and `workflows` `all`, a comma list or a list of workflow keys (already
+        checked by the route); both go to this delivery's task as `J2_RUN_TEMPLATE` and `J2_RUN_TEMPLATE_WORKFLOWS` (D182). `workflows` without
+        a template is dropped: there is nothing to select from."""
         page = ctxmod.read_page(self.services.data_dir, self.dept_id)
-        settings = dict(page.next_settings) or None
+        settings = dict(page.next_settings)
+        if template:
+            settings["J2_RUN_TEMPLATE"] = str(template)
+            if workflows:
+                settings["J2_RUN_TEMPLATE_WORKFLOWS"] = workflows if isinstance(workflows, str) else ",".join(str(key) for key in workflows)
+        settings = settings or None
         try:
             delivery = self.services.deliver_to_department(self.dept_id, text, settings=settings)
         except Exception as exc:        # noqa: BLE001 - only the orchestrator's busy refusal is an answer, the rest is a bug

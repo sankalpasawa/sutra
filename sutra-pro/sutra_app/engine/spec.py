@@ -6,15 +6,20 @@ writer and this class the tolerant reader (`extra="ignore"`): two classes of one
 `EngineSettings` holds every J2 flag with J2's default (D18). The host resolves them in this order, later wins:
 
     defaults  <  data/engine.json  <  J2_* in the process environment (dev and tests)  <  data/departments/<id>/engine.json
-              <  the task's settings (the eight keys `TASK_SETTING_KEYS`; the orchestrator validates them)
+              <  the task's settings (the keys `TASK_SETTING_KEYS`; the orchestrator validates them)
 
 writes the result to `<run>/settings.json`, exports `to_env()` before it imports J2, and never reads the layers again.
 The files hold field names (`{"board": true}`); the environment and the task hold J2's variable names (`J2_BOARD=1`).
+
+Two of the task keys are not settings (`J2_RUN_TEMPLATE`, `J2_RUN_TEMPLATE_WORKFLOWS`, D182): they say which run template this one request starts from,
+the host reads them from the task itself and `layered()` ignores them, so they cannot reach J2's environment. `EngineSettings.effective()` computes the
+flags that J2 implies from others once (D178). `J2_PUSH_RUNS` and `J2_RUN_BY` are not fields at all: `DataPaths.j2_env()` fixes them (D177).
 """
 import json
 import math
 import re
 from collections.abc import Mapping
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Literal, Optional, Union, get_args, get_origin
 
@@ -22,8 +27,9 @@ from pydantic import BaseModel, ConfigDict, Field, PrivateAttr, ValidationError,
 
 __all__ = [
     "DEPT_ID_RE", "RUN_ID_RE", "SETTING_KEY_RE", "TASK_SCHEMA", "TASK_SETTING_KEYS", "CONNECTORS", "is_dept_id",
-    "is_run_id", "OUTPUT_NAME_RE", "is_output_name", "TaskSpec", "EngineSettings", "LOCKED_FIELDS", "EDITABLE_FIELDS", "ENV_NAMES", "SettingsError",
-    "read_settings_file", "SETTINGS_SCHEMA",
+    "is_run_id", "OUTPUT_NAME_RE", "is_output_name", "TaskSpec", "EngineSettings", "EffectiveFlags", "LOCKED_FIELDS", "EDITABLE_FIELDS", "ENV_NAMES",
+    "SettingsError", "read_settings_file", "SETTINGS_SCHEMA", "RUN_TEMPLATE_ID_RE", "RUN_TEMPLATE_KEYS_MAX", "RUN_TEMPLATE_KEY_CHARS",
+    "RUN_TEMPLATE_WORKFLOWS_MAX", "is_run_template_id", "run_template_keys",
 ]
 
 # Pattern strings, to be used with `re.fullmatch` (never `re.match`: a `$` also accepts a trailing newline).
@@ -37,7 +43,13 @@ CONNECTORS = ("auto", "claude", "codex", "stub")
 # (`j2_types.NAME_RE`). This module is read before J2 is imported, so it checks the shape only; whether a name is a type that exists is checked
 # where J2 is loaded: the host at preflight and the settings API (D166). There is no closed list of names.
 OUTPUT_NAME_RE = r"[a-z][a-z0-9_]{1,40}"
-TASK_SETTING_KEYS = ("J2_OUTPUT", "J2_BUDGET", "J2_BUDGET_CAP", "J2_FIXES", "J2_MEMORY", "J2_SLIM", "J2_RATES", "J2_DECIDE_FOR_ME")
+# The first eight are `EngineSettings` fields; the last two (D182) are task-only: the run template this request starts from and the workflows of it.
+TASK_SETTING_KEYS = ("J2_OUTPUT", "J2_BUDGET", "J2_BUDGET_CAP", "J2_FIXES", "J2_MEMORY", "J2_SLIM", "J2_RATES", "J2_DECIDE_FOR_ME",
+                     "J2_RUN_TEMPLATE", "J2_RUN_TEMPLATE_WORKFLOWS")
+RUN_TEMPLATE_ID_RE = r"[a-z0-9-]{1,80}"        # a run template's id (J2 names its folder `library/run-templates/<id>/`)
+RUN_TEMPLATE_WORKFLOWS_MAX = 400               # characters of `J2_RUN_TEMPLATE_WORKFLOWS`
+RUN_TEMPLATE_KEYS_MAX = 40                     # workflow keys one request may name
+RUN_TEMPLATE_KEY_CHARS = 20                    # characters of one key
 
 
 def is_dept_id(value: object) -> bool:
@@ -51,6 +63,22 @@ def is_output_name(value: object) -> bool:
 
 def is_run_id(value: object) -> bool:
     return isinstance(value, str) and re.fullmatch(RUN_ID_RE, value) is not None
+
+
+def is_run_template_id(value: object) -> bool:
+    return isinstance(value, str) and re.fullmatch(RUN_TEMPLATE_ID_RE, value) is not None
+
+
+def run_template_keys(value: object) -> Optional[list[str]]:
+    """The workflow keys of `J2_RUN_TEMPLATE_WORKFLOWS` (`all`, or a comma list), as J2's `set_run_template` takes them: `[]` is the whole
+    template (`all`, an empty text), else the keys in order. None when the value is not that shape (too long, too many keys, a key too long
+    or with a character that is not a letter, digit, `-`, `_` or `.`)."""
+    if not isinstance(value, str) or len(value) > RUN_TEMPLATE_WORKFLOWS_MAX:
+        return None
+    keys = [key.strip() for key in value.split(",") if key.strip()]
+    if len(keys) > RUN_TEMPLATE_KEYS_MAX or not all(re.fullmatch(rf"[A-Za-z0-9_.-]{{1,{RUN_TEMPLATE_KEY_CHARS}}}", key) for key in keys):
+        return None
+    return [] if [key.lower() for key in keys] in ([], ["all"]) else keys
 
 
 class TaskSpec(BaseModel):
@@ -141,6 +169,16 @@ class TaskSpec(BaseModel):
         return tuple(self._dropped_settings)
 
 
+@dataclass(frozen=True)
+class EffectiveFlags:
+    """The reuse flags after J2's implications (`EngineSettings.effective()`): each is what J2 will see as on in the run."""
+
+    auto_reuse: bool
+    run_templates: bool
+    template_library: bool
+    artifact_schema: bool
+
+
 class SettingsError(ValueError):
     """A settings layer holds something that is not a valid setting. The message names the layer."""
 
@@ -170,6 +208,9 @@ class EngineSettings(BaseModel):
     board: bool = False
     artifact_schema: bool = False
     template_library: bool = False
+    run_templates: bool = False     # J2 sync 6 (D177): a run can start from a run template (J2_RUN_TEMPLATES); experimental, off
+    auto_reuse: bool = False        # the best run template is taken after the first charter, section templates are adapted (J2_AUTO_REUSE); implies the two above
+    artifact_library: bool = False  # the content door: a section is served from a finished run of the team (J2_ARTIFACT_LIBRARY); implies auto-reuse
     send_mode: Literal["dry-run", "mock", "live"] = "dry-run"
     send_cap: int = Field(10, ge=0)
     milestone_emails: bool = False
@@ -184,6 +225,18 @@ class EngineSettings(BaseModel):
     workspace: Literal["auto", "off"] = "auto"      # the workspace capability (D127): agents read the owner's working folder; "off" gives them none
     builder_timeout: float = Field(600, ge=0, allow_inf_nan=False)      # J2 sync 5: seconds a builder's AI call may run before it is stopped and tried once more; 0 = no limit (J2_BUILDER_TIMEOUT)
     decide_for_me: bool = False     # J2 sync 4: the team answers its own questions with the suggested option; the Simple view's switch (J2_DECIDE_FOR_ME)
+    reviewer: bool = True           # J2 sync 6 (D179): the reviewer's notes in the run report; read by the host, not by J2 (J2_REVIEWER)
+    reviewer_wait: float = Field(120.0, ge=0, allow_inf_nan=False)      # seconds the host waits for the reviewer when a run ends; 0 = do not wait (J2_REVIEWER_WAIT)
+
+    def effective(self) -> "EffectiveFlags":
+        """The flags as J2 computes them, once (D178): `auto_reuse` is on when `artifact_library` is; `run_templates` and `template_library` when
+        `auto_reuse` is; `artifact_schema` when `template_library` is. J2 does the implying inside the run (`j2_template_lib.enabled`,
+        `auto_reuse`, `j2.run_templates_on`, `artifact_schema_on`); the app asks here, so there is one copy of the rule. The settings are not
+        rewritten: what the owner chose stays what is stored."""
+        reuse = self.auto_reuse or self.artifact_library
+        library = self.template_library or reuse
+        return EffectiveFlags(auto_reuse=reuse, run_templates=self.run_templates or reuse, template_library=library,
+                              artifact_schema=self.artifact_schema or library)
 
     def to_env(self) -> dict[str, str]:
         """The J2 environment for these settings: `J2_<FIELD>` with "1"/"0" for flags; empty values (an empty string or
