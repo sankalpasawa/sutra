@@ -3640,6 +3640,8 @@ class J2Run:
         self.WF_FMT = doc_fmt(J2Run.WF_FMT) if self.doc else J2Run.WF_FMT
         self.GRANT_FMT = doc_fmt(J2Run.GRANT_FMT) if self.doc else J2Run.GRANT_FMT
         self.ATOM_RULES = self.out.get("atom_rules") or J2Run.ATOM_RULES
+        if llm.tools_on() and self.out.get("tools"):      # the general path: builders with tools (builder_tools.atom_rules)
+            self.ATOM_RULES += "\n" + (j2_types.builder_tools().get("atom_rules") or "")
 
     def _begin_cycle(self, advance=True):
         if advance:
@@ -4574,7 +4576,7 @@ class J2Run:
             return j2_types.named(text, alone=True) or [j2_types.page_type()]
         note = (f"\nThe Requester chose the {output_def(self.output)['label']} on the start page: include it."
                 if self.output else "")
-        r = j2_realization.plan_goal(goal, web=False, log=lambda m: None, extra=note, types=types,
+        r = j2_realization.plan_goal(goal, web=llm.tools_on(), log=lambda m: None, extra=note, types=types,
                                      mocks=j2_realization.deliverable_mocks(goal, offline))
         self.save("deliverables.json", r)      # its calls stay there: self.calls numbers calls.jsonl (documents.json ranges)
         self.declared_secs = {n: [str(x) for x in spec.get("sections") or []]
@@ -6617,7 +6619,9 @@ class J2Run:
                 f"\nNECESSARY CONDITIONS (code checks each one on the built {self.out['noun']}; plan the work each "
                 "needs; " + WARN_NOTE + "):\n" + "\n".join(cond_line(c) for c in conditions_for(self.out["conditions"], self.goal,
                                                                                     self.out.get("practice", "")))
-                + "\nA goal that names a time, price, number or email needs a facts-present check or a named test.")
+                + "\nA goal that names a time, price, number or email needs a facts-present check or a named test."
+                + ("\n" + (j2_types.builder_tools().get("atom_rules") or "") if llm.tools_on() and self.out.get("tools")
+                   else ""))
 
     def _realization_applies(self):
         """J2_REALIZATION=1 shapes the first plan of a website run (not documents, a blueprint build or a change request;
@@ -6637,7 +6641,7 @@ class J2Run:
         if self.real is None:
             self.post("system", "Realization is on: Adaptation plans by stage and certainty, and a separate judge scores "
                                 "every workflow before anything is built.")
-            r = j2_realization.plan_goal(self.goal, web=False, log=lambda m: None, extra=self._real_note())
+            r = j2_realization.plan_goal(self.goal, web=llm.tools_on(), log=lambda m: None, extra=self._real_note())
             self.real, self.real_base = r, copy.deepcopy(self.goal)     # a change is diffed against this charter
             self.calls += r["calls"]
             self.save("realization.json", r)

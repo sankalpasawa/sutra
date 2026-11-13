@@ -4224,6 +4224,25 @@ def general_path():
           "published to site/ and prd.md; an advisory check warns, never fails ok")
 
 
+def missing_capabilities():
+    """remove-restrictions step 4: with builders on tools, Adaptation's atom rules and the realization planner's note
+    add builder_tools.atom_rules (plan a small script with its test when no tool gives a capability); off without tools."""
+    keep = os.environ.get("J2_AGENT_TOOLS")
+    try:
+        os.environ["J2_AGENT_TOOLS"] = "1"
+        rules = j2.j2_types.builder_tools()["atom_rules"]
+        assert "MISSING CAPABILITIES" in rules
+        run = page_run()
+        assert rules in run.ATOM_RULES
+        run.output, run.goal = "website", {"done_when": ["a"]}
+        assert rules in run._real_note()
+        os.environ["J2_AGENT_TOOLS"] = "0"
+        assert "MISSING CAPABILITIES" not in page_run().ATOM_RULES
+    finally:
+        os.environ["J2_AGENT_TOOLS"] = keep
+    print("missing capabilities: builders with tools are told to plan a script and its test for a missing capability ok")
+
+
 def guesses_warn():
     """remove-restrictions step 3: on the general path a guess never blocks. A validator guess (a number in a check's
     label that differs from its expect) is logged as a warning and the workflow is kept; on the section path it still
@@ -15004,6 +15023,7 @@ if __name__ == "__main__":
             builder_tools_call()        # agent-tools step 1: tools through J2Run.call, recorded, faults raised
             general_path()              # remove-restrictions step 2: every brief through one path, builders with tools
             guesses_warn()              # remove-restrictions step 3: a guess warns, never blocks
+            missing_capabilities()      # remove-restrictions step 4: a missing capability becomes a planned script
             builder_context_trim()      # a real run's builder prompt: no chat, no other workflows
             builder_inputs()            # depended-on sections in full, cut inputs noticed and logged
             timing_records()            # timing.json and Run settings' calls, tokens and time
