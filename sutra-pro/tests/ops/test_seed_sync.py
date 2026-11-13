@@ -208,7 +208,7 @@ def test_a_second_sync_changes_nothing_byte_for_byte(tmp_path):
     files, dirs, stamp = snapshot(library), folders(library), (library / "index.json").stat().st_mtime_ns
     report: dict = {}
     assert doctor.sync_seed_library(data, report=report) == []
-    assert report == {"templates": [], "versions": [], "filled": {}, "skipped": [], "runs": []}
+    assert report == {"templates": [], "versions": [], "filled": {}, "skipped": [], "runs": [], "run_templates": [], "renamed": {}}
     assert snapshot(library) == files and folders(library) == dirs and (library / "index.json").stat().st_mtime_ns == stamp       # not even rewritten
 
 

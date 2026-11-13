@@ -363,7 +363,8 @@ def test_config_sync_library_adds_what_is_missing_and_is_idempotent(tmp_path, ca
     code, out, _ = call(capsys, "config", "sync-library", *data_args(tmp_path))
     assert code == 0 and f"Added {len(goals)} template(s): " + ", ".join(goals) in out
     code, out, _ = call(capsys, "config", "sync-library", "--json", *data_args(tmp_path))
-    assert json.loads(out) == {"added": [], "templates": [], "versions": [], "filled": {}, "skipped": [], "runs": []}
+    assert json.loads(out) == {"added": [], "templates": [], "versions": [], "filled": {}, "skipped": [], "runs": [],
+                              "run_templates": [], "renamed": {}}
     code, out, _ = call(capsys, "config", "sync-library", *data_args(tmp_path))
     assert code == 0 and "The library already has every seed template and version." in out
 
