@@ -467,6 +467,7 @@ class GenericFile(BaseModel):
     kind: Literal["generic"]
     version: int
     from_: str = Field(default="", alias="from")
+    assumptions_section: bool = False      # code closes the document with "Assumptions to confirm" (j2.assemble_doc)
     templates: List[GenericEntry] = Field(min_length=1)
 
 

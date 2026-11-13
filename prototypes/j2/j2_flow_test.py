@@ -4224,6 +4224,43 @@ def general_path():
           "published to site/ and prd.md; an advisory check warns, never fails ok")
 
 
+def guesses_warn():
+    """remove-restrictions step 3: on the general path a guess never blocks. A validator guess (a number in a check's
+    label that differs from its expect) is logged as a warning and the workflow is kept; on the section path it still
+    rejects. Every condition but a fact ("gate": true) is a warning. The closing "Assumptions to confirm" section is
+    added only when the type's template asks for it."""
+    keep = os.environ.get("J2_AGENT_TOOLS")
+    try:
+        os.environ["J2_AGENT_TOOLS"] = "1"
+        run = page_run()
+        run.goal = {"done_when": ["a"]}
+        how = {"kind": "AI", "agent": "Builder", "steps": "a list with id events"}
+        a = {**j2.mock_atom({}), "how": how, "verification": [
+            {"text": "8 event options", "type": "element-count", "target": "#events li", "expect": 9}]}
+        assert not run._atom_problems({"name": "Events", "atoms": [a]}), run._atom_problems({"name": "Events", "atoms": [a]})
+        rows = autofixes(run)
+        assert {r["kind"] for r in rows} == {"guess_warning"} and any("but expects 9" in r["detail"] for r in rows), rows
+        conds = run._conditions("<html><body>To be confirmed</body></html>", {})
+        assert conds and all(c.get("severity") == "warn" for c in conds), conds
+        agent = j2.J2Run()
+        agent.set_output("agent")
+        agent.goal = {"done_when": ["a"], "files": ["main.py"], "test": "test_main.py"}
+        gated = {c["id"] for c in agent._conditions("") if c.get("severity") != "warn"}
+        assert gated == {"C1", "C2", "C3"}, gated
+        os.environ["J2_AGENT_TOOLS"] = "0"
+        old = page_run()
+        old.goal = run.goal
+        assert any("says '8 event options' but expects 9" in p for p in old._atom_problems({"name": "E", "atoms": [a]}))
+    finally:
+        os.environ["J2_AGENT_TOOLS"] = keep
+    secs = {"W-1": {"body": "## Problem\nAssumption: clinics open at 9.\n"}}
+    assert "Assumptions to confirm" in j2.assemble_doc("X", secs, ["Problem"])
+    assert "Assumptions to confirm" not in j2.assemble_doc("X", secs, ["Problem"], closing=False)
+    assert j2.j2_types.asks_assumptions("prd") and not j2.j2_types.asks_assumptions("website")
+    print("guesses warn: a validator guess logged, not rejected, on the general path (still rejects on the section "
+          "path); only facts gate as conditions; the closing assumptions section only when the template asks ok")
+
+
 def builder_tools_call():
     """agent-tools step 1 (mock): J2Run._builder_tools gives a builder its form's tools with tools on (offline only with
     J2_AGENT_TOOLS=1), each limit its setting or default (none for a form without tools); J2Run.call records the files written in the builder's folder in
@@ -14966,6 +15003,7 @@ if __name__ == "__main__":
             agent_form()                # agent-tools step 2: the agent form, data only
             builder_tools_call()        # agent-tools step 1: tools through J2Run.call, recorded, faults raised
             general_path()              # remove-restrictions step 2: every brief through one path, builders with tools
+            guesses_warn()              # remove-restrictions step 3: a guess warns, never blocks
             builder_context_trim()      # a real run's builder prompt: no chat, no other workflows
             builder_inputs()            # depended-on sections in full, cut inputs noticed and logged
             timing_records()            # timing.json and Run settings' calls, tokens and time

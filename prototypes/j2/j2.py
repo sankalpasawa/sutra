@@ -822,12 +822,18 @@ def range_ids(told):
     return " ".join(out)
 
 
-def check_problems(a, source, types=CHECK_TYPES, upstream="", ranges=False):
+# A validator problem found by a guess (wording, numbers in a label, a pattern), not a fact: it rejects on the section
+# path; on the general path it is logged as a warning and never rejects (J2Run._atom_problems). Never shown to agents.
+GUESS = "\x00guess:"
+
+
+def check_problems(a, source, types=CHECK_TYPES, upstream="", ranges=False, tag=False):
     """J2.e's rules for one atom's checks. source: the charter and the Requester's answers, squashed. types: the
     check types the output allows (a website's, or DOC_CHECK_TYPES for a document). upstream: the how and constraints
     of the workflows this one depends on, squashed: an id one of them is told to create may be checked here too.
     ranges (J2_REALIZATION): an id range in how or constraints names every id in it, and a digit inside a name in a
     check's text (#pad-4, j2-btn) is not a count."""
+    g = GUESS if tag else ""      # tag=True: a guess is marked, for the general path to log instead of reject
     out, checks = [], a.get("verification") if isinstance(a.get("verification"), list) else []
     # (tap-targets: expect is the minimum size in px, so a label like "at least 44x44px" must expect 44)
     told = squash(json.dumps([a.get("how"), a.get("constraints")], ensure_ascii=False)) + (" " + upstream if upstream else "")
@@ -860,22 +866,22 @@ def check_problems(a, source, types=CHECK_TYPES, upstream="", ranges=False):
             facts = target if isinstance(target, list) else [target]
             bad = [f for f in facts if not str(f or "").strip() or squash(f) not in source]
             if bad:
-                out.append(f"{lab} facts-present lists {bad}, not found in the charter or the Requester's answers")
+                out.append(f"{g}{lab} facts-present lists {bad}, not found in the charter or the Requester's answers")
         elif t == "behavior-steps":
             about = squash(json.dumps([a.get("goal"), a.get("how"), label], ensure_ascii=False))
             out += [f"{lab} behavior {x}" for x in behavior_problems(target, told, source, about, loose=ranges)]
         elif t in COUNTED:
             if bad := target_problem(target, told, source, t, loose=ranges):
-                out.append(f"{lab} {t} {bad}")
+                out.append(f"{g}{lab} {t} {bad}")
             nums = [int(x) for x in re.findall(r"\d+", NAME_WITH_DIGIT.sub(" ", label) if ranges else label)]
             if t == "tap-targets":      # "tappable at 360px": the screen width is never the count or the size
                 nums = [x for x in nums if x not in j2_check.WIDTHS.values()]
             if nums and as_int(c.get("expect"), None) not in nums and not (
                     ranges and as_int(c.get("expect"), None) == 0 and NEGATED.search(label)):  # "no run of 10 digits": 0
-                out.append(f"{lab} says {label!r} but expects {c.get('expect')!r}")
+                out.append(f"{g}{lab} says {label!r} but expects {c.get('expect')!r}")
     if (FACT_VALUE if ranges else SPECIFIC).search(str(a.get("goal") or "")) and not any(
             isinstance(c, dict) and c.get("type") in ("facts-present", "named-test", "behavior-steps") for c in checks):
-        out.append("its goal names a time, price, number or email but no check is facts-present or a named test")
+        out.append(f"{g}its goal names a time, price, number or email but no check is facts-present or a named test")
     return out
 
 
@@ -2773,15 +2779,22 @@ def parse_doc(raw):
     return "", body
 
 
-def assemble_doc(title, sections, order):
+def assemble_doc(title, sections, order, closing=True):
     """The document: a title, then every section's markdown in the output's section order (by each section's first
-    heading); a section that names none goes last."""
+    heading); a section that names none goes last. closing: code's "Assumptions to confirm" section, only when the
+    type's template asks for it (j2_types.asks_assumptions)."""
     def rank(x):
         h = next((m[2] for ln in x["body"].splitlines() if (m := MD_HEADING.match(ln))), "")
         return next((i for i, s in enumerate(order) if squash(strip_md(h)).startswith(s.lower())), len(order))
     bodies = sorted((x for x in sections.values() if x.get("body")), key=rank)    # stable: ties keep build order
     doc = f"# {title}\n\n" + "\n\n".join(x["body"].strip() for x in bodies) + "\n"
-    asm = doc_assumptions(doc)          # code's closing section, made from the builders' Assumption: lines
+    return with_assumptions(doc) if closing else doc
+
+
+def with_assumptions(doc):
+    """doc with code's closing section, made from the builders' Assumption: lines (any earlier one replaced)."""
+    doc = re.split(rf"(?m)^##\s+{ASSUMPTIONS_HEADING}\s*$", str(doc))[0].rstrip() + "\n"
+    asm = doc_assumptions(doc)
     return doc + (f"\n## {ASSUMPTIONS_HEADING}\n\n" + "\n".join(f"- {a}" for a in asm) + "\n" if asm else "")
 
 
@@ -7325,7 +7338,13 @@ class J2Run:
         self._fix_atoms(w, src, types, up, real)
         out = [f"work atom {n}: {x}" for n, a in enumerate(w["atoms"], 1)
                for x in expected_problems(a, types) or check_problems(cover_expected(copy.deepcopy(a)), src, types, up,
-                                                                      ranges=real)]
+                                                                      ranges=real, tag=True)]
+        guesses = [p for p in out if GUESS in p]
+        if guesses and self._general():      # a guess warns, never rejects
+            for p in guesses:
+                self._autofix(w.get("name") or "?", "guess_warning", p.replace(GUESS, ""))
+            out = [p for p in out if GUESS not in p]
+        out = [p.replace(GUESS, "") for p in out]
         if self.doc and not w.get("revises") and "fix" not in (w.get("parts") or []):
             # every section the workflow writes has its own heading-present and section-not-empty check (any atom),
             # whose target is that section's name exactly ("## " and spaces aside, heading_target)
@@ -8588,7 +8607,8 @@ class J2Run:
                 w["style_guide"] = True
             self.sections[sid] = {"owner": fn, "head": got[0], "body": got[1], "workflow": w["name"]}
             title = (self.goal or {}).get("site_name") or "Site"
-            html_out = assemble_doc(title, self.sections, self.out["sections"]) if self.doc else assemble(title, self.sections)
+            html_out = assemble_doc(title, self.sections, self.out["sections"], j2_types.asks_assumptions(self.output)) \
+                if self.doc else assemble(title, self.sections)
             self.sites.append(html_out)
             os.makedirs(os.path.join(self.dir, "site"), exist_ok=True)
             for name in ((f"site/{self.site_tag}v{len(self.sites)}.md", self.out.get("file")) if self.doc else
@@ -8827,7 +8847,10 @@ class J2Run:
 
     def _publish_out(self, text):
         """A new version of the output: in sites, and where the rest of J2 reads it (a document's main file at its
-        path, an html main file's folder copied into site/), with the version's copy in site/."""
+        path, an html main file's folder copied into site/), with the version's copy in site/. A document whose
+        template asks for it gets code's closing "Assumptions to confirm" section."""
+        if self.doc and j2_types.asks_assumptions(self.output):
+            text = with_assumptions(text)
         self.sites.append(text)
         d, m, n = self._out_dir(), self._main_file(), len(self.sites)
         os.makedirs(os.path.join(self.dir, "site"), exist_ok=True)
@@ -10840,6 +10863,11 @@ class J2Run:
             for c in conds:
                 if c["check"] in FOLDER_CHECKS:
                     c["met"], c["evidence"] = self._folder_condition(c)
+        if self._general():      # only a fact gates (its data says "gate": true); every other condition is a guess: a warning
+            gates = {x["id"] for x in load_conditions(self.out["conditions"], self.out.get("practice", "")) if x.get("gate")}
+            for c in conds:
+                if c["id"] not in gates:
+                    c["severity"] = "warn"
         self.save("conditions.json", conds)
         if built:
             self.post("system", "Necessary conditions (checked by code): " + "; ".join(

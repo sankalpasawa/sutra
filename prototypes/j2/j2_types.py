@@ -47,6 +47,16 @@ def template_path(name, path=None):
 _TEMPLATES = {}
 
 
+def asks_assumptions(name, path=None):
+    """True when a type's template asks for the closing "Assumptions to confirm" section (generic.json
+    "assumptions_section": true); a document without it ends with its own sections."""
+    try:
+        with open(template_path(name, path), encoding="utf-8") as f:
+            return json.load(f).get("assumptions_section") is True
+    except (OSError, ValueError):
+        return False
+
+
 def template_file(name):
     """Every template of a type's generic.json, in file order, the document-level one included; () when the type has no
     generic.json. The file is the hand-edited source of the type's sections, fields, rules and rendering: it is read
