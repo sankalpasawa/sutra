@@ -47,6 +47,9 @@ import re
 import shutil
 from pathlib import Path
 
+from . import forms
+from .events import END_STATUSES
+
 __all__ = ["RehydrateRefused", "check_source", "rehydrate", "continuing_line", "fresh_line", "HOST_FILES", "RUN_TREES",
            "RESTORED", "RESTORED_REALIZATION", "RESTORED_CHAIN", "RESTORED_TYPE", "RESTORED_REUSE", "NOT_RESTORED_REUSE"]
 
@@ -67,7 +70,7 @@ NOT_RESTORED_REUSE = ("run_tpl",)
 RESTORED_TYPE = ("output", "out", "doc")              # a single page stage when nothing was chosen for the new run: the earlier run's type (no default exists)
 BLUEPRINT_KEYS = ("id", "anchor", "implements")      # what a section of a blueprint says (J2's own `lld` sections: S1, its anchor, what it implements)
 SITE_VERSION = re.compile(r"v(\d+)\.(?:html|md)")
-ENDED = ("done", "done_with_open_items")
+ENDED = END_STATUSES[:2]                # `done`, `done_with_open_items`: a run that finished its work (the statuses are events.py's)
 
 CONTINUING = ("Continuing from run {run_id}: the team keeps its charter, workflows, findings and site and treats your "
               "message as a change request.")
@@ -101,13 +104,13 @@ def _types():
 
 
 def _form(kind, src: Path | None = None):
-    """The form of an output type ("page" or "document"), or None when `kind` is no output type: a name in the data, else a document type
-    the run itself recorded (a local type deleted after the run: J2's `recorded`, so the run still opens)."""
+    """The form of an output type (`forms.PAGE` or `forms.DOCUMENT`), or None when `kind` is no output type: a name in the data, else a document
+    type the run itself recorded (a local type deleted after the run: J2's `recorded`, so the run still opens)."""
     j2, j2_types = _types()
     if kind in j2_types.names():
         return j2_types.info(kind)["form"]
     if src is not None and kind in j2_types.recorded(str(src)):
-        return "document"
+        return forms.DOCUMENT
     return None
 
 
@@ -212,7 +215,7 @@ def _chain(src: Path, summary: dict, workflows: list) -> dict:
             or not isinstance(record.get("stages"), list):
         raise RehydrateRefused("the earlier run's document chain cannot be read (summary.json has no design_documents)")
     docset, stages = list(record["requested"]), list(record["stages"])
-    if any(_form(k, src) != "document" for k in docset) or not all(isinstance(k, str) and re.fullmatch(r"\w+", k) for k in stages) \
+    if any(_form(k, src) != forms.DOCUMENT for k in docset) or not all(isinstance(k, str) and re.fullmatch(r"\w+", k) for k in stages) \
             or not set(docset) <= set(stages):
         raise RehydrateRefused("the earlier run's document chain cannot be read (summary.json names unknown stages)")
     docs = _json(src, "documents.json", "the earlier run's document chain has no documents.json", dict)
@@ -240,7 +243,7 @@ def _chain(src: Path, summary: dict, workflows: list) -> dict:
     else:
         calls0 = max(done_calls, default=0)
     revisions = record.get("lld_revisions")
-    return {"docset": docset, "stages": stages, "docs": docs, "archive": archive, "last": last, "doc_stage": _form(last, src) == "document",
+    return {"docset": docset, "stages": stages, "docs": docs, "archive": archive, "last": last, "doc_stage": _form(last, src) == forms.DOCUMENT,
             "site_tag": f"{last}-" if len(stages) > 1 else "", "past": past,
             "current": [w for w in rows if w not in past], "files": files, "calls0": calls0,
             "lld_revisions": revisions if isinstance(revisions, list) else []}

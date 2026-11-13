@@ -2,7 +2,7 @@
 
 "Project work" is a document-form type (D164), so the whole flow is inherited unchanged: Identity's intake and charter,
 Adaptation's plan, Priority's pricing, the builders, Audit, the three attempts, the necessary conditions, receipts, atoms, the function
-nodes and the map. The "document" is the work report; each builder does its section's work with its file tools in the folder and reports
+nodes and the map. The written artifact is the work report; each builder does its section's work with its file tools in the folder and reports
 it. Audit looks in the folder itself (`CallTag.workspace`: Audit reads, a builder of this output edits; the owner's access setting caps
 both). The one vendored change it needs is patch P14 (`single`: named documents in the brief do not swap the output).
 
@@ -19,16 +19,16 @@ from typing import Optional
 
 from ..spec import is_run_id
 from .base import Capability, EngineContext, OutputSpec, Selection
-from .select import choose_output
 
-__all__ = ["ProjectCapability", "PROJECT_SECTIONS", "PROJECT_RUBRIC", "CONDITIONS_FILE", "PROJECT_INTAKE", "PROJECT_PLAN",
-           "PROJECT_BUILDER", "DATA", "CHECK_TYPES", "EARLIER_MAX", "project_spec", "mock_project_charter", "mock_project_section", "earlier_report",
+__all__ = ["ProjectCapability", "TYPE", "PROJECT_SECTIONS", "PROJECT_RUBRIC", "CONDITIONS_FILE", "PROJECT_INTAKE", "PROJECT_PLAN",
+           "PROJECT_BUILDER", "DATA", "CHECK_TYPES", "EARLIER_MAX", "EARLIER_FILES", "LIMITS_FILE", "load_limits", "project_spec", "mock_project_charter", "mock_project_section", "earlier_report",
            "earlier_context", "bind_data_dir"]
 
 # The design names the third section "Verification". J2's own validator refuses that word: a done-when item may not contain it
 # (`J2Run.NOT_CHECKABLE`) and, unless the realization pass is on, a workflow whose name contains it is "Audit's job, not a workflow"
 # (`J2Run.CHECK_WORK`); and the offline mock plan of a document has no costs while the realization pass is on. So the section is called
 # "Confirmation": the same content (what was checked in the folder, how, and what could not be), a word the validator lets through.
+TYPE = "project"        # the one definition of this capability's type name (D188, R-2): `Selection`, `force`, `addendum` and `register` read it
 PROJECT_SECTIONS = ("Findings", "Changes", "Confirmation", "Open items", "Outcome")
 DATA = Path(__file__).resolve().parent / "data"
 CONDITIONS_FILE = str(DATA / "project.json")
@@ -79,8 +79,25 @@ ADDENDA = {
 }
 
 # ---- the earlier result of a follow-up (D135): the report of the run this one continues, given to the agents that need it ----------------
-EARLIER_MAX = 12_000                  # characters of the earlier report an agent is given (a longer report is cut, with a note)
-EARLIER_FILES = 40                    # changed files named from the earlier run's own record
+LIMITS_FILE = DATA / "project.limits.json"
+
+
+def load_limits(path=LIMITS_FILE) -> tuple[int, int]:
+    """`(earlier_max, earlier_files)` from the limits file; ValueError, naming the file, when it is not two whole numbers of at least 1 (D188, R-3)."""
+    try:
+        data = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, ValueError) as exc:
+        raise ValueError(f"{path.name}: cannot be read ({exc})") from None
+    values = []
+    for key in ("earlier_max", "earlier_files"):
+        value = data.get(key) if isinstance(data, dict) else None
+        if isinstance(value, bool) or not isinstance(value, int) or value < 1:
+            raise ValueError(f"{path.name}: {key} must be a whole number of at least 1")
+        values.append(value)
+    return values[0], values[1]
+
+
+EARLIER_MAX, EARLIER_FILES = load_limits()      # characters of the earlier report an agent is given (a longer one is cut, with a note); changed files named from the earlier run's own record
 _BUILDER_FN = re.compile(r"W-[0-9]+")
 EARLIER_FRAME = {
     "identity": ("This request continues the team's earlier run {run}. Its report is below: it is the record of what the team did and found in "
@@ -168,7 +185,7 @@ def earlier_context(fn: str, ctx: EngineContext) -> str:
 def project_spec(j2) -> OutputSpec:
     """The output's spec: its text files are the capability's own data files, its mock atom is built by the J2 module that is running."""
     return OutputSpec(
-        name="project", label="Project work", noun="report", file="project.md", sections=PROJECT_SECTIONS, rubric=PROJECT_RUBRIC,
+        name=TYPE, label="Project work", noun="report", file="project.md", sections=PROJECT_SECTIONS, rubric=PROJECT_RUBRIC,
         check_types=CHECK_TYPES, done="Done: the project work report is workable. Every done-when item, rubric item and necessary condition passes.",
         conditions=CONDITIONS_FILE, builder=str(DATA / "project.builder.md"), intake=str(DATA / "project.intake.md"),
         charter_format=str(DATA / "project.charter.txt"), atom_rules=str(DATA / "project.atom_rules.md"),
@@ -244,7 +261,7 @@ def mock_project_charter(text: str, access: Optional[str] = None) -> dict:
             "constraints": constraints, "success_measures": [],
             "facts": [name], "standards": ["Every finding names its file"], "rules": rules,
             "done_when": items, "core": [True, True, True, False, False], "to_be_confirmed": [], "dropped_from_brief": [],
-            "business_type": "project", "visitor_needs": []}
+            "business_type": TYPE, "visitor_needs": []}
 
 
 def mock_project_section(w: dict, goal: Optional[dict]) -> str:
@@ -264,23 +281,24 @@ def mock_project_section(w: dict, goal: Optional[dict]) -> str:
 
 # ---- the capability --------------------------------------------------------------------------------------------------------
 class ProjectCapability(Capability):
-    name = "project"
+    name = TYPE
 
     def outputs(self) -> dict:
         import importlib
-        return {"project": project_spec(importlib.import_module("sutra_app.engine.j2"))}
+        return {TYPE: project_spec(importlib.import_module("sutra_app.engine.j2"))}
 
     def install(self, ctx: EngineContext) -> None:
         bind_data_dir(getattr(ctx, "data_dir", None))              # the scripted Identity reads the owner's access choice from the same store
 
     def select(self, brief: str, ctx: EngineContext) -> Optional[Selection]:
+        from .select import choose_output          # select.py reads TYPE and DATA from this module
         return choose_output(brief, ctx.has_folder, ctx.seed_output, ctx.settings.output)
 
     def force(self, output: str) -> dict:
-        return dict(FORCE) if output == "project" else {}
+        return dict(FORCE) if output == TYPE else {}
 
     def addendum(self, fn: str, ctx: EngineContext) -> str:
-        if ctx.output != "project":
+        if ctx.output != TYPE:
             return ""
         text = ADDENDA.get(fn)
         return (f"\n\n## Project work\n{text}" if text else "") + earlier_context(fn, ctx)
