@@ -134,7 +134,12 @@ broke. A brief that does (e.g. "sort the files in /tmp/j2-sort-demo") would test
 - ~~Dry run before the RUN code~~: done (`j2.real_run_dry`; the ask shows "dry run on a copy: exit N; X created,
   Y deleted, Z changed" and the paths; the real run's receipt keeps the dry run's lists).
 
-## Step 8: delete dead code (paused, founder, 2026-11-13)
+## Step 8: delete dead code (done)
+
+Deleted: the Documents viewer, unreachable since step 5 (`renderDocs`, `docBlock`, `docBody`, `docItems`, `docBuilt`,
+the hidden `pane-docs`, its jump-bar handler, its rail dim rule and its CSS). Kept: `DOCS` and `/api/docs`, which the
+workflow cards still read for document items. Not dead: the section path (a provider without tools, and most flow
+tests with `J2_AGENT_TOOLS=0`) and the page/document mock builders; deleting them is a separate decision.
 
 Delete page/document code the general path no longer uses, plus tests that only checked it, each listed in the
 commit message. After: `--fast`, mock release check.

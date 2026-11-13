@@ -5150,33 +5150,8 @@ def docs_tab():
     a["constraints"] = ["Placeholder for any photo"]
     plain_card = render_node(snap, docs=docs)["cards"][w["id"]].split('data-block="constraints"')[1].split("data-block=")[0]
     assert "<b>" not in plain_card.split("</button>")[1] and "<li>Placeholder for any photo</li>" in plain_card
-    # the tab: a jump bar, one coloured block per document (name, item count, builders), dividers, the note, the highlight
-    d = out["docs"]
-    assert re.findall(r'data-doc-kind="(\w+)"', d) == ["prd", "hld", "lld"]
-    assert re.findall(r'data-docjump="(\w+)"', d.split('<section')[0]) == ["prd", "hld", "lld"], "jump bar first"
-    heads = re.findall(r'<header class="dochead" style="background:var\(--(\w+)\)"><b>([^<]*)</b> <span class="code">(\w+)</span>(?:<span class="docmeta">([^<]*)</span>)?</header>', d)
-    assert [h[:3] for h in heads] == [("prd", "Product requirements", "PRD"), ("hld", "High-level design", "HLD"),
-                                      ("lld", "Low-level design", "LLD")], heads
-    assert heads[0][3] == f"2 items · built by W-1 {snap['workflows'][0]['name']}, W-2 {snap['workflows'][1]['name']}", heads[0]
-    assert all(not h[3].startswith(("·", " ·")) for h in heads), "no stray leading dot before the count"
-    assert 'data-tabjump="charter">Charter</a>' in d.split("<section")[0], "the jump bar has a Charter entry"
-    assert "2 items" in heads[1][3] and "built by W-9" in heads[1][3] and "items" in heads[2][3] and "built by" not in heads[2][3], heads
-    assert re.findall(r'<span>(End of \w+|Start of \w+)</span>', d) == ["End of PRD", "Start of HLD", "End of HLD", "Start of LLD", "End of LLD"], d
-    assert d.count('data-docjump="top"') == 3
-    assert '<p class="dl hit" id="doc-prd-R2">' in d and '<p class="dl" id="doc-prd-G1">' in d and 'id="doc-lld-S1"' in d, d
-    assert d.count('id="doc-prd-G1"') == 1 and '<h4 data-head="P">P</h4>' in d, "an item's first line only carries the id; a heading carries its text (a Map section link lands on it)"
-    docs["docs"]["hld"] = {"asked": False, "text": None, "workflows": [], **lt("hld")}
-    nd = render_node(snap, docs=docs)["docs"]
-    assert "Not asked for in this run." in nd.split('data-doc-kind="hld"')[1].split("</section>")[0] and nd.count("End of HLD") == 1
-    # any document type, a local one too: its own label, tag and colour from /api/docs, after the others
-    docs["docs"]["hiring_rules"] = {"asked": True, "text": "## Who approves\n\nThe founder.", "workflows": [], "label": "Hiring <rules>", "tag": "Hiring", "color": "--other"}
-    nd = render_node(snap, docs=docs)["docs"]
-    assert re.findall(r'data-doc-kind="(\w+)"', nd) == ["prd", "hld", "lld", "hiring_rules"], nd
-    assert '<header class="dochead" style="background:var(--other)"><b>Hiring &lt;rules&gt;</b> <span class="code">Hiring</span>' in nd, nd
-    assert 'data-docjump="hiring_rules">Hiring</a>' in nd.split("<section")[0] and "End of LLD</span><span>Start of Hiring" in nd
-    assert "No documents in this run." in render_node(snap, docs={"docs": {}})["docs"]
     print("docs tab: Context in words, Constraints grouped (stored text unchanged, ungrouped in a plain list), document "
-          "items linked, Documents tab render, /api/docs live and saved, 404 for bad runs, not-asked note ok")
+          "items linked, /api/docs live and saved, nothing for bad runs ok")
 
 
 def html_page():
@@ -5491,8 +5466,8 @@ def fresh_page_run():
             docs = {"docs": get("/api/docs"), "stage_audits": get("/api/audits")}
             out = render_node(st, docs=docs)
             assert out["charter"].endswith("No charter recorded yet.</p>") and out["cards"] == {}, out["charter"][-80:]
-            assert "No documents in this run." in out["docs"] and "undefined" not in out["docs"] + out["charter"], out["docs"][:300]
-            assert "Something went wrong" not in out["simple"] + out["docs"] + out["charter"]
+            assert "undefined" not in out["charter"], out["charter"][:300]
+            assert "Something went wrong" not in out["simple"] + out["charter"]
         if j2.j2_check.find_chrome() and (BROWSER or not FAST):       # the real page: no error text in the page's own elements
             import subprocess
             for q in ("?view=detail", f"?view=detail&run={rid}", "?view=simple"):
@@ -5583,8 +5558,6 @@ def output_tags():
     assert re.findall(r'data-otag="(\w+)" style="background:var\(--(\w+)\)"', legend) == [(k, k) for k in ("prd", "hld", "lld", "site", "other")]
     page = html_page()
     assert all(re.search(rf"--{k}:var\(--\w+\)", page) for k in ("prd", "hld", "lld", "site", "other"))
-    assert 'style="background:var(--prd)"><b>Product requirements' in render_node(snap, docs={"docs": {"prd": {"asked": True, "text": "- **R1**: x", **{k: next(
-        t for t in j2.j2_types._read_types()["types"] if t["name"] == "prd")[k] for k in ("label", "tag", "color")}}}})["docs"]      # as /api/docs gives it
     assert "Status is always a word as well as a colour" in legend and '<span class="pill ' in out
     # filter: only workflows with that type; the same click again (filter cleared) is the full list
     n_all = out.count('<details data-key="wf-')
@@ -6718,7 +6691,6 @@ def board_doc_change():
         snap = j2.saved_snapshot(os.path.basename(run.dir), 0)
         out = render_node(snap, docs={"docs": {"hld": {"text": hld, "asked": True, "workflows": ["W-9"]}},
                                       "board": run.board["entries"]})
-        assert f"Version {up['to_version']}: Q-1," in out["docs"], "the Documents tab shows the version note"
         tab = out["board"]
         assert "<th>Impact</th>" in tab and f'<td data-impact="Q-1">' in tab, tab[:400]
         cell = tab.split('<td data-impact="Q-1">')[1].split("</td>")[0]
@@ -9672,7 +9644,7 @@ def artifacts_tab():
     # the Documents and Charter tabs still render as before
     both = render_node(snap, docs={"docs": {k: {"asked": True, "text": open(os.path.join(run.dir, k + ".md"), encoding="utf-8").read()}
                                             for k in ("prd", "hld", "lld")}})
-    assert 'id="docblock-prd"' in both["docs"] and "Charter" in both["charter"]
+    assert "Charter" in both["charter"]
     print("artifacts: artifacts.json written at run end (additive), an old run gets the same rows from its folder, endpoints serve "
           "only listed files (live, saved, missing run), the groups keep documents out of the guides, a group lists its rows ok")
 
@@ -10880,8 +10852,9 @@ def left_bar():
             for a in sorted(ids):
                 want = want_of(a)
                 doc = re.sub(r"^work:", "", ":".join(a.split(":")[1:-1]) if a.startswith("sec:") else a)
-                assert any(w_ in arts_html for w_ in want) or (doc in ("prd", "hld", "lld") and f'id="docblock-{doc}"' in out["docs"]), \
-                    (name, a, "an artifact's deep link lands on no Artifacts item (a PRD, HLD or LLD: on its Documents block)", want)
+                unwritten = (map_arts.get("work:" + doc) or {}).get("status") == "not_made"      # asked for, never written: no row
+                assert any(w_ in arts_html for w_ in want) or f'data-agrow="{doc}"' in arts_html or unwritten, \
+                    (name, a, "an artifact's deep link lands on no Artifacts item (a document: on its row)", want)
                 seen["deep links"] += 1
             seen["deep links"] += len(wfs)
             sec = {x["id"]: x for x in model}
@@ -12944,7 +12917,7 @@ def map_tab():
     assert top.count("<svg") == 11, "an icon for every rail item"
     dvh = ui[ui.index('<div id="dview">'):ui.index('<dialog id="detail">')]
     panes = re.findall(r'<div class="pane[^"]*" id="pane-(\w+)"( hidden)?', dvh)
-    assert [n for n, h in panes if not h] == ["map"] and {n for n, _ in panes} == set(old_tabs) | {"map", "style", "catalog", "docs"}, "the home shows only the Map pane; every old pane still exists (catalog: the shared template library, /library)"
+    assert [n for n, h in panes if not h] == ["map"] and {n for n, _ in panes} == set(old_tabs) | {"map", "style", "catalog"}, "the home shows only the Map pane; every old pane still exists (catalog: the shared template library, /library)"
     assert dvh.index('id="needs"') < dvh.index('<section class="work">') < dvh.index('<section class="chat" id="chatp"'), "Needs you, then the Map, then the Chat"
     assert "@media (max-width:900px){#dview .dcol{overflow:auto}#dview main{grid-template-columns:minmax(0,1fr)" in ui and "@media (max-width:600px){.mapsvgwrap{display:none}.mapcards{display:block}}" in ui, "stacked below 900px; map cards at 600px"
     # Needs you: every open question, a plain line each, a button into the Chat; nothing waiting says so
