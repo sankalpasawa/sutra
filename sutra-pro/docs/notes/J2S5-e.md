@@ -66,4 +66,28 @@ below to the Decided paragraph of each:
 
 ## Measurements
 
-(see the end of this note, filled when the lane's tests ran on top of V-core)
+`scripts/py -m pytest tests/engine tests/contracts` on lane E merged with V-core and V-tail: 38 failures, none in lane E's own files except as listed.
+Lane E's files pass: capabilities, project (57 tests, mock runs to Done, no planner call, prompts equal to sync 4), select, spec, views (101), runlist, api
+(commands, scope, settings), workspace, deliverable, host_output, no_type_names, contracts except the route table.
+Belonging to other lanes, seen from here:
+
+- Lane U (records catalogue, D172): `test_engine_host.py` (3: forced audit, decide for me, seed), `test_engine_host_process.py` (1), `test_engine_inbox_setting.py` (1)
+  all end `Crashed: RecordRejected: deliverables.json refused: ... not in the record catalogue` in strict mode; `test_engine_rehydrate.py` (19) and
+  `test_engine_fn_registry.py::test_stamp_check...` (4) are U's files.
+- Lane U (page): `test_contract_route_table.py` (2): `/api/timing` is served (32 GET paths) and no page script calls it until `sutra_ctx.js` `J2_EXACT` has it.
+- Lane V: `test_engine_fn_golden.py` (5, recorders), and `test_engine_crash.py[ModelTimeout-timeout]`: the shim raises `llm.CallTimeout(RuntimeError)`, so the host
+  records `code: internal` and `Crashed: CallTimeout: ...` where a model timeout was `code: timeout`, `ModelTimeout`; making `CallTimeout` a subclass of
+  `port.ModelTimeout` in `llm.py` fixes both (`j2.py` P8 maps a `_ModelError` to its code).
+- Integrator: `tests/test_traceability.py` reads `HANDLER_COUNT = 42` against the traceability data (not updated here).
+
+## What the integrator must know
+
+- J2 now treats every document-form type alike: a project run no longer gets the finish step's `project.json` guide (`GenericGuide`); the Artifacts agent tab of
+  the report reads `project.md` as text. The row is still exactly one (J2's), and `finish.agent_views` may list `project.json` as not recorded.
+- The entry carries `"mock": {}` on purpose: the document form's own `mock` names would replace the capability's mocks in `j2._data_type` (found by the
+  project charter coming back as J2's generic document charter).
+- `api/__init__.py` exports `J2_TYPES_DIR` from `paths.default_data_dir()` before J2 is imported; a service mounted with another data folder keeps the types in
+  the default one (the same assumption `main.py` makes).
+- A working folder now claims a brief that names a deliverable (deviation 5).
+- Not done: the by-hand checks of the design's section 13 (a project brief on a scratch folder with a model, the planner creating a type under the data folder
+  through a real model); the mock suite covers the flow.
