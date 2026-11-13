@@ -42,7 +42,7 @@ def test_what_the_orchestrator_accepts_the_engine_reads_as_the_same_values():
 @pytest.mark.parametrize("key, value, ok", [
     ("J2_BUDGET", "1", True), ("J2_BUDGET", "100000", True), ("J2_BUDGET", "0", False), ("J2_BUDGET", "100001", False),
     ("J2_BUDGET", "12.5", False), ("J2_BUDGET", "-3", False), ("J2_BUDGET_CAP", "1", True), ("J2_BUDGET_CAP", "100000", True),
-    ("J2_BUDGET_CAP", "0", False), ("J2_BUDGET_CAP", "100001", False), ("J2_OUTPUT", "prd", True), ("J2_OUTPUT", "deck", False),
+    ("J2_BUDGET_CAP", "0", False), ("J2_BUDGET_CAP", "100001", False), ("J2_OUTPUT", "prd", True), ("J2_OUTPUT", "business_report", True), ("J2_OUTPUT", "9deck", False), ("J2_OUTPUT", "a", False),
     ("J2_FIXES", "1", True), ("J2_FIXES", "2", False), ("J2_RATES", "0", True), ("J2_RATES", "2", False)])
 def test_both_sides_draw_the_line_at_the_same_value(key, value, ok):
     def writer() -> bool:

@@ -159,12 +159,11 @@ class DeptCommands:
         return _output_type(out)
 
 
-def _output_type(out: Any) -> str:
-    """J2's `output_type` and the one the engine adds: `auto` (the engine picks the output for the brief when the run starts, D129) or any
-    registered output; anything else is the website (the process environment is not consulted). `j2.output_type` alone would turn `auto`
-    into the website."""
+def _output_type(out: Any) -> Optional[str]:
+    """The type a run is pinned to: `auto` (the engine picks the output for the brief when the run starts, D129) or a type the data knows;
+    anything else is None (no type: J2's planner chooses; there is no default type, D165; the process environment is not consulted)."""
     name = str(out or "").strip().lower()
-    return name if name == "auto" or name in j2.OUTPUTS else "website"
+    return name if name == "auto" or name in j2.j2_types.names() else None
 
 
 async def read_json_body(request: Request) -> Optional[dict]:

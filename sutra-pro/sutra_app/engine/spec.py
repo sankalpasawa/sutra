@@ -22,7 +22,7 @@ from pydantic import BaseModel, ConfigDict, Field, PrivateAttr, ValidationError,
 
 __all__ = [
     "DEPT_ID_RE", "RUN_ID_RE", "SETTING_KEY_RE", "TASK_SCHEMA", "TASK_SETTING_KEYS", "CONNECTORS", "is_dept_id",
-    "is_run_id", "OUTPUT_NAMES", "TaskSpec", "EngineSettings", "LOCKED_FIELDS", "EDITABLE_FIELDS", "ENV_NAMES", "SettingsError",
+    "is_run_id", "OUTPUT_NAME_RE", "is_output_name", "TaskSpec", "EngineSettings", "LOCKED_FIELDS", "EDITABLE_FIELDS", "ENV_NAMES", "SettingsError",
     "read_settings_file", "SETTINGS_SCHEMA",
 ]
 
@@ -33,15 +33,20 @@ SETTING_KEY_RE = r"J2_[A-Z_]+"
 TASK_SCHEMA = "run-spec/1"
 SETTINGS_SCHEMA = "engine-settings/1"       # the `schema` of GET /api/engine/settings
 CONNECTORS = ("auto", "claude", "codex", "stub")
-# Every output name a setting may hold, in the order the start page lists them. `auto` leaves the choice to the engine
-# (`capabilities.select_output`, decided once by the host before J2 starts); the others name an output of `j2.OUTPUTS`. The one list that
-# `EngineSettings.output`, the task's `J2_OUTPUT` and the start page's command validate against (D129).
-OUTPUT_NAMES = ("auto", "website", "prd", "hld", "lld", "project")
+# An output setting is `auto` (the engine decides once, before J2 starts: `capabilities.select_output`) or a type name in J2's own shape
+# (`j2_types.NAME_RE`). This module is read before J2 is imported, so it checks the shape only; whether a name is a type that exists is checked
+# where J2 is loaded: the host at preflight and the settings API (D166). There is no closed list of names.
+OUTPUT_NAME_RE = r"[a-z][a-z0-9_]{1,40}"
 TASK_SETTING_KEYS = ("J2_OUTPUT", "J2_BUDGET", "J2_BUDGET_CAP", "J2_FIXES", "J2_MEMORY", "J2_SLIM", "J2_RATES", "J2_DECIDE_FOR_ME")
 
 
 def is_dept_id(value: object) -> bool:
     return isinstance(value, str) and re.fullmatch(DEPT_ID_RE, value) is not None
+
+
+def is_output_name(value: object) -> bool:
+    """`value` has the shape of a type name (not `auto`)."""
+    return isinstance(value, str) and re.fullmatch(OUTPUT_NAME_RE, value) is not None
 
 
 def is_run_id(value: object) -> bool:
@@ -146,7 +151,7 @@ class EngineSettings(BaseModel):
 
     model_config = ConfigDict(extra="forbid")
 
-    output: Literal[OUTPUT_NAMES] = "auto"          # "auto": the host picks the output for the brief, once, before J2 starts (D129)
+    output: str = Field("auto", pattern=rf"^(auto|{OUTPUT_NAME_RE})$")      # "auto": the host picks the output for the brief, once, before J2 starts (D129)
     fixes: Literal[0, 1] = 0
     budget: int = Field(100, ge=1, le=100000)
     budget_cap: Optional[int] = Field(None, ge=1, le=100000)      # None: twice the budget
@@ -177,6 +182,7 @@ class EngineSettings(BaseModel):
     force_question: str = Field("", max_length=1000)
     memory_test_lessons: bool = False
     workspace: Literal["auto", "off"] = "auto"      # the workspace capability (D127): agents read the owner's working folder; "off" gives them none
+    builder_timeout: float = Field(600, ge=0, allow_inf_nan=False)      # J2 sync 5: seconds a builder's AI call may run before it is stopped and tried once more; 0 = no limit (J2_BUILDER_TIMEOUT)
     decide_for_me: bool = False     # J2 sync 4: the team answers its own questions with the suggested option; the Simple view's switch (J2_DECIDE_FOR_ME)
 
     def to_env(self) -> dict[str, str]:
@@ -252,6 +258,10 @@ def _parse_env_value(name: str, raw: Any) -> Any:
         return None
     kind, allowed = _field_kind(name)
     word = text.strip().lower()
+    if name == "output":        # `auto` or a type name: lower case, checked by shape here so every bad variable of a layer is reported at once
+        if not re.fullmatch(rf"auto|{OUTPUT_NAME_RE}", word):
+            raise ValueError("must be auto or a type name (lower case letters, digits and _, starting with a letter)")
+        return word
     if kind == "str":
         return text
     if kind == "flag" or (kind == "literal" and allowed == (0, 1)):
