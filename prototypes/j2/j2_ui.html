@@ -3470,23 +3470,25 @@ const runHref = id => `/?run=${encodeURIComponent(id)}&view=detail&tab=library`;
 const libBadge = m => m === true ? '<span class="libbadge mock">mock</span>' : m === false ? '<span class="libbadge live">live</span>' : `<span class="libbadge">${esc(m || "not recorded")}</span>`;
 const libUses = u => (u || []).map(x => `${esc(x.run)} ${esc(x.workflow)}${x.action ? " (" + esc(x.action) + ")" : ""}`).join("<br>") || '<span class="empty">not used yet</span>';
 const libOpen = (art, sec, name, ver, text) => `<button type="button" class="linkbtn" data-tplopen="${esc(art)}|${esc(sec)}|${esc(name)}|${esc(ver)}">${text}</button>`;
-// A run started from a run template: the counts the Library tab and the /library "Used by" list show. "created" among the documents is
-// the number wanted at 0, so it is the one that stands out; a part the template does not have is "added, not in template", in the muted style.
-const reuseCounts = (c, group) => `<span class="mappill ${group === "documents" ? (c.created ? "waiting_on_you" : "checks") : ""}" data-rtc="${group}-created">${esc(c.created)} created</span>`
+// A run started from a run template: the counts the Library tab and the /library "Used by" list show, one line per group of types (the
+// server's "scopes", from artifacts/types.json: no type or form is named here). "created" in a group the template covers is the number
+// wanted at 0, so it is the one that stands out; a group the template does not have is "added, not in template", in the muted style.
+const reuseCounts = (c, group) => `<span class="mappill ${c.from_template ? (c.created ? "waiting_on_you" : "checks") : ""}" data-rtc="${group}-created">${esc(c.created)} created</span>`
   + ["adapted", "reused", "generic"].map(k => `<span class="mappill" data-rtc="${group}-${k}">${esc(c[k])} ${k}</span>`).join("");
 const reuseFrom = c => c.from_template === null || c.from_template === undefined ? "" : c.from_template === 0 ? '<span class="empty">added, not in template</span>'
   : `<span class="empty">${esc(c.from_template)} of ${esc(c.total)} from the template</span>`;
-// Its filters (?filter=adapted&scope=documents): a chip per action with the count of rows it shows in the chosen scope, and a scope
+// Its filters (?filter=adapted&scope=<a group>): a chip per action with the count of rows it shows in the chosen scope, and a scope
 // toggle. Each row carries its group and the kind shown (reuse_rows); the style guide row has no group, so only the scope "All" shows it.
 const RTKINDS = [["all", "All"], ["created", "Created"], ["adapted", "Adapted"], ["reused", "Reused"], ["generic", "Generic"]];
-const RTSCOPES = [["all", "All", null], ["documents", "Documents", "documents"], ["website", "Website", "pages"]];
+const rtScopes = () => [["all", "All"], ...(((LIB.rt || {}).scopes) || []).map(x => [String(x.key), String(x.label)])];      // one button per group of types this run's decisions fall in, as the server lists them
 (() => { const q = new URLSearchParams(location.search), pick = (list, v) => list.some(x => x[0] === v) ? v : "all";
-  LIB.filter = pick(RTKINDS, (q.get("filter") || "").toLowerCase()); LIB.scope = pick(RTSCOPES, (q.get("scope") || "").toLowerCase()); })();
-const rtInScope = d => LIB.scope === "all" || d.group === RTSCOPES.find(x => x[0] === LIB.scope)[2];
+  LIB.filter = pick(RTKINDS, (q.get("filter") || "").toLowerCase()); LIB.scope = (q.get("scope") || "all").toLowerCase(); })();      // the scope is checked against the run's own list when it has loaded (rtScope)
+const rtScope = () => rtScopes().some(x => x[0] === LIB.scope) ? LIB.scope : "all";
+const rtInScope = d => rtScope() === "all" || d.group === rtScope();
 const rtShown = d => rtInScope(d) && (LIB.filter === "all" || d.kind_shown === LIB.filter);
 function rtFilters(dec){
   const mine = dec.filter(rtInScope), n = k => k === "all" ? mine.length : mine.filter(d => d.kind_shown === k).length;
-  return `<div data-rtfilters="1"><div class="seg" role="group" aria-label="Scope">${RTSCOPES.map(([k, t]) => `<button type="button" data-rtscope="${k}" aria-pressed="${LIB.scope === k}">${t}</button>`).join("")}</div></div>`
+  return `<div data-rtfilters="1"><div class="seg" role="group" aria-label="Scope">${rtScopes().map(([k, t]) => `<button type="button" data-rtscope="${esc(k)}" aria-pressed="${rtScope() === k}">${esc(t)}</button>`).join("")}</div></div>`
     + `<div class="rfil" role="group" aria-label="Show rows by action">${RTKINDS.map(([k, t]) => `<button type="button" data-rtfilter="${k}" aria-pressed="${LIB.filter === k}">${t} <i>${esc(n(k))}</i></button>`).join("")}</div>`
     + `<div class="empty" data-rtnote="1">Adapted = the run template's section template, given this run's facts as a new version. Created = no matching section in the run template.</div>`;
 }
@@ -3499,14 +3501,14 @@ function rtPick(key, value){      // a chip or a scope button: keep the choice i
 }
 function rtSummary(u, dec){
   if (!u) return "";
-  const c = u.counts || {}, part = (g, label) => c[g] ? `<div data-rtgroup="${g}"><b>${label}:</b> ${reuseCounts(c[g], g)} ${reuseFrom(c[g])}</div>` : "";
+  const c = u.counts || {}, part = (g, label) => c[g] ? `<div data-rtgroup="${esc(g)}"><b>${esc(label)}:</b> ${reuseCounts(c[g], g)} ${reuseFrom(c[g])}</div>` : "";
   const name = u.in_library ? `<a href="/library?view=templates&rt=${encodeURIComponent(u.id)}" data-rtlink="1">${esc(u.name)}</a>` : esc(u.name);
   const match = x => esc(Number(x).toFixed(2));      // J2_AUTO_REUSE=1: the run picked the template itself, or found none similar and built from scratch
   const lead = u.scratch ? `<b data-rtauto="scratch">Built from scratch</b>: no similar run template${u.best ? ` (best ${esc(u.best.name)} ${match(u.best.score)})` : ""}`
     : `<b${u.auto ? ' data-rtauto="picked"' : ""}>${u.auto ? "Auto-picked run template" : "Started from run template"}</b> ${name}${u.auto ? ` (match ${match(u.match)})` : ""}: ${esc(u.selected)} of ${esc(u.of)} workflows`;
   return `<div class="artrow tplcard" data-rtsum="1"><div>${lead}`
     + ((u.added_stages || []).length ? `; <span class="empty">added, not in template: ${u.added_stages.map(esc).join(", ")}</span>` : "") + `</div>`
-    + part("documents", "Documents") + part("pages", "Website") + `<div data-rtgen="1"><b>Generator calls:</b> ${esc(u.generator_calls)}</div>${rtFilters(dec || [])}</div>`;
+    + (u.scopes || []).map(x => part(x.key, x.label)).join("") + `<div data-rtgen="1"><b>Generator calls:</b> ${esc(u.generator_calls)}</div>${rtFilters(dec || [])}</div>`;
 }
 const rtFrom = d => d.adapted_from ? `<span class="empty">adapted from ${esc(d.adapted_from)}</span>` : "";      // the source of an adapted row, whichever way it was found
 const rtCell = d => d.from_template === true ? `${esc(d.template_workflow || "")}${d.adapted_from ? " " + rtFrom(d) : ""}`
@@ -3675,8 +3677,9 @@ function rtPane(row){
 }
 function rtUsedBy(t){      // the runs that started from this run template, each with its counts and a link to its Library tab
   const us = t.used_by || [], cell = (u, g) => u.counts && typeof u.counts === "object" ? (u.counts[g] ? reuseCounts(u.counts[g], g) : '<span class="empty">none</span>') : '<span class="empty">not recorded</span>';
-  return `<div class="ablk tplcard" data-rtusedby="1"><h5>Used by (${us.length})</h5>` + (us.length ? `<table class="maptable"><thead><tr><th>Run</th><th>Workflows</th><th>Documents</th><th>Website</th></tr></thead><tbody>`
-    + us.map(u => `<tr data-rtrun="${esc(u.run)}"><td><a href="${runHref(u.run)}">${esc(u.run)}</a></td><td>${esc(u.workflows)} of ${esc(u.of)}</td><td>${cell(u, "documents")}</td><td>${cell(u, "pages")}</td></tr>`).join("") + `</tbody></table>`
+  const cols = []; us.forEach(u => (u.scopes || []).forEach(x => { if (!cols.some(c => c.key === x.key)) cols.push(x); }));      // one column per group of types the runs' decisions fall in (the server's scopes)
+  return `<div class="ablk tplcard" data-rtusedby="1"><h5>Used by (${us.length})</h5>` + (us.length ? `<table class="maptable"><thead><tr><th>Run</th><th>Workflows</th>${cols.map(c => `<th data-rtcol="${esc(c.key)}">${esc(c.label)}</th>`).join("")}</tr></thead><tbody>`
+    + us.map(u => `<tr data-rtrun="${esc(u.run)}"><td><a href="${runHref(u.run)}">${esc(u.run)}</a></td><td>${esc(u.workflows)} of ${esc(u.of)}</td>${cols.map(c => `<td>${cell(u, c.key)}</td>`).join("")}</tr>`).join("") + `</tbody></table>`
     : '<p class="empty">No run has started from this run template yet.</p>') + `</div>`;
 }
 const rtHref = (id, keys) => `/?view=simple&template=${encodeURIComponent(id)}&workflows=${encodeURIComponent(keys)}`;      // the new-run brief box, with the template and the workflows in the address

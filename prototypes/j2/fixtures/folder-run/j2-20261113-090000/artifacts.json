@@ -1,0 +1,36 @@
+{
+  "schema": "artifacts/1",
+  "rows": [
+    {
+      "name": "Script",
+      "type": "script",
+      "kind": "type",
+      "form": "script",
+      "output": "folder",
+      "folder": "script",
+      "file": "script/*",
+      "preview": "folder",
+      "deliverable": true,
+      "workflows": [
+        "W-1"
+      ],
+      "depends_on": [],
+      "version": 1,
+      "files": [
+        {
+          "path": "README.md",
+          "sha256": "41721d879ff18f5eb8a25c3babe9d244603d7ffa85a44542a00721d0ea93ef70"
+        },
+        {
+          "path": "copy_files.py",
+          "sha256": "f948203ff557c3d293ea4e1cb1d422b46a3a1a7709cd7fafd046b68dd8a5edab"
+        },
+        {
+          "path": "test_copy_files.py",
+          "sha256": "18ac3dc61d1e24732370e6fa31e2df6dd8f5aea5549b8a6e6b698d6ab0a024eb"
+        }
+      ],
+      "time": "2026-11-13T09:00:41"
+    }
+  ]
+}
