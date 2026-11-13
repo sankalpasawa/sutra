@@ -33,9 +33,11 @@ from typing import Any, Optional
 
 from sutra_app.library.types import clip
 
+from ..events import END_STATUSES
+
 __all__ = ["run_steps", "agent_views", "catalog", "Skip", "STEPS", "ENDED_WELL", "STEP_SECONDS", "TRACE_TYPE"]
 
-ENDED_WELL = ("done", "done_with_open_items")      # the `run.ended` statuses that get the steps
+ENDED_WELL = END_STATUSES[:2]                      # the `run.ended` statuses that get the steps (`done`, `done_with_open_items`): the statuses have one owner, events.py (D188, R-3)
 STEP_SECONDS = 10.0                                # a step that takes longer ends the rest (D142)
 TRACE_TYPE = "finish.step"
 

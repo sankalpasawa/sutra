@@ -28,9 +28,13 @@ from .events import EventWriter, say_event
 
 __all__ = [
     "TurnInfo", "CallInfo", "TurnOutcome", "EngineHooks", "NullHooks", "EventHooks", "is_fatal", "load_validator",
-    "DEFAULT_RECORDS_HOOK", "RECORD_MODES", "ADDENDUM_HEADING",
+    "DEFAULT_RECORDS_HOOK", "RECORD_MODES", "ADDENDUM_HEADING", "AGENT_PURPOSES",
 ]
 
+# The purposes (the `purpose` of a `CallTag`, patch P7) that are an agent's own work: its turn, the plan Adaptation makes, the judge's score. Every other
+# call (summary, template, review, change, chat) is a helper. One definition for the capabilities that treat the two kinds apart (D188, R-3): the
+# workspace (helpers get no folder) and the live view (a helper is not shown as the agent's work).
+AGENT_PURPOSES = ("agent_turn", "plan", "judge")
 ADDENDUM_HEADING = "\n\n## Node context\n"
 DEFAULT_RECORDS_HOOK = "sutra_app.library.records:gate_record"
 RECORD_MODES = ("log", "strict")

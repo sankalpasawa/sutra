@@ -550,3 +550,10 @@ def test_a_run_of_the_app_with_the_library_on_reaches_the_catalog_through_the_ho
     assert seen["trace"][1]["result"] == "ok" and seen["trace"][1]["not_recorded"] == 0
     assert run_dir.name in seen["index"]["runs"] and seen["agent"] is True
     assert events(run_dir)[-1]["t"] == "run.ended"
+
+
+def test_the_statuses_that_get_the_steps_are_the_two_finished_ones_of_the_event_vocabulary():
+    """D188 (R-3): one owner for the words. `finish.ENDED_WELL` and `rehydrate.ENDED` read `events.END_STATUSES`."""
+    from sutra_app.engine import events, rehydrate
+    assert finish.ENDED_WELL == rehydrate.ENDED == ("done", "done_with_open_items") == events.END_STATUSES[:2]
+    assert set(events.END_STATUSES) - set(finish.ENDED_WELL) == {"stopped", "crashed"}
