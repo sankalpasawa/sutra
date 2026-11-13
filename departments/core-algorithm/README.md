@@ -8,7 +8,7 @@
 **Run and verify:** [lab/README.md](lab/README.md)  
 **Next gate:** [NEXT-GATES.md](NEXT-GATES.md)
 
-The attached `lab/` is `sutra-kernel-extensions/0.2.0-experimental`, a deterministic Python reference with human-authored synthetic extension packs. It is **not** Sutra Core `v0.2.2`, `v0.3.0-CANDIDATE`, production J2, or an installed Native capability. Those historical streams must not be merged by naming alone.
+The attached `lab/` (its build label is at the top of `lab/README.md`) is a deterministic Python reference with human-authored synthetic extension packs. It is **not** Sutra Core `v0.2.2`, `v0.3.0-CANDIDATE`, production J2, or an installed Native capability. Those historical streams must not be merged by naming alone.
 
 ## Boundaries
 
@@ -20,6 +20,6 @@ The attached `lab/` is `sutra-kernel-extensions/0.2.0-experimental`, a determini
 
 ## Status (as of 8 Nov 2026)
 
-The experimental lab's synthetic fixtures reproduce locally with **54/54** unit tests and **31/31** independent record checks. The archived browser viewer had **21/21** browser checks; that browser run has not been repeated as part of this repository publication.
+The experimental lab's synthetic fixtures reproduce locally; the current counts of unit tests and independent record checks are in `lab/README.md`. The archived browser viewer had **21/21** browser checks; that browser run has not been repeated as part of this repository publication.
 
 A separate J2 adapter must be built and independently tested before claiming Native effects.

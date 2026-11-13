@@ -56,33 +56,56 @@ def _rules(state, actions: list) -> list:
     return rows
 
 
+def whole_plan(result: dict) -> list:
+    """The whole plan of a result: what ran, what was skipped as already true, the pending step each wait is for, and what
+    is still to run. In the selection's order (the SELECT row of the trace) when the result carries its trace; a step the
+    selection does not list (a question out since an earlier run) stays in front."""
+    steps = list(dict.fromkeys(list(result.get("actions", [])) + list(result.get("skipped", [])) + list(result.get("waits", [])) + list(result.get("pending", []))))
+    chosen = next((row["data"].get("actions", []) for row in result.get("trace", []) if row.get("operation") == "SELECT"), [])
+    return sorted(steps, key=lambda mid: chosen.index(mid) if mid in chosen else -1)
+
+
 def _steps(result: dict, state) -> list:
     goal = result["goal"]
     steps = [{"id": "record-intent", "host": "codex", "sandbox": "read-only",
               "action": f"log the goal {goal}, the scope {result['scope']} and the selected plan to the execution record",
               "verify": "an execution row exists for this run"}]
-    made_by = {state.methods.get(mid, {}).get("effect"): _slug(mid) for mid in result.get("actions", [])}   # effect -> the step that makes it
-    for mid in result.get("actions", []):
+    planned = whole_plan(result)
+    asked_before = set(result.get("waits", [])) - set(result.get("actions", []))   # out since an earlier run: no step of this plan comes before them
+    made_by = {}   # effect -> the first step, earlier in this plan, that makes it: a step never waits for a later one
+    taken = {"record-intent", "show-it"}   # the step ids in use: two methods whose names give one slug still get two ids
+    for mid in planned:
         m = state.methods.get(mid, {})
         cost = ", ".join(f"{k} {v}" for k, v in sorted(m.get("cost", {}).items()))
         reqs = ", ".join(m.get("requires", [])) or "none"
-        steps.append({"id": _slug(mid), "host": m.get("provider") or "claude-effector", "sandbox": LOCAL_SANDBOX,
-                      "method": mid, "effect": m.get("effect"), "requires": list(m.get("requires", [])),
-                      "after": [made_by[r] for r in m.get("requires", []) if r in made_by],   # the steps in this plan it waits for
+        sid = next(x for x in (_slug(mid) + ("" if n == 1 else f"-{n}") for n in range(1, len(taken) + 2)) if x not in taken)
+        taken.add(sid)
+        steps.append({"id": sid, "host": m.get("provider") or "claude-effector", "sandbox": LOCAL_SANDBOX,
+                      "method": mid, "kind": m.get("action"), "effect": m.get("effect"), "requires": list(m.get("requires", [])),
+                      "after": [] if mid in asked_before else list(dict.fromkeys(made_by[r] for r in m.get("requires", []) if r in made_by)),   # the steps in this plan it waits for, each once
                       "grant": m.get("grant"), "cost": dict(m.get("cost", {})),
                       "action": f"make {m.get('effect')} true by {mid} (needs {reqs}; grant {m.get('grant')}; cost {cost or 'none'}); "
                                 "the owner stamps the ask before any real effect",
                       "verify": f"{m.get('effect')} observed TRUE from an independent source, not from the receipt"})
+        if m.get("action") == "ask":   # a step that asks a person and waits for the answer
+            to = m.get("ask_to", "owner")
+            steps[-1].update(waits_for=to,
+                             action=f"ask {to}: {m.get('question') or 'is ' + str(m.get('effect')) + ' true?'} Then wait: nothing after this step runs "
+                                    f"until the answer arrives, and a no is final (grant {m.get('grant')}; cost {cost or 'none'})",
+                             verify=f"{m.get('effect')} answered TRUE or FALSE by {to}, the answer citing this ask's receipt")
+        made_by.setdefault(m.get("effect"), sid)
     steps.append({"id": "show-it", "host": "claude-effector", "sandbox": "read-only",
                   "action": f"show the goal, the plan, the gates and the record; say what waits on a stamp",
-                  "verify": f"the page lists {len(result.get('actions', []))} steps and the goal {goal}"})
+                  "verify": f"the page lists {len(planned) + 2} steps and the goal {goal}"})
     return steps
 
 
 def _edges(steps: list) -> list:
-    """The plan as ordered dependency edges: one per prerequisite a step takes from another step of the same plan."""
-    made = {s.get("effect"): s["id"] for s in steps if s.get("method")}
-    return [{"from": made[r], "to": s["id"], "via": r} for s in steps if s.get("method") for r in s.get("requires", []) if r in made]
+    """The plan as ordered dependency edges: one per prerequisite a step takes from another step of the same plan. A step waits for the
+    FIRST earlier step that makes each of its needs (a second maker of the same fact gets no edge), and a question that was already out
+    before this plan is listed first and waits for nothing."""
+    effect_of = {s["id"]: s.get("effect") for s in steps if s.get("method")}
+    return [{"from": a, "to": s["id"], "via": r} for s in steps if s.get("method") for r in dict.fromkeys(s.get("requires", [])) for a in dict.fromkeys(s.get("after", [])) if effect_of.get(a) == r]   # one edge per maker, step and fact
 
 
 def _ui(impl: dict) -> str:
@@ -110,7 +133,14 @@ def to_implementation(result: dict, state) -> dict:
     goal = result["goal"]
     scope = result.get("scope", state.scope)
     slug = _slug(goal)
-    actions = list(result.get("actions", []))
+    actions = whole_plan(result)
+    ran = [r["method"] for r in result.get("model_receipts", [])]
+    spend = lambda steps: {k: sum(state.methods.get(a, {}).get("cost", {}).get(k, 0) for a in steps) for k in state.budget}
+    skipped = list(result.get("skipped", []))
+    cost = spend(actions) if result.get("waits") or skipped else result.get("cost")   # a result that waited or skipped reports what ran; the plan's cost is the cost of the steps listed here
+    still = [a for a in actions if a not in ran and a not in result.get("waits", []) and a not in skipped]   # not yet run, not skipped, not out as a question
+    budget_line = (f"plan cost {canonical(cost)} within {canonical(state.budget)}" if still == actions else
+                   f"plan cost {canonical(cost)}, of which still to pay {canonical(spend(still))} within {canonical(state.budget)}")
     workflow = {
         "schema": WORKFLOW_SCHEMA,
         "id": f"W-{slug}",
@@ -123,11 +153,15 @@ def to_implementation(result: dict, state) -> dict:
         "steps": _steps(result, state),
         "edges": [],
         "verify": f"{goal} observed TRUE from an independent source; every step's receipt present; budget not exceeded "
-                  f"(plan cost {canonical(result.get('cost'))} within {canonical(state.budget)})",
+                  f"({budget_line})",
         "enforcement": {"current": "PROPOSED_ONLY: generated from a local plan; nothing executed; every real effect is an ask the owner stamps",
                         "planned": "the daemon runs the steps as asks; independent verification closes each"},
     }
     workflow["edges"] = _edges(workflow["steps"])
+    if any(spend(still)[k] > state.budget[k] for k in state.budget):   # the steps still to pay do not fit the budget of the State given
+        workflow["over_budget"] = spend(still)
+    if result.get("work_state") == "blocked":   # no step here makes the goal true: say so on the workflow itself
+        workflow["blocked"] = result.get("status")
     scaffold = {
         "title": f"Department for {goal}",
         "scope": scope,
@@ -145,7 +179,8 @@ def to_implementation(result: dict, state) -> dict:
               "verify": {"check": s["verify"], "met": False, "evidence": None}}
              for i, s in enumerate(workflow["steps"], 1) if s.get("method")]
     impl = {"schema": "core-algorithm/implementation/1", "status": "PROPOSED_ONLY",
-            "plan": {"goal": goal, "scope": scope, "status": result.get("status"), "actions": actions, "cost": result.get("cost"),
+            "plan": {"goal": goal, "scope": scope, "status": result.get("status"), "actions": actions, "cost": cost,
+                     "ran": ran, "spent": spend(ran), "waits": list(result.get("waits", [])), **({"skipped": skipped} if skipped else {}),
                      "trace_root_sha256": result.get("trace_root_sha256")},
             "workflow": workflow, "atoms": atoms, "scaffold": scaffold,
             "claim": "generated from a local plan; not executed; not registered; a runnable shape, not a run"}
@@ -163,11 +198,17 @@ def validate_workflow(wf: dict) -> list:
         if s.get("method") and s.get("sandbox") != LOCAL_SANDBOX:
             problems.append(f"step {i} is a method step without the local sandbox")
     pos = {s.get("id"): i for i, s in enumerate(wf.get("steps", []))}
+    if len(pos) != len(wf.get("steps", [])):
+        problems.append("two steps share one id")
     for e in wf.get("edges", []):
         if e.get("from") not in pos or e.get("to") not in pos:
             problems.append(f"edge {e.get('from')} -> {e.get('to')} names a step that is not in the workflow")
         elif pos[e["from"]] >= pos[e["to"]]:
             problems.append(f"step {e['to']} comes before its prerequisite {e['from']}")
+    if wf.get("blocked"):
+        problems.append(f"the plan is blocked ({wf['blocked']}): no step here makes the goal true")
+    if wf.get("over_budget"):
+        problems.append(f"the steps still to pay cost more than the budget left ({canonical(wf['over_budget'])})")
     if "PROPOSED_ONLY" not in str(wf.get("enforcement", {}).get("current", "")):
         problems.append("enforcement.current is not PROPOSED_ONLY")
     return problems

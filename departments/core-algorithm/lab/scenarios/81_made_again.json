@@ -1,0 +1,73 @@
+{
+  "schema": "sutra-extension/2",
+  "id": "81_made_again",
+  "scope": "orgA/quotes",
+  "goals": [
+    "order_shipped"
+  ],
+  "budget": {
+    "compute": 10,
+    "money": 10,
+    "attention": 3
+  },
+  "methods": [
+    {
+      "id": "prepare-quote@1",
+      "effect": "quote_ready",
+      "requires": [],
+      "provider": "local-provider",
+      "grant": "action:prepare-quote@1",
+      "cost": {
+        "compute": 1,
+        "money": 1,
+        "attention": 0
+      },
+      "action": "simulate_fact",
+      "approved": true,
+      "source": "reviewed/synthetic-method"
+    },
+    {
+      "id": "assume-approval@1",
+      "effect": "quote_approved",
+      "requires": [
+        "quote_ready"
+      ],
+      "provider": "local-provider",
+      "grant": "action:assume-approval@1",
+      "cost": {
+        "compute": 3,
+        "money": 3,
+        "attention": 0
+      },
+      "action": "simulate_fact",
+      "approved": true,
+      "source": "reviewed/synthetic-method"
+    },
+    {
+      "id": "ship-quoted@1",
+      "effect": "order_shipped",
+      "requires": [
+        "quote_ready",
+        "quote_approved"
+      ],
+      "provider": "local-provider",
+      "grant": "action:ship-quoted@1",
+      "cost": {
+        "compute": 1,
+        "money": 1,
+        "attention": 0
+      },
+      "action": "simulate_fact",
+      "approved": true,
+      "source": "reviewed/synthetic-method"
+    }
+  ],
+  "providers": {
+    "local-provider": 6
+  },
+  "grants": [
+    "action:prepare-quote@1",
+    "action:assume-approval@1",
+    "action:ship-quoted@1"
+  ]
+}

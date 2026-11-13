@@ -7,6 +7,7 @@ sys.path.insert(0,str(ROOT))
 from kernel.core import State,Kernel,digest
 from extensions.reflection import Learner   # learning lives in the extension since 0.4.0-shrink (move-out M1)
 import extensions.constructor   # registers compile_candidate and emit_artifact (0.7.0-handlers, move-outs M2 + M3)
+from extensions.asks import answer,open_asks   # registers ask (0.8.0-ask); answer is the stamp
 from kernel.core import ACTIONS
 from tools.make_packs import P
 
@@ -40,7 +41,32 @@ CASES=[
  ('26_registrable_repair','Repair to the standard','A reviewed method that adds step checks turns the failed standard into a plan.',['60_standard_goal','61_standard_theory','62_handwritten_evidence','63_repair_method'],True,'Standards'),
  ('27_registrable_generated','Generated work meets the standard','The workflow the implementation generator emits passes the same standard on evidence alone.',['60_standard_goal','61_standard_theory','64_generated_evidence'],True,'Standards'),
  ('28_website','A chain of four methods','A website: plan, write, build, check. The methods are authored out of order; the plan comes out in dependency order.',['70_site_goal','71_site_theory','72_site_methods'],False,'Ordering'),
+ ('29_ask','A human ask','The approval is unknown and a reviewed method may ask for it: the run asks once, waits, and ships nothing.',['00_goal','01_domain','02_methods','04_admission','80_ask_method'],True,'Asks'),
 ]
+ASK=['00_goal','01_domain','02_methods','04_admission','80_ask_method']
+
+def ask_events():
+    """One ask on three identical States, then what follows. On the first: a second look, an unrelated event, the answer yes.
+    On the second: the answer no, and a look after it. On the third: the original item comes back in stock while the question is out.
+    A fourth State (pack 81, no ask in it) records a plan made again: the quote is withdrawn and re-made, and the two steps whose rows come back are skipped."""
+    def start():
+        s=State.from_packs([pack(n) for n in ASK]);k=Kernel(s);first=k.run_standing(execute=True);return s,k,first
+    snap=lambda s:{'budget':dict(s.budget),'providers':dict(s.providers),'open_asks':open_asks(s)}
+    s,k,first=start();after_first=snap(s)
+    again=k.run_standing(execute=True);after_again=snap(s)
+    unrelated=k.on_event({'predicate':'substitute_stock','truth':'TRUE','version':'2','verified':True,'source':'fixture/stock-recount'},execute=True);after_unrelated=snap(s)
+    yes=answer(k,first['runs'][0]['model_receipts'][0],'TRUE','customer',execute=True);after_yes=snap(s)
+    s2,k2,first_no=start();after_first_no=snap(s2)
+    no=answer(k2,first_no['runs'][0]['model_receipts'][0],'FALSE','customer',execute=True);after_no=snap(s2)
+    no_again=k2.run_standing(execute=True);after_no_again=snap(s2)
+    s3,k3,first_other=start();after_first_other=snap(s3)
+    other=k3.on_event({'predicate':'original_stock','truth':'TRUE','version':'2','verified':True,'source':'fixture/stock-recount'},execute=True);after_other=snap(s3)
+    s4=State.from_packs([pack('81_made_again')]);k4=Kernel(s4);k4.run_standing(execute=True)
+    k4.on_event({'predicate':'quote_ready','truth':'FALSE','version':'2','verified':True,'source':'fixture/quote-withdrawn'})
+    made_again=k4.run_standing(execute=True)
+    return {'first':first,'after_first':after_first,'again':again,'after_again':after_again,'unrelated':unrelated,'after_unrelated':after_unrelated,
+            'answered_yes':yes,'after_yes':after_yes,'first_no':first_no,'after_first_no':after_first_no,'answered_no':no,'after_no':after_no,
+            'no_again':no_again,'after_no_again':after_no_again,'first_other':first_other,'after_first_other':after_first_other,'other_route':other,'after_other':after_other,'made_again':made_again}
 
 def pack(n):return json.loads((P/(n+'.json')).read_text())
 
@@ -83,13 +109,13 @@ def extra_events():
 
 def build():
     handlers={kind:{'module':fn.__module__,'file':str(Path(sys.modules[fn.__module__].__file__).resolve().relative_to(ROOT)),
-                     'sha256':hashlib.sha256(Path(sys.modules[fn.__module__].__file__).read_bytes()).hexdigest()} for kind,fn in sorted(ACTIONS.items())}
-    result={'release':'sutra-kernel-extensions/0.7.0-handlers','action_handlers':handlers,
+                     'sha256':hashlib.sha256(Path(sys.modules[fn.__module__].__file__).read_bytes()).hexdigest()} for kind,fn in sorted((k,h['run']) for k,h in ACTIONS.items())}
+    result={'release':'sutra-kernel-extensions/0.8.0-ask','action_handlers':handlers,
             'kernel_sha256':hashlib.sha256((ROOT/'kernel'/'core.py').read_bytes()).hexdigest(),
             'baseline_v0_1_sha256':hashlib.sha256((ROOT/'release'/'baseline_v0_1_core.py').read_bytes()).hexdigest(),
             'scope':'finite synthetic deterministic local simulation; NOT historical Core, current J2, or external outcomes',
             'cases':[scenario(x) for x in CASES],
-            'events':extra_events()}
+            'events':extra_events(),'ask_events':ask_events()}
     target=ROOT/'results'/'actual_run_records.json'
     target.write_text(json.dumps(result,ensure_ascii=False,indent=2)+'\n')
     print('WROTE',len(result['cases']),'runs to',target)

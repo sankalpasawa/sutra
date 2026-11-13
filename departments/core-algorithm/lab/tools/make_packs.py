@@ -130,6 +130,16 @@ pack('62_handwritten_evidence',evidence=workflow_facts(HANDWRITTEN))
 pack('63_repair_method',methods=[method('add-step-checks@1','every_step_has_check',['has_overall_verify'],cost={'compute':1,'money':0,'attention':1})],
      providers={'local-provider':2},grants=['action:add-step-checks@1'])
 pack('64_generated_evidence',evidence=workflow_facts(generated_workflow()))
+# A human ask (0.8.0-ask): the customer's approval is unknown; a reviewed method of kind `ask` asks for it and the run waits.
+pack('80_ask_method',methods=[method('ask-customer-approval@1','customer_approved',[],provider='owner-channel',
+                                     cost={'compute':0,'money':0,'attention':1},action='ask',
+                                     question='May we send a replacement for the item that is out of stock?',ask_to='customer')],
+     providers={'owner-channel':2},grants=['action:ask-customer-approval@1'])
+# A plan made again (0.8.0-ask, round five): when the quote is re-made, the approval and the shipment that rested on it read true again, and their steps are skipped.
+pack('81_made_again',scope='orgA/quotes',goals=['order_shipped'],budget={'compute':10,'money':10,'attention':3},
+     methods=[method('prepare-quote@1','quote_ready'),method('assume-approval@1','quote_approved',['quote_ready'],cost={'compute':3,'money':3,'attention':0}),
+              method('ship-quoted@1','order_shipped',['quote_ready','quote_approved'])],
+     providers={'local-provider':6},grants=['action:prepare-quote@1','action:assume-approval@1','action:ship-quoted@1'])
 # Fourth domain (0.6.0-order): a website for an organisation. A chain of four methods; the plan must come out in order.
 pack('70_site_goal',scope='orgA/website',goals=['site_live'],budget={'compute':10,'money':5,'attention':3},
      preference=['attention','money','compute'])
