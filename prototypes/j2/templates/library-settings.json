@@ -1,11 +1,12 @@
 {
-  "_note": "Settings of the template library (j2_template_lib.py reads this file; nothing here is repeated in code). no_business_type: what a charter's business_type holds when it recorded none (two such values are never the same business). stop_words and min_word_length: the words words() leaves out when two texts are compared. fact_fields: the shapes of a charter fact that name fields; the first pattern that matches a fact is used, {noun} is group 1 as an identifier, {Noun} the same in title case, {word} group 1 as written, {fact} the whole fact, {item} one listed name. routing: the numbers the router holds the template generator to; the generator is told each one in its prompt (routing.rules), and a reply that breaks one is refused with the rule, never changed by code.",
+  "_note": "Settings of the template library (j2_template_lib.py reads this file; nothing here is repeated in code). no_business_type: what a charter's business_type holds when it recorded none (two such values are never the same business). slots: the charter fields whose values the library shows as slots on the templates shelf; a field under named gives the slot its own name (site_name -> <site name>), an entry of a list under listed is named by the list and its place (facts -> <fact 3>); skip: values that record nothing. stop_words and min_word_length: the words words() leaves out when two texts are compared. fact_fields: the shapes of a charter fact that name fields; the first pattern that matches a fact is used, {noun} is group 1 as an identifier, {Noun} the same in title case, {word} group 1 as written, {fact} the whole fact, {item} one listed name. routing: the numbers the router holds the template generator to; the generator is told each one in its prompt (routing.rules), and a reply that breaks one is refused with the rule, never changed by code.",
   "schema": "library-settings/1",
   "min_word_length": 4,
   "stop_words": ["the", "and", "with", "this", "that", "page", "section", "every", "each", "from", "into", "their", "they",
                  "what", "when", "have", "has", "shows", "show", "lists", "list", "written", "must", "work", "works", "on",
                  "for", "its", "are", "is", "a", "an", "of", "to", "in", "as"],
   "no_business_type": ["business", "not recorded", "document"],
+  "slots": {"named": ["site_name", "product_name", "business_type"], "listed": ["facts"], "skip": ["not provided", "none", "n/a"], "min_length": 3},
   "list_separator": ",\\s*|\\s+and\\s+",
   "fact_fields": [
     {"makes": "objects",
