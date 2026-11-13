@@ -1,0 +1,39 @@
+{
+  "schema": "template-library/1",
+  "name": "Iron Grove Fitness Interactive elements",
+  "version": 1,
+  "sha": "2a459085e907bb2659e808a578dd18f2023db020d6a61960779f7ed9a19fbfb1",
+  "schema_sha": "d185d677949d7c092b00bc06200d351aee1696026191156639b082f315f78439",
+  "model_sha": "6b5082a9b30881b6fb929fe869905ead83cd469e7311a0e2122d77e7e568b821",
+  "class": "IronGroveFitnessInteractiveElementsV1",
+  "created": "2026-11-11T21:34:06",
+  "fingerprints": [
+    "5ef2e458cc593bcaeaf91b81be77bfa191ddda62beb48c58bce7a8c50894d8fd"
+  ],
+  "made_by": {
+    "run": "j2-20261111-211339",
+    "workflow": "W-17",
+    "atom": "W-17.a1",
+    "agent": "code (adapted from a run template)",
+    "date": "2026-11-11 21:13:39"
+  },
+  "business": {
+    "name": "Iron Grove Fitness",
+    "type": "fitness studio"
+  },
+  "mock": false,
+  "collected_from": {
+    "run": "j2-20261111-211339",
+    "where": "the run's copy"
+  },
+  "used_by": [
+    {
+      "run": "j2-20261111-211339",
+      "workflow": "W-17",
+      "atom": "W-17.a1",
+      "action": "extended"
+    }
+  ],
+  "renamed_from": "Still Point Yoga Interactive elements@2",
+  "adapted_from": "Still Point Yoga Interactive elements@1"
+}

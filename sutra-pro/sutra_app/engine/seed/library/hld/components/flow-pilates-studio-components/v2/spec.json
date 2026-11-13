@@ -1,0 +1,117 @@
+{
+  "name": "Flow Pilates Studio Components",
+  "artifact": "hld",
+  "section": "Components",
+  "version": 2,
+  "kind": "specialised",
+  "description": "Components for Flow Pilates Studio (hld): the generic HLD/1 · Components fields plus facts_used, from 1 charter fact(s); adapted from a template made for another business",
+  "fields": [
+    {
+      "name": "components",
+      "type": "list[Component]",
+      "required": true,
+      "description": "the components, C1, C2, ... in order; each names the PRD requirement ids it covers (for Flow Pilates Studio, a hld)",
+      "enum": null,
+      "nullable": false
+    },
+    {
+      "name": "assumptions",
+      "type": "list[string]",
+      "required": false,
+      "description": "the assumptions of Flow Pilates Studio's Components",
+      "enum": null,
+      "nullable": false
+    },
+    {
+      "name": "facts_used",
+      "type": "list[string]",
+      "required": false,
+      "description": "the charter facts this section is written from, copied exactly from Flow Pilates Studio's charter",
+      "enum": [
+        "Flow Pilates Studio"
+      ],
+      "nullable": false
+    },
+    {
+      "name": "booking_address",
+      "type": "string",
+      "required": true,
+      "description": "the booking address of Flow Pilates Studio's Components",
+      "enum": null,
+      "nullable": false
+    }
+  ],
+  "objects": [
+    {
+      "name": "Component",
+      "fields": [
+        {
+          "name": "id",
+          "type": "string",
+          "required": true,
+          "description": "C1, C2, ... in order",
+          "enum": null,
+          "nullable": false
+        },
+        {
+          "name": "name",
+          "type": "string",
+          "required": true,
+          "description": "the component name",
+          "enum": null,
+          "nullable": false
+        },
+        {
+          "name": "responsibility",
+          "type": "string",
+          "required": true,
+          "description": "its one responsibility, in one line",
+          "enum": null,
+          "nullable": false
+        },
+        {
+          "name": "covers",
+          "type": "list[string]",
+          "required": false,
+          "description": "the PRD requirement ids it covers, e.g. [\"R1\"]",
+          "enum": null,
+          "nullable": false
+        },
+        {
+          "name": "page",
+          "type": "string",
+          "required": false,
+          "description": "the page id it sits on, e.g. \"P1\"",
+          "enum": null,
+          "nullable": false
+        }
+      ]
+    }
+  ],
+  "rules": [
+    {
+      "rule": "enum",
+      "path": "facts_used[]",
+      "values": [
+        "Flow Pilates Studio"
+      ],
+      "from": "facts",
+      "name": "facts_used are facts of Flow Pilates Studio's charter"
+    }
+  ],
+  "sha": "2258c9fdf3420b2b44348d82a7742f5c00cd34b3c3e2165e69d33f8401ec1ed7",
+  "extends": "hld/components@generic/1",
+  "made_by": {
+    "run": "j2-20261112-150036",
+    "workflow": "W-21",
+    "atom": "W-21.a1",
+    "agent": "code (adapted from a run template)"
+  },
+  "context": {
+    "business_type": "hld",
+    "facts_used": [
+      "Flow Pilates Studio"
+    ],
+    "fingerprint": "31de9c094b2f2f2a99f1dbd75e89c8be92720450839b0832478a6940e8ab275d"
+  }
+}

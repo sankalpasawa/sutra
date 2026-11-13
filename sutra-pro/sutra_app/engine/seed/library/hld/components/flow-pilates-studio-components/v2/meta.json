@@ -1,0 +1,39 @@
+{
+  "schema": "template-library/1",
+  "name": "Flow Pilates Studio Components",
+  "version": 2,
+  "sha": "2258c9fdf3420b2b44348d82a7742f5c00cd34b3c3e2165e69d33f8401ec1ed7",
+  "schema_sha": "3c3f17083667177293323ba6d2216f72246b8c35faa017fb31fbadce70926d00",
+  "model_sha": "a5fe3303be8d1e6d0cf1b1d42013bdd0c026fae874391e553ac4be51e377f66f",
+  "class": "FlowPilatesStudioComponentsV2",
+  "created": "2026-11-12T15:20:42",
+  "fingerprints": [
+    "31de9c094b2f2f2a99f1dbd75e89c8be92720450839b0832478a6940e8ab275d"
+  ],
+  "made_by": {
+    "run": "j2-20261112-150036",
+    "workflow": "W-21",
+    "atom": "W-21.a1",
+    "agent": "code (adapted from a run template)",
+    "date": "2026-11-12 15:00:36"
+  },
+  "business": {
+    "name": "Flow Pilates Studio",
+    "type": "pilates studio"
+  },
+  "mock": false,
+  "collected_from": {
+    "run": "j2-20261112-150036",
+    "where": "the run's copy"
+  },
+  "used_by": [
+    {
+      "run": "j2-20261112-150036",
+      "workflow": "W-21",
+      "atom": "W-21.a1",
+      "action": "extended"
+    }
+  ],
+  "renamed_from": "Still Point Yoga Components@8",
+  "adapted_from": "Iron Grove Fitness Components@2"
+}

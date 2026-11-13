@@ -1,0 +1,39 @@
+{
+  "schema": "template-library/1",
+  "name": "Rhythm Room Dance Studio Purpose and scope",
+  "version": 1,
+  "sha": "e2661e1df2e762bfa791d0124c0cdd8208a2be34600e5a7209ed9bfde9d37206",
+  "schema_sha": "f4b05bf094f38675920fa7fd91805056884751b1c4b85869f366950ad90e8169",
+  "model_sha": "a7ad7ad8a4868607696fb05ee058b627e0acc6d18ca601924cce7a2ffdc7b21c",
+  "class": "RhythmRoomDanceStudioPurposeAndScopeV1",
+  "created": "2026-11-11T22:07:02",
+  "fingerprints": [
+    "b6a3b4d0bad7a811ad74db1074e12975f1bb1c49487db453e58fb3c1f21f8f62"
+  ],
+  "made_by": {
+    "run": "j2-20261111-215733",
+    "workflow": "W-7",
+    "atom": "W-7.a1",
+    "agent": "code (adapted from a run template)",
+    "date": "2026-11-11 21:57:33"
+  },
+  "business": {
+    "name": "Rhythm Room Dance Studio",
+    "type": "hld"
+  },
+  "mock": false,
+  "collected_from": {
+    "run": "j2-20261111-215733",
+    "where": "the run's copy"
+  },
+  "used_by": [
+    {
+      "run": "j2-20261111-215733",
+      "workflow": "W-7",
+      "atom": "W-7.a1",
+      "action": "extended"
+    }
+  ],
+  "renamed_from": "Still Point Yoga Purpose and scope@3",
+  "adapted_from": "Still Point Yoga Purpose and scope@1"
+}

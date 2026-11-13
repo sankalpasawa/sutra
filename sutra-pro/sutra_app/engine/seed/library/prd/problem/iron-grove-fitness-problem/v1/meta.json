@@ -1,0 +1,39 @@
+{
+  "schema": "template-library/1",
+  "name": "Iron Grove Fitness Problem",
+  "version": 1,
+  "sha": "6c57e9c555e0fcc64318b0ec7d80cf0bb187daf125b02447a4ccfd006393c560",
+  "schema_sha": "33f82638b8616ffb0e707ec62418275b59dbaa36bf555f0b0d93b6b22e1c71e5",
+  "model_sha": "3bd385ec628a7ffbe527f65464bf7754e7a8a2ea500c9e1472626ecc5c8316bb",
+  "class": "IronGroveFitnessProblemV1",
+  "created": "2026-11-11T21:21:07",
+  "fingerprints": [
+    "ed0ea32372a419568f95fa22f477a15f2c693766f7c7f8aedfc18743924af51a"
+  ],
+  "made_by": {
+    "run": "j2-20261111-211339",
+    "workflow": "W-1",
+    "atom": "W-1.a1",
+    "agent": "code (adapted from a run template)",
+    "date": "2026-11-11 21:13:39"
+  },
+  "business": {
+    "name": "Iron Grove Fitness",
+    "type": "fitness studio"
+  },
+  "mock": false,
+  "collected_from": {
+    "run": "j2-20261111-211339",
+    "where": "the run's copy"
+  },
+  "used_by": [
+    {
+      "run": "j2-20261111-211339",
+      "workflow": "W-1",
+      "atom": "W-1.a1",
+      "action": "extended"
+    }
+  ],
+  "renamed_from": "Still Point Yoga Problem@3",
+  "adapted_from": "Still Point Yoga Problem@2"
+}
