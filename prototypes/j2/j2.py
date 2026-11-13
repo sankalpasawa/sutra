@@ -3398,6 +3398,7 @@ class J2Run:
         # J2_TEMPLATE_LIBRARY=1 (template-library/1): the template each workflow's builder fills, chosen by the router
         self.tpl_lib = j2_template_lib.enabled()
         self.tpl_routes, self.tpl_decisions, self.tpl_cur = {}, [], None
+        self.reused_from = None      # step 6: the run template whose folder files this run started from
         self.style = None                              # the style guide, written by the first workflow that runs
         self.run_tpl = None                            # J2_RUN_TEMPLATES=1: the run template this run started from (set_run_template)
         self.auto_pick = None                          # J2_AUTO_REUSE=1: the run templates scored after the first charter, and the one picked (_auto_reuse_pick)
@@ -3435,7 +3436,8 @@ class J2Run:
         chosen, added = j2_template_lib.select_workflows(rt, [k for k in keys or [] if str(k).strip().lower() != "all"])
         self.run_tpl = {"id": rt.id, "name": rt.name, "total": len(rt.workflows), "selected": chosen, "added": added,
                         "rows": [w.model_dump() for w in rt.workflows], "stages": list(rt.stages),
-                        "slots": list(rt.facts_slots), "names": {}, "used": {}, "plans": {}, "workflows": []}
+                        "slots": list(rt.facts_slots), "names": {}, "used": {}, "plans": {}, "workflows": [],
+                        "outputs": dict(getattr(rt, "outputs", None) or {}), "from_run": rt.made_from_run}
 
     def _auto_reuse_pick(self):
         """J2_AUTO_REUSE=1, once per run, when the first charter is stamped and the run has no run template: every run
@@ -8258,6 +8260,9 @@ class J2Run:
                   "envelope": env, "charged": True, "calls_used": 0, "retries_used": 0, "outputs": w.get("outputs"),
                   "completion_check": w.get("completion_check", ""), "dependencies": w.get("dependencies") or [],
                   "status": "registered", "cycle": self.cycle, "kind": w.get("kind")}
+            if self.folder and isinstance(wf["outputs"], list):      # a folder's files, recorded from the run folder
+                rel = self._out_rel()      # (file_sorter/sort_files.py): a run template finds the type they belong to
+                wf["outputs"] = [o if str(o).startswith(rel + "/") else f"{rel}/{str(o).lstrip('./')}" for o in wf["outputs"]]
             if w.get("real_run") is not None:      # step 7: checked here, asked for when the deliverable is workable
                 bad = real_run_problems(w["real_run"], self._fact_source(), self.out.get("test_runner"), self.dir)
                 if bad:
@@ -8966,6 +8971,38 @@ class J2Run:
         """The run's output folder: the form's folder, else builder_tools' (types.json)."""
         return os.path.join(self.dir, self.out.get("folder") or j2_types.builder_tools()["folder"])
 
+    def _reuse_folder(self, w, cwd):
+        """Step 6: a run that follows a run template whose outputs name a folder for this type starts from that
+        template's files: copied once from the run it was made from (when it is saved here) into the output folder,
+        with a routing decision (j2_template_lib.folder_decision) the Library tab counts. The template's name when the
+        files are here from it (copied now or earlier in this run), else None: the builder builds as usual."""
+        t = self.run_tpl or {}
+        plan = (t.get("outputs") or {}).get(self.output)
+        if not plan or not plan.get("files"):
+            return None
+        if getattr(self, "reused_from", None):
+            return self.reused_from
+        src = os.path.join(saved_dir(t.get("from_run")) or "", plan.get("folder") or "")
+        if any(os.scandir(cwd)) or not all(os.path.isfile(os.path.join(src, f)) for f in plan["files"]):
+            return None
+        for f in plan["files"]:
+            os.makedirs(os.path.dirname(os.path.join(cwd, f)) or cwd, exist_ok=True)
+            shutil.copy2(os.path.join(src, f), os.path.join(cwd, f))
+        rt = j2_template_lib.get_run_template(t["id"])
+        dec = j2_template_lib.folder_decision(rt, self.output, plan["files"], {"run": os.path.basename(self.dir),
+                                              "workflow": w["id"], "atom": (w.get("atoms") or [{}])[0].get("id")})
+        self.tpl_decisions.append(dec)
+        self.save("templates.json", {"schema": j2_template_lib.SCHEMA, "library": j2_template_lib.lib_dir(),
+                                     "decisions": self.tpl_decisions, **self._run_tpl_record()})
+        self.post("system", f"{w['id']} starts from run template {t.get('name')}: {len(plan['files'])} file(s) copied "
+                            f"from run {t.get('from_run')} ({dec.get('action')}); code checks them before any builder call.")
+        self.reused_from = t.get("name")
+        return self.reused_from
+
+    def _out_rel(self):
+        """The output folder, relative to the run folder, with forward slashes."""
+        return os.path.relpath(self._out_dir(), self.dir).replace(os.sep, "/")
+
     def _main_file(self):
         """The output's main file in the folder (its form's file name), None for a folder of files."""
         f = os.path.basename(str(self.out.get("entry_file") or ""))
@@ -9046,6 +9083,8 @@ class J2Run:
         after the last failed attempt). A change outside the folder fails the workflow at once."""
         fn, tools = w["id"], self._builder_tools()
         cwd, main, label = tools["cwd"], self._main_file(), self.out["label"]
+        rel = self._out_rel() + "/"      # the builder works inside the folder: its outputs, relative to it
+        brief = {**brief, "outputs": [o[len(rel):] if str(o).startswith(rel) else o for o in brief.get("outputs") or []]}
         runner = " ".join(self.out.get("test_runner") or ())
         guide = self.out["builder"]
         task0 = (f"YOU ARE {NAMES[fn]}, the agent for one registered workflow.\nYOUR WORKFLOW: "
@@ -9061,9 +9100,19 @@ class J2Run:
                     f"write into the files instead):\n{guide}" if guide else "")
                  + self._artifact_context(w))
         attempt, evidence, r, failed, stop = 0, "", {}, [], None
+        reused = self._reuse_folder(w, cwd)
+        if reused:      # step 6: the run template's files are already here: code checks them before any builder call
+            attempt = 1
+            text = self._out_text()
+            self._publish_out(text)
+            failed = self._run_checks(w, attempt, text, folder=cwd)
+            r = {"say": f"@Coordination {fn} reused {reused}'s files; code ran its checks.",
+                 "human_output": f"I reused the files of {reused} instead of building them again.",
+                 "atom_human_output": "This part comes from an earlier run that made the same thing."}
+            evidence = "\n".join(f"- {x['check']} ({x['type']} {x['target']}, expect {x['expect']}): {x['evidence']}" for x in failed)
         self.tools_builder = j2_types.builder_tools().get("builder")
         try:
-            while attempt < MAX_CHECK_ATTEMPTS and w["calls_used"] < max_calls + attempt:
+            while (not reused or failed) and attempt < MAX_CHECK_ATTEMPTS and w["calls_used"] < max_calls + attempt:
                 attempt += 1
                 w["calls_used"] += 1
                 try:

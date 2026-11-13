@@ -87,74 +87,22 @@ store. Do not edit Kaivan's files: `j2_template_lib.py`, `library/`, `templates/
 `j2_artifact_models.py`, the Library tab. If `decision_group` or anything there must change, write exactly what is
 needed as a note for the founder to send him. After: `--fast`, mock release check.
 
-**Status (2026-11-13, after merging his library cleanup, `afa6881b`):** still blocked for real runs.
+**Status:** done without a change from Kaivan. Folder workflows record their outputs from the run folder
+(`<folder>/<file>`, `J2Run._register`), which his `_stage_of` already matches (`"<folder>/"`, `j2_template_lib.py:2368`);
+checked on copies of the three real folder runs (j2-20261113-195301, -195303, -164130): each saves as a run template.
+A run that follows a run template with a folder for its type starts from that template's files (copied from the saved
+run), code checks them before any builder call, and the decision is "reused" (`J2Run._reuse_folder`, test
+`folder_run_reused`). The fallback request is dropped from the note.
 
-| Note item | In main? | Detail |
-|---|---|---|
-| 1. `_stage_of` places a folder run's workflows | Partly | He matches a workflow's `outputs` against `"<folder>/"` (`j2_template_lib.py:2368`). His fixture writes `outputs: ["script/"]`, so `folder_reuse` passes. Real runs record `outputs` relative to the folder (`["sort_files.py"]`, `["copy_files.py"]`), so `run_template_from_run` still raises "no workflow finished" on j2-20261113-195301, j2-20261113-195303 and j2-20261113-164130. The `"deliverable"` fallback is not in. |
-| 2. `decision_group` counts a folder type as pages | Yes | It returns the type's `group`, else its form (`j2_template_lib.py:899`): a folder type is counted under its own form. |
-| 3. `assumptions_section` | Kept | `j2_template_lib.py:470`, unchanged. |
+### Note for Kaivan (sent; status after his merge `afa6881b`)
 
-**Still to ask him (send this):**
-
-> Thanks for the library cleanup. One thing from the note is still open: `_stage_of` finds a folder run's
-> workflows only when their `outputs` start with the folder (`"script/..."`, as your fixture has). Real runs record
-> outputs relative to the folder (`"sort_files.py"`), so `run_template_from_run` still raises "no workflow finished"
-> on every real folder run (e.g. runs j2-20261113-195301 and j2-20261113-195303). Could you add the fallback from the
-> note, before the last `return` of `_stage_of`:
->
-> ```python
->     if w.get("deliverable") in j2_types.names():      # the type the workflow serves (workflows.json), any form
->         return w["deliverable"], w["deliverable"], NOT_RECORDED, None
-> ```
->
-> We'll write `"deliverable"` on every workflow from our side when you say it's in. Also: since our step 6a,
-> `types.json` has no built-in folder type (a run makes one, kept in `artifacts/types.local.json`), so a check over
-> `j2_types.names()` sees this machine's local types too; we narrowed one line of `library_cleanup` to the file's
-> own types in our merge. And `sutra_library` fails on a machine whose saved run recorded "phone" as a charter value
-> (run j2-20261111-013315 here): "phone" is also a generic word on the templates shelf.
-
-### Note for Kaivan (to send)
-
-> Hi Kaivan. Three things in `j2_template_lib.py`, from Disha's remove-restrictions branch.
->
-> **1. `_stage_of` can't place a folder run's workflows (blocks saving and reusing script runs).**
-> `run_template_from_run` on a run that built a folder of files (e.g. a copy script and its test) raises
-> "no workflow finished, so there is nothing to bundle". `_stage_of` finds a workflow's stage from its routing
-> decision, then `documents.json`, then a type's file name. A folder run has none of these: no section templates are
-> routed, it is not a document, and its type's file is a glob (`<name>/*`). From our side, `j2.py` will write the
-> type each workflow serves into `workflows.json` as `"deliverable"` (any form). Could you add one fallback at the
-> end of `_stage_of`, before the last `return`:
->
-> ```python
->     if w.get("deliverable") in j2_types.names():      # the type the workflow serves (workflows.json), any form
->         return w["deliverable"], w["deliverable"], NOT_RECORDED, None
-> ```
->
-> Older runs have no `"deliverable"` and behave as today.
->
-> **2. `decision_group` counts a folder type as "pages".** It returns `"documents"` for the document form and
-> `"pages"` for every other form, so a folder type (form `agent`, `"output": "folder"` in `types.json`) would be
-> counted with pages in the Library tab. Folder runs make no routing decisions today, so nothing shows wrong yet.
-> Suggested:
->
-> ```python
->     f = j2_types.info(a)
->     if f["output"] == "folder":
->         return None      # or a group of its own, if the Library tab should count folders
->     return "documents" if f["form"] == "document" else "pages"
-> ```
->
-> **3. An edit we made in your file without asking (sorry).** In commit `d2bb7f6d` we added one field to
-> `GenericFile`, `j2_template_lib.py:470`:
->
-> ```python
->     assumptions_section: bool = False      # code closes the document with "Assumptions to confirm" (j2.assemble_doc)
-> ```
->
-> A type's `generic.json` may now say `"assumptions_section": true` (prd, hld, lld and business_report do), and
-> `j2_types.asks_assumptions` reads it. Without the field, those four `generic.json` files would fail your model.
-> Please keep it, rename it, or move it as you see fit, and tell us if you change it.
+| Item | Status |
+|---|---|
+| 1. `_stage_of` for folder runs | Not needed: we now record outputs as `<folder>/<file>`, which his `_stage_of` matches |
+| 2. `decision_group` counts a folder type as pages | Fixed in main: the type's `group`, else its form |
+| 3. `assumptions_section` (`j2_template_lib.py:470`) | Kept in main |
+| 4. Builder guidance line in `templates/builder.md` ("never run on the Requester's folders; code does that after approval") | Paused (founder, usage); tell him when it is written, as `templates/` is his |
+| Tests | `library_cleanup` narrowed to `types.json`'s own types in our merge; `sutra_library` fails on a machine whose saved run recorded "phone" as a charter value |
 
 ## Step 7: run for real
 
@@ -181,7 +129,13 @@ two folders: allow a `"reads"` list (read only) next to `"folder"` (the only wri
 **Release check:** the three briefs ask for no real run, so the live check after step 7 only shows nothing else
 broke. A brief that does (e.g. "sort the files in /tmp/j2-sort-demo") would test it live; add it?
 
-## Step 8: delete dead code
+### Paused (founder, 2026-11-13, at 85% of weekly usage)
+
+- Dry run before the RUN code: run the command on a copy of the stated folders in the sandbox and show what would be
+  created, changed or deleted, with counts; then ask for the code. With a test.
+- The builder guidance line in `templates/builder.md` (above).
+
+## Step 8: delete dead code (paused, founder, 2026-11-13)
 
 Delete page/document code the general path no longer uses, plus tests that only checked it, each listed in the
 commit message. After: `--fast`, mock release check.

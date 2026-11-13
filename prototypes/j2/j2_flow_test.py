@@ -4596,6 +4596,74 @@ def run_for_real():
           "or Decide for me runs nothing; the exact reply runs it once, writing only its folder, with a receipt ok")
 
 
+@with_folder_type
+def folder_run_reused():
+    """remove-restrictions step 6: a folder run's workflows record their outputs from the run folder (<folder>/<file>),
+    so j2_template_lib.run_template_from_run finds the type they belong to; the run is saved as a run template; a
+    second run that follows it starts from the template's files (copied from the saved run), code checks them first,
+    and no builder is called: the copy script is reused, not rebuilt. Its decision is "reused" (Library tab counts)."""
+    import j2_template_lib as L
+    tmp = tempfile.mkdtemp(prefix="j2-reuse-")
+    keep_env = {k: os.environ.get(k) for k in ("J2_LIBRARY_DIR", "J2_RUN_TEMPLATES", "J2_AGENT_TOOLS")}
+    keep_runs = j2.RUNS_DIR
+    try:
+        os.environ.update(J2_LIBRARY_DIR=os.path.join(tmp, "library"), J2_RUN_TEMPLATES="1", J2_AGENT_TOOLS="1")
+        j2.RUNS_DIR = os.path.join(tmp, "runs")
+        # a registered folder workflow records its outputs from the run folder
+        run = j2.J2Run()
+        run.set_output(FT)
+        run.goal, run.budget = {"statement": "copy", "done_when": ["files copied"]}, 300
+        atom = {"id": "a1", "goal": "copy files", "context": ["charter item 1"], "constraints": ["only the folder"],
+                "how": {"kind": "AI", "agent": "Builder", "steps": "write copy_files.py"},
+                "expected_output": [{"text": "copy_files.py exists", "kind": "file", "target": "copy_files.py"}],
+                "verification": [{"text": "copy_files.py exists", "type": "file-exists", "target": "copy_files.py", "expect": True}]}
+        reg, refused, _ = run._register([{"name": "Copier", "goal_gap": "x", "outputs": ["copy_files.py", f"{FT}/README.md"],
+                                          "completion_check": "z", "covers": [1], "parts": ["agent_file"], "atoms": [atom]}])
+        assert [w["outputs"] for w in reg] == [[f"{FT}/copy_files.py", f"{FT}/README.md"]] and not refused, (reg, refused)
+        # run 1: the committed folder-run fixture, as a run of type FT
+        src = os.path.join(j2.HERE, "fixtures", "folder-run", "j2-20261113-090000")
+        r1 = os.path.join(j2.RUNS_DIR, "j2-20261113-090000")
+        shutil.copytree(src, r1)
+        os.rename(os.path.join(r1, "script"), os.path.join(r1, FT))
+        a = json.load(open(os.path.join(r1, "artifacts.json")))
+        for row in a["rows"]:
+            if row.get("type") == "script":
+                row.update(type=FT, form="agent", folder=FT, file=f"{FT}/*", name="Script")
+        json.dump(a, open(os.path.join(r1, "artifacts.json"), "w"))
+        wfs = json.load(open(os.path.join(r1, "workflows.json")))
+        for x in wfs:
+            x["outputs"] = [f"{FT}/copy_files.py", f"{FT}/test_copy_files.py", f"{FT}/README.md"]      # as _register records them
+        json.dump(wfs, open(os.path.join(r1, "workflows.json"), "w"))
+        rt = L.run_template_from_run(r1)
+        files = ["README.md", "copy_files.py", "test_copy_files.py"]
+        assert rt.stages == [FT] and rt.outputs[FT]["files"] == files, (rt.stages, rt.outputs)
+        L.save_run_template(rt)
+        # run 2 follows it: the files are copied in and checked; no builder call
+        run2 = j2.J2Run()
+        run2.set_output(FT)
+        run2.goal, run2.budget = {"statement": "copy for Harbor Clinic", "done_when": ["files copied"]}, 300
+        assert run2.set_run_template(rt.id) and run2.run_tpl["outputs"][FT]["files"] == files
+        checks = [{"text": f"{f} exists", "type": "file-exists", "target": f, "expect": True} for f in files]
+        w = {"id": "W-1", "name": "copier", "purpose": "copy", "outputs": [f"{FT}/copy_files.py"], "status": "running",
+             "calls_used": 0, "retries_used": 0, "cost": 10, "cycle": 1, "section": "W-1", "covers": [1],
+             "atoms": [{"id": "W-1.a1", "goal": "copy files", "verification": checks, "expected_output": []}]}
+        run2.workflows = [w]
+        before = len(run2.call_log)
+        run2._run_tools(w, {"id": "W-1", "name": "copier", "outputs": w["outputs"]}, 3)
+        assert len(run2.call_log) == before and w["status"] == "done" and w["calls_used"] == 0, (w["status"], run2.call_log[before:])
+        assert sorted(os.listdir(run2._out_dir())) == files
+        dec = json.load(open(os.path.join(run2.dir, "templates.json")))["decisions"]
+        assert [(d["action"], d["from_template"]) for d in dec] == [("reused", True)], dec
+        assert L.run_template_use(run2.dir)["counts"][L.decision_group({"artifact": FT}, run2.dir)]["reused"] == 1
+    finally:
+        j2.RUNS_DIR = keep_runs
+        for k, v in keep_env.items():
+            os.environ.pop(k, None) if v is None else os.environ.__setitem__(k, v)
+        shutil.rmtree(tmp, ignore_errors=True)
+    print("folder run reused: outputs recorded from the run folder; a folder run saved as a run template; a second run "
+          "starts from its files, checked by code, with no builder call; its decision counts as reused ok")
+
+
 def builder_time_limit():
     """J2_BUILDER_TIMEOUT (default 600 s): llm stops a call past its limit for claude-cli (the process is killed once, no
     internal retry) and the Anthropic stream (closed at the next piece, the late text never returned); without a limit
@@ -15705,6 +15773,7 @@ if __name__ == "__main__":
             one_artifact_view()         # remove-restrictions step 5: one artifact view, every output file, warnings apart
             folder_types_named()        # remove-restrictions 6a: a folder output gets a type named for what it makes
             run_for_real()              # remove-restrictions step 7: a real run only on the Requester's exact approval
+            folder_run_reused()         # remove-restrictions step 6: a folder run saved and reused, not rebuilt
             builder_context_trim()      # a real run's builder prompt: no chat, no other workflows
             builder_inputs()            # depended-on sections in full, cut inputs noticed and logged
             timing_records()            # timing.json and Run settings' calls, tokens and time
