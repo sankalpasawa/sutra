@@ -16,7 +16,9 @@ from typing import Annotated, Any, Literal, Union
 
 from pydantic import Field, StringConstraints, TypeAdapter, ValidationError, field_validator, model_serializer, model_validator
 
-from sutra_app.engine.spec import DEPT_ID_RE, OUTPUT_NAME_RE, RUN_ID_RE, TASK_SCHEMA, TASK_SETTING_KEYS
+from sutra_app.engine.spec import (
+    DEPT_ID_RE, OUTPUT_NAME_RE, RUN_ID_RE, RUN_TEMPLATE_ID_RE, RUN_TEMPLATE_WORKFLOWS_MAX, TASK_SCHEMA, TASK_SETTING_KEYS, run_template_keys,
+)
 from sutra_app.library.chat import ChatBlock
 from sutra_app.library.base import Value, nested_models, unwrap_annotation
 from sutra_app.library.node import GraphNodeId, NodeState
@@ -584,8 +586,9 @@ _INT_SETTING = re.compile(r"[1-9][0-9]{0,5}")
 
 
 class TaskSettings(Value):
-    """The eight task keys a request may carry (D18, S1-contracts-03; J2 sync 4 added the Decide for me switch), all text as J2 reads its environment. A key left unset is
-    left out of the dump. Anything else is refused (closed class), so a model reply or web request cannot reach live email,
+    """The ten task keys a request may carry (D18, S1-contracts-03; J2 sync 4 added the Decide for me switch, J2 sync 6 the two run template keys, D182), all text as J2
+    reads its environment. `J2_RUN_TEMPLATE` and `J2_RUN_TEMPLATE_WORKFLOWS` are not engine settings: they name the run template this one request starts from and
+    the workflows of it, and only the engine host reads them. A key left unset is left out of the dump. Anything else is refused (closed class), so a model reply or web request cannot reach live email,
     a Chrome path or a forced audit failure."""
 
     J2_OUTPUT: Annotated[str, StringConstraints(pattern=rf"^(auto|{OUTPUT_NAME_RE})$")] | None = None      # `auto` or a type name by shape (D166)
@@ -596,6 +599,15 @@ class TaskSettings(Value):
     J2_SLIM: Literal["0", "1"] | None = None
     J2_RATES: Literal["0", "1"] | None = None
     J2_DECIDE_FOR_ME: Literal["0", "1"] | None = None
+    J2_RUN_TEMPLATE: Annotated[str, StringConstraints(pattern=rf"^{RUN_TEMPLATE_ID_RE}$")] | None = None      # a run template's id (D182)
+    J2_RUN_TEMPLATE_WORKFLOWS: Annotated[str, StringConstraints(max_length=RUN_TEMPLATE_WORKFLOWS_MAX)] | None = None      # `all` or a comma list of workflow keys
+
+    @field_validator("J2_RUN_TEMPLATE_WORKFLOWS")
+    @classmethod
+    def _workflow_keys(cls, value: str | None) -> str | None:
+        if value is not None and run_template_keys(value) is None:
+            raise ValueError("must be all, or a comma list of at most 40 workflow keys of at most 20 letters, digits, - _ or .")
+        return value
 
     @field_validator("J2_BUDGET", "J2_BUDGET_CAP")
     @classmethod

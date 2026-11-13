@@ -135,7 +135,9 @@ def test_the_task_spec_ignores_what_a_newer_orchestrator_adds_and_the_run_spec_d
 def test_the_task_setting_keys_are_the_run_spec_keys_and_each_one_is_an_engine_setting():
     from sutra_app.orchestrator.models import TaskSettings
     assert tuple(TaskSettings.model_fields) == TASK_SETTING_KEYS
-    assert set(TASK_SETTING_KEYS) <= set(engine_spec.ENV_NAMES.values())
+    task_only = {"J2_RUN_TEMPLATE", "J2_RUN_TEMPLATE_WORKFLOWS"}      # D182: not settings; the host reads them from the task itself
+    assert task_only <= set(TASK_SETTING_KEYS) and not task_only & set(engine_spec.ENV_NAMES.values())
+    assert set(TASK_SETTING_KEYS) - task_only <= set(engine_spec.ENV_NAMES.values())
     assert not set(TASK_SETTING_KEYS) & {engine_spec.ENV_NAMES[name] for name in engine_spec.LOCKED_FIELDS}
 
 
