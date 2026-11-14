@@ -14,7 +14,7 @@ import re
 from collections.abc import Mapping
 from typing import Annotated, Any, Literal, Union
 
-from pydantic import Field, StringConstraints, TypeAdapter, ValidationError, field_validator, model_serializer, model_validator
+from pydantic import ConfigDict, Field, StringConstraints, TypeAdapter, ValidationError, field_validator, model_serializer, model_validator
 
 from sutra_app.engine.spec import (
     DEPT_ID_RE, OUTPUT_NAME_RE, RUN_ID_RE, RUN_TEMPLATE_ID_RE, RUN_TEMPLATE_WORKFLOWS_MAX, TASK_SCHEMA, TASK_SETTING_KEYS, run_template_keys,
@@ -63,7 +63,12 @@ AtomDisplay = Literal["open", "verify_failed", "closed", "refused", "abandoned"]
 # ---- events (SSE) -------------------------------------------------------------------------------------------------
 
 class Event(Value):
-    """One server event. `seq` is process-local from 1 each launch; the database hands out `seq` 0 and the bus assigns it."""
+    """One server event. `seq` is process-local from 1 each launch; the database hands out `seq` 0 and the bus assigns it.
+
+    The data keeps its strings exactly as they were: `Value` strips the white space around every string it validates, and a streamed piece of text ("the ", " price") is
+    nothing but white space at its edges (streaming design D232: found by the browser test, the page saw "aprice in" and its offset check made it read the snapshot again)."""
+
+    model_config = ConfigDict(str_strip_whitespace=False)
 
     seq: Count
     at: Iso

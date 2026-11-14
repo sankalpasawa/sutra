@@ -1605,3 +1605,45 @@ Decided by Claude on its own, on the dates shown. The owner can veto any of them
 - Why: the stored reply must equal what was shown; a slow disk must not cost CPU or streaming latency or a spurious 409.
 - Rejected: dropping the checkpoint deadline while a write runs (nothing would wake the ticker when it ends); closing without joining (the join is bounded and keeps tests and shutdown clean).
 - Diagram: label "stop wins over a late result" on Live turn.
+
+## D227 — Client layers: intake, store, client, view
+- Sources: streaming design D202, D220, D221, D222; `sutra_events.js` (the page's own SutraEvents handle stays the transport: an EventSource, so the browser frames the bytes and a frame that arrives in pieces or several in one read reaches the page whole and in order); `tests/ui/js/chat_live_*.test.js`.
+- Decided: no layer reads the clock or the network except the client; the reducer takes `now` on the action. A hole (a `seq` that skips, a text `offset` that is not the code-point length already shown, a first frame that is not seq 1, an oversize piece) makes the intake buffer every later frame and the client read `GET /api/chats/{sid}/turn`; the buffered frames newer than the snapshot follow it in order. Every reconnect (`server.resync`), the stream being down (polling, every second) and 15 s of silence run the same sequence. A terminal event, a snapshot that says nothing runs, or 20 s of silence releases the stored reply that was held back.
+- Why: each piece has one input and one output and is tested without a page; the holes the design lists (offset, seq, first frame) are exactly what a chunked or dropped stream produces, and the cursor is the seq the snapshot carries.
+- Rejected: a fetch-based SSE reader of our own (it would repeat SutraEvents' retry and polling and the server sends `chat.live` with id 0, so there is no byte cursor to resume from); counting UTF-16 units for `offset` (the server counts code points, an emoji would look like a hole).
+- Diagram: label "client layers: intake store client view", pill on band:EXPERIENCE.
+
+## D228 — The composer is live only when the page asks for it
+- Sources: `chat_composer.js`, `tests/ui/js/chat_composer.test.js` (unchanged), `tests/ui/js/chat_composer_live.test.js`, streaming design D220.
+- Decided: without `live` every older caller and test sees the composer it always had (the existing 43 composer tests pass unmodified); with it, a Stop pressed while the POST is in flight shows Stopping at once and sends the stop only after the 202 gives the turn an id, a stop answer of `stopped:false` never clears Stopping (the snapshot decides), a failed stop request brings the button back, and the owner's line shows at once and is replaced by the stored line with the same `client_id` (one bubble, also with a second tab). Retry uses `/direct/retry` (no second owner line) and falls back to sending the words again on a server without the live chat.
+- Why: the old composer tests encode behaviour the legacy path must keep; a switch is cheaper than two controllers.
+- Rejected: replacing the composer's turn object (twenty tests assign and compare it); a Retry that re-sends the words on a live server (a second owner line and a repeated side effect).
+- Diagram: label "composer live opt-in; stop queued", pill on band:EXPERIENCE.
+
+## D229 — A reply is one node, painted from a model, live or stored
+- Sources: `chat_view.js` (`shell` option), `chat_live_view.js`, streaming design D207, D212, D219; `tests/e2e/test_browser_live_chat.py` (a node of the reply is never recreated; the item's top does not move at settle).
+- Decided: the shell's html is a function of (turn, try) only, so `Fluid.patchList` never replaces it; a stored `id` and every state is painted into it. The status and the actions share one row under the blocks, present live and settled, so nothing above it moves at settle. Historical messages (ordered blocks, a text-only message, a legacy message with its tools folded in one row) go through the same model; a superseded try is collapsed under Earlier try. The live item exists only until a stored message has its key.
+- Why: a reply that is built twice (a streaming row, then a bubble) flashes and jumps; one node painted by one function cannot.
+- Rejected: keeping the streaming row outside the scroller and moving its text into a bubble at the end (the swap is the jump); putting the status above the text (it disappears at settle and the text moves up).
+- Diagram: label "one reply node; settle in place", pill on band:EXPERIENCE.
+
+## D230 — Text blocks are drawn by appending; a code fence is one node
+- Sources: `fluid.js`, `chat_markdown.js`, `tests/ui/js/fluid_text.test.js` (a 200 KB reply in 4,000 pieces: no settled block and no fence recreated), the browser test of a long reply with a table and a fence.
+- Decided: the tail is split into text and fence segments and reconciled with what is drawn (a text segment is drawn again when it changed, a fence only changes its text); an unfinished table row and an unclosed span are held or shown as text by `ChatMarkdown.hold` as before; the highlighter is a small DOM-building one (no innerHTML from text); the copy-code button lives inside the settled `<pre>`.
+- Why: a streamed fence that is recreated on every piece loses its scroll and selection and costs a layout per piece.
+- Rejected: highlighting while streaming (the colours change as a string closes); a third-party highlighter (a dependency for a feature a hundred lines cover, and the page stays offline).
+- Diagram: label "append-only text; one node per fence", pill on band:EXPERIENCE.
+
+## D231 — The activity line says only what the wire says, and the number that changes is not announced
+- Sources: `chat_live_store.js` (`activity`, `label`), `chat_live_activity.js`, streaming design "Activity timeline" and "Message state machine".
+- Decided: stalled shows the real silence and, when the server sent it, the real idle limit ("Still working, no output for 25 s", "stopped after 120 s without output"); a backoff shows the server's reason and counts down the server's delay; a tool shows its name until the title arrives; thinking shows presence and its real duration, never its text; a provider that sends its answer whole says so and gets a fade, never a typewriter.
+- Why: an invented progress bar is the one thing that makes a user stop trusting a live view; a label that changes every second is read out every second.
+- Rejected: an elapsed-time estimate or a "step 2 of 5" line; one live region for text and clock.
+- Diagram: label "honest labels; clock not announced", pill on band:EXPERIENCE.
+
+## D232 — The data of an event keeps its white space
+- Sources: `orchestrator/models.py` (`Event`), `library/base.py` (`Value`: `str_strip_whitespace=True`), `tests/orchestrator/test_event_whitespace.py`, the browser test of a long reply (`tests/e2e/test_browser_live_chat.py`).
+- Decided: `Event` sets `str_strip_whitespace=False`. `Value` strips the white space around every string it validates, nested strings of `data` included, and a live chat piece ("the ", " price") is nothing but white space at its edge: the page received "aprice in rupees" while the server's offset counted the lost space, so the page's own offset check found a hole at nearly every piece boundary and read the snapshot again and again (the text came out right each time, which is why the earlier tests passed; the reply remounted its code block, which is how the browser test found it).
+- Why: a streamed word must reach the page as the provider sent it; the repair by snapshot hid the fault and cost a request and a redraw per piece.
+- Rejected: leaving the strip and making the page tolerant of a short piece (the text on screen would differ from the stored text until the next snapshot); a new model for live events (the bus has one `Event` and one data shape).
+- Diagram: label "event data keeps its white space", pill on Chat sessions.

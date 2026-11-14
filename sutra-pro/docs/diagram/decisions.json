@@ -1123,5 +1123,40 @@
   "id": "D225",
   "label": "stop answers at once; not_retryable",
   "anchor": "Connector router"
+ },
+ {
+  "id": "D226",
+  "label": "stop wins over a late result",
+  "anchor": "Chat sessions"
+ },
+ {
+  "id": "D227",
+  "label": "client layers: intake store client view",
+  "anchor": "band:EXPERIENCE"
+ },
+ {
+  "id": "D228",
+  "label": "composer live opt-in; stop queued",
+  "anchor": "band:EXPERIENCE"
+ },
+ {
+  "id": "D229",
+  "label": "one reply node; settle in place",
+  "anchor": "band:EXPERIENCE"
+ },
+ {
+  "id": "D230",
+  "label": "append-only text; one node per fence",
+  "anchor": "band:EXPERIENCE"
+ },
+ {
+  "id": "D231",
+  "label": "honest labels; clock not announced",
+  "anchor": "band:EXPERIENCE"
+ },
+ {
+  "id": "D232",
+  "label": "event data keeps its white space",
+  "anchor": "Chat sessions"
  }
 ]
