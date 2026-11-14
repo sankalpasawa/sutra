@@ -5,6 +5,6 @@
     {"id": "C1", "text": "Every section is present and not empty", "check": "sections-present", "min_words": 1},
     {"id": "C2", "text": "Every brief fact appears exactly", "check": "facts-present-all", "severity": "warn"},
     {"id": "C3", "text": "No invented facts: every number, email and proper name comes from the charter or the Requester's answers, or sits in an Assumption: line{practice}", "check": "no-invented-facts", "names": true, "severity": "warn"},
-    {"id": "C4", "text": "Nothing is \"to be confirmed\"", "check": "nothing-to-be-confirmed"}
+    {"id": "C4", "text": "Nothing is \"to be confirmed\"", "check": "nothing-to-be-confirmed", "markers": ["to be confirmed", "TBC", "TBD"]}
   ]
 }

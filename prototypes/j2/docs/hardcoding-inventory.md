@@ -184,6 +184,19 @@ code name no workflow, type or file.
 | `BUDGET_TALK` (`_budget_question`, survey `j2.py:6854-6866`) | Fixed (3b): Adaptation's format has `"about": "budget"\|"charter"` with a POLICY_QUESTION. Code reads only that field: a budget question takes the same reject-and-propose path (Priority decides what is funded: kept as a guardrail); a charter question goes to Identity; a question without `about` is asked once more, then goes to Identity. `BUDGET_TALK` is deleted | `j2.py:6826`, `6888-6894`, `7855` |
 | The other Priority rows (rate card fixed, a `fix` part per finding, envelope defaults, GRANT re-ask, REFUSE coercions, `_carry`, `_kept_price`) | Left as they are (founder, 2026-11-14) | |
 
+### Batch 4: Audit's word matching, `_supersede`, board duplicates
+
+Findings are matched to items by id or by Audit's own fields, never by words.
+
+| Row | Status | Now |
+|---|---|---|
+| `j2.py:10220-10238` `_finding_item.like` (followup #5) | Fixed: a finding's item is its run-long number (the numbering Audit is given); with none, Audit's own `criterion` when it is an exact copy of an item's text; otherwise an extra issue, logged as `invalid_move` (the item stays BLOCKED_BY_EVIDENCE). A dropped item's finding is ignored, as before. `like()` (shared words, 0.6) is deleted | `j2.py:11337-11343`, `11305` |
+| `j2.py:7952-7968` `_supersede` (followup #11) | Fixed: a waiting workflow is replaced when the new one names it in `replaces` (new `WF_FMT` field, set by Adaptation), has exactly its name, or is held with exactly its items. The `" (change n)"` strip and the case fold are deleted; a `replaces` id that isn't waiting is logged | `j2.py:8601-8625`, `8571`, `6552` |
+| `j2.py:1367` `TBC_WORDS` | Fixed: the markers are the condition's own data (`"markers"` on nothing-to-be-confirmed in each `conditions/*.json`: website, prd, hld, document, agent); code reads them, case-insensitive, whole words. The check stays | `j2.py:1732`, `conditions/*.json` |
+| `j2.py:1479` `user_groups` split | Fixed: only the charter's `user_groups` name the groups; the "users" text is never split. Without them, the groups-covered condition (a warning) says the charter names no user groups. The mock PRD charter splits its own text (mock only) | `j2.py:1652-1655` |
+| `j2.py:8818` `_ask_board → j2_board.duplicate_of`; `j2_board.py:21-26,50-66` `DUPLICATE_SHARE, duplicate_of` | Fixed: the asker sets `same_as` (a board id that already answers it) in `board_question` / `question`; code refuses it, pointing at that entry, and refuses a `same_as` naming no answered entry. No words compared; the same words without `same_as` are a new question. `duplicate_of` and `DUPLICATE_SHARE` are deleted; `content_words` stays for the mock board answers | `j2.py:9587`, `9593`, `9748-9759`; `j2_board.py:47` |
+| `facts_to_headings`, `_fix_atoms`, `carry_checks.stale`, `CONTENT_EDGES` | Left for later (founder); listed in `docs/remove-group-c-plan.md` | |
+
 ## Full inventory
 
 

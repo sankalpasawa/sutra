@@ -1538,7 +1538,6 @@ def export_docx(doc, path):
 
 # Necessary conditions (conditions/<type>.json): each names a code check below (or a list of them) and its parameters.
 CONDITIONS_DIR = os.path.join(HERE, "conditions")
-TBC_WORDS = re.compile(r"to be confirmed|\bTB[CD]\b", re.I)
 
 
 def load_conditions(name, practice=""):
@@ -1651,11 +1650,8 @@ def doc_names(text):
 
 
 def user_groups(goal):
-    """The user groups the charter names: user_groups ([str] or [{"name"}]), else split from "users"."""
-    g = goal or {}
-    raw = [x.get("name") if isinstance(x, dict) else x for x in g.get("user_groups") or []]
-    if not raw and g.get("users"):
-        raw = re.split(r",|;|\band\b", re.sub(r"\([^)]*\)", "", str(g["users"])))
+    """The user groups the charter names (user_groups: [str] or [{"name"}]). Never split from the "users" text."""
+    raw = [x.get("name") if isinstance(x, dict) else x for x in (goal or {}).get("user_groups") or []]
     return [re.sub(r"^(?:the|its|our)\s+", "", str(x).strip().rstrip("."), flags=re.I) for x in raw if str(x or "").strip(" .")]
 
 
@@ -1733,7 +1729,10 @@ def condition_met(cond, doc, goal, source, sections, page=None, mech=None):
                            f"every number{', phone' if page is not None else ''} and email comes from the charter or "
                            "the Requester's answers") + skip
     if k == "nothing-to-be-confirmed":
-        m, open_ = TBC_WORDS.search(str(doc)), g.get("to_be_confirmed") or []
+        # the placeholder markers are the condition's own data (conditions/<type>.json "markers"), never a list in code
+        m = next((x for x in (re.search(rf"\b{re.escape(str(k))}\b", str(doc), re.I) for k in cond.get("markers") or [])
+                  if x), None)
+        open_ = g.get("to_be_confirmed") or []
         return not m and not open_, (f"the document says {m.group(0)!r}" if m else
                                      f"{len(open_)} fact(s) still to be confirmed" if open_ else "nothing to be confirmed")
     if k == "ids-covered":
@@ -2426,7 +2425,8 @@ def mock_prd_charter(text):
         features = [s for s in sents if re.match(r"The (?:page|form|weekly|class)\b", s)]
         success = success or [s[:1].lower() + s[1:] for s in sents if " must " in f" {s} "][:2]
         users = users or ("visitors" if features else "")
-    groups = user_groups({"users": users})     # mock: the first group does the features, the rest say nothing
+    groups = [re.sub(r"^(?:the|its|our)\s+", "", x.strip().rstrip("."), flags=re.I)       # the mock Identity's groups
+              for x in re.split(r",|;|\band\b", re.sub(r"\([^)]*\)", "", users)) if x.strip(" .")]  # (mock only)
     items = [f"The Problem section states the problem {name} solves", "The Users section says who the users are",
              "The Goals section lists the goals as G1, G2, ...",
              "The Requirements section lists every must-have feature as R1, R2, ...",
@@ -6549,7 +6549,8 @@ class J2Run:
               '"covers": [int] (the done-when item numbers this workflow builds), "fixes": [str] (the Audit finding ids '
               'it fixes, e.g. "F-3", "R-6"), '
               '"revises": str|null (registered workflow id whose site section this one rewrites; null adds a new '
-              'section), "estimated_resources": {"money": int, "calls": int, "time_minutes": int}, '
+              'section), "replaces": [str] (ids of waiting workflows, registered or held, that this one replaces; they '
+              'are then not built), "estimated_resources": {"money": int, "calls": int, "time_minutes": int}, '
               '"atoms": [{"id": str, "goal": str, "constraints": [str], "context": [str], "how": {"kind": "AI"|"code", '
               '"agent": str, "steps": str (what to build, naming every section id and class name it creates)}, '
               '"expected_output": [{"text": str, "kind": ' + WF_KINDS + ', '
@@ -8567,7 +8568,7 @@ class J2Run:
                 self._place_wf(wf, w, src)
             add_workflow_agent(wf["id"])
             wf["agent"] = NAMES[wf["id"]]
-            self._supersede(wf)
+            self._supersede(wf, w.get("replaces"))
             self.workflows.append(wf)
             registered.append(wf)
         self._recalc_spent()
@@ -8597,23 +8598,27 @@ class J2Run:
                              "what is built." if docs else ""), change=c["id"])
         return registered, refused, defaults
 
-    def _supersede(self, wf):
-        """A workflow still waiting (registered or held, never run) that a new one replaces: the same name, or held
-        with the same items. It is superseded: not built, not charged, not waiting work, its items not "not built".
+    def _supersede(self, wf, replaces=None):
+        """A workflow still waiting (registered or held, never run) that a new one replaces: one the new workflow names
+        in "replaces" (its id), one with exactly the same name, or one held with exactly the same items. It is
+        superseded: not built, not charged, not waiting work, its items not "not built". No word of a name is read.
         runs/j2-20261031-213453: W-13..W-15 waited on a renamed dependency, W-17..W-19 replaced them, and they stayed
         held, so Identity listed their items as not built and Coordination never handed the queue to Audit."""
         if wf.get("revises"):
             return
-        base = lambda n: re.sub(r" \(change \d+\)$", "", str(n or "")).strip().lower()
+        named = {str(x) for x in replaces or [] if x} if isinstance(replaces, list) else {str(replaces)} if replaces else set()
         items = set(self._wf_items(wf))
         for old in self.workflows:
             if old["status"] not in ("registered", "held"):
                 continue
-            if base(old["name"]) == base(wf["name"]) or (old["status"] == "held" and items
-                                                         and set(self._wf_items(old)) == items):
+            if old["id"] in named or old["name"] == wf["name"] or (old["status"] == "held" and items
+                                                                    and set(self._wf_items(old)) == items):
                 old["status"], old["superseded_by"], old["charged"] = "superseded", wf["id"], False
                 self.post("system", f"{old['id']} {old['name']} is replaced by {wf['id']} {wf['name']}, so it is not "
                                     "built.")
+        missed = named - {x["id"] for x in self.workflows if x.get("superseded_by") == wf["id"]}
+        if missed:
+            self._event("validator", "replaces", f"{wf['id']} names {sorted(missed)} in replaces, which aren't waiting")
 
     def _lld_check_for(self, ids):
         return {"text": f"The page matches LLD section(s) {', '.join(ids)}: ids, selectors and form fields as specified",
@@ -9578,15 +9583,16 @@ class J2Run:
                 'such field, a string gives its new type)} (only when your spec can\'t be built as written; never deviate '
                 'silently), ')
 
-    BOARD_FMT = ('"question": null|{"to": str (an atom id from OTHER SECTIONS or BOARD), "about": str, "text": str} '
-                 '(optional: the one atom that knows; at most one question per atom, never repeat an already-answered '
-                 'question), "board_used": null|[str] (optional: the board ids, e.g. ["Q-1"], whose answer you used), ')
+    BOARD_FMT = ('"question": null|{"to": str (an atom id from OTHER SECTIONS or BOARD), "about": str, "text": str, '
+                 '"same_as": str|null (the BOARD id that already answers it, if one does: then read that answer instead)} '
+                 '(optional: the one atom that knows; at most one question per atom), "board_used": null|[str] (optional: the board ids, e.g. ["Q-1"], whose answer you used), ')
     # The same two fields for the five functions (added to every function format in call()). The question field is
     # called board_question because every function format already uses "question"/"questions" for the Requester or
     # for a policy question; code reads either key but only ever acts on the {to, about, text} shape.
     FN_BOARD_FMT = ('"board_question": null|{"to": str (the workflow id, atom id or function name that knows), '
-                    '"about": str, "text": str} (optional: ask the one that knows instead of guessing; at most one '
-                    'question per turn, and never one the BOARD already answers), "board_used": null|[str] '
+                    '"about": str, "text": str, "same_as": str|null (the BOARD id that already answers it, if one does: '
+                    'then read that answer instead)} (optional: ask the one that knows instead of guessing; at most one '
+                    'question per turn), "board_used": null|[str] '
                     '(optional: the board ids, e.g. ["Q-1"], whose answer you used)')
 
     def _hld_summary(self):
@@ -9725,7 +9731,8 @@ class J2Run:
     def _ask_board(self, asker, question, attempt, role=None):
         """Items 2 (Ask) and 3 (Answer), for a function (asker: its name) or a builder (asker: its workflow). The
         question is refused, with the reason posted, when it names no target, when a builder's atom already asked,
-        when the board already answers it (60% of its content words, j2_board.duplicate_of) or when the target isn't
+        when the asker marks it the same as an answered entry (same_as: that entry's id; no word of it is compared),
+        when same_as names no answered entry, or when the target isn't
         a built workflow or another function. A valid question gets one short answer-only call, which costs no
         credits: to the target's builder, given its recorded section and agent_output, or to the target function.
         If a builder's answer corrects its own output, _apply_board_update bumps the site version ("Updated by Q-n")."""
@@ -9738,7 +9745,9 @@ class J2Run:
         about, text = str(question.get("about") or ""), str(question.get("text") or "")
         kind, target = self._board_target(to)
         atoms_v1 = self._atoms_v1()
-        dup = j2_board.duplicate_of(text, self.board["entries"])
+        same = str(question.get("same_as") or "").strip()
+        dup = next((e["id"] for e in self.board["entries"] if e.get("id") == same and e.get("status") == "answered"),
+                   None) if same else None
         reason = ("max one question per atom; this atom already asked"
                       if builder and any(e["atom"] == asking for e in self.board["entries"]) else
                   "max one question per turn; this function already asked this turn"
@@ -9746,6 +9755,7 @@ class J2Run:
                                              and e["attempt"] == attempt for e in self.board["entries"]) else
                   "no target named" if not to else
                   f"already answered in {dup}" if dup else
+                  f"same_as names {same}, which is no answered board entry" if same else
                   "the target isn't a workflow of this run or one of the five functions" if not target else
                   "a function can't ask itself" if kind == "function" and target == asked_by else
                   "the target atom isn't in the manifest" if kind == "workflow" and "." in str(to) and to not in atoms_v1 else
@@ -11291,6 +11301,9 @@ class J2Run:
             if 1 <= n <= len(crit) and n not in by_item:
                 by_item[n] = row
             else:
+                if n == 0 and row["verdict"] not in ("PASS", "PASS_WITH_WARNING"):
+                    self._event("audit", "invalid_move", f"{row['id']} names no done-when item (no number, no exact "
+                                                         "criterion): kept as an extra issue")
                 extras.append(row)
         results = []
         for n, c in enumerate(crit, 1):
@@ -11322,23 +11335,10 @@ class J2Run:
 
     @staticmethod
     def _finding_item(n, text, crit, orig, dropped):
-        """The current item number a finding is about, -1 for a dropped item, 0 for an extra issue. After a drop
-        Audit may still use the charter's first numbering (runs/j2-20261009-133203: items 9, 15, 16 for 5, 6, 7), so
-        the number is read against both lists and the finding's own text picks between them."""
-        def like(item, finding):        # share of the finding's words that the item's text contains
-            words = set(re.findall(r"[a-z0-9]{4,}", str(finding).lower()))
-            return len(words & set(re.findall(r"[a-z0-9]{4,}", str(item).lower()))) / len(words) if words else 0
-        cands = []                       # the charter number first: that's the numbering Audit is given
-        if 1 <= n <= len(orig):
-            cands.append(orig[n - 1])
-        if orig != crit and 1 <= n <= len(crit):
-            cands.append(crit[n - 1])
-        if not cands:                    # no usable number: the closest current or dropped item by text
-            best = max(crit + dropped, key=lambda c: like(c, text), default=None)
-            cands = [best] if best and like(best, text) >= 0.6 else []
-        if not cands:
-            return 0
-        pick = max(cands, key=lambda c: like(c, text)) if text else cands[0]
+        """The current item number a finding is about, -1 for a dropped item, 0 for an extra issue. n is the run-long
+        (charter) number Audit is given; with none, Audit's own criterion field, when it is an exact copy of an item's
+        text. No word of a finding is read."""
+        pick = orig[n - 1] if 1 <= n <= len(orig) else next((c for c in crit + dropped if c == str(text or "").strip()), None)
         return crit.index(pick) + 1 if pick in crit else -1 if pick in dropped else 0
 
     def _audit_tally(self, results, extras):

@@ -25,7 +25,8 @@ Branch `remove-group-c`, from `remove-restrictions` (2026-11-14). Removes group 
 | 2 | Coordination: no rules written into its task as if it chose them; it may name several ready workflows (the engine runs one at a time, and says so). Founder rule: no workflow, type or file names in its task or code; readiness only from dependencies and what each writes. Rows: inventory "Group C: status", batch 2 | done; live check below |
 | 3c | Founder's fix: at registration a dependency that matches no workflow of the run (and no finished earlier stage) is refused back to Adaptation, by exact name only. Committed on its own | done |
 | 3 | Priority: remove word lists (`BUDGET_TALK`, `item_kind`). 3a: Identity tags each done-when item with a kind from the type's data; 3b: Adaptation's POLICY_QUESTION states what it is about. Live check after batch 3 too (founder), since 3c may refuse plans that used to pass | done; live check below |
-| 4 | Audit: remove word matching for findings and duplicates; also `_supersede` (a waiting workflow superseded by its name minus " (change n)") | planned |
+| 4 | Audit: remove word matching for findings and duplicates; also `_supersede`, the TBC markers (into the conditions data), the `user_groups` split and the board's `duplicate_of` (asker's `same_as`). Rows: inventory "Group C: status", batch 4 | done; live check below |
+| later | Left by the founder (2026-11-14): `facts_to_headings` and `_fix_atoms` (code rewrites Adaptation's atoms by their shape), `j2_change.carry_checks.stale` (a substring of 8+ characters decides a check came from a removed charter string), `j2_schema.CONTENT_EDGES` (regexes on document prompt notes decide which edges carry a change) | planned |
 | 5 | Planner thresholds (`THRESHOLD`, `MAX_ROUNDS`, lesson and playbook caps): no change; a written proposal for Rubak | planned |
 | later | Hidden rewrites: `to_requester` (cuts to 3 statements and 1 question, drops numbered lines), `PLAIN_WORDS`, `requester_words` (drops sentences naming internal ids). Code changes Identity's text without telling it. Also: a J2.g fact question merged into "Please send these" keeps its agent-facing wording (live run j2-20261114-193037: "Does the Requester want the script run on their own real folders...") | planned |
 
@@ -48,3 +49,9 @@ Branch `remove-group-c`, from `remove-restrictions` (2026-11-14). Removes group 
 | Run | Result |
 |---|---|
 | All 4 briefs ($3.06, `--cap 100`) | 4 pass with `Done:`. 3c refused no dependency. Identity tagged every item: coffee shop 6 of 6 (page_section, styling), hiring policy 8 of 8 (doc_section); the two folder briefs have one kind, so no tags are asked. No POLICY_QUESTION was asked. Ledger total $46.70 of $100 |
+
+## Batch 4 live check (2026-11-14)
+
+| Run | Result |
+|---|---|
+| All 4 briefs ($2.39, `--cap 100`) | 4 pass with `Done:`. Every Audit finding named its item (no finding logged as naming none); no workflow was superseded; no board in these runs (`J2_BOARD` off). Ledger total $49.09 of $100 |

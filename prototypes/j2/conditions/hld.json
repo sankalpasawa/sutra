@@ -39,7 +39,8 @@
     {
       "id": "H6",
       "text": "Nothing is \"to be confirmed\"",
-      "check": "nothing-to-be-confirmed"
+      "check": "nothing-to-be-confirmed",
+      "markers": ["to be confirmed", "TBC", "TBD"]
     },
     {
       "id": "H7",

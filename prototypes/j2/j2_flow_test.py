@@ -528,7 +528,8 @@ def build_before_asking():
     gate = run.goal["done_when"][-1]
     assert gate == j2.GATE_TEXT and not re.search(r"filter|categor", gate, re.I), gate
     assert gate in run.goal["core_items"] and j2.must_keep(gate, run.goal), run.goal["core_items"]
-    # (5) after a drop, Audit's pre-drop numbers are read by text; dropped items get no finding; nothing is "missing"
+    # (5) after a drop, Audit's run-long numbers name the items (no text read); dropped items get no finding; nothing
+    # is "missing". An unnumbered finding is matched only by an exact copy of an item's text (group C batch 4)
     run = j2.J2Run()
     orig_items = [c for c, _ in THREAD_AND_LOOM]
     keep = [orig_items[i] for i in (0, 1, 6, 8, 11)]
@@ -543,12 +544,19 @@ def build_before_asking():
                  {"id": "F-5", "item": 12, "criterion": "No JavaScript errors", "verdict": "PASS", "evidence": "seen"},
                  {"id": "F-6", "item": 8, "criterion": "Lookbook with 3 styled outfits", "verdict": "NEEDS_REVISION",
                   "evidence": "absent"},                                 # dropped: no finding
-                 {"id": "F-7", "item": None, "criterion": "A reviews section shows three reviews", "verdict":
-                  "NEEDS_REVISION", "evidence": "absent"}]               # dropped, unnumbered: no finding
+                 {"id": "F-7", "item": None, "criterion": orig_items[9], "verdict":
+                  "NEEDS_REVISION", "evidence": "absent"},               # dropped, unnumbered, exact text: no finding
+                 {"id": "F-8", "item": None, "criterion": "A reviews section shows three reviews", "verdict":
+                  "NEEDS_REVISION", "evidence": "absent"}]               # unnumbered paraphrase: an extra issue
     results, extras = run._audit_findings(findings, keep)
     # findings are named by the items' run-long numbers: 1, 2, 7, 9, 12 (never renumbered after the drop)
     assert [r["id"] for r in results] == ["F-1", "F-2", "F-7", "F-9", "F-12"] and all(r["pass"] for r in results), results
-    assert not extras, extras
+    assert [x.get("audit_id", x["id"]) for x in extras] == ["F-8"], extras      # never matched to an item by its words
+    assert any(e.get("type") == "invalid_move" and "names no done-when item" in str(e.get("detail") or e.get("text"))
+               for e in run.events), "logged"
+    # a finding whose text resembles another item stays on the item its number names
+    r2, _ = run._audit_findings([{"id": "F-1", "item": 1, "criterion": keep[1], "verdict": "PASS", "evidence": "seen"}], keep)
+    assert r2[0]["item"] == 1 and r2[0]["pass"] and all(not r["pass"] for r in r2[1:]), r2
 
 
 def below_floor():
@@ -770,6 +778,37 @@ def item_kinds_and_about():
     print("item kinds and about: prices from Identity's kind tags (default when untagged, a bad tag logged), the type's "
           "kinds and what each is about in Identity's format; a budget question only when Adaptation marks it, the same "
           "words marked charter go to Identity, no about: asked once more ok")
+
+
+def supersede_and_markers():
+    """Group C batch 4: a waiting workflow is replaced only when the new one names it (replaces), has exactly its
+    name, or is held with exactly its items; no stripped suffix or case fold. The nothing-to-be-confirmed check reads
+    its markers from the condition's own data."""
+    def wfs():
+        return [{"id": "W-1", "name": "Menu", "status": "registered", "covers_text": ["a"]},
+                {"id": "W-2", "name": "Hours", "status": "held", "covers_text": ["b"]},
+                {"id": "W-3", "name": "Map", "status": "registered", "covers_text": ["c"]}]
+    run = page_run()
+    run.goal = {"done_when": ["a", "b", "c", "d"]}
+    for new, replaces, gone in ((dict(id="W-4", name="menu (change 2)", covers_text=["d"]), None, set()),
+                                (dict(id="W-4", name="MENU", covers_text=["d"]), None, set()),
+                                (dict(id="W-4", name="Menu", covers_text=["d"]), None, {"W-1"}),
+                                (dict(id="W-4", name="New map", covers_text=["d"]), ["W-3"], {"W-3"}),
+                                (dict(id="W-4", name="Hours v2", covers_text=["b"]), None, {"W-2"})):
+        run.workflows = wfs()
+        run._supersede(new, replaces)
+        assert {w["id"] for w in run.workflows if w["status"] == "superseded"} == gone, (new, replaces)
+    run.workflows = wfs()
+    run._supersede(dict(id="W-4", name="X", covers_text=["d"]), ["W-9"])
+    assert any(e.get("type") == "replaces" for e in run.events), "a replaces naming no waiting workflow is logged"
+    cond = next(c for c in j2.load_conditions("website.json") if c["check"] == "nothing-to-be-confirmed")
+    assert cond["markers"] == ["to be confirmed", "TBC", "TBD"], cond
+    met = lambda c, d: j2.condition_met(c, d, {"to_be_confirmed": []}, "", [])[0]
+    assert not met(cond, "Opening hours: TBC") and met(cond, "Opening hours: 7am-6pm")
+    assert met({**cond, "markers": ["pending"]}, "Opening hours: TBC") and not met({**cond, "markers": ["pending"]}, "Hours pending")
+    assert met({**cond, "markers": []}, "Opening hours: TBC"), "no markers in the data: only open facts count"
+    print("supersede and markers: replaced by replaces, exact name or held with the same items, never by a stripped or "
+          "case-folded name; the to-be-confirmed markers come from the condition's data ok")
 
 
 def deferred_twice():
@@ -3449,7 +3488,9 @@ def prd_groups_metrics_assumptions():
     assumptions section, the window in Identity's number question, and short item names cut at a natural break."""
     conds = {c["id"]: c for c in j2.load_conditions("prd.json")}
     goal = {"product_name": "LabSlot", "users": "Students (book slots) and lab staff", "facts": ["LabSlot"],
-            "to_be_confirmed": []}
+            "to_be_confirmed": [], "user_groups": ["Students", "lab staff"]}
+    # no split of the "users" text (group C batch 4): only the charter's user_groups name the groups
+    assert j2.user_groups({"users": goal["users"]}) == [], "never split from words"
     src = j2.squash("LabSlot students lab staff book a slot 80% of bookings are made without staff help")
     doc = ("# LabSlot\n\n## Users\n\nStudents and lab staff.\n\n## Requirements\n\n1. **R1**: A student can book a slot\n\n"
            "## Success metrics\n\n- **G1**: 80% of bookings are made without staff help\n")
@@ -6176,6 +6217,9 @@ INTENDED_PROMPT_CHANGES = [
     # batch 3b: Adaptation's POLICY_QUESTION says what it is about (budget or charter)
     ('"about": "budget"|"charter"|null (with POLICY_QUESTION, what your question is about: budget when it is about cost, '
      'funding or what to leave out; charter otherwise), ', ""),
+    # batch 4: a workflow may name the waiting workflows it replaces
+    ('"replaces": [str] (ids of waiting workflows, registered or held, that this one replaces; they are then not '
+     'built), ', ""),
     ("4. Name every workflow that is ready now: all of its dependencies are done, and what it writes doesn't collide with "
      "another ready workflow. Several may be ready at once. Your order says which goes first. Code runs them one at a "
      "time; that is the engine's limit, not your rule.",
@@ -6669,12 +6713,22 @@ def board_functions():
     assert any(m["who"] == "adaptation" and "Q-2:" in m["text"] for m in chat), "the answer is in the chat"
     assert any(m["who"] == "adaptation" and "[read Q-1]" in m["text"] for m in chat), "a function's read tag"
     assert any(m["who"] == "audit" and "[read" in m["text"] and "Q-3" in m["text"] for m in chat), "Audit's read tag"
-    # A question the board already answers is refused, whoever asks it
-    dup = run._ask_board("coordination", {"to": b[2]["to"], "about": "the price attribute",
+    # A question its asker marks the same as an answered entry (same_as) is refused, whoever asks it; code compares
+    # no words, so the same words without same_as are a new question, and a same_as naming no answered entry is refused
+    dup = run._ask_board("coordination", {"to": b[2]["to"], "about": "the price attribute", "same_as": "Q-3",
                                           "text": "Which attribute holds the price?"}, 1, role="function")
     assert dup["status"] == "refused", dup
     with open(os.path.join(run.dir, "board.jsonl"), encoding="utf-8") as f:
         assert json.loads(f.readlines()[-1])["reason"] == "already answered in Q-3"
+    bad = run._ask_board("coordination", {"to": b[2]["to"], "about": "x", "same_as": "Q-99", "text": "Which?"}, 2,
+                         role="function")
+    assert bad["status"] == "refused", bad
+    with open(os.path.join(run.dir, "board.jsonl"), encoding="utf-8") as f:
+        assert json.loads(f.readlines()[-1])["reason"] == "same_as names Q-99, which is no answered board entry"
+    n = len(run.board["entries"])
+    fresh = run._ask_board("priority", {"to": b[2]["to"], "about": "the price attribute",
+                                        "text": "Which attribute holds the price?"}, 3, role="function")
+    assert fresh["status"] != "refused" and len(run.board["entries"]) == n + 1, fresh
     # and a function asks at most once in a turn (the turn it asked in is the entry's attempt)
     cycle, run.cycle = run.cycle, b[2]["cycle"]
     again = run._ask_board("audit", {"to": b[0]["to"], "about": "the nav", "text": "Which section holds the nav?"},
@@ -8660,7 +8714,10 @@ SAVED_RUNS_GOLDEN = {
 # part; batch 3b: Adaptation's format has "about". Outcomes, spend, the agents called, workflows and the documents
 # are identical to {"prd": "fcd605c769f8",
 # "design docs": "38742d746510", "docs then site": "35382abf283e"}.
-DOC_RUN_GOLDEN = {"prd": "3237e2b5bcd8", "design docs": "3b6bc31fb169", "docs then site": "a84d0f970ede"}
+# Re-recorded 2026-11-14 (remove-group-c batch 4) for prompts only: the workflow format has "replaces" and the
+# conditions data has "markers" (both in the planners' prompts). Outcomes, spend, the agents called, workflows and the
+# documents are identical to {"prd": "3237e2b5bcd8", "design docs": "3b6bc31fb169", "docs then site": "a84d0f970ede"}.
+DOC_RUN_GOLDEN = {"prd": "ac6d3f00fb5c", "design docs": "2284f23cff02", "docs then site": "dc8ed3ceb805"}
 DOC_PROMPTS_GOLDEN = {
     "prd.builder": "e971c88e727f", "prd.intake": "75a955fb24fa",
     "prd.charter_fmt": "eedccdf82d84", "prd.atom_rules": "b8a918ef6039", "prd.system": "d09f06fa3181",
@@ -16183,6 +16240,7 @@ if __name__ == "__main__":
         coordination_ready_now()
         dependency_names()
         item_kinds_and_about()
+        supersede_and_markers()
         thread_and_loom_core()
         deferred_twice()
         connections()
