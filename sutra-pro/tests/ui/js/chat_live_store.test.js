@@ -386,3 +386,28 @@ test("a retry on the SAME provider counts down the wait; it never says it is try
   r2.wire("attempt.failed", {provider: "claude", reason: "Overloaded.", delay_s: null, next_provider: "claude"});
   assert.equal(S.label(r2.state, r2.now), "Claude failed: Overloaded. Retrying");
 });
+
+test("a snapshot that still says running does not undo a Stop that was pressed: it stays Stopping until turn.stopping, and a terminal snapshot still ends it", () => {
+  const r = begin(rig());
+  accept(r);
+  r.wire("turn.started", {provider: "claude"});
+  r.act({type: "stop.pressed"});
+  assert.equal(turn(r).phase, "stopping");
+  const snap = state => ({generationId: GEN, messageId: 7, clientId: CID, attempt: 1, attemptNo: 1, state, seq: 2, provider: "claude", model: "m", streamMode: "tokens", elapsedMs: 500,
+    idleLimitS: 120, blocks: [], earlier: []});
+  r.act({type: "snapshot", snap: snap("running")});
+  assert.equal(turn(r).phase, "stopping");
+  assert.equal(S.canStop(r.state), false);
+  r.wire("turn.stopping", {});
+  assert.equal(turn(r).phase, "stopping");
+  r.act({type: "snapshot", snap: snap("running")});
+  assert.equal(turn(r).phase, "stopping");
+  r.act({type: "snapshot", snap: snap("stopped")});
+  assert.equal(turn(r).phase, "stopped");
+  // a snapshot of a turn nobody pressed Stop on is what it says
+  const q = begin(rig());
+  accept(q);
+  q.wire("turn.started", {provider: "claude"});
+  q.act({type: "snapshot", snap: snap("backoff")});
+  assert.equal(turn(q).phase, "backoff");
+});

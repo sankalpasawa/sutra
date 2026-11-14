@@ -181,8 +181,10 @@
     const earlier = snap.earlier.map(e => ({provider: e.provider, reason: e.reason, afterSideEffects: e.afterSideEffects, lines: e.lines,
       blocks: e.blocks.map(b => newBlock(b.id, {type: ["text", "thinking", "tool_use"].includes(b.type) ? b.type : "text", kind: b.kind || "other", name: b.name, title: b.title, target: b.target,
         status: b.status || "ok", text: b.text, isError: b.isError, truncated: b.truncated}))}));
+    // Stop that was pressed (queued, or sent and not yet heard back as turn.stopping) stays Stopping when a snapshot of the same turn still says it runs: the server had not
+    // handled the request when it was read, and turn.stopping follows. Only a terminal snapshot ends it.
     const base = prev && prev.generationId === snap.generationId ? prev : blank({startedAt: now - snap.elapsedMs});
-    return Object.assign({}, base, {phase: base.stopQueued && !terminal(phase) ? "stopping" : phase, source: "live", clientId: snap.clientId || base.clientId, generationId: snap.generationId,
+    return Object.assign({}, base, {phase: (base.stopQueued || base.phase === "stopping") && !terminal(phase) ? "stopping" : phase, source: "live", clientId: snap.clientId || base.clientId, generationId: snap.generationId,
       messageId: snap.messageId, attempt: snap.attempt, attemptNo: snap.attemptNo, provider: snap.provider || base.provider, model: snap.model || base.model,
       streamMode: snap.streamMode || base.streamMode, idleLimitS: snap.idleLimitS, startedAt: base.startedAt || now - snap.elapsedMs, lastEventAt: now, seq: snap.seq, blocks, earlier,
       heartbeat: null});
