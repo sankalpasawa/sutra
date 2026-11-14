@@ -1108,5 +1108,20 @@
   "id": "D222",
   "label": "seq+publish one lock; resync on reconnect",
   "anchor": "Chat sessions"
+ },
+ {
+  "id": "D223",
+  "label": "tool title at tool_call (real order)",
+  "anchor": "Claude connector (extends base)"
+ },
+ {
+  "id": "D224",
+  "label": "one lock; live kinds opt-in",
+  "anchor": "Chat sessions"
+ },
+ {
+  "id": "D225",
+  "label": "stop answers at once; not_retryable",
+  "anchor": "Connector router"
  }
 ]

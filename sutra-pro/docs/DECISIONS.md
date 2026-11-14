@@ -1577,3 +1577,24 @@ Decided by Claude on its own, on the dates shown. The owner can veto any of them
 - Why: seq assigned apart from publish can reorder on the wire; the first event precedes the 202; a lost terminal event is otherwise found only by the 15 s stall rule.
 - Rejected: assigning seq under the data lock and publishing after; a time threshold before resync; route-side publishing.
 - Diagram: label "seq+publish one lock; resync on reconnect", pill on Chat sessions.
+
+## D223 — A tool line's title and target are set when the provider's `tool_call` arrives, not at `content_block_stop`
+- Sources: `tests/fixtures/connectors/claude/stream_partials_tool_ok.jsonl` (the real capture of 2026-11-14, STR-1), `docs/design/streaming/capture-notes.md`, `connectors/chat_blocks.py`.
+- Decided: Claude sends the complete `assistant` message (the whole `tool_use` with its input) BEFORE the block's `content_block_stop`, so the title and target are computed at the existing `tool_call` event and matched to the open block by `tool_id`; `block_stop` only completes the input and carries the privately buffered input as a fallback when no `assistant` message came; the tool stays open until its `tool_result`. A Codex command starts at `item.started` (with its command text) and ends at `item.completed` with its exit code; an `agent_message` is only ever a whole `item.completed`, so Codex is `stream_mode: "activity"`. Neither parser changes an existing event: block kinds are new events, gated on a partials turn (Claude) or a chat turn (Codex).
+- Why: the design assumed the input was complete only at the stop event; the capture shows it is complete earlier, and an assumption that costs the page a delay it does not need is worth correcting; older parser tests assert exact event data and stay green.
+- Rejected: computing the title in the parser (the existing `tool_call` data is asserted exactly by the older tests, and `ChatPort` can reach the turn's folder through the router anyway); sending the buffered input to the page.
+- Diagram: label "tool title at tool_call (real order)", pill on Claude connector.
+
+## D224 — The live turn uses one lock for sequence, accumulator and publish, and every live kind is opt-in
+- Sources: `orchestrator/live_turn.py`, `connectors/chat_port.py` (`acc=`), `connectors/router.py` (`routes=`), STR-5 and STR-6.
+- Decided: a `LiveTurn` guards the accumulator, the sequence number and the bus call with one re-entrant lock, so a snapshot taken under it is exactly "everything up to seq N" (the design had two locks and needed the pair consistent anyway); the JSON of a checkpoint and every SQL statement run outside it, on a separate writer thread that is skipped while the previous write runs. `ChatPort.stream(acc=)` yields the live kinds (`started`, `route`, `block_*`, a `restart` with data, a `turn_done` with ordered blocks, the settle map and earlier tries) and `Router.chat_stream(routes=True)` yields the route events; without them every older caller sees exactly the events it always saw, which is what keeps the existing connector and port tests unmodified (one test that called the private `_map` now asks the accumulator, which owns that mapping).
+- Why: the second lock bought nothing a snapshot could use; making the new kinds opt-in is cheaper than auditing every consumer of `ConnectorEvent` and `ChatEvent`.
+- Rejected: two locks with a copy for the snapshot; adding the live kinds to every chat stream.
+- Diagram: label "one lock; live kinds opt-in", pill on Chat sessions.
+
+## D225 — Stop is truthful and instant at the route, and the new refusal is `not_retryable`
+- Sources: `orchestrator/api/chat_v2.py` (`_stop_live`, `_retry_live`), `orchestrator/errors.py`, `connectors/router.py` (`chat_stop`), STR-2 and STR-7.
+- Decided: with the live chat on, `POST .../direct/stop` calls `LiveTurn.request_stop()` (flush, freeze, token, `turn.stopping`, in that order) and schedules `port.stop` (the cancel ladder, up to 12 s) on a background task; the response `{session_id, stopped, state}` returns at once, and `stopped: true` means a turn was running and Stop is requested, `false` that none is. With the flag off the route is what it was. A retry of an owner line that was answered or is not the chat's newest is `409 not_retryable`, a code added to the closed list of error codes (and to TROUBLESHOOTING) rather than overloading `busy`, which means "a turn is running". The idle-timeout sentence names the limit and still starts with the words the older tests assert ("<Provider> did not answer within L s: it sent no output for that long, so it was stopped").
+- Why: a Stop that waits for the ladder looks like a hang; a refusal that means one thing must not share a code with one that means another.
+- Rejected: waiting for the process in the route; reusing `busy` for "already answered".
+- Diagram: label "stop answers at once; not_retryable", pill on Connector router.

@@ -1,6 +1,6 @@
 # Streaming chat: architecture
 
-Status: proposed design (revision 2, after the design critique), no code changed. Date: 2026-11-14. Input: `analysis.md` (same folder; its section numbers and RC ids are used here). Paths are relative to `sutra-pro/sutra_app` unless noted. Decisions: D201 to D222 in `docs/DECISIONS.md` (D201 to D214 revised in place, D215 to D222 new). Work packages are STR-1 to STR-14 (see the last section).
+Status: revision 2 of the design, with the backend packages STR-1 to STR-7 built (see "Backend implementation notes" below; the client packages STR-8 to STR-14 are not). Date: 2026-11-14. Input: `analysis.md` (same folder; its section numbers and RC ids are used here). Paths are relative to `sutra-pro/sutra_app` unless noted. Decisions: D201 to D222 in `docs/DECISIONS.md` (D201 to D214 revised in place, D215 to D222 new). Work packages are STR-1 to STR-14 (see the last section).
 
 Product goal: the chat feels instant, fluid, informative and real. Real means: every pixel of live text comes from a provider byte, every activity line from a provider or router event, nothing is invented, Stop really stops the process group, and a provider that cannot stream is labelled as such.
 
@@ -46,6 +46,28 @@ The critique (19 points) was checked against the code. Every blocker and major p
 Verified: `Router._chat` clears the early flag on entry and `_chat_turn` registers `_chat_active` before `connector.stream` (`router.py` 875 to 882, 970 to 975); `base._events` tracks the process only after `runner.start` (`base.py` 535 to 542); `Router.chat_stop` returns `False` when no process is tracked and the turn is not in `_chat_busy`; `Router._drive` sleeps with `self._sleep` and only notes the failure after the turn; `ChatPort.stream` clears blocks on restart and `continue`s past `started`; `Redactor.secrets()` returns whole env and `.env` values (min 8 characters, longest first, `whole_line` values included, explicit extras any length); the ladder differs by platform (`process.py` 47 to 50: SIGTERM and SIGKILL only on one branch); `sutra_events.js` state names are `live`, `polling`, `offline`; the recovery SQL is in `orchestrator/chat_v2.py:250` (not `api/`) and matches `'direct:' || m.id`; `docs/diagram/decisions.json` stops at D200, so the earlier commit left `tests/test_diagram_decisions.py` failing (fixed here).
 
 Not verified, so flagged as tasks with a check, never assumed: the exact stream shapes of Claude `content_block_start` ordering against the later `assistant` message and of Codex `item.*` (STR-1 captures them); that the parser can reach the turn's `folder` through `TurnPlan` (STR-5 adds the field if not); where the carry-over reader (`resume_info`, limit 20) lives, to add the `superseded` filter (STR-3 locates it, test proves it); the exact text of the idle-timeout error (STR-5 test asserts it names the limit); anything on Windows.
+
+## Backend implementation notes (STR-1 to STR-7)
+
+What was built, and where it differs from revision 2 because the real capture or the code said otherwise. Decisions D223 to D225 record the three that change a rule.
+
+| Topic | Revision 2 said | What is built | Why |
+|---|---|---|---|
+| Tool title and target | computed at `content_block_stop` from the buffered `input_json_delta` | computed at the `tool_call` event (matched by `tool_id`); `block_stop` carries the buffered input only as a fallback | Real Claude sends the complete `assistant` message before `content_block_stop` (capture notes). D223 |
+| Computing it | in the parser, with the turn's folder | in `BlockAccumulator`, with the folder read once from the router by `ChatPort`; the parser adds only new event kinds | The older parser tests assert `tool_call` data exactly. D223 |
+| Event kinds | `block_start`, `block_stop`, `thinking`, `message_boundary`, `route` | the same without `thinking`: a thinking block is a `block_start` of type `thinking` and a `block_stop`; `thinking_delta` is dropped | Presence only; a separate kind carried nothing |
+| Locks | `_pub_lock` outside, a data lock inside | one re-entrant lock for accumulator, seq and publish; checkpoint JSON and SQL outside it on a writer thread | A snapshot needs the pair consistent. D224 |
+| Who sees the new kinds | every `ChatPort.stream` and `Router.chat_stream` caller | only a caller that passes `acc=` (ChatPort) or `routes=True` (Router) | Keeps every older caller and its tests as they were. D224 |
+| Ref pattern | `\.[2-9][0-9]?` | `\.([2-9]\|[1-9][0-9])`, attempts 2 to 99 | The STR-3 table test found that attempts 10 to 19 were refused |
+| Stop | route returns at once | the same; `stopped` true iff a turn was running; response `{session_id, stopped, state}` with the flag on and unchanged with it off | D225 |
+| Refusal of a retry | `409 not_retryable` | the code is added to the closed list and to TROUBLESHOOTING | D225 |
+| Idle timeout words | "No output from <provider> for L s" | "<Provider> did not answer within L s: it sent no output for that long, so it was stopped" | Older tests assert the first words |
+| Stored text blocks | one block per streamed text | cut into blocks of at most 100,000 characters (the `ChatBlock` limit), the total capped at 200,000 | The record refuses a longer text block |
+| Stopped or failed with no text | note only | the note (or error) carries the blocks that ran, so tools stay visible | A note may carry blocks |
+| Recovery | "owner lines with no reply of any attempt" | checkpoints first (a retry whose first try has a reply is recovered under its own attempt), then owner lines with no reply | A retry that crashes is otherwise never marked |
+| Codex | `item.started`, `item.updated` | `item.started` (command text present) and `item.completed` (exit code, capped output); `item.updated` was never seen and is ignored | STR-1 capture |
+
+Not built here, by design of this stage: the client (STR-8 to STR-13), the default of `SUTRA_LIVE_V1` (off until STR-14), anything on Windows, the real-provider checks beyond the STR-1 capture and the fake-CLI end-to-end tests.
 
 ## Context
 
