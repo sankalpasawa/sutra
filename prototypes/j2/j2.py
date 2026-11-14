@@ -8451,10 +8451,13 @@ class J2Run:
                     continue
                 checks = w["real_run"].get("checks") or []
                 at = self._item_at()
+                # structure only: item numbers in covers and checks, and an empty checks list
                 bad = ([f"real_run checks {checks!r} must be a list of done-when item numbers"] if not isinstance(checks, list)
+                       else ["real_run checks is empty: a real run decides the done-when item(s) only running it on the "
+                             "Requester's files can meet, so name them there"] if not checks
                        else [f"real_run checks item {i}, which is not a done-when item" for i in checks if as_int(i) not in at]
-                       + [f"done-when item {i} is checked by the real run's receipt, so no workflow covers it"
-                          for i in checks if at.get(as_int(i)) in planned])
+                       + [f"done-when item {i} is checked by the real run's receipt, so no workflow covers it: take it "
+                          "out of covers and keep it in real_run checks" for i in checks if at.get(as_int(i)) in planned])
                 if bad:
                     refused.append(self._reject(name, "; ".join(bad)))
                     continue

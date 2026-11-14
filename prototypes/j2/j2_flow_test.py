@@ -4616,6 +4616,10 @@ def real_run_checks():
     "Done:"; any other reply leaves it failing and the run "Done with open items". The atom rules say so."""
     assert "never assigned to a builder" in j2.j2_types.builder_tools()["atom_rules"]
     assert '"checks"' in j2.j2_types.builder_tools()["real_run"]
+    ident = j2.system_prompt("identity", "{}")      # Identity's instructions (agents/j2/identity.md), not code
+    assert "an item about acting on the Requester's real files" in ident and "always its own done-when item" in ident
+    assert "Approval to run anything on the Requester's files is code's RUN <code> step" in ident
+    assert "Never ask the Requester for that approval" in ident
     real = tempfile.mkdtemp(prefix="j2-real-")
     tools = tempfile.mkdtemp(prefix="j2-fake-srt-")
     keep = {k: os.environ.get(k) for k in ("J2_SANDBOX_CMD",)}
@@ -4641,7 +4645,8 @@ def real_run_checks():
         rr = {"command": ["python3", "go.py", real], "folder": real, "why": "x"}
         wf = lambda covers, checks: {"name": "Builder", "goal_gap": "x", "outputs": ["go.py"], "completion_check": "z",
                                      "covers": covers, "parts": ["agent_file"] * len(covers), "atoms": [atom], "real_run": {**rr, "checks": checks}}
-        for covers, checks, why in (([1, 2], [2], "so no workflow covers it"), ([1], [9], "not a done-when item")):
+        for covers, checks, why in (([1, 2], [2], "so no workflow covers it: take it out of covers and keep it in real_run checks"),
+                                    ([1], [9], "not a done-when item"), ([1], [], "real_run checks is empty")):
             reg, refused, _ = made_run()._register([wf(covers, checks)])
             assert not reg and any(why in str(x) for x in refused), (reg, refused)
         later = {"name": "Later", "goal_gap": "x", "outputs": ["more.py"], "completion_check": "z", "covers": [2],
@@ -5988,6 +5993,8 @@ INTENDED_PROMPT_CHANGES = [
     ("Give each question its kind: decision when it asks them to choose between ways to go on (Decide for me may pick a "
      "typical choice), fact when it asks for something only they know or that happened (only they, or code from its "
      "records, can answer it); and item: the done-when item number it is about, or null. ", ""),
+    (open(os.path.join(os.path.dirname(os.path.abspath(__file__)), "agents", "j2", "identity.md"), encoding="utf-8").read()
+     .split("## Decision procedure", 1)[0].split("\n\n## Real files and real runs", 1)[-1].join(["\n\n## Real files and real runs", ""]), "\n\n"),    # Identity's real-run rules
 ]
 PLAIN_CHECKPOINT = "94bffd0"   # plain_unchanged compares the working tree with this commit; move it when the plain path changes on purpose
 CHECKPOINT = "0657d93"         # the commit before the design-document work: a plain brief must behave exactly as there
@@ -8444,7 +8451,7 @@ SAVED_RUNS_GOLDEN = {
 # Re-recorded 2026-11-11 (DOC_RUN_GOLDEN only) for agents/j2/adaptation.md's proposal block naming kind and sections
 # (Adaptation's system prompt). With adaptation.md as it was: {"prd": "2c2d3402a6ca", "design docs": "94c750a4fcb0",
 # "docs then site": "6b28bcb5d3ff"}.
-DOC_RUN_GOLDEN = {"prd": "3702ded7b086", "design docs": "817f983a4c24", "docs then site": "085dbbbc169e"}
+DOC_RUN_GOLDEN = {"prd": "04fcc95c4dd7", "design docs": "361164fd06ab", "docs then site": "a37bc605ee3b"}
 DOC_PROMPTS_GOLDEN = {
     "prd.builder": "e971c88e727f", "prd.intake": "56b304946997",
     "prd.charter_fmt": "eedccdf82d84", "prd.atom_rules": "b8a918ef6039", "prd.system": "d09f06fa3181",
