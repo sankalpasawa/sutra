@@ -45,7 +45,8 @@ SCHEMA_VERSION = 1
 STATES = ("accepted", "connecting", "running", "backoff", "stopping", "done", "stopped", "failed")
 TERMINAL = ("done", "stopped", "failed")
 MAX_EARLIER = 5                    # earlier tries shown in a snapshot (the stored note summarises more)
-JOIN_S = 2.0                       # how long `close` waits for the ticker
+JOIN_S = 2.0                                           # how long `close` waits for the ticker
+CKPT_RETRY_S = 0.05                                    # the pause between looks while a due checkpoint waits for the write in flight
 
 
 @dataclass(frozen=True)
@@ -337,7 +338,11 @@ class LiveTurn:
             deadlines.append(self._ckpt_last + (self.config.structural_checkpoint_s if self._ckpt_dirty else self.config.checkpoint_s))
         if not deadlines:
             return None
-        return max(0.0, min(deadlines) - now)
+        timeout = max(0.0, min(deadlines) - now)
+        if timeout <= 0 and self._ckpt_thread is not None and self._ckpt_thread.is_alive() and (self._ckpt_dirty or self._ckpt_chars):
+            # a due checkpoint is being skipped because the previous write still runs: look again soon, never spin on a deadline that stays in the past
+            timeout = max(timeout, CKPT_RETRY_S)
+        return timeout
 
     def _run(self) -> None:
         while True:

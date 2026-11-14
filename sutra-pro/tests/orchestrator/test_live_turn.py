@@ -721,3 +721,22 @@ def test_a_live_turn_through_the_real_bus_reaches_a_subscriber_in_seq_order():
         return out
     out = asyncio.run(go())
     assert [d["seq"] for d in out] == list(range(1, len(out) + 1)) and out[0]["type"] == "turn.accepted" and out[-1]["type"] == "turn.done"
+
+
+def test_the_real_ticker_does_not_spin_while_a_checkpoint_write_is_slow(db, monkeypatch):
+    gate = threading.Event()
+    monkeypatch.setattr(live_checkpoint, "save", lambda database, **row: gate.wait(5))
+    cfg = LiveConfig(heartbeat_s=5.0, coalesce_ms=33, checkpoint_s=0.01, structural_checkpoint_s=0.01)
+    live, bus, clock = make(db=db, config=cfg, start_thread=True, clock=lambda: time.monotonic())
+    ticks = []
+    original = live.tick
+    live.tick = lambda now=None: (ticks.append(1), original(now))[1]
+    try:
+        live.on_event(attempt())
+        live.on_event(start_text())
+        live.on_event(ev("block_end", block_id="b1", status="ok", is_error=False, truncated=False))
+        time.sleep(0.6)                                                        # the first write blocks; every later due checkpoint is skipped
+        assert len(ticks) < 100, len(ticks)
+    finally:
+        gate.set()
+        live.close()
