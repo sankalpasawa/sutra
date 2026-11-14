@@ -63,7 +63,7 @@
   const ENTITIES = {"&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;"};
   const esc = s => String(s).replace(/[&<>"']/g, c => ENTITIES[c]);
   const clean = v => text(v).replace(/[\u0000-\u001f\u007f]+/g, " ").replace(/\s+/g, " ").trim();
-  const FILES = {ChatPill: "chat_pill", ChatSearch: "chat_search", ChatLiveClient: "chat_live_client", ChatLiveStore: "chat_live_store"};
+  const FILES = {ChatDraft: "chat_draft", ChatPill: "chat_pill", ChatSearch: "chat_search", ChatLiveClient: "chat_live_client", ChatLiveStore: "chat_live_store"};
   const need = name => {
     if (root[name]) return root[name];
     if (typeof module === "object" && module !== null && module.exports && typeof require === "function" && hasOwn(FILES, name)) return require("./" + FILES[name] + ".js");
@@ -242,7 +242,17 @@
     const ended = () => { if (typeof o.onTurnEnd === "function") o.onTurnEnd(); };
     let downNote = "";                       // the note a transport failure ("The app is not responding.") put up: it goes when the page reads the session again
     const failNote = (e, fallback) => { const words = asError(e, fallback); downNote = isObj(e) && e.code === "network" ? words : ""; return words; };
-    const state = {mode: o.mode === "direct" ? "direct" : "team", files: [], note: ""};
+    // Where the box sends is the owner's choice for this chat and survives a reload (ChatDraft keeps it beside the draft); storage that is missing or blocked just means the default.
+    const modes = isObj(o.modes) ? o.modes : (() => { try { const D = need("ChatDraft"); return D ? D.create() : null; } catch (e) { return null; } })();
+    const rememberedMode = (() => { try { return modes && typeof modes.loadMode === "function" ? modes.loadMode(sid) : ""; } catch (e) { return ""; } })();
+    let modeNow = rememberedMode !== "" ? rememberedMode : (o.mode === "direct" ? "direct" : "team");
+    const state = {files: [], note: ""};
+    Object.defineProperty(state, "mode", {enumerable: true, configurable: true, get: () => modeNow, set: v => {
+      const next = v === "direct" ? "direct" : "team";
+      if (next === modeNow) return;
+      modeNow = next;
+      try { if (modes && typeof modes.saveMode === "function") modes.saveMode(sid, next); } catch (e) { /* no storage: the choice lasts until the reload */ }
+    }});
     // The live turn (STR-9): a ChatLiveClient told by `chat.live` frames. `state.turn` is then its projection (the same four keys); without it the turn is the plain object it was.
     const LiveClient = o.live === true ? need("ChatLiveClient") : null;
     const LS = LiveClient ? need("ChatLiveStore") : null;

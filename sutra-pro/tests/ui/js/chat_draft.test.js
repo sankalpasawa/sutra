@@ -147,3 +147,35 @@ test("QA bug 7: a draft longer than a message can be is kept whole, so a reload 
   d.save(A, log);
   assert.equal(d.load(A), log);
 });
+
+test("the mode of a chat's box is kept per chat next to the draft: direct comes back direct, an unknown chat has none, bad values and a hostile id are refused", () => {
+  const {d, storage, clock} = rig();
+  assert.equal(d.loadMode(A), "");
+  assert.equal(d.saveMode(A, "direct"), true);
+  assert.equal(d.loadMode(A), "direct");
+  assert.equal(d.loadMode(B), "");
+  d.saveMode(A, "team");
+  assert.equal(d.loadMode(A), "team");
+  assert.equal(d.saveMode(A, "elsewhere"), false);
+  assert.equal(d.saveMode("../x", "direct"), false);
+  assert.equal(d.loadMode("../x"), "");
+  d.saveMode(A, "direct");
+  clock.t += 15 * DAY;
+  assert.equal(d.loadMode(A), "", "an old choice is dropped");
+  assert.equal(storage.getItem("sutra:mode:" + A), null);
+  storage.setItem("sutra:mode:" + B, "not json");
+  assert.equal(d.loadMode(B), "");
+  const none = create({storage: () => { throw new Error("blocked"); }});
+  assert.equal(none.saveMode(A, "direct"), false);
+  assert.equal(none.loadMode(A), "");
+});
+
+test("at most 30 chats keep a mode, the newest; a mode never touches a draft", () => {
+  const {d, storage, clock} = rig();
+  d.save(A, "words");
+  for (let i = 0; i < MAX_CHATS + 5; i += 1) { clock.t += 1000; d.saveMode("cs_mode" + String(i).padStart(4, "0"), "direct"); }
+  const kept = Array.from(storage.map.keys()).filter(k => k.startsWith("sutra:mode:"));
+  assert.equal(kept.length, MAX_CHATS);
+  assert.ok(!kept.includes("sutra:mode:cs_mode0000") && kept.includes("sutra:mode:cs_mode0034"));
+  assert.equal(d.load(A), "words");
+});

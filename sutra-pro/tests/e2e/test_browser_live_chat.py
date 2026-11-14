@@ -591,3 +591,17 @@ def test_the_chat_column_reaches_the_bottom_of_the_window_at_every_width(make, b
     assert box["msgs"] >= box["win"] * 0.3, box
     browser.wait_for("document.querySelector('#smsgs .clive').dataset.state === 'ok'", timeout=60)
     clean(browser, "layout")
+
+
+@pytest.mark.browser
+def test_ask_directly_is_still_chosen_after_a_reload(make, browser):
+    live = make([Text("Here you go.", pieces=3)], delay="0.05")
+    home(browser, live)
+    ask(browser, "Hello")
+    browser.wait_for("document.querySelector('#smsgs .clive') && document.querySelector('#smsgs .clive').dataset.state === 'ok'", timeout=30)
+    browser.reload()
+    browser.wait_for("window.HomePage && HomePage.state().loaded === true")
+    browser.wait_for("!!document.querySelector('#sbar .ccmode')")
+    assert browser.js("document.querySelector('#sbar .ccmode [data-mode=direct]').getAttribute('aria-pressed')") == "true"
+    assert browser.js("document.querySelector('#sbar .ccmode [data-mode=team]').getAttribute('aria-pressed')") == "false"
+    clean(browser, "mode")
