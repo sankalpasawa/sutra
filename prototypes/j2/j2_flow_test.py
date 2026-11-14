@@ -690,6 +690,32 @@ def coordination_ready_now():
           "a waiting workflow refused as ready, unknown dependencies never block, no type or file names, no next ok")
 
 
+def dependency_names():
+    """Group C 3c: at registration a dependency must name, exactly, a workflow of this run (id, name or proposal id, any
+    status), a workflow of the same batch, or a finished earlier stage; anything else is refused back to Adaptation
+    with the names it may use. No word of a name is read: 'W-1 ' or a different case is not a match."""
+    run = page_run()
+    run.workflows = [{"id": "W-1", "name": "Page shell", "proposal_id": "page-shell", "status": "done", "dependencies": []},
+                     {"id": "W-2", "name": "Menu", "proposal_id": "menu", "status": "registered", "dependencies": []}]
+    run.stage_archive = [{"stage": "prd"}]
+    batch = [{"id": "hours", "name": "Hours", "dependencies": ["page-shell", "W-2", "Hours list", "prd", "Menu"]},
+             {"id": "list", "name": "Hours list", "dependencies": []}]
+    assert run._unknown_deps(batch[0], batch) == [], run._unknown_deps(batch[0], batch)
+    for bad in ("PRD v6", "HLD (accepted as it is)", "decide-defaults", "page shell", "W-1 ", "menu-section"):
+        assert run._unknown_deps({"dependencies": [bad]}, batch) == [bad], bad
+    run2 = j2.J2Run()
+    say(run2, BREW_LAB)
+    w = dict(next(x for x in run2.workflows if x["status"] == "done"), name="Late extra", dependencies=["PRD v6"])
+    w.pop("id", None)
+    run2._register([w])
+    r = run2.rejections[-1]
+    assert r["workflow"] == "Late extra" and r["reason"].startswith("it depends on 'PRD v6', which names no workflow of "
+                                                                    "this run and no finished earlier stage"), r
+    assert "W-1" in r["reason"], r["reason"]        # the names it may use are listed
+    print("dependency names: exact id, name, proposal id, same-batch name or finished stage accepted; anything else "
+          "refused back to Adaptation with the names it may use ok")
+
+
 def deferred_twice():
     """The same done-when item left out or refused in 2 rounds: Identity asks the Requester even though budget remains."""
     run = page_run()
@@ -16081,6 +16107,7 @@ if __name__ == "__main__":
         policy_budget(mode == "1")
         below_floor()
         coordination_ready_now()
+        dependency_names()
         thread_and_loom_core()
         deferred_twice()
         connections()

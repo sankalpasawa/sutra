@@ -8437,6 +8437,9 @@ class J2Run:
                       if w.get("kind") == "audit"
                       else f"required field(s) missing: {', '.join(missing)}" if missing
                       else "; ".join(no_atom) if no_atom
+                      else (f"it depends on {', '.join(repr(d) for d in odd)}, which names no workflow of this run and no "
+                            f"finished earlier stage; name each dependency exactly as one of: {', '.join(names)}")
+                      if (odd := self._unknown_deps(w, batch)) and (names := self._dep_names(batch))
                       else f"it cites LLD section(s) that don't exist: {unknown_lld}" if unknown_lld
                       else (f"it names section(s) the {self.out['noun']} template doesn't have: {', '.join(bad_secs)} "
                             f"(sections: {', '.join(self.out['sections'])})") if bad_secs
@@ -8734,6 +8737,20 @@ class J2Run:
         self._handoff("adaptation", kind="propose", why="Coordination put workflows on HOLD: "
                       + "; ".join(f"{i}: {why}" for i, why in held.items())
                       + ". Address the missing conditions, or DISPUTE a HOLD you think is wrong.")
+
+    def _dep_names(self, batch=()):
+        """Every name a dependency may use, matched exactly: the id, name and proposal id of each workflow of this run
+        (any status) and of each workflow in the batch being registered, and each finished earlier stage."""
+        every = list(self.past_workflows) + list(self.workflows)
+        names = [str(x[k]) for x in every for k in ("id", "name", "proposal_id") if x.get(k)]
+        names += [str(x[k]) for x in batch if isinstance(x, dict) for k in ("id", "name") if x.get(k)]
+        names += [str(a["stage"]) for a in self.stage_archive if a.get("stage")]
+        return list(dict.fromkeys(names))
+
+    def _unknown_deps(self, w, batch=()):
+        """The dependencies of w that match none of _dep_names exactly (no word of a name is read)."""
+        known = set(self._dep_names(batch))
+        return [str(d) for d in w.get("dependencies") or [] if str(d) not in known]
 
     def _schedule_rows(self, todo):
         """What Coordination schedules from: per waiting workflow its dependencies, waits_for (the ones naming a workflow

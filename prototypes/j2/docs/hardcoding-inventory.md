@@ -170,6 +170,12 @@ code name no workflow, type or file.
 | `j2.py:8048-8053` empty queue to Audit; `8101-8109` `hold_bounces`; `8033-8047` change resend; HOLD lifted by a settled conflict; charges released on HOLD; `j2_realization.holds`; builder reports to Coordination; `_say` repeat | Kept: loop bounds, budget, a carried-out ruling, safety (no input, no build), routing |
 | `j2.py:7952-7968` `_supersede` | Moved to batch 4 (word matching) |
 
+### Batch 3c: dependency names at registration (founder's fix)
+
+| Row | Status | Now |
+|---|---|---|
+| New guardrail (valid replies): a dependency naming nothing | `_register` refuses a workflow whose dependency matches, exactly, none of: a workflow of this run (id, name or proposal id, any status), a workflow of the same batch (id or name), or a finished earlier stage (`stage_archive`). The refusal goes back to Adaptation through the usual resend path and lists the names it may use. No word of a name is read. Saved runs it would have refused: 'PRD v6' and 'HLD (accepted as it is)' (j2-20261112-165902), 'decide-defaults' (j2-20261114-193037). `_schedule_rows` keeps `unknown_dependencies` for work registered before | `j2.py:8741-`, `8442` |
+
 ## Full inventory
 
 
