@@ -24,5 +24,6 @@
 
 **Added since 0.9.0, one line per version, newest last:**
 - 0.10.0-addons: a version that only adds arrives as files (the add-on points); case 50 records must-cohere as far as the kernel holds it (matrix row R55: a verified FALSE goal, no decision, under a branch that evidence closes). Kernel unchanged.
+- 0.11.0-journal: memory across runs is a journal outside the kernel (replay through the kernel's own doors, the head kept outside, one writer per keeper, continuing a journal is a write to it, a pack id once, code stated and never a gate); an adapter reads ledger rows and counts without the kernel; case 60 and three recorded sequences. Kernel unchanged. Reviewed in two rounds; the findings of the confirming round are settled without new code. Owed to a later version, each new code with its own review: the closing entry sealed only when its save is taken; a ledger row of its own for a look taken dry; a recorded replay under another stated code with its test in S96; the depth rule for the kept head; a save that cuts with nothing new to hand over; the adapter's check of the code statement; closed keys for the parts of a recorded sequence.
 
 **Promotion rule:** keep every historical version and run immutable. A new generalization or real effect claim requires an independent tester and explicit release authority. No candidate self-promotes.

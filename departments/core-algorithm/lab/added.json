@@ -2,7 +2,7 @@
  "about": "Written by the additive applier (.tmp/core-algo-additive4-apply.py, contract 4). `pinned`: what the lab had recorded when a version was applied (sha256 of the kernel and of each scenario file; sha256 of the canonical JSON of each case, of the event record, of the ask record, of each recorded sequence, of each handler entry and of each lens except the reflection summary), and `built_in`, every Python file the lab had before the add-on points. `points` and `applied`: every file laid in, with its sha256. An entry of `applied` that holds `edits` is an EDIT VERSION (ruling R32): the name and sha256 of its edit script and, for every existing file the script changed, the sha256 before and after; the pin of the kernel and the pinned handler entries were taken again for those files, an added file it changed is listed with its new sha256, and every other pin stayed. Its `moves` are what it declares as moved of the things an earlier version recorded, each with its reason; check S202 holds a declared move to nothing until the next version is applied to the built, verified record. The verifier reads this file for checks S202 and S203, for the sha256 a check module's text is held to before it runs, and for what it hands a check module; tools/run_all.py reads it for the record's file list. Nothing in the lab holds this file itself.",
  "contract": 4,
  "pinned": {
-  "from": "sutra-kernel-extensions/0.9.0-stop",
+  "from": "sutra-kernel-extensions/0.10.0-addons",
   "kernel_sha256": "688ab9431d4f4b17608d848e32f12e0373197a301d3b7f641a6f476a2b9ad368",
   "built_in": [
    "extensions/asks.py",
@@ -34,6 +34,7 @@
    "07_survey_gap": "3a03c65e0f499c438f20c9c73fd26eea70bdd6f17a7532577103c045c74fd9b8",
    "08_survey_authored": "a0c86d3fcdb4c94a45a1ce029cb93218d716d341472326a6af4062d8f2bfc950",
    "09_fast_tradeoff": "bcf89b9252c017249552775013a2dfced15dad8f208e5ff2fcb08d6f74b774dd",
+   "100_delivered_but_open": "e1203486bffecbd8f998866b60dfa52a4d893ebb8987fdb9226b021b9865f0c2",
    "10_money_first": "e0f7379ebee9c62c657aa0ef7c1171834cc6e0d143b16496e235efdc2f9374dd",
    "11_no_goal": "de850a7919f19e1c263a5c4e6fb9b4e15a693d2bf6e694b92beb72a06c7b2895",
    "12_other_tenant": "e14e35b11c29b753773eb1c13ae60edbcddd2c125621cd72254abafcaaae6214",
@@ -191,6 +192,10 @@
    [
     "30_stop",
     "3dff2ee6f669022f9ff2513f882eea9316b4769982eacdae6744f68216d89aff"
+   ],
+   [
+    "50_must_cohere",
+    "4a721d5ba360db8e8e28fc3faa840a18d967f56adae281919cba2041d328ba4c"
    ]
   ],
   "events": "f58f0cf138c8ca42fe880e0a0c15d116a2c52c8a300b8284a8c93e3e72d2317c",
@@ -227,6 +232,21 @@
     "qa/checks/must_cohere.py": "17671e16dfefa821bcb0707e794459a63fc9e257993c02ec7718f3c5c8fa07be",
     "tests/test_must_cohere.py": "4430cd0fcb45d9991eff9e2520dede03764ba788ca630963b79ea9a7f2d6e703",
     "tools/packs/must_cohere.py": "eab6cafde4c40042836d2c405f01ef0a19035133c5ed69b2b56c5c0179c5af14"
+   }
+  },
+  {
+   "label": "0.11.0-journal",
+   "delivery": "journal",
+   "files": {
+    "cases/60_pack_twice.json": "55b8662e2dab8982955ca489dd5a353325fc9ed5606f938e67be02012c71c32c",
+    "extensions/journal.py": "b6666e833f3a169cbb3bf091e499566b11269857f0cd3953cae34bce52c43345",
+    "extensions/journal_record.py": "512ca1909753f51803b108426ed57221c67a07a520be48945c33c794e4c7eb41",
+    "qa/checks/journal.py": "1492cd697ea9c579b66918a0b5b67171c4a4e484717a90af3c9c715647bbc75b",
+    "tests/test_journal.py": "1bf8da7512c89903932e778166a1fe420f2ab5c585037ec6b45ed133acadfb72",
+    "tools/packs/journal.py": "f39d37fcab3fea4af27851e3a7921cd2f5ff827af16361a6960d85cd3601b336",
+    "tools/scenes/journal_chain.py": "2e3c9cb4cfecf8b0696525b366c3a3e470b9ac5f2efbf1d04a7ce66245c34358",
+    "tools/scenes/journal_refusals.py": "d87eb72b2d67c08a7aa70faf1140f84444fbab50489c9419f77f4df62ee47f79",
+    "tools/scenes/journal_restart.py": "7bfd6f6a8e8fe39897230c0e10fd5b673302c671dd2270ac01617c469fc354f2"
    }
   }
  ]

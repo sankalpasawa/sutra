@@ -51,9 +51,9 @@ Output contract: `proven satisfaction | evidence query | selected bounded plan |
 
 | Outcome | Current reference evidence | Required before promotion |
 |---|---|---|
-| Add domain nuance without kernel change | 32 synthetic recorded scenarios against one kernel hash (0.5.0 added workflow standards and 0.6.0 a website, a third and a fourth domain, with no kernel change) | Held-out domains and independent need labels |
+| Add domain nuance without kernel change | 33 synthetic recorded scenarios against one kernel hash (0.5.0 added workflow standards and 0.6.0 a website, a third and a fourth domain, with no kernel change) | Held-out domains and independent need labels |
 | Block unjustified actions | Unknown/authority/provider/resource counterexamples | Real policy enforcement and independently witnessed external effects |
-| Reproduce reference algorithm | 150/150 unit + 57/57 independent model-record checks (0.10.0-addons; 0.2.0 had 54 and 31) | Original historical Core v0.2.2 source and sealed baseline recovered for head-to-head comparison |
+| Reproduce reference algorithm | 195/195 unit + 67/67 independent model-record checks (0.11.0-journal; 0.2.0 had 54 and 31) | Original historical Core v0.2.2 source and sealed baseline recovered for head-to-head comparison |
 | Method formation | Contract assembled from seeded components, marked `PROPOSED_ONLY` | Generic independent constructor, hidden tests and release authority |
 | J2 compatibility | `atom/1`-shaped read-only projection only | Real J2 `atom/1` / `map/1` run, verification and recovery |
 | Native maturity | Not claimed | Native's independently witnessed v1 FOLLOW → v5 DISTRIBUTE stage gates |

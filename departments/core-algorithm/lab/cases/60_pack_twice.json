@@ -1,0 +1,9 @@
+{
+  "id": "60_pack_twice",
+  "title": "A pack handed over twice",
+  "description": "The same level pack is handed over twice and the kernel takes it both times: the look names it twice among its packs (the approval is unknown, so nothing is planned). One look cannot show more of memory across runs than this: the kernel has no door that lets a pack id in once. The journal has one, and its recorded sequences show the rest.",
+  "packs": ["00_goal", "01_domain", "02_methods", "04_admission", "140_levels_restated", "140_levels_restated"],
+  "execute": false,
+  "area": "Memory",
+  "expected": "QUERY_EVIDENCE"
+}
