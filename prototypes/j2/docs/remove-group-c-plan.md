@@ -12,7 +12,8 @@ Branch `remove-group-c`, from `remove-restrictions` (2026-11-14). Removes group 
 | Word lists | No new ones |
 | Per batch | List each change with file:line; update the inventory rows; `--fast` with the 8 skips |
 | 8 skips | `--skip map_focus,graph_map,left_bar_toggle,artifacts_groups,warm_ui,map_motion,sutra_library,map_tab` |
-| Live release check | After batches 1, 2 and 4 only (`python3 tools/release_check.py`) |
+| Live release check | After batches 1, 2 and 4 only: `python3 tools/release_check.py --cap 100` |
+| Spend cap | $100 across all live checks in `runs/release/ledger.json` (raised from $60 by the founder, 2026-11-14, after batch 1b; $41.05 spent then) |
 | Push | Not until the founder says |
 
 ## Batches
