@@ -311,6 +311,10 @@
       '<div class="cards">' + EXAMPLES.map(t => '<button type="button" data-brief="' + esc(t) + '">' + esc(t) + "</button>").join("") + "</div></div>";
   }
 
+  // The replies of the direct chat are shells that chat_live_view.js paints (STR-10): a live turn and a stored message are the same node, so the stored one takes over without a swap.
+  const liveOn = () => !!(S.cc && S.cc.live() && root.ChatLiveView && root.Fluid);
+  const liveDeps = () => ({whoOf: m => root.ChatView.whoLabel(clean(m.who), {}), canRetry: () => false});
+
   function renderChat() {
     const shown = S.messages.concat(S.pending.map(p => p.msg));
     const line = S.cc ? S.cc.pendingLine(S.messages) : null;           // the owner's direct line before the server has stored it: one bubble, matched by client_id
@@ -322,15 +326,34 @@
     // Fluid.patchList edits the list in place: the lines that did not change are not touched, a new line enters (a long chat is not rebuilt per message)
     let changed;
     if (root.Fluid) {
-      const items = root.ChatView.transcriptItems(session, shown, view);
+      const plan = liveOn() ? root.ChatLiveView.plan(S.messages, S.cc.liveView(), liveDeps()) : null;
+      const items = root.ChatView.transcriptItems(session, shown, plan ? Object.assign(view, {shell: true}) : view);
+      if (plan && plan.liveItem) items.push(plan.liveItem);
       const start = startHtml();
       if (start !== "") items.push({key: "starter", html: start});
       changed = root.Fluid.patchList(el, items, {enter: "nmsg-in"}).changed;
+      if (plan) changed = root.ChatLiveView.sync(el, plan.models, liveDeps()) > 0 || changed;
     } else {
       changed = ctx.paint(el, root.ChatView.transcript(session, shown, view) + startHtml());
     }
     if (!changed) return;
     follow(el, shown, near);
+  }
+
+  // One frame of a live reply touches only its own shell: the transcript is not built again for a piece of text. When the shell is not on the page yet (or a stored
+  // message has taken its key) the transcript is drawn as a whole.
+  function renderLive() {
+    if (!liveOn()) return;
+    const LV = root.ChatLiveView;
+    const view = S.cc.liveView();
+    const model = LV.fromLive(view, {});
+    if (!model) return;
+    const el = $("smsgs");
+    const node = el.querySelector('.clive[data-turn="' + model.turn + '"][data-attempt="' + model.attempt + '"]');
+    const stored = S.messages.some(m => LV.isReply(m) && LV.keyOf(m.turn, m.attempt) === model.key);
+    if (!node || stored) { renderChat(); return; }
+    LV.paint(node, model, liveDeps());
+    keepFollowing();
   }
 
   /* ---------------------------------------------------------------- the reader's place and the box (GAP-chat-comfort) */
@@ -440,7 +463,7 @@
   // chosen model answers, streamed, with attachments and a Stop. The mode is the owner's, per page load.
   function composer() {
     // one repaint per animation frame, however many chunks of a reply arrived in it (Fluid.frame; without fluid.js it is at once, as before)
-    const repaint = () => { renderBar(); renderComposer(); };
+    const repaint = () => { renderBar(); renderComposer(); renderLive(); };
     // live: the turn is told by `chat.live` frames and snapshots (STR-9); a stored reply of the running turn is held back (offer) and let go at its end (onRelease)
     if (S.cc === undefined) S.cc = root.ChatComposer ? root.ChatComposer.create({api, sid: ORG, mode: "team", live: true, onChange: () => (root.Fluid ? root.Fluid.frame(repaint, repaint) : repaint()),
       onTurnEnd: rereadPill, onRelease: rows => { mergeMessages(rows, false); renderChat(); }, onSettle: () => refetchMessages()}) : null;
@@ -458,7 +481,8 @@
     const html = CC.bar(c.state(), {labels: {team: "Plan with Sutra", direct: "Ask directly"}});
     ctx.paint(bar, html);
     bar.hidden = html === "";
-    $("sstream").hidden = !CC.paintStreamRow($("sstream"), c.state(), CC.providerOf(providersOf(), S.pillData ? S.pillData.chosen : null));       // a chunk adds to the end of the row
+    if (liveOn()) $("sstream").hidden = true;                                       // the reply is a node of the transcript now (renderLive)
+    else $("sstream").hidden = !CC.paintStreamRow($("sstream"), c.state(), CC.providerOf(providersOf(), S.pillData ? S.pillData.chosen : null));       // a chunk adds to the end of the row
     keepFollowing();
   }
 
@@ -670,6 +694,27 @@
       retryTask(b.dataset.task, b);
     } else if (act === "retry-direct") {
       retryDirect(b.dataset.turn);
+    } else if (act === "composer-stop") {
+      stopDirect();
+    } else if (act === "copy-reply" || act === "copy-code") {
+      if (root.ChatLiveView) root.ChatLiveView.copy(b, {fallback: copyFallback});
+    }
+  }
+
+  // Where the clipboard API is missing or refused (a page without a secure context): a hidden textarea and the old command.
+  function copyFallback(value) {
+    try {
+      const area = doc.createElement("textarea");
+      area.value = value;
+      area.setAttribute("readonly", "");
+      area.style.cssText = "position:fixed;left:-9999px;top:0";
+      doc.body.appendChild(area);
+      area.select();
+      const ok = doc.execCommand("copy");
+      doc.body.removeChild(area);
+      return ok === true;
+    } catch (e) {
+      return false;
     }
   }
 

@@ -23,6 +23,10 @@
      streamParts(state)           what to do to a streaming row already drawn: {reset, add, tail}, from the settled text of the last drawing and the
                                   text now. Only the tail and the blocks that settled since are drawn again.
      paintStream(el, parts, options)   the DOM side of it: the streaming row of a chat, appended to as the text grows (see below).
+     paintText(el, text, options)      the same append-only drawing for ONE text block of the live chat (STR-10), without the "is writing" header: blocks that settled
+                                  stay as DOM that is never written again, only the tail is drawn again, and a code fence that is still open is ONE <pre> whose
+                                  text grows (never recreated while it streams, and kept as it is when it settles). options {render, streaming, highlight}:
+                                  highlight(pre) is called once for a fence that settled, never while it streams.
 
    A classic script with ONE global, Fluid (see sutra_ctx.js for why); in node it is module.exports. */
 (function (root) {
@@ -310,8 +314,181 @@
     return true;
   }
 
+
+  /* ---------------------------------------------------------------- one text block of the live chat: settled blocks stay, the tail is drawn again */
+  // The tail as segments: text between fences, and each fence (open or closed) as {kind: "fence", opener, marker, body, closed}. The fences become ONE <pre> each whose text grows;
+  // the text segments are drawn by `render`. A fence that is still open runs to the end of the tail.
+  function segmentsOf(tail) {
+    const lines = tail.split("\n");
+    const segs = [];
+    let text = "";
+    let textStart = 0;
+    let offset = 0;
+    let open = null;
+    const flush = at => { if (text !== "") { segs.push({kind: "text", text, start: textStart, end: at}); text = ""; } };
+    for (let i = 0; i < lines.length; i += 1) {
+      const line = lines[i];
+      const end = Math.min(tail.length, offset + line.length + 1);
+      if (open !== null) {
+        if (closes(line, open.marker)) {
+          segs.push({kind: "fence", opener: open.opener, marker: open.marker, body: tail.slice(open.bodyStart, Math.max(open.bodyStart, offset - 1)), closed: true, start: open.start, end});
+          open = null;
+        }
+      } else {
+        const marker = fenceMarker(line);
+        if (marker !== "") { flush(offset); open = {marker, opener: line, bodyStart: offset + line.length + 1, start: offset}; } else {
+          if (text === "") textStart = offset;
+          text += line + (i === lines.length - 1 ? "" : "\n");
+        }
+      }
+      offset += line.length + 1;
+    }
+    if (open !== null) {
+      // a last line of one or two fence characters is the closing line being typed: it is not code (and would not be there when the block settles)
+      const partial = new RegExp("(^|\\n)[ \\t]*" + (open.marker[0] === "`" ? "`" : "~") + "{1,2}$");
+      segs.push({kind: "fence", opener: open.opener, marker: open.marker, body: tail.slice(open.bodyStart).replace(partial, ""), closed: false, start: open.start, end: tail.length});
+    }
+    flush(tail.length);
+    return segs;
+  }
+
+  const squash = t => t.split("\n").map(l => l.replace(/^[ \t]+/, "")).join("\n").replace(/\s+$/, "");
+  // the code that streamed (`a`) is the beginning of, or the same as, the code of the settled block (`b`): a settle can arrive in the same piece as the last lines of the fence
+  const sameCode = (a, b) => squash(b).startsWith(squash(a));
+
+  function paintText(el, value, options) {
+    const o = isObj(options) ? options : {};
+    if (!el) return false;
+    const render = typeof o.render === "function" ? o.render : () => "";
+    const streaming = o.streaming !== false;
+    const text = typeof value === "string" ? value : "";
+    const doc = el.ownerDocument || root.document;
+    let st = el.__txt;
+    if (st && st.cmd.parentNode !== el) st = el.__txt = undefined;                       // somebody wrote into el since
+    if (text === "") {
+      if (!st) return false;
+      st.cmd.textContent = "";
+      st.settled = ""; st.tail = ""; st.segs = []; st.tailStreaming = true;
+      return true;
+    }
+    let touched = false;
+    if (!st) {
+      const cmd = doc.createElement("div");
+      cmd.className = "cmd";
+      el.textContent = "";
+      el.appendChild(cmd);
+      st = el.__txt = {cmd, settled: "", tail: "", tailStreaming: true, segs: []};
+      touched = true;
+    }
+    const cmd = st.cmd;
+    const plan = streamParts(st.settled, text);
+    if (plan.reset) { cmd.textContent = ""; st.segs = []; st.tail = ""; st.settled = ""; touched = true; }
+    let add = plan.add;
+    let tail = plan.tail;
+    if (!streaming && tail !== "") { add = add.concat([tail]); tail = ""; }             // the turn is over: the tail is a block like the others
+    if (!touched && add.length === 0 && tail === st.tail && st.tailStreaming === streaming) return false;       // the same picture
+    const fragment = html => {
+      if (html === "") return null;
+      const t = doc.createElement("template");
+      t.innerHTML = html;
+      return t.content;
+    };
+    const mark = pre => { if (typeof o.highlight === "function" && pre && !pre.__lit) { pre.__lit = true; try { o.highlight(pre); } catch (e) { report("highlight", e); } } };
+    const nodesOf = f => (f === null ? [] : Array.from(f.childNodes));
+    const drop = seg => { seg.nodes.forEach(n => { if (n.parentNode === cmd) cmd.removeChild(n); }); };
+    const place = (f, anchor) => { if (f !== null) cmd.insertBefore(f, anchor || null); };
+
+    // 1. blocks that settled: drawn once, final, in front of what stays in the tail. A <pre> that streamed in the tail is the node that stays when its block settles (same code), and
+    // is highlighted now. A segment of the old tail that lies after the settled text is the tail still (a fence that went on, a paragraph that was begun) and is not touched.
+    let kept = st.segs;
+    if (add.length > 0) {
+      const consumed = add.join("").length;
+      const gone = st.segs.filter(sg => sg.start < consumed);
+      const fences = gone.filter(sg => sg.kind === "fence").map(sg => sg.node);
+      gone.forEach(drop);
+      kept = st.segs.filter(sg => sg.start >= consumed);
+      kept.forEach(sg => { sg.start -= consumed; sg.end -= consumed; });
+      const anchor = (kept.find(sg => sg.nodes.length > 0) || {nodes: []}).nodes[0] || null;
+      add.forEach(block => {
+        const f = fragment(inner(render(block, {streaming: false})));
+        if (f === null) return;
+        Array.from(f.childNodes).forEach(n => {
+          if (n.tagName !== "PRE") return;
+          const at = fences.findIndex(k => sameCode(k.textContent, n.textContent));
+          let node = n;
+          if (at >= 0) {
+            node = fences.splice(at, 1)[0];
+            const code = node.querySelector("code") || node;
+            if (code.textContent !== n.textContent) code.textContent = n.textContent;           // the final text has its indent and trailing blank lines settled
+            f.replaceChild(node, n);
+          }
+          mark(node);
+        });
+        place(f, anchor);
+      });
+      st.segs = kept;
+    }
+
+    // 2. the tail: segments, reconciled with what is drawn: a text segment is drawn again when it changed, a fence only grows its text, and nothing after the first difference is kept
+    const next = tail === "" ? [] : (streaming ? segmentsOf(tail) : [{kind: "text", text: tail, start: 0, end: tail.length}]);
+    const old = st.segs;
+    let i = 0;
+    while (i < old.length && i < next.length && old[i].kind === next[i].kind) {
+      const a = old[i];
+      const b = next[i];
+      if (a.kind === "fence") {
+        // the opener line may still be typed ("```py", then "```python"): the <pre> does not depend on it, so it is the same node
+        if (a.body !== b.body) { a.code.textContent = b.body; a.body = b.body; }
+        a.opener = b.opener;
+        a.marker = b.marker;
+        a.closed = b.closed;
+        a.start = b.start;
+        a.end = b.end;
+      } else if (a.text !== b.text || a.streaming !== streaming) {
+        const later = old.slice(i + 1).find(sg => sg.nodes.length > 0);
+        drop(a);
+        const f = b.text.trim() === "" ? null : fragment(inner(render(b.text, {streaming})));
+        a.nodes = nodesOf(f);
+        place(f, later ? later.nodes[0] : null);
+        a.text = b.text;
+        a.streaming = streaming;
+      }
+      a.start = b.start;
+      a.end = b.end;
+      i += 1;
+    }
+    old.slice(i).forEach(drop);
+    old.length = i;
+    next.slice(i).forEach(b => {
+      if (b.kind === "fence") {
+        const f = fragment(inner(render(b.opener + "\n" + b.marker, {streaming: true})));         // an empty fence: the skeleton of the <pre>, which the text then fills
+        const pre = f && f.childNodes.length === 1 && f.firstChild.tagName === "PRE" ? f.firstChild : null;
+        if (pre) {
+          const code = pre.querySelector("code") || pre;
+          code.textContent = b.body;
+          cmd.appendChild(pre);
+          old.push({kind: "fence", opener: b.opener, marker: b.marker, body: b.body, closed: b.closed, node: pre, code, nodes: [pre], start: b.start, end: b.end});
+          return;
+        }
+        const g = fragment(inner(render(b.opener + "\n" + b.body + (b.closed ? "\n" + b.marker : ""), {streaming: true})));
+        const ns = nodesOf(g);
+        place(g, null);
+        old.push({kind: "text", text: b.opener + "\n" + b.body, streaming, nodes: ns, start: b.start, end: b.end});
+        return;
+      }
+      const f = b.text.trim() === "" ? null : fragment(inner(render(b.text, {streaming})));
+      const ns = nodesOf(f);
+      place(f, null);
+      old.push({kind: "text", text: b.text, streaming, nodes: ns, start: b.start, end: b.end});
+    });
+    st.tail = tail;
+    st.tailStreaming = streaming;
+    st.settled = plan.settledText + (add.length > plan.add.length ? plan.tail : "");
+    return true;
+  }
+
   const Fluid = {createFrames, frame, flush: () => frames.flush(), cancel: key => frames.cancel(key), pending: () => frames.pending(),
-    signature, changed, diffList, patchList, splitStream, streamParts, paintStream};
+    signature, changed, diffList, patchList, splitStream, streamParts, paintStream, paintText, segmentsOf};
   if (typeof module === "object" && module !== null && module.exports) module.exports = Fluid;
   else root.Fluid = Fluid;
 })(globalThis);
