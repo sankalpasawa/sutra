@@ -1,0 +1,26 @@
+{
+  "schema": "sutra-extension/2",
+  "id": "121_scrub_simulated",
+  "methods": [
+    {
+      "id": "scrub@1",
+      "effect": "scrubbed",
+      "requires": [
+        "feedback_given"
+      ],
+      "provider": "sanitizer",
+      "grant": "action:scrub@1",
+      "cost": {
+        "compute": 1,
+        "money": 0,
+        "attention": 0
+      },
+      "action": "simulate_fact",
+      "approved": true,
+      "source": "reviewed/synthetic-method"
+    }
+  ],
+  "grants": [
+    "action:scrub@1"
+  ]
+}

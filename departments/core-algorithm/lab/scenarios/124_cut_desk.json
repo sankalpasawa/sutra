@@ -1,0 +1,311 @@
+{
+  "schema": "sutra-extension/2",
+  "id": "124_cut_desk",
+  "scope": "sutra/speed",
+  "goals": [
+    "hook_chain_cut_landed",
+    "boot_load_cut_landed"
+  ],
+  "rules": [
+    {
+      "id": "R-HOOK-CHAIN-ADMISSIBLE@1",
+      "head": "hook_chain_cut_admissible",
+      "branches": [
+        [
+          "hook_chain_baseline_cited",
+          "hook_chain_samples_ge_100",
+          "hook_chain_guardrails_hold"
+        ]
+      ],
+      "approved": true,
+      "source": "reviewed/speed-charter"
+    },
+    {
+      "id": "R-HOOK-CHAIN-LANDED@1",
+      "head": "hook_chain_cut_landed",
+      "branches": [
+        [
+          "hook_chain_cut_admissible",
+          "hook_chain_cut_approved",
+          "hook_chain_cut_shipped"
+        ]
+      ],
+      "approved": true,
+      "source": "reviewed/speed-charter"
+    },
+    {
+      "id": "R-BOOT-LOAD-ADMISSIBLE@1",
+      "head": "boot_load_cut_admissible",
+      "branches": [
+        [
+          "boot_load_baseline_cited",
+          "boot_load_samples_ge_100",
+          "boot_load_guardrails_hold"
+        ]
+      ],
+      "approved": true,
+      "source": "reviewed/speed-charter"
+    },
+    {
+      "id": "R-BOOT-LOAD-LANDED@1",
+      "head": "boot_load_cut_landed",
+      "branches": [
+        [
+          "boot_load_cut_admissible",
+          "boot_load_cut_approved",
+          "boot_load_cut_shipped"
+        ]
+      ],
+      "approved": true,
+      "source": "reviewed/speed-charter"
+    }
+  ],
+  "methods": [
+    {
+      "id": "ship-hook-chain-cut@1",
+      "effect": "hook_chain_cut_shipped",
+      "requires": [
+        "hook_chain_baseline_cited",
+        "hook_chain_samples_ge_100",
+        "hook_chain_guardrails_hold",
+        "hook_chain_cut_approved"
+      ],
+      "provider": "local-provider",
+      "grant": "action:ship-hook-chain-cut@1",
+      "cost": {
+        "compute": 1,
+        "money": 0,
+        "attention": 0
+      },
+      "action": "simulate_fact",
+      "approved": true,
+      "source": "reviewed/synthetic-method"
+    },
+    {
+      "id": "ask-hook-chain-cut-approval@1",
+      "effect": "hook_chain_cut_approved",
+      "requires": [
+        "hook_chain_baseline_cited",
+        "hook_chain_samples_ge_100",
+        "hook_chain_guardrails_hold"
+      ],
+      "provider": "founder-channel",
+      "grant": "action:ask-hook-chain-cut-approval@1",
+      "cost": {
+        "compute": 0,
+        "money": 0,
+        "attention": 1
+      },
+      "action": "ask",
+      "approved": true,
+      "source": "reviewed/synthetic-method",
+      "question": "Approve this one cut, the hook chain overhead cut? Its baseline, its sample and its guardrails are on file.",
+      "ask_to": "founder"
+    },
+    {
+      "id": "ship-boot-load-cut@1",
+      "effect": "boot_load_cut_shipped",
+      "requires": [
+        "boot_load_baseline_cited",
+        "boot_load_samples_ge_100",
+        "boot_load_guardrails_hold",
+        "boot_load_cut_approved"
+      ],
+      "provider": "local-provider",
+      "grant": "action:ship-boot-load-cut@1",
+      "cost": {
+        "compute": 1,
+        "money": 0,
+        "attention": 0
+      },
+      "action": "simulate_fact",
+      "approved": true,
+      "source": "reviewed/synthetic-method"
+    },
+    {
+      "id": "ask-boot-load-cut-approval@1",
+      "effect": "boot_load_cut_approved",
+      "requires": [
+        "boot_load_baseline_cited",
+        "boot_load_samples_ge_100",
+        "boot_load_guardrails_hold"
+      ],
+      "provider": "founder-channel",
+      "grant": "action:ask-boot-load-cut-approval@1",
+      "cost": {
+        "compute": 0,
+        "money": 0,
+        "attention": 1
+      },
+      "action": "ask",
+      "approved": true,
+      "source": "reviewed/synthetic-method",
+      "question": "Approve this one cut, the boot load cut? Its baseline, its sample and its guardrails are on file.",
+      "ask_to": "founder"
+    }
+  ],
+  "providers": {
+    "local-provider": 4,
+    "founder-channel": 3
+  },
+  "grants": [
+    "action:ship-hook-chain-cut@1",
+    "action:ask-hook-chain-cut-approval@1",
+    "action:ship-boot-load-cut@1",
+    "action:ask-boot-load-cut-approval@1"
+  ],
+  "evidence": [
+    {
+      "predicate": "hook_chain_baseline_cited",
+      "truth": "TRUE",
+      "verified": true,
+      "source": "adapter:ordered/cut@1",
+      "version": "cut-968c0a367004",
+      "checked": "cut-proposal-hook-chain",
+      "question": "the proposal cites a measured baseline: where it was measured, which metric, what value",
+      "measured": {
+        "source": "holding/LATENCY-LOG.jsonl",
+        "metric": "hook_chain_overhead_p95_ms",
+        "value": 640
+      }
+    },
+    {
+      "predicate": "hook_chain_samples_ge_100",
+      "truth": "TRUE",
+      "verified": true,
+      "source": "adapter:ordered/cut@1",
+      "version": "cut-d8f60c7a8ff6",
+      "checked": "cut-proposal-hook-chain",
+      "question": "the baseline rests on at least 100 samples",
+      "measured": {
+        "samples": 212,
+        "floor": 100
+      }
+    },
+    {
+      "predicate": "hook_chain_guardrails_hold",
+      "truth": "TRUE",
+      "verified": true,
+      "source": "adapter:ordered/cut@1",
+      "version": "cut-0836dd2b7962",
+      "checked": "cut-proposal-hook-chain",
+      "question": "the override count has not risen, triage accuracy is 90 or more, and nothing on the do-not-cut list is touched",
+      "measured": {
+        "override_count_before": 14,
+        "override_count_now": 14,
+        "triage_correct_pct": 96,
+        "triage_floor": 90,
+        "touches_do_not_cut": []
+      }
+    },
+    {
+      "predicate": "boot_load_baseline_cited",
+      "truth": "TRUE",
+      "verified": true,
+      "source": "adapter:ordered/cut@1",
+      "version": "cut-d23c5bd07a04",
+      "checked": "cut-proposal-boot-load",
+      "question": "the proposal cites a measured baseline: where it was measured, which metric, what value",
+      "measured": {
+        "source": "holding/LATENCY-LOG.jsonl",
+        "metric": "boot_load_p50_ms",
+        "value": 15200
+      }
+    },
+    {
+      "predicate": "boot_load_samples_ge_100",
+      "truth": "TRUE",
+      "verified": true,
+      "source": "adapter:ordered/cut@1",
+      "version": "cut-2b90fa350863",
+      "checked": "cut-proposal-boot-load",
+      "question": "the baseline rests on at least 100 samples",
+      "measured": {
+        "samples": 131,
+        "floor": 100
+      }
+    },
+    {
+      "predicate": "boot_load_guardrails_hold",
+      "truth": "TRUE",
+      "verified": true,
+      "source": "adapter:ordered/cut@1",
+      "version": "cut-1c912232aeae",
+      "checked": "cut-proposal-boot-load",
+      "question": "the override count has not risen, triage accuracy is 90 or more, and nothing on the do-not-cut list is touched",
+      "measured": {
+        "override_count_before": 14,
+        "override_count_now": 14,
+        "triage_correct_pct": 96,
+        "triage_floor": 90,
+        "touches_do_not_cut": []
+      }
+    },
+    {
+      "predicate": "hook_chain_cut_shipped",
+      "truth": "FALSE",
+      "verified": true,
+      "source": "fixture/not-shipped",
+      "version": "1"
+    },
+    {
+      "predicate": "boot_load_cut_shipped",
+      "truth": "FALSE",
+      "verified": true,
+      "source": "fixture/not-shipped",
+      "version": "1"
+    }
+  ],
+  "proposals": [
+    {
+      "id": "cut-proposal-hook-chain",
+      "cut": "hook_chain",
+      "sink": "hook chain overhead per tool call",
+      "baseline": {
+        "source": "holding/LATENCY-LOG.jsonl",
+        "metric": "hook_chain_overhead_p95_ms",
+        "value": 640,
+        "samples": 212
+      },
+      "target": {
+        "metric": "hook_chain_overhead_p95_ms",
+        "value": 300
+      },
+      "guardrails": {
+        "override_count_total": {
+          "before": 14,
+          "now": 14
+        },
+        "triage_correct_pct": 96
+      },
+      "touches": [
+        "hook-pretool-chain"
+      ]
+    },
+    {
+      "id": "cut-proposal-boot-load",
+      "cut": "boot_load",
+      "sink": "boot load before the first output",
+      "baseline": {
+        "source": "holding/LATENCY-LOG.jsonl",
+        "metric": "boot_load_p50_ms",
+        "value": 15200,
+        "samples": 131
+      },
+      "target": {
+        "metric": "boot_load_p50_ms",
+        "value": 8000
+      },
+      "guardrails": {
+        "override_count_total": {
+          "before": 14,
+          "now": 14
+        },
+        "triage_correct_pct": 96
+      },
+      "touches": [
+        "boot-context-files"
+      ]
+    }
+  ]
+}

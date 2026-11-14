@@ -1,0 +1,7 @@
+{
+  "schema": "sutra-extension/2",
+  "id": "123_team_rail",
+  "providers": {
+    "team-rail": 2
+  }
+}

@@ -2,7 +2,7 @@
  "about": "Written by the additive applier (.tmp/core-algo-additive4-apply.py, contract 4). `pinned`: what the lab had recorded when a version was applied (sha256 of the kernel and of each scenario file; sha256 of the canonical JSON of each case, of the event record, of the ask record, of each recorded sequence, of each handler entry and of each lens except the reflection summary), and `built_in`, every Python file the lab had before the add-on points. `points` and `applied`: every file laid in, with its sha256. An entry of `applied` that holds `edits` is an EDIT VERSION (ruling R32): the name and sha256 of its edit script and, for every existing file the script changed, the sha256 before and after; the pin of the kernel and the pinned handler entries were taken again for those files, an added file it changed is listed with its new sha256, and every other pin stayed. Its `moves` are what it declares as moved of the things an earlier version recorded, each with its reason; check S202 holds a declared move to nothing until the next version is applied to the built, verified record. The verifier reads this file for checks S202 and S203, for the sha256 a check module's text is held to before it runs, and for what it hands a check module; tools/run_all.py reads it for the record's file list. Nothing in the lab holds this file itself.",
  "contract": 4,
  "pinned": {
-  "from": "sutra-kernel-extensions/0.14.0-pagebuilder",
+  "from": "sutra-kernel-extensions/0.15.0-refusals",
   "kernel_sha256": "688ab9431d4f4b17608d848e32f12e0373197a301d3b7f641a6f476a2b9ad368",
   "built_in": [
    "extensions/asks.py",
@@ -36,6 +36,16 @@
    "09_fast_tradeoff": "bcf89b9252c017249552775013a2dfced15dad8f208e5ff2fcb08d6f74b774dd",
    "100_delivered_but_open": "e1203486bffecbd8f998866b60dfa52a4d893ebb8987fdb9226b021b9865f0c2",
    "10_money_first": "e0f7379ebee9c62c657aa0ef7c1171834cc6e0d143b16496e235efdc2f9374dd",
+   "110_ops_desk": "f93198e5dac982bc7e3a8be09fa292b681e43efc3fb22b0b474c4fb1c3eb68f5",
+   "111_requested_actions": "8b7250957c632b7c2c34896df1b37a2b99e872050a905c534f30aa8ccc388af1",
+   "112_servicing_team": "d9cac036e95b660eeba3d6c44902ad54db3a70c3904440ebd11dee0efcfd6292",
+   "113_servicing_standing_rules": "e20c1dfff6a7e0051e31256735d3e51e766f7afcdafeaff7bd369d5b8bfca253",
+   "114_practice_money_movement": "0faa8d7d6f0657e8520efa5810dfc5734d01f7078e541797d79a0c97df16e0c7",
+   "115_servicing_loosens": "caa7ffab0bc3df47627ebcb5fb603c02cdfdd5bb32f50f073092b353f6d7e3ad",
+   "116_pack_review": "8a6f0f04d13ff421f85b8f6da7e7038aaf05a43f7c4bebc4d6d1edc266fe44c2",
+   "117_review_of_loosening": "5d1df867d6a2c3e932fd102d28f422050878486cc2b6029d8b0308de1600c0d6",
+   "118_review_of_practice": "8b2eba22bb5728da676a1e6d6971dd54be7515c8f853c863d358ba4ad10c33bf",
+   "119_platform_allows_itself": "905da3a13c2e135714591ed4139cee6e7cb54d27c4eddef4437035f782fc2cd7",
    "11_no_goal": "de850a7919f19e1c263a5c4e6fb9b4e15a693d2bf6e694b92beb72a06c7b2895",
    "12_other_tenant": "e14e35b11c29b753773eb1c13ae60edbcddd2c125621cd72254abafcaaae6214",
    "13_revoke_authority": "d2643d40a98197e3d78f2c60af428d6834854a4868d88d9ef5c434f1f9e3282f",
@@ -274,6 +284,18 @@
     "4a721d5ba360db8e8e28fc3faa840a18d967f56adae281919cba2041d328ba4c"
    ],
    [
+    "51_refused_class",
+    "0ce5567be74bfc04e974f1a4b8d8a69e345b0ecab2f592aedb098b5b7b21681d"
+   ],
+   [
+    "52_standing_rules",
+    "8133bd0f30c48a50b81e1c7069e4c6fc5d6d2efba4a67c47016ecc531df6a75f"
+   ],
+   [
+    "53_child_relaxes",
+    "2a377c7c57ddc01967737046e7ab5b3691c2209bbb1474a11c2a63a948d24e38"
+   ],
+   [
     "60_pack_twice",
     "3f763aa037b00e66e09806ed65a7fd341d1a8ef9e58b7b2195d52585a9df0afc"
    ],
@@ -326,6 +348,7 @@
    "journal_refusals": "0c8646c7ad38b13dc36a29cc6112815e255dde8828b004f6408f169f2ca62ef6",
    "journal_restart": "1b30c480032ee792b0f7d1fd9645a0942fc89e2e886fdd4f2fe3223de9ab99d4",
    "numbers": "d3502c559c71eb3f67370b3aa6190315538057febc7a0e291664ee4f7a832553",
+   "refusals": "fdd595b7298a4aee3e84fec1679df8967de976829c53a47bc39c625c81d2994e",
    "system": "b367f2143ea685827f4ee5b9d994c5fc3dcc6f926958e946273059713d7ef8fb"
   },
   "action_handlers": {
@@ -434,6 +457,23 @@
     "tests/test_refusals.py": "03c8e9177e7877c15fe9175ed0c9ff568c62be6cc2ec3b540e2b7febdee4d1a7",
     "tools/packs/refusals.py": "a5e2a3968db5451a317d68f5a2c42fd6153f1b979e382ddc8729a6fd4c9be331",
     "tools/scenes/refusals.py": "479cce24542cb3b081b657bf616e23dc029604e0136712646252c722a4c7fbe7"
+   }
+  },
+  {
+   "label": "0.16.0-ordered",
+   "delivery": "ordered",
+   "files": {
+    "cases/54_ordered_effects.json": "3ac98a250ef8c6b76cfa5b03d8cf32c34196f33ccc4aa36ae7839a61de5b859b",
+    "cases/55_data_before_cuts.json": "2b37f6bb342990cfd58bc99d441b247fd109eacd82dba337d951a1b1de915fa9",
+    "cases/56_tier_rules.json": "e4a17a5b9b2a836a644782b7d1f32b719821f45198ea70a1edb1c9e7d9366238",
+    "extensions/ordered_cuts.py": "67c70410ad4d8b10fdd9cafaca61be8361f26f9d63ae093804cf5b3e25df0cdc",
+    "extensions/ordered_effects.py": "d6a3b016824344b2f226dce821eea3cec8824403253c75657b6ea4d424a41e1f",
+    "extensions/ordered_tiers.py": "5442579b0119379e0f20d55ecc30dba15a1cc61e26ad4e6148323a39173e53df",
+    "kinds/scrub_text.py": "142551f0571f17beb0aff59a7b5f4c95348ca128185e2baa121e1bf98eaaca03",
+    "qa/checks/ordered.py": "50c8999ac921c58b81d5dda65ba2c3fca7fb7e2cce6216f08b6df85cbfb4c459",
+    "tests/test_ordered.py": "f39cf089bb070ca23e20c48cefdd9a46b21dde1dc28c1929692c5813bb8c7edb",
+    "tools/packs/ordered.py": "d5ae722053a947e0552c94be232c9c8a1831e3184243c5f684490abc9f8f0af2",
+    "tools/scenes/ordered.py": "736ba41740294b5ce2962b36e848e29a162fb7d1ca4b0632b6acc497c41ba6b8"
    }
   }
  ]

@@ -1,0 +1,9 @@
+{
+  "id": "56_tier_rules",
+  "title": "One rule set, four tiers",
+  "description": "The fan-in rule has one alternative per tier, and the tier is an evidence row. Under the portfolio pack the same goal takes the portfolio alternative: the notice is shown, then the signals are sent, on that tier's own grants.",
+  "packs": ["125_fan_in_rules", "127_tier_portfolio"],
+  "execute": true,
+  "area": "Governance",
+  "expected": "LOCAL_MODEL_EFFECTS_RECORDED"
+}

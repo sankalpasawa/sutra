@@ -1,0 +1,48 @@
+{
+  "schema": "sutra-extension/2",
+  "id": "126_tier_internal",
+  "scope": "internal/fan-in",
+  "evidence": [
+    {
+      "predicate": "tier_internal",
+      "truth": "TRUE",
+      "verified": true,
+      "source": "fixture/client-registry",
+      "version": "1"
+    },
+    {
+      "predicate": "tier_portfolio",
+      "truth": "FALSE",
+      "verified": true,
+      "source": "fixture/client-registry",
+      "version": "1"
+    },
+    {
+      "predicate": "tier_project",
+      "truth": "FALSE",
+      "verified": true,
+      "source": "fixture/client-registry",
+      "version": "1"
+    },
+    {
+      "predicate": "tier_external",
+      "truth": "FALSE",
+      "verified": true,
+      "source": "fixture/client-registry",
+      "version": "1"
+    },
+    {
+      "predicate": "signals_sent",
+      "truth": "FALSE",
+      "verified": true,
+      "source": "fixture/nothing-sent",
+      "version": "1"
+    }
+  ],
+  "grants": [
+    "fan-in:internal"
+  ],
+  "providers": {
+    "local-provider": 3
+  }
+}

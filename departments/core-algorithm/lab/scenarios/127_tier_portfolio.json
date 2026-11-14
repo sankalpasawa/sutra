@@ -1,0 +1,56 @@
+{
+  "schema": "sutra-extension/2",
+  "id": "127_tier_portfolio",
+  "scope": "portfolio/fan-in",
+  "evidence": [
+    {
+      "predicate": "tier_internal",
+      "truth": "FALSE",
+      "verified": true,
+      "source": "fixture/client-registry",
+      "version": "1"
+    },
+    {
+      "predicate": "tier_portfolio",
+      "truth": "TRUE",
+      "verified": true,
+      "source": "fixture/client-registry",
+      "version": "1"
+    },
+    {
+      "predicate": "tier_project",
+      "truth": "FALSE",
+      "verified": true,
+      "source": "fixture/client-registry",
+      "version": "1"
+    },
+    {
+      "predicate": "tier_external",
+      "truth": "FALSE",
+      "verified": true,
+      "source": "fixture/client-registry",
+      "version": "1"
+    },
+    {
+      "predicate": "signals_sent",
+      "truth": "FALSE",
+      "verified": true,
+      "source": "fixture/nothing-sent",
+      "version": "1"
+    },
+    {
+      "predicate": "notice_shown",
+      "truth": "FALSE",
+      "verified": true,
+      "source": "fixture/no-banner-yet",
+      "version": "1"
+    }
+  ],
+  "grants": [
+    "fan-in:portfolio",
+    "notice:portfolio"
+  ],
+  "providers": {
+    "local-provider": 3
+  }
+}

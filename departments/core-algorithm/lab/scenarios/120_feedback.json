@@ -1,0 +1,87 @@
+{
+  "schema": "sutra-extension/2",
+  "id": "120_feedback",
+  "scope": "sutra/feedback",
+  "goals": [
+    "written_locally",
+    "feedback_sent"
+  ],
+  "evidence": [
+    {
+      "predicate": "feedback_given",
+      "truth": "TRUE",
+      "verified": true,
+      "source": "fixture/user-typed",
+      "version": "words-1",
+      "text": "The start command refuses a folder that only holds a settings directory. Seen in /Users/someone/work/app; write to someone@example.org."
+    },
+    {
+      "predicate": "scrubbed",
+      "truth": "FALSE",
+      "verified": true,
+      "source": "fixture/marker-absent",
+      "version": "1"
+    },
+    {
+      "predicate": "written_locally",
+      "truth": "FALSE",
+      "verified": true,
+      "source": "fixture/marker-absent",
+      "version": "1"
+    },
+    {
+      "predicate": "feedback_sent",
+      "truth": "FALSE",
+      "verified": true,
+      "source": "fixture/marker-absent",
+      "version": "1"
+    }
+  ],
+  "methods": [
+    {
+      "id": "push@1",
+      "effect": "feedback_sent",
+      "requires": [
+        "written_locally",
+        "scrubbed",
+        "feedback_given"
+      ],
+      "provider": "team-rail",
+      "grant": "action:push@1",
+      "cost": {
+        "compute": 1,
+        "money": 0,
+        "attention": 0
+      },
+      "action": "simulate_fact",
+      "approved": true,
+      "source": "reviewed/synthetic-method"
+    },
+    {
+      "id": "write-local@1",
+      "effect": "written_locally",
+      "requires": [
+        "scrubbed",
+        "feedback_given"
+      ],
+      "provider": "local-disk",
+      "grant": "action:write-local@1",
+      "cost": {
+        "compute": 1,
+        "money": 0,
+        "attention": 0
+      },
+      "action": "simulate_fact",
+      "approved": true,
+      "source": "reviewed/synthetic-method"
+    }
+  ],
+  "providers": {
+    "local-disk": 2,
+    "sanitizer": 2
+  },
+  "grants": [
+    "action:push@1",
+    "action:write-local@1"
+  ]
+}

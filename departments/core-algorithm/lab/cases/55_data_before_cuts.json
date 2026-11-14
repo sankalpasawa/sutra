@@ -1,0 +1,9 @@
+{
+  "id": "55_data_before_cuts",
+  "title": "Data before cuts",
+  "description": "Two cuts on one desk. Each has its cited baseline, its 100 samples and its guardrails as adapter rows. What is left is its own approval: each run asks the founder its own question once, waits, and ships nothing.",
+  "packs": ["124_cut_desk"],
+  "execute": true,
+  "area": "Standards",
+  "expected": "WAITING"
+}
