@@ -620,3 +620,7 @@ button:not(:disabled):not(.cjump-btn):active,.lbtn:active,.fnchip:active{transfo
   .clive .cl-act,.clive .cl-copycode{min-height:32px;min-width:44px}
   .clive .cl-clock{font-size:11px}
 }
+
+/* the chat column reaches the bottom of the window at 901 to 1150 px: j2-shell.css (frozen) leaves the .smain grid one row of auto height, so the column stopped where its content
+   ended; a definite row makes it as tall as the window (the phone layout, up to 900 px, sets its own rows and is left alone) */
+@media (min-width:901px){#sview>main{grid-template-rows:minmax(0,1fr)}}

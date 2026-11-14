@@ -131,7 +131,7 @@ body.simple #dview{display:flex;flex:0 0 auto}body.simple #dview .dcol{display:n
 .shead{display:flex;align-items:center;gap:10px;padding:10px 16px;border-bottom:1px solid var(--line);background:var(--panel)}
 .shead b{font:700 18px var(--display)}
 .slink{font-size:13px;color:var(--muted)}
-.smain{flex:1;display:grid;grid-template-columns:minmax(320px,1fr) minmax(0,1.6fr);grid-template-rows:minmax(0,1fr);min-height:0}
+.smain{flex:1;display:grid;grid-template-columns:minmax(320px,1fr) minmax(0,1.6fr);min-height:0}
 .smain>*{min-width:0}
 .schat{display:flex;flex-direction:column;min-height:0;border-right:1px solid var(--line)}
 .sprog{display:flex;gap:4px;padding:12px 14px 10px;background:var(--bg);border-bottom:1px solid var(--line);position:sticky;top:0;z-index:2;flex:0 0 auto}
