@@ -729,13 +729,17 @@ def test_the_real_ticker_does_not_spin_while_a_checkpoint_write_is_slow(db, monk
     cfg = LiveConfig(heartbeat_s=5.0, coalesce_ms=33, checkpoint_s=0.01, structural_checkpoint_s=0.01)
     live, bus, clock = make(db=db, config=cfg, start_thread=True, clock=lambda: time.monotonic())
     ticks = []
+    live.start()
     original = live.tick
     live.tick = lambda now=None: (ticks.append(1), original(now))[1]
     try:
         live.on_event(attempt())
         live.on_event(start_text())
         live.on_event(ev("block_end", block_id="b1", status="ok", is_error=False, truncated=False))
-        time.sleep(0.6)                                                        # the first write blocks; every later due checkpoint is skipped
+        time.sleep(0.15)                                                       # the first write is now running and blocked
+        live.on_event(start_text())                                            # new structure while it runs: a checkpoint is due and can only be skipped
+        live.on_event(ev("block_end", block_id="b1", status="ok", is_error=False, truncated=False))
+        time.sleep(0.6)
         assert len(ticks) < 100, len(ticks)
     finally:
         gate.set()
