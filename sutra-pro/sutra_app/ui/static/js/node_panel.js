@@ -268,7 +268,7 @@
     function paintJump() {
       const CS = CSc();
       if (!chatRefs || !chatRefs.jump) return;
-      const html = CS && st ? CS.pillHtml(st.scroll.pill) : "";
+      const html = CS && st ? CS.pillHtml(st.scroll.pill, {live: st.replyLive === true && st.scroll.parked === true}) : "";          // a reply being written below a reader who moved up: "Reply in progress"
       chatRefs.jump.hidden = html === "";
       paintTo(chatRefs.jump, html);
     }
@@ -278,7 +278,7 @@
       if (!CS || !el) return;
       st.scroll = {parked: false, seenId: lastIdOf(activeMessages()), pill: 0};
       paintJump();
-      const how = CS.behavior(typeof root.matchMedia === "function" ? q => root.matchMedia(q) : undefined);
+      const how = CS.behavior(typeof root.matchMedia === "function" ? q => root.matchMedia(q) : undefined, {streaming: st.replyLive === true});
       if (typeof el.scrollTo === "function") el.scrollTo({top: el.scrollHeight, behavior: how});
       else el.scrollTop = el.scrollHeight;
     }
@@ -383,8 +383,14 @@
       const node = chatRefs.msgs.querySelector('.clive[data-turn="' + model.turn + '"][data-attempt="' + model.attempt + '"]');
       const stored = activeMessages().some(m => LV.isReply(m) && LV.keyOf(m.turn, m.attempt) === model.key);
       if (!node || stored) { paintMessages(); return; }
+      st.replyLive = model.live === true;
+      const CS = CSc();
+      const el = chatRefs.msgs;
+      const near = CS ? CS.distance(el) <= NEAR_PX : true;
       LV.paint(node, model, liveDeps());
-      keepFollowing();
+      const g = CS ? CS.grow({parked: st.scroll.parked, atBottom: near}) : {scroll: "bottom", live: false};
+      if (g.scroll === "bottom" && !st.loading) el.scrollTop = el.scrollHeight;          // the growing reply is followed while the reader is at the bottom
+      paintJump();
     }
 
     // Where the clipboard API is missing or refused: a hidden textarea and the old command.
@@ -414,11 +420,16 @@
       // are shells that chat_live_view.js paints (STR-10): a live turn and a stored message are the same node.
       const plan = liveOn() ? root.ChatLiveView.plan(list, st.cc.c.liveView(), liveDeps()) : null;
       let changed;
+      st.replyLive = !!(st.cc && st.cc.sid === st.sid && st.cc.c.live() && st.cc.c.state().turn.active);
       if (root.Fluid) {
         const items = CV().transcriptItems(session, list, plan ? Object.assign(view, {shell: true}) : view);
         if (plan && plan.liveItem) items.push(plan.liveItem);
-        changed = root.Fluid.patchList(el, items, {enter: "nmsg-in"}).changed;
-        if (plan) changed = root.ChatLiveView.sync(el, plan.models, liveDeps()) > 0 || changed;
+        const draw = () => {
+          let c = root.Fluid.patchList(el, items, {enter: "nmsg-in"}).changed;
+          if (plan) c = root.ChatLiveView.sync(el, plan.models, liveDeps()) > 0 || c;
+          return c;
+        };
+        changed = CSc() && st.scroll.parked ? CSc().keepPlace(el, draw) : draw();          // a line that comes in above a reader who moved up does not move what is read
       } else {
         changed = paintTo(el, CV().transcript(session, list, view));
       }

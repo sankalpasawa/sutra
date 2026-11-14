@@ -1163,5 +1163,10 @@
   "id": "D233",
   "label": "stop and retry in the reply",
   "anchor": "band:EXPERIENCE"
+ },
+ {
+  "id": "D234",
+  "label": "motion on arrival; keep the reader's place",
+  "anchor": "band:EXPERIENCE"
  }
 ]

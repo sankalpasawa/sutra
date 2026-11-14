@@ -335,8 +335,13 @@
       if (plan && plan.liveItem) items.push(plan.liveItem);
       const start = startHtml();
       if (start !== "") items.push({key: "starter", html: start});
-      changed = root.Fluid.patchList(el, items, {enter: "nmsg-in"}).changed;
-      if (plan) changed = root.ChatLiveView.sync(el, plan.models, liveDeps()) > 0 || changed;
+      S.replyLive = !!(S.cc && S.cc.live() && S.cc.state().turn.active);
+      const draw = () => {
+        let c = root.Fluid.patchList(el, items, {enter: "nmsg-in"}).changed;
+        if (plan) c = root.ChatLiveView.sync(el, plan.models, liveDeps()) > 0 || c;
+        return c;
+      };
+      changed = root.ChatScroll && S.scroll.parked ? root.ChatScroll.keepPlace(el, draw) : draw();          // a line that comes in above a reader who moved up does not move what is read
     } else {
       changed = ctx.paint(el, root.ChatView.transcript(session, shown, view) + startHtml());
     }
@@ -356,8 +361,13 @@
     const node = el.querySelector('.clive[data-turn="' + model.turn + '"][data-attempt="' + model.attempt + '"]');
     const stored = S.messages.some(m => LV.isReply(m) && LV.keyOf(m.turn, m.attempt) === model.key);
     if (!node || stored) { renderChat(); return; }
+    S.replyLive = model.live === true;
+    const CS = root.ChatScroll;
+    const near = CS ? CS.distance(el) <= 48 : true;
     LV.paint(node, model, liveDeps());
-    keepFollowing();
+    const g = CS ? CS.grow({parked: S.scroll.parked, atBottom: near}) : {scroll: "bottom", live: false};
+    if (g.scroll === "bottom") el.scrollTop = el.scrollHeight;                    // the growing reply is followed while the reader is at the bottom
+    renderJump();
   }
 
   /* ---------------------------------------------------------------- the reader's place and the box (GAP-chat-comfort) */
@@ -386,7 +396,7 @@
   function renderJump() {
     const el = $("sjump");
     if (!el || !root.ChatScroll) return;
-    const html = root.ChatScroll.pillHtml(S.scroll.pill);
+    const html = root.ChatScroll.pillHtml(S.scroll.pill, {live: S.replyLive === true && S.scroll.parked === true});          // a reply being written below a reader who moved up: "Reply in progress"
     ctx.paint(el, html);
     el.hidden = html === "";
   }
@@ -397,7 +407,7 @@
     if (!CS) return;
     S.scroll = {parked: false, seenId: CS.lastId(S.messages), pill: 0};
     renderJump();
-    const how = CS.behavior(typeof root.matchMedia === "function" ? q => root.matchMedia(q) : undefined);
+    const how = CS.behavior(typeof root.matchMedia === "function" ? q => root.matchMedia(q) : undefined, {streaming: S.replyLive === true});
     if (typeof el.scrollTo === "function") el.scrollTo({top: el.scrollHeight, behavior: how});
     else el.scrollTop = el.scrollHeight;
   }

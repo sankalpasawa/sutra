@@ -438,6 +438,39 @@ def test_an_existing_conversation_renders_through_the_same_model_and_a_new_turn_
 
 
 # ------------------------------------------------------------------------------------------------------------------------------------------------------------
+# scroll: the page follows the reply at the bottom; a reader who moves up is not moved, sees "Reply in progress", and the pill takes them back and they follow again
+# ------------------------------------------------------------------------------------------------------------------------------------------------------------
+@pytest.mark.browser
+def test_following_parking_the_reply_in_progress_pill_and_return_to_latest(make, browser):
+    live = make([Text(LONG, pieces=140)], delay="0.1")
+    browser.set_size(900, 520)
+    home(browser, live)
+    ask(browser, "Plan the site")
+    browser.wait_for("(() => { const e = document.getElementById('smsgs'); return e.scrollHeight > e.clientHeight + 200; })()", timeout=40)
+    dist = "(() => { const e = document.getElementById('smsgs'); return e.scrollHeight - e.clientHeight - e.scrollTop; })()"
+    assert browser.js(dist) <= 24, "the page follows the reply while the reader is at the bottom"
+    browser.js("document.getElementById('smsgs').scrollTop = 0")                        # the reader moves up
+    browser.wait_for("!!document.querySelector('#sjump .cjump-btn') && document.querySelector('#sjump .cjump-btn').textContent === 'Reply in progress'", timeout=10)
+    assert browser.js("document.querySelector('#sjump').hidden") is False
+    top = browser.js("document.getElementById('smsgs').scrollTop")
+    first = browser.js("(() => { const e = document.getElementById('smsgs'); return Math.round(e.firstElementChild.getBoundingClientRect().top - e.getBoundingClientRect().top); })()")
+    time.sleep(1.5)                                                                     # the reply grows meanwhile
+    assert browser.js("document.getElementById('smsgs').scrollTop") == top, "the reader was not moved"
+    assert browser.js("(() => { const e = document.getElementById('smsgs'); return Math.round(e.firstElementChild.getBoundingClientRect().top - e.getBoundingClientRect().top); })()") == first
+    assert browser.js("document.querySelector('#smsgs .clive').dataset.state") == "live", "it was still being written"
+    shot(browser, "10-reader-above-reply-in-progress.png")
+    browser.click("#sjump .cjump-btn")
+    browser.wait_for(dist + " <= 24", timeout=10)
+    seen = browser.js("document.getElementById('smsgs').scrollTop")
+    time.sleep(1.2)
+    assert browser.js("document.getElementById('smsgs').scrollTop") > seen or browser.js("document.querySelector('#smsgs .clive').dataset.state") == "ok", "and follows again"
+    browser.wait_for("document.querySelector('#smsgs .clive').dataset.state === 'ok'", timeout=60)
+    assert browser.js(dist) <= 24
+    browser.wait_for("document.querySelector('#sjump').hidden === true", timeout=5)
+    clean(browser, "scroll")
+
+
+# ------------------------------------------------------------------------------------------------------------------------------------------------------------
 # reduced motion, phone width
 # ------------------------------------------------------------------------------------------------------------------------------------------------------------
 @pytest.mark.browser
