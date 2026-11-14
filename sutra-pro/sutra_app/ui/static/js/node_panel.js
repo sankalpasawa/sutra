@@ -504,7 +504,7 @@
           // one repaint per animation frame, however many chunks of a reply arrived in it
           c = CC.create({api: api(), sid, mode: st.ccMode || "team", live: true, onChange: () => later(() => { if (st && chatRefs) { paintComposer(); paintBar(); paintLiveTurn(); } }),
                          onTurnEnd: () => { if (st && st.sid === sid && chatRefs) { st.pillSid = ""; paintPill(); } },          // the turn may have moved the chat to the other model: read the pill again
-                         onRelease: rows => { if (st && st.sid === sid) { st.messages = mergeMessages(st.messages, rows); st.lastId = lastIdOf(st.messages); reconcileTurn(); if (st.tab === "chat" && chatRefs) paintChat(); } },
+                         onRelease: rows => { if (st && st.sid === sid) { st.messages = mergeMessages(st.messages, rows); st.lastId = lastIdOf(st.messages); reconcileTurn(); if (st.tab === "chat" && chatRefs) { paintChat(); paintComposer(); paintBar(); } } },
                          onSettle: () => { if (st && st.sid === sid && st.refresh) st.refresh[0](); }});          // the live turn ended: read its stored reply
           composers.set(sid, c);
         }

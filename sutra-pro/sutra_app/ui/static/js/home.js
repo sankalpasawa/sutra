@@ -480,7 +480,7 @@
     const repaint = () => { renderBar(); renderComposer(); renderLive(); };
     // live: the turn is told by `chat.live` frames and snapshots (STR-9); a stored reply of the running turn is held back (offer) and let go at its end (onRelease)
     if (S.cc === undefined) S.cc = root.ChatComposer ? root.ChatComposer.create({api, sid: ORG, mode: "team", live: true, onChange: () => (root.Fluid ? root.Fluid.frame(repaint, repaint) : repaint()),
-      onTurnEnd: rereadPill, onRelease: rows => { mergeMessages(rows, false); renderChat(); }, onSettle: () => refetchMessages()}) : null;
+      onTurnEnd: rereadPill, onRelease: rows => { mergeMessages(rows, false); renderChat(); renderBar(); renderComposer(); }, onSettle: () => refetchMessages()}) : null;
     return S.cc;
   }
   const directOn = () => { const c = composer(); return c !== null && c.state().mode === "direct"; };

@@ -626,3 +626,18 @@ def test_phone_composer_chrome_leaves_most_of_the_screen_to_the_transcript_and_i
     assert "20 MB" in m["title"], "the limits stay one hover or long press away"
     assert browser.js("document.documentElement.scrollWidth <= window.innerWidth + 1") is True
     clean(browser, "phone composer")
+
+
+@pytest.mark.browser
+def test_the_composer_button_is_already_send_when_the_reply_first_shows_settled(make, browser):
+    """The reply settles when its stored row takes over; the box must not say Stop for even one step after that (it was repainted a frame later)."""
+    live = make([Text("Short and sweet.", pieces=3)], delay="0.03")
+    home(browser, live)
+    browser.js("""(() => { window.__seen = []; const check = () => { const s = document.querySelector('#smsgs .clive'); if (s && s.dataset.state === 'ok') window.__seen.push(document.getElementById('ssend').textContent); };
+      new MutationObserver(check).observe(document.getElementById('smsgs'), {subtree: true, childList: true, attributes: true, attributeFilter: ['data-state', 'data-id']}); })()""")
+    ask(browser, "Say something short")
+    browser.wait_for("document.querySelector('#smsgs .clive') && document.querySelector('#smsgs .clive').dataset.state === 'ok'", timeout=30)
+    browser.wait_for("document.getElementById('ssend').textContent === 'Send'", timeout=10)
+    seen = browser.js("window.__seen")
+    assert seen and set(seen) == {"Send"}, seen
+    clean(browser, "settle")
