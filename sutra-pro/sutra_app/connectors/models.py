@@ -239,7 +239,13 @@ class SessionState(M):
 
 
 class ConnectorEvent(M):
-    kind: Literal["started", "text_delta", "text", "tool_call", "tool_result", "quota", "notice", "turn_done"]
+    # The chat-turn kinds added for streaming (D217, D218) come only from a chat turn's parser or the router's chat path, never from an engine call:
+    #   message_boundary {}                                     a new assistant message begins (Claude `message_start`): block indexes restart in it
+    #   block_start {index, type, tool_id?, name?, input?}      a content block opened (text, thinking, tool_use; Codex: a command item started)
+    #   block_stop  {index?, tool_id?, input?, exit_code?, output?}   the block's input (or a command) is complete
+    #   route       {event: plan|attempt|failed, ...}           the router's own decisions: which providers, which attempt, why it failed and what happens next
+    kind: Literal["started", "text_delta", "text", "tool_call", "tool_result", "quota", "notice", "turn_done",
+                  "message_boundary", "block_start", "block_stop", "route"]
     data: dict = {}
 
 

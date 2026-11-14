@@ -196,6 +196,7 @@ class _Request(Hooks):
         self.row: Optional[UsageIn] = None
         self._held: list[threading.Semaphore] = []
         self.cancel: Optional[CancelToken] = None     # a chat turn's stop token (D215); None for every other request
+        self.routes = False                            # a chat turn that asked for the router's own events (route plan, attempt, failed; D217)
 
     # ---- the gate ---------------------------------------------------------------------------------------------------------
     def _exceeded(self, limit: str, message: str) -> EnvelopeExceededError:
@@ -617,6 +618,10 @@ class Router:
         had fewer than `max_attempts` tries (J2 `range(2)`: the default is one retry); then, when the error allows it, the
         next provider. Any other error propagates (the last error of the last provider)."""
         order = plan.order
+        chat = state.routes                    # the route events are for a chat turn's live view only (`chat_stream(routes=True)`): an engine call, `ask` or any older caller never sees them
+        attempt_no = 0
+        if chat:
+            yield ConnectorEvent(kind="route", data={"event": "plan", "order": list(order), "model": plan.models.get(order[0]) if order else None})
         for index, provider in enumerate(order):
             connector = self._connectors[provider]
             tries = 0
@@ -625,6 +630,10 @@ class Router:
                 self._check_cancel(state, provider)
                 state.check_gate()
                 tries += 1
+                attempt_no += 1
+                if chat:
+                    yield ConnectorEvent(kind="route", data={"event": "attempt", "provider": provider, "model": plan.models.get(provider), "n": attempt_no,
+                                                             "idle_limit_s": getattr(connector, "idle_timeout_s", None), "stream_mode": _stream_mode(provider, connector)})
                 try:
                     result = yield from make(plan, provider, connector)
                 except ConnectorError as err:
@@ -633,12 +642,19 @@ class Router:
                     if err.retryable and tries < plan.resolved.max_attempts:
                         state.check_gate()                         # no point waiting for a retry the envelope will refuse
                         delay = plan.resolved.retry_delay(tries - 1)
+                        wait = delay + self._rng() if delay > 0 else 0.0
+                        if chat:
+                            yield ConnectorEvent(kind="route", data=_failed(provider, err, "retry", wait, provider))
                         if delay > 0:
-                            self._wait(state, delay + self._rng(), provider)
+                            self._wait(state, wait, provider)
                         continue
                     if self._may_fall_back(err, plan.resolved) and index + 1 < len(order):
                         state.failures.append((provider, err))
+                        if chat:
+                            yield ConnectorEvent(kind="route", data=_failed(provider, err, "fallback", 0.0, order[index + 1]))
                         break
+                    if chat and err.code != "cancelled":
+                        yield ConnectorEvent(kind="route", data=_failed(provider, err, "fail", 0.0, None))
                     raise
                 state.note = self._independence_note(state, provider, self._with_pick_note(state, plan, provider, self._note(state.failures, provider)))
                 return result
@@ -868,10 +884,12 @@ class Router:
         assert result is not None
         return result
 
-    def chat_stream(self, session_id: str, m: Message, ctx: Optional[RouteContext] = None, cancel: Optional[CancelToken] = None) -> Iterator[ConnectorEvent]:
+    def chat_stream(self, session_id: str, m: Message, ctx: Optional[RouteContext] = None, cancel: Optional[CancelToken] = None,
+                    routes: bool = False) -> Iterator[ConnectorEvent]:
         """The events of one turn; the last one is `turn_done` with `data["result"]`. Errors surface while iterating. `cancel` is the turn's stop
-        token (D215): requested at any moment, it ends the turn wherever it is (setup, back-off wait, before the spawn, the process itself)."""
-        return self._chat(session_id, m, ctx or RouteContext(), partials=True, cancel=cancel)
+        token (D215): requested at any moment, it ends the turn wherever it is (setup, back-off wait, before the spawn, the process itself). `routes=True`
+        adds `route` events (plan, attempt, failed) before the attempts and before every wait, for the live view (D217)."""
+        return self._chat(session_id, m, ctx or RouteContext(), partials=True, cancel=cancel, routes=routes)
 
     def chat_stop(self, session_id: str) -> bool:
         """Stop the turn of this chat. True iff a turn is running (never False just because its process is not tracked yet). For a turn that has a
@@ -904,7 +922,8 @@ class Router:
             stored.pinned = provider        # type: ignore[assignment]
             save_session_state(stored)
 
-    def _chat(self, session_id: str, m: Message, ctx: RouteContext, *, partials: bool, cancel: Optional[CancelToken] = None) -> Iterator[ConnectorEvent]:
+    def _chat(self, session_id: str, m: Message, ctx: RouteContext, *, partials: bool, cancel: Optional[CancelToken] = None,
+              routes: bool = False) -> Iterator[ConnectorEvent]:
         sid = session_id
         self._workdir(sid)
         with self._lock:
@@ -921,6 +940,7 @@ class Router:
             resolved = self.policy.resolve(req)
             state = _Request(self, ctx, resolved, kind="chat", purpose="chat")
             state.cancel = cancel
+            state.routes = routes
             ok, failure = False, None
             try:
                 if m.role != "user":
@@ -1167,6 +1187,22 @@ def tool_title(data: Mapping[str, Any]) -> str:
         about = next((str(args[k]) for k in _TOOL_ARGS if isinstance(args.get(k), str) and args[k].strip()), "")
     title = " ".join(f"{name} {about}".split())
     return title if len(title) <= TOOL_TITLE_CHARS else title[:TOOL_TITLE_CHARS - 1] + "…"
+
+
+def _stream_mode(provider: str, connector: ModelConnector) -> str:
+    """How a provider's answer reaches the page: `simulated` (the offline stub), `tokens` (it sends text pieces), `activity` (tools stream, the answer arrives whole:
+    Codex), `final` (nothing until the end)."""
+    if provider == "stub":
+        return "simulated"
+    if connector.capabilities.partials:
+        return "tokens"
+    return "activity" if provider == "codex" else "final"
+
+
+def _failed(provider: str, err: ConnectorError, action: str, delay_s: float, next_provider: Optional[str]) -> dict:
+    """The `route.failed` event: why an attempt failed (the user-safe sentence, never a stack), what the router does next and after how long."""
+    return {"event": "failed", "provider": provider, "code": err.code, "reason": err.user_message(), "retryable": bool(err.retryable), "action": action,
+            "delay_s": round(float(delay_s), 3), "next_provider": next_provider}
 
 
 def _progress(on_progress: Optional[Callable[[dict], None]]) -> Optional[Callable[[ConnectorEvent], None]]:
