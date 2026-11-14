@@ -503,8 +503,8 @@ def build_before_asking():
     run = j2.J2Run()
     run.goal = j2.mock_charter(BREW_LAB)
     run.workflows = [{"id": "W-1", "name": "Menu", "status": "registered", "covers_text": [run.goal["done_when"][0]]}]
-    run.call = lambda fn, fmt, task, mock, **k: {"say": "So far the page has the earthy look and all your prices."} \
-        if fn == "identity" else json.loads(mock())
+    run.call = lambda fn, fmt, task, mock, **k: {"say": "So far the page has the earthy look and all your prices.",
+                                                 "built": [1]} if fn == "identity" else json.loads(mock())   # its claim
     run._identity_limit({"reason": "Priority's ruling", "left_out": run.goal["done_when"][1:], "budget_needed": 20})
     text = run.chat[-1]["text"]
     assert "page has" not in text and "will build 1 funded part" in text, text
@@ -809,6 +809,56 @@ def supersede_and_markers():
     assert met({**cond, "markers": []}, "Opening hours: TBC"), "no markers in the data: only open facts count"
     print("supersede and markers: replaced by replaces, exact name or held with the same items, never by a stripped or "
           "case-folded name; the to-be-confirmed markers come from the condition's data ok")
+
+
+def declared_not_words():
+    """Batch 6: four word rules are fields an agent sets. exact_facts (Identity) make an atom covering that item need a
+    facts-present check, a named test or behavior steps; digits in an unmarked goal need nothing. date_rule_items
+    (Identity) make a page atom name date_control and set exactly that control, and a no-page atom name date_case
+    with a test check; "deadline" in an unmarked goal needs nothing. Identity's limit message is replaced when its
+    built list claims an item Audit didn't pass. A builder's blocked_by names other workflows of the run."""
+    src = ""
+    a = {"goal": "Show the price 120 and the deadline 5 Mar", "how": {"steps": "x"}, "constraints": [],
+         "verification": [{"text": "the section exists", "type": "file-exists", "target": "index.html", "expect": True}]}
+    plain = j2.check_problems(a, src, rules={})
+    assert not any("exactly" in p or "date" in p for p in plain), plain        # no words read: nothing required
+    facts = j2.check_problems(a, src, rules={"facts": True})
+    assert any("facts that must appear exactly" in p for p in facts), facts
+    steps = ["set #reg-date 2026-03-01", "click #calc", "expect-number #total 100"]
+    b = {**a, "verification": [{"text": "price", "type": "behavior-steps", "target": steps, "expect": True}]}
+    no_ctl = j2.check_problems(b, src, rules={"date": True})
+    assert any("date_control" in p for p in no_ctl), no_ctl
+    ok = j2.check_problems({**b, "date_control": "#reg-date"}, src, rules={"date": True})
+    assert not any("date_control" in p for p in ok), ok
+    other = j2.check_problems({**b, "date_control": "#when"}, src, rules={"date": True})
+    assert any("is never set" in p for p in other), other
+    nopage = ("file-exists", "test-passed", "inside-folder")
+    c = {**a, "verification": [{"text": "tests pass", "type": "test-passed", "target": "test_x.py", "expect": True}]}
+    assert any("date_case" in p for p in j2.check_problems(c, src, nopage, rules={"date": True}))
+    assert not any("date" in p for p in j2.check_problems({**c, "date_case": "early-bird before 5 Mar"}, src, nopage,
+                                                            rules={"date": True}))
+    # Identity's marks reach the rules by item text
+    run = page_run()
+    run.goal = {"done_when": ["Prices", "Early bird"], "exact_facts": [{"fact": "120", "item": "Prices"}],
+                "date_rules": ["Early bird"]}
+    assert run._item_rules({"covers_text": ["Prices"]}) == {"facts": True, "date": False}
+    assert run._item_rules({"covers_text": ["Early bird"]}) == {"facts": False, "date": True}
+    # blocked_by: only other workflows of the run, never words in say
+    run.workflows = [{"id": "W-1", "name": "a", "status": "done"}, {"id": "W-2", "name": "b", "status": "running"}]
+    assert run._blocked_by({"blocked_by": ["W-1", "W-9", "W-2"]}, "W-2") == ["W-1"]
+    assert run._blocked_by({"say": "I can't: the cause belongs to W-1's section"}, "W-2") == []
+    assert any(e.get("type") == "blocked_by" for e in run.events)
+    # built: a claim of an item Audit didn't pass replaces Identity's message
+    for built, kept in (([], True), ([1], False)):
+        r = page_run()
+        r.goal = {"done_when": ["The menu with prices is shown", "Opening hours are listed"]}
+        say_ = "The menu is built and on the page."
+        r.call = lambda fn, fmt, task, mock, **k: {"say": say_, "built": built, "question": "Keep going?"}
+        r._identity_limit({"reason": "Out of budget", "out_of_budget": True})
+        shown = next(m["text"] for m in reversed(r.chat) if m["who"] == "identity")
+        assert (say_ in shown) == kept, (built, shown)
+    print("declared, not words: exact facts and date rules from Identity's marks, date_control or date_case from the "
+          "atom, built claims checked against Audit's passes, blocked_by checked against the run's workflows ok")
 
 
 def deferred_twice():
@@ -1896,11 +1946,14 @@ def atom_checks():
     timed = {**a, "goal": "Opening hours 8am to 9pm are listed", "how": {**how, "steps": "h2 headings, class hours-head"},
              "expected_output": [{"text": "2 hours headings", "kind": "element", "target": ".hours-head", "count": 2}],
              "verification": [{"text": "2 hours headings", "type": "element-count", "target": ".hours-head", "expect": 2}]}
-    assert j2.check_problems(timed, src) == ["its goal names a time, price, number or email but no check is "
-                                             "facts-present or a named test"], j2.check_problems(timed, src)
+    assert j2.check_problems(timed, src) == [], "no word of the goal is read"
+    assert j2.check_problems(timed, src, rules={"facts": True}) == [
+        "it covers a done-when item with facts that must appear exactly, but no check is facts-present, a named test "
+        "or behavior steps"], j2.check_problems(timed, src, rules={"facts": True})
 
-    def patched(edit, reply=lambda r, fn: r, done=True):
-        """A run whose first Adaptation proposal has its first atom changed by edit (once)."""
+    def patched(edit, reply=lambda r, fn: r, done=True, marks=None):
+        """A run whose first Adaptation proposal has its first atom changed by edit (once). marks(goal): Identity's
+        marks added to the charter before that proposal."""
         run, hit = j2.J2Run(), []
         orig = run.call
 
@@ -1908,6 +1961,8 @@ def atom_checks():
             r = orig(fn, fmt, task, mock, **k)
             if fn == "adaptation" and isinstance(r, dict) and r.get("workflows") and not run.workflows and not hit:
                 hit.append(1)
+                if marks:
+                    run.goal.update(marks(run.goal, r["workflows"][0]))
                 edit(r["workflows"][0]["atoms"][0])
             return reply(r, fn)
         run.call = call
@@ -1915,8 +1970,9 @@ def atom_checks():
         if done:
             finish(run)
         return run
-    run = patched(lambda at: at.update({k: v for k, v in timed.items() if k != "context"}))
-    assert "names a time, price, number or email" in run.rejections[0]["reason"], run.rejections
+    run = patched(lambda at: at.update({k: v for k, v in timed.items() if k != "context"}),
+                  marks=lambda g, w: {"exact_facts": [{"fact": "8am", "item": g["done_when"][int(w["covers"][0]) - 1]}]})
+    assert "facts that must appear exactly" in run.rejections[0]["reason"], run.rejections
     assert len([c for c in calls_of(run) if "THE VALIDATOR REJECTED" in c["prompt"]]) == 1
     assert run.outcome.startswith("Done"), run.outcome
 
@@ -2272,8 +2328,10 @@ def run_blockers_batch1():
     met, ev = j2.lld_condition("lld-elements", read("lld-elements-165902.md"))
     assert met, ev
     # A13 (runs/j2-20261111-095315 C2 on v1): the brief's facts in other words are a warning
+    g95 = json.loads(read("goal-095315.json"))      # replayed as if Identity marked every charter fact exact (batch 6)
+    g95["exact_facts"] = [{"fact": f, "item": None} for f in g95.get("facts") or []]
     c2 = next(c for c in j2.check_conditions(j2.load_conditions("document.json"), read("doc-v1-095315.md"),
-                                             json.loads(read("goal-095315.json")), "", []) if c["id"] == "C2")
+                                             g95, "", []) if c["id"] == "C2")
     assert not c2["met"] and not j2.blocks(c2), c2
     # A6 (165902 call 4, 155605, 095315): the format names "sections"; the run's first plan, without it, is still flagged
     run = j2.J2Run()
@@ -3459,7 +3517,8 @@ def prd_checks():
     assert not j2.run_check({"type": "ids-unique", "target": "R"}, "", doc + "- **R2**: again\n", doc=True)["pass"]
     # necessary conditions, each on a document that breaks it
     conds = {c["id"]: c for c in j2.load_conditions("prd.json")}
-    goal = {"product_name": "QuickQueue", "facts": ["QuickQueue", "SMS alert"], "to_be_confirmed": []}
+    goal = {"product_name": "QuickQueue", "facts": ["QuickQueue", "SMS alert"], "to_be_confirmed": [],
+            "exact_facts": [{"fact": "QuickQueue", "item": None}, {"fact": "SMS alert", "item": None}]}   # Identity's marks
     src = j2.squash("QuickQueue SMS alert 45 minutes 10 minutes 60% 3 months")
     good = ("# QuickQueue\n\n## Problem\n\nPatients wait 45 minutes.\n\n## Users\n\nClinic patients.\n\n## Goals\n\n- **G1**: "
             "Short waits\n\n## Requirements\n\n1. **R1**: SMS alert\n2. **R2**: Join from a phone\n\n## Success metrics\n\n"
@@ -3470,6 +3529,7 @@ def prd_checks():
     assert not met("P1", good.replace("## Users", "## People"))[0]
     assert not met("P2", good.replace("phone\n", "phone\n3. **R2**: Duplicate\n"))[0] and not met("P2", good.replace("**R2**", "**R3**"))[0]
     assert not met("P3", good.replace("SMS alert", "text message"))[0]
+    assert met("P3", good.replace("SMS alert", "text message"), {**goal, "exact_facts": []})[0], "unmarked: never checked"
     p4 = met("P4", good.replace("Under 10 minutes", "Under 7 minutes"))
     assert not p4[0] and "7" in p4[1], p4
     assert not met("P5", good.replace("Payments", "Payments (to be confirmed)"))[0]
@@ -3809,7 +3869,8 @@ def website_conditions():
     fact shows no "None" and no internal id."""
     conds = j2.load_conditions("website.json")
     assert [c["id"] for c in conds] == [f"N{i}" for i in range(1, 10)], conds
-    goal = {"site_name": "Little Fig", "facts": ["Little Fig", "+91 98765 43210"], "to_be_confirmed": []}
+    goal = {"site_name": "Little Fig", "facts": ["Little Fig", "+91 98765 43210"], "to_be_confirmed": [],
+            "exact_facts": [{"fact": "Little Fig", "item": None}, {"fact": "+91 98765 43210", "item": None}]}      # Identity's marks
     src = j2.squash("Little Fig is open 8 to 10. Call +91 98765 43210 or write to hello@littlefig.in")
     good = ('<!doctype html><html><head><title>Little Fig</title></head><body><header id="hero"><nav>'
             '<a href="#menu">Menu</a> <a href="#visit">Visit</a></nav><h1>Little Fig</h1>'
@@ -3833,7 +3894,7 @@ def website_conditions():
               "N6": (good.replace("<p>Open 8 to 10.</p>", "<p>Open 8 to 10. Free delivery over 500.</p>"), clean, goal),
               "N7": (good.replace(' action="mailto:hello@littlefig.in"', ""), clean, goal),
               "N8": (good.replace('<a href="#menu">Menu</a> ', ""), clean, goal),
-              "N9": (good, clean, {**goal, "facts": ["Koramangala"]})}
+              "N9": (good, clean, {**goal, "exact_facts": [{"fact": "Koramangala", "item": None}]})}
     for cid, (page, mech, g) in breaks.items():
         r = check(page, mech, g)[cid]
         assert not r["met"] and r["evidence"] and r["evidence"] != ok[cid]["evidence"], (cid, r)
@@ -3843,10 +3904,10 @@ def website_conditions():
     assert not r["met"] and "hero" in r["evidence"], r
     r = check(good, {"available": False, "note": "Chrome not found"})
     assert not r["N2"]["met"] and r["N2"]["evidence"].startswith("could not run"), r["N2"]
-    assert ok["N9"]["evidence"].startswith("all 2 brief fact(s) appear"), ok["N9"]
+    assert ok["N9"]["evidence"].startswith("all 2 exact fact(s) appear"), ok["N9"]
     assert check(*breaks["N9"])["N9"]["severity"] == "warn" and not j2.blocks(check(*breaks["N9"])["N9"])
-    r = check(good, clean, {**goal, "facts": []})["N9"]          # no facts list: the site name only, and it says so
-    assert r["met"] and r["evidence"].startswith("no facts list; the site name 'Little Fig' appears"), r
+    r = check(good, clean, {**goal, "exact_facts": []})["N9"]    # nothing marked exact: nothing checked, and it says so
+    assert r["met"] and r["evidence"] == "the charter marks no facts that must appear exactly", r
 
     # workable(): Audit accepts and the render check is clean; every condition met, or not workable
     row = {"id": "F-1", "item": 1, "criterion": "Menu", "verdict": "PASS", "pass": True}
@@ -3958,9 +4019,11 @@ def behavior_steps():
     goal = "A fee calculator shows the total, with 10% off up to 31 December 2026"
 
     def probs(steps, g=goal, h=how, kind="behavior"):
+        # the item is a date-rule item (Identity's mark) and the atom names its date control (batch 6: no words read)
         a = {"goal": g, "how": h, "constraints": [], "context": ["charter item 1"], "verification": [],
+             "date_control": "#reg-date",
              "expected_output": [{"text": "The total for one 10K runner and 2 T-shirts", "kind": kind, "steps": steps}]}
-        return j2.expected_problems(a, j2.CHECK_TYPES) or j2.check_problems(j2.cover_expected(a), src)
+        return j2.expected_problems(a, j2.CHECK_TYPES) or j2.check_problems(j2.cover_expected(a), src, rules={"date": True})
     good = ["set #reg-date 2026-12-01", "set #shirts 2", "click #calc-go", "expect-number #total 500*0.9+2*250"]
     assert probs(good) == [], probs(good)
     for steps, part in (([*good[:3], "expect-number #total 950"], "uses 950, not in the charter"),
@@ -6220,6 +6283,16 @@ INTENDED_PROMPT_CHANGES = [
     # batch 4: a workflow may name the waiting workflows it replaces
     ('"replaces": [str] (ids of waiting workflows, registered or held, that this one replaces; they are then not '
      'built), ', ""),
+    # batch 6: Identity marks exact facts and date-rule items; atoms name date_control/date_case; builders name
+    # blocked_by; the facts-present condition counts exact facts (the mock marks every fact exact)
+    ("re", r'"exact_facts": \[\{"fact": str, "item": int\}\] \(.*?\), "date_rule_items": \[int\] \(.*?\), ', ""),
+    ('"date_control": str|null (when it covers a done-when item whose rule depends on a date and its output is a page: '
+     'the selector of the control that sets the date, which its behavior steps set), "date_case": str|null (the same '
+     'with no page: the test case that covers the date), ', ""),
+    ("re", r', \\?"exact_facts\\?": \[[^\]]*\]', ""),
+    ('"blocked_by": [str] (only when a check fails because of another workflow\'s work: the ids of those workflows, '
+     'e.g. ["W-2"]; [] otherwise), ', ""),
+    ("re", r"all (\d+) (?:brief|exact) fact\(s\) appear", r"all \1 fact(s) appear"),
     ("4. Name every workflow that is ready now: all of its dependencies are done, and what it writes doesn't collide with "
      "another ready workflow. Several may be ready at once. Your order says which goes first. Code runs them one at a "
      "time; that is the engine's limit, not your rule.",
@@ -8717,7 +8790,12 @@ SAVED_RUNS_GOLDEN = {
 # Re-recorded 2026-11-14 (remove-group-c batch 4) for prompts only: the workflow format has "replaces" and the
 # conditions data has "markers" (both in the planners' prompts). Outcomes, spend, the agents called, workflows and the
 # documents are identical to {"prd": "3237e2b5bcd8", "design docs": "3b6bc31fb169", "docs then site": "a84d0f970ede"}.
-DOC_RUN_GOLDEN = {"prd": "ac6d3f00fb5c", "design docs": "2284f23cff02", "docs then site": "dc8ed3ceb805"}
+# Re-recorded 2026-11-14 (remove-group-c batch 6): Identity's intake format asks exact_facts and date_rule_items,
+# the atom format has date_control and date_case, the builder's has blocked_by; the stage goals record exact_facts and
+# the facts-present condition's evidence names exact facts (stage-*.json). Outcomes, spend, the agents called,
+# workflows and the documents are identical to {"prd": "ac6d3f00fb5c", "design docs": "2284f23cff02",
+# "docs then site": "dc8ed3ceb805"}.
+DOC_RUN_GOLDEN = {"prd": "f1d22a8df780", "design docs": "9a933693c619", "docs then site": "93b81e02b546"}
 DOC_PROMPTS_GOLDEN = {
     "prd.builder": "e971c88e727f", "prd.intake": "75a955fb24fa",
     "prd.charter_fmt": "eedccdf82d84", "prd.atom_rules": "b8a918ef6039", "prd.system": "d09f06fa3181",
@@ -16241,6 +16319,7 @@ if __name__ == "__main__":
         dependency_names()
         item_kinds_and_about()
         supersede_and_markers()
+        declared_not_words()
         thread_and_loom_core()
         deferred_twice()
         connections()

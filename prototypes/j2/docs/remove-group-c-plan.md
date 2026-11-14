@@ -28,6 +28,8 @@ Branch `remove-group-c`, from `remove-restrictions` (2026-11-14). Removes group 
 | 4 | Audit: remove word matching for findings and duplicates; also `_supersede`, the TBC markers (into the conditions data), the `user_groups` split and the board's `duplicate_of` (asker's `same_as`). Rows: inventory "Group C: status", batch 4 | done; live check below |
 | later | Left by the founder (2026-11-14): `facts_to_headings` and `_fix_atoms` (code rewrites Adaptation's atoms by their shape), `j2_change.carry_checks.stale` (a substring of 8+ characters decides a check came from a removed charter string), `j2_schema.CONTENT_EDGES` (regexes on document prompt notes decide which edges carry a change) | planned |
 | 5 | Planner thresholds (`THRESHOLD`, `MAX_ROUNDS`, lesson and playbook caps, the judge's scoring numbers): no change; a written proposal for Rubak: `docs/planner-thresholds-proposal.md` | done |
+| 6 | Four word rules the founder added become fields: SPECIFIC/FACT_VALUE (Identity's exact_facts), BUILT_CLAIM (Identity's built), DATE_RULE (Identity's date_rule_items; the atom's date_control, or date_case with no page), _blames_other (the builder's blocked_by). _fix_atoms kept. Rows: inventory "Group C: status", batch 6 | done; live check below |
+| later | Still word rules in the validator block: NEGATED, NAME_WITH_DIGIT, ID_RANGE, RC_RANGE | planned |
 | later | Hidden rewrites: `to_requester` (cuts to 3 statements and 1 question, drops numbered lines), `PLAIN_WORDS`, `requester_words` (drops sentences naming internal ids). Code changes Identity's text without telling it. Also: a J2.g fact question merged into "Please send these" keeps its agent-facing wording (live run j2-20261114-193037: "Does the Requester want the script run on their own real folders...") | planned |
 
 ## Batch 1 live check (2026-11-14)
@@ -55,3 +57,9 @@ Branch `remove-group-c`, from `remove-restrictions` (2026-11-14). Removes group 
 | Run | Result |
 |---|---|
 | All 4 briefs ($2.39, `--cap 100`) | 4 pass with `Done:`. Every Audit finding named its item (no finding logged as naming none); no workflow was superseded; no board in these runs (`J2_BOARD` off). Ledger total $49.09 of $100 |
+
+## Batch 6 live check (2026-11-15)
+
+| Run | Result |
+|---|---|
+| All 4 briefs ($2.38, `--cap 100`) | 4 pass with `Done:`. Identity marked exact facts: coffee shop 6, hiring policy 2, file sorter 3, file copy 0; no brief had a date rule. Ledger total $51.47 of $100 |

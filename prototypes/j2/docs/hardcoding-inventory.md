@@ -197,6 +197,17 @@ Findings are matched to items by id or by Audit's own fields, never by words.
 | `j2.py:8818` `_ask_board → j2_board.duplicate_of`; `j2_board.py:21-26,50-66` `DUPLICATE_SHARE, duplicate_of` | Fixed: the asker sets `same_as` (a board id that already answers it) in `board_question` / `question`; code refuses it, pointing at that entry, and refuses a `same_as` naming no answered entry. No words compared; the same words without `same_as` are a new question. `duplicate_of` and `DUPLICATE_SHARE` are deleted; `content_words` stays for the mock board answers | `j2.py:9587`, `9593`, `9748-9759`; `j2_board.py:47` |
 | `facts_to_headings`, `_fix_atoms`, `carry_checks.stale`, `CONTENT_EDGES` | Left for later (founder); listed in `docs/remove-group-c-plan.md` | |
 
+### Batch 6: four word rules become fields (founder's list, 2026-11-14)
+
+| Rule | Status | Now |
+|---|---|---|
+| `SPECIFIC` (any digit or email in an atom's goal) and `FACT_VALUE` (prices, times, dates, %, phones, emails by regex; validator path `check_problems`, used with realization on, so not Rubak's) | Fixed: Identity's intake reply marks `exact_facts` [{fact, item}]; the charter stores them by item text. An atom of a workflow covering such an item needs a facts-present check, a named test or behavior steps (`_item_rules`, `check_problems(rules=)`). The facts-present condition checks only marked facts (unmarked: met, and it says so). Both regexes deleted | `j2.py:1035`, `1687`, `5393`, `5506`, `7748` |
+| `BUILT_CLAIM` (phrases like "is built" in Identity's limit message) | Fixed: the limit reply lists `built` (item numbers its words describe as built); a claim not in Audit's passes gets the same replacement and `invalid_move`. The regex is deleted | `j2.py:6171`, `6185` |
+| `DATE_RULE`, `DATE_CONTROL` (deadline words in an atom's goal; date words in a selector) | Fixed: Identity marks `date_rule_items`; the atom covering one names `date_control` (a page: its behavior steps must `set` exactly that selector) or `date_case` (no page: a test check covers the date case, no selector). Page or not is read from the output's check types (behavior-steps). Both regexes deleted | `j2.py:902`, `1039`, `6580` |
+| `_blames_other` (another `W-n` plus "can't/belongs/their" in a builder's report) | Fixed: the builder's reply has `blocked_by` [workflow id]; ids that are no other workflow of the run are ignored and logged; a valid one stops the retries and names the owners to Adaptation (`_owner_note` stays as evidence) | `j2.py:9026`, `9192`, `10492` |
+| `_fix_atoms` | Kept (founder) | |
+| `NEGATED`, `NAME_WITH_DIGIT`, `ID_RANGE`, `RC_RANGE` (same block; not on the list) | Still word rules; noted for later | |
+
 ## Full inventory
 
 

@@ -339,13 +339,6 @@ COUNTED = ("grep-count", "element-count", "tap-targets")     # target: a section
 NAMED_TESTS = ("page-parses", "links-resolve", "form-has-submit")
 MAX_CHECK_ATTEMPTS = 3
 EMAIL = re.compile(r"[\w.+-]+@[\w-]+\.[\w.-]+")
-SPECIFIC = re.compile(r"\d|" + EMAIL.pattern)       # a time, price, number or email in a goal
-# J2_REALIZATION: a goal's value that must be checked as a fact is a price, a time, a date, a percentage, a phone number
-# or an email. A count ("8 practice puzzles", "3 hints", "81 cells") is a quantity the checks count, not a fact to copy
-# (runs/j2-20261102-111726 and -140419 refused two change rows for one, and Adaptation dropped the number to pass).
-FACT_VALUE = re.compile(EMAIL.pattern + r"|[$€£₹]\s?\d|\b(?:rs\.?|inr|usd|eur)\s?\d|\d\s?(?:%|per ?cent|rupees|dollars|euros)"
-                        r"|\b\d{1,2}(?::\d{2})?\s?(?:am|pm)\b|\b\d{1,2}:\d{2}\b|\+?\d[\d ()-]{8,}\d"
-                        r"|\b\d{1,2}(?:st|nd|rd|th)?\s+(?:jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)", re.I)
 NEGATED = re.compile(r"\b(?:no|none|never|not|without|zero)\b", re.I)
 IDENT = re.compile(r"^[#.]?[A-Za-z][\w-]*$")         # a section id or class name
 # A selector: an id, a class or an element, with any number of attribute clauses after it ([data-code=TL-K1],
@@ -360,14 +353,10 @@ ID_RANGE = re.compile(r"#?\b([a-z][\w-]*?)(\d+(?:-\d+)*)\s*(?:to|through|\.\.|�
 RC_RANGE = re.compile(r"#?\b([a-z][\w-]*?-)r-c\b[^.;]{0,40}?\b(\d+)\s*(?:to|through|\.\.|–|—)\s*(\d+)\b")
 NAME_WITH_DIGIT = re.compile(r"[#.]?\b[a-z][\w-]*\d[\w-]*", re.I)
 MAX_RANGE_IDS = 400
-# A goal that describes an action needs a behaviour item proving it works; a rule that depends on a date needs a
-# control on the page that sets the date, used by the steps (never today's date).
+# A goal that describes an action needs a behaviour item proving it works.
 ACTION_GOAL = re.compile(r"\b(?:(?:re)?calculat\w*|self-updating|on change|shows?\s*(?:/|and|or)\s*hides?|"
                          r"toggl\w*|highlight\w*|validat\w*|reveal\w*|hides?|shown only when|hidden unless|"
                          r"required only (?:when|if))\b", re.I)
-DATE_RULE = re.compile(r"early[- ]?bird|deadline|\b(?:up to|until|till|before|by|after)\s+(?:the\s+)?\d{1,2}(?:st|nd|rd|th)?"
-                       r"\s+(?:jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)", re.I)
-DATE_CONTROL = re.compile(r"date|day|today|early", re.I)
 
 
 def human_problem(t):
@@ -874,7 +863,7 @@ def allowed_numbers(source, steps):
     return nums
 
 
-def behavior_problems(steps, told, source, about, loose=False):
+def behavior_problems(steps, told, source, about, loose=False, date_control=None):
     """J2.e's rules for one behaviour check's steps. about: the atom's goal, how and the item text, squashed. loose:
     target_problem's."""
     if not isinstance(steps, list) or not steps:
@@ -908,10 +897,13 @@ def behavior_problems(steps, told, source, about, loose=False):
             need = "wait" if p["verb"] == "expect-changed" else "click"
             if not any(q["verb"] == need for q in parsed[:i - 1]):
                 out.append(f"step {i} {p['verb']} needs a {need} step before it")
-    if DATE_RULE.search(about) and any(p["verb"] in ("expect-number", "expect-text") for p in parsed) and \
-            not any(p["verb"] == "set" and DATE_CONTROL.search(p["sel"]) for p in parsed):
-        out.append("its rule depends on a date: the atom must create a control that sets the date (e.g. #reg-date) "
-                   "and the steps must set it, never rely on today's date")
+    # A date-rule item (Identity's date_rule_items): the atom names the control that sets the date (date_control), and
+    # steps that expect a number or text set exactly that control first, never today's date. date_control None: no rule.
+    if date_control is not None and any(p["verb"] in ("expect-number", "expect-text") for p in parsed) and \
+            not (date_control and any(p["verb"] == "set" and p["sel"] == str(date_control).strip() for p in parsed)):
+        out.append("it covers a done-when item whose rule depends on a date: the atom must name the control that sets "
+                   "the date (date_control) and the steps must set exactly that control, never rely on today's date"
+                   + (f" (date_control {date_control!r} is never set)" if date_control else " (no date_control)"))
     return out
 
 
@@ -981,12 +973,15 @@ GUESS = "\x00guess:"
 CODE_NAME = re.compile(r"(?=[^\s]*(?:_|\.\w|\(\)|[a-z][A-Z]))[A-Za-z_][\w.]*(?:\(\))?")      # test_source_unchanged, copy_files.py, run(), makeCopy
 
 
-def check_problems(a, source, types=CHECK_TYPES, upstream="", ranges=False, tag=False):
+def check_problems(a, source, types=CHECK_TYPES, upstream="", ranges=False, tag=False, rules=None):
     """J2.e's rules for one atom's checks. source: the charter and the Requester's answers, squashed. types: the
     check types the output allows (a website's, or DOC_CHECK_TYPES for a document). upstream: the how and constraints
     of the workflows this one depends on, squashed: an id one of them is told to create may be checked here too.
     ranges (J2_REALIZATION): an id range in how or constraints names every id in it, and a digit inside a name in a
-    check's text (#pad-4, j2-btn) is not a count."""
+    check's text (#pad-4, j2-btn) is not a count. rules (J2Run._item_rules, from the items the atom's workflow covers):
+    "facts": an item has facts Identity marked exact, so a facts-present check, a named test or behavior steps is
+    needed; "date": an item's rule depends on a date. No word of the goal is read."""
+    rules = rules or {}
     g = GUESS if tag else ""      # tag=True: a guess is marked, for the general path to log instead of reject
     out, checks = [], a.get("verification") if isinstance(a.get("verification"), list) else []
     # (tap-targets: expect is the minimum size in px, so a label like "at least 44x44px" must expect 44)
@@ -1025,7 +1020,9 @@ def check_problems(a, source, types=CHECK_TYPES, upstream="", ranges=False, tag=
                 out.append(f"{g}{lab} facts-present lists {bad}, not found in the charter or the Requester's answers")
         elif t == "behavior-steps":
             about = squash(json.dumps([a.get("goal"), a.get("how"), label], ensure_ascii=False))
-            out += [f"{lab} behavior {x}" for x in behavior_problems(target, told, source, about, loose=ranges)]
+            out += [f"{lab} behavior {x}" for x in behavior_problems(
+                target, told, source, about, loose=ranges,
+                date_control=(a.get("date_control") or "") if rules.get("date") else None)]
         elif t in COUNTED:
             if bad := target_problem(target, told, source, t, loose=ranges):
                 out.append(f"{g}{lab} {t} {bad}")
@@ -1035,9 +1032,16 @@ def check_problems(a, source, types=CHECK_TYPES, upstream="", ranges=False, tag=
             if nums and as_int(c.get("expect"), None) not in nums and not (
                     ranges and as_int(c.get("expect"), None) == 0 and NEGATED.search(label)):  # "no run of 10 digits": 0
                 out.append(f"{g}{lab} says {label!r} but expects {c.get('expect')!r}")
-    if (FACT_VALUE if ranges else SPECIFIC).search(str(a.get("goal") or "")) and not any(
+    if rules.get("facts") and not any(
             isinstance(c, dict) and c.get("type") in ("facts-present", "named-test", "behavior-steps") for c in checks):
-        out.append(f"{g}its goal names a time, price, number or email but no check is facts-present or a named test")
+        out.append(f"{g}it covers a done-when item with facts that must appear exactly, but no check is facts-present, "
+                   "a named test or behavior steps")
+    if rules.get("date") and "behavior-steps" not in types and not (
+            str(a.get("date_case") or "").strip() and any(isinstance(c, dict) and c.get("type") in ("test-passed", "named-test")
+                                                         for c in checks)):
+        # an output with no page: its test must cover the date case (date_case names it), no selector needed
+        out.append("it covers a done-when item whose rule depends on a date: a test check must cover the date case, "
+                   "named in date_case")
     return out
 
 
@@ -1680,15 +1684,13 @@ def condition_met(cond, doc, goal, source, sections, page=None, mech=None):
                     f"{p}1 to {p}{len(ids)}, unique and in order" if ok else
                     f"ids {', '.join(f'{p}{i}' for i in ids)}: not unique and sequential from {p}1")
     if k == "facts-present-all":
-        listed = [str(f) for f in g.get("facts") or [] if str(f or "").strip()]
-        facts = listed or [str(f) for f in [g.get("product_name") or g.get("site_name")] if str(f or "").strip()]
+        # only the facts Identity marked exact (exact_facts): code never decides which facts must appear as written
+        facts = [str(f.get("fact")) for f in g.get("exact_facts") or [] if isinstance(f, dict) and str(f.get("fact") or "").strip()]
         text = squash(strip_md(doc))
         missing = [f for f in facts if squash(strip_md(f)) not in text]
-        if not listed:      # the site-name fallback: say so, never "all 1 brief fact(s)"
-            return bool(facts) and not missing, ("no facts list and no site name" if not facts else
-                                                 f"no facts list; the site name {facts[0]!r} "
-                                                 + ("is missing" if missing else "appears"))
-        return not missing, f"missing: {missing}" if missing else f"all {len(facts)} brief fact(s) appear"
+        if not facts:
+            return True, "the charter marks no facts that must appear exactly"
+        return not missing, f"missing: {missing}" if missing else f"all {len(facts)} exact fact(s) appear"
     if k == "groups-covered":
         groups, req = user_groups(g), squash(strip_md(md_section(doc, cond.get("section", sec_name("prd", "requirements"))) or ""))
         said = squash(strip_md(doc))
@@ -1996,8 +1998,6 @@ DECIDE_RULE = ("Never offer adding budget, leaving items out or finishing as is 
 DECISION_FMT = ('"decision": "continue"|"drop"|"ship"|"stop"|null (null if the answer doesn\'t say), "add": int|null (work credits the '
                 'Requester asked to add, as they typed it), "drop_items": [int] (done-when item numbers they asked to '
                 'leave out)')
-BUILT_CLAIM = re.compile(r"\b(?:now has|already has|so far the (?:page|site) has|the (?:page|site) has|is built|"
-                         r"(?:we|I)(?:'ve| have)? (?:built|added)|has been (?:built|added))\b", re.I)
 DECISION_PAUSES = ("limit", "conflict", "ruling_budget", "send_confirm", "real_run")    # the Requester decides; info/fact/question only inform
 ONLY_PICK = re.compile(r"\s*(option\s*)?[1-9]\s*[.:)]?\s*", re.I)
 
@@ -5384,10 +5384,15 @@ class J2Run:
         def mock():      # mock only: the mock Identity's email_updates and item kinds
             r = json.loads(mock_reply())
             dw = (r.get("goal") or {}).get("done_when") if isinstance(r.get("goal"), dict) else None
+            facts = (r.get("goal") or {}).get("facts") if isinstance(r.get("goal"), dict) else None
             return json.dumps({**r, "email_updates": j2_send.asks_updates(said),
+                               **({"exact_facts": [{"fact": f, "item": None} for f in facts]} if facts else {}),
                                **({"item_kinds": [mock_item_kind(c) for c in dw]} if dw and len(kinds) > 1 else {})})
         kinds_fmt = ('"item_kinds": [str] (one per done-when item, same order: the kind of work each item is, one of '
                      + json.dumps(dict(kinds), ensure_ascii=False) + '), ') if len(kinds) > 1 else ""
+        kinds_fmt += ('"exact_facts": [{"fact": str, "item": int}] (facts from facts that must appear exactly as written, '
+                      'each with the done-when item it belongs to), "date_rule_items": [int] (done-when items whose rule '
+                      'depends on a date, such as a deadline or an early-bird price), ')
         r = self.call("identity", '{"say": str (when you ask: to the Requester), ' + REPLY_FMT + ' (when enough is '
                       'true), "enough": bool, "questions": [{"question": str, "options": [str] '
                       '(0-4)}] (when enough is false), "email_updates": bool (true only when the Requester asked to get '
@@ -5431,6 +5436,7 @@ class J2Run:
         if goal and (r.get("email_updates") is True or (self.goal or {}).get("email_updates")):
             goal["email_updates"] = True      # recorded only when asked for, so other charters stay as they were
         tags = r.get("item_kinds") if isinstance(r.get("item_kinds"), list) else []
+        marks = {k: r.get(k) if isinstance(r.get(k), list) else [] for k in ("exact_facts", "date_rule_items")}
         if not goal:
             self._event("identity", "invalid_move", "J2.a reply had neither questions nor a charter")
             if not last:
@@ -5470,6 +5476,7 @@ class J2Run:
             if self.output in ("hld", "lld"):      # a design document asked for without a PRD: its own sections and checks
                 goal = stage_goal(self.output, goal, self.chain)
                 tags = []          # code's items replace Identity's: their kinds are the sections' parts
+                marks = {k: [] for k in marks}     # and Identity's item numbers no longer point at them
         # The no-errors gate has fixed wording: Identity can't extend it with features (runs/j2-20261009-133203
         # item 16 added filters and category browsing, so it couldn't pass once those were dropped).
         goal["done_when"] = [GATE_TEXT if NO_ERRORS_GATE.search(str(c)) else
@@ -5496,6 +5503,18 @@ class J2Run:
         kept = {c: k for c, k in ((self.goal or {}).get("item_kinds") or {}).items() if c in crit}
         if given or kept or goal.get("item_kinds"):
             goal["item_kinds"] = {**kept, **(goal.get("item_kinds") or {}), **given}
+        # Identity's exact facts and date-rule items, stored by item text (item numbers are charter positions here)
+        at = lambda n: crit[as_int(n) - 1] if 1 <= as_int(n) <= len(crit) else None
+        old = self.goal or {}
+        exact = [{"fact": str(f.get("fact")).strip(), "item": at(f.get("item"))} for f in marks["exact_facts"]
+                 if isinstance(f, dict) and str(f.get("fact") or "").strip()]
+        exact += [f for f in old.get("exact_facts") or [] if f.get("item") in crit and f not in exact] if change else []
+        dates = list(dict.fromkeys([c for c in map(at, marks["date_rule_items"]) if c]
+                                   + ([c for c in old.get("date_rules") or [] if c in crit] if change else [])))
+        if exact:
+            goal["exact_facts"] = exact
+        if dates:
+            goal["date_rules"] = dates
         if change and self._change_applies(change):      # J2_CHANGE=1: the charter before this change is kept
             k = 1 + sum(1 for f in os.listdir(self.dir) if re.fullmatch(r"goal\.v\d+\.json", f))
             self.save(f"goal.v{k}.json", self.goal)
@@ -6149,7 +6168,8 @@ class J2Run:
         r = self.call("identity", '{"say": str (to the Requester: what has been done so far; don\'t list what is '
                       'missing, code adds that list; no question, it is asked below), "question": str (the one '
                       'question asked below your words: why the Requester must decide now, then what they choose '
-                      'between, in the order of the options; never an option\'s amount)}',
+                      'between, in the order of the options; never an option\'s amount), "built": [int] (the done-when item '
+                      'numbers your words describe as built or on the site; [] when none)}',
                       f"PASSED BY AUDIT (the only things you may describe as built or on the site): "
                       f"{json.dumps(passed, ensure_ascii=False)}\nFUNDED, NOT BUILT OR NOT CHECKED YET (say the team "
                       f"will build these, never that the site has them): {json.dumps(funded, ensure_ascii=False)}\n"
@@ -6161,9 +6181,13 @@ class J2Run:
         say = r.get("say") or plain_missing
         if self.doc:      # a document: the check results are written by code, whatever Identity said
             say = check_summary(last, dw)
-        if not passed and BUILT_CLAIM.search(say):
-            # Nothing has passed Audit, so nothing may be described as built (runs/j2-20261009-133203 msg 29).
-            self._event("identity", "invalid_move", "described unbuilt work as built")
+        at, crit_now = self._item_at(), (self.goal or {}).get("done_when") or []
+        claimed = [crit_now[at[as_int(n)] - 1] if as_int(n) in at else None for n in r.get("built") or []] \
+            if isinstance(r.get("built"), list) else []
+        if any(c not in passed for c in claimed):
+            # Only what passed Audit may be described as built (runs/j2-20261009-133203 msg 29). Identity lists what its
+            # words claim (built); code checks each against Audit's passes. No word of the message is read.
+            self._event("identity", "invalid_move", f"described unbuilt work as built: items {r.get('built')}")
             say = (f"Nothing has passed the checks yet; the team will build {len(funded)} funded part"
                    f"{'s' if len(funded) != 1 else ''} first." if funded else plain_missing)
         self.last_limit = {"state": state, "decision": None}
@@ -6553,6 +6577,9 @@ class J2Run:
               'are then not built), "estimated_resources": {"money": int, "calls": int, "time_minutes": int}, '
               '"atoms": [{"id": str, "goal": str, "constraints": [str], "context": [str], "how": {"kind": "AI"|"code", '
               '"agent": str, "steps": str (what to build, naming every section id and class name it creates)}, '
+              '"date_control": str|null (when it covers a done-when item whose rule depends on a date and its output is a '
+              'page: the selector of the control that sets the date, which its behavior steps set), "date_case": str|null '
+              '(the same with no page: the test case that covers the date), '
               '"expected_output": [{"text": str, "kind": ' + WF_KINDS + ', '
               '"target": str|[str], "count": int (section/element only, default 1), "steps": [str] (behavior only)}], '
               '"verification": [{"text": str, "type": ' + WF_TYPES + ', "target": str|[str], "expect": int|bool}]}]}]')
@@ -7718,6 +7745,15 @@ class J2Run:
                 out.append(without_ids(f.read()))      # before squash: lowercase "r1" would read as a number
         return squash(" ".join(out))
 
+    def _item_rules(self, w):
+        """What the done-when items a workflow covers ask of its atoms' checks, from Identity's marks at J2.a: "facts"
+        (an item has facts marked exact) and "date" (an item's rule depends on a date). Matched by item text."""
+        g = self.goal or {}
+        crit = g.get("done_when") or []
+        mine = {crit[i - 1] for i in (self._wf_items(w) if "covers_text" in w else self._covers(w)) if 0 < i <= len(crit)}
+        return {"facts": any(f.get("item") in mine for f in g.get("exact_facts") or [] if isinstance(f, dict)),
+                "date": bool(mine & set(g.get("date_rules") or []))}
+
     def _atom_problems(self, w, pool=()):
         """J2.e's work-atom check: missing fields first; then the check rules (check_problems) for every atom. pool: the
         other workflows proposed with this one; an id a workflow it depends on is told to create counts as known."""
@@ -7734,7 +7770,7 @@ class J2Run:
         self._fix_atoms(w, src, types, up, real)
         out = [f"work atom {n}: {x}" for n, a in enumerate(w["atoms"], 1)
                for x in expected_problems(a, types) or check_problems(cover_expected(copy.deepcopy(a)), src, types, up,
-                                                                      ranges=real, tag=True)]
+                                                                      ranges=real, tag=True, rules=self._item_rules(w))]
         guesses = [p for p in out if GUESS in p]
         if guesses and self._general():      # a guess warns, never rejects
             for p in guesses:
@@ -7788,7 +7824,7 @@ class J2Run:
                                                    "run kept as constraints (Audit judges them)")
             if expected_problems(a, types):
                 continue
-            probs = check_problems(cover_expected(copy.deepcopy(a)), src, types, up, ranges=real)
+            probs = check_problems(cover_expected(copy.deepcopy(a)), src, types, up, ranges=real, rules=self._item_rules(w))
             sels = [s for s in dict.fromkeys(untold_selector(p) for p in probs) if s]
             if sels:
                 cons = a.get("constraints")
@@ -8987,7 +9023,7 @@ class J2Run:
                                           if self.doc else (
                                     'First line: a JSON object {"say": str (one short line reporting to @Coordination: '
                                     'what you changed; code runs your checks and reports them, so don\'t claim they pass), '
-                                    '"human_output": str (1 to 3 plain sentences telling a person what you built; \"done.\" alone is rejected), "atom_human_output": str (1 or 2 plain sentences telling the Requester what this part created, in everyday words: no ids, no selectors, no \"units\"), "next": "Coordination", ' + (self.SPEC_FMT if self.blueprint else '') + (self.BOARD_FMT if j2_board.enabled() else '') + self.REASON + '}. '
+                                    '"human_output": str (1 to 3 plain sentences telling a person what you built; \"done.\" alone is rejected), "atom_human_output": str (1 or 2 plain sentences telling the Requester what this part created, in everyday words: no ids, no selectors, no \"units\"), "blocked_by": [str] (only when a check fails because of another workflow\'s work: the ids of those workflows, e.g. [\"W-2\"]; [] otherwise), "next": "Coordination", ' + (self.SPEC_FMT if self.blueprint else '') + (self.BOARD_FMT if j2_board.enabled() else '') + self.REASON + '}. '
                                     + ('Then a ```style block with the style guide as JSON: ' + STYLE_FMT + '. ' if first
                                        else '')
                                     + 'Then, '
@@ -9122,7 +9158,7 @@ class J2Run:
             # says the cause is in another atom's section: Adaptation gets it now (runs/j2-20261015-114723, W-6).
             sig = {(r["check"], r["evidence"]) for r in failed}
             early = ("the same check failed with the same evidence twice" if sig & prev_sig else
-                     "the builder says the cause is in another atom's section" if self._blames_other(meta.get("say"), fn)
+                     "the builder says the cause is in another workflow's work" if self._blocked_by(meta, fn)
                      else None)
             prev_sig = sig
             if early:
@@ -9153,7 +9189,10 @@ class J2Run:
             for a in w["atoms"]:
                 if a["id"] in bad:
                     a["status"] = "failed"
-            owner = (self._lld_owner_note(spec_stop) if spec_stop else self._owner_note(failed, sid)) if early else ""
+            blocked = self._blocked_by(meta, fn) if early and not spec_stop else []
+            owner = ((self._lld_owner_note(spec_stop) if spec_stop else
+                      f"The builder names {', '.join(blocked)} as the cause (blocked_by). " + self._owner_note(failed, sid)
+                      if blocked else self._owner_note(failed, sid)) if early else "")
             self.post("system", f"{', '.join(bad)} failed its checks on " + (f"attempt {attempt}: {early}, so no more "
                                 f"attempts. {owner}" if early else f"all {MAX_CHECK_ATTEMPTS} attempts.") + " Code sends "
                                 "the receipts to Adaptation, which decides whether the check or the build is wrong.")
@@ -10450,11 +10489,16 @@ class J2Run:
         return (f"Owner atom: {a or 'the LLD'} (the LLD section {c.get('section')} was already revised once; "
                 f"reason: {c.get('reason')}).")
 
-    def _blames_other(self, say, fn):
-        """The builder's own report puts the cause in another workflow's section (names one besides its own)."""
-        say = str(say or "")
-        return bool(set(re.findall(r"\bW-\d+\b", say)) - {fn}) and bool(re.search(r"can(?:no|')t|unable|not (?:in|mine)|"
-                                                                                    r"outside|belongs?|their|its own", say, re.I))
+    def _blocked_by(self, meta, fn):
+        """The workflows the builder's own blocked_by field names as the cause of its failure: ids of workflows of this
+        run other than its own (an unknown id is ignored and logged). No word of its report is read."""
+        named = [str(x).strip() for x in (meta or {}).get("blocked_by") or [] if str(x).strip()] \
+            if isinstance((meta or {}).get("blocked_by"), list) else []
+        known = {w["id"] for w in self._all_wfs()}
+        bad = [x for x in named if x not in known or x == fn]
+        if bad:
+            self._event("validator", "blocked_by", f"{fn} named {bad} in blocked_by: no other workflow of this run")
+        return [x for x in named if x not in bad]
 
     def _owner_note(self, failed, sid):
         """Evidence for Adaptation: which other workflow's atom holds the selector a failed check targets."""
@@ -10476,7 +10520,7 @@ class J2Run:
         self._record_given(w, self._chain_edges() + dep_edges + (self._manifest_edges(w) if slim() else [])
                            + self._board_edges(), whole=not slim())
         return ('First line: a JSON object {"say": str (one short line reporting to @Coordination: what you changed; '
-                'code runs your checks and reports them, so don\'t claim they pass), "human_output": str (1 to 3 plain sentences telling a person what you built; \"done.\" alone is rejected), "atom_human_output": str (1 or 2 plain sentences telling the Requester what this part created, in everyday words: no ids, no selectors, no \"units\"), "next": "Coordination", '
+                'code runs your checks and reports them, so don\'t claim they pass), "human_output": str (1 to 3 plain sentences telling a person what you built; \"done.\" alone is rejected), "atom_human_output": str (1 or 2 plain sentences telling the Requester what this part created, in everyday words: no ids, no selectors, no \"units\"), "blocked_by": [str] (only when a check fails because of another workflow\'s work: the ids of those workflows, e.g. [\"W-2\"]; [] otherwise), "next": "Coordination", '
                 + (self.BOARD_FMT if j2_board.enabled() else '')
                 + self.REASON + '}. Then a ```markdown block: your section only, starting with its "## <Section>" '
                 'heading. Markdown only, never HTML.',
@@ -11255,7 +11299,8 @@ class J2Run:
             new = normalise_checks([{**copy.deepcopy(a), "verification": r.get("verification")}])[0]
             real = bool(getattr(self, "realization", False))      # an element another workflow made is known too
             probs = atom_missing({"atoms": [new]}) or check_problems(new, self._fact_source(), self.out["check_types"],
-                                                                     self._known_names(w) if real else "", ranges=real)
+                                                                     self._known_names(w) if real else "", ranges=real,
+                                                                     rules=self._item_rules(w))
             if probs and a["id"] in corr:        # Adaptation's own correction breaks a rule: code's correction
                 new, probs = {**a, "verification": corr[a["id"]]}, []
             if probs:
