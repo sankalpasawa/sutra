@@ -51,6 +51,7 @@ class Ending(Value):
     src_ref: Annotated[str, StringConstraints(pattern=r"^direct(-(note|error|switch))?:[1-9][0-9]{0,15}(\.([2-9]|[1-9][0-9]))?$")]
     blocks: list[dict[str, Any]] = []
     ordered: bool = False                    # `blocks` is the whole turn in order, text included (D212): stored as a sibling key of the meta, read back as `ChatMessageOut.ordered`
+    via: dict[str, Any] | None = None        # {provider, model} of the reply (a sibling key of the meta, read back as `ChatMessageOut.via`): the header says it the same live and settled
 
 
 def ref_of(user_id: int, tail: str = "", attempt: int = 1) -> str:
@@ -114,30 +115,30 @@ def _notes(user_id: int, attempt: int, switched: Any, earlier: Any, *, bare: boo
     return [Ending(kind="note", text=text, src_ref=ref_of(user_id, "switch", attempt))] if text else []
 
 
-def finished(user_id: int, done: dict, attempt: int = 1, *, ordered: bool = False, earlier: Any = None) -> list[Ending]:
+def finished(user_id: int, done: dict, attempt: int = 1, *, ordered: bool = False, earlier: Any = None, via: dict | None = None) -> list[Ending]:
     """`ordered=True` keeps text blocks (the turn's blocks are the whole turn in order) and marks the reply so; the default drops text blocks that carry no text
     and is what every turn stored before the live view looks like."""
     blocks = [b for b in done.get("blocks", []) if isinstance(b, dict) and (b.get("type") != "text" or b.get("text"))]
     out = _notes(user_id, attempt, done.get("switched"), earlier)
     out.append(Ending(kind="text", text=(str(done.get("text") or "") or NO_REPLY)[:MAX_TEXT], src_ref=ref_of(user_id, "", attempt), blocks=blocks,
-                      ordered=bool(ordered and blocks)))
+                      ordered=bool(ordered and blocks), via=via))
     return out
 
 
-def stopped(user_id: int, shown: str, attempt: int = 1, *, blocks: list[dict] | None = None, ordered: bool = False, earlier: Any = None) -> list[Ending]:
+def stopped(user_id: int, shown: str, attempt: int = 1, *, blocks: list[dict] | None = None, ordered: bool = False, earlier: Any = None, via: dict | None = None) -> list[Ending]:
     notes = _notes(user_id, attempt, None, earlier)
     if not shown.strip():            # nothing was written; the tools that ran stay visible on the calm note (a note may carry blocks)
-        return notes + [Ending(kind="note", text=STOPPED_EMPTY, src_ref=ref_of(user_id, "", attempt), blocks=blocks or [], ordered=bool(ordered and blocks))]
-    return notes + [Ending(kind="text", text=shown[:MAX_TEXT], src_ref=ref_of(user_id, "", attempt), blocks=blocks or [], ordered=bool(ordered and blocks)),
+        return notes + [Ending(kind="note", text=STOPPED_EMPTY, src_ref=ref_of(user_id, "", attempt), blocks=blocks or [], ordered=bool(ordered and blocks), via=via)]
+    return notes + [Ending(kind="text", text=shown[:MAX_TEXT], src_ref=ref_of(user_id, "", attempt), blocks=blocks or [], ordered=bool(ordered and blocks), via=via),
                     Ending(kind="note", text=STOPPED, src_ref=ref_of(user_id, "note", attempt))]
 
 
-def failed(user_id: int, shown: str, sentence: str, attempt: int = 1, *, blocks: list[dict] | None = None, ordered: bool = False, earlier: Any = None) -> list[Ending]:
+def failed(user_id: int, shown: str, sentence: str, attempt: int = 1, *, blocks: list[dict] | None = None, ordered: bool = False, earlier: Any = None, via: dict | None = None) -> list[Ending]:
     reason = sentence.strip()[:MAX_TEXT] or "The model could not answer."
     notes = _notes(user_id, attempt, None, earlier, bare=True)
     if not shown.strip():
-        return notes + [Ending(kind="error", text=reason, src_ref=ref_of(user_id, "", attempt), blocks=blocks or [], ordered=bool(ordered and blocks))]
-    return notes + [Ending(kind="text", text=shown[:MAX_TEXT], src_ref=ref_of(user_id, "", attempt), blocks=blocks or [], ordered=bool(ordered and blocks)),
+        return notes + [Ending(kind="error", text=reason, src_ref=ref_of(user_id, "", attempt), blocks=blocks or [], ordered=bool(ordered and blocks), via=via)]
+    return notes + [Ending(kind="text", text=shown[:MAX_TEXT], src_ref=ref_of(user_id, "", attempt), blocks=blocks or [], ordered=bool(ordered and blocks), via=via),
                     Ending(kind="error", text=reason, src_ref=ref_of(user_id, "error", attempt))]
 
 

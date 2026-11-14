@@ -314,6 +314,13 @@ class LiveTurn:
             return self._publish_locked("turn.failed", {"message": message, "code": code, "message_id_reply": int(reply_message_id), "attempt_no": self.attempt_no,
                                                          "stored_order": self.acc.stored_order()})
 
+    def via(self) -> Optional[dict]:
+        """{provider, model} of the attempt that is on the page now: what the reply's header says while it runs, stored with the reply so it says the same after."""
+        with self._lock:
+            if not self._provider:
+                return None
+            return {"provider": self._provider, "model": self._model}
+
     def earlier_tries(self) -> list[dict]:
         """The tries before the last that the router gave up on, as the accumulator keeps them (`earlier_attempts`), plus the ones that never wrote a block (a provider that was not
         signed in): what a failed turn's stored ending says about who failed first. A try the accumulator already holds is not repeated."""

@@ -99,7 +99,7 @@ def _message_out(row: sqlite3.Row, newest: Mapping[tuple[str, int], int] | None 
         card=json.loads(row["card_json"]) if row["card_json"] else None, pause=row["pause"], answered_by=row["answered_by"],
         task_id=row["task_id"], state=row["state"], at=iso_z(row["at"]), blocks=_blocks_of(row["meta_json"]),
         turn=_turn_of(row["src_ref"]), passed_on=_passed_on_of(row["session_id"], row["src_ref"]), steer=(row["src_ref"] or "").startswith(STEER_REF),
-        ask=_ask_of(row["src_ref"]), client_id=client, attempt=attempt, ordered=_ordered_of(row["meta_json"]),
+        ask=_ask_of(row["src_ref"]), client_id=client, attempt=attempt, ordered=_ordered_of(row["meta_json"]), via=_via_of(row["meta_json"]),
         superseded=bool(owner is not None and attempt is not None and newest is not None and newest.get((row["session_id"], owner), 1) > attempt))
 
 
@@ -148,6 +148,18 @@ def _client_of(src_ref: str | None) -> str | None:
         return None
     tail = ref[len(DIRECT_ASK):]
     return tail if tail and len(tail) <= 64 else None
+
+
+def _via_of(meta_json: str | None) -> dict | None:
+    """{provider, model} of a direct reply, from the sibling key `via` (strings only; anything else reads as not recorded)."""
+    try:
+        via = json.loads(meta_json or "{}").get("via")
+    except ValueError:
+        return None
+    if not isinstance(via, dict) or not isinstance(via.get("provider"), str) or not via["provider"]:
+        return None
+    model = via.get("model")
+    return {"provider": via["provider"], "model": model if isinstance(model, str) and model else None}
 
 
 def _ordered_of(meta_json: str | None) -> bool:
@@ -302,6 +314,8 @@ class ChatStore:
             if msg.ordered:
                 sibling["ordered"] = True           # the blocks are the whole turn in order, text included (D212): a second sibling key, never a meta key
             meta_json = json.dumps({**json.loads(meta_json), **sibling}, separators=(",", ":"), ensure_ascii=False)
+        if msg.via:
+            meta_json = json.dumps({**json.loads(meta_json), "via": msg.via}, separators=(",", ":"), ensure_ascii=False)
         cursor = conn.execute(
             "INSERT INTO chat_messages(session_id, role, who, kind, text, card_json, meta_json, pause, answered_by, task_id, src_ref, state, at)"
             " VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)",

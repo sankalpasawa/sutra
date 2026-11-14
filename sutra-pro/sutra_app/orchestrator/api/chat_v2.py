@@ -331,7 +331,7 @@ def _post_all(services: Any, sid: str, endings: list[Ending], drop_generation: s
     with services.db.tx() as tx:
         for e in endings:
             out = services.chats.post(tx, sid, GATE.check("chat_message", ChatMessage(
-                kind=e.kind, session_id=sid, role="agent", who="sutra", text=redact(e.text)[:200_000], blocks=e.blocks, ordered=e.ordered,
+                kind=e.kind, session_id=sid, role="agent", who="sutra", text=redact(e.text)[:200_000], blocks=e.blocks, ordered=e.ordered, via=e.via,
                 src_ref=e.src_ref, at=tx.now()), ctx=tx.ctx))
             ids[e.src_ref] = None if out is None else out.id
         if drop_generation:
@@ -571,7 +571,7 @@ def _answer_live(services: Any, port: Any, sid: str, user_message_id: int, turn:
         plain = "".join(str(b.get("text") or "") for b in stored["blocks"] if isinstance(b, dict) and b.get("type") == "text")
         if str(done.get("text") or "") == plain and plain:            # the provider's text is the blocks' text run together: store it as the page draws it, paragraphs apart
             stored["text"] = join_text((b.get("type") == "text", str(b.get("text") or "")) for b in stored["blocks"] if isinstance(b, dict))
-        ids = _post_all(services, sid, finished(user_message_id, stored, attempt, ordered=True, earlier=done.get("earlier")), drop_generation=live.generation_id)
+        ids = _post_all(services, sid, finished(user_message_id, stored, attempt, ordered=True, earlier=done.get("earlier"), via=live.via()), drop_generation=live.generation_id)
         live.finish(ids.get(direct_turns.ref_of(user_message_id, "", attempt)) or 0, {**done, "text": stored["text"]})
     except Exception as exc:                                         # a failed turn is a message, not a lost line
         log.warning("live direct chat turn failed for %s: %s", sid, type(exc).__name__)
@@ -581,9 +581,9 @@ def _answer_live(services: Any, port: Any, sid: str, user_message_id: int, turn:
             live.settle_blocks("interrupted")
             shown, blocks, earlier = live.shown_text(), live.acc.stored_blocks(ordered=True), live.earlier_tries()
             if isinstance(exc, CallCancelledError):
-                endings = stopped(user_message_id, shown, attempt, blocks=blocks, ordered=True, earlier=earlier)
+                endings = stopped(user_message_id, shown, attempt, blocks=blocks, ordered=True, earlier=earlier, via=live.via())
             else:
-                endings = failed(user_message_id, shown, _failure_text(exc), attempt, blocks=blocks, ordered=True, earlier=earlier)
+                endings = failed(user_message_id, shown, _failure_text(exc), attempt, blocks=blocks, ordered=True, earlier=earlier, via=live.via())
             ids = _post_all(services, sid, endings, drop_generation=live.generation_id)
             reply = ids.get(direct_turns.ref_of(user_message_id, "", attempt)) or 0
             if isinstance(exc, CallCancelledError):

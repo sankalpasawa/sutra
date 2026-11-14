@@ -643,3 +643,27 @@ test("plan: a turn that failed before it wrote anything gets no shell of its own
   w.wire("turn.failed", {message: "died", code: "crashed", message_id_reply: 9, attempt_no: 1, stored_order: ["b1"]});
   assert.ok(LV.plan([], w.view(), {}).liveItem);
 });
+
+test("the header names the provider and model the same live, at settle and from a stored reply that carries them; a reply stored before that has no 'via'", () => {
+  const r = rig();
+  r.begin();
+  r.wire("turn.connecting", {provider: "codex", model: "gpt-5.6-luna"});
+  const shell = r.shell();
+  LV.paint(shell, LV.fromLive(r.view(), {who: "Sutra"}), r.deps());
+  const live = q(shell, ".cl-who").textContent;
+  assert.equal(live, "Sutra · via Codex gpt-5.6-luna");
+  r.wire("turn.started", {provider: "codex", model: "gpt-5.6-luna"});
+  r.wire("block.start", {type: "text"}, "b1");
+  delta(r, "Hi", 0, "b1");
+  r.wire("block.end", {status: "ok"}, "b1");
+  r.wire("turn.done", {message_id_reply: 9, attempt_no: 1, stored_order: ["b1"]});
+  LV.paint(shell, LV.fromLive(r.view(), {who: "Sutra"}), r.deps());
+  assert.equal(q(shell, ".cl-who").textContent, live, "at settle");
+  const stored = LV.plan([reply({via: {provider: "codex", model: "gpt-5.6-luna"}})], {turn: null}, {whoOf: () => "Sutra"}).models["turn:7:1"];
+  const later = r.shell(7, 1);
+  LV.paint(later, stored, r.deps());
+  assert.equal(q(later, ".cl-who").textContent, live, "after a reload");
+  const noModel = LV.fromMessage(reply({via: {provider: "claude", model: null}}), {who: "Sutra"});
+  assert.equal(noModel.meta, "via Claude");
+  assert.equal(LV.fromMessage(reply({via: {provider: 7}}), {who: "Sutra"}).meta, "");
+});

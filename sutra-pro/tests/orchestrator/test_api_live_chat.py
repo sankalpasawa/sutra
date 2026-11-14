@@ -609,3 +609,24 @@ def test_a_turn_that_failed_after_a_fallback_stores_who_failed_first_so_a_reload
     rows = chats.messages(sid)[1:]
     assert [m.kind for m in rows] == ["note", "error"]
     assert rows[0].text == "Earlier try (Claude) failed: Claude is not signed in: use Sign in or run claude login"
+
+
+def test_the_reply_stores_which_provider_and_model_wrote_it_finished_stopped_or_failed(live):
+    client, world, chats, bus, services = live
+    sid = world.session_of["web"]
+    services.chat_port = LivePort(attempt(), started(), text("All good."))
+    post(client, sid, client_id=CID)
+    assert done(chats, sid, 2)
+    first = chats.messages(sid)[1]
+    assert first.via == {"provider": "claude", "model": "m"} and first.model_dump(mode="json")["via"] == {"provider": "claude", "model": "m"}
+    # a failed turn that wrote something, after a fallback: the reply was written by the provider that was on the page last
+    services.chat_port = LivePort(route("plan", order=["claude", "codex"], model="m"), attempt(1, "claude"),
+                                  route("failed", provider="claude", code="crashed", reason="Claude stopped", retryable=False, action="fallback", delay_s=0.0, next_provider="codex"),
+                                  attempt(2, "codex"), ChatEvent(kind="started", data={"provider": "codex", "model": "luna", "session_id": "p2"}), text("half"), CrashedError("died", provider="codex"))
+    post(client, sid, client_id="client-bbbb2222")
+    assert done(chats, sid, 6)
+    rows = chats.messages(sid)
+    reply = [m for m in rows if m.kind == "text" and m.role == "agent"][-1]
+    assert reply.text == "half" and reply.via == {"provider": "codex", "model": "luna"}
+    # a message stored before this existed has none, and its wire shape has no key
+    assert chats.messages(sid)[0].via is None and "via" not in chats.messages(sid)[0].model_dump(mode="json")

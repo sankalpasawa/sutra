@@ -72,6 +72,9 @@
     return out;
   }
 
+  // "via Claude claude-sonnet-5-5": who wrote the reply, said the same while it runs and after it settles (the server stores {provider, model} with the reply)
+  const viaOf = (provider, model) => (str(provider) !== "" ? "via " + providerName(provider) + (clean(model) !== "" ? " " + clean(model) : "") : "");
+
   function fromLive(view, deps) {
     const d = isObj(deps) ? deps : {};
     const t = isObj(view) ? view.turn : null;
@@ -81,7 +84,7 @@
     const blocks = t.blocks;
     const label = live ? str(view.label) : "";
     return {key: keyOf(t.messageId, t.attemptNo), turn: t.messageId, attempt: t.attemptNo, id: null, source: "live", live, phase: t.phase, state: live ? "live" : (t.phase === "stopped" ? "stopped" : (t.phase === "failed" ? "error" : "ok")),
-      who: str(d.who) || providerName(t.provider) || "The model", meta: t.provider !== "" ? "via " + providerName(t.provider) + (clean(t.model) !== "" ? " " + clean(t.model) : "") : "", label, activity: isObj(view.activity) ? view.activity.kind : "", note: live ? str(view.note) : "",
+      who: str(d.who) || providerName(t.provider) || "The model", meta: viaOf(t.provider, t.model), label, activity: isObj(view.activity) ? view.activity.kind : "", note: live ? str(view.note) : "",
       blocks, text: textOfBlocks(blocks), earlier: t.earlier, afterSideEffects: t.afterSideEffects, canStop: live && view.canStop === true, stopping: t.phase === "stopping",
       elapsedMs: live ? view.elapsedMs : 0, streamMode: t.streamMode, error: t.error, legacy: false, superseded: false, ending: "", polling: view.polling === true,
       detail: live && isObj(view.activity) ? str(view.activity.detail) : "", canRetry: false, siblingError: false};
@@ -109,7 +112,7 @@
     let ending = "";
     if (kind === "note" || kind === "error") ending = str(m.text);
     return {key: keyOf(m.turn, m.attempt), turn: m.turn, attempt: Number.isInteger(m.attempt) && m.attempt > 0 ? m.attempt : 1, id: m.id, source: "stored", live: false, phase: "", state: failed ? "error" : (kind === "note" ? "stopped" : "ok"),
-      who: str(d.who) || "The model", meta: "", label: "", activity: "", note: "", blocks, text: textOfBlocks(blocks), earlier: [],
+      who: str(d.who) || "The model", meta: isObj(m.via) ? viaOf(m.via.provider, m.via.model) : "", label: "", activity: "", note: "", blocks, text: textOfBlocks(blocks), earlier: [],
       afterSideEffects: blocks.some(b => b.type === "tool_use" && (b.kind === "edit" || b.kind === "run")), canStop: false, stopping: false,
       elapsedMs: 0, streamMode: "", error: null, legacy: !ordered && Array.isArray(m.blocks) && m.blocks.length > 0, superseded: m.superseded === true, ending, polling: false,
       detail: "", canRetry: false, siblingError: false};

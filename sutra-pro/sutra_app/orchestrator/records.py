@@ -95,6 +95,7 @@ class ChatMessage(Record):
     meta: MessageMeta = MessageMeta()
     blocks: list[ChatBlock] = []                            # typed provider blocks of a settled chat turn (ABS-6), stored in meta_json
     ordered: bool = False                                   # `blocks` is the whole turn in order, text included (D212): a sibling key of the blocks in meta_json
+    via: JsonObject | None = None                           # a direct reply: {provider, model} that wrote it (a sibling key in meta_json, never a MessageMeta key)
     pause: Annotated[str, StringConstraints(min_length=1, max_length=60)] | None = None
     answered_by: Annotated[int, Field(ge=1)] | None = None
     task_id: TaskId | None = None
