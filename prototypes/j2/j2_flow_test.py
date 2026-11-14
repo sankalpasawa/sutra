@@ -4679,6 +4679,82 @@ def real_run_checks():
 
 
 @with_folder_type
+def real_run_order():
+    """runs/j2-20261114-123619: the RUN ask waited on Identity's done, Identity waited on the run, Decide for me
+    "confirmed" the run had happened and "finish as it is" ended "Done:" with the folder untouched. Now: (1) once the
+    rest is workable code asks for the run without calling Identity; (2) finishing with the run pending ends "Done with
+    open items"; (3) a real run's item (by number, from its checks) is never a question for the Requester and never
+    taken as confirmed from an answer, Decide for me's included: code answers from receipts.jsonl; (4) Audit and
+    Identity are told who runs it and when."""
+    crit = ["the script is built and its test passes", "the script has been run on the folder"]
+    real, tools = tempfile.mkdtemp(prefix="j2-real-"), tempfile.mkdtemp(prefix="j2-fake-srt-")
+    keep = os.environ.get("J2_SANDBOX_CMD")
+    open(os.path.join(tools, "srt.py"), "w").write(FAKE_SRT)
+    os.environ["J2_SANDBOX_CMD"] = f"python3 {os.path.join(tools, 'srt.py')}"
+
+    def made_run(item1_pass=True, fact=None):
+        run = j2.J2Run()
+        run.set_output(FT)
+        run.goal, run.budget = {"statement": "x", "done_when": list(crit)}, 300
+        os.makedirs(run._out_dir(), exist_ok=True)
+        open(os.path.join(run._out_dir(), "go.py"), "w").write("import sys\n")
+        run.sites = ["v1"]
+        run.workflows = [{"id": "W-1", "name": "Builder", "status": "done", "cycle": 1, "covers": [1],
+                          "real_run": {"command": ["python3", "go.py", real], "folder": real, "why": "x", "checks": [2]}}]
+        res = [{"id": f"F-{i}", "item": i, "criterion": c, "pass": i == 1 and item1_pass,
+                "verdict": "PASS" if i == 1 and item1_pass else "BLOCKED_BY_EVIDENCE", "note": "",
+                **({"needs_requester_fact": fact} if fact and i == 2 else {})} for i, c in enumerate(crit, 1)]
+        run.audits = [{"output": FT, "results": res, "rubric": [], "conditions": [], "mechanical": {"available": True},
+                       "after_real_run": run._real_run_items(True)}]
+        run.post("user", "go")
+        return run
+
+    def no_identity(role, *a, **k):
+        assert role != "identity", "Identity was asked before the real run"
+        raise AssertionError(role)
+    try:
+        # (1) the ask comes as soon as the rest is workable, without Identity
+        run = made_run()
+        run.call = no_identity
+        run._identity_audit({})
+        assert run.paused and run.paused["kind"] == "real_run", run.paused
+        assert any("reply exactly: RUN " in m["text"] for m in run.chat if m["who"] == "system")
+        # (2) finishing as it is with the run pending: never "Done:"
+        run = made_run()
+        out = run._ship_outcome("on the Requester's decision")
+        assert out.startswith("Done with open items") and "real run has not run" in out, out
+        run.real_runs_asked["W-1"] = "abc123"           # asked, never answered: the run reaches its end without it
+        run._goal_done({})
+        assert run.outcome.startswith("Done with open items: the real run has not run"), run.outcome
+        # (3) Audit's question about the run is answered by code, not asked; an answer can't confirm it
+        run = made_run(item1_pass=False, fact="whether the script has been run on the folder")
+        seen = []
+        run.call = lambda role, fmt, prompt, *a, **k: (seen.append((role, prompt)) or
+                                                       {"say": "@Adaptation rework item 1", "done": False,
+                                                        "needs_requester": False, "next": "Adaptation"})
+        run._identity_audit({})
+        assert not (run.paused and run.paused["kind"] == "fact"), run.paused
+        assert any(m["text"].startswith("Real run, answered by code from receipts.jsonl: item 2: none yet")
+                   for m in run.chat), [m["text"] for m in run.chat][-3:]
+        assert "PLANNED REAL RUN: done-when items 2 are decided only by the real run's receipt" in seen[0][1]
+        run = made_run(item1_pass=False)
+        run.call = lambda role, fmt, prompt, *a, **k: {"say": "ok", "to_requester": "Thanks.", "clause": "done_when",
+                                                       "confirmed": [{"item": 2, "fact": "has been run"},
+                                                                     {"item": 1, "fact": "the test passes"}],
+                                                       "still_to_be_confirmed": [], "next": "Adaptation"}
+        run._identity_hears_requester({"asked": [{"question": "Has it run?"}], "answer": j2.AUTO_ASSUME})
+        facts = (run.goal or {}).get("confirmed_facts") or []
+        assert crit[1] not in {t["criterion"] for t in facts} and crit[0] in {t["criterion"] for t in facts}, facts
+        assert any(m["text"].startswith("Not taken from the answer: whether a real run happened") for m in run.chat)
+    finally:
+        os.environ.pop("J2_SANDBOX_CMD", None) if keep is None else os.environ.__setitem__("J2_SANDBOX_CMD", keep)
+        for d in (real, tools):
+            shutil.rmtree(d, ignore_errors=True)
+    print("real run order: the RUN ask without Identity's done; finishing with it pending is Done with open items; "
+          "code answers whether it ran, by item number, and Decide for me can't confirm it ok")
+
+
+@with_folder_type
 def folder_run_reused():
     """remove-restrictions step 6: a folder run's workflows record their outputs from the run folder (<folder>/<file>),
     so j2_template_lib.run_template_from_run finds the type they belong to; the run is saved as a run template; a
@@ -15848,6 +15924,7 @@ if __name__ == "__main__":
             folder_types_named()        # remove-restrictions 6a: a folder output gets a type named for what it makes
             run_for_real()              # remove-restrictions step 7: a real run only on the Requester's exact approval
             real_run_checks()           # step 7 gap: an item only the real run meets is decided by its receipt
+            real_run_order()            # the RUN ask without Identity; Decide for me never confirms a real run
             folder_run_reused()         # remove-restrictions step 6: a folder run saved and reused, not rebuilt
             builder_context_trim()      # a real run's builder prompt: no chat, no other workflows
             builder_inputs()            # depended-on sections in full, cut inputs noticed and logged

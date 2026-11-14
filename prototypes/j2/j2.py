@@ -3841,7 +3841,7 @@ class J2Run:
         if not self.sites:
             return f"Stopped {why}: nothing was built."
         fails = workable(self.audits[-1]) if self.audits else ["nothing has been checked"]
-        fails = self.open_docs + fails
+        fails = self.open_docs + fails + self._real_run_pending()
         if not fails:
             return self.out["done"]
         return f"Done with open items: shipped as is {why}. Still not workable: {'; '.join(fails)}."
@@ -5087,6 +5087,41 @@ class J2Run:
                 and not (pending and w["id"] in self.real_runs_done)
                 for n in w["real_run"].get("checks") or [] if n in at and at[n] <= len(crit)]
 
+    def _real_run_nums(self):
+        """Step 7: the run-long done-when item numbers a planned real run decides (its "checks")."""
+        return {as_int(n) for w in self.workflows if w.get("real_run") for n in w["real_run"].get("checks") or []}
+
+    def _real_run_answer(self, n):
+        """Step 7: whether item n's real run happened, answered by code from receipts.jsonl, never by an agent."""
+        try:
+            with open(os.path.join(self.dir, "receipts.jsonl"), encoding="utf-8") as f:
+                recs = [json.loads(x) for x in f if '"real_run"' in x]
+        except OSError:
+            recs = []
+        rec = next((x for x in reversed(recs) if x.get("type") == "real_run"
+                    and n in {as_int(c) for c in x.get("checks") or []}), None)
+        return {"item": n, "receipt": f"{rec.get('workflow')}: {'approved' if rec.get('approved') else 'not approved'}, "
+                                      f"{rec.get('evidence')}" if rec else
+                "none yet: not run. Code asks the Requester for approval once the rest is workable, then runs it"}
+
+    def _real_run_pending(self):
+        """Step 7: what stops "Done:" while a planned real run has no receipt (workable() leaves those items out, so
+        the run can be asked for once the rest is workable; finishing without it is never workable)."""
+        return [f"done-when item {self._no(t)}: {t} (its real run has not run)"
+                for t in dict.fromkeys(self._real_run_items(pending=True))]
+
+    def _real_run_note(self):
+        """Step 7, shown to Audit and Identity: who runs a planned real run and when, and what its receipts say."""
+        nums = sorted(self._real_run_nums())
+        if not nums:
+            return ""
+        return ("PLANNED REAL RUN: done-when items " + ", ".join(map(str, nums)) + " are decided only by the real "
+                "run's receipt. Code runs it after the build, once, only on the Requester's exact approval; no workflow "
+                "and no agent runs it or writes its receipt. Until the receipt exists these items are pending: a missing "
+                "run is not a failure, needs no workflow (none to record a receipt), and is no question for the "
+                "Requester. Declare done when everything else is workable; code then asks for the run. Receipts "
+                f"(code, from receipts.jsonl): {json.dumps([self._real_run_answer(n) for n in nums], ensure_ascii=False)}\n")
+
     def _ask_real_run(self, r):
         """Step 7: the next done workflow with a planned real run not yet asked about. Code posts its exact command and
         folders and a one-time code; the run pauses (real_run: Decide for me never answers it). True when it paused."""
@@ -5683,6 +5718,14 @@ class J2Run:
                          "work credits they asked to add; drop_items: the item numbers they named to leave out. Adding and "
                          "leaving out can come together. Code applies it. The Requester's decision is final: you may "
                          "say what won't fit in the budget, never refuse it." if limit else ""), mock)
+        rr, said = self._real_run_nums(), set()
+        for k in ("confirmed", "still_to_be_confirmed"):    # a real run's items: only its receipt decides them, never an answer
+            said |= {as_int(x.get("item")) for x in r.get(k) or [] if isinstance(x, dict) and as_int(x.get("item")) in rr}
+            r[k] = [x for x in r.get(k) or [] if not (isinstance(x, dict) and as_int(x.get("item")) in rr)]
+        if said:
+            self.post("system", "Not taken from the answer: whether a real run happened is answered by code from "
+                                "receipts.jsonl: " + "; ".join(f"item {a['item']}: {a['receipt']}" for a in
+                                                               map(self._real_run_answer, sorted(said))) + ".")
         for k in ("confirmed", "still_to_be_confirmed"):          # item numbers -> current positions
             r[k] = [{**x, "item": at.get(as_int(x.get("item")), 0)} for x in r.get(k) or [] if isinstance(x, dict)]
         decision, add, drops = "continue", None, []
@@ -5944,8 +5987,10 @@ class J2Run:
                         else self.out["done"])
         if self.accepted and not self.open_docs:
             self.outcome += f" Still open, accepted as it is by the Requester: {'; '.join(self.accepted)}."
-        if self.real_runs_done and self.audits and (fails := workable(self.audits[-1])):    # step 7: workable only after the run
-            self.outcome = f"Done with open items: the real run did not pass. Still not workable: {'; '.join(fails)}."
+        if self.audits and (fails := workable(self.audits[-1]) + self._real_run_pending()) and \
+                (self.real_runs_done or self._real_run_pending()):    # step 7: workable only after an approved run passed
+            self.outcome = (f"Done with open items: the real run {'did not pass' if self.real_runs_done else 'has not run'}."
+                            f" Still not workable: {'; '.join(fails)}.")
         self.turn = None
         if self.memory and not self.docset:
             self._save_playbook()
@@ -6147,8 +6192,15 @@ class J2Run:
                 return self._identity_limit({**p, "left_out": left, "at_audit": True,
                                              "budget_needed": need if need > 0 else None})
         tbc = {t["criterion"] for t in (self.goal or {}).get("to_be_confirmed") or []}
+        if not fails and self._ask_real_run({}):     # step 7: the rest is workable, so the planned run is asked for now,
+            return                                    # without waiting on Identity's done (runs/j2-20261114-123619)
+        rr = self._real_run_nums()
         facts = [x for x in findings if x.get("needs_requester_fact") and x.get("verdict") not in ("PASS", "PASS_WITH_WARNING")
-                 and x.get("criterion") not in tbc]
+                 and x.get("criterion") not in tbc and as_int(x.get("item")) not in rr]
+        if asked := [x for x in findings if x.get("needs_requester_fact") and as_int(x.get("item")) in rr]:
+            # whether a real run happened is never a question for the Requester (or Decide for me): code answers it
+            self.post("system", "Real run, answered by code from receipts.jsonl: " + "; ".join(
+                f"item {a['item']}: {a['receipt']}" for a in (self._real_run_answer(as_int(x["item"])) for x in asked)) + ".")
         recent = self.audits[max(self.fail_floor, len(self.audits) - 2):]
         same = len(recent) == 2 and failure_signature(recent[0]) == failure_signature(recent[1]) and fails
         # Only the Requester can help when every remaining failure is a to-be-confirmed item: no other done-when item,
@@ -6190,7 +6242,7 @@ class J2Run:
                                    "Adaptation for rework") + "}",
                       f"AUDIT'S FINDINGS (all, in full): {json.dumps(findings, ensure_ascii=False)}\n"
                       f"WORKABLE CHECK BY CODE: {'workable' if not fails else 'not workable: ' + json.dumps(fails, ensure_ascii=False)}\n"
-                      + self._accepted_note() +
+                      + self._accepted_note() + self._real_run_note() +
                       f"FACTS ONLY THE REQUESTER KNOWS (from Audit): {json.dumps([x.get('needs_requester_fact') for x in facts], ensure_ascii=False)}\n"
                       f"{h.get('why', '')}\nJ2.h: the site is done only when it is workable: every done-when item passes "
                       "Audit, no JS errors, no horizontal overflow at 360px and 1280px, forms work, no broken in-page "
@@ -11294,6 +11346,7 @@ class J2Run:
                       + (f"DROPPED BY THE REQUESTER (out of scope: file no finding for these): "
                          f"{json.dumps((self.goal or {}).get('dropped_by_requester'), ensure_ascii=False)}\n"
                          if (self.goal or {}).get("dropped_by_requester") else "")
+                      + self._real_run_note()
                       + f"MECHANICAL CHECK (run by code in headless Chrome; treat as evidence, and "
                       f"use BLOCKED_BY_EVIDENCE only for what neither it nor the code can show): {json.dumps(mech)}\n"
                       f"NECESSARY CONDITIONS (checked by code on the page; evidence; {WARN_NOTE}): {json.dumps(conds, ensure_ascii=False)}\n"
@@ -11393,6 +11446,7 @@ class J2Run:
                       + (f"DROPPED BY THE REQUESTER (out of scope: file no finding for these): "
                          f"{json.dumps((self.goal or {}).get('dropped_by_requester'), ensure_ascii=False)}\n"
                          if (self.goal or {}).get("dropped_by_requester") else "")
+                      + self._real_run_note()
                       + f"NECESSARY CONDITIONS (checked by code on the text; evidence; {WARN_NOTE}): {json.dumps(conds, ensure_ascii=False)}\n"
                       + (f"ADDED BY CODE: the closing \"## {ASSUMPTIONS_HEADING}\" section lists every Assumption: line "
                          "the builders wrote, gathered by code after their sections. No builder wrote it and none can "
