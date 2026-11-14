@@ -85,6 +85,7 @@ class LiveTurn:
         self.acc = BlockAccumulator(folder=folder, provider=provider, redact=redact, text_filter=holdback_factory(redact) if redact is not None else None)
         self._lock = threading.RLock()
         self._cv = threading.Condition(self._lock)
+        self.acc.guard = self._lock                      # `ChatPort.stream` feeds and hands on under this lock, so a Stop never lands between the two
         self._thread: Optional[threading.Thread] = None
         self._closed = False
         self._seq = 0

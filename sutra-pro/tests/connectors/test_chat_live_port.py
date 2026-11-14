@@ -286,3 +286,32 @@ def test_started_event_data_of_the_real_connector_has_what_the_live_turn_needs(t
     events = list(port.stream(SID, ChatTurnIn(text="hello"), acc=BlockAccumulator()))
     started = next(e for e in events if e.kind == "started")
     assert started.data["provider"] == "claude" and "session_id" in started.data
+
+
+def test_a_stop_cannot_land_between_the_accumulator_feed_and_the_publish_of_its_events(tmp_path):
+    """What is stored equals what every tab showed: the port holds the live turn's lock from the feed until the consumer has handed the block events on."""
+    import threading
+    import time
+    from sutra_app.orchestrator.live_turn import LiveConfig, LiveTurn
+    port, router = rig(tmp_path)
+    class Bus:
+        def __init__(self):
+            self.live = []
+
+        def publish_one(self, type, data):
+            self.live.append(json.loads(json.dumps(data)))
+    bus = Bus()
+    live = LiveTurn(session_id=SID, message_id=1, generation_id="g" * 32, bus=bus, config=LiveConfig(coalesce_ms=0), start_thread=False)
+    stopper, blocked = [], []
+    for event in port.stream(SID, ChatTurnIn(text="hello"), acc=live.acc):
+        if event.kind == "block_delta" and not stopper:
+            thread = threading.Thread(target=live.request_stop)
+            stopper.append(thread)
+            thread.start()
+            time.sleep(0.15)
+            blocked.append(thread.is_alive())               # Stop waits for the events of this feed to be handed on
+        live.on_event(event)
+    stopper[0].join(5)
+    assert blocked == [True]
+    shown = "".join(d["payload"]["delta"] for d in bus.live if d["type"] == "block.delta")
+    assert shown and shown == live.shown_text()

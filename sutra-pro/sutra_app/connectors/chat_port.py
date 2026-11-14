@@ -6,6 +6,7 @@ session API, so every chat improvement lives below every surface. The port never
 """
 from __future__ import annotations
 
+import contextlib
 import uuid
 from pathlib import Path
 from typing import Callable, Iterator, Optional, Protocol, Sequence, runtime_checkable
@@ -262,9 +263,12 @@ class RouterChatPort:
                     yield ChatEvent(kind="started", data={**event.data, "provider": acc.provider})
                 continue
             mark = acc.legacy_count()
-            for out in acc.feed(event):
-                if live:
-                    yield ChatEvent(kind="block_" + out.kind, data={"block_id": out.block_id, **out.data})
+            # the live turn's lock (`acc.guard`) is held from the feed until the consumer has handed the block events on, so a Stop cannot freeze the accumulator between the two:
+            # what is accumulated is exactly what was published. It is released as soon as the generator resumes, never while waiting for the provider.
+            with (getattr(acc, "guard", None) or contextlib.nullcontext()):
+                for out in acc.feed(event):
+                    if live:
+                        yield ChatEvent(kind="block_" + out.kind, data={"block_id": out.block_id, **out.data})
             if not live:
                 if event.kind == "text_delta" and event.data.get("kind", "text") == "text":
                     yield ChatEvent(kind="partial", data={"delta": event.data.get("text", "")})

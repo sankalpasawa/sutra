@@ -104,6 +104,7 @@ class BlockAccumulator:
         self._legacy_kinds: dict[Any, tuple[str, str]] = {}
         self._earlier: list[dict] = []
         self._frozen = False
+        self.guard: Any = None                         # a lock the owner sets: `ChatPort.stream` holds it from the feed until the events are handed on
         self._elements = 0                             # stored elements counted so far (a tool use reserves two)
         self._fold: Optional[_Block] = None
         self._folded = 0
