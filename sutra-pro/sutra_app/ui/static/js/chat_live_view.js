@@ -92,10 +92,12 @@
     const A = Activity();
     const kind = str(m.kind) || "text";
     const failed = kind === "error" || str(m.state) === "error";
+    // a tool that never returned a result is "interrupted" when the turn ended badly: with an error, or with Stop (the stopped reply is a plain text row, its Stopped note is its sibling)
+    const cutOff = failed || d.cutOff === true || (kind === "note" && /^Stopped\b/.test(str(m.text)));
     const ordered = m.ordered === true && Array.isArray(m.blocks) && m.blocks.length > 0;
     let blocks;
     if (ordered) {
-      blocks = A.fromStored(m.blocks, {ids: Array.isArray(d.ids) ? d.ids : [], failed});
+      blocks = A.fromStored(m.blocks, {ids: Array.isArray(d.ids) ? d.ids : [], failed: cutOff});
     } else {
       blocks = [];
       if (kind === "text" && str(m.text) !== "") blocks.push({id: "s0", type: "text", kind: "other", name: "", title: "", target: "", status: "ok", text: str(m.text), isError: false, truncated: false, output: "", startTs: "", endTs: ""});
@@ -437,12 +439,14 @@
       let ids = [];
       if (turn && turn.messageId === m.turn && turn.attemptNo === attempt) ids = turn.storedOrder;
       else if (settled && settled.messageId === m.turn && settled.attemptNo === attempt) ids = settled.storedOrder;
-      const model = fromMessage(m, {ids, who: typeof d.whoOf === "function" ? d.whoOf(m) : ""});
       // how the turn ended, from the lines that were stored with the reply: a note after it says it was stopped, an error line says it failed (and has its own Retry)
       const same = x => isObj(x) && x !== m && x.role === "agent" && x.turn === m.turn && (Number.isInteger(x.attempt) && x.attempt > 0 ? x.attempt : 1) === attempt && !isReply(x);
       const rows = Array.isArray(messages) ? messages : [];
-      if (rows.some(x => same(x) && str(x.kind) === "error")) { model.state = "error"; model.siblingError = true; }
-      else if (rows.some(x => same(x) && str(x.kind) === "note" && /^Stopped\b/.test(str(x.text)))) model.state = "stopped";           // a switch note is not a stop
+      const errored = rows.some(x => same(x) && str(x.kind) === "error");
+      const stopped = !errored && rows.some(x => same(x) && str(x.kind) === "note" && /^Stopped\b/.test(str(x.text)));           // a switch note is not a stop
+      const model = fromMessage(m, {ids, who: typeof d.whoOf === "function" ? d.whoOf(m) : "", cutOff: errored || stopped});
+      if (errored) { model.state = "error"; model.siblingError = true; }
+      else if (stopped) model.state = "stopped";
       model.canRetry = typeof d.canRetry === "function" ? d.canRetry(model) === true : false;
       models[model.key] = model;
     });

@@ -596,3 +596,26 @@ test("Copy keeps the text blocks of a multi-stage reply apart: a tool or thinkin
     {type: "tool_use", kind: "read", name: "Read", text: "Reading"}, {type: "tool_result", kind: "read", name: "Read", text: "", is_error: false}, {type: "text", kind: "other", text: "Four."}]}, {}), r.deps());
   assert.equal(LV.copyText(stored), "One. Two.\n\nThree.\n\nFour.");
 });
+
+test("a tool that never returned a result when Stop was pressed reads Interrupted after the stop, from the stored rows (reload), not Done", () => {
+  const r = rig();
+  const blocks = [{type: "text", kind: "other", text: "Starting."}, {type: "tool_use", kind: "run", name: "Bash", text: "Running sleep 100"}];
+  const replyRow = {id: 5, role: "agent", kind: "text", turn: 7, attempt: 1, ordered: true, state: "ok", text: "Starting.", blocks};
+  const note = {id: 6, role: "agent", kind: "note", turn: 7, attempt: 1, text: "Stopped. What was written is kept."};
+  const stopped = LV.plan([replyRow, note], {turn: null}, {}).models["turn:7:1"];
+  const shell = r.shell(7, 1);
+  LV.paint(shell, stopped, r.deps());
+  assert.equal(shell.getAttribute("data-state"), "stopped");
+  const tool = q(shell, ".cl-tool");
+  assert.equal(tool.getAttribute("data-status"), "interrupted");
+  assert.match(q(tool, ".cl-detail").textContent, /Status: Interrupted/);
+  // a turn that ended well, the same blocks with no note: a call without a result is simply done
+  const ok = LV.plan([replyRow], {turn: null}, {}).models["turn:7:1"];
+  assert.equal(ok.blocks.find(b => b.type === "tool_use").status, "ok");
+  // a stopped turn whose note IS the reply (nothing written)
+  const empty = LV.fromMessage({id: 8, role: "agent", kind: "note", turn: 9, attempt: 1, ordered: true, text: "Stopped before the model wrote anything.", blocks: [blocks[1]]}, {});
+  assert.equal(empty.blocks[0].status, "interrupted");
+  // an error row beside the reply
+  const err = LV.plan([replyRow, {id: 9, role: "agent", kind: "error", turn: 7, attempt: 1, text: "It failed."}], {turn: null}, {}).models["turn:7:1"];
+  assert.equal(err.blocks.find(b => b.type === "tool_use").status, "interrupted");
+});
