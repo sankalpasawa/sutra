@@ -7846,11 +7846,20 @@ def docs_funding():
     say(run, "Option 1")
     assert run.stages == ["prd", "hld"] and not run.paused and run.outcome.startswith("Done") and list(run.docs) == ["prd", "hld"], \
         (run.stages, run.outcome)
+    # a typed answer is read by Identity (one call), never by code's words; an unclear one is asked again, never defaulted
+    typed = docs_run(DESIGN_BRIEF, 120)
+    say(typed, "hmm, not sure")
+    assert typed.paused and typed.paused["handoff"]["kind"] == "stage_decision" and typed.paused["handoff"]["reasked"], typed.paused
+    assert typed.stages == ["prd", "hld", "lld", "website"] and typed.budget == 120, "nothing applied by default"
+    say(typed, "Leave out what doesn't fit, please")
+    reads = [c for c in calls_of(typed) if c["fn"] == "identity" and "THE STAGES STILL TO MAKE" in c["prompt"]]
+    assert len(reads) == 2 and typed.stages == ["prd"], (len(reads), typed.stages)
     # enough credits: no question at all
     run = docs_run(DESIGN_BRIEF, 900)
     assert not any(m.get("act") == "ASK_REQUESTER" for m in run.chat) and run.outcome.startswith("Done")
     print("funding: short credits ask the decision question with each document and the site as items, nothing is "
-          "skipped by code; leave out, add and keep going, finish as it is, and no question when the credits cover it ok")
+          "skipped by code; leave out, add and keep going, finish as it is, a typed answer read by Identity, an unclear one "
+          "asked again, and no question when the credits cover it ok")
 
 
 def docs_repeat_failure():

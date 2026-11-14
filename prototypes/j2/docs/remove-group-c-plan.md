@@ -20,7 +20,7 @@ Branch `remove-group-c`, from `remove-restrictions` (2026-11-14). Removes group 
 | # | Scope | Status |
 |---|---|---|
 | 1 | Identity: the Requester persona becomes a plain-words style rule (audience only from the brief and the Requester's answers); Identity's other forced decisions. Rows: inventory "Group C: status", batch 1 | done; live check below |
-| 1b | The stage answer (`_stage_decision`) and `parse_decision`: Identity reads the Requester's answer instead of code's word matching | planned |
+| 1b | The stage answer (`_stage_decision`) and `parse_decision`: Identity reads the Requester's answer instead of code's word matching. Rows: inventory "Group C: status", batch 1b | done (no live check: not in the cadence) |
 | 2 | Coordination: no rules written into its task as if it chose them; it may name several ready workflows (the engine may still run one at a time, and says so) | planned |
 | 3 | Priority: remove word lists (`BUDGET_TALK`, `item_kind`) | planned |
 | 4 | Audit: remove word matching for findings and duplicates | planned |

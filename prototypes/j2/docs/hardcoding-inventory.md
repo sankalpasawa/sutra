@@ -141,9 +141,17 @@ offers only money it can apply) or valid replies (a fallback for a missing or br
 | `j2.py:4044` stuck; `j2.py:5709-5719` same failure twice; `j2.py:5531` stale; `j2.py:5761-5766` workable decides done | Kept: safety and loop bounds |
 | `j2.py:4807-4818` change request keeps items word for word | Kept: item numbers are tied to item text (`charter_items`); rewording would break them |
 | `j2.py:154` `AUTO_ASSUME` | Kept: the Requester's own Decide-for-me answer, not Identity's |
-| `j2.py:4340`, `4387-4390` `_stage_gate`, `_stage_decision`; `j2.py:1942-2010` `parse_decision` | Batch 1b |
 | `j2.py:1828` `PLAIN_WORDS`; `j2.py:1915-1926` `requester_words`; `j2.py:1928-1939` `to_requester` | Later batch: hidden rewrites |
 | `j2.py:5356-5360`, `5368-5376` routing after a drop or a limit answer | Batch 2 (Coordination) or the batch-5 proposal |
+
+### Batch 1b: the stage answer
+
+| Row | Status | Now |
+|---|---|---|
+| `j2.py:4387-4390` `_stage_decision` | Fixed: a click or a bare option number is that option (`_picked`, by number only); any other answer is read by Identity in one call (`_read_decision`, `DECISION_FMT`, the stages still to make by number) and code applies its reading. An answer naming no option is asked again (`_reask`, shared with the limit answer), never defaulted to continue or leave out | `j2.py:4918-4961` |
+| `j2.py:1942-2010` `NEGATION, OPTION_WORDS, affirmed, parse_decision` | Fixed: the mock Identity's reader only. Live code no longer reads an answer's words: the limit answer's bare-number path uses `_picked` | `j2.py:2149`, `5775` |
+| `j2.py:1942-2010` `ONLY_PICK` | Kept: valid replies. It tells a click or a bare number from a typed answer; it names no option by words |
+| `j2.py:4340` `_stage_gate` chain order; `j2.py:4348-4377` stage options and amounts | Kept: budget. Code offers only money it can apply, and funds stages in the order they depend on each other |
 
 ## Full inventory
 

@@ -2147,7 +2147,8 @@ def affirmed(answer):
 
 
 def parse_decision(answer, q, choices, crit, nums=None):
-    """The Requester's answer to the decision question, as code reads it: {"decision", "add", "drop_items"}.
+    """The mock Identity's reading of an answer to the decision question (mock only: live, Identity reads it,
+    _read_decision): {"decision", "add", "drop_items"}.
     "2. Add 25 more. Leave out the lookbook and reviews" -> continue, add 25, drop the two items by name.
     A negated option never selects that option ("don't finish as it is" is not a finish); what the rest of the
     answer affirms is read as before; nothing affirmed is None, so the question is asked again. A bare number is
@@ -4914,6 +4915,39 @@ class J2Run:
                                 "unfunded": short, "limit": "stages"})
         return True
 
+    def _picked(self, answer, q, choices):
+        """A click or a bare option number (ONLY_PICK): exactly that option, read by number, never by words."""
+        i = option_picked(q, answer) if q.get("options") else None
+        return {"decision": choices[i] if i is not None and i < len(choices) else None, "add": None, "drop_items": []}
+
+    def _read_decision(self, answer, q, choices, items, items_title):
+        """The Requester's answer to a decision question code asked: a click or a bare number is that option; any
+        other answer is read by Identity ({"decision", "add", "drop_items"}); code applies it. items: {n: text}."""
+        if ONLY_PICK.fullmatch(answer):
+            return self._picked(answer, q, choices)
+        crit = list(items.values())
+        r = self.call("identity", '{' + DECISION_FMT + '}',
+                      f"THE REQUESTER WAS ASKED: {json.dumps(q, ensure_ascii=False)}\nTHE OPTIONS ARE, IN ORDER: "
+                      f"{json.dumps(choices)}\nTHE REQUESTER ANSWERED: {answer}\n{items_title}: "
+                      f"{json.dumps(items, ensure_ascii=False)}\nRead what they asked for: decision is one of the options "
+                      "(null if the answer doesn't say); add: work credits they asked to add; drop_items: the numbers "
+                      "above that they named to leave out. Adding and leaving out can come together. Code applies it.",
+                      lambda: json.dumps(parse_decision(answer, q, choices, crit, list(items))))
+        return {"decision": str(r.get("decision") or "").lower() or None, "add": max(0, as_int(r.get("add"))) or None,
+                "drop_items": [as_int(n) for n in r.get("drop_items") or [] if as_int(n) in items]}
+
+    def _reask(self, q, h, keys):
+        """An answer that names no option: asked again, every time, never defaulted. It can't loop: each re-ask is a
+        pause only a new Requester message resumes, and Decide for me answers with a bare option number."""
+        if self.decisions:
+            self.decisions[-1]["unclear"] = True
+        self._event("identity", "unclear_answer", f"answer to '{q.get('question')}' names no option")
+        n = len(q.get("options") or [])
+        nums = ", ".join(str(i) for i in range(1, n)) + f" or {n}" if n > 1 else "1"
+        self._ask_user(f"I couldn't tell which option you chose. Reply {nums}, or type what to add or leave out.", [q],
+                       "limit", auto=True, options_only=True,
+                       handoff={**{k: h[k] for k in keys if k in h}, "reasked": True})
+
     def _stage_decision(self, h):
         """The Requester's answer to the stage question: add credits (then the chain goes on), leave out the named
         stages, or finish as it is. Code applies it, typed or clicked, and says so."""
@@ -4921,10 +4955,10 @@ class J2Run:
         answer, choices, i, short = h.get("answer") or "", h.get("choices") or [], h.get("stage_i", 0), h.get("unfunded") or []
         q = (h.get("asked") or [{}])[0]
         labels = [f"{self._sw(k)} {k}" for k in self.stages[i:]]
-        d = parse_decision(answer, q, choices, labels, list(range(1, len(labels) + 1)))
+        d = self._read_decision(answer, q, choices, dict(enumerate(labels, 1)), "THE STAGES STILL TO MAKE (by number)")
         decision = d.get("decision")
         if decision not in choices:
-            decision = "continue" if "continue" in choices else "drop"
+            return self._reask(q, h, ("kind", "stage_i", "started", "choices", "unfunded", "limit"))
         add = d.get("add") or (q.get("budget")[choices.index("continue")] if decision == "continue" and q.get("budget") else None)
         named = [self.stages[i + n - 1] for n in d.get("drop_items") or [] if 1 <= n <= len(self.stages[i:])] or \
             (short if decision == "drop" else [])
@@ -5738,7 +5772,7 @@ class J2Run:
         named = [t for t in h.get("drop_texts") or [] if t in crit]   # what the "leave out" option named
         if limit:
             if ONLY_PICK.fullmatch(answer):          # a click or a bare option number: exactly that option
-                r.update(parse_decision(answer, q, choices, crit, nums))
+                r.update(self._picked(answer, q, choices))
             decision = str(r.get("decision") or "").lower() or None
             add = max(0, as_int(r.get("add"))) or None
             drops = sorted({at[as_int(n)] for n in r.get("drop_items") or [] if as_int(n) in at})
@@ -5753,17 +5787,8 @@ class J2Run:
             if decision not in choices:
                 # Asked again each time, never a default: each re-ask waits for a new Requester message, and Decide
                 # for me answers with a bare option number, which always names an option (ONLY_PICK above).
-                if self.decisions:
-                    self.decisions[-1]["unclear"] = True
-                self._event("identity", "unclear_answer", f"answer to '{q.get('question')}' names no option")
-                n = len(q.get("options") or [])
-                nums = ", ".join(str(i) for i in range(1, n)) + f" or {n}" if n > 1 else "1"
-                self._ask_user(f"I couldn't tell which option you chose. Reply {nums}, or type what to add or leave "
-                               "out.", [q], "limit", auto=True, options_only=True,
-                               handoff={**{k: h[k] for k in ("kind", "limit", "choices", "failing_items", "resume",
-                                                             "drop_texts", "drop_named") if k in h},
-                                        "reasked": True})
-                return
+                return self._reask(q, h, ("kind", "limit", "choices", "failing_items", "resume", "drop_texts",
+                                          "drop_named"))
         confirmed = self._tbc(r.get("confirmed"), crit)
         done_facts = {t["criterion"] for t in confirmed}
         g["confirmed_facts"] = (g.get("confirmed_facts") or []) + confirmed
