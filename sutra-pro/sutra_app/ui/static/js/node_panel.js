@@ -370,7 +370,10 @@
     // read, else to the bottom; a reader who moved up stays and the pill counts what arrived below; a follower follows.
     // The live reply of a direct chat (STR-10). Only a team chat the owner can write in has a composer; an agent's chat keeps its own live row.
     const liveOn = () => !!(st && st.tab === "chat" && st.cc && st.cc.sid === st.sid && st.cc.c.live() && root.ChatLiveView && root.Fluid && directOwner() !== "");
-    const liveDeps = () => ({whoOf: m => CV().whoLabel(clean(m.who), {}), canRetry: () => false});
+    // Retry on a stopped or failed reply, while it is the owner's newest line and no turn is answering
+    const newestOwn = () => st.messages.reduce((n, m) => ((m.role === "user" || m.who === "user") && Number.isInteger(m.id) && m.id > n ? m.id : n), 0);
+    const liveDeps = () => ({whoOf: m => CV().whoLabel(clean(m.who), {}), canRetry: model => model.turn === newestOwn() && !!st.cc && !st.cc.c.state().turn.active && !st.readOnly &&
+      !!st.session && st.session.writable !== false && clean(st.session.status) !== "archived"});
     // One frame of a live reply touches only its own shell; the transcript is drawn as a whole when the shell is not there yet or a stored message has taken its key.
     function paintLiveTurn() {
       if (!liveOn() || !chatRefs) return;
@@ -984,7 +987,7 @@
         if (all[i].role === "user" || all[i].who === "user") owner = all[i].id;
         else if (all[i].kind === "question" && (all[i].answered_by === null || all[i].answered_by === undefined) && owner !== null) all[i] = Object.assign({}, all[i], {answered_by: owner});
       }
-      return all;
+      return root.ChatLiveView ? root.ChatLiveView.supersede(all) : all;          // a first try that a retry has replaced is collapsed at once, not after the next reload
     }
 
     const lastIdOf = list => list.reduce((n, m) => Math.max(n, Number(m.id) || 0), 0);

@@ -12,6 +12,7 @@
      fromLive(view, deps)        the model of a live turn, or null (no turn, or not accepted yet); deps {who}
      fromMessage(message, deps)  the model of a stored message; deps {ids (stored_order), who, canRetry}
      paint(shell, model, deps)   draw the model into the shell, touching only what changed. deps {render (ChatMarkdown.render), highlight, Fluid}
+     supersede(messages)         the rows with `superseded` set on every try that a later try of the same owner line replaced (what the server reads, worked out again by a page that read the first try early)
      plan(messages, view, deps)  {models, liveItem}: the model of every reply item of the list, and the item of the live turn while no stored message has its key
      sync(host, models, deps)    paint every shell under `host`: models {key: model}
      copyText(shell)             the text of the reply in the shell (what Copy puts on the clipboard)
@@ -69,7 +70,8 @@
     return {key: keyOf(t.messageId, t.attemptNo), turn: t.messageId, attempt: t.attemptNo, id: null, source: "live", live, phase: t.phase, state: live ? "live" : (t.phase === "stopped" ? "stopped" : (t.phase === "failed" ? "error" : "ok")),
       who: providerName(t.provider) || str(d.who) || "The model", meta: clean(t.model), label, activity: isObj(view.activity) ? view.activity.kind : "", note: live ? str(view.note) : "",
       blocks, text: textOfBlocks(blocks), earlier: t.earlier, afterSideEffects: t.afterSideEffects, canStop: live && view.canStop === true, stopping: t.phase === "stopping",
-      elapsedMs: live ? view.elapsedMs : 0, streamMode: t.streamMode, error: t.error, legacy: false, superseded: false, ending: "", polling: view.polling === true};
+      elapsedMs: live ? view.elapsedMs : 0, streamMode: t.streamMode, error: t.error, legacy: false, superseded: false, ending: "", polling: view.polling === true,
+      detail: live && isObj(view.activity) ? str(view.activity.detail) : "", canRetry: false, siblingError: false};
   }
 
   function fromMessage(m, deps) {
@@ -92,8 +94,10 @@
     let ending = "";
     if (kind === "note" || kind === "error") ending = str(m.text);
     return {key: keyOf(m.turn, m.attempt), turn: m.turn, attempt: Number.isInteger(m.attempt) && m.attempt > 0 ? m.attempt : 1, id: m.id, source: "stored", live: false, phase: "", state: failed ? "error" : (kind === "note" ? "stopped" : "ok"),
-      who: str(d.who) || "The model", meta: "", label: "", activity: "", note: "", blocks, text: textOfBlocks(blocks), earlier: [], afterSideEffects: false, canStop: false, stopping: false,
-      elapsedMs: 0, streamMode: "", error: null, legacy: !ordered && Array.isArray(m.blocks) && m.blocks.length > 0, superseded: m.superseded === true, ending, polling: false};
+      who: str(d.who) || "The model", meta: "", label: "", activity: "", note: "", blocks, text: textOfBlocks(blocks), earlier: [],
+      afterSideEffects: blocks.some(b => b.type === "tool_use" && (b.kind === "edit" || b.kind === "run")), canStop: false, stopping: false,
+      elapsedMs: 0, streamMode: "", error: null, legacy: !ordered && Array.isArray(m.blocks) && m.blocks.length > 0, superseded: m.superseded === true, ending, polling: false,
+      detail: "", canRetry: false, siblingError: false};
   }
 
   /* ---------------------------------------------------------------- the shell's parts */
@@ -297,14 +301,17 @@
     });
   }
 
+  // Retry is offered on a reply that was stopped or failed and is the owner's newest line; a reply whose failure has its own error line (which has its own Retry) does not repeat it.
+  const retryShown = model => model.canRetry === true && (model.state === "stopped" || (model.state === "error" && model.siblingError !== true));
+
   function paintActions(cl, model, deps, doc) {
     const want = [];
     if (model.live) {
-      want.push(model.stopping ? {act: "composer-stop", label: "Stopping…", disabled: true} : {act: "composer-stop", label: "Stop", disabled: !model.canStop});
+      want.push(model.stopping ? {act: "composer-stop", label: "Stopping…", disabled: true, aria: "Stopping the answer"} : {act: "composer-stop", label: "Stop", disabled: !model.canStop, aria: "Stop the answer"});
     } else if (model.text !== "") {
-      want.push({act: "copy-reply", label: "Copy"});
+      want.push({act: "copy-reply", label: "Copy", aria: "Copy the answer"});
     }
-    if (!model.live && deps.canRetry === true) want.push({act: "retry-direct", label: "Retry", turn: model.turn});
+    if (!model.live && retryShown(model)) want.push({act: "retry-direct", label: "Retry", turn: model.turn, aria: "Ask again"});
     const sig = want.map(w => w.act + w.label + (w.disabled ? "1" : "0") + (w.turn || "")).join("|");
     if (cl.sig.actions === sig) return;
     cl.sig.actions = sig;
@@ -315,6 +322,7 @@
       b.setAttribute("type", "button");
       b.setAttribute("data-act", w.act);
       if (w.turn) b.setAttribute("data-turn", String(w.turn));
+      if (w.aria) b.setAttribute("aria-label", w.aria);
       if (w.disabled) b.disabled = true;
       cl.actions.appendChild(b);
     });
@@ -344,10 +352,14 @@
     paintEarlier(cl, model, doc);
     paintBlocks(cl, model, d, doc);
     const notes = [];
+    const retry = !model.live && retryShown(model);
     if (model.live && model.note) notes.push(model.note);
+    if (model.live && model.detail) notes.push(model.detail);
     if (model.live && model.afterSideEffects) notes.push("An earlier try may have changed files.");
+    if (retry && model.afterSideEffects) notes.push("This try may have changed files. Trying again can repeat that.");
     setText(cl.note, notes.join(" "), cl, "note");
     cl.note.hidden = notes.length === 0;
+    setAttr(shell, "data-note", notes.length > 0 ? "1" : "");
     cl.head.hidden = lab.text === "" && notes.length === 0;
     cl.foot.hidden = cl.head.hidden && cl.actions.hidden;
     setText(cl.ending, !live && model.source === "stored" ? clean(model.ending) : "", cl, "ending");
@@ -357,6 +369,23 @@
     cl.text = model.text;
     cl.painted = true;
     return true;
+  }
+
+  // supersede(messages) -> messages: a reply, and the notes and errors stored with it, of a try that a LATER try of the same owner line replaced, is `superseded`. The server says so in
+  // what it reads; a page that read the first try before the retry's reply was stored has not been told, so it works it out from the rows it has (the same rule). New objects only
+  // where a flag changes; the list and the rows are otherwise returned as they are.
+  function supersede(messages) {
+    const list = Array.isArray(messages) ? messages : [];
+    const newest = new Map();
+    const tryOf = m => (Number.isInteger(m.attempt) && m.attempt > 0 ? m.attempt : 1);
+    list.forEach(m => { if (isObj(m) && m.role === "agent" && Number.isInteger(m.turn) && m.turn > 0) newest.set(m.turn, Math.max(newest.get(m.turn) || 1, tryOf(m))); });
+    let changed = false;
+    const out = list.map(m => {
+      if (!isObj(m) || m.role !== "agent" || !Number.isInteger(m.turn) || m.superseded === true || tryOf(m) >= (newest.get(m.turn) || 1)) return m;
+      changed = true;
+      return Object.assign({}, m, {superseded: true});
+    });
+    return changed ? out : list;
   }
 
   // plan(messages, view, deps) -> {models: {key: model}, liveItem: {key, html} | null}: what the transcript needs to draw the replies as shells. Every reply item of the list gets
@@ -374,6 +403,12 @@
       if (turn && turn.messageId === m.turn && turn.attemptNo === attempt) ids = turn.storedOrder;
       else if (settled && settled.messageId === m.turn && settled.attemptNo === attempt) ids = settled.storedOrder;
       const model = fromMessage(m, {ids, who: typeof d.whoOf === "function" ? d.whoOf(m) : ""});
+      // how the turn ended, from the lines that were stored with the reply: a note after it says it was stopped, an error line says it failed (and has its own Retry)
+      const same = x => isObj(x) && x !== m && x.role === "agent" && x.turn === m.turn && (Number.isInteger(x.attempt) && x.attempt > 0 ? x.attempt : 1) === attempt && !isReply(x);
+      const rows = Array.isArray(messages) ? messages : [];
+      if (rows.some(x => same(x) && str(x.kind) === "error")) { model.state = "error"; model.siblingError = true; }
+      else if (rows.some(x => same(x) && str(x.kind) === "note")) model.state = "stopped";
+      model.canRetry = typeof d.canRetry === "function" ? d.canRetry(model) === true : false;
       models[model.key] = model;
     });
     const live = fromLive(view, {who: typeof d.who === "string" ? d.who : ""});
@@ -461,7 +496,7 @@
     return true;
   }
 
-  const ChatLiveView = {keyOf, shellHtml, isReply, fromLive, fromMessage, plan, paint, sync, copyText, copy, highlight: highlightPre, providerName};
+  const ChatLiveView = {keyOf, shellHtml, isReply, fromLive, fromMessage, supersede, plan, paint, sync, copyText, copy, highlight: highlightPre, providerName};
   if (typeof module === "object" && module !== null && module.exports) module.exports = ChatLiveView;
   else root.ChatLiveView = ChatLiveView;
 })(globalThis);

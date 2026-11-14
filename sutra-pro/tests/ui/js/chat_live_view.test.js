@@ -430,3 +430,101 @@ test("a 4,000-piece reply of 200 KB: the shell is painted per piece without recr
   assert.ok(off > 150000);
   assert.ok(churn <= 6, "a piece creates at most a few elements: " + churn);
 });
+
+/* ---------------------------------------------------------------- STR-11: Stop, Retry, honest labels */
+const reply = (over) => Object.assign({id: 9, role: "agent", kind: "text", turn: 7, attempt: 1, ordered: true, state: "ok", text: "Partial words.", blocks: [{type: "text", kind: "other", text: "Partial words."}]}, over || {});
+const noteRow = {id: 10, role: "agent", kind: "note", turn: 7, attempt: 1, text: "Stopped."};
+const errorRow = {id: 10, role: "agent", kind: "error", turn: 7, attempt: 1, text: "Claude failed.", state: "error"};
+
+test("a reply that was stopped (a note follows it) is stopped, and offers Retry only when the page says it may", () => {
+  const r = rig();
+  const shell = r.shell(7, 1);
+  const yes = LV.plan([reply(), noteRow], {turn: null}, {canRetry: () => true}).models["turn:7:1"];
+  assert.equal(yes.state, "stopped");
+  LV.paint(shell, yes, r.deps());
+  const retry = q(shell, '.cl-actions [data-act="retry-direct"]');
+  assert.ok(retry);
+  assert.equal(retry.getAttribute("data-turn"), "7");
+  assert.equal(retry.getAttribute("aria-label"), "Ask again");
+  assert.ok(q(shell, '.cl-actions [data-act="copy-reply"]'), "Copy stays");
+  const no = LV.plan([reply(), noteRow], {turn: null}, {canRetry: () => false}).models["turn:7:1"];
+  const other = r.shell(7, 1);
+  LV.paint(other, no, r.deps());
+  assert.equal(q(other, '[data-act="retry-direct"]'), null);
+});
+
+test("a failed reply that has its own error line leaves Retry to that line; a failed turn whose error row IS the reply item has it in the reply", () => {
+  const r = rig();
+  const withLine = LV.plan([reply(), errorRow], {turn: null}, {canRetry: () => true}).models["turn:7:1"];
+  assert.equal(withLine.state, "error");
+  assert.equal(withLine.siblingError, true);
+  const a = r.shell(7, 1);
+  LV.paint(a, withLine, r.deps());
+  assert.equal(q(a, '[data-act="retry-direct"]'), null);
+  const primary = {id: 9, role: "agent", kind: "error", turn: 7, attempt: 1, ordered: true, state: "error", text: "Claude did not answer.", blocks: [{type: "tool_use", kind: "read", name: "Read", text: "Reading a"}]};
+  const b = r.shell(7, 1);
+  LV.paint(b, LV.plan([primary], {turn: null}, {canRetry: () => true}).models["turn:7:1"], r.deps());
+  assert.ok(q(b, '[data-act="retry-direct"]'));
+  assert.match(q(b, ".cl-ending").textContent, /did not answer/);
+});
+
+test("Retry says first that the try may have changed files when it ran an edit or a command", () => {
+  const r = rig();
+  const edit = reply({blocks: [{type: "tool_use", kind: "edit", name: "Edit", text: "Editing a.py"}, {type: "tool_result", kind: "edit", name: "Edit", text: ""}, {type: "text", kind: "other", text: "Partial words."}]});
+  const shell = r.shell(7, 1);
+  LV.paint(shell, LV.plan([edit, noteRow], {turn: null}, {canRetry: () => true}).models["turn:7:1"], r.deps());
+  assert.match(q(shell, ".cl-note").textContent, /may have changed files. Trying again can repeat that/);
+  assert.equal(shell.getAttribute("data-note"), "1");
+  const read = reply({blocks: [{type: "tool_use", kind: "read", name: "Read", text: "Reading a"}, {type: "text", kind: "other", text: "Partial words."}]});
+  const clean = r.shell(7, 1);
+  LV.paint(clean, LV.plan([read, noteRow], {turn: null}, {canRetry: () => true}).models["turn:7:1"], r.deps());
+  assert.equal(q(clean, ".cl-note").hidden, true);
+});
+
+test("stalled: the note under a running reply carries the real silence and the real idle limit, and says nothing about a limit the server did not send", () => {
+  const r = rig();
+  r.begin();
+  r.wire("turn.started", {provider: "claude", idle_limit_s: 120});
+  r.now += 5000;
+  r.wire("heartbeat", {idle_ms: 22000, idle_limit_s: 120});
+  const shell = r.shell();
+  r.now += 3000;
+  r.paintLive(shell);
+  assert.equal(q(shell, ".cl-state").textContent, "Still working, no output");
+  assert.equal(q(shell, ".cl-clock").textContent, "for 25 s");
+  assert.match(q(shell, ".cl-note").textContent, /stopped after 120 s without output/);
+  const r2 = rig();
+  r2.begin();
+  r2.wire("turn.started", {provider: "claude"});
+  r2.wire("heartbeat", {idle_ms: 30000, idle_limit_s: null});
+  const s2 = r2.shell();
+  r2.paintLive(s2);
+  assert.equal(q(s2, ".cl-note").hidden, true);
+});
+
+test("the Stop button is named for a screen reader and is a real button that a keyboard can press", () => {
+  const r = rig();
+  r.begin();
+  r.wire("turn.started", {provider: "claude"});
+  const shell = r.shell();
+  r.paintLive(shell);
+  const stop = q(shell, '[data-act="composer-stop"]');
+  assert.equal(stop.tagName, "BUTTON");
+  assert.equal(stop.getAttribute("type"), "button");
+  assert.equal(stop.getAttribute("aria-label"), "Stop the answer");
+  r.act({type: "stop.pressed"});
+  r.paintLive(shell);
+  assert.equal(q(shell, '[data-act="composer-stop"]').getAttribute("aria-label"), "Stopping the answer");
+});
+
+test("supersede: every row of an earlier try of an owner line that has a later try is marked, the newest try and other lines are not, and an unchanged list is the same list", () => {
+  const rows = [{id: 1, role: "user", kind: "text"}, {id: 2, role: "agent", kind: "text", turn: 1, attempt: 1}, {id: 3, role: "agent", kind: "note", turn: 1, attempt: 1},
+    {id: 4, role: "agent", kind: "text", turn: 1, attempt: 2}, {id: 5, role: "agent", kind: "text", turn: 9}];
+  const out = LV.supersede(rows);
+  assert.deepEqual(out.map(m => m.superseded === true), [false, true, true, false, false]);
+  assert.equal(out[0], rows[0]);
+  assert.equal(rows[1].superseded, undefined, "the row that came in is not changed");
+  const same = [{id: 2, role: "agent", kind: "text", turn: 1, attempt: 1}];
+  assert.equal(LV.supersede(same), same);
+  assert.deepEqual(LV.supersede(null), []);
+});

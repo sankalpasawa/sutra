@@ -1647,3 +1647,10 @@ Decided by Claude on its own, on the dates shown. The owner can veto any of them
 - Why: a streamed word must reach the page as the provider sent it; the repair by snapshot hid the fault and cost a request and a redraw per piece.
 - Rejected: leaving the strip and making the page tolerant of a short piece (the text on screen would differ from the stored text until the next snapshot); a new model for live events (the bus has one `Event` and one data shape).
 - Diagram: label "event data keeps its white space", pill on Chat sessions.
+
+## D233 — Stop and Retry live in the reply, and a replaced try collapses at once
+- Sources: `chat_live_view.js` (`plan`, `supersede`, `paintActions`), `home.js`, `node_panel.js`, `tests/ui/js/chat_live_view.test.js`, `tests/e2e/test_browser_live_chat.py` (stop, retry, backoff).
+- Decided: Stop is a button inside the running reply (named for a screen reader, disabled and worded "Stopping…" at once, Esc as before); a reply that was stopped (a note was stored with it) or whose error row is the reply item offers Retry while it is the owner's newest line and no turn answers; a reply whose failure has its own error line leaves Retry to that line (one button, not two). A retry that follows a try that may have run an edit or a command says so first. A page that read the first try before the retry's reply was stored works out `superseded` from the rows it has, by the server's rule, so the first try is collapsed under Earlier try when the retry's reply arrives, not after the next reload.
+- Why: the owner's eyes are on the reply, not on the box; a button that repeats, or a warning that comes after the click, is worse than none; the page never re-reads old rows, so a flag that changes later on the server would otherwise never reach it.
+- Rejected: re-fetching the whole chat after a retry (a request per retry for one boolean); a confirm dialog on Retry (the words are in the reply, the choice is one click).
+- Diagram: label "stop and retry in the reply", pill on band:EXPERIENCE.

@@ -1158,5 +1158,10 @@
   "id": "D232",
   "label": "event data keeps its white space",
   "anchor": "Chat sessions"
+ },
+ {
+  "id": "D233",
+  "label": "stop and retry in the reply",
+  "anchor": "band:EXPERIENCE"
  }
 ]

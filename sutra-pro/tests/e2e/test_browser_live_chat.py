@@ -316,6 +316,26 @@ def test_stop_cancels_the_process_and_what_is_shown_is_what_is_stored(make, brow
     clean(browser, "cancel")
 
 
+@pytest.mark.browser
+def test_a_stopped_reply_can_be_asked_again_and_the_first_try_is_kept_under_earlier_try(make, browser):
+    live = make([Text("A long answer that the owner stops before it is done. " * 15, pieces=200)], [Text("The second try answers briefly and completely.", pieces=3)], delay="0.1")
+    home(browser, live)
+    ask(browser, "Answer this")
+    browser.wait_for("(() => { const s = document.querySelector('#smsgs .clive'); return !!s && s.querySelector('.cl-text') && s.querySelector('.cl-text').textContent.length > 50; })()", timeout=30)
+    browser.click("#smsgs .clive [data-act=composer-stop]")
+    browser.wait_for("document.querySelector('#smsgs .clive').dataset.state === 'stopped'", timeout=30)
+    browser.wait_for("!!document.querySelector('#smsgs .clive [data-act=retry-direct]')", timeout=10)
+    assert browser.js("document.querySelector('#smsgs .clive [data-act=copy-reply]') !== null") is True
+    shot(browser, "05b-stopped-with-retry.png")
+    browser.click("#smsgs .clive [data-act=retry-direct]")
+    browser.wait_for("Array.from(document.querySelectorAll('#smsgs .clive')).some(n => n.dataset.attempt === '2' && n.dataset.state === 'ok')", timeout=60)
+    assert "second try answers briefly" in browser.js("Array.from(document.querySelectorAll('#smsgs .clive')).filter(n => n.dataset.attempt === '2')[0].textContent")
+    assert browser.js("document.querySelectorAll('#smsgs .nmsg.me').length") == 1, "a retry adds no second owner line"
+    first = browser.js("(() => { const n = Array.from(document.querySelectorAll('#smsgs .clive')).filter(n => n.dataset.attempt === '1')[0]; return n ? {prior: !!n.querySelector('details.cl-prior'), open: n.querySelector('details.cl-prior').open} : null; })()")
+    assert first == {"prior": True, "open": False}, f"the first try is collapsed under Earlier try: {first}"
+    clean(browser, "retry")
+
+
 # ------------------------------------------------------------------------------------------------------------------------------------------------------------
 # 6. network drop: the stream goes away mid-turn; the page catches up from the snapshot, no word is repeated or lost, no second reply
 # ------------------------------------------------------------------------------------------------------------------------------------------------------------

@@ -190,6 +190,7 @@
     const byId = new Map(replace ? [] : S.messages.map(m => [m.id, m]));
     list.forEach(m => { if (isObj(m) && m.id !== undefined) byId.set(m.id, m); });
     S.messages = Array.from(byId.values()).sort((a, b) => a.id - b.id);
+    if (root.ChatLiveView) S.messages = root.ChatLiveView.supersede(S.messages);          // a first try that a retry has replaced is collapsed at once, not after the next reload
     S.lastId = S.messages.reduce((n, m) => (typeof m.id === "number" && m.id > n ? m.id : n), 0);
     S.pending = S.pending.filter(p => p.serverId === null || !S.messages.some(m => m.id === p.serverId));
   }
@@ -313,7 +314,10 @@
 
   // The replies of the direct chat are shells that chat_live_view.js paints (STR-10): a live turn and a stored message are the same node, so the stored one takes over without a swap.
   const liveOn = () => !!(S.cc && S.cc.live() && root.ChatLiveView && root.Fluid);
-  const liveDeps = () => ({whoOf: m => root.ChatView.whoLabel(clean(m.who), {}), canRetry: () => false});
+  // Retry on a stopped or failed reply, while it is the owner's newest line and no turn is answering (an older line's retry would confuse the order of the chat)
+  const newestOwn = () => S.messages.reduce((n, m) => ((m.role === "user" || m.who === "user") && Number.isInteger(m.id) && m.id > n ? m.id : n), 0);
+  const liveDeps = () => ({whoOf: m => root.ChatView.whoLabel(clean(m.who), {}), canRetry: model => model.turn === newestOwn() && !!S.cc && !S.cc.state().turn.active &&
+    (!S.session || (S.session.writable !== false && clean(S.session.status) !== "archived"))});
 
   function renderChat() {
     const shown = S.messages.concat(S.pending.map(p => p.msg));
