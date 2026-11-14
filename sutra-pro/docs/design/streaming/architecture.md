@@ -264,7 +264,7 @@ Fold (D212): the cap counts stored elements, where a `tool_use` and its `tool_re
 
 Superseded replies: a reply (and its note, error, switch rows) of attempt k is `superseded` when a stored row of the same owner line has a higher attempt. `ChatMessageOut.superseded` is computed in the same SQL read as `answered_by`. The transcript shows superseded replies collapsed under "Earlier try" (kept: it may have changed files); `resume_info` (the carry-over reader, limit 20) and the model history exclude them, so the model is not told about a reply the owner replaced. STR-3 locates the carry-over reader and tests this.
 
-`ChatMessageOut` gains four additive fields: `client_id` (parsed from `direct-ask:` refs, else null), `attempt`, `superseded`, `ordered`. The raw `src_ref` is not exposed.
+`ChatMessageOut` gains four additive fields: `client_id` (parsed from `direct-ask:` refs, else null), `attempt`, `superseded`, `ordered`. The raw `src_ref` is not exposed. A fifth, `via` (`{provider, model}` of the reply, a sibling key of the meta, left out when not recorded), lets the header say who wrote a reply the same live and after a reload (D236).
 
 ### Checkpoint table (migration v5, additive)
 

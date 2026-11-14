@@ -1173,5 +1173,20 @@
   "id": "D235",
   "label": "live chat on by default",
   "anchor": "Chat sessions"
+ },
+ {
+  "id": "D236",
+  "label": "ending, text and author read the same after reload",
+  "anchor": "Chat sessions"
+ },
+ {
+  "id": "D237",
+  "label": "feed and publish under one lock; ticker sleeps when nothing is due",
+  "anchor": "Chat sessions"
+ },
+ {
+  "id": "D238",
+  "label": "terminal frame kept; Stop stays; mode remembered",
+  "anchor": "band:EXPERIENCE"
  }
 ]
