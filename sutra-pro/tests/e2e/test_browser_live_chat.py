@@ -574,3 +574,20 @@ def test_phone_width_has_no_horizontal_scroll_and_a_usable_stop(make, browser):
     assert browser.js("(() => { const s = document.querySelector('#smsgs'); return s.scrollWidth <= s.clientWidth + 1; })()") is True
     shot(browser, "09-phone.png")
     clean(browser, "phone")
+
+
+@pytest.mark.browser
+@pytest.mark.parametrize("width,height", [(1000, 560), (1100, 720), (1200, 720)])
+def test_the_chat_column_reaches_the_bottom_of_the_window_at_every_width(make, browser, width, height):
+    """At 901 to 1150 px the chat column used to stop well short of the window and the transcript was a few lines tall."""
+    live = make([Text("A reply that is long enough to need room. " * 8, pieces=12)], delay="0.05")
+    browser.set_size(width, height)
+    home(browser, live)
+    ask(browser, "How much room is there?")
+    browser.wait_for("document.querySelector('#smsgs .clive') !== null", timeout=30)
+    box = browser.js("""(() => { const c = document.getElementById('schat').getBoundingClientRect(), m = document.getElementById('smsgs').getBoundingClientRect();
+      return {bottom: c.bottom, msgs: m.height, win: window.innerHeight}; })()""")
+    assert box["bottom"] >= box["win"] - 2, box
+    assert box["msgs"] >= box["win"] * 0.3, box
+    browser.wait_for("document.querySelector('#smsgs .clive').dataset.state === 'ok'", timeout=60)
+    clean(browser, "layout")
