@@ -1,0 +1,19 @@
+{
+  "schema": "sutra-extension/2",
+  "id": "155_loan_goal",
+  "scope": "orgA/lending",
+  "goals": [
+    "loan_file_reviewed"
+  ],
+  "budget": {
+    "usd_cents": 200,
+    "tokens": 10000
+  },
+  "preference": [
+    "usd_cents",
+    "tokens",
+    "compute",
+    "money",
+    "attention"
+  ]
+}

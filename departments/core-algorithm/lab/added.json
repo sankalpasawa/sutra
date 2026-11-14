@@ -2,7 +2,7 @@
  "about": "Written by the additive applier (.tmp/core-algo-additive4-apply.py, contract 4). `pinned`: what the lab had recorded when a version was applied (sha256 of the kernel and of each scenario file; sha256 of the canonical JSON of each case, of the event record, of the ask record, of each recorded sequence, of each handler entry and of each lens except the reflection summary), and `built_in`, every Python file the lab had before the add-on points. `points` and `applied`: every file laid in, with its sha256. An entry of `applied` that holds `edits` is an EDIT VERSION (ruling R32): the name and sha256 of its edit script and, for every existing file the script changed, the sha256 before and after; the pin of the kernel and the pinned handler entries were taken again for those files, an added file it changed is listed with its new sha256, and every other pin stayed. Its `moves` are what it declares as moved of the things an earlier version recorded, each with its reason; check S202 holds a declared move to nothing until the next version is applied to the built, verified record. The verifier reads this file for checks S202 and S203, for the sha256 a check module's text is held to before it runs, and for what it hands a check module; tools/run_all.py reads it for the record's file list. Nothing in the lab holds this file itself.",
  "contract": 4,
  "pinned": {
-  "from": "sutra-kernel-extensions/0.10.0-addons",
+  "from": "sutra-kernel-extensions/0.11.0-journal",
   "kernel_sha256": "688ab9431d4f4b17608d848e32f12e0373197a301d3b7f641a6f476a2b9ad368",
   "built_in": [
    "extensions/asks.py",
@@ -39,6 +39,8 @@
    "11_no_goal": "de850a7919f19e1c263a5c4e6fb9b4e15a693d2bf6e694b92beb72a06c7b2895",
    "12_other_tenant": "e14e35b11c29b753773eb1c13ae60edbcddd2c125621cd72254abafcaaae6214",
    "13_revoke_authority": "d2643d40a98197e3d78f2c60af428d6834854a4868d88d9ef5c434f1f9e3282f",
+   "140_levels_restated": "6e72d650950aa954aa03c74f529d2f50c9db8898b31595f1a469a0112e0dc1a9",
+   "141_ask_with_line_marks": "1135bab2abe57b4c50a003bba2cfd131c2c66f3a0ae8f097d8dfd113a9d3551b",
    "14_remove_capacity": "4521dfd09b5066a190ac3374ecf0a85c7e9b3f987537c235003239d75ab5cbf3",
    "15_low_budget": "796569e612a2f5c6abf6e05676c9166ea5c3371605ca0e6fe967421695a758cb",
    "20_enquiry_goal": "ac089a3607c41dd9f73979cfbb76cc95db7c458038c505c77a09f5b8e01f83ca",
@@ -196,11 +198,19 @@
    [
     "50_must_cohere",
     "4a721d5ba360db8e8e28fc3faa840a18d967f56adae281919cba2041d328ba4c"
+   ],
+   [
+    "60_pack_twice",
+    "3f763aa037b00e66e09806ed65a7fd341d1a8ef9e58b7b2195d52585a9df0afc"
    ]
   ],
   "events": "f58f0cf138c8ca42fe880e0a0c15d116a2c52c8a300b8284a8c93e3e72d2317c",
   "ask_events": "541f53443324006a1cedafd604f4a28324a227fca6c4c443d86ced9d4eebba44",
-  "scenes": {},
+  "scenes": {
+   "journal_chain": "6c189359834d38d83b168a5142f8c0c2cd75d6d1a68533dee20bc9b1d6fb440b",
+   "journal_refusals": "0c8646c7ad38b13dc36a29cc6112815e255dde8828b004f6408f169f2ca62ef6",
+   "journal_restart": "1b30c480032ee792b0f7d1fd9645a0942fc89e2e886fdd4f2fe3223de9ab99d4"
+  },
   "action_handlers": {
    "ask": "021f2fe610ee6a2ff8edc3fda09b6e29d297b4caa1747a2900682368ab5729e9",
    "compile_candidate": "3c67a8dc6d4e412f7cc204fe49375b04db06abc778cd4d96df68a2e44699a6de",
@@ -247,6 +257,22 @@
     "tools/scenes/journal_chain.py": "2e3c9cb4cfecf8b0696525b366c3a3e470b9ac5f2efbf1d04a7ce66245c34358",
     "tools/scenes/journal_refusals.py": "d87eb72b2d67c08a7aa70faf1140f84444fbab50489c9419f77f4df62ee47f79",
     "tools/scenes/journal_restart.py": "7bfd6f6a8e8fe39897230c0e10fd5b673302c671dd2270ac01617c469fc354f2"
+   }
+  },
+  {
+   "label": "0.12.0-numbers",
+   "delivery": "numbers",
+   "files": {
+    "cases/63_conformance_finding.json": "66c80da7283ee2f3c1b34f6fa4a1adfdbc8e75eb37e76f99fb81162bbe6f53ee",
+    "cases/64_conformance_in_band.json": "fd58b4d26f010cabef46c598c2be7cc14d3a4137e3591cca03ef58be03612850",
+    "cases/65_loan_review_cost.json": "9406377ca8d9d3bbd468d155a30350371fb56df2313db9d9827774a7eeee98ac",
+    "cases/66_review_queue.json": "5a7dac48cc2a67872d51dcff26294daad555237ccfd47a2e9c99ad22cbe6d40f",
+    "extensions/numbers.py": "5954017a7ef88a4eef8127ff6288520946cc74d63ab3e490d0bbb67122ce0f14",
+    "extensions/numbers_lint.py": "373ca7ec381fd20f88cf9692a8f717036e4732681df5dd2e4a2745d2e00d3649",
+    "qa/checks/numbers.py": "029ef32970e51f0f6c1a25ca1ecb27d73a00009b52b334665b2a3183d538ada7",
+    "tests/test_numbers.py": "1ec0751d8066bb147c7a43946a86a0c6ca214241797890ca906d235820aab34f",
+    "tools/packs/numbers.py": "971f22acd6a3cbd9eefecb01f9191a70ba614e0333bd6ec281694d9216521471",
+    "tools/scenes/numbers.py": "f07126b015b4c8984a9b6e89e014c7fa3a2ff0d19debeadbba58eb0fac00c9f5"
    }
   }
  ]

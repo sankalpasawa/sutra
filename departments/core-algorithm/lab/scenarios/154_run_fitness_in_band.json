@@ -1,0 +1,81 @@
+{
+  "schema": "sutra-extension/2",
+  "id": "154_run_fitness_in_band",
+  "evidence": [
+    {
+      "predicate": "run_fitness",
+      "truth": "TRUE",
+      "verified": true,
+      "source": "adapter:conformance/log@1",
+      "version": "num-77f671cbb2f1d92f",
+      "value": "1.0",
+      "unit": "ratio",
+      "label": "run-0002",
+      "evidence_kind": "NUMBER"
+    },
+    {
+      "predicate": "fitness_in_band",
+      "truth": "TRUE",
+      "verified": true,
+      "source": "adapter:numbers/compare@1",
+      "version": "cmp-d97999d82cf92463",
+      "depends_on": [
+        {
+          "predicate": "run_fitness",
+          "version": "num-77f671cbb2f1d92f"
+        },
+        {
+          "predicate": "fitness_band",
+          "version": "num-edfc698130687717"
+        }
+      ],
+      "compares": {
+        "number": {
+          "predicate": "run_fitness",
+          "value": "1.0",
+          "version": "num-77f671cbb2f1d92f"
+        },
+        "op": ">=",
+        "bound": {
+          "predicate": "fitness_band",
+          "value": "0.9",
+          "version": "num-edfc698130687717"
+        },
+        "partner": "fitness_below_band"
+      },
+      "evidence_kind": "COMPARISON"
+    },
+    {
+      "predicate": "fitness_below_band",
+      "truth": "FALSE",
+      "verified": true,
+      "source": "adapter:numbers/compare@1",
+      "version": "cmp-8c3e765f3b160864",
+      "depends_on": [
+        {
+          "predicate": "run_fitness",
+          "version": "num-77f671cbb2f1d92f"
+        },
+        {
+          "predicate": "fitness_band",
+          "version": "num-edfc698130687717"
+        }
+      ],
+      "compares": {
+        "number": {
+          "predicate": "run_fitness",
+          "value": "1.0",
+          "version": "num-77f671cbb2f1d92f"
+        },
+        "op": "<",
+        "bound": {
+          "predicate": "fitness_band",
+          "value": "0.9",
+          "version": "num-edfc698130687717"
+        },
+        "partner": "fitness_in_band"
+      },
+      "evidence_kind": "COMPARISON"
+    }
+  ]
+}

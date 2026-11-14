@@ -1,0 +1,18 @@
+{
+  "schema": "sutra-extension/2",
+  "id": "150_conformance_goal",
+  "scope": "sutra/workflows",
+  "goals": [
+    "run_judged"
+  ],
+  "budget": {
+    "compute": 5,
+    "money": 5,
+    "attention": 2
+  },
+  "preference": [
+    "compute",
+    "money",
+    "attention"
+  ]
+}

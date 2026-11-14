@@ -1,0 +1,27 @@
+{
+  "schema": "sutra-extension/2",
+  "id": "157_review_queue",
+  "scope": "orgA/lending",
+  "goals": [
+    "big_loan_reviewed",
+    "small_loan_reviewed"
+  ],
+  "impact": {
+    "big_loan_reviewed": "9",
+    "small_loan_reviewed": "1"
+  },
+  "budget": {
+    "usd_cents": 200,
+    "dept_usd_cents": 60
+  },
+  "ceilings": {
+    "dept_usd_cents": "usd_cents"
+  },
+  "preference": [
+    "usd_cents",
+    "dept_usd_cents",
+    "compute",
+    "money",
+    "attention"
+  ]
+}

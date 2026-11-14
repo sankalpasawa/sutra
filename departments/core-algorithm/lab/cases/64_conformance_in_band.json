@@ -1,0 +1,9 @@
+{
+  "id": "64_conformance_in_band",
+  "title": "A number in its band",
+  "description": "Fitness 1.0 against the same band: the goal is supported by evidence, nothing runs and nothing is paid.",
+  "packs": ["150_conformance_goal", "151_conformance_theory", "154_run_fitness_in_band", "153_finding_method"],
+  "execute": true,
+  "area": "Numbers",
+  "expected": "SUPPORTED_BY_EVIDENCE"
+}

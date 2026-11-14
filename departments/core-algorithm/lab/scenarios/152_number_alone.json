@@ -1,0 +1,17 @@
+{
+  "schema": "sutra-extension/2",
+  "id": "152_number_alone",
+  "evidence": [
+    {
+      "predicate": "run_fitness",
+      "truth": "TRUE",
+      "verified": true,
+      "source": "adapter:conformance/log@1",
+      "version": "num-f1d644a54a3ef67b",
+      "value": "0.8",
+      "unit": "ratio",
+      "label": "run-0001",
+      "evidence_kind": "NUMBER"
+    }
+  ]
+}
