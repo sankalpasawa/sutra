@@ -14,6 +14,7 @@ from sutra_app import oslayer
 
 from .attachments import AttachmentStore, deliver
 from .base import write_private_file
+from .cancel import CancelToken
 from .chat_models import CarryPlan, Choice, ChatEvent, ChatTurnIn, ChatTurnOut, ProviderPill
 from .errors import InvalidRequestError, NoProviderError
 import re
@@ -39,7 +40,7 @@ class ChatPort(Protocol):
     def default_pick(self, function: str = "") -> Pick: ...
     def plan_switch(self, session_id: str, target: str) -> CarryPlan: ...
     def send(self, session_id: str, turn: ChatTurnIn, on_event: Optional[Callable[[ChatEvent], None]] = None) -> ChatTurnOut: ...
-    def stream(self, session_id: str, turn: ChatTurnIn) -> Iterator[ChatEvent]: ...
+    def stream(self, session_id: str, turn: ChatTurnIn, *, cancel: Optional[CancelToken] = None) -> Iterator[ChatEvent]: ...
     def set_system(self, session_id: str, text: str) -> None: ...
     def stop(self, session_id: str) -> bool: ...
     def close(self) -> None: ...
@@ -220,7 +221,7 @@ class RouterChatPort:
     def _ctx_for(self, session_id: str, turn: ChatTurnIn) -> RouteContext:
         return self._ctx.model_copy(update={"session_id": session_id, "tag": turn.tag})
 
-    def stream(self, session_id: str, turn: ChatTurnIn) -> Iterator[ChatEvent]:
+    def stream(self, session_id: str, turn: ChatTurnIn, *, cancel: Optional[CancelToken] = None) -> Iterator[ChatEvent]:
         """(partial | block | restart)* / usage / switched? / turn_done. The last event is always `turn_done` (errors raise while iterating).
         A `restart` marks a new attempt of this turn (the router retried): what the earlier attempt streamed is void, so the text and the blocks
         it produced are forgotten here and the caller starts again from the next event."""
@@ -230,7 +231,8 @@ class RouterChatPort:
         begun = False
         blocks: list[dict] = []
         kinds: dict = {}
-        for event in self.router.chat_stream(session_id, message, self._ctx_for(session_id, turn)):
+        extra: dict = {} if cancel is None else {"cancel": cancel}          # the turn's stop token (D215): a router without the keyword is never given it
+        for event in self.router.chat_stream(session_id, message, self._ctx_for(session_id, turn), **extra):
             if event.kind == "started":                    # the first event of every attempt: the first one begins the turn, a later one is a retry
                 if begun:
                     saw_partial = False

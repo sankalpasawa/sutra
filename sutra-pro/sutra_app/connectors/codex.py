@@ -491,8 +491,8 @@ class CodexConnector(ModelConnector):
         return super().call_text(prompt, **kw)
 
     def stream(self, s: SessionState, m: Any, *, timeout_s: Optional[float] = None, partials: bool = False,
-               hooks: Optional[Hooks] = None, folder: str = "") -> Iterator[ConnectorEvent]:
-        return super().stream(s, m, timeout_s=timeout_s, partials=False, hooks=hooks, folder=folder)
+               hooks: Optional[Hooks] = None, folder: str = "", cancel: Any = None) -> Iterator[ConnectorEvent]:
+        return super().stream(s, m, timeout_s=timeout_s, partials=False, hooks=hooks, folder=folder, cancel=cancel)
 
     # ---- one spawn: notices before the first event, the rollout quota after the last --------------------------------------------
     def _spawn(self, plan: TurnPlan, hooks: Hooks, box: dict) -> Iterator[ConnectorEvent]:

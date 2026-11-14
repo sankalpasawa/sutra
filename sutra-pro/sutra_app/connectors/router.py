@@ -36,6 +36,7 @@ from typing import Any, Callable, Iterator, Mapping, Optional, Protocol, Sequenc
 from sutra_app.engine.port import Allowance, CallTag, CompletionRequest, CompletionResult
 
 from .base import ModelConnector, Hooks, CallInfo, CallRecord, prompted_prompt
+from .cancel import CancelToken
 from .errors import (
     CallCancelledError, ConnectorError, EnvelopeExceededError, InvalidJsonError, InvalidRequestError, NoProviderError,
     SessionLostError, StructuredError,
@@ -194,6 +195,7 @@ class _Request(Hooks):
         self.last_native = False
         self.row: Optional[UsageIn] = None
         self._held: list[threading.Semaphore] = []
+        self.cancel: Optional[CancelToken] = None     # a chat turn's stop token (D215); None for every other request
 
     # ---- the gate ---------------------------------------------------------------------------------------------------------
     def _exceeded(self, limit: str, message: str) -> EnvelopeExceededError:
@@ -337,6 +339,7 @@ class Router:
         self._chat_busy: set[str] = set()
         self._chat_stop_early: set[str] = set()        # a Stop that arrived before the turn's process was registered
         self._chat_active: dict[str, tuple[ModelConnector, SessionState]] = {}
+        self._chat_tokens: dict[str, CancelToken] = {}  # the stop token of each running chat turn that has one (D215)
         self._pins: dict[str, str] = {}
         self.choice_source: Optional[Callable[[str], Optional[str]]] = None      # session id -> the owner's persisted provider choice (ABS-8)
         self.agent_pick: Optional[Callable[[CallTag], Optional[Pick]]] = None    # call tag -> the owner's pick for that agent (D131); the engine's capability sets it
@@ -619,6 +622,7 @@ class Router:
             tries = 0
             while True:
                 self._reject_closed()
+                self._check_cancel(state, provider)
                 state.check_gate()
                 tries += 1
                 try:
@@ -630,7 +634,7 @@ class Router:
                         state.check_gate()                         # no point waiting for a retry the envelope will refuse
                         delay = plan.resolved.retry_delay(tries - 1)
                         if delay > 0:
-                            self._sleep(delay + self._rng())
+                            self._wait(state, delay + self._rng(), provider)
                         continue
                     if self._may_fall_back(err, plan.resolved) and index + 1 < len(order):
                         state.failures.append((provider, err))
@@ -639,6 +643,25 @@ class Router:
                 state.note = self._independence_note(state, provider, self._with_pick_note(state, plan, provider, self._note(state.failures, provider)))
                 return result
         raise AssertionError("unreachable: the last provider returns or raises")       # pragma: no cover
+
+    @staticmethod
+    def _check_cancel(state: "_Request", provider: Optional[str] = None) -> None:
+        if state.cancel is not None and state.cancel.requested:
+            raise CallCancelledError("the turn was stopped", provider=provider)
+
+    def _wait(self, state: "_Request", seconds: float, provider: Optional[str] = None) -> None:
+        """The back-off between two attempts. With a stop token the wait IS the token's wait, so Stop ends it at once (D215); the injected `sleep`
+        of a test is still what a token-less request uses, and what a token request uses when one was injected."""
+        token = state.cancel
+        if token is None:
+            self._sleep(seconds)
+            return
+        if self._sleep is time.sleep:
+            token.wait(seconds)
+        else:
+            self._check_cancel(state, provider)
+            self._sleep(seconds)
+        self._check_cancel(state, provider)
 
     @staticmethod
     def _consume(gen: Iterator[Any]) -> Any:
@@ -845,16 +868,25 @@ class Router:
         assert result is not None
         return result
 
-    def chat_stream(self, session_id: str, m: Message, ctx: Optional[RouteContext] = None) -> Iterator[ConnectorEvent]:
-        """The events of one turn; the last one is `turn_done` with `data["result"]`. Errors surface while iterating."""
-        return self._chat(session_id, m, ctx or RouteContext(), partials=True)
+    def chat_stream(self, session_id: str, m: Message, ctx: Optional[RouteContext] = None, cancel: Optional[CancelToken] = None) -> Iterator[ConnectorEvent]:
+        """The events of one turn; the last one is `turn_done` with `data["result"]`. Errors surface while iterating. `cancel` is the turn's stop
+        token (D215): requested at any moment, it ends the turn wherever it is (setup, back-off wait, before the spawn, the process itself)."""
+        return self._chat(session_id, m, ctx or RouteContext(), partials=True, cancel=cancel)
 
     def chat_stop(self, session_id: str) -> bool:
+        """Stop the turn of this chat. True iff a turn is running (never False just because its process is not tracked yet). For a turn that has a
+        stop token the token is requested first and then the bound process runs the cancel ladder (this call blocks for it; the HTTP route runs it in
+        the background)."""
         with self._lock:
+            token = self._chat_tokens.get(session_id)
             active = self._chat_active.get(session_id)
-            if active is None and session_id in self._chat_busy:
+            if token is None and active is None and session_id in self._chat_busy:
                 self._chat_stop_early.add(session_id)        # the turn is being set up: it ends before any process starts
                 return True
+        if token is not None:
+            token.request()
+            token.cancel_bound()
+            return True
         return False if active is None else active[0].stop(active[1])
 
     def chat_pin(self, session_id: str, provider: Optional[str]) -> None:
@@ -872,24 +904,29 @@ class Router:
             stored.pinned = provider        # type: ignore[assignment]
             save_session_state(stored)
 
-    def _chat(self, session_id: str, m: Message, ctx: RouteContext, *, partials: bool) -> Iterator[ConnectorEvent]:
+    def _chat(self, session_id: str, m: Message, ctx: RouteContext, *, partials: bool, cancel: Optional[CancelToken] = None) -> Iterator[ConnectorEvent]:
         sid = session_id
         self._workdir(sid)
         with self._lock:
             if sid in self._chat_busy:
                 raise InvalidRequestError(f"session {sid} is already running a turn", detail={"busy": True})
             self._chat_busy.add(sid)
-            self._chat_stop_early.discard(sid)
+            if cancel is None:
+                self._chat_stop_early.discard(sid)          # a token caller's Stop lives in its token, which this entry cannot erase
+            else:
+                self._chat_tokens[sid] = cancel
         try:
             ctx = ctx.model_copy(update={"session_id": sid})
             req = AskRequest(user=m.text, ctx=ctx, kind="text", images=list(m.images))
             resolved = self.policy.resolve(req)
             state = _Request(self, ctx, resolved, kind="chat", purpose="chat")
+            state.cancel = cancel
             ok, failure = False, None
             try:
                 if m.role != "user":
                     raise InvalidRequestError("a chat turn is sent as a user message")
                 self._reject_closed()
+                self._check_cancel(state)
                 self._check_images(m.images)
                 stored = load_session_state(self._workdir(sid))
                 plan = self._plan(resolved, req, pinned=stored.pinned if stored is not None else self._pins.get(sid))
@@ -910,6 +947,8 @@ class Router:
             with self._lock:
                 self._chat_busy.discard(sid)
                 self._chat_stop_early.discard(sid)
+                if cancel is not None and self._chat_tokens.get(sid) is cancel:
+                    del self._chat_tokens[sid]
 
     def _read_system(self, workdir: Path) -> str:
         try:
@@ -953,6 +992,7 @@ class Router:
         lost = False
         folder = self.chat_folder()            # the working folder of THIS turn (a change applies to the next message)
         for round_no in (1, 2):
+            self._check_cancel(state, provider)
             old = load_session_state(self._workdir(sid))
             session: Optional[SessionState] = None
             text, replaces = m.text, False
@@ -976,9 +1016,11 @@ class Router:
             if stopped_early:
                 raise CallCancelledError("the turn was stopped before it started", provider=provider)
             turn: Optional[TurnResult] = None
+            token_kw: dict[str, Any] = {} if state.cancel is None else {"cancel": state.cancel}
             try:
+                self._check_cancel(state, provider)
                 for event in connector.stream(session, Message(role="user", text=text, images=list(m.images)),
-                                              timeout_s=state.timeout_s(), partials=partials, hooks=state, folder=folder):
+                                              timeout_s=state.timeout_s(), partials=partials, hooks=state, folder=folder, **token_kw):
                     if event.kind == "turn_done":
                         turn = TurnResult.model_validate(event.data["result"])
                     else:
