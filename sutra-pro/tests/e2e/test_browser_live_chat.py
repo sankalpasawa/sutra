@@ -299,9 +299,12 @@ def test_stop_cancels_the_process_and_what_is_shown_is_what_is_stored(make, brow
     home(browser, live)
     ask(browser, "Write at length")
     browser.wait_for("(() => { const s = document.querySelector('#smsgs .clive'); return !!s && s.querySelector('.cl-text') && s.querySelector('.cl-text').textContent.length > 60; })()", timeout=30)
+    # the process can be gone within a frame or two of the press, so "Stopping" is caught by watching the status node change, not by polling for it
+    browser.js("""(() => { window.__states = []; new MutationObserver(() => { const e = document.querySelector('#smsgs .clive .cl-state'); const t = e ? e.textContent : '';
+      if (window.__states[window.__states.length - 1] !== t) window.__states.push(t); }).observe(document.getElementById('smsgs'), {subtree: true, childList: true, characterData: true, attributes: true}); })()""")
     t0 = time.time()
     browser.click("#smsgs .clive [data-act=composer-stop]")
-    browser.wait_for("document.querySelector('#smsgs .clive .cl-state') && document.querySelector('#smsgs .clive .cl-state').textContent === 'Stopping'", timeout=5)
+    browser.wait_for("window.__states.includes('Stopping')", timeout=5)
     assert time.time() - t0 < 3, "Stopping shows at once"
     browser.wait_for("document.querySelector('#smsgs .clive').dataset.state === 'stopped' || document.querySelector('#smsgs .clive').dataset.state === 'ok'", timeout=30)
     shown = browser.js("document.querySelector('#smsgs .clive .cl-text').textContent")
