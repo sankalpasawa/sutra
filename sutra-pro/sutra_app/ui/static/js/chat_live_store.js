@@ -80,7 +80,7 @@
     let blocks = turn.blocks;
     let i = findBlock(blocks, id);
     if (ev.type === "block.start") {
-      const fresh = newBlock(id, {type: ["text", "thinking", "tool_use"].includes(p.blockType) ? p.blockType : "text", kind: p.kind || "other", name: p.name, startTs: ev.ts});
+      const fresh = newBlock(id, {type: p.blockType !== "" ? p.blockType : "text", kind: p.kind || "other", name: p.name, startTs: ev.ts});          // a type this page does not know is kept: the view draws it as a plain line
       if (i >= 0) blocks = replaceAt(blocks, i, Object.assign({}, blocks[i], {type: fresh.type, kind: fresh.kind, name: fresh.name || blocks[i].name}));
       else blocks = blocks.length >= KEEP_BLOCKS ? blocks : blocks.concat([fresh]);
       return Object.assign({}, turn, {blocks});

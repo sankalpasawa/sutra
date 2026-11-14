@@ -1,6 +1,6 @@
 # Streaming chat: architecture
 
-Status: revision 2 of the design, with the backend packages STR-1 to STR-7 built (see "Backend implementation notes" below; the client packages STR-8 to STR-14 are not). Date: 2026-11-14. Input: `analysis.md` (same folder; its section numbers and RC ids are used here). Paths are relative to `sutra-pro/sutra_app` unless noted. Decisions: D201 to D222 in `docs/DECISIONS.md` (D201 to D214 revised in place, D215 to D222 new). Work packages are STR-1 to STR-14 (see the last section).
+Status: revision 2 of the design, with the backend packages STR-1 to STR-7 and the client packages STR-8 to STR-14 built (see "Backend implementation notes" and "Client implementation notes" below). Date: 2026-11-14. Input: `analysis.md` (same folder; its section numbers and RC ids are used here). Paths are relative to `sutra-pro/sutra_app` unless noted. Decisions: D201 to D222 in `docs/DECISIONS.md` (D201 to D214 revised in place, D215 to D222 new). Work packages are STR-1 to STR-14 (see the last section).
 
 Product goal: the chat feels instant, fluid, informative and real. Real means: every pixel of live text comes from a provider byte, every activity line from a provider or router event, nothing is invented, Stop really stops the process group, and a provider that cannot stream is labelled as such.
 
@@ -67,7 +67,27 @@ What was built, and where it differs from revision 2 because the real capture or
 | Recovery | "owner lines with no reply of any attempt" | checkpoints first (a retry whose first try has a reply is recovered under its own attempt), then owner lines with no reply | A retry that crashes is otherwise never marked |
 | Codex | `item.started`, `item.updated` | `item.started` (command text present) and `item.completed` (exit code, capped output); `item.updated` was never seen and is ignored | STR-1 capture |
 
-Not built here, by design of this stage: the client (STR-8 to STR-13), the default of `SUTRA_LIVE_V1` (off until STR-14), anything on Windows, the real-provider checks beyond the STR-1 capture and the fake-CLI end-to-end tests.
+Not built at that stage: the client (STR-8 to STR-14, built later: see below), anything on Windows, the real-provider checks beyond the STR-1 capture and the fake-CLI end-to-end tests.
+
+## Client implementation notes (STR-8 to STR-14)
+
+What was built, and where it differs from the Client table above because the code or the browser said otherwise. Decisions D227 to D235 record them.
+
+| Topic | The design said | What is built | Why |
+|---|---|---|---|
+| Files | `chat_live_events.js`, `chat_live_store.js`, `chat_live_view.js`, `chat_live_activity.js` | the same four, plus `chat_live_client.js` (snapshot, reconnect, polling, the clock, cleanup) | the composer needed one place for the network side; the reducer stays pure. D227 |
+| Transport | the page's own `SutraEvents` handle | the same: an EventSource, so the browser frames the bytes; the intake judges each whole frame (de-duplicate, gaps, text offsets in code points, snapshot catch-up). No second SSE parser | `chat.live` has SSE id 0, so there is no byte cursor to resume from; the cursor is the `seq` of the snapshot. D227 |
+| Composer | `state().turn` is a projection of the store | opt-in: `create({live: true})` (the pages pass it); without it every older caller and test sees the composer it had (the 43 older composer tests pass unmodified) | twenty tests assign and compare the plain turn object. D228 |
+| The reply | a keyed list of block nodes in the transcript | one shell per reply, key `turn:<owner line>:<try>`, html constant per key, painted by `ChatLiveView` from a live or a stored model; status and actions in one row under the blocks | the stored message must take the live node over without a swap, and nothing above the footer may move at settle. D229 |
+| Text | `Fluid.paintStream` per block | `Fluid.paintText`: segments (text and fences) reconciled; a fence is one `<pre>` kept through settle; highlight once, on settle | a fuzz of 300 random cuts found every case where the first version recreated a fence. D230 |
+| AI workers | read through `fromPartial` (D221) | unchanged `AgentChats` live row; `fromPartial` serves the direct chat's flag-off path only | the worker row has a tool line and a raw-JSON rule the adapter would lose. D235 |
+| Retry | `superseded` read from the server | also worked out on the page from the rows it has, because the page never re-reads old rows | a first try stayed uncollapsed until a reload. D233 |
+| Label clock | one label | a stable state label (announced) and a clock (`aria-hidden`) | a number that changes every second must not be read out every second. D231 |
+| Bus | not mentioned | `Event.data` keeps its white space (`Value` stripped every string) | the browser test found "aprice in rupees" on the wire. D232 |
+| Node tests | jsdom | none in the repo: `tests/ui/js/helpers/fake_dom.js`, a small DOM that counts every node it creates | "no node recreated" needs a count, not a look |
+
+Verified in a real Chrome (17 scenarios, with the fake CLIs replaying JSONL built from the real capture): normal, long (table, list, fence), tool, multi-stage with a reload mid-turn, cancel (the text shown equals the text stored), a network drop (no word repeated or lost, one reply), a turn that ended while the stream was down, error with Retry, backoff with Stop during the wait, an existing conversation, the flag off, the node panel, reduced motion, phone width, scrolling (follow, park, the pill, return), the reply item not moving at settle. Not run: the real-provider check (`tests/e2e/test_real_provider_live_chat.py`, opt-in, costs plan usage), anything on Windows.
+
 
 ## Context
 

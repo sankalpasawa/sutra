@@ -554,3 +554,24 @@ test("the reply is signed as the page signs the stored one (Sutra), and the prov
   LV.paint(done, stored, r.deps());
   assert.equal(q(done, ".cl-who").textContent, "Sutra");
 });
+
+test("register: a new kind of block is drawn by the painter that was registered, an unknown one as one plain line of text (never html), and a bad registration is refused", () => {
+  const r = rig();
+  assert.equal(LV.register("", {make: () => null, paint: () => null}), false);
+  assert.equal(LV.register("image", {make: 1}), false);
+  assert.equal(LV.register("citation", {
+    make: doc => { const n = doc.createElement("div"); n.className = "cl-block cl-cite"; return n; },
+    paint: (node, b) => { node.textContent = "Source: " + b.title; },
+  }), true);
+  r.begin();
+  r.wire("turn.started", {provider: "claude"});
+  r.wire("block.start", {type: "citation", kind: "other", name: ""}, "b1");
+  r.wire("block.update", {title: "notes.txt"}, "b1");
+  r.wire("block.start", {type: "mystery", kind: "other", name: "<b>x</b>"}, "b2");
+  const shell = r.shell();
+  r.paintLive(shell);
+  assert.equal(q(shell, ".cl-cite").textContent, "Source: notes.txt");
+  assert.equal(q(shell, ".cl-other").textContent, "<b>x</b>");
+  assert.equal(qa(shell, "b").length, 0);
+  assert.deepEqual(qa(shell, ".cl-block").map(n => n.getAttribute("data-block")), ["b1", "b2"]);
+});

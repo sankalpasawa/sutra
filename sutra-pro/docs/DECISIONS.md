@@ -1661,3 +1661,10 @@ Decided by Claude on its own, on the dates shown. The owner can veto any of them
 - Why: motion that is not attached to an arrival is noise, and a smooth scroll to a target that keeps moving always lags; the existing intent machine of `chat_scroll.js` already told following from reading, so the reply only needed to count as one growing item.
 - Rejected: animating every text piece (80 paints a second for nothing), a typewriter for a provider that did not stream (it would claim a stream that did not happen), a count of "N new pieces" on the pill.
 - Diagram: label "motion on arrival; keep the reader's place", pill on band:EXPERIENCE.
+
+## D235 — The live chat is on by default; `SUTRA_LIVE_V1=0` goes back
+- Sources: `config.py` (`live_v1`), `docs/ENVIRONMENT.md`, D214, the browser tests of `tests/e2e/test_browser_live_chat.py` (17 scenarios on and off) and the unchanged older ones.
+- Decided: `live_v1` defaults to `True`. Off is the legacy `chat.partial` path with the same reply node drawn from it (no tool lines, no claim of streaming); the checkpoint table is ignored; the ref and `ChatMessageOut` changes read the same either way. The AI-worker chat keeps its own live row (`AgentChats`, fed by `chat.partial`): its tool line and "writing its reply" rule are unchanged, so it is not read through the adapter after all (D221 is narrowed to the direct chat's flag-off path).
+- Why: every package is built and the eight scenarios pass in a real Chrome with the flag on and off; a switch is the rollback.
+- Rejected: leaving the default off for another release (the legacy row has none of what the owner asked for); removing the legacy path now (rollback should stay a setting).
+- Diagram: label "live chat on by default", pill on Chat sessions.

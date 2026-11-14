@@ -13,6 +13,7 @@
      fromMessage(message, deps)  the model of a stored message; deps {ids (stored_order), who, canRetry}
      paint(shell, model, deps)   draw the model into the shell, touching only what changed. deps {render (ChatMarkdown.render), highlight, Fluid}
      supersede(messages)         the rows with `superseded` set on every try that a later try of the same owner line replaced (what the server reads, worked out again by a page that read the first try early)
+     register(type, {make, paint})  add a kind of block (make(doc, block) -> node, paint(node, block, ctx)); an unknown type is drawn as one plain line
      plan(messages, view, deps)  {models, liveItem}: the model of every reply item of the list, and the item of the live turn while no stored message has its key
      sync(host, models, deps)    paint every shell under `host`: models {key: model}
      copyText(shell)             the text of the reply in the shell (what Copy puts on the clipboard)
@@ -159,25 +160,19 @@
   }
 
   /* ---------------------------------------------------------------- blocks */
+  // The kinds of block the view can draw: {make(doc, block) -> node, paint(node, block, ctx)}. text, thinking and tool_use are built in; `register` adds another (an image, a
+  // citation) without touching the painter, and a block of a type nobody registered is drawn as one plain line with its title (never dropped, never as html).
+  const KINDS = {};
+
+  function register(type, spec) {
+    if (typeof type !== "string" || type === "" || !isObj(spec) || typeof spec.make !== "function" || typeof spec.paint !== "function") return false;
+    KINDS[type] = spec;
+    return true;
+  }
+
   function makeBlock(doc, b, cl) {
-    let node;
-    if (b.type === "text") {
-      node = el(doc, "div", "cl-block cl-text");
-      node.appendChild(el(doc, "div", "cl-tx"));
-    } else if (b.type === "thinking") {
-      node = el(doc, "div", "cl-block cl-think");
-      node.appendChild(el(doc, "span", "cl-mark"));
-      node.appendChild(el(doc, "span", "cl-title"));
-      node.appendChild(el(doc, "span", "cl-meta"));
-    } else {
-      node = el(doc, "details", "cl-block cl-tool");
-      const sum = el(doc, "summary", "cl-sum");
-      sum.appendChild(el(doc, "span", "cl-mark"));
-      sum.appendChild(el(doc, "span", "cl-title"));
-      sum.appendChild(el(doc, "span", "cl-meta"));
-      node.appendChild(sum);
-      node.appendChild(el(doc, "div", "cl-detail"));
-    }
+    const kind = KINDS[b.type] || KINDS.other;
+    const node = kind.make(doc, b);
     node.setAttribute("data-block", b.id);
     if (cl.painted) node.classList.add("cl-in");                                       // an arrival enters; what was there when the reply first drew does not
     return node;
@@ -238,6 +233,47 @@
     while (ref) { const next = ref.nextSibling; container.removeChild(ref); ref = next; }
   }
 
+  register("text", {
+    make: doc => { const node = el(doc, "div", "cl-block cl-text"); node.appendChild(el(doc, "div", "cl-tx")); return node; },
+    paint: (node, b, c) => {
+      const writing = c.model.live && b.id === c.lastOpenText && !c.model.stopping && c.model.phase === "running";
+      const tx = node.children[0];
+      const streaming = c.model.live || b.status === "open";
+      c.F.paintText(tx, b.text, {render: c.render, streaming, highlight: c.highlight});
+      if (!streaming) addCopyButtons(tx, c.doc);
+      if (node.classList.contains("cl-writing") !== writing) node.classList.toggle("cl-writing", writing);
+      const empty = b.text === "";
+      if (node.hidden !== empty) node.hidden = empty;
+    },
+  });
+  register("thinking", {
+    make: doc => {
+      const node = el(doc, "div", "cl-block cl-think");
+      node.appendChild(el(doc, "span", "cl-mark"));
+      node.appendChild(el(doc, "span", "cl-title"));
+      node.appendChild(el(doc, "span", "cl-meta"));
+      return node;
+    },
+    paint: (node, b, c) => paintThink(node, b, c.A),
+  });
+  register("tool_use", {
+    make: doc => {
+      const node = el(doc, "details", "cl-block cl-tool");
+      const sum = el(doc, "summary", "cl-sum");
+      sum.appendChild(el(doc, "span", "cl-mark"));
+      sum.appendChild(el(doc, "span", "cl-title"));
+      sum.appendChild(el(doc, "span", "cl-meta"));
+      node.appendChild(sum);
+      node.appendChild(el(doc, "div", "cl-detail"));
+      return node;
+    },
+    paint: (node, b, c) => paintTool(node, b, c.A, c.cl),
+  });
+  register("other", {
+    make: doc => el(doc, "div", "cl-block cl-other"),
+    paint: (node, b) => { const t = clean(b.title) || clean(b.name) || clean(b.type); if (node.textContent !== t) node.textContent = t; },
+  });
+
   function paintBlocks(cl, model, deps, doc) {
     const A = Activity();
     const F = deps.Fluid || FluidOf();
@@ -255,20 +291,7 @@
       if (rec && rec.type !== b.type) { if (rec.node.parentNode) rec.node.parentNode.removeChild(rec.node); cl.nodes.delete(b.id); rec = undefined; }
       if (!rec) { rec = {type: b.type, node: makeBlock(doc, b, cl)}; cl.nodes.set(b.id, rec); }
       const node = rec.node;
-      if (b.type === "text") {
-        const writing = model.live && b.id === lastOpenText && !model.stopping && model.phase === "running";
-        const tx = node.children[0];
-        const streaming = model.live || b.status === "open";
-        F.paintText(tx, b.text, {render, streaming, highlight});
-        if (!streaming) addCopyButtons(tx, doc);
-        if (node.classList.contains("cl-writing") !== writing) node.classList.toggle("cl-writing", writing);
-        const empty = b.text === "";
-        if (node.hidden !== empty) node.hidden = empty;
-      } else if (b.type === "thinking") {
-        paintThink(node, b, A);
-      } else {
-        paintTool(node, b, A, cl);
-      }
+      (KINDS[b.type] || KINDS.other).paint(node, b, {model, A, F, render, highlight, doc, lastOpenText, cl});
       (folded && b.type === "tool_use" ? stepNodes : bodyNodes).push(node);
     });
     for (const [id, rec] of Array.from(cl.nodes.entries())) {
@@ -496,7 +519,7 @@
     return true;
   }
 
-  const ChatLiveView = {keyOf, shellHtml, isReply, fromLive, fromMessage, supersede, plan, paint, sync, copyText, copy, highlight: highlightPre, providerName};
+  const ChatLiveView = {keyOf, shellHtml, isReply, fromLive, fromMessage, supersede, plan, paint, sync, register, copyText, copy, highlight: highlightPre, providerName};
   if (typeof module === "object" && module !== null && module.exports) module.exports = ChatLiveView;
   else root.ChatLiveView = ChatLiveView;
 })(globalThis);

@@ -147,9 +147,9 @@ class Settings(BaseModel):
     max_live: int = Field(12, ge=1, le=256)
     watch_ms: int = Field(400, ge=20, le=10_000)
     live: bool = False
-    # the streaming chat (design D214, D204, D211): `live_v1` switches the direct chat route to the live turn (off: the legacy `chat.partial` path, unchanged);
+    # the streaming chat (design D214, D204, D211, D235): `live_v1` runs the direct chat as a live turn (SUTRA_LIVE_V1=0: the legacy `chat.partial` path, unchanged);
     # the others are the heartbeat after silence, the longest a text piece waits before it is sent, and how often an in-flight turn is checkpointed
-    live_v1: bool = False
+    live_v1: bool = True
     live_heartbeat_s: float = Field(5.0, ge=0.2, le=60, allow_inf_nan=False)
     live_coalesce_ms: int = Field(33, ge=0, le=1000)
     live_checkpoint_s: float = Field(1.5, ge=0.05, le=60, allow_inf_nan=False)

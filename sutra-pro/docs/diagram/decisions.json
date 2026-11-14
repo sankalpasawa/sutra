@@ -1168,5 +1168,10 @@
   "id": "D234",
   "label": "motion on arrival; keep the reader's place",
   "anchor": "band:EXPERIENCE"
+ },
+ {
+  "id": "D235",
+  "label": "live chat on by default",
+  "anchor": "Chat sessions"
  }
 ]
