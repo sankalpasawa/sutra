@@ -575,3 +575,24 @@ test("register: a new kind of block is drawn by the painter that was registered,
   assert.equal(qa(shell, "b").length, 0);
   assert.deepEqual(qa(shell, ".cl-block").map(n => n.getAttribute("data-block")), ["b1", "b2"]);
 });
+
+test("Copy keeps the text blocks of a multi-stage reply apart: a tool or thinking block between two texts gives a blank line, live and stored", () => {
+  const r = rig();
+  r.begin();
+  r.wire("turn.started", {provider: "claude"});
+  r.wire("block.start", {type: "text"}, "b1");
+  delta(r, "Let me check the file.", 0, "b1");
+  r.wire("block.end", {status: "ok"}, "b1");
+  r.wire("block.start", {type: "tool_use", kind: "read", name: "Read"}, "b2");
+  r.wire("block.end", {status: "ok"}, "b2");
+  r.wire("block.start", {type: "text"}, "b3");
+  delta(r, "Found it: the value is alpha.", 0, "b3");
+  const shell = r.shell();
+  r.paintLive(shell);
+  assert.equal(LV.copyText(shell), "Let me check the file.\n\nFound it: the value is alpha.");
+  const stored = r.shell(8, 1);
+  LV.paint(stored, LV.fromMessage({id: 9, role: "agent", kind: "text", turn: 8, ordered: true, state: "ok", text: "x", blocks: [
+    {type: "text", kind: "other", text: "One."}, {type: "text", kind: "other", text: " Two."}, {type: "thinking", text: ""}, {type: "text", kind: "other", text: "Three.\n"},
+    {type: "tool_use", kind: "read", name: "Read", text: "Reading"}, {type: "tool_result", kind: "read", name: "Read", text: "", is_error: false}, {type: "text", kind: "other", text: "Four."}]}, {}), r.deps());
+  assert.equal(LV.copyText(stored), "One. Two.\n\nThree.\n\nFour.");
+});

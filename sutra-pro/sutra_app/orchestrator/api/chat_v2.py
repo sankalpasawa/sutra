@@ -39,6 +39,7 @@ from typing import Annotated, Any
 from fastapi import APIRouter, Depends, Path, Query, Request
 from pydantic import ConfigDict, Field, StringConstraints
 
+from sutra_app.connectors.chat_blocks import join_text
 from sutra_app.connectors.attachments import MAX_BYTES, MAX_PER_MESSAGE, clean_name
 from sutra_app.connectors.chat_models import AttachmentRef, ChatTurnIn
 from sutra_app.connectors.egress import scan
@@ -567,8 +568,11 @@ def _answer_live(services: Any, port: Any, sid: str, user_message_id: int, turn:
             # ending is the stopped one, built from what was shown, never the provider's full text
             raise CallCancelledError("stopped")
         stored = {**done, "blocks": done.get("blocks_ordered") or done.get("blocks") or []}
+        plain = "".join(str(b.get("text") or "") for b in stored["blocks"] if isinstance(b, dict) and b.get("type") == "text")
+        if str(done.get("text") or "") == plain and plain:            # the provider's text is the blocks' text run together: store it as the page draws it, paragraphs apart
+            stored["text"] = join_text((b.get("type") == "text", str(b.get("text") or "")) for b in stored["blocks"] if isinstance(b, dict))
         ids = _post_all(services, sid, finished(user_message_id, stored, attempt, ordered=True, earlier=done.get("earlier")), drop_generation=live.generation_id)
-        live.finish(ids.get(direct_turns.ref_of(user_message_id, "", attempt)) or 0, done)
+        live.finish(ids.get(direct_turns.ref_of(user_message_id, "", attempt)) or 0, {**done, "text": stored["text"]})
     except Exception as exc:                                         # a failed turn is a message, not a lost line
         log.warning("live direct chat turn failed for %s: %s", sid, type(exc).__name__)
         try:

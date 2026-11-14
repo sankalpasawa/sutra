@@ -353,3 +353,13 @@ def test_the_real_codex_turn_becomes_a_command_line_and_a_whole_answer(fixtures)
     ended = [e for e in out if e.kind == "end"]
     assert ended[0].data["status"] == "ok" and ended[-1].data["text"].startswith("The launch checklist")           # the answer arrives whole
     assert not [e for e in out if e.kind == "delta"]
+
+
+def test_join_text_separates_text_blocks_that_a_tool_or_thinking_block_divides_and_nothing_else():
+    from sutra_app.connectors.chat_blocks import join_text
+    assert join_text([(True, "a"), (True, "b")]) == "ab"
+    assert join_text([(True, "a"), (False, ""), (True, "b")]) == "a\n\nb"
+    assert join_text([(True, "a\n"), (False, ""), (True, "b")]) == "a\n\nb"
+    assert join_text([(True, "a\n\n"), (False, ""), (True, "b")]) == "a\n\nb"
+    assert join_text([(False, ""), (True, "a"), (False, "")]) == "a"
+    assert join_text([(True, "a"), (False, ""), (True, ""), (True, "b")]) == "a\n\nb"

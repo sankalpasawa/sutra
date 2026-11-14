@@ -86,6 +86,24 @@ def _cut(text: str, limit: int = LIVE_TEXT_MAX) -> str:
     return text if len(text) <= limit else text[:limit]
 
 
+def join_text(pieces: Any) -> str:
+    """Join the text of a reply's blocks. `pieces` is (is_text, text) in block order. Text blocks that sit next to each other are one run and join as they are; text blocks that a
+    tool or thinking block separates are paragraphs of their own and get a blank line between them (so the last word before a tool and the first after it are never fused)."""
+    out = ""
+    gap = False
+    for is_text, text in pieces:
+        if not is_text:
+            gap = True
+            continue
+        if not text:
+            continue
+        if out and gap:
+            out += "\n" * max(0, 2 - (len(out) - len(out.rstrip("\n"))))
+        out += text
+        gap = False
+    return out
+
+
 class BlockAccumulator:
     def __init__(self, *, folder: str = "", provider: str = "claude", redact: Optional[Callable[[str], str]] = None,
                  text_filter: Optional[Callable[[], Any]] = None, max_elements: int = MAX_ELEMENTS) -> None:
@@ -139,8 +157,9 @@ class BlockAccumulator:
         return self._message in self._saw_delta
 
     def text(self) -> str:
-        """The text of the final attempt as it was emitted (what a stored reply's `text` is built from when the provider's own result is not used)."""
-        return "".join("".join(b.parts) for b in self._blocks if b.type == "text")
+        """The text of the final attempt as it was emitted (what a stored reply's `text` is built from when the provider's own result is not used). Text blocks that a tool or
+        thinking block separates are joined with a blank line, as the page draws them as separate paragraphs (`join_text`)."""
+        return join_text((b.type == "text", "".join(b.parts)) for b in self._blocks)
 
     # ---- feeding -----------------------------------------------------------------------------------------------------------------
     def feed(self, event: ConnectorEvent) -> list[BlockEvent]:

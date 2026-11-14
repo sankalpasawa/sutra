@@ -573,3 +573,25 @@ def test_the_chat_is_free_before_a_slow_ticker_close_returns(live, monkeypatch):
     post(client, sid, client_id=CID)
     assert done(chats, sid, 2)
     assert wait_for(lambda: bool(freed), 5) and freed == [True]
+
+
+class GluedPort(LivePort):
+    """A provider whose result text is its text blocks run together (what a CLI's final result can look like)."""
+
+    def stream(self, sid, turn, *, cancel=None, acc=None):
+        for event in super().stream(sid, turn, cancel=cancel, acc=acc):
+            if event.kind == "turn_done":
+                event.data["text"] = "".join(b["text"] for b in event.data["blocks_ordered"] if b["type"] == "text")
+            yield event
+
+
+@pytest.mark.parametrize("glued", [False, True])
+def test_the_stored_text_of_a_reply_with_a_tool_in_the_middle_keeps_its_paragraphs_apart(live, glued):
+    client, world, chats, bus, services = live
+    sid = world.session_of["web"]
+    services.chat_port = (GluedPort if glued else LivePort)(attempt(), started(), text("Let me check the file."), tool(), text("Found it: the value is alpha."))
+    post(client, sid, client_id=CID)
+    assert done(chats, sid, 2)
+    reply = chats.messages(sid)[1]
+    assert reply.text == "Let me check the file.\n\nFound it: the value is alpha."
+    assert services.seen[-1]["payload"]["text_len"] == len(reply.text)

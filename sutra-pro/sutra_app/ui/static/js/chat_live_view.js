@@ -56,8 +56,20 @@
     (((str(m.kind) || "text") === "text") || (((str(m.kind) === "note") || (str(m.kind) === "error")) && m.ordered === true && Array.isArray(m.blocks) && m.blocks.length > 0));
 
   /* ---------------------------------------------------------------- models */
+  // The text of a reply as Copy and search read it. Text blocks next to each other are one run; text blocks that a tool or thinking block divides are separate paragraphs on screen
+  // and get a blank line here, so the last word before a tool and the first after it are never fused (the server stores its text the same way: chat_blocks.join_text).
   function textOfBlocks(blocks) {
-    return blocks.filter(b => b.type === "text").map(b => b.text).join("");
+    let out = "";
+    let gap = false;
+    blocks.forEach(b => {
+      if (b.type !== "text") { gap = true; return; }
+      const t = str(b.text);
+      if (t === "") return;
+      if (out !== "" && gap) out += "\n".repeat(Math.max(0, 2 - (out.length - out.replace(/\n+$/, "").length)));
+      out += t;
+      gap = false;
+    });
+    return out;
   }
 
   function fromLive(view, deps) {
