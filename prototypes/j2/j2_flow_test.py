@@ -31,6 +31,7 @@ F. J2_FORCE_AUDIT_FAIL=<item>: a forced cycle-1 failure that agents can't tell f
 Runs are written to a temp folder (J2_RUNS_DIR), never the real runs/; each ended run has summary.json. Memory is off (J2_MEMORY=0) except in
 the memory test, which uses its own lessons file.
 """
+import copy
 import inspect
 import json
 import os
@@ -4755,6 +4756,66 @@ def real_run_order():
 
 
 @with_folder_type
+def grant_and_question_kind():
+    """runs/release/j2-20261114-130736: Priority's GRANT echo dropped real_run and set covers [1], and the workflow
+    registered that way. Now _carry registers Adaptation's proposal with only Priority's fields (cost, estimate,
+    envelope) from the echo. J2.g questions carry Identity's kind: Decide for me answers only decision questions; a
+    fact waits for the Requester, and a fact about a real run's item is answered by code from receipts.jsonl."""
+    real = tempfile.mkdtemp(prefix="j2-real-")
+    try:
+        crit = ["the script is built and its test passes", f"the script has been run on {real}"]
+        run = j2.J2Run()
+        run.set_output(FT)
+        run.request = f"Build a script and run it on {real}"
+        run.goal, run.budget = {"statement": "x", "done_when": list(crit)}, 300
+        atom = {"id": "a1", "goal": "build go.py", "context": ["charter item 1"], "constraints": ["only the folder"],
+                "how": {"kind": "AI", "agent": "Builder", "steps": "write go.py"},
+                "expected_output": [{"text": "go.py exists", "kind": "file", "target": "go.py"}],
+                "verification": [{"text": "go.py exists", "type": "file-exists", "target": "go.py", "expect": True}]}
+        prop = {"id": "build-go", "name": "Builder", "goal_gap": "x", "outputs": ["go.py"], "completion_check": "z",
+                "covers": [1], "parts": ["agent_file"], "atoms": [atom], "estimated_resources": {"money": 20},
+                "real_run": {"command": ["python3", "go.py", real], "folder": real, "why": "x", "checks": [2]}}
+        run.proposed_fields = {"build-go": copy.deepcopy(prop), "Builder": copy.deepcopy(prop)}
+        env = {"money_limit": 25, "model_call_limit": 3, "time_limit_minutes": 5, "retry_limit": 1, "stop_loss": "s"}
+        echo = {**{k: v for k, v in prop.items() if k != "real_run"}, "covers": [1, 2], "goal_gap": "changed",
+                "envelope": env, "cost": 25}
+        carried = run._carry([echo])[0]
+        assert carried == {**prop, "envelope": env, "cost": 25}, carried
+        reg, refused, _ = run._register([carried])
+        assert reg and not refused, refused
+        w = run.workflows[0]
+        assert w["covers"] == [1] and w["real_run"]["checks"] == [2] and w["real_run"]["folder"] == real, w
+        # question kinds: Identity sets them; Decide for me answers only decisions
+        qs = j2.clean_questions([{"question": "Which layout?", "kind": "decision"}, {"question": "Phone?", "kind": "fact", "item": 1},
+                                 "No kind"])
+        assert [q.get("kind") for q in qs] == ["decision", "fact", None] and qs[1]["item"] == 1, qs
+        run.auto = True
+        for kinds, answers in ((["decision"], True), (["decision", "fact"], False), ([None], False)):
+            run.paused = {"kind": "fact", "msg": 0, "questions": [{"question": "q", "options": [], **({"kind": k} if k else {})}
+                                                                   for k in kinds]}
+            assert bool(run._auto_pick()) is answers, (kinds, run._auto_pick())
+        assert run._fact_question({"item": 1, "needs_requester_fact": "the phone number"})["kind"] == "fact"
+        # a fact question about the real run's item is answered by code at J2.h, not asked
+        run.paused = None
+        run.workflows[0]["status"] = "done"
+        res = [{"id": f"F-{i}", "item": i, "criterion": c, "pass": False, "verdict": "NEEDS_REVISION", "note": ""}
+               for i, c in enumerate(crit, 1)]
+        run.audits = [{"output": FT, "results": res, "rubric": [], "conditions": [], "mechanical": {"available": True},
+                       "after_real_run": run._real_run_items(True)}]
+        run.post("user", "go")
+        run.call = lambda role, *a, **k: {"say": "x", "done": False, "needs_requester": True, "next": "user",
+                                          "requester_questions": [{"question": "Has the script been run?", "kind": "fact", "item": 2}]}
+        run._identity_audit({})
+        assert not (run.paused and run.paused["kind"] == "fact"), run.paused
+        assert any(m["text"].startswith("Real run, answered by code from receipts.jsonl: item 2: none yet") for m in run.chat)
+    finally:
+        shutil.rmtree(real, ignore_errors=True)
+    print("grant and question kind: a grant that drops real_run and changes covers registers the workflow as proposed, "
+          "with Priority's price and envelope; Decide for me answers only decision questions; a fact about a real run "
+          "is answered by code ok")
+
+
+@with_folder_type
 def folder_run_reused():
     """remove-restrictions step 6: a folder run's workflows record their outputs from the run folder (<folder>/<file>),
     so j2_template_lib.run_template_from_run finds the type they belong to; the run is saved as a run template; a
@@ -5920,6 +5981,14 @@ BREW_FACTS = (" Users: coffee lovers and office staff. Problem: people can't see
               "features: see the menu with prices, pre-order a coffee, find the shop, read the opening hours. "
               "Constraints: one page only. Success: 30 pre-orders per week.")
 DESIGN_BRIEF = BREW_LAB + " Write the design docs first." + BREW_FACTS
+# Prompt changes made on purpose after the checkpoints (new text, the text before): plain_unchanged maps them back
+# before hashing, so every other prompt is still compared character for character. J2.g question kind and item:
+INTENDED_PROMPT_CHANGES = [
+    ('"requester_questions": [{"question": str, "kind": "decision"|"fact", "item": int|null}]', '"requester_questions": [str]'),
+    ("Give each question its kind: decision when it asks them to choose between ways to go on (Decide for me may pick a "
+     "typical choice), fact when it asks for something only they know or that happened (only they, or code from its "
+     "records, can answer it); and item: the done-when item number it is about, or null. ", ""),
+]
 PLAIN_CHECKPOINT = "94bffd0"   # plain_unchanged compares the working tree with this commit; move it when the plain path changes on purpose
 CHECKPOINT = "0657d93"         # the commit before the design-document work: a plain brief must behave exactly as there
 
@@ -6199,7 +6268,11 @@ def plain_unchanged(checkpoint=None, slim=None, board=None, generic=False):
              "r.user_says(sys.stdin.read())\n"
              "while r.status != 'waiting': time.sleep(0.02)\n"
              "rows = [json.loads(l) for l in open(os.path.join(r.dir, 'calls.jsonl'), encoding='utf-8')]\n"
-             "h = lambda t: hashlib.sha256(re.sub(r'\\d{4}-\\d\\d-\\d\\dT\\d\\d:\\d\\d:\\d\\d', 'T', t).encode()).hexdigest()[:12]\n"
+             f"CH = {INTENDED_PROMPT_CHANGES!r}\n"
+             "def old(t):\n"
+             "    for a, b in CH: t = t.replace(a, b)\n"
+             "    return t\n"
+             "h = lambda t: hashlib.sha256(re.sub(r'\\d{4}-\\d\\d-\\d\\dT\\d\\d:\\d\\d:\\d\\d', 'T', old(t)).encode()).hexdigest()[:12]\n"
              "print(json.dumps({'outcome': r.outcome, 'spent': r.spent, 'site': h(r.sites[-1]), 'sections': h(json.dumps(r.sections, sort_keys=True)),\n"
              "  'calls': [[c['fn'], h(c['system']), h(c['prompt'])] for c in rows],\n"
              "  'workflows': h(json.dumps([{k: v for k, v in w.items() if k not in ('t',)} for w in r.workflows], sort_keys=True))}))\n")
@@ -8371,7 +8444,7 @@ SAVED_RUNS_GOLDEN = {
 # Re-recorded 2026-11-11 (DOC_RUN_GOLDEN only) for agents/j2/adaptation.md's proposal block naming kind and sections
 # (Adaptation's system prompt). With adaptation.md as it was: {"prd": "2c2d3402a6ca", "design docs": "94c750a4fcb0",
 # "docs then site": "6b28bcb5d3ff"}.
-DOC_RUN_GOLDEN = {"prd": "68deba040a32", "design docs": "7b76e60d93cc", "docs then site": "ec32b20eff08"}
+DOC_RUN_GOLDEN = {"prd": "3702ded7b086", "design docs": "817f983a4c24", "docs then site": "085dbbbc169e"}
 DOC_PROMPTS_GOLDEN = {
     "prd.builder": "e971c88e727f", "prd.intake": "56b304946997",
     "prd.charter_fmt": "eedccdf82d84", "prd.atom_rules": "b8a918ef6039", "prd.system": "d09f06fa3181",
@@ -9203,7 +9276,7 @@ def doc_sections_replay():
         assert run.outcome.startswith("Done"), run.outcome
         assert all(f"## {x}" in done(run) for x in HP_SECTIONS) and not refusals(run), refusals(run)
         assert {f["workflow"] for f in fixes(run) if f["kind"] == "carried"} == {w["name"] for w in HP_PROPOSAL}, fixes(run)
-        assert all("sections, kind" in f["detail"] for f in fixes(run) if f["kind"] == "carried"), fixes(run)
+        assert all("sections" in f["detail"] and "kind" in f["detail"] for f in fixes(run) if f["kind"] == "carried"), fixes(run)
         assert [w["sections"] for w in run.workflows[:4]] == [w["sections"] for w in HP_PROPOSAL]
         # 2. the name the run used next cycle, ending in "review", with kind build: written, not Audit's job
         named = copy.deepcopy(HP_PROPOSAL)
@@ -15925,6 +15998,7 @@ if __name__ == "__main__":
             run_for_real()              # remove-restrictions step 7: a real run only on the Requester's exact approval
             real_run_checks()           # step 7 gap: an item only the real run meets is decided by its receipt
             real_run_order()            # the RUN ask without Identity; Decide for me never confirms a real run
+            grant_and_question_kind()   # the grant keeps Adaptation's plan; Decide for me answers decisions only
             folder_run_reused()         # remove-restrictions step 6: a folder run saved and reused, not rebuilt
             builder_context_trim()      # a real run's builder prompt: no chat, no other workflows
             builder_inputs()            # depended-on sections in full, cut inputs noticed and logged

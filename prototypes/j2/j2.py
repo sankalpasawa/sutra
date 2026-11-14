@@ -1965,8 +1965,10 @@ def clean_questions(raw):
             budget = [max(0, as_int(o.get("budget_increase"))) if isinstance(o, dict) else 0 for o in raw_opts]
         else:
             q, opts, budget = str(x or "").strip(), [], []
-        if q:
-            out.append({"question": q, "options": opts, **({"budget": budget} if any(budget) else {})})
+        if q:      # kind (decision|fact) and item: set by the agent that asks; Decide for me reads kind
+            out.append({"question": q, "options": opts, **({"budget": budget} if any(budget) else {}),
+                        **({"kind": x["kind"]} if isinstance(x, dict) and x.get("kind") in ("decision", "fact") else {}),
+                        **({"item": as_int(x["item"])} if isinstance(x, dict) and as_int(x.get("item")) else {})})
     return out
 
 
@@ -4489,6 +4491,8 @@ class J2Run:
         p = self.paused
         if not (self.auto and p) or p["kind"] in AUTO_ASK or len(self.auto_log) >= AUTO_CAP:
             return None
+        if p["kind"] == "fact" and not all(q.get("kind") == "decision" for q in p.get("questions") or []):
+            return None      # J2.g: only a decision is Decide for me's; a fact waits for the Requester
         return self._auto_choice(p)
 
     def _auto_choice(self, p):
@@ -5888,7 +5892,8 @@ class J2Run:
         if self.doc and NUMBER_ASK.search(ask) and not re.search(r"over what time|window", ask, re.I):
             ask += ", and over what time it is measured (for example per week or per term)"   # one question, P8
         return {"question": ask + (f" (checklist item {n}: {short(text)})" if n else "")
-                + ". If you can't give it yet, say so and it's marked to be confirmed.", "options": []}
+                + ". If you can't give it yet, say so and it's marked to be confirmed.", "options": [], "kind": "fact",
+                **({"item": n} if n else {})}
 
     def _no_at(self, i):
         """The run-long number of the item at current position i (None when there is no such item)."""
@@ -6237,7 +6242,8 @@ class J2Run:
                                "clause": "done_when", "done": False, "needs_requester": bool(facts),
                                "requester_questions": [], "next": "Requester" if facts else "Adaptation"})
         r = self.call("identity", '{' + REPLY_FMT + ', "clause": str, "done": bool, "needs_requester": bool, '
-                      '"requester_questions": [str], "instruction_to_adaptation": str|null, ' + DECIDE_FMT + ', '
+                      '"requester_questions": [{"question": str, "kind": "decision"|"fact", "item": int|null}], '
+                      '"instruction_to_adaptation": str|null, ' + DECIDE_FMT + ', '
                       + next_field(("user", "adaptation"), "Requester when done=true or needs_requester=true; "
                                    "Adaptation for rework") + "}",
                       f"AUDIT'S FINDINGS (all, in full): {json.dumps(findings, ensure_ascii=False)}\n"
@@ -6249,7 +6255,11 @@ class J2Run:
                       "link, every necessary condition met, nothing to be confirmed. Code checks this. Workable: declare done=true and tell the Requester "
                       "the goal is reached. Not workable: it goes back to Adaptation (J2.b); give the instruction. If a "
                       "fix needs a fact only the Requester knows (facts above, or any you see), set needs_requester=true "
-                      "and ask for it in requester_questions; the run pauses until they answer. " + DECIDE_RULE, mock,
+                      "and ask for it in requester_questions; the run pauses until they answer. Give each question its kind: "
+                      "decision when it asks them to choose between ways to go on (Decide for me may pick a typical "
+                      "choice), fact when it asks for something only they know or that happened (only they, or code "
+                      "from its records, can answer it); and item: the done-when item number it is about, or null. "
+                      + DECIDE_RULE, mock,
                       defaults=(self._page_ready(), "") if not fails else
                       ("We're still working on your site.", "Not workable yet: rework the failing findings."))
         if not fails and r.get("done"):
@@ -6264,6 +6274,10 @@ class J2Run:
             return self._identity_limit({"reason": "Identity: the site can't be finished as asked without your "
                                                    "decision.", "budget_needed": as_int(r.get("budget_needed")) or None})
         questions = clean_questions(r.get("requester_questions"))
+        if code_q := [q for q in questions if q.get("kind") == "fact" and q.get("item") in rr]:
+            questions = [q for q in questions if q not in code_q]      # whether a real run happened: code's answer
+            self.post("system", "Real run, answered by code from receipts.jsonl: " + "; ".join(
+                f"item {a['item']}: {a['receipt']}" for a in map(self._real_run_answer, sorted({q["item"] for q in code_q}))) + ".")
         questions += [self._fact_question(x) for x in facts]
         if questions and (facts or r.get("needs_requester")):
             return self._ask_user(r.get("to_requester") or r.get("say", ""), questions, "fact",
@@ -7367,7 +7381,7 @@ class J2Run:
             self.proposed_atoms[w.get("name")] = normalise_checks(w["atoms"])
             for k in (w.get("id"), w.get("name")):
                 if k:
-                    self.proposed_fields[str(k)] = {f: copy.deepcopy(w[f]) for f in ("sections", "kind") if f in w}
+                    self.proposed_fields[str(k)] = copy.deepcopy(w)      # the whole proposal: _carry restores it
             self._item_texts(w)
             if self.blueprint:
                 self.proposed_lld[w.get("name")] = w.get("lld_sections")
@@ -7400,19 +7414,24 @@ class J2Run:
     def _own_sections(w):
         return [str(x) for x in w.get("sections") or []] if isinstance(w.get("sections"), list) else []
 
+    PRIORITY_OWNS = ("cost", "estimate", "envelope")      # price, and the envelope: limits, approval, stop-loss
+
     def _carry(self, wfs):
-        """Priority's GRANT or COUNTER, or a ruling, may echo a workflow without the "sections" and "kind" Adaptation
-        proposed it with (runs/j2-20261111-124718: Priority dropped "sections"). Code puts them back as Adaptation sent
-        them, found by id, then name, as _kept_price keeps a price; one Adaptation never proposed is left as it is."""
+        """Priority's GRANT or COUNTER, or a ruling, echoes each workflow; only its price and envelope are Priority's.
+        Code registers Adaptation's proposal (found by id, then name) with just PRIORITY_OWNS taken from the echo, so
+        the grant can't drop or change a planning field (runs/j2-20261111-124718 dropped "sections";
+        runs/release/j2-20261114-130736 dropped "real_run" and set covers [1]). One Adaptation never proposed is
+        left as it is."""
         out = []
         for w in wfs:
             src = (self.proposed_fields.get(str(w.get("id"))) or self.proposed_fields.get(str(w.get("name"))) or {}) \
                 if isinstance(w, dict) else {}
-            put = [k for k, v in src.items() if w.get(k) != v]
-            if put:
-                self._autofix(w.get("name") or "?", "carried", "Priority's or the ruling's version dropped or changed "
-                              + ", ".join(put) + "; kept as Adaptation proposed it")
-                w = {**w, **copy.deepcopy(src)}
+            if src:
+                put = sorted(k for k in set(src) | set(w) if k not in self.PRIORITY_OWNS and w.get(k) != src.get(k))
+                if put:
+                    self._autofix(w.get("name") or "?", "carried", "Priority's or the ruling's version dropped or changed "
+                                  + ", ".join(put) + "; kept as Adaptation proposed it")
+                w = {**copy.deepcopy(src), **{k: w[k] for k in self.PRIORITY_OWNS if k in w}}
             out.append(w)
         return out
 
