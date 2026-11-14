@@ -241,3 +241,23 @@ test("view gives the label, the activity, the note and what the buttons need", (
   assert.equal(v.note, "Codex sends its answer in one piece");
   assert.equal(v.canStop, true);
 });
+
+test("a turn that failed while a snapshot was being read, and the snapshot says nothing runs, ends failed with its error (not as a quiet success)", async () => {
+  let release;
+  const r = rig({["/api/chats/" + SID + "/turn"]: () => new Promise(res => { release = res; })});
+  begin(r);
+  r.wire("turn.accepted", {client_id: CID, attempt_no: 1});
+  r.wire("turn.started", {provider: "claude"});
+  const reading = r.c.snapshot();
+  await tick();
+  r.wire("turn.failed", {message: "The model stopped.", code: "crashed", message_id_reply: 9, attempt_no: 1, stored_order: []});
+  release({live: false, last_reply_id: 9, last_attempt_no: 1});
+  await reading;
+  await tick();
+  const turn = r.c.state().turn;
+  assert.equal(turn.phase, "failed");
+  assert.deepEqual(turn.error, {message: "The model stopped.", code: "crashed"});
+  assert.equal(turn.lost, false);
+  assert.equal(turn.replyId, 9);
+  assert.deepEqual(r.log.terminals, ["failed"]);
+});

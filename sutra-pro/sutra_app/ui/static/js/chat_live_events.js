@@ -160,7 +160,17 @@
       buffer = null;
       if (!isObj(snap)) return [];
       if (snap.live === false) {
-        return [{type: "snapshot.none", lastReplyId: int(snap.last_reply_id), lastAttemptNo: int(snap.last_attempt_no)}];
+        // The server runs no turn any more. A terminal frame that arrived while the snapshot was read is the real ending (done, stopped or failed, with its stored order, usage and
+        // switch note): it goes first, whatever gap there was before it, and `snapshot.none` after it then changes nothing. Frames that are not an ending are not applied: nothing runs.
+        const out = [];
+        held.slice().sort((a, b) => a.seq - b.seq).forEach(ev => {
+          const verdict = admit(ev);
+          if (verdict.dup || !ev.terminal) return;
+          advance(ev);
+          out.push({type: "event", ev});
+        });
+        out.push({type: "snapshot.none", lastReplyId: int(snap.last_reply_id), lastAttemptNo: int(snap.last_attempt_no)});
+        return out;
       }
       const gen = str(snap.generation_id, 64);
       const seq = int(snap.seq);

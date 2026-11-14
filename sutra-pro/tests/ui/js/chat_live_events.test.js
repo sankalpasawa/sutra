@@ -152,3 +152,20 @@ test("fromPartial reads a piece, a reset and an end; other chats and empty frame
   assert.deepEqual(fromPartial({session_id: SID, delta: ""}, {sid: SID}), []);
   assert.deepEqual(fromPartial({data: {session_id: SID, delta: "x"}}, {sid: SID}).length, 1);
 });
+
+test("a snapshot that says nothing runs still lets a terminal frame that was held while it was read through first; other held frames are not applied", () => {
+  const i = createIntake({sid: SID});
+  i.push(frame("turn.accepted", 1, {client_id: "client-0001", attempt_no: 1}));
+  i.beginSnapshot();
+  i.push(frame("heartbeat", 2, {idle_ms: 1}));
+  i.push(frame("turn.failed", 3, {message: "boom", code: "x", message_id_reply: 9, attempt_no: 1, stored_order: []}));
+  const out = i.applySnapshot({live: false, last_reply_id: 9, last_attempt_no: 1});
+  assert.deepEqual(out.map(a => a.type === "event" ? a.ev.type : a.type), ["turn.failed", "snapshot.none"]);
+  assert.equal(i.push(frame("turn.failed", 3, {message: "boom", code: "x", message_id_reply: 9, attempt_no: 1, stored_order: []})).length, 0, "and it is not applied twice");
+  // even after a hole before it: the server says nothing runs, so the ending is the truth
+  const j = createIntake({sid: SID});
+  j.push(frame("turn.accepted", 1, {client_id: "client-0001", attempt_no: 1}));
+  j.beginSnapshot();
+  j.push(frame("turn.done", 6, {message_id_reply: 9, attempt_no: 1, stored_order: ["b1"]}));
+  assert.deepEqual(j.applySnapshot({live: false, last_reply_id: 9}).map(a => a.type === "event" ? a.ev.type : a.type), ["turn.done", "snapshot.none"]);
+});
