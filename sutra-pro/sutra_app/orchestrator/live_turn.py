@@ -340,12 +340,15 @@ class LiveTurn:
             deadlines.append(self._pending[3] + self.config.coalesce_ms / 1000.0)
         if self._state in ("running", "connecting") and not self._stopping:
             deadlines.append(max(self._last_provider, self._last_heartbeat) + self.config.heartbeat_s)
-        if self._ckpt_dirty or self._ckpt_chars:
+        # a checkpoint deadline counts only when `_checkpoint_due_locked` would act on it: a db to write to, and either a dirty state or enough chars (a smaller
+        # number of unsaved chars waits for the next structural change, and a deadline for it would pass with nothing to do and spin the ticker)
+        ckpt_wait = self._db is not None and not self._closed and (self._ckpt_dirty or self._ckpt_chars >= self.config.checkpoint_chars)
+        if ckpt_wait:
             deadlines.append(self._ckpt_last + (self.config.structural_checkpoint_s if self._ckpt_dirty else self.config.checkpoint_s))
         if not deadlines:
             return None
         timeout = max(0.0, min(deadlines) - now)
-        if timeout <= 0 and self._ckpt_thread is not None and self._ckpt_thread.is_alive() and (self._ckpt_dirty or self._ckpt_chars):
+        if timeout <= 0 and self._ckpt_thread is not None and self._ckpt_thread.is_alive() and ckpt_wait:
             # a due checkpoint is being skipped because the previous write still runs: look again soon, never spin on a deadline that stays in the past
             timeout = max(timeout, CKPT_RETRY_S)
         return timeout

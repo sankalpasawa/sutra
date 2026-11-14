@@ -744,3 +744,42 @@ def test_the_real_ticker_does_not_spin_while_a_checkpoint_write_is_slow(db, monk
     finally:
         gate.set()
         live.close()
+
+
+def _count_ticks(live):
+    ticks = []
+    original = live.tick
+    live.tick = lambda now=None: (ticks.append(1), original(now))[1]
+    return ticks
+
+
+@pytest.mark.parametrize("with_db", [True, False])
+def test_the_real_ticker_does_not_spin_in_a_quiet_stretch_inside_a_text_block(db, with_db):
+    """A model that pauses mid-sentence (or a tool that runs) after fewer than `checkpoint_chars` unsaved chars: nothing is due, so the ticker must sleep, not loop."""
+    cfg = LiveConfig(heartbeat_s=30.0, coalesce_ms=33, checkpoint_s=0.2, structural_checkpoint_s=0.05)
+    live, bus, clock = make(db=db if with_db else None, config=cfg, start_thread=True, clock=lambda: time.monotonic())
+    live.start()
+    try:
+        live.on_event(attempt())
+        live.on_event(ev("started", provider="claude", model="sonnet", session_id="s"))
+        live.on_event(start_text())
+        time.sleep(0.4)                                                        # let the structural checkpoint go, then 100 unsaved chars and silence
+        live.on_event(delta("x" * 100, 0))
+        time.sleep(0.4)
+        ticks = _count_ticks(live)
+        time.sleep(1.0)
+        assert len(ticks) < 20, len(ticks)
+    finally:
+        live.close()
+
+
+def test_a_text_checkpoint_deadline_counts_only_once_enough_chars_are_unsaved(db):
+    live, bus, clock = make(db=db, config=LiveConfig(heartbeat_s=1e6, coalesce_ms=33, checkpoint_s=1.5))
+    live.on_event(attempt())
+    live.on_event(start_text())
+    live._ckpt_dirty = False
+    live.on_event(delta("x" * 10, 0))
+    clock.advance(100)
+    assert live._next_timeout(clock()) > 1e5                # only the far heartbeat: no checkpoint deadline in the past
+    live.on_event(delta("x" * live.config.checkpoint_chars, 10))
+    assert live._next_timeout(clock()) == 0.0
