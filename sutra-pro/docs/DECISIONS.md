@@ -1598,3 +1598,10 @@ Decided by Claude on its own, on the dates shown. The owner can veto any of them
 - Why: a Stop that waits for the ladder looks like a hang; a refusal that means one thing must not share a code with one that means another.
 - Rejected: waiting for the process in the route; reusing `busy` for "already answered".
 - Diagram: label "stop answers at once; not_retryable", pill on Connector router.
+
+## D226 — A requested Stop always ends the turn stopped, the ticker never spins on a slow checkpoint, and the chat is freed before the ticker is joined
+- Sources: `orchestrator/live_turn.py` (`_next_timeout`, `stopping`), `orchestrator/api/chat_v2.py` (`_answer_live`), review of STR-6 and STR-7.
+- Decided: when a checkpoint is due but the previous write is still running, the ticker looks again after `CKPT_RETRY_S` (0.05 s) instead of at a deadline already past (it had spun about 700,000 times a second while holding the lock the provider events use). When Stop was requested, `_answer_live` takes the stopped ending even if the provider returned a result (the process had already exited when the cancel ladder ran): the stored text is what every tab saw, and `turn.done` is never sent after `turn.stopping`. A Stop asked after the turn ended still ends `done` (D225). `direct_running.end` runs before `LiveTurn.close`, so the chat accepts the next send while the join of a slow write is still waiting.
+- Why: the stored reply must equal what was shown; a slow disk must not cost CPU or streaming latency or a spurious 409.
+- Rejected: dropping the checkpoint deadline while a write runs (nothing would wake the ticker when it ends); closing without joining (the join is bounded and keeps tests and shutdown clean).
+- Diagram: label "stop wins over a late result" on Live turn.
