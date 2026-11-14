@@ -64,7 +64,7 @@ test("a live turn paints its who, a short status label that is announced, and a 
   r.wire("turn.connecting", {provider: "claude", model: "sonnet"});
   const shell = r.shell();
   r.paintLive(shell);
-  assert.equal(q(shell, ".cl-who").textContent, "Claude · sonnet");
+  assert.equal(q(shell, ".cl-who").textContent, "Claude · via Claude sonnet");
   const status = q(shell, ".cl-status");
   assert.equal(status.getAttribute("role"), "status");
   assert.equal(status.getAttribute("aria-live"), "polite");
@@ -433,7 +433,7 @@ test("a 4,000-piece reply of 200 KB: the shell is painted per piece without recr
 
 /* ---------------------------------------------------------------- STR-11: Stop, Retry, honest labels */
 const reply = (over) => Object.assign({id: 9, role: "agent", kind: "text", turn: 7, attempt: 1, ordered: true, state: "ok", text: "Partial words.", blocks: [{type: "text", kind: "other", text: "Partial words."}]}, over || {});
-const noteRow = {id: 10, role: "agent", kind: "note", turn: 7, attempt: 1, text: "Stopped."};
+const noteRow = {id: 10, role: "agent", kind: "note", turn: 7, attempt: 1, text: "Stopped. What was written is kept."};
 const errorRow = {id: 10, role: "agent", kind: "error", turn: 7, attempt: 1, text: "Claude failed.", state: "error"};
 
 test("a reply that was stopped (a note follows it) is stopped, and offers Retry only when the page says it may", () => {
@@ -527,4 +527,30 @@ test("supersede: every row of an earlier try of an owner line that has a later t
   const same = [{id: 2, role: "agent", kind: "text", turn: 1, attempt: 1}];
   assert.equal(LV.supersede(same), same);
   assert.deepEqual(LV.supersede(null), []);
+});
+
+test("a switch note stored with a reply does not make it a stopped reply (no Retry on a reply that answered)", () => {
+  const switched = {id: 10, role: "agent", kind: "note", turn: 7, attempt: 1, text: "Switched Codex to Claude; carried 1 message"};
+  const model = LV.plan([reply(), switched], {turn: null}, {canRetry: () => true}).models["turn:7:1"];
+  assert.equal(model.state, "ok");
+  const r = rig();
+  const shell = r.shell(7, 1);
+  LV.paint(shell, model, r.deps());
+  assert.equal(q(shell, '[data-act="retry-direct"]'), null);
+  assert.ok(q(shell, '[data-act="copy-reply"]'));
+  const empty = {id: 9, role: "agent", kind: "note", turn: 7, attempt: 1, ordered: true, text: "Stopped before the model wrote anything.", blocks: [{type: "tool_use", kind: "read", name: "Read", text: "Reading a"}]};
+  assert.equal(LV.plan([empty], {turn: null}, {canRetry: () => true}).models["turn:7:1"].state, "stopped");
+});
+
+test("the reply is signed as the page signs the stored one (Sutra), and the provider and model are said as what they are: via Claude sonnet, while it runs", () => {
+  const r = rig();
+  r.begin();
+  r.wire("turn.connecting", {provider: "claude", model: "sonnet"});
+  const shell = r.shell();
+  LV.paint(shell, LV.fromLive(r.view(), {who: "Sutra"}), r.deps());
+  assert.equal(q(shell, ".cl-who").textContent, "Sutra \u00b7 via Claude sonnet");
+  const stored = LV.plan([reply()], {turn: null}, {whoOf: () => "Sutra"}).models["turn:7:1"];
+  const done = r.shell(7, 1);
+  LV.paint(done, stored, r.deps());
+  assert.equal(q(done, ".cl-who").textContent, "Sutra");
 });

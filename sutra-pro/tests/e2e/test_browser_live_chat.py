@@ -402,8 +402,9 @@ def test_router_backoff_shows_the_real_reason_and_countdown_and_stop_ends_the_wa
     ask(browser, "Try this")
     browser.wait_for("document.querySelector('#smsgs .clive') && /failed/.test(document.querySelector('#smsgs .clive .cl-state').textContent)", timeout=30)
     s = shell_state(browser)
-    assert s["phase"] == "backoff" and "Retrying" in s["status"] or "Trying" in s["status"], s
-    assert s["clock"].startswith("in ") or "Trying" in s["status"], s
+    assert s["phase"] == "backoff", s
+    assert s["status"].endswith("Retrying") and "failed" in s["status"], s                      # the same provider again: a wait is counted, no other provider is named
+    assert s["clock"].startswith("in ") and s["clock"].endswith(" s"), s
     shot(browser, "07b-backoff.png")
     t0 = time.time()
     browser.click("#smsgs .clive [data-act=composer-stop]")
@@ -468,6 +469,78 @@ def test_following_parking_the_reply_in_progress_pill_and_return_to_latest(make,
     assert browser.js(dist) <= 24
     browser.wait_for("document.querySelector('#sjump').hidden === true", timeout=5)
     clean(browser, "scroll")
+
+
+# ------------------------------------------------------------------------------------------------------------------------------------------------------------
+# a lost terminal event: the stream goes away, the turn ends meanwhile, and the page finds out at the first resync (no wait for a 15 s rule), with the whole reply and no duplicate
+# ------------------------------------------------------------------------------------------------------------------------------------------------------------
+@pytest.mark.browser
+def test_a_turn_that_ended_while_the_stream_was_down_is_found_at_the_first_resync(make, browser):
+    text = "The whole answer arrives while the page has no stream, and it must still be shown once, in full, when the page comes back."
+    live = make([Text(text, pieces=10)], delay="0.15")
+    browser._send("Page.addScriptToEvaluateOnNewDocument", {"source": DROP_JS})
+    home(browser, live)
+    browser.js(DROP_JS)
+    ask(browser, "Say it")
+    browser.wait_for("(() => { const s = document.querySelector('#smsgs .clive .cl-text'); return !!s && s.textContent.length > 10; })()", timeout=30)
+    browser.js("window.__drop()")
+    live.until("the turn to end while the page has no stream", lambda: not direct_running.RUNNING, timeout=30)
+    browser.wait_for("document.querySelector('#smsgs .clive') && document.querySelector('#smsgs .clive').dataset.state === 'ok'", timeout=20)
+    assert browser.js("document.querySelector('#smsgs .clive .cl-text').textContent") == text
+    assert browser.count("#smsgs .clive") == 1
+    browser.wait_for("document.getElementById('ssend').textContent === 'Send'", timeout=10)
+    clean(browser, "lost terminal event")
+
+
+# ------------------------------------------------------------------------------------------------------------------------------------------------------------
+# the flag off: the same view draws the reply from `chat.partial` and the stored message, one node, honest about what it knows
+# ------------------------------------------------------------------------------------------------------------------------------------------------------------
+@pytest.mark.browser
+def test_with_the_live_chat_off_the_same_view_draws_the_reply_from_chat_partial(make, browser):
+    live = make([Text("Legacy path: pieces arrive as chat.partial and the stored reply ends the turn.", pieces=8)], delay="0.15", live_v1=False)
+    home(browser, live)
+    ask(browser, "Hello")
+    browser.wait_for("!!document.querySelector('#smsgs .clive .cl-text') && document.querySelector('#smsgs .clive .cl-text').textContent.length > 5", timeout=30)
+    assert browser.js("document.querySelector('#smsgs .clive').dataset.state") in ("live", "ok")
+    browser.wait_for("document.querySelector('#smsgs .clive').dataset.state === 'ok'", timeout=40)
+    assert browser.js("document.querySelector('#smsgs .clive .cl-text').textContent") == "Legacy path: pieces arrive as chat.partial and the stored reply ends the turn."
+    assert browser.count("#smsgs .clive") == 1
+    assert not any(t == "chat.live" for t in live.sse.types()), "the flag is off: no chat.live frame was sent"
+    clean(browser, "flag off")
+
+
+# ------------------------------------------------------------------------------------------------------------------------------------------------------------
+# the team's node panel: the same reply item, with Stop and the real cancel
+# ------------------------------------------------------------------------------------------------------------------------------------------------------------
+@pytest.mark.browser
+def test_the_node_panel_streams_the_reply_and_stops_it(make, browser):
+    live = make([Tool("Read", {"file_path": "a.txt"}, "alpha"), Text("A reply in the team's own chat that is long enough to be stopped part of the way through. " * 8, pieces=120)], delay="0.1")
+    live.add_department("web", "Web", "Websites")
+    browser.goto(live.base_url + "/")
+    browser.wait_for("window.HomePage && HomePage.state().loaded === true")
+    browser.wait_for("!!document.querySelector('#pane-graph .wnode[data-id=\"web\"]')", timeout=15)
+    browser.js("document.querySelector('#pane-graph g.wnode[data-id=\"web\"]').focus()")
+    browser.press("Enter")
+    browser.wait_for("!document.getElementById('nodepanel').hidden && document.getElementById('nptitle').textContent === 'Web'")
+    browser.wait_for("!!document.querySelector('#nodepanel .npill .cpill') && !!document.querySelector('#nodepanel .ccmode [data-mode=direct]')", timeout=20)
+    browser.click("#nodepanel .ccmode [data-mode=direct]")
+    browser.wait_for("!!document.querySelector('#nodepanel .ccinput')")
+    browser.type(".nbox", "Hello team chat")
+    browser.click(".ncomposer .send")
+    browser.wait_for("!!document.querySelector('#nodepanel .nchat .clive .cl-tool') ", timeout=30)
+    browser.wait_for("(() => { const t = document.querySelector('#nodepanel .nchat .clive .cl-text'); return !!t && t.textContent.length > 40; })()", timeout=30)
+    assert browser.js("document.querySelector('.ncomposer .send').textContent") == "Stop"
+    assert browser.js("document.querySelector('#nodepanel .ccstream').hidden") is True
+    width = browser.js("Math.round(document.querySelector('#nodepanel .nchat .clive').getBoundingClientRect().width)")
+    browser.wait_for("document.querySelector('#nodepanel .nchat .clive .cl-text').textContent.length > 200", timeout=30)
+    assert browser.js("Math.round(document.querySelector('#nodepanel .nchat .clive').getBoundingClientRect().width)") == width, "the reply keeps one width while it grows"
+    shot(browser, "11-node-panel-live.png")
+    browser.click("#nodepanel .nchat .clive [data-act=composer-stop]")
+    browser.wait_for("['stopped', 'ok'].includes(document.querySelector('#nodepanel .nchat .clive').dataset.state)", timeout=30)
+    live.until("the process to be gone", lambda: not direct_running.RUNNING)
+    assert browser.js("document.querySelector('.ncomposer .send').textContent") == "Send"
+    assert browser.count("#nodepanel .nchat .clive") == 1
+    clean(browser, "node panel")
 
 
 # ------------------------------------------------------------------------------------------------------------------------------------------------------------

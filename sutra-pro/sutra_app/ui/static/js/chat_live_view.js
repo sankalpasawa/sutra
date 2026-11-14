@@ -68,7 +68,7 @@
     const blocks = t.blocks;
     const label = live ? str(view.label) : "";
     return {key: keyOf(t.messageId, t.attemptNo), turn: t.messageId, attempt: t.attemptNo, id: null, source: "live", live, phase: t.phase, state: live ? "live" : (t.phase === "stopped" ? "stopped" : (t.phase === "failed" ? "error" : "ok")),
-      who: providerName(t.provider) || str(d.who) || "The model", meta: clean(t.model), label, activity: isObj(view.activity) ? view.activity.kind : "", note: live ? str(view.note) : "",
+      who: str(d.who) || providerName(t.provider) || "The model", meta: t.provider !== "" ? "via " + providerName(t.provider) + (clean(t.model) !== "" ? " " + clean(t.model) : "") : "", label, activity: isObj(view.activity) ? view.activity.kind : "", note: live ? str(view.note) : "",
       blocks, text: textOfBlocks(blocks), earlier: t.earlier, afterSideEffects: t.afterSideEffects, canStop: live && view.canStop === true, stopping: t.phase === "stopping",
       elapsedMs: live ? view.elapsedMs : 0, streamMode: t.streamMode, error: t.error, legacy: false, superseded: false, ending: "", polling: view.polling === true,
       detail: live && isObj(view.activity) ? str(view.activity.detail) : "", canRetry: false, siblingError: false};
@@ -407,7 +407,7 @@
       const same = x => isObj(x) && x !== m && x.role === "agent" && x.turn === m.turn && (Number.isInteger(x.attempt) && x.attempt > 0 ? x.attempt : 1) === attempt && !isReply(x);
       const rows = Array.isArray(messages) ? messages : [];
       if (rows.some(x => same(x) && str(x.kind) === "error")) { model.state = "error"; model.siblingError = true; }
-      else if (rows.some(x => same(x) && str(x.kind) === "note")) model.state = "stopped";
+      else if (rows.some(x => same(x) && str(x.kind) === "note" && /^Stopped\b/.test(str(x.text)))) model.state = "stopped";           // a switch note is not a stop
       model.canRetry = typeof d.canRetry === "function" ? d.canRetry(model) === true : false;
       models[model.key] = model;
     });

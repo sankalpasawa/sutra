@@ -354,7 +354,7 @@
         const left = Number.isFinite(b.delayS) ? Math.max(0, Math.ceil(b.delayS - (clock - b.at) / 1000)) : null;
         const why = (b.reason || "").replace(/[.\s]+$/, "");
         const head = nameOf(b.provider) + " failed" + (why !== "" ? ": " + why : "");
-        if (b.nextProvider) return head + ". Trying " + nameOf(b.nextProvider);
+        if (b.nextProvider && b.nextProvider !== b.provider) return head + ". Trying " + nameOf(b.nextProvider);          // another provider takes over: no wait to count
         return head + (left !== null ? ". Retrying in " + left + " s" : ". Retrying");
       }
       case "stopping": return "Stopping";

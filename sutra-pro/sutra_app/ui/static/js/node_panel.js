@@ -372,13 +372,13 @@
     const liveOn = () => !!(st && st.tab === "chat" && st.cc && st.cc.sid === st.sid && st.cc.c.live() && root.ChatLiveView && root.Fluid && directOwner() !== "");
     // Retry on a stopped or failed reply, while it is the owner's newest line and no turn is answering
     const newestOwn = () => st.messages.reduce((n, m) => ((m.role === "user" || m.who === "user") && Number.isInteger(m.id) && m.id > n ? m.id : n), 0);
-    const liveDeps = () => ({whoOf: m => CV().whoLabel(clean(m.who), {}), canRetry: model => model.turn === newestOwn() && !!st.cc && !st.cc.c.state().turn.active && !st.readOnly &&
+    const liveDeps = () => ({who: CV().whoLabel("sutra", {}), whoOf: m => CV().whoLabel(clean(m.who), {}), canRetry: model => model.turn === newestOwn() && !!st.cc && !st.cc.c.state().turn.active && !st.readOnly &&
       !!st.session && st.session.writable !== false && clean(st.session.status) !== "archived"});
     // One frame of a live reply touches only its own shell; the transcript is drawn as a whole when the shell is not there yet or a stored message has taken its key.
     function paintLiveTurn() {
       if (!liveOn() || !chatRefs) return;
       const LV = root.ChatLiveView;
-      const model = LV.fromLive(st.cc.c.liveView(), {});
+      const model = LV.fromLive(st.cc.c.liveView(), liveDeps());
       if (!model) return;
       const node = chatRefs.msgs.querySelector('.clive[data-turn="' + model.turn + '"][data-attempt="' + model.attempt + '"]');
       const stored = activeMessages().some(m => LV.isReply(m) && LV.keyOf(m.turn, m.attempt) === model.key);

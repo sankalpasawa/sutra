@@ -375,3 +375,14 @@ test("the reducer is pure: the old state is untouched", () => {
   S.reduce(frozen, {type: "event", ev: {gen: GEN, seq: 99, type: "block.start", known: true, attempt: 1, blockId: "b1", ts: "", payload: {blockType: "text", kind: "other", name: ""}}, now: 5});
   assert.equal(JSON.stringify(frozen), before);
 });
+
+test("a retry on the SAME provider counts down the wait; it never says it is trying the provider that just failed as if it were another", () => {
+  const r = begin(rig());
+  accept(r);
+  r.wire("attempt.failed", {provider: "claude", reason: "claude stopped unexpectedly (exit 137).", delay_s: 2, next_provider: "claude"});
+  assert.equal(S.label(r.state, r.now), "Claude failed: claude stopped unexpectedly (exit 137). Retrying in 2 s");
+  const r2 = begin(rig());
+  accept(r2);
+  r2.wire("attempt.failed", {provider: "claude", reason: "Overloaded.", delay_s: null, next_provider: "claude"});
+  assert.equal(S.label(r2.state, r2.now), "Claude failed: Overloaded. Retrying");
+});

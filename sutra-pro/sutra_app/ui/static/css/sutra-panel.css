@@ -538,7 +538,8 @@ button:not(:disabled):not(.cjump-btn):active,.lbtn:active,.fnchip:active{transfo
    One node per reply: a short status (announced) and its clock, the earlier tries, the blocks in the order they came (text, tool lines, thinking), a note, the
    actions. A tool line is a <details>: its summary is the one line, its body the target, the status and the output. Only opacity, transform and colour move,
    on the tokens above, and only for what arrives; prefers-reduced-motion turns the durations to 0 (the tokens) and stops the loops. J2's colour tokens only. */
-.clive{white-space:normal}
+.nmsg.sb.clive{width:100%;box-sizing:border-box;white-space:normal}                 /* the reply keeps one width while it grows: it never widens line by line */
+.nmsg.sb.clive .cl-cut{display:block;margin:2px 0 0;font-weight:400;color:var(--muted)}
 .clive .cl-who{display:block;color:var(--muted)}
 .clive .cl-foot{display:flex;flex-wrap:wrap;align-items:center;gap:2px 12px;margin-top:6px;min-height:26px}
 .clive .cl-head{display:flex;flex-wrap:wrap;align-items:baseline;gap:2px 8px;flex:1 1 auto;min-width:0;color:var(--muted);font-size:13px}

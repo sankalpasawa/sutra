@@ -316,7 +316,7 @@
   const liveOn = () => !!(S.cc && S.cc.live() && root.ChatLiveView && root.Fluid);
   // Retry on a stopped or failed reply, while it is the owner's newest line and no turn is answering (an older line's retry would confuse the order of the chat)
   const newestOwn = () => S.messages.reduce((n, m) => ((m.role === "user" || m.who === "user") && Number.isInteger(m.id) && m.id > n ? m.id : n), 0);
-  const liveDeps = () => ({whoOf: m => root.ChatView.whoLabel(clean(m.who), {}), canRetry: model => model.turn === newestOwn() && !!S.cc && !S.cc.state().turn.active &&
+  const liveDeps = () => ({who: root.ChatView.whoLabel("sutra", {}), whoOf: m => root.ChatView.whoLabel(clean(m.who), {}), canRetry: model => model.turn === newestOwn() && !!S.cc && !S.cc.state().turn.active &&
     (!S.session || (S.session.writable !== false && clean(S.session.status) !== "archived"))});
 
   function renderChat() {
@@ -355,7 +355,7 @@
     if (!liveOn()) return;
     const LV = root.ChatLiveView;
     const view = S.cc.liveView();
-    const model = LV.fromLive(view, {});
+    const model = LV.fromLive(view, liveDeps());
     if (!model) return;
     const el = $("smsgs");
     const node = el.querySelector('.clive[data-turn="' + model.turn + '"][data-attempt="' + model.attempt + '"]');
