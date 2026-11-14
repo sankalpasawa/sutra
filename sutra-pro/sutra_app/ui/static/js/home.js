@@ -185,7 +185,8 @@
     renderPill();
   }
 
-  function mergeMessages(list, replace) {
+  function mergeMessages(rows, replace) {
+    const list = S.cc ? S.cc.offer(rows) : rows;                       // a stored reply of the live turn waits for its end (the row settles in place)
     const byId = new Map(replace ? [] : S.messages.map(m => [m.id, m]));
     list.forEach(m => { if (isObj(m) && m.id !== undefined) byId.set(m.id, m); });
     S.messages = Array.from(byId.values()).sort((a, b) => a.id - b.id);
@@ -312,6 +313,8 @@
 
   function renderChat() {
     const shown = S.messages.concat(S.pending.map(p => p.msg));
+    const line = S.cc ? S.cc.pendingLine(S.messages) : null;           // the owner's direct line before the server has stored it: one bubble, matched by client_id
+    if (line) shown.push({id: "local-direct", session_id: ORG, role: "user", who: "user", kind: "text", text: line.text, card: null, pause: null, answered_by: null, task_id: null, state: "pending", at: ""});
     const session = S.session || {kind: "org", writable: true, status: "active", title: "Sutra"};
     const view = {deptName: "", live: true, answers: answersMap(), deptSessions: deptSessions(), retryTasks: retryTasks()};
     const el = $("smsgs");
@@ -438,7 +441,9 @@
   function composer() {
     // one repaint per animation frame, however many chunks of a reply arrived in it (Fluid.frame; without fluid.js it is at once, as before)
     const repaint = () => { renderBar(); renderComposer(); };
-    if (S.cc === undefined) S.cc = root.ChatComposer ? root.ChatComposer.create({api, sid: ORG, mode: "team", onChange: () => (root.Fluid ? root.Fluid.frame(repaint, repaint) : repaint()), onTurnEnd: rereadPill}) : null;
+    // live: the turn is told by `chat.live` frames and snapshots (STR-9); a stored reply of the running turn is held back (offer) and let go at its end (onRelease)
+    if (S.cc === undefined) S.cc = root.ChatComposer ? root.ChatComposer.create({api, sid: ORG, mode: "team", live: true, onChange: () => (root.Fluid ? root.Fluid.frame(repaint, repaint) : repaint()),
+      onTurnEnd: rereadPill, onRelease: rows => { mergeMessages(rows, false); renderChat(); }, onSettle: () => refetchMessages()}) : null;
     return S.cc;
   }
   const directOn = () => { const c = composer(); return c !== null && c.state().mode === "direct"; };
@@ -464,10 +469,12 @@
     const stuck = askBlocked();
     if (stuck !== "") { showBanner({text: stuck, settings: true}); return false; }
     clearBanner();
-    const out = await c.send(body);
-    if (!out.ok) return false;
-    clearSent(body);
+    const sending = c.send(body);
     S.own = true;
+    renderChat();                                                      // the owner's line shows at once
+    const out = await sending;
+    if (!out.ok) { renderChat(); return false; }
+    clearSent(body);
     try { await fetchMessages(false); } catch (e) { handleFetchError(e); }
     return true;
   }
@@ -1452,6 +1459,7 @@
   /* ---------------------------------------------------------------- events */
   function setLive(state) {
     S.live = state;
+    if (S.cc) S.cc.setPolling(state === "polling");                    // the stream is down and the page polls: so does the turn
     if (S.graphView) S.graphView.setLive(state);
     if (S.chartView) S.chartView.setLive(state);
   }
@@ -1463,6 +1471,9 @@
     switch (type) {
       case "chat.partial":
         if (d.session_id === ORG && composer()) composer().partial(d);
+        break;
+      case "chat.live":
+        if (d.conversation_id === ORG && composer()) composer().frame(d);
         break;
       case "chat.turn":
         if (d.session_id === ORG) {
@@ -1493,7 +1504,7 @@
       case "connector.health": refetchLimits(); break;                                                // a plan window moved: the guard's line may change
       case "connector.switch": if (d.session_id === ORG) { pillMoved(); renderPill(); } break;           // the org chat's session now runs on the other provider
       case "needs_you.changed": refetchNeeds(); break;
-      case "server.resync": loadAll(); break;
+      case "server.resync": loadAll(); if (S.cc) S.cc.reconnect(); break;                // the page's handle says this on every reconnect: the turn's snapshot is read again
       default: break;
     }
   }

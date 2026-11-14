@@ -5,10 +5,18 @@
    that, for the node panel and for Home. Strings in, strings out, plus ONE small controller that owns the state and takes everything it touches
    (the api, the file reader, the repaint) as an argument, so node tests drive it without a page. Every word from the wire is escaped.
 
-     create({api, sid, readFile, onChange, onTurnEnd, mode, objectUrl})   the controller (objectUrl {create, revoke}: the page's URL by default; onTurnEnd: called
+     create({api, sid, readFile, onChange, onTurnEnd, mode, objectUrl, live, onRelease, onSettle, now, timers, newId})   the controller (objectUrl {create, revoke}: the page's URL by default; onTurnEnd: called
                                        once when a turn that ran is over, by its stored reply or because the server lost it, so the page can read the provider
                                        pill again: a turn may have moved the chat to the other model):
          state()                       {mode, files, note, turn: {active, stopping, text, messageId}}
+                                       `live: true` (the pages; STR-9) puts the turn in a ChatLiveClient: the send carries a `client_id`, the turn is told by `chat.live`
+                                       frames (frame(raw)) and snapshots, the stored reply of a live turn is held back until its end (offer(rows)), Stop and Retry go to the
+                                       routes of the live turn, and state().turn is a projection of the store with the same four keys. Without it (every older caller) nothing
+                                       below changes: the turn is the plain {active, stopping, text, messageId} told by `chat.partial`.
+         frame(raw)                    live: one `chat.live` frame of this chat           reconnect()   live: the stream (re)connected: read the snapshot
+         setPolling(on)                live: the stream is down, the snapshot is polled   offer(rows)    live: the rows to show now (a held reply is kept back)
+         liveView()                    live: {turn, label, activity, note, canStop, ...} for the row   pendingLine(messages)  live: the owner's line before the stored one has it
+         close()                       live: stop the timers
          setMode("team" | "direct")    where Send goes (the panel keeps the team's plain message route as it was)
          addFiles(files, {pasted})     check (ChatSearch.checkFile), read, upload to POST /api/chats/{sid}/attachments; the chips show each one, an
                                        image with its thumbnail (a blob: URL, revoked when the chip goes); a pasted image gets a name of its own
@@ -55,9 +63,10 @@
   const ENTITIES = {"&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;"};
   const esc = s => String(s).replace(/[&<>"']/g, c => ENTITIES[c]);
   const clean = v => text(v).replace(/[\u0000-\u001f\u007f]+/g, " ").replace(/\s+/g, " ").trim();
+  const FILES = {ChatPill: "chat_pill", ChatSearch: "chat_search", ChatLiveClient: "chat_live_client", ChatLiveStore: "chat_live_store"};
   const need = name => {
     if (root[name]) return root[name];
-    if (typeof module === "object" && module !== null && module.exports && typeof require === "function") return require("./" + (name === "ChatPill" ? "chat_pill" : "chat_search") + ".js");
+    if (typeof module === "object" && module !== null && module.exports && typeof require === "function" && hasOwn(FILES, name)) return require("./" + FILES[name] + ".js");
     return null;
   };
   const pillOf = () => need("ChatPill");
@@ -233,7 +242,22 @@
     const ended = () => { if (typeof o.onTurnEnd === "function") o.onTurnEnd(); };
     let downNote = "";                       // the note a transport failure ("The app is not responding.") put up: it goes when the page reads the session again
     const failNote = (e, fallback) => { const words = asError(e, fallback); downNote = isObj(e) && e.code === "network" ? words : ""; return words; };
-    const state = {mode: o.mode === "direct" ? "direct" : "team", files: [], note: "", turn: idle()};
+    const state = {mode: o.mode === "direct" ? "direct" : "team", files: [], note: ""};
+    // The live turn (STR-9): a ChatLiveClient told by `chat.live` frames. `state.turn` is then its projection (the same four keys); without it the turn is the plain object it was.
+    const LiveClient = o.live === true ? need("ChatLiveClient") : null;
+    const LS = LiveClient ? need("ChatLiveStore") : null;
+    const newId = typeof o.newId === "function" ? o.newId : () => "s" + Array.from({length: 24}, () => Math.floor(Math.random() * 16).toString(16)).join("");
+    const live = LiveClient && LS ? LiveClient.create({sid, api, now: o.now, timers: o.timers, onChange: () => changed(),
+      onRelease: rows => { if (typeof o.onRelease === "function") o.onRelease(rows); },
+      onTerminal: () => { if (typeof o.onSettle === "function") o.onSettle(); }}) : null;
+    let plain = idle();
+    let pending = null;                      // live: the owner's line as the page showed it before the server stored it: {clientId, text}
+    const project = () => {
+      const t = live.state().turn;
+      if (t === null) return idle();
+      return {active: !LS.terminal(t.phase), stopping: t.phase === "stopping", text: t.blocks.filter(b => b.type === "text").map(b => b.text).join(""), messageId: t.messageId};
+    };
+    Object.defineProperty(state, "turn", {enumerable: true, configurable: true, get: () => (live ? project() : plain), set: v => { plain = v; }});
     let seq = 0;
     let pastes = 0;
     const sent = new Map();                 // owner line id -> the attachment refs this page sent with it (a Retry sends them again)
@@ -341,6 +365,7 @@
 
     // One POST /direct: the turn is active while it travels and after it was accepted; a refusal ends it and says why.
     async function ask(body, refs, names) {
+      if (live) return askLive(body, refs, names, null);
       state.turn = {active: true, stopping: false, text: "", messageId: null};
       state.note = "";
       changed();
@@ -371,7 +396,7 @@
       const o = isObj(opts) ? opts : {};
       const known = sent.get(Number(lineId));
       state.mode = "direct";
-      const out = known ? await ask(body, known.refs, known.names) : await ask(body, [], []);
+      const out = live && Number.isInteger(Number(lineId)) && Number(lineId) > 0 ? await retryLive(Number(lineId), body, known) : (known ? await ask(body, known.refs, known.names) : await ask(body, [], []));
       if (out.ok && !known && Number.isFinite(o.files) && o.files > 0) {
         state.note = "Sent again without its files: attach them again to include them.";
         changed();
@@ -389,6 +414,7 @@
     // Resolves to whether the page changed. Never rejects: a failed read changes nothing.
     async function resync() {
       if (!api || typeof api.get !== "function") return false;
+      if (live) return resyncLive();
       const known = state.turn.active ? state.turn.messageId : null;
       let running = null;
       try {
@@ -424,6 +450,7 @@
     }
 
     function rejoin() {
+      if (live) { if (!state.turn.active) return false; live.reconnect(); return true; }
       if (!state.turn.active || state.turn.text === "") return false;
       state.turn = Object.assign({}, state.turn, {text: ""});
       changed();
@@ -431,6 +458,7 @@
     }
 
     async function stop() {
+      if (live) return stopLive();
       if (!state.turn.active || state.turn.stopping) return {ok: false};
       state.turn.stopping = true;
       changed();
@@ -452,6 +480,7 @@
     }
 
     function partial(data) {
+      if (live) return live.partial(data);
       const CP = pillOf();
       const d = isObj(data) && isObj(data.data) ? data.data : data;
       if (!CP || !isObj(d) || d.session_id !== sid) return false;
@@ -465,6 +494,7 @@
     }
 
     function reconcile(messages) {
+      if (live) return reconcileLive(messages);
       const turn = state.turn;
       if (!turn.active || turn.messageId === null) return false;
       const done = (Array.isArray(messages) ? messages : []).some(m => isObj(m) && m.role === "agent" && m.turn === turn.messageId);
@@ -475,7 +505,163 @@
       return true;
     }
 
-    return {state: () => state, setMode, addFiles, take, removeFile, send, retry, stop, partial, rejoin, reconcile, resync};
+
+    /* ---------------------------------------------------------------- the live turn (STR-9) */
+    const endNow = () => { live.dispatch({type: "clear"}); ended(); };
+
+    // One POST /direct as a live turn: the page's own `client_id` goes with it, so the server's `turn.accepted`, the 202 and the stored line all name the same send
+    // (one bubble, a repeated POST is `duplicate`, never a second turn). Stop pressed before the 202 is sent right after it.
+    async function askLive(body, refs, names, retryOf) {
+      const clientId = newId();
+      live.dispatch({type: "send", clientId});
+      pending = retryOf === null ? {clientId, text: body} : null;
+      state.note = "";
+      changed();
+      try {
+        const payload = refs.length ? {text: body, attachments: refs, names, client_id: clientId} : {text: body, client_id: clientId};
+        const accepted = await api.post(base + "/direct", payload);
+        return await acceptedLive(clientId, accepted, refs, names);
+      } catch (e) {
+        return failedLive(clientId, e);
+      }
+    }
+
+    async function acceptedLive(clientId, accepted, refs, names) {
+      const id = isObj(accepted) && Number.isInteger(accepted.message_id) ? accepted.message_id : null;
+      const generation = isObj(accepted) && typeof accepted.generation_id === "string" ? accepted.generation_id : "";
+      live.dispatch({type: "accepted", clientId, generationId: generation, messageId: id,
+        attemptNo: isObj(accepted) && Number.isInteger(accepted.attempt_no) ? accepted.attempt_no : 1});
+      if (id !== null && refs && refs.length) {
+        sent.set(id, {refs: refs.slice(), names: names.slice()});
+        while (sent.size > 50) sent.delete(sent.keys().next().value);
+      }
+      // a duplicate answer is the first request's turn, maybe over already: read where it is now. A fresh turn needs no read: its frames start at seq 1 and the intake would hold every
+      // one of them back while the read travelled. (The flag-off route has no generation: that turn is told by chat.partial and the stored reply.)
+      if (isObj(accepted) && accepted.duplicate === true) live.snapshot();
+      const t = live.state().turn;
+      if (t && t.stopQueued && t.messageId !== null) await stopRequest();
+      changed();
+      return {ok: true, message_id: id};
+    }
+
+    function failedLive(clientId, e) {
+      const words = failNote(e, "That did not work. Try again.");
+      live.dispatch({type: "send.failed", clientId, message: words, code: isObj(e) && e.code ? String(e.code) : "send"});
+      live.dispatch({type: "clear"});                                    // a send that was never accepted leaves no turn behind
+      pending = null;
+      state.note = words;
+      changed();
+      return {ok: false, error: words};
+    }
+
+    // The owner's Retry on a line whose turn failed or was stopped: the live route reuses the owner's line and runs a new try (no second bubble, no repeated side
+    // effect of the owner's words); a server without the live chat has no such route and the words are sent again as they always were.
+    async function retryLive(lineId, body, known) {
+      const clientId = newId();
+      live.dispatch({type: "send", clientId, messageId: lineId});
+      pending = null;
+      state.note = "";
+      changed();
+      try {
+        const accepted = await api.post(base + "/direct/retry", {message_id: lineId, client_id: clientId});
+        return await acceptedLive(clientId, accepted, [], []);
+      } catch (e) {
+        live.dispatch({type: "clear"});
+        if (isObj(e) && e.status === 404) return known ? askLive(body, known.refs, known.names, null) : askLive(body, [], [], null);
+        if (isObj(e) && e.code === "not_retryable") {
+          state.note = "That message was answered already.";
+          changed();
+          return {ok: false, error: state.note};
+        }
+        return failedLive(clientId, e);
+      }
+    }
+
+    async function stopRequest() {
+      try {
+        const r = await api.post(base + "/direct/stop", {});
+        if (isObj(r) && r.stopped === false) {                           // nothing runs: the snapshot says whether the turn ended (a stopped reply is stored) or never was
+          await live.snapshot();
+          return {ok: true, stopped: false};
+        }
+        return {ok: true, stopped: true};
+      } catch (e) {
+        live.dispatch({type: "stop.failed"});
+        state.note = failNote(e, "The turn could not be stopped.");
+        changed();
+        return {ok: false, error: state.note};
+      }
+    }
+
+    async function stopLive() {
+      const t = live.state().turn;
+      if (t === null || LS.terminal(t.phase) || t.phase === "stopping") return {ok: false};
+      live.dispatch({type: "stop.pressed"});                             // "Stopping" shows at once, whatever the network does
+      const now = live.state().turn;
+      if (now && now.stopQueued && now.messageId === null) return {ok: true, queued: true};          // the POST is in flight: its 202 sends the stop (never before: it could reach a chat with no turn)
+      return stopRequest();
+    }
+
+    // The turn ends when the reply of its try is on the page and the live generation has ended; a held reply never ends it (the row settles in place instead).
+    function reconcileLive(messages) {
+      const t = live.state().turn;
+      if (t === null || t.messageId === null) return false;
+      if (live.holds(t.messageId, t.attemptNo)) return false;
+      const done = (Array.isArray(messages) ? messages : []).some(m => isObj(m) && m.role === "agent" && m.turn === t.messageId &&
+        (m.attempt === undefined || m.attempt === null ? t.attemptNo === 1 : m.attempt === t.attemptNo));
+      if (!done) return false;
+      endNow();
+      return true;
+    }
+
+    async function resyncLive() {
+      const t0 = live.state().turn;
+      const known = t0 && !LS.terminal(t0.phase) ? t0.messageId : null;
+      let running = null;
+      let liveInfo = false;
+      try {
+        const session = await api.get(base);
+        running = isObj(session) && Number.isInteger(session.direct_turn) && session.direct_turn > 0 ? session.direct_turn : null;
+        liveInfo = isObj(session) && isObj(session.live);
+      } catch (e) {
+        return false;
+      }
+      if (downNote !== "" && state.note === downNote) { state.note = ""; downNote = ""; changed(); }
+      const t = live.state().turn;
+      const activeNow = t !== null && !LS.terminal(t.phase);
+      if (running === null) {
+        if (!activeNow || known === null || t.messageId !== known) return false;
+        if (t.source === "live") { await live.snapshot(); return true; }          // the server runs nothing: the snapshot says so, and the stored line tells how it ended
+        endNow();
+        return true;
+      }
+      if (activeNow && (t.messageId === null || t.messageId === running)) { if (liveInfo && t.source === "live" && t.generationId === "") await live.snapshot(); return false; }
+      try {
+        const page = await api.get(base + "/messages", {after: running - 1, limit: 50});
+        const list = isObj(page) && Array.isArray(page.messages) ? page.messages : [];
+        if (list.some(m => isObj(m) && m.role === "agent" && m.turn === running && !live.holds(running, m.attempt))) return false;
+      } catch (e) { /* the list is not readable now: show the turn, the next reconcile ends it if it is over */ }
+      const now = live.state().turn;
+      if (now !== null && !LS.terminal(now.phase) && (now.messageId === null || now.messageId === running)) return false;       // this page began it while we asked
+      state.mode = "direct";
+      if (liveInfo) {
+        if (await live.snapshot()) { changed(); return true; }
+      }
+      live.dispatch({type: "adopt", messageId: running});
+      return true;
+    }
+
+    // The owner's line as this page showed it before the server had it: gone as soon as a stored line carries the same client_id (one bubble, also with a second tab).
+    function pendingLine(messages) {
+      if (pending === null) return null;
+      if ((Array.isArray(messages) ? messages : []).some(m => isObj(m) && m.client_id === pending.clientId)) { pending = null; return null; }
+      return pending;
+    }
+
+    return {state: () => state, setMode, addFiles, take, removeFile, send, retry, stop, partial, rejoin, reconcile, resync,
+      live: () => live !== null, frame: raw => { if (live) live.frame(raw); }, reconnect: () => (live && project().active ? live.reconnect() : Promise.resolve(false)), setPolling: on => { if (live) live.setPolling(on); },
+      offer: rows => (live ? live.offer(rows) : (Array.isArray(rows) ? rows : [])), liveView: () => (live ? live.view() : null), pendingLine: messages => (live ? pendingLine(messages) : null),
+      close: () => { if (live) live.close(); }};
   }
 
   const ChatComposer = {create, bar, chips, streamRow, streamParts, paintStreamRow, button, askBlock, providerOf, filesOf, hasFiles, sendKey, stopPress, tooLong, size, MAX_FILES, MAX_MESSAGE};

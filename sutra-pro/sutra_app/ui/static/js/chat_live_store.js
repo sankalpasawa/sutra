@@ -13,7 +13,7 @@
    changes; a new send replaces the turn. An action that the table does not allow is ignored (`state.ignored` counts them, a dev build can look).
 
      create(sid)              the empty state
-     reduce(state, action)    actions: send, accepted, send.failed, stop.pressed, event, snapshot, snapshot.none, gap, resync, tick, partial, message, release, clear, unsupported
+     reduce(state, action)    actions: send, accepted, adopt, send.failed, stop.pressed, stop.failed, event, snapshot, snapshot.none, gap, resync, tick, partial, message, release, clear, unsupported
      LEGAL                    the transition table, {from: [to, ...]}
      holds(state, messageId, attempt)   true while a live generation answers that owner line and has no terminal event (the stored reply is held back, D207, D219)
      activity(state, now)     {kind: "stalled" | "tool" | "writing" | "thinking" | "waiting" | "", label, detail} of a running turn (first match wins)
@@ -55,7 +55,7 @@
   function blank(over) {
     return Object.assign({phase: "sending", source: "live", clientId: "", generationId: "", messageId: null, attempt: 1, attemptNo: 1, provider: "", model: "", streamMode: "",
       idleLimitS: null, startedAt: 0, lastEventAt: 0, seq: 0, heartbeat: null, blocks: [], earlier: [], backoff: null, stopQueued: false, stoppingAt: 0, error: null,
-      replyId: null, storedOrder: [], usage: null, switched: null, restarts: 0, afterSideEffects: false, lost: false, endedAt: 0}, over || {});
+      replyId: null, storedOrder: [], usage: null, switched: null, restarts: 0, afterSideEffects: false, lost: false, endedAt: 0, beforeStop: "", stopSeen: false}, over || {});
   }
 
   const withTurn = (state, turn, extra) => Object.assign({}, state, {turn}, extra || {});
@@ -154,7 +154,7 @@
         turn = Object.assign({}, turn, {heartbeat: {idleMs: p.idleMs, at: now}, idleLimitS: p.idleLimitS !== null ? p.idleLimitS : turn.idleLimitS});
         break;
       case "turn.stopping":
-        turn = go(Object.assign({}, turn, {stoppingAt: turn.stoppingAt || now}), "stopping");
+        turn = go(Object.assign({}, turn, {stoppingAt: turn.stoppingAt || now, stopSeen: true}), "stopping");
         break;
       case "turn.done": case "turn.stopped": case "turn.failed": {
         const to = ev.type === "turn.done" ? "done" : (ev.type === "turn.stopped" ? "stopped" : "failed");
@@ -236,9 +236,16 @@
       case "stop.pressed": {
         if (turn === null || terminal(turn.phase)) return ignore();
         if (turn.phase === "stopping") return base;
-        const next = go(Object.assign({}, turn, {stopQueued: turn.generationId === "" && turn.messageId === null, stoppingAt: now}), "stopping");
+        const next = go(Object.assign({}, turn, {stopQueued: turn.generationId === "" && turn.messageId === null, stoppingAt: now, beforeStop: turn.phase}), "stopping");
         return next === turn ? ignore() : withTurn(base, next);
       }
+      case "stop.failed": {                                   // the stop request itself failed (the app did not answer) and no turn.stopping came: Stop is offered again
+        if (turn === null || turn.phase !== "stopping" || turn.stopSeen || turn.beforeStop === "") return ignore();
+        return withTurn(base, Object.assign({}, turn, {phase: turn.beforeStop, beforeStop: "", stopQueued: false, stoppingAt: 0}));
+      }
+      case "adopt":                                          // a turn this page did not start and has no live frames for (the flag-off direct chat): shown with its Stop, filled by `partial`
+        if (turn !== null && !terminal(turn.phase)) return ignore();
+        return withTurn(base, blank({phase: "running", source: "partial", messageId: Number.isInteger(a.messageId) ? a.messageId : null, startedAt: now, lastEventAt: now, streamMode: "snapshot"}), {settled: null});
       case "event":
         return isObj(a.ev) ? applyEvent(base, a.ev, now) : ignore();
       case "snapshot": {

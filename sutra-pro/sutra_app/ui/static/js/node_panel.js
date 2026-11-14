@@ -439,8 +439,10 @@
         const again = c !== undefined;
         if (!again) {
           // one repaint per animation frame, however many chunks of a reply arrived in it
-          c = CC.create({api: api(), sid, mode: st.ccMode || "team", onChange: () => later(() => { if (st && chatRefs) { paintComposer(); paintBar(); } }),
-                         onTurnEnd: () => { if (st && st.sid === sid && chatRefs) { st.pillSid = ""; paintPill(); } }});          // the turn may have moved the chat to the other model: read the pill again
+          c = CC.create({api: api(), sid, mode: st.ccMode || "team", live: true, onChange: () => later(() => { if (st && chatRefs) { paintComposer(); paintBar(); } }),
+                         onTurnEnd: () => { if (st && st.sid === sid && chatRefs) { st.pillSid = ""; paintPill(); } },          // the turn may have moved the chat to the other model: read the pill again
+                         onRelease: rows => { if (st && st.sid === sid) { st.messages = mergeMessages(st.messages, rows); st.lastId = lastIdOf(st.messages); reconcileTurn(); if (st.tab === "chat" && chatRefs) paintChat(); } },
+                         onSettle: () => { if (st && st.sid === sid && st.refresh) st.refresh[0](); }});          // the live turn ended: read its stored reply
           composers.set(sid, c);
         }
         st.cc = {sid, c};                        // set first: rejoin and reconcile repaint, and the repaint asks for this composer again
@@ -1076,7 +1078,8 @@
       if (!st || g !== gen || sid !== st.sid) return;
       if (found.error) return;
       if (found.value.length) {
-        st.messages = mergeMessages(st.messages, found.value);
+        const own = st.cc && st.cc.sid === sid ? st.cc.c : null;
+        st.messages = mergeMessages(st.messages, own ? own.offer(found.value) : found.value);          // a stored reply of the live turn waits for its end
         st.lastId = lastIdOf(st.messages);
       }
       reconcileTurn();
@@ -1112,6 +1115,9 @@
             }
             const c = mine(data) ? composerOf() : null;
             if (c) c.partial(data);
+          } else if (type === "chat.live") {
+            const c = isObj(data) && data.conversation_id === (st && st.sid) ? composerOf() : null;
+            if (c) c.frame(data);
           } else if (type === "chat.message") {
             if (mine(data) && st.live && st.live.active && isObj(data) && isObj(data.message) && data.message.role !== "user") { st.live = AC().idle(); paintLive(); }
             if (mine(data)) refetchMessages();
@@ -1136,9 +1142,10 @@
             if (st.tab === "agents") loadAgents(g);
             refetchMessages();
             refetchDetail();
-            if (st.cc && st.cc.sid === st.sid) st.cc.c.resync();          // the server restarted: a turn it ran is gone, and one it runs now is shown
+            if (st.cc && st.cc.sid === st.sid) { st.cc.c.reconnect(); st.cc.c.resync(); }          // the stream came back (or the server restarted): the turn's snapshot is read, a turn it ran is gone, one it runs now is shown
           }
         },
+        onState: state => { if (st && st.cc && st.cc.sid === st.sid) st.cc.c.setPolling(state === "polling"); },
         pollFn: () => Promise.all([refreshMessages(g), refreshDetail(g)]),
         pollMs: opts.pollMs,
       });
@@ -1493,6 +1500,7 @@
     }
 
     function destroy() {
+      composers.forEach(c => { if (typeof c.close === "function") c.close(); });
       close();
       host.removeEventListener("click", onClick);
       doc.removeEventListener("keydown", onKeyDown);
