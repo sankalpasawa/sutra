@@ -1,7 +1,7 @@
 """J2's stdlib HTTP server, kept for the legacy tests and single-run development (work package E2, engine design 3.1).
 
 The application never uses it: uvicorn serves the FastAPI routes of `engine/api`, and `python -m sutra_app` does not start this
-module. It is a thin adapter over `views.py`, which holds the one implementation of the 42 handlers: it picks the view from the
+module. It is a thin adapter over `views.py`, which holds the one implementation of the 43 handlers: it picks the view from the
 path, builds the `RunCtx` of the one global run `RUN` (state read from the live `J2Run` per request, no files) and sends the
 `Reply`. Every text body goes through `redact()`. A question (`POST /api/ask`) is answered from the run's records, always: this
 adapter has no model port, and no path of this tree calls `llm.ask` for an answer (J2 sync 4, D147).
@@ -57,7 +57,7 @@ def route(path):
         return "vendor", {}
     fixed = {"/api/state": "state", "/api/runs": "runs", "/api/call": "call", "/api/preview": "preview", "/api/docs": "docs",
              "/api/map": "map", "/api/plan": "plan", "/api/plan-map": "plan_map", "/api/library": "library",
-             "/api/catalog": "catalog", "/api/run-templates": "run_templates", "/api/artifacts": "artifacts", "/api/agent": "agent",
+             "/api/catalog": "catalog", "/api/run-template": "run_template", "/api/run-templates": "run_templates", "/api/artifacts": "artifacts", "/api/agent": "agent",
              "/api/activity": "activity", "/api/record": "record", "/api/code": "code", "/api/artifacts/tree": "artifacts_tree",
              "/api/artifacts/groups": "artifacts_groups", "/api/artifact": "artifact", "/api/story": "story", "/api/board": "board",
              "/api/audits": "audits", "/api/refs": "refs", "/api/runlist": "runlist", "/api/changes": "changes", "/api/timing": "timing", "/view": "view"}
@@ -82,7 +82,9 @@ def route(path):
 class _RunCommands:
     """The POSTs that act, done on whichever run `RUN` is now."""
 
-    def say(self, text):
+    def say(self, text, template=None, workflows=None):
+        if template:      # a new run from a run template (J2's own server does the same; ignored once the run has started)
+            RUN.set_run_template(template, workflows)
         return RUN.user_says(text)
 
     def ask(self, who, question, run_id):
@@ -115,7 +117,8 @@ def _ctx(q, name):
     if run and run == live_id and not os.path.isdir(RUN.dir):
         run = None                  # the live run's id before its folder exists (no prompt sent yet): the live run, empty
     common = dict(runs_dir=j2.RUNS_DIR, live_id=live_id, memory=MemoryPaths(j2.MEMORY_FILE, j2.PLAYBOOK_FILE),
-                  commands=_RunCommands(), here=HERE, vendor=VENDOR, dept_id=q.get("dept"))
+                  commands=_RunCommands(), here=HERE, vendor=VENDOR, dept_id=q.get("dept"),
+                  run_templates_on=bool(name == "run_template" and j2.run_templates_on()))      # J2's own switch: this process is the run
     if run:
         return RunCtx("saved", run, j2.saved_dir(run, j2.RUNS_DIR), **common)
     snap, extras = views.live_state(RUN) if name in views.LIVE_VIEWS else (None, None)

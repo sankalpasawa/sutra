@@ -1,14 +1,14 @@
 {
  "schema": "traceability/1",
  "counts": {
-  "decisions": 175,
+  "decisions": 200,
   "packages": 78,
-  "endpoints": 42,
-  "chips": 15,
+  "endpoints": 43,
+  "chips": 17,
   "steps": 7,
   "owner_rules": 7
  },
- "max_decision": 175,
+ "max_decision": 200,
  "owner_rules": [
   {
    "rule": "This is a new app, no relation to the old sutra-ui. Its design is the J2 prototype's design.",
@@ -364,7 +364,32 @@
     "D172",
     "D173",
     "D174",
-    "D175"
+    "D175",
+    "D176",
+    "D177",
+    "D178",
+    "D179",
+    "D180",
+    "D181",
+    "D182",
+    "D183",
+    "D184",
+    "D185",
+    "D186",
+    "D187",
+    "D188",
+    "D189",
+    "D190",
+    "D191",
+    "D192",
+    "D193",
+    "D194",
+    "D195",
+    "D196",
+    "D197",
+    "D198",
+    "D199",
+    "D200"
    ],
    "modules": [
     "docs/DECISIONS.md",
@@ -705,9 +730,40 @@
    ]
   },
   {
+   "id": "run_templates",
+   "chip": "Run templates and auto-reuse",
+   "diagram_label": "Charter change",
+   "modules": [
+    "sutra_app/engine/j2.py",
+    "sutra_app/engine/j2_template_lib.py"
+   ],
+   "flags": [
+    "auto_reuse",
+    "run_templates"
+   ],
+   "tests": [
+    "tests/engine/test_engine_features.py"
+   ]
+  },
+  {
+   "id": "content_door",
+   "chip": "Content door",
+   "diagram_label": "Artifact schemas",
+   "modules": [
+    "sutra_app/engine/j2.py",
+    "sutra_app/engine/j2_artifact_lib.py"
+   ],
+   "flags": [
+    "artifact_library"
+   ],
+   "tests": [
+    "tests/engine/test_engine_features.py"
+   ]
+  },
+  {
    "id": "change",
    "chip": "Charter change",
-   "diagram_label": "Charter change",
+   "diagram_label": "Story + agent views",
    "modules": [
     "sutra_app/engine/j2.py",
     "sutra_app/engine/j2_change.py"
@@ -722,7 +778,7 @@
   {
    "id": "schemas",
    "chip": "Artifact schemas",
-   "diagram_label": "Artifact schemas",
+   "diagram_label": "Plan + priorities",
    "modules": [
     "sutra_app/engine/artifacts/types.json",
     "sutra_app/engine/j2_artifact_models.py",
@@ -739,7 +795,7 @@
   {
    "id": "story",
    "chip": "Story and agent views",
-   "diagram_label": "Story + agent views",
+   "diagram_label": "",
    "modules": [
     "sutra_app/engine/j2_agent.py",
     "sutra_app/engine/j2_story.py"
@@ -752,7 +808,7 @@
   {
    "id": "plan",
    "chip": "Plan and priorities",
-   "diagram_label": "Plan + priorities",
+   "diagram_label": "",
    "modules": [
     "sutra_app/engine/j2.py",
     "sutra_app/engine/j2_map.py"
@@ -963,6 +1019,22 @@
   },
   {
    "n": 12,
+   "name": "run_template",
+   "method": "GET",
+   "path": "/api/run-template",
+   "handler": "sutra_app/engine/views.py",
+   "adapter": "sutra_app/engine/api/library.py",
+   "in_ui_list": true,
+   "golden_keys": [],
+   "tests": [
+    "tests/engine/test_engine_views.py",
+    "tests/engine/golden/api_shapes.json",
+    "tests/engine/test_engine_api_scope.py",
+    "tests/contracts/test_contract_route_table.py"
+   ]
+  },
+  {
+   "n": 13,
    "name": "run_templates",
    "method": "GET",
    "path": "/api/run-templates",
@@ -980,7 +1052,7 @@
    ]
   },
   {
-   "n": 13,
+   "n": 14,
    "name": "artifacts",
    "method": "GET",
    "path": "/api/artifacts",
@@ -998,7 +1070,7 @@
    ]
   },
   {
-   "n": 14,
+   "n": 15,
    "name": "agent",
    "method": "GET",
    "path": "/api/agent",
@@ -1016,7 +1088,7 @@
    ]
   },
   {
-   "n": 15,
+   "n": 16,
    "name": "code",
    "method": "GET",
    "path": "/api/code",
@@ -1035,7 +1107,7 @@
    ]
   },
   {
-   "n": 16,
+   "n": 17,
    "name": "artifacts_tree",
    "method": "GET",
    "path": "/api/artifacts/tree",
@@ -1053,7 +1125,7 @@
    ]
   },
   {
-   "n": 17,
+   "n": 18,
    "name": "artifact",
    "method": "GET",
    "path": "/api/artifact",
@@ -1072,7 +1144,7 @@
    ]
   },
   {
-   "n": 18,
+   "n": 19,
    "name": "story",
    "method": "GET",
    "path": "/api/story",
@@ -1090,7 +1162,7 @@
    ]
   },
   {
-   "n": 19,
+   "n": 20,
    "name": "board",
    "method": "GET",
    "path": "/api/board",
@@ -1108,7 +1180,7 @@
    ]
   },
   {
-   "n": 20,
+   "n": 21,
    "name": "audits",
    "method": "GET",
    "path": "/api/audits",
@@ -1126,7 +1198,7 @@
    ]
   },
   {
-   "n": 21,
+   "n": 22,
    "name": "refs",
    "method": "GET",
    "path": "/api/refs",
@@ -1144,7 +1216,7 @@
    ]
   },
   {
-   "n": 22,
+   "n": 23,
    "name": "shot",
    "method": "GET",
    "path": "/shot/{n}",
@@ -1162,7 +1234,7 @@
    ]
   },
   {
-   "n": 23,
+   "n": 24,
    "name": "file",
    "method": "GET",
    "path": "/file/{name}",
@@ -1180,7 +1252,7 @@
    ]
   },
   {
-   "n": 24,
+   "n": 25,
    "name": "site (saved)",
    "method": "GET",
    "path": "/site/{key}?run=",
@@ -1200,7 +1272,7 @@
    ]
   },
   {
-   "n": 25,
+   "n": 26,
    "name": "site (live)",
    "method": "GET",
    "path": "/site/{key}",
@@ -1220,7 +1292,7 @@
    ]
   },
   {
-   "n": 26,
+   "n": 27,
    "name": "say",
    "method": "POST",
    "path": "/api/say",
@@ -1239,7 +1311,7 @@
    ]
   },
   {
-   "n": 27,
+   "n": 28,
    "name": "playbooks_clear",
    "method": "POST",
    "path": "/api/playbooks/clear",
@@ -1257,7 +1329,7 @@
    ]
   },
   {
-   "n": 28,
+   "n": 29,
    "name": "lessons_clear",
    "method": "POST",
    "path": "/api/lessons/clear",
@@ -1275,7 +1347,7 @@
    ]
   },
   {
-   "n": 29,
+   "n": 30,
    "name": "output",
    "method": "POST",
    "path": "/api/output",
@@ -1294,7 +1366,7 @@
    ]
   },
   {
-   "n": 30,
+   "n": 31,
    "name": "reset",
    "method": "POST",
    "path": "/api/reset",
@@ -1312,7 +1384,7 @@
    ]
   },
   {
-   "n": 31,
+   "n": 32,
    "name": "runlist",
    "method": "GET",
    "path": "/api/runlist",
@@ -1330,7 +1402,7 @@
    ]
   },
   {
-   "n": 32,
+   "n": 33,
    "name": "changes",
    "method": "GET",
    "path": "/api/changes",
@@ -1348,7 +1420,7 @@
    ]
   },
   {
-   "n": 33,
+   "n": 34,
    "name": "plan_map",
    "method": "GET",
    "path": "/api/plan-map",
@@ -1366,7 +1438,7 @@
    ]
   },
   {
-   "n": 34,
+   "n": 35,
    "name": "activity",
    "method": "GET",
    "path": "/api/activity",
@@ -1384,7 +1456,7 @@
    ]
   },
   {
-   "n": 35,
+   "n": 36,
    "name": "catalog",
    "method": "GET",
    "path": "/api/catalog",
@@ -1402,7 +1474,7 @@
    ]
   },
   {
-   "n": 36,
+   "n": 37,
    "name": "artifacts_groups",
    "method": "GET",
    "path": "/api/artifacts/groups",
@@ -1420,7 +1492,7 @@
    ]
   },
   {
-   "n": 37,
+   "n": 38,
    "name": "ask",
    "method": "POST",
    "path": "/api/ask",
@@ -1439,7 +1511,7 @@
    ]
   },
   {
-   "n": 38,
+   "n": 39,
    "name": "record",
    "method": "GET",
    "path": "/api/record",
@@ -1459,7 +1531,7 @@
    ]
   },
   {
-   "n": 39,
+   "n": 40,
    "name": "doc",
    "method": "GET",
    "path": "/doc/{name}",
@@ -1477,7 +1549,7 @@
    ]
   },
   {
-   "n": 40,
+   "n": 41,
    "name": "view",
    "method": "GET",
    "path": "/view",
@@ -1496,7 +1568,7 @@
    ]
   },
   {
-   "n": 41,
+   "n": 42,
    "name": "settings",
    "method": "POST",
    "path": "/api/settings",
@@ -1515,7 +1587,7 @@
    ]
   },
   {
-   "n": 42,
+   "n": 43,
    "name": "timing",
    "method": "GET",
    "path": "/api/timing",
@@ -3295,6 +3367,7 @@
    "title": "A finished run is collected into the catalog by a Sutra-owned step under the library lock",
    "packages": [
     "GAP-W1",
+    "L7",
     "UI-7"
    ],
    "status": "implemented",
@@ -3509,10 +3582,8 @@
   {
    "id": "D160",
    "title": "The pin moves to J2 `cut-off/2026-11-12` (`1d537295`); the source stays the extraction of this repository's `prototypes/j2`",
-   "packages": [
-    "E1"
-   ],
-   "status": "implemented",
+   "packages": [],
+   "status": "documented only",
    "superseded_by": [],
    "diagram": "label \"J2 pin: cut-off 2026-11-12\", pill on band:DEPARTMENT RUNTIME."
   },
@@ -3677,6 +3748,260 @@
    "status": "documented only",
    "superseded_by": [],
    "diagram": "label \"release 0.4.0\", pill on band:DEPARTMENT RUNTIME."
+  },
+  {
+   "id": "D176",
+   "title": "The pin moves to J2 main `1adb8ecd`; the source stays the extraction of this repository's `prototypes/j2`",
+   "packages": [
+    "E1"
+   ],
+   "status": "implemented",
+   "superseded_by": [],
+   "diagram": "label \"J2 pin: main 1adb8ecd\", pill on band:DEPARTMENT RUNTIME."
+  },
+  {
+   "id": "D177",
+   "title": "The reuse flags are Engine settings; `J2_PUSH_RUNS` and `J2_RUN_BY` are fixed values of the host",
+   "packages": [
+    "E0",
+    "E3",
+    "GAP-W1",
+    "UI-0",
+    "UI-7"
+   ],
+   "status": "implemented",
+   "superseded_by": [],
+   "diagram": "label \"reuse flags are settings\", pill on band:EXPERIENCE."
+  },
+  {
+   "id": "D178",
+   "title": "Implied flags are computed once by `EngineSettings.effective()`; the finish step and the project force read it",
+   "packages": [
+    "E0",
+    "E4",
+    "UI-0",
+    "UI-7"
+   ],
+   "status": "implemented",
+   "superseded_by": [],
+   "diagram": "label \"implied flags: effective()\", pill on band:DEPARTMENT RUNTIME."
+  },
+  {
+   "id": "D179",
+   "title": "The reviewer: on by default, two settings, a host that waits (capped) and discards a late result; patch P19",
+   "packages": [
+    "E0",
+    "E1",
+    "GAP-E1B",
+    "GAP-W1",
+    "UI-0",
+    "UI-7"
+   ],
+   "status": "implemented",
+   "superseded_by": [],
+   "diagram": "label \"reviewer: join, cap, switch (P19)\", pill on band:DEPARTMENT RUNTIME."
+  },
+  {
+   "id": "D180",
+   "title": "P1, P7, P8, P9 are re-anchored; P19 is new; the late-judge reserve is P20",
+   "packages": [],
+   "status": "documented only",
+   "superseded_by": [],
+   "diagram": "label \"patch table P1-P19\", pill on band:DEPARTMENT RUNTIME."
+  },
+  {
+   "id": "D181",
+   "title": "P10 covers the two runtime writers J2 added: `note_version` and `mark_run_template_used`",
+   "packages": [
+    "E1"
+   ],
+   "status": "implemented",
+   "superseded_by": [],
+   "diagram": "label \"library lock covers 4 writers\", pill on Template library."
+  },
+  {
+   "id": "D182",
+   "title": "The `say` carrier is in scope: `template` and `workflows` travel as two task-only settings keys; the start page gets no control of its own",
+   "packages": [
+    "CT-1",
+    "E0",
+    "E2",
+    "E4",
+    "GAP-W1",
+    "ORCH-1",
+    "UI-0"
+   ],
+   "status": "implemented",
+   "superseded_by": [],
+   "diagram": "label \"say carries run template\", pill on band:EXPERIENCE."
+  },
+  {
+   "id": "D183",
+   "title": "The run-template views read the team's resolved settings, never the server's environment",
+   "packages": [
+    "E2",
+    "E4",
+    "UI-0"
+   ],
+   "status": "implemented",
+   "superseded_by": [],
+   "diagram": "label \"run template views: team settings\", pill on band:EXPERIENCE."
+  },
+  {
+   "id": "D184",
+   "title": "The Artifacts shelf is team-scoped: `J2_RUNS_DIR` is the team's runs folder for the call",
+   "packages": [
+    "E2",
+    "E4"
+   ],
+   "status": "implemented",
+   "superseded_by": [],
+   "diagram": "label \"artifact shelf per team\", pill on Template library."
+  },
+  {
+   "id": "D185",
+   "title": "The seed sync adds run templates, their folders and the two provenance keys; it stays additive",
+   "packages": [
+    "GAP-OPS-1"
+   ],
+   "status": "implemented",
+   "superseded_by": [],
+   "diagram": "label \"seed library: + run templates\", pill on Template library."
+  },
+  {
+   "id": "D186",
+   "title": "The records catalogue and the closed models learn the new run files and keys; J2's run-template bundle is `RunTemplateBundle`",
+   "packages": [],
+   "status": "documented only",
+   "superseded_by": [],
+   "diagram": "label \"records: reuse, run template bundle\", pill on band:DEPARTMENT RUNTIME."
+  },
+  {
+   "id": "D187",
+   "title": "A follow-up never re-fires auto-reuse and does not restore the run template",
+   "packages": [
+    "GAP-E1B"
+   ],
+   "status": "implemented",
+   "superseded_by": [],
+   "diagram": "label \"follow-up: no auto-reuse\", pill on band:EXPERIENCE."
+  },
+  {
+   "id": "D188",
+   "title": "The Sutra-side hard-coded behaviour is cleaned by three rules, applied to a list; what stays is named",
+   "packages": [
+    "E0",
+    "E2",
+    "E8",
+    "GAP-TUNE"
+   ],
+   "status": "implemented",
+   "superseded_by": [],
+   "diagram": "label \"hard-coded cleanup: 3 rules\", pill on band:DEPARTMENT RUNTIME."
+  },
+  {
+   "id": "D189",
+   "title": "J2's own hard-coded behaviour is reported to J2's maintainers, not patched; the group-A fixes are adopted at the pin that contains them",
+   "packages": [
+    "GAP-TUNE"
+   ],
+   "status": "implemented",
+   "superseded_by": [],
+   "diagram": "label \"J2 hard-coding: reported\", pill on band:DEPARTMENT RUNTIME."
+  },
+  {
+   "id": "D190",
+   "title": "Goldens and fixtures move only through the recorders; `J2_RUN_BY` is pinned in every recorder",
+   "packages": [
+    "E5"
+   ],
+   "status": "implemented",
+   "superseded_by": [],
+   "diagram": "label \"goldens by recorder only\", pill on band:DEPARTMENT RUNTIME."
+  },
+  {
+   "id": "D191",
+   "title": "The page is regenerated by the script: 40 edits, E20f split, E24a to E24f added",
+   "packages": [
+    "UI-2"
+   ],
+   "status": "implemented",
+   "superseded_by": [],
+   "diagram": "label \"page regenerated for sync 6\", pill on band:EXPERIENCE."
+  },
+  {
+   "id": "D192",
+   "title": "The diff of record decides every new file; two reference documents and two tests are carried",
+   "packages": [
+    "E5"
+   ],
+   "status": "implemented",
+   "superseded_by": [],
+   "diagram": "none (tooling)."
+  },
+  {
+   "id": "D193",
+   "title": "One release, 0.5.0, in one merge order; the flags ship off",
+   "packages": [],
+   "status": "documented only",
+   "superseded_by": [],
+   "diagram": "label \"release 0.5.0\", pill on band:DEPARTMENT RUNTIME."
+  },
+  {
+   "id": "D194",
+   "title": "The shared library is J2's library data plus the contract; the app's stores sit beside it, not in it",
+   "packages": [],
+   "status": "documented only",
+   "superseded_by": [],
+   "diagram": "label \"shared library = J2 data + contract\", pill on Template library."
+  },
+  {
+   "id": "D195",
+   "title": "Ownership is split by role, the contract is a document, a file and a test, and its text belongs to the shared-library maintainer",
+   "packages": [],
+   "status": "documented only",
+   "superseded_by": [],
+   "diagram": "label \"library ownership by role\", pill on Template library."
+  },
+  {
+   "id": "D196",
+   "title": "Memory and the external catalogue are separate app-side stores behind the gate, with one write path and one scope vocabulary",
+   "packages": [],
+   "status": "documented only",
+   "superseded_by": [],
+   "diagram": "label \"memory + catalogue: app stores, one gate\", pill on Interface library."
+  },
+  {
+   "id": "D197",
+   "title": "Nothing is shared beyond a team by default; sharing is a later, owner-triggered publish step with scrubbing",
+   "packages": [],
+   "status": "documented only",
+   "superseded_by": [],
+   "diagram": "label \"no sharing without publish\", pill on Template library."
+  },
+  {
+   "id": "D198",
+   "title": "The sync follows one procedure of ten steps, each with a check that fails loudly",
+   "packages": [],
+   "status": "documented only",
+   "superseded_by": [],
+   "diagram": "label \"sync procedure, 10 checks\", pill on Template library."
+  },
+  {
+   "id": "D199",
+   "title": "The `template` kind of external software stays a plain catalogue row in v1",
+   "packages": [],
+   "status": "documented only",
+   "superseded_by": [],
+   "diagram": "label \"external template: row only\", pill on Interface library."
+  },
+  {
+   "id": "D200",
+   "title": "The J2 library maintainers are asked to move the remaining constants into data and to add three seams",
+   "packages": [],
+   "status": "documented only",
+   "superseded_by": [],
+   "diagram": "label \"J2 asked: constants to data, 3 seams\", pill on Template library."
   }
  ],
  "packages": [

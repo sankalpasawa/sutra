@@ -12,6 +12,7 @@ import stat
 import sys
 import threading
 from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
 
@@ -910,7 +911,15 @@ def test_the_hook_classes_satisfy_the_protocol():
     assert not isinstance(object(), EngineHooks)
     assert [n for n in vars(EngineHooks) if not n.startswith("_") and callable(getattr(EngineHooks, n))] == [
         "run_started", "run_status", "turn_started", "turn_finished", "call_finished", "message_posted", "record_saved",
-        "run_error", "system_addendum"]
+        "run_error", "system_addendum", "review_enabled"]      # review_enabled: J2 sync 6, patch P19
+
+
+def test_the_reviewer_hook_defaults_to_on_for_null_and_event_hooks_and_is_the_settings_flag_otherwise():
+    assert NullHooks().review_enabled() is True
+    hooks = EventHooks(SimpleNamespace(trace=lambda *a, **k: None), lambda: None)
+    assert hooks.review_enabled() is True
+    hooks.reviewer = False
+    assert hooks.review_enabled() is False
 
 
 # ---- EventHooks -------------------------------------------------------------------------------------------------------

@@ -1,0 +1,39 @@
+{
+  "schema": "template-library/1",
+  "name": "Rhythm Room Dance Studio Hosting and deployment",
+  "version": 1,
+  "sha": "dcca28b839b0de3b70f07440dedd6991fb7b604fcb6ca0f6fa289558378b4700",
+  "schema_sha": "83262b1abe5ec513a8399d5bd0e33ef5a1b9f34565b8ea9ebb5caac58d7dd999",
+  "model_sha": "77fe75dabafe32d63ecb331ec42390b4b43ca607e9bac2f2d1ddaeba4faee85a",
+  "class": "RhythmRoomDanceStudioHostingAndDeploymentV1",
+  "created": "2026-11-11T22:09:16",
+  "fingerprints": [
+    "6d46e3b828c76dc6b25af34be3c2738fe71de42d3e2348014784305fc00c0e14"
+  ],
+  "made_by": {
+    "run": "j2-20261111-215733",
+    "workflow": "W-11",
+    "atom": "W-11.a1",
+    "agent": "code (adapted from a run template)",
+    "date": "2026-11-11 21:57:33"
+  },
+  "business": {
+    "name": "Rhythm Room Dance Studio",
+    "type": "hld"
+  },
+  "mock": false,
+  "collected_from": {
+    "run": "j2-20261111-215733",
+    "where": "the run's copy"
+  },
+  "used_by": [
+    {
+      "run": "j2-20261111-215733",
+      "workflow": "W-11",
+      "atom": "W-11.a1",
+      "action": "extended"
+    }
+  ],
+  "renamed_from": "Still Point Yoga Hosting and deployment@4",
+  "adapted_from": "Still Point Yoga Hosting and deployment@1"
+}

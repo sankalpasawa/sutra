@@ -397,6 +397,16 @@ def test_the_catalog_step_does_nothing_while_the_template_library_is_off(j2, mak
     assert row["result"] == "skipped" and row["why"] == "the template library is off for this run"
 
 
+@pytest.mark.parametrize("flag", ["auto_reuse", "artifact_library"])
+def test_the_catalog_step_runs_when_reuse_turns_the_library_on_by_implication(j2, make_run_dir, flag):
+    """D178: J2 turns the template library on itself for `auto_reuse` and the content door, so the step reads `effective()`, not the stored flag."""
+    host = finished(brew(make_run_dir), mock=False)
+    host.settings = host.settings.model_copy(update={flag: True})
+    assert host.settings.template_library is False and host.settings.effective().template_library is True
+    row = catalog_row(host)
+    assert row["result"] == "skipped" and row["why"] == "the run stored no templates", "past the library check: it looked for the run's templates"
+
+
 def test_the_catalog_step_leaves_a_mock_run_out(j2, make_run_dir):
     host = finished(library_run(make_run_dir))
     assert host.mock is True and host.settings.template_library is True
@@ -540,3 +550,10 @@ def test_a_run_of_the_app_with_the_library_on_reaches_the_catalog_through_the_ho
     assert seen["trace"][1]["result"] == "ok" and seen["trace"][1]["not_recorded"] == 0
     assert run_dir.name in seen["index"]["runs"] and seen["agent"] is True
     assert events(run_dir)[-1]["t"] == "run.ended"
+
+
+def test_the_statuses_that_get_the_steps_are_the_two_finished_ones_of_the_event_vocabulary():
+    """D188 (R-3): one owner for the words. `finish.ENDED_WELL` and `rehydrate.ENDED` read `events.END_STATUSES`."""
+    from sutra_app.engine import events, rehydrate
+    assert finish.ENDED_WELL == rehydrate.ENDED == ("done", "done_with_open_items") == events.END_STATUSES[:2]
+    assert set(events.END_STATUSES) - set(finish.ENDED_WELL) == {"stopped", "crashed"}

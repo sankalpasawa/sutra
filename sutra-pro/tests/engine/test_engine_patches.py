@@ -1,7 +1,7 @@
 """The patches of the vendored J2 (work package E1, engine design 3.4): P2 role-file folder, P3 explicit run folder and id,
 P4 non-blocking user_says and apply_override, P5 explicit-path memory and saved-run functions, P7 tagged model calls,
 P8 hooks, P9 the system addendum, P14 `single` with no type, P16 Decide for me's settings file, P17 the local type store and
-P18 host type registration (sync 5). J2 runs in mock mode with its Chrome checks faked (as J2's own `--fast` flow does), so a
+P18 host type registration (sync 5), and since sync 6 P19 (the reviewer switch) and the P7, P8 and P9 anchors at the new pin. J2 runs in mock mode with its Chrome checks faked (as J2's own `--fast` flow does), so a
 whole Brew Lab run takes about a tenth of a second. P1 (imports) and P10 (the library lock) are in test_engine_vendor.py and
 test_engine_library_lock.py, P11 (rehydrate) in test_engine_rehydrate.py."""
 import contextlib
@@ -19,7 +19,7 @@ from pathlib import Path
 import pytest
 
 ENGINE = "sutra_app.engine"
-J2_MODULES = ("j2", "j2_agent", "j2_agent_models", "j2_agent_views", "j2_artifact_models", "j2_artifacts", "j2_board", "j2_change",
+J2_MODULES = ("j2", "j2_agent", "j2_agent_models", "j2_agent_views", "j2_artifact_lib", "j2_artifact_models", "j2_artifacts", "j2_board", "j2_change",
               "j2_check", "j2_map", "j2_realization", "j2_rules", "j2_schema", "j2_send", "j2_story", "j2_studio", "j2_template_lib",
               "j2_types", "rehydrate")
 BREW_LAB = ("A one-page website for Brew Lab, a small specialty coffee shop in Indiranagar, Bengaluru. Visitors should "
@@ -368,6 +368,7 @@ def tagged_run(j2, make_run, mock_mode, text=BREW_LAB, **kw):
     mock_mode.configure(port, mock=True, base_tag=base_tag())
     run = make_run(**kw)
     say(run, text)
+    settle(run)
     return run, port
 
 
@@ -436,6 +437,15 @@ def test_p7_the_turn_tag_does_not_leak_out_of_the_turn(j2, make_run, mock_mode):
 
 
 # ---- P8: hooks --------------------------------------------------------------------------------------------------------
+def settle(run):
+    """J2 (since sync 6) writes report.json, report.md and artifacts.json after the run is `waiting`, from the reviewer's thread
+    (D179): a test that reads the folder or the hook calls waits for it, as the host does."""
+    thread = getattr(run, "review_thread", None)
+    if thread is not None:
+        thread.join(30)
+        assert not thread.is_alive()
+
+
 def hooked_run(j2, make_run, mock_mode, texts=(BREW_LAB,), **kw):
     mock_mode.configure(mock=True, base_tag=base_tag())
     rec = recorder()
@@ -443,13 +453,18 @@ def hooked_run(j2, make_run, mock_mode, texts=(BREW_LAB,), **kw):
     rec.run = run
     for text in texts:
         say(run, text)
+    settle(run)
     return run, rec
 
 
 def test_p8_a_hooked_run_pairs_every_turn_start_with_its_finish(j2, make_run, mock_mode):
     run, rec = hooked_run(j2, make_run, mock_mode)
     names = [c[0] for c in rec.calls]
-    assert names[:4] == ["message_posted", "run_status", "record_saved", "turn_started"] and names[-1] == "run_status"
+    assert names[:4] == ["message_posted", "run_status", "record_saved", "turn_started"]
+    last_status = max(i for i, n in enumerate(names) if n == "run_status")
+    late = [c[1] for c in rec.calls[last_status + 1:]]
+    assert late and set(late) <= {"report.json", "artifacts.json"} and all(n == "record_saved" for n in names[last_status + 1:]), \
+        "after the run end hook only the reviewer's thread writes (the host joins it, D179)"
     assert rec.calls[2][1] == "deliverables.json", "J2's planner call of _plan_stages (sync 5) saves its answer before the first turn"
     open_turn, numbers = None, []
     for c in rec.calls:
@@ -1026,3 +1041,157 @@ def test_p18_register_clears_the_cache_so_the_type_shows_at_once(jt, tmp_path):
     before = jt.names()
     jt.register(host_entry(tmp_path, jt))
     assert set(jt.names()) == set(before) | {"host_doc"}
+
+
+# ---- sync 6: P7 on a run template's planner call, P8 order at the run end, P9 and the delay, P19 the reviewer switch ------------------
+SEED_LIBRARY = Path(__file__).resolve().parents[2] / "sutra_app" / "engine" / "seed" / "library"
+RUN_TEMPLATE = "thread-boutique-website"          # a mock-made run template of the seed (the runs here are mock runs)
+
+
+@pytest.fixture
+def j2_tpl(tmp_path):
+    """J2 imported with run templates on (J2_RUN_TEMPLATES) and the seed library as its library."""
+    import shutil
+    shutil.copytree(SEED_LIBRARY, tmp_path / "env" / "library")
+    with fresh_j2(tmp_path / "env", J2_RUN_TEMPLATES="1") as mod:
+        yield mod
+
+
+def test_p7_the_planner_call_of_a_run_template_run_is_tagged_adaptation_step_2(j2_tpl, tmp_path, mock_mode):
+    """`_run_tpl_start(said) if self.run_tpl else self._deliverables(said)` is one expression inside the P7 block: the planner
+    call the whole-template path makes (it calls `_deliverables` itself) is charged to Adaptation, like the plain one."""
+    port = captured_port()
+    mock_mode.configure(port, mock=True, base_tag=base_tag())
+    run = j2_tpl.J2Run(run_dir=tmp_path / "runs" / "j2-20261104-100001-7f3a")
+    assert run.set_run_template(RUN_TEMPLATE, "all") is True and run.run_tpl
+    assert run.user_says(BREW_LAB) is True
+    deadline = time.time() + 60
+    while run.status != "waiting":
+        assert time.time() < deadline
+        time.sleep(0.003)
+    first = port.requests[0].tag
+    assert (first.function, first.step) == ("adaptation", 2), "the first model call of a template run is the planner's, tagged"
+    settle(run)
+
+
+def test_p7_the_planner_expression_is_one_statement_inside_the_tagged_block():
+    text = (Path(__file__).resolve().parents[2] / "sutra_app" / "engine" / "j2.py").read_text(encoding="utf-8")
+    block = ('        with llm.tagged(function="adaptation", step=2, cycle=self.cycle, stage=self.stage_kind or self.output):'
+             '      # P7: Adaptation\'s planner call, made before its turn\n'
+             '            chosen = self._run_tpl_start(said) if self.run_tpl else self._deliverables(said)')
+    assert text.count(block) == 1
+
+
+def test_p8_the_run_end_hook_fires_after_the_report_is_made_and_the_reviewer_is_running(j2, make_run, mock_mode):
+    """P8's anchor moved in sync 6: `_make_report` starts the reviewer thread, then the status is `waiting`, then the hook. The
+    placeholder report is on disk when `run_status("waiting")` is heard; the host's join (D179) is what makes the folder stable."""
+    seen = {}
+    rec = recorder()
+    original = rec.run_status
+
+    def run_status(snap):
+        original(snap)
+        if snap["status"] == "waiting":
+            seen["report"] = json.loads((Path(rec.run.dir) / "report.json").read_text())
+            seen["thread"] = getattr(rec.run, "review_thread", None)
+    rec.run_status = run_status
+    mock_mode.configure(mock=True, base_tag=base_tag())
+    run = make_run(hooks=rec)
+    rec.run = run
+    say(run, BREW_LAB)
+    assert seen["report"]["review"]["verdict"] and seen["thread"] is not None, "report.json existed and the reviewer thread was started"
+    settle(run)
+    assert rec.of("run_status")[-1][0]["status"] == "waiting"
+
+
+def test_p9_the_delay_lines_of_call_use_call_delay_and_the_other_two_sites_are_untouched():
+    text = (Path(__file__).resolve().parents[2] / "sutra_app" / "engine" / "j2.py").read_text(encoding="utf-8")
+    assert text.count("if self.calls and call_delay():") == 3 and text.count("time.sleep(call_delay())") == 3
+    at = text.index("system = system_prompt(fn, reply_format, self._builder_for(fn))")
+    assert text[at:at + 400].count("system_addendum") == 1 and text[at:at + 600].count("call_delay()") == 2
+
+
+def test_p9_an_addendum_still_reaches_the_prompt_with_the_new_delay(j2, make_run, mock_mode):
+    rec = recorder()
+    rec.system_addendum = lambda fn: "\n\n## Node context\nbe brief" if fn == "identity" else ""
+    run = make_run(hooks=rec)
+    say(run, BREW_LAB)
+    settle(run)
+    first = json.loads((Path(run.dir) / "calls.jsonl").read_text().splitlines()[0])
+    assert first["system"].endswith("\n\n## Node context\nbe brief")
+
+
+def test_p9_a_mock_run_has_no_call_delay(j2):
+    assert j2.call_delay() == 0
+
+
+# ---- P19: the reviewer switch (D179) ---------------------------------------------------------------------------------------------
+def reviewer_calls(port):
+    return [r for r in port.requests if r.tag.function == "reviewer"]
+
+
+def run_with_hooks(j2, make_run, mock_mode, hooks):
+    port = captured_port()
+    mock_mode.configure(port, mock=True, base_tag=base_tag())
+    run = make_run(**({"hooks": hooks} if hooks is not None else {}))
+    if hooks is not None and hasattr(hooks, "run"):
+        hooks.run = run
+    say(run, BREW_LAB)
+    settle(run)
+    return run, port
+
+
+def verdict_of(run):
+    return json.loads((Path(run.dir) / "report.json").read_text())["review"]["verdict"]
+
+
+def test_p19_the_reviewer_runs_under_null_hooks_as_before(j2, make_run, mock_mode):
+    run, port = run_with_hooks(j2, make_run, mock_mode, None)
+    assert len(reviewer_calls(port)) == 1 and "switched off" not in verdict_of(run)
+    assert json.loads((Path(run.dir) / "report.json").read_text())["metrics"]["ai_calls"] == run.calls, "the reviewer's call is counted"
+
+
+def test_p19_a_hook_that_says_true_or_nothing_leaves_the_reviewer_on(j2, make_run, mock_mode):
+    for answer in (True, None, "no", 0):
+        rec = recorder()
+        rec.review_enabled = lambda answer=answer: answer
+        run, port = run_with_hooks(j2, make_run, mock_mode, rec)
+        assert len(reviewer_calls(port)) == 1, answer      # only an explicit False switches it off
+        assert "switched off" not in verdict_of(run), answer
+
+
+def test_p19_an_explicit_false_switches_the_reviewer_off_and_the_report_says_so(j2, make_run, mock_mode):
+    rec = recorder()
+    rec.review_enabled = lambda: False
+    run, port = run_with_hooks(j2, make_run, mock_mode, rec)
+    assert reviewer_calls(port) == [] and getattr(run, "review_thread", None) is None
+    assert verdict_of(run) == "The reviewer is switched off in this team's settings."
+    report = json.loads((Path(run.dir) / "report.json").read_text())
+    assert report["metrics"]["ai_calls"] == run.calls, "the reviewer's call is not counted"
+    assert "switched off in this team's settings" in (Path(run.dir) / "report.md").read_text()
+    assert run.outcome.startswith("Done")
+
+
+def test_p19_a_pause_for_the_requester_keeps_its_own_placeholder_even_when_the_reviewer_is_off(j2, make_run, mock_mode):
+    rec = recorder()
+    rec.review_enabled = lambda: False
+    mock_mode.configure(mock=True, base_tag=base_tag())
+    run = make_run(hooks=rec)
+    say(run, VAGUE[0])
+    assert run.paused and verdict_of(run).startswith("Paused for the Requester")
+
+
+def test_p19_a_hook_that_raises_does_not_switch_the_reviewer_off(j2, make_run, mock_mode, capsys):
+    rec = recorder()
+
+    def boom():
+        raise RuntimeError("hook failed")
+    rec.review_enabled = boom
+    run, port = run_with_hooks(j2, make_run, mock_mode, rec)
+    assert len(reviewer_calls(port)) == 1 and run.error is None
+
+
+def test_p19_the_edit_is_in_the_vendored_make_report():
+    text = (Path(__file__).resolve().parents[2] / "sutra_app" / "engine" / "j2.py").read_text(encoding="utf-8")
+    assert text.count('off = review and self._hook("review_enabled") is False') == 1
+    assert text.count("The reviewer is switched off in this team's settings.") == 1

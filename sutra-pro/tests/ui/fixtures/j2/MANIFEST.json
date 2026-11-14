@@ -1,6 +1,6 @@
 {
   "schema": "j2-fixtures/1",
-  "j2_commit": "1d537295eb11cb034956fa9d8a4026eaa1e3f44e",
+  "j2_commit": "1adb8ecd8fa8eef47fb7a0fc63a1616f556cdfeb",
   "mock": true,
   "brief": "A one-page website for Brew Lab, a small specialty coffee shop in Indiranagar, Bengaluru. Visitors should see the menu with prices, the opening hours, and where to find us, and be able to pre-order a coffee for pickup. It should feel warm and modern and work well on a phone.",
   "clock": 1793786404,
@@ -106,11 +106,11 @@
     },
     "artifacts-tree.json": {
       "bytes": 6268,
-      "sha256": "196041bcca822fded8778e072daf6db4dd3241d54013267b21d91c051b6a54ea"
+      "sha256": "8821ee12bf55345cc7d7f285e46e15ef9f198930ac2135841db8c232d5b02381"
     },
     "artifacts.json": {
       "bytes": 4486,
-      "sha256": "8b3a8d1aff3546d3cc3ef6dda8784176c875bb05f8fb7ac689ecda3157b0096b"
+      "sha256": "60efce5031bf973db3d129a9188c31b80f0bc1374be15343d5ecfabeb6ad7a7a"
     },
     "ask-adaptation.json": {
       "bytes": 697,
@@ -145,8 +145,8 @@
       "sha256": "b429ba025aeeb8963f98b408bbcea1ac1ddfc3b44b3a9cb085449c869ad6e208"
     },
     "catalog.json": {
-      "bytes": 122075,
-      "sha256": "a3ef5cb6d2fb8965a3dfcb059aa7f9311e47f4254bbff20e68ec5aa5e31aaf61"
+      "bytes": 314740,
+      "sha256": "2fb93f7bf47be4bac710d23d6a4df1a41f2c471b92acbe37ae66124f284383c4"
     },
     "changes.json": {
       "bytes": 15,
@@ -265,8 +265,8 @@
       "sha256": "6a587f360e2f20fcc6b9c44388f7d9d3b6bc6be84abcfd13d845820e46d68861"
     },
     "library.json": {
-      "bytes": 79647,
-      "sha256": "5e69de8ed5b1fe5ea7bde85ea2f87f375d61fa55e1f94174ee9867abd80eadcb"
+      "bytes": 209293,
+      "sha256": "e954f12f55bc731e9119be5039fd368dc1a4b8311540a58af91118f4338b07c4"
     },
     "map.json": {
       "bytes": 19642,
@@ -326,7 +326,7 @@
     },
     "render-docs.json": {
       "bytes": 150948,
-      "sha256": "89679f269591bbfa3e411ca43241ae81eba892d1cab5a4d927ef4551ce109a57"
+      "sha256": "d8549817fc85b51e035aadd0909ca234129cd3c07f0bbdfc256916f21e3c536e"
     },
     "run-templates.json": {
       "bytes": 17,

@@ -1,0 +1,72 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "additionalProperties": false,
+  "properties": {
+    "components": {
+      "description": "the components, C1, C2, ... in order; each names the PRD requirement ids it covers (for Iron Grove Fitness, a hld)",
+      "items": {
+        "$ref": "#/definitions/Component"
+      },
+      "type": "array"
+    },
+    "assumptions": {
+      "description": "the assumptions of Iron Grove Fitness's Components",
+      "items": {
+        "type": "string"
+      },
+      "type": "array"
+    },
+    "facts_used": {
+      "description": "the charter facts this section is written from, copied exactly from Iron Grove Fitness's charter",
+      "items": {
+        "type": "string"
+      },
+      "type": "array"
+    },
+    "booking_address": {
+      "description": "the booking address of Iron Grove Fitness's Components",
+      "type": "string"
+    }
+  },
+  "required": [
+    "components",
+    "booking_address"
+  ],
+  "type": "object",
+  "definitions": {
+    "Component": {
+      "additionalProperties": false,
+      "properties": {
+        "id": {
+          "description": "C1, C2, ... in order",
+          "type": "string"
+        },
+        "name": {
+          "description": "the component name",
+          "type": "string"
+        },
+        "responsibility": {
+          "description": "its one responsibility, in one line",
+          "type": "string"
+        },
+        "covers": {
+          "description": "the PRD requirement ids it covers, e.g. [\"R1\"]",
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "page": {
+          "description": "the page id it sits on, e.g. \"P1\"",
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "name",
+        "responsibility"
+      ],
+      "type": "object"
+    }
+  }
+}

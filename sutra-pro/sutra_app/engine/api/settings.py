@@ -20,9 +20,14 @@ J2 sync 5 (D166): the body also has `output_types`, `[{name, label, form, pin}]`
 is true for a type the planner lists and for a type a capability registered), with the data's own labels, so the pages build their choices
 from it and name no type. `output` is `auto` or a name of the right shape (`spec.py`); that the name is a type that exists is checked here,
 where J2 is loaded: `set.output` of an unknown name is a violation row.
+
+J2 sync 6 (D178): the body also has `effective_flags`, `{auto_reuse, run_templates, template_library, artifact_schema}` as J2 will see them after
+its own implications (`EngineSettings.effective()`). `effective` still holds the values as stored (what the owner chose), so a row that is on
+only by implication is `effective_flags[x] and not effective[x]` ("on (implied by Reuse earlier work)").
 """
 import json
 import os
+from dataclasses import asdict
 from sutra_app import oslayer
 import tempfile
 import threading
@@ -75,6 +80,7 @@ def settings_view(data_dir, dept_id: Optional[str]) -> dict:
     if dept_id:
         body["department"] = dept_file
     body.update(effective=effective.model_dump(), editable=list(EDITABLE_FIELDS), locked=list(LOCKED_FIELDS))
+    body["effective_flags"] = asdict(effective.effective())          # J2 sync 6 (D178): the reuse flags after J2's implications; `effective` keeps what is stored
     body["output_types"] = output_types()
     if dept_id:
         body["next_run"] = {"output": effective_settings(data_dir, dept_id).output}

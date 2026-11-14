@@ -139,7 +139,58 @@ test("the template library flag says what the catalog's By run list shows while 
   const html = engineHtml(FOR_ALL, {scope: "", departments: DEPARTMENTS});
   const row = rows(html).template_library;
   assert.match(row, /<label class="setlabel" for="setf-template_library">Template library<\/label>/);
-  assert.match(row, /<span class="sethint">Builders use the template library\. While this is off, the catalog&#39;s &quot;By run&quot; list shows J2&#39;s eight development runs only\.<\/span>/);
+  assert.match(row, /<span class="sethint">Builders use the template library\. While this is off, the catalog&#39;s &quot;By run&quot; list shows J2&#39;s development runs only\.<\/span>/);
+});
+
+// J2 sync 6 (D177, D178, D179): the reuse switches, the reviewer pair, the groups and the implied row
+test("the reuse switches and the reviewer pair are five more rows: four toggles and one number, under their own headings", () => {
+  const html = engineHtml(FOR_ALL, {scope: "", departments: DEPARTMENTS});
+  const found = rows(html);
+  assert.equal(Object.keys(found).length, 37, "27 editable rows and 10 locked ones");
+  ["run_templates", "auto_reuse", "artifact_library", "reviewer"].forEach(f => assert.match(inputOf(found[f])[0], /type="checkbox"/, f));
+  assert.match(inputOf(found.reviewer_wait)[0], /type="number" step="any"/);
+  assert.match(inputOf(found.reviewer_wait)[0], /value="120"/);
+  ["run_templates", "auto_reuse", "artifact_library"].forEach(f => assert.doesNotMatch(inputOf(found[f])[0], /checked/, f + " is off by default"));
+  assert.match(inputOf(found.reviewer)[0], /checked/);
+  assert.match(html, /<h4 class="setsub" data-subgroup="reuse">Reuse \(experimental\)<\/h4>/);
+  assert.match(html, /<h4 class="setsub" data-subgroup="report">Run report<\/h4>/);
+  const at = k => html.indexOf('data-field="' + k + '"');
+  assert.ok(at("workspace") < html.indexOf('data-subgroup="reuse"') && html.indexOf('data-subgroup="reuse"') < at("run_templates") && at("artifact_library") < html.indexOf('data-subgroup="report"') && html.indexOf('data-subgroup="report"') < at("reviewer"));
+  assert.ok(at("template_library") < html.indexOf('data-subgroup="reuse"'), "the template library stays in the main list");
+  assert.match(found.auto_reuse, /Off by default/);
+  assert.match(found.reviewer, /one more AI call per run/);
+});
+
+test("a switch that is on only because another is on says so, shows the stored value, and is not pinned by a save", () => {
+  const answer = clone(FOR_ALL);
+  answer.global = Object.assign({}, answer.global, {auto_reuse: true});
+  answer.effective = Object.assign({}, answer.defaults, answer.global);      // as stored
+  answer.effective_flags = {auto_reuse: true, run_templates: true, template_library: true, artifact_schema: true};      // as the engine will run
+  const found = rows(engineHtml(answer, {scope: ""}));
+  assert.match(found.auto_reuse, /data-source="all"/);
+  assert.doesNotMatch(found.auto_reuse, /data-implied/, "the owner's own choice is not implied");
+  ["run_templates", "template_library", "artifact_schema"].forEach(f => {
+    assert.match(found[f], /data-implied="true"/, f);
+    assert.match(found[f], /on \(implied by Reuse earlier work\)/, f);
+    assert.doesNotMatch(inputOf(found[f])[0], /checked/, f + " shows what was stored: off");
+  });
+  assert.doesNotMatch(found.artifact_library, /data-implied/);
+  assert.deepEqual(engineBody(answer, {run_templates: false, template_library: false, artifact_schema: false}), {set: {}, unset: []}, "saving the page as it is changes nothing");
+  assert.deepEqual(engineBody(answer, {run_templates: true}).set, {run_templates: true}, "the owner can still pin it on");
+  assert.deepEqual(engineBody(answer, {auto_reuse: false}), {set: {}, unset: ["auto_reuse"]});
+});
+
+test("with no implication (an answer whose effective values are the stored ones) no row is marked", () => {
+  assert.doesNotMatch(engineHtml(FOR_TEAM, {scope: "web"}), /data-implied|implied by/);
+  assert.doesNotMatch(engineHtml(FOR_ALL, {}), /data-implied/);
+});
+
+test("the reviewer wait is a number of seconds that may be 0, and a reviewer switch is a toggle in the body", () => {
+  assert.deepEqual(engineBody(FOR_ALL, {reviewer_wait: "0"}).set, {reviewer_wait: 0});
+  assert.deepEqual(engineBody(FOR_ALL, {reviewer_wait: "45.5"}).set, {reviewer_wait: 45.5});
+  assert.deepEqual(engineBody(FOR_ALL, {reviewer_wait: "120"}), {set: {}, unset: []});
+  assert.deepEqual(engineBody(FOR_ALL, {reviewer: false}).set, {reviewer: false});
+  assert.deepEqual(SettingsView.formProblems(FOR_ALL, {reviewer_wait: "soon"}), {reviewer_wait: "Write a number."});
 });
 
 test("the working-folder switch for agents is a choice between auto and off", () => {

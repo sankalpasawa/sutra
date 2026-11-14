@@ -1,5 +1,5 @@
 """Nothing of J2 is lost (work package E1, engine design section 8, ENG-02): every file and symbol of `FEATURES` exists in the
-vendored tree, the 8 loop steps and the 15 chips are all there, and every flag is a real engine setting."""
+vendored tree, the 8 loop steps and the 17 chips are all there, and every flag is a real engine setting."""
 import ast
 import functools
 from pathlib import Path
@@ -26,9 +26,9 @@ def defined(path: Path) -> frozenset:
     return frozenset(names)
 
 
-def test_the_8_steps_and_the_15_chips_and_the_extras_row_are_present():
+def test_the_8_steps_and_the_17_chips_and_the_extras_row_are_present():
     kinds = [f.kind for f in FEATURES]
-    assert (kinds.count("step"), kinds.count("chip"), kinds.count("extra")) == (8, 15, 1)
+    assert (kinds.count("step"), kinds.count("chip"), kinds.count("extra")) == (8, 17, 1)
     assert tuple(f.id for f in FEATURES if f.kind == "step") == STEP_IDS == tuple(f"J2.{c}" for c in "abcdefgh")
     assert len(by_id()) == len(FEATURES), "ids are unique"
 

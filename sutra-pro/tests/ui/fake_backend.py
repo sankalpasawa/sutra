@@ -389,6 +389,7 @@ class FakeState:
             self.chart_notes: list[dict] = []       # gap chart-insight: GET /api/chart/notes (set by /__fake/chart-notes)
             self.owner_notes: list[dict] = []       # gap rules-notes: GET /api/notes (set by /__fake/notes); NoteOut rows
             self.find: dict = {"teams": [], "messages": []}       # GET /api/find answers this (set by /__fake/find)
+            self.said_with: list[dict] = []        # sync 6 (D182): the `say` bodies that carried a run template, for the tests
             self.next_output: dict[str, str] = {}   # sync 4 (D139): the start page's choice per team, what POST /api/output stored; the next run would make it
             self.output_locked = False              # POST /api/output answers 409, as it does once the team has a message (set by /__fake/output)
             self.decide_for_me: dict[str, bool] = {}   # the Simple view's switch per team (POST /api/settings); /api/state says it (the capture's value until it is set)
@@ -647,6 +648,7 @@ class FakeState:
         if dept:
             view["department"] = copy.deepcopy(layer)
         view["effective"] = {**es["defaults"], **self.layers["global"], **layer}
+        view["effective_flags"] = {k: v for k, v in imply_flags(view["effective"]).items() if k in FLAG_NAMES}       # sync 6 (D178): what J2 will run with; `effective` stays as stored
         view["editable"], view["locked"] = list(es["editable"]), list(es["locked"])
         view["output_types"] = copy.deepcopy(es.get("output_types", []))        # D166: the choices of the pages, from the data
         if dept:                                                # sync 4 (D139): what the team's next run would use, the start page's choice included
@@ -1129,11 +1131,27 @@ def _parse_body(raw: bytes) -> Any:
 
 J2_GET_PATHS = (    # the GET names of J2_EXACT (sutra_ctx.js); sync 4 added plan-map, activity, catalog, artifacts/groups, runlist, changes and record
     "/api/state", "/api/runs", "/api/call", "/api/preview", "/api/docs", "/api/map", "/api/plan", "/api/library",
-    "/api/run-templates", "/api/artifacts", "/api/agent", "/api/code", "/api/artifacts/tree", "/api/artifact", "/api/story",
-    "/api/board", "/api/audits", "/api/refs", "/api/timing",     # sync 5 (D168): Run settings' time per step
+    "/api/run-templates", "/api/run-template", "/api/artifacts", "/api/agent", "/api/code", "/api/artifacts/tree", "/api/artifact", "/api/story",
+    "/api/board", "/api/audits", "/api/refs", "/api/timing",     # sync 5 (D168): Run settings' time per step; sync 6 (D183): one run template
     "/api/plan-map", "/api/activity", "/api/catalog", "/api/artifacts/groups", "/api/runlist", "/api/changes",
     "/api/record",               # the studio redesign (pin 025e265): the record of a part or of a deliverable
 )
+RUN_TEMPLATE_ID = re.compile(r"[a-z0-9-]+")
+RUN_TEMPLATES_DIR = Path(__file__).resolve().parents[2] / "sutra_app" / "engine" / "seed" / "library" / "run-templates"
+IMPLIED = (("auto_reuse", "artifact_library"), ("run_templates", "auto_reuse"), ("template_library", "auto_reuse"), ("artifact_schema", "template_library"))      # D178, J2's own chain, in order
+
+
+FLAG_NAMES = ("auto_reuse", "run_templates", "template_library", "artifact_schema")      # EffectiveFlags
+
+
+def imply_flags(values: dict) -> dict:
+    """The effective flags (EngineSettings.effective, D178): a flag is on when it is set or one it is implied by is on. The chain is J2's own."""
+    out = dict(values)
+    for flag, by in IMPLIED:
+        out[flag] = bool(out.get(flag) or out.get(by))
+    return out
+
+
 J2_POST_PATHS = ("/api/say", "/api/playbooks/clear", "/api/lessons/clear", "/api/output", "/api/reset", "/api/ask", "/api/settings")
 J2_PATH_SET = frozenset(J2_GET_PATHS + J2_POST_PATHS)      # the names whose forced failures have J2's body shape (the fetches the client wrapper adds ?dept= to)
 J2_PAGE_PATHS = ("/view",)   # pages the Simple view puts in its frame (with /doc/<name>): the page's own URL builders add ?dept=, so they are no fetch of the wrapper
@@ -1675,6 +1693,17 @@ def register_j2(app: FastAPI, state: FakeState) -> None:
 
         app.add_api_route(path, make(name), methods=["GET"])
 
+    @app.get("/api/run-template")
+    def j2_run_template(dept: str | None = None, id: str = ""):
+        """One run template (J2 `run_template_view`) from the vendored seed's `template.json`, plus `enabled` from the team's effective settings, as the
+        real route does (D183): never from the server's environment. An id that is not [a-z0-9-]+ or not in the seed: 404."""
+        scope(dept, None)
+        found = RUN_TEMPLATE_ID.fullmatch(id) and RUN_TEMPLATES_DIR / id / "template.json"
+        if not found or not found.is_file():
+            raise J2Reject(404, {"error": "no such run template"})
+        flags = state.settings_view(dept)["effective_flags"]
+        return JSONResponse({**json.loads(found.read_text(encoding="utf-8")), "enabled": bool(flags["run_templates"])}, headers=secure)
+
     @app.get("/api/library")
     def j2_library(dept: str | None = None):
         scope(dept, None)
@@ -1795,6 +1824,14 @@ def register_j2(app: FastAPI, state: FakeState) -> None:
         text = text.strip() if isinstance(text, str) else ""  # anything but text is nothing to say
         if not text:
             raise J2Reject(400, {"error": "empty"})
+        template, workflows = body.get("template"), body.get("workflows")        # sync 6 (D182): the same shapes the real route accepts
+        if template not in (None, ""):
+            if not isinstance(template, str) or not re.fullmatch(r"[a-z0-9-]{1,80}", template):
+                raise J2Reject(400, {"error": "template must be a run template id: lower-case letters, digits and hyphens, up to 80 characters"})
+            keys = workflows.split(",") if isinstance(workflows, str) else workflows
+            if workflows not in (None, "", []) and (not isinstance(keys, list) or len(keys) > 40 or not all(isinstance(k, str) and re.fullmatch(r"[A-Za-z0-9_-]{1,20}", k.strip()) for k in keys)):
+                raise J2Reject(400, {"error": "workflows must be all, a comma list of workflow keys, or a list of keys"})
+            state.said_with.append({"dept": dept, "template": template, "workflows": workflows})
         dept_node = state.node(dept or "")
         try:
             delivered = state.deliver(state.chat(dept_node["chat_session_id"]), text)

@@ -1,15 +1,15 @@
 {
  "change_checks": 192,
- "flow_fast_ok_lines": 93,
- "flow_fast_ok_lines_with_extraction": 131,
- "j2_commit": "1d537295eb11cb034956fa9d8a4026eaa1e3f44e",
- "j2_flow_test_sha256": "a77f88951e8a4ab3b359e9acf40d48dc5244eaa12ad9c4f98218d9c74c7a7634",
+ "flow_fast_ok_lines": 98,
+ "flow_fast_ok_lines_with_extraction": 150,
+ "j2_commit": "1adb8ecd8fa8eef47fb7a0fc63a1616f556cdfeb",
+ "j2_flow_test_sha256": "1872ede1fe27354b11b5963143efd5dee917d5378a2203f1634a2d225ce1a217",
  "known_upstream_failures": [
   "map_focus",
   "graph_map",
   "warm_ui"
  ],
- "legacy_flow_test_sha256": "2f999d1a6800472898ddf63d6bcf45ff5fa983fa9df77cdccad87967781ac190",
+ "legacy_flow_test_sha256": "afb624e96bd90147130fdd1c5fddae621d6a1843b186d1e68dbc664c5c1d6bc2",
  "realization_checks": 98,
  "skip_lines_with_extraction": [
   "replay test skipped: runs/j2-20261015-114723 not found",
@@ -27,6 +27,7 @@
   "view kept: static checks ok (browser steps skipped",
   "run settings: no old controls, Appearance cards; run list = the records on 0 runs",
   "saved runs render: skipped (not in runs/:",
-  "board story view: j2-20261027-012148 isn't in this clone"
+  "board story view: j2-20261027-012148 isn't in this clone",
+  "skipped sutra_library (a): the link at the top of J2's repository is not in an extraction"
  ]
 }

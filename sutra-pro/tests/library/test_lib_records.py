@@ -77,6 +77,9 @@ HARNESS = textwrap.dedent(r'''
     while run.status != "waiting" or run.lock.locked():      # the lock is held while Decide for me answers and goes on
         assert time.time() < end, "the run did not stop"
         time.sleep(0.003)
+    reviewer = getattr(run, "review_thread", None)      # J2 writes the report and artifacts.json after "waiting" from a thread (sync 6): wait as the host does (D179)
+    if reviewer is not None:
+        reviewer.join(60)
     shutil.copytree(run.dir, out / "run")
     (out / "run_templates.json").write_text(json.dumps(j2_template_lib.run_templates(str(run.dir))))
 ''')
@@ -225,7 +228,7 @@ def test_a_run_without_decide_for_me_writes_no_settings_file(golden):
 def test_the_first_chat_line_is_a_run_header_and_every_other_line_a_run_message(golden):
     chat = lines(golden["site"] / "run", "chat.jsonl")
     assert chat[0].get("meta") is True and all("who" in line for line in chat[1:])
-    assert R.gate_record("chat.jsonl", chat[0], mode="strict").family == "run_file.object"      # open JSON, not a message
+    assert R.gate_record("chat.jsonl", chat[0], mode="strict").family == "run_header"           # the run header, not a message
     assert R.gate_record("chat.jsonl", chat[1], mode="strict").family == "run_message"
 
 

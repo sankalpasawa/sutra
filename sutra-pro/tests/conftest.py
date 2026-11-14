@@ -222,6 +222,7 @@ WINDOWS_SKIP.update({
     "tests/engine/test_engine_library_lock.py::test_a_wait_that_ends_in_time_succeeds": "a child script takes the library lock with fcntl; the lock itself is oslayer.try_lock, proved by tests/ops/test_oslayer.py",
     "tests/engine/test_engine_library_lock.py::test_mark_used_gives_up_the_same_way": "a child script takes the library lock with fcntl; the lock itself is oslayer.try_lock, proved by tests/ops/test_oslayer.py",
     "tests/engine/test_engine_library_lock.py::test_store_gives_up_with_library_busy_after_the_wait": "a child script takes the library lock with fcntl; the lock itself is oslayer.try_lock, proved by tests/ops/test_oslayer.py",
+    "tests/engine/test_engine_library_lock.py::test_note_version_and_mark_run_template_used_give_up_with_library_busy": "a child script takes the library lock with fcntl; the lock itself is oslayer.try_lock, proved by tests/ops/test_lock.py",
     "tests/engine/test_engine_paths.py::test_a_process_of_another_user_counts_as_alive": "POSIX pid semantics (another user's pid) and path strings",
     "tests/engine/test_engine_paths.py::test_j2_env_names_the_departments_files_and_the_global_library": "POSIX pid semantics (another user's pid) and path strings",
     "tests/engine/test_engine_paths.py::test_pid_alive_sends_signal_zero_only": "POSIX pid semantics (another user's pid) and path strings",

@@ -102,6 +102,16 @@ def say(run, text, timeout=60.0):
     while run.status != "waiting":
         assert time.time() < deadline, "the run did not stop"
         time.sleep(0.003)
+    stable(run)
+
+
+def stable(run, timeout=30.0):
+    """What the host does at a run end (D179): J2's reviewer thread writes `report.json`, `report.md` and `artifacts.json` once more after the
+    run is `waiting`; wait for it, so a test that compares a finished folder with itself later compares a folder nothing writes to."""
+    thread = getattr(run, "review_thread", None)
+    if thread is not None:
+        thread.join(timeout)
+        assert not thread.is_alive(), "the reviewer did not finish"
 
 
 def tree_sha(folder: Path) -> dict:
@@ -192,7 +202,8 @@ def test_rehydrate_sets_exactly_the_listed_attributes(j2, finished, new_run):
     follow.rehydrate(finished.dir)
     after = vars(follow)
     changed = {k for k in after if after[k] is not before.get(k) and after[k] != before.get(k)}
-    assert changed <= set(R.RESTORED) | set(R.RESTORED_TYPE) and {"chat", "goal", "workflows", "sites", "done", "status", "outcome", "request"} <= changed
+    assert changed <= set(R.RESTORED) | set(R.RESTORED_TYPE) | set(R.RESTORED_REUSE) \
+        and {"chat", "goal", "workflows", "sites", "done", "status", "outcome", "request", "auto_pick"} <= changed
     assert not (set(R.RESTORED_REALIZATION) & changed), "no realization.json: no real*"
     assert set(after) == set(before), "no attribute was added"
 
@@ -481,3 +492,31 @@ def test_the_two_system_lines_are_fixed(j2):
         "Starting a new run. Your earlier files from run j2-20261104-100004-7f3a are in upstream/j2-20261104-100004-7f3a/ "
         "for reference. Reason: the earlier run crashed.")
     assert fresh_line("j2-x", "it was stopped. ") == "Starting a new run. Your earlier files from run j2-x are in upstream/j2-x/ for reference. Reason: it was stopped."
+
+
+# ---- J2 sync 6 (D187): a follow-up never re-fires auto-reuse and does not take the earlier run's run template -------------------------------
+def test_the_reuse_attributes_are_named_and_a_continued_run_counts_as_having_decided(j2, finished, new_run):
+    from sutra_app.engine import rehydrate as R
+    assert R.RESTORED_REUSE == ("auto_pick",) and R.NOT_RESTORED_REUSE == ("run_tpl",)
+    assert not set(R.RESTORED_REUSE) & set(R.RESTORED_CHAIN) and "run_tpl" not in R.RESTORED_CHAIN
+    follow = new_run()
+    assert follow.auto_pick is None and follow.run_tpl is None
+    follow.rehydrate(finished.dir)
+    assert follow.auto_pick == {}, "J2's own marker: `_auto_reuse_pick` returns at once"
+    assert follow.run_tpl is None, "the earlier run's template shaped its first plan; a follow-up is a change request"
+
+
+def test_a_follow_up_with_auto_reuse_on_never_scores_the_run_templates_again(j2, finished, new_run, monkeypatch):
+    scored = []
+    monkeypatch.setenv("J2_AUTO_REUSE", "1")
+    monkeypatch.setattr(j2.j2_template_lib, "match_run_templates", lambda *a, **k: scored.append(a) or [])
+    follow = new_run()
+    follow.rehydrate(finished.dir)
+    say(follow, CHANGE, timeout=120)
+    assert follow.outcome.startswith("Done") and scored == [], "no match_run_templates call (D187)"
+    assert follow.auto_pick == {} and follow.run_tpl is None
+    fresh = new_run()
+    monkeypatch.setattr(j2.j2_template_lib, "match_run_templates", lambda *a, **k: scored.append(a) or [])
+    say(fresh, BREW_LAB, timeout=120)
+    assert len(scored) == 1, "the control: a first run does score them once, so the spy works"
+    assert fresh.auto_pick and fresh.auto_pick.get("picked") is None

@@ -1,0 +1,66 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "additionalProperties": false,
+  "properties": {
+    "goals": {
+      "description": "the goals, G1, G2, ... in order (for Rhythm Room Dance Studio, a prd)",
+      "items": {
+        "$ref": "#/definitions/Goal"
+      },
+      "type": "array"
+    },
+    "assumptions": {
+      "description": "the assumptions of Rhythm Room Dance Studio's Goals",
+      "items": {
+        "type": "string"
+      },
+      "type": "array"
+    },
+    "facts_used": {
+      "description": "the charter facts this section is written from, copied exactly from Rhythm Room Dance Studio's charter",
+      "items": {
+        "enum": [
+          "3rd Floor, 8 Sample Lane, Bengaluru 560001",
+          "Monday 6:00 pm Salsa Beginners 700",
+          "Payment is made at the studio",
+          "Rhythm Room Dance Studio",
+          "Saturday 10:00 am Kids Hip Hop 500",
+          "Sunday 11:00 am Open Floor 400",
+          "The Goals section states a one-page website for Rhythm Room Dance Studio that lists classes and takes booking requests",
+          "Thursday 6:30 pm Contemporary 750",
+          "Wednesday 7:00 pm Bollywood Basics 600",
+          "hello@rhythmroom.example",
+          "name, email, class and preferred date"
+        ],
+        "type": "string"
+      },
+      "type": "array"
+    }
+  },
+  "required": [
+    "goals",
+    "assumptions",
+    "facts_used"
+  ],
+  "type": "object",
+  "definitions": {
+    "Goal": {
+      "additionalProperties": false,
+      "properties": {
+        "id": {
+          "description": "G1, G2, ... in order",
+          "type": "string"
+        },
+        "statement": {
+          "description": "the goal in one line",
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "statement"
+      ],
+      "type": "object"
+    }
+  }
+}

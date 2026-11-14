@@ -21,6 +21,8 @@ from sutra_app.main import create_app
 from sutra_app.ops import doctor
 from sutra_app.orchestrator.testing.scripted import ScriptedConnector
 
+pytestmark = pytest.mark.usefixtures("sync5_seed")          # the sync-4 and sync-5 rules are proved on the seed of J2 sync 5 (conftest)
+
 ALL = NEW_TEMPLATE_NAMES + NEW_VERSION_NAMES
 RISKS = ("hld", "risks", "still-point-yoga-risks")
 GOALS = ("prd", "goals", "still-point-yoga-goals")
@@ -47,7 +49,7 @@ def synced(tmp_path: Path) -> tuple[Path, Path]:
 
 # ---- the shipped seed is what the fixtures assume ---------------------------------------------------------------------------------
 
-def test_the_shipped_seed_holds_what_sync_4_added(tmp_path):
+def test_the_sync_5_seed_holds_what_sync_4_added(tmp_path):
     doc = seed_index()
     for key in NEW_TEMPLATES:
         assert entry_of(doc, key)["versions"]
@@ -208,7 +210,7 @@ def test_a_second_sync_changes_nothing_byte_for_byte(tmp_path):
     files, dirs, stamp = snapshot(library), folders(library), (library / "index.json").stat().st_mtime_ns
     report: dict = {}
     assert doctor.sync_seed_library(data, report=report) == []
-    assert report == {"templates": [], "versions": [], "filled": {}, "skipped": [], "runs": []}
+    assert report == {"templates": [], "versions": [], "filled": {}, "skipped": [], "runs": [], "run_templates": [], "renamed": {}}
     assert snapshot(library) == files and folders(library) == dirs and (library / "index.json").stat().st_mtime_ns == stamp       # not even rewritten
 
 

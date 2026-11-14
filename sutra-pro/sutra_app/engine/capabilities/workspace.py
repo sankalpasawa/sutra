@@ -12,12 +12,13 @@ from typing import Optional
 
 from sutra_app.library.types import FUNCTIONS
 
+from ..hooks import AGENT_PURPOSES
 from ..port import CallTag
 from .base import Capability, EngineContext, output_spec
 
 __all__ = ["WorkspaceCapability", "WORKSPACE_PURPOSES", "workspace_for", "team_workspace_for"]
 
-WORKSPACE_PURPOSES = ("agent_turn", "plan", "judge")     # an agent's own work; helpers (summary, template, review, change) get no folder
+WORKSPACE_PURPOSES = AGENT_PURPOSES                      # an agent's own work; helpers (summary, template, review, change) get no folder
 _BUILDER = re.compile(r"W-[0-9]+")
 
 

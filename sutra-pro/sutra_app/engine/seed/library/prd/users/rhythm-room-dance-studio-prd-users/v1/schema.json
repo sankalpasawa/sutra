@@ -1,0 +1,70 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "additionalProperties": false,
+  "properties": {
+    "users": {
+      "description": "every user group the charter names (for Rhythm Room Dance Studio, a prd)",
+      "items": {
+        "$ref": "#/definitions/UserGroup"
+      },
+      "type": "array"
+    },
+    "assumptions": {
+      "description": "the assumptions of Rhythm Room Dance Studio's Users",
+      "items": {
+        "type": "string"
+      },
+      "type": "array"
+    },
+    "facts_used": {
+      "description": "the charter facts this section is written from, copied exactly from Rhythm Room Dance Studio's charter",
+      "items": {
+        "enum": [
+          "3rd Floor, 8 Sample Lane, Bengaluru 560001",
+          "Monday 6:00 pm Salsa Beginners 700",
+          "Payment is made at the studio",
+          "Rhythm Room Dance Studio",
+          "Saturday 10:00 am Kids Hip Hop 500",
+          "Sunday 11:00 am Open Floor 400",
+          "The Users section names visitors and the studio team and gives the actions the brief supports for each",
+          "Thursday 6:30 pm Contemporary 750",
+          "Wednesday 7:00 pm Bollywood Basics 600",
+          "hello@rhythmroom.example",
+          "name, email, class and preferred date"
+        ],
+        "type": "string"
+      },
+      "type": "array"
+    }
+  },
+  "required": [
+    "users"
+  ],
+  "type": "object",
+  "definitions": {
+    "UserGroup": {
+      "additionalProperties": false,
+      "properties": {
+        "group": {
+          "description": "the name of this user group, as the charter names it",
+          "type": "string"
+        },
+        "needs": {
+          "description": "what this group needs from the product",
+          "type": "string"
+        },
+        "actions": {
+          "description": "what this group does on the page; empty when this group has no actions in this version",
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        }
+      },
+      "required": [
+        "group"
+      ],
+      "type": "object"
+    }
+  }
+}

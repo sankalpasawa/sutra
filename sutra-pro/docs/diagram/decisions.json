@@ -873,5 +873,130 @@
   "id": "D175",
   "label": "release 0.4.0",
   "anchor": "band:DEPARTMENT RUNTIME"
+ },
+ {
+  "id": "D176",
+  "label": "J2 pin: main 1adb8ecd",
+  "anchor": "band:DEPARTMENT RUNTIME"
+ },
+ {
+  "id": "D177",
+  "label": "reuse flags are settings",
+  "anchor": "band:EXPERIENCE"
+ },
+ {
+  "id": "D178",
+  "label": "implied flags: effective()",
+  "anchor": "band:DEPARTMENT RUNTIME"
+ },
+ {
+  "id": "D179",
+  "label": "reviewer: join, cap, switch (P19)",
+  "anchor": "band:DEPARTMENT RUNTIME"
+ },
+ {
+  "id": "D180",
+  "label": "patch table P1-P19",
+  "anchor": "band:DEPARTMENT RUNTIME"
+ },
+ {
+  "id": "D181",
+  "label": "library lock covers 4 writers",
+  "anchor": "Template library"
+ },
+ {
+  "id": "D182",
+  "label": "say carries run template",
+  "anchor": "band:EXPERIENCE"
+ },
+ {
+  "id": "D183",
+  "label": "run template views: team settings",
+  "anchor": "band:EXPERIENCE"
+ },
+ {
+  "id": "D184",
+  "label": "artifact shelf per team",
+  "anchor": "Template library"
+ },
+ {
+  "id": "D185",
+  "label": "seed library: + run templates",
+  "anchor": "Template library"
+ },
+ {
+  "id": "D186",
+  "label": "records: reuse, run template bundle",
+  "anchor": "band:DEPARTMENT RUNTIME"
+ },
+ {
+  "id": "D187",
+  "label": "follow-up: no auto-reuse",
+  "anchor": "band:EXPERIENCE"
+ },
+ {
+  "id": "D188",
+  "label": "hard-coded cleanup: 3 rules",
+  "anchor": "band:DEPARTMENT RUNTIME"
+ },
+ {
+  "id": "D189",
+  "label": "J2 hard-coding: reported",
+  "anchor": "band:DEPARTMENT RUNTIME"
+ },
+ {
+  "id": "D190",
+  "label": "goldens by recorder only",
+  "anchor": "band:DEPARTMENT RUNTIME"
+ },
+ {
+  "id": "D191",
+  "label": "page regenerated for sync 6",
+  "anchor": "band:EXPERIENCE"
+ },
+ {
+  "id": "D192",
+  "label": "diff of record decides new files",
+  "anchor": null
+ },
+ {
+  "id": "D193",
+  "label": "release 0.5.0",
+  "anchor": "band:DEPARTMENT RUNTIME"
+ },
+ {
+  "id": "D194",
+  "label": "shared library = J2 data + contract",
+  "anchor": "Template library"
+ },
+ {
+  "id": "D195",
+  "label": "library ownership by role",
+  "anchor": "Template library"
+ },
+ {
+  "id": "D196",
+  "label": "memory + catalogue: app stores, one gate",
+  "anchor": "Interface library"
+ },
+ {
+  "id": "D197",
+  "label": "no sharing without publish",
+  "anchor": "Template library"
+ },
+ {
+  "id": "D198",
+  "label": "sync procedure, 10 checks",
+  "anchor": "Template library"
+ },
+ {
+  "id": "D199",
+  "label": "external template: row only",
+  "anchor": "Interface library"
+ },
+ {
+  "id": "D200",
+  "label": "J2 asked: constants to data, 3 seams",
+  "anchor": "Template library"
  }
 ]

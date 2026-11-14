@@ -31,7 +31,7 @@ sutra-pro import-old-chats    # bring the old Sutra app's chats in (a dry run un
 | `sutra-pro config show` | `--data-dir D`, `--json`, `--dept D` | the effective values and their source |
 | `sutra-pro config set FIELD VALUE` | `--data-dir D`, `--json`, `--dept D` | the only way to set a locked engine setting |
 | `sutra-pro config init` | `--data-dir D`, `--json`, `--generate-override-key` | writes a commented `.env` template (mode 600); never overwrites |
-| `sutra-pro config sync-library` | `--data-dir D`, `--json` | adds what the seed has and the data library lacks (templates, versions, provenance keys, runs rows) and never overwrites; the server does the same once per seed at start |
+| `sutra-pro config sync-library` | `--data-dir D`, `--json` | adds what the seed has and the data library lacks (templates, versions, run templates and their folders, provenance keys, runs rows; 81 families, 107 versions and 4 run templates at the 0.5.0 seed) and never overwrites; the server does the same once per seed at start |
 | `sutra-pro backup` | `--data-dir D`, `--json`, `--to DIR`, `--no-runs`, `--include-env` | `--include-env` is refused |
 | `sutra-pro restore FILE` | `--data-dir D`, `--json` | the server must be stopped |
 | `sutra-pro prune` | `--data-dir D`, `--json`, `--older-than AGE`, `--dry-run`, `--yes` | a dry run unless `--yes` |

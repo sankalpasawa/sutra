@@ -40,8 +40,8 @@ Flags with no variable: `--no-browser`, `--browser auto|chrome|default`, `--exit
 
 These are the J2 flags, each with J2's own default (the pacing delay is 0 because the connector layer paces). The variable name is what J2 reads and what
 `sutra-pro config show` prints; in `engine.json` and in `config set` you use the field name. **Locked** fields are not editable in Settings (they can send mail, run a browser or force a
-failure) and change only with `sutra-pro config set`. **Task** fields may also be given by a single request (the eight keys a task may carry); every other field reaches a run only through the
-two `engine.json` files. A run does not pass the server's own `J2_*` variables on to its engine process: the files are the way in.
+failure) and change only with `sutra-pro config set`. **Task** fields may also be given by a single request (the eight keys a task may carry, besides two task-only keys, `J2_RUN_TEMPLATE` and `J2_RUN_TEMPLATE_WORKFLOWS`, that name the run template one request starts from and are not settings); every other field reaches a run only through the
+two `engine.json` files. `J2_PUSH_RUNS` (always `0`: Sutra never pushes a run folder) and `J2_RUN_BY` (always `sutra-pro`: no user name goes into run data) are fixed by the engine host and are not settings. A run does not pass the server's own `J2_*` variables on to its engine process: the files are the way in.
 
 | Variable | Field | Default | Locked | Task | Meaning |
 |---|---|---|---|---|---|
@@ -62,11 +62,16 @@ two `engine.json` files. A run does not pass the server's own `J2_*` variables o
 | `J2_MEMORY` | `memory` | `1` | no | yes | `0`: lessons and playbooks are neither read nor written |
 | `J2_DECIDE_FOR_ME` | `decide_for_me` | `0` | no | yes | the team answers its own questions with the suggested option and keeps going (the Simple view's Decide for me); `1` turns it on |
 | `J2_BUILDER_TIMEOUT` | `builder_timeout` | `600` | no | no | seconds a builder's AI call may run before it is stopped and tried once more; `0` means no limit (J2 sync 5, D169) |
+| `J2_REVIEWER` | `reviewer` | `1` | no | no | `1`: when a run ends, a reviewer writes its notes into the run report; `0` leaves them out and the report says the reviewer is switched off. Read by the app's engine host, not by J2 (D179) |
+| `J2_REVIEWER_WAIT` | `reviewer_wait` | `120` | no | no | seconds the host waits for the reviewer's notes before it finishes the run; a reviewer later than that is discarded and the report keeps its placeholder; `0` means do not wait. Read by the app's engine host, not by J2 (D179) |
 | `J2_REALIZATION` | `realization` | `1` | no | no | Adaptation's first plan of a website goes through realization and certainty, and a separate judge scores each workflow |
 | `J2_CHANGE` | `change` | `0` | no | no | `1`: the charter of the last full plan is kept and a change request is handled as a change |
 | `J2_BOARD` | `board` | `0` | no | no | `1`: the message board between the function nodes |
 | `J2_ARTIFACT_SCHEMA` | `artifact_schema` | `0` | no | no | `1`: a builder answers with one JSON object that the three artifact layers check |
 | `J2_TEMPLATE_LIBRARY` | `template_library` | `0` | no | no | `1`: each workflow's builder fills a template chosen from the library (implies the artifact schema) |
+| `J2_RUN_TEMPLATES` | `run_templates` | `0` | no | no | experimental: `1` lets a run start from a run template (a named bundle of the workflows of one finished run), whole or with selected workflows, from the Templates page; implied by `auto_reuse` (J2 sync 6, D177) |
+| `J2_AUTO_REUSE` | `auto_reuse` | `0` | no | no | experimental: `1` takes the best-matching run template (score 0.6 or more) after the first charter and adapts the nearest section template before a new one is made; implies `run_templates`, `template_library` and the artifact schema; implied by `artifact_library` (D177, D178) |
+| `J2_ARTIFACT_LIBRARY` | `artifact_library` | `0` | no | no | experimental, the content door: `1` serves a document section from a finished run of the same team with no model call and checks it; implies `auto_reuse`. Never for project work (D177, D184) |
 | `J2_SEND_MODE` | `send_mode` | `dry-run` | yes | no | `dry-run`, `mock` (tests) or `live`; live also needs the SMTP login of section 3 |
 | `J2_SEND_CAP` | `send_cap` | `10` | yes | no | at most this many live emails per run |
 | `J2_MILESTONE_EMAILS` | `milestone_emails` | `0` | yes | no | `1`: one milestone email per goal reached |

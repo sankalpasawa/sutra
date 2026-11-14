@@ -16,7 +16,7 @@ from sutra_app.connectors.workdir import WorkFolder
 from sutra_app.engine.capabilities import project as project_module
 from sutra_app.engine.capabilities.project import (CHECK_TYPES, CONDITIONS_FILE, DATA, PROJECT_BUILDER, PROJECT_INTAKE, PROJECT_RUBRIC, PROJECT_SECTIONS,
                                                    ProjectCapability, mock_project_charter, mock_project_section, project_spec)
-from sutra_app.engine.spec import EngineSettings
+from sutra_app.engine.spec import EffectiveFlags, EngineSettings
 
 from test_engine_host import BREW_LAB, QUIET, Running, chat, events, j2, jsonl, make_port_of, of, trace   # noqa: F401  (fixtures and helpers)
 
@@ -206,6 +206,29 @@ def test_with_artifact_schema_and_the_template_library_on_a_project_run_still_wo
     assert events(run_dir)[-1]["status"] in ("done", "done_with_open_items")
     assert not list(run_dir.glob("site/*.json")), "no artifact-schema section files: that machinery is off for a project run"
     assert not (run_dir / "project.json").exists(), "J2 sync 5 treats every document type alike: no artifact-schema data, so no project.json guide"
+
+
+def test_the_whole_reuse_chain_is_forced_off_for_project_work_whatever_the_owner_switched_on(j2, make_run_dir, data_dir):
+    """D178: forcing `template_library` alone would let J2's chain turn it on again through `auto_reuse`; the content door would serve document text."""
+    chain = {"run_templates": True, "auto_reuse": True, "artifact_library": True, "artifact_schema": True, "template_library": True}
+    (data_dir / "engine.json").write_text(json.dumps(chain))
+    run_dir = make_run_dir(user_text=BRIEF, settings=QUIET)
+    go(run_dir)
+    settings = json.loads((run_dir / "settings.json").read_text())
+    assert {name: settings[name] for name in chain} == {name: False for name in chain}
+    assert EngineSettings(**settings).effective() == EffectiveFlags(False, False, False, False)
+    selected = trace(run_dir, "output.selected")[0]["data"]
+    assert selected["forced"] == {name: False for name in chain}, "the host says so in its trace line"
+    assert events(run_dir)[-1]["status"] in ("done", "done_with_open_items")
+    assert not (run_dir / "reuse.json").exists() and not (run_dir / "templates.json").exists()
+
+
+def test_the_project_capability_forces_five_flags_off_for_project_and_none_for_another_output():
+    from sutra_app.engine.capabilities.project import ProjectCapability
+    assert ProjectCapability().force("project") == {"artifact_schema": False, "template_library": False, "run_templates": False,
+                                                    "auto_reuse": False, "artifact_library": False}
+    assert ProjectCapability().force("website") == {}
+    assert set(ProjectCapability().force("project")) <= set(EngineSettings.model_fields)
 
 
 def test_other_outputs_keep_the_flags_the_owner_turned_on(j2, make_run_dir, data_dir):
