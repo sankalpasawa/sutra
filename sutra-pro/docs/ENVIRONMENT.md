@@ -32,6 +32,10 @@ A boolean accepts `1`, `true`, `yes`, `on` and `0`, `false`, `no`, `off`; this d
 | `SUTRA_MAX_LIVE` | `max_live` | `12` | most live engine processes, those waiting for you included; at least `SUTRA_MAX_RUNS` |
 | `SUTRA_WATCH_MS` | `watch_ms` | `400` | how often the server reads each run's event file, in milliseconds (20 to 10000) |
 | `SUTRA_LIVE` | `live` | `0` | `1`: allow the tests marked `live` that call the real CLIs |
+| `SUTRA_LIVE_V1` | `live_v1` | `0` | `1`: the direct chat streams as live turns (`chat.live` events, a snapshot route, an interruptible Stop); `0`: the older `chat.partial` path, unchanged. The default becomes `1` when the streaming chat ships (D214) |
+| `SUTRA_LIVE_HEARTBEAT_S` | `live_heartbeat_s` | `5` | a live turn says it is alive after this many seconds without provider output (0.2 to 60) |
+| `SUTRA_LIVE_COALESCE_MS` | `live_coalesce_ms` | `33` | the longest a streamed text piece waits to be joined with the next one before it is sent, in milliseconds (0 to 1000; the first piece of a block is never delayed) |
+| `SUTRA_LIVE_CHECKPOINT_S` | `live_checkpoint_s` | `1.5` | how often a streaming turn is saved so that a crash keeps what was written (0.05 to 60) |
 | `SUTRA_ENV_FILE` | `env_file` | `<project>/.env` in a checkout, `<data>/.env` installed | the file that holds the secrets of section 3 |
 
 Flags with no variable: `--no-browser`, `--browser auto|chrome|default`, `--exit-when-stdin-closes`, `--verbose`.
