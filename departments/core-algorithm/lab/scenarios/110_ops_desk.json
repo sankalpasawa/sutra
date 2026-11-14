@@ -1,0 +1,118 @@
+{
+  "schema": "sutra-extension/2",
+  "id": "110_ops_desk",
+  "scope": "lendco/operations",
+  "budget": {
+    "compute": 10,
+    "money": 10,
+    "attention": 3
+  },
+  "preference": [
+    "compute",
+    "money",
+    "attention"
+  ],
+  "providers": {
+    "local-provider": 8
+  },
+  "evidence": [
+    {
+      "predicate": "may:history_rewrite",
+      "truth": "FALSE",
+      "verified": true,
+      "final": true,
+      "source": "owner:lendco/operations",
+      "version": "denylist-1",
+      "tag": "never",
+      "line": "Never rewrite or discard shared git history."
+    },
+    {
+      "predicate": "may:recursive_delete",
+      "truth": "FALSE",
+      "verified": true,
+      "final": true,
+      "source": "owner:lendco/operations",
+      "version": "denylist-1",
+      "tag": "never",
+      "line": "Never delete a tree outside the build folders."
+    },
+    {
+      "predicate": "may:disk_or_system",
+      "truth": "FALSE",
+      "verified": true,
+      "final": true,
+      "source": "owner:lendco/operations",
+      "version": "denylist-1",
+      "tag": "never",
+      "line": "Never touch disks, mounts or system services."
+    },
+    {
+      "predicate": "may:remote_mutation",
+      "truth": "TRUE",
+      "verified": true,
+      "source": "owner:lendco/operations",
+      "version": "denylist-1",
+      "tag": "always",
+      "line": "Copies and syncs to the branch servers may run."
+    },
+    {
+      "predicate": "may:privilege_escalation",
+      "truth": "FALSE",
+      "verified": true,
+      "final": true,
+      "source": "owner:lendco/operations",
+      "version": "denylist-1",
+      "tag": "never",
+      "line": "Never run anything as another user."
+    },
+    {
+      "predicate": "may:unreadable_command",
+      "truth": "FALSE",
+      "verified": true,
+      "final": true,
+      "source": "owner:lendco/operations",
+      "version": "denylist-1",
+      "tag": "never",
+      "line": "Never run a command that cannot be read by its words."
+    },
+    {
+      "predicate": "may:destructive_tool",
+      "truth": "FALSE",
+      "verified": true,
+      "final": true,
+      "source": "owner:lendco/operations",
+      "version": "denylist-1",
+      "tag": "never",
+      "line": "Never call a tool that deletes, drops or purges."
+    },
+    {
+      "predicate": "may:bulk_tool",
+      "truth": "TRUE",
+      "verified": true,
+      "source": "owner:lendco/operations",
+      "version": "denylist-1",
+      "tag": "always",
+      "line": "The monthly bulk update of the dunning list may run."
+    },
+    {
+      "predicate": "may:credential_path",
+      "truth": "FALSE",
+      "verified": true,
+      "final": true,
+      "source": "owner:lendco/operations",
+      "version": "denylist-1",
+      "tag": "never",
+      "line": "Never touch a credential store."
+    },
+    {
+      "predicate": "may:private_host",
+      "truth": "FALSE",
+      "verified": true,
+      "final": true,
+      "source": "owner:lendco/operations",
+      "version": "denylist-1",
+      "tag": "never",
+      "line": "Never fetch anything but a plain public web address."
+    }
+  ]
+}

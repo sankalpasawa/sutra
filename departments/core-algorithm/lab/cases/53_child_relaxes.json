@@ -1,0 +1,9 @@
+{
+  "id": "53_child_relaxes",
+  "title": "A child pack that relaxes is not installable",
+  "description": "Two packs ask to be installed over the servicing team's standing rules. The team's later pack drops a condition, lifts a refusal and answers the owner's question for the owner: its review is a decision that says no, and the goal of installing it is refused. The practice pick only adds: its review says yes, and its install is supported by evidence. Each review is named by the pack it read and the packs it was read against, so neither stands in for the other.",
+  "packs": ["116_pack_review", "117_review_of_loosening", "118_review_of_practice"],
+  "execute": true,
+  "area": "Refusals",
+  "expected": "REFUSED"
+}

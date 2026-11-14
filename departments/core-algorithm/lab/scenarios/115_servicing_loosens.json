@@ -1,0 +1,37 @@
+{
+  "schema": "sutra-extension/2",
+  "id": "115_servicing_loosens",
+  "scope": "lendco/servicing",
+  "rules": [
+    {
+      "id": "R-REFUND@3",
+      "head": "refund_settled",
+      "branches": [
+        [
+          "refund_paid",
+          "payment_reconciled"
+        ]
+      ],
+      "approved": true,
+      "source": "draft/servicing-team",
+      "replaces": "R-REFUND@2"
+    }
+  ],
+  "evidence": [
+    {
+      "predicate": "third_party_payout_allowed",
+      "truth": "TRUE",
+      "verified": true,
+      "final": true,
+      "source": "team:lendco/servicing",
+      "version": "draft-1"
+    },
+    {
+      "predicate": "owner_approved_refund",
+      "truth": "TRUE",
+      "verified": true,
+      "source": "team:lendco/servicing",
+      "version": "draft-1"
+    }
+  ]
+}

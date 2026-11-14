@@ -215,7 +215,7 @@ def record(scene_folder=None):
     registry_held()   # the first of three looks at the registry: before anything is recorded, so a handler re-bound by a pack file or an extension is refused in words, before the table of handlers below is made of it
     handlers={kind:{'module':fn.__module__,'file':str(Path(sys.modules[fn.__module__].__file__).resolve().relative_to(ROOT)),
                      'sha256':hashlib.sha256(Path(sys.modules[fn.__module__].__file__).read_bytes()).hexdigest()} for kind,fn in sorted((k,h['run']) for k,h in ACTIONS.items())}
-    result={'release':'sutra-kernel-extensions/0.14.0-pagebuilder','action_handlers':handlers,
+    result={'release':'sutra-kernel-extensions/0.15.0-refusals','action_handlers':handlers,
             'kernel_sha256':hashlib.sha256((ROOT/'kernel'/'core.py').read_bytes()).hexdigest(),
             'baseline_v0_1_sha256':hashlib.sha256((ROOT/'release'/'baseline_v0_1_core.py').read_bytes()).hexdigest(),
             'scope':'finite synthetic deterministic local simulation; NOT historical Core, current J2, or external outcomes',

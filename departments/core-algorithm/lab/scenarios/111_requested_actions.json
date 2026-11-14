@@ -1,0 +1,316 @@
+{
+  "schema": "sutra-extension/2",
+  "id": "111_requested_actions",
+  "scope": "lendco/operations",
+  "goals": [
+    "ledger_sync_restarted",
+    "due_list_mailed",
+    "dunning_queue_purged",
+    "bank_keys_read",
+    "instance_metadata_fetched",
+    "due_list_exported",
+    "loan_book_synced_as_root",
+    "rate_table_pushed"
+  ],
+  "evidence": [
+    {
+      "predicate": "screened:restart-ledger-sync@1@req-5cdc6013d3ba",
+      "truth": "TRUE",
+      "verified": true,
+      "source": "adapter:refusals/classes@1",
+      "version": "req-5cdc6013d3ba",
+      "request": {
+        "kind": "command",
+        "text": "sudo systemctl restart ledger-sync"
+      },
+      "classes": [
+        "privilege_escalation"
+      ]
+    },
+    {
+      "predicate": "screened:mail-due-list@1@req-3c33cea70842",
+      "truth": "TRUE",
+      "verified": true,
+      "source": "adapter:refusals/classes@1",
+      "version": "req-3c33cea70842",
+      "request": {
+        "kind": "command",
+        "text": "python3 reports/due_list.py --month 2026-11 | mail -s due ops@lendco.example"
+      },
+      "classes": [
+        "unreadable_command"
+      ]
+    },
+    {
+      "predicate": "screened:purge-dunning-queue@1@req-4c394d2641f1",
+      "truth": "TRUE",
+      "verified": true,
+      "source": "adapter:refusals/classes@1",
+      "version": "req-4c394d2641f1",
+      "request": {
+        "kind": "tool",
+        "text": "collections__purge_dunning_queue"
+      },
+      "classes": [
+        "destructive_tool"
+      ]
+    },
+    {
+      "predicate": "screened:read-bank-keys@1@req-3aa5efd81cde",
+      "truth": "TRUE",
+      "verified": true,
+      "source": "adapter:refusals/classes@1",
+      "version": "req-3aa5efd81cde",
+      "request": {
+        "kind": "path",
+        "text": "~/.aws/credentials"
+      },
+      "classes": [
+        "credential_path"
+      ]
+    },
+    {
+      "predicate": "screened:fetch-instance-metadata@1@req-35139f5b0a44",
+      "truth": "TRUE",
+      "verified": true,
+      "source": "adapter:refusals/classes@1",
+      "version": "req-35139f5b0a44",
+      "request": {
+        "kind": "host",
+        "text": "http://169.254.169.254/latest/meta-data/"
+      },
+      "classes": [
+        "private_host"
+      ]
+    },
+    {
+      "predicate": "screened:export-due-list@1@req-97e38b20838b",
+      "truth": "TRUE",
+      "verified": true,
+      "source": "adapter:refusals/classes@1",
+      "version": "req-97e38b20838b",
+      "request": {
+        "kind": "command",
+        "text": "python3 reports/due_list.py --month 2026-11"
+      },
+      "classes": []
+    },
+    {
+      "predicate": "screened:sync-loan-book-as-root@1@req-dab2cd3c2c6d",
+      "truth": "TRUE",
+      "verified": true,
+      "source": "adapter:refusals/classes@1",
+      "version": "req-dab2cd3c2c6d",
+      "request": {
+        "kind": "command",
+        "text": "sudo rsync -a loans/ backup:/srv/loans/"
+      },
+      "classes": [
+        "remote_mutation",
+        "privilege_escalation"
+      ]
+    },
+    {
+      "predicate": "screened:push-rate-table@1@req-3c70bf0a32fa",
+      "truth": "TRUE",
+      "verified": true,
+      "source": "adapter:refusals/classes@1",
+      "version": "req-3c70bf0a32fa",
+      "request": {
+        "kind": "command",
+        "text": "rsync -a rates/ branch-01:/srv/rates/"
+      },
+      "classes": [
+        "remote_mutation"
+      ]
+    }
+  ],
+  "methods": [
+    {
+      "id": "restart-ledger-sync@1",
+      "effect": "ledger_sync_restarted",
+      "requires": [
+        "screened:restart-ledger-sync@1@req-5cdc6013d3ba",
+        "may:privilege_escalation"
+      ],
+      "provider": "local-provider",
+      "grant": "action:restart-ledger-sync@1",
+      "cost": {
+        "compute": 1,
+        "money": 1,
+        "attention": 0
+      },
+      "action": "simulate_fact",
+      "approved": true,
+      "source": "reviewed/synthetic-method",
+      "request": {
+        "kind": "command",
+        "text": "sudo systemctl restart ledger-sync"
+      }
+    },
+    {
+      "id": "mail-due-list@1",
+      "effect": "due_list_mailed",
+      "requires": [
+        "screened:mail-due-list@1@req-3c33cea70842",
+        "may:unreadable_command"
+      ],
+      "provider": "local-provider",
+      "grant": "action:mail-due-list@1",
+      "cost": {
+        "compute": 1,
+        "money": 1,
+        "attention": 0
+      },
+      "action": "simulate_fact",
+      "approved": true,
+      "source": "reviewed/synthetic-method",
+      "request": {
+        "kind": "command",
+        "text": "python3 reports/due_list.py --month 2026-11 | mail -s due ops@lendco.example"
+      }
+    },
+    {
+      "id": "purge-dunning-queue@1",
+      "effect": "dunning_queue_purged",
+      "requires": [
+        "screened:purge-dunning-queue@1@req-4c394d2641f1",
+        "may:destructive_tool"
+      ],
+      "provider": "local-provider",
+      "grant": "action:purge-dunning-queue@1",
+      "cost": {
+        "compute": 1,
+        "money": 1,
+        "attention": 0
+      },
+      "action": "simulate_fact",
+      "approved": true,
+      "source": "reviewed/synthetic-method",
+      "request": {
+        "kind": "tool",
+        "text": "collections__purge_dunning_queue"
+      }
+    },
+    {
+      "id": "read-bank-keys@1",
+      "effect": "bank_keys_read",
+      "requires": [
+        "screened:read-bank-keys@1@req-3aa5efd81cde",
+        "may:credential_path"
+      ],
+      "provider": "local-provider",
+      "grant": "action:read-bank-keys@1",
+      "cost": {
+        "compute": 1,
+        "money": 1,
+        "attention": 0
+      },
+      "action": "simulate_fact",
+      "approved": true,
+      "source": "reviewed/synthetic-method",
+      "request": {
+        "kind": "path",
+        "text": "~/.aws/credentials"
+      }
+    },
+    {
+      "id": "fetch-instance-metadata@1",
+      "effect": "instance_metadata_fetched",
+      "requires": [
+        "screened:fetch-instance-metadata@1@req-35139f5b0a44",
+        "may:private_host"
+      ],
+      "provider": "local-provider",
+      "grant": "action:fetch-instance-metadata@1",
+      "cost": {
+        "compute": 1,
+        "money": 1,
+        "attention": 0
+      },
+      "action": "simulate_fact",
+      "approved": true,
+      "source": "reviewed/synthetic-method",
+      "request": {
+        "kind": "host",
+        "text": "http://169.254.169.254/latest/meta-data/"
+      }
+    },
+    {
+      "id": "export-due-list@1",
+      "effect": "due_list_exported",
+      "requires": [
+        "screened:export-due-list@1@req-97e38b20838b"
+      ],
+      "provider": "local-provider",
+      "grant": "action:export-due-list@1",
+      "cost": {
+        "compute": 1,
+        "money": 1,
+        "attention": 0
+      },
+      "action": "simulate_fact",
+      "approved": true,
+      "source": "reviewed/synthetic-method",
+      "request": {
+        "kind": "command",
+        "text": "python3 reports/due_list.py --month 2026-11"
+      }
+    },
+    {
+      "id": "sync-loan-book-as-root@1",
+      "effect": "loan_book_synced_as_root",
+      "requires": [
+        "screened:sync-loan-book-as-root@1@req-dab2cd3c2c6d",
+        "may:remote_mutation",
+        "may:privilege_escalation"
+      ],
+      "provider": "local-provider",
+      "grant": "action:sync-loan-book-as-root@1",
+      "cost": {
+        "compute": 1,
+        "money": 1,
+        "attention": 0
+      },
+      "action": "simulate_fact",
+      "approved": true,
+      "source": "reviewed/synthetic-method",
+      "request": {
+        "kind": "command",
+        "text": "sudo rsync -a loans/ backup:/srv/loans/"
+      }
+    },
+    {
+      "id": "push-rate-table@1",
+      "effect": "rate_table_pushed",
+      "requires": [
+        "screened:push-rate-table@1@req-3c70bf0a32fa",
+        "may:remote_mutation"
+      ],
+      "provider": "local-provider",
+      "grant": "action:push-rate-table@1",
+      "cost": {
+        "compute": 1,
+        "money": 1,
+        "attention": 0
+      },
+      "action": "simulate_fact",
+      "approved": true,
+      "source": "reviewed/synthetic-method",
+      "request": {
+        "kind": "command",
+        "text": "rsync -a rates/ branch-01:/srv/rates/"
+      }
+    }
+  ],
+  "grants": [
+    "action:restart-ledger-sync@1",
+    "action:mail-due-list@1",
+    "action:purge-dunning-queue@1",
+    "action:read-bank-keys@1",
+    "action:fetch-instance-metadata@1",
+    "action:export-due-list@1",
+    "action:sync-loan-book-as-root@1",
+    "action:push-rate-table@1"
+  ]
+}

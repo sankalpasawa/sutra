@@ -2,7 +2,7 @@
  "about": "Written by the additive applier (.tmp/core-algo-additive4-apply.py, contract 4). `pinned`: what the lab had recorded when a version was applied (sha256 of the kernel and of each scenario file; sha256 of the canonical JSON of each case, of the event record, of the ask record, of each recorded sequence, of each handler entry and of each lens except the reflection summary), and `built_in`, every Python file the lab had before the add-on points. `points` and `applied`: every file laid in, with its sha256. An entry of `applied` that holds `edits` is an EDIT VERSION (ruling R32): the name and sha256 of its edit script and, for every existing file the script changed, the sha256 before and after; the pin of the kernel and the pinned handler entries were taken again for those files, an added file it changed is listed with its new sha256, and every other pin stayed. Its `moves` are what it declares as moved of the things an earlier version recorded, each with its reason; check S202 holds a declared move to nothing until the next version is applied to the built, verified record. The verifier reads this file for checks S202 and S203, for the sha256 a check module's text is held to before it runs, and for what it hands a check module; tools/run_all.py reads it for the record's file list. Nothing in the lab holds this file itself.",
  "contract": 4,
  "pinned": {
-  "from": "sutra-kernel-extensions/0.13.0-time",
+  "from": "sutra-kernel-extensions/0.14.0-pagebuilder",
   "kernel_sha256": "688ab9431d4f4b17608d848e32f12e0373197a301d3b7f641a6f476a2b9ad368",
   "built_in": [
    "extensions/asks.py",
@@ -113,6 +113,10 @@
    "169_crowd_clock@6.1": "a163cbe36640b6a69a3e361eedbde6545419732074d7b86bd2fb590da8385065",
    "169_crowd_clock@6": "6b74879e8efc72090f0e749fea2f9cde08e0590cd2bcd9325575dd015cfef4ad",
    "169_shipping_pass": "a14ae186ee1cf6a2b8cca5d73db7d4f49956fbfd38b1b550f00ae74448483760",
+   "170_recorded_open": "d7745754560f137003a83854c3e8cd9a0b690f01bdf514be38983b27080e6a76",
+   "171_domain_catalogue": "a398f3fb16a8bd2a21cf0d0594e15e063f9409af2ae9882e22e324100150ebb1",
+   "172_domain_exhibits": "3d2bfc33b4628275dbfad567346d37d188db87cfefa22bf07eb2563b452a965b",
+   "173_closed_on_confirmation": "5bce286c9cbaf0f93f96af50f5b0d1447b78e25f56e9e853ee367585ca64cb41",
    "20_enquiry_goal": "ac089a3607c41dd9f73979cfbb76cc95db7c458038c505c77a09f5b8e01f83ca",
    "21_enquiry_theory": "f98e3813d35d7a85a3efba6338a2aa26c4bb29280448f8a61eecad9426dfa94d",
    "22_enquiry_methods": "c24a6bf2f19dae143ad5465c982d9ea851cb8e8fc12c8d0efc0b8702eae56d6e",
@@ -304,6 +308,14 @@
    [
     "69_permission_ran_out",
     "ee2a73470a9dc874031a671438190ee8aee3ee302976fa6f0a6401d2cc1146ad"
+   ],
+   [
+    "70_recorded_open",
+    "fc98fa9848fabc715594f031a4232c3e2b246b606c5c322195d554b9575d1d20"
+   ],
+   [
+    "71_no_plan_after_a_yes",
+    "6c84d85a69248bc8a44f2bc814cf6df886c42cee4e56175fb1b2115020b62027"
    ]
   ],
   "events": "f58f0cf138c8ca42fe880e0a0c15d116a2c52c8a300b8284a8c93e3e72d2317c",
@@ -313,7 +325,8 @@
    "journal_chain": "6c189359834d38d83b168a5142f8c0c2cd75d6d1a68533dee20bc9b1d6fb440b",
    "journal_refusals": "0c8646c7ad38b13dc36a29cc6112815e255dde8828b004f6408f169f2ca62ef6",
    "journal_restart": "1b30c480032ee792b0f7d1fd9645a0942fc89e2e886fdd4f2fe3223de9ab99d4",
-   "numbers": "d3502c559c71eb3f67370b3aa6190315538057febc7a0e291664ee4f7a832553"
+   "numbers": "d3502c559c71eb3f67370b3aa6190315538057febc7a0e291664ee4f7a832553",
+   "system": "b367f2143ea685827f4ee5b9d994c5fc3dcc6f926958e946273059713d7ef8fb"
   },
   "action_handlers": {
    "ask": "021f2fe610ee6a2ff8edc3fda09b6e29d297b4caa1747a2900682368ab5729e9",
@@ -406,6 +419,21 @@
     "tests/test_system.py": "5d5b8f85c7cca7693c1af7452a867185832feeed3fcf9cdbf224d30e81eb9836",
     "tools/packs/system.py": "7e4d2166825a4e78c58d5ae951d9ddc9fec0d2cdaed10625d38738eca9f48bf9",
     "tools/scenes/system.py": "8a68a69104f4cfde1d8143e704dec6e2173f95b321a2a2ee5806e15dce3aa8dd"
+   }
+  },
+  {
+   "label": "0.15.0-refusals",
+   "delivery": "refusals",
+   "files": {
+    "cases/51_refused_class.json": "38ed7dc18ae28bcd75bcb740097ddce4b1a2e52100e30b7eed6ea23d59b45551",
+    "cases/52_standing_rules.json": "831b4097185eeba7956f629c207c4132aa05528e58e77d410f17e47937285d31",
+    "cases/53_child_relaxes.json": "ae2344eda3847fc71f6658e16f4498dc912045502b231817f707e1e36fc97e46",
+    "extensions/refusals_classes.py": "a552011e0261778ac7a112b594010c411b527e114b0cf1c37cedefb766c2d4e8",
+    "extensions/refusals_narrowing.py": "69b5522a6bbe5eb65ceb7bd5c5e9d1842e9d6b4367dd3f42d94b60624448bdbc",
+    "qa/checks/refusals.py": "f359fc101826b798dfd70023dcf8440f8bbd4d6019fb424f7f938994e6f94161",
+    "tests/test_refusals.py": "03c8e9177e7877c15fe9175ed0c9ff568c62be6cc2ec3b540e2b7febdee4d1a7",
+    "tools/packs/refusals.py": "a5e2a3968db5451a317d68f5a2c42fd6153f1b979e382ddc8729a6fd4c9be331",
+    "tools/scenes/refusals.py": "479cce24542cb3b081b657bf616e23dc029604e0136712646252c722a4c7fbe7"
    }
   }
  ]

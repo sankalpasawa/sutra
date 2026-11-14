@@ -1,0 +1,51 @@
+{
+  "schema": "sutra-extension/2",
+  "id": "117_review_of_loosening",
+  "scope": "lendco/pack-review",
+  "evidence": [
+    {
+      "predicate": "narrows:115_servicing_loosens@pair-f3d25cafc818",
+      "truth": "FALSE",
+      "verified": true,
+      "final": true,
+      "source": "adapter:refusals/narrowing@1",
+      "version": "pair-f3d25cafc818",
+      "child": "115_servicing_loosens",
+      "parents": [
+        "112_servicing_team",
+        "113_servicing_standing_rules",
+        "114_practice_money_movement"
+      ],
+      "relaxed": [
+        {
+          "kind": "CONDITION_DROPPED",
+          "how": "rule",
+          "rule": "R-REFUND@3",
+          "replaces": "R-REFUND@2",
+          "head": "refund_settled",
+          "alternative": 1,
+          "dropped": [
+            "source_record_named"
+          ],
+          "line": "R-REFUND@3 replaces R-REFUND@2: its alternative 1 keeps no alternative of the parent whole; the nearest loses source_record_named"
+        },
+        {
+          "kind": "REFUSAL_DROPPED",
+          "how": "decision",
+          "fact": "third_party_payout_allowed",
+          "scope": "lendco/servicing",
+          "source": "team:lendco/servicing",
+          "line": "the parent refuses third_party_payout_allowed (a FALSE decision in lendco/servicing); the pack replaces it with a TRUE decision"
+        },
+        {
+          "kind": "ASK_DROPPED",
+          "how": "answer",
+          "fact": "owner_approved_refund",
+          "source": "team:lendco/servicing",
+          "reads": "TRUE",
+          "line": "the pack carries a TRUE row on owner_approved_refund, which the parent asks about: it answers for the party that was to be asked"
+        }
+      ]
+    }
+  ]
+}
