@@ -605,3 +605,24 @@ def test_ask_directly_is_still_chosen_after_a_reload(make, browser):
     assert browser.js("document.querySelector('#sbar .ccmode [data-mode=direct]').getAttribute('aria-pressed')") == "true"
     assert browser.js("document.querySelector('#sbar .ccmode [data-mode=team]').getAttribute('aria-pressed')") == "false"
     clean(browser, "mode")
+
+
+@pytest.mark.browser
+def test_phone_composer_chrome_leaves_most_of_the_screen_to_the_transcript_and_its_toggles_are_tappable(make, browser):
+    live = make([Text("A short answer.", pieces=2)], delay="0.05")
+    browser.set_size(375, 740)
+    home(browser, live)
+    browser.wait_for("!!document.querySelector('#sbar .ccattach')")
+    m = browser.js("""(() => { const r = s => { const e = document.querySelector(s); if (!e) return null; const b = e.getBoundingClientRect(); return {w: b.width, h: b.height}; };
+      const all = s => Array.from(document.querySelectorAll(s)).map(e => { const b = e.getBoundingClientRect(); return {w: b.width, h: b.height}; });
+      return {msgs: r('#smsgs'), modes: all('#sbar .ccmode-opt'), pills: all('#spill .cpill-opt'), attach: r('#sbar .ccattach'), attachBtn: r('#sbar [data-act=composer-attach]'), win: window.innerHeight,
+              note: r('#sbar .ccattach small'), title: (document.querySelector('#sbar [data-act=composer-attach]') || {}).title || ''}; })()""")
+    print("PHONE COMPOSER", m)
+    assert m["modes"] and all(b["h"] >= 36 for b in m["modes"]), m
+    assert m["pills"] and all(b["h"] >= 36 for b in m["pills"]), m
+    assert m["attachBtn"]["h"] >= 36, m
+    assert m["attach"]["h"] <= 56, m
+    assert m["msgs"]["h"] >= m["win"] * 0.45, m
+    assert "20 MB" in m["title"], "the limits stay one hover or long press away"
+    assert browser.js("document.documentElement.scrollWidth <= window.innerWidth + 1") is True
+    clean(browser, "phone composer")

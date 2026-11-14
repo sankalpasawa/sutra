@@ -174,7 +174,7 @@
     if (mode !== "direct") return toggle;
     const CS = searchOf();
     const limit = CS ? CS.limitsNote() : "";
-    const attach = '<div class="ccattach"><button type="button" class="linkbtn" data-act="composer-attach">Attach files</button>' +
+    const attach = '<div class="ccattach"><button type="button" class="linkbtn" data-act="composer-attach" title="' + esc(limit) + '">Attach files</button>' +
       '<input type="file" class="ccinput" multiple hidden tabindex="-1" aria-label="Choose files to attach"/><small>' + esc(limit) + "</small></div>";
     const note = clean(s.note) === "" ? "" : '<p class="ccnote" role="status">' + esc(clean(s.note)) + "</p>";
     return toggle + chips(s.files) + attach + note;

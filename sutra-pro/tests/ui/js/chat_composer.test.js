@@ -641,3 +641,9 @@ test("the mode is remembered per chat: Ask directly survives a new composer for 
   safe.setMode("direct");
   assert.equal(safe.state().mode, "direct");
 });
+
+test("the Attach link carries the limits as its title (a phone shows the note on one line), and the note stays in the page", () => {
+  const html = bar({mode: "direct", files: [], note: ""}, {});
+  assert.match(html, /data-act="composer-attach" title="Up to 10 files, 20 MB each/);
+  assert.match(html, /<small>Up to 10 files, 20 MB each/);
+});

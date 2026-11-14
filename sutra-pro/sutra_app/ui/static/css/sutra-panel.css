@@ -431,6 +431,13 @@ body.nodeopen #dview .chat,body.nodeopen .chatfab{visibility:hidden}
 .ccattach{display:flex;flex-wrap:wrap;align-items:center;gap:8px}
 .ccattach small,.ccnote{color:var(--muted);font-size:12px;margin:0}
 .ccstream{margin:0;padding:4px 0}
+/* a phone: the mode and provider toggles and the attach link are finger-sized (40px), and the limits note is one line (the whole note is in the link's title and still read aloud) */
+@media (max-width:600px){
+  .ccmode-opt,.cpill-opt{min-height:40px;display:inline-flex;align-items:center}
+  .ccattach{flex-wrap:nowrap;gap:10px}
+  .ccattach .linkbtn{min-height:40px;display:inline-flex;align-items:center;flex:0 0 auto}
+  .ccattach small{flex:1 1 0;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+}
 
 /* the comfort of a chat (GAP-chat-comfort): the box grows with its text (chat_draft.js sets the height, up to 200px), the "new messages below" pill
    rides the bottom edge of the transcript at zero height, a chip shows its thumbnail or a kind tile, an owner's line lists its files; J2's tokens only */
