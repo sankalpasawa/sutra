@@ -1,5 +1,5 @@
 "use strict";
-// SutraEvents (sutra_app/ui/static/js/sutra_events.js): the 17 event names, the hello-resync rule, polling when the stream
+// SutraEvents (sutra_app/ui/static/js/sutra_events.js): the 18 event names, the hello-resync rule, polling when the stream
 // drops, the retry after a hard close, close(), and coalesce.
 // Run with: node --test tests/ui/js/events.test.js
 //
@@ -16,7 +16,7 @@ const FILE = path.resolve(__dirname, "../../../sutra_app/ui/static/js/sutra_even
 const CODE = fs.readFileSync(FILE, "utf8");
 const NAMES = ["server.hello", "server.resync", "chat.turn", "chat.message", "chat.partial", "chart.changed", "chart.approval", "graph.updated",
   "task.updated", "atom.updated", "usage.recorded", "needs_you.changed", "connector.health", "connector.switch", "connector.mode",
-  "agent.session", "chat.choice"];
+  "agent.session", "chat.choice", "chat.live"];
 
 const plain = value => JSON.parse(JSON.stringify(value));
 
@@ -90,11 +90,11 @@ function start(options = {}, extra = {}) {
 // ------------------------------------------------------------------------------------------------------------------
 // Loading
 // ------------------------------------------------------------------------------------------------------------------
-test("TYPES is the 17 event names of /api/events, in order, and frozen", () => {
+test("TYPES is the 18 event names of /api/events, in order, and frozen", () => {
   const { SutraEvents } = sandboxWith(makeClock(), []);
   assert.deepEqual(plain(SutraEvents.TYPES), NAMES);
-  assert.equal(SutraEvents.TYPES.length, 17);
-  assert.equal(new Set(NAMES).size, 17);
+  assert.equal(SutraEvents.TYPES.length, 18);
+  assert.equal(new Set(NAMES).size, 18);
   assert.ok(Object.isFrozen(SutraEvents.TYPES));
 });
 
@@ -115,14 +115,14 @@ test("in node the file is module.exports and sets no global", () => {
   assert.deepEqual(Object.keys(sandbox.module.exports).sort(), ["TYPES", "coalesce", "connect"]);
   assert.equal(sandbox.SutraEvents, undefined);
   const required = require(FILE);
-  assert.equal(required.TYPES.length, 17);
+  assert.equal(required.TYPES.length, 18);
   assert.equal(typeof required.connect, "function");
 });
 
 // ------------------------------------------------------------------------------------------------------------------
 // connect: the stream, its address and its listeners
 // ------------------------------------------------------------------------------------------------------------------
-test("connect opens one EventSource at /api/events with a listener for each of the 17 names, open and error", () => {
+test("connect opens one EventSource at /api/events with a listener for each of the 18 names, open and error", () => {
   const { made } = start();
   assert.equal(made.length, 1);
   assert.equal(made[0].url, "/api/events");
@@ -163,15 +163,15 @@ test("onEvent is required", () => {
 // ------------------------------------------------------------------------------------------------------------------
 // Events reach onEvent; server.hello and server.resync
 // ------------------------------------------------------------------------------------------------------------------
-test("every one of the 17 names reaches onEvent: 15 as they are, server.resync forwarded, server.hello as server.resync after the first", () => {
+test("every one of the 18 names reaches onEvent: 16 as they are, server.resync forwarded, server.hello as server.resync after the first", () => {
   const { es, events } = start();
   NAMES.filter(name => name !== "server.hello").forEach((name, i) => es().send(name, {n: i, name}));
   assert.deepEqual(events.map(e => e[0]), NAMES.filter(name => name !== "server.hello"));
   events.forEach(([name, data], i) => assert.deepEqual(data, {n: i, name}));
   es().send("server.hello", {version: 1});            // the first one of the handle: the handshake
-  assert.equal(events.length, 16);
+  assert.equal(events.length, 17);
   es().send("server.hello", {version: 2});
-  assert.deepEqual(events[16], ["server.resync", {version: 2}]);
+  assert.deepEqual(events[17], ["server.resync", {version: 2}]);
 });
 
 test("the first server.hello of a handle is ignored, the second and later act as server.resync with their own body", () => {
