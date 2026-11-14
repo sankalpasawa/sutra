@@ -228,3 +228,19 @@ test("fuzz: 300 random cuts of a reply with a table, a list and a fence never re
     assert.equal(pre.textContent, "def price(item):\n    # the menu price in rupees\n    return item.base * 1.18");
   }
 });
+
+test("an open code fence ends at its last code line: the newline after it is not a line, so the <pre> is the height it keeps when the closing fence arrives", () => {
+  const r = rig();
+  r.paint("Code:\n\n```python\nx = 1\ny = 2\n", true);
+  const pre = r.cmd().querySelector("pre");
+  assert.equal(pre.textContent, "x = 1\ny = 2");
+  r.paint("Code:\n\n```python\nx = 1\ny = 2\nz = 3", true);
+  assert.equal(pre.textContent, "x = 1\ny = 2\nz = 3");
+  r.paint("Code:\n\n```python\nx = 1\ny = 2\nz = 3\n``", true);                 // the closing fence being typed
+  assert.equal(pre.textContent, "x = 1\ny = 2\nz = 3");
+  r.paint("Code:\n\n```python\nx = 1\ny = 2\nz = 3\n```\n\nDone.", true);
+  assert.equal(r.cmd().querySelector("pre"), pre);
+  assert.equal(pre.textContent, "x = 1\ny = 2\nz = 3");
+  r.paint("Code:\n\n```python\nx = 1\n\n", true);                                // a blank last code line is kept as the closed form keeps it
+  assert.equal(r.cmd().querySelector("pre").textContent, "x = 1\n");
+});

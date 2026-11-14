@@ -346,7 +346,10 @@
     if (open !== null) {
       // a last line of one or two fence characters is the closing line being typed: it is not code (and would not be there when the block settles)
       const partial = new RegExp("(^|\\n)[ \\t]*" + (open.marker[0] === "`" ? "`" : "~") + "{1,2}$");
-      segs.push({kind: "fence", opener: open.opener, marker: open.marker, body: tail.slice(open.bodyStart).replace(partial, ""), closed: false, start: open.start, end: tail.length});
+      // the newline that ends the last finished code line is not a line: with it the <pre> is one line taller than it will be when the closing fence arrives (the closed body ends before it)
+      const raw = tail.slice(open.bodyStart);
+      const body = partial.test(raw) ? raw.replace(partial, "") : raw.replace(/\n$/, "");
+      segs.push({kind: "fence", opener: open.opener, marker: open.marker, body, closed: false, start: open.start, end: tail.length});
     }
     flush(tail.length);
     return segs;
