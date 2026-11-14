@@ -1,0 +1,72 @@
+{
+  "schema": "sutra-extension/2",
+  "id": "162_loan",
+  "scope": "orgA/lending",
+  "goals": [
+    "loan_disbursed"
+  ],
+  "budget": {
+    "compute": 10,
+    "money": 10,
+    "attention": 3
+  },
+  "preference": [
+    "compute",
+    "money",
+    "attention"
+  ],
+  "evidence": [
+    {
+      "predicate": "bureau_report_clean",
+      "truth": "TRUE",
+      "verified": true,
+      "source": "fixture/bureau-report",
+      "version": "report-1",
+      "depends_on": [
+        {
+          "predicate": "until:30",
+          "version": "window"
+        }
+      ]
+    },
+    {
+      "predicate": "in-time:loan_disbursed",
+      "truth": "TRUE",
+      "verified": true,
+      "source": "fixture/owner-due-by",
+      "version": "1",
+      "depends_on": [
+        {
+          "predicate": "until:7",
+          "version": "window"
+        }
+      ]
+    }
+  ],
+  "methods": [
+    {
+      "id": "disburse-loan@1",
+      "effect": "loan_disbursed",
+      "requires": [
+        "bureau_report_clean"
+      ],
+      "provider": "local-provider",
+      "grant": "action:disburse-loan@1",
+      "cost": {
+        "compute": 1,
+        "money": 1,
+        "attention": 0
+      },
+      "action": "simulate_fact",
+      "approved": true,
+      "source": "reviewed/synthetic-method"
+    }
+  ],
+  "providers": {
+    "local-provider": 5
+  },
+  "grants": [
+    "action:disburse-loan@1",
+    "box:15:action:disburse-loan@1"
+  ]
+}

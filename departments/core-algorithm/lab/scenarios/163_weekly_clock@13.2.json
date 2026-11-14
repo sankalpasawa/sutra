@@ -1,0 +1,26 @@
+{
+  "schema": "sutra-extension/2",
+  "id": "163_weekly_clock@13.2",
+  "evidence": [
+    {
+      "predicate": "now",
+      "truth": "TRUE",
+      "verified": true,
+      "final": true,
+      "source": "adapter:clock@1",
+      "version": 13,
+      "at": 13,
+      "scope": "orgA/branch"
+    },
+    {
+      "predicate": "now",
+      "truth": "TRUE",
+      "verified": true,
+      "final": true,
+      "source": "adapter:clock@1",
+      "version": 13,
+      "at": 13,
+      "scope": "orgA/lending"
+    }
+  ]
+}

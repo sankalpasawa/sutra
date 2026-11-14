@@ -1,0 +1,32 @@
+{
+  "schema": "sutra-extension/2",
+  "id": "160_clock@3",
+  "evidence": [
+    {
+      "predicate": "now",
+      "truth": "TRUE",
+      "verified": true,
+      "final": true,
+      "source": "adapter:clock@1",
+      "version": 3,
+      "at": 3,
+      "scope": "orgA/fulfillment"
+    },
+    {
+      "predicate": "until:3",
+      "truth": "TRUE",
+      "verified": true,
+      "source": "adapter:clock@1",
+      "version": "window",
+      "scope": "orgA/fulfillment"
+    },
+    {
+      "predicate": "until:5",
+      "truth": "TRUE",
+      "verified": true,
+      "source": "adapter:clock@1",
+      "version": "window",
+      "scope": "orgA/fulfillment"
+    }
+  ]
+}

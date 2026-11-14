@@ -1,0 +1,9 @@
+{
+  "id": "67a_order_in_time",
+  "title": "The same order inside its window",
+  "description": "The twin of case 67: the same packs with the clock pack of day 2 in place of the pack of day 6. The approval counts until day 3, so on day 2 it is believed and the order ships. The two cases differ in their clock pack alone: a clock that published no window would fail this one, a clock that never closed one would fail case 67. This is the first tick of the walk order of the sequence clock.",
+  "packs": ["00_goal", "01_domain", "02_methods", "04_admission", "160_timed_approval", "160_clock@2"],
+  "execute": true,
+  "area": "Time",
+  "expected": "LOCAL_MODEL_EFFECTS_RECORDED"
+}

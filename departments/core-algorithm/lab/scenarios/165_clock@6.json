@@ -1,0 +1,25 @@
+{
+  "schema": "sutra-extension/2",
+  "id": "165_clock@6",
+  "evidence": [
+    {
+      "predicate": "now",
+      "truth": "TRUE",
+      "verified": true,
+      "final": true,
+      "source": "adapter:clock@1",
+      "version": 6,
+      "at": 6,
+      "scope": "orgA/fulfillment"
+    },
+    {
+      "predicate": "until:5",
+      "truth": "FALSE",
+      "verified": true,
+      "final": true,
+      "source": "adapter:clock@1",
+      "version": "closed",
+      "scope": "orgA/fulfillment"
+    }
+  ]
+}

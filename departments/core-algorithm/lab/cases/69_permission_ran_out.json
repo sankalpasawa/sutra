@@ -1,0 +1,9 @@
+{
+  "id": "69_permission_ran_out",
+  "title": "A permission that ran out",
+  "description": "The sanction admitted disbursal until day 15 and the disbursal was due by day 7. The clock pack of day 16 takes the grant away: the loan is not disbursed, the run asks for authority, and the tick this case records (walk loan_late of the sequence clock) reports the disbursal late.",
+  "packs": ["162_loan", "162_clock@16"],
+  "execute": true,
+  "area": "Time",
+  "expected": "AUTHORITY_REQUIRED"
+}

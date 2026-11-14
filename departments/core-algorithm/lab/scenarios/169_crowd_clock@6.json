@@ -1,0 +1,525 @@
+{
+  "schema": "sutra-extension/2",
+  "id": "169_crowd_clock@6",
+  "evidence": [
+    {
+      "predicate": "until:3",
+      "truth": "FALSE",
+      "verified": true,
+      "final": true,
+      "source": "adapter:clock@1",
+      "version": "closed",
+      "scope": "orgA/fulfillment"
+    },
+    {
+      "predicate": "until:5",
+      "truth": "FALSE",
+      "verified": true,
+      "final": true,
+      "source": "adapter:clock@1",
+      "version": "closed",
+      "scope": "orgA/fulfillment"
+    },
+    {
+      "predicate": "now",
+      "truth": "TRUE",
+      "verified": true,
+      "final": true,
+      "source": "adapter:clock@1",
+      "version": 6,
+      "at": 6,
+      "scope": "orgA/fulfillment"
+    },
+    {
+      "predicate": "until:6",
+      "truth": "TRUE",
+      "verified": true,
+      "source": "adapter:clock@1",
+      "version": "window",
+      "scope": "orgA/fulfillment"
+    },
+    {
+      "predicate": "until:7",
+      "truth": "TRUE",
+      "verified": true,
+      "source": "adapter:clock@1",
+      "version": "window",
+      "scope": "orgA/fulfillment"
+    },
+    {
+      "predicate": "until:8",
+      "truth": "TRUE",
+      "verified": true,
+      "source": "adapter:clock@1",
+      "version": "window",
+      "scope": "orgA/fulfillment"
+    },
+    {
+      "predicate": "until:9",
+      "truth": "TRUE",
+      "verified": true,
+      "source": "adapter:clock@1",
+      "version": "window",
+      "scope": "orgA/fulfillment"
+    },
+    {
+      "predicate": "until:10",
+      "truth": "TRUE",
+      "verified": true,
+      "source": "adapter:clock@1",
+      "version": "window",
+      "scope": "orgA/fulfillment"
+    },
+    {
+      "predicate": "until:11",
+      "truth": "TRUE",
+      "verified": true,
+      "source": "adapter:clock@1",
+      "version": "window",
+      "scope": "orgA/fulfillment"
+    },
+    {
+      "predicate": "until:12",
+      "truth": "TRUE",
+      "verified": true,
+      "source": "adapter:clock@1",
+      "version": "window",
+      "scope": "orgA/fulfillment"
+    },
+    {
+      "predicate": "until:13",
+      "truth": "TRUE",
+      "verified": true,
+      "source": "adapter:clock@1",
+      "version": "window",
+      "scope": "orgA/fulfillment"
+    },
+    {
+      "predicate": "until:14",
+      "truth": "TRUE",
+      "verified": true,
+      "source": "adapter:clock@1",
+      "version": "window",
+      "scope": "orgA/fulfillment"
+    },
+    {
+      "predicate": "until:15",
+      "truth": "TRUE",
+      "verified": true,
+      "source": "adapter:clock@1",
+      "version": "window",
+      "scope": "orgA/fulfillment"
+    },
+    {
+      "predicate": "until:16",
+      "truth": "TRUE",
+      "verified": true,
+      "source": "adapter:clock@1",
+      "version": "window",
+      "scope": "orgA/fulfillment"
+    },
+    {
+      "predicate": "until:17",
+      "truth": "TRUE",
+      "verified": true,
+      "source": "adapter:clock@1",
+      "version": "window",
+      "scope": "orgA/fulfillment"
+    },
+    {
+      "predicate": "until:18",
+      "truth": "TRUE",
+      "verified": true,
+      "source": "adapter:clock@1",
+      "version": "window",
+      "scope": "orgA/fulfillment"
+    },
+    {
+      "predicate": "until:19",
+      "truth": "TRUE",
+      "verified": true,
+      "source": "adapter:clock@1",
+      "version": "window",
+      "scope": "orgA/fulfillment"
+    },
+    {
+      "predicate": "until:20",
+      "truth": "TRUE",
+      "verified": true,
+      "source": "adapter:clock@1",
+      "version": "window",
+      "scope": "orgA/fulfillment"
+    },
+    {
+      "predicate": "until:21",
+      "truth": "TRUE",
+      "verified": true,
+      "source": "adapter:clock@1",
+      "version": "window",
+      "scope": "orgA/fulfillment"
+    },
+    {
+      "predicate": "until:22",
+      "truth": "TRUE",
+      "verified": true,
+      "source": "adapter:clock@1",
+      "version": "window",
+      "scope": "orgA/fulfillment"
+    },
+    {
+      "predicate": "until:23",
+      "truth": "TRUE",
+      "verified": true,
+      "source": "adapter:clock@1",
+      "version": "window",
+      "scope": "orgA/fulfillment"
+    },
+    {
+      "predicate": "until:24",
+      "truth": "TRUE",
+      "verified": true,
+      "source": "adapter:clock@1",
+      "version": "window",
+      "scope": "orgA/fulfillment"
+    },
+    {
+      "predicate": "until:25",
+      "truth": "TRUE",
+      "verified": true,
+      "source": "adapter:clock@1",
+      "version": "window",
+      "scope": "orgA/fulfillment"
+    },
+    {
+      "predicate": "until:26",
+      "truth": "TRUE",
+      "verified": true,
+      "source": "adapter:clock@1",
+      "version": "window",
+      "scope": "orgA/fulfillment"
+    },
+    {
+      "predicate": "until:27",
+      "truth": "TRUE",
+      "verified": true,
+      "source": "adapter:clock@1",
+      "version": "window",
+      "scope": "orgA/fulfillment"
+    },
+    {
+      "predicate": "until:28",
+      "truth": "TRUE",
+      "verified": true,
+      "source": "adapter:clock@1",
+      "version": "window",
+      "scope": "orgA/fulfillment"
+    },
+    {
+      "predicate": "until:29",
+      "truth": "TRUE",
+      "verified": true,
+      "source": "adapter:clock@1",
+      "version": "window",
+      "scope": "orgA/fulfillment"
+    },
+    {
+      "predicate": "until:30",
+      "truth": "TRUE",
+      "verified": true,
+      "source": "adapter:clock@1",
+      "version": "window",
+      "scope": "orgA/fulfillment"
+    },
+    {
+      "predicate": "until:31",
+      "truth": "TRUE",
+      "verified": true,
+      "source": "adapter:clock@1",
+      "version": "window",
+      "scope": "orgA/fulfillment"
+    },
+    {
+      "predicate": "until:32",
+      "truth": "TRUE",
+      "verified": true,
+      "source": "adapter:clock@1",
+      "version": "window",
+      "scope": "orgA/fulfillment"
+    },
+    {
+      "predicate": "until:33",
+      "truth": "TRUE",
+      "verified": true,
+      "source": "adapter:clock@1",
+      "version": "window",
+      "scope": "orgA/fulfillment"
+    },
+    {
+      "predicate": "until:34",
+      "truth": "TRUE",
+      "verified": true,
+      "source": "adapter:clock@1",
+      "version": "window",
+      "scope": "orgA/fulfillment"
+    },
+    {
+      "predicate": "until:35",
+      "truth": "TRUE",
+      "verified": true,
+      "source": "adapter:clock@1",
+      "version": "window",
+      "scope": "orgA/fulfillment"
+    },
+    {
+      "predicate": "until:36",
+      "truth": "TRUE",
+      "verified": true,
+      "source": "adapter:clock@1",
+      "version": "window",
+      "scope": "orgA/fulfillment"
+    },
+    {
+      "predicate": "until:37",
+      "truth": "TRUE",
+      "verified": true,
+      "source": "adapter:clock@1",
+      "version": "window",
+      "scope": "orgA/fulfillment"
+    },
+    {
+      "predicate": "until:38",
+      "truth": "TRUE",
+      "verified": true,
+      "source": "adapter:clock@1",
+      "version": "window",
+      "scope": "orgA/fulfillment"
+    },
+    {
+      "predicate": "until:39",
+      "truth": "TRUE",
+      "verified": true,
+      "source": "adapter:clock@1",
+      "version": "window",
+      "scope": "orgA/fulfillment"
+    },
+    {
+      "predicate": "until:40",
+      "truth": "TRUE",
+      "verified": true,
+      "source": "adapter:clock@1",
+      "version": "window",
+      "scope": "orgA/fulfillment"
+    },
+    {
+      "predicate": "until:41",
+      "truth": "TRUE",
+      "verified": true,
+      "source": "adapter:clock@1",
+      "version": "window",
+      "scope": "orgA/fulfillment"
+    },
+    {
+      "predicate": "until:42",
+      "truth": "TRUE",
+      "verified": true,
+      "source": "adapter:clock@1",
+      "version": "window",
+      "scope": "orgA/fulfillment"
+    },
+    {
+      "predicate": "until:43",
+      "truth": "TRUE",
+      "verified": true,
+      "source": "adapter:clock@1",
+      "version": "window",
+      "scope": "orgA/fulfillment"
+    },
+    {
+      "predicate": "until:44",
+      "truth": "TRUE",
+      "verified": true,
+      "source": "adapter:clock@1",
+      "version": "window",
+      "scope": "orgA/fulfillment"
+    },
+    {
+      "predicate": "until:45",
+      "truth": "TRUE",
+      "verified": true,
+      "source": "adapter:clock@1",
+      "version": "window",
+      "scope": "orgA/fulfillment"
+    },
+    {
+      "predicate": "until:46",
+      "truth": "TRUE",
+      "verified": true,
+      "source": "adapter:clock@1",
+      "version": "window",
+      "scope": "orgA/fulfillment"
+    },
+    {
+      "predicate": "until:47",
+      "truth": "TRUE",
+      "verified": true,
+      "source": "adapter:clock@1",
+      "version": "window",
+      "scope": "orgA/fulfillment"
+    },
+    {
+      "predicate": "until:48",
+      "truth": "TRUE",
+      "verified": true,
+      "source": "adapter:clock@1",
+      "version": "window",
+      "scope": "orgA/fulfillment"
+    },
+    {
+      "predicate": "until:49",
+      "truth": "TRUE",
+      "verified": true,
+      "source": "adapter:clock@1",
+      "version": "window",
+      "scope": "orgA/fulfillment"
+    },
+    {
+      "predicate": "until:50",
+      "truth": "TRUE",
+      "verified": true,
+      "source": "adapter:clock@1",
+      "version": "window",
+      "scope": "orgA/fulfillment"
+    },
+    {
+      "predicate": "until:51",
+      "truth": "TRUE",
+      "verified": true,
+      "source": "adapter:clock@1",
+      "version": "window",
+      "scope": "orgA/fulfillment"
+    },
+    {
+      "predicate": "until:52",
+      "truth": "TRUE",
+      "verified": true,
+      "source": "adapter:clock@1",
+      "version": "window",
+      "scope": "orgA/fulfillment"
+    },
+    {
+      "predicate": "until:53",
+      "truth": "TRUE",
+      "verified": true,
+      "source": "adapter:clock@1",
+      "version": "window",
+      "scope": "orgA/fulfillment"
+    },
+    {
+      "predicate": "until:54",
+      "truth": "TRUE",
+      "verified": true,
+      "source": "adapter:clock@1",
+      "version": "window",
+      "scope": "orgA/fulfillment"
+    },
+    {
+      "predicate": "until:55",
+      "truth": "TRUE",
+      "verified": true,
+      "source": "adapter:clock@1",
+      "version": "window",
+      "scope": "orgA/fulfillment"
+    },
+    {
+      "predicate": "until:56",
+      "truth": "TRUE",
+      "verified": true,
+      "source": "adapter:clock@1",
+      "version": "window",
+      "scope": "orgA/fulfillment"
+    },
+    {
+      "predicate": "until:57",
+      "truth": "TRUE",
+      "verified": true,
+      "source": "adapter:clock@1",
+      "version": "window",
+      "scope": "orgA/fulfillment"
+    },
+    {
+      "predicate": "until:58",
+      "truth": "TRUE",
+      "verified": true,
+      "source": "adapter:clock@1",
+      "version": "window",
+      "scope": "orgA/fulfillment"
+    },
+    {
+      "predicate": "until:59",
+      "truth": "TRUE",
+      "verified": true,
+      "source": "adapter:clock@1",
+      "version": "window",
+      "scope": "orgA/fulfillment"
+    },
+    {
+      "predicate": "until:60",
+      "truth": "TRUE",
+      "verified": true,
+      "source": "adapter:clock@1",
+      "version": "window",
+      "scope": "orgA/fulfillment"
+    },
+    {
+      "predicate": "until:61",
+      "truth": "TRUE",
+      "verified": true,
+      "source": "adapter:clock@1",
+      "version": "window",
+      "scope": "orgA/fulfillment"
+    },
+    {
+      "predicate": "until:62",
+      "truth": "TRUE",
+      "verified": true,
+      "source": "adapter:clock@1",
+      "version": "window",
+      "scope": "orgA/fulfillment"
+    },
+    {
+      "predicate": "until:63",
+      "truth": "TRUE",
+      "verified": true,
+      "source": "adapter:clock@1",
+      "version": "window",
+      "scope": "orgA/fulfillment"
+    },
+    {
+      "predicate": "until:64",
+      "truth": "TRUE",
+      "verified": true,
+      "source": "adapter:clock@1",
+      "version": "window",
+      "scope": "orgA/fulfillment"
+    },
+    {
+      "predicate": "until:65",
+      "truth": "TRUE",
+      "verified": true,
+      "source": "adapter:clock@1",
+      "version": "window",
+      "scope": "orgA/fulfillment"
+    },
+    {
+      "predicate": "until:66",
+      "truth": "TRUE",
+      "verified": true,
+      "source": "adapter:clock@1",
+      "version": "window",
+      "scope": "orgA/fulfillment"
+    }
+  ],
+  "revoke_grants": [
+    "action:ship-replacement@1"
+  ]
+}

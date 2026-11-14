@@ -1,0 +1,41 @@
+{
+  "schema": "sutra-extension/2",
+  "id": "169_clock@4",
+  "evidence": [
+    {
+      "predicate": "now",
+      "truth": "TRUE",
+      "verified": true,
+      "final": true,
+      "source": "adapter:clock@1",
+      "version": 4,
+      "at": 4,
+      "scope": "orgA/fulfillment"
+    },
+    {
+      "predicate": "until:3",
+      "truth": "FALSE",
+      "verified": true,
+      "final": true,
+      "source": "adapter:clock@1",
+      "version": "closed",
+      "scope": "orgA/fulfillment"
+    },
+    {
+      "predicate": "until:5",
+      "truth": "TRUE",
+      "verified": true,
+      "source": "adapter:clock@1",
+      "version": "window",
+      "scope": "orgA/fulfillment"
+    },
+    {
+      "predicate": "until:999999999999999999",
+      "truth": "TRUE",
+      "verified": true,
+      "source": "adapter:clock@1",
+      "version": "window",
+      "scope": "orgA/fulfillment"
+    }
+  ]
+}

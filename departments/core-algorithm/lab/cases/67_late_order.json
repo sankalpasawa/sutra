@@ -1,0 +1,9 @@
+{
+  "id": "67_late_order",
+  "title": "A deadline and an approval that ran out",
+  "description": "The approval counted until day 3 and the order was due by day 5. The clock pack says it is day 6: the approval's row still stands but is no longer believed, nothing ships, and the tick this case records (walk late_order of the sequence clock) reports the order late.",
+  "packs": ["00_goal", "01_domain", "02_methods", "04_admission", "160_timed_approval", "160_clock@6"],
+  "execute": true,
+  "area": "Time",
+  "expected": "QUERY_EVIDENCE"
+}

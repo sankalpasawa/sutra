@@ -1,0 +1,36 @@
+{
+  "schema": "sutra-extension/2",
+  "id": "162_clock@16",
+  "evidence": [
+    {
+      "predicate": "now",
+      "truth": "TRUE",
+      "verified": true,
+      "final": true,
+      "source": "adapter:clock@1",
+      "version": 16,
+      "at": 16,
+      "scope": "orgA/lending"
+    },
+    {
+      "predicate": "until:7",
+      "truth": "FALSE",
+      "verified": true,
+      "final": true,
+      "source": "adapter:clock@1",
+      "version": "closed",
+      "scope": "orgA/lending"
+    },
+    {
+      "predicate": "until:30",
+      "truth": "TRUE",
+      "verified": true,
+      "source": "adapter:clock@1",
+      "version": "window",
+      "scope": "orgA/lending"
+    }
+  ],
+  "revoke_grants": [
+    "action:disburse-loan@1"
+  ]
+}

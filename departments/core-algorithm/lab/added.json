@@ -2,7 +2,7 @@
  "about": "Written by the additive applier (.tmp/core-algo-additive4-apply.py, contract 4). `pinned`: what the lab had recorded when a version was applied (sha256 of the kernel and of each scenario file; sha256 of the canonical JSON of each case, of the event record, of the ask record, of each recorded sequence, of each handler entry and of each lens except the reflection summary), and `built_in`, every Python file the lab had before the add-on points. `points` and `applied`: every file laid in, with its sha256. An entry of `applied` that holds `edits` is an EDIT VERSION (ruling R32): the name and sha256 of its edit script and, for every existing file the script changed, the sha256 before and after; the pin of the kernel and the pinned handler entries were taken again for those files, an added file it changed is listed with its new sha256, and every other pin stayed. Its `moves` are what it declares as moved of the things an earlier version recorded, each with its reason; check S202 holds a declared move to nothing until the next version is applied to the built, verified record. The verifier reads this file for checks S202 and S203, for the sha256 a check module's text is held to before it runs, and for what it hands a check module; tools/run_all.py reads it for the record's file list. Nothing in the lab holds this file itself.",
  "contract": 4,
  "pinned": {
-  "from": "sutra-kernel-extensions/0.11.0-journal",
+  "from": "sutra-kernel-extensions/0.12.0-numbers",
   "kernel_sha256": "688ab9431d4f4b17608d848e32f12e0373197a301d3b7f641a6f476a2b9ad368",
   "built_in": [
    "extensions/asks.py",
@@ -42,6 +42,18 @@
    "140_levels_restated": "6e72d650950aa954aa03c74f529d2f50c9db8898b31595f1a469a0112e0dc1a9",
    "141_ask_with_line_marks": "1135bab2abe57b4c50a003bba2cfd131c2c66f3a0ae8f097d8dfd113a9d3551b",
    "14_remove_capacity": "4521dfd09b5066a190ac3374ecf0a85c7e9b3f987537c235003239d75ab5cbf3",
+   "150_conformance_goal": "554753ed2d79d72f5de551ef908170bd107170423d625237b7f19c7ce10ba56d",
+   "151_conformance_theory": "bccdd603165484e29fc7a6b57cc50f29c08dbe68ef16c341aa51b1c19451b1d9",
+   "152_number_alone": "be9628c5c9c73d1578a1fd85bd52cd7ef948ac3979c1c7b2f59095cd10ab1030",
+   "152_run_fitness": "fbd4c40ef48e90c651194e6f587045b57d656bb71803b361ebb90d245b7f53b1",
+   "153_finding_method": "41fda60762473f1f3c3394b9c1971bbd636796f3f466091d2276ebc6681eb59f",
+   "154_run_fitness_in_band": "0f71fceddb55106e0bcb869a709126b5d64a25a6d008ba0f8a420269f4c1ff6b",
+   "155_loan_goal": "b07707e5e83aec6d2cc800444c6891a49d25976fb8160deebb7ef31189645bbf",
+   "156_loan_review": "cc57a4dfe45776187bc16ffa69bb92d6f51127d7387de6583fd04e5531e97851",
+   "157_review_queue": "784cda499f46e083bb936d2735e4ce02241fb32eea12820693962dc6a056a63f",
+   "158_queue_reviews": "b999d35d7597f1b4e7e26cfc62fc275402eb48ee2222c0f5d0d376e109572bbd",
+   "158_run_cap_again": "849ebedff7379ef859eb8f8cd2830412ad826128feb8ad2ed42938dff8c11134",
+   "159_one_row_alone": "9eb46858c22d16515a6eb2b88fee832787390d38329b4e4d964365d604589636",
    "15_low_budget": "796569e612a2f5c6abf6e05676c9166ea5c3371605ca0e6fe967421695a758cb",
    "20_enquiry_goal": "ac089a3607c41dd9f73979cfbb76cc95db7c458038c505c77a09f5b8e01f83ca",
    "21_enquiry_theory": "f98e3813d35d7a85a3efba6338a2aa26c4bb29280448f8a61eecad9426dfa94d",
@@ -202,6 +214,22 @@
    [
     "60_pack_twice",
     "3f763aa037b00e66e09806ed65a7fd341d1a8ef9e58b7b2195d52585a9df0afc"
+   ],
+   [
+    "63_conformance_finding",
+    "eb8b2c9a11e199e39a124c5885381789f650efa36ac5d70a7e9943f6dbc2846a"
+   ],
+   [
+    "64_conformance_in_band",
+    "b262a195b11f11d29e4cb0ea81d7798307d8f8dbf1832a20c6081f935539f5e9"
+   ],
+   [
+    "65_loan_review_cost",
+    "4f4e4a41efb455a1bc28aca9a626db181b2bd7521ebfa1e411b366d58ec4faac"
+   ],
+   [
+    "66_review_queue",
+    "af77fcdd970a0c91589e2451f4a344a6f5ff5ce4d35706081d8f596c6b9b9a31"
    ]
   ],
   "events": "f58f0cf138c8ca42fe880e0a0c15d116a2c52c8a300b8284a8c93e3e72d2317c",
@@ -209,7 +237,8 @@
   "scenes": {
    "journal_chain": "6c189359834d38d83b168a5142f8c0c2cd75d6d1a68533dee20bc9b1d6fb440b",
    "journal_refusals": "0c8646c7ad38b13dc36a29cc6112815e255dde8828b004f6408f169f2ca62ef6",
-   "journal_restart": "1b30c480032ee792b0f7d1fd9645a0942fc89e2e886fdd4f2fe3223de9ab99d4"
+   "journal_restart": "1b30c480032ee792b0f7d1fd9645a0942fc89e2e886fdd4f2fe3223de9ab99d4",
+   "numbers": "d3502c559c71eb3f67370b3aa6190315538057febc7a0e291664ee4f7a832553"
   },
   "action_handlers": {
    "ask": "021f2fe610ee6a2ff8edc3fda09b6e29d297b4caa1747a2900682368ab5729e9",
@@ -273,6 +302,21 @@
     "tests/test_numbers.py": "1ec0751d8066bb147c7a43946a86a0c6ca214241797890ca906d235820aab34f",
     "tools/packs/numbers.py": "971f22acd6a3cbd9eefecb01f9191a70ba614e0333bd6ec281694d9216521471",
     "tools/scenes/numbers.py": "f07126b015b4c8984a9b6e89e014c7fa3a2ff0d19debeadbba58eb0fac00c9f5"
+   }
+  },
+  {
+   "label": "0.13.0-time",
+   "delivery": "time",
+   "files": {
+    "cases/67_late_order.json": "4c9710f0832c3788edf05a8b336194d9ef4dcbbadb9abd1550e0754ee5a6671e",
+    "cases/67a_order_in_time.json": "25394301e2c7173cf112e4a416ee60ab69750fa106e2cf80649470e8a6bbfae4",
+    "cases/68_allowance.json": "66e440674b14251af6fe6f31390166c68b34cbb04817fc4e66c4723a6a374021",
+    "cases/69_permission_ran_out.json": "9d193183c23a74ccb7e4e86584b29ca30c930da0a55e92843043a59bf3a2f82e",
+    "extensions/clock.py": "19f28efc2e793914b8cd22a06fa840193eb99ef4cbd09c2f706a919cfcf0300b",
+    "qa/checks/clock.py": "e7c2b76ee99145bcd4986e185c95bf5afb3b87eb25f77c4b0cfc209447872b96",
+    "tests/test_clock.py": "9dd3af53c0f49c1064e600b43d8896523be68bd6c7ab69056cf85a6a9058b7a2",
+    "tools/packs/clock.py": "b2ce6a713e31ff084e4a5bb89e65a8ec27240ce41f17ccd1600795d93b39ac39",
+    "tools/scenes/clock.py": "0995dcd5027b6e13551799500f930f39db3c0eca9b5c2ed96360ef35243128cf"
    }
   }
  ]

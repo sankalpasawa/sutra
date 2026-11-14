@@ -1,0 +1,19 @@
+{
+  "schema": "sutra-extension/2",
+  "id": "164_due_by",
+  "evidence": [
+    {
+      "predicate": "in-time:order_complete",
+      "truth": "TRUE",
+      "verified": true,
+      "source": "fixture/owner-due-by",
+      "version": "due-by-1",
+      "depends_on": [
+        {
+          "predicate": "until:5",
+          "version": "window"
+        }
+      ]
+    }
+  ]
+}

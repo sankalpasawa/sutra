@@ -1,0 +1,19 @@
+{
+  "schema": "sutra-extension/2",
+  "id": "168_stock_hold",
+  "evidence": [
+    {
+      "predicate": "stock_reserved",
+      "truth": "TRUE",
+      "verified": true,
+      "source": "fixture/warehouse",
+      "version": "1",
+      "depends_on": [
+        {
+          "predicate": "until:8",
+          "version": "window"
+        }
+      ]
+    }
+  ]
+}

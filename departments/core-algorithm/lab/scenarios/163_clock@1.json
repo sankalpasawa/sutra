@@ -1,0 +1,19 @@
+{
+  "schema": "sutra-extension/2",
+  "id": "163_clock@1",
+  "evidence": [
+    {
+      "predicate": "now",
+      "truth": "TRUE",
+      "verified": true,
+      "final": true,
+      "source": "adapter:clock@1",
+      "version": 1,
+      "at": 1,
+      "scope": "orgA/lending"
+    }
+  ],
+  "budget": {
+    "pulls": 2
+  }
+}

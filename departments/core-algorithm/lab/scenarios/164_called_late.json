@@ -1,0 +1,13 @@
+{
+  "schema": "sutra-extension/2",
+  "id": "164_called_late",
+  "evidence": [
+    {
+      "predicate": "in-time:order_complete",
+      "truth": "FALSE",
+      "verified": true,
+      "source": "fixture/owner-due-by",
+      "version": "1"
+    }
+  ]
+}

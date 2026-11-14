@@ -1,0 +1,8 @@
+{
+  "schema": "sutra-extension/2",
+  "id": "161_allowance",
+  "grants": [
+    "allowance:compute:2:1",
+    "allowance:money:2:1"
+  ]
+}

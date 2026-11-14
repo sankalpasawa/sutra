@@ -1,0 +1,70 @@
+{
+  "schema": "sutra-extension/2",
+  "id": "169_crowd_clock@4.1",
+  "evidence": [
+    {
+      "predicate": "until:67",
+      "truth": "TRUE",
+      "verified": true,
+      "source": "adapter:clock@1",
+      "version": "window",
+      "scope": "orgA/fulfillment"
+    },
+    {
+      "predicate": "until:68",
+      "truth": "TRUE",
+      "verified": true,
+      "source": "adapter:clock@1",
+      "version": "window",
+      "scope": "orgA/fulfillment"
+    },
+    {
+      "predicate": "until:69",
+      "truth": "TRUE",
+      "verified": true,
+      "source": "adapter:clock@1",
+      "version": "window",
+      "scope": "orgA/fulfillment"
+    },
+    {
+      "predicate": "until:70",
+      "truth": "TRUE",
+      "verified": true,
+      "source": "adapter:clock@1",
+      "version": "window",
+      "scope": "orgA/fulfillment"
+    },
+    {
+      "predicate": "until:71",
+      "truth": "TRUE",
+      "verified": true,
+      "source": "adapter:clock@1",
+      "version": "window",
+      "scope": "orgA/fulfillment"
+    },
+    {
+      "predicate": "until:72",
+      "truth": "TRUE",
+      "verified": true,
+      "source": "adapter:clock@1",
+      "version": "window",
+      "scope": "orgA/fulfillment"
+    },
+    {
+      "predicate": "until:73",
+      "truth": "TRUE",
+      "verified": true,
+      "source": "adapter:clock@1",
+      "version": "window",
+      "scope": "orgA/fulfillment"
+    },
+    {
+      "predicate": "until:74",
+      "truth": "TRUE",
+      "verified": true,
+      "source": "adapter:clock@1",
+      "version": "window",
+      "scope": "orgA/fulfillment"
+    }
+  ]
+}
