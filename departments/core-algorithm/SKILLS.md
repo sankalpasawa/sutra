@@ -14,5 +14,6 @@
 | Standards as rules | A checklist over a workflow JSON becomes verified evidence rows (an evidence adapter); the standard is an approved rule | Cases 25 to 27 (0.5.0) |
 | Action kinds | A registered kind owns an effect and may carry hooks (check, plan, settle); the kernel keeps the gate and the receipt | Constructor and artifact handlers with byte-identical receipts (0.7.0); hooks (0.8.0) |
 | Human ask | A step asks a named party and the run waits; waiting is a plan; the stamp is bound to the issued receipt; a decision is final | Case 29 and the `ask_events` record (0.8.0) |
+| Recorded stop | A step that cannot run or fails ends the run as an outcome on the record; a stopped step is never paid; what a handler returns is rebuilt as plain data before it becomes a receipt | Case 30 (0.9.0) |
 
 A skill or domain rule is a versioned extension. It cannot change core authorization or proof semantics by changing its own JSON.

@@ -65,6 +65,7 @@ Suppose a standing goal is `order_fulfilled(order_7)`. An approved rule provides
 | Implementation generator | Turn a plan into a runnable workflow shape (sutra-native user-kit), atoms, a department scaffold and a page | Execute anything, register itself, or mark a step done |
 | Action kind | Perform the effect of a registered kind, check its methods at load, say when its effect is pending, keep its own books after a run | Skip the gate, set the receipt's own fields, or touch grants, budget, providers, rules or methods |
 | Ask and stamp | Park a run on a question to a named party; write the answer as a decision | Answer for someone else, reopen a decision with an ordinary row, or count as external proof |
+| Recorded stop | End a run at the step that cannot run or fails, saying what ran, what it cost, where it stopped and why | Roll back what a handler already wrote, try the step again by itself, or count a stopped step as paid |
 
 ## Four linked interpretations
 

@@ -8,10 +8,94 @@ DATA=ROOT/'results'/'actual_run_records.json'
 def sha(obj):return hashlib.sha256(json.dumps(obj,sort_keys=True,ensure_ascii=False,separators=(',',':')).encode()).hexdigest()
 def check_chain(trace):
     for i,row in enumerate(trace):
-        if row['seq']!=i+1:return False
+        if not held('seq',type(row['seq']) is int) or row['seq']!=i+1:return False   # a whole number by type: true is not 1 and 2.0 is not 2
         if row['prev_sha256'] != (trace[i-1]['sha256'] if i else 'GENESIS'):return False
         if row['sha256']!=sha({k:v for k,v in row.items() if k!='sha256'}):return False
     return True
+
+# 0.9.0-stop: what a stopped run and a case's books are held to. Module level, so the unit tests can run them on stops made in memory.
+PHRASES=('Gate changed before effect: ','Prerequisite not true before effect: ','Handler refused: ','Handler failed: ','Kernel fault: ');RETURNED='Handler returned what cannot be a receipt'
+RANK=('SEMANTICS_MISSING','SEMANTICS_UNAPPROVED','EVIDENCE_CONFLICT','REFUSED','QUERY_EVIDENCE','AUTHORITY_REQUIRED','PROVIDER_REQUIRED','RESOURCE_REQUIRED','METHOD_ABSENT','CYCLE_LIMIT')   # the verifier's own copy of the kernel's ten stop reasons, in the kernel's order
+def block_ok(b):   # a BLOCK row against the ranking: every reason is one of the ten, each once and in order, and the row is named by the first in rank (METHOD_ABSENT when there is none: the kernel's own fallback, which the kernel reaches only on a State changed by hand, so a forged blocked run that names no reason at all passes; a stated limit)
+    alls=b.get('all_reasons')
+    return held('rank',type(alls) is list and all(type(x) is str and x in RANK for x in alls) and alls==sorted(set(alls)) and b.get('reason')==next((x for x in RANK if x in alls),'METHOD_ABSENT'))
+OFF=set()   # checks switched off by name. Only S49 and S50 do that, to show that each check is the one that refuses its forgery
+def held(name,ok):return name in OFF or bool(ok)
+STEPS=('SELECT','BLOCK','ADMISSION','LOCAL_EFFECT','STEP_ALREADY_TRUE','STEP_STOPPED')   # the rows the kernel writes for a plan and its steps: a stop row is the last of them, and the kinds settle after them
+def name_ok(text):return type(text) is str and text.isascii() and text.isidentifier()   # what the kernel writes for an error's class: one plain name of ASCII letters, digits and underscores that does not start with a digit and is not empty ('unreadable' when the class has none)
+
+def said(text,needs):   # the text names one or more of the step's prerequisites, in their order, joined by single spaces (a name may hold a space itself, and may be the empty text)
+    ends={(0,False)}   # how far the text is read, and whether a name was read
+    for n in needs:ends|={(e+begun+len(n),True) for e,begun in ends if text[e+begun:].startswith(n) and (not begun or text[e:e+1]==' ')}
+    return (len(text),True) in ends
+
+def stop_ok(r,methods,kinds=None):
+    """A run against the shape of a stop. A SETTLE_STOPPED row has two fields, the kind (one of `kinds`, the registry, when that is given; no kind twice) and one plain name for the
+    error; it stands after every row of the plan and its steps; a plan that was only offered has none; and `unsettled` names the kinds of these rows, in their order. A STEP_STOPPED
+    row has its three fields; its reason is a phrase of the closed list (the facts of a prerequisite stop are prerequisites of the stopped step; a failed handler and a kernel fault
+    are named by one plain name; a handler's own words are held to nothing); it is the last row of the plan and its steps; and it stands right after the stopped step's own gate row,
+    whose verdict it repeats. One exemption: a kernel fault may stand right after a row of the plan instead (SELECT, LOCAL_EFFECT, STEP_ALREADY_TRUE), because the kernel can fail
+    before a step reaches its gate (its method is gone, say). Not caught here, each a stated limit that a unit test pins: a stop whose gate admitted the step, re-worded with any other phrase of the
+    list that is not a gate's, with its gate row left in (the gate row says only that the step was admitted) or, as a kernel fault, taken out; the facts a prerequisite stop names, which
+    are held to the step's prerequisites and not to what the stored rows read; a SETTLE_STOPPED row invented for a kind of the registry, or taken out together with its name under
+    `unsettled` (the record says neither which kinds have a settle hook nor whether a blocked look was dry); and a stop re-told as a completed run (its stop row replaced by a
+    STEP_ALREADY_TRUE row: this function then sees no stop to hold)."""
+    t=r['trace'];ops=[e['operation'] for e in t];rows=[e['data'] for e in t if e['operation']=='SETTLE_STOPPED'];names=[x.get('kind') for x in rows];last=max([i for i,op in enumerate(ops) if op in STEPS],default=-1)
+    if not held('unsettled',r.get('unsettled',[])==names and ('unsettled' in r)==bool(names) and all(set(x)=={'kind','reason'} and type(x['kind']) is str and (kinds is None or x['kind'] in kinds) and name_ok(x['reason']) for x in rows)
+                and len(set(names))==len(names) and (not names or (r.get('work_state')!='ready' and ops.index('SETTLE_STOPPED')>last))):return False
+    if 'STEP_STOPPED' not in ops:return True
+    i=ops.index('STEP_STOPPED');stop=t[i]['data'];why=stop.get('reason');gate=t[i-1];needs=methods.get(stop.get('method'),{}).get('requires',[])
+    if not held('shape',set(stop)=={'method','reason','effect_reads'} and type(why) is str and stop['effect_reads'] in ('TRUE','FALSE','UNKNOWN')):return False
+    if not held('reason',why==RETURNED or (any(why.startswith(p) for p in PHRASES) and (not why.startswith(PHRASES[1]) or said(why[len(PHRASES[1]):],needs)) and all(name_ok(why[len(p):]) for p in PHRASES[3:] if why.startswith(p)))):return False
+    own=gate['operation']=='ADMISSION' and gate['data'].get('methods')==[stop.get('method')]
+    agrees=(gate['data'].get('accepted') is False and why==PHRASES[0]+' '.join(gate['data'].get('blockers',[]))) if why.startswith(PHRASES[0]) else gate['data'].get('accepted') is True
+    return held('gate',i==last and ((own and agrees) or (why.startswith(PHRASES[4]) and gate['operation'] in ('SELECT','LOCAL_EFFECT','STEP_ALREADY_TRUE'))))
+
+def stored(packs):
+    """What a case's pack files leave in the books before any run: the rows stored (scope|fact -> row) and the rows a standing decision turned away, in order. The verifier's own copy
+    of the kernel's rule for a row: a pack names the scope before its rows; a row that is not verified is ignored; a decision stands until another decision replaces it."""
+    scope,rows,away='orgA/fulfillment',{},[]
+    for p in packs:
+        scope=p.get('scope',scope)
+        for o in p.get('evidence',[]):
+            at=o.get('scope',scope);key=at+'|'+o['predicate']
+            if o.get('verified',False) and rows.get(key,{}).get('final') and not o.get('final'):away.append({'status':'DECISION_STANDS','scope':at,'predicate':o['predicate']})
+            elif o.get('verified',False):rows[key]=dict(o,scope=at)
+    return rows,away
+
+def standing(facts,scope,fact,seen=()):
+    """The stored row a fact reads from in a scope, or None when no valid row stands (the fact then reads UNKNOWN). The verifier's own copy of the kernel's rule for a reading:
+    a row counts when it is verified and every row it rests on reads TRUE at the version it names (versions compare as JSON text); a fact that rests on itself reads UNKNOWN."""
+    row=facts.get(scope+'|'+fact)
+    if fact in seen or type(row) is not dict or row.get('verified') is not True:return None
+    for dep in row.get('depends_on',[]):
+        other=standing(facts,scope,dep['predicate'],seen+(fact,))
+        if other is None or other.get('truth')!='TRUE' or sha(other.get('version'))!=sha(dep.get('version')):return None
+    return row
+def reading(facts,scope,fact):return (standing(facts,scope,fact) or {'truth':'UNKNOWN'})['truth']
+
+def books_ok(case,methods,packs):
+    """A case's books against its runs and pack files. The budget left is the packs' budget less the cost of the receipts. The journal begins with the rows the packs turned away
+    and holds one row per run, in order, with the run's status and trace root; any other row in it is a row turned away during a run, on a fact that carries a decision. The
+    candidates counted are the ones the last run lists, each cited by a receipt. The stored facts are the rows the packs left, except on the effect of a step that ran or stopped:
+    that row is its handler's to write (it may not be gone where the packs left one). And what the stop row of the case's last run says its effect reads, and what that run says
+    its goal reads, is exactly what the stored rows read. Not held: what an earlier run of the same case says its effect and its goal read (the books keep the facts as they stood
+    at the end of the case); the handler's row itself; and whether a row said to be turned away during a run was."""
+    runs=case['run']['runs'];book=case['derived_state'];facts=book['facts'];journal=book['historical_events'];left={'compute':10,'money':10,'attention':3};receipts=[x for r in runs for x in r['model_receipts']]
+    for p in packs:left.update(p.get('budget',{}))
+    for x in receipts:
+        for dim,v in methods[x['method']].get('cost',{}).items():left[dim]-=v
+    rows,away=stored(packs);made=runs[-1].get('candidates',[]) if runs else [];cited={x.get('candidate_sha256') for x in receipts}
+    halts=[(r,e['data']) for r in runs for e in r['trace'] if e['operation']=='STEP_STOPPED'];effect=lambda mid:str(methods.get(mid,{}).get('effect'))
+    own={r['scope']+'|'+effect(x['method']) for r in runs for x in r['model_receipts']}|{r['scope']+'|'+effect(stop.get('method')) for r,stop in halts}   # the facts a handler was called to make
+    told=all(stop.get('effect_reads')==reading(facts,r['scope'],effect(stop.get('method'))) and r.get('goal_truth_after')==reading(facts,r['scope'],r['goal']) for r,stop in halts if r is runs[-1])
+    turned=lambda j:set(j)=={'status','scope','predicate'} and j['status']=='DECISION_STANDS' and type(j['scope']) is str and type(j['predicate']) is str and (facts.get(j['scope']+'|'+j['predicate']) or {}).get('final') is True
+    return (held('budget',sha(book['budget_after'])==sha(left))
+            and held('journal',sha(journal[:len(away)])==sha(away) and sha([j for j in journal if 'goal' in j])==sha([{'goal':r['goal'],'scope':r['scope'],'status':r['status'],'trace_root_sha256':r['trace_root_sha256']} for r in runs])
+                     and all('goal' in j or turned(j) for j in journal))
+            and held('candidates',sha(book['candidate_count'])==sha(len(made)) and all(sha(c) in cited for c in made))
+            and held('facts',all(key in facts and (key in own or sha(facts[key])==sha(rows.get(key))) for key in set(facts)|set(rows)))
+            and held('effect',told))
 
 def inspect(data):
     tests=[]
@@ -21,7 +105,7 @@ def inspect(data):
     check('S01_source_hash_current',data['kernel_sha256']==h)
     baseline=hashlib.sha256((ROOT/'release'/'baseline_v0_1_core.py').read_bytes()).hexdigest()
     check('S02_old_baseline_immutable',data['baseline_v0_1_sha256']==baseline and baseline.startswith('c5a86c28aac'))
-    check('S03_30_distinct_cases',len(data['cases'])==30 and len(set(x['id'] for x in data['cases']))==30)
+    check('S03_31_distinct_cases',len(data['cases'])==31 and len(set(x['id'] for x in data['cases']))==31)
     valid_chains=[];all_model_only=True;all_costs_ok=True;all_governed=True;valid_packs=[]
     for case in data['cases']:
         pack_objs=[json.loads((ROOT/'scenarios'/(n+'.json')).read_text()) for n in case['packs']]
@@ -37,7 +121,7 @@ def inspect(data):
             all_governed &= all(c['status']=='PROPOSED_ONLY' for c in outcome['candidates'])
             all_governed &= all(c['status']=='PROPOSED_ONLY' for c in outcome['learning'])
     check('S04_all_pack_sha_match',all(valid_packs))
-    check('S05_all_29_run_chains',len(valid_chains)==29 and all(valid_chains))
+    check('S05_all_30_run_chains',len(valid_chains)==30 and all(valid_chains))
     check('S06_receipts_local_only',all_model_only)
     check('S07_all_plan_costs_nonnegative',all_costs_ok)
     check('S08_all_candidates_proposed_only',all_governed)
@@ -111,18 +195,21 @@ def inspect(data):
     # with the packs it says it loaded (each pack's sha against its file; every step is a method of one of them, at that pack's cost;
     # a case's run loaded the case's packs) and with the kernel's claim sentence, word for word; a case's run is recorded twice and
     # both copies are compared, and so are the viewer's copies of its actions and trace; numbers are compared as JSON (1 is not true)
-    # in a run's cost, in the ask record's snapshots, in the stamp's event and in case 29's budget_after. NOT checked here: what a trace
-    # does not carry (needs, proof, branch, the truth of the goal); the type of a trace row's seq and of pareto_options (they are compared
-    # by value, so true passes for 1); whether a blocked run's reason is one of the stop reasons (the run is compared with its BLOCK row,
-    # the BLOCK row with nothing); trace rows that no check reads (an ADMISSION row's own fields); a run's candidates and learning; a key
+    # in a run's cost, in the ask record's snapshots, in the stamp's event and in every case's budget_after and candidate count. A stopped run (0.9.0) must carry one STEP_STOPPED row after its last receipt, the stopped step first under pending, and the same step and reason in its result; the row has its three fields and a reason from the closed list, is the last row of the plan and its steps and stands right after the stopped step's own gate row (a kernel fault may stand right after a row of the plan instead), and `unsettled` names the SETTLE_STOPPED rows, each held to its shape (stop_ok). Every case's books are held to its runs and its pack files: the budget left, the journal rows, the candidates of its last run, the stored facts, and what the stop row of its last run says its effect reads and what that run says its goal reads (books_ok). Not caught (this verifier runs neither the kernel nor a handler, and the chain holds no secret): a run re-made consistently from end to end; a handler's refusal re-worded; a stop whose gate admitted the step re-worded with any other phrase of the list that is not a gate's (a kernel fault with its gate row left in or taken out, a failed handler, a return that cannot be a receipt, a prerequisite of the stopped step, also one that the stored rows read TRUE); a stop re-told as a completed run by a STEP_ALREADY_TRUE row for the stopped step, although the stored row of that step's effect does not read TRUE; a settle failure invented or erased (the record says neither which kinds have a settle hook nor whether a blocked look was dry); a blocked run that names no reason at all, worded METHOD_ABSENT; a row said to be turned away during a run, on a fact that carries a decision; the stored row on the effect of a step that ran or stopped, which is its handler's to write; what an earlier run of a case with several goals says its effect and its goal read. The line that pins case 30 (in runs_ok below) refuses a re-wording of that case's own stop; a forged case 30 that has no `stopped` field ends this function with KeyError there instead of a failed check (the pinned fields are read before the check can refuse). NOT checked here: what a trace
+    # does not carry (needs, proof, branch, and the truth of the goal other than what a stopped last run says its goal reads); trace rows that no check reads (an ADMISSION row's own fields, other than the verdict of a stopped step's gate row); a run's candidates (other than the count of a case's last run, and that a receipt cites each) and learning; a key
     # added to a run; the viewer's world and knowledge views; a case's title, description, area, scope, its run block's own status and
-    # goals, and its derived state (budget_after is checked for case 29 only); the order of the packs an event-block run names, and a pack
+    # goals, and of its derived state the rule_ids; the order of the packs an event-block run names, and a pack
     # among them that no step needs; the release label; and an event block's own status, goals and counts beyond what S43 to S47 read.
     # The ask record must show: asked once, nothing
     # shipped, charged once; yes resumes; no is final; another route leaves the question answerable. S48 shows the same
     # claims fail on forged records.
     packs={p['id']:p for p in (json.loads(f.read_text()) for f in sorted((ROOT/'scenarios').glob('*.json')))}
     methods={mth['id']:mth for p in packs.values() for mth in p.get('methods',[])}   # every method of every pack file: the ask books below read their costs here
+    loaded={}
+    def packs_of(c):   # the pack files a case ran on, each read once
+        for n in c['packs']:
+            if n not in loaded:loaded[n]=json.loads((ROOT/'scenarios'/(n+'.json')).read_text())
+        return [loaded[n] for n in c['packs']]
     CLAIM='LOCAL_REFERENCE_ONLY; never external success or current J2 implementation'   # the kernel's sentence, word for word
     def table(r):   # the methods of the packs this run says it loaded; a pack that is not its file gives no table
         if any(p['pack'] not in packs or sha(packs[p['pack']])!=p['sha256'] for p in r['provenance']):return None
@@ -130,16 +217,18 @@ def inspect(data):
     rsha=lambda r:sha({k:v for k,v in r.items() if k!='sha256'});same=lambda a,b:sha(a)==sha(b)   # numbers are compared as JSON: 1 is not true and not 1.0
     def run_ok(r):
         t=r['trace'];last=t[-1];receipts=[e['data']['receipt'] for e in t if e['operation']=='LOCAL_EFFECT']
-        chosen=[e['data'] for e in t if e['operation']=='SELECT'];skips=[e['data']['method'] for e in t if e['operation']=='STEP_ALREADY_TRUE'];block=[e['data'] for e in t if e['operation']=='BLOCK'];waiting=r['work_state']=='waiting'
+        chosen=[e['data'] for e in t if e['operation']=='SELECT'];skips=[e['data']['method'] for e in t if e['operation']=='STEP_ALREADY_TRUE'];stops=[e['data'] for e in t if e['operation']=='STEP_STOPPED'];ops=[e['operation'] for e in t];block=[e['data'] for e in t if e['operation']=='BLOCK'];waiting=r['work_state']=='waiting'
         mt=table(r);total=lambda acts:{d:sum(mt[a].get('cost',{}).get(d,0) for a in acts) for d in chosen[0]['full_cost']}
         return (check_chain(t) and same(r.get('claim'),CLAIM) and mt is not None and r['trace_root_sha256']==last['sha256'] and last['operation']=='TERMINAL' and last['data']=={'status':r['status'],'work_state':r['work_state']}
                 and t[0]['operation']=='GOAL_ACCEPTED' and t[0]['data']=={'goal':r['goal'],'scope':r['scope']}
                 and same(receipts,r['model_receipts']) and all(x['sha256']==rsha(x) and x['status']=='LOCAL_ONLY' for x in receipts)
-                and len(chosen)+len(block)==1 and ('waits' in r)==waiting and ('pending' in r)==waiting
-                and ((r['status'],r['stop_reasons'],r['actions'],r['cost'],r['work_state'],receipts)==(block[0]['reason'],block[0]['all_reasons'],[],None,'blocked',[]) and same(r['pareto_options'],0) and not skips and 'skipped' not in r if block else
-                     r['stop_reasons']==[] and same(r['pareto_options'],chosen[0]['pareto_options']) and [a for a in chosen[0]['actions'] if a not in skips]==r['actions']+r.get('pending',[]) and r.get('skipped',[])==skips and ('skipped' in r)==bool(skips) and set(skips)<=set(chosen[0]['actions'])
+                and len(chosen)+len(block)==1 and ('waits' in r)==waiting and ('pending' in r)==(waiting or bool(stops)) and ('stopped' in r)==bool(stops) and len(stops)<=1 and stop_ok(r,methods,handlers)
+                and (not stops or ((r['status'],r['work_state'],r['stopped'],r['pending'][:1])==('STEP_STOPPED','stopped',{'method':stops[0]['method'],'reason':stops[0]['reason']},[stops[0]['method']])
+                                   and 'LOCAL_EFFECT' not in ops[ops.index('STEP_STOPPED'):]))
+                and ((r['status'],r['stop_reasons'],r['actions'],r['cost'],r['work_state'],receipts)==(block[0]['reason'],block[0]['all_reasons'],[],None,'blocked',[]) and same(r['pareto_options'],0) and not skips and 'skipped' not in r and block_ok(block[0]) if block else
+                     r['stop_reasons']==[] and same(r['pareto_options'],chosen[0]['pareto_options']) and held('options',type(r['pareto_options']) is int) and [a for a in chosen[0]['actions'] if a not in skips]==r['actions']+r.get('pending',[]) and r.get('skipped',[])==skips and ('skipped' in r)==bool(skips) and set(skips)<=set(chosen[0]['actions'])
                      and set(chosen[0]['actions'])<=set(mt) and same(total(chosen[0]['actions']),chosen[0]['full_cost']) and same(r['cost'],total(r['actions'])) and [x['method'] for x in receipts]==(r['actions'] if r['work_state']!='ready' else [])
-                     and r['status']=={'ready':'PLAN_READY','waiting':'WAITING','completed':'LOCAL_MODEL_EFFECTS_RECORDED' if receipts else 'SUPPORTED_BY_EVIDENCE'}.get(r['work_state'])
+                     and r['status']=={'ready':'PLAN_READY','waiting':'WAITING','stopped':'STEP_STOPPED','completed':'LOCAL_MODEL_EFFECTS_RECORDED' if receipts else 'SUPPORTED_BY_EVIDENCE'}.get(r['work_state'])
                      and (not waiting or (r['status']=='WAITING' and (r['waits']==[receipts[-1]['method']] and receipts[-1].get('parked') is True if receipts else r['actions']==[] and chosen[0].get('waits')==r['waits'])))))
     def every_run(d):
         for c in d['cases']:
@@ -149,10 +238,12 @@ def inspect(data):
             for value in d[block].values():
                 if isinstance(value,dict) and 'runs' in value:yield from value['runs']
     def runs_ok(d):   # every run agrees with its trace; the two copies of a case's run are one run; the run that skipped two steps says so in its result and in its chain
-        made=d['ask_events']['made_again']['runs'][0];rows=[e['data'] for e in made['trace'] if e['operation']=='STEP_ALREADY_TRUE']
+        made=d['ask_events']['made_again']['runs'][0];rows=[e['data'] for e in made['trace'] if e['operation']=='STEP_ALREADY_TRUE'];halt=[c for c in d['cases'] if c['id']=='30_stop'][0]['outcome']
         return (all(run_ok(r) for r in every_run(d)) and all(same(c['outcome'],c['run']['runs'][0] if c['run']['runs'] else None) and same([c['four_views']['design'],c['four_views']['run']],[(c['outcome'] or {}).get('actions',[]),(c['outcome'] or {}).get('trace',[])])
                                                          and (not c['outcome'] or [p['pack'] for p in c['outcome']['provenance']]==c['packs']) for c in d['cases'])
                 and (made['status'],made['actions'],made.get('skipped'))==('LOCAL_MODEL_EFFECTS_RECORDED',['prepare-quote@1'],['assume-approval@1','ship-quoted@1'])
+                and all(books_ok(c,methods,packs_of(c)) for c in d['cases'])
+                and held('pin',(halt['status'],halt['stopped']['reason'],len(halt['model_receipts']),halt['pending']==[halt['stopped']['method']],halt['goal_truth_after'])==('STEP_STOPPED','Handler refused: No declared constructor',3,True,'FALSE'))
                 and [(x['method'],x['effect'],x['source']) for x in rows]==[('assume-approval@1','quote_approved','LOCAL_MODEL:assume-approval@1'),('ship-quoted@1','order_shipped','LOCAL_MODEL:ship-quoted@1')])
     def ask_claims(d):
         if not runs_ok(d):return {'runs':False}
@@ -199,11 +290,51 @@ def inspect(data):
     for name,ok in claims.items():
         if name!='runs':check(name,ok)
     # The same claims must fail on a falsified record: forgeries of this very record, each changing one thing (two change it in several places at once).
+    # The stop forgeries of 0.9.0 (stop_forgeries) change the books of case 30 or re-make its run as a forger would: the run changed, its chain hashed again, every copy
+    # of it updated. S49 switches each stop check off in turn and shows that a forgery then passes (each check is the one that refuses a forgery), with the line
+    # that pins case 30 switched off throughout (no check leans on it).
     def falsified(change):
         d=json.loads(json.dumps(data));change(d)
         try:return not all(ask_claims(d).values())
         except Exception:return True
-    c29=lambda d:[c for c in d['cases'] if c['id']=='29_ask'][0];r0=lambda d,key:d['ask_events'][key]['runs'][0];ev=lambda d,key:d['ask_events'][key]
+    c29=lambda d:[c for c in d['cases'] if c['id']=='29_ask'][0];c30=lambda d:[c for c in d['cases'] if c['id']=='30_stop'][0];r0=lambda d,key:d['ask_events'][key]['runs'][0];ev=lambda d,key:d['ask_events'][key]
+    def remake(d,change):   # what a forger can do without any secret: change case 30's run, hash its chain again, and carry the new run to every copy the record keeps
+        c=c30(d);r=c['outcome'];change(r);prev='GENESIS'
+        for n,row in enumerate(r['trace']):
+            row.update(seq=n+1,prev_sha256=prev);row['sha256']=sha({k:v for k,v in row.items() if k!='sha256'});prev=row['sha256']
+        r['trace_root_sha256']=r['learning_record']['source_trace']=c['derived_state']['historical_events'][-1]['trace_root_sha256']=prev
+        c['run']['runs'][0]=json.loads(json.dumps(r));c['four_views']['run']=json.loads(json.dumps(r['trace']))
+    halted=lambda r:[e['data'] for e in r['trace'] if e['operation']=='STEP_STOPPED'][0]
+    def reworded(reason):return lambda r:(halted(r).update(reason=reason),r['stopped'].update(reason=reason))
+    def moved(r):   # the stop row put in front of its own gate row
+        i=[e['operation'] for e in r['trace']].index('STEP_STOPPED');r['trace'][i-1],r['trace'][i]=r['trace'][i],r['trace'][i-1]
+    stop_forgeries=[lambda d:c30(d)['derived_state']['budget_after'].update(compute=6),      # the stopped step was paid
+                    lambda d:c30(d)['derived_state']['budget_after'].update(compute=10),     # nothing was paid
+                    lambda d:[r.update(unsettled=['ask']) for r in (c30(d)['outcome'],c30(d)['run']['runs'][0])],
+                    lambda d:c30(d)['derived_state']['historical_events'][-1].update(status='LOCAL_MODEL_EFFECTS_RECORDED'),
+                    lambda d:c30(d)['derived_state'].update(candidate_count=1),
+                    lambda d:[r.update(goal_truth_after='TRUE') for r in (c30(d)['outcome'],c30(d)['run']['runs'][0])],
+                    lambda d:remake(d,lambda r:halted(r).update(effect_reads='TRUE')),
+                    lambda d:remake(d,lambda r:halted(r).pop('effect_reads')),
+                    lambda d:remake(d,lambda r:halted(r).update(note='x')),
+                    lambda d:remake(d,reworded('Because')),
+                    lambda d:remake(d,reworded('Prerequisite not true before effect: no_such_fact')),
+                    lambda d:remake(d,reworded('Gate changed before effect: AUTHORITY_REQUIRED')),
+                    lambda d:remake(d,moved),
+                    lambda d:remake(d,lambda r:r['trace'].insert(-1,{'operation':'SETTLE_STOPPED','data':{'kind':'ask','reason':'KeyError'}})),
+                    # review round two, 14 to 21: what the goal and the stopped step's effect read, said to be UNKNOWN against rows that read FALSE; a row the packs left, changed;
+                    # a row said to be turned away by a decision nobody made; words that are no class name; a kernel fault in front of its own gate row; two SETTLE_STOPPED rows out of shape
+                    lambda d:[r.update(goal_truth_after='UNKNOWN') for r in (c30(d)['outcome'],c30(d)['run']['runs'][0])],
+                    lambda d:remake(d,lambda r:halted(r).update(effect_reads='UNKNOWN')),
+                    lambda d:c30(d)['derived_state']['facts'].setdefault('orgA/enquiries|source_contract_reviewed',{}).update(truth='FALSE'),
+                    lambda d:c30(d)['derived_state']['historical_events'].insert(0,{'status':'DECISION_STANDS','scope':'orgA/enquiries','predicate':'source_contract_reviewed'}),
+                    lambda d:remake(d,reworded('Handler failed: not a class name at all')),
+                    lambda d:remake(d,lambda r:(reworded('Kernel fault: KeyError')(r),moved(r))),
+                    lambda d:remake(d,lambda r:(r['trace'].insert(-1,{'operation':'SETTLE_STOPPED','data':{'kind':'no_such_kind','reason':'KeyError'}}),r.update(unsettled=['no_such_kind']))),   # well made and well placed, for a kind the registry does not have
+                    lambda d:remake(d,lambda r:(r['trace'].insert(1,{'operation':'SETTLE_STOPPED','data':{'kind':'ask'}}),r.update(unsettled=['ask']))),   # no reason, and before the plan is chosen
+                    # 22, the last: the stored row on the effect of a step that ran or stopped is its handler's to write, so changing it together with what the run says it reads passes
+                    # every check of a stop and of the books (a stated limit). On case 30 the pinned line refuses it, because the goal of that case reads FALSE; S49 shows it is the only one that needs that line.
+                    lambda d:(c30(d)['derived_state']['facts'].setdefault('orgA/enquiries|capability_candidate_created',{}).update(truth='UNKNOWN'),remake(d,lambda r:(halted(r).update(effect_reads='UNKNOWN'),r.update(goal_truth_after='UNKNOWN'))))]
     def retold(cid,status,work):   # a case's run re-chained to end with another status and work state: both copies of the run and the viewer's copy of its trace
         def change(d):
             c=[c for c in d['cases'] if c['id']==cid][0]
@@ -212,6 +343,25 @@ def inspect(data):
                 r.update(status=status,work_state=work,trace_root_sha256=last['sha256'])
             c['four_views']['run']=c['outcome']['trace']
         return change
+    # 0.9.0 also holds a trace row's seq and a run's pareto_options to whole numbers by type, and a BLOCK row to the kernel's ranking (block_ok). The four forgeries below
+    # re-make a case's run as a forger would (the run changed, its chain hashed again, every copy updated); S50 shows that each of the three checks refuses its own.
+    def rechained(cid,change):   # what remake does for case 30, for any case: the journal row follows the run's status too, and a row's seq is left as the change set it
+        def go(d):
+            c=[c for c in d['cases'] if c['id']==cid][0];r=c['outcome'];change(r);prev='GENESIS'
+            for row in r['trace']:
+                row['prev_sha256']=prev;row['sha256']=sha({k:v for k,v in row.items() if k!='sha256'});prev=row['sha256']
+            r['trace_root_sha256']=r['learning_record']['source_trace']=prev;c['derived_state']['historical_events'][-1].update(status=r['status'],trace_root_sha256=prev)
+            c['run']['runs'][0]=json.loads(json.dumps(r));c['four_views']['run']=json.loads(json.dumps(r['trace']))
+        return go
+    row_of=lambda r,op:[e['data'] for e in r['trace'] if e['operation']==op][0]
+    def renamed(r):   # a blocked run that says effects were recorded: the run, its BLOCK row and its last row say the same
+        r.update(status='LOCAL_MODEL_EFFECTS_RECORDED');row_of(r,'BLOCK').update(reason='LOCAL_MODEL_EFFECTS_RECORDED');row_of(r,'TERMINAL').update(status='LOCAL_MODEL_EFFECTS_RECORDED')
+    def retyped(r):   # the number of options as 3.0, in the run and in its SELECT row
+        n=float(r['pareto_options']);r.update(pareto_options=n);row_of(r,'SELECT').update(pareto_options=n)
+    hard_forgeries=[rechained('02_methods',renamed),
+                    rechained('02_methods',lambda r:(r.update(stop_reasons=['METHOD_ABSENT','NO_SUCH_REASON','QUERY_EVIDENCE']),row_of(r,'BLOCK').update(all_reasons=['METHOD_ABSENT','NO_SUCH_REASON','QUERY_EVIDENCE']))),   # a reason outside the ten, in the run and in its BLOCK row
+                    rechained('09_pareto',lambda r:r['trace'][1].update(seq=2.0)),   # a row numbered 2.0
+                    rechained('09_pareto',retyped)]
     forgeries=[lambda d:c29(d)['outcome']['model_receipts'][0].update(sha256='0'*64),
                lambda d:c29(d)['outcome']['model_receipts'][0]['ask'].update(to='mallory'),
                lambda d:c29(d)['outcome'].update(waits=['ship-replacement@1']),
@@ -289,8 +439,29 @@ def inspect(data):
                retold('09_pareto','SUPPORTED_BY_EVIDENCE','completed'),          # the same plan said to be complete on evidence, its steps still listed
                retold('09_pareto','WAITING','ready'),                            # a ready plan said to be waiting
                retold('04_gates','SUPPORTED_BY_EVIDENCE','completed'),           # a run with a receipt, said to have run nothing
-               lambda d:r0(d,'answered_no')['provenance'][0].update(sha256='0'*64)]   # a blocked run naming a pack that is not its file
+               lambda d:r0(d,'answered_no')['provenance'][0].update(sha256='0'*64),   # a blocked run naming a pack that is not its file
+               lambda d:c30(d)['outcome'].update(status='LOCAL_MODEL_EFFECTS_RECORDED'),
+               lambda d:c30(d)['outcome'].update(work_state='completed'),
+               lambda d:c30(d)['outcome']['stopped'].update(reason='Handler failed: KeyError'),
+               lambda d:c30(d)['outcome'].pop('stopped'),
+               lambda d:c30(d)['outcome'].update(pending=[]),
+               lambda d:c30(d)['outcome']['model_receipts'].pop(),
+               lambda d:c30(d)['run']['runs'][0]['stopped'].update(method='construct-nothing@1')]+stop_forgeries+hard_forgeries
     check('S48_claims_fail_on_forged_records',all(falsified(f) for f in forgeries),detail=str([i for i,f in enumerate(forgeries) if not falsified(f)]))
+    def accepted(off):   # the stop forgeries that pass when the named checks are switched off
+        OFF.update(off)
+        try:return [i for i,f in enumerate(stop_forgeries) if not falsified(f)]
+        finally:OFF.difference_update(off)
+    alone={name:accepted({'pin',name}) for name in ('unsettled','shape','reason','gate','budget','journal','candidates','facts','effect')}   # each check switched off in turn, the pinned line off throughout: exactly its own forgeries then pass, next to the one that only the pinned line refuses
+    check('S49_every_stop_check_refuses_a_forgery_of_its_own_and_only_the_last_forgery_leans_on_the_case_pin',accepted(set())==[] and accepted({'pin'})==[22]
+          and alone=={'unsettled':[2,13,20,21,22],'shape':[8,22],'reason':[9,10,18,22],'gate':[11,12,19,22],'budget':[0,1,22],'journal':[3,17,22],'candidates':[4,22],'facts':[16,22],'effect':[5,6,14,15,22]},
+          detail=str({'accepted':accepted(set()),'accepted without the pin':accepted({'pin'}),'accepted with one check more off':alone}))
+    def passing(off):   # the hardening forgeries that pass when the named check is switched off
+        OFF.update(off)
+        try:return [i for i,f in enumerate(hard_forgeries) if not falsified(f)]
+        finally:OFF.difference_update(off)
+    lone={name:passing({name}) for name in ('rank','seq','options')}
+    check('S50_a_blocked_reason_and_the_type_of_a_number_each_refuse_a_forgery_of_their_own',not passing(set()) and lone=={'rank':[0,1],'seq':[2],'options':[3]},detail=str({'accepted':passing(set()),'accepted with one check off':lone}))
     valid=all(t['pass'] for t in tests)
     return {'verifier':'independent_verify.py: pure JSON/hash verifier, never imports kernel',
             'checks':tests,'passed':sum(t['pass'] for t in tests),'total':len(tests),

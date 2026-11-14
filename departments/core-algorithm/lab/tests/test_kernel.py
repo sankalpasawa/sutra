@@ -1,15 +1,19 @@
 from pathlib import Path
-import unittest, sys, json, copy, hashlib
+import unittest, sys, json, copy, hashlib, importlib.util
 ROOT=Path(__file__).resolve().parents[1]
 sys.path.insert(0,str(ROOT))
-from kernel.core import State,Kernel,digest,ACTIONS,register
-from tools.run_all import CASES,pack,extra_events,ASK
+from kernel.core import State,Kernel,digest,ACTIONS,register,Stop
+from tools.run_all import CASES,pack,extra_events,ASK,scenario
 from extensions.asks import answer,open_asks
 from extensions.j2_projection import to_j2_proposed_atom_views as j2_atoms
 from extensions.knowledge import compile_pattern,signal_priority
 from extensions.reflection import minimal_graph_diff,reflect,Learner
 from extensions.j2_projection import to_j2_proposed_atom_views
 from extensions.implementation import to_implementation,validate_workflow
+
+def _throw(exc):   # a handler that raises what it is given
+    def run(s,m,mid,deps):raise exc
+    return run
 
 EXPECTED={
  '00_goal':'SEMANTICS_MISSING','01_meaning':'METHOD_ABSENT',
@@ -28,7 +32,7 @@ EXPECTED={
  '20_wrong_tenant':'QUERY_EVIDENCE','21_no_goal':'NO_STANDING_GOAL',
  '22_revoke':'AUTHORITY_REQUIRED','23_capacity':'PROVIDER_REQUIRED','24_budget':'RESOURCE_REQUIRED',
  '25_registrable_gap':'METHOD_ABSENT','26_registrable_repair':'LOCAL_MODEL_EFFECTS_RECORDED',
- '27_registrable_generated':'SUPPORTED_BY_EVIDENCE','28_website':'PLAN_READY','29_ask':'WAITING'
+ '27_registrable_generated':'SUPPORTED_BY_EVIDENCE','28_website':'PLAN_READY','29_ask':'WAITING','30_stop':'STEP_STOPPED'
 }
 class ContractTests(unittest.TestCase):
     def test_original_baseline_byte_identical(self):
@@ -277,10 +281,13 @@ class ContractTests(unittest.TestCase):
         packs=[pack(n) for n in ('00_goal','01_domain','02_methods','03_approval','04_admission')]
         s=State(actions={'simulate_fact':{'run':lambda s,m,mid,deps:{'status':'EXTERNAL_DONE'}}})
         for p in packs:s.apply(p)
-        with self.assertRaises(RuntimeError):Kernel(s).run_standing(execute=True)
+        r=Kernel(s).run_standing(execute=True)['runs'][0]   # a handler that sets a receipt field: a recorded stop, nothing paid, one journal row
+        self.assertEqual((r['status'],r['work_state'],r['actions'],r['model_receipts'],r['stopped']['reason'],r['pending'][:1],s.budget,[j['status'] for j in s.event_journal]),
+                         ('STEP_STOPPED','stopped',[],[],'Handler returned what cannot be a receipt',[r['stopped']['method']],{'compute':10,'money':10,'attention':3},['STEP_STOPPED']))
         self.assertEqual(s.fact('replacement_delivered')['truth'],'FALSE')
         s=State.from_packs([pack(n) for n in ('00_goal','01_domain','02_methods','04_admission')]);k=Kernel(s)   # approval unknown
-        with self.assertRaises(RuntimeError):k._act({'actions':['ship-replacement@1']})
+        self.assertEqual(k._act({'actions':['ship-replacement@1']}),[]);stop=k.events[-1]   # run by hand before its prerequisite is true: the gate stops the step
+        self.assertEqual((stop['operation'],stop['data']['method'],stop['data']['reason'].split(':')[0],'customer_approved' in stop['data']['reason']),('STEP_STOPPED','ship-replacement@1','Prerequisite not true before effect',True))
         self.assertEqual(s.fact('replacement_delivered')['truth'],'FALSE');self.assertEqual(s.budget,{'compute':10,'money':10,'attention':3})
     def test_moved_handlers_reproduce_0_6_0_receipts_and_trace_roots(self):
         # Equivalence fixture recorded from the 0.6.0 kernel (323 lines) on 2026-11-10.
@@ -328,6 +335,10 @@ class ContractTests(unittest.TestCase):
     def _spent(self,s):return (dict(s.budget),dict(s.providers))
     def _ops(self,run):return [e['operation'] for e in run['trace']]
     def _asks(self,runs):return [x for r in runs for x in r['model_receipts'] if x['action']=='ask']
+    def _kinds(self,**kinds):   # register test kinds for the length of one test: name -> handler, or (handler, hooks)
+        for name,fn in kinds.items():
+            run,hooks=fn if isinstance(fn,tuple) else (fn,{})
+            register(name,**hooks)(run);self.addCleanup(ACTIONS.pop,name,None)
     def test_ask_parks_once_reports_only_what_ran_and_resumes_on_yes(self):
         # Counterexample: on 0.7.0 nothing could wait. The same packs without the ask end QUERY_EVIDENCE, and the kernel alone refuses the ask pack.
         self.assertEqual(Kernel(State.from_packs([pack(n) for n in ASK[:-1]])).run_standing(execute=True)['runs'][0]['status'],'QUERY_EVIDENCE')
@@ -406,7 +417,8 @@ class ContractTests(unittest.TestCase):
                 later=Kernel(s).run_standing(execute=execute)['runs'][0];self.assertEqual((later['status'],later['actions'],later['model_receipts']),('REFUSED',[],[]))
             fact=s.fact('customer_approved');self.assertEqual((fact['truth'],fact['final'],fact['source'],s.fact('replacement_delivered')['truth'],s.budget['attention']),('FALSE',True,'STAMP:customer','FALSE',2))
             if extra:
-                with self.assertRaises(RuntimeError):k._act({'actions':['assume-approval@1']})   # even run by hand, a method cannot write over a decision
+                self.assertEqual(k._act({'actions':['assume-approval@1']}),[])   # even run by hand, a method cannot write over a decision: the step stops, unpaid
+                self.assertEqual((k.events[-1]['operation'],k.events[-1]['data']['reason']),('STEP_STOPPED','Handler refused: A decision stands on this effect'))
                 self.assertEqual((s.fact('customer_approved')['truth'],s.budget['compute']),('FALSE',10))
             lifted=k.on_event({'predicate':'customer_approved','truth':'TRUE','verified':True,'final':True,'source':'owner/reversal','version':'d2'},execute=True)['runs'][0]
             self.assertEqual(lifted['actions'],['ship-replacement@1'])   # only another decision replaces a decision
@@ -473,7 +485,8 @@ class ContractTests(unittest.TestCase):
         register('test_raising_kind')(boom)
         try:
             s=self._world(['G1','G2'],[('G1',[['p']])],[self._m('ask-p','p','ask',self.ASKS,ask_to='owner'),self._m('break','G2','test_raising_kind')]);k=Kernel(s)
-            with self.assertRaises(RuntimeError):k.run_standing(execute=True)
+            runs=k.run_standing(execute=True)['runs']   # the later goal's handler raises: a recorded stop, and the earlier goal's question is not lost
+            self.assertEqual(([r['status'] for r in runs],runs[1]['stopped'],[j['status'] for j in s.event_journal]),(['WAITING','STEP_STOPPED'],{'method':'break','reason':'Handler failed: RuntimeError'},['WAITING','STEP_STOPPED']))
         finally:del ACTIONS['test_raising_kind']
         issued=open_asks(s)[self.Q+'p']['issued'];self.assertEqual((issued['ask']['to'],issued['method'],s.budget['attention']),('owner','ask-p',2))
         issued['ask']['to']='mallory'                                             # what open_asks hands out is a copy
@@ -654,8 +667,11 @@ class ContractTests(unittest.TestCase):
         self.assertEqual((s.fact('approved')['truth'],s.fact('approved')['final']),('FALSE',True))   # a row handed in is copied: the caller's list is not the State's
         look=k.run_standing()['runs'][0];look['provenance'][0]['sha256']='x';self.assertNotEqual(s.loaded[0]['sha256'],'x')
         w=self._world(['shipped'],[('approved',[['manager_ok']])],[self._m('ship','shipped',req=['approved'])],[('manager_ok','TRUE')])
-        self.assertEqual(Kernel(w).run_standing()['runs'][0]['status'],'PLAN_READY')
-        with self.assertRaises(RuntimeError):Kernel(w).run_standing(execute=True)   # a known limit kept from 0.7.0: the gate reads stored evidence only, so this plan stops at the gate
+        self.assertEqual(Kernel(w).run_standing()['runs'][0]['status'],'PLAN_READY')   # a known limit kept from 0.7.0: the gate reads stored evidence only, so a step resting on a condition that holds only through a rule is offered
+        halt=Kernel(w).run_standing(execute=True)['runs'][0]   # since 0.9.0 the gate's refusal is a recorded stop, unpaid, where 0.8.0 raised
+        self.assertEqual((halt['status'],halt['actions'],halt['stopped'],w.budget['compute']),('STEP_STOPPED',[],{'method':'ship','reason':'Prerequisite not true before effect: approved'},10))
+        stored=self._world(['shipped'],[('approved',[['manager_ok']])],[self._m('ship','shipped',req=['approved'])],[('manager_ok','TRUE'),('approved','TRUE')])
+        self.assertEqual(Kernel(stored).run_standing(execute=True)['runs'][0]['actions'],['ship'])   # with a stored row for the rule's head the step runs
     def test_a_skipped_step_is_on_the_record_and_every_reader_sees_the_whole_plan(self):
         # Round five: a skipped step left no line and no field, so the verifier called an honest run inconsistent and every reader saw a shorter plan.
         methods=[self._m('prepare-quote','quote'),self._m('assume-approval','approved',req=['quote'],cost={'compute':3,'money':3,'attention':0}),self._m('ship','shipped',req=['quote','approved'])]
@@ -883,17 +899,642 @@ class ContractTests(unittest.TestCase):
         self.assertEqual(([x['id'] for x in wf['steps']],[x['after'] for x in steps],validate_workflow(wf)),
                          (['record-intent','x','x-2','x-3','show-it-2','record-intent-2','show-it'],[[],['x'],['x-2'],['x-3'],['show-it-2']],[]))
         self.assertEqual([(e['from'],e['to'],e['via']) for e in wf['edges']],[('x','x-2','a'),('x-2','x-3','b'),('x-3','show-it-2','c'),('show-it-2','record-intent-2','d')])
-    def test_what_round_eight_left_as_stated_limits_is_pinned(self):
-        # Round eight refuted nothing. These are the points it raised that this version states as limits; the next version removes them, and these lines then change.
-        w=State();self.assertTrue(w.observe({'predicate':'z','truth':'TRUE','verified':True,'depends_on':[{'predicate':'q','version':True}]}))
-        self.assertEqual(w.fact('z')['truth'],'UNKNOWN')   # a version named inside depends_on is not checked: such a row is stored and can never read valid
-        s=self._world(['g'],[],[self._m('m','g')]);self.assertEqual(Kernel(s).resolve('g',execute=1)['status'],'LOCAL_MODEL_EFFECTS_RECORDED')   # execute is read as it is given: 1 runs like true
-        big=10**4300-1;w=State()   # every amount is inside the bound on integers; the sum of two is not
-        w.apply({'schema':'sutra-extension/2','id':'x','goals':['b'],'grants':['g'],'providers':{'prov':2},'budget':{'compute':big},
-                 'methods':[self._m('ma','a',cost={'compute':big}),self._m('mb','b',cost={'compute':big},req=['a'])]})
-        try:status=Kernel(w).resolve('b')['status']
-        except ValueError:status='the sum cannot be written down'   # a Python that limits the text of an integer (3.10.7 and later)
-        self.assertIn(status,('RESOURCE_REQUIRED','the sum cannot be written down'))
+    def test_what_round_eight_of_the_ask_version_left_is_closed(self):
+        # Round eight of 0.8.0 refuted nothing and left three stated limits (a fix that needs new code goes to the next version, R19). 0.9.0 removes them:
+        # the build before accepted every call refused below.
+        w=State()
+        for v in (True,False,{'n':1},[1]):   # a version named inside depends_on is held to the rule for a row's own version
+            with self.assertRaises(ValueError):w.observe({'predicate':'z','truth':'TRUE','verified':True,'depends_on':[{'predicate':'q','version':v}]})
+        self.assertEqual(w.evidence,{})
+        self.assertTrue(w.observe({'predicate':'z','truth':'TRUE','verified':True,'depends_on':[{'predicate':'q','version':None},{'predicate':'r','version':2},{'predicate':'t','version':'v1'},{'predicate':'u'}]}))
+        s=self._world(['g'],[],[self._m('m','g')]);k=Kernel(s);books=lambda:digest({'evidence':s.evidence,'journal':s.event_journal,'budget':s.budget,'providers':s.providers})
+        before=books();event={'predicate':'q','truth':'TRUE','verified':True,'source':'fx','version':'1'}
+        for flag in (1,0,'yes',None,[True]):   # execute is exactly true or false: refused before a row is stored or a step runs
+            for call in (lambda:k.resolve('g',execute=flag),lambda:k.run_standing(execute=flag),lambda:k.on_event(event,execute=flag)):
+                with self.assertRaises(ValueError):call()
+        self.assertEqual(books(),before)
+        with self.assertRaises(ValueError):Kernel(State()).run_standing(execute=1)   # with no goal to run as well
+        self.assertEqual(k.resolve('g',execute=True)['status'],'LOCAL_MODEL_EFFECTS_RECORDED')
+        a,ka,ra=self._asked();asked=digest(open_asks(a))   # the stamp passes the flag on: a wrong one is refused and the question stays out
+        with self.assertRaises(ValueError):answer(ka,ra['model_receipts'][0],'TRUE','customer',execute=1)
+        self.assertEqual((digest(open_asks(a)),a.fact('customer_approved')['truth']),(asked,'UNKNOWN'))
+        base={'schema':'sutra-extension/2','id':'x','goals':['b'],'grants':['g'],'providers':{'prov':2}}
+        for bad in (10**18,10**4300-1):   # an amount is below 10**18: a cost, a budget entry, a provider's capacity
+            for part in ({'budget':{'compute':bad}},{'providers':{'prov':bad}},{'methods':[self._m('ma','b',cost={'compute':bad})]}):
+                with self.assertRaises(ValueError):State().apply(dict(base,**part))
+        for part in ({'budget':{'compute':None}},{'providers':{'prov':None}},{'methods':[self._m('ma','b',cost={'compute':None})]}):   # review round three: null is no amount either (a kernel that took it passed every test)
+            with self.assertRaises(ValueError):State().apply(dict(base,**part))
+        top=10**18-1;w=State();w.apply(dict(base,budget={'compute':top},methods=[self._m('ma','a',cost={'compute':top}),self._m('mb','b',cost={'compute':top},req=['a'])]))
+        r=Kernel(w).resolve('b');self.assertEqual(r['status'],'RESOURCE_REQUIRED')   # the two largest amounts add up, and the sum is written down on every Python
+        self.assertEqual([e['data']['cost']['compute'] for e in r['trace'] if e['operation']=='ADMISSION'],[2*top])
+    def test_the_verifier_holds_a_number_to_its_type_and_a_blocked_run_to_the_ranking(self):
+        # Round eight of 0.8.0: a row numbered true or 2.0 passed the chain check, and a BLOCK row was compared with nothing. Both checks are module-level functions.
+        spec=importlib.util.spec_from_file_location('independent_verify',ROOT/'qa'/'independent_verify.py');v=importlib.util.module_from_spec(spec);spec.loader.exec_module(v)
+        s=self._world(['g'],[],[self._m('m','g',req=['absent'])]);r=Kernel(s).resolve('g');self.assertEqual(r['work_state'],'blocked')
+        def chained(change):   # the trace changed and hashed again, as a forger would
+            t=json.loads(json.dumps(r['trace']));change(t);prev='GENESIS'
+            for row in t:row['prev_sha256']=prev;row['sha256']=v.sha({k:x for k,x in row.items() if k!='sha256'});prev=row['sha256']
+            return t
+        self.assertTrue(v.check_chain(chained(lambda t:None)))
+        for n in (True,1.0):self.assertFalse(v.check_chain(chained(lambda t:t[0].update(seq=n))))
+        block=[e['data'] for e in r['trace'] if e['operation']=='BLOCK'][0];self.assertTrue(v.block_ok(block))
+        for forged in (dict(block,reason='LOCAL_MODEL_EFFECTS_RECORDED'),dict(block,reason='CYCLE_LIMIT'),dict(block,all_reasons=block['all_reasons']+['NO_SUCH_REASON']),
+                       dict(block,all_reasons=block['all_reasons']*2),dict(block,all_reasons=None),dict(block,all_reasons=[]),{}):
+            self.assertFalse(v.block_ok(forged),forged)
+        self.assertTrue(v.block_ok({'reason':'METHOD_ABSENT','all_reasons':[]}))   # a known limit (review round three): a blocked run that names no reason at all passes when it is worded METHOD_ABSENT. That is the kernel's own word for it, but the kernel writes it only on a State changed by hand:
+        with self.assertRaises(ValueError):self._world(['g'],[('g',[])],[])   # no pack can deliver a rule with no branch,
+        self.assertEqual(Kernel(self._world(['g'],[],[])).resolve('g')['stop_reasons'],['SEMANTICS_MISSING'])   # a goal with nothing names its reason,
+        hand=self._world(['g'],[],[]);hand.rules['g']={'id':'R-g','head':'g','branches':[]};b=Kernel(hand).resolve('g')   # and only a rule with no branch put into the State by hand gives a blocked look with no reason
+        self.assertEqual((b['status'],b['stop_reasons'],[e['data'] for e in b['trace'] if e['operation']=='BLOCK']),('METHOD_ABSENT',[],[{'reason':'METHOD_ABSENT','all_reasons':[]}]))
+        for k in Kernel.RANK:self.assertIn(k,v.RANK)   # the verifier's copy is the kernel's list, in its order
+        self.assertEqual(list(v.RANK),Kernel.RANK)
+    def test_a_step_that_stops_is_on_the_record_and_never_an_exception(self):
+        # 0.8.0 and before: a handler, the gate or a settle hook that raised in the middle of a plan ended the run with an exception. The steps before it stayed
+        # done and paid, the journal got no row, a second goal never ran. Now the run returns, says where it stopped and why, and pays only what has a receipt.
+        packs=[pack(n) for n in ('30_build_goal','31_build_theory','82_components_without_constructor')]
+        s=State.from_packs(packs);k=Kernel(s);before=self._spent(s)
+        self.assertEqual(k.run_standing()['runs'][0]['status'],'PLAN_READY')   # the dry look cannot tell that the last step has no constructor
+        r=k.run_standing(execute=True)['runs'][0];paid=self._spent(s)
+        self.assertEqual((r['status'],r['work_state'],len(r['model_receipts']),r['actions'],r['stopped']['reason'],r['pending'],r['goal_truth_after']),
+                         ('STEP_STOPPED','stopped',3,[x['method'] for x in r['model_receipts']],'Handler refused: No declared constructor',[r['stopped']['method']],s.fact(r['goal'])['truth']))
+        self.assertEqual(self._ops(r)[-2:],['STEP_STOPPED','TERMINAL']);self.assertEqual((s.event_journal[-1]['status'],s.event_journal[-1]['trace_root_sha256']),('STEP_STOPPED',r['trace_root_sha256']))
+        cost={d:sum(s.methods[a]['cost'].get(d,0) for a in r['actions']) for d in before[0]}
+        self.assertEqual((r['cost'],{d:before[0][d]-paid[0][d] for d in cost},sum(before[1].values())-sum(paid[1].values())),(cost,cost,3))   # paid: exactly the three receipts; the stopped step costs nothing
+        again=k.run_standing(execute=True)['runs'][0]   # a second look pays nothing more and names the same step and reason
+        self.assertEqual((again['status'],again['stopped'],again['model_receipts'],self._spent(s)),('STEP_STOPPED',r['stopped'],[],paid))
+        twin=Kernel(State.from_packs(packs)).run_standing(execute=True)['runs'][0];self.assertEqual(twin['trace_root_sha256'],r['trace_root_sha256'])   # the same stop, the same record
+        impl=to_implementation(r,s);self.assertEqual(impl['workflow']['stopped'],r['stopped']);self.assertTrue(any('stopped at' in p for p in validate_workflow(impl['workflow'])))
+        self.assertEqual((reflect([r,r])['candidates'],Learner(True).learn(r)),([],[]))   # a stopped run is no composition to reuse
+        bad=copy.deepcopy(pack('32_builder_components'));bad['constructors'][0]['components']='abc'   # a constructor spec of the wrong shape stops at its step, on the record, and stores nothing
+        w=State.from_packs([pack('30_build_goal'),pack('31_build_theory'),bad]);r2=Kernel(w).run_standing(execute=True)['runs'][0]
+        self.assertEqual((r2['status'],r2['stopped']['reason'],w.candidates),('STEP_STOPPED','Handler refused: Components unavailable',{}))
+        # every way a step can fail ends the same way: a recorded stop with a fixed reason, and nothing paid for the stopped step
+        def wrote_then_failed(s,m,mid,deps):s.observe({'predicate':m['effect'],'truth':'TRUE','verified':True,'source':f'LOCAL_MODEL:{mid}','version':'local-sim-1'});raise OSError('disk')
+        def drops_grant(s,m,mid,deps):s.grants.discard('g');s.observe({'predicate':m['effect'],'truth':'TRUE','verified':True,'source':f'LOCAL_MODEL:{mid}','version':'local-sim-1'});return {}
+        def bad_settle(s,result,log):raise KeyError('books')
+        kinds={'test_none':lambda s,m,mid,deps:None,'test_list':lambda s,m,mid,deps:['x'],'test_set':lambda s,m,mid,deps:{'x':{1,2}},'test_field':lambda s,m,mid,deps:{'sha256':'0'},
+               'test_oserror':wrote_then_failed,'test_meddle':drops_grant}
+        for name,fn in kinds.items():register(name)(fn)
+        register('test_bad_settle',settle=bad_settle)(lambda s,m,mid,deps:{});register('test_bad_plan',plan=lambda s,m:1/0)(lambda s,m,mid,deps:{})
+        try:
+            cannot='Handler returned what cannot be a receipt'
+            for name,reason,reads in (('test_none',cannot,'UNKNOWN'),('test_list',cannot,'UNKNOWN'),('test_set',cannot,'UNKNOWN'),('test_field',cannot,'UNKNOWN'),('test_oserror','Handler failed: OSError','TRUE')):
+                w=self._world(['e'],[],[self._m('m','e',name)]);r=Kernel(w).run_standing(execute=True)['runs'][0];row=[e['data'] for e in r['trace'] if e['operation']=='STEP_STOPPED'][0]
+                self.assertEqual((r['status'],r['stopped'],row['effect_reads'],self._spent(w)[0],r['model_receipts']),('STEP_STOPPED',{'method':'m','reason':reason},reads,{'compute':10,'money':10,'attention':3},[]),name)
+            w=self._world(['done'],[],[self._m('first','a','test_meddle'),self._m('second','done',req=['a'])]);r=Kernel(w).run_standing(execute=True)['runs'][0]   # the gate changes in the middle of a plan
+            self.assertEqual((r['actions'],r['stopped'],r['pending'],w.budget['compute']),(['first'],{'method':'second','reason':'Gate changed before effect: AUTHORITY_REQUIRED'},['second'],9))
+            w=self._world(['G1','G2'],[],[self._m('m1','G1','test_oserror'),self._m('m2','G2')]);k=Kernel(w)   # a stop does not take the next goal down with it, and an event returns its runs
+            self.assertEqual([x['status'] for x in k.run_standing(execute=True)['runs']],['STEP_STOPPED','LOCAL_MODEL_EFFECTS_RECORDED'])
+            self.assertEqual([x['status'] for x in k.on_event(self._row('G1','FALSE','2'),execute=True)['runs']],['STEP_STOPPED'])
+            s2,k2,r2=self._asked()   # a kind whose settle fails is named; the run returns, the ask kind has kept its books, the journal has its row
+            self.assertEqual((r2['status'],r2['unsettled'],[e['data'] for e in r2['trace'] if e['operation']=='SETTLE_STOPPED'],self._open(s2),len(s2.event_journal)),
+                             ('WAITING',['test_bad_settle'],[{'kind':'test_bad_settle','reason':'KeyError'}],['ask-customer-approval@1'],1))
+            w=self._world(['e'],[],[self._m('m','e','test_bad_plan')])
+            with self.assertRaises(ZeroDivisionError):Kernel(w).run_standing()   # a known limit: a plan hook that raises ends the look before anything runs
+            self.assertEqual((w.event_journal,w.budget['compute']),([],10))
+        finally:
+            for name in list(kinds)+['test_bad_settle','test_bad_plan']:del ACTIONS[name]
+    def test_the_planner_offers_what_0_8_0_offered_and_a_plan_that_must_stop_is_recorded(self):
+        # Review round one on 0.9.0. Its first build did not offer a step that rests on a rule's head whose row does not read TRUE. That hid plans 0.8.0 completes
+        # and worded a person's no, and a row its rule contradicts, as missing evidence. The rule is cut: planning is 0.8.0's again, and a plan that must stop is recorded.
+        stale=self._row('approved','TRUE','1',depends_on=[{'predicate':'manager_ok','version':'local-sim-1'}])
+        w=self._world(['shipped'],[('approved',[['manager_ok']])],[self._m('get-ok','manager_ok'),self._m('ship','shipped',req=['approved'])]);w.observe(stale)
+        r=Kernel(w).run_standing(execute=True)['runs'][0]   # the first step makes the stored row of the rule's head valid again: the plan completes, as on 0.8.0
+        self.assertEqual((r['status'],r['actions'],w.fact('shipped')['truth']),('LOCAL_MODEL_EFFECTS_RECORDED',['get-ok','ship'],'TRUE'))
+        s=State.from_packs([pack('81_made_again')]);k=Kernel(s);k.run_standing(execute=True)   # the lab's own pack, then a rule for a fact its methods had already made
+        s.apply({'schema':'sutra-extension/2','id':'late-rule','rules':[{'id':'R-QUOTE@1','head':'quote_approved','branches':[['quote_ready']],'approved':True}]})
+        k.on_event(self._row('quote_ready','FALSE','2'));r=k.run_standing(execute=True)['runs'][0]
+        self.assertEqual((r['status'],r['actions'],r.get('skipped'),s.fact('order_shipped')['truth']),('LOCAL_MODEL_EFFECTS_RECORDED',['prepare-quote@1'],['ship-quoted@1'],'TRUE'))
+        rested=lambda facts:self._world(['x'],[('h',[['c']])],[self._m('A','x',req=['h'])],facts)
+        no=rested([]);no.observe(self._row('h','FALSE','d1',final=True));r=Kernel(no).run_standing(execute=True)['runs'][0]   # a decision against the rule's head is a no, not missing evidence
+        self.assertEqual((r['status'],r['stop_reasons'],Learner(True).learn(r),'REFUSED' in self._ops(r)),('REFUSED',['REFUSED'],[],True))
+        r=Kernel(rested([('h','FALSE'),('c','TRUE')])).run_standing()['runs'][0]   # a stored row that its own rule contradicts is a conflict
+        self.assertEqual((r['status'],r['stop_reasons']),('EVIDENCE_CONFLICT',['EVIDENCE_CONFLICT']))
+        w=self._world(['shipped'],[('approved',[['manager_ok']])],[self._m('get-ok','manager_ok'),self._m('ship','shipped',req=['approved'])]);k=Kernel(w)
+        self.assertEqual(k.run_standing()['runs'][0]['status'],'PLAN_READY')   # the known limit: no step stores a row for the rule's head, so this plan must stop, and it is still offered
+        looks=[k.run_standing(execute=True)['runs'][0] for _ in (1,2)]
+        self.assertEqual([(x['status'],x['actions'],x['stopped']['reason']) for x in looks]+[self._spent(w)],   # the step before the stop ran and was paid once; the stop itself costs nothing, at every look
+                         [('STEP_STOPPED',['get-ok'],'Prerequisite not true before effect: approved'),('STEP_STOPPED',[],'Prerequisite not true before effect: approved'),({'compute':9,'money':10,'attention':3},{'prov':9})])
+    def test_whatever_a_handler_raises_or_returns_is_a_receipt_or_one_stop_line(self):
+        # Review round one on 0.9.0. The first build worded a stop with text Python made (a RuntimeError's message, an error's str), wrote the stop line and the receipt's
+        # line outside the guard, read what a handler returned with the handler's own code, and paid in two statements. Each world below ended a look with an exception,
+        # paid a stopped step, or recorded a forged receipt. Review round two: the name of an error's class was still asked of the class, so a class that gave no text
+        # for its name ended the look with TypeError or worded its stop with a gate's phrase. The name is read from the type itself now and taken only when it is plain.
+        asked=[]   # every call into the code of an error's class, or of a text that is not exact text
+        class Liar(type):   # an error class that raises when it is asked for its name
+            @property
+            def __name__(cls):asked.append(cls);raise SystemExit(3)
+        class Says(type):   # an error class that gives a name UTF-8 cannot carry
+            __name__=property(lambda cls:asked.append(cls) or 'Caf\udce9Error')
+        class Thing:   # no text at all: asked to become text it gives itself, and added to the kernel's phrase it gives a gate's words
+            def encode(self,*a):asked.append(self);return self
+            def decode(self,*a):asked.append(self);return self
+            def __radd__(self,other):asked.append(self);return 'Gate changed before effect: PROVIDER_REQUIRED'
+        class Mute(type):   # an error class that gives such a thing for its name
+            __name__=property(lambda cls:asked.append(cls) or Thing())
+        class Text(str):   # text of a class of its own, with code of its own
+            def encode(self,*a):asked.append(self);return Thing()
+            def isascii(self):asked.append(self);return True
+            def isidentifier(self):asked.append(self);return True
+        class Renamed(Exception):pass
+        Renamed.__name__=Text('Renamed')   # Python keeps a name as it was given: here, text of that class
+        def runaway(s,m,mid,deps):return runaway(s,m,mid,deps)   # a handler that calls itself until the stack is used up
+        class Odd(int):
+            def __bool__(self):raise KeyError('odd')
+        class Lies:   # says it has two keys; iterating it shows none
+            def __iter__(self):return iter(())
+            def keys(self):return ['status','method']
+            def __getitem__(self,key):return {'status':'EXTERNAL_DONE','method':'m2'}[key]
+        class Late(dict):
+            def keys(self):raise Stop('Gate changed before effect: AUTHORITY_REQUIRED')
+        class Sub(Stop):pass
+        class Sly(Exception):   # an error that answers Stop when it is asked for its class
+            __class__=property(lambda self:asked.append(self) or Stop)
+        def deep(n):   # an object holding n levels of lists
+            v=[]
+            for _ in range(n-1):v=[v]
+            return {'x':v}
+        def grows(s,m,mid,deps):
+            d={'a':1}
+            for key in d:d[key+'x']=1
+        def pops(s,m,mid,deps):s.observe(self._row(m['effect'],'TRUE','1'));s.providers.pop(m['provider']);return {}
+        def drops(s,m,mid,deps):s.observe(self._row(m['effect'],'TRUE','1'));s.methods.pop('later');return {}
+        cannot='Handler returned what cannot be a receipt'
+        worlds=[('its own words',_throw(Stop('no room on the shelf')),'Handler refused: no room on the shelf'),
+                ('words UTF-8 cannot carry',_throw(Stop('cannot read caf\udce9.txt')),'Handler refused: cannot read caf\\udce9.txt'),
+                ("Python's own RuntimeError",grows,'Handler failed: RuntimeError'),
+                ('a RuntimeError with such words',_throw(RuntimeError('cannot read caf\udce9.txt')),'Handler failed: RuntimeError'),
+                ('a subclass of Stop',_throw(Sub('words')),'Handler failed: Sub'),
+                ('Stop without words',_throw(Stop()),'Handler failed: Stop'),
+                ('Stop with words that are not text',_throw(Stop(7)),'Handler failed: Stop'),
+                ('Stop with two texts',_throw(Stop('no room','on the shelf')),'Handler failed: Stop'),
+                ('Stop with text of a class of its own',_throw(Stop(Text('no room'))),'Handler failed: Stop'),
+                ('Stop with the empty text',_throw(Stop('')),'Handler refused: '),   # review round three: the empty text is the handler's own words too
+                ('an error that answers Stop when it is asked for its class',_throw(Sly('I am the kernel')),'Handler failed: Sly'),   # review round three: the class is read from the error itself and never asked of it, so this is no refusal and is named by its own class
+                ('a class that raises when it is asked for its name',_throw(Liar('Hidden',(Exception,),{})('x')),'Handler failed: Hidden'),
+                ('a class that gives a name UTF-8 cannot carry',_throw(Says('Named',(Exception,),{})('x')),'Handler failed: Named'),
+                ('a class that gives no text for its name',_throw(Mute('Quiet',(Exception,),{})('x')),'Handler failed: Quiet'),
+                ('a class whose name is text of a class of its own',_throw(Renamed('x')),'Handler failed: unreadable'),
+                ('a class named in two words',_throw(type('Disk Error',(Exception,),{})('x')),'Handler failed: unreadable'),
+                ('a class named in other letters',_throw(type('CaféError',(Exception,),{})('x')),'Handler failed: unreadable'),
+                ('a class without a name',_throw(type('',(Exception,),{})('x')),'Handler failed: unreadable'),
+                ('a handler that calls itself without end',runaway,'Handler failed: RecursionError'),
+                ('984 levels deep',lambda s,m,mid,deps:deep(984),cannot),('17 levels deep',lambda s,m,mid,deps:deep(17),cannot),
+                ('a tuple',lambda s,m,mid,deps:{'x':(1,2)},cannot),('parked is no plain value',lambda s,m,mid,deps:{'parked':Odd(1)},cannot),
+                ('a mapping that lies about its keys',lambda s,m,mid,deps:Lies(),cannot),('a dict whose keys() raises',lambda s,m,mid,deps:Late(),cannot)]
+        worlds+=[(f'sets {field}',(lambda field:lambda s,m,mid,deps:{field:'x'})(field),cannot) for field in ('method','scope','action','status','sha256')]
+        for i,(name,fn,reason) in enumerate(worlds):
+            self._kinds(**{f'test_w{i}':fn})
+            w=self._world(['G1','G2'],[],[self._m('a','A'),self._m('bad','G1',f'test_w{i}',req=['A']),self._m('m2','G2')])
+            runs=Kernel(w).run_standing(execute=True)['runs'];r=runs[0];rows=[e['data'] for e in r['trace'] if e['operation']=='STEP_STOPPED']
+            self.assertEqual(([x['status'] for x in runs],r['actions'],r['stopped'],rows,r['pending'],r['model_receipts']==[e['data']['receipt'] for e in r['trace'] if e['operation']=='LOCAL_EFFECT'],[j['status'] for j in w.event_journal]),
+                             (['STEP_STOPPED','LOCAL_MODEL_EFFECTS_RECORDED'],['a'],{'method':'bad','reason':reason},[{'method':'bad','reason':reason,'effect_reads':'UNKNOWN'}],['bad'],True,['STEP_STOPPED','LOCAL_MODEL_EFFECTS_RECORDED']),name)
+            self.assertEqual(self._spent(w),({'compute':8,'money':10,'attention':3},{'prov':8}),name)   # paid: step a and the other goal's step; the stopped step took nothing, from the budget or from the slots
+        self.assertEqual(asked,[])   # the kernel named every one of these errors without running any code of its class, and took no text that is not exact text
+        roots=lambda kind:[Kernel(self._world(['G'],[],[self._m('bad','G',kind)])).run_standing(execute=True)['runs'][0]['trace_root_sha256'] for _ in (1,2)]
+        said=[0]
+        def counts(s,m,mid,deps):said[0]+=1;raise Stop(f'refusal number {said[0]}')
+        self._kinds(test_counts=counts,test_deep16=lambda s,m,mid,deps:deep(16),test_pops=pops,test_drops=drops)
+        self.assertEqual((len(set(roots('test_w0'))),len(set(roots('test_counts')))),(1,2))   # the same words give the same record on two States; a handler that words its refusal anew each time gets a new root each time
+        r=Kernel(self._world(['G'],[],[self._m('ok','G','test_deep16')])).run_standing(execute=True)['runs'][0]
+        self.assertEqual((r['status'],len(r['model_receipts'])),('LOCAL_MODEL_EFFECTS_RECORDED',1))   # 16 levels is plain data: a receipt
+        kept=[]
+        def keeps(s,m,mid,deps):s.observe(self._row(m['effect'],'TRUE','1'));kept.append(mid);return {'seen':kept}   # hands out a list it keeps, and adds to it at its next call
+        self._kinds(test_keeps=keeps);w=self._world(['G'],[],[self._m('one','A','test_keeps'),self._m('two','G','test_keeps',req=['A'])]);r=Kernel(w).run_standing(execute=True)['runs'][0]
+        self.assertEqual(([x['seen'] for x in r['model_receipts']],[x['sha256']==digest({key:y for key,y in x.items() if key!='sha256'}) for x in r['model_receipts']],kept),   # review round three: a receipt carries the kernel's own copy of what was returned: a list the handler changes after its return leaves the receipt, and its sha, as they were
+                         ([['one'],['one','two']],[True,True],['one','two']))
+        w=self._world(['e'],[],[self._m('a','e','test_pops',cost={'compute':2,'money':1,'attention':0})]);r=Kernel(w).run_standing(execute=True)['runs'][0]
+        self.assertEqual((r['stopped'],r['cost'],w.budget,r['model_receipts'],[e['data']['effect_reads'] for e in r['trace'] if e['operation']=='STEP_STOPPED']),   # the slot could not be taken, so nothing was: paid in full or not at all. A fault of the kernel's own line is named by its class
+                         ({'method':'a','reason':'Kernel fault: KeyError'},self.ZERO,{'compute':10,'money':10,'attention':3},[],['TRUE']))
+        self.assertNotIn('LOCAL_EFFECT',self._ops(r))   # review round three: and no receipt's line is in the record: the amounts are read before the line is written, so this step leaves a stop line and no receipt's line
+        class Full(Kernel):   # a kernel whose record has no room for a receipt's line
+            def log(self,op,**data):
+                if op=='LOCAL_EFFECT':raise MemoryError('no room for the line')
+                super().log(op,**data)
+        w=self._world(['e'],[],[self._m('m','e')]);r=Full(w).run_standing(execute=True)['runs'][0]
+        self.assertEqual((r['stopped'],r['model_receipts'],self._spent(w),w.fact('e')['truth']),   # no line, no payment: a step is paid after its receipt is in the record (the effect the handler wrote stands)
+                         ({'method':'m','reason':'Kernel fault: MemoryError'},[],({'compute':10,'money':10,'attention':3},{'prov':10}),'TRUE'))
+        for error,name in ((Liar('Hidden',(Exception,),{})('x'),'Hidden'),(Mute('Quiet',(Exception,),{})('x'),'Quiet')):   # review round three: a fault of the kernel's own line is named as a handler's failure is, from the type itself: a class that raises, or gives no text, when it is asked for its name is named all the same, and none of its code runs
+            class Fails(Kernel):   # a kernel whose record fails with that error when a receipt's line is written
+                def log(self,op,**data):
+                    if op=='LOCAL_EFFECT':raise error
+                    super().log(op,**data)
+            w=self._world(['e'],[],[self._m('m','e')]);r=Fails(w).run_standing(execute=True)['runs'][0]
+            self.assertEqual((r['stopped'],asked),({'method':'m','reason':'Kernel fault: '+name},[]),name)
+        w=self._world(['e'],[('e',[['x','y']])],[self._m('first','x','test_drops'),self._m('later','y')]);r=Kernel(w).run_standing(execute=True)['runs'][0]
+        self.assertEqual((r['status'],r['actions'],r['stopped'],r['pending'],[e['data']['effect_reads'] for e in r['trace'] if e['operation']=='STEP_STOPPED'],len(w.event_journal)),   # a later step's method is gone: a recorded stop all the same, its effect unreadable
+                         ('STEP_STOPPED',['first'],{'method':'later','reason':'Kernel fault: KeyError'},['later'],['UNKNOWN'],1))
+        def unplugs(s,m,mid,deps):s.observe(self._row(m['effect'],'TRUE','1'));s.actions.pop('simulate_fact');return {}
+        self._kinds(test_unplugs=unplugs)
+        w=self._world(['done'],[],[self._m('first','a','test_unplugs'),self._m('second','done',req=['a'])]);r=Kernel(w).run_standing(execute=True)['runs'][0]
+        self.assertEqual((r['actions'],r['stopped']),(['first'],{'method':'second','reason':'Kernel fault: KeyError'}))   # the kind of a later step is gone: no handler ran, so the stop is not worded as a handler's failure
+        def blanks(s,m,mid,deps):s.observe(self._row(m['effect'],'TRUE','1'));s.methods['later']=None;return {}
+        self._kinds(test_blanks=blanks)
+        w=self._world(['e'],[('e',[['x','y']])],[self._m('first','x','test_blanks'),self._m('later','y')]);r=Kernel(w).run_standing(execute=True)['runs'][0]
+        self.assertEqual((r['actions'],r['stopped'],[e['data']['effect_reads'] for e in r['trace'] if e['operation']=='STEP_STOPPED'],len(w.event_journal)),   # a later step's method is no method any more: its effect cannot be read, for another reason than a missing key, and the line is written all the same
+                         (['first'],{'method':'later','reason':'Kernel fault: TypeError'},['UNKNOWN'],1))
+        import socket
+        self._kinds(test_late_answer=_throw(socket.timeout('late')))
+        r=Kernel(self._world(['G'],[],[self._m('bad','G','test_late_answer')])).run_standing(execute=True)['runs'][0]
+        self.assertEqual((r['stopped']['reason'],socket.timeout.__name__ in ('timeout','TimeoutError')),('Handler failed: '+socket.timeout.__name__,True))   # the name is the one the running Python holds: `timeout` before 3.10, `TimeoutError` from 3.10 on, so two records of this failure compare only on one Python version
+        def adds_a_kind(s,result,log):s.actions.setdefault('test_late',{'run':lambda s,m,mid,deps:{}})
+        def hides(s,result,log):raise Renamed('x')
+        def mutters(s,result,log):raise Mute('Quiet',(Exception,),{})('x')
+        def halts(s,result,log):raise Stop('books')
+        self._kinds(test_registry=(lambda s,m,mid,deps:{},{'settle':adds_a_kind}),test_hides=(lambda s,m,mid,deps:{},{'settle':hides}),test_mutters=(lambda s,m,mid,deps:{},{'settle':mutters}),test_halts=(lambda s,m,mid,deps:{},{'settle':halts}))
+        w=self._world(['G'],[],[self._m('m','G')]);r=Kernel(w).run_standing(execute=True)['runs'][0]   # a settle hook that changes the registry does not end the settling; kinds whose settle fails are one line and one name under unsettled each, in the registry's order, each error named as a step's failure is (a Stop too: from a hook it is the hook's own error)
+        self.assertEqual((r['status'],'test_late' in w.actions,[e['data'] for e in r['trace'] if e['operation']=='SETTLE_STOPPED'],r['unsettled'],len(w.event_journal),asked),
+                         ('LOCAL_MODEL_EFFECTS_RECORDED',True,[{'kind':'test_hides','reason':'unreadable'},{'kind':'test_mutters','reason':'Quiet'},{'kind':'test_halts','reason':'Stop'}],['test_hides','test_mutters','test_halts'],1,[]))
+    def test_a_stop_ends_the_run_there_and_every_part_of_it_is_on_the_record(self):
+        # Review round one on 0.9.0: 30 of 87 mutants of the changed kernel lines passed every test. One assertion per survivor that changed behaviour.
+        def meddles(s,m,mid,deps):s.grants.discard('g');s.budget['compute']=0;s.observe(self._row(m['effect'],'TRUE','1'));return {}
+        def bad_settle(s,result,log):raise KeyError('books')
+        self._kinds(test_fail=_throw(OSError('disk')),test_returns_none=lambda s,m,mid,deps:None,test_meddles=meddles)
+        w=self._world(['G'],[('G',[['x','y','z']])],[self._m('first','x'),self._m('mid','y','test_fail'),self._m('last','z')]);r=Kernel(w).run_standing(execute=True)['runs'][0]
+        self.assertEqual((r['actions'],r['pending'],w.fact('z')['truth'],self._spent(w)),(['first'],['mid','last'],'UNKNOWN',({'compute':9,'money':10,'attention':3},{'prov':9})))   # nothing after the stopped step runs; the rest of the plan is pending
+        w=self._world(['e'],[],[self._m('m','e','test_returns_none')]);Kernel(w).run_standing(execute=True)
+        self.assertEqual(self._spent(w),({'compute':10,'money':10,'attention':3},{'prov':10}))   # a refused return costs no slot either
+        w=self._world(['done'],[],[self._m('first','a','test_meddles',cost=self.ZERO),self._m('second','done',req=['a'])]);r=Kernel(w).run_standing(execute=True)['runs'][0]
+        self.assertEqual((r['actions'],r['stopped']),(['first'],{'method':'second','reason':'Gate changed before effect: AUTHORITY_REQUIRED RESOURCE_REQUIRED'}))   # every gate word, in the gate's own order
+        w=self._world(['done'],[],[self._m('m','done',req=['p','q'])]);k=Kernel(w);self.assertEqual(k._act({'actions':['m']}),[])
+        self.assertEqual(k.events[-1]['data'],{'method':'m','reason':'Prerequisite not true before effect: p q','effect_reads':'UNKNOWN'})   # every missing fact is named
+        w=self._world(['done'],[],[self._m('m','done',req=['q','p','q'])]);k=Kernel(w);k._act({'actions':['m']})
+        self.assertEqual(k.events[-1]['data']['reason'],'Prerequisite not true before effect: q p q')   # review round three: in the step's own order, a fact the step names twice said twice (neither sorted nor said once)
+        w=self._world(['done'],[],[self._m('m','done',req=['q','p','q'])],[('p','TRUE'),('q','TRUE')]);Kernel(w).run_standing(execute=True)
+        self.assertEqual(w.evidence[w.key('done')]['depends_on'],[{'predicate':x,'version':'1'} for x in ('q','p','q')])   # review round three: and the row a step writes rests on the step's prerequisites in the same order
+        w=self._world(['e'],[],[]);w.methods['free']={'id':'free','effect':'e','requires':[],'grant':'g','cost':{'compute':1},'action':'simulate_fact'}   # put into the State by hand without a provider (no pack can)
+        r=Kernel(w).run_standing(execute=True)['runs'][0];self.assertEqual((r['actions'],self._spent(w)),(['free'],({'compute':9,'money':10,'attention':3},{'prov':10})))   # it takes no slot, as in 0.8.0
+        s=State(actions={'test_first':{'run':lambda s,m,mid,deps:{},'settle':bad_settle},**{name:dict(kind) for name,kind in ACTIONS.items()}})
+        for n in ASK:s.apply(pack(n))
+        r=Kernel(s).run_standing(execute=True)['runs'][0]   # the kind whose settle fails comes first in the registry: the ask kind after it still keeps its books
+        self.assertEqual((r['status'],r['unsettled'],self._open(s),[op for op in self._ops(r) if op in ('SETTLE_STOPPED','TERMINAL')]),('WAITING',['test_first'],['ask-customer-approval@1'],['SETTLE_STOPPED','TERMINAL']))
+    def test_what_the_guard_does_not_cover_is_stated_and_pinned(self):
+        # The known limits of 0.9.0, each as the README states it.
+        for exc in (SystemExit(3),KeyboardInterrupt(),GeneratorExit()):   # an error that is not an Exception is not a step's failure: it passes through, and the look it interrupts leaves no journal row
+            kind='test_'+type(exc).__name__;self._kinds(**{kind:_throw(exc)})
+            w=self._world(['G1','G2'],[],[self._m('a','A'),self._m('bad','G1',kind,req=['A']),self._m('m2','G2')])
+            with self.assertRaises(type(exc)):Kernel(w).run_standing(execute=True)
+            self.assertEqual((w.event_journal,self._spent(w)),([],({'compute':9,'money':10,'attention':3},{'prov':9})))   # step a stays done and paid; no row, no second goal
+        def quits(s,result,log):raise SystemExit(3)
+        self._kinds(test_quits=(lambda s,m,mid,deps:{},{'settle':quits}));w=self._world(['G'],[],[self._m('m','G')])
+        with self.assertRaises(SystemExit):Kernel(w).run_standing(execute=True)   # the same from a settle hook: the run's step is done and paid, its result is lost
+        self.assertEqual((w.event_journal,w.budget['compute']),([],9));ACTIONS.pop('test_quits')
+        def gone(s,m,mid,deps):s.methods.pop(mid);return {}
+        self._kinds(test_gone=gone);w=self._world(['e'],[],[self._m('m','e','test_gone')])
+        with self.assertRaises(KeyError):Kernel(w).run_standing(execute=True)   # the guard is around the step, not around the State: this handler removed its own method, and the run's tail cannot price what ran
+        self.assertEqual(w.event_journal,[])
+        def hoards(s,m,mid,deps):
+            v=[]
+            for _ in range(sys.getrecursionlimit()):v=[v]
+            s.candidates['deep']={'id':'deep','status':'PROPOSED_ONLY','nested':v};raise Stop('no')
+        self._kinds(test_hoards=hoards);w=self._world(['e'],[],[self._m('m','e','test_hoards')])
+        for execute in (True,False):   # a candidate nested deeper than Python can copy: the stop is recorded in the run, but the kernel cannot hand the candidates out, in this look or in any later one, dry looks too
+            with self.assertRaises(RecursionError):Kernel(w).run_standing(execute=execute)
+        self.assertEqual(w.event_journal,[])
+        self._kinds(test_two_goal_plan=(lambda s,m,mid,deps:{},{'plan':lambda s,m:1/0}))
+        w=self._world(['G1','G2'],[],[self._m('m1','G1'),self._m('m2','G2','test_two_goal_plan')])
+        with self.assertRaises(ZeroDivisionError):Kernel(w).run_standing(execute=True)   # a plan hook that raises ends the look before any step of its own goal runs
+        self.assertEqual(([j['status'] for j in w.event_journal],w.budget['compute']),(['LOCAL_MODEL_EFFECTS_RECORDED'],9))   # the goal before it has run and been paid; its result is lost with the error
+        armed=[]
+        def trips(s,m):
+            if armed:raise Stop('not now')
+        def refuses(m):raise Stop('not this method')
+        def divides(m):1/0
+        self._kinds(test_trips=(lambda s,m,mid,deps:{},{'plan':trips}),test_refuses=(lambda s,m,mid,deps:{},{'check':refuses}),test_divides=(lambda s,m,mid,deps:{},{'check':divides}))
+        w=self._world(['G'],[],[self._m('g','G','test_trips',req=['ok'])]);k=Kernel(w);armed.append(1)
+        with self.assertRaises(Stop):k.run_standing(execute=True)   # a hook's own error is not the stop of a step: a Stop that a plan hook raises reaches the caller like any other error
+        with self.assertRaises(Stop):k.on_event(self._row('ok','TRUE','1'),execute=True)   # through an event the row is stored before the looks run: it stands although the call raised and returned nothing
+        self.assertEqual((w.fact('ok')['truth'],w.event_journal),('TRUE',[]))
+        armed.clear();a=self._world(['G'],[],[self._m('q','ok','ask',self.ASKS,ask_to='al'),self._m('g','G','test_trips',req=['ok'])]);ka=Kernel(a);out=ka.run_standing(execute=True)['runs'][0];armed.append(1)
+        with self.assertRaises(Stop):answer(ka,out['model_receipts'][0],'TRUE','al',execute=True)   # the same through the stamp: the decision is on the fact, the call raised, and the journal has no row for the look the answer caused
+        self.assertEqual((a.fact('ok')['truth'],a.fact('ok').get('final'),[j['status'] for j in a.event_journal],open_asks(a)),('TRUE',True,['WAITING'],{}))
+        with self.assertRaises(ValueError):answer(ka,out['model_receipts'][0],'TRUE','al',execute=True)   # the question is closed by that decision: its receipt answers nothing more
+        armed.clear();s=State()
+        for kind,error in (('test_refuses',Stop),('test_divides',ZeroDivisionError)):   # a check hook that raises an error the kernel does not turn into a refusal leaves apply with that error, not with a ValueError; the pack is not applied
+            with self.assertRaises(error):s.apply({'schema':'sutra-extension/2','id':'x','goals':['e'],'grants':['g'],'providers':{'prov':2},'methods':[self._m('m','e',kind)]})
+        self.assertEqual((s.methods,s.goals,s.loaded),({},[],[]))
+        self.assertEqual(Stop.__mro__,(Stop,Exception,BaseException,object))   # review round three: so "instead of a ValueError" holds for a Stop: it is an error of its own kind, neither a ValueError (a refusal of the door) nor a RuntimeError (Python raises those itself)
+        self._kinds(test_no_evidence=lambda s,m,mid,deps:{})   # a step that rests on a fact made by a kind that writes no evidence: offered, then recorded as stopped
+        w=self._world(['done'],[],[self._m('make','made','test_no_evidence',cost={'compute':3,'money':0,'attention':0}),self._m('use','done',req=['made'])]);k=Kernel(w)
+        looks=[k.run_standing()['runs'][0]]+[k.run_standing(execute=True)['runs'][0] for _ in range(4)]
+        self.assertEqual([(x['status'],x['actions'],(x.get('stopped') or {}).get('reason')) for x in looks]+[w.budget['compute']],   # the step before the stop leaves no evidence: every executed look runs and pays it again, until the budget is gone
+                         [('PLAN_READY',['make','use'],None)]+[('STEP_STOPPED',['make'],'Prerequisite not true before effect: made')]*3+[('RESOURCE_REQUIRED',[],None),1])
+        def wrote_then_failed(s,m,mid,deps):s.observe(self._row(m['effect'],'TRUE','local-sim-1'));raise OSError('disk')
+        self._kinds(test_wrote=wrote_then_failed)
+        w=self._world(['done'],[],[self._m('first','a','test_wrote',cost={'compute':5,'money':0,'attention':0}),self._m('second','done',req=['a'])]);k=Kernel(w)
+        one,two=[k.run_standing(execute=True)['runs'][0] for _ in (1,2)]
+        self.assertEqual(((one['status'],one['actions'],[e['data']['effect_reads'] for e in one['trace'] if e['operation']=='STEP_STOPPED']),(two['status'],two['actions']),w.budget['compute']),   # the effect the failed step wrote stands: the next look completes on it, and the 5-compute step is never paid
+                         (('STEP_STOPPED',[],['TRUE']),('LOCAL_MODEL_EFFECTS_RECORDED',['second']),9))
+        def fails(s,result,log):raise OSError('books')
+        s=State.from_packs([pack(n) for n in ASK]);k=Kernel(s);keep=s.actions['ask']['settle'];s.actions['ask']['settle']=fails
+        asked=k.run_standing(execute=True)['runs'][0];s.actions['ask']['settle']=keep   # the ask kind's own settle fails once: the run looks like any wait, but the books do not know the question
+        self.assertEqual((asked['status'],asked['unsettled'],open_asks(s),s.budget['attention']),('WAITING',['ask'],{},2))
+        with self.assertRaises(ValueError):answer(k,asked['model_receipts'][0],'TRUE','customer',execute=True)   # so the asked party's answer is refused
+        again=k.run_standing(execute=True)['runs'][0];self.assertEqual((again['actions'],s.budget['attention']),(['ask-customer-approval@1'],1))   # and the next executed look asks and pays again
+        def deep(s,m,mid,deps):   # writes its effect, then returns 16 levels of data: the kernel's own work on that return is the deepest part of the look
+            s.observe(self._row(m['effect'],'TRUE','1'));v=[]
+            for _ in range(15):v=[v]
+            return {'x':v}
+        def digs(s,m,mid,deps):   # needs 20 calls of stack before it writes its effect
+            def down(n):return n and down(n-1)
+            down(20);s.observe(self._row(m['effect'],'TRUE','1'));return {}
+        self._kinds(test_deep=deep,test_digs=digs)
+        def dive(n,call):return call() if n==0 else dive(n-1,call)
+        here,frame=0,sys._getframe()
+        while frame:here,frame=here+1,frame.f_back
+        top=sys.getrecursionlimit()-here;seen=set();lowest=None
+        for n in range(top-150,top):   # Python's own limit is not guarded. A look called at every one of the last 150 call depths before the stack is used up:
+            w=self._world(['G','H'],[],[self._m('g','G','test_deep',cost={'compute':5,'money':0,'attention':0}),self._m('h','H')]);start=self._spent(w)
+            try:runs=dive(n,lambda:Kernel(w).run_standing(execute=True)['runs'])
+            except RecursionError:seen.add('ends with RecursionError');continue
+            stops=[r['stopped']['reason'] for r in runs if r['status']=='STEP_STOPPED'];paid={d:sum(w.methods[x['method']]['cost'][d] for r in runs for x in r['model_receipts']) for d in start[0]}
+            self.assertTrue(set(stops)<={'Kernel fault: RecursionError','Handler failed: RecursionError'} and len(runs)==2,(n,stops))
+            self.assertEqual(({d:start[0][d]-w.budget[d] for d in paid},start[1]['prov']-w.providers['prov']),(paid,sum(len(r['model_receipts']) for r in runs)),n)   # in the band too, what is paid is what has a receipt
+            seen.add('completes' if not stops else 'a recorded stop, its effect standing unpaid' if runs[0]['status']=='STEP_STOPPED' and w.fact('G')['truth']=='TRUE' else 'a recorded stop');seen.update(stops)
+            if runs[0]['status']=='STEP_STOPPED':lowest=n
+        self.assertTrue({'completes','ends with RecursionError','a recorded stop, its effect standing unpaid','Kernel fault: RecursionError'}<=seen,seen)   # it ends with the error, or (the stack ran out inside a step) returns with that step recorded as stopped, and an effect its handler had written stands unpaid
+        w=self._world(['G','H'],[],[self._m('g','G','test_deep'),self._m('h','H','test_digs')]);first,later=dive(lowest,lambda:Kernel(w).run_standing(execute=True)['runs'])   # the deepest of those depths, and a second goal whose step needs more stack than is left
+        self.assertEqual((first['status'],later['status'] in ('LOCAL_MODEL_EFFECTS_RECORDED','STEP_STOPPED')),('STEP_STOPPED',True))   # what the rest of such a look does is Python's own:
+        if sys.version_info<(3,10):self.assertEqual(later['status'],'LOCAL_MODEL_EFFECTS_RECORDED')   # Python 3.9 lets the look go on past its limit once the error was caught (and ends the process about fifty calls past it: no test provokes that)
+        if sys.version_info>=(3,11):self.assertEqual((later['status'],later['stopped']['reason'][-14:]),('STEP_STOPPED','RecursionError'))   # from 3.11 the later step is recorded as stopped in its turn
+    def test_what_review_round_three_left_is_stated_and_pinned(self):
+        # Review round three on 0.9.0 (two refuters, eight findings) did not refute the build, and its findings were settled without new code (ruling R19: a fix that needs new
+        # code goes to the next version and its own review). The four limits it showed in the kernel are pinned here as the build behaves today, each as the README states it;
+        # those of the verifier are pinned in the two verifier tests; NEXT-GATES.md lists the fixes the next version owes.
+        import types
+        spec=importlib.util.spec_from_file_location('independent_verify',ROOT/'qa'/'independent_verify.py');v=importlib.util.module_from_spec(spec);spec.loader.exec_module(v)
+        def bad_settle(s,result,log):raise KeyError('books')
+        two={'schema':'sutra-extension/2','id':'t','goals':['G1','G2'],'methods':[self._m('m1','G1'),self._m('m2','G2')],'providers':{'prov':10},'grants':['g']}   # two goals, one step each
+        def named(name):   # a State whose registry holds a kind registered under that name, with a settle hook that fails
+            register(name,settle=bad_settle)(lambda s,m,mid,deps:{});self.addCleanup(ACTIONS.pop,name,None)
+            w=State.from_packs([two]);ACTIONS.pop(name);return w
+        # 1. The name of a kind is taken as it is registered: register() checks a kind's hooks and not its name. With a name the record cannot carry (text that UTF-8 cannot carry;
+        #    bytes or a frozenset, which JSON cannot write) the SETTLE_STOPPED line of a settle hook that fails cannot be written, and the look ends with Python's error.
+        for name,error in (('caf\udce9',UnicodeEncodeError),(b'k',TypeError),(frozenset('k'),TypeError)):
+            w=named(name)
+            with self.assertRaises(error):Kernel(w).run_standing(execute=True)
+            self.assertEqual((w.event_journal,self._spent(w),w.fact('G1')['truth'],w.fact('G2')['truth']),([],({'compute':9,'money':10,'attention':3},{'prov':9}),'TRUE','UNKNOWN'),repr(name))   # the first goal's step is done and paid, the journal has no row, the second goal never ran
+        for name in (7,None,1.5,('a','b')):   # a name that is a number, null or a tuple: the look returns, the line and `unsettled` carry that value, and the verifier refuses the honest run (it wants a kind named by text)
+            w=named(name);runs=Kernel(w).run_standing(execute=True)['runs']
+            self.assertEqual(([r['status'] for r in runs],[r['unsettled'] for r in runs],[e['data'] for e in runs[0]['trace'] if e['operation']=='SETTLE_STOPPED'],len(w.event_journal),[v.stop_ok(r,w.methods) for r in runs]),
+                             (['LOCAL_MODEL_EFFECTS_RECORDED']*2,[[name]]*2,[{'kind':name,'reason':'KeyError'}],2,[False,False]),repr(name))
+        s=State(actions={**{kind:dict(hooks) for kind,hooks in ACTIONS.items()},'caf\udce9':{'run':lambda s,m,mid,deps:{},'settle':bad_settle}});s.apply(two)   # a registry handed to State(actions=...) is not checked at all
+        with self.assertRaises(UnicodeEncodeError):Kernel(s).run_standing(execute=True)
+        self.assertEqual((s.event_journal,s.budget['compute']),([],9))
+        def makes(s,m,mid,deps):s.observe(self._row(m['effect'],'TRUE','1'));return {}
+        for name in (7,None):   # and a pack's method can name a kind that is registered under a number or under null: the receipt then carries that value where a kind's name is meant
+            register(name)(makes);self.addCleanup(ACTIONS.pop,name,None)
+            w=State.from_packs([{'schema':'sutra-extension/2','id':'t','goals':['G'],'methods':[dict(self._m('m','G'),action=name)],'providers':{'prov':10},'grants':['g']}]);ACTIONS.pop(name)
+            r=Kernel(w).run_standing(execute=True)['runs'][0];self.assertEqual((r['status'],[x['action'] for x in r['model_receipts']]),('LOCAL_MODEL_EFFECTS_RECORDED',[name]),repr(name))
+        # 2. A plan whose step must stop is chosen again at every look, also where a dearer plan that would complete stands beside it: a stop does not feed the next plan.
+        cheap,dear=self._m('cheap','G',req=['h']),self._m('dear','G',cost={'compute':5,'money':0,'attention':0},req=['c'])   # `cheap` rests on a rule's head, for which no step stores a row; `dear` rests on the stored row itself
+        w=self._world(['G'],[('h',[['c']])],[cheap,dear],[('c','TRUE')]);k=Kernel(w);looks=[k.run_standing()['runs'][0]]+[k.run_standing(execute=True)['runs'][0] for _ in range(3)]
+        self.assertEqual([(x['status'],x['actions'],x.get('pending'),x['pareto_options'],(x.get('stopped') or {}).get('reason')) for x in looks]+[w.fact('G')['truth'],self._spent(w),len(w.event_journal)],
+                         [('PLAN_READY',['cheap'],None,1,None)]+[('STEP_STOPPED',[],['cheap'],1,'Prerequisite not true before effect: h')]*3+['UNKNOWN',({'compute':10,'money':10,'attention':3},{'prov':10}),4])
+        self.assertEqual([(sorted(key for key,val in x.items() if 'dear' in json.dumps(val)),[(e['operation'],e['data'].get('accepted')) for e in x['trace'] if 'dear' in json.dumps(e['data'])]) for x in looks],
+                         [(['trace'],[('METHOD_MATCH',None),('ADMISSION',True)])]*4)   # `dear` is dominated on cost: the result offers it nowhere, and only the trace shows that it was matched and admitted
+        alone=self._world(['G'],[('h',[['c']])],[dear],[('c','TRUE')]);r=Kernel(alone).run_standing(execute=True)['runs'][0]
+        self.assertEqual((r['status'],r['actions'],alone.fact('G')['truth']),('LOCAL_MODEL_EFFECTS_RECORDED',['dear'],'TRUE'))   # the route that exists: without `cheap` beside it, `dear` completes the goal
+        # 3. A chain of stored rows, each resting on the one before, that is long enough to use up the stack. A look that reads it while planning ends with RecursionError, a dry
+        #    look too, as on 0.8.0. Where a step reads the chain deeper than planning did, the look returns with that step recorded as stopped, at any depth of the caller.
+        def chain(n):   # two goals; the step of the first rests on the last of n+1 stored rows
+            w=self._world(['G','H'],[],[self._m('g','G',req=[f'f{n}']),self._m('h','H')],[('f0','TRUE')])
+            for i in range(1,n+1):w.observe(self._row(f'f{i}','TRUE','1',depends_on=[{'predicate':f'f{i-1}','version':'1'}]))
+            return w
+        def look(k,execute):   # what a look ends with: Python's error, or each run's status and the reason of its stop
+            try:return [(r['status'],(r.get('stopped') or {}).get('reason')) for r in k.run_standing(execute=execute)['runs']]
+            except RecursionError:return 'RecursionError'
+        def three(n):   # a dry look and two executed looks at a chain of that length, then the journal's length and the books
+            w=chain(n);k=Kernel(w);return [look(k,False),look(k,True),look(k,True)],len(w.event_journal),self._spent(w)
+        def planned(n):return look(Kernel(chain(n)),False)   # one dry look at a chain of that length, called as deep as `three` calls its looks
+        here,frame=0,sys._getframe()
+        while frame:here,frame=here+1,frame.f_back
+        low,high=sys.getrecursionlimit()-here-40,sys.getrecursionlimit()-here;ready=[('PLAN_READY',None)]*2   # a chain that planning can read from this depth, and one that it cannot
+        self.assertEqual((planned(low),planned(high)),(ready,'RecursionError'))
+        while high-low>1:   # the shortest chain that a dry look can no longer read
+            n=(low+high)//2;low,high=(low,n) if planned(n)=='RecursionError' else (n,high)
+        stop=('STEP_STOPPED','Kernel fault: RecursionError')
+        done=([ready,[('LOCAL_MODEL_EFFECTS_RECORDED',None)]*2,[('SUPPORTED_BY_EVIDENCE',None)]*2],6,({'compute':8,'money':10,'attention':3},{'prov':8}))
+        halted=([ready,[stop,('LOCAL_MODEL_EFFECTS_RECORDED',None)],[stop,('SUPPORTED_BY_EVIDENCE',None)]],6,({'compute':9,'money':10,'attention':3},{'prov':9}))   # the step is recorded as stopped, unpaid, at every executed look, and the next goal runs
+        self.assertEqual((three(high-2),three(high)),(done,(['RecursionError']*3,0,({'compute':10,'money':10,'attention':3},{'prov':10}))))   # two rows shorter the plan completes; from that length on every look ends with the error and leaves no journal row
+        edge=three(high-1);self.assertIn(edge,(halted,done))   # the longest chain that planning can read:
+        if sys.version_info<(3,12):self.assertEqual(edge,halted)   # on Python 3.9 and 3.11 a step reads the chain one call deeper than planning did, so at exactly this length the step is a recorded stop (0.8.0 ended the look with the error)
+        if sys.version_info[:2]==(3,12):self.assertEqual(edge,done)   # on Python 3.12 a step reads no deeper than planning, and no length gives the recorded stop
+        # 4. The guard holds against what a handler raises and returns, not against what it does to the State. One that replaces the provider slots by a mapping that cannot be
+        #    written leaves a look that returns with its step recorded as stopped although the receipt's line is in the chain and the budget was paid.
+        def swaps(s,m,mid,deps):s.observe(self._row(m['effect'],'TRUE','1'));s.providers=types.MappingProxyType(dict(s.providers));return {}
+        self._kinds(test_swaps=swaps);w=self._world(['G'],[],[self._m('g','G','test_swaps',cost={'compute':2,'money':0,'attention':0})]);k=Kernel(w);r=k.run_standing(execute=True)['runs'][0]
+        self.assertEqual((self._ops(r)[-4:],[e['data']['receipt']['method'] for e in r['trace'] if e['operation']=='LOCAL_EFFECT'],r['model_receipts'],r['stopped'],r['actions'],r['cost'],w.budget,dict(w.providers),w.fact('G')['truth'],len(w.event_journal),v.stop_ok(r,w.methods)),
+                         (['ADMISSION','LOCAL_EFFECT','STEP_STOPPED','TERMINAL'],['g'],[],{'method':'g','reason':'Kernel fault: AttributeError'},[],self.ZERO,{'compute':8,'money':10,'attention':3},{'prov':10},'TRUE',1,True))   # a receipt's line and a stop line for one step; no receipt in the result; 2 compute paid, the slot not taken; the verifier's check of a stop accepts the row
+        again=k.run_standing(execute=True)['runs'][0];self.assertEqual((again['status'],again['actions'],w.budget['compute']),('SUPPORTED_BY_EVIDENCE',[],8))   # the effect stands, and what was paid stays paid
+    def test_a_stopped_run_is_worded_as_a_stop_outside_the_kernel(self):
+        # Review round one on 0.9.0: the viewer worded every run with pending steps as a wait on a person, and the generator's page showed neither the stopped step nor the reason.
+        s=State.from_packs([pack(n) for n in ('30_build_goal','31_build_theory','82_components_without_constructor')]);r=Kernel(s).run_standing(execute=True)['runs'][0];ui=to_implementation(r,s)['ui']
+        self.assertIn('stopped at <code>construct-enquiry-candidate@1</code>: Handler refused: No declared constructor. Steps that ran there: validate-field@1, store-component@1, read-component@1.',ui)
+        done=State.from_packs([pack(n) for n in ('00_goal','01_domain','02_methods','03_approval','04_admission')]);ok=Kernel(done).run_standing(execute=True)['runs'][0]
+        self.assertNotIn('stopped at',to_implementation(ok,done)['ui'])   # a run that did not stop is worded as before
+        viewer=(ROOT/'tools'/'build_viewer.py').read_text()   # the viewer's script words pending steps by the run's state: a stop is not a wait on a person
+        self.assertIn("`<span class=\"muted\">${r?.stopped?'Nothing ran':'No admitted action'}</span>`",viewer)   # review round two: a stop at the first step is worded as nothing ran, not as no admitted action
+        self.assertIn("r?.stopped?`<div class=\"hint\">Stopped at ${escaped(r.stopped.method)}: ${escaped(r.stopped.reason)}.${r.pending?.length>1?` Not reached: ${r.pending.slice(1).map(escaped).join(', ')}`:''}</div>`",viewer)   # the stopped step is named as the step that stopped and is no longer listed among steps that were not run; what comes after it was not reached
+        self.assertNotIn('. Not run`',viewer)
+    def test_the_verifier_holds_a_stop_to_its_shape_and_a_case_to_its_books(self):
+        # Review round one on 0.9.0: forged stops passed the independent verifier (a paid stopped step, a journal row saying completed, a reason outside the list, a stop row in
+        # front of its own gate row). Its stop checks are module-level functions: here they run on case 30 made in memory, on forgeries of it, and on honest stops of every kind.
+        # Review round two added what follows the list of forgeries: the readings held exactly, the stored facts held to the pack files, honest cases the verifier had refused, and its own limits.
+        spec=importlib.util.spec_from_file_location('independent_verify',ROOT/'qa'/'independent_verify.py');v=importlib.util.module_from_spec(spec);spec.loader.exec_module(v)
+        stop=[c for c in CASES if c[0]=='30_stop'][0]   # by its id, not by its place: a later version adds cases after it
+        files=[pack(n) for n in stop[3]];methods={m['id']:m for p in files for m in p.get('methods',[])};honest=json.loads(json.dumps(scenario(stop)))
+        both=lambda c:(c['outcome'],c['run']['runs'][0]);rows=lambda c:[e['data'] for r in both(c) for e in r['trace'] if e['operation']=='STEP_STOPPED']
+        def forged(change):
+            c=json.loads(json.dumps(honest));change(c);return v.stop_ok(c['outcome'],methods),v.books_ok(c,methods,files)
+        def says(**fields):return lambda c:[row.update(**fields) for row in rows(c)]
+        def moved(c):
+            for r in both(c):
+                t=r['trace'];i=[e['operation'] for e in t].index('STEP_STOPPED');t[i-1],t[i]=t[i],t[i-1]
+        def earlier(c):   # the stop moved one step earlier, and every book re-made to agree
+            for r in both(c):
+                t=r['trace'];i=[e['operation'] for e in t].index('STEP_STOPPED');gone=r['model_receipts'].pop()['method'];del t[i-2:i]
+                t[i-2]['data'].update(method=gone,effect_reads='TRUE');r['actions'].pop();r['cost']['compute']-=1;r['pending'].insert(0,gone);r['stopped']['method']=gone
+            c['derived_state']['budget_after']['compute']+=1
+        self.assertEqual((honest['outcome']['status'],forged(lambda c:None)),('STEP_STOPPED',(True,True)))
+        for name,change,want in (('an extra field in the stop row',says(note='x'),(False,True)),('a reason outside the list',says(reason='Because'),(False,True)),
+                                 ('a fact the stopped step does not need',says(reason='Prerequisite not true before effect: no_such_fact'),(False,True)),
+                                 ('a gate word its gate row does not carry',says(reason='Gate changed before effect: AUTHORITY_REQUIRED'),(False,True)),
+                                 ('the stop row in front of its own gate row',moved,(False,True)),('unsettled without a row',lambda c:[r.update(unsettled=['ask']) for r in both(c)],(False,True)),
+                                 ('the effect reads TRUE against the stored row',says(effect_reads='TRUE'),(True,False)),
+                                 ('the goal reads TRUE against the stored row',lambda c:[r.update(goal_truth_after='TRUE') for r in both(c)],(True,False)),
+                                 ('the stopped step was paid',lambda c:c['derived_state']['budget_after'].update(compute=6),(True,False)),
+                                 ('nothing was paid',lambda c:c['derived_state']['budget_after'].update(compute=10),(True,False)),
+                                 ('the journal says completed',lambda c:c['derived_state']['historical_events'][-1].update(status='LOCAL_MODEL_EFFECTS_RECORDED'),(True,False)),
+                                 ('a candidate nobody made',lambda c:c['derived_state'].update(candidate_count=1),(True,False)),
+                                 ('the goal reads UNKNOWN against the stored row',lambda c:[r.update(goal_truth_after='UNKNOWN') for r in both(c)],(True,False)),
+                                 ('the effect reads UNKNOWN against the stored row',says(effect_reads='UNKNOWN'),(True,False)),
+                                 ('a row the packs left, changed',lambda c:c['derived_state']['facts']['orgA/enquiries|source_contract_reviewed'].update(truth='FALSE'),(True,False)),
+                                 ('a row the packs left, gone',lambda c:c['derived_state']['facts'].pop('orgA/enquiries|source_contract_reviewed'),(True,False)),
+                                 ("the row on the stopped step's effect, gone",lambda c:c['derived_state']['facts'].pop('orgA/enquiries|capability_candidate_created'),(True,False)),
+                                 ('that row gone, and what the run says it reads changed to agree',lambda c:(c['derived_state']['facts'].pop('orgA/enquiries|capability_candidate_created'),says(effect_reads='UNKNOWN')(c),[r.update(goal_truth_after='UNKNOWN') for r in both(c)]),(True,False)),
+                                 ('that row said to be unverified',lambda c:c['derived_state']['facts']['orgA/enquiries|capability_candidate_created'].update(verified=False),(True,False)),
+                                 ('a fact nobody wrote',lambda c:c['derived_state']['facts'].update({'orgA/enquiries|another_fact':{'predicate':'another_fact','truth':'TRUE','verified':True,'scope':'orgA/enquiries'}}),(True,False)),
+                                 ('a row turned away by a decision nobody made',lambda c:c['derived_state']['historical_events'].insert(0,{'status':'DECISION_STANDS','scope':'orgA/enquiries','predicate':'source_contract_reviewed'}),(True,False)),
+                                 ('words after Handler failed that are no name',says(reason='Handler failed: not a class name at all'),(False,True)),
+                                 ('a failed handler named in other letters',says(reason='Handler failed: CaféError'),(False,True)),
+                                 ('a kernel fault in several words',says(reason='Kernel fault: the owner said so'),(False,True)),
+                                 ('worded as a kernel fault, in front of its own gate row',lambda c:(says(reason='Kernel fault: KeyError')(c),moved(c)),(False,True)),
+                                 ('worded as a kernel fault, after the gate row of another step',lambda c:(says(reason='Kernel fault: KeyError')(c),[r['trace'][[e['operation'] for e in r['trace']].index('STEP_STOPPED')-1]['data'].update(methods=['validate-field@1']) for r in both(c)]),(False,True)),
+                                 ('its own gate row taken out',lambda c:[r['trace'].pop([e['operation'] for e in r['trace']].index('STEP_STOPPED')-1) for r in both(c)],(False,True)),
+                                 ('a row of a step after the stop row',lambda c:[r['trace'].insert(-1,dict(r['trace'][10])) for r in both(c)],(False,True)),
+                                 ('a settle row without a reason, before the plan is chosen',lambda c:[(r['trace'].insert(1,{'operation':'SETTLE_STOPPED','data':{'kind':'ask'}}),r.update(unsettled=['ask'])) for r in both(c)],(False,True))):
+            self.assertEqual(forged(change),want,name)
+        def rewritten(c):   # the stored row on the stopped step's effect replaced by one that reads UNKNOWN, and what the run says it reads changed to agree
+            c['derived_state']['facts']['orgA/enquiries|capability_candidate_created'].update(truth='UNKNOWN');says(effect_reads='UNKNOWN')(c);[r.update(goal_truth_after='UNKNOWN') for r in both(c)]
+        def ungated(c):   # worded as a kernel fault, its own gate row taken out: what a kernel fault before the gate looks like
+            for r in both(c):
+                t=r['trace'];i=[e['operation'] for e in t].index('STEP_STOPPED');del t[i-1];t[i-1]['data'].update(reason='Kernel fault: KeyError')
+        self.assertEqual((forged(earlier),forged(rewritten),forged(ungated),forged(says(reason='Handler refused: any other words'))),((True,True),)*4)   # the known limits: a run re-made consistently from end to end is not caught, nor a stored row on the effect of a stopped step changed together with what the run says it reads (that row is its handler's), nor a stop re-worded as a kernel fault before its gate, nor a handler's refusal re-worded (the verifier runs neither the kernel nor a handler; the chain holds no secret)
+        # Review round three: the limits are wider than the four above, and each is pinned here as the verifier behaves today (holding them needs new code: NEXT-GATES.md). A forgery
+        # re-made as a forger would: the run changed in both copies, its chain hashed again, the journal's row following; then the chain, the shape of the stop and the books.
+        registry=('simulate_fact','compile_candidate','emit_artifact','ask')   # the kinds the record names
+        def remade(change):
+            c=json.loads(json.dumps(honest))
+            for r in both(c):
+                change(r);prev='GENESIS'
+                for n,row in enumerate(r['trace']):row.update(seq=n+1,prev_sha256=prev);row['sha256']=v.sha({key:x for key,x in row.items() if key!='sha256'});prev=row['sha256']
+                r['trace_root_sha256']=prev
+            c['derived_state']['historical_events'][-1].update(status=c['outcome']['status'],trace_root_sha256=c['outcome']['trace_root_sha256'])
+            return v.check_chain(c['outcome']['trace']),v.stop_ok(c['outcome'],methods,registry),v.books_ok(c,methods,files)
+        at=lambda r:[e['operation'] for e in r['trace']].index('STEP_STOPPED')
+        def worded(reason):return lambda r:(r['trace'][at(r)]['data'].update(reason=reason),r['stopped'].update(reason=reason))
+        def completed(r):   # the stop re-told as a completed run: the stop row replaced by a STEP_ALREADY_TRUE row for the stopped step, its gate row taken out, pending and stopped gone, no book touched
+            i=at(r);mid=r['trace'][i]['data']['method'];r['trace'][i]={'operation':'STEP_ALREADY_TRUE','data':{'method':mid}};del r['trace'][i-1],r['pending'],r['stopped']
+            r['trace'][-1]['data']={'status':'LOCAL_MODEL_EFFECTS_RECORDED','work_state':'completed'};r.update(status='LOCAL_MODEL_EFFECTS_RECORDED',work_state='completed',skipped=[mid])
+        def unsettled(kind):return lambda r:(r['trace'].insert(-1,{'operation':'SETTLE_STOPPED','data':{'kind':kind,'reason':'unreadable'}}),r.update(unsettled=[kind]))
+        halted=honest['outcome']['stopped']['method'];reads=lambda fact:v.reading(honest['derived_state']['facts'],honest['outcome']['scope'],fact)
+        self.assertEqual((remade(lambda r:None),'component_validate' in methods[halted]['requires'],reads('component_validate'),reads(methods[halted]['effect'])),((True,True,True),True,'TRUE','FALSE'))   # honest; what the books read for a prerequisite of the stopped step and for its effect
+        for name,change in (('re-worded as a kernel fault, its gate row left in',worded('Kernel fault: KeyError')),('re-worded as a failed handler',worded('Handler failed: KeyError')),
+                            ('re-worded as a return that cannot be a receipt',worded('Handler returned what cannot be a receipt')),
+                            ('re-worded as a prerequisite of the stopped step that the stored rows read TRUE',worded('Prerequisite not true before effect: component_validate')),
+                            ("re-told as a completed run, although the stored row of the stopped step's effect reads FALSE",completed),
+                            ('a settle failure invented for a kind that has no settle hook',unsettled('compile_candidate'))):
+            self.assertEqual(remade(change),(True,True,True),name)   # known limits: a stop whose gate admitted the step can be given any other phrase of the list that is not a gate's; the facts a prerequisite stop names are held to the step's prerequisites, not to the books; a stop can be re-told as completed; a settle failure can be invented
+        self.assertEqual(remade(worded('Gate changed before effect: AUTHORITY_REQUIRED')),(True,False,True))   # a gate's phrase is the one such a stop cannot be given: its gate row says the step was admitted
+        # On case 30 itself the pinned line refuses a re-wording, but a case 30 re-told as completed gets no failed check: that line reads `stopped` before its check can refuse, and the
+        # verifier ends with KeyError. The lab's record made in memory as tools/run_all.py makes it (the lenses of tools/make_extra.py as empty shapes: the checks that read them fail, none raises).
+        from tools.run_all import ask_events
+        lenses={'knowledge_compiler':{'unreviewed_rule':{'rules':[{'approved':False}]},'reviewed_rule':{'rules':[{'approved':True}]}},'reflection':{'candidates':[]},'j2_projection':{'atoms':[]},'graph_diff_nuance':{'added':[]},'implementation_website':{'workflow':{'steps':[],'edges':[]}}}
+        record=json.loads(json.dumps({'kernel_sha256':'','baseline_v0_1_sha256':'','action_handlers':{},'cases':[scenario(x) for x in CASES],'events':extra_events(),'ask_events':ask_events(),'meta_extensions':lenses}))
+        c=[c for c in record['cases'] if c['id']=='30_stop'][0];r=c['outcome'];completed(r);prev='GENESIS'   # re-made as a forger would, every copy the record keeps updated
+        for n,row in enumerate(r['trace']):row.update(seq=n+1,prev_sha256=prev);row['sha256']=v.sha({key:x for key,x in row.items() if key!='sha256'});prev=row['sha256']
+        r['trace_root_sha256']=r['learning_record']['source_trace']=prev;c['derived_state']['historical_events'][-1].update(status=r['status'],trace_root_sha256=prev)
+        c['run']['runs'][0]=json.loads(json.dumps(r));c['four_views']['run']=json.loads(json.dumps(r['trace']))
+        try:v.inspect(record);where='no error'
+        except KeyError as error:
+            tb=error.__traceback__
+            while tb.tb_next:tb=tb.tb_next
+            where=(error.args,tb.tb_frame.f_code.co_name)
+        self.assertEqual(where,(('stopped',),'runs_ok'))   # the error is raised in runs_ok, by the line that pins case 30: every check before it took the forged run
+        # Review round two. The verifier took UNKNOWN for whatever a stopped run said its goal or its effect reads (the list above), refused two honest cases, held a kernel fault and a
+        # SETTLE_STOPPED row to no shape, and refused a prerequisite with the empty name. Cases made in memory as the lab makes its own:
+        P={'schema':'sutra-extension/2','providers':{'prov':9},'grants':['g']}
+        def case(packs,change=lambda c:None):   # the packs, one executed look at the standing goals, the books; then a change; then what the verifier says of the runs' stops and of the books
+            s=State.from_packs(packs);run=Kernel(s).run_standing(execute=True);table={m['id']:m for p in packs for m in p.get('methods',[])}
+            c=json.loads(json.dumps({'run':run,'outcome':run['runs'][0] if run['runs'] else None,'derived_state':{'facts':s.evidence,'candidate_count':len(s.candidates),'budget_after':s.budget,'historical_events':s.event_journal}}))
+            change(c);return all(v.stop_ok(r,table) for r in c['run']['runs']),v.books_ok(c,table,packs)
+        journal=lambda c:c['derived_state']['historical_events']
+        turned=[dict(P,id='p',goals=['g'],methods=[self._m('m','g')],evidence=[self._row('x','TRUE','1',final=True),self._row('x','FALSE','2')])]
+        self.assertEqual(case(turned),(True,True))   # honest: the journal holds the row the decision turned away, then the run's row
+        self.assertEqual(case(turned,lambda c:c['derived_state']['facts']['orgA/fulfillment|g'].update(truth='FALSE')),(True,True))   # a known limit: the stored row on the effect of a step that ran is its handler's to write, and is held to nothing
+        for name,change in (('the row turned away, taken out',lambda c:journal(c).pop(0)),('the row turned away, put after the run',lambda c:journal(c).reverse()),
+                            ('a row turned away on a fact that carries no decision',lambda c:journal(c).insert(1,{'status':'DECISION_STANDS','scope':'orgA/fulfillment','predicate':'g'})),
+                            ('the row turned away, with another status',lambda c:journal(c)[0].update(status='DECISION_LAPSED')),('the row turned away, with one field more',lambda c:journal(c)[0].update(note='x')),
+                            ('a second row for the run',lambda c:journal(c).append(dict(journal(c)[-1])))):
+            self.assertEqual(case(turned,change),(True,False),name)
+        def decides(s,m,mid,deps):s.observe(self._row(m['effect'],'FALSE','d1',final=True));return {}   # a kind that decides no on its own effect
+        self._kinds(test_v_decides=decides,test_v_no=_throw(Stop('no')))
+        twice=[dict(P,id='p',goals=['G'],methods=[self._m('a1','A','test_v_decides',cost=self.ZERO),self._m('a2','A',cost=self.ZERO),self._m('b','B',cost=self.ZERO,req=['A']),self._m('g','G',cost=self.ZERO,req=['A','B'])])]
+        s=State.from_packs(twice);r=Kernel(s).run_standing(execute=True)['runs'][0]
+        self.assertEqual((r['actions'],r['stopped'],[j['status'] for j in s.event_journal],case(twice)),   # honest: a plan with two methods for one fact; the first decides no, and the write of the second is turned away in the middle of the run
+                         (['a1'],{'method':'a2','reason':'Handler refused: A decision stands on this effect'},['DECISION_STANDS','STEP_STOPPED'],(True,True)))
+        for name,change in (('with another status',lambda c:journal(c)[0].update(status='DECISION_LAPSED')),('with one field more',lambda c:journal(c)[0].update(note='x')),('on a fact that carries no decision',lambda c:journal(c)[0].update(predicate='B'))):
+            self.assertEqual(case(twice,change),(True,False),name)   # the row turned away during the run is held to its three fields and to the decision on its fact
+        self.assertEqual(case(turned,lambda c:journal(c).insert(1,{'status':'DECISION_STANDS','scope':'orgA/fulfillment','predicate':'x'})),(True,True))   # and, a known limit, to nothing more: a row said to be turned away during a run passes when its fact carries a decision
+        made=[dict(P,id='p',goals=['g','h'],methods=[self._m('m','g'),self._m('n','h','compile_candidate',constructor='C')],constructors=[{'id':'C','components':['m'],'required_effects':['g'],'target_effect':'h'}])]
+        extra=lambda c:c['run']['runs'][-1]['candidates'].append({'id':'D','status':'PROPOSED_ONLY'})
+        self.assertEqual((case(made),case(made,extra),case(made,lambda c:(extra(c),c['derived_state'].update(candidate_count=2)))),((True,True),(True,False),(True,False)))   # honest: the candidate is made for the second goal, and the books count what the last run lists; a candidate no receipt cites is refused, counted or not
+        two=lambda goals:[dict(P,id='p',goals=goals,methods=[self._m('m','g','test_v_no'),self._m('n','h')],evidence=[self._row('g','FALSE','1')])]
+        said_true=lambda c:[r.update(goal_truth_after='TRUE') for r in c['run']['runs'] if r['goal']=='g']
+        self.assertEqual((case(two(['g','h'])),case(two(['g','h']),said_true),case(two(['h','g'])),case(two(['h','g']),said_true)),((True,True),(True,True),(True,True),(True,False)))   # a known limit: the books keep the facts as they stood at the end of the case, so a stopped run is held to what it says its effect and its goal read only when it is the case's last run
+        tries=[]
+        def second_time(s,m,mid,deps):   # refuses when it is first called and makes its effect when it is called again
+            tries.append(mid)
+            if len(tries)<2:raise Stop('not yet')
+            s.observe(self._row(m['effect'],'TRUE','1'));return {}
+        def wrote_then_failed(s,m,mid,deps):s.observe(self._row(m['effect'],'TRUE','1'));raise OSError('disk')
+        self._kinds(test_v_second=second_time,test_v_wrote=wrote_then_failed)
+        again=[dict(P,id='p',goals=['x','y'],methods=[self._m('e','E','test_v_second'),self._m('mx','x',req=['E']),self._m('my','y',req=['E'])])]
+        s=State.from_packs(again);runs=Kernel(s).run_standing(execute=True)['runs'];tries.clear()
+        self.assertEqual(([(r['status'],[e['data']['effect_reads'] for e in r['trace'] if e['operation']=='STEP_STOPPED']) for r in runs],s.fact('E')['truth'],case(again)),   # why it is so: honest, and the stop of the first run read UNKNOWN on a fact that the second run then made true
+                         ([('STEP_STOPPED',['UNKNOWN']),('LOCAL_MODEL_EFFECTS_RECORDED',[])],'TRUE',(True,True)))
+        self.assertEqual(case([dict(P,id='p',goals=['g'],methods=[self._m('m','g','test_v_wrote')])]),(True,True))   # honest: an effect a handler wrote before it failed stands, on the fact it was called to make, and the stop line reads it
+        def takes(s,m,mid,deps):s.budget['compute']-=1;s.observe(self._row(m['effect'],'TRUE','1'));return {}
+        def writes(s,m,mid,deps):s.observe(self._row(m['effect'],'TRUE','1'));s.observe(self._row('another_fact','TRUE','1'));return {}
+        def hoards(s,m,mid,deps):s.candidates['c']={'id':'c','status':'PROPOSED_ONLY'};s.observe(self._row(m['effect'],'TRUE','1'));return {}
+        def halts(s,m,mid,deps):s.candidates['c']={'id':'c','status':'PROPOSED_ONLY'};raise Stop('no')
+        def hides(s,m,mid,deps):s.observe(self._row(m['effect'],'TRUE','1'));s.methods.pop(mid);raise OSError('disk')
+        self._kinds(test_v_takes=takes,test_v_writes=writes,test_v_hoards=hoards,test_v_halts=halts,test_v_hides=hides)
+        for kind,why in (('test_v_takes','takes budget'),('test_v_writes','writes a fact that is not its own effect'),('test_v_hoards','stores a candidate its receipt does not cite'),
+                         ('test_v_halts','stores a candidate and then stops: the candidate stands on no receipt'),('test_v_hides','removes its own method and fails: the stop line says UNKNOWN for an effect that stands')):
+            self.assertEqual(case([dict(P,id='p',goals=['g'],methods=[self._m('m','g',kind)])]),(True,False),why)   # known limits: the verifier holds a case to the handler contract, so it refuses these records although the kernel made them
+        # the verifier's own copies of two kernel rules, held to the kernel: what packs leave in the books (the rows stored, the rows turned away), and what the stored rows make a fact read
+        row=self._row
+        packs=[dict(P,id='a',scope='orgA/x',evidence=[row('d','TRUE','1',final=True),row('d','FALSE','2'),row('u','TRUE','1',verified=False),row('e','TRUE','1',depends_on=[{'predicate':'d','version':'1'}]),
+                                                      row('f','TRUE','1',depends_on=[{'predicate':'e','version':'2'}]),row('n','TRUE',1,depends_on=[{'predicate':'d','version':'1'}]),row('n2','TRUE','1',depends_on=[{'predicate':'n','version':1.0}]),
+                                                      row('n3','TRUE','1',depends_on=[{'predicate':'n','version':1}]),row('c1','TRUE','1',depends_on=[{'predicate':'c2','version':'1'}]),row('c2','TRUE','1',depends_on=[{'predicate':'c1','version':'1'}]),
+                                                      row('q','UNKNOWN','1'),row('r','TRUE','1',depends_on=[{'predicate':'q','version':'1'}]),row('z','FALSE','1'),row('y','TRUE','1',depends_on=[{'predicate':'z','version':'1'}]),
+                                                      row('nv','TRUE',None),row('m1','TRUE','1',depends_on=[{'predicate':'nv'}]),row('m2','TRUE','1',depends_on=[{'predicate':'missing','version':'1'}]),row('m3','TRUE','1',depends_on=[{'predicate':'e','version':'1'}])]),
+               dict(P,id='b',scope='orgB/y',evidence=[row('d','FALSE','3'),row('h','TRUE','1',scope='orgA/x'),row('d','FALSE','9',scope='orgA/x'),row('d','TRUE','1',final=True,source='second',scope='orgA/x'),row('d','TRUE','7')])]
+        s=State.from_packs(packs);left,away=v.stored(packs);self.assertEqual((left,away,len(away),s.evidence['orgA/x|d']['source']),(s.evidence,s.event_journal,2,'second'))   # two rows turned away; a decision replaced by a decision
+        for scope in ('orgA/x','orgB/y'):
+            s.scope=scope
+            for key in list(s.evidence)+[scope+'|missing']:
+                fact=key.split('|',1)[1];self.assertEqual(v.reading(s.evidence,scope,fact),s.fact(fact)['truth'],(scope,fact))
+        self.assertEqual({f:v.reading(s.evidence,'orgA/x',f) for f in ('e','f','n','n2','n3','c1','q','r','z','y','m1','m2','m3','u','h')},   # a version that differs, 1 against 1.0, a circle, a row that reads UNKNOWN or FALSE below, no version on both sides, a row that is not there, a row that was never stored
+                         {'e':'TRUE','f':'UNKNOWN','n':'TRUE','n2':'UNKNOWN','n3':'TRUE','c1':'UNKNOWN','q':'UNKNOWN','r':'UNKNOWN','z':'FALSE','y':'UNKNOWN','m1':'TRUE','m2':'UNKNOWN','m3':'TRUE','u':'UNKNOWN','h':'TRUE'})
+        for text,needs,want in (('',['a',''],True),(' b',['a','','b'],True),('a ',['a',''],True),(' ',['',''],True),('a  b',['a','','b'],True),('',['a'],False),('a',['a','b'],True),('a b',['a','b'],True),
+                                ('b a',['a','b'],False),('a  b',['a','b'],False),('ab',['a','b'],False),('a,b',['a','b'],False),('two words b',['two words','b'],True),('c',['a','b'],False)):
+            self.assertEqual(v.said(text,needs),want,(text,needs))   # the facts a prerequisite stop names: some of the step's prerequisites, in order; a fact may have the empty name
+        def withdraws(s,m,mid,deps):
+            for p,t in ((m['effect'],'TRUE'),('','FALSE')):s.observe(self._row(p,t,'2'))
+            return {}
+        def loses(s,m,mid,deps):s.observe(self._row(m['effect'],'TRUE','1'));s.methods.pop('later');return {}
+        self._kinds(test_v_withdraws=withdraws,test_v_loses=loses)
+        w=self._world(['G'],[],[self._m('a','A','test_v_withdraws'),self._m('g','G',req=['A',''])],[('','TRUE')]);r=Kernel(w).run_standing(execute=True)['runs'][0]
+        self.assertEqual((r['stopped']['reason'],v.stop_ok(r,w.methods)),('Prerequisite not true before effect: ',True))   # the reason then names nothing, and is still the kernel's own
+        w=self._world(['e'],[('e',[['x','y']])],[self._m('first','x','test_v_loses'),self._m('later','y')]);table=dict(w.methods);r=Kernel(w).run_standing(execute=True)['runs'][0]
+        self.assertEqual((r['stopped']['reason'],self._ops(r)[-3:],v.stop_ok(r,table)),('Kernel fault: KeyError',['LOCAL_EFFECT','STEP_STOPPED','TERMINAL'],True))   # the exemption: a kernel fault before the step reached its gate stands right after a row of the plan
+        done=self._world(['G'],[],[self._m('m','G')]);ok=Kernel(done).run_standing(execute=True)['runs'][0];offered=Kernel(self._world(['G'],[],[self._m('m','G')])).run_standing()['runs'][0]
+        def settled(rows,run=ok,at=-1,kinds=None,**fields):   # a run with SETTLE_STOPPED rows put in, before its last row unless said otherwise
+            t=list(run['trace']);t[at:at]=[{'operation':'SETTLE_STOPPED','data':x} for x in rows];return v.stop_ok(dict(run,trace=t,**fields),done.methods,kinds)
+        one={'kind':'ask','reason':'KeyError'}
+        self.assertEqual([settled([one],unsettled=['ask']),settled([one],unsettled=['ask'],kinds={'ask':1}),settled([one,{'kind':'simulate_fact','reason':'unreadable'}],unsettled=['ask','simulate_fact'])],[True,True,True])
+        for name,got in (('a kind the registry does not have',settled([one],unsettled=['ask'],kinds={'simulate_fact':1})),('no reason',settled([{'kind':'ask'}],unsettled=['ask'])),
+                         ('a reason in two words',settled([{'kind':'ask','reason':'Key Error'}],unsettled=['ask'])),('one field more',settled([dict(one,note='x')],unsettled=['ask'])),
+                         ('one kind twice',settled([one,one],unsettled=['ask','ask'])),('not named under unsettled',settled([one])),('named in another order',settled([one,{'kind':'simulate_fact','reason':'KeyError'}],unsettled=['simulate_fact','ask'])),
+                         ('before the rows of the plan',settled([one],at=1,unsettled=['ask'])),('on a plan that was only offered',settled([one],run=offered,unsettled=['ask']))):
+            self.assertFalse(got,name)   # a SETTLE_STOPPED row is held to its two fields, its kind to the registry, its place to after the plan
+        dry=Kernel(self._world(['G'],[],[self._m('m','G',req=['absent'])])).run_standing()['runs'][0]   # review round three, a known limit: a settle failure can be invented for a kind that has no settle hook, and on a blocked look that was dry (the kernel settles on neither): the record says neither which kinds have a settle hook nor whether a blocked look was dry
+        self.assertEqual((dry['work_state'],settled([{'kind':'simulate_fact','reason':'KeyError'}],unsettled=['simulate_fact'],kinds={'simulate_fact':1}),settled([one],run=dry,unsettled=['ask'])),('blocked',True,True))
+        def drops_grant(s,m,mid,deps):s.grants.discard('g');s.observe(self._row(m['effect'],'TRUE','1'));return {}
+        def pops(s,m,mid,deps):s.providers.pop(m['provider']);return {}
+        def bad_settle(s,result,log):raise KeyError('books')
+        self._kinds(test_v_meddle=drops_grant,test_v_pops=pops,test_v_words=_throw(Stop('no room')),test_v_fail=_throw(OSError('disk')),test_v_none=lambda s,m,mid,deps:None,
+                    test_v_settle=(lambda s,m,mid,deps:{},{'settle':bad_settle}))
+        worlds={'Gate changed before effect: AUTHORITY_REQUIRED':self._world(['done'],[],[self._m('first','a','test_v_meddle'),self._m('second','done',req=['a'])]),
+                'Prerequisite not true before effect: approved':self._world(['shipped'],[('approved',[['manager_ok']])],[self._m('ship','shipped',req=['approved'])],[('manager_ok','TRUE')]),
+                'Handler refused: no room':self._world(['e'],[],[self._m('m','e','test_v_words')]),'Handler failed: OSError':self._world(['e'],[],[self._m('m','e','test_v_fail')]),
+                'Handler returned what cannot be a receipt':self._world(['e'],[],[self._m('m','e','test_v_none')]),'Kernel fault: KeyError':self._world(['e'],[],[self._m('m','e','test_v_pops')])}
+        for reason,w in worlds.items():   # every phrase the kernel can write is a phrase the verifier knows, with its gate row and its unsettled kinds
+            r=Kernel(w).run_standing(execute=True)['runs'][0];self.assertEqual((r['stopped']['reason'],r['unsettled'],v.stop_ok(r,w.methods)),(reason,['test_v_settle'],True),reason)
+            erased=dict(r,trace=[e for e in r['trace'] if e['operation']!='SETTLE_STOPPED']);del erased['unsettled'];self.assertTrue(v.stop_ok(erased,w.methods),reason)   # review round three, a known limit: a settle failure can be erased as well (its row and its name under unsettled taken out)
     def test_generator_shows_the_whole_plan_of_a_waiting_run_and_words_the_ask(self):
         s,k,r=self._asked();again=k.run_standing(execute=True)['runs'][0];dry=k.run_standing(execute=False)['runs'][0]
         answer(k,r['model_receipts'][0],'FALSE','customer')                                    # the books move on; the results below were made before

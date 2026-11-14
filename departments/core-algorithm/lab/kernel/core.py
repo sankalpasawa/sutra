@@ -29,6 +29,10 @@ def plain(v: Any, room: int = 16, left: list = None) -> Any:   # what is handed 
         if t is bool or v is None or (t is int and -BIG<v<BIG) or (t is float and v-v==0):return v   # v-v==0 leaves out NaN and the infinities
     raise ValueError('Not a plain JSON object')
 
+class Stop(Exception):pass   # a step that cannot run or was refused. A handler refuses in its own words by raising it with one text; Kernel._act records every stop of a step. A Stop that a hook raises is that hook's own error: from check or plan it reaches the caller, from settle it is that kind's SETTLE_STOPPED line
+def _named(e) -> str:   # an error's class by the name Python holds for it, read from the type itself so that no code of the class runs; a name that is not plain (exact text of ASCII letters, digits and underscores that does not start with a digit; the empty name is not plain) is 'unreadable'. Never the message of the error
+    n=type.__dict__['__name__'].__get__(type(e));return n if type(n) is str and n.isascii() and n.isidentifier() else 'unreadable'
+
 
 ACTIONS: dict = {}   # action kind -> {'run': handler(state, method, method_id, deps) -> receipt detail, plus optional hooks}. Reviewed code registers; packs cannot.
 def register(kind: str, **hooks):   # hooks are reviewed code like handlers. check(method): refuse a malformed method by raising when its pack is applied.
@@ -38,13 +42,13 @@ def register(kind: str, **hooks):   # hooks are reviewed code like handlers. che
         ACTIONS[kind]=dict(hooks,run=fn);return fn
     return add
 
-def _amount(v) -> bool:   # a whole number that is not negative (fractions drift between admission and the step-by-step gate; NaN poisons a budget)
-    return type(v) is int and v>=0
+def _amount(v) -> bool:   # a whole number, not negative and below 10**18, so no sum the kernel makes of amounts outgrows what every Python prints (fractions drift between admission and the step-by-step gate; NaN poisons a budget)
+    return type(v) is int and 0<=v<10**18
 
 @register('simulate_fact')
 def _simulate_fact(s, m, mid, deps):
     if not s.observe({'predicate':m['effect'],'truth':'TRUE','verified':True,'source':f'LOCAL_MODEL:{mid}','version':'local-sim-1',
-                      'evidence_kind':'SIMULATED_LOCAL', 'depends_on':deps}):raise RuntimeError('A decision stands on this effect')
+                      'evidence_kind':'SIMULATED_LOCAL', 'depends_on':deps}):raise Stop('A decision stands on this effect')
     return {'model_effect':m['effect']}
 
 
@@ -65,7 +69,6 @@ class State:
     loaded: list[dict] = field(default_factory=list)
     event_journal: list[dict] = field(default_factory=list)
     active_work: dict[str, dict] = field(default_factory=dict)   # the books each kind keeps between runs (kind -> its entries)
-    goal_history: list[dict] = field(default_factory=list)
     actions: dict = field(default_factory=lambda: {k:dict(v) for k,v in ACTIONS.items()})   # the registry as it stood when this State was built
 
     def apply(self, pack: dict) -> None:
@@ -158,8 +161,8 @@ class State:
     def observe(self, row:dict)->bool:
         row=plain(row);deps=row.get('depends_on',[]);scope=row.get('scope',self.scope)   # the State's own plain copy, made before any check reads it
         if (row.get('truth') not in ('TRUE','FALSE','UNKNOWN') or not isinstance(row.get('predicate'),str) or not isinstance(deps,list)
-                or any(not isinstance(d,dict) or not isinstance(d.get('predicate'),str) for d in deps) or not isinstance(scope,str) or not scope or '|' in scope
-                or type(row.get('verified',False)) is not bool or type(row.get('final',False)) is not bool or isinstance(row.get('version'),(dict,list,bool))):   # a version is a name or a number
+                or any(not isinstance(d,dict) or not isinstance(d.get('predicate'),str) or isinstance(d.get('version'),(dict,list,bool)) for d in deps) or not isinstance(scope,str) or not scope or '|' in scope
+                or type(row.get('verified',False)) is not bool or type(row.get('final',False)) is not bool or isinstance(row.get('version'),(dict,list,bool))):   # a version is a name or a number: the row's own and each one it rests on
             raise ValueError('Invalid observation')
         if row.get('final') and (row['truth']=='UNKNOWN' or deps):
             raise ValueError('A decision is a TRUE or FALSE row that rests on nothing else')
@@ -272,33 +275,38 @@ class Kernel:
         a=self.cost(p);b=self.cost(q)
         return all(a[k]<=b[k] for k in a) and any(a[k]<b[k] for k in a)
 
+    def _step(self, mid, m):   # one step: the gate, the handler's effect, the kernel's receipt and its line in the record, the payment. What stops it raises Stop with a phrase from the closed list; a fault of the kernel's own lines here leaves as its own error, and _act words it
+        if (gate:=self.admissible(self._single(actions=[mid]))):raise Stop('Gate changed before effect: '+' '.join(gate))
+        if (missing:=[p for p in m.get('requires',[]) if self.s.fact(p)['truth']!='TRUE']):raise Stop('Prerequisite not true before effect: '+' '.join(missing))
+        deps=[{'predicate':pre,'version':self.s.fact(pre).get('version')} for pre in m.get('requires',[])];run=self.s.actions[m['action']]['run']
+        try:detail=run(self.s,m,mid,deps)   # the effect is the handler's; the gate above and the record below are the kernel's
+        except Exception as e:raise Stop('Handler refused: '+e.args[0].encode('utf-8','backslashreplace').decode() if type(e) is Stop and len(e.args)==1 and type(e.args[0]) is str else 'Handler failed: '+_named(e)) from None   # its own words only when it raised Stop with one text
+        try:
+            detail=plain(detail)   # rebuilt as plain data like everything that is handed in: no code of the handler runs after it returned
+            if set(detail)&{'method','scope','action','status','sha256'}:raise ValueError
+        except ValueError:raise Stop('Handler returned what cannot be a receipt') from None
+        rec={'method':mid,'scope':self.s.scope,'action':m['action'],'status':'LOCAL_ONLY',**detail};rec['sha256']=digest(rec)
+        left={d:self.s.budget[d]-v for d,v in m.get('cost',{}).items()};slot={p:self.s.providers[p]-1 for p in [m.get('provider')] if p}   # every entry is read before one is written: a step is paid in full or not at all
+        self.log('LOCAL_EFFECT',receipt=rec);self.s.budget.update(left);self.s.providers.update(slot)   # paid after its receipt is in the record: a stopped step is never paid
+        return rec
+
     def _act(self, plan):
         receipts=[]
         for mid in plan['actions']:
-            m=self.s.methods[mid];seen=self.s.fact(m['effect'])
-            if seen['truth']=='TRUE':   # already true at its turn (an earlier step brought its row back): nothing to make, nothing to pay, one line in the record
-                self.log('STEP_ALREADY_TRUE',method=mid,effect=m['effect'],source=seen.get('source'),version=seen.get('version'));continue
-            only=self._single(actions=[mid])
-            if self.admissible(only):
-                raise RuntimeError('Gate changed before effect')
-            action=m['action']
-            deps=[{'predicate':pre,'version':self.s.fact(pre).get('version')} for pre in m.get('requires',[]) if self.s.fact(pre)['truth']=='TRUE']
-            if any(self.s.fact(p)['truth']!='TRUE' for p in m.get('requires',[])):
-                raise RuntimeError('Prerequisite not true before effect')
-            detail=self.s.actions[action]['run'](self.s,m,mid,deps)   # the effect is the handler's; the gate above and the record below are the kernel's
-            if set(detail)&{'method','scope','action','status','sha256'}:
-                raise RuntimeError('A handler may not set the receipt fields')
-            for dim,v in m.get('cost',{}).items():self.s.budget[dim]-=v
-            if m.get('provider'):self.s.providers[m['provider']]-=1
-            rec={'method':mid,'scope':self.s.scope,'action':action,'status':'LOCAL_ONLY',**detail}
-            rec['sha256']=digest(rec)
-            self.log('LOCAL_EFFECT',receipt=rec)
-            receipts.append(rec)
-            if detail.get('parked'):break   # the step parked (its effect is pending): nothing after it runs
+            try:
+                m=self.s.methods[mid];seen=self.s.fact(m['effect'])
+                if seen['truth']=='TRUE':   # already true at its turn (an earlier step brought its row back): nothing to make, nothing to pay, one line in the record
+                    self.log('STEP_ALREADY_TRUE',method=mid,effect=m['effect'],source=seen.get('source'),version=seen.get('version'));continue
+                receipts.append(self._step(mid,m))
+            except Exception as e:   # a step that stops is an outcome, not an exception: one line in the record, and the run ends here
+                try:reads=self.s.fact(self.s.methods[mid]['effect'])['truth']
+                except Exception:reads='UNKNOWN'   # the effect cannot be read (its method is gone, say): the line is written all the same
+                self.log('STEP_STOPPED',method=mid,reason=e.args[0] if type(e) is Stop else 'Kernel fault: '+_named(e),effect_reads=reads);break
+            if receipts[-1].get('parked'):break   # the step parked (its effect is pending): nothing after it runs
         return receipts
 
     def resolve(self, goal:str, execute=False)->dict:
-        if type(goal) is not str:raise ValueError('A goal is a name')
+        if type(goal) is not str or type(execute) is not bool:raise ValueError('A goal is a name, and execute is true or false')
         self.events=[];self.log('GOAL_ACCEPTED',goal=goal,scope=self.s.scope)
         plans, blockers=self.expand(goal,root=True)
         eligible=[]
@@ -325,7 +333,11 @@ class Kernel:
                 skipped=[e['data']['method'] for e in self.events if e['operation']=='STEP_ALREADY_TRUE']
                 result.update(status='LOCAL_MODEL_EFFECTS_RECORDED' if ran else 'SUPPORTED_BY_EVIDENCE',work_state='completed',actions=ran,cost=self.cost({'actions':ran}),**({'skipped':skipped} if skipped else {}))
                 # Results are not independently certified external business outcomes.
-                if receipts and receipts[-1].get('parked'):   # a step parked: only what ran is reported; the rest of the plan is pending
+                stop=next((e['data'] for e in self.events if e['operation']=='STEP_STOPPED'),None)
+                if stop:   # a step stopped: what ran is reported and paid; the stopped step and the rest of the plan are pending
+                    result.update(status='STEP_STOPPED',work_state='stopped',pending=selected['actions'][selected['actions'].index(stop['method']):],
+                                  goal_truth_after=self.s.fact(goal)['truth'],stopped={'method':stop['method'],'reason':stop['reason']})
+                elif receipts and receipts[-1].get('parked'):   # a step parked: only what ran is reported; the rest of the plan is pending
                     result.update(status='WAITING',work_state='waiting',pending=selected['actions'][selected['actions'].index(ran[-1])+1:],
                                   goal_truth_after=self.s.fact(goal)['truth'],waits=[ran[-1]])
                 else:result['goal_truth_after']='MODEL_DERIVABLE_NOT_EXTERNAL_PROOF' if ran else self.s.fact(goal)['truth']
@@ -333,9 +345,10 @@ class Kernel:
             status=next((x for x in self.RANK if x in blockers),'METHOD_ABSENT')
             self.log('BLOCK',reason=status,all_reasons=sorted(set(blockers)))
             result.update(status=status,pareto_options=0)
-        if execute:   # each kind settles its own books inside this run's hash chain
-            for kind in self.s.actions.values():
-                if kind.get('settle'):kind['settle'](self.s,result,self.log)
+        if execute:   # each kind settles its own books inside this run's hash chain; a kind whose settle fails is named, and the others still settle
+            for name,kind in list(self.s.actions.items()):   # a list: a hook that changes the registry does not end the settling
+                try:kind.get('settle') and kind['settle'](self.s,result,self.log)
+                except Exception as e:self.log('SETTLE_STOPPED',kind=name,reason=_named(e));result.setdefault('unsettled',[]).append(name)
         result['candidates']=copy.deepcopy(list(self.s.candidates.values()))
         self.log('TERMINAL',status=result['status'],work_state=result['work_state'])
         result['trace']=list(self.events)
@@ -343,10 +356,10 @@ class Kernel:
         result['claim']='LOCAL_REFERENCE_ONLY; never external success or current J2 implementation'
         self.s.event_journal.append({'goal':goal,'scope':self.s.scope,'status':result['status'],
                                     'trace_root_sha256':result['trace_root_sha256']})
-        self.s.goal_history.append({'goal':goal,'status':result['status'],'actions':list(result['actions'])})
         return result
 
     def on_event(self, observation:dict, execute=False):
+        if type(execute) is not bool:raise ValueError('execute is true or false')   # refused before the row is stored
         observation=plain(observation)
         if not self.s.observe(observation):   # ignored as unverified, or turned away by a standing decision (State.observe wrote that journal row); a malformed row is refused, as in a pack
             return {'status':'DECISION_STANDS' if observation.get('verified') else 'UNVERIFIED_EVENT_IGNORED','affected':[],'runs':[]}
@@ -369,5 +382,6 @@ class Kernel:
                 'runs':[self.resolve(g,execute=execute) for g in affected]}
 
     def run_standing(self,execute=False):
+        if type(execute) is not bool:raise ValueError('execute is true or false')
         return {'status':'EVALUATED' if self.s.goals else 'NO_STANDING_GOAL',
                 'goals':list(self.s.goals),'runs':[self.resolve(g,execute=execute) for g in self.s.goals]}

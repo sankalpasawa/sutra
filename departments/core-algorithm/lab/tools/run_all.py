@@ -42,6 +42,7 @@ CASES=[
  ('27_registrable_generated','Generated work meets the standard','The workflow the implementation generator emits passes the same standard on evidence alone.',['60_standard_goal','61_standard_theory','64_generated_evidence'],True,'Standards'),
  ('28_website','A chain of four methods','A website: plan, write, build, check. The methods are authored out of order; the plan comes out in dependency order.',['70_site_goal','71_site_theory','72_site_methods'],False,'Ordering'),
  ('29_ask','A human ask','The approval is unknown and a reviewed method may ask for it: the run asks once, waits, and ships nothing.',['00_goal','01_domain','02_methods','04_admission','80_ask_method'],True,'Asks'),
+ ('30_stop','A step that cannot run',"The builder's last step names a constructor that no pack declares: three steps run, the fourth stops, and the run says where and why instead of ending in an error.",['30_build_goal','31_build_theory','82_components_without_constructor'],True,'Stops'),
 ]
 ASK=['00_goal','01_domain','02_methods','04_admission','80_ask_method']
 
@@ -110,7 +111,7 @@ def extra_events():
 def build():
     handlers={kind:{'module':fn.__module__,'file':str(Path(sys.modules[fn.__module__].__file__).resolve().relative_to(ROOT)),
                      'sha256':hashlib.sha256(Path(sys.modules[fn.__module__].__file__).read_bytes()).hexdigest()} for kind,fn in sorted((k,h['run']) for k,h in ACTIONS.items())}
-    result={'release':'sutra-kernel-extensions/0.8.0-ask','action_handlers':handlers,
+    result={'release':'sutra-kernel-extensions/0.9.0-stop','action_handlers':handlers,
             'kernel_sha256':hashlib.sha256((ROOT/'kernel'/'core.py').read_bytes()).hexdigest(),
             'baseline_v0_1_sha256':hashlib.sha256((ROOT/'release'/'baseline_v0_1_core.py').read_bytes()).hexdigest(),
             'scope':'finite synthetic deterministic local simulation; NOT historical Core, current J2, or external outcomes',

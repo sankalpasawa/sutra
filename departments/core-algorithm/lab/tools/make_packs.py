@@ -140,6 +140,8 @@ pack('81_made_again',scope='orgA/quotes',goals=['order_shipped'],budget={'comput
      methods=[method('prepare-quote@1','quote_ready'),method('assume-approval@1','quote_approved',['quote_ready'],cost={'compute':3,'money':3,'attention':0}),
               method('ship-quoted@1','order_shipped',['quote_ready','quote_approved'])],
      providers={'local-provider':6},grants=['action:prepare-quote@1','action:assume-approval@1','action:ship-quoted@1'])
+# A step that cannot run (the recorded stop): the builder's components without the constructor its last step names. The dry look cannot tell; the executed look stops at that step, on the record.
+_c=json.loads((P/'32_builder_components.json').read_text());pack('82_components_without_constructor',**{k:v for k,v in _c.items() if k not in ('schema','id','constructors')})
 # Fourth domain (0.6.0-order): a website for an organisation. A chain of four methods; the plan must come out in order.
 pack('70_site_goal',scope='orgA/website',goals=['site_live'],budget={'compute':10,'money':5,'attention':3},
      preference=['attention','money','compute'])
