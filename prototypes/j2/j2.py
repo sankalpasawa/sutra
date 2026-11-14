@@ -156,8 +156,6 @@ AUTO_ASK = {"send_confirm", "real_run"}
 AUTO_CAP = int(os.getenv("J2_AUTO_CAP") or 6)
 AUTO_ASSUME = ("Decide for me: go with sensible, typical choices for anything I haven't told you, "
                "and list them as assumptions I can check later.")
-AUTO_FINISH = re.compile(r"^\s*(?:finish|ship|stop)\b", re.I)      # "Finish as it is: ..." (a "leave out" option can say "stays as it is")
-AUTO_SIMPLE = re.compile(r"\bkeep it simple\b|\bwithout\b|\bno extra\b|\bskip\b|\bleave (?:it|this) out\b|^no\b", re.I)
 
 
 STAGE_SKILLS = {s["id"]: s["skill"] for s in j2_realization.load_stages() if s.get("skill")}      # stage -> persona file
@@ -256,28 +254,20 @@ def item_min(criterion):
     return RATES.get(item_kind(criterion), 0)
 
 
-# Leaving items out for budget: the no-errors gate and the brief's core facts always stay in. Identity marks core
-# items at J2.a (goal["core_items"]); the keywords are only the fallback for a charter without that mark.
+# Leaving items out for budget: the no-errors gate and the items Identity marked core at J2.a (goal["core_items"])
+# always stay in. A charter without that mark has no core items but the gate.
 NO_ERRORS_GATE = re.compile(r"\b(?:javascript|js) errors\b", re.I)    # the gate item names JavaScript errors
 GATE_TEXT = ("The page has no JavaScript errors, no horizontal overflow at 360px and 1280px, and every in-page link "
              "points to an existing section.")     # fixed by code at J2.a: Identity never adds features to it
-CORE_FACT = re.compile(r"\bprices?\b|\bhours\b|timings?|address|location|\bmaps?\b|contact|whatsapp|e-?mail|"
-                       r"phone number|\bcall\b|\border", re.I)
 BUDGET_TALK = re.compile(r"budget|\bcosts?\b|afford|expensive|cheap|\bcut|\bdrop|leave (?:\w+ )?out|fund|credits?\b|"
                          r"\bunits?\b|rate[- ]card|minimums?", re.I)
 
 
 def must_keep(criterion, goal):
-    """True for a done-when item that can't be left out for budget: the no-errors gate, or a core fact from the brief
-    (business name and location, contact details, prices, hours, ordering). Identity's mark from J2.a decides; a
-    charter without it falls back to keywords."""
-    g, c = goal or {}, str(criterion)
-    if NO_ERRORS_GATE.search(c):
-        return True
-    if "core_items" in g:
-        return c in g["core_items"]
-    name = str(g.get("site_name") or "").lower()
-    return bool(CORE_FACT.search(c) or (name and name in c.lower()))
+    """True for a done-when item that can't be left out for budget: the no-errors gate, or an item Identity marked
+    core at J2.a. No word of the item decides it."""
+    c = str(criterion)
+    return bool(NO_ERRORS_GATE.search(c)) or c in ((goal or {}).get("core_items") or [])
 
 
 def granted(w):
@@ -2228,6 +2218,10 @@ def guess_type(text):
     return next((t for t, pat in BUSINESS_TYPES if re.search(pat, text, re.I)), "business")
 
 
+MOCK_CORE = re.compile(r"\bprices?\b|\bhours\b|timings?|address|location|\bmaps?\b|contact|whatsapp|e-?mail|"
+                       r"phone number|\bcall\b|\border", re.I)     # the mock Identity's core marks (mock only)
+
+
 def mock_charter(text):
     t = text.lower()
     m = re.search(r"\b(?:for|called)\s+([A-Z][\w']*(?:\s+[A-Z][\w']*)*)", text)
@@ -2254,7 +2248,7 @@ def mock_charter(text):
             "site_name": name, "audience": "Local customers, mostly on phones",
             "standards": ["Warm, modern feel", "Fast first screen on a phone"],
             "rules": ["Plain HTML/CSS/JS in one file", "No real customer data"],
-            "done_when": items, "core": [bool(CORE_FACT.search(d)) for d in items], "to_be_confirmed": [],
+            "done_when": items, "core": [bool(MOCK_CORE.search(d)) for d in items], "to_be_confirmed": [],
             "dropped_from_brief": [], "facts": [name] if name in text else [],
             "business_type": guess_type(text), "visitor_needs": NEEDS.get(guess_type(text), [])}
 
@@ -4088,13 +4082,12 @@ class J2Run:
     # Every Identity call gets this: anything Identity writes to the Requester must read plainly at the source.
     # (The Simple view's word list is only a fallback.) Messages to other agents keep their precise terms.
     PLAIN_TO_REQUESTER = (
-        "\nWHEN YOU WRITE TO THE REQUESTER (any say addressed to them, any question or option for them): they are a "
-        "college student with no tech background. Use everyday words. Never use internal terms: charter, done-when, "
-        "checklist, standards, reserve, fix, effort, budget, units, workflow, cycle, finding, audit, ruling, envelope, "
-        "content types such as \"warmth content\", or the names of the functions (Identity, Adaptation, Priority, "
-        "Coordination, Audit). At most two short sentences of context. Each option says what they get and what it costs, "
-        "in plain words, e.g. \"Add a gallery of past work (takes a bit longer)\" / \"Keep it simple, no gallery\". "
-        "No recommendation.")
+        "\nWHEN YOU WRITE TO THE REQUESTER (any say addressed to them, any question or option for them): write in plain, "
+        "everyday words for someone outside the team. Never use internal terms: charter, done-when, checklist, "
+        "standards, reserve, fix, effort, budget, units, workflow, cycle, cap, estimate, finding, audit, ruling, envelope, "
+        "or the names of the functions (Identity, Adaptation, Priority, Coordination, Audit). At most two short "
+        "sentences of context. Each option says what they get and what it costs. Who the Requester is, and who the "
+        "work is for, come only from the brief and the Requester's answers.")
     MOCK_REASON = "Scripted mock reply: no model reasoning."
 
     REPLY_DEFAULTS = ("Thanks, got it. We're working on it now.", "Go ahead with the Requester's latest answer.")
@@ -4401,15 +4394,12 @@ class J2Run:
                       "options": [self._requester_noun(requester_words(o, src) or o) for o in q.get("options") or []]}
                      for q in questions]
         if gaps is not None:
-            # At most 2 sentences, then the full list, one gap per line; the header's counts add up to the list.
-            say = " ".join(re.split(r"(?<=[.!?])\s+", say)[:2])
-            say += gap_list(gaps, gaps_title)
+            say += gap_list(gaps, gaps_title)     # the full list, one gap per line; the header's counts add up to it
         if len(questions) > 1:
             # One question per message: several become one list of what to send (options can't be kept).
             items = [re.sub(r"[?.]$", "", q["question"].strip()) for q in questions]
             questions = [{"question": "Please send these: " + "; ".join(items) + "."}]
-        questions = [{**q, "options": q.get("options", [])[:3],
-                      **({"budget": q["budget"][:3]} if q.get("budget") else {})} for q in questions]
+        questions = [{**q, "options": q.get("options") or []} for q in questions]
         if kind != "limit":
             # Adding budget is offered only by the decision question (_identity_limit), whose options code builds
             # and applies. Approval and ruling_budget apply their own amount after the answer.
@@ -4502,15 +4492,15 @@ class J2Run:
         choices, listed as assumptions. (text sent as the answer, plain label, option number or None)"""
         if p["kind"] in ("approval", "ruling_budget"):
             return "Yes, approve it.", "Yes, go ahead", None
-        qs = p.get("questions") or []
+        qs, ho = p.get("questions") or [], p.get("handoff") or {}
         opts = (qs[0].get("options") or []) if len(qs) == 1 else []
         if opts:
             k = 1
-            if p["kind"] == "conflict":      # something beyond the agreed plan: stay with the plan (the simpler option)
-                k = next((i + 1 for i, o in enumerate(opts) if AUTO_SIMPLE.search(str(o))), 1)
+            if p["kind"] == "conflict" and 1 <= as_int(ho.get("plan_option")) <= len(opts):
+                k = as_int(ho["plan_option"])      # the option Identity marked as staying with the agreed plan
+            choices = ho.get("choices") or []
             if p["kind"] == "limit" and any(a["kind"] == "limit" for a in self.auto_log):
-                k = next((i + 1 for i, o in enumerate(opts) if AUTO_FINISH.search(str(o))),
-                         next((i + 1 for i, o in enumerate(opts) if re.search(r"\bas it is\b", str(o), re.I)), len(opts)))
+                k = choices.index("ship") + 1 if "ship" in choices and len(choices) == len(opts) else len(opts)
             return f"Option {k}", str(opts[k - 1]), k
         return AUTO_ASSUME, "Go with sensible choices", None
 
@@ -5206,8 +5196,8 @@ class J2Run:
         to J2_TEST_EMAIL only. It is a deed atom (verb do) whose parent is the goal it reports. An email never stops the
         run: when the credits can't cover it, it is skipped and the reason recorded. True when the run paused to ask the
         Requester before its first live email (r, Identity's reply, comes back with the answer)."""
-        said = [self.request] + [x["answer"] for x in self.intake]
-        if os.getenv("J2_MILESTONE_EMAILS", "0") != "1" and not j2_send.asks_updates(*said):
+        first = (self.stage_archive[0]["goal"] if self.stage_archive else self.goal) or {}
+        if os.getenv("J2_MILESTONE_EMAILS", "0") != "1" and first.get("email_updates") is not True:
             return
         kind = self.stage_kind or self.output
         tag = self.GOAL_TAGS.get(kind) or (j2_types.info(kind)["label"] if is_page(kind) else None)
@@ -5343,9 +5333,13 @@ class J2Run:
                                "to_agents": "@Adaptation Charter recorded from the brief"
                                       + (" and the Requester's answers." if self.intake else "; it had enough to work."),
                                "enough": True, "next": "Adaptation", "goal": mock_charter(text)})
+        said = " ".join([self.request] + [x["answer"] for x in self.intake])
+        mock_reply = mock
+        mock = lambda: json.dumps({**json.loads(mock_reply()), "email_updates": j2_send.asks_updates(said)})   # mock only
         r = self.call("identity", '{"say": str (when you ask: to the Requester), ' + REPLY_FMT + ' (when enough is '
                       'true), "enough": bool, "questions": [{"question": str, "options": [str] '
-                      '(0-4)}] (when enough is false), "goal": ' + self.out.get("charter_fmt", self.CHARTER_FMT)
+                      '(0-4)}] (when enough is false), "email_updates": bool (true only when the Requester asked to get '
+                      'progress updates by email), "goal": ' + self.out.get("charter_fmt", self.CHARTER_FMT)
                       + f'|null (when enough is true; done_when has at least {self.out["min_done_when"]} item(s)), '
                       + next_field(("user", "adaptation"), "Requester when you ask; Adaptation once the charter is "
                                    "recorded") + "}",
@@ -5358,7 +5352,7 @@ class J2Run:
                       "dental clinic: services, prices, appointments). Don't assume: unless the brief already says what "
                       "visitors must see or do, list what you think they need in one question and ask the Requester to "
                       "confirm or change it. Record business_type and the confirmed visitor_needs in the charter.\n"
-                      "- Not enough: set enough=false and ask the Requester 1-4 specific questions about what the brief "
+                      "- Not enough: set enough=false and ask the Requester specific questions about what the brief "
                       "leaves open (what the site is for, who it serves, what visitors must be able to see or do, hard "
                       "rules). Offer options only for a choice between known alternatives. Don't ask about cost.\n"
                       "- Enough: set enough=true and record the charter from the brief and the Requester's answers only. "
@@ -5371,8 +5365,8 @@ class J2Run:
                       "three items; \"a form asking for name, email and phone\" is one). Content facts only the "
                       "Requester knows (phone numbers, prices, addresses) are questions for the Requester: ask for them. "
                       "Only if the Requester has said they can't supply a fact yet, record it in to_be_confirmed with the "
-                      "number of the done-when item it blocks: that item is not met until they confirm it. Done-when "
-                      "may not refer to the Requester, Audit, verification, approval or launch. Keep everything the brief "
+                      "number of the done-when item it blocks: that item is not met until they confirm it. "
+                      "Keep everything the brief "
                       "asks for; if the charter leaves any of it out, list it in dropped_from_brief with the reason. "
                       "Don't plan costs or resources.") + (SITE_LATER.format(page=self._page_word()) if self.docset and not self.doc and not change else "")
                       + ("\nRecord the charter now (enough=true) from what you have." if last else ""), mock,
@@ -5382,6 +5376,8 @@ class J2Run:
         if not r.get("enough") and not last and qs:
             return self._ask_user(r.get("say", ""), qs, "info", handoff={"kind": "intake", "change": change, "mark": mark})
         goal = r.get("goal") if isinstance(r.get("goal"), dict) else None
+        if goal and (r.get("email_updates") is True or (self.goal or {}).get("email_updates")):
+            goal["email_updates"] = True      # recorded only when asked for, so other charters stay as they were
         if not goal:
             self._event("identity", "invalid_move", "J2.a reply had neither questions nor a charter")
             if not last:
@@ -5520,8 +5516,9 @@ class J2Run:
                   'final position), ' if proposal else '')
                + '"instruction": str (what happens next, one sentence)'
                + ('' if answer else ', "user_question": {"question": str, "options": [str] (2-4, each text with its '
-                  'consequence and risk; no recommendation; never adding budget, leaving items out or finishing as '
-                  'is: only code offers those)}|null') + "}")
+                  'consequence and risk; never adding budget, leaving items out or finishing as is: only code offers '
+                  'those), "plan_option": int|null (the number of the option that stays with the plan already agreed, '
+                  'if one does)}|null') + "}")
         attempts = "\n".join(f"  attempt {x['n']} {NAMES[x['who']]}: {x['text']}" for x in c["attempts"])
         task = (f"CONFLICT {c['id']} ({TOPICS[c['topic']]}) between {NAMES[a]} and {NAMES[b]}: {c['subject']}\n"
                 f"{c.get('detail') or ''}\nTHEIR ATTEMPTS:\n{attempts}\n"
@@ -5561,7 +5558,7 @@ class J2Run:
                                "resolved": False, "ruling": None, "instruction": "", "user_question": {
                                    "question": "Do you want a section about your coffee's story?",
                                    "options": ["Add a section about your coffee's story (takes a bit longer)",
-                                               "Keep it simple, no story section"]}})
+                                               "Keep it simple, no story section"], "plan_option": 2}})
         r = self.call("identity", fmt, task, mock)
         ruling = key(r.get("ruling"))
         c["identity"].append({"say": r.get("to_agents") or r.get("say"), "clause": r.get("clause"), "resolved": bool(r.get("resolved")),
@@ -5572,7 +5569,8 @@ class J2Run:
             return self._apply(c, ruling, r)
         if not answer:
             q = clean_questions([r.get("user_question")]) if isinstance(r.get("user_question"), dict) else []
-            if not q or len(q[0]["options"]) < 2:
+            own = bool(q and len(q[0]["options"]) >= 2)
+            if not own:
                 self._event("identity", "invalid_move", f"{c['id']}: no decision-ready question; code offered both "
                                                         "final positions")
                 q = [{"question": f"{NAMES[a]} and {NAMES[b]} disagree about {c['subject']}, and the charter doesn't "
@@ -5580,7 +5578,11 @@ class J2Run:
                       "options": [f"{NAMES[a]}'s: {brief_list(pos[a])}", f"{NAMES[b]}'s: {brief_list(pos[b])}"]}]
             c["user_question"], c["escalated_to_user"] = q[0], True
             self._save_conflicts()
-            return self._ask_user(r.get("to_requester") or r.get("say", ""), q, "conflict", handoff={"kind": "resolve", "conflict": c["id"]},
+            # Decide for me takes the option Identity marked as staying with the plan (none on code's fallback question)
+            plan = as_int((r.get("user_question") or {}).get("plan_option")) if own else 0
+            plan = plan if 1 <= plan <= len(q[0]["options"]) else None
+            return self._ask_user(r.get("to_requester") or r.get("say", ""), q, "conflict",
+                                  handoff={"kind": "resolve", "conflict": c["id"], **({"plan_option": plan} if plan else {})},
                                   conflict=c["id"])
         self._event("identity", "invalid_move", f"{c['id']}: no ruling after the Requester's answer")
         self.post("system", f"Identity didn't rule on {c['id']} after the Requester answered. The default for "
@@ -5595,7 +5597,7 @@ class J2Run:
         frm = h.get("frm") or "adaptation"
         resume = h.get("resume") or {"to": "adaptation", "handoff": {"kind": "propose", "why": "Identity answered."}}
         r = self.call("identity", '{"say": str (address @' + NAMES[frm] + '), "clause": str, "answer": str|null, '
-                      '"user_question": {"question": str, "options": [str] (0-4, no recommendation)}|null, '
+                      '"user_question": {"question": str, "options": [str] (0-4)}|null, '
                       + DECIDE_FMT + '}',
                       f"QUESTION FROM {NAMES[frm]}: {h.get('question')}\nAnswer it from the charter, naming the clause. "
                       "Only if the charter can't decide it and only the Requester can (a fact, an approval or a value "
@@ -5748,7 +5750,9 @@ class J2Run:
                     [i for i in h.get("failing_items") or [] if 1 <= i <= len(crit)]
             if decision == "continue" and "continue" not in choices and drops:
                 decision = "drop"                     # keep working wasn't offered (nothing to fund it): leave out
-            if decision not in choices and not h.get("reasked"):
+            if decision not in choices:
+                # Asked again each time, never a default: each re-ask waits for a new Requester message, and Decide
+                # for me answers with a bare option number, which always names an option (ONLY_PICK above).
                 if self.decisions:
                     self.decisions[-1]["unclear"] = True
                 self._event("identity", "unclear_answer", f"answer to '{q.get('question')}' names no option")
@@ -5760,8 +5764,6 @@ class J2Run:
                                                              "drop_texts", "drop_named") if k in h},
                                         "reasked": True})
                 return
-            if decision not in choices:
-                decision = "continue" if "continue" in choices else "ship"
         confirmed = self._tbc(r.get("confirmed"), crit)
         done_facts = {t["criterion"] for t in confirmed}
         g["confirmed_facts"] = (g.get("confirmed_facts") or []) + confirmed
@@ -6064,34 +6066,43 @@ class J2Run:
             opts.append("Stop here: nothing is built yet, so you get no site")
             budget.append(0)
             choices.append("ship")
-        lead = ("The last round produced no new work, so keeping going as before would change nothing." if stale else
-                "Some parts were put off twice." if h.get("deferred") else
-                "Some parts don't fit in the work you approved." if left else"The team paused after a round of work." if re.match(r"Cycle \d+ used|The department used", reason) else
-                "The work you approved is used up." if short else
-                "The same problem came back twice." if reason.startswith("The same failure") else
-                "Only you can give what's still missing." if reason.startswith("Only you") else
-                "The team needs your decision.")
         say_choices = {"continue": "add more and keep going" if add else "keep going",
                        "drop": "leave out the missing parts" if not dw else "leave out what is not right",
                        "ship": "finish as it is" if self.sites else "stop here", "stop": "stop the whole run here"}
         ask = [say_choices[c] for c in choices]
         ask = ", ".join(ask[:-1]) + (", or " if len(ask) > 2 else " or ") + ask[-1] if len(ask) > 1 else ask[0]
-        q = {"question": f"{lead} {ask[0].upper() + ask[1:]}?", "options": opts,
+        q = {"question": f"{ask[0].upper() + ask[1:]}?", "options": opts,      # Identity's question replaces it
              **({"budget": budget} if any(budget) else {})}
+        # What led here, as facts for Identity's question (code no longer picks the opening sentence from the reason)
+        why = [x for x, on in (("the last time the Requester chose to keep going, nothing changed, so keeping going is "
+                                "not offered", stale), ("some parts were put off twice", h.get("deferred")),
+                               ("some parts don't fit in the work already approved", left),
+                               ("the work already approved is used up", short)) if on]
+
+        def mock_lead():      # the mock Identity's opening sentence (mock only)
+            return ("The last round produced no new work, so keeping going as before would change nothing." if stale else
+                    "Some parts were put off twice." if h.get("deferred") else
+                    "Some parts don't fit in the work you approved." if left else
+                    "The team paused after a round of work." if re.match(r"Cycle \d+ used|The department used", reason) else
+                    "The work you approved is used up." if short else
+                    "The same problem came back twice." if reason.startswith("The same failure") else
+                    "Only you can give what's still missing." if reason.startswith("Only you") else
+                    "The team needs your decision.")
         self._event("system", "limit", reason)
         plain_missing = f"{dw[0].upper() + dw[1:]} isn't finished yet." if dw else "The site isn't finished yet."
         passed, funded = self._built_and_funded(last)
-        r = self.call("identity", '{"say": str (to the Requester, in plain words: what has been done so far, at most 2 '
-                      'short sentences; don\'t list what is missing, code adds that list; no question, it is asked '
-                      'below; no recommendation; never the words "building time", "cap", "cycles", "done-when" or '
-                      '"estimate")}',
+        r = self.call("identity", '{"say": str (to the Requester: what has been done so far; don\'t list what is '
+                      'missing, code adds that list; no question, it is asked below), "question": str (the one '
+                      'question asked below your words: why the Requester must decide now, then what they choose '
+                      'between, in the order of the options; never an option\'s amount)}',
                       f"PASSED BY AUDIT (the only things you may describe as built or on the site): "
                       f"{json.dumps(passed, ensure_ascii=False)}\nFUNDED, NOT BUILT OR NOT CHECKED YET (say the team "
                       f"will build these, never that the site has them): {json.dumps(funded, ensure_ascii=False)}\n"
-                      f"LIMIT: {reason}\nWHAT IS STILL NOT RIGHT (code lists it after your words): "
-                      f"{json.dumps(shown, ensure_ascii=False)}\nTHE QUESTION AND OPTIONS CODE WILL OFFER: "
-                      f"{json.dumps(q, ensure_ascii=False)}\nTell the Requester.",
-                      lambda: json.dumps({"say": plain_missing}))
+                      f"LIMIT: {reason}\n" + (f"ALSO: {'; '.join(why)}\n" if why else "") + f"WHAT IS STILL NOT RIGHT (code lists it after your words): "
+                      f"{json.dumps(shown, ensure_ascii=False)}\nTHE OPTIONS CODE WILL OFFER: "
+                      f"{json.dumps(opts, ensure_ascii=False)}\nTell the Requester, and write the question.",
+                      lambda: json.dumps({"say": plain_missing, "question": f"{mock_lead()} {q['question']}"}))
+        q["question"] = str(r.get("question") or "").strip() or q["question"]
         say = r.get("say") or plain_missing
         if self.doc:      # a document: the check results are written by code, whatever Identity said
             say = check_summary(last, dw)

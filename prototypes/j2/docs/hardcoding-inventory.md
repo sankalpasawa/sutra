@@ -116,6 +116,35 @@ conditions. Audit and the planners are told that a warning is a heuristic check 
 - **The validator caught a real agent fault.** A reply naming no next speaker (`_usable`): 012507, 095315, 155605, 165902. `to_agents` tagged "@Requester" (`_check_audiences`): 013315, 095315, 165902, 191311. A wrong check type (013315). ids-unique R on a document that only cites R ids (165902 W-7): Adaptation chose that check.
 - **No waste found.** 20261102-120445, 20261103-132039, 20261110-200005, 20261110-220236, 20261112-150211, 20261112-164806 (no calls.jsonl). 20261112-120345 is a mock.
 
+## Group C: status on branch `remove-group-c`
+
+Plan and batches: `docs/remove-group-c-plan.md`. Rows are named by their "Where" in the full inventory below (the survey
+commit's line numbers); "now" is the line in `j2.py` after the batch. Kept rows are guardrails: safety, budget (code
+offers only money it can apply) or valid replies (a fallback for a missing or broken reply).
+
+### Batch 1: Identity
+
+| Row | Status | Now |
+|---|---|---|
+| `j2.py:3549-3556` `PLAIN_TO_REQUESTER` | Fixed: the "college student" persona, the gallery example options and "No recommendation" are gone. One plain-words style rule stays: everyday words for someone outside the team, no internal terms or function names. Who the Requester and the audience are comes only from the brief and the Requester's answers | `j2.py:4084` |
+| `j2.py:5594` `_identity_limit prompt` | Fixed: the second list of banned words and "2 sentences" are gone (the style rule covers them) | `j2.py:6094` |
+| `j2.py:5575-5582` `_identity_limit lead` | Fixed: Identity writes the question (a `question` field). It is told what led here as facts (the limit's reason, plus: keep going changed nothing, parts put off twice, parts that don't fit, money used up); no regex on the reason string. Code still builds the options, the amounts and the choices. Code's own question is only the fallback for a reply without one | `j2.py:6069-6105` |
+| `j2.py:3862` `_ask_user` 2 sentences | Fixed: no cut before the gap list | `j2.py:4396-4397` |
+| `j2.py:3864-3869` `_ask_user` options capped at 3 | Fixed: Identity's options are never cut. Merging several questions into one "Please send these" list is kept: a pause holds one answer (valid replies) | `j2.py:4398-4402` |
+| `j2.py:156-157` `AUTO_FINISH, AUTO_SIMPLE` | Fixed: both word lists deleted. A conflict question: Decide for me takes the option Identity marked `plan_option` (stays with the agreed plan), else option 1. A second limit question: the "ship" option from the pause's `choices` | `j2.py:4488-4505`, `5520`, `5580-5586` |
+| `j2.py:258-275` `CORE_FACT` fallback, `j2.py:5468` `_gap_rows must_keep`, `j2.py:5637-5652` `_finish_only_option must_keep` | Fixed: `must_keep` reads only the no-errors gate and Identity's `core` marks; a charter without marks has no core items but the gate. The keyword list moved to the mock charter (`MOCK_CORE`) | `j2.py:266`, `2221` |
+| `j2.py:4724` `_milestone asks_updates` | Fixed: Identity's intake reply has `email_updates` (true only when the Requester asked for progress updates by email); the charter records it; code reads the charter, not the brief's words. `asks_updates` is used by the mock Identity only | `j2.py:5200`, `5341`, `5379` |
+| `j2.py:4889` `_identity_intake` | Fixed: no "1-4 questions" and no "Done-when may not refer to the Requester, Audit, verification, approval or launch" (in `j2.py` and every `templates/*/intake.md`); checkability is Identity's call, judged by Audit (as A4). `agents/j2/identity.md` says done-when items describe what is delivered, not process steps, and a real-file item is added only when the brief or answers ask for a run (the live check's file-copy brief invented one without it). "Don't ask about cost" is kept: Identity can't see the budget | `j2.py:5355`, templates |
+| `j2.py:5262-5279` `_identity_hears_requester` unclear answer | Fixed: an answer naming no option is asked again every time, never defaulted to continue or ship. It cannot loop: each re-ask is a Requester pause (status waiting) that only a new Requester message resumes, and Decide for me answers with a bare option number, which always names an option. "Continue becomes drop when it isn't offered" is kept (budget) | `j2.py:5753-5766` |
+| `j2.py:79` `LIMIT_ADD`; `j2.py:1804-1807` `DECIDE_FMT, DECIDE_RULE`; `j2.py:3870` budget options stripped; `j2.py:5046` resolve fmt; `j2.py:5511-5590`, `5559-5574` limit options; `j2.py:4348-4377` stage options; `j2.py:5619-5625` one option applied | Kept: budget. Only code offers money, with amounts it can apply |
+| `j2.py:5097-5103`, `5109` resolve fallback question and defaults; `j2.py:5171-5175` approval fallback; `j2.py:4978-4984` stamp retry then accepted | Kept: valid replies |
+| `j2.py:4044` stuck; `j2.py:5709-5719` same failure twice; `j2.py:5531` stale; `j2.py:5761-5766` workable decides done | Kept: safety and loop bounds |
+| `j2.py:4807-4818` change request keeps items word for word | Kept: item numbers are tied to item text (`charter_items`); rewording would break them |
+| `j2.py:154` `AUTO_ASSUME` | Kept: the Requester's own Decide-for-me answer, not Identity's |
+| `j2.py:4340`, `4387-4390` `_stage_gate`, `_stage_decision`; `j2.py:1942-2010` `parse_decision` | Batch 1b |
+| `j2.py:1828` `PLAIN_WORDS`; `j2.py:1915-1926` `requester_words`; `j2.py:1928-1939` `to_requester` | Later batch: hidden rewrites |
+| `j2.py:5356-5360`, `5368-5376` routing after a drop or a limit answer | Batch 2 (Coordination) or the batch-5 proposal |
+
 ## Full inventory
 
 

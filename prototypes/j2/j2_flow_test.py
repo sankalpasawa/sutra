@@ -584,9 +584,15 @@ def below_floor():
         j2.BUDGET_CAP = 2 * j2.BUDGET
     # only "add credits" would be possible (every left-out item is a core fact): stop here is the second option
     run = page_run()
-    run.goal = {"done_when": ["The menu with prices is shown", "Opening hours are listed"]}
+    both = ["The menu with prices is shown", "Opening hours are listed"]
+    run.goal = {"done_when": both, "core_items": both}      # Identity's marks: no word of an item makes it core
     run._identity_limit({"reason": "Priority's ruling", "left_out": run.goal["done_when"], "budget_needed": 20})
     assert run.paused["handoff"]["choices"] == ["continue", "ship"], run.paused["handoff"]
+    run = page_run()
+    run.goal = {"done_when": both}                          # no marks: nothing is core but the gate, so both may go
+    assert not any(j2.must_keep(c, run.goal) for c in both)
+    run._identity_limit({"reason": "Priority's ruling", "left_out": both, "budget_needed": 20})
+    assert run.paused["handoff"]["choices"] == ["continue", "drop"], run.paused["handoff"]
 
 
 
@@ -640,8 +646,9 @@ def thread_and_loom_core():
     for words in ("lookbook", "reviews section", "New Arrivals"):
         assert any(words in c for c in offered), (words, offered)
     assert not any(j2.must_keep(c, run.goal) for c in offered), offered
-    # the keyword fallback no longer treats a number as a core fact
-    assert not j2.must_keep(THREAD_AND_LOOM[7][0], {}) and j2.must_keep(THREAD_AND_LOOM[1][0], {})
+    # no keyword fallback: without Identity's marks only the no-errors gate is core
+    assert not any(j2.must_keep(c, {}) for c, _ in THREAD_AND_LOOM if "JavaScript errors" not in c)
+    assert j2.must_keep(j2.GATE_TEXT, {})
 
 
 def deferred_twice():
@@ -1421,13 +1428,15 @@ def decide_for_me():
                      [{"question": "Send real emails to your test address during this run?", "options": ["Yes", "No"]}], "send_confirm")
         assert r4._auto_pick() is None and r4.snapshot()["paused"]["auto_waits"] is True
         r4.paused = {"kind": "conflict", "questions": [{"question": "q", "options": ["Add a story section (takes longer)", "Keep it simple, no story section"]}],
-                     "to": "identity", "handoff": {}, "msg": 1}
-        assert r4._auto_pick() == ("Option 2", "Keep it simple, no story section", 2)
+                     "to": "identity", "handoff": {"plan_option": 2}, "msg": 1}
+        assert r4._auto_pick() == ("Option 2", "Keep it simple, no story section", 2), "the option Identity marked as the plan"
+        assert r4._auto_choice({**r4.paused, "handoff": {}})[2] == 1, "no mark: the first option, never a word guess"
         r4.auto_log = [{"kind": "info"}] * j2.AUTO_CAP
         assert r4._auto_pick() is None, "after the cap the question waits for the Requester"
         r4.auto_log = [{"kind": "limit"}]
         r4.paused = {"kind": "limit", "questions": [{"question": "q", "options": ["Add 30 work credits and keep going", "Leave out item 7",
-                                                                                   "Finish as it is: you get the site as it is now"]}], "to": "identity", "handoff": {}, "msg": 1}
+                                                                                   "Finish as it is: you get the site as it is now"]}], "to": "identity",
+                     "handoff": {"choices": ["continue", "drop", "ship"]}, "msg": 1}
         assert r4._auto_pick()[2] == 3 and j2.J2Run()._auto_choice({**r4.paused})[2] == 1, "the first limit keeps going, a second one finishes as it is"
         r4.paused["questions"][0]["options"] = ["Keep going: you get more of the missing parts built",       # live run j2-20261109-231951: the
                                                 "Leave out item 7: you get the site without it. The form stays as it is, still failing",   # leave-out option
@@ -2069,7 +2078,7 @@ def identity_prompt_is_plain():
         calls = [json.loads(ln) for ln in f]
     assert any(c["fn"] == "identity" for c in calls)
     for c in calls:
-        assert ("college student with no tech background" in c["prompt"]) == (c["fn"] == "identity"), (c["id"], c["fn"])
+        assert ("write in plain, everyday words for someone outside the team" in c["prompt"]) == (c["fn"] == "identity"), (c["id"], c["fn"])
 
 
 FLORIST = "A website for Petal & Stem, a florist in Jaipur"
@@ -2788,7 +2797,7 @@ BANNED_FOR_REQUESTER = re.compile(r"building time|\bcaps?\b|\bcycles?\b|done[-_ 
 
 def plain_for_requester(run):
     """Everything Identity sends the Requester: no @ in front, no internal words, at most 3 sentences plus one
-    question, at most one question with at most 3 options."""
+    question, at most one question."""
     for m in run.chat:
         if m["who"] != "identity" or not m.get("to_user"):
             continue
@@ -2798,7 +2807,7 @@ def plain_for_requester(run):
         parts = [x for x in re.split(r"(?<=[.!?])\s+", say[len("@Requester "):]) if x.strip()]
         assert len([x for x in parts if not x.endswith("?")]) <= 3 and len([x for x in parts if x.endswith("?")]) <= 1, say
         qs = re.findall(r"^\d+\. ", m["text"], re.M)
-        assert len(qs) <= 1 and len(re.findall(r"^\s+Option \d+:", m["text"], re.M)) <= 3, m["text"]
+        assert len(qs) <= 1, m["text"]          # options: as many as the asker wrote (no cap of 3 since group C batch 1)
 
 
 def two_audiences():
@@ -2851,7 +2860,7 @@ def two_audiences():
 
 
 def simple_messages():
-    """Item 5: what the Requester reads is short and plain; one question, at most 3 options; the decision question's
+    """Item 5: what the Requester reads is short and plain; one question, Identity's options as it wrote them; the decision question's
     options say what they get."""
     t = j2.to_requester("@Requester The building time is used up. We hit the cap after 3 cycles. The done-when "
                         "list has 4 items (estimate). One more sentence. And another. Which do you want? Really?")
@@ -2865,7 +2874,7 @@ def simple_messages():
     assert len(q) == 1 and q[0]["question"] == "Please send these: What is your phone number; What are your hours.", q
     assert "?" not in run.chat[-1]["text"].split("\n")[0], run.chat[-1]["text"]
     run._ask_user("Pick one.", [{"question": "Which?", "options": ["a", "b", "c", "d"]}], "question")
-    assert run.paused["questions"][0]["options"] == ["a", "b", "c"], run.paused
+    assert run.paused["questions"][0]["options"] == ["a", "b", "c", "d"], "Identity's own options are never cut"
     run.budget, run.spent = 40, 38
     run._identity_limit({"reason": "Out of budget", "out_of_budget": True})
     opts = run.paused["questions"][0]["options"]                # no site yet: "stop here", never "finish"
@@ -3140,6 +3149,15 @@ def readable_decision():
     assert re_ask[0] == "@Requester I couldn't tell which option you chose. Reply 1, 2 or 3, or type what to add or " \
                         "leave out.", re_ask[0]
     assert len(re_ask) == 4 and all(ln.startswith("   Option ") for ln in re_ask[1:]), re_ask
+    # still unclear: asked again, never a default (each re-ask waits for a new Requester message, so it can't loop)
+    budget, n_asks = run.budget, sum(1 for e in run.events if e.get("type") == "unclear_answer")
+    say(run, "still not sure")
+    assert run.paused and run.paused["kind"] == "limit" and run.budget == budget, run.paused
+    assert sum(1 for e in run.events if e.get("type") == "unclear_answer") == n_asks + 1
+    assert run.status == "waiting", "the run waits for the Requester; nothing re-asks on its own"
+    # Decide for me answers with a bare option number, which always names an option
+    pick = run._auto_choice(run.paused)
+    assert pick[2] and j2.ONLY_PICK.fullmatch(pick[0]), pick
 
 
 def decision_negation():
@@ -5995,6 +6013,28 @@ INTENDED_PROMPT_CHANGES = [
      "records, can answer it); and item: the done-when item number it is about, or null. ", ""),
     (open(os.path.join(os.path.dirname(os.path.abspath(__file__)), "agents", "j2", "identity.md"), encoding="utf-8").read()
      .split("## Decision procedure", 1)[0].split("\n\n## Real files and real runs", 1)[-1].join(["\n\n## Real files and real runs", ""]), "\n\n"),    # Identity's real-run rules
+    # remove-group-c batch 1 (Identity): the plain-words rule replaces the Requester persona; intake asks no fixed
+    # number of questions, no longer bans words from done-when, and records email_updates
+    (j2.J2Run.PLAIN_TO_REQUESTER, ("\nWHEN YOU WRITE TO THE REQUESTER (any say addressed to them, any question or option for them): they are a "
+     "college student with no tech background. Use everyday words. Never use internal terms: charter, done-when, "
+     "checklist, standards, reserve, fix, effort, budget, units, workflow, cycle, finding, audit, ruling, envelope, "
+     "content types such as \"warmth content\", or the names of the functions (Identity, Adaptation, Priority, "
+     "Coordination, Audit). At most two short sentences of context. Each option says what they get and what it costs, "
+     "in plain words, e.g. \"Add a gallery of past work (takes a bit longer)\" / \"Keep it simple, no gallery\". "
+     "No recommendation.")),
+    ('"email_updates": bool (true only when the Requester asked to get progress updates by email), ', ""),
+    ("ask the Requester specific questions", "ask the Requester 1-4 specific questions"),
+    ("(set enough=false, specific questions)", "(set enough=false, 1-4 specific questions)"),
+    ("confirm it. Keep everything the brief", "confirm it. Done-when may not refer to the Requester, Audit, "
+     "verification, approval or launch. Keep everything the brief"),
+    ("feature names). Keep everything", "feature names). Done-when may not refer to the Requester, Audit, verification, "
+     "approval or launch. Keep everything"),
+    # Identity may recommend an option; a conflict question marks the option that stays with the plan
+    ('"options": [str] (0-4)}|null, "needs_decision"', '"options": [str] (0-4, no recommendation)}|null, "needs_decision"'),
+    ("consequence and risk; never adding budget, leaving items out or finishing as is: only code offers those), "
+     "\"plan_option\": int|null (the number of the option that stays with the plan already agreed, if one does)}",
+     "consequence and risk; no recommendation; never adding budget, leaving items out or finishing as is: only code "
+     "offers those)}"),
 ]
 PLAIN_CHECKPOINT = "94bffd0"   # plain_unchanged compares the working tree with this commit; move it when the plain path changes on purpose
 CHECKPOINT = "0657d93"         # the commit before the design-document work: a plain brief must behave exactly as there
@@ -8451,13 +8491,18 @@ SAVED_RUNS_GOLDEN = {
 # Re-recorded 2026-11-11 (DOC_RUN_GOLDEN only) for agents/j2/adaptation.md's proposal block naming kind and sections
 # (Adaptation's system prompt). With adaptation.md as it was: {"prd": "2c2d3402a6ca", "design docs": "94c750a4fcb0",
 # "docs then site": "6b28bcb5d3ff"}.
-DOC_RUN_GOLDEN = {"prd": "04fcc95c4dd7", "design docs": "361164fd06ab", "docs then site": "a37bc605ee3b"}
+# Re-recorded 2026-11-14 (remove-group-c batch 1) for Identity's prompts only: the plain-words rule replaces the
+# Requester persona, the intake reply format has email_updates, intake asks no fixed number of questions and no longer
+# bans words from done-when, and identity.md's two new lines on real-file items and done-when items. Outcomes,
+# spend, the agents called, workflows and the documents are identical to
+# {"prd": "04fcc95c4dd7", "design docs": "361164fd06ab", "docs then site": "a37bc605ee3b"}.
+DOC_RUN_GOLDEN = {"prd": "aa75d3ee857a", "design docs": "670652642ba7", "docs then site": "ed47e03e6ae6"}
 DOC_PROMPTS_GOLDEN = {
-    "prd.builder": "e971c88e727f", "prd.intake": "56b304946997",
+    "prd.builder": "e971c88e727f", "prd.intake": "75a955fb24fa",
     "prd.charter_fmt": "eedccdf82d84", "prd.atom_rules": "b8a918ef6039", "prd.system": "d09f06fa3181",
-    "hld.builder": "5ed1a9d0887c", "hld.intake": "ac332d648468",
+    "hld.builder": "5ed1a9d0887c", "hld.intake": "f569b31ea7ec",
     "hld.charter_fmt": "eedccdf82d84", "hld.atom_rules": "f03b53ec28a5", "hld.system": "ec72aa0a3d7b",
-    "lld.builder": "a767f5b54bd4", "lld.intake": "7a7282e0c457",
+    "lld.builder": "a767f5b54bd4", "lld.intake": "0cf412298a0c",
     "lld.charter_fmt": "eedccdf82d84", "lld.atom_rules": "4235ba453cd6", "lld.system": "f084658af51b",
 }
 
