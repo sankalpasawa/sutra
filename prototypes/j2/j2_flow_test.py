@@ -651,6 +651,45 @@ def thread_and_loom_core():
     assert j2.must_keep(j2.GATE_TEXT, {})
 
 
+def coordination_ready_now():
+    """Group C batch 2: Coordination schedules from each workflow's dependencies and what it writes, never words. It
+    may name several ready workflows; the engine runs one and says so. A workflow whose dependency (by id, name or
+    proposal_id) isn't done can't be ready; a dependency naming no workflow of the run never blocks. Its task names
+    no type or file and gives it no "next" to pick."""
+    run = page_run()
+    run.goal = {"done_when": ["a", "b", "c", "d"]}
+    wf = lambda i, pid, deps, st="registered": {"id": i, "name": f"Part {i}", "proposal_id": pid, "status": st,
+                                                "dependencies": deps, "cost": 5, "charged": True, "outputs": [f"{pid}.out"]}
+    run.workflows = [wf("W-1", "base", [], "done"), wf("W-2", "two", ["base"]), wf("W-3", "three", ["base", "earlier-stage"]),
+                     wf("W-4", "four", ["W-2"]), wf("W-5", "five", ["Part W-1"])]
+    rows = {r["id"]: r for r in run._schedule_rows([w for w in run.workflows if w["status"] != "done"])}
+    assert rows["W-2"]["waits_for"] == [] and rows["W-4"]["waits_for"] == ["W-2"], rows
+    assert rows["W-3"]["unknown_dependencies"] == ["earlier-stage"] and rows["W-3"]["waits_for"] == [], rows["W-3"]
+    assert rows["W-5"]["waits_for"] == [] and rows["W-2"]["writes"] == {"outputs": ["two.out"]}, rows
+    seen = {}
+
+    def call(fn, fmt, task, mock, **k):
+        seen.update(fmt=fmt, task=task)
+        return {"say": "Schedule.", "rule": "dependencies first", "order": ["W-4", "W-2", "W-3"],
+                "ready_now": ["W-2", "W-3", "W-4", "W-5"], "holds": []}
+    run.call = call
+    run.handoff = {"kind": "schedule"}
+    run._turn_coordination({"kind": "schedule"})
+    notes = [m["text"] for m in run.chat if m["who"] == "system"]
+    assert run.turn == "priority" and run.handoff["wid"] == "W-2", (run.turn, run.handoff)      # W-4 first in order, but waits
+    assert any(t.startswith("Refused as ready: W-4 waits for W-2") for t in notes), notes
+    assert any(t.startswith("Coordination named 3 ready: W-2, W-3, W-5. The engine runs one at a time: W-2 now; W-3 and "
+                            "W-5 wait for the next slot.") for t in notes), notes
+    assert any(t.startswith("Not in Coordination's order, so added at the end: W-5") for t in notes), notes
+    said = next(m for m in reversed(run.chat) if m["who"] == "coordination")
+    assert said["ready_now"] == ["W-2", "W-3", "W-5"] and said["schedule"][0] == "W-2", said
+    assert '"next"' not in seen["fmt"] and '"ready_now"' in seen["fmt"], seen["fmt"]
+    assert not re.search(r"\bsite\b|index\.html|\.html\b", seen["task"] + seen["fmt"], re.I), seen["task"]
+    assert "the engine's limit, not your scheduling rule" in seen["task"]
+    print("coordination: schedules from dependencies and writes, names several ready, the engine runs one and says so, "
+          "a waiting workflow refused as ready, unknown dependencies never block, no type or file names, no next ok")
+
+
 def deferred_twice():
     """The same done-when item left out or refused in 2 rounds: Identity asks the Requester even though budget remains."""
     run = page_run()
@@ -6035,6 +6074,22 @@ INTENDED_PROMPT_CHANGES = [
      "\"plan_option\": int|null (the number of the option that stays with the plan already agreed, if one does)}",
      "consequence and risk; no recommendation; never adding budget, leaving items out or finishing as is: only code "
      "offers those)}"),
+    # remove-group-c batch 2 (Coordination): the task gives each workflow's dependencies, waits_for and writes instead of
+    # the raw workflow, and states the engine's limit as code's; the format has ready_now and no next; coordination.md
+    # step 4; the mock's schedule names no file. Coordination's waiting list and task line are masked in both trees
+    # (regex entries: ("re", pattern, replacement)); the chat lines are normalised to the new text.
+    ("re", r"REGISTERED AND WAITING.*?\nDONE OR FAILED", "REGISTERED AND WAITING\nDONE OR FAILED"),
+    ("re", r"Schedule them\. [^\n]*", "Schedule them."),
+    ("re", r'\{"say": str, "rule": str[^\n]*?"holds": \[\{"id": str, "missing": str\}\][^\n]*', "COORDINATION_FMT"),
+    ("re", r"\[\d+\] System: Coordination named \d+ ready: [^\n]*\n", ""),    # the engine's honest one-at-a-time line
+    ("re", r"(?m)^\[\d+\] ", "[n] "),      # ...shifts later chat numbers by one: chat numbers are masked
+    ("Each one writes index.html, so they run one at a time. ", ""),
+    ("; one writer at a time on index.html", ""),
+    ("Hand-off by code: Audit checks version ", "Hand-off by code: Audit checks site v"),
+    ("4. Name every workflow that is ready now: all of its dependencies are done, and what it writes doesn't collide with "
+     "another ready workflow. Several may be ready at once. Your order says which goes first. Code runs them one at a "
+     "time; that is the engine's limit, not your rule.",
+     "4. Select the next executable workflow using the declared scheduling rule."),
 ]
 PLAIN_CHECKPOINT = "94bffd0"   # plain_unchanged compares the working tree with this commit; move it when the plain path changes on purpose
 CHECKPOINT = "0657d93"         # the commit before the design-document work: a plain brief must behave exactly as there
@@ -6317,7 +6372,7 @@ def plain_unchanged(checkpoint=None, slim=None, board=None, generic=False):
              "rows = [json.loads(l) for l in open(os.path.join(r.dir, 'calls.jsonl'), encoding='utf-8')]\n"
              f"CH = {INTENDED_PROMPT_CHANGES!r}\n"
              "def old(t):\n"
-             "    for a, b in CH: t = t.replace(a, b)\n"
+             "    for e in CH: t = re.sub(e[1], e[2], t, flags=re.S) if len(e) == 3 else t.replace(*e)\n"
              "    return t\n"
              "h = lambda t: hashlib.sha256(re.sub(r'\\d{4}-\\d\\d-\\d\\dT\\d\\d:\\d\\d:\\d\\d', 'T', old(t)).encode()).hexdigest()[:12]\n"
              "print(json.dumps({'outcome': r.outcome, 'spent': r.spent, 'site': h(r.sites[-1]), 'sections': h(json.dumps(r.sections, sort_keys=True)),\n"
@@ -8505,7 +8560,12 @@ SAVED_RUNS_GOLDEN = {
 # bans words from done-when, and identity.md's two new lines on real-file items and done-when items. Outcomes,
 # spend, the agents called, workflows and the documents are identical to
 # {"prd": "04fcc95c4dd7", "design docs": "361164fd06ab", "docs then site": "a37bc605ee3b"}.
-DOC_RUN_GOLDEN = {"prd": "aa75d3ee857a", "design docs": "670652642ba7", "docs then site": "ed47e03e6ae6"}
+# Re-recorded 2026-11-14 (remove-group-c batch 2) for Coordination's prompts only: its task gives each workflow's
+# dependencies, waits_for and writes, states the engine's one-at-a-time limit as code's, and its format has ready_now
+# and no next; coordination.md step 4; the mock's schedule names no file. Outcomes, spend, the agents called,
+# workflows and the documents are identical to {"prd": "aa75d3ee857a", "design docs": "670652642ba7",
+# "docs then site": "ed47e03e6ae6"}.
+DOC_RUN_GOLDEN = {"prd": "fcd605c769f8", "design docs": "38742d746510", "docs then site": "35382abf283e"}
 DOC_PROMPTS_GOLDEN = {
     "prd.builder": "e971c88e727f", "prd.intake": "75a955fb24fa",
     "prd.charter_fmt": "eedccdf82d84", "prd.atom_rules": "b8a918ef6039", "prd.system": "d09f06fa3181",
@@ -16020,6 +16080,7 @@ if __name__ == "__main__":
         full(mode == "1")
         policy_budget(mode == "1")
         below_floor()
+        coordination_ready_now()
         thread_and_loom_core()
         deferred_twice()
         connections()

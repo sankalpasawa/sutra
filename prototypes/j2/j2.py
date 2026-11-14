@@ -8655,28 +8655,41 @@ class J2Run:
             self.agent_turns["coordination"] -= 1
             self.cycle_turns -= 1
             self.post("system", f"Queue empty: no registered work left in cycle {self.cycle}. Hand-off by code: Audit "
-                                f"checks site v{len(self.sites)}.")
+                                f"checks version {len(self.sites)}.")
             return self._handoff("audit", kind="audit")
         ids = [w["id"] for w in todo]
-        finished = {x[k] for x in self.workflows if x["status"] == "done" for k in ("id", "name") if x.get(k)}
-        waits = {w["id"]: [d for d in w["dependencies"] if d not in finished] for w in todo}
-        sched = self.call("coordination", '{"say": str, "rule": str, "order": [workflow id], '
-                          '"holds": [{"id": str, "missing": str}], ' + next_field(("priority", "adaptation"),
-                          "Priority to check the run envelope of the first workflow in your order; Adaptation only if "
-                          "everything is on HOLD") + "}",
-                          f"REGISTERED AND WAITING: {json.dumps(todo)}\nDONE OR FAILED: "
+        rows = self._schedule_rows(todo)
+        waits = {r["id"]: r["waits_for"] for r in rows}
+
+        def mock():
+            ready = [r["id"] for r in rows if not r["waits_for"]]
+            return json.dumps({"say": "@Priority Schedule: " + " → ".join(f"{r['id']} {r['name']}" for r in rows
+                                                                          if not r["waits_for"])
+                               + ". Please check the first one's envelope.",
+                               "rule": "dependencies first, then registration order", "order": ids, "ready_now": ready,
+                               "holds": [{"id": i, "missing": f"waits for {', '.join(d)} to finish"}
+                                         for i, d in waits.items() if d]})
+        sched = self.call("coordination", '{"say": str, "rule": str (your scheduling rule), "order": [workflow id], '
+                          '"ready_now": [workflow id] (every workflow that can start now: its waits_for is empty and '
+                          'what it writes doesn\'t collide with another ready workflow; several may be ready at once), '
+                          '"holds": [{"id": str, "missing": str}]}',
+                          f"REGISTERED AND WAITING (waits_for: its dependencies not done yet; unknown_dependencies: "
+                          f"names no workflow of this run, never blocks; writes: what it writes): {json.dumps(rows, ensure_ascii=False)}\nDONE OR FAILED: "
                           f"{json.dumps([[w['id'], w['status']] for w in self.workflows if w not in todo])}\n"
-                          "Schedule them. Priority checks each run's envelope, then the workflow's own agent runs it "
-                          "and reports back to you. One writer at a time on the site file: you hold the write lock.",
-                          lambda: json.dumps({"say": "@Priority Schedule: " + " → ".join(f"{w['id']} {w['name']}" for w in todo
-                                                                                       if not waits[w["id"]])
-                                              + ". Each one writes index.html, so they run one at a time. Please check "
-                                                "the first one's envelope.",
-                                              "rule": "dependencies first, then registration order; one writer at a "
-                                                      "time on index.html", "order": ids, "next": "Priority",
-                                              "holds": [{"id": i, "missing": f"waits for {', '.join(d)} to finish"}
-                                                        for i, d in waits.items() if d]}))
-        order = [i for i in sched.get("order") or [] if i in ids] + [i for i in ids if i not in (sched.get("order") or [])]
+                          "Schedule them. Code runs one workflow at a time, in your order: that is the engine's limit, "
+                          "not your scheduling rule. Code hands the first ready workflow to Priority to check its run "
+                          "envelope, then the workflow's own agent runs it and reports back to you; when everything is "
+                          "on HOLD, code hands the turn to Adaptation.", mock)
+        sorder = [i for i in sched.get("order") or [] if i in ids]
+        order = sorder + [i for i in ids if i not in sorder]
+        notes = [f"Not in Coordination's order, so added at the end: {', '.join(i for i in ids if i not in sorder)}."] \
+            if len(sorder) < len(ids) else []
+        named = [i for i in dict.fromkeys(sched.get("ready_now") or []) if i in ids]
+        early = [i for i in named if waits[i]]
+        if early:     # readiness comes from the dependencies: one not done yet means not ready
+            self._event("coordination", "invalid_move", "ready_now names workflows still waiting: " + ", ".join(early))
+            notes.append("Refused as ready: " + "; ".join(f"{i} waits for {', '.join(waits[i])}" for i in early) + ".")
+        named = [i for i in named if not waits[i]]
         held = {x.get("id"): x.get("missing") for x in sched.get("holds") or [] if x.get("id") in ids}
         lifted = [i for i in held if (self._wf(i) or {}).get("hold_override")]
         for i in lifted:
@@ -8688,26 +8701,30 @@ class J2Run:
                 released.append(f"{w['cost']} from {w['id']}")
             w["status"] = "held" if w["id"] in held else "registered"
         self._recalc_spent()
-        ready = [i for i in order if i not in held]
+        ready = [i for i in order if i not in held and not waits[i]]
+        named = [i for i in named if i not in held]
+        if len(named) > 1:      # Coordination may name several; the engine runs one at a time, and says so
+            first = next((i for i in ready if i in named), ready[0] if ready else None)
+            rest = [i for i in named if i != first]
+            self._event("coordination", "ready_now", ", ".join(named))
+            notes.append(f"Coordination named {len(named)} ready: {', '.join(named)}. The engine runs one at a time: "
+                         f"{first} now; {and_list(rest)} {'waits' if len(rest) == 1 else 'wait'} for the next slot.")
         text = sched.get("say", "") + (f" Rule: {sched.get('rule')}." if sched.get("rule") else "")
         text += "".join(f"\nHOLD {i}: {why}" for i, why in held.items())
         for i, why in held.items():
             self._event("coordination", "hold", f"{i}: {why}")
         self.save("workflows.json", self.workflows)
-        notes = [f"{', '.join(lifted)}: the HOLD was lifted in a settled conflict, so it can't be held again."] if lifted else []
+        if lifted:
+            notes.append(f"{', '.join(lifted)}: the HOLD was lifted in a settled conflict, so it can't be held again.")
         if released:
             notes.append(f"Released {', '.join(released)} while on HOLD; charged again only when it runs. "
                          f"Budget: {self.spent}/{self.budget} used.")
         if ready:
-            nxt, note = self._pick("coordination", sched.get("next"), ("priority",), "priority",
-                                   "Priority checks the run envelope before a workflow runs")
-            self._say("coordination", text, nxt, note, schedule=ready)
+            self._say("coordination", text, "priority", None, schedule=ready, ready_now=named)
             for n in notes:
                 self.post("system", n)
             return self._handoff("priority", kind="envelope", wid=ready[0])
-        nxt, note = self._pick("coordination", sched.get("next"), ("adaptation",), "adaptation",
-                               "everything is on HOLD, so Adaptation must address the missing conditions")
-        self._say("coordination", text, nxt, note, schedule=[])
+        self._say("coordination", text, "adaptation", None, schedule=[], ready_now=[])
         for n in notes:
             self.post("system", n)
         self.hold_bounces += 1
@@ -8717,6 +8734,21 @@ class J2Run:
         self._handoff("adaptation", kind="propose", why="Coordination put workflows on HOLD: "
                       + "; ".join(f"{i}: {why}" for i, why in held.items())
                       + ". Address the missing conditions, or DISPUTE a HOLD you think is wrong.")
+
+    def _schedule_rows(self, todo):
+        """What Coordination schedules from: per waiting workflow its dependencies, waits_for (the ones naming a workflow
+        of this run, by id, name or proposal_id exactly, that isn't done), unknown_dependencies (naming no workflow of
+        this run: an earlier stage or a plan entry never registered; they never block) and what it writes, as stored.
+        No word of any field is read."""
+        keys = lambda x: {str(x[k]) for k in ("id", "name", "proposal_id") if x.get(k)}
+        every = list(self.past_workflows) + list(self.workflows)
+        known = set().union(*map(keys, every)) if every else set()
+        done = set().union(*(keys(x) for x in every if x["status"] == "done"))
+        deps = lambda w: [str(d) for d in w.get("dependencies") or []]
+        return [{"id": w["id"], "name": w.get("name"), "status": w["status"], "dependencies": deps(w),
+                 "waits_for": [d for d in deps(w) if d in known and d not in done],
+                 "unknown_dependencies": [d for d in deps(w) if d not in known],
+                 "writes": {k: w[k] for k in ("outputs", "section", "sections") if w.get(k)}} for w in todo]
 
     def _priority_envelope(self, h):
         """J2.f: Priority checks the run envelope before the workflow runs. The limits are numbers, so code checks

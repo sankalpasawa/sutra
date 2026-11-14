@@ -153,6 +153,23 @@ offers only money it can apply) or valid replies (a fallback for a missing or br
 | `j2.py:1942-2010` `ONLY_PICK` | Kept: valid replies. It tells a click or a bare number from a typed answer; it names no option by words |
 | `j2.py:4340` `_stage_gate` chain order; `j2.py:4348-4377` stage options and amounts | Kept: budget. Code offers only money it can apply, and funds stages in the order they depend on each other |
 
+### Batch 2: Coordination
+
+Readiness comes only from each workflow's dependencies and what it writes, never from words; Coordination's task and
+code name no workflow, type or file.
+
+| Row | Status | Now |
+|---|---|---|
+| Task text "One writer at a time on the site file: you hold the write lock" (`_turn_coordination`, survey `j2.py:8059-8065`) | Fixed: an engine limit written as Coordination's rule, naming the type and file. The task now says, as code's: "Code runs one workflow at a time, in your order: that is the engine's limit, not your scheduling rule", and what code does next (Priority's envelope check; Adaptation when all is on HOLD) | `j2.py:8672-8683` |
+| `j2.py:8095-8096` `_pick (coordination)` and the format's `next` | Fixed: no `next` field; Coordination isn't offered a choice code makes. The hand-off itself (Priority checks the envelope before a run) is kept: budget | `j2.py:8723`, `8727` |
+| Coordination's input | Fixed: one row per waiting workflow (`_schedule_rows`): dependencies, `waits_for` (dependencies naming a workflow of this run, by id, name or proposal_id exactly, that isn't done), `unknown_dependencies` (naming no workflow of the run: an earlier stage or an unregistered plan entry; never block), `writes` (outputs, section, sections as stored). No word of any field is read | `j2.py:8738-8752`, `8661` |
+| Several ready workflows | New: `ready_now` in the format. A workflow with a non-empty `waits_for` can't be ready: refused with the reason (new guardrail: before, a workflow could run before its dependency finished if Coordination put it first). The engine runs the first ready one and posts "Coordination named N ready: ... The engine runs one at a time: X now; ... wait for the next slot." Collisions are Coordination's call from `writes`; code compares no output strings. No engine parallelism | `j2.py:8686-8712` |
+| `j2.py:8072-8077` ids missing from the order | Kept (valid replies: every registered workflow is scheduled or held), now said in a system line instead of silently | `j2.py:8685` |
+| Empty-queue line "Audit checks site v{n}"; the mock's "index.html" | Fixed: "Audit checks version {n}"; the mock builds its schedule from the rows | `j2.py:8658`, `8664-8671` |
+| `agents/j2/coordination.md` step 4 | Changed: name every ready workflow (dependencies done, writes don't collide); several may be ready; the engine runs one at a time | |
+| `j2.py:8048-8053` empty queue to Audit; `8101-8109` `hold_bounces`; `8033-8047` change resend; HOLD lifted by a settled conflict; charges released on HOLD; `j2_realization.holds`; builder reports to Coordination; `_say` repeat | Kept: loop bounds, budget, a carried-out ruling, safety (no input, no build), routing |
+| `j2.py:7952-7968` `_supersede` | Moved to batch 4 (word matching) |
+
 ## Full inventory
 
 

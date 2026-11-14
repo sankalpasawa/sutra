@@ -22,9 +22,9 @@ Branch `remove-group-c`, from `remove-restrictions` (2026-11-14). Removes group 
 |---|---|---|
 | 1 | Identity: the Requester persona becomes a plain-words style rule (audience only from the brief and the Requester's answers); Identity's other forced decisions. Rows: inventory "Group C: status", batch 1 | done; live check below |
 | 1b | The stage answer (`_stage_decision`) and `parse_decision`: Identity reads the Requester's answer instead of code's word matching. Rows: inventory "Group C: status", batch 1b | done (no live check: not in the cadence) |
-| 2 | Coordination: no rules written into its task as if it chose them; it may name several ready workflows (the engine may still run one at a time, and says so) | planned |
+| 2 | Coordination: no rules written into its task as if it chose them; it may name several ready workflows (the engine runs one at a time, and says so). Founder rule: no workflow, type or file names in its task or code; readiness only from dependencies and what each writes. Rows: inventory "Group C: status", batch 2 | done; live check below |
 | 3 | Priority: remove word lists (`BUDGET_TALK`, `item_kind`) | planned |
-| 4 | Audit: remove word matching for findings and duplicates | planned |
+| 4 | Audit: remove word matching for findings and duplicates; also `_supersede` (a waiting workflow superseded by its name minus " (change n)") | planned |
 | 5 | Planner thresholds (`THRESHOLD`, `MAX_ROUNDS`, lesson and playbook caps): no change; a written proposal for Rubak | planned |
 | later | Hidden rewrites: `to_requester` (cuts to 3 statements and 1 question, drops numbered lines), `PLAIN_WORDS`, `requester_words` (drops sentences naming internal ids). Code changes Identity's text without telling it. Also: a J2.g fact question merged into "Please send these" keeps its agent-facing wording (live run j2-20261114-193037: "Does the Requester want the script run on their own real folders...") | planned |
 
@@ -35,3 +35,9 @@ Branch `remove-group-c`, from `remove-restrictions` (2026-11-14). Removes group 
 | All 4 briefs ($2.81) | 3 pass. File-copy brief fails: without the intake rule "Done-when may not refer to the Requester, ... approval ...", Identity added a real-folder run item the brief never asked for, and the run paused on it (j2-20261114-193037) |
 | Fix (founder: option B) | Two lines in `agents/j2/identity.md`, "Real files and real runs": a real-file item only when the brief or answers ask for a run on them; done-when items describe what is delivered, not process steps. The code rule stays removed |
 | File-copy brief alone ($0.36) | Pass: `Done:`, 2 done-when items, no real-run item (j2-20261114-195549). Ledger total $41.05 of $60 |
+
+## Batch 2 live check (2026-11-14)
+
+| Run | Result |
+|---|---|
+| All 4 briefs ($2.59, `--cap 100`) | 4 pass with `Done:`. Coordination named 2 ready once (coffee shop, j2-20261114-210601) and the engine's one-at-a-time line was posted; no workflow refused as ready; no id appended to its order. Ledger total $43.64 of $100 |
