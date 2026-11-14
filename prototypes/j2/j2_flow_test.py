@@ -383,7 +383,8 @@ def policy_budget(fixes):
             asked.append("REJECTED" in task)
             if len(asked) == 1:
                 return {"say": "@Identity Policy question: 60 can't cover the charter's sections. Can we add budget?",
-                        "act": "POLICY_QUESTION", "question": "60 can't cover the charter's sections. Add budget?"}
+                        "act": "POLICY_QUESTION", "question": "60 can't cover the charter's sections. Add budget?",
+                        "about": "budget"}
         assert not (fn == "identity" and task.startswith("QUESTION FROM")), "a budget question reached Identity"
         return orig(fn, fmt, task, mock, **k)
     run.call = call
@@ -416,7 +417,7 @@ def connections():
     registers or rejects with a reason, Coordination schedules, Audit checks what was built, and every run ends with
     a site built (the Requester always picks leave-out or keep going here). summary.json counts the links."""
     j2.load_rates("website")
-    floor = sum(j2.item_min(c) for c in j2.mock_charter(BREW_LAB)["done_when"])
+    floor = sum(j2.RATES.get(j2.mock_item_kind(c), 0) for c in j2.mock_charter(BREW_LAB)["done_when"])
     assert floor == 70, floor
     for name, budget, cap in (("generous", 2 * floor, None), ("tight", floor - 15, None),
                               ("impossible", floor - 30, floor - 30)):
@@ -714,6 +715,61 @@ def dependency_names():
     assert "W-1" in r["reason"], r["reason"]        # the names it may use are listed
     print("dependency names: exact id, name, proposal id, same-batch name or finished stage accepted; anything else "
           "refused back to Adaptation with the names it may use ok")
+
+
+def item_kinds_and_about():
+    """Group C 3a/3b: an item's minimum price is the rate-card part of the kind Identity tagged at J2.a, from the type's
+    kinds (types.json cost.item_parts); an untagged item is the type's default kind; no word of an item is read. A
+    POLICY_QUESTION is a budget question only when Adaptation marks it so ("about"); the same words marked "charter"
+    go to Identity; a question without "about" is asked once more, then goes to Identity."""
+    run = page_run()
+    form = "Visitors can pre-order a coffee for pickup with a form"
+    assert j2.item_kind(form, {}) == j2.output_def("website")["default_kind"] == "page_section"   # no tag: default
+    assert j2.item_kind("A plain line", {"item_kinds": {"A plain line": "form"}}) == "form"      # the tag, not words
+    assert j2.item_min("A plain line", {"item_kinds": {"A plain line": "form"}}) == j2.RATES["form"]
+    kinds = dict(j2.output_def("website")["item_kinds"])
+    assert set(kinds) == {"form", "interactive_feature", "styling", "page_section"} and all(kinds.values()), kinds
+    seen = {}
+    orig = run.call
+
+    def call(fn, fmt, task, mock, **k):
+        if fn == "identity" and '"item_kinds": [str]' in fmt:
+            seen["fmt"] = fmt
+            r = json.loads(mock())
+            r["item_kinds"] = ["styling"] + ["not-a-kind"] * (len(r["goal"]["done_when"]) - 1)
+            return r
+        return orig(fn, fmt, task, mock, **k)
+    run.call = call
+    say(run, BREW_LAB)
+    assert all(v in seen["fmt"] for v in kinds.values()), "Identity reads what each kind is about"
+    first = run.goal["charter_items"][0]
+    assert run.goal["item_kinds"] == {first: "styling"} or j2.item_kind(first, run.goal) == "styling", run.goal.get("item_kinds")
+    assert any(e.get("type") == "item_kinds" for e in run.events), "a kind outside the type's list is logged"
+    others = [c for c in run.goal["done_when"] if c != first]
+    assert all(j2.item_kind(c, run.goal) == "page_section" for c in others), "an untagged item takes the default kind"
+    # 3b: the same words, marked differently
+    for about, to_identity in (("budget", False), ("charter", True), (None, True)):
+        r2, asked = page_run(), []
+        r2.goal = {"done_when": ["The menu with prices is shown"]}
+
+        def call2(fn, fmt, task, mock, **k):
+            asked.append(fn if fn != "identity" or not task.startswith("QUESTION FROM") else "identity_question")
+            if fn == "adaptation":
+                return {"say": "@Identity Can we add budget for a gallery?", "act": "POLICY_QUESTION",
+                        "question": "Can we add budget for a gallery?", "next": "Identity",
+                        **({"about": about} if about else {})}
+            return {"say": "@Adaptation Proceed inside the charter.", "clause": "rules", "answer": "Proceed."}
+        r2.call = call2
+        r2.agent_turns["adaptation"] = 1
+        r2._turn_adaptation({"kind": "propose", "why": "test"})
+        rejected = any(m["who"] == "system" and m["text"].startswith("Adaptation's question about budget was rejected")
+                       for m in r2.chat)
+        assert rejected == (not to_identity), (about, [m["text"][:60] for m in r2.chat])
+        assert (r2.turn == "identity") if to_identity else True, (about, r2.turn)
+        assert asked.count("adaptation") == (1 if about == "charter" else 2), (about, asked)
+    print("item kinds and about: prices from Identity's kind tags (default when untagged, a bad tag logged), the type's "
+          "kinds and what each is about in Identity's format; a budget question only when Adaptation marks it, the same "
+          "words marked charter go to Identity, no about: asked once more ok")
 
 
 def deferred_twice():
@@ -1936,7 +1992,7 @@ def rubric_and_credits():
     finish(run)
     built = [c for c in calls_of(run) if j2.is_wf_agent(c["fn"])]
     assert built and all(f"{rid} {txt}" in c["prompt"] for c in built for rid, txt in j2.RUBRIC[:6])
-    form = next(i for i, c in enumerate(run.goal["done_when"], 1) if j2.item_kind(c) == "form")
+    form = next(i for i, c in enumerate(run.goal["done_when"], 1) if j2.item_kind(c, run.goal) == "form")
     w = next(w for w in run.workflows if form in run._wf_items(w))
     tap = [c for a in w["atoms"] for c in a["verification"] if c["type"] == "tap-targets"]
     assert tap and tap[0]["target"] == ".order-form" and "order-form" in json.dumps(w["atoms"][0]["how"]), w["atoms"]
@@ -2374,9 +2430,10 @@ def pricing():
     """I: the validator ties price to the work, not to labels."""
     run = page_run()
     run.goal = j2.mock_charter(BREW_LAB)    # 1 menu, 2 hours, 3 address, 4 order (form), 5 beans, 6 loyalty, 7 phone
+    run.goal["item_kinds"] = {c: j2.mock_item_kind(c) for c in run.goal["done_when"]}     # Identity's tags (the mock's)
     run.budget, run.cycle = 500, 1
     base = {"goal_gap": "x", "outputs": ["index.html"], "completion_check": "y", "atoms": ATOM}
-    kinds = [j2.item_kind(c) for c in run.goal["done_when"]]
+    kinds = [j2.item_kind(c, run.goal) for c in run.goal["done_when"]]
     assert kinds == ["page_section"] * 3 + ["form"] + ["page_section"] * 2 + ["styling"], kinds
     # bundling: six items in one 20-unit workflow (as in the run) is rejected; the same work priced honestly passes
     reg, refused, _ = run._register([{**base, "name": "Shop", "parts": ["page_section", "interactive_feature"],
@@ -2432,7 +2489,7 @@ def unpaid_items():
         assert first["verdict"] == "UNPAID" and not first["pass"] and "no workflow covers" in first["note"], first
         assert any(x.startswith(f"done-when item {beans}") and "UNPAID" in x for x in j2.workable(run.audits[0]))
         pay = next(w for w in run.workflows if w.get("covers") == [beans] and w["status"] == "done")
-        assert pay["cost"] >= j2.item_min(run.goal["done_when"][beans - 1]), pay
+        assert pay["cost"] >= j2.item_min(run.goal["done_when"][beans - 1], run.goal), pay
         assert beans in run.paid_items() and run.outcome.startswith("Done"), run.outcome
         assert not any(r["verdict"] == "UNPAID" for r in run.audits[-1]["results"])
         # unit: an item a fix paid for (via its finding) isn't flagged; an undeclared one is
@@ -2787,7 +2844,7 @@ def adaptation_idle():
     def call(fn, fmt, task, mock, **k):
         asked.append(fn)
         return {"say": "@Identity 2 left, the cheapest part costs more, so I propose nothing.",
-                "act": "POLICY_QUESTION", "workflows": [], "next": "Identity"}
+                "act": "POLICY_QUESTION", "about": "budget", "workflows": [], "next": "Identity"}
     run.call = call
     h = {"kind": "propose", "why": "Identity answered."}
     run.agent_turns["adaptation"] = 1
@@ -6112,6 +6169,13 @@ INTENDED_PROMPT_CHANGES = [
     ("Each one writes index.html, so they run one at a time. ", ""),
     ("; one writer at a time on index.html", ""),
     ("Hand-off by code: Audit checks version ", "Hand-off by code: Audit checks site v"),
+    # remove-group-c batch 3a: Identity tags each done-when item's kind (intake format field) and the charter records
+    # the tags (goal JSON in later prompts); prices are unchanged, so both are masked
+    ("re", r'"item_kinds": \[str\] \(one per done-when item[^\n]*?\}\), ', ""),
+    ("re", r', \\?"item_kinds\\?": \{[^{}]*\}', ""),
+    # batch 3b: Adaptation's POLICY_QUESTION says what it is about (budget or charter)
+    ('"about": "budget"|"charter"|null (with POLICY_QUESTION, what your question is about: budget when it is about cost, '
+     'funding or what to leave out; charter otherwise), ', ""),
     ("4. Name every workflow that is ready now: all of its dependencies are done, and what it writes doesn't collide with "
      "another ready workflow. Several may be ready at once. Your order says which goes first. Code runs them one at a "
      "time; that is the engine's limit, not your rule.",
@@ -8591,7 +8655,12 @@ SAVED_RUNS_GOLDEN = {
 # and no next; coordination.md step 4; the mock's schedule names no file. Outcomes, spend, the agents called,
 # workflows and the documents are identical to {"prd": "aa75d3ee857a", "design docs": "670652642ba7",
 # "docs then site": "ed47e03e6ae6"}.
-DOC_RUN_GOLDEN = {"prd": "fcd605c769f8", "design docs": "38742d746510", "docs then site": "35382abf283e"}
+# Re-recorded 2026-11-14 (remove-group-c batch 3a): Identity's intake format asks item_kinds (the type's kinds and what
+# each is about), each stage's goal records item_kinds (stage-*.json), and code's HLD/LLD items take their section's
+# part; batch 3b: Adaptation's format has "about". Outcomes, spend, the agents called, workflows and the documents
+# are identical to {"prd": "fcd605c769f8",
+# "design docs": "38742d746510", "docs then site": "35382abf283e"}.
+DOC_RUN_GOLDEN = {"prd": "3237e2b5bcd8", "design docs": "3b6bc31fb169", "docs then site": "a84d0f970ede"}
 DOC_PROMPTS_GOLDEN = {
     "prd.builder": "e971c88e727f", "prd.intake": "75a955fb24fa",
     "prd.charter_fmt": "eedccdf82d84", "prd.atom_rules": "b8a918ef6039", "prd.system": "d09f06fa3181",
@@ -9747,13 +9816,18 @@ def types_constants():
         d["forms"]["page"]["file"] = "site/home.html"
         d["expect_kinds"]["shot"] = "pixel-diff"
         web = next(t for t in d["types"] if t["name"] == "website")
-        web["cost"]["item_parts"][0]["words"] = r"\bquote\b"
+        for x in web["cost"]["item_parts"]:      # another default kind and another description, read from the data
+            x.pop("default", None)
+            x["default"] = x["part"] == "styling" or None
+            if x["part"] == "form":
+                x["about"] = "a quote request"
         path = os.path.join(tmp, "types.json")
         json.dump(d, open(path, "w", encoding="utf-8"))
         code = ("import json, sys, j2_types\nj2_types.TYPES_PATH = sys.argv[1]\nimport j2\nj2.load_rates('website')\n"
                 "print(json.dumps({'ct': j2.CHECK_TYPES, 'doc': j2.DOC_CHECK_TYPES, 'ek': j2.EXPECT_KINDS, "
                 "'wf': j2.WF_TYPES + ' ' + j2.WF_KINDS, 'fmt': j2.J2Run.WF_FMT, 'file': j2.PAGE_FILE, "
-                "'files': j2.SITE_FILES, 'kinds': [j2.item_kind('Get a quote'), j2.item_kind('An order form')], "
+                "'files': j2.SITE_FILES, 'kinds': [j2.item_kind('Get a quote', {}), j2.item_kind('An order form', {})], "
+                "'about': dict(j2.output_def('website')['item_kinds'])['form'], "
                 "'bad': j2.check_problems({'verification': [{'type': 'nope', 'target': '#x', 'expect': 1}]}, '')}))")
         p = subprocess.run([sys.executable, "-c", code, path], cwd=here, capture_output=True, text=True, timeout=120)
         assert p.returncode == 0, p.stderr[-2000:]
@@ -9762,7 +9836,7 @@ def types_constants():
     assert got["ek"]["shot"] == "pixel-diff" and '"pixel-diff"' in got["wf"] and '"shot"' in got["wf"], got["wf"]
     assert '"pixel-diff"' in got["fmt"] and '"shot"' in got["fmt"]
     assert got["file"] == "home.html" and got["files"] == ["home.html", "site/home.html"], got["files"]
-    assert got["kinds"] == ["form", "page_section"], got["kinds"]        # the form words are now "quote" only
+    assert got["kinds"] == ["styling", "styling"] and got["about"] == "a quote request", got    # untagged: the data's default
     assert "pixel-diff" in got["bad"][0], got["bad"]                      # check_problems' default types
     # and this process, with the real file, has the values the prompts were written with
     assert j2.CHECK_TYPES == ("file-exists", "grep-count", "element-count", "named-test", "facts-present", "tap-targets",
@@ -16108,6 +16182,7 @@ if __name__ == "__main__":
         below_floor()
         coordination_ready_now()
         dependency_names()
+        item_kinds_and_about()
         thread_and_loom_core()
         deferred_twice()
         connections()

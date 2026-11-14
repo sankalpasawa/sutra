@@ -391,8 +391,12 @@ def load(name, path=None):
            "export": entry.get("export"), "done": entry["done"], "output": kind,
            "min_done_when": entry["min_done_when"]}
     out.update({key: fill(_text(entry[k])) for k, key in TEXTS.items() if entry.get(k)})
-    # a done-when item's words -> the rate-card part it needs at least (cost.item_parts; first match wins)
-    out["item_parts"] = tuple((x["part"], x["words"]) for x in entry["cost"].get("item_parts") or ())
+    # the kinds of done-when item Identity tags at J2.a (cost.item_parts): part -> what it is about; the default kind
+    # for an untagged item; mock_words only for the mock Identity's tags
+    parts = entry["cost"].get("item_parts") or ()
+    out["item_kinds"] = tuple((x["part"], x.get("about") or "") for x in parts)
+    out["default_kind"] = next((x["part"] for x in parts if x.get("default")), parts[-1]["part"] if parts else None)
+    out["mock_item_parts"] = tuple((x["part"], x.get("mock_words") or "") for x in parts)
     out["entry_file"] = entry["file"]      # the output's main file (a page form's site/index.html; a folder's <name>/*)
     if doc:      # a page's file is the page form's own (site/index.html); a document names its own
         out["file"] = entry["file"]

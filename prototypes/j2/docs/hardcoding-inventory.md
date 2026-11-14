@@ -174,7 +174,15 @@ code name no workflow, type or file.
 
 | Row | Status | Now |
 |---|---|---|
-| New guardrail (valid replies): a dependency naming nothing | `_register` refuses a workflow whose dependency matches, exactly, none of: a workflow of this run (id, name or proposal id, any status), a workflow of the same batch (id or name), or a finished earlier stage (`stage_archive`). The refusal goes back to Adaptation through the usual resend path and lists the names it may use. No word of a name is read. Saved runs it would have refused: 'PRD v6' and 'HLD (accepted as it is)' (j2-20261112-165902), 'decide-defaults' (j2-20261114-193037). `_schedule_rows` keeps `unknown_dependencies` for work registered before | `j2.py:8741-`, `8442` |
+| New guardrail (valid replies): a dependency naming nothing | `_register` refuses a workflow whose dependency matches, exactly, none of: a workflow of this run (id, name or proposal id, any status), a workflow of the same batch (id or name), or a finished earlier stage (`stage_archive`). The refusal goes back to Adaptation through the usual resend path and lists the names it may use. No word of a name is read. Saved runs it would have refused: 'PRD v6' and 'HLD (accepted as it is)' (j2-20261112-165902), 'decide-defaults' (j2-20261114-193037). `_schedule_rows` keeps `unknown_dependencies` for work registered before | `j2.py:8779-8792`, reason chain in `_register` |
+
+### Batch 3: Priority's word lists
+
+| Row | Status | Now |
+|---|---|---|
+| `j2.py:246-253` `item_kind, item_min`; `j2_types.py:357-358` `load (item_parts)`; `j2.py:3480-3486` state `item_minimums`; `j2.py:7475-7486` `_per_item`; `j2.py:8010-8014` `_underpriced`; `j2.py:6571-6581` `_change_cost`; `j2.py:7237-7262` `_cheapest_fit` (their item_min) | Fixed (3a): an item's minimum price is the rate-card part of the kind Identity tagged at J2.a. The type's kinds and what each is about come from `artifacts/types.json` (`cost.item_parts`: part, about, default); Identity's intake format lists them (`item_kinds`, asked only when a type has more than one kind; Identity sees no prices). The charter stores the tags by item text (`goal["item_kinds"]`); an untagged item, a wrong-length list or a kind not in the type's list leaves the item at the type's default kind (logged). Code's HLD/LLD items take their section's part (`section_parts`). Every price floor reads the tags. The old regexes stay only as `mock_words` for the mock Identity (`mock_item_kind`) | `j2.py:248-265`, `2716`, `5389-5396`, `5472`, `5489-5498`; `j2_types.py:394-399` |
+| `BUDGET_TALK` (`_budget_question`, survey `j2.py:6854-6866`) | Fixed (3b): Adaptation's format has `"about": "budget"\|"charter"` with a POLICY_QUESTION. Code reads only that field: a budget question takes the same reject-and-propose path (Priority decides what is funded: kept as a guardrail); a charter question goes to Identity; a question without `about` is asked once more, then goes to Identity. `BUDGET_TALK` is deleted | `j2.py:6826`, `6888-6894`, `7855` |
+| The other Priority rows (rate card fixed, a `fix` part per finding, envelope defaults, GRANT re-ask, REFUSE coercions, `_carry`, `_kept_price`) | Left as they are (founder, 2026-11-14) | |
 
 ## Full inventory
 

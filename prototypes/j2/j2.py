@@ -241,17 +241,26 @@ def price(w):
     return sum(RATES.get(str(p), 0) for p in parts), unknown
 
 
-# Cost follows the work: each done-when item a workflow covers has a minimum price, the rate-card part that kind of
-# item needs (the type's cost.item_parts in artifacts/types.json). ponytail: keyword match on the item text; first
-# match wins, the last entry (empty words) is the default.
-def item_kind(criterion):
+# Cost follows the work: each done-when item a workflow covers has a minimum price, the rate-card part of its kind.
+# Identity tags each item's kind at J2.a from the type's kinds (cost.item_parts in artifacts/types.json, with what each
+# is about); the tags are goal["item_kinds"] ({item text: kind}). An untagged item is the type's default kind. No word
+# of an item is read.
+def item_kind(criterion, goal=None):
     if not OUTPUT:      # no type chosen yet: no rate card, so no part
         return None
-    return next(k for k, pat in output_def(OUTPUT)["item_parts"] if re.search(pat, str(criterion), re.I))
+    return ((goal or {}).get("item_kinds") or {}).get(str(criterion)) or output_def(OUTPUT)["default_kind"]
 
 
-def item_min(criterion):
-    return RATES.get(item_kind(criterion), 0)
+def item_min(criterion, goal=None):
+    return RATES.get(item_kind(criterion, goal), 0)
+
+
+def mock_item_kind(criterion):
+    """The mock Identity's tag for an item (mock only): the first kind whose mock_words match, else the default."""
+    if not OUTPUT:
+        return None
+    d = output_def(OUTPUT)
+    return next((k for k, pat in d["mock_item_parts"] if pat and re.search(pat, str(criterion), re.I)), d["default_kind"])
 
 
 # Leaving items out for budget: the no-errors gate and the items Identity marked core at J2.a (goal["core_items"])
@@ -259,8 +268,6 @@ def item_min(criterion):
 NO_ERRORS_GATE = re.compile(r"\b(?:javascript|js) errors\b", re.I)    # the gate item names JavaScript errors
 GATE_TEXT = ("The page has no JavaScript errors, no horizontal overflow at 360px and 1280px, and every in-page link "
              "points to an existing section.")     # fixed by code at J2.a: Identity never adds features to it
-BUDGET_TALK = re.compile(r"budget|\bcosts?\b|afford|expensive|cheap|\bcut|\bdrop|leave (?:\w+ )?out|fund|credits?\b|"
-                         r"\bunits?\b|rate[- ]card|minimums?", re.I)
 
 
 def must_keep(criterion, goal):
@@ -2357,7 +2364,7 @@ def mock_page(w, goal, sections, anchors=()):
     orig = g.get("charter_items") or g.get("done_when") or []      # charter numbers: stable after drops
     num = lambda i, d: orig.index(d) + 1 if d in orig else i
     shown = [(num(i, d), d) for i, d in enumerate(g.get("done_when") or [], 1) if "phone" not in str(d).lower()]
-    main = next(((i, d) for i, d in shown if item_kind(d) == "form"), shown[0] if shown else None)
+    main = next(((i, d) for i, d in shown if mock_item_kind(d) == "form"), shown[0] if shown else None)
     link = lambda i, d, c="": (f'<a{c} href="#item-{i}" style="display:inline-block;min-height:44px;min-width:44px;'
                                f'line-height:44px;padding:0 8px">{html.escape(short(d))}</a>')     # 44px tap targets
     hero = "" if "<nav" in others else (
@@ -2384,7 +2391,7 @@ def mock_page(w, goal, sections, anchors=()):
                    f'<div class="j2-products" style="max-width:100%">{cards}</div></section>')
 
     def item(i, d):
-        if item_kind(d) == "form":
+        if mock_item_kind(d) == "form":
             return (f'<section class="order-form" id="item-{i}" data-item="{i}"><h2>{html.escape(str(d))}</h2>'
                     '<form action="/orders">'
                     '<label>Name <input name="name" style="display:block;min-height:44px;width:100%"></label>'
@@ -2698,18 +2705,21 @@ def stage_goal(kind, base, chain):
     name = base.get("product_name") or base.get("site_name") or "The product"
     reqs = [r["id"] for r in (chain.get("prd") or {}).get("requirements") or []]
     comps = [c["id"] for c in (chain.get("hld") or {}).get("components") or []]
-    items = []
-    cite = doc_cites(kind)
+    items, kinds = [], {}
+    cite, part = doc_cites(kind), j2_types.section_parts(kind)
     for s in output_def(kind)["sections"]:
         c = cite.get(s)
         got = [x["id"] for x in (chain.get(c[0]) or {}).get(c[1]) or []] if c else []
         extra = f", and names every {c[1][:-1]} ({', '.join(got)}) it {c[2]}" if got else ""
         items.append(f"The {s} section is written for {name}{extra}")
+        if part.get(s):
+            kinds[items[-1]] = part[s]      # code's item for a section: its kind is that section's rate-card part
     keep = {k: base[k] for k in ("product_name", "users", "audience", "problem", "features", "user_groups", "constraints",
                                  "success_measures") if k in base}
     return {**keep, "statement": f"An {kind.upper()} for {name}", "site_name": name, "product_name": name,
             "business_type": kind, "facts": [name], "standards": ["Every item traceable to the PRD"],
-            "rules": ["No invented facts"], "done_when": items, "core": [True] * len(items), "to_be_confirmed": [],
+            "rules": ["No invented facts"], "done_when": items, "core": [True] * len(items), "item_kinds": kinds,
+            "to_be_confirmed": [],
             "dropped_from_brief": [], "visitor_needs": [], "chain": {**chain, "prd_ids": reqs, "hld_ids": comps}}
 
 
@@ -4015,8 +4025,8 @@ class J2Run:
                            "style_guide": self.style,
                            "rate_card": ({"prices": RATES, "rule": "a workflow costs the sum of its parts' prices; "
                                           "estimated_resources.money is ignored; list a part once per unit",
-                                          "item_minimums": [{"item": self._no(c), "kind": item_kind(c),
-                                                             "min": item_min(c)}
+                                          "item_minimums": [{"item": self._no(c), "kind": item_kind(c, self.goal),
+                                                             "min": item_min(c, self.goal)}
                                                             for c in (self.goal or {}).get("done_when") or []],
                                           "fix_rule": "one 'fix' part per Audit finding fixed"}
                                          if RATES and not blind else None)}, ensure_ascii=False)
@@ -5369,11 +5379,19 @@ class J2Run:
                                "enough": True, "next": "Adaptation", "goal": mock_charter(text)})
         said = " ".join([self.request] + [x["answer"] for x in self.intake])
         mock_reply = mock
-        mock = lambda: json.dumps({**json.loads(mock_reply()), "email_updates": j2_send.asks_updates(said)})   # mock only
+        kinds = list(self.out.get("item_kinds") or [])
+
+        def mock():      # mock only: the mock Identity's email_updates and item kinds
+            r = json.loads(mock_reply())
+            dw = (r.get("goal") or {}).get("done_when") if isinstance(r.get("goal"), dict) else None
+            return json.dumps({**r, "email_updates": j2_send.asks_updates(said),
+                               **({"item_kinds": [mock_item_kind(c) for c in dw]} if dw and len(kinds) > 1 else {})})
+        kinds_fmt = ('"item_kinds": [str] (one per done-when item, same order: the kind of work each item is, one of '
+                     + json.dumps(dict(kinds), ensure_ascii=False) + '), ') if len(kinds) > 1 else ""
         r = self.call("identity", '{"say": str (when you ask: to the Requester), ' + REPLY_FMT + ' (when enough is '
                       'true), "enough": bool, "questions": [{"question": str, "options": [str] '
                       '(0-4)}] (when enough is false), "email_updates": bool (true only when the Requester asked to get '
-                      'progress updates by email), "goal": ' + self.out.get("charter_fmt", self.CHARTER_FMT)
+                      'progress updates by email), ' + kinds_fmt + '"goal": ' + self.out.get("charter_fmt", self.CHARTER_FMT)
                       + f'|null (when enough is true; done_when has at least {self.out["min_done_when"]} item(s)), '
                       + next_field(("user", "adaptation"), "Requester when you ask; Adaptation once the charter is "
                                    "recorded") + "}",
@@ -5412,6 +5430,7 @@ class J2Run:
         goal = r.get("goal") if isinstance(r.get("goal"), dict) else None
         if goal and (r.get("email_updates") is True or (self.goal or {}).get("email_updates")):
             goal["email_updates"] = True      # recorded only when asked for, so other charters stay as they were
+        tags = r.get("item_kinds") if isinstance(r.get("item_kinds"), list) else []
         if not goal:
             self._event("identity", "invalid_move", "J2.a reply had neither questions nor a charter")
             if not last:
@@ -5450,6 +5469,7 @@ class J2Run:
             goal["business_type"] = self.output
             if self.output in ("hld", "lld"):      # a design document asked for without a PRD: its own sections and checks
                 goal = stage_goal(self.output, goal, self.chain)
+                tags = []          # code's items replace Identity's: their kinds are the sections' parts
         # The no-errors gate has fixed wording: Identity can't extend it with features (runs/j2-20261009-133203
         # item 16 added filters and category browsing, so it couldn't pass once those were dropped).
         goal["done_when"] = [GATE_TEXT if NO_ERRORS_GATE.search(str(c)) else
@@ -5466,6 +5486,16 @@ class J2Run:
             goal["core_items"] = [c for c, k in zip(crit, core) if k is True]
         elif "core_items" in goal:                                       # a change request kept the old marks
             goal["core_items"] = [c for c in goal["core_items"] if c in crit]
+        # Identity's kind tag per item (stored by text, like core): an item's minimum price is its kind's rate-card part.
+        # A tag that isn't one of the type's kinds, or a list of the wrong length, leaves the item at the default kind.
+        known = {k for k, _ in kinds}
+        if tags and (len(tags) != len(crit) or any(t not in known for t in tags)):
+            self._event("identity", "item_kinds", f"{len(tags)} tags for {len(crit)} items, or a kind not in "
+                                                  f"{sorted(known)}: those items take the default kind")
+        given = {c: t for c, t in zip(crit, tags) if t in known} if len(tags) == len(crit) else {}
+        kept = {c: k for c, k in ((self.goal or {}).get("item_kinds") or {}).items() if c in crit}
+        if given or kept or goal.get("item_kinds"):
+            goal["item_kinds"] = {**kept, **(goal.get("item_kinds") or {}), **given}
         if change and self._change_applies(change):      # J2_CHANGE=1: the charter before this change is kept
             k = 1 + sum(1 for f in os.listdir(self.dir) if re.fullmatch(r"goal\.v\d+\.json", f))
             self.save(f"goal.v{k}.json", self.goal)
@@ -6229,7 +6259,7 @@ class J2Run:
             passed = {r["criterion"] for r in (last or {}).get("results", []) if r["pass"]}
             left = [c for c in p["left_out"] if c in crit and c not in passed]
             if left:
-                need = sum(item_min(c) for c in left) - (self.budget - self.spent)
+                need = sum(item_min(c, self.goal) for c in left) - (self.budget - self.spent)
                 return self._identity_limit({**p, "left_out": left, "at_audit": True,
                                              "budget_needed": need if need > 0 else None})
         tbc = {t["criterion"] for t in (self.goal or {}).get("to_be_confirmed") or []}
@@ -6637,7 +6667,7 @@ class J2Run:
 
         def items(pat, kinds=None, skip=r"$^"):             # charter numbers, as an agent writes them
             return [self._no(c) for c in crit if re.search(pat, c, re.I) and not re.search(skip, c, re.I)
-                    and (kinds is None or item_kind(c) in kinds)]
+                    and (kinds is None or mock_item_kind(c) in kinds)]
 
         def mock_plain():
             # The mock declares honest covers/fixes: each workflow's parts pay for the items it covers (J2.e checks).
@@ -6672,7 +6702,7 @@ class J2Run:
                                    "next": "Audit", "dispute": {"with": "Audit", "about": phone["id"],
                                                                 "reason": "Fluid layout, no overflow at 360px"}})
             others = [{"name": f"Cover item {f['item']}", "goal_gap": f["criterion"], "covers": [f["item"]],
-                       "parts": [item_kind(f["criterion"])], "outputs": [PAGE_FILE], "completion_check": f["criterion"],
+                       "parts": [mock_item_kind(f["criterion"])], "outputs": [PAGE_FILE], "completion_check": f["criterion"],
                        "estimated_resources": {"money": 10}}
                       if f.get("verdict") == "UNPAID" else
                       {"name": f"Fix item {f['item']}", "goal_gap": f["criterion"], "parts": ["fix"], "revises": "W-2",
@@ -6754,7 +6784,7 @@ class J2Run:
             wfs = []
             for x in self.real_summary["proposal_brief"]:
                 w_ = {"name": x["name"], "goal_gap": x.get("goal") or x["name"], "covers": x["covers"],
-                      "parts": [item_kind(crit[i - 1]) for i in x["covers"] if 0 < i <= len(crit)] or ["page_section"],
+                      "parts": [mock_item_kind(crit[i - 1]) for i in x["covers"] if 0 < i <= len(crit)] or ["page_section"],
                       "outputs": [PAGE_FILE], "completion_check": x.get("done_test") or x["name"],
                       "dependencies": x["after"], "estimated_resources": {"money": 10, "calls": 2, "time_minutes": 5}}
                 if not x["covers"]:
@@ -6779,7 +6809,7 @@ class J2Run:
             first_real = bool(real and (self.real_summary or {}).get("proposal_brief") and (not self.workflows or replan))
             r = self._mock_change_plan() if changing else json.loads(mock_real() if first_real else mock_plain())
             r["workflows"] = with_atoms(r.get("workflows"), self.out.get("mock_atom"))
-            if r.get("act") == "PROPOSE" and not self.workflows and sum(item_min(c) for c in crit) > self.budget - self.spent:
+            if r.get("act") == "PROPOSE" and not self.workflows and sum(item_min(c, self.goal) for c in crit) > self.budget - self.spent:
                 r = self._cheapest_fit()                         # the charter costs more than the budget left
             if offered and r.get("act") == "PROPOSE":
                 r["say"] += f" Using lesson {offered[0]['id']}: {offered[0]['fix']}"
@@ -6793,7 +6823,9 @@ class J2Run:
         keep = [self._no(c) for c in crit if must_keep(c, g)]
         fmt = ('{"say": str, "act": "PROPOSE"|"POLICY_QUESTION"|"DISPUTE", "workflows": '
                       + self.WF_FMT + ', "left_out": [{"item": int, "reason": str}] (done-when items this proposal '
-                      'leaves out because the budget left can\'t pay for them), "question": str|null, "dispute": {"with": "Audit"|"Coordination", "about": str '
+                      'leaves out because the budget left can\'t pay for them), "question": str|null, "about": "budget"|"charter"|null '
+                      '(with POLICY_QUESTION, what your question is about: budget when it is about cost, funding or what '
+                      'to leave out; charter otherwise), "dispute": {"with": "Audit"|"Coordination", "about": str '
                       '(finding id or workflow id), "reason": str}|null, "playbook_used": str|null (id of the playbook '
                       'you followed), "playbook_changes": str|null (what you changed from it, one sentence), '
                       '"lesson_used": str|null (id of the lesson '
@@ -6851,6 +6883,12 @@ class J2Run:
             task += self._change_text()
         # A proposal that follows the realization plan carries more workflows and atoms than the 900-token default
         r = self.call("adaptation", fmt, task, mock, **({"max_tokens": 8000} if real or changing else {}))
+        if str(r.get("act", "")).upper() == "POLICY_QUESTION" and str(r.get("about") or "").lower() not in ("budget", "charter"):
+            # a question must say what it is about: asked once more; still unsaid, it goes to Identity as a charter question
+            self._event("adaptation", "invalid_move", "POLICY_QUESTION without about")
+            r2 = self.call("adaptation", fmt, task + "\nYOUR LAST REPLY WAS A POLICY_QUESTION WITHOUT \"about\": say "
+                           "whether it is about budget or the charter.", mock)
+            r = r2 if str(r2.get("act", "")).upper() != "POLICY_QUESTION" or r2.get("about") else {**r, "about": "charter"}
         if self._budget_question(r):
             # Affordability is Priority's call (J2.c): a budget question is rejected, asked once more, then replaced.
             self._event("adaptation", "invalid_move", "budget POLICY_QUESTION rejected")
@@ -7129,7 +7167,7 @@ class J2Run:
             costs = [wf_cost(w) for w in self._all_wfs() if wf_cost(w) > 0]
             avg = sum(costs) // len(costs) if costs else 0
             return sum(wf_cost(self._wf_any(r.get("revises")) or {}) or avg for r in rows)
-        new = lambda r: (sum(item_min(crit[i - 1]) for i in r.get("covers") or [] if 0 < i <= len(crit))
+        new = lambda r: (sum(item_min(crit[i - 1], self.goal) for i in r.get("covers") or [] if 0 < i <= len(crit))
                          or RATES.get("page_section", 0))
         return sum(RATES.get("fix", 0) if r.get("revises") else new(r) for r in rows)
 
@@ -7378,7 +7416,7 @@ class J2Run:
             link = {x: f"{c[0]}_ids" for k in j2_types.names() for x, c in doc_cites(k).items()}      # the ids the plan must name (a chain link)
             ids = lambda x: ((self.goal or {}).get("chain") or {}).get(link.get(x)) or []
             wfs = [{"name": f"Write {x}", "kind": "build", "sections": [x],
-                    "goal_gap": f"The {self.out['noun']} has no {x} section yet", "parts": [item_kind(x)],
+                    "goal_gap": f"The {self.out['noun']} has no {x} section yet", "parts": [mock_item_kind(x)],
                     "covers": [self._no(c) for c in crit if sec_of(c) == x], "outputs": [self.out["file"]],
                     "completion_check": f"## {x} is present and not empty" + (f", and covers {', '.join(ids(x))}"
                                                                                 if ids(x) else "")} for x in secs]
@@ -7558,7 +7596,7 @@ class J2Run:
         for n, sec in enumerate(secs):
             mine = items[n:n + 1] if n < len(secs) - 1 else items[n:]
             wfs.append({"name": f"Build section {sec['id']}", "goal_gap": f"LLD section {sec['id']} is not on the page",
-                        "parts": [item_kind(c) for c in mine] or ["interactive_feature"],
+                        "parts": [mock_item_kind(c) for c in mine] or ["interactive_feature"],
                         "covers": [self._no(c) for c in mine], "lld_sections": [sec["id"]], "outputs": [PAGE_FILE],
                         "completion_check": f"The page matches LLD section {sec['id']}"})
         return {"say": "@Priority One workflow per LLD section, after the scaffold.", "act": "PROPOSE", "next": "Priority",
@@ -7815,8 +7853,8 @@ class J2Run:
         return squash(json.dumps(told, ensure_ascii=False)) if told else ""
 
     def _budget_question(self, r):
-        return str(r.get("act", "")).upper() == "POLICY_QUESTION" and \
-            bool(BUDGET_TALK.search(f"{r.get('question') or ''} {r.get('say') or ''}"))
+        """A POLICY_QUESTION Adaptation itself marked as about budget (its "about" field; no word of it is read)."""
+        return str(r.get("act", "")).upper() == "POLICY_QUESTION" and str(r.get("about") or "").lower() == "budget"
 
     def _cheapest_fit(self):
         """Adaptation's proposal when it won't propose within the budget: one workflow per done-when item no workflow
@@ -7826,10 +7864,10 @@ class J2Run:
         built = {i for w in self.workflows if w["status"] in ("registered", "held", "running", "done")
                  for i in self._wf_items(w)}
         todo = sorted((i for i in range(1, len(crit) + 1) if i not in built),
-                      key=lambda i: (not must_keep(crit[i - 1], g), item_min(crit[i - 1]), i))
+                      key=lambda i: (not must_keep(crit[i - 1], g), item_min(crit[i - 1], self.goal), i))
         left, wfs, out = self.budget - self.spent, [], []
         for i in todo:
-            c, cost = crit[i - 1], item_min(crit[i - 1])
+            c, cost = crit[i - 1], item_min(crit[i - 1], self.goal)
             if cost > left:
                 out.append({"item": self._no(c), "reason": f"costs {cost}, only {left} left after the items before it"})
                 continue
@@ -7838,7 +7876,7 @@ class J2Run:
             wfs.append({"name": f"{'Scaffold and item' if first else 'Build item'} {i}", "kind": "build",
                         **({"sections": self._item_sections(c)} if self.doc and self._item_sections(c) else {}),
                         "goal_gap": c,
-                        "parts": [item_kind(c)], "covers": [self._no(c)], "outputs": [PAGE_FILE],
+                        "parts": [item_kind(c, self.goal)], "covers": [self._no(c)], "outputs": [PAGE_FILE],
                         "completion_check": c})
         wfs = with_atoms(wfs, self.out.get("mock_atom"))
         say = f"@Priority The cheapest done-when items that fit the {self.budget - self.spent} left: " + \
@@ -7857,7 +7895,7 @@ class J2Run:
         for c in left:
             self.deferred.setdefault(c, set()).add(self.cycle)
         twice = [c for c in left if len(self.deferred[c]) >= 2]
-        need = sum(item_min(c) for c in left) - (self.budget - self.spent)
+        need = sum(item_min(c, self.goal) for c in left) - (self.budget - self.spent)
         if twice and need <= 0:
             # Budget remains, but the same item was put off in 2 rounds: the Requester decides, not a third round.
             return {"reason": f"The same checklist item(s) were left out or refused in 2 rounds: {'; '.join(twice)}.",
@@ -8063,7 +8101,7 @@ class J2Run:
         for w in table:
             covers = self._covers(w)
             rc = price(w)[0]
-            mins = sum(item_min(crit[i - 1]) for i in covers)
+            mins = sum(item_min(crit[i - 1], self.goal) for i in covers)
             out.append({"workflow": w.get("name"), "covers": [self._no_at(i) for i in covers],
                         "fixes": w.get("fixes") or [], "price": rc,
                         "rate_card_minimum_for_items": mins,
@@ -8617,9 +8655,9 @@ class J2Run:
             return (f"a fix is priced as a fix: it needs {need_fix} 'fix' part(s) "
                     f"({', '.join(fixes) or 'it rewrites ' + str(w.get('revises'))}), but its parts are {parts}")
         new = [i for i in covers if i not in covered]
-        minimum = sum(item_min(crit[i - 1]) for i in new) + need_fix * RATES.get("fix", 0)
+        minimum = sum(item_min(crit[i - 1], self.goal) for i in new) + need_fix * RATES.get("fix", 0)
         if rc < minimum:
-            each = "; ".join(f"item {i} {item_kind(crit[i - 1])} {item_min(crit[i - 1])}" for i in new)
+            each = "; ".join(f"item {i} {item_kind(crit[i - 1], self.goal)} {item_min(crit[i - 1], self.goal)}" for i in new)
             return (f"it costs {rc}, below the rate-card minimum of {minimum} for the work it covers ({each}"
                     + (f"; {need_fix} fix {need_fix * RATES.get('fix', 0)}" if need_fix else "") + ")")
         return None
@@ -11589,7 +11627,7 @@ class J2Run:
         paid = self.paid_items()
         for row in results:
             if row["pass"] and row["item"] not in paid:
-                kind = item_kind(row["criterion"])
+                kind = item_kind(row["criterion"], self.goal)
                 row.update(verdict="UNPAID", **{"pass": False}, severity="medium",
                            note=f"Built on the page, but no workflow covers item {row['item']}, so nobody paid for it. "
                                 f"Register a workflow that covers it at its rate-card minimum ({kind}, "

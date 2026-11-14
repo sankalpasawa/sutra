@@ -18,7 +18,7 @@
   },
   "expect_kinds": {"section": "element-count", "element": "element-count", "facts": "facts-present", "file": "file-exists", "test": "named-test", "tap": "tap-targets", "heading": "heading-present", "ids": "ids-unique", "behavior": "behavior-steps"},
   "forms": {
-    "_note": "How each form is built and checked, defined once. advisory_checks: check types whose failure is a warning on the result, never a gate (a website's browser checks, a document's section checks). A type names its form; every field it leaves out comes from here ({name}, {label}, {noun} and {sections} are filled from the type; {practice} is the form's practice_rule for a type whose recommended_practice is true, else empty). output: what a form makes, \"file\" (one file) or \"folder\" (a folder of files its builder writes with the tools the form declares: tools is the CLI tool list, allow its permission rules, test_runner the command a test is run with, {target} the test file; J2_AGENT_TOOLS=1 only). browser_checks: the check types code runs in headless Chrome (the plan format lists the others; the atom rules describe these). cost.item_parts: a done-when item's words (regex) -> the rate-card part it costs at least, first match wins. expect_kinds: an expected-output kind -> the check type that verifies it.",
+    "_note": "How each form is built and checked, defined once. advisory_checks: check types whose failure is a warning on the result, never a gate (a website's browser checks, a document's section checks). A type names its form; every field it leaves out comes from here ({name}, {label}, {noun} and {sections} are filled from the type; {practice} is the form's practice_rule for a type whose recommended_practice is true, else empty). output: what a form makes, \"file\" (one file) or \"folder\" (a folder of files its builder writes with the tools the form declares: tools is the CLI tool list, allow its permission rules, test_runner the command a test is run with, {target} the test file; J2_AGENT_TOOLS=1 only). browser_checks: the check types code runs in headless Chrome (the plan format lists the others; the atom rules describe these). cost.item_parts: the kinds of done-when item (part: the rate-card part it costs at least; about: what Identity reads to tag each item at J2.a; default: the kind of an untagged item; mock_words: the mock Identity's tagging only). expect_kinds: an expected-output kind -> the check type that verifies it.",
     "page": {"about": "a web page: one HTML entry file, with any style, script or image files beside it, checked in a browser", "output": "file", "min_done_when": 3, "builder": "builder.md", "file": "site/index.html", "preview": "html", "style_guide": "design", "advisory_checks": ["tap-targets", "behavior-steps", "element-count", "grep-count"],
              "check_types": ["file-exists", "grep-count", "element-count", "named-test", "facts-present", "tap-targets", "behavior-steps"], "ready": "Your {lower} is ready.",
              "browser_checks": ["tap-targets", "behavior-steps"]},
@@ -37,7 +37,7 @@
       "done": "Done: the {label} is workable. Every done-when item, rubric item and necessary condition passes.",
       "ready": "Your document is ready.",
       "cost": {"card": "rates_prd", "section_part": "doc_section",
-               "item_parts": [{"part": "requirements_section", "words": "requirement|components?\\b|pages and sections"}, {"part": "doc_section", "words": ""}]},
+               "item_parts": [{"part": "requirements_section", "about": "an item about the requirements, the components, or the pages and sections", "mock_words": "requirement|components?\\b|pages and sections"}, {"part": "doc_section", "about": "any other section of the document", "default": true}]},
       "workflow": {"template": "doc-sections", "refs": "^{name}\\.md(#|$)"},
       "mock": {"charter": "mock_form_charter", "section": "mock_form_section", "atom": {}}
     },
@@ -55,7 +55,7 @@
       ],
       "done": "Done: the {label} is workable. Its test passed in the sandbox and every done-when item, rubric item and necessary condition passes.",
       "ready": "Your {lower} is ready.",
-      "cost": {"card": "rates_agent", "item_parts": [{"part": "agent_file", "words": ""}], "parts": {"agent_file": 2, "agent_test": 1}},
+      "cost": {"card": "rates_agent", "item_parts": [{"part": "agent_file", "about": "a file of the folder", "default": true}], "parts": {"agent_file": 2, "agent_test": 1}},
       "workflow": {"template": "folder-files", "refs": "^{name}/"},
       "mock": {"charter": "mock_form_folder_charter", "files": "mock_form_folder_files"}
     }
@@ -258,7 +258,7 @@
       },
       "cost": {
         "card": "rates",
-        "item_parts": [{"part": "form", "words": "\\bform\\b|\\border|\\bbook(?:ing)?\\b|enquir|inquir|appointment|reserv|sign[- ]?up|subscribe"}, {"part": "interactive_feature", "words": "filter|search|sort|slider|carousel|calculator|toggle|\\btabs?\\b|interactive|animat"}, {"part": "styling", "words": "viewport|mobile|phone|responsive|horizontal scroll|\\b360\\s*px|\\b1280\\s*px|\\bcolou?rs?\\b|\\bfonts?\\b"}, {"part": "page_section", "words": ""}],
+        "item_parts": [{"part": "form", "about": "a form visitors fill in and send (an order, a booking, an enquiry, a sign-up)", "mock_words": "\\bform\\b|\\border|\\bbook(?:ing)?\\b|enquir|inquir|appointment|reserv|sign[- ]?up|subscribe"}, {"part": "interactive_feature", "about": "something visitors operate on the page (a filter, search, slider, calculator, tabs, an animation)", "mock_words": "filter|search|sort|slider|carousel|calculator|toggle|\\btabs?\\b|interactive|animat"}, {"part": "styling", "about": "how the page looks or fits a screen (layout on phones, colours, fonts, no horizontal scroll)", "mock_words": "viewport|mobile|phone|responsive|horizontal scroll|\\b360\\s*px|\\b1280\\s*px|\\bcolou?rs?\\b|\\bfonts?\\b"}, {"part": "page_section", "about": "any other content section of the page", "default": true}],
         "parts": {
           "styling": 1,
           "page_section": 3,
