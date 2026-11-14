@@ -1,0 +1,82 @@
+{
+  "schema": "sutra-extension/2",
+  "id": "133_complaint_desk",
+  "scope": "lendco/credit-ops",
+  "goals": [
+    "complaint_8801_closed"
+  ],
+  "budget": {
+    "compute": 10,
+    "money": 10,
+    "attention": 2
+  },
+  "preference": [
+    "compute",
+    "money",
+    "attention"
+  ],
+  "learning": true,
+  "rules": [
+    {
+      "id": "R-STYLES@1",
+      "head": "complaint_8801_closed",
+      "branches": [
+        [
+          "styled_by_the_book",
+          "resolved_by_the_book"
+        ],
+        [
+          "styled_incident",
+          "resolved_as_incident"
+        ],
+        [
+          "styled_unmatched",
+          "new_home_8801_agreed"
+        ]
+      ],
+      "approved": true,
+      "source": "reviewed/credit-ops-charter",
+      "styles": [
+        "run-the-book",
+        "incident"
+      ],
+      "unmatched": "ask the charter owner: a new home, or a new style"
+    }
+  ],
+  "evidence": [
+    {
+      "predicate": "complaint_8801_logged",
+      "truth": "TRUE",
+      "verified": true,
+      "source": "fixture/complaints-inbox",
+      "version": "1"
+    }
+  ],
+  "methods": [
+    {
+      "id": "ask-new-home-8801@1",
+      "effect": "new_home_8801_agreed",
+      "requires": [
+        "complaint_8801_logged"
+      ],
+      "provider": "charter-owner",
+      "grant": "action:ask-new-home-8801@1",
+      "cost": {
+        "compute": 0,
+        "money": 0,
+        "attention": 1
+      },
+      "action": "ask",
+      "approved": true,
+      "source": "reviewed/synthetic-method",
+      "question": "Complaint 8801 fits no declared style of Credit-Ops. Does it go to a new home? (No: it stays, and a new style is to be declared here.)",
+      "ask_to": "charter-owner"
+    }
+  ],
+  "providers": {
+    "charter-owner": 1
+  },
+  "grants": [
+    "action:ask-new-home-8801@1"
+  ]
+}

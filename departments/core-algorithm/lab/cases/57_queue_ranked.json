@@ -1,0 +1,12 @@
+{
+  "id": "57_queue_ranked",
+  "title": "A queue ranked by impact",
+  "description": "Four borrowers are overdue and the desk has attention for two calls. The queue is ranked by the impact each goal's rule declares, so the two goals that matter most get the calls. Of the other two, one is held on the attention line and the last one, turned away on the call, takes its other route: a letter.",
+  "packs": [
+    "130_collections_queue",
+    "131_queue_ranked"
+  ],
+  "execute": true,
+  "area": "Priority",
+  "expected": "LOCAL_MODEL_EFFECTS_RECORDED"
+}

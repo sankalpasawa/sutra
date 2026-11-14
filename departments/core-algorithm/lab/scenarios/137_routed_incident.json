@@ -1,0 +1,13 @@
+{
+  "schema": "sutra-extension/2",
+  "id": "137_routed_incident",
+  "evidence": [
+    {
+      "predicate": "styled_incident",
+      "truth": "TRUE",
+      "verified": true,
+      "source": "router/credit-ops",
+      "version": "r1"
+    }
+  ]
+}

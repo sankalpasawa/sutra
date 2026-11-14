@@ -1,0 +1,100 @@
+{
+  "schema": "sutra-extension/2",
+  "id": "139_style_campaign",
+  "rules": [
+    {
+      "id": "R-STYLES@2",
+      "head": "complaint_8801_closed",
+      "branches": [
+        [
+          "styled_by_the_book",
+          "resolved_by_the_book"
+        ],
+        [
+          "styled_incident",
+          "resolved_as_incident"
+        ],
+        [
+          "styled_unmatched",
+          "new_home_8801_agreed"
+        ],
+        [
+          "styled_campaign",
+          "resolved_as_campaign"
+        ]
+      ],
+      "approved": true,
+      "source": "reviewed/credit-ops-charter",
+      "styles": [
+        "run-the-book",
+        "incident",
+        "campaign"
+      ],
+      "unmatched": "ask the charter owner: a new home, or a new style",
+      "replaces": "R-STYLES@1"
+    },
+    {
+      "id": "R-STYLE-CAMPAIGN@1",
+      "head": "resolved_as_campaign",
+      "branches": [
+        [
+          "offer_8801_checked",
+          "credit_8801_applied"
+        ]
+      ],
+      "approved": true,
+      "source": "reviewed/style-card",
+      "card": {
+        "style": "campaign",
+        "what_is_missing": "T2 known-unknown",
+        "cause_effect": "predictable",
+        "reach": "two-system ask",
+        "cadence": "periodic",
+        "vehicle": "local workflow",
+        "verify": "the offer was checked and the credit applied",
+        "gate": "auto",
+        "unmatched": "ask the charter owner: a new home, or a new style"
+      }
+    }
+  ],
+  "methods": [
+    {
+      "id": "check-offer-8801@1",
+      "effect": "offer_8801_checked",
+      "requires": [
+        "complaint_8801_logged"
+      ],
+      "provider": "ops-desk",
+      "grant": "action:check-offer-8801@1",
+      "cost": {
+        "compute": 1,
+        "money": 0,
+        "attention": 0
+      },
+      "action": "simulate_fact",
+      "approved": true,
+      "source": "reviewed/synthetic-method"
+    },
+    {
+      "id": "apply-credit-8801@1",
+      "effect": "credit_8801_applied",
+      "requires": [
+        "offer_8801_checked"
+      ],
+      "provider": "ops-desk",
+      "grant": "action:apply-credit-8801@1",
+      "cost": {
+        "compute": 1,
+        "money": 2,
+        "attention": 0
+      },
+      "action": "simulate_fact",
+      "approved": true,
+      "source": "reviewed/synthetic-method"
+    }
+  ],
+  "grants": [
+    "action:check-offer-8801@1",
+    "action:apply-credit-8801@1"
+  ]
+}

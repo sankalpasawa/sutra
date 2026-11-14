@@ -1,0 +1,14 @@
+{
+  "id": "59_style_unmatched",
+  "title": "A problem in no declared style",
+  "description": "Credit-Ops declares two problem styles, each a card with its own done-when and its own methods, and says what happens to a problem that fits neither: the charter owner is asked whether it goes to a new home. The router marks this complaint unmatched, so no card runs: the goal asks that one question, pays for it once and waits.",
+  "packs": [
+    "133_complaint_desk",
+    "134_style_run_the_book",
+    "135_style_incident",
+    "138_routed_unmatched"
+  ],
+  "execute": true,
+  "area": "Styles",
+  "expected": "WAITING"
+}

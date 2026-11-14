@@ -1,0 +1,72 @@
+{
+  "schema": "sutra-extension/2",
+  "id": "134_style_run_the_book",
+  "rules": [
+    {
+      "id": "R-STYLE-RUN-THE-BOOK@1",
+      "head": "resolved_by_the_book",
+      "branches": [
+        [
+          "ledger_8801_matched",
+          "reversal_8801_posted"
+        ]
+      ],
+      "approved": true,
+      "source": "reviewed/style-card",
+      "card": {
+        "style": "run-the-book",
+        "what_is_missing": "T1 known-known",
+        "cause_effect": "predictable",
+        "reach": "in-system",
+        "cadence": "event-driven",
+        "vehicle": "local workflow",
+        "verify": "the ledger matches and the reversal is posted",
+        "gate": "auto",
+        "unmatched": "ask the charter owner: a new home, or a new style"
+      }
+    }
+  ],
+  "methods": [
+    {
+      "id": "match-ledger-8801@1",
+      "effect": "ledger_8801_matched",
+      "requires": [
+        "complaint_8801_logged"
+      ],
+      "provider": "ops-desk",
+      "grant": "action:match-ledger-8801@1",
+      "cost": {
+        "compute": 1,
+        "money": 0,
+        "attention": 0
+      },
+      "action": "simulate_fact",
+      "approved": true,
+      "source": "reviewed/synthetic-method"
+    },
+    {
+      "id": "post-reversal-8801@1",
+      "effect": "reversal_8801_posted",
+      "requires": [
+        "ledger_8801_matched"
+      ],
+      "provider": "ops-desk",
+      "grant": "action:post-reversal-8801@1",
+      "cost": {
+        "compute": 1,
+        "money": 1,
+        "attention": 0
+      },
+      "action": "simulate_fact",
+      "approved": true,
+      "source": "reviewed/synthetic-method"
+    }
+  ],
+  "providers": {
+    "ops-desk": 4
+  },
+  "grants": [
+    "action:match-ledger-8801@1",
+    "action:post-reversal-8801@1"
+  ]
+}
