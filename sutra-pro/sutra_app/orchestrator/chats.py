@@ -25,7 +25,7 @@ from sutra_app.connectors.models import Message
 from sutra_app.library.gate import GATE, Checked
 from sutra_app.library.org_chart import LinkPlan
 from sutra_app.orchestrator import direct_running
-from sutra_app.orchestrator.chat_v2 import ChatSegments
+from sutra_app.orchestrator.chat_v2 import DIRECT_ASK, ChatSegments
 from sutra_app.orchestrator.db import Database, Tx
 from sutra_app.orchestrator.errors import NotFound
 from sutra_app.orchestrator.ids import iso_z
@@ -81,13 +81,17 @@ def _session_record(row: sqlite3.Row) -> ChatSession:
         pinned=row["pinned"], pinned_model=row["pinned_model"], pinned_effort=row["pinned_effort"], run_id=row["run_id"])
 
 
-def _message_out(row: sqlite3.Row) -> ChatMessageOut:
+def _message_out(row: sqlite3.Row, newest: Mapping[tuple[str, int], int] | None = None) -> ChatMessageOut:
+    """`newest` maps (session id, owner's line id) to the highest attempt stored for that line; a row of a lower attempt is `superseded`."""
+    owner, attempt = _turn_of(row["src_ref"]), _attempt_of(row["src_ref"])
+    client = _client_of(row["src_ref"])
     return ChatMessageOut(
         id=row["id"], session_id=row["session_id"], role=row["role"], who=row["who"], kind=row["kind"], text=row["text"],
         card=json.loads(row["card_json"]) if row["card_json"] else None, pause=row["pause"], answered_by=row["answered_by"],
         task_id=row["task_id"], state=row["state"], at=iso_z(row["at"]), blocks=_blocks_of(row["meta_json"]),
         turn=_turn_of(row["src_ref"]), passed_on=_passed_on_of(row["session_id"], row["src_ref"]), steer=(row["src_ref"] or "").startswith(STEER_REF),
-        ask=_ask_of(row["src_ref"]))
+        ask=_ask_of(row["src_ref"]), client_id=client, attempt=attempt, ordered=_ordered_of(row["meta_json"]),
+        superseded=bool(owner is not None and attempt is not None and newest is not None and newest.get((row["session_id"], owner), 1) > attempt))
 
 
 def _ask_of(src_ref: str | None) -> str | None:
@@ -115,8 +119,50 @@ def _passed_on_of(session_id: str, src_ref: str | None) -> int | None:
 def _turn_of(src_ref: str | None) -> int | None:
     """The owner's line a direct-chat reply answers (`src_ref` is `direct:<message id>`, or `direct-note:`, `direct-error:`, `direct-switch:`
     for the other messages that end the same turn: orchestrator/direct_turns.py), else None."""
-    found = re.fullmatch(r"direct(?:-(?:note|error|switch))?:([1-9][0-9]{0,15})", src_ref or "")
+    found = _DIRECT_REF.fullmatch(src_ref or "")
     return int(found.group(1)) if found else None
+
+
+_DIRECT_REF = re.compile(r"direct(?:-(?:note|error|switch))?:([1-9][0-9]{0,15})(?:\.([2-9]|[1-9][0-9]))?")
+
+
+def _attempt_of(src_ref: str | None) -> int | None:
+    """Which try of the owner's line a direct-chat row ends: 1 for the historical shape (`direct:<id>`), N for `direct:<id>.N` (D216); None for any other row."""
+    found = _DIRECT_REF.fullmatch(src_ref or "")
+    return None if found is None else int(found.group(2) or 1)
+
+
+def _client_of(src_ref: str | None) -> str | None:
+    """The id the page sent with the owner's line (`direct-ask:<client id>`), else None."""
+    ref = src_ref or ""
+    if not ref.startswith(DIRECT_ASK):
+        return None
+    tail = ref[len(DIRECT_ASK):]
+    return tail if tail and len(tail) <= 64 else None
+
+
+def _ordered_of(meta_json: str | None) -> bool:
+    try:
+        return json.loads(meta_json or "{}").get("ordered") is True
+    except ValueError:
+        return False
+
+
+def newest_attempts(conn: sqlite3.Connection, rows: Sequence[sqlite3.Row]) -> dict[tuple[str, int], int]:
+    """The highest attempt stored for each owner line the rows answer, read once per session of the rows (one indexed prefix scan on `src_ref`)."""
+    sessions = {r["session_id"] for r in rows if _turn_of(r["src_ref"]) is not None}
+    out: dict[tuple[str, int], int] = {}
+    for sid in sessions:
+        for ref in conn.execute("SELECT src_ref FROM chat_messages WHERE session_id = ? AND src_ref LIKE 'direct%:%'", (sid,)):
+            owner, attempt = _turn_of(ref[0]), _attempt_of(ref[0])
+            if owner is not None and attempt is not None and attempt > out.get((sid, owner), 0):
+                out[(sid, owner)] = attempt
+    return out
+
+
+def _outs(conn: sqlite3.Connection, rows: Sequence[sqlite3.Row]) -> list[ChatMessageOut]:
+    newest = newest_attempts(conn, rows)
+    return [_message_out(r, newest) for r in rows]
 
 
 def _blocks_of(meta_json: str | None) -> list[dict]:
@@ -196,11 +242,12 @@ class ChatStore:
             rows = conn.execute(
                 f"SELECT {_MESSAGE_COLUMNS} FROM chat_messages WHERE session_id = ? AND id > ? ORDER BY id LIMIT ?",
                 (session_id, int(after), _clamp(limit))).fetchall()
-        return [_message_out(r) for r in rows]
+        return _outs(conn, rows)
 
     def message(self, message_id: int) -> ChatMessageOut | None:
-        row = self.db.conn().execute(f"SELECT {_MESSAGE_COLUMNS} FROM chat_messages WHERE id = ?", (message_id,)).fetchone()
-        return _message_out(row) if row is not None else None
+        conn = self.db.conn()
+        row = conn.execute(f"SELECT {_MESSAGE_COLUMNS} FROM chat_messages WHERE id = ?", (message_id,)).fetchone()
+        return _outs(conn, [row])[0] if row is not None else None
 
     def blocks(self, message_id: int) -> list[dict]:
         """The typed blocks stored with a message, in order (empty for a message without any)."""
@@ -208,18 +255,21 @@ class ChatStore:
         return list(json.loads(row["meta_json"]).get("blocks", [])) if row is not None else []
 
     def last_messages(self, session_id: str, limit: int = RESUME_MESSAGES, *, kinds: Sequence[str] | None = None,
-                      ok_only: bool = False) -> list[ChatMessageOut]:
-        """The newest `limit` messages of one session (its own rows only), oldest first; `kinds` and `ok_only` filter first."""
+                      ok_only: bool = False, exclude_superseded: bool = False) -> list[ChatMessageOut]:
+        """The newest `limit` messages of one session (its own rows only), oldest first; `kinds` and `ok_only` filter first. `exclude_superseded` leaves out
+        the replies of a try that a later try of the same owner line replaced (the model is not told about an answer the owner discarded, D216)."""
         where, args = ["session_id = ?"], [session_id]
         if kinds is not None:
             where.append(f"kind IN ({','.join('?' * len(kinds))})")
             args += list(kinds)
         if ok_only:
             where.append("state = 'ok'")
-        rows = self.db.conn().execute(
+        conn = self.db.conn()
+        rows = conn.execute(
             f"SELECT {_MESSAGE_COLUMNS} FROM chat_messages WHERE {' AND '.join(where)} ORDER BY id DESC LIMIT ?",
             (*args, max(0, int(limit)))).fetchall()
-        return [_message_out(r) for r in reversed(rows)]
+        out = _outs(conn, list(reversed(rows)))
+        return [m for m in out if not m.superseded] if exclude_superseded else out
 
     def post(self, tx: Tx, session_id: str, rec: Checked[ChatMessage]) -> ChatMessageOut | None:
         """Store a checked message in `session_id` and emit `chat.message`. Returns None, storing nothing, when a message with
@@ -239,8 +289,10 @@ class ChatStore:
         card_json = json.dumps(msg.card, separators=(",", ":"), ensure_ascii=False, sort_keys=True) if msg.card is not None else None
         meta_json = msg.meta.model_dump_json()
         if msg.blocks:                              # typed provider blocks ride in meta_json (absorb D108); MessageMeta itself is J2's and unchanged
-            meta_json = json.dumps({**json.loads(meta_json), "blocks": [b.model_dump(mode="json", exclude_defaults=True) for b in msg.blocks]},
-                                   separators=(",", ":"), ensure_ascii=False)
+            sibling: dict = {"blocks": [b.model_dump(mode="json", exclude_defaults=True) for b in msg.blocks]}
+            if msg.ordered:
+                sibling["ordered"] = True           # the blocks are the whole turn in order, text included (D212): a second sibling key, never a meta key
+            meta_json = json.dumps({**json.loads(meta_json), **sibling}, separators=(",", ":"), ensure_ascii=False)
         cursor = conn.execute(
             "INSERT INTO chat_messages(session_id, role, who, kind, text, card_json, meta_json, pause, answered_by, task_id, src_ref, state, at)"
             " VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)",
@@ -256,7 +308,7 @@ class ChatStore:
 
     @staticmethod
     def message_in(conn: sqlite3.Connection, message_id: int) -> ChatMessageOut:
-        return _message_out(conn.execute(f"SELECT {_MESSAGE_COLUMNS} FROM chat_messages WHERE id = ?", (message_id,)).fetchone())
+        return _outs(conn, [conn.execute(f"SELECT {_MESSAGE_COLUMNS} FROM chat_messages WHERE id = ?", (message_id,)).fetchone()])[0]
 
     def mark_answered(self, tx: Tx, question_id: int, by_message_id: int) -> None:
         """Say that message `by_message_id` answered the question `question_id`. A question is answered once: a second call
@@ -401,5 +453,5 @@ class ChatTranscripts:
         self._chats = chats
 
     def messages(self, session_id: str, limit: int = 20) -> list[Message]:
-        found = self._chats.last_messages(session_id, limit, kinds=("text", "question"), ok_only=True)
+        found = self._chats.last_messages(session_id, limit, kinds=("text", "question"), ok_only=True, exclude_superseded=True)
         return [Message(role=_TRANSCRIPT_ROLES[m.role], text=m.text) for m in found]

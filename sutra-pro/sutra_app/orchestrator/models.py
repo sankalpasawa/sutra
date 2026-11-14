@@ -412,6 +412,10 @@ class ChatMessageOut(Value):
     steer: bool = False                                                    # the owner's note to an agent (POST /api/chats/{sid}/steer, D132): its src_ref is `steer:<id>`
     ask: Literal["q", "records", "model"] | None = None                    # the owner's question to a function (q) and its answer, made from its records or by a model
                                                                            # (POST /api/ask, D148): the src_ref is `ask:<id>`, `ask:<id>:records` or `ask:<id>:model`
+    client_id: Annotated[str, StringConstraints(max_length=64)] | None = None   # the owner's line of a direct turn: the id the page sent with it (`direct-ask:<id>`, D220)
+    attempt: Annotated[int, Field(ge=1)] | None = None                     # a direct-chat reply, note or error: which try of the owner's line it ends (1, or N for a retry, D216)
+    superseded: bool = False                                               # a reply of a try that a later try of the same owner line replaced (kept, not shown as the answer)
+    ordered: bool = False                                                  # `blocks` holds the whole turn in order, text included (D212)
 
     @model_serializer(mode="wrap")
     def _blocks_only_when_there_are_some(self, handler: Any) -> dict[str, Any]:
@@ -427,6 +431,14 @@ class ChatMessageOut(Value):
             data.pop("steer", None)
         if data.get("ask") is None:
             data.pop("ask", None)
+        if data.get("client_id") is None:
+            data.pop("client_id", None)
+        if data.get("attempt") is None:
+            data.pop("attempt", None)
+        if not data.get("superseded"):
+            data.pop("superseded", None)
+        if not data.get("ordered"):
+            data.pop("ordered", None)
         return data
 
 

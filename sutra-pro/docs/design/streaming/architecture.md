@@ -215,7 +215,7 @@ Fold (D212): the cap counts stored elements, where a `tool_use` and its `tool_re
 
 `<N>` is the server-computed ordinal: one more than the number of replies already stored for that owner line, fixed when the generation starts and returned in the 202 as `attempt_no`. Four places change together in STR-3, with a table test over every ref shape:
 
-1. `direct_turns.Ending.src_ref` pattern becomes `^direct(-(note|error|switch))?:[1-9][0-9]{0,15}(\.[2-9][0-9]?)?$`.
+1. `direct_turns.Ending.src_ref` pattern becomes `^direct(-(note|error|switch))?:[1-9][0-9]{0,15}(\.([2-9]|[1-9][0-9]))?$` (revision 2 wrote `[2-9][0-9]?`, which refuses attempts 10 to 19; the STR-3 table test found it).
 2. `chats._turn_of` regex gains `(?:\.[0-9]+)?` after the id (it returns the owner id as before); a new `chats._attempt_of(src_ref)` returns 1 or N and feeds `ChatMessageOut.attempt`.
 3. `recover_interrupted` (`orchestrator/chat_v2.py:250`) counts any reply of the owner line: `r.src_ref = 'direct:' || m.id OR r.src_ref LIKE 'direct:' || m.id || '.%'` (ids are digits, so the `.` cannot widen the match to another owner line).
 4. Composer `reconcile` ends the turn only on an agent row with `turn === id` and `attempt === state.turn.attempt` (the attempt from the 202 or the snapshot). Without this the first attempt's stored partial reply would end the retry instantly.

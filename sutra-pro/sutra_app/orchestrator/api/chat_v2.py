@@ -44,7 +44,7 @@ from sutra_app.orchestrator.api.deps import RedactedJSONResponse, require_token,
 from sutra_app.orchestrator import direct_running
 from sutra_app.orchestrator.agent_sessions import agent_of, effective, pick_dict
 from sutra_app.orchestrator.chat_ground import ground
-from sutra_app.orchestrator.chat_v2 import DIRECT_ASK, MAX_RESULTS, SCOPE_RE, ChatArchive, ChatChoices, ChatSearch
+from sutra_app.orchestrator.chat_v2 import DIRECT_ASK, MAX_RESULTS, SCOPE_RE, ChatArchive, ChatChoices, ChatSearch, find_owner_line
 from sutra_app.orchestrator.db import run_blocking
 from sutra_app.orchestrator.direct_turns import MAX_TEXT, Ending, attached_line, failed, finished, stopped
 from sutra_app.orchestrator.errors import AppError, Busy, NotFound, ReadOnly, validation_error
@@ -257,12 +257,14 @@ def _kind_of(filename: str) -> str:
 
 
 def _post(services: Any, sid: str, *, role: str, who: str, kind: str, text: str, blocks: list | None = None,
-          src_ref: str | None = None) -> int:
+          src_ref: str | None = None) -> int | None:
+    """The stored message's id, or None when a message with this `src_ref` is stored already (`ChatStore.post` refuses a repeated ref: a replayed line is
+    not an error, and the caller looks the stored one up)."""
     redact = services.redact
     with services.db.tx() as tx:
         out = services.chats.post(tx, sid, GATE.check("chat_message", ChatMessage(
             kind=kind, session_id=sid, role=role, who=who, text=redact(text)[:200_000], blocks=blocks or [], src_ref=src_ref, at=tx.now()), ctx=tx.ctx))
-    return out.id
+    return None if out is None else out.id
 
 
 def _clean(services: Any, text: str) -> str:
@@ -277,15 +279,22 @@ def _post_all(services: Any, sid: str, endings: list[Ending]) -> None:
     with services.db.tx() as tx:
         for e in endings:
             services.chats.post(tx, sid, GATE.check("chat_message", ChatMessage(
-                kind=e.kind, session_id=sid, role="agent", who="sutra", text=redact(e.text)[:200_000], blocks=e.blocks, src_ref=e.src_ref,
-                at=tx.now()), ctx=tx.ctx))
+                kind=e.kind, session_id=sid, role="agent", who="sutra", text=redact(e.text)[:200_000], blocks=e.blocks, ordered=e.ordered,
+                src_ref=e.src_ref, at=tx.now()), ctx=tx.ctx))
 
 
-def _store_user_line(services: Any, sid: str, text: str, attached: str = "") -> int:
+def _store_user_line(services: Any, sid: str, text: str, attached: str = "", client_id: str | None = None) -> int:
     """The owner's line; with files, a last line records what went with it (the model gets the files and `text` itself). Its src_ref marks it as the
-    start of a direct turn, so that a start after a crash can find the ones that never got an ending (`chat_v2.recover_interrupted`)."""
-    return _post(services, sid, role="user", who="user", kind="text", text=text + ("\n" + attached if attached else ""),
-                 src_ref=DIRECT_ASK + uuid.uuid4().hex[:16])
+    start of a direct turn, so that a start after a crash can find the ones that never got an ending (`chat_v2.recover_interrupted`). The page's
+    `client_id` is the tail of the ref when it sent one (D220): a replayed line is found again, never stored twice."""
+    ref = DIRECT_ASK + (client_id or uuid.uuid4().hex[:16])
+    stored = _post(services, sid, role="user", who="user", kind="text", text=text + ("\n" + attached if attached else ""), src_ref=ref)
+    if stored is None:                                      # the ref was stored already: this is the same line
+        found = find_owner_line(services.db.conn(), sid, client_id or "")
+        if found is None:
+            raise AppError("internal", "the owner's line could not be stored")
+        return found
+    return stored
 
 
 def _ground(services: Any, port: Any, sid: str) -> None:
@@ -297,9 +306,10 @@ def _ground(services: Any, port: Any, sid: str) -> None:
         log.warning("could not ground the direct chat %s", sid, exc_info=True)
 
 
-def _answer(services: Any, port: Any, sid: str, user_message_id: int, turn: ChatTurnIn) -> None:
+def _answer(services: Any, port: Any, sid: str, user_message_id: int, turn: ChatTurnIn, attempt: int = 1) -> None:
     """The turn, on a worker thread: partials out as control events, the stored reply once at the end. A stop keeps what was written
-    with a calm note; a failure keeps it with the real reason (direct_turns)."""
+    with a calm note; a failure keeps it with the real reason (direct_turns). `attempt` is the try of the owner's line (1; N for a retry): it names the refs
+    the endings are stored under (D216)."""
     bus = services.bus
     buffered = ""
     shown = ""                                                       # what the owner has seen stream in, redacted as it was sent
@@ -330,17 +340,17 @@ def _answer(services: Any, port: Any, sid: str, user_message_id: int, turn: Chat
         flush()
         if done is None:
             raise RuntimeError("the turn ended without a result")
-        _post_all(services, sid, finished(user_message_id, done))
+        _post_all(services, sid, finished(user_message_id, done, attempt))
     except Exception as exc:                                         # a failed turn is a message, not a lost line
         flush()
         log.warning("direct chat turn failed for %s: %s", sid, type(exc).__name__)
         if isinstance(exc, CallCancelledError):                      # the owner's Stop is not an error: what was written stays
-            endings = stopped(user_message_id, shown)
+            endings = stopped(user_message_id, shown, attempt)
         else:
             message = exc.user_message() if isinstance(exc, ConnectorError) else (exc.message if isinstance(exc, AppError) else "The model could not answer.")
             if isinstance(exc, ReplyTruncatedError):                 # the part that was written is kept above; say what the owner can do next
                 message += " Ask for a shorter answer, or say \"continue\"."
-            endings = failed(user_message_id, shown, message)
+            endings = failed(user_message_id, shown, message, attempt)
         try:
             _post_all(services, sid, endings)
         except Exception:

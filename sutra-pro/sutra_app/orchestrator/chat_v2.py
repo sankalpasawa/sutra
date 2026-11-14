@@ -26,7 +26,7 @@ from sutra_app.orchestrator.ids import iso_z
 from sutra_app.orchestrator.records import ChatMessage
 
 __all__ = ["ChatSegments", "ChatSearch", "ChatArchive", "ChatChoices", "MAX_RESULTS", "SCOPE_RE", "DIRECT_ASK", "INTERRUPTED", "recover_interrupted",
-           "cascade", "SOURCES", "EFFORTS"]
+           "cascade", "SOURCES", "EFFORTS", "find_owner_line", "attempts_stored", "next_attempt"]
 
 MAX_RESULTS = 50
 SCOPE_RE = re.compile(r"^(all|node:[a-z][a-z0-9_.-]{1,60}|dept:[a-z][a-z0-9_-]{1,40})$")
@@ -236,7 +236,7 @@ class ChatChoices:
 
 # ---- direct turns the last process did not finish ---------------------------------------------------------------------------------------------------
 
-DIRECT_ASK = "direct-ask:"           # the src_ref prefix of the owner's line that starts a direct turn (api/chat_v2._store_user_line adds a random tail)
+DIRECT_ASK = direct_turns.DIRECT_ASK   # the src_ref prefix of the owner's line that starts a direct turn (api/chat_v2._store_user_line adds the page's client id, or a random tail)
 INTERRUPTED = "Interrupted: the app closed before the model answered."
 
 
@@ -247,13 +247,41 @@ def recover_interrupted(db: Database, chats: Any) -> int:
     never touched. -> how many lines were marked."""
     rows = db.conn().execute(
         "SELECT m.session_id AS sid, m.id AS id FROM chat_messages m WHERE m.src_ref LIKE ? AND NOT EXISTS ("
-        " SELECT 1 FROM chat_messages r WHERE r.session_id = m.session_id AND r.src_ref = 'direct:' || m.id) ORDER BY m.id", (DIRECT_ASK + "%",)).fetchall()
+        " SELECT 1 FROM chat_messages r WHERE r.session_id = m.session_id AND (r.src_ref = 'direct:' || m.id OR r.src_ref LIKE 'direct:' || m.id || '.%'))"
+        " ORDER BY m.id", (DIRECT_ASK + "%",)).fetchall()               # a reply of ANY attempt answers the line (ids are digits: `direct:5.%` never matches line 55)
     marked = 0
     for row in rows:
         with db.tx() as tx:
             for ending in direct_turns.failed(int(row["id"]), "", INTERRUPTED):
                 posted = chats.post(tx, row["sid"], GATE.check("chat_message", ChatMessage(
-                    kind=ending.kind, session_id=row["sid"], role="agent", who="sutra", text=ending.text, blocks=ending.blocks, src_ref=ending.src_ref,
-                    at=tx.now()), ctx=tx.ctx))
+                    kind=ending.kind, session_id=row["sid"], role="agent", who="sutra", text=ending.text, blocks=ending.blocks, ordered=ending.ordered,
+                    src_ref=ending.src_ref, at=tx.now()), ctx=tx.ctx))
                 marked += 1 if posted is not None else 0
     return marked
+
+
+# ---- the owner's line and its tries (D216, D220) -----------------------------------------------------------------------------------------------------
+
+def find_owner_line(conn: sqlite3.Connection, session_id: str, client_id: str) -> int | None:
+    """The id of the owner's line a page stored with this `client_id` in this chat, or None. A send that repeats a `client_id` finds its line here instead
+    of storing a second one (a double click, a retry of a request that timed out)."""
+    row = conn.execute("SELECT id FROM chat_messages WHERE session_id = ? AND src_ref = ?",
+                       (session_id, direct_turns.owner_ref(client_id))).fetchone()
+    return None if row is None else int(row["id"])
+
+
+def attempts_stored(conn: sqlite3.Connection, session_id: str, owner_id: int) -> list[int]:
+    """The attempts of this owner line that have an ending stored, ascending: 1 for `direct:<id>`, N for `direct:<id>.N`."""
+    found = {1} if conn.execute("SELECT 1 FROM chat_messages WHERE session_id = ? AND src_ref = ?",
+                                (session_id, f"direct:{int(owner_id)}")).fetchone() is not None else set()
+    for row in conn.execute("SELECT src_ref FROM chat_messages WHERE session_id = ? AND src_ref LIKE ?", (session_id, f"direct:{int(owner_id)}.%")):
+        tail = row["src_ref"].rsplit(".", 1)[-1]
+        if tail.isdigit():
+            found.add(int(tail))
+    return sorted(found)
+
+
+def next_attempt(conn: sqlite3.Connection, session_id: str, owner_id: int) -> int:
+    """The attempt number a retry of this owner line gets: one more than the highest stored (1 when nothing answers the line yet)."""
+    stored = attempts_stored(conn, session_id, owner_id)
+    return (stored[-1] + 1) if stored else 1
