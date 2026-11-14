@@ -1,0 +1,233 @@
+{
+ "about": "Written by the additive applier (.tmp/core-algo-additive4-apply.py, contract 4). `pinned`: what the lab had recorded when a version was applied (sha256 of the kernel and of each scenario file; sha256 of the canonical JSON of each case, of the event record, of the ask record, of each recorded sequence, of each handler entry and of each lens except the reflection summary), and `built_in`, every Python file the lab had before the add-on points. `points` and `applied`: every file laid in, with its sha256. An entry of `applied` that holds `edits` is an EDIT VERSION (ruling R32): the name and sha256 of its edit script and, for every existing file the script changed, the sha256 before and after; the pin of the kernel and the pinned handler entries were taken again for those files, an added file it changed is listed with its new sha256, and every other pin stayed. Its `moves` are what it declares as moved of the things an earlier version recorded, each with its reason; check S202 holds a declared move to nothing until the next version is applied to the built, verified record. The verifier reads this file for checks S202 and S203, for the sha256 a check module's text is held to before it runs, and for what it hands a check module; tools/run_all.py reads it for the record's file list. Nothing in the lab holds this file itself.",
+ "contract": 4,
+ "pinned": {
+  "from": "sutra-kernel-extensions/0.9.0-stop",
+  "kernel_sha256": "688ab9431d4f4b17608d848e32f12e0373197a301d3b7f641a6f476a2b9ad368",
+  "built_in": [
+   "extensions/asks.py",
+   "extensions/constructor.py",
+   "extensions/implementation.py",
+   "extensions/j2_projection.py",
+   "extensions/knowledge.py",
+   "extensions/reflection.py",
+   "extensions/standards.py",
+   "kernel/core.py",
+   "qa/browser_test.py",
+   "qa/independent_verify.py",
+   "release/baseline_v0_1_core.py",
+   "tests/test_kernel.py",
+   "tools/build_viewer.py",
+   "tools/make_extra.py",
+   "tools/make_packs.py",
+   "tools/run_all.py"
+  ],
+  "kinds": [],
+  "scenarios": {
+   "00_goal": "747033e16b2e065c83df84faea0a504ca0b881259b8a35685c25c44c9b693097",
+   "01_domain": "6311e80617a990363f01d4a8debdb1c9dc3ed4283496a3f9481f1087b2490e21",
+   "02_methods": "4db79234a4d85ebc5ded8ebf9e4d11db91936f00139eb9eb9bd7a1910dbf0887",
+   "03_approval": "3e1e4eb8799b9f5a5012789035d86099f657bdc1bf04c14c112873f0e133006f",
+   "04_admission": "5a3ee05720bd4e47e3d862183702174d8be06602676bfcb1c2aba0cc6c234052",
+   "05_learning": "6598c0ad68ee53964798d901dae5baa8da505dd67ec53305d59ff3c1679463e3",
+   "06_notify": "6dbd0ea53c3d0c5751ca00b799bf755055c74f63c51abbfed0cf02103ed34a1c",
+   "07_survey_gap": "3a03c65e0f499c438f20c9c73fd26eea70bdd6f17a7532577103c045c74fd9b8",
+   "08_survey_authored": "a0c86d3fcdb4c94a45a1ce029cb93218d716d341472326a6af4062d8f2bfc950",
+   "09_fast_tradeoff": "bcf89b9252c017249552775013a2dfced15dad8f208e5ff2fcb08d6f74b774dd",
+   "10_money_first": "e0f7379ebee9c62c657aa0ef7c1171834cc6e0d143b16496e235efdc2f9374dd",
+   "11_no_goal": "de850a7919f19e1c263a5c4e6fb9b4e15a693d2bf6e694b92beb72a06c7b2895",
+   "12_other_tenant": "e14e35b11c29b753773eb1c13ae60edbcddd2c125621cd72254abafcaaae6214",
+   "13_revoke_authority": "d2643d40a98197e3d78f2c60af428d6834854a4868d88d9ef5c434f1f9e3282f",
+   "14_remove_capacity": "4521dfd09b5066a190ac3374ecf0a85c7e9b3f987537c235003239d75ab5cbf3",
+   "15_low_budget": "796569e612a2f5c6abf6e05676c9166ea5c3371605ca0e6fe967421695a758cb",
+   "20_enquiry_goal": "ac089a3607c41dd9f73979cfbb76cc95db7c458038c505c77a09f5b8e01f83ca",
+   "21_enquiry_theory": "f98e3813d35d7a85a3efba6338a2aa26c4bb29280448f8a61eecad9426dfa94d",
+   "22_enquiry_methods": "c24a6bf2f19dae143ad5465c982d9ea851cb8e8fc12c8d0efc0b8702eae56d6e",
+   "23_enquiry_extra_knowledge": "5acef6fb34c7d0811046ccfd41c23ae71346b853483c9e3fe11f4f4b255b4bee",
+   "24_enquiry_privacy": "d89575814f1cd45e1e880be10077cbb9bc6009a37183b91bb49ed8a88c96d1f0",
+   "30_build_goal": "559ecb3cce6b89a0126295db627cf6edece371eed3a14bc018c0478554b6f73b",
+   "31_build_theory": "d5335a7c2990c3adaaabb3a455540c29cfd4ac8d7479fd0f76a8deb49fe6be81",
+   "32_builder_components": "b8fb5ad7490da5fa7e7c785684876e9c08d51decf97a69a31c75db0b1b5446dd",
+   "33_bad_constructor": "d88c4523ec13a18c99ba33dc4b9de87cc33fafaae7d74a2d9b3582e96f8fa5e5",
+   "34_manually_accepted": "14834d5feee3ff545626b5999dc3979ab76fb9b0d942c1214a1a86172d066e70",
+   "40_self_goal": "d45f6d4035e205ea96cf0d9bf88f3c74c11bc074ffe8fe91a7e116da829c7dd7",
+   "41_self_theory": "098ef29922a4e0a6ecea182e2064ca5ad4205d5578c94e75e79fdd856f11ff14",
+   "42_self_methods": "d6e78868457d13a0751a6c7518655d4174962118632ccec9994e50beceeccf4e",
+   "43_self_review_grant": "6900282c546b52a6307c9e990507d14f6cc8ccc83bcd67f3588053c02e1bace1",
+   "50_unapproved_semantics": "822a40a9c89407012e2001cebc0c8caf9705362db9fd54367e442a64b2dcfa3e",
+   "60_standard_goal": "f590508950b3563e46386bd1ca5e464efb6f6e0cc01549cf396c1dca909f23dc",
+   "61_standard_theory": "8b2897129e01d9723d07c94e9205c4c68d13c228ef1a64ed3448b7b6d1187b21",
+   "62_handwritten_evidence": "8a5e6505919746df9a677ae3f37521d1c7c4893fd78dc4fe31064657df7fa202",
+   "63_repair_method": "5a2d45bf7235efe4108049bb536192a9214498fbf329592b4210b45219704f5f",
+   "64_generated_evidence": "e7d7888a2e7c2c1e2154df4339f3a468c089ea687f9f2ea91f3215fb6647ea60",
+   "70_site_goal": "06c9c1046001534d06b6e06e36edff2803a5a06191cf076a905e3973914d1645",
+   "71_site_theory": "a07bbff8cbd2651fbd5bb49f16b792a1409de352b9bf972f6ae152493f97040c",
+   "72_site_methods": "a0a6f79be214c36d13a75dd57d3ef6d4d928d0c16cc8d5f96a036c4cf5a127cb",
+   "80_ask_method": "e4a6f972b5e6c3fbb486999a04a05b51739d93945a2cb9aad683ee202fef957b",
+   "81_made_again": "7209e9da479139d752c0100b5388163385794b708803aa12098df12949cc03e4",
+   "82_components_without_constructor": "5e48e37c8b1304c996bbbb10ad4366e893eb9c25a8640932cd45adc337dd6c8e"
+  },
+  "cases": [
+   [
+    "00_goal",
+    "3847be35a074a0057647c740978ac669502350661d96d7bd77cd2ee49c63a640"
+   ],
+   [
+    "01_meaning",
+    "971abdd98489df01cfcbdd3c3a68cfe309b37dd6c7eb0e873cbe13e599e8211b"
+   ],
+   [
+    "02_methods",
+    "ff15318517ed79a0ad689d7efa72d49489526f8860aecf8bdbda1fb6150fc5fb"
+   ],
+   [
+    "03_evidence",
+    "bb0fe4206f13c3107419b3f82c61f4079008951c97477893d0cb639382104933"
+   ],
+   [
+    "04_gates",
+    "1f654c69304617a8373c206c6b0a686cfb30704f825c40e4326bd16f7d32dcc8"
+   ],
+   [
+    "05_learn",
+    "c2581e04e5293b2529bd578f54ea32428103387b7f7affa72d437ab3242e4348"
+   ],
+   [
+    "06_nuance",
+    "d2a1822112dfca33a07b815e107f9e2e7b9584caf036957c826d647ceb4d2573"
+   ],
+   [
+    "07_gap",
+    "a3786f271322dcf2ec9ae8ff7078c3633abfd9335fb921a325c3277bda9e1a1c"
+   ],
+   [
+    "08_method_added",
+    "9505e1485c44ed161b57c160fd46424e51e3d5d43006534e448e8c98f785951d"
+   ],
+   [
+    "09_pareto",
+    "0709d0e1a5c6a973b314895c7d62d3b8e619b38c0facbdb1dd50bf53a8b5da39"
+   ],
+   [
+    "10_preference",
+    "aebe5f0f8c0bc6e5258680c352c85d13b5c25ffe51620d5a1b3957a6e60567a2"
+   ],
+   [
+    "11_knowledge_gap",
+    "00faaecff1ca3ac12de425986a99f3f70fd38825787f8e8676b29ba24cbda5c1"
+   ],
+   [
+    "12_enquiry",
+    "8e3dce23542483323c7afb1cca125b728693a01ae74d2ae2a7f8d4f01fe424be"
+   ],
+   [
+    "13_privacy_gap",
+    "5785c66ee173fe19806b0372e2f675489ccd65ee60d1b5d2cdf924425444c743"
+   ],
+   [
+    "14_privacy_method",
+    "78bfdbc54d5cba7a02b03a3eed3dfff800e8361ed041a27c9d4374a3066833ae"
+   ],
+   [
+    "15_constructor",
+    "d4d73949f6d8d1eb8e5f14fd755c70f87aaa8699a677d11213ff5dc5fada0be5"
+   ],
+   [
+    "16_bad_constructor",
+    "176f20e7c2eb5e63dcc72b0bc1e92ebe67f4d99008329275df2e2b275edce1fa"
+   ],
+   [
+    "17_reviewed_release",
+    "d24207e0b7bc33cff43d5091dc15f6355e6d57df4afd4a531dbb592c9d104097"
+   ],
+   [
+    "18_self_need",
+    "a7a7fbd6e1653b4ab99f22f3b0f389bac9dfe5e3c01fda815ba07678de5214fe"
+   ],
+   [
+    "19_self_grant",
+    "52a6542366ac5df1b35ce064af9276ee61aa9f38e1c88ebac212db9e9e33a3d0"
+   ],
+   [
+    "20_wrong_tenant",
+    "739f39f61eef6c69baad8f292c38f5544b8605c73bd03e2c34b17e19aaf3ebd6"
+   ],
+   [
+    "21_no_goal",
+    "f230fc34455a7a4b6017805b8cbc7cbe38cbd2328b86160ece595e601850e26d"
+   ],
+   [
+    "22_revoke",
+    "d70f8330f961f80ab703f5da9f06cf77381d0ff827300b0adacaa20e93ce88cb"
+   ],
+   [
+    "23_capacity",
+    "549155bb983896086598b9031e270ae0306fff270cfa3353d2c8e07f399ac20b"
+   ],
+   [
+    "24_budget",
+    "48ef6fbd457df1e866bda9fe42ac49674fcd9a8e1b8c6bd80dedfa3698b769bf"
+   ],
+   [
+    "25_registrable_gap",
+    "1a938cadf8dcb65948eabbb19c010d4d697ece538362170bde4df869374307c0"
+   ],
+   [
+    "26_registrable_repair",
+    "8e75ffd703434d3c237708ac56117072d294960a1e3335f5fc67113e955287e1"
+   ],
+   [
+    "27_registrable_generated",
+    "12174855d91b47846b98114839b202f7167df0ef02ced6696b81c43be52020ec"
+   ],
+   [
+    "28_website",
+    "3b880bddd3fc7585931e8e7ef1f9df566fef71e72ecc4f21cf57682fcd1e167a"
+   ],
+   [
+    "29_ask",
+    "b9e99eed2ca8c635d6fa572282caafde0c7bd52b76efb9af1f56752980dce40a"
+   ],
+   [
+    "30_stop",
+    "3dff2ee6f669022f9ff2513f882eea9316b4769982eacdae6744f68216d89aff"
+   ]
+  ],
+  "events": "f58f0cf138c8ca42fe880e0a0c15d116a2c52c8a300b8284a8c93e3e72d2317c",
+  "ask_events": "541f53443324006a1cedafd604f4a28324a227fca6c4c443d86ced9d4eebba44",
+  "scenes": {},
+  "action_handlers": {
+   "ask": "021f2fe610ee6a2ff8edc3fda09b6e29d297b4caa1747a2900682368ab5729e9",
+   "compile_candidate": "3c67a8dc6d4e412f7cc204fe49375b04db06abc778cd4d96df68a2e44699a6de",
+   "emit_artifact": "3c67a8dc6d4e412f7cc204fe49375b04db06abc778cd4d96df68a2e44699a6de",
+   "simulate_fact": "234000e106019e68737dc688d8454461071a24ec92a2ea3681d7a02eca445169"
+  },
+  "meta_extensions": {
+   "knowledge_compiler": "efb61838896fce069c29ee1af80f030f7d5677b37562544bd86c60e18bb0050b",
+   "graph_diff_nuance": "a291d36dd568991729caf933f3e7803d3d49b6294fdf968f1d6d966be225df00",
+   "j2_projection": "c833bc72cf2fca2162d17bdfa408c5155f243fdd3aed4fc85a288455d7e198dc",
+   "implementation": "3931ab3e02ca12194f4e3205cd16bf2c80d5b40a7229383fd6d80d31e3e6a9f5",
+   "implementation_enquiry": "a3dc7d8646c934982ab5cc5de06cf36909eac8af062f45ec3f228b6cd4a9e710",
+   "implementation_website": "967e86a3aee93dab23e845414d4ded5d83e01c3fa366d04d6eed4b68b8c0dece",
+   "stage_boundary": "cce66c35d2db9143d1d88201482617797b4b4f54f839decdd7d5b96b848249ec"
+  }
+ },
+ "points": {
+  "given_with": "0.10.0-addons",
+  "files": {
+   "tests/test_added.py": "76e34d6c8cf6a89e0b95cd9d4a0403905ed6a8c30d7e993aebb65d32239b5ee1"
+  }
+ },
+ "applied": [
+  {
+   "label": "0.10.0-addons",
+   "delivery": "must-cohere",
+   "files": {
+    "cases/50_must_cohere.json": "c7df3e0000afac61935e7f93e063114d7c65fe977ed908d393f13dcf1cbac9e5",
+    "qa/checks/must_cohere.py": "17671e16dfefa821bcb0707e794459a63fc9e257993c02ec7718f3c5c8fa07be",
+    "tests/test_must_cohere.py": "4430cd0fcb45d9991eff9e2520dede03764ba788ca630963b79ea9a7f2d6e703",
+    "tools/packs/must_cohere.py": "eab6cafde4c40042836d2c405f01ef0a19035133c5ed69b2b56c5c0179c5af14"
+   }
+  }
+ ]
+}

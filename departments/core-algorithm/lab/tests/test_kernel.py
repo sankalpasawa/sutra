@@ -3,7 +3,7 @@ import unittest, sys, json, copy, hashlib, importlib.util
 ROOT=Path(__file__).resolve().parents[1]
 sys.path.insert(0,str(ROOT))
 from kernel.core import State,Kernel,digest,ACTIONS,register,Stop
-from tools.run_all import CASES,pack,extra_events,ASK,scenario
+from tools.run_all import CASES,pack,extra_events,ASK,scenario,MORE
 from extensions.asks import answer,open_asks
 from extensions.j2_projection import to_j2_proposed_atom_views as j2_atoms
 from extensions.knowledge import compile_pattern,signal_priority
@@ -34,6 +34,7 @@ EXPECTED={
  '25_registrable_gap':'METHOD_ABSENT','26_registrable_repair':'LOCAL_MODEL_EFFECTS_RECORDED',
  '27_registrable_generated':'SUPPORTED_BY_EVIDENCE','28_website':'PLAN_READY','29_ask':'WAITING','30_stop':'STEP_STOPPED'
 }
+EXPECTED.update({c['id']:c['expected'] for c in MORE})   # a case a later version adds brings its expected status in cases/<id>.json
 class ContractTests(unittest.TestCase):
     def test_original_baseline_byte_identical(self):
         sha=hashlib.sha256((ROOT/'release'/'baseline_v0_1_core.py').read_bytes()).hexdigest()

@@ -22,4 +22,7 @@
 | 5 | A payment that cannot fail after the receipt's line: the budget and the provider slots are checked to be exact dicts before the line is written | Refuter 2, finding 3 | Points 1 and 2 of 0.9.0 hold against a handler that swaps the State's containers | Low: one line in `_step`, one test |
 | 6 | `block_ok` requires at least one reason | Refuter 2, finding 4 | A forged blocked run that names no reason is refused | Low: one condition, one forgery in S50 |
 
+**Added since 0.9.0, one line per version, newest last:**
+- 0.10.0-addons: a version that only adds arrives as files (the add-on points); case 50 records must-cohere as far as the kernel holds it (matrix row R55: a verified FALSE goal, no decision, under a branch that evidence closes). Kernel unchanged.
+
 **Promotion rule:** keep every historical version and run immutable. A new generalization or real effect claim requires an independent tester and explicit release authority. No candidate self-promotes.

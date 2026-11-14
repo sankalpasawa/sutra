@@ -1,0 +1,20 @@
+{
+  "schema": "sutra-extension/2",
+  "id": "100_delivered_but_open",
+  "evidence": [
+    {
+      "predicate": "original_delivered",
+      "truth": "TRUE",
+      "verified": true,
+      "source": "fixture/courier-scan",
+      "version": "2"
+    },
+    {
+      "predicate": "order_complete",
+      "truth": "FALSE",
+      "verified": true,
+      "source": "fixture/order-desk",
+      "version": "1"
+    }
+  ]
+}

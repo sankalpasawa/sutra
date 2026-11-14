@@ -1,0 +1,9 @@
+{
+  "id": "50_must_cohere",
+  "title": "A false goal over a closed branch",
+  "description": "The order desk's verified row says the order is not complete, while the courier's scan closes one branch of the order rule on evidence alone. The kernel names the conflict on the goal and offers no plan. The case holds no method, so nothing could run in it.",
+  "packs": ["00_goal", "01_domain", "100_delivered_but_open"],
+  "execute": true,
+  "area": "Evidence",
+  "expected": "EVIDENCE_CONFLICT"
+}

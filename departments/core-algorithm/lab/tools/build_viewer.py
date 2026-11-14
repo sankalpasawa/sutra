@@ -39,10 +39,10 @@ renderTab();}
 $('numCases').textContent=cases.length;$('kernelShort').textContent=d.kernel_sha256.slice(0,12);document.querySelectorAll('[data-tab]').forEach(el=>el.addEventListener('click',()=>{tab=el.dataset.tab;renderTab()}));$('prev').onclick=()=>{stop();current=(current-1+cases.length)%cases.length;render()};$('next').onclick=()=>{stop();next()};$('play').onclick=()=>{if(timer){stop();return}timer=setInterval(next,1350);$('play').textContent='Ⅱ Pause';next()};mountList();render();
 </script></body></html>'''
 import ast
-def collected():   # counted from the source, without importing the test module (importing it would regenerate the packs)
-    tests=sum(isinstance(n,ast.FunctionDef) and n.name.startswith('test_') for f in sorted((ROOT/'tests').glob('test_*.py')) for n in ast.walk(ast.parse(f.read_text())))
-    cases=[len(n.value.elts) for n in ast.walk(ast.parse((ROOT/'tools'/'run_all.py').read_text())) if isinstance(n,ast.Assign) and getattr(n.targets[0],'id','')=='CASES']
-    return tests+(cases[0] if cases else 0)   # plus one generated stage test per recorded case
+def collected():   # the count the test runner gives (add-on points, 0.10.0): unittest's own discovery, in a process of its own, the line the runner step runs for the README.
+    import subprocess,sys   # So a test file of a later version is counted as unittest loads it (a test in a base class that two classes inherit counts three times), and so is every stage test
+    ran=subprocess.run([sys.executable,'-I','-B','-c',"import unittest;print(unittest.defaultTestLoader.discover('tests').countTestCases())"],cwd=ROOT,capture_output=True,text=True)
+    return int(ran.stdout.split()[-1])   # loading the tests makes the packs again, byte for byte, as every build does
 verified=ROOT/'qa'/'independent_verification.json'
 checks=json.loads(verified.read_text()) if verified.exists() else None
 page=page.replace('__UNIT__',str(collected())).replace('__CHECKS__',f"{checks['passed']} / {checks['total']}" if checks else 'not run yet')

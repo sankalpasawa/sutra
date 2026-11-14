@@ -9,7 +9,11 @@ from extensions.reflection import Learner   # learning lives in the extension si
 import extensions.constructor   # registers compile_candidate and emit_artifact (0.7.0-handlers, move-outs M2 + M3)
 from extensions.asks import answer,open_asks   # registers ask (0.8.0-ask); answer is the stamp
 from kernel.core import ACTIONS
-from tools.make_packs import P
+if __name__=='__main__':   # the build (add-on points, 0.10.0): the record and the verdict of an earlier build go first, so a build that stops, at the import below (a kind file or a pack file that is refused) or later, leaves neither behind
+    for old in (ROOT/'results'/'actual_run_records.json',ROOT/'qa'/'independent_verification.json'):
+        if old.exists():old.unlink()
+from tools.make_packs import P,KINDS,PACK,plug,HELD,rebound   # KINDS, PACK, plug, HELD and rebound belong to the add-on points (0.10.0)
+import re,ast
 
 CASES=[
  ('00_goal','Goal alone','Intent exists; domain meaning is absent.',['00_goal'],False,'Foundation'),
@@ -44,6 +48,23 @@ CASES=[
  ('29_ask','A human ask','The approval is unknown and a reviewed method may ask for it: the run asks once, waits, and ships nothing.',['00_goal','01_domain','02_methods','04_admission','80_ask_method'],True,'Asks'),
  ('30_stop','A step that cannot run',"The builder's last step names a constructor that no pack declares: three steps run, the fourth stops, and the run says where and why instead of ending in an error.",['30_build_goal','31_build_theory','82_components_without_constructor'],True,'Stops'),
 ]
+# ---- Add-on point (0.10.0): cases a later version adds live in cases/<id>.json, one file per case, named after its id:
+# {id, title, description, packs, execute, area, expected}. This file, the tests' table of expected statuses and the verifier read them there.
+def more(folder,taken=tuple(c[0] for c in CASES)):   # when this line runs CASES holds the built-in cases only: their ids are taken
+    """The cases of `folder` in file order. A file that is no case stops the build with its name: other keys, a value of another type, a file not named after its id,
+    an id that is taken (a built-in case), a pack that is no plain name or no scenario file."""
+    out=[]
+    for f in plug(folder,'.json'):
+        c=json.loads(f.read_text())
+        if (type(c) is not dict or set(c)!={'id','title','description','packs','execute','area','expected'} or c['id']!=f.stem or c['id'] in taken or type(c['execute']) is not bool
+                or any(type(c[k]) is not str or not c[k] for k in ('title','description','area','expected')) or type(c['packs']) is not list
+                or any(type(n) is not str or not re.fullmatch(PACK,n) or not (P/(n+'.json')).is_file() for n in c['packs'])):
+            raise ValueError(f'REFUSED cases/{f.name}: not a case file (seven keys, the file named after an id that is not taken, packs that are scenario files)')
+        out.append(c)
+    return out
+def spec(c):return (c['id'],c['title'],c['description'],c['packs'],c['execute'],c['area'])   # an added case in the shape of the built-in ones above
+MORE=more(ROOT/'cases')
+CASES+=[spec(c) for c in MORE]
 ASK=['00_goal','01_domain','02_methods','04_admission','80_ask_method']
 
 def ask_events():
@@ -108,16 +129,114 @@ def extra_events():
             'impacted_fact_after_revoke':s.fact('replacement_delivered'),
             'journal_count':len(s.event_journal)}
 
-def build():
+# ---- Add-on points (0.10.0): what a scene file states of its sequence, and how the looks and runs of a sequence are counted. The verifier holds the same two functions, word for word.
+def scene_says(src):
+    """What a scene file states of the sequence it records: (looks, runs), or None when it does not state both. Two lines at the top level of the file, each once, each a
+    whole number written as a number: LOOKS = 3 and RUNS = 4. They are read from the text of the file, which is not run for it. The build stops when scene(lab) records
+    other numbers than its file states; the verifier compares the record with the same two lines, so the number of looks and of runs in a recorded sequence is held to
+    the scene file, which stands outside the record (and is listed in added.json by sha256)."""
+    try:tree=ast.parse(src)
+    except (SyntaxError,ValueError,RecursionError,MemoryError):return None
+    said={}
+    for node in tree.body:
+        for target in (node.targets if isinstance(node,ast.Assign) else []):
+            if isinstance(target,ast.Name) and target.id in ('LOOKS','RUNS'):
+                whole=len(node.targets)==1 and target.id not in said and isinstance(node.value,ast.Constant) and type(node.value.value) is int and node.value.value>=0
+                said[target.id]=node.value.value if whole else None
+    return (said['LOOKS'],said['RUNS']) if set(said)=={'LOOKS','RUNS'} and None not in said.values() else None
+
+def looks_and_runs(v,found=None,item=False):
+    """The looks and the runs of a recorded sequence: {'looks': how many, 'runs': [every run, in the order it stands], 'odd': how many things look like a run and are none}.
+    A look is a dict that holds a list under `runs` (what the kernel returns for one look at its goals, for one event, for one answer). What looks like a run: every item
+    of such a list, and every dict that carries a `trace`, wherever it sits (under any key, in a list of lists, inside another run or inside a row of its trace). It is a
+    run when it is a dict that carries both `trace` and `trace_root_sha256`; anything else that looks like one is counted under `odd`."""
+    found={'looks':0,'runs':[],'odd':0} if found is None else found
+    if type(v) is dict:
+        if 'trace' in v and 'trace_root_sha256' in v:found['runs'].append(v)
+        elif 'trace' in v or item:found['odd']+=1
+        if type(v.get('runs')) is list:found['looks']+=1
+        for key,x in v.items():
+            if key=='runs' and type(x) is list:
+                for y in x:looks_and_runs(y,found,True)
+            else:looks_and_runs(x,found)
+    else:
+        if item:found['odd']+=1   # an item of a `runs` list that is no dict
+        if type(v) is list:
+            for x in v:looks_and_runs(x,found)
+    return found
+
+def scenes(folder=None):
+    """Add-on point (0.10.0): recorded sequences a later version adds. tools/scenes/<name>.py defines scene(lab) -> a dict of runs and snapshots, kept in the record
+    under scenes.<name> as plain JSON data and sealed there by its sha256 (lab holds State, Kernel, pack, answer, open_asks, Learner, digest). Every pack a scene loads
+    must be a scenario file, so that the verifier can check its runs. The file states, at its top level, how many looks and runs its sequence records (LOOKS = n and
+    RUNS = n; scene_says and looks_and_runs above). The build stops at a scene file that does not state them, that has no scene(lab), that returns what is no JSON
+    object or an empty one, or whose sequence holds other numbers of looks and runs than the file states or something that looks like a run and is none.
+    It also looks, when the scene returns, at every State a Kernel was made for while the scene ran, and stops when one of them holds a kind by another handler or hook
+    than the registered one, or a kind that is not registered. That catches the mistake it is there for: a kind handed to one State's registry instead of a kind file.
+    It is a look, not a fence: a scene is reviewed code that runs with the lab's rights, and a scene written to get past the look (a Kernel pointed at another State
+    after it was made, a registry kept in another kind of dict, a handler put back before the scene returns) is recorded (ruling R31; a unit test of the points pins it).
+    Nor does the build look for a scene that writes a file or changes a class of the kernel while it runs: it is recorded too (a unit test of the points pins it)."""
+    lab={'State':State,'Kernel':Kernel,'pack':pack,'answer':answer,'open_asks':open_asks,'Learner':Learner,'digest':digest};out={}
+    for f in plug(folder or ROOT/'tools'/'scenes','.py'):
+        text=f.read_text();said=scene_says(text)
+        if said is None:raise ValueError(f'REFUSED tools/scenes/{f.name}: it does not state how many looks and runs it records (two lines at the top of the file: LOOKS = <number> and RUNS = <number>)')
+        ns={'__name__':'tools.scenes.'+f.stem};exec(compile(text,str(f),'exec'),ns)
+        if not callable(ns.get('scene')):raise ValueError(f'REFUSED tools/scenes/{f.name}: it defines no scene(lab)')
+        seen=[];init=Kernel.__init__
+        def noting(self,*given,**named):   # only notes the State: the Kernel is made as the kernel makes it
+            seen.append(given[0] if given else named.get('state'));init(self,*given,**named)
+        Kernel.__init__=noting
+        try:made=ns['scene'](dict(lab))
+        finally:Kernel.__init__=init
+        if type(made) is not dict or not made:raise ValueError(f'REFUSED tools/scenes/{f.name}: scene(lab) returns a dict, and not an empty one')
+        registries=[state.actions for state in seen if type(getattr(state,'actions',None)) is dict]
+        own=sorted({str(kind) for registry in registries for kind,hooks in registry.items() if kind not in HELD or type(hooks) is not dict or set(hooks)!=set(HELD[kind]) or any(hooks[h] is not HELD[kind][h] for h in hooks)})
+        if own:raise ValueError(f'REFUSED tools/scenes/{f.name}: a State of this sequence holds the action kind(s) {own} with another handler or hook than the registered one, or a kind that is not registered; an action kind arrives as a kind file, kinds/<kind>.py')
+        kept=json.loads(json.dumps(made,ensure_ascii=False,allow_nan=False))   # as it stands in the record: what is sealed and checked is what was made
+        got=looks_and_runs(kept)
+        if got['odd'] or (got['looks'],len(got['runs']))!=said:
+            raise ValueError(f"REFUSED tools/scenes/{f.name}: it says LOOKS = {said[0]} and RUNS = {said[1]}; scene(lab) recorded {got['looks']} looks and {len(got['runs'])} runs, and {got['odd']} of what looks like a run in it is no whole run")
+        out[f.stem]=kept
+    return out
+
+def undeclared():return sorted(set(ACTIONS)-{'simulate_fact','compile_candidate','emit_artifact','ask'}-set(KINDS))   # action kinds registered by anything but a file in kinds/
+
+def registry_held():
+    """Stop the build when the registry of action kinds is not the one that stood when the kinds were loaded: a kind registered by anything but a file in kinds/, or a
+    kind whose handler or hook is no longer the same function (an extension, a pack file or a sequence that re-binds one and leaves it so). No record can say which
+    function ran, so the build looks, three times: before anything is recorded; when the cases, the event record and the ask record are made and before the sequences
+    run; and once more after the sequences. A look at those three moments, for mistakes; not a fence (ruling R31)."""
+    if undeclared():raise ValueError(f'REFUSED: action kinds registered outside kinds/: {undeclared()}')
+    if rebound(HELD):raise ValueError(f'REFUSED: the handler or a hook of the action kind(s) {rebound(HELD)} is no longer the function that stood when the kinds were loaded (an extension, a pack file or a sequence changed the registry)')
+
+def record(scene_folder=None):
+    """The record as the lab makes it now, in memory: nothing is written. build() writes it; the unit tests compare the record on disk with it
+    (and make one with the scene files of another folder)."""
+    registry_held()   # the first of three looks at the registry: before anything is recorded, so a handler re-bound by a pack file or an extension is refused in words, before the table of handlers below is made of it
     handlers={kind:{'module':fn.__module__,'file':str(Path(sys.modules[fn.__module__].__file__).resolve().relative_to(ROOT)),
                      'sha256':hashlib.sha256(Path(sys.modules[fn.__module__].__file__).read_bytes()).hexdigest()} for kind,fn in sorted((k,h['run']) for k,h in ACTIONS.items())}
-    result={'release':'sutra-kernel-extensions/0.9.0-stop','action_handlers':handlers,
+    result={'release':'sutra-kernel-extensions/0.10.0-addons','action_handlers':handlers,
             'kernel_sha256':hashlib.sha256((ROOT/'kernel'/'core.py').read_bytes()).hexdigest(),
             'baseline_v0_1_sha256':hashlib.sha256((ROOT/'release'/'baseline_v0_1_core.py').read_bytes()).hexdigest(),
             'scope':'finite synthetic deterministic local simulation; NOT historical Core, current J2, or external outcomes',
             'cases':[scenario(x) for x in CASES],
             'events':extra_events(),'ask_events':ask_events()}
-    target=ROOT/'results'/'actual_run_records.json'
+    registry_held()   # the second look: before the sequences run (what the cases and the two records ran is held); and once more after them: a sequence may not leave the registry changed either
+    sc=scenes(scene_folder)
+    if sc:result['scenes']=sc
+    book=json.loads((ROOT/'added.json').read_text())   # what the applier laid in, file by file
+    result['added']={'files':{rel:hashlib.sha256((ROOT/rel).read_bytes()).hexdigest() for entry in [book['points']]+book['applied'] for rel in entry['files']},
+                     'scenes':{name:digest(made) for name,made in sc.items()},   # every added file by sha256, and the seal of every recorded sequence
+                     'scenarios':{f.stem:hashlib.sha256(f.read_bytes()).hexdigest() for f in sorted(P.glob('*.json'))}}   # every scenario file this build authored, by sha256
+    registry_held()
+    return result
+
+def build(target=None,verdict=None):
+    """Write the record. The record and the verdict of an earlier build are removed first, so a build that fails (a scene that raises, say) leaves neither behind."""
+    target=target or ROOT/'results'/'actual_run_records.json';verdict=verdict or ROOT/'qa'/'independent_verification.json'
+    for old in (target,verdict):
+        if old.exists():old.unlink()
+    result=record()
     target.write_text(json.dumps(result,ensure_ascii=False,indent=2)+'\n')
     print('WROTE',len(result['cases']),'runs to',target)
     for case in result['cases']:
