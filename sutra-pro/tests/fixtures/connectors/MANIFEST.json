@@ -17,6 +17,13 @@
    "recorded_after": "claude/stream_structured_ok.jsonl"
   },
   {
+   "path": "claude/stream_partials_tool_ok.jsonl",
+   "origin": "captured",
+   "cli": "claude 2.1.308",
+   "command": "ClaudeConnector.stream(partials=True, folder=<a scratch folder holding notes.txt, read-only tools>) through scripts/capture_connector_fixtures.py --stream: claude -p --output-format stream-json --verbose --include-partial-messages --system-prompt ... --tools Glob,Grep,Read --restricted --allowedTools ... --permission-mode dontAsk --session-id <uuid> --model sonnet --effort low; prompt on stdin; env allowlist",
+   "shows": "a streamed chat turn with a tool: init, status, stream_event message_start / content_block_start (tool_use, id and name, empty input) / input_json_delta x6 / the complete assistant tool_use message BEFORE content_block_stop / message_delta / message_stop, user tool_result, a second message with text_delta x5, the complete assistant text message before its content_block_stop, result. No thinking block (effort low)"
+  },
+  {
    "path": "claude/stream_not_logged_in.jsonl",
    "origin": "captured",
    "cli": "claude 2.1.308",
@@ -67,6 +74,13 @@
    "recorded_after": "codex/exec_structured_ok.jsonl"
   },
   {
+   "path": "codex/exec_tool_items_ok.jsonl",
+   "origin": "captured",
+   "cli": "codex-cli 0.146.0",
+   "command": "CodexConnector.stream(folder=<a scratch folder holding notes.txt, read-only>) through scripts/capture_connector_fixtures.py --stream: codex exec --json ... -s read-only; prompt on stdin; env allowlist",
+   "shows": "thread.started, turn.started, a command_execution item.started (status in_progress, aggregated_output empty) then item.completed (exit_code, aggregated_output), the final agent_message item.completed (a whole sentence, never chunked), turn.completed with usage. No item.updated event was seen. A first capture of the same prompt also began with an agent_message preamble before the command: its presence varies from run to run"
+  },
+  {
    "path": "codex/exec_not_signed_in.jsonl",
    "origin": "captured",
    "cli": "codex-cli 0.146.0",
@@ -114,6 +128,13 @@
    "cli": "claude 2.1.308; codex-cli 0.146.0",
    "command": "see the probe list inside",
    "shows": "exit codes and stderr texts of the failures that need no model call; signal behaviour"
+  },
+  {
+   "path": "timing/stream_timing.json",
+   "origin": "captured",
+   "cli": "claude 2.1.308 and codex-cli 0.146.0",
+   "command": "scripts/capture_connector_fixtures.py --stream (the recording runner behind each connector)",
+   "shows": "wall-clock arrival time and type of every stdout line of the two tool turns, first-output time, and the Stop latency (a Stop at the first output until the stream ended cancelled) on one macOS run; never content"
   },
   {
    "path": "derived/claude_quota_rejected.jsonl",
