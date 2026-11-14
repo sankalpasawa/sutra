@@ -1423,3 +1423,101 @@ Decided by Claude on its own, on the dates shown. The owner can veto any of them
 - Why: the owner's refactoring rule applied to the library: decisions in data with one owner; the app's per-call environment switching is a workaround the seams remove.
 - Rejected: patching the copy (two truths); leaving the constants in code (the app cannot show or tune them).
 - Diagram: label "J2 asked: constants to data, 3 seams", pill on Template library.
+
+## D201 — Streaming chat stays on the existing global SSE stream, with one new control event `chat.live`
+- Sources: `docs/design/streaming/analysis.md` sections 1 and 7, `docs/design/streaming/architecture.md` (Alternatives), D12.
+- Decided: the direct chat route publishes its live events as the control event type `chat.live` on `GET /api/events`; no per-turn endpoint, no fetch-stream, no WebSocket. `chat.partial` remains only for the agent and J2 polled path and for the rollback flag.
+- Why: the pipe is already genuinely incremental; the app is one local process with the browser as the window; a second long-lived connection competes for the six-connection limit and needs its own auth, reconnect and tests.
+- Rejected: per-turn SSE (extra connection); POST-response NDJSON (a reload cannot attach); WebSocket (new surface, stop is a plain POST).
+- Diagram: label "chat.live on global SSE", pill on Orchestration.
+
+## D202 — `chat.live` has one versioned envelope: generation id, per-generation seq, block ids, additive payloads
+- Sources: `architecture.md` Data model, ABS-5 `ChatBlock`.
+- Decided: envelope `{v:1, id, conversation_id, message_id, generation_id, attempt, seq, ts, type, block_id?, payload}`; types `turn.accepted|connecting|started|stopping|done|stopped|failed`, `block.start|delta|end`, `heartbeat`, `usage`, `switched`, `attempt.restart`. Unknown types and fields are ignored; a higher `v` shows a refresh note. Blocks are the ABS-5 types with a stable `block_id`.
+- Why: a gap-free seq and a delta offset make loss detectable; additive payloads let the contract grow without breaking an open page.
+- Rejected: reusing `chat.turn` (the org chat's phase event); a text-only event with fields added.
+- Diagram: label "chat.live envelope v1", pill on Chat sessions.
+
+## D203 — Catch-up is a snapshot route plus seq dedupe, not replay from the bus ring
+- Sources: analysis risk 4, `orchestrator/events.py`.
+- Decided: `GET /api/chats/{sid}/turn` returns the live turn's whole state and its seq; reload, a second tab, a gap and a reconnect all use it; the client drops events with a seq at or below the snapshot's. `chat.live` stays out of the 1000-event ring.
+- Why: putting chat events in the ring would force `gap` resyncs on every topic; a snapshot is smaller and exact.
+- Rejected: ring replay; per-turn `Last-Event-ID`.
+- Diagram: label "snapshot + seq catch-up", pill on Chat sessions.
+
+## D204 — A server-side `LiveTurn` coalesces by time and redacts with a hold-back; the 60-character rule goes
+- Sources: analysis RC3, `chat_v2._answer`, `services.redact`.
+- Decided: the first delta of a block is sent at once, later ones merge for at most 33 ms; redaction runs on the running text, emitting up to the last whitespace and holding the trailing token until whitespace, block end or the longest shape span; stored text is what was emitted.
+- Why: no short or pre-tool text withheld; a secret split across chunks cannot show live; a stop stores exactly what the owner saw.
+- Rejected: smaller character threshold (still quantised, still splits secrets); redacting only at the end.
+- Diagram: label "time coalesce + hold-back redact", pill on Orchestration.
+
+## D205 — Provider honesty: each turn declares `stream_mode`; Codex scope is fixed by a real capture first
+- Sources: analysis RC2 and section 9, D32.
+- Decided: `stream_mode` is `tokens`, `activity`, `final` or `simulated`; the UI labels non-token modes ("sends its answer in one piece", "Demo provider, simulated"); a whole message is never chunked; a capture script records real Claude and Codex streams before the Codex parser is finalised. No persistent-process change (D32 stands).
+- Why: the owner's rule: real, never simulated; Codex behaviour on the installed version is unverified.
+- Rejected: typewriter reveal of a whole message; promising Codex token streaming.
+- Diagram: label "stream_mode, honest labels", pill on Codex connector.
+
+## D206 — Thinking is shown as presence and elapsed time only
+- Sources: analysis RC4.
+- Decided: a thinking block produces `block.start` and `block.end` with no text; the UI shows a presence indicator and a measured duration; reasoning text is neither sent nor stored.
+- Why: honest liveness during long thinking without exposing or fabricating content.
+- Rejected: streaming thinking text; a "thinking" label without a provider event.
+- Diagram: label "thinking: presence only", pill on Claude connector.
+
+## D207 — The live row is a transcript item promoted in place at settle; the live view has no head cap
+- Sources: analysis RC6, section 4.
+- Decided: the stream row moves inside the scroller as a keyed item and keeps its nodes when the stored reply arrives; `MAX_SHOWN` no longer applies to the live view; Home reconciles and paints in one step like the panel.
+- Why: removes the settle jump, the vanishing top of long replies and the duplicate window.
+- Rejected: cross-fade between two DOM trees; a larger cap.
+- Diagram: label "live row promoted in place", pill on Chat sessions.
+
+## D208 — The client is layered: shared transport, event normaliser, pure reducer with a fixed state machine, keyed block view
+- Sources: `architecture.md` Message state machine, Components.
+- Decided: `sutra_events.js` shares one connection per page; `chat_live_events.js`, `chat_live_store.js`, `chat_live_view.js`, `chat_live_activity.js`; states sending, accepted, connecting, running, stopping, done, stopped, failed, plus resyncing; activity (waiting, thinking, writing, tool, stalled) is derived; `state().turn` keeps its keys.
+- Why: each layer is testable without the others; labels come only from real events or real absence of events.
+- Rejected: growing `ChatComposer` state; a framework.
+- Diagram: label "transport / reducer / view layers", pill on Chat sessions.
+
+## D209 — Sends carry a `client_id`; retry reuses the owner line with a new generation
+- Sources: analysis section 5 (idempotency), `chat_v2.direct`.
+- Decided: `client_id` makes a repeated send return the same turn with `duplicate:true`; `POST /api/chats/{sid}/direct/retry` re-runs the newest failed or stopped line without a new owner line; an earlier attempt that could have changed files stays visible as "Earlier try".
+- Why: no duplicated owner line, turn or hidden side effect.
+- Rejected: automatic re-run after an edit or run tool; erasing a failed attempt.
+- Diagram: label "idempotent send, safe retry", pill on Chat sessions.
+
+## D210 — Live tool data is kind, title, redacted target and status; never raw input or output
+- Sources: analysis risk 3, `connectors/tool_kinds.py`.
+- Decided: `block.start` for a tool carries a title and a target cut to 200 characters, relative to the work root or a basename, redacted; no input JSON deltas, no output text live.
+- Why: redaction by construction; no home paths; small frames.
+- Rejected: streaming tool input; live output previews.
+- Diagram: label "tool activity: no raw args", pill on Tool connectors.
+
+## D211 — In-flight turns are checkpointed in a side table, never in `chat_messages`
+- Sources: analysis RC7 and section 5 (persistence), FTS trigger `chat_search_msg_au`.
+- Decided: migration v5 adds `chat_turn_checkpoint`, written at state changes, block ends and at most every 1.5 s while text flows; dropped in the transaction that stores the reply; `recover_interrupted` stores the partial turn from it.
+- Why: crash and restart keep text and tools; no FTS churn; no pending-row hazards in `reconcile`.
+- Rejected: a `pending` placeholder row; a write per token.
+- Diagram: label "checkpoint table, not messages", pill on Chat sessions.
+
+## D212 — New turns store the ordered block list; blocks beyond 400 fold at the producer
+- Sources: analysis section 5 (stored text, block cap), `models.py` 409.
+- Decided: `meta_json.ordered=true` marks messages whose `blocks` include text blocks in order, rendered from blocks; the `text` column stays `result.result`; beyond 400 blocks one `truncated` "more tool calls" block closes the list.
+- Why: the settled view equals the live view; legacy messages and search are untouched; the 500 read cap cannot fail a store.
+- Rejected: lifting the read cap; changing the `text` column.
+- Diagram: label "ordered blocks, fold at 400", pill on Chat sessions.
+
+## D213 — Stop is two-phase and honest
+- Sources: analysis section 2 row 18 and risk 9, `connectors/process.py`.
+- Decided: the client shows `stopping` at once with the text frozen; the server publishes `turn.stopping`, closes the early window (a flag set at `direct_running.begin`), kills the process group (tools included) by the existing ladder; `turn.stopped` is sent only after exit and store; open tools end `interrupted`; a stop that races completion ends `done`.
+- Why: Stop feels immediate and never claims more than happened.
+- Rejected: optimistic "Stopped"; marking interrupted tools failed.
+- Diagram: label "two-phase stop", pill on Router.
+
+## D214 — Rollout is behind `SUTRA_LIVE_V1`, with the legacy path kept for one release
+- Sources: `architecture.md` Rollout.
+- Decided: default off until the client lands, then on; off restores today's `chat.partial` path unchanged; the checkpoint table is ignored when off.
+- Why: the change spans server, parsers and four views; a switch makes rollback a config change.
+- Rejected: big-bang replacement; a permanent dual path.
+- Diagram: label "SUTRA_LIVE_V1 rollback flag", pill on Orchestration.
