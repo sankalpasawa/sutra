@@ -129,6 +129,12 @@ class LiveTurn:
     def stream_mode(self) -> Optional[str]:
         return self._stream_mode
 
+    @property
+    def stopping(self) -> bool:
+        """Stop was asked for: the page saw the text freeze, so the stored ending must be the stopped one whatever the provider returned."""
+        with self._lock:
+            return self._stopping
+
     def shown_text(self) -> str:
         """What the page was shown of the reply so far (the stored text of a stopped or failed turn is built from this)."""
         with self._lock:

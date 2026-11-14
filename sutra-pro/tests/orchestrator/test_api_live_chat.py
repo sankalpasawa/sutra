@@ -536,3 +536,25 @@ def test_the_worker_always_frees_the_chat_even_when_the_ticker_or_the_store_fail
     services.chat_port = LivePort(attempt(), started(), text("again"))
     assert post(client, sid, "again please", client_id="client-dddd4444").status_code == 202
     assert done(chats, sid, 3)
+
+
+def test_a_stop_that_loses_the_race_with_the_provider_result_still_ends_stopped_with_the_text_every_tab_saw(live):
+    client, world, chats, bus, services = live
+    sid = world.session_of["web"]
+    gate = Gate()
+    stop_now = lambda cancel, acc: direct_running.live_of(sid).request_stop()
+    # the provider returns a full result although Stop was asked: the process had already exited when the cancel ladder ran
+    services.chat_port = LivePort(attempt(), started(), text("seen part "), gate, stop_now, text("never shown"))
+    post(client, sid, client_id=CID)
+    assert gate.reached.wait(10)
+    assert wait_for(lambda: "block.delta" in types(services))
+    gate.event.set()
+    assert done(chats, sid, 3)
+    rows = chats.messages(sid)[1:]
+    assert [m.kind for m in rows] == ["text", "note"] and rows[0].text == "seen part"
+    assert "never shown" not in " ".join(m.text for m in rows)
+    assert types(services).index("turn.stopping") < types(services).index("turn.stopped")
+    assert "turn.done" not in types(services)
+    received = "".join(x["payload"]["delta"] for x in services.seen if x["type"] == "block.delta")
+    assert received.rstrip() == rows[0].text
+

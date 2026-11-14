@@ -562,6 +562,10 @@ def _answer_live(services: Any, port: Any, sid: str, user_message_id: int, turn:
                 done = event.data
         if done is None:
             raise RuntimeError("the turn ended without a result")
+        if live.stopping or (live.token is not None and live.token.requested):
+            # Stop won, even though the provider still returned a result (it had already finished when the cancel ladder ran): every tab saw the text freeze, so the stored
+            # ending is the stopped one, built from what was shown, never the provider's full text
+            raise CallCancelledError("stopped")
         stored = {**done, "blocks": done.get("blocks_ordered") or done.get("blocks") or []}
         ids = _post_all(services, sid, finished(user_message_id, stored, attempt, ordered=True, earlier=done.get("earlier")), drop_generation=live.generation_id)
         live.finish(ids.get(direct_turns.ref_of(user_message_id, "", attempt)) or 0, done)
