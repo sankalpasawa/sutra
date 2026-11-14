@@ -213,6 +213,15 @@ class ChatSessionOut(Value):
     pinned_effort: Literal["", "low", "medium", "high", "xhigh", "max"] = ""
     run_id: RunId | None = None             # the run a function or step session belongs to (D130)
     direct_turn: Count | None = None        # the owner's line that a direct turn is answering right now (direct_running.py), else None: any page can offer Stop
+    live: dict[str, Any] | None = None      # the live turn that is streaming in this chat ({generation_id, seq, state, attempt_no}, streaming design D203), else None (the key is left out)
+
+    @model_serializer(mode="wrap")
+    def _live_only_when_there_is_one(self, handler: Any) -> dict[str, Any]:
+        """The wire shape of a chat session is what it always was unless a live turn is streaming in it."""
+        data = handler(self)
+        if data.get("live") is None:
+            data.pop("live", None)
+        return data
 
 
 class ChatOption(Value):

@@ -69,8 +69,17 @@ def _session_out(row: sqlite3.Row, phase: str | None = None) -> ChatSessionOut:
     return ChatSessionOut(
         id=row["id"], node_id=row["node_id"], kind=row["kind"], title=row["title"], writable=bool(row["writable"]), status=row["status"],
         filed_under=row["filed_under"], connector=row["connector"], model=row["model"], provider_session_id=row["provider_session_id"],
-        last_message_id=row["last_message_id"], note=row["note"], phase=phase, direct_turn=direct_running.turn_of(row["id"]),
+        last_message_id=row["last_message_id"], note=row["note"], phase=phase, direct_turn=direct_running.turn_of(row["id"]), live=_live_of(row["id"]),
         pinned=row["pinned"], pinned_model=row["pinned_model"], pinned_effort=row["pinned_effort"], run_id=row["run_id"])
+
+
+def _live_of(session_id: str) -> dict | None:
+    """Where the live turn of this chat is ({generation_id, seq, state, attempt_no}), else None."""
+    turn = direct_running.live_of(session_id)
+    try:
+        return turn.brief() if turn is not None else None
+    except Exception:                                              # noqa: BLE001  a label for the page must not fail a read
+        return None
 
 
 def _session_record(row: sqlite3.Row) -> ChatSession:

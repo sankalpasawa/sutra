@@ -303,6 +303,11 @@ class LiveTurn:
             return self._publish_locked("turn.failed", {"message": message, "code": code, "message_id_reply": int(reply_message_id), "attempt_no": self.attempt_no,
                                                          "stored_order": self.acc.stored_order()})
 
+    def brief(self) -> dict:
+        """The four fields `ChatSessionOut.live` shows (where a page that did not start the turn can attach)."""
+        with self._lock:
+            return {"generation_id": self.generation_id, "seq": self._seq, "state": self._state, "attempt_no": self.attempt_no}
+
     # ---- the snapshot -----------------------------------------------------------------------------------------------------------
     def snapshot(self) -> dict:
         """Where the turn is now, exactly up to `seq`: what a page that opened late, or lost events, seeds itself with. Pending text is sent first, so the snapshot never holds

@@ -27,7 +27,7 @@ from pydantic import ConfigDict, StringConstraints
 from sutra_app.connectors.attachments import clean_name as _clean_file_name
 from sutra_app.library.base import Value
 
-__all__ = ["Ending", "finished", "stopped", "failed", "switch_notice", "attached_line", "clean_name", "ref_of", "owner_ref", "valid_client_id",
+__all__ = ["Ending", "finished", "stopped", "failed", "switch_notice", "earlier_note", "attached_line", "clean_name", "ref_of", "owner_ref", "valid_client_id",
            "STOPPED", "STOPPED_EMPTY", "NO_REPLY", "MAX_TEXT", "MAX_ATTEMPT", "DIRECT_ASK", "CLIENT_ID_RE"]
 
 STOPPED = "Stopped. What was written is kept."
@@ -91,32 +91,50 @@ def switch_notice(switched: Any) -> str:
     return head + "; " + carried + (f", {omitted} earlier shortened" if omitted > 0 else "")
 
 
-def finished(user_id: int, done: dict, attempt: int = 1, *, ordered: bool = False) -> list[Ending]:
+def earlier_note(earlier: Any) -> str:
+    """One line for each earlier try of this turn that ran tools ("Earlier try (claude, failed: Claude had a server error) ran: Reading a.py, Editing b.py"), at most 20 lines, so
+    that a try that may have changed files stays visible after a reload, as text. `earlier` is `BlockAccumulator.earlier_attempts()`; a try with no tool line adds nothing."""
+    lines: list[str] = []
+    for item in earlier if isinstance(earlier, list) else []:
+        if not isinstance(item, dict) or not item.get("lines"):
+            continue
+        reason = str(item.get("reason") or "").strip()
+        head = f"Earlier try ({_label(item.get('provider')) or 'the model'}{', failed: ' + reason if reason else ''}) ran: "
+        ran = ", ".join(str(x) for x in item["lines"][:20])
+        lines.append((head + ran + ("." if not ran.endswith(".") else "") + (" It may have changed files." if item.get("after_side_effects") else ""))[:600])
+    return "\n".join(lines[:20])
+
+
+def _notes(user_id: int, attempt: int, switched: Any, earlier: Any) -> list["Ending"]:
+    text = "\n".join(part for part in (switch_notice(switched), earlier_note(earlier)) if part)
+    return [Ending(kind="note", text=text, src_ref=ref_of(user_id, "switch", attempt))] if text else []
+
+
+def finished(user_id: int, done: dict, attempt: int = 1, *, ordered: bool = False, earlier: Any = None) -> list[Ending]:
     """`ordered=True` keeps text blocks (the turn's blocks are the whole turn in order) and marks the reply so; the default drops text blocks that carry no text
     and is what every turn stored before the live view looks like."""
     blocks = [b for b in done.get("blocks", []) if isinstance(b, dict) and (b.get("type") != "text" or b.get("text"))]
-    out = []
-    notice = switch_notice(done.get("switched"))
-    if notice:
-        out.append(Ending(kind="note", text=notice, src_ref=ref_of(user_id, "switch", attempt)))
+    out = _notes(user_id, attempt, done.get("switched"), earlier)
     out.append(Ending(kind="text", text=(str(done.get("text") or "") or NO_REPLY)[:MAX_TEXT], src_ref=ref_of(user_id, "", attempt), blocks=blocks,
                       ordered=bool(ordered and blocks)))
     return out
 
 
-def stopped(user_id: int, shown: str, attempt: int = 1, *, blocks: list[dict] | None = None, ordered: bool = False) -> list[Ending]:
+def stopped(user_id: int, shown: str, attempt: int = 1, *, blocks: list[dict] | None = None, ordered: bool = False, earlier: Any = None) -> list[Ending]:
+    notes = _notes(user_id, attempt, None, earlier)
     if not shown.strip():            # nothing was written; the tools that ran stay visible on the calm note (a note may carry blocks)
-        return [Ending(kind="note", text=STOPPED_EMPTY, src_ref=ref_of(user_id, "", attempt), blocks=blocks or [], ordered=bool(ordered and blocks))]
-    return [Ending(kind="text", text=shown[:MAX_TEXT], src_ref=ref_of(user_id, "", attempt), blocks=blocks or [], ordered=bool(ordered and blocks)),
-            Ending(kind="note", text=STOPPED, src_ref=ref_of(user_id, "note", attempt))]
+        return notes + [Ending(kind="note", text=STOPPED_EMPTY, src_ref=ref_of(user_id, "", attempt), blocks=blocks or [], ordered=bool(ordered and blocks))]
+    return notes + [Ending(kind="text", text=shown[:MAX_TEXT], src_ref=ref_of(user_id, "", attempt), blocks=blocks or [], ordered=bool(ordered and blocks)),
+                    Ending(kind="note", text=STOPPED, src_ref=ref_of(user_id, "note", attempt))]
 
 
-def failed(user_id: int, shown: str, sentence: str, attempt: int = 1, *, blocks: list[dict] | None = None, ordered: bool = False) -> list[Ending]:
+def failed(user_id: int, shown: str, sentence: str, attempt: int = 1, *, blocks: list[dict] | None = None, ordered: bool = False, earlier: Any = None) -> list[Ending]:
     reason = sentence.strip()[:MAX_TEXT] or "The model could not answer."
+    notes = _notes(user_id, attempt, None, earlier)
     if not shown.strip():
-        return [Ending(kind="error", text=reason, src_ref=ref_of(user_id, "", attempt), blocks=blocks or [], ordered=bool(ordered and blocks))]
-    return [Ending(kind="text", text=shown[:MAX_TEXT], src_ref=ref_of(user_id, "", attempt), blocks=blocks or [], ordered=bool(ordered and blocks)),
-            Ending(kind="error", text=reason, src_ref=ref_of(user_id, "error", attempt))]
+        return notes + [Ending(kind="error", text=reason, src_ref=ref_of(user_id, "", attempt), blocks=blocks or [], ordered=bool(ordered and blocks))]
+    return notes + [Ending(kind="text", text=shown[:MAX_TEXT], src_ref=ref_of(user_id, "", attempt), blocks=blocks or [], ordered=bool(ordered and blocks)),
+                    Ending(kind="error", text=reason, src_ref=ref_of(user_id, "error", attempt))]
 
 
 def clean_name(name: Any) -> str:

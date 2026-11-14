@@ -19,7 +19,7 @@ from typing import Any, Optional
 
 from sutra_app.orchestrator.db import Database, Tx
 
-__all__ = ["MAX_JSON", "save", "load", "all_rows", "drop", "drop_session", "cap_blocks"]
+__all__ = ["MAX_JSON", "save", "load", "all_rows", "drop", "drop_session", "cap_blocks", "stored_blocks", "shown_text"]
 
 MAX_JSON = 256 * 1024
 
@@ -89,3 +89,28 @@ def drop(tx: Tx, generation_id: str) -> None:
 def drop_session(db: Database, session_id: str) -> None:
     with db.tx() as tx:
         tx.conn.execute("DELETE FROM chat_turn_checkpoint WHERE session_id = ?", (session_id,))
+
+
+def stored_blocks(rows: list[dict]) -> list[dict]:
+    """A checkpoint's snapshot rows as the `ChatBlock` dicts a stored message carries (text, thinking, tool use; no tool result: the output of a tool is never part of a
+    snapshot). What a restart after a crash stores for a turn that was in flight."""
+    out: list[dict] = []
+    for row in rows:
+        kind = row.get("type")
+        if kind == "text" and row.get("text"):
+            block = {"type": "text", "kind": "other", "text": str(row["text"])}
+            if row.get("truncated"):
+                block["truncated"] = True
+            out.append(block)
+        elif kind == "thinking":
+            out.append({"type": "thinking", "kind": "other", "text": ""})
+        elif kind == "tool_use":
+            name = str(row.get("name") or "")[:200]
+            out.append({"type": "tool_use", "kind": row.get("kind") if row.get("kind") in ("read", "edit", "run", "search", "web", "other") else "other", "name": name,
+                        "text": str(row.get("title") or name)[:1000]})
+    return out
+
+
+def shown_text(rows: list[dict]) -> str:
+    """The text a checkpoint's text blocks hold, in order (the partial reply of a turn that was in flight)."""
+    return "".join(str(r.get("text") or "") for r in rows if r.get("type") == "text")
