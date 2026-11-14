@@ -96,6 +96,7 @@ class LiveTurn:
         self._stream_mode: Optional[str] = None
         self._idle_limit: Optional[float] = None
         self._order: list[str] = []
+        self._tries: list[dict] = []                    # attempts the router gave up on and moved past (retry or fallback): who and why, for the ending of a failed turn
         self._started_at = clock()
         self._last_provider = self._started_at
         self._last_heartbeat = self._started_at
@@ -221,6 +222,8 @@ class LiveTurn:
         elif event == "failed":
             self._flush_locked()
             self._set_state("backoff")
+            if data.get("action") in ("retry", "fallback") and str(data.get("reason") or "").strip():
+                self._tries.append({"provider": data.get("provider"), "reason": str(data.get("reason")), "lines": [], "after_side_effects": False, "blocks": []})
             self._publish_locked("attempt.failed", {key: data.get(key) for key in ("provider", "code", "reason", "action", "delay_s", "next_provider")})
 
     def _block(self, what: str, data: dict, now: float) -> None:
@@ -310,6 +313,20 @@ class LiveTurn:
             self._set_state("failed")
             return self._publish_locked("turn.failed", {"message": message, "code": code, "message_id_reply": int(reply_message_id), "attempt_no": self.attempt_no,
                                                          "stored_order": self.acc.stored_order()})
+
+    def earlier_tries(self) -> list[dict]:
+        """The tries before the last that the router gave up on, as the accumulator keeps them (`earlier_attempts`), plus the ones that never wrote a block (a provider that was not
+        signed in): what a failed turn's stored ending says about who failed first. A try the accumulator already holds is not repeated."""
+        with self._lock:
+            held = self.acc.earlier_attempts()
+            seen = {(str(e.get("provider")), str(e.get("reason"))) for e in held}
+            extra = []
+            for item in self._tries:
+                key = (str(item["provider"]), item["reason"])
+                if key not in seen:
+                    seen.add(key)
+                    extra.append(dict(item))
+            return extra + held
 
     def brief(self) -> dict:
         """The four fields `ChatSessionOut.live` shows (where a page that did not start the turn can attach)."""

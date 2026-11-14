@@ -595,3 +595,17 @@ def test_the_stored_text_of_a_reply_with_a_tool_in_the_middle_keeps_its_paragrap
     reply = chats.messages(sid)[1]
     assert reply.text == "Let me check the file.\n\nFound it: the value is alpha."
     assert services.seen[-1]["payload"]["text_len"] == len(reply.text)
+
+
+def test_a_turn_that_failed_after_a_fallback_stores_who_failed_first_so_a_reload_says_what_the_live_page_did(live):
+    client, world, chats, bus, services = live
+    sid = world.session_of["web"]
+    services.chat_port = LivePort(route("plan", order=["claude", "codex"], model="m"), attempt(),
+                                  route("failed", provider="claude", code="not_logged_in", reason="Claude is not signed in: use Sign in or run claude login", retryable=False, action="fallback",
+                                        delay_s=0.0, next_provider="codex"),
+                                  attempt(2, "codex"), CrashedError("died", provider="codex", detail={"exit": 1}))
+    post(client, sid, client_id=CID)
+    assert done(chats, sid, 3)
+    rows = chats.messages(sid)[1:]
+    assert [m.kind for m in rows] == ["note", "error"]
+    assert rows[0].text == "Earlier try (Claude) failed: Claude is not signed in: use Sign in or run claude login"

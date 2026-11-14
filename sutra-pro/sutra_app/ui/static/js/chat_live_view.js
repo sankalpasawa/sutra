@@ -452,7 +452,10 @@
     });
     const live = fromLive(view, {who: typeof d.who === "string" ? d.who : ""});
     let liveItem = null;
-    if (live && !models[live.key]) {
+    // a turn that failed before it wrote anything has no reply: its ending is the stored error line (and the note of who failed first), the same live and after a reload, so
+    // it gets no shell of its own (an empty card headed by a provider that never answered, below its own error)
+    const bare = live !== null && live.state === "error" && live.blocks.length === 0;
+    if (live && !models[live.key] && !bare) {
       models[live.key] = live;
       liveItem = {key: live.key, html: shellHtml(live.turn, live.attempt)};
     }

@@ -579,7 +579,7 @@ def _answer_live(services: Any, port: Any, sid: str, user_message_id: int, turn:
             if isinstance(exc, CallCancelledError):                  # the owner's Stop is not an error: what was written stays
                 live.request_stop()
             live.settle_blocks("interrupted")
-            shown, blocks, earlier = live.shown_text(), live.acc.stored_blocks(ordered=True), live.acc.earlier_attempts()
+            shown, blocks, earlier = live.shown_text(), live.acc.stored_blocks(ordered=True), live.earlier_tries()
             if isinstance(exc, CallCancelledError):
                 endings = stopped(user_message_id, shown, attempt, blocks=blocks, ordered=True, earlier=earlier)
             else:

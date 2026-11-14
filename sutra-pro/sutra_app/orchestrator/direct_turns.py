@@ -91,12 +91,16 @@ def switch_notice(switched: Any) -> str:
     return head + "; " + carried + (f", {omitted} earlier shortened" if omitted > 0 else "")
 
 
-def earlier_note(earlier: Any) -> str:
+def earlier_note(earlier: Any, *, bare: bool = False) -> str:
     """One line for each earlier try of this turn that ran tools ("Earlier try (claude, failed: Claude had a server error) ran: Reading a.py, Editing b.py"), at most 20 lines, so
-    that a try that may have changed files stays visible after a reload, as text. `earlier` is `BlockAccumulator.earlier_attempts()`; a try with no tool line adds nothing."""
+    that a try that may have changed files stays visible after a reload, as text. `earlier` is `BlockAccumulator.earlier_attempts()`; a try with no tool line adds nothing,
+    unless `bare` (a turn that failed: every earlier try is said, with its reason, so a reload tells who failed before the last error as the live page did)."""
     lines: list[str] = []
     for item in earlier if isinstance(earlier, list) else []:
-        if not isinstance(item, dict) or not item.get("lines"):
+        if not isinstance(item, dict) or not (item.get("lines") or (bare and str(item.get("reason") or "").strip())):
+            continue
+        if not item.get("lines"):
+            lines.append(f"Earlier try ({_label(item.get('provider')) or 'the model'}) failed: {str(item.get('reason')).strip()}"[:600])
             continue
         reason = str(item.get("reason") or "").strip()
         head = f"Earlier try ({_label(item.get('provider')) or 'the model'}{', failed: ' + reason if reason else ''}) ran: "
@@ -105,8 +109,8 @@ def earlier_note(earlier: Any) -> str:
     return "\n".join(lines[:20])
 
 
-def _notes(user_id: int, attempt: int, switched: Any, earlier: Any) -> list["Ending"]:
-    text = "\n".join(part for part in (switch_notice(switched), earlier_note(earlier)) if part)
+def _notes(user_id: int, attempt: int, switched: Any, earlier: Any, *, bare: bool = False) -> list["Ending"]:
+    text = "\n".join(part for part in (switch_notice(switched), earlier_note(earlier, bare=bare)) if part)
     return [Ending(kind="note", text=text, src_ref=ref_of(user_id, "switch", attempt))] if text else []
 
 
@@ -130,7 +134,7 @@ def stopped(user_id: int, shown: str, attempt: int = 1, *, blocks: list[dict] | 
 
 def failed(user_id: int, shown: str, sentence: str, attempt: int = 1, *, blocks: list[dict] | None = None, ordered: bool = False, earlier: Any = None) -> list[Ending]:
     reason = sentence.strip()[:MAX_TEXT] or "The model could not answer."
-    notes = _notes(user_id, attempt, None, earlier)
+    notes = _notes(user_id, attempt, None, earlier, bare=True)
     if not shown.strip():
         return notes + [Ending(kind="error", text=reason, src_ref=ref_of(user_id, "", attempt), blocks=blocks or [], ordered=bool(ordered and blocks))]
     return notes + [Ending(kind="text", text=shown[:MAX_TEXT], src_ref=ref_of(user_id, "", attempt), blocks=blocks or [], ordered=bool(ordered and blocks)),

@@ -619,3 +619,27 @@ test("a tool that never returned a result when Stop was pressed reads Interrupte
   const err = LV.plan([replyRow, {id: 9, role: "agent", kind: "error", turn: 7, attempt: 1, text: "It failed."}], {turn: null}, {}).models["turn:7:1"];
   assert.equal(err.blocks.find(b => b.type === "tool_use").status, "interrupted");
 });
+
+test("plan: a turn that failed before it wrote anything gets no shell of its own (its ending is the stored error line and the note of who failed first); one that wrote something keeps its shell", () => {
+  const r = rig();
+  r.begin();
+  r.wire("turn.connecting", {provider: "claude", model: "m", stream_mode: "tokens"});
+  r.wire("attempt.failed", {provider: "claude", code: "not_logged_in", reason: "Claude is not signed in", action: "fallback", delay_s: 0, next_provider: "codex"});
+  r.wire("turn.connecting", {provider: "codex", model: "m", stream_mode: "activity"});
+  assert.ok(LV.plan([], r.view(), {}).liveItem, "while it runs the shell shows the real reason of the earlier try");
+  r.wire("turn.failed", {message: "Codex is not signed in", code: "not_signed_in", message_id_reply: 9, attempt_no: 1, stored_order: []});
+  const error = {id: 9, role: "agent", kind: "error", turn: 7, attempt: 1, text: "Codex is not signed in"};
+  const planned = LV.plan([{id: 8, role: "agent", kind: "note", turn: 7, attempt: 1, text: "Earlier try (Claude) failed: Claude is not signed in"}, error], r.view(), {});
+  assert.equal(planned.liveItem, null);
+  assert.deepEqual(Object.keys(planned.models), []);
+  const same = LV.plan([], r.view(), {});
+  assert.equal(same.liveItem, null, "even before the error line is read, no empty card");
+  // a failed turn that had written text keeps its shell until the stored reply takes it over
+  const w = rig();
+  w.begin();
+  w.wire("turn.started", {provider: "claude"});
+  w.wire("block.start", {type: "text"}, "b1");
+  delta(w, "Half an answ", 0, "b1");
+  w.wire("turn.failed", {message: "died", code: "crashed", message_id_reply: 9, attempt_no: 1, stored_order: ["b1"]});
+  assert.ok(LV.plan([], w.view(), {}).liveItem);
+});
