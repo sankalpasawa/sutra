@@ -70,6 +70,7 @@ Suppose a standing goal is `order_fulfilled(order_7)`. An approved rule provides
 | Journal | Keep what was handed in, asked, decided and ran as hashed entries, and rebuild the State by replaying them through the kernel's own doors | Be believed without replay, take entries from two writers at one keeper or after it was continued, go on under a kernel whose results differ, or be used with a kind that acts outside the model (replay runs every handler again) |
 | Numbers adapter | Write a number as a verified row and a comparison as a row with its own source, version and dependencies; take a new reading whole or not at all; state what each step cost from the gate's own row | Make the kernel read a number, let a comparison outlive its number, or state a cost the gate did not charge |
 | Clock adapter | State the moment and the windows at a tick, in as many packs as the rows need; close a window for good; take a time-boxed grant away; set an allowance at a new period; report which standing goals are overdue | Give a grant, state another source's row again, move time back, reopen a closed window, or put a word of time into the kernel |
+| Page builder | Turn a goal in a person's words into a department folder with one page, from one reviewed domain of a closed catalogue | Guess what a domain means, choose on a tie, approve a draft, call a plan ready or waiting before its whole path ran in the local model as the plan it shows, name another reason for a stop than the kernel's own, or run anything outside it |
 
 ## Four linked interpretations
 

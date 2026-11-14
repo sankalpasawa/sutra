@@ -1,0 +1,141 @@
+{
+  "schema": "sutra-extension/2",
+  "id": "171_domain_catalogue",
+  "domains": [
+    {
+      "id": "website",
+      "title": "Website",
+      "goal": "site_live",
+      "say": "a website for my organisation",
+      "words": [
+        "website",
+        "site",
+        "web",
+        "pages",
+        "page",
+        "landing",
+        "organisation",
+        "organization",
+        "online",
+        "homepage"
+      ],
+      "packs": [
+        "70_site_goal",
+        "71_site_theory",
+        "72_site_methods"
+      ],
+      "labels": {
+        "site_live": "the website is live",
+        "site_checked": "the site has been checked",
+        "pages_built": "the pages are built",
+        "content_written": "the content is written",
+        "site_planned": "the site is planned",
+        "brief_given": "the owner has given a brief",
+        "plan-site@1": "Plan the site",
+        "write-content@1": "Write the content",
+        "build-pages@1": "Build the pages",
+        "check-site@1": "Check the site"
+      }
+    },
+    {
+      "id": "order",
+      "title": "Order fulfilment",
+      "goal": "order_complete",
+      "say": "complete a customer order when the item is out of stock",
+      "words": [
+        "order",
+        "orders",
+        "deliver",
+        "delivery",
+        "replacement",
+        "ship",
+        "shipping",
+        "fulfil",
+        "fulfilment",
+        "stock",
+        "item"
+      ],
+      "packs": [
+        "00_goal",
+        "01_domain",
+        "02_methods",
+        "04_admission",
+        "80_ask_method"
+      ],
+      "labels": {
+        "order_complete": "the order is complete",
+        "original_delivered": "the original item is delivered",
+        "replacement_delivered": "a replacement is delivered",
+        "customer_approved": "the customer has approved a replacement",
+        "original_stock": "the original item is in stock",
+        "substitute_stock": "a substitute is in stock",
+        "ship-original@1": "Ship the original item",
+        "ship-replacement@1": "Ship the replacement",
+        "ask-customer-approval@1": "Ask the customer"
+      }
+    },
+    {
+      "id": "enquiry",
+      "title": "Enquiry desk",
+      "goal": "enquiry_complete",
+      "say": "answer and store customer enquiries",
+      "words": [
+        "enquiry",
+        "enquiries",
+        "inquiry",
+        "inquiries",
+        "inbox",
+        "support",
+        "answer",
+        "store",
+        "privacy"
+      ],
+      "packs": [
+        "20_enquiry_goal",
+        "21_enquiry_theory",
+        "22_enquiry_methods",
+        "23_enquiry_extra_knowledge",
+        "24_enquiry_privacy"
+      ],
+      "labels": {
+        "enquiry_complete": "the enquiry is handled",
+        "record_stored": "the enquiry is stored",
+        "record_retrievable": "the stored enquiry can be read back",
+        "support_inbox_retrievable": "the enquiry is in the support inbox",
+        "privacy_checked": "the privacy check is done",
+        "enquiry_valid": "the enquiry is valid",
+        "store-enquiry@1": "Store the enquiry",
+        "readback-enquiry@1": "Read the enquiry back",
+        "check-privacy@1": "Check privacy"
+      }
+    },
+    {
+      "id": "workflow-standard",
+      "title": "Workflow standard",
+      "goal": "workflow_registrable",
+      "say": "check a workflow against the standard",
+      "words": [
+        "workflow",
+        "workflows",
+        "standard",
+        "standards",
+        "registrable",
+        "checklist",
+        "check"
+      ],
+      "packs": [
+        "60_standard_goal",
+        "61_standard_theory",
+        "62_handwritten_evidence",
+        "63_repair_method"
+      ],
+      "labels": {
+        "workflow_registrable": "the workflow meets the standard",
+        "has_trigger": "the workflow says what starts it",
+        "every_step_has_check": "every step carries a check of its own",
+        "has_overall_verify": "the workflow says how the whole is verified",
+        "add-step-checks@1": "Add a check to every step"
+      }
+    }
+  ]
+}

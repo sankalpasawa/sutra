@@ -1,0 +1,9 @@
+{
+  "id": "70_recorded_open",
+  "title": "A goal recorded as not true",
+  "description": "The order desk recorded the order as not complete. The plan still asks the customer and waits; what a yes leads to is in the systems record: the replacement ships, and the stored row then contradicts the rule.",
+  "packs": ["00_goal", "01_domain", "02_methods", "04_admission", "80_ask_method", "170_recorded_open"],
+  "execute": true,
+  "area": "Page builder",
+  "expected": "WAITING"
+}

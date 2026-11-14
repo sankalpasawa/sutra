@@ -2,7 +2,7 @@
  "about": "Written by the additive applier (.tmp/core-algo-additive4-apply.py, contract 4). `pinned`: what the lab had recorded when a version was applied (sha256 of the kernel and of each scenario file; sha256 of the canonical JSON of each case, of the event record, of the ask record, of each recorded sequence, of each handler entry and of each lens except the reflection summary), and `built_in`, every Python file the lab had before the add-on points. `points` and `applied`: every file laid in, with its sha256. An entry of `applied` that holds `edits` is an EDIT VERSION (ruling R32): the name and sha256 of its edit script and, for every existing file the script changed, the sha256 before and after; the pin of the kernel and the pinned handler entries were taken again for those files, an added file it changed is listed with its new sha256, and every other pin stayed. Its `moves` are what it declares as moved of the things an earlier version recorded, each with its reason; check S202 holds a declared move to nothing until the next version is applied to the built, verified record. The verifier reads this file for checks S202 and S203, for the sha256 a check module's text is held to before it runs, and for what it hands a check module; tools/run_all.py reads it for the record's file list. Nothing in the lab holds this file itself.",
  "contract": 4,
  "pinned": {
-  "from": "sutra-kernel-extensions/0.12.0-numbers",
+  "from": "sutra-kernel-extensions/0.13.0-time",
   "kernel_sha256": "688ab9431d4f4b17608d848e32f12e0373197a301d3b7f641a6f476a2b9ad368",
   "built_in": [
    "extensions/asks.py",
@@ -55,6 +55,64 @@
    "158_run_cap_again": "849ebedff7379ef859eb8f8cd2830412ad826128feb8ad2ed42938dff8c11134",
    "159_one_row_alone": "9eb46858c22d16515a6eb2b88fee832787390d38329b4e4d964365d604589636",
    "15_low_budget": "796569e612a2f5c6abf6e05676c9166ea5c3371605ca0e6fe967421695a758cb",
+   "160_clock@2": "d275019153c8f6a1b5af8b8e1357bce3c4dd1d0d9283514b37d8bd29ad72708d",
+   "160_clock@3": "5eed5ca89f48a91a3d2e7de3df521d9bb18699baa62d3cd51bc0f28f38a76ce0",
+   "160_clock@4": "29c1e00027d81a18a2ebecf42719f99800b9d726e7640c4fe5b9616fd9d21c74",
+   "160_clock@6": "3f42f4a2ff84ee3ca65fa97bc7365986b3673c5ad4e6c4eb623765bb8cbad5da",
+   "160_timed_approval": "f347d8d1000035c1546f61204472b7f5f444fac60b21284671045fe1cf92c200",
+   "161_allowance": "c4a9e0b26d7fd8a1ea059dbd22fcfaf04bb284eef50396205ced5be26fb321d1",
+   "161_clock@1": "417a28bf6e79fd3c5b390dc7965b764881ab41a7123ee62d23989730532c9edf",
+   "162_clock@15": "5fdd3dc27510aaee64fa986214042a11397910b53fcd417aa30cbd7393c8129f",
+   "162_clock@16": "418f19b55374c797b89fcbefb0caef247a70eec9a9b2eef2125fb0a606f68a29",
+   "162_clock@31.1": "6c7b9600c958454581c4f2e59812425a3686d885f29a26487e14381c7e95c2a0",
+   "162_clock@31": "5ad9d6ef60fce3899dfc0a13a93ff5ec8d5625852346f2d62761f26a2215f14f",
+   "162_clock@5": "ac9b6ac6ccfbf45bac4df11ef8d9d1b838f0024b7faf1b6b21cdaa62c5407d59",
+   "162_loan": "05dbdbdae775a3e9c9292e5c6b5178c0faeb319498681a3ddfb64ccf68233544",
+   "162_renewal": "fa151f7d21137a02464a862d8ffd192037864a3a753f3fe5dbe554554c654914",
+   "162_sanction_again": "422b6903fd86eb5ca5e56416f40df5cbc732cbee616fb9523fca0317bcbdc0b2",
+   "162_second_box": "e533c9c3bf502f2bebe2c868127244f7d50b9d3b0d3ca93867903ad3c48c344f",
+   "162_two_boxes_clock@16": "e8a0e8980256876986ccc4d337072bf0f35af8767d699ee3477131a3b6be015a",
+   "162_two_boxes_clock@20": "07b12f27c9389cc204481c00113421ad8d1aea8f262636c1730ad729b10e9ada",
+   "162_two_boxes_clock@21.1": "7a29a8d663b763abe51fd3a293990c997b386d5cf1d7942e8a1a35a719cd0cc1",
+   "162_two_boxes_clock@21": "dc8f7de9c900ace199a7a4bf31a6352f3914ab0c57840f34887730c1d810e156",
+   "163_branch": "232174d118bfae20642b42888d8846132b1cdee519c62a7cce62aeabfacca58e",
+   "163_bureau_pulls": "5aedbfb25ccac9d638213a68382024e0413902ce8c9ef9dcbc82229558888483",
+   "163_clock@0": "e659e6b32bc66975ed95c98791e493046aaa6dba9a1010f9bac3d7fee2576bc3",
+   "163_clock@1": "9c580834a32992b25b0173f8f4812dcd5acf8b53c62cf071a37f07989196d93a",
+   "163_lending": "5fee57eb7857d62d097191f3a217afaaa70aac50fe55be42a455d8e45eb865ba",
+   "163_weekly_clock@13.1": "25d28784f2868fff624cdef2a041c489f12360a8bdd34cd35ed61a4b80743f4b",
+   "163_weekly_clock@13.2": "6815e4f2619d977b449d2ba0c78238e262c5a50ccdd716111c64819605a42888",
+   "163_weekly_clock@13": "bea9d79d6d8c04d3272988deb528be2b5545ab9730769c2e26a1cea021a6aa12",
+   "163_weekly_clock@14": "83cfff422a8f2fe343eb2c509848e7a08d4bf3249632f2f1e363e2b4920e85b3",
+   "163_weekly_clock@6": "fa17620eb3aaed6bf988ae74d5d5dae8f497dfde8b431933fd83466cd90f3409",
+   "163_weekly_clock@7": "92cae9d9ae7cdff0653ee176fddd5959ec60e0a97033f0f2a96ca515b1469988",
+   "163_weekly_pulls": "a4cd064395dc3a46fa7996388b8d1d0da0437892a95f40bdcfa3c120088ee271",
+   "164_called_clock@1": "8f39e8f2245381f7911258e901897c8f0de336d20bebc62b09bc6efd7b410adb",
+   "164_called_late": "6f8d014300bd9b790db4847ad60af4bd998b2d48dc42c40faff55d81137a81d0",
+   "164_clock@6": "2ee5fa6b88140a6f90fc0563f79ec6b455d24eb97e84514c676a26bcc399b610",
+   "164_clock@7": "8201c16d273027b101110d9e716ad440eeabe319e0229d967cb162bc388ecef6",
+   "164_due_by": "adcd2f597923a9cad44071fdb5c7e14f9b3951427d1a71d79dd0f86795d7b314",
+   "165_clock@6": "136db8fab3c908e42725eaecc0c49fa47b6441f4fdf804c579cd9bc9a7086445",
+   "165_two_goals": "b263e5cc5684d183dc73acbadd37758bc05e40a5dea5ff9c91df3123dd2c1652",
+   "166_clock@2": "cdb1c66c7273ec6e3e93de127ccc6142ee7f9c49110ec0fcba7ac2408f373c6d",
+   "166_clock@3": "6915b8d778bcdcfcfc21e23716f17c0abc0106a8cb9a337800e99ba6ec371459",
+   "166_clock@6": "f399ce960e118492a8cc07564299cb011699be0d71b26b4e2abbd3ad949fd2cc",
+   "167_clock@2": "14eb627fd118d765f4d5fcf5dcc1bd36f2d1c5b9d42861330b9bd9a30b3c5e4c",
+   "167_clock@4": "d697c8caf5a2e52a471fc658b647baa6400161a78a6f591538281f659c5d3ebc",
+   "167_clock@5": "0bf470a8bac955abb875c0f692c70762d1c625d5b76fef320c4a17645107cf8e",
+   "167_offer": "353d00cb2a5940e54b45f9a9b5d4cb1e4c782ebfd2b74f415f4cd5bba177969d",
+   "168_clock@2.1": "cc00961a2456e6d1bcf6f2ad1db8d0b98bd903fe06daddc654996983b04a1c3c",
+   "168_clock@2": "7e292e14a18623a102b0430b8c317b9292eeade58440ae70a6116462a4910db2",
+   "168_stock_hold": "db1e96848662bf05cbc28dc1d65f0bab4b361754eb18f08e7daeecdf1bf4a615",
+   "169_clock@2": "6b485dc34c3d2c6c40095ccbf5f821871dcd558cb8f8f7fa06dce8508b594d6a",
+   "169_clock@4": "342d7df769b5cd3f8560cdd88429fd092fa00f29ceff26f31b261c27e87f967e",
+   "169_clock@5": "2829787b07644c7c6b5485035b85326f56526add2084a3bdc308c36237e9bfe1",
+   "169_crowd_clock@2": "667d850314da2514deede1a818d5f15a1aa18438d3f463f96707ec8fe96b6e23",
+   "169_crowd_clock@4.1": "e10cc84180c593ca907409be6fbf55335f24323910bd01cb52ebe0be78dd963d",
+   "169_crowd_clock@4": "f86a791c94a2806b50f7a61bc58079dd9e53afe00220bf2f380b2dfe62978a12",
+   "169_crowd_clock@6.1": "a163cbe36640b6a69a3e361eedbde6545419732074d7b86bd2fb590da8385065",
+   "169_crowd_clock@6": "6b74879e8efc72090f0e749fea2f9cde08e0590cd2bcd9325575dd015cfef4ad",
+   "169_shipping_pass": "a14ae186ee1cf6a2b8cca5d73db7d4f49956fbfd38b1b550f00ae74448483760",
    "20_enquiry_goal": "ac089a3607c41dd9f73979cfbb76cc95db7c458038c505c77a09f5b8e01f83ca",
    "21_enquiry_theory": "f98e3813d35d7a85a3efba6338a2aa26c4bb29280448f8a61eecad9426dfa94d",
    "22_enquiry_methods": "c24a6bf2f19dae143ad5465c982d9ea851cb8e8fc12c8d0efc0b8702eae56d6e",
@@ -230,11 +288,28 @@
    [
     "66_review_queue",
     "af77fcdd970a0c91589e2451f4a344a6f5ff5ce4d35706081d8f596c6b9b9a31"
+   ],
+   [
+    "67_late_order",
+    "d59a5165605c1352044f5f88a7a69840ec03813079754ad800d060335b1923ea"
+   ],
+   [
+    "67a_order_in_time",
+    "ff8a07178a03f21a1e0004587a68fc9d456f7eacb1fd3244c5f6653a23d36145"
+   ],
+   [
+    "68_allowance",
+    "ba801093d448c00f9488db86264c44f64bb7f7845bb98d8849729d448e8e209e"
+   ],
+   [
+    "69_permission_ran_out",
+    "ee2a73470a9dc874031a671438190ee8aee3ee302976fa6f0a6401d2cc1146ad"
    ]
   ],
   "events": "f58f0cf138c8ca42fe880e0a0c15d116a2c52c8a300b8284a8c93e3e72d2317c",
   "ask_events": "541f53443324006a1cedafd604f4a28324a227fca6c4c443d86ced9d4eebba44",
   "scenes": {
+   "clock": "67c5c9938c3c000590c8b0ce95e594ccb09708153d27632e976a641f84e1ebfd",
    "journal_chain": "6c189359834d38d83b168a5142f8c0c2cd75d6d1a68533dee20bc9b1d6fb440b",
    "journal_refusals": "0c8646c7ad38b13dc36a29cc6112815e255dde8828b004f6408f169f2ca62ef6",
    "journal_restart": "1b30c480032ee792b0f7d1fd9645a0942fc89e2e886fdd4f2fe3223de9ab99d4",
@@ -317,6 +392,20 @@
     "tests/test_clock.py": "9dd3af53c0f49c1064e600b43d8896523be68bd6c7ab69056cf85a6a9058b7a2",
     "tools/packs/clock.py": "b2ce6a713e31ff084e4a5bb89e65a8ec27240ce41f17ccd1600795d93b39ac39",
     "tools/scenes/clock.py": "0995dcd5027b6e13551799500f930f39db3c0eca9b5c2ed96360ef35243128cf"
+   }
+  },
+  {
+   "label": "0.14.0-pagebuilder",
+   "delivery": "g2",
+   "files": {
+    "cases/70_recorded_open.json": "a24b8c48fb2e30faa66c368d5a3acaf4fc0ac035808c67d05375f5b572ad8950",
+    "cases/71_no_plan_after_a_yes.json": "88266cb9499bfd6b903a42ef94c3663753347eb18a598e51fc53c6456620a22c",
+    "extensions/g2.py": "6ba590c0b23d74e27acaaf96ef3679bef5d28d3e806c45a832a601f9ceb180e4",
+    "extensions/system.py": "9e87ceffe926408d551b9a18a4bad11770120db901c2bec0b75fdb30ccb72b17",
+    "qa/checks/system.py": "dcba8f2a78e8a192f98806b332c46352f0459db63b6a0994f23de1931b637120",
+    "tests/test_system.py": "5d5b8f85c7cca7693c1af7452a867185832feeed3fcf9cdbf224d30e81eb9836",
+    "tools/packs/system.py": "7e4d2166825a4e78c58d5ae951d9ddc9fec0d2cdaed10625d38738eca9f48bf9",
+    "tools/scenes/system.py": "8a68a69104f4cfde1d8143e704dec6e2173f95b321a2a2ee5806e15dce3aa8dd"
    }
   }
  ]
