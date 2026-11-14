@@ -589,8 +589,8 @@ def _answer_live(services: Any, port: Any, sid: str, user_message_id: int, turn:
         except Exception:
             log.exception("could not store the failed turn of %s", sid)
     finally:
+        direct_running.end(sid)          # first: the reply is stored and the end sent, so the chat is free now; closing joins threads and can wait on a slow checkpoint write
         live.close()
-        direct_running.end(sid)
 
 
 router = build_router()

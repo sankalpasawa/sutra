@@ -558,3 +558,18 @@ def test_a_stop_that_loses_the_race_with_the_provider_result_still_ends_stopped_
     received = "".join(x["payload"]["delta"] for x in services.seen if x["type"] == "block.delta")
     assert received.rstrip() == rows[0].text
 
+
+def test_the_chat_is_free_before_a_slow_ticker_close_returns(live, monkeypatch):
+    from sutra_app.orchestrator import live_turn
+    client, world, chats, bus, services = live
+    sid = world.session_of["web"]
+    services.chat_port = LivePort(attempt(), started(), text("hi"))
+    original, freed = live_turn.LiveTurn.close, []
+
+    def slow_close(self):
+        freed.append(not direct_running.answering(sid))                       # the chat must already be free when close starts
+        return original(self)
+    monkeypatch.setattr(live_turn.LiveTurn, "close", slow_close)
+    post(client, sid, client_id=CID)
+    assert done(chats, sid, 2)
+    assert wait_for(lambda: bool(freed), 5) and freed == [True]
