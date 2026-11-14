@@ -42,3 +42,9 @@ Branch `remove-group-c`, from `remove-restrictions` (2026-11-14). Removes group 
 | Run | Result |
 |---|---|
 | All 4 briefs ($2.59, `--cap 100`) | 4 pass with `Done:`. Coordination named 2 ready once (coffee shop, j2-20261114-210601) and the engine's one-at-a-time line was posted; no workflow refused as ready; no id appended to its order. Ledger total $43.64 of $100 |
+
+## Batch 3 live check (2026-11-14)
+
+| Run | Result |
+|---|---|
+| All 4 briefs ($3.06, `--cap 100`) | 4 pass with `Done:`. 3c refused no dependency. Identity tagged every item: coffee shop 6 of 6 (page_section, styling), hiring policy 8 of 8 (doc_section); the two folder briefs have one kind, so no tags are asked. No POLICY_QUESTION was asked. Ledger total $46.70 of $100 |
