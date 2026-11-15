@@ -34,7 +34,8 @@ __all__ = [
     "MAX_ATTEMPTS", "EXIT_PASS", "EXIT_FAIL", "EXIT_PIN_CHANGED", "EXIT_MISSING", "CheckTemplate", "PLUGIN_CHECKS",
     "J2_CHECKS", "REGISTRY_CHECKS", "CHECK_NAMES", "BEHAVIOR_VERBS", "ATOM_DETAIL_KEYS", "AtomError", "check_arity",
     "default_relevance", "check_sentence", "Constraint", "Work", "ExpectedItem", "CheckResult", "Check", "Verify",
-    "AtomEdge", "Refusal", "AtomDraft", "OutputItem", "Atom", "open_rules", "Seen", "CardRow", "Card", "Transition",
+    "AtomEdge", "Refusal", "AtomDraft", "OutputItem", "REPLY_TEXT_MAX", "AtomReply", "Atom", "open_rules", "Seen", "CardRow", "Card",
+    "Transition",
     "build_card", "card", "open_atom", "close_atom", "abandon_atom", "atom_display_state", "LedgerVerify", "LedgerRow",
     "ledger_row", "ledger_row_from_view", "ViewHow", "ViewCheck", "AtomView", "atom_view", "atom_kind", "dedupe_edges",
     "link_views", "dependency_edges", "run_views", "validate_atom", "validate_views", "MAKE_CHECKS", "DO_CHECKS",
@@ -279,6 +280,18 @@ class OutputItem(Value):
     ref: Line300
 
 
+REPLY_TEXT_MAX: Final = 4000          # characters of a recorded reply (D157): about 4 KB
+
+
+class AtomReply(Value):
+    """The last reply a function's turn got from the model, as the layer saw it (D157): the reply object printed with two-space
+    indents and cut to `REPLY_TEXT_MAX` characters, `clipped` saying it was cut. It sits on the atom beside `produced` (the plain
+    words of what the turn made or did) and is what the owner's card shows as "The reply". An atom stored before D157 has none."""
+
+    text: Annotated[str, StringConstraints(max_length=REPLY_TEXT_MAX)]
+    clipped: bool = False
+
+
 ATOM_DETAIL_KEYS: Final = ("selectors", "ids", "section", "anchor", "elements", "scope", "channel", "mode", "sent")      # AS:18-20
 
 
@@ -408,6 +421,7 @@ class Atom(Record, AtomDraft):
     abandon_code: Literal["verify_failed", "run_ended", "replaced", "manual"] | None = None
     produced: Annotated[list[OutputItem], Field(max_length=40)] = []
     notes: Text600 = ""
+    reply: AtomReply | None = None            # D157: the last reply of the turn; additive, an atom stored before it has none
     details: JsonObject = {}
     ts_open: Ts
     ts_closed: Ts | None = None
@@ -478,11 +492,15 @@ class Atom(Record, AtomDraft):
 
 class Seen(Value):
     """What the layer saw while the work ran. `work` and `model` correct the declaration; `note` is the layer's own
-    trace text and the library stores nothing of it (S4-fnodes-03: nothing else about the atom changes)."""
+    trace text and the library stores nothing of it (S4-fnodes-03). Since D157 it also hands over what the turn produced:
+    `produced` (the plain words, replacing what the atom held) and `reply` (the last reply the model gave). Nothing else
+    about the atom changes."""
 
     work: Literal["llm", "bash", "manual"] | None = None
     model: Annotated[str, StringConstraints(min_length=1, max_length=80)] | None = None
     note: Annotated[str, StringConstraints(max_length=200)] = ""
+    produced: Annotated[list[OutputItem], Field(max_length=40)] = []
+    reply: AtomReply | None = None
 
 
 CardLabel = Literal["WORK ATOM OPEN", "WORK ATOM CLOSED", "VERIFY FAILED", "WORK ATOM ABANDONED", "ATOM REFUSED"]
@@ -629,7 +647,8 @@ def open_atom(draft: AtomDraft, *, id: str, node_id: str, now: int, department_i
 
 def _apply_seen(atom: Atom, seen: Seen | None) -> Atom:
     """S4-fnodes-03: a differing `seen.work` replaces `work.dispatch_kind` and the notes say "declared <old>, did <new>";
-    `seen.model` fills an empty `model`. Nothing else changes."""
+    `seen.model` fills an empty `model`. D157: `seen.produced` and `seen.reply`, when given, replace `produced` and `reply`.
+    Nothing else changes."""
     if seen is None:
         return atom
     changes: dict[str, Any] = {}
@@ -638,6 +657,10 @@ def _apply_seen(atom: Atom, seen: Seen | None) -> Atom:
         changes["notes"] = clip(f"{atom.notes} declared {atom.work.dispatch_kind}, did {seen.work}".strip(), 600)
     if seen.model is not None and not atom.model:
         changes["model"] = seen.model
+    if seen.produced:                       # D157: what the turn made or did; the newest sight of it replaces the last one
+        changes["produced"] = list(seen.produced)
+    if seen.reply is not None:
+        changes["reply"] = seen.reply
     return atom.evolve(**changes) if changes else atom
 
 

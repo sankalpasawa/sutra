@@ -1,0 +1,39 @@
+{
+  "schema": "template-library/1",
+  "name": "Iron Grove Fitness PRD Out of scope",
+  "version": 1,
+  "sha": "1c96cf2a3b5abd39358fb5d9b4ca7a0f834c38e979660f1959d98b8a56e6816e",
+  "schema_sha": "758b4d68b9f2ee968c1b5bb8aea0caaf79ff1195dee68ee7ad5cb8227ad07eb6",
+  "model_sha": "b1e3907aea91005fb90c2c5388b28ccee31adf65b7555be1fb764d6873904e82",
+  "class": "IronGroveFitnessPRDOutOfScopeV1",
+  "created": "2026-11-11T21:22:25",
+  "fingerprints": [
+    "42ccae9abec7e4f39f6428895cba7e0e15c8c9f011633a35bd494dce6ac0622d"
+  ],
+  "made_by": {
+    "run": "j2-20261111-211339",
+    "workflow": "W-6",
+    "atom": "W-6.a1",
+    "agent": "code (adapted from a run template)",
+    "date": "2026-11-11 21:13:39"
+  },
+  "business": {
+    "name": "Iron Grove Fitness",
+    "type": "fitness studio"
+  },
+  "mock": false,
+  "collected_from": {
+    "run": "j2-20261111-211339",
+    "where": "the run's copy"
+  },
+  "used_by": [
+    {
+      "run": "j2-20261111-211339",
+      "workflow": "W-6",
+      "atom": "W-6.a1",
+      "action": "extended"
+    }
+  ],
+  "renamed_from": "Still Point Yoga PRD Out of scope@3",
+  "adapted_from": "Still Point Yoga PRD Out of scope@2"
+}

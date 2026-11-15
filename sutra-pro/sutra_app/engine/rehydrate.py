@@ -20,7 +20,9 @@ What happens, in this order:
      continue where the old run stopped;
   3. these `J2Run` attributes are set, and no others: chat (the copied `chat.jsonl` without its header), goal, stamped,
      workflows, conflicts, audits, sections, style, sites, request, calls, cycle, spent, budget, receipts, decisions, done,
-     status, outcome and, when `realization.json` exists, real, real_base, real_summary and real_asked.
+     status, outcome and, when `realization.json` exists, real, real_base, real_summary and real_asked; and `auto_pick`, set to
+     `{}` (RESTORED_REUSE, D187: the run counts as having decided about auto-reuse, so a follow-up never scores the run templates again;
+     `run_tpl` is deliberately left as it is, None: NOT_RESTORED_REUSE).
 
 A document chain (E1-b, GAP-E1B) is recognised by `documents.json` or `stage-*.json`. Its `summary.json` must hold
 `design_documents` (requested, stages) and `documents.json` every requested document, or the run is refused. Then also
@@ -45,8 +47,11 @@ import re
 import shutil
 from pathlib import Path
 
+from . import forms
+from .events import END_STATUSES
+
 __all__ = ["RehydrateRefused", "check_source", "rehydrate", "continuing_line", "fresh_line", "HOST_FILES", "RUN_TREES",
-           "RESTORED", "RESTORED_REALIZATION", "RESTORED_CHAIN"]
+           "RESTORED", "RESTORED_REALIZATION", "RESTORED_CHAIN", "RESTORED_TYPE", "RESTORED_REUSE", "NOT_RESTORED_REUSE"]
 
 HOST_FILES = ("task.json", "settings.json", "snapshot.json", "live.json", "events.jsonl", "trace.jsonl", "inbox.jsonl",
               "choices.json", "node_context.json",           # the server's notes to a run's agents (D131, D132): plumbing, never a follow-up's seed
@@ -57,9 +62,15 @@ RESTORED = ("chat", "goal", "stamped", "workflows", "conflicts", "audits", "sect
 RESTORED_REALIZATION = ("real", "real_base", "real_summary", "real_asked")
 RESTORED_CHAIN = ("docset", "stages", "stage_i", "docs", "chain", "stage_archive", "past_workflows", "site_tag", "stage_calls0",
                   "lld_revisions", "output", "out", "doc", "WF_FMT", "GRANT_FMT", "ATOM_RULES", "blueprint")
-DOC_KINDS = ("prd", "hld", "lld")
+# J2 sync 6 (D187): a follow-up is a change request on finished work, so it never re-fires auto-reuse and does not take the earlier run's run template.
+# `auto_pick = {}` is J2's own "already decided" marker (`_auto_reuse_pick` returns at once when it is not None); `run_tpl` stays None, because the
+# earlier run's template shaped its FIRST plan and its rows and per-workflow state would steer stages that are already done.
+RESTORED_REUSE = ("auto_pick",)
+NOT_RESTORED_REUSE = ("run_tpl",)
+RESTORED_TYPE = ("output", "out", "doc")              # a single page stage when nothing was chosen for the new run: the earlier run's type (no default exists)
+BLUEPRINT_KEYS = ("id", "anchor", "implements")      # what a section of a blueprint says (J2's own `lld` sections: S1, its anchor, what it implements)
 SITE_VERSION = re.compile(r"v(\d+)\.(?:html|md)")
-ENDED = ("done", "done_with_open_items")
+ENDED = END_STATUSES[:2]                # `done`, `done_with_open_items`: a run that finished its work (the statuses are events.py's)
 
 CONTINUING = ("Continuing from run {run_id}: the team keeps its charter, workflows, findings and site and treats your "
               "message as a change request.")
@@ -82,6 +93,39 @@ def continuing_line(run_id: str) -> str:
 def fresh_line(run_id: str, reason: str) -> str:
     """The system line of a follow-up that starts fresh with the old files as upstream (fixed wording, engine design 4.8)."""
     return FRESH.format(run_id=run_id, reason=str(reason).rstrip(". "))
+
+
+# ---- the types: data, read through J2 (D167) -----------------------------------------------------------------------
+# What is a document, what is a page and what is neither is J2's `artifacts/types.json` (and the user's local types, and the types a
+# capability registers); this module names no type. J2 is imported when a run is read, not when this module loads.
+def _types():
+    from . import j2, j2_types
+    return j2, j2_types
+
+
+def _form(kind, src: Path | None = None):
+    """The form of an output type (`forms.PAGE` or `forms.DOCUMENT`), or None when `kind` is no output type: a name in the data, else a document
+    type the run itself recorded (a local type deleted after the run: J2's `recorded`, so the run still opens)."""
+    j2, j2_types = _types()
+    if kind in j2_types.names():
+        return j2_types.info(kind)["form"]
+    if src is not None and kind in j2_types.recorded(str(src)):
+        return forms.DOCUMENT
+    return None
+
+
+def _blueprint_of(run, page_kind):
+    """The chain document that is the page's blueprint, as `J2Run._begin_stage` sets it: the first of the page type's `depends_on` whose
+    record has sections of the blueprint's shape (a non-empty list of objects with an id, an anchor and what they implement). J2 names its
+    own `lld` there; this reads the shape, so a custom chain is carried on the same way. None when no record has it."""
+    _, j2_types = _types()
+    entry = next((e for e in j2_types.entries() if e.get("kind") == "type" and e.get("name") == page_kind), {})
+    for dep in entry.get("depends_on") or []:
+        record = (run.chain or {}).get(dep)
+        sections = record.get("sections") if isinstance(record, dict) else None
+        if isinstance(sections, list) and sections and all(isinstance(s, dict) and all(k in s for k in BLUEPRINT_KEYS) for s in sections):
+            return copy.deepcopy(record)
+    return None
 
 
 # ---- reading the source ---------------------------------------------------------------------------------------------
@@ -171,7 +215,7 @@ def _chain(src: Path, summary: dict, workflows: list) -> dict:
             or not isinstance(record.get("stages"), list):
         raise RehydrateRefused("the earlier run's document chain cannot be read (summary.json has no design_documents)")
     docset, stages = list(record["requested"]), list(record["stages"])
-    if any(k not in DOC_KINDS for k in docset) or not all(isinstance(k, str) and re.fullmatch(r"\w+", k) for k in stages) \
+    if any(_form(k, src) != forms.DOCUMENT for k in docset) or not all(isinstance(k, str) and re.fullmatch(r"\w+", k) for k in stages) \
             or not set(docset) <= set(stages):
         raise RehydrateRefused("the earlier run's document chain cannot be read (summary.json names unknown stages)")
     docs = _json(src, "documents.json", "the earlier run's document chain has no documents.json", dict)
@@ -183,7 +227,7 @@ def _chain(src: Path, summary: dict, workflows: list) -> dict:
     for kind in stages:
         if (src / f"stage-{kind}.json").exists():
             archive.append(_json(src, f"stage-{kind}.json", "", dict))
-    stage_kinds = [k for k in stages if k in DOC_KINDS or k == "website"]           # the others are send deeds: no output
+    stage_kinds = [k for k in stages if _form(k, src) is not None]                   # the others are send deeds: no output
     last = stage_kinds[-1] if stage_kinds else docset[-1]
     earlier = {i for k, r in docs.items() if k != last for i in r.get("workflows") or []}
     rows = [w for w in workflows if isinstance(w, dict)]
@@ -199,7 +243,7 @@ def _chain(src: Path, summary: dict, workflows: list) -> dict:
     else:
         calls0 = max(done_calls, default=0)
     revisions = record.get("lld_revisions")
-    return {"docset": docset, "stages": stages, "docs": docs, "archive": archive, "last": last, "doc_stage": last in DOC_KINDS,
+    return {"docset": docset, "stages": stages, "docs": docs, "archive": archive, "last": last, "doc_stage": _form(last, src) == forms.DOCUMENT,
             "site_tag": f"{last}-" if len(stages) > 1 else "", "past": past,
             "current": [w for w in rows if w not in past], "files": files, "calls0": calls0,
             "lld_revisions": revisions if isinstance(revisions, list) else []}
@@ -220,8 +264,10 @@ def check_source(src_dir) -> dict:
     if not chat or not chat[0].get("meta"):
         raise RehydrateRefused("the earlier run's chat.jsonl has no header")
     has_chain = (src / "documents.json").exists() or any(src.glob("stage-*.json"))
-    if chat[0].get("output") != "website" and not has_chain:
-        raise RehydrateRefused(f"the earlier run built a {chat[0].get('output') or 'document'}, not a website")
+    if not has_chain:                       # a single stage: it must be a page (a document run leaves a chain; a run with no type leaves neither)
+        j2, _ = _types()
+        if not j2.is_page(j2.saved_output(str(src))):
+            raise RehydrateRefused("the earlier run has no page and no document chain")
     goal = _json(src, "goal.json", "the earlier run has no charter (goal.json)", dict)
     workflows = _json(src, "workflows.json", "the earlier run has no workflows (workflows.json)", list)
     chain = _chain(src, summary, workflows) if has_chain else None
@@ -277,9 +323,11 @@ def _restore_chain(run, chain: dict) -> None:
     run.stage_calls0 = chain["calls0"]
     run.lld_revisions = chain["lld_revisions"]
     run._apply_output(chain["last"])
-    if chain["last"] == "website" and (run.chain.get("lld") or {}).get("sections"):
-        # the website stage's blueprint, as J2Run._begin_stage sets it (the text is J2's; the state test compares it with a live run)
-        run.blueprint = copy.deepcopy(run.chain["lld"])
+    j2, _ = _types()
+    blueprint = _blueprint_of(run, chain["last"]) if j2.is_page(chain["last"]) else None
+    if blueprint is not None:
+        # the page stage's blueprint, as J2Run._begin_stage sets it (the text is J2's; the state test compares it with a live run)
+        run.blueprint = blueprint
         run.WF_FMT = run.WF_FMT.replace('"covers": [int]', '"lld_sections": [str] (the LLD section ids this '
                                         'workflow implements, e.g. "S1"), "covers": [int]')
         run.GRANT_FMT = run.GRANT_FMT.replace('"covers": [int]', '"lld_sections": [str], "covers": [int]')
@@ -306,6 +354,7 @@ def rehydrate(run, src_dir) -> dict:
     run.spent, run.budget = int(budget.get("used") or 0), int(budget.get("granted") or run.budget)
     run.receipts, run.decisions = rec["receipts"], list(summary.get("questions_to_user") or [])
     run.done, run.status, run.outcome = True, "waiting", summary.get("outcome")
+    run.auto_pick = {}                      # D187: J2's own "already decided" marker; `run_tpl` stays None (NOT_RESTORED_REUSE)
     if rec["realization"] is not None:
         planned = summary.get("realization") if isinstance(summary.get("realization"), dict) else {}
         run.real, run.real_base = rec["realization"], copy.deepcopy(run.goal)
@@ -313,5 +362,8 @@ def rehydrate(run, src_dir) -> dict:
         run.real_asked = True           # the plan's blocking facts were asked in the earlier run (needed for J2_CHANGE=1)
     if rec["chain"]:
         _restore_chain(run, rec["chain"])
+    elif run.out is None:                   # a single page stage: the run is the earlier run's type (nothing is chosen for it: there is no default type)
+        j2, _ = _types()
+        run._apply_output(j2.saved_output(str(src)))
     return {"source": Path(src_dir).name, "files": len(rec["files"]), "messages": len(run.chat),
             "workflows": len(run.past_workflows) + len(run.workflows), "sites": len(run.sites), "realization": rec["realization"] is not None}

@@ -167,7 +167,8 @@ def test_an_output_that_leaves_no_deliverable_writes_no_record_and_runs_no_git(j
     answerer = Answerer(run_dir, VAGUE[1:])
     assert running.wait(60) == 0
     answerer.stop()
-    assert json.loads((run_dir / "output.json").read_text())["output"] == "website"
+    chosen = json.loads((run_dir / "output.json").read_text())
+    assert (chosen["output"], chosen["rule"]) == (None, "planner"), "no folder and no project word: J2's planner chooses the type (D165)"
     assert not (run_dir / "deliverable.json").exists() and calls == []
 
 

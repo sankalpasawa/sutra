@@ -1,0 +1,7 @@
+{
+  "schema": "sutra-extension/2",
+  "id": "169_shipping_pass",
+  "grants": [
+    "box:5:action:ship-replacement@1"
+  ]
+}

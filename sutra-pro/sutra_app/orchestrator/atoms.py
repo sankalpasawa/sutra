@@ -1,6 +1,6 @@
 """Atoms and the Atom log (orchestrator 3.4, 4.1, 5.6, 6.2; S2-models-07, S2-models-10, S4-fnodes-08, S4-fnodes-09).
 
-    atoms = AtomStore(db, chats=chat_store, graph=graph_store)
+    atoms = AtomStore(db, chats=chat_store, graph=graph_store, scrub=None)      # scrub: what a turn's words and reply go through (D157)
     atoms.apply_transition(tx, node, run_atom_event, run_id=..., task_id=...)   # the Projector's entry for an `atom` line
     atoms.upsert(tx, checked_atom, ...)          # the one writer of `atoms`; computes `display`
     atoms.append_ledger(tx, checked_row)         # the one writer of `atom_ledger`; one row per atom, ever
@@ -12,6 +12,11 @@ builder's J2 view (the library `AtomView`, stored under the key `<run_id>:<J2 id
 `abandoned` with the code `verify_failed` shows `verify_failed`), the view's own status for `atom/1`. It is computed here from
 the checked body and never taken from the event.
 
+What a turn produced (D157): the body of a function atom may carry `produced` (plain words) and `reply` (the last reply the model gave). They
+are the model's text, so before they are checked and stored they go through the store's `scrub` (the app's secret values and the credential
+shapes, `connectors.egress.scrubbed`, as the owner's own words are where they enter) and are cut again to their limits, since a replaced secret
+can make a text longer. A store built with no `scrub` stores them as they came.
+
 `apply_transition` is all-or-nothing and never raises for bad event data: it returns an `AtomResult` whose status is
 `applied`, `unchanged` (a replay) or `rejected` (with the reason, for the Projector to note). Rules: the body passes the gate;
 only forward moves (work atoms: open to open with the same or a higher attempt, open to closed or abandoned; closed, abandoned
@@ -22,18 +27,18 @@ a function node in the same transaction; `atom.updated` is emitted.
 import json
 import logging
 import sqlite3
-from collections.abc import Sequence
+from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass
 from typing import Any, Literal
 
 from pydantic import ValidationError
 
 from sutra_app.library.atom import (
-    Atom, AtomError, AtomView, LedgerRow, atom_display_state, ledger_row, ledger_row_from_view,
+    REPLY_TEXT_MAX, Atom, AtomError, AtomView, LedgerRow, atom_display_state, ledger_row, ledger_row_from_view,
 )
 from sutra_app.library.gate import GATE, Checked, GateError
 from sutra_app.library.node import Node
-from sutra_app.library.types import FUNCTIONS
+from sutra_app.library.types import FUNCTIONS, clip
 from sutra_app.orchestrator.db import Database, Tx
 from sutra_app.orchestrator.errors import NotFound
 from sutra_app.orchestrator.ids import iso_z
@@ -81,6 +86,24 @@ def _round(value: float | None) -> float | None:
     return None if value is None else round(float(value), 6)
 
 
+def _scrub_output(body: dict[str, Any], scrub: Callable[[str], str] | None) -> dict[str, Any]:
+    """The body of a function atom with the model's text in it (`reply.text`, `produced[].name` and `.ref`) put through `scrub` and cut again
+    to the limits of the library (D157). A body with neither, or no `scrub`, comes back as it is; a part that is not the shape the library
+    expects is left for the gate to refuse."""
+    if scrub is None:
+        return body
+    out = dict(body)
+    reply = out.get("reply")
+    if isinstance(reply, Mapping) and isinstance(reply.get("text"), str):
+        text = scrub(reply["text"])
+        out["reply"] = {**reply, "text": clip(text, REPLY_TEXT_MAX), "clipped": bool(reply.get("clipped")) or len(text) > REPLY_TEXT_MAX}
+    produced = out.get("produced")
+    if isinstance(produced, list):
+        out["produced"] = [{**item, **{key: clip(scrub(item[key]), 300) for key in ("name", "ref") if isinstance(item.get(key), str)}}
+                           if isinstance(item, Mapping) else item for item in produced]
+    return out
+
+
 def _atom_usage(conn: sqlite3.Connection, atom_ids: Sequence[str]) -> dict[str, UsageTotals]:
     """atom id -> calls and sums of its ledger rows, stub rows left out; a part is null when every row's part is null."""
     out: dict[str, UsageTotals] = {}
@@ -103,10 +126,11 @@ def _atom_outs(conn: sqlite3.Connection, rows: Sequence[sqlite3.Row]) -> list[At
 class AtomStore:
     """`atoms` and `atom_ledger`. `chats` and `graph` are only needed by `apply_transition` (the card and the node body)."""
 
-    def __init__(self, db: Database, *, chats: Any = None, graph: Any = None) -> None:
+    def __init__(self, db: Database, *, chats: Any = None, graph: Any = None, scrub: Callable[[str], str] | None = None) -> None:
         self.db = db
         self.chats = chats
         self.graph = graph
+        self.scrub = scrub                    # D157: the model's text of a function atom goes through it before it is stored
 
     # ---- reads -----------------------------------------------------------------------------------------------------
 
@@ -212,7 +236,7 @@ class AtomStore:
 
     def _apply_function_atom(self, tx: Tx, node: Node, event: RunAtom, run_id: str, task_id: str | None) -> AtomResult:
         ea = event.atom
-        body = dict(ea.body)
+        body = _scrub_output(dict(ea.body), self.scrub)
         body["department_id"] = node.department_id if node.department_id is not None else body.get("department_id")
         if task_id is not None:
             body["task_id"] = task_id

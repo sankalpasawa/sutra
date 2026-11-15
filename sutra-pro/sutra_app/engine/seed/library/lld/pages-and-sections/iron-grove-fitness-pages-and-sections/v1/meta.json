@@ -1,0 +1,39 @@
+{
+  "schema": "template-library/1",
+  "name": "Iron Grove Fitness Pages and sections",
+  "version": 1,
+  "sha": "b5a703e5ea591995903a2b05d8a6fa1f27f855fc49e315884c04b84695a2aa6c",
+  "schema_sha": "a86b829f3787f1972113cf1ad1d07986804d3725c5cce9ddffcf13d9f6dd71c7",
+  "model_sha": "312660bc4eebf1c370709dabcba081bb7bbd27747a942abc710461af49a06b72",
+  "class": "IronGroveFitnessPagesAndSectionsV1",
+  "created": "2026-11-11T21:33:45",
+  "fingerprints": [
+    "0d6cbcecfcb3ec1111828c1fc42ed68e6a24d8274dd7a05845437ab29f321ec5"
+  ],
+  "made_by": {
+    "run": "j2-20261111-211339",
+    "workflow": "W-16",
+    "atom": "W-16.a1",
+    "agent": "code (adapted from a run template)",
+    "date": "2026-11-11 21:13:39"
+  },
+  "business": {
+    "name": "Iron Grove Fitness",
+    "type": "fitness studio"
+  },
+  "mock": false,
+  "collected_from": {
+    "run": "j2-20261111-211339",
+    "where": "the run's copy"
+  },
+  "used_by": [
+    {
+      "run": "j2-20261111-211339",
+      "workflow": "W-16",
+      "atom": "W-16.a1",
+      "action": "extended"
+    }
+  ],
+  "renamed_from": "Still Point Yoga Pages and sections@3",
+  "adapted_from": "Still Point Yoga Pages and sections@2"
+}

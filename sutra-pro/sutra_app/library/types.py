@@ -22,7 +22,7 @@ from pydantic import AfterValidator, Field, JsonValue, StringConstraints, Valida
 from .base import Value
 
 __all__ = [
-    "Ts", "NodeId", "FunctionName", "WorkflowId", "AtomId", "ChangeId", "Ref", "Target", "FindingId", "EdgeId",
+    "Ts", "ArtifactName", "ARTIFACT_NAME_PATTERN", "ARTIFACT_NAME_RE", "NodeId", "FunctionName", "WorkflowId", "AtomId", "ChangeId", "Ref", "Target", "FindingId", "EdgeId",
     "JsonObject", "FUNCTIONS", "NODE_ID_RE", "WORKFLOW_ID_RE", "ATOM_ID_RE", "CHANGE_ID_RE", "REF_RE", "TARGET_RE",
     "FINDING_ID_RE", "EDGE_ID_RE", "NODE_ID_PATTERN", "WORKFLOW_ID_PATTERN", "ATOM_ID_PATTERN", "CHANGE_ID_PATTERN",
     "REF_PATTERN", "TARGET_PATTERN", "FINDING_ID_PATTERN", "EDGE_ID_PATTERN", "IdError", "function_node_id",
@@ -41,9 +41,13 @@ ATOM_ID_PATTERN = r"^(a-[a-z0-9]{1,16}-[0-9]{2,6}|W-[0-9]+\.a[0-9]+)$"
 CHANGE_ID_PATTERN = r"^chg-[0-9]{4,9}$"
 REF_PATTERN = r"^\$[a-z][a-z0-9_]{0,15}$"
 TARGET_PATTERN = r"^(\$[a-z][a-z0-9_]{0,15}|[a-z][a-z0-9_-]{1,39})$"       # an existing NodeId or a Ref
+# An output type's name, by shape only (J2's own NAME_RE): the names themselves are data (`artifacts/types.json` and the
+# user's local types), never listed in code.
+ARTIFACT_NAME_PATTERN = r"^[a-z][a-z0-9_]{1,40}$"
 FINDING_ID_PATTERN = r"^F-[A-Za-z0-9-]{1,20}$"
 EDGE_ID_PATTERN = r"^[a-z_]{1,20}:[^>\s]{1,80}>[^>\s]{1,80}$"                 # "<kind>:<from_id>><to_id>"
 
+ARTIFACT_NAME_RE = re.compile(ARTIFACT_NAME_PATTERN)
 NODE_ID_RE = re.compile(NODE_ID_PATTERN)
 WORKFLOW_ID_RE = re.compile(WORKFLOW_ID_PATTERN)
 ATOM_ID_RE = re.compile(ATOM_ID_PATTERN)
@@ -55,6 +59,7 @@ EDGE_ID_RE = re.compile(EDGE_ID_PATTERN)
 
 Ts = Annotated[int, Field(ge=0)]                                              # epoch seconds
 # Every pattern bounds its own length except the two with a digit run (`[0-9]+`), which carry a max_length (rule 3).
+ArtifactName = Annotated[str, StringConstraints(pattern=ARTIFACT_NAME_PATTERN)]
 NodeId = Annotated[str, StringConstraints(pattern=NODE_ID_PATTERN)]
 WorkflowId = Annotated[str, StringConstraints(pattern=WORKFLOW_ID_PATTERN, max_length=12)]
 AtomId = Annotated[str, StringConstraints(pattern=ATOM_ID_PATTERN, max_length=40)]

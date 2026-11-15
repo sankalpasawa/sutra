@@ -1,0 +1,69 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "additionalProperties": false,
+  "properties": {
+    "users": {
+      "description": "every user group the charter names (for Flow Pilates Studio, a prd)",
+      "items": {
+        "$ref": "#/definitions/UserGroup"
+      },
+      "type": "array"
+    },
+    "assumptions": {
+      "description": "the assumptions of Flow Pilates Studio's Users",
+      "items": {
+        "type": "string"
+      },
+      "type": "array"
+    },
+    "facts_used": {
+      "description": "the charter facts this section is written from, copied exactly from Flow Pilates Studio's charter",
+      "items": {
+        "enum": [
+          "Flow Pilates Studio",
+          "Friday 6:30 pm Stretch and Release 550",
+          "Monday 7:00 am Mat Basics 500",
+          "Payment is made at the studio",
+          "Saturday 9:00 am Weekend Mat Class 500",
+          "Tuesday 6:30 pm Reformer Flow 800",
+          "Unit 3, 9 Sample Lane, Pune 411004",
+          "Wednesday 7:00 am Core Strength 600",
+          "bookings@flowpilates.example",
+          "name, email, class, preferred date"
+        ],
+        "type": "string"
+      },
+      "type": "array"
+    }
+  },
+  "required": [
+    "users"
+  ],
+  "type": "object",
+  "definitions": {
+    "UserGroup": {
+      "additionalProperties": false,
+      "properties": {
+        "group": {
+          "description": "the name of this user group, as the charter names it",
+          "type": "string"
+        },
+        "needs": {
+          "description": "what this group needs from the product",
+          "type": "string"
+        },
+        "actions": {
+          "description": "what this group does on the page; empty when this group has no actions in this version",
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        }
+      },
+      "required": [
+        "group"
+      ],
+      "type": "object"
+    }
+  }
+}

@@ -50,7 +50,7 @@ from .models import (
     AuthStatus, Capabilities, ConnectorConfig, ConnectorEvent, Effort, JsonResult, Message, ModelInfo, Provider, Quota,
     RouteContext, SessionSpec, SessionState, TurnResult, Usage,
 )
-from .process import Command, ExitInfo, ProcessRunner, RunningProcess
+from .process import Command, ExitInfo, ProcessRunner, RunningProcess, remove_path
 from .schema import fits_native, schema_sha, schema_text, to_json_schema
 
 __all__ = [
@@ -101,6 +101,7 @@ class TurnPlan:
     cum_usage: Usage = field(default_factory=Usage)
     inline_system: bool = False                  # Claude: the system text goes on argv even when it is long
     attempt: int = 1                             # 1 for the first spawn of a request, 2 for a recovery retry
+    cancel: Any = None                           # a `cancel.CancelToken` of a chat turn (D215): checked before the spawn, bound to the process right after it is tracked
 
 
 @dataclass(frozen=True)
@@ -531,6 +532,10 @@ class ModelConnector(ABC):
                 cmd = replace(cmd, cleanup=cmd.cleanup + (oneshot_dir,))
             parser = self.new_parser(plan)
             idle = plan.idle_timeout_s if plan.partials else None
+            if plan.cancel is not None and plan.cancel.requested:
+                for path in cmd.cleanup:
+                    remove_path(path)
+                raise CallCancelledError("the turn was stopped before its process started", provider=self.name)
             try:
                 proc = self.runner.start(cmd, timeout_s=plan.timeout_s, idle_timeout_s=idle)
             except ProviderError as e:
@@ -540,6 +545,8 @@ class ModelConnector(ABC):
                 raise
             with proc:
                 self._track(key, proc)
+                if plan.cancel is not None:
+                    plan.cancel.bind(proc)           # a Stop that arrived before this point cancels the process now
                 try:
                     for line in proc.lines():
                         for event in parser.feed(line):
@@ -549,6 +556,8 @@ class ModelConnector(ABC):
                     exit_info = proc.wait()
                 finally:
                     self._untrack(key, proc)
+                    if plan.cancel is not None:
+                        plan.cancel.unbind(proc)
             box["parser"] = parser
             turn = parser.finish(exit_info)
         except ConnectorError as e:
@@ -661,13 +670,13 @@ class ModelConnector(ABC):
         return box["turn"]
 
     def stream(self, s: SessionState, m: Message, *, timeout_s: Optional[float] = None, partials: bool = True,
-               hooks: Optional[Hooks] = None, folder: str = "") -> Iterator[ConnectorEvent]:
+               hooks: Optional[Hooks] = None, folder: str = "", cancel: Any = None) -> Iterator[ConnectorEvent]:
         """The events of one turn; the last one is `turn_done` with `data["result"]` (the TurnResult as JSON). `folder` is the owner's
         working folder for this turn (GAP3-workdir): the child runs in it with read-only file tools; the session's own files stay in its work dir."""
-        return self._turn(s, m, timeout_s, partials, hooks or self.hooks, {}, folder)
+        return self._turn(s, m, timeout_s, partials, hooks or self.hooks, {}, folder, cancel)
 
     def _turn(self, s: SessionState, m: Message, timeout_s: Optional[float], partials: bool, hooks: Hooks,
-              box: dict, folder: str = "") -> Iterator[ConnectorEvent]:
+              box: dict, folder: str = "", cancel: Any = None) -> Iterator[ConnectorEvent]:
         if m.role != "user":
             raise InvalidRequestError("a chat turn is sent as a user message", provider=self.name)
         if s.provider != self.name:
@@ -694,7 +703,7 @@ class ModelConnector(ABC):
                 idle_timeout_s=self.idle_timeout_s if partials else None, partials=partials, images=images,
                 tools=tool_names(() if s.tool_profile == "none" else (s.tool_profile,)), session=s, resume=resume,
                 provider_session_id=s.provider_session_id if resume else self.new_provider_session_id(),
-                workdir=str(directory), folder=folder, oneshot=False, cum_usd=s.cum_usd, cum_usage=s.cum_usage)
+                workdir=str(directory), folder=folder, oneshot=False, cum_usd=s.cum_usd, cum_usage=s.cum_usage, cancel=cancel)
             holder: dict[str, Any] = {}
             for event in self._events(plan, hooks, holder):
                 yield event

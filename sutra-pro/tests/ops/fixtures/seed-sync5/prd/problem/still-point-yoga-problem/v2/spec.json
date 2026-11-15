@@ -1,0 +1,99 @@
+{
+  "name": "Still Point Yoga Problem",
+  "artifact": "prd",
+  "section": "Problem",
+  "version": 2,
+  "kind": "specialised",
+  "description": "Problem section of the Still Point Yoga PRD: states that the studio needs a page showing its classes and taking booking requests, with the studio name and address exactly as given.",
+  "fields": [
+    {
+      "name": "studio_name",
+      "type": "string",
+      "required": true,
+      "description": "the studio name, exactly as written",
+      "enum": [
+        "Still Point Yoga"
+      ],
+      "nullable": false
+    },
+    {
+      "name": "address",
+      "type": "string",
+      "required": true,
+      "description": "the studio address, exactly as written, as text only",
+      "enum": [
+        "4th Floor, 22 Church Street, Bengaluru 560001"
+      ],
+      "nullable": false
+    },
+    {
+      "name": "statement",
+      "type": "string",
+      "required": true,
+      "description": "the problem: Still Point Yoga at its address needs a page showing its classes and taking booking requests",
+      "enum": null,
+      "nullable": false
+    },
+    {
+      "name": "assumptions",
+      "type": "list[string]",
+      "required": false,
+      "description": "facts you had to assume, each one line",
+      "enum": null,
+      "nullable": false
+    }
+  ],
+  "objects": [],
+  "rules": [
+    {
+      "rule": "not_empty",
+      "name": "the problem statement is given",
+      "from": "P1",
+      "path": "statement"
+    },
+    {
+      "rule": "enum",
+      "name": "the studio name is Still Point Yoga",
+      "from": "P1",
+      "path": "studio_name",
+      "values": [
+        "Still Point Yoga"
+      ]
+    },
+    {
+      "rule": "enum",
+      "name": "the address is the studio address exactly",
+      "from": "P1",
+      "path": "address",
+      "values": [
+        "4th Floor, 22 Church Street, Bengaluru 560001"
+      ]
+    }
+  ],
+  "sha": "679068639b2cf68b07ad404cc6c24ff0b950235b53c436edb44a8e7736a463b5",
+  "extends": "prd/problem@generic/1",
+  "made_by": {
+    "run": "j2-20261103-184249",
+    "workflow": "W-1",
+    "atom": "W-1.a1",
+    "agent": "template generator (claude-cli)"
+  },
+  "context": {
+    "business_type": "prd",
+    "facts_used": [
+      "4th Floor, 22 Church Street, Bengaluru 560001",
+      "Monday 7:00 am Gentle Flow 500",
+      "No online payment is taken",
+      "Payment is made at the studio",
+      "Problem section states that Still Point Yoga at 4th Floor, 22 Church Street, Bengaluru 560001 needs a page showing its classes and taking booking requests",
+      "Saturday 9:00 am Beginners Basics 400",
+      "Still Point Yoga",
+      "Sunday 8:00 am Slow Sunday 500",
+      "Thursday 7:00 am Breath and Stretch 450",
+      "Tuesday 6:30 pm Strength Yoga 600",
+      "bookings@stillpoint.example",
+      "name, email, class and preferred date"
+    ],
+    "fingerprint": "be1cb643e3fa0c87a73e84789de50629ff7efa8091d2a7dc8ada538ad12d346a"
+  }
+}

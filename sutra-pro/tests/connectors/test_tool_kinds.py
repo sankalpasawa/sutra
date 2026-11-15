@@ -4,6 +4,7 @@ from __future__ import annotations
 import pytest
 
 from sutra_app.connectors.chat_models import ChatTurnIn
+from sutra_app.connectors.chat_blocks import BlockAccumulator
 from sutra_app.connectors.models import ConnectorEvent
 from sutra_app.connectors.tool_kinds import KINDS, classify, title_of
 from test_chat_port import make
@@ -33,12 +34,13 @@ def test_titles_are_the_command_the_file_or_the_query():
 
 
 def test_the_port_turns_tool_events_into_typed_blocks_and_the_result_keeps_them(tmp_path):
-    port, router, *_ = make(tmp_path)
     events = [ConnectorEvent(kind="tool_call", data={"id": "t1", "name": "Bash", "input": {"command": "ls"}}),
               ConnectorEvent(kind="tool_result", data={"tool_use_id": "t1", "content": "a\nb", "truncated": True, "is_error": False}),
               ConnectorEvent(kind="tool_call", data={"id": "t2", "name": "Zap", "input": {}})]
-    kinds: dict = {}
-    mapped = [port._map(e, False, kinds, "claude").data for e in events]
+    acc = BlockAccumulator(provider="claude")          # the port's block mapping lives in the one accumulator now (STR-5); same expectations
+    for e in events:
+        acc.feed(e)
+    mapped = acc.stored_blocks()
     assert mapped[0] == {"type": "tool_use", "kind": "run", "name": "Bash", "text": "ls"}
     assert mapped[1]["kind"] == "run" and mapped[1]["name"] == "Bash" and mapped[1]["truncated"] is True
     assert mapped[2]["kind"] == "other"

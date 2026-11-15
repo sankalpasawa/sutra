@@ -1,0 +1,57 @@
+{
+  "schema": "sutra-extension/2",
+  "id": "229_own_waivers",
+  "goals": [
+    "fee_waived_204"
+  ],
+  "evidence": [
+    {
+      "predicate": "waiver_requested_204",
+      "truth": "TRUE",
+      "verified": true,
+      "source": "fixture/loan-book",
+      "version": "loan-204"
+    }
+  ],
+  "methods": [
+    {
+      "id": "approve-own-waiver-204@1",
+      "effect": "waiver_approved_204",
+      "requires": [
+        "waiver_requested_204"
+      ],
+      "provider": "local-provider",
+      "grant": "action:approve-own-waiver-204@1",
+      "cost": {
+        "compute": 1,
+        "money": 0,
+        "attention": 0
+      },
+      "action": "simulate_fact",
+      "approved": true,
+      "source": "reviewed/synthetic-method"
+    },
+    {
+      "id": "waive-late-fee-204@1",
+      "effect": "fee_waived_204",
+      "requires": [
+        "waiver_requested_204",
+        "waiver_approved_204"
+      ],
+      "provider": "local-provider",
+      "grant": "action:waive-late-fee-204@1",
+      "cost": {
+        "compute": 1,
+        "money": 0,
+        "attention": 0
+      },
+      "action": "simulate_fact",
+      "approved": true,
+      "source": "reviewed/synthetic-method"
+    }
+  ],
+  "grants": [
+    "action:approve-own-waiver-204@1",
+    "action:waive-late-fee-204@1"
+  ]
+}

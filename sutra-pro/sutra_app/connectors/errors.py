@@ -224,6 +224,8 @@ class CallTimeoutError(ConnectorError, ModelTimeout):
     def user_message(self, *, tz: Optional[tzinfo] = None) -> str:
         seconds = self.detail.get("seconds")
         shown = f"{seconds:g}" if isinstance(seconds, (int, float)) and not isinstance(seconds, bool) else "the allowed number of"
+        if self.detail.get("which") == "idle":          # a stream that went quiet: say how long it was allowed to be quiet (streaming design D213)
+            return f"{_name(self.provider)} did not answer within {shown} s: it sent no output for that long, so it was stopped"
         return f"{_name(self.provider)} did not answer within {shown} s"
 
 

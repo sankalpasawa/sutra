@@ -6,6 +6,7 @@ import sqlite3
 import pytest
 from factories_atom import abandon, close_with, open_transition
 from orchestrator.test_graph_store import World, tid
+from pydantic import ValidationError
 
 from sutra_app.connectors.usage import UsageIn
 from sutra_app.library.atom import AtomView, ViewCheck, ledger_row
@@ -641,6 +642,89 @@ def test_summary_groups_by_department_function_provider_day_and_atom_and_the_sum
     assert round(sum(g["usd"] or 0 for g in atoms.values()), 6) == total.usd
     with pytest.raises(ValueError):
         usage.summary("colour")
+
+
+# ---- usage by purpose (D159): what the calls were for -----------------------------------------------------------------------------------------
+
+def by_purpose(usage, **kw):
+    return {g["key"]: g for g in usage.summary("purpose", **kw)}
+
+
+def seed_purposes(usage):
+    """The calls of a run with the late judge on, a question answered in a chat, two Codex calls (tokens, no dollars) and a stub row of its own purpose."""
+    for ref, over in (
+            ("w1", dict(purpose="agent_turn", usd=0.5, tokens_in=100, tokens_out=20)),
+            ("w2", dict(purpose="agent_turn", usd=0.25, tokens_in=50, tokens_out=10)),
+            ("w3", dict(purpose="agent_turn", provider="codex", usd=None, tokens_in=7, tokens_out=3)),
+            ("j1", dict(purpose="judge", usd=0.125, tokens_in=40, tokens_out=8)),
+            ("j2", dict(purpose="plan", usd=0.0625, tokens_in=30, tokens_out=6)),
+            ("q1", dict(purpose="agent_chat", usd=0.0625, tokens_in=300, tokens_out=60)),
+            ("s1", dict(purpose="summary", provider="codex", usd=None, tokens_in=5, tokens_out=1)),
+            ("c1", dict(purpose="chat_plan", provider="stub", model="", usd=None, tokens_in=1, tokens_out=1, how="stub"))):
+        usage.record(uin(call_ref=ref, **over))
+
+
+def test_summary_groups_by_purpose_with_calls_dollars_and_tokens_and_the_sums_agree_with_the_total(usage, world):
+    seed_purposes(usage)
+    found = by_purpose(usage)
+    assert list(found) == ["agent_chat", "agent_turn", "judge", "plan", "summary"]                       # key order; the stub row's purpose is left out
+    assert found["agent_turn"] == {"key": "agent_turn", "calls": 3, "usd": 0.75, "tokens_in": 157, "tokens_out": 33}      # the Codex call adds tokens, no dollars
+    assert found["judge"] == {"key": "judge", "calls": 1, "usd": 0.125, "tokens_in": 40, "tokens_out": 8}
+    assert found["plan"] == {"key": "plan", "calls": 1, "usd": 0.0625, "tokens_in": 30, "tokens_out": 6}
+    assert found["agent_chat"] == {"key": "agent_chat", "calls": 1, "usd": 0.0625, "tokens_in": 300, "tokens_out": 60}
+    assert found["summary"] == {"key": "summary", "calls": 1, "usd": None, "tokens_in": 5, "tokens_out": 1}        # only Codex: no price, as in every grouping
+    total = usage.rows()[1]
+    assert sum(g["calls"] for g in found.values()) == total.calls == 7
+    assert sum(g["tokens_in"] for g in found.values()) == total.tokens_in and sum(g["tokens_out"] for g in found.values()) == total.tokens_out
+    assert round(sum(g["usd"] or 0 for g in found.values()), 6) == total.usd
+    assert NO_KEY not in found                                                                         # a row always has a purpose
+
+
+def test_summary_by_purpose_leaves_stub_rows_out_unless_asked_for(usage, world):
+    seed_purposes(usage)
+    assert "chat_plan" not in by_purpose(usage)
+    stubbed = by_purpose(usage, include_stub=True)
+    assert stubbed["chat_plan"] == {"key": "chat_plan", "calls": 1, "usd": None, "tokens_in": 1, "tokens_out": 1}
+    assert {key: g for key, g in stubbed.items() if key != "chat_plan"} == by_purpose(usage)            # the other groups do not move
+    usage.record(uin(call_ref="s2", purpose="agent_turn", provider="stub", model="", usd=None, tokens_in=2, tokens_out=2, how="stub"))
+    assert by_purpose(usage)["agent_turn"]["calls"] == 3 and by_purpose(usage, include_stub=True)["agent_turn"]["calls"] == 4
+
+
+def test_summary_takes_a_window_for_every_grouping_and_it_joins_the_session_filter(usage, world, clock):
+    sid = world.session_of[NODE]
+    stamps = []
+    for n, (purpose, session) in enumerate((("agent_turn", sid), ("judge", sid), ("plan", None), ("agent_chat", sid))):
+        usage.record(uin(purpose=purpose, session_id=session, call_ref=f"t{n}", usd=1.0, tokens_in=10, tokens_out=1))
+        stamps.append(rows_of(world)[-1]["at"])
+        clock.advance(100)
+    assert set(by_purpose(usage, since=stamps[0])) == {"agent_turn", "judge", "plan", "agent_chat"}
+    assert set(by_purpose(usage, since=stamps[2])) == {"plan", "agent_chat"}                           # a row exactly at `since` counts
+    assert set(by_purpose(usage, since=stamps[2] + 1)) == {"agent_chat"}                               # and one second later it does not
+    assert by_purpose(usage, since=stamps[3] + 1) == {}
+    assert by_purpose(usage, since=stamps[2])["plan"]["usd"] == 1.0
+    assert {g["key"]: g["calls"] for g in usage.summary("provider", since=stamps[2])} == {"claude": 2}  # the window is the grouping's too, not the purpose's alone
+    assert usage.summary("session", since=stamps[2]) == [
+        {"key": NO_KEY, "calls": 1, "usd": 1.0, "tokens_in": 10, "tokens_out": 1}, {"key": sid, "calls": 1, "usd": 1.0, "tokens_in": 10, "tokens_out": 1}]
+    assert set(by_purpose(usage, session_id=sid)) == {"agent_turn", "judge", "agent_chat"}
+    assert set(by_purpose(usage, session_id=sid, since=stamps[1])) == {"judge", "agent_chat"}          # both limits at once
+    assert by_purpose(usage, session_id="cs_nobody") == {}
+
+
+def test_summary_by_purpose_cuts_the_groups_by_limit_in_key_order_and_never_below_one(usage, world):
+    seed_purposes(usage)
+    assert [g["key"] for g in usage.summary("purpose", limit=2)] == ["agent_chat", "agent_turn"]
+    assert [g["key"] for g in usage.summary("purpose", limit=0)] == ["agent_chat"]                     # at least one group
+    assert len(usage.summary("purpose", limit=10 ** 9)) == 5                                           # and never past the cap (MAX_ROWS), which holds them all
+
+
+def test_a_purpose_nobody_listed_is_a_group_like_any_other(usage, world):
+    usage.record(uin(call_ref="u1", purpose="from_a_later_release", usd=0.5))
+    usage.record(uin(call_ref="u2", purpose="from_a_later_release", usd=0.25))
+    assert by_purpose(usage) == {"from_a_later_release": {"key": "from_a_later_release", "calls": 2, "usd": 0.75, "tokens_in": 200, "tokens_out": 80}}
+    with pytest.raises(ValidationError, match="purpose"):
+        uin(call_ref="u3", purpose="Not A Purpose")                                                    # the one rule a purpose has: a lower-case word of at most 24 characters
+    with pytest.raises(ValueError, match="purpose"):
+        usage.summary("colour")                                                                        # and the refusal names the grouping that was added
 
 
 def test_parse_since_takes_epoch_seconds_or_an_iso_time():

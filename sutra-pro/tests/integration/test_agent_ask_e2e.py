@@ -155,6 +155,7 @@ def test_one_ledger_row_carries_the_session_the_function_the_purpose_and_the_run
     assert (row["atom_id"], row["ok"], row["how"], row["usd"], row["tokens_in"], row["tokens_out"]) == (overhead_atom_id(story.run), 1, "text", 0.01, 120, 30)
     mine = {a["agent"]: a for a in story.live.get("/api/teams/web/agents", run=story.run)}["identity"]
     assert mine["usage"]["calls"] == 1 and mine["usage"]["usd"] == 0.01                # the Agents tab counts it under the function
+    assert mine["usage"]["by_purpose"] == {"agent_chat": {"calls": 1, "usd": 0.01}}      # and names it: a question answered, not a turn of the run (D159)
     page = story.live.get("/api/usage", session_id=story.sessions["identity"])
     assert [r["purpose"] for r in page["rows"] if r["purpose"] == "agent_chat"] == ["agent_chat"] and page["totals"]["usd"] >= 0.01
 

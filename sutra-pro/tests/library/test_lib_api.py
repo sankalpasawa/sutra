@@ -64,7 +64,7 @@ def test_the_version_may_be_written_as_the_export_file_names_it(client):
 
 
 def test_a_family_name_with_dots_is_found(client):
-    assert client.get("/api/schemas/artifact.prd.problem/1").status_code == 200
+    assert client.get("/api/schemas/template.run/1").status_code == 200
 
 
 def test_a_schema_that_does_not_exist_is_404_unknown_schema_with_the_versions_there_are(client):

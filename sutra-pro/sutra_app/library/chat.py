@@ -11,13 +11,13 @@ Two shapes had one name, `chat_message`. Now:
 `_reply` and `_ask_user`; the keys below are what an AST scan of J2's j2.py (33aeeda, 2026-11-04) found, and they are the
 design's list (section 10) plus the ones the scan found since: `forced_test`, `lesson_test`, `lesson_used`,
 `lessons_offered`, `playbook_used`, `playbook_changes`, `playbooks_offered` and `board_read` (J2's `post` adds it to the
-meta itself). A key outside the set is refused, so a new J2 key is found by a test, not by a lost field. The values are
+meta itself), and, from J2 1adb8ecd, `humans_only`, `run_template` and `content_door`. A key outside the set is refused, so a new J2 key is found by a test, not by a lost field. The values are
 open: any JSON value, bounded in depth (J2 puts a bool, a number, a workflow id, a list or a whole proposal under one
 key, and `change` is a flag on the Requester's line and a board id on another).
 
 The canonical JSON of a `MessageMeta` leaves out the keys that are not set, so a stored message carries only its meta.
 The first line of a chat.jsonl file is not a message: it is the run header `{"meta": true, "run": ...}` and is not a
-`run_message`.
+`run_message`; it is a `RunHeader` (closed, J2 1adb8ecd adds `by`: who ran it, which the app fixes with `J2_RUN_BY`).
 """
 import warnings
 from typing import Annotated, Any, Final, Literal
@@ -27,7 +27,7 @@ from pydantic import AfterValidator, Field, JsonValue, StringConstraints, model_
 from .base import Value
 from .registry import REGISTRY
 
-__all__ = ["MetaValue", "MessageMeta", "RunMessage", "ChatBlock", "BASE_KEYS", "META_KEYS"]
+__all__ = ["MetaValue", "MessageMeta", "RunMessage", "RunHeader", "ChatBlock", "BASE_KEYS", "META_KEYS", "HEADER_KEYS"]
 
 _MAX_DEPTH: Final = 32
 _MAX_TEXT: Final = 100_000          # a chat line: J2 shows a summary above 60,000 characters of chat (CHAT_FULL_CHARS)
@@ -142,6 +142,11 @@ with warnings.catch_warnings():
         playbook_changes: MetaValue = None
         # the test switch J2_FORCE_AUDIT_FAIL: the item number it forced
         forced_test: MetaValue = None
+        # run templates, auto-reuse and the content door (J2 1adb8ecd): a line only the humans read, the run template a line
+        # is about ({id, selected, of}) and the content door's decision for one section ({workflow, door, rule, section})
+        humans_only: MetaValue = None
+        run_template: MetaValue = None
+        content_door: MetaValue = None
 
         @model_serializer(mode="wrap")
         def _only_what_is_set(self, handler: Any) -> dict[str, Any]:
@@ -163,7 +168,28 @@ with warnings.catch_warnings():
         register: MetaValue = None          # declared again on purpose: see the note above this block
 
 
+class RunHeader(Value):
+    """The first line of chat.jsonl (J2 `post`, message 1): which mode and model produced the run, and since J2 1adb8ecd who ran
+    it (`by`, J2 `run_author()`: `J2_RUN_BY`, else the git or system user name). Closed; every key but `meta` and `run` is
+    optional so a run of an older J2 reads. `by` is a name, never a path."""
+
+    meta: Literal[True]
+    run: Annotated[str, StringConstraints(min_length=1, max_length=200)]
+    output: MetaValue = None
+    j2_fixes: MetaValue = None
+    force_audit_fail: MetaValue = None
+    force_question: MetaValue = None
+    test_lessons: MetaValue = None
+    realization: MetaValue = None
+    provider: MetaValue = None
+    model: MetaValue = None
+    mock: bool | None = None
+    by: Annotated[str, StringConstraints(min_length=1, max_length=80, pattern=r"^[^/\\\x00-\x1f]+$")] | None = None
+
+
 REGISTRY.register_payload("run_message", 1, RunMessage)
+REGISTRY.register_payload("run_header", 1, RunHeader)
 
 BASE_KEYS: Final = ("id", "t", "who", "text", "step", "calls", "board_read")
 META_KEYS: Final = tuple(MessageMeta.model_fields)
+HEADER_KEYS: Final = tuple(RunHeader.model_fields)

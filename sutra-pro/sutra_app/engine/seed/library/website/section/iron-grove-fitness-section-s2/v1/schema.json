@@ -1,0 +1,81 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "additionalProperties": false,
+  "properties": {
+    "id": {
+      "description": "the section id of this workflow, as the task gives it",
+      "type": "string"
+    },
+    "anchor": {
+      "description": "the id attribute of the trial booking section element, with the #",
+      "type": "string"
+    },
+    "implements": {
+      "description": "the LLD section ids this builds",
+      "items": {
+        "type": "string"
+      },
+      "type": "array"
+    },
+    "html": {
+      "description": "the trial booking section's HTML only: no <html>, <head> or <body> tags",
+      "type": "string"
+    },
+    "head": {
+      "description": "page-head tags this section needs (meta, link, style or script only); empty when none",
+      "type": "string"
+    },
+    "selectors_used": {
+      "description": "the ids and classes used in the trial booking form",
+      "items": {
+        "type": "string"
+      },
+      "type": "array"
+    },
+    "facts_used": {
+      "description": "the charter facts this section shows, copied exactly",
+      "items": {
+        "enum": [
+          "Kettlebell Class",
+          "The trial booking form has the fields name, email, class and preferred date",
+          "The trial booking form sends the booking to bookings@irongrove.example",
+          "bookings@irongrove.example"
+        ],
+        "type": "string"
+      },
+      "type": "array"
+    },
+    "elements": {
+      "description": "the booking form elements this section contains",
+      "items": {
+        "enum": [
+          "#booking-class",
+          "#booking-date",
+          "#booking-email",
+          "#booking-form",
+          "#booking-name",
+          "#booking-submit"
+        ],
+        "type": "string"
+      },
+      "type": "array"
+    },
+    "form_fields": {
+      "description": "the fields of the trial booking form",
+      "items": {
+        "enum": [
+          "class",
+          "email",
+          "name",
+          "preferred_date"
+        ],
+        "type": "string"
+      },
+      "type": "array"
+    }
+  },
+  "required": [
+    "id"
+  ],
+  "type": "object"
+}

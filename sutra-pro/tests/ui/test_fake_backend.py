@@ -670,7 +670,12 @@ def test_engine_settings_follow_the_engine_sections_field_list():
               "force_audit_note", "force_question", "memory_test_lessons"]  # engine.md LOCKED_FIELDS
     assert settings["locked"] == locked
     assert settings["editable"] == [f for f in settings["defaults"] if f not in locked]
-    assert len(settings["defaults"]) == 31
+    assert len(settings["defaults"]) == 37 and settings["defaults"]["builder_timeout"] == 600.0       # J2 sync 5 (D169); sync 6 (D177, D179): run_templates, auto_reuse, artifact_library, reviewer, reviewer_wait
+    flags = {f: settings["defaults"][f] for f in ("run_templates", "auto_reuse", "artifact_library", "reviewer", "reviewer_wait")}
+    assert flags == {"run_templates": False, "auto_reuse": False, "artifact_library": False, "reviewer": True, "reviewer_wait": 120.0}
+    types = settings["output_types"]                                                  # D166: the pages' choices; the names are data
+    assert types and all(set(t) == {"name", "label", "form", "pin"} and isinstance(t["pin"], bool) for t in types)
+    assert len({t["name"] for t in types}) == len(types) and {t["form"] for t in types} <= {"page", "document"}
     assert settings["defaults"]["send_mode"] == "dry-run" and settings["defaults"]["budget"] == 100
     assert settings["defaults"]["delay"] == 0.0 and settings["defaults"]["realization"] is True and settings["defaults"]["board"] is False
     assert settings["effective"] == {**settings["defaults"], **settings["global"], **settings["department"]}
@@ -795,7 +800,7 @@ def test_the_j2_captures_hold_the_routes_feeds_and_answers_that_j2_added_in_sync
     runlist = load("runlist.json")
     assert list(runlist) == ["live", "runs"] and [r["id"] for r in runlist["runs"]] == [runlist["live"]] == [load("runs.json")["live"]]
     catalog = load("catalog.json")
-    assert catalog["schema"] == "template-library/1" and catalog["dir"] == "library" and catalog["groups"] and len(catalog["runs"]) == 8
+    assert catalog["schema"] == "template-library/1" and catalog["dir"] == "library" and catalog["groups"] and len(catalog["runs"]) == 11
     for who in J2_FUNCS:  # one feed and one answer per function, from the records of the same run
         feed, answer = load(f"activity-{who}.json"), load(f"ask-{who}.json")
         assert feed["schema"] == "activity/1" and feed["who"] == who and feed["found"] is True and feed["events"], who
@@ -812,7 +817,7 @@ def test_no_j2_capture_holds_an_absolute_home_folder_path():
     home = re.compile(rb"(?:/Users|/home)/[^/\s\"'\\]+/")
     assert [p.name for p in sorted(J2_FIXTURES.iterdir()) if p.is_file() and home.search(p.read_bytes())] == []
     libraries = [run.get("library") for run in json.loads((J2_FIXTURES / "catalog.json").read_bytes())["runs"]]
-    assert libraries.count("not recorded") == 6 and sorted(v for v in libraries if v != "not recorded") == ["/tmp/j2-live-library", "/tmp/j2-live-library-2"]
+    assert libraries.count("not recorded") == 6 and sorted(v for v in libraries if v != "not recorded") == ["/tmp/j2-auto-lib", "/tmp/j2-live-library", "/tmp/j2-live-library-2", "/tmp/j2-rt-lib", "/tmp/j2-rt-lib"]
 
 
 def test_the_graph_run_ids_extend_the_run_id_j2_recorded():
@@ -1265,11 +1270,11 @@ def test_engine_settings_get_has_the_documented_shape_for_all_teams_and_for_one(
     fake.stage("2")
     es = load("engine-settings.json")
     everyone = ok(fake, "/api/engine/settings")
-    assert set(everyone) == {"schema", "defaults", "global", "effective", "editable", "locked"}  # no `department` without dept
+    assert set(everyone) == {"schema", "defaults", "global", "effective", "effective_flags", "editable", "locked", "output_types"}  # no `department` without dept; sync 6 (D178): effective_flags
     assert everyone["defaults"] == es["defaults"] and everyone["global"] == es["global"]
     assert everyone["effective"] == {**es["defaults"], **es["global"]} and everyone["editable"] == es["editable"]
     one = ok(fake, "/api/engine/settings", dept="web")
-    assert set(one) == {"schema", "defaults", "global", "department", "effective", "editable", "locked", "next_run"}   # sync 4 (D139): what the next run would use
+    assert set(one) == {"schema", "defaults", "global", "department", "effective", "effective_flags", "editable", "locked", "output_types", "next_run"}   # sync 4 (D139): what the next run would use
     assert one["department"] == es["department"] and one["effective"] == es["effective"]
     assert one["next_run"] == {"output": es["effective"]["output"]} == {"output": "auto"}     # nothing chosen on the start page: the team's own setting
     error_of(fake.get("/api/engine/settings", dept="nosuch"), 404, "not_found")
@@ -1299,7 +1304,8 @@ def test_engine_settings_put_sets_unsets_and_answers_like_the_get(fake):
     ("nope", 1, "is not a setting"),
     ("send_mode", "live", "only be changed by hand"),
     ("chrome", "/x", "only be changed by hand"),
-    ("output", "poster", "must be one of auto, website, prd, hld, lld, project"),
+    ("output", "poster", "unknown output type poster"),
+    ("output", "Poster", "must be auto or a type name"),
     ("fixes", 2, "must be one of 0, 1"),
     ("fixes", True, "must be one of 0, 1"),
     ("rates", "yes", "must be true or false"),
@@ -2374,7 +2380,7 @@ J2_GETS = [  # the GET handlers of j2_server.py (ENG 7.1 rows 3-25, then sync 4'
     "/api/state", "/api/runs", "/api/call?id=1", "/api/preview?atom=W-2.a1", "/api/docs", "/api/map", "/api/plan", "/api/library",
     "/api/library/website/hero/classic/v1", "/api/run-templates", "/api/artifacts", "/api/agent?who=identity",
     "/api/code?deck=a&section=b", "/api/artifacts/tree", "/api/artifact?name=site/index.html", "/api/story", "/api/board",
-    "/api/audits", "/api/refs", "/shot/1", "/file/prd.md", "/site/latest", "/site/v1",
+    "/api/audits", "/api/refs", "/api/timing", "/shot/1", "/file/prd.md", "/site/latest", "/site/v1",
     "/api/plan-map", "/api/activity?who=adaptation", "/api/catalog", "/api/artifacts/groups", "/api/runlist", "/api/changes",
     "/api/record?sec=nothing", "/doc/prd", "/view?name=site/index.html",
 ]
@@ -2385,7 +2391,7 @@ J2_JSON_FILES = {  # the routes that answer a capture byte for byte
     "/api/run-templates": "run-templates.json", "/api/artifacts": "artifacts.json", "/api/artifacts/tree": "artifacts-tree.json",
     "/api/story": "story.json", "/api/board": "board.json", "/api/audits": "audits.json", "/api/library": "library.json",
     "/api/refs": "refs.json", "/api/plan-map": "plan-map.json", "/api/catalog": "catalog.json", "/api/artifacts/groups": "artifacts-groups.json",
-    "/api/runlist": "runlist.json", "/api/changes": "changes.json",
+    "/api/runlist": "runlist.json", "/api/changes": "changes.json", "/api/timing": "timing.json",
 }
 BAD_DEPTS = [None, "", "Web", "WEB", "w", "web_1", "1web", "a b", "web/../x", "x" * 41, "web."]  # none passes DEPT_ID_RE
 J2_SANDBOX = "sandbox allow-scripts allow-forms allow-popups; frame-ancestors 'self'"  # D83
@@ -2429,9 +2435,9 @@ def test_the_j2_routes_the_fake_registers_are_the_ones_the_client_wrapper_adds_d
     assert prefixed >= {"/api/library/{artifact}/{section}/{slug}/{ver}", "/site/{key}", "/file/{name}", "/shot/{n}"}
     assert prefixed <= {"/api/library/{artifact}/{section}/{slug}/{ver}", "/site/{key}", "/file/{name}", "/shot/{n}", "/doc/{name}"}
     assert {(m, p) for m, p in registered if p in fb.J2_POST_PATHS} == {("POST", p) for p in fb.J2_POST_PATHS} and len(fb.J2_POST_PATHS) == 7
-    # 23 GET and 5 POST handlers of engine.md 7.1; sync 4 added nine GET (the plan map, a feed, the catalog, the groups, the run list, the changes, a record,
+    # 23 GET and 5 POST handlers of engine.md 7.1; sync 5 added /api/timing; sync 4 added nine GET (the plan map, a feed, the catalog, the groups, the run list, the changes, a record,
     # a document page, a view page) and two POST (ask, settings)
-    assert len(J2_GETS) + len(J2_POSTS) == 28 + 9 + 2
+    assert len(J2_GETS) + len(J2_POSTS) == 29 + 9 + 2
 
 
 @pytest.mark.parametrize("path", J2_GETS)
@@ -2582,6 +2588,51 @@ def test_say_to_a_team_that_is_working_is_busy_and_to_a_team_that_is_idle_a_foll
     assert texts[-1] == "Add a gallery"
 
 
+def test_the_fake_says_the_effective_flags_with_the_implication_chain_of_the_engine(fake):
+    """D178: auto_reuse implies run_templates and template_library, template_library implies artifact_schema; artifact_library implies auto_reuse."""
+    names = ("auto_reuse", "run_templates", "template_library", "artifact_schema", "artifact_library")
+    fake.stage("full")
+
+    def flags_with(field):
+        status, answer = fake.request("PUT", "/api/engine/settings?dept=web", {"set": {field: True}}, token=True)
+        assert status == 200, answer
+        assert fake.request("PUT", "/api/engine/settings?dept=web", {"unset": [field]}, token=True)[0] == 200
+        assert answer["effective"][field] is True and all(answer["effective"][n] is False for n in names if n != field), "`effective` is what was stored"
+        return {n: answer["effective_flags"][n] for n in names if n != "artifact_library"}
+    assert flags_with("run_templates") == {"auto_reuse": False, "run_templates": True, "template_library": False, "artifact_schema": False}
+    assert flags_with("auto_reuse") == {"auto_reuse": True, "run_templates": True, "template_library": True, "artifact_schema": True}
+    assert flags_with("artifact_library") == dict.fromkeys(("auto_reuse", "run_templates", "template_library", "artifact_schema"), True)
+    assert flags_with("template_library")["run_templates"] is False
+    stored = ok(fake, "/api/engine/settings", dept="web")
+    assert stored["effective"]["auto_reuse"] is False and stored["effective_flags"]["auto_reuse"] is False and "auto_reuse" not in stored["department"]
+
+
+def test_the_fake_answers_one_run_template_with_enabled_from_the_teams_settings(fake_server, fake):
+    fake.stage("full")
+    path = "/api/run-template?id=thread-boutique-website"
+    status, _, raw = j2_get(fake_server, path, dept="web")
+    body = json.loads(raw)
+    assert status == 200 and body["id"] == "thread-boutique-website" and body["enabled"] is False, "off by default"
+    assert fake.request("PUT", "/api/engine/settings?dept=web", {"set": {"run_templates": True}}, token=True)[0] == 200
+    assert json.loads(j2_get(fake_server, path, dept="web")[2])["enabled"] is True
+    other = next(d["id"] for d in ok(fake, "/api/departments") if d["id"] != "web")
+    assert json.loads(j2_get(fake_server, path, dept=other)[2])["enabled"] is False, "another team's switch is its own"
+    for bad in ("", "Thread", "a%20b", "nothing-here"):
+        status, _, raw = j2_get(fake_server, "/api/run-template?id=" + bad, dept="web")
+        assert (status, json.loads(raw)) == (404, {"error": "no such run template"}), bad
+    assert j2_get(fake_server, path)[0] == 400, "the team is required, as on every J2 route"
+
+
+def test_say_with_a_run_template_takes_the_shapes_of_the_real_route_and_refuses_the_rest(fake_server, fake):
+    fake.stage("full")
+    good = {"text": "A site", "template": "thread-boutique-website", "workflows": "W-1,W-2"}
+    assert j2_post(fake_server, "/api/say", good, dept="content")[0] == 200
+    assert j2_post(fake_server, "/api/say", {**good, "workflows": ["all"]}, dept="content")[0] == 200
+    for bad in ({"template": "Bad"}, {"template": 5}, {"workflows": "W 1"}, {"workflows": 7}, {"workflows": [f"W-{n}" for n in range(41)]}):
+        status, _, raw = j2_post(fake_server, "/api/say", {**good, **bad}, dept="content")
+        assert status == 400 and list(json.loads(raw)) == ["error"], bad
+
+
 @pytest.mark.parametrize("body", [{"text": ""}, {"text": "   "}, {}, {"text": 5}, [], "text"])
 def test_say_with_nothing_to_say_is_400_empty(fake_server, fake, body):
     fake.stage("2")
@@ -2595,14 +2646,14 @@ def test_say_with_a_body_that_is_not_json_is_the_422_envelope(fake_server, fake)
     assert status == 422 and json.loads(raw)["error"]["code"] == "validation"
 
 
-def test_output_takes_one_of_the_four_kinds_and_otherwise_answers_409_with_website(fake_server, fake):
+def test_output_takes_one_of_the_types_the_engine_lists_and_otherwise_answers_409_with_the_team_default(fake_server, fake):
     fake.stage("2")
     for kind in ("website", "prd", "hld", "lld"):
         status, _, raw = j2_post(fake_server, "/api/output", {"type": kind})
         assert (status, json.loads(raw)) == (200, {"ok": True, "output": kind})
     for body in ({"type": "poster"}, {}, {"type": 3}, [], {"type": None}):
         status, _, raw = j2_post(fake_server, "/api/output", body)
-        assert (status, json.loads(raw)) == (409, {"ok": False, "output": "website"}), body
+        assert (status, json.loads(raw)) == (409, {"ok": False, "output": "auto"}), body
 
 
 def test_reset_is_refused_while_the_team_works_and_clears_the_clear_routes_say_how_many(fake_server, fake):
@@ -2879,7 +2930,7 @@ def test_a_model_answer_is_stored_as_the_models_and_booked_to_the_agent_as_one_a
     fake.stage("full")
     rows = agent_rows_of(fake)
     sid, usage = rows["audit"]["session_id"], rows["audit"]["usage"]
-    assert usage["by_purpose"]["agent_chat"] == {"calls": 0, "usd": 0.0}
+    assert "agent_chat" not in usage["by_purpose"]                                                       # no call, no key: as the real route has it
     fake.post("/__fake/ask", {"mode": "model", "text": "Item 4 was not met: the footer has no phone number."}, token=False)
     with Stream(fake_server.url, "/api/events?topics=usage") as stream:
         status, body = ask(fake_server, "audit", "Which check failed?")
@@ -2949,15 +3000,18 @@ def test_an_agents_usage_names_its_calls_by_purpose_and_they_add_up(fake):
     for run in (None, fb.PAST_RUN["run_id"]):
         for agent, row in agent_rows_of(fake, run).items():
             usage = row["usage"]
-            assert set(usage) == {"calls", "usd", "tokens_in", "tokens_out", "by_purpose"} and list(usage["by_purpose"]) == list(fb.PURPOSES), agent
+            assert set(usage) == {"calls", "usd", "tokens_in", "tokens_out", "by_purpose"}, agent
             cells = usage["by_purpose"]
-            assert all(set(cell) == {"calls", "usd"} for cell in cells.values())
+            assert list(cells) == sorted(cells) and set(cells) <= set(fb.PURPOSES), agent                      # the ledger's order (by purpose); only the purposes the agent was charged for
+            assert all(set(cell) == {"calls", "usd"} and cell["calls"] > 0 for cell in cells.values())
             assert sum(c["calls"] for c in cells.values()) == usage["calls"], agent
             assert sum(c["usd"] for c in cells.values()) == pytest.approx(usage["usd"], abs=1e-3), agent
     rows = agent_rows_of(fake)
-    assert {a: r["usage"]["by_purpose"]["judge"]["calls"] for a, r in rows.items() if r["usage"]["by_purpose"]["judge"]["calls"]} == {"priority": 2, "coordination": 1}
-    assert {a: r["usage"]["by_purpose"]["plan"]["calls"] for a, r in rows.items() if r["usage"]["by_purpose"]["plan"]["calls"]} == {"adaptation": 2, "coordination": 1}
-    assert all(r["usage"]["by_purpose"]["agent_chat"]["calls"] == 0 for r in rows.values())               # nobody has been asked anything
+    assert {a: r["usage"]["by_purpose"]["judge"]["calls"] for a, r in rows.items() if "judge" in r["usage"]["by_purpose"]} == {"priority": 2, "coordination": 1}
+    assert {a: r["usage"]["by_purpose"]["plan"]["calls"] for a, r in rows.items() if "plan" in r["usage"]["by_purpose"]} == {"adaptation": 2, "coordination": 1}
+    assert all("agent_chat" not in r["usage"]["by_purpose"] for r in rows.values())                       # nobody has been asked anything
+    assert rows["identity"]["usage"]["by_purpose"] == {"agent_turn": {"calls": 2, "usd": 0.01}}            # an agent that only worked: its turns, and nothing else named
+    assert rows["coordination"]["usage"]["by_purpose"] == {"agent_turn": {"calls": 3, "usd": 0.024}, "judge": {"calls": 1, "usd": 0.008}, "plan": {"calls": 1, "usd": 0.008}}
     assert [(r["usage"]["calls"], r["usage"]["usd"]) for r in rows.values()][:5] == [(2, 0.01), (3, 0.02), (4, 0.03), (5, 0.04), (6, 0.05)]      # the totals a row always had
 
 
@@ -2980,6 +3034,50 @@ def test_the_usage_summary_groups_the_same_numbers_by_purpose_and_by_the_ledgers
     assert atoms["(none)"]["calls"] == purposes["agent_turn"]["calls"]                                     # a turn's calls have atoms of their own; judging and planning are overhead
     assert atoms[overhead_atom_id(fb.LIVE_RUN["run_id"])]["calls"] == purposes["judge"]["calls"] + purposes["plan"]["calls"]
     assert next(iter(atoms)) == "(none)"                                                                   # a row without a key sorts first, as in the ledger's SQL
+
+
+def test_the_real_model_reads_every_grouping_of_the_summary_and_writes_it_back_unchanged(fake):
+    """The expected shape is the real model, which the real route builds its answer from: a key the fake added, or one it lacked, would fail here."""
+    from sutra_app.orchestrator.api.usage import UsageSummary
+    fake.stage("full")
+    for by in fb.SUMMARY_BY:
+        answer = ok(fake, "/api/usage/summary", by=by)
+        assert UsageSummary.model_validate(answer).model_dump(mode="json") == answer and answer["groups"], by
+
+
+def test_the_summary_takes_a_window_and_reads_it_as_the_real_route_does(fake):
+    from sutra_app.orchestrator.usage import parse_since
+    fake.stage("full")
+    live, past = "2026-11-04T10:20:00Z", "2026-11-03T09:30:00Z"                                            # when the agents of the live run and of the earlier run last spoke
+    keys = lambda **q: {g["key"]: g["calls"] for g in ok(fake, "/api/usage/summary", by="purpose", **q)["groups"]}  # noqa: E731
+    everything = keys()
+    assert keys(since=past) == everything and keys(since=live) == keys(since=str(parse_since(live)))        # a row exactly at `since` counts; ISO or seconds
+    assert sum(everything.values()) > sum(keys(since=live).values()) > 0                                    # the earlier run's rows are out of the live window
+    assert keys(since="2026-11-04T10:20:01Z") == {} == keys(since="4102444800")
+    assert sum(g["calls"] for g in ok(fake, "/api/usage/summary", by="day", since=live)["groups"]) == sum(keys(since=live).values())     # every grouping has it
+
+
+def test_the_fakes_reading_of_since_is_the_real_ones_for_every_text(fake):
+    """Parity, text by text: the number the real `parse_since` makes of it is the one the fake makes, or both refuse (the route answers 422 `query.since`)."""
+    from sutra_app.orchestrator.usage import parse_since
+    fake.stage("full")
+    texts = ("0", "1793786400", "253402300799", "253402300800", "99999999999999999999", "-1", "1e3", "", " 5", "5 ", "yesterday", "2026-11-04T10:00:06Z", "9999-12-31T23:59:59Z",
+             "10000-01-01T00:00:00Z", "2026-11-04", "2026-11-04T10:20:00", "2026-13-01T00:00:00Z", "2026-11-04T10:00:06+00:00", "\u0663", "\u00b2")
+    for text in texts:
+        try:
+            real = parse_since(text)
+        except ValueError:
+            real = None
+        try:
+            mine = fb.since_seconds(text)
+        except ValueError:
+            mine = None
+        assert mine == real, text
+        status, body = fake.get("/api/usage/summary", by="purpose", since=text)
+        assert status == (200 if real is not None else 422), text
+        if real is None:
+            assert body["error"]["code"] == "validation" and body["error"]["details"]["violations"][0]["path"] == "query.since", text
+            assert body["error"]["details"]["violations"][0]["code"] == "bad_time", text
 
 
 def test_the_summary_of_one_session_and_a_bad_grouping(fake):
@@ -4838,7 +4936,9 @@ def test_the_j2_process_gets_a_scrubbed_environment_and_nothing_of_the_developer
     assert env["J2_MEMORY_FILE"] == str(tmp_path / "lessons.jsonl") and env["J2_PLAYBOOK_FILE"] == str(tmp_path / "playbooks.jsonl")
     assert env["PYTHONDONTWRITEBYTECODE"] == "1" and env["PYTHONHASHSEED"] == "0" and env["PYTHONUTF8"] == "1"
     assert set(env) == {"PATH", "LANG", "LC_ALL", "SYSTEMROOT", "TEMP", "TMP", "HOME", "TZ", "STUDIO_MOCK", "J2_CHROME", "J2_MEMORY", "J2_RUNS_DIR",
-                        "J2_MEMORY_FILE", "J2_PLAYBOOK_FILE", "PYTHONDONTWRITEBYTECODE", "PYTHONHASHSEED", "PYTHONUTF8"}
+                        "J2_MEMORY_FILE", "J2_PLAYBOOK_FILE", "PYTHONDONTWRITEBYTECODE", "PYTHONHASHSEED", "PYTHONUTF8",
+                        "J2_RUN_BY", "J2_PUSH_RUNS"}
+    assert env["J2_RUN_BY"] == "sutra-pro" and env["J2_PUSH_RUNS"] == "0"      # D190: pinned in every recorder
     assert capture.scrubbed_env(tmp_path, {"PATH": "/bin"})["PATH"] == "/bin" and "LANG" not in capture.scrubbed_env(tmp_path, {"PATH": "/bin"})
 
 
@@ -4891,7 +4991,7 @@ def test_check_checkout_refuses_what_is_not_an_extraction_of_j2_a_python_that_ca
 
 
 # ---- a whole capture of the stand-in ------------------------------------------------------------------------------------------
-STANDIN_FILES = 77  # 22 route files + 7 agent views + 7 feeds + 6 answers + 4 records (2 parts, 2 deliverables) + 4 derived inputs + 26 goldens + the manifest
+STANDIN_FILES = 78  # 23 route files + 7 agent views + 7 feeds + 6 answers + 4 records (2 parts, 2 deliverables) + 4 derived inputs + 26 goldens + the manifest
 
 
 def test_the_capture_of_the_stand_in_makes_the_files_the_committed_set_has(standin):
@@ -5217,7 +5317,7 @@ def test_every_route_every_agent_view_every_feed_every_record_and_every_answer_i
                             + [f"activity-{who}.json" for who in J2_FUNCS] + ["activity-unknown.json"]
                             + ["record-W-1.json", "record-W-2.json", "record-art-Website.json", "record-art-Menu-card.json"]
                             + [f"ask-{who}.json" for who in J2_FUNCS])
-    assert len(capture.ROUTE_FILES) == 22 and len(routes) == 22 + 7 + 7 + 4 + 6
+    assert len(capture.ROUTE_FILES) == 23 and len(routes) == 23 + 7 + 7 + 4 + 6
 
 
 def test_a_preview_route_that_does_not_answer_200_stops_the_capture(server):
@@ -5386,7 +5486,7 @@ def test_the_run_list_and_the_changes_are_j2s_captures_and_a_team_is_asked_for(f
     status, _, raw = j2_get(fake_server, "/api/runlist", dept="web")
     body = json.loads(raw)
     assert status == 200 and list(body) == ["live", "runs"] and body["runs"], body
-    assert set(body["runs"][0]) == {"id", "title", "status", "output", "when", "brief"} and body["runs"][0]["when"] == "2026-11-04T10:00:04"
+    assert set(body["runs"][0]) == {"id", "title", "status", "output", "label", "form", "when", "brief"} and body["runs"][0]["when"] == "2026-11-04T10:00:04"
     assert json.loads(j2_get(fake_server, "/api/changes", dept="web")[2]) == {"changes": []}
     for path in ("/api/runlist", "/api/changes"):
         assert j2_get(fake_server, path)[0] == 400 and j2_get(fake_server, path, dept="nosuch")[0] == 404

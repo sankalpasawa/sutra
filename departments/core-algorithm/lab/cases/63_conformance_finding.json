@@ -1,0 +1,9 @@
+{
+  "id": "63_conformance_finding",
+  "title": "A number under its band",
+  "description": "Fitness 0.8 against a band of 0.9: the reading handed to the adapter says a run did four of its routine's five written steps. The adapter wrote the number and both comparison rows; the kernel reads no number and files the finding. The finding rests on the comparison row below the band, which is on the books of this case with both numbers; the comparisons block of this look is in the recorded sequence `numbers`, which takes the same look again.",
+  "packs": ["150_conformance_goal", "151_conformance_theory", "152_run_fitness", "153_finding_method"],
+  "execute": true,
+  "area": "Numbers",
+  "expected": "LOCAL_MODEL_EFFECTS_RECORDED"
+}

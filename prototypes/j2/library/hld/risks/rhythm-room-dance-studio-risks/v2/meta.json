@@ -1,0 +1,39 @@
+{
+  "schema": "template-library/1",
+  "name": "Rhythm Room Dance Studio Risks",
+  "version": 2,
+  "sha": "76d49f2b5744e718490a611df8fe649ad2fe1ee7485db236314574e327daa7c2",
+  "schema_sha": "f376b6303a87a6514643ee25b96092ebe2e361816dac52958d2c8f49705d3c8c",
+  "model_sha": "7fe0476078c14fe3bd3fb09d856d61c27986838fdba5a8d936fcf6b40cee1565",
+  "class": "RhythmRoomDanceStudioRisksV2",
+  "created": "2026-11-11T22:12:22",
+  "fingerprints": [
+    "08e60b9d008e7f9c8a1b788673378ec8e7be2e1f2d68ac0a1e1463a0cc47e746"
+  ],
+  "made_by": {
+    "run": "j2-20261111-215733",
+    "workflow": "W-14",
+    "atom": "W-14.a1",
+    "agent": "code (adapted from a run template)",
+    "date": "2026-11-11 21:57:33"
+  },
+  "business": {
+    "name": "Rhythm Room Dance Studio",
+    "type": "hld"
+  },
+  "mock": false,
+  "collected_from": {
+    "run": "j2-20261111-215733",
+    "where": "the run's copy"
+  },
+  "used_by": [
+    {
+      "run": "j2-20261111-215733",
+      "workflow": "W-14",
+      "atom": "W-14.a1",
+      "action": "extended"
+    }
+  ],
+  "renamed_from": "Still Point Yoga Risks@4",
+  "adapted_from": "Still Point Yoga Risks@1"
+}

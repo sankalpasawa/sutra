@@ -1,0 +1,13 @@
+{
+  "schema": "sutra-extension/2",
+  "id": "212_book_read",
+  "evidence": [
+    {
+      "predicate": "loan_on_book",
+      "truth": "TRUE",
+      "verified": true,
+      "source": "checker:loan-book",
+      "version": "book-fixture"
+    }
+  ]
+}

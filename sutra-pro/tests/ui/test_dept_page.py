@@ -771,7 +771,7 @@ def test_the_start_page_offers_what_to_make_a_pick_is_one_post_and_a_reload_show
     team.open(view="simple")
     team.b.wait_for("!!document.getElementById('outsel')")
     assert team.js("document.getElementById('outsel').value") == "auto"
-    assert team.js("Array.from(document.querySelectorAll('#outsel option'), o => o.value)") == ["auto", "website", "prd", "project"]
+    assert team.js("Array.from(document.querySelectorAll('#outsel option'), o => o.value)") == ["auto", "prd", "hld", "lld", "website", "business_report", "project"]
     assert "dept=web" in team.requests("/api/engine/settings")[0]["query"]           # what the team's next run makes: asked of the team, not of all teams
     team.js("(() => { const s = document.getElementById('outsel'); s.value = 'prd'; s.dispatchEvent(new Event('change', {bubbles: true})); })()")
     team.wait_requests("/api/output", 1)
@@ -1222,10 +1222,11 @@ def test_the_teams_library_page_is_the_same_page_and_draws_the_catalog_of_the_on
     team.b.wait_for("CAT.loaded === true")
     assert team.js("[location.pathname, CAT.on, SutraCtx.libraryPath, SutraCtx.onLibrary()]") == ["/d/web/library", True, "/d/web/library", True]
     assert "dept=web" in team.requests("/api/catalog")[0]["query"]                    # the data is global, the path says the team
-    assert team.js("CAT.runs.length") == len(catalog["runs"]) and team.js("Object.keys(CAT.groups)") == list(catalog["groups"])
+    shelf = catalog["shelf"]      # sync 6: the page draws the two shelves (Artifacts, Artifact templates), not the "By run" list of sync 5
+    assert team.js("[CAT.arts.length, CAT.rts.length, CAT.types.length]") == [len(catalog["artifacts"]), len(shelf["run_templates"]), len(shelf["types"])]
     assert team.js("document.body.classList.contains('libpage')") is True and team.hidden("#pane-catalog") is False
     shown = team.js("document.getElementById('pane-catalog').innerText")
-    assert all(run["run"] in shown for run in catalog["runs"]) and "By run" in shown and "By artifact" in shown      # every run that gave the library a template, from catalog.json
+    assert all(rt["name"] in shown for rt in shelf["run_templates"]) and "Artifacts" in shown and "Artifact templates" in shown      # every run template of the shelf, from catalog.json
     assert team.b.console_errors == [] and team.b.failed_requests == []
 
 

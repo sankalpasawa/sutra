@@ -1,0 +1,39 @@
+{
+  "schema": "template-library/1",
+  "name": "Flow Pilates Studio Problem",
+  "version": 1,
+  "sha": "4ecc723a27ff96e096d28b4cc40f26ba1cf340e3cd5b24fdd6e7c046e3a3827f",
+  "schema_sha": "a9aec070f491bbabdc9d94b11fd43e18bb5f4a68895da004f683a2a474624e4f",
+  "model_sha": "014615029ab4c696fb56d752c23dfeaab3a6232b551d74e9d1faefed9e07264a",
+  "class": "FlowPilatesStudioProblemV1",
+  "created": "2026-11-12T15:06:53",
+  "fingerprints": [
+    "1c191d99fa925c5794ad0b73c1fc08645278b3a22d396db0c120dcba39e878ea"
+  ],
+  "made_by": {
+    "run": "j2-20261112-150036",
+    "workflow": "W-1",
+    "atom": "W-1.a1",
+    "agent": "code (adapted from a run template)",
+    "date": "2026-11-12 15:00:36"
+  },
+  "business": {
+    "name": "Flow Pilates Studio",
+    "type": "pilates studio"
+  },
+  "mock": false,
+  "collected_from": {
+    "run": "j2-20261112-150036",
+    "where": "the run's copy"
+  },
+  "used_by": [
+    {
+      "run": "j2-20261112-150036",
+      "workflow": "W-1",
+      "atom": "W-1.a1",
+      "action": "extended"
+    }
+  ],
+  "renamed_from": "Still Point Yoga Problem@5",
+  "adapted_from": "Iron Grove Fitness Problem@1"
+}

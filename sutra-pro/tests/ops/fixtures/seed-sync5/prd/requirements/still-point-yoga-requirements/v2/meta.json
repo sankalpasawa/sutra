@@ -1,0 +1,44 @@
+{
+  "schema": "template-library/1",
+  "name": "Still Point Yoga Requirements",
+  "version": 2,
+  "sha": "8e7a2fc5fbd30ae59470f8dac4e04db45dd3bb2a9f738fc6d6a495dac8b2de12",
+  "schema_sha": "b594f019779807e636105da34b223d111dcadd77fd63673afe96f2ebbd7445d0",
+  "model_sha": "83339f6d7a2d1342808f737943a426ff03c3bd60b224777fbe87de55991f9edc",
+  "class": "StillPointYogaRequirementsV2",
+  "created": "2026-11-03T16:30:25",
+  "fingerprints": [
+    "78eb50d36e851267b338a38a95f9859f985d0de965c9cf3e36f50429de19c0ce",
+    "21faabc1a0aca96e608876e2c1311f7048fb834270cc90a4c4015f3a250f5e47"
+  ],
+  "made_by": {
+    "run": "j2-20261103-162711",
+    "workflow": "W-2",
+    "atom": "W-2.a1",
+    "agent": "template generator (claude-cli)",
+    "date": "2026-11-03 16:27:11"
+  },
+  "business": {
+    "name": "Still Point Yoga",
+    "type": "prd"
+  },
+  "mock": false,
+  "collected_from": {
+    "run": "j2-20261103-162711",
+    "where": "the run's copy"
+  },
+  "used_by": [
+    {
+      "run": "j2-20261103-162711",
+      "workflow": "W-2",
+      "atom": "W-2.a1",
+      "action": "extended"
+    },
+    {
+      "run": "j2-20261103-162711",
+      "workflow": "W-7",
+      "atom": "W-7.a1",
+      "action": "reused"
+    }
+  ]
+}

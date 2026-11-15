@@ -17,7 +17,7 @@ import pytest
 ENGINE = "sutra_app.engine"
 J2_MODULES = ("j2", "j2_agent", "j2_agent_models", "j2_agent_views", "j2_artifact_models", "j2_artifacts", "j2_board", "j2_change",
               "j2_check", "j2_map", "j2_realization", "j2_rules", "j2_schema", "j2_send", "j2_story", "j2_studio", "j2_template_lib",
-              "rehydrate")
+              "j2_types", "rehydrate")
 BREW_LAB = ("A one-page website for Brew Lab, a small specialty coffee shop in Indiranagar, Bengaluru. Visitors should "
             "see the menu with prices, the opening hours, and where to find us, and be able to pre-order a coffee for "
             "pickup. It should feel warm and modern and work well on a phone. Include a section about our beans and the "
@@ -102,6 +102,16 @@ def say(run, text, timeout=60.0):
     while run.status != "waiting":
         assert time.time() < deadline, "the run did not stop"
         time.sleep(0.003)
+    stable(run)
+
+
+def stable(run, timeout=30.0):
+    """What the host does at a run end (D179): J2's reviewer thread writes `report.json`, `report.md` and `artifacts.json` once more after the
+    run is `waiting`; wait for it, so a test that compares a finished folder with itself later compares a folder nothing writes to."""
+    thread = getattr(run, "review_thread", None)
+    if thread is not None:
+        thread.join(timeout)
+        assert not thread.is_alive(), "the reviewer did not finish"
 
 
 def tree_sha(folder: Path) -> dict:
@@ -192,7 +202,8 @@ def test_rehydrate_sets_exactly_the_listed_attributes(j2, finished, new_run):
     follow.rehydrate(finished.dir)
     after = vars(follow)
     changed = {k for k in after if after[k] is not before.get(k) and after[k] != before.get(k)}
-    assert changed <= set(R.RESTORED) and {"chat", "goal", "workflows", "sites", "done", "status", "outcome", "request"} <= changed
+    assert changed <= set(R.RESTORED) | set(R.RESTORED_TYPE) | set(R.RESTORED_REUSE) \
+        and {"chat", "goal", "workflows", "sites", "done", "status", "outcome", "request", "auto_pick"} <= changed
     assert not (set(R.RESTORED_REALIZATION) & changed), "no realization.json: no real*"
     assert set(after) == set(before), "no attribute was added"
 
@@ -348,11 +359,46 @@ def test_a_done_with_open_items_source_is_allowed(j2, source, new_run):
     assert follow.outcome == "Done with open items: shipped as is."
 
 
-def test_a_source_whose_output_is_not_a_website_is_refused(j2, source, new_run):
+def test_a_source_whose_output_is_not_a_page_and_that_has_no_document_chain_is_refused(j2, source, new_run):
     rows = (source / "chat.jsonl").read_text().splitlines()
     rows[0] = json.dumps({**json.loads(rows[0]), "output": "prd"})
     (source / "chat.jsonl").write_text("\n".join(rows) + "\n")
-    assert refused(new_run(), source) == "the earlier run built a prd, not a website"
+    assert refused(new_run(), source) == "the earlier run has no page and no document chain"
+
+
+def test_a_run_that_chose_no_type_is_refused_as_having_no_page_and_no_chain(j2, source, new_run):
+    """A run that stopped before the planner chose a type has `output: null` in its header (J2's `saved_run_no_type`): no page, no chain."""
+    rows = (source / "chat.jsonl").read_text().splitlines()
+    rows[0] = json.dumps({**json.loads(rows[0]), "output": None})
+    (source / "chat.jsonl").write_text("\n".join(rows) + "\n")
+    summary = json.loads((source / "summary.json").read_text())
+    summary.pop("output_type", None)
+    (source / "summary.json").write_text(json.dumps(summary))
+    assert refused(new_run(), source) == "the earlier run has no page and no document chain"
+
+
+def test_a_page_type_is_read_from_the_data_not_from_a_name(j2, source, new_run):
+    """The earlier run's header names a type that J2's data lists as a page: it continues, whatever the name is."""
+    names = [n for n in j2.j2_types.names() if j2.is_page(n)]
+    assert names
+    rows = (source / "chat.jsonl").read_text().splitlines()
+    rows[0] = json.dumps({**json.loads(rows[0]), "output": names[0]})
+    (source / "chat.jsonl").write_text("\n".join(rows) + "\n")
+    follow = new_run()
+    follow.rehydrate(source)
+    assert follow.output == names[0] and follow.doc is False
+
+
+def test_a_classic_follow_up_takes_the_earlier_runs_type_when_nothing_was_chosen_for_it(j2, source, new_run):
+    follow = new_run()
+    assert follow.out is None                                     # no default type: nothing is chosen until the planner or the host does
+    follow.rehydrate(source)
+    assert follow.output == j2.saved_output(str(source)) and follow.out is not None and j2.is_page(follow.output)
+    pinned = new_run()
+    pinned.set_output(follow.output)
+    out = pinned.out
+    pinned.rehydrate(source)
+    assert pinned.out is out                                      # a type the host already pinned is left as it is
 
 
 def test_a_source_without_a_chat_header_is_refused(j2, source, new_run):
@@ -446,3 +492,31 @@ def test_the_two_system_lines_are_fixed(j2):
         "Starting a new run. Your earlier files from run j2-20261104-100004-7f3a are in upstream/j2-20261104-100004-7f3a/ "
         "for reference. Reason: the earlier run crashed.")
     assert fresh_line("j2-x", "it was stopped. ") == "Starting a new run. Your earlier files from run j2-x are in upstream/j2-x/ for reference. Reason: it was stopped."
+
+
+# ---- J2 sync 6 (D187): a follow-up never re-fires auto-reuse and does not take the earlier run's run template -------------------------------
+def test_the_reuse_attributes_are_named_and_a_continued_run_counts_as_having_decided(j2, finished, new_run):
+    from sutra_app.engine import rehydrate as R
+    assert R.RESTORED_REUSE == ("auto_pick",) and R.NOT_RESTORED_REUSE == ("run_tpl",)
+    assert not set(R.RESTORED_REUSE) & set(R.RESTORED_CHAIN) and "run_tpl" not in R.RESTORED_CHAIN
+    follow = new_run()
+    assert follow.auto_pick is None and follow.run_tpl is None
+    follow.rehydrate(finished.dir)
+    assert follow.auto_pick == {}, "J2's own marker: `_auto_reuse_pick` returns at once"
+    assert follow.run_tpl is None, "the earlier run's template shaped its first plan; a follow-up is a change request"
+
+
+def test_a_follow_up_with_auto_reuse_on_never_scores_the_run_templates_again(j2, finished, new_run, monkeypatch):
+    scored = []
+    monkeypatch.setenv("J2_AUTO_REUSE", "1")
+    monkeypatch.setattr(j2.j2_template_lib, "match_run_templates", lambda *a, **k: scored.append(a) or [])
+    follow = new_run()
+    follow.rehydrate(finished.dir)
+    say(follow, CHANGE, timeout=120)
+    assert follow.outcome.startswith("Done") and scored == [], "no match_run_templates call (D187)"
+    assert follow.auto_pick == {} and follow.run_tpl is None
+    fresh = new_run()
+    monkeypatch.setattr(j2.j2_template_lib, "match_run_templates", lambda *a, **k: scored.append(a) or [])
+    say(fresh, BREW_LAB, timeout=120)
+    assert len(scored) == 1, "the control: a first run does score them once, so the spy works"
+    assert fresh.auto_pick and fresh.auto_pick.get("picked") is None

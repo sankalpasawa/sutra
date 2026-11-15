@@ -54,6 +54,9 @@ stored atom model.
 - New in L4 (S4-8, S4-3): `Atom.abandon_code` (`verify_failed|run_ended|replaced|manual`, only when abandoned) and
   `Seen(work, model, note)` given to `close_atom` and `abandon_atom`: when `work` differs from the declared kind the
   stored `work.dispatch_kind` is replaced and `notes` gets `declared bash, did llm`.
+- New in D157: `produced` (the plain words of what the turn made or did, one `OutputItem` per sentence) and `reply` (an
+  `AtomReply`: the last reply the model gave, printed, at most 4,000 characters, with `clipped`), both given in `Seen` and
+  filled at every transition of the turn's atom (section 5.6). Both are empty on an atom stored before D157.
 
 **2.4 Ids.** Function atom `a-<sid10>-<nn>` (S2-10). Builder atom `<run_id>:W-n.aK` on the server. Overhead key
 `overhead_atom_id(owner_ref) = function_atom_id(atom_sid(owner_ref, "overhead"), 1)` with `owner_ref` = run id or
@@ -239,12 +242,46 @@ reserved and the factory raises ValueError.
    `verify_failed`), then `abandon_atom(code verify_failed)` (card WORK ATOM ABANDONED). Ledger row `verify_failed`; display verify_failed.
 5. The next turn opens `a-3f9a1c2b7d-02`; its charter passes: card WORK ATOM CLOSED, ledger row `closed`, display closed.
    Had it failed too, J2 posts `Charter accepted after two attempts` and the atom closes with `WAIVED: <why>`.
+6. What the owner sees on the failed atom's card (D157, section 5.6): Output `the charter: Brew Lab, 2 done-when items` and `posted 1
+   message to Adaptation`, then The reply: the JSON the model sent, whose `goal.done_when` holds two items, which is why the check said
+   fewer than 3. Before D157 the card showed the check and the reason and not the reply.
+
+**5.6 What a turn produced (D157).** Every transition of the atom of a turn (a failed try, the close, the abandon after a third
+failed try, the run ending mid-turn) carries in its body what the turn has made or done so far and the last reply the model gave.
+`engine/fnodes/output.py` reads only the turn buffer the hooks already fill (`TurnBuffer`: the node's calls and replies, the
+messages posted, the record files saved); `layer._seen` hands the result to `close_atom` and `abandon_atom` in `Seen(produced,
+reply)`. The newest sight replaces the last, a stale atom replaced by the next turn and an atom the server abandons when the run
+ends keep what they held, and the manual atom of a question records the owner's answer (`you answered: ...`).
+
+| Function (`yields`) | What its turn produced, as `Atom.produced` sentences |
+|---|---|
+| Identity (charter, rule, question) | `the charter: <name>, 7 done-when items`; `asked you 2 questions: <first>`; `ruled for Adaptation: <clause>` or `ruled to split the proposal: <names>`; `approved more budget (+20)`; `decided the goal is reached`; `read your answer: carry on` |
+| Adaptation (a proposal) | `a proposal of 2 workflows: W-1 Build the page, Write the copy`; a revised one; `accepted Priority's decision`; `parked the proposal`; `asked Identity: <question>`; `disputed F-7 with Audit: <reason>`; `judged the check wrong for W-2.a1: sent 3 corrected checks` |
+| Priority (GRANT, COUNTER, REFUSE) | `GRANT: funded 2 workflows: W-1 Scaffold (money 15), Core`; `COUNTER: ...`; `REFUSE: funded nothing`; `HOLD: ...`; `REQUEST_APPROVAL: ...` |
+| Coordination (rule, order, holds) | `scheduled 3 workflows in this order: W-1, W-2, W-3. Rule: <rule>`; `held 1 workflow: W-4 (missing <what>)` |
+| Audit (one finding per item) | `14 findings and rubric rows: 13 pass, 1 needs revision`, then `finding F-7: needs revision, <evidence>` for each that does not pass (five, then `and 3 more`) |
+| every turn | `posted 3 messages to Coordination` (its own messages and who they went to; `you` is the owner); `code posted 1 message: <first line>` (what J2's own code said during the turn: a hand-off by code is a whole turn when the queue is empty); `saved the findings` (a record file no sentence above names); `nothing: no usable reply, no message posted, no record saved` when it made nothing |
+
+- The sentences read a reply tolerantly: a failed try is exactly the reply that does not fit its class, so a word that cannot be read
+  is left out, a reply with no words of its own for its kind is told by its `say` (`said: ...`), and no reply of any shape stops them.
+  If they cannot be made at all the layer writes a `layer.error` line (hook `output`) and the atom closes without them.
+- `OutputItem` is `{verb, name, form, ref}`: `make` for a record the turn made, `do` for a deed; `form` is `charter`, `proposal`,
+  `order`, `findings`, `finding`, `record`, `message`, `question`, `decision`, `ruling`, `verdict`, `dispute`, `hold`, `reply`, `answer` or
+  `nothing`; `ref` is the record file when the turn saved it, else `the reply`, `chat` or `this turn`. The card draws the `name` only for a function atom.
+- `Atom.reply.text` is the last reply object of the node's latest call, `json.dumps(reply, ensure_ascii=False, indent=2)`, cut to 4,000
+  characters with `clipped` set (the whole text stays in the run's `calls.jsonl`). A latest call that gave no object records none: an
+  older reply is not offered for a newer call that gave none, as the checks judge the latest call too.
+- The model's text is stored text: `AtomStore` puts `reply.text` and every `produced[].name` and `.ref` through the app's scrub (secret
+  values and credential shapes) and cuts them again to their limits before the gate checks the body. `Atom.notes` stays the layer's
+  trace text and is not drawn for a function atom.
+- Additive (D145's rule): `docs/schemas/atom.v1.json` re-exported, the family version stays 1, an atom stored before has neither and
+  the page says `not recorded for this atom`.
 
 ## 6. Events, statuses, tables, cost
 **6.1 Events.** Every transition is one `atom` line in `events.jsonl` (S1-9, S2-7): `node`, `atom{id, schema, goal,
 work_kind, verify_template, status, attempt, closed_by, reason, body, ts_open, ts_closed}`, `outcome`, `card`, `ledger`.
 `outcome` is opened, verify_failed (a failed try, the atom stays open), closed, refused or abandoned. `body` is the
-library `Atom` JSON and carries `abandon_code`. Node events carry no goal; their optional `task` and `context` are
+library `Atom` JSON and carries `abandon_code`, and since D157 `produced` and `reply` (section 5.6). Node events carry no goal; their optional `task` and `context` are
 trace-only and the Projector ignores them (S3-web-04). The Projector gates the body, accepts forward moves only,
 upserts `atoms`, appends the ledger row once, posts the card to the node's own session (`src_ref
 <run>#atom:<id>:<outcome>:<attempt>`), updates `open_atom` and `atom_count` in the same transaction, emits `atom.updated`.
@@ -324,7 +361,10 @@ department), step (read-only).
 - **Atom card** (J2's labels): status line OPEN, CLOSED, VERIFY FAILED, ABANDONED or REFUSED with `attempt n of 3`; Goal;
   Constraints; Context; How (llm: the model, from `usage`; bash: code, no AI call; manual: you); Expected output =
   `outputs[0]`; Verification = per check its sentence and every try (`attempt 1: failed, <evidence>`); Result = the
-  pill text, a `Concern on record` row for RECOVERED or WAIVED, and the cost line from `AtomOut.usage`.
+  pill text, then (D157) an `Output` row (`body.produced`, the plain words, one line each; `not recorded for this atom` when
+  none, `nothing yet` for an atom just opened, no row for a refused atom) and `The reply` (`body.reply.text`, preformatted and
+  escaped, in a fold), then a `Concern on record` row for RECOVERED or WAIVED, the Reason of an abandoned or failed atom, and the
+  cost line from `AtomOut.usage`. A builder's atom/1 draws its `output` (name, form and where it lives in plain words) and `notes`.
 - `AtomOut` = `id, schema, node_id, task_id, state` (the display word), `goal, attempt, ts_open, ts_closed, body, usage`.
 - **Division click.** Chat tab: the lens, header `<Division> is part of <Department>. This is <Department>'s Identity,
   showing the work for <Division>`, link `Show everything for <Department>`, composer on. Details tab: `Functions of

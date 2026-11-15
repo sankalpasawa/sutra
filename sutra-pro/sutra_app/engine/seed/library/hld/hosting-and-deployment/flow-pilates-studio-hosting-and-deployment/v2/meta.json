@@ -1,0 +1,51 @@
+{
+  "schema": "template-library/1",
+  "name": "Flow Pilates Studio Hosting and deployment",
+  "version": 2,
+  "sha": "1ca889bb7764aba52b394965033c1c089892eb0f258dc5dac2b63cc09c86448d",
+  "schema_sha": "acc7577384c9fa2e90438bdd24b9edc33acd4a1afcaa404c66eb8f26ea6a6897",
+  "model_sha": "8ad0c96cab6e23f8d0a284e410ac367cb75dd702d34c451561c1d14fb3438385",
+  "class": "FlowPilatesStudioHostingAndDeploymentV2",
+  "created": "2026-11-12T15:16:24",
+  "fingerprints": [
+    "fe3e15bd7dd039cdb4a53d7a0c009db43299e2939fb3ef9beb5135c5e3a40e0a"
+  ],
+  "made_by": {
+    "run": "j2-20261112-150036",
+    "workflow": "W-17",
+    "atom": "W-17.a1",
+    "agent": "code (adapted from a run template)",
+    "date": "2026-11-12 15:00:36"
+  },
+  "business": {
+    "name": "Flow Pilates Studio",
+    "type": "pilates studio"
+  },
+  "mock": false,
+  "collected_from": {
+    "run": "j2-20261112-150036",
+    "where": "the run's copy"
+  },
+  "used_by": [
+    {
+      "run": "j2-20261112-150036",
+      "workflow": "W-17",
+      "atom": "W-17.a1",
+      "action": "extended"
+    },
+    {
+      "run": "j2-20261112-150036",
+      "workflow": "W-19",
+      "atom": "W-19.a1",
+      "action": "reused"
+    },
+    {
+      "run": "j2-20261112-150036",
+      "workflow": "W-23",
+      "atom": "W-23.a1",
+      "action": "reused"
+    }
+  ],
+  "renamed_from": "Still Point Yoga Hosting and deployment@6",
+  "adapted_from": "Iron Grove Fitness Hosting and deployment@2"
+}

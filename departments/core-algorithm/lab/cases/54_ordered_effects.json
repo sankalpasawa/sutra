@@ -1,0 +1,9 @@
+{
+  "id": "54_ordered_effects",
+  "title": "Scrub, write locally, then send",
+  "description": "A person's words are captured, then sent to the team. The capture is a standing goal of its own, ahead of the send, and the three methods are authored out of order (send, write, scrub). The first run scrubs and writes locally, the second sends: the order their prerequisites give, and each row made rests on the rows before it and on the words.",
+  "packs": ["120_feedback", "121_scrub_simulated", "123_team_rail"],
+  "execute": true,
+  "area": "Ordering",
+  "expected": "LOCAL_MODEL_EFFECTS_RECORDED"
+}

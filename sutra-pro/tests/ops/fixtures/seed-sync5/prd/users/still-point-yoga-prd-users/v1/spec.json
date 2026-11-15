@@ -1,0 +1,141 @@
+{
+  "name": "Still Point Yoga PRD Users",
+  "artifact": "prd",
+  "section": "Users",
+  "version": 1,
+  "kind": "specialised",
+  "description": "The Users section of the Still Point Yoga PRD: prospective students and the studio team, and what each does. Heading is exactly '## Users'.",
+  "fields": [
+    {
+      "name": "heading",
+      "type": "string",
+      "required": true,
+      "description": "The section heading, written exactly as '## Users'",
+      "enum": [
+        "## Users"
+      ],
+      "nullable": false
+    },
+    {
+      "name": "users",
+      "type": "list[UserGroup]",
+      "required": true,
+      "description": "The user groups of Still Point Yoga: prospective students and the studio team",
+      "enum": null,
+      "nullable": false
+    },
+    {
+      "name": "booking_address",
+      "type": "string",
+      "required": true,
+      "description": "The address the booking form sends to: bookings@stillpoint.example",
+      "enum": [
+        "bookings@stillpoint.example"
+      ],
+      "nullable": false
+    },
+    {
+      "name": "assumptions",
+      "type": "list[string]",
+      "required": false,
+      "description": "Anything assumed; nothing is invented",
+      "enum": null,
+      "nullable": false
+    }
+  ],
+  "objects": [
+    {
+      "name": "UserGroup",
+      "fields": [
+        {
+          "name": "group",
+          "type": "string",
+          "required": true,
+          "description": "The name of this user group",
+          "enum": [
+            "Prospective students",
+            "Studio team"
+          ],
+          "nullable": false
+        },
+        {
+          "name": "needs",
+          "type": "string",
+          "required": false,
+          "description": "What this group needs from the page",
+          "enum": null,
+          "nullable": false
+        },
+        {
+          "name": "actions",
+          "type": "list[string]",
+          "required": false,
+          "description": "What this group does, for example a student sends name, email, class and preferred date, and pays at the studio; the studio team receives the booking at the booking address. Empty if none in this version.",
+          "enum": null,
+          "nullable": false
+        }
+      ]
+    }
+  ],
+  "rules": [
+    {
+      "rule": "not_empty",
+      "path": "users[].group",
+      "name": "every user group is named",
+      "from": "P7"
+    },
+    {
+      "rule": "one_of_present",
+      "path": [
+        "users[].actions",
+        "users[].needs"
+      ],
+      "name": "every group says what it does or what it needs",
+      "from": "P7"
+    },
+    {
+      "rule": "enum",
+      "path": "heading",
+      "name": "heading is exactly ## Users",
+      "from": "P7",
+      "values": [
+        "## Users"
+      ]
+    },
+    {
+      "rule": "enum",
+      "path": "booking_address",
+      "name": "booking address appears",
+      "from": "P7",
+      "values": [
+        "bookings@stillpoint.example"
+      ]
+    }
+  ],
+  "sha": "864dc71d86d3410fa379a485053ead7032731973f76e6499c59dc6a8e04a9138",
+  "extends": "prd/users@generic/1",
+  "made_by": {
+    "run": "j2-20261103-162711",
+    "workflow": "W-4",
+    "atom": "W-4.a1",
+    "agent": "template generator (claude-cli)"
+  },
+  "context": {
+    "business_type": "prd",
+    "facts_used": [
+      "4th Floor, 22 Church Street, Bengaluru 560001",
+      "Monday 7:00 am Gentle Flow 500",
+      "No online payment is taken",
+      "Payment is made at the studio",
+      "Saturday 9:00 am Beginners Basics 400",
+      "Still Point Yoga",
+      "Sunday 8:00 am Slow Sunday 500",
+      "The Users section names prospective students and the studio team and states what each does",
+      "Thursday 7:00 am Breath and Stretch 450",
+      "Tuesday 6:30 pm Strength Yoga 600",
+      "bookings@stillpoint.example",
+      "name, email, class and preferred date"
+    ],
+    "fingerprint": "8ddc67c0c5e114ef0d1b03a8c8de120348f14292916b6d716a6917ad320f0985"
+  }
+}

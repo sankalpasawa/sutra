@@ -1,0 +1,253 @@
+{
+  "$defs": {
+    "ReuseDecision": {
+      "additionalProperties": false,
+      "description": "One content decision of reuse.json (J2 `_content_route`, `_serve_done`): for one document workflow, the door (reuse, adapt,\nbuild or unknown), the rule that chose it and why. `held` and `refunded` are set when a served section passed its checks\nand its charge went back to the budget.",
+      "properties": {
+        "artifact": {
+          "pattern": "^[a-z][a-z0-9_]{1,40}$",
+          "title": "Artifact",
+          "type": "string"
+        },
+        "atom": {
+          "default": "",
+          "maxLength": 200,
+          "title": "Atom",
+          "type": "string"
+        },
+        "door": {
+          "enum": [
+            "reuse",
+            "adapt",
+            "build",
+            "unknown"
+          ],
+          "title": "Door",
+          "type": "string"
+        },
+        "held": {
+          "title": "Held",
+          "type": "boolean"
+        },
+        "key": {
+          "anyOf": [
+            {
+              "maxLength": 200,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Key"
+        },
+        "reason": {
+          "maxLength": 100000,
+          "title": "Reason",
+          "type": "string"
+        },
+        "refunded": {
+          "anyOf": [
+            {
+              "minimum": 0,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Refunded"
+        },
+        "rule": {
+          "maxLength": 40,
+          "minLength": 1,
+          "title": "Rule",
+          "type": "string"
+        },
+        "run": {
+          "maxLength": 200,
+          "title": "Run",
+          "type": "string"
+        },
+        "run_template": {
+          "anyOf": [
+            {
+              "maxLength": 80,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Run Template"
+        },
+        "section": {
+          "maxLength": 80,
+          "minLength": 1,
+          "title": "Section",
+          "type": "string"
+        },
+        "source": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/ReuseSource"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "t": {
+          "maxLength": 40,
+          "minLength": 1,
+          "title": "T",
+          "type": "string"
+        },
+        "workflow": {
+          "maxLength": 200,
+          "title": "Workflow",
+          "type": "string"
+        }
+      },
+      "required": [
+        "run",
+        "t",
+        "workflow",
+        "artifact",
+        "section",
+        "held",
+        "door",
+        "rule",
+        "reason"
+      ],
+      "title": "ReuseDecision",
+      "type": "object"
+    },
+    "ReuseSource": {
+      "additionalProperties": false,
+      "description": "The section a content-door decision points at: the source run and its workflow, the sha of the served data, the template\nit was made with, and what the source stage's audit and receipts said (J2 `j2_artifact_lib.door`).",
+      "properties": {
+        "audit": {
+          "maxLength": 40,
+          "minLength": 1,
+          "title": "Audit",
+          "type": "string"
+        },
+        "fingerprint": {
+          "anyOf": [
+            {
+              "maxLength": 128,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Fingerprint"
+        },
+        "key": {
+          "anyOf": [
+            {
+              "maxLength": 200,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Key"
+        },
+        "receipts_passed": {
+          "default": [],
+          "items": {
+            "anyOf": [
+              {
+                "maxLength": 2000,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "maxItems": 500,
+          "title": "Receipts Passed",
+          "type": "array"
+        },
+        "run": {
+          "maxLength": 200,
+          "title": "Run",
+          "type": "string"
+        },
+        "sha": {
+          "pattern": "^[0-9a-f]{64}$",
+          "title": "Sha",
+          "type": "string"
+        },
+        "template": {
+          "anyOf": [
+            {
+              "maxLength": 2000,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Template"
+        },
+        "workflow": {
+          "maxLength": 200,
+          "title": "Workflow",
+          "type": "string"
+        }
+      },
+      "required": [
+        "run",
+        "workflow",
+        "sha",
+        "audit"
+      ],
+      "title": "ReuseSource",
+      "type": "object"
+    }
+  },
+  "additionalProperties": false,
+  "description": "reuse.json: the content door's decisions for a run (`artifact-reuse/1`), written only when J2_ARTIFACT_LIBRARY is on. `schema`\nis checked and not stored; `to_json()` puts it back.",
+  "properties": {
+    "decisions": {
+      "default": [],
+      "items": {
+        "$ref": "#/$defs/ReuseDecision"
+      },
+      "maxItems": 5000,
+      "title": "Decisions",
+      "type": "array"
+    },
+    "library": {
+      "maxLength": 1000,
+      "minLength": 1,
+      "title": "Library",
+      "type": "string"
+    },
+    "runs": {
+      "maxLength": 1000,
+      "minLength": 1,
+      "title": "Runs",
+      "type": "string"
+    }
+  },
+  "required": [
+    "library",
+    "runs"
+  ],
+  "title": "ArtifactReuse",
+  "type": "object"
+}

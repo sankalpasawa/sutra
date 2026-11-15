@@ -45,17 +45,20 @@ from ..hooks import EventHooks, load_validator
 from ..paths import DataPaths, RunDirError, load_env_file
 from ..port import CallTag, ModelError, PortSpec
 from ..rehydrate import HOST_FILES
-from ..spec import OUTPUT_NAMES, EngineSettings, SettingsError, TaskSpec, read_settings_file
+from ..spec import (
+    EngineSettings, is_output_name, is_run_template_id, run_template_keys, SettingsError, TaskSpec, read_settings_file,
+)
 from .heartbeat import Heartbeat, heartbeat_interval
 from .inbox import Inbox
 
-__all__ = ["main", "Host", "StartFailed", "TICK_S", "STOP_WAIT_S", "DEAD_THREAD_GRACE_S", "DEFAULT_HOOKS", "outcome_status",
+__all__ = ["main", "Host", "StartFailed", "TICK_S", "STOP_WAIT_S", "DEAD_THREAD_GRACE_S", "REVIEWER_SETTLE_S", "DEFAULT_HOOKS", "outcome_status",
            "EXIT_OK", "EXIT_BAD_TASK", "EXIT_START_FAILED", "EXIT_INTERNAL", "EXIT_TERM"]
 
 EXIT_OK, EXIT_BAD_TASK, EXIT_START_FAILED, EXIT_INTERNAL, EXIT_TERM = 0, 2, 3, 70, 143
 TICK_S = 0.15                      # the inbox is polled every 150 ms
 STOP_WAIT_S = 4.0                  # how long a stop waits for the run thread (the whole stop finishes inside 6 s)
 DEAD_THREAD_GRACE_S = 1.0          # status "running" with nobody holding the run lock for this long: the run thread died
+REVIEWER_SETTLE_S = 0.25           # after a late reviewer was discarded: how long its thread may take to leave a write it had already begun (D179)
 DEFAULT_HOOKS = "sutra_app.engine.fnodes.layer:factory"
 STOP_OUTCOME = "Stopped: stopped on request"
 TERM_OUTCOME = "Stopped: the process was asked to stop (SIGTERM)"
@@ -134,6 +137,7 @@ class Host:
         self._terminate = threading.Event()
         self._ended = False
         self._thread_exc: Optional[BaseException] = None
+        self._reviewer_late = False                 # the reviewer outlived `reviewer_wait` and was discarded (D179)
         self._dead_since: Optional[float] = None
         self._saved_hook = None
         self._saved_sigterm = None
@@ -197,7 +201,7 @@ class Host:
         path = self.paths.run_dir / "chat.jsonl"
         lines = []
         if not path.exists():
-            chosen = self.settings.output if self.settings and self.settings.output != "auto" else "website"
+            chosen = self.settings.output if self.settings and self.settings.output != "auto" else None       # no type chosen yet (D165)
             lines.append({"meta": True, "run": self.paths.run_id[3:], "output": chosen,
                           "j2_fixes": int(self.settings.fixes) if self.settings else 0, "force_audit_fail": None,
                           "force_question": None, "test_lessons": None,
@@ -267,6 +271,8 @@ class Host:
         except OSError as exc:
             raise StartFailed(f"settings.json cannot be written: {exc}") from None
         os.environ.update(self.settings.to_env())
+        if self.settings.output == "auto":
+            os.environ.pop("J2_OUTPUT", None)          # no type chosen: J2 leaves it to its planner (D165)
         os.environ.update(paths.j2_env())
         if self.mock:
             os.environ["STUDIO_MOCK"] = "1"
@@ -301,7 +307,7 @@ class Host:
                 found = pick(row) if isinstance(row, dict) else None
             except (OSError, ValueError, IndexError):
                 continue
-            if found in OUTPUT_NAMES and found != "auto":
+            if is_output_name(found):          # the shape only: whether the type still exists is checked where J2 is loaded (D166)
                 return found
         return None
 
@@ -317,7 +323,7 @@ class Host:
         selection = capabilities.select_output(task.user_text, context)
         forced = {name: value for name, value in capabilities.forced_settings(selection.output).items()
                   if getattr(settings, name, value) != value}
-        self.settings = settings.model_copy(update={"output": selection.output, **forced})
+        self.settings = settings.model_copy(update={"output": selection.output or "auto", **forced})      # no type: J2's planner chooses (D165)
         self.selection, self.has_folder = selection, has_folder
         record = {"choice": settings.output, "output": selection.output, "rule": selection.rule, "reason": selection.reason,
                   "folder": has_folder}
@@ -416,16 +422,41 @@ class Host:
             self._hooks_off(target, exc)
             return plain()
 
+    def _check_output_known(self, j2) -> None:
+        """The chosen type must exist in the data (J2's `types.json`, the local types, a registered capability type): an unknown one the owner pinned
+        is a refused start that says what is known, never a silent default (D166). A follow-up of a type that is gone (a deleted local type) is left to
+        J2's planner instead, with one trace line."""
+        chosen = self.selection.output if self.selection is not None else None
+        known = j2.j2_types.names()
+        if chosen is None or chosen in known:
+            return
+        if self.selection.rule == "followup":
+            self.trace("output.unknown", {"output": chosen, "known": known, "action": "the team's planner chooses"})
+            self.selection = type(self.selection)(None, "planner", "the type of the earlier run no longer exists: the team's planner chooses")
+            self.settings = self.settings.model_copy(update={"output": "auto"})
+            os.environ.pop("J2_OUTPUT", None)
+            try:
+                _atomic_write(self.paths.settings_json, json.dumps(self.settings.model_dump(), indent=2) + "\n")
+                _atomic_write(self.paths.run_dir / "output.json", json.dumps(
+                    {"choice": "auto", "output": None, "rule": self.selection.rule, "reason": self.selection.reason, "folder": self.has_folder}, indent=2) + "\n")
+            except OSError as exc:
+                self.trace("publish.error", {"where": "output.json", "error": clip(str(exc), 300)})
+            return
+        raise StartFailed(f"unknown output type {chosen} (known: {', '.join(known)})", chat=True)
+
     def _make_run(self) -> None:
         from .publisher import HostHooks, StatePublisher           # these import J2: the environment is set by now
         task, paths = self.task, self.paths
         from .. import capabilities, j2
         capabilities.register(j2)                                  # D126: the engine's own outputs, before any J2Run exists
+        self._check_output_known(j2)
         self.context = capabilities.EngineContext(task=task, settings=self.settings, paths=paths, data_dir=paths.data_dir,
                                                   selection=self.selection, has_folder=self.has_folder)
         capabilities.install(self.context)                         # the tag and progress hooks every model call of this process runs
         self.publisher = StatePublisher(self.writer, paths.run_dir)
-        self.hooks = HostHooks(self._make_hooks(self.publisher.notify), self.publisher, self.context)
+        inner = self._make_hooks(self.publisher.notify)
+        inner.reviewer = bool(self.settings.reviewer)              # P19 asks `review_enabled()`; the setting is the host's (D179)
+        self.hooks = HostHooks(inner, self.publisher, self.context)
         self.run = j2.J2Run(run_dir=str(paths.run_dir), run_id=task.run_id[3:], hooks=self.hooks)
         self.context.run = self.run
         self.publisher.attach(self.run)
@@ -530,11 +561,14 @@ class Host:
         self.writer.emit(run_started_event(pid=os.getpid(), mock=self.mock, seed=seed))
         self.heartbeat = Heartbeat(self.writer, heartbeat_interval())
         self.heartbeat.start()                     # the first beat follows run.started at once
+        said_of_template = self._take_run_template(seed)          # before any line is posted: J2 refuses once the chat has a line
         if self.selection is not None:
             from ..capabilities.select import chat_line
             said = chat_line(self.selection, self.has_folder)
-            if said:                                   # project work only: a website selection posts nothing, so existing runs are unchanged
+            if said:                                   # project work only: any other selection posts nothing, so existing runs are unchanged
                 lines.append(said)
+        if said_of_template:
+            lines.append(said_of_template)
         if self._function_nodes_off:
             lines.append(f"function nodes are off: {self._function_nodes_off}")
         if task.framing.strip():
@@ -555,6 +589,47 @@ class Host:
             if code is not None:
                 return code
             self._terminate.wait(TICK_S)
+
+    # ---- a run template named by the request (D182) ------------------------------------------------------------------------------------
+    def _take_run_template(self, seed: str) -> Optional[str]:
+        """The task may name a run template (`J2_RUN_TEMPLATE`, with `J2_RUN_TEMPLATE_WORKFLOWS`: `all` or a comma list), which the page's "Use whole
+        template" and "Use selected workflows" links send. Called after `run.started` and before the first line is posted, because
+        `J2Run.set_run_template` is False once the chat has a line. A follow-up (any seed) ignores both keys: the earlier run's plan is the plan.
+
+        Returns None when the task names none, else the one `system` line for the chat ONLY when the template was not used ("The run template <id>
+        was not used: <reason>; the team starts from scratch."); a used template speaks through J2's own chat line. A refusal is never a refused
+        start: the run goes on from scratch, and one `run_template.requested` trace line keeps the choice and the answer."""
+        named = self.task.settings.get("J2_RUN_TEMPLATE")
+        if not named or self.task.seed_from or seed != "none":
+            return None
+        wanted = named if is_run_template_id(named) else None
+        keys = run_template_keys(self.task.settings.get("J2_RUN_TEMPLATE_WORKFLOWS", "all"))
+        label = named if wanted else "that name"
+        if wanted is None:
+            why = "it is not a run template id"
+        elif keys is None:
+            why = "the list of workflows is not valid"
+        elif not self.settings.effective().run_templates:
+            why = "run templates are switched off in this team's settings"
+        else:
+            why = None
+            try:
+                from .. import j2_template_lib
+                if j2_template_lib.get_run_template(wanted) is None:
+                    why = "the library has no run template with that id"
+            except Exception as exc:  # noqa: BLE001 - the library never blocks a start
+                why = f"the library could not be read ({type(exc).__name__})"
+        taken = False
+        if why is None:
+            try:
+                taken = bool(self.run.set_run_template(wanted, keys or None))
+            except Exception as exc:  # noqa: BLE001
+                why = f"the engine could not take it ({type(exc).__name__})"
+            else:
+                why = None if taken else "the engine did not take it"
+        self.trace("run_template.requested", {"id": clip(str(named), 80), "workflows": clip(str(self.task.settings.get("J2_RUN_TEMPLATE_WORKFLOWS", "all")), 200),
+                                              "taken": taken, "why": why})
+        return None if taken else f"The run template {label} was not used: {why}; the team starts from scratch."
 
     # ---- what the run leaves for the owner (D135) -------------------------------------------------------------------------------
     def _delivers(self) -> bool:
@@ -736,8 +811,10 @@ class Host:
             self.trace("publish.error", {"where": "stop summary file", "error": clip(str(err), 300)})
 
     def _conclude(self, status: str, outcome: str, code: Optional[str]) -> None:
-        """Final publish, then `run.ended`: the publisher and the heartbeat are stopped first, so nothing follows it."""
+        """The reviewer is awaited (capped), then the final publish and `run.ended`: the publisher and the heartbeat are stopped first, so
+        nothing follows it."""
         self.inbox.close()
+        self._join_reviewer()                      # D179: the run folder must be stable before anything collects, publishes or closes the writer
         self.publisher.stop()
         from . import finish
         finish.run_steps(self, status)             # D142, D143: the steps of a run that ended well; the heartbeat still beats
@@ -747,6 +824,30 @@ class Host:
         except Exception as err:  # noqa: BLE001
             self.trace("publish.error", {"where": "final", "error": clip(f"{type(err).__name__}: {err}", 300)})
         self._emit_ended(status, clip(outcome, 2000), code)
+
+    def _join_reviewer(self) -> None:
+        """J2 writes `report.json`, `report.md` and `artifacts.json` once more when the reviewer's notes arrive, from a thread it does not name or
+        offer to join (`J2Run.review_thread`). Wait for it for at most `reviewer_wait` seconds, with the publisher and the heartbeat still running
+        (a stop or SIGTERM waits no longer than a stop does: the port is closed, so the call ends). A reviewer that is still going after that is
+        discarded: bumping `report_gen` makes J2's own `_review_later` save nothing, the placeholder stays in the report, and one `reviewer.late`
+        trace line says so. Nothing is written for the run after `run.ended`."""
+        run = self.run
+        thread = getattr(run, "review_thread", None)
+        if thread is None or not thread.is_alive():
+            return
+        wait = float(self.settings.reviewer_wait) if self.settings is not None else 0.0
+        if self.stopping.is_set():
+            wait = min(wait, STOP_WAIT_S)
+        started = time.monotonic()
+        if wait > 0:
+            thread.join(wait)
+        if not thread.is_alive():
+            return
+        run.report_gen = getattr(run, "report_gen", 0) + 1       # J2: `if gen == self.report_gen: self._save_report(...)`
+        self._reviewer_late = True
+        self.trace("reviewer.late", {"waited": round(time.monotonic() - started, 3), "reviewer_wait": wait,
+                                     "result": "discarded: the report keeps its placeholder"})
+        thread.join(REVIEWER_SETTLE_S)
 
     def _close_port(self) -> None:
         try:
@@ -761,6 +862,11 @@ class Host:
 
         def hook(args):
             if args.thread is not None and args.thread.name.startswith("sutra-"):
+                return self._saved_hook(args)
+            if args.thread is not None and args.thread is getattr(self.run, "review_thread", None):
+                # J2's reviewer thread is not the run: its failure (a write after the host closed its writer, a bad report) is a trace line and a
+                # stderr traceback, never a crashed run (`_save_report` is outside the thread's own try, D179)
+                self.trace("reviewer.error", {"error": clip(f"{type(args.exc_value).__name__}: {args.exc_value}", 300), "late": self._reviewer_late})
                 return self._saved_hook(args)
             self._thread_exc = args.exc_value
             self._saved_hook(args)

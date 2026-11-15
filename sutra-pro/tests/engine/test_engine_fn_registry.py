@@ -25,7 +25,7 @@ from pydantic import ValidationError
 from sutra_app.engine.fnodes import evidence as evidence_module
 from sutra_app.engine.fnodes import registry as registry_module
 from sutra_app.engine.fnodes.evidence import RECORD_NAMES, Evidence, merge_records, read_records
-from sutra_app.engine.fnodes.registry import (AGENT_CONTENT, GATE, J2_STRINGS, NOT_CHECKABLE, REGISTRY, USER_CONTENT, J2_ROUTES, CheckArgsError,
+from sutra_app.engine.fnodes.registry import (J2_STRINGS, REGISTRY, CheckArgsError, agent_content, gate, j2_routes, not_checkable, user_content,
                                                Outcome, UnknownCheck, stamp_check, workable_problems)
 from sutra_app.library.atom import CHECK_NAMES, REGISTRY_CHECKS, check_arity
 
@@ -358,9 +358,25 @@ def run(j2, tmp_path, llm_reset):
     return lambda: j2.J2Run(run_dir=tmp_path / "runs" / f"j2-20261104-1000{next(counter):02d}-7f3a")
 
 
-def test_the_three_regexes_are_j2s_own(j2):
-    for mine, theirs in ((NOT_CHECKABLE, j2.J2Run.NOT_CHECKABLE), (AGENT_CONTENT, j2.AGENT_CONTENT), (USER_CONTENT, j2.USER_CONTENT)):
-        assert (mine.pattern, mine.flags) == (theirs.pattern, theirs.flags)
+def test_the_three_regexes_are_j2s_own_read_from_j2_not_copied(j2):
+    """D188 (R-1): equal by construction, so no character-for-character parity is kept; the registry hands back J2's own objects."""
+    for mine, theirs in ((not_checkable(), j2.J2Run.NOT_CHECKABLE), (agent_content(), j2.AGENT_CONTENT), (user_content(), j2.USER_CONTENT)):
+        assert mine is theirs
+
+
+def test_the_registry_reads_j2_at_first_use_and_not_when_it_is_imported():
+    """J2 reads some constants from the environment when it is imported and the host sets the environment first (D188): importing the registry
+    must not import J2, and the first read does."""
+    import subprocess
+    import sys
+    code = ("import sys\n"
+            "import sutra_app.engine.fnodes.registry as r\n"
+            "assert 'sutra_app.engine.j2' not in sys.modules and 'sutra_app.engine.j2_realization' not in sys.modules, 'imported with the module'\n"
+            "assert r.gate() == 0.8 and 'sutra_app.engine.j2_realization' in sys.modules\n"
+            "assert r.not_checkable().search('Audit passes') and 'sutra_app.engine.j2' in sys.modules\n")
+    done = subprocess.run([sys.executable, "-c", code], capture_output=True, text=True, timeout=120,
+                          env={**os.environ, "PYTHONPATH": os.pathsep.join(p for p in sys.path if p)})
+    assert done.returncode == 0, done.stderr
 
 
 STAMP_GOALS = [
@@ -375,8 +391,22 @@ STAMP_GOALS = [
 
 @pytest.mark.parametrize("goal", STAMP_GOALS, ids=lambda g: json.dumps(g)[:50])
 def test_stamp_check_equals_j2s_stamp_check(j2, goal):
-    stand_in = types.SimpleNamespace(goal=goal, NOT_CHECKABLE=j2.J2Run.NOT_CHECKABLE)
-    assert stamp_check(goal) == j2.J2Run._stamp_check(stand_in)
+    """With no type chosen, and with each type of the data (J2 names what is built by the type's label; the check reads `turn.stage`)."""
+    for output in (None, *j2.j2_types.names()):
+        stand_in = types.SimpleNamespace(goal=goal, NOT_CHECKABLE=j2.J2Run.NOT_CHECKABLE, output=output)
+        assert stamp_check(goal, output) == j2.J2Run._stamp_check(stand_in), output
+
+
+def test_the_charter_stamp_names_what_is_built_by_the_stage_type(j2):
+    goal = {"statement": "s", "done_when": ["a", "b", "Requester signs off"]}
+    name = next(n for n in j2.j2_types.names() if j2.is_page(n))
+    ev = build_evidence("charter-stamp", {"turn": {"function": "identity", "kind": "intake", "stage": name},
+                                          "reply": {"enough": True}, "records": {"goal.json": goal}, "saved": ["goal.json"]})
+    why = REGISTRY.run("charter-stamp", ev, ()).evidence
+    assert f"reading the {j2.j2_types.info(name)['label'].lower()}" in why
+    bare = build_evidence("charter-stamp", {"turn": {"function": "identity", "kind": "intake"}, "reply": {"enough": True},
+                                            "records": {"goal.json": goal}, "saved": ["goal.json"]})
+    assert "reading the output" in REGISTRY.run("charter-stamp", bare, ()).evidence
 
 
 def _row(i, verdict="PASS", **kw):
@@ -403,12 +433,25 @@ AUDITS = [
     {"output": "prd", "results": [_row(1, "NEEDS_REVISION")], "rubric": [{"id": "D-1", "verdict": "NEEDS_REVISION", "criterion": "x", "pass": False}],
      "conditions": [{"id": "NC-2", "text": "t", "evidence": "e", "met": False}]},
     {"output": "hld", "results": [_row(1)], "rubric": [], "conditions": []},
+    {"output": "business_report", "results": [_row(1, "NEEDS_REVISION")], "rubric": [{"id": "D-1", "verdict": "NEEDS_REVISION", "criterion": "x", "pass": False}],
+     "conditions": [{"id": "C1-1", "text": "t", "evidence": "e", "met": False}]},        # a type the code never names: a document by its form
+    {"output": "website", "results": [_row(1)], "mechanical": {"available": False, "note": "no Chrome"}},
+    {"output": None, "results": [_row(1, "NEEDS_REVISION")], "rubric": [], "conditions": []},         # a run with no type is no page
 ]
 
 
 @pytest.mark.parametrize("audit", AUDITS, ids=lambda a: json.dumps(a)[:50])
 def test_workable_problems_equal_j2s_workable(j2, audit):
     assert workable_problems(audit) == j2.workable(audit)
+
+
+def test_a_missing_output_means_what_j2_means_by_it_and_the_form_is_read_from_the_data(j2):
+    page = next(n for n in j2.j2_types.names() if j2.is_page(n))
+    document = next(n for n in j2.j2_types.names() if not j2.is_page(n))
+    audit = {"results": [_row(1)], "mechanical": {"available": False, "note": "no Chrome"}}
+    assert any("render check" in x for x in workable_problems(audit)) and workable_problems({**audit, "output": page}) == workable_problems(audit)
+    assert not any("render check" in x for x in workable_problems({**audit, "output": document}))
+    assert workable_problems({**audit, "output": document}) == j2.workable({**audit, "output": document})
 
 
 def test_design_problems_are_j2_checks_own_function(j2):
@@ -421,11 +464,11 @@ def test_design_problems_are_j2_checks_own_function(j2):
 
 
 def test_the_dispute_routes_are_j2s_routes(j2):
-    assert {fn: tuple(to) for fn, to in J2_ROUTES.items()} == {fn: tuple(j2.ROUTES[fn]) for fn in J2_ROUTES}
+    assert j2_routes() is j2.ROUTES and set(j2.ROUTES) == {"identity", "adaptation", "priority", "coordination", "audit"}
 
 
 def test_the_gate_is_the_judges_threshold(j2):
-    assert GATE == j2.j2_realization.THRESHOLD == 0.80
+    assert gate() == j2.j2_realization.THRESHOLD == 0.80
 
 
 def test_the_texts_j2_posts_are_still_what_the_checks_read(j2):

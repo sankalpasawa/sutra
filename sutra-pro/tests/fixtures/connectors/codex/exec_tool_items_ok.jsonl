@@ -1,0 +1,6 @@
+{"type":"thread.started","thread_id":"01a1da09-6100-7d51-9197-3e0a53aa61a6"}
+{"type":"turn.started"}
+{"type":"item.started","item":{"id":"item_0","type":"command_execution","command":"/bin/zsh -lc \"sed -n '1,120p' notes.txt\"","aggregated_output":"","exit_code":null,"status":"in_progress"}}
+{"type":"item.completed","item":{"id":"item_0","type":"command_execution","command":"/bin/zsh -lc \"sed -n '1,120p' notes.txt\"","aggregated_output":"scratch notes: the launch checklist has three items, build, test and ship.\n","exit_code":0,"status":"completed"}}
+{"type":"item.completed","item":{"id":"item_1","type":"agent_message","text":"The launch checklist has three items: build, test, and ship."}}
+{"type":"turn.completed","usage":{"input_tokens":24282,"cached_input_tokens":22272,"cache_write_input_tokens":0,"output_tokens":97,"reasoning_output_tokens":9}}

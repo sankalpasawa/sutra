@@ -1,0 +1,27 @@
+{
+  "schema": "sutra-extension/2",
+  "id": "122_scrub_by_code",
+  "methods": [
+    {
+      "id": "scrub-text@1",
+      "effect": "scrubbed",
+      "requires": [
+        "feedback_given"
+      ],
+      "provider": "sanitizer",
+      "grant": "action:scrub-text@1",
+      "cost": {
+        "compute": 1,
+        "money": 0,
+        "attention": 0
+      },
+      "action": "scrub_text",
+      "approved": true,
+      "source": "reviewed/synthetic-method",
+      "scrubs": "feedback_given"
+    }
+  ],
+  "grants": [
+    "action:scrub-text@1"
+  ]
+}

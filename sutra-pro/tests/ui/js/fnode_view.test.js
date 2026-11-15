@@ -699,6 +699,166 @@ test("atom words from the wire are escaped", () => {
   assert.equal(textOf(one(c, "span.agoal")), bad);
 });
 
+/* ================================================================ atom cards: what the atom produced (D157) */
+const resultOf = atom => block(card(atom), "result");
+const inner = atom => resultOf(atom).children[1];                                       // the div inside the labelled block: the pill and the rows
+const kinds = node => node.children.map(c => c.tag + (c.attrs.class ? "." + c.attrs.class.split(" ").join(".") : ""));
+const withBody = (atom, body) => ({...atom, body: {...atom.body, ...body}});
+const REPLY_TEXT = '{\n  "say": "hello",\n  "next": "Adaptation"\n}';
+const DONE = [{verb: "do", name: "read your answer: carry on", form: "decision", ref: "chat"}, {verb: "do", name: "posted 1 message to you", form: "message", ref: "chat"}];
+
+test("a closed atom's Result block says what the turn made, then offers the reply, above everything else", () => {
+  const result = resultOf(CLOSED);
+  const output = one(result, "div.aoutput");
+  assert.equal(output.attrs["data-row"], "output");
+  assert.equal(textOf(one(output, "b")), "Output");
+  assert.deepEqual(select(output, "li").map(textOf), ["read your answer: carry on", "posted 1 message to you"]);
+  assert.deepEqual(kinds(inner(CLOSED)), ["span.apill.st-closed", "div.arow.aoutput", "details.areply", "div.arow.aconcern", "div.arow.acost"]);
+});
+
+test("the reply is a fold, closed until the owner opens it, holding the text as it was printed", () => {
+  const fold = one(resultOf(CLOSED), "details.areply");
+  assert.equal("open" in fold.attrs, false);
+  assert.equal(fold.attrs["data-row"], "reply");
+  assert.equal(fold.attrs["data-key"], "reply-a-a810960e61-02");                         // so that SutraCtx.paint keeps it open across a redraw
+  assert.equal(textOf(one(fold, "summary")), "The reply");
+  const pre = one(fold, "pre.areplytext");
+  assert.equal(textOf(pre), atomById("a-a810960e61-02").body.reply.text);
+  assert.equal(textOf(pre).includes('\n  "clause"'), true);                              // new lines and indents stay
+  assert.equal(select(fold, "span.empty").length, 0);                                    // not shortened: no note
+});
+
+test("a failed atom shows its reply behind the fold, above the Reason, and the reply says why the check failed", () => {
+  const result = resultOf(FAILED);
+  assert.deepEqual(kinds(inner(FAILED)), ["span.apill.st-verify_failed", "div.arow.aoutput", "details.areply", "div.arow.areason", "div.arow.acost"]);
+  assert.deepEqual(select(one(result, "div.aoutput"), "li").map(textOf), ["the charter: Coffee shop landing page, 2 done-when items", "posted 1 message to Adaptation"]);
+  const reply = JSON.parse(textOf(one(result, "pre.areplytext")));
+  assert.equal(reply.goal.done_when.length, 2);                                          // the check said: fewer than 3 'done when' criteria
+  assert.equal(textOf(one(result, "div.areason")), "Reason verify failed: charter-stamp: Charter rejected: fewer than 3 'done when' criteria.");
+});
+
+test("an open atom shows what its last failed try said", () => {
+  const result = resultOf(OPEN);
+  assert.deepEqual(select(one(result, "div.aoutput"), "li").map(textOf), ["said: I need one more answer."]);
+  assert.equal(JSON.parse(textOf(one(result, "pre.areplytext"))).enough, false);
+});
+
+test("an atom with nothing recorded says so instead of showing nothing, and an atom that has only just opened says nothing yet", () => {
+  const old = resultOf(ABANDONED);                                                       // stored before the layer recorded anything
+  assert.equal(textOf(one(old, "div.aoutput")), "Output not recorded for this atom");
+  assert.equal(select(old, "details.areply").length, 0);
+  assert.equal(textOf(one(old, "div.areason")), "Reason replaced: a newer turn opened on this node");
+  const fresh = clone(OPEN);
+  fresh.attempt = 0;
+  fresh.body = {...fresh.body, produced: [], reply: null};
+  assert.equal(textOf(one(resultOf(fresh), "div.aoutput")), "Output nothing yet");
+  assert.equal(textOf(one(resultOf({id: "x", state: "closed", goal: "g", body: {}}), "div.aoutput")), "Output not recorded for this atom");
+  assert.equal(textOf(one(resultOf({id: "x", state: "open", attempt: 1, goal: "g", body: {}}), "div.aoutput")), "Output not recorded for this atom");
+});
+
+test("a refused atom never ran: it has no Output row and no reply", () => {
+  const refused = resultOf(withBody(REFUSED, {produced: DONE, reply: {text: REPLY_TEXT, clipped: false}}));
+  assert.equal(select(refused, "div.aoutput").length, 0);
+  assert.equal(select(refused, "details.areply").length, 0);
+  assert.deepEqual(kinds(refused.children[1]), ["span.apill.st-refused", "div.arow.acost"]);
+});
+
+test("a reply that was cut says how much of it is shown", () => {
+  const cut = withBody(CLOSED, {reply: {text: "x".repeat(4000), clipped: true}});
+  assert.equal(textOf(one(one(resultOf(cut), "details.areply"), "summary")), "The reply (shortened to its first 4,000 characters)");
+  const odd = withBody(CLOSED, {reply: {text: "short", clipped: true}});
+  assert.equal(textOf(one(one(resultOf(odd), "details.areply"), "summary")), "The reply (shortened to its first 5 characters)");
+  assert.equal(textOf(one(one(resultOf(withBody(CLOSED, {reply: {text: "short", clipped: "yes"}})), "details.areply"), "summary")), "The reply");
+});
+
+test("the reply is read as printed: new lines kept, other control characters dropped, and never more than 20,000 characters", () => {
+  const normalized = normalizeAtom(withBody(CLOSED, {reply: {text: "a\r\nb\rc\u0000d\u0007e\tf\u007f", clipped: false}}));
+  assert.equal(normalized.reply.text, "a\nb\ncde\tf");
+  const huge = normalizeAtom(withBody(CLOSED, {reply: {text: "y".repeat(30000), clipped: false}}));
+  assert.equal(huge.reply.text.length, 20000);
+  assert.equal(huge.reply.clipped, true);
+  assert.equal(textOf(one(one(resultOf(withBody(CLOSED, {reply: {text: "y".repeat(30000)}})), "details.areply"), "summary")), "The reply (shortened to its first 20,000 characters)");
+});
+
+test("every word of the output and the reply is escaped, and the card stays well formed", () => {
+  const bad = `<script>alert("x")</script> & 'q' </pre></details>`;
+  const html = atomHtml(withBody(CLOSED, {produced: [{verb: "do", name: bad, form: bad, ref: bad}], reply: {text: bad + "\n  " + bad, clipped: true}}), {open: true});
+  assert.equal(html.includes("<script"), false);
+  assert.equal(html.includes("</pre></details>\n"), false);
+  const c = one(dom(html), "details.atomcard");
+  assert.equal(textOf(one(c, "div.aoutput li")), bad);                                   // a function turn's item shows its name only
+  assert.equal(textOf(one(c, "pre.areplytext")), bad + "\n  " + bad);
+  assert.equal(select(c, "details.areply").length, 1);
+});
+
+test("the output and the reply of malformed data are left out, never an error", () => {
+  const draw = body => resultOf({id: "x", state: "closed", goal: "g", attempt: 1, body});
+  assert.equal(textOf(one(draw({produced: "x", reply: 5}), "div.aoutput")), "Output not recorded for this atom");
+  assert.equal(textOf(one(draw({produced: [null, 4, [], {}, {name: ""}, {name: {}}, {name: null}], reply: {text: 5}}), "div.aoutput")), "Output not recorded for this atom");
+  assert.deepEqual(select(draw({produced: [{name: 7}, {name: "  two   words\n"}]}), "li").map(textOf), ["7", "two words"]);       // a number is its digits, words are on one line
+  assert.equal(select(draw({reply: {text: 5}}), "details.areply").length, 0);
+  assert.equal(select(draw({reply: "text"}), "details.areply").length, 0);
+  assert.deepEqual(select(draw({produced: ["plain words", {name: "an object"}, null]}), "li").map(textOf), ["plain words", "an object"]);
+  assert.equal(textOf(one(draw({reply: {text: ""}}), "pre.areplytext")), "");               // a reply with no text is still a reply
+  [{}, {produced: {}, reply: []}].forEach(body => assert.equal(draw(body).tag, "div"));
+});
+
+test("a function atom's notes are the layer's own trace text and are not drawn", () => {
+  assert.equal(select(resultOf(withBody(CLOSED, {notes: "declared bash, did llm"})), "div.anotes").length, 0);
+});
+
+const BUILT = {
+  id: "j2-20261104-100004-7f3a:W-1.a1", schema: "atom/1", node_id: "s-1a2d9a66b0", state: "closed", goal: "The hero section names the cafe", attempt: 1,
+  ts_open: "2026-11-04T10:05:00Z", ts_closed: "2026-11-04T10:06:00Z", usage: {calls: 2, usd: 0.04, tokens_in: 500, tokens_out: 200},
+  body: {schema: "atom/1", id: "W-1.a1", status: "closed", how: {kind: "AI", agent: "W-1 Hero builder"}, verification: [{check: "exists", method: "heading-present: Hero", met: true, evidence: "found"}],
+    output: [{verb: "make", name: "Hero section", form: "page", ref: "site/index.html#hero"}, {verb: "make", name: "Style sheet", form: "code", ref: "site/style.css"},
+      {verb: "do", name: "Sent the booking", form: "send", ref: "W-3.a1:1"}], notes: "Built the hero section from the charter facts."},
+};
+
+test("a builder's Result block draws its output as name, form and where it lives in plain words, and its notes", () => {
+  const result = resultOf(BUILT);
+  assert.deepEqual(select(one(result, "div.aoutput"), "li").map(textOf), [
+    "Hero section (page, site/index.html, section hero)", "Style sheet (code, site/style.css)", "Sent the booking (send, W-3.a1:1)"]);
+  assert.equal(textOf(one(result, "div.anotes")), "Notes Built the hero section from the charter facts.");
+  assert.equal(one(result, "div.anotes").attrs["data-row"], "notes");
+  assert.deepEqual(kinds(inner(BUILT)), ["span.apill.st-closed", "div.arow.aoutput", "div.arow.anotes", "div.arow.acost"]);
+  assert.equal(select(result, "details.areply").length, 0);                                // a builder has no turn reply
+  assert.equal(select(resultOf(withBody(BUILT, {reply: {text: "x"}})), "details.areply").length, 0);
+});
+
+test("a builder with no output says so, and notes are shown without an output", () => {
+  const none = withBody(BUILT, {output: [], notes: ""});
+  assert.equal(textOf(one(resultOf(none), "div.aoutput")), "Output not recorded for this atom");
+  assert.equal(select(resultOf(none), "div.anotes").length, 0);
+  assert.equal(textOf(one(resultOf({...none, state: "open", attempt: 0}), "div.aoutput")), "Output nothing yet");
+  assert.equal(textOf(one(resultOf(withBody(BUILT, {output: [], notes: "Nothing to build"})), "div.anotes")), "Notes Nothing to build");
+  assert.equal(select(resultOf(withBody(BUILT, {output: [{verb: "make", name: "A", form: "", ref: ""}]})), "li span.empty").length, 0);   // no form and no ref: no brackets
+});
+
+test("every word of a builder's output and notes is escaped", () => {
+  const bad = `<img src=x onerror="y"> & "q"`;
+  const html = atomHtml(withBody(BUILT, {output: [{verb: "make", name: bad, form: bad, ref: bad + "#" + bad}], notes: bad}));
+  assert.equal(html.includes("<img"), false);
+  const c = one(dom(html), "details.atomcard");
+  assert.equal(textOf(one(c, "div.aoutput li")), bad + " (" + bad + ", " + bad + ", section " + bad + ")");
+  assert.equal(textOf(one(c, "div.anotes")), "Notes " + bad);
+});
+
+test("normalizeAtom reads what an atom produced, and the cards drawn from a read atom and a raw atom are the same", () => {
+  const n = normalizeAtom(CLOSED);
+  assert.deepEqual(n.made.map(m => [m.verb, m.name, m.form, m.ref]), [["do", "read your answer: carry on", "decision", "chat"], ["do", "posted 1 message to you", "message", "chat"]]);
+  assert.equal(n.reply.clipped, false);
+  assert.equal(n.notes, "");
+  [CLOSED, FAILED, OPEN, ABANDONED, REFUSED, BUILT].forEach(atom => assert.equal(atomHtml(normalizeAtom(atom)), atomHtml(atom)));
+  const bare = normalizeAtom({id: "x", state: "closed", body: {}});
+  assert.deepEqual([bare.made, bare.reply, bare.notes], [[], null, ""]);
+  const before = normalizeAtom(CLOSED);                                                   // an atom read by a copy of the view from before D157
+  delete before.made;
+  delete before.reply;
+  delete before.notes;
+  assert.equal(textOf(one(block(one(dom(atomHtml(before)), "details.atomcard"), "result"), "div.aoutput")), "Output not recorded for this atom");
+});
+
 /* ================================================================ the five functions of a team */
 const WEB = GRAPH.nodes.find(n => n.id === "web");
 const FAQ = GRAPH.nodes.find(n => n.id === "faq");

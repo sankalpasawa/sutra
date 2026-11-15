@@ -19,9 +19,12 @@ corrected the reply (the evidence narrates the correction). The phases: `reply` 
 failure is a live try), `turn` (judged once at turn end on the whole turn) and `event` (judged when its event arrives). A
 check that serves two phases tells them apart by `ev.outcome` (None before the turn has ended).
 
-J2's own functions are the oracle. `stamp_check`, `workable_problems` and the three regexes are ports of the vendored
-`j2.py` code (the parity tests tie them to it); `design_problems` and `problems` are `j2_check`'s own functions; the gate
-is `j2_realization.THRESHOLD`'s value. Four checks read strings J2 posts (`Validator rejected`, the two Priority price
+J2's own functions are the oracle. `stamp_check` and `workable_problems` are ports of the vendored `j2.py` code (the parity tests tie
+them to it); `design_problems` and `problems` are `j2_check`'s own functions. What J2 holds as a value is READ from J2, at first use and never when
+this module is imported (J2 reads some of its own constants from the environment when it is imported, and the host sets the environment first;
+D188, rule R-1): the judge gate is `gate()` (`j2_realization.THRESHOLD`), the three regexes are `not_checkable()`, `agent_content()` and
+`user_content()`, the dispute routes are `j2_routes()`. When J2 deletes `NOT_CHECKABLE` (its fix A4, D189) `not_checkable()` fails by name and the
+check that uses it goes with it, in the same change. Four checks read strings J2 posts (`Validator rejected`, the two Priority price
 notes, the charter acceptance note, the `Budget n/m used` line): the constants below hold them and the parity tests pin
 each against the vendored source.
 """
@@ -45,21 +48,45 @@ from sutra_app.library.types import clip
 from .evidence import Evidence
 
 __all__ = [
-    "Outcome", "CheckSpec", "CheckRegistry", "REGISTRY", "CheckFn", "CheckArgsError", "UnknownCheck", "GATE", "NOT_CHECKABLE",
-    "AGENT_CONTENT", "USER_CONTENT", "J2_ROUTES", "stamp_check", "workable_problems", "J2_STRINGS",
+    "Outcome", "CheckSpec", "CheckRegistry", "REGISTRY", "CheckFn", "CheckArgsError", "UnknownCheck", "gate", "not_checkable",
+    "agent_content", "user_content", "j2_routes", "stamp_check", "workable_problems", "J2_STRINGS",
 ]
 
 EVIDENCE_MAX: Final = 2000
-GATE: Final = 0.80                         # j2_realization.THRESHOLD, the plan confidence the judge gate asks for
 
-# J2's own regexes, character for character (j2.py `J2Run.NOT_CHECKABLE`, `AGENT_CONTENT`, `USER_CONTENT`)
-NOT_CHECKABLE: Final = re.compile(r"\b(requester|audit\w*|launch\w*|go(?:es|ing)? live|verif\w*|approv\w*|sign(?:ed)?[- ]?off)\b",
-                                  re.I)
-AGENT_CONTENT: Final = re.compile(r"@(?!Requester\b)[A-Za-z]|\b[WFRC]-\d+\b|\bre-?pric|\b\d+\s*units?\b|\b(?:Adaptation|"
-                                  r"Priority|Coordination|Validator|Audit)\b|\b(?:workflows?|GRANT|COUNTER|REFUSE|envelope|"
-                                  r"rate[- ]card)\b", re.I)
-USER_CONTENT: Final = re.compile(r"@Requester\b|\bthank(?:s| you)\b|\bI(?:'ll| will) start\b|\bwould you like\b|"
-                                 r"\bdo you want\b|\byour (?:site|website|shop|store|business|brief)\b", re.I)
+
+# ---- what J2 holds, read from J2 at first use (D188, R-1) ------------------------------------------------------------------------------
+def gate() -> float:
+    """The plan confidence the judge gate asks for: `j2_realization.THRESHOLD`."""
+    from sutra_app.engine import j2_realization
+    return j2_realization.THRESHOLD
+
+
+def not_checkable() -> "re.Pattern[str]":
+    """J2's `J2Run.NOT_CHECKABLE`: words a done-when item may not contain (the charter stamp)."""
+    from sutra_app.engine import j2
+    return j2.J2Run.NOT_CHECKABLE
+
+
+def agent_content() -> "re.Pattern[str]":
+    """J2's `AGENT_CONTENT`: what does not belong in the text addressed to the Requester."""
+    from sutra_app.engine import j2
+    return j2.AGENT_CONTENT
+
+
+def user_content() -> "re.Pattern[str]":
+    """J2's `USER_CONTENT`: what does not belong in the text addressed to the agents."""
+    from sutra_app.engine import j2
+    return j2.USER_CONTENT
+
+
+def j2_routes() -> Mapping[str, tuple]:
+    """J2's `ROUTES`: who may hand the turn to whom in J2. The library's HANDOFFS narrow it for the app (audit -> identity only), but a DISPUTE turn is
+    J2's own route to the party disputed, so there J2's table also counts."""
+    from sutra_app.engine import j2
+    return j2.ROUTES
+
+
 _QUOTED: Final = re.compile(r"'[^']*'|\"[^\"]*\"|‘[^’]*’|“[^”]*”")
 _FINDING_ID: Final = re.compile(r"F-\d+")
 
@@ -75,13 +102,6 @@ MEASURED_NOTE: Final = "Measured by code: "
 CODE_HANDOFF: Final = "Hand-off by code"
 J2_STRINGS: Final = (CHARTER_ACCEPTED, REJECTED_PREFIX, KEPT_PRICE, KEPT_PRICE_TAIL, OVER_BUDGET_NOTE, "Budget {self.spent}/{self.budget} used",
                      NO_FINDING_NOTE, NO_EVIDENCE_NOTE, MEASURED_NOTE, CODE_HANDOFF)
-
-# j2.py `ROUTES`: who may hand the turn to whom in J2. The library's HANDOFFS narrow it for the app (audit -> identity only), but
-# a DISPUTE turn is J2's own route to the party disputed, so there J2's table also counts.
-J2_ROUTES: Final = MappingProxyType({
-    "identity": ("user", "adaptation", "priority", "coordination", "audit"), "adaptation": ("priority", "identity", "audit", "coordination"),
-    "priority": ("adaptation", "identity", "coordination"), "coordination": ("priority", "adaptation", "identity"),
-    "audit": ("adaptation", "identity")})
 
 _BUDGET_USED_RE: Final = re.compile(r"Budget (\d+)/(\d+) used")
 _LEFT_RE: Final = re.compile(r"(\d+) left")
@@ -154,19 +174,30 @@ CheckFn = Callable[[Evidence, tuple[str, ...]], Outcome]
 
 # ---- ports of J2's own code -------------------------------------------------------------------------------------------
 
-def stamp_check(goal: Optional[Mapping]) -> tuple[bool, str]:
+def _what(output: Optional[str]) -> str:
+    """How J2's message names what is built: "the <label of the chosen type>" (its label, from the data), "the output" when no type is chosen."""
+    if output:
+        from sutra_app.engine import j2_types
+        if output in j2_types.names():
+            return f"the {j2_types.info(output)['label'].lower()}"
+    return "the output"
+
+
+def stamp_check(goal: Optional[Mapping], output: Optional[str] = None) -> tuple[bool, str]:
     """`J2Run._stamp_check`: (passes, why). The charter has a statement, at least 3 done-when items, and none that depends
-    on the Requester, Audit, verification, approval or launch (quoted text is a label the site shows, not a dependency)."""
+    on the Requester, Audit, verification, approval or launch (quoted text is a label the output shows, not a dependency).
+    `output` is the run's chosen type (J2's `self.output`): it only changes the words of the refusal."""
     g = goal or {}
     if not g.get("statement"):
         return False, "goal has no statement"
     if len(g.get("done_when") or []) < 3:
         return False, "fewer than 3 'done when' criteria"
     unquoted = lambda d: _QUOTED.sub("", str(d))
-    bad = [d for d in g["done_when"] if NOT_CHECKABLE.search(unquoted(d))]
+    bad = [d for d in g["done_when"] if not_checkable().search(unquoted(d))]
     if bad:
-        return False, ("these done-when items can't be checked by reading the site (they depend on the Requester, "
-                       "Audit, verification, approval or launch); rephrase them as something the site shows, and "
+        what = _what(output)
+        return False, (f"these done-when items can't be checked by reading {what} (they depend on the Requester, "
+                       f"Audit, verification, approval or launch); rephrase them as something {what} shows, and "
                        "record a fact only the Requester can give in to_be_confirmed: " + json.dumps(bad))
     return True, "passes code checks"
 
@@ -174,6 +205,19 @@ def stamp_check(goal: Optional[Mapping]) -> tuple[bool, str]:
 def _blocks(c: Mapping) -> bool:
     """j2.py `blocks`: an unmet condition that stops workable() (a warning never does)."""
     return not c["met"] and c.get("severity") != "warn"
+
+
+def _is_page(kind) -> bool:
+    """j2.py `is_page`: the kind is an output type of the page form, read from the data (artifacts/types.json and the local types). J2 is
+    imported when a verdict is asked for, not when this module loads, so the J2 environment is the one the process set."""
+    from sutra_app.engine import j2
+    return j2.is_page(kind)
+
+
+def _legacy_output() -> str:
+    """j2.py `LEGACY_OUTPUT`: what an audit saved before output types means by its missing `output` (J2's own word, not ours)."""
+    from sutra_app.engine import j2
+    return j2.LEGACY_OUTPUT
 
 
 def workable_problems(audit: Optional[Mapping]) -> list[str]:
@@ -184,7 +228,7 @@ def workable_problems(audit: Optional[Mapping]) -> list[str]:
     ok = set(audit.get("accepted") or [])
     out = [f"done-when item {num(r)} ({r['id']} {r['verdict']}): {r['criterion']}" for r in audit["results"]
            if not r["pass"] and r["criterion"] not in ok]
-    if audit.get("output", "website") != "website":
+    if not _is_page(audit.get("output", _legacy_output())):
         return (out + [f"document rubric {r['id']} ({r['verdict']}): {r['criterion']}" for r in audit.get("rubric", [])
                        if not r["pass"]]
                 + [f"necessary condition {c['id']} not met: {c['text']} ({c['evidence']})"
@@ -239,13 +283,16 @@ def reply_valid(ev: Evidence, args: tuple[str, ...]) -> Outcome:
     best: Optional[ReplyInvalid] = None
     for kind in [k for k in kinds.split("|") if k]:
         try:
-            _PARSER.parse(family, ev.reply, kind=kind)
+            parsed = _PARSER.parse(family, ev.reply, kind=kind, clip_text=True)
         except ReplyInvalid as exc:
             if best is None or len(exc.violations) < len(best.violations):
                 best = exc
         except RegistryError as exc:
             return _fail(f"{family}/{kind} is not a registered reply: {exc}")
         else:
+            if parsed.clipped:      # D158: a text over its cap is read cut to it, and the cut is a concern on record
+                shown = ", ".join(parsed.clipped[:6]) + (f" and {len(parsed.clipped) - 6} more" if len(parsed.clipped) > 6 else "")
+                return _ok(f"text over its limit, read cut to it: {shown}", changed=tuple(parsed.clipped))
             return _ok("ok")
     if best is None:
         return _fail(f"no reply kind named in {kinds!r}")
@@ -269,7 +316,7 @@ def turn_posted(ev: Evidence, args: tuple[str, ...]) -> Outcome:
         targets.append(target.capitalize())
         if m.get("auto") or CODE_HANDOFF in str(m.get("text") or ""):
             continue
-        if not may_hand_off(function, target) and not (ev.turn.kind == "dispute" and nxt in J2_ROUTES.get(function, ())):
+        if not may_hand_off(function, target) and not (ev.turn.kind == "dispute" and nxt in j2_routes().get(function, ())):
             bad.append(f"next={target} is no route of {function}")
     if bad:
         return _fail("; ".join(dict.fromkeys(bad)))
@@ -290,7 +337,7 @@ def charter_stamp(ev: Evidence, args: tuple[str, ...]) -> Outcome:
     goal = ev.records.get("goal.json")
     if not isinstance(goal, dict):
         return _missing("goal.json holds no charter")
-    passed, why = stamp_check(goal)
+    passed, why = stamp_check(goal, ev.turn.stage)
     if passed:
         return _ok(f"statement present, {_plural(len(goal['done_when']), 'done-when item')}")
     if any(CHARTER_ACCEPTED in text for text in ev.system_texts()):
@@ -319,8 +366,8 @@ def workable(ev: Evidence, args: tuple[str, ...]) -> Outcome:
 
 
 def _audience_problems(req: str, agents: str) -> list[str]:
-    return ([f"to_requester has agent content ({m.group(0)!r})"] if (m := AGENT_CONTENT.search(req)) else []) \
-        + ([f"to_agents reads as user-facing ({m.group(0)!r})"] if (m := USER_CONTENT.search(agents)) else [])
+    return ([f"to_requester has agent content ({m.group(0)!r})"] if (m := agent_content().search(req)) else []) \
+        + ([f"to_agents reads as user-facing ({m.group(0)!r})"] if (m := user_content().search(agents)) else [])
 
 
 def audience_split(ev: Evidence, args: tuple[str, ...]) -> Outcome:
@@ -422,10 +469,10 @@ def judge_gate(ev: Evidence, args: tuple[str, ...]) -> Outcome:
     after = ""
     if len(rounds) > 1:
         after = f" after {_plural(len(rounds) - 1, 'revision round')}" + (f" ({', '.join(f'{s:.2f}' for s in steps)})" if steps else "")
-    if conf >= GATE:
+    if conf >= gate():
         return _ok(f"plan {conf:.2f}{after}")
     not_ready = [str(x.get("workflow")) for x in plan.get("not_ready") or [] if isinstance(x, dict)]
-    return _ok(f"plan {conf:.2f} < {GATE:.2f}; not ready: {', '.join(not_ready) or 'none named'}", waived=True)
+    return _ok(f"plan {conf:.2f} < {gate():.2f}; not ready: {', '.join(not_ready) or 'none named'}", waived=True)
 
 
 def _kept_prices(texts: list[str]) -> dict[str, int]:

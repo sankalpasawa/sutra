@@ -1,0 +1,39 @@
+{
+  "schema": "template-library/1",
+  "name": "Iron Grove Fitness Risks",
+  "version": 1,
+  "sha": "2c69cee00a0f017c47d461b316f225e827429d2f1b9944b4bdae78ac71a5dc2f",
+  "schema_sha": "c755842f5bf156e0d190e89b1a6fb37e38e31a773f46137a2589bb75e7035f23",
+  "model_sha": "28a914913a71396aba4a018bc9a496e20a235770d9087727c12cb917335885eb",
+  "class": "IronGroveFitnessRisksV1",
+  "created": "2026-11-11T21:25:59",
+  "fingerprints": [
+    "bd34f1add83c04dc1e1376454e6385eacaba892b2942838e755d8c29990d7990"
+  ],
+  "made_by": {
+    "run": "j2-20261111-211339",
+    "workflow": "W-12",
+    "atom": "W-12.a1",
+    "agent": "code (adapted from a run template)",
+    "date": "2026-11-11 21:13:39"
+  },
+  "business": {
+    "name": "Iron Grove Fitness",
+    "type": "fitness studio"
+  },
+  "mock": false,
+  "collected_from": {
+    "run": "j2-20261111-211339",
+    "where": "the run's copy"
+  },
+  "used_by": [
+    {
+      "run": "j2-20261111-211339",
+      "workflow": "W-12",
+      "atom": "W-12.a1",
+      "action": "extended"
+    }
+  ],
+  "renamed_from": "Still Point Yoga Risks@2",
+  "adapted_from": "Still Point Yoga Risks@1"
+}

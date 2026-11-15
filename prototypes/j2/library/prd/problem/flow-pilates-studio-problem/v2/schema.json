@@ -1,0 +1,40 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "additionalProperties": false,
+  "properties": {
+    "statement": {
+      "description": "the problem the product solves, in the charter's own words (for Flow Pilates Studio, a prd)",
+      "type": "string"
+    },
+    "assumptions": {
+      "description": "facts you had to assume, each one line (for Flow Pilates Studio, a prd)",
+      "items": {
+        "type": "string"
+      },
+      "type": "array"
+    },
+    "facts_used": {
+      "description": "the charter facts this section is written from, copied exactly from Flow Pilates Studio's charter",
+      "items": {
+        "enum": [
+          "Flow Pilates Studio",
+          "Friday 6:30 pm Stretch and Release 550",
+          "Monday 7:00 am Mat Basics 500",
+          "Payment is made at the studio",
+          "Saturday 9:00 am Weekend Mat Class 500",
+          "Tuesday 6:30 pm Reformer Flow 800",
+          "Unit 3, 9 Sample Lane, Pune 411004",
+          "Wednesday 7:00 am Core Strength 600",
+          "bookings@flowpilates.example",
+          "name, email, class, preferred date"
+        ],
+        "type": "string"
+      },
+      "type": "array"
+    }
+  },
+  "required": [
+    "statement"
+  ],
+  "type": "object"
+}

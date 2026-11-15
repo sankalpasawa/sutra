@@ -1,0 +1,135 @@
+{
+  "name": "Still Point Yoga PRD Success metrics",
+  "artifact": "prd",
+  "section": "Success metrics",
+  "version": 1,
+  "kind": "specialised",
+  "description": "Success metrics section of the Still Point Yoga PRD: success is that visitors can see the classes and send a booking, each metric names its goal, and no number is given.",
+  "fields": [
+    {
+      "name": "heading",
+      "type": "string",
+      "required": true,
+      "description": "The section heading",
+      "enum": [
+        "Success metrics"
+      ],
+      "nullable": false
+    },
+    {
+      "name": "success_sentence",
+      "type": "string",
+      "required": true,
+      "description": "The success statement for Still Point Yoga, written exactly: success is that visitors can see the classes and send a booking",
+      "enum": [
+        "Success is that visitors can see the classes and send a booking."
+      ],
+      "nullable": false
+    },
+    {
+      "name": "success_metrics",
+      "type": "list[SuccessMetric]",
+      "required": true,
+      "description": "one metric per goal, each naming its goal, with no number",
+      "enum": null,
+      "nullable": false
+    },
+    {
+      "name": "assumptions",
+      "type": "list[string]",
+      "required": false,
+      "description": "Assumptions behind the metrics",
+      "enum": null,
+      "nullable": false
+    }
+  ],
+  "objects": [
+    {
+      "name": "SuccessMetric",
+      "fields": [
+        {
+          "name": "goal",
+          "type": "string",
+          "required": true,
+          "description": "the goal id this metric measures, e.g. \"G1\"",
+          "enum": null,
+          "nullable": false
+        },
+        {
+          "name": "metric",
+          "type": "string",
+          "required": true,
+          "description": "what is measured: visitors can see the classes and send a booking",
+          "enum": null,
+          "nullable": false
+        },
+        {
+          "name": "target",
+          "type": "string",
+          "required": false,
+          "description": "the state to reach, in words only, with no number",
+          "enum": null,
+          "nullable": false
+        },
+        {
+          "name": "window",
+          "type": "string",
+          "required": false,
+          "description": "the measurement window; write \"measurement window not set\" when the brief doesn't say",
+          "enum": null,
+          "nullable": false
+        }
+      ]
+    }
+  ],
+  "rules": [
+    {
+      "rule": "ref_exists",
+      "path": "success_metrics[].goal",
+      "target": "this.goals[].id",
+      "name": "every metric names a goal id of this document",
+      "from": "P6"
+    },
+    {
+      "rule": "not_empty",
+      "path": "success_sentence",
+      "name": "the success sentence is present",
+      "from": "P6"
+    },
+    {
+      "rule": "enum",
+      "path": "heading",
+      "name": "heading is Success metrics",
+      "from": "P6",
+      "values": [
+        "Success metrics"
+      ]
+    }
+  ],
+  "sha": "df66f495af927802771ee1787d5cdc13244de156122e7d174353cabaa265899e",
+  "extends": "prd/success-metrics@generic/1",
+  "made_by": {
+    "run": "j2-20261103-184249",
+    "workflow": "W-5",
+    "atom": "W-5.a1",
+    "agent": "template generator (claude-cli)"
+  },
+  "context": {
+    "business_type": "prd",
+    "facts_used": [
+      "4th Floor, 22 Church Street, Bengaluru 560001",
+      "Monday 7:00 am Gentle Flow 500",
+      "No online payment is taken",
+      "Payment is made at the studio",
+      "Saturday 9:00 am Beginners Basics 400",
+      "Still Point Yoga",
+      "Success metrics section states that success is that visitors can see the classes and send a booking, with no number",
+      "Sunday 8:00 am Slow Sunday 500",
+      "Thursday 7:00 am Breath and Stretch 450",
+      "Tuesday 6:30 pm Strength Yoga 600",
+      "bookings@stillpoint.example",
+      "name, email, class and preferred date"
+    ],
+    "fingerprint": "9e3eca24fca3f29678d189a47735ae62dcd10c27c7c29a6533522a4a831e9afb"
+  }
+}

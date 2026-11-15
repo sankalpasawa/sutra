@@ -1,0 +1,7 @@
+{
+  "schema": "sutra-extension/2",
+  "id": "213_model_spent",
+  "providers": {
+    "letter-model": 0
+  }
+}

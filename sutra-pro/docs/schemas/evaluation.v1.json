@@ -75,7 +75,7 @@
         },
         "id": {
           "maxLength": 8,
-          "pattern": "^[A-Z][0-9]+$",
+          "pattern": "^[A-Z]{1,4}[0-9]+$",
           "title": "Id",
           "type": "string"
         },
@@ -605,13 +605,7 @@
         "output": {
           "anyOf": [
             {
-              "enum": [
-                "website",
-                "prd",
-                "hld",
-                "lld",
-                "project"
-              ],
+              "pattern": "^[a-z][a-z0-9_]{1,40}$",
               "type": "string"
             },
             {
@@ -704,7 +698,7 @@
         },
         "id": {
           "maxLength": 12,
-          "pattern": "^[RD]-[0-9]+$",
+          "pattern": "^[A-Z]{1,4}-[0-9]+$",
           "title": "Id",
           "type": "string"
         },

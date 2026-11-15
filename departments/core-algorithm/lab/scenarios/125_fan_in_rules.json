@@ -1,0 +1,148 @@
+{
+  "schema": "sutra-extension/2",
+  "id": "125_fan_in_rules",
+  "goals": [
+    "fan_in_done"
+  ],
+  "rules": [
+    {
+      "id": "R-FAN-IN@1",
+      "head": "fan_in_done",
+      "branches": [
+        [
+          "tier_internal",
+          "signals_sent"
+        ],
+        [
+          "tier_portfolio",
+          "notice_shown",
+          "signals_sent"
+        ],
+        [
+          "tier_project",
+          "opted_in",
+          "batch_confirmed",
+          "signals_sent"
+        ],
+        [
+          "tier_external",
+          "opted_in",
+          "signals_sent"
+        ]
+      ],
+      "approved": true,
+      "source": "reviewed/privacy-tiered-contract"
+    }
+  ],
+  "methods": [
+    {
+      "id": "send-internal@1",
+      "effect": "signals_sent",
+      "requires": [
+        "tier_internal"
+      ],
+      "provider": "local-provider",
+      "grant": "fan-in:internal",
+      "cost": {
+        "compute": 1,
+        "money": 0,
+        "attention": 0
+      },
+      "action": "simulate_fact",
+      "approved": true,
+      "source": "reviewed/synthetic-method"
+    },
+    {
+      "id": "send-portfolio@1",
+      "effect": "signals_sent",
+      "requires": [
+        "tier_portfolio",
+        "notice_shown"
+      ],
+      "provider": "local-provider",
+      "grant": "fan-in:portfolio",
+      "cost": {
+        "compute": 1,
+        "money": 0,
+        "attention": 0
+      },
+      "action": "simulate_fact",
+      "approved": true,
+      "source": "reviewed/synthetic-method"
+    },
+    {
+      "id": "send-project@1",
+      "effect": "signals_sent",
+      "requires": [
+        "tier_project",
+        "opted_in",
+        "batch_confirmed"
+      ],
+      "provider": "local-provider",
+      "grant": "fan-in:project",
+      "cost": {
+        "compute": 1,
+        "money": 0,
+        "attention": 0
+      },
+      "action": "simulate_fact",
+      "approved": true,
+      "source": "reviewed/synthetic-method"
+    },
+    {
+      "id": "send-external@1",
+      "effect": "signals_sent",
+      "requires": [
+        "tier_external",
+        "opted_in"
+      ],
+      "provider": "local-provider",
+      "grant": "fan-in:external",
+      "cost": {
+        "compute": 1,
+        "money": 0,
+        "attention": 0
+      },
+      "action": "simulate_fact",
+      "approved": true,
+      "source": "reviewed/synthetic-method"
+    },
+    {
+      "id": "show-notice@1",
+      "effect": "notice_shown",
+      "requires": [
+        "tier_portfolio"
+      ],
+      "provider": "local-provider",
+      "grant": "notice:portfolio",
+      "cost": {
+        "compute": 1,
+        "money": 0,
+        "attention": 0
+      },
+      "action": "simulate_fact",
+      "approved": true,
+      "source": "reviewed/synthetic-method"
+    },
+    {
+      "id": "ask-batch-confirm@1",
+      "effect": "batch_confirmed",
+      "requires": [
+        "tier_project",
+        "opted_in"
+      ],
+      "provider": "client-channel",
+      "grant": "ask:client",
+      "cost": {
+        "compute": 0,
+        "money": 0,
+        "attention": 1
+      },
+      "action": "ask",
+      "approved": true,
+      "source": "reviewed/synthetic-method",
+      "question": "May this batch of signals go to the Sutra team?",
+      "ask_to": "client"
+    }
+  ]
+}

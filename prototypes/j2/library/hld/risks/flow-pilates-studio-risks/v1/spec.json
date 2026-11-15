@@ -1,0 +1,88 @@
+{
+  "name": "Flow Pilates Studio Risks",
+  "artifact": "hld",
+  "section": "Risks",
+  "version": 1,
+  "kind": "specialised",
+  "description": "Risks for Flow Pilates Studio (hld): the generic HLD/1 · Risks fields plus facts_used, from 2 charter fact(s); adapted from a template made for another business",
+  "fields": [
+    {
+      "name": "risks",
+      "type": "list[Risk]",
+      "required": true,
+      "description": "each risk with its mitigation (for Flow Pilates Studio, a hld)",
+      "enum": null,
+      "nullable": false
+    },
+    {
+      "name": "assumptions",
+      "type": "list[string]",
+      "required": false,
+      "description": "the assumptions of Flow Pilates Studio's Risks",
+      "enum": null,
+      "nullable": false
+    },
+    {
+      "name": "facts_used",
+      "type": "list[string]",
+      "required": false,
+      "description": "the charter facts this section is written from, copied exactly from Flow Pilates Studio's charter",
+      "enum": [
+        "Flow Pilates Studio",
+        "The Risks section is written for Flow Pilates Studio"
+      ],
+      "nullable": false
+    }
+  ],
+  "objects": [
+    {
+      "name": "Risk",
+      "fields": [
+        {
+          "name": "risk",
+          "type": "string",
+          "required": true,
+          "description": "the risk, one line",
+          "enum": null,
+          "nullable": false
+        },
+        {
+          "name": "mitigation",
+          "type": "string",
+          "required": true,
+          "description": "what is done about it",
+          "enum": null,
+          "nullable": false
+        }
+      ]
+    }
+  ],
+  "rules": [
+    {
+      "rule": "enum",
+      "path": "facts_used[]",
+      "values": [
+        "Flow Pilates Studio",
+        "The Risks section is written for Flow Pilates Studio"
+      ],
+      "from": "facts",
+      "name": "facts_used are facts of Flow Pilates Studio's charter"
+    }
+  ],
+  "sha": "4269b7f0ad0731533872ad4d225fd12b5df2bd8ae9955442e6e7ab68148ea51f",
+  "extends": "hld/risks@generic/1",
+  "made_by": {
+    "run": "j2-20261112-150036",
+    "workflow": "W-15",
+    "atom": "W-15.a1",
+    "agent": "code (adapted from a run template)"
+  },
+  "context": {
+    "business_type": "hld",
+    "facts_used": [
+      "Flow Pilates Studio",
+      "The Risks section is written for Flow Pilates Studio"
+    ],
+    "fingerprint": "d4c2a993feb3aa743ad86158e022509fe46151cae62e53dcd4977be91bbefa06"
+  }
+}

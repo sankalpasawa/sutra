@@ -1,9 +1,12 @@
 """The chats of the agents (agent-sessions design 3.6, D130 to D132). Reads need no token; writes do (D81).
 
     GET  /api/teams/{dept}/agents?run=<run_id>   -> [{agent, label, kind: function|step, title, session_id, node_id, run_id, task_id, state, live, status, own,
-                                                       run_pick, effective: {provider, model, effort, source}, usage: {calls, usd, tokens_in, tokens_out}, last_at}]
+                                                       run_pick, effective: {provider, model, effort, source},
+                                                       usage: {calls, usd, tokens_in, tokens_out, by_purpose: {<purpose>: {calls, usd}}}, last_at}]
                                                     the team's five active function sessions plus every session stamped with `run` (builders, and the function
-                                                    sessions a later run rolled); `run` defaults to the live run, else the latest (404 for a run of another team)
+                                                    sessions a later run rolled); `run` defaults to the live run, else the latest (404 for a run of another team).
+                                                    `usage.by_purpose` (D159) names what the agent's calls were for, one key per purpose it was charged for (`agent_turn`,
+                                                    `plan` and `judge` of the late judge, `agent_chat` for the answers in its chat, ...); `{}` when it has not called
 
     POST /api/chats/{sid}/steer {text <= 2000}   -> {message_id, session_id, applies: "next_call"}   (token; only a function or step chat of a live run, else 409
                                                     `not_running`; the line is stored in the agent's session of this run with the marker `steer`, and the agent's entry of

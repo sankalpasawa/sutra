@@ -1,0 +1,74 @@
+{
+  "schema": "sutra-extension/2",
+  "id": "114_practice_money_movement",
+  "scope": "lendco/servicing",
+  "practice": {
+    "id": "money-movement",
+    "name": "Money movement",
+    "from": "sutra-pro/sutra_app/library/specs/practice_packs.json"
+  },
+  "standing_rules": [
+    {
+      "function": "identity",
+      "tag": "always",
+      "line": "Every money effect names its source record (the bank file, a ledger row or a payment reference) before it is judged.",
+      "rule": "R-REFUND@2",
+      "grant": "action:name-source-record@1"
+    },
+    {
+      "function": "coordination",
+      "tag": "never",
+      "line": "A payment and its reconciliation are never held by the same person or model: one makes, another checks.",
+      "decision": "maker_may_reconcile"
+    }
+  ],
+  "rules": [
+    {
+      "id": "R-REFUND@2",
+      "head": "refund_settled",
+      "branches": [
+        [
+          "source_record_named",
+          "refund_paid",
+          "payment_reconciled"
+        ]
+      ],
+      "approved": true,
+      "source": "practice/money-movement",
+      "replaces": "R-REFUND@1"
+    }
+  ],
+  "methods": [
+    {
+      "id": "name-source-record@1",
+      "effect": "source_record_named",
+      "requires": [
+        "refund_due"
+      ],
+      "provider": "local-provider",
+      "grant": "action:name-source-record@1",
+      "cost": {
+        "compute": 1,
+        "money": 0,
+        "attention": 0
+      },
+      "action": "simulate_fact",
+      "approved": true,
+      "source": "reviewed/synthetic-method"
+    }
+  ],
+  "grants": [
+    "action:name-source-record@1"
+  ],
+  "evidence": [
+    {
+      "predicate": "maker_may_reconcile",
+      "truth": "FALSE",
+      "verified": true,
+      "final": true,
+      "source": "practice:money-movement",
+      "version": "practice-1",
+      "tag": "never"
+    }
+  ]
+}

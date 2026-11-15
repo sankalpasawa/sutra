@@ -6,6 +6,7 @@ session API, so every chat improvement lives below every surface. The port never
 """
 from __future__ import annotations
 
+import contextlib
 import uuid
 from pathlib import Path
 from typing import Callable, Iterator, Optional, Protocol, Sequence, runtime_checkable
@@ -14,6 +15,8 @@ from sutra_app import oslayer
 
 from .attachments import AttachmentStore, deliver
 from .base import write_private_file
+from .cancel import CancelToken
+from .chat_blocks import BlockAccumulator
 from .chat_models import CarryPlan, Choice, ChatEvent, ChatTurnIn, ChatTurnOut, ProviderPill
 from .errors import InvalidRequestError, NoProviderError
 import re
@@ -22,7 +25,6 @@ from .models import SESSION_ID_PATTERN, AskRequest, ConnectorEvent, Message, Pic
 from .health import API_KEY_REFUSED
 from .model_catalog import ModelOption, efforts_of, names_of, options_for
 from .router import TRANSCRIPT_LIMIT, Router
-from .tool_kinds import classify, title_of
 from .transcript import FULL_CHARS, TAIL_MESSAGES, render_carry_over
 from .usage import load_session_state, save_session_state
 
@@ -39,7 +41,7 @@ class ChatPort(Protocol):
     def default_pick(self, function: str = "") -> Pick: ...
     def plan_switch(self, session_id: str, target: str) -> CarryPlan: ...
     def send(self, session_id: str, turn: ChatTurnIn, on_event: Optional[Callable[[ChatEvent], None]] = None) -> ChatTurnOut: ...
-    def stream(self, session_id: str, turn: ChatTurnIn) -> Iterator[ChatEvent]: ...
+    def stream(self, session_id: str, turn: ChatTurnIn, *, cancel: Optional[CancelToken] = None, acc: Optional[BlockAccumulator] = None) -> Iterator[ChatEvent]: ...
     def set_system(self, session_id: str, text: str) -> None: ...
     def stop(self, session_id: str) -> bool: ...
     def close(self) -> None: ...
@@ -220,67 +222,86 @@ class RouterChatPort:
     def _ctx_for(self, session_id: str, turn: ChatTurnIn) -> RouteContext:
         return self._ctx.model_copy(update={"session_id": session_id, "tag": turn.tag})
 
-    def stream(self, session_id: str, turn: ChatTurnIn) -> Iterator[ChatEvent]:
+    def stream(self, session_id: str, turn: ChatTurnIn, *, cancel: Optional[CancelToken] = None, acc: Optional[BlockAccumulator] = None) -> Iterator[ChatEvent]:
         """(partial | block | restart)* / usage / switched? / turn_done. The last event is always `turn_done` (errors raise while iterating).
         A `restart` marks a new attempt of this turn (the router retried): what the earlier attempt streamed is void, so the text and the blocks
-        it produced are forgotten here and the caller starts again from the next event."""
+        it produced are forgotten here and the caller starts again from the next event.
+
+        `cancel` is the turn's stop token (D215). `acc` is the caller's `BlockAccumulator` (the live turn owns it, so a stopped or failed turn can still read what
+        was written): with it, the stream yields the live kinds instead of `partial` and `block`: `started`, `route`, `block_start`, `block_update`,
+        `block_delta`, `block_end`, a `restart` with data, and a `turn_done` that also carries the ordered blocks, their settle map and the earlier tries.
+        Without it, the events are exactly what they always were."""
         message = self._message(session_id, turn)
         before = load_session_state(self._work_dir(session_id))
-        saw_partial = False
-        begun = False
-        blocks: list[dict] = []
-        kinds: dict = {}
-        for event in self.router.chat_stream(session_id, message, self._ctx_for(session_id, turn)):
+        live = acc is not None
+        if acc is None:
+            acc = BlockAccumulator(provider=before.provider if before is not None else "claude")
+        elif not acc.folder:
+            acc.folder = self._folder()
+        begun, pending, failed = False, None, None
+        extra: dict = {} if cancel is None else {"cancel": cancel}          # the turn's stop token (D215): a router without the keyword is never given it
+        if live:
+            extra["routes"] = True                                           # the live view's plan, attempt and failure events (D217)
+        for event in self.router.chat_stream(session_id, message, self._ctx_for(session_id, turn), **extra):
+            if event.kind == "route":
+                if live:
+                    if event.data.get("event") == "attempt":
+                        pending = event.data.get("provider") or pending
+                    elif event.data.get("event") == "failed":
+                        failed = event.data
+                    yield ChatEvent(kind="route", data=dict(event.data))
+                continue
             if event.kind == "started":                    # the first event of every attempt: the first one begins the turn, a later one is a retry
                 if begun:
-                    saw_partial = False
-                    blocks.clear()
-                    kinds.clear()
-                    yield ChatEvent(kind="restart")
+                    ended = acc.restart((failed or {}).get("reason") or "", pending or "")
+                    failed = None
+                    yield ChatEvent(kind="restart", data=dict(ended[0].data) if live and ended else {})
+                elif pending:
+                    acc.provider = pending
                 begun = True
+                if live:
+                    yield ChatEvent(kind="started", data={**event.data, "provider": acc.provider})
                 continue
-            out = self._map(event, saw_partial, kinds, before.provider if before is not None else "claude")
-            if event.kind == "text_delta" and event.data.get("kind", "text") == "text":
-                saw_partial = True
-            if out is None:
-                continue
-            if out.kind == "block":
-                blocks.append(out.data)
-            if out.kind == "turn_done":
+            mark = acc.legacy_count()
+            # the live turn's lock (`acc.guard`) is held from the feed until the consumer has handed the block events on, so a Stop cannot freeze the accumulator between the two:
+            # what is accumulated is exactly what was published. It is released as soon as the generator resumes, never while waiting for the provider.
+            with (getattr(acc, "guard", None) or contextlib.nullcontext()):
+                for out in acc.feed(event):
+                    if live:
+                        yield ChatEvent(kind="block_" + out.kind, data={"block_id": out.block_id, **out.data})
+            if not live:
+                if event.kind == "text_delta" and event.data.get("kind", "text") == "text":
+                    yield ChatEvent(kind="partial", data={"delta": event.data.get("text", "")})
+                for legacy in acc.legacy_since(mark):
+                    yield ChatEvent(kind="block", data=legacy)
+            if event.kind == "turn_done":
                 result = event.data["result"]
                 after = load_session_state(self._work_dir(session_id))
                 moved = before is not None and after is not None and before.provider != after.provider
                 switched = {"from": before.provider, "to": after.provider,           # type: ignore[union-attr]
                             "plan": self._plan(session_id, after.provider, self._carried(session_id, message)).model_dump()} if moved and after else None
+                if live:
+                    for out in acc.finalize("ok"):
+                        yield ChatEvent(kind="block_" + out.kind, data={"block_id": out.block_id, **out.data})
                 yield ChatEvent(kind="usage", data={"usd": result.get("usd"), "usage": result.get("usage")})
                 if switched is not None:
                     yield ChatEvent(kind="switched", data=switched)
-                yield ChatEvent(kind="turn_done", data={
-                    "text": result["text"], "provider": result["provider"], "model": result.get("model"), "usd": result.get("usd"),
-                    "blocks": blocks, "switched": switched})
+                done = {"text": result["text"], "provider": result["provider"], "model": result.get("model"), "usd": result.get("usd"),
+                        "blocks": acc.stored_blocks(), "switched": switched}
+                if live:
+                    done.update({"blocks_ordered": acc.stored_blocks(ordered=True), "stored_order": acc.stored_order(), "earlier": acc.earlier_attempts(),
+                                 "usage": result.get("usage")})
+                yield ChatEvent(kind="turn_done", data=done)
                 return
-            yield out
 
-    def _map(self, event: ConnectorEvent, saw_partial: bool, kinds: dict, provider: str) -> Optional[ChatEvent]:
-        if event.kind == "text_delta":
-            return ChatEvent(kind="partial", data={"delta": event.data.get("text", "")}) if event.data.get("kind", "text") == "text" else None
-        if event.kind == "text":
-            return None if saw_partial else ChatEvent(kind="block", data={"type": "text", "kind": "other", "text": event.data.get("text", "")})
-        if event.kind == "tool_call":
-            name = str(event.data.get("name") or event.data.get("type") or "")
-            kind = classify(name, event.data.get("input"), provider)
-            kinds[event.data.get("id")] = (kind, name)
-            return ChatEvent(kind="block", data={"type": "tool_use", "kind": kind, "name": name, "text": title_of(name, event.data.get("input"))})
-        if event.kind == "tool_result":
-            kind, name = kinds.get(event.data.get("tool_use_id"), ("other", ""))
-            text = str(event.data.get("content") or "")
-            data = {"type": "tool_result", "kind": kind, "name": name, "text": text, "is_error": bool(event.data.get("is_error"))}
-            if event.data.get("truncated"):
-                data["truncated"] = True            # a cut says it was cut
-            return ChatEvent(kind="block", data=data)
-        if event.kind == "turn_done":
-            return ChatEvent(kind="turn_done")
-        return None
+    def _folder(self) -> str:
+        """The working folder the router gives this turn's connector (read once, as the router does at the turn's start): only used to show a tool's path
+        relative to it. It is never sent anywhere."""
+        found = getattr(self.router, "chat_folder", None)
+        try:
+            return str(found() or "") if callable(found) else ""
+        except Exception:                                  # noqa: BLE001  a label for the page must not fail a turn
+            return ""
 
     def send(self, session_id: str, turn: ChatTurnIn, on_event: Optional[Callable[[ChatEvent], None]] = None) -> ChatTurnOut:
         done: Optional[ChatEvent] = None

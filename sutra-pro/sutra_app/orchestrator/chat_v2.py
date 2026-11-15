@@ -26,7 +26,7 @@ from sutra_app.orchestrator.ids import iso_z
 from sutra_app.orchestrator.records import ChatMessage
 
 __all__ = ["ChatSegments", "ChatSearch", "ChatArchive", "ChatChoices", "MAX_RESULTS", "SCOPE_RE", "DIRECT_ASK", "INTERRUPTED", "recover_interrupted",
-           "cascade", "SOURCES", "EFFORTS"]
+           "cascade", "SOURCES", "EFFORTS", "find_owner_line", "attempts_stored", "next_attempt", "last_outcome", "newest_owner_line"]
 
 MAX_RESULTS = 50
 SCOPE_RE = re.compile(r"^(all|node:[a-z][a-z0-9_.-]{1,60}|dept:[a-z][a-z0-9_-]{1,40})$")
@@ -236,7 +236,7 @@ class ChatChoices:
 
 # ---- direct turns the last process did not finish ---------------------------------------------------------------------------------------------------
 
-DIRECT_ASK = "direct-ask:"           # the src_ref prefix of the owner's line that starts a direct turn (api/chat_v2._store_user_line adds a random tail)
+DIRECT_ASK = direct_turns.DIRECT_ASK   # the src_ref prefix of the owner's line that starts a direct turn (api/chat_v2._store_user_line adds the page's client id, or a random tail)
 INTERRUPTED = "Interrupted: the app closed before the model answered."
 
 
@@ -244,16 +244,93 @@ def recover_interrupted(db: Database, chats: Any) -> int:
     """Marks every owner's direct line that has no ending: the error line `INTERRUPTED`, stored like any failed turn's (`direct_turns.failed`: src_ref
     `direct:<id>`, so the page offers Retry and the line is answered for good). A process that dies mid-turn (SIGKILL, a crash, a power cut) cannot say so itself;
     a graceful stop already stores its own note. Called once at start, before any turn of this process exists. The team route's lines carry no mark and are
-    never touched. -> how many lines were marked."""
+    never touched. A checkpoint of a turn that was streaming (D211) is turned into that turn's ending first: what was written, the tools that ran (ended
+    `interrupted`) and the same error line; this also covers a retry whose earlier try has its own reply. -> how many lines were marked."""
+    marked = _recover_checkpoints(db, chats)
     rows = db.conn().execute(
         "SELECT m.session_id AS sid, m.id AS id FROM chat_messages m WHERE m.src_ref LIKE ? AND NOT EXISTS ("
-        " SELECT 1 FROM chat_messages r WHERE r.session_id = m.session_id AND r.src_ref = 'direct:' || m.id) ORDER BY m.id", (DIRECT_ASK + "%",)).fetchall()
-    marked = 0
+        " SELECT 1 FROM chat_messages r WHERE r.session_id = m.session_id AND (r.src_ref = 'direct:' || m.id OR r.src_ref LIKE 'direct:' || m.id || '.%'))"
+        " ORDER BY m.id", (DIRECT_ASK + "%",)).fetchall()               # a reply of ANY attempt answers the line (ids are digits: `direct:5.%` never matches line 55)
     for row in rows:
         with db.tx() as tx:
             for ending in direct_turns.failed(int(row["id"]), "", INTERRUPTED):
                 posted = chats.post(tx, row["sid"], GATE.check("chat_message", ChatMessage(
-                    kind=ending.kind, session_id=row["sid"], role="agent", who="sutra", text=ending.text, blocks=ending.blocks, src_ref=ending.src_ref,
-                    at=tx.now()), ctx=tx.ctx))
+                    kind=ending.kind, session_id=row["sid"], role="agent", who="sutra", text=ending.text, blocks=ending.blocks, ordered=ending.ordered,
+                    src_ref=ending.src_ref, at=tx.now()), ctx=tx.ctx))
                 marked += 1 if posted is not None else 0
     return marked
+
+
+def _recover_checkpoints(db: Database, chats: Any) -> int:
+    """Every checkpoint left by a process that died while a turn streamed (the live turn deletes its row in the transaction that stores the final reply, so a row that is
+    still here belongs to a turn that never ended). A checkpoint whose attempt already has a stored reply is stale and only dropped. -> how many lines were marked."""
+    from sutra_app.orchestrator import live_checkpoint
+    marked = 0
+    for ck in live_checkpoint.all_rows(db):
+        sid, owner, attempt = ck["session_id"], int(ck["message_id"]), int(ck["attempt_no"])
+        with db.tx() as tx:
+            live_checkpoint.drop(tx, ck["generation_id"])
+            line = tx.conn.execute("SELECT 1 FROM chat_messages WHERE id = ? AND session_id = ?", (owner, sid)).fetchone()
+            stored = tx.conn.execute("SELECT 1 FROM chat_messages WHERE session_id = ? AND src_ref = ?", (sid, direct_turns.ref_of(owner, "", attempt))).fetchone() \
+                if 1 <= attempt <= direct_turns.MAX_ATTEMPT else True
+            if line is None or stored is not None:
+                continue
+            blocks = live_checkpoint.stored_blocks(ck["blocks"])
+            for ending in direct_turns.failed(owner, live_checkpoint.shown_text(ck["blocks"]), INTERRUPTED, attempt, blocks=blocks, ordered=bool(blocks)):
+                posted = chats.post(tx, sid, GATE.check("chat_message", ChatMessage(
+                    kind=ending.kind, session_id=sid, role="agent", who="sutra", text=ending.text, blocks=ending.blocks, ordered=ending.ordered,
+                    src_ref=ending.src_ref, at=tx.now()), ctx=tx.ctx))
+                marked += 1 if posted is not None else 0
+    return marked
+
+
+# ---- the owner's line and its tries (D216, D220) -----------------------------------------------------------------------------------------------------
+
+def find_owner_line(conn: sqlite3.Connection, session_id: str, client_id: str) -> int | None:
+    """The id of the owner's line a page stored with this `client_id` in this chat, or None. A send that repeats a `client_id` finds its line here instead
+    of storing a second one (a double click, a retry of a request that timed out)."""
+    row = conn.execute("SELECT id FROM chat_messages WHERE session_id = ? AND src_ref = ?",
+                       (session_id, direct_turns.owner_ref(client_id))).fetchone()
+    return None if row is None else int(row["id"])
+
+
+def attempts_stored(conn: sqlite3.Connection, session_id: str, owner_id: int) -> list[int]:
+    """The attempts of this owner line that have an ending stored, ascending: 1 for `direct:<id>`, N for `direct:<id>.N`."""
+    found = {1} if conn.execute("SELECT 1 FROM chat_messages WHERE session_id = ? AND src_ref = ?",
+                                (session_id, f"direct:{int(owner_id)}")).fetchone() is not None else set()
+    for row in conn.execute("SELECT src_ref FROM chat_messages WHERE session_id = ? AND src_ref LIKE ?", (session_id, f"direct:{int(owner_id)}.%")):
+        tail = row["src_ref"].rsplit(".", 1)[-1]
+        if tail.isdigit():
+            found.add(int(tail))
+    return sorted(found)
+
+
+def next_attempt(conn: sqlite3.Connection, session_id: str, owner_id: int) -> int:
+    """The attempt number a retry of this owner line gets: one more than the highest stored (1 when nothing answers the line yet)."""
+    stored = attempts_stored(conn, session_id, owner_id)
+    return (stored[-1] + 1) if stored else 1
+
+
+def last_outcome(conn: sqlite3.Connection, session_id: str, owner_id: int) -> str:
+    """How the newest try of an owner line ended: `none` (nothing stored), `done`, `failed` (an error line, or an error as the only message) or `stopped` (the calm note).
+    A retry is offered for `failed` and `stopped` only (D220)."""
+    stored = attempts_stored(conn, session_id, owner_id)
+    if not stored:
+        return "none"
+    n = stored[-1]
+    main = conn.execute("SELECT kind FROM chat_messages WHERE session_id = ? AND src_ref = ?", (session_id, direct_turns.ref_of(owner_id, "", n))).fetchone()
+    if main is None:
+        return "none"
+    if main["kind"] == "error" or conn.execute("SELECT 1 FROM chat_messages WHERE session_id = ? AND src_ref = ?",
+                                               (session_id, direct_turns.ref_of(owner_id, "error", n))).fetchone() is not None:
+        return "failed"
+    if main["kind"] == "note" or conn.execute("SELECT 1 FROM chat_messages WHERE session_id = ? AND src_ref = ?",
+                                              (session_id, direct_turns.ref_of(owner_id, "note", n))).fetchone() is not None:
+        return "stopped"
+    return "done"
+
+
+def newest_owner_line(conn: sqlite3.Connection, session_id: str) -> int | None:
+    """The id of the newest owner line of a direct turn in this chat (the only one that can be retried)."""
+    row = conn.execute("SELECT id FROM chat_messages WHERE session_id = ? AND src_ref LIKE ? ORDER BY id DESC LIMIT 1", (session_id, DIRECT_ASK + "%")).fetchone()
+    return None if row is None else int(row["id"])

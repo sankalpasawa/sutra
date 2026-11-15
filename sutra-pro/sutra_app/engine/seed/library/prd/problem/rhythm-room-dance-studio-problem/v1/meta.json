@@ -1,0 +1,39 @@
+{
+  "schema": "template-library/1",
+  "name": "Rhythm Room Dance Studio Problem",
+  "version": 1,
+  "sha": "e5e2d3a22d37f75695d3e6208356c0d188e3d3250b8784e458008023dcab78eb",
+  "schema_sha": "2ae3e09f3ba3b8144f745f035ee87187c7445804924831cb0aee7cc19b5478cd",
+  "model_sha": "004c6b920af3d198990c564acccf0bea10335c783820a11a18e7ac2ab5084430",
+  "class": "RhythmRoomDanceStudioProblemV1",
+  "created": "2026-11-11T21:59:33",
+  "fingerprints": [
+    "96f8143e1a87ffddefac0c226058abd8f8d2a890f41e259e89bb6ae35698f74f"
+  ],
+  "made_by": {
+    "run": "j2-20261111-215733",
+    "workflow": "W-1",
+    "atom": "W-1.a1",
+    "agent": "code (adapted from a run template)",
+    "date": "2026-11-11 21:57:33"
+  },
+  "business": {
+    "name": "Rhythm Room Dance Studio",
+    "type": "hld"
+  },
+  "mock": false,
+  "collected_from": {
+    "run": "j2-20261111-215733",
+    "where": "the run's copy"
+  },
+  "used_by": [
+    {
+      "run": "j2-20261111-215733",
+      "workflow": "W-1",
+      "atom": "W-1.a1",
+      "action": "extended"
+    }
+  ],
+  "renamed_from": "Still Point Yoga Problem@4",
+  "adapted_from": "Still Point Yoga Problem@2"
+}

@@ -3,7 +3,7 @@
   "artifact": "hld",
   "kind": "generic",
   "version": 1,
-  "from": "j2_artifact_models.SECTION_MODELS, DOC_MODELS and j2_rules.RULES (generated: python3 j2_template_lib.py)",
+  "from": "hand-edited: this file is the source of this type's sections, their fields, rules and rendering. J2 builds each section's model and checks from it at load time (j2_artifact_models, j2_rules); python3 j2_template_lib.py checks every generic.json",
   "templates": [
     {
       "name": "HLD/1 · Purpose and scope",
@@ -12,6 +12,10 @@
       "version": 1,
       "kind": "generic",
       "description": "The generic HLD/1 · Purpose and scope template: the fixed layout of every HLD Purpose and scope section, whatever the business",
+      "model": "HLDPurpose",
+      "conditions": [
+        "H1"
+      ],
       "fields": [
         {
           "name": "purpose",
@@ -37,8 +41,16 @@
           "from": "H1"
         }
       ],
-      "sha": "99e5f55298e84b0591faf81078e75a05b1f8d411463ec160fe92d72f9ae8c7a5",
-      "schema_sha": "3d7357a31aa67b0792d30d4bf6af63bb38fb3ad1cd49ce1b8e834a08c344cbb1"
+      "render": [
+        {
+          "text": "{purpose}"
+        },
+        {
+          "each": "assumptions",
+          "line": "Assumption: {_}",
+          "after_body": true
+        }
+      ]
     },
     {
       "name": "HLD/1 · Pages",
@@ -47,6 +59,10 @@
       "version": 1,
       "kind": "generic",
       "description": "The generic HLD/1 · Pages template: the fixed layout of every HLD Pages section, whatever the business",
+      "model": "HLDPages",
+      "conditions": [
+        "H1"
+      ],
       "fields": [
         {
           "name": "pages",
@@ -107,8 +123,17 @@
           "from": "H1"
         }
       ],
-      "sha": "39855d66322e5e19e4ce751c6f38a13debaa85bad9405c20e2bad755a190a4d6",
-      "schema_sha": "4802ece4a212eb2aa9683d60fbfc161db1f8647d467df8bde670124ec2bd0cf9"
+      "render": [
+        {
+          "each": "pages",
+          "line": "- **{id}** {name}: {purpose:nodot}.[ Implements {implements}.]"
+        },
+        {
+          "each": "assumptions",
+          "line": "Assumption: {_}",
+          "after_body": true
+        }
+      ]
     },
     {
       "name": "HLD/1 · Components",
@@ -117,6 +142,12 @@
       "version": 1,
       "kind": "generic",
       "description": "The generic HLD/1 · Components template: the fixed layout of every HLD Components section, whatever the business",
+      "model": "HLDComponents",
+      "conditions": [
+        "H1",
+        "H3",
+        "H4"
+      ],
       "fields": [
         {
           "name": "components",
@@ -207,8 +238,17 @@
           "from": "H4"
         }
       ],
-      "sha": "f80f622bdaeb1b3d46de7a38ffb16bdbcc4528c18df737df019a28bc43c7be7a",
-      "schema_sha": "503eadea93ecff04d300957e19983cca6f2c3f4d0998dcfbb583c11d4998c91c"
+      "render": [
+        {
+          "each": "components",
+          "line": "- **{id}** {name}: {responsibility:nodot}.[ Covers {covers}.][ On {page}.]"
+        },
+        {
+          "each": "assumptions",
+          "line": "Assumption: {_}",
+          "after_body": true
+        }
+      ]
     },
     {
       "name": "HLD/1 · Data flow",
@@ -217,6 +257,10 @@
       "version": 1,
       "kind": "generic",
       "description": "The generic HLD/1 · Data flow template: the fixed layout of every HLD Data flow section, whatever the business",
+      "model": "HLDDataFlow",
+      "conditions": [
+        "H1"
+      ],
       "fields": [
         {
           "name": "data_flows",
@@ -268,6 +312,10 @@
           ]
         }
       ],
+      "reply_optional": [
+        "data_flows",
+        "assumptions"
+      ],
       "rules": [
         {
           "rule": "not_empty",
@@ -281,8 +329,17 @@
           "from": "H1"
         }
       ],
-      "sha": "a36ab44f6a955025516dab503b3885bcd1e0aad97eeb33b049c8cc76b4ff7f6e",
-      "schema_sha": "04dc29449a9021aad105e2acc7327e9692292f81a5d611bd501d47885961a3b3"
+      "render": [
+        {
+          "each": "data_flows",
+          "line": "- {from} to {to}: {data}, on {trigger}."
+        },
+        {
+          "each": "assumptions",
+          "line": "Assumption: {_}",
+          "after_body": true
+        }
+      ]
     },
     {
       "name": "HLD/1 · Hosting and deployment",
@@ -291,6 +348,10 @@
       "version": 1,
       "kind": "generic",
       "description": "The generic HLD/1 · Hosting and deployment template: the fixed layout of every HLD Hosting and deployment section, whatever the business",
+      "model": "HLDHosting",
+      "conditions": [
+        "H1"
+      ],
       "fields": [
         {
           "name": "hosting",
@@ -336,8 +397,16 @@
           "from": "H1"
         }
       ],
-      "sha": "1ab1667a1a5dab20097420315c1f0ee221941b3c2cade6074215d72442df1fa1",
-      "schema_sha": "6316411253d5512d0c23707a2efe2719ad8a9662765dd6d8395f9c2e6efc0931"
+      "render": [
+        {
+          "text": "{hosting.kind}[ {hosting.notes}]"
+        },
+        {
+          "each": "assumptions",
+          "line": "Assumption: {_}",
+          "after_body": true
+        }
+      ]
     },
     {
       "name": "HLD/1 · Risks",
@@ -346,6 +415,10 @@
       "version": 1,
       "kind": "generic",
       "description": "The generic HLD/1 · Risks template: the fixed layout of every HLD Risks section, whatever the business",
+      "model": "HLDRisks",
+      "conditions": [
+        "H1"
+      ],
       "fields": [
         {
           "name": "risks",
@@ -383,6 +456,10 @@
           ]
         }
       ],
+      "reply_optional": [
+        "risks",
+        "assumptions"
+      ],
       "rules": [
         {
           "rule": "not_empty",
@@ -394,8 +471,17 @@
           "from": "H1"
         }
       ],
-      "sha": "2ad49cc69b9805e231a348b18d28d9dbfb58aa638238d9a4f331b730c3f90e3f",
-      "schema_sha": "6720ce6ef504f1f586697c0548c3873d2f200c20673187486d285471bd18813a"
+      "render": [
+        {
+          "each": "risks",
+          "line": "- {risk:nodot}. Mitigation: {mitigation}"
+        },
+        {
+          "each": "assumptions",
+          "line": "Assumption: {_}",
+          "after_body": true
+        }
+      ]
     },
     {
       "name": "HLD/1 · Document",
@@ -404,6 +490,7 @@
       "version": 1,
       "kind": "generic",
       "description": "The generic HLD/1 document template: the whole HLD as one object, every section in order, as the agent reads it and as the renderer writes it",
+      "model": "HLD",
       "fields": [
         {
           "name": "purpose",
@@ -455,211 +542,15 @@
           "nullable": false
         }
       ],
-      "objects": [
-        {
-          "name": "Page",
-          "fields": [
-            {
-              "name": "id",
-              "type": "string",
-              "required": true,
-              "description": "P1, P2, ... in order",
-              "nullable": false
-            },
-            {
-              "name": "name",
-              "type": "string",
-              "required": true,
-              "description": "the page name",
-              "nullable": false
-            },
-            {
-              "name": "purpose",
-              "type": "string",
-              "required": true,
-              "description": "what the page is for",
-              "nullable": false
-            },
-            {
-              "name": "implements",
-              "type": "list[string]",
-              "required": false,
-              "description": "the PRD requirement ids this page carries",
-              "nullable": false
-            }
-          ]
-        },
-        {
-          "name": "Component",
-          "fields": [
-            {
-              "name": "id",
-              "type": "string",
-              "required": true,
-              "description": "C1, C2, ... in order",
-              "nullable": false
-            },
-            {
-              "name": "name",
-              "type": "string",
-              "required": true,
-              "description": "the component name",
-              "nullable": false
-            },
-            {
-              "name": "responsibility",
-              "type": "string",
-              "required": true,
-              "description": "its one responsibility, in one line",
-              "nullable": false
-            },
-            {
-              "name": "covers",
-              "type": "list[string]",
-              "required": false,
-              "description": "the PRD requirement ids it covers, e.g. [\"R1\"]",
-              "nullable": false
-            },
-            {
-              "name": "page",
-              "type": "string",
-              "required": false,
-              "description": "the page id it sits on, e.g. \"P1\"",
-              "nullable": false
-            }
-          ]
-        },
-        {
-          "name": "DataFlow",
-          "fields": [
-            {
-              "name": "from",
-              "type": "string",
-              "required": true,
-              "description": "where the data comes from",
-              "nullable": false
-            },
-            {
-              "name": "to",
-              "type": "string",
-              "required": true,
-              "description": "where it goes",
-              "nullable": false
-            },
-            {
-              "name": "data",
-              "type": "string",
-              "required": true,
-              "description": "what is sent",
-              "nullable": false
-            },
-            {
-              "name": "trigger",
-              "type": "string",
-              "required": true,
-              "description": "what starts it",
-              "nullable": false
-            }
-          ]
-        },
-        {
-          "name": "Hosting",
-          "fields": [
-            {
-              "name": "kind",
-              "type": "string",
-              "required": true,
-              "description": "how it is hosted, e.g. \"one static file on a static host\"",
-              "nullable": false
-            },
-            {
-              "name": "notes",
-              "type": "string",
-              "required": false,
-              "description": "how it is deployed and replaced",
-              "nullable": false
-            }
-          ]
-        },
-        {
-          "name": "Risk",
-          "fields": [
-            {
-              "name": "risk",
-              "type": "string",
-              "required": true,
-              "description": "the risk, one line",
-              "nullable": false
-            },
-            {
-              "name": "mitigation",
-              "type": "string",
-              "required": true,
-              "description": "what is done about it",
-              "nullable": false
-            }
-          ]
-        }
-      ],
-      "rules": [],
-      "sha": "c43583ed3f699f92808afec542caf91c1b82dfa963f0635fb69c239e3ac939fd",
-      "schema_sha": "b4613819392c3cae64604ad8625417cbf7cf600f084e214058026cbfb9639e81",
-      "render": {
-        "format": "markdown",
-        "file": "hld.md",
-        "title": "# HLD/1",
-        "sections": [
-          {
-            "heading": "## Purpose and scope",
-            "template": "HLD/1 · Purpose and scope",
-            "fields": [
-              "purpose",
-              "assumptions"
-            ]
-          },
-          {
-            "heading": "## Pages",
-            "template": "HLD/1 · Pages",
-            "fields": [
-              "pages",
-              "assumptions"
-            ]
-          },
-          {
-            "heading": "## Components",
-            "template": "HLD/1 · Components",
-            "fields": [
-              "components",
-              "assumptions"
-            ]
-          },
-          {
-            "heading": "## Data flow",
-            "template": "HLD/1 · Data flow",
-            "fields": [
-              "data_flows",
-              "assumptions"
-            ]
-          },
-          {
-            "heading": "## Hosting and deployment",
-            "template": "HLD/1 · Hosting and deployment",
-            "fields": [
-              "hosting",
-              "assumptions"
-            ]
-          },
-          {
-            "heading": "## Risks",
-            "template": "HLD/1 · Risks",
-            "fields": [
-              "risks",
-              "assumptions"
-            ]
-          }
-        ],
-        "from": "j2_artifact_models.render_section(kind, section, data), one section after the other, in this order"
-      }
+      "reply_optional": [
+        "data_flows",
+        "risks",
+        "assumptions",
+        "implements",
+        "covers",
+        "page",
+        "notes"
+      ]
     }
   ]
 }

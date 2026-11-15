@@ -1,0 +1,39 @@
+{
+  "schema": "template-library/1",
+  "name": "Flow Pilates Studio Risks",
+  "version": 2,
+  "sha": "079c76dec4dac77f7fd202ed572422798c59e81267ef9323fa4a6cece3920894",
+  "schema_sha": "6a74952a95abd4b367347c64c74ea0a4c579623e8a30b604a0ab6cf59eb605a8",
+  "model_sha": "babcc4c8eca3b8b4a9826cd29418f0e9fb6b0abdae7885bfd521e7964c7bec8c",
+  "class": "FlowPilatesStudioRisksV2",
+  "created": "2026-11-12T15:22:21",
+  "fingerprints": [
+    "d1609c4144ada6edbca087926eaeaf43eb305bb906d51e81440b7c1d1de87d32"
+  ],
+  "made_by": {
+    "run": "j2-20261112-150036",
+    "workflow": "W-24",
+    "atom": "W-24.a1",
+    "agent": "code (adapted from a run template)",
+    "date": "2026-11-12 15:00:36"
+  },
+  "business": {
+    "name": "Flow Pilates Studio",
+    "type": "pilates studio"
+  },
+  "mock": false,
+  "collected_from": {
+    "run": "j2-20261112-150036",
+    "where": "the run's copy"
+  },
+  "used_by": [
+    {
+      "run": "j2-20261112-150036",
+      "workflow": "W-24",
+      "atom": "W-24.a1",
+      "action": "extended"
+    }
+  ],
+  "renamed_from": "Still Point Yoga Risks@6",
+  "adapted_from": "Iron Grove Fitness Risks@1"
+}

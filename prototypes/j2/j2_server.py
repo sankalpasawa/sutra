@@ -148,7 +148,7 @@ class Handler(http.server.BaseHTTPRequestHandler):
             tid = q.get("id") or ""
             got = j2_template_lib.run_template_view(tid) if re.fullmatch(r"[a-z0-9-]+", tid) else None
             if got:
-                got["enabled"] = os.environ.get("J2_RUN_TEMPLATES") == "1"
+                got["enabled"] = os.environ.get("J2_RUN_TEMPLATES") == "1" or j2_template_lib.auto_reuse()
             return self._send(200, json.dumps(got, ensure_ascii=False)) if got else self._send(404, '{"error": "no such run template"}')
         if u.path.startswith("/api/library/"):      # one template version: /api/library/<artifact>/<section>/<slug>/v<N>
             parts = u.path[len("/api/library/"):].split("/")
@@ -164,6 +164,8 @@ class Handler(http.server.BaseHTTPRequestHandler):
             d = j2.saved_dir(run) if run else RUN.dir
             decs = j2_template_lib.run_templates(d) if d and os.path.isdir(d) else []
             use = j2_template_lib.run_template_use(d) if decs else None      # only a run started from a run template has it
+            if use:      # its rows carry the group and the kind the filters read
+                decs = j2_template_lib.reuse_rows(decs)
             return self._send(200, json.dumps({"decisions": decs, **({"run_template": use} if use else {})}, ensure_ascii=False))
         if u.path == "/api/artifacts":  # the Artifacts tab: deliverables, then evidence and records (artifacts/types.json)
             d = j2.saved_dir(run) if run else RUN.dir

@@ -183,6 +183,32 @@ def test_per_atom_sums_equal_the_total_and_stub_rows_are_left_out_unless_asked(c
     assert {g["key"]: g["calls"] for g in client.get("/api/usage/summary", params={"by": "atom"}).json()["groups"]} == {atom: 1}
 
 
+def test_per_purpose_sums_equal_the_total_and_the_purposes_the_engine_tags_are_the_ledgers(chain):
+    """D159: a turn's own call, the late judge's planner and judge calls (D145) and a helper's reach the ledger under the purpose the engine tagged them with, and `by=purpose`
+    groups them: the groups add up to the total, with the stub rows and without them (the provider bill, by purpose)."""
+    atom = first_atom(chain)
+    llm.bind_atom(atom)
+    chain.ask("a" * 40, function="adaptation", step=1, call_no=1)                                                  # a turn: the tag's own purpose, agent_turn
+    chain.ask("b" * 40, function="adaptation", step=1, call_no=2, role="planner", purpose="plan")                  # the late judge has Adaptation plan ...
+    chain.ask("c" * 40, function="adaptation", step=1, call_no=3, role="judge", purpose="judge")                   # ... and a judge score the plan
+    chain.ask("d" * 40, function="priority", step=2, call_no=4, role="judge", purpose="judge")
+    chain.ask("e" * 40, function="summariser", call_no=5, purpose="summary")                                       # a helper of the turn
+    chain.writer.emit(usage_event(fn="priority", step="J2.c", atom=atom, provider="claude", model="sonnet", purpose="judge", usd=0.0123, tokens_in=3000, tokens_out=200,
+                                  seconds=4.0, ok=True, how="native", call_ref=f"{chain.run_id}:6", detail=None))   # the one call a provider billed
+    chain.ingest()
+    client = chain.w.client
+    everything = client.get("/api/usage", params={"task_id": chain.task, "include_stub": 1}).json()
+    groups = client.get("/api/usage/summary", params={"by": "purpose", "include_stub": 1}).json()["groups"]
+    assert {g["key"]: g["calls"] for g in groups} == {"agent_turn": 1, "plan": 1, "judge": 3, "summary": 1}
+    assert sum(g["calls"] for g in groups) == everything["totals"]["calls"] == 6
+    assert sum(g["tokens_in"] for g in groups) == everything["totals"]["tokens_in"] and sum(g["tokens_out"] for g in groups) == everything["totals"]["tokens_out"]
+    assert round(sum(g["usd"] or 0 for g in groups), 6) == everything["totals"]["usd"] == 0.0123
+    assert client.get("/api/usage/summary", params={"by": "purpose"}).json()["groups"] == [
+        {"key": "judge", "calls": 1, "usd": 0.0123, "tokens_in": 3000, "tokens_out": 200}]                         # stub rows left out: what the provider billed, by purpose
+    assert [r["purpose"] for r in client.get("/api/usage", params={"task_id": chain.task, "include_stub": 1}).json()["rows"]] == [
+        "agent_turn", "plan", "judge", "judge", "summary", "judge"]                                                 # the rows are the groups' rows: nothing was renamed on the way
+
+
 def test_a_usage_line_the_ledger_refuses_is_not_stored_and_does_not_stop_the_run(chain):
     atom = first_atom(chain)
     chain.writer.emit(usage_event(fn="audit", step="J2.g", atom=atom, provider="claude", model="sonnet", purpose="agent_turn", usd=0.01,

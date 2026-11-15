@@ -101,7 +101,7 @@ def test_the_end_statuses_are_the_same_four_words():
 
 def test_the_recorded_run_reads_strictly_and_every_line_has_its_time_and_the_last_is_run_ended():
     lines = jsonl(GOLDEN)
-    assert len(lines) == 151 and lines[0]["t"] == "run.started" and lines[-1]["t"] == "run.ended"
+    assert len(lines) == 155 and lines[0]["t"] == "run.started" and lines[-1]["t"] == "run.ended"
     assert all(AT.fullmatch(line["at"]) for line in lines)
     assert {line["t"] for line in lines} <= set(RUN_EVENT_TYPES)
     for line in GOLDEN.read_text(encoding="utf-8").splitlines():

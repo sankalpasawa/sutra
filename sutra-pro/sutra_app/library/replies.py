@@ -28,7 +28,7 @@ from .types import Violation, clip, violation, violations_from_validation_error
 
 __all__ = [
     "extract_json", "close_json", "ReplyInvalid", "ParsedReply", "ReplyParser", "normalise_enums", "drop_unknown",
-    "tolerate", "retry_text_for", "RETRY_PREFIX",
+    "tolerate", "tolerate_clipping", "retry_text_for", "RETRY_PREFIX",
 ]
 
 log = logging.getLogger("sutra.library")
@@ -109,6 +109,7 @@ class ParsedReply:
     model: Value
     dropped_keys: list[str] = field(default_factory=list)
     normalised: list[str] = field(default_factory=list)
+    clipped: list[str] = field(default_factory=list)       # "<path> (<length> > <limit>)" for each text cut to its cap (clip_text only)
 
 
 # ---- tolerant reading: enum words in any case, undeclared keys dropped ---------------------------------------------
@@ -136,20 +137,24 @@ def _common_tag(models: list[type[BaseModel]]) -> str | None:
 class _Walker:
     """Walks a reply alongside the class it should become and fixes what can be fixed without guessing."""
 
-    def __init__(self, enums: bool, drop: bool) -> None:
+    def __init__(self, enums: bool, drop: bool, clip: bool = False) -> None:
         self.enums = enums
         self.drop = drop
+        self.clip = clip
         self.dropped: list[str] = []
         self.normalised: list[str] = []
+        self.clipped: list[str] = []
 
-    def value(self, annotation: Any, value: Any, path: str, hint: str | None = None) -> Any:
+    def value(self, annotation: Any, value: Any, path: str, hint: str | None = None, outer: tuple = ()) -> Any:
         core, meta = unwrap_annotation(annotation)
+        if self.clip and core is str and isinstance(value, str):
+            return self._text(value, (*outer, *meta), path)
         origin = get_origin(core)
         if origin is Literal:
             return self._literal(core, value, path)
         members = union_members(core)
         if members is not None:
-            return self._union(members, discriminator_of(meta) or hint, value, path)
+            return self._union(members, discriminator_of(meta) or hint, value, path, outer)
         if _is_model(core):
             return self.model(core, value, path)
         args = get_args(core)
@@ -158,6 +163,19 @@ class _Walker:
         if isinstance(value, dict) and origin in (dict, Mapping) and len(args) == 2:
             return {k: self.value(args[1], item, _join(path, k)) for k, item in value.items()}
         return value
+
+    def _text(self, value: str, meta: tuple, path: str) -> str:
+        """A free text (a str with a length cap and no pattern) longer than its cap is cut to it and listed."""
+        limit, pattern = None, None
+        for m in meta:
+            for item in (m, *getattr(m, "metadata", ())):
+                limit = getattr(item, "max_length", limit)
+                pattern = getattr(item, "pattern", pattern)
+        text = value.strip()
+        if limit is None or pattern is not None or len(text) <= limit:
+            return value
+        self.clipped.append(f"{path} ({len(text)} > {limit})")
+        return clip(text, limit)
 
     def _literal(self, annotation: Any, value: Any, path: str) -> Any:
         allowed = [v for v in get_args(annotation) if isinstance(v, str)]
@@ -179,6 +197,9 @@ class _Walker:
             for alias in (info.alias, info.validation_alias):
                 if isinstance(alias, str):
                     declared[alias] = info
+        read = getattr(cls, "read_wire", None)         # a class that reads J2's wire shape says so (idempotent)
+        if callable(read):
+            value = read(value)
         out: dict[str, Any] = {}
         for key, item in value.items():
             info = declared.get(key)
@@ -189,20 +210,23 @@ class _Walker:
                     out[key] = item
                 continue
             disc = info.discriminator if isinstance(info.discriminator, str) else None
-            out[key] = self.value(info.annotation, item, _join(path, key), disc)
+            out[key] = self.value(info.annotation, item, _join(path, key), disc, tuple(info.metadata))
         return out
 
-    def _union(self, members: tuple[Any, ...], disc: str | None, value: Any, path: str) -> Any:
+    def _union(self, members: tuple[Any, ...], disc: str | None, value: Any, path: str, outer: tuple = ()) -> Any:
         real = [m for m in members if m is not type(None)]
         if not isinstance(value, dict):
             for member in real:                       # a scalar or list: the first member that changes it
-                trial = _Walker(self.enums, self.drop)
-                changed = trial.value(member, value, path)
-                if trial.normalised or trial.dropped:
+                trial = _Walker(self.enums, self.drop, self.clip)
+                changed = trial.value(member, value, path, None, outer)
+                if trial.normalised or trial.dropped or trial.clipped:
                     self.normalised.extend(trial.normalised)
                     self.dropped.extend(trial.dropped)
+                    self.clipped.extend(trial.clipped)
                     return changed
             return value
+        if len(real) == 1 and union_members(real[0]) is not None:      # Optional[Annotated[Union[...], discriminator]]
+            return self.value(real[0], value, path, disc, outer)
         models = [unwrap_annotation(m)[0] for m in real if _is_model(unwrap_annotation(m)[0])]
         if len(models) == 1:
             return self.model(models[0], value, path)
@@ -221,6 +245,12 @@ def tolerate(model: type[BaseModel], data: Any, *, enums: bool = True, drop: boo
     """(data read tolerantly for `model`, the paths of the keys dropped, the paths of the enum words fixed)."""
     walker = _Walker(enums, drop)
     return walker.model(model, data, ""), walker.dropped, walker.normalised
+
+
+def tolerate_clipping(model: type[BaseModel], data: Any) -> tuple[Any, list[str], list[str], list[str]]:
+    """`tolerate` that also cuts every free text to its cap: (data, dropped, normalised, clipped)."""
+    walker = _Walker(True, True, True)
+    return walker.model(model, data, ""), walker.dropped, walker.normalised, walker.clipped
 
 
 def normalise_enums(model: type[BaseModel], data: Any) -> tuple[Any, list[str]]:
@@ -252,17 +282,22 @@ class ReplyParser:
         self._registry = registry
 
     def parse(self, family: str, text: str | bytes | Mapping[str, Any], *, kind: str | None = None,
-              version: int | None = None) -> ParsedReply:
+              version: int | None = None, clip_text: bool = False) -> ParsedReply:
+        """`clip_text` (off by default) cuts a free text longer than its cap to it and lists it in `clipped` (D158)."""
         data = self._object_from(text)
         cls = self._class_for(family, kind, version, data)
-        data, dropped, normalised = tolerate(cls, data)
+        clipped: list[str] = []
+        if clip_text:
+            data, dropped, normalised, clipped = tolerate_clipping(cls, data)
+        else:
+            data, dropped, normalised = tolerate(cls, data)
         if dropped:
             log.debug("reply for %s dropped keys: %s", family, dropped)
         try:
             model = cls.model_validate(data)
         except ValidationError as exc:
             raise ReplyInvalid("shape", violations_from_validation_error(exc)) from None
-        return ParsedReply(model=model, dropped_keys=dropped, normalised=normalised)
+        return ParsedReply(model=model, dropped_keys=dropped, normalised=normalised, clipped=clipped)
 
     # ---- steps ------------------------------------------------------------------------------------------------
 

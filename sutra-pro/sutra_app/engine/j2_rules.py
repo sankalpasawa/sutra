@@ -1,9 +1,11 @@
-"""artifact-rules/1: the template rules as data, one list per (kind, section), run by a small fixed set of checks.
+"""artifact-rules/1: the template rules as data, one list per section, run by a small fixed set of checks.
 
-The split this file completes: the Pydantic models in j2_artifact_models.py say what SHAPE an artifact's data has
-(fields, types, required or optional, enums), and everything else - ids in order, references that point at an id that
-exists, hex colours, plain CSS, page tags, anchors - is a rule here, written as a plain dict. Rules are data, so a
-generic or generated template can carry its own list later without new code.
+The split this file completes: the models j2_artifact_models.py builds say what SHAPE an artifact's data has (fields,
+types, required or optional, enums), and everything else - ids in order, references that point at an id that exists,
+hex colours, plain CSS, page tags, anchors - is a rule, written as a plain dict. The rules of every section live in its
+type's template file (templates/<type>/generic.json, "rules"), beside the section's fields: this file holds the rule
+TYPES (the checks) and reads the rules themselves from there. A specialised template carries its own list in the same
+shape.
 
 One function per rule type (RULE_TYPES), paths in a simple syntax:
     "statement"                 a field
@@ -14,10 +16,12 @@ run_rules() answers for every rule in the list, never raising: {"rule", "name", 
 pass is True, False, or None when the run recorded nothing to check it against ("not recorded", never a pass).
 
 Targets of ref_exists are "this.<path>" (the document this section belongs to, as the run has recorded it so far) or
-"prd.<path>" / "hld.<path>" / "lld.<path>" (an earlier document). Python 3.9: Optional/List/Dict.
+"<type>.<path>" (an earlier document, by its type's name). Python 3.9: Optional/List/Dict.
 """
 import re
 from typing import Any, Dict, List, Optional
+
+from . import j2_types
 
 SCHEMA = "artifact-rules/1"
 HEX = re.compile(r"#(?:[0-9a-fA-F]{3}){1,2}$")
@@ -258,132 +262,35 @@ RULE_TYPES = {"ids_sequential": ids_sequential, "ids_unique": ids_unique, "ref_e
 
 
 # ---------------------------------------------------------------- the rules, as data
-# One list per (kind, section). "name" is the rule as a reader sees it, "from" the condition or the code it comes
-# from. Nothing here is code: a template that carries its own rules carries exactly this shape.
-PRIORITIES = ["must", "should", "could"]
-FIELD_TYPES = ["text", "email", "tel", "url", "number", "date", "time", "select", "textarea", "checkbox", "radio",
-               "password", "file"]
-
-RULES = {
-    ("prd", "Problem"): [
-        {"rule": "not_empty", "path": "statement", "name": "the problem statement is given", "from": "P1"}],
-    ("prd", "Users"): [
-        {"rule": "not_empty", "path": "users[].group", "name": "every user group is named", "from": "P7"},
-        {"rule": "one_of_present", "path": ["users[].actions", "users[].needs"],
-         "name": "every group says what it does or what it needs", "from": "P7"}],
-    ("prd", "Goals"): [
-        {"rule": "ids_sequential", "path": "goals", "prefix": "G",
-         "name": "ids G1, G2, ... unique and in order", "from": "P6"}],
-    ("prd", "Requirements"): [
-        {"rule": "ids_sequential", "path": "requirements", "prefix": "R",
-         "name": "ids R1, R2, ... unique and in order", "from": "P2"},
-        {"rule": "enum", "path": "requirements[].priority", "values": PRIORITIES,
-         "name": "priority is must, should or could", "from": "P2"},
-        {"rule": "ref_exists", "path": "requirements[].goals", "target": "this.goals[].id",
-         "name": "goals point at a goal id of this document", "from": "P6"}],
-    ("prd", "Success metrics"): [
-        {"rule": "ref_exists", "path": "success_metrics[].goal", "target": "this.goals[].id",
-         "name": "every metric names a goal id of this document", "from": "P6"}],
-    ("prd", "Out of scope"): [
-        {"rule": "not_empty", "path": "out_of_scope", "name": "the out-of-scope lines are given", "from": "P1"}],
-    ("hld", "Purpose and scope"): [
-        {"rule": "not_empty", "path": "purpose", "name": "the purpose is given", "from": "H1"}],
-    ("hld", "Pages"): [
-        {"rule": "ids_sequential", "path": "pages", "prefix": "P",
-         "name": "ids P1, P2, ... unique and in order", "from": "H1"}],
-    ("hld", "Components"): [
-        {"rule": "ids_sequential", "path": "components", "prefix": "C",
-         "name": "ids C1, C2, ... unique and in order", "from": "H3"},
-        {"rule": "not_empty", "path": "components[].responsibility",
-         "name": "every component states its responsibility", "from": "H3"},
-        {"rule": "ref_exists", "path": "components[].page", "target": "this.pages[].id",
-         "name": "page points at a page id of this document", "from": "H1"},
-        {"rule": "ref_exists", "path": "components[].covers", "target": "prd.requirements[].id",
-         "required_target": True, "fail_text": "{id} covers {bad}, which is not a requirement of the PRD",
-         "missing_text": "{id}: the PRD's requirement ids are not recorded, so Covers can't be checked",
-         "name": "covers points at a requirement id of the PRD", "from": "H4"}],
-    ("hld", "Data flow"): [
-        {"rule": "not_empty", "path": ["data_flows[].from", "data_flows[].to", "data_flows[].data",
-                                       "data_flows[].trigger"],
-         "name": "every flow has from, to, data and trigger", "from": "H1"}],
-    ("hld", "Hosting and deployment"): [
-        {"rule": "not_empty", "path": "hosting.kind", "name": "the hosting kind is given", "from": "H1"}],
-    ("hld", "Risks"): [
-        {"rule": "not_empty", "path": ["risks[].risk", "risks[].mitigation"],
-         "name": "every risk has a mitigation", "from": "H1"}],
-    ("lld", "Pages and sections"): [
-        {"rule": "ids_sequential", "path": "sections", "prefix": "S",
-         "name": "ids S1, S2, ... unique and in order", "from": "L2"},
-        {"rule": "anchor_selector", "path": "sections[].anchor", "name": "every section has an anchor",
-         "from": "L2"},
-        {"rule": "ref_exists", "path": "sections[].implements", "target": "hld.components[].id",
-         "required_target": True, "fail_text": "{id} implements {bad}, which is not a component of the HLD",
-         "missing_text": "{id}: the HLD's component ids are not recorded, so Implements can't be checked",
-         "name": "implements points at a component id of the HLD", "from": "L5"}],
-    ("lld", "Interactive elements"): [
-        {"rule": "ids_sequential", "path": "elements", "prefix": "E",
-         "name": "ids E1, E2, ... unique and in order", "from": "L2"},
-        {"rule": "not_empty", "path": ["elements[].selector", "elements[].trigger", "elements[].behaviour"],
-         "name": "every element has a selector, a trigger and a behaviour", "from": "L3"},
-        {"rule": "ref_exists", "path": "elements[].section", "target": "this.sections[].id",
-         "name": "section points at a section id of this document", "from": "L2"}],
-    ("lld", "Form fields"): [
-        {"rule": "ids_sequential", "path": "form_fields", "prefix": "F",
-         "name": "ids F1, F2, ... unique and in order", "from": "L2"},
-        {"rule": "not_empty", "path": ["form_fields[].name", "form_fields[].type"],
-         "name": "every field has a name, a type and a required flag", "from": "L4"},
-        {"rule": "enum", "path": "form_fields[].type", "values": FIELD_TYPES,
-         "name": "type is one of " + ", ".join(FIELD_TYPES[:4]) + ", ...", "from": "L4"},
-        {"rule": "ref_exists", "path": "form_fields[].section", "target": "this.sections[].id",
-         "name": "section points at a section id of this document", "from": "L2"}],
-    ("lld", "File structure"): [
-        {"rule": "not_empty", "path": ["files[].path", "files[].purpose"],
-         "name": "every file has a path and a purpose", "from": "L1"}],
-    ("lld", "Responsive and accessibility rules"): [
-        {"rule": "one_of_present", "path": ["responsive_rules", "accessibility_rules"],
-         "name": "the rules are given", "from": "L1"}],
-    ("design", "Style guide"): [
-        {"rule": "hex", "path": "palette.*", "name": "every palette colour is a hex colour",
-         "from": "parse_style (j2.py)"},
-        {"rule": "not_empty", "path": ["fonts.heading", "fonts.body"], "name": "heading and body fonts are given",
-         "from": "parse_style (j2.py)"},
-        {"rule": "css_safe", "path": ["palette", "fonts.heading", "fonts.body", "spacing", "radius", "buttons",
-                                      "card"], "name": "every value is plain CSS", "from": "parse_style (j2.py)"},
-        {"rule": "url_prefix", "path": "fonts.google_fonts_url", "prefix": "https://fonts.googleapis.com/",
-         "name": "the fonts url is a fonts.googleapis.com url or null", "from": "parse_style (j2.py)"}],
-    ("website", "Section"): [
-        {"rule": "html_no_page_tags", "path": ["html", "head"],
-         "name": "the html has no <html>, <head> or <body> tags", "from": "parse_section (j2.py)"},
-        {"rule": "anchor_selector", "path": "anchor", "name": "the anchor is an id selector",
-         "from": "parse_section (j2.py)"},
-        {"rule": "anchor_in_html", "anchor_path": "anchor", "html_path": "html",
-         "name": "the anchor points at an element in the html", "from": "N4"},
-        {"rule": "ref_exists", "path": "implements", "target": "lld.sections[].id",
-         "fail_text": "{id} implements {bad}, which is not a section of the LLD",
-         "name": "implements points at a section id of the LLD", "from": "N8"}],
-}
-# The names a reader sees, derived from the rules themselves: there is no second list to keep in step.
-RULE_NAMES = {k: [r["name"] for r in v] for k, v in RULES.items()}
-
-
+# One list per section, held by the section's own template in templates/<type>/generic.json ("rules"). "name" is the
+# rule as a reader sees it, "from" the condition or the code it comes from. Nothing here names a type or a section: a
+# rule that points at another document says so in its own target.
 def rules_for(kind, section):
-    """The rule specs of one section ([] when the template fixes none)."""
-    return [dict(r) for r in RULES.get((str(kind or ""), str(section or "")), [])]
+    """The rule specs of one section, read from its template ([] when the template fixes none, or there is none)."""
+    t = j2_types.section_template(str(kind or ""), str(section or ""))
+    return [dict(r) for r in (t or {}).get("rules") or []]
+
+
+def all_rules():
+    """{(type, section): its rule specs} for every section of every type that has a template."""
+    return {(k, t["section"]): [dict(r) for r in t.get("rules") or []] for k in j2_types.templated()
+            for t in j2_types.template(k)}
 
 
 def rule_names(kind, section):
+    """The names a reader sees, taken from the rules themselves: there is no second list to keep in step."""
     return [r["name"] for r in rules_for(kind, section)]
 
 
 def rules_count(kind, section, data=None):
     """How many rules this section is held to, so a receipt can say "n of m"."""
-    return len(RULES.get((str(kind or ""), str(section or "")), []))
+    return len(rules_for(kind, section))
 
 
 def run_rules(kind, section, data, docs=None):
     """Every rule of this section, answered: [{"rule", "name", "from", "pass", "evidence"}]. Nothing raises: a rule
     whose own check breaks is reported as not recorded with the reason. docs holds what the run recorded - {"this":
-    this document's data so far, "prd": ..., "hld": ..., "lld": ...} - and a target it has nothing for is
+    this document's data so far, "<an earlier document's type>": ...} - and a target it has nothing for is
     "not recorded", never a pass."""
     return run_specs(rules_for(kind, section), data, docs)
 

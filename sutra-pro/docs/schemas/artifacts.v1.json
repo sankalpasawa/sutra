@@ -79,6 +79,22 @@
           "default": null,
           "title": "Rechecked After"
         },
+        "reused_from": {
+          "anyOf": [
+            {
+              "items": {
+                "$ref": "#/$defs/ReusedFrom"
+              },
+              "maxItems": 500,
+              "type": "array"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Reused From"
+        },
         "sha256": {
           "anyOf": [
             {
@@ -146,6 +162,79 @@
         "depends_on"
       ],
       "title": "ArtifactRow",
+      "type": "object"
+    },
+    "ReusedFrom": {
+      "additionalProperties": false,
+      "description": "A section this run served from an earlier run (the content door, J2_ARTIFACT_LIBRARY=1; j2_artifacts.rows, from reuse.json):\nthe workflow that owns it here, its section, the source run and the source's workflow and run template key.",
+      "properties": {
+        "key": {
+          "anyOf": [
+            {
+              "maxLength": 200,
+              "minLength": 1,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Key"
+        },
+        "run": {
+          "anyOf": [
+            {
+              "maxLength": 200,
+              "minLength": 1,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Run"
+        },
+        "section": {
+          "anyOf": [
+            {
+              "maxLength": 200,
+              "minLength": 1,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Section"
+        },
+        "source_workflow": {
+          "anyOf": [
+            {
+              "maxLength": 200,
+              "minLength": 1,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Source Workflow"
+        },
+        "workflow": {
+          "maxLength": 200,
+          "minLength": 1,
+          "title": "Workflow",
+          "type": "string"
+        }
+      },
+      "required": [
+        "workflow"
+      ],
+      "title": "ReusedFrom",
       "type": "object"
     }
   },

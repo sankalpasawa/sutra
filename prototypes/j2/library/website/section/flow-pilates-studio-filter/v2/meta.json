@@ -1,0 +1,39 @@
+{
+  "schema": "template-library/1",
+  "name": "Flow Pilates Studio Filter",
+  "version": 2,
+  "sha": "c410f5529469187471eb33e9c271c29b4556d1d117c7766077157df997e0bd3a",
+  "schema_sha": "dde5b478be402edb5e26ca8ef003f6092f8db9110f52b4ba2a5e18d75443a3c1",
+  "model_sha": "4a73b079281641ec6a517f8c930a8ecdfc278e5f1959fb69cccf20e75b83816d",
+  "class": "FlowPilatesStudioFilterV2",
+  "created": "2026-11-12T15:31:00",
+  "fingerprints": [
+    "c8a57419172e03e579da8480bb9cf112b7134867fd3950d2c605b3188a90048f"
+  ],
+  "made_by": {
+    "run": "j2-20261112-150036",
+    "workflow": "W-32",
+    "atom": "W-32.a1",
+    "agent": "code (adapted from the nearest template)",
+    "date": "2026-11-12 15:00:36"
+  },
+  "business": {
+    "name": "Flow Pilates Studio",
+    "type": "pilates studio"
+  },
+  "mock": false,
+  "collected_from": {
+    "run": "j2-20261112-150036",
+    "where": "the run's copy"
+  },
+  "used_by": [
+    {
+      "run": "j2-20261112-150036",
+      "workflow": "W-32",
+      "atom": "W-32.a1",
+      "action": "extended"
+    }
+  ],
+  "renamed_from": "Thread Filter@3",
+  "adapted_from": "Flow Pilates Studio Filter@1"
+}

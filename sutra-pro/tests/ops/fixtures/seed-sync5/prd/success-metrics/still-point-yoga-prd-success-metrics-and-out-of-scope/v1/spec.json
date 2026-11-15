@@ -1,0 +1,141 @@
+{
+  "name": "Still Point Yoga PRD Success metrics and Out of scope",
+  "artifact": "prd",
+  "section": "Success metrics",
+  "version": 1,
+  "kind": "specialised",
+  "description": "Success metrics and Out of scope sections of the Still Point Yoga PRD. Metrics are checkable by reading the page, each names its goal, and no numbers are invented.",
+  "fields": [
+    {
+      "name": "success_metrics",
+      "type": "list[SuccessMetric]",
+      "required": true,
+      "description": "one metric per goal, each checkable by reading the page",
+      "enum": null,
+      "nullable": false
+    },
+    {
+      "name": "out_of_scope",
+      "type": "list[string]",
+      "required": true,
+      "description": "items left out of the page: teacher names, phone number, embedded map and online payment",
+      "enum": [
+        "teacher names",
+        "phone number",
+        "embedded map",
+        "online payment"
+      ],
+      "nullable": false
+    },
+    {
+      "name": "online_payment_exclusion",
+      "type": "string",
+      "required": true,
+      "description": "states that no online payment is taken and that payment is made at the studio",
+      "enum": null,
+      "nullable": false
+    },
+    {
+      "name": "assumptions",
+      "type": "list[string]",
+      "required": false,
+      "description": "assumptions stated in the brief",
+      "enum": null,
+      "nullable": false
+    }
+  ],
+  "objects": [
+    {
+      "name": "SuccessMetric",
+      "fields": [
+        {
+          "name": "goal",
+          "type": "string",
+          "required": true,
+          "description": "the goal id this metric measures, e.g. \"G1\"",
+          "enum": null,
+          "nullable": false
+        },
+        {
+          "name": "metric",
+          "type": "string",
+          "required": true,
+          "description": "what is checked by reading the page",
+          "enum": null,
+          "nullable": false
+        },
+        {
+          "name": "target",
+          "type": "string",
+          "required": false,
+          "description": "the state to reach, with no invented numbers",
+          "enum": null,
+          "nullable": false
+        },
+        {
+          "name": "window",
+          "type": "string",
+          "required": false,
+          "description": "the measurement window; write \"measurement window not set\" when the brief doesn't say",
+          "enum": null,
+          "nullable": false
+        }
+      ]
+    }
+  ],
+  "rules": [
+    {
+      "rule": "ref_exists",
+      "name": "every metric names a goal id of this document",
+      "from": "P6",
+      "path": "success_metrics[].goal",
+      "target": "this.goals[].id"
+    },
+    {
+      "rule": "not_empty",
+      "name": "out of scope is not empty",
+      "from": "P6",
+      "path": "out_of_scope"
+    },
+    {
+      "rule": "enum",
+      "name": "out of scope items come from the brief",
+      "from": "P6",
+      "path": "out_of_scope[]",
+      "values": [
+        "teacher names",
+        "phone number",
+        "embedded map",
+        "online payment"
+      ]
+    }
+  ],
+  "sha": "7ba39fb48aa16b8eb1d3b007eba38624f812138d5ec61dc3cdfb2c9f1ca7bb7b",
+  "extends": "prd/success-metrics@generic/1",
+  "made_by": {
+    "run": "j2-20261103-162711",
+    "workflow": "W-3",
+    "atom": "W-3.a1",
+    "agent": "template generator (claude-cli)"
+  },
+  "context": {
+    "business_type": "prd",
+    "facts_used": [
+      "4th Floor, 22 Church Street, Bengaluru 560001",
+      "Monday 7:00 am Gentle Flow 500",
+      "No online payment is taken",
+      "No teacher name or phone number appears anywhere in the document",
+      "Payment is made at the studio",
+      "Saturday 9:00 am Beginners Basics 400",
+      "Still Point Yoga",
+      "Sunday 8:00 am Slow Sunday 500",
+      "The Out of scope section lists teacher names, phone number, embedded map and online payment",
+      "The Success metrics section lists measures that can be checked by reading the page, with no invented numbers",
+      "Thursday 7:00 am Breath and Stretch 450",
+      "Tuesday 6:30 pm Strength Yoga 600",
+      "bookings@stillpoint.example",
+      "name, email, class and preferred date"
+    ],
+    "fingerprint": "27f74e53533476704d68083e4e613ff8f833f00c74edfc8862084625f97a9dea"
+  }
+}

@@ -1,0 +1,183 @@
+{
+  "schema": "sutra-extension/2",
+  "id": "228_waiver_desk",
+  "scope": "lendco/waivers",
+  "goals": [
+    "fee_waived_201",
+    "fee_waived_202",
+    "fee_waived_203",
+    "own_waivers_approved"
+  ],
+  "budget": {
+    "compute": 8,
+    "money": 0,
+    "attention": 4
+  },
+  "preference": [
+    "compute",
+    "money",
+    "attention"
+  ],
+  "evidence": [
+    {
+      "predicate": "waiver_requested_201",
+      "truth": "TRUE",
+      "verified": true,
+      "source": "fixture/loan-book",
+      "version": "loan-201"
+    },
+    {
+      "predicate": "waiver_requested_202",
+      "truth": "TRUE",
+      "verified": true,
+      "source": "fixture/loan-book",
+      "version": "loan-202"
+    },
+    {
+      "predicate": "waiver_requested_203",
+      "truth": "TRUE",
+      "verified": true,
+      "source": "fixture/loan-book",
+      "version": "loan-203"
+    }
+  ],
+  "methods": [
+    {
+      "id": "ask-finance-waiver-201@1",
+      "effect": "waiver_approved_201",
+      "requires": [],
+      "provider": "finance-channel",
+      "grant": "action:ask-finance-waiver-201@1",
+      "cost": {
+        "compute": 0,
+        "money": 0,
+        "attention": 1
+      },
+      "action": "ask",
+      "approved": true,
+      "source": "reviewed/synthetic-method",
+      "question": "May the late fee of this loan be waived?",
+      "ask_to": "system:lendco/finance"
+    },
+    {
+      "id": "waive-late-fee-201@1",
+      "effect": "fee_waived_201",
+      "requires": [
+        "waiver_requested_201",
+        "waiver_approved_201"
+      ],
+      "provider": "local-provider",
+      "grant": "action:waive-late-fee-201@1",
+      "cost": {
+        "compute": 1,
+        "money": 0,
+        "attention": 0
+      },
+      "action": "simulate_fact",
+      "approved": true,
+      "source": "reviewed/synthetic-method"
+    },
+    {
+      "id": "ask-finance-waiver-202@1",
+      "effect": "waiver_approved_202",
+      "requires": [],
+      "provider": "finance-channel",
+      "grant": "action:ask-finance-waiver-202@1",
+      "cost": {
+        "compute": 0,
+        "money": 0,
+        "attention": 1
+      },
+      "action": "ask",
+      "approved": true,
+      "source": "reviewed/synthetic-method",
+      "question": "May the late fee of this loan be waived?",
+      "ask_to": "system:lendco/finance"
+    },
+    {
+      "id": "waive-late-fee-202@1",
+      "effect": "fee_waived_202",
+      "requires": [
+        "waiver_requested_202",
+        "waiver_approved_202"
+      ],
+      "provider": "local-provider",
+      "grant": "action:waive-late-fee-202@1",
+      "cost": {
+        "compute": 1,
+        "money": 0,
+        "attention": 0
+      },
+      "action": "simulate_fact",
+      "approved": true,
+      "source": "reviewed/synthetic-method"
+    },
+    {
+      "id": "ask-finance-waiver-203@1",
+      "effect": "waiver_approved_203",
+      "requires": [],
+      "provider": "finance-channel",
+      "grant": "action:ask-finance-waiver-203@1",
+      "cost": {
+        "compute": 0,
+        "money": 0,
+        "attention": 1
+      },
+      "action": "ask",
+      "approved": true,
+      "source": "reviewed/synthetic-method",
+      "question": "May the late fee of this loan be waived?",
+      "ask_to": "system:lendco/finance"
+    },
+    {
+      "id": "waive-late-fee-203@1",
+      "effect": "fee_waived_203",
+      "requires": [
+        "waiver_requested_203",
+        "waiver_approved_203"
+      ],
+      "provider": "local-provider",
+      "grant": "action:waive-late-fee-203@1",
+      "cost": {
+        "compute": 1,
+        "money": 0,
+        "attention": 0
+      },
+      "action": "simulate_fact",
+      "approved": true,
+      "source": "reviewed/synthetic-method"
+    },
+    {
+      "id": "ask-finance-own-waivers@1",
+      "effect": "own_waivers_approved",
+      "requires": [
+        "waiver_answer_repeated"
+      ],
+      "provider": "finance-channel",
+      "grant": "action:ask-finance-own-waivers@1",
+      "cost": {
+        "compute": 0,
+        "money": 0,
+        "attention": 1
+      },
+      "action": "ask",
+      "approved": true,
+      "source": "reviewed/synthetic-method",
+      "question": "Finance gave the same answer each time the waiver desk asked. May the desk decide waivers of this kind on its own from now on?",
+      "ask_to": "system:lendco/finance"
+    }
+  ],
+  "providers": {
+    "local-provider": 6,
+    "finance-channel": 4
+  },
+  "grants": [
+    "action:ask-finance-waiver-201@1",
+    "action:waive-late-fee-201@1",
+    "action:ask-finance-waiver-202@1",
+    "action:waive-late-fee-202@1",
+    "action:ask-finance-waiver-203@1",
+    "action:waive-late-fee-203@1",
+    "action:ask-finance-own-waivers@1"
+  ]
+}

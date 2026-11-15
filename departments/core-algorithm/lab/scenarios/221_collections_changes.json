@@ -1,0 +1,88 @@
+{
+  "schema": "sutra-extension/2",
+  "id": "221_collections_changes",
+  "goals": [
+    "reminder_sent",
+    "reminder_lesson_approved"
+  ],
+  "evidence": [
+    {
+      "predicate": "change_weight",
+      "truth": "TRUE",
+      "verified": true,
+      "source": "fixture/change-policy",
+      "version": "small"
+    },
+    {
+      "predicate": "change_weight=small",
+      "truth": "TRUE",
+      "verified": true,
+      "source": "fixture/change-policy",
+      "version": "small",
+      "depends_on": [
+        {
+          "predicate": "change_weight",
+          "version": "small"
+        }
+      ]
+    },
+    {
+      "predicate": "change_weight=weighty",
+      "truth": "FALSE",
+      "verified": true,
+      "source": "fixture/change-policy",
+      "version": "small",
+      "depends_on": [
+        {
+          "predicate": "change_weight",
+          "version": "small"
+        }
+      ]
+    }
+  ],
+  "methods": [
+    {
+      "id": "approve-own-reminder-lesson@1",
+      "effect": "reminder_lesson_approved",
+      "requires": [
+        "reminder_stop_repeated",
+        "change_weight=small"
+      ],
+      "provider": "local-provider",
+      "grant": "action:approve-own-reminder-lesson@1",
+      "cost": {
+        "compute": 1,
+        "money": 0,
+        "attention": 0
+      },
+      "action": "simulate_fact",
+      "approved": true,
+      "source": "reviewed/synthetic-method"
+    },
+    {
+      "id": "check-reminder-lesson-independently@1",
+      "effect": "reminder_lesson_approved",
+      "requires": [
+        "reminder_stop_repeated",
+        "change_weight=weighty"
+      ],
+      "provider": "independent-checker",
+      "grant": "action:check-reminder-lesson-independently@1",
+      "cost": {
+        "compute": 5,
+        "money": 0,
+        "attention": 0
+      },
+      "action": "simulate_fact",
+      "approved": true,
+      "source": "reviewed/synthetic-method"
+    }
+  ],
+  "providers": {
+    "independent-checker": 1
+  },
+  "grants": [
+    "action:approve-own-reminder-lesson@1",
+    "action:check-reminder-lesson-independently@1"
+  ]
+}

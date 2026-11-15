@@ -1,0 +1,9 @@
+{
+  "id": "86_no_slot_left",
+  "title": "A hand with no slot left",
+  "description": "The model's provider has no slot left: the kernel's own gate turns the hand-over down, nothing is handed over and nothing is paid.",
+  "packs": ["210_letters_desk", "211_hand_to_model", "212_book_read", "213_model_spent"],
+  "execute": true,
+  "area": "Hand-off",
+  "expected": "PROVIDER_REQUIRED"
+}

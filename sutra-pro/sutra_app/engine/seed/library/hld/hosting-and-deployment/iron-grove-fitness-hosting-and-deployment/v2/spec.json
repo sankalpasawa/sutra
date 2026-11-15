@@ -1,0 +1,85 @@
+{
+  "name": "Iron Grove Fitness Hosting and deployment",
+  "artifact": "hld",
+  "section": "Hosting and deployment",
+  "version": 2,
+  "kind": "specialised",
+  "description": "Hosting and deployment for Iron Grove Fitness (hld): the generic HLD/1 · Hosting and deployment fields plus facts_used, from 1 charter fact(s); adapted from a template made for another business",
+  "fields": [
+    {
+      "name": "hosting",
+      "type": "Hosting",
+      "required": true,
+      "description": "the hosting of Iron Grove Fitness's Hosting and deployment",
+      "enum": null,
+      "nullable": false
+    },
+    {
+      "name": "assumptions",
+      "type": "list[string]",
+      "required": false,
+      "description": "the assumptions of Iron Grove Fitness's Hosting and deployment",
+      "enum": null,
+      "nullable": false
+    },
+    {
+      "name": "facts_used",
+      "type": "list[string]",
+      "required": false,
+      "description": "the charter facts this section is written from, copied exactly from Iron Grove Fitness's charter",
+      "enum": [
+        "Iron Grove Fitness"
+      ],
+      "nullable": false
+    }
+  ],
+  "objects": [
+    {
+      "name": "Hosting",
+      "fields": [
+        {
+          "name": "kind",
+          "type": "string",
+          "required": true,
+          "description": "how it is hosted, e.g. \"one static file on a static host\"",
+          "enum": null,
+          "nullable": false
+        },
+        {
+          "name": "notes",
+          "type": "string",
+          "required": false,
+          "description": "how it is deployed and replaced",
+          "enum": null,
+          "nullable": false
+        }
+      ]
+    }
+  ],
+  "rules": [
+    {
+      "rule": "enum",
+      "path": "facts_used[]",
+      "values": [
+        "Iron Grove Fitness"
+      ],
+      "from": "facts",
+      "name": "facts_used are facts of Iron Grove Fitness's charter"
+    }
+  ],
+  "sha": "17082aa6d946681820ad1cc4e28ca24e597a3a6da536813d318ee19c6c5eac78",
+  "extends": "hld/hosting-and-deployment@generic/1",
+  "made_by": {
+    "run": "j2-20261111-211339",
+    "workflow": "W-15",
+    "atom": "W-15.a1",
+    "agent": "code (adapted from a run template)"
+  },
+  "context": {
+    "business_type": "hld",
+    "facts_used": [
+      "Iron Grove Fitness"
+    ],
+    "fingerprint": "0d1bc53a22cf65f5af90a2dde3d1f91caeadbbe936bd03a127fec6bc3709e1e6"
+  }
+}

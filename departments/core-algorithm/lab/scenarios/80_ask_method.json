@@ -1,0 +1,29 @@
+{
+  "schema": "sutra-extension/2",
+  "id": "80_ask_method",
+  "methods": [
+    {
+      "id": "ask-customer-approval@1",
+      "effect": "customer_approved",
+      "requires": [],
+      "provider": "owner-channel",
+      "grant": "action:ask-customer-approval@1",
+      "cost": {
+        "compute": 0,
+        "money": 0,
+        "attention": 1
+      },
+      "action": "ask",
+      "approved": true,
+      "source": "reviewed/synthetic-method",
+      "question": "May we send a replacement for the item that is out of stock?",
+      "ask_to": "customer"
+    }
+  ],
+  "providers": {
+    "owner-channel": 2
+  },
+  "grants": [
+    "action:ask-customer-approval@1"
+  ]
+}

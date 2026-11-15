@@ -1,0 +1,13 @@
+{
+  "id": "91_payout_in_one",
+  "title": "The chain as one step: the cheaper way is taken",
+  "description": "The same desk with the pack that brings the chain as one step: the same fact made, the same fact required, two tokens where the chain costs five. Both ways are open and the kernel takes the one that is not dominated. The pack is loaded here from the files together with the desk's own packs, so this State holds no row read from the record and no yes, and the one step pays out the desk's first loan: the door takes the pack without a yes. The recorded sequence reader_one_way shows the three runs of the chain, the proposal, the independent yes and the hand-in that come before the one step there.",
+  "packs": [
+    "224_payout_desk",
+    "225_payout_changes",
+    "226_payout_in_one"
+  ],
+  "execute": true,
+  "area": "Learning from past runs",
+  "expected": "LOCAL_MODEL_EFFECTS_RECORDED"
+}

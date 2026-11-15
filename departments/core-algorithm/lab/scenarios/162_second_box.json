@@ -1,0 +1,7 @@
+{
+  "schema": "sutra-extension/2",
+  "id": "162_second_box",
+  "grants": [
+    "box:20:action:disburse-loan@1"
+  ]
+}

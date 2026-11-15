@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Record the shapes of J2's HTTP API into `tests/engine/golden/api_shapes.json` (work package E2, engine design 9; J2 sync 4, D150).
+"""Record the shapes of J2's HTTP API into `tests/engine/golden/api_shapes.json` (work package E2, engine design 9; J2 sync 4, D150; sync 5, D160).
 
     scripts/py scripts/record_api_shapes.py --source <an extraction of prototypes/j2> [--commit <sutra commit>] [--out FILE] [--check]
 
@@ -40,7 +40,7 @@ import urllib.request
 from pathlib import Path
 
 REPO = Path(__file__).resolve().parent.parent
-BASELINE = "025e265c594564f47a2365874cd5a5cc5d0d20a6"       # the sutra commit whose `prototypes/j2` the golden is recorded from (sync 4, D136)
+BASELINE = "1adb8ecd8fa8eef47fb7a0fc63a1616f556cdfeb"       # the sutra commit whose `prototypes/j2` the golden is recorded from (sync 6, D176: J2 main)
 DEFAULT_OUT = REPO / "tests" / "engine" / "golden" / "api_shapes.json"
 SCHEMA = "api-shapes/1"
 
@@ -50,11 +50,16 @@ BREW_LAB = ("A one-page website for Brew Lab, a small specialty coffee shop in I
             "farms they come from, and a simple loyalty-card explainer (buy 9, get the 10th free).")
 # The flags of the recorded run: mock, J2's own template library, artifact schemas and message board on, so that the routes that
 # read those records have something to show; realization off (the unmodified mock cannot pass its cost check, E1 notes).
+# D190: pinned like the engine host does (`DataPaths.j2_env()`); not part of the recorded `scenario_env`.
+PINNED_ENV = {"J2_RUN_BY": "sutra-pro", "J2_PUSH_RUNS": "0"}
 SCENARIO_ENV = {"STUDIO_MOCK": "1", "J2_MEMORY": "0", "J2_REALIZATION": "0", "J2_TEMPLATE_LIBRARY": "1",
                 "J2_ARTIFACT_SCHEMA": "1", "J2_BOARD": "1", "J2_FORCE_QUESTION": "adaptation"}
 # Maps keyed by ids: their keys are written as `*` in a key path. `enums` is the map of a template version's enum names (`FormField.type`,
 # `Requirement.priority`, ...): data, which every new seed template extends, so no template can move the golden again (D150).
-MAPS = frozenset({"atoms_v1", "agents", "conditions", "rubric", "constellations", "names", "groups", "groups.*", "enums"})
+# `types` (the snapshot's `output_info.types`: type name -> label, tag, form, ...) is a map keyed by type names, which are data too: a
+# type J2 adds, or a user's local type, must not move the golden (sync 5, D161).
+MAPS = frozenset({"atoms_v1", "agents", "conditions", "rubric", "constellations", "names", "groups", "groups.*", "enums",
+                  "types"})
 # Free-form agent output: the key is kept, what is inside it is not (it is the model's reply, not part of the API).
 OPAQUE = frozenset({"reply", "proposal", "adaptation_final", "priority_final", "metrics"})
 # Keys that exist on the engine's side only, on purpose (engine design 4.6): the live state's host, run_id and dept_id, and the
@@ -187,7 +192,7 @@ def child(source, work):
         shutil.copytree(Path(source) / "library", lib)
     env = {**SCENARIO_ENV, "J2_RUNS_DIR": f"{work}/runs", "J2_MEMORY_FILE": f"{work}/memory/lessons.jsonl",
            "J2_PLAYBOOK_FILE": f"{work}/memory/playbooks.jsonl", "J2_LIBRARY_DIR": str(lib)}
-    os.environ.update(env)
+    os.environ.update({**env, **PINNED_ENV})
     sys.path.insert(0, source)
     import j2
     import j2_check

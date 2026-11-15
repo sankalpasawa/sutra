@@ -1,0 +1,13 @@
+{
+  "schema": "sutra-extension/2",
+  "id": "136_routed_by_the_book",
+  "evidence": [
+    {
+      "predicate": "styled_by_the_book",
+      "truth": "TRUE",
+      "verified": true,
+      "source": "router/credit-ops",
+      "version": "r1"
+    }
+  ]
+}

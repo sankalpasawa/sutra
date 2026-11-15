@@ -22,7 +22,8 @@ def run_row(name, runs_dir=None, live_running=False):
     status: summary.json "status" (done and done_with_open_items -> done; stopped, crashed, stuck, out_of_budget -> stopped);
     no summary.json -> stopped (it never finished), except the live run while it runs -> running. title: goal.json
     "site_name", else the first sentence of goal.json "statement", else the run id. output: summary.json "output_type" (the
-    type the run ended with), else the chat's meta row "output" (the type it started with). brief: summary.json "brief", else
+    type the run ended with), else the chat's meta row "output" (the type it started with), else "" (no type was chosen: its `label` and
+    `form` are "" too; both are the type's own, read from the data: J2 sync 5). brief: summary.json "brief", else
     the first user message of chat.jsonl. when: from the id."""
     d = j2.saved_dir(name, runs_dir)
     if not d or not os.path.exists(os.path.join(d, "chat.jsonl")):
@@ -36,7 +37,10 @@ def run_row(name, runs_dir=None, live_running=False):
     stmt = re.split(r"(?<=[.!?])\s", str(g.get("statement") or "").strip())[0]
     title = str(g.get("site_name") or "").strip() or (stmt[:70] + ("…" if len(stmt) > 70 else "")) or name
     m = re.search(r"(\d{4})(\d{2})(\d{2})-(\d{2})(\d{2})(\d{2})", name)
-    return {"id": name, "title": title, "status": status, "output": s.get("output_type") or meta.get("output") or "",
+    out = s.get("output_type") or meta.get("output") or ""        # None for a run that stopped before a type was chosen (D167)
+    # the label and form of its type, a local type's too; a type the store no longer has: what the run recorded (`j2_types.recorded`)
+    kind = j2.j2_types.info(out) if out in j2.j2_types.names() else j2.j2_types.recorded(d).get(out) or {}
+    return {"id": name, "title": title, "status": status, "output": out, "label": kind.get("label") or "", "form": kind.get("form") or "",
             "when": f"{m[1]}-{m[2]}-{m[3]}T{m[4]}:{m[5]}:{m[6]}" if m else "", "brief": str(s.get("brief") or first.get("text") or "")[:160]}
 
 

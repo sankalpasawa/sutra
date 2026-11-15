@@ -98,19 +98,99 @@ test("budget_cap, which is not set by default, is an empty number field", () => 
   assert.match(inputOf(found.budget_cap)[0], /value=""/);
 });
 
-test("the kind of build is a choice among the six the engine accepts, and the engine decides by default", () => {
+test("the kind of build is a choice among the types the engine lists (output_types), and the team decides by default", () => {
   const row = rows(engineHtml(FOR_ALL, {})).output;
   assert.match(row, /<select\b/);
-  ["auto", "website", "prd", "hld", "lld", "project"].forEach(v => assert.match(row, new RegExp(`<option value="${v}"`)));
+  ["auto", "prd", "hld", "lld", "website", "business_report", "project"].forEach(v => assert.match(row, new RegExp(`<option value="${v}"`)));
   assert.match(row, /<option value="auto" selected>Let the team decide</);
   assert.match(row, /<option value="project">Project work</);
+  assert.match(row, /<option value="business_report">Report</);                      // the label is the data's
+  assert.deepEqual([...row.matchAll(/<option value="([^"]*)"/g)].map(m => m[1]), ["auto", "prd", "hld", "lld", "website", "business_report", "project"]);
+});
+
+test("a type the engine adds is a choice with no change to the page, and one it cannot pin is not offered", () => {
+  const more = clone(FOR_ALL);
+  more.output_types = [{name: "policy_note", label: "Policy note", form: "document", pin: true}, {name: "planner_only", label: "Planner", form: "document", pin: false}];
+  const row = rows(engineHtml(more, {})).output;
+  assert.deepEqual([...row.matchAll(/<option value="([^"]*)"/g)].map(m => m[1]), ["auto", "policy_note"]);
+  assert.match(row, /<option value="policy_note">Policy note</);
+  assert.deepEqual(engineBody(more, {output: "policy_note"}).set, {output: "policy_note"});
+  assert.deepEqual(SettingsView.formProblems(more, {output: "planner_only"}), {output: "This value is not valid."});
+  const none = clone(FOR_ALL);
+  delete none.output_types;                                                          // an answer that does not list its types: the shape is all the page checks
+  assert.deepEqual(engineBody(none, {output: "any_name"}).set, {output: "any_name"});
+  assert.deepEqual(SettingsView.formProblems(none, {output: "Not A Name"}), {output: "This value is not valid."});
+  assert.deepEqual([...rows(engineHtml(none, {})).output.matchAll(/<option value="([^"]*)"/g)].map(m => m[1]), ["auto"]);
+});
+
+test("the builder time limit is a number field with its label and hint (D169), and 0 means no limit", () => {
+  const row = rows(engineHtml(FOR_ALL, {})).builder_timeout;
+  assert.match(row, /<label class="setlabel" for="setf-builder_timeout">Builder time limit \(seconds\)<\/label>/);
+  assert.match(inputOf(row)[0], /type="number" step="any"/);
+  assert.match(inputOf(row)[0], /value="600"/);
+  assert.match(row, /A builder&#39;s AI call that runs longer is stopped and tried once more; 0 means no limit/);
+  assert.deepEqual(engineBody(FOR_ALL, {builder_timeout: "0"}).set, {builder_timeout: 0});
+  assert.deepEqual(engineBody(FOR_ALL, {builder_timeout: "90.5"}).set, {builder_timeout: 90.5});
+  assert.deepEqual(engineBody(FOR_ALL, {builder_timeout: "600"}), {set: {}, unset: []});
+  assert.deepEqual(SettingsView.formProblems(FOR_ALL, {builder_timeout: "slow"}), {builder_timeout: "Write a number."});
 });
 
 test("the template library flag says what the catalog's By run list shows while it is off (D142)", () => {
   const html = engineHtml(FOR_ALL, {scope: "", departments: DEPARTMENTS});
   const row = rows(html).template_library;
   assert.match(row, /<label class="setlabel" for="setf-template_library">Template library<\/label>/);
-  assert.match(row, /<span class="sethint">Builders use the template library\. While this is off, the catalog&#39;s &quot;By run&quot; list shows J2&#39;s eight development runs only\.<\/span>/);
+  assert.match(row, /<span class="sethint">Builders use the template library\. While this is off, the catalog&#39;s &quot;By run&quot; list shows J2&#39;s development runs only\.<\/span>/);
+});
+
+// J2 sync 6 (D177, D178, D179): the reuse switches, the reviewer pair, the groups and the implied row
+test("the reuse switches and the reviewer pair are five more rows: four toggles and one number, under their own headings", () => {
+  const html = engineHtml(FOR_ALL, {scope: "", departments: DEPARTMENTS});
+  const found = rows(html);
+  assert.equal(Object.keys(found).length, 37, "27 editable rows and 10 locked ones");
+  ["run_templates", "auto_reuse", "artifact_library", "reviewer"].forEach(f => assert.match(inputOf(found[f])[0], /type="checkbox"/, f));
+  assert.match(inputOf(found.reviewer_wait)[0], /type="number" step="any"/);
+  assert.match(inputOf(found.reviewer_wait)[0], /value="120"/);
+  ["run_templates", "auto_reuse", "artifact_library"].forEach(f => assert.doesNotMatch(inputOf(found[f])[0], /checked/, f + " is off by default"));
+  assert.match(inputOf(found.reviewer)[0], /checked/);
+  assert.match(html, /<h4 class="setsub" data-subgroup="reuse">Reuse \(experimental\)<\/h4>/);
+  assert.match(html, /<h4 class="setsub" data-subgroup="report">Run report<\/h4>/);
+  const at = k => html.indexOf('data-field="' + k + '"');
+  assert.ok(at("workspace") < html.indexOf('data-subgroup="reuse"') && html.indexOf('data-subgroup="reuse"') < at("run_templates") && at("artifact_library") < html.indexOf('data-subgroup="report"') && html.indexOf('data-subgroup="report"') < at("reviewer"));
+  assert.ok(at("template_library") < html.indexOf('data-subgroup="reuse"'), "the template library stays in the main list");
+  assert.match(found.auto_reuse, /Off by default/);
+  assert.match(found.reviewer, /one more AI call per run/);
+});
+
+test("a switch that is on only because another is on says so, shows the stored value, and is not pinned by a save", () => {
+  const answer = clone(FOR_ALL);
+  answer.global = Object.assign({}, answer.global, {auto_reuse: true});
+  answer.effective = Object.assign({}, answer.defaults, answer.global);      // as stored
+  answer.effective_flags = {auto_reuse: true, run_templates: true, template_library: true, artifact_schema: true};      // as the engine will run
+  const found = rows(engineHtml(answer, {scope: ""}));
+  assert.match(found.auto_reuse, /data-source="all"/);
+  assert.doesNotMatch(found.auto_reuse, /data-implied/, "the owner's own choice is not implied");
+  ["run_templates", "template_library", "artifact_schema"].forEach(f => {
+    assert.match(found[f], /data-implied="true"/, f);
+    assert.match(found[f], /on \(implied by Reuse earlier work\)/, f);
+    assert.doesNotMatch(inputOf(found[f])[0], /checked/, f + " shows what was stored: off");
+  });
+  assert.doesNotMatch(found.artifact_library, /data-implied/);
+  assert.deepEqual(engineBody(answer, {run_templates: false, template_library: false, artifact_schema: false}), {set: {}, unset: []}, "saving the page as it is changes nothing");
+  assert.deepEqual(engineBody(answer, {run_templates: true}).set, {run_templates: true}, "the owner can still pin it on");
+  assert.deepEqual(engineBody(answer, {auto_reuse: false}), {set: {}, unset: ["auto_reuse"]});
+});
+
+test("with no implication (an answer whose effective values are the stored ones) no row is marked", () => {
+  assert.doesNotMatch(engineHtml(FOR_TEAM, {scope: "web"}), /data-implied|implied by/);
+  assert.doesNotMatch(engineHtml(FOR_ALL, {}), /data-implied/);
+});
+
+test("the reviewer wait is a number of seconds that may be 0, and a reviewer switch is a toggle in the body", () => {
+  assert.deepEqual(engineBody(FOR_ALL, {reviewer_wait: "0"}).set, {reviewer_wait: 0});
+  assert.deepEqual(engineBody(FOR_ALL, {reviewer_wait: "45.5"}).set, {reviewer_wait: 45.5});
+  assert.deepEqual(engineBody(FOR_ALL, {reviewer_wait: "120"}), {set: {}, unset: []});
+  assert.deepEqual(engineBody(FOR_ALL, {reviewer: false}).set, {reviewer: false});
+  assert.deepEqual(SettingsView.formProblems(FOR_ALL, {reviewer_wait: "soon"}), {reviewer_wait: "Write a number."});
 });
 
 test("the working-folder switch for agents is a choice between auto and off", () => {

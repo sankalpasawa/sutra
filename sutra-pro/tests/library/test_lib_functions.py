@@ -320,7 +320,7 @@ def test_report_rules():
     says(refused("audit", "report", findings=[{**row, "severity": "huge"}]), "severity")
     says(refused("audit", "report", rubric=[{"id": "R-1", "verdict": "PASS", "evidence": ""}]), "R-1: a PASS needs evidence")
     says(refused("audit", "report", rubric=[{"id": "R-1", "verdict": "PASS", "evidence": "a"}] * 2), "repeats the id R-1")
-    says(refused("audit", "report", rubric=[{"id": "X-1", "verdict": "PASS", "evidence": "a"}]), "rubric.0.id")
+    says(refused("audit", "report", rubric=[{"id": "X1", "verdict": "PASS", "evidence": "a"}]), "rubric.0.id")
     says(refused("audit", "report", rubric=[{"id": "D-5", "verdict": "BLOCKED_BY_EVIDENCE", "evidence": "a"}]), "rubric.0.verdict")
     says(refused("audit", "report", next="Adaptation"), "next")
     assert parse("audit", "report", read="the Problem section, about 120 words").read.startswith("the Problem")

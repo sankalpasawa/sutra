@@ -12,7 +12,7 @@ end for the next version; never edit an old one.
 from collections.abc import Callable, Sequence
 from sqlite3 import Connection
 
-__all__ = ["DDL_V1", "DDL_V3_RECURRING", "DDL_V4_AGENT_SESSIONS", "MIGRATIONS", "SCHEMA_VERSION", "TABLES", "Migration"]
+__all__ = ["DDL_V1", "DDL_V3_RECURRING", "DDL_V4_AGENT_SESSIONS", "DDL_V5_TURN_CHECKPOINT", "MIGRATIONS", "SCHEMA_VERSION", "TABLES", "Migration"]
 
 DDL_V1: tuple[str, ...] = (
     # schema version = PRAGMA user_version; 'graph_version' and 'bootstrapped_at' live here
@@ -236,10 +236,20 @@ DDL_V4_AGENT_SESSIONS: tuple[str, ...] = (
     "ALTER TABLE tasks ADD COLUMN pick_json TEXT NOT NULL DEFAULT ''",
 )
 
+# In-flight direct-chat turns (streaming design D211, migration v5): one row per live generation, rewritten every second or so while a turn streams and deleted in the transaction
+# that stores the final reply. It is what a restart after a crash turns into the partial reply. Additive: no table that exists is touched, `chat_messages` and its FTS triggers
+# stay as they are, and an older build ignores the table. No foreign key: a row must outlive nothing it depends on, and a cleanup must never be blocked.
+DDL_V5_TURN_CHECKPOINT: tuple[str, ...] = (
+    """CREATE TABLE chat_turn_checkpoint (
+  generation_id TEXT PRIMARY KEY, session_id TEXT NOT NULL, message_id INTEGER NOT NULL, attempt INTEGER NOT NULL, attempt_no INTEGER NOT NULL,
+  state TEXT NOT NULL, seq INTEGER NOT NULL, blocks_json TEXT NOT NULL, updated_at REAL NOT NULL)""",
+    "CREATE INDEX chat_turn_checkpoint_session ON chat_turn_checkpoint(session_id)",
+)
+
 Migration = Sequence[str] | Callable[[Connection], None]
-MIGRATIONS: tuple[Migration, ...] = (DDL_V1, _v2, DDL_V3_RECURRING, DDL_V4_AGENT_SESSIONS)
+MIGRATIONS: tuple[Migration, ...] = (DDL_V1, _v2, DDL_V3_RECURRING, DDL_V4_AGENT_SESSIONS, DDL_V5_TURN_CHECKPOINT)
 SCHEMA_VERSION = len(MIGRATIONS)
 TABLES = (
     "meta", "org_charts", "chart_changes", "org_nodes", "org_edges", "departments", "tasks", "graph_nodes", "graph_edges",
-    "chat_sessions", "chat_messages", "chat_segments", "atoms", "atom_ledger", "usage_ledger", "recurring", "recurring_runs",
+    "chat_sessions", "chat_messages", "chat_segments", "atoms", "atom_ledger", "usage_ledger", "recurring", "recurring_runs", "chat_turn_checkpoint",
 )

@@ -17,7 +17,8 @@ of at most 2,000 characters, an archived team 403, J2's own records-only answer 
 its own for that run, the question and the answer stored as two lines of that session (`ask` is "q", "records" or "model" on the wire, as `ChatMessageOut.ask`)
 and announced as `chat.message` events, so the node panel and J2's chat panel read one transcript; a second question while one is being answered is 409
 `busy`. `GET /api/engine/settings?dept=` carries `next_run.output` (the start page's choice, else the team's setting), `GET /api/teams/{dept}/agents` rows carry
-`usage.by_purpose`, and `GET /api/usage/summary?by=dept|fn|provider|day|atom|session|purpose` groups the same numbers. `/d/{dept}/library` is the real UI router's.
+`usage.by_purpose` (`{purpose: {calls, usd}}` for the purposes the agent was charged for, none for a purpose with no call, as the real route builds it), and
+`GET /api/usage/summary?by=dept|fn|provider|day|atom|session|purpose&session_id=&since=` groups the same numbers. `/d/{dept}/library` is the real UI router's.
 
 The state is a STAGE of the story the fixtures tell:
 
@@ -72,6 +73,7 @@ import time
 import urllib.error
 import urllib.request
 from dataclasses import dataclass
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Callable, NamedTuple
 from urllib.parse import urlencode
@@ -106,11 +108,17 @@ HOSTS = ("127.0.0.1", "localhost")
 TASK_STATUS = {"running": "running", "waiting_on_you": "waiting_user", "filed": "done", "left_open": "done_with_open_items",
                "fault": "crashed", "idle": "queued", "not_made": "queued", "waiting": "running", "done_unchecked": "done"}
 SANDBOX = "sandbox allow-scripts allow-forms allow-popups; frame-ancestors 'self'"  # generated HTML (S3-web-14)
-ENGINE_ENUMS = {"output": ("auto", "website", "prd", "hld", "lld", "project"), "workspace": ("auto", "off"), "fixes": (0, 1), "send_mode": ("dry-run", "mock", "live")}
+ENGINE_ENUMS = {"workspace": ("auto", "off"), "fixes": (0, 1), "send_mode": ("dry-run", "mock", "live")}    # `output` is not here: its names are the fixture's `output_types` (D166)
+OUTPUT_NAME_RE = re.compile(r"^[a-z][a-z0-9_]{1,40}$")      # J2's own shape of a type name (spec.py): what a pinned output must look like
+
+
+def output_names(es: dict) -> tuple[str, ...]:
+    """What the fake's engine accepts as `output`: `auto` and every type of the fixture's `output_types` that can be pinned, in its order."""
+    return ("auto", *(t["name"] for t in es.get("output_types", []) if t.get("pin")))
 ENGINE_MIN = {"budget": 1, "max_cycles": 1, "max_turns": 1, "chat_full_chars": 1000, "budget_cap": 1}
 J2_FUNCS = (*FUNCTIONS, "validator")  # J2's six functions (j2_agent.FUNCS): the ones GET /api/activity and POST /api/ask know
 ASK_CHARS = 2000  # the longest question: the ceiling of a note to an agent (views.ASK_CHARS)
-PURPOSES = ("agent_turn", "judge", "plan", "agent_chat")  # what `usage.by_purpose` of an agent's row names (D145)
+PURPOSES = ("agent_turn", "judge", "plan", "agent_chat")  # the purposes the fake's story has calls for: what `usage.by_purpose` of an agent's row names (D145, D159)
 NOT_WRITTEN = "<p style='font:15px system-ui;color:#667;padding:24px'>This isn't written yet.</p>"   # j2_server.view_page for a file the run does not list
 SUMMARY_BY = ("dept", "fn", "provider", "day", "atom", "session", "purpose")  # GET /api/usage/summary?by=
 NO_KEY = "(none)"  # the group of a ledger row that has no value for the key (orchestrator/usage.py)
@@ -381,6 +389,7 @@ class FakeState:
             self.chart_notes: list[dict] = []       # gap chart-insight: GET /api/chart/notes (set by /__fake/chart-notes)
             self.owner_notes: list[dict] = []       # gap rules-notes: GET /api/notes (set by /__fake/notes); NoteOut rows
             self.find: dict = {"teams": [], "messages": []}       # GET /api/find answers this (set by /__fake/find)
+            self.said_with: list[dict] = []        # sync 6 (D182): the `say` bodies that carried a run template, for the tests
             self.next_output: dict[str, str] = {}   # sync 4 (D139): the start page's choice per team, what POST /api/output stored; the next run would make it
             self.output_locked = False              # POST /api/output answers 409, as it does once the team has a message (set by /__fake/output)
             self.decide_for_me: dict[str, bool] = {}   # the Simple view's switch per team (POST /api/settings); /api/state says it (the capture's value until it is set)
@@ -588,6 +597,15 @@ class FakeState:
                 atom["body"]["closed_by"] = "verify"
                 for check in atom["body"]["verify"]["checks"]:
                     check["results"].append({"attempt": atom["attempt"], "exit_code": 0, "evidence": "ok"})
+                # the third try's reply and what the turn made (D157): the layer records both on the closing transition, replacing the failed try's
+                atom["body"]["produced"] = [
+                    {"verb": "make", "name": "the charter: Coffee shop landing page, 4 done-when items", "form": "charter", "ref": "goal.json"},
+                    {"verb": "do", "name": "posted 1 message to Adaptation", "form": "message", "ref": "chat"}]
+                atom["body"]["reply"] = {"text": json.dumps({
+                    "say": "@Adaptation Charter recorded from the brief and the answers.", "enough": True,
+                    "goal": {"kind": "site", "site_name": "Coffee shop landing page", "statement": "A one-page site for a coffee shop",
+                             "done_when": ["The menu is on the page", "Opening hours are shown", "The address is shown", "A phone number is shown"]},
+                    "to_requester": "Thanks, I have what I need.", "next": "Adaptation"}, indent=2), "clipped": False}
                 atom["usage"] = {"calls": 9, "usd": 0.32, "tokens_in": 5400, "tokens_out": 1620}
         return atoms
 
@@ -630,7 +648,9 @@ class FakeState:
         if dept:
             view["department"] = copy.deepcopy(layer)
         view["effective"] = {**es["defaults"], **self.layers["global"], **layer}
+        view["effective_flags"] = {k: v for k, v in imply_flags(view["effective"]).items() if k in FLAG_NAMES}       # sync 6 (D178): what J2 will run with; `effective` stays as stored
         view["editable"], view["locked"] = list(es["editable"]), list(es["locked"])
+        view["output_types"] = copy.deepcopy(es.get("output_types", []))        # D166: the choices of the pages, from the data
         if dept:                                                # sync 4 (D139): what the team's next run would use, the start page's choice included
             view["next_run"] = {"output": self.next_output.get(dept) or view["effective"]["output"]}
         return view
@@ -673,6 +693,10 @@ class FakeState:
         if field in es["locked"]:
             return ("locked_field", f"{field} can only be changed by hand in engine.json")
         default = es["defaults"][field]
+        if field == "output":       # the real route: the shape in spec.py, the membership where J2 is loaded
+            if not isinstance(value, str) or (value != "auto" and not OUTPUT_NAME_RE.match(value)):
+                return ("invalid_value", "output must be auto or a type name (lower case letters, digits and _)")
+            return None if value in output_names(es) else ("invalid_value", f"output: unknown output type {value} (known: {', '.join(output_names(es)[1:])})")
         if field in ENGINE_ENUMS:
             return None if value in ENGINE_ENUMS[field] and not isinstance(value, bool) else (
                 "invalid_value", f"{field} must be one of {', '.join(map(str, ENGINE_ENUMS[field]))}")
@@ -1107,11 +1131,27 @@ def _parse_body(raw: bytes) -> Any:
 
 J2_GET_PATHS = (    # the GET names of J2_EXACT (sutra_ctx.js); sync 4 added plan-map, activity, catalog, artifacts/groups, runlist, changes and record
     "/api/state", "/api/runs", "/api/call", "/api/preview", "/api/docs", "/api/map", "/api/plan", "/api/library",
-    "/api/run-templates", "/api/artifacts", "/api/agent", "/api/code", "/api/artifacts/tree", "/api/artifact", "/api/story",
-    "/api/board", "/api/audits", "/api/refs",
+    "/api/run-templates", "/api/run-template", "/api/artifacts", "/api/agent", "/api/code", "/api/artifacts/tree", "/api/artifact", "/api/story",
+    "/api/board", "/api/audits", "/api/refs", "/api/timing",     # sync 5 (D168): Run settings' time per step; sync 6 (D183): one run template
     "/api/plan-map", "/api/activity", "/api/catalog", "/api/artifacts/groups", "/api/runlist", "/api/changes",
     "/api/record",               # the studio redesign (pin 025e265): the record of a part or of a deliverable
 )
+RUN_TEMPLATE_ID = re.compile(r"[a-z0-9-]+")
+RUN_TEMPLATES_DIR = Path(__file__).resolve().parents[2] / "sutra_app" / "engine" / "seed" / "library" / "run-templates"
+IMPLIED = (("auto_reuse", "artifact_library"), ("run_templates", "auto_reuse"), ("template_library", "auto_reuse"), ("artifact_schema", "template_library"))      # D178, J2's own chain, in order
+
+
+FLAG_NAMES = ("auto_reuse", "run_templates", "template_library", "artifact_schema")      # EffectiveFlags
+
+
+def imply_flags(values: dict) -> dict:
+    """The effective flags (EngineSettings.effective, D178): a flag is on when it is set or one it is implied by is on. The chain is J2's own."""
+    out = dict(values)
+    for flag, by in IMPLIED:
+        out[flag] = bool(out.get(flag) or out.get(by))
+    return out
+
+
 J2_POST_PATHS = ("/api/say", "/api/playbooks/clear", "/api/lessons/clear", "/api/output", "/api/reset", "/api/ask", "/api/settings")
 J2_PATH_SET = frozenset(J2_GET_PATHS + J2_POST_PATHS)      # the names whose forced failures have J2's body shape (the fetches the client wrapper adds ?dept= to)
 J2_PAGE_PATHS = ("/view",)   # pages the Simple view puts in its frame (with /doc/<name>): the page's own URL builders add ?dept=, so they are no fetch of the wrapper
@@ -1653,6 +1693,17 @@ def register_j2(app: FastAPI, state: FakeState) -> None:
 
         app.add_api_route(path, make(name), methods=["GET"])
 
+    @app.get("/api/run-template")
+    def j2_run_template(dept: str | None = None, id: str = ""):
+        """One run template (J2 `run_template_view`) from the vendored seed's `template.json`, plus `enabled` from the team's effective settings, as the
+        real route does (D183): never from the server's environment. An id that is not [a-z0-9-]+ or not in the seed: 404."""
+        scope(dept, None)
+        found = RUN_TEMPLATE_ID.fullmatch(id) and RUN_TEMPLATES_DIR / id / "template.json"
+        if not found or not found.is_file():
+            raise J2Reject(404, {"error": "no such run template"})
+        flags = state.settings_view(dept)["effective_flags"]
+        return JSONResponse({**json.loads(found.read_text(encoding="utf-8")), "enabled": bool(flags["run_templates"])}, headers=secure)
+
     @app.get("/api/library")
     def j2_library(dept: str | None = None):
         scope(dept, None)
@@ -1668,6 +1719,14 @@ def register_j2(app: FastAPI, state: FakeState) -> None:
     def j2_refs(dept: str | None = None):
         scope(dept, None)
         return raw_json("refs.json")
+
+    @app.get("/api/timing")
+    def j2_timing(dept: str | None = None, run: str | None = None):
+        """timing.json of the live run or of a saved one (J2 `/api/timing`); a run that has none is J2's own 404 `{"error": "no timing"}`."""
+        scope(dept, run)
+        if j2.raw("timing.json") is None:
+            raise J2Reject(404, {"error": "no timing"})
+        return raw_json("timing.json")
 
     @app.get("/api/activity")
     def j2_activity(who: str = "", dept: str | None = None, run: str | None = None):
@@ -1765,6 +1824,14 @@ def register_j2(app: FastAPI, state: FakeState) -> None:
         text = text.strip() if isinstance(text, str) else ""  # anything but text is nothing to say
         if not text:
             raise J2Reject(400, {"error": "empty"})
+        template, workflows = body.get("template"), body.get("workflows")        # sync 6 (D182): the same shapes the real route accepts
+        if template not in (None, ""):
+            if not isinstance(template, str) or not re.fullmatch(r"[a-z0-9-]{1,80}", template):
+                raise J2Reject(400, {"error": "template must be a run template id: lower-case letters, digits and hyphens, up to 80 characters"})
+            keys = workflows.split(",") if isinstance(workflows, str) else workflows
+            if workflows not in (None, "", []) and (not isinstance(keys, list) or len(keys) > 40 or not all(isinstance(k, str) and re.fullmatch(r"[A-Za-z0-9_-]{1,20}", k.strip()) for k in keys)):
+                raise J2Reject(400, {"error": "workflows must be all, a comma list of workflow keys, or a list of keys"})
+            state.said_with.append({"dept": dept, "template": template, "workflows": workflows})
         dept_node = state.node(dept or "")
         try:
             delivered = state.deliver(state.chat(dept_node["chat_session_id"]), text)
@@ -1796,8 +1863,8 @@ def register_j2(app: FastAPI, state: FakeState) -> None:
         kind = body.get("type") if isinstance(body, dict) else None
         if state.output_locked:                              # a message exists: J2 refuses, and says what the run makes
             raise J2Reject(409, {"ok": False, "output": state.settings_view(dept)["next_run"]["output"]})
-        if kind not in ENGINE_ENUMS["output"]:
-            raise J2Reject(409, {"ok": False, "output": "website"})
+        if kind not in output_names(state.fx.engine_settings):
+            raise J2Reject(409, {"ok": False, "output": state.settings_view(dept)["effective"]["output"]})
         state.next_output[dept or ""] = kind                 # page.json next_settings.J2_OUTPUT: GET /api/engine/settings?dept= says it in next_run
         return JSONResponse({"ok": True, "output": kind}, headers=secure)
 
@@ -2381,16 +2448,17 @@ def spread(total: int, weights: list[int]) -> list[int]:
 
 
 def usage_of(agent: str, calls: int, usd: float, tokens_in: int, tokens_out: int, asked: dict | None = None) -> dict:
-    """The `usage` of one agent's row: the totals a row always had, plus `by_purpose` (`{agent_turn, judge, plan, agent_chat}`, each with `calls` and `usd`, all
-    four always there). The turns' calls are split by `PURPOSE_SPLIT`; the model answers booked since (`asked`: calls and usd) are the `agent_chat` calls and
-    are added on top of the totals, as the ledger would count them."""
+    """The `usage` of one agent's row: the totals a row always had, plus `by_purpose` as the real route builds it (`team_agents`): `{purpose: {calls, usd}}` for each
+    purpose the agent was charged for, in the order of the ledger (by purpose), and no key for a purpose with no call (`agent_chat` is there only once a model has
+    answered). The turns' calls are split by `PURPOSE_SPLIT`; the model answers booked since (`asked`: calls and usd) are the `agent_chat` calls and are added on top
+    of the totals, as the ledger would count them."""
     split = PURPOSE_SPLIT.get(agent, {})
-    cells = {p: {"calls": split.get(p, 0), "usd": round(usd * split.get(p, 0) / calls, 4) if calls else 0.0} for p in PURPOSES}
-    cells["agent_turn"] = {"calls": calls - sum(split.values()), "usd": round(usd - sum(c["usd"] for p, c in cells.items() if p != "agent_turn"), 4)}
+    cells = {p: {"calls": n, "usd": round(usd * n / calls, 4)} for p, n in split.items() if n and calls}
+    cells["agent_turn"] = {"calls": calls - sum(c["calls"] for c in cells.values()), "usd": round(usd - sum(c["usd"] for c in cells.values()), 4)}
     asked = asked or {"calls": 0, "usd": 0.0}
     cells["agent_chat"] = {"calls": asked["calls"], "usd": round(asked["usd"], 4)}
     return {"calls": calls + asked["calls"], "usd": round(usd + asked["usd"], 4), "tokens_in": tokens_in + asked["calls"] * ASK_TOKENS[0],
-            "tokens_out": tokens_out + asked["calls"] * ASK_TOKENS[1], "by_purpose": cells}
+            "tokens_out": tokens_out + asked["calls"] * ASK_TOKENS[1], "by_purpose": {p: cell for p, cell in sorted(cells.items()) if cell["calls"] > 0}}
 
 
 def past_agent_rows(state: FakeState) -> list[dict]:
@@ -2427,31 +2495,50 @@ def agent_rows(state: FakeState, run: str | None) -> list[dict]:
     return out
 
 
+_ISO_TIME = re.compile(r"\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z")
+MAX_EPOCH = 253_402_300_799  # 9999-12-31T23:59:59Z, the last second the real route takes (orchestrator/usage.py)
+
+
+def since_seconds(text: str) -> int:
+    """`since` as the real route reads it (`parse_since` of orchestrator/usage.py): whole epoch seconds up to the year 9999, or an ISO time like 2026-11-04T10:00:06Z;
+    anything else is a ValueError (the route answers 422 `query.since`)."""
+    if text.isdigit():
+        seconds = int(text)
+    elif _ISO_TIME.fullmatch(text):
+        seconds = int(datetime.strptime(text, "%Y-%m-%dT%H:%M:%SZ").replace(tzinfo=timezone.utc).timestamp())
+    else:
+        raise ValueError(f"not a time: {text[:40]!r}")
+    if not 0 <= seconds <= MAX_EPOCH:
+        raise ValueError(f"not a time: {text[:40]} seconds is outside the years 1970 to 9999")
+    return seconds
+
+
 def usage_ledger(state: FakeState) -> list[dict]:
     """The usage rows of the fake's story, one per agent and purpose: what GET /api/usage/summary groups. They are cut from the agents' rows, so the two views of
-    the usage agree (the calls, the dollars and the tokens of a row are the sum of its ledger rows)."""
+    the usage agree (the calls, the dollars and the tokens of a row are the sum of its ledger rows). A row has the time of its agent's last line (`at`, and `day`)."""
     out = []
-    for run_id, rows, day in ((LIVE_RUN["run_id"], agent_rows(state, None), "2026-11-04"), (PAST_RUN["run_id"], past_agent_rows(state), "2026-11-03")):
+    for run_id, rows, when in ((LIVE_RUN["run_id"], agent_rows(state, None), "2026-11-04T10:20:00Z"), (PAST_RUN["run_id"], past_agent_rows(state), "2026-11-03T09:30:00Z")):
         for row in rows:
             usage = row["usage"]
-            calls = [usage["by_purpose"][p]["calls"] for p in PURPOSES]
+            calls = [usage["by_purpose"].get(p, {"calls": 0})["calls"] for p in PURPOSES]
             tin, tout = spread(usage["tokens_in"], calls), spread(usage["tokens_out"], calls)
             for i, purpose in enumerate(PURPOSES):
-                cell = usage["by_purpose"][purpose]
-                if cell["calls"]:
-                    out.append({"purpose": purpose, "fn": row["agent"] if row["kind"] == "function" else None, "session_id": row["session_id"], "day": day,
-                                "calls": cell["calls"], "usd": cell["usd"], "tokens_in": tin[i], "tokens_out": tout[i],
+                cell = usage["by_purpose"].get(purpose)
+                if cell is not None:
+                    out.append({"purpose": purpose, "fn": row["agent"] if row["kind"] == "function" else None, "session_id": row["session_id"], "day": when[:10],
+                                "at": since_seconds(when), "calls": cell["calls"], "usd": cell["usd"], "tokens_in": tin[i], "tokens_out": tout[i],
                                 "atom": None if purpose == "agent_turn" else overhead_atom_id(run_id)})     # judging, planning and answering are overhead, not a work atom (D59)
     return out
 
 
-def usage_summary(state: FakeState, by: str, session_id: str | None = None) -> list[dict]:
-    """GET /api/usage/summary: calls and sums per `by`, in key order; a row without a key is grouped under `(none)` (and sorts first, as in the ledger's SQL)."""
+def usage_summary(state: FakeState, by: str, session_id: str | None = None, since: int | None = None) -> list[dict]:
+    """GET /api/usage/summary: calls and sums per `by`, in key order; a row without a key is grouped under `(none)` (and sorts first, as in the ledger's SQL). `session_id`
+    limits the rows to one chat session and `since` (epoch seconds) to the rows at or after it, as in the real route."""
     key = {"dept": lambda e: "web", "fn": lambda e: e["fn"], "provider": lambda e: "claude", "day": lambda e: e["day"], "atom": lambda e: e["atom"],
            "session": lambda e: e["session_id"], "purpose": lambda e: e["purpose"]}[by]
     groups: dict[str | None, dict] = {}
     for entry in usage_ledger(state):
-        if session_id is not None and entry["session_id"] != session_id:
+        if (session_id is not None and entry["session_id"] != session_id) or (since is not None and entry["at"] < since):
             continue
         group = groups.setdefault(key(entry), {"calls": 0, "usd": 0.0, "tokens_in": 0, "tokens_out": 0})
         for field in ("calls", "usd", "tokens_in", "tokens_out"):
@@ -2652,12 +2739,17 @@ def register_agent_chats(app: FastAPI, state: FakeState) -> None:
         return JSONResponse({"over": state.ag["over"], "run_pick": state.ag["run_pick"], "team": state.ag["team"], "notes": state.ag["notes"]})
 
     @app.get("/api/usage/summary")
-    def usage_summary_route(by: str = "dept", session_id: str | None = None, include_stub: bool = False):
-        """The usage grouped as the real route groups it (dept, fn, provider, day, atom, session) and, since sync 4 (D145), by purpose; stub rows do not exist here."""
+    def usage_summary_route(by: str = "dept", session_id: str | None = None, since: str | None = None, include_stub: bool = False):
+        """The usage grouped as the real route groups it (dept, fn, provider, day, atom, session and, since 0.3.3 (D159), purpose), over the window `since` (epoch seconds
+        or an ISO time; a bad one is 422 `query.since`); stub rows do not exist here."""
         if by not in SUMMARY_BY:
             raise ApiError(422, "validation", "The request did not pass validation.",
                            {"violations": [violation("query.by", "literal_error", f"by must be one of {', '.join(SUMMARY_BY)}")]})
-        return JSONResponse({"groups": usage_summary(state, by, session_id)})
+        try:
+            floor = since_seconds(since) if since is not None else None
+        except ValueError as exc:
+            raise ApiError(422, "validation", "The request did not pass validation.", {"violations": [violation("query.since", "bad_time", str(exc))]}) from None
+        return JSONResponse({"groups": usage_summary(state, by, session_id, floor)})
 
     @app.post("/__fake/ask")
     async def ask_control(request: Request):

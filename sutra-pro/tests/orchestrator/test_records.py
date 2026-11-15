@@ -168,7 +168,7 @@ def test_task_settings_are_the_engines_seven_keys_and_nothing_else():
     assert tuple(TaskSettings.model_fields) == TASK_SETTING_KEYS
     ok = TaskSettings.model_validate({"J2_BUDGET": "100000", "J2_FIXES": "1", "J2_OUTPUT": "lld"})
     assert ok.model_dump() == {"J2_OUTPUT": "lld", "J2_BUDGET": "100000", "J2_FIXES": "1"}            # unset keys are left out
-    for bad_value in ({"J2_SEND_MODE": "live"}, {"J2_OUTPUT": "pdf"}, {"J2_BUDGET": "0"}, {"J2_BUDGET": "100001"}, {"J2_BUDGET": "abc"},
+    for bad_value in ({"J2_SEND_MODE": "live"}, {"J2_OUTPUT": "Not A Type"}, {"J2_BUDGET": "0"}, {"J2_BUDGET": "100001"}, {"J2_BUDGET": "abc"},
                       {"J2_BUDGET": "007"}, {"J2_BUDGET_CAP": "1.5"}, {"J2_FIXES": "2"}, {"J2_MEMORY": True}, {"J2_BUDGET": 5}):
         with pytest.raises(ValidationError):
             TaskSettings.model_validate(bad_value)
@@ -376,7 +376,7 @@ def test_run_spec_is_what_the_engine_reads():
 
 def test_error_codes_and_statuses_are_the_designs():
     assert STATUS_BY_CODE == {"bad_token": 401, "bad_host": 400, "bad_origin": 403, "validation": 422, "rules": 422, "not_found": 404, "busy": 409,
-                              "stale_chart": 409, "already_decided": 409, "not_running": 409, "read_only": 403, "too_many_pending": 429, "provider_unavailable": 503,
+                              "stale_chart": 409, "already_decided": 409, "not_running": 409, "not_retryable": 409, "read_only": 403, "too_many_pending": 429, "provider_unavailable": 503,
                               "cli_missing": 503, "store_busy": 503, "internal": 500}
     err = AppError("busy", "later", {"task": 1})
     assert (err.status, err.code, err.body()) == (409, "busy", {"error": {"code": "busy", "message": "later", "details": {"task": 1}}})

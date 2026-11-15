@@ -1,0 +1,33 @@
+{
+  "schema": "sutra-extension/2",
+  "id": "222_reminder_lesson",
+  "goals": [
+    "reminder_sent"
+  ],
+  "methods": [
+    {
+      "id": "send-reminder-by-phone@1",
+      "effect": "reminder_sent",
+      "requires": [
+        "instalment_overdue",
+        "phone_on_file"
+      ],
+      "provider": "local-provider",
+      "grant": "action:send-reminder-by-phone@1",
+      "cost": {
+        "compute": 1,
+        "money": 0,
+        "attention": 0
+      },
+      "action": "simulate_fact",
+      "approved": true,
+      "source": "reviewed/synthetic-method"
+    }
+  ],
+  "grants": [
+    "action:send-reminder-by-phone@1"
+  ],
+  "revoke_grants": [
+    "action:send-reminder@1"
+  ]
+}

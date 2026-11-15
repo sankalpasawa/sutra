@@ -198,11 +198,11 @@ test("with a department and a run the URLs carry the run first and the departmen
 
 test("the page's own first calls reach J2's routes with the department once, with and without a run", () => {
   // the start page's output select is a Sutra module (output_pick.js): the page's own script no longer asks /api/engine/settings
-  assert.deepEqual(dept().fetched, ["/api/refs?dept=web", "/api/runs?dept=web", "/api/runlist?dept=web", "/api/state?since=0&dept=web",
-    "/api/artifacts?x=1&dept=web"]);
+  assert.deepEqual(dept().fetched, ["/api/refs?dept=web", "/api/runs?dept=web", "/api/runlist?dept=web", "/api/timing?dept=web",
+    "/api/state?since=0&dept=web", "/api/artifacts?x=1&dept=web"]);
   // a saved run also asks for its change requests (the build journey's stops) before the artifacts
   assert.deepEqual(dept({location: {search: `?run=${RUN}`}}).fetched,
-    ["/api/refs?dept=web", "/api/runs?dept=web", "/api/runlist?dept=web", `/api/state?since=0&run=${RUN}&dept=web`,
+    ["/api/refs?dept=web", "/api/runs?dept=web", "/api/runlist?dept=web", `/api/timing?run=${RUN}&dept=web`, `/api/state?since=0&run=${RUN}&dept=web`,
       `/api/changes?x=1&run=${RUN}&dept=web`, `/api/artifacts?x=1&run=${RUN}&dept=web`]);
 });
 
@@ -211,7 +211,7 @@ test("without a department the page is J2's: SutraCtx is there and empty, nothin
   assert.equal(alone.run("typeof SutraCtx"), "object");
   assert.equal(alone.run("SutraCtx.dept"), "");
   assert.equal(alone.run("typeof fetch.sutraWrapped"), "undefined");
-  assert.deepEqual(alone.fetched, ["/api/refs", "/api/runs", "/api/runlist", "/api/state?since=0", "/api/artifacts?x=1"]);
+  assert.deepEqual(alone.fetched, ["/api/refs", "/api/runs", "/api/runlist", "/api/timing", "/api/state?since=0", "/api/artifacts?x=1"]);
   assert.ok(!JSON.stringify(alone.out).includes("dept="));
 });
 
@@ -256,6 +256,15 @@ test("E20: links to the shared library and to a run's Library tab are the team's
   assert.equal(plain({location: {pathname: "/library"}}).run("CAT.on"), true, "J2's own page, as the stub has it");
 });
 
+test("E24: the shelf links and the run template links are the team's paths with a team and J2's own without one (sync 6)", () => {
+  const web = dept(), alone = plain();
+  assert.equal(alone.run('shelfHref("artifacts", "run-1")'), "/library?view=artifacts&open=run-1");
+  assert.equal(web.run('shelfHref("artifacts", "run-1")'), "/d/web/library?view=artifacts&open=run-1");
+  assert.equal(alone.run('rtHref("thread-boutique-website", "all")'), "/?view=simple&template=thread-boutique-website&workflows=all");
+  assert.equal(web.run('rtHref("thread-boutique-website", "all")'), "/d/web/?view=simple&template=thread-boutique-website&workflows=all");
+  assert.equal(web.run('rtHref("a", "x,y")'), "/d/web/?view=simple&template=a&workflows=x%2Cy");
+});
+
 test("E21: loadFeed hands the question list to FunctionChat before it paints the feed, and paints all the same when the module fails or is absent", async () => {
   const page = dept();
   page.run('globalThis.window = globalThis; globalThis.calls = []; globalThis.order = []; CHATFN = "adaptation"; paintFeed = () => order.push("paint");'
@@ -287,7 +296,7 @@ test("E4: the finish card of a finished run links to the preview with the run fi
   const alone = finish({}), web = finish({boot: BOOT, location: {pathname: "/d/web/"}});
   const run = finish({boot: BOOT, location: {pathname: "/d/web/", search: `?run=${RUN}`}});
   for (const card of [alone, web, run]) {
-    assert.ok(card.includes("Copy share link") && card.includes("Open full view") && card.includes('download="my-website.html"'));
+    assert.ok(card.includes("Copy share link") && card.includes("Open full view") && card.includes(`download="${readJson(fixture("state.json")).page}.html"`));
   }
   assert.ok(alone.includes('href="/site/latest"') && web.includes('href="/site/latest?dept=web"'));
   assert.ok(run.includes(`href="/site/latest?run=${RUN}&dept=web"`));

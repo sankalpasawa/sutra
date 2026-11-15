@@ -10,8 +10,6 @@ import subprocess
 import sys
 from pathlib import Path
 
-from sutra_app.library import templates
-
 REPO = Path(__file__).resolve().parents[2]
 SCHEMAS = REPO / "docs" / "schemas"
 
@@ -33,14 +31,14 @@ def test_the_index_lists_every_schema_file_and_every_file_is_a_json_schema():
     index = json.loads((SCHEMAS / "index.json").read_text(encoding="utf-8"))
     files = sorted(p.name for p in SCHEMAS.glob("*.v*.json"))
     assert files == sorted(f"{family}.v{version}.json" for family, versions in index.items() for version in versions)
-    assert len(index) > 60 and {"atom", "node", "org_chart", "goal", "run_message", "receipt", "template.file"} <= set(index)
+    assert len(index) > 35 and {"atom", "node", "org_chart", "goal", "run_message", "receipt", "template.file"} <= set(index)
     schema = json.loads((SCHEMAS / "atom.v1.json").read_text(encoding="utf-8"))
     assert schema["type"] == "object" and "id" in schema["properties"]
 
 
 def test_a_changed_a_deleted_and_a_left_over_schema_file_are_each_found(tmp_path):
     copy = tmp_path / "schemas"
-    shutil.copytree(SCHEMAS, copy, ignore=shutil.ignore_patterns("templates"))
+    shutil.copytree(SCHEMAS, copy)
     schema = json.loads((copy / "department.v1.json").read_text(encoding="utf-8"))
     schema["properties"].pop("home_dir")                                    # a field removed without a version bump
     (copy / "department.v1.json").write_text(json.dumps(schema, indent=2, sort_keys=True) + "\n", encoding="utf-8")
@@ -58,6 +56,9 @@ def test_the_export_writes_the_same_files_into_an_empty_folder(tmp_path):
     assert fresh == {p.name: p.read_text(encoding="utf-8") for p in SCHEMAS.iterdir() if p.is_file()}
 
 
-def test_the_generic_templates_under_docs_schemas_match_the_models_and_rules():
-    assert templates.generic_drift(SCHEMAS / "templates") == []
-    assert sorted(p.parent.name for p in (SCHEMAS / "templates").glob("*/generic.json")) == sorted(templates.ARTIFACTS)
+def test_docs_schemas_holds_no_copy_of_the_generic_templates_or_the_section_models():
+    """D171: J2's `templates/<type>/generic.json` is the single source; the library exports nothing of it."""
+    assert not (SCHEMAS / "templates").exists()
+    assert not list(SCHEMAS.glob("artifact.*.json"))
+    index = json.loads((SCHEMAS / "index.json").read_text(encoding="utf-8"))
+    assert not [name for name in index if name.startswith("artifact.")] and "artifact_data" in index

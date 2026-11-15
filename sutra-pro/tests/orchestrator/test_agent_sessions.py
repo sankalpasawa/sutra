@@ -194,6 +194,49 @@ def test_the_list_of_a_teams_agents_per_run_with_usage_pick_and_state(tenv):  # 
     assert [r["agent"] for r in other] == list(FUNCTIONS) and all(r["run_id"] is None and not r["live"] for r in other)
 
 
+def test_an_agents_usage_names_its_calls_by_purpose_and_they_add_up_to_its_totals(tenv):  # noqa: F811
+    """D159: `usage.by_purpose` is `{purpose: {calls, usd}}` for each purpose the agent's session was charged for, on a function's row and on a builder's; the purposes add up to
+    the totals the row always had, a stub call is in neither, and an agent that has not called has an empty mapping (every row has the key)."""
+    from sutra_app.connectors.usage import UsageIn
+    task = tenv.started()
+    run = tenv.row(task).run_id
+    go(tenv, task, ev("node", fn="priority", status="running", detail="x", calls=1, seconds=0.1), ev("step", step="W-1", name="Menu", status="running"),
+       usage(f"{run}:1", fn="priority", step="J2.c"), usage(f"{run}:2", fn="priority", step="J2.c"),                         # two turns of Priority
+       usage(f"{run}:3", fn="priority", step="J2.c", purpose="judge", usd=0.02),                                             # the late judge scores what it registered
+       usage(f"{run}:4", fn="priority", step="J2.c", purpose="plan", provider="codex", usd=None, tokens_in=5, tokens_out=1),   # Codex: tokens, no dollars
+       usage(f"{run}:5", fn="priority", step="J2.c", purpose="summary", provider="stub", usd=None),                          # a stub call counts nowhere
+       usage(f"{run}:6", fn="adaptation", step="J2.b", usd=0.03),
+       usage(f"{run}:7", fn="W-1", step="W-1", atom="W-1.a1"))
+    priority_sid = active(tenv, "web.priority")
+    tenv.usage.record(UsageIn(provider="claude", model="sonnet", purpose="agent_chat", usd=0.0625, tokens_in=300, tokens_out=60, how="native", fn="priority", task_id=task,
+                              session_id=priority_sid, call_ref="r:question-1"))                                             # a function's answer to a question asked in its chat (D147)
+    rows = {r["agent"]: r for r in agents_api(tenv).get("/api/teams/web/agents").json()}
+    priority = rows["priority"]["usage"]
+    assert priority["by_purpose"] == {"agent_chat": {"calls": 1, "usd": 0.0625}, "agent_turn": {"calls": 2, "usd": 0.02}, "judge": {"calls": 1, "usd": 0.02},
+                                      "plan": {"calls": 1, "usd": None}}
+    assert {k: priority[k] for k in ("calls", "usd", "tokens_in", "tokens_out")} == {"calls": 5, "usd": 0.1025, "tokens_in": 605, "tokens_out": 121}      # the totals a row always had
+    assert set(priority) == {"calls", "usd", "tokens_in", "tokens_out", "by_purpose"}
+    assert sum(c["calls"] for c in priority["by_purpose"].values()) == priority["calls"]
+    assert round(sum(c["usd"] or 0 for c in priority["by_purpose"].values()), 6) == priority["usd"]
+    assert rows["adaptation"]["usage"]["by_purpose"] == {"agent_turn": {"calls": 1, "usd": 0.03}}
+    assert rows["W-1"]["usage"]["by_purpose"] == {"agent_turn": {"calls": 1, "usd": 0.01}} and rows["W-1"]["usage"]["calls"] == 1      # a builder's row is the same shape
+    assert rows["audit"]["usage"] == {"calls": 0, "usd": None, "tokens_in": None, "tokens_out": None, "by_purpose": {}}
+    assert all(set(r["usage"]) == {"calls", "usd", "tokens_in", "tokens_out", "by_purpose"} for r in rows.values())
+    assert [(g["key"], g["calls"]) for g in agents_api(tenv).get("/api/usage/summary", params={"by": "purpose", "session_id": priority_sid}).json()["groups"]] == [
+        ("agent_chat", 1), ("agent_turn", 2), ("judge", 1), ("plan", 1)]                                                       # the summary route reads the same rows
+
+
+def test_a_codex_only_purpose_has_calls_and_no_dollars_and_a_row_with_none_has_no_dollars_at_all(tenv):  # noqa: F811
+    task = tenv.started()
+    run = tenv.row(task).run_id
+    go(tenv, task, ev("node", fn="audit", status="running", detail="x", calls=1, seconds=0.1),
+       usage(f"{run}:1", fn="audit", step="J2.g", provider="codex", usd=None, tokens_in=40, tokens_out=8),
+       usage(f"{run}:2", fn="audit", step="J2.g", provider="codex", usd=None, tokens_in=10, tokens_out=2, purpose="judge"))
+    audit = {r["agent"]: r for r in agents_api(tenv).get("/api/teams/web/agents").json()}["audit"]["usage"]
+    assert audit == {"calls": 2, "usd": None, "tokens_in": 50, "tokens_out": 10,
+                     "by_purpose": {"agent_turn": {"calls": 1, "usd": None}, "judge": {"calls": 1, "usd": None}}}
+
+
 def test_usage_by_session_and_the_session_filter(tenv):  # noqa: F811
     task = tenv.started()
     run = tenv.row(task).run_id

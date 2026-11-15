@@ -165,3 +165,64 @@ test("distance is what is left below the view; watch on nothing is a no-op", () 
   assert.equal(typeof watch(null, () => {}), "function");
   assert.deepEqual(intent(undefined, {type: "other"}), idle());
 });
+
+/* ---------------------------------------------------------------- STR-12: the reply that is being written */
+test("STR-12 pillHtml: a reply in progress is one button whatever the count, and the old pill is as it was", () => {
+  const live = ChatScroll.pillHtml(0, {live: true});
+  assert.match(live, /data-act="jump-latest"/);
+  assert.match(live, />Reply in progress<\/button>/);
+  assert.match(live, /aria-label="Reply in progress, go to the newest"/);
+  assert.equal(ChatScroll.pillHtml(3, {live: true}), live);
+  assert.equal(ChatScroll.pillHtml(0), "");
+  assert.match(ChatScroll.pillHtml(2), />2 new messages below<\/button>/);
+  assert.match(ChatScroll.pillHtml(2, {live: false}), />2 new messages below<\/button>/);
+});
+
+test("STR-12 grow: a follower follows the growing reply, a reader who moved up keeps the place and sees that a reply is in progress", () => {
+  assert.deepEqual(ChatScroll.grow({parked: false, atBottom: true}), {scroll: "bottom", live: false});
+  assert.deepEqual(ChatScroll.grow({parked: true, atBottom: true}), {scroll: "keep", live: true});
+  assert.deepEqual(ChatScroll.grow({parked: false, atBottom: false}), {scroll: "keep", live: true});
+  assert.deepEqual(ChatScroll.grow({parked: true, atBottom: false, own: true}), {scroll: "bottom", live: false});
+  assert.deepEqual(ChatScroll.grow(null), {scroll: "bottom", live: false});
+});
+
+test("STR-12 behavior: auto while a reply streams, whatever the setting; smooth otherwise unless the reader asked for less motion", () => {
+  const yes = () => ({matches: true});
+  const no = () => ({matches: false});
+  assert.equal(ChatScroll.behavior(no), "smooth");
+  assert.equal(ChatScroll.behavior(yes), "auto");
+  assert.equal(ChatScroll.behavior(no, {streaming: true}), "auto");
+  assert.equal(ChatScroll.behavior(no, {streaming: false}), "smooth");
+});
+
+// a scroller made of boxes: each child has a height; `top` is the scroll offset; the child rects are what a browser would answer
+function boxes(heights, top) {
+  const el = {scrollTop: top, children: [], getBoundingClientRect: () => ({top: 100, bottom: 400})};
+  const make = h => { const c = {h, parentNode: el, getBoundingClientRect: () => { let y = 100 - el.scrollTop; for (const k of el.children) { if (k === c) break; y += k.h; } return {top: y, bottom: y + c.h}; }}; return c; };
+  heights.forEach(h => el.children.push(make(h)));
+  el.insert = (at, h) => { el.children.splice(at, 0, make(h)); };
+  return el;
+}
+
+test("STR-12 keepPlace: a block inserted above the reader moves the scroll by its height, so the line the reader looks at stays where it was", () => {
+  const el = boxes([200, 200, 200, 200], 250);              // the second box is the first in view (it ends at 400-250+100)
+  const first = el.children[1];
+  const before = first.getBoundingClientRect().top;
+  ChatScroll.keepPlace(el, () => el.insert(0, 120));
+  assert.equal(el.scrollTop, 370);
+  assert.equal(first.getBoundingClientRect().top, before);
+});
+
+test("STR-12 keepPlace: nothing above changes, nothing moves; the result of the change is returned; a missing element or function is harmless", () => {
+  const el = boxes([200, 200, 200], 250);
+  assert.equal(ChatScroll.keepPlace(el, () => "done"), "done");
+  assert.equal(el.scrollTop, 250);
+  assert.equal(ChatScroll.keepPlace(null, () => 7), 7);
+  assert.equal(ChatScroll.keepPlace(el, null), undefined);
+});
+
+test("STR-12 keepPlace: growth BELOW the reader's line (a reply that is being written) does not move the scroll", () => {
+  const el = boxes([200, 200, 200], 150);
+  ChatScroll.keepPlace(el, () => { el.children[2].h = 900; });
+  assert.equal(el.scrollTop, 150);
+});

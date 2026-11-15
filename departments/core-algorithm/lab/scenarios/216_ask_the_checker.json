@@ -1,0 +1,31 @@
+{
+  "schema": "sutra-extension/2",
+  "id": "216_ask_the_checker",
+  "methods": [
+    {
+      "id": "ask-checker-about-letter@1",
+      "effect": "letter_drafted",
+      "requires": [
+        "loan_on_book"
+      ],
+      "provider": "checker-channel",
+      "grant": "action:ask-checker-about-letter@1",
+      "cost": {
+        "compute": 0,
+        "money": 0,
+        "attention": 1
+      },
+      "action": "ask",
+      "approved": true,
+      "source": "reviewed/synthetic-method",
+      "question": "Does the letter drafted for loan L-17 match the loan book?",
+      "ask_to": "checker:loan-book"
+    }
+  ],
+  "providers": {
+    "checker-channel": 3
+  },
+  "grants": [
+    "action:ask-checker-about-letter@1"
+  ]
+}

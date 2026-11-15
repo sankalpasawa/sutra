@@ -1,0 +1,33 @@
+{
+  "schema": "sutra-extension/2",
+  "id": "151_conformance_theory",
+  "rules": [
+    {
+      "id": "R-CONFORMS@1",
+      "head": "run_judged",
+      "branches": [
+        [
+          "fitness_in_band"
+        ],
+        [
+          "finding_filed"
+        ]
+      ],
+      "approved": true,
+      "source": "reviewed/conformance-check"
+    }
+  ],
+  "evidence": [
+    {
+      "predicate": "fitness_band",
+      "truth": "TRUE",
+      "verified": true,
+      "source": "policy:routine/conformance-band",
+      "version": "num-edfc698130687717",
+      "value": "0.9",
+      "unit": "ratio",
+      "label": "band-v1",
+      "evidence_kind": "NUMBER"
+    }
+  ]
+}

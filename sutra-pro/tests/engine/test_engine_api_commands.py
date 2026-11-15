@@ -127,9 +127,10 @@ def test_output_is_accepted_while_the_page_has_no_run(api):
     got = api.client.post("/api/output?dept=web", json={"type": "prd"}, headers=TOKEN)
     assert (got.status_code, got.json()) == (200, {"ok": True, "output": "prd"})
     assert api.page().next_settings == {"J2_OUTPUT": "prd"}
-    assert api.client.post("/api/output?dept=web", json={"type": "Website "}, headers=TOKEN).json()["output"] == "website"
-    assert api.client.post("/api/output?dept=web", json={"type": "nonsense"}, headers=TOKEN).json()["output"] == "website"
-    assert api.client.post("/api/output?dept=web", json={}, headers=TOKEN).json() == {"ok": True, "output": "website"}
+    assert api.client.post("/api/output?dept=web", json={"type": "PRD "}, headers=TOKEN).json()["output"] == "prd"
+    got = api.client.post("/api/output?dept=web", json={"type": "nonsense"}, headers=TOKEN)
+    assert got.json()["output"] is None and "J2_OUTPUT" not in api.page().next_settings, "no default type: an unknown name pins nothing (D165)"
+    assert api.client.post("/api/output?dept=web", json={}, headers=TOKEN).json() == {"ok": True, "output": None}
 
 
 def test_output_after_a_message_is_409_and_names_the_runs_output(api):
@@ -138,8 +139,8 @@ def test_output_after_a_message_is_409_and_names_the_runs_output(api):
     got = api.client.post("/api/output?dept=web", json={"type": "hld"}, headers=TOKEN)
     assert (got.status_code, got.json()) == (409, {"ok": False, "output": "prd"})
     assert api.page().next_settings == {}
-    api.svc.add_run("sales")                                     # no snapshot yet: the page's own choice, else the website
-    assert api.client.post("/api/output?dept=sales", json={"type": "hld"}, headers=TOKEN).json() == {"ok": False, "output": "website"}
+    api.svc.add_run("sales")                                     # no snapshot yet: the page's own choice, else no type (D165)
+    assert api.client.post("/api/output?dept=sales", json={"type": "hld"}, headers=TOKEN).json() == {"ok": False, "output": None}
 
 
 def test_output_is_allowed_again_after_a_reset(api):
@@ -543,3 +544,34 @@ def test_the_settings_route_needs_the_token_and_an_open_team(api):
     got = switch(api, {"decide_for_me": True}, dept="old")
     assert got.status_code == 403 and got.json()["error"]["code"] == "read_only" and not api.page("old").next_settings
     assert switch(api, {"decide_for_me": True}, dept="nope").status_code == 404
+
+
+# ---- J2 sync 6 (D182): `say` carries a run template as two task-only settings keys ------------------------------------------------------
+def test_say_with_a_template_hands_both_keys_to_this_delivery_only(api):
+    cmd = commands.DeptCommands(api.svc, "web")
+    assert cmd.say("a boutique site", "thread-boutique-website", "all") is True
+    assert api.svc.deliveries[-1]["settings"] == {"J2_RUN_TEMPLATE": "thread-boutique-website", "J2_RUN_TEMPLATE_WORKFLOWS": "all"}
+    assert api.page().next_settings == {}, "the page keeps nothing of a template: the next message starts from scratch"
+
+
+def test_say_takes_the_workflows_as_a_list_or_a_comma_text_and_the_page_choices_ride_along(api):
+    api.client.post("/api/output?dept=web", json={"type": "website"}, headers=TOKEN)
+    cmd = commands.DeptCommands(api.svc, "web")
+    assert cmd.say("go", "t-1", ["w1", "w2"]) is True
+    assert api.svc.deliveries[-1]["settings"] == {"J2_OUTPUT": "website", "J2_RUN_TEMPLATE": "t-1", "J2_RUN_TEMPLATE_WORKFLOWS": "w1,w2"}
+    assert cmd.say("go", "t-1", "w3,w4") is True
+    assert api.svc.deliveries[-1]["settings"]["J2_RUN_TEMPLATE_WORKFLOWS"] == "w3,w4"
+
+
+def test_say_without_a_template_adds_nothing_and_workflows_alone_are_dropped(api):
+    cmd = commands.DeptCommands(api.svc, "web")
+    assert cmd.say("plain") is True and api.svc.deliveries[-1]["settings"] is None
+    assert cmd.say("only workflows", None, "all") is True and api.svc.deliveries[-1]["settings"] is None
+    assert cmd.say("empty", "t-1", "") is True
+    assert api.svc.deliveries[-1]["settings"] == {"J2_RUN_TEMPLATE": "t-1"}, "no workflows named: the whole template (J2: keys None)"
+
+
+def test_say_of_a_busy_team_with_a_template_is_false_and_leaves_the_page_alone(api):
+    api.svc.busy = True
+    assert commands.DeptCommands(api.svc, "web").say("go", "t-1", "all") is False
+    assert api.page().next_settings == {}

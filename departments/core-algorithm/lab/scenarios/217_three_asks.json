@@ -1,0 +1,90 @@
+{
+  "schema": "sutra-extension/2",
+  "id": "217_three_asks",
+  "rules": [
+    {
+      "id": "R-LETTER-TRIES@1",
+      "head": "letter_drafted",
+      "branches": [
+        [
+          "draft_1_passes"
+        ],
+        [
+          "draft_2_passes"
+        ],
+        [
+          "draft_3_passes"
+        ]
+      ],
+      "approved": true,
+      "source": "reviewed/letters-desk"
+    }
+  ],
+  "methods": [
+    {
+      "id": "ask-checker-about-draft-1@1",
+      "effect": "draft_1_passes",
+      "requires": [
+        "loan_on_book"
+      ],
+      "provider": "checker-channel",
+      "grant": "action:ask-checker-about-draft-1@1",
+      "cost": {
+        "compute": 0,
+        "money": 0,
+        "attention": 1
+      },
+      "action": "ask",
+      "approved": true,
+      "source": "reviewed/synthetic-method",
+      "question": "Try 1 of 3: does the letter drafted for loan L-17 match the loan book?",
+      "ask_to": "checker:loan-book"
+    },
+    {
+      "id": "ask-checker-about-draft-2@1",
+      "effect": "draft_2_passes",
+      "requires": [
+        "loan_on_book"
+      ],
+      "provider": "checker-channel",
+      "grant": "action:ask-checker-about-draft-2@1",
+      "cost": {
+        "compute": 0,
+        "money": 0,
+        "attention": 1
+      },
+      "action": "ask",
+      "approved": true,
+      "source": "reviewed/synthetic-method",
+      "question": "Try 2 of 3: does the letter drafted for loan L-17 match the loan book?",
+      "ask_to": "checker:loan-book"
+    },
+    {
+      "id": "ask-checker-about-draft-3@1",
+      "effect": "draft_3_passes",
+      "requires": [
+        "loan_on_book"
+      ],
+      "provider": "checker-channel",
+      "grant": "action:ask-checker-about-draft-3@1",
+      "cost": {
+        "compute": 0,
+        "money": 0,
+        "attention": 1
+      },
+      "action": "ask",
+      "approved": true,
+      "source": "reviewed/synthetic-method",
+      "question": "Try 3 of 3: does the letter drafted for loan L-17 match the loan book?",
+      "ask_to": "checker:loan-book"
+    }
+  ],
+  "providers": {
+    "checker-channel": 3
+  },
+  "grants": [
+    "action:ask-checker-about-draft-1@1",
+    "action:ask-checker-about-draft-2@1",
+    "action:ask-checker-about-draft-3@1"
+  ]
+}

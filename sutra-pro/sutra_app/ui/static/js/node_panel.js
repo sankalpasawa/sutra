@@ -268,7 +268,7 @@
     function paintJump() {
       const CS = CSc();
       if (!chatRefs || !chatRefs.jump) return;
-      const html = CS && st ? CS.pillHtml(st.scroll.pill) : "";
+      const html = CS && st ? CS.pillHtml(st.scroll.pill, {live: st.replyLive === true && st.scroll.parked === true}) : "";          // a reply being written below a reader who moved up: "Reply in progress"
       chatRefs.jump.hidden = html === "";
       paintTo(chatRefs.jump, html);
     }
@@ -278,7 +278,7 @@
       if (!CS || !el) return;
       st.scroll = {parked: false, seenId: lastIdOf(activeMessages()), pill: 0};
       paintJump();
-      const how = CS.behavior(typeof root.matchMedia === "function" ? q => root.matchMedia(q) : undefined);
+      const how = CS.behavior(typeof root.matchMedia === "function" ? q => root.matchMedia(q) : undefined, {streaming: st.replyLive === true});
       if (typeof el.scrollTo === "function") el.scrollTo({top: el.scrollHeight, behavior: how});
       else el.scrollTop = el.scrollHeight;
     }
@@ -295,7 +295,13 @@
     }
 
     const activeSession = () => (st.view ? st.view.session : st.session);
-    const activeMessages = () => (st.view ? st.view.messages : st.messages);
+    // The owner's direct line before the server has stored it (live composer, STR-9): one bubble, gone when the stored line with the same client_id is in the list.
+    function activeMessages() {
+      if (st.view) return st.view.messages;
+      const c = st.cc && st.cc.sid === st.sid ? st.cc.c : null;
+      const line = c ? c.pendingLine(st.messages) : null;
+      return line ? st.messages.concat([{id: "local-direct", session_id: st.sid, role: "user", who: "user", kind: "text", text: line.text, card: null, pause: null, answered_by: null, task_id: null, state: "pending", at: ""}]) : st.messages;
+    }
     const activeSid = () => (st.view ? st.view.sid : st.sid);
 
     function departmentOf(node) {
@@ -362,14 +368,71 @@
 
     // The reader's place (ChatScroll): the owner's own send (st.stick) goes to the bottom; a chat opened again (st.reopen) comes back where it was
     // read, else to the bottom; a reader who moved up stays and the pill counts what arrived below; a follower follows.
+    // The live reply of a direct chat (STR-10). Only a team chat the owner can write in has a composer; an agent's chat keeps its own live row.
+    const liveOn = () => !!(st && st.tab === "chat" && st.cc && st.cc.sid === st.sid && st.cc.c.live() && root.ChatLiveView && root.Fluid && directOwner() !== "");
+    // Retry on a stopped or failed reply, while it is the owner's newest line and no turn is answering
+    const newestOwn = () => st.messages.reduce((n, m) => ((m.role === "user" || m.who === "user") && Number.isInteger(m.id) && m.id > n ? m.id : n), 0);
+    const liveDeps = () => ({who: CV().whoLabel("sutra", {}), whoOf: m => CV().whoLabel(clean(m.who), {}), canRetry: model => model.turn === newestOwn() && !!st.cc && !st.cc.c.state().turn.active && !st.readOnly &&
+      !!st.session && st.session.writable !== false && clean(st.session.status) !== "archived"});
+    // One frame of a live reply touches only its own shell; the transcript is drawn as a whole when the shell is not there yet or a stored message has taken its key.
+    function paintLiveTurn() {
+      if (!liveOn() || !chatRefs) return;
+      const LV = root.ChatLiveView;
+      const model = LV.fromLive(st.cc.c.liveView(), liveDeps());
+      if (!model) return;
+      const node = chatRefs.msgs.querySelector('.clive[data-turn="' + model.turn + '"][data-attempt="' + model.attempt + '"]');
+      const stored = activeMessages().some(m => LV.isReply(m) && LV.keyOf(m.turn, m.attempt) === model.key);
+      if (!node || stored) { paintMessages(); return; }
+      st.replyLive = model.live === true;
+      const CS = CSc();
+      const el = chatRefs.msgs;
+      const near = CS ? CS.distance(el) <= NEAR_PX : true;
+      LV.paint(node, model, liveDeps());
+      const g = CS ? CS.grow({parked: st.scroll.parked, atBottom: near}) : {scroll: "bottom", live: false};
+      if (g.scroll === "bottom" && !st.loading) el.scrollTop = el.scrollHeight;          // the growing reply is followed while the reader is at the bottom
+      paintJump();
+    }
+
+    // Where the clipboard API is missing or refused: a hidden textarea and the old command.
+    function copyFallback(value) {
+      try {
+        const area = doc.createElement("textarea");
+        area.value = value;
+        area.setAttribute("readonly", "");
+        area.style.cssText = "position:fixed;left:-9999px;top:0";
+        doc.body.appendChild(area);
+        area.select();
+        const ok = doc.execCommand("copy");
+        doc.body.removeChild(area);
+        return ok === true;
+      } catch (e) {
+        return false;
+      }
+    }
+
     function paintMessages() {
       const session = activeSession();
       const el = chatRefs.msgs;
       const near = el.scrollHeight - el.scrollTop - el.clientHeight < NEAR_PX;
       const list = activeMessages();
       const view = {deptName: deptName(), live: !st.view};
-      // Fluid.patchList edits the list in place: the lines that did not change are not touched (no flicker, no lost selection), a new line enters
-      const changed = root.Fluid ? root.Fluid.patchList(el, CV().transcriptItems(session, list, view), {enter: "nmsg-in"}).changed : paintTo(el, CV().transcript(session, list, view));
+      // Fluid.patchList edits the list in place: the lines that did not change are not touched (no flicker, no lost selection), a new line enters. The replies of the direct chat
+      // are shells that chat_live_view.js paints (STR-10): a live turn and a stored message are the same node.
+      const plan = liveOn() ? root.ChatLiveView.plan(list, st.cc.c.liveView(), liveDeps()) : null;
+      let changed;
+      st.replyLive = !!(st.cc && st.cc.sid === st.sid && st.cc.c.live() && st.cc.c.state().turn.active);
+      if (root.Fluid) {
+        const items = CV().transcriptItems(session, list, plan ? Object.assign(view, {shell: true}) : view);
+        if (plan && plan.liveItem) items.push(plan.liveItem);
+        const draw = () => {
+          let c = root.Fluid.patchList(el, items, {enter: "nmsg-in"}).changed;
+          if (plan) c = root.ChatLiveView.sync(el, plan.models, liveDeps()) > 0 || c;
+          return c;
+        };
+        changed = CSc() && st.scroll.parked ? CSc().keepPlace(el, draw) : draw();          // a line that comes in above a reader who moved up does not move what is read
+      } else {
+        changed = paintTo(el, CV().transcript(session, list, view));
+      }
       const last = list.reduce((n, m) => Math.max(n, Number(m.id) || 0), 0);
       const CS = CSc();
       if (!CS) {
@@ -439,8 +502,10 @@
         const again = c !== undefined;
         if (!again) {
           // one repaint per animation frame, however many chunks of a reply arrived in it
-          c = CC.create({api: api(), sid, mode: st.ccMode || "team", onChange: () => later(() => { if (st && chatRefs) { paintComposer(); paintBar(); } }),
-                         onTurnEnd: () => { if (st && st.sid === sid && chatRefs) { st.pillSid = ""; paintPill(); } }});          // the turn may have moved the chat to the other model: read the pill again
+          c = CC.create({api: api(), sid, mode: st.ccMode || "team", live: true, onChange: () => later(() => { if (st && chatRefs) { paintComposer(); paintBar(); paintLiveTurn(); } }),
+                         onTurnEnd: () => { if (st && st.sid === sid && chatRefs) { st.pillSid = ""; paintPill(); } },          // the turn may have moved the chat to the other model: read the pill again
+                         onRelease: rows => { if (st && st.sid === sid) { st.messages = mergeMessages(st.messages, rows); st.lastId = lastIdOf(st.messages); reconcileTurn(); if (st.tab === "chat" && chatRefs) { paintChat(); paintComposer(); paintBar(); } } },
+                         onSettle: () => { if (st && st.sid === sid && st.refresh) st.refresh[0](); }});          // the live turn ended: read its stored reply
           composers.set(sid, c);
         }
         st.cc = {sid, c};                        // set first: rejoin and reconcile repaint, and the repaint asks for this composer again
@@ -472,7 +537,8 @@
       const html = CC.bar(c.state(), {labels: {team: "Tell the team", direct: "Ask the model"}});
       chatRefs.bar.hidden = html === "";
       paintTo(chatRefs.bar, html);
-      chatRefs.stream.hidden = !CC.paintStreamRow(chatRefs.stream, c.state(), CC.providerOf(data.providers, data.chosen));       // a chunk adds to the end of the row
+      if (c.live() && root.ChatLiveView && root.Fluid) { chatRefs.stream.hidden = true; chatRefs.stream.innerHTML = ""; chatRefs.stream.__html = undefined; }       // the reply is a node of the transcript now
+      else chatRefs.stream.hidden = !CC.paintStreamRow(chatRefs.stream, c.state(), CC.providerOf(data.providers, data.chosen));       // a chunk adds to the end of the row
       keepFollowing();
     }
 
@@ -932,7 +998,7 @@
         if (all[i].role === "user" || all[i].who === "user") owner = all[i].id;
         else if (all[i].kind === "question" && (all[i].answered_by === null || all[i].answered_by === undefined) && owner !== null) all[i] = Object.assign({}, all[i], {answered_by: owner});
       }
-      return all;
+      return root.ChatLiveView ? root.ChatLiveView.supersede(all) : all;          // a first try that a retry has replaced is collapsed at once, not after the next reload
     }
 
     const lastIdOf = list => list.reduce((n, m) => Math.max(n, Number(m.id) || 0), 0);
@@ -1076,7 +1142,8 @@
       if (!st || g !== gen || sid !== st.sid) return;
       if (found.error) return;
       if (found.value.length) {
-        st.messages = mergeMessages(st.messages, found.value);
+        const own = st.cc && st.cc.sid === sid ? st.cc.c : null;
+        st.messages = mergeMessages(st.messages, own ? own.offer(found.value) : found.value);          // a stored reply of the live turn waits for its end
         st.lastId = lastIdOf(st.messages);
       }
       reconcileTurn();
@@ -1112,6 +1179,9 @@
             }
             const c = mine(data) ? composerOf() : null;
             if (c) c.partial(data);
+          } else if (type === "chat.live") {
+            const c = isObj(data) && data.conversation_id === (st && st.sid) ? composerOf() : null;
+            if (c) c.frame(data);
           } else if (type === "chat.message") {
             if (mine(data) && st.live && st.live.active && isObj(data) && isObj(data.message) && data.message.role !== "user") { st.live = AC().idle(); paintLive(); }
             if (mine(data)) refetchMessages();
@@ -1136,9 +1206,10 @@
             if (st.tab === "agents") loadAgents(g);
             refetchMessages();
             refetchDetail();
-            if (st.cc && st.cc.sid === st.sid) st.cc.c.resync();          // the server restarted: a turn it ran is gone, and one it runs now is shown
+            if (st.cc && st.cc.sid === st.sid) { st.cc.c.reconnect(); st.cc.c.resync(); }          // the stream came back (or the server restarted): the turn's snapshot is read, a turn it ran is gone, one it runs now is shown
           }
         },
+        onState: state => { if (st && st.cc && st.cc.sid === st.sid) st.cc.c.setPolling(state === "polling"); },
         pollFn: () => Promise.all([refreshMessages(g), refreshDetail(g)]),
         pollMs: opts.pollMs,
       });
@@ -1230,7 +1301,10 @@
       const stuck = askBlocked();
       if (stuck !== "") { st.banner = stuck; paintChat(); return false; }
       st.banner = "";
-      const out = await c.send(body);
+      const sending = c.send(body);
+      st.stick = true;
+      paintMessages();                                                      // the owner's line shows at once
+      const out = await sending;
       if (out.ok && draftStore()) draftStore().clearIf(sid, body);          // only a send the server accepted clears the draft
       if (g !== gen || !st) return out.ok;
       if (out.ok) {
@@ -1400,6 +1474,7 @@
       else if (name === "retry-load") { const node = st.nodeId; const tab = st.tab; open(node, tab); }
       else if (name === "jump-latest") jumpLatest();
       else if (name === "retry-direct") retryDirect(act.dataset.turn);
+      else if (name === "copy-reply" || name === "copy-code") { if (root.ChatLiveView) root.ChatLiveView.copy(act, {fallback: copyFallback}); }
       else if (name.indexOf("rules-") === 0) onRules(name, act);
     }
 
@@ -1493,6 +1568,7 @@
     }
 
     function destroy() {
+      composers.forEach(c => { if (typeof c.close === "function") c.close(); });
       close();
       host.removeEventListener("click", onClick);
       doc.removeEventListener("keydown", onKeyDown);

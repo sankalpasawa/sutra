@@ -292,14 +292,14 @@ def test_the_golden_run_replays_into_consistent_rows(tenv):
 def test_golden_usage_invariants(tenv):
     task = replay_golden(tenv)
     usage_lines = [e for e in golden_events() if e["t"] == "usage"]
-    assert tenv.one("SELECT count(*) FROM usage_ledger") == len(usage_lines) == 30
+    assert tenv.one("SELECT count(*) FROM usage_ledger") == len(usage_lines) == 34
     assert tenv.one("SELECT count(*) FROM usage_ledger WHERE provider != 'stub' AND atom_id IS NULL") == 0
     assert tenv.one("SELECT count(*) FROM usage_ledger WHERE atom_id IS NULL") == 0                  # stub rows carry one too
     run = tenv.row(task).run_id
     builder = tenv.sql("SELECT atom_id, node_id FROM usage_ledger WHERE call_ref LIKE '%:10'").fetchone()
     assert tuple(builder) == (f"{run}:W-1.a1", None)                                          # no step node yet: the link stays empty
     groups = tenv.usage.summary("atom", include_stub=True)
-    assert sum(g["tokens_in"] for g in groups) == tenv.one("SELECT sum(tokens_in) FROM usage_ledger") and sum(g["calls"] for g in groups) == 30
+    assert sum(g["tokens_in"] for g in groups) == tenv.one("SELECT sum(tokens_in) FROM usage_ledger") and sum(g["calls"] for g in groups) == 34
     assert tenv.usage.summary("atom") == []                                                   # stub rows are out of every total
 
 
@@ -322,6 +322,6 @@ def test_replaying_the_golden_run_a_second_time_changes_nothing(tenv):
 def test_the_golden_events_all_parse_strictly():
     from sutra_app.orchestrator.models import parse_event
     events = golden_events()
-    assert len(events) == 151
+    assert len(events) == 155
     for line in GOLDEN.read_text().splitlines():
         parse_event(line, strict=True)

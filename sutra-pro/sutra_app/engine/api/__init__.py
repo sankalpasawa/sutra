@@ -8,6 +8,14 @@ The adapter is thin: `views.py` holds the one implementation of the handlers, `c
 about, `reply.py` turns a `Reply` into a response (redaction, charset, the security headers and the generated-content sandbox).
 It serves no page, no static file and no cookie, and has no default team: `sutra_app.ui` serves the pages (S3-web-01).
 """
+import os as _os      # the local type store: exported before J2 is first imported, because `j2_types` reads it at import (patch P17, D163)
+from pathlib import Path as _Path
+
+from ..paths import default_data_dir as _default_data_dir
+
+if not _os.environ.get("J2_TYPES_DIR"):
+    _os.environ["J2_TYPES_DIR"] = str(_Path(_default_data_dir()) / "types")
+
 from fastapi import APIRouter, FastAPI
 from fastapi.routing import APIRoute
 

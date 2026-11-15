@@ -1,0 +1,164 @@
+{
+  "name": "Still Point Yoga Problem, Users and Goals",
+  "artifact": "prd",
+  "section": "Problem",
+  "version": 1,
+  "kind": "specialised",
+  "description": "Problem, Users and Goals sections of the Still Point Yoga PRD: the problem, who uses the page, and goals G1 to G3.",
+  "fields": [
+    {
+      "name": "studio_name",
+      "type": "string",
+      "required": true,
+      "description": "the studio name as written in the facts",
+      "enum": [
+        "Still Point Yoga"
+      ],
+      "nullable": false
+    },
+    {
+      "name": "statement",
+      "type": "string",
+      "required": true,
+      "description": "the problem: people need to see the studio's address, classes and prices and to request a booking",
+      "enum": null,
+      "nullable": false
+    },
+    {
+      "name": "assumptions",
+      "type": "list[string]",
+      "required": false,
+      "description": "facts you had to assume, each one line",
+      "enum": null,
+      "nullable": false
+    },
+    {
+      "name": "users",
+      "type": "list[User]",
+      "required": true,
+      "description": "the user groups, prospective students and the studio team, each with what they do",
+      "enum": null,
+      "nullable": false
+    },
+    {
+      "name": "goals",
+      "type": "list[Goal]",
+      "required": true,
+      "description": "the goals G1 name and address as text, G2 weekly class list, G3 class bookings",
+      "enum": null,
+      "nullable": false
+    }
+  ],
+  "objects": [
+    {
+      "name": "User",
+      "fields": [
+        {
+          "name": "group",
+          "type": "string",
+          "required": true,
+          "description": "the user group name",
+          "enum": [
+            "prospective students",
+            "studio team"
+          ],
+          "nullable": false
+        },
+        {
+          "name": "does",
+          "type": "string",
+          "required": true,
+          "description": "what this group does with the page",
+          "enum": null,
+          "nullable": false
+        }
+      ]
+    },
+    {
+      "name": "Goal",
+      "fields": [
+        {
+          "name": "id",
+          "type": "string",
+          "required": true,
+          "description": "goal id: G1, G2 or G3",
+          "enum": [
+            "G1",
+            "G2",
+            "G3"
+          ],
+          "nullable": false
+        },
+        {
+          "name": "text",
+          "type": "string",
+          "required": true,
+          "description": "the goal in one sentence, with no numeric targets",
+          "enum": null,
+          "nullable": false
+        }
+      ]
+    }
+  ],
+  "rules": [
+    {
+      "rule": "not_empty",
+      "name": "the problem statement is given",
+      "from": "P1",
+      "path": "statement"
+    },
+    {
+      "rule": "not_empty",
+      "name": "users are given",
+      "from": "P1",
+      "path": "users"
+    },
+    {
+      "rule": "not_empty",
+      "name": "goals are given",
+      "from": "P1",
+      "path": "goals"
+    },
+    {
+      "rule": "ids_unique",
+      "name": "goal ids are unique",
+      "from": "P1",
+      "path": "goals"
+    },
+    {
+      "rule": "ids_sequential",
+      "name": "goal ids run G1, G2, G3",
+      "from": "P1",
+      "path": "goals",
+      "prefix": "G"
+    }
+  ],
+  "sha": "de1ee3aa16507e2671cf86ea85535728f83b551a06fd900a234e881c5e77b852",
+  "extends": "prd/problem@generic/1",
+  "made_by": {
+    "run": "j2-20261103-162711",
+    "workflow": "W-1",
+    "atom": "W-1.a1",
+    "agent": "template generator (claude-cli)"
+  },
+  "context": {
+    "business_type": "prd",
+    "facts_used": [
+      "4th Floor, 22 Church Street, Bengaluru 560001",
+      "Monday 7:00 am Gentle Flow 500",
+      "No online payment is taken",
+      "Payment is made at the studio",
+      "Saturday 9:00 am Beginners Basics 400",
+      "Still Point Yoga",
+      "Sunday 8:00 am Slow Sunday 500",
+      "The Goals section states that the page shows the studio name and address as text, lists the weekly classes, and takes bookings",
+      "The Problem section says that people need to see the studio's address, classes and prices and to request a booking, for Still Point Yoga",
+      "The Users section names prospective students and the studio team and states what each does",
+      "Thursday 7:00 am Breath and Stretch 450",
+      "Tuesday 6:30 pm Strength Yoga 600",
+      "bookings@stillpoint.example",
+      "name, email, class and preferred date"
+    ],
+    "fingerprint": "5cc5d210ad77f952165b30c02b517fde69f20948754e33f7150817829d41e7da"
+  }
+}
