@@ -256,8 +256,10 @@ test("E20: links to the shared library and to a run's Library tab are the team's
   assert.equal(plain({location: {pathname: "/library"}}).run("CAT.on"), true, "J2's own page, as the stub has it");
 });
 
-test("E20k: the run template links are the team's paths with a team and J2's own without one (studio pin b2d70b5 has no shelf links)", () => {
+test("E24: the shelf links and the run template links are the team's paths with a team and J2's own without one (sync 6)", () => {
   const web = dept(), alone = plain();
+  assert.equal(alone.run('shelfHref("artifacts", "run-1")'), "/library?view=artifacts&open=run-1");
+  assert.equal(web.run('shelfHref("artifacts", "run-1")'), "/d/web/library?view=artifacts&open=run-1");
   assert.equal(alone.run('rtHref("thread-boutique-website", "all")'), "/?view=simple&template=thread-boutique-website&workflows=all");
   assert.equal(web.run('rtHref("thread-boutique-website", "all")'), "/d/web/?view=simple&template=thread-boutique-website&workflows=all");
   assert.equal(web.run('rtHref("a", "x,y")'), "/d/web/?view=simple&template=a&workflows=x%2Cy");
