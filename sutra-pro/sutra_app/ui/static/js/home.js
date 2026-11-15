@@ -805,7 +805,26 @@
       if (root.ProjectRail && S.departmentsLoaded) root.ProjectRail.set({departments: S.departments, needs: S.needsLoaded ? S.needs : []});
       if ($("fdfaces") && $("fdfaces").childElementCount === 0 && fd.facesHtml) ctx.paint($("fdfaces"), fd.facesHtml());
       renderFrontLatest();
+      renderAttention();
     });
+  }
+
+  // Attention: what needs the owner (each card answered in place) and what just finished. A half-typed answer is never torn down by a repaint
+  // (the cards are drawn again on every event and every minute): the paint waits until the owner leaves the box.
+  function renderAttention() {
+    const fd = FD();
+    const el = $("fdattn");
+    if (!fd || !el) return;
+    const active = doc.activeElement;
+    if (active && el.contains(active) && active.matches && active.matches("textarea[data-msg]") && active.value.trim() !== "" &&
+      !S.front.answering[active.dataset.msg] && !hasOwn(S.answers, active.dataset.msg)) { S.front.held = true; return; }
+    S.front.held = false;
+    const st = {needs: S.needs, heads: S.heads, seen: S.seen, departments: S.departments, loaded: S.needsLoaded, answering: S.front.answering,
+      errors: S.front.errors, elapsedMs: S.needsAt ? Date.now() - S.needsAt : 0, moreDone: S.front.moreDone};
+    ctx.paint(el, fd.needsHtml(st));
+    const done = fd.finishedHtml(st);
+    ctx.paint($("fddone"), done);
+    $("fddone").hidden = done === "";
   }
 
   // Under the box: after the owner started something here, the org chat's progress sentence and its last word (or the choice it waits on).
@@ -932,6 +951,7 @@
       const t = e.target;
       if (t && t.matches && t.matches("textarea[data-msg]") && e.key === "Enter" && !e.shiftKey && !e.isComposing) { e.preventDefault(); answerFront(t.dataset.msg, t.value); }
     });
+    $("front").addEventListener("focusout", () => root.setTimeout(() => { if (S.front.held) renderAttention(); }, 0));
     if ($("gofront")) $("gofront").addEventListener("click", () => setPlace("front"));
     if (root.ProjectRail) protect("project sidebar", () => root.ProjectRail.mount({feed: false}));      // Home feeds it from its own reads
   }

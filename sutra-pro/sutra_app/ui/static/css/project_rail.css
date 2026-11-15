@@ -61,7 +61,7 @@ body.has-prail { padding-left: var(--pr-w); box-sizing: border-box; }
 .pr-sectoggle { flex: 1 1 auto; min-width: 0; display: flex; align-items: center; gap: 6px; padding: 7px 8px; border: 0; background: none; color: var(--pr-ink);
   font: 600 13.5px/1.3 var(--pr-body); text-align: left; cursor: pointer; border-radius: 9px; }
 .pr-secname { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.pr-caret { flex: none; color: var(--pr-muted); transition: transform .12s; }
+.pr-caret { flex: none; color: var(--pr-muted); transition: transform var(--dur-fast) var(--ease-out); }
 .pr-sectoggle[aria-expanded=true] .pr-caret { transform: rotate(90deg); }
 .pr-sec .pr-list { padding-left: 14px; }
 .pr-row { display: flex; align-items: center; border-radius: 9px; }

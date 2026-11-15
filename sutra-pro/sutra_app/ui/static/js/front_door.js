@@ -1,26 +1,22 @@
-/* front_door.js - Home's front door: what needs the owner right now, then what is running and what finished (the one-front brief).
+/* front_door.js - Home, the Attention page: the "What should we make?" box, then what needs the owner (each card answered in place), then what
+   just finished.
 
    Strings in, strings out, like heads_up_view.js: nothing touches the DOM and every word from the wire is escaped. home.js owns the fetches, the
-   events and the clicks; this file only says what the front door shows for a given state and level.
+   events and the clicks; this file only says what Attention shows for a given state.
 
-     LEVELS                              ["simple", "manager", "debug"]: what the owner sees (SutraCtx.level() reads and stores it)
      buckets(departments, heads, seen)   {running, done, idle}: teams at work (working, waiting, a problem), work finished (a done team, or a
                                          Heads up "finished" row of the last day), and the rest (idle, not started). A team is in one bucket only.
      needCard(item, opts)                one card per GET /api/needs-you item: the team, how long it waited, the question, and the answer in place
                                          (option buttons, or a box and Send) with "Open" to the team page; an approval has Approve and Not now.
                                          opts {elapsedMs, busy, error}
-     problemCard(row)                    one card per Heads up problem the owner has not marked "Got it": Try again, Open team, Got it
-     needsHtml(state)                    the "Needs you" section: the cards, or the calm empty line with what is running
-     listsHtml(state)                    "In progress" and "Done recently" (and the folded "Other teams"), each row a link to the team page
-     navHtml(level)                      the extra views the level adds (Manager: org chart, workflow graph, team chats; Debug: also settings,
-                                         usage and log, and the Raw AI chat hook)
-     debugHtml(state)                    Debug only: the whole Heads up lane (problems, quiet teams, finished work), from HeadsUpView
-     latestHtml(state)                   the last word of the org chat after the owner sent something here: a sentence, or a choice to press
+     problemCard(row)                    one card per Heads up problem the owner has not marked "Got it": Try again, Open, Got it
+     needsHtml(state)                    "Needs you": the cards, or the calm line "Nothing needs you right now."
+     finishedHtml(state)                 "Just finished": the work finished lately, each row with Open (nothing when there is none)
+     latestHtml(state)                   under the box, after the owner sent something there: one calm line, a choice to press, or the way to the work
      summary(state)                      "2 things need you" / "Nothing needs you right now" (the document title and the screen reader line)
 
    Buttons carry data-act: fd-option (data-msg, data-opt, data-text), fd-answer (data-msg), fd-approve and fd-decline (data-msg), fd-retry
-   (data-task), fd-seen (data-task), fd-chat (data-node), fd-go (data-pane), fd-choose (data-msg, data-option), fd-hook (data-hook),
-   fd-conversation. A team link is a real <a href="/d/<dept>/?view=simple">.
+   (data-task), fd-seen (data-task), fd-choose (data-msg, data-option), fd-more. A team link is a real <a href="/d/<dept>/">.
    A classic script with ONE global, FrontDoor; in node it is module.exports. */
 (function (root) {
   "use strict";
@@ -32,10 +28,8 @@
   const clean = v => text(v).replace(/[\u0000-\u001f\u007f]+/g, " ").replace(/\s+/g, " ").trim();
   const ID = /^[A-Za-z0-9_.:-]{1,120}$/;
   const idOf = v => (ID.test(text(v)) ? text(v) : "");
-  const teamHref = id => "/d/" + encodeURIComponent(id) + "/?view=simple";
+  const teamHref = id => "/d/" + encodeURIComponent(id) + "/";
 
-  const LEVELS = ["simple", "manager", "debug"];
-  const at = (level, min) => LEVELS.indexOf(level) >= LEVELS.indexOf(min);
   const ORG = "cs_org";
   const DONE_SHOWN = 5;
   const RUNNING = ["running", "waiting", "waiting_on_you", "fault"];
@@ -44,7 +38,7 @@
     done_unchecked: "done, not checked", left_open: "done, with open items", idle: "idle", not_made: "not started"};
   const word = status => (Object.prototype.hasOwnProperty.call(WORDS, status) ? WORDS[status] : "idle");
 
-  // What a status reads as at Simple: everyday words a first-time owner knows, no "team", "org" or engine terms.
+  // What a status reads as: everyday words a first-time owner knows, no "team", "org" or engine terms.
   const PLAIN = {running: "Being made", waiting: "Waiting its turn", waiting_on_you: "Needs your answer", fault: "Something broke", filed: "Done",
     done_unchecked: "Done", left_open: "Done, with open items", idle: "Paused", not_made: "Not started", finished: "Done"};
   const plain = (status, fallback) => (Object.prototype.hasOwnProperty.call(PLAIN, status) ? PLAIN[status] : fallback);
@@ -148,7 +142,7 @@
       const yes = (Array.isArray(item.options) && clean(item.options[0])) || "Yes";
       const no = (Array.isArray(item.options) && clean(item.options[1])) || "No";
       return '<article class="fdcard fdappr" data-msg="' + esc(msg) + '" data-kind="approval">' +
-        '<header class="fdhead">' + face("asha", 36) + '<span class="fdhw"><b class="fdasker">' + (o.level === "simple" ? "Asha needs your OK" : "Approval") +
+        '<header class="fdhead">' + face("asha", 36) + '<span class="fdhw"><b class="fdasker">' + "Asha needs your OK" +
           '</b></span>' + waited(item, o.elapsedMs) + "</header>" +
         '<p class="fdq">' + esc(clean(item.text) || "A change to your org waits for your yes.") + "</p>" + err +
         '<div class="fdacts"><button type="button" class="fdbtn fdyes" data-act="fd-approve" data-msg="' + esc(msg) + '" data-text="' + esc(yes) + '"' + dis + ">Approve</button>" +
@@ -209,77 +203,33 @@
     const needs = Array.isArray(s.needs) ? s.needs.filter(isObj) : [];
     const answering = isObj(s.answering) ? s.answering : {};
     const errors = isObj(s.errors) ? s.errors : {};
-    const cards = needs.map(i => needCard(i, {level: s.level, elapsedMs: s.elapsedMs, busy: answering[i.message_id] === true, error: errors[i.message_id]}))
+    const cards = needs.map(i => needCard(i, {elapsedMs: s.elapsedMs, busy: answering[i.message_id] === true, error: errors[i.message_id]}))
       .concat(problemsOf(s.heads, s.seen).map(problemCard)).filter(Boolean);
     const n = cards.length;
-    if (!s.loaded) return '<h2 class="fdh">Needs you</h2><p class="fdcalm">Looking&hellip;</p>';
-    if (n === 0) {
-      const running = buckets(s.departments, s.heads, s.seen).running;
-      const simple = s.level === "simple";
-      // Simple with nothing made yet: no section at all, so the box is the one thing on the page
-      if (simple && !(Array.isArray(s.departments) && s.departments.some(isObj))) return "";
-      const now = running.length === 0 ? (simple ? "Nothing is being made right now." : "Nothing is running.") : running.length === 1 ? running[0].name + (simple ? " is being made." : " is working.") :
-        running.length + (simple ? " projects are being made: " : " teams are working: ") + running.slice(0, 3).map(r => r.name).join(", ") + (running.length > 3 ? " and more" : "") + ".";
-      return '<h2 class="fdh">Needs you</h2><div class="fdempty"><span class="fdok" aria-hidden="true"></span><div><b>Nothing needs you right now</b>' + (simple ? "" : "<p>" + esc(now) + "</p>") + "</div></div>";
-    }
-    return '<h2 class="fdh">Needs you <span class="fdcount">' + n + "</span></h2>" + '<div class="fdcards">' + cards.join("") + "</div>";
+    if (!s.loaded) return '<h2 class="fdh" id="fd-needs-h">Needs you</h2><p class="fdcalm">Looking&hellip;</p>';
+    if (n === 0) return '<h2 class="fdh" id="fd-needs-h">Needs you</h2><div class="fdempty"><span class="fdok" aria-hidden="true"></span><div><b>Nothing needs you right now.</b></div></div>';
+    return '<h2 class="fdh" id="fd-needs-h">Needs you <span class="fdcount">' + n + "</span></h2>" + '<div class="fdcards">' + cards.join("") + "</div>";
   }
 
-  /* ---------------------------------------------------------------- in progress and done */
-  function teamRow(r, level, kind) {
-    const href = r.id ? teamHref(r.id) : "";
+  /* ---------------------------------------------------------------- just finished */
+  function finishedRow(r) {
     const hv = HV();
-    const when = kind === "done" && r.since !== null && r.since !== undefined && hv ? (r.since < 60 ? "just now" : hv.ageWords(r.since) + " ago") : "";
+    const when = r.since !== null && r.since !== undefined && hv ? (r.since < 60 ? "just now" : hv.ageWords(r.since) + " ago") : "";
     const sub = r.work ? r.work : r.purpose;
-    const name = '<span class="fdname">' + esc(r.name) + "</span>" + (sub ? '<span class="fdsub">' + esc(sub) + "</span>" : "");
-    const main = href ? '<a class="fdrowlink" href="' + esc(href) + '">' + name + "</a>" : '<span class="fdrowlink">' + name + "</span>";
-    const chat = at(level, "manager") && r.id ? '<button type="button" class="fdchip" data-act="fd-chat" data-node="' + esc(r.id) + '">Chat</button>' : "";
-    const words = level === "simple" ? plain(r.words === "finished" ? "finished" : r.status, r.words) : r.words;
-    return '<li class="fdrow st-' + esc(r.status || "idle") + '"><i class="fddot" aria-hidden="true"></i>' + main +
-      '<small class="fdst">' + esc(when ? (level === "simple" ? "Done · " + when : when) : words) + "</small>" + chat + "</li>";
+    const words = r.words === "finished" ? "Done" : plain(r.status, r.words);
+    return '<li class="fdrow st-' + esc(r.status || "filed") + '"><i class="fddot" aria-hidden="true"></i><span class="fdrowlink"><span class="fdname">' + esc(r.name) + "</span>" +
+      (sub ? '<span class="fdsub">' + esc(sub) + "</span>" : "") + '</span><small class="fdst">' + esc(when ? "Done · " + when : words) + "</small>" +
+      (r.id ? '<a class="fdbtn fdopenbtn" href="' + esc(teamHref(r.id)) + '" aria-label="Open ' + esc(r.name) + '">Open</a>' : "") + "</li>";
   }
 
-  function listsHtml(state) {
+  function finishedHtml(state) {
     const s = isObj(state) ? state : {};
-    const level = LEVELS.includes(s.level) ? s.level : "simple";
-    const b = buckets(s.departments, s.heads, s.seen);
-    const done = s.moreDone === true ? b.done : b.done.slice(0, DONE_SHOWN);
-    const more = b.done.length - done.length;
-    const run = '<section class="fdlist" aria-labelledby="fd-run-h"><h2 class="fdh" id="fd-run-h">In progress</h2>' +
-      (b.running.length ? '<ul class="fdrows">' + b.running.map(r => teamRow(r, level, "run")).join("") + "</ul>" : '<p class="fdcalm">' + (level === "simple" ? "Nothing is being made right now." : "No team is working right now.") + "</p>") + "</section>";
-    const fin = '<section class="fdlist" aria-labelledby="fd-done-h"><h2 class="fdh" id="fd-done-h">Done recently</h2>' +
-      (done.length ? '<ul class="fdrows">' + done.map(r => teamRow(r, level, "done")).join("") + "</ul>" : '<p class="fdcalm">Finished work shows here.</p>') +
-      (more > 0 ? '<button type="button" class="fdmore" data-act="fd-more">' + more + " more</button>" : "") + "</section>";
-    const idle = b.idle.length ? '<details class="fdidle" data-key="fd-idle"><summary>' + (level === "simple" ? "Older projects" : "Other teams") + " (" + b.idle.length + ")</summary><ul class=\"fdrows\">" +
-      b.idle.map(r => teamRow(r, level, "idle")).join("") + "</ul></details>" : "";
-    if (level === "simple") {                     // Simple shows a list only when it has something in it
-      const parts = (b.running.length ? run : "") + (done.length ? fin : "");
-      return (parts ? '<div class="fdlists">' + parts + "</div>" : "") + idle;
-    }
-    return '<div class="fdlists">' + run + fin + "</div>" + idle;
-  }
-
-  /* ---------------------------------------------------------------- what the level adds */
-  function navHtml(level) {
-    const l = LEVELS.includes(level) ? level : "simple";
-    if (!at(l, "manager")) return "";
-    const go = (pane, label) => '<button type="button" class="fdnavb" data-act="fd-go" data-pane="' + pane + '">' + label + "</button>";
-    const items = [go("chart", "Org chart"), go("graph", "Workflow graph"), go("chat", "Team chats")];
-    if (at(l, "debug")) {
-      items.push(go("settings", "Settings"), '<a class="fdnavb" href="/console">Usage and log</a>',
-        // the Raw AI chat viewer is built elsewhere (node_panel / agent views); this is where it is reached from. A page that has it listens for sutra:raw-ai-chat.
-        '<button type="button" class="fdnavb" data-act="fd-hook" data-hook="raw-ai-chat" id="fd-rawchat">Raw AI chat</button>');
-    }
-    return items.join("");
-  }
-
-  function debugHtml(state) {
-    const s = isObj(state) ? state : {};
-    if (s.level !== "debug") return "";
-    const hv = HV();
-    const lane = hv ? hv.laneHtml(s.heads, {seen: s.seen, more: true}) : "";
-    return '<section class="fddebug" aria-labelledby="fd-dbg-h"><h2 class="fdh" id="fd-dbg-h">Heads up, in full</h2>' +
-      (lane || '<p class="fdcalm">No crashed work, no quiet team, nothing finished in the last day.</p>') + "</section>";
+    const done = buckets(s.departments, s.heads, s.seen).done;
+    if (done.length === 0) return "";
+    const shown = s.moreDone === true ? done : done.slice(0, DONE_SHOWN);
+    const more = done.length - shown.length;
+    return '<h2 class="fdh" id="fd-done-h">Just finished</h2><ul class="fdrows">' + shown.map(finishedRow).join("") + "</ul>" +
+      (more > 0 ? '<button type="button" class="fdmore" data-act="fd-more">' + more + " more</button>" : "");
   }
 
   /* ---------------------------------------------------------------- the org chat's last word, after a send from here */
@@ -315,7 +265,7 @@
       "</div></article>";
   }
 
-  // Simple: one calm card, one line. While Sutra works, what it is doing now; a question as a Needs you card; once the work has a home, a big
+  // One calm card, one line. While Sutra works, what it is doing now; a question as a Needs you card; once the work has a home, a big
   // "Watch it being built" that goes there (s.going: the page is on its way there by itself).
   function latestSimple(s, r, status) {
     if (r.choice) return choiceCard(r.choice, true);
@@ -339,26 +289,10 @@
     const status = clean(s.status);
     const r = replyOf(s);
     if (s.show !== true || (r.reply.length === 0 && !status && !clean(s.error))) return "";
-    if (s.level === "simple") return latestSimple(s, r, status);
-    // Manager and Debug: Sutra's words, the team that took the work, a choice it waits on, and the way into the org chat
-    const parts = [];
-    r.reply.forEach(m => {
-      const card = isObj(m.card) ? m.card : null;
-      if (!card) {
-        const said = clean(CV() ? CV().stripTag(m.text) : m.text);
-        if (said) parts.push('<p class="fdsay">' + esc(said.length > 280 ? said.slice(0, 277) + "…" : said) + "</p>");
-      } else if (card.type === "task" && idOf(card.dept_id)) {
-        const who = clean(card.dept_name) || card.dept_id;
-        parts.push('<p class="fdsay"><a class="fdopen" href="' + esc(teamHref(card.dept_id)) + '">' + esc(who) + "</a> is on it: " + esc(clean(card.title)) + "</p>");
-      }
-    });
-    const watch = r.task ? '<a class="fdbtn fdyes fdwatch" href="' + esc(teamHref(r.task.card.dept_id)) + '">Watch it being built</a>' : "";
-    const note = clean(s.status) || clean(s.error);
-    return '<div class="fdlatest" role="status"><span class="fdwho">Sutra</span>' + (note ? '<p class="fdphase">' + esc(note) + "</p>" : "") + parts.join("") +
-      (r.choice ? choiceCard(r.choice, false) : "") + '<div class="fdacts">' + watch + '<button type="button" class="fdlink" data-act="fd-conversation">Open the conversation</button></div></div>';
+    return latestSimple(s, r, status);
   }
 
-  const FrontDoor = {LEVELS, ORG, buckets, askOf, needCard, problemCard, needsHtml, listsHtml, navHtml, debugHtml, latestHtml, landing, facesHtml, face, summary, count, levelAt: at};
+  const FrontDoor = {ORG, buckets, askOf, needCard, problemCard, needsHtml, finishedHtml, latestHtml, landing, facesHtml, face, summary, count};
   if (typeof module === "object" && module !== null && module.exports) module.exports = FrontDoor;
   else root.FrontDoor = FrontDoor;
 })(globalThis);

@@ -1,6 +1,6 @@
 "use strict";
-// FrontDoor (sutra_app/ui/static/js/front_door.js): Home's front door. What needs the owner first (one card per question, approval and problem),
-// then In progress and Done recently, and what each level adds.
+// FrontDoor (sutra_app/ui/static/js/front_door.js): Home, the Attention page. What needs the owner (one card per question, approval and problem,
+// answered in place), then what just finished.
 // Run with: node --test tests/ui/js/front_door.test.js
 const test = require("node:test");
 const assert = require("node:assert/strict");
@@ -16,12 +16,6 @@ const approval = (id, extra = {}) => Object.assign({message_id: id, session_id: 
   text: "Add a Design team?", options: ["Yes", "No"], asked_at: "2026-11-12T10:00:00Z", waiting_s: 30}, extra);
 const head = (n, kind, extra = {}) => Object.assign({kind, tone: kind === "problem" ? "err" : "ok", task_id: tid(n), dept_id: "web", dept_name: "Web",
   title: "Menu page", text: "Web: row " + n, outcome: kind === "problem" ? "The model stopped" : "", since_s: 600, retry: kind === "problem"}, extra);
-
-test("the levels are simple, manager and debug, in that order", () => {
-  assert.deepEqual(FD.LEVELS, ["simple", "manager", "debug"]);
-  assert.equal(FD.levelAt("debug", "manager"), true);
-  assert.equal(FD.levelAt("simple", "manager"), false);
-});
 
 test("buckets: working, waiting and a problem are in progress; done states and finished work are done; the rest is idle, each team once", () => {
   const b = FD.buckets([dept("web", "running"), dept("ads", "waiting_on_you"), dept("ops", "fault"), dept("docs", "filed"), dept("hr", "idle"), dept("pr", "not_made"),
@@ -46,7 +40,7 @@ test("a question card: the team, how long it waited, the ask, a box and Send, an
   assert.match(html, /<p class="fdq">Which colours\?<\/p>/);                       // the @tag is gone
   assert.match(html, /<textarea class="fdbox"[^>]*data-msg="7"/);
   assert.match(html, /data-act="fd-answer" data-msg="7"/);
-  assert.match(html, /<a class="fdopen" href="\/d\/web\/\?view=simple">Open Web<\/a>/);
+  assert.match(html, /<a class="fdopen" href="\/d\/web\/">Open Web<\/a>/);
 });
 
 test("a question with options is answered by its buttons, and a long option reads as the choice and what it means", () => {
@@ -77,7 +71,7 @@ test("a card being answered is disabled, and a refusal shows on its own card", (
 });
 
 test("every word from the wire is escaped", () => {
-  const html = FD.needCard(question(7, {dept_name: "<b>x</b>", text: "<img src=x onerror=1>?"}), {}) + FD.listsHtml({departments: [dept("web", "running", {name: "<i>W</i>"})]});
+  const html = FD.needCard(question(7, {dept_name: "<b>x</b>", text: "<img src=x onerror=1>?"}), {}) + FD.finishedHtml({departments: [dept("web", "filed", {name: "<i>W</i>"})]});
   assert.doesNotMatch(html, /<b>x|<img|<i>W/);
   assert.match(html, /&lt;img src=x onerror=1&gt;\?/);
 });
@@ -85,7 +79,7 @@ test("every word from the wire is escaped", () => {
 test("a problem card: Try again, Open the team, Got it; a problem marked Got it is gone", () => {
   const html = FD.problemCard(head(3, "problem"));
   assert.match(html, /data-act="fd-retry" data-task="tsk_000000000003">Try again/);
-  assert.match(html, /href="\/d\/web\/\?view=simple">Open Web/);
+  assert.match(html, /href="\/d\/web\/">Open Web/);
   assert.match(html, /data-act="fd-seen"/);
   const seen = {[tid(3)]: true};
   assert.doesNotMatch(FD.needsHtml({loaded: true, needs: [], heads: [head(3, "problem")], seen, departments: []}), /fdprob/);
@@ -99,92 +93,50 @@ test("Needs you: questions and approvals first, then problems; the count says ho
   assert.equal(FD.summary({needs: [question(7)], heads: [], seen: {}}), "1 thing needs you");
 });
 
-test("nothing waits: a calm line with what is running; before the first read it says it is looking", () => {
+test("nothing waits: one calm line; before the first read it says it is looking", () => {
   assert.match(FD.needsHtml({loaded: false}), /Looking/);
-  const calm = FD.needsHtml({loaded: true, needs: [], heads: [], departments: [dept("web", "running"), dept("ads", "running")]});
-  assert.match(calm, /Nothing needs you right now/);
-  assert.match(calm, /2 teams are working: Web, Ads\./);
-  assert.match(FD.needsHtml({loaded: true, needs: [], heads: [], departments: []}), /Nothing is running\./);
+  const calm = FD.needsHtml({loaded: true, needs: [], heads: [], departments: [dept("web", "running")]});
+  assert.match(calm, /<b>Nothing needs you right now\.<\/b>/);
+  assert.match(FD.needsHtml({loaded: true, needs: [], heads: [], departments: []}), /Nothing needs you right now\./);
 });
 
-test("In progress and Done recently link each team to its page; Manager adds a Chat button per team; idle teams are folded away", () => {
-  const state = {departments: [dept("web", "running"), dept("docs", "filed"), dept("hr", "idle")], heads: []};
-  const simple = FD.listsHtml(Object.assign({level: "simple"}, state));
-  assert.match(simple, /In progress[\s\S]*href="\/d\/web\/\?view=simple"/);
-  assert.match(simple, /Done recently[\s\S]*href="\/d\/docs\/\?view=simple"/);
-  assert.match(simple, /<details class="fdidle" data-key="fd-idle"><summary>Older projects \(1\)/);
-  assert.match(simple, /<small class="fdst">Being made<\/small>/);                 // everyday words at Simple
-  assert.doesNotMatch(simple, /fd-chat|teams?\b/i);
-  const manager = FD.listsHtml(Object.assign({level: "manager"}, state));
-  assert.match(manager, /data-act="fd-chat" data-node="web"/);
-  assert.match(manager, /<summary>Other teams \(1\)/);
-  assert.match(manager, /<small class="fdst">working<\/small>/);
+test("Just finished: finished work first, each row with Open to its studio; nothing finished means no section", () => {
+  const state = {departments: [dept("web", "running"), dept("docs", "filed"), dept("hr", "idle")], heads: [head(3, "finished", {dept_id: "ads", dept_name: "Ads"})], seen: {}};
+  const html = FD.finishedHtml(state);
+  assert.match(html, /<h2 class="fdh" id="fd-done-h">Just finished<\/h2>/);
+  assert.deepEqual([...html.matchAll(/href="([^"]+)" aria-label="Open (\w+)">Open<\/a>/g)].map(m => [m[1], m[2]]), [["/d/ads/", "Ads"], ["/d/docs/", "Docs"]]);
+  assert.match(html, /<small class="fdst">Done · 10 minutes ago<\/small>/);
+  assert.doesNotMatch(html, /Web|Hr/);
+  assert.equal(FD.finishedHtml({departments: [dept("web", "running")], heads: []}), "");
 });
 
-test("Done recently shows five, then a button for the rest", () => {
+test("Just finished shows five, then a button for the rest", () => {
   const many = Array.from({length: 7}, (_, i) => dept("t" + i, "filed"));
-  const html = FD.listsHtml({level: "simple", departments: many, heads: []});
+  const html = FD.finishedHtml({departments: many, heads: []});
   assert.equal((html.match(/st-filed/g) || []).length, 5);
   assert.match(html, /data-act="fd-more">2 more/);
-  assert.equal((FD.listsHtml({level: "simple", departments: many, heads: [], moreDone: true}).match(/st-filed/g) || []).length, 7);
+  assert.equal((FD.finishedHtml({departments: many, heads: [], moreDone: true}).match(/st-filed/g) || []).length, 7);
 });
 
-test("what each level adds: nothing at Simple; org chart, graph, team chats at Manager; settings, usage and log and the Raw AI chat hook at Debug", () => {
-  assert.equal(FD.navHtml("simple"), "");
-  const manager = FD.navHtml("manager");
-  assert.deepEqual([...manager.matchAll(/data-pane="(\w+)"/g)].map(m => m[1]), ["chart", "graph", "chat"]);
-  assert.doesNotMatch(manager, /console|raw-ai-chat|settings/);
-  const debug = FD.navHtml("debug");
-  assert.deepEqual([...debug.matchAll(/data-pane="(\w+)"/g)].map(m => m[1]), ["chart", "graph", "chat", "settings"]);
-  assert.match(debug, /href="\/console">Usage and log/);
-  assert.match(debug, /data-act="fd-hook" data-hook="raw-ai-chat"/);
-});
-
-test("Debug only: the whole Heads up lane, quiet teams and finished work included", () => {
-  const heads = [head(1, "problem"), head(2, "quiet"), head(3, "finished"), head(4, "finished"), head(5, "finished"), head(6, "finished")];
-  assert.equal(FD.debugHtml({level: "manager", heads}), "");
-  const html = FD.debugHtml({level: "debug", heads, seen: {}});
-  assert.equal((html.match(/class="huitem/g) || []).length, 6);                    // every row, no "+N more"
-  assert.match(FD.debugHtml({level: "debug", heads: []}), /No crashed work/);
-});
-
-test("after a send here: Sutra's reply to the last line, the team that took it, and a choice it waits on", () => {
-  const messages = [
-    {id: 1, role: "user", text: "old"}, {id: 2, role: "agent", text: "old answer"},
-    {id: 3, role: "user", text: "A flyer"}, {id: 4, role: "agent", text: "@Requester I gave this to the Web team."},
-    {id: 5, role: "agent", text: "", card: {type: "task", dept_id: "web", dept_name: "Web", title: "A flyer"}},
-    {id: 6, role: "agent", text: "", card: {type: "choice", question: "Which team?", options: [{id: "web", label: "Web"}, {id: "none", label: "A new team"}]}},
-  ];
-  assert.equal(FD.latestHtml({show: false, messages}), "");
-  const html = FD.latestHtml({show: true, messages, status: "Planning…"});
-  assert.doesNotMatch(html, /old answer/);
-  assert.match(html, /<p class="fdphase">Planning…<\/p>/);
-  assert.match(html, /I gave this to the Web team\./);
-  assert.match(html, /<a class="fdopen" href="\/d\/web\/\?view=simple">Web<\/a> is on it: A flyer/);
-  assert.match(html, /data-act="fd-choose" data-msg="6" data-option="none" data-text="A new team"/);
-  assert.match(html, /data-act="fd-conversation"/);
-  assert.doesNotMatch(FD.latestHtml({show: true, messages, answers: {6: "Web"}}), /fd-choose/);       // a pressed choice is not offered again
-});
-
-test("Simple, after a send here: one calm line while Sutra works, a choice as a Needs you card in plain words, then Watch it being built", () => {
+test("after a send here: one calm line while Sutra works, a choice as a Needs you card in plain words, then Watch it being built", () => {
   const sent = [{id: 3, role: "user", text: "A flyer"}];
-  const working = FD.latestHtml({show: true, level: "simple", messages: sent, status: "Setting up your project…"});
+  const working = FD.latestHtml({show: true, messages: sent, status: "Setting up your project…"});
   assert.match(working, /class="fdlatest fdwork"/);
   assert.match(working, /Setting up your project…/);
   assert.doesNotMatch(working, /fd-conversation|Reading the org chart|team/i);
   const asking = sent.concat([{id: 6, role: "agent", text: "", card: {type: "choice", question: "Which team fits best?",
     options: [{id: "web", label: "Web"}, {id: "none", label: "A new team"}]}}]);
-  const card = FD.latestHtml({show: true, level: "simple", messages: asking});
+  const card = FD.latestHtml({show: true, messages: asking});
   assert.match(card, /class="fdcard fdask fdchoice" data-msg="6"/);
   assert.match(card, /Asha needs one answer/);
   assert.match(card, /<p class="fdq">Is this for one of your projects, or something new\?<\/p>/);
   assert.match(card, /data-act="fd-choose" data-msg="6" data-option="none" data-text="A new team">Something new<\/button>/);   // the server still gets its own label
   assert.doesNotMatch(card, /fd-conversation/);
   const done = sent.concat([{id: 5, role: "agent", text: "", card: {type: "task", dept_id: "web", dept_name: "Web", title: "A flyer"}}]);
-  assert.equal(FD.landing({messages: done}), "/d/web/?view=simple");
+  assert.equal(FD.landing({messages: done}), "/d/web/");
   assert.equal(FD.landing({messages: asking}), "");
-  const ready = FD.latestHtml({show: true, level: "simple", messages: done, going: true});
-  assert.match(ready, /<a class="fdbtn fdyes fdwatch" href="\/d\/web\/\?view=simple">Watch it being built<\/a>/);
+  const ready = FD.latestHtml({show: true, messages: done, going: true});
+  assert.match(ready, /<a class="fdbtn fdyes fdwatch" href="\/d\/web\/">Watch it being built<\/a>/);
   assert.match(ready, /Taking you there/);
 });
 
@@ -198,12 +150,5 @@ test("a team's question says who asks in plain words: Asha needs one answer (or 
   assert.match(FD.needCard(question(7), {}), /<b class="fdasker">Asha needs one answer<\/b>/);
   const three = FD.needCard(question(9, {text: "Before we start.\nPlease send these: Your name; Your city; Your colours"}), {});
   assert.match(three, /Asha needs 3 answers/);
-  assert.match(FD.needCard(approval(11), {level: "simple"}), /Asha needs your OK/);
-});
-
-test("Simple with nothing made yet shows no Needs you and no lists: the box is the one thing to do", () => {
-  assert.equal(FD.needsHtml({loaded: true, level: "simple", needs: [], heads: [], departments: []}), "");
-  assert.equal(FD.listsHtml({level: "simple", departments: [], heads: []}), "");
-  assert.match(FD.needsHtml({loaded: true, level: "manager", needs: [], heads: [], departments: []}), /Nothing needs you right now/);
-  assert.match(FD.listsHtml({level: "manager", departments: [], heads: []}), /No team is working right now/);
+  assert.match(FD.needCard(approval(11), {}), /Asha needs your OK/);
 });

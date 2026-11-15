@@ -17,9 +17,9 @@ try { var tp = localStorage.getItem("j2theme"); document.documentElement.dataset
 try { var hq = new URLSearchParams(location.search); document.documentElement.dataset.place = hq.has("pane") || hq.has("node") || hq.has("change") || localStorage.getItem("sutra:home:place") === "ws" ? "ws" : "front"; } catch (e) { document.documentElement.dataset.place = "front"; }</script>
 </head>
 <body class="simple home">
-<!-- The front door (front_door.js, painted by home.js): one box to start a new project. Every project, and what needs the owner, is in the project
-     sidebar on the left (project_rail.js). Home has no Simple/Manager/Debug switch: it lives inside an open project (dept_ext.js). The workspace
-     further down (the org chat, the map, Settings) is the back room, reached by "Settings & logs" or from a project's Manager and Debug menu. -->
+<!-- Attention, the front door (front_door.js, painted by home.js): the box to start a new project, then what needs the owner (answered in place),
+     then what just finished. Every project is in the sidebar on the left (project_rail.js). The workspace further down is the back room: Agent Org
+     (/?pane=org: the teams, the org chart, the workflow graph) and Settings & logs (/?pane=settings). -->
 <div id="front" class="front">
   <main class="fdmain" id="fdmain">
     <section class="fdnew" aria-labelledby="fd-new-h">
@@ -29,6 +29,8 @@ try { var hq = new URLSearchParams(location.search); document.documentElement.da
       <div id="fdfaces"></div>
       <div id="fdlatest"></div>
     </section>
+    <section class="fdneeds" id="fdattn" aria-labelledby="fd-needs-h" tabindex="-1"></section>
+    <section class="fdlist fddone" id="fddone" aria-labelledby="fd-done-h" hidden></section>
   </main>
 </div>
 <!-- Home: the J2 Simple skeleton. Left, the org chat with the chat agent (the Root node's session cs_org). Right, J2's preview slot (.sprev.sright): what needs you,
