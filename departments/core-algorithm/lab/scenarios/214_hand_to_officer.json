@@ -1,0 +1,32 @@
+{
+  "schema": "sutra-extension/2",
+  "id": "214_hand_to_officer",
+  "methods": [
+    {
+      "id": "hand-letter-to-officer@1",
+      "effect": "letter_drafted",
+      "requires": [
+        "loan_on_book"
+      ],
+      "provider": "collections-officer",
+      "grant": "action:hand-letter-to-officer@1",
+      "cost": {
+        "compute": 0,
+        "money": 0,
+        "attention": 1
+      },
+      "action": "handoff",
+      "approved": true,
+      "source": "reviewed/synthetic-method",
+      "handoff_to": "person:collections-officer",
+      "instruction": "Draft the collections letter for loan L-17: name the borrower, the loan and the amount overdue.",
+      "verified_by": "checker:loan-book"
+    }
+  ],
+  "providers": {
+    "collections-officer": 1
+  },
+  "grants": [
+    "action:hand-letter-to-officer@1"
+  ]
+}

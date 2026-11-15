@@ -2,7 +2,7 @@
  "about": "Written by the additive applier (.tmp/core-algo-additive4-apply.py, contract 4). `pinned`: what the lab had recorded when a version was applied (sha256 of the kernel and of each scenario file; sha256 of the canonical JSON of each case, of the event record, of the ask record, of each recorded sequence, of each handler entry and of each lens except the reflection summary), and `built_in`, every Python file the lab had before the add-on points. `points` and `applied`: every file laid in, with its sha256. An entry of `applied` that holds `edits` is an EDIT VERSION (ruling R32): the name and sha256 of its edit script and, for every existing file the script changed, the sha256 before and after; the pin of the kernel and the pinned handler entries were taken again for those files, an added file it changed is listed with its new sha256, and every other pin stayed. Its `moves` are what it declares as moved of the things an earlier version recorded, each with its reason; check S202 holds a declared move to nothing until the next version is applied to the built, verified record. The verifier reads this file for checks S202 and S203, for the sha256 a check module's text is held to before it runs, and for what it hands a check module; tools/run_all.py reads it for the record's file list. Nothing in the lab holds this file itself.",
  "contract": 4,
  "pinned": {
-  "from": "sutra-kernel-extensions/0.16.0-ordered",
+  "from": "sutra-kernel-extensions/0.17.0-queue",
   "kernel_sha256": "688ab9431d4f4b17608d848e32f12e0373197a301d3b7f641a6f476a2b9ad368",
   "built_in": [
    "extensions/asks.py",
@@ -60,6 +60,16 @@
    "128_tier_project": "968499af458eaca4d522ad6fa782fb7206eef50a867628ee42ddf8cddf66e7d7",
    "129_tier_external": "05d8453f596e63b72acfcb83aa8ff0ce85165738f5a353cfbc308b5feee98729",
    "12_other_tenant": "e14e35b11c29b753773eb1c13ae60edbcddd2c125621cd72254abafcaaae6214",
+   "130_collections_queue": "77456607a8530656d37c6d2e00d6a744dbe4b4ed058b411d4e3c1b4d7003a17a",
+   "131_queue_ranked": "5d36d71c88e1864d5cfcc3bf0f136744f8b2087f66e31fb8be60056e557fcf1f",
+   "132_loan_desk": "deffa479f24324f5366f8655feaccb2eee437862d89692e34950a5cc385c7ba7",
+   "133_complaint_desk": "bd9ca58b40a00965b8c94c0afeb6c9925690ae9d00bd81e1d84fedffed088d44",
+   "134_style_run_the_book": "5684374dda1147b8b9277123b04c687006bdd45bd7feb103740096468a8ae7e0",
+   "135_style_incident": "ae7e0a92333df7bffd9a9907cd06d2cb31485bad00c5fb3f8996937d3fc45109",
+   "136_routed_by_the_book": "dd4229d74b987c47217fee9893807dec935bf93371dba2fe9238b28df8bf526b",
+   "137_routed_incident": "a553bfa99103a97401396bddb78747c97eda32e12c694269bb52fe234c011971",
+   "138_routed_unmatched": "24b01c475114103609112a5b3d05180e515160f70782ccdb2ead904762bc0f5d",
+   "139_style_campaign": "f0cb74b85dbbcd52865b6c4a00745666c9ec1bbba3725b694f5441ffd547fbff",
    "13_revoke_authority": "d2643d40a98197e3d78f2c60af428d6834854a4868d88d9ef5c434f1f9e3282f",
    "140_levels_restated": "6e72d650950aa954aa03c74f529d2f50c9db8898b31595f1a469a0112e0dc1a9",
    "141_ask_with_line_marks": "1135bab2abe57b4c50a003bba2cfd131c2c66f3a0ae8f097d8dfd113a9d3551b",
@@ -320,6 +330,18 @@
     "99b7248df06ed7a2fcff4ecadba7c960459470af1af2f59d0bedecfe1bd7a20b"
    ],
    [
+    "57_queue_ranked",
+    "ffefdcfe0375e177395823aca303443c7f0a397efef78aab11a2587402db307c"
+   ],
+   [
+    "58_gate_decisions",
+    "c103402641fc3d0ddd7dd906258b68fd6d2b764b7ae2249572c3601c45bdd77f"
+   ],
+   [
+    "59_style_unmatched",
+    "dd078304e387a2f104a50520515562107c429b6d0bb54ff2c50051c1ce57bb41"
+   ],
+   [
     "60_pack_twice",
     "3f763aa037b00e66e09806ed65a7fd341d1a8ef9e58b7b2195d52585a9df0afc"
    ],
@@ -373,6 +395,9 @@
    "journal_restart": "1b30c480032ee792b0f7d1fd9645a0942fc89e2e886fdd4f2fe3223de9ab99d4",
    "numbers": "d3502c559c71eb3f67370b3aa6190315538057febc7a0e291664ee4f7a832553",
    "ordered": "67643bbc6bc3bdd53c3b9c0e790e56e669dd246300dfbeffb82dbabc5c748e48",
+   "queue_provenance": "295cdf56f047e3d01741ef202475dd7b1fe610fe5a23808d0bf7b9fc02496de6",
+   "queue_rank": "88d7b1cf7cc19171976e0d05f3757cf11e03edd8960ebdaff703a04c0d4e99a5",
+   "queue_styles": "b548ce212a816e2a2906fe980c1139b2574f39b010ef8ef17d908d0d5e55c7a5",
    "refusals": "fdd595b7298a4aee3e84fec1679df8967de976829c53a47bc39c625c81d2994e",
    "system": "b367f2143ea685827f4ee5b9d994c5fc3dcc6f926958e946273059713d7ef8fb"
   },
@@ -517,6 +542,22 @@
     "tools/scenes/queue_provenance.py": "57332b3897ec71e4bcda2c099a069f6b42ed4d70797cebc3f228c5175554a6bc",
     "tools/scenes/queue_rank.py": "42bddd21f15111702607ccbd3266f97839c8d44f42d41a2dd8bd562787955647",
     "tools/scenes/queue_styles.py": "f455c04b8273495b7adad01b10746bbc7c7152e9db9b8573ebacdba969276dc7"
+   }
+  },
+  {
+   "label": "0.18.0-handoff",
+   "delivery": "handoff",
+   "files": {
+    "cases/84_handed_over.json": "eb003160d0b09f3baacffcfee32956bfb70dc86e36013fc01ace109e0be1b1d4",
+    "cases/85_no_step.json": "e1ce3e16cd4f43d267268efac5387e9e7281e18ebd12f60f9dca01d0470d202d",
+    "cases/86_no_slot_left.json": "e627c2393f116c7fd237ce7358df693d565ec6fe8e670e599b18bfa985312912",
+    "cases/87_next_hand.json": "ca487547adfdcf1452dada3a679caac8f0744bb70ecb648bf963f390b029620d",
+    "kinds/handoff.py": "95046757e959ba5eb38dd899a489cb39d3bb9ba2426e0f3d0cb58b60e5c1e091",
+    "qa/checks/handoff.py": "a6a466f1d8336aa01efaf4cc90b2eb3b53d25f144dae1000f2ec9d0a3f7a098c",
+    "tests/test_handoff.py": "cd3bbd8e9f2e5c0a7c0ac579e6324c9b187f10ba94c6467b01f76dc2a60013d2",
+    "tools/packs/handoff.py": "525189958993dfe981124288a52bd2bbd82873f5743e4f04d3be730398960f55",
+    "tools/scenes/handoff_existing.py": "c57e72fb2a9f3ff038042685f61e6bd6df735c85f909ffba9c8e50367dfdc7ed",
+    "tools/scenes/handoff_letter.py": "c081d00b1bfdc65cf19ca3e60b92a6f0b735d760491e89c2d877d2dd9fc0237d"
    }
   }
  ]
