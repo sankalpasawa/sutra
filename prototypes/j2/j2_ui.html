@@ -966,6 +966,104 @@ svg path[data-edge].hot,svg.focusing path[data-edge].lit{opacity:1!important;str
 .shelfitem{padding:8px 0;border-top:1px solid var(--line)}.shelfitem:first-of-type{border-top:0}.shelfitem[data-hl]{box-shadow:inset 3px 0 0 var(--ok);padding-left:10px}.shelfitem .tplview{margin-top:8px}.shelfitem .linkbtn{text-align:left}
 [data-shelfhuman=html]{width:100%;height:70vh;border:1px solid var(--line);border-radius:10px;background:var(--panel)}
 .tplmeta{margin:6px 0 8px;font-size:13px;color:var(--muted)}.tplmeta div{margin:2px 0}.tplmeta b{color:var(--ink)}.tplline{font-size:12.5px;color:var(--muted)}.tplline .code{color:var(--ink)}
+/* ---- The Library in the studio's look: /library's two shelves and a run's Templates tab (#pane-library) wear the Simple view's
+   tokens (--s-*), its fonts (Bricolage Grotesque headings, Figtree words) and its white cards with a thin line. Look only: the
+   markup, the data attributes and what every button does are unchanged. Both themes: the --s-* set has a dark and a light value. */
+body.libpage{background:var(--s-bg);color:var(--s-ink)}
+body.libpage #dview,#pane-library{--serif:"Bricolage Grotesque",system-ui,sans-serif;--lb-body:"Figtree",system-ui,sans-serif}
+body.libpage #needs{display:none}
+body.libpage #dview main{padding-top:32px}
+body.libpage #dview .work{background:none;border:0;box-shadow:none;font:15px/1.5 var(--lb-body);color:var(--s-ink)}
+body.libpage .wbar{border:0;padding:4px 4px 18px}
+body.libpage .wcrumb{color:var(--s-muted);font-size:13px;margin-bottom:4px}body.libpage .wcrumb b{color:var(--s-ink);font-weight:600}
+body.libpage .wtitle{font:700 30px/1.15 var(--serif);letter-spacing:-.01em;color:var(--s-ink)}
+body.libpage .wsub{color:var(--s-muted);font-size:15px;margin-top:6px}
+body.libpage .wcnt{background:var(--s-surface);border:1px solid var(--s-line);color:var(--s-muted);font-size:12.5px;padding:2px 11px}
+body.libpage #ver{display:none}
+body.libpage #pane-catalog{padding:0 4px 4px}
+body.libpage .cattools{gap:12px 16px;margin:0 0 20px}
+body.libpage .libviews{display:inline-flex;gap:2px;padding:4px;border:1px solid var(--s-line);border-radius:999px;background:var(--s-surface)}
+body.libpage .libviews [role=tab]{border:0;border-radius:999px;background:none;color:var(--s-muted);padding:7px 16px;font:600 14px var(--lb-body)}
+body.libpage .libviews [role=tab]:hover{color:var(--s-ink)}
+body.libpage .libviews [aria-selected="true"]{background:var(--s-accent);color:var(--s-accentink);font-weight:600}
+body.libpage .libhead input[type=search]{min-width:min(360px,100%);padding:10px 16px;border:1px solid var(--s-line);border-radius:999px;background:var(--s-surface);color:var(--s-ink);font:15px var(--lb-body)}
+body.libpage .libhead input[type=search]::placeholder{color:var(--s-muted)}
+body.libpage .libhead input[type=search]:focus{outline:2px solid var(--s-accent);outline-offset:1px}
+body.libpage .cattools label{color:var(--s-muted);font-size:14px;display:inline-flex;align-items:center;gap:7px;cursor:pointer}body.libpage .cattools input[type=checkbox]{accent-color:var(--s-accent)}
+body.libpage [data-shelfrun]{color:var(--s-muted)}
+body.libpage .agwrap{gap:20px;grid-template-columns:minmax(260px,360px) minmax(0,1fr)}
+body.libpage .aglist,body.libpage .agpane{background:var(--s-surface);border:1px solid var(--s-line);border-radius:18px;color:var(--s-ink)}
+body.libpage .aglist{padding:6px 0}
+body.libpage .agpane{padding:28px 32px}
+body.libpage .agrow{padding:14px 20px;border-top:1px solid var(--s-line);color:var(--s-ink);gap:12px}
+body.libpage .aglist>.agrow:first-child{border-top:0}
+body.libpage .agrow:hover{background:var(--s-surface2)}
+body.libpage .agrow.on{background:var(--s-surface2);box-shadow:inset 3px 0 0 var(--s-accent)}
+body.libpage .agrow .agt b{font:600 15px/1.3 var(--lb-body);color:var(--s-ink)}
+body.libpage .agrow .agt span{color:var(--s-muted);font-size:13px;line-height:1.4;margin-top:3px}
+body.libpage .agrow.shelfnest{padding-left:32px}
+body.libpage .agrow.shelfhl{box-shadow:inset 3px 0 0 var(--s-good)}body.libpage .agrow.shelfhl.on{box-shadow:inset 3px 0 0 var(--s-accent),inset 6px 0 0 var(--s-good)}
+body.libpage .shelfhead{padding:18px 20px 8px;background:none;border-top:1px solid var(--s-line);color:var(--s-muted);font:600 11.5px var(--lb-body);letter-spacing:.08em}
+body.libpage .shelfhead b{color:var(--s-ink)}body.libpage .shelfhead .empty{color:var(--s-muted);text-transform:none;letter-spacing:0;font-weight:400;font-size:13px}
+body.libpage .agpane h2{font:700 24px/1.2 var(--serif);color:var(--s-ink);margin:0 0 6px;letter-spacing:-.01em}
+body.libpage .agpane h2 .empty{font:500 17px var(--lb-body);color:var(--s-muted)}
+body.libpage .agpane h4{font:600 15px var(--serif);color:var(--s-ink)}
+body.libpage .aby{color:var(--s-muted);font-size:14px;margin:0 0 18px}
+body.libpage .tplview{border:0;background:none;padding:0;margin:0}
+body.libpage .atabs{border-bottom:1px solid var(--s-line);gap:6px;margin:0 0 20px}
+body.libpage .atabs button{color:var(--s-muted);font:500 14px var(--lb-body);padding:9px 14px}
+body.libpage .atabs button[aria-selected=true]{color:var(--s-ink);border-color:var(--s-accent);font-weight:600}
+body.libpage .tplmeta{font-size:14.5px;color:var(--s-ink);margin:0 0 20px;display:grid;gap:8px}
+body.libpage .tplmeta>div{margin:0;display:flex;flex-wrap:wrap;align-items:baseline;column-gap:6px}
+body.libpage .tplmeta b{color:var(--s-muted);font-weight:500;flex:0 0 150px}
+body.libpage .ablk{margin:0 0 24px}
+body.libpage .ablk h5{font:600 11.5px var(--lb-body);letter-spacing:.08em;color:var(--s-muted);margin:0 0 10px}
+body.libpage :is(.agpane,.tplmeta) a,body.libpage .linkbtn{color:var(--s-accent);text-decoration:none;font-weight:500}
+body.libpage :is(.agpane,.tplmeta) a:hover,body.libpage .linkbtn:hover{text-decoration:underline}
+body.libpage .empty{color:var(--s-muted)}
+body.libpage .ackl li{border-color:var(--s-line)}
+body.libpage .shelfitem{padding:14px 16px;margin:0 0 10px;border:1px solid var(--s-line);border-radius:14px;background:var(--s-surface)}
+body.libpage .shelfitem:first-of-type{border-top:1px solid var(--s-line)}
+body.libpage .shelfitem.on{background:var(--s-surface2)}
+body.libpage .shelfitem[data-hl]{box-shadow:inset 3px 0 0 var(--s-good);padding-left:16px}
+body.libpage .shelfitem .linkbtn{color:var(--s-ink);font-size:15px}
+body.libpage .shelfitem .tplview{margin-top:14px;padding-top:14px;border-top:1px solid var(--s-line)}
+body.libpage .codebox{border:1px solid var(--s-line);border-radius:12px;background:var(--s-surface2);padding:12px 14px;margin:0 0 12px}
+body.libpage .codebox pre{background:none;color:var(--s-ink)}
+body.libpage [data-shelfhuman=html]{border:1px solid var(--s-line);border-radius:14px;background:var(--s-surface)}
+:is(body.libpage,#pane-library) .libbadge{border:0;border-radius:999px;padding:2px 10px;font:600 12px var(--lb-body);white-space:nowrap}
+:is(body.libpage,#pane-library) .libbadge.live{background:var(--s-goodbg);color:var(--s-good)}
+:is(body.libpage,#pane-library) .libbadge.mock{background:var(--s-askbg);color:var(--s-ask)}
+:is(body.libpage,#pane-library) .mappill{background:var(--s-surface2);border:1px solid var(--s-line);color:var(--s-ink);border-radius:999px;padding:3px 11px;font-size:13px}
+:is(body.libpage,#pane-library) .mappill.checks{background:var(--s-goodbg);border-color:transparent;color:var(--s-good)}
+:is(body.libpage,#pane-library) .maptable{border-collapse:collapse;width:100%;font-size:14px}
+:is(body.libpage,#pane-library) .maptable th{color:var(--s-muted);font:600 12px var(--lb-body);text-align:left;border-bottom:1px solid var(--s-line);padding:8px 10px;background:none}
+:is(body.libpage,#pane-library) .maptable td{border-bottom:1px solid var(--s-line);padding:10px;color:var(--s-ink);vertical-align:top}
+:is(body.libpage,#pane-library) .rttable tr.rtauto td{background:var(--s-surface2)}
+:is(body.libpage,#pane-library) .rttable input[type=checkbox]{accent-color:var(--s-accent)}
+body.libpage .rtslots{margin:4px 0 16px;color:var(--s-ink);display:flex;flex-wrap:wrap;gap:6px;align-items:center}
+body.libpage .rtuse{gap:10px;margin:0 0 8px}
+body.libpage .rtuse .ghost{border:1px solid var(--s-line);background:var(--s-surface);color:var(--s-ink);border-radius:12px;padding:10px 18px;font:600 14.5px var(--lb-body)}
+body.libpage .rtuse .ghost.rtmain{background:var(--s-accent);border-color:var(--s-accent);color:var(--s-accentink)}
+body.libpage .rtuse .ghost.rtmain:hover{background:color-mix(in srgb,var(--s-accent) 88%,var(--s-ink))}
+body.libpage .rtuse .ghost[aria-disabled=true]{opacity:.55}
+body.libpage .rtnote{color:var(--s-muted);font-size:13.5px;margin:0 0 20px}
+:is(body.libpage,#pane-library) .tplcard{background:var(--s-surface);border:1px solid var(--s-line);border-radius:16px;padding:18px 20px;color:var(--s-ink)}
+/* a run's Templates tab: the summary card, the scope toggle and the chips in the studio's look */
+#pane-library{font-family:var(--lb-body);color:var(--s-ink)}
+#pane-library h3{font:700 19px var(--serif);color:var(--s-ink);margin:22px 0 12px}
+#pane-library .empty{color:var(--s-muted)}
+#pane-library a,#pane-library .linkbtn{color:var(--s-accent)}
+#pane-library [data-rtsum]{display:grid;gap:6px;margin:0 0 16px;font-size:14.5px}#pane-library [data-rtsum] b{font-weight:600}
+#pane-library [data-rtfilters]{margin-top:10px}
+#pane-library .seg{border:1px solid var(--s-line);border-radius:999px;padding:3px;gap:2px;background:var(--s-surface)}
+#pane-library .seg button{border-radius:999px;color:var(--s-muted);padding:6px 14px;font:600 13.5px var(--lb-body);cursor:pointer}
+#pane-library .seg button[aria-pressed="true"]{background:var(--s-accent);color:var(--s-accentink)}
+#pane-library .rfil{gap:8px;margin:12px 0 6px}
+#pane-library .rfil button{border:1px solid var(--s-line);background:var(--s-surface);color:var(--s-ink);padding:6px 14px;font:500 13.5px var(--lb-body)}
+#pane-library .rfil button i{color:var(--s-muted);margin-left:5px}
+#pane-library .rfil button[aria-pressed=true]{background:var(--s-accent);border-color:var(--s-accent);color:var(--s-accentink)}#pane-library .rfil button[aria-pressed=true] i{color:inherit;opacity:.8}
+#pane-library [data-rtnote]{font-size:13px;margin-top:4px}
 </style>
 <script>/* the viewer's Appearance before the first paint (Run settings sets it): light, dark or system; light by default */
 try { var tp = localStorage.getItem("j2theme"); document.documentElement.dataset.theme = tp === "dark" ? "dark" : tp === "system" && !matchMedia("(prefers-color-scheme: light)").matches ? "dark" : "light"; } catch (e) { document.documentElement.dataset.theme = "light"; }</script>
@@ -3533,7 +3631,7 @@ const shelfMade = t => t ? shelfTplLink(t, `${esc(t.name)}${t.version !== undefi
 const shelfArts = () => (CAT.arts || []).filter(a => !(CAT.hideMock && a.mock === true)).filter(a => catMatch(a.label, a.business, a.run, a.type));
 const shelfCurArt = rows => { rows = rows || shelfArts(); return rows.find(a => a.id === CAT.sel.art) || rows.find(a => a.highlight) || rows[0] || null; };
 function renderShelfArts(){
-  const rows = shelfArts(); if (!rows.length) return '<p class="empty">No artifact matches. Artifacts are read from the saved runs on this computer.</p>';
+  const rows = shelfArts(); if (!rows.length) return '<p class="empty">Nothing matches. This shelf shows the finished work saved on this computer.</p>';
   const cur = shelfCurArt(rows);
   return rows.map(a => catRow("art|" + a.id, esc(a.label), `${esc(a.business)} · ${esc(a.run)} · ${plural((a.sections || []).length, "section")}`, libBadge(a.mock), a === cur, a.highlight ? "run" : "")).join("");
 }
@@ -3544,20 +3642,20 @@ const shelfSecHl = s => [s.generic, ...(s.variants || [])].some(v => v.highlight
 function renderShelfTpls(){
   const rts = rtRows(), secs = shelfSecs(), curRt = CAT.sel.sec ? null : rtCur(rts), curSec = shelfCurSec(secs);
   const head = (key, title, sub) => `<div class="shelfhead" data-shelfhead="${esc(key)}"><b>${title}</b>${sub ? ` <span class="empty">${sub}</span>` : ""}</div>`;
-  let h = head("rt", "Run templates", "a whole run as one bundle") + (rts.map(t => catRow("rt|" + t.id, esc(t.name), `${(t.stages || []).map(k => esc(rtStage(t, k))).join(", ")} · ${plural(t.workflows, "workflow")} · ${plural(t.outputs, "output")}`, libBadge(t.mock), t === curRt, t.highlight)).join("") || '<p class="empty">No run template matches.</p>');
+  let h = head("rt", "Run templates", "start a whole project from one") + (rts.map(t => catRow("rt|" + t.id, esc(t.name), `${(t.stages || []).map(k => esc(rtStage(t, k))).join(", ")} · ${plural(t.workflows, "workflow")} · ${plural(t.outputs, "output")}`, libBadge(t.mock), t === curRt, t.highlight)).join("") || '<p class="empty">No run template matches.</p>');
   for (const t of CAT.types || []){ const mine = secs.filter(x => x.t === t); if (!mine.length) continue;
     h += head("type|" + t.type, esc(t.label), t.tag && t.tag !== t.label ? esc(t.tag) : "")
-      + mine.map(x => catRow("sec|" + x.key, esc(x.s.section), `generic + ${plural((x.s.variants || []).length, "variant")}`, "", x === curSec, shelfSecHl(x.s), "shelfnest")).join(""); }
+      + mine.map(x => catRow("sec|" + x.key, esc(x.s.section), `a blank one + ${plural((x.s.variants || []).length, "business version")}`, "", x === curSec, shelfSecHl(x.s), "shelfnest")).join(""); }
   return h;
 }
 function shelfSecPane(x){      // one section of one type: the generic skeleton first, then the business variants; the open one shows its three tabs under its row
   const items = [{...x.s.generic, generic: true}, ...(x.s.variants || [])], cur = items.find(v => v.key === CAT.item) || items[0];
   const row = v => `<div class="shelfitem${v === cur ? " on" : ""}" data-shelfrow="${esc(v.key)}"${v.highlight ? ` data-hl="${esc(v.highlight)}"` : ""}><button type="button" class="linkbtn" data-shelfitem="${esc(v.key)}" aria-expanded="${v === cur}"><b>${esc(v.name)}</b>${v.generic ? "" : " v" + esc(v.version)}</button> `
-    + `<span class="empty">${v.generic ? "generic skeleton" : "business variant, as a skeleton"} · ${plural(v.fields, "field")} · ${plural(v.outputs, "output")}${v.generic || !v.made_by_run ? "" : " · from run " + esc(v.made_by_run)}</span> ${v.generic ? "" : libBadge(v.mock)} ${shelfMark(v.highlight)}`
+    + `<span class="empty">${v.generic ? "blank, for any business" : "made for one business, details left blank"} · ${plural(v.fields, "field")} · ${plural(v.outputs, "output")}${v.generic || !v.made_by_run ? "" : " · from run " + esc(v.made_by_run)}</span> ${v.generic ? "" : libBadge(v.mock)} ${shelfMark(v.highlight)}`
     + (v === cur ? shelfView("template", v.key) : "") + `</div>`;
-  return `<h2 data-shelfpath="1">${esc(x.t.label)} <span aria-hidden="true">→</span> ${esc(x.s.section)}</h2><div class="aby">${x.s.whole ? "the whole artifact, as one template" : "one section of the artifact"} · structure only: every business value is a slot</div>`
-    + `<div class="ablk" data-shelfgroup="generic"><h5>Generic skeleton</h5>${row(items[0])}</div>`
-    + `<div class="ablk" data-shelfgroup="variants"><h5>Business variants (${items.length - 1})</h5>${items.slice(1).map(row).join("") || '<p class="empty">No business variant yet.</p>'}</div>`;
+  return `<h2 data-shelfpath="1">${esc(x.t.label)} <span aria-hidden="true">→</span> ${esc(x.s.section)}</h2><div class="aby">${x.s.whole ? "The whole document as one template" : "One part of the document"}. Each business's details are left blank.</div>`
+    + `<div class="ablk" data-shelfgroup="generic"><h5>Blank starting point</h5>${row(items[0])}</div>`
+    + `<div class="ablk" data-shelfgroup="variants"><h5>Versions made for a business (${items.length - 1})</h5>${items.slice(1).map(row).join("") || '<p class="empty">No business has its own version yet.</p>'}</div>`;
 }
 // The one view of an item: Summary / Agent-readable / Human-readable. kind "artifact" (Shelf 1) or "template" (Shelf 2; "rt/<id>" is a run template).
 async function shelfText(run, name){ try { const r = await fetch(`/api/artifact?name=${encodeURIComponent(name)}&run=${encodeURIComponent(run)}`, {cache: "no-store"}); return r.ok ? await r.text() : null; } catch (e) { return null; } }
@@ -3589,7 +3687,7 @@ function shelfMarkRun(){      // ?run=<id>: its artifacts, the templates it made
 const shelfRow = (k, val) => `<div><b>${k}</b> ${val}</div>`;
 const shelfCode = (key, files) => (files || []).filter(f => f && f.text !== null && f.text !== undefined).map(f => { const id = `${key}/${f.name}`; TPLCODE[id] = f.text;
   return `<div class="codebox" data-shelffile="${esc(f.name)}"><b>${esc(f.name)}</b> <button type="button" class="ghost codecopy" data-tplcopy="${esc(id)}">Copy</button><pre class="code plain">${esc(f.text)}</pre></div>`; }).join("") || '<p class="empty">Nothing recorded in the agent\'s form.</p>';
-const shelfOuts = outs => `<div class="ablk" data-shelfouts="1"><h5>Outputs made from this template (${(outs || []).length})</h5>` + ((outs || []).length ? `<ul class="ackl">${outs.map(o => `<li><a href="${esc(shelfHref("artifacts", o.id))}" data-shelflink="artifact">${esc(o.label)} of ${esc(o.run)}</a><span class="empty">${o.section ? esc(o.section) + (o.workflow ? " · " + esc(o.workflow) : "") : "the whole artifact"}</span></li>`).join("")}</ul>` : '<p class="empty">No saved run on this computer was made from it.</p>') + `</div>`;
+const shelfOuts = outs => `<div class="ablk" data-shelfouts="1"><h5>Made from this template (${(outs || []).length})</h5>` + ((outs || []).length ? `<ul class="ackl">${outs.map(o => `<li><a href="${esc(shelfHref("artifacts", o.id))}" data-shelflink="artifact">${esc(o.label)} of ${esc(o.run)}</a><span class="empty">${o.section ? esc(o.section) + (o.workflow ? " · " + esc(o.workflow) : "") : "the whole artifact"}</span></li>`).join("")}</ul>` : '<p class="empty">Nothing on this computer was made from it yet.</p>') + `</div>`;
 function shelfFields(sk){      // a skeleton as a person reads it: the fields, the objects and the rules
   const chips = l => (l || []).map(x => `<span class="mappill">${esc(x)}</span>`).join(" ");
   const frow = f => `<tr><td><span class="code">${esc(f.name)}</span></td><td>${esc(f.type)}</td><td>${f.required ? "required" : "optional"}</td><td>${esc(f.description || "")}${f.enum && f.enum.length ? `<div>${chips(f.enum)}</div>` : ""}</td></tr>`;
@@ -3624,16 +3722,16 @@ function shelfView(kind, key){
     const row = (CAT.rts || []).find(t => t.id === s.id) || {id: s.id, name: s.name};
     body = `<div class="tplmeta" data-shelfsum="run-template">` + shelfRow("Stages", (s.stages || []).map(k => esc((s.stage_labels || {})[k] || k)).join(", ")) + shelfRow("Workflows", esc(s.workflows))
       + shelfRow("Made from run", s.made_by && s.made_by.run ? `<a href="${esc(`/library?view=artifacts&run=${encodeURIComponent(s.made_by.run)}`)}">${esc(s.made_by.run)}</a>` : nr) + shelfRow("Live or mock", libBadge(s.mock)) + `</div>`
-      + shelfOuts(s.outputs) + `<div class="ablk" data-shelfbundle="1"><h5>The whole bundle</h5>${rtPane(row, (d.human || {}).skeleton || {})}</div>`;
+      + shelfOuts(s.outputs) + `<div class="ablk" data-shelfbundle="1"><h5>Everything in this template</h5>${rtPane(row, (d.human || {}).skeleton || {})}</div>`;
   } else if (tab === "sum"){
-    body = `<div class="tplmeta" data-shelfsum="template">` + shelfRow("Name", `<span class="code">${esc(s.name)}</span>`) + shelfRow("Version", `v${esc(s.version)}`) + shelfRow("Kind", s.kind === "generic" ? "generic skeleton" : "business variant, as a skeleton")
+    body = `<div class="tplmeta" data-shelfsum="template">` + shelfRow("Name", `<span class="code">${esc(s.name)}</span>`) + shelfRow("Version", `v${esc(s.version)}`) + shelfRow("Kind", s.kind === "generic" ? "blank, for any business" : "made for one business, details left blank")
       + (s.kind === "generic" ? "" : shelfRow("Extends", shelfTplLink({key: s.generic_key}, esc(s.extends || "the generic skeleton")))
         + shelfRow("Made by run", s.made_by && s.made_by.run ? `<a href="${esc(`/library?view=artifacts&run=${encodeURIComponent(s.made_by.run)}`)}">${esc(s.made_by.run)}</a> ${esc(s.made_by.workflow || "")}` : nr) + shelfRow("Live or mock", libBadge(s.mock))
         + (s.adapted_from ? shelfRow("Adapted from", shelfTplLink(s.adapted_from, `${esc(s.adapted_from.name)}@v${esc(s.adapted_from.version)}`)) : ""))
       + shelfRow("Fields", esc(s.fields)) + `</div>` + shelfOuts(s.outputs);
   } else if (s.kind === "run-template"){
     const sk = (d.human || {}).skeleton || {}, labels = (d.human || {}).stage_labels || {};
-    body = `<div data-shelfskeleton="run-template"><div class="rtslots">A new run is asked for: ${(sk.facts_slots || []).map(x => `<span class="mappill">${esc(x)}</span>`).join(" ") || '<span class="empty">no slots</span>'}</div>` + (sk.stages || []).map(k => { const mine = (sk.workflows || []).filter(w => w.stage === k), out = (sk.outputs || {})[k];
+    body = `<div data-shelfskeleton="run-template"><div class="rtslots">You will be asked for: ${(sk.facts_slots || []).map(x => `<span class="mappill">${esc(x)}</span>`).join(" ") || '<span class="empty">no slots</span>'}</div>` + (sk.stages || []).map(k => { const mine = (sk.workflows || []).filter(w => w.stage === k), out = (sk.outputs || {})[k];
       return `<div class="ablk" data-rtstage="${esc(k)}"><h5>${esc(labels[k] || k)} (${mine.length})</h5>${out ? `<p class="empty">A folder of files: ${(out.files || []).map(esc).join(", ")}${out.test ? "; test " + esc(out.test) : ""}</p>` : ""}<table class="maptable"><thead><tr><th>Key</th><th>Workflow</th><th>Section</th><th>Section template</th><th>Depends on</th></tr></thead><tbody>`
         + mine.map(w => `<tr><td class="mono">${esc(w.key)}</td><td>${esc(w.name)}${(w.covers || []).length ? `<div class="empty">${w.covers.map(esc).join("<br>")}</div>` : ""}</td><td>${esc(w.section)}</td><td>${shelfTplLink({key: w.template_key}, esc(w.section_template))}</td><td>${(w.depends_on || []).map(esc).join(", ") || '<span class="empty">nothing</span>'}</td></tr>`).join("") + `</tbody></table></div>`; }).join("") + `</div>`;
   } else body = shelfFields((d.human || {}).skeleton || {});
@@ -3667,12 +3765,12 @@ function rtPane(row, sk){      // sk: the template's skeleton (Shelf 2). Its nam
       + mine.map(w => `<tr data-rtwf="${esc(w.key)}"${auto.has(w.key) ? ' class="rtauto"' : ""}><td><input type="checkbox" data-rtpick="${esc(w.key)}" aria-label="Select ${esc(w.key)} ${esc(w.name)}"${pick.chosen.includes(w.key) ? " checked" : ""}${auto.has(w.key) ? " disabled" : ""}></td>`
         + `<td class="mono">${esc(w.key)}</td><td>${esc(w.name)}${(w.covers || []).length ? `<div class="empty">${w.covers.map(esc).join("<br>")}</div>` : ""}</td><td>${esc(w.section)}</td><td>${tplCell(w)}</td>`
         + `<td>${(w.depends_on || []).map(esc).join(", ") || '<span class="empty">nothing</span>'}${auto.has(w.key) ? `<div class="empty">added: ${esc(why(w.key).join(", "))} depends on it</div>` : ""}</td></tr>`).join("") + `</tbody></table></div>`; }).join("");
-  const note = !want.length ? "Tick workflows to use only some of them. What they depend on is added for you." : `${plural(pick.chosen.length, "workflow")} of ${wfs.length} selected`
+  const note = !want.length ? "Use the whole template, or tick only the steps you want. Anything they need is added for you." : `${plural(pick.chosen.length, "workflow")} of ${wfs.length} selected`
     + (pick.added.length ? `; ${esc(pick.added.join(", "))} added because ${pick.added.length === 1 ? "a selected workflow depends on it" : "selected workflows depend on them"}` : "") + ".";
   return `<div class="aby" data-rtbundle="1">${(t.stages || []).map(k => esc(rtStage(t, k))).join(", ")} · ${plural(wfs.length, "workflow")} ${libBadge(t.mock)} · made from <a href="${runHref(t.made_from_run)}">${esc(t.made_from_run)}</a></div>`
     + `<p class="empty">${esc(t.description || "")}</p>`
-    + `<div class="rtslots">A new run is asked for: ${(t.facts_slots || []).map(x => `<span class="mappill">${esc(x)}</span>`).join(" ") || '<span class="empty">no facts recorded</span>'}</div>`
-    + `<div class="rtuse"><a class="ghost rtmain" data-rtuse="all" href="${esc(rtHref(t.id, "all"))}">Use whole template</a>`
+    + `<div class="rtslots">You will be asked for: ${(t.facts_slots || []).map(x => `<span class="mappill">${esc(x)}</span>`).join(" ") || '<span class="empty">no facts recorded</span>'}</div>`
+    + `<div class="rtuse"><a class="ghost rtmain" data-rtuse="all" href="${esc(rtHref(t.id, "all"))}">Use this template</a>`
     + (want.length ? `<a class="ghost" data-rtuse="sel" href="${esc(rtHref(t.id, pick.chosen.join(",")))}">Use selected workflows</a>` : `<a class="ghost" data-rtuse="sel" role="link" aria-disabled="true">Use selected workflows</a>`)
     + `</div><div class="rtnote" data-rtnote="1">${note}</div>` + stages + rtUsedBy(t);
 }
@@ -3696,20 +3794,20 @@ function renderCatBody(){      // the list and the details pane of the chosen sh
     const pane = !cur ? '<p class="empty">Nothing to show.</p>' : `<h2 data-shelftitle="1">${esc(cur.label)} <span class="empty">${esc(cur.business)}</span> ${shelfMark(cur.highlight ? "run" : "")}</h2><div class="aby">${esc(cur.run)} · ${esc(cur.date)} ${libBadge(cur.mock)}</div>${shelfView("artifact", cur.id)}`;
     return `<div class="agwrap" data-agroup="catalog" data-shelf="artifacts"><div class="aglist" aria-label="Artifacts">${renderShelfArts()}</div><div class="agpane" data-apane="${esc(cur ? cur.id : "")}">${pane}</div></div>`; }
   const sec = shelfCurSec(), rt = sec ? null : rtCur();
-  const pane = sec ? shelfSecPane(sec) : rt ? `<h2 data-rtname="1">${esc(rt.name)} ${shelfMark(rt.highlight)}</h2><div class="aby">run template · structure only: every business value is a slot</div>${shelfView("template", rt.key)}` : '<p class="empty">Nothing to show.</p>';
+  const pane = sec ? shelfSecPane(sec) : rt ? `<h2 data-rtname="1">${esc(rt.name)} ${shelfMark(rt.highlight)}</h2><div class="aby">A whole project you can start again for a new business. Its details are left blank.</div>${shelfView("template", rt.key)}` : '<p class="empty">Nothing to show.</p>';
   return `<div class="agwrap" data-agroup="catalog" data-shelf="templates"><div class="aglist" aria-label="Artifact templates">${renderShelfTpls()}</div><div class="agpane" data-apane="${esc(sec ? sec.key : rt ? rt.id : "")}">${pane}</div></div>`;
 }
 function renderCatHead(){      // the tools above the list: the shelf, the search and the mock filter
   return `<div class="libhead cattools"><div class="libviews" role="tablist" aria-label="Shelf"><button type="button" role="tab" data-catview="artifacts" aria-selected="${CAT.view === "artifacts"}">Artifacts</button> <button type="button" role="tab" data-catview="templates" aria-selected="${CAT.view === "templates"}">Artifact templates</button></div>`
-    + `<input type="search" id="catq" placeholder="Search by run, business, type or template" aria-label="Search by run, business, type or template" value="${esc(CAT.q)}">`
-    + `<label><input type="checkbox" id="cathide"${CAT.hideMock ? " checked" : ""}> Hide mock</label>${CAT.run ? `<span class="empty" data-shelfrun="1">Marked: what ${esc(CAT.run)} produced or used</span>` : ""}</div><div id="catbody"></div>`;
+    + `<input type="search" id="catq" placeholder="Search by business, project or type" aria-label="Search by business, project or type" value="${esc(CAT.q)}">`
+    + `<label><input type="checkbox" id="cathide"${CAT.hideMock ? " checked" : ""}> Hide practice runs</label>${CAT.run ? `<span class="empty" data-shelfrun="1">Marked: what ${esc(CAT.run)} produced or used</span>` : ""}</div><div id="catbody"></div>`;
 }
 function catHead(){      // the Artifacts header: a breadcrumb, the title, a line and a count chip
   const nv = (CAT.types || []).reduce((n, t) => n + (t.sections || []).reduce((k, s) => k + (s.variants || []).length, 0), 0), ns = (CAT.types || []).reduce((n, t) => n + (t.sections || []).length, 0);
   $("wcrumbs").textContent = "Library"; $("wcrumbg").textContent = "Shared"; $("wcrumb").hidden = false; $("backmap").hidden = true;
   $("wtitle").textContent = CAT.view === "artifacts" ? "Artifacts" : "Artifact templates";
-  $("wsub").textContent = CAT.view === "artifacts" ? "Finished outputs of the saved runs, read from this computer" : "Structure only: skeletons with slots in place of every business value"; $("wsub").removeAttribute("title");
-  $("wcnt").textContent = CAT.view === "artifacts" ? plural((CAT.arts || []).length, "artifact") : `${plural((CAT.rts || []).length, "run template")} · ${ns} sections · ${nv} variants`; $("wcnt").hidden = false;
+  $("wsub").textContent = CAT.view === "artifacts" ? "Finished work from the projects saved on this computer" : "Starting points for new work. Each business's own details are left blank."; $("wsub").removeAttribute("title");
+  $("wcnt").textContent = CAT.view === "artifacts" ? plural((CAT.arts || []).length, "artifact") : `${plural((CAT.rts || []).length, "run template")} · ${ns} sections · ${nv} business versions`; $("wcnt").hidden = false;
 }
 function catUrl(){      // the shelf, the marked run, the open item and the tab stay in the address
   try { const q = new URLSearchParams(); q.set("view", CAT.view); if (CAT.run) q.set("run", CAT.run);
