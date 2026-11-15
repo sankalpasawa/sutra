@@ -425,6 +425,8 @@ def main():
     url = f"http://127.0.0.1:{a.port}/"
     print("Mode:", "MOCK (scripted functions)" if llm.MOCK else f"{llm.PROVIDER} ({llm.MODEL})")
     print("Open:", url)
+    if not j2.sandbox_on():
+        print(j2.SANDBOX_OFF_NOTE)
     if not a.no_browser:
         try:
             webbrowser.open(url)

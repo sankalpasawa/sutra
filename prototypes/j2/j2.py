@@ -500,6 +500,16 @@ AGENT_SETTINGS = tuple(AGENT_DEFAULTS)
 
 def agent_setting(k):
     return str(os.getenv(k) or "").strip() or AGENT_DEFAULTS[k]
+# No sandbox by default (J2_SANDBOX=1 turns it on): builders, the test rerun and a real run then run as plain processes.
+# The before/after check of the run folder (BuilderToolFault), the RUN <code> approval and receipts, the budget and time
+# limits and the builders' instruction stay either way.
+SANDBOX_OFF_NOTE = "Builders run without a sandbox: they can change files outside their folder."
+
+
+def sandbox_on():
+    return llm.sandbox_on()
+
+
 # Paths the sandbox runtime (srt) leaves writable by default; a rerun closes them (measured 2026-11-12, srt 0.0.81)
 SANDBOX_DENY_WRITE = ("/tmp/claude", "/private/tmp/claude")
 
@@ -563,12 +573,13 @@ def real_run_problems(rr, source, runner, run_dir):
 
 
 def real_run(out_dir, rr, timeout):
-    """Run an approved real run once, inside the sandbox runtime (J2_SANDBOX_CMD): no network; reads the built folder,
-    the stated folder and its read-only folders; writes only the stated folder; the builder's time limit; the command
-    from the built folder. {"ran", "exit", "output" (its end), "seconds", "sha256" of the built files it names,
+    """Run an approved real run once, from the built folder, within the builder's time limit. With J2_SANDBOX=1 inside the
+    sandbox runtime (J2_SANDBOX_CMD): no network; reads the built folder, the stated folder and its read-only folders;
+    writes only the stated folder. Without it (the default) as a plain process; the approval (RUN <code>), the dry run
+    and the receipt are the same either way. {"ran", "exit", "output" (its end), "seconds", "sha256" of the built files it names,
     "evidence"}."""
-    cmd = agent_setting("J2_SANDBOX_CMD")
-    if not cmd:
+    cmd = agent_setting("J2_SANDBOX_CMD") if sandbox_on() else None
+    if sandbox_on() and not cmd:
         return {"ran": False, "exit": None, "evidence": "J2_SANDBOX_CMD is not set, so nothing was run"}
     out_dir, folder = os.path.realpath(out_dir), os.path.realpath(rr["folder"])
     reads = [os.path.realpath(x) for x in rr.get("reads") or []]
@@ -585,15 +596,17 @@ def real_run(out_dir, rr, timeout):
             json.dump({"network": {"allowedDomains": [], "deniedDomains": []},
                        "filesystem": {"denyRead": ["~"], "allowRead": [out_dir, folder] + reads, "allowWrite": [folder],
                                       "denyWrite": list(SANDBOX_DENY_WRITE)}}, f)
-        p = subprocess.run(shlex.split(cmd) + ["-s", conf, "-c", shlex.join(rr["command"])], cwd=out_dir,
-                           capture_output=True, text=True, timeout=timeout)
+        argv = shlex.split(cmd) + ["-s", conf, "-c", shlex.join(rr["command"])] if cmd else list(rr["command"])
+        p = subprocess.run(argv, cwd=out_dir, capture_output=True, text=True, timeout=timeout)
         out = ((p.stdout or "") + (p.stderr or ""))[-1500:]
         last = next((x.strip() for x in reversed(out.splitlines()) if x.strip()), "no output")
+        where = f"in the sandbox, writing only {folder}" if cmd else "without a sandbox"
         return {"ran": True, "exit": p.returncode, "output": out, "seconds": round(time.time() - t0, 2), "sha256": shas,
-                "evidence": f"{shlex.join(rr['command'])} exited {p.returncode} in the sandbox, writing only {folder} ({last[:160]})"}
+                "evidence": f"{shlex.join(rr['command'])} exited {p.returncode} {where} ({last[:160]})"}
     except subprocess.TimeoutExpired:
         return {"ran": True, "exit": None, "sha256": shas, "seconds": round(time.time() - t0, 2),
-                "evidence": f"{shlex.join(rr['command'])} ran past {timeout:g}s in the sandbox and was stopped"}
+                "evidence": f"{shlex.join(rr['command'])} ran past {timeout:g}s {'in the sandbox' if cmd else 'without a sandbox'} "
+                            "and was stopped"}
     finally:
         os.unlink(conf)
 
@@ -644,14 +657,14 @@ def real_run_dry(out_dir, rr, timeout):
 
 
 def sandbox_rerun(folder, runner, target, timeout):
-    """Run a builder's test again, independently, inside the sandbox runtime (J2_SANDBOX_CMD, e.g. srt): on a copy of
-    the folder made beside it in the run folder (the test may write; the folder itself is never changed), with
-    sandbox_settings, the form's runner ({target} = the test file) and the time limit. J2 never runs builder code any
-    other way. {"pass": True/False, or None when it could not run, "exit", "sha256" of the test file, "seconds",
+    """Run a builder's test again, independently, on a copy of the folder made beside it in the run folder (the test may
+    write; the folder itself is never changed), with the form's runner ({target} = the test file) and the time limit.
+    With J2_SANDBOX=1 inside the sandbox runtime (J2_SANDBOX_CMD, e.g. srt, with sandbox_settings); without it (the
+    default) as a plain process. {"pass": True/False, or None when it could not run, "exit", "sha256" of the test file, "seconds",
     "output" (the end of it), "evidence"}."""
-    cmd = agent_setting("J2_SANDBOX_CMD")
+    cmd = agent_setting("J2_SANDBOX_CMD") if sandbox_on() else None
     path = os.path.realpath(os.path.join(folder, str(target or "")))
-    if not cmd:
+    if sandbox_on() and not cmd:
         return {"pass": None, "exit": None, "evidence": "J2_SANDBOX_CMD is not set, so the test was not rerun"}
     if not target or not llm.inside(path, folder) or not os.path.isfile(path):
         return {"pass": False, "exit": None, "evidence": f"the test {target!r} is not a file in the folder"}
@@ -666,17 +679,20 @@ def sandbox_rerun(folder, runner, target, timeout):
         shutil.copytree(folder, copy, dirs_exist_ok=True, symlinks=True)
         with os.fdopen(fd, "w", encoding="utf-8") as f:
             json.dump(sandbox_settings(copy), f)
-        p = subprocess.run(shlex.split(cmd) + ["-s", conf, "-c", shlex.join(argv)], cwd=copy, capture_output=True,
-                           text=True, timeout=timeout)
+        run_argv = shlex.split(cmd) + ["-s", conf, "-c", shlex.join(argv)] if cmd else argv
+        p = subprocess.run(run_argv, cwd=copy, capture_output=True, text=True, timeout=timeout)
         out = ((p.stdout or "") + (p.stderr or ""))[-1500:]
         last = next((x.strip() for x in reversed(out.splitlines()) if x.strip()), "no output")
+        where = "in the sandbox" if cmd else "on a copy, without a sandbox"
         return {"pass": p.returncode == 0, "exit": p.returncode, "sha256": sha, "seconds": round(time.time() - t0, 2),
-                "output": out, "evidence": f"{shlex.join(argv)} exited {p.returncode} in the sandbox ({last[:160]})"}
+                "output": out, "evidence": f"{shlex.join(argv)} exited {p.returncode} {where} ({last[:160]})"}
     except subprocess.TimeoutExpired:
-        return {"pass": False, "exit": None, "sha256": sha, "evidence": f"{shlex.join(argv)} ran past {timeout:g}s in the "
-                                                                         "sandbox and was stopped"}
+        return {"pass": False, "exit": None, "sha256": sha, "evidence": f"{shlex.join(argv)} ran past {timeout:g}s "
+                                                                         + ("in the sandbox" if cmd else "without a sandbox")
+                                                                         + " and was stopped"}
     except OSError as e:
-        return {"pass": None, "exit": None, "sha256": sha, "evidence": f"the sandbox could not start: {e}"}
+        return {"pass": None, "exit": None, "sha256": sha,
+                "evidence": f"the sandbox could not start: {e}" if cmd else f"the test could not start: {e}"}
     finally:
         shutil.rmtree(copy, ignore_errors=True)
         try:

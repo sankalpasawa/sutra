@@ -10,20 +10,28 @@ check the site. See `README.md` for how the flow works.
 |---|---|---|
 | Python | 3.9 or newer (tested 3.9.6) | Runs the server (`python3 --version`) |
 | **Claude Code CLI, logged in to a Claude subscription** (Pro or Max) | tested 2.1.323 (`claude --version`) | Every agent call goes through `claude -p` on your subscription: no API key, no API bill. Builders use its tools (files, commands, web) |
-| Node.js | 22.12 or newer (tested 26.9.0) | Installs the Claude CLI and the sandbox runtime |
-| Anthropic sandbox runtime `srt` | exactly 0.0.81 | Code reruns every builder's test in it, and runs an approved "run for real" in it. Linux also needs bubblewrap, socat and ripgrep |
+| Node.js (only with `J2_SANDBOX=1`, or to install the Claude CLI with npm) | 22.12 or newer (tested 26.9.0) | Installs the sandbox runtime |
+| Anthropic sandbox runtime `srt` (only with `J2_SANDBOX=1`) | exactly 0.0.81 | With the sandbox on, code reruns every builder's test in it and runs an approved "run for real" in it. Linux also needs bubblewrap, socat and ripgrep |
 | Google Chrome (optional) | any recent | Audit screenshots a page at 360px and 1280px. Without Chrome, Audit judges from code only. Set `J2_CHROME=/path/to/chrome` if it is not in the usual place |
 | An API key (optional) | | Only without the Claude subscription: `ANTHROPIC_API_KEY` or `GEMINI_API_KEY`. Builders get tools only through the CLI |
 
 ### Install and log in to Claude Code
 
 ```bash
-npm install -g @anthropic-ai/claude-code              # or see https://docs.claude.com/en/docs/claude-code
+npm install -g @anthropic-ai/claude-code              # or the native installer: https://docs.claude.com/en/docs/claude-code
 claude                                                 # first run: log in with your Claude account, then exit
 claude -p "say hi"                                     # check: should print a reply
-npm install -g @anthropic-ai/sandbox-runtime@0.0.81    # the sandbox: J2_SANDBOX_CMD=srt (the default)
+```
+
+Windows, Mac and Linux run J2 the same way, natively. The sandbox is off by default. Only to turn it on
+(`J2_SANDBOX=1`):
+
+```bash
+npm install -g @anthropic-ai/sandbox-runtime@0.0.81    # J2_SANDBOX_CMD=srt (the default command)
 srt --version                                          # check: 0.0.81
 ```
+
+Optional on Windows: `srt`'s Windows support is alpha, so to use the sandbox there, run J2 inside WSL2.
 
 The server removes `ANTHROPIC_API_KEY` from the environment it gives `claude -p`, so subscription runs never bill
 the API, even if the key is set.
@@ -52,14 +60,15 @@ your own, drop `map_tab,left_bar,map_shapes` from the list.
 | `ANTHROPIC_API_KEY=` | unset | An Anthropic API key, only without the subscription. `claude -p` never sees it, so subscription runs never bill the API |
 | `STUDIO_PROVIDER=` | unset | `claude-cli` runs on your Claude subscription (recommended) |
 | `J2_OVERRIDE_KEY=` | unset | Owner override: a message starting with this key, then `budget +N`, `ship` or `drop <item>`, is applied by code. Pick a long random value. Never shown to agents; redacted in logs and the page |
-| `J2_BUILDER_TIMEOUT=600` | 600 | Seconds one builder call may take before it is stopped and retried once (`0` = no limit). The sandboxed test rerun and a run for real get the same limit |
+| `J2_BUILDER_TIMEOUT=600` | 600 | Seconds one builder call may take before it is stopped and retried once (`0` = no limit). The test rerun and a run for real get the same limit |
 | `# J2_DELAY=2` | 0 | Seconds between AI calls. `2` on a free-tier API key |
 | `# J2_AGENT_TOOLS=1` | on | Builders get Claude's built-in tools in the run's output folder. `0` turns them off (the old section path, used by most offline tests) |
 | `# J2_AGENT_USD=2.00` | 2.00 | Dollars one builder call may spend (`claude -p --max-budget-usd`, checked after each turn, so one turn may go over) |
 | `# J2_AGENT_MAX_FILES=200` | 200 | Most files a builder's folder may hold after a call |
 | `# J2_AGENT_MAX_BYTES=5000000` | 5000000 | Most bytes a builder's folder may hold after a call |
 | `# J2_TOOL_LOG_CHARS=2000` | 2000 | Longest string kept as text in a call's tool log; a longer one is kept as its length and sha256 |
-| `# J2_SANDBOX_CMD=srt` | `srt` | The sandbox command. Code reruns a builder's test in it and runs an approved real run in it. J2 never runs a builder's code any other way |
+| `# J2_SANDBOX=0` | off | `1` turns the sandbox on: the Claude CLI's sandbox for builders' commands, and `J2_SANDBOX_CMD` for the test rerun and a real run. Off, they run as plain processes and can change files outside their folder; the server says so at startup |
+| `# J2_SANDBOX_CMD=srt` | `srt` | The sandbox command, used only with `J2_SANDBOX=1` |
 
 The commented lines show the default; uncomment one only to change it.
 
@@ -168,17 +177,25 @@ output folder, runs commands there and can search and fetch the web. Its tools a
 `artifacts/types.json` (`builder_tools`); the limits above have defaults in code. Check it live with
 `python3 tools/agent_tools_smoke.py` (about $0.10).
 
-**The sandbox is the security boundary, not the allow-list.** The Claude CLI's sandbox keeps a builder's commands
-inside its folder: reads of your home folder (the repo's `.env`, `~/.ssh`, other runs) are refused, writes go only to
-the folder. The network is open to builders. Code reruns a builder's test in `srt` on a copy of the folder, with no
-network. A test runner installed under your home folder (pyenv, a virtualenv) can't be read inside the sandbox: use
-one on the system path. Windows support in `srt` is alpha; J2's builder tools are untested there.
+**No sandbox by default.** Builders' commands, the rerun of a builder's test (on a copy of its folder) and an approved
+run for real run as plain processes on your machine: they can read and change files outside their folder, and the
+network is open. The server prints one line at startup to say so. What stays: builders are told never to touch
+anything outside their folder; code compares the run folder before and after every builder call, and a change outside
+the builder's folder is logged and stops that run; a run for real needs your exact `RUN <code>` reply and leaves a
+receipt; budget and time limits apply. The permission rules are not a security boundary: a rule for a runner lets it
+run any code.
+
+**With `J2_SANDBOX=1`** the Claude CLI's sandbox keeps a builder's commands inside its folder: reads of your home folder
+(the repo's `.env`, `~/.ssh`, other runs) are refused, writes go only to the folder. Code reruns a builder's test in
+`srt` on a copy of the folder, with no network. A test runner installed under your home folder (pyenv, a virtualenv)
+can't be read inside the sandbox: use one on the system path.
 
 **Running a build for real on your files.** When a brief asks for a script to be run on your own folder (for example
 "sort the files in /path/to/folder, and run it"), the plan names the exact command and the folder; the folder must
 be written out in full in the brief or your answers. When the script is done and its test passes, code first runs it
 on a copy of your folder (the dry run) and shows what it would create, change or delete. Then it asks you to reply
-exactly `RUN <code>`. Only that reply runs it, once, in the sandbox, with no network, writing only that folder.
+exactly `RUN <code>`. Only that reply runs it, once (in the sandbox, with no network, writing only that folder, when
+`J2_SANDBOX=1`).
 **Decide for me** never gives this reply. Every answer leaves a receipt in the run's `receipts.jsonl`.
 
 ## Settings
@@ -216,7 +233,7 @@ Set any of these before `python3 j2_server.py`, like the examples above.
 | `J2_TEST_EMAIL` | unset | The only address a send may go to |
 | `J2_TEST_SLACK_TARGET` | unset | The only Slack target a send may go to |
 | `J2_AGENT_TOOLS` | on | `0` turns builder tools off (see "Builder tools") |
-| `J2_AGENT_USD`, `J2_AGENT_MAX_FILES`, `J2_AGENT_MAX_BYTES`, `J2_TOOL_LOG_CHARS`, `J2_SANDBOX_CMD`, `J2_BUILDER_TIMEOUT` | see the `.env.example` table | Builder limits and the sandbox command |
+| `J2_AGENT_USD`, `J2_AGENT_MAX_FILES`, `J2_AGENT_MAX_BYTES`, `J2_TOOL_LOG_CHARS`, `J2_SANDBOX`, `J2_SANDBOX_CMD`, `J2_BUILDER_TIMEOUT` | see the `.env.example` table | Builder limits and the sandbox command |
 | `J2_DECIDE_FOR_ME` | off | `1` starts runs with Decide for me on (it never approves a send or a real run) |
 
 ## Checks

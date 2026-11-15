@@ -63,3 +63,15 @@ Branch `remove-group-c`, from `remove-restrictions` (2026-11-14). Removes group 
 | Run | Result |
 |---|---|
 | All 4 briefs ($2.38, `--cap 100`) | 4 pass with `Done:`. Identity marked exact facts: coffee shop 6, hiring policy 2, file sorter 3, file copy 0; no brief had a date rule. Ledger total $51.47 of $100 |
+
+## No sandbox by default (Sankalp, 2026-11-15)
+
+So J2 works the same on Windows, Mac and Linux, builders' commands (`llm.cli_settings`), the rerun of a builder's test
+(`sandbox_rerun`, still on a copy of the folder) and an approved real run and its dry run (`real_run`) run as plain
+processes. `J2_SANDBOX=1` brings back the sandbox code unchanged (the CLI sandbox; `J2_SANDBOX_CMD`, default `srt`).
+The server prints "Builders run without a sandbox: they can change files outside their folder." at startup when it is
+off. Kept either way: the before/after check of the run folder (a change outside the builder's folder is logged and
+stops that run), `RUN <code>` and receipts for real runs, budget and time limits, and the builders' instruction never
+to touch anything outside their folder (`templates/builder.md` now says "never", not "you can't"). Texts that said
+"in the sandbox" (rubric A-4, the folder form's done line, `artifacts/real_run.md`) no longer claim one.
+`.env.example` and `SETUP.md` document `J2_SANDBOX`; Node and `srt` are needed only with it.

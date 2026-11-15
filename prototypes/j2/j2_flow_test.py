@@ -861,6 +861,38 @@ def declared_not_words():
           "atom, built claims checked against Audit's passes, blocked_by checked against the run's workflows ok")
 
 
+def sandbox_off_default():
+    """Founder 2026-11-15: no sandbox by default, on every platform. The test rerun and a real run run as plain
+    processes (no J2_SANDBOX_CMD needed), say so in their evidence, and the rerun still works on a copy; the builder's
+    CLI settings carry no sandbox; the server's startup line says builders run without one. J2_SANDBOX=1 brings it back."""
+    keep = {k: os.environ.get(k) for k in ("J2_SANDBOX", "J2_SANDBOX_CMD")}
+    folder = tempfile.mkdtemp()
+    try:
+        os.environ.pop("J2_SANDBOX", None)
+        os.environ["J2_SANDBOX_CMD"] = "no-such-sandbox-command"         # never used while the sandbox is off
+        open(os.path.join(folder, "test_ok.py"), "w").write("open('made.txt', 'w').write('x')\n")
+        rr = j2.sandbox_rerun(folder, [sys.executable, "{target}"], "test_ok.py", 60)
+        assert rr["pass"] is True and "without a sandbox" in rr["evidence"], rr
+        assert not os.path.exists(os.path.join(folder, "made.txt")), "the rerun works on a copy"
+        out = tempfile.mkdtemp()
+        res = j2.real_run(folder, {"command": [sys.executable, "-c", f"open({os.path.join(out, 'r.txt')!r}, 'w').write('1')"],
+                                   "folder": out}, 60)
+        assert res["ran"] and res["exit"] == 0 and "without a sandbox" in res["evidence"], res
+        assert not j2.sandbox_on() and j2.SANDBOX_OFF_NOTE == ("Builders run without a sandbox: they can change files "
+                                                               "outside their folder.")
+        src = open(os.path.join(j2.HERE, "j2_server.py"), encoding="utf-8").read()
+        assert "SANDBOX_OFF_NOTE" in src and "sandbox_on()" in src, "the server prints the line at startup"
+        os.environ["J2_SANDBOX"] = "1"
+        assert j2.sandbox_on()
+        assert j2.sandbox_rerun(folder, [sys.executable, "{target}"], "test_ok.py", 60)["pass"] is None, "the sandbox " \
+            "command must exist when the sandbox is on"
+    finally:
+        for k, v in keep.items():
+            os.environ.pop(k, None) if v is None else os.environ.__setitem__(k, v)
+    print("sandbox off by default: the test rerun and a real run as plain processes, saying so; the rerun on a copy; "
+          "J2_SANDBOX=1 needs the sandbox command; the startup line ok")
+
+
 def deferred_twice():
     """The same done-when item left out or refused in 2 rounds: Identity asks the Requester even though budget remains."""
     run = page_run()
@@ -4372,9 +4404,16 @@ def agent_tools_cli():
         arg = lambda f: cmd[cmd.index(f) + 1]
         assert arg("--tools") == "ToolA,ToolB" and arg("--allowedTools") == "ToolA ToolB(run *)", cmd
         assert arg("--max-budget-usd") == "0.5" and arg("--permission-mode") == "dontAsk", cmd
-        assert {"--restricted", "--safe-mode"} <= set(cmd) and json.loads(arg("--settings"))["sandbox"]["enabled"], cmd
-        fs = json.loads(arg("--settings"))["sandbox"]["filesystem"]      # reads fenced: home denied, the folder only
-        assert fs["denyRead"] == ["~/"] and fs["allowRead"] == fs["allowWrite"] == [os.path.realpath(folder)], fs
+        # no sandbox by default (J2_SANDBOX unset): the permission rules only; J2_SANDBOX=1 fences reads and writes
+        assert {"--restricted", "--safe-mode"} <= set(cmd) and "sandbox" not in json.loads(arg("--settings")), cmd
+        keep_sb = os.environ.get("J2_SANDBOX")
+        os.environ["J2_SANDBOX"] = "1"
+        try:
+            sb = llm.cli_settings(tools)["sandbox"]
+        finally:
+            os.environ.pop("J2_SANDBOX", None) if keep_sb is None else os.environ.__setitem__("J2_SANDBOX", keep_sb)
+        fs = sb["filesystem"]      # reads fenced: home denied, the folder only
+        assert sb["enabled"] and fs["denyRead"] == ["~/"] and fs["allowRead"] == fs["allowWrite"] == [os.path.realpath(folder)], fs
         assert json.loads(arg("--settings"))["permissions"]["allow"] == ["ToolA", "ToolB(run *)"], cmd
         assert arg("--output-format") == "stream-json" and kw["cwd"] == folder, (cmd, kw)
         tc = llm.LAST_META["tool_calls"]
@@ -4775,7 +4814,7 @@ def run_for_real():
     real = tempfile.mkdtemp(prefix="j2-real-")      # the Requester's folder: outside the repo and the home folder
     src = tempfile.mkdtemp(prefix="j2-real-src-")
     tools = tempfile.mkdtemp(prefix="j2-fake-srt-")
-    keep = {k: os.environ.get(k) for k in ("J2_SANDBOX_CMD", "J2_AGENT_TOOLS")}
+    keep = {k: os.environ.get(k) for k in ("J2_SANDBOX_CMD", "J2_AGENT_TOOLS", "J2_SANDBOX")}
     try:
         source = j2.squash(f"Sort the files in {real} into folders by type, reading samples from {src}, and run it.")
         runner = ("python3", "{target}")
@@ -4795,7 +4834,7 @@ def run_for_real():
         open(fake, "w").write(FAKE_SRT)
         open(os.path.join(real, "keep.txt"), "w").write("k")
         open(os.path.join(real, "gone.txt"), "w").write("g")
-        os.environ["J2_SANDBOX_CMD"] = f"python3 {fake}"
+        os.environ.update(J2_SANDBOX_CMD=f"python3 {fake}", J2_SANDBOX="1")     # the sandbox path, via the fake srt
 
         def made_run():
             run = j2.J2Run()
@@ -4866,11 +4905,11 @@ def real_run_checks():
     assert "Never ask the Requester for that approval" in ident
     real = tempfile.mkdtemp(prefix="j2-real-")
     tools = tempfile.mkdtemp(prefix="j2-fake-srt-")
-    keep = {k: os.environ.get(k) for k in ("J2_SANDBOX_CMD",)}
+    keep = {k: os.environ.get(k) for k in ("J2_SANDBOX_CMD", "J2_SANDBOX")}
     try:
         fake = os.path.join(tools, "srt.py")
         open(fake, "w").write(FAKE_SRT)
-        os.environ["J2_SANDBOX_CMD"] = f"python3 {fake}"
+        os.environ.update(J2_SANDBOX_CMD=f"python3 {fake}", J2_SANDBOX="1")     # the sandbox path, via the fake srt
         crit = ["the script is built and its test passes", f"the script has been run on {real}"]
 
         def made_run():
@@ -4938,9 +4977,9 @@ def real_run_order():
     Identity are told who runs it and when."""
     crit = ["the script is built and its test passes", "the script has been run on the folder"]
     real, tools = tempfile.mkdtemp(prefix="j2-real-"), tempfile.mkdtemp(prefix="j2-fake-srt-")
-    keep = os.environ.get("J2_SANDBOX_CMD")
+    keep, keep_sb = os.environ.get("J2_SANDBOX_CMD"), os.environ.get("J2_SANDBOX")
     open(os.path.join(tools, "srt.py"), "w").write(FAKE_SRT)
-    os.environ["J2_SANDBOX_CMD"] = f"python3 {os.path.join(tools, 'srt.py')}"
+    os.environ.update(J2_SANDBOX_CMD=f"python3 {os.path.join(tools, 'srt.py')}", J2_SANDBOX="1")
 
     def made_run(item1_pass=True, fact=None):
         run = j2.J2Run()
@@ -4998,6 +5037,7 @@ def real_run_order():
         assert any(m["text"].startswith("Not taken from the answer: whether a real run happened") for m in run.chat)
     finally:
         os.environ.pop("J2_SANDBOX_CMD", None) if keep is None else os.environ.__setitem__("J2_SANDBOX_CMD", keep)
+        os.environ.pop("J2_SANDBOX", None) if keep_sb is None else os.environ.__setitem__("J2_SANDBOX", keep_sb)
         for d in (real, tools):
             shutil.rmtree(d, ignore_errors=True)
     print("real run order: the RUN ask without Identity's done; finishing with it pending is Done with open items; "
@@ -16320,6 +16360,7 @@ if __name__ == "__main__":
         item_kinds_and_about()
         supersede_and_markers()
         declared_not_words()
+        sandbox_off_default()
         thread_and_loom_core()
         deferred_twice()
         connections()
