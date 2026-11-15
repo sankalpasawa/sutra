@@ -1,0 +1,88 @@
+{
+ "_from": "runs/j2-20261109-182842 calls.jsonl row 2 (call 9, Adaptation's first plan): the workflow rejected for 'highlighted'",
+ "workflow": {
+  "id": "conflict-highlight",
+  "name": "conflict-highlight",
+  "goal_gap": "Repeated digits are not flagged",
+  "expected_outcome": "Soft highlight of repeats",
+  "outputs": [
+   "index.html"
+  ],
+  "completion_check": "Repeats in a row, column or box get .cell-conflict, with no answer shown",
+  "dependencies": [
+   "grid-and-number-pad",
+   "undo",
+   "design-guide"
+  ],
+  "parts": [],
+  "covers": [
+   6
+  ],
+  "fixes": [],
+  "revises": null,
+  "estimated_resources": {
+   "money": 12,
+   "calls": 3,
+   "time_minutes": 6
+  },
+  "atoms": [
+   {
+    "id": "a1",
+    "goal": "Repeated digits in a row, column or box are gently highlighted.",
+    "constraints": [
+     "Compare only with other cells, never with the solution",
+     "Soft colour, no alarm red",
+     "Create only .cell-conflict"
+    ],
+    "context": [
+     "charter item 6"
+    ],
+    "how": {
+     "kind": "AI",
+     "agent": "Builder",
+     "steps": "After every change add class .cell-conflict to every cell whose digit repeats in its row, column or box, including clue-versus-entry pairs; remove it when the repeat is gone."
+    },
+    "expected_output": [
+     {
+      "text": "Conflict style exists in the page",
+      "kind": "element",
+      "target": ".cell-conflict",
+      "count": 1
+     }
+    ],
+    "verification": [
+     {
+      "text": "Conflict class is used in the page",
+      "type": "grep-count",
+      "target": ".cell-conflict",
+      "expect": 1
+     },
+     {
+      "text": "Page parses",
+      "type": "named-test",
+      "target": "page-parses",
+      "expect": true
+     }
+    ]
+   }
+  ]
+ },
+ "goal": {
+  "statement": "Build a friendly, uncluttered Sudoku game as a single web page for casual players who play quick games on their phones, for example on a commute. It offers a few difficulty levels and beginner help that does not spoil the puzzle. It needs no sign-up and shows no ads, and it should be pleasant enough that people come back.",
+  "done_when": [
+   "The page shows a 9x9 Sudoku grid with 3x3 boxes clearly marked, where the player can select a cell and enter a digit from 1 to 9 using on-screen number buttons, and erase a digit they entered",
+   "The page lets the player choose between a few difficulty levels (three or more, named in plain words) before starting, and each choice starts a new puzzle of that level",
+   "Each new puzzle is made by code in the file that guarantees exactly one solution",
+   "The page has a notes (pencil mark) mode where the player can jot small candidate digits in a cell",
+   "The page has an undo button that reverses the player's last move",
+   "The page gently highlights digits that repeat in the same row, column or box, without telling the player the correct answer",
+   "The page has a hint button that points the player to a cell or area to look at and explains why in plain words, without filling in or revealing the digit",
+   "The page shows a friendly congratulations message when the puzzle is completed correctly, with a way to start a new game",
+   "The page saves the game in progress on the player's device and offers to resume it when the player returns",
+   "The page layout fits a 360px-wide phone screen with number buttons large enough to tap comfortably and no horizontal scrolling",
+   "The page has no sign-up or login form and no ads, and the whole game is in one HTML file",
+   "The page has no JavaScript errors, no horizontal overflow at 360px and 1280px, and every in-page link points to an existing section."
+  ],
+  "facts": []
+ }
+}

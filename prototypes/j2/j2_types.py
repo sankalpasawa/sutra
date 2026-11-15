@@ -15,9 +15,10 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 TYPES_PATH = os.path.join(HERE, "artifacts", "types.json")
 AGENTS_DIR = os.path.join(HERE, "agents", "j2")
 CONDITIONS_DIR = os.path.join(HERE, "conditions")
-FORMS = ("page", "document")      # room for "script" and "action": not built yet
-NEEDED = ("label", "noun", "form", "conditions", "rubric", "check_types", "done", "intake", "charter_format", "workflow", "cost")
+NEEDED = ("label", "noun", "form", "output", "min_done_when", "conditions", "rubric", "check_types", "done", "intake", "charter_format", "workflow", "cost")
 DOC_NEEDED = ("file", "builder", "atom_rules")
+# What a form makes (its "output" in types.json) and what a form of that kind must declare. A form's name is never read.
+OUTPUTS = {"file": (), "folder": ("folder", "builder", "atom_rules", "tools", "allow", "test_runner")}
 EXPORTS = (None, "docx")
 TEXTS = {"intake": "intake", "charter_format": "charter_fmt", "atom_rules": "atom_rules"}      # field -> OUTPUTS key
 
@@ -43,6 +44,16 @@ def template_path(name, path=None):
 
 
 _TEMPLATES = {}
+
+
+def asks_assumptions(name, path=None):
+    """True when a type's template asks for the closing "Assumptions to confirm" section (generic.json
+    "assumptions_section": true); a document without it ends with its own sections."""
+    try:
+        with open(template_path(name, path), encoding="utf-8") as f:
+            return json.load(f).get("assumptions_section") is True
+    except (OSError, ValueError):
+        return False
 
 
 def template_file(name):
@@ -209,19 +220,35 @@ def _merged(name, path=None):
     if entry is None:
         raise ValueError(f"{name}: no such output type in {os.path.basename(path or TYPES_PATH)}")
     form = (d.get("forms") or {}).get(entry.get("form"))
-    if entry.get("form") not in FORMS or not isinstance(form, dict):
+    if not isinstance(form, dict) or str(entry.get("form")).startswith("_"):      # the forms in types.json, its data only
         raise ValueError(f"{name}: unknown form {entry.get('form')!r}")
     noun = entry.get("noun") or entry.get("label") or name
     label = str(entry.get("label") or name)
     rule = practice_rule(entry, form)
+    runner = " ".join(map(str, entry.get("test_runner") or form.get("test_runner") or []))
     fill = lambda v: (v.replace("{name}", name).replace("{label}", label).replace("{lower}", label.lower())
                       .replace("{noun}", noun).replace("{sections}", ", ".join(sections(name)))
-                      .replace("{practice}", rule) if isinstance(v, str) else v)
-    out = {**{k: fill(v) for k, v in form.items() if k not in ("workflow", "cost")}, **entry, "noun": noun}
+                      .replace("{practice}", rule).replace("{runner}", runner) if isinstance(v, str) else v)
+    bt = {k: v for k, v in (d.get("builder_tools") or {}).items() if k in ("tools", "allow")}      # every builder's default
+    out = {**bt, **{k: fill(v) for k, v in form.items() if k not in ("workflow", "cost")}, **entry, "noun": noun}
     out["workflow"] = {**{k: fill(v) for k, v in (form.get("workflow") or {}).items()}, **(entry.get("workflow") or {})}
     out["cost"] = {**(form.get("cost") or {}), **(entry.get("cost") or {})}
     out["_fill"] = fill
     return out
+
+
+def forms(path=None):
+    """The forms in types.json ({name: form data}), its data only."""
+    return {k: v for k, v in (_read_types(path).get("forms") or {}).items() if not k.startswith("_") and isinstance(v, dict)}
+
+
+def builder_tools(path=None):
+    """types.json "builder_tools": every builder's tools, rules, guidance text and default output folder."""
+    d = dict(_read_types(path).get("builder_tools") or {})
+    for k in ("builder", "atom_rules", "real_run"):      # prompt files: their text
+        if d.get(k):
+            d[k] = _text(d[k])
+    return d
 
 
 def practice_rule(entry, form):
@@ -279,7 +306,8 @@ def info(name, path=None):
     """What the views and messages need of a type: its form, label, file, preview and ready message."""
     e = _merged(name, path)
     return {"name": name, "form": e["form"], "label": e.get("label"), "noun": e["noun"], "file": e.get("file"),
-            "preview": e.get("preview"), "ready": e.get("ready")}
+            "preview": e.get("preview"), "ready": e.get("ready"), "output": e.get("output"),
+            "folder": e["_fill"](e["folder"]) if e.get("folder") else None}
 
 
 def recorded(d, path=None):
@@ -298,9 +326,10 @@ def recorded(d, path=None):
         except (OSError, ValueError):
             return None
     docs, known, out = rd("documents.json"), set(names(path)), {}
-    if not isinstance(docs, dict) or not set(docs) - known:
-        return {}
     arts = {r.get("type"): r for r in (rd("artifacts.json") or {}).get("rows") or [] if isinstance(r, dict) and r.get("kind") == "type"}
+    docs = docs if isinstance(docs, dict) else {}
+    if not (set(docs) | set(arts)) - known:
+        return {}
     new = {x.get("type"): x.get("new") or {} for x in ((rd("deliverables.json") or {}).get("plan") or {}).get("deliverables") or []
            if isinstance(x, dict) and isinstance(x.get("new"), dict)}
     for k, v in docs.items():
@@ -311,6 +340,14 @@ def recorded(d, path=None):
         file = next((f for f in (v.get("file"), a.get("file"), n.get("file")) if isinstance(f, str) and re.fullmatch(r"[\w.-]+\.md", f)), f"{k}.md")
         out[k] = {"name": k, "kind": "type", "label": label, "tag": label, "color": "--other", "form": "document", "file": file,
                   "deliverable": True, "triggers": [], "groups": [], "depends_on": [], "recorded": True}
+    fs = forms(path)
+    for k, a in arts.items():      # a type of any other form the run built (artifacts.json): its form's own file
+        if k in known or k in out or not NAME_RE.match(str(k)) or a.get("form") not in fs:
+            continue
+        label = str(a.get("name") or k.replace("_", " ").capitalize())
+        out[k] = {"name": k, "kind": "type", "label": label, "tag": label, "color": "--other", "form": a["form"],
+                  "file": str(fs[a["form"]].get("file") or "").replace("{name}", k), "deliverable": True, "triggers": [],
+                  "groups": [], "depends_on": [], "recorded": True}
     return out
 
 
@@ -318,14 +355,26 @@ def load(name, path=None):
     entry = _merged(name, path)
     fill = entry.pop("_fill")
     doc = entry["form"] == "document"
-    bad = [k for k in NEEDED + (DOC_NEEDED if doc else ()) if entry.get(k) in (None, "", [])]
+    kind = entry.get("output")
+    if kind is not None and kind not in OUTPUTS:
+        raise ValueError(f"{name}: unknown output {kind!r} (one of {', '.join(OUTPUTS)})")
+    bad = [k for k in NEEDED + (DOC_NEEDED if doc else ()) + OUTPUTS.get(kind, ()) if entry.get(k) in (None, "", [])]
     if bad:
         raise ValueError(f"{name}: missing {', '.join(bad)}")
+    folder = kind == "folder"
+    if folder and not (isinstance(entry["tools"], list) and isinstance(entry["allow"], list)
+                       and all(isinstance(x, str) and x for x in entry["tools"] + entry["allow"])):
+        raise ValueError(f"{name}: tools and allow must be lists of names")
+    if folder and not any("{target}" in str(x) for x in entry["test_runner"]):
+        raise ValueError(f"{name}: test_runner must name {{target}}, the test file")
+    if not (isinstance(entry["min_done_when"], int) and entry["min_done_when"] >= 1):
+        raise ValueError(f"{name}: min_done_when must be a whole number, at least 1")
     if entry.get("export") not in EXPORTS:
         raise ValueError(f"{name}: unknown export {entry['export']!r}")
-    # a page's builder is a role file in agents/j2 (workflow.builder); a document's is its own text ("builder")
+    # a page's builder is a role file in agents/j2 (workflow.builder); a document's or a folder's is its own text
+    own = doc or folder
     files = {"conditions": os.path.join(CONDITIONS_DIR, entry["conditions"]),
-             "builder": os.path.join(HERE if doc else AGENTS_DIR, entry.get("builder") or ""),
+             "builder": os.path.join(HERE if own else AGENTS_DIR, entry.get("builder") or ""),
              **{k: os.path.join(HERE, entry[k]) for k in TEXTS if entry.get(k)}}
     missing = [k for k, p in files.items() if not os.path.isfile(p)]
     if missing:
@@ -338,15 +387,23 @@ def load(name, path=None):
            "rates": entry["cost"]["card"], "recommended_practice": entry.get("recommended_practice") is True,
            "practice": fill("{practice}"),
            "check_types": tuple(entry["check_types"]),
-           "builder": fill(_text(entry["builder"])) if doc else entry["builder"],
-           "export": entry.get("export"), "done": entry["done"]}
+           "builder": fill(_text(entry["builder"])) if own else entry["builder"],
+           "export": entry.get("export"), "done": entry["done"], "output": kind,
+           "min_done_when": entry["min_done_when"]}
     out.update({key: fill(_text(entry[k])) for k, key in TEXTS.items() if entry.get(k)})
     # a done-when item's words -> the rate-card part it needs at least (cost.item_parts; first match wins)
     out["item_parts"] = tuple((x["part"], x["words"]) for x in entry["cost"].get("item_parts") or ())
+    out["entry_file"] = entry["file"]      # the output's main file (a page form's site/index.html; a folder's <name>/*)
     if doc:      # a page's file is the page form's own (site/index.html); a document names its own
         out["file"] = entry["file"]
-    else:      # the parts a page needs first, in order: its minimum cost (J2Run._stage_cost)
+    else:      # the parts a page or a folder needs first, in order: its minimum cost (J2Run._stage_cost)
         out["essentials"] = tuple(p for p, n in entry["cost"]["parts"].items() for _ in range(n))
+    if entry.get("tools"):      # every builder's tools and rules (types.json builder_tools, or the form's own)
+        out.update(tools=tuple(entry["tools"]), allow=tuple(entry["allow"] or ()))
+    # the checks that only advise: a failure is a warning on the result, never a gate (the form's data)
+    out["advisory_checks"] = tuple(entry.get("advisory_checks") or ())
+    if folder:      # the builder's folder in the run folder, and the runner its test is run with (data only)
+        out.update(folder=fill(entry["folder"]), test_runner=tuple(entry["test_runner"]))
     if entry.get("mock"):      # migration only: names of the mock functions in j2.py, which j2 resolves (j2.output_def)
         out["mock"] = dict(entry["mock"])
     return out
@@ -371,16 +428,24 @@ def template_for(name, label, secs):
                                       {"each": "assumptions", "line": "Assumption: {_}", "after_body": True}]} for x in secs]}
 
 
-def create_problems(name, label, secs, file, path=None, practice=False):
-    """What a proposed new type lacks ([] when it can be made): a name, a form (document), a section, a file name,
-    and recommended_practice true or false when given."""
-    out = []
+def create_problems(name, label, secs, file, path=None, practice=False, form=None):
+    """What a proposed new type lacks ([] when it can be made): a name, its form from types.json (the planner names
+    it; code never picks one), for a form with a section template a section and a .md file name, and
+    recommended_practice true or false when given."""
+    out, fs = [], forms(path)
+    if not form:
+        return [f"it needs its form: one of FORMS ({', '.join(fs)})"]
+    if form not in fs:
+        return [f"form {form!r} is not one of {', '.join(fs)}"]
     if not NAME_RE.match(str(name or "")):
         out.append(f"name {name!r} must be lower case letters, digits and _ (2 to 41 characters)")
     elif name in names(path) or name in {t.get("name") for t in _read_local()}:
         out.append(f"type {name} already exists")
     if not str(label or "").strip():
         out.append("it needs a label")
+    if not fs[form].get("template"):      # a form without sections: its file and folder come from the form
+        return out + ([f"recommended_practice {practice!r} must be true or false"]
+                      if practice is not None and not isinstance(practice, bool) else [])
     if not isinstance(secs, list) or not [x for x in secs if str(x or "").strip()]:
         out.append("it needs at least one section")
     elif len(set(map(str, secs))) != len(secs) or any(not str(x).strip() or x == DOCUMENT for x in secs):
@@ -405,17 +470,24 @@ def _write_template(p, tpl):
         f.write("\n")
 
 
-def create(name, label, secs, file=None, path=None, practice=None):
+def create(name, label, secs, file=None, path=None, practice=None, form=None):
     """Save a new document type, locally: its entry in types.local.json (the document form fills the rest) and its
     template in the local library (library/types/<name>/generic.json), so the next run reuses it; --promote moves it
     into types.json. practice: the type's recommended_practice (kept only when true). ValueError with the reasons
     when it can't be made."""
-    file = file or f"{name}.md"
-    bad = create_problems(name, label, secs, file, path, practice)
+    bad = create_problems(name, label, secs, file or f"{name}.md", path, practice, form)
     if bad:
         raise ValueError(f"new type {name}: " + "; ".join(bad))
+    if not forms(path)[form].get("template"):      # no section template: the form gives the rest
+        entry = {"name": name, "kind": "type", "label": str(label).strip(), "tag": str(label).strip(), "color": "--other",
+                 "form": form, "deliverable": True, "triggers": [], "groups": [], "depends_on": [], "made_by": "adaptation",
+                 **({"recommended_practice": True} if practice else {})}
+        _write_local(_read_local() + [entry])
+        template.cache_clear()
+        return entry
+    file = file or f"{name}.md"
     entry = {"name": name, "kind": "type", "label": str(label).strip(), "tag": str(label).strip(), "color": "--other",
-             "form": "document", "template": f"{LOCAL_LIBRARY_REL}/{name}/generic.json", "file": file, "deliverable": True,
+             "form": form, "template": f"{LOCAL_LIBRARY_REL}/{name}/generic.json", "file": file, "deliverable": True,
              "triggers": [], "groups": [], "depends_on": [], "made_by": "adaptation",
              **({"recommended_practice": True} if practice else {})}
     local, d = _read_local(), os.path.join(LOCAL_LIBRARY_DIR, name)

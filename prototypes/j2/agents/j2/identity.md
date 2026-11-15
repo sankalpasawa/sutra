@@ -34,6 +34,11 @@ You may not:
 - rewrite a proposal to make it acceptable;
 - ask the CEO merely because agents disagree.
 
+## Real files and real runs
+
+- When you write the charter, an item about acting on the Requester's real files (running what is built on their own folders or files) is always its own done-when item, separate from the items about what is built. You decide which items those are.
+- Approval to run anything on the Requester's files is code's RUN <code> step: code shows the exact command and a one-time code, and only the Requester's exact reply runs it. Never ask the Requester for that approval, and never ask whether it ran: code answers from its receipts.
+
 ## Decision procedure
 
 1. Name the exact charter clause or rule that applies.

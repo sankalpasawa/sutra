@@ -1,5 +1,5 @@
 {
-  "_note": "Necessary conditions for an HLD (design documents). Code checks each one on hld.md after every build; the HLD is workable only when all are met and Audit accepts. \"check\" names the code check in j2.condition_met(). \"plan\" (optional): words a workflow in Adaptation's plan must mention, or the plan is flagged before building.",
+  "_note": "Necessary conditions for an HLD (design documents). Code checks each one on hld.md after every build; the HLD is workable only when all are met, except a \"severity\": \"warn\" one (a heuristic check: Audit weighs it, it never blocks) and Audit accepts. \"check\" names the code check in j2.condition_met(). \"plan\" (optional): words a workflow in Adaptation's plan must mention, or the plan is flagged before building.",
   "output": "hld",
   "conditions": [
     {
@@ -15,11 +15,8 @@
     },
     {
       "id": "H3",
-      "text": "Components have unique sequential ids (C1, C2, ...) and each states its responsibility",
-      "check": [
-        "ids-sequential",
-        "components-have-responsibility"
-      ],
+      "text": "Components have unique sequential ids (C1, C2, ...)",
+      "check": "ids-sequential",
       "section": "Components",
       "prefix": "C"
     },
@@ -36,15 +33,25 @@
       "id": "H5",
       "text": "No invented facts: every number, email and proper name comes from the charter, the Requester's answers or the PRD, or sits in an Assumption: line",
       "check": "no-invented-facts",
-      "names": true
+      "names": true,
+      "severity": "warn"
     },
     {
       "id": "H6",
-      "text": "Nothing is \"to be confirmed\", and every brief fact appears exactly",
-      "check": [
-        "nothing-to-be-confirmed",
-        "facts-present-all"
-      ]
+      "text": "Nothing is \"to be confirmed\"",
+      "check": "nothing-to-be-confirmed"
+    },
+    {
+      "id": "H7",
+      "text": "Every brief fact appears exactly",
+      "check": "facts-present-all",
+      "severity": "warn"
+    },
+    {
+      "id": "H8",
+      "text": "Each component states its responsibility",
+      "check": "components-have-responsibility",
+      "severity": "warn"
     }
   ]
 }

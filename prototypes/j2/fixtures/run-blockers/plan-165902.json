@@ -1,0 +1,49 @@
+{
+ "_from": "runs/j2-20261112-165902 calls.jsonl #4 (Adaptation's first PRD plan), workflow names and fields only",
+ "workflows": [
+  {
+   "name": "Problem, Users and Goals",
+   "kind": "build",
+   "outputs": [
+    "## Problem",
+    "## Users",
+    "## Goals"
+   ],
+   "covers": [
+    1,
+    2,
+    3,
+    4,
+    5
+   ]
+  },
+  {
+   "name": "Requirements",
+   "kind": "build",
+   "outputs": [
+    "## Requirements"
+   ],
+   "covers": [
+    6,
+    7,
+    8,
+    9,
+    10,
+    11
+   ]
+  },
+  {
+   "name": "Success metrics and Out of scope",
+   "kind": "build",
+   "outputs": [
+    "## Success metrics",
+    "## Out of scope"
+   ],
+   "covers": [
+    12,
+    13,
+    14
+   ]
+  }
+ ]
+}

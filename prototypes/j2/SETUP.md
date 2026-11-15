@@ -6,19 +6,23 @@ check the site. See `README.md` for how the flow works.
 
 ## What you need
 
-| Need | Why |
-|---|---|
-| Python 3.9 or newer | Runs the server (`python3 --version` to check) |
-| **Claude Code CLI, logged in to a Claude subscription** (Pro or Max) | The normal way to run: every agent call goes through `claude -p` on your subscription, so no API key and no API bill |
-| Google Chrome (optional) | Audit screenshots the site at 360px and 1280px. Without Chrome, Audit judges from code only. Set `J2_CHROME=/path/to/chrome` if it is not in the usual place |
-| An API key (optional) | Only if you do not use the Claude subscription: `ANTHROPIC_API_KEY` or `GEMINI_API_KEY` |
+| Need | Version (tested 2026-11-13) | Why |
+|---|---|---|
+| Python | 3.9 or newer (tested 3.9.6) | Runs the server (`python3 --version`) |
+| **Claude Code CLI, logged in to a Claude subscription** (Pro or Max) | tested 2.1.323 (`claude --version`) | Every agent call goes through `claude -p` on your subscription: no API key, no API bill. Builders use its tools (files, commands, web) |
+| Node.js | 22.12 or newer (tested 26.9.0) | Installs the Claude CLI and the sandbox runtime |
+| Anthropic sandbox runtime `srt` | exactly 0.0.81 | Code reruns every builder's test in it, and runs an approved "run for real" in it. Linux also needs bubblewrap, socat and ripgrep |
+| Google Chrome (optional) | any recent | Audit screenshots a page at 360px and 1280px. Without Chrome, Audit judges from code only. Set `J2_CHROME=/path/to/chrome` if it is not in the usual place |
+| An API key (optional) | | Only without the Claude subscription: `ANTHROPIC_API_KEY` or `GEMINI_API_KEY`. Builders get tools only through the CLI |
 
 ### Install and log in to Claude Code
 
 ```bash
-npm install -g @anthropic-ai/claude-code   # or see https://docs.claude.com/en/docs/claude-code
-claude                                      # first run: log in with your Claude account, then exit
-claude -p "say hi"                          # check: should print a reply
+npm install -g @anthropic-ai/claude-code              # or see https://docs.claude.com/en/docs/claude-code
+claude                                                 # first run: log in with your Claude account, then exit
+claude -p "say hi"                                     # check: should print a reply
+npm install -g @anthropic-ai/sandbox-runtime@0.0.81    # the sandbox: J2_SANDBOX_CMD=srt (the default)
+srt --version                                          # check: 0.0.81
 ```
 
 The server removes `ANTHROPIC_API_KEY` from the environment it gives `claude -p`, so subscription runs never bill
@@ -27,13 +31,37 @@ the API, even if the key is set.
 ## One-time setup
 
 ```bash
-git clone https://github.com/<your-github-username>/J2_Prototype.git
-cd J2_Prototype
+git clone https://github.com/sankalpasawa/sutra.git
+cd sutra/prototypes/j2
 python3 -m venv .venv
 source .venv/bin/activate
 pip install -r requirements.txt
 cp .env.example .env        # optional: fill in only what you use. .env is never committed
+python3 j2_flow_test.py --fast --skip map_focus,graph_map,left_bar_toggle,artifacts_groups,warm_ui,map_motion,sutra_library,map_tab,left_bar,map_shapes
 ```
+
+The last line checks the clone offline (mock agents, no cost, about 5 minutes). The skipped tests read saved runs
+in `runs/`, which a fresh clone does not have (checked from a fresh clone, 2026-11-13). Once you have saved runs of
+your own, drop `map_tab,left_bar,map_shapes` from the list.
+
+### Every line of `.env.example`
+
+| Line | Default when unset | What it does |
+|---|---|---|
+| `GEMINI_API_KEY=` | unset | A Gemini key, only without the Claude subscription |
+| `ANTHROPIC_API_KEY=` | unset | An Anthropic API key, only without the subscription. `claude -p` never sees it, so subscription runs never bill the API |
+| `STUDIO_PROVIDER=` | unset | `claude-cli` runs on your Claude subscription (recommended) |
+| `J2_OVERRIDE_KEY=` | unset | Owner override: a message starting with this key, then `budget +N`, `ship` or `drop <item>`, is applied by code. Pick a long random value. Never shown to agents; redacted in logs and the page |
+| `J2_BUILDER_TIMEOUT=600` | 600 | Seconds one builder call may take before it is stopped and retried once (`0` = no limit). The sandboxed test rerun and a run for real get the same limit |
+| `# J2_DELAY=2` | 0 | Seconds between AI calls. `2` on a free-tier API key |
+| `# J2_AGENT_TOOLS=1` | on | Builders get Claude's built-in tools in the run's output folder. `0` turns them off (the old section path, used by most offline tests) |
+| `# J2_AGENT_USD=2.00` | 2.00 | Dollars one builder call may spend (`claude -p --max-budget-usd`, checked after each turn, so one turn may go over) |
+| `# J2_AGENT_MAX_FILES=200` | 200 | Most files a builder's folder may hold after a call |
+| `# J2_AGENT_MAX_BYTES=5000000` | 5000000 | Most bytes a builder's folder may hold after a call |
+| `# J2_TOOL_LOG_CHARS=2000` | 2000 | Longest string kept as text in a call's tool log; a longer one is kept as its length and sha256 |
+| `# J2_SANDBOX_CMD=srt` | `srt` | The sandbox command. Code reruns a builder's test in it and runs an approved real run in it. J2 never runs a builder's code any other way |
+
+The commented lines show the default; uncomment one only to change it.
 
 ## Run it
 
@@ -133,6 +161,26 @@ a real email is still never sent without you. "Detailed view" opens everything b
 rail on the left switches between Map, Chat (the Simple view) and Internals (the other tabs, including Board when the board is
 on). On a phone the rail runs along the bottom. Light by default; the moon button switches to dark.
 
+### Builder tools and running for real
+
+Builders work with tools by default (`J2_AGENT_TOOLS=0` turns them off): each writes and edits files in the run's
+output folder, runs commands there and can search and fetch the web. Its tools and permission rules are in
+`artifacts/types.json` (`builder_tools`); the limits above have defaults in code. Check it live with
+`python3 tools/agent_tools_smoke.py` (about $0.10).
+
+**The sandbox is the security boundary, not the allow-list.** The Claude CLI's sandbox keeps a builder's commands
+inside its folder: reads of your home folder (the repo's `.env`, `~/.ssh`, other runs) are refused, writes go only to
+the folder. The network is open to builders. Code reruns a builder's test in `srt` on a copy of the folder, with no
+network. A test runner installed under your home folder (pyenv, a virtualenv) can't be read inside the sandbox: use
+one on the system path. Windows support in `srt` is alpha; J2's builder tools are untested there.
+
+**Running a build for real on your files.** When a brief asks for a script to be run on your own folder (for example
+"sort the files in /path/to/folder, and run it"), the plan names the exact command and the folder; the folder must
+be written out in full in the brief or your answers. When the script is done and its test passes, code first runs it
+on a copy of your folder (the dry run) and shows what it would create, change or delete. Then it asks you to reply
+exactly `RUN <code>`. Only that reply runs it, once, in the sandbox, with no network, writing only that folder.
+**Decide for me** never gives this reply. Every answer leaves a receipt in the run's `receipts.jsonl`.
+
 ## Settings
 
 Set any of these before `python3 j2_server.py`, like the examples above.
@@ -147,7 +195,7 @@ Set any of these before `python3 j2_server.py`, like the examples above.
 | `J2_BUDGET_CAP` | 2 x budget | Most your approvals can raise the budget to |
 | `J2_MEMORY` | 1 | `0` turns lessons and playbooks off |
 | `J2_REALIZATION` | 1 | On by default: Adaptation's first plan of a website run goes through realization and certainty (the planning part of `agents/j2/adaptation.md`), a separate judge scores every workflow before the build, and planning files are written under `artifacts/` for the build to read. Writes `realization.json` and `realization.md` in the run folder. `0` turns it off (the classic path) |
-| `J2_DELAY` | 2 | Seconds between AI calls |
+| `J2_DELAY` | 0 | Seconds between AI calls |
 | `J2_MAX_CYCLES` | 6 | Plan, build, audit cycles before Identity asks you what to do |
 | `J2_MAX_TURNS` | 30 | Agent turns per cycle |
 | `J2_LIMIT_ADD` | 30 | Budget "keep working" adds when the budget runs out |
@@ -166,14 +214,19 @@ Set any of these before `python3 j2_server.py`, like the examples above.
 | `J2_MILESTONE_EMAILS` | off | `1` writes a milestone email per goal reached (dry run) |
 | `J2_SEND_MODE` | `dry-run` | `dry-run` or `mock` (tests). Live sending is not built |
 | `J2_TEST_EMAIL` | unset | The only address a send may go to |
-| `J2_TEST_SLACK_TARGET` | unset
- | The only Slack target a send may go to |
+| `J2_TEST_SLACK_TARGET` | unset | The only Slack target a send may go to |
+| `J2_AGENT_TOOLS` | on | `0` turns builder tools off (see "Builder tools") |
+| `J2_AGENT_USD`, `J2_AGENT_MAX_FILES`, `J2_AGENT_MAX_BYTES`, `J2_TOOL_LOG_CHARS`, `J2_SANDBOX_CMD`, `J2_BUILDER_TIMEOUT` | see the `.env.example` table | Builder limits and the sandbox command |
+| `J2_DECIDE_FOR_ME` | off | `1` starts runs with Decide for me on (it never approves a send or a real run) |
 
 ## Checks
 
 ```bash
-python3 j2_flow_test.py --fast             # offline flow test in mock mode, no browser steps. About 35 seconds
-python3 j2_flow_test.py --fast --browser   # adds the tests that drive the page in Chrome. About 8 to 9 minutes
+python3 j2_flow_test.py --fast             # offline flow test in mock mode, no browser steps. About 7 minutes
+python3 j2_flow_test.py --fast --browser   # adds the tests that drive the page in Chrome. About 25 minutes
+python3 tools/release_check.py --mock      # the four release briefs, offline. Under a minute
+python3 tools/release_check.py             # the four release briefs live, each in its own process ($6 to $10;
+                                           # --cap 60 keeps the total of all live checks under $60)
 python3 j2_flow_test.py                    # the full test, both J2_FIXES modes. Longest
 python3 j2_check.py site.html              # render check on any HTML page
 python3 realization_test.py                # realization planner, judge and J2 runs with J2_REALIZATION, offline

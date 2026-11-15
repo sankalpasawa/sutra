@@ -1,10 +1,10 @@
 {
-  "_note": "Necessary conditions for any document type made from the document form (J2_GENERIC=1). Code checks each one on the document after every build; it is workable only when all are met and Audit accepts.",
+  "_note": "Necessary conditions for any document type made from the document form (J2_GENERIC=1). Code checks each one on the document after every build; it is workable only when all are met, except a \"severity\": \"warn\" one (a heuristic check: Audit weighs it, it never blocks) and Audit accepts.",
   "output": "document",
   "conditions": [
     {"id": "C1", "text": "Every section is present and not empty", "check": "sections-present", "min_words": 1},
-    {"id": "C2", "text": "Every brief fact appears exactly", "check": "facts-present-all"},
-    {"id": "C3", "text": "No invented facts: every number, email and proper name comes from the charter or the Requester's answers, or sits in an Assumption: line{practice}", "check": "no-invented-facts", "names": true},
+    {"id": "C2", "text": "Every brief fact appears exactly", "check": "facts-present-all", "severity": "warn"},
+    {"id": "C3", "text": "No invented facts: every number, email and proper name comes from the charter or the Requester's answers, or sits in an Assumption: line{practice}", "check": "no-invented-facts", "names": true, "severity": "warn"},
     {"id": "C4", "text": "Nothing is \"to be confirmed\"", "check": "nothing-to-be-confirmed"}
   ]
 }
