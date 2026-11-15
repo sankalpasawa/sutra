@@ -255,8 +255,8 @@ body.home .railhead { font-family: var(--s-body); }
 .orgview { display: none; }
 :root[data-ws=org] body.home .orgview { display: block; flex: none; padding: 28px 28px 4px; color: var(--s-ink); font-family: var(--s-body); }
 :root[data-ws=org] body.home #dview, :root[data-ws=org] body.home .schat, :root[data-ws=org] body.home .shead,
-:root[data-ws=org] body.home #needs, :root[data-ws=org] body.home .stoggle { display: none !important; }
-:root[data-ws=org] body.home .smain { grid-template-columns: minmax(0, 1fr); grid-template-rows: minmax(0, 1fr); }
+:root[data-ws=org] body.home #needs, :root[data-ws=org] body.home #sview main > [role=tablist] { display: none !important; }
+:root[data-ws=org] body.home #sview > main { grid-template-columns: minmax(0, 1fr); grid-template-rows: minmax(0, 1fr); }
 :root[data-ws=org] body.home .sright { display: flex !important; grid-row: 1; overflow: auto; }
 :root[data-ws=org] body.home .sright .pane { flex: none; overflow: visible; padding: 8px 28px 28px; }
 .orgtitle { margin: 0 0 4px; font: 700 30px/1.15 var(--s-display); letter-spacing: -.01em; color: var(--s-ink); }

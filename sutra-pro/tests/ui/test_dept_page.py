@@ -955,7 +955,7 @@ PILL_LOOKS = r"""(() => {
 
 @browser_only
 def test_the_attention_pill_is_drawn_by_its_own_rules_and_an_atoms_status_pill_by_the_atoms(finished_team):
-    """Its own rules: a flex link with 13.5px type, 14px at the sides, 99px corners and the accent border; the 6px above and below that a corner chip has are kept where it sits in
+    """Its own rules: a flex link with 13.5px type, 14px at the sides, 99px corners and the navy border; the 6px above and below that a corner chip has are kept where it sits in
     the bottom corner (the Detailed view from 901 px, the console) and given up where it rides in a row at the top (the Simple view's strip, a phone or tablet width), because
     that row is 27px tall. The status pill of an atom card keeps its own box: inline, 9px at the sides, 12.5px type, 10px corners and the colour of its state."""
     team = finished_team
@@ -966,7 +966,7 @@ def test_the_attention_pill_is_drawn_by_its_own_rules_and_an_atoms_status_pill_b
         team.b.wait_for("!!document.querySelector('#attnpill a.apill')")
         seen = team.js(PILL_LOOKS)
         where = f"{view} at {width}"
-        assert seen["pill"] == {"display": "inline-flex", "padding": f"{rows} 14px {rows} 14px", "size": "13.5px", "radius": "99px", "border": seen["accent"]}, (where, seen)
+        assert seen["pill"] == {"display": "inline-flex", "padding": f"{rows} 14px {rows} 14px", "size": "13.5px", "radius": "99px", "border": "rgb(61, 90, 128)"}, (where, seen)    # the sidebar's navy (project_rail.css), not J2's accent
         assert seen["atom"] == {"display": "inline-block", "padding": "0px 9px 0px 9px", "size": "12.5px", "radius": "10px", "border": seen["ok"]}, (where, seen)
     assert team.b.console_errors == [] and team.b.failed_requests == []
 

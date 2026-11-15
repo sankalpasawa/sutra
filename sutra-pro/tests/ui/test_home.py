@@ -171,7 +171,8 @@ def test_home_reads_what_the_design_says_on_load_and_nothing_else(browser, fake)
               "/api/health", "/api/heads-up",
               "/api/chats/cs_org/providers",                   # the model pill of the org chat (ABS-9)
               "/api/limits", "/api/ops/attention",             # the limit line of the strip and the quiet hours (gap routines-limits)
-              "/api/ops/welcome"}                              # whether the first-run card is due (gap welcome-settings)
+              "/api/ops/welcome",                              # whether the first-run card is due (gap welcome-settings)
+              "/api/sections"}                                 # the sidebar's own sections (project_rail.js, SectionsStore)
     assert {p for p, _ in paths if p != "/api/events"} == wanted
     graph = [r for r in fake.log("/api/graph") if r["path"] == "/api/graph"][0]
     assert "level=chart" in graph["query"]
@@ -462,7 +463,7 @@ def test_the_rail_lists_the_teams_with_their_status_and_the_panes_switch(browser
     load(browser, fake, stage="full")
     assert texts(browser, "#railteams .railteam .rtname") == ["Web", "Content"]
     assert texts(browser, "#railteams .railteam .rtstat") == ["waiting on you", "idle"]
-    assert attrs(browser, "#railteams .railteam", "href") == ["/d/web/", "/d/content/"]
+    assert attrs(browser, "#railteams .railteam", "href") == ["/d/web/?view=detail", "/d/content/?view=detail"]      # a team's agent view
     assert shown(browser, "#pane-graph") and not shown(browser, "#pane-chart") and not shown(browser, "#pane-settings")
     browser.click('#rail [data-pane="chart"]')
     assert shown(browser, "#pane-chart") and not shown(browser, "#pane-graph")
