@@ -6,15 +6,14 @@
    The search box filters the list on the full text (server side) and marks the words in the open call. While the run is going, the list grows on
    its own and the agents writing right now are shown on top with their text so far (GET /api/agent-live).
 
-   Where it shows: a "Raw AI chat" button on the team page when the viewer level is Debug (localStorage "sutra:level" = "debug"), and always
-   full screen at /d/<team>/raw[?run=<id>] (that path serves the team page; this script opens the viewer there).
+   Where it shows: full screen at /d/<team>/raw[?run=<id>] (that path serves the team page; this script opens the viewer there). The way in is
+   "Raw AI chat" under Settings & logs (home.js openRawChat); closing the viewer goes back there.
 
    A classic script with ONE global, RawChat; in node it is module.exports (the pure parts are tested) and does not start by itself.
    dept_ext.js adds it to the team page. */
 (function (root) {
   "use strict";
 
-  const LEVEL_KEY = "sutra:level";
   const POLL_MS = 2000;
   const PAGE = 300;
   const RAW_PATH = /^\/d\/[^/]+\/raw\/?$/;
@@ -26,14 +25,6 @@
   const esc = v => str(v).replace(/[&<>"']/g, c => ({"&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;"}[c]));
 
   /* ---------------------------------------------------------------- pure parts */
-  function isDebug(storage) {
-    try {
-      return (storage || root.localStorage).getItem(LEVEL_KEY) === "debug";
-    } catch (e) {
-      return false;
-    }
-  }
-
   const onRawPath = pathname => RAW_PATH.test(str(pathname));
 
   // Who made a call: a person of the studio for the agents that have one, "Builder W-n" for a workflow builder, else the function's own name.
@@ -364,7 +355,7 @@
     S.full = isObj(opts) && opts.full === true;
     S.el.classList.toggle("rc-full", S.full);
     const closeBtn = $("#rc-close");
-    if (closeBtn) closeBtn.textContent = S.full ? "Back to team" : "Close";
+    if (closeBtn) closeBtn.textContent = S.full ? "Back to Settings" : "Close";
     S.el.hidden = false;
     d.body.classList.add("rc-open");
     paintChat();
@@ -375,7 +366,7 @@
 
   function close() {
     if (S.full) {
-      root.location.href = "./" + (S.run ? "?run=" + encodeURIComponent(S.run) : "");
+      root.location.href = "/?pane=settings";
       return;
     }
     if (S.el) S.el.hidden = true;
@@ -385,31 +376,9 @@
     if (d && d.body) d.body.classList.remove("rc-open");
   }
 
-  // The entry button: shown at the Debug level only, kept in step when the level changes (another tab, or the level switch's event).
-  function button() {
-    const d = doc();
-    if (!d || !d.body) return null;
-    let b = d.getElementById("rawchat-open");
-    if (!b) {
-      b = d.createElement("button");
-      b.type = "button";
-      b.id = "rawchat-open";
-      b.className = "rc-open-btn";
-      b.textContent = "Raw AI chat";
-      b.title = "See the exact text of every AI call of this run";
-      b.addEventListener("click", () => open({}));
-      d.body.appendChild(b);
-    }
-    b.hidden = !isDebug();
-    return b;
-  }
-
   function init() {
     if (S.started) return false;
     S.started = true;
-    button();
-    root.addEventListener("storage", e => { if (!e || e.key === LEVEL_KEY) button(); });
-    if (doc() && doc().addEventListener) doc().addEventListener("sutra:level", button);
     const loc = root.location || {};
     if (onRawPath(loc.pathname)) {
       let run = "";
@@ -424,7 +393,7 @@
   }
 
   const RawChat = {init, open, close, state: () => ({open: !!(S.el && !S.el.hidden), run: S.run, calls: S.calls.length, sel: S.sel, live: S.live}),
-    helpers: {isDebug, onRawPath, personOf, fmtTokens, fmtUsd, rowHtml, liveRowHtml, transcriptHtml, markHtml, countOf, esc}};
+    helpers: {onRawPath, personOf, fmtTokens, fmtUsd, rowHtml, liveRowHtml, transcriptHtml, markHtml, countOf, esc}};
 
   if (typeof module === "object" && module !== null && module.exports) {
     module.exports = RawChat;

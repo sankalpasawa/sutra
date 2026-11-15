@@ -354,52 +354,21 @@
     }
   }
 
-  /* ---------------------------------------------------------------- the owner's level (the one-front brief) */
-  // How much the owner sees, one choice for Home and every team page, kept in this browser (localStorage sutra:level):
-  //   simple   what needs you, what runs, what finished; a team page shows only its studio (no Detailed view)
-  //   manager  adds the org chart, the workflow graph, each team's chat and the Detailed view of a team page
-  //   debug    adds Settings, Usage and log (/console), the whole Heads up lane and the Raw AI chat entry
-  // <html data-level> carries it before the first paint, so a style sheet can hide what a level does not show. A change in another tab follows.
-  const LEVEL_KEY = "sutra:level";
-  const LEVELS = ["simple", "manager", "debug"];
-  const levelNorm = v => (LEVELS.includes(v) ? v : "simple");
-  function level() {
-    try { return levelNorm(root.localStorage.getItem(LEVEL_KEY)); } catch (e) { return "simple"; }
-  }
-  const levelAt = min => LEVELS.indexOf(level()) >= LEVELS.indexOf(levelNorm(min));
-  function applyLevel() {
-    const now = level();
-    try { root.document.documentElement.dataset.level = now; } catch (e) { /* no document (node, a stub) */ }
-    return now;
-  }
-  function announceLevel(now) {
-    try { root.document.dispatchEvent(new root.CustomEvent("sutra:level", {detail: {level: now}})); } catch (e) { /* no document or no CustomEvent */ }
-  }
-  function setLevel(v) {
-    const now = levelNorm(v);
-    try { root.localStorage.setItem(LEVEL_KEY, now); } catch (e) { /* storage may be blocked: the level holds for this page only */ }
-    try { root.document.documentElement.dataset.level = now; } catch (e) { /* no document */ }
-    announceLevel(now);
-    return now;
-  }
-  // A team page at Simple opens in its studio: J2's own first-paint choice reads j2view and ?view, so both say simple before its script runs.
-  function simpleTeamPage() {
-    if (boot.page !== "dept" || level() !== "simple" || onLibrary()) return;      // the template library is a Detailed page of its own
-    try { root.localStorage.setItem("j2view", "simple"); } catch (e) { /* storage may be blocked */ }
+  /* ---------------------------------------------------------------- a project opens in its studio */
+  // J2 remembers the last view (j2view) for every team at once, so a plain /d/<team>/ link could open in the agent view. A team page with no ?view=,
+  // no ?tab= and no #hash is its studio: j2view says simple before J2's script reads it. ?view=detail (Agent Org's links) and a deep link are kept.
+  function studioByDefault() {
+    if (boot.page !== "dept" || onLibrary()) return;      // the template library is a detailed page of its own
     try {
       const q = new root.URLSearchParams(root.location.search);
-      if (q.has("view") && q.get("view") !== "simple") {
-        q.set("view", "simple");
-        root.history.replaceState(root.history.state, "", root.location.pathname + "?" + q.toString() + (root.location.hash || ""));
-      }
-    } catch (e) { /* no location or history (node, a stub) */ }
+      if (q.has("view") || q.has("tab") || (root.location.hash && root.location.hash.length > 1)) return;
+    } catch (e) { return; }                                // no location (node, a stub)
+    try { root.localStorage.setItem("j2view", "simple"); } catch (e) { /* storage may be blocked */ }
   }
-  applyLevel();
-  simpleTeamPage();
-  try { root.addEventListener("storage", e => { if (e && e.key === LEVEL_KEY) announceLevel(applyLevel()); }); } catch (e) { /* no window */ }
+  studioByDefault();
 
   Object.assign(ctx, {run: run, esc: esc, paint: paint, tab: tab, api: api, installFetch: installFetch, withDept: withDept,
-    onLibrary: onLibrary, J2_PATHS: J2_PATHS, ApiError: ApiError, LEVELS: LEVELS, LEVEL_KEY: LEVEL_KEY, level: level, levelAt: levelAt, setLevel: setLevel});
+    onLibrary: onLibrary, J2_PATHS: J2_PATHS, ApiError: ApiError});
 
   // A team page wraps J2's fetch calls; Home has none.
   if (boot.page === "dept" && typeof root.fetch === "function") installFetch(root);

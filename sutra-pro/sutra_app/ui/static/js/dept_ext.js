@@ -22,9 +22,9 @@
                           not edited for it. It also adds chart_notes.js, the Chart notes under the Org chart tab's log: gap package chart-insight.)
      DeptExt.drawers()    mounts #nodepanel once. The panel and J2's Agent drawer exclude each other in both directions (the panel closes the Agent
                           drawer when it opens and closes itself when the Agent drawer opens: node_panel.js); mounting it is what makes that true.
-     (init also adds project_rail.js and its sheet: the project sidebar of every page, mounted once the script has loaded; and the view switch,
-                          Simple / Manager / Debug, at the right of the studio's top bar, floating at the top right in the Detailed view. Home has
-                          no switch: the level only changes what a project's page shows.)
+     (init also adds project_rail.js and its sheet: the sidebar of every page, mounted once the script has loaded; and ONE button, #agentview:
+                          "Agent view" in the studio (it opens J2's detailed view, the team's agents at work) and "Simple view" there (back to the
+                          studio). It sits at the right of the studio's top bar, and at the foot of the sidebar in the agent view.)
      DeptExt.state()      {started, tab, live, mounted: {graph, orgchart}, fetches: {graph, chart}, panel}
      DeptExt.helpers      pure parts: touchesDept, bannerText, titleText.
 
@@ -90,7 +90,6 @@
     tab: "",
     live: "offline",
     stream: null,
-    levelWatch: null,          // keeps a Simple-level page in its studio (levels())
     panel: null,
     graph: null,           // the GraphView handle
     chart: null,           // the OrgChartView handle
@@ -205,7 +204,7 @@
     return true;
   }
 
-  /* ---- the Raw AI chat debugger (raw_chat.js): its "Raw AI chat" button shows at the Debug level, and /d/{team}/raw opens it full screen;
+  /* ---- the Raw AI chat debugger (raw_chat.js): /d/{team}/raw opens it full screen (Settings & logs links there);
      J2's page is not edited, so its script is added from here */
   function rawChat() {
     const d = doc();
@@ -369,31 +368,6 @@
     return false;
   }
 
-  /* ---- the owner's level (SutraCtx.level, the one-front brief): at Simple a team page is its studio only. sutra-panel.css hides the ways into the
-     Detailed view (keyed on <html data-level>); this keeps the page in the Simple view when something else (a ?tab= link, J2's own code) asks for
-     the Detailed one. The template library is a Detailed page of its own and is left alone. Manager and Debug change nothing here. */
-  function levelView() {
-    const c = ctx();
-    const d = doc();
-    if (!c || typeof c.level !== "function" || c.level() !== "simple" || !d || !d.body) return false;
-    if (typeof c.onLibrary === "function" && c.onLibrary()) return false;
-    if (d.body.classList.contains("simple") || typeof root.setView !== "function") return false;
-    safely("setView", () => root.setView("simple", false));
-    return true;
-  }
-
-  function levels() {
-    const d = doc();
-    levelView();
-    if (!d || typeof d.addEventListener !== "function") return false;
-    d.addEventListener("sutra:level", levelView);
-    if (typeof root.MutationObserver === "function" && d.body) {
-      S.levelWatch = new root.MutationObserver(() => levelView());
-      S.levelWatch.observe(d.body, {attributes: true, attributeFilter: ["class"]});
-    }
-    return true;
-  }
-
   /* ---- the project sidebar (project_rail.js): every project, what needs the owner, New project and Settings & logs. J2's page is not edited:
      its script is added from here and mounts itself into the page once it has loaded. */
   function rail() {
@@ -412,78 +386,38 @@
     return true;
   }
 
-  /* ---- the view switch (Simple / Manager / Debug): one small menu at the right of the studio's top bar. It only changes what a project page
-     shows; Home has none. Manager and Debug also list the ways into what they add. */
-  const VIEWS = [
-    {level: "simple", label: "Simple", hint: "Just your project"},
-    {level: "manager", label: "Manager", hint: "Adds the Detailed view, team chats and the org map"},
-    {level: "debug", label: "Debug", hint: "Adds the raw AI chat, usage and log"},
-  ];
-
-  function switchMenuHtml(level) {
-    const at = min => VIEWS.findIndex(v => v.level === level) >= VIEWS.findIndex(v => v.level === min);
-    const opts = VIEWS.map(v => '<button type="button" class="pv-opt" role="menuitemradio" data-level="' + v.level + '" aria-checked="' + (v.level === level) + '"><b>' +
-      v.label + "</b><small>" + v.hint + "</small></button>").join("");
-    const extra = [];
-    if (at("manager")) {
-      extra.push('<button type="button" class="pv-link" role="menuitem" data-go="detail">Detailed view</button>',
-        '<a class="pv-link" role="menuitem" href="/?pane=chat">Team chats</a>', '<a class="pv-link" role="menuitem" href="/?pane=chart">Org chart</a>',
-        '<a class="pv-link" role="menuitem" href="/?pane=graph">Workflow graph</a>');
-    }
-    if (at("debug")) {
-      extra.push('<button type="button" class="pv-link" role="menuitem" data-go="raw">Raw AI chat</button>', '<a class="pv-link" role="menuitem" href="/console">Usage and log</a>');
-    }
-    return opts + (extra.length ? '<div class="pv-sep" role="separator"></div><div class="pv-extra">' + extra.join("") + "</div>" : "");
-  }
+  /* ---- the one view button: "Agent view" in the studio, "Simple view" in J2's detailed view. J2's own setView does the switching. */
+  const viewLabel = studio => (studio ? "Agent view" : "Simple view");
 
   function viewSwitch() {
     const d = doc();
-    const c = ctx();
-    if (!d || !d.body || !c || typeof c.level !== "function" || byId("pviewsw")) return null;
-    const box = d.createElement("div");
-    box.className = "pv";
-    box.id = "pviewsw";
-    box.innerHTML = '<button type="button" class="pv-btn" id="pv-btn" aria-haspopup="menu" aria-expanded="false" aria-controls="pv-menu"></button>' +
-      '<div class="pv-menu" id="pv-menu" role="menu" aria-label="How much to show" hidden></div>';
-    const btn = box.querySelector("#pv-btn");
-    const menu = box.querySelector("#pv-menu");
+    if (!d || !d.body || byId("agentview")) return null;
+    const btn = d.createElement("button");
+    btn.type = "button";
+    btn.className = "pv-btn";
+    btn.id = "agentview";
     const paint = () => {
-      const level = c.level();
-      const v = VIEWS.find(x => x.level === level) || VIEWS[0];
-      btn.innerHTML = v.label + ' <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" aria-hidden="true"><path d="M6 9l6 6 6-6"/></svg>';
-      btn.setAttribute("aria-label", "View: " + v.label + ". Change how much this project shows");
-      menu.innerHTML = switchMenuHtml(level);
+      const studio = d.body.classList.contains("simple");
+      const label = viewLabel(studio);
+      if (btn.textContent !== label) btn.textContent = label;
+      btn.title = studio ? "See the team's agents at work" : "Back to the simple view of your project";
     };
-    const show = open => {
-      menu.hidden = !open;
-      // a narrow bar wraps the switch to its left end: the menu then opens to the right, never under the sidebar
-      menu.classList.remove("pv-left");
-      if (open && typeof btn.getBoundingClientRect === "function" && btn.getBoundingClientRect().right < 300 + (d.body.classList.contains("has-prail") ? 260 : 0)) menu.classList.add("pv-left");
-      btn.setAttribute("aria-expanded", String(open));
-      if (open) { const on = menu.querySelector('[aria-checked="true"]'); if (on) on.focus(); }
-    };
-    btn.addEventListener("click", () => show(menu.hidden));
-    menu.addEventListener("click", e => {
-      const opt = e.target.closest(".pv-opt[data-level]");          // <html> carries data-level too
-      const go = e.target.closest(".pv-link[data-go]");
-      if (opt || go) e.stopPropagation();           // the studio's own click handlers (it sits in #sview) never see the menu's clicks
-      if (opt) { c.setLevel(opt.dataset.level); show(false); btn.focus(); return; }
-      // the next turn: the switch moves out of the studio's bar when the view changes, so the click has to be over first
-      if (go && go.dataset.go === "detail") { show(false); root.setTimeout(() => { if (typeof root.setView === "function") safely("setView", () => root.setView("detail", true)); }, 0); }
-      if (go && go.dataset.go === "raw") { show(false); if (root.RawChat) safely("RawChat.open", () => root.RawChat.open({})); }
+    btn.addEventListener("click", e => {
+      e.stopPropagation();                         // the studio's own click handlers (the button sits in #sview) never see it
+      const to = d.body.classList.contains("simple") ? "detail" : "simple";
+      // the next turn: the button moves out of the studio's bar when the view changes, so the click has to be over first
+      root.setTimeout(() => { if (typeof root.setView === "function") safely("setView", () => root.setView(to, true)); }, 0);
     });
-    d.addEventListener("click", e => { if (!menu.hidden && !box.contains(e.target)) show(false); });
-    d.addEventListener("keydown", e => { if (e.key === "Escape" && !menu.hidden) { show(false); btn.focus(); } });
-    d.addEventListener("sutra:level", paint);
+    if (typeof root.MutationObserver === "function") new root.MutationObserver(paint).observe(d.body, {attributes: true, attributeFilter: ["class"]});
     paint();
-    place(box);
-    return box;
+    place(btn);
+    return btn;
   }
 
   // In the studio the switch sits at the right of its top bar (before the theme button); in the Detailed view it floats at the top right.
   function place(box) {
     const d = doc();
-    const el = box || byId("pviewsw");
+    const el = box || byId("agentview");
     if (!d || !d.body || !el) return;
     const bar = d.querySelector("#sview .stop");
     const studio = d.body.classList.contains("simple") && bar;
@@ -505,7 +439,6 @@
   function init() {
     if (S.started) return false;
     S.started = true;
-    levels();
     // the template library is a Detailed page of its own (a tool, not a project view): it keeps J2's full width, with no sidebar and no switch
     const library = !!(ctx() && typeof ctx().onLibrary === "function" && ctx().onLibrary());
     if (!library) rail();
@@ -548,9 +481,9 @@
   }
 
   const DeptExt = {
-    init, chip, title, onTab, events, drawers, destroy, levelView,
+    init, chip, title, onTab, events, drawers, destroy,
     state: () => ({started: S.started, tab: S.tab, live: S.live, mounted: mounted(), fetches: Object.assign({}, S.fetches), panel: S.panel !== null, archived: S.archived}),
-    helpers: {touchesDept, bannerText, titleText, switchMenuHtml},
+    helpers: {touchesDept, bannerText, titleText, viewLabel},
   };
 
   if (typeof module === "object" && module !== null && module.exports) {

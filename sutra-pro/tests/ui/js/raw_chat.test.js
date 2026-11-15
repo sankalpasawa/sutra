@@ -1,5 +1,5 @@
 "use strict";
-// RawChat (sutra_app/ui/static/js/raw_chat.js): the Raw AI chat debugger's pure parts: the Debug level gate, the /raw path, who made a call,
+// RawChat (sutra_app/ui/static/js/raw_chat.js): the Raw AI chat debugger's pure parts: the /raw path, who made a call,
 // the list row and the transcript (every word of the wire escaped, the search marked, SYSTEM folded unless the search is in it).
 // Run with: node --test tests/ui/js/raw_chat.test.js
 const test = require("node:test");
@@ -8,15 +8,6 @@ const path = require("node:path");
 
 const RawChat = require(path.resolve(__dirname, "../../../sutra_app/ui/static/js/raw_chat.js"));
 const H = RawChat.helpers;
-
-const store = v => ({getItem: k => (k === "sutra:level" ? v : null)});
-
-test("the button belongs to the Debug level only, and a storage that throws reads as not debug", () => {
-  assert.equal(H.isDebug(store("debug")), true);
-  assert.equal(H.isDebug(store("manager")), false);
-  assert.equal(H.isDebug(store(null)), false);
-  assert.equal(H.isDebug({getItem: () => { throw new Error("blocked"); }}), false);
-});
 
 test("the full-screen path is /d/<team>/raw and nothing else", () => {
   assert.equal(H.onRawPath("/d/web/raw"), true);

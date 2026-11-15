@@ -77,12 +77,8 @@ test("bad rows are skipped: no id, an id that is not one, not an object", () => 
   assert.deepEqual(m.needs.map(n => n.name), ["Your organisation"]);           // a need with no usable project is an org-level one
 });
 
-test("the view switch of a project: Simple lists only the three views; Manager adds the Detailed view and the org map; Debug adds the raw AI chat and the log", () => {
-  const menu = DeptExt.helpers.switchMenuHtml;
-  const links = html => (html.match(/class="pv-link"[^>]*>([^<]+)</g) || []).map(s => s.slice(s.lastIndexOf(">") + 1, -1));
-  assert.deepEqual(links(menu("simple")), []);
-  assert.deepEqual(links(menu("manager")), ["Detailed view", "Team chats", "Org chart", "Workflow graph"]);
-  assert.deepEqual(links(menu("debug")), ["Detailed view", "Team chats", "Org chart", "Workflow graph", "Raw AI chat", "Usage and log"]);
-  assert.match(menu("manager"), /data-level="manager" aria-checked="true"/);
-  assert.equal((menu("simple").match(/role="menuitemradio"/g) || []).length, 3);
+test("the one view button of a project reads Agent view in the studio and Simple view in the agent view", () => {
+  assert.equal(DeptExt.helpers.viewLabel(true), "Agent view");
+  assert.equal(DeptExt.helpers.viewLabel(false), "Simple view");
+  assert.equal(DeptExt.helpers.switchMenuHtml, undefined);
 });
