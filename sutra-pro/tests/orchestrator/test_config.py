@@ -1,6 +1,7 @@
 """Settings: env parsing, defaults, the loopback rule, the token length, the override key and its secrecy (design 6.4, S3-web-02,
 S1-contracts-14, S1-contracts-19)."""
 import json
+import os
 from pathlib import Path
 
 import pytest
@@ -31,7 +32,7 @@ def test_every_variable_is_read():
               "SUTRA_MAX_RUNS": "2", "SUTRA_MAX_LIVE": "5", "SUTRA_WATCH_MS": "100", "SUTRA_LIVE": "true"})
     assert (s.port, s.host, s.token, s.connector, s.engine, s.offline) == (9001, "localhost", TOKEN, "stub", "fake", True)
     assert (s.chat_timeout, s.chat_attempts, s.max_runs, s.max_live, s.watch_ms, s.live) == (30.5, 2, 2, 5, 100, True)
-    assert s.data_dir == Path("/tmp/sutra-config-test") and s.env_file == Path("/nonexistent/.env")
+    assert s.data_dir == Path(os.path.abspath("/tmp/sutra-config-test")) and s.env_file == Path("/nonexistent/.env")
 
 
 def test_every_env_name_is_a_field():
