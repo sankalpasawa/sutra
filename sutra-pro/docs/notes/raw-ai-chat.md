@@ -9,7 +9,7 @@ What it shows, where it lives, and the one thing it does not show yet.
 | Reader | `sutra_app/engine/rawchat.py` | Reads a run's `calls.jsonl` as list rows (metadata and 160-character previews, no full text) and `agent_live.json` as the live tail. |
 | Routes | `sutra_app/engine/api/rawchat.py` | `GET /api/calls?dept=&run=&offset=&limit=&q=` (at most 500 rows a page; `q` searches the full system prompt, prompt and raw reply) and `GET /api/agent-live?dept=&run=`. Same scope rules and redaction as every engine GET. The full text of one call stays J2's `GET /api/call?dept=&run=&id=`. |
 | View | `sutra_app/ui/static/js/raw_chat.js`, styles at the end of `sutra-panel.css` | List of calls on the left; the picked call as a chat on the right: SYSTEM PROMPT (folded), PROMPT (user turn), RAW REPLY (assistant turn), PARSED REPLY, REASON. Copy buttons, search with marks, live tail while the run is going (polls every 2 s). |
-| Entry | `dept_ext.js` adds the script; `/d/{team}/raw[?run=]` in `sutra_app/ui/routes.py` | A "Raw AI chat" button on the team page when `localStorage["sutra:level"] === "debug"`; the direct URL opens it full screen at any level. |
+| Entry | `dept_ext.js` adds the script; `/d/{team}/raw[?run=]` in `sutra_app/ui/routes.py` | "Raw AI chat" under Settings & logs (Logs & debug, `home.js` `openRawChat`): the team working now, else the one waiting on the owner, else the first team; the URL opens the viewer full screen and its close goes back to Settings & logs. |
 
 ## Not there yet: the exact Claude Code stream (tool calls)
 

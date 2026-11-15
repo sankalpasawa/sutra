@@ -11,13 +11,14 @@
      Settings & logs
    On a phone it folds away behind a menu button.
 
-     ProjectRail.model(departments, needs)   {needs: [{id, name, href, count}], projects: [{id, name, href, state, words}], count}
-                                             from GET /api/departments and GET /api/needs-you; nothing else is read
+     ProjectRail.model(departments, needs, heads, seen)   {needs: [{id, name, href, count}], projects: [{id, name, href, state, words}], count}
+                                             from GET /api/departments, /api/needs-you and /api/heads-up. `count` is what Attention counts:
+                                             every question and approval, plus every problem the owner has not marked "Got it" (`seen`)
      ProjectRail.html(model, current, view)  the column's inner markup. `current` is the open team's id ("" off a team page). view: {doc (the
                                              sections document), here ("attention" | "org" | ""), adding, renaming (a section id), allShut, error}
      ProjectRail.mount(opts)                 once per page: adds the column, the menu button and the style sheet. opts.feed false (Home):
                                              the page hands the lists in with set(); else the rail reads them itself, every few seconds
-     ProjectRail.set({departments, needs})   new lists: repaint
+     ProjectRail.set({departments, needs, heads})   new lists: repaint
      ProjectRail.open(bool)                  the phone drawer
 
    Strings in, strings out for model() and html(): every word from the wire is escaped. A classic script with ONE global, ProjectRail;
@@ -53,10 +54,11 @@
     return "idle";
   }
 
-  function model(departments, needs) {
+  function model(departments, needs, heads, seen) {
     const asks = new Map();
     let approvals = 0;
-    let count = 0;
+    const marks = isObj(seen) ? seen : {};
+    let count = (Array.isArray(heads) ? heads : []).filter(h => isObj(h) && h.kind === "problem" && marks[h.task_id] !== true).length;
     (Array.isArray(needs) ? needs : []).filter(isObj).forEach(n => {
       const dept = idOf(n.dept_id);
       count += 1;
@@ -134,7 +136,7 @@
   /* ---------------------------------------------------------------- the page */
   const doc = () => root.document || null;
   const ctx = () => root.SutraCtx || null;
-  const S = {mounted: false, el: null, list: null, btn: null, menu: null, departments: [], needs: [], current: "", timer: null, open: false,
+  const S = {mounted: false, el: null, list: null, btn: null, menu: null, departments: [], needs: [], heads: [], current: "", timer: null, open: false,
     doc: null, adding: false, renaming: "", allShut: false, error: "", pendingTeam: "", dirty: false, saving: Promise.resolve()};
 
   function here() {
@@ -154,7 +156,10 @@
     // a name being typed is never torn down by a repaint (the team page reads the lists every few seconds): paint once it is done
     if (!force && d && d.activeElement && d.activeElement.classList && d.activeElement.classList.contains("pr-input") && S.list.contains(d.activeElement)) { S.dirty = true; return; }
     S.dirty = false;
-    const m = model(S.departments, S.needs);
+    const hv = root.HeadsUpView;
+    let seen = {};
+    try { seen = hv && hv.loadSeen ? hv.loadSeen(root.localStorage) : {}; } catch (e) { seen = {}; }
+    const m = model(S.departments, S.needs, S.heads, seen);
     const next = html(m, S.current, view());
     if (S.list.dataset.html !== next) { S.list.innerHTML = next; S.list.dataset.html = next; }
     const box = S.list.querySelector(".pr-input");
@@ -170,16 +175,17 @@
     if (!isObj(lists)) return;
     if (Array.isArray(lists.departments)) S.departments = lists.departments;
     if (Array.isArray(lists.needs)) S.needs = lists.needs;
+    if (Array.isArray(lists.heads)) S.heads = lists.heads;
     paint();
   }
 
   async function load() {
     const c = ctx();
     if (!c || !c.api) return;
-    const [d, n] = await Promise.allSettled([c.api.get("/api/departments"), c.api.get("/api/needs-you")]);
+    const [d, n, h] = await Promise.allSettled([c.api.get("/api/departments"), c.api.get("/api/needs-you"), c.api.get("/api/heads-up")]);
     const rows = r => (r.status !== "fulfilled" ? null : Array.isArray(r.value) ? r.value : isObj(r.value) && Array.isArray(r.value.items) ? r.value.items
       : isObj(r.value) && Array.isArray(r.value.departments) ? r.value.departments : null);
-    set({departments: rows(d) || undefined, needs: rows(n) || undefined});
+    set({departments: rows(d) || undefined, needs: rows(n) || undefined, heads: rows(h) || undefined});
   }
 
   async function loadSections() {

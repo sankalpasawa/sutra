@@ -105,8 +105,8 @@ def probe() -> dict:
 
 def test_the_file_loads_in_node_and_starts_nothing(probe):
     assert probe["loads"]["init"] == "function"
-    assert probe["loads"]["keys"] == sorted(["init", "chip", "title", "onTab", "events", "drawers", "destroy", "levelView", "state", "helpers"])
-    assert probe["loads"]["helpers"] == ["bannerText", "switchMenuHtml", "titleText", "touchesDept"]      # switchMenuHtml: the view switch of a project (project_rail.test.js)
+    assert probe["loads"]["keys"] == sorted(["init", "chip", "title", "onTab", "events", "drawers", "destroy", "state", "helpers"])
+    assert probe["loads"]["helpers"] == ["bannerText", "titleText", "touchesDept", "viewLabel"]      # viewLabel: the Agent view button of a project (project_rail.test.js)
     assert probe["loads"]["started"] is False       # a module load is not a page start
 
 
@@ -906,7 +906,7 @@ def finished_team(team, fake_server, monkeypatch) -> Page:
 
 STUDIO_NAMED = ["#sfinish [data-full]", "#sauto", "#stheme2"]               # drawn at every width: Open full view, Decide for me, the dark-mode button
 STUDIO_SIZES = [
-    (1280, 860, STUDIO_NAMED + ["#schatbtn", "#sdetail", "#sopen", ".srail"]),     # a laptop: the toolbar with Chat, Detailed view and Open the site, and the team rail
+    (1280, 860, STUDIO_NAMED + ["#schatbtn", "#agentview", "#sopen", ".srail"]),     # a laptop: the toolbar with Chat, Agent view and Open the site, and the team rail
     (375, 812, STUDIO_NAMED + [".sdock", ".sdock .sdkchat"]),                       # a phone: the two-row toolbar and the dock under it all (the team, the plan, Chat)
 ]
 

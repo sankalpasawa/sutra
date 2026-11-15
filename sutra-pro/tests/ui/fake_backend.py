@@ -384,6 +384,7 @@ class FakeState:
                                      "month_ends_at": "2026-12-01T00:00:00Z", "line": ""},
                            "guard": {"enabled": False, "level": "none", "holding": False, "top": None, "line": "", "windows": []}}
             self.attention = {"quiet_hours": None, "nudges_per_hour": 3, "default_nudges_per_hour": 3, "max_nudges_per_hour": 10, "quiet_now": False}
+            self.sections = {"version": 1, "sections": []}          # the sidebar's sections (GET/PUT /api/sections)
             self.recurring: list[dict] = []
             self.recurring_runs: dict[str, list[dict]] = {}
             self.chart_notes: list[dict] = []       # gap chart-insight: GET /api/chart/notes (set by /__fake/chart-notes)
@@ -1291,6 +1292,22 @@ def register_api(app: FastAPI, state: FakeState) -> None:
     @app.get("/api/needs-you")
     def needs_you():
         return JSONResponse(state.needs_you())
+
+    # ---- the sidebar's sections (the real route is sutra_app/orchestrator/api, GET/PUT /api/sections; the document is checked by sections.clean_doc)
+    @app.get("/api/sections")
+    def get_sections():
+        with state.lock:
+            return JSONResponse(copy.deepcopy(getattr(state, "sections", {"version": 1, "sections": []})))
+
+    @app.put("/api/sections")
+    async def put_sections(request: Request):
+        require_token(request, state)
+        body = await json_body(request)
+        if not isinstance(body, dict) or not isinstance(body.get("sections"), list):
+            raise ApiError(422, "validation", "send a sections document")
+        with state.lock:
+            state.sections = {"version": 1, "sections": copy.deepcopy(body["sections"])}
+            return JSONResponse(copy.deepcopy(state.sections))
 
     @app.get("/api/heads-up")
     def heads_up():

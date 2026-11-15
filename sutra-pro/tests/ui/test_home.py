@@ -191,8 +191,9 @@ def test_home_asks_for_the_newest_changes_not_the_first_of_a_long_log(browser, f
 def test_home_boots_with_no_console_error_and_the_rail_shows_its_items(browser, fake):
     load(browser, fake, stage="full")
     assert texts(browser, "#rail > button, #rail .railhead, #rail .railsec > button") == [
-        "Chat", "Workflow graph", "Org chart", "Teams", "Settings", "Appearance", "Connectors", "Limits", "Notifications", "Recurring work", "Engine", "Notes", "About", "Owner"]
-    assert texts(browser, "#goconsole .rtname") == ["Usage and log"] and attrs(browser, "#goconsole", "href") == ["/console"]       # the Owner section's one link
+        "Chat", "Workflow graph", "Org chart", "Teams", "Settings", "Appearance", "Connectors", "Limits", "Notifications", "Recurring work", "Engine", "Notes", "About", "Logs & debug", "Raw AI chatevery AI call of a run, word for word"]
+    assert texts(browser, "#goconsole .rtname") == ["Usage and log"] and attrs(browser, "#goconsole", "href") == ["/console"]       # Logs & debug: Usage and log
+    assert texts(browser, "#gorawchat .rtname") == ["Raw AI chat"]                                                                 # and Raw AI chat
     assert browser.console_errors == []
 
 

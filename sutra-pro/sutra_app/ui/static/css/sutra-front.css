@@ -1,4 +1,4 @@
-/* sutra-front.css: Home in the studio's look. The front door (front_door.js), the levels (Simple, Manager, Debug), the org chat workspace and the
+/* sutra-front.css: Home in the studio's look. Attention (front_door.js), Agent Org, the org chat workspace and the
    welcome card all take the studio palette (light paper, ink, one navy accent, green for done, amber for "needs you") and its two type faces:
    Bricolage Grotesque for headings, Figtree for words (vendor/fonts, served from this origin: the page works offline).
    Every colour is a token, so light and dark need no rule here. --s-line and --s-line2 are hairlines between things, not lines that carry meaning.
@@ -75,8 +75,8 @@ body.home .sprog div.on { color: var(--s-ink); }
 body.home .rail { background: var(--s-bg); }
 body.home .sright { background: var(--s-bg); }
 
-/* ---- the workspace is Home's back room ("Settings & logs" in the project sidebar, or a project's Manager and Debug menu): Home has no level, so
-   it shows whole whenever it is opened (the org chat, the panes, Settings, Usage and log). The level only changes a project's own page. */
+/* ---- the workspace is Home's back room ("Settings & logs" in the sidebar): it shows whole whenever it is opened (the org chat, the panes, Settings,
+   Usage and log). Agent Org (?pane=org) shows a part of it as a page of its own (the end of this sheet). */
 
 /* ---- the welcome card: light paper, the studio's type, the same four facts */
 body.home .swelcome { background: var(--s-bg); padding: 40px 16px; align-items: flex-start; }
@@ -105,30 +105,6 @@ body.home .swacts .sethint { color: var(--s-muted); font-size: 13px; }
 .front header.fdhead { display: flex; padding: 0; border: 0; background: none; gap: 12px; flex-wrap: nowrap; }
 .front textarea { height: auto; }
 .front .fdcompose textarea { border: 0; padding: 0; background: none; }
-.fdtop {
-  position: sticky; top: 0; z-index: 2; display: flex; align-items: center; gap: 16px; flex-wrap: wrap;
-  padding: 16px 28px; background: var(--s-bg); border-bottom: 0;
-}
-.fdorg { display: flex; align-items: center; gap: 10px; min-width: 0; }
-.fdorg b { font: 600 15px/1.2 var(--s-body); color: var(--s-ink); white-space: nowrap; }
-.fdmark { display: block; width: 12px; height: 12px; border-radius: 3px; background: var(--s-accent); }
-.fdnav { display: flex; gap: 4px; flex-wrap: wrap; flex: 1 1 auto; justify-content: center; }
-.fdnav[hidden] { display: none; }
-.fdnavb {
-  border: 0; background: none; color: var(--s-muted); font: 500 14px/1 var(--s-body);
-  padding: 8px 10px; border-radius: 8px; cursor: pointer; text-decoration: none; white-space: nowrap;
-}
-.fdnavb:hover { background: var(--s-surface); color: var(--s-ink); }
-.fdlevel {
-  margin-left: auto; display: inline-flex; padding: 3px; gap: 2px; border-radius: 999px;
-  background: var(--s-surface2); border: 1px solid var(--s-line);
-}
-.fdlevel button {
-  border: 0; background: none; color: var(--s-muted); font: 500 13px/1 var(--s-body);
-  padding: 7px 12px; border-radius: 999px; cursor: pointer;
-}
-.fdlevel button[aria-pressed="true"] { background: var(--s-surface); color: var(--s-ink); box-shadow: 0 1px 3px var(--s-shadow); }
-
 .fdmain { max-width: 728px; margin: 0 auto; padding: 72px 24px 96px; }
 .fdtitle { font: 700 34px/1.15 var(--s-display); letter-spacing: -.015em; margin: 0 0 24px; color: var(--s-ink); }
 .fdcompose {
@@ -244,7 +220,6 @@ a.fdrowlink:hover .fdname { text-decoration: underline; text-underline-offset: 3
 .fdsub { color: var(--s-muted); font-size: 13.5px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .fdst { flex: 0 0 auto; color: var(--s-muted); font: 400 14px/1.3 var(--s-body); white-space: nowrap; }
 .fdrow.st-waiting_on_you .fdst { color: var(--s-askink); font-weight: 600; }
-.fdchip { flex: 0 0 auto; border: 1px solid var(--s-line2); background: none; color: var(--s-ink); border-radius: 999px; padding: 5px 12px; font: 500 13px/1.2 var(--s-body); cursor: pointer; }
 .fdmore { margin-top: 10px; border: 0; background: none; padding: 0; color: var(--s-accent); font: 600 14px var(--s-body); cursor: pointer; }
 .fddone { margin-top: 44px; }
 .fddone[hidden] { display: none; }
@@ -253,21 +228,7 @@ a.fdrowlink:hover .fdname { text-decoration: underline; text-underline-offset: 3
 .fdidle { margin-top: 28px; color: var(--s-muted); }
 .fdidle summary { cursor: pointer; font-size: 14px; }
 
-/* Debug: the whole Heads up lane (heads_up_view.js markup), in the studio's look */
-.fddebug { margin-top: 48px; padding: 18px; border-radius: 14px; border: 1px dashed var(--s-line2); background: var(--s-surface); }
-.fddebug .nylane { display: none; }
-.fddebug .huitem { display: flex; flex-wrap: wrap; gap: 6px 10px; align-items: baseline; padding: 10px 0; border-bottom: 1px solid var(--s-line); color: var(--s-ink); }
-.fddebug .huitem:last-child { border-bottom: 0; }
-.fddebug .hutext { flex: 1 1 260px; }
-.fddebug .huwhen, .fddebug .huwhy { color: var(--s-muted); font: 400 12px/1.3 var(--s-mono); }
-.fddebug .huacts { display: flex; gap: 8px; flex-wrap: wrap; }
-.fddebug .huacts button, .fddebug .humore { border: 1px solid var(--s-line2); background: none; color: var(--s-ink); border-radius: 999px; padding: 4px 10px; font: 500 12.5px var(--s-body); cursor: pointer; }
-.fddebug .huacts a { color: var(--s-accent); font-size: 13px; }
-
 @media (max-width: 720px) {
-  .fdtop { padding: 12px 16px; gap: 10px; }
-  .fdnav { order: 3; flex-basis: 100%; justify-content: flex-start; overflow-x: auto; flex-wrap: nowrap; }
-  .fdlevel button { padding: 7px 9px; }
   .fdmain { padding: 28px 16px 72px; }
   .fdtitle { font-size: 28px; margin-bottom: 18px; }
   .fdcompose { padding: 16px 16px 12px; }
@@ -325,3 +286,6 @@ body.home .railhead { font-family: var(--s-body); }
 .orgtabs button:focus-visible { outline: 2px solid var(--s-accent); outline-offset: 2px; }
 @media (max-width: 1024px) { :root[data-ws=org] body.home .orgview { padding: 60px 16px 4px; } :root[data-ws=org] body.home .sright .pane { padding: 8px 16px 20px; } }
 @media (max-width: 720px) { .orgtitle { font-size: 26px; } .orgteams { grid-template-columns: minmax(0, 1fr); } }
+/* Settings & logs: "Raw AI chat" is a button, drawn like the "Usage and log" link above it */
+body.home #rail button.railteam { display: flex; flex-direction: column; align-items: flex-start; color: var(--s-ink); cursor: pointer; background: none; }
+body.home #rail button.railteam:hover { background: var(--s-surface2); }

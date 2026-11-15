@@ -89,7 +89,7 @@
     auto: null, autoBusy: false, autoMsg: "",
     pillStale: false, pillSeq: 0,          // the org chat's pill is read again when its session may have moved (renderPill)
     // the front door (front_door.js): the cards being answered, a refusal per card, Done recently opened up, a send from its box, the Raw AI chat note
-    front: {answering: {}, errors: {}, moreDone: false, sent: false, error: "", going: false, held: false},
+    front: {answering: {}, errors: {}, moreDone: false, sent: false, error: "", going: false, held: false, since: 0},
   };
 
   /* ---------------------------------------------------------------- errors in words */
@@ -801,7 +801,7 @@
     if (!fd || !$("front")) return;
     protect("front door", () => {
       // every project and what needs the owner: the sidebar, fed from the lists Home reads anyway (no second stream)
-      if (root.ProjectRail && S.departmentsLoaded) root.ProjectRail.set({departments: S.departments, needs: S.needsLoaded ? S.needs : []});
+      if (root.ProjectRail && S.departmentsLoaded) root.ProjectRail.set({departments: S.departments, needs: S.needsLoaded ? S.needs : [], heads: S.heads});
       if ($("fdfaces") && $("fdfaces").childElementCount === 0 && fd.facesHtml) ctx.paint($("fdfaces"), fd.facesHtml());
       renderFrontLatest();
       renderAttention();
@@ -833,7 +833,10 @@
     if (!fd || !$("fdlatest")) return;
     const words = PHASE_PLAIN;
     const status = S.front.sent && S.turn.active && hasOwn(words, S.turn.phase) ? words[S.turn.phase] : "";
-    const st = {show: S.front.sent || S.front.error !== "", status, error: S.front.error, messages: S.messages, answers: answersMap(), going: S.front.going};
+    // only what came after this send: an older project's task card must never be where a new project lands
+    const since = S.front.since || 0;
+    const fresh = S.messages.filter(m => !(typeof m.id === "number" && m.id <= since));
+    const st = {show: S.front.sent || S.front.error !== "", status, error: S.front.error, messages: fresh, answers: answersMap(), going: S.front.going};
     const href = S.front.sent && fd.landing ? fd.landing(st) : "";
     if (href && place() === "front" && !S.front.going) {
       S.front.going = true;
@@ -853,6 +856,7 @@
     S.front.sent = true;
     S.front.error = "";
     S.front.going = false;
+    S.front.since = S.lastId;
     $("fdsend").disabled = true;
     const ok = await send(body, null, {plan: true});
     $("fdsend").disabled = false;

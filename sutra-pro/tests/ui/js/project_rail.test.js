@@ -31,10 +31,12 @@ test("a finished project is Done once its team is idle again (last_status), a cr
   assert.deepEqual(m.projects.map(p => p.state), ["done", "done", "problem", "idle", "idle"]);
 });
 
-test("the Attention count is every open question and approval; questions are counted per project", () => {
+test("the Attention count is every open question, approval and problem; questions are counted per project", () => {
   const needs = [{message_id: 1, dept_id: "bakery"}, {message_id: 2, dept_id: "bakery"}, {message_id: 3, dept_id: "web"}, {message_id: 4, kind: "approval"}];
   const m = ProjectRail.model(DEPTS, needs);
   assert.equal(m.count, 4);
+  const heads = [{kind: "problem", task_id: "tsk_1"}, {kind: "problem", task_id: "tsk_2"}, {kind: "finished", task_id: "tsk_3"}];
+  assert.equal(ProjectRail.model(DEPTS, needs, heads, {tsk_2: true}).count, 5);        // plus a problem not marked Got it, as Attention counts
   assert.deepEqual(m.needs.map(n => [n.name, n.count]), [["Bakery site", 2], ["Align Physio", 1], ["Your organisation", 1]]);
   assert.equal(m.projects.find(p => p.id === "web").state, "needs");          // a question beats "being made"
 });

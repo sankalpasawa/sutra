@@ -1214,8 +1214,8 @@ def test_a_clicked_box_opens_a_card_with_its_name_purpose_and_what_it_can_do(pag
     assert page.js(card)["hidden"] is True
     page.b.click("g.wnode[data-id='web']")
     shown = page.js(card)
-    assert shown == {"hidden": False, "name": "Web", "purpose": "Websites and landing pages", "tag": None, "acts": ["Open team page", "Open chat"], "label": "Web"}
-    assert page.js("document.querySelector(\"[data-oc='team']\").getAttribute('href')") == "/d/web/" and page.ids("g.wnode.sel") == ["web"]
+    assert shown == {"hidden": False, "name": "Web", "purpose": "Websites and landing pages", "tag": None, "acts": ["Open agent view", "Open chat"], "label": "Web"}
+    assert page.js("document.querySelector(\"[data-oc='team']\").getAttribute('href')") == "/d/web/?view=detail" and page.ids("g.wnode.sel") == ["web"]
     page.b.click(".chgrow[data-change='3']")                                                                    # the card follows the selected change
     assert page.js(card)["tag"] == "reused by task: Menu page"
     page.b.click("[data-oc='chat']")
@@ -1235,7 +1235,7 @@ def test_a_clicked_box_opens_a_card_with_its_name_purpose_and_what_it_can_do(pag
     })()""")
     page.js("window.log = []")
     page.b.click("#other g.wnode[data-id='content']")
-    assert page.js("Array.from(document.querySelectorAll('#other .ocacts > *')).map(a => a.textContent)") == ["Open team page", "Show in graph", "Open chat"]
+    assert page.js("Array.from(document.querySelectorAll('#other .ocacts > *')).map(a => a.textContent)") == ["Open agent view", "Show in graph", "Open chat"]
     page.b.click("#other [data-oc='show']")
     page.b.click("#other [data-oc='chat']")
     assert page.js("window.log") == [["show", "content"], ["open", "content"]]
