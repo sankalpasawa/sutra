@@ -22,26 +22,53 @@ test("each project reads in plain words: being made, needs your answer, done, so
   assert.deepEqual(m.projects.map(p => [p.id, p.state, p.words]), [
     ["web", "making", "Being made"], ["bakery", "needs", "Needs your answer"], ["brew", "done", "Done"],
     ["code", "problem", "Something broke"], ["new", "idle", "Not started yet"]]);
-  assert.deepEqual(m.projects.map(p => p.href), DEPTS.map(d => `/d/${d.id}/?view=simple`));
+  assert.deepEqual(m.projects.map(p => p.href), DEPTS.map(d => `/d/${d.id}/`));          // no ?view=: a project opens in its studio
 });
 
-test("Needs you: one row per project with an open question and its count; an approval of no project goes to the org chart", () => {
+test("a finished project is Done once its team is idle again (last_status), a crashed one Something broke, a fresh one Not started yet", () => {
+  const m = ProjectRail.model([{id: "a", node_status: "idle", last_status: "done"}, {id: "b", node_status: "idle", last_status: "done_with_open_items"},
+    {id: "c", node_status: "idle", last_status: "crashed"}, {id: "d", node_status: "idle", last_status: null}, {id: "e", node_status: "idle", last_status: "stopped"}], []);
+  assert.deepEqual(m.projects.map(p => p.state), ["done", "done", "problem", "idle", "idle"]);
+});
+
+test("the Attention count is every open question and approval; questions are counted per project", () => {
   const needs = [{message_id: 1, dept_id: "bakery"}, {message_id: 2, dept_id: "bakery"}, {message_id: 3, dept_id: "web"}, {message_id: 4, kind: "approval"}];
   const m = ProjectRail.model(DEPTS, needs);
-  assert.deepEqual(m.needs.map(n => [n.name, n.count, n.href]), [
-    ["Bakery site", 2, "/d/bakery/?view=simple"], ["Align Physio", 1, "/d/web/?view=simple"], ["Your organisation", 1, "/?pane=chart"]]);
+  assert.equal(m.count, 4);
+  assert.deepEqual(m.needs.map(n => [n.name, n.count]), [["Bakery site", 2], ["Align Physio", 1], ["Your organisation", 1]]);
   assert.equal(m.projects.find(p => p.id === "web").state, "needs");          // a question beats "being made"
 });
 
-test("the markup: the open project is marked, words are escaped, the groups have headings, and an empty list says where projects go", () => {
-  const html = ProjectRail.html(ProjectRail.model([...DEPTS, {id: "x", name: "<b>bold</b>", node_status: "idle"}], [{dept_id: "bakery"}]), "brew");
-  assert.match(html, /<h2 class="pr-head" id="pr-needs-h">Needs you<\/h2>/);
-  assert.match(html, /<h2 class="pr-head" id="pr-proj-h">Projects<\/h2>/);
+test("the markup: Attention with its count, Agent Org, My sections with +, the open project marked once, words escaped", () => {
+  const html = ProjectRail.html(ProjectRail.model([...DEPTS, {id: "x", name: "<b>bold</b>", node_status: "idle"}], [{dept_id: "bakery"}]), "brew", {});
+  assert.match(html, /id="pr-att" href="\/">.*Attention<\/span><b class="pr-count" aria-label="1 thing needs you">1<\/b>/);
+  assert.match(html, /id="pr-org" href="\/\?pane=org">/);
+  assert.match(html, /<h2 class="pr-head" id="pr-sec-h">My sections<\/h2><button type="button" class="pr-add" id="pr-addsec" data-pr="add"/);
   assert.equal((html.match(/aria-current="page"/g) || []).length, 1);
-  assert.match(html, /class="pr-item pr-on" href="\/d\/brew\/\?view=simple" aria-current="page" title="Done">/);
+  assert.match(html, /class="pr-item pr-on" href="\/d\/brew\/" aria-current="page" title="Done">/);
   assert.ok(html.includes("&lt;b&gt;bold&lt;/b&gt;") && !html.includes("<b>bold"));
-  assert.ok(!ProjectRail.html(ProjectRail.model([], []), "").includes("Needs you"));
-  assert.ok(ProjectRail.html(ProjectRail.model([], []), "").includes("Your projects show here."));
+  assert.ok(!html.includes("pr-needs-h"));                                       // what needs the owner is on Attention, not in the column
+  assert.ok(ProjectRail.html(ProjectRail.model([], []), "", {}).includes("Your projects show here."));
+  assert.match(ProjectRail.html(ProjectRail.model([], []), "", {here: "org"}), /class="pr-nav pr-on" id="pr-org" href="\/\?pane=org" aria-current="page"/);
+  assert.match(ProjectRail.html(ProjectRail.model([], []), "", {here: "attention"}), /class="pr-nav pr-on" id="pr-att"/);
+});
+
+test("sections: each with its projects in order, a folded one shows none, the rest under All projects, and the boxes to name one", () => {
+  const doc = {version: 1, sections: [{id: "sec_aaaa", name: "Clients", teams: ["brew", "bakery"], collapsed: false},
+    {id: "sec_bbbb", name: "Old", teams: ["code"], collapsed: true}, {id: "sec_cccc", name: "Empty", teams: [], collapsed: false}]};
+  const html = ProjectRail.html(ProjectRail.model(DEPTS, []), "", {doc});
+  const names = part => (part.match(/class="pr-name">([^<]+)</g) || []).map(x => x.slice(16, -1));
+  assert.deepEqual(names(html.slice(html.indexOf('data-sec="sec_aaaa"'), html.indexOf('data-sec="sec_bbbb"'))), ["Bakery site", "Brew Lab"]);    // the sidebar's order
+  assert.match(html, /<div class="pr-sec pr-shut" data-sec="sec_bbbb">/);
+  assert.ok(!names(html.slice(html.indexOf('data-sec="sec_bbbb"'), html.indexOf('data-sec="sec_cccc"'))).includes("CodeSprint"));
+  assert.match(html, /Empty\. Use &middot;&middot;&middot; on a project to move it here\./);
+  assert.deepEqual(names(html.slice(html.indexOf("pr-all"))), ["Align Physio", "New one"]);
+  assert.match(html, /data-pr="secmenu" data-sec="sec_aaaa" aria-haspopup="menu" aria-label="Rename or delete Clients"/);
+  assert.match(html, /data-pr="projmenu" data-team="web" aria-haspopup="menu" aria-label="Move Align Physio to a section"/);
+  assert.match(ProjectRail.html(ProjectRail.model(DEPTS, []), "", {doc, adding: true}), /<form class="pr-namebox" data-pr-form="add"><input class="pr-input"/);
+  assert.match(ProjectRail.html(ProjectRail.model(DEPTS, []), "", {doc, renaming: "sec_aaaa"}), /data-pr-form="rename"><input [^>]*value="Clients">/);
+  assert.match(ProjectRail.html(ProjectRail.model(DEPTS, []), "", {doc, allShut: true}), /<div class="pr-sec pr-all pr-shut">/);
+  assert.match(ProjectRail.html(ProjectRail.model(DEPTS, []), "", {doc, error: "No <way>"}), /<p class="pr-err" role="alert">No &lt;way&gt;<\/p>/);
 });
 
 test("bad rows are skipped: no id, an id that is not one, not an object", () => {

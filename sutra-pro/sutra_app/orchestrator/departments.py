@@ -92,6 +92,7 @@ class DepartmentStore:
         live = conn.execute(
             f"SELECT id FROM tasks WHERE dept_id = ? AND status IN ({marks}) ORDER BY created_at DESC, rowid DESC LIMIT 1",
             (dept_id, *LIVE_STATUSES)).fetchone()
+        last = conn.execute("SELECT status FROM tasks WHERE dept_id = ? ORDER BY created_at DESC, rowid DESC LIMIT 1", (dept_id,)).fetchone()
         chips: list[FunctionChip] = []
         for fn in FUNCTIONS:
             found = conn.execute("SELECT state, chat_session_id FROM graph_nodes WHERE id = ?", (function_node_id(dept_id, fn),)).fetchone()
@@ -99,7 +100,7 @@ class DepartmentStore:
                 chips.append(FunctionChip(id=function_node_id(dept_id, fn), fn=fn, status=found["state"], chat_session_id=found["chat_session_id"]))
         return DepartmentOut(
             id=dept_id, name=node["name"], purpose=node["purpose"], node_status=graph["state"] if graph is not None else "idle",
-            live_task_id=live["id"] if live is not None else None, session_id=graph["chat_session_id"] if graph is not None else None,
+            live_task_id=live["id"] if live is not None else None, last_status=last["status"] if last is not None else None, session_id=graph["chat_session_id"] if graph is not None else None,
             functions=chips)
 
     # ---- invariant I4 ------------------------------------------------------------------------------------------------

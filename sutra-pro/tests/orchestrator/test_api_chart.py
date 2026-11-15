@@ -186,7 +186,7 @@ def test_the_department_list_and_one_department(client, built):
     assert [r.id for r in rows] == ["sales", "web"] and len(rows[0].functions) == 5
     one = client.get("/api/departments/web")
     assert one.status_code == 200 and DepartmentOut.model_validate(one.json()).id == "web"
-    assert set(one.json()) == {"id", "name", "purpose", "node_status", "live_task_id", "session_id", "functions"}
+    assert set(one.json()) == {"id", "name", "purpose", "node_status", "live_task_id", "last_status", "session_id", "functions"}
     error_of(client.get("/api/departments/ghost"), 404, "not_found")
     error_of(client.get("/api/departments/menu"), 404, "not_found")
     error_of(client.get("/api/departments/has space"), 422, "validation")

@@ -7,6 +7,7 @@
      add(doc, name)             a new document with a section at the end (a fresh sec_ id); an empty or overlong name, or a full list, changes nothing
      rename(doc, id, name)      a new document with that section renamed (the same name rules)
      remove(doc, id)            a new document without that section; its teams go back to "All projects"
+     copy(doc)                  a well formed copy (the sidebar flips `collapsed` on it)
      group(doc, teams)          [{section, teams}, ..., {section: null, teams}]: each section in order with its teams in `teams` order, then the rest
 
    `api` defaults to SutraCtx.api (sutra_ctx.js); a test hands in a fake. `teams` in group() is the list of team ids the sidebar shows (strings, or
@@ -113,7 +114,7 @@
     return out;
   }
 
-  const SectionsStore = {load, save, assign, add, rename, remove, group, cleanName, PATH, VERSION, MAX_SECTIONS, NAME_CHARS};
+  const SectionsStore = {load, save, assign, add, rename, remove, group, copy, cleanName, PATH, VERSION, MAX_SECTIONS, NAME_CHARS};
   if (typeof module === "object" && module !== null && module.exports) module.exports = SectionsStore;
   else root.SectionsStore = SectionsStore;
 })(globalThis);

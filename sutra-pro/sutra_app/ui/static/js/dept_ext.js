@@ -403,11 +403,12 @@
     css.rel = "stylesheet";
     css.href = "/ui/css/project_rail.css";
     d.head.appendChild(css);
-    const tag = d.createElement("script");
-    tag.id = "project_rail-js";
-    tag.src = "/ui/js/project_rail.js";
-    tag.addEventListener("load", () => { if (root.ProjectRail) safely("ProjectRail.mount", () => root.ProjectRail.mount({})); place(); });
-    d.head.appendChild(tag);
+    // the sections store first (the sidebar's own groups), then the sidebar, which mounts once it has loaded
+    const add = (id, src, then) => { const tag = d.createElement("script"); tag.id = id; tag.src = src; tag.addEventListener("load", then); tag.addEventListener("error", then); d.head.appendChild(tag); };
+    add("sections_store-js", "/ui/js/sections_store.js", () => add("project_rail-js", "/ui/js/project_rail.js", () => {
+      if (root.ProjectRail) safely("ProjectRail.mount", () => root.ProjectRail.mount({}));
+      place();
+    }));
     return true;
   }
 

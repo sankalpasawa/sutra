@@ -82,6 +82,15 @@ def test_the_live_task_and_the_node_status_show_up(built, store):
     out = store.get("web")
     assert (out.live_task_id, out.node_status) == (live, "waiting_on_you")
     assert store.get("sales").live_task_id is None
+    assert (out.last_status, store.get("sales").last_status) == ("queued", None)          # the newest task, whatever its status
+
+
+def test_the_last_status_says_a_team_finished_once_it_is_idle_again(built, store):
+    add_task(built, 1, "web", "done_with_open_items", run="j2-20261104-100001-aaaa")
+    with built.db.tx() as tx:
+        built.graph.aggregate(tx)
+    out = store.get("web")
+    assert (out.live_task_id, out.last_status) == (None, "done_with_open_items")
 
 
 def test_the_list_is_in_chart_order_and_an_unknown_department_is_not_found(built, store):
