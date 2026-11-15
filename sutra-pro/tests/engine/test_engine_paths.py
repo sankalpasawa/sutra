@@ -148,7 +148,8 @@ def test_j2_env_names_the_departments_files_and_the_global_library(data_dir):
     assert p.j2_env() == {"J2_RUNS_DIR": str(data_dir / "departments/web/runs"),
                           "J2_MEMORY_FILE": str(data_dir / "departments/web/memory/lessons.jsonl"),
                           "J2_PLAYBOOK_FILE": str(data_dir / "departments/web/memory/playbooks.jsonl"),
-                          "J2_LIBRARY_DIR": str(data_dir / "library"), "J2_TYPES_DIR": str(data_dir / "types")}
+                          "J2_LIBRARY_DIR": str(data_dir / "library"), "J2_TYPES_DIR": str(data_dir / "types"),
+                          "J2_PUSH_RUNS": "0", "J2_RUN_BY": "sutra-pro"}      # the two fixed values (D177)
     assert p.types_dir == data_dir / "types" and DataPaths.for_dept(data_dir, "other").types_dir == p.types_dir, "one per user"
     (data_dir / "agents" / "j2").mkdir(parents=True)
     assert p.j2_env()["J2_AGENTS_DIR"] == str(data_dir / "agents" / "j2")

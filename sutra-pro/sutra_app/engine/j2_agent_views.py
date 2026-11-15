@@ -29,9 +29,27 @@ from . import j2_types      # noqa: E402
 RUNS_DIR = os.environ.get("J2_RUNS_DIR") or os.path.join(HERE, "runs")
 
 
+def _named_sections(kind):
+    """True when a type's template (templates/<type>/generic.json) names its sections: more than one section template,
+    or a template for the whole artifact. A template with one section template repeats it, once per workflow (the rule
+    j2_artifact_models.model_for already follows). The template says which; no form or type name is read."""
+    return j2_types.document(kind) is not None or len(j2_types.sections(kind)) > 1
+
+
 def doc_kinds():
-    """The document types of artifacts/types.json, in its order."""
-    return tuple(n for n in j2_types.names() if j2_types.info(n)["form"] == "document")
+    """The types built section by named section, in the order of artifacts/types.json (_named_sections)."""
+    return tuple(n for n in j2_types.names() if j2_types.sections(n) and _named_sections(n))
+
+
+def repeating_kinds():
+    """The types whose one section template is filled once per workflow, in the order of artifacts/types.json."""
+    return tuple(n for n in j2_types.names() if j2_types.sections(n) and not _named_sections(n))
+
+
+def style_guides():
+    """Every style guide a form of artifacts/types.json names and that has a template (j2_types.templated lists a guide
+    before the first type of its form): whichever forms declare one."""
+    return tuple(n for n in j2_types.templated() if n not in j2_types.names())
 
 
 def delivered_md():
@@ -240,42 +258,52 @@ def build_documents(d, decs):
 
 
 def build_design(d, decs):
-    """<style guide>.json (the style guide's data, as the page form's style guide template): validated, "model" and
-    "valid" added; the style row reads it."""
-    kind = j2_types.style_guide()
-    if not kind:
-        return []
-    name, model = f"{kind}.json", _doc_model_name(kind)
-    data = os.path.join(d, name)
-    if not os.path.isfile(os.path.join(d, "style.json")) and not os.path.isfile(data):
-        return []
-    rec = _read_json(data)
-    if not isinstance(rec, dict) or not isinstance(rec.get("sections"), dict):
-        return [_result("style guide", model, name, False, "not recorded: the run saved no artifact-schema data for the style guide")]
-    validation = _validate_sections(d, kind, rec["sections"], decs)
-    _write_json(data, _stamp(rec, kind, validation))
-    return [_result("style guide", model, name, rec["valid"], "")]
+    """<style guide>.json for every style guide a form names (style_guides): the guide's data as its template, validated,
+    "model" and "valid" added; the style row reads it. A run that made no guide has no row."""
+    results = []
+    for kind in style_guides():
+        name, model = f"{kind}.json", _doc_model_name(kind)
+        data = os.path.join(d, name)
+        if not os.path.isfile(os.path.join(d, "style.json")) and not os.path.isfile(data):
+            continue
+        rec = _read_json(data)
+        if not isinstance(rec, dict) or not isinstance(rec.get("sections"), dict):
+            results.append(_result("style guide", model, name, False, "not recorded: the run saved no artifact-schema data for the style guide"))
+            continue
+        validation = _validate_sections(d, kind, rec["sections"], decs)
+        _write_json(data, _stamp(rec, kind, validation))
+        results.append(_result("style guide", model, name, rec["valid"], ""))
+    return results
 
 
 def build_sections(d, decs):
-    """site/sections/<id>.json for every page section in sections.json: the builder's own data when the page type's
-    data file kept it (J2 keeps the last reply), else the section as the page holds it, marked so; validated as the
-    page type's section model."""
-    page = j2_types.page_type()
+    """<the type's folder>/sections/<id>.json for every section a workflow built of each type that repeats one section
+    template (repeating_kinds), from sections.json: the builder's own data when the type's data file kept it (J2 keeps
+    the last reply), else the section as the built file holds it, marked so; validated as the type's section model.
+    An entry of sections.json that no workflow of the run owns under its own id (the style guide's) is not a section."""
+    results = []
+    for kind in repeating_kinds():
+        results += _build_sections_of(d, decs, kind)
+    return results
+
+
+def _build_sections_of(d, decs, page):
     model = AM.model_for(page, None)
-    if model is None:      # the page type has no template: nothing to validate a section against
+    built = str(j2_types.info(page).get("file") or "")
+    if model is None or not built:      # the type has no template or no file: nothing to validate a section against
         return []
     section = model.SECTION
     secs = _read_json(os.path.join(d, "sections.json"), {}) or {}
-    if not isinstance(secs, dict) or not os.path.isfile(os.path.join(d, "site", "index.html")):
+    if not isinstance(secs, dict) or not os.path.isfile(os.path.join(d, built)):
         return []
+    made = {str(w.get("id")) for w in _read_json(os.path.join(d, "workflows.json"), []) or [] if isinstance(w, dict)}
     saved = {}
     for e in ((_read_json(os.path.join(d, f"{page}.json"), {}) or {}).get("sections") or {}).values():
         if isinstance(e, dict) and e.get("id"):
             saved[str(e["id"])] = e
     results = []
     for sid, e in secs.items():
-        if sid == "style" or not isinstance(e, dict):
+        if not isinstance(e, dict) or (made and sid not in made):
             continue
         body, head = str(e.get("body") or ""), str(e.get("head") or "")
         if sid in saved:
@@ -302,7 +330,7 @@ def build_sections(d, decs):
         else:
             env = G.envelope(model, data, source)
         env["schema"] = AM.SCHEMA
-        out = f"site/sections/{sid}.json"
+        out = f"{os.path.dirname(built) or '.'}/sections/{sid}.json"
         _write_json(os.path.join(d, out), env)
         results.append(_result(f"{page} section {sid}", env.get("model") or model.__name__, out, env["valid"], note))
     return results

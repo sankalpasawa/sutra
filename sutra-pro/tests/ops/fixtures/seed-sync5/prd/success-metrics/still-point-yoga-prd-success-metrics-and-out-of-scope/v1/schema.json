@@ -1,0 +1,70 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "additionalProperties": false,
+  "properties": {
+    "success_metrics": {
+      "description": "one metric per goal, each checkable by reading the page",
+      "items": {
+        "$ref": "#/definitions/SuccessMetric"
+      },
+      "type": "array"
+    },
+    "out_of_scope": {
+      "description": "items left out of the page: teacher names, phone number, embedded map and online payment",
+      "items": {
+        "enum": [
+          "teacher names",
+          "phone number",
+          "embedded map",
+          "online payment"
+        ],
+        "type": "string"
+      },
+      "type": "array"
+    },
+    "online_payment_exclusion": {
+      "description": "states that no online payment is taken and that payment is made at the studio",
+      "type": "string"
+    },
+    "assumptions": {
+      "description": "assumptions stated in the brief",
+      "items": {
+        "type": "string"
+      },
+      "type": "array"
+    }
+  },
+  "required": [
+    "success_metrics",
+    "online_payment_exclusion"
+  ],
+  "type": "object",
+  "definitions": {
+    "SuccessMetric": {
+      "additionalProperties": false,
+      "properties": {
+        "goal": {
+          "description": "the goal id this metric measures, e.g. \"G1\"",
+          "type": "string"
+        },
+        "metric": {
+          "description": "what is checked by reading the page",
+          "type": "string"
+        },
+        "target": {
+          "description": "the state to reach, with no invented numbers",
+          "type": "string"
+        },
+        "window": {
+          "description": "the measurement window; write \"measurement window not set\" when the brief doesn't say",
+          "type": "string"
+        }
+      },
+      "required": [
+        "goal",
+        "metric"
+      ],
+      "type": "object"
+    }
+  }
+}

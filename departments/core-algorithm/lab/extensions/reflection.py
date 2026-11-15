@@ -5,7 +5,7 @@ from kernel.core import digest,Kernel
 from extensions.implementation import whole_plan   # what ran, what was skipped as already true, what is waited on, what is still to run
 
 def reflect(runs:list[dict])->dict:
-    runs=[r for r in runs if r.get('work_state')!='waiting']   # a run that waits is part of a plan, not a composition to reuse
+    runs=[r for r in runs if r.get('work_state') not in ('waiting','stopped')]   # a run that waits or stopped is part of a plan, not a composition to reuse
     signatures=Counter(' -> '.join(whole_plan(r)) for r in runs if r.get('actions'))
     patterns=[]
     for sig,n in sorted(signatures.items()):

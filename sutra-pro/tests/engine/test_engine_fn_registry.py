@@ -25,7 +25,7 @@ from pydantic import ValidationError
 from sutra_app.engine.fnodes import evidence as evidence_module
 from sutra_app.engine.fnodes import registry as registry_module
 from sutra_app.engine.fnodes.evidence import RECORD_NAMES, Evidence, merge_records, read_records
-from sutra_app.engine.fnodes.registry import (AGENT_CONTENT, GATE, J2_STRINGS, NOT_CHECKABLE, REGISTRY, USER_CONTENT, J2_ROUTES, CheckArgsError,
+from sutra_app.engine.fnodes.registry import (J2_STRINGS, REGISTRY, CheckArgsError, agent_content, gate, j2_routes, not_checkable, user_content,
                                                Outcome, UnknownCheck, stamp_check, workable_problems)
 from sutra_app.library.atom import CHECK_NAMES, REGISTRY_CHECKS, check_arity
 
@@ -358,9 +358,25 @@ def run(j2, tmp_path, llm_reset):
     return lambda: j2.J2Run(run_dir=tmp_path / "runs" / f"j2-20261104-1000{next(counter):02d}-7f3a")
 
 
-def test_the_three_regexes_are_j2s_own(j2):
-    for mine, theirs in ((NOT_CHECKABLE, j2.J2Run.NOT_CHECKABLE), (AGENT_CONTENT, j2.AGENT_CONTENT), (USER_CONTENT, j2.USER_CONTENT)):
-        assert (mine.pattern, mine.flags) == (theirs.pattern, theirs.flags)
+def test_the_three_regexes_are_j2s_own_read_from_j2_not_copied(j2):
+    """D188 (R-1): equal by construction, so no character-for-character parity is kept; the registry hands back J2's own objects."""
+    for mine, theirs in ((not_checkable(), j2.J2Run.NOT_CHECKABLE), (agent_content(), j2.AGENT_CONTENT), (user_content(), j2.USER_CONTENT)):
+        assert mine is theirs
+
+
+def test_the_registry_reads_j2_at_first_use_and_not_when_it_is_imported():
+    """J2 reads some constants from the environment when it is imported and the host sets the environment first (D188): importing the registry
+    must not import J2, and the first read does."""
+    import subprocess
+    import sys
+    code = ("import sys\n"
+            "import sutra_app.engine.fnodes.registry as r\n"
+            "assert 'sutra_app.engine.j2' not in sys.modules and 'sutra_app.engine.j2_realization' not in sys.modules, 'imported with the module'\n"
+            "assert r.gate() == 0.8 and 'sutra_app.engine.j2_realization' in sys.modules\n"
+            "assert r.not_checkable().search('Audit passes') and 'sutra_app.engine.j2' in sys.modules\n")
+    done = subprocess.run([sys.executable, "-c", code], capture_output=True, text=True, timeout=120,
+                          env={**os.environ, "PYTHONPATH": os.pathsep.join(p for p in sys.path if p)})
+    assert done.returncode == 0, done.stderr
 
 
 STAMP_GOALS = [
@@ -448,11 +464,11 @@ def test_design_problems_are_j2_checks_own_function(j2):
 
 
 def test_the_dispute_routes_are_j2s_routes(j2):
-    assert {fn: tuple(to) for fn, to in J2_ROUTES.items()} == {fn: tuple(j2.ROUTES[fn]) for fn in J2_ROUTES}
+    assert j2_routes() is j2.ROUTES and set(j2.ROUTES) == {"identity", "adaptation", "priority", "coordination", "audit"}
 
 
 def test_the_gate_is_the_judges_threshold(j2):
-    assert GATE == j2.j2_realization.THRESHOLD == 0.80
+    assert gate() == j2.j2_realization.THRESHOLD == 0.80
 
 
 def test_the_texts_j2_posts_are_still_what_the_checks_read(j2):

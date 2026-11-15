@@ -432,6 +432,12 @@ class HostHooks:
         self.error_code, self.error_message = code, message
         return self._inner.run_error(code, message)
 
+    def review_enabled(self) -> bool:
+        """P19: does J2 start the end-of-run reviewer? The inner hooks say (`EventHooks.reviewer`, the team's `reviewer` setting); a hook object
+        without the method (a test double) leaves J2's behaviour as it was: the reviewer runs."""
+        ask = getattr(self._inner, "review_enabled", None)
+        return True if ask is None else bool(ask())
+
     def system_addendum(self, fn: str) -> str:
         """The inner hooks' node-context text, then every capability's addendum for this agent (D126)."""
         text = self._inner.system_addendum(fn)

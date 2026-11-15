@@ -34,7 +34,7 @@ def test_a_fresh_run_on_the_real_repository_has_every_row_and_is_deterministic()
     second = bt.build_document(ROOT, merges={"E0": ["abc1234"]})
     assert bt.dump_json(first) == bt.dump_json(second)
     assert bt.render_markdown(first) == bt.render_markdown(second)
-    assert first["counts"]["endpoints"] == 42 and first["counts"]["chips"] == 15 and first["counts"]["steps"] == 7
+    assert first["counts"]["endpoints"] == 43 and first["counts"]["chips"] == 17 and first["counts"]["steps"] == 7
     assert first["counts"]["endpoints"] == handler_count()        # one row per handler of engine/views.py (J2 sync 4: 41)
     headings = bt.parse_decisions((ROOT / "docs" / "DECISIONS.md").read_text(encoding="utf-8"))
     assert [row["id"] for row in first["decisions"]] == [d["id"] for d in headings]
@@ -173,9 +173,9 @@ def test_small_source_parsers_read_chips_views_routes_and_literals():
     assert bt.literal_assign("ROUTES = make()\n", "ROUTES") is None and bt.literal_assign("x = 1\n", "ROUTES") is None
 
 
-def test_features_load_from_the_real_file_with_fifteen_chips():
+def test_features_load_from_the_real_file_with_seventeen_chips():
     features = bt.load_features(ROOT / "sutra_app" / "engine" / "features.py")
-    assert sum(1 for f in features if f.kind == "chip") == 15 and sum(1 for f in features if f.kind == "step") == 8
+    assert sum(1 for f in features if f.kind == "chip") == 17 and sum(1 for f in features if f.kind == "step") == 8
 
 
 # ---- a dead path is reported ---------------------------------------------------------------------------------------------------------

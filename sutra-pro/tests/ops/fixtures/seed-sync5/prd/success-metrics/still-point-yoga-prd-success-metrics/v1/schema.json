@@ -1,0 +1,62 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "additionalProperties": false,
+  "properties": {
+    "heading": {
+      "description": "The section heading",
+      "type": "string"
+    },
+    "success_sentence": {
+      "description": "The success statement for Still Point Yoga, written exactly: success is that visitors can see the classes and send a booking",
+      "type": "string"
+    },
+    "success_metrics": {
+      "description": "one metric per goal, each naming its goal, with no number",
+      "items": {
+        "$ref": "#/definitions/SuccessMetric"
+      },
+      "type": "array"
+    },
+    "assumptions": {
+      "description": "Assumptions behind the metrics",
+      "items": {
+        "type": "string"
+      },
+      "type": "array"
+    }
+  },
+  "required": [
+    "heading",
+    "success_sentence",
+    "success_metrics"
+  ],
+  "type": "object",
+  "definitions": {
+    "SuccessMetric": {
+      "additionalProperties": false,
+      "properties": {
+        "goal": {
+          "description": "the goal id this metric measures, e.g. \"G1\"",
+          "type": "string"
+        },
+        "metric": {
+          "description": "what is measured: visitors can see the classes and send a booking",
+          "type": "string"
+        },
+        "target": {
+          "description": "the state to reach, in words only, with no number",
+          "type": "string"
+        },
+        "window": {
+          "description": "the measurement window; write \"measurement window not set\" when the brief doesn't say",
+          "type": "string"
+        }
+      },
+      "required": [
+        "goal",
+        "metric"
+      ],
+      "type": "object"
+    }
+  }
+}

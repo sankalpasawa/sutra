@@ -3,7 +3,9 @@ once by the host before J2 starts. No model call, so the table is tested as a ta
 import pytest
 
 from sutra_app.engine import capabilities
-from sutra_app.engine.capabilities.select import RULES, STRONG_PROJECT_WORDS, chat_line, choose_output
+import json
+
+from sutra_app.engine.capabilities.select import RULES, STRONG_PROJECT_WORDS, WEAK_REASONS, WORDS_FILE, chat_line, choose_output, load_words
 
 # (brief, a working folder is set, the output of the run this continues, the owner's choice) -> (output, rule)
 # No default type and no deliverable phrases (D165): a brief the project rules do not claim is left to J2's planner (`None`, rule `planner`).
@@ -105,6 +107,37 @@ def test_no_rule_names_a_default_type_or_a_deliverable_phrase():
 
 def test_the_words_are_data_and_each_has_a_reason_for_the_owner():
     assert all(pattern and why for pattern, why in STRONG_PROJECT_WORDS)
+
+
+def test_the_word_table_is_a_data_file_in_the_order_and_with_the_reasons_it_had_in_code():
+    """D188 (R-2): moved out of code unchanged. The reasons, in order, are what the owner reads in `output.json` and the chat line."""
+    assert WORDS_FILE.name == "project.words.json" and WORDS_FILE.parent.name == "data"
+    assert [why for _, why in STRONG_PROJECT_WORDS] == ["a repository", "the codebase", "a pull request", "git", "the project's instructions file",
+                                                         "your folder", "the app's code", "the source", "a refactor", "a bug"]
+    assert set(WEAK_REASONS) == {"a bug", "the source"}
+    assert json.loads(WORDS_FILE.read_text(encoding="utf-8"))["words"][0] == {"pattern": "repositor(?:y|ies)|repos?", "reason": "a repository"}
+
+
+@pytest.mark.parametrize("body, why", [
+    ("not json", "cannot be read"), ("[]", "non-empty list"), ('{"words": []}', "non-empty list"), ('{"words": [1]}', "words[0]"),
+    ('{"words": [{"pattern": "x"}]}', "words[0]"), ('{"words": [{"reason": "x"}]}', "words[0]"),
+    ('{"words": [{"pattern": "x", "reason": "y", "extra": 1}]}', "words[0]"), ('{"words": [{"pattern": "", "reason": "y"}]}', "pattern and a reason"),
+    ('{"words": [{"pattern": "x", "reason": 3}]}', "pattern and a reason"), ('{"words": [{"pattern": "x", "reason": "y", "weak": "yes"}]}', "weak"),
+    ('{"words": [{"pattern": "(", "reason": "y"}]}', "does not compile")])
+def test_a_bad_words_file_is_refused_by_name(tmp_path, body, why):
+    bad = tmp_path / "words.json"
+    bad.write_text(body)
+    with pytest.raises(ValueError, match="words.json") as refused:
+        load_words(bad)
+    assert why in str(refused.value)
+    with pytest.raises(ValueError, match="cannot be read"):
+        load_words(tmp_path / "missing.json")
+
+
+def test_a_words_file_gives_its_patterns_in_order_and_the_weak_reasons(tmp_path):
+    good = tmp_path / "words.json"
+    good.write_text(json.dumps({"words": [{"pattern": "a", "reason": "ra"}, {"pattern": "b", "reason": "rb", "weak": True}, {"pattern": "c", "reason": "rc", "weak": False}]}))
+    assert load_words(good) == ((("a", "ra"), ("b", "rb"), ("c", "rc")), ("rb",))
 
 
 # ---- the chat line: only for project work ------------------------------------------------------------------------------

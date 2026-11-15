@@ -418,7 +418,8 @@ live.json    {"schema":"engine-live/1","pid":48211,"at":"2026-11-04T10:00:41Z","
 | 9 | `plan` GET `/api/plan` (:129) | `run` | `plan_view` `{found,...}` | disk |
 | 10 | `library` GET `/api/library` (:132) | none | `{schema, dir, groups}` | global |
 | 11 | `library_item` GET `/api/library/{artifact}/{section}/{slug}/v{N}` (:134) | `run` | the template view plus `example`; 404 `{"error":"no such template"}` | global + disk |
-| 12 | `run_templates` GET `/api/run-templates` (:143) | `run` | `{decisions:[...]}` | disk |
+| 12 | `run_templates` GET `/api/run-templates` (:143) | `run` | `{decisions:[...], run_templates:[...]}` (the library's run templates with `group`, `kind_shown`, J2 sync 6) | disk + global |
+| 12b | `run_template` GET `/api/run-template` | `id` (`[a-z0-9-]+`) | J2's `run_template_view` plus `enabled` (the team's `effective().run_templates`, D183); 404 `{"error":"no such run template"}` | global |
 | 13 | `artifacts` GET `/api/artifacts` (:147) | `run` | `{deliverables, records}` | disk |
 | 14 | `agent` GET `/api/agent` (:150) | `who`, `run` | agent/1 `{schema,who,found,names,summary,conversations,thinking}` | disk |
 | 15 | `code` GET `/api/code` (:153) | `deck`, `section`, `run` | `text/plain`, or 404 "not found" | disk |

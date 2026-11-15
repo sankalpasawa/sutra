@@ -1,0 +1,94 @@
+{
+  "name": "Still Point Yoga PRD Out of scope",
+  "artifact": "prd",
+  "section": "Out of scope",
+  "version": 1,
+  "kind": "specialised",
+  "description": "The '## Out of scope' section of the Still Point Yoga PRD: lists teacher names, phone number, embedded map and online payment as things the page will not have. Payment is made at the studio.",
+  "fields": [
+    {
+      "name": "heading",
+      "type": "string",
+      "required": true,
+      "description": "The section heading, written exactly as '## Out of scope'",
+      "enum": [
+        "## Out of scope"
+      ],
+      "nullable": false
+    },
+    {
+      "name": "out_of_scope",
+      "type": "list[string]",
+      "required": true,
+      "description": "What the Still Point Yoga page will not have, one line each: teacher names, phone number, embedded map, online payment. Never write an actual teacher name or phone number.",
+      "enum": null,
+      "nullable": false
+    },
+    {
+      "name": "online_payment_exclusion",
+      "type": "string",
+      "required": true,
+      "description": "States that no online payment is taken and that payment is made at the studio",
+      "enum": null,
+      "nullable": false
+    },
+    {
+      "name": "assumptions",
+      "type": "list[string]",
+      "required": false,
+      "description": "Assumptions, only if recorded in the facts",
+      "enum": null,
+      "nullable": false
+    }
+  ],
+  "objects": [],
+  "rules": [
+    {
+      "rule": "not_empty",
+      "name": "the out-of-scope lines are given",
+      "from": "P1",
+      "path": "out_of_scope"
+    },
+    {
+      "rule": "enum",
+      "name": "heading is exactly '## Out of scope'",
+      "from": "charter rules",
+      "path": "heading",
+      "values": [
+        "## Out of scope"
+      ]
+    },
+    {
+      "rule": "not_empty",
+      "name": "online payment exclusion is stated",
+      "from": "charter item 9",
+      "path": "online_payment_exclusion"
+    }
+  ],
+  "sha": "89f951dbb0c10389a2edf3b62905a29c912139c9a303f3f844526e2e4aff8efb",
+  "extends": "prd/out-of-scope@generic/1",
+  "made_by": {
+    "run": "j2-20261103-162711",
+    "workflow": "W-6",
+    "atom": "W-6.a1",
+    "agent": "template generator (claude-cli)"
+  },
+  "context": {
+    "business_type": "prd",
+    "facts_used": [
+      "4th Floor, 22 Church Street, Bengaluru 560001",
+      "Monday 7:00 am Gentle Flow 500",
+      "No online payment is taken",
+      "Payment is made at the studio",
+      "Saturday 9:00 am Beginners Basics 400",
+      "Still Point Yoga",
+      "Sunday 8:00 am Slow Sunday 500",
+      "The Out of scope section lists teacher names, phone number, embedded map and online payment",
+      "Thursday 7:00 am Breath and Stretch 450",
+      "Tuesday 6:30 pm Strength Yoga 600",
+      "bookings@stillpoint.example",
+      "name, email, class and preferred date"
+    ],
+    "fingerprint": "c7f43f08a2305fe439db78248145976ed0151a98689391a9b46969653bdc492a"
+  }
+}

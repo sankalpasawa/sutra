@@ -1,0 +1,9 @@
+{
+  "id": "65_loan_review_cost",
+  "title": "Fractions of cost as whole units",
+  "description": "A loan file review at usd 0.42 and 3,340 tokens against usd 2.00 and 10,000 tokens, authored as 42 of 200 usd_cents: 158 cents and 6,660 tokens are left.",
+  "packs": ["155_loan_goal", "156_loan_review"],
+  "execute": true,
+  "area": "Numbers",
+  "expected": "LOCAL_MODEL_EFFECTS_RECORDED"
+}

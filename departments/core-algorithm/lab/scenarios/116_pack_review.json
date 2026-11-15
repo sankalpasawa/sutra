@@ -1,0 +1,33 @@
+{
+  "schema": "sutra-extension/2",
+  "id": "116_pack_review",
+  "scope": "lendco/pack-review",
+  "goals": [
+    "installable:115_servicing_loosens@pair-f3d25cafc818",
+    "installable:114_practice_money_movement@pair-59d6bae8e306"
+  ],
+  "rules": [
+    {
+      "id": "R-INSTALL:115_servicing_loosens@pair-f3d25cafc818",
+      "head": "installable:115_servicing_loosens@pair-f3d25cafc818",
+      "branches": [
+        [
+          "narrows:115_servicing_loosens@pair-f3d25cafc818"
+        ]
+      ],
+      "approved": true,
+      "source": "reviewed/child-narrows-never-relaxes"
+    },
+    {
+      "id": "R-INSTALL:114_practice_money_movement@pair-59d6bae8e306",
+      "head": "installable:114_practice_money_movement@pair-59d6bae8e306",
+      "branches": [
+        [
+          "narrows:114_practice_money_movement@pair-59d6bae8e306"
+        ]
+      ],
+      "approved": true,
+      "source": "reviewed/child-narrows-never-relaxes"
+    }
+  ]
+}

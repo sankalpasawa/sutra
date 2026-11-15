@@ -1,0 +1,30 @@
+{
+  "schema": "sutra-extension/2",
+  "id": "153_finding_method",
+  "methods": [
+    {
+      "id": "file-finding@1",
+      "effect": "finding_filed",
+      "requires": [
+        "fitness_below_band"
+      ],
+      "provider": "local-provider",
+      "grant": "action:file-finding@1",
+      "cost": {
+        "compute": 1,
+        "money": 0,
+        "attention": 1
+      },
+      "action": "emit_artifact",
+      "approved": true,
+      "source": "reviewed/synthetic-method",
+      "artifact_title": "Conformance finding: the run fitness is below the band of its routine; the numbers are on the comparison row this finding rests on (fitness_below_band)"
+    }
+  ],
+  "providers": {
+    "local-provider": 2
+  },
+  "grants": [
+    "action:file-finding@1"
+  ]
+}

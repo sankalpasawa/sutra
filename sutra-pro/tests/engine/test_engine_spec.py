@@ -18,6 +18,7 @@ from pydantic import ValidationError
 from sutra_app.engine import features
 from sutra_app.engine.features import FEATURES, STEP_IDS, by_id
 from sutra_app.engine.spec import (
+    EffectiveFlags, is_run_template_id, run_template_keys,
     CONNECTORS, DEPT_ID_RE, EDITABLE_FIELDS, ENV_NAMES, LOCKED_FIELDS, RUN_ID_RE, SETTING_KEY_RE, SETTINGS_SCHEMA,
     TASK_SCHEMA, TASK_SETTING_KEYS, EngineSettings, SettingsError, TaskSpec, is_dept_id, is_run_id, read_settings_file,
 )
@@ -170,10 +171,12 @@ def test_task_spec_settings_need_text_values():
             task(settings=bad)
 
 
-def test_the_eight_task_keys_are_the_ones_the_orchestrator_allows():
-    assert TASK_SETTING_KEYS == ("J2_OUTPUT", "J2_BUDGET", "J2_BUDGET_CAP", "J2_FIXES", "J2_MEMORY", "J2_SLIM", "J2_RATES", "J2_DECIDE_FOR_ME")
+def test_the_ten_task_keys_are_the_ones_the_orchestrator_allows():
+    assert TASK_SETTING_KEYS == ("J2_OUTPUT", "J2_BUDGET", "J2_BUDGET_CAP", "J2_FIXES", "J2_MEMORY", "J2_SLIM", "J2_RATES", "J2_DECIDE_FOR_ME",
+                                 "J2_RUN_TEMPLATE", "J2_RUN_TEMPLATE_WORKFLOWS")
     assert all(re.fullmatch(SETTING_KEY_RE, key) for key in TASK_SETTING_KEYS)
     assert all(ENV_NAMES[name] in TASK_SETTING_KEYS for name in ("output", "budget", "budget_cap", "fixes", "memory", "slim", "rates", "decide_for_me"))
+    assert not {"J2_RUN_TEMPLATE", "J2_RUN_TEMPLATE_WORKFLOWS"} & set(ENV_NAMES.values()), "the two run template keys are task-only: not settings (D182)"
     assert not set(TASK_SETTING_KEYS) & {ENV_NAMES[name] for name in LOCKED_FIELDS}
 
 
@@ -214,6 +217,9 @@ J2_DEFAULTS = {
     "board": False,                   # j2_board.py:30 == "1"
     "artifact_schema": False,         # :450 == "1"
     "template_library": False,        # j2_template_lib.py:61 == "1"
+    "run_templates": False,           # J2 sync 6 (D177): j2.py `run_templates_on()`, J2_RUN_TEMPLATES == "1" (or auto_reuse)
+    "auto_reuse": False,              # J2 sync 6: j2_template_lib.py `auto_reuse()`, J2_AUTO_REUSE == "1" (or the content door)
+    "artifact_library": False,        # J2 sync 6: j2_artifact_lib.py, J2_ARTIFACT_LIBRARY == "1"
     "send_mode": "dry-run",           # j2_send.py:76
     "send_cap": 10,                   # j2_send.py:82
     "milestone_emails": False,        # :3895
@@ -228,19 +234,22 @@ J2_DEFAULTS = {
     "workspace": "auto",              # D127: Sutra's own, not J2's: the workspace capability
     "builder_timeout": 600,           # J2 sync 5: j2.py `float(os.environ.get("J2_BUILDER_TIMEOUT") or 600)`: seconds one builder AI call may take, 0 = no limit
     "decide_for_me": False,           # J2 sync 4: j2.py `os.getenv("J2_DECIDE_FOR_ME") == "1"`: the Simple view's switch is off until it is turned on
+    "reviewer": True,                 # J2 sync 6 (D179): the host's, J2 has no switch; on is J2's behaviour (the reviewer always ran)
+    "reviewer_wait": 120.0,           # J2 sync 6 (D179): seconds the host waits for the reviewer thread; the host's own
 }
 
 
 def test_engine_settings_default_to_j2s_values():
     assert EngineSettings().model_dump() == J2_DEFAULTS
     assert list(EngineSettings.model_fields) == list(J2_DEFAULTS)
-    assert len(J2_DEFAULTS) == 33
+    assert len(J2_DEFAULTS) == 38
 
 
 def test_the_flags_that_are_on_in_j2_are_on_and_the_others_off():
     s = EngineSettings()
     assert (s.rates, s.slim, s.memory, s.realization) == (True, True, True, True)
     assert (s.change, s.board, s.artifact_schema, s.template_library, s.milestone_emails, s.memory_test_lessons) == (False,) * 6
+    assert (s.run_templates, s.auto_reuse, s.artifact_library) == (False,) * 3 and s.reviewer is True       # D177, D179: the reuse flags ship off, the reviewer on
     assert s.send_mode == "dry-run"                                   # nothing leaves the machine by default
 
 
@@ -261,6 +270,8 @@ def test_no_setting_is_a_secret():
     ("output", ["auto", "website", "prd", "hld", "lld", "project", "business_report"],
      ["Website", "", None, 3, "a", "has space", "x" * 42, "1abc", "../x"]),         # `auto` or a name by shape, never a closed list (D166)
     ("builder_timeout", [0, 0.5, 600, 3600.0], [-1, "slow", None, float("nan"), float("inf")]),
+    ("reviewer_wait", [0, 0.5, 120, 3600.0], [-1, "slow", None, float("nan"), float("inf")]),         # J2 sync 6 (D179): 0 = do not wait
+    ("reviewer", [True, False], ["maybe", 5]),
     ("fixes", [0, 1], [2, -1, "yes"]),
     ("budget", [1, 100, 100000], [0, -5, 100001, "many", 1.5]),
     ("budget_cap", [None, 1, 100000], [0, 100001, "x"]),
@@ -303,7 +314,7 @@ def test_the_ten_locked_fields():
 
 def test_editable_is_everything_else_in_field_order():
     assert EDITABLE_FIELDS == tuple(f for f in EngineSettings.model_fields if f not in LOCKED_FIELDS)
-    assert len(EDITABLE_FIELDS) == 23 and not set(EDITABLE_FIELDS) & set(LOCKED_FIELDS)
+    assert len(EDITABLE_FIELDS) == 28 and not set(EDITABLE_FIELDS) & set(LOCKED_FIELDS)
     assert SETTINGS_SCHEMA == "engine-settings/1"
 
 
@@ -319,7 +330,8 @@ J2_VARIABLES = {     # engine.md 4.4: the J2 variables that become fields
     "test_slack_target": "J2_TEST_SLACK_TARGET", "tap_min": "J2_TAP_MIN", "chrome": "J2_CHROME",
     "force_audit_fail": "J2_FORCE_AUDIT_FAIL", "force_audit_note": "J2_FORCE_AUDIT_NOTE", "force_question": "J2_FORCE_QUESTION",
     "memory_test_lessons": "J2_MEMORY_TEST_LESSONS", "workspace": "J2_WORKSPACE", "builder_timeout": "J2_BUILDER_TIMEOUT",
-    "decide_for_me": "J2_DECIDE_FOR_ME"}
+    "decide_for_me": "J2_DECIDE_FOR_ME", "run_templates": "J2_RUN_TEMPLATES", "auto_reuse": "J2_AUTO_REUSE",
+    "artifact_library": "J2_ARTIFACT_LIBRARY", "reviewer": "J2_REVIEWER", "reviewer_wait": "J2_REVIEWER_WAIT"}
 
 
 def test_every_field_has_its_j2_variable():
@@ -331,7 +343,7 @@ NON_DEFAULT = dict(output="prd", fixes=1, budget=250, budget_cap=400, max_cycles
                    board=True, artifact_schema=True, template_library=True, send_mode="mock", send_cap=0, milestone_emails=True,
                    test_email="me@example.com", test_slack_target="#tests", tap_min=48, chrome="/opt/chrome", force_audit_fail=2,
                    force_audit_note="forced", force_question="why?", memory_test_lessons=True, workspace="off", builder_timeout=30.0,
-                   decide_for_me=True)
+                   decide_for_me=True, run_templates=True, auto_reuse=True, artifact_library=True, reviewer=False, reviewer_wait=7.5)
 
 
 def test_to_env_of_the_defaults_leaves_out_the_empty_values():
@@ -343,7 +355,8 @@ def test_to_env_of_the_defaults_leaves_out_the_empty_values():
                    "J2_DELAY": "0.0", "J2_RATES": "1", "J2_SLIM": "1", "J2_MEMORY": "1", "J2_REALIZATION": "1", "J2_CHANGE": "0",
                    "J2_BOARD": "0", "J2_ARTIFACT_SCHEMA": "0", "J2_TEMPLATE_LIBRARY": "0", "J2_SEND_MODE": "dry-run",
                    "J2_SEND_CAP": "10", "J2_MILESTONE_EMAILS": "0", "J2_TAP_MIN": "44", "J2_FORCE_AUDIT_FAIL": "0",
-                   "J2_MEMORY_TEST_LESSONS": "0", "J2_WORKSPACE": "auto", "J2_BUILDER_TIMEOUT": "600", "J2_DECIDE_FOR_ME": "0"}
+                   "J2_MEMORY_TEST_LESSONS": "0", "J2_WORKSPACE": "auto", "J2_BUILDER_TIMEOUT": "600", "J2_DECIDE_FOR_ME": "0",
+                   "J2_RUN_TEMPLATES": "0", "J2_AUTO_REUSE": "0", "J2_ARTIFACT_LIBRARY": "0", "J2_REVIEWER": "1", "J2_REVIEWER_WAIT": "120.0"}
 
 
 def test_to_env_for_every_field():
@@ -356,7 +369,8 @@ def test_to_env_for_every_field():
                    "J2_SEND_MODE": "mock", "J2_SEND_CAP": "0", "J2_MILESTONE_EMAILS": "1", "J2_TEST_EMAIL": "me@example.com",
                    "J2_TEST_SLACK_TARGET": "#tests", "J2_TAP_MIN": "48", "J2_CHROME": "/opt/chrome", "J2_FORCE_AUDIT_FAIL": "2",
                    "J2_FORCE_AUDIT_NOTE": "forced", "J2_FORCE_QUESTION": "why?", "J2_MEMORY_TEST_LESSONS": "1",
-                   "J2_WORKSPACE": "off", "J2_BUILDER_TIMEOUT": "30.0", "J2_DECIDE_FOR_ME": "1"}
+                   "J2_WORKSPACE": "off", "J2_BUILDER_TIMEOUT": "30.0", "J2_DECIDE_FOR_ME": "1",
+                   "J2_RUN_TEMPLATES": "1", "J2_AUTO_REUSE": "1", "J2_ARTIFACT_LIBRARY": "1", "J2_REVIEWER": "0", "J2_REVIEWER_WAIT": "7.5"}
 
 
 def test_the_builder_time_limit_takes_zero_for_no_limit_and_a_bad_value_names_its_variable():
@@ -565,15 +579,16 @@ def test_read_settings_file(tmp_path):
 # ---- FEATURES ---------------------------------------------------------------------------------------------------------
 
 CHIPS = ["Workflow builder agents", "Code validator", "Confidence judge", "Budget and rate card", "Memory", "Message board",
-         "Document chain", "Site build and checks", "Sends and deeds", "Run views", "Template library", "Charter change",
+         "Document chain", "Site build and checks", "Sends and deeds", "Run views", "Template library", "Run templates and auto-reuse",
+         "Content door", "Charter change",
          "Artifact schemas", "Story and agent views", "Plan and priorities"]
 
 
-def test_the_table_has_eight_steps_fifteen_chips_and_one_row_of_extras():
+def test_the_table_has_eight_steps_seventeen_chips_and_one_row_of_extras():
     assert [f.id for f in FEATURES if f.kind == "step"] == list(STEP_IDS) == ["J2.a", "J2.b", "J2.c", "J2.d", "J2.e", "J2.f", "J2.g", "J2.h"]
     assert [f.chip for f in FEATURES if f.kind == "chip"] == CHIPS
     assert [f.kind for f in FEATURES if f.kind not in ("step", "chip")] == ["extra"]
-    assert len(FEATURES) == 24
+    assert len(FEATURES) == 26
     assert FEATURES[-1].chip.startswith("Also: run report and reviewer, owner override, test switches, docx export, redaction, saved runs")
 
 
@@ -588,7 +603,8 @@ def test_the_flags_of_a_feature_are_real_settings():
     for feature in FEATURES:
         assert set(feature.flags) <= set(EngineSettings.model_fields), feature.id
     assert by_id()["judge"].flags == ("realization", "change")
-    assert by_id()["extras"].flags == ("force_audit_fail", "force_audit_note", "force_question")
+    assert by_id()["extras"].flags == ("force_audit_fail", "force_audit_note", "force_question", "reviewer", "reviewer_wait")
+    assert by_id()["run_templates"].flags == ("run_templates", "auto_reuse") and by_id()["content_door"].flags == ("artifact_library",)
 
 
 def test_files_are_relative_and_symbols_live_in_the_features_files():
@@ -620,7 +636,7 @@ def test_the_table_is_the_design_as_it_was_written():
     """Section 8 of engine.md, transcribed. Change a row on purpose and this digest changes with it (and so must the design);
     `test_every_symbol_and_file_of_the_table_exists_in_j2` below checks the names against J2 itself."""
     blob = json.dumps([dataclasses.asdict(f) for f in FEATURES], sort_keys=True, separators=(",", ":"))
-    assert hashlib.sha256(blob.encode()).hexdigest() == "48bf1aaa846c66ad50bd4054d0eee184f53bf2f67d7d19349efcb74314366dfa"
+    assert hashlib.sha256(blob.encode()).hexdigest() == "38f0525f81cb13d7d0f2263e69c9343ab531a5c06139ed3d2cecdef371541488"
 
 
 J2_CHECKOUT = os.environ.get("SUTRA_J2_CHECKOUT")
@@ -647,3 +663,94 @@ def test_every_symbol_and_file_of_the_table_exists_in_j2():
                                 found.add(target.id)
                 defined[file] = found
             assert name in defined[file], (feature.id, file, name)
+
+
+# ---- J2 sync 6: the reuse flags, effective(), the reviewer pair, the two task-only keys, the fixed values (D177 to D179, D182) ----------------------------
+
+IMPLIED = {   # the stored flag that is on -> what `effective()` says is on (J2's own chain: j2_template_lib.enabled / auto_reuse, j2.run_templates_on, artifact_schema_on)
+    "nothing": ({}, dict(auto_reuse=False, run_templates=False, template_library=False, artifact_schema=False)),
+    "run_templates": ({"run_templates": True}, dict(auto_reuse=False, run_templates=True, template_library=False, artifact_schema=False)),
+    "auto_reuse": ({"auto_reuse": True}, dict(auto_reuse=True, run_templates=True, template_library=True, artifact_schema=True)),
+    "artifact_library": ({"artifact_library": True}, dict(auto_reuse=True, run_templates=True, template_library=True, artifact_schema=True)),
+    "template_library": ({"template_library": True}, dict(auto_reuse=False, run_templates=False, template_library=True, artifact_schema=True)),
+    "artifact_schema": ({"artifact_schema": True}, dict(auto_reuse=False, run_templates=False, template_library=False, artifact_schema=True)),
+}
+
+
+@pytest.mark.parametrize("name", list(IMPLIED))
+def test_effective_flags_follow_js_own_chain(name):
+    stored, expected = IMPLIED[name]
+    settings = EngineSettings(**stored)
+    flags = settings.effective()
+    assert dataclasses.asdict(flags) == expected
+    assert settings.model_dump() == EngineSettings(**stored).model_dump(), "effective() reads; it never rewrites what the owner chose"
+
+
+def test_effective_flags_are_frozen_and_the_settings_keep_what_is_stored():
+    settings = EngineSettings(artifact_library=True)
+    flags = settings.effective()
+    assert isinstance(flags, EffectiveFlags)
+    with pytest.raises(dataclasses.FrozenInstanceError):
+        flags.auto_reuse = False
+    assert (settings.auto_reuse, settings.run_templates, settings.template_library, settings.artifact_schema) == (False,) * 4
+    assert tuple(f.name for f in dataclasses.fields(EffectiveFlags)) == ("auto_reuse", "run_templates", "template_library", "artifact_schema")
+
+
+def test_the_reuse_flags_and_the_reviewer_pair_are_editable_and_none_is_locked():
+    for name in ("run_templates", "auto_reuse", "artifact_library", "reviewer", "reviewer_wait"):
+        assert name in EDITABLE_FIELDS and name not in LOCKED_FIELDS
+        assert ENV_NAMES[name] == "J2_" + name.upper()
+        assert ENV_NAMES[name] not in TASK_SETTING_KEYS, "the five are not task keys: a request cannot switch them"
+
+
+def test_the_reuse_flags_and_the_reviewer_pair_read_the_environment_the_files_and_refuse_a_bad_word():
+    got = EngineSettings.layered({"J2_AUTO_REUSE": "yes", "J2_REVIEWER": "off", "J2_REVIEWER_WAIT": "0"}, {"run_templates": True}, None, {})
+    assert (got.auto_reuse, got.reviewer, got.reviewer_wait, got.run_templates) == (True, False, 0, True)
+    assert got.to_env()["J2_REVIEWER_WAIT"] == "0.0" and got.to_env()["J2_REVIEWER"] == "0"
+    for var, bad in (("J2_ARTIFACT_LIBRARY", "perhaps"), ("J2_REVIEWER_WAIT", "-5"), ("J2_REVIEWER_WAIT", "nan")):
+        with pytest.raises(SettingsError, match=var):
+            EngineSettings.layered({var: bad}, None, None, {})
+
+
+def test_the_two_run_template_keys_are_task_only_and_layered_ignores_them():
+    got = EngineSettings.layered({}, None, None, {"J2_RUN_TEMPLATE": "thread-boutique-website", "J2_RUN_TEMPLATE_WORKFLOWS": "all", "J2_BUDGET": "7"})
+    assert got.budget == 7 and got == EngineSettings(budget=7), "the two keys change no setting"
+    assert not any("TEMPLATE" in env for env in got.to_env() if env not in ("J2_RUN_TEMPLATES", "J2_TEMPLATE_LIBRARY"))
+    spec = task(settings={"J2_RUN_TEMPLATE": "thread-boutique-website", "J2_RUN_TEMPLATE_WORKFLOWS": "w1,w2"})
+    assert spec.settings["J2_RUN_TEMPLATE"] == "thread-boutique-website" and spec.dropped_settings == ()
+
+
+@pytest.mark.parametrize("value, ok", [("thread-boutique-website", True), ("a", True), ("x" * 80, True), ("x" * 81, False), ("", False), ("Upper", False),
+                                       ("has space", False), ("a_b", False), ("../x", False), ("a\n", False), (None, False), (5, False)])
+def test_a_run_template_id_has_the_shape_of_a_folder_name(value, ok):
+    assert is_run_template_id(value) is ok
+
+
+@pytest.mark.parametrize("value, expected", [("all", []), ("ALL", []), ("", []), (" all ", []), ("w1", ["w1"]), ("w1, w2 ,w3", ["w1", "w2", "w3"]),
+                                             (",,", []), ("a" * 20, ["a" * 20]), ("a" * 21, None), (",".join(f"k{i}" for i in range(40)), [f"k{i}" for i in range(40)]),
+                                             (",".join(f"k{i}" for i in range(41)), None), ("a b", None), ("w1;w2", None), ("x," * 300, None), (7, None),
+                                             ("all,w1", ["all", "w1"])])
+def test_the_workflow_keys_of_a_request(value, expected):
+    assert run_template_keys(value) == expected
+
+
+# ---- the defaults that copy J2's (D188, rule R-1 exception) ---------------------------------------------------------------------------------------
+def test_every_default_that_has_a_j2_module_constant_equals_it_in_a_clean_process():
+    """`spec.py` is read before J2 exists (the host resolves the settings, exports the environment, then imports J2), so it cannot read J2's values;
+    the copy stays and this one test reads J2's own constants, in a process with no J2_* variable, and compares each. `delay` is the deliberate
+    difference (J2 paces itself with 2 s outside mock mode; the router paces here), kept out by name."""
+    import subprocess
+    import sys
+    code = ("import json\nimport sutra_app.engine.j2 as j\n"
+            "print(json.dumps({'budget': j.BUDGET, 'budget_cap': j.BUDGET_CAP, 'max_cycles': j.MAX_CYCLES, 'limit_add': j.LIMIT_ADD, "
+            "'bargain_minutes': j.BARGAIN_MINUTES, 'bargain_calls': j.BARGAIN_CALLS, 'max_turns': j.MAX_TURNS, 'chat_full_chars': j.CHAT_FULL_CHARS, "
+            "'rates': j.RATES_ON, 'tap_min': j.j2_check.TAP_MIN}))\n")
+    env = {"PATH": os.environ.get("PATH", ""), "HOME": os.environ.get("HOME", ""), "STUDIO_MOCK": "1",
+           "PYTHONPATH": os.pathsep.join(p for p in sys.path if p)}
+    done = subprocess.run([sys.executable, "-c", code], capture_output=True, text=True, timeout=120, env=env)
+    assert done.returncode == 0, done.stderr
+    theirs = json.loads(done.stdout.strip().splitlines()[-1])
+    ours = EngineSettings()
+    assert theirs.pop("budget_cap") == 2 * ours.budget and ours.budget_cap is None, "unset means twice the budget, as J2 reads it"
+    assert theirs == {name: getattr(ours, name) for name in theirs}, "a J2 default moved: update spec.py, its tests and docs/ENVIRONMENT.md together"
+    assert ours.delay == 0.0, "the one deliberate difference"

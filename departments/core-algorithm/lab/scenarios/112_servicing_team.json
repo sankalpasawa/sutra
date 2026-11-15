@@ -1,0 +1,146 @@
+{
+  "schema": "sutra-extension/2",
+  "id": "112_servicing_team",
+  "scope": "lendco/servicing",
+  "goals": [
+    "refund_settled"
+  ],
+  "budget": {
+    "compute": 10,
+    "money": 10,
+    "attention": 3
+  },
+  "preference": [
+    "compute",
+    "money",
+    "attention"
+  ],
+  "rules": [
+    {
+      "id": "R-REFUND@1",
+      "head": "refund_settled",
+      "branches": [
+        [
+          "refund_paid",
+          "payment_reconciled"
+        ]
+      ],
+      "approved": true,
+      "source": "reviewed/servicing-team"
+    }
+  ],
+  "evidence": [
+    {
+      "predicate": "refund_due",
+      "truth": "TRUE",
+      "verified": true,
+      "source": "fixture/loan-book",
+      "version": "overpaid-instalment-1"
+    },
+    {
+      "predicate": "maker_may_reconcile",
+      "truth": "TRUE",
+      "verified": true,
+      "source": "fixture/team-default",
+      "version": "1"
+    }
+  ],
+  "methods": [
+    {
+      "id": "check-payee-account@1",
+      "effect": "payee_account_checked",
+      "requires": [
+        "refund_due"
+      ],
+      "provider": "local-provider",
+      "grant": "action:check-payee-account@1",
+      "cost": {
+        "compute": 1,
+        "money": 0,
+        "attention": 0
+      },
+      "action": "simulate_fact",
+      "approved": true,
+      "source": "reviewed/synthetic-method"
+    },
+    {
+      "id": "pay-to-borrower@1",
+      "effect": "refund_paid",
+      "requires": [
+        "payee_account_checked",
+        "owner_approved_refund"
+      ],
+      "provider": "local-provider",
+      "grant": "action:pay-to-borrower@1",
+      "cost": {
+        "compute": 1,
+        "money": 2,
+        "attention": 0
+      },
+      "action": "simulate_fact",
+      "approved": true,
+      "source": "reviewed/synthetic-method"
+    },
+    {
+      "id": "pay-to-third-party@1",
+      "effect": "refund_paid",
+      "requires": [
+        "third_party_payout_allowed"
+      ],
+      "provider": "local-provider",
+      "grant": "action:pay-to-third-party@1",
+      "cost": {
+        "compute": 1,
+        "money": 1,
+        "attention": 0
+      },
+      "action": "simulate_fact",
+      "approved": true,
+      "source": "reviewed/synthetic-method"
+    },
+    {
+      "id": "reconcile-by-maker@1",
+      "effect": "payment_reconciled",
+      "requires": [
+        "maker_may_reconcile",
+        "refund_paid"
+      ],
+      "provider": "local-provider",
+      "grant": "action:reconcile-by-maker@1",
+      "cost": {
+        "compute": 1,
+        "money": 0,
+        "attention": 0
+      },
+      "action": "simulate_fact",
+      "approved": true,
+      "source": "reviewed/synthetic-method"
+    },
+    {
+      "id": "reconcile-by-checker@1",
+      "effect": "payment_reconciled",
+      "requires": [
+        "refund_paid"
+      ],
+      "provider": "local-provider",
+      "grant": "action:reconcile-by-checker@1",
+      "cost": {
+        "compute": 2,
+        "money": 0,
+        "attention": 0
+      },
+      "action": "simulate_fact",
+      "approved": true,
+      "source": "reviewed/synthetic-method"
+    }
+  ],
+  "providers": {
+    "local-provider": 6
+  },
+  "grants": [
+    "action:pay-to-borrower@1",
+    "action:pay-to-third-party@1",
+    "action:reconcile-by-maker@1",
+    "action:reconcile-by-checker@1"
+  ]
+}

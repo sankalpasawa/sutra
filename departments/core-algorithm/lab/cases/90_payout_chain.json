@@ -1,0 +1,12 @@
+{
+  "id": "90_payout_chain",
+  "title": "A chain of three steps",
+  "description": "A lender's payout desk pays out a loan in three steps: check the payee, pay, reconcile. Five tokens and one unit of money. Every step names the payout it works on. This case is one look at one payout; the recorded sequence reader_one_way shows the next two payouts run and pay all three steps again. The desk's second goal, the yes to a new way of paying out, waits for a row read from the record.",
+  "packs": [
+    "224_payout_desk",
+    "225_payout_changes"
+  ],
+  "execute": true,
+  "area": "Learning from past runs",
+  "expected": "LOCAL_MODEL_EFFECTS_RECORDED"
+}

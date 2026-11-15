@@ -60,7 +60,8 @@ VENDORED_MD = "sutra_app/engine/VENDORED.md"
 VENDOR_SCRIPT = "scripts/vendor_j2.py"
 PORT_SCRIPT = "scripts/port_j2_ui.py"
 LEGACY_DIR = "tests/engine/legacy"
-LEGACY_NAMES = ("j2_flow_test.py", "change_test.py", "realization_test.py", "j2_replay_size.py")
+LEGACY_NAMES = ("j2_flow_test.py", "change_test.py", "realization_test.py", "j2_replay_size.py",
+                "artifact_lib_test.py", "content_door_test.py")      # sync 6 (D190, D192): the last two test the content door, which the flow test does not exercise
 # the folders `vendor_j2.py` manages: a file in one of them that VENDORED.md does not name is stale
 MANAGED = ("sutra_app/engine/agents", "sutra_app/engine/conditions", "sutra_app/engine/artifacts", "sutra_app/engine/templates",
            "sutra_app/engine/seed", "docs/reference/j2")
@@ -159,6 +160,10 @@ _FIXTURE = ("the saved Sudoku run (N6 'no invented content') that J2's flow test
 _FOLLOWUPS = ("J2's working note of the word-based decisions still to review (`docs/word-matching-followups.md`): a to-do list of J2's "
               "maintainers, not an engine file; the 13 items are out of scope of sync 5.")
 _SYNC5_AT = "docs/design/j2-sync-5.md D161 (named exclusions)"
+_FOLDER_RUN = ("the saved copy-files run (a script, its test and a README, written by one workflow into script/) that J2's flow test "
+               "turns into a run template and reuses (`folder_reuse`): test data of J2's own script. The legacy copy in tests/engine/legacy/ "
+               "reads it from SUTRA_J2_CHECKOUT, an extraction of this folder, and prints a skip reason without one.")
+_SYNC6_AT = "docs/design/j2-sync-6.md D190 and D192 (the fixtures follow the flow test that reads them)"
 
 EXCLUDED: tuple[Exclusion, ...] = (
     Exclusion("studio.py", "older studio", _STUDIO, _STUDIO_AT),
@@ -196,6 +201,7 @@ EXCLUDED: tuple[Exclusion, ...] = (
     Exclusion("tools/*", "J2 developer tools", _TOOLS, _SYNC5_AT),
     Exclusion("fixtures/n6-sudoku-*", "J2 test fixtures", _FIXTURE, _SYNC5_AT),
     Exclusion("docs/word-matching-followups.md", "J2 developer notes", _FOLLOWUPS, _SYNC5_AT),
+    Exclusion("fixtures/folder-run/*", "J2 test fixtures", _FOLDER_RUN, _SYNC6_AT),
 )
 
 

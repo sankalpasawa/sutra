@@ -12,6 +12,8 @@ the prompts (it imports this module, never the other way round).
     build_model, transport, validate                the runtime class from a spec (pydantic.create_model), its draft-07
                                                     transport schema, and (data) -> (dict or None, errors)
     TemplateMeta, TemplateDecision, RunTemplate, TemplatesFile           the files of a run's own copy (J2 sync 33aeeda)
+    RunTemplateBundle, RunTemplateWorkflow, RunTemplateUse, AutoReuse    J2 `run-template/1` (the bundle of a finished run, library/run-templates/<id>/template.json)
+                                                                         and what templates.json says about the one a run started from (J2 1adb8ecd)
     run_tpl_rel, RUN_TEMPLATE_FILES                 where a run keeps its copy of a template version
 
 Differences from J2, each on purpose: a template is frozen (a changed sha or version is `evolve`); `rules` are `RuleSpec`
@@ -32,17 +34,20 @@ from pydantic import Field, StringConstraints, create_model, model_validator
 from .base import Record, Value
 from .registry import REGISTRY, record, transport_schema
 from .rules import RULE_TYPES, RuleSpec, spec_problems
-from .types import ArtifactName
+from .types import ArtifactName, JsonObject
 
 __all__ = [
     "SCHEMA", "VERSION", "MAX_FIELDS", "RUN_TEMPLATE_FILES", "TemplateArtifact", "FieldSpec", "ObjectSpec", "MadeBy",
     "Context", "Use", "Template", "GenericTemplate", "SpecialisedTemplate", "TemplateMeta", "TemplateCandidate",
-    "TemplateDecision", "RunTemplate", "TemplatesFile", "sha_of", "generic_ref", "shape_problems", "rule_problems",
+    "TemplateDecision", "RunTemplate", "TemplatesFile", "RunTemplateBundle", "RunTemplateWorkflow", "RunTemplateUse", "AutoReuse",
+    "AutoScore", "RUN_TEMPLATE_SCHEMA", "RUN_TEMPLATE_DIR", "MetaMadeBy", "Business", "CollectedFrom", "sha_of", "generic_ref", "shape_problems", "rule_problems",
     "resolve", "keeps_problems", "refusal", "spec_json", "slug", "errors_of", "normalise", "class_name", "build_model",
     "transport", "validate", "run_tpl_rel",
 ]
 
 SCHEMA = "template-library/1"
+RUN_TEMPLATE_SCHEMA = "run-template/1"          # J2 j2_template_lib.RUN_TEMPLATE_SCHEMA
+RUN_TEMPLATE_DIR = "run-templates"              # library/run-templates/<id>/{template.json, schema.json}
 VERSION = 1
 TemplateArtifact = ArtifactName          # the name of an output type, by shape: the types are data
 MAX_FIELDS = 25
@@ -597,10 +602,33 @@ class _TemplateDoc(Value):
         return {"schema": SCHEMA, **self.model_dump(by_alias=True, mode="json", exclude_none=True)}
 
 
+class MetaMadeBy(MadeBy):
+    """`made_by` of a library meta.json: the four keys of a spec's `made_by` and, since J2 sync 4, the time it was made."""
+
+    date: Optional[Annotated[str, StringConstraints(max_length=40)]] = None
+
+
+class Business(Value):
+    """The business a template version was made for (provenance of a library version, J2 sync 4)."""
+
+    name: Line200
+    type: Line200
+
+
+class CollectedFrom(Value):
+    """Which run's copy a library version was collected from (the finish step, D142)."""
+
+    run: Line200
+    where: Line200
+
+
 class TemplateMeta(_TemplateDoc):
     """meta.json of one template version (a library version or a run's copy). A generic copy says `kind: "generic"` and
     has `used_by: []`; a specialised one has no `kind` key in J2, and carries the class name, the creation time and the
-    fingerprints of the needs it answered."""
+    fingerprints of the needs it answered. The keys after `used_by` are provenance: `made_by`, `business`, `mock` and
+    `collected_from` (a library version, J2 sync 4; a run's copy of one carries them too) and, from J2 1adb8ecd,
+    `renamed_from` ("name@N", the family and number a moved version had) and `adapted_from` ("name@N", the template an
+    auto-reuse adaptation started from)."""
 
     name: Name200
     version: Annotated[int, Field(ge=1, le=999_999)]
@@ -612,6 +640,12 @@ class TemplateMeta(_TemplateDoc):
     created: Optional[Annotated[str, StringConstraints(max_length=40)]] = None
     fingerprints: Optional[Annotated[list[Annotated[str, StringConstraints(max_length=128)]], Field(max_length=500)]] = None
     used_by: Annotated[list[Use], Field(max_length=5000)] = Field(default_factory=list)
+    made_by: Optional[MetaMadeBy] = None
+    business: Optional[Business] = None
+    mock: Optional[bool] = None
+    collected_from: Optional[CollectedFrom] = None
+    renamed_from: Optional[Line200] = None
+    adapted_from: Optional[Line200] = None
 
 
 class TemplateCandidate(Value):
@@ -652,21 +686,174 @@ class TemplateDecision(Value):
     attempts: Optional[Annotated[int, Field(ge=1, le=10)]] = None
     refused: Optional[Annotated[list[Optional[Text2000]], Field(max_length=10)]] = None
     saved: Optional[Annotated[str, StringConstraints(pattern=SAVED_PATTERN)]] = None
+    # J2 1adb8ecd, on the paths that use a run template, auto-reuse or the content door
+    run_template: Optional[Annotated[str, StringConstraints(max_length=80)]] = None      # the run template this run follows (id)
+    from_template: Optional[bool] = None                                                  # the template has a workflow for this section
+    template_workflow: Optional[Line80] = None                                            # which one ("W-3")
+    adapted_from: Optional[Line200] = None                                                # "name@N": the template this one was made over from
+    new_family: Optional[bool] = None                                                     # adapted for another business: a family of its own
+    first_refused: Optional[Text2000] = None                                              # why the run template's own section template was not adapted
+    nearest: Optional[JsonObject] = None                                                  # the nearest template by fields (auto-reuse)
+    nearest_refused: Optional[Text2000] = None                                            # why the nearest template was not adapted
+    door: Optional[Literal["reuse", "adapt", "build", "unknown"]] = None                  # the content door's decision for this section
 
 
 class RunTemplate(TemplateDecision):
-    """A row of GET /api/run-templates: the decision plus where its template can be read from now."""
+    """A row of GET /api/run-templates: the decision plus where its template can be read from now. From J2 1adb8ecd (`reuse_rows`)
+    the row also has the `group` its artifact type is counted in (null for an artifact that is no type: a form's style guide) and
+    the action as the page names it (`kind_shown`: the recorded "extended" is shown as "adapted")."""
 
     source: Literal["from this run", "from library", "not recorded"]
+    group: Optional[Line80] = None
+    kind_shown: Optional[Literal["created", "adapted", "reused", "generic"]] = None
+
+
+class RunTemplateUse(Value):
+    """`run_template` of templates.json: the run template this run follows, chosen by the Requester (`set_run_template`) or by
+    auto-reuse (`auto`, `match`). `plans` and `workflows` are per-workflow state J2 keeps while the run goes (bounded open JSON)."""
+
+    id: Annotated[str, StringConstraints(min_length=1, max_length=80)]
+    name: Name200
+    selected: Annotated[list[Annotated[str, StringConstraints(max_length=40)]], Field(max_length=500)]
+    added: Annotated[list[Annotated[str, StringConstraints(max_length=40)]], Field(max_length=500)] = Field(default_factory=list)
+    of: Annotated[int, Field(ge=0, le=500)]
+    plans: JsonObject = Field(default_factory=dict)
+    workflows: Annotated[list[JsonObject], Field(max_length=500)] = Field(default_factory=list)
+    added_stages: Optional[Annotated[list[Annotated[str, StringConstraints(max_length=40)]], Field(max_length=40)]] = None
+    auto: Optional[bool] = None
+    match: Optional[float] = None
+
+
+class AutoScore(Value):
+    """One run template scored against a run (J2 `match_run_templates`): the score and its three parts, and whether this run could
+    take it (`eligible`; `why_not` says why not). `mock` is true, false or "not recorded"."""
+
+    id: Annotated[str, StringConstraints(min_length=1, max_length=80)]
+    name: Name200
+    score: float
+    stages: float
+    business: float
+    covers: float
+    template_stages: Annotated[list[Annotated[str, StringConstraints(max_length=40)]], Field(max_length=40)]
+    business_type: Line200
+    mock: bool | Literal["not recorded"]
+    eligible: bool
+    why_not: Optional[Text1000] = None
+
+
+class AutoReuse(Value):
+    """`auto_reuse` of templates.json (J2_AUTO_REUSE=1): the threshold and weights used, the stages asked for, the pick (an id, or
+    null when no template reached the threshold) and every score."""
+
+    threshold: float
+    weights: dict[Line80, float]
+    asked_stages: Annotated[list[Annotated[str, StringConstraints(max_length=40)]], Field(max_length=40)]
+    picked: Optional[Annotated[str, StringConstraints(max_length=80)]] = None
+    match: Optional[float] = None
+    scores: Annotated[list[AutoScore], Field(max_length=500)] = Field(default_factory=list)
 
 
 class TemplatesFile(_TemplateDoc):
-    """templates.json of a run."""
+    """templates.json of a run. `run_template` and `auto_reuse` appear only when a run template or auto-reuse was in play."""
 
     library: Annotated[str, StringConstraints(min_length=1, max_length=1000)]
     decisions: Annotated[list[TemplateDecision], Field(max_length=2000)] = Field(default_factory=list)
+    run_template: Optional[RunTemplateUse] = None
+    auto_reuse: Optional[AutoReuse] = None
+
+
+# ---------------------------------------------------------------- run-template/1: the bundle of a finished run (J2 1adb8ecd)
+NOT_RECORDED = "not recorded"
+KEY_RE = re.compile(r"^W-[0-9]+$")
+SLOT_RE = re.compile(r"<([a-z][a-z ]*)>")
+ID_SLOTS = ("requirement ids", "component ids", "goal ids", "section ids")        # J2 `ID_SLOTS`: slots that are never facts
+Key = Annotated[str, StringConstraints(pattern=r"^W-[0-9]+$", max_length=40)]
+Stage = Annotated[str, StringConstraints(min_length=1, max_length=40)]
+Slug = Annotated[str, StringConstraints(pattern=r"^[a-z0-9]+(-[a-z0-9]+)*$", max_length=80)]
+
+
+class RunTemplateWorkflow(Value):
+    """One workflow of a run template. `section_template` is "name@version" as the library holds it (the generic layout's own
+    name when the run's builder filled the generic one); `covers` are done-when texts with slots, never facts."""
+
+    key: Key
+    name: Name200
+    stage: Stage
+    artifact: TemplateArtifact
+    section: Annotated[str, StringConstraints(min_length=1, max_length=80)]
+    section_template: Name200
+    section_template_kind: Literal["generic", "specialised", "not recorded"] = NOT_RECORDED
+    depends_on: Annotated[list[Key], Field(max_length=500)] = Field(default_factory=list)
+    covers: Annotated[list[Annotated[str, StringConstraints(max_length=2000)]], Field(max_length=300)] = Field(default_factory=list)
+    made_from: Annotated[str, StringConstraints(max_length=40)] = ""        # the workflow's id in the run it was made from
+    fix: bool = False                                                       # it fixed an Audit finding of that run
+
+
+class RunTemplateBundle(Value):
+    """`run-template/1`: all the workflows of one finished run, as `library/run-templates/<id>/template.json` (family payload
+    `run_template.bundle`). Closed, and checked as J2 checks it at every write: workflow keys run W-1.. in order, each once;
+    `depends_on` names earlier keys; every workflow's stage is one of `stages`, and the workflows are grouped by stage in that
+    order; no slot is used that `facts_slots` does not list; `outputs` name a stage and the files inside its folder. The
+    `schema` key is checked and written back by `to_json()`. Not a row of `GET /api/run-templates` (that is `RunTemplate`)."""
+
+    id: Slug
+    name: Name200
+    description: Text2000 = ""
+    business_type: Line200 = NOT_RECORDED
+    made_from_run: Annotated[str, StringConstraints(min_length=1, max_length=200)]
+    mock: bool | Literal["not recorded"] = NOT_RECORDED
+    stages: Annotated[list[Stage], Field(min_length=1, max_length=40)]
+    workflows: Annotated[list[RunTemplateWorkflow], Field(min_length=1, max_length=500)]
+    facts_slots: Annotated[list[Annotated[str, StringConstraints(max_length=200)]], Field(max_length=300)] = Field(default_factory=list)
+    outputs: dict[Stage, JsonObject] = Field(default_factory=dict)
+    made_by: JsonObject = Field(default_factory=dict)
+    used_by: Annotated[list[JsonObject], Field(max_length=5000)] = Field(default_factory=list)
+    created: Annotated[str, StringConstraints(max_length=40)] = ""
+
+    @model_validator(mode="before")
+    @classmethod
+    def _schema_key(cls, data: Any) -> Any:
+        if isinstance(data, Mapping) and "schema" in data:
+            if data["schema"] != RUN_TEMPLATE_SCHEMA:
+                raise ValueError(f"schema must be {RUN_TEMPLATE_SCHEMA!r}, not {data['schema']!r}")
+            data = {k: v for k, v in data.items() if k != "schema"}
+        return data
+
+    @model_validator(mode="after")
+    def _checked(self) -> Self:
+        bad: list[str] = []
+        for stage, out in self.outputs.items():
+            files = out.get("files")
+            if stage not in self.stages or not isinstance(files, list) or not files or any(
+                    not isinstance(f, str) or not f or f.startswith(("/", "..")) or "/../" in f for f in files):
+                bad.append(f"outputs[{stage!r}] must name a stage and list its files, as paths inside its folder")
+        if not self.name.strip():
+            bad.append("id must be a slug and name must be given")
+        keys = [w.key for w in self.workflows]
+        if keys != [f"W-{i}" for i in range(1, len(keys) + 1)]:
+            bad.append("workflow keys must run W-1, W-2, ... in order")
+        for i, w in enumerate(self.workflows):
+            if w.stage not in self.stages:
+                bad.append(f"{w.key}: stage {w.stage!r} is not one of the template's stages")
+            late = [d for d in w.depends_on if d not in keys[:i]]
+            if late:
+                bad.append(f"{w.key}: depends_on {late} names no earlier workflow")
+        order = [w.stage for w in self.workflows]
+        if [s for i, s in enumerate(order) if i == 0 or order[i - 1] != s] != self.stages:
+            bad.append("the workflows must be grouped by stage, in the order of stages")
+        used = {m for w in self.workflows for t in [w.name, *w.covers] for m in SLOT_RE.findall(t)}
+        extra = sorted(used - set(self.facts_slots) - set(ID_SLOTS))
+        if extra:
+            bad.append(f"slots used but not listed in facts_slots: {extra}")
+        if bad:
+            raise ValueError("; ".join(bad))
+        return self
+
+    def to_json(self) -> dict[str, Any]:
+        return {"schema": RUN_TEMPLATE_SCHEMA, **self.model_dump(by_alias=True, mode="json")}
 
 
 for _name, _cls in (("template.meta", TemplateMeta), ("template.decision", TemplateDecision),
-                    ("template.run", RunTemplate), ("template.file", TemplatesFile)):
+                    ("template.run", RunTemplate), ("template.file", TemplatesFile),
+                    ("run_template.bundle", RunTemplateBundle)):
     REGISTRY.register_payload(_name, 1, _cls)

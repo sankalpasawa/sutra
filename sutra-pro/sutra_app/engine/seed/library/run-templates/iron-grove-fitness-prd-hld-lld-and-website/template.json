@@ -1,0 +1,386 @@
+{
+  "schema": "run-template/1",
+  "id": "iron-grove-fitness-prd-hld-lld-and-website",
+  "name": "Iron Grove Fitness: PRD, HLD, LLD and website",
+  "description": "Product requirements, High-level design, Low-level design and Website for a fitness studio: 20 workflows, as run j2-20261111-211339 (live) finished them.",
+  "business_type": "fitness studio",
+  "made_from_run": "j2-20261111-211339",
+  "mock": false,
+  "stages": [
+    "prd",
+    "hld",
+    "lld",
+    "website"
+  ],
+  "workflows": [
+    {
+      "key": "W-1",
+      "name": "PRD Problem section",
+      "stage": "prd",
+      "artifact": "prd",
+      "section": "Problem",
+      "section_template": "Iron Grove Fitness Problem@1",
+      "section_template_kind": "specialised",
+      "depends_on": [],
+      "covers": [
+        "The Problem section states that the problem was not provided and does not state an invented problem"
+      ],
+      "made_from": "W-1",
+      "fix": false
+    },
+    {
+      "key": "W-2",
+      "name": "PRD Users section",
+      "stage": "prd",
+      "artifact": "prd",
+      "section": "Users",
+      "section_template": "Iron Grove Fitness PRD Users@1",
+      "section_template_kind": "specialised",
+      "depends_on": [
+        "W-1"
+      ],
+      "covers": [
+        "The Users section names the page visitors and the studio and gives only the actions listed in the brief"
+      ],
+      "made_from": "W-2",
+      "fix": false
+    },
+    {
+      "key": "W-3",
+      "name": "PRD Goals section",
+      "stage": "prd",
+      "artifact": "prd",
+      "section": "Goals",
+      "section_template": "Iron Grove Fitness PRD Goals@1",
+      "section_template_kind": "specialised",
+      "depends_on": [
+        "W-2"
+      ],
+      "covers": [
+        "The Goals section contains only goals the brief states: showing the weekly classes and prices and taking trial bookings"
+      ],
+      "made_from": "W-3",
+      "fix": false
+    },
+    {
+      "key": "W-4",
+      "name": "PRD Requirements section",
+      "stage": "prd",
+      "artifact": "prd",
+      "section": "Requirements",
+      "section_template": "Iron Grove Fitness Requirements@1",
+      "section_template_kind": "specialised",
+      "depends_on": [
+        "W-3"
+      ],
+      "covers": [
+        "The Requirements section lists all five classes with their exact day, time, class name and price in rupees",
+        "The Requirements section describes the trial booking form with the fields name, email, class and preferred date, sent to <email address>",
+        "The Requirements section states that the address <address> is shown as text with no embedded map, and that payment is made at the studio with no online payment",
+        "The Requirements section states that no phone number and no trainer names are shown and that the page works on phones"
+      ],
+      "made_from": "W-4",
+      "fix": false
+    },
+    {
+      "key": "W-5",
+      "name": "PRD Success metrics section",
+      "stage": "prd",
+      "artifact": "prd",
+      "section": "Success metrics",
+      "section_template": "Iron Grove Fitness PRD Success metrics@1",
+      "section_template_kind": "specialised",
+      "depends_on": [
+        "W-3"
+      ],
+      "covers": [
+        "The Success metrics section states that no success measure was provided and gives no invented number"
+      ],
+      "made_from": "W-5",
+      "fix": false
+    },
+    {
+      "key": "W-6",
+      "name": "PRD Out of scope section",
+      "stage": "prd",
+      "artifact": "prd",
+      "section": "Out of scope",
+      "section_template": "Iron Grove Fitness PRD Out of scope@1",
+      "section_template_kind": "specialised",
+      "depends_on": [
+        "W-4"
+      ],
+      "covers": [
+        "The Out of scope section lists online payment, a phone number, trainer names, an embedded map and any detail not in the brief"
+      ],
+      "made_from": "W-6",
+      "fix": false
+    },
+    {
+      "key": "W-7",
+      "name": "HLD Purpose and scope section",
+      "stage": "hld",
+      "artifact": "hld",
+      "section": "Purpose and scope",
+      "section_template": "Iron Grove Fitness Purpose and scope@1",
+      "section_template_kind": "specialised",
+      "depends_on": [],
+      "covers": [
+        "The Purpose and scope section is written for <studio name>"
+      ],
+      "made_from": "W-7",
+      "fix": false
+    },
+    {
+      "key": "W-8",
+      "name": "HLD Pages section",
+      "stage": "hld",
+      "artifact": "hld",
+      "section": "Pages",
+      "section_template": "Iron Grove Fitness Pages@1",
+      "section_template_kind": "specialised",
+      "depends_on": [
+        "W-7"
+      ],
+      "covers": [
+        "The Pages section is written for <studio name>"
+      ],
+      "made_from": "W-8",
+      "fix": false
+    },
+    {
+      "key": "W-9",
+      "name": "HLD Components section",
+      "stage": "hld",
+      "artifact": "hld",
+      "section": "Components",
+      "section_template": "Iron Grove Fitness Components@2",
+      "section_template_kind": "specialised",
+      "depends_on": [
+        "W-8",
+        "W-4"
+      ],
+      "covers": [
+        "The Components section is written for <studio name>, and names every requirement (<requirement ids>) it covers"
+      ],
+      "made_from": "W-9",
+      "fix": false
+    },
+    {
+      "key": "W-10",
+      "name": "HLD Data flow section",
+      "stage": "hld",
+      "artifact": "hld",
+      "section": "Data flow",
+      "section_template": "Iron Grove Fitness Data flow@1",
+      "section_template_kind": "specialised",
+      "depends_on": [
+        "W-9"
+      ],
+      "covers": [
+        "The Data flow section is written for <studio name>"
+      ],
+      "made_from": "W-10",
+      "fix": false
+    },
+    {
+      "key": "W-11",
+      "name": "HLD Hosting and deployment section",
+      "stage": "hld",
+      "artifact": "hld",
+      "section": "Hosting and deployment",
+      "section_template": "Iron Grove Fitness Hosting and deployment@2",
+      "section_template_kind": "specialised",
+      "depends_on": [
+        "W-10"
+      ],
+      "covers": [
+        "The Hosting and deployment section is written for <studio name>"
+      ],
+      "made_from": "W-11",
+      "fix": false
+    },
+    {
+      "key": "W-12",
+      "name": "HLD Risks section",
+      "stage": "hld",
+      "artifact": "hld",
+      "section": "Risks",
+      "section_template": "Iron Grove Fitness Risks@1",
+      "section_template_kind": "specialised",
+      "depends_on": [
+        "W-11"
+      ],
+      "covers": [
+        "The Risks section is written for <studio name>"
+      ],
+      "made_from": "W-12",
+      "fix": false
+    },
+    {
+      "key": "W-13",
+      "name": "LLD Pages and sections",
+      "stage": "lld",
+      "artifact": "lld",
+      "section": "Pages and sections",
+      "section_template": "Iron Grove Fitness Pages and sections@1",
+      "section_template_kind": "specialised",
+      "depends_on": [
+        "W-9"
+      ],
+      "covers": [
+        "The Pages and sections section is written for <studio name>, and names every component (<component ids>) it implements"
+      ],
+      "made_from": "W-16",
+      "fix": false
+    },
+    {
+      "key": "W-14",
+      "name": "LLD Interactive elements",
+      "stage": "lld",
+      "artifact": "lld",
+      "section": "Interactive elements",
+      "section_template": "Iron Grove Fitness Interactive elements@2",
+      "section_template_kind": "specialised",
+      "depends_on": [
+        "W-13"
+      ],
+      "covers": [
+        "The Interactive elements section is written for <studio name>"
+      ],
+      "made_from": "W-17",
+      "fix": false
+    },
+    {
+      "key": "W-15",
+      "name": "LLD Form fields",
+      "stage": "lld",
+      "artifact": "lld",
+      "section": "Form fields",
+      "section_template": "Iron Grove Fitness Form fields@2",
+      "section_template_kind": "specialised",
+      "depends_on": [
+        "W-14"
+      ],
+      "covers": [
+        "The Form fields section is written for <studio name>"
+      ],
+      "made_from": "W-18",
+      "fix": false
+    },
+    {
+      "key": "W-16",
+      "name": "LLD File structure",
+      "stage": "lld",
+      "artifact": "lld",
+      "section": "File structure",
+      "section_template": "Iron Grove Fitness File structure@2",
+      "section_template_kind": "specialised",
+      "depends_on": [
+        "W-15"
+      ],
+      "covers": [
+        "The File structure section is written for <studio name>"
+      ],
+      "made_from": "W-19",
+      "fix": false
+    },
+    {
+      "key": "W-17",
+      "name": "LLD Responsive and accessibility rules",
+      "stage": "lld",
+      "artifact": "lld",
+      "section": "Responsive and accessibility rules",
+      "section_template": "Iron Grove Fitness Responsive and accessibility rules@2",
+      "section_template_kind": "specialised",
+      "depends_on": [
+        "W-16"
+      ],
+      "covers": [
+        "The Responsive and accessibility rules section is written for <studio name>"
+      ],
+      "made_from": "W-20",
+      "fix": false
+    },
+    {
+      "key": "W-18",
+      "name": "Header, hero and weekly classes",
+      "stage": "website",
+      "artifact": "website",
+      "section": "Section",
+      "section_template": "WebsiteSection/1 · Section@1",
+      "section_template_kind": "generic",
+      "depends_on": [
+        "W-13"
+      ],
+      "covers": [
+        "The page shows the studio name <studio name> as its main heading",
+        "The weekly classes list shows five classes, each with day, time, class name and price in rupees: <class list>; <class list>; <class list>; <class list>; <class list>"
+      ],
+      "made_from": "W-28",
+      "fix": false
+    },
+    {
+      "key": "W-19",
+      "name": "Trial booking form",
+      "stage": "website",
+      "artifact": "website",
+      "section": "Section",
+      "section_template": "Iron Grove Fitness section S2@1",
+      "section_template_kind": "specialised",
+      "depends_on": [
+        "W-13"
+      ],
+      "covers": [
+        "The trial booking form has the fields name, email, class and preferred date",
+        "The trial booking form sends the booking to <email address>"
+      ],
+      "made_from": "W-29",
+      "fix": false
+    },
+    {
+      "key": "W-20",
+      "name": "Address, payment note and page quality",
+      "stage": "website",
+      "artifact": "website",
+      "section": "Section",
+      "section_template": "WebsiteSection/1 · Section@1",
+      "section_template_kind": "generic",
+      "depends_on": [
+        "W-18",
+        "W-19",
+        "W-13"
+      ],
+      "covers": [
+        "The page shows the studio address as text: <address>, with no embedded map",
+        "The page states that payment is made at the studio and that no online payment is taken",
+        "The page shows no phone number and no trainer names",
+        "The page has no horizontal overflow at 360px and at 1280px",
+        "The page has no JavaScript errors, no horizontal overflow at 360px and 1280px, and every in-page link points to an existing section."
+      ],
+      "made_from": "W-30",
+      "fix": false
+    }
+  ],
+  "facts_slots": [
+    "studio name",
+    "address",
+    "email address",
+    "class list"
+  ],
+  "made_by": {
+    "run": "j2-20261111-211339",
+    "date": "2026-11-11 21:13:39",
+    "provider": "claude-cli",
+    "model": "sonnet",
+    "by": "j2_template_lib.run_template_from_run"
+  },
+  "used_by": [
+    {
+      "run": "j2-20261112-150036",
+      "workflows": 20,
+      "of": 20
+    }
+  ],
+  "created": "2026-11-11T22:16:22"
+}

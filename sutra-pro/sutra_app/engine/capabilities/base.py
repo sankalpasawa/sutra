@@ -17,6 +17,8 @@ import os
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any, Callable, Optional
 
+from .. import forms
+
 if TYPE_CHECKING:       # typing only: the settings module imports the names of the outputs from the package above this file
     from pathlib import Path
 
@@ -83,7 +85,7 @@ class OutputSpec:
         `owner`. Everything it leaves out comes from the `document` form of `types.json`. The cost block keeps the form's rate card and
         prices no item as a requirements section."""
         return {"name": self.name, "kind": "type", "label": self.label, "tag": self.tag or self.label.split()[0], "color": "--other",
-                "form": "document", "file": self.file, "noun": self.noun, "export": None, "template": self.template,
+                "form": forms.DOCUMENT, "file": self.file, "noun": self.noun, "export": None, "template": self.template,
                 "rubric": [{"id": i, "text": t} for i, t in self.rubric], "check_types": list(self.check_types), "done": self.done,
                 "conditions": self.conditions, "builder": self.builder, "intake": self.intake, "charter_format": self.charter_format,
                 "atom_rules": self.atom_rules, "deliverable": False, "triggers": [], "groups": [], "depends_on": [],
@@ -183,7 +185,7 @@ class Capability:
             return []
         from .. import j2_artifacts          # J2's module is read when a row is built, never when the registry is imported
         label, noun = str(get("label") or output), str(get("noun") or "").strip()
-        row = {"id": output, "kind": "document", "name": f"{label} {noun}".strip(), "file": file, "doc_file": file, "maker": None,
+        row = {"id": output, "kind": forms.DOCUMENT, "name": f"{label} {noun}".strip(), "file": file, "doc_file": file, "maker": None,
                "made_in": [], "sections": {}, "nodes": [],
                "versions": [{"workflow": None, "cycle": None, "purpose": "", "label": "current"}], "docs": [],
                "ok": os.path.getsize(os.path.join(run_dir, file)) > 0}

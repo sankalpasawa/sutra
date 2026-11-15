@@ -1,0 +1,39 @@
+{
+  "schema": "template-library/1",
+  "name": "Flow Pilates Studio Form fields",
+  "version": 1,
+  "sha": "097b54242668e26cea7047954f640da52d94fe85477784af948d87e935ee9e70",
+  "schema_sha": "d0df2b4fbe9317dc5f3a6753e483721a4aa0f2b8191719fe42340eaf39079f4a",
+  "model_sha": "dce2ee88f16153ed8483cbbc82d65d97d8657710e69bb360633f5afc487ab140",
+  "class": "FlowPilatesStudioFormFieldsV1",
+  "created": "2026-11-12T15:26:31",
+  "fingerprints": [
+    "0b5fefc4c7767940133337c1b84f7a1c0af5f8f8725aacdd20eb16f8981c7b8e"
+  ],
+  "made_by": {
+    "run": "j2-20261112-150036",
+    "workflow": "W-27",
+    "atom": "W-27.a1",
+    "agent": "code (adapted from a run template)",
+    "date": "2026-11-12 15:00:36"
+  },
+  "business": {
+    "name": "Flow Pilates Studio",
+    "type": "pilates studio"
+  },
+  "mock": false,
+  "collected_from": {
+    "run": "j2-20261112-150036",
+    "where": "the run's copy"
+  },
+  "used_by": [
+    {
+      "run": "j2-20261112-150036",
+      "workflow": "W-27",
+      "atom": "W-27.a1",
+      "action": "extended"
+    }
+  ],
+  "renamed_from": "Still Point Yoga Form fields@4",
+  "adapted_from": "Iron Grove Fitness Form fields@2"
+}

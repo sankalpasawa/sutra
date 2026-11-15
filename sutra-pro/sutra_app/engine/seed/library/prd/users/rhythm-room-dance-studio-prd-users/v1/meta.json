@@ -1,0 +1,39 @@
+{
+  "schema": "template-library/1",
+  "name": "Rhythm Room Dance Studio PRD Users",
+  "version": 1,
+  "sha": "174e0d2e73197f6d7515aacb6cb3cf3114b497d43a0aa560496bfacbb649d14d",
+  "schema_sha": "e62bc5b1851eefb535f36ca7737f25aae49e12786f34b13c4c39b56d5d667ac4",
+  "model_sha": "983946a331435383c1aff8d78cb3ccaba59834c27b0f131dd28912eb917642dc",
+  "class": "RhythmRoomDanceStudioPRDUsersV1",
+  "created": "2026-11-11T21:59:44",
+  "fingerprints": [
+    "45da685366ca585620e43483d4dae6048871c4a518521583ccaf69b1bdb401c6"
+  ],
+  "made_by": {
+    "run": "j2-20261111-215733",
+    "workflow": "W-2",
+    "atom": "W-2.a1",
+    "agent": "code (adapted from a run template)",
+    "date": "2026-11-11 21:57:33"
+  },
+  "business": {
+    "name": "Rhythm Room Dance Studio",
+    "type": "hld"
+  },
+  "mock": false,
+  "collected_from": {
+    "run": "j2-20261111-215733",
+    "where": "the run's copy"
+  },
+  "used_by": [
+    {
+      "run": "j2-20261111-215733",
+      "workflow": "W-2",
+      "atom": "W-2.a1",
+      "action": "extended"
+    }
+  ],
+  "renamed_from": "Still Point Yoga PRD Users@3",
+  "adapted_from": "Still Point Yoga PRD Users@1"
+}

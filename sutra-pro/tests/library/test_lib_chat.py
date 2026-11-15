@@ -28,6 +28,9 @@ SCAN_ADDED = {"forced_test", "lesson_test", "lesson_used", "lessons_offered", "p
 # found by the scan of the vendored j2.py of J2 sync 4: the late judge's system lines say whose judgement they report (`judge`, D145),
 # and the answer Decide for me gives in the Requester's name is flagged `auto` and carries a plain label (`auto_label`)
 SYNC4_ADDED = {"judge", "auto_label"}
+# J2 1adb8ecd (sync 6): run templates, auto-reuse and the content door post lines only the humans read (`humans_only`), say which run
+# template a line is about (`run_template`) and which door a section took (`content_door`)
+SYNC6_ADDED = {"humans_only", "run_template", "content_door"}
 
 USER_LINE = {"id": 1, "t": "12:48:35", "who": "user", "step": 0,
              "text": "A one-page website for Brew Lab, a small specialty coffee shop in Indiranagar, Bengaluru."}
@@ -62,8 +65,8 @@ def deep(levels: int):
 # ---- MessageMeta --------------------------------------------------------------------------------------------------
 
 def test_the_key_set_is_the_design_list_plus_what_the_scan_of_j2_found_since():
-    assert set(META_KEYS) == SECTION_10 | SCAN_ADDED | SYNC4_ADDED
-    assert len(META_KEYS) == len(set(META_KEYS)) == 62
+    assert set(META_KEYS) == SECTION_10 | SCAN_ADDED | SYNC4_ADDED | SYNC6_ADDED
+    assert len(META_KEYS) == len(set(META_KEYS)) == 65
     assert set(MessageMeta.model_fields) == set(META_KEYS)
 
 

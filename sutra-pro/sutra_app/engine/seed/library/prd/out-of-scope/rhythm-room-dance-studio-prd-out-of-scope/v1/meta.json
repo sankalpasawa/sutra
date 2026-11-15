@@ -1,0 +1,39 @@
+{
+  "schema": "template-library/1",
+  "name": "Rhythm Room Dance Studio PRD Out of scope",
+  "version": 1,
+  "sha": "5567e0ba332e86430a98d81f49569b29b97f80404fbb883b6a7c09dbfcb3c4af",
+  "schema_sha": "ce1cf77b48935fded966c3bf46dae127f419dcca81291110dc598b859a04ff75",
+  "model_sha": "e72d23994c989c676a90697e36e28653f7cc7ebcd945e8a66293b3f8c41883d4",
+  "class": "RhythmRoomDanceStudioPRDOutOfScopeV1",
+  "created": "2026-11-11T22:00:56",
+  "fingerprints": [
+    "36bb6f6fead43255dc90741183f24357a6c5d16b0d22de28d2da561524f80285"
+  ],
+  "made_by": {
+    "run": "j2-20261111-215733",
+    "workflow": "W-6",
+    "atom": "W-6.a1",
+    "agent": "code (adapted from a run template)",
+    "date": "2026-11-11 21:57:33"
+  },
+  "business": {
+    "name": "Rhythm Room Dance Studio",
+    "type": "hld"
+  },
+  "mock": false,
+  "collected_from": {
+    "run": "j2-20261111-215733",
+    "where": "the run's copy"
+  },
+  "used_by": [
+    {
+      "run": "j2-20261111-215733",
+      "workflow": "W-6",
+      "atom": "W-6.a1",
+      "action": "extended"
+    }
+  ],
+  "renamed_from": "Still Point Yoga PRD Out of scope@4",
+  "adapted_from": "Still Point Yoga PRD Out of scope@2"
+}

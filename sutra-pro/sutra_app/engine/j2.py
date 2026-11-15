@@ -49,6 +49,7 @@ import sys
 import threading
 import time
 
+from . import j2_artifact_lib
 from . import j2_artifacts
 from . import j2_artifact_models
 from . import j2_board
@@ -100,7 +101,10 @@ SUMMARY_REFRESH = 20       # re-summarise once this many more messages have scro
 SITE_LIMIT = 150_000       # characters of the site the workflow agents and Audit see
 INPUT_LIMIT = int(os.getenv("J2_INPUT_LIMIT", "20000"))   # characters of one file or depended-on section in a builder prompt
 SITE_WARN_BYTES = 60_000   # builder.md asks for a single page under ~60 KB
-DELAY = 0 if llm.MOCK else float(os.getenv("J2_DELAY", "2"))   # spacing for free-tier rate limits
+def call_delay():
+    """J2_DELAY: seconds between AI calls (default 0). 2 suits free-tier rate limits (.env.example). Read per call so
+    tests can switch it; mock runs never wait."""
+    return 0.0 if llm.MOCK else float(os.environ.get("J2_DELAY") or 0)
 
 NAMES = {"validator": "Validator", "identity": "Identity", "adaptation": "Adaptation",
          "priority": "Priority", "coordination": "Coordination", "audit": "Audit", "user": "Requester (you)",
@@ -478,6 +482,26 @@ def build_agent_output(w, a, attempt, body, receipts, last_audit, n_sites, doc, 
             **({"kind": "doc", "file": out_file} if doc else {}),
             "checks": [{"check": r["check"], "type": r["type"], "target": r["target"], "pass": r["pass"]} for r in recs],
             "conditions": [{"id": c["id"], "met": c["met"]} for c in (last_audit or {}).get("conditions") or []]}
+
+
+def run_author():
+    """Who ran it, for the run's first chat line and the shelf (runs travel on Git, founder 13 Nov): J2_RUN_BY, else
+    git's user.name, else the OS user name; "not recorded" when none can be read."""
+    by = os.environ.get("J2_RUN_BY")
+    if by:
+        return by
+    try:
+        import subprocess
+        out = subprocess.run(["git", "config", "user.name"], capture_output=True, text=True, timeout=5).stdout.strip()
+        if out:
+            return out
+    except Exception:
+        pass
+    try:
+        import getpass
+        return getpass.getuser()
+    except Exception:
+        return "not recorded"
 
 
 def artifact_schema_on():
@@ -1824,8 +1848,10 @@ def gap_list(gaps, title=None):
 
 
 def for_agents(m):
-    """Test notes are for humans; to_requester replies are for the Requester. Agents get neither."""
-    return not m.get("test") and not m.get("requester_only")
+    """Test notes are for humans; to_requester replies are for the Requester. Agents get neither. Nor a line that names a
+    run template or its section templates (J2_RUN_TEMPLATES=1, humans_only): those names hold the business the
+    template was first made for, which the agents of a new business must not read."""
+    return not m.get("test") and not m.get("requester_only") and not m.get("humans_only")
 
 
 NUMBER_ASK = re.compile(r"\b(?:number|target|metric|how many|how much|percent(?:age)?|rate)\b|%", re.I)
@@ -2730,6 +2756,20 @@ def realization_on():
     return os.getenv("J2_REALIZATION", "1") != "0"
 
 
+def run_templates_on():
+    """J2_RUN_TEMPLATES=1 (default off): a run may start from a run template (run-template/1, j2_template_lib): its
+    selected workflows are the base plan, and each one's section template is the router's first candidate. Read per
+    call, so one process can test both. Off: nothing below is reached and every prompt is as it was."""
+    return os.environ.get("J2_RUN_TEMPLATES") == "1" or auto_reuse_on()
+
+
+def auto_reuse_on():
+    """J2_AUTO_REUSE=1 (default off; implies J2_TEMPLATE_LIBRARY=1 and J2_RUN_TEMPLATES=1): a run started without a
+    run template picks a similar one itself once its first charter is written (_auto_reuse_pick), and the router adapts the
+    nearest existing section template before it creates one (j2_template_lib.route). Unset: nothing changes."""
+    return j2_template_lib.auto_reuse()
+
+
 def load_lessons(path=None):
     path = path or MEMORY_FILE        # P5: another department's file; the old constant is the default
     if not memory_on() or not os.path.exists(path):
@@ -3151,7 +3191,12 @@ class J2Run:
         # J2_TEMPLATE_LIBRARY=1 (template-library/1): the template each workflow's builder fills, chosen by the router
         self.tpl_lib = j2_template_lib.enabled()
         self.tpl_routes, self.tpl_decisions, self.tpl_cur = {}, [], None
+        # J2_ARTIFACT_LIBRARY=1 (artifact-reuse/1): the content door, a document section served from its source run (_route_content)
+        self.art_lib = j2_artifact_lib.enabled()
+        self.content_decisions, self.content_routes, self.content_sources, self.content_draft = [], {}, {}, {}
         self.style = None                              # the style guide, written by the first workflow that runs
+        self.run_tpl = None                            # J2_RUN_TEMPLATES=1: the run template this run started from (set_run_template)
+        self.auto_pick = None                          # J2_AUTO_REUSE=1: the run templates scored after the first charter, and the one picked (_auto_reuse_pick)
         self.playbooks_used, self.playbook_saved = [], None
         self.lessons_used, self.lessons_saved = [], []
         self.fail_floor = 0          # audits before this index don't count for "same failure twice in a row"
@@ -3166,6 +3211,291 @@ class J2Run:
         self.accepted = []       # rubric and condition ids the Requester finished with (_accept_open)
         self.check_times, self.waits, self.wait_from = [], [], None    # timing.json: code checks, Requester waits
         self._begin_cycle(advance=False)
+
+    # ---- J2_RUN_TEMPLATES=1 (run-template/1): a run started from a run template
+    def set_run_template(self, tid, keys=None):
+        """Before the first message: start this run from the run template tid (its id or name), whole or with only the
+        workflows in keys (what they depend on is added). False when the flag is off, the run has started or the
+        library has no such template; the run then goes on without one."""
+        if not run_templates_on() or self.chat or self.status == "running" or not tid:
+            return False
+        rt = j2_template_lib.get_run_template(tid)
+        if rt is None:
+            return False
+        self._take_run_template(rt, keys)
+        return True
+
+    def _take_run_template(self, rt, keys=None):
+        """This run now follows the run template rt, whole or with the workflows in keys."""
+        keys = keys.split(",") if isinstance(keys, str) else keys
+        chosen, added = j2_template_lib.select_workflows(rt, [k for k in keys or [] if str(k).strip().lower() != "all"])
+        self.run_tpl = {"id": rt.id, "name": rt.name, "total": len(rt.workflows), "selected": chosen, "added": added,
+                        "rows": [w.model_dump() for w in rt.workflows], "stages": list(rt.stages),
+                        "slots": list(rt.facts_slots), "names": {}, "used": {}, "plans": {}, "workflows": []}
+
+    def _auto_reuse_pick(self):
+        """J2_AUTO_REUSE=1, once per run, when the first charter is stamped and the run has no run template: every run
+        template in the library is scored against the charter (j2_template_lib.match_run_templates: the stages asked
+        for, the business type, the done-when items against the template's slot-covers). The best usable one at
+        AUTO_MIN or above is taken exactly as if the Requester had chosen it whole: its stages are built, then the
+        stages the brief asks for beyond it. Below that the run starts from scratch. Either way the chat says which,
+        and templates.json keeps the choice and every score."""
+        if self.auto_pick is not None or not auto_reuse_on():
+            return
+        self.auto_pick = {}
+        if self.run_tpl:      # the Requester chose one
+            return
+        asked = [k for k in (self.stages or [self.output]) if k in j2_types.names()]
+        g = self.goal or {}
+        text = " ".join([self.request] + [x["answer"] for x in self.intake]
+                        + [str(g.get(k) or "") for k in ("statement", "site_name", "product_name", "audience")])
+        try:
+            scores = j2_template_lib.match_run_templates(asked, text, g.get("done_when"), live=not llm.MOCK)
+        except Exception as e:      # the library never blocks a run: it starts from scratch
+            self._event("system", "auto_reuse", f"run templates not scored: {type(e).__name__}: {e}")
+            scores = []
+        best = scores[0] if scores else None
+        pick = next((x for x in scores if x["eligible"] and x["score"] >= j2_template_lib.AUTO_MIN), None)
+        rt = j2_template_lib.get_run_template(pick["id"]) if pick else None
+        self.auto_pick = {"threshold": j2_template_lib.AUTO_MIN, "weights": dict(j2_template_lib.AUTO_WEIGHTS),
+                          "asked_stages": asked, "picked": rt.id if rt else None, "match": pick["score"] if rt else None,
+                          "scores": scores}
+        if rt is None:
+            self.post("system", (f"No similar run template (best {best['name']} {best['score']:.2f}"
+                                 + (f"; not usable: {best['why_not']}" if best.get("why_not") else "") + ")."
+                                 if best else "No similar run template (the library has none)."), humans_only=True)
+            self.save("templates.json", {"schema": j2_template_lib.SCHEMA, "library": j2_template_lib.lib_dir(),
+                                         "decisions": self.tpl_decisions, **self._run_tpl_record()})
+            return
+        self._take_run_template(rt)
+        t = self.run_tpl
+        t["auto"] = {"match": pick["score"]}
+        stages = [k for k in t["stages"] if k in j2_types.names()]
+        extra = [k for k in asked if k not in stages]
+        t["added_stages"] = extra
+        self.post("system", f"Using similar run template {t['name']} (match {pick['score']:.2f}).",
+                  run_template={"id": t["id"], "selected": t["selected"], "of": t["total"]}, humans_only=True)
+        try:
+            j2_template_lib.mark_run_template_used(t["id"], {"run": os.path.basename(self.dir), "workflows": t["total"],
+                                                             "of": t["total"]})
+        except Exception as e:      # the library's own record never blocks a run
+            self._event("system", "run_template", f"used_by not written: {type(e).__name__}: {e}")
+        docs = [k for k in stages + extra if j2_types.info(k)["form"] == "document"]
+        if docs and stages + extra != asked:      # the template has stages the brief did not name: they are built too
+            deeds = [k for k in self.stages if k in j2_send.DEEDS]
+            self.docset = docs
+            self.stages = docs + deeds + [k for k in stages + extra if k not in docs]
+            self.stage_i = 0
+            self.site_tag = self.stages[0] + "-" if len(self.stages) > 1 else ""
+            self.stage_checked = False
+        self.post("system", "The run template sets what is built: " + ", then ".join(self._sw(k) for k in stages)
+                  + (". Added, not in template (the brief asks for " + and_list(self._sw(k) for k in extra)
+                     + "; Adaptation plans it)" if extra else "") + ".")
+        self.save("templates.json", {"schema": j2_template_lib.SCHEMA, "library": j2_template_lib.lib_dir(),
+                                     "decisions": self.tpl_decisions, **self._run_tpl_record()})
+
+    def _run_tpl_record(self):
+        """What templates.json holds about the run template ({} without one, so the file is as it was)."""
+        t = self.run_tpl
+        auto = {"auto_reuse": self.auto_pick} if self.auto_pick else {}      # J2_AUTO_REUSE=1: the scores and the pick
+        if not t:
+            return auto
+        return {"run_template": {"id": t["id"], "name": t["name"], "selected": t["selected"], "added": t["added"],
+                                 "of": t["total"], "plans": t["plans"], "workflows": t["workflows"],
+                                 **({"added_stages": t["added_stages"]} if t.get("added_stages") else {}),
+                                 **({"auto": True, "match": t["auto"]["match"]} if t.get("auto") else {})}, **auto}
+
+    def _run_tpl_start(self, said):
+        """Once, before the charter: say which run template is used, record it (templates.json, the template's
+        used_by), and return the stages to build: the template's, for the selected workflows, in its order."""
+        t = self.run_tpl
+        n = len(t["selected"])
+        self.post("system", f"Using run template {t['name']}: {n} of {t['total']} workflows"
+                  + (f" ({', '.join(t['added'])} added: the chosen workflows depend on "
+                     f"{'it' if len(t['added']) == 1 else 'them'})" if t["added"] else "") + ".",
+                  run_template={"id": t["id"], "selected": t["selected"], "of": t["total"]}, humans_only=True)
+        self.save("templates.json", {"schema": j2_template_lib.SCHEMA, "library": j2_template_lib.lib_dir(),
+                                     "decisions": self.tpl_decisions, **self._run_tpl_record()})
+        try:
+            j2_template_lib.mark_run_template_used(t["id"], {"run": os.path.basename(self.dir), "workflows": n,
+                                                             "of": t["total"]})
+        except Exception as e:      # the library's own record never blocks a run
+            self._event("system", "run_template", f"used_by not written: {type(e).__name__}: {e}")
+        sel = set(t["selected"])
+        stages = [k for k in t["stages"] if k in j2_types.names() and any(r["stage"] == k and r["key"] in sel for r in t["rows"])]
+        if not stages:
+            self.post("system", "The run template names no type J2 can build here, so Adaptation plans what to build.",
+                      warning=True)
+            return self._deliverables(said)
+        extra = []
+        if n == t["total"]:      # the whole template: what the brief asks for beyond it is added, planned by Adaptation
+            was = self.outcome
+            asked = self._deliverables(said)
+            if asked is None:      # the planner named nothing buildable: the template's stages still stand
+                self.outcome = was
+            extra = [k for k in asked or [] if k not in t["stages"]]
+        t["added_stages"] = extra
+        self.post("system", "The run template sets what is built: " + ", then ".join(self._sw(k) for k in stages)
+                  + (". Added, not in template (the brief asks for " + and_list(self._sw(k) for k in extra)
+                     + "; Adaptation plans it)" if extra else "") + ".")
+        return stages + extra
+
+    def _run_tpl_intake(self):
+        """Added to Identity's J2.a task: the charter is for the NEW business; the template's slots are the facts to
+        ask for. Slot names only: nothing of the business the template was made from is known here."""
+        t = self.run_tpl
+        if not t:
+            return ""
+        return ("A RUN TEMPLATE IS USED: this run repeats the workflows of an earlier run for THIS Requester's own "
+                "business. Write the charter for this business only, from the brief and the answers. The workflows need "
+                "these facts of this business: " + (", ".join(t["slots"]) or "none recorded") + ". Ask the Requester "
+                "for each one the brief and the answers do not give (one question may ask for several); never fill one "
+                "in yourself.\n")
+
+    def _run_tpl_rows(self):
+        """The selected template workflows of the stage being planned, for its FIRST plan only ([] otherwise, and
+        always without a run template)."""
+        t = self.run_tpl
+        if not t or self.workflows or self.feedback or not self.goal:
+            return []
+        sel = set(t["selected"])
+        return [r for r in t["rows"] if r["stage"] == self.output and r["key"] in sel and not r.get("fix")]
+
+    def _run_tpl_plan(self, rows):
+        """Added to Adaptation's task for a stage's first plan: the template's selected workflows are the base plan."""
+        show = [{"template_key": r["key"], "name": r["name"], "section": r["section"],
+                 "depends_on": [d for d in r["depends_on"] if any(x["key"] == d for x in rows)], "covers_like": r["covers"]}
+                for r in rows]
+        return ("\nRUN TEMPLATE, THE BASE PLAN (mandatory as the starting point): propose these workflows for this "
+                "stage, the same workflows in the same order, one J2 workflow each, and put each one's key in its "
+                "\"template_key\". Adapt each name and its covers to THIS charter: words in angle brackets stand for this "
+                "business's own facts, covers_like shows the kind of done-when item it covered, and covers lists THIS "
+                "charter's done-when item numbers. Do not drop, merge or reorder them. Add a workflow of your own "
+                "(\"template_key\": null) only for a done-when item none of these covers, and say in \"say\" which "
+                "items those are.\n" + json.dumps(show, ensure_ascii=False))
+
+    def _run_tpl_follow(self, wfs, rows):
+        """Code's check of a stage's first plan against the run template: each proposed workflow is matched to a
+        template workflow (its template_key, else the section it writes, else its name, else its place in the order).
+        A workflow matched to a template workflow that was not selected is not built; when only some of the stage's
+        workflows were selected, nothing else is built either. Says what it found, records it, returns the plan."""
+        t = self.run_tpl
+        stage_rows = [r for r in t["rows"] if r["stage"] == self.output and not r.get("fix")]      # a fix is not planned work
+        by_key = {r["key"]: r for r in stage_rows}
+        sel = {r["key"] for r in rows}
+        got, taken = {}, set()
+        for i, w in enumerate(wfs):      # 1: by key, by section (a document), by name
+            key = str(w.get("template_key") or "").upper()
+            secs = wf_sections(w, self.out["sections"]) if self.doc else []
+            hit = (by_key.get(key) if key in by_key and key not in taken else None) \
+                or next((r for r in stage_rows if r["key"] not in taken and r["section"] in secs), None) \
+                or next((r for r in stage_rows if r["key"] not in taken
+                         and squash(r["name"]) == squash(w.get("name"))), None)
+            if hit:
+                got[i] = hit["key"]
+                taken.add(hit["key"])
+        if not self.doc:      # 2: a page's sections share one section name, so what is left is matched in order
+            left = [r for r in stage_rows if r["key"] not in taken]
+            for i, w in enumerate(wfs):
+                if i not in got and left and not w.get("revises") and not w.get("fixes"):
+                    got[i] = left.pop(0)["key"]
+                    taken.add(got[i])
+        partial = len(sel) < len(stage_rows)
+        keep, added, skipped = [], [], []
+        for i, w in enumerate(wfs):
+            key = got.get(i)
+            if key in sel:
+                keep.append(w)
+                t["names"][w.get("name")] = key
+            elif key or partial:
+                skipped.append(w.get("name"))
+            else:
+                keep.append(w)
+                added.append(w.get("name"))
+                t["names"][w.get("name")] = None
+        missing = [k for k in by_key if k in sel and k not in taken]
+        t["plans"][self.output] = {"followed": [k for k in by_key if k in sel and k in taken], "missing": missing,
+                                   "added": added, "not_selected": skipped, "partial": partial}
+        self.post("system", f"Run template {t['name']}: the {self.out['noun']} plan follows "
+                  f"{len(sel) - len(missing)} of its {len(stage_rows)} {self.out['noun']} workflows"
+                  + (f" ({', '.join(k for k in by_key if k in sel and k in taken)})" if partial else "")
+                  + (f"; added for done-when items the template does not cover: {', '.join(map(str, added))}" if added else "")
+                  + (f"; not selected, so not built: {', '.join(map(str, skipped))}" if skipped else "")
+                  + (f"; the plan has no workflow for {', '.join(missing)}" if missing else "") + ".",
+                  humans_only=True, **({"warning": True} if missing else {}))
+        return keep
+
+    def _run_tpl_partial(self):
+        """True when only some of this stage's template workflows were selected: the sections left unwritten are the
+        Requester's choice, not a plan gap (always False without a run template)."""
+        return bool(((self.run_tpl or {}).get("plans", {}).get(self.output) or {}).get("partial"))
+
+    def _run_tpl_partial_done(self):
+        """True when only some of this stage's template workflows were selected and every one of them has been built:
+        the stage ends there (the rest was never asked for, so Audit's open items for it are not reworked)."""
+        t = self.run_tpl
+        plan = (t or {}).get("plans", {}).get(self.output) or {}
+        return bool(plan.get("partial") and self.workflows
+                    and all(w["status"] not in ("registered", "held", "running") for w in self.workflows)
+                    and any(w["status"] == "done" for w in self.workflows))
+
+    def _run_tpl_stage_end(self):
+        """A stage built from only some of the template's workflows ends without the workable check: say so plainly,
+        then the next stage, or the end of the run."""
+        t = self.run_tpl
+        built = ", ".join(w["id"] for w in self.workflows if w["status"] == "done")
+        self.post("system", f"Run template {t['name']}: only some of its {self.out['noun']} workflows were selected, and "
+                            f"they are built ({built}). The parts not selected are not written, so the {self.out['noun']} "
+                            "is not complete and Audit's open items for them stay open.", humans_only=True)
+        if self.stages and self._next_stage():
+            return
+        self.post("identity", f"The workflows you selected are built ({len(t['selected'])} of {t['total']} in the run "
+                              "template). The parts you did not select are not written.", done=True, to_user=True,
+                  next="user")
+        self.outcome = (f"Done: the selected workflows of run template {t['name']} are built ({len(t['selected'])} of "
+                        f"{t['total']}); what was not selected is not built.")
+        self.turn = None
+
+    def _run_tpl_first(self, w, kind, section):
+        """The template workflow a registered workflow stands for, and so the section template the router tries first:
+        a revision stands for what the workflow it revises stands for; a document workflow for the template workflow
+        of the section it writes; a page workflow for the one its plan matched it to, or one of the same name not taken
+        yet (a fix that comes back). None without a run template, or when the template has no such workflow."""
+        t = self.run_tpl
+        if not t:
+            return None
+        sel = set(t["selected"])
+        rows = [r for r in t["rows"] if r["stage"] == kind and r["key"] in sel]
+        key = t["used"].get(str(w.get("revises") or "")) or t["names"].get(w.get("name"))
+        row = next((r for r in rows if r["key"] == key), None)
+        if self.doc:
+            row = next((r for r in rows if r["section"] == section), None) or row
+        if row is None:
+            taken = set(t["used"].values())
+            row = next((r for r in rows if r["key"] not in taken and squash(r["name"]) == squash(w.get("name"))), None)
+        if row is None or row["section"] != section:
+            return None
+        t["used"][w["id"]] = row["key"]
+        return {"template": row["section_template"], "kind": row["section_template_kind"], "key": row["key"]}
+
+    def _run_tpl_decided(self, w, first, rec):
+        """A routing decision under a run template: from_template (the template has a workflow for it), which one, and,
+        for a workflow the template has none for, that reason in front of the router's own. Recorded per workflow."""
+        t = self.run_tpl
+        rec["run_template"], rec["from_template"] = t["id"], bool(first)
+        if first:
+            rec["template_workflow"] = first["key"]
+            if rec.get("action") == "created":
+                rec["reason"] = (f"the run template's section template {first['template']} is not in this library; "
+                                 + str(rec.get("reason") or ""))
+        elif rec.get("action") == "created":
+            rec["reason"] = ("the run template has no workflow for this section, so a new template is made; "
+                             + str(rec.get("reason") or ""))
+        row = {"workflow": w["id"], "template_workflow": first["key"] if first else None, "from_template": bool(first),
+               "action": rec.get("action"), "template": f"{rec.get('template')}@{rec.get('version')}",
+               **({"adapted_from": rec["adapted_from"]} if rec.get("adapted_from") else {}),
+               **({} if first else {"note": "added, not in template"})}
+        t["workflows"] = [x for x in t["workflows"] if x["workflow"] != w["id"]] + [row]
 
     def set_output(self, out):
         """Pick what the department builds before the first message: J2_OUTPUT, or the start page (None: not chosen yet,
@@ -3453,7 +3783,7 @@ class J2Run:
                                     "test_lessons": self.test_lessons or None,
                                     "realization": int(self.realization),
                                     "provider": None if llm.MOCK else llm.PROVIDER, "model": None if llm.MOCK else llm.MODEL,
-                                    "mock": llm.MOCK}) + "\n")
+                                    "mock": llm.MOCK, "by": run_author()}) + "\n")
             f.write(json.dumps(m, ensure_ascii=False) + "\n")
         if meta.get("act") != "ASK_REQUESTER":      # P8: _ask_user tells the hook itself, once `paused` is set
             self._hook("message_posted", m)
@@ -3527,8 +3857,8 @@ class J2Run:
                 + "\n".join(line(m) for m in recent))
 
     def _summarize(self, older):
-        if self.calls and DELAY:
-            time.sleep(DELAY)
+        if self.calls and call_delay():
+            time.sleep(call_delay())
         self.calls += 1
         new = [m for m in older[self.summary_upto:] if for_agents(m)]
         self.summary = _ask(self._ask_tag("summariser", "summary"),
@@ -3603,8 +3933,8 @@ class J2Run:
         if self._observed():      # P9: empty unless a node-context file names text for this function
             addendum = self._hook("system_addendum", fn)
             system += addendum if isinstance(addendum, str) else ""
-        if self.calls and DELAY:
-            time.sleep(DELAY)
+        if self.calls and call_delay():
+            time.sleep(call_delay())
         self.calls += 1
         self.thinking = fn
         t0 = time.time()
@@ -4074,16 +4404,17 @@ class J2Run:
         self.post("system", (self.outcome or "Stopped.") + (f" {noun} v{len(self.sites)} is in the preview. " if noun else " ")
                   + ("Answer Identity's question above to continue." if self.paused else
                      "Tell us if you want changes."))
-        # summary.json first (code only): the reviewer call in _make_report can take minutes or hang, and the run
-        # must have its summary the moment it ends.
+        # summary.json first (code only), then the result is shown: the run is complete here. The reviewer call can
+        # take minutes or hang, so _make_report writes the report without it (code only) and runs it after, in its
+        # own thread; timing.json doesn't count it.
         if not self.paused:
             self._write_summary()
-        self._make_report(review=not self.paused)
         self.feedback = None
         if self.change and not self.paused:      # J2_CHANGE: the change ends with the run it was built in
             self.change["phase"] = "closed"
         self.wait_from = time.time() if self.paused else None
         self.save("timing.json", self.timing())
+        self._make_report(review=not self.paused)
         self.status = "waiting"
         self._run_status()      # P8
 
@@ -4137,7 +4468,7 @@ class J2Run:
             return
         said = [self.request] + [x["answer"] for x in self.intake]
         with llm.tagged(function="adaptation", step=2, cycle=self.cycle, stage=self.stage_kind or self.output):      # P7: Adaptation's planner call, made before its turn
-            chosen = self._deliverables(said)
+            chosen = self._run_tpl_start(said) if self.run_tpl else self._deliverables(said)      # J2_RUN_TEMPLATES=1: the template's stages
         if chosen is None:
             return False
         docs = [k for k in chosen if j2_types.info(k)["form"] == "document"]
@@ -4676,7 +5007,7 @@ class J2Run:
                       + next_field(("user", "adaptation"), "Requester when you ask; Adaptation once the charter is "
                                    "recorded") + "}",
                       f"REQUESTER'S BRIEF: {self.request}\nEARLIER QUESTIONS AND ANSWERS: {json.dumps(self.intake)}\n"
-                      f"{feedback}\n" + (self.out["intake"] + (SITE_FIRST.format(page=self._page_word()) if self._page_word() and not change else "") if self.doc else
+                      f"{feedback}\n" + self._run_tpl_intake() + (self.out["intake"] + (SITE_FIRST.format(page=self._page_word()) if self._page_word() and not change else "") if self.doc else
                       self.out.get("intake") or "J2.a: is there enough information to work? You need enough to write the charter: "
                       "goal, audience, standards, rules and a checkable done-when list. Never invent a missing fact.\n"
                       "- Work out what kind of business this is and what its visitors usually need (for example a "
@@ -5504,6 +5835,8 @@ class J2Run:
         self.step = 8
         last = self.audits[-1] if self.audits else None
         fails, findings = workable(last), self._findings(last)
+        if self.run_tpl and fails and self._run_tpl_partial_done():      # J2_RUN_TEMPLATES=1: only some workflows were selected
+            return self._run_tpl_stage_end()
         if self.pending_left and not self._waiting_work():
             # The cycle's funded work is built and audited: now Identity asks about what the ruling left out.
             p, self.pending_left = self.pending_left, None
@@ -6105,7 +6438,10 @@ class J2Run:
                       + "\n".join(f"{c['id']}: {c['text']}" for c in conditions_for(self.out["conditions"], self.goal, self.out.get("practice", ""))))
         real, replan = None, self.real_replan
         changing = bool(self.change and self.change["phase"] == "plan")      # J2_CHANGE: the change plan is the task
-        if self._realization_applies():
+        tpl_rows = self._run_tpl_rows()      # J2_RUN_TEMPLATES=1: the template's workflows are this stage's base plan
+        if tpl_rows:
+            task += self._run_tpl_plan(tpl_rows)
+        elif self._realization_applies():
             real = self._realization_plan(h)
             if real is None:         # a blocking Requester fact went to Identity first
                 return
@@ -6147,6 +6483,8 @@ class J2Run:
             note = f"Dispute isn't valid: {sid}. Treated as a proposal."
             self._event("adaptation", "invalid_move", note)
         wfs = norm(r.get("workflows"))
+        if tpl_rows and wfs and act in ("", "PROPOSE"):      # J2_RUN_TEMPLATES=1: matched to the template, the unselected left out
+            wfs = norm(self._run_tpl_follow(wfs, tpl_rows))
         if real and self.real_summary is not None:       # did the proposal follow the plan? (names match, by design)
             planned = [x["name"] for x in self.real_summary["proposal_brief"]]
             got = [w.get("name") for w in wfs]
@@ -6307,6 +6645,8 @@ class J2Run:
     def _start_work(self, change, start):
         """After the charter is stamped: Adaptation proposes. A J2_CHANGE change goes to _turn_change, unless no item,
         rule or standard changed (no plan change: the run ends as it is) or the goal itself changed (a full re-plan)."""
+        if not change:
+            self._auto_reuse_pick()      # J2_AUTO_REUSE=1: once, after the first charter
         if not (change and self._change_applies(change)):
             return self._handoff("adaptation", **start)
         d = j2_change.charter_diff(self.real_base, self.goal)
@@ -7429,7 +7769,7 @@ class J2Run:
                 msg += f" Envelope defaults applied: {'; '.join(defaults)}."
             msg += " Workflow agents: " + "; ".join(self._owns(w) for w in registered) + "."
             left = self._left_by_ruling()
-            missing = self._unwritten_sections() if first else []
+            missing = self._unwritten_sections() if first and not self._run_tpl_partial() else []      # J2_RUN_TEMPLATES=1: not selected is not a gap
             if missing:
                 msg += (f" No registered workflow writes {', '.join(missing)}: Adaptation proposes the workflow(s) for "
                         f"{'it' if len(missing) == 1 else 'them'} now.")
@@ -8005,8 +8345,14 @@ class J2Run:
             art_tpl = self._route_template(w, art_kind, art_model.SECTION or art_sec)
             if art_tpl is not None:
                 art_sec = art_tpl.section
-                art_model = j2_template_lib.build_model(art_tpl)
+                # J2_RUN_TEMPLATES=1: agents read the template by its section, not by the name of its first business
+                # (J2_AUTO_REUSE=1 too: an adapted template keeps the name of the business it was first made for)
+                art_model = j2_template_lib.build_model(art_tpl, **({"label": f"the {art_tpl.section} template v{art_tpl.version}"}
+                                                                    if self.run_tpl or auto_reuse_on() else {}))
                 art_sec_schema = j2_template_lib.transport(art_tpl)
+        served, served_state = None, {}      # J2_ARTIFACT_LIBRARY=1: the source run's section, decided before any model call
+        if self.art_lib and self.doc and art_model is not None and art_tpl is not None and self.run_tpl:
+            served = self._route_content(w, art_kind, art_sec)
         attempt, failed, evidence, prev_sig, early, spec_stop = 0, [], "", set(), None, None
         while True:
             attempt += 1
@@ -8160,7 +8506,14 @@ class J2Run:
                     log["reason"] = meta.get("reason") or (self.MOCK_REASON if llm.MOCK else None)
                 return got, raw, guide, meta, stop
 
-            got, raw, guide, meta, stop = one_call()
+            if served and served.get("door") == "reuse" and not served_state.get("tried"):      # J2_ARTIFACT_LIBRARY=1: served, no model call
+                served_state["tried"] = True
+                got, raw, guide, meta, stop = self._serve_content(w, served, served_state, art_kind, art_sec, art_model, sid,
+                                                                  first, attempt)
+                if got is None:      # the data does not follow this run's template: the builder starts from it as a draft
+                    got, raw, guide, meta, stop = one_call()
+            else:
+                got, raw, guide, meta, stop = one_call()
             if got is None:      # code writes the failure report, so the unusable reply isn't route-checked
                 self.write_lock = self.atom = None
                 w["status"] = "failed"
@@ -8206,6 +8559,8 @@ class J2Run:
             failed = self._run_checks(w, attempt, html_out)
             if art_model is not None:      # J2_ARTIFACT_SCHEMA=1: shape, rules and render, each with its receipt
                 failed = self._artifact_receipts(w, attempt, art_kind, art_sec, art_model) + failed
+            if served_state.get("live") and failed:      # the served section failed a check: rolled back, a draft for the builder
+                self._serve_rollback(w, served, served_state, sid, art_kind, art_sec, failed)
             if spec_stop:
                 early = f"the builder reports a second conflict with LLD section {spec_stop.get('section')}"
                 break
@@ -8251,6 +8606,8 @@ class J2Run:
                                 f"attempts. {owner}" if early else f"all {MAX_CHECK_ATTEMPTS} attempts.") + " Code sends "
                                 "the receipts to Adaptation, which decides whether the check or the build is wrong.")
             return self._handoff("adaptation", kind="atom_failed", wid=fn, atoms=bad, attempt=attempt, owner_note=owner)
+        if served_state.get("live"):      # J2_ARTIFACT_LIBRARY=1: the served section passed every check: it counts, and is refunded
+            self._serve_done(w, served)
         self._handoff("coordination", kind="schedule")
 
     def _dep_wfs(self, w, revised=False):
@@ -9366,7 +9723,155 @@ class J2Run:
                 + (f"{deps}\nOTHER SECTIONS (their atoms' agent_output; the rest isn't shown): "
                    f"{json.dumps(self._manifest(w), ensure_ascii=False)}" if slim() else
                    f"\nTHE WHOLE DOCUMENT NOW (v{len(self.sites)}, read only):\n{prev[:SITE_LIMIT]}")
+                + self._content_draft_text(w)
                 + self._board_context())
+
+    # ---- J2_ARTIFACT_LIBRARY=1 (artifact-reuse/1): the content door, j2_artifact_lib
+    def _route_content(self, w, kind, section):
+        """Once per document workflow, after the router and before any model call: the section the source run of this
+        run's run template wrote for the same template workflow, and the door (reuse, adapt, build, unknown). Recorded
+        in reuse.json and as one system line. A source that cannot be read is "unknown", never "nothing"."""
+        wid = w["id"]
+        if wid in self.content_routes:
+            return self.content_routes[wid]
+        _, rec, need = self.tpl_routes.get(wid) or (None, {}, {})
+        rec, need = rec or {}, need or {}
+        key, tid = rec.get("template_workflow"), (self.run_tpl or {}).get("id")
+        src, err = None, None
+        if key and tid:
+            try:
+                src = j2_artifact_lib.source_section(tid, key, kind, section)
+            except j2_artifact_lib.SourceUnreadable as e:
+                err = str(e)
+            except Exception as e:      # the door never blocks a run
+                err = f"{type(e).__name__}: {e}"
+        d = j2_artifact_lib.door(need, rec, src, err, has_key=bool(key and tid), goal=self.goal or {})
+        d = {"run": os.path.basename(self.dir), "t": time.strftime("%Y-%m-%dT%H:%M:%S"), "workflow": wid,
+             "atom": (w.get("atoms") or [{}])[0].get("id") or "", "artifact": kind, "section": section,
+             "run_template": tid, "key": key, "held": False, **d}
+        self.content_routes[wid], self.content_sources[wid] = d, src
+        self.content_decisions.append(d)
+        if d["door"] == "adapt" and src:
+            try:
+                self.content_draft[wid] = j2_artifact_lib.draft_text(src)
+            except Exception as e:      # no draft is better than a draft with the source business's values in it
+                self._event("system", "content_draft", f"{wid}: no draft: {type(e).__name__}: {e}")
+        self._save_reuse()
+        self.post("system", j2_artifact_lib.chat_line(d), content_door={k: d.get(k) for k in ("workflow", "door", "rule", "section")})
+        return d
+
+    def _save_reuse(self):
+        self.save("reuse.json", j2_artifact_lib.record(self.content_decisions))
+
+    def _serve_content(self, w, served, state, kind, section, model, sid, first, attempt):
+        """Attempt 1 served from the source section instead of a model call, through the same validate, data and render
+        path a reply takes (_read_artifact), so the schema, rules and render receipts follow as for a built section.
+        (got, raw, guide, meta, stop); got is None when the data does not follow this run's template, and then the door
+        is adapt and the builder is called with the slotted data as a draft."""
+        fn = w["id"]
+        src = self.content_sources.get(fn) or {}
+        meta = {"say": f"@Coordination {fn} served: {w['name']}. Section {sid} restored from run {src.get('run')} "
+                       f"{src.get('workflow')}; code runs the checks.",
+                "human_output": f"I reused the {w['name']} section of an earlier finished run, unchanged; code checked it "
+                                "against this charter.",
+                "atom_human_output": "This part was taken from an earlier finished run and checked again here.",
+                "next": "Coordination"}
+        raw = json.dumps({**meta, "section": src.get("data")}, ensure_ascii=False)
+        state.update(prev_section=self.sections.get(sid), prev_data=(self.art_data.get(kind) or {}).get(section),
+                     sites_before=len(self.sites))
+        try:
+            parts, guide = self._read_artifact(w, raw, kind, section, model, sid, first, attempt)
+        except ValueError as e:
+            self._serve_fallback(w, served, state, f"does not follow this run's template ({str(e)[:160]})")
+            return None, "", None, {}, None
+        st = self.art_state.get((w.get("atoms") or [{}])[0].get("id")) or {}
+        st["subtype"] = "served"
+        state["live"] = True
+        w["last_check"] = "served section"
+        return parts, raw, guide, meta, None
+
+    def _serve_fallback(self, w, served, state, why):
+        """A served section that failed: the door becomes adapt, and the builder starts from the slotted data as a draft."""
+        wid = w["id"]
+        state["live"] = False
+        served["door"], served["reason"] = "adapt", f"served, then {why}; the builder starts from it as a draft"
+        src = self.content_sources.get(wid)
+        if src:
+            try:
+                self.content_draft[wid] = j2_artifact_lib.draft_text(src)
+            except Exception:
+                self.content_draft.pop(wid, None)
+        self._save_reuse()
+        self.post("system", f"{wid}: the served section {why}. The builder starts from it as a draft.")
+
+    def _serve_rollback(self, w, served, state, sid, kind, section, failed):
+        """The served section failed a check: the document goes back to what it was before it, so no value of the source
+        business reaches the next prompt; the builder gets the slotted data as a draft, and the evidence as today."""
+        if state.get("prev_section") is None:
+            self.sections.pop(sid, None)
+        else:
+            self.sections[sid] = state["prev_section"]
+        del self.sites[state.get("sites_before", len(self.sites)):]
+        data = self.art_data.get(kind) or {}
+        if state.get("prev_data") is None:
+            data.pop(section, None)
+        else:
+            data[section] = state["prev_data"]
+        self.save("sections.json", self.sections)
+        names = sorted({str(r.get("check") or r.get("type")) for r in failed})
+        self._serve_fallback(w, served, state, "failed " + ", ".join(names)[:200])
+
+    def _serve_done(self, w, served):
+        """The served section passed every check: it counts, and the workflow's charge goes back to the budget (founder,
+        13 Nov: refund), the way held work is released."""
+        served["held"] = True
+        if w.get("charged"):
+            w["charged"] = False
+            self._recalc_spent()
+            served["refunded"] = w["cost"]
+        w["served_from"] = served.get("source")
+        self.save("workflows.json", self.workflows)
+        self._save_reuse()
+        self.post("system", f"{w['id']}: the served section passed every check: 0 model calls, {w['cost']} credits refunded "
+                            f"(budget used {self.spent}).")
+
+    def _content_draft_text(self, w):
+        """The draft a builder starts from (door adapt): the source section with the source business's values slotted."""
+        text = self.content_draft.get(w["id"])
+        if not text:
+            return ""
+        return ("\nDRAFT (the same section from an earlier finished run, its business's values replaced by <slots>; keep "
+                "what fits these facts, replace the rest, and use no fact that is not in FACTS YOU MAY USE):\n```json\n"
+                + text + "\n```")
+
+    def _push_run(self):
+        """J2_PUSH_RUNS=1 (default off): the finished run folder is committed and pushed, so anyone's shelf has it
+        (founder, 13 Nov). Each step in its own try; a failure is one system line, never a stop."""
+        if os.environ.get("J2_PUSH_RUNS") != "1":
+            return
+        import subprocess
+        rid = os.path.basename(self.dir)
+        try:
+            top = subprocess.run(["git", "rev-parse", "--show-toplevel"], cwd=self.dir, capture_output=True, text=True,
+                                 timeout=20).stdout.strip()
+        except Exception as e:
+            return self.post("system", f"Run not pushed: git not available ({type(e).__name__}).", warning=True)
+        if not top:
+            return self.post("system", "Run not pushed: the runs folder is not inside a git repository.", warning=True)
+        rel = os.path.relpath(self.dir, top)
+        biz = (self.goal or {}).get("business_type") or "not recorded"
+        steps = [["git", "add", "--", rel],
+                 ["git", "commit", "-m", f"run {rid} ({'mock' if llm.MOCK else llm.PROVIDER}, {biz}, by {run_author()})", "--", rel],
+                 ["git", "pull", "--rebase", "--quiet"], ["git", "push", "--quiet"]]
+        for cmd in steps:
+            try:
+                r = subprocess.run(cmd, cwd=top, capture_output=True, text=True, timeout=120)
+            except Exception as e:
+                return self.post("system", f"Run not pushed at '{' '.join(cmd[:2])}': {type(e).__name__}: {e}", warning=True)
+            if r.returncode != 0:
+                return self.post("system", f"Run not pushed at '{' '.join(cmd[:2])}': {(r.stderr or r.stdout).strip()[:300]}",
+                                 warning=True)
+        self.post("system", f"Run {rid} pushed to Git ({rel}).")
 
     # ---- J2_TEMPLATE_LIBRARY=1 (template-library/1): the router picks the template a workflow's builder fills
     def _route_template(self, w, kind, section):
@@ -9383,9 +9888,12 @@ class J2Run:
         run_id = os.path.basename(self.dir)
         ctx = {"run": run_id, "workflow": wid, "atom": aid,
                "agent": "template generator (mock)" if llm.MOCK else f"template generator ({llm.PROVIDER})"}
+        if self.run_tpl and auto_reuse_on():      # J2_AUTO_REUSE=1: on a tie the router prefers this run template's own section templates
+            ctx["run_template"] = self.run_tpl["id"]
         self.tpl_cur = {"wid": wid}
+        first = self._run_tpl_first(w, kind, section)      # J2_RUN_TEMPLATES=1: the run template's section template first
         try:
-            t, rec = j2_template_lib.route(need, ctx, ask=self._template_ask)
+            t, rec = j2_template_lib.route(need, ctx, ask=self._template_ask, **({"first": first} if first else {}))
         except Exception as e:      # the router never blocks a run: the builder fills the generic template
             gen = j2_template_lib.generic(kind, section)
             t, rec = None, {"workflow": wid, "atom": aid, "artifact": kind, "section": section, "action": "generic",
@@ -9393,6 +9901,8 @@ class J2Run:
                             "kind": "generic", "score": None, "rule": "e",
                             "reason": f"the router could not run ({type(e).__name__}: {e})"}
         rec = {"run": run_id, "t": time.strftime("%Y-%m-%dT%H:%M:%S"), **rec}
+        if self.run_tpl:
+            self._run_tpl_decided(w, first, rec)
         self.tpl_routes[wid] = (t, rec, need)
         self.tpl_decisions.append(rec)
         if is_page(kind) and self.style is None and not self.doc:
@@ -9410,8 +9920,10 @@ class J2Run:
                     d["saved"] = None
                     self._event("system", "template_save", f"{wid}: {type(e).__name__}: {e}")
         self.save("templates.json", {"schema": j2_template_lib.SCHEMA, "library": j2_template_lib.lib_dir(),
-                                     "decisions": self.tpl_decisions})
-        self.post("system", template_line(wid, rec), template_route={k: rec.get(k) for k in ("workflow", "atom", "action", "template",
+                                     "decisions": self.tpl_decisions, **self._run_tpl_record()})
+        self.post("system", template_line(wid, rec) + (f"; run template workflow {first['key']}" + (f", adapted from {rec['adapted_from']}" if rec.get("adapted_from") else "") if first
+                                                       else f"; adapted from {rec['adapted_from']}" if rec.get("adapted_from") else ""),
+                  **({"humans_only": True} if self.run_tpl or auto_reuse_on() else {}), template_route={k: rec.get(k) for k in ("workflow", "atom", "action", "template",
                                                                           "version", "score")})
         self.tpl_cur = {"template": t, "rec": rec, "need": need}
         return t
@@ -9499,6 +10011,8 @@ class J2Run:
 
     def _tpl_ref(self):
         rec = (self.tpl_cur or {}).get("rec") or {}
+        if (self.run_tpl or auto_reuse_on()) and rec.get("kind") == "specialised":      # J2_RUN_TEMPLATES=1: receipts reach agents, so the template goes by its section there (templates.json keeps its name)
+            return {**{k: rec.get(k) for k in ("version", "kind", "action")}, "template": f"the {rec.get('section')} template"}
         return {k: rec.get(k) for k in ("template", "version", "kind", "action")}
 
     # ---- J2_ARTIFACT_SCHEMA=1 (artifact-schema/1): the data a builder sends, and the three layers code runs on it
@@ -9832,15 +10346,32 @@ class J2Run:
         receipts."""
         site_dir, failed, doc = os.path.join(self.dir, "site"), [], self.doc if doc is None else doc
         t0 = time.time()
+        # the document sections this workflow owns: its sections field only (wf_sections), never its name or words
+        owned = wf_sections(w, (self.out or {}).get("sections") or []) if doc else []
 
         def one(c):
             if doc and c.get("type") == "file-exists" and self._file_wf(w):      # a file workflow: the file it wrote
                 f = artifact_path(w)
                 ok = os.path.isfile(os.path.join(self.dir, f))
                 return {"actual": ok, "pass": ok, "evidence": f"{f} {'exists' if ok else 'not found'} in the run"}
+            if owned and c.get("type") == "ids-unique":
+                # only the ids defined in the sections it owns: another section citing them (a metrics table keyed by
+                # goal id) is not a duplicate (runs/j2-20261111-191311 W-3 deleted Users and Goals over that)
+                mine = "\n\n".join(f"## {h}\n{md_section(page, h) or ''}" for h in owned)
+                res = run_check(c, site_dir, mine, doc)
+                return {**res, "evidence": res["evidence"].replace("in the document",
+                                                                   f"in the sections it owns ({', '.join(owned)})")}
             return run_check(c, site_dir, page, doc)
-        for a in atoms or w.get("atoms") or []:
-            ver = [c for c in a.get("verification") or [] if isinstance(c, dict)]
+        # A build must keep every section its workflow owns, present and not empty, whatever its atoms check
+        # (runs/j2-20261111-191311: W-3 owned Problem, Users and Goals, checked only Problem and dropped the other two).
+        # A failure goes back to the builder with this reason, like any failed check. Not on a single-atom re-check,
+        # and not for a section an atom already checks with section-not-empty (a first build always does: J2.e).
+        have = {heading_target(c.get("target")) for a in w.get("atoms") or [] for c in a.get("verification") or []
+                if isinstance(c, dict) and c.get("type") == "section-not-empty"}
+        kept = [{"text": f"The {h} section this workflow owns is present and not empty.", "type": "section-not-empty",
+                 "target": h, "expect": 1, "owned_section": True} for h in owned if h not in have] if atoms is None else []
+        for n, a in enumerate(atoms or w.get("atoms") or []):
+            ver = [c for c in a.get("verification") or [] if isinstance(c, dict)] + (kept if n == 0 else [])
             recs = [self._receipt(a, c, attempt, one(c), **extra) for c in ver]
             a["results"], a["attempts"] = recs, attempt
             self._expected_receipts(a, ver, recs, attempt, **extra)
@@ -10576,6 +11107,7 @@ class J2Run:
             "route_check_violations": [{"agent": e["agent"], "detail": e["detail"], "msg": e["msg"], "cycle": e["cycle"]}
                                        for e in self.events if e["type"] == "redirect"]})
         self._write_artifacts()
+        self._push_run()      # J2_PUSH_RUNS=1: the finished run goes to Git; never stops the run
 
     def _write_artifacts(self):
         """artifacts.json: a new file listing what the run made (artifacts/types.json). Written with the summary and
@@ -10610,8 +11142,8 @@ class J2Run:
                               f"{c['resolved_by_identity']} by Identity, {c['asked_requester']} needed the Requester."],
                 "problems": [f"{sum(a['redirects'] for a in metrics['agents'].values())} illegal route pick(s) were redirected."],
                 "learnings": ["Mock replies are scripted, so these learnings only show the report works."]})
-        if self.calls and DELAY:
-            time.sleep(DELAY)
+        if self.calls and call_delay():
+            time.sleep(call_delay())
         self.calls += 1
         raw = _ask(self._ask_tag("reviewer", "review"),
             "You review one test run of J2, a department of AI agents with strict roles (role files below). You are not "
@@ -10629,15 +11161,32 @@ class J2Run:
             return {"verdict": "The reviewer's reply wasn't valid JSON.", "raw": raw[:2000]}
 
     def _make_report(self, review=True):
-        """Metrics always; the reviewer call only when the run ends (not on every pause for the Requester)."""
+        """Metrics and report.json at once. The reviewer call (only when the run ends, not on every pause for the
+        Requester) runs after the result is shown, in its own thread (self.review_thread): its notes replace the
+        placeholder verdict when they arrive. A newer report (the next pause or end) wins over a late review."""
+        off = review and self._hook("review_enabled") is False      # P19: the host's reviewer setting; only an explicit False switches it off
+        review = review and not off
         metrics = self._metrics()
         self.thinking = None
+        metrics["ai_calls"] = self.calls + (1 if review else 0)      # counting the reviewer's call
+        self.report_gen = getattr(self, "report_gen", 0) + 1
+        self._save_report(metrics, {"verdict": "The reviewer is writing its notes; they appear here when done." if review
+                                    else "The reviewer is switched off in this team's settings." if off
+                                    else "Paused for the Requester; the reviewer runs when the run ends."})
+        if review:
+            self.review_thread = threading.Thread(target=self._review_later, args=(metrics, self.report_gen),
+                                                  daemon=True)
+            self.review_thread.start()
+
+    def _review_later(self, metrics, gen):
         try:
-            review = self._review(metrics) if review else {"verdict": "Paused for the Requester; the reviewer runs "
-                                                                      "when the run ends."}
+            review = self._review(metrics)
         except Exception as e:  # noqa: BLE001  the metrics are still worth saving
             review = {"verdict": f"Reviewer call failed: {type(e).__name__}: {str(e)[:200]}"}
-        metrics["ai_calls"] = self.calls
+        if gen == self.report_gen:
+            self._save_report(metrics, review)
+
+    def _save_report(self, metrics, review):
         self.report = {"metrics": metrics, "review": review, "events": self.events,
                        "made": time.strftime("%Y-%m-%d %H:%M:%S")}
         self.save("report.json", self.report)

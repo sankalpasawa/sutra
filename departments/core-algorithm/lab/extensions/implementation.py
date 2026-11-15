@@ -114,13 +114,16 @@ def _ui(impl: dict) -> str:
     rows = "".join(f"<tr><td>{e(s['id'])}</td><td>{e(', '.join(s.get('after', [])) or '-')}</td><td>{e(s['host'])}</td><td>{e(s['sandbox'])}</td><td>{e(s['action'])}</td><td>{e(s['verify'])}</td></tr>" for s in wf["steps"])
     gates = "".join(f"<li><b>{e(r['tag'])}</b> {e(r['line'])}</li>" for r in impl["scaffold"]["rules"])
     done = "".join(f"<li>{e(d)}</li>" for d in impl["scaffold"]["done_when"])
+    stop = wf.get("stopped")   # the run this plan comes from stopped: the page says where and why, and what ran before it
+    halted = (f" The local run it was made from stopped at <code>{e(str(stop.get('method')))}</code>: {e(str(stop.get('reason')))}. "
+              f"Steps that ran there: {e(', '.join(impl['plan']['ran']) or 'none')}.") if stop else ""
     return ("<!doctype html><html lang=\"en\"><head><meta charset=\"utf-8\"><meta name=\"viewport\" content=\"width=device-width,initial-scale=1\">"
             f"<title>{e(impl['scaffold']['title'])}</title><style>body{{font:14px/1.5 -apple-system,Arial,sans-serif;margin:0;padding:24px;color:#15202b;background:#fff}}"
             "table{border-collapse:collapse;width:100%;font-size:12.5px}th,td{border:1px solid #d7dde3;padding:5px 7px;text-align:left;vertical-align:top}"
             "th{background:#f3f6f8;font-size:11px;text-transform:uppercase;color:#5b6773}.banner{background:#fdf3ec;border-left:4px solid #9a4a1e;padding:8px 12px;margin:0 0 16px}"
             "h1{font-size:20px;margin:0 0 6px}h2{font-size:13px;text-transform:uppercase;letter-spacing:.05em;color:#5b6773;margin:18px 0 6px}code{background:#f3f6f8;padding:0 4px}</style></head><body>"
             f"<h1>{e(impl['scaffold']['title'])}</h1><div class=\"banner\"><b>{e(impl['status'])}.</b> Generated from a local plan; nothing here has run. "
-            f"Workflow <code>{e(wf['id'])}</code>, {len(wf['steps'])} steps, kernel status <code>{e(impl['plan']['status'])}</code>.</div>"
+            f"Workflow <code>{e(wf['id'])}</code>, {len(wf['steps'])} steps, kernel status <code>{e(impl['plan']['status'])}</code>.{halted}</div>"
             f"<h2>Goal</h2><p>{e(impl['scaffold']['purpose'])}</p><h2>Done when</h2><ul>{done}</ul>"
             f"<h2>Steps</h2><table><tr><th>Step</th><th>After</th><th>Host</th><th>Sandbox</th><th>Action</th><th>Verify</th></tr>{rows}</table>"
             f"<h2>Gates and rules</h2><ul>{gates}</ul>"
@@ -137,7 +140,7 @@ def to_implementation(result: dict, state) -> dict:
     ran = [r["method"] for r in result.get("model_receipts", [])]
     spend = lambda steps: {k: sum(state.methods.get(a, {}).get("cost", {}).get(k, 0) for a in steps) for k in state.budget}
     skipped = list(result.get("skipped", []))
-    cost = spend(actions) if result.get("waits") or skipped else result.get("cost")   # a result that waited or skipped reports what ran; the plan's cost is the cost of the steps listed here
+    cost = spend(actions) if result.get("waits") or skipped or result.get("stopped") else result.get("cost")   # a result that waited or skipped reports what ran; the plan's cost is the cost of the steps listed here
     still = [a for a in actions if a not in ran and a not in result.get("waits", []) and a not in skipped]   # not yet run, not skipped, not out as a question
     budget_line = (f"plan cost {canonical(cost)} within {canonical(state.budget)}" if still == actions else
                    f"plan cost {canonical(cost)}, of which still to pay {canonical(spend(still))} within {canonical(state.budget)}")
@@ -162,6 +165,8 @@ def to_implementation(result: dict, state) -> dict:
         workflow["over_budget"] = spend(still)
     if result.get("work_state") == "blocked":   # no step here makes the goal true: say so on the workflow itself
         workflow["blocked"] = result.get("status")
+    if result.get("stopped"):   # the run stopped at a step: the workflow names the step and the reason
+        workflow["stopped"] = dict(result["stopped"])
     scaffold = {
         "title": f"Department for {goal}",
         "scope": scope,
@@ -207,6 +212,8 @@ def validate_workflow(wf: dict) -> list:
             problems.append(f"step {e['to']} comes before its prerequisite {e['from']}")
     if wf.get("blocked"):
         problems.append(f"the plan is blocked ({wf['blocked']}): no step here makes the goal true")
+    if wf.get("stopped"):
+        problems.append(f"the run stopped at {wf['stopped'].get('method')}: {wf['stopped'].get('reason')}")
     if wf.get("over_budget"):
         problems.append(f"the steps still to pay cost more than the budget left ({canonical(wf['over_budget'])})")
     if "PROPOSED_ONLY" not in str(wf.get("enforcement", {}).get("current", "")):

@@ -1,0 +1,9 @@
+{
+  "id": "85_no_step",
+  "title": "A fact that only evidence makes true",
+  "description": "The same desk with no step that leads to the letter: the look is blocked, nobody is named as the hand and nothing is handed over.",
+  "packs": ["210_letters_desk", "212_book_read"],
+  "execute": true,
+  "area": "Hand-off",
+  "expected": "QUERY_EVIDENCE"
+}

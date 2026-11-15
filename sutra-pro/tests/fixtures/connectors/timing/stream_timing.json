@@ -1,0 +1,256 @@
+{
+ "date": "2026-11-14",
+ "platform": "darwin",
+ "versions": {
+  "claude": "2.1.308",
+  "codex": "0.146.0"
+ },
+ "measured": {
+  "claude_tool": {
+   "first_output_s": 3.425,
+   "first_text_delta_s": 3.425,
+   "total_s": 6.1,
+   "argv_flags": [
+    "--allowedTools",
+    "--disable-slash-commands",
+    "--disallowedTools",
+    "--effort",
+    "--include-partial-messages",
+    "--model",
+    "--output-format",
+    "--permission-mode",
+    "--permission-prompts",
+    "--restricted",
+    "--session-id",
+    "--setting-sources",
+    "--strict-mcp-config",
+    "--system-prompt",
+    "--tools",
+    "--verbose"
+   ],
+   "timeline": [
+    {
+     "t": 1.989,
+     "type": "system"
+    },
+    {
+     "t": 1.992,
+     "type": "system"
+    },
+    {
+     "t": 3.42,
+     "type": "stream_event",
+     "event": "message_start"
+    },
+    {
+     "t": 3.421,
+     "type": "stream_event",
+     "event": "content_block_start",
+     "index": 0,
+     "block": "tool_use"
+    },
+    {
+     "t": 3.421,
+     "type": "stream_event",
+     "event": "content_block_delta",
+     "delta": "input_json_delta",
+     "index": 0
+    },
+    {
+     "t": 3.896,
+     "type": "stream_event",
+     "event": "content_block_delta",
+     "delta": "input_json_delta",
+     "index": 0
+    },
+    {
+     "t": 3.896,
+     "type": "stream_event",
+     "event": "content_block_delta",
+     "delta": "input_json_delta",
+     "index": 0
+    },
+    {
+     "t": 3.896,
+     "type": "stream_event",
+     "event": "content_block_delta",
+     "delta": "input_json_delta",
+     "index": 0
+    },
+    {
+     "t": 3.896,
+     "type": "stream_event",
+     "event": "content_block_delta",
+     "delta": "input_json_delta",
+     "index": 0
+    },
+    {
+     "t": 3.896,
+     "type": "stream_event",
+     "event": "content_block_delta",
+     "delta": "input_json_delta",
+     "index": 0
+    },
+    {
+     "t": 3.897,
+     "type": "stream_event",
+     "event": "content_block_delta",
+     "delta": "input_json_delta",
+     "index": 0
+    },
+    {
+     "t": 3.902,
+     "type": "assistant"
+    },
+    {
+     "t": 3.909,
+     "type": "stream_event",
+     "event": "content_block_stop",
+     "index": 0
+    },
+    {
+     "t": 3.911,
+     "type": "stream_event",
+     "event": "message_delta",
+     "delta": null
+    },
+    {
+     "t": 3.912,
+     "type": "stream_event",
+     "event": "message_stop"
+    },
+    {
+     "t": 3.913,
+     "type": "rate_limit_event"
+    },
+    {
+     "t": 3.934,
+     "type": "user"
+    },
+    {
+     "t": 3.937,
+     "type": "system"
+    },
+    {
+     "t": 5.255,
+     "type": "stream_event",
+     "event": "message_start"
+    },
+    {
+     "t": 5.256,
+     "type": "stream_event",
+     "event": "content_block_start",
+     "index": 0,
+     "block": "text"
+    },
+    {
+     "t": 5.256,
+     "type": "stream_event",
+     "event": "content_block_delta",
+     "delta": "text_delta",
+     "index": 0
+    },
+    {
+     "t": 5.256,
+     "type": "stream_event",
+     "event": "content_block_delta",
+     "delta": "text_delta",
+     "index": 0
+    },
+    {
+     "t": 5.256,
+     "type": "stream_event",
+     "event": "content_block_delta",
+     "delta": "text_delta",
+     "index": 0
+    },
+    {
+     "t": 5.257,
+     "type": "stream_event",
+     "event": "content_block_delta",
+     "delta": "text_delta",
+     "index": 0
+    },
+    {
+     "t": 5.259,
+     "type": "assistant"
+    },
+    {
+     "t": 5.259,
+     "type": "stream_event",
+     "event": "content_block_stop",
+     "index": 0
+    },
+    {
+     "t": 5.265,
+     "type": "stream_event",
+     "event": "message_delta",
+     "delta": null
+    },
+    {
+     "t": 5.265,
+     "type": "stream_event",
+     "event": "message_stop"
+    },
+    {
+     "t": 5.274,
+     "type": "result"
+    }
+   ]
+  },
+  "claude_stop": {
+   "stop_latency_s": 0.886,
+   "ended_with": "cancelled",
+   "first_text_delta_s": 2.967
+  },
+  "codex_tool": {
+   "first_output_s": 4.914,
+   "total_s": 7.06,
+   "argv_flags": [
+    "-",
+    "--ignore-rules",
+    "--ignore-user-config",
+    "--json",
+    "--skip-git-repo-check",
+    "-C",
+    "-c",
+    "-m",
+    "-s"
+   ],
+   "timeline": [
+    {
+     "t": 0.093,
+     "type": "thread.started"
+    },
+    {
+     "t": 0.096,
+     "type": "turn.started"
+    },
+    {
+     "t": 4.785,
+     "type": "item.started",
+     "item": "command_execution"
+    },
+    {
+     "t": 4.785,
+     "type": "item.completed",
+     "item": "command_execution"
+    },
+    {
+     "t": 5.854,
+     "type": "item.completed",
+     "item": "agent_message"
+    },
+    {
+     "t": 5.877,
+     "type": "turn.completed"
+    }
+   ]
+  },
+  "codex_stop": {
+   "stop_latency_s": 0.316,
+   "ended_with": "cancelled"
+  }
+ },
+ "note": "wall-clock seconds on one run on this machine; timelines list arrival time and type of each stdout line, never content"
+}

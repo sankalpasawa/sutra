@@ -160,9 +160,9 @@ def test_without_the_key_or_a_line_the_run_waits_for_the_owner_as_before(j2, mak
 
 
 # ---- the setting itself ------------------------------------------------------------------------------------------------------
-def test_decide_for_me_is_an_engine_setting_and_the_eighth_task_key():
+def test_decide_for_me_is_an_engine_setting_and_the_eighth_task_key():          # J2 sync 6 appended two task-only keys after it
     assert EngineSettings().decide_for_me is False and ENV_NAMES["decide_for_me"] == "J2_DECIDE_FOR_ME"
-    assert TASK_SETTING_KEYS[-1] == "J2_DECIDE_FOR_ME" and len(TASK_SETTING_KEYS) == 8
+    assert TASK_SETTING_KEYS[7] == "J2_DECIDE_FOR_ME" and len(TASK_SETTING_KEYS) == 10
     assert EngineSettings(decide_for_me=True).to_env()["J2_DECIDE_FOR_ME"] == "1" and EngineSettings().to_env()["J2_DECIDE_FOR_ME"] == "0"
     layered = EngineSettings.layered({}, None, {"decide_for_me": False}, {"J2_DECIDE_FOR_ME": "1"})
     assert layered.decide_for_me is True, "the task's key beats the team's file"

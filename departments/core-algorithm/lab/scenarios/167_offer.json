@@ -1,0 +1,85 @@
+{
+  "schema": "sutra-extension/2",
+  "id": "167_offer",
+  "scope": "orgA/offers",
+  "goals": [
+    "offer_shipped",
+    "offer_open"
+  ],
+  "budget": {
+    "compute": 10,
+    "money": 10,
+    "attention": 3
+  },
+  "preference": [
+    "compute",
+    "money",
+    "attention"
+  ],
+  "evidence": [
+    {
+      "predicate": "offer_approved",
+      "truth": "TRUE",
+      "verified": true,
+      "source": "fixture/owner-decision",
+      "version": "1",
+      "final": true
+    }
+  ],
+  "rules": [
+    {
+      "id": "R-OFFER@1",
+      "head": "offer_open",
+      "branches": [
+        [
+          "offer_approved",
+          "until:3"
+        ]
+      ],
+      "approved": true,
+      "source": "fixture/reviewed-domain-theory"
+    }
+  ],
+  "methods": [
+    {
+      "id": "ship-offer@1",
+      "effect": "offer_shipped",
+      "requires": [
+        "offer_approved",
+        "until:4"
+      ],
+      "provider": "local-provider",
+      "grant": "action:ship-offer@1",
+      "cost": {
+        "compute": 1,
+        "money": 1,
+        "attention": 0
+      },
+      "action": "simulate_fact",
+      "approved": true,
+      "source": "reviewed/synthetic-method"
+    },
+    {
+      "id": "reopen-offer@1",
+      "effect": "until:3",
+      "requires": [],
+      "provider": "local-provider",
+      "grant": "action:reopen-offer@1",
+      "cost": {
+        "compute": 0,
+        "money": 0,
+        "attention": 0
+      },
+      "action": "simulate_fact",
+      "approved": true,
+      "source": "reviewed/synthetic-method"
+    }
+  ],
+  "providers": {
+    "local-provider": 2
+  },
+  "grants": [
+    "action:ship-offer@1",
+    "action:reopen-offer@1"
+  ]
+}

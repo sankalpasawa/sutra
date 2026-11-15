@@ -1,0 +1,88 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "additionalProperties": false,
+  "properties": {
+    "studio_name": {
+      "description": "the studio name as written in the facts",
+      "type": "string"
+    },
+    "statement": {
+      "description": "the problem: people need to see the studio's address, classes and prices and to request a booking",
+      "type": "string"
+    },
+    "assumptions": {
+      "description": "facts you had to assume, each one line",
+      "items": {
+        "type": "string"
+      },
+      "type": "array"
+    },
+    "users": {
+      "description": "the user groups, prospective students and the studio team, each with what they do",
+      "items": {
+        "$ref": "#/definitions/User"
+      },
+      "type": "array"
+    },
+    "goals": {
+      "description": "the goals G1 name and address as text, G2 weekly class list, G3 class bookings",
+      "items": {
+        "$ref": "#/definitions/Goal"
+      },
+      "type": "array"
+    }
+  },
+  "required": [
+    "studio_name",
+    "statement",
+    "users"
+  ],
+  "type": "object",
+  "definitions": {
+    "Goal": {
+      "additionalProperties": false,
+      "properties": {
+        "id": {
+          "description": "goal id: G1, G2 or G3",
+          "enum": [
+            "G1",
+            "G2",
+            "G3"
+          ],
+          "type": "string"
+        },
+        "text": {
+          "description": "the goal in one sentence, with no numeric targets",
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "text"
+      ],
+      "type": "object"
+    },
+    "User": {
+      "additionalProperties": false,
+      "properties": {
+        "group": {
+          "description": "the user group name",
+          "enum": [
+            "prospective students",
+            "studio team"
+          ],
+          "type": "string"
+        },
+        "does": {
+          "description": "what this group does with the page",
+          "type": "string"
+        }
+      },
+      "required": [
+        "group",
+        "does"
+      ],
+      "type": "object"
+    }
+  }
+}

@@ -155,7 +155,7 @@ def test_rehydrate_sets_exactly_the_listed_attributes_for_a_chain(site_chain, ne
     follow.rehydrate(site_chain.dir)
     after = vars(follow)
     changed = {k for k in after if after[k] is not before.get(k) and after[k] != before.get(k)}
-    assert changed <= set(R.RESTORED) | set(R.RESTORED_CHAIN)
+    assert changed <= set(R.RESTORED) | set(R.RESTORED_CHAIN) | set(R.RESTORED_REUSE)
     assert {"docset", "stages", "stage_i", "docs", "chain", "stage_archive", "past_workflows", "site_tag", "blueprint"} <= changed
     assert set(after) == set(before)
 

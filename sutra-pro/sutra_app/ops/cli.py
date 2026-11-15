@@ -326,11 +326,17 @@ def _config_sync(args: argparse.Namespace, settings: Settings) -> int:
         print(f"sutra-pro: the library could not be synced: {exc}", file=sys.stderr)
         return 1
     templates, versions, filled, runs, skipped = (report[k] for k in ("templates", "versions", "filled", "runs", "skipped"))
+    run_templates, renamed = report.get("run_templates") or [], report.get("renamed") or {}
     lines: list[str] = []
     if templates:
         lines.append(f"Added {len(templates)} template(s): " + ", ".join(templates))
     if versions:
         lines.append(f"Added {len(versions)} version(s): " + ", ".join(versions))
+    if run_templates:
+        lines.append(f"Added {len(run_templates)} run template(s): " + ", ".join(run_templates))
+    if renamed:
+        lines.append(f"{len(renamed)} added version(s) were renamed upstream; the old family is kept beside the new one: "
+                     + ", ".join(f"{label} (was {old})" for label, old in sorted(renamed.items())[:5]) + (" ..." if len(renamed) > 5 else ""))
     if filled:
         lines.append(f"Filled the provenance (business, date, live or mock) of {len(filled)} version(s).")
     if runs:

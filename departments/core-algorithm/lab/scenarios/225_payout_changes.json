@@ -1,0 +1,88 @@
+{
+  "schema": "sutra-extension/2",
+  "id": "225_payout_changes",
+  "goals": [
+    "payout_reconciled",
+    "payout_way_approved"
+  ],
+  "evidence": [
+    {
+      "predicate": "change_weight",
+      "truth": "TRUE",
+      "verified": true,
+      "source": "fixture/change-policy",
+      "version": "weighty"
+    },
+    {
+      "predicate": "change_weight=small",
+      "truth": "FALSE",
+      "verified": true,
+      "source": "fixture/change-policy",
+      "version": "weighty",
+      "depends_on": [
+        {
+          "predicate": "change_weight",
+          "version": "weighty"
+        }
+      ]
+    },
+    {
+      "predicate": "change_weight=weighty",
+      "truth": "TRUE",
+      "verified": true,
+      "source": "fixture/change-policy",
+      "version": "weighty",
+      "depends_on": [
+        {
+          "predicate": "change_weight",
+          "version": "weighty"
+        }
+      ]
+    }
+  ],
+  "methods": [
+    {
+      "id": "approve-own-payout-way@1",
+      "effect": "payout_way_approved",
+      "requires": [
+        "payout_chain_repeated",
+        "change_weight=small"
+      ],
+      "provider": "local-provider",
+      "grant": "action:approve-own-payout-way@1",
+      "cost": {
+        "compute": 1,
+        "money": 0,
+        "attention": 0
+      },
+      "action": "simulate_fact",
+      "approved": true,
+      "source": "reviewed/synthetic-method"
+    },
+    {
+      "id": "check-payout-way-independently@1",
+      "effect": "payout_way_approved",
+      "requires": [
+        "payout_chain_repeated",
+        "change_weight=weighty"
+      ],
+      "provider": "independent-checker",
+      "grant": "action:check-payout-way-independently@1",
+      "cost": {
+        "compute": 5,
+        "money": 0,
+        "attention": 0
+      },
+      "action": "simulate_fact",
+      "approved": true,
+      "source": "reviewed/synthetic-method"
+    }
+  ],
+  "providers": {
+    "independent-checker": 1
+  },
+  "grants": [
+    "action:approve-own-payout-way@1",
+    "action:check-payout-way-independently@1"
+  ]
+}

@@ -44,7 +44,7 @@ import time
 from pathlib import Path
 
 REPO = Path(__file__).resolve().parent.parent
-BASELINE = "1d537295eb11cb034956fa9d8a4026eaa1e3f44e"       # the sutra commit whose `prototypes/j2` the goldens are recorded from (sync 5, D160: cut-off/2026-11-12)
+BASELINE = "1adb8ecd8fa8eef47fb7a0fc63a1616f556cdfeb"       # the sutra commit whose `prototypes/j2` the goldens are recorded from (sync 6, D176: J2 main)
 OUT_DIR = REPO / "tests" / "engine" / "golden"
 SCHEMA = "prompts-golden/1"
 FILE = "prompts_{}.json"
@@ -68,6 +68,9 @@ BOUTIQUE_BRIEF = ("make a website for my cousin's clothing boutique called Threa
                   "and order on whatsapp (+91 00000 11111). it should feel earthy and elegant and work well on phones")
 
 COMMON_ENV = {"STUDIO_MOCK": "1", "J2_MEMORY": "0", "J2_REALIZATION": "0"}
+# D190: J2 reads the git user name (`run_author`, a subprocess) and may push the run folder; the recorders pin both, as the engine host does
+# (`DataPaths.j2_env()`), and keep them out of the recorded `env` so that a golden stays what it was.
+PINNED_ENV = {"J2_RUN_BY": "sutra-pro", "J2_PUSH_RUNS": "0"}
 # name -> flags, the brief and the budget the run is given (J2 starts with 100; a document or library run is given more, as the flow test does).
 # "ask": after the run, this question to this function through `j2_agent.answer` (a stub for the model), recorded as one more call.
 SCENARIOS = {
@@ -139,7 +142,7 @@ def child(kind: str, folder: str, name: str, work: str) -> int:
     spec = SCENARIOS[name]
     env = {**COMMON_ENV, **spec["env"], "J2_RUNS_DIR": os.path.join(work, "runs"), "J2_LIBRARY_DIR": os.path.join(work, "library"),
            "J2_MEMORY_FILE": os.path.join(work, "lessons.jsonl"), "J2_PLAYBOOK_FILE": os.path.join(work, "playbooks.jsonl")}
-    os.environ.update(env)
+    os.environ.update({**env, **PINNED_ENV})
     if kind == "j2":
         sys.path.insert(0, folder)
         import j2

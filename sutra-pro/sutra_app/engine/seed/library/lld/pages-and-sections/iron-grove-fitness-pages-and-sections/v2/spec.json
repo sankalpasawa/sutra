@@ -1,0 +1,101 @@
+{
+  "name": "Iron Grove Fitness Pages and sections",
+  "artifact": "lld",
+  "section": "Pages and sections",
+  "version": 2,
+  "kind": "specialised",
+  "description": "Pages and sections for Iron Grove Fitness (lld): the generic LLD/1 · Pages and sections fields plus facts_used, from 1 charter fact(s); adapted from a template made for another business",
+  "fields": [
+    {
+      "name": "sections",
+      "type": "list[LLDSection]",
+      "required": true,
+      "description": "the page sections, S1, S2, ... in order, each with its anchor and the HLD components it implements (for Iron Grove Fitness, a lld)",
+      "enum": null,
+      "nullable": false
+    },
+    {
+      "name": "assumptions",
+      "type": "list[string]",
+      "required": false,
+      "description": "the assumptions of Iron Grove Fitness's Pages and sections",
+      "enum": null,
+      "nullable": false
+    },
+    {
+      "name": "facts_used",
+      "type": "list[string]",
+      "required": false,
+      "description": "the charter facts this section is written from, copied exactly from Iron Grove Fitness's charter",
+      "enum": [
+        "Iron Grove Fitness"
+      ],
+      "nullable": false
+    }
+  ],
+  "objects": [
+    {
+      "name": "LLDSection",
+      "fields": [
+        {
+          "name": "id",
+          "type": "string",
+          "required": true,
+          "description": "S1, S2, ... in order",
+          "enum": null,
+          "nullable": false
+        },
+        {
+          "name": "anchor",
+          "type": "string",
+          "required": true,
+          "description": "the id attribute on the page, with the #, e.g. \"#classes\"",
+          "enum": null,
+          "nullable": false
+        },
+        {
+          "name": "page",
+          "type": "string",
+          "required": false,
+          "description": "the page id, e.g. \"P1\"",
+          "enum": null,
+          "nullable": false
+        },
+        {
+          "name": "implements",
+          "type": "list[string]",
+          "required": false,
+          "description": "the HLD component ids this section implements",
+          "enum": null,
+          "nullable": false
+        }
+      ]
+    }
+  ],
+  "rules": [
+    {
+      "rule": "enum",
+      "path": "facts_used[]",
+      "values": [
+        "Iron Grove Fitness"
+      ],
+      "from": "facts",
+      "name": "facts_used are facts of Iron Grove Fitness's charter"
+    }
+  ],
+  "sha": "36c92267f5832087310a6efb757fa3c91c4ddc6464ce49cfca1fb6b9ae324ddd",
+  "extends": "lld/pages-and-sections@generic/1",
+  "made_by": {
+    "run": "j2-20261111-211339",
+    "workflow": "W-24",
+    "atom": "W-24.a1",
+    "agent": "code (adapted from a run template)"
+  },
+  "context": {
+    "business_type": "lld",
+    "facts_used": [
+      "Iron Grove Fitness"
+    ],
+    "fingerprint": "f76d517cda1cf3ad5a8df9c20fe93e2cb3d5838b4ed92f544dac925008a85dd7"
+  }
+}

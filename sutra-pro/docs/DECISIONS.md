@@ -1235,3 +1235,457 @@ Decided by Claude on its own, on the dates shown. The owner can veto any of them
 - Why: speed; one release carries the whole wire change once.
 - Rejected: a release per lane (the wire is not usable until all three are merged).
 - Diagram: label "release 0.4.0", pill on band:DEPARTMENT RUNTIME.
+
+## D176 — The pin moves to J2 main `1adb8ecd`; the source stays the extraction of this repository's `prototypes/j2`
+- Sources: D136, D154, D160, `docs/design/j2-sync-5.md`.
+- Decided: `scripts/vendor_j2.py` takes `BASELINE = 1adb8ecd8fa8eef47fb7a0fc63a1616f556cdfeb` and tree `9a7cb34c028248de7d3b436647f8baf39be6f77e`; `VENDORED.md` names it "sync 6" (the header says "J2's main, not tagged"); the sync 5 pin (`1d537295`) joins `PREVIOUS_BASELINES`. J2 has not tagged the commit; its maintainers are asked (D189), and the tag name is added as a comment when they do. The tree is 516 files (the design said 514 plus two documents: the two documents are in the 516; `sutra_app/engine/seed` 437, `templates/` 25 with `library-settings.json`, 19 code modules with `j2_artifact_lib.py`). The seven commits labelled "needs owner review" are carried inert behind `J2_RUN_TEMPLATES` and `J2_AUTO_REUSE`.
+- Why: the owner's task is "J2 sync 6"; the commit is a fixed point; the flag-off behaviour was measured byte-neutral (seven prompt goldens differ in `j2_commit` only).
+- Rejected: waiting for a tag; vendoring a branch tip (D154); carrying only part of the span (the content door, the shelves and the run templates share `j2_template_lib.py`).
+- Diagram: label "J2 pin: main 1adb8ecd", pill on band:DEPARTMENT RUNTIME.
+
+## D177 — The reuse flags are Engine settings; `J2_PUSH_RUNS` and `J2_RUN_BY` are fixed values of the host
+- Sources: D129 (settings layers), D152 (an environment variable with no field does nothing), D169, `docs/design/j2-sync-5.md` section 7.
+- Decided: `EngineSettings` gains `run_templates`, `auto_reuse` and `artifact_library` (bool, default `False`, editable, env names `J2_RUN_TEMPLATES`, `J2_AUTO_REUSE`, `J2_ARTIFACT_LIBRARY` by the existing rule). `DataPaths.j2_env()` exports `J2_PUSH_RUNS=0` and `J2_RUN_BY=sutra-pro` (constants `FIXED_PUSH_RUNS`, `FIXED_RUN_BY`); the host applies it after the settings, so it wins over the inherited environment; they are not fields, so no settings file, task key or environment can change them. `docs/ENVIRONMENT.md` has the three rows in the commit of their fields, and says in prose that the two fixed values are the host's.
+- Why: J2 only reads its environment, the host is what sets it; the page has the buttons, so the owner needs the switch; a fixed `J2_RUN_BY` keeps the OS or git user name out of `chat.jsonl` and removes a `git config` subprocess per run; a pushed run folder is the one J2 flag that writes outside the data folder.
+- Rejected: leaving the variables to the environment (D152); exposing `J2_PUSH_RUNS` read-only; `J2_RUN_BY` from the owner's name (a personal identifier in run data).
+- Diagram: label "reuse flags are settings", pill on band:EXPERIENCE.
+
+## D178 — Implied flags are computed once by `EngineSettings.effective()`; the finish step and the project force read it
+- Sources: D142, D164, J2 `j2_template_lib.enabled`, `auto_reuse`, `j2.run_templates_on`, `artifact_schema_on`.
+- Decided: `EngineSettings.effective()` returns a frozen `EffectiveFlags(auto_reuse, run_templates, template_library, artifact_schema)`: `auto_reuse = auto_reuse or artifact_library`; `run_templates = run_templates or auto_reuse`; `template_library = template_library or auto_reuse`; `artifact_schema = artifact_schema or template_library`. The stored settings are not rewritten. `GET /api/engine/settings` keeps `effective` (the stored values, resolved) and adds `effective_flags` (the object above); a row that is on only by implication is `effective_flags[x] and not effective[x]`. `host/finish.py` calls `effective()`. The project capability's `FORCE` sets all five of `run_templates`, `auto_reuse`, `artifact_library`, `artifact_schema` and `template_library` to `False`, so the chain is off for a project run (the `output.selected` trace line lists them under `forced`).
+- Why: J2 does the implying inside the run, the app must agree without a second copy of the rule; a project has no template and the content door would serve document text into a working-folder run.
+- Rejected: normalising the stored settings (the owner's file would change under them); forcing only `template_library` for project (J2's chain would turn it on again through `auto_reuse`); replacing the `effective` key of the answer (two contract tests pin it).
+- Diagram: label "implied flags: effective()", pill on band:DEPARTMENT RUNTIME.
+
+## D179 — The reviewer: on by default, two settings, a host that waits (capped) and discards a late result; patch P19
+- Sources: D142, D143, J2 `_make_report`, `_review_later`, `report_gen`.
+- Decided: `EngineSettings` gains `reviewer` (bool, `True`, `J2_REVIEWER`, read by the host, not by J2) and `reviewer_wait` (float seconds, `120`, `ge=0`, `J2_REVIEWER_WAIT`, `0` = do not wait). `hooks.review_enabled() -> bool` (`NullHooks` True; `EventHooks` returns its `reviewer` attribute, which the host sets from the setting; `HostHooks` forwards). In `Host._conclude`, first after `inbox.close()` and before `publisher.stop()`, `_join_reviewer` joins `run.review_thread` (when alive) for at most `reviewer_wait` seconds (at most `STOP_WAIT_S` when the run is being stopped); past the cap it increments `run.report_gen` (J2's `_review_later` then saves nothing), writes one `reviewer.late` trace line and joins the thread for `REVIEWER_SETTLE_S` (0.25 s) so a write already begun finishes before the finish steps. A failure of the review thread is a `reviewer.error` trace line and a stderr traceback, never the run's crash.
+- Why: the host decides when a run ended and must make the folder stable before it collects, publishes and closes its writer; J2 already has the supersede counter, so no J2 text beyond the switch is needed.
+- Rejected: leaving the thread unjoined; a patch that names or joins the thread; default off; a hidden constant for the wait.
+- Diagram: label "reviewer: join, cap, switch (P19)", pill on band:DEPARTMENT RUNTIME.
+
+## D180 — P1, P7, P8, P9 are re-anchored; P19 is new; the late-judge reserve is P20
+- Sources: D13, D136, D145, D162, section 5 of the design.
+- Decided: applies P2, P3, P4, P5, P11, P12, P14, P15 (still exactly six home paths), P16, P17, P18; conflict fixed P1 (`CODE` gains `j2_artifact_lib.py`; `P1_COUNTS` `j2.py` 15, `j2_artifact_lib.py` 1: the rule changes **42** lines, not 41 as the design said: 40 + 2), P7 (the planner expression, one statement), P8 (the run-end anchor now includes the `_make_report` line), P9 (`call_delay()` in the delay lines of `call` only); extended P10 (D181); new P19 (the reviewer switch). The reserve of D145 moves from P19 to P20.
+- Why: every changed anchor is explained by a J2 change; the reviewer switch is the one place where J2 gives the host no seam.
+- Rejected: dropping P8's run-end hook; a regex for P7/P8/P9 (an anchor that stops the run when J2 moves is the safety).
+- Diagram: label "patch table P1-P19", pill on band:DEPARTMENT RUNTIME.
+
+## D181 — P10 covers the two runtime writers J2 added: `note_version` and `mark_run_template_used`
+- Sources: D26, D142, P10, J2 `j2_template_lib.py`.
+- Decided: both are wrappers that take `_library_lock()` around the original, kept as `_note_version` and `_mark_run_template_used`, as `store` and `mark_used` are. `save_run_template`, `move_versions` and the `__main__` commands are developer tools and stay unpatched; `collect` is run by the host under the lock. Tests: `tests/engine/test_engine_library_lock.py` has a static test (over `j2_template_lib.py`) that exactly the four wrappers take the lock and that none of them (and not `collect`) can reach a function that takes it, a guard that no other function writes the index (`_save_index`) outside the lock, a busy-lock test for the two new writers and a two-process test (one run template used 25 times while 25 versions get notes: no row lost).
+- Why: both read the index, change it and write it back; two runs adapting templates or using one run template could lose a row.
+- Rejected: one lock around the whole of `route` (deadlock for 30 s); a Sutra-side lock in the host.
+- Diagram: label "library lock covers 4 writers", pill on Template library.
+
+## D182 — The `say` carrier is in scope: `template` and `workflows` travel as two task-only settings keys; the start page gets no control of its own
+- Sources: D18, D129, `TASK_SETTING_KEYS`, `TaskSettings`, J2 `POST /api/say` (`RUN.set_run_template`), J2 `set_run_template`.
+- Decided: `POST /api/say` accepts `template` and `workflows` (the route is lane U's; the shape rules are `spec.RUN_TEMPLATE_ID_RE`, `spec.run_template_keys`). `DeptCommands.say(text, template=None, workflows=None)` adds `J2_RUN_TEMPLATE` and `J2_RUN_TEMPLATE_WORKFLOWS` to the settings of that one delivery (never to `page.json`). `TASK_SETTING_KEYS` and `TaskSettings` have ten keys; the last two are not `EngineSettings` fields, so `layered()` ignores them and they cannot reach J2's environment. The host calls `set_run_template` after `run.started` and before the first line is posted (J2 refuses once the chat has a line), for a first run only; a refusal is one system line "The run template <id> was not used: <reason>; the team starts from scratch." and a `run_template.requested` trace line, never a refused start. A follow-up ignores both keys.
+- Why: the page's links must work, not silently start without the template; the settings channel is validated, stored in the task and visible to the engine without a new column.
+- Rejected: hiding the buttons; a new `RunSpec` field and a new `deliver_to_department` parameter; a start-page picker.
+- Diagram: label "say carries run template", pill on band:EXPERIENCE.
+- As built (the route, lane U): `views.say` validates the two keys with the constants and helpers of `spec.py` (`is_run_template_id`, `run_template_keys`, `RUN_TEMPLATE_*`), so a body the route takes is a body the task takes; one owner for the limits. An absent or empty `template` is the old call (`commands.say(text)`: a command object without the new arguments keeps working); `workflows` without a template is dropped, as in J2's server; the keys are read case-blind, each once, `all` only when it is the whole list, and the result is `all` or one comma list. A malformed template or list is 400 `{"error": "<the violation>"}` before the run is touched; an empty text is still 400 `{"error": "empty"}` first. `Commands.say(text, template=None, workflows=None)` is the Protocol; the stdlib adapter calls `RUN.set_run_template(template, workflows)` before `user_says`.
+
+## D183 — The run-template views read the team's resolved settings, never the server's environment
+- Sources: D129, D141, D178, J2 `GET /api/run-template`, `GET /api/run-templates`.
+- Decided: `views.run_template(ctx, q)` (route `GET /api/run-template?id=`, the 43rd handler; `HANDLER_COUNT` 43; `J2_EXACT` +1) answers `j2_template_lib.run_template_view(id)` plus `enabled = ctx.run_templates_on`; an id that is not `[a-z0-9-]+`, or J2 does not know, is 404 `{"error": "no such run template"}` (J2 is not asked for a malformed id). `RunCtx.run_templates_on` (default `False`) is filled by `api/ctx.py` `build_ctx(..., flags=True)` from `effective_settings(...).effective().run_templates` (the layers `data/engine.json` < the team's `engine.json` < `page.json`; so `auto_reuse` and `artifact_library` imply it, D178); `serve` asks for it only for this view (the other views are polled every second and do not need it). The stdlib adapter fills it from `j2.run_templates_on()`, J2's own switch, since that process is the run. `views.run_templates` adds `run_template` (J2's `run_template_use`, only when the run has decisions and a run template) and widens the rows with `reuse_rows(decs)` exactly when J2's server does. No view reads `os.environ["J2_RUN_TEMPLATES"]`.
+- Why: the flags are the team's settings; the API process has none of them.
+- Rejected: setting the variable in the API process per call (a global switch for all teams); computing `enabled` in the page; computing the flag on every request (a per-poll read of three settings files).
+- Diagram: label "run template views: team settings", pill on band:EXPERIENCE.
+
+## D184 — The Artifacts shelf is team-scoped: `J2_RUNS_DIR` is the team's runs folder for the call
+- Sources: D26, D141, J2 `shelf_artifacts`, `runs_root`.
+- Decided: `views._library(ctx)` sets `J2_LIBRARY_DIR` (the one global library) and `J2_RUNS_DIR` (`ctx.runs_dir`, the asking team's `runs/`) together, under the existing lock, and puts both back whatever the call does (also an exception, and an old value that was another folder). With `ctx.library` None (the stdlib adapter) nothing is set. `GET /api/catalog` therefore lists the asking team's finished artifacts only; the templates, the run templates, the `runs` rows of the index and the shelf's skeleton rows stay global (D26). On Shelf 2, the per-template `outputs` counts come from the same team's runs. The catalog handler's docstring and `api/library.py` say so (D141's "nothing of the team is read" is amended: the team picks the page and the runs shelf).
+- Why: a finished document holds the business's own facts.
+- Rejected: all teams' runs; a per-install shelf with a filter.
+- Diagram: label "artifact shelf per team", pill on Template library.
+
+## D185 — The seed sync adds run templates, their folders and the two provenance keys; it stays additive
+- Sources: D144, D26, `ops/doctor.py` `_apply_seed`, `_fill`, J2 seed (`run_templates`, `renamed_from`, `adapted_from`).
+- Decided: `_apply_seed` also syncs the index key `run_templates`, per seed id: the library has row and folder (present: left alone, its `used_by` is the library's own),
+  the row only (restore: the seed's folder is copied back), the folder only (adopt: its `template.json` is the seed's, by id and `made_from_run`; any other folder is
+  reported and kept), neither (add: folder `library/run-templates/<id>/` and row). An id that is not a slug, a seed row without a folder and a `run_templates` value that is not a list
+  are reported `skipped`. `_fill` adds `renamed_from` and `adapted_from` to a present version's row and `meta.json` when absent, never changes one that is there. A seed family
+  J2 renamed is added under the seed's name beside the old one (nothing is moved or renamed on disk) and its added versions are listed in the report's `renamed`. The report
+  gains `run_templates` and `renamed`; `missing_seed_run_templates`, the doctor check and `config sync-library` count them. A first run and `_seed_whole` copy the whole seed; the
+  marker (`.seed-sync`, the sha of the seed index) changes with the seed index, so an install syncs once at its next start.
+- Why: existing installs must gain what is new without losing what they made; J2's resolver already opens an old reference through `renamed_from`.
+- Rejected: following J2's renames on disk (changes what an old run points at); skipping a version whose sha exists under the old name (the new J2 routing and the seed's run templates name the new family).
+- Diagram: label "seed library: + run templates", pill on Template library.
+
+## D186 — The records catalogue and the closed models learn the new run files and keys; J2's run-template bundle is `RunTemplateBundle`
+- Sources: D47, D172, D151, `docs/design/library.md` sections 9 and 10.
+- Decided: `records.py` has a row for `reuse.json` (`artifact-reuse/1`, closed `ArtifactReuse`). `TemplatesFile` gains `run_template` and `auto_reuse`; `TemplateDecision` gains `run_template`,
+  `from_template`, `template_workflow`, `adapted_from`, `new_family`, `first_refused`, `nearest`, `nearest_refused`, `door`; `TemplateMeta` (closed) gains `renamed_from`, `adapted_from` and the provenance
+  keys of a library version (`made_by` with `date`, `business`, `mock`, `collected_from`); `MessageMeta` (closed) gains `humans_only`, `run_template`, `content_door`; `RunTemplate` (a row of
+  `GET /api/run-templates`) gains `group` and `kind_shown`; an artifact row gains `reused_from`. The first line of `chat.jsonl` is a closed `RunHeader` (`by` is a name, never a path). The new closed class
+  `RunTemplateBundle` (payload `run_template.bundle`, J2's `run-template/1`) validates `library/run-templates/<id>/template.json` with J2's own checks; the existing `RunTemplate` keeps its name.
+  `docs/schemas/` is regenerated by the export. Each key was found by strict-mode validation of mock runs of the vendored J2 with the flags off, on and with the content door; a test repeats that
+  (`tests/library/test_lib_reuse_runs.py`). Default log mode only warns; strict mode is what the tests run.
+- Why: the library's closed models are what makes `GATE.check` mean something; every key J2 adds and the model refuses is a strict-mode failure of a run.
+- Rejected: leaving the new files in `UNCHECKED` (D172's reason); renaming the existing `RunTemplate` (a published payload name and schema file); checking the run header as a `RunMessage` (it is not a message).
+- Diagram: label "records: reuse, run template bundle", pill on band:DEPARTMENT RUNTIME.
+
+## D187 — A follow-up never re-fires auto-reuse and does not restore the run template
+- Sources: D135, `rehydrate.py`, J2 `_auto_reuse_pick`, `set_run_template`.
+- Decided: `rehydrate.py` sets `run.auto_pick = {}` for a continued run (J2's own "already decided" marker) and leaves `run_tpl` as `None`. Both are named beside `RESTORED_CHAIN` (`RESTORED_REUSE`, `NOT_RESTORED_REUSE`), with the reason: the earlier run's template shaped its first plan; a follow-up is a change request on finished work.
+- Why: without the marker a follow-up that stamps a charter would score the run templates again and could swap the plan under finished work.
+- Rejected: restoring `run_tpl` from `templates.json` (its rows and per-workflow state would steer stages that are already done).
+- Diagram: label "follow-up: no auto-reuse", pill on band:EXPERIENCE.
+
+## D188 — The Sutra-side hard-coded behaviour is cleaned by three rules, applied to a list; what stays is named
+- Sources: the owner's refactoring task, D165, D166, "agents decide, code validates", `docs/design/function-nodes.md`.
+- Decided: three rules. (R-1) A value that is J2's is read from J2 where the layer already imports J2, lazily at first use (`fnodes/registry.py`: `gate()`, `not_checkable()`, `agent_content()`, `user_content()`, `j2_routes()`); where a layer cannot import J2 (`spec.py`) a copy stays, with one parity test in a clean process. (R-2) A value that is a decision leaves code: the word table to `capabilities/data/project.words.json`; the type name has one owner, `project.TYPE`; J2's two form words have one owner, `engine/forms.py`, whose `check_forms` runs at registration. (R-3) A limit stays a named, commented constant with one owner: the follow-up limits are `capabilities/data/project.limits.json`, `AGENT_PURPOSES` is defined once in `hooks.py`, and `ENDED_WELL` reads `events.END_STATUSES`. `tests/engine/test_engine_no_type_names.py` is widened to `website|prd|hld|lld|document|project|business_report` over every `*.py` of `sutra_app/engine/` and `sutra_app/library/` except the 19 vendored J2 modules, with the owners listed by count and reason and one pending entry for a file of the views lane.
+- Why: the owner asked for the cleaner design; the three rules separate what J2 owns from what the host decides from what is only a size.
+- Rejected: moving every number into settings; deleting the parity of `J2_STRINGS` before J2 posts them as data; a model call to choose `project`; an import-time form check (the host imports the capabilities before it exports J2's environment).
+- Diagram: label "hard-coded cleanup: 3 rules", pill on band:DEPARTMENT RUNTIME.
+
+## D189 — J2's own hard-coded behaviour is reported to J2's maintainers, not patched; the group-A fixes are adopted at the pin that contains them
+- Sources: the owner's rule "no app-side fixes of upstream", the handoff of sync 5 ("write it down and send it"), J2 `docs/hardcoding-inventory.md` (547 rows: 357 decisions, 190 guardrails; NAME 160, FORCED 243, HIDDEN 47, KEYWORD 104).
+- Decided: `docs/reference/j2/docs/hardcoding-inventory.md` and `library-reuse-order.md` are carried as reference documents (`REF_DOCS`, byte copies). The lane V note ends with the list for J2's maintainers (section 11 below). The group-A fixes (A4 `NOT_CHECKABLE` deleted, A5 `min_done_when`, A8 `ACTION_GOAL`, A10 quotes in CSS) are on J2's branch `fix-run-blockers` and not in main: the app does nothing about them now. At the sync whose pin contains A4, `fnodes/registry.py` loses its `NOT_CHECKABLE` read together with the check that uses it, in the same lane, and the parity tests that read J2's symbol say so by failing at import.
+- Why: patching J2 in the copy makes two truths; the app's layer reads J2's symbols so it breaks loudly, not silently, when J2 moves.
+- Rejected: a patch P-n for each inventory row (545 recorded edits of upstream text).
+- Diagram: label "J2 hard-coding: reported", pill on band:DEPARTMENT RUNTIME.
+
+## D190 — Goldens and fixtures move only through the recorders; `J2_RUN_BY` is pinned in every recorder
+- Sources: D150, D174, R5.
+- Decided: the recorders (`record_engine_golden.py`, `record_api_shapes.py`, `record_fn_golden.py`, `capture_j2_fixtures.py`) set `J2_RUN_BY=sutra-pro` and `J2_PUSH_RUNS=0` in the environment they build, and keep both out of the recorded `env` (so a golden is not changed by the pin). Measured: the seven prompt goldens differ from their predecessors in `j2_commit` only; `record_fn_golden --check` is current; `api_shapes.json` changes in `j2_commit` and in the keys of `get.*.catalog`, `library`, `library_item` and `run_templates` (new shelf, artifacts, run template and provenance keys) and nowhere else. The legacy flow test is a three-way merge again (base: J2's file at `1d537295`, ours: the sync 5 copy, theirs: the extraction): 0 conflicts. `change_test.py`, `realization_test.py` and `j2_replay_size.py` did not change upstream. `EXPECTED.json` records the pin, the new hashes and the numbers.
+- Why: the goldens are the proof that the pin changed nothing a team can see with the flags off.
+- Rejected: re-recording by hand; carrying files without a ruling.
+- Diagram: label "goldens by recorder only", pill on band:DEPARTMENT RUNTIME.
+
+## D191 — The page is regenerated by the script: 40 edits, E20f split, E24a to E24f added
+- Sources: D137, D173, `scripts/port_j2_ui.py`.
+- Decided: of J2's `1adb8ecd` page only anchor E20f failed (`data-catgo="/library${viewRun`, now two buttons): it is E20f1 and E20f2 (`${SutraCtx.libraryPath}?view=artifacts${rq}` and `...templates${rq}`). Six edits are added for root-absolute URLs the page must not follow: E24a `shelfHref`, E24b `catUrl`'s `replaceState`, E24c the run-template link of the Library tab (`rtSummary`), E24d and E24e the "Made from run" and "Made by run" links of the shelves (two anchors, one per row), E24f `rtHref` (`/?view=simple&template=..&workflows=..` to `SutraCtx.pagePath`). 33 + 1 + 6 = 40 edits, 7 files, `--check` green against the extraction. The page's own `/file/`, `/site/` and `/api/` paths are the client wrapper's (prefixes in `J2_PREFIXES`), unchanged. `sutra_ctx.js` `J2_EXACT` gains `/api/run-template` (35 exact paths; the stale "33" in its comment is corrected). `tests/ui/test_port_edits.py` has a case per edit, a miniature line per new anchor and the fetch count (45 sites, 34 `/api/` routes); `page_render.test.js` proves the E24 helpers give a team path with a team and J2's own without one.
+- Why: the page is generated; a root-absolute link would leave the team's page.
+- Rejected: leaving the links; hand edits.
+- Diagram: label "page regenerated for sync 6", pill on band:EXPERIENCE.
+
+## D192 — The diff of record decides every new file; two reference documents and two tests are carried
+- Sources: D161, D154, `scripts/j2_diff_of_record.py`.
+- Decided: `hardcoding-inventory.md` and `library-reuse-order.md` join `REF_DOCS` (carried, byte copies); `artifact_lib_test.py` and `content_door_test.py` are carried as legacy copies (`tests/engine/legacy/`, `LEGACY_NAMES`) because the merged flow test does not exercise `j2_artifact_lib` (no mention of it; checked by search and by the 77 checks the two scripts add), with the engine imports and J2's committed library read as the engine's seed library; `fixtures/folder-run/**` is excluded (named, with a reason): it is test data of the flow test's `folder_reuse`, read from `SUTRA_J2_CHECKOUT`; `j2_server.py` and `j2_ui.html` stay as before. `j2_diff_of_record.py --check` reports 0 undecided.
+- Why: a file without a ruling is how a sync forgets something.
+- Rejected: carrying J2's server; skipping the content-door tests (they are the only tests of that module).
+- Diagram: none (tooling).
+
+## D193 — One release, 0.5.0, in one merge order; the flags ship off
+- Sources: D100, D175.
+- Decided: lanes V, L, E, U merge in the order of section 8, the integrator then writes the as-built note (`docs/design/j2-sync-6.md` gets its section A to G in front of this design, as sync 5's did), `docs/DECISIONS.md`, the diagram key, `docs/TRACEABILITY.md`, `docs/ENVIRONMENT.md` (five rows), the counts of `tests/test_traceability.py` (43 endpoints), and the version 0.5.0 (`pyproject.toml`, `sutra_app/__init__.py`, `desktop/package.json`, `desktop/package-lock.json`); `scripts/check_release_tag.py sutra-pro-v0.5.0` passes. The three reuse flags and the content door ship off; the reviewer ships on. Amended: D129 (a pinned non-project type gets J2's planner call also through `_run_tpl_start`; the project type is never given a run template, D178), D141 (the team picks the runs shelf), D142 (the catalog step reads `effective()`), D145 (late-judge reserve P20), D162 (P19 used), D175 (0.4.0 history).
+- Why: one wire change, once.
+- Rejected: shipping the settings and the vendoring separately (the page already has the buttons).
+- Diagram: label "release 0.5.0", pill on band:DEPARTMENT RUNTIME.
+
+## D194 — The shared library is J2's library data plus the contract; the app's stores sit beside it, not in it
+- Sources: D26, D141, D144, D161, `docs/design/library.md`, `memory-evaluation.md`, `external-software-plan.md`.
+- Decided: "shared library" names J2's `library/` (seed and run-time), `templates/**`, `artifacts/types.json` and the rules that drive them, shared between the J2 prototype and Sutra Pro. App records (memory items, catalogue entries, atoms, usage) are never written into `library/`. The Interface library keeps its own meaning (closed models and the gate).
+- Why: one name for four things caused the "two meanings of library" confusion the memory evaluation already warns about; a library folder that holds only J2's data can be merged by rules at every sync.
+- Rejected: a new top-level "shared library" folder in the app (a second copy of J2's tree); putting memory and catalogue tables in `library/index.json` (J2's file, J2's keys).
+- Diagram: label "shared library = J2 data + contract", pill on Template library.
+
+## D195 — Ownership is split by role, the contract is a document, a file and a test, and its text belongs to the shared-library maintainer
+- Sources: the owner's task, section 6, `docs/design/j2-sync-6.md` D189.
+- Decided: the J2 library maintainers own J2's data, code, flags, pin tags and hard-coded behaviour; the app team owns vendoring, settings, scope, records, seed sync, UI and the two new stores; the shared-library maintainer owns the contract text and the design of sharing beyond a team; the owner approves what is shared and decides defaults. A change to what the app reads from J2 changes the contract document, `library-contract.json` and `test_j2_library_contract.py` in one change.
+- Why: two people working on the same library need one place that says who may change what and what the other side can rely on; a test makes the promise cheaper than a meeting.
+- Rejected: ownership by file path only (the paths overlap at the seed and the patches); a shared-library maintainer who owns the app's vendoring (the app team already carries the goldens and the patch table).
+- Diagram: label "library ownership by role", pill on Template library.
+
+## D196 — Memory and the external catalogue are separate app-side stores behind the gate, with one write path and one scope vocabulary
+- Sources: `memory-evaluation.md` Decisions A to E, `external-software-plan.md` Decisions C and D, D7, D26.
+- Decided: `memory_item/1` and `external_software/1` are closed families in the Interface library, stored as tables in the app's SQLite, never in J2's `library/`. Models propose, `GATE.check` and the scrub admit, the owner edits and approves. Both key their scope on chart NodeIds. Memory is recalled into a run through the capability addendum and the node-context file (P9), the lessons and playbooks seam stays P5, and the catalogue's enabled entries reach a run through the engine host. Neither serves content into an artifact.
+- Why: one write path and one scope vocabulary mean one set of tests and one backup; separate storage means a library sync cannot lose a memory and a memory migration cannot corrupt a template.
+- Rejected: memory as a J2 library kind (it holds facts, not structure); the catalogue inside the template library (it holds references to software, not section specs); a third-party memory layer with its own write path.
+- Diagram: label "memory + catalogue: app stores, one gate", pill on Interface library.
+
+## D197 — Nothing is shared beyond a team by default; sharing is a later, owner-triggered publish step with scrubbing
+- Sources: D184, D26, `docs/design/j2-sync-6.md` section 10 (business names in family names), the owner's rule that nothing is pushed unless asked.
+- Decided: finished artifacts and run folders stay in the team that made them; the content door and the Artifacts shelf read the team's own runs. Templates are one store because they are structure, with business values replaced by slots on the shelf. A "publish" step (step 7) is designed by the shared-library maintainer: the owner picks one item, the scrub removes business names and any secret shape, the record keeps provenance, and the item enters a shared place that other teams may read; nothing is published by a flag or a schedule.
+- Why: a finished document holds the business's own facts; a family name can carry a business name; sharing must be a visible act.
+- Rejected: a global shelf with a filter (disclosure one click away); automatic sharing of run templates made by live runs.
+- Diagram: label "no sharing without publish", pill on Template library.
+
+## D198 — The sync follows one procedure of ten steps, each with a check that fails loudly
+- Sources: D136, D154, D160, D176, D190, section 8.
+- Decided: the procedure of section 8 is the sync's definition of done; a J2 tag starts it, the app team runs it, the shared-library maintainer reads the contract report; the as-built note names every patch verdict and every item reported upstream.
+- Why: sync 5 and sync 6 both found, by running the checks, what the analysis did not say; a fixed list keeps the next sync from skipping one.
+- Rejected: syncing on a calendar (a pin of flag-gated work can wait); a sync without the contract test (the contract would be prose).
+- Diagram: label "sync procedure, 10 checks", pill on Template library.
+
+## D199 — The `template` kind of external software stays a plain catalogue row in v1
+- Sources: `external-software-plan.md` open question 7, D194.
+- Decided: an external entry of kind `template` is listed, described and approved like any other, and gives no routing or matching; a template from outside enters the J2 library only by a maintainer's review through the seed path and the contract test. Whether the router may reuse external templates is a later question for the J2 library maintainers.
+- Why: the router's matching is J2's and flag-gated; a second way into the library would bypass the contract.
+- Rejected: importing external templates at run time (a write into the global library from a catalogue entry).
+- Diagram: label "external template: row only", pill on Interface library.
+
+## D200 — The J2 library maintainers are asked to move the remaining constants into data and to add three seams
+- Sources: D188, D189, `j2-sync-6.md` section 11, J2 `docs/hardcoding-inventory.md`.
+- Decided: `AUTO_MIN`, `AUTO_WEIGHTS`, `VAGUE_TYPES`, the `style.json` lookup, `run_slots` and `_noun` move into `templates/library-settings.json` (they are decisions and numbers about reuse, which the library's cleanup already moved for 11 of 13 rows); a runs-folder argument for `catalog_view` and the shelves; a public way to wait for the reviewer thread; an argument for `enabled` in the run-template view. The app does not patch any of it; it adopts the data when a pin contains it.
+- Why: the owner's refactoring rule applied to the library: decisions in data with one owner; the app's per-call environment switching is a workaround the seams remove.
+- Rejected: patching the copy (two truths); leaving the constants in code (the app cannot show or tune them).
+- Diagram: label "J2 asked: constants to data, 3 seams", pill on Template library.
+
+## D201 — Streaming chat stays on the existing global SSE stream, with one new control event `chat.live`
+- Sources: `docs/design/streaming/analysis.md` sections 1 and 7, `docs/design/streaming/architecture.md` (Alternatives), D12.
+- Decided: the direct chat route publishes its live events as the control event type `chat.live` on `GET /api/events`; no per-turn endpoint, no fetch-stream, no WebSocket. `chat.partial` remains only for the agent and J2 polled path and for the rollback flag, read on the client through an adapter (D221). The only transport change in `sutra_events.js` is the `TYPES` entry; each view keeps its own handle.
+- Why: the pipe is already genuinely incremental; the app is one local process with the browser as the window; a second long-lived connection competes for the six-connection limit and needs its own auth, reconnect and tests.
+- Rejected: per-turn SSE (extra connection); POST-response NDJSON (a reload cannot attach); WebSocket (new surface, stop is a plain POST).
+- Diagram: label "chat.live on global SSE", pill on Orchestration.
+
+## D202 — `chat.live` has one versioned envelope: generation id, per-generation seq, block ids, additive payloads, and only events with a real source
+- Sources: `architecture.md` Data model, ABS-5 `ChatBlock`, design critique points 4 and 10.
+- Decided: envelope `{v:1, id, conversation_id, message_id, generation_id, attempt, seq, ts, type, block_id?, payload}`; types `turn.accepted|connecting|started|stopping|done|stopped|failed`, `attempt.failed|restart`, `block.start|update|delta|end`, `heartbeat`. Each type names its real source (router event, connector event, ticker); `usage` and `switched` exist only at turn end and ride `turn.done`, they are not live events. Unknown types and fields are ignored; a higher `v` shows a refresh note.
+- Why: a gap-free seq and a delta offset make loss detectable; a live type without a source would make the UI invent state.
+- Rejected: reusing `chat.turn`; a text-only event with fields added; live `usage` and `switched` (no live source).
+- Diagram: label "chat.live envelope v1", pill on Chat sessions.
+
+## D203 — Catch-up is a snapshot route plus seq dedupe, opened stream-first, not replay from the bus ring
+- Sources: analysis risk 4, `orchestrator/events.py`, critique point 10.
+- Decided: `GET /api/chats/{sid}/turn` returns the live turn's whole state and its seq (or `live:false` with the last reply); a page opens its event stream first, buffers `chat.live`, then fetches the snapshot and applies events after its seq; reload, a second tab, a gap and every reconnect use this path. `chat.live` stays out of the 1000-event ring.
+- Why: snapshot-then-stream can miss a terminal event until a 15 s stall rule; putting chat events in the ring forces `gap` resyncs on every topic.
+- Rejected: ring replay; per-turn `Last-Event-ID`; snapshot before the stream is open.
+- Diagram: label "snapshot + seq catch-up", pill on Chat sessions.
+
+## D204 — A server-side `LiveTurn` coalesces on a real timer and redacts by holding back only a possible secret prefix; the 60-character rule goes
+- Sources: analysis RC3, `chat_v2._answer`, `orchestrator/redact.py`, critique points 3, 11 and 19.
+- Decided: the first delta of a block is sent at once, later ones merge for at most 33 ms, flushed by a per-turn ticker waiting on a condition with the real deadlines (flush, heartbeat, checkpoint), not by the next provider event. Redaction holds back only the trailing suffix of the unemitted text that is a proper prefix of a current secret from `redact.secrets()` (whole env and `.env` values, including values with spaces and newlines, re-read per flush); everything before it is emitted redacted; the remainder is flushed at block end. Stored text is what was emitted. `ChatPort.stream` forwards `started`, and `LiveTurn.close()` runs in a `finally` and joins the ticker with a timeout.
+- Why: `redact` replaces exact values, not shapes, so whitespace splitting leaks and no constant span exists; this is correct for any value and adds no latency when the tail cannot start a secret.
+- Rejected: splitting at whitespace; a constant shape length; a character threshold; redacting only at the end.
+- Diagram: label "time coalesce + secret-prefix hold-back", pill on Orchestration.
+
+## D205 — Provider honesty: each turn declares `stream_mode`; Codex scope is fixed by a real capture taken through the connectors
+- Sources: analysis RC2 and section 9, D32, critique points 15 and 16.
+- Decided: `stream_mode` is `tokens`, `activity`, `final`, `simulated` or `snapshot`; the UI labels non-token modes; a whole message is never chunked. The capture extends `scripts/capture_connector_fixtures.py` with a recording runner behind the connector, so the connector's flags, environment allowlist and the `api_key` billing refusal apply; fixtures are scrubbed (home paths, tool output stubbed) and pass `scripts/ownership-audit.sh` before they are written. Capture and latency checks are POSIX only and nothing is claimed for Windows. No persistent-process change (D32 stands).
+- Why: the owner's rule: real, never simulated; raw CLI calls skip refusals and tool output carries home paths.
+- Rejected: raw CLI capture; typewriter reveal of a whole message; promising Codex token streaming; a second capture script.
+- Diagram: label "stream_mode, honest labels", pill on Codex connector.
+
+## D206 — Thinking is shown as presence and elapsed time only
+- Sources: analysis RC4.
+- Decided: a thinking block produces `block.start` and `block.end` with no text; the UI shows a presence indicator and a measured duration; reasoning text is neither sent nor stored.
+- Why: honest liveness during long thinking without exposing or fabricating content.
+- Rejected: streaming thinking text; a "thinking" label without a provider event.
+- Diagram: label "thinking: presence only", pill on Claude connector.
+
+## D207 — The live row is a transcript item promoted in place at settle, made reachable by deferring the stored-message refetch; the live view has no head cap
+- Sources: analysis RC6, section 4, critique point 5.
+- Decided: the stream row moves inside the scroller as a keyed item and keeps its nodes when the stored reply arrives; while a live generation exists for an owner line, `reconcile`, the page refetch and the reply's `chat.message` go to a stash and are applied at the terminal event, which carries `stored_order` to remap keys; `MAX_SHOWN` no longer applies to the live view; Home reconciles and paints in one step like the panel. The no-jump guarantee is for the reply item.
+- Why: the reply's `chat.message` arrives before `turn.done`; without the deferral the row is replaced first, which is the node swap this decision exists to remove.
+- Rejected: cross-fade between two DOM trees; a larger cap; promoting without the deferral.
+- Diagram: label "live row promoted in place", pill on Chat sessions.
+
+## D208 — The client is layered: event normaliser (with a partial adapter), pure reducer with a fixed state machine, keyed block view; the transport is not refactored
+- Sources: `architecture.md` Message state machine, Components, critique point 12.
+- Decided: `chat_live_events.js`, `chat_live_store.js`, `chat_live_view.js`, `chat_live_activity.js`; states sending, accepted, connecting, running, backoff, stopping, done, stopped, failed, plus resyncing; `sending` to `stopping` queues the stop until the 202; activity (waiting, thinking, writing, tool, stalled) is derived; `state().turn` keeps its keys. `SutraEvents.shared` is dropped from this scope: `home.js` and `node_panel.js` keep their own handles, topics, `pollFn` and first-hello handling, and the state names stay `live`, `polling`, `offline`.
+- Why: each layer is testable alone; a ref-counted shared connection leaves per-subscriber semantics undefined and touches four views for no streaming benefit.
+- Rejected: growing `ChatComposer` state; a framework; a shared connection.
+- Diagram: label "normaliser / reducer / view layers", pill on Chat sessions.
+
+## D209 — Sends carry a `client_id`; retry reuses the owner line with a new generation
+- Sources: analysis section 5 (idempotency), `chat_v2.direct`.
+- Decided: `client_id` makes a repeated send return `duplicate:true` with the same turn; `POST /api/chats/{sid}/direct/retry` re-runs the newest failed or stopped line without a new owner line, with attempt-scoped refs (D216); an earlier attempt that could have changed files stays visible as "Earlier try" (stored as a note after reload); the owner-driven retry warns first when side effects were possible.
+- Why: no duplicated owner line, turn or hidden side effect.
+- Rejected: automatic re-run after an edit or run tool; erasing a failed attempt.
+- Diagram: label "idempotent send, safe retry", pill on Chat sessions.
+
+## D210 — Live tool data is name at start, then kind, title and a redacted target relative to the turn's folder at block stop; never raw input or output
+- Sources: analysis risk 3, `connectors/tool_kinds.py`, critique points 7 and 14.
+- Decided: Claude's tool input arrives as `input_json_delta`, so a tool block starts with its name only ("Using Read") and `block.update` carries title and target once the block stops (or the matching `tool_call` is matched by `tool_id`); the input JSON is buffered server-side (8 KB), parsed, discarded, never sent. Targets are relative to the turn's `folder` (the owner's chosen folder, not the work root), a basename outside it, cut to 200, redacted; `describe(name, input, folder)` runs in the connector so no root leaves it.
+- Why: redaction by construction; a title cannot be honest before the input is known; the child runs in the owner's folder.
+- Rejected: streaming tool input; a title at `block.start`; paths relative to the work root; live output previews.
+- Diagram: label "tool activity: no raw args", pill on Tool connectors.
+
+## D211 — In-flight turns are checkpointed in a side table, never in `chat_messages`, written outside the locks
+- Sources: analysis RC7 and section 5 (persistence), FTS trigger `chat_search_msg_au`, critique point 11.
+- Decided: migration v5 adds `chat_turn_checkpoint`, written at state changes, block ends and at most every 1.5 s while text flows; the block table is copied under the short data lock and serialised (up to 256 KB) and written by the ticker outside every lock; dropped in the transaction that stores the reply; `recover_interrupted` stores the partial turn from it.
+- Why: crash and restart keep text and tools; no FTS churn; no pending-row hazards in `reconcile`; the provider consumer is never blocked by JSON or SQL.
+- Rejected: a `pending` placeholder row; a write per token; serialising under the lock.
+- Diagram: label "checkpoint table, not messages", pill on Chat sessions.
+
+## D212 — New turns store the ordered block list under a sibling meta key; the fold counts a call and its result as one unit
+- Sources: analysis section 5 (stored text, block cap), `models.py` 409, `chats.py` blocks write, critique point 13.
+- Decided: `ordered: true` is written as a sibling key next to `blocks` (`MessageMeta` is J2's closed key set) and read into an additive `ChatMessageOut.ordered`; the `text` column stays `result.result`, so text is stored twice (bounded by `MAX_TEXT`, asserted); the fold closes the list past 400 elements with one `truncated` "more tool calls" block, counting a `tool_use` and its `tool_result` as one unit and never separating them, so call and result stay paired and the 500 read cap cannot fail a store.
+- Why: the settled view equals the live view; legacy messages and search are untouched.
+- Rejected: a key inside `MessageMeta`; lifting the read cap; emptying the `text` column (breaks search); folding results separately.
+- Diagram: label "ordered blocks, fold by pairs", pill on Chat sessions.
+
+## D213 — Stop is two-phase and honest: the server freezes at the request, the route never blocks, `stopped:false` means nothing is running
+- Sources: analysis section 2 row 18 and risk 9, `connectors/process.py`, critique points 9, 16, 17 and 18.
+- Decided: the client shows `stopping` at once; `LiveTurn.request_stop` sets the token, freezes the accumulator (no more text emitted or kept) and publishes `turn.stopping` in one ordered step, so every tab and the stored text end at the same character; the stop route schedules the process cancel in the background and answers at once; the UI ends `stopping` only on a terminal event, and a `stopped:false` answer triggers the snapshot resync; `sending` to `stopping` queues the stop until the 202; `turn.stopped` is sent only after exit and store; open tools end `interrupted`; a stop that races completion ends `done`. The POSIX ladder is SIGINT 5 s, SIGTERM 5 s, SIGKILL 2 s; nothing is claimed for Windows (different ladder, abrupt, unverified). The stalled copy shows the real idle limit (`idle_limit_s`), and the idle-timeout failure message names it.
+- Why: Stop feels immediate and never claims more than happened; the 12 s ladder must not hold the UI.
+- Rejected: optimistic "Stopped"; a client-side freeze that disagrees with the stored text; the UI waiting on the stop response; marking interrupted tools failed; Windows timing claims.
+- Diagram: label "two-phase stop, freeze at request", pill on Connector router.
+
+## D214 — Rollout is behind `SUTRA_LIVE_V1`, with the legacy path kept for one release
+- Sources: `architecture.md` Rollout.
+- Decided: default off until the client lands, then on; off restores today's `chat.partial` path unchanged (read through the D221 adapter); the checkpoint table is ignored when off; the ref and `ChatMessageOut` changes are additive and read the same either way.
+- Why: the change spans server, parsers and four views; a switch makes rollback a config change.
+- Rejected: big-bang replacement; a permanent dual path.
+- Diagram: label "SUTRA_LIVE_V1 rollback flag", pill on Orchestration.
+
+## D215 — One stop owner: a per-turn `CancelToken` through `ChatPort`, `Router` and `base._events`
+- Sources: `connectors/router.py` (`_chat`, `_chat_turn`, `chat_stop`, `_drive`), `connectors/base.py` (`_events`, `_track`), critique points 1 and 18.
+- Decided: `direct_running.begin_turn` creates the token; it is passed `ChatPort.stream(cancel=)` to `Router` to `connector.stream(cancel=)`; `base._events` binds the process to it right after `_track` and a token already set cancels it at once; it is also checked before session setup, before spawn and between events; the Router back-off waits on the token and ends at once on Stop; `Router.chat_stop` returns True iff a turn is running. `_chat`'s entry `discard` cannot erase a token; the legacy early-flag set stays for callers without one.
+- Why: today Stop is lost between `_chat_active` being set and the process being tracked (`stopped:false` is read as "nothing to stop"); a flag read before spawn cannot cover that window.
+- Rejected: a `LiveTurn` flag checked before spawn; keeping `_chat_stop_early`; returning False when the process is not yet tracked.
+- Diagram: label "CancelToken: one stop owner", pill on Connector router.
+
+## D216 — Attempt-scoped refs; a superseded reply stays visible and leaves the model's history
+- Sources: `chat_messages_src` unique index, `direct_turns.Ending`, `chats._turn_of`, `chat_v2.recover_interrupted`, composer `reconcile`, critique point 2.
+- Decided: attempt 1 keeps today's refs (historical rows stay valid); attempt N >= 2 appends `.N` to every reply, note, error and switch ref; `N` is the server-computed ordinal fixed at generation start and returned as `attempt_no`; the `Ending` pattern, `_turn_of`, `recover_interrupted` (`= ... OR LIKE '....%'`) and `reconcile` (ends on `turn === id` and the running attempt) change together under a table test; `ChatMessageOut` gains `attempt` and `superseded`; superseded replies are collapsed under "Earlier try" and excluded from carry-over and history.
+- Why: a retry on the same owner line would reuse refs, `post()` would return `None` and the reply would be lost; the replaced reply must not be told to the model as if it stood.
+- Rejected: deleting the first attempt's reply; reusing refs; a new owner line per retry.
+- Diagram: label "attempt-scoped refs", pill on Chat sessions.
+
+## D217 — The Router emits `route.*` events; connecting, failing and restarting are shown only from them
+- Sources: `Router._drive`, `ChatPort.stream`, critique point 4.
+- Decided: on the chat path only, `_drive` yields `route.plan`, `route.attempt` (provider, model, attempt number, idle limit) right before spawn, and `route.failed` (reason, retryable, action, delay, next provider) before the sleep; `turn.connecting`, `attempt.failed` and `attempt.restart` derive from them; the label for the first is "Starting <provider>", never "connected" (that is `turn.started`, from the CLI's init line).
+- Why: nothing before the CLI's init line was observable, and the retry back-off was silent, leaving a stale "Writing" with frozen text.
+- Rejected: a `connecting` event with no source; a `restart` with no data; building the note only after the turn.
+- Diagram: label "route events: plan, attempt, failed", pill on Connector router.
+
+## D218 — `BlockAccumulator` is the sole owner of block structure
+- Sources: `ChatPort.stream` (blocks, `saw_partial`, restart), critique point 7.
+- Decided: one pure class in `connectors/chat_blocks.py` owns block ids, per-message index scoping (Claude block indexes restart in each assistant message), `saw_partial` per message, matching of the later `tool_call` event to the open block by `tool_id`, restart, the redaction hook, the pair-aware fold and `stored_order`; `ChatPort.stream` uses it for every caller and `LiveTurn` consumes its output and adds only envelope, timing, checkpoint and publishing.
+- Why: two accumulators diverge on restart, tool ids and indexes.
+- Rejected: `LiveTurn` re-implementing accumulation; a global `saw_partial`.
+- Diagram: label "BlockAccumulator: one block owner", pill on Connector router.
+
+## D219 — The stored message is the final attempt; earlier tries are a stored note; `stored_order` maps live keys
+- Sources: `ChatPort` restart (clears blocks), D207, critique point 5.
+- Decided: the stored reply holds only the final attempt's blocks (matching the `text` column and the live reply item); earlier attempts with tool blocks are summarised, from block titles and redacted, in the turn's switch note (at most 20 lines), so they stay visible after a reload; `turn.done`/`stopped`/`failed` carry `stored_order` (live `block_id`s in stored order) so promotion maps by position, never by assumed index.
+- Why: live "Earlier try" blocks and a stored list with only the last attempt cannot share index keys; the note keeps the honest record without breaking the mapping.
+- Rejected: storing all attempts' blocks in one list; dropping earlier tries at settle without a record.
+- Diagram: label "final attempt stored, earlier as note", pill on Chat sessions.
+
+## D220 — Idempotency lookup and claim come before `begin`; a duplicate is 200, not 409 or 500
+- Sources: `api/chat_v2.direct`, `direct_running.begin`, `_post`, `ChatMessageOut`, critique point 6.
+- Decided: the route validates, looks up `client_id` (a stored `direct-ask:<client_id>` line or a running claim), and only then calls `begin_turn(sid, client_id)`, which also covers two concurrent POSTs; a duplicate returns `duplicate:true` and starts nothing; `_post` returns `Optional[int]` and `None` means a replayed ref; `ChatMessageOut` exposes `client_id` (not `src_ref`) so the optimistic owner line and the stored line reconcile to one bubble, in the sending tab and in a second tab.
+- Why: today `begin` refuses first so a double POST is 409, and a duplicate ref would be `None.id` (a 500); without `client_id` on the read model a page shows two bubbles.
+- Rejected: exposing `src_ref`; reconciling by text; relying on the unique index alone.
+- Diagram: label "client_id before begin", pill on Chat sessions.
+
+## D221 — AI workers and the legacy path are read through a `chat.partial` adapter with `stream_mode:"snapshot"`
+- Sources: `chat_composer.js` (`state().turn`), `agent_live.json` path, critique point 8.
+- Decided: `fromPartial` turns `chat.partial {text, reset}` into `partial.snapshot` actions on a synthetic generation with one text block (cumulative, replaced per snapshot, fresh on `reset`); `source:"partial"` switches off seq gap detection and snapshot resync; no tool activity and no label claim; turn end stays the existing reconcile; no server change. The flag-off direct path uses the same adapter.
+- Why: the composer's turn is a projection of the new store, and the polled path has no seq, generation or blocks; without an adapter AI-worker chat would regress.
+- Rejected: leaving the composer with two turn models; converting the AI-worker server path in this scope.
+- Diagram: label "chat.partial adapter (snapshot)", pill on Chat sessions.
+
+## D222 — Seq and publish happen under one lock, every event goes through `LiveTurn`, `turn.accepted` carries `client_id`, every reconnect resyncs
+- Sources: `orchestrator/events.py` (`publish_one`), `sutra_events.js` (hello after an error becomes `server.resync`), critique point 10.
+- Decided: producing an event takes `_pub_lock`, assigns seq and publishes before releasing, so bus order equals seq order and a flushed delta cannot overtake a later one; the route's `turn.accepted` and `turn.stopping` are published through `LiveTurn`; `turn.accepted` carries `client_id` so the sender matches it before it knows `generation_id`; the page resyncs (stream open, buffer, snapshot) on every `server.resync` its own handle synthesises, with no 3 s threshold, and polls the snapshot every second while `polling`.
+- Why: seq assigned apart from publish can reorder on the wire; the first event precedes the 202; a lost terminal event is otherwise found only by the 15 s stall rule.
+- Rejected: assigning seq under the data lock and publishing after; a time threshold before resync; route-side publishing.
+- Diagram: label "seq+publish one lock; resync on reconnect", pill on Chat sessions.
+
+## D223 — A tool line's title and target are set when the provider's `tool_call` arrives, not at `content_block_stop`
+- Sources: `tests/fixtures/connectors/claude/stream_partials_tool_ok.jsonl` (the real capture of 2026-11-14, STR-1), `docs/design/streaming/capture-notes.md`, `connectors/chat_blocks.py`.
+- Decided: Claude sends the complete `assistant` message (the whole `tool_use` with its input) BEFORE the block's `content_block_stop`, so the title and target are computed at the existing `tool_call` event and matched to the open block by `tool_id`; `block_stop` only completes the input and carries the privately buffered input as a fallback when no `assistant` message came; the tool stays open until its `tool_result`. A Codex command starts at `item.started` (with its command text) and ends at `item.completed` with its exit code; an `agent_message` is only ever a whole `item.completed`, so Codex is `stream_mode: "activity"`. Neither parser changes an existing event: block kinds are new events, gated on a partials turn (Claude) or a chat turn (Codex).
+- Why: the design assumed the input was complete only at the stop event; the capture shows it is complete earlier, and an assumption that costs the page a delay it does not need is worth correcting; older parser tests assert exact event data and stay green.
+- Rejected: computing the title in the parser (the existing `tool_call` data is asserted exactly by the older tests, and `ChatPort` can reach the turn's folder through the router anyway); sending the buffered input to the page.
+- Diagram: label "tool title at tool_call (real order)", pill on Claude connector.
+
+## D224 — The live turn uses one lock for sequence, accumulator and publish, and every live kind is opt-in
+- Sources: `orchestrator/live_turn.py`, `connectors/chat_port.py` (`acc=`), `connectors/router.py` (`routes=`), STR-5 and STR-6.
+- Decided: a `LiveTurn` guards the accumulator, the sequence number and the bus call with one re-entrant lock, so a snapshot taken under it is exactly "everything up to seq N" (the design had two locks and needed the pair consistent anyway); the JSON of a checkpoint and every SQL statement run outside it, on a separate writer thread that is skipped while the previous write runs. `ChatPort.stream(acc=)` yields the live kinds (`started`, `route`, `block_*`, a `restart` with data, a `turn_done` with ordered blocks, the settle map and earlier tries) and `Router.chat_stream(routes=True)` yields the route events; without them every older caller sees exactly the events it always saw, which is what keeps the existing connector and port tests unmodified (one test that called the private `_map` now asks the accumulator, which owns that mapping).
+- Why: the second lock bought nothing a snapshot could use; making the new kinds opt-in is cheaper than auditing every consumer of `ConnectorEvent` and `ChatEvent`.
+- Rejected: two locks with a copy for the snapshot; adding the live kinds to every chat stream.
+- Diagram: label "one lock; live kinds opt-in", pill on Chat sessions.
+
+## D225 — Stop is truthful and instant at the route, and the new refusal is `not_retryable`
+- Sources: `orchestrator/api/chat_v2.py` (`_stop_live`, `_retry_live`), `orchestrator/errors.py`, `connectors/router.py` (`chat_stop`), STR-2 and STR-7.
+- Decided: with the live chat on, `POST .../direct/stop` calls `LiveTurn.request_stop()` (flush, freeze, token, `turn.stopping`, in that order) and schedules `port.stop` (the cancel ladder, up to 12 s) on a background task; the response `{session_id, stopped, state}` returns at once, and `stopped: true` means a turn was running and Stop is requested, `false` that none is. With the flag off the route is what it was. A retry of an owner line that was answered or is not the chat's newest is `409 not_retryable`, a code added to the closed list of error codes (and to TROUBLESHOOTING) rather than overloading `busy`, which means "a turn is running". The idle-timeout sentence names the limit and still starts with the words the older tests assert ("<Provider> did not answer within L s: it sent no output for that long, so it was stopped").
+- Why: a Stop that waits for the ladder looks like a hang; a refusal that means one thing must not share a code with one that means another.
+- Rejected: waiting for the process in the route; reusing `busy` for "already answered".
+- Diagram: label "stop answers at once; not_retryable", pill on Connector router.
+
+## D226 — A requested Stop always ends the turn stopped, the ticker never spins on a slow checkpoint, and the chat is freed before the ticker is joined
+- Sources: `orchestrator/live_turn.py` (`_next_timeout`, `stopping`), `orchestrator/api/chat_v2.py` (`_answer_live`), review of STR-6 and STR-7.
+- Decided: when a checkpoint is due but the previous write is still running, the ticker looks again after `CKPT_RETRY_S` (0.05 s) instead of at a deadline already past (it had spun about 700,000 times a second while holding the lock the provider events use). When Stop was requested, `_answer_live` takes the stopped ending even if the provider returned a result (the process had already exited when the cancel ladder ran): the stored text is what every tab saw, and `turn.done` is never sent after `turn.stopping`. A Stop asked after the turn ended still ends `done` (D225). `direct_running.end` runs before `LiveTurn.close`, so the chat accepts the next send while the join of a slow write is still waiting.
+- Why: the stored reply must equal what was shown; a slow disk must not cost CPU or streaming latency or a spurious 409.
+- Rejected: dropping the checkpoint deadline while a write runs (nothing would wake the ticker when it ends); closing without joining (the join is bounded and keeps tests and shutdown clean).
+- Diagram: label "stop wins over a late result" on Live turn.
+
+## D227 — Client layers: intake, store, client, view
+- Sources: streaming design D202, D220, D221, D222; `sutra_events.js` (the page's own SutraEvents handle stays the transport: an EventSource, so the browser frames the bytes and a frame that arrives in pieces or several in one read reaches the page whole and in order); `tests/ui/js/chat_live_*.test.js`.
+- Decided: no layer reads the clock or the network except the client; the reducer takes `now` on the action. A hole (a `seq` that skips, a text `offset` that is not the code-point length already shown, a first frame that is not seq 1, an oversize piece) makes the intake buffer every later frame and the client read `GET /api/chats/{sid}/turn`; the buffered frames newer than the snapshot follow it in order. Every reconnect (`server.resync`), the stream being down (polling, every second) and 15 s of silence run the same sequence. A terminal event, a snapshot that says nothing runs, or 20 s of silence releases the stored reply that was held back.
+- Why: each piece has one input and one output and is tested without a page; the holes the design lists (offset, seq, first frame) are exactly what a chunked or dropped stream produces, and the cursor is the seq the snapshot carries.
+- Rejected: a fetch-based SSE reader of our own (it would repeat SutraEvents' retry and polling and the server sends `chat.live` with id 0, so there is no byte cursor to resume from); counting UTF-16 units for `offset` (the server counts code points, an emoji would look like a hole).
+- Diagram: label "client layers: intake store client view", pill on band:EXPERIENCE.
+
+## D228 — The composer is live only when the page asks for it
+- Sources: `chat_composer.js`, `tests/ui/js/chat_composer.test.js` (unchanged), `tests/ui/js/chat_composer_live.test.js`, streaming design D220.
+- Decided: without `live` every older caller and test sees the composer it always had (the existing 43 composer tests pass unmodified); with it, a Stop pressed while the POST is in flight shows Stopping at once and sends the stop only after the 202 gives the turn an id, a stop answer of `stopped:false` never clears Stopping (the snapshot decides), a failed stop request brings the button back, and the owner's line shows at once and is replaced by the stored line with the same `client_id` (one bubble, also with a second tab). Retry uses `/direct/retry` (no second owner line) and falls back to sending the words again on a server without the live chat.
+- Why: the old composer tests encode behaviour the legacy path must keep; a switch is cheaper than two controllers.
+- Rejected: replacing the composer's turn object (twenty tests assign and compare it); a Retry that re-sends the words on a live server (a second owner line and a repeated side effect).
+- Diagram: label "composer live opt-in; stop queued", pill on band:EXPERIENCE.
+
+## D229 — A reply is one node, painted from a model, live or stored
+- Sources: `chat_view.js` (`shell` option), `chat_live_view.js`, streaming design D207, D212, D219; `tests/e2e/test_browser_live_chat.py` (a node of the reply is never recreated; the item's top does not move at settle).
+- Decided: the shell's html is a function of (turn, try) only, so `Fluid.patchList` never replaces it; a stored `id` and every state is painted into it. The status and the actions share one row under the blocks, present live and settled, so nothing above it moves at settle. Historical messages (ordered blocks, a text-only message, a legacy message with its tools folded in one row) go through the same model; a superseded try is collapsed under Earlier try. The live item exists only until a stored message has its key.
+- Why: a reply that is built twice (a streaming row, then a bubble) flashes and jumps; one node painted by one function cannot.
+- Rejected: keeping the streaming row outside the scroller and moving its text into a bubble at the end (the swap is the jump); putting the status above the text (it disappears at settle and the text moves up).
+- Diagram: label "one reply node; settle in place", pill on band:EXPERIENCE.
+
+## D230 — Text blocks are drawn by appending; a code fence is one node
+- Sources: `fluid.js`, `chat_markdown.js`, `tests/ui/js/fluid_text.test.js` (a 200 KB reply in 4,000 pieces: no settled block and no fence recreated), the browser test of a long reply with a table and a fence.
+- Decided: the tail is split into text and fence segments and reconciled with what is drawn (a text segment is drawn again when it changed, a fence only changes its text); an unfinished table row and an unclosed span are held or shown as text by `ChatMarkdown.hold` as before; the highlighter is a small DOM-building one (no innerHTML from text); the copy-code button lives inside the settled `<pre>`.
+- Why: a streamed fence that is recreated on every piece loses its scroll and selection and costs a layout per piece.
+- Rejected: highlighting while streaming (the colours change as a string closes); a third-party highlighter (a dependency for a feature a hundred lines cover, and the page stays offline).
+- Diagram: label "append-only text; one node per fence", pill on band:EXPERIENCE.
+
+## D231 — The activity line says only what the wire says, and the number that changes is not announced
+- Sources: `chat_live_store.js` (`activity`, `label`), `chat_live_activity.js`, streaming design "Activity timeline" and "Message state machine".
+- Decided: stalled shows the real silence and, when the server sent it, the real idle limit ("Still working, no output for 25 s", "stopped after 120 s without output"); a backoff shows the server's reason and counts down the server's delay; a tool shows its name until the title arrives; thinking shows presence and its real duration, never its text; a provider that sends its answer whole says so and gets a fade, never a typewriter.
+- Why: an invented progress bar is the one thing that makes a user stop trusting a live view; a label that changes every second is read out every second.
+- Rejected: an elapsed-time estimate or a "step 2 of 5" line; one live region for text and clock.
+- Diagram: label "honest labels; clock not announced", pill on band:EXPERIENCE.
+
+## D232 — The data of an event keeps its white space
+- Sources: `orchestrator/models.py` (`Event`), `library/base.py` (`Value`: `str_strip_whitespace=True`), `tests/orchestrator/test_event_whitespace.py`, the browser test of a long reply (`tests/e2e/test_browser_live_chat.py`).
+- Decided: `Event` sets `str_strip_whitespace=False`. `Value` strips the white space around every string it validates, nested strings of `data` included, and a live chat piece ("the ", " price") is nothing but white space at its edge: the page received "aprice in rupees" while the server's offset counted the lost space, so the page's own offset check found a hole at nearly every piece boundary and read the snapshot again and again (the text came out right each time, which is why the earlier tests passed; the reply remounted its code block, which is how the browser test found it).
+- Why: a streamed word must reach the page as the provider sent it; the repair by snapshot hid the fault and cost a request and a redraw per piece.
+- Rejected: leaving the strip and making the page tolerant of a short piece (the text on screen would differ from the stored text until the next snapshot); a new model for live events (the bus has one `Event` and one data shape).
+- Diagram: label "event data keeps its white space", pill on Chat sessions.
+
+## D233 — Stop and Retry live in the reply, and a replaced try collapses at once
+- Sources: `chat_live_view.js` (`plan`, `supersede`, `paintActions`), `home.js`, `node_panel.js`, `tests/ui/js/chat_live_view.test.js`, `tests/e2e/test_browser_live_chat.py` (stop, retry, backoff).
+- Decided: Stop is a button inside the running reply (named for a screen reader, disabled and worded "Stopping…" at once, Esc as before); a reply that was stopped (a note was stored with it) or whose error row is the reply item offers Retry while it is the owner's newest line and no turn answers; a reply whose failure has its own error line leaves Retry to that line (one button, not two). A retry that follows a try that may have run an edit or a command says so first. A page that read the first try before the retry's reply was stored works out `superseded` from the rows it has, by the server's rule, so the first try is collapsed under Earlier try when the retry's reply arrives, not after the next reload.
+- Why: the owner's eyes are on the reply, not on the box; a button that repeats, or a warning that comes after the click, is worse than none; the page never re-reads old rows, so a flag that changes later on the server would otherwise never reach it.
+- Rejected: re-fetching the whole chat after a retry (a request per retry for one boolean); a confirm dialog on Retry (the words are in the reply, the choice is one click).
+- Diagram: label "stop and retry in the reply", pill on band:EXPERIENCE.
+
+## D234 — Only what arrives moves, the loops stop under reduced motion, and the reader keeps their place
+- Sources: `static/css/sutra-panel.css` (the live reply block and the motion tokens), `chat_scroll.js` (`grow`, `keepPlace`, `pillHtml({live})`, `behavior({streaming})`), `tests/ui/js/chat_scroll.test.js`, `tests/ui/js/motion_css.test.js`, `tests/e2e/test_browser_live_chat.py` (scroll, reduced motion, phone width).
+- Decided: two tokens join the scale (`--dur-pulse`, `--dur-blink`, both 0 under `prefers-reduced-motion`); a block that arrives fades or rises over `--dur-fast`, a whole text block of a provider that sends its answer whole fades over `--dur-base` (never a typewriter), text that streams does not animate, the presence dot breathes while the turn waits, thinks, starts or is between tries and stops when words flow, the caret is a pseudo-element of the last open block (no node is made for it) and blinks, and under reduce no animation or transition runs inside a reply at all. A reader at the bottom follows the growing reply; a reader who moved up is not moved, a pill says "Reply in progress", and the jump scrolls with `auto` while the reply still streams (the target moves) and `smooth` otherwise unless motion is reduced; a line inserted above a parked reader moves the scroll by its height (`keepPlace`).
+- Why: motion that is not attached to an arrival is noise, and a smooth scroll to a target that keeps moving always lags; the existing intent machine of `chat_scroll.js` already told following from reading, so the reply only needed to count as one growing item.
+- Rejected: animating every text piece (80 paints a second for nothing), a typewriter for a provider that did not stream (it would claim a stream that did not happen), a count of "N new pieces" on the pill.
+- Diagram: label "motion on arrival; keep the reader's place", pill on band:EXPERIENCE.
+
+## D235 — The live chat is on by default; `SUTRA_LIVE_V1=0` goes back
+- Sources: `config.py` (`live_v1`), `docs/ENVIRONMENT.md`, D214, the browser tests of `tests/e2e/test_browser_live_chat.py` (17 scenarios on and off) and the unchanged older ones.
+- Decided: `live_v1` defaults to `True`. Off is the legacy `chat.partial` path with the same reply node drawn from it (no tool lines, no claim of streaming); the checkpoint table is ignored; the ref and `ChatMessageOut` changes read the same either way. The AI-worker chat keeps its own live row (`AgentChats`, fed by `chat.partial`): its tool line and "writing its reply" rule are unchanged, so it is not read through the adapter after all (D221 is narrowed to the direct chat's flag-off path).
+- Why: every package is built and the eight scenarios pass in a real Chrome with the flag on and off; a switch is the rollback.
+- Rejected: leaving the default off for another release (the legacy row has none of what the owner asked for); removing the legacy path now (rollback should stay a setting).
+- Diagram: label "live chat on by default", pill on Chat sessions.
+
+## D236 — A reply says the same live, settled and after a reload: how it ended, what it said, who wrote it
+- Sources: the review of the live chat (findings on Stop, Copy, the failed turn and the header), `chat_live_view.js`, `chat_blocks.py`, `direct_turns.py`, `chats.py`, D212, D220.
+- Decided: (1) a tool that never returned a result is `Interrupted` whenever the turn ended with Stop or an error, decided from the stored ending (a `Stopped` note or an error row beside the reply, or the note or error that is the reply), not only from an error row. (2) Text blocks that a tool or thinking block divides are joined with a blank line, in Copy and in the stored `text` (`join_text`); a provider text that is only the blocks run together is replaced by that form, a provider text that differs (a real final answer) is kept as it is. (3) A turn that failed before it wrote anything has no card of its own: its ending is the stored error line, and the tries the router gave up on are stored as a note ("Earlier try (Claude) failed: reason") beside it, so a reload says what the live page did. (4) A reply stores `{provider, model}` as a sibling key `via` of its meta (never a `MessageMeta` key), read back as the additive `ChatMessageOut.via`; the header is "via Claude model" live, at settle and after a reload, and plain "Sutra" for a message stored before. (5) An open code fence does not carry the newline of its last line, so its height does not change when the closing fence arrives.
+- Why: the owner reads the reply later, in another tab or after a restart; what the page said while it ran must still be true then, and a tool that did not finish must never read Done.
+- Rejected: storing the interrupted status per block on the server (the ending already says it and old messages have no such field); a second card for a failed turn that wrote nothing (it repeats the error line under a provider that never answered).
+- Diagram: label "ending, text and author read the same after reload", pill on Chat sessions.
+
+## D237 — The live turn's lock covers the feed, and the ticker waits only for work that is due
+- Sources: `chat_port.py`, `live_turn.py`, `chat_blocks.py` (`guard`), D201, D204.
+- Decided: `ChatPort.stream` holds the live turn's lock (`acc.guard`) from `acc.feed` until its consumer has handed the block events on, and lets go as soon as the generator resumes (never while it waits for the provider), so a Stop cannot freeze the accumulator between the two and what is stored is exactly what every tab was shown. The ticker adds a checkpoint deadline only when a checkpoint is due (a database, and a dirty state or `checkpoint_chars` unsaved characters); fewer characters wait for the next structural change.
+- Why: the unlocked gap let stored text hold words no tab saw after a Stop, and a deadline that nothing could satisfy made the ticker spin at full speed during every quiet stretch of a reply, slowing the very stream it serves.
+- Rejected: a second lock inside the accumulator (two orders to keep); a minimum sleep as the only cure (it hides the loop, the deadline is the bug).
+- Diagram: label "feed and publish under one lock; ticker sleeps when nothing is due", pill on Chat sessions.
+
+## D238 — The chat page keeps the owner's place: terminal frames, Stop, mode, width
+- Sources: `chat_live_events.js`, `chat_live_store.js`, `chat_composer.js`, `chat_draft.js`, `home.js`, `sutra-panel.css`.
+- Decided: a terminal frame held while a snapshot was read is applied before `snapshot.none` when the server says nothing runs, so a failed or stopped turn ends as that; a snapshot of a turn still running does not undo a Stop that was pressed (Stopping stays until `turn.stopping` or an ending); the Ask directly / Plan with Sutra choice is kept per chat beside the draft (`sutra:mode:<sid>`, 14 days, 30 chats, storage guarded) and wins over the page's default; the release of a stored reply repaints the bar and box in the same step as the reply, so the box never says Stop beside a settled reply; the `main` of `#sview` has a definite row (in `sutra-panel.css`; `j2-shell.css` is frozen) so the chat column reaches the bottom of the window between 901 and 1150 px; under 600 px the mode and provider toggles and the attach link are 40 px tall and the limits note is one line (its whole text is the link's title).
+- Why: each was a place where the page told the owner something that had stopped being true, or made a control hard to hit.
+- Rejected: persisting the mode on the server (a per-device convenience, like the draft); hiding the limits note on a phone (it stays in the page and is read aloud).
+- Diagram: label "terminal frame kept; Stop stays; mode remembered", pill on band:EXPERIENCE.

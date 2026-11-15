@@ -1,0 +1,76 @@
+{
+  "schema": "sutra-extension/2",
+  "id": "220_collections_desk",
+  "scope": "lendco/collections",
+  "goals": [
+    "reminder_sent"
+  ],
+  "budget": {
+    "compute": 12,
+    "money": 0,
+    "attention": 0
+  },
+  "preference": [
+    "compute",
+    "money",
+    "attention"
+  ],
+  "evidence": [
+    {
+      "predicate": "instalment_overdue",
+      "truth": "TRUE",
+      "verified": true,
+      "source": "fixture/loan-book",
+      "version": "loan-7-day-1"
+    },
+    {
+      "predicate": "phone_on_file",
+      "truth": "TRUE",
+      "verified": true,
+      "source": "fixture/loan-book",
+      "version": "loan-7"
+    }
+  ],
+  "rules": [
+    {
+      "id": "R-REACHABLE@1",
+      "head": "borrower_reachable",
+      "branches": [
+        [
+          "phone_on_file"
+        ],
+        [
+          "address_on_file"
+        ]
+      ],
+      "approved": true,
+      "source": "fixture/reviewed-domain-theory"
+    }
+  ],
+  "methods": [
+    {
+      "id": "send-reminder@1",
+      "effect": "reminder_sent",
+      "requires": [
+        "instalment_overdue",
+        "borrower_reachable"
+      ],
+      "provider": "local-provider",
+      "grant": "action:send-reminder@1",
+      "cost": {
+        "compute": 1,
+        "money": 0,
+        "attention": 0
+      },
+      "action": "simulate_fact",
+      "approved": true,
+      "source": "reviewed/synthetic-method"
+    }
+  ],
+  "providers": {
+    "local-provider": 6
+  },
+  "grants": [
+    "action:send-reminder@1"
+  ]
+}

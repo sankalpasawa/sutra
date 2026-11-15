@@ -163,7 +163,7 @@ def _isolated(base: Path, nodes: str):
                 del os.environ[name]
         os.environ.update({"STUDIO_MOCK": "1", "J2_MEMORY": "0", "J2_REALIZATION": "0", "J2_MEMORY_FILE": str(base / "lessons.jsonl"),
                            "J2_PLAYBOOK_FILE": str(base / "playbooks.jsonl"), "J2_RUNS_DIR": str(base / "runs"),
-                           "J2_LIBRARY_DIR": str(base / "library"), "SUTRA_HEARTBEAT_S": "0.2",
+                           "J2_LIBRARY_DIR": str(base / "library"), "SUTRA_HEARTBEAT_S": "0.2", "J2_RUN_BY": "sutra-pro", "J2_PUSH_RUNS": "0",      # D190
                            "SUTRA_ENV_FILE": str(base / "none.env")})
         llm.PROVIDER = llm.MODEL = llm._PORT = llm._DEFAULT_PORT = llm._BOUND_ATOM = None
         llm.MOCK = True

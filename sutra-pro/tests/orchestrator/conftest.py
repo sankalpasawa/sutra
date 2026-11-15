@@ -20,7 +20,9 @@ TOKEN = "test-token-0123456789abcdef"
 
 @pytest.fixture
 def settings(tmp_path) -> Settings:
-    return Settings.load({}, data_dir=tmp_path / "data", token=TOKEN, env_file=tmp_path / "none.env")
+    # `live_v1=False`: the tests of the folder that were written before the live chat (D235 made it the default) exercise the legacy `chat.partial` path, which stays
+    # supported with SUTRA_LIVE_V1=0; the live path has its own tests, which turn the flag on themselves
+    return Settings.load({}, data_dir=tmp_path / "data", token=TOKEN, env_file=tmp_path / "none.env", live_v1=False)
 
 
 @pytest.fixture

@@ -1,6 +1,6 @@
-"""The 42 handlers of J2's server as plain functions (work package E2, engine design 4.6 and 7.1; J2 sync 4 added `plan_map`,
+"""The 43 handlers of J2's server as plain functions (work package E2, engine design 4.6 and 7.1; J2 sync 4 added `plan_map`,
 `activity`, `catalog`, `artifacts_groups`, `ask`, `record`, `doc`, `view` and `settings`, D140: `runlist` and `changes` are J2's own
-routes now).
+routes now; J2 sync 6 added `run_template`, D183).
 
     VIEWS[name](ctx: RunCtx, query_or_body: dict) -> Reply
 
@@ -35,9 +35,10 @@ from dataclasses import dataclass
 from typing import Any, Callable, Dict, List, Mapping, Optional, Protocol, Tuple, Union
 
 from . import j2, j2_agent, j2_artifacts, j2_map, j2_story, j2_studio, j2_template_lib, llm
-from . import capabilities
+from . import capabilities, forms
 from .paths import pid_alive
-from .spec import EngineSettings
+from .spec import (RUN_TEMPLATE_KEY_CHARS, RUN_TEMPLATE_KEYS_MAX, RUN_TEMPLATE_WORKFLOWS_MAX, EngineSettings, is_run_template_id,
+                   run_template_keys)
 
 capabilities.register(j2)        # D126: the API process, the stdlib adapter and the tests see the same outputs as the run process
 
@@ -48,7 +49,7 @@ DOCX = "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
 PROCESS_GONE = "The department process stopped (exit unknown). Try again."      # engine design 4.6
 SNAPSHOT_FILE, LIVE_FILE = "snapshot.json", "live.json"
 PNG = "image/png"
-HANDLER_COUNT = 42        # J2's rows of engine design 7.1 and `timing` (J2 sync 5, D168): 35 GET rows ("site" has two, saved and live, and one entry in VIEWS) and 7 POST rows
+HANDLER_COUNT = 43        # J2's rows of engine design 7.1, `timing` (J2 sync 5, D168) and `run_template` (J2 sync 6, D183): 36 GET rows ("site" has two, saved and live, and one entry in VIEWS) and 7 POST rows. A literal because tests/test_traceability.py reads it as text; test_engine_views pins it to the table
 ASK_CHARS = 2000          # the longest question `ask` takes: as long as a note to an agent (D147)
 
 
@@ -76,7 +77,8 @@ class Commands(Protocol):
     """What the four POSTs that act do to the run (the two clears only touch memory files, which the views do themselves). The
     handler validates; this object acts."""
 
-    def say(self, text: str) -> bool: ...                      # False: the run is busy (409)
+    def say(self, text: str, template: Optional[str] = None, workflows: Optional[str] = None) -> bool: ...      # False: the run is busy (409); the two
+    #   optional arguments are a run template and its workflows (J2 sync 6, D182); the view passes them only when the body has a template
     def set_output(self, out: Any) -> Tuple[bool, str]: ...    # (accepted, the output type now)
     def reset(self) -> bool: ...                               # False: a run is going on, nothing was touched (409)
     def ask(self, who: str, question: Any, run_id: str) -> dict: ...      # J2's answer {who, answer, from}, plus additive keys; AskBusy: 409
@@ -100,6 +102,7 @@ class RunCtx:
     vendor: Optional[str] = None                  # E2 addition: the folder of d3.min.js, stdlib adapter only
     library: Optional[str] = None                 # J2 sync 4: the one global template library's folder (`<data>/library`, D26); None: J2's own default
     decide_for_me: Optional[bool] = None          # J2 sync 4: the owner's choice for the team's next run (page.json), None: none made; shown where no live process holds the switch
+    run_templates_on: bool = False                # J2 sync 6 (D183): `run_templates` is on in the team's effective settings (never the server's os.environ), for `run_template`'s `enabled`
 
 
 @dataclass(frozen=True)
@@ -261,23 +264,29 @@ _LIBRARY_LOCK = threading.RLock()
 
 @contextlib.contextmanager
 def _library(ctx: RunCtx):
-    """Point J2's template library at the app's one global library (`<data>/library`, D26 and D141) for one call. The server process never
-    sets `J2_LIBRARY_DIR` (only the engine host does, in its own process) and J2 reads the variable on every call, so a view that reads the
-    library sets it here and puts the old value back; the lock keeps two requests from interleaving. `ctx.library` None (the stdlib
-    adapter): J2's own resolution, which the tests and the legacy server set themselves."""
+    """Point J2's template library at the app's one global library (`<data>/library`, D26 and D141) and J2's runs folder at the asking
+    team's `runs/` (J2 sync 6, D184) for one call. The server process sets neither `J2_LIBRARY_DIR` nor `J2_RUNS_DIR` (only the engine
+    host does, in its own process) and J2 reads both variables on every call, so a view that reads the library sets them here and puts
+    the old values back; the lock keeps two requests from interleaving. The runs folder is what makes the Artifacts shelf
+    (`catalog_view`, J2's `shelf_artifacts`) the team's own: a finished document holds the business's facts and no team reads another's.
+    `ctx.library` None (the stdlib adapter): J2's own resolution of both, which the tests and the legacy server set themselves."""
     if not ctx.library:
         yield
         return
+    names = {"J2_LIBRARY_DIR": ctx.library}
+    if ctx.runs_dir:
+        names["J2_RUNS_DIR"] = ctx.runs_dir
     with _LIBRARY_LOCK:
-        old = os.environ.get("J2_LIBRARY_DIR")
-        os.environ["J2_LIBRARY_DIR"] = ctx.library
+        old = {name: os.environ.get(name) for name in names}
+        os.environ.update(names)
         try:
             yield
         finally:
-            if old is None:
-                os.environ.pop("J2_LIBRARY_DIR", None)
-            else:
-                os.environ["J2_LIBRARY_DIR"] = old
+            for name, value in old.items():
+                if value is None:
+                    os.environ.pop(name, None)
+                else:
+                    os.environ[name] = value
 
 
 def _site_path(ctx: RunCtx, version: int) -> Optional[str]:
@@ -397,7 +406,7 @@ def docs(ctx: RunCtx, q: dict) -> Reply:
     out = {}
     for t in j2_artifacts.load_types(d)["types"]:
         k = t["name"]
-        if t.get("kind") != "type" or t.get("form") != "document":
+        if t.get("kind") != "type" or not forms.is_document(t):
             continue
         try:
             with open(os.path.join(d, t["file"]), encoding="utf-8") as f:
@@ -455,8 +464,10 @@ def library(ctx: RunCtx, q: dict) -> Reply:
 
 
 def catalog(ctx: RunCtx, q: dict) -> Reply:
-    """The shared library page's data (J2 sync 4, D141): the committed library and the runs that gave it templates. It is the one
-    global library: the run is not read, and the index is replaced atomically (P12), so J2's library lock is not needed for a read."""
+    """The shared library page's data (J2 sync 4, D141): the committed library and the runs that gave it templates. The library is the
+    one global one and the index is replaced atomically (P12), so J2's library lock is not needed for a read. The team picks the page and
+    the Artifacts shelf: `artifacts` lists the finished runs of the asking team only (J2 sync 6, D184); the templates, the run templates
+    and the `runs` rows of the index stay global (D26)."""
     with _library(ctx):
         return _json(j2_template_lib.catalog_view())
 
@@ -475,11 +486,32 @@ def library_item(ctx: RunCtx, q: dict) -> Reply:
     return _json(got) if got else _json({"error": "no such template"}, 404)
 
 
+RUN_TEMPLATE_ID = re.compile(r"[a-z0-9-]+")
+
+
+def run_template(ctx: RunCtx, q: dict) -> Reply:
+    """One run template (run-template/1) with where each workflow's section template opens (J2 sync 6, D183). `enabled` is whether the
+    team's effective settings allow a run to start from a run template (`ctx.run_templates_on`), never the server's environment: the
+    page shows the Use buttons by it. An id that is not `[a-z0-9-]+`, or no such template: 404 `{"error": "no such run template"}`."""
+    tid = str(q.get("id") or "")
+    with _library(ctx):
+        got = j2_template_lib.run_template_view(tid) if RUN_TEMPLATE_ID.fullmatch(tid) else None
+    if not got:
+        return _json({"error": "no such run template"}, 404)
+    return _json({**got, "enabled": bool(ctx.run_templates_on)})
+
+
 def run_templates(ctx: RunCtx, q: dict) -> Reply:
-    """This run's routing decisions, each with where its template is read from; none recorded: an empty list."""
+    """This run's routing decisions, each with where its template is read from; none recorded: an empty list. A run that started from a
+    run template (or looked for one, J2_AUTO_REUSE) also has `run_template`, J2's `run_template_use`, and its rows carry the group and
+    the kind the Library tab's filters read (`reuse_rows`; J2 sync 6)."""
     d = _dir(ctx)
     with _library(ctx):
-        return _json({"decisions": j2_template_lib.run_templates(d) if d else []})
+        decs = j2_template_lib.run_templates(d) if d else []
+        use = j2_template_lib.run_template_use(d) if decs else None       # only a run started from a run template has it
+        if use:
+            decs = j2_template_lib.reuse_rows(decs)
+    return _json({"decisions": decs, **({"run_template": use} if use else {})})
 
 
 # --------------------------------------------------------------------------------------------------------- rows 13 to 17
@@ -517,7 +549,7 @@ def artifacts_groups(ctx: RunCtx, q: dict) -> Reply:
         added = [r for r in rows if r["id"] not in have]          # never a second row, and never over J2's own entry
         docs["rows"] += added
         body["documents"] = {**(body.get("documents") or {}),
-                             **{r["id"]: {"sections": {}, "file": r["file"], "kind": "document"} for r in added}}
+                             **{r["id"]: {"sections": {}, "file": r["file"], "kind": forms.DOCUMENT} for r in added}}
     return _json(body)
 
 
@@ -681,7 +713,7 @@ def _stub_noun(live: dict) -> str:
     """What the live page stub calls the thing being built: the run's type label in lower case, `document` for a document form with no label, and
     `result` while no type is chosen (nothing is assumed, D165)."""
     label = str(live.get("out_label") or "").strip().lower()
-    return label or ("document" if live.get("doc") else "result")
+    return label or (forms.DOCUMENT if live.get("doc") else "result")
 
 
 def site_live(ctx: RunCtx, q: dict) -> Reply:
@@ -708,14 +740,44 @@ def _no_commands() -> Reply:
     return _json({"error": "this adapter has no command object"}, 501)
 
 
+def _say_template(body: dict) -> Tuple[Optional[str], Optional[str], Optional[str]]:
+    """(template, workflows, the violation) of a `POST /api/say` body (J2 sync 6, D182). `template` is a run template id; `workflows` is `all`,
+    a comma list of workflow keys or a list of keys, and comes back as `all` or one comma list. An absent or empty value is None; `workflows`
+    without a template is dropped (J2 does the same: its server reads `workflows` only when a template is named). The limits are the task
+    setting's (`spec.py`: `RUN_TEMPLATE_*`, one owner), so a body this route takes is a body the task takes. The violation is the 400's text."""
+    template = body.get("template")
+    if template is None or template == "":
+        return None, None, None
+    if not is_run_template_id(template):
+        return None, None, "template must be a run template id: lower-case letters, digits and hyphens, up to 80 characters"
+    raw = body.get("workflows")
+    if raw is None or raw == "" or raw == []:
+        return template, None, None
+    if isinstance(raw, list) and all(isinstance(k, str) for k in raw):
+        raw = ",".join(k.strip() for k in raw)
+    elif not isinstance(raw, str):
+        return None, None, "workflows must be all, a comma list of workflow keys, or a list of keys"
+    if len(raw) > RUN_TEMPLATE_WORKFLOWS_MAX:
+        return None, None, f"workflows: at most {RUN_TEMPLATE_WORKFLOWS_MAX} characters in all"
+    keys = run_template_keys(raw)
+    if keys is None:
+        return None, None, (f"workflows: at most {RUN_TEMPLATE_KEYS_MAX} keys, each of letters, digits, - _ and ., up to {RUN_TEMPLATE_KEY_CHARS} characters")
+    seen: set = {"all"}      # J2 reads the keys case-blind: each key once, in the order given, and `all` only when it is the whole list
+    keys = [k for k in keys if k.lower() not in seen and not seen.add(k.lower())]
+    return template, ",".join(keys) or "all", None
+
+
 def say(ctx: RunCtx, body: dict) -> Reply:
     text = body.get("text")
     text = text.strip() if isinstance(text, str) else ""
     if not text:
         return _json({"error": "empty"}, 400)
+    template, workflows, violation = _say_template(body)
+    if violation:
+        return _json({"error": violation}, 400)
     if ctx.commands is None:
         return _no_commands()
-    ok = bool(ctx.commands.say(text))
+    ok = bool(ctx.commands.say(text, template=template, workflows=workflows) if template else ctx.commands.say(text))
     return _json({"ok": ok}, 200 if ok else 409)
 
 
@@ -772,7 +834,7 @@ def reset(ctx: RunCtx, body: dict) -> Reply:
 
 
 VIEWS: Dict[str, Callable[[RunCtx, dict], Reply]] = {fn.__name__: fn for fn in (
-    index, vendor, state, runs, call, preview, docs, map, plan, library, library_item, run_templates, artifacts, agent, code,
+    index, vendor, state, runs, call, preview, docs, map, plan, library, library_item, run_template, run_templates, artifacts, agent, code,
     artifacts_tree, artifact, story, board, audits, refs, shot, file, site, say, playbooks_clear, lessons_clear, output, reset,
     runlist, changes, plan_map, activity, catalog, artifacts_groups, ask, record, doc, view, settings, timing)}
 

@@ -173,7 +173,7 @@ class AtomStore:       # atoms.py: apply_transition(tx, node, event) is the Proj
 class UsageStore:      # usage.py: record(row: UsageIn), the server's usage sink: INSERT ... ON CONFLICT(task_id, call_ref) WHERE call_ref IS NOT NULL DO NOTHING, then ChatStore.note_provider; rows(...) the filtered rows with totals; summary(by, *, include_stub, limit, session_id, since) the groups, by dept, fn, provider, day, atom, session or purpose (D159)  [S1-contracts-05]
 class TaskService:     # tasks.py
     def create(self, tx, *, dept_id, text, title, scope_id=None, framing="", depends_on=(), follows=None, request=None, change_id=None, settings=None) -> TaskOut
-        # settings: the eight allowed keys (`J2_DECIDE_FOR_ME` joined in sync 4, D152) with valid values, else 422 validation  [S1-contracts-03]; follows: a task of the same department, sets seed_from and parent_run_id  [S1-contracts-12]; change_id is set for every task of a request  [S3-web-04]
+        # settings: the ten allowed keys (`J2_DECIDE_FOR_ME` joined in sync 4, D152; `J2_RUN_TEMPLATE` and `J2_RUN_TEMPLATE_WORKFLOWS` in sync 6, D182) with valid values, else 422 validation  [S1-contracts-03]; follows: a task of the same department, sets seed_from and parent_run_id  [S1-contracts-12]; change_id is set for every task of a request  [S3-web-04]
     async def start_ready(self) -> list[str]            # FIFO: blocked -> queued when dependencies are done; start (5.6) queued tasks while count(status in starting,running) < SUTRA_MAX_RUNS and count(status in starting,running,waiting_user) < SUTRA_MAX_LIVE  [S1-contracts-14]
     def deliver(self, session_id: str, text: str) -> Delivery          # department or division chat (5.5); raises Busy
     def deliver_to_department(self, dept_id: str, text: str, *, scope_id: str | None = None, settings: dict | None = None) -> Delivery   # what the engine's /api/say calls
@@ -241,7 +241,7 @@ CREATE TABLE tasks (                                                      -- one
   status TEXT NOT NULL CHECK (status IN ('blocked','queued','starting','running','waiting_user','done',
                               'done_with_open_items','stopped','crashed','cancelled')),
   run_id TEXT UNIQUE, parent_task_id TEXT REFERENCES tasks(id), depends_on TEXT NOT NULL DEFAULT '[]',   -- JSON task ids
-  request_id TEXT, origin_message_id INTEGER, change_id TEXT, settings_json TEXT NOT NULL DEFAULT '{}',  -- settings: the eight allowed J2_* keys
+  request_id TEXT, origin_message_id INTEGER, change_id TEXT, settings_json TEXT NOT NULL DEFAULT '{}',  -- settings: the ten allowed J2_* keys
   pid INTEGER, events_offset INTEGER NOT NULL DEFAULT 0, inbox_seq INTEGER NOT NULL DEFAULT 0,           -- bytes of events.jsonl applied; last inbox line number
   outcome TEXT NOT NULL DEFAULT '', created_at INTEGER NOT NULL, started_at INTEGER, ended_at INTEGER, last_event_at INTEGER);
 CREATE INDEX tasks_dept ON tasks(dept_id, created_at);

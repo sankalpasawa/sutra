@@ -1,0 +1,83 @@
+{
+ "schema": "artifact-reuse/1",
+ "library": "library",
+ "runs": "runs",
+ "decisions": [
+  {
+   "run": "j2-20261113-230805",
+   "t": "2026-11-13T23:08:05",
+   "workflow": "W-1",
+   "atom": "W-1.a1",
+   "artifact": "prd",
+   "section": "Problem",
+   "run_template": "a-rerun-of-still-point-yoga",
+   "key": "W-1",
+   "held": true,
+   "door": "reuse",
+   "rule": "same",
+   "reason": "the same inputs and the same template as run j2-20261113-230804 W-1: served, then checked",
+   "source": {
+    "run": "j2-20261113-230804",
+    "workflow": "W-1",
+    "key": "W-1",
+    "sha": "4beb4c77811aab8681ad90ca973da5b25f8a1823719438f5502fbae3caf001fe",
+    "template": "Still Point Yoga Problem@7",
+    "fingerprint": "7722cb9f4489654aa64c81e8e368884ea1b9535bb10355075b9c8e749c4591fc",
+    "audit": "pass",
+    "receipts_passed": [
+     "The document has the heading Problem.",
+     "The Problem section isn't empty (at least 5 words).",
+     "The reply follows the Problem template v7",
+     "Every reference in the Problem template v7 points at an id that exists",
+     "Code rendered Problem from the data"
+    ]
+   },
+   "refunded": 10
+  },
+  {
+   "run": "j2-20261113-230806",
+   "t": "2026-11-13T23:08:07",
+   "workflow": "W-1",
+   "atom": "W-1.a1",
+   "artifact": "prd",
+   "section": "Problem",
+   "run_template": "a-rerun-of-still-point-yoga",
+   "key": "W-1",
+   "held": false,
+   "door": "adapt",
+   "rule": "near",
+   "reason": "the template was adapted for these facts; the builder starts from the section of run j2-20261113-230804 W-1 as a draft",
+   "source": {
+    "run": "j2-20261113-230804",
+    "workflow": "W-1",
+    "key": "W-1",
+    "sha": "4beb4c77811aab8681ad90ca973da5b25f8a1823719438f5502fbae3caf001fe",
+    "template": "Still Point Yoga Problem@7",
+    "fingerprint": "7722cb9f4489654aa64c81e8e368884ea1b9535bb10355075b9c8e749c4591fc",
+    "audit": "pass",
+    "receipts_passed": [
+     "The document has the heading Problem.",
+     "The Problem section isn't empty (at least 5 words).",
+     "The reply follows the Problem template v7",
+     "Every reference in the Problem template v7 points at an id that exists",
+     "Code rendered Problem from the data"
+    ]
+   }
+  },
+  {
+   "run": "j2-20261113-230804",
+   "t": "2026-11-13T23:08:04",
+   "workflow": "W-1",
+   "atom": "W-1.a1",
+   "artifact": "prd",
+   "section": "Problem",
+   "run_template": "still-point-yoga-prd-hld-and-lld",
+   "key": "W-1",
+   "held": false,
+   "door": "unknown",
+   "rule": "0",
+   "reason": "the source run cannot be read: source run j2-20261103-184249 is not in the runs folder; built as today",
+   "source": null
+  }
+ ]
+}

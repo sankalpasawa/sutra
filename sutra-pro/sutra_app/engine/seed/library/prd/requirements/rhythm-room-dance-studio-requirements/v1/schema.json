@@ -1,0 +1,85 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "additionalProperties": false,
+  "properties": {
+    "requirements": {
+      "description": "the requirements, R1, R2, ... in order (for Rhythm Room Dance Studio, a prd)",
+      "items": {
+        "$ref": "#/definitions/Requirement"
+      },
+      "type": "array"
+    },
+    "assumptions": {
+      "description": "the assumptions of Rhythm Room Dance Studio's Requirements",
+      "items": {
+        "type": "string"
+      },
+      "type": "array"
+    },
+    "facts_used": {
+      "description": "the charter facts this section is written from, copied exactly from Rhythm Room Dance Studio's charter",
+      "items": {
+        "enum": [
+          "3rd Floor, 8 Sample Lane, Bengaluru 560001",
+          "Monday 6:00 pm Salsa Beginners 700",
+          "Payment is made at the studio",
+          "Rhythm Room Dance Studio",
+          "Saturday 10:00 am Kids Hip Hop 500",
+          "Sunday 11:00 am Open Floor 400",
+          "The Requirements describe the booking form with the fields name, email, class and preferred date, sent to hello@rhythmroom.example",
+          "The Requirements list all five weekly classes with day, time, class name and price in rupees exactly as in the brief",
+          "The Requirements state that payment is made at the studio and no online payment is taken",
+          "The Requirements state that the address 3rd Floor, 8 Sample Lane, Bengaluru 560001 is shown as text with no embedded map",
+          "The Requirements state that the page must work on phones",
+          "Thursday 6:30 pm Contemporary 750",
+          "Wednesday 7:00 pm Bollywood Basics 600",
+          "hello@rhythmroom.example",
+          "name, email, class and preferred date"
+        ],
+        "type": "string"
+      },
+      "type": "array"
+    }
+  },
+  "required": [
+    "requirements"
+  ],
+  "type": "object",
+  "definitions": {
+    "Requirement": {
+      "additionalProperties": false,
+      "properties": {
+        "id": {
+          "description": "R1, R2, ... in order",
+          "type": "string"
+        },
+        "statement": {
+          "description": "what the product must do, naming the user group that does it",
+          "type": "string"
+        },
+        "priority": {
+          "description": "must, should or could",
+          "enum": [
+            "must",
+            "should",
+            "could"
+          ],
+          "type": "string"
+        },
+        "goals": {
+          "description": "the goal ids this requirement serves, e.g. [\"G1\"]",
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        }
+      },
+      "required": [
+        "id",
+        "statement",
+        "priority"
+      ],
+      "type": "object"
+    }
+  }
+}

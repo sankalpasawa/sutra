@@ -274,7 +274,7 @@ class RunningProcess:
             seconds=max(0.0, self._clock() - self._started), pid=self.pid, ladder=tuple(self._sent),
             stderr_bytes=self._stderr_bytes)
         for path in self._cmd.cleanup:
-            _remove(path)
+            remove_path(path)
         self._tree.close()
         self._runner._forget(self)
         self._finished.set()
@@ -312,7 +312,7 @@ class RunningProcess:
         self.wait()
 
 
-def _remove(path: str) -> None:
+def remove_path(path: str) -> None:
     try:
         p = Path(path)
         if p.is_dir() and not p.is_symlink():
@@ -321,6 +321,9 @@ def _remove(path: str) -> None:
             p.unlink(missing_ok=True)
     except OSError:
         pass
+
+
+_remove = remove_path
 
 
 class ProcessRunner:
@@ -396,4 +399,4 @@ class ProcessRunner:
 
 def _cleanup(cmd: Command) -> None:
     for path in cmd.cleanup:
-        _remove(path)
+        remove_path(path)

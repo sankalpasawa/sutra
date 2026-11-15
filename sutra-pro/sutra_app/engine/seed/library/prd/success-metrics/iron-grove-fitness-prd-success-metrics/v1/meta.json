@@ -1,0 +1,39 @@
+{
+  "schema": "template-library/1",
+  "name": "Iron Grove Fitness PRD Success metrics",
+  "version": 1,
+  "sha": "c0417ccb43bd44a9785121e909cc64f0dc8c44aad66c3c2dfcef8d0e2d5ac422",
+  "schema_sha": "ae08cb01093a3e1d8ec086a8b26c5c8146910f963c06db63e7569667348f6de2",
+  "model_sha": "6482561592735f650d4130e19c74c416efc3e044780da22617f716890084f74b",
+  "class": "IronGroveFitnessPRDSuccessMetricsV1",
+  "created": "2026-11-11T21:22:12",
+  "fingerprints": [
+    "3384b029601af0283d31fc54dd59b67746549490b49f9dcb4463c32d634aface"
+  ],
+  "made_by": {
+    "run": "j2-20261111-211339",
+    "workflow": "W-5",
+    "atom": "W-5.a1",
+    "agent": "code (adapted from a run template)",
+    "date": "2026-11-11 21:13:39"
+  },
+  "business": {
+    "name": "Iron Grove Fitness",
+    "type": "fitness studio"
+  },
+  "mock": false,
+  "collected_from": {
+    "run": "j2-20261111-211339",
+    "where": "the run's copy"
+  },
+  "used_by": [
+    {
+      "run": "j2-20261111-211339",
+      "workflow": "W-5",
+      "atom": "W-5.a1",
+      "action": "extended"
+    }
+  ],
+  "renamed_from": "Still Point Yoga PRD Success metrics@2",
+  "adapted_from": "Still Point Yoga PRD Success metrics@1"
+}

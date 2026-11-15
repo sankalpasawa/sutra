@@ -19,6 +19,7 @@ import hashlib
 import json
 import logging
 import os
+import re
 import stat
 import time
 from sutra_app import oslayer
@@ -38,6 +39,7 @@ from sutra_app.ops import browser, lock
 from sutra_app.ops.envfile import SMTP_VARS, mode_problem
 
 __all__ = ["Check", "Report", "run", "CHECK_IDS", "MIN_FREE_BYTES", "PORT_RANGE", "seed_dir", "missing_seed_templates", "missing_seed_versions",
+           "missing_seed_run_templates",
            "sync_seed_library", "sync_seed_once", "SeedSyncError", "LibraryBusy", "LibraryUnreadable", "LOCK_WAIT_S", "SEED_MARKER"]
 
 MIN_FREE_BYTES = 1024 ** 3
@@ -95,6 +97,8 @@ class Report:
 # has (who made one, when, for which business, live or mock) and the runs those came from. `sync_seed_library` gives an existing library
 # exactly that and nothing else: it only adds. It never changes a value, never renumbers a version, and writes every file by a temp file
 # and `oslayer.replace`, under the `<library>/.lock` that the runtime's `store` and `mark_used` take (the engine's patch P10).
+# D185 (J2 sync 6) adds the run templates (`run_templates` of the index and the folders `run-templates/<id>/`) and the two provenance keys
+# `renamed_from` and `adapted_from`; nothing is moved or renamed on disk, so a family J2 renamed is added beside the old one.
 
 log = logging.getLogger(__name__)
 LOCK_WAIT_S = 30.0                      # the most a sync waits for the library lock (the wait P10 gives a run)
@@ -244,13 +248,33 @@ def _version_of(row: Any) -> int:
     return row["version"] if isinstance(row, dict) and isinstance(row.get("version"), int) else 0
 
 
+RUN_TEMPLATES_KEY = "run_templates"     # the index key of J2's run templates (J2 1adb8ecd)
+RUN_TEMPLATES_DIR = "run-templates"     # `<library>/run-templates/<id>/{template.json, schema.json}`
+RUN_TEMPLATE_FILES = ("template.json", "schema.json")
+_ID_RE = re.compile(r"^[a-z0-9]+(-[a-z0-9]+)*$")          # J2's `slug`: a run template's id is also its folder name
+PROVENANCE_ONLY_IF_LACKING = ("business", "mock", "collected_from", "renamed_from", "adapted_from")
+
+
+def _safe_id(value: Any) -> bool:
+    return isinstance(value, str) and len(value) <= 120 and bool(_ID_RE.match(value))
+
+
+def _run_template_rows(doc: Mapping[str, Any]) -> list[dict[str, Any]]:
+    rows = doc.get(RUN_TEMPLATES_KEY)
+    return [r for r in rows if isinstance(r, dict)] if isinstance(rows, list) else []
+
+
+def _run_template_name(row: Mapping[str, Any]) -> str:
+    return str(row.get("name") or row.get("id") or "").lower()
+
+
 def _fill(target: dict[str, Any], *sources: Any) -> list[str]:
-    """Give `target` the provenance keys it lacks (`business`, `mock`, `collected_from`, `made_by` and its `date`), each taken from the first
-    of `sources` that has it. A key that is there is never changed; of a `made_by` that is there only a missing `date` is added. Returns
-    the keys added, by the names D144 uses."""
+    """Give `target` the provenance keys it lacks (`business`, `mock`, `collected_from`, `renamed_from`, `adapted_from`, `made_by` and its
+    `date`), each taken from the first of `sources` that has it. A key that is there is never changed; of a `made_by` that is there only a
+    missing `date` is added. Returns the keys added, by the names D144 and D185 use."""
     found_in = tuple(s for s in sources if isinstance(s, Mapping))
     added: list[str] = []
-    for name in ("business", "mock", "collected_from"):
+    for name in PROVENANCE_ONLY_IF_LACKING:
         if name not in target:
             donor = next((s for s in found_in if name in s), None)
             if donor is not None:
@@ -281,11 +305,14 @@ def _apply_seed(library: Path, seed: Path, doc: dict[str, Any], *, apply: bool) 
         is left alone and reported `skipped`;
       * else the number is free: the seed's folder is copied and its row appended.
     A template the library lacks (no index entry, or no folder) is the same rule over all its versions; it is reported as a template,
-    its versions are not listed one by one. The seed's `runs` rows whose id is absent are appended.
+    its versions are not listed one by one. The seed's `runs` rows whose id is absent are appended. D185: the seed's `run_templates` follow
+    the same four states per id (`_apply_run_templates`), and a version the seed says was renamed (`renamed_from`) that is added here,
+    under the family name the seed gives it, is also listed in `renamed` (the old family stays where it is: nothing is moved).
 
     `apply` False writes nothing (`doc` is still edited: pass a copy); the report says what would be done. The report:
-    `templates`, `versions` (`artifact/section/slug@vN`), `filled` (version -> provenance keys added), `skipped`, `runs`."""
-    report: dict[str, Any] = {"templates": [], "versions": [], "filled": {}, "skipped": [], "runs": []}
+    `templates`, `versions` (`artifact/section/slug@vN`), `filled` (version -> provenance keys added), `skipped`, `runs`,
+    `run_templates` (ids added or restored) and `renamed` (version -> the name@N it was renamed from)."""
+    report: dict[str, Any] = {"templates": [], "versions": [], "filled": {}, "skipped": [], "runs": [], "run_templates": [], "renamed": {}}
     seed_doc = _seed_doc(seed)
     held = {_key(e): e for e in doc["templates"] if isinstance(e, dict)}
     new_entries: list[dict[str, Any]] = []
@@ -349,6 +376,8 @@ def _apply_seed(library: Path, seed: Path, doc: dict[str, Any], *, apply: bool) 
                 rows.append(row)
                 appended = True
                 done.append(label)
+                if isinstance(seed_row.get("renamed_from"), str) and seed_row["renamed_from"]:
+                    report["renamed"][label] = seed_row["renamed_from"]
             elif state == "restore":
                 done.append(label)
             if state in ("present", "restore"):                               # the library's own row gains the seed row's provenance
@@ -392,7 +421,65 @@ def _apply_seed(library: Path, seed: Path, doc: dict[str, Any], *, apply: bool) 
                 report["runs"] = list(fresh)
         else:
             skip("index.json", None, "`runs` is not an object; the seed's runs were not added")
+    _apply_run_templates(library, seed, seed_doc, doc, report, apply=apply, skip=skip)
     return report
+
+
+def _apply_run_templates(library: Path, seed: Path, seed_doc: Mapping[str, Any], doc: dict[str, Any], report: dict[str, Any], *,
+                         apply: bool, skip: Callable[[str, Any, str], None]) -> None:
+    """D185: J2's run templates (`run_templates` of the index, `run-templates/<id>/{template.json, schema.json}`), per seed id and by the
+    states of a version: the library has the row and the folder (present: left alone, its `used_by` is the library's own); the row but not
+    the folder (restore: the seed's folder is copied back); the folder but not the row (adopt: the row is appended when the folder's
+    template.json is the seed's run template, else the folder is left alone and reported); neither (add: folder copied, row appended). An
+    id the library holds under another spec is never touched. The rows are kept in J2's order (by name, case-insensitive)."""
+    seed_rows = _run_template_rows(seed_doc)
+    if not seed_rows:
+        return
+    if doc.get(RUN_TEMPLATES_KEY) is not None and not isinstance(doc[RUN_TEMPLATES_KEY], list):
+        skip("index.json", None, "`run_templates` is not a list; the seed's run templates were not added")
+        return
+    rows: list[Any] = doc.get(RUN_TEMPLATES_KEY) or []                              # the key is written only when a row is added
+    held = {r.get("id"): r for r in rows if isinstance(r, dict)}
+    appended = False
+    for seed_row in seed_rows:
+        rid = seed_row.get("id")
+        name = f"{RUN_TEMPLATES_DIR}/{rid}"
+        if not _safe_id(rid):
+            continue
+        source, here = seed / RUN_TEMPLATES_DIR / rid, library / RUN_TEMPLATES_DIR / rid
+        has_source = source.is_dir() and all((source / f).is_file() for f in RUN_TEMPLATE_FILES)
+        row = held.get(rid)
+        if row is not None:
+            if here.is_dir():
+                continue                                                          # present
+            if not has_source:
+                skip(name, None, "its folder is missing here and the seed has none to restore it from")
+                continue
+            if apply:
+                _copy_folder(source, here)                                        # restore
+            report["run_templates"].append(rid)
+            continue
+        if here.exists():
+            same = _read_json(here / "template.json") if here.is_dir() else None
+            if isinstance(same, dict) and same.get("id") == rid and same.get("made_from_run") == seed_row.get("made_from_run"):
+                state = "adopt"
+            else:
+                skip(name, None, "a folder of this name exists here with another run template and no index row; it is left alone")
+                continue
+        elif has_source:
+            state = "add"
+        else:
+            skip(name, None, "the seed has no folder for it")
+            continue
+        if state == "add" and apply:
+            _copy_folder(source, here)
+        rows.append(copy.deepcopy(seed_row))
+        held[rid] = rows[-1]
+        appended = True
+        report["run_templates"].append(rid)
+    if appended:
+        rows.sort(key=lambda r: _run_template_name(r) if isinstance(r, dict) else "")
+        doc[RUN_TEMPLATES_KEY] = rows
 
 
 def _seed_whole(library: Path, seed: Path) -> bool:
@@ -415,7 +502,7 @@ def _seed_whole(library: Path, seed: Path) -> bool:
 def sync_seed_library(data_dir: str | os.PathLike[str], seed: Path | None = None, *, report: dict[str, Any] | None = None) -> list[str]:
     """Give `<data>/library` what the seed has and it lacks (D144: only adds, never overwrites; `_apply_seed` has the rule). Returns the
     templates added (`artifact/section/slug`) and the versions added to templates it had (`artifact/section/slug@vN`). `report`, when
-    given, is filled with `templates`, `versions`, `filled`, `skipped` and `runs`.
+    given, is filled with `templates`, `versions`, `filled`, `skipped`, `runs`, `run_templates` and `renamed` (`_apply_seed` says what each is).
 
     A data folder without a library gets the whole seed. Otherwise the sync runs under the library lock (waits `LOCK_WAIT_S`, then
     raises `LibraryBusy`) and writes the index once, at the end; an index that is not an index raises `LibraryUnreadable` and nothing is
@@ -426,7 +513,8 @@ def sync_seed_library(data_dir: str | os.PathLike[str], seed: Path | None = None
     if not library.exists() and _seed_whole(library, seed):
         seed_runs = _seed_doc(seed).get("runs")
         found = {"templates": ["/".join(_key(e)) for e in _entries(seed / "index.json")], "versions": [], "filled": {}, "skipped": [],
-                 "runs": list(seed_runs) if isinstance(seed_runs, dict) else []}
+                 "runs": list(seed_runs) if isinstance(seed_runs, dict) else [], "renamed": {},
+                 "run_templates": [r["id"] for r in _run_template_rows(_seed_doc(seed)) if isinstance(r.get("id"), str)]}
     if found is None:
         with _library_lock(library):
             doc = _library_doc(library)
@@ -453,6 +541,19 @@ def missing_seed_versions(data_dir: str | os.PathLike[str], seed: Path | None = 
     except LibraryUnreadable:
         return []
     return sorted(_apply_seed(library, seed or seed_dir(), doc, apply=False)["versions"])
+
+
+def missing_seed_run_templates(data_dir: str | os.PathLike[str], seed: Path | None = None) -> list[str]:
+    """The ids of the seed's run templates that `sync_seed_library` would add or restore (D185): the library lacks the row or the folder.
+    Nothing is written and no lock is taken. [] when there is no library or its index is not an index."""
+    library = Path(data_dir) / "library"
+    if not library.is_dir():
+        return []
+    try:
+        doc = _library_doc(library)
+    except LibraryUnreadable:
+        return []
+    return sorted(_apply_seed(library, seed or seed_dir(), doc, apply=False)["run_templates"])
 
 
 def _seed_sha(seed: Path) -> str | None:
@@ -491,10 +592,10 @@ def sync_seed_once(data_dir: str | os.PathLike[str], seed: Path | None = None) -
         oslayer.replace(tmp, marker)
     except OSError as exc:
         log.warning("the template library was synced, but %s could not be written (%s); the next start syncs again", SEED_MARKER, exc.strerror or exc)
-    added = len(report["templates"]) + len(report["versions"]) + len(report["filled"]) + len(report["runs"])
+    added = len(report["templates"]) + len(report["versions"]) + len(report["filled"]) + len(report["runs"]) + len(report["run_templates"])
     if added:
-        log.info("template library synced with the seed: %d template(s), %d version(s), provenance on %d version(s), %d run(s)",
-                 len(report["templates"]), len(report["versions"]), len(report["filled"]), len(report["runs"]))
+        log.info("template library synced with the seed: %d template(s), %d version(s), provenance on %d version(s), %d run(s), %d run template(s)",
+                 len(report["templates"]), len(report["versions"]), len(report["filled"]), len(report["runs"]), len(report["run_templates"]))
     if report["skipped"]:
         log.warning("template library: %d seed version(s) were left alone (their number is taken here by another spec, or their files differ): %s",
                     len(report["skipped"]), ", ".join(f"{s['template']}@v{s['version']}" if s["version"] is not None else s["template"] for s in report["skipped"][:5]))
@@ -725,12 +826,14 @@ def _check_library(data_dir: Path, seed: Path | None) -> Check:
         return Check("library", title, "warn", f"{exc}; the seed cannot be synced into it",
                      "restore library/index.json from a backup (`sutra-pro config sync-library` leaves an index it cannot read alone)")
     versions = missing_seed_versions(data_dir, seed)
-    if missing or versions:
-        names = [*missing, *versions]
-        what = " and ".join(part for part in (f"{len(missing)} seed template(s)" if missing else "", f"{len(versions)} seed version(s)" if versions else "") if part)
+    run_templates = missing_seed_run_templates(data_dir, seed)
+    if missing or versions or run_templates:
+        names = [*missing, *versions, *run_templates]
+        what = " and ".join(part for part in (f"{len(missing)} seed template(s)" if missing else "", f"{len(versions)} seed version(s)" if versions else "",
+                                              f"{len(run_templates)} seed run template(s)" if run_templates else "") if part)
         return Check("library", title, "warn", f"{what} are missing from {library}: " + ", ".join(names[:3]) + (" ..." if len(names) > 3 else ""),
                      "run `sutra-pro config sync-library` (adds only what is missing, never overwrites)")
-    return Check("library", title, "ok", "all seed templates and versions are present")
+    return Check("library", title, "ok", "all seed templates, versions and run templates are present")
 
 
 def _check_browser(offline: bool, platform: str | None, plist_path: Any, chrome_known: bool) -> Check:

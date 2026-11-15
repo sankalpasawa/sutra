@@ -1,6 +1,7 @@
 """Nothing of J2 is lost: engine design section 8 as data (ENG-02).
 
-`FEATURES` lists the eight steps of J2's loop (J2.a .. J2.h), the fifteen chips of the diagram and one row of extras. For each:
+`FEATURES` lists the eight steps of J2's loop (J2.a .. J2.h), the seventeen chips of the diagram (fifteen, and J2 sync 6's "Run templates and
+auto-reuse" and "Content door") and one row of extras. For each:
 
     files     paths relative to `sutra_app/engine/`; a name ending in `/` is a folder (package data)
     symbols   (file, name) pairs: a def, class or constant that file defines (J2's names; its line numbers move)
@@ -74,6 +75,10 @@ FEATURES: tuple[Feature, ...] = (
             _s("j2_map.py", "build") + _s("j2_schema.py", "run_views") + _s("j2.py", "lanes", "snapshot", "saved_snapshot")),
     Feature("library", "chip", "Template library", ("j2_template_lib.py", "templates/", "seed/library/"),
             _s("j2_template_lib.py", "route", "store", "library_view"), ("template_library",)),
+    Feature("run_templates", "chip", "Run templates and auto-reuse", ("j2.py", "j2_template_lib.py"),
+            _s("j2.py", "set_run_template", "_auto_reuse_pick", "run_templates_on"), ("run_templates", "auto_reuse")),
+    Feature("content_door", "chip", "Content door", ("j2_artifact_lib.py", "j2.py"),
+            _s("j2_artifact_lib.py", "enabled", "source_section", "door"), ("artifact_library",)),
     Feature("change", "chip", "Charter change", ("j2_change.py", "j2.py"),
             _s("j2.py", "_turn_change", "_change_relay"), ("change",)),
     Feature("schemas", "chip", "Artifact schemas",
@@ -86,7 +91,7 @@ FEATURES: tuple[Feature, ...] = (
     Feature("extras", "extra",
             "Also: run report and reviewer, owner override, test switches, docx export, redaction, saved runs", ("j2.py",),
             _s("j2.py", "_make_report", "_review", "_override", "export_docx", "list_runs"),
-            ("force_audit_fail", "force_audit_note", "force_question"), _s("api/reply.py", "redact")),
+            ("force_audit_fail", "force_audit_note", "force_question", "reviewer", "reviewer_wait"), _s("api/reply.py", "redact")),
 )
 
 

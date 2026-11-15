@@ -76,3 +76,23 @@ def test_the_extras_carry_what_data_cannot_the_flags_and_the_mocks():
     assert (extras["single"], extras["workspace"], extras["deliver"]) == (True, "edit", True)
     assert callable(extras["mock_charter"]) and callable(extras["mock_section"])
     assert extras["mock_atom"] == ("atom", PROJECT_SECTIONS, {})
+
+
+# ---- the limits are data (D188, R-3) ---------------------------------------------------------------------------------------------------------
+def test_the_followup_limits_are_a_data_file_with_the_values_they_had_in_code():
+    from sutra_app.engine.capabilities import project
+    assert project.LIMITS_FILE.name == "project.limits.json" and project.LIMITS_FILE.parent == DATA
+    assert (project.EARLIER_MAX, project.EARLIER_FILES) == (12_000, 40) == project.load_limits()
+
+
+@pytest.mark.parametrize("body, why", [("nope", "cannot be read"), ("[]", "earlier_max"), ('{"earlier_max": 5}', "earlier_files"),
+                                       ('{"earlier_max": 0, "earlier_files": 3}', "earlier_max"), ('{"earlier_max": 5, "earlier_files": -1}', "earlier_files"),
+                                       ('{"earlier_max": true, "earlier_files": 3}', "earlier_max"), ('{"earlier_max": 5.5, "earlier_files": 3}', "earlier_max"),
+                                       ('{"earlier_max": "9", "earlier_files": 3}', "earlier_max")])
+def test_a_bad_limits_file_is_refused_by_name(tmp_path, body, why):
+    from sutra_app.engine.capabilities import project
+    bad = tmp_path / "limits.json"
+    bad.write_text(body)
+    with pytest.raises(ValueError, match="limits.json") as refused:
+        project.load_limits(bad)
+    assert why in str(refused.value)

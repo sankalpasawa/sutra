@@ -1,0 +1,122 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "additionalProperties": false,
+  "properties": {
+    "requirements": {
+      "description": "the requirements, R1, R2, ... in order",
+      "items": {
+        "$ref": "#/definitions/Requirement"
+      },
+      "type": "array"
+    },
+    "assumptions": {
+      "description": "assumptions behind the requirements",
+      "items": {
+        "type": "string"
+      },
+      "type": "array"
+    },
+    "studio_name": {
+      "description": "the studio name shown as text",
+      "type": "string"
+    },
+    "studio_address": {
+      "description": "the studio address shown as text, with no embedded map",
+      "type": "string"
+    },
+    "classes": {
+      "description": "all five classes with day, time and price in rupees, copied exactly",
+      "items": {
+        "enum": [
+          "Monday 7:00 am Gentle Flow 500",
+          "Tuesday 6:30 pm Strength Yoga 600",
+          "Thursday 7:00 am Breath and Stretch 450",
+          "Saturday 9:00 am Beginners Basics 400",
+          "Sunday 8:00 am Slow Sunday 500"
+        ],
+        "type": "string"
+      },
+      "type": "array"
+    },
+    "booking_form_fields": {
+      "description": "the fields of the booking form",
+      "items": {
+        "enum": [
+          "name",
+          "email",
+          "class",
+          "preferred date"
+        ],
+        "type": "string"
+      },
+      "type": "array"
+    },
+    "booking_email": {
+      "description": "where the booking form is sent",
+      "type": "string"
+    },
+    "payment": {
+      "description": "how payment works",
+      "items": {
+        "enum": [
+          "Payment is made at the studio",
+          "No online payment is taken"
+        ],
+        "type": "string"
+      },
+      "type": "array"
+    },
+    "phone_use": {
+      "description": "the requirement that the page works on phones",
+      "type": "string"
+    }
+  },
+  "required": [
+    "requirements",
+    "studio_name",
+    "studio_address",
+    "classes",
+    "booking_form_fields",
+    "booking_email",
+    "payment",
+    "phone_use"
+  ],
+  "type": "object",
+  "definitions": {
+    "Requirement": {
+      "additionalProperties": false,
+      "properties": {
+        "id": {
+          "description": "R1, R2, ... in order",
+          "type": "string"
+        },
+        "statement": {
+          "description": "what the product must do, naming the user group that does it",
+          "type": "string"
+        },
+        "priority": {
+          "description": "must, should or could",
+          "enum": [
+            "must",
+            "should",
+            "could"
+          ],
+          "type": "string"
+        },
+        "goals": {
+          "description": "the goal ids this requirement serves, e.g. [\"G1\"]",
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        }
+      },
+      "required": [
+        "id",
+        "statement",
+        "priority"
+      ],
+      "type": "object"
+    }
+  }
+}

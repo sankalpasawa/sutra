@@ -25,10 +25,12 @@ FIELD_OF = {env: name for name, env in ENV_NAMES.items()}
 
 # ---- the task keys: orchestrator (writer) against engine (reader) -----------------------------------------------------------------
 
-def test_the_eight_keys_are_the_same_list_on_both_sides():
+def test_the_ten_keys_are_the_same_list_on_both_sides():
     assert tuple(TaskSettings.model_fields) == TASK_SETTING_KEYS
-    assert len(TASK_SETTING_KEYS) == 8
-    assert [FIELD_OF[key] for key in TASK_SETTING_KEYS] == ["output", "budget", "budget_cap", "fixes", "memory", "slim", "rates", "decide_for_me"]
+    assert len(TASK_SETTING_KEYS) == 10
+    assert [FIELD_OF[key] for key in TASK_SETTING_KEYS[:8]] == ["output", "budget", "budget_cap", "fixes", "memory", "slim", "rates", "decide_for_me"]
+    assert TASK_SETTING_KEYS[8:] == ("J2_RUN_TEMPLATE", "J2_RUN_TEMPLATE_WORKFLOWS") and not {*TASK_SETTING_KEYS[8:]} & set(FIELD_OF), \
+        "the last two are task-only (D182): no engine setting"
 
 
 def test_what_the_orchestrator_accepts_the_engine_reads_as_the_same_values():

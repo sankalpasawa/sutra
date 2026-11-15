@@ -1,0 +1,45 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "additionalProperties": false,
+  "properties": {
+    "responsive_rules": {
+      "description": "one rule per line (for Iron Grove Fitness, a lld)",
+      "items": {
+        "type": "string"
+      },
+      "type": "array"
+    },
+    "accessibility_rules": {
+      "description": "one rule per line (for Iron Grove Fitness, a lld)",
+      "items": {
+        "type": "string"
+      },
+      "type": "array"
+    },
+    "assumptions": {
+      "description": "the assumptions of Iron Grove Fitness's Responsive and accessibility rules",
+      "items": {
+        "type": "string"
+      },
+      "type": "array"
+    },
+    "facts_used": {
+      "description": "the charter facts this section is written from, copied exactly from Iron Grove Fitness's charter",
+      "items": {
+        "enum": [
+          "Iron Grove Fitness",
+          "The Responsive and accessibility rules section is written for Iron Grove Fitness"
+        ],
+        "type": "string"
+      },
+      "type": "array"
+    }
+  },
+  "type": "object",
+  "required": [
+    "responsive_rules",
+    "accessibility_rules",
+    "assumptions",
+    "facts_used"
+  ]
+}

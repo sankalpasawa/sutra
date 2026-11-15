@@ -40,7 +40,7 @@ def codes(got):
 def test_get_without_dept_shows_the_global_scope(api):
     api.glob.write_text(json.dumps({"budget": 80}))
     body = api.client.get(URL).json()
-    assert set(body) == {"schema", "defaults", "global", "effective", "editable", "locked", "output_types"}
+    assert set(body) == {"schema", "defaults", "global", "effective", "editable", "locked", "output_types", "effective_flags"}
     assert body["schema"] == SETTINGS_SCHEMA == "engine-settings/1"
     assert body["defaults"] == EngineSettings().model_dump() and body["global"] == {"budget": 80}
     assert body["effective"] == {**EngineSettings().model_dump(), "budget": 80}
@@ -62,7 +62,7 @@ def test_with_a_team_the_body_says_what_the_next_run_would_use_and_without_one_i
     body = api.client.get(URL + "?dept=web").json()
     assert body["next_run"] == {"output": "auto"} == {"output": EngineSettings().output}, "the default: the engine picks (D129)"
     assert "next_run" not in api.client.get(URL).json(), "the global scope is no run"
-    assert set(body) == {"schema", "defaults", "global", "department", "next_run", "effective", "editable", "locked", "output_types"}
+    assert set(body) == {"schema", "defaults", "global", "department", "next_run", "effective", "editable", "locked", "output_types", "effective_flags"}
 
 
 def test_next_run_layers_the_files_and_the_start_pages_choice_and_effective_does_not(api):

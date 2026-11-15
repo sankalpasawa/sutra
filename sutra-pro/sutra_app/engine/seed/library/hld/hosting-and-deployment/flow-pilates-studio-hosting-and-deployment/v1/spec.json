@@ -1,0 +1,88 @@
+{
+  "name": "Flow Pilates Studio Hosting and deployment",
+  "artifact": "hld",
+  "section": "Hosting and deployment",
+  "version": 1,
+  "kind": "specialised",
+  "description": "Hosting and deployment for Flow Pilates Studio (hld): the generic HLD/1 · Hosting and deployment fields plus facts_used, from 2 charter fact(s); adapted from a template made for another business",
+  "fields": [
+    {
+      "name": "hosting",
+      "type": "Hosting",
+      "required": true,
+      "description": "the hosting of Flow Pilates Studio's Hosting and deployment",
+      "enum": null,
+      "nullable": false
+    },
+    {
+      "name": "assumptions",
+      "type": "list[string]",
+      "required": false,
+      "description": "the assumptions of Flow Pilates Studio's Hosting and deployment",
+      "enum": null,
+      "nullable": false
+    },
+    {
+      "name": "facts_used",
+      "type": "list[string]",
+      "required": false,
+      "description": "the charter facts this section is written from, copied exactly from Flow Pilates Studio's charter",
+      "enum": [
+        "Flow Pilates Studio",
+        "The Hosting and deployment section is written for Flow Pilates Studio"
+      ],
+      "nullable": false
+    }
+  ],
+  "objects": [
+    {
+      "name": "Hosting",
+      "fields": [
+        {
+          "name": "kind",
+          "type": "string",
+          "required": true,
+          "description": "how it is hosted, e.g. \"one static file on a static host\"",
+          "enum": null,
+          "nullable": false
+        },
+        {
+          "name": "notes",
+          "type": "string",
+          "required": false,
+          "description": "how it is deployed and replaced",
+          "enum": null,
+          "nullable": false
+        }
+      ]
+    }
+  ],
+  "rules": [
+    {
+      "rule": "enum",
+      "path": "facts_used[]",
+      "values": [
+        "Flow Pilates Studio",
+        "The Hosting and deployment section is written for Flow Pilates Studio"
+      ],
+      "from": "facts",
+      "name": "facts_used are facts of Flow Pilates Studio's charter"
+    }
+  ],
+  "sha": "30770f0a21f8a212968ebe0559c5009542e1459af58fc001ee0f856a7e2106c4",
+  "extends": "hld/hosting-and-deployment@generic/1",
+  "made_by": {
+    "run": "j2-20261112-150036",
+    "workflow": "W-14",
+    "atom": "W-14.a1",
+    "agent": "code (adapted from a run template)"
+  },
+  "context": {
+    "business_type": "hld",
+    "facts_used": [
+      "Flow Pilates Studio",
+      "The Hosting and deployment section is written for Flow Pilates Studio"
+    ],
+    "fingerprint": "6635b066917f81014158dac76c3eb12df666539d2e0b0178d9e1a0ce5b539179"
+  }
+}

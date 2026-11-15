@@ -20,7 +20,7 @@ import importlib
 import sys
 from typing import Optional
 
-from .. import llm
+from .. import forms, llm
 from .base import Capability, CapabilityConflict, EngineContext, OutputSpec, Selection, SPECS, output_spec
 from .project import ProjectCapability
 from .workspace import WorkspaceCapability
@@ -53,6 +53,7 @@ def register(j2, capabilities=None) -> None:
     conflict raises before anything is registered. Registering the same capability twice is a no-op in effect (the same owner replaces its
     own entry); a name that is not ours (J2's own, a local type, another capability's) is a conflict."""
     types = j2.j2_types
+    forms.check_forms(types)                  # J2's two forms are the two the engine layer names (D188)
     pending: dict[str, tuple[Capability, OutputSpec]] = {}
     for cap in _caps(capabilities):
         for name, spec in cap.outputs().items():

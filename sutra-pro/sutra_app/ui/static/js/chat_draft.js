@@ -12,6 +12,8 @@
          clear(sid)             forget the draft
          clearIf(sid, sent)     forget it when it is what was just sent (trimmed); a box the owner kept typing in keeps its newer words
          prune()                drop expired drafts and keep the newest MAX_CHATS
+         loadMode(sid)          where this chat's messages go ("direct" or "team"), as the owner last chose, or "" (never chosen, expired, or no storage)
+         saveMode(sid, mode)    keep the choice (under sutra:mode:<sid>, the same TTL and chat cap as a draft); true when it is kept
      grow(el, maxPx)            size a textarea to its text, from its CSS min-height up to maxPx (default 200), and let it scroll above that
 
    Only text is kept (never a file, never file bytes), at most MAX_CHARS characters (4 times the direct route's cap of 8000, so a draft the owner cannot send yet is not cut on reload), under the key sutra:draft:<sid>,
@@ -23,6 +25,7 @@
   "use strict";
 
   const PREFIX = "sutra:draft:";
+  const MODE_PREFIX = "sutra:mode:";
   const MAX_CHARS = 32000;                // longer than a message can be (8000, chat_composer.js): a pasted log over the cap is kept whole, and Send then says why it cannot go
   const MAX_CHATS = 30;
   const TTL_DAYS = 14;
@@ -123,7 +126,40 @@
       return clear(sid);
     }
 
-    return {load, save, clear, clearIf, prune};
+    // The mode a chat's box was in ("Ask directly" or "Plan with Sutra"): kept next to the draft so a reload comes back where the owner was.
+    function loadMode(sid) {
+      if (!okSid(sid)) return "";
+      return attempt(s => {
+        let found = null;
+        try { found = JSON.parse(s.getItem(MODE_PREFIX + sid)); } catch (e) { found = null; }
+        if (!isObj(found) || (found.m !== "direct" && found.m !== "team") || !Number.isFinite(found.at) || now() - found.at > TTL_MS) {
+          if (s.getItem(MODE_PREFIX + sid) !== null) s.removeItem(MODE_PREFIX + sid);
+          return "";
+        }
+        return found.m;
+      }, "");
+    }
+
+    function saveMode(sid, mode) {
+      if (!okSid(sid) || (mode !== "direct" && mode !== "team")) return false;
+      return attempt(s => {
+        s.setItem(MODE_PREFIX + sid, JSON.stringify({m: mode, at: now()}));
+        const kept = [];
+        const n = Number.isInteger(s.length) ? s.length : 0;
+        for (let i = 0; i < n; i += 1) {
+          const k = s.key(i);
+          if (typeof k !== "string" || !k.startsWith(MODE_PREFIX)) continue;
+          let found = null;
+          try { found = JSON.parse(s.getItem(k)); } catch (e) { found = null; }
+          kept.push([k, isObj(found) && Number.isFinite(found.at) && now() - found.at <= TTL_MS ? found.at : -1]);
+        }
+        kept.sort((a, b) => b[1] - a[1]);
+        kept.forEach(([k, at], i) => { if (at < 0 || i >= MAX_CHATS) s.removeItem(k); });
+        return true;
+      }, false);
+    }
+
+    return {load, save, clear, clearIf, prune, loadMode, saveMode};
   }
 
   // grow(el, maxPx): measure at auto, then set the height in px (the CSS min-height is the floor), and scroll inside the box only above the ceiling.

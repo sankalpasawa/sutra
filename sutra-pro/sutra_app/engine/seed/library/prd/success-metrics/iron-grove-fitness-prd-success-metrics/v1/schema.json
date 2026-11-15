@@ -1,0 +1,72 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "additionalProperties": false,
+  "properties": {
+    "success_metrics": {
+      "description": "one metric per goal (for Iron Grove Fitness, a prd)",
+      "items": {
+        "$ref": "#/definitions/SuccessMetric"
+      },
+      "type": "array"
+    },
+    "assumptions": {
+      "description": "the assumptions of Iron Grove Fitness's Success metrics",
+      "items": {
+        "type": "string"
+      },
+      "type": "array"
+    },
+    "facts_used": {
+      "description": "the charter facts this section is written from, copied exactly from Iron Grove Fitness's charter",
+      "items": {
+        "enum": [
+          "Friday 7:00 pm Kettlebell Class 650",
+          "Iron Grove Fitness",
+          "Monday 6:30 am Strength Basics 600",
+          "Payment is made at the studio",
+          "Saturday 8:00 am Weekend Bootcamp 800",
+          "The Success metrics section states that no success measure was provided and gives no invented number",
+          "Tuesday 7:00 pm Circuit Hour 700",
+          "Unit 5, 21 Sample Street, Pune 411001",
+          "Wednesday 6:30 am Mobility Flow 500",
+          "bookings@irongrove.example",
+          "name, email, class, preferred date"
+        ],
+        "type": "string"
+      },
+      "type": "array"
+    }
+  },
+  "required": [
+    "success_metrics"
+  ],
+  "type": "object",
+  "definitions": {
+    "SuccessMetric": {
+      "additionalProperties": false,
+      "properties": {
+        "goal": {
+          "description": "the goal id this metric measures, e.g. \"G1\"",
+          "type": "string"
+        },
+        "metric": {
+          "description": "what is measured",
+          "type": "string"
+        },
+        "target": {
+          "description": "the number or state to reach",
+          "type": "string"
+        },
+        "window": {
+          "description": "the measurement window, e.g. \"in the first 30 days\"; write \"measurement window not set\" when the brief doesn't say",
+          "type": "string"
+        }
+      },
+      "required": [
+        "goal",
+        "metric"
+      ],
+      "type": "object"
+    }
+  }
+}

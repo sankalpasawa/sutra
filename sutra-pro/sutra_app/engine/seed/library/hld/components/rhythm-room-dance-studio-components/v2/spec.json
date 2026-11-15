@@ -1,0 +1,117 @@
+{
+  "name": "Rhythm Room Dance Studio Components",
+  "artifact": "hld",
+  "section": "Components",
+  "version": 2,
+  "kind": "specialised",
+  "description": "Components for Rhythm Room Dance Studio (hld): the generic HLD/1 · Components fields plus facts_used, from 1 charter fact(s); adapted from a template made for another business",
+  "fields": [
+    {
+      "name": "components",
+      "type": "list[Component]",
+      "required": true,
+      "description": "the components, C1, C2, ... in order; each names the PRD requirement ids it covers (for Rhythm Room Dance Studio, a hld)",
+      "enum": null,
+      "nullable": false
+    },
+    {
+      "name": "assumptions",
+      "type": "list[string]",
+      "required": false,
+      "description": "the assumptions of Rhythm Room Dance Studio's Components",
+      "enum": null,
+      "nullable": false
+    },
+    {
+      "name": "facts_used",
+      "type": "list[string]",
+      "required": false,
+      "description": "the charter facts this section is written from, copied exactly from Rhythm Room Dance Studio's charter",
+      "enum": [
+        "Rhythm Room Dance Studio"
+      ],
+      "nullable": false
+    },
+    {
+      "name": "booking_address",
+      "type": "string",
+      "required": true,
+      "description": "the booking address of Rhythm Room Dance Studio's Components",
+      "enum": null,
+      "nullable": false
+    }
+  ],
+  "objects": [
+    {
+      "name": "Component",
+      "fields": [
+        {
+          "name": "id",
+          "type": "string",
+          "required": true,
+          "description": "C1, C2, ... in order",
+          "enum": null,
+          "nullable": false
+        },
+        {
+          "name": "name",
+          "type": "string",
+          "required": true,
+          "description": "the component name",
+          "enum": null,
+          "nullable": false
+        },
+        {
+          "name": "responsibility",
+          "type": "string",
+          "required": true,
+          "description": "its one responsibility, in one line",
+          "enum": null,
+          "nullable": false
+        },
+        {
+          "name": "covers",
+          "type": "list[string]",
+          "required": false,
+          "description": "the PRD requirement ids it covers, e.g. [\"R1\"]",
+          "enum": null,
+          "nullable": false
+        },
+        {
+          "name": "page",
+          "type": "string",
+          "required": false,
+          "description": "the page id it sits on, e.g. \"P1\"",
+          "enum": null,
+          "nullable": false
+        }
+      ]
+    }
+  ],
+  "rules": [
+    {
+      "rule": "enum",
+      "path": "facts_used[]",
+      "values": [
+        "Rhythm Room Dance Studio"
+      ],
+      "from": "facts",
+      "name": "facts_used are facts of Rhythm Room Dance Studio's charter"
+    }
+  ],
+  "sha": "8b7d7df2877654ba9854571fbe56c3ae5a4fcb258df828fc400be829bb73193c",
+  "extends": "hld/components@generic/1",
+  "made_by": {
+    "run": "j2-20261111-215733",
+    "workflow": "W-15",
+    "atom": "W-15.a1",
+    "agent": "code (adapted from a run template)"
+  },
+  "context": {
+    "business_type": "hld",
+    "facts_used": [
+      "Rhythm Room Dance Studio"
+    ],
+    "fingerprint": "9e123522d3cf39be3a17c4ac3d7f4db905e750b70b60a24433c42c758efecde6"
+  }
+}

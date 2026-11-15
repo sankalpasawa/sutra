@@ -1,0 +1,59 @@
+{
+  "schema": "sutra-extension/2",
+  "id": "113_servicing_standing_rules",
+  "scope": "lendco/servicing",
+  "standing_rules": [
+    {
+      "tag": "always",
+      "line": "Always check the payee's account against the loan book before a refund is paid.",
+      "grant": "action:check-payee-account@1"
+    },
+    {
+      "tag": "ask",
+      "line": "Ask me first before a refund is paid.",
+      "method": "ask-owner-refund@1"
+    },
+    {
+      "tag": "never",
+      "line": "Never pay a refund to an account that is not the borrower's own.",
+      "decision": "third_party_payout_allowed"
+    }
+  ],
+  "grants": [
+    "action:check-payee-account@1",
+    "action:ask-owner-refund@1"
+  ],
+  "methods": [
+    {
+      "id": "ask-owner-refund@1",
+      "effect": "owner_approved_refund",
+      "requires": [],
+      "provider": "owner-channel",
+      "grant": "action:ask-owner-refund@1",
+      "cost": {
+        "compute": 0,
+        "money": 0,
+        "attention": 1
+      },
+      "action": "ask",
+      "approved": true,
+      "source": "reviewed/synthetic-method",
+      "question": "A refund of an overpaid instalment is due to the borrower. May it be paid?",
+      "ask_to": "owner"
+    }
+  ],
+  "providers": {
+    "owner-channel": 1
+  },
+  "evidence": [
+    {
+      "predicate": "third_party_payout_allowed",
+      "truth": "FALSE",
+      "verified": true,
+      "final": true,
+      "source": "owner:lendco/servicing",
+      "version": "standing-rules-1",
+      "tag": "never"
+    }
+  ]
+}

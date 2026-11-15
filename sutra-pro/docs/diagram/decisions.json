@@ -873,5 +873,320 @@
   "id": "D175",
   "label": "release 0.4.0",
   "anchor": "band:DEPARTMENT RUNTIME"
+ },
+ {
+  "id": "D176",
+  "label": "J2 pin: main 1adb8ecd",
+  "anchor": "band:DEPARTMENT RUNTIME"
+ },
+ {
+  "id": "D177",
+  "label": "reuse flags are settings",
+  "anchor": "band:EXPERIENCE"
+ },
+ {
+  "id": "D178",
+  "label": "implied flags: effective()",
+  "anchor": "band:DEPARTMENT RUNTIME"
+ },
+ {
+  "id": "D179",
+  "label": "reviewer: join, cap, switch (P19)",
+  "anchor": "band:DEPARTMENT RUNTIME"
+ },
+ {
+  "id": "D180",
+  "label": "patch table P1-P19",
+  "anchor": "band:DEPARTMENT RUNTIME"
+ },
+ {
+  "id": "D181",
+  "label": "library lock covers 4 writers",
+  "anchor": "Template library"
+ },
+ {
+  "id": "D182",
+  "label": "say carries run template",
+  "anchor": "band:EXPERIENCE"
+ },
+ {
+  "id": "D183",
+  "label": "run template views: team settings",
+  "anchor": "band:EXPERIENCE"
+ },
+ {
+  "id": "D184",
+  "label": "artifact shelf per team",
+  "anchor": "Template library"
+ },
+ {
+  "id": "D185",
+  "label": "seed library: + run templates",
+  "anchor": "Template library"
+ },
+ {
+  "id": "D186",
+  "label": "records: reuse, run template bundle",
+  "anchor": "band:DEPARTMENT RUNTIME"
+ },
+ {
+  "id": "D187",
+  "label": "follow-up: no auto-reuse",
+  "anchor": "band:EXPERIENCE"
+ },
+ {
+  "id": "D188",
+  "label": "hard-coded cleanup: 3 rules",
+  "anchor": "band:DEPARTMENT RUNTIME"
+ },
+ {
+  "id": "D189",
+  "label": "J2 hard-coding: reported",
+  "anchor": "band:DEPARTMENT RUNTIME"
+ },
+ {
+  "id": "D190",
+  "label": "goldens by recorder only",
+  "anchor": "band:DEPARTMENT RUNTIME"
+ },
+ {
+  "id": "D191",
+  "label": "page regenerated for sync 6",
+  "anchor": "band:EXPERIENCE"
+ },
+ {
+  "id": "D192",
+  "label": "diff of record decides new files",
+  "anchor": null
+ },
+ {
+  "id": "D193",
+  "label": "release 0.5.0",
+  "anchor": "band:DEPARTMENT RUNTIME"
+ },
+ {
+  "id": "D194",
+  "label": "shared library = J2 data + contract",
+  "anchor": "Template library"
+ },
+ {
+  "id": "D195",
+  "label": "library ownership by role",
+  "anchor": "Template library"
+ },
+ {
+  "id": "D196",
+  "label": "memory + catalogue: app stores, one gate",
+  "anchor": "Interface library"
+ },
+ {
+  "id": "D197",
+  "label": "no sharing without publish",
+  "anchor": "Template library"
+ },
+ {
+  "id": "D198",
+  "label": "sync procedure, 10 checks",
+  "anchor": "Template library"
+ },
+ {
+  "id": "D199",
+  "label": "external template: row only",
+  "anchor": "Interface library"
+ },
+ {
+  "id": "D200",
+  "label": "J2 asked: constants to data, 3 seams",
+  "anchor": "Template library"
+ },
+ {
+  "id": "D201",
+  "label": "chat.live on global SSE",
+  "anchor": "band:ORCHESTRATION"
+ },
+ {
+  "id": "D202",
+  "label": "chat.live envelope v1",
+  "anchor": "Chat sessions"
+ },
+ {
+  "id": "D203",
+  "label": "snapshot + seq catch-up",
+  "anchor": "Chat sessions"
+ },
+ {
+  "id": "D204",
+  "label": "time coalesce + secret-prefix hold-back",
+  "anchor": "band:ORCHESTRATION"
+ },
+ {
+  "id": "D205",
+  "label": "stream_mode, honest labels",
+  "anchor": "Codex connector (extends base)"
+ },
+ {
+  "id": "D206",
+  "label": "thinking: presence only",
+  "anchor": "Claude connector (extends base)"
+ },
+ {
+  "id": "D207",
+  "label": "live row promoted in place",
+  "anchor": "Chat sessions"
+ },
+ {
+  "id": "D208",
+  "label": "normaliser / reducer / view layers",
+  "anchor": "Chat sessions"
+ },
+ {
+  "id": "D209",
+  "label": "idempotent send, safe retry",
+  "anchor": "Chat sessions"
+ },
+ {
+  "id": "D210",
+  "label": "tool activity: no raw args",
+  "anchor": "Tool connectors (MCP)"
+ },
+ {
+  "id": "D211",
+  "label": "checkpoint table, not messages",
+  "anchor": "Chat sessions"
+ },
+ {
+  "id": "D212",
+  "label": "ordered blocks, fold by pairs",
+  "anchor": "Chat sessions"
+ },
+ {
+  "id": "D213",
+  "label": "two-phase stop, freeze at request",
+  "anchor": "Connector router"
+ },
+ {
+  "id": "D214",
+  "label": "SUTRA_LIVE_V1 rollback flag",
+  "anchor": "band:ORCHESTRATION"
+ },
+ {
+  "id": "D215",
+  "label": "CancelToken: one stop owner",
+  "anchor": "Connector router"
+ },
+ {
+  "id": "D216",
+  "label": "attempt-scoped refs",
+  "anchor": "Chat sessions"
+ },
+ {
+  "id": "D217",
+  "label": "route events: plan, attempt, failed",
+  "anchor": "Connector router"
+ },
+ {
+  "id": "D218",
+  "label": "BlockAccumulator: one block owner",
+  "anchor": "Connector router"
+ },
+ {
+  "id": "D219",
+  "label": "final attempt stored, earlier as note",
+  "anchor": "Chat sessions"
+ },
+ {
+  "id": "D220",
+  "label": "client_id before begin",
+  "anchor": "Chat sessions"
+ },
+ {
+  "id": "D221",
+  "label": "chat.partial adapter (snapshot)",
+  "anchor": "Chat sessions"
+ },
+ {
+  "id": "D222",
+  "label": "seq+publish one lock; resync on reconnect",
+  "anchor": "Chat sessions"
+ },
+ {
+  "id": "D223",
+  "label": "tool title at tool_call (real order)",
+  "anchor": "Claude connector (extends base)"
+ },
+ {
+  "id": "D224",
+  "label": "one lock; live kinds opt-in",
+  "anchor": "Chat sessions"
+ },
+ {
+  "id": "D225",
+  "label": "stop answers at once; not_retryable",
+  "anchor": "Connector router"
+ },
+ {
+  "id": "D226",
+  "label": "stop wins over a late result",
+  "anchor": "Chat sessions"
+ },
+ {
+  "id": "D227",
+  "label": "client layers: intake store client view",
+  "anchor": "band:EXPERIENCE"
+ },
+ {
+  "id": "D228",
+  "label": "composer live opt-in; stop queued",
+  "anchor": "band:EXPERIENCE"
+ },
+ {
+  "id": "D229",
+  "label": "one reply node; settle in place",
+  "anchor": "band:EXPERIENCE"
+ },
+ {
+  "id": "D230",
+  "label": "append-only text; one node per fence",
+  "anchor": "band:EXPERIENCE"
+ },
+ {
+  "id": "D231",
+  "label": "honest labels; clock not announced",
+  "anchor": "band:EXPERIENCE"
+ },
+ {
+  "id": "D232",
+  "label": "event data keeps its white space",
+  "anchor": "Chat sessions"
+ },
+ {
+  "id": "D233",
+  "label": "stop and retry in the reply",
+  "anchor": "band:EXPERIENCE"
+ },
+ {
+  "id": "D234",
+  "label": "motion on arrival; keep the reader's place",
+  "anchor": "band:EXPERIENCE"
+ },
+ {
+  "id": "D235",
+  "label": "live chat on by default",
+  "anchor": "Chat sessions"
+ },
+ {
+  "id": "D236",
+  "label": "ending, text and author read the same after reload",
+  "anchor": "Chat sessions"
+ },
+ {
+  "id": "D237",
+  "label": "feed and publish under one lock; ticker sleeps when nothing is due",
+  "anchor": "Chat sessions"
+ },
+ {
+  "id": "D238",
+  "label": "terminal frame kept; Stop stays; mode remembered",
+  "anchor": "band:EXPERIENCE"
  }
 ]

@@ -63,6 +63,9 @@ HARNESS = textwrap.dedent(r'''
     while run.status != "waiting":
         assert time.time() < end, "the run did not stop"
         time.sleep(0.003)
+    reviewer = getattr(run, "review_thread", None)      # J2 writes the report, artifacts.json and the map after "waiting" (sync 6): wait as the host does (D179)
+    if reviewer is not None:
+        reviewer.join(60)
     d = Path(run.dir)
     for name in ("summary.json", "map.json", "board.json", "artifacts.json", "realization.json"):
         if (d / name).is_file():

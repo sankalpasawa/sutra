@@ -1,0 +1,32 @@
+{
+  "schema": "sutra-extension/2",
+  "id": "211_hand_to_model",
+  "methods": [
+    {
+      "id": "hand-letter-to-model@1",
+      "effect": "letter_drafted",
+      "requires": [
+        "loan_on_book"
+      ],
+      "provider": "letter-model",
+      "grant": "action:hand-letter-to-model@1",
+      "cost": {
+        "compute": 2,
+        "money": 0,
+        "attention": 0
+      },
+      "action": "handoff",
+      "approved": true,
+      "source": "reviewed/synthetic-method",
+      "handoff_to": "model:letter-drafter",
+      "instruction": "Draft the collections letter for loan L-17: name the borrower, the loan and the amount overdue.",
+      "verified_by": "checker:loan-book"
+    }
+  ],
+  "providers": {
+    "letter-model": 3
+  },
+  "grants": [
+    "action:hand-letter-to-model@1"
+  ]
+}

@@ -237,11 +237,11 @@ def test_notes_file_exists_and_stays_within_sixty_lines():
 # ------------------------------------------------------------------------------------------------ scenarios replay their fixtures
 FILE_SCENARIOS = [(cli, name, scn.file) for cli in ("claude", "codex") for name, scn in fake_cli.table(cli).items() if scn.file and not scn.base]
 EXPECTED_EXIT = {
-    "claude": {"ok_structured": 0, "ok_plain": 0, "not_logged_in": 1, "mcp_connected": 1, "tool_profile": 1, "session_lost": 1, "control_interrupt": 0,
+    "claude": {"ok_structured": 0, "ok_plain": 0, "tool_partials": 0, "not_logged_in": 1, "mcp_connected": 1, "tool_profile": 1, "session_lost": 1, "control_interrupt": 0,
                "quota": 1, "billing_error": 1, "overloaded": 1, "server_error": 1, "invalid_request": 1, "model_not_found": 1, "login_expired": 1,
                "structured_failed": 1, "error_during_execution": 1, "truncated_no_result": 137, "plain_not_json": 0, "plain_json_in_fence": 0,
                "plain_json_wrong_shape": 0, "noise_lines": 0},
-    "codex": {"ok_structured": 0, "ok_plain": 0, "not_signed_in": 1, "usage_limit": 1, "rate_limited_429": 1, "server_error_500": 1,
+    "codex": {"ok_structured": 0, "ok_plain": 0, "tool_items": 0, "not_signed_in": 1, "usage_limit": 1, "rate_limited_429": 1, "server_error_500": 1,
               "schema_rejected_400": 1, "model_unsupported_400": 1, "reply_not_json": 0, "reply_wrong_shape": 0, "reply_in_fence": 0,
               "truncated_no_turn_end": 137, "empty_reply": 0, "unknown_item_type": 0},
 }
@@ -1702,7 +1702,7 @@ def run_capture(fake, root, *extra, versions=True, env=None):
     root = Path(root)
     out = root / "out"
     shutil.copytree(str(FIXTURES), str(out))
-    for stale in ("claude", "codex", "mcp", "derived", "handwritten"):
+    for stale in ("claude", "codex", "mcp", "derived", "handwritten", "timing"):
         shutil.rmtree(str(out / stale))
     old_errors = json.loads((out / "cli_errors.json").read_text())
     old_errors["date"] = "2001-01-01"

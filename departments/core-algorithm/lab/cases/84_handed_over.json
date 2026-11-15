@@ -1,0 +1,9 @@
+{
+  "id": "84_handed_over",
+  "title": "Work handed to a hand",
+  "description": "A collections letter is handed to a model: the step parks, the receipt names the hand, the work and the checker, and the letter is not queued.",
+  "packs": ["210_letters_desk", "211_hand_to_model", "212_book_read"],
+  "execute": true,
+  "area": "Hand-off",
+  "expected": "WAITING"
+}

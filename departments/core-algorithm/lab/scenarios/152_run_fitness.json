@@ -1,0 +1,81 @@
+{
+  "schema": "sutra-extension/2",
+  "id": "152_run_fitness",
+  "evidence": [
+    {
+      "predicate": "run_fitness",
+      "truth": "TRUE",
+      "verified": true,
+      "source": "adapter:conformance/log@1",
+      "version": "num-f1d644a54a3ef67b",
+      "value": "0.8",
+      "unit": "ratio",
+      "label": "run-0001",
+      "evidence_kind": "NUMBER"
+    },
+    {
+      "predicate": "fitness_in_band",
+      "truth": "FALSE",
+      "verified": true,
+      "source": "adapter:numbers/compare@1",
+      "version": "cmp-8edfe1ac77552978",
+      "depends_on": [
+        {
+          "predicate": "run_fitness",
+          "version": "num-f1d644a54a3ef67b"
+        },
+        {
+          "predicate": "fitness_band",
+          "version": "num-edfc698130687717"
+        }
+      ],
+      "compares": {
+        "number": {
+          "predicate": "run_fitness",
+          "value": "0.8",
+          "version": "num-f1d644a54a3ef67b"
+        },
+        "op": ">=",
+        "bound": {
+          "predicate": "fitness_band",
+          "value": "0.9",
+          "version": "num-edfc698130687717"
+        },
+        "partner": "fitness_below_band"
+      },
+      "evidence_kind": "COMPARISON"
+    },
+    {
+      "predicate": "fitness_below_band",
+      "truth": "TRUE",
+      "verified": true,
+      "source": "adapter:numbers/compare@1",
+      "version": "cmp-83a424122bfea1ba",
+      "depends_on": [
+        {
+          "predicate": "run_fitness",
+          "version": "num-f1d644a54a3ef67b"
+        },
+        {
+          "predicate": "fitness_band",
+          "version": "num-edfc698130687717"
+        }
+      ],
+      "compares": {
+        "number": {
+          "predicate": "run_fitness",
+          "value": "0.8",
+          "version": "num-f1d644a54a3ef67b"
+        },
+        "op": "<",
+        "bound": {
+          "predicate": "fitness_band",
+          "value": "0.9",
+          "version": "num-edfc698130687717"
+        },
+        "partner": "fitness_in_band"
+      },
+      "evidence_kind": "COMPARISON"
+    }
+  ]
+}

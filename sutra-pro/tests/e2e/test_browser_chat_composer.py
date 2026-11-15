@@ -116,8 +116,9 @@ def test_the_direct_chat_composer_in_the_node_panel_and_on_home(app, browser, tm
     browser.click(".ncomposer .send")
     browser.wait_for("document.querySelector('.ncomposer .send').textContent === 'Stop'")              # Send is Stop while the turn answers
     browser.wait_for("document.querySelectorAll('#nodepanel .ccfile').length === 0")                                                                     # the files went with the message
-    browser.wait_for("!document.querySelector('#nodepanel .ccstream').hidden", timeout=20)
-    assert "is writing" in label(browser, "#nodepanel .ccstream")
+    # the reply is a node of the transcript (STR-10), not a row under it: its state is a short honest label, and the old streaming row stays hidden
+    browser.wait_for("!!document.querySelector('#nodepanel .nchat .clive[data-state=live] .cl-state') && document.querySelector('#nodepanel .nchat .clive .cl-state').textContent !== ''", timeout=20)
+    assert browser.js("document.querySelector('#nodepanel .ccstream').hidden") is True
     browser.click("[data-npclose]")                                     # closed while the model writes: the reply is stored with no panel open
     browser.wait_for("document.getElementById('nodepanel').hidden")
     reply = agent_after(live, sid, 2)

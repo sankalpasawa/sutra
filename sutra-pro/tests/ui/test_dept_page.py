@@ -1222,10 +1222,11 @@ def test_the_teams_library_page_is_the_same_page_and_draws_the_catalog_of_the_on
     team.b.wait_for("CAT.loaded === true")
     assert team.js("[location.pathname, CAT.on, SutraCtx.libraryPath, SutraCtx.onLibrary()]") == ["/d/web/library", True, "/d/web/library", True]
     assert "dept=web" in team.requests("/api/catalog")[0]["query"]                    # the data is global, the path says the team
-    assert team.js("CAT.runs.length") == len(catalog["runs"]) and team.js("Object.keys(CAT.groups)") == list(catalog["groups"])
+    shelf = catalog["shelf"]      # sync 6: the page draws the two shelves (Artifacts, Artifact templates), not the "By run" list of sync 5
+    assert team.js("[CAT.arts.length, CAT.rts.length, CAT.types.length]") == [len(catalog["artifacts"]), len(shelf["run_templates"]), len(shelf["types"])]
     assert team.js("document.body.classList.contains('libpage')") is True and team.hidden("#pane-catalog") is False
     shown = team.js("document.getElementById('pane-catalog').innerText")
-    assert all(run["run"] in shown for run in catalog["runs"]) and "By run" in shown and "By artifact" in shown      # every run that gave the library a template, from catalog.json
+    assert all(rt["name"] in shown for rt in shelf["run_templates"]) and "Artifacts" in shown and "Artifact templates" in shown      # every run template of the shelf, from catalog.json
     assert team.b.console_errors == [] and team.b.failed_requests == []
 
 
