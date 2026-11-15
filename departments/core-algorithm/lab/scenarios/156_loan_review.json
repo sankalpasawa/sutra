@@ -1,0 +1,37 @@
+{
+  "schema": "sutra-extension/2",
+  "id": "156_loan_review",
+  "evidence": [
+    {
+      "predicate": "loan_file_received",
+      "truth": "TRUE",
+      "verified": true,
+      "source": "fixture/loan-intake",
+      "version": "1"
+    }
+  ],
+  "methods": [
+    {
+      "id": "review-loan-file@1",
+      "effect": "loan_file_reviewed",
+      "requires": [
+        "loan_file_received"
+      ],
+      "provider": "review-model",
+      "grant": "action:review-loan-file@1",
+      "cost": {
+        "usd_cents": 42,
+        "tokens": 3340
+      },
+      "action": "simulate_fact",
+      "approved": true,
+      "source": "reviewed/synthetic-method"
+    }
+  ],
+  "providers": {
+    "review-model": 1
+  },
+  "grants": [
+    "action:review-loan-file@1"
+  ]
+}

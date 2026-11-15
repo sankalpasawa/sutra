@@ -1,0 +1,13 @@
+{
+  "schema": "sutra-extension/2",
+  "id": "138_routed_unmatched",
+  "evidence": [
+    {
+      "predicate": "styled_unmatched",
+      "truth": "TRUE",
+      "verified": true,
+      "source": "router/credit-ops",
+      "version": "r1"
+    }
+  ]
+}

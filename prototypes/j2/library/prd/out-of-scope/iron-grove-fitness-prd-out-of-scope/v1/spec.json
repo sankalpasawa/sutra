@@ -1,0 +1,93 @@
+{
+  "name": "Iron Grove Fitness PRD Out of scope",
+  "artifact": "prd",
+  "section": "Out of scope",
+  "version": 1,
+  "kind": "specialised",
+  "description": "Out of scope for Iron Grove Fitness (prd): the generic PRD/1 · Out of scope fields plus facts_used, from 11 charter fact(s); adapted from a template made for another business",
+  "fields": [
+    {
+      "name": "out_of_scope",
+      "type": "list[string]",
+      "required": true,
+      "description": "what the product will not do, one line each (for Iron Grove Fitness, a prd)",
+      "enum": null,
+      "nullable": false
+    },
+    {
+      "name": "assumptions",
+      "type": "list[string]",
+      "required": false,
+      "description": "the assumptions of Iron Grove Fitness's Out of scope",
+      "enum": null,
+      "nullable": false
+    },
+    {
+      "name": "facts_used",
+      "type": "list[string]",
+      "required": false,
+      "description": "the charter facts this section is written from, copied exactly from Iron Grove Fitness's charter",
+      "enum": [
+        "Friday 7:00 pm Kettlebell Class 650",
+        "Iron Grove Fitness",
+        "Monday 6:30 am Strength Basics 600",
+        "Payment is made at the studio",
+        "Saturday 8:00 am Weekend Bootcamp 800",
+        "The Out of scope section lists online payment, a phone number, trainer names, an embedded map and any detail not in the brief",
+        "Tuesday 7:00 pm Circuit Hour 700",
+        "Unit 5, 21 Sample Street, Pune 411001",
+        "Wednesday 6:30 am Mobility Flow 500",
+        "bookings@irongrove.example",
+        "name, email, class, preferred date"
+      ],
+      "nullable": false
+    }
+  ],
+  "objects": [],
+  "rules": [
+    {
+      "rule": "enum",
+      "path": "facts_used[]",
+      "values": [
+        "Friday 7:00 pm Kettlebell Class 650",
+        "Iron Grove Fitness",
+        "Monday 6:30 am Strength Basics 600",
+        "Payment is made at the studio",
+        "Saturday 8:00 am Weekend Bootcamp 800",
+        "The Out of scope section lists online payment, a phone number, trainer names, an embedded map and any detail not in the brief",
+        "Tuesday 7:00 pm Circuit Hour 700",
+        "Unit 5, 21 Sample Street, Pune 411001",
+        "Wednesday 6:30 am Mobility Flow 500",
+        "bookings@irongrove.example",
+        "name, email, class, preferred date"
+      ],
+      "from": "facts",
+      "name": "facts_used are facts of Iron Grove Fitness's charter"
+    }
+  ],
+  "sha": "1c96cf2a3b5abd39358fb5d9b4ca7a0f834c38e979660f1959d98b8a56e6816e",
+  "extends": "prd/out-of-scope@generic/1",
+  "made_by": {
+    "run": "j2-20261111-211339",
+    "workflow": "W-6",
+    "atom": "W-6.a1",
+    "agent": "code (adapted from a run template)"
+  },
+  "context": {
+    "business_type": "prd",
+    "facts_used": [
+      "Friday 7:00 pm Kettlebell Class 650",
+      "Iron Grove Fitness",
+      "Monday 6:30 am Strength Basics 600",
+      "Payment is made at the studio",
+      "Saturday 8:00 am Weekend Bootcamp 800",
+      "The Out of scope section lists online payment, a phone number, trainer names, an embedded map and any detail not in the brief",
+      "Tuesday 7:00 pm Circuit Hour 700",
+      "Unit 5, 21 Sample Street, Pune 411001",
+      "Wednesday 6:30 am Mobility Flow 500",
+      "bookings@irongrove.example",
+      "name, email, class, preferred date"
+    ],
+    "fingerprint": "42ccae9abec7e4f39f6428895cba7e0e15c8c9f011633a35bd494dce6ac0622d"
+  }
+}

@@ -1,0 +1,39 @@
+{
+  "schema": "template-library/1",
+  "name": "Flow Pilates Studio PRD Out of scope",
+  "version": 1,
+  "sha": "b8e230d1c328bd59ac8997a119cdb420a388b2d88e299c8a70356b9b414026a0",
+  "schema_sha": "cf4bd873a4fc9954c1332a5c1a1ccef8f9bdeffa33eb7d42455809d991b738d3",
+  "model_sha": "36d4e8015bfa30d79a4c4fce2d624d63bfcd5aa61cb5e13f0f003966442d6d02",
+  "class": "FlowPilatesStudioPRDOutOfScopeV1",
+  "created": "2026-11-12T15:08:05",
+  "fingerprints": [
+    "fba2b32d5d58fc1646925722557970ab60f81feb33ff0966d5b66691f400fe18"
+  ],
+  "made_by": {
+    "run": "j2-20261112-150036",
+    "workflow": "W-6",
+    "atom": "W-6.a1",
+    "agent": "code (adapted from a run template)",
+    "date": "2026-11-12 15:00:36"
+  },
+  "business": {
+    "name": "Flow Pilates Studio",
+    "type": "pilates studio"
+  },
+  "mock": false,
+  "collected_from": {
+    "run": "j2-20261112-150036",
+    "where": "the run's copy"
+  },
+  "used_by": [
+    {
+      "run": "j2-20261112-150036",
+      "workflow": "W-6",
+      "atom": "W-6.a1",
+      "action": "extended"
+    }
+  ],
+  "renamed_from": "Still Point Yoga PRD Out of scope@5",
+  "adapted_from": "Iron Grove Fitness PRD Out of scope@1"
+}

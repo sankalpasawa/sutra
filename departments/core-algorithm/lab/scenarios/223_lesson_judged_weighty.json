@@ -1,0 +1,39 @@
+{
+  "schema": "sutra-extension/2",
+  "id": "223_lesson_judged_weighty",
+  "evidence": [
+    {
+      "predicate": "change_weight",
+      "truth": "TRUE",
+      "verified": true,
+      "source": "fixture/change-policy",
+      "version": "weighty"
+    },
+    {
+      "predicate": "change_weight=small",
+      "truth": "FALSE",
+      "verified": true,
+      "source": "fixture/change-policy",
+      "version": "weighty",
+      "depends_on": [
+        {
+          "predicate": "change_weight",
+          "version": "weighty"
+        }
+      ]
+    },
+    {
+      "predicate": "change_weight=weighty",
+      "truth": "TRUE",
+      "verified": true,
+      "source": "fixture/change-policy",
+      "version": "weighty",
+      "depends_on": [
+        {
+          "predicate": "change_weight",
+          "version": "weighty"
+        }
+      ]
+    }
+  ]
+}

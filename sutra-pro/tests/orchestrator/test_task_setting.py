@@ -72,7 +72,7 @@ def test_only_the_named_teams_live_run_gets_the_line(tenv):
 
 # ---- the eighth task key -------------------------------------------------------------------------------------------------------
 def test_the_task_key_is_a_zero_or_a_one_and_nothing_else():
-    assert TASK_SETTING_KEYS[-1] == "J2_DECIDE_FOR_ME" and tuple(TaskSettings.model_fields) == TASK_SETTING_KEYS
+    assert TASK_SETTING_KEYS[7] == "J2_DECIDE_FOR_ME" and tuple(TaskSettings.model_fields) == TASK_SETTING_KEYS
     assert TaskSettings(J2_DECIDE_FOR_ME="1").model_dump() == {"J2_DECIDE_FOR_ME": "1"}
     assert TaskSettings(J2_DECIDE_FOR_ME="0").model_dump() == {"J2_DECIDE_FOR_ME": "0"} and TaskSettings().model_dump() == {}
     for bad in ("yes", "true", "2", "", 1, True):
@@ -98,3 +98,36 @@ def test_a_first_message_with_the_key_starts_a_run_that_has_it_in_its_task_and_i
 def test_a_key_the_task_does_not_know_is_still_refused(tenv):
     with pytest.raises(Exception):
         tenv.service.deliver_to_department("web", "Build", settings={"J2_SEND_MODE": "live"})
+
+
+# ---- J2 sync 6 (D182): the two task-only run template keys ---------------------------------------------------------------------------
+
+def test_the_run_template_keys_take_an_id_and_a_workflow_list_and_nothing_else():
+    ok = TaskSettings(J2_RUN_TEMPLATE="thread-boutique-website", J2_RUN_TEMPLATE_WORKFLOWS="all")
+    assert ok.model_dump() == {"J2_RUN_TEMPLATE": "thread-boutique-website", "J2_RUN_TEMPLATE_WORKFLOWS": "all"}
+    assert TaskSettings(J2_RUN_TEMPLATE_WORKFLOWS="w1,w2").model_dump() == {"J2_RUN_TEMPLATE_WORKFLOWS": "w1,w2"}
+    for bad in ("Upper", "has space", "../x", "a_b", "", "x" * 81, 5, True):
+        with pytest.raises(ValidationError):
+            TaskSettings(J2_RUN_TEMPLATE=bad)
+    for bad in ("a b", "w1;w2", "x" * 21, ",".join(f"k{i}" for i in range(41)), "x," * 300, 7, True):
+        with pytest.raises(ValidationError):
+            TaskSettings(J2_RUN_TEMPLATE_WORKFLOWS=bad)
+
+
+def test_the_run_template_keys_cannot_widen_into_the_settings_that_switch_the_reuse_flags():
+    for key in ("J2_RUN_TEMPLATES", "J2_AUTO_REUSE", "J2_ARTIFACT_LIBRARY", "J2_REVIEWER", "J2_REVIEWER_WAIT", "J2_PUSH_RUNS", "J2_RUN_BY"):
+        with pytest.raises(ValidationError):
+            TaskSettings.model_validate({key: "1"})
+
+
+def test_a_first_message_with_a_run_template_has_both_keys_in_its_task_and_a_bad_one_is_refused_with_422(tenv):
+    from sutra_app.orchestrator.errors import AppError
+    result = tenv.service.deliver_to_department("web", "a website for a boutique", settings={
+        "J2_RUN_TEMPLATE": "thread-boutique-website", "J2_RUN_TEMPLATE_WORKFLOWS": "w1,w2"})
+    assert result.delivered == "follow_up"
+    row = tenv.row(result.task_id)
+    assert row.settings == {"J2_RUN_TEMPLATE": "thread-boutique-website", "J2_RUN_TEMPLATE_WORKFLOWS": "w1,w2"}
+    for bad in ({"J2_RUN_TEMPLATE": "Not An Id"}, {"J2_RUN_TEMPLATE": "x", "J2_RUN_TEMPLATE_WORKFLOWS": "a b"}):
+        with pytest.raises(AppError) as refused:
+            tenv.service.deliver_to_department("sales", "a website for a boutique", settings=bad)
+        assert refused.value.code == "validation"

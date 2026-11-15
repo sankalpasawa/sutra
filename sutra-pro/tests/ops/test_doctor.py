@@ -337,7 +337,7 @@ def test_the_library_check_names_missing_templates_and_versions_and_writes_nothi
     assert seedlib.snapshot(library) == before and not (library / ".lock").exists() and run(settings).ok        # the doctor only reads; a warning does not fail it
     doctor.sync_seed_library(settings.data_dir)
     done = check(run(settings), "library")
-    assert done.status == "ok" and done.detail == "all seed templates and versions are present"
+    assert done.status == "ok" and done.detail == "all seed templates, versions and run templates are present"
 
 
 def test_a_library_that_lacks_only_versions_is_a_warning_too(tmp_path):

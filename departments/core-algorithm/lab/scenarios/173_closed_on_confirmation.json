@@ -1,0 +1,58 @@
+{
+  "schema": "sutra-extension/2",
+  "id": "173_closed_on_confirmation",
+  "scope": "orgA/closing",
+  "goals": [
+    "order_closed"
+  ],
+  "rules": [
+    {
+      "id": "R-CLOSE@1",
+      "head": "order_closed",
+      "branches": [
+        [
+          "refund_recorded"
+        ],
+        [
+          "receipt_confirmed"
+        ]
+      ],
+      "approved": true,
+      "source": "fixture/reviewed-domain-theory"
+    }
+  ],
+  "evidence": [
+    {
+      "predicate": "order_closed",
+      "truth": "FALSE",
+      "verified": true,
+      "source": "fixture/order-desk",
+      "version": "desk-1"
+    }
+  ],
+  "methods": [
+    {
+      "id": "ask-customer-receipt@1",
+      "effect": "receipt_confirmed",
+      "requires": [],
+      "provider": "owner-channel",
+      "grant": "action:ask-customer-receipt@1",
+      "cost": {
+        "compute": 0,
+        "money": 0,
+        "attention": 1
+      },
+      "action": "ask",
+      "approved": true,
+      "source": "reviewed/synthetic-method",
+      "question": "Did the parcel arrive?",
+      "ask_to": "customer"
+    }
+  ],
+  "providers": {
+    "owner-channel": 2
+  },
+  "grants": [
+    "action:ask-customer-receipt@1"
+  ]
+}

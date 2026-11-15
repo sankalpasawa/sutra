@@ -1,415 +1,318 @@
-"""artifact-schema/1: the SHAPE of every artifact J2 generates, as Pydantic 2 models (J2_ARTIFACT_SCHEMA=1).
+"""artifact-schema/1: the SHAPE of every artifact J2 generates, as Pydantic 2 models built from data (J2_ARTIFACT_SCHEMA=1).
 
-These models say what fields an artifact's data has, their types, which are required and which enums they allow -
-and nothing else. Every constraint (ids in order, references that point at an id that exists, hex colours, plain
-CSS, page tags, anchors) is a rule in j2_rules.py, written as data and run as its own layer. The one presence rule
-that stays here is a website section's "html or head": which fields must be there is shape.
+templates/<type>/generic.json is the hand-edited source of each output type's sections: their fields, types, which are
+required, which enums they allow, the conditions they come from, the rules code holds them to and the lines their data
+is rendered as. This file holds no section and no field. At load time it builds one model per section from that file
+(model_for, section_models) and the whole-document model from the file's document-level template (doc_model), so
+editing a field in generic.json changes the model, the schema the builder gets and the checks with no Python change.
 
-One model per thing a workflow writes, so each builder's schema stays small: a PRD section, an HLD section, an LLD
-section, the design style guide, one website section. The document models (PRD/1, HLD/1, LLD/1) are the same fields
-assembled, used for the cross-document rules and for rendering.
+The models say what fields an artifact's data has, their types, which are required and which enums they allow - and
+nothing else. Every constraint (ids in order, references that point at an id that exists, hex colours, plain CSS, page
+tags, anchors) is a rule, written as data beside the fields and run by j2_rules as its own layer. The one presence rule
+that is shape is a template's "requires_one_of" (a page section must carry its markup or its head tags).
 
 Two schemas per template, as the structured-output docs require:
   * the TRANSPORT schema, transport_schema(): what goes to the model. Draft-07 (2020-12 is refused by
     `claude --json-schema`), Pydantic's $defs rewritten to definitions, additionalProperties false on every object,
-    every field required unless the brief may lack it, no min/max, no length, no pattern, no format, no recursion.
-  * the FULL rules, in the validators below: ids in order, cross-references inside the document, hex colours, the
-    enum values the parsers read. Anything that needs another document (an HLD component covering a PRD
-    requirement) is checked by cross_errors(), which is given the chain.
+    every field required unless the brief may lack it (the template's "reply_optional"; the fields that are not
+    required when it names none), no min/max, no length, no pattern, no format, no recursion.
+  * the FULL rules, run by j2_rules on the validated data. Anything that needs another document (a component covering
+    a requirement of an earlier document) is a ref_exists rule whose target names that document's type.
 
-The renderers write the markdown the existing parsers and conditions already read (parse_hld, parse_lld, md_ids,
-P1-P8 / H1-H6 / L1-L6), so nothing downstream changes: the agent sends data, code writes the document.
+render_section() writes the markdown the existing parsers and conditions already read, from the template's "render"
+lines, so nothing downstream changes: the agent sends data, code writes the document.
 
 Python 3.9: Optional/List/Dict, never "X | None".
 """
 import copy
 import hashlib
 import json
+import keyword
 import re
-from typing import Any, ClassVar, Dict, List, Literal, Optional
+from functools import lru_cache
+from typing import ClassVar, List, Literal, Optional
 
-from pydantic import BaseModel, ConfigDict, Field, model_validator
+from pydantic import BaseModel, ConfigDict, Field, create_model, model_validator
 
 from . import j2_rules
+from . import j2_types
 
 SCHEMA = "artifact-schema/1"
 VERSION = 1
-# Field names that may be missing from a reply because the brief may not say anything about them. Everything else is
-# required in the transport schema.
-OPTIONAL_FIELDS = {"assumptions", "google_fonts_url", "notes", "window", "target", "validation", "page", "head",
-                   "anchor", "html",
-                   "selectors_used", "facts_used", "implements", "covers", "goals", "actions", "needs",
-                   "responsive_rules", "accessibility_rules", "out_of_scope", "risks", "data_flows", "files"}
-# The enums are shape: the model allows these values and no others, and the transport schema carries them.
-FIELD_TYPES = tuple(j2_rules.FIELD_TYPES)
-PRIORITIES = tuple(j2_rules.PRIORITIES)
+DOCUMENT = j2_types.DOCUMENT      # the document-level template of a generic.json: the whole document, not a section
+SEP = " · "                  # between a template's family and its section in its name
+TYPE_RE = re.compile(r"^(?:string|integer|boolean|list\[string\]|list\[([A-Z][A-Za-z0-9]*)\]|([A-Z][A-Za-z0-9]*))$")
 
 
+# ---------------------------------------------------------------- a template's fields, as data
+class FieldSpec(BaseModel):
+    """One field: a name, an allowed type, required or not, its description, and an enum when it is narrowed."""
+    model_config = ConfigDict(extra="forbid")
+    name: str
+    type: str
+    required: bool
+    description: str = ""
+    enum: Optional[List[str]] = None
+    nullable: bool = False      # Optional[...] in the model: the value may be null
+
+
+class ObjectSpec(BaseModel):
+    """An object type defined inside the spec, used as <Object> or list[<Object>]."""
+    model_config = ConfigDict(extra="forbid")
+    name: str
+    fields: List[FieldSpec]
+
+
+def parse_type(t):
+    """(kind, object name) for an allowed type: ("string"|"integer"|"boolean"|"list_string"|"list_obj"|"obj", name)."""
+    m = TYPE_RE.match(str(t or ""))
+    if not m:
+        return None, None
+    if m.group(1):
+        return "list_obj", m.group(1)
+    if m.group(2):
+        return "obj", m.group(2)
+    return ("list_string" if t == "list[string]" else t), None
+
+
+def class_name(name, version=VERSION):
+    """A class name made from a template's name and version ("Still Point classes", 2 -> StillPointClassesV2)."""
+    base = "".join(w[:1].upper() + w[1:] for w in re.findall(r"[A-Za-z0-9]+", str(name or ""))) or "Template"
+    if base[0].isdigit():
+        base = "T" + base
+    return f"{base}V{version}"
+
+
+# ---------------------------------------------------------------- the model of a template, built from its fields
 class Artifact(BaseModel):
     """Base of every artifact model: strict (no extra keys), and it carries the template name the records show."""
-    model_config = ConfigDict(extra="forbid", str_strip_whitespace=True)
+    model_config = ConfigDict(extra="forbid", str_strip_whitespace=True, populate_by_name=True)
 
     TEMPLATE: ClassVar[str] = "artifact/1"
     SECTION: ClassVar[str] = ""
+    LABEL: ClassVar[str] = ""
+    REPLY_OPTIONAL: ClassVar[frozenset] = frozenset()      # the field names a reply may leave out (transport_schema)
+    ENUMS: ClassVar[dict] = {}                             # field name -> its allowed values (normalise)
 
     @classmethod
     def template(cls):
-        return cls.TEMPLATE + (f" · {cls.SECTION}" if cls.SECTION else "")
-
-
-# ---------------------------------------------------------------- PRD/1
-class UserGroup(Artifact):
-    group: str = Field(description="the name of this user group, as the charter names it")
-    needs: str = Field(default="", description="what this group needs from the product")
-    actions: List[str] = Field(default_factory=list, description="what this group does on the page; empty when this "
-                                                                "group has no actions in this version")
-
-
-class Goal(Artifact):
-    id: str = Field(description="G1, G2, ... in order")
-    statement: str = Field(description="the goal in one line")
-
-
-class Requirement(Artifact):
-    id: str = Field(description="R1, R2, ... in order")
-    statement: str = Field(description="what the product must do, naming the user group that does it")
-    priority: Literal["must", "should", "could"] = Field(description="must, should or could")
-    goals: List[str] = Field(default_factory=list, description="the goal ids this requirement serves, e.g. [\"G1\"]")
-
-
-class SuccessMetric(Artifact):
-    goal: str = Field(description="the goal id this metric measures, e.g. \"G1\"")
-    metric: str = Field(description="what is measured")
-    target: str = Field(default="", description="the number or state to reach")
-    window: str = Field(default="", description="the measurement window, e.g. \"in the first 30 days\"; write "
-                                                "\"measurement window not set\" when the brief doesn't say")
-
-
-class PRDProblem(Artifact):
-    TEMPLATE: ClassVar[str] = "PRD/1"
-    SECTION: ClassVar[str] = "Problem"
-    statement: str = Field(description="the problem the product solves, in the charter's own words")
-    assumptions: List[str] = Field(default_factory=list, description="facts you had to assume, each one line")
-
-
-class PRDUsers(Artifact):
-    TEMPLATE: ClassVar[str] = "PRD/1"
-    SECTION: ClassVar[str] = "Users"
-    users: List[UserGroup] = Field(description="every user group the charter names")
-    assumptions: List[str] = Field(default_factory=list)
-
-
-class PRDGoals(Artifact):
-    TEMPLATE: ClassVar[str] = "PRD/1"
-    SECTION: ClassVar[str] = "Goals"
-    goals: List[Goal] = Field(description="the goals, G1, G2, ... in order")
-    assumptions: List[str] = Field(default_factory=list)
-
-
-class PRDRequirements(Artifact):
-    TEMPLATE: ClassVar[str] = "PRD/1"
-    SECTION: ClassVar[str] = "Requirements"
-    requirements: List[Requirement] = Field(description="the requirements, R1, R2, ... in order")
-    assumptions: List[str] = Field(default_factory=list)
-
-
-class PRDSuccessMetrics(Artifact):
-    TEMPLATE: ClassVar[str] = "PRD/1"
-    SECTION: ClassVar[str] = "Success metrics"
-    success_metrics: List[SuccessMetric] = Field(description="one metric per goal")
-    assumptions: List[str] = Field(default_factory=list)
-
-
-class PRDOutOfScope(Artifact):
-    TEMPLATE: ClassVar[str] = "PRD/1"
-    SECTION: ClassVar[str] = "Out of scope"
-    out_of_scope: List[str] = Field(description="what the product will not do, one line each")
-    assumptions: List[str] = Field(default_factory=list)
-
-
-class PRD(Artifact):
-    TEMPLATE: ClassVar[str] = "PRD/1"
-    problem: PRDProblem
-    users: List[UserGroup] = Field(default_factory=list)
-    goals: List[Goal] = Field(default_factory=list)
-    requirements: List[Requirement] = Field(default_factory=list)
-    success_metrics: List[SuccessMetric] = Field(default_factory=list)
-    out_of_scope: List[str] = Field(default_factory=list)
-    assumptions: List[str] = Field(default_factory=list)
-
-
-# ---------------------------------------------------------------- HLD/1
-class Page(Artifact):
-    id: str = Field(description="P1, P2, ... in order")
-    name: str = Field(description="the page name")
-    purpose: str = Field(description="what the page is for")
-    implements: List[str] = Field(default_factory=list, description="the PRD requirement ids this page carries")
-
-
-class Component(Artifact):
-    id: str = Field(description="C1, C2, ... in order")
-    name: str = Field(description="the component name")
-    responsibility: str = Field(description="its one responsibility, in one line")
-    covers: List[str] = Field(default_factory=list, description="the PRD requirement ids it covers, e.g. [\"R1\"]")
-    page: str = Field(default="", description="the page id it sits on, e.g. \"P1\"")
-
-
-class DataFlow(Artifact):
-    from_: str = Field(alias="from", description="where the data comes from")
-    to: str = Field(description="where it goes")
-    data: str = Field(description="what is sent")
-    trigger: str = Field(description="what starts it")
-
-    model_config = ConfigDict(extra="forbid", populate_by_name=True, str_strip_whitespace=True)
-
-
-class Hosting(Artifact):
-    kind: str = Field(description="how it is hosted, e.g. \"one static file on a static host\"")
-    notes: str = Field(default="", description="how it is deployed and replaced")
-
-
-class Risk(Artifact):
-    risk: str = Field(description="the risk, one line")
-    mitigation: str = Field(description="what is done about it")
-
-
-class HLDPurpose(Artifact):
-    TEMPLATE: ClassVar[str] = "HLD/1"
-    SECTION: ClassVar[str] = "Purpose and scope"
-    purpose: str = Field(description="what this design covers and what it leaves out")
-    assumptions: List[str] = Field(default_factory=list)
-
-
-class HLDPages(Artifact):
-    TEMPLATE: ClassVar[str] = "HLD/1"
-    SECTION: ClassVar[str] = "Pages"
-    pages: List[Page] = Field(description="the pages, P1, P2, ... in order")
-    assumptions: List[str] = Field(default_factory=list)
-
-
-class HLDComponents(Artifact):
-    TEMPLATE: ClassVar[str] = "HLD/1"
-    SECTION: ClassVar[str] = "Components"
-    components: List[Component] = Field(description="the components, C1, C2, ... in order; each names the PRD "
-                                                    "requirement ids it covers")
-    assumptions: List[str] = Field(default_factory=list)
-
-
-class HLDDataFlow(Artifact):
-    TEMPLATE: ClassVar[str] = "HLD/1"
-    SECTION: ClassVar[str] = "Data flow"
-    data_flows: List[DataFlow] = Field(description="every flow the pages need, including each form")
-    assumptions: List[str] = Field(default_factory=list)
-
-
-class HLDHosting(Artifact):
-    TEMPLATE: ClassVar[str] = "HLD/1"
-    SECTION: ClassVar[str] = "Hosting and deployment"
-    hosting: Hosting
-    assumptions: List[str] = Field(default_factory=list)
-
-
-class HLDRisks(Artifact):
-    TEMPLATE: ClassVar[str] = "HLD/1"
-    SECTION: ClassVar[str] = "Risks"
-    risks: List[Risk] = Field(description="each risk with its mitigation")
-    assumptions: List[str] = Field(default_factory=list)
-
-
-class HLD(Artifact):
-    TEMPLATE: ClassVar[str] = "HLD/1"
-    purpose: str = ""
-    pages: List[Page] = Field(default_factory=list)
-    components: List[Component] = Field(default_factory=list)
-    data_flows: List[DataFlow] = Field(default_factory=list)
-    hosting: Optional[Hosting] = None
-    risks: List[Risk] = Field(default_factory=list)
-    assumptions: List[str] = Field(default_factory=list)
-
-
-# ---------------------------------------------------------------- LLD/1
-class LLDSection(Artifact):
-    id: str = Field(description="S1, S2, ... in order")
-    anchor: str = Field(description="the id attribute on the page, with the #, e.g. \"#classes\"")
-    page: str = Field(default="", description="the page id, e.g. \"P1\"")
-    implements: List[str] = Field(default_factory=list, description="the HLD component ids this section implements")
-
-
-class Element(Artifact):
-    id: str = Field(description="E1, E2, ... in order")
-    section: str = Field(description="the section id it sits in, e.g. \"S1\"")
-    selector: str = Field(description="its selector, e.g. \"#book-now\"")
-    trigger: str = Field(description="what the visitor does, e.g. \"click\"")
-    behaviour: str = Field(description="what happens then")
-
-
-class FormField(Artifact):
-    id: str = Field(description="F1, F2, ... in order")
-    form: str = Field(description="the form's selector, e.g. \"#booking\"")
-    name: str = Field(description="the field name attribute")
-    type: Literal["text", "email", "tel", "url", "number", "date", "time", "select", "textarea", "checkbox",
-                  "radio", "password", "file"] = Field(description="one of " + ", ".join(FIELD_TYPES))
-    required: bool = Field(description="true when the visitor must fill it in")
-    section: str = Field(default="", description="the section id the form sits in, e.g. \"S1\"")
-    validation: str = Field(default="", description="the validation rule in one line")
-
-
-class FileEntry(Artifact):
-    path: str = Field(description="the file path, e.g. \"index.html\"")
-    purpose: str = Field(description="what it holds")
-
-
-class LLDSections(Artifact):
-    TEMPLATE: ClassVar[str] = "LLD/1"
-    SECTION: ClassVar[str] = "Pages and sections"
-    sections: List[LLDSection] = Field(description="the page sections, S1, S2, ... in order, each with its anchor and "
-                                                   "the HLD components it implements")
-    assumptions: List[str] = Field(default_factory=list)
-
-
-class LLDElements(Artifact):
-    TEMPLATE: ClassVar[str] = "LLD/1"
-    SECTION: ClassVar[str] = "Interactive elements"
-    elements: List[Element] = Field(description="every interactive element, E1, E2, ... in order")
-    assumptions: List[str] = Field(default_factory=list)
-
-
-class LLDFormFields(Artifact):
-    TEMPLATE: ClassVar[str] = "LLD/1"
-    SECTION: ClassVar[str] = "Form fields"
-    form_fields: List[FormField] = Field(description="every form field, F1, F2, ... in order")
-    assumptions: List[str] = Field(default_factory=list)
-
-
-class LLDFiles(Artifact):
-    TEMPLATE: ClassVar[str] = "LLD/1"
-    SECTION: ClassVar[str] = "File structure"
-    files: List[FileEntry] = Field(description="every file of the build")
-    assumptions: List[str] = Field(default_factory=list)
-
-
-class LLDRules(Artifact):
-    TEMPLATE: ClassVar[str] = "LLD/1"
-    SECTION: ClassVar[str] = "Responsive and accessibility rules"
-    responsive_rules: List[str] = Field(default_factory=list, description="one rule per line")
-    accessibility_rules: List[str] = Field(default_factory=list, description="one rule per line")
-    assumptions: List[str] = Field(default_factory=list)
-
-
-class LLD(Artifact):
-    TEMPLATE: ClassVar[str] = "LLD/1"
-    sections: List[LLDSection] = Field(default_factory=list)
-    elements: List[Element] = Field(default_factory=list)
-    form_fields: List[FormField] = Field(default_factory=list)
-    files: List[FileEntry] = Field(default_factory=list)
-    responsive_rules: List[str] = Field(default_factory=list)
-    accessibility_rules: List[str] = Field(default_factory=list)
-    assumptions: List[str] = Field(default_factory=list)
-
-
-# ---------------------------------------------------------------- Design/1 (the style guide, STYLE_FMT as a model)
-class Palette(Artifact):
-    primary: str
-    secondary: str
-    accent: str
-    background: str
-    surface: str
-    text: str
-    muted: str
-
-
-class Fonts(Artifact):
-    heading: str = Field(description="a css font-family")
-    body: str = Field(description="a css font-family")
-    google_fonts_url: Optional[str] = Field(default=None, description="a https://fonts.googleapis.com/ url, or null")
-
-
-class Spacing(Artifact):
-    unit: str = Field(description="the base spacing, e.g. \"8px\"")
-    section: str = Field(description="the space between sections, e.g. \"64px\"")
-
-
-class Buttons(Artifact):
-    primary: str = Field(description="css declarations for the primary button")
-    secondary: str = Field(description="css declarations for the secondary button")
-
-
-class Design(Artifact):
-    TEMPLATE: ClassVar[str] = "Design/1"
-    SECTION: ClassVar[str] = "Style guide"
-    palette: Palette
-    fonts: Fonts
-    spacing: Spacing
-    radius: str = Field(description="the corner radius, e.g. \"12px\"")
-    buttons: Buttons
-    card: str = Field(description="css declarations for a card")
-    notes: str = Field(default="", description="one line: why this suits the business")
-
-
-# ---------------------------------------------------------------- WebsiteSection/1
-class WebsiteSection(Artifact):
-    TEMPLATE: ClassVar[str] = "WebsiteSection/1"
-    SECTION: ClassVar[str] = "Section"
-    id: str = Field(description="the section id of this workflow, as the task gives it")
-    anchor: str = Field(default="", description="the id attribute of the section element, with the #; \"\" when this "
-                                                 "workflow writes page-head tags only")
-    implements: List[str] = Field(default_factory=list, description="the LLD section ids this builds; empty when the "
-                                                                    "run has no LLD")
-    html: str = Field(default="", description="the section's HTML only: no <html>, <head> or <body> tags; \"\" when "
-                                               "this workflow writes page-head tags only")
-    head: str = Field(default="", description="page-head tags this section needs (meta, link, style or script only); "
-                                              "\"\" when it needs none")
-    selectors_used: List[str] = Field(default_factory=list, description="the ids and classes you used")
-    facts_used: List[str] = Field(default_factory=list, description="the charter facts this section shows, copied "
-                                                                     "exactly")
-
-    @model_validator(mode="after")
-    def _something(self):
-        """Shape, not a constraint: a section must carry one of the two fields. Everything else about the markup and
-        the anchor is a rule in j2_rules (html_no_page_tags, anchor_selector, anchor_in_html)."""
-        if not str(self.html).strip() and not str(self.head).strip():
-            raise ValueError("a section must have html, or head tags when it writes only those")
+        return cls.LABEL or cls.TEMPLATE
+
+
+_BUILT = {}
+
+
+def attr(name):
+    """The attribute a field is held in: its name, or name_ when the name is a Python keyword (the alias keeps it)."""
+    return name + "_" if keyword.iskeyword(name) else name
+
+
+def py_type(f, classes):
+    kind, obj = parse_type(f.type)
+    if kind == "string":
+        tp = Literal[tuple(f.enum)] if f.enum else str
+    elif kind == "integer":
+        tp = int
+    elif kind == "boolean":
+        tp = bool
+    elif kind == "list_string":
+        tp = List[Literal[tuple(f.enum)]] if f.enum else List[str]
+    elif kind == "list_obj":
+        tp = List[classes[obj]]
+    else:
+        tp = classes[obj]
+    if f.nullable or (kind == "obj" and not f.required):
+        tp = Optional[tp]
+    return tp
+
+
+def field_args(f, blank=True):
+    """What Field() gets for one field. blank=False leaves an empty description out of the schema, as a field written
+    without one has none."""
+    kind, _ = parse_type(f.type)
+    args = {"description": f.description} if f.description or blank else {}
+    if f.name != attr(f.name):
+        args["alias"] = f.name
+    if f.required:
+        return args
+    if kind in ("list_string", "list_obj"):
+        args["default_factory"] = list
+    elif f.nullable or kind == "obj":
+        args["default"] = None
+    elif kind == "integer":
+        args["default"] = 0
+    elif kind == "boolean":
+        args["default"] = False
+    else:
+        args["default"] = f.enum[0] if f.enum else ""
+    return args
+
+
+def obj_order(objects):
+    """The object names, each after the objects its fields use (the order their classes are built in)."""
+    objs, done, out = {o.name: o for o in objects}, set(), []
+
+    def visit(n):
+        if n in done or n not in objs:
+            return
+        done.add(n)
+        for f in objs[n].fields:
+            o = parse_type(f.type)[1]
+            if o:
+                visit(o)
+        out.append(n)
+    for o in objects:
+        visit(o.name)
+    return out
+
+
+def _one_of(names, message):
+    """Shape, not a constraint: the data must carry at least one of these fields (a page section's markup or its head
+    tags). Everything else about the values is a rule."""
+    def check(self):
+        got = [getattr(self, attr(n), None) for n in names]
+        if not any(v.strip() if isinstance(v, str) else v for v in got):
+            raise ValueError(message)
         return self
+    return model_validator(mode="after")(check)
 
 
-# ---------------------------------------------------------------- the registry: section -> model
-# One model per section a workflow writes, so a builder's schema is only its own part. The names are the section
-# names of PRD_SECTIONS / HLD_SECTIONS / LLD_SECTIONS in j2.py, and the drift test fails if they ever disagree.
-SECTION_MODELS = {
-    "prd": {"Problem": PRDProblem, "Users": PRDUsers, "Goals": PRDGoals, "Requirements": PRDRequirements,
-            "Success metrics": PRDSuccessMetrics, "Out of scope": PRDOutOfScope},
-    "hld": {"Purpose and scope": HLDPurpose, "Pages": HLDPages, "Components": HLDComponents,
-            "Data flow": HLDDataFlow, "Hosting and deployment": HLDHosting, "Risks": HLDRisks},
-    "lld": {"Pages and sections": LLDSections, "Interactive elements": LLDElements, "Form fields": LLDFormFields,
-            "File structure": LLDFiles, "Responsive and accessibility rules": LLDRules},
-    "design": {"Style guide": Design},
-    "website": {"Section": WebsiteSection},
-}
-DOC_MODELS = {"prd": PRD, "hld": HLD, "lld": LLD, "design": Design, "website": WebsiteSection}
-# Which condition each section's rules come from, for the records (the conditions themselves stay in conditions/).
-SECTION_CONDITIONS = {
-    "prd": {"Problem": ["P1"], "Users": ["P1", "P7"], "Goals": ["P1", "P6"], "Requirements": ["P1", "P2"],
-            "Success metrics": ["P1", "P6", "P8"], "Out of scope": ["P1"]},
-    "hld": {"Purpose and scope": ["H1"], "Pages": ["H1"], "Components": ["H1", "H3", "H4"], "Data flow": ["H1"],
-            "Hosting and deployment": ["H1"], "Risks": ["H1"]},
-    "lld": {"Pages and sections": ["L1", "L2", "L5"], "Interactive elements": ["L1", "L2", "L3"],
-            "Form fields": ["L1", "L2", "L4"], "File structure": ["L1"],
-            "Responsive and accessibility rules": ["L1"]},
-    "design": {"Style guide": []},
-    "website": {"Section": ["N1", "N4", "N8"]},
-}
+def build_class(name, label, section, fields, objects=(), requires=(), optional=None, template=None, blank=True):
+    """The Pydantic class of one template, from its fields and objects with pydantic.create_model (kept by content, so
+    the same template gives the same class). name is the class name, label what the records call the template, and
+    optional the field names a reply may leave out (None: the fields that are not required). blank=False keeps an
+    empty description out of the schema (a generic template's schema has none for a field that says nothing)."""
+    fields = [f if isinstance(f, FieldSpec) else FieldSpec.model_validate(f) for f in fields]
+    objects = [o if isinstance(o, ObjectSpec) else ObjectSpec.model_validate(o) for o in objects]
+    every = fields + [f for o in objects for f in o.fields]
+    if optional is None:
+        optional = [f.name for f in every if not f.required]
+    requires = [{"fields": list(r["fields"]), "message": str(r["message"])} for r in requires or ()]
+    key = schema_sha([name, label, section, template, [f.model_dump() for f in fields], [o.model_dump() for o in objects],
+                      requires, sorted(optional), blank])
+    if key in _BUILT:
+        return _BUILT[key]
+    classes, objs = {}, {o.name: o for o in objects}
+    for n in obj_order(objects):
+        classes[n] = create_model(n, __base__=Artifact, **{attr(f.name): (py_type(f, classes), Field(**field_args(f, blank)))
+                                                           for f in objs[n].fields})
+    checks = {f"_requires_{i}": _one_of(r["fields"], r["message"]) for i, r in enumerate(requires)}
+    cls = create_model(name, __base__=Artifact, __validators__=checks or None,
+                       **{attr(f.name): (py_type(f, classes), Field(**field_args(f, blank))) for f in fields})
+    cls.LABEL = label
+    cls.TEMPLATE = template or label.split(SEP)[0]
+    cls.SECTION = section
+    cls.REPLY_OPTIONAL = frozenset(optional)
+    cls.ENUMS = {f.name: list(f.enum) for f in every if f.enum and parse_type(f.type)[0] == "string"}
+    _BUILT[key] = cls
+    return cls
+
+
+# ---------------------------------------------------------------- the registry: generic.json -> one model per section
+_GENERIC = {}      # id of a template entry -> (the entry, its class): an entry is rebuilt only when its file changed
+
+
+def model_name(entry):
+    """The class name of a generic template: its own "model", else one made from its name."""
+    return entry.get("model") or class_name(entry.get("name"), entry.get("version") or VERSION)
+
+
+def document_objects(kind, fields):
+    """The objects a document-level template's fields use, taken from the type's own sections (an object a section
+    defines, or a whole section by its model name), so the document never repeats them."""
+    pool = {}
+    for t in j2_types.template(kind):
+        for o in t.get("objects") or []:
+            pool.setdefault(o["name"], o["fields"])
+    for t in j2_types.template(kind):
+        pool.setdefault(model_name(t), t["fields"])
+    done, out = set(), []
+
+    def visit(n):
+        if n in done or n not in pool:
+            return
+        done.add(n)
+        for f in pool[n]:
+            o = parse_type(f.get("type"))[1]
+            if o:
+                visit(o)
+        out.append(ObjectSpec.model_validate({"name": n, "fields": pool[n]}))
+    for f in fields:
+        o = parse_type(f.type)[1]
+        if o:
+            visit(o)
+    return out
+
+
+def entry_spec(kind, entry):
+    """(fields, objects) of one generic.json template, as FieldSpec and ObjectSpec."""
+    fields = [FieldSpec.model_validate(f) for f in entry.get("fields") or []]
+    if entry.get("section") == DOCUMENT and "objects" not in entry:
+        return fields, document_objects(kind, fields)
+    return fields, [ObjectSpec.model_validate(o) for o in entry.get("objects") or []]
+
+
+def entry_label(kind, entry):
+    """What the records call a generic template: its name (the document-level one without its closing "Document")."""
+    label = str(entry.get("name") or kind)
+    if entry.get("section") == DOCUMENT and label.endswith(SEP + DOCUMENT):
+        label = label[:-len(SEP + DOCUMENT)]
+    return label
+
+
+def _entry_class(kind, entry):
+    hit = _GENERIC.get(id(entry))
+    if hit is not None and hit[0] is entry:
+        return hit[1]
+    fields, objects = entry_spec(kind, entry)
+    cls = build_class(model_name(entry), entry_label(kind, entry), "" if entry.get("section") == DOCUMENT else entry["section"],
+                      fields, objects, entry.get("requires_one_of") or (), entry.get("reply_optional"), blank=False)
+    _GENERIC[id(entry)] = (entry, cls)
+    return cls
+
+
+def kinds():
+    """Every artifact that has a template: the output types of artifacts/types.json and the style guide a form names."""
+    return j2_types.templated()
+
+
+def section_models(kind):
+    """{section: model} of one artifact, in its template's order ({} when it has no template)."""
+    return {t["section"]: _entry_class(kind, t) for t in j2_types.template(str(kind or ""))}
 
 
 def model_for(kind, section):
-    """The model one workflow writes, by output kind and section name (None when there is none)."""
-    by = SECTION_MODELS.get(str(kind or ""), {})
+    """The model one workflow writes, by output kind and section name (None when there is none). An artifact with one
+    template has one model, whatever the section is called."""
+    by = section_models(kind)
     if section in by:
         return by[section]
     want = re.sub(r"[^a-z0-9]+", " ", str(section or "").lower()).strip()
     for name, m in by.items():
         if re.sub(r"[^a-z0-9]+", " ", name.lower()).strip() == want:
             return m
-    return next(iter(by.values())) if kind in ("design", "website") else None
+    return next(iter(by.values())) if len(by) == 1 else None
+
+
+def doc_model(kind):
+    """The whole artifact as one model: the document-level template of its generic.json, or its one section's model
+    when it has a single template (None otherwise)."""
+    d = j2_types.document(str(kind or ""))
+    if d is not None:
+        return _entry_class(kind, d)
+    by = section_models(kind)
+    return next(iter(by.values())) if len(by) == 1 else None
+
+
+def reply_optional(kind):
+    """Every field name a reply may leave out in any section of one artifact: what a specialised template, which may
+    carry the fields of several of its artifact's sections, starts from."""
+    return frozenset(n for m in section_models(kind).values() for n in m.REPLY_OPTIONAL)
+
+
+def section_conditions(kind, section):
+    """Which conditions a section's rules come from, for the records (the conditions themselves stay in conditions/)."""
+    return list((j2_types.section_template(str(kind or ""), section) or {}).get("conditions") or [])
 
 
 # ---------------------------------------------------------------- the transport schema
@@ -417,14 +320,14 @@ _STRIP = ("minLength", "maxLength", "minItems", "maxItems", "pattern", "format",
           "exclusiveMaximum", "minimum", "maximum", "multipleOf", "default", "title", "examples", "const")
 
 
-def _clean(node):
+def _clean(node, optional=frozenset()):
     """One schema node as the transport allows it: no length, pattern, format or default, anyOf [X, null] folded into
-    a type list, objects closed, and every property required."""
+    a type list, objects closed, and every property required unless its name is in optional."""
     if not isinstance(node, dict):
         return node
     out = {k: v for k, v in node.items() if k not in _STRIP}
     if "anyOf" in out:      # Optional[X] -> {"type": [x, "null"]}
-        parts = [_clean(x) for x in out.pop("anyOf")]
+        parts = [_clean(x, optional) for x in out.pop("anyOf")]
         nullable = any(p.get("type") == "null" for p in parts)
         real = [p for p in parts if p.get("type") != "null"]
         if len(real) == 1 and isinstance(real[0].get("type"), str):
@@ -434,13 +337,13 @@ def _clean(node):
             out["anyOf"] = real
     for key in ("properties", "definitions", "$defs"):
         if isinstance(out.get(key), dict):
-            out[key] = {k: _clean(v) for k, v in out[key].items()}
+            out[key] = {k: _clean(v, optional) for k, v in out[key].items()}
     if isinstance(out.get("items"), dict):
-        out["items"] = _clean(out["items"])
+        out["items"] = _clean(out["items"], optional)
     if out.get("type") == "object" or "properties" in out:
         out["additionalProperties"] = False
         props = list((out.get("properties") or {}).keys())
-        out["required"] = [p for p in props if p not in OPTIONAL_FIELDS] or props
+        out["required"] = [p for p in props if p not in optional] or props
     return out
 
 
@@ -452,7 +355,7 @@ def transport_schema(model):
     raw.pop("$schema", None)
     if "$defs" in raw:
         raw["definitions"] = raw.pop("$defs")
-    out = _clean(copy.deepcopy(raw))
+    out = _clean(copy.deepcopy(raw), getattr(model, "REPLY_OPTIONAL", frozenset()))
     out = {"$schema": "http://json-schema.org/draft-07/schema#", **out}
     return out
 
@@ -532,7 +435,7 @@ def normalise(model, data):
     if not isinstance(data, dict):
         return data
     d = copy.deepcopy(data)
-    enums = {"priority": PRIORITIES, "type": FIELD_TYPES}
+    enums = getattr(model, "ENUMS", None) or {}
 
     def walk(node):
         if isinstance(node, list):
@@ -550,110 +453,132 @@ def normalise(model, data):
 
 
 # ---------------------------------------------------------------- rendering: code writes the document, not the agent
-# Each renderer writes the markdown the existing readers already parse (parse_hld, parse_lld, md_ids) and the
-# conditions already check (P1-P8 / H1-H6 / L1-L6). The agent sends data; no agent writes a heading.
-NO_ACTIONS = "have no actions in this version"
+# A section's template says how its data is written ("render" in generic.json): a list of blocks, each one
+#   {"text": "<line>"}                          one line from the section's own fields
+#   {"each": "<list field>", "line": "<line>"}  one line per item ("head": lines always written first; "join": what
+#                                               sits between the lines, a new line unless given; "unless": leave out
+#                                               the items that have this field)
+# joined by a new line ("gap": true puts an empty line before the block), with the blocks marked "after_body" added
+# after the body, one per line. In a line, {field} is a value (a list is joined with ", "; {#} is the item's number,
+# {_} the item itself, {a.b} a field of an object), {field|words} uses the words when the value is empty, {field:nodot}
+# drops a closing full stop, {field:cap} starts with a capital, {field:yesno} writes yes or no, and [ ... ] is written
+# only when every value inside it is given. The agent sends data; no agent writes a heading.
+FILTERS = ("nodot", "cap", "yesno")
 
 
-def _lines(items, fmt):
-    return "\n".join(fmt(i, x) for i, x in enumerate(items, 1))
+@lru_cache(maxsize=None)
+def line_parts(text):
+    """A render line read once: (("text", str) | ("value", spec) | ("maybe", parts), ...). ValueError on an open { or [."""
+    out, i, n = [], 0, len(text)
+    while i < n:
+        c = text[i]
+        if c in "{[":
+            j = text.find("}" if c == "{" else "]", i)
+            if j < 0:
+                raise ValueError(f"render line {text!r}: {c} is never closed")
+            inner = text[i + 1:j]
+            out.append(("value", inner) if c == "{" else ("maybe", line_parts(inner)))
+            i = j + 1
+        else:
+            j = min([x for x in (text.find("{", i), text.find("[", i)) if x >= 0] or [n])
+            out.append(("text", text[i:j]))
+            i = j
+    return tuple(out)
 
 
-def _assumptions(data):
-    return "".join(f"\nAssumption: {a}" for a in (data.get("assumptions") or []))
+def value_spec(spec):
+    """(path, filter, default words) of one {value}: "needs|uses the page" -> ("needs", "", "uses the page")."""
+    body, _, default = spec.partition("|")
+    path, _, how = body.partition(":")
+    return path, how, default
+
+
+def _value(spec, item, index):
+    """(the value as given, the words written for it) for one {value} of a line."""
+    path, how, default = value_spec(spec)
+    if path == "#":
+        v = index
+    elif path == "_":
+        v = item
+    else:
+        v = item
+        for key in path.split("."):
+            v = v.get(key) if isinstance(v, dict) else None
+    if how == "yesno":
+        s = "yes" if v else "no"
+    elif isinstance(v, list):
+        s = ", ".join(str(x) for x in v)
+    else:
+        s = "" if v is None else str(v)
+    if how == "nodot":
+        s = s.rstrip(".")
+    elif how == "cap":
+        s = s[:1].upper() + s[1:]
+    return v, (s or default)
+
+
+def _line(parts, item, index):
+    out = []
+    for kind, x in parts:
+        if kind == "text":
+            out.append(x)
+        elif kind == "value":
+            out.append(_value(x, item, index)[1])
+        elif all(_value(y, item, index)[0] for k, y in x if k == "value"):
+            out.append(_line(x, item, index))
+    return "".join(out)
+
+
+def _block_lines(block, data):
+    if "text" in block:
+        return [_line(line_parts(block["text"]), data, 0)]
+    items = data.get(block.get("each")) or []
+    if block.get("unless"):
+        items = [x for x in items if not (isinstance(x, dict) and x.get(block["unless"]))]
+    return [_line(line_parts(block["line"]), x, i) for i, x in enumerate(items, 1)]
 
 
 def render_section(kind, section, data):
     """The markdown of one section, from its validated data: "## <Section>" and the body, in the shape the readers
-    expect. Returns None when nothing here renders that section."""
-    d = dict(data or {})
-    body = None
-    if kind == "prd":
-        if section == "Problem":
-            body = str(d.get("statement") or "")
-        elif section == "Users":
-            rows, idle = [], []
-            for u in d.get("users") or []:
-                acts = ", ".join(u.get("actions") or [])
-                rows.append(f"- {u.get('group')}: {u.get('needs') or 'uses the page'}"
-                            + (f"; they {acts}." if acts else "."))
-                if not (u.get("actions") or []):
-                    name = str(u.get("group") or "")
-                    idle.append(f"{name[:1].upper() + name[1:]} {NO_ACTIONS}.")
-            body = "\n".join(rows) + ("\n\n" + " ".join(idle) if idle else "")
-        elif section == "Goals":
-            body = _lines(d.get("goals") or [], lambda i, g: f"- **{g['id']}**: {g['statement']}")
-        elif section == "Requirements":
-            body = _lines(d.get("requirements") or [], lambda i, r: f"{i}. **{r['id']}**: "
-                          + str(r["statement"]).rstrip(".") + f" ({r.get('priority', 'must')})."
-                          + (f" Serves {', '.join(r.get('goals') or [])}." if r.get("goals") else ""))
-        elif section == "Success metrics":
-            rows = d.get("success_metrics") or []
-            body = ("| Goal | Metric | Target | Window |\n|---|---|---|---|\n"
-                    + "\n".join(f"| {m.get('goal')} | {m.get('metric')} | {m.get('target') or 'not set'} | "
-                                f"{m.get('window') or 'measurement window not set'} |" for m in rows))
-        elif section == "Out of scope":
-            body = "\n".join(f"- {x}" for x in d.get("out_of_scope") or [])
-    elif kind == "hld":
-        if section == "Purpose and scope":
-            body = str(d.get("purpose") or "")
-        elif section == "Pages":
-            body = _lines(d.get("pages") or [], lambda i, p: f"- **{p['id']}** {p['name']}: "
-                          + str(p["purpose"]).rstrip(".") + "."
-                          + (f" Implements {', '.join(p.get('implements') or [])}." if p.get("implements") else ""))
-        elif section == "Components":
-            body = _lines(d.get("components") or [], lambda i, c: f"- **{c['id']}** {c['name']}: "
-                          + str(c["responsibility"]).rstrip(".") + "."
-                          + (f" Covers {', '.join(c.get('covers') or [])}." if c.get("covers") else "")
-                          + (f" On {c['page']}." if c.get("page") else ""))
-        elif section == "Data flow":
-            body = "\n".join(f"- {f.get('from') or f.get('from_')} to {f['to']}: {f['data']}, on {f['trigger']}."
-                             for f in d.get("data_flows") or [])
-        elif section == "Hosting and deployment":
-            h = d.get("hosting") or {}
-            body = f"{h.get('kind') or ''}" + (f" {h.get('notes')}" if h.get("notes") else "")
-        elif section == "Risks":
-            body = "\n".join(f"- {str(r['risk']).rstrip('.')}. Mitigation: {r['mitigation']}"
-                             for r in d.get("risks") or [])
-    elif kind == "lld":
-        if section == "Pages and sections":
-            body = _lines(d.get("sections") or [], lambda i, s: f"- **{s['id']}** `{s['anchor']}`"
-                          + (f" (page `{s['page']}`)" if s.get("page") else "") + ": shows "
-                          + (", ".join(s.get("implements") or []) or "this part of the page") + "."
-                          + (f" Implements {', '.join(s.get('implements') or [])}." if s.get("implements") else ""))
-        elif section == "Interactive elements":
-            body = _lines(d.get("elements") or [], lambda i, e: f"- **{e['id']}** in {e['section']}: `{e['selector']}`"
-                          f" trigger {e['trigger']}; behaviour {e['behaviour']}")
-        elif section == "Form fields":
-            body = _lines(d.get("form_fields") or [],
-                          lambda i, f: f"- **{f['id']}** in {f.get('section') or 'S1'}, form `{f['form']}`: field "
-                          f"`{f['name']}`, type {f['type']}, required {'yes' if f.get('required') else 'no'}"
-                          + (f", validation {f['validation']}" if f.get("validation") else ""))
-        elif section == "File structure":
-            body = "\n".join(f"- `{x['path']}`: {x['purpose']}" for x in d.get("files") or [])
-        elif section == "Responsive and accessibility rules":
-            body = "\n".join([f"- {x}" for x in d.get("responsive_rules") or []]
-                             + [f"- {x}" for x in d.get("accessibility_rules") or []])
-    if body is None:
+    expect, written from the section template's render lines. Returns None when the template has none (or there is no
+    such section)."""
+    blocks = (j2_types.section_template(str(kind or ""), section) or {}).get("render")
+    if blocks is None:
         return None
-    return f"## {section}\n\n{body.strip()}{_assumptions(d)}\n"
+    d = dict(data or {})
+    body, after = "", ""
+    for b in blocks:
+        lines = _block_lines(b, d)
+        if b.get("after_body"):
+            after += "".join(f"\n{x}" for x in lines)
+            continue
+        text = str(b.get("join", "\n")).join(lines)
+        if b.get("head"):
+            text = f"{b['head']}\n{text}"
+        if text:
+            body += (("\n\n" if b.get("gap") else "\n") if body else "") + text
+    return f"## {section}\n\n{body.strip()}{after}\n"
 
 
 def style_from_design(data):
-    """The design data as the style guide the rest of the code already uses (style_css, style.json): the same keys
-    STYLE_FMT has, so nothing downstream changes."""
+    """The style guide's data as the style guide the rest of the code already uses (style_css, style.json): the fields
+    of the style guide's template, in its order, so nothing downstream changes."""
     d = dict(data or {})
-    fonts = dict(d.get("fonts") or {})
-    return {"palette": dict(d.get("palette") or {}),
-            "fonts": {"heading": fonts.get("heading"), "body": fonts.get("body"),
-                      "google_fonts_url": fonts.get("google_fonts_url")},
-            "spacing": dict(d.get("spacing") or {}), "radius": d.get("radius"),
-            "buttons": dict(d.get("buttons") or {}), "card": d.get("card"), "notes": d.get("notes") or ""}
+    t = next(iter(j2_types.template(j2_types.style_guide() or "")), None) or {}
+    objs = {o["name"]: o["fields"] for o in t.get("objects") or []}
+    out = {}
+    for f in t.get("fields") or []:
+        kind, obj = parse_type(f["type"])
+        v = d.get(f["name"])
+        if kind == "obj":
+            out[f["name"]] = {g["name"]: (v or {}).get(g["name"]) for g in objs.get(obj) or []}
+        else:
+            out[f["name"]] = (v or "") if kind == "string" and not f.get("required") and not f.get("nullable") else v
+    return out
 
 
 # ---------------------------------------------------------------- the rules layer (code, every attempt)
-# The rules themselves are data in j2_rules; these are here so the callers keep one import.
-RULE_NAMES = dict(j2_rules.RULE_NAMES)
+# The rules themselves are data in each template; these are here so the callers keep one import.
 rule_names = j2_rules.rule_names
 rules_count = j2_rules.rules_count
 run_rules = j2_rules.run_rules

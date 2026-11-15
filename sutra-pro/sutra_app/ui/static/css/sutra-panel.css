@@ -223,6 +223,11 @@ details.atomcard>summary{cursor:pointer;display:flex;flex-wrap:wrap;align-items:
 .arow{margin:4px 0 0;font-size:13px}
 .arow>b{color:var(--muted);margin-right:4px}
 .acost{color:var(--muted)}
+/* what the atom produced (D157): the Output row, and the reply the model gave in a fold (preformatted, wrapped, never wider than the card) */
+.aoutput>.alist{margin-top:2px}
+.areply{margin:6px 0 0;font-size:13px}
+.areply>summary{cursor:pointer;color:var(--muted)}
+.areplytext{margin:4px 0 0;padding:8px 10px;max-height:320px;overflow:auto;border:1px solid var(--line);border-radius:6px;background:var(--panel2);color:var(--ink);font:12px/1.45 var(--mono);white-space:pre-wrap;overflow-wrap:anywhere}
 
 /* ---- a team that was merged away: its page keeps the history but takes no new line (docs/design/ui.md 6.7) */
 body.archived .scompose,body.archived #sbox,body.archived #ssend,body.archived #sform,body.archived #box,body.archived #send,body.archived .outsel,
@@ -346,6 +351,7 @@ body.nodeopen #dview .chat,body.nodeopen .chatfab{visibility:hidden}
 .agent-dot[data-state="past"]{background:transparent;border:1px solid var(--muted)}
 .agent-state{color:var(--muted);font-size:12px}
 .agent-usage{color:var(--muted);font-size:12px;font-family:var(--mono)}
+.agent-purposes{flex:1 1 100%;display:flex;flex-wrap:wrap;gap:2px 14px;padding-left:17px;color:var(--muted);font-size:12px;font-family:var(--mono)}
 .agentlive .alive-tool{display:inline-block;margin-left:8px;font:500 12px var(--mono);color:var(--muted)}
 .agentlive .alive-note{margin-left:8px;color:var(--muted);font-size:12px}
 .cstream{margin:6px 0;color:var(--ink)}
@@ -425,6 +431,13 @@ body.nodeopen #dview .chat,body.nodeopen .chatfab{visibility:hidden}
 .ccattach{display:flex;flex-wrap:wrap;align-items:center;gap:8px}
 .ccattach small,.ccnote{color:var(--muted);font-size:12px;margin:0}
 .ccstream{margin:0;padding:4px 0}
+/* a phone: the mode and provider toggles and the attach link are finger-sized (40px), and the limits note is one line (the whole note is in the link's title and still read aloud) */
+@media (max-width:600px){
+  .ccmode-opt,.cpill-opt{min-height:40px;display:inline-flex;align-items:center}
+  .ccattach{flex-wrap:nowrap;gap:10px}
+  .ccattach .linkbtn{min-height:40px;display:inline-flex;align-items:center;flex:0 0 auto}
+  .ccattach small{flex:1 1 0;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+}
 
 /* the comfort of a chat (GAP-chat-comfort): the box grows with its text (chat_draft.js sets the height, up to 200px), the "new messages below" pill
    rides the bottom edge of the transcript at zero height, a chip shows its thumbnail or a kind tile, an owner's line lists its files; J2's tokens only */
@@ -459,8 +472,8 @@ body.nodeopen #dview .chat,body.nodeopen .chatfab{visibility:hidden}
    transform and opacity move: the browser does them on the compositor, without layout or paint, so they hold their frame rate while the page is
    busy. Colours change over --dur-fast. Nothing animates width, height, top, left, margin, box-shadow or filter, and no rule says `transition: all`
    (tests/ui/js/motion_css.test.js keeps it so). prefers-reduced-motion makes every duration 0: things still change, at once. */
-:root{--ease-out:cubic-bezier(.22,1,.36,1);--ease-in-out:cubic-bezier(.65,0,.35,1);--dur-fast:120ms;--dur-base:200ms;--dur-slow:320ms}
-@media (prefers-reduced-motion:reduce){:root{--dur-fast:0ms;--dur-base:0ms;--dur-slow:0ms}}
+:root{--ease-out:cubic-bezier(.22,1,.36,1);--ease-in-out:cubic-bezier(.65,0,.35,1);--dur-fast:120ms;--dur-base:200ms;--dur-slow:320ms;--dur-pulse:1200ms;--dur-blink:1050ms}
+@media (prefers-reduced-motion:reduce){:root{--dur-fast:0ms;--dur-base:0ms;--dur-slow:0ms;--dur-pulse:0ms;--dur-blink:0ms}}
 @keyframes fluidin{from{opacity:0;transform:translate3d(0,6px,0)}to{opacity:1;transform:none}}
 @keyframes fluidfade{from{opacity:0}to{opacity:1}}
 @keyframes drawerin{from{opacity:0;transform:translate3d(28px,0,0)}to{opacity:1;transform:none}}
@@ -611,3 +624,87 @@ body.rc-open .rc-open-btn{display:none}
 :root[data-level=simple] #slanddetail, :root[data-level=simple] #sdetail, :root[data-level=simple] #steamfull,
 :root[data-level=simple] #sview [data-detail], :root[data-level=simple] #sview [data-records],
 :root[data-level=simple] #sview a.slink[href^="library"], :root[data-level=simple] #sview .slsep { display: none !important; }
+
+/* ---- the live reply of a direct chat (streaming chat, STR-10 to STR-12; chat_live_view.js)
+   One node per reply: a short status (announced) and its clock, the earlier tries, the blocks in the order they came (text, tool lines, thinking), a note, the
+   actions. A tool line is a <details>: its summary is the one line, its body the target, the status and the output. Only opacity, transform and colour move,
+   on the tokens above, and only for what arrives; prefers-reduced-motion turns the durations to 0 (the tokens) and stops the loops. J2's colour tokens only. */
+.nmsg.sb.clive{width:100%;box-sizing:border-box;white-space:normal}                 /* the reply keeps one width while it grows: it never widens line by line */
+.nmsg.sb.clive .cl-cut{display:block;margin:2px 0 0;font-weight:400;color:var(--muted)}
+.clive .cl-who{display:block;color:var(--muted)}
+.clive .cl-foot{display:flex;flex-wrap:wrap;align-items:center;gap:2px 12px;margin-top:6px;min-height:26px}
+.clive .cl-head{display:flex;flex-wrap:wrap;align-items:baseline;gap:2px 8px;flex:1 1 auto;min-width:0;color:var(--muted);font-size:13px}
+.clive .cl-foot[hidden],.clive .cl-head[hidden],.clive .cl-earlier[hidden],.clive .cl-note[hidden],.clive .cl-ending[hidden],.clive .cl-actions[hidden],.clive .cl-steps[hidden],.clive .cl-block[hidden]{display:none}
+.clive .cl-state{overflow-wrap:anywhere}
+.clive .cl-clock{font:12px var(--mono);color:var(--muted)}
+.clive .cl-state::before{content:"";display:inline-block;width:7px;height:7px;margin-right:7px;border-radius:50%;background:var(--accent);vertical-align:middle;position:relative;top:-1px}
+.clive[data-state="stopped"] .cl-state::before,.clive[data-state="error"] .cl-state::before{background:var(--muted)}
+.clive:not(.cl-live):not([data-note]) .cl-head{display:none}
+.clive .cl-body{display:flex;flex-direction:column;gap:6px;min-width:0}
+.clive .cl-block{min-width:0}
+.clive .cl-tx{min-width:0}
+.clive .cl-text .cmd{min-height:1.4em}
+.clive .cl-tool,.clive .cl-think{border:1px solid var(--line);border-radius:8px;background:var(--panel2);font-size:13px;color:var(--ink)}
+.clive .cl-think{display:flex;align-items:center;gap:8px;padding:3px 10px;color:var(--muted)}
+.clive .cl-sum{display:flex;align-items:center;gap:8px;padding:3px 10px;cursor:pointer;list-style:none;min-width:0}
+.clive .cl-sum::-webkit-details-marker{display:none}
+.clive .cl-title{flex:1 1 auto;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.clive .cl-meta{flex:0 0 auto;font:12px var(--mono);color:var(--muted)}
+.clive .cl-mark{flex:0 0 auto;width:8px;height:8px;border-radius:50%;background:var(--muted)}
+.clive [data-status="open"]>.cl-mark,.clive [data-status="open"]>.cl-sum>.cl-mark{background:var(--accent)}
+.clive [data-status="ok"]>.cl-mark,.clive [data-status="ok"]>.cl-sum>.cl-mark{background:var(--ok)}
+.clive [data-status="error"]>.cl-sum>.cl-mark{background:var(--bad)}
+.clive [data-status="interrupted"]>.cl-sum>.cl-mark{background:var(--validator)}
+.clive .cl-tool[open] .cl-title{white-space:normal;overflow-wrap:anywhere}
+.clive .cl-detail{padding:2px 10px 6px 26px;color:var(--muted);font-size:12.5px;overflow-wrap:anywhere}
+.clive .cl-row b{font-weight:600;color:var(--ink)}
+.clive .cl-out{margin:4px 0 0;padding:6px 8px;max-height:12em;overflow:auto;white-space:pre-wrap;background:var(--panel);border:1px solid var(--line);border-radius:6px;font:12px/1.4 var(--mono);color:var(--ink)}
+.clive .cl-cut{display:block;margin-top:2px}
+.clive .cl-steps,.clive .cl-prior{margin-top:6px;font-size:13px;color:var(--muted)}
+.clive .cl-steps>summary,.clive .cl-prior>summary{cursor:pointer;color:var(--muted)}
+.clive .cl-steps-body{display:flex;flex-direction:column;gap:4px;margin-top:4px}
+.clive .cl-prior-list{margin:4px 0 0;padding-left:20px;color:var(--ink)}
+.clive .cl-earlier{display:flex;flex-direction:column;gap:2px;margin-bottom:4px}
+.clive .cl-note{color:var(--muted);font-size:12.5px}
+.clive .cl-ending{margin:6px 0 0;color:var(--muted);font-size:13px;overflow-wrap:anywhere}
+.clive[data-state="error"] .cl-ending{color:var(--bad)}
+.clive .cl-actions{display:flex;flex-wrap:wrap;gap:4px 12px;margin-left:auto}
+.clive .cl-act{padding:0;font-size:13px}
+.clive .cl-act:disabled{color:var(--muted);cursor:default}
+.clive .cmd-pre{position:relative}
+.clive .cl-copycode{position:absolute;top:4px;right:6px;padding:0 6px;border:1px solid var(--line);border-radius:6px;background:var(--panel);color:var(--muted);font:12px var(--mono);cursor:pointer;opacity:0}
+.clive .cmd-pre:hover .cl-copycode,.clive .cl-copycode:focus-visible{opacity:1}
+@media (hover:none){.clive .cl-copycode{opacity:1}}
+.clive .cl-superseded,.clive.cl-superseded{opacity:.9}
+.clive .tk-c{color:var(--muted);font-style:italic}
+.clive .tk-s{color:var(--ok)}
+.clive .tk-n{color:var(--validator)}
+.clive .tk-k{color:var(--accent);font-weight:600}
+.clive summary:focus-visible,.clive .cl-act:focus-visible,.clive .cl-copycode:focus-visible{outline:2px solid var(--accent);outline-offset:2px;border-radius:6px}
+
+/* the caret: the block that is being written ends in a bar (a pseudo-element: no node is made or recreated for it). Not for a provider that sends its answer whole. */
+.clive .cl-writing .cmd>:last-child::after{content:"";display:inline-block;width:2px;height:1.05em;margin-left:2px;vertical-align:text-bottom;background:var(--accent)}
+.clive .cl-writing .cmd>.cmd-pre:last-child code::after{content:"";display:inline-block;width:2px;height:1em;margin-left:1px;vertical-align:text-bottom;background:var(--accent)}
+@media (prefers-reduced-motion:no-preference){
+  /* what arrives enters (a block, the reply itself); what streams does not: text appears where the provider put it */
+  .clive .cl-in{animation:fluidin var(--dur-fast) var(--ease-out)}
+  .clive .cl-text.cl-in{animation:fluidfade var(--dur-base) var(--ease-out)}
+  /* presence: a dot that breathes while the turn waits, thinks, starts, or is between tries; it stops when words flow */
+  .clive.cl-live[data-activity="waiting"] .cl-state::before,.clive.cl-live[data-activity="thinking"] .cl-state::before,.clive.cl-live[data-phase="connecting"] .cl-state::before,
+  .clive.cl-live[data-phase="backoff"] .cl-state::before,.clive.cl-live[data-activity="stalled"] .cl-state::before,.clive .cl-think[data-status="open"] .cl-mark{animation:clpulse var(--dur-pulse) var(--ease-in-out) infinite}
+  .clive .cl-writing .cmd>:last-child::after,.clive .cl-writing .cmd>.cmd-pre:last-child code::after{animation:clblink var(--dur-blink) steps(2,start) infinite}
+}
+@keyframes clpulse{0%,100%{opacity:1}50%{opacity:.35}}
+@keyframes clblink{to{visibility:hidden}}
+@media (prefers-reduced-motion:reduce){
+  .clive,.clive *,.clive *::before,.clive *::after{animation:none!important;transition:none!important}
+}
+@media (max-width:640px){
+  .clive .cl-sum,.clive .cl-think{padding:6px 10px}
+  .clive .cl-act,.clive .cl-copycode{min-height:32px;min-width:44px}
+  .clive .cl-clock{font-size:11px}
+}
+
+/* the chat column reaches the bottom of the window at 901 to 1150 px: j2-shell.css (frozen) leaves the .smain grid one row of auto height, so the column stopped where its content
+   ended; a definite row makes it as tall as the window (the phone layout, up to 900 px, sets its own rows and is left alone) */
+@media (min-width:901px){#sview>main{grid-template-rows:minmax(0,1fr)}}

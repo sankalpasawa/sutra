@@ -539,6 +539,20 @@ def test_settings_are_layered_written_and_exported_before_j2_is_imported(j2, mak
     assert "key" not in json.dumps(written).lower().replace("monkey", "")
 
 
+def test_an_inherited_push_flag_or_author_name_never_reaches_the_run_and_a_task_key_cannot_set_them(j2, make_run_dir, data_dir, clean_env):
+    """D177: `J2_PUSH_RUNS` and `J2_RUN_BY` are fixed by the host (`DataPaths.j2_env()`, applied last); a developer shell, a task key and a settings
+    file cannot change them, and neither is a field of the settings written to the run."""
+    clean_env.setenv("J2_PUSH_RUNS", "1")
+    clean_env.setenv("J2_RUN_BY", "someone-else")
+    (data_dir / "engine.json").write_text(json.dumps({"budget": 80}))
+    run_dir = make_run_dir(user_text=BREW_LAB, settings={**QUIET, "J2_PUSH_RUNS": "1", "J2_RUN_BY": "evil"})
+    assert Running(run_dir, "--mock").wait() == 0
+    assert (os.environ["J2_PUSH_RUNS"], os.environ["J2_RUN_BY"]) == ("0", "sutra-pro")
+    written = json.loads((run_dir / "settings.json").read_text())
+    assert "push_runs" not in written and "run_by" not in written
+    assert trace(run_dir, "task.settings_dropped") == [], "both names look like settings and are only ignored by the layering"
+
+
 def test_bad_settings_end_the_run_as_could_not_start(j2, make_run_dir, data_dir):
     run_dir = make_run_dir(settings={"J2_BUDGET": "lots"})
     assert Running(run_dir, "--mock").wait() == 3

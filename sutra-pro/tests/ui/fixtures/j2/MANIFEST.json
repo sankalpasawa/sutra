@@ -1,6 +1,6 @@
 {
   "schema": "j2-fixtures/1",
-  "j2_commit": "025e265c594564f47a2365874cd5a5cc5d0d20a6",
+  "j2_commit": "1adb8ecd8fa8eef47fb7a0fc63a1616f556cdfeb",
   "mock": true,
   "brief": "A one-page website for Brew Lab, a small specialty coffee shop in Indiranagar, Bengaluru. Visitors should see the menu with prices, the opening hours, and where to find us, and be able to pre-order a coffee for pickup. It should feel warm and modern and work well on a phone.",
   "clock": 1793786404,
@@ -45,76 +45,76 @@
   },
   "files": {
     "activity-adaptation.json": {
-      "bytes": 11763,
-      "sha256": "9745f40e14fe1eccc7696b07b3b8895e2494e593ec044cc236f86ab1f0ea4f07"
+      "bytes": 11865,
+      "sha256": "ae362d40be913941e21342eb35aa90131ee0e90cb00d63cb17880cd434a5e3a5"
     },
     "activity-audit.json": {
       "bytes": 1585,
       "sha256": "40ea9f845f8c19ccb286bac43b6ce1bae4c71615ee85a5e00e98086f8a57d91e"
     },
     "activity-coordination.json": {
-      "bytes": 8383,
-      "sha256": "d100902a3e0b2e116f23c8bbcb0f225bb2ba22b21ab2afe14d1cd2ddf309a688"
+      "bytes": 8453,
+      "sha256": "137384c1af50e7a48a453dd0b300ef72d85588e2f23688a3783f44b2607bf9ee"
     },
     "activity-identity.json": {
       "bytes": 3208,
       "sha256": "610ad4ff17c97f49bd27b6bc72b0039528e9caa489d903ba93457c90ded9fcb6"
     },
     "activity-priority.json": {
-      "bytes": 12446,
-      "sha256": "0f48bbe7dc74b099d2926abab03d0799d6f3db112cf2688c379ad0b400a3e467"
+      "bytes": 12548,
+      "sha256": "44e45997322a36407d59e2c3256181aaa9dc38a49382a0bbe9fb0ad2ba94bde7"
     },
     "activity-unknown.json": {
       "bytes": 227,
       "sha256": "0327baae7db21e0fba7d02fec546d3bcb54e33ca7f73585b38df9a9a8a6f7ef1"
     },
     "activity-validator.json": {
-      "bytes": 997,
-      "sha256": "a91985d95ecf4c8522fce204133086fece75db77d3e9b694b799c1d6459ecb80"
+      "bytes": 1067,
+      "sha256": "7b624c00db298a4b230592d47d30f258319d8d8a70e199443f91978e6764abc3"
     },
     "agent-W-1.json": {
-      "bytes": 24679,
-      "sha256": "6421b0dd14ab1bed278f48c06abb8dfaf119c8ed386f9022801387a013471cb7"
+      "bytes": 24905,
+      "sha256": "c8dc334e8e8a319be3f6480b6e3b682daa91c1dfc9432eeb08110ea488b86f7d"
     },
     "agent-adaptation.json": {
-      "bytes": 103613,
-      "sha256": "0317624e044d5af4cd6e7fe8b90032dd33d5e42d4229897155d3829a1a99fb53"
+      "bytes": 105627,
+      "sha256": "5b88f954b3b4a316fb384943aa07f45d2d17207c418dbdd34d3ceedbad7fc4fb"
     },
     "agent-audit.json": {
-      "bytes": 77489,
-      "sha256": "34155035a983ebb9350b39a84c7abf25299ee0172a5198686cfd272efcf0ce5f"
+      "bytes": 78055,
+      "sha256": "1e7986d5296689323a4fc62015ea64384f01bf6af28833e896696aba4e728edb"
     },
     "agent-coordination.json": {
-      "bytes": 187161,
-      "sha256": "e6203da52f688498345656d8d09b6872f379403490dd89c97c263868f77f5e16"
+      "bytes": 189028,
+      "sha256": "c9e0c4dbc24796586385b0bb4b8ed1b6f3d7d5a2b70e1c8a4fa29ba6f1f68fc5"
     },
     "agent-identity.json": {
-      "bytes": 80360,
-      "sha256": "9ed39097eb48214b1ddf87eb695c5e734d4a2b10a23a3f3f7509575d9facef07"
+      "bytes": 80899,
+      "sha256": "3d87e00137598537fd38e3927d56bf8d0643db94d32da7bd2feeda76a7b74729"
     },
     "agent-priority.json": {
-      "bytes": 34535,
-      "sha256": "37471dc955606f0cb7dea10fd83a048285550dffc70a58365f0b3e919722a6d7"
+      "bytes": 34848,
+      "sha256": "d1a28e719afe44f20e831f13c9f0be6a1e4297296209907e51a1c6eed8b1029f"
     },
     "agent-unknown.json": {
       "bytes": 351,
       "sha256": "b45afd5e2a54db0b190ed75616bc4dd1949dbfeaa02b419fb4cb8540a60654a0"
     },
     "artifacts-groups.json": {
-      "bytes": 11063,
-      "sha256": "989f138fad8af5a582a6154d29c2251475d557252565a68b2d1df5ac458a5d3c"
+      "bytes": 11466,
+      "sha256": "c4a591be49af8ac75b0d053a837820ea69c6735ab49b6460ed821e0a67f55d4b"
     },
     "artifacts-tree.json": {
-      "bytes": 5943,
-      "sha256": "9d0d6357874f8bcb7a05ea543d6f490dc6285c43ca016b75475ed9cfe4c5664a"
+      "bytes": 6268,
+      "sha256": "8821ee12bf55345cc7d7f285e46e15ef9f198930ac2135841db8c232d5b02381"
     },
     "artifacts.json": {
-      "bytes": 4068,
-      "sha256": "3150f3a1325f3bc576850ed48701744d00412450385a4997da7c8c5e2a9c1d57"
+      "bytes": 4486,
+      "sha256": "60efce5031bf973db3d129a9188c31b80f0bc1374be15343d5ecfabeb6ad7a7a"
     },
     "ask-adaptation.json": {
       "bytes": 697,
-      "sha256": "adba420e4fd735b867f7e4cc28dfe584d1b357521caec8b6f97f734f3f97a41c"
+      "sha256": "3c15aaa85ba2cf995d5ed5e91146868a9ecf3b188d3e19851f662489874c8882"
     },
     "ask-audit.json": {
       "bytes": 796,
@@ -130,11 +130,11 @@
     },
     "ask-priority.json": {
       "bytes": 1949,
-      "sha256": "5d0cc82b25834337f860301da24b2f8e36bb599051a313d74566ca14c2c8dd4a"
+      "sha256": "0a7f7e86166c0637cde3198f5dfa386667dd6fb0b83e6cd25dda657a55086abe"
     },
     "ask-validator.json": {
-      "bytes": 560,
-      "sha256": "5ba7992c94312a749a13a60d5c848d8c76597a01af325d1b86cf9939439ebd73"
+      "bytes": 630,
+      "sha256": "fe1c26e62190f0b31b42e31b134bd00a919121257828a211890a38dc32de93df"
     },
     "audits.json": {
       "bytes": 2,
@@ -145,8 +145,8 @@
       "sha256": "b429ba025aeeb8963f98b408bbcea1ac1ddfc3b44b3a9cb085449c869ad6e208"
     },
     "catalog.json": {
-      "bytes": 120764,
-      "sha256": "2e82a3603eac9484ca9698c6907c498089993e216765ac3ab4562f57f0a43425"
+      "bytes": 314740,
+      "sha256": "2fb93f7bf47be4bac710d23d6a4df1a41f2c471b92acbe37ae66124f284383c4"
     },
     "changes.json": {
       "bytes": 15,
@@ -157,12 +157,12 @@
       "sha256": "ba69c2a42c5e61147dfded37c52b4b79f322bc043daf11c83c63cbaf4a88f40d"
     },
     "docs.json": {
-      "bytes": 168,
-      "sha256": "8ec3135c1f4624db617785ced22785e61f0c045ef229d46eaef4e822621a274a"
+      "bytes": 2,
+      "sha256": "44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a"
     },
     "golden-agent.json": {
-      "bytes": 96108,
-      "sha256": "54bc1425a97cd9198aaaa12c4900ec5339120f6e8dc89221a0d82ed5e6bf504c"
+      "bytes": 96839,
+      "sha256": "ce3981d6c98b9e39f6a0c1a1471f1a0966f4afcf4ec6294212d3315c11c2d51a"
     },
     "golden-feed.json": {
       "bytes": 5160,
@@ -185,16 +185,16 @@
       "sha256": "57d0a7825b371337438d5894163ac88a235d970402ebadb1dba8f94e027e0cb0"
     },
     "golden-journeyhtml.json": {
-      "bytes": 12114,
-      "sha256": "e960764b4c829eef1cafade3390b6e4dd65503cda8ca71f4e9efb1407b7c0001"
+      "bytes": 12118,
+      "sha256": "0fa9677a9c7a4fdd0996f42243a4dd468934fe3171f974b973fced82b5d077e7"
     },
     "golden-layout.json": {
       "bytes": 24794,
       "sha256": "665ebf33105d69863a39652243d797cf08f1383baa673a24e0fb40f6b5c63580"
     },
     "golden-map.json": {
-      "bytes": 47691,
-      "sha256": "eedfa3a9f5916acf7f88208f7b8efe4c14c1b57a142f05c14194eeaefa6e4bc7"
+      "bytes": 47765,
+      "sha256": "685316688508e90d5446ba8097436a0412fd96e29d77d27f321f7859ecfe732a"
     },
     "golden-msgfns.json": {
       "bytes": 893,
@@ -222,11 +222,11 @@
     },
     "golden-rail.json": {
       "bytes": 2562,
-      "sha256": "329846117d4a1118c1c0800e78b2d834bc342f82d986d54833568b87c672cd11"
+      "sha256": "27e2f95b557ba45a26c3e19a310d2e3e69ed2bd61b47691ad4ab3366c6facff8"
     },
     "golden-railst.json": {
       "bytes": 827,
-      "sha256": "46545c05e6c09b473a053f81632ae08603f4acd5a594cb44df21d6df676e4b0e"
+      "sha256": "ba0cd9d6530abbfd3fd2aa8c3ef35ac81436f33aada90e1e81d9a9c0d70e3975"
     },
     "golden-sframe.json": {
       "bytes": 14,
@@ -253,20 +253,20 @@
       "sha256": "cf179d0a35d91facf36730d74a4dcadcae8716db3b2bda8bb6faa19eb8aa4e65"
     },
     "golden-teamwork.json": {
-      "bytes": 12096,
-      "sha256": "a3a3df01f006125fb480ad4e53e719b93499cf7a165b2acdaf6840eb74611b06"
+      "bytes": 12100,
+      "sha256": "705871b7bcb578b607fc2fd2cc2c3a4abae831d361c69ff7d0a6635f5e243b9b"
     },
     "golden-views.json": {
-      "bytes": 195,
-      "sha256": "0029aaca41548f1eed2e5063167e6ca8ac04ab8c1e81d04e8b34d15b247ec7d2"
+      "bytes": 198,
+      "sha256": "78ef268e2a0b79791ab4d3d8c56b658227d8c52c8f8ec3834cb33bfab644c6f1"
     },
     "golden-workflows.json": {
-      "bytes": 48213,
-      "sha256": "a8061dc6bbd19bebcca8d8b00d94dd5252b8b768d5872932758600bbf797c13b"
+      "bytes": 48216,
+      "sha256": "6a587f360e2f20fcc6b9c44388f7d9d3b6bc6be84abcfd13d845820e46d68861"
     },
     "library.json": {
-      "bytes": 78336,
-      "sha256": "b7be879b6d5a625a6f21bd810e1207535241683bf6c90ea3544e9feaec7f30fa"
+      "bytes": 209293,
+      "sha256": "e954f12f55bc731e9119be5039fd368dc1a4b8311540a58af91118f4338b07c4"
     },
     "map.json": {
       "bytes": 19642,
@@ -321,20 +321,20 @@
       "sha256": "5463f8d0ab2e4f973c7cb5b760465a8acf33397397ce52b09658a28dee576ec2"
     },
     "refs.json": {
-      "bytes": 3270,
-      "sha256": "24facb6b461d164ffb3ffb30b492c603b625445f41e0e92521d0fee988e26782"
+      "bytes": 3713,
+      "sha256": "dbc32777c7f6dae800096ee0f6f41a81301145d7142047b208e0a6e3410df1df"
     },
     "render-docs.json": {
-      "bytes": 149257,
-      "sha256": "45f914f469339ecb1e8bc2a513f42eed4787153b636f3eee3a507f19971ee4d5"
+      "bytes": 150948,
+      "sha256": "d8549817fc85b51e035aadd0909ca234129cd3c07f0bbdfc256916f21e3c536e"
     },
     "run-templates.json": {
       "bytes": 17,
       "sha256": "1672e9728a2079c90e1a3de3b2279d199f0bc1a90b366656915700a3922c7f18"
     },
     "runlist.json": {
-      "bytes": 337,
-      "sha256": "54272b2d5231dc059f1592a7c035e4675adfb34e9a1118f997e6024eb61fa3ee"
+      "bytes": 355,
+      "sha256": "6b64d73329e6b996ca5f681b833bb0677edfd4c75d557ea2622bea4b4e20eb98"
     },
     "runs.json": {
       "bytes": 227,
@@ -345,12 +345,16 @@
       "sha256": "dac57d43aa835999c178b5a886ae2aa278ae4dcc96524f54d75cd9537430e196"
     },
     "state.json": {
-      "bytes": 121902,
-      "sha256": "9fbddccec8ac33019a1b0562ef5dc8d92fd5bc9dafe82849d993201d155d43c3"
+      "bytes": 123445,
+      "sha256": "e491873a7bc3582993229c5fc120ed4bd95d605021d22d82d898e10effab4571"
     },
     "story.json": {
       "bytes": 463,
       "sha256": "8175b808983dd120d2de11086a6a94fc523a6730becd8fddfdabb43002275355"
+    },
+    "timing.json": {
+      "bytes": 2963,
+      "sha256": "0d014234948389968f4f79d698dda818905b2fd57d303a9e623456444eaf112e"
     },
     "view-goal.html": {
       "bytes": 1847,

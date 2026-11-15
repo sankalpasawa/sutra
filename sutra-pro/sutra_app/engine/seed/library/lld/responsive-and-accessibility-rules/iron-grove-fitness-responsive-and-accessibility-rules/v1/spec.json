@@ -1,0 +1,74 @@
+{
+  "name": "Iron Grove Fitness Responsive and accessibility rules",
+  "artifact": "lld",
+  "section": "Responsive and accessibility rules",
+  "version": 1,
+  "kind": "specialised",
+  "description": "Responsive and accessibility rules for Iron Grove Fitness (lld): the generic LLD/1 · Responsive and accessibility rules fields plus facts_used, from 2 charter fact(s); adapted from a template made for another business",
+  "fields": [
+    {
+      "name": "responsive_rules",
+      "type": "list[string]",
+      "required": false,
+      "description": "one rule per line (for Iron Grove Fitness, a lld)",
+      "enum": null,
+      "nullable": false
+    },
+    {
+      "name": "accessibility_rules",
+      "type": "list[string]",
+      "required": false,
+      "description": "one rule per line (for Iron Grove Fitness, a lld)",
+      "enum": null,
+      "nullable": false
+    },
+    {
+      "name": "assumptions",
+      "type": "list[string]",
+      "required": false,
+      "description": "the assumptions of Iron Grove Fitness's Responsive and accessibility rules",
+      "enum": null,
+      "nullable": false
+    },
+    {
+      "name": "facts_used",
+      "type": "list[string]",
+      "required": false,
+      "description": "the charter facts this section is written from, copied exactly from Iron Grove Fitness's charter",
+      "enum": [
+        "Iron Grove Fitness",
+        "The Responsive and accessibility rules section is written for Iron Grove Fitness"
+      ],
+      "nullable": false
+    }
+  ],
+  "objects": [],
+  "rules": [
+    {
+      "rule": "enum",
+      "path": "facts_used[]",
+      "values": [
+        "Iron Grove Fitness",
+        "The Responsive and accessibility rules section is written for Iron Grove Fitness"
+      ],
+      "from": "facts",
+      "name": "facts_used are facts of Iron Grove Fitness's charter"
+    }
+  ],
+  "sha": "bbd349a71912950f21b9b6d5c2825a6495caf8f527ff5f5cdf73fb2e8c6c8ed9",
+  "extends": "lld/responsive-and-accessibility-rules@generic/1",
+  "made_by": {
+    "run": "j2-20261111-211339",
+    "workflow": "W-20",
+    "atom": "W-20.a1",
+    "agent": "code (adapted from a run template)"
+  },
+  "context": {
+    "business_type": "lld",
+    "facts_used": [
+      "Iron Grove Fitness",
+      "The Responsive and accessibility rules section is written for Iron Grove Fitness"
+    ],
+    "fingerprint": "0c82ac6a6480a5e9f877e764578f77b98dbfe8d55355226651df3ee17b8fd1dd"
+  }
+}

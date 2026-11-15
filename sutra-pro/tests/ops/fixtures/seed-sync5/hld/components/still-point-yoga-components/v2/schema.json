@@ -1,0 +1,77 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "additionalProperties": false,
+  "properties": {
+    "heading": {
+      "description": "the section heading, Components",
+      "type": "string"
+    },
+    "components": {
+      "description": "the components, C1, C2, ... in order; together they cover every requirement R1 to R12 of Still Point Yoga",
+      "items": {
+        "$ref": "#/definitions/Component"
+      },
+      "type": "array"
+    },
+    "booking_address": {
+      "description": "the booking address of Still Point Yoga, as recorded in the PRD",
+      "type": "string"
+    },
+    "assumptions": {
+      "description": "assumptions, using only recorded facts",
+      "items": {
+        "type": "string"
+      },
+      "type": "array"
+    },
+    "facts_used": {
+      "description": "the charter facts this section relies on",
+      "items": {
+        "type": "string"
+      },
+      "type": "array"
+    }
+  },
+  "required": [
+    "heading",
+    "components",
+    "booking_address"
+  ],
+  "type": "object",
+  "definitions": {
+    "Component": {
+      "additionalProperties": false,
+      "properties": {
+        "id": {
+          "description": "C1, C2, ... in order",
+          "type": "string"
+        },
+        "name": {
+          "description": "the component name",
+          "type": "string"
+        },
+        "responsibility": {
+          "description": "its one responsibility, in one line",
+          "type": "string"
+        },
+        "covers": {
+          "description": "the PRD requirement ids it covers, from R1 to R12",
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "page": {
+          "description": "the page id it sits on, e.g. \"P1\"",
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "name",
+        "responsibility"
+      ],
+      "type": "object"
+    }
+  }
+}

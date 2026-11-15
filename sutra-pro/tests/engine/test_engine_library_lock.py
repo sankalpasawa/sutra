@@ -1,22 +1,26 @@
-"""P10 (work package E1, engine design 3.4 and risk 12): the template library's index is read, changed and written back, so two
-runs storing different templates could lose one entry. `store` and `mark_used` now run inside an `fcntl.flock` on
+"""P10 (work package E1, engine design 3.4 and risk 12; four writers since sync 6, D181): the template library's index is read, changed
+and written back, so two runs storing different templates could lose one entry. `store`, `mark_used`, `note_version` and
+`mark_run_template_used` now run inside an `fcntl.flock` on
 `<library>/.lock`; a run that waits longer than `LOCK_WAIT_S` gets `LibraryBusy`, which the router turns into the generic
 template. The race is reproduced with real processes; the 30 s wait is cut down to a fraction of a second here."""
+import ast
 import contextlib
 import importlib
 import json
 import os
+import shutil
 import subprocess
 import sys
 import textwrap
 import time
+import types
 from pathlib import Path
 
 import pytest
 
 REPO = Path(__file__).resolve().parents[2]
 ENGINE = "sutra_app.engine"
-J2_MODULES = ("j2", "j2_agent", "j2_agent_models", "j2_agent_views", "j2_artifact_models", "j2_artifacts", "j2_board", "j2_change",
+J2_MODULES = ("j2", "j2_agent", "j2_agent_models", "j2_agent_views", "j2_artifact_lib", "j2_artifact_models", "j2_artifacts", "j2_board", "j2_change",
               "j2_check", "j2_map", "j2_realization", "j2_rules", "j2_schema", "j2_send", "j2_story", "j2_studio", "j2_template_lib",
               "rehydrate")
 BREW_LAB = ("A one-page website for Brew Lab, a small specialty coffee shop in Indiranagar, Bengaluru. Visitors should "
@@ -164,6 +168,140 @@ def test_the_lock_is_released_when_the_write_fails(tpl, monkeypatch):
 def test_library_busy_is_a_runtime_error_and_lock_wait_is_30_seconds():
     from sutra_app.engine import j2_template_lib
     assert issubclass(j2_template_lib.LibraryBusy, RuntimeError) and j2_template_lib.LOCK_WAIT_S == 30.0
+
+
+# ---- sync 6 (D181): the two more writers, and no wrapper calls another wrapper ----------------------------------------------------
+SEED = REPO / "sutra_app" / "engine" / "seed" / "library"
+RUN_TEMPLATE = "iron-grove-fitness-prd-hld-lld-and-website"       # a row of the seed's `run_templates`
+
+# Two writer processes of the sync 6 kind: one marks the run template used by many runs, the other adds provenance notes to the
+# versions of one section (what `route`'s adapt path does), both on the same index at the same time.
+USER = textwrap.dedent('''
+    import os, sys, time
+    from sutra_app.engine import j2_template_lib as L
+    tid, count, start = sys.argv[1], int(sys.argv[2]), sys.argv[3]
+    while not os.path.exists(start):
+        time.sleep(0.002)
+    for i in range(count):
+        L.mark_run_template_used(tid, {"run": f"run-{i}", "workflows": 1, "of": 20})
+    print("marked", count)
+''')
+NOTER = textwrap.dedent('''
+    import os, sys, time, types
+    from sutra_app.engine import j2_template_lib as L
+    count, start = int(sys.argv[1]), sys.argv[2]
+    while not os.path.exists(start):
+        time.sleep(0.002)
+    rows = [(e, v) for e in L.index()["templates"] for v in e["versions"] if L.load(e["artifact"], L.slug(e["section"]), e["slug"], v["version"])][:count]
+    for i, (e, v) in enumerate(rows):
+        spec = L.load(e["artifact"], L.slug(e["section"]), e["slug"], v["version"])[0]
+        t = types.SimpleNamespace(artifact=e["artifact"], section=e["section"], name=spec["name"], version=v["version"])
+        L.note_version(t, noted_by=f"noter-{i}")
+    print("noted", len(rows), flush=True)
+    assert len(rows) == count, len(rows)
+''')
+
+
+def seeded_library(tmp_path) -> Path:
+    library = tmp_path / "library"
+    shutil.copytree(SEED, library)
+    return library
+
+
+def test_two_processes_use_one_run_template_and_adapt_a_section_at_once_without_losing_a_row(tmp_path):
+    library, start = seeded_library(tmp_path), tmp_path / "go"
+    before = json.loads((library / "index.json").read_text())
+    used_before = next(r["used_by"] for r in before["run_templates"] if r["id"] == RUN_TEMPLATE)
+    procs = [subprocess.Popen([sys.executable, "-c", code, *args, str(start)], env=child_env(library),
+                              stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+             for code, args in ((USER, (RUN_TEMPLATE, "25")), (NOTER, ("25",)))]
+    time.sleep(0.5)
+    start.write_text("go")
+    outs = [p.communicate(timeout=180) for p in procs]
+    assert [p.returncode for p in procs] == [0, 0], outs
+    after = json.loads((library / "index.json").read_text())
+    assert next(r["used_by"] for r in after["run_templates"] if r["id"] == RUN_TEMPLATE) == used_before + 25
+    template = json.loads((library / "run-templates" / RUN_TEMPLATE / "template.json").read_text())
+    assert len(template["used_by"]) == used_before + 25
+    noted = sorted(v["noted_by"] for e in after["templates"] for v in e["versions"] if "noted_by" in v)
+    assert noted == sorted(f"noter-{i}" for i in range(25)), "every note reached its index row"
+    assert len(after["templates"]) == len(before["templates"]) and len(after["run_templates"]) == len(before["run_templates"])
+
+
+def test_note_version_and_mark_run_template_used_give_up_with_library_busy(tpl, tmp_path):
+    shutil.copytree(SEED, tmp_path / "library")
+    entry = tpl.index()["templates"][0]
+    spec = tpl.load(entry["artifact"], tpl.slug(entry["section"]), entry["slug"], entry["versions"][0]["version"])[0]
+    t = types.SimpleNamespace(artifact=entry["artifact"], section=entry["section"], name=spec["name"], version=entry["versions"][0]["version"])
+    used = next(r["used_by"] for r in tpl.index()["run_templates"] if r["id"] == RUN_TEMPLATE)
+    with lock_held_by_another_process(tmp_path / "library"):
+        with pytest.raises(tpl.LibraryBusy):
+            tpl.note_version(t, adapted_from="x")
+        with pytest.raises(tpl.LibraryBusy):
+            tpl.mark_run_template_used(RUN_TEMPLATE, {"run": "r9", "workflows": 1, "of": 20})
+    row = tpl.index()["templates"][0]["versions"][0]
+    assert row.get("adapted_from") != "x" and next(r["used_by"] for r in tpl.index()["run_templates"] if r["id"] == RUN_TEMPLATE) == used
+    tpl.note_version(t, adapted_from="x")      # free again: the same call now works
+    assert tpl.index()["templates"][0]["versions"][0]["adapted_from"] == "x"
+
+
+def test_the_originals_are_kept_under_their_underscore_names_and_the_wrappers_take_the_lock():
+    from sutra_app.engine import j2_template_lib as L
+    for name in ("store", "mark_used", "note_version", "mark_run_template_used"):
+        assert callable(getattr(L, name)) and callable(getattr(L, "_" + name)), name
+
+
+def module_functions(path: Path):
+    tree = ast.parse(path.read_text(encoding="utf-8"))
+    return {n.name: n for n in tree.body if isinstance(n, ast.FunctionDef)}
+
+
+def lock_takers(funcs):
+    """Functions that take the library lock themselves: a `with _library_lock():` in the body."""
+    out = set()
+    for name, fn in funcs.items():
+        for node in ast.walk(fn):
+            if isinstance(node, ast.With) and any(isinstance(i.context_expr, ast.Call) and getattr(i.context_expr.func, "id", "") == "_library_lock"
+                                                  for i in node.items):
+                out.add(name)
+    return out
+
+
+def reachable(funcs, start):
+    """Module functions called, directly or through other module functions, from `start` (by plain name)."""
+    seen, todo = set(), [start]
+    while todo:
+        fn = funcs[todo.pop()]
+        for node in ast.walk(fn):
+            if isinstance(node, ast.Call) and isinstance(node.func, ast.Name) and node.func.id in funcs and node.func.id not in seen:
+                seen.add(node.func.id)
+                todo.append(node.func.id)
+    return seen
+
+
+def test_the_library_lock_is_taken_by_exactly_the_four_wrappers_and_never_nested():
+    """The lock is a non-reentrant flock: a second acquire on a new descriptor of the same process waits LOCK_WAIT_S and then fails
+    (D181). No function that takes it may reach one that takes it, and `collect`, which the host runs under the lock in its finish
+    step, must reach none."""
+    funcs = module_functions(REPO / "sutra_app" / "engine" / "j2_template_lib.py")
+    takers = lock_takers(funcs)
+    assert takers == {"store", "mark_used", "note_version", "mark_run_template_used"}
+    for name in sorted(takers):
+        assert not (reachable(funcs, name) & takers), f"{name} reaches a function that takes the library lock"
+    assert "collect" in funcs and not (reachable(funcs, "collect") & takers)
+
+
+def test_no_function_that_writes_the_index_runs_outside_the_lock_unless_it_is_a_developer_tool():
+    """Every writer of the index (`_save_index`) is a wrapper's original, or a function listed here as a developer tool the app never
+    calls (D181), or a function reached only from those: a new J2 writer that nobody wrapped fails here."""
+    funcs = module_functions(REPO / "sutra_app" / "engine" / "j2_template_lib.py")
+    takers = lock_takers(funcs)
+    inside = set()
+    for name in takers:
+        inside |= reachable(funcs, name)
+    writers = {n for n, fn in funcs.items() if any(isinstance(x, ast.Call) and getattr(x.func, "id", "") == "_save_index" for x in ast.walk(fn))}
+    developer_tools = {"save_run_template", "move_versions", "collect"}      # `collect`: the host runs it under the lock (finish step)
+    assert writers - inside - takers - developer_tools == set(), "an index writer that takes no lock"
 
 
 # ---- the run falls back to the generic template ------------------------------------------------------------------------------

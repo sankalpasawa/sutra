@@ -1,0 +1,32 @@
+{
+  "schema": "sutra-extension/2",
+  "id": "163_weekly_clock@14",
+  "evidence": [
+    {
+      "predicate": "now",
+      "truth": "TRUE",
+      "verified": true,
+      "final": true,
+      "source": "adapter:clock@1",
+      "version": 14,
+      "at": 14,
+      "scope": "orgA/lending"
+    },
+    {
+      "predicate": "now",
+      "truth": "TRUE",
+      "verified": true,
+      "final": true,
+      "source": "adapter:clock@1",
+      "version": 14,
+      "at": 14,
+      "scope": "orgA/branch"
+    }
+  ],
+  "revoke_grants": [
+    "allowance:pulls:1:7"
+  ],
+  "budget": {
+    "pulls": 0
+  }
+}

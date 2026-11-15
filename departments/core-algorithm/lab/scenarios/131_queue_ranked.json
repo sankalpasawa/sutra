@@ -1,0 +1,32 @@
+{
+  "schema": "sutra-extension/2",
+  "id": "131_queue_ranked",
+  "goals": [
+    "loan_1042_promise",
+    "loan_1043_promise",
+    "loan_1044_promise",
+    "loan_1041_promise"
+  ],
+  "ranked_by": [
+    {
+      "goal": "loan_1042_promise",
+      "impact": 9,
+      "rule": "R-PROMISE-1042@1"
+    },
+    {
+      "goal": "loan_1043_promise",
+      "impact": 5,
+      "rule": "R-PROMISE-1043@1"
+    },
+    {
+      "goal": "loan_1044_promise",
+      "impact": 5,
+      "rule": "R-PROMISE-1044@1"
+    },
+    {
+      "goal": "loan_1041_promise",
+      "impact": 2,
+      "rule": "R-PROMISE-1041@1"
+    }
+  ]
+}

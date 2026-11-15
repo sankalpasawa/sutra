@@ -1,0 +1,9 @@
+{
+  "id": "51_refused_class",
+  "title": "A class of actions is refused",
+  "description": "A lender's operations desk rules on every class of the classifier's table: eight it never allows, two it does. Eight actions are asked for: two sudo commands, a command with a pipe, a purge tool, a path under .aws, the instance-metadata address, a plain report export and a sync to a branch server. Each was screened by its words. Six are refused by their class though every grant, a provider slot and the budget are there; the two that are in no class, or in a permitted one, run.",
+  "packs": ["110_ops_desk", "111_requested_actions"],
+  "execute": true,
+  "area": "Refusals",
+  "expected": "REFUSED"
+}

@@ -1,0 +1,90 @@
+{
+  "schema": "sutra-extension/2",
+  "id": "224_payout_desk",
+  "scope": "lendco/payouts",
+  "goals": [
+    "payout_reconciled"
+  ],
+  "budget": {
+    "compute": 30,
+    "money": 6,
+    "attention": 0
+  },
+  "preference": [
+    "compute",
+    "money",
+    "attention"
+  ],
+  "evidence": [
+    {
+      "predicate": "payout_due",
+      "truth": "TRUE",
+      "verified": true,
+      "source": "fixture/loan-book",
+      "version": "loan-101"
+    }
+  ],
+  "methods": [
+    {
+      "id": "check-payout-payee@1",
+      "effect": "payee_checked",
+      "requires": [
+        "payout_due"
+      ],
+      "provider": "local-provider",
+      "grant": "action:check-payout-payee@1",
+      "cost": {
+        "compute": 2,
+        "money": 0,
+        "attention": 0
+      },
+      "action": "simulate_fact",
+      "approved": true,
+      "source": "reviewed/synthetic-method"
+    },
+    {
+      "id": "pay-payout@1",
+      "effect": "payout_paid",
+      "requires": [
+        "payout_due",
+        "payee_checked"
+      ],
+      "provider": "local-provider",
+      "grant": "action:pay-payout@1",
+      "cost": {
+        "compute": 1,
+        "money": 1,
+        "attention": 0
+      },
+      "action": "simulate_fact",
+      "approved": true,
+      "source": "reviewed/synthetic-method"
+    },
+    {
+      "id": "reconcile-payout@1",
+      "effect": "payout_reconciled",
+      "requires": [
+        "payout_due",
+        "payout_paid"
+      ],
+      "provider": "local-provider",
+      "grant": "action:reconcile-payout@1",
+      "cost": {
+        "compute": 2,
+        "money": 0,
+        "attention": 0
+      },
+      "action": "simulate_fact",
+      "approved": true,
+      "source": "reviewed/synthetic-method"
+    }
+  ],
+  "providers": {
+    "local-provider": 12
+  },
+  "grants": [
+    "action:check-payout-payee@1",
+    "action:pay-payout@1",
+    "action:reconcile-payout@1"
+  ]
+}

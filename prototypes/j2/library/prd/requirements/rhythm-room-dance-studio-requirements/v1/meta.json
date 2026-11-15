@@ -1,0 +1,39 @@
+{
+  "schema": "template-library/1",
+  "name": "Rhythm Room Dance Studio Requirements",
+  "version": 1,
+  "sha": "194c621e770ff09aa79f52fe35d0d038f7332f0bee465cec5eb499ed4361aee0",
+  "schema_sha": "0ca399ab8bc3b773a573f8f1786f2611373a784f37f0ff729346302f3151ab82",
+  "model_sha": "d500e2004f264e5e87f56790a54fc5308c4e26a74b7b41f257d1e4b733c79ab2",
+  "class": "RhythmRoomDanceStudioRequirementsV1",
+  "created": "2026-11-11T22:00:16",
+  "fingerprints": [
+    "501c2c920d09d2bc7126d708a1b6daac25c53cf292ffdad0dfb1ae900a1d33b0"
+  ],
+  "made_by": {
+    "run": "j2-20261111-215733",
+    "workflow": "W-4",
+    "atom": "W-4.a1",
+    "agent": "code (adapted from a run template)",
+    "date": "2026-11-11 21:57:33"
+  },
+  "business": {
+    "name": "Rhythm Room Dance Studio",
+    "type": "hld"
+  },
+  "mock": false,
+  "collected_from": {
+    "run": "j2-20261111-215733",
+    "where": "the run's copy"
+  },
+  "used_by": [
+    {
+      "run": "j2-20261111-215733",
+      "workflow": "W-4",
+      "atom": "W-4.a1",
+      "action": "extended"
+    }
+  ],
+  "renamed_from": "Still Point Yoga Requirements@5",
+  "adapted_from": "Still Point Yoga Requirements@3"
+}

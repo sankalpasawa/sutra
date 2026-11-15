@@ -198,13 +198,11 @@ test("with a department and a run the URLs carry the run first and the departmen
 
 test("the page's own first calls reach J2's routes with the department once, with and without a run", () => {
   // the start page's output select is a Sutra module (output_pick.js): the page's own script no longer asks /api/engine/settings
-  // /api/timing (Run settings, studio pin b2d70b5) is not a route of the vendored engine yet, so SutraCtx leaves it unrouted
-  // (test_port_edits.py NOT_IN_ENGINE_YET); the page shows its own empty state for it
-  assert.deepEqual(dept().fetched, ["/api/refs?dept=web", "/api/runs?dept=web", "/api/runlist?dept=web", "/api/timing", "/api/state?since=0&dept=web",
-    "/api/artifacts?x=1&dept=web"]);
+  assert.deepEqual(dept().fetched, ["/api/refs?dept=web", "/api/runs?dept=web", "/api/runlist?dept=web", "/api/timing?dept=web",
+    "/api/state?since=0&dept=web", "/api/artifacts?x=1&dept=web"]);
   // a saved run also asks for its change requests (the build journey's stops) before the artifacts
   assert.deepEqual(dept({location: {search: `?run=${RUN}`}}).fetched,
-    ["/api/refs?dept=web", "/api/runs?dept=web", "/api/runlist?dept=web", `/api/timing?run=${RUN}`, `/api/state?since=0&run=${RUN}&dept=web`,
+    ["/api/refs?dept=web", "/api/runs?dept=web", "/api/runlist?dept=web", `/api/timing?run=${RUN}&dept=web`, `/api/state?since=0&run=${RUN}&dept=web`,
       `/api/changes?x=1&run=${RUN}&dept=web`, `/api/artifacts?x=1&run=${RUN}&dept=web`]);
 });
 
@@ -256,6 +254,13 @@ test("E20: links to the shared library and to a run's Library tab are the team's
   assert.equal(dept({location: {pathname: "/d/web/library/"}}).run("CAT.on"), true, "a trailing slash is the same page");
   assert.equal(dept({location: {pathname: "/d/other/library"}}).run("CAT.on"), false, "another team's library is not this page");
   assert.equal(plain({location: {pathname: "/library"}}).run("CAT.on"), true, "J2's own page, as the stub has it");
+});
+
+test("E20k: the run template links are the team's paths with a team and J2's own without one (studio pin b2d70b5 has no shelf links)", () => {
+  const web = dept(), alone = plain();
+  assert.equal(alone.run('rtHref("thread-boutique-website", "all")'), "/?view=simple&template=thread-boutique-website&workflows=all");
+  assert.equal(web.run('rtHref("thread-boutique-website", "all")'), "/d/web/?view=simple&template=thread-boutique-website&workflows=all");
+  assert.equal(web.run('rtHref("a", "x,y")'), "/d/web/?view=simple&template=a&workflows=x%2Cy");
 });
 
 test("E21: loadFeed hands the question list to FunctionChat before it paints the feed, and paints all the same when the module fails or is absent", async () => {

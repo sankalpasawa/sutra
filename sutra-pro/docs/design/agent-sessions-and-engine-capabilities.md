@@ -149,12 +149,12 @@ No ninth event: partials are ephemeral and chatty, and the event protocol is a c
 ### 3.6 API and events
 | Route | Shape |
 |---|---|
-| `GET /api/teams/{dept}/agents?run=<run_id>` (default: live run, else latest) | `[{agent, label, kind: function\|step, session_id, node_id, run_id, state, live, own: Pick\|null, effective: {provider, model, effort, source}, usage: {calls, usd, tokens_in, tokens_out}, last_at}]`: the five active function sessions plus every session with `run_id = run` (builders, and a past run's archived function sessions); usage by `session_id` |
+| `GET /api/teams/{dept}/agents?run=<run_id>` (default: live run, else latest) | `[{agent, label, kind: function\|step, session_id, node_id, run_id, state, live, own: Pick\|null, effective: {provider, model, effort, source}, usage: {calls, usd, tokens_in, tokens_out, by_purpose: {purpose: {calls, usd}}}, last_at}]`: the five active function sessions plus every session with `run_id = run` (builders, and a past run's archived function sessions); usage by `session_id`; `by_purpose` (0.3.3, D159) has a key for each purpose the session was charged for (`agent_turn`, `plan` and `judge` of the late judge, `agent_chat`, ...), none for one it was not, `{}` for an agent that has not called, and its calls and dollars add up to the totals |
 | `PUT /api/chats/{sid}/choice` | body unchanged `{provider, model?, effort?}` (null provider clears all three); answer adds `source` and `effective` |
 | `GET /api/chats/{sid}/providers` | adds `kind`, `agent`, `own`, `effective`, and `chat_model`/`chat_effort` read from the database when `session.json` is gone |
 | `PUT /api/tasks/{id}/choice` | the run pick (`tasks.pick_json`) for agents with no choice of their own; refused for a finished task |
 | `POST /api/chats/{sid}/steer` | 3.4; answer `{message_id, applies: "next_call"}` |
-| `GET /api/usage/summary?by=session` and `?session_id=` | adds the grouping and filter (`orchestrator/usage.py`, `api/usage.py`) |
+| `GET /api/usage/summary?by=session` and `?session_id=` | adds the grouping and filter (`orchestrator/usage.py`, `api/usage.py`); `by=purpose` and `since=` followed in 0.3.3 (D159) |
 Events on the bus: `agent.session {session_id, node_id, agent, run_id, rolled_from?}` (a session opened or rolled; the page refreshes its list), `chat.choice {session_id, provider, model, effort, source}`, and `chat.partial` as in 3.5; `graph.updated` and `chat.archived` fire as today. Errors: 404 unknown chat, 409 `not_running` (steer on a finished run), 422 with the valid models or efforts named (as today), 403 token.
 
 ### 3.7 The page

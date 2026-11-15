@@ -1,0 +1,85 @@
+{
+  "$defs": {
+    "JsonValue": {}
+  },
+  "additionalProperties": false,
+  "description": "The first line of chat.jsonl (J2 `post`, message 1): which mode and model produced the run, and since J2 1adb8ecd who ran\nit (`by`, J2 `run_author()`: `J2_RUN_BY`, else the git or system user name). Closed; every key but `meta` and `run` is\noptional so a run of an older J2 reads. `by` is a name, never a path.",
+  "properties": {
+    "by": {
+      "anyOf": [
+        {
+          "maxLength": 80,
+          "minLength": 1,
+          "pattern": "^[^/\\\\\\x00-\\x1f]+$",
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "By"
+    },
+    "force_audit_fail": {
+      "$ref": "#/$defs/JsonValue",
+      "default": null
+    },
+    "force_question": {
+      "$ref": "#/$defs/JsonValue",
+      "default": null
+    },
+    "j2_fixes": {
+      "$ref": "#/$defs/JsonValue",
+      "default": null
+    },
+    "meta": {
+      "const": true,
+      "title": "Meta",
+      "type": "boolean"
+    },
+    "mock": {
+      "anyOf": [
+        {
+          "type": "boolean"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Mock"
+    },
+    "model": {
+      "$ref": "#/$defs/JsonValue",
+      "default": null
+    },
+    "output": {
+      "$ref": "#/$defs/JsonValue",
+      "default": null
+    },
+    "provider": {
+      "$ref": "#/$defs/JsonValue",
+      "default": null
+    },
+    "realization": {
+      "$ref": "#/$defs/JsonValue",
+      "default": null
+    },
+    "run": {
+      "maxLength": 200,
+      "minLength": 1,
+      "title": "Run",
+      "type": "string"
+    },
+    "test_lessons": {
+      "$ref": "#/$defs/JsonValue",
+      "default": null
+    }
+  },
+  "required": [
+    "meta",
+    "run"
+  ],
+  "title": "RunHeader",
+  "type": "object"
+}

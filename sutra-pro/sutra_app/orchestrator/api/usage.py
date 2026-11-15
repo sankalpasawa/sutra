@@ -1,10 +1,17 @@
 """Usage routes (orchestrator 6.2). Both are reads, so they need no token.
 
     GET /api/usage?task_id=&dept_id=&fn=&session_id=&since=&include_stub=&after=&limit=   -> {rows: UsageOut[], totals}
-    GET /api/usage/summary?by=dept|fn|provider|day|atom|session&session_id=&include_stub=   -> {groups: [{key, calls, usd, tokens_in, tokens_out}]}
+    GET /api/usage/summary?by=dept|fn|provider|day|atom|session|purpose&session_id=&since=&include_stub=   -> {groups: [{key, calls, usd, tokens_in, tokens_out}]}
 
 `totals` cover every matching row, not just the page (`limit` default 50, max 500; `after` is a row id). `since` is epoch
-seconds or an ISO time like 2026-11-04T10:00:06Z. Stub rows are left out of rows, totals and groups unless `include_stub=1`.
+seconds or an ISO time like 2026-11-04T10:00:06Z; on the summary it is the window of every grouping (the rows at or after it). Stub rows are
+left out of rows, totals and groups unless `include_stub=1`. The groups are in key order and hold at most 500 keys; a call without a value for
+the key is the group `(none)`.
+
+`by=purpose` is what the calls were for, the ledger's own open word: `agent_turn` (an agent's work), `plan` and `judge` (the late judge, D145),
+`agent_chat` (a function's answer to a question in its chat, D147), `change`, `summary`, `template`, `review`, `chat`, `chat_plan` (the chat
+agent) and `connector_test`; a purpose this list does not know is a group like any other (D159). A group's `usd` is null when none of its rows
+has a price (Codex reports tokens only), as in every other grouping.
 The router reads `request.app.state.services.usage` (a `UsageStore`).
 """
 from typing import Annotated, Literal
@@ -44,6 +51,14 @@ def _store(request: Request) -> UsageStore:
     return store
 
 
+def _floor(since: str | None) -> int | None:
+    """`since` as epoch seconds, None when it was not given; a time that is none is a 422 naming `query.since`."""
+    try:
+        return parse_since(since) if since is not None else None
+    except ValueError as exc:
+        raise validation_error([violation("query.since", "bad_time", str(exc))]) from None
+
+
 def build_router() -> APIRouter:
     router = APIRouter(prefix="/api/usage", tags=["usage"])
 
@@ -59,22 +74,21 @@ def build_router() -> APIRouter:
         after: int = Query(0, ge=0, le=2**53 - 1),
         limit: int = Query(50, ge=1, le=500),
     ) -> RedactedJSONResponse:
-        try:
-            floor = parse_since(since) if since is not None else None
-        except ValueError as exc:
-            raise validation_error([violation("query.since", "bad_time", str(exc))]) from None
+        floor = _floor(since)
         rows, totals = await run_blocking(lambda: _store(request).rows(
             task_id=task_id, dept_id=dept_id, fn=fn, since=floor, include_stub=include_stub, after=after, limit=limit, session_id=session_id))
         return respond(request, UsageList(rows=rows, totals=totals))
 
-    @router.get("/summary", summary="Usage grouped by department, function, provider, day, atom or chat session")
+    @router.get("/summary", summary="Usage grouped by department, function, provider, day, atom, chat session or purpose")
     async def get_summary(
         request: Request,
-        by: Literal["dept", "fn", "provider", "day", "atom", "session"] = Query("dept"),
+        by: Literal["dept", "fn", "provider", "day", "atom", "session", "purpose"] = Query("dept"),
         session_id: str | None = Query(None, pattern=ID_PATTERN),
+        since: str | None = Query(None, max_length=40, description="epoch seconds or 2026-11-04T10:00:06Z"),
         include_stub: bool = Query(False),
     ) -> RedactedJSONResponse:
-        groups = await run_blocking(lambda: _store(request).summary(by, include_stub=include_stub, session_id=session_id))
+        floor = _floor(since)
+        groups = await run_blocking(lambda: _store(request).summary(by, include_stub=include_stub, session_id=session_id, since=floor))
         return respond(request, UsageSummary(groups=[UsageGroupOut(**g) for g in groups]))
 
     return router

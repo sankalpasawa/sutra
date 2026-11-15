@@ -1,0 +1,9 @@
+{
+  "id": "66_review_queue",
+  "title": "A ranked queue under a ceiling",
+  "description": "Two loan reviews ranked by impact under a department ceiling: the review with the higher impact runs; the other fits the run cap and not the ceiling, and stops as RESOURCE_REQUIRED. This case is one evaluation. The recorded sequence `numbers` takes the same look, says which dimension, how much was needed and what was left, and then takes the next run: the run cap is set again, the ceiling is not, and the review stops on the ceiling again.",
+  "packs": ["157_review_queue", "158_queue_reviews"],
+  "execute": true,
+  "area": "Numbers",
+  "expected": "LOCAL_MODEL_EFFECTS_RECORDED"
+}

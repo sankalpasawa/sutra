@@ -1,0 +1,333 @@
+{
+  "schema": "run-template/1",
+  "id": "still-point-yoga-prd-hld-and-lld",
+  "name": "Still Point Yoga: PRD, HLD and LLD",
+  "description": "Product requirements, High-level design and Low-level design for a yoga studio: 17 workflows, as run j2-20261103-184249 (live) finished them.",
+  "business_type": "yoga studio",
+  "made_from_run": "j2-20261103-184249",
+  "mock": false,
+  "stages": [
+    "prd",
+    "hld",
+    "lld"
+  ],
+  "workflows": [
+    {
+      "key": "W-1",
+      "name": "PRD Problem section",
+      "stage": "prd",
+      "artifact": "prd",
+      "section": "Problem",
+      "section_template": "Still Point Yoga Problem@2",
+      "section_template_kind": "specialised",
+      "depends_on": [],
+      "covers": [
+        "Problem section states that <studio name> at <address> needs a page showing its classes and taking booking requests"
+      ],
+      "made_from": "W-1",
+      "fix": false
+    },
+    {
+      "key": "W-2",
+      "name": "PRD Users section",
+      "stage": "prd",
+      "artifact": "prd",
+      "section": "Users",
+      "section_template": "Still Point Yoga PRD Users@1",
+      "section_template_kind": "specialised",
+      "depends_on": [
+        "W-1"
+      ],
+      "covers": [
+        "Users section names the visitors who want to book a class and the studio team who receive bookings, with what each does"
+      ],
+      "made_from": "W-2",
+      "fix": false
+    },
+    {
+      "key": "W-3",
+      "name": "PRD Goals section",
+      "stage": "prd",
+      "artifact": "prd",
+      "section": "Goals",
+      "section_template": "Still Point Yoga PRD Goals@2",
+      "section_template_kind": "specialised",
+      "depends_on": [
+        "W-2"
+      ],
+      "covers": [
+        "Goals section states that visitors can see the classes and send a booking, with no numeric target"
+      ],
+      "made_from": "W-3",
+      "fix": false
+    },
+    {
+      "key": "W-4",
+      "name": "PRD Requirements section",
+      "stage": "prd",
+      "artifact": "prd",
+      "section": "Requirements",
+      "section_template": "Still Point Yoga Requirements@3",
+      "section_template_kind": "specialised",
+      "depends_on": [
+        "W-3"
+      ],
+      "covers": [
+        "Requirements section lists the studio name and the address as text, with no embedded map",
+        "Requirements section lists all five classes with day, time and price in rupees exactly as given",
+        "Requirements section describes a booking form with the fields name, email, class and preferred date, sent to <email address>",
+        "Requirements section states that payment is made at the studio and no online payment is taken",
+        "Requirements section states that the page works on phones"
+      ],
+      "made_from": "W-4",
+      "fix": false
+    },
+    {
+      "key": "W-5",
+      "name": "PRD Success metrics section",
+      "stage": "prd",
+      "artifact": "prd",
+      "section": "Success metrics",
+      "section_template": "Still Point Yoga PRD Success metrics@1",
+      "section_template_kind": "specialised",
+      "depends_on": [
+        "W-3"
+      ],
+      "covers": [
+        "Success metrics section states that success is that visitors can see the classes and send a booking, with no number"
+      ],
+      "made_from": "W-5",
+      "fix": false
+    },
+    {
+      "key": "W-6",
+      "name": "PRD Out of scope section",
+      "stage": "prd",
+      "artifact": "prd",
+      "section": "Out of scope",
+      "section_template": "Still Point Yoga PRD Out of scope@2",
+      "section_template_kind": "specialised",
+      "depends_on": [
+        "W-4"
+      ],
+      "covers": [
+        "Out of scope section lists teacher names, a phone number, an embedded map and online payment",
+        "The document contains no detail beyond the brief and the answers"
+      ],
+      "made_from": "W-6",
+      "fix": false
+    },
+    {
+      "key": "W-7",
+      "name": "HLD Purpose and scope section",
+      "stage": "hld",
+      "artifact": "hld",
+      "section": "Purpose and scope",
+      "section_template": "Still Point Yoga Purpose and scope@1",
+      "section_template_kind": "specialised",
+      "depends_on": [],
+      "covers": [
+        "The Purpose and scope section is written for <studio name>"
+      ],
+      "made_from": "W-8",
+      "fix": false
+    },
+    {
+      "key": "W-8",
+      "name": "HLD Pages section",
+      "stage": "hld",
+      "artifact": "hld",
+      "section": "Pages",
+      "section_template": "Still Point Yoga Pages@1",
+      "section_template_kind": "specialised",
+      "depends_on": [
+        "W-7"
+      ],
+      "covers": [
+        "The Pages section is written for <studio name>"
+      ],
+      "made_from": "W-9",
+      "fix": false
+    },
+    {
+      "key": "W-9",
+      "name": "HLD Components section",
+      "stage": "hld",
+      "artifact": "hld",
+      "section": "Components",
+      "section_template": "Still Point Yoga Components@2",
+      "section_template_kind": "specialised",
+      "depends_on": [
+        "W-8",
+        "W-4"
+      ],
+      "covers": [
+        "The Components section is written for <studio name>, and names every requirement (<requirement ids>) it covers"
+      ],
+      "made_from": "W-10",
+      "fix": false
+    },
+    {
+      "key": "W-10",
+      "name": "HLD Data flow section",
+      "stage": "hld",
+      "artifact": "hld",
+      "section": "Data flow",
+      "section_template": "Still Point Yoga Data flow@1",
+      "section_template_kind": "specialised",
+      "depends_on": [
+        "W-9"
+      ],
+      "covers": [
+        "The Data flow section is written for <studio name>"
+      ],
+      "made_from": "W-11",
+      "fix": false
+    },
+    {
+      "key": "W-11",
+      "name": "HLD Hosting and deployment section",
+      "stage": "hld",
+      "artifact": "hld",
+      "section": "Hosting and deployment",
+      "section_template": "Still Point Yoga Hosting and deployment@1",
+      "section_template_kind": "specialised",
+      "depends_on": [
+        "W-10"
+      ],
+      "covers": [
+        "The Hosting and deployment section is written for <studio name>"
+      ],
+      "made_from": "W-12",
+      "fix": false
+    },
+    {
+      "key": "W-12",
+      "name": "HLD Risks section",
+      "stage": "hld",
+      "artifact": "hld",
+      "section": "Risks",
+      "section_template": "Still Point Yoga Risks@1",
+      "section_template_kind": "specialised",
+      "depends_on": [
+        "W-11"
+      ],
+      "covers": [
+        "The Risks section is written for <studio name>"
+      ],
+      "made_from": "W-13",
+      "fix": false
+    },
+    {
+      "key": "W-13",
+      "name": "LLD Pages and sections",
+      "stage": "lld",
+      "artifact": "lld",
+      "section": "Pages and sections",
+      "section_template": "Still Point Yoga Pages and sections@2",
+      "section_template_kind": "specialised",
+      "depends_on": [
+        "W-9"
+      ],
+      "covers": [
+        "The Pages and sections section is written for <studio name>, and names every component (<component ids>) it implements"
+      ],
+      "made_from": "W-19",
+      "fix": false
+    },
+    {
+      "key": "W-14",
+      "name": "LLD Interactive elements",
+      "stage": "lld",
+      "artifact": "lld",
+      "section": "Interactive elements",
+      "section_template": "Still Point Yoga Interactive elements@1",
+      "section_template_kind": "specialised",
+      "depends_on": [
+        "W-13"
+      ],
+      "covers": [
+        "The Interactive elements section is written for <studio name>"
+      ],
+      "made_from": "W-20",
+      "fix": false
+    },
+    {
+      "key": "W-15",
+      "name": "LLD Form fields",
+      "stage": "lld",
+      "artifact": "lld",
+      "section": "Form fields",
+      "section_template": "Still Point Yoga Form fields@1",
+      "section_template_kind": "specialised",
+      "depends_on": [
+        "W-14"
+      ],
+      "covers": [
+        "The Form fields section is written for <studio name>"
+      ],
+      "made_from": "W-21",
+      "fix": false
+    },
+    {
+      "key": "W-16",
+      "name": "LLD File structure",
+      "stage": "lld",
+      "artifact": "lld",
+      "section": "File structure",
+      "section_template": "Still Point Yoga File structure@1",
+      "section_template_kind": "specialised",
+      "depends_on": [
+        "W-15"
+      ],
+      "covers": [
+        "The File structure section is written for <studio name>"
+      ],
+      "made_from": "W-22",
+      "fix": false
+    },
+    {
+      "key": "W-17",
+      "name": "LLD Responsive and accessibility rules",
+      "stage": "lld",
+      "artifact": "lld",
+      "section": "Responsive and accessibility rules",
+      "section_template": "Still Point Yoga Responsive and accessibility rules@1",
+      "section_template_kind": "specialised",
+      "depends_on": [
+        "W-16"
+      ],
+      "covers": [
+        "The Responsive and accessibility rules section is written for <studio name>"
+      ],
+      "made_from": "W-23",
+      "fix": false
+    }
+  ],
+  "facts_slots": [
+    "studio name",
+    "address",
+    "class list",
+    "email address"
+  ],
+  "made_by": {
+    "run": "j2-20261103-184249",
+    "date": "2026-11-03 18:42:49",
+    "provider": "claude-cli",
+    "model": "sonnet",
+    "by": "j2_template_lib.run_template_from_run"
+  },
+  "used_by": [
+    {
+      "run": "j2-20261111-211339",
+      "workflows": 17,
+      "of": 17
+    },
+    {
+      "run": "j2-20261111-215733",
+      "workflows": 12,
+      "of": 17
+    }
+  ],
+  "created": "2026-11-11T15:46:42"
+}

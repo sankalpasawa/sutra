@@ -1,0 +1,23 @@
+{
+  "schema": "sutra-extension/2",
+  "id": "162_renewal",
+  "evidence": [
+    {
+      "predicate": "bureau_report_clean",
+      "truth": "TRUE",
+      "verified": true,
+      "source": "fixture/bureau-report",
+      "version": "report-2",
+      "depends_on": [
+        {
+          "predicate": "until:60",
+          "version": "window"
+        }
+      ]
+    }
+  ],
+  "grants": [
+    "action:disburse-loan@1",
+    "box:45:action:disburse-loan@1"
+  ]
+}

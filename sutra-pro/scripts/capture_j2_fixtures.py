@@ -110,6 +110,7 @@ ROUTE_FILES = {
     "story.json": "/api/story",
     "audits.json": "/api/audits",
     "refs.json": "/api/refs",
+    "timing.json": "/api/timing",     # Run settings' "Time per step" (J2 sync 5, D173)
     "site-latest.html": "/site/latest",
     # the Studio view's readable pages: a document's tab (the mock website run wrote none: J2's "not written yet" page), the site and one
     # record of the run, as `/view?name=` shows a file of the run's artifact list
@@ -252,6 +253,8 @@ def scrubbed_env(work: Path, base: dict[str, str] | None = None) -> dict[str, st
         "STUDIO_MOCK": "1",
         "J2_CHROME": "none",  # J2's render check would use this machine's Chrome and change the audits
         "J2_MEMORY": "0",
+        "J2_RUN_BY": "sutra-pro",  # D190: no git user name in chat.jsonl, no git subprocess per run
+        "J2_PUSH_RUNS": "0",  # D190: a run folder is never pushed
         "J2_RUNS_DIR": str(work / "runs"),
         "J2_MEMORY_FILE": str(work / "lessons.jsonl"),
         "J2_PLAYBOOK_FILE": str(work / "playbooks.jsonl"),

@@ -1,0 +1,86 @@
+{
+  "schema": "sutra-extension/2",
+  "id": "82_components_without_constructor",
+  "methods": [
+    {
+      "id": "validate-field@1",
+      "effect": "component_validate",
+      "requires": [
+        "source_contract_reviewed"
+      ],
+      "provider": "local-provider",
+      "grant": "action:validate-field@1",
+      "cost": {
+        "compute": 1,
+        "money": 0,
+        "attention": 0
+      },
+      "action": "simulate_fact",
+      "approved": true,
+      "source": "reviewed/synthetic-method"
+    },
+    {
+      "id": "store-component@1",
+      "effect": "component_store",
+      "requires": [
+        "source_contract_reviewed"
+      ],
+      "provider": "local-provider",
+      "grant": "action:store-component@1",
+      "cost": {
+        "compute": 1,
+        "money": 0,
+        "attention": 0
+      },
+      "action": "simulate_fact",
+      "approved": true,
+      "source": "reviewed/synthetic-method"
+    },
+    {
+      "id": "read-component@1",
+      "effect": "component_read",
+      "requires": [
+        "source_contract_reviewed"
+      ],
+      "provider": "local-provider",
+      "grant": "action:read-component@1",
+      "cost": {
+        "compute": 1,
+        "money": 0,
+        "attention": 0
+      },
+      "action": "simulate_fact",
+      "approved": true,
+      "source": "reviewed/synthetic-method"
+    },
+    {
+      "id": "construct-enquiry-candidate@1",
+      "effect": "capability_candidate_created",
+      "requires": [
+        "component_validate",
+        "component_store",
+        "component_read"
+      ],
+      "provider": "local-provider",
+      "grant": "action:construct-enquiry-candidate@1",
+      "cost": {
+        "compute": 1,
+        "money": 0,
+        "attention": 0
+      },
+      "action": "compile_candidate",
+      "approved": true,
+      "source": "reviewed/synthetic-method",
+      "constructor": "C-ENQUIRY@1"
+    }
+  ],
+  "providers": {
+    "local-provider": 5
+  },
+  "grants": [
+    "action:validate-field@1",
+    "action:store-component@1",
+    "action:read-component@1",
+    "action:construct-enquiry-candidate@1"
+  ]
+}

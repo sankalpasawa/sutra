@@ -1,0 +1,37 @@
+{
+  "schema": "template-library/1",
+  "name": "Iron Grove Fitness section S2",
+  "version": 1,
+  "sha": "18664c21f45dc0c1c193bb9276e37cce1594e199348fe7ba49896353e05c2b49",
+  "schema_sha": "2b8fbfa64fa4319c7ea2a19e1481ba4c28b21eece2ed968016fad1a7e6a569fd",
+  "model_sha": "6667373dc0905803bd647e6d285302800e652ccadd72296ef19f138a64f15514",
+  "class": "IronGroveFitnessSectionS2V1",
+  "created": "2026-11-11T21:48:20",
+  "fingerprints": [
+    "b334a7a416ef8257e8992c9a60bb26f2ae2910686b4d51808e9e67522b8edb89"
+  ],
+  "made_by": {
+    "run": "j2-20261111-211339",
+    "workflow": "W-29",
+    "atom": "W-29.a1",
+    "agent": "template generator (claude-cli)",
+    "date": "2026-11-11 21:13:39"
+  },
+  "business": {
+    "name": "Iron Grove Fitness",
+    "type": "fitness studio"
+  },
+  "mock": false,
+  "collected_from": {
+    "run": "j2-20261111-211339",
+    "where": "the run's copy"
+  },
+  "used_by": [
+    {
+      "run": "j2-20261111-211339",
+      "workflow": "W-29",
+      "atom": "W-29.a1",
+      "action": "created"
+    }
+  ]
+}

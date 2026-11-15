@@ -26,6 +26,7 @@ from typing import Any
 import sutra_app
 from sutra_app.config import Settings
 from sutra_app.connectors.chat_port import RouterChatPort
+from sutra_app.connectors.egress import scrubbed
 from sutra_app.orchestrator.agent_sessions import session_of
 from sutra_app.connectors.factory import build_router as build_connector_router
 from sutra_app.connectors.orchestrator_port import AsyncConnector
@@ -154,7 +155,7 @@ def build_services(settings: Settings, *, connector: Any = None, launcher: Any =
     chats = ChatStore(db)
     departments = DepartmentStore(db, settings.data_dir)
     chart = ChartStore(db, graph=graph, chats=chats, data_dir=settings.data_dir, departments=departments, ids=ids)
-    atoms = AtomStore(db, chats=chats, graph=graph)
+    atoms = AtomStore(db, chats=chats, graph=graph, scrub=lambda text: scrubbed(text, redactor))      # a turn's words and reply are the model's text (D157)
     usage = UsageStore(db, chats=chats)
     store = TaskStore(db, settings.data_dir)
     taskgraph = TaskGraph(store, graph, ids=ids)

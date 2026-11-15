@@ -396,6 +396,67 @@ def test_the_function_drawer_has_the_sections_the_legend_and_the_five_atom_state
     no_errors(browser)
 
 
+def result_rows(browser, state):
+    """The class names of the children of the Result block of the atom card in this state, in the order they are drawn."""
+    return browser.js(f"Array.from(document.querySelector('details.atomcard[data-state={state}] .ablock[data-block=result] > div').children, e => e.tagName.toLowerCase() + '.' + e.className.split(' ').join('.'))")
+
+
+@pytest.mark.browser
+def test_the_result_of_an_atom_shows_what_it_produced_and_the_reply_the_model_gave_behind_a_fold(browser, fake, screens_dir):
+    """D157: the owner can see what an atom made. A closed atom shows its output, a failed atom shows the reply that failed (here a charter with two
+    done-when items, which is why the check said fewer than 3), an atom stored before the layer recorded it says so, and a refused one never ran."""
+    load(browser, fake)
+    open_node(browser, "web.identity", "details")
+    present(browser, "details.atomcard")
+    for state in ("verify_failed", "closed", "abandoned", "refused"):
+        browser.click(f"details.atomcard[data-state={state}] summary")
+    # the open atom (unfolded): what its last failed try said, and its reply behind a closed fold
+    assert texts(browser, "details.atomcard[data-state=open] .aoutput li") == ["said: I need one more answer."]
+    assert browser.js("document.querySelector('details.atomcard[data-state=open] details.areply').open") is False
+    # a closed atom shows what the turn made
+    assert texts(browser, "details.atomcard[data-state=closed] .aoutput b") == ["Output"]
+    assert texts(browser, "details.atomcard[data-state=closed] .aoutput li") == ["read your answer: carry on", "posted 1 message to you"]
+    # a failed atom: the output, the reply behind the fold, then the Reason (in that order); the fold opens to the text as it was printed
+    assert result_rows(browser, "verify_failed") == ["span.apill.st-verify_failed", "div.arow.aoutput", "details.areply", "div.arow.areason", "div.arow.acost"]
+    assert texts(browser, "details.atomcard[data-state=verify_failed] .aoutput li") == ["the charter: Coffee shop landing page, 2 done-when items", "posted 1 message to Adaptation"]
+    assert texts(browser, "details.atomcard[data-state=verify_failed] .areply summary") == ["The reply"]
+    fold = "document.querySelector('details.atomcard[data-state=verify_failed] details.areply')"
+    assert browser.js(f"{fold}.open") is False
+    browser.click("details.atomcard[data-state=verify_failed] .areply summary")
+    assert browser.js(f"{fold}.open") is True and browser.js(f"{fold}.querySelector('.areplytext').getBoundingClientRect().height") > 40
+    reply = browser.js("document.querySelector('details.atomcard[data-state=verify_failed] .areplytext').textContent")
+    assert json.loads(reply)["goal"]["done_when"] == ["The menu is on the page", "Opening hours are shown"] and reply.startswith("{\n  ")
+    assert browser.js("getComputedStyle(document.querySelector('details.atomcard[data-state=verify_failed] .areplytext')).whiteSpace") == "pre-wrap"
+    assert texts(browser, "details.atomcard[data-state=verify_failed] .areason") == ["Reason verify failed: charter-stamp: Charter rejected: fewer than 3 'done when' criteria."]
+    # an atom stored before the layer recorded anything says so; a refused atom has no Output row at all
+    assert texts(browser, "details.atomcard[data-state=abandoned] .aoutput") == ["Output not recorded for this atom"]
+    assert count(browser, "details.atomcard[data-state=abandoned] .areply") == 0
+    assert count(browser, "details.atomcard[data-state=refused] .aoutput") == 0 and count(browser, "details.atomcard[data-state=refused] .areply") == 0
+    # the fold the owner opened stays open when the drawer is drawn again (an atom event refetches the node's detail)
+    before = len(gets(fake, "/api/graph/nodes/web.identity"))
+    fake.emit("atom.updated")
+    wait_until(lambda: len(gets(fake, "/api/graph/nodes/web.identity")) > before, "the drawer refetched its node")
+    time.sleep(0.3)
+    assert browser.js("document.querySelector('details.atomcard[data-state=verify_failed] details.areply').open") is True
+    browser.shot(screens_dir / "atom-output.png")
+    no_errors(browser)
+
+
+@pytest.mark.browser
+def test_an_atom_that_closes_shows_the_output_and_reply_of_its_last_try_in_place_of_a_failed_one(browser, fake):
+    load(browser, fake)
+    open_node(browser, "web.identity", "details")
+    present(browser, "details.atomcard")
+    assert texts(browser, "details.atomcard[data-state=open] .aoutput li") == ["said: I need one more answer."]
+    fake.stage("3")                                                            # the owner answered: the third try passes and the atom closes
+    fake.emit("atom.updated")
+    browser.wait_for("document.querySelector('details.atomcard').getAttribute('data-state') === 'closed'")
+    assert texts(browser, "details.atomcard:first-of-type .aoutput li") == ["the charter: Coffee shop landing page, 4 done-when items", "posted 1 message to Adaptation"]
+    browser.click("details.atomcard:first-of-type .areply summary")
+    assert len(json.loads(browser.js("document.querySelector('details.atomcard .areplytext').textContent"))["goal"]["done_when"]) == 4
+    no_errors(browser)
+
+
 @pytest.mark.browser
 def test_the_tabs_switch_without_losing_the_node(browser, fake):
     load(browser, fake)

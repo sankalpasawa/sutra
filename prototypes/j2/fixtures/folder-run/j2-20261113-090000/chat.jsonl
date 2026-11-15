@@ -1,0 +1,2 @@
+{"meta": true, "run": "20261113-090000", "output": "script", "provider": "mock", "model": "mock", "mock": true}
+{"who": "system", "text": "Done: the script is workable."}

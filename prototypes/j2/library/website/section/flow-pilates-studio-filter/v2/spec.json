@@ -1,0 +1,113 @@
+{
+  "name": "Flow Pilates Studio Filter",
+  "artifact": "website",
+  "section": "Section",
+  "version": 2,
+  "kind": "specialised",
+  "description": "Section for Flow Pilates Studio (pilates studio): the generic WebsiteSection/1 · Section fields, from 7 charter fact(s); adapted from version 1 of this template",
+  "fields": [
+    {
+      "name": "id",
+      "type": "string",
+      "required": true,
+      "description": "the section id of this workflow, as the task gives it (for Flow Pilates Studio, a pilates studio)",
+      "enum": null,
+      "nullable": false
+    },
+    {
+      "name": "anchor",
+      "type": "string",
+      "required": false,
+      "description": "the id attribute of the section element, with the #; \"\" when this workflow writes page-head tags only (for Flow Pilates Studio, a pilates studio)",
+      "enum": null,
+      "nullable": false
+    },
+    {
+      "name": "implements",
+      "type": "list[string]",
+      "required": false,
+      "description": "the LLD section ids this builds; empty when the run has no LLD (for Flow Pilates Studio, a pilates studio)",
+      "enum": null,
+      "nullable": false
+    },
+    {
+      "name": "html",
+      "type": "string",
+      "required": false,
+      "description": "the section's HTML only: no <html>, <head> or <body> tags; \"\" when this workflow writes page-head tags only (for Flow Pilates Studio, a pilates studio)",
+      "enum": null,
+      "nullable": false
+    },
+    {
+      "name": "head",
+      "type": "string",
+      "required": false,
+      "description": "page-head tags this section needs (meta, link, style or script only); \"\" when it needs none (for Flow Pilates Studio, a pilates studio)",
+      "enum": null,
+      "nullable": false
+    },
+    {
+      "name": "selectors_used",
+      "type": "list[string]",
+      "required": false,
+      "description": "the ids and classes you used (for Flow Pilates Studio, a pilates studio)",
+      "enum": null,
+      "nullable": false
+    },
+    {
+      "name": "facts_used",
+      "type": "list[string]",
+      "required": false,
+      "description": "the charter facts this section uses, copied exactly from Flow Pilates Studio's charter",
+      "enum": [
+        "The page has no JavaScript errors, no horizontal overflow at 360px and 1280px, and every in-page link points to an existing section.",
+        "The page has no horizontal overflow at 360px and at 1280px, so it works on phones.",
+        "The page shows no phone number.",
+        "The page shows no teacher names.",
+        "The page shows the studio address 'Unit 3, 9 Sample Lane, Pune 411004' as text, with no embedded map.",
+        "The page states that payment is made at the studio and that no online payment is taken.",
+        "Unit 3, 9 Sample Lane, Pune 411004"
+      ],
+      "nullable": false
+    }
+  ],
+  "objects": [],
+  "rules": [
+    {
+      "rule": "enum",
+      "path": "facts_used[]",
+      "values": [
+        "The page has no JavaScript errors, no horizontal overflow at 360px and 1280px, and every in-page link points to an existing section.",
+        "The page has no horizontal overflow at 360px and at 1280px, so it works on phones.",
+        "The page shows no phone number.",
+        "The page shows no teacher names.",
+        "The page shows the studio address 'Unit 3, 9 Sample Lane, Pune 411004' as text, with no embedded map.",
+        "The page states that payment is made at the studio and that no online payment is taken.",
+        "Unit 3, 9 Sample Lane, Pune 411004"
+      ],
+      "from": "facts",
+      "name": "facts_used are facts of Flow Pilates Studio's charter"
+    }
+  ],
+  "sha": "c410f5529469187471eb33e9c271c29b4556d1d117c7766077157df997e0bd3a",
+  "extends": "website/section@generic/1",
+  "made_by": {
+    "run": "j2-20261112-150036",
+    "workflow": "W-32",
+    "atom": "W-32.a1",
+    "agent": "code (adapted from the nearest template)"
+  },
+  "context": {
+    "business_type": "pilates studio",
+    "facts_used": [
+      "The page has no JavaScript errors, no horizontal overflow at 360px and 1280px, and every in-page link points to an existing section.",
+      "The page has no horizontal overflow at 360px and at 1280px, so it works on phones.",
+      "The page shows no phone number.",
+      "The page shows no teacher names.",
+      "The page shows the studio address 'Unit 3, 9 Sample Lane, Pune 411004' as text, with no embedded map.",
+      "The page states that payment is made at the studio and that no online payment is taken.",
+      "Unit 3, 9 Sample Lane, Pune 411004"
+    ],
+    "fingerprint": "c8a57419172e03e579da8480bb9cf112b7134867fd3950d2c605b3188a90048f"
+  }
+}

@@ -86,6 +86,10 @@
       "$ref": "#/$defs/JsonValue",
       "default": null
     },
+    "content_door": {
+      "$ref": "#/$defs/JsonValue",
+      "default": null
+    },
     "cycle": {
       "$ref": "#/$defs/JsonValue",
       "default": null
@@ -123,6 +127,10 @@
       "default": null
     },
     "human_output": {
+      "$ref": "#/$defs/JsonValue",
+      "default": null
+    },
+    "humans_only": {
       "$ref": "#/$defs/JsonValue",
       "default": null
     },
@@ -220,6 +228,10 @@
       "default": null
     },
     "requester_only": {
+      "$ref": "#/$defs/JsonValue",
+      "default": null
+    },
+    "run_template": {
       "$ref": "#/$defs/JsonValue",
       "default": null
     },

@@ -1,0 +1,37 @@
+{
+  "schema": "template-library/1",
+  "name": "Still Point Yoga Requirements",
+  "version": 3,
+  "sha": "b6d7cb1a20dacd1a025658ca05ef39d31aa77c759175995746617940b9c3660f",
+  "schema_sha": "9d8942ba09a6abbec68404781b38ede40c6f01fbf7ae40512d97b74c907ae1c1",
+  "model_sha": "84e1886ff41631c671fa91fc30c9a88169db596730784ccfeef3fde212a5c29d",
+  "class": "StillPointYogaRequirementsV3",
+  "created": "2026-11-03T18:48:11",
+  "fingerprints": [
+    "d0eb19b4b4bab2988eb91faedea0fe66f539e799ae62abb2359328487a989e08"
+  ],
+  "made_by": {
+    "run": "j2-20261103-184249",
+    "workflow": "W-4",
+    "atom": "W-4.a1",
+    "agent": "template generator (claude-cli)",
+    "date": "2026-11-03 18:42:49"
+  },
+  "business": {
+    "name": "Still Point Yoga",
+    "type": "yoga studio"
+  },
+  "mock": false,
+  "collected_from": {
+    "run": "j2-20261103-184249",
+    "where": "the run's copy"
+  },
+  "used_by": [
+    {
+      "run": "j2-20261103-184249",
+      "workflow": "W-4",
+      "atom": "W-4.a1",
+      "action": "extended"
+    }
+  ]
+}

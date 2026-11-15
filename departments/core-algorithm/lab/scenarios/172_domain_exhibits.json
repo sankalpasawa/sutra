@@ -1,0 +1,102 @@
+{
+  "schema": "sutra-extension/2",
+  "id": "172_domain_exhibits",
+  "domains": [
+    {
+      "id": "order-nobody-may-ask",
+      "title": "Order fulfilment, nobody may ask",
+      "goal": "order_complete",
+      "say": "complete a customer order when nobody may ask the customer",
+      "words": [
+        "order"
+      ],
+      "packs": [
+        "00_goal",
+        "01_domain",
+        "02_methods"
+      ],
+      "labels": {
+        "order_complete": "the order is complete",
+        "original_delivered": "the original item is delivered",
+        "replacement_delivered": "a replacement is delivered",
+        "customer_approved": "the customer has approved a replacement",
+        "original_stock": "the original item is in stock",
+        "substitute_stock": "a substitute is in stock",
+        "ship-original@1": "Ship the original item",
+        "ship-replacement@1": "Ship the replacement",
+        "ask-customer-approval@1": "Ask the customer"
+      }
+    },
+    {
+      "id": "builder-without-constructor",
+      "title": "Capability builder, constructor missing",
+      "goal": "capability_candidate_created",
+      "say": "build a capability from components whose constructor is missing",
+      "words": [
+        "capability"
+      ],
+      "packs": [
+        "30_build_goal",
+        "31_build_theory",
+        "82_components_without_constructor"
+      ],
+      "labels": {
+        "capability_candidate_created": "a capability candidate is created",
+        "source_contract_reviewed": "the source contract is reviewed",
+        "component_validate": "the validating component is ready",
+        "component_store": "the storing component is ready",
+        "component_read": "the reading component is ready",
+        "validate-field@1": "Validate the field",
+        "store-component@1": "Store the component",
+        "read-component@1": "Read the component",
+        "construct-enquiry-candidate@1": "Construct the candidate"
+      }
+    },
+    {
+      "id": "order-recorded-open",
+      "title": "Order fulfilment, recorded as not complete",
+      "goal": "order_complete",
+      "say": "complete a customer order the desk recorded as not complete",
+      "words": [
+        "order"
+      ],
+      "packs": [
+        "00_goal",
+        "01_domain",
+        "02_methods",
+        "04_admission",
+        "80_ask_method",
+        "170_recorded_open"
+      ],
+      "labels": {
+        "order_complete": "the order is complete",
+        "original_delivered": "the original item is delivered",
+        "replacement_delivered": "a replacement is delivered",
+        "customer_approved": "the customer has approved a replacement",
+        "original_stock": "the original item is in stock",
+        "substitute_stock": "a substitute is in stock",
+        "ship-original@1": "Ship the original item",
+        "ship-replacement@1": "Ship the replacement",
+        "ask-customer-approval@1": "Ask the customer"
+      }
+    },
+    {
+      "id": "order-closed-on-confirmation",
+      "title": "Order closing, recorded as not closed",
+      "goal": "order_closed",
+      "say": "close a customer order the desk recorded as open once the customer confirms the parcel",
+      "words": [
+        "order"
+      ],
+      "packs": [
+        "173_closed_on_confirmation"
+      ],
+      "labels": {
+        "order_closed": "the order is closed",
+        "refund_recorded": "a refund is on record",
+        "receipt_confirmed": "the customer has confirmed that the parcel arrived",
+        "ask-customer-receipt@1": "Ask the customer"
+      }
+    }
+  ]
+}

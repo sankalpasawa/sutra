@@ -1,0 +1,5 @@
+{
+  "_note": "Limits of the project capability's follow-up (D135, D188 R-3): how much of the earlier run's report an agent is given, and how many changed files are named from the earlier run's own record. Whole numbers, at least 1.",
+  "earlier_max": 12000,
+  "earlier_files": 40
+}

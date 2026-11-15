@@ -215,6 +215,15 @@ class CodexParser(LineParser):
             self.thread_id = obj["thread_id"]
         return [ConnectorEvent(kind="started", data={"session_id": self.thread_id})]
 
+    def _on_item_started(self, obj: dict) -> list[ConnectorEvent]:
+        """A command (or any tool item) has started. Only a chat turn shows it: a tool line that says what is running, before it has finished."""
+        item = obj.get("item")
+        if self.plan.kind != "chat" or not isinstance(item, dict) or not isinstance(item.get("type"), str) or item["type"] in ("agent_message", "error", "reasoning"):
+            return []
+        command = item.get("command") if isinstance(item.get("command"), str) else None
+        return [ConnectorEvent(kind="block_start", data={"index": None, "type": "tool_use", "tool_id": item.get("id") if isinstance(item.get("id"), str) else None,
+                                                         "name": item["type"], "input": {"command": command[:1000]} if command else None})]
+
     def _on_item_completed(self, obj: dict) -> list[ConnectorEvent]:
         item = obj.get("item")
         if not isinstance(item, dict) or not isinstance(item.get("type"), str):
@@ -230,7 +239,16 @@ class CodexParser(LineParser):
         if item["type"] == "error":
             return [ConnectorEvent(kind="notice", data={"text": str(item.get("message", ""))[:500]})]
         self.tool_types.append(item["type"])                           # X18: unknown item types are tolerated
-        return [ConnectorEvent(kind="tool_call", data={"type": item["type"], "id": item.get("id")})]
+        events = [ConnectorEvent(kind="tool_call", data={"type": item["type"], "id": item.get("id")})]
+        if self.plan.kind == "chat" and item["type"] != "reasoning":
+            code = item.get("exit_code")
+            output = item.get("aggregated_output") if isinstance(item.get("aggregated_output"), str) else ""
+            command = item.get("command") if isinstance(item.get("command"), str) else None
+            events.append(ConnectorEvent(kind="block_stop", data={
+                "index": None, "tool_id": item.get("id") if isinstance(item.get("id"), str) else None, "name": item["type"], "completed": True,
+                "input": {"command": command[:1000]} if command else None, "exit_code": code if isinstance(code, int) and not isinstance(code, bool) else None,
+                "output": output[:2000], "truncated": len(output) > 2000}))
+        return events
 
     def _on_error(self, obj: dict) -> list[ConnectorEvent]:
         message = str(obj.get("message", ""))
@@ -491,8 +509,8 @@ class CodexConnector(ModelConnector):
         return super().call_text(prompt, **kw)
 
     def stream(self, s: SessionState, m: Any, *, timeout_s: Optional[float] = None, partials: bool = False,
-               hooks: Optional[Hooks] = None, folder: str = "") -> Iterator[ConnectorEvent]:
-        return super().stream(s, m, timeout_s=timeout_s, partials=False, hooks=hooks, folder=folder)
+               hooks: Optional[Hooks] = None, folder: str = "", cancel: Any = None) -> Iterator[ConnectorEvent]:
+        return super().stream(s, m, timeout_s=timeout_s, partials=False, hooks=hooks, folder=folder, cancel=cancel)
 
     # ---- one spawn: notices before the first event, the rollout quota after the last --------------------------------------------
     def _spawn(self, plan: TurnPlan, hooks: Hooks, box: dict) -> Iterator[ConnectorEvent]:

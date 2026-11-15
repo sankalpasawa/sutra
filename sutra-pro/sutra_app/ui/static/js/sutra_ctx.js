@@ -25,15 +25,15 @@
   const isRootRelative = v => typeof v === "string" && ROOT_RELATIVE.test(v);
 
   /* ---------------------------------------------------------------- J2's data routes (j2_server.py) */
-  // The 33 exact pathnames of J2's page (32 under /api/, and the studio's /view) and the five prefixes (S3-web-15; J2 sync 4, D140). Ten are
-  // newer than the first port: /api/runlist and /api/changes (patch P13 until sync 4, J2's own routes since), /api/plan-map, /api/catalog,
+  // The 35 exact pathnames of J2's page (34 under /api/, and the studio's /view) and the five prefixes (S3-web-15; J2 sync 4, D140). Eleven are
+  // newer than the first port: /api/run-template (sync 6), /api/runlist and /api/changes (patch P13 until sync 4, J2's own routes since), /api/plan-map, /api/catalog,
   // /api/artifacts/groups, /api/activity, /api/ask and, with the studio, /api/record, /api/settings, /view and the /doc/ prefix. The
   // orchestrator's own routes (/api/runs/{run_id}, /api/chart, /api/graph, /api/schemas/..., /api/tasks, /api/engine/settings, ...) match none
   // of them, so they never get `dept`.
   const J2_EXACT = ["/api/state", "/api/runs", "/api/runlist", "/api/changes", "/api/call", "/api/preview", "/api/docs", "/api/map",
-    "/api/plan", "/api/plan-map", "/api/library", "/api/catalog", "/api/run-templates", "/api/artifacts", "/api/artifacts/tree",
+    "/api/plan", "/api/plan-map", "/api/library", "/api/catalog", "/api/run-templates", "/api/run-template", "/api/artifacts", "/api/artifacts/tree",
     "/api/artifacts/groups", "/api/artifact", "/api/agent", "/api/activity", "/api/record", "/api/code", "/api/story", "/api/board",
-    "/api/audits", "/api/refs", "/api/say", "/api/ask", "/api/output", "/api/settings", "/api/reset", "/api/playbooks/clear",
+    "/api/audits", "/api/refs", "/api/timing", "/api/say", "/api/ask", "/api/output", "/api/settings", "/api/reset", "/api/playbooks/clear",
     "/api/lessons/clear", "/view"];
   const J2_PREFIXES = ["/api/library/", "/site/", "/file/", "/shot/", "/doc/"];
   const J2_EXACT_SET = new Set(J2_EXACT);
@@ -183,7 +183,7 @@
   }
 
   /* ---------------------------------------------------------------- the fetch wrapper for J2's own calls */
-  const NOT_IN_ENGINE_YET = ["/api/timing", "/api/run-template"];
+  const NOT_IN_ENGINE_YET = [];      // empty since the engine serves /api/timing (sync 5) and /api/run-template (sync 6)
   const pathOf = url => (isRootRelative(url) ? URL_PARTS.exec(url)[1] : "");
   function methodOf(init) {
     const m = init?.method;
@@ -234,8 +234,8 @@
     if (!win || typeof win.fetch !== "function" || win.fetch.sutraWrapped === true) return false;
     const original = win.fetch;
     const wrapped = function sutraFetch(input, init) {
-      // The studio page (pin b2d70b5) asks two routes the vendored engine (025e265) does not have yet: answer "not here" in place, so the page
-      // shows its own empty state and the browser logs no 404. They go to the engine once it syncs and J2_PATHS lists them.
+      // A J2 route the studio page asks that the vendored engine does not serve yet is answered "not here" in place, so the page shows its own
+      // empty state and the browser logs no 404. The list is empty while the engine serves every route the page asks.
       const asked = pathOf(input);
       if (NOT_IN_ENGINE_YET.includes(asked) && typeof root.Response === "function") {
         return Promise.resolve(new root.Response('{"error":{"code":"not_in_engine","message":"This engine version does not record this yet."}}',

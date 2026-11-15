@@ -316,11 +316,17 @@ def start_ready(runner, tmp_path, body):
     return p, lines
 
 
-def test_sigint_ends_a_child_that_obeys_it_and_nothing_more_is_sent(runner, tmp_path):
-    p, _ = start_ready(runner, tmp_path, "import time, sys\nprint('READY')\ntime.sleep(60)")
-    assert p.cancel() is True
-    e = p.wait()
-    assert e.reason == "cancelled" and e.ladder == ("SIGINT",) and e.seconds < 5
+def test_sigint_ends_a_child_that_obeys_it_and_nothing_more_is_sent(tmp_path):
+    # The child installs its handler BEFORE it says READY and leaves at once from it (no traceback, no interpreter teardown to be slow on a loaded machine), and the grace after
+    # SIGINT is generous: the test is that SIGINT alone was enough, not how fast a busy machine can tear a process down.
+    runner = ProcessRunner(ladder=((signal.SIGINT, 5.0), (signal.SIGTERM, 5.0), (getattr(signal, "SIGKILL", 9), 3.0)))
+    try:
+        p, _ = start_ready(runner, tmp_path, "import os, signal, time\nsignal.signal(signal.SIGINT, lambda *a: os._exit(0))\nprint('READY')\ntime.sleep(60)")
+        assert p.cancel() is True
+        e = p.wait()
+        assert e.reason == "cancelled" and e.ladder == ("SIGINT",) and e.seconds < 5
+    finally:
+        runner.stop_all()
 
 
 def test_ladder_goes_sigint_then_sigterm_against_a_child_that_ignores_sigint(runner, tmp_path):

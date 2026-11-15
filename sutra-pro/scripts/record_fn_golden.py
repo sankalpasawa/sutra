@@ -49,7 +49,7 @@ SCHEMA = "fn-atoms-golden/1"
 ENGINE = "sutra_app.engine"
 J2_MODULES = ("j2", "j2_agent", "j2_agent_models", "j2_agent_views", "j2_artifact_models", "j2_artifacts", "j2_board", "j2_change",
               "j2_check", "j2_map", "j2_realization", "j2_rules", "j2_schema", "j2_send", "j2_story", "j2_studio", "j2_template_lib",
-              "rehydrate")
+              "j2_types", "rehydrate")
 RUN_ID, TASK_ID, DEPT = "j2-20261104-100004-7f3a", "tsk_a1b2c3d4e5f6", "web"
 VAGUE = "a website for my cafe"
 BREW_LAB = ("A one-page website for Brew Lab, a small specialty coffee shop in Indiranagar, Bengaluru. Visitors should "
@@ -163,7 +163,7 @@ def _isolated(base: Path, nodes: str):
                 del os.environ[name]
         os.environ.update({"STUDIO_MOCK": "1", "J2_MEMORY": "0", "J2_REALIZATION": "0", "J2_MEMORY_FILE": str(base / "lessons.jsonl"),
                            "J2_PLAYBOOK_FILE": str(base / "playbooks.jsonl"), "J2_RUNS_DIR": str(base / "runs"),
-                           "J2_LIBRARY_DIR": str(base / "library"), "SUTRA_HEARTBEAT_S": "0.2",
+                           "J2_LIBRARY_DIR": str(base / "library"), "SUTRA_HEARTBEAT_S": "0.2", "J2_RUN_BY": "sutra-pro", "J2_PUSH_RUNS": "0",      # D190
                            "SUTRA_ENV_FILE": str(base / "none.env")})
         llm.PROVIDER = llm.MODEL = llm._PORT = llm._DEFAULT_PORT = llm._BOUND_ATOM = None
         llm.MOCK = True

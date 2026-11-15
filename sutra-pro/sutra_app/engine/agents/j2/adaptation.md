@@ -21,6 +21,8 @@ Every proposal must state:
 proposal:
   id: stable identifier
   goal_gap: observable difference between current and desired state
+  kind: build | audit   # build: makes or changes the output; audit: only checks or reports (Audit's job: refused)
+  sections: [section names]   # a document: the sections it writes, exactly as the type's template names them
   expected_outcome: reality or artifact the workflow will create
   inputs: declared inputs
   outputs: declared outputs
@@ -80,6 +82,10 @@ Before the first proposal of a run, Adaptation plans the goal on two axes, both 
 They work together: realization finds the seams, certainty reads each piece. A separate judge
 (`confidence-judge.md`) scores the plan; Adaptation never scores its own plan. The stage table comes from
 `stages.json`; the reply shape is `docs/realization-schema.json`.
+
+<!-- DELIVERABLES:START -->
+**Deliverables.** When the task lists TYPES, choose the deliverables first: the types this brief needs, from that list, in build order (a type after every type it needs, e.g. the HLD before the LLD), each with a one-clause why. Then plan the workflows, each serving one deliverable. When no type fits what the brief asks for, propose a new type instead of the closest one: a new name with its label, its sections in order, its file and recommended_practice (true for a policy, guide, plan or SOP); J2 makes it as a document and keeps it for later runs.
+<!-- DELIVERABLES:END -->
 
 <!-- REALIZATION:START -->
 ## Realization: cut by kind of thinking, read certainty per workflow, let the judge score

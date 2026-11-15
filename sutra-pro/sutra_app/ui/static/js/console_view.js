@@ -4,13 +4,14 @@
    Two layers in one file, because the page has no other script of its own:
 
    1. Pure functions (strings in, strings out, no DOM, no timer), so `node --test` runs them: money(), tokens(), untilText(), periodBar(), usageHtml(),
-      connectorsHtml(), filterRows(), pageRows(), logHtml(), cardHtml(), healthHtml(), bytesText(), durationText(). Every word from the wire goes through
-      esc(); a link is a link only when it is a path on this origin.
+      purposesHtml(), purposeName(), connectorsHtml(), filterRows(), pageRows(), logHtml(), cardHtml(), healthHtml(), bytesText(), durationText(). Every word
+      from the wire goes through esc(); a link is a link only when it is a path on this origin.
    2. create(opts) -> the controller: it fetches from the routes below, repaints a panel when its markup changed, follows the event stream
       (usage.recorded, coalesced to 1 s; atom.updated, connector.*, task.*) and falls back to polling every 2 s like the other views. `opts` carries
       everything it touches (doc, api, events, fetch, token, save, now, fnode), so a test drives it with fakes.
 
-   Routes read:  GET /api/ops/usage?period=today|7d|30d|all&include_stub=0|1   GET /api/connectors/status   GET /api/ops/info   GET /api/ops/doctor[?refresh=1]
+   Routes read:  GET /api/ops/usage?period=today|7d|30d|all&include_stub=0|1 (totals, providers, days, teams, functions, purposes, atoms)   GET /api/connectors/status
+                 GET /api/ops/info   GET /api/ops/doctor[?refresh=1]
                  GET /api/atoms/log?node_id=&after=&limit=   GET /api/atoms/{id}   GET /api/ops/diagnostics (the token goes in the header; the answer is a zip)
 
    The Atom log is read forward (the route pages by `seq`), so the console loads the newest WINDOW seqs, shows them newest first, filters them in the page
@@ -39,6 +40,11 @@
   const QUOTA_WORDS = freeze({ok: "Quota fine", warning: "Quota running low", exhausted: "Quota used up", unknown: "Quota unknown"});
   const BASIS_WORDS = freeze({reported: "reported", rate_card: "rate card", unknown: "no price", none: "none"});
   const PROVIDER_NAMES = freeze({claude: "Claude", codex: "Codex", stub: "Stub"});
+  // What a call was for, in the owner's words (D159). The ledger's `purpose` is an open word (a lower-case word of at most 24 characters), so this holds every one the
+  // app writes today: the engine's own (agent_turn, plan and judge of the late judge, change, summary, template, review), the chat agent's (chat_plan), a direct chat's
+  // (chat), the answer in an agent's chat (agent_chat) and the Settings test (connector_test). Any other word shows as itself, never hidden.
+  const PURPOSE_WORDS = freeze({agent_turn: "Agents at work", plan: "Planning workflows", judge: "Judging workflows", change: "Charter changes", summary: "Chat summaries",
+    template: "Template writing", review: "Run reviews", chat: "Direct chat", chat_plan: "Chat with Sutra", agent_chat: "Questions to agents", connector_test: "Connector tests"});
   const CHECK_WORDS = freeze({ok: "ok", warn: "warning", fail: "failed", skip: "skipped"});
   const WINDOW = 1000;          // log rows (seqs) loaded at first and per "older" request
   const LOG_PAGE_SIZE = 25;     // rows on one page of the table
@@ -48,6 +54,7 @@
   const USAGE_COALESCE_MS = 1000;
   const DOCTOR_POLL_MS = 30000;
   const providerName = key => (hasOwn(PROVIDER_NAMES, key) ? PROVIDER_NAMES[key] : clean(key));
+  const purposeName = key => (hasOwn(PURPOSE_WORDS, key) ? PURPOSE_WORDS[key] : clean(key));
 
   /* ---------------------------------------------------------------- numbers */
   // 12.5 -> "$12.50", 0.0031 -> "$0.0031", null -> "no figure"
@@ -152,15 +159,31 @@
     }).join("") + '</div><p class="cnote">Bars show ' + esc(label) + " per UTC day.</p>";
   }
 
+  // The four number cells of a usage row: calls, dollars (blank when no call had a price: Codex reports tokens only), tokens in and out (blank when none were counted).
+  const usageCells = r => "<td>" + esc(group(r.calls || 0)) + "</td><td>" + esc(finite(r.usd) ? money(r.usd) : "") + "</td><td>" + esc(finite(r.tokens_in) ? tokens(r.tokens_in) : "") +
+    "</td><td>" + esc(finite(r.tokens_out) ? tokens(r.tokens_out) : "") + "</td>";
+
   function teamsHtml(report) {
     const teams = arr(report.teams).filter(isObj);
     if (!teams.length) return "";
-    const cells = r => "<td>" + esc(group(r.calls || 0)) + "</td><td>" + esc(finite(r.usd) ? money(r.usd) : "") + "</td><td>" + esc(finite(r.tokens_in) ? tokens(r.tokens_in) : "") +
-      "</td><td>" + esc(finite(r.tokens_out) ? tokens(r.tokens_out) : "") + "</td>";
     const fns = arr(report.functions).filter(isObj);
-    const rows = teams.map(t => '<tr class="cteam"><th scope="row">' + esc(t.name || t.key) + "</th>" + cells(t) + "</tr>" +
-      fns.filter(f => f.dept === t.key).map(f => '<tr class="cfn"><th scope="row">' + esc(f.fn) + "</th>" + cells(f) + "</tr>").join("")).join("");
+    const rows = teams.map(t => '<tr class="cteam"><th scope="row">' + esc(t.name || t.key) + "</th>" + usageCells(t) + "</tr>" +
+      fns.filter(f => f.dept === t.key).map(f => '<tr class="cfn"><th scope="row">' + esc(f.fn) + "</th>" + usageCells(f) + "</tr>").join("")).join("");
     return '<table class="ctable"><caption>By team and function</caption><thead><tr><th scope="col">Team / function</th><th scope="col">Calls</th><th scope="col">USD</th>' +
+      '<th scope="col">Tokens in</th><th scope="col">Tokens out</th></tr></thead><tbody>' + rows + "</tbody></table>";
+  }
+
+  // What the period's calls were for (D159): one row per purpose in the owner's words, in the order the server sends (the dearest first). The word the ledger holds is the
+  // row's tooltip, so an operator can match the table to a ledger row; a purpose the list above does not know shows as itself.
+  function purposesHtml(report) {
+    const purposes = arr(report.purposes).filter(r => isObj(r) && clean(r.key) !== "");
+    if (!purposes.length) return "";
+    const rows = purposes.map(p => {
+      const key = clean(p.key);
+      const word = purposeName(key);
+      return '<tr class="cpurpose" data-purpose="' + esc(key) + '"><th scope="row"' + (word !== key ? ' title="' + esc(key) + '"' : "") + ">" + esc(word) + "</th>" + usageCells(p) + "</tr>";
+    }).join("");
+    return '<table class="ctable cpurposes"><caption>Usage by purpose</caption><thead><tr><th scope="col">Purpose</th><th scope="col">Calls</th><th scope="col">USD</th>' +
       '<th scope="col">Tokens in</th><th scope="col">Tokens out</th></tr></thead><tbody>' + rows + "</tbody></table>";
   }
 
@@ -178,11 +201,11 @@
       '<th scope="col">USD</th><th scope="col">Tokens</th><th scope="col">Open</th></tr></thead><tbody>' + rows + "</tbody></table>";
   }
 
-  // The Usage and cost panel: the picker, the totals, a bar per day, the team and function table, the ten dearest atoms.
+  // The Usage and cost panel: the picker, the totals, a bar per day, the team and function table, the table by purpose, the ten dearest atoms.
   function usageHtml(report, state, error) {
     const head = "<h2>Usage and cost</h2>" + periodBar(state);
     if (!isObj(report)) return head + (error ? '<p class="cerr" role="alert">' + esc(error) + "</p>" : '<p class="cempty">Loading&hellip;</p>');
-    return head + (error ? '<p class="cerr" role="alert">' + esc(error) + "</p>" : "") + totalsHtml(report) + daysHtml(report) + teamsHtml(report) + atomsHtml(report);
+    return head + (error ? '<p class="cerr" role="alert">' + esc(error) + "</p>" : "") + totalsHtml(report) + daysHtml(report) + teamsHtml(report) + purposesHtml(report) + atomsHtml(report);
   }
 
   /* ---------------------------------------------------------------- connectors and the next quota reset */
@@ -609,8 +632,8 @@
   }
 
   const ConsoleView = {
-    PERIODS, STATES, WINDOW, LOG_PAGE_SIZE, POLL_MS, USAGE_COALESCE_MS, DEFAULT_PERIOD, esc, money, tokens, bytesText, durationText, untilText, safePath, periodBar, usageHtml, connectorsHtml,
-    nextReset, filterRows, pageRows, logHtml, cardHtml, healthHtml, create, boot,
+    PERIODS, STATES, WINDOW, LOG_PAGE_SIZE, POLL_MS, USAGE_COALESCE_MS, DEFAULT_PERIOD, PURPOSE_WORDS, esc, money, tokens, bytesText, durationText, untilText, safePath, periodBar,
+    usageHtml, purposesHtml, purposeName, connectorsHtml, nextReset, filterRows, pageRows, logHtml, cardHtml, healthHtml, create, boot,
   };
   if (typeof module === "object" && module !== null && module.exports) module.exports = ConsoleView;
   else {

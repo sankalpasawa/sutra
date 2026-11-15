@@ -69,7 +69,7 @@ def test_every_usage_line_the_engine_wrote_names_an_atom_that_exists_or_the_runs
 def test_no_row_of_the_ledger_or_the_atom_log_or_the_atoms_lacks_an_atom_id(replayed):
     world, _ = replayed
     one = world.t.one
-    assert one("SELECT count(*) FROM usage_ledger") == 30
+    assert one("SELECT count(*) FROM usage_ledger") == 34
     assert one("SELECT count(*) FROM usage_ledger WHERE atom_id IS NULL OR atom_id = ''") == 0
     assert one("SELECT count(*) FROM atom_ledger WHERE atom_id IS NULL OR atom_id = ''") == 0
     assert one("SELECT count(*) FROM atoms WHERE id IS NULL OR id = ''") == 0
@@ -87,7 +87,7 @@ def test_the_cost_of_an_atom_over_the_api_is_the_sum_of_its_provider_rows_and_ne
     task = replay(world, *[usage_event(fn="audit", step=None, atom=atom, provider="claude" if usd is not None else "codex", model="m",
                                        purpose="agent_turn", usd=usd, tokens_in=tin, tokens_out=tout, seconds=1.0, ok=True, how="native",
                                        call_ref=f"{GOLDEN_RUN}:{100 + n}", detail=None) for n, (atom, usd, tin, tout) in enumerate(extra)])
-    assert world.t.one("SELECT count(*) FROM usage_ledger WHERE task_id = ?", task) == 33
+    assert world.t.one("SELECT count(*) FROM usage_ledger WHERE task_id = ?", task) == 37
     first = world.client.get(f"/api/atoms/{first_id}").json()["usage"]
     second = world.client.get(f"/api/atoms/{second_id}").json()["usage"]
     assert (first["calls"], first["usd"], first["tokens_in"], first["tokens_out"]) == (2, 0.03, 300, 30)

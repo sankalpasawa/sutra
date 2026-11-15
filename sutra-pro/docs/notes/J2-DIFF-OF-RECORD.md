@@ -4,7 +4,7 @@ Standing note of the tool `scripts/j2_diff_of_record.py` (J2 sync 4, lane V0). I
 
 ## What it compares, and how to run it
 
-There is one reference: the folder `prototypes/j2` of this repository, at a commit (the pin; today `025e265c594564f47a2365874cd5a5cc5d0d20a6`, tree `21c67045fe3230c1ab9be381c2f21465ea91849c`). It is compared with Sutra Pro as committed. There is no second reference: no other repository and no earlier baseline, so the tool is pin-agnostic and needs no knowledge of an older state.
+There is one reference: the folder `prototypes/j2` of this repository, at a commit (the pin; today `1d537295eb11cb034956fa9d8a4026eaa1e3f44e`, tree `30c71fea4679716c9f48d297ee4b2c3463eeebfd`, the tag `cut-off/2026-11-12`, sync 5; sync 4 was `025e265c594564f47a2365874cd5a5cc5d0d20a6`, tree `21c67045fe3230c1ab9be381c2f21465ea91849c`). It is compared with Sutra Pro as committed. There is no second reference: no other repository and no earlier baseline, so the tool is pin-agnostic and needs no knowledge of an older state.
 
 ```
 cd sutra-pro
@@ -382,3 +382,23 @@ Every file of `prototypes/j2` that Sutra Pro does not carry has a reason in the 
 - `docs/reference/j2/docs/realization-axis.md` names `docs/realization-axis.dot` as its picture, which is not carried.
 
 Neither is a fault of the vendoring (the copies are byte for byte what J2 has); carrying the three small pictures would close them.
+
+## After sync 5 (lane V, before lanes E and U are merged)
+
+Sync 5 moved the pin to `1d537295eb11cb034956fa9d8a4026eaa1e3f44e` (D160) and vendored the types as data (D161): `conditions/` and `templates/` are tree copies, so a type J2 adds needs no script edit. Four exclusions were added with their reasons (D161): `templates/README.md`, `tools/*`, `fixtures/n6-sudoku-*` and `docs/word-matching-followups.md`. The real output on the lane V branch (working tree clean, extraction made with `git archive`):
+
+- Source: `prototypes/j2` at commit `1d537295eb11cb034956fa9d8a4026eaa1e3f44e` (tree `30c71fea4679716c9f48d297ee4b2c3463eeebfd`), 313 files.
+- `vendor_j2.py --check`: ok, 229 files.
+- `port_j2_ui.py --check`: differences in `j2_ui.html` and `j2.css` (lane U regenerates the page; the 33 anchors match). It passes once lane U is merged.
+
+| class | files | identical | patched | edited | unverified | n/a |
+|---|---|---|---|---|---|---|
+| vendored | 228 | 215 | 13 | | | |
+| page | 6 | 3 | | | 3 | |
+| legacy | 4 | | | 4 | | |
+| excluded | 75 | | | | | 75 |
+| unlisted | 0 | | | | | |
+| undecided | 0 | | | | | |
+| all | 313 | 218 | 13 | 4 | 3 | 75 |
+
+Differing 0, missing 0, not decided 0, stale 0. The verdict of `--check` is FAIL only for the page check above; the integrator re-runs it after the merge of lane U. What the lane built and decided is in `J2S5-v.md`.

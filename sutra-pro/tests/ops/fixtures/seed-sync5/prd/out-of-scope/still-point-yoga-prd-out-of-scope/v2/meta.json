@@ -1,0 +1,37 @@
+{
+  "schema": "template-library/1",
+  "name": "Still Point Yoga PRD Out of scope",
+  "version": 2,
+  "sha": "003ddbd7bf494f2a71d68d1dc630ed895c5964afa3bae4e43dc3187ea5bd6d8d",
+  "schema_sha": "f3d0ae5f1f6feb6d8002548d69948f56bb76c5660b6f3b92d9fdd60fa8aae4f2",
+  "model_sha": "245589fa24ec1e04b111b8c985e4a9056ec1bb25cb9c9e9cc4cf295211952664",
+  "class": "StillPointYogaPRDOutOfScopeV2",
+  "created": "2026-11-03T18:49:46",
+  "fingerprints": [
+    "25e48c8a492f0b59a4af1fc1ebe2bc171c88bddd77029ef89193e559251a85ae"
+  ],
+  "made_by": {
+    "run": "j2-20261103-184249",
+    "workflow": "W-6",
+    "atom": "W-6.a1",
+    "agent": "template generator (claude-cli)",
+    "date": "2026-11-03 18:42:49"
+  },
+  "business": {
+    "name": "Still Point Yoga",
+    "type": "yoga studio"
+  },
+  "mock": false,
+  "collected_from": {
+    "run": "j2-20261103-184249",
+    "where": "the run's copy"
+  },
+  "used_by": [
+    {
+      "run": "j2-20261103-184249",
+      "workflow": "W-6",
+      "atom": "W-6.a1",
+      "action": "extended"
+    }
+  ]
+}

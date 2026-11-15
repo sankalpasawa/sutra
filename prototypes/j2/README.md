@@ -632,8 +632,13 @@ playbooks into the real file, and a live clothing run reused one. Those are now 
 
 - **Root (J2.e)**: the page says Root checks granted workflows against standards ("designed; not yet built").
   Here a code validator checks fields, price, refusals and budget, not standards.
-- **Library workflows**: the page has Adaptation pick from a Library or make custom ones. Here every workflow
-  is custom.
+- **Library workflows**: the page has Adaptation pick from a Library or make custom ones. Here the library reuses
+  three things, each behind a flag (SETUP.md): the plan (`J2_RUN_TEMPLATES`, `J2_AUTO_REUSE`: a finished run's
+  workflows as the base plan), the shape (`J2_TEMPLATE_LIBRARY`: the section template a builder fills) and, since
+  13 Nov 2026, the content (`J2_ARTIFACT_LIBRARY`: a document section served from the run template's source run when
+  the inputs match, checked like a built one, no model call, charge refunded; `reuse.json`). Adaptation does not yet
+  call `j2_template_lib.find` (a finished artifact first, then a template) when it plans; the search is designed in
+  `docs/superpowers/specs/2026-11-13-artifact-search-design.md`.
 - **Engines and triggers**: the page has each function as an engine that wakes when its records exist. Here one
   loop hands the turn from agent to agent.
 - **Audit timing**: Audit runs once the build queue is empty, not after every workflow (fewer calls).

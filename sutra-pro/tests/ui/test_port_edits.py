@@ -2,7 +2,7 @@
 
 Three groups, none of them needs a browser or the J2 source:
   1. the committed files (sutra_app/ui/pages/j2_ui.html, static/css/j2.css, static/vendor/*, the two harness copies, and the frozen
-     static/css/j2-shell.css that Home and the console keep): edit by edit (the 33 page edits) against a table written out here, and
+     static/css/j2-shell.css that Home and the console keep): edit by edit (the 40 page edits) against a table written out here, and
      the invariants the design lists;
   2. scripts/port_j2_ui.py on a miniature J2 built below: the same table holds for what the script produces, J2 drift stops the
      port, `--check`, `--commit`, J2 is never written, two ports give the same bytes;
@@ -37,15 +37,15 @@ _spec.loader.exec_module(port)
 SANDBOX = "allow-scripts allow-forms allow-popups"
 MODULES = ["sutra_events", "graph_layout", "chart_marks", "graph_render", "graph_view", "orgchart_view", "fnode_view",
            "chat_view", "node_panel", "function_chat", "output_pick", "dept_ext"]
-# The 32 exact data routes under /api/ of J2's server (sutra_ctx.js J2_EXACT has them and /view, the studio's output page), written out again
-# here. The page calls 31 of them: /api/output is posted by output_pick.js, not by the page (and /view is a frame's address, not a fetch).
-J2_API = ["state", "runs", "runlist", "changes", "call", "preview", "docs", "map", "plan", "plan-map", "library", "catalog", "run-templates",
+# The 34 exact data routes under /api/ of J2's server (sutra_ctx.js J2_EXACT has them and /view, the studio's output page), written out again
+# here. The page calls 33 of them: /api/output is posted by output_pick.js, not by the page (and /view is a frame's address, not a fetch).
+J2_API = ["state", "runs", "runlist", "changes", "call", "preview", "docs", "map", "plan", "plan-map", "library", "catalog", "run-templates", "run-template",
           "artifacts", "artifacts/tree", "artifacts/groups", "artifact", "agent", "activity", "record", "code", "story", "board", "audits", "refs",
-          "say", "ask", "output", "settings", "reset", "playbooks/clear", "lessons/clear"]
+          "timing", "say", "ask", "output", "settings", "reset", "playbooks/clear", "lessons/clear"]
 NOT_FETCHED = {"output"}
-# The studio pin (b2d70b5) fetches two routes the vendored engine (025e265) does not have yet: Run settings' timing and one run template.
-# They are not in SutraCtx.J2_PATHS, so they reach no engine and the page shows its own "could not load" state until the engine syncs.
-NOT_IN_ENGINE_YET = {"timing", "run-template"}
+# J2 routes the studio page fetches that the vendored engine does not serve yet (sutra_ctx.js NOT_IN_ENGINE_YET). Empty: the engine serves
+# Run settings' timing (sync 5) and one run template (sync 6), which the studio pin (b2d70b5) asks.
+NOT_IN_ENGINE_YET: set[str] = set()
 EXTERNAL_REF = re.compile(r"""(?:src|href|action|poster|data-src)\s*=\s*["']\s*(?:https?:)?//""", re.IGNORECASE)
 INLINE_SCRIPT = re.compile(r"<script>(.*?)</script>", re.DOTALL)
 # D138: Home and the console keep the style sheet of the previous sync, frozen. The whole file (one comment line of its own, then the old
@@ -327,7 +327,7 @@ def test_every_fetch_goes_to_a_j2_route_or_through_artUrl_so_the_wrapper_covers_
             continue
         assert route[len("/api/"):] in J2_API, site
         routes.add(route[len("/api/"):])
-    assert routes == set(J2_API) - NOT_FETCHED                       # 31 routes, and never /api/output (output_pick.js posts it)
+    assert routes == set(J2_API) - NOT_FETCHED                       # 34 routes, and never /api/output (output_pick.js posts it)
     assert "const artUrl = f => `/api/artifact?name=${encodeURIComponent(f)}${runQ()}`;" in PAGE
 
 

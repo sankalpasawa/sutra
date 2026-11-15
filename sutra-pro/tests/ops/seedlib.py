@@ -136,8 +136,26 @@ def write_version(root: Path, key: tuple[str, str, str], row: dict) -> None:
     (folder / "model.py").write_text(f"# {name_of(key)} v{row['version']}\nclass Acme:\n    pass\n", encoding="utf-8")
 
 
-def make_library(root: Path, templates: dict[tuple[str, str, str], dict[int, str]], *, provenance: bool = True, runs: dict | None = None) -> Path:
-    """A small library (a seed, or an install's) at `root`: `templates` maps a key (artifact, section_slug, slug) to {version: spec sha}."""
+def run_template_row(rid: str, name: str | None = None, *, run: str = "j2-20261103-100000", mock: bool = True, used_by: int = 0) -> dict:
+    """A row of the index's `run_templates` (J2 `_run_template_row`)."""
+    return {"id": rid, "name": name or rid.replace("-", " ").title(), "description": f"{rid} run template", "business_type": "shop",
+            "stages": ["prd"], "workflows": 1, "mock": mock, "made_from_run": run, "created": "2026-11-11T10:00:00", "used_by": used_by}
+
+
+def write_run_template(root: Path, row: dict, *, marker: str = "") -> Path:
+    """`<root>/run-templates/<id>/{template.json, schema.json}` for `row`; `marker` is text only the copy can have, to tell copies apart."""
+    folder = root / "run-templates" / row["id"]
+    folder.mkdir(parents=True)
+    write(folder / "template.json", {"schema": "run-template/1", "id": row["id"], "name": row["name"], "made_from_run": row["made_from_run"],
+                                     "mock": row["mock"], "stages": ["prd"], "workflows": [], "used_by": [], "note": marker})
+    write(folder / "schema.json", {"title": row["id"], "note": marker})
+    return folder
+
+
+def make_library(root: Path, templates: dict[tuple[str, str, str], dict[int, str]], *, provenance: bool = True, runs: dict | None = None,
+                 run_templates: list[dict] | None = None) -> Path:
+    """A small library (a seed, or an install's) at `root`: `templates` maps a key (artifact, section_slug, slug) to {version: spec sha};
+    `run_templates` is a list of `run_template_row`s, each with its folder."""
     root.mkdir(parents=True)
     entries = []
     for key, versions in templates.items():
@@ -149,6 +167,10 @@ def make_library(root: Path, templates: dict[tuple[str, str, str], dict[int, str
     doc: dict[str, Any] = {"schema": "template-library/1", "templates": entries}
     if runs is not None:
         doc["runs"] = runs
+    if run_templates is not None:
+        doc["run_templates"] = run_templates
+        for row in run_templates:
+            write_run_template(root, row, marker="seed")
     write(root / "index.json", doc)
     return root
 

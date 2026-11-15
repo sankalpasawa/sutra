@@ -1,0 +1,39 @@
+{
+  "schema": "template-library/1",
+  "name": "Flow Pilates Studio PRD Success metrics",
+  "version": 1,
+  "sha": "f00dac600bad1727884544b18f3c6371d49fe2f80b041702a7b50b02f0238e6c",
+  "schema_sha": "cb41d8c8f081aa28781e0972e0761dcac53ae0fe0582ca252604a39bba6a1a32",
+  "model_sha": "e0830e6250e3103c51024b7fbb90dd64cb05bc1e2664e9c524d3d8a62e8aba0a",
+  "class": "FlowPilatesStudioPRDSuccessMetricsV1",
+  "created": "2026-11-12T15:07:55",
+  "fingerprints": [
+    "fcfb24c3de62a134025bab395400d358d6535c6e881d169dd0dc648d44c688e2"
+  ],
+  "made_by": {
+    "run": "j2-20261112-150036",
+    "workflow": "W-5",
+    "atom": "W-5.a1",
+    "agent": "code (adapted from a run template)",
+    "date": "2026-11-12 15:00:36"
+  },
+  "business": {
+    "name": "Flow Pilates Studio",
+    "type": "pilates studio"
+  },
+  "mock": false,
+  "collected_from": {
+    "run": "j2-20261112-150036",
+    "where": "the run's copy"
+  },
+  "used_by": [
+    {
+      "run": "j2-20261112-150036",
+      "workflow": "W-5",
+      "atom": "W-5.a1",
+      "action": "extended"
+    }
+  ],
+  "renamed_from": "Still Point Yoga PRD Success metrics@4",
+  "adapted_from": "Iron Grove Fitness PRD Success metrics@1"
+}

@@ -289,6 +289,7 @@ def _claude_table():
     return {
         "ok_structured": S("claude/stream_structured_ok.jsonl", replyable=True),
         "ok_plain": S("claude/stream_resume_plain_ok.jsonl", replyable=True),
+        "tool_partials": S("claude/stream_partials_tool_ok.jsonl"),      # a real streamed turn: a Read tool call, then text deltas (STR-1)
         "not_logged_in": S("claude/stream_not_logged_in.jsonl"),
         "mcp_connected": S("claude/stream_mcp_server_connected.jsonl"),
         "tool_profile": S("claude/stream_tool_profile_init.jsonl"),
@@ -342,6 +343,7 @@ def _codex_table():
     return {
         "ok_structured": S("codex/exec_structured_ok.jsonl", replyable=True),
         "ok_plain": S("codex/exec_resume_plain_ok.jsonl", replyable=True),
+        "tool_items": S("codex/exec_tool_items_ok.jsonl"),               # a real turn: a preamble message, a command item, the answer (STR-1)
         "not_signed_in": S("codex/exec_not_signed_in.jsonl"),
         "usage_limit": S("derived/codex_usage_limit.jsonl"),
         "rate_limited_429": S("derived/codex_rate_limited_429.jsonl"),

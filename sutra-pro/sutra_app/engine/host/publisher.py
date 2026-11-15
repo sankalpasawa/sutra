@@ -246,7 +246,7 @@ class StatePublisher:
     # ---- the events ------------------------------------------------------------------------------------------------------
     def _emit(self, snap: dict, live: dict, j2, j2_map) -> int:
         running = snap.get("status") == "running" or bool(snap.get("paused"))
-        arg = {"snapshot": snap, "stages": list(live.get("stages") or []), "stage_words": j2.J2Run.STAGE_WORDS,
+        arg = {"snapshot": snap, "stages": list(live.get("stages") or []), "stage_words": j2.J2Run.stage_words(),
                "board": live.get("board")} if running else None
         built = j2_map.build(self.run.dir, arg)
         pending: list[tuple[tuple, str, dict]] = []
@@ -431,6 +431,12 @@ class HostHooks:
     def run_error(self, code: str, message: str) -> None:
         self.error_code, self.error_message = code, message
         return self._inner.run_error(code, message)
+
+    def review_enabled(self) -> bool:
+        """P19: does J2 start the end-of-run reviewer? The inner hooks say (`EventHooks.reviewer`, the team's `reviewer` setting); a hook object
+        without the method (a test double) leaves J2's behaviour as it was: the reviewer runs."""
+        ask = getattr(self._inner, "review_enabled", None)
+        return True if ask is None else bool(ask())
 
     def system_addendum(self, fn: str) -> str:
         """The inner hooks' node-context text, then every capability's addendum for this agent (D126)."""

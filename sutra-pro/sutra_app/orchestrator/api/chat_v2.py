@@ -11,6 +11,12 @@
     POST /api/chats/{sid}/attachments {name, content_b64} -> AttachmentRef                (20 MB a file)
     POST /api/chats/{sid}/direct  {text, attachments?, names?} -> 202 {message_id, turn}  (the org, a department or a division chat answered by the chat model)
     POST /api/chats/{sid}/direct/stop                   -> {session_id, stopped}          (ends the turn that is answering; false when none is)
+    GET  /api/chats/{sid}/turn                          -> the live turn's snapshot, or {live: false, ...}      (SUTRA_LIVE_V1, streaming design D203)
+    POST /api/chats/{sid}/direct/retry {message_id, client_id?} -> 202 like /direct, attempt_no N                  (SUTRA_LIVE_V1; a failed or stopped newest line only)
+
+With `SUTRA_LIVE_V1=1` the direct chat is a live turn (orchestrator/live_turn.py): `/direct` takes the page's `client_id` (a repeated one answers 200 `{duplicate: true}`, never a
+second turn), answers 202 with the generation id, and every event of the turn travels as `chat.live` (see events.py); Stop answers at once and the process is stopped in the
+background; the reply is stored once with its blocks in order. With the flag off nothing below `_answer_legacy` is reached and every payload is what it was.
 
 `/direct` stores the owner's line, writes the session's grounding (the node's own record and the rules, `orchestrator/chat_ground.py`, through
 `ChatPort.set_system`), then answers through `ChatPort.stream`. The pieces of the reply travel as `chat.partial` events
@@ -26,12 +32,14 @@ import asyncio
 import base64
 import binascii
 import logging
+import re
 import uuid
 from typing import Annotated, Any
 
 from fastapi import APIRouter, Depends, Path, Query, Request
 from pydantic import ConfigDict, Field, StringConstraints
 
+from sutra_app.connectors.chat_blocks import join_text
 from sutra_app.connectors.attachments import MAX_BYTES, MAX_PER_MESSAGE, clean_name
 from sutra_app.connectors.chat_models import AttachmentRef, ChatTurnIn
 from sutra_app.connectors.egress import scan
@@ -44,20 +52,25 @@ from sutra_app.orchestrator.api.deps import RedactedJSONResponse, require_token,
 from sutra_app.orchestrator import direct_running
 from sutra_app.orchestrator.agent_sessions import agent_of, effective, pick_dict
 from sutra_app.orchestrator.chat_ground import ground
-from sutra_app.orchestrator.chat_v2 import DIRECT_ASK, MAX_RESULTS, SCOPE_RE, ChatArchive, ChatChoices, ChatSearch
+from sutra_app.orchestrator import live_checkpoint
+from sutra_app.orchestrator.chat_v2 import (DIRECT_ASK, MAX_RESULTS, SCOPE_RE, ChatArchive, ChatChoices, ChatSearch, attempts_stored, find_owner_line, last_outcome, newest_owner_line,
+                                            next_attempt)
+from sutra_app.orchestrator.live_turn import LiveConfig, LiveTurn
 from sutra_app.orchestrator.db import run_blocking
+from sutra_app.orchestrator import direct_turns
 from sutra_app.orchestrator.direct_turns import MAX_TEXT, Ending, attached_line, failed, finished, stopped
 from sutra_app.orchestrator.errors import AppError, Busy, NotFound, ReadOnly, validation_error
 from sutra_app.orchestrator.events import PARTIAL
 from sutra_app.orchestrator.records import ChatMessage
 
-__all__ = ["router", "build_router", "ChoiceIn", "UploadIn", "DirectIn"]
+__all__ = ["router", "build_router", "ChoiceIn", "UploadIn", "DirectIn", "RetryIn"]
 
 log = logging.getLogger(__name__)
 PARTIAL_EVERY_CHARS = 60
 MAX_CHARS = 8000                                                      # the longest message the owner can send (the page's box says the same: chat_composer.js)
 _running = direct_running.RUNNING                                   # the chats with a direct turn answering: one at a time (a Busy for the next), shared with the team route
 _running_lock = direct_running.LOCK
+_background: set[Any] = set()                                       # the tasks that stop a process in the background (kept so none is collected before it ends)
 
 
 class ChoiceIn(Value):
@@ -79,6 +92,14 @@ class DirectIn(Value):
     attachments: Annotated[list[Annotated[str, StringConstraints(pattern=r"^[0-9a-f]{64}$")]], Field(max_length=MAX_PER_MESSAGE)] = []
     # the owner's names of the attachments, in order: only for the record on the owner's line (GAP-chat-comfort); the model's input is unchanged
     names: Annotated[list[Annotated[str, StringConstraints(max_length=200)]], Field(max_length=MAX_PER_MESSAGE)] = []
+    # the page's id of this send (8 to 64 characters of letters, digits, `_`, `-`): a repeated send with it is the same send (D220). Only read when the live chat is on
+    client_id: Annotated[str, StringConstraints(pattern=r"^[A-Za-z0-9_-]{8,64}$")] | None = None
+
+
+class RetryIn(Value):
+    model_config = ConfigDict(extra="forbid", strict=True)
+    message_id: Annotated[int, Field(ge=1)]
+    client_id: Annotated[str, StringConstraints(pattern=r"^[A-Za-z0-9_-]{8,64}$")] | None = None
 
 
 def _need(request: Request, name: str) -> Any:
@@ -227,6 +248,9 @@ def build_router() -> APIRouter:
             # the model is told the owner's file name (cleaned), never the content hash the store keeps the file under
             named = clean_name(owner_names[n]) if owner_names else ""
             refs.append(AttachmentRef(id=ref_id, name=named or f"attachment-{n + 1}{path.suffix}", kind=_kind_of(path.name), size=path.stat().st_size))
+        if _live_on(services):
+            return await _start_live(request, services, port, sid, said=_clean(services, body.text),
+                                     attached=_clean(services, attached_line(list(body.names), [r.kind for r in refs])), refs=refs, client_id=body.client_id)
         if not direct_running.begin(sid):
             raise Busy("This chat is already answering")
         try:
@@ -243,10 +267,36 @@ def build_router() -> APIRouter:
 
     @router.post("/chats/{sid}/direct/stop", summary="Stop the turn that is answering", dependencies=[Depends(require_token)])
     async def stop(request: Request, sid: str = Path(pattern=ID_PATTERN)) -> RedactedJSONResponse:
+        services = services_of(request)
         chats, port = _need(request, "chats"), _need(request, "chat_port")
         await run_blocking(chats.session, sid)
-        stopped = await run_blocking(port.stop, sid)
-        return respond(request, {"session_id": sid, "stopped": bool(stopped)})
+        if not _live_on(services):
+            stopped = await run_blocking(port.stop, sid)
+            return respond(request, {"session_id": sid, "stopped": bool(stopped)})
+        return respond(request, _stop_live(port, sid))
+
+    @router.get("/chats/{sid}/turn", summary="Where the live turn of this chat is")
+    async def turn(request: Request, sid: str = Path(pattern=ID_PATTERN)) -> RedactedJSONResponse:
+        services = services_of(request)
+        chats = _need(request, "chats")
+        await run_blocking(chats.session, sid)
+        live = direct_running.live_of(sid) if _live_on(services) else None
+        if live is not None:
+            return respond(request, await run_blocking(live.snapshot))
+        return respond(request, await run_blocking(_last_turn, services, sid))
+
+    @router.post("/chats/{sid}/direct/retry", status_code=202, summary="Answer the owner's last line again", dependencies=[Depends(require_token)])
+    async def retry(request: Request, body: RetryIn, sid: str = Path(pattern=ID_PATTERN)) -> RedactedJSONResponse:
+        services = services_of(request)
+        chats, port = _need(request, "chats"), _need(request, "chat_port")
+        session = await run_blocking(chats.session, sid)
+        if not _live_on(services):
+            raise NotFound("that route")
+        if session.status != "active":
+            raise ReadOnly("This chat was archived. Open the team's current chat to write.")
+        if not session.writable or session.kind not in ("org", "department", "division"):
+            raise ReadOnly("This chat cannot be asked directly")
+        return await _retry_live(request, services, port, sid, body)
 
     return router
 
@@ -257,12 +307,14 @@ def _kind_of(filename: str) -> str:
 
 
 def _post(services: Any, sid: str, *, role: str, who: str, kind: str, text: str, blocks: list | None = None,
-          src_ref: str | None = None) -> int:
+          src_ref: str | None = None) -> int | None:
+    """The stored message's id, or None when a message with this `src_ref` is stored already (`ChatStore.post` refuses a repeated ref: a replayed line is
+    not an error, and the caller looks the stored one up)."""
     redact = services.redact
     with services.db.tx() as tx:
         out = services.chats.post(tx, sid, GATE.check("chat_message", ChatMessage(
             kind=kind, session_id=sid, role=role, who=who, text=redact(text)[:200_000], blocks=blocks or [], src_ref=src_ref, at=tx.now()), ctx=tx.ctx))
-    return out.id
+    return None if out is None else out.id
 
 
 def _clean(services: Any, text: str) -> str:
@@ -271,21 +323,34 @@ def _clean(services: Any, text: str) -> str:
     return scan(services.redact(text), replace=True)[0]
 
 
-def _post_all(services: Any, sid: str, endings: list[Ending]) -> None:
-    """The messages that end one turn, in ONE transaction: a page never reads half an ending."""
+def _post_all(services: Any, sid: str, endings: list[Ending], drop_generation: str | None = None) -> dict[str, int | None]:
+    """The messages that end one turn, in ONE transaction: a page never reads half an ending. `drop_generation` is the live turn whose checkpoint is deleted in the same
+    transaction (D211): the partial copy and the final reply are never both there, and never neither. -> the id stored for each `src_ref` (None for a replayed one)."""
     redact = services.redact
+    ids: dict[str, int | None] = {}
     with services.db.tx() as tx:
         for e in endings:
-            services.chats.post(tx, sid, GATE.check("chat_message", ChatMessage(
-                kind=e.kind, session_id=sid, role="agent", who="sutra", text=redact(e.text)[:200_000], blocks=e.blocks, src_ref=e.src_ref,
-                at=tx.now()), ctx=tx.ctx))
+            out = services.chats.post(tx, sid, GATE.check("chat_message", ChatMessage(
+                kind=e.kind, session_id=sid, role="agent", who="sutra", text=redact(e.text)[:200_000], blocks=e.blocks, ordered=e.ordered, via=e.via,
+                src_ref=e.src_ref, at=tx.now()), ctx=tx.ctx))
+            ids[e.src_ref] = None if out is None else out.id
+        if drop_generation:
+            live_checkpoint.drop(tx, drop_generation)
+    return ids
 
 
-def _store_user_line(services: Any, sid: str, text: str, attached: str = "") -> int:
+def _store_user_line(services: Any, sid: str, text: str, attached: str = "", client_id: str | None = None) -> int:
     """The owner's line; with files, a last line records what went with it (the model gets the files and `text` itself). Its src_ref marks it as the
-    start of a direct turn, so that a start after a crash can find the ones that never got an ending (`chat_v2.recover_interrupted`)."""
-    return _post(services, sid, role="user", who="user", kind="text", text=text + ("\n" + attached if attached else ""),
-                 src_ref=DIRECT_ASK + uuid.uuid4().hex[:16])
+    start of a direct turn, so that a start after a crash can find the ones that never got an ending (`chat_v2.recover_interrupted`). The page's
+    `client_id` is the tail of the ref when it sent one (D220): a replayed line is found again, never stored twice."""
+    ref = DIRECT_ASK + (client_id or uuid.uuid4().hex[:16])
+    stored = _post(services, sid, role="user", who="user", kind="text", text=text + ("\n" + attached if attached else ""), src_ref=ref)
+    if stored is None:                                      # the ref was stored already: this is the same line
+        found = find_owner_line(services.db.conn(), sid, client_id or "")
+        if found is None:
+            raise AppError("internal", "the owner's line could not be stored")
+        return found
+    return stored
 
 
 def _ground(services: Any, port: Any, sid: str) -> None:
@@ -297,9 +362,10 @@ def _ground(services: Any, port: Any, sid: str) -> None:
         log.warning("could not ground the direct chat %s", sid, exc_info=True)
 
 
-def _answer(services: Any, port: Any, sid: str, user_message_id: int, turn: ChatTurnIn) -> None:
+def _answer(services: Any, port: Any, sid: str, user_message_id: int, turn: ChatTurnIn, attempt: int = 1) -> None:
     """The turn, on a worker thread: partials out as control events, the stored reply once at the end. A stop keeps what was written
-    with a calm note; a failure keeps it with the real reason (direct_turns)."""
+    with a calm note; a failure keeps it with the real reason (direct_turns). `attempt` is the try of the owner's line (1; N for a retry): it names the refs
+    the endings are stored under (D216)."""
     bus = services.bus
     buffered = ""
     shown = ""                                                       # what the owner has seen stream in, redacted as it was sent
@@ -330,23 +396,205 @@ def _answer(services: Any, port: Any, sid: str, user_message_id: int, turn: Chat
         flush()
         if done is None:
             raise RuntimeError("the turn ended without a result")
-        _post_all(services, sid, finished(user_message_id, done))
+        _post_all(services, sid, finished(user_message_id, done, attempt))
     except Exception as exc:                                         # a failed turn is a message, not a lost line
         flush()
         log.warning("direct chat turn failed for %s: %s", sid, type(exc).__name__)
         if isinstance(exc, CallCancelledError):                      # the owner's Stop is not an error: what was written stays
-            endings = stopped(user_message_id, shown)
+            endings = stopped(user_message_id, shown, attempt)
         else:
             message = exc.user_message() if isinstance(exc, ConnectorError) else (exc.message if isinstance(exc, AppError) else "The model could not answer.")
             if isinstance(exc, ReplyTruncatedError):                 # the part that was written is kept above; say what the owner can do next
                 message += " Ask for a shorter answer, or say \"continue\"."
-            endings = failed(user_message_id, shown, message)
+            endings = failed(user_message_id, shown, message, attempt)
         try:
             _post_all(services, sid, endings)
         except Exception:
             log.exception("could not store the failed turn of %s", sid)
     finally:
         direct_running.end(sid)
+
+
+# ---- the live turn (SUTRA_LIVE_V1, streaming design D201 to D222) ------------------------------------------------------------------------------------
+
+def _live_on(services: Any) -> bool:
+    return bool(getattr(getattr(services, "settings", None), "live_v1", False))
+
+
+def _duplicate(sid: str, services: Any, client_id: str, message_id: int | None, running: bool) -> RedactedJSONResponse:
+    """200 `{duplicate: true}` for a send whose `client_id` was already taken: nothing is started, the page matches the first send by `client_id`."""
+    live = direct_running.live_of(sid) if running else None
+    return RedactedJSONResponse(status_code=200, content={
+        "duplicate": True, "turn": "started" if running else "done", "message_id": message_id, "client_id": client_id,
+        "generation_id": live.generation_id if live is not None else None})
+
+
+async def _start_live(request: Request, services: Any, port: Any, sid: str, *, said: str, attached: str, refs: list, client_id: str | None) -> RedactedJSONResponse:
+    """One send as a live turn. The order matters (D220): look the `client_id` up, claim the chat (which also creates the stop token), store the owner's line, ground the chat,
+    build and bind the live turn, publish `turn.accepted` (seq 1), and only then return the 202."""
+    if client_id:
+        found = await run_blocking(lambda: find_owner_line(services.db.conn(), sid, client_id))
+        if found is not None:
+            return _duplicate(sid, services, client_id, found, direct_running.answering(sid) and direct_running.client_of(sid) == client_id)
+    claim = direct_running.begin_turn(sid, client_id)
+    if isinstance(claim, direct_running.Busy):
+        if client_id and claim.client_id == client_id:               # the same send, caught while its first request is still storing the line
+            found = await run_blocking(lambda: find_owner_line(services.db.conn(), sid, client_id))
+            return _duplicate(sid, services, client_id, found, True)
+        raise Busy("This chat is already answering")
+    generation = uuid.uuid4().hex
+    live: LiveTurn | None = None
+    try:
+        message_id = await run_blocking(_store_user_line, services, sid, said, attached, client_id)
+        direct_running.attach(sid, message_id)
+        await run_blocking(_ground, services, port, sid)
+        live = _new_live(services, sid, message_id, generation, client_id, 1, claim.token)
+        direct_running.bind(sid, live)
+        live.start()
+        live.accepted()
+        if claim.token.requested:                                      # a Stop that arrived while the line was being stored
+            live.request_stop()
+    except BaseException:
+        if live is not None:
+            live.close()
+        direct_running.end(sid)
+        raise
+    asyncio.get_running_loop().create_task(run_blocking(_answer_live, services, port, sid, message_id, ChatTurnIn(text=said, attachments=refs), live, 1))
+    return RedactedJSONResponse(status_code=202, content={"message_id": message_id, "turn": "started", "generation_id": generation, "attempt_no": 1,
+                                                          "client_id": client_id or _client_of_line(services, sid, message_id)})
+
+
+def _client_of_line(services: Any, sid: str, message_id: int) -> str | None:
+    row = services.db.conn().execute("SELECT src_ref FROM chat_messages WHERE id = ?", (message_id,)).fetchone()
+    ref = row["src_ref"] if row is not None else ""
+    return ref[len(DIRECT_ASK):] if ref.startswith(DIRECT_ASK) else None
+
+
+def _new_live(services: Any, sid: str, message_id: int, generation: str, client_id: str | None, attempt_no: int, token: Any) -> LiveTurn:
+    return LiveTurn(session_id=sid, message_id=message_id, generation_id=generation, client_id=client_id, attempt_no=attempt_no, token=token, bus=services.bus,
+                    db=services.db, redact=services.redact, config=LiveConfig.from_settings(services.settings))
+
+
+async def _retry_live(request: Request, services: Any, port: Any, sid: str, body: RetryIn) -> RedactedJSONResponse:
+    """Answer the owner's newest line again: the same owner line, a new generation, attempt-scoped refs (D216). Only a failed or stopped try can be retried."""
+    def check() -> tuple[str, int]:
+        conn = services.db.conn()
+        row = conn.execute("SELECT id, role, text, src_ref FROM chat_messages WHERE id = ? AND session_id = ?", (body.message_id, sid)).fetchone()
+        if row is None or row["role"] != "user" or not str(row["src_ref"] or "").startswith(DIRECT_ASK):
+            raise NotFound("that line")
+        if newest_owner_line(conn, sid) != body.message_id:
+            raise AppError("not_retryable", "Only the last question of a chat can be answered again.")
+        if last_outcome(conn, sid, body.message_id) == "done":
+            raise AppError("not_retryable", "That question was answered. Ask it again as a new message.")
+        return str(row["text"]), next_attempt(conn, sid, body.message_id)
+    text, attempt = await run_blocking(check)
+    claim = direct_running.begin_turn(sid, body.client_id)
+    if isinstance(claim, direct_running.Busy):
+        raise Busy("This chat is already answering")
+    generation = uuid.uuid4().hex
+    live: LiveTurn | None = None
+    try:
+        if attempt > direct_turns.MAX_ATTEMPT:
+            raise AppError("not_retryable", "That question was already answered again as often as the chat allows.")
+        direct_running.attach(sid, body.message_id)
+        await run_blocking(_ground, services, port, sid)
+        live = _new_live(services, sid, body.message_id, generation, body.client_id, attempt, claim.token)
+        direct_running.bind(sid, live)
+        live.start()
+        live.accepted()
+        if claim.token.requested:
+            live.request_stop()
+    except BaseException:
+        if live is not None:
+            live.close()
+        direct_running.end(sid)
+        raise
+    said = re.sub(r"\n\(attached: [^\n]*\)$", "", text)          # the files of the first send cannot be sent again: the question can
+    asyncio.get_running_loop().create_task(run_blocking(_answer_live, services, port, sid, body.message_id, ChatTurnIn(text=said), live, attempt))
+    return RedactedJSONResponse(status_code=202, content={"message_id": body.message_id, "turn": "started", "generation_id": generation, "attempt_no": attempt,
+                                                          "client_id": body.client_id})
+
+
+def _stop_live(port: Any, sid: str) -> dict[str, Any]:
+    """Stop, as a live chat does it: say so to the live turn (it stops sending and freezes what was written), ask the process to end on a background task, and answer at once.
+    `stopped: true` means a turn was running and Stop is now requested; `false` means none is (the page resyncs from the snapshot, it never decides by itself)."""
+    live = direct_running.live_of(sid)
+    token = direct_running.token_of(sid)
+    running = direct_running.answering(sid)
+    if live is not None:
+        live.request_stop()
+    elif token is not None:
+        token.request()                                              # the turn is being set up: it stops before its process starts, and the live turn is frozen when it is built
+    if running:
+        task = asyncio.get_running_loop().create_task(run_blocking(port.stop, sid))      # the cancel ladder can take 12 s: never wait for it here
+        _background.add(task)
+        task.add_done_callback(_background.discard)
+    return {"session_id": sid, "stopped": bool(running), "state": live.state if live is not None else ("stopping" if running else "none")}
+
+
+def _last_turn(services: Any, sid: str) -> dict[str, Any]:
+    """`{live: false}` and what the page needs to fetch the stored reply: the newest reply of a direct turn and which try it was."""
+    row = services.db.conn().execute(
+        "SELECT id, src_ref FROM chat_messages WHERE session_id = ? AND src_ref LIKE 'direct:%' ORDER BY id DESC LIMIT 1", (sid,)).fetchone()
+    out: dict[str, Any] = {"live": False}
+    if row is not None:
+        ref = str(row["src_ref"])
+        out["last_reply_id"] = int(row["id"])
+        out["last_attempt_no"] = int(ref.rsplit(".", 1)[-1]) if "." in ref else 1
+    return out
+
+
+def _failure_text(exc: BaseException) -> str:
+    message = exc.user_message() if isinstance(exc, ConnectorError) else (exc.message if isinstance(exc, AppError) else "The model could not answer.")
+    if isinstance(exc, ReplyTruncatedError):                 # the part that was written is kept above; say what the owner can do next
+        message += " Ask for a shorter answer, or say \"continue\"."
+    return message
+
+
+def _answer_live(services: Any, port: Any, sid: str, user_message_id: int, turn: ChatTurnIn, live: LiveTurn, attempt: int) -> None:
+    """The turn, on a worker thread, as a live turn: the port's events go to the live turn, which publishes them; the reply is stored once at the end, in one transaction with the
+    deletion of its checkpoint, and only then does `turn.done` go out (so a page that hears it can fetch the stored message). A Stop keeps what was written (and the tools that
+    ran, ended `interrupted`) with a calm note; a failure keeps it with the real reason. `live.close()` and `direct_running.end` run whatever happens."""
+    try:
+        done = None
+        for event in port.stream(sid, turn, cancel=live.token, acc=live.acc):
+            live.on_event(event)
+            if event.kind == "turn_done":
+                done = event.data
+        if done is None:
+            raise RuntimeError("the turn ended without a result")
+        if live.stopping or (live.token is not None and live.token.requested):
+            # Stop won, even though the provider still returned a result (it had already finished when the cancel ladder ran): every tab saw the text freeze, so the stored
+            # ending is the stopped one, built from what was shown, never the provider's full text
+            raise CallCancelledError("stopped")
+        stored = {**done, "blocks": done.get("blocks_ordered") or done.get("blocks") or []}
+        plain = "".join(str(b.get("text") or "") for b in stored["blocks"] if isinstance(b, dict) and b.get("type") == "text")
+        if str(done.get("text") or "") == plain and plain:            # the provider's text is the blocks' text run together: store it as the page draws it, paragraphs apart
+            stored["text"] = join_text((b.get("type") == "text", str(b.get("text") or "")) for b in stored["blocks"] if isinstance(b, dict))
+        ids = _post_all(services, sid, finished(user_message_id, stored, attempt, ordered=True, earlier=done.get("earlier"), via=live.via()), drop_generation=live.generation_id)
+        live.finish(ids.get(direct_turns.ref_of(user_message_id, "", attempt)) or 0, {**done, "text": stored["text"]})
+    except Exception as exc:                                         # a failed turn is a message, not a lost line
+        log.warning("live direct chat turn failed for %s: %s", sid, type(exc).__name__)
+        try:
+            if isinstance(exc, CallCancelledError):                  # the owner's Stop is not an error: what was written stays
+                live.request_stop()
+            live.settle_blocks("interrupted")
+            shown, blocks, earlier = live.shown_text(), live.acc.stored_blocks(ordered=True), live.earlier_tries()
+            if isinstance(exc, CallCancelledError):
+                endings = stopped(user_message_id, shown, attempt, blocks=blocks, ordered=True, earlier=earlier, via=live.via())
+            else:
+                endings = failed(user_message_id, shown, _failure_text(exc), attempt, blocks=blocks, ordered=True, earlier=earlier, via=live.via())
+            ids = _post_all(services, sid, endings, drop_generation=live.generation_id)
+            reply = ids.get(direct_turns.ref_of(user_message_id, "", attempt)) or 0
+            if isinstance(exc, CallCancelledError):
+                live.stopped(reply)
+            else:
+                live.failed(_failure_text(exc), getattr(exc, "code", "failed") if isinstance(exc, ConnectorError) else "failed", reply)
+        except Exception:
+            log.exception("could not store the failed turn of %s", sid)
+    finally:
+        direct_running.end(sid)          # first: the reply is stored and the end sent, so the chat is free now; closing joins threads and can wait on a slow checkpoint write
+        live.close()
 
 
 router = build_router()

@@ -88,16 +88,10 @@
     },
     "GenericTemplate": {
       "additionalProperties": false,
-      "description": "The generic layer: one per (artifact, section), built from the section model and RULES.",
+      "description": "The generic layer: one per (artifact, section), as J2 keeps it in `templates/<type>/generic.json`.",
       "properties": {
         "artifact": {
-          "enum": [
-            "prd",
-            "hld",
-            "lld",
-            "design",
-            "website"
-          ],
+          "pattern": "^[a-z][a-z0-9_]{1,40}$",
           "title": "Artifact",
           "type": "string"
         },
@@ -237,7 +231,7 @@
     },
     "RuleSpec": {
       "additionalProperties": false,
-      "description": "One rule as data: the J2 dict shape (the wire key `from` is `from_` in Python). A spec that a rule type cannot\nrun (a missing key, a list where one path is needed, a target outside this/prd/hld/lld) is refused when it is\nbuilt, with J2's wording; whether its paths resolve to a field is a `Template` check (`templates.resolve`).",
+      "description": "One rule as data: the J2 dict shape (the wire key `from` is `from_` in Python). A spec that a rule type cannot\nrun (a missing key, a list where one path is needed, a target that is not this. or an artifact's name) is refused when it is\nbuilt, with J2's wording; whether its paths resolve to a field is a `Template` check (`templates.resolve`).",
       "properties": {
         "anchor_path": {
           "anyOf": [
@@ -412,16 +406,10 @@
     },
     "SpecialisedTemplate": {
       "additionalProperties": false,
-      "description": "A workflow's own template: extends one generic and keeps every required field of it.",
+      "description": "A workflow's own template: extends one generic. That it keeps every required field of the generic is\n`keeps_problems(generic, template)`, checked by whoever holds the generic (J2's file); this library holds none.",
       "properties": {
         "artifact": {
-          "enum": [
-            "prd",
-            "hld",
-            "lld",
-            "design",
-            "website"
-          ],
+          "pattern": "^[a-z][a-z0-9_]{1,40}$",
           "title": "Artifact",
           "type": "string"
         },

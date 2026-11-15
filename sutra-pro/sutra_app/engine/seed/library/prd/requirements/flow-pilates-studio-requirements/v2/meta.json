@@ -1,0 +1,39 @@
+{
+  "schema": "template-library/1",
+  "name": "Flow Pilates Studio Requirements",
+  "version": 2,
+  "sha": "160161a474e36d6aa21c448a28239edc7c572c51d0883ea72d5f8252e5471ddb",
+  "schema_sha": "09965d9bce6ddcb79756a3b167f52582ed0ed6e79b601721df3040e01fd75b8b",
+  "model_sha": "5ece8f5518c722ddcc8336b41d3c3a2199277eb5caad4b27731eb36abb9e6310",
+  "class": "FlowPilatesStudioRequirementsV2",
+  "created": "2026-11-12T15:09:57",
+  "fingerprints": [
+    "9903b6dcb7d29d0828107fc9cee288f94c925637ba9a0f6e876c183d0cb9db71"
+  ],
+  "made_by": {
+    "run": "j2-20261112-150036",
+    "workflow": "W-9",
+    "atom": "W-9.a1",
+    "agent": "code (adapted from a run template)",
+    "date": "2026-11-12 15:00:36"
+  },
+  "business": {
+    "name": "Flow Pilates Studio",
+    "type": "pilates studio"
+  },
+  "mock": false,
+  "collected_from": {
+    "run": "j2-20261112-150036",
+    "where": "the run's copy"
+  },
+  "used_by": [
+    {
+      "run": "j2-20261112-150036",
+      "workflow": "W-9",
+      "atom": "W-9.a1",
+      "action": "extended"
+    }
+  ],
+  "renamed_from": "Still Point Yoga Requirements@7",
+  "adapted_from": "Iron Grove Fitness Requirements@1"
+}

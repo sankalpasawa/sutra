@@ -1,0 +1,9 @@
+{
+  "id": "87_next_hand",
+  "title": "The next hand",
+  "description": "The model has no slot left and a second method hands the same letter to a person: the kernel takes that way, by its ordinary choice among methods.",
+  "packs": ["210_letters_desk", "211_hand_to_model", "212_book_read", "213_model_spent", "214_hand_to_officer"],
+  "execute": true,
+  "area": "Hand-off",
+  "expected": "WAITING"
+}

@@ -1,0 +1,219 @@
+{
+  "$defs": {
+    "JsonValue": {},
+    "RunTemplateWorkflow": {
+      "additionalProperties": false,
+      "description": "One workflow of a run template. `section_template` is \"name@version\" as the library holds it (the generic layout's own\nname when the run's builder filled the generic one); `covers` are done-when texts with slots, never facts.",
+      "properties": {
+        "artifact": {
+          "pattern": "^[a-z][a-z0-9_]{1,40}$",
+          "title": "Artifact",
+          "type": "string"
+        },
+        "covers": {
+          "items": {
+            "maxLength": 2000,
+            "type": "string"
+          },
+          "maxItems": 300,
+          "title": "Covers",
+          "type": "array"
+        },
+        "depends_on": {
+          "items": {
+            "maxLength": 40,
+            "pattern": "^W-[0-9]+$",
+            "type": "string"
+          },
+          "maxItems": 500,
+          "title": "Depends On",
+          "type": "array"
+        },
+        "fix": {
+          "default": false,
+          "title": "Fix",
+          "type": "boolean"
+        },
+        "key": {
+          "maxLength": 40,
+          "pattern": "^W-[0-9]+$",
+          "title": "Key",
+          "type": "string"
+        },
+        "made_from": {
+          "default": "",
+          "maxLength": 40,
+          "title": "Made From",
+          "type": "string"
+        },
+        "name": {
+          "maxLength": 200,
+          "minLength": 1,
+          "title": "Name",
+          "type": "string"
+        },
+        "section": {
+          "maxLength": 80,
+          "minLength": 1,
+          "title": "Section",
+          "type": "string"
+        },
+        "section_template": {
+          "maxLength": 200,
+          "minLength": 1,
+          "title": "Section Template",
+          "type": "string"
+        },
+        "section_template_kind": {
+          "default": "not recorded",
+          "enum": [
+            "generic",
+            "specialised",
+            "not recorded"
+          ],
+          "title": "Section Template Kind",
+          "type": "string"
+        },
+        "stage": {
+          "maxLength": 40,
+          "minLength": 1,
+          "title": "Stage",
+          "type": "string"
+        }
+      },
+      "required": [
+        "key",
+        "name",
+        "stage",
+        "artifact",
+        "section",
+        "section_template"
+      ],
+      "title": "RunTemplateWorkflow",
+      "type": "object"
+    }
+  },
+  "additionalProperties": false,
+  "description": "`run-template/1`: all the workflows of one finished run, as `library/run-templates/<id>/template.json` (family payload\n`run_template.bundle`). Closed, and checked as J2 checks it at every write: workflow keys run W-1.. in order, each once;\n`depends_on` names earlier keys; every workflow's stage is one of `stages`, and the workflows are grouped by stage in that\norder; no slot is used that `facts_slots` does not list; `outputs` name a stage and the files inside its folder. The\n`schema` key is checked and written back by `to_json()`. Not a row of `GET /api/run-templates` (that is `RunTemplate`).",
+  "properties": {
+    "business_type": {
+      "default": "not recorded",
+      "maxLength": 200,
+      "title": "Business Type",
+      "type": "string"
+    },
+    "created": {
+      "default": "",
+      "maxLength": 40,
+      "title": "Created",
+      "type": "string"
+    },
+    "description": {
+      "default": "",
+      "maxLength": 2000,
+      "title": "Description",
+      "type": "string"
+    },
+    "facts_slots": {
+      "items": {
+        "maxLength": 200,
+        "type": "string"
+      },
+      "maxItems": 300,
+      "title": "Facts Slots",
+      "type": "array"
+    },
+    "id": {
+      "maxLength": 80,
+      "pattern": "^[a-z0-9]+(-[a-z0-9]+)*$",
+      "title": "Id",
+      "type": "string"
+    },
+    "made_by": {
+      "additionalProperties": {
+        "$ref": "#/$defs/JsonValue"
+      },
+      "title": "Made By",
+      "type": "object"
+    },
+    "made_from_run": {
+      "maxLength": 200,
+      "minLength": 1,
+      "title": "Made From Run",
+      "type": "string"
+    },
+    "mock": {
+      "anyOf": [
+        {
+          "type": "boolean"
+        },
+        {
+          "const": "not recorded",
+          "type": "string"
+        }
+      ],
+      "default": "not recorded",
+      "title": "Mock"
+    },
+    "name": {
+      "maxLength": 200,
+      "minLength": 1,
+      "title": "Name",
+      "type": "string"
+    },
+    "outputs": {
+      "additionalProperties": {
+        "additionalProperties": {
+          "$ref": "#/$defs/JsonValue"
+        },
+        "type": "object"
+      },
+      "propertyNames": {
+        "maxLength": 40,
+        "minLength": 1
+      },
+      "title": "Outputs",
+      "type": "object"
+    },
+    "stages": {
+      "items": {
+        "maxLength": 40,
+        "minLength": 1,
+        "type": "string"
+      },
+      "maxItems": 40,
+      "minItems": 1,
+      "title": "Stages",
+      "type": "array"
+    },
+    "used_by": {
+      "items": {
+        "additionalProperties": {
+          "$ref": "#/$defs/JsonValue"
+        },
+        "type": "object"
+      },
+      "maxItems": 5000,
+      "title": "Used By",
+      "type": "array"
+    },
+    "workflows": {
+      "items": {
+        "$ref": "#/$defs/RunTemplateWorkflow"
+      },
+      "maxItems": 500,
+      "minItems": 1,
+      "title": "Workflows",
+      "type": "array"
+    }
+  },
+  "required": [
+    "id",
+    "name",
+    "made_from_run",
+    "stages",
+    "workflows"
+  ],
+  "title": "RunTemplateBundle",
+  "type": "object"
+}
