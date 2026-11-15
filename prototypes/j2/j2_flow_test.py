@@ -383,7 +383,8 @@ def policy_budget(fixes):
             asked.append("REJECTED" in task)
             if len(asked) == 1:
                 return {"say": "@Identity Policy question: 60 can't cover the charter's sections. Can we add budget?",
-                        "act": "POLICY_QUESTION", "question": "60 can't cover the charter's sections. Add budget?"}
+                        "act": "POLICY_QUESTION", "question": "60 can't cover the charter's sections. Add budget?",
+                        "about": "budget"}
         assert not (fn == "identity" and task.startswith("QUESTION FROM")), "a budget question reached Identity"
         return orig(fn, fmt, task, mock, **k)
     run.call = call
@@ -416,7 +417,7 @@ def connections():
     registers or rejects with a reason, Coordination schedules, Audit checks what was built, and every run ends with
     a site built (the Requester always picks leave-out or keep going here). summary.json counts the links."""
     j2.load_rates("website")
-    floor = sum(j2.item_min(c) for c in j2.mock_charter(BREW_LAB)["done_when"])
+    floor = sum(j2.RATES.get(j2.mock_item_kind(c), 0) for c in j2.mock_charter(BREW_LAB)["done_when"])
     assert floor == 70, floor
     for name, budget, cap in (("generous", 2 * floor, None), ("tight", floor - 15, None),
                               ("impossible", floor - 30, floor - 30)):
@@ -502,8 +503,8 @@ def build_before_asking():
     run = j2.J2Run()
     run.goal = j2.mock_charter(BREW_LAB)
     run.workflows = [{"id": "W-1", "name": "Menu", "status": "registered", "covers_text": [run.goal["done_when"][0]]}]
-    run.call = lambda fn, fmt, task, mock, **k: {"say": "So far the page has the earthy look and all your prices."} \
-        if fn == "identity" else json.loads(mock())
+    run.call = lambda fn, fmt, task, mock, **k: {"say": "So far the page has the earthy look and all your prices.",
+                                                 "built": [1]} if fn == "identity" else json.loads(mock())   # its claim
     run._identity_limit({"reason": "Priority's ruling", "left_out": run.goal["done_when"][1:], "budget_needed": 20})
     text = run.chat[-1]["text"]
     assert "page has" not in text and "will build 1 funded part" in text, text
@@ -527,7 +528,8 @@ def build_before_asking():
     gate = run.goal["done_when"][-1]
     assert gate == j2.GATE_TEXT and not re.search(r"filter|categor", gate, re.I), gate
     assert gate in run.goal["core_items"] and j2.must_keep(gate, run.goal), run.goal["core_items"]
-    # (5) after a drop, Audit's pre-drop numbers are read by text; dropped items get no finding; nothing is "missing"
+    # (5) after a drop, Audit's run-long numbers name the items (no text read); dropped items get no finding; nothing
+    # is "missing". An unnumbered finding is matched only by an exact copy of an item's text (group C batch 4)
     run = j2.J2Run()
     orig_items = [c for c, _ in THREAD_AND_LOOM]
     keep = [orig_items[i] for i in (0, 1, 6, 8, 11)]
@@ -542,12 +544,19 @@ def build_before_asking():
                  {"id": "F-5", "item": 12, "criterion": "No JavaScript errors", "verdict": "PASS", "evidence": "seen"},
                  {"id": "F-6", "item": 8, "criterion": "Lookbook with 3 styled outfits", "verdict": "NEEDS_REVISION",
                   "evidence": "absent"},                                 # dropped: no finding
-                 {"id": "F-7", "item": None, "criterion": "A reviews section shows three reviews", "verdict":
-                  "NEEDS_REVISION", "evidence": "absent"}]               # dropped, unnumbered: no finding
+                 {"id": "F-7", "item": None, "criterion": orig_items[9], "verdict":
+                  "NEEDS_REVISION", "evidence": "absent"},               # dropped, unnumbered, exact text: no finding
+                 {"id": "F-8", "item": None, "criterion": "A reviews section shows three reviews", "verdict":
+                  "NEEDS_REVISION", "evidence": "absent"}]               # unnumbered paraphrase: an extra issue
     results, extras = run._audit_findings(findings, keep)
     # findings are named by the items' run-long numbers: 1, 2, 7, 9, 12 (never renumbered after the drop)
     assert [r["id"] for r in results] == ["F-1", "F-2", "F-7", "F-9", "F-12"] and all(r["pass"] for r in results), results
-    assert not extras, extras
+    assert [x.get("audit_id", x["id"]) for x in extras] == ["F-8"], extras      # never matched to an item by its words
+    assert any(e.get("type") == "invalid_move" and "names no done-when item" in str(e.get("detail") or e.get("text"))
+               for e in run.events), "logged"
+    # a finding whose text resembles another item stays on the item its number names
+    r2, _ = run._audit_findings([{"id": "F-1", "item": 1, "criterion": keep[1], "verdict": "PASS", "evidence": "seen"}], keep)
+    assert r2[0]["item"] == 1 and r2[0]["pass"] and all(not r["pass"] for r in r2[1:]), r2
 
 
 def below_floor():
@@ -584,9 +593,15 @@ def below_floor():
         j2.BUDGET_CAP = 2 * j2.BUDGET
     # only "add credits" would be possible (every left-out item is a core fact): stop here is the second option
     run = page_run()
-    run.goal = {"done_when": ["The menu with prices is shown", "Opening hours are listed"]}
+    both = ["The menu with prices is shown", "Opening hours are listed"]
+    run.goal = {"done_when": both, "core_items": both}      # Identity's marks: no word of an item makes it core
     run._identity_limit({"reason": "Priority's ruling", "left_out": run.goal["done_when"], "budget_needed": 20})
     assert run.paused["handoff"]["choices"] == ["continue", "ship"], run.paused["handoff"]
+    run = page_run()
+    run.goal = {"done_when": both}                          # no marks: nothing is core but the gate, so both may go
+    assert not any(j2.must_keep(c, run.goal) for c in both)
+    run._identity_limit({"reason": "Priority's ruling", "left_out": both, "budget_needed": 20})
+    assert run.paused["handoff"]["choices"] == ["continue", "drop"], run.paused["handoff"]
 
 
 
@@ -640,8 +655,242 @@ def thread_and_loom_core():
     for words in ("lookbook", "reviews section", "New Arrivals"):
         assert any(words in c for c in offered), (words, offered)
     assert not any(j2.must_keep(c, run.goal) for c in offered), offered
-    # the keyword fallback no longer treats a number as a core fact
-    assert not j2.must_keep(THREAD_AND_LOOM[7][0], {}) and j2.must_keep(THREAD_AND_LOOM[1][0], {})
+    # no keyword fallback: without Identity's marks only the no-errors gate is core
+    assert not any(j2.must_keep(c, {}) for c, _ in THREAD_AND_LOOM if "JavaScript errors" not in c)
+    assert j2.must_keep(j2.GATE_TEXT, {})
+
+
+def coordination_ready_now():
+    """Group C batch 2: Coordination schedules from each workflow's dependencies and what it writes, never words. It
+    may name several ready workflows; the engine runs one and says so. A workflow whose dependency (by id, name or
+    proposal_id) isn't done can't be ready; a dependency naming no workflow of the run never blocks. Its task names
+    no type or file and gives it no "next" to pick."""
+    run = page_run()
+    run.goal = {"done_when": ["a", "b", "c", "d"]}
+    wf = lambda i, pid, deps, st="registered": {"id": i, "name": f"Part {i}", "proposal_id": pid, "status": st,
+                                                "dependencies": deps, "cost": 5, "charged": True, "outputs": [f"{pid}.out"]}
+    run.workflows = [wf("W-1", "base", [], "done"), wf("W-2", "two", ["base"]), wf("W-3", "three", ["base", "earlier-stage"]),
+                     wf("W-4", "four", ["W-2"]), wf("W-5", "five", ["Part W-1"])]
+    rows = {r["id"]: r for r in run._schedule_rows([w for w in run.workflows if w["status"] != "done"])}
+    assert rows["W-2"]["waits_for"] == [] and rows["W-4"]["waits_for"] == ["W-2"], rows
+    assert rows["W-3"]["unknown_dependencies"] == ["earlier-stage"] and rows["W-3"]["waits_for"] == [], rows["W-3"]
+    assert rows["W-5"]["waits_for"] == [] and rows["W-2"]["writes"] == {"outputs": ["two.out"]}, rows
+    seen = {}
+
+    def call(fn, fmt, task, mock, **k):
+        seen.update(fmt=fmt, task=task)
+        return {"say": "Schedule.", "rule": "dependencies first", "order": ["W-4", "W-2", "W-3"],
+                "ready_now": ["W-2", "W-3", "W-4", "W-5"], "holds": []}
+    run.call = call
+    run.handoff = {"kind": "schedule"}
+    run._turn_coordination({"kind": "schedule"})
+    notes = [m["text"] for m in run.chat if m["who"] == "system"]
+    assert run.turn == "priority" and run.handoff["wid"] == "W-2", (run.turn, run.handoff)      # W-4 first in order, but waits
+    assert any(t.startswith("Refused as ready: W-4 waits for W-2") for t in notes), notes
+    assert any(t.startswith("Coordination named 3 ready: W-2, W-3, W-5. The engine runs one at a time: W-2 now; W-3 and "
+                            "W-5 wait for the next slot.") for t in notes), notes
+    assert any(t.startswith("Not in Coordination's order, so added at the end: W-5") for t in notes), notes
+    said = next(m for m in reversed(run.chat) if m["who"] == "coordination")
+    assert said["ready_now"] == ["W-2", "W-3", "W-5"] and said["schedule"][0] == "W-2", said
+    assert '"next"' not in seen["fmt"] and '"ready_now"' in seen["fmt"], seen["fmt"]
+    assert not re.search(r"\bsite\b|index\.html|\.html\b", seen["task"] + seen["fmt"], re.I), seen["task"]
+    assert "the engine's limit, not your scheduling rule" in seen["task"]
+    print("coordination: schedules from dependencies and writes, names several ready, the engine runs one and says so, "
+          "a waiting workflow refused as ready, unknown dependencies never block, no type or file names, no next ok")
+
+
+def dependency_names():
+    """Group C 3c: at registration a dependency must name, exactly, a workflow of this run (id, name or proposal id, any
+    status), a workflow of the same batch, or a finished earlier stage; anything else is refused back to Adaptation
+    with the names it may use. No word of a name is read: 'W-1 ' or a different case is not a match."""
+    run = page_run()
+    run.workflows = [{"id": "W-1", "name": "Page shell", "proposal_id": "page-shell", "status": "done", "dependencies": []},
+                     {"id": "W-2", "name": "Menu", "proposal_id": "menu", "status": "registered", "dependencies": []}]
+    run.stage_archive = [{"stage": "prd"}]
+    batch = [{"id": "hours", "name": "Hours", "dependencies": ["page-shell", "W-2", "Hours list", "prd", "Menu"]},
+             {"id": "list", "name": "Hours list", "dependencies": []}]
+    assert run._unknown_deps(batch[0], batch) == [], run._unknown_deps(batch[0], batch)
+    for bad in ("PRD v6", "HLD (accepted as it is)", "decide-defaults", "page shell", "W-1 ", "menu-section"):
+        assert run._unknown_deps({"dependencies": [bad]}, batch) == [bad], bad
+    run2 = j2.J2Run()
+    say(run2, BREW_LAB)
+    w = dict(next(x for x in run2.workflows if x["status"] == "done"), name="Late extra", dependencies=["PRD v6"])
+    w.pop("id", None)
+    run2._register([w])
+    r = run2.rejections[-1]
+    assert r["workflow"] == "Late extra" and r["reason"].startswith("it depends on 'PRD v6', which names no workflow of "
+                                                                    "this run and no finished earlier stage"), r
+    assert "W-1" in r["reason"], r["reason"]        # the names it may use are listed
+    print("dependency names: exact id, name, proposal id, same-batch name or finished stage accepted; anything else "
+          "refused back to Adaptation with the names it may use ok")
+
+
+def item_kinds_and_about():
+    """Group C 3a/3b: an item's minimum price is the rate-card part of the kind Identity tagged at J2.a, from the type's
+    kinds (types.json cost.item_parts); an untagged item is the type's default kind; no word of an item is read. A
+    POLICY_QUESTION is a budget question only when Adaptation marks it so ("about"); the same words marked "charter"
+    go to Identity; a question without "about" is asked once more, then goes to Identity."""
+    run = page_run()
+    form = "Visitors can pre-order a coffee for pickup with a form"
+    assert j2.item_kind(form, {}) == j2.output_def("website")["default_kind"] == "page_section"   # no tag: default
+    assert j2.item_kind("A plain line", {"item_kinds": {"A plain line": "form"}}) == "form"      # the tag, not words
+    assert j2.item_min("A plain line", {"item_kinds": {"A plain line": "form"}}) == j2.RATES["form"]
+    kinds = dict(j2.output_def("website")["item_kinds"])
+    assert set(kinds) == {"form", "interactive_feature", "styling", "page_section"} and all(kinds.values()), kinds
+    seen = {}
+    orig = run.call
+
+    def call(fn, fmt, task, mock, **k):
+        if fn == "identity" and '"item_kinds": [str]' in fmt:
+            seen["fmt"] = fmt
+            r = json.loads(mock())
+            r["item_kinds"] = ["styling"] + ["not-a-kind"] * (len(r["goal"]["done_when"]) - 1)
+            return r
+        return orig(fn, fmt, task, mock, **k)
+    run.call = call
+    say(run, BREW_LAB)
+    assert all(v in seen["fmt"] for v in kinds.values()), "Identity reads what each kind is about"
+    first = run.goal["charter_items"][0]
+    assert run.goal["item_kinds"] == {first: "styling"} or j2.item_kind(first, run.goal) == "styling", run.goal.get("item_kinds")
+    assert any(e.get("type") == "item_kinds" for e in run.events), "a kind outside the type's list is logged"
+    others = [c for c in run.goal["done_when"] if c != first]
+    assert all(j2.item_kind(c, run.goal) == "page_section" for c in others), "an untagged item takes the default kind"
+    # 3b: the same words, marked differently
+    for about, to_identity in (("budget", False), ("charter", True), (None, True)):
+        r2, asked = page_run(), []
+        r2.goal = {"done_when": ["The menu with prices is shown"]}
+
+        def call2(fn, fmt, task, mock, **k):
+            asked.append(fn if fn != "identity" or not task.startswith("QUESTION FROM") else "identity_question")
+            if fn == "adaptation":
+                return {"say": "@Identity Can we add budget for a gallery?", "act": "POLICY_QUESTION",
+                        "question": "Can we add budget for a gallery?", "next": "Identity",
+                        **({"about": about} if about else {})}
+            return {"say": "@Adaptation Proceed inside the charter.", "clause": "rules", "answer": "Proceed."}
+        r2.call = call2
+        r2.agent_turns["adaptation"] = 1
+        r2._turn_adaptation({"kind": "propose", "why": "test"})
+        rejected = any(m["who"] == "system" and m["text"].startswith("Adaptation's question about budget was rejected")
+                       for m in r2.chat)
+        assert rejected == (not to_identity), (about, [m["text"][:60] for m in r2.chat])
+        assert (r2.turn == "identity") if to_identity else True, (about, r2.turn)
+        assert asked.count("adaptation") == (1 if about == "charter" else 2), (about, asked)
+    print("item kinds and about: prices from Identity's kind tags (default when untagged, a bad tag logged), the type's "
+          "kinds and what each is about in Identity's format; a budget question only when Adaptation marks it, the same "
+          "words marked charter go to Identity, no about: asked once more ok")
+
+
+def supersede_and_markers():
+    """Group C batch 4: a waiting workflow is replaced only when the new one names it (replaces), has exactly its
+    name, or is held with exactly its items; no stripped suffix or case fold. The nothing-to-be-confirmed check reads
+    its markers from the condition's own data."""
+    def wfs():
+        return [{"id": "W-1", "name": "Menu", "status": "registered", "covers_text": ["a"]},
+                {"id": "W-2", "name": "Hours", "status": "held", "covers_text": ["b"]},
+                {"id": "W-3", "name": "Map", "status": "registered", "covers_text": ["c"]}]
+    run = page_run()
+    run.goal = {"done_when": ["a", "b", "c", "d"]}
+    for new, replaces, gone in ((dict(id="W-4", name="menu (change 2)", covers_text=["d"]), None, set()),
+                                (dict(id="W-4", name="MENU", covers_text=["d"]), None, set()),
+                                (dict(id="W-4", name="Menu", covers_text=["d"]), None, {"W-1"}),
+                                (dict(id="W-4", name="New map", covers_text=["d"]), ["W-3"], {"W-3"}),
+                                (dict(id="W-4", name="Hours v2", covers_text=["b"]), None, {"W-2"})):
+        run.workflows = wfs()
+        run._supersede(new, replaces)
+        assert {w["id"] for w in run.workflows if w["status"] == "superseded"} == gone, (new, replaces)
+    run.workflows = wfs()
+    run._supersede(dict(id="W-4", name="X", covers_text=["d"]), ["W-9"])
+    assert any(e.get("type") == "replaces" for e in run.events), "a replaces naming no waiting workflow is logged"
+    cond = next(c for c in j2.load_conditions("website.json") if c["check"] == "nothing-to-be-confirmed")
+    assert cond["markers"] == ["to be confirmed", "TBC", "TBD"], cond
+    met = lambda c, d: j2.condition_met(c, d, {"to_be_confirmed": []}, "", [])[0]
+    assert not met(cond, "Opening hours: TBC") and met(cond, "Opening hours: 7am-6pm")
+    assert met({**cond, "markers": ["pending"]}, "Opening hours: TBC") and not met({**cond, "markers": ["pending"]}, "Hours pending")
+    assert met({**cond, "markers": []}, "Opening hours: TBC"), "no markers in the data: only open facts count"
+    print("supersede and markers: replaced by replaces, exact name or held with the same items, never by a stripped or "
+          "case-folded name; the to-be-confirmed markers come from the condition's data ok")
+
+
+def declared_not_words():
+    """Batch 6: four word rules are fields an agent sets. exact_facts (Identity) make an atom covering that item need a
+    facts-present check, a named test or behavior steps; digits in an unmarked goal need nothing. date_rule_items
+    (Identity) make a page atom name date_control and set exactly that control, and a no-page atom name date_case
+    with a test check; "deadline" in an unmarked goal needs nothing. Identity's limit message is replaced when its
+    built list claims an item Audit didn't pass. A builder's blocked_by names other workflows of the run."""
+    src = ""
+    a = {"goal": "Show the price 120 and the deadline 5 Mar", "how": {"steps": "x"}, "constraints": [],
+         "verification": [{"text": "the section exists", "type": "file-exists", "target": "index.html", "expect": True}]}
+    plain = j2.check_problems(a, src, rules={})
+    assert not any("exactly" in p or "date" in p for p in plain), plain        # no words read: nothing required
+    facts = j2.check_problems(a, src, rules={"facts": True})
+    assert any("facts that must appear exactly" in p for p in facts), facts
+    steps = ["set #reg-date 2026-03-01", "click #calc", "expect-number #total 100"]
+    b = {**a, "verification": [{"text": "price", "type": "behavior-steps", "target": steps, "expect": True}]}
+    no_ctl = j2.check_problems(b, src, rules={"date": True})
+    assert any("date_control" in p for p in no_ctl), no_ctl
+    ok = j2.check_problems({**b, "date_control": "#reg-date"}, src, rules={"date": True})
+    assert not any("date_control" in p for p in ok), ok
+    other = j2.check_problems({**b, "date_control": "#when"}, src, rules={"date": True})
+    assert any("is never set" in p for p in other), other
+    nopage = ("file-exists", "test-passed", "inside-folder")
+    c = {**a, "verification": [{"text": "tests pass", "type": "test-passed", "target": "test_x.py", "expect": True}]}
+    assert any("date_case" in p for p in j2.check_problems(c, src, nopage, rules={"date": True}))
+    assert not any("date" in p for p in j2.check_problems({**c, "date_case": "early-bird before 5 Mar"}, src, nopage,
+                                                            rules={"date": True}))
+    # Identity's marks reach the rules by item text
+    run = page_run()
+    run.goal = {"done_when": ["Prices", "Early bird"], "exact_facts": [{"fact": "120", "item": "Prices"}],
+                "date_rules": ["Early bird"]}
+    assert run._item_rules({"covers_text": ["Prices"]}) == {"facts": True, "date": False}
+    assert run._item_rules({"covers_text": ["Early bird"]}) == {"facts": False, "date": True}
+    # blocked_by: only other workflows of the run, never words in say
+    run.workflows = [{"id": "W-1", "name": "a", "status": "done"}, {"id": "W-2", "name": "b", "status": "running"}]
+    assert run._blocked_by({"blocked_by": ["W-1", "W-9", "W-2"]}, "W-2") == ["W-1"]
+    assert run._blocked_by({"say": "I can't: the cause belongs to W-1's section"}, "W-2") == []
+    assert any(e.get("type") == "blocked_by" for e in run.events)
+    # built: a claim of an item Audit didn't pass replaces Identity's message
+    for built, kept in (([], True), ([1], False)):
+        r = page_run()
+        r.goal = {"done_when": ["The menu with prices is shown", "Opening hours are listed"]}
+        say_ = "The menu is built and on the page."
+        r.call = lambda fn, fmt, task, mock, **k: {"say": say_, "built": built, "question": "Keep going?"}
+        r._identity_limit({"reason": "Out of budget", "out_of_budget": True})
+        shown = next(m["text"] for m in reversed(r.chat) if m["who"] == "identity")
+        assert (say_ in shown) == kept, (built, shown)
+    print("declared, not words: exact facts and date rules from Identity's marks, date_control or date_case from the "
+          "atom, built claims checked against Audit's passes, blocked_by checked against the run's workflows ok")
+
+
+def sandbox_off_default():
+    """Founder 2026-11-15: no sandbox by default, on every platform. The test rerun and a real run run as plain
+    processes (no J2_SANDBOX_CMD needed), say so in their evidence, and the rerun still works on a copy; the builder's
+    CLI settings carry no sandbox; the server's startup line says builders run without one. J2_SANDBOX=1 brings it back."""
+    keep = {k: os.environ.get(k) for k in ("J2_SANDBOX", "J2_SANDBOX_CMD")}
+    folder = tempfile.mkdtemp()
+    try:
+        os.environ.pop("J2_SANDBOX", None)
+        os.environ["J2_SANDBOX_CMD"] = "no-such-sandbox-command"         # never used while the sandbox is off
+        open(os.path.join(folder, "test_ok.py"), "w").write("open('made.txt', 'w').write('x')\n")
+        rr = j2.sandbox_rerun(folder, [sys.executable, "{target}"], "test_ok.py", 60)
+        assert rr["pass"] is True and "without a sandbox" in rr["evidence"], rr
+        assert not os.path.exists(os.path.join(folder, "made.txt")), "the rerun works on a copy"
+        out = tempfile.mkdtemp()
+        res = j2.real_run(folder, {"command": [sys.executable, "-c", f"open({os.path.join(out, 'r.txt')!r}, 'w').write('1')"],
+                                   "folder": out}, 60)
+        assert res["ran"] and res["exit"] == 0 and "without a sandbox" in res["evidence"], res
+        assert not j2.sandbox_on() and j2.SANDBOX_OFF_NOTE == ("Builders run without a sandbox: they can change files "
+                                                               "outside their folder.")
+        src = open(os.path.join(j2.HERE, "j2_server.py"), encoding="utf-8").read()
+        assert "SANDBOX_OFF_NOTE" in src and "sandbox_on()" in src, "the server prints the line at startup"
+        os.environ["J2_SANDBOX"] = "1"
+        assert j2.sandbox_on()
+        assert j2.sandbox_rerun(folder, [sys.executable, "{target}"], "test_ok.py", 60)["pass"] is None, "the sandbox " \
+            "command must exist when the sandbox is on"
+    finally:
+        for k, v in keep.items():
+            os.environ.pop(k, None) if v is None else os.environ.__setitem__(k, v)
+    print("sandbox off by default: the test rerun and a real run as plain processes, saying so; the rerun on a copy; "
+          "J2_SANDBOX=1 needs the sandbox command; the startup line ok")
 
 
 def deferred_twice():
@@ -1421,13 +1670,15 @@ def decide_for_me():
                      [{"question": "Send real emails to your test address during this run?", "options": ["Yes", "No"]}], "send_confirm")
         assert r4._auto_pick() is None and r4.snapshot()["paused"]["auto_waits"] is True
         r4.paused = {"kind": "conflict", "questions": [{"question": "q", "options": ["Add a story section (takes longer)", "Keep it simple, no story section"]}],
-                     "to": "identity", "handoff": {}, "msg": 1}
-        assert r4._auto_pick() == ("Option 2", "Keep it simple, no story section", 2)
+                     "to": "identity", "handoff": {"plan_option": 2}, "msg": 1}
+        assert r4._auto_pick() == ("Option 2", "Keep it simple, no story section", 2), "the option Identity marked as the plan"
+        assert r4._auto_choice({**r4.paused, "handoff": {}})[2] == 1, "no mark: the first option, never a word guess"
         r4.auto_log = [{"kind": "info"}] * j2.AUTO_CAP
         assert r4._auto_pick() is None, "after the cap the question waits for the Requester"
         r4.auto_log = [{"kind": "limit"}]
         r4.paused = {"kind": "limit", "questions": [{"question": "q", "options": ["Add 30 work credits and keep going", "Leave out item 7",
-                                                                                   "Finish as it is: you get the site as it is now"]}], "to": "identity", "handoff": {}, "msg": 1}
+                                                                                   "Finish as it is: you get the site as it is now"]}], "to": "identity",
+                     "handoff": {"choices": ["continue", "drop", "ship"]}, "msg": 1}
         assert r4._auto_pick()[2] == 3 and j2.J2Run()._auto_choice({**r4.paused})[2] == 1, "the first limit keeps going, a second one finishes as it is"
         r4.paused["questions"][0]["options"] = ["Keep going: you get more of the missing parts built",       # live run j2-20261109-231951: the
                                                 "Leave out item 7: you get the site without it. The form stays as it is, still failing",   # leave-out option
@@ -1727,11 +1978,14 @@ def atom_checks():
     timed = {**a, "goal": "Opening hours 8am to 9pm are listed", "how": {**how, "steps": "h2 headings, class hours-head"},
              "expected_output": [{"text": "2 hours headings", "kind": "element", "target": ".hours-head", "count": 2}],
              "verification": [{"text": "2 hours headings", "type": "element-count", "target": ".hours-head", "expect": 2}]}
-    assert j2.check_problems(timed, src) == ["its goal names a time, price, number or email but no check is "
-                                             "facts-present or a named test"], j2.check_problems(timed, src)
+    assert j2.check_problems(timed, src) == [], "no word of the goal is read"
+    assert j2.check_problems(timed, src, rules={"facts": True}) == [
+        "it covers a done-when item with facts that must appear exactly, but no check is facts-present, a named test "
+        "or behavior steps"], j2.check_problems(timed, src, rules={"facts": True})
 
-    def patched(edit, reply=lambda r, fn: r, done=True):
-        """A run whose first Adaptation proposal has its first atom changed by edit (once)."""
+    def patched(edit, reply=lambda r, fn: r, done=True, marks=None):
+        """A run whose first Adaptation proposal has its first atom changed by edit (once). marks(goal): Identity's
+        marks added to the charter before that proposal."""
         run, hit = j2.J2Run(), []
         orig = run.call
 
@@ -1739,6 +1993,8 @@ def atom_checks():
             r = orig(fn, fmt, task, mock, **k)
             if fn == "adaptation" and isinstance(r, dict) and r.get("workflows") and not run.workflows and not hit:
                 hit.append(1)
+                if marks:
+                    run.goal.update(marks(run.goal, r["workflows"][0]))
                 edit(r["workflows"][0]["atoms"][0])
             return reply(r, fn)
         run.call = call
@@ -1746,8 +2002,9 @@ def atom_checks():
         if done:
             finish(run)
         return run
-    run = patched(lambda at: at.update({k: v for k, v in timed.items() if k != "context"}))
-    assert "names a time, price, number or email" in run.rejections[0]["reason"], run.rejections
+    run = patched(lambda at: at.update({k: v for k, v in timed.items() if k != "context"}),
+                  marks=lambda g, w: {"exact_facts": [{"fact": "8am", "item": g["done_when"][int(w["covers"][0]) - 1]}]})
+    assert "facts that must appear exactly" in run.rejections[0]["reason"], run.rejections
     assert len([c for c in calls_of(run) if "THE VALIDATOR REJECTED" in c["prompt"]]) == 1
     assert run.outcome.startswith("Done"), run.outcome
 
@@ -1862,7 +2119,7 @@ def rubric_and_credits():
     finish(run)
     built = [c for c in calls_of(run) if j2.is_wf_agent(c["fn"])]
     assert built and all(f"{rid} {txt}" in c["prompt"] for c in built for rid, txt in j2.RUBRIC[:6])
-    form = next(i for i, c in enumerate(run.goal["done_when"], 1) if j2.item_kind(c) == "form")
+    form = next(i for i, c in enumerate(run.goal["done_when"], 1) if j2.item_kind(c, run.goal) == "form")
     w = next(w for w in run.workflows if form in run._wf_items(w))
     tap = [c for a in w["atoms"] for c in a["verification"] if c["type"] == "tap-targets"]
     assert tap and tap[0]["target"] == ".order-form" and "order-form" in json.dumps(w["atoms"][0]["how"]), w["atoms"]
@@ -2069,7 +2326,7 @@ def identity_prompt_is_plain():
         calls = [json.loads(ln) for ln in f]
     assert any(c["fn"] == "identity" for c in calls)
     for c in calls:
-        assert ("college student with no tech background" in c["prompt"]) == (c["fn"] == "identity"), (c["id"], c["fn"])
+        assert ("write in plain, everyday words for someone outside the team" in c["prompt"]) == (c["fn"] == "identity"), (c["id"], c["fn"])
 
 
 FLORIST = "A website for Petal & Stem, a florist in Jaipur"
@@ -2103,8 +2360,10 @@ def run_blockers_batch1():
     met, ev = j2.lld_condition("lld-elements", read("lld-elements-165902.md"))
     assert met, ev
     # A13 (runs/j2-20261111-095315 C2 on v1): the brief's facts in other words are a warning
+    g95 = json.loads(read("goal-095315.json"))      # replayed as if Identity marked every charter fact exact (batch 6)
+    g95["exact_facts"] = [{"fact": f, "item": None} for f in g95.get("facts") or []]
     c2 = next(c for c in j2.check_conditions(j2.load_conditions("document.json"), read("doc-v1-095315.md"),
-                                             json.loads(read("goal-095315.json")), "", []) if c["id"] == "C2")
+                                             g95, "", []) if c["id"] == "C2")
     assert not c2["met"] and not j2.blocks(c2), c2
     # A6 (165902 call 4, 155605, 095315): the format names "sections"; the run's first plan, without it, is still flagged
     run = j2.J2Run()
@@ -2300,9 +2559,10 @@ def pricing():
     """I: the validator ties price to the work, not to labels."""
     run = page_run()
     run.goal = j2.mock_charter(BREW_LAB)    # 1 menu, 2 hours, 3 address, 4 order (form), 5 beans, 6 loyalty, 7 phone
+    run.goal["item_kinds"] = {c: j2.mock_item_kind(c) for c in run.goal["done_when"]}     # Identity's tags (the mock's)
     run.budget, run.cycle = 500, 1
     base = {"goal_gap": "x", "outputs": ["index.html"], "completion_check": "y", "atoms": ATOM}
-    kinds = [j2.item_kind(c) for c in run.goal["done_when"]]
+    kinds = [j2.item_kind(c, run.goal) for c in run.goal["done_when"]]
     assert kinds == ["page_section"] * 3 + ["form"] + ["page_section"] * 2 + ["styling"], kinds
     # bundling: six items in one 20-unit workflow (as in the run) is rejected; the same work priced honestly passes
     reg, refused, _ = run._register([{**base, "name": "Shop", "parts": ["page_section", "interactive_feature"],
@@ -2358,7 +2618,7 @@ def unpaid_items():
         assert first["verdict"] == "UNPAID" and not first["pass"] and "no workflow covers" in first["note"], first
         assert any(x.startswith(f"done-when item {beans}") and "UNPAID" in x for x in j2.workable(run.audits[0]))
         pay = next(w for w in run.workflows if w.get("covers") == [beans] and w["status"] == "done")
-        assert pay["cost"] >= j2.item_min(run.goal["done_when"][beans - 1]), pay
+        assert pay["cost"] >= j2.item_min(run.goal["done_when"][beans - 1], run.goal), pay
         assert beans in run.paid_items() and run.outcome.startswith("Done"), run.outcome
         assert not any(r["verdict"] == "UNPAID" for r in run.audits[-1]["results"])
         # unit: an item a fix paid for (via its finding) isn't flagged; an undeclared one is
@@ -2713,7 +2973,7 @@ def adaptation_idle():
     def call(fn, fmt, task, mock, **k):
         asked.append(fn)
         return {"say": "@Identity 2 left, the cheapest part costs more, so I propose nothing.",
-                "act": "POLICY_QUESTION", "workflows": [], "next": "Identity"}
+                "act": "POLICY_QUESTION", "about": "budget", "workflows": [], "next": "Identity"}
     run.call = call
     h = {"kind": "propose", "why": "Identity answered."}
     run.agent_turns["adaptation"] = 1
@@ -2788,7 +3048,7 @@ BANNED_FOR_REQUESTER = re.compile(r"building time|\bcaps?\b|\bcycles?\b|done[-_ 
 
 def plain_for_requester(run):
     """Everything Identity sends the Requester: no @ in front, no internal words, at most 3 sentences plus one
-    question, at most one question with at most 3 options."""
+    question, at most one question."""
     for m in run.chat:
         if m["who"] != "identity" or not m.get("to_user"):
             continue
@@ -2798,7 +3058,7 @@ def plain_for_requester(run):
         parts = [x for x in re.split(r"(?<=[.!?])\s+", say[len("@Requester "):]) if x.strip()]
         assert len([x for x in parts if not x.endswith("?")]) <= 3 and len([x for x in parts if x.endswith("?")]) <= 1, say
         qs = re.findall(r"^\d+\. ", m["text"], re.M)
-        assert len(qs) <= 1 and len(re.findall(r"^\s+Option \d+:", m["text"], re.M)) <= 3, m["text"]
+        assert len(qs) <= 1, m["text"]          # options: as many as the asker wrote (no cap of 3 since group C batch 1)
 
 
 def two_audiences():
@@ -2851,7 +3111,7 @@ def two_audiences():
 
 
 def simple_messages():
-    """Item 5: what the Requester reads is short and plain; one question, at most 3 options; the decision question's
+    """Item 5: what the Requester reads is short and plain; one question, Identity's options as it wrote them; the decision question's
     options say what they get."""
     t = j2.to_requester("@Requester The building time is used up. We hit the cap after 3 cycles. The done-when "
                         "list has 4 items (estimate). One more sentence. And another. Which do you want? Really?")
@@ -2865,7 +3125,7 @@ def simple_messages():
     assert len(q) == 1 and q[0]["question"] == "Please send these: What is your phone number; What are your hours.", q
     assert "?" not in run.chat[-1]["text"].split("\n")[0], run.chat[-1]["text"]
     run._ask_user("Pick one.", [{"question": "Which?", "options": ["a", "b", "c", "d"]}], "question")
-    assert run.paused["questions"][0]["options"] == ["a", "b", "c"], run.paused
+    assert run.paused["questions"][0]["options"] == ["a", "b", "c", "d"], "Identity's own options are never cut"
     run.budget, run.spent = 40, 38
     run._identity_limit({"reason": "Out of budget", "out_of_budget": True})
     opts = run.paused["questions"][0]["options"]                # no site yet: "stop here", never "finish"
@@ -3140,6 +3400,15 @@ def readable_decision():
     assert re_ask[0] == "@Requester I couldn't tell which option you chose. Reply 1, 2 or 3, or type what to add or " \
                         "leave out.", re_ask[0]
     assert len(re_ask) == 4 and all(ln.startswith("   Option ") for ln in re_ask[1:]), re_ask
+    # still unclear: asked again, never a default (each re-ask waits for a new Requester message, so it can't loop)
+    budget, n_asks = run.budget, sum(1 for e in run.events if e.get("type") == "unclear_answer")
+    say(run, "still not sure")
+    assert run.paused and run.paused["kind"] == "limit" and run.budget == budget, run.paused
+    assert sum(1 for e in run.events if e.get("type") == "unclear_answer") == n_asks + 1
+    assert run.status == "waiting", "the run waits for the Requester; nothing re-asks on its own"
+    # Decide for me answers with a bare option number, which always names an option
+    pick = run._auto_choice(run.paused)
+    assert pick[2] and j2.ONLY_PICK.fullmatch(pick[0]), pick
 
 
 def decision_negation():
@@ -3280,7 +3549,8 @@ def prd_checks():
     assert not j2.run_check({"type": "ids-unique", "target": "R"}, "", doc + "- **R2**: again\n", doc=True)["pass"]
     # necessary conditions, each on a document that breaks it
     conds = {c["id"]: c for c in j2.load_conditions("prd.json")}
-    goal = {"product_name": "QuickQueue", "facts": ["QuickQueue", "SMS alert"], "to_be_confirmed": []}
+    goal = {"product_name": "QuickQueue", "facts": ["QuickQueue", "SMS alert"], "to_be_confirmed": [],
+            "exact_facts": [{"fact": "QuickQueue", "item": None}, {"fact": "SMS alert", "item": None}]}   # Identity's marks
     src = j2.squash("QuickQueue SMS alert 45 minutes 10 minutes 60% 3 months")
     good = ("# QuickQueue\n\n## Problem\n\nPatients wait 45 minutes.\n\n## Users\n\nClinic patients.\n\n## Goals\n\n- **G1**: "
             "Short waits\n\n## Requirements\n\n1. **R1**: SMS alert\n2. **R2**: Join from a phone\n\n## Success metrics\n\n"
@@ -3291,6 +3561,7 @@ def prd_checks():
     assert not met("P1", good.replace("## Users", "## People"))[0]
     assert not met("P2", good.replace("phone\n", "phone\n3. **R2**: Duplicate\n"))[0] and not met("P2", good.replace("**R2**", "**R3**"))[0]
     assert not met("P3", good.replace("SMS alert", "text message"))[0]
+    assert met("P3", good.replace("SMS alert", "text message"), {**goal, "exact_facts": []})[0], "unmarked: never checked"
     p4 = met("P4", good.replace("Under 10 minutes", "Under 7 minutes"))
     assert not p4[0] and "7" in p4[1], p4
     assert not met("P5", good.replace("Payments", "Payments (to be confirmed)"))[0]
@@ -3309,7 +3580,9 @@ def prd_groups_metrics_assumptions():
     assumptions section, the window in Identity's number question, and short item names cut at a natural break."""
     conds = {c["id"]: c for c in j2.load_conditions("prd.json")}
     goal = {"product_name": "LabSlot", "users": "Students (book slots) and lab staff", "facts": ["LabSlot"],
-            "to_be_confirmed": []}
+            "to_be_confirmed": [], "user_groups": ["Students", "lab staff"]}
+    # no split of the "users" text (group C batch 4): only the charter's user_groups name the groups
+    assert j2.user_groups({"users": goal["users"]}) == [], "never split from words"
     src = j2.squash("LabSlot students lab staff book a slot 80% of bookings are made without staff help")
     doc = ("# LabSlot\n\n## Users\n\nStudents and lab staff.\n\n## Requirements\n\n1. **R1**: A student can book a slot\n\n"
            "## Success metrics\n\n- **G1**: 80% of bookings are made without staff help\n")
@@ -3628,7 +3901,8 @@ def website_conditions():
     fact shows no "None" and no internal id."""
     conds = j2.load_conditions("website.json")
     assert [c["id"] for c in conds] == [f"N{i}" for i in range(1, 10)], conds
-    goal = {"site_name": "Little Fig", "facts": ["Little Fig", "+91 98765 43210"], "to_be_confirmed": []}
+    goal = {"site_name": "Little Fig", "facts": ["Little Fig", "+91 98765 43210"], "to_be_confirmed": [],
+            "exact_facts": [{"fact": "Little Fig", "item": None}, {"fact": "+91 98765 43210", "item": None}]}      # Identity's marks
     src = j2.squash("Little Fig is open 8 to 10. Call +91 98765 43210 or write to hello@littlefig.in")
     good = ('<!doctype html><html><head><title>Little Fig</title></head><body><header id="hero"><nav>'
             '<a href="#menu">Menu</a> <a href="#visit">Visit</a></nav><h1>Little Fig</h1>'
@@ -3652,7 +3926,7 @@ def website_conditions():
               "N6": (good.replace("<p>Open 8 to 10.</p>", "<p>Open 8 to 10. Free delivery over 500.</p>"), clean, goal),
               "N7": (good.replace(' action="mailto:hello@littlefig.in"', ""), clean, goal),
               "N8": (good.replace('<a href="#menu">Menu</a> ', ""), clean, goal),
-              "N9": (good, clean, {**goal, "facts": ["Koramangala"]})}
+              "N9": (good, clean, {**goal, "exact_facts": [{"fact": "Koramangala", "item": None}]})}
     for cid, (page, mech, g) in breaks.items():
         r = check(page, mech, g)[cid]
         assert not r["met"] and r["evidence"] and r["evidence"] != ok[cid]["evidence"], (cid, r)
@@ -3662,10 +3936,10 @@ def website_conditions():
     assert not r["met"] and "hero" in r["evidence"], r
     r = check(good, {"available": False, "note": "Chrome not found"})
     assert not r["N2"]["met"] and r["N2"]["evidence"].startswith("could not run"), r["N2"]
-    assert ok["N9"]["evidence"].startswith("all 2 brief fact(s) appear"), ok["N9"]
+    assert ok["N9"]["evidence"].startswith("all 2 exact fact(s) appear"), ok["N9"]
     assert check(*breaks["N9"])["N9"]["severity"] == "warn" and not j2.blocks(check(*breaks["N9"])["N9"])
-    r = check(good, clean, {**goal, "facts": []})["N9"]          # no facts list: the site name only, and it says so
-    assert r["met"] and r["evidence"].startswith("no facts list; the site name 'Little Fig' appears"), r
+    r = check(good, clean, {**goal, "exact_facts": []})["N9"]    # nothing marked exact: nothing checked, and it says so
+    assert r["met"] and r["evidence"] == "the charter marks no facts that must appear exactly", r
 
     # workable(): Audit accepts and the render check is clean; every condition met, or not workable
     row = {"id": "F-1", "item": 1, "criterion": "Menu", "verdict": "PASS", "pass": True}
@@ -3777,9 +4051,11 @@ def behavior_steps():
     goal = "A fee calculator shows the total, with 10% off up to 31 December 2026"
 
     def probs(steps, g=goal, h=how, kind="behavior"):
+        # the item is a date-rule item (Identity's mark) and the atom names its date control (batch 6: no words read)
         a = {"goal": g, "how": h, "constraints": [], "context": ["charter item 1"], "verification": [],
+             "date_control": "#reg-date",
              "expected_output": [{"text": "The total for one 10K runner and 2 T-shirts", "kind": kind, "steps": steps}]}
-        return j2.expected_problems(a, j2.CHECK_TYPES) or j2.check_problems(j2.cover_expected(a), src)
+        return j2.expected_problems(a, j2.CHECK_TYPES) or j2.check_problems(j2.cover_expected(a), src, rules={"date": True})
     good = ["set #reg-date 2026-12-01", "set #shirts 2", "click #calc-go", "expect-number #total 500*0.9+2*250"]
     assert probs(good) == [], probs(good)
     for steps, part in (([*good[:3], "expect-number #total 950"], "uses 950, not in the charter"),
@@ -4128,9 +4404,16 @@ def agent_tools_cli():
         arg = lambda f: cmd[cmd.index(f) + 1]
         assert arg("--tools") == "ToolA,ToolB" and arg("--allowedTools") == "ToolA ToolB(run *)", cmd
         assert arg("--max-budget-usd") == "0.5" and arg("--permission-mode") == "dontAsk", cmd
-        assert {"--restricted", "--safe-mode"} <= set(cmd) and json.loads(arg("--settings"))["sandbox"]["enabled"], cmd
-        fs = json.loads(arg("--settings"))["sandbox"]["filesystem"]      # reads fenced: home denied, the folder only
-        assert fs["denyRead"] == ["~/"] and fs["allowRead"] == fs["allowWrite"] == [os.path.realpath(folder)], fs
+        # no sandbox by default (J2_SANDBOX unset): the permission rules only; J2_SANDBOX=1 fences reads and writes
+        assert {"--restricted", "--safe-mode"} <= set(cmd) and "sandbox" not in json.loads(arg("--settings")), cmd
+        keep_sb = os.environ.get("J2_SANDBOX")
+        os.environ["J2_SANDBOX"] = "1"
+        try:
+            sb = llm.cli_settings(tools)["sandbox"]
+        finally:
+            os.environ.pop("J2_SANDBOX", None) if keep_sb is None else os.environ.__setitem__("J2_SANDBOX", keep_sb)
+        fs = sb["filesystem"]      # reads fenced: home denied, the folder only
+        assert sb["enabled"] and fs["denyRead"] == ["~/"] and fs["allowRead"] == fs["allowWrite"] == [os.path.realpath(folder)], fs
         assert json.loads(arg("--settings"))["permissions"]["allow"] == ["ToolA", "ToolB(run *)"], cmd
         assert arg("--output-format") == "stream-json" and kw["cwd"] == folder, (cmd, kw)
         tc = llm.LAST_META["tool_calls"]
@@ -4531,7 +4814,7 @@ def run_for_real():
     real = tempfile.mkdtemp(prefix="j2-real-")      # the Requester's folder: outside the repo and the home folder
     src = tempfile.mkdtemp(prefix="j2-real-src-")
     tools = tempfile.mkdtemp(prefix="j2-fake-srt-")
-    keep = {k: os.environ.get(k) for k in ("J2_SANDBOX_CMD", "J2_AGENT_TOOLS")}
+    keep = {k: os.environ.get(k) for k in ("J2_SANDBOX_CMD", "J2_AGENT_TOOLS", "J2_SANDBOX")}
     try:
         source = j2.squash(f"Sort the files in {real} into folders by type, reading samples from {src}, and run it.")
         runner = ("python3", "{target}")
@@ -4551,7 +4834,7 @@ def run_for_real():
         open(fake, "w").write(FAKE_SRT)
         open(os.path.join(real, "keep.txt"), "w").write("k")
         open(os.path.join(real, "gone.txt"), "w").write("g")
-        os.environ["J2_SANDBOX_CMD"] = f"python3 {fake}"
+        os.environ.update(J2_SANDBOX_CMD=f"python3 {fake}", J2_SANDBOX="1")     # the sandbox path, via the fake srt
 
         def made_run():
             run = j2.J2Run()
@@ -4622,11 +4905,11 @@ def real_run_checks():
     assert "Never ask the Requester for that approval" in ident
     real = tempfile.mkdtemp(prefix="j2-real-")
     tools = tempfile.mkdtemp(prefix="j2-fake-srt-")
-    keep = {k: os.environ.get(k) for k in ("J2_SANDBOX_CMD",)}
+    keep = {k: os.environ.get(k) for k in ("J2_SANDBOX_CMD", "J2_SANDBOX")}
     try:
         fake = os.path.join(tools, "srt.py")
         open(fake, "w").write(FAKE_SRT)
-        os.environ["J2_SANDBOX_CMD"] = f"python3 {fake}"
+        os.environ.update(J2_SANDBOX_CMD=f"python3 {fake}", J2_SANDBOX="1")     # the sandbox path, via the fake srt
         crit = ["the script is built and its test passes", f"the script has been run on {real}"]
 
         def made_run():
@@ -4694,9 +4977,9 @@ def real_run_order():
     Identity are told who runs it and when."""
     crit = ["the script is built and its test passes", "the script has been run on the folder"]
     real, tools = tempfile.mkdtemp(prefix="j2-real-"), tempfile.mkdtemp(prefix="j2-fake-srt-")
-    keep = os.environ.get("J2_SANDBOX_CMD")
+    keep, keep_sb = os.environ.get("J2_SANDBOX_CMD"), os.environ.get("J2_SANDBOX")
     open(os.path.join(tools, "srt.py"), "w").write(FAKE_SRT)
-    os.environ["J2_SANDBOX_CMD"] = f"python3 {os.path.join(tools, 'srt.py')}"
+    os.environ.update(J2_SANDBOX_CMD=f"python3 {os.path.join(tools, 'srt.py')}", J2_SANDBOX="1")
 
     def made_run(item1_pass=True, fact=None):
         run = j2.J2Run()
@@ -4754,6 +5037,7 @@ def real_run_order():
         assert any(m["text"].startswith("Not taken from the answer: whether a real run happened") for m in run.chat)
     finally:
         os.environ.pop("J2_SANDBOX_CMD", None) if keep is None else os.environ.__setitem__("J2_SANDBOX_CMD", keep)
+        os.environ.pop("J2_SANDBOX", None) if keep_sb is None else os.environ.__setitem__("J2_SANDBOX", keep_sb)
         for d in (real, tools):
             shutil.rmtree(d, ignore_errors=True)
     print("real run order: the RUN ask without Identity's done; finishing with it pending is Done with open items; "
@@ -5995,6 +6279,64 @@ INTENDED_PROMPT_CHANGES = [
      "records, can answer it); and item: the done-when item number it is about, or null. ", ""),
     (open(os.path.join(os.path.dirname(os.path.abspath(__file__)), "agents", "j2", "identity.md"), encoding="utf-8").read()
      .split("## Decision procedure", 1)[0].split("\n\n## Real files and real runs", 1)[-1].join(["\n\n## Real files and real runs", ""]), "\n\n"),    # Identity's real-run rules
+    # remove-group-c batch 1 (Identity): the plain-words rule replaces the Requester persona; intake asks no fixed
+    # number of questions, no longer bans words from done-when, and records email_updates
+    (j2.J2Run.PLAIN_TO_REQUESTER, ("\nWHEN YOU WRITE TO THE REQUESTER (any say addressed to them, any question or option for them): they are a "
+     "college student with no tech background. Use everyday words. Never use internal terms: charter, done-when, "
+     "checklist, standards, reserve, fix, effort, budget, units, workflow, cycle, finding, audit, ruling, envelope, "
+     "content types such as \"warmth content\", or the names of the functions (Identity, Adaptation, Priority, "
+     "Coordination, Audit). At most two short sentences of context. Each option says what they get and what it costs, "
+     "in plain words, e.g. \"Add a gallery of past work (takes a bit longer)\" / \"Keep it simple, no gallery\". "
+     "No recommendation.")),
+    ('"email_updates": bool (true only when the Requester asked to get progress updates by email), ', ""),
+    ("ask the Requester specific questions", "ask the Requester 1-4 specific questions"),
+    ("(set enough=false, specific questions)", "(set enough=false, 1-4 specific questions)"),
+    ("confirm it. Keep everything the brief", "confirm it. Done-when may not refer to the Requester, Audit, "
+     "verification, approval or launch. Keep everything the brief"),
+    ("feature names). Keep everything", "feature names). Done-when may not refer to the Requester, Audit, verification, "
+     "approval or launch. Keep everything"),
+    # Identity may recommend an option; a conflict question marks the option that stays with the plan
+    ('"options": [str] (0-4)}|null, "needs_decision"', '"options": [str] (0-4, no recommendation)}|null, "needs_decision"'),
+    ("consequence and risk; never adding budget, leaving items out or finishing as is: only code offers those), "
+     "\"plan_option\": int|null (the number of the option that stays with the plan already agreed, if one does)}",
+     "consequence and risk; no recommendation; never adding budget, leaving items out or finishing as is: only code "
+     "offers those)}"),
+    # remove-group-c batch 2 (Coordination): the task gives each workflow's dependencies, waits_for and writes instead of
+    # the raw workflow, and states the engine's limit as code's; the format has ready_now and no next; coordination.md
+    # step 4; the mock's schedule names no file. Coordination's waiting list and task line are masked in both trees
+    # (regex entries: ("re", pattern, replacement)); the chat lines are normalised to the new text.
+    ("re", r"REGISTERED AND WAITING.*?\nDONE OR FAILED", "REGISTERED AND WAITING\nDONE OR FAILED"),
+    ("re", r"Schedule them\. [^\n]*", "Schedule them."),
+    ("re", r'\{"say": str, "rule": str[^\n]*?"holds": \[\{"id": str, "missing": str\}\][^\n]*', "COORDINATION_FMT"),
+    ("re", r"\[\d+\] System: Coordination named \d+ ready: [^\n]*\n", ""),    # the engine's honest one-at-a-time line
+    ("re", r"(?m)^\[\d+\] ", "[n] "),      # ...shifts later chat numbers by one: chat numbers are masked
+    ("Each one writes index.html, so they run one at a time. ", ""),
+    ("; one writer at a time on index.html", ""),
+    ("Hand-off by code: Audit checks version ", "Hand-off by code: Audit checks site v"),
+    # remove-group-c batch 3a: Identity tags each done-when item's kind (intake format field) and the charter records
+    # the tags (goal JSON in later prompts); prices are unchanged, so both are masked
+    ("re", r'"item_kinds": \[str\] \(one per done-when item[^\n]*?\}\), ', ""),
+    ("re", r', \\?"item_kinds\\?": \{[^{}]*\}', ""),
+    # batch 3b: Adaptation's POLICY_QUESTION says what it is about (budget or charter)
+    ('"about": "budget"|"charter"|null (with POLICY_QUESTION, what your question is about: budget when it is about cost, '
+     'funding or what to leave out; charter otherwise), ', ""),
+    # batch 4: a workflow may name the waiting workflows it replaces
+    ('"replaces": [str] (ids of waiting workflows, registered or held, that this one replaces; they are then not '
+     'built), ', ""),
+    # batch 6: Identity marks exact facts and date-rule items; atoms name date_control/date_case; builders name
+    # blocked_by; the facts-present condition counts exact facts (the mock marks every fact exact)
+    ("re", r'"exact_facts": \[\{"fact": str, "item": int\}\] \(.*?\), "date_rule_items": \[int\] \(.*?\), ', ""),
+    ('"date_control": str|null (when it covers a done-when item whose rule depends on a date and its output is a page: '
+     'the selector of the control that sets the date, which its behavior steps set), "date_case": str|null (the same '
+     'with no page: the test case that covers the date), ', ""),
+    ("re", r', \\?"exact_facts\\?": \[[^\]]*\]', ""),
+    ('"blocked_by": [str] (only when a check fails because of another workflow\'s work: the ids of those workflows, '
+     'e.g. ["W-2"]; [] otherwise), ', ""),
+    ("re", r"all (\d+) (?:brief|exact) fact\(s\) appear", r"all \1 fact(s) appear"),
+    ("4. Name every workflow that is ready now: all of its dependencies are done, and what it writes doesn't collide with "
+     "another ready workflow. Several may be ready at once. Your order says which goes first. Code runs them one at a "
+     "time; that is the engine's limit, not your rule.",
+     "4. Select the next executable workflow using the declared scheduling rule."),
 ]
 PLAIN_CHECKPOINT = "94bffd0"   # plain_unchanged compares the working tree with this commit; move it when the plain path changes on purpose
 CHECKPOINT = "0657d93"         # the commit before the design-document work: a plain brief must behave exactly as there
@@ -6277,7 +6619,7 @@ def plain_unchanged(checkpoint=None, slim=None, board=None, generic=False):
              "rows = [json.loads(l) for l in open(os.path.join(r.dir, 'calls.jsonl'), encoding='utf-8')]\n"
              f"CH = {INTENDED_PROMPT_CHANGES!r}\n"
              "def old(t):\n"
-             "    for a, b in CH: t = t.replace(a, b)\n"
+             "    for e in CH: t = re.sub(e[1], e[2], t, flags=re.S) if len(e) == 3 else t.replace(*e)\n"
              "    return t\n"
              "h = lambda t: hashlib.sha256(re.sub(r'\\d{4}-\\d\\d-\\d\\dT\\d\\d:\\d\\d:\\d\\d', 'T', old(t)).encode()).hexdigest()[:12]\n"
              "print(json.dumps({'outcome': r.outcome, 'spent': r.spent, 'site': h(r.sites[-1]), 'sections': h(json.dumps(r.sections, sort_keys=True)),\n"
@@ -6484,12 +6826,22 @@ def board_functions():
     assert any(m["who"] == "adaptation" and "Q-2:" in m["text"] for m in chat), "the answer is in the chat"
     assert any(m["who"] == "adaptation" and "[read Q-1]" in m["text"] for m in chat), "a function's read tag"
     assert any(m["who"] == "audit" and "[read" in m["text"] and "Q-3" in m["text"] for m in chat), "Audit's read tag"
-    # A question the board already answers is refused, whoever asks it
-    dup = run._ask_board("coordination", {"to": b[2]["to"], "about": "the price attribute",
+    # A question its asker marks the same as an answered entry (same_as) is refused, whoever asks it; code compares
+    # no words, so the same words without same_as are a new question, and a same_as naming no answered entry is refused
+    dup = run._ask_board("coordination", {"to": b[2]["to"], "about": "the price attribute", "same_as": "Q-3",
                                           "text": "Which attribute holds the price?"}, 1, role="function")
     assert dup["status"] == "refused", dup
     with open(os.path.join(run.dir, "board.jsonl"), encoding="utf-8") as f:
         assert json.loads(f.readlines()[-1])["reason"] == "already answered in Q-3"
+    bad = run._ask_board("coordination", {"to": b[2]["to"], "about": "x", "same_as": "Q-99", "text": "Which?"}, 2,
+                         role="function")
+    assert bad["status"] == "refused", bad
+    with open(os.path.join(run.dir, "board.jsonl"), encoding="utf-8") as f:
+        assert json.loads(f.readlines()[-1])["reason"] == "same_as names Q-99, which is no answered board entry"
+    n = len(run.board["entries"])
+    fresh = run._ask_board("priority", {"to": b[2]["to"], "about": "the price attribute",
+                                        "text": "Which attribute holds the price?"}, 3, role="function")
+    assert fresh["status"] != "refused" and len(run.board["entries"]) == n + 1, fresh
     # and a function asks at most once in a turn (the turn it asked in is the entry's attempt)
     cycle, run.cycle = run.cycle, b[2]["cycle"]
     again = run._ask_board("audit", {"to": b[0]["to"], "about": "the nav", "text": "Which section holds the nav?"},
@@ -7806,11 +8158,20 @@ def docs_funding():
     say(run, "Option 1")
     assert run.stages == ["prd", "hld"] and not run.paused and run.outcome.startswith("Done") and list(run.docs) == ["prd", "hld"], \
         (run.stages, run.outcome)
+    # a typed answer is read by Identity (one call), never by code's words; an unclear one is asked again, never defaulted
+    typed = docs_run(DESIGN_BRIEF, 120)
+    say(typed, "hmm, not sure")
+    assert typed.paused and typed.paused["handoff"]["kind"] == "stage_decision" and typed.paused["handoff"]["reasked"], typed.paused
+    assert typed.stages == ["prd", "hld", "lld", "website"] and typed.budget == 120, "nothing applied by default"
+    say(typed, "Leave out what doesn't fit, please")
+    reads = [c for c in calls_of(typed) if c["fn"] == "identity" and "THE STAGES STILL TO MAKE" in c["prompt"]]
+    assert len(reads) == 2 and typed.stages == ["prd"], (len(reads), typed.stages)
     # enough credits: no question at all
     run = docs_run(DESIGN_BRIEF, 900)
     assert not any(m.get("act") == "ASK_REQUESTER" for m in run.chat) and run.outcome.startswith("Done")
     print("funding: short credits ask the decision question with each document and the site as items, nothing is "
-          "skipped by code; leave out, add and keep going, finish as it is, and no question when the credits cover it ok")
+          "skipped by code; leave out, add and keep going, finish as it is, a typed answer read by Identity, an unclear one "
+          "asked again, and no question when the credits cover it ok")
 
 
 def docs_repeat_failure():
@@ -8451,13 +8812,36 @@ SAVED_RUNS_GOLDEN = {
 # Re-recorded 2026-11-11 (DOC_RUN_GOLDEN only) for agents/j2/adaptation.md's proposal block naming kind and sections
 # (Adaptation's system prompt). With adaptation.md as it was: {"prd": "2c2d3402a6ca", "design docs": "94c750a4fcb0",
 # "docs then site": "6b28bcb5d3ff"}.
-DOC_RUN_GOLDEN = {"prd": "04fcc95c4dd7", "design docs": "361164fd06ab", "docs then site": "a37bc605ee3b"}
+# Re-recorded 2026-11-14 (remove-group-c batch 1) for Identity's prompts only: the plain-words rule replaces the
+# Requester persona, the intake reply format has email_updates, intake asks no fixed number of questions and no longer
+# bans words from done-when, and identity.md's two new lines on real-file items and done-when items. Outcomes,
+# spend, the agents called, workflows and the documents are identical to
+# {"prd": "04fcc95c4dd7", "design docs": "361164fd06ab", "docs then site": "a37bc605ee3b"}.
+# Re-recorded 2026-11-14 (remove-group-c batch 2) for Coordination's prompts only: its task gives each workflow's
+# dependencies, waits_for and writes, states the engine's one-at-a-time limit as code's, and its format has ready_now
+# and no next; coordination.md step 4; the mock's schedule names no file. Outcomes, spend, the agents called,
+# workflows and the documents are identical to {"prd": "aa75d3ee857a", "design docs": "670652642ba7",
+# "docs then site": "ed47e03e6ae6"}.
+# Re-recorded 2026-11-14 (remove-group-c batch 3a): Identity's intake format asks item_kinds (the type's kinds and what
+# each is about), each stage's goal records item_kinds (stage-*.json), and code's HLD/LLD items take their section's
+# part; batch 3b: Adaptation's format has "about". Outcomes, spend, the agents called, workflows and the documents
+# are identical to {"prd": "fcd605c769f8",
+# "design docs": "38742d746510", "docs then site": "35382abf283e"}.
+# Re-recorded 2026-11-14 (remove-group-c batch 4) for prompts only: the workflow format has "replaces" and the
+# conditions data has "markers" (both in the planners' prompts). Outcomes, spend, the agents called, workflows and the
+# documents are identical to {"prd": "3237e2b5bcd8", "design docs": "3b6bc31fb169", "docs then site": "a84d0f970ede"}.
+# Re-recorded 2026-11-14 (remove-group-c batch 6): Identity's intake format asks exact_facts and date_rule_items,
+# the atom format has date_control and date_case, the builder's has blocked_by; the stage goals record exact_facts and
+# the facts-present condition's evidence names exact facts (stage-*.json). Outcomes, spend, the agents called,
+# workflows and the documents are identical to {"prd": "ac6d3f00fb5c", "design docs": "2284f23cff02",
+# "docs then site": "dc8ed3ceb805"}.
+DOC_RUN_GOLDEN = {"prd": "f1d22a8df780", "design docs": "9a933693c619", "docs then site": "93b81e02b546"}
 DOC_PROMPTS_GOLDEN = {
-    "prd.builder": "e971c88e727f", "prd.intake": "56b304946997",
+    "prd.builder": "e971c88e727f", "prd.intake": "75a955fb24fa",
     "prd.charter_fmt": "eedccdf82d84", "prd.atom_rules": "b8a918ef6039", "prd.system": "d09f06fa3181",
-    "hld.builder": "5ed1a9d0887c", "hld.intake": "ac332d648468",
+    "hld.builder": "5ed1a9d0887c", "hld.intake": "f569b31ea7ec",
     "hld.charter_fmt": "eedccdf82d84", "hld.atom_rules": "f03b53ec28a5", "hld.system": "ec72aa0a3d7b",
-    "lld.builder": "a767f5b54bd4", "lld.intake": "7a7282e0c457",
+    "lld.builder": "a767f5b54bd4", "lld.intake": "0cf412298a0c",
     "lld.charter_fmt": "eedccdf82d84", "lld.atom_rules": "4235ba453cd6", "lld.system": "f084658af51b",
 }
 
@@ -9607,13 +9991,18 @@ def types_constants():
         d["forms"]["page"]["file"] = "site/home.html"
         d["expect_kinds"]["shot"] = "pixel-diff"
         web = next(t for t in d["types"] if t["name"] == "website")
-        web["cost"]["item_parts"][0]["words"] = r"\bquote\b"
+        for x in web["cost"]["item_parts"]:      # another default kind and another description, read from the data
+            x.pop("default", None)
+            x["default"] = x["part"] == "styling" or None
+            if x["part"] == "form":
+                x["about"] = "a quote request"
         path = os.path.join(tmp, "types.json")
         json.dump(d, open(path, "w", encoding="utf-8"))
         code = ("import json, sys, j2_types\nj2_types.TYPES_PATH = sys.argv[1]\nimport j2\nj2.load_rates('website')\n"
                 "print(json.dumps({'ct': j2.CHECK_TYPES, 'doc': j2.DOC_CHECK_TYPES, 'ek': j2.EXPECT_KINDS, "
                 "'wf': j2.WF_TYPES + ' ' + j2.WF_KINDS, 'fmt': j2.J2Run.WF_FMT, 'file': j2.PAGE_FILE, "
-                "'files': j2.SITE_FILES, 'kinds': [j2.item_kind('Get a quote'), j2.item_kind('An order form')], "
+                "'files': j2.SITE_FILES, 'kinds': [j2.item_kind('Get a quote', {}), j2.item_kind('An order form', {})], "
+                "'about': dict(j2.output_def('website')['item_kinds'])['form'], "
                 "'bad': j2.check_problems({'verification': [{'type': 'nope', 'target': '#x', 'expect': 1}]}, '')}))")
         p = subprocess.run([sys.executable, "-c", code, path], cwd=here, capture_output=True, text=True, timeout=120)
         assert p.returncode == 0, p.stderr[-2000:]
@@ -9622,7 +10011,7 @@ def types_constants():
     assert got["ek"]["shot"] == "pixel-diff" and '"pixel-diff"' in got["wf"] and '"shot"' in got["wf"], got["wf"]
     assert '"pixel-diff"' in got["fmt"] and '"shot"' in got["fmt"]
     assert got["file"] == "home.html" and got["files"] == ["home.html", "site/home.html"], got["files"]
-    assert got["kinds"] == ["form", "page_section"], got["kinds"]        # the form words are now "quote" only
+    assert got["kinds"] == ["styling", "styling"] and got["about"] == "a quote request", got    # untagged: the data's default
     assert "pixel-diff" in got["bad"][0], got["bad"]                      # check_problems' default types
     # and this process, with the real file, has the values the prompts were written with
     assert j2.CHECK_TYPES == ("file-exists", "grep-count", "element-count", "named-test", "facts-present", "tap-targets",
@@ -15966,6 +16355,12 @@ if __name__ == "__main__":
         full(mode == "1")
         policy_budget(mode == "1")
         below_floor()
+        coordination_ready_now()
+        dependency_names()
+        item_kinds_and_about()
+        supersede_and_markers()
+        declared_not_words()
+        sandbox_off_default()
         thread_and_loom_core()
         deferred_twice()
         connections()

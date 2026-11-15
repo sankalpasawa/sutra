@@ -78,10 +78,16 @@ TOOL_KEYS = ("tools", "allow", "cwd", "root", "usd", "log_chars")
 # opens the sandbox's host list). Measured 2026-11-12 (tools/agent_tools_smoke.py): writes outside the folder are
 # refused; a folder under the CLI's own temp folder (/private/tmp/claude-<uid>) is not protected, so a builder folder
 # must resolve inside the run folder ("root"), checked before every call.
-# SECURITY: the sandbox is what confines the command tool. The allow-list is not a security boundary: a rule for a
-# runner lets that runner run any code. Never run a tools call without cli_settings, and never run a builder's code
-# anywhere else (J2 reads the test result from the CLI's record).
+# SECURITY: with J2_SANDBOX=1 the sandbox is what confines the command tool. It is off by default (founder, 2026-11-15:
+# J2 works the same on Windows, Mac and Linux): then only the permission rules, --restricted for the file tools, the
+# builder's instruction and J2's before/after check of the run folder stand between a command and the rest of the
+# machine. The allow-list is not a security boundary: a rule for a runner lets that runner run any code.
 CLI_SANDBOX = {"sandbox": {"enabled": True, "autoAllowBashIfSandboxed": True, "allowUnsandboxedCommands": False}}
+
+
+def sandbox_on():
+    """J2_SANDBOX=1: builders' commands, the test rerun and a real run go through a sandbox. Off by default."""
+    return os.getenv("J2_SANDBOX") == "1"
 
 
 def cli_settings(tools):
@@ -89,9 +95,12 @@ def cli_settings(tools):
     any extra folder allowed back), writes only in the folder (and the extra one), the caller's rules as allow rules,
     and the file tools refused outside the working folders."""
     folders = [os.path.realpath(tools["cwd"])] + [os.path.realpath(x) for x in tools.get("extra") or []]
+    perms = {"permissions": {"allow": list(tools["allow"]), "additionalDirectories": folders[1:],
+                             "blockReadsOutsideWorkingDirectories": True}}
+    if not sandbox_on():      # no sandbox (the default): the permission rules only
+        return perms
     sb = {**CLI_SANDBOX["sandbox"], "filesystem": {"denyRead": ["~/"], "allowRead": folders, "allowWrite": folders}}
-    return {"sandbox": sb, "permissions": {"allow": list(tools["allow"]), "additionalDirectories": folders[1:],
-                                           "blockReadsOutsideWorkingDirectories": True}}
+    return {"sandbox": sb, **perms}
 
 
 def tools_on():

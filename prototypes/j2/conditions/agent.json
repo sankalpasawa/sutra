@@ -6,6 +6,6 @@
     {"id": "C2", "gate": true, "text": "The test passed when code reran it independently in the sandbox, on a copy of the folder", "check": "test-passed", "charter_field": "test"},
     {"id": "C3", "gate": true, "text": "Nothing was written outside the folder", "check": "inside-folder"},
     {"id": "C4", "text": "Every must-never-do item in the charter is stated in the folder's files", "check": "charter-fields-present", "charter_fields": ["never_do"]},
-    {"id": "C5", "text": "Nothing is \"to be confirmed\"", "check": "nothing-to-be-confirmed"}
+    {"id": "C5", "text": "Nothing is \"to be confirmed\"", "check": "nothing-to-be-confirmed", "markers": ["to be confirmed", "TBC", "TBD"]}
   ]
 }
