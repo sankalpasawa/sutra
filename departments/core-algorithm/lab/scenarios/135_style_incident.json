@@ -1,0 +1,94 @@
+{
+  "schema": "sutra-extension/2",
+  "id": "135_style_incident",
+  "rules": [
+    {
+      "id": "R-STYLE-INCIDENT@1",
+      "head": "resolved_as_incident",
+      "branches": [
+        [
+          "cause_8801_written",
+          "fix_8801_signed_off",
+          "customer_8801_told"
+        ]
+      ],
+      "approved": true,
+      "source": "reviewed/style-card",
+      "card": {
+        "style": "incident",
+        "what_is_missing": "T3 unknown-known",
+        "cause_effect": "judgment-heavy",
+        "reach": "in-system",
+        "cadence": "one-off",
+        "vehicle": "local workflow",
+        "verify": "the cause is written, the head of operations signed the fix, the customer was told",
+        "gate": "ask",
+        "unmatched": "ask the charter owner: a new home, or a new style"
+      }
+    }
+  ],
+  "methods": [
+    {
+      "id": "write-cause-8801@1",
+      "effect": "cause_8801_written",
+      "requires": [
+        "complaint_8801_logged"
+      ],
+      "provider": "ops-desk",
+      "grant": "action:write-cause-8801@1",
+      "cost": {
+        "compute": 2,
+        "money": 0,
+        "attention": 0
+      },
+      "action": "simulate_fact",
+      "approved": true,
+      "source": "reviewed/synthetic-method"
+    },
+    {
+      "id": "ask-signoff-8801@1",
+      "effect": "fix_8801_signed_off",
+      "requires": [
+        "cause_8801_written"
+      ],
+      "provider": "ops-head",
+      "grant": "action:ask-signoff-8801@1",
+      "cost": {
+        "compute": 0,
+        "money": 0,
+        "attention": 1
+      },
+      "action": "ask",
+      "approved": true,
+      "source": "reviewed/synthetic-method",
+      "question": "Is the fix for complaint 8801 good to close?",
+      "ask_to": "ops-head"
+    },
+    {
+      "id": "tell-customer-8801@1",
+      "effect": "customer_8801_told",
+      "requires": [
+        "fix_8801_signed_off"
+      ],
+      "provider": "ops-desk",
+      "grant": "action:tell-customer-8801@1",
+      "cost": {
+        "compute": 1,
+        "money": 0,
+        "attention": 0
+      },
+      "action": "simulate_fact",
+      "approved": true,
+      "source": "reviewed/synthetic-method"
+    }
+  ],
+  "providers": {
+    "ops-desk": 4,
+    "ops-head": 1
+  },
+  "grants": [
+    "action:write-cause-8801@1",
+    "action:ask-signoff-8801@1",
+    "action:tell-customer-8801@1"
+  ]
+}

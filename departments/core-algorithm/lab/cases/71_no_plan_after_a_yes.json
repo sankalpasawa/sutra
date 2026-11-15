@@ -1,0 +1,9 @@
+{
+  "id": "71_no_plan_after_a_yes",
+  "title": "A yes after which no plan is left",
+  "description": "The order desk recorded the order as not closed. It closes on a recorded refund or on the customer's word that the parcel arrived: the plan asks the customer and waits. What a yes leads to is in the systems record: the kernel has no plan left and gives two reasons, the conflict it names the run with and the refund nobody may ask about.",
+  "packs": ["173_closed_on_confirmation"],
+  "execute": true,
+  "area": "Page builder",
+  "expected": "WAITING"
+}

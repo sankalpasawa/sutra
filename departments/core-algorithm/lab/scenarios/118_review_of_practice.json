@@ -1,0 +1,21 @@
+{
+  "schema": "sutra-extension/2",
+  "id": "118_review_of_practice",
+  "scope": "lendco/pack-review",
+  "evidence": [
+    {
+      "predicate": "narrows:114_practice_money_movement@pair-59d6bae8e306",
+      "truth": "TRUE",
+      "verified": true,
+      "final": true,
+      "source": "adapter:refusals/narrowing@1",
+      "version": "pair-59d6bae8e306",
+      "child": "114_practice_money_movement",
+      "parents": [
+        "112_servicing_team",
+        "113_servicing_standing_rules"
+      ],
+      "relaxed": []
+    }
+  ]
+}

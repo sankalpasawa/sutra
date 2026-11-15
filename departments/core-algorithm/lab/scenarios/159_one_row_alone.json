@@ -1,0 +1,42 @@
+{
+  "schema": "sutra-extension/2",
+  "id": "159_one_row_alone",
+  "evidence": [
+    {
+      "predicate": "run_fitness",
+      "truth": "TRUE",
+      "verified": true,
+      "source": "adapter:conformance/log@1",
+      "version": "num-099807191103dbc3",
+      "value": "0.85",
+      "unit": "ratio",
+      "label": "run-0004",
+      "evidence_kind": "NUMBER"
+    },
+    {
+      "predicate": "fitness_in_band",
+      "truth": "FALSE",
+      "verified": true,
+      "source": "adapter:numbers/compare@1",
+      "version": "cmp-b3a92a901d0f8ec5",
+      "depends_on": [
+        {
+          "predicate": "run_fitness",
+          "version": "num-099807191103dbc3"
+        }
+      ],
+      "compares": {
+        "number": {
+          "predicate": "run_fitness",
+          "value": "0.85",
+          "version": "num-099807191103dbc3"
+        },
+        "op": ">=",
+        "bound": {
+          "literal": "0.9"
+        }
+      },
+      "evidence_kind": "COMPARISON"
+    }
+  ]
+}

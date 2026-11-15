@@ -1,0 +1,84 @@
+{
+  "schema": "sutra-extension/2",
+  "id": "163_weekly_pulls",
+  "scope": "orgA/lending",
+  "goals": [
+    "report_pulled_a",
+    "report_pulled_b",
+    "report_pulled_c"
+  ],
+  "budget": {
+    "compute": 10,
+    "money": 10,
+    "attention": 3,
+    "pulls": 0
+  },
+  "preference": [
+    "compute",
+    "money",
+    "attention",
+    "pulls"
+  ],
+  "methods": [
+    {
+      "id": "pull-weekly-a@1",
+      "effect": "report_pulled_a",
+      "requires": [],
+      "provider": "local-provider",
+      "grant": "action:pull-weekly-a@1",
+      "cost": {
+        "compute": 1,
+        "money": 0,
+        "attention": 0,
+        "pulls": 1
+      },
+      "action": "simulate_fact",
+      "approved": true,
+      "source": "reviewed/synthetic-method"
+    },
+    {
+      "id": "pull-weekly-b@1",
+      "effect": "report_pulled_b",
+      "requires": [],
+      "provider": "local-provider",
+      "grant": "action:pull-weekly-b@1",
+      "cost": {
+        "compute": 1,
+        "money": 0,
+        "attention": 0,
+        "pulls": 1
+      },
+      "action": "simulate_fact",
+      "approved": true,
+      "source": "reviewed/synthetic-method"
+    },
+    {
+      "id": "pull-weekly-c@1",
+      "effect": "report_pulled_c",
+      "requires": [],
+      "provider": "local-provider",
+      "grant": "action:pull-weekly-c@1",
+      "cost": {
+        "compute": 1,
+        "money": 0,
+        "attention": 0,
+        "pulls": 1
+      },
+      "action": "simulate_fact",
+      "approved": true,
+      "source": "reviewed/synthetic-method"
+    }
+  ],
+  "providers": {
+    "local-provider": 5
+  },
+  "grants": [
+    "action:pull-weekly-a@1",
+    "action:pull-weekly-b@1",
+    "action:pull-weekly-c@1",
+    "allowance:pulls:1:7",
+    "box:13:allowance:pulls:1:7",
+    "allowance:pulls:0:7",
+    "allowance:energy:5:7"
+  ]
+}

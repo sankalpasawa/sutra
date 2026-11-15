@@ -1,0 +1,13 @@
+{
+  "schema": "sutra-extension/2",
+  "id": "170_recorded_open",
+  "evidence": [
+    {
+      "predicate": "order_complete",
+      "truth": "FALSE",
+      "verified": true,
+      "source": "fixture/order-desk",
+      "version": "desk-1"
+    }
+  ]
+}

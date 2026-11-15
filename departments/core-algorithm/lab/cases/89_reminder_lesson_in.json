@@ -1,0 +1,13 @@
+{
+  "id": "89_reminder_lesson_in",
+  "title": "With the lesson pack the reminder is sent",
+  "description": "The same desk with the lesson pack: a way that requires the stored fact (the phone number on file), and the grant of the way that stops is taken away. The reminder is sent for one token. The pack is loaded here from the files together with the desk's own packs, so this State holds no row read from the record and no yes: the door takes the pack without one. The recorded sequence reader_lesson shows the three stops, the proposal, the yes and the hand-in that come before the reminder there.",
+  "packs": [
+    "220_collections_desk",
+    "221_collections_changes",
+    "222_reminder_lesson"
+  ],
+  "execute": true,
+  "area": "Learning from past runs",
+  "expected": "LOCAL_MODEL_EFFECTS_RECORDED"
+}

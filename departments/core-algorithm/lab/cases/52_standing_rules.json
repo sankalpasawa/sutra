@@ -1,0 +1,12 @@
+{
+  "id": "52_standing_rules",
+  "title": "Always, ask, never: a team's standing rules",
+  "description": "A servicing team owes a borrower a refund. Its owner said three things once. Always check the payee's account: that step holds its grant and runs unasked. Ask me first before a refund is paid: the run puts the question to the owner and waits, with the payment and its reconciliation pending. Never pay to an account that is not the borrower's own: that route is refused by decision, though it is the cheaper one.",
+  "packs": [
+    "112_servicing_team",
+    "113_servicing_standing_rules"
+  ],
+  "execute": true,
+  "area": "Standing rules",
+  "expected": "WAITING"
+}

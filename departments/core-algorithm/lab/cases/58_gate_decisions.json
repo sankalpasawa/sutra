@@ -1,0 +1,11 @@
+{
+  "id": "58_gate_decisions",
+  "title": "Six goals at the gate",
+  "description": "A loan desk's day. One goal is granted and runs, one lacks its grant, one asks the credit head and waits, one finds no free provider, one costs more money than the first one left, and one has no meaning yet. Every gate decision is a line in its run's record.",
+  "packs": [
+    "132_loan_desk"
+  ],
+  "execute": true,
+  "area": "Decision provenance",
+  "expected": "LOCAL_MODEL_EFFECTS_RECORDED"
+}

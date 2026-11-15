@@ -1,0 +1,32 @@
+{
+  "schema": "sutra-extension/2",
+  "id": "160_timed_approval",
+  "evidence": [
+    {
+      "predicate": "customer_approved",
+      "truth": "TRUE",
+      "verified": true,
+      "source": "fixture/customer-approval",
+      "version": "approval-v1",
+      "depends_on": [
+        {
+          "predicate": "until:3",
+          "version": "window"
+        }
+      ]
+    },
+    {
+      "predicate": "in-time:order_complete",
+      "truth": "TRUE",
+      "verified": true,
+      "source": "fixture/owner-due-by",
+      "version": "1",
+      "depends_on": [
+        {
+          "predicate": "until:5",
+          "version": "window"
+        }
+      ]
+    }
+  ]
+}

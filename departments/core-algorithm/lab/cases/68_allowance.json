@@ -1,0 +1,9 @@
+{
+  "id": "68_allowance",
+  "title": "An allowance for the day",
+  "description": "Case 24's order cannot ship: its budget is zero. Here the same packs carry an allowance of two units of compute and of money a day. The clock pack of day 1 sets both to two, and the order ships. The walk pulls of the sequence clock records an allowance spent and coming back the next day.",
+  "packs": ["00_goal", "01_domain", "02_methods", "03_approval", "04_admission", "15_low_budget", "161_allowance", "161_clock@1"],
+  "execute": true,
+  "area": "Time",
+  "expected": "LOCAL_MODEL_EFFECTS_RECORDED"
+}

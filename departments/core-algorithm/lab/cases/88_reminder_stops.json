@@ -1,0 +1,12 @@
+{
+  "id": "88_reminder_stops",
+  "title": "A reminder step that stops at its turn",
+  "description": "A lender's collections desk reminds a borrower whose instalment is overdue. Its reminder step requires the fact that the borrower can be reached, and that fact holds only through the desk's rule (a phone number is on file): no stored row says it. The plan is offered, the step stops at its turn, and nothing is paid. This case is that one look; the recorded sequence reader_lesson shows the same plan offered and the same stop on the next two days. The desk's second goal, the yes to a lesson, waits for a row read from the record.",
+  "packs": [
+    "220_collections_desk",
+    "221_collections_changes"
+  ],
+  "execute": true,
+  "area": "Learning from past runs",
+  "expected": "STEP_STOPPED"
+}

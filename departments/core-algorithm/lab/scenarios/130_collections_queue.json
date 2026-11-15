@@ -1,0 +1,201 @@
+{
+  "schema": "sutra-extension/2",
+  "id": "130_collections_queue",
+  "scope": "lendco/collections",
+  "goals": [
+    "loan_1041_promise",
+    "loan_1042_promise",
+    "loan_1043_promise",
+    "loan_1044_promise"
+  ],
+  "budget": {
+    "compute": 10,
+    "money": 10,
+    "attention": 2
+  },
+  "preference": [
+    "money",
+    "attention",
+    "compute"
+  ],
+  "rules": [
+    {
+      "id": "R-PROMISE-1041@1",
+      "head": "loan_1041_promise",
+      "branches": [
+        [
+          "borrower_1041_called"
+        ],
+        [
+          "borrower_1041_written"
+        ]
+      ],
+      "approved": true,
+      "source": "reviewed/collections-charter",
+      "impact": 2
+    },
+    {
+      "id": "R-PROMISE-1042@1",
+      "head": "loan_1042_promise",
+      "branches": [
+        [
+          "borrower_1042_called"
+        ]
+      ],
+      "approved": true,
+      "source": "reviewed/collections-charter",
+      "impact": 9
+    },
+    {
+      "id": "R-PROMISE-1043@1",
+      "head": "loan_1043_promise",
+      "branches": [
+        [
+          "borrower_1043_called"
+        ]
+      ],
+      "approved": true,
+      "source": "reviewed/collections-charter",
+      "impact": 5
+    },
+    {
+      "id": "R-PROMISE-1044@1",
+      "head": "loan_1044_promise",
+      "branches": [
+        [
+          "borrower_1044_called"
+        ]
+      ],
+      "approved": true,
+      "source": "reviewed/collections-charter",
+      "impact": 5
+    }
+  ],
+  "evidence": [
+    {
+      "predicate": "loan_1041_overdue",
+      "truth": "TRUE",
+      "verified": true,
+      "source": "fixture/due-list",
+      "version": "1"
+    },
+    {
+      "predicate": "loan_1042_overdue",
+      "truth": "TRUE",
+      "verified": true,
+      "source": "fixture/due-list",
+      "version": "1"
+    },
+    {
+      "predicate": "loan_1043_overdue",
+      "truth": "TRUE",
+      "verified": true,
+      "source": "fixture/due-list",
+      "version": "1"
+    },
+    {
+      "predicate": "loan_1044_overdue",
+      "truth": "TRUE",
+      "verified": true,
+      "source": "fixture/due-list",
+      "version": "1"
+    }
+  ],
+  "methods": [
+    {
+      "id": "call-1041@1",
+      "effect": "borrower_1041_called",
+      "requires": [
+        "loan_1041_overdue"
+      ],
+      "provider": "collections-desk",
+      "grant": "action:call-1041@1",
+      "cost": {
+        "compute": 1,
+        "money": 0,
+        "attention": 1
+      },
+      "action": "simulate_fact",
+      "approved": true,
+      "source": "reviewed/synthetic-method"
+    },
+    {
+      "id": "write-1041@1",
+      "effect": "borrower_1041_written",
+      "requires": [
+        "loan_1041_overdue"
+      ],
+      "provider": "collections-desk",
+      "grant": "action:write-1041@1",
+      "cost": {
+        "compute": 1,
+        "money": 1,
+        "attention": 0
+      },
+      "action": "simulate_fact",
+      "approved": true,
+      "source": "reviewed/synthetic-method"
+    },
+    {
+      "id": "call-1042@1",
+      "effect": "borrower_1042_called",
+      "requires": [
+        "loan_1042_overdue"
+      ],
+      "provider": "collections-desk",
+      "grant": "action:call-1042@1",
+      "cost": {
+        "compute": 1,
+        "money": 0,
+        "attention": 1
+      },
+      "action": "simulate_fact",
+      "approved": true,
+      "source": "reviewed/synthetic-method"
+    },
+    {
+      "id": "call-1043@1",
+      "effect": "borrower_1043_called",
+      "requires": [
+        "loan_1043_overdue"
+      ],
+      "provider": "collections-desk",
+      "grant": "action:call-1043@1",
+      "cost": {
+        "compute": 1,
+        "money": 0,
+        "attention": 1
+      },
+      "action": "simulate_fact",
+      "approved": true,
+      "source": "reviewed/synthetic-method"
+    },
+    {
+      "id": "call-1044@1",
+      "effect": "borrower_1044_called",
+      "requires": [
+        "loan_1044_overdue"
+      ],
+      "provider": "collections-desk",
+      "grant": "action:call-1044@1",
+      "cost": {
+        "compute": 1,
+        "money": 0,
+        "attention": 1
+      },
+      "action": "simulate_fact",
+      "approved": true,
+      "source": "reviewed/synthetic-method"
+    }
+  ],
+  "providers": {
+    "collections-desk": 5
+  },
+  "grants": [
+    "action:call-1041@1",
+    "action:write-1041@1",
+    "action:call-1042@1",
+    "action:call-1043@1",
+    "action:call-1044@1"
+  ]
+}

@@ -1,0 +1,9 @@
+{
+  "schema": "sutra-extension/2",
+  "id": "140_levels_restated",
+  "budget": {
+    "compute": 10,
+    "money": 10,
+    "attention": 3
+  }
+}

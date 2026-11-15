@@ -1,0 +1,8 @@
+{
+  "schema": "sutra-extension/2",
+  "id": "165_two_goals",
+  "goals": [
+    "replacement_delivered",
+    "order_complete"
+  ]
+}

@@ -1,0 +1,43 @@
+{
+  "schema": "sutra-extension/2",
+  "id": "210_letters_desk",
+  "scope": "lendco/collections-letters",
+  "goals": [
+    "letter_queued"
+  ],
+  "budget": {
+    "compute": 10,
+    "money": 5,
+    "attention": 3
+  },
+  "preference": [
+    "attention",
+    "money",
+    "compute"
+  ],
+  "methods": [
+    {
+      "id": "queue-collections-letter@1",
+      "effect": "letter_queued",
+      "requires": [
+        "letter_drafted"
+      ],
+      "provider": "local-provider",
+      "grant": "action:queue-collections-letter@1",
+      "cost": {
+        "compute": 1,
+        "money": 0,
+        "attention": 0
+      },
+      "action": "simulate_fact",
+      "approved": true,
+      "source": "reviewed/synthetic-method"
+    }
+  ],
+  "providers": {
+    "local-provider": 4
+  },
+  "grants": [
+    "action:queue-collections-letter@1"
+  ]
+}

@@ -1,0 +1,7 @@
+{
+  "schema": "sutra-extension/2",
+  "id": "227_checker_away",
+  "providers": {
+    "independent-checker": 0
+  }
+}

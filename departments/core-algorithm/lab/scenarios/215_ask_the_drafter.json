@@ -1,0 +1,31 @@
+{
+  "schema": "sutra-extension/2",
+  "id": "215_ask_the_drafter",
+  "methods": [
+    {
+      "id": "ask-drafter-for-letter@1",
+      "effect": "letter_drafted",
+      "requires": [
+        "loan_on_book"
+      ],
+      "provider": "drafter-channel",
+      "grant": "action:ask-drafter-for-letter@1",
+      "cost": {
+        "compute": 0,
+        "money": 0,
+        "attention": 1
+      },
+      "action": "ask",
+      "approved": true,
+      "source": "reviewed/synthetic-method",
+      "question": "Draft the collections letter for loan L-17 and say when it is done.",
+      "ask_to": "model:letter-drafter"
+    }
+  ],
+  "providers": {
+    "drafter-channel": 3
+  },
+  "grants": [
+    "action:ask-drafter-for-letter@1"
+  ]
+}

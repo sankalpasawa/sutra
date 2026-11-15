@@ -1,0 +1,41 @@
+{
+  "schema": "sutra-extension/2",
+  "id": "158_queue_reviews",
+  "methods": [
+    {
+      "id": "review-big-loan@1",
+      "effect": "big_loan_reviewed",
+      "requires": [],
+      "provider": "review-model",
+      "grant": "action:review-big-loan@1",
+      "cost": {
+        "usd_cents": 42,
+        "dept_usd_cents": 42
+      },
+      "action": "simulate_fact",
+      "approved": true,
+      "source": "reviewed/synthetic-method"
+    },
+    {
+      "id": "review-small-loan@1",
+      "effect": "small_loan_reviewed",
+      "requires": [],
+      "provider": "review-model",
+      "grant": "action:review-small-loan@1",
+      "cost": {
+        "usd_cents": 42,
+        "dept_usd_cents": 42
+      },
+      "action": "simulate_fact",
+      "approved": true,
+      "source": "reviewed/synthetic-method"
+    }
+  ],
+  "providers": {
+    "review-model": 2
+  },
+  "grants": [
+    "action:review-big-loan@1",
+    "action:review-small-loan@1"
+  ]
+}

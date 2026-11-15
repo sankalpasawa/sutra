@@ -1,0 +1,185 @@
+{
+  "schema": "sutra-extension/2",
+  "id": "132_loan_desk",
+  "scope": "lendco/loan-desk",
+  "goals": [
+    "loan_7001_disbursed",
+    "fee_7002_waived",
+    "limit_7003_raised",
+    "statement_7004_posted",
+    "audit_7005_sampled",
+    "writeoff_7006_booked"
+  ],
+  "budget": {
+    "compute": 10,
+    "money": 10,
+    "attention": 1
+  },
+  "preference": [
+    "compute",
+    "money",
+    "attention"
+  ],
+  "rules": [
+    {
+      "id": "R-DISBURSE-7001@1",
+      "head": "loan_7001_disbursed",
+      "branches": [
+        [
+          "kyc_7001_verified",
+          "funds_7001_released"
+        ]
+      ],
+      "approved": true,
+      "source": "reviewed/loan-desk-charter",
+      "impact": "high"
+    },
+    {
+      "id": "R-LIMIT-7003@1",
+      "head": "limit_7003_raised",
+      "branches": [
+        [
+          "head_7003_approved",
+          "limit_7003_updated"
+        ]
+      ],
+      "approved": true,
+      "source": "reviewed/loan-desk-charter"
+    }
+  ],
+  "evidence": [
+    {
+      "predicate": "application_7001_complete",
+      "truth": "TRUE",
+      "verified": true,
+      "source": "fixture/loan-file",
+      "version": "1"
+    }
+  ],
+  "methods": [
+    {
+      "id": "verify-kyc-7001@1",
+      "effect": "kyc_7001_verified",
+      "requires": [
+        "application_7001_complete"
+      ],
+      "provider": "ops-desk",
+      "grant": "action:verify-kyc-7001@1",
+      "cost": {
+        "compute": 1
+      },
+      "action": "simulate_fact",
+      "approved": true,
+      "source": "reviewed/synthetic-method"
+    },
+    {
+      "id": "release-funds-7001@1",
+      "effect": "funds_7001_released",
+      "requires": [
+        "kyc_7001_verified"
+      ],
+      "provider": "ops-desk",
+      "grant": "action:release-funds-7001@1",
+      "cost": {
+        "compute": 1,
+        "money": 2,
+        "attention": 0
+      },
+      "action": "simulate_fact",
+      "approved": true,
+      "source": "reviewed/synthetic-method"
+    },
+    {
+      "id": "waive-fee-7002@1",
+      "effect": "fee_7002_waived",
+      "requires": [],
+      "provider": "ops-desk",
+      "grant": "action:waive-fee-7002@1",
+      "cost": {
+        "compute": 1,
+        "money": 1,
+        "attention": 0
+      },
+      "action": "simulate_fact",
+      "approved": true,
+      "source": "reviewed/synthetic-method"
+    },
+    {
+      "id": "ask-credit-head-7003@1",
+      "effect": "head_7003_approved",
+      "requires": [],
+      "provider": "credit-head",
+      "grant": "action:ask-credit-head-7003@1",
+      "cost": {
+        "compute": 0,
+        "money": 0,
+        "attention": 1
+      },
+      "action": "ask",
+      "approved": true,
+      "source": "reviewed/synthetic-method",
+      "question": "May the limit on loan 7003 be raised?",
+      "ask_to": "credit-head"
+    },
+    {
+      "id": "update-limit-7003@1",
+      "effect": "limit_7003_updated",
+      "requires": [
+        "head_7003_approved"
+      ],
+      "provider": "ops-desk",
+      "grant": "action:update-limit-7003@1",
+      "cost": {
+        "compute": 1,
+        "money": 0,
+        "attention": 0
+      },
+      "action": "simulate_fact",
+      "approved": true,
+      "source": "reviewed/synthetic-method"
+    },
+    {
+      "id": "post-statement-7004@1",
+      "effect": "statement_7004_posted",
+      "requires": [],
+      "provider": "print-room",
+      "grant": "action:post-statement-7004@1",
+      "cost": {
+        "compute": 1,
+        "money": 1,
+        "attention": 0
+      },
+      "action": "simulate_fact",
+      "approved": true,
+      "source": "reviewed/synthetic-method"
+    },
+    {
+      "id": "sample-audit-7005@1",
+      "effect": "audit_7005_sampled",
+      "requires": [],
+      "provider": "ops-desk",
+      "grant": "action:sample-audit-7005@1",
+      "cost": {
+        "compute": 1,
+        "money": 9,
+        "attention": 0
+      },
+      "action": "simulate_fact",
+      "approved": true,
+      "source": "reviewed/synthetic-method"
+    }
+  ],
+  "providers": {
+    "ops-desk": 6,
+    "credit-head": 1,
+    "print-room": 0
+  },
+  "grants": [
+    "action:verify-kyc-7001@1",
+    "action:release-funds-7001@1",
+    "action:ask-credit-head-7003@1",
+    "action:update-limit-7003@1",
+    "action:post-statement-7004@1",
+    "action:sample-audit-7005@1"
+  ]
+}
