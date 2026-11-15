@@ -148,3 +148,5 @@ body.has-prail #sview > .steamstrip { min-height: 32px; box-sizing: border-box; 
 /* the Detailed view beside the sidebar is 248px narrower, so J2's cards reach the corner where the pill rides above the Chat button: while the pill shows,
    the page keeps room for it under the cards, as sutra-panel.css does for the library page (110px = 68 + 34 + 8) */
 @media (min-width: 1025px) { body.has-prail:not(.simple):has(.apillhost:not([hidden])) #dview main { padding-bottom: 110px; } }
+/* the "N need you" pill of a team page takes the sidebar's navy, not J2's accent */
+body.has-prail .apillhost .apill { border-color: var(--pr-accent); }

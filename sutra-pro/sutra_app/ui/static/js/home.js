@@ -238,6 +238,7 @@
     S.needsLoaded = true;
     S.needsAt = Date.now();
     renderNeeds();
+    renderRail();
     renderChat();
   }
 
@@ -1045,7 +1046,7 @@
       '<span class="rtname">' + esc(d.name || d.id) + '</span><span class="rtstat">' + esc(statusWord(d.node_status)) + "</span></a>");
     ctx.paint($("railteams"), rows.length ? rows.join("") : '<p class="railnone">No teams yet. Tell Sutra what you need and a team appears here.</p>');
     // Agent Org: one card per team (what it does, its agents, its state), each opening the team's agent view
-    if ($("orgteams") && root.OrgChartView && root.OrgChartView.teamCardsHtml && S.departmentsLoaded) ctx.paint($("orgteams"), root.OrgChartView.teamCardsHtml(S.departments));
+    if ($("orgteams") && root.OrgChartView && root.OrgChartView.teamCardsHtml && S.departmentsLoaded) ctx.paint($("orgteams"), root.OrgChartView.teamCardsHtml(S.departments, S.needs));
     renderSwitch();
   }
 

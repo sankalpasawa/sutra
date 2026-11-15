@@ -277,7 +277,7 @@
   }
 
   /* ---- Agent Org's team cards (home.js paints them above the chart): per team its name, what it does, its five function agents and their state,
-     and what the team is doing now. The whole card opens the team's agent view (/d/<team>/?view=detail). Strings in, strings out, all escaped. */
+     and what the team is doing now (a team with an open question in `needs`, GET /api/needs-you, reads Needs your answer). The whole card opens the team's agent view (/d/<team>/?view=detail). Strings in, strings out, all escaped. */
   const AGENTS = {identity: "Asha, talks to you", adaptation: "Planner, plans the work", priority: "Budget lead, picks what comes first",
     coordination: "Scheduler, hands out the work", audit: "Nora, checks the work"};
   const AGENT_ORDER = ["identity", "adaptation", "priority", "coordination", "audit"];
@@ -285,16 +285,18 @@
     filed: ["done", "Done"], done_unchecked: ["done", "Done"], left_open: ["done", "Done, with open items"], idle: ["idle", "Resting"], not_made: ["idle", "Not started yet"]};
   const ID = /^[A-Za-z0-9_.:-]{1,120}$/;
   const flat = v => (typeof v === "string" ? v : "").replace(/[\u0000-\u001f\u007f]+/g, " ").replace(/\s+/g, " ").trim();
-  function teamState(d) {
+  function teamState(d, asked) {
     const s = typeof d.node_status === "string" ? d.node_status : "";
+    if (asked) return STATE.waiting_on_you;              // an open question of the team (GET /api/needs-you), as the sidebar shows it
     if (s === "idle" && (d.last_status === "done" || d.last_status === "done_with_open_items")) return ["done", "Done"];
     return hasOwn(STATE, s) ? STATE[s] : STATE.idle;
   }
-  function teamCardsHtml(departments) {
+  function teamCardsHtml(departments, needs) {
+    const asked = new Set((Array.isArray(needs) ? needs : []).filter(isObj).map(n => n.dept_id));
     const teams = (Array.isArray(departments) ? departments : []).filter(d => isObj(d) && ID.test(typeof d.id === "string" ? d.id : ""));
     if (teams.length === 0) return '<p class="orgnone">No teams yet. Start a project on Attention and its team shows here.</p>';
     return teams.map(d => {
-      const [mark, words] = teamState(d);
+      const [mark, words] = teamState(d, asked.has(d.id));
       const fns = (Array.isArray(d.functions) ? d.functions : []).filter(f => isObj(f) && hasOwn(AGENTS, f.fn))
         .sort((a, b) => AGENT_ORDER.indexOf(a.fn) - AGENT_ORDER.indexOf(b.fn));
       const name = flat(d.name) || d.id;

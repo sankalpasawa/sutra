@@ -27,6 +27,11 @@ test("the five function agents, in the studio's order, each with its state", () 
     ["Scheduler, hands out the work", "Resting"], ["Nora, checks the work", "Needs your answer"]]);
 });
 
+test("a team with an open question reads Needs your answer, whatever its node says", () => {
+  const html = cards([{id: "web", name: "Web", node_status: "idle"}], [{message_id: 1, dept_id: "web"}]);
+  assert.match(html, /<span class="orgstate oc-needs"><i aria-hidden="true"><\/i>Needs your answer<\/span>/);
+});
+
 test("no team yet says where teams come from; bad rows are skipped and every word is escaped", () => {
   assert.match(cards([]), /No teams yet\. Start a project on Attention/);
   const html = cards([null, {id: "../x"}, {id: "ok", name: "<b>x</b>", purpose: "<img src=x>", node_status: "nonsense"}]);
