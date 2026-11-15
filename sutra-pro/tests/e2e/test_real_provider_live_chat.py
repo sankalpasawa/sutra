@@ -55,7 +55,9 @@ def test_real_claude_streams_into_one_node_and_stop_ends_the_process(tmp_path):
             browser.wait_for("document.querySelector('#smsgs .clive').dataset.state === 'ok'", timeout=180)
             assert browser.count("#smsgs .clive") == 1
             stored = [m for m in live.messages(ORG) if m["role"] == "agent" and m.get("turn")]
-            assert len(stored) == 1 and stored[0]["text"] == browser.js("document.querySelector('#smsgs .clive .cl-text').textContent")
+            # the page draws a line break as <br/>, which textContent drops: innerText is what the reader sees
+            shown = browser.js("document.querySelector('#smsgs .clive .cl-text').innerText")
+            assert len(stored) == 1 and stored[0]["text"].split() == shown.split()
             browser.type("#sbox", "Write the numbers 1 to 400, one per line, slowly.")
             browser.click("#ssend")
             browser.wait_for("(() => { const t = document.querySelectorAll('#smsgs .clive')[1]; return !!t && t.querySelector('.cl-text') && t.querySelector('.cl-text').textContent.length > 10; })()", timeout=120)
