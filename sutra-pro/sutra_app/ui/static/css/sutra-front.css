@@ -288,3 +288,40 @@ a.fdrowlink:hover .fdname { text-decoration: underline; text-underline-offset: 3
   @keyframes fdspin { to { transform: rotate(360deg); } }
 }
 body.home .railhead { font-family: var(--s-body); }
+
+/* ---- Agent Org (?pane=org, <html data-ws=org>): the sidebar, then one column: the title, one card per team, then the org chart or the workflow
+   graph. The back room's org chat, its own rail and its Needs you strip are not shown here (Attention has what needs the owner). */
+.orgview { display: none; }
+:root[data-ws=org] body.home .orgview { display: block; flex: none; padding: 28px 28px 4px; color: var(--s-ink); font-family: var(--s-body); }
+:root[data-ws=org] body.home #dview, :root[data-ws=org] body.home .schat, :root[data-ws=org] body.home .shead,
+:root[data-ws=org] body.home #needs, :root[data-ws=org] body.home .stoggle { display: none !important; }
+:root[data-ws=org] body.home .smain { grid-template-columns: minmax(0, 1fr); grid-template-rows: minmax(0, 1fr); }
+:root[data-ws=org] body.home .sright { display: flex !important; grid-row: 1; overflow: auto; }
+:root[data-ws=org] body.home .sright .pane { flex: none; overflow: visible; padding: 8px 28px 28px; }
+.orgtitle { margin: 0 0 4px; font: 700 30px/1.15 var(--s-display); letter-spacing: -.01em; color: var(--s-ink); }
+.orglead { margin: 0 0 20px; color: var(--s-muted); font-size: 15px; }
+.orgteams { display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 14px; }
+.orgnone { margin: 0; color: var(--s-muted); }
+.orgcard { display: flex; flex-direction: column; gap: 8px; padding: 16px 18px; border-radius: 14px; background: var(--s-surface); border: 1px solid var(--s-line);
+  color: var(--s-ink); text-decoration: none; box-shadow: 0 1px 2px var(--s-ring); }
+.orgcard:hover { border-color: var(--s-accent); }
+.orgcard:focus-visible { outline: 2px solid var(--s-accent); outline-offset: 2px; }
+.orgcardhead { display: flex; align-items: baseline; justify-content: space-between; gap: 10px; }
+.orgname { font: 600 17px/1.3 var(--s-display); min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.orgstate { flex: none; display: inline-flex; align-items: center; gap: 6px; color: var(--s-muted); font-size: 13px; font-weight: 600; }
+.orgstate i, .oc-dot { flex: none; width: 8px; height: 8px; border-radius: 50%; background: var(--s-line2); }
+.orgstate.oc-making { color: var(--s-accent); } .orgstate.oc-making i, .oc-dot.oc-making { background: var(--s-accent); }
+.orgstate.oc-needs { color: var(--s-askink); } .orgstate.oc-needs i, .oc-dot.oc-needs { background: var(--s-ask); }
+.orgstate.oc-done { color: var(--s-goodink); } .orgstate.oc-done i, .oc-dot.oc-done { background: var(--s-good); }
+.orgstate.oc-problem { color: var(--s-bad); } .orgstate.oc-problem i, .oc-dot.oc-problem { background: var(--s-bad); }
+.orgpurpose { color: var(--s-muted); font-size: 14px; overflow: hidden; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; }
+.orgagents { display: flex; flex-direction: column; gap: 4px; padding-top: 8px; border-top: 1px solid var(--s-line); }
+.orgagent { display: flex; align-items: center; gap: 8px; font-size: 13.5px; }
+.orgagent small { margin-left: auto; color: var(--s-muted); font-size: 12.5px; white-space: nowrap; }
+.orgopen { color: var(--s-accent); font-weight: 600; font-size: 14px; }
+.orgtabs { display: flex; gap: 20px; margin: 28px 0 0; border-bottom: 1px solid var(--s-line); }
+.orgtabs button { border: 0; background: none; padding: 8px 0; margin-bottom: -1px; border-bottom: 2px solid transparent; color: var(--s-muted); font: 600 15px/1.2 var(--s-body); cursor: pointer; }
+.orgtabs button[aria-selected=true] { color: var(--s-ink); border-bottom-color: var(--s-accent); }
+.orgtabs button:focus-visible { outline: 2px solid var(--s-accent); outline-offset: 2px; }
+@media (max-width: 1024px) { :root[data-ws=org] body.home .orgview { padding: 60px 16px 4px; } :root[data-ws=org] body.home .sright .pane { padding: 8px 16px 20px; } }
+@media (max-width: 720px) { .orgtitle { font-size: 26px; } .orgteams { grid-template-columns: minmax(0, 1fr); } }

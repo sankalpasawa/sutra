@@ -122,47 +122,22 @@ body.has-prail { padding-left: var(--pr-w); box-sizing: border-box; }
 body.has-prail #sview #shome, body.has-prail #sview #to-home-s, body.has-prail #to-home, body.has-prail #deptchip { display: none !important; }
 /* the strip above the studio stays only as the row of the "N need you" pill (with the project's name); with nothing waiting it goes */
 body.has-prail:not(:has(.apillhost:not([hidden]))) #sview .steamstrip { display: none; }
-/* Home's back room (Settings & logs, the org chat and its map) has its own rail: the sidebar steps aside there */
-:root[data-place=ws] body.has-prail { padding-left: 0; }
-:root[data-place=ws] .prail, :root[data-place=ws] .pr-btn { display: none; }
+/* Home's back room (Settings & logs, the org chat and its map) has its own rail: the sidebar steps aside there, except on Agent Org (data-ws=org) */
+:root[data-place=ws]:not([data-ws=org]) body.has-prail { padding-left: 0; }
+:root[data-place=ws]:not([data-ws=org]) .prail, :root[data-place=ws]:not([data-ws=org]) .pr-btn { display: none; }
 
-/* ---- the view switch of a team page (Simple / Manager / Debug), at the right of the studio's top bar */
-.pv { position: relative; flex: none; font: 14px/1.3 var(--pr-body); }
-.pv-btn { display: inline-flex; align-items: center; gap: 6px; padding: 8px 12px; border-radius: 9px; border: 1px solid var(--pr-line); background: var(--pr-surface);
-  color: var(--pr-ink); font: 600 14px/1 var(--pr-body); cursor: pointer; }
+/* ---- the one view button of a team page ("Agent view" / "Simple view", dept_ext.js viewSwitch): at the right of the studio's top bar, at the
+   foot of the sidebar in the agent view */
+.pv-btn { display: inline-flex; flex: none; align-items: center; gap: 6px; padding: 8px 12px; border-radius: 9px; border: 1px solid var(--pr-line); background: var(--pr-surface);
+  color: var(--pr-ink); font: 600 14px/1 var(--pr-body); cursor: pointer; white-space: nowrap; }
 .pv-btn:hover { background: var(--pr-hover); }
-.pv-btn svg { flex: none; }
-.pv-menu { position: absolute; right: 0; top: calc(100% + 6px); z-index: 70; width: 270px; padding: 6px; box-sizing: border-box; border-radius: 12px;
-  border: 1px solid var(--pr-line); background: var(--pr-surface); box-shadow: 0 10px 30px var(--pr-shadow); }
-.pv-menu[hidden] { display: none; }
-.pv-opt { display: block; width: 100%; text-align: left; padding: 8px 10px; border: 0; border-radius: 8px; background: none; color: var(--pr-ink); font: inherit; cursor: pointer; text-decoration: none; box-sizing: border-box; }
-.pv-opt:hover, .pv-opt:focus-visible { background: var(--pr-hover); outline: none; }
-.pv-opt b { display: block; font-weight: 600; }
-.pv-opt small { display: block; color: var(--pr-muted); font-size: 12.5px; }
-.pv-opt[aria-checked=true] b::after { content: " ✓"; color: var(--pr-accent); }
-.pv-sep { height: 1px; margin: 6px 4px; background: var(--pr-line); }
-.pv-extra { display: flex; flex-wrap: wrap; gap: 4px; padding: 2px 4px 4px; }
-.pv-extra .pv-link { padding: 6px 10px; border-radius: 8px; border: 1px solid var(--pr-line); color: var(--pr-ink); text-decoration: none; font-size: 13px; background: none; cursor: pointer; font-family: inherit; }
-.pv-extra .pv-link:hover { background: var(--pr-hover); }
-/* the Detailed view has no top bar of the studio: the switch floats at its top right */
-.pv.pv-float { position: fixed; right: 14px; top: 10px; z-index: 45; }
-@media (max-width: 1024px) { .pv-btn { padding: 7px 10px; } .pv-menu { width: min(270px, 86vw); } }
-
-/* Manager and Debug: the studio shows its own way into the Detailed view again (the owner's design hides it; Simple keeps it hidden) */
-:root[data-level=manager] body.has-prail #sview .stop #sdetail, :root[data-level=debug] body.has-prail #sview .stop #sdetail { display: inline-flex; }
-@media (max-width: 1024px) { :root[data-level] body.has-prail #sview .stop #sdetail { display: none; } }
-/* the Raw AI chat entry (raw_chat.js) sits bottom left by default, which is the sidebar: it moves just right of it (and of the Detailed view's icon rail) */
-body.has-prail .rc-open-btn { left: calc(var(--pr-w) + 16px); }
-body.has-prail:not(.simple) .rc-open-btn { left: calc(var(--pr-w) + 100px); }
-@media (max-width: 1024px) { body.has-prail .rc-open-btn, body.has-prail:not(.simple) .rc-open-btn { left: 16px; } }
+.pv-btn:focus-visible { outline: 2px solid var(--pr-accent); outline-offset: 2px; }
+.pv-btn.pv-float { position: fixed; right: 14px; top: 10px; z-index: 45; }
+.pv-btn.pv-inrail { margin: 8px 0 0; justify-content: center; }
 @media (max-width: 1024px) {
-  body.has-prail #sview .stop .pv { order: 10; margin-left: auto; }  /* the switch goes to the end of the bar: the project name keeps its room */
+  .pv-btn { padding: 7px 10px; }
+  body.has-prail #sview .stop .pv-btn { order: 10; margin-left: auto; }  /* the button goes to the end of the bar: the project name keeps its room */
 }
-.pv-menu.pv-left { right: auto; left: 0; }
-/* the Detailed view: the switch sits at the foot of the sidebar and its menu opens upwards */
-.pv.pv-inrail { margin: 8px 0 0; }
-.pv.pv-inrail .pv-btn { width: 100%; justify-content: space-between; }
-.pv.pv-inrail .pv-menu { top: auto; bottom: calc(100% + 6px); left: 0; right: auto; }
 /* J2 places a few things against the window's left edge (fixed): beside the sidebar they move right by its width (desktop only; on a phone the sidebar is a drawer) */
 @media (min-width: 1025px) {
   body.has-prail .rfly { left: calc(var(--pr-w) + 84px); width: min(280px, calc(100vw - var(--pr-w) - 84px)); }

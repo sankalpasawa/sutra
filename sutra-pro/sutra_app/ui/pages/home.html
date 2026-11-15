@@ -14,7 +14,9 @@
    the team pages), and which place of Home shows: the front door, or the workspace (a deep link: ?pane=, ?node= or ?change=; or sutra:home:place "ws", which only the
    browser tests set now and "Home" clears) */
 try { var tp = localStorage.getItem("j2theme"); document.documentElement.dataset.theme = tp === "dark" ? "dark" : tp === "system" && !matchMedia("(prefers-color-scheme: light)").matches ? "dark" : "light"; } catch (e) { document.documentElement.dataset.theme = "light"; }
-try { var hq = new URLSearchParams(location.search); document.documentElement.dataset.place = hq.has("pane") || hq.has("node") || hq.has("change") || localStorage.getItem("sutra:home:place") === "ws" ? "ws" : "front"; } catch (e) { document.documentElement.dataset.place = "front"; }</script>
+try { var hq = new URLSearchParams(location.search); document.documentElement.dataset.place = hq.has("pane") || hq.has("node") || hq.has("change") || localStorage.getItem("sutra:home:place") === "ws" ? "ws" : "front"; } catch (e) { document.documentElement.dataset.place = "front"; }
+/* Agent Org (?pane=org) is a page of its own: the sidebar, the team cards, the org chart and the workflow graph; no org chat, no back-room rail */
+try { if (new URLSearchParams(location.search).get("pane") === "org") { document.documentElement.dataset.ws = "org"; document.title = "Agent Org · Sutra"; } } catch (e) { /* no URLSearchParams */ }</script>
 </head>
 <body class="simple home">
 <!-- Attention, the front door (front_door.js, painted by home.js): the box to start a new project, then what needs the owner (answered in place),
@@ -53,6 +55,12 @@ try { var hq = new URLSearchParams(location.search); document.documentElement.da
       <section class="npinline" id="teamchat" aria-labelledby="npititle" hidden></section>
     </section>
     <section class="sprev sright" id="sright" aria-label="Teams and settings">
+      <section class="orgview" id="orgview" aria-labelledby="org-h">
+        <h1 class="orgtitle" id="org-h">Agent Org</h1>
+        <p class="orglead">Your teams, what each one does, and who is working now. Click a team to watch its agents.</p>
+        <div class="orgteams" id="orgteams"></div>
+        <div class="orgtabs" role="tablist" aria-label="Show"><button type="button" role="tab" data-orgpane="chart" aria-selected="true">Org chart</button><button type="button" role="tab" data-orgpane="graph" aria-selected="false">How work flows</button></div>
+      </section>
       <section class="needs" id="needs" aria-label="Needs you" tabindex="-1"></section>
       <div class="pane" id="pane-graph"></div>
       <div class="pane" id="pane-chart" hidden></div>
@@ -88,8 +96,10 @@ try { var hq = new URLSearchParams(location.search); document.documentElement.da
     <button type="button" data-pane="settings" data-group="notes"><span>Notes</span></button>
     <button type="button" data-pane="settings" data-group="about"><span>About</span></button>
   </div>
-  <div class="railsec" id="railowner" aria-labelledby="rail-owner-h"><h3 class="railhead" id="rail-owner-h">Owner</h3>
+  <div class="railsec" id="railowner" aria-labelledby="rail-owner-h"><h3 class="railhead" id="rail-owner-h">Logs &amp; debug</h3>
     <a class="railteam" href="/console" id="goconsole"><span class="rtname">Usage and log</span><span class="rtstat">cost, Atom log, health</span></a>
+    <button type="button" class="railteam" id="gorawchat"><span class="rtname">Raw AI chat</span><span class="rtstat">every AI call of a run, word for word</span></button>
+    <p class="railnone" id="rawchatnote" role="status" hidden></p>
   </div>
 </nav>
 </div>

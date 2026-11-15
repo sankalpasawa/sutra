@@ -89,7 +89,7 @@
     auto: null, autoBusy: false, autoMsg: "",
     pillStale: false, pillSeq: 0,          // the org chat's pill is read again when its session may have moved (renderPill)
     // the front door (front_door.js): the cards being answered, a refusal per card, Done recently opened up, a send from its box, the Raw AI chat note
-    front: {answering: {}, errors: {}, moreDone: false, sent: false, error: "", hookNote: "", going: false},
+    front: {answering: {}, errors: {}, moreDone: false, sent: false, error: "", going: false, held: false},
   };
 
   /* ---------------------------------------------------------------- errors in words */
@@ -778,11 +778,10 @@
   }
 
   /* ---------------------------------------------------------------- the front door (front_door.js; the one-front brief) */
-  // Home has two places: the front door (the project sidebar and "What should we make?") and the workspace, the back room (the org chat, the panes,
-  // the rail: Settings & logs). <html data-place> says which shows; only a deep link (?pane=, ?node=, ?change=) opens the workspace. Home has no
-  // level switch: Simple, Manager and Debug live inside an open project, so the front door always speaks in the plain words of Simple.
+  // Home has two places: the front door, Attention ("What should we make?", what needs the owner, what just finished) and the workspace, the back
+  // room (Agent Org at ?pane=org; the org chat, the panes and Settings & logs). <html data-place> says which shows; only a deep link (?pane=, ?node=,
+  // ?change=) opens the workspace. The front door always speaks in plain words.
   const FD = () => root.FrontDoor || null;
-  const level = () => "simple";
   const place = () => (doc.documentElement.dataset.place === "ws" ? "ws" : "front");
 
   function setPlace(where) {
@@ -832,16 +831,15 @@
   function renderFrontLatest() {
     const fd = FD();
     if (!fd || !$("fdlatest")) return;
-    const lv = level();
-    const words = lv === "simple" ? PHASE_PLAIN : PHASE_SENTENCE;
+    const words = PHASE_PLAIN;
     const status = S.front.sent && S.turn.active && hasOwn(words, S.turn.phase) ? words[S.turn.phase] : "";
-    const st = {show: S.front.sent || S.front.error !== "", level: lv, status, error: S.front.error, messages: S.messages, answers: answersMap(), going: S.front.going};
+    const st = {show: S.front.sent || S.front.error !== "", status, error: S.front.error, messages: S.messages, answers: answersMap(), going: S.front.going};
     const href = S.front.sent && fd.landing ? fd.landing(st) : "";
-    if (href && lv === "simple" && place() === "front" && !S.front.going) {
+    if (href && place() === "front" && !S.front.going) {
       S.front.going = true;
       st.going = true;
       root.setTimeout(() => {
-        if (level() === "simple" && place() === "front") root.location.assign(href);
+        if (place() === "front") root.location.assign(href);
         else { S.front.going = false; renderFrontLatest(); }
       }, LAND_MS);
     }
@@ -926,21 +924,18 @@
       if (HV()) protect("seen", () => HV().saveSeen(storage(), S.seen, S.heads));
       renderNeeds();
     } else if (act === "fd-more") { S.front.moreDone = true; renderFront(); }
-    else if (act === "fd-chat" || act === "open-team-chat") { setPlace("ws"); openTeamChat(b.dataset.node, b.dataset.session || "", {}); }
-    else if (act === "fd-go") {
-      setPlace("ws");
-      if (b.dataset.pane === "chat") selectPane("chat");
-      else selectPane(b.dataset.pane, {group: b.dataset.pane === "settings" ? "appearance" : ""});
-    } else if (act === "fd-conversation") { setPlace("ws"); selectPane("chat"); }
-    else if (act === "fd-hook") {
-      // the Raw AI chat viewer (raw_chat.js) lives on a team's page: open it for the team working now, else the one waiting on you, else the first team
-      const ev = new root.CustomEvent("sutra:raw-ai-chat", {cancelable: true, detail: {from: "home"}});
-      if (!doc.dispatchEvent(ev)) return;
-      const teams = S.departments || [], waiting = (S.needs || []).map(n => n && n.dept_id).find(Boolean);
-      const team = teams.find(d => d.live_task_id) || teams.find(d => d.id === waiting) || teams[0];
-      if (team) root.location.href = "/d/" + encodeURIComponent(team.id) + "/raw";
-      else { S.front.hookNote = "No team has run yet. The raw AI chat shows every AI call once a team starts work."; renderFront(); }
-    }
+  }
+
+  // Settings & logs, "Raw AI chat": the viewer (raw_chat.js) lives on a team's page at /d/{team}/raw. It opens for the team working now, else the one
+  // waiting on the owner, else the first team; with no team yet, a sentence says so.
+  function openRawChat() {
+    const teams = (S.departments || []).filter(isObj);
+    const waiting = (S.needs || []).map(n => n && n.dept_id).find(Boolean);
+    const team = teams.find(d => d.live_task_id) || teams.find(d => d.id === waiting) || teams[0];
+    if (team) { root.location.assign("/d/" + enc(team.id) + "/raw"); return team.id; }
+    const note = $("rawchatnote");
+    if (note) { note.textContent = "No team has run yet. The raw AI chat shows every AI call once a team starts work."; note.hidden = false; }
+    return "";
   }
 
   function wireFront() {
@@ -1042,9 +1037,11 @@
   function statusWord(status) { return hasOwn(STATUS_WORDS, status) ? STATUS_WORDS[status] : "idle"; }
 
   function renderRail() {
-    const rows = S.departments.filter(isObj).map(d => '<a class="railteam st-' + esc(d.node_status || "idle") + '" href="/d/' + enc(d.id) + '/" data-dept="' + esc(d.id) + '">' +
+    const rows = S.departments.filter(isObj).map(d => '<a class="railteam st-' + esc(d.node_status || "idle") + '" href="/d/' + enc(d.id) + '/?view=detail" data-dept="' + esc(d.id) + '">' +
       '<span class="rtname">' + esc(d.name || d.id) + '</span><span class="rtstat">' + esc(statusWord(d.node_status)) + "</span></a>");
     ctx.paint($("railteams"), rows.length ? rows.join("") : '<p class="railnone">No teams yet. Tell Sutra what you need and a team appears here.</p>');
+    // Agent Org: one card per team (what it does, its agents, its state), each opening the team's agent view
+    if ($("orgteams") && root.OrgChartView && root.OrgChartView.teamCardsHtml && S.departmentsLoaded) ctx.paint($("orgteams"), root.OrgChartView.teamCardsHtml(S.departments));
     renderSwitch();
   }
 
@@ -1181,6 +1178,7 @@
     if (pane === "chart") ensureChart();
     if (pane === "settings") openSettings(S.group);
     markRail();
+    doc.querySelectorAll("[data-orgpane]").forEach(b => b.setAttribute("aria-selected", String(b.dataset.orgpane === pane)));
     return pane;
   }
 
@@ -1769,7 +1767,8 @@
   function deepLink() {
     const q = new root.URLSearchParams(root.location.search);
     const pane = q.get("pane");
-    // ?pane=settings is the sidebar's "Settings & logs"; ?pane=chat a project menu's "Team chats"
+    // ?pane=settings is the sidebar's "Settings & logs"; ?pane=org its "Agent Org" (the org chart, with the team cards above it)
+    if (pane === "org") return {pane: "chart", node: "", change: "", org: true};
     return {pane: pane === "chart" || pane === "settings" || pane === "chat" ? pane : (pane === "graph" || q.get("node") ? "graph" : (q.get("change") ? "chart" : "graph")),
       node: q.get("node") || "", change: q.get("change") || ""};
   }
@@ -1864,6 +1863,8 @@
       markRail();
     });
     $("gochat").addEventListener("click", () => selectPane("chat"));
+    if ($("gorawchat")) $("gorawchat").addEventListener("click", openRawChat);
+    doc.querySelectorAll("[data-orgpane]").forEach(b => b.addEventListener("click", () => selectPane(b.dataset.orgpane)));
     doc.querySelectorAll("#rail [data-pane]").forEach(b => b.addEventListener("click", () => selectPane(b.dataset.pane, {group: b.dataset.group || ""})));
     doc.addEventListener("click", e => {
       const b = e.target.closest && e.target.closest("[data-themepick]");
@@ -1916,7 +1917,7 @@
 
   const HomePage = {
     boot, loadAll, renderChat, send, answerNeeds, selectPane, renderRail, renderNeeds, onEvent, themeApply, barSet, renderSettings, saveEngine, testConnector,
-    signIn, cancelSignIn, errorWords, poll: pollAll, state: () => S, retryTask, renderFront, setPlace, answerFront, decideFront, sendFront,
+    signIn, cancelSignIn, errorWords, poll: pollAll, state: () => S, retryTask, renderFront, setPlace, answerFront, decideFront, sendFront, openRawChat,
   };
   root.HomePage = HomePage;
   const start = () => protect("boot", () => boot().catch(e => { if (root.console) root.console.error("HomePage: boot failed", e); }));

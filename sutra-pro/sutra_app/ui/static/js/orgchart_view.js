@@ -15,7 +15,7 @@
    update(orgChart, changes): orgChart is GET /api/chart, changes GET /api/chart/changes?limit=50&newest=true (the newest 50 ChartChangeOut[]; leaving it out keeps
    the ones in hand). The newest change is selected until the owner picks another (a click on its row, or selectChange(seq)); picking
    the newest again follows the newest once more. A change that was not applied (pending_approval, rejected, stale, failed) marks nothing.
-   The card of a node has its name and purpose, Open team page (a team), Show in graph and Open chat. Esc closes it.
+   The card of a node has its name and purpose, Open agent view (a team: its J2 detailed view), Show in graph and Open chat. Esc closes it.
    refresh() asks GET /api/chart and GET /api/chart/changes itself (what Try again does).
 
    Gap package chart-insight: under the log, "Chart notes" (chart_notes.js; GET /api/chart/notes, read again when the chart changes or a minute has
@@ -111,7 +111,7 @@
       }
       const mark = hasOwn(state.marks, node.id) ? state.marks[node.id] : null;
       const acts = [];
-      if (node.kind === "department") acts.push('<a class="ocbtn" data-oc="team" href="/d/' + encodeURIComponent(node.id) + '/">Open team page</a>');
+      if (node.kind === "department") acts.push('<a class="ocbtn" data-oc="team" href="/d/' + encodeURIComponent(node.id) + '/?view=detail">Open agent view</a>');
       if (typeof o.onShow === "function") acts.push('<button type="button" class="ocbtn" data-oc="show">Show in graph</button>');
       if (typeof o.onOpen === "function") acts.push('<button type="button" class="ocbtn" data-oc="chat">Open chat</button>');
       cardEl.setAttribute("aria-label", node.label);
@@ -276,7 +276,39 @@
     };
   }
 
-  const OrgChartView = {create};
+  /* ---- Agent Org's team cards (home.js paints them above the chart): per team its name, what it does, its five function agents and their state,
+     and what the team is doing now. The whole card opens the team's agent view (/d/<team>/?view=detail). Strings in, strings out, all escaped. */
+  const AGENTS = {identity: "Asha, talks to you", adaptation: "Planner, plans the work", priority: "Budget lead, picks what comes first",
+    coordination: "Scheduler, hands out the work", audit: "Nora, checks the work"};
+  const AGENT_ORDER = ["identity", "adaptation", "priority", "coordination", "audit"];
+  const STATE = {running: ["making", "Working"], waiting: ["making", "Waiting its turn"], waiting_on_you: ["needs", "Needs your answer"], fault: ["problem", "Something broke"],
+    filed: ["done", "Done"], done_unchecked: ["done", "Done"], left_open: ["done", "Done, with open items"], idle: ["idle", "Resting"], not_made: ["idle", "Not started yet"]};
+  const ID = /^[A-Za-z0-9_.:-]{1,120}$/;
+  const flat = v => (typeof v === "string" ? v : "").replace(/[\u0000-\u001f\u007f]+/g, " ").replace(/\s+/g, " ").trim();
+  function teamState(d) {
+    const s = typeof d.node_status === "string" ? d.node_status : "";
+    if (s === "idle" && (d.last_status === "done" || d.last_status === "done_with_open_items")) return ["done", "Done"];
+    return hasOwn(STATE, s) ? STATE[s] : STATE.idle;
+  }
+  function teamCardsHtml(departments) {
+    const teams = (Array.isArray(departments) ? departments : []).filter(d => isObj(d) && ID.test(typeof d.id === "string" ? d.id : ""));
+    if (teams.length === 0) return '<p class="orgnone">No teams yet. Start a project on Attention and its team shows here.</p>';
+    return teams.map(d => {
+      const [mark, words] = teamState(d);
+      const fns = (Array.isArray(d.functions) ? d.functions : []).filter(f => isObj(f) && hasOwn(AGENTS, f.fn))
+        .sort((a, b) => AGENT_ORDER.indexOf(a.fn) - AGENT_ORDER.indexOf(b.fn));
+      const name = flat(d.name) || d.id;
+      return '<a class="orgcard" href="/d/' + encodeURIComponent(d.id) + '/?view=detail" data-dept="' + esc(d.id) + '" aria-label="' + esc(name + ", " + words + ". Open its agent view") + '">' +
+        '<span class="orgcardhead"><b class="orgname">' + esc(name) + '</b><span class="orgstate oc-' + mark + '"><i aria-hidden="true"></i>' + esc(words) + "</span></span>" +
+        (flat(d.purpose) ? '<span class="orgpurpose">' + esc(flat(d.purpose)) + "</span>" : "") +
+        (fns.length ? '<span class="orgagents">' + fns.map(f => {
+          const [m, w] = hasOwn(STATE, f.status) ? STATE[f.status] : STATE.idle;
+          return '<span class="orgagent"><i class="oc-dot oc-' + m + '" aria-hidden="true"></i>' + esc(AGENTS[f.fn]) + '<small>' + esc(w) + "</small></span>";
+        }).join("") + "</span>" : "") + '<span class="orgopen">Open agent view &rarr;</span></a>';
+    }).join("");
+  }
+
+  const OrgChartView = {create, teamCardsHtml};
   if (typeof module === "object" && module !== null && module.exports) module.exports = OrgChartView;
   else root.OrgChartView = OrgChartView;
 })(globalThis);
