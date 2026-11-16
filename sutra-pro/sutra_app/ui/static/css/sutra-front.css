@@ -248,7 +248,7 @@ a.fdrowlink:hover .fdname { text-decoration: underline; text-underline-offset: 3
   @keyframes fdin { from { opacity: 0; transform: translateY(4px); } }
   @keyframes fdspin { to { transform: rotate(360deg); } }
 }
-body.home .railhead { font-family: var(--s-body); }
+body.home .railhead, body.home #dview h3.railhead { font-family: var(--s-body); }
 
 /* ---- Agent Org (?pane=org, <html data-ws=org>): the sidebar, then one column: the title, one card per team, then the org chart or the workflow
    graph. The back room's org chat, its own rail and its Needs you strip are not shown here (Attention has what needs the owner). */
@@ -298,3 +298,22 @@ body.home .wgpane .maphead .mappill.waiting_on_you, body.home .wgpane .maphead .
 body.home .wgpane .wlive { border: 0; padding: 3px 4px; font: 500 13px/1.4 var(--s-body); color: var(--s-muted); }
 body.home .wgpane .wlive[data-state="live"] { color: var(--s-goodink); }
 body.home .wgpane .wlive[data-state="polling"] { color: var(--s-askink); }
+
+/* ---- Settings & logs (?pane=settings, <html data-ws=settings>): the rail is the page's own menu (Settings, then Logs & debug) and the settings fill
+   the rest. The back room's org chat, its Needs you strip (Attention has it), and the rail's Chat, Workflow graph, Org chart and Teams (Agent Org and the
+   sidebar have them) are not shown here. */
+.settitle { display: none; }
+:root[data-ws=settings] body.home .settitle { display: inline; font: 700 18px/1.2 var(--s-display); color: var(--s-ink); }
+:root[data-ws=settings] body.home #stitle, :root[data-ws=settings] body.home #sotype { display: none; }
+:root[data-ws=settings] body.home .schat, :root[data-ws=settings] body.home #needs, :root[data-ws=settings] body.home #sview main > [role=tablist],
+:root[data-ws=settings] body.home #rail > #gochat, :root[data-ws=settings] body.home #rail > [data-pane=graph], :root[data-ws=settings] body.home #rail > [data-pane=chart],
+:root[data-ws=settings] body.home #rail .railsec:has(#railteams) { display: none !important; }
+:root[data-ws=settings] body.home #sview > main { grid-template-columns: minmax(0, 1fr); grid-template-rows: minmax(0, 1fr); }
+:root[data-ws=settings] body.home .sright { display: flex !important; grid-row: 1; overflow: auto; }
+:root[data-ws=settings] body.home .sright .pane { flex: none; overflow: visible; width: 100%; max-width: 820px; box-sizing: border-box; padding: 16px 28px 32px; }
+@media (max-width: 720px) { :root[data-ws=settings] body.home .sright .pane { padding: 12px 16px 24px; } }
+/* Settings' status chips (Ready, First, Second, Signed out ...): quiet filled chips in the studio's colours, not outlined pills */
+body.home .setchip { border: 0; border-radius: 8px; padding: 2px 9px; font: 600 12px/1.4 var(--s-body); background: var(--s-surface2); color: var(--s-muted); }
+body.home .setchip.st-ok { background: var(--s-goodbg); color: var(--s-goodink); }
+body.home .setchip.st-signed_out, body.home .setchip.st-quota, body.home .setchip.st-cooldown { background: var(--s-askbg); color: var(--s-askink); }
+body.home .setchip.st-missing, body.home .setchip.st-fault, body.home .setchip.st-breaker { background: var(--s-surface2); color: var(--s-bad); }
