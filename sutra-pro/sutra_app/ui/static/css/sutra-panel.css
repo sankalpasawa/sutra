@@ -703,3 +703,8 @@ button:not(:disabled):not(.cjump-btn):active,.lbtn:active,.fnchip:active{transfo
 /* the chat column reaches the bottom of the window at 901 to 1150 px: j2-shell.css (frozen) leaves the .smain grid one row of auto height, so the column stopped where its content
    ended; a definite row makes it as tall as the window (the phone layout, up to 900 px, sets its own rows and is left alone) */
 @media (min-width:901px){#sview>main{grid-template-rows:minmax(0,1fr)}}
+
+/* ---- one accent: J2's detailed view and library draw links, badges and selected tabs in J2's purple (--accent, --vio); every Sutra page uses the
+   studio's navy (#3D5A80, #9db8de at night) */
+:root body { --accent: #3D5A80; --vio: #3D5A80; }
+:root[data-theme=dark] body { --accent: #9db8de; --vio: #9db8de; }
