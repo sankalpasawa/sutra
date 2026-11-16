@@ -18,6 +18,10 @@ bundled interpreter, which a foreign system or architecture cannot do. The steps
   5. build-info.json says what went in; every symbolic link is checked to stay inside the app
 
 Layout of `<out>/Sutra Pro.app`:  Contents/Resources/python/ (the interpreter and the app), Contents/Resources/build-info.json
+
+`--channel beta` (a Mac only) builds "Sutra Pro Beta.app" instead (D242): another name, another bundle id, another data folder and no automatic update, so it
+installs and runs beside the stable app. The identity of each channel is desktop/src/channels.json; `--build-label` is what the beta's About box and
+build-info.json say about the tree it was built from.
 Layout of `<out>/Sutra Pro/`:     `Sutra Pro.exe`, resources/python/, resources/build-info.json (what the installer copies and the zip holds)
 
 The interpreter is unpacked straight into the package because the packager rewrites a relative symbolic link as an absolute one when it
@@ -48,8 +52,9 @@ from build_macos_app import BuildError, Fetch, fetch_url, read_wheel, sha256_of 
 
 ROOT = HERE.parent
 DESKTOP = ROOT / "desktop"
-APP_NAME = "Sutra Pro"
-BUNDLE_ID = "os.sutra.pro"
+CHANNELS = json.loads((DESKTOP / "src" / "channels.json").read_text(encoding="utf-8"))      # the same file the window and the packager read
+APP_NAME = CHANNELS["stable"]["appName"]                                                     # "Sutra Pro"
+BUNDLE_ID = CHANNELS["stable"]["appId"]                                                      # "os.sutra.pro"
 
 
 @dataclass(frozen=True)
@@ -98,16 +103,17 @@ def run_tool(args: list[str], what: str, cwd: Path) -> subprocess.CompletedProce
     return done
 
 
-def package_window(target: Target, stage: Path, version: str, *, skip_npm: bool = False) -> Path:
-    """Run `npm ci` and desktop/scripts/package.mjs; return the packaged app ("Sutra Pro.app" or the Windows folder), inside `stage`."""
+def package_window(target: Target, stage: Path, version: str, *, skip_npm: bool = False, channel: str = "stable") -> Path:
+    """Run `npm ci` and desktop/scripts/package.mjs; return the packaged app ("Sutra Pro.app" or the Windows folder), inside `stage`.
+    The stable app's command line is the one the releases have always used; a beta adds `--channel beta`."""
     if not skip_npm:
         # --ignore-scripts: no dependency runs code during a release build. Electron's own install script only fetches its binary, which the packager fetches
         # itself (and checks against the release's checksums) for the platform and architecture it builds for
         run_tool([tool("npm"), "ci", "--ignore-scripts", "--no-audit", "--no-fund"], "npm ci", DESKTOP)
     elif not (DESKTOP / "node_modules").is_dir():
         raise BuildError("--skip-npm was given but desktop/node_modules is not there: run `npm ci` in desktop/")
-    done = run_tool([tool("node"), "scripts/package.mjs", "--platform", target.platform, "--arch", target.arch, "--out", str(stage), "--version", version],
-                    "the Electron packager", DESKTOP)
+    command = [tool("node"), "scripts/package.mjs", "--platform", target.platform, "--arch", target.arch, "--out", str(stage), "--version", version]
+    done = run_tool(command + (["--channel", channel] if channel != "stable" else []), "the Electron packager", DESKTOP)
     packaged = [line.split(" ", 1)[1].strip() for line in done.stdout.splitlines() if line.startswith("PACKAGED ")]
     if len(packaged) != 1 or not Path(packaged[0]).exists():
         raise BuildError(f"the packager did not say where the app is:\n{done.stdout.strip()[-400:]}")
@@ -196,12 +202,18 @@ def check_links(root: Path) -> None:
 
 
 def build_app(*, wheel: Path, target: str, out: Path, python_archive: Optional[Path] = None, cache_dir: Optional[Path] = None,
-              fetch: Fetch = fetch_url, skip_npm: bool = False, package: Optional[Packager] = None, allow_foreign_host: bool = False) -> Path:
-    """Build `<out>/Sutra Pro.app` (or `<out>/Sutra Pro`) and return its path. Replaces one of that name already in `out`; touches nothing else.
-    `package` replaces the Electron packager (tests)."""
+              fetch: Fetch = fetch_url, skip_npm: bool = False, package: Optional[Packager] = None, allow_foreign_host: bool = False,
+              channel: str = "stable", build_label: str = "") -> Path:
+    """Build `<out>/Sutra Pro.app` (or `<out>/Sutra Pro`) and return its path; the beta channel builds `<out>/Sutra Pro Beta.app`. Replaces one of that
+    name already in `out`; touches nothing else. `package` replaces the Electron packager (tests)."""
     if target not in TARGETS:
         raise BuildError(f"unsupported target {target!r} ({', '.join(TARGETS)})")
+    if channel not in CHANNELS:
+        raise BuildError(f"unsupported channel {channel!r} ({', '.join(CHANNELS)})")
     spec = TARGETS[target]
+    if channel != "stable" and spec.windows:
+        raise BuildError(f"the {channel} app is a Mac app: it is built and installed on one Mac, not for {target}")
+    identity = CHANNELS[channel]
     if not allow_foreign_host and not host_can_build(spec):
         raise BuildError(f"this machine cannot build {target}: the wheel is installed by running the bundled interpreter, so build on a "
                          f"machine of the target system and architecture (the workflow does)")
@@ -214,10 +226,10 @@ def build_app(*, wheel: Path, target: str, out: Path, python_archive: Optional[P
         archive, archive_sha = common.resolve_archive(spec.archive, cache_dir or common.default_cache_dir(), fetch)
 
     out.mkdir(parents=True, exist_ok=True)
-    final = out / (f"{APP_NAME}.app" if not spec.windows else APP_NAME)
+    final = out / (f"{identity['appName']}.app" if not spec.windows else identity["appName"])
     stage = Path(tempfile.mkdtemp(prefix=".sutra-pro-build-", dir=out))      # a failed build never leaves a half app under the final name
     try:
-        app = (package or (lambda t, s, v: package_window(t, s, v, skip_npm=skip_npm)))(spec, stage, info.version)
+        app = (package or (lambda t, s, v: package_window(t, s, v, skip_npm=skip_npm, channel=channel)))(spec, stage, info.version)
         resources = resources_of(app, spec)
         if not resources.is_dir():
             raise BuildError(f"the packaged app has no resources folder: {resources}")
@@ -230,11 +242,14 @@ def build_app(*, wheel: Path, target: str, out: Path, python_archive: Optional[P
         precompile(interpreter, windows=spec.windows)
         if spec.windows:
             write_windows_extras(app, info.version)
-        (resources / "build-info.json").write_text(json.dumps({
-            "app": APP_NAME, "bundle_id": BUNDLE_ID, "version": info.version, "target": target, "shell": "electron",
+        record = {
+            "app": identity["appName"], "bundle_id": identity["appId"], "version": info.version, "target": target, "shell": "electron",
             "electron": json.loads((DESKTOP / "package.json").read_text(encoding="utf-8"))["devDependencies"]["electron"],
             "python_archive": archive.name, "python_archive_sha256": archive_sha, "wheel": wheel.name, "wheel_sha256": info.sha256,
-        }, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+        }
+        if channel != "stable":                                              # a release's build-info.json is what it always was
+            record.update(channel=channel, build=build_label)
+        (resources / "build-info.json").write_text(json.dumps(record, indent=2, sort_keys=True) + "\n", encoding="utf-8")
         check_links(app)
         if final.exists():
             shutil.rmtree(final)
@@ -253,10 +268,13 @@ def main(argv: Optional[list[str]] = None) -> int:
                         help="a local python-build-standalone archive to use instead of downloading one (trusted as given)")
     parser.add_argument("--cache-dir", type=Path, default=None, help="download cache (default: $SUTRA_BUNDLE_CACHE or ~/.cache/sutra-pro-bundle)")
     parser.add_argument("--skip-npm", action="store_true", help="do not run `npm ci`: desktop/node_modules is already installed")
+    parser.add_argument("--channel", choices=sorted(CHANNELS), default="stable",
+                        help="stable (default): 'Sutra Pro.app', what a release ships; beta: 'Sutra Pro Beta.app', a build to try beside the stable app (a Mac only)")
+    parser.add_argument("--build-label", default="", help="beta only: what the build says about the tree it came from (a short commit id)")
     args = parser.parse_args(argv)
     try:
         app = build_app(wheel=args.wheel, target=args.target, out=args.out, python_archive=args.python_archive, cache_dir=args.cache_dir,
-                        skip_npm=args.skip_npm)
+                        skip_npm=args.skip_npm, channel=args.channel, build_label=args.build_label)
     except BuildError as error:
         print(f"error: {error}", file=sys.stderr)
         return 1

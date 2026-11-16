@@ -1203,5 +1203,10 @@
   "id": "D241",
   "label": "forms are data; folder forms pass",
   "anchor": "band:DEPARTMENT RUNTIME"
+ },
+ {
+  "id": "D242",
+  "label": "beta beside stable; AGENTS.md protocol",
+  "anchor": "Desktop app · Electron window"
  }
 ]
