@@ -8,6 +8,9 @@ host calls `configure(...)` BEFORE the vendored `j2` module is imported because 
     ask            J2's signature (`timeout` included) plus a keyword `tag`; the reply text, stripped (unstripped in mock mode, as J2)
     CallTimeout    what `ask` raises when the port reports a timeout (J2's `except llm.CallTimeout`, D170)
     can_read_files False: the agents' file tools are bound to the owner's working folder, never to a run folder (D170)
+    tools_on, can_use_tools, TOOLS   builder tools (J2 sync 7): off for a live run, so J2 takes its section path; a live `ask(tools=...)` is
+                                     refused (D240); offline, J2_AGENT_TOOLS=1 turns J2's general path on with scripted replies, as in J2
+    sandbox_on, inside               J2's own helpers, kept as J2 has them (J2_SANDBOX=1 only; a path strictly inside a folder)
     LAST_META      cleared before each call, then filled from the result (model, provider, tokens, usd, duration_ms,
                    structured); a mock call leaves it empty, as J2's did
     MOCK, PROVIDER, MODEL    what J2 reads; fixed by `configure`. In mock mode PROVIDER and MODEL are None, as in J2
@@ -42,7 +45,7 @@ from .port import (
 )
 
 __all__ = [
-    "ask", "CallTimeout", "can_read_files", "configure", "tagged", "current_tag", "bind_atom", "bound_atom", "env_mock", "step_label", "ScriptedPort",
+    "ask", "CallTimeout", "can_read_files", "tools_on", "can_use_tools", "sandbox_on", "inside", "TOOLS", "configure", "tagged", "current_tag", "bind_atom", "bound_atom", "env_mock", "step_label", "ScriptedPort",
     "EmptyReply", "extract_json", "close_json", "extract_html", "partial_html", "LAST_META", "MOCK", "PROVIDER", "MODEL",
     "MOCK_ENV", "TAG_HOOKS", "PROGRESS_HOOKS",
 ]
@@ -85,6 +88,36 @@ def can_read_files() -> bool:
     """J2 asks whether the agent can read files at a path; here it never can: the agents' file tools are bound to the owner's
     working folder, never to a run folder, so J2's "read the rest at <path>" hint would point at nothing (D170)."""
     return False
+
+
+# Builder tools (J2 sync 7, D240). J2 gives a builder Claude's built-in tools in a folder of the run (`ask(tools=...)`, its
+# "general path") when `llm.tools_on()`; the router and the connectors have no seam for a tools call in a run folder yet, so the
+# engine reports them off for a live run: J2 then builds through its section path, as J2 does with J2_AGENT_TOOLS=0. Offline the
+# switch is J2's own (J2_AGENT_TOOLS=1, mock only). A provider name maps to whether it can run a tools call: none can here.
+TOOLS: dict = {}
+
+
+def tools_on() -> bool:
+    """J2 asks whether builders get tools. Live, never here (D240). Offline (mock) only when J2_AGENT_TOOLS=1, as in J2: the scripted
+    replies stand for the builders' writes, so J2's own flow test can walk the general path without a model or a tool."""
+    return MOCK and os.getenv("J2_AGENT_TOOLS") == "1"
+
+
+def can_use_tools() -> bool:
+    """J2 asks whether the current provider can run a call with tools in a folder; here none can (D240)."""
+    return False
+
+
+def sandbox_on() -> bool:
+    """J2's switch, kept as J2 has it: J2_SANDBOX=1 puts builders' commands, the test rerun and a real run in a sandbox; off by
+    default. With builder tools off (D240) nothing in the engine runs such a command."""
+    return os.getenv("J2_SANDBOX") == "1"
+
+
+def inside(path, root) -> bool:
+    """J2's helper, verbatim in meaning: True when `path` resolves (symlinks followed) to a path strictly inside `root`."""
+    p, r = os.path.realpath(path), os.path.realpath(root)
+    return p != r and p.startswith(r.rstrip(os.sep) + os.sep)
 
 
 class EmptyReply(ModelError):
@@ -208,12 +241,16 @@ def _hooked_progress(tag: CallTag, on_progress: Optional[Callable[[dict], None]]
 
 
 def ask(system, user, mock, max_tokens=1500, effort="high", on_progress=None, json_mode=False, images=None,
-        schema=None, timeout=None, *, tag=None) -> str:
+        schema=None, timeout=None, tools=None, *, tag=None) -> str:
     """One model call. `mock` is J2's scripted reply (a callable); only the stub path calls it. `images` are PNG paths and
     the ones that do not exist are dropped. `schema` is a JSON Schema the reply should follow (advisory: the engine checks
     the reply itself). `timeout` is J2's per-call limit in seconds (D170): it becomes `CompletionRequest.timeout_s`, which the
     router honours and cuts to the envelope's deadline; a `ModelError` with code `timeout` is re-raised as `CallTimeout`.
-    `tag` names the call; default `current_tag()`. Raises a `ModelError` when the port does."""
+    `tag` names the call; default `current_tag()`. Raises a `ModelError` when the port does. `tools` is J2's tools request: only
+    None is accepted live, because builder tools are off here (D240), and J2 sends one only when `tools_on()` is true; mock mode ignores
+    it, as J2 does."""
+    if tools is not None and not MOCK:      # mock mode ignores tools, as J2's own mock does
+        raise RuntimeError("builder tools are off in Sutra's engine (llm.tools_on, D240): a call with tools can't run")
     images = [p for p in images or [] if p and os.path.exists(p)]
     LAST_META.clear()
     port = _active_port()

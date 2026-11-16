@@ -1188,5 +1188,20 @@
   "id": "D238",
   "label": "terminal frame kept; Stop stays; mode remembered",
   "anchor": "band:EXPERIENCE"
+ },
+ {
+  "id": "D239",
+  "label": "J2 pin: main dee83d5c",
+  "anchor": "band:DEPARTMENT RUNTIME"
+ },
+ {
+  "id": "D240",
+  "label": "builder tools off live (section path)",
+  "anchor": "band:DEPARTMENT RUNTIME"
+ },
+ {
+  "id": "D241",
+  "label": "forms are data; folder forms pass",
+  "anchor": "band:DEPARTMENT RUNTIME"
  }
 ]

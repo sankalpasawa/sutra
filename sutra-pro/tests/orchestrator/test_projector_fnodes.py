@@ -322,6 +322,6 @@ def test_replaying_the_golden_run_a_second_time_changes_nothing(tenv):
 def test_the_golden_events_all_parse_strictly():
     from sutra_app.orchestrator.models import parse_event
     events = golden_events()
-    assert len(events) == 155
+    assert len(events) == 158
     for line in GOLDEN.read_text().splitlines():
         parse_event(line, strict=True)

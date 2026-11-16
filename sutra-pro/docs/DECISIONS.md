@@ -1689,3 +1689,24 @@ Decided by Claude on its own, on the dates shown. The owner can veto any of them
 - Why: each was a place where the page told the owner something that had stopped being true, or made a control hard to hit.
 - Rejected: persisting the mode on the server (a per-device convenience, like the draft); hiding the limits note on a phone (it stays in the page and is read aloud).
 - Diagram: label "terminal frame kept; Stop stays; mode remembered", pill on band:EXPERIENCE.
+
+## D239 — The pin moves to J2 main `dee83d5c` (sync 7): Disha's remove-restrictions (#202) and group C (#203)
+- Sources: D176, D198, `prototypes/j2/docs/remove-restrictions-plan.md`, `prototypes/j2/docs/remove-group-c-plan.md`, `docs/design/j2-sync-7.md`.
+- Decided: `scripts/vendor_j2.py` takes `BASELINE = dee83d5c565fe7d82631a4f7eb555543160a6d41` and tree `b9a14370c35a6309062821b549b311d662a8ed3d`; `1adb8ecd` joins `PREVIOUS_BASELINES`. The `artifacts/` folder is vendored as a tree (it gains `real_run.md`); the three plan documents of the two PRs join the reference docs; `fixtures/run-blockers/` is excluded as J2 test data read from the extraction. Re-anchored, intent unchanged: P1 (`j2_artifacts.py` has seven sibling imports), P7 (the agent call passes `tools` on), P8 (the import block), P17 (`create` takes the planner's `form`). No patch was dropped and none was added. The prompt and API goldens are re-recorded from J2 at the pin; the legacy flow test is a three-way merge (base 1adb8ecd, ours the sync 6 copy, theirs dee83d5c) with three conflicts, each resolved to J2's new text plus the engine port's existing edit.
+- Why: the owner asked for the app to run Disha's latest engine; the pin is a fixed commit of J2 main.
+- Rejected: waiting for a tag; vendoring the PR branches (their merge commits are in main).
+- Diagram: label "J2 pin: main dee83d5c", pill on band:DEPARTMENT RUNTIME.
+
+## D240 — Builder tools stay off for a live run of the engine; J2's section path builds, J2's general path is carried inert
+- Sources: D17, D170, J2 `llm.tools_on` and `ask(tools=...)` (remove-restrictions steps 1 and 2), J2's "no sandbox by default" (2026-11-15).
+- Decided: Sutra's `engine/llm.py` gains J2's new surface: `TOOLS` (empty), `tools_on()` (False live; offline only with `J2_AGENT_TOOLS=1`, as J2's mock), `can_use_tools()` (False), `sandbox_on()` and `inside()` (J2's own), and `ask(..., tools=None)` (a live tools call raises; mock ignores tools as J2 does). So a live run takes J2's section path, as J2 does with `J2_AGENT_TOOLS=0`; folder outputs (the `agent` form), the planned real run (`RUN <code>`) and the builders' test rerun are not offered, because `j2_realization.type_list` drops a folder form when tools are off. The sandbox setting is J2's (off by default) and has nothing to confine while tools are off.
+- Why: the router and the connectors have no seam for a tools call inside a run folder, and with J2's sandbox off by default a builder's command could change any file the desktop user can; giving builders tools is a product and safety decision for the owner, not a sync step.
+- Rejected: shelling out to `claude -p` with tools from the engine (a second way to a model beside the connector layer, D17); turning tools on with no sandbox in the desktop app.
+- Diagram: label "builder tools off live (section path)", pill on band:DEPARTMENT RUNTIME.
+
+## D241 — J2's forms are data; a folder form is allowed at registration, a new file form still stops it
+- Sources: D188, J2 7f11f5de (the agent form as data; `j2_types.FORMS` removed), `engine/forms.py`.
+- Decided: `forms.check_forms(j2_types)` reads `j2_types.forms()`: `page` and `document` must be there, and every other form must have `"output": "folder"` (`forms.FOLDER`), which J2 builds only with builder tools on (D240). A third form that makes one file still stops the engine at registration by name. The library's closed models learn J2's new reply and record fields (`item_kinds`, `exact_facts`, `date_rules`/`date_rule_items`, `email_updates`, J2.h question objects, `plan_option`, `about`, `ready_now`; Coordination's schedule has no `next`), and the charter stamp counts the form's `min_done_when` only, as J2's `_stamp_check` does. The capability rows of the Documents group carry J2's new Summary keys (`conditions`, `warnings`, `failed`, `failed_checks`, `retried`, `real_runs`, `template`, `type_label`), read with J2's own helpers.
+- Why: J2 no longer names its forms in code ("J2 does whatever a prompt asks"); the check keeps its purpose (no form quietly treated as a page) without fighting a data-defined form.
+- Rejected: dropping the check (a new file form would render as a page); listing `agent` by name (it is J2's data).
+- Diagram: label "forms are data; folder forms pass", pill on band:DEPARTMENT RUNTIME.

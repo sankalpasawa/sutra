@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Vendor the J2 prototype's engine into `sutra_app/engine/` (work package E1; engine design 3.1 and 3.4, decision D13).
 
-    scripts/py scripts/vendor_j2.py --source /path/to/extraction --commit 1adb8ecd... [--dest .] [--check]
+    scripts/py scripts/vendor_j2.py --source /path/to/extraction --commit dee83d5c... [--dest .] [--check]
 
 Since sync 4 (D136), and in syncs 5 and 6 (D160, D176) again, the source is the folder `prototypes/j2` of this repository at the pinned sutra commit, extracted with
 `git archive <commit> prototypes/j2 | tar -x --strip-components=2 -C <new, empty folder>` (never the working tree).
@@ -15,7 +15,7 @@ What it does, in this order, and nothing else:
      instead of producing a silently different file (P1 is a counted rule over every import line, see `apply_p1`; P15 is a
      data patch: see `scrub_seed_index`);
   3. copies the data files byte for byte: role files, the whole `conditions/` and `templates/` trees (types are data, D161:
-     no type name is listed here), `artifacts/types.json`, the seed template library (but for P15) and the reference docs;
+     no type name is listed here), the `artifacts/` tree (`types.json`, `real_run.md`), the seed template library (but for P15) and the reference docs;
   4. writes `sutra_app/engine/VENDORED.md`: the commit, the sha256 of every J2 file and of its vendored copy, and the patch
      list with the line ranges the patches ended up on.
 
@@ -38,9 +38,9 @@ from pathlib import Path
 from typing import Optional
 
 REPO = Path(__file__).resolve().parent.parent
-BASELINE = "1adb8ecd8fa8eef47fb7a0fc63a1616f556cdfeb"        # main (sync 6, D176): J2 has not tagged it; the tag name is added here when it does
-BASELINE_TREE = "9a7cb34c028248de7d3b436647f8baf39be6f77e"   # `git rev-parse <BASELINE>:prototypes/j2`
-PREVIOUS_BASELINES = ("9200cf6", "33aeeda", "025e265c", "1d537295")       # commits the earlier syncs took the J2 prototype at (025e265c: sync 4, 1d537295: sync 5, tag cut-off/2026-11-12): history only, never a source
+BASELINE = "dee83d5c565fe7d82631a4f7eb555543160a6d41"        # main (sync 7, D239): Disha's #202 and #203 merged; J2 has not tagged it
+BASELINE_TREE = "b9a14370c35a6309062821b549b311d662a8ed3d"   # `git rev-parse <BASELINE>:prototypes/j2`
+PREVIOUS_BASELINES = ("9200cf6", "33aeeda", "025e265c", "1d537295", "1adb8ecd")       # commits the earlier syncs took the J2 prototype at (025e265c: sync 4, 1d537295: sync 5, tag cut-off/2026-11-12, 1adb8ecd: sync 6): history only, never a source
 DESIGNED_AGAINST = "ce2631f"                                  # the design documents' line numbers (`j2.py:n`) are those of this commit: history only
 J2_ENV = "SUTRA_J2_CHECKOUT"
 
@@ -49,12 +49,14 @@ CODE = ("j2.py", "j2_agent.py", "j2_agent_models.py", "j2_agent_views.py", "j2_a
         "j2_send.py", "j2_story.py", "j2_studio.py", "j2_template_lib.py", "j2_types.py")
 ROLE_FILES = ("team.md", "identity.md", "adaptation.md", "priority.md", "coordination.md", "audit.md", "builder.md",
               "confidence-judge.md", "rates.json", "stages.json")          # agents/j2/ without the never-read _placeholders/
-TREES = (("conditions", "sutra_app/engine/conditions", ()),       # (J2 folder, vendored folder, excluded paths below the J2 folder)
+TREES = (("artifacts", "sutra_app/engine/artifacts", ("artifacts/types.local.json",)),      # sync 7: types.json and real_run.md (a run's own types stay out)
+         ("conditions", "sutra_app/engine/conditions", ()),       # (J2 folder, vendored folder, excluded paths below the J2 folder)
          ("templates", "sutra_app/engine/templates", ("templates/README.md",)))      # D161: whole trees, no type is named here
 REF_TOP = ("README.md", "SETUP.md")
 REF_DOCS = ("atom-schema.json", "atom-schema.md", "map-schema.md", "realization-schema.json", "realization-axis.md",
             "j2-handoff.md", "j2-prompts.md", "j2-test-plan.md", "agent-views-j2-proposal.md",
-            "hardcoding-inventory.md", "library-reuse-order.md")
+            "hardcoding-inventory.md", "library-reuse-order.md",
+            "remove-restrictions-plan.md", "remove-group-c-plan.md", "planner-thresholds-proposal.md")      # sync 7: Disha's #202 and #203
 REF_TREES = ("docs/superpowers",)
 MANAGED = ("sutra_app/engine/agents", "sutra_app/engine/conditions", "sutra_app/engine/artifacts",
            "sutra_app/engine/templates", "sutra_app/engine/seed", "docs/reference/j2")      # stale files in these are removed
@@ -76,12 +78,12 @@ class Edit:
 
 
 P1_NOTE = ("sibling imports become package-relative by one counted rule over every code line (not comment) of every code module "
-           "(42 lines, `P1_COUNTS`): `import j2_x[ as Y]` and `import llm` -> `from . import ...` (indentation kept), `from j2_x import y` "
+           "(44 lines, `P1_COUNTS`): `import j2_x[ as Y]` and `import llm` -> `from . import ...` (indentation kept), `from j2_x import y` "
            "-> `from .j2_x import y`; `j2_agent_views.py` also loses its `sys.path` insert (an anchor edit)")
 
 # P1 (D162): the rule's expected number of changed lines per code module (a module not named here must have none). A J2 change
 # that adds or removes a sibling import changes a count and stops the run, like a missing anchor.
-P1_COUNTS = {"j2.py": 15, "j2_agent_views.py": 4, "j2_artifact_lib.py": 1, "j2_artifact_models.py": 2, "j2_artifacts.py": 5, "j2_change.py": 2,
+P1_COUNTS = {"j2.py": 15, "j2_agent_views.py": 4, "j2_artifact_lib.py": 1, "j2_artifact_models.py": 2, "j2_artifacts.py": 7, "j2_change.py": 2,
              "j2_map.py": 2, "j2_realization.py": 2, "j2_rules.py": 1, "j2_story.py": 2, "j2_template_lib.py": 4, "j2_types.py": 2}
 _P1_IMPORT = re.compile(r"^([ \t]*)import (j2_[a-z0-9_]+|llm)((?:[ \t]+as[ \t]+\w+)?)(?=[ \t]*(?:#.*)?$)", re.M)
 _P1_FROM = re.compile(r"^([ \t]*)from (j2_[a-z0-9_]+) import ", re.M)
@@ -106,9 +108,13 @@ def p1_lines(text: str):
 J2_EDITS = (
     # ---- imports (P1) and what the other patches import
     Edit("P8", "j2.py", r'''import shutil
+import subprocess
+import tempfile
 import threading
 ''', r'''import shutil
+import subprocess
 import sys
+import tempfile
 import threading
 '''),
     # P1's rule (apply_p1) has already made the sibling imports package-relative when these edits run
@@ -473,11 +479,11 @@ def saved_snapshot_dir(d, name, since=0):
         self.thinking = fn
 '''),
     Edit("P7", "j2.py", r'''                    raw = llm.ask(system, user, mock, max_tokens=max_tokens, effort="low" if json_reply else "high",
-                                  json_mode=json_reply, images=images, schema=schema, timeout=timeout)
+                                  json_mode=json_reply, images=images, schema=schema, timeout=timeout, tools=tools)
                     break
 ''', r'''                    raw = _ask(self._ask_tag(fn, "agent_turn", self.calls, self.atom or None), system, user, mock,
                                max_tokens=max_tokens, effort="low" if json_reply else "high", json_mode=json_reply,
-                               images=images, schema=schema, timeout=timeout)
+                               images=images, schema=schema, timeout=timeout, tools=tools)
                     break
 '''),
     Edit("P7", "j2.py", r'''        self.summary = llm.ask(
@@ -826,8 +832,8 @@ def register(entry, extras=None):
         f.write('{\\n  "types": [\\n' + ",\\n".join("    " + json.dumps(t, ensure_ascii=False) for t in types) + "\\n  ]\\n}\\n")
     oslayer.replace(tmp, LOCAL_TYPES_PATH)
 '''),
-    Edit("P17", "j2_types.py", '''def create(name, label, secs, file=None, path=None, practice=None):
-    """Save a new document type, locally:''', '''def create(name, label, secs, file=None, path=None, practice=None):
+    Edit("P17", "j2_types.py", '''def create(name, label, secs, file=None, path=None, practice=None, form=None):
+    """Save a new document type, locally:''', '''def create(name, label, secs, file=None, path=None, practice=None, form=None):
     """P17: `_create` inside an exclusive lock on <store>/.lock (oslayer.try_lock, as P10): the whole read-modify-write is one
     step across runs and processes. Waits TYPES_LOCK_WAIT_S; a busy lock is a ValueError, which J2 already turns into the
     event new_type_refused."""
@@ -842,14 +848,14 @@ def register(entry, extras=None):
                                  f"(waited {TYPES_LOCK_WAIT_S:g} s)") from None
             time.sleep(0.05)
         try:
-            return _create(name, label, secs, file, path, practice)
+            return _create(name, label, secs, file, path, practice, form)
         finally:
             oslayer.unlock(fd)
     finally:
         os.close(fd)
 
 
-def _create(name, label, secs, file=None, path=None, practice=None):
+def _create(name, label, secs, file=None, path=None, practice=None, form=None):
     """Save a new document type, locally:'''),
 )
 
@@ -995,8 +1001,6 @@ def build(src: Source):
     for name in ROLE_FILES:
         data = src.read(f"agents/j2/{name}")
         add(f"sutra_app/engine/agents/j2/{name}", f"agents/j2/{name}", data, data)
-    data = src.read("artifacts/types.json")
-    add("sutra_app/engine/artifacts/types.json", "artifacts/types.json", data, data)
     for folder, vendored, excluded in TREES:      # D161: types are data; every file of the tree, no name listed
         for rel in src.tree(folder):
             if rel not in excluded:
@@ -1041,10 +1045,10 @@ def render_vendored_md(commit: str, rows, ranges) -> str:
         "# Vendored J2 engine",
         "",
         f"Source: the J2 prototype as it is kept in this repository's own copy `prototypes/j2`, at the sutra commit `{commit}`{tree}, "
-        f"extracted with `git archive {commit} prototypes/j2 | tar -x --strip-components=2 -C <empty folder>` (sync 6, D176). That "
+        f"extracted with `git archive {commit} prototypes/j2 | tar -x --strip-components=2 -C <empty folder>` (sync 7, D239). That "
         "extraction, given to the script with `--source` and `--commit`, is the only source of every file below, never the working tree. "
         f"History, not a source: the earlier syncs took the J2 prototype at the commits `{PREVIOUS_BASELINES[0]}` and "
-        f"`{PREVIOUS_BASELINES[1]}` and `{PREVIOUS_BASELINES[2]}` (sync 4) and `{PREVIOUS_BASELINES[3]}` (sync 5, the tag `cut-off/2026-11-12`); the design documents cite the line numbers (`j2.py:n`) of `{DESIGNED_AGAINST}`, and everything "
+        f"`{PREVIOUS_BASELINES[1]}` and `{PREVIOUS_BASELINES[2]}` (sync 4) and `{PREVIOUS_BASELINES[3]}` (sync 5, the tag `cut-off/2026-11-12`) and `{PREVIOUS_BASELINES[4]}` (sync 6); the design documents cite the line numbers (`j2.py:n`) of `{DESIGNED_AGAINST}`, and everything "
         "after `j2.py:8313` has moved. Patches are located by anchor text, never by line.",
         "",
         "Copied into `sutra_app/engine/` with the same module names; every change to a J2 file is one of the numbered patches "
@@ -1057,6 +1061,11 @@ def render_vendored_md(commit: str, rows, ranges) -> str:
         "seven commits labelled \"needs owner review\" (run templates, auto-reuse) are carried inert behind `J2_RUN_TEMPLATES` and "
         "`J2_AUTO_REUSE`; P1 (15 lines in `j2.py`, one in the new `j2_artifact_lib.py`, 41 in all), P7, P8 and P9 were re-anchored, "
         "P10 covers two more writers of the library index, P19 is new (the reviewer switch). "
+        "Sync 7 (D239 to D241): the pin moved to J2 main `dee83d5c` (Disha's remove-restrictions #202 and group C #203: builders "
+        "with tools on a general path, a planned real run, the sandbox off by default); the `artifacts/` folder is vendored as a "
+        "tree (it gains `real_run.md`); P1 (seven lines in `j2_artifacts.py`), P7 (the call passes `tools` on), P8 (the import "
+        "block) and P17 (`create` takes the form) were re-anchored; no patch was dropped. Sutra's `llm` shim reports builder tools "
+        "off (D240), so the vendored engine takes J2's section path. "
         "This file is written by `scripts/vendor_j2.py`; `scripts/py scripts/vendor_j2.py --source <the extraction> --commit "
         f"{commit} --check` re-derives every file below from the J2 source and fails on any difference.",
         "",

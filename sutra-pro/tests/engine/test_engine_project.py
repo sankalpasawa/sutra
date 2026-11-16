@@ -189,10 +189,13 @@ def test_named_documents_in_the_brief_do_not_flip_a_project_run_into_a_prd_chain
     assert summary["output_type"] == "project" and "design_documents" not in summary
 
 
-def test_the_third_section_avoids_the_words_j2s_validator_refuses_in_a_done_when_item(j2):
-    """The design says Verification; J2's `NOT_CHECKABLE` refuses that word in a done-when item (see PROJECT_SECTIONS), so the section is Confirmation."""
-    for section in PROJECT_SECTIONS:
-        assert not j2.J2Run.NOT_CHECKABLE.search(f"The {section} section is written")
+def test_the_third_section_avoids_the_words_j2s_validator_refused_in_a_done_when_item(j2):
+    """The design says Verification; J2's `NOT_CHECKABLE` refused that word in a done-when item until sync 7 (group C: J2 reads no word of
+    an item, D241), so the section is still Confirmation and every section's item passes the charter stamp."""
+    from sutra_app.engine.fnodes.registry import stamp_check
+    assert not hasattr(j2.J2Run, "NOT_CHECKABLE")
+    goal = {"statement": "s", "done_when": [f"The {section} section is written" for section in PROJECT_SECTIONS]}
+    assert stamp_check(goal)[0]
     assert "Verification" not in PROJECT_SECTIONS
 
 

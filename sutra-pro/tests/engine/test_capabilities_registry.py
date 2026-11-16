@@ -38,7 +38,10 @@ class Adds(Capability):
 class FakeTypes:
     """`j2_types` as patch P18 gives it: `names()`, `HOST` and `register(entry, extras)`, with J2's refusals as `ValueError`."""
 
-    FORMS = ("page", "document")       # J2's list of forms: `register` checks it (engine/forms.py, D188)
+    FORMS = {"page": {"output": "file"}, "document": {"output": "file"}, "agent": {"output": "folder"}}   # J2's forms, data since sync 7: `register` checks them (engine/forms.py, D188, D241)
+
+    def forms(self):
+        return dict(self.FORMS)
 
     def __init__(self, *own):
         self.own, self.HOST = list(own), {}
@@ -423,7 +426,7 @@ def test_the_module_imports_no_j2_module_so_importing_it_reads_no_environment():
 # ---- the forms (engine/forms.py, D188) ---------------------------------------------------------------------------------------------------
 def test_register_stops_by_name_when_j2_has_another_list_of_forms():
     j2 = FakeJ2()
-    j2.j2_types.FORMS = ("page", "document", "script")
+    j2.j2_types.FORMS = {"page": {}, "document": {}, "script": {"output": "file"}}       # a third file form (a folder form is allowed)
     with pytest.raises(RuntimeError, match="forms"):
         register(j2, [Adds("a", {"thing": spec()})])
     assert not j2.j2_types.HOST and "thing" not in SPECS, "nothing was registered"
@@ -436,4 +439,6 @@ def test_the_two_form_words_and_what_is_a_document():
     assert forms.is_page({"form": "page"}) and not forms.is_page({})
     forms.check_forms(FakeTypes())
     with pytest.raises(RuntimeError):
-        forms.check_forms(type("T", (), {"FORMS": ("page",)}))
+        forms.check_forms(type("T", (), {"forms": staticmethod(lambda: {"page": {}})}))
+    with pytest.raises(RuntimeError, match="new file form"):
+        forms.check_forms(type("T", (), {"forms": staticmethod(lambda: {"page": {}, "document": {}, "sheet": {"output": "file"}})}))

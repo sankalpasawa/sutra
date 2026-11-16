@@ -257,7 +257,7 @@ def test_a_type_the_data_gains_is_a_choice_with_no_code_change(api, tmp_path, mo
     monkeypatch.setattr(j2.j2_types, "LOCAL_TYPES_PATH", str(store / "types.local.json"))
     monkeypatch.setattr(j2.j2_types, "LOCAL_LIBRARY_DIR", str(store / "templates"))
     j2.j2_types.template.cache_clear()
-    j2.j2_types.create("field_guide", "Field guide", ["Birds", "Trees"])
+    j2.j2_types.create("field_guide", "Field guide", ["Birds", "Trees"], form="document")
     rows = {r["name"]: r for r in api.client.get(URL).json()["output_types"]}
     assert rows["field_guide"] == {"name": "field_guide", "label": "Field guide", "form": "document", "pin": True}
     assert put(api, {"set": {"output": "field_guide"}}, "web").status_code == 200

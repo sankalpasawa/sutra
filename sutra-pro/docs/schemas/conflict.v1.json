@@ -135,6 +135,19 @@
           "title": "Options",
           "type": "array"
         },
+        "plan_option": {
+          "anyOf": [
+            {
+              "minimum": 1,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Plan Option"
+        },
         "question": {
           "maxLength": 400,
           "minLength": 1,
