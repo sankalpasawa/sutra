@@ -263,9 +263,9 @@ body.home .railhead { font-family: var(--s-body); }
 .orglead { margin: 0 0 20px; color: var(--s-muted); font-size: 15px; }
 .orgteams { display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 14px; }
 .orgnone { margin: 0; color: var(--s-muted); }
-.orgcard { display: flex; flex-direction: column; gap: 8px; padding: 16px 18px; border-radius: 14px; background: var(--s-surface); border: 1px solid var(--s-line);
-  color: var(--s-ink); text-decoration: none; box-shadow: 0 1px 2px var(--s-ring); }
-.orgcard:hover { border-color: var(--s-accent); }
+.orgcard { display: flex; flex-direction: column; gap: 8px; padding: 16px; border-radius: 12px; background: var(--s-surface); border: 1px solid var(--s-line);
+  color: var(--s-ink); text-decoration: none; box-shadow: 0 1px 3px var(--s-ring); transition: border-color var(--dur-fast) var(--ease-out); }
+.orgcard:hover { border-color: var(--s-accent); box-shadow: 0 4px 14px var(--s-ring); }
 .orgcard:focus-visible { outline: 2px solid var(--s-accent); outline-offset: 2px; }
 .orgcardhead { display: flex; align-items: baseline; justify-content: space-between; gap: 10px; }
 .orgname { font: 600 17px/1.3 var(--s-display); min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
@@ -279,8 +279,9 @@ body.home .railhead { font-family: var(--s-body); }
 .orgagents { display: flex; flex-direction: column; gap: 4px; padding-top: 8px; border-top: 1px solid var(--s-line); }
 .orgagent { display: flex; align-items: center; gap: 8px; font-size: 13.5px; }
 .orgagent small { margin-left: auto; color: var(--s-muted); font-size: 12.5px; white-space: nowrap; }
-.orgopen { color: var(--s-accent); font-weight: 600; font-size: 14px; }
-.orgtabs { display: flex; gap: 20px; margin: 28px 0 0; border-bottom: 1px solid var(--s-line); }
+.orgtabs { display: flex; gap: 24px; margin: 32px 0 0; border-bottom: 1px solid var(--s-line); }
+/* under the Org chart / How work flows tabs, the pane's own title would say the tab's name again: the tab is the title */
+:root[data-ws=org] body.home .sright .wgpane .maphead > h3 { display: none; }
 .orgtabs button { border: 0; background: none; padding: 8px 0; margin-bottom: -1px; border-bottom: 2px solid transparent; color: var(--s-muted); font: 600 15px/1.2 var(--s-body); cursor: pointer; }
 .orgtabs button[aria-selected=true] { color: var(--s-ink); border-bottom-color: var(--s-accent); }
 .orgtabs button:focus-visible { outline: 2px solid var(--s-accent); outline-offset: 2px; }
@@ -289,3 +290,11 @@ body.home .railhead { font-family: var(--s-body); }
 /* Settings & logs: "Raw AI chat" is a button, drawn like the "Usage and log" link above it */
 body.home #rail button.railteam { display: flex; flex-direction: column; align-items: flex-start; color: var(--s-ink); cursor: pointer; background: none; }
 body.home #rail button.railteam:hover { background: var(--s-surface2); }
+
+/* ---- the graph panes' head on Home (Agent Org and the back room): quiet filled chips, not outlined pills; "live" in the body face, as a dot and a word */
+body.home .wgpane .maphead { gap: 8px; }
+body.home .wgpane .maphead .mappill { border: 0; border-radius: 8px; padding: 3px 10px; background: var(--s-surface); color: var(--s-muted); font: 500 13px/1.4 var(--s-body); }
+body.home .wgpane .maphead .mappill.waiting_on_you, body.home .wgpane .maphead .mappill.running { background: var(--s-askbg); color: var(--s-askink); font-weight: 600; }
+body.home .wgpane .wlive { border: 0; padding: 3px 4px; font: 500 13px/1.4 var(--s-body); color: var(--s-muted); }
+body.home .wgpane .wlive[data-state="live"] { color: var(--s-goodink); }
+body.home .wgpane .wlive[data-state="polling"] { color: var(--s-askink); }

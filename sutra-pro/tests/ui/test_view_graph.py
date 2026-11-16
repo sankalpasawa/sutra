@@ -567,7 +567,7 @@ def test_tab_visits_the_nodes_depth_first_and_each_is_a_button_with_a_spoken_lab
     assert visited == ids[:4]
     assert page.js("Array.from(document.querySelectorAll('g.wnode')).every(e => e.getAttribute('role') === 'button' && e.getAttribute('tabindex') === '0')") is True
     labels = page.js("Object.fromEntries(Array.from(document.querySelectorAll('g.wnode')).map(e => [e.dataset.id, e.getAttribute('aria-label')]))")
-    assert labels["web.identity"] == "Identity, Client Lead, waiting on you. Open chat." and labels["root"] == "Root, waiting on you. Go to the org chat."
+    assert labels["web.identity"] == "Identity, Client Lead, waiting on you. Open chat." and labels["root"] == "Your org, waiting on you. Go to the org chat."
 
 
 # ---------------------------------------------------------------------------------------------------------------------
@@ -722,14 +722,14 @@ def test_an_event_makes_the_page_refetch_once_and_the_pane_redraws_what_changed(
     page.b.wait_for("document.querySelector(\"g.wnode[data-id='web.adaptation']\").classList.contains('st-running')")
     assert page.requests("/api/graph") == ["level=full", "level=full"]
     assert page.classes("web.identity") >= {"st-idle"} and page.count("path.wedge") == 9         # the handoff and speaks_to links appeared
-    assert page.js("document.querySelector('.wsr').textContent") == "Root is running now (and 4 more)"      # five boxes changed their status
+    assert page.js("document.querySelector('.wsr').textContent") == "Your org is running now (and 4 more)"      # five boxes changed their status
     page.js("window.drawn = document.querySelector('svg.wgsvg')")
     page.js("Promise.all(Array.from({length: 4}, () => fetch('/__fake/emit', {method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({event: 'graph.updated'})})))")
     page.b.wait_for("window.events.filter(e => e === 'graph.updated').length >= 5")
     time.sleep(0.4)
     assert len(page.requests("/api/graph")) == 3                                                   # four events in a burst: one refetch (the mount page coalesces)
     assert page.js("document.querySelector('svg.wgsvg') === window.drawn") is True                  # the same graph again: the picture is not rebuilt
-    assert page.js("document.querySelector('.wsr').textContent") == "Root is running now (and 4 more)"
+    assert page.js("document.querySelector('.wsr').textContent") == "Your org is running now (and 4 more)"
 
 
 @browser_only
@@ -1227,7 +1227,7 @@ def test_a_clicked_box_opens_a_card_with_its_name_purpose_and_what_it_can_do(pag
     page.b.press("Escape")
     assert page.js(card)["hidden"] is True
     page.b.click("g.wnode[data-id='root']")
-    assert page.js(card)["name"] == "Root" and page.js(card)["purpose"] is None and page.js(card)["acts"] == ["Open chat"]
+    assert page.js(card)["name"] == "Your org" and page.js(card)["purpose"] is None and page.js(card)["acts"] == ["Open chat"]
     page.js("""(async () => {
         const host = window.spare('other');
         window.other = OrgChartView.create(host, {onShow: n => window.log.push(['show', n.id]), onOpen: n => window.log.push(['open', n.id])});
@@ -1279,7 +1279,7 @@ def test_an_empty_chart_is_the_root_and_a_sentence(page):
     page.fake.emit("chart.changed")
     page.b.wait_for("document.querySelectorAll('g.wnode').length === 2")
     assert page.js("document.querySelector('.wempty').hidden") is True
-    assert page.js("document.querySelector('.wsr').textContent") == "Web was added under Root"
+    assert page.js("document.querySelector('.wsr').textContent") == "Web was added under Your org"
 
 
 @browser_only

@@ -6,7 +6,7 @@
    graph); this file feeds it ChartMarks.toGraph(chart) and the marks of the selected change, writes the change log under it
    (ChartMarks.logHtml) and shows a small card for a clicked node.
 
-     OrgChartView.create(host, {onOpen(node), onShow(node), dept}) -> handle
+     OrgChartView.create(host, {onOpen(node), onShow(node), dept, quietMarks}) -> handle   (quietMarks: mark a change only once the owner picks one)
        onOpen  the card's Open chat: the host opens the node's chat panel (the id is the graph node's id: a chart node keeps its id, D44).
        onShow  the card's Show in graph: the host switches to the Workflow graph and selects the node. Without it there is no such button.
        dept    the team being viewed (default SutraCtx.dept): its box gets a ring.
@@ -129,7 +129,8 @@
     }
 
     function draw() {
-      state.marks = CM.marks(state.changes, pickedSeq());
+      // quietMarks (Agent Org): no "added" or "moved" tag until the owner picks a change; the newest change is not news on a page about the teams
+      state.marks = o.quietMarks === true && state.selectedSeq === null ? {} : CM.marks(state.changes, pickedSeq());
       const ok = gv.update(state.graph, {marks: state.marks, ring: dept});
       paintLog();
       paintCard();
@@ -192,6 +193,8 @@
       let graph;
       try {
         graph = CM.toGraph(chart);
+        const L = optional("GraphLayout", "./graph_layout.js");      // the top of the chart reads "Your org", by GraphLayout's one rule
+        if (L && typeof L.rootLabel === "function") graph.nodes.forEach(n => { n.label = L.rootLabel(n.kind, n.label); });
       } catch (e) {
         gv.fail(e);                                    // the last good chart stays on the page, with the banner
         return false;
@@ -306,7 +309,7 @@
         (fns.length ? '<span class="orgagents">' + fns.map(f => {
           const [m, w] = hasOwn(STATE, f.status) ? STATE[f.status] : STATE.idle;
           return '<span class="orgagent"><i class="oc-dot oc-' + m + '" aria-hidden="true"></i>' + esc(AGENTS[f.fn]) + '<small>' + esc(w) + "</small></span>";
-        }).join("") + "</span>" : "") + '<span class="orgopen">Open agent view &rarr;</span></a>';
+        }).join("") + "</span>" : "") + "</a>";
     }).join("");
   }
 
