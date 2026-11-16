@@ -543,22 +543,22 @@ button:not(:disabled):not(.cjump-btn):active,.lbtn:active,.fnchip:active{transfo
 
 /* ---- the Raw AI chat debugger (raw_chat.js): a dialog over the team page, full screen at /d/{team}/raw. The studio tokens (--s-*) and J2's --line and --edge, which
    j2.css sets for the light and the dark theme. The way in is "Raw AI chat" under Settings & logs. */
-.rc{position:fixed;inset:24px;z-index:70;display:flex;flex-direction:column;min-height:0;background:var(--s-bg);color:var(--s-ink);border:1px solid var(--line);border-radius:14px;box-shadow:0 20px 60px var(--s-shadow);font:14px/1.45 var(--body);overflow:hidden}
+.rc{position:fixed;inset:24px;z-index:70;display:flex;flex-direction:column;min-height:0;background:var(--s-bg);color:var(--s-ink);border:1px solid var(--line);border-radius:14px;box-shadow:0 20px 60px var(--s-shadow);font:14px/1.45 "Figtree",system-ui,-apple-system,"Segoe UI",sans-serif;overflow:hidden}
 .rc[hidden]{display:none}
 .rc:not(.rc-full){box-shadow:0 0 0 100vmax var(--s-scrim),0 20px 60px var(--s-shadow)}
 .rc.rc-full{inset:0;border:0;border-radius:0}
 .rc :focus-visible{outline:2px solid var(--s-accent);outline-offset:2px}
 .rc button,.rc select,.rc input{font:inherit;color:inherit}
 .rc-bar{display:flex;align-items:center;gap:10px;flex-wrap:wrap;padding:12px 16px;border-bottom:1px solid var(--line);background:var(--s-surface)}
-.rc-bar h2{margin:0;font:600 17px/1.2 var(--display)}
+.rc-bar h2{margin:0;font:700 18px/1.2 "Bricolage Grotesque",system-ui,sans-serif}
 .rc-sub{color:var(--s-muted);font-size:13px}
 .rc-field{display:flex;min-width:0}
-.rc-field select,.rc-field input{background:var(--s-bg);border:1px solid var(--edge);border-radius:8px;padding:6px 9px;max-width:260px;min-width:0}
+.rc-field select,.rc-field input{background:var(--s-surface);border:1px solid var(--edge);border-radius:9px;padding:7px 10px;max-width:260px;min-width:0}
 .rc-search{flex:1 1 200px}
 .rc-search input{width:100%;max-width:none}
 .rc-vh{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap}
-.rc-close,.rc-back,.rc-more,.rc-copy{background:transparent;border:1px solid var(--edge);border-radius:8px;padding:5px 11px;cursor:pointer}
-.rc-close:hover,.rc-back:hover,.rc-more:hover,.rc-copy:hover{border-color:var(--s-accent)}
+.rc-close,.rc-back,.rc-more,.rc-copy{background:var(--s-surface);border:1px solid var(--edge);border-radius:9px;padding:7px 12px;font-weight:600;cursor:pointer}
+.rc-close:hover,.rc-back:hover,.rc-more:hover,.rc-copy:hover{background:var(--s-surface2);border-color:var(--s-accent)}
 .rc-livetag{display:inline-block;border-radius:999px;padding:1px 8px;font-size:11px;font-weight:700;letter-spacing:.04em;text-transform:uppercase;background:var(--s-goodbg);color:var(--s-good)}
 .rc-livetag[hidden]{display:none}
 .rc-body{flex:1;display:grid;grid-template-columns:minmax(260px,340px) 1fr;min-height:0}
