@@ -29,7 +29,7 @@ const GOLDEN_KEYS = ["simple", "sprog", "workflows", "rail", "needs", "map", "ag
   "railst", "planmap", "msgfns", "feed", "teamwork", "plan", "team", "status", "views", "files", "parts", "tabs", "inline"];
 // What J2's harness prints, in J2's order (the command line and the JSON output do not change).
 const J2_KEYS = ["simple", "sprog", "finish", "journey", "journeyhtml", "sframe", "teamwork", "plan", "team", "status", "views", "files", "parts",
-  "tabs", "inline", "needids", "cards", "workflows", "charter", "docs", "artifacts", "map", "board", "story", "needs", "needcount", "branches",
+  "tabs", "inline", "needids", "cards", "workflows", "charter", "artifacts", "map", "board", "story", "needs", "needcount", "branches",
   "pages", "given", "tree", "focusall", "rail", "railst", "prio", "priorities", "planmap", "msgfns", "feed", "agent"];
 const BOOT = {page: "dept", token: "t".repeat(24), dept: "web", dept_label: "Web", archived: false, note: "", version: "0.1.0"};
 const RUN = "j2-20261104-100004-7f3a";

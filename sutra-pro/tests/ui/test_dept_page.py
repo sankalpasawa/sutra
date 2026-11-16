@@ -1180,7 +1180,8 @@ def test_the_rails_artifacts_flyout_lists_the_groups_of_the_run_and_a_click_open
     team.b.click('#rail [data-ri="artifacts"]')
     team.b.wait_for("!document.getElementById('rfly').hidden")
     shown = team.js("Array.from(document.querySelectorAll('#rfl [data-artgo]'), e => [e.dataset.artgo, e.firstChild.textContent])")
-    assert [g[0] for g in shown] == [g["id"] for g in groups] and all(g[1] for g in shown)      # the studio pin words a label for the output (Website -> Page)
+    # the studio pin words a label for the output (Website -> Page); since J2 dee83d5c an empty group is not listed
+    assert [g[0] for g in shown] == [g["id"] for g in groups if g.get("rows")] and all(g[1] for g in shown)
     team.b.click('#rfl [data-artgo="records"]')
     team.b.wait_for("!document.getElementById('pane-artifacts').hidden")
     assert team.js("document.querySelector('.tabs [data-tab=artifacts]').getAttribute('aria-selected')") == "true" and team.hidden("#rfly") is True

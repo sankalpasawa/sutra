@@ -221,12 +221,12 @@
       "sha256": "1c386488f6e483c9f1d95d751b804e357e8449a678edc5e4f2df130dd00f2797"
     },
     "golden-rail.json": {
-      "bytes": 2562,
-      "sha256": "27e2f95b557ba45a26c3e19a310d2e3e69ed2bd61b47691ad4ab3366c6facff8"
+      "bytes": 2489,
+      "sha256": "b529284c828526d6ae9ccfaf5ffac1f98c09f2ab743583008085cea7dbfdae6f"
     },
     "golden-railst.json": {
-      "bytes": 827,
-      "sha256": "ba0cd9d6530abbfd3fd2aa8c3ef35ac81436f33aada90e1e81d9a9c0d70e3975"
+      "bytes": 820,
+      "sha256": "ea255903bf91081a4a30f10dd93272afc857ac7eb3b7654d09ba980ad4e14169"
     },
     "golden-sframe.json": {
       "bytes": 14,
@@ -325,8 +325,8 @@
       "sha256": "dbc32777c7f6dae800096ee0f6f41a81301145d7142047b208e0a6e3410df1df"
     },
     "render-docs.json": {
-      "bytes": 150948,
-      "sha256": "d8549817fc85b51e035aadd0909ca234129cd3c07f0bbdfc256916f21e3c536e"
+      "bytes": 150941,
+      "sha256": "7c244b877161d9b5501fc211a93270ff0814aeb8f2234ac4b06e6a3537ab889d"
     },
     "run-templates.json": {
       "bytes": 17,
