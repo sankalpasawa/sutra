@@ -15674,8 +15674,9 @@ def auto_reuse():
     (b) a pilates brief with no template chosen picks the yoga run template (match 0.6 or more), says so, records the pick and
     every score, and creates no template: every workflow comes from the template; (c) a template with a stage the brief did not
     name builds that stage too; (d) a law-firm brief with only a PRD finds no similar run template, says so with the best
-    score, and its PRD sections are adapted from the nearest templates, not created: no fact and no name of the earlier
-    businesses reaches the new versions or an agent's prompt; (e) with no template for a section in the library, one is
+    score, and no studio's section template is similar enough to adapt (business_similarity below the settings'
+    adapt_min_similarity): its PRD sections get the firm's own template family, created, and no fact and no name of the
+    earlier businesses reaches the new templates or an agent's prompt; (e) with no template for a section in the library, one is
     created and the reason says so; (f) flag off: no pick, no nearest template, nothing recorded (and plain_unchanged);
     (g) the Library tab says "Auto-picked run template <name> (match 0.xx)" or "Built from scratch", and each adapted row
     names its source (--browser)."""
@@ -15829,7 +15830,7 @@ def auto_reuse():
         assert rec2["auto_reuse"]["asked_stages"] == ["prd", "hld"] and 0.5 <= rec2["auto_reuse"]["match"] < 0.6 and rec2["auto_reuse"]["picked"] == yoga.id, rec2["auto_reuse"]["match"]
         assert r2.outcome.startswith("Done") and r2.stages == ["prd", "hld", "lld"] and {d["artifact"] for d in rec2["decisions"]} == {"prd", "hld", "lld"}, (r2.outcome, r2.stages)
         assert not rec2["run_template"].get("added_stages")
-        # (d) a law firm, a PRD only: no similar run template; its sections are adapted from the nearest templates
+        # (d) a law firm, a PRD only: no similar run template, and no studio's template is similar enough to adapt: its own family
         before3 = {e["name"] for e in L.index()["templates"]}      # with the families the runs above made
         r3, rec3 = run_of(LAW_PRD, 400)
         a3 = rec3["auto_reuse"]
@@ -15838,23 +15839,28 @@ def auto_reuse():
         assert [m_["text"] for m_ in r3.chat if "similar run template" in m_["text"]] == [f"No similar run template (best {best['name']} {best['score']:.2f})."], best
         ds3 = rec3["decisions"]
         assert len(ds3) == 6 and {d["artifact"] for d in ds3} == {"prd"} and not any("from_template" in d for d in ds3), [(d["artifact"], d["action"]) for d in ds3]
+        least3 = L.routing("adapt_min_similarity")
         for d in ds3:
-            assert d["action"] == "extended" and d["rule"] == "s" and d["adapted_from"] == f"{d['nearest']['name']}@{d['nearest']['version']}", d
-            assert d["adapted_from"].rpartition("@")[0] in before3 and d["template"].startswith("Hale Legal ") and d["template"] not in before3 and d["version"] == 1 and d["new_family"], d
-            assert d["reason"].startswith(f"adapted from {d['adapted_from']}: the nearest {d['section']} template by fields"), d["reason"]
+            assert d["action"] == "created" and d["rule"] == "d" and "adapted_from" not in d and "nearest" not in d and d["fresh_start"] is True, d
+            assert d["template"].startswith("Hale Legal ") and d["template"] not in before3 and d["version"] == 1, d
+            turned = d["not_similar"]["templates"]
+            assert d["not_similar"]["least"] == least3 and turned and all(x["business_similarity"] < least3 and x["name"] in before3 for x in turned), d["not_similar"]
+            assert d["reason"].startswith(f"no {d['section']} template of a similar enough business ({turned[0]['name']}@{turned[0]['version']}: business similarity "), d["reason"]
             spec = json.load(open(os.path.join(r3.dir, d["saved"], "spec.json"), encoding="utf-8"))
             body = json.dumps({k: spec[k] for k in ("description", "fields", "objects", "rules", "context")}).lower()
             gone = [f for f in old_facts if f not in d_facts(r3) and len(f) > 12 and f.lower() in body]
-            assert not gone and spec["made_by"]["agent"] == "code (adapted from the nearest template)", (d["workflow"], gone)
-        assert not os.path.isfile(os.path.join(r3.dir, "template_calls.jsonl")), "adapting is code: the generator is not called"
+            assert not gone and spec["made_by"]["agent"].startswith("template generator"), (d["workflow"], gone, spec["made_by"])
+        with open(os.path.join(r3.dir, "template_calls.jsonl"), encoding="utf-8") as f:
+            gen_calls = [json.loads(ln) for ln in f if ln.strip()]
+        assert len(gen_calls) == 6 and all(str(least3) in c["prompt"] and "another business" in c["prompt"] for c in gen_calls), "a new family is the generator's: one call a section, told the least similarity"
         said = [m_["text"] for m_ in r3.chat if " template: " in m_["text"]]
-        assert len(said) == 6 and all("; adapted from " in t for t in said) and all(m_.get("humans_only") for m_ in r3.chat if " template: " in m_["text"]), said
+        assert len(said) == 6 and all(" template: created Hale Legal " in t and "adapted from" not in t for t in said) and all(m_.get("humans_only") for m_ in r3.chat if " template: " in m_["text"]), said
         names3 = {d["template"] for d in ds3} | {"Still Point Yoga", "Iron Grove", "Rhythm Room"}
         leaked = sorted({n for c in calls_file(r3) for n in names3 if n.lower() in (c["system"] + c["prompt"]).lower()})
         assert not leaked, ("an adapted template's name reaches no agent", leaked)
         use3 = L.run_template_use(r3.dir)
-        assert use3["scratch"] is True and use3["best"]["name"] == best["name"] and use3["counts"][DOCS] == {"created": 0, "adapted": 6, "reused": 0, "generic": 0, "total": 6, "from_template": None}, use3
-        r3b, rec3b = run_of(LAW_PRD, 400)      # the same brief again: the adapted versions are there
+        assert use3["scratch"] is True and use3["best"]["name"] == best["name"] and use3["counts"][DOCS] == {"created": 6, "adapted": 0, "reused": 0, "generic": 0, "total": 6, "from_template": None}, use3
+        r3b, rec3b = run_of(LAW_PRD, 400)      # the same brief again: the firm's own templates are there
         assert all(d["action"] == "reused" for d in rec3b["decisions"]), [(d["action"], d["rule"]) for d in rec3b["decisions"]]
         # (e) no template for the section: one is created, and the reason says why
         bare = os.path.join(tmp, "bare")

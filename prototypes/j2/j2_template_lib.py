@@ -1549,7 +1549,7 @@ def route(need, ctx, ask=None, first=None, closest=None):
     section template as it is although the fingerprint differs (rule "j", same_job in the decision).
     ctx["similar"] (a dict the run keeps, optional): the best similarity found so far for each other business in this
     run; every later need of the run counts it, and a need with too few facts to compare (similarity_min_facts) has
-    nothing else."""
+    nothing else. With too few facts and nothing found yet there is no finding: the nearest is adapted, as before."""
     gen = generic(need["artifact"], need["section"])
     closest = auto_reuse() if closest is None else closest
     cands = candidates(need)
@@ -1672,10 +1672,13 @@ def route(need, ctx, ask=None, first=None, closest=None):
             sim, compared = business_similarity(need, t.context.facts_used, biz)
             # the best this run has found for that business counts (a section with few facts of its own to compare,
             # an HLD section or one page section, takes what the PRD's sections found)
-            sim = max(sim if compared >= few else 0.0, known.get(biz, 0.0)) if (compared >= few or biz in known) else sim
             if compared >= few:
-                known[biz] = sim
-            if sim >= least:
+                sim = known[biz] = max(sim, known.get(biz, 0.0))
+            elif biz in known:
+                sim = known[biz]
+            else:      # nothing to compare and nothing found yet: no finding, so the nearest is adapted as before
+                sim = None
+            if sim is None or sim >= least:
                 near, t1 = {**c, "business_similarity": sim}, t
                 break
             if c["name"] not in turned or sim > turned[c["name"]]["business_similarity"]:
