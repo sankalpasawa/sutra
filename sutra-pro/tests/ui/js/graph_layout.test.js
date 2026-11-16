@@ -99,7 +99,7 @@ function randomGraph(seed, count) {
 
 /* ---------------------------------------------------------------- loading */
 test("loads with require and exposes the vocabulary, frozen", () => {
-  assert.deepEqual(Object.keys(GraphLayout).sort(), ["CROSS_KINDS", "DEFAULTS", "KINDS", "SIZES", "STATUSES", "TREE_KINDS", "diff", "forest", "layout", "validate"]);
+  assert.deepEqual(Object.keys(GraphLayout).sort(), ["CROSS_KINDS", "DEFAULTS", "KINDS", "SIZES", "STATUSES", "TREE_KINDS", "diff", "forest", "layout", "rootLabel", "validate"]);
   assert.deepEqual([...GraphLayout.STATUSES], NINE);
   assert.deepEqual([...GraphLayout.KINDS], ["root", "department", "division", "function", "step"]);
   assert.deepEqual([...GraphLayout.TREE_KINDS], ["contains", "has_function", "has_step"]);
@@ -363,7 +363,15 @@ test("validate does not change what it is given, and hands back new objects", ()
   first.graph.cross.push({});
   assert.equal(input.nodes[0].label, "Root");
   assert.notEqual(first.graph.nodes[1], input.nodes[1]);
-  assert.equal(plain(validate(sampleView())).graph.nodes[0].label, "Root");
+  assert.equal(plain(validate(sampleView())).graph.nodes[0].label, "Your org");       // the stored "Root" is shown as the owner's organisation
+});
+
+test("the top of the chart reads Your org, never Root; a root with its own name keeps it", () => {
+  const label = n => validate(view([n])).graph.nodes[0].label;
+  assert.equal(label(rawNode("root", "root", {label: "Root"})), "Your org");
+  assert.equal(label(rawNode("root", "root", {label: ""})), "Your org");
+  assert.equal(label(rawNode("root", "root", {label: "Acme Ltd"})), "Acme Ltd");
+  assert.equal(label(rawNode("web", "department", {label: "Root"})), "Root");
 });
 
 test("warnings are plain sentences with the ids quoted", () => {

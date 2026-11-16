@@ -1144,7 +1144,7 @@
 
   function ensureChart() {
     if (S.chartView || !root.OrgChartView) return;
-    S.chartView = root.OrgChartView.create($("pane-chart"), {onOpen: openNode, onShow(node) { selectPane("graph", {reveal: true}); if (S.graphView) S.graphView.select(node.id); }});
+    S.chartView = root.OrgChartView.create($("pane-chart"), {quietMarks: !!root.document && root.document.documentElement.dataset.ws === "org", onOpen: openNode, onShow(node) { selectPane("graph", {reveal: true}); if (S.graphView) S.graphView.select(node.id); }});
     S.chartView.setLive(S.live);
     if (S.chart) S.chartView.update(S.chart, S.changes);
     if (S.find) S.chartView.setFind(S.find);

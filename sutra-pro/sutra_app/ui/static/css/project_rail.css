@@ -118,10 +118,16 @@ body.has-prail { padding-left: var(--pr-w); box-sizing: border-box; }
   .prail { transition: transform var(--dur-base) var(--ease-out), visibility var(--dur-base) var(--ease-out); }
 }
 
-/* ---- what the sidebar replaces on a team page: the studio's own New project and the "All teams" strip (the "N need you" pill stays: it is what a phone sees first) */
+/* ---- what the sidebar replaces on a team page: the studio's own New project, the "All teams" strip with the project's name (the sidebar marks the
+   project), and the "N need you" pill (the sidebar's Attention count says it, and on a phone the menu button's badge) */
 body.has-prail #sview #shome, body.has-prail #sview #to-home-s, body.has-prail #to-home, body.has-prail #deptchip { display: none !important; }
-/* the strip above the studio stays only as the row of the "N need you" pill (with the project's name); with nothing waiting it goes */
-body.has-prail:not(:has(.apillhost:not([hidden]))) #sview .steamstrip { display: none; }
+body.has-prail #attnpill, body.has-prail #sview .steamstrip { display: none !important; }
+/* the finish bar's "Open full view" opens the agent view, which the top bar's "Agent view" button already does: one way in */
+body.has-prail #sfinish [data-full] { display: none; }
+/* the agent view beside the sidebar takes the studio's type: Bricolage where J2 uses a system serif (the library page already does) */
+body.has-prail #dview { --serif: "Bricolage Grotesque", system-ui, sans-serif; }
+/* its status chips (Done, the checks) are quiet filled chips, not outlined pills */
+body.has-prail #dview .maphead .mappill { border-color: transparent; background: var(--panel2); }
 /* Home's back room (Settings & logs, the org chat and its map) has its own rail: the sidebar steps aside there, except on Agent Org (data-ws=org) */
 :root[data-place=ws]:not([data-ws=org]) body.has-prail { padding-left: 0; }
 :root[data-place=ws]:not([data-ws=org]) .prail, :root[data-place=ws]:not([data-ws=org]) .pr-btn { display: none; }
@@ -143,10 +149,4 @@ body.has-prail:not(:has(.apillhost:not([hidden]))) #sview .steamstrip { display:
   body.has-prail .rfly { left: calc(var(--pr-w) + 84px); width: min(280px, calc(100vw - var(--pr-w) - 84px)); }
   body.has-prail #sview .stoast { left: calc(50% + var(--pr-w) / 2); }
 }
-/* the pill's row above the studio keeps the height the "All teams" link gave it */
-body.has-prail #sview > .steamstrip { min-height: 32px; box-sizing: border-box; }
-/* the Detailed view beside the sidebar is 248px narrower, so J2's cards reach the corner where the pill rides above the Chat button: while the pill shows,
-   the page keeps room for it under the cards, as sutra-panel.css does for the library page (110px = 68 + 34 + 8) */
-@media (min-width: 1025px) { body.has-prail:not(.simple):has(.apillhost:not([hidden])) #dview main { padding-bottom: 110px; } }
-/* the "N need you" pill of a team page takes the sidebar's navy, not J2's accent */
-body.has-prail .apillhost .apill { border-color: var(--pr-accent); }
+

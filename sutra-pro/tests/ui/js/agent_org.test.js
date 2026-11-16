@@ -10,14 +10,15 @@ const OrgChartView = require(path.resolve(__dirname, "../../../sutra_app/ui/stat
 const cards = OrgChartView.teamCardsHtml;
 const fns = status => ["audit", "identity", "priority", "adaptation", "coordination"].map(fn => ({id: "web." + fn, fn, status: fn === "audit" ? status : "idle"}));
 
-test("one card per team: its name, what it does, its state in plain words, and a link to its agent view", () => {
+test("one card per team: its name, what it does, its state in plain words; the whole card is the link to its agent view", () => {
   const html = cards([{id: "web", name: "Bakery site", purpose: "A site for the bakery", node_status: "running", functions: fns("running")},
     {id: "docs", name: "Docs", purpose: "", node_status: "idle", last_status: "done"}]);
   assert.deepEqual([...html.matchAll(/<a class="orgcard" href="([^"]+)"/g)].map(m => m[1]), ["/d/web/?view=detail", "/d/docs/?view=detail"]);
   assert.match(html, /<b class="orgname">Bakery site<\/b><span class="orgstate oc-making"><i aria-hidden="true"><\/i>Working<\/span>/);
   assert.match(html, /<span class="orgpurpose">A site for the bakery<\/span>/);
   assert.match(html, /<span class="orgstate oc-done"><i aria-hidden="true"><\/i>Done<\/span>/);          // idle again after a finished run
-  assert.equal((html.match(/Open agent view/g) || []).length, 2);
+  assert.equal((html.match(/Open its agent view/g) || []).length, 2);                                 // said to a screen reader, in the card's label
+  assert.doesNotMatch(html, /orgopen|Open agent view &rarr;/);                                         // no second link-looking line inside the link
 });
 
 test("the five function agents, in the studio's order, each with its state", () => {

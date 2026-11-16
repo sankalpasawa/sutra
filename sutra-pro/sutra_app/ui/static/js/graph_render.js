@@ -383,7 +383,7 @@
     const meta = isObj(n.meta) ? n.meta : {};
     const key = kind === "function" ? functionKey(n) : "";
     const name = clean(n.label) || clean(n.id);
-    const role = key === "" ? kindWord(kind) : PERSONA[key];
+    const role = kind === "root" ? "" : key === "" ? kindWord(kind) : PERSONA[key];          // the top of the chart is named for the owner ("Your org"): no kind word
     const spoken = [name, role.toLowerCase() === name.toLowerCase() ? "" : role, statusWord(look.status, kind, meta.wait_on)].filter(Boolean).join(", ");
     const aria = spoken + "." + (mark && mark.tag !== "" ? " " + mark.tag + "." : "") + " " + (clean(v.action) || (kind === "root" ? "Go to the org chat." : "Open chat."));
     // the tooltip: the chip's own, then the words in full when the box had to cut them, then the mark
