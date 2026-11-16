@@ -1,15 +1,15 @@
 {
  "change_checks": 192,
- "flow_fast_ok_lines": 98,
- "flow_fast_ok_lines_with_extraction": 150,
- "j2_commit": "1adb8ecd8fa8eef47fb7a0fc63a1616f556cdfeb",
- "j2_flow_test_sha256": "1872ede1fe27354b11b5963143efd5dee917d5378a2203f1634a2d225ce1a217",
+ "flow_fast_ok_lines": 118,
+ "flow_fast_ok_lines_with_extraction": 181,
+ "j2_commit": "dee83d5c565fe7d82631a4f7eb555543160a6d41",
+ "j2_flow_test_sha256": "fd0cf512480a385c613d2f9bcea0dcaca80671d560887e03d4f3d4756eaa79b8",
  "known_upstream_failures": [
   "map_focus",
   "graph_map",
   "warm_ui"
  ],
- "legacy_flow_test_sha256": "afb624e96bd90147130fdd1c5fddae621d6a1843b186d1e68dbc664c5c1d6bc2",
+ "legacy_flow_test_sha256": "334a1f62f6cd310ad534f830509fe0f7240e5b33f8a69bb2336da82c14d52ca5",
  "realization_checks": 98,
  "skip_lines_with_extraction": [
   "replay test skipped: runs/j2-20261015-114723 not found",

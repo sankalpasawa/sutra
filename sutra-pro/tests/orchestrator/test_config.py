@@ -1,6 +1,7 @@
 """Settings: env parsing, defaults, the loopback rule, the token length, the override key and its secrecy (design 6.4, S3-web-02,
 S1-contracts-14, S1-contracts-19)."""
 import json
+import os
 from pathlib import Path
 
 import pytest
@@ -31,7 +32,7 @@ def test_every_variable_is_read():
               "SUTRA_MAX_RUNS": "2", "SUTRA_MAX_LIVE": "5", "SUTRA_WATCH_MS": "100", "SUTRA_LIVE": "true"})
     assert (s.port, s.host, s.token, s.connector, s.engine, s.offline) == (9001, "localhost", TOKEN, "stub", "fake", True)
     assert (s.chat_timeout, s.chat_attempts, s.max_runs, s.max_live, s.watch_ms, s.live) == (30.5, 2, 2, 5, 100, True)
-    assert s.data_dir == Path("/tmp/sutra-config-test") and s.env_file == Path("/nonexistent/.env")
+    assert s.data_dir == Path(os.path.abspath("/tmp/sutra-config-test")) and s.env_file == Path("/nonexistent/.env")
 
 
 def test_every_env_name_is_a_field():
@@ -103,6 +104,11 @@ def test_data_dir_variable_wins_then_checkout_then_home(monkeypatch, tmp_path):
     monkeypatch.setattr(config, "project_root", lambda: tmp_path)                 # an installed app has no pyproject.toml beside it
     monkeypatch.setenv("HOME", str(tmp_path / "home"))
     assert config.default_data_dir({}) == tmp_path / "home" / ".sutra-pro"
+
+
+def test_a_relative_data_dir_becomes_absolute(monkeypatch, tmp_path):
+    monkeypatch.chdir(tmp_path)                                                   # a team's engine runs elsewhere: `--data-dir ./x` crashed every run
+    assert load(data_dir=Path("./demo-data")).data_dir == tmp_path.resolve() / "demo-data"
 
 
 def test_env_file_defaults_to_the_project_dot_env_and_honours_the_variable():

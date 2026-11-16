@@ -11,7 +11,7 @@ Two shapes had one name, `chat_message`. Now:
 `_reply` and `_ask_user`; the keys below are what an AST scan of J2's j2.py (33aeeda, 2026-11-04) found, and they are the
 design's list (section 10) plus the ones the scan found since: `forced_test`, `lesson_test`, `lesson_used`,
 `lessons_offered`, `playbook_used`, `playbook_changes`, `playbooks_offered` and `board_read` (J2's `post` adds it to the
-meta itself), and, from J2 1adb8ecd, `humans_only`, `run_template` and `content_door`. A key outside the set is refused, so a new J2 key is found by a test, not by a lost field. The values are
+meta itself), and, from J2 1adb8ecd, `humans_only`, `run_template` and `content_door`, and, from J2 dee83d5c, `ready_now` and `real_run`. A key outside the set is refused, so a new J2 key is found by a test, not by a lost field. The values are
 open: any JSON value, bounded in depth (J2 puts a bool, a number, a workflow id, a list or a whole proposal under one
 key, and `change` is a flag on the Requester's line and a board id on another).
 
@@ -147,6 +147,9 @@ with warnings.catch_warnings():
         humans_only: MetaValue = None
         run_template: MetaValue = None
         content_door: MetaValue = None
+        # J2 dee83d5c (sync 7): the workflows Coordination named ready to start now, and a planned real run's question
+        ready_now: MetaValue = None
+        real_run: MetaValue = None
 
         @model_serializer(mode="wrap")
         def _only_what_is_set(self, handler: Any) -> dict[str, Any]:

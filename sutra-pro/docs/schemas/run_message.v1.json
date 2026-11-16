@@ -207,6 +207,14 @@
       "$ref": "#/$defs/JsonValue",
       "default": null
     },
+    "ready_now": {
+      "$ref": "#/$defs/JsonValue",
+      "default": null
+    },
+    "real_run": {
+      "$ref": "#/$defs/JsonValue",
+      "default": null
+    },
     "realization": {
       "$ref": "#/$defs/JsonValue",
       "default": null

@@ -217,7 +217,7 @@ def test_settings_load_the_override_key_from_the_data_folder_env_of_an_installed
 def test_one_constant_names_the_database_file():
     assert app_config.DB_FILENAME == "db.sqlite3"
     settings = app_config.Settings.load({}, data_dir=Path("/x/data"), token="t" * 20, env_file=Path("/x/none.env"))
-    assert settings.db_path == Path("/x/data") / app_config.DB_FILENAME
+    assert settings.db_path == Path(os.path.abspath("/x/data")) / app_config.DB_FILENAME      # absolute: Windows adds the drive
 
 
 @pytest.fixture

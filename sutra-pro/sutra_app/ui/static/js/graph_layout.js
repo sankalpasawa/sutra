@@ -28,6 +28,9 @@
   // sends (a merged-away node is deleted); a node that carries it is not drawn.
   const STATUSES = freeze(["idle", "running", "waiting", "waiting_on_you", "fault", "filed", "done_unchecked", "left_open", "not_made"]);
   const ARCHIVED = "archived";
+  // The top of the org chart is stored as "Root", a word for engineers: the owner reads it as their organisation, "Your org".
+  const ROOT_NAME = "Your org";                     // short: the root box is 96 px wide
+  const rootLabel = (kind, label) => (kind === "root" && /^\s*root\s*$/i.test(label) ? ROOT_NAME : label);
   const KINDS = freeze(["root", "department", "division", "function", "step"]);
   const TREE_KINDS = freeze(["contains", "has_function", "has_step"]);       // the edges that build the tree (derived on read)
   const CROSS_KINDS = freeze(["handoff", "depends_on", "speaks_to", "step"]); // the stored links; any other kind is drawn as `step`
@@ -192,7 +195,7 @@
         kind = "step";
       }
       nodes.push({
-        id: n.id, kind, label: text(n.label).trim() === "" ? n.id : text(n.label), status, detail: text(n.detail),
+        id: n.id, kind, label: rootLabel(kind, text(n.label).trim() === "" ? n.id : text(n.label)), status, detail: text(n.detail),
         chat_session_id: idOrNull(n.chat_session_id), org_node_id: idOrNull(n.org_node_id), dept_id: idOrNull(n.dept_id),
         task_id: idOrNull(n.task_id), fn: idOrNull(n.fn), step_ref: idOrNull(n.step_ref),
         version: finite(n.version) ? n.version : null,
@@ -430,7 +433,7 @@
     return {added, removed, status};
   }
 
-  const GraphLayout = {validate, layout, diff, forest, STATUSES, KINDS, TREE_KINDS, CROSS_KINDS, SIZES, DEFAULTS};
+  const GraphLayout = {validate, layout, diff, forest, rootLabel, STATUSES, KINDS, TREE_KINDS, CROSS_KINDS, SIZES, DEFAULTS};
   if (typeof module === "object" && module !== null && module.exports) module.exports = GraphLayout;
   else root.GraphLayout = GraphLayout;
 })(globalThis);

@@ -1,0 +1,152 @@
+/* project_rail.css: the project sidebar (project_rail.js) on Home and on every team page, and the view switch of a team page (dept_ext.js
+   viewSwitch). The studio's look: light paper, ink, one navy accent, green for done, amber for "needs you". Every colour is a token below,
+   light by default and the same family at night under <html data-theme=dark>. The two type faces come from vendor/fonts (this origin). */
+
+@font-face { font-family: "Figtree"; src: url("/ui/vendor/fonts/figtree.woff2") format("woff2"); font-weight: 300 900; font-style: normal; font-display: swap; }
+@font-face { font-family: "Bricolage Grotesque"; src: url("/ui/vendor/fonts/bricolage-grotesque.woff2") format("woff2"); font-weight: 200 800; font-style: normal; font-display: swap; }
+
+:root {
+  --pr-w: 248px;
+  --pr-bg:#F3F1EC;--pr-surface:#FFFFFF;--pr-ink:#1F2421;--pr-muted:#686C66;--pr-line:#E2DED5;--pr-hover:#EAE6DE;
+  --pr-accent:#3D5A80;--pr-accentink:#FFFFFF;--pr-accentbg:#E3E9F1;--pr-good:#3E8E5E;--pr-ask:#D9822B;--pr-askon:#1F2421;--pr-askink:#93500E;--pr-bad:#B3412E;
+  --pr-shadow:rgb(31 36 33 / .18);--pr-scrim:rgb(31 36 33 / .32);
+  --pr-body:"Figtree",system-ui,-apple-system,"Segoe UI",Arial,sans-serif;
+}
+:root[data-theme=dark] {
+  --pr-bg:#171a18;--pr-surface:#1f2320;--pr-ink:#eceae4;--pr-muted:#a5a8a1;--pr-line:#2e322f;--pr-hover:#262a27;
+  --pr-accent:#9db8de;--pr-accentink:#0f1724;--pr-accentbg:#243246;--pr-good:#6fbf8b;--pr-ask:#e89a4c;--pr-askon:#1f1408;--pr-askink:#f0b070;--pr-bad:#ef8f7a;
+  --pr-shadow:rgb(0 0 0 / .5);--pr-scrim:rgb(0 0 0 / .5);
+}
+
+/* ---- the column */
+body.has-prail { padding-left: var(--pr-w); box-sizing: border-box; }
+.prail { position: fixed; left: 0; top: 0; bottom: 0; width: var(--pr-w); z-index: 40; box-sizing: border-box; display: flex; flex-direction: column;
+  background: var(--pr-bg); border-right: 1px solid var(--pr-line); color: var(--pr-ink); font: 14px/1.4 var(--pr-body); padding: 14px 10px 10px; }
+.pr-new { display: flex; align-items: center; gap: 8px; padding: 9px 12px; border-radius: 10px; border: 1px solid var(--pr-line); background: var(--pr-surface);
+  color: var(--pr-ink); font-weight: 600; text-decoration: none; }
+.pr-new:hover { background: var(--pr-hover); }
+.pr-body { flex: 1 1 auto; min-height: 0; overflow-y: auto; margin: 14px -4px 0; padding: 0 4px; }
+.pr-group + .pr-group { margin-top: 18px; }
+.pr-head { margin: 0 0 6px; padding: 0 8px; font: 600 11.5px/1.2 var(--pr-body); letter-spacing: .08em; text-transform: uppercase; color: var(--pr-muted); }
+.pr-list { list-style: none; margin: 0; padding: 0; }
+.pr-item { display: flex; align-items: center; gap: 10px; padding: 7px 8px; border-radius: 9px; color: var(--pr-ink); text-decoration: none; min-width: 0; }
+.pr-item:hover { background: var(--pr-hover); }
+.pr-item.pr-on { background: var(--pr-accentbg); font-weight: 600; }
+.pr-name { flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.pr-count { flex: none; min-width: 20px; padding: 1px 6px; border-radius: 99px; background: var(--pr-ask); color: var(--pr-askon); font: 700 12px/18px var(--pr-body); text-align: center; }
+
+.pr-empty { margin: 0; padding: 4px 8px; color: var(--pr-muted); }
+.pr-hint { padding: 2px 8px 6px 30px; font-size: 12.5px; }
+.pr-sr { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+.pr-foot { margin-top: 8px; padding: 8px; border-top: 1px solid var(--pr-line); color: var(--pr-muted); font-size: 13px; text-decoration: none; }
+.pr-foot:hover { color: var(--pr-ink); }
+.prail a:focus-visible, .prail button:focus-visible, .pr-btn:focus-visible { outline: 2px solid var(--pr-accent); outline-offset: 2px; }
+
+/* Attention and Agent Org: the two fixed places, above the sections */
+.pr-fixed { margin-bottom: 18px; }
+.pr-nav { display: flex; align-items: center; gap: 10px; padding: 8px 8px; border-radius: 9px; color: var(--pr-ink); text-decoration: none; font-weight: 600; }
+.pr-nav:hover { background: var(--pr-hover); }
+.pr-nav.pr-on { background: var(--pr-accentbg); color: var(--pr-ink); }
+.pr-ico { flex: none; color: var(--pr-accent); }
+
+/* My sections: a head with "+", each section a row that folds, its projects under it, then All projects */
+.pr-headrow { display: flex; align-items: center; justify-content: space-between; margin: 0 0 4px; }
+.pr-headrow .pr-head { margin: 0; }
+.pr-add, .pr-more { flex: none; display: inline-grid; place-items: center; width: 26px; height: 26px; padding: 0; border: 0; border-radius: 7px; background: none;
+  color: var(--pr-muted); cursor: pointer; }
+.pr-add:hover, .pr-more:hover { background: var(--pr-hover); color: var(--pr-ink); }
+.pr-sec { margin-top: 2px; }
+.pr-secrow { display: flex; align-items: center; gap: 2px; border-radius: 9px; }
+.pr-secrow:hover { background: var(--pr-hover); }
+.pr-sectoggle { flex: 1 1 auto; min-width: 0; display: flex; align-items: center; gap: 6px; padding: 7px 8px; border: 0; background: none; color: var(--pr-ink);
+  font: 600 13.5px/1.3 var(--pr-body); text-align: left; cursor: pointer; border-radius: 9px; }
+.pr-secname { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.pr-caret { flex: none; color: var(--pr-muted); transition: transform var(--dur-fast) var(--ease-out); }
+.pr-sectoggle[aria-expanded=true] .pr-caret { transform: rotate(90deg); }
+.pr-sec .pr-list { padding-left: 14px; }
+.pr-row { display: flex; align-items: center; border-radius: 9px; }
+.pr-row .pr-item { flex: 1 1 auto; }
+.pr-row .pr-more, .pr-secrow .pr-more { opacity: 0; }
+.pr-row:hover .pr-more, .pr-secrow:hover .pr-more, .pr-more:focus-visible, .pr-more[aria-expanded=true] { opacity: 1; }
+@media (hover: none) { .pr-row .pr-more, .pr-secrow .pr-more { opacity: 1; } }
+.pr-namebox { margin: 2px 0 6px; }
+.pr-input { width: 100%; box-sizing: border-box; padding: 7px 10px; border: 1px solid var(--pr-accent); border-radius: 9px; background: var(--pr-surface); color: var(--pr-ink);
+  font: 14px/1.3 var(--pr-body); outline: none; }
+.pr-err { margin: 0 0 6px; padding: 0 8px; color: var(--pr-bad); font-size: 12.5px; }
+
+/* the "..." menu */
+.pr-menu { position: absolute; right: 8px; z-index: 70; min-width: 180px; max-width: calc(var(--pr-w) - 16px); padding: 6px; box-sizing: border-box; border-radius: 12px;
+  border: 1px solid var(--pr-line); background: var(--pr-surface); box-shadow: 0 10px 30px var(--pr-shadow); }
+.pr-menu[hidden] { display: none; }
+.pr-mi { display: block; width: 100%; padding: 8px 10px; border: 0; border-radius: 8px; background: none; color: var(--pr-ink); font: 14px/1.3 var(--pr-body);
+  text-align: left; cursor: pointer; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.pr-mi:hover, .pr-mi:focus-visible { background: var(--pr-hover); outline: none; }
+.pr-mi[aria-checked=true]::after { content: " \2713"; color: var(--pr-accent); }
+.pr-mi-bad { color: var(--pr-bad); }
+.pr-mi-new { color: var(--pr-accent); font-weight: 600; border-top: 1px solid var(--pr-line); border-radius: 0 0 8px 8px; margin-top: 4px; }
+.pr-mhead { margin: 2px 10px 4px; color: var(--pr-muted); font: 600 11.5px/1.2 var(--pr-body); letter-spacing: .06em; text-transform: uppercase; }
+.pr-minote { margin: 4px 10px 2px; color: var(--pr-muted); font-size: 12px; }
+
+/* the marks: ◐ being made, ● needs you, ✓ done, ! something broke, ○ not started */
+.pr-mark { flex: none; width: 14px; height: 14px; border-radius: 50%; box-sizing: border-box; position: relative; }
+.pr-making { border: 2px solid var(--pr-accent); background: linear-gradient(90deg, var(--pr-accent) 50%, transparent 50%); }
+.pr-needs { background: var(--pr-ask); }
+.pr-done { background: var(--pr-good); }
+.pr-done::after { content: ""; position: absolute; left: 4.5px; top: 2.5px; width: 3px; height: 6px; border: solid var(--pr-surface); border-width: 0 1.8px 1.8px 0; transform: rotate(45deg); }
+.pr-problem { background: var(--pr-bad); }
+.pr-problem::after { content: "!"; position: absolute; inset: 0; color: var(--pr-surface); font: 800 10px/14px var(--pr-body); text-align: center; }
+.pr-idle { border: 1.5px solid var(--pr-muted); }
+
+/* ---- the phone: the column folds behind a menu button */
+.pr-btn, .pr-scrim { display: none; }
+@media (max-width: 1024px) {
+  body.has-prail { padding-left: 0; }
+  .prail { transform: translateX(-100%); visibility: hidden; box-shadow: 0 0 24px var(--pr-shadow); width: min(84vw, 300px); z-index: 61; }
+  body.prail-open .prail { transform: none; visibility: visible; }
+  body.prail-open .pr-scrim { display: block; position: fixed; inset: 0; background: var(--pr-scrim); z-index: 60; }
+  .pr-btn { display: inline-flex; align-items: center; justify-content: center; position: fixed; left: 8px; top: 8px; z-index: 59; width: 40px; height: 40px;
+    border-radius: 10px; border: 1px solid var(--pr-line); background: var(--pr-surface); color: var(--pr-ink); cursor: pointer; }
+  .pr-btnbadge { position: absolute; right: -5px; top: -5px; min-width: 18px; height: 18px; padding: 0 4px; box-sizing: border-box; border-radius: 99px;
+    background: var(--pr-ask); color: var(--pr-askon); font: 700 11px/18px var(--pr-body); text-align: center; }
+  .pr-btnbadge[hidden] { display: none; }
+  /* room for the button: Home's start, and the studio's top bar */
+  body.has-prail #front { padding-top: 48px; }
+  body.has-prail #sview .stop { padding-left: 58px; }
+}
+@media (max-width: 1024px) {
+  /* the shared motion scale of sutra-panel.css: zero under reduced motion */
+  .prail { transition: transform var(--dur-base) var(--ease-out), visibility var(--dur-base) var(--ease-out); }
+}
+
+/* ---- what the sidebar replaces on a team page: the studio's own New project, the "All teams" strip with the project's name (the sidebar marks the
+   project), and the "N need you" pill (the sidebar's Attention count says it, and on a phone the menu button's badge) */
+body.has-prail #sview #shome, body.has-prail #sview #to-home-s, body.has-prail #to-home, body.has-prail #deptchip { display: none !important; }
+body.has-prail #attnpill, body.has-prail #sview .steamstrip { display: none !important; }
+/* the finish bar's "Open full view" opens the agent view, which the top bar's "Agent view" button already does: one way in */
+body.has-prail #sfinish [data-full] { display: none; }
+/* the agent view beside the sidebar takes the studio's type: Bricolage where J2 uses a system serif (the library page already does) */
+body.has-prail #dview { --serif: "Bricolage Grotesque", system-ui, sans-serif; }
+/* its status chips (Done, the checks) are quiet filled chips, not outlined pills */
+body.has-prail #dview .maphead .mappill { border-color: transparent; background: var(--panel2); }
+/* Home's back room (Settings & logs, the org chat and its map) has its own rail: the sidebar steps aside there, except on Agent Org (data-ws=org) */
+:root[data-place=ws]:not([data-ws=org]) body.has-prail { padding-left: 0; }
+:root[data-place=ws]:not([data-ws=org]) .prail, :root[data-place=ws]:not([data-ws=org]) .pr-btn { display: none; }
+
+/* ---- the one view button of a team page ("Agent view" / "Simple view", dept_ext.js viewSwitch): at the right of the studio's top bar, at the
+   foot of the sidebar in the agent view */
+.pv-btn { display: inline-flex; flex: none; align-items: center; gap: 6px; padding: 8px 12px; border-radius: 9px; border: 1px solid var(--pr-line); background: var(--pr-surface);
+  color: var(--pr-ink); font: 600 14px/1 var(--pr-body); cursor: pointer; white-space: nowrap; }
+.pv-btn:hover { background: var(--pr-hover); }
+.pv-btn:focus-visible { outline: 2px solid var(--pr-accent); outline-offset: 2px; }
+.pv-btn.pv-float { position: fixed; right: 14px; top: 10px; z-index: 45; }
+.pv-btn.pv-inrail { margin: 8px 0 0; justify-content: center; }
+@media (max-width: 1024px) {
+  .pv-btn { padding: 7px 10px; }
+  body.has-prail #sview .stop .pv-btn { order: 10; margin-left: auto; }  /* the button goes to the end of the bar: the project name keeps its room */
+}
+/* J2 places a few things against the window's left edge (fixed): beside the sidebar they move right by its width (desktop only; on a phone the sidebar is a drawer) */
+@media (min-width: 1025px) {
+  body.has-prail .rfly { left: calc(var(--pr-w) + 84px); width: min(280px, calc(100vw - var(--pr-w) - 84px)); }
+  body.has-prail #sview .stoast { left: calc(50% + var(--pr-w) / 2); }
+}
+

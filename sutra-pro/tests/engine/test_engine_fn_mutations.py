@@ -105,7 +105,7 @@ def test_a_charter_that_fails_the_stamp_fails_charter_stamp():
     def drop_items(raw):
         raw["records"]["goal.json"]["done_when"] = raw["records"]["goal.json"]["done_when"][:2]
     ok, broken = base_and_mutant("charter-stamp", "pass", drop_items)
-    assert ok.ok and not broken.ok and broken.evidence == "fewer than 3 'done when' criteria"
+    assert ok.ok and not broken.ok and broken.evidence.startswith("fewer than 3 'done when' criteria (the ")
 
 
 def test_removing_the_evidence_a_check_needs_turns_a_pass_into_a_failure():

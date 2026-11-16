@@ -370,9 +370,16 @@
         "requester_questions": {
           "default": [],
           "items": {
-            "maxLength": 300,
-            "minLength": 1,
-            "type": "string"
+            "anyOf": [
+              {
+                "maxLength": 300,
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "$ref": "#/$defs/RequesterQuestion"
+              }
+            ]
           },
           "maxItems": 10,
           "title": "Requester Questions",
@@ -395,6 +402,36 @@
         "next"
       ],
       "title": "Done",
+      "type": "object"
+    },
+    "ExactFactMark": {
+      "additionalProperties": false,
+      "description": "J2 dee83d5c (group C): a fact Identity marks as one that must appear exactly as written, with the NUMBER of the done-when item\nit belongs to (what Identity returns; J2's mock leaves the number out).",
+      "properties": {
+        "fact": {
+          "maxLength": 300,
+          "minLength": 1,
+          "title": "Fact",
+          "type": "string"
+        },
+        "item": {
+          "anyOf": [
+            {
+              "minimum": 1,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Item"
+        }
+      },
+      "required": [
+        "fact"
+      ],
+      "title": "ExactFactMark",
       "type": "object"
     },
     "Heard": {
@@ -521,9 +558,33 @@
       "additionalProperties": false,
       "description": "J2.a (J2:4027-4032; ROLE:identity): is there enough to write the charter? Enough: the charter and no questions,\nhanded to Adaptation. Not enough: 1 to 4 questions and no charter, handed to the Requester.",
       "properties": {
+        "date_rule_items": {
+          "default": [],
+          "items": {
+            "minimum": 1,
+            "type": "integer"
+          },
+          "maxItems": 60,
+          "title": "Date Rule Items",
+          "type": "array"
+        },
+        "email_updates": {
+          "default": false,
+          "title": "Email Updates",
+          "type": "boolean"
+        },
         "enough": {
           "title": "Enough",
           "type": "boolean"
+        },
+        "exact_facts": {
+          "default": [],
+          "items": {
+            "$ref": "#/$defs/ExactFactMark"
+          },
+          "maxItems": 60,
+          "title": "Exact Facts",
+          "type": "array"
         },
         "goal": {
           "anyOf": [
@@ -550,6 +611,17 @@
           ],
           "default": null,
           "title": "Goal"
+        },
+        "item_kinds": {
+          "default": [],
+          "items": {
+            "maxLength": 60,
+            "minLength": 1,
+            "type": "string"
+          },
+          "maxItems": 60,
+          "title": "Item Kinds",
+          "type": "array"
         },
         "kind": {
           "const": "intake",
@@ -626,6 +698,19 @@
           "title": "Options",
           "type": "array"
         },
+        "plan_option": {
+          "anyOf": [
+            {
+              "minimum": 1,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Plan Option"
+        },
         "question": {
           "maxLength": 400,
           "minLength": 1,
@@ -637,6 +722,52 @@
         "question"
       ],
       "title": "Question",
+      "type": "object"
+    },
+    "RequesterQuestion": {
+      "additionalProperties": false,
+      "description": "J2 dee83d5c (J2.h): one question for the Requester with Identity's `kind` (a decision Decide for me may take, or a fact only the\nRequester or code's records can give) and the done-when item number it is about.",
+      "properties": {
+        "item": {
+          "anyOf": [
+            {
+              "minimum": 1,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Item"
+        },
+        "kind": {
+          "anyOf": [
+            {
+              "enum": [
+                "decision",
+                "fact"
+              ],
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Kind"
+        },
+        "question": {
+          "maxLength": 300,
+          "minLength": 1,
+          "title": "Question",
+          "type": "string"
+        }
+      },
+      "required": [
+        "question"
+      ],
+      "title": "RequesterQuestion",
       "type": "object"
     },
     "Ruling": {

@@ -169,8 +169,9 @@ def test_the_whole_first_day_walk(story, browser):
     assert browser.text("#deptchip-s") == "Web" and browser.js("document.getElementById('to-home-s').getAttribute('href')") == "/"
     clean(browser, "team page")
 
-    # 8. the Detailed view's button opens the rail, whose strip has the two tabs: the Workflow graph draws, the Org chart shows its marks
-    browser.click("#sdetail")
+    # 8. the "Agent view" button opens the detailed view and its rail, whose strip has the two tabs: the Workflow graph draws, the Org chart shows its marks
+    browser.wait_for("document.getElementById('agentview') !== null")
+    browser.click("#agentview")
     browser.wait_for("!document.body.classList.contains('simple')")
     assert browser.text("#deptchip") == "Web" and browser.js("document.getElementById('to-home').getAttribute('href')") == "/"
     browser.click('.tabs [data-tab="graph"]')

@@ -55,14 +55,14 @@ class Recorder:
 # ---- the call syntax ------------------------------------------------------------------------------------------------
 
 def test_ask_signature_is_j2s_plus_a_keyword_only_tag():
-    """J2's own signature, `timeout` (sync 5, D170) included."""
+    """J2's own signature, `timeout` (sync 5, D170) and `tools` (sync 7, D240) included."""
     sig = inspect.signature(llm.ask)
     params = list(sig.parameters.values())
     assert [p.name for p in params] == ["system", "user", "mock", "max_tokens", "effort", "on_progress", "json_mode", "images",
-                                        "schema", "timeout", "tag"]
+                                        "schema", "timeout", "tools", "tag"]
     assert {p.name: p.default for p in params if p.default is not p.empty} == {
         "max_tokens": 1500, "effort": "high", "on_progress": None, "json_mode": False, "images": None, "schema": None,
-        "timeout": None, "tag": None}
+        "timeout": None, "tools": None, "tag": None}
     assert all(p.kind is p.POSITIONAL_OR_KEYWORD for p in params[:-1])
     assert params[-1].kind is params[-1].KEYWORD_ONLY
 
@@ -693,3 +693,17 @@ def test_scripted_port_is_the_port_ask_uses_in_mock_mode(scripted_port):
         assert llm.ask("s", "u", lambda: "priced") == "priced"
     (row,) = scripted_port.usage_sink.rows
     assert (row["fn"], row["step"], row["call_ref"], row["task_id"], row["dept_id"]) == ("priority", "J2.c", "j2-1:2", "tsk_1", "web")
+
+
+def test_builder_tools_are_off_live_and_follow_j2s_switch_offline(monkeypatch):
+    """D240: no tools seam in the router, so a live run takes J2's section path; offline J2_AGENT_TOOLS=1 is J2's own mock switch."""
+    monkeypatch.setenv("J2_AGENT_TOOLS", "1")
+    llm.configure(Recorder(), mock=False)
+    assert not llm.tools_on() and not llm.can_use_tools() and llm.TOOLS == {}
+    with pytest.raises(RuntimeError, match="builder tools are off"):
+        llm.ask("s", "u", None, tools={"tools": ["Read"]})
+    llm.configure(mock=True)
+    assert llm.tools_on()
+    monkeypatch.delenv("J2_AGENT_TOOLS")
+    assert not llm.tools_on()
+    llm.configure()

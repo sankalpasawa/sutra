@@ -164,6 +164,10 @@ _FOLDER_RUN = ("the saved copy-files run (a script, its test and a README, writt
                "turns into a run template and reuses (`folder_reuse`): test data of J2's own script. The legacy copy in tests/engine/legacy/ "
                "reads it from SUTRA_J2_CHECKOUT, an extraction of this folder, and prints a skip reason without one.")
 _SYNC6_AT = "docs/design/j2-sync-6.md D190 and D192 (the fixtures follow the flow test that reads them)"
+_RUN_BLOCKERS = ("excerpts of saved runs (charters, plans, documents, an atom) that J2's flow test replays for its group A fixes "
+                 "(`run_blockers_batch1` to `run_blockers_batch3`): test data of J2's own script. The legacy copy in tests/engine/legacy/ reads "
+                 "them from SUTRA_J2_CHECKOUT, an extraction of this folder, and prints a skip reason without one.")
+_SYNC7_AT = "docs/design/j2-sync-7.md D239 (the fixtures follow the flow test that reads them)"
 
 EXCLUDED: tuple[Exclusion, ...] = (
     Exclusion("studio.py", "older studio", _STUDIO, _STUDIO_AT),
@@ -202,6 +206,7 @@ EXCLUDED: tuple[Exclusion, ...] = (
     Exclusion("fixtures/n6-sudoku-*", "J2 test fixtures", _FIXTURE, _SYNC5_AT),
     Exclusion("docs/word-matching-followups.md", "J2 developer notes", _FOLLOWUPS, _SYNC5_AT),
     Exclusion("fixtures/folder-run/*", "J2 test fixtures", _FOLDER_RUN, _SYNC6_AT),
+    Exclusion("fixtures/run-blockers/*", "J2 test fixtures", _RUN_BLOCKERS, _SYNC7_AT),
 )
 
 

@@ -25,6 +25,6 @@
  "expect": {
   "ok": true,
   "waived": true,
-  "evidence": "fewer than 3 'done when' criteria"
+  "evidence": "fewer than 3 'done when' criteria (the output needs at least 3)"
  }
 }

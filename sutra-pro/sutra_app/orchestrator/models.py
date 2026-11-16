@@ -523,6 +523,7 @@ class DepartmentOut(Value):
     purpose: Annotated[str, StringConstraints(max_length=1000)] = ""
     node_status: NodeState
     live_task_id: TaskId | None = None
+    last_status: TaskStatus | None = None          # the newest task's status: a team whose last run is done shows Done once it is idle again
     session_id: SessionId | None = None
     functions: Annotated[list[FunctionChip], Field(max_length=5)] = []
 

@@ -1,5 +1,5 @@
 {
-  "_note": "Necessary conditions for an LLD (design documents). Code checks each one on lld.md after every build; the LLD is workable only when all are met and Audit accepts. \"check\" names the code check in j2.condition_met(). \"plan\" (optional): words a workflow in Adaptation's plan must mention, or the plan is flagged before building.",
+  "_note": "Necessary conditions for an LLD (design documents). Code checks each one on lld.md after every build; the LLD is workable only when all are met, except a \"severity\": \"warn\" one (a heuristic check: Audit weighs it, it never blocks) and Audit accepts. \"check\" names the code check in j2.condition_met(). \"plan\" (optional): words a workflow in Adaptation's plan must mention, or the plan is flagged before building.",
   "output": "lld",
   "conditions": [
     {
@@ -36,7 +36,8 @@
       "id": "L6",
       "text": "No invented facts: every number, email and proper name comes from the charter, the Requester's answers or the earlier documents, or sits in an Assumption: line",
       "check": "no-invented-facts",
-      "names": true
+      "names": true,
+      "severity": "warn"
     }
   ]
 }

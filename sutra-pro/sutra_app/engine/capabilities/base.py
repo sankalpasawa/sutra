@@ -173,7 +173,8 @@ class Capability:
         what its row is, from the spec it already has: nothing of J2 is patched, and a future output with a report file shows
         up the same way with no code. Every capability inherits this: `[]` unless `output` is one of THIS capability's outputs, its
         spec names a `file`, and that file exists in the run folder. Otherwise one row of J2's own document shape (`id`, `kind`,
-        `name`, `file`, `doc_file`, `maker`, `made_in`, `sections`, `nodes`, `versions`, `docs`, `ok`, `views`): `views` is
+        `name`, `file`, `doc_file`, `maker`, `made_in`, `sections`, `nodes`, `versions`, `docs`, `ok`, `views`, and since J2 sync 7 the Summary's
+        `conditions`, `warnings`, `failed`, `failed_checks`, `retried`, `real_runs`, `template` and `type_label`): `views` is
         `j2_artifacts.views(run_dir, row)`, so the three tabs (Summary, Agent-readable, Human-readable) work as they do for a PRD.
         A report is not a Map node, so `nodes` is empty and no Map link points at it."""
         spec = self.outputs().get(output) if output and run_dir else None
@@ -189,5 +190,8 @@ class Capability:
                "made_in": [], "sections": {}, "nodes": [],
                "versions": [{"workflow": None, "cycle": None, "purpose": "", "label": "current"}], "docs": [],
                "ok": os.path.getsize(os.path.join(run_dir, file)) > 0}
+        # J2 sync 7: every deliverable row also carries what its Summary shows (the run's conditions, warnings, failed and retried checks,
+        # real runs), the template that made it and the type's label, read the way J2 reads them for its own rows
+        row.update(j2_artifacts._deliverable_extras(str(run_dir)), template=j2_artifacts._template_of(str(run_dir), output), type_label=label)
         row["views"] = j2_artifacts.views(run_dir, row)
         return [row]

@@ -154,8 +154,8 @@ _E21_OLD = _lines("for (const k of Object.keys(FEED)) delete FEED[k]; Object.ass
 _LIBRARY_PATH = "location.pathname === \"/library\""
 # E23: the studio adds a Google Fonts link to a generated document when it can read the frame (sFrameSetup). The app has no CDN and no web font
 # (UI-D3, the same reason E1 drops J2's own link), and under the frame sandbox (D83) the document cannot be read, so the line never ran here.
-_E23_OLD = ('if (d.querySelector("h2") && !d.querySelector("[class]")){ const fl = d.createElement("link"); fl.rel = "stylesheet"; '
-            'fl.href = "https://fonts.googleapis.com/css2?family=DM+Sans:opsz,wght@9..40,400;9..40,600&family=Fraunces:opsz,wght@9..144,500;9..144,600&display=swap"; '
+_E23_OLD = ('{ const fl = d.createElement("link"); fl.rel = "stylesheet"; '
+            'fl.href = "https://fonts.googleapis.com/css2?family=Figtree:wght@400;500;600;700&family=Bricolage+Grotesque:opsz,wght@12..96,600;12..96,700&display=swap"; '
             '(d.head || d.body).appendChild(fl); }')
 
 PAGE_EDITS: tuple[Edit, ...] = (
@@ -221,7 +221,7 @@ PAGE_EDITS: tuple[Edit, ...] = (
     Edit("E20f2", 'data-catgo="/library?view=templates${rq}"', 'data-catgo="${SutraCtx.libraryPath}?view=templates${rq}"', 1),
     # the studio's start page: a static link (no script can write the team into markup, so it is relative: /d/<id>/ gives /d/<id>/library, and
     # J2's own root gives /library), the Recent work list, and New project, which goes back to the start page
-    Edit("E20g", '<a class="slink" href="/library?view=detail">Template library</a>', '<a class="slink" href="library?view=detail">Template library</a>', 1),
+    Edit("E20g", '<a class="slq" href="/library?view=detail">Template library</a>', '<a class="slq" href="library?view=detail">Template library</a>', 1),
     Edit("E20h", '`<a href="/?run=${encodeURIComponent(x.id)}&view=simple">', '`<a href="${SutraCtx.pagePath}?run=${encodeURIComponent(x.id)}&view=simple">', 1),
     Edit("E20i", 'location.href = "/?view=simple"', 'location.href = SutraCtx.pagePath + "?view=simple"', 2),
     # E21: the function chat's questions and answers are lines of the function's own session (D148): loadFeed fills J2's QA list from it
@@ -232,7 +232,8 @@ PAGE_EDITS: tuple[Edit, ...] = (
     # E22: J2's own hint of the Run settings item still says the pane has "what to build"; it has Appearance and the saved runs
     Edit("E22", 'runsettings: "appearance, what to build, saved runs"};', 'runsettings: "appearance and saved runs"};', 1),
     Edit("E23", _E23_OLD, "/* no web fonts in the app (UI-D3): the studio's Google Fonts link is not added to a generated document */", 1),
-    # E24 (sync 6, D191): the new root-absolute URLs of the shelves and of the run templates; each would leave the team's page for the studio's root
+    # E24 (sync 6, D191): the root-absolute URLs of the shelves and of the run templates; each would leave the team's page for the studio's root.
+    # E24c and E24f take the place of the studio pin's E20j and E20k (the same two anchors, written out in full)
     Edit("E24a", 'const shelfHref = (view, open, extra) => `/library?view=', 'const shelfHref = (view, open, extra) => `${SutraCtx.libraryPath}?view=', 1),
     Edit("E24b", 'history.replaceState(history.state, "", "/library?" + q.toString()', 'history.replaceState(history.state, "", SutraCtx.libraryPath + "?" + q.toString()', 1),
     Edit("E24c", '<a href="/library?view=templates&rt=${encodeURIComponent(u.id)}" data-rtlink="1">',

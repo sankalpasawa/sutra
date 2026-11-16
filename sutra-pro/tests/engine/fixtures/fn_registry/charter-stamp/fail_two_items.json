@@ -17,6 +17,6 @@
  },
  "expect": {
   "ok": false,
-  "evidence": "fewer than 3 'done when' criteria"
+  "evidence": "fewer than 3 'done when' criteria (the output needs at least 3)"
  }
 }

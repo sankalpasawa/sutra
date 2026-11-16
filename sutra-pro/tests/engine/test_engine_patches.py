@@ -924,7 +924,7 @@ def test_p17_with_the_store_set_create_writes_under_it_and_nothing_under_the_pac
     store, package = tmp_path / "store", package_dir(jt)
     before = sorted(p.relative_to(package).as_posix() for p in package.rglob("*") if p.is_file())
     assert jt.LOCAL_TYPES_PATH == str(store / "types.local.json") and jt.LOCAL_LIBRARY_DIR == str(store / "templates")
-    entry = jt.create("brew_notes", "Brew notes", SECTIONS)
+    entry = jt.create("brew_notes", "Brew notes", SECTIONS, form="document")
     assert entry["name"] == "brew_notes" and "brew_notes" in jt.names()
     assert (store / "types.local.json").is_file() and (store / "templates" / "brew_notes" / "generic.json").is_file()
     assert Path(jt.template_path("brew_notes")) == store / "templates" / "brew_notes" / "generic.json"
@@ -949,12 +949,12 @@ def test_p17_a_held_lock_gives_a_value_error_and_writes_nothing(jt, tmp_path, mo
     try:
         assert oslayer.try_lock(fd)
         with pytest.raises(ValueError, match="locked by another run"):
-            jt.create("brew_notes", "Brew notes", SECTIONS)
+            jt.create("brew_notes", "Brew notes", SECTIONS, form="document")
     finally:
         oslayer.unlock(fd)
         os.close(fd)
     assert not (store / "types.local.json").exists()
-    assert jt.create("brew_notes", "Brew notes", SECTIONS)["name"] == "brew_notes", "free again"
+    assert jt.create("brew_notes", "Brew notes", SECTIONS, form="document")["name"] == "brew_notes", "free again"
 
 
 def test_p17_two_threads_creating_different_types_lose_neither(jt, tmp_path):
@@ -962,7 +962,7 @@ def test_p17_two_threads_creating_different_types_lose_neither(jt, tmp_path):
 
     def make(name):
         try:
-            jt.create(name, name.replace("_", " ").title(), SECTIONS)
+            jt.create(name, name.replace("_", " ").title(), SECTIONS, form="document")
         except Exception as e:  # noqa: BLE001
             errors.append(e)
     threads = [threading.Thread(target=make, args=(n,)) for n in names]
@@ -1034,7 +1034,7 @@ def test_p18_an_entry_must_be_a_type_with_a_good_name_and_an_owner(jt, tmp_path)
 def test_p18_a_local_type_with_a_host_name_is_refused_by_create(jt, tmp_path):
     jt.register(host_entry(tmp_path, jt))
     with pytest.raises(ValueError):
-        jt.create("host_doc", "Host doc", SECTIONS)
+        jt.create("host_doc", "Host doc", SECTIONS, form="document")
 
 
 def test_p18_register_clears_the_cache_so_the_type_shows_at_once(jt, tmp_path):

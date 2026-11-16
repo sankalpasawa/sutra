@@ -30,7 +30,7 @@ from pydantic_core import InitErrorDetails, core_schema
 
 from .atom import Check
 from .base import Record, Value
-from .goal import DocGoalDraft, Question, SiteGoalDraft, TbcAnswer, goal_kind
+from .goal import DocGoalDraft, ExactFactMark, KindName, Question, SiteGoalDraft, TbcAnswer, goal_kind
 from .registry import record
 from .replies import tolerate
 from .types import AtomId, FindingId, FunctionName, JsonObject, WorkflowId
@@ -361,12 +361,18 @@ class Intake(IdentityReply):
     """J2.a (J2:4027-4032; ROLE:identity): is there enough to write the charter? Enough: the charter and no questions,
     handed to Adaptation. Not enough: 1 to 4 questions and no charter, handed to the Requester."""
 
-    TRANSPORT_OPTIONAL = frozenset({"schema_version", "reason", "goal"})
+    TRANSPORT_OPTIONAL = frozenset({"schema_version", "reason", "goal", "email_updates", "item_kinds", "exact_facts", "date_rule_items"})
 
     kind: Literal["intake"] = "intake"
     enough: bool
     questions: Annotated[list[Question], Field(max_length=4)] = []
     goal: _Goal | None = None
+    # J2 dee83d5c (group C): fields Identity sets instead of words code read: email updates asked for, one kind of work per done-when item,
+    # the facts that must appear exactly (with their item numbers) and the items whose rule depends on a date
+    email_updates: bool = False
+    item_kinds: Annotated[list[KindName], Field(max_length=60)] = []
+    exact_facts: Annotated[list[ExactFactMark], Field(max_length=60)] = []
+    date_rule_items: Annotated[list[Count], Field(max_length=60)] = []
     to_requester: Text600 = ""
     to_agents: Text600 = ""
     next: Literal["Requester", "Adaptation"]
@@ -455,6 +461,15 @@ class Heard(IdentityReply):
     next: Literal["Audit", "Adaptation"]
 
 
+class RequesterQuestion(Value):
+    """J2 dee83d5c (J2.h): one question for the Requester with Identity's `kind` (a decision Decide for me may take, or a fact only the
+    Requester or code's records can give) and the done-when item number it is about."""
+
+    question: Line300
+    kind: Literal["decision", "fact"] | None = None
+    item: Count | None = None
+
+
 @record
 class Done(IdentityReply):
     """J2.h (J2:4892-4896, 1504-1506): is the goal reached? The Requester hears it when it is done or when only they can help."""
@@ -463,7 +478,7 @@ class Done(IdentityReply):
     clause: Text300 = ""
     done: bool
     needs_requester: bool = False
-    requester_questions: Annotated[list[Line300], Field(max_length=10)] = []
+    requester_questions: Annotated[list[Union[Line300, RequesterQuestion]], Field(max_length=10)] = []      # J2 dee83d5c: objects
     instruction_to_adaptation: Text600 | None = None
     needs_decision: bool = False
     budget_needed: Whole | None = None
@@ -505,7 +520,7 @@ class Propose(AdaptationReply, RealizationFields):
     """J2.b (J2:5396-5402; ROLE:adaptation): propose workflows, ask Identity a policy question, or dispute a finding."""
 
     TRANSPORT_OPTIONAL = frozenset({
-        "schema_version", "reason", "dispute", "certainty_assessment", "analysis", "deferred",
+        "schema_version", "reason", "dispute", "about", "certainty_assessment", "analysis", "deferred",
         "factors", "unplaced", "stages", "open_facts", "not_ready"})
 
     kind: Literal["propose"] = "propose"
@@ -513,6 +528,7 @@ class Propose(AdaptationReply, RealizationFields):
     workflows: _Workflows = []
     left_out: Annotated[list[LeftOut], Field(max_length=60)] = []
     question: Text600 | None = None
+    about: Literal["budget", "charter"] | None = None      # J2 dee83d5c: what a POLICY_QUESTION is about, Adaptation's mark
     dispute: Dispute | None = None
     playbook_used: Text300 | None = None
     playbook_changes: Text600 | None = None
@@ -661,13 +677,17 @@ class EnvelopeCheck(PriorityReply):
 
 @record
 class Schedule(CoordinationReply):
-    """J2.f (J2:6838-6841, 6854-6855; ROLE:coordination): order the registered workflows and name the holds."""
+    """J2.f (J2:6838-6841, 6854-6855; ROLE:coordination): order the registered workflows and name the holds. Since J2 dee83d5c the
+    reply also names `ready_now` and carries no `next` (code hands the turn on)."""
+
+    TRANSPORT_OPTIONAL = frozenset({"schema_version", "reason", "next"})
 
     kind: Literal["schedule"] = "schedule"
     rule: Line300
     order: Annotated[list[WorkflowId], Field(max_length=40)] = []
+    ready_now: Annotated[list[WorkflowId], Field(max_length=40)] = []      # J2 dee83d5c: every workflow that can start now
     holds: Annotated[list[HoldRow], Field(max_length=40)] = []
-    next: Literal["Priority", "Adaptation"]
+    next: Literal["Priority", "Adaptation"] | None = None      # J2 dee83d5c asks for none: code hands the first ready workflow on
 
     @model_validator(mode="after")
     def _schedule_rules(self) -> Self:
