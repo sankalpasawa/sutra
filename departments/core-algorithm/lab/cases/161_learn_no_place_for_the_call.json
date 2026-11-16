@@ -1,0 +1,11 @@
+{
+  "id": "161_learn_no_place_for_the_call",
+  "title": "A call blocked for want of a place",
+  "description": "A lender's collections desk calls a borrower whose instalment is in arrears. The call is handed to a collector, and the desk's own pack gives the collector no place, so the look is blocked for want of a place. This case is that one look; the recorded sequence learn_across shows three mornings, each a record of its own, blocked the same way until the day's roster gives two places, and what the learn feature reads of the three records together.",
+  "packs": [
+    "312_learn_collections"
+  ],
+  "execute": true,
+  "area": "Learning from checks and records",
+  "expected": "PROVIDER_REQUIRED"
+}

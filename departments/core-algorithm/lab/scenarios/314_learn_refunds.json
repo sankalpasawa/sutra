@@ -1,0 +1,97 @@
+{
+  "schema": "sutra-extension/2",
+  "id": "314_learn_refunds",
+  "scope": "lendco/refunds",
+  "goals": [
+    "refund_sent"
+  ],
+  "budget": {
+    "compute": 6,
+    "money": 2,
+    "attention": 2
+  },
+  "preference": [
+    "compute",
+    "money",
+    "attention"
+  ],
+  "evidence": [
+    {
+      "predicate": "refund_due",
+      "truth": "TRUE",
+      "verified": true,
+      "source": "fixture/loan-book",
+      "version": "loan-17-instalment-7"
+    }
+  ],
+  "methods": [
+    {
+      "id": "learn-ask-finance-refund@1",
+      "effect": "refund_approved",
+      "requires": [
+        "refund_due"
+      ],
+      "provider": "finance-channel",
+      "grant": "action:learn-ask-finance-refund@1",
+      "cost": {
+        "compute": 0,
+        "money": 0,
+        "attention": 1
+      },
+      "action": "ask",
+      "approved": true,
+      "source": "reviewed/synthetic-method",
+      "question": "Loan L-17 was overpaid on instalment 7. May the desk send the refund?",
+      "ask_to": "system:lendco/finance"
+    },
+    {
+      "id": "learn-reconcile-refund@1",
+      "effect": "refund_reconciled",
+      "requires": [
+        "refund_due"
+      ],
+      "provider": "agent:reconciler",
+      "grant": "action:learn-reconcile-refund@1",
+      "cost": {
+        "compute": 1,
+        "money": 0,
+        "attention": 0
+      },
+      "action": "handoff",
+      "approved": true,
+      "source": "reviewed/synthetic-method",
+      "handoff_to": "agent:reconciler",
+      "instruction": "Check the refund of loan L-17 against the loan book.",
+      "verified_by": "checker:reconciliation"
+    },
+    {
+      "id": "learn-send-refund@1",
+      "effect": "refund_sent",
+      "requires": [
+        "refund_due",
+        "refund_approved",
+        "refund_reconciled"
+      ],
+      "provider": "local-provider",
+      "grant": "action:learn-send-refund@1",
+      "cost": {
+        "compute": 1,
+        "money": 1,
+        "attention": 0
+      },
+      "action": "simulate_fact",
+      "approved": true,
+      "source": "reviewed/synthetic-method"
+    }
+  ],
+  "providers": {
+    "local-provider": 2,
+    "finance-channel": 2,
+    "agent:reconciler": 2
+  },
+  "grants": [
+    "action:learn-ask-finance-refund@1",
+    "action:learn-reconcile-refund@1",
+    "action:learn-send-refund@1"
+  ]
+}
