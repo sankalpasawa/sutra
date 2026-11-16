@@ -2,7 +2,7 @@
  "about": "Written by the additive applier (.tmp/core-algo-additive4-apply.py, contract 4). `pinned`: what the lab had recorded when a version was applied (sha256 of the kernel and of each scenario file; sha256 of the canonical JSON of each case, of the event record, of the ask record, of each recorded sequence, of each handler entry and of each lens except the reflection summary), and `built_in`, every Python file the lab had before the add-on points. `points` and `applied`: every file laid in, with its sha256. An entry of `applied` that holds `edits` is an EDIT VERSION (ruling R32): the name and sha256 of its edit script and, for every existing file the script changed, the sha256 before and after; the pin of the kernel and the pinned handler entries were taken again for those files, an added file it changed is listed with its new sha256, and every other pin stayed. Its `moves` are what it declares as moved of the things an earlier version recorded, each with its reason; check S202 holds a declared move to nothing until the next version is applied to the built, verified record. The verifier reads this file for checks S202 and S203, for the sha256 a check module's text is held to before it runs, and for what it hands a check module; tools/run_all.py reads it for the record's file list. Nothing in the lab holds this file itself.",
  "contract": 4,
  "pinned": {
-  "from": "sutra-kernel-extensions/0.18.0-handoff",
+  "from": "sutra-kernel-extensions/0.19.0-reader",
   "kernel_sha256": "688ab9431d4f4b17608d848e32f12e0373197a301d3b7f641a6f476a2b9ad368",
   "built_in": [
    "extensions/asks.py",
@@ -160,6 +160,16 @@
    "216_ask_the_checker": "79a0165e233111c60b8aa9dba4a4faa013203c01bc71379c897573b7ff49286e",
    "217_three_asks": "83fdfe50fc208b27dc6f9454e231716f30c54393d91c59555c867da90b49d3df",
    "21_enquiry_theory": "f98e3813d35d7a85a3efba6338a2aa26c4bb29280448f8a61eecad9426dfa94d",
+   "220_collections_desk": "d0e1426e886d45dd8e2faa917a91b43e25990100d56c16950fd6f5b03a4b8c7b",
+   "221_collections_changes": "8bfc85f2998355dab0fe18ef4e6512a5f5aa2154058e59a62ecf1b8edf94f5f7",
+   "222_reminder_lesson": "488996b0dbc69eddefa84f438bf7dccbd882b59e552ffc26222a0cdf57f6ea0d",
+   "223_lesson_judged_weighty": "516e8dfbe31440e5db8bdd9c05e4992e751e71ce4bd2206616ef88d0d28dfad6",
+   "224_payout_desk": "bbb6f7744067afc214bb60df6b12431ce76a3684f8491c06468a2ce25c01fa8d",
+   "225_payout_changes": "f05b46c74662832d250b433347f34de1186e1745d011d27cacf592bc8e8f80e8",
+   "226_payout_in_one": "ad8af06a2e5c05cf1a8ac9ce74bbc2c550213e81354cf6498aa31ec659812507",
+   "227_checker_away": "6b7c32ccb45d62f7935c26187c39e3f5f446bf6a97d298cc8c87d290e6ca8bec",
+   "228_waiver_desk": "026a1fc48cb30501a9de3e43c301d398e78062931d43dcece9e0326a5f080fe8",
+   "229_own_waivers": "2bdceb22d137c05aa152022464f2a9ba68b028c38a81c012754fd1facdb20389",
    "22_enquiry_methods": "c24a6bf2f19dae143ad5465c982d9ea851cb8e8fc12c8d0efc0b8702eae56d6e",
    "23_enquiry_extra_knowledge": "5acef6fb34c7d0811046ccfd41c23ae71346b853483c9e3fe11f4f4b255b4bee",
    "24_enquiry_privacy": "d89575814f1cd45e1e880be10077cbb9bc6009a37183b91bb49ed8a88c96d1f0",
@@ -409,6 +419,22 @@
    [
     "87_next_hand",
     "6821f2262a5b706d8dbd083fb0120560615bd8334d8d5f295b78a48bf6de9175"
+   ],
+   [
+    "88_reminder_stops",
+    "22c28133c13bf8dc99c1a01a6d2e1c48bdf8eaac5efbd361428a4576b872d08a"
+   ],
+   [
+    "89_reminder_lesson_in",
+    "891e67749f91cb4a2ec144c438ecc994be6ede56d428dc505db689017d32bc2a"
+   ],
+   [
+    "90_payout_chain",
+    "0d7447057923995c10479df7d88acc147a727b1c73a8d96ed6506f1895ee83e3"
+   ],
+   [
+    "91_payout_in_one",
+    "8823dba323e9c93b285952849a58e20c33cf375f0cd42c9c3a54ef56fe31c79f"
    ]
   ],
   "events": "f58f0cf138c8ca42fe880e0a0c15d116a2c52c8a300b8284a8c93e3e72d2317c",
@@ -425,6 +451,9 @@
    "queue_provenance": "295cdf56f047e3d01741ef202475dd7b1fe610fe5a23808d0bf7b9fc02496de6",
    "queue_rank": "88d7b1cf7cc19171976e0d05f3757cf11e03edd8960ebdaff703a04c0d4e99a5",
    "queue_styles": "b548ce212a816e2a2906fe980c1139b2574f39b010ef8ef17d908d0d5e55c7a5",
+   "reader_answers": "8fb60242484afafd9fce0dd3d3704b48ac1395aa9251071c79fdf19536b07279",
+   "reader_lesson": "6512be7d4ae2afa82d3899a8d39b705f1974441596d6ba702992bac7c121ad77",
+   "reader_one_way": "cc50464f8e1c83530bd21b79ed3c4b5bf24e72824f71f2897a8c81e70846e31c",
    "refusals": "fdd595b7298a4aee3e84fec1679df8967de976829c53a47bc39c625c81d2994e",
    "system": "b367f2143ea685827f4ee5b9d994c5fc3dcc6f926958e946273059713d7ef8fb"
   },
@@ -602,6 +631,21 @@
     "tools/scenes/reader_answers.py": "fa2e9729ce7955e87f812ddc962b585a4b92b2608e352457d06f6152296452ff",
     "tools/scenes/reader_lesson.py": "e04699c1fff3f29f10a33ee65002169a6f777b161246c5e8aea275898c9357d9",
     "tools/scenes/reader_one_way.py": "8ec733a75c1a034a145762313f8f4921ce4fbdeb8f01868286c02dfb2fd93cee"
+   }
+  },
+  {
+   "label": "0.20.0-learn",
+   "delivery": "learn",
+   "files": {
+    "cases/160_learn_statement_handed_over.json": "4192908ea609ad2e7288a7050672504a0e887b9872996f41ef69890ef9f70a8b",
+    "cases/161_learn_no_place_for_the_call.json": "bc07119e29b807e195c5c241407388a5d8b9ac40e9a8fd392419b5fc2ef60026",
+    "cases/162_learn_refund_asked.json": "e6d28b50f75486a421793c55a729e74895207a176b17d15e9c588b4c9720bd4f",
+    "extensions/learn.py": "36a803f26d0bea00edf460e0ea2a6db825e67a875ed6cde2ced78a9bf42f0d52",
+    "tests/test_learn.py": "bd8ccd934680895d43ebf34da58664675225f27ae284ce661f9e64b04dfd0481",
+    "tools/packs/learn.py": "a3f1bd12797da7bb73ef77bf2e3b15ad2747df21a4396bf2919c6eff77881efe",
+    "tools/scenes/learn_across.py": "74a7d3b2622e49785aec9549f6930ded55969e5b21bcdc7eac83b257d5a19cb2",
+    "tools/scenes/learn_checks.py": "4f1f2aa3c03f2b2b9f533b2089de0b83cbde644cb8c53b710bbb7d695d8909c8",
+    "tools/scenes/learn_settled.py": "150651f577969ecfbe0b4e60c7b69b856265fa090c5b55bdc14c8252fe287583"
    }
   }
  ]

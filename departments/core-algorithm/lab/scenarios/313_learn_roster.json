@@ -1,0 +1,7 @@
+{
+  "schema": "sutra-extension/2",
+  "id": "313_learn_roster",
+  "providers": {
+    "agent:collector": 2
+  }
+}

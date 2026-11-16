@@ -1,0 +1,55 @@
+{
+  "schema": "sutra-extension/2",
+  "id": "312_learn_collections",
+  "scope": "lendco/collections-calls",
+  "goals": [
+    "arrears_call_made"
+  ],
+  "budget": {
+    "compute": 6,
+    "money": 0,
+    "attention": 0
+  },
+  "preference": [
+    "compute",
+    "money",
+    "attention"
+  ],
+  "evidence": [
+    {
+      "predicate": "arrears_due",
+      "truth": "TRUE",
+      "verified": true,
+      "source": "fixture/loan-book",
+      "version": "loan-44"
+    }
+  ],
+  "methods": [
+    {
+      "id": "learn-call-borrower@1",
+      "effect": "arrears_call_made",
+      "requires": [
+        "arrears_due"
+      ],
+      "provider": "agent:collector",
+      "grant": "action:learn-call-borrower@1",
+      "cost": {
+        "compute": 1,
+        "money": 0,
+        "attention": 0
+      },
+      "action": "handoff",
+      "approved": true,
+      "source": "reviewed/synthetic-method",
+      "handoff_to": "agent:collector",
+      "instruction": "Call the borrower of loan L-44 about the instalment in arrears.",
+      "verified_by": "checker:call-log"
+    }
+  ],
+  "providers": {
+    "agent:collector": 0
+  },
+  "grants": [
+    "action:learn-call-borrower@1"
+  ]
+}

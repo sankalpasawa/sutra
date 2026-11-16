@@ -1,0 +1,53 @@
+[
+ {
+  "cycle": 1,
+  "version": 1,
+  "output": "script",
+  "results": [
+   {
+    "id": "F-1",
+    "item": 1,
+    "criterion": "copy_files.py copies every file from scans-inbox to scans-shelf, keeping sub-folders",
+    "verdict": "PASS",
+    "note": "",
+    "pass": true
+   },
+   {
+    "id": "F-2",
+    "item": 2,
+    "criterion": "A file already there with the same bytes is left alone",
+    "verdict": "PASS",
+    "note": "",
+    "pass": true
+   },
+   {
+    "id": "F-3",
+    "item": 3,
+    "criterion": "test_copy_files.py is in the folder",
+    "verdict": "PASS",
+    "note": "",
+    "pass": true
+   },
+   {
+    "id": "F-4",
+    "item": 4,
+    "criterion": "README.md says how to run it",
+    "verdict": "PASS",
+    "note": "",
+    "pass": true
+   },
+   {
+    "id": "F-5",
+    "item": 5,
+    "criterion": "Its test passes",
+    "verdict": "PASS",
+    "note": "",
+    "pass": true
+   }
+  ],
+  "extra_issues": [],
+  "rubric": [],
+  "conditions": [],
+  "all_pass": true
+ }
+]

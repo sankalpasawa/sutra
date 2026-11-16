@@ -1,0 +1,12 @@
+{
+  "id": "160_learn_statement_handed_over",
+  "title": "A statement handed to a writer, checked by a review",
+  "description": "A lender's servicing desk sends the annual statement of a loan. Writing it is handed to a writer and checked by the statement review against the loan book; the program above the desk has a judge check the servicing lead's account of the month. One look hands the statement over (try 1) and waits; the account waits on the statement. This case is that one look; the recorded sequence learn_checks shows the review's rows on three tries and the judge's verdict, and what the learn feature reads of them.",
+  "packs": [
+    "310_learn_statements",
+    "311_learn_month_judged"
+  ],
+  "execute": true,
+  "area": "Learning from checks and records",
+  "expected": "WAITING"
+}

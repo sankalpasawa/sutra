@@ -1,0 +1,11 @@
+{
+  "id": "162_learn_refund_asked",
+  "title": "A refund whose yes is finance's to give",
+  "description": "A lender's refund desk sends the refund of an overpaid instalment. Its plan gives the yes to finance (a question put to another system), the check of the amount to the reconciliation checker (a hand-over to a reconciler) and the refund to the desk's own step. One look puts the question to finance and waits. This case is that one look; the recorded sequence learn_settled shows two sessions in which the loan book, the reconciliation checker and an auditor hand in rows on those facts, and what the learn feature reads of who stated each fact.",
+  "packs": [
+    "314_learn_refunds"
+  ],
+  "execute": true,
+  "area": "Learning from checks and records",
+  "expected": "WAITING"
+}

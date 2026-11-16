@@ -35,3 +35,33 @@ changed on this branch. Line numbers are j2.py as of the commit that adds this f
 `AUDIT_FIRST`, `AUDIT_LAST`, `BUILD_VERB`, `_audit_name`, `wf_sections`' name fallback, the "name inside target"
 heading-check rule in `_atom_problems`, and the section-by-words lookups in `_gap_rows`, `_identity_limit` and
 `_board_doc_owner`.
+
+## Form-name checks and send code (cleanup after agent-tools)
+
+Branch `agent-tools` adds builder tools and a folder form whose code reads only `artifacts/types.json` (a form's
+`tools`, `allow`, output kind and checks). The code below predates it and still names forms, or sends email and Slack
+messages. None of it changed on that branch. Line numbers are as of the commit that adds this section.
+
+### Form names in code
+
+| Where | What it decides | Data that would replace it |
+|---|---|---|
+| `j2.py` `is_page` 2442-2444; callers 2657, 2963, 4070, 4228, 4356, 5121, 9211, 9250, 9397, 9422 | Whether a type is a page (`form == "page"`) | The form's output kind and its own fields (`essentials`, `style_guide`, `preview`) |
+| `j2.py` `_apply_output` 3141 (`self.doc`, used in 77 places) | Document or not (`form == "document"`): prompts, check types, file names, export | The form's output kind and fields (`sections`, `export`, `file`) |
+| `j2.py` `_plan_stages` 3956 | Which chosen types run first as documents | A stage order in the forms' data |
+| `j2.py` `PAGE_FILE` 333, `SITE_FILES` 1625 | The page form's file, read by name | The current form's `file` |
+| `j2_types.py` `FORMS` 18, `DOC_NEEDED` 20, `load` 320, `named` 243-246, `page_type` 249, `style_guide` 90, `create` 418 | Required fields and lookups per named form | Required fields declared per output kind in `types.json` |
+| `j2_artifacts.py` 41, 89, 362, 384-386, 644 | Rows, open view and version files by form name | The form's `preview` and output kind |
+| `j2_realization.py` `type_list` 281 | Only documents have `needs` | `depends_on` for every form |
+| `j2_agent_views.py` 35; `j2_server.py` 366; `j2_studio.py` 204 | Document types only; a page means "site" | The form's output kind |
+| `j2_ui.html` 2362, 2777, 2806, 2941 | Tabs and icons by `"page"` or a document type name | The form's `preview` |
+
+### Send code (email and Slack)
+
+| Where | What |
+|---|---|
+| `j2_send.py` (whole file, 269 lines) | Send deeds by channel (email, Slack), detected from the brief's words, with test and live modes |
+| `j2.py` 225-227 `RATES_DEED`; 839 `deed-send` check | Deed prices; the receipt check |
+| `j2.py` 3958-3968, 3981-3983 (`_plan_stages`) | Deeds read from the brief; the note naming an email address or Slack target |
+| `j2.py` 4068-4080, 4216-4217, 4249-4336 (`_deed_stage`, `_confirm_send`, `_identity_send_confirm`, `_send_args`, `_send_status`, `_send_note`) | The send stage, its confirmation and receipts |
+| `j2.py` 4353-4410 (milestone email, `_deeds_finished`) | The milestone email after a build |
