@@ -4,6 +4,7 @@
   "kind": "generic",
   "version": 1,
   "from": "hand-edited: this file is the source of this type's sections, their fields, rules and rendering. J2 builds each section's model and checks from it at load time (j2_artifact_models, j2_rules); python3 j2_template_lib.py checks every generic.json",
+ "assumptions_section": true,
   "templates": [
     {
       "name": "PRD/1 · Problem",

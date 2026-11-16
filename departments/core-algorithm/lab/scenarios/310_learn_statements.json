@@ -1,0 +1,55 @@
+{
+  "schema": "sutra-extension/2",
+  "id": "310_learn_statements",
+  "scope": "lendco/servicing",
+  "goals": [
+    "statement_sent"
+  ],
+  "budget": {
+    "compute": 8,
+    "money": 0,
+    "attention": 0
+  },
+  "preference": [
+    "compute",
+    "money",
+    "attention"
+  ],
+  "evidence": [
+    {
+      "predicate": "statement_due",
+      "truth": "TRUE",
+      "verified": true,
+      "source": "fixture/loan-book",
+      "version": "loan-31-year-2026"
+    }
+  ],
+  "methods": [
+    {
+      "id": "learn-send-statement@1",
+      "effect": "statement_sent",
+      "requires": [
+        "statement_due"
+      ],
+      "provider": "agent:statement-writer",
+      "grant": "action:learn-send-statement@1",
+      "cost": {
+        "compute": 1,
+        "money": 0,
+        "attention": 0
+      },
+      "action": "handoff",
+      "approved": true,
+      "source": "reviewed/synthetic-method",
+      "handoff_to": "agent:statement-writer",
+      "instruction": "Write and send the annual statement of loan L-31.",
+      "verified_by": "checker:statement-review"
+    }
+  ],
+  "providers": {
+    "agent:statement-writer": 3
+  },
+  "grants": [
+    "action:learn-send-statement@1"
+  ]
+}

@@ -4,6 +4,7 @@
  "kind": "generic",
  "version": 1,
  "from": "made by J2 for a new document type (j2_types.create); hand-edit it like any generic.json",
+ "assumptions_section": true,
  "templates": [
   {
    "name": "Report · Summary",

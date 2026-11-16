@@ -16,6 +16,12 @@
     "requirements_section": 48,
     "fix": 8
   },
+  "_note_agent": "PLACEHOLDER rate card for the agent form (agent-tools), not measured: a file the builder writes and the test it runs.",
+  "rates_agent": {
+    "agent_file": 10,
+    "agent_test": 10,
+    "fix": 8
+  },
   "_note_deed": "PLACEHOLDER price of a send deed (test sends only): 5 each, not measured. J2_RATES=0 makes it free.",
   "rates_deed": {
     "send_email": 5,

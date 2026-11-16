@@ -1,0 +1,36 @@
+{
+  "schema": "sutra-extension/2",
+  "id": "311_learn_month_judged",
+  "goals": [
+    "statement_sent",
+    "servicing_month_judged"
+  ],
+  "methods": [
+    {
+      "id": "learn-judge-servicing-month@1",
+      "effect": "servicing_month_judged",
+      "requires": [
+        "statement_sent"
+      ],
+      "provider": "agent:servicing-lead",
+      "grant": "action:learn-judge-servicing-month@1",
+      "cost": {
+        "compute": 1,
+        "money": 0,
+        "attention": 0
+      },
+      "action": "handoff",
+      "approved": true,
+      "source": "reviewed/synthetic-method",
+      "handoff_to": "agent:servicing-lead",
+      "instruction": "Give the program an account of this month's statements.",
+      "verified_by": "checker:program-judge"
+    }
+  ],
+  "providers": {
+    "agent:servicing-lead": 1
+  },
+  "grants": [
+    "action:learn-judge-servicing-month@1"
+  ]
+}
