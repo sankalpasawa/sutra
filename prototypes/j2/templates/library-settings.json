@@ -25,7 +25,7 @@
     "reuse_without_asking": {"same_need": true, "coverage": 1.0},
     "adapt_min_similarity": 0.6,
     "similarity_min_facts": 3,
-    "same_job_min": 0.7,
+    "same_job_min": 0.6,
     "generator_attempts": 2,
     "candidates_shown": 3,
     "rules": [
