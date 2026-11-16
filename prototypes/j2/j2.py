@@ -3501,6 +3501,7 @@ class J2Run:
         # J2_TEMPLATE_LIBRARY=1 (template-library/1): the template each workflow's builder fills, chosen by the router
         self.tpl_lib = j2_template_lib.enabled()
         self.tpl_routes, self.tpl_decisions, self.tpl_cur = {}, [], None
+        self.tpl_similar = {}      # how similar each other business's templates were found to this run's (j2_template_lib.route)
         self.reused_from = None      # step 6: the run template whose folder files this run started from
         # J2_ARTIFACT_LIBRARY=1 (artifact-reuse/1): the content door, a document section served from its source run (_route_content)
         self.art_lib = j2_artifact_lib.enabled()
@@ -10752,6 +10753,7 @@ class J2Run:
                "agent": "template generator (mock)" if llm.MOCK else f"template generator ({llm.PROVIDER})"}
         if self.run_tpl and auto_reuse_on():      # J2_AUTO_REUSE=1: on a tie the router prefers this run template's own section templates
             ctx["run_template"] = self.run_tpl["id"]
+        ctx["similar"] = self.tpl_similar      # one finding per other business for the whole run (sections with few facts take it)
         self.tpl_cur = {"wid": wid}
         first = self._run_tpl_first(w, kind, section)      # J2_RUN_TEMPLATES=1: the run template's section template first
         try:
