@@ -279,6 +279,15 @@ try:
     sim_law, n_law = L.business_similarity(law, L.get("Still Point Yoga Problem@2", "prd", "Problem").context.facts_used)
     sim_pil, n_pil = L.business_similarity(pil, L.get("Still Point Yoga Problem@2", "prd", "Problem").context.facts_used)
     ok(sim_law < least <= sim_pil, f"law firm to yoga studio {sim_law} ({n_law} facts), pilates to yoga studio {sim_pil} ({n_pil} facts)")
+    # a page section with facts of its own never takes a template of another business that has too few facts to compare
+    # (live run j2-20261116-172922 W-22: a yoga page section adapted from a boutique's one-fact template)
+    page = L.make_need("website", "Section", "website", ["The page shows the studio name Harbour Yoga", "The page shows the address 4 Sample Quay as text",
+                                                         "The weekly class list has five classes with day, time and price"], "Harbour Yoga")
+    thread = L.get("Thread Filter@1", "website", "Section")
+    ok(L.business_similarity(page, thread.context.facts_used, "Thread")[1][1] < int(L.routing("similarity_min_facts")),
+       f"the boutique's template has too few facts to compare: {thread.context.facts_used}")
+    _, wrec = L.route(page, {"run": "test-yoga-page", "workflow": "W-1", "atom": "W-1.a1"}, closest=True)
+    ok("Thread" not in str(wrec.get("adapted_from") or ""), f"it is not adapted for the yoga page: {wrec['action']} {wrec.get('adapted_from')}")
     # ---- (4) the same job after small changes
     t0 = L.get("Still Point Yoga Problem@2", "prd", "Problem")
     facts = list(t0.context.facts_used)

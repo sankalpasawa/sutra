@@ -1502,16 +1502,17 @@ def business_similarity(need, facts, business=""):
     facts only. One way: the share of one side's facts (those with a word left to compare, fact_words) that share at
     least one word with the other side's facts. similarity = the LOWER of the two ways, so a few common words (a
     form's "name" and "email", a section's own heading) do not make two businesses similar: a studio's class list has
-    nothing to meet in a law firm's matter types, and the other way round. compared = how many facts the smaller
-    side had to compare. business: the other template's own business name, left out of its words."""
+    nothing to meet in a law firm's matter types, and the other way round. compared = (this need's facts, the other
+    template's facts) that had a word to compare. business: the other template's own business name, left out of its
+    words."""
     mine = [w for w in (fact_words(f, need.get("site")) for f in need.get("facts") or []) if w]
     theirs = [w for w in (fact_words(f, business) for f in facts or []) if w]
     if not mine or not theirs:
-        return 0.0, 0
+        return 0.0, (len(mine), len(theirs))
     a, b = set().union(*mine), set().union(*theirs)
     there = sum(1 for w in mine if w & b) / len(mine)
     back = sum(1 for w in theirs if w & a) / len(theirs)
-    return round(min(there, back), 4), min(len(mine), len(theirs))
+    return round(min(there, back), 4), (len(mine), len(theirs))
 
 
 def same_job(need, t0):
@@ -1549,7 +1550,8 @@ def route(need, ctx, ask=None, first=None, closest=None):
     section template as it is although the fingerprint differs (rule "j", same_job in the decision).
     ctx["similar"] (a dict the run keeps, optional): the best similarity found so far for each other business in this
     run; every later need of the run counts it, and a need with too few facts to compare (similarity_min_facts) has
-    nothing else. With too few facts and nothing found yet there is no finding: the nearest is adapted, as before."""
+    nothing else. With too few facts and nothing found yet there is no finding: the nearest is adapted, as before.
+    A template of another business with too few facts to meet this need's is not shown to be similar: it is passed."""
     gen = generic(need["artifact"], need["section"])
     closest = auto_reuse() if closest is None else closest
     cands = candidates(need)
@@ -1669,15 +1671,17 @@ def route(need, ctx, ask=None, first=None, closest=None):
                 near, t1 = {**c, "business_similarity": None}, t
                 break
             biz = family_business(t) or t.name
-            sim, compared = business_similarity(need, t.context.facts_used, biz)
+            sim, (mine_n, theirs_n) = business_similarity(need, t.context.facts_used, biz)
             # the best this run has found for that business counts (a section with few facts of its own to compare,
             # an HLD section or one page section, takes what the PRD's sections found)
-            if compared >= few:
+            if mine_n >= few and theirs_n >= few:
                 sim = known[biz] = max(sim, known.get(biz, 0.0))
             elif biz in known:
                 sim = known[biz]
-            else:      # nothing to compare and nothing found yet: no finding, so the nearest is adapted as before
+            elif mine_n < few:      # this need has nothing to compare and nothing was found yet: no finding, adapted as before
                 sim = None
+            else:      # this need has facts, the other template has too few to meet them: nothing shows the business is similar
+                sim = 0.0
             if sim is None or sim >= least:
                 near, t1 = {**c, "business_similarity": sim}, t
                 break
