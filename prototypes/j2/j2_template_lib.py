@@ -1487,6 +1487,53 @@ def nearest_ranked(need, gen, own=()):
     return out
 
 
+_EMAIL_RE = re.compile(r"\S+@\S+")
+_HARD_RE = re.compile(r"[\w.+-]+@[\w.-]+|\d{1,2}:\d{2}|\d{3,}")      # an email, a time, a number of three digits or more
+
+
+def fact_words(fact, site=""):
+    """The words one fact is compared by between two businesses: words() of the fact without its email addresses,
+    without any word that holds a digit, and without the words of this business's own name (site)."""
+    return {w for w in words(_EMAIL_RE.sub(" ", str(fact or ""))) if not any(c.isdigit() for c in w)} - words(site)
+
+
+def business_similarity(need, facts, business=""):
+    """(similarity, compared): how near the business of another template is to this need's business, from recorded
+    facts only. One way: the share of one side's facts (those with a word left to compare, fact_words) that share at
+    least one word with the other side's facts. similarity = the LOWER of the two ways, so a few common words (a
+    form's "name" and "email", a section's own heading) do not make two businesses similar: a studio's class list has
+    nothing to meet in a law firm's matter types, and the other way round. compared = how many facts the smaller
+    side had to compare. business: the other template's own business name, left out of its words."""
+    mine = [w for w in (fact_words(f, need.get("site")) for f in need.get("facts") or []) if w]
+    theirs = [w for w in (fact_words(f, business) for f in facts or []) if w]
+    if not mine or not theirs:
+        return 0.0, 0
+    a, b = set().union(*mine), set().union(*theirs)
+    there = sum(1 for w in mine if w & b) / len(mine)
+    back = sum(1 for w in theirs if w & a) / len(theirs)
+    return round(min(there, back), 4), min(len(mine), len(theirs))
+
+
+def same_job(need, t0):
+    """The match (0 to 1) when this need is the SAME JOB as the one that made template t0, else None: the template's
+    family is named for this run's business, both fact lists hold the same emails, times and numbers (three digits or
+    more), the template has every needed field, and the words of the two lists overlap by at least the settings'
+    same_job_min (shared / all). A done-when item worded anew, or a fact left out, is then the same job: the template
+    is reused as it is, and the content door may serve its section. Any changed price, time or address is not."""
+    if not _named_for(t0.name, need.get("site")):
+        return None
+    mine, theirs = list(need.get("facts") or []), list(t0.context.facts_used)
+    hard = lambda fs: set(_HARD_RE.findall(" ".join(str(f) for f in fs).lower()))
+    if hard(mine) != hard(theirs):
+        return None
+    row = {"fields": [f.name for f in t0.fields], "enums": _enums(t0)}
+    if not all(has_field(need, row, n) for n in need.get("fields") or []):
+        return None
+    a, b = words(" ".join(mine)), words(" ".join(theirs))
+    match = round(len(a & b) / len(a | b), 4) if a | b else 0.0
+    return match if match >= float(routing("same_job_min")) else None
+
+
 def route(need, ctx, ask=None, first=None, closest=None):
     """Pick the template one workflow's builder fills. ctx: {run, workflow, atom, agent}. ask(system, user, mock,
     schema) is the generator's one LLM call (None: the mock). Returns (template or None for generic, decision).
@@ -1495,7 +1542,14 @@ def route(need, ctx, ask=None, first=None, closest=None):
     "extended" with adapted_from); a new template is never created while it exists.
     closest (None: J2_AUTO_REUSE=1): where the usual routing would create a template, the nearest stored template of
     the same section is adapted the same way instead (rule "s", adapted_from); a template is created only when the
-    library has none for that section, or the adapted one fails the checks, and the reason says which."""
+    library has none for that section, the adapted one fails the checks, or no other business that has one is similar
+    enough (business_similarity below the settings' adapt_min_similarity: this business gets its own family), and the
+    reason says which.
+    The same job (same_job: this business, the run template's workflow, matching facts) reuses the run template's
+    section template as it is although the fingerprint differs (rule "j", same_job in the decision).
+    ctx["similar"] (a dict the run keeps, optional): the best similarity found so far for each other business in this
+    run; every later need of the run counts it, and a need with too few facts to compare (similarity_min_facts) has
+    nothing else."""
     gen = generic(need["artifact"], need["section"])
     closest = auto_reuse() if closest is None else closest
     cands = candidates(need)
@@ -1540,6 +1594,12 @@ def route(need, ctx, ask=None, first=None, closest=None):
         if set(need["facts"]) <= set(t0.context.facts_used) and all(has_field(need, row, n) for n in need["fields"]):
             return done(t0, "reused", score, as_is.format(ref=ref), rule="t" if key == "first_refused" else "s",
                         **({} if key == "first_refused" else {"adapted_from": ref}))
+        match = same_job(need, t0) if key == "first_refused" else None
+        if match is not None:      # the same job, worded anew: the template as it is, so its section can be served
+            return done(t0, "reused", score,
+                        f"the same job as the one that made {ref}: this business, the same run-template workflow, and "
+                        f"facts that match ({match:.2f}, the least is {routing('same_job_min')}); reused as it is",
+                        rule="j", same_job={"template": ref, "match": match})
         rule = "t" if key == "first_refused" else "s"
         # J2_AUTO_REUSE=1: adapted for another business, it is a new family named for this one (family_name)
         name = family_name(t0, need) if closest else t0.name
@@ -1596,19 +1656,52 @@ def route(need, ctx, ask=None, first=None, closest=None):
         rt = get_run_template(ctx["run_template"]) if ctx.get("run_template") else None      # the run template this run follows
         own = {w.section_template.rpartition("@")[0] for w in (rt.workflows if rt else [])
                if w.artifact == need["artifact"] and w.section == need["section"] and w.section_template_kind == "specialised"}
-        near = nearest(need, gen, own)
-        t1 = get(f"{near['name']}@{near['version']}", need["artifact"], need["section"]) if near else None
+        # a template of ANOTHER business is adapted only when that business is similar enough (adapt_min_similarity);
+        # the nearest one that is, in nearest()'s order; none: this business's own family is created
+        least, few = float(routing("adapt_min_similarity")), int(routing("similarity_min_facts"))
+        known = ctx.get("similar") if isinstance(ctx.get("similar"), dict) else {}
+        near, t1, turned = None, None, {}
+        for c in nearest_ranked(need, gen, own):
+            t = get(f"{c['name']}@{c['version']}", need["artifact"], need["section"])
+            if t is None:
+                continue
+            if c["same_business"]:      # this business's own family, or the same recorded business type
+                near, t1 = {**c, "business_similarity": None}, t
+                break
+            biz = family_business(t) or t.name
+            sim, compared = business_similarity(need, t.context.facts_used, biz)
+            # the best this run has found for that business counts (a section with few facts of its own to compare,
+            # an HLD section or one page section, takes what the PRD's sections found)
+            sim = max(sim if compared >= few else 0.0, known.get(biz, 0.0)) if (compared >= few or biz in known) else sim
+            if compared >= few:
+                known[biz] = sim
+            if sim >= least:
+                near, t1 = {**c, "business_similarity": sim}, t
+                break
+            if c["name"] not in turned or sim > turned[c["name"]]["business_similarity"]:
+                turned[c["name"]] = {"name": c["name"], "version": c["version"], "business": biz, "business_similarity": sim}
+        if turned:
+            base["not_similar"] = {"least": least, "templates": list(turned.values())[:int(routing("candidates_shown"))]}
         if t1 is not None:
-            base["nearest"] = {k: near[k] for k in ("name", "version", "similarity", "business_type", "same_business", "own_section")}
+            base["nearest"] = {k: near[k] for k in ("name", "version", "similarity", "business_type", "same_business",
+                                                    "own_section", "business_similarity")}
             got = adapted(t1, "nearest_refused", "code (adapted from the nearest template)",
                           "the nearest template {ref}, as it is: the same facts and fields",
                           "adapted from {ref} before: version {version} already holds this business's facts",
                           f"adapted from {{ref}}: the nearest {need['section']} template by fields "
-                          f"(similarity {near['similarity']:.2f}), with this business's facts only")
+                          f"(similarity {near['similarity']:.2f}"
+                          + (f", business similarity {near['business_similarity']:.2f}" if near["business_similarity"] is not None else "")
+                          + "), with this business's facts only")
             if got:
                 return got
             why_new = (f"the nearest template {near['name']}@{near['version']} could not be adapted "
                        f"({base['nearest_refused']}), so a new one is made; ")
+        elif turned:
+            far = next(iter(turned.values()))      # the nearest by fields that was turned down
+            why_new = (f"no {need['section']} template of a similar enough business ({far['name']}@{far['version']}: "
+                       f"business similarity {far['business_similarity']:.2f}, the least is {least}), so this business's "
+                       "own template family is made; ")
+            base["fresh_start"] = True
         else:
             why_new = f"no template exists for {need['artifact']} {need['section']} in the library, so a new one is made; "
     refused, tries = None, []
