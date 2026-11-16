@@ -15922,8 +15922,8 @@ def auto_reuse():
             assert all(re.match(r"W-\d+", c) for c in g1["cells"]) and sum("adapted from" in c for c in g1["cells"]) == sum(1 for d in ds1 if d.get("adapted_from")) > 0, g1["cells"]
             g3 = load(r3)
             assert g3["auto"] == "scratch" and g3["sum"] == f"Built from scratch: no similar run template (best {best['name']} {best['score']:.2f})" and g3["link"] is None, g3["sum"]
-            assert g3["pills"][f"{DOCS}-created"] == "0 created" and g3["pills"][f"{DOCS}-adapted"] == "6 adapted" and g3["rows"] == 6, g3["pills"]
-            assert g3["cells"] == [f"adapted from {d['adapted_from']}" for d in ds3] and "Run template" in g3["heads"], g3["cells"]
+            assert g3["pills"][f"{DOCS}-created"] == "6 created" and g3["pills"][f"{DOCS}-adapted"] == "0 adapted" and g3["rows"] == 6, g3["pills"]
+            assert len(g3["cells"]) == 6 and not any("adapted from" in c for c in g3["cells"]) and "Run template" in g3["heads"], g3["cells"]      # its own family: no source to name
             assert g1["sw"][0] <= g1["sw"][1] and g3["sw"][0] <= g3["sw"][1], "no sideways scroll"
             page = "an auto-picked run shows \"Auto-picked run template <name> (match 0.xx)\", a run with none shows \"Built from scratch\" with the best score, each adapted row names its source"
         assert tree_sha(real_lib) == real_before, "the committed library is untouched"
