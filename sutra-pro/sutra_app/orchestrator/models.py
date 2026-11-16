@@ -14,7 +14,7 @@ import re
 from collections.abc import Mapping
 from typing import Annotated, Any, Literal, Union
 
-from pydantic import Field, StringConstraints, TypeAdapter, ValidationError, field_validator, model_serializer, model_validator
+from pydantic import ConfigDict, Field, StringConstraints, TypeAdapter, ValidationError, field_validator, model_serializer, model_validator
 
 from sutra_app.engine.spec import (
     DEPT_ID_RE, OUTPUT_NAME_RE, RUN_ID_RE, RUN_TEMPLATE_ID_RE, RUN_TEMPLATE_WORKFLOWS_MAX, TASK_SCHEMA, TASK_SETTING_KEYS, run_template_keys,
@@ -63,7 +63,12 @@ AtomDisplay = Literal["open", "verify_failed", "closed", "refused", "abandoned"]
 # ---- events (SSE) -------------------------------------------------------------------------------------------------
 
 class Event(Value):
-    """One server event. `seq` is process-local from 1 each launch; the database hands out `seq` 0 and the bus assigns it."""
+    """One server event. `seq` is process-local from 1 each launch; the database hands out `seq` 0 and the bus assigns it.
+
+    The data keeps its strings exactly as they were: `Value` strips the white space around every string it validates, and a streamed piece of text ("the ", " price") is
+    nothing but white space at its edges (streaming design D232: found by the browser test, the page saw "aprice in" and its offset check made it read the snapshot again)."""
+
+    model_config = ConfigDict(str_strip_whitespace=False)
 
     seq: Count
     at: Iso
@@ -213,6 +218,15 @@ class ChatSessionOut(Value):
     pinned_effort: Literal["", "low", "medium", "high", "xhigh", "max"] = ""
     run_id: RunId | None = None             # the run a function or step session belongs to (D130)
     direct_turn: Count | None = None        # the owner's line that a direct turn is answering right now (direct_running.py), else None: any page can offer Stop
+    live: dict[str, Any] | None = None      # the live turn that is streaming in this chat ({generation_id, seq, state, attempt_no}, streaming design D203), else None (the key is left out)
+
+    @model_serializer(mode="wrap")
+    def _live_only_when_there_is_one(self, handler: Any) -> dict[str, Any]:
+        """The wire shape of a chat session is what it always was unless a live turn is streaming in it."""
+        data = handler(self)
+        if data.get("live") is None:
+            data.pop("live", None)
+        return data
 
 
 class ChatOption(Value):
@@ -412,6 +426,11 @@ class ChatMessageOut(Value):
     steer: bool = False                                                    # the owner's note to an agent (POST /api/chats/{sid}/steer, D132): its src_ref is `steer:<id>`
     ask: Literal["q", "records", "model"] | None = None                    # the owner's question to a function (q) and its answer, made from its records or by a model
                                                                            # (POST /api/ask, D148): the src_ref is `ask:<id>`, `ask:<id>:records` or `ask:<id>:model`
+    client_id: Annotated[str, StringConstraints(max_length=64)] | None = None   # the owner's line of a direct turn: the id the page sent with it (`direct-ask:<id>`, D220)
+    attempt: Annotated[int, Field(ge=1)] | None = None                     # a direct-chat reply, note or error: which try of the owner's line it ends (1, or N for a retry, D216)
+    superseded: bool = False                                               # a reply of a try that a later try of the same owner line replaced (kept, not shown as the answer)
+    ordered: bool = False                                                  # `blocks` holds the whole turn in order, text included (D212)
+    via: JsonObject | None = None                                          # a direct reply: {provider, model} that wrote it, so the header says the same live and after a reload
 
     @model_serializer(mode="wrap")
     def _blocks_only_when_there_are_some(self, handler: Any) -> dict[str, Any]:
@@ -427,6 +446,16 @@ class ChatMessageOut(Value):
             data.pop("steer", None)
         if data.get("ask") is None:
             data.pop("ask", None)
+        if data.get("client_id") is None:
+            data.pop("client_id", None)
+        if data.get("attempt") is None:
+            data.pop("attempt", None)
+        if not data.get("superseded"):
+            data.pop("superseded", None)
+        if not data.get("ordered"):
+            data.pop("ordered", None)
+        if not data.get("via"):
+            data.pop("via", None)
         return data
 
 

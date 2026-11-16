@@ -14,6 +14,13 @@ Written files are scrubbed (your e-mail, organisation, home directory, scratch p
 event is trimmed to the keys a connector reads. `derived/` and `handwritten/` fixtures are NOT regenerated: the script says so at the
 end, so you re-check their wording against the new captures. It also updates the CLI versions in MANIFEST.json.
 
+--stream is a separate, opt-in mode (it adds two model calls per CLI, so the default run never makes them): it drives each CLI through the PRODUCT's own
+connector (`ClaudeConnector.stream`, `CodexConnector.stream`: the real `build_command`, flags, environment allowlist and parser) over a recording runner that
+keeps every stdout line with its arrival time, in a scratch folder holding one tiny file. Turn 1 asks the model to read that file (a tool call, partial
+messages for Claude); turn 2 asks for a long answer and Stops it after the first output, to measure the first-output and Stop latency. The recorded
+lines are scrubbed (see below) and a file is written ONLY when the audit finds nothing: no identifier of `scripts/ownership-audit.sh`, no home or user path,
+no scratch path, no account e-mail. A hit refuses the write for that file and fails the step. `--plan` prints these steps too.
+
 --claude / --codex name the executables (default: claude and codex on PATH); --pass-env NAME,... forwards more variables to them (the
 tests use it to drive the fakes in tests/fakes). Exit 0 when every step wrote its files, 1 when a step failed, 2 for a refusal.
 """
@@ -30,6 +37,7 @@ import signal
 import subprocess
 import sys
 import tempfile
+import threading
 import time
 import uuid
 from pathlib import Path
@@ -37,6 +45,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parent.parent
 FIXTURES = ROOT / "tests" / "fixtures" / "connectors"
 MAX_MODEL_CALLS = 2
+MAX_STREAM_CALLS = 2                  # --stream: one tool turn and one Stop turn per CLI
 # the connectors' child environment (connectors.md section 4); copied so that the script runs without the package
 ENV_ALLOW = ("PATH", "HOME", "USER", "LOGNAME", "LANG", "LC_ALL", "LC_CTYPE", "TMPDIR", "SSL_CERT_FILE", "SSL_CERT_DIR", "HTTPS_PROXY", "HTTP_PROXY",
              "NO_PROXY", "ALL_PROXY", "https_proxy", "http_proxy", "no_proxy", "all_proxy", "XDG_CONFIG_HOME", "XDG_DATA_HOME", "XDG_CACHE_HOME",
@@ -177,14 +186,19 @@ def trim_claude_init(event):
 def scrub_stream(text, scrubber, fixed_cwd=False):
     """A stream-json or JSONL capture -> the fixture text: init trimmed (its cwd becomes /work with fixed_cwd), strings scrubbed, one
     compact JSON object per line. Lines that are not JSON are kept (scrubbed); blank lines are dropped."""
-    out = []
+    parsed = []
     for raw in text.split("\n"):
         if raw.strip() == "":
             continue
         try:
-            obj = json.loads(raw)
+            parsed.append(json.loads(raw))
         except ValueError:
-            out.append(scrubber.text(raw))
+            parsed.append(raw)
+    scrub_split_deltas([o for o in parsed if isinstance(o, dict)], scrubber)
+    out = []
+    for obj in parsed:
+        if isinstance(obj, str):
+            out.append(scrubber.text(obj))
             continue
         if isinstance(obj, dict) and obj.get("type") == "system" and obj.get("subtype") == "init":
             obj = trim_claude_init(obj)
@@ -192,6 +206,57 @@ def scrub_stream(text, scrubber, fixed_cwd=False):
                 obj["cwd"] = "/work"
         out.append(json.dumps(scrubber.obj(obj), separators=(",", ":"), ensure_ascii=False))
     return "\n".join(out) + "\n"
+
+
+def _delta_of(obj):
+    """(group key, field name, container dict) of a streamed text or JSON delta line, else None. A piece of a path or an e-mail can be split across deltas, so a
+    scrubber that looks at one string at a time would miss it."""
+    event = obj.get("event") if isinstance(obj, dict) and obj.get("type") == "stream_event" else None
+    if not isinstance(event, dict) or event.get("type") != "content_block_delta" or not isinstance(event.get("delta"), dict):
+        return None
+    delta = event["delta"]
+    for field in ("text", "partial_json", "thinking"):
+        if isinstance(delta.get(field), str):
+            return (obj.get("api_message_id"), event.get("index"), delta.get("type")), field, delta
+    return None
+
+
+def scrub_split_deltas(objs, scrubber):
+    """The streamed deltas of each block, joined, scrubbed and cut again into the same number of pieces (the first piece of a JSON block stays empty if it was).
+    Run BEFORE the per-string scrub: a string that was split across deltas is only found whole."""
+    groups = {}
+    for obj in objs:
+        found = _delta_of(obj)
+        if found is not None:
+            groups.setdefault(found[0], []).append((found[1], found[2]))
+    for members in groups.values():
+        field = members[0][0]
+        pieces = [d[field] for _, d in members]
+        joined = scrubber.text("".join(pieces))
+        if joined == "".join(pieces):
+            continue
+        sizes = [len(p) for p in pieces]
+        total, cut, at = sum(sizes) or 1, [], 0
+        for n, size in enumerate(sizes):
+            end = len(joined) if n == len(sizes) - 1 else at + round(len(joined) * size / total)
+            cut.append(joined[at:end])
+            at = end
+        for (_, delta), piece in zip(members, cut):
+            delta[field] = piece
+    return objs
+
+
+def reassembled_deltas(text):
+    """The streamed deltas of each block of a stream-json capture, joined: what the audit must also look at, because a secret split across deltas is in no one line."""
+    out = {}
+    for raw in text.split("\n"):
+        try:
+            found = _delta_of(json.loads(raw))
+        except ValueError:
+            continue
+        if found is not None:
+            out.setdefault(found[0], []).append(found[2][found[1]])
+    return ["".join(v) for v in out.values()]
 
 
 def scrub_device_code(text):
@@ -658,12 +723,224 @@ class Capture:
         shutil.rmtree(str(self.scratch), ignore_errors=True)
 
 
+# ------------------------------------------------------------------------------------------------ --stream: through the product's connectors
+STREAM_STEPS = {
+    "claude": ["claude_stream_tool", "claude_stream_stop"],
+    "codex": ["codex_stream_tool", "codex_stream_stop"],
+}
+STREAM_PLAN = {
+    "claude_stream_tool": ("ClaudeConnector.stream(partials=True, folder=<scratch folder>) asking it to read notes.txt", "claude/stream_partials_tool_ok.jsonl", 1),
+    "claude_stream_stop": ("ClaudeConnector.stream, a long answer, Stop after the first output (latency)", "timing/stream_timing.json", 1),
+    "codex_stream_tool": ("CodexConnector.stream(folder=<scratch folder>) asking it to read notes.txt", "codex/exec_tool_items_ok.jsonl", 1),
+    "codex_stream_stop": ("CodexConnector.stream, a long answer, Stop after the first item (latency)", "timing/stream_timing.json", 1),
+}
+STREAM_FILE = "scratch notes: the launch checklist has three items, build, test and ship.\n"
+PROMPT_TOOL = "Read the file notes.txt in your working folder and tell me in one short sentence what it says."
+PROMPT_LONG = "Write a detailed, numbered list of 40 distinct tips for keeping a small team's code review fast and kind. One sentence each."
+STREAM_MODELS = {"claude": "sonnet", "codex": "gpt-5.6-luna"}
+IDENT_RE = re.compile(r"/Users/(?!me(?:/|\b))[^/\s\"']+|/home/(?!me(?:/|\b))[^/\s\"']+|[A-Za-z]:\\{1,2}Users\\{1,2}(?!me\b)[^\\\s\"']+", re.IGNORECASE)
+
+
+def ownership_pattern():
+    """The pattern of `scripts/ownership-audit.sh`, read from that file so this script never carries the identifiers itself."""
+    path = ROOT.parent / "scripts" / "ownership-audit.sh"
+    try:
+        found = re.search(r"^PAT='([^']+)'", path.read_text(encoding="utf-8"), re.MULTILINE)
+    except OSError:
+        found = None
+    return re.compile(found.group(1), re.IGNORECASE) if found else None
+
+
+def audit_text(text, extra=()):
+    """What in `text` the repository's audit (or a stricter local check) would object to: the audit's own pattern, a home or user path that is not the
+    placeholder, the scratch directory, and any of `extra` (identity strings the Scrubber learned). -> list of short descriptions; empty when clean."""
+    hits = []
+    pattern = ownership_pattern()
+    for view in [text, *reassembled_deltas(text)]:         # a streamed value split across deltas is in no one line: look at the joined deltas too
+        if pattern is not None and pattern.search(view):
+            hits.append("an identifier of the ownership audit")
+        for found in IDENT_RE.findall(view):
+            hits.append("a user path (%s)" % found[:40])
+        for needle in extra:
+            if needle and len(needle) > 3 and needle in view:
+                hits.append("a string that identifies the account or machine")
+        if "/sutra-capture-" in view or "/private/tmp/" in view or "/var/folders/" in view:
+            hits.append("the scratch directory")
+    return hits
+
+
+def stream_core(connector_name, *, root, exe, pass_env, environ, prompt, stop_after, say=print):
+    """One turn through the product's connector over a recording runner. -> dict(lines=[(seconds, raw line)], events=[(seconds, kind, summary)],
+    argv=[...], stopped_at=seconds or None, seconds=total, error=code or None). `stop_after` is None (run to the end) or a function (event kind, data) -> bool
+    that, the first time it is true, calls `connector.stop(state)` (the Stop latency is the time from that call to the end of the stream)."""
+    sys.path.insert(0, str(ROOT))
+    from sutra_app.connectors.claude import ClaudeConnector
+    from sutra_app.connectors.codex import CodexConnector
+    from sutra_app.connectors.errors import ConnectorError
+    from sutra_app.connectors.models import ConnectorConfig, Message, SessionSpec
+    from sutra_app.connectors.process import ProcessRunner
+    from sutra_app.connectors.workdir import Folder
+
+    recorded = {"lines": [], "argv": []}
+
+    class Recording(ProcessRunner):
+        def start(self, cmd, *, timeout_s=None, idle_timeout_s=None):
+            proc = super().start(cmd, timeout_s=timeout_s, idle_timeout_s=idle_timeout_s)
+            recorded["argv"], recorded["lines"] = list(cmd.argv), []          # the last spawn is the turn: a probe the connector made before it is dropped
+            began, real = time.monotonic(), proc.lines
+
+            def lines():
+                for line in real():
+                    recorded["lines"].append((round(time.monotonic() - began, 3), line))
+                    yield line
+            proc.lines = lines
+            return proc
+
+    data, work, folder = (Path(root) / n for n in ("data", "work", "folder"))
+    folder.mkdir(parents=True, exist_ok=True)
+    (folder / "notes.txt").write_text(STREAM_FILE, encoding="utf-8")
+    extra_env = {k: environ[k] for k in pass_env if k in environ}
+    cfg = ConnectorConfig(data_dir=data, work_root=work, claude_exe=exe["claude"], codex_exe=exe["codex"], extra_env=extra_env)
+    connector = (ClaudeConnector if connector_name == "claude" else CodexConnector)(cfg)
+    connector.runner = Recording()
+    state = connector.start(SessionSpec(session_id="capstream-%s" % uuid.uuid4().hex[:8], provider=connector_name, model=STREAM_MODELS[connector_name], effort="low"))
+    began, events, error, stopped_at, stop_sent = time.monotonic(), [], None, None, None
+    try:
+        for event in connector.stream(state, Message(role="user", text=prompt), partials=True, timeout_s=150, folder=Folder(str(folder), edit=False)):
+            now = round(time.monotonic() - began, 3)
+            events.append((now, event.kind, {k: (len(v) if isinstance(v, (str, list)) else v) for k, v in event.data.items() if k in ("text", "name", "kind", "id", "tool_use_id", "is_error")}))
+            if stop_after is not None and stop_sent is None and stop_after(event.kind, event.data):
+                stop_sent = time.monotonic()
+                threading.Thread(target=connector.stop, args=(state,), daemon=True).start()
+    except ConnectorError as e:
+        error = e.code
+    ended = time.monotonic()
+    if stop_sent is not None:
+        stopped_at = round(ended - stop_sent, 3)
+    return {"lines": recorded["lines"], "events": events, "argv": recorded["argv"], "stopped_at": stopped_at, "seconds": round(ended - began, 2),
+            "error": error, "session": state.session_id, "folder": str(folder), "state": state}
+
+
+class StreamCapture(Capture):
+    """The `--stream` mode: Capture's plumbing (environment, scratch folder, scrubber, session clean-up), different steps."""
+
+    def __init__(self, *a, **kw):
+        super().__init__(*a, **kw)
+        self.timing = {}
+
+    def write_stream(self, rel, text):
+        """Like `write`, but only when the audit of the SCRUBBED text finds nothing."""
+        hits = audit_text(text, extra=[p[0] for p in self.scrub.pairs if p[1] != "/Users/me" and len(p[0]) > 3])
+        if hits:
+            raise CaptureError("not written (%s): %s" % (rel, "; ".join(sorted(set(hits)))))
+        self.write(rel, text)
+
+    def stream(self, cli, prompt, stop_after=None):
+        if self.model_calls[cli] >= MAX_STREAM_CALLS:
+            raise CaptureError("refusing call %d that reaches a %s model (the stream limit is %d)" % (self.model_calls[cli] + 1, cli, MAX_STREAM_CALLS))
+        self.model_calls[cli] += 1
+        result = stream_core(cli, root=self.scratch, exe=self.exe, pass_env=self.pass_env, environ=self.environ, prompt=prompt, stop_after=stop_after, say=self.say)
+        self.session["claude_dir"] = result["folder"] if cli == "claude" else self.session.get("claude_dir")
+        thread = next((json.loads(l).get("thread_id") for _, l in result["lines"] if l.startswith('{"type":"thread.started"') or '"thread.started"' in l), None)
+        if cli == "codex" and thread:
+            self.session["codex_thread"] = thread
+        return result
+
+    def scrubbed_lines(self, result):
+        return scrub_stream("\n".join(l for _, l in result["lines"]), self.scrub, fixed_cwd=True)
+
+    def timeline(self, result):
+        """The arrival time of every line and its type, without content: what the notes quote for latency and ordering."""
+        out = []
+        for at, line in result["lines"]:
+            try:
+                obj = json.loads(line)
+            except ValueError:
+                out.append({"t": at, "type": "(noise)"})
+                continue
+            entry = {"t": at, "type": obj.get("type")}
+            inner = obj.get("event")
+            if isinstance(inner, dict):
+                entry["event"] = inner.get("type")
+                if isinstance(inner.get("delta"), dict):
+                    entry["delta"] = inner["delta"].get("type")
+                if inner.get("index") is not None:
+                    entry["index"] = inner.get("index")
+                if isinstance(inner.get("content_block"), dict):
+                    entry["block"] = inner["content_block"].get("type")
+            item = obj.get("item")
+            if isinstance(item, dict):
+                entry["item"] = item.get("type")
+            out.append(entry)
+        return out
+
+    def claude_stream_tool(self):
+        res = self.stream("claude", PROMPT_TOOL)
+        if res["error"]:
+            raise CaptureError("the Claude turn ended with %s" % res["error"])
+        kinds = [k for _, k, _ in res["events"]]
+        if "tool_call" not in kinds:
+            self.warnings.append("claude_stream_tool: the model made no tool call, so the fixture shows no tool block")
+        self.write_stream("claude/stream_partials_tool_ok.jsonl", self.scrubbed_lines(res))
+        self.timing["claude_tool"] = {"first_output_s": next((t for t, k, _ in res["events"] if k in ("text_delta", "text", "tool_call")), None),
+                                      "first_text_delta_s": next((t for t, k, _ in res["events"] if k == "text_delta"), None), "total_s": res["seconds"],
+                                      "argv_flags": sorted({a for a in res["argv"] if isinstance(a, str) and a.startswith("--")}), "timeline": self.timeline(res)}
+
+    def claude_stream_stop(self):
+        res = self.stream("claude", PROMPT_LONG, stop_after=lambda kind, data: kind == "text_delta")
+        self.timing["claude_stop"] = {"stop_latency_s": res["stopped_at"], "ended_with": res["error"], "first_text_delta_s": next((t for t, k, _ in res["events"] if k == "text_delta"), None)}
+
+    def codex_stream_tool(self):
+        res = self.stream("codex", PROMPT_TOOL)
+        if res["error"]:
+            raise CaptureError("the Codex turn ended with %s" % res["error"])
+        self.write_stream("codex/exec_tool_items_ok.jsonl", self.scrubbed_lines(res))
+        self.timing["codex_tool"] = {"first_output_s": next((t for t, k, _ in res["events"] if k in ("text", "tool_call", "text_delta")), None), "total_s": res["seconds"],
+                                     "argv_flags": sorted({a for a in res["argv"] if isinstance(a, str) and a.startswith("-")}), "timeline": self.timeline(res)}
+
+    def codex_stream_stop(self):
+        res = self.stream("codex", PROMPT_LONG, stop_after=lambda kind, data: kind in ("tool_call", "text", "text_delta"))
+        self.timing["codex_stop"] = {"stop_latency_s": res["stopped_at"], "ended_with": res["error"]}
+
+    def run_streams(self):
+        for cli in ("claude", "codex"):
+            if self.only and cli != self.only:
+                continue
+            self.say("== %s (stream, through the connector)" % cli)
+            found = re.search(r"\d+\.\d+\.\d+", run_cmd([self.exe[cli], "--version"], self.env(cli), timeout=STATUS_TIMEOUT).stdout)
+            self.versions[cli] = found.group(0) if found else None
+            for name in STREAM_STEPS[cli]:
+                if name in self.skip or name.split("_", 1)[1] in self.skip:
+                    self.say("- %s: skipped" % name)
+                    continue
+                self.say("- %s: %s" % (name, STREAM_PLAN[name][0]))
+                try:
+                    getattr(self, name)()
+                except CaptureError as e:
+                    self.failed.append((name, str(e)))
+                    self.say("  FAILED: %s" % e)
+                except Exception as e:                      # one broken step must not hide the others
+                    self.failed.append((name, "%s: %s" % (type(e).__name__, e)))
+                    self.say("  FAILED: %s: %s" % (type(e).__name__, e))
+            self.cleanup(cli)
+        if self.timing:
+            doc = {"date": time.strftime("%Y-%m-%d"), "platform": sys.platform, "versions": self.versions, "measured": self.timing,
+                   "note": "wall-clock seconds on one run on this machine; timelines list arrival time and type of each stdout line, never content"}
+            self.write_stream("timing/stream_timing.json", json.dumps(self.scrub.obj(doc), indent=1, ensure_ascii=False) + "\n")
+        return 1 if self.failed else 0
+
+
 def plan_text():
     lines = ["Steps (at most %d calls per CLI reach a model):" % MAX_MODEL_CALLS]
     for cli in ("claude", "codex"):
         for name in STEPS[cli]:
             what, writes, calls = PLAN[name]
             lines.append("  %-22s %s -> %s%s" % (name, what, writes, "   [%d model call]" % calls if calls else ""))
+    lines.append("With --stream only (opt-in; at most %d calls per CLI, through the product's connectors; a file is written only when the audit is clean):" % MAX_STREAM_CALLS)
+    for cli in ("claude", "codex"):
+        for name in STREAM_STEPS[cli]:
+            what, writes, calls = STREAM_PLAN[name]
+            lines.append("  %-22s %s -> %s   [stream: %d model call]" % (name, what, writes, calls))
     return "\n".join(lines)
 
 
@@ -677,6 +954,7 @@ def main(argv=None):
     ap.add_argument("--pass-env", default="", help="more environment variable names to forward to the CLIs (the tests use it for the fakes)")
     ap.add_argument("--keep-scratch", action="store_true", help="keep the scratch directory (it is removed when every step succeeded)")
     ap.add_argument("--plan", action="store_true", help="print the steps and exit")
+    ap.add_argument("--stream", action="store_true", help="instead of the default steps: capture a streamed turn and a Stop through the product's connectors")
     args = ap.parse_args(argv)
     if args.plan:
         print(plan_text())
@@ -685,6 +963,15 @@ def main(argv=None):
         print("This runs the real claude and codex on your logins (at most %d model calls each). Set SUTRA_LIVE=1 to go ahead, "
               "or use --plan to see what it would do." % MAX_MODEL_CALLS, file=sys.stderr)
         return 2
+    if args.stream:
+        cap = StreamCapture(args.out, args.claude, args.codex, args.only, [s for s in args.skip.split(",") if s], [s for s in args.pass_env.split(",") if s])
+        code = cap.run_streams()
+        cap.report()
+        if code == 0 and not args.keep_scratch:
+            cap.close()
+        else:
+            print("scratch directory kept at %s" % cap.scratch)
+        return code
     cap = Capture(args.out, args.claude, args.codex, args.only, [s for s in args.skip.split(",") if s], [s for s in args.pass_env.split(",") if s])
     code = cap.run()
     cap.report()

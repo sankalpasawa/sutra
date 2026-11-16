@@ -494,7 +494,10 @@
       if (ask === "records" || ask === "model") inner += '<span class="nasksrc">' + ASK_WORDS[ask] + "</span>";
       return '<div class="' + klass + '"' + attrs + "><small>" + esc(label) + "</small>" + inner + "</div>";
     };
-    return list.map((m, i) => ({key: text(m.id) !== "" ? "m" + text(m.id) : "i" + i, html: html(m, i)}));
+    // opts.shell (the pages, STR-10): a direct reply is ONE node whose inside chat_live_view.js paints, live and settled alike, so the stored message takes over the live node
+    const shell = o.shell === true && root.ChatLiveView && typeof root.ChatLiveView.isReply === "function" ? root.ChatLiveView : null;
+    return list.map((m, i) => (shell && shell.isReply(m) ? {key: shell.keyOf(m.turn, m.attempt), html: shell.shellHtml(m.turn, m.attempt, {superseded: m.superseded === true})} :
+      {key: text(m.id) !== "" ? "m" + text(m.id) : "i" + i, html: html(m, i)}));
   }
 
   /* ---------------------------------------------------------------- the message box */

@@ -18,13 +18,19 @@
                                   the reader follows again; else the pill of the plan
      newCount(messages, seenId)   how many messages have an id above the last one the reader saw (a local, unsent line has no number: not counted)
      lastId(messages)             the highest numeric id
-     pillHtml(n)                  "" for 0, else the button "1 new message below" / "N new messages below" (data-act="jump-latest")
+     pillHtml(n, {live})          "" for 0, else the button "1 new message below" / "N new messages below" (data-act="jump-latest"). With {live: true} (a reply is being
+                                  written below the reader, STR-12) it is the button "Reply in progress" whatever n is: the growing reply counts as one
+     grow({parked, atBottom, own})  {scroll: "bottom" | "keep", live}: what to do when the text of the reply that is being written grew inside the scroller: follow it
+                                  while the reader is at the bottom, else keep the place and say a reply is in progress
+     keepPlace(el, fn)            run fn (a change of the lines above or around what the reader sees) and then put the scroll back so that the first line in view is
+                                  where it was: a block inserted above the reader does not move what is read. Returns fn's result
      distance(el)                 px between the bottom of the view and the bottom of the content
      watch(el, onIntent)          listens on the transcript element (wheel, touchmove, keydown, scroll) and hands each input to onIntent as
                                   an event for intent(); returns a function that stops listening
      pin(el, following)           keeps a follower at the bottom when the transcript's box changes size (ResizeObserver; a no-op without it);
                                   returns a function that stops it
-     behavior(matchMedia)         "auto" under prefers-reduced-motion, else "smooth": how the pill's jump scrolls
+     behavior(matchMedia, {streaming})  "auto" under prefers-reduced-motion and while a reply is streaming (the target moves: a smooth scroll to it would lag
+                                  behind), else "smooth": how the pill's jump scrolls
      remember(map, sid, view)     keep {top, pinned, seenId} of a chat being closed (view {top, scrollHeight, clientHeight, seenId}); a Map
                                   of at most MAX_REMEMBERED chats
      restore(map, sid, view)      {top (clamped to the new height), parked: true, seenId} for a chat that was read above its bottom, else null
@@ -90,11 +96,39 @@
     return (Array.isArray(messages) ? messages : []).filter(m => { const id = idOf(m); return id !== null && id > seen; }).length;
   }
 
-  function pillHtml(n) {
+  function pillHtml(n, opts) {
+    if (isObj(opts) && opts.live === true) return '<button type="button" class="cjump-btn" data-act="jump-latest" aria-label="Reply in progress, go to the newest">Reply in progress</button>';
     const count = Math.max(0, Math.floor(num(n)));
     if (count === 0) return "";
     const words = count === 1 ? "1 new message below" : count + " new messages below";
     return '<button type="button" class="cjump-btn" data-act="jump-latest" aria-label="' + words + ', go to the newest">' + words + "</button>";
+  }
+
+  function grow(input) {
+    const p = isObj(input) ? input : {};
+    if (p.own === true) return {scroll: "bottom", live: false};
+    if (p.parked === true || p.atBottom === false) return {scroll: "keep", live: true};
+    return {scroll: "bottom", live: false};
+  }
+
+  // The first child of `el` that is (partly) in view, and how far below the top of the view it starts: what the reader is looking at, before and after a change above it.
+  function keepPlace(el, fn) {
+    if (typeof fn !== "function") return undefined;
+    if (!el || typeof el.getBoundingClientRect !== "function" || !el.children) return fn();
+    const top = num(el.scrollTop);
+    const edge = el.getBoundingClientRect().top;
+    let anchor = null;
+    let offset = 0;
+    for (let i = 0; i < el.children.length; i += 1) {
+      const r = el.children[i].getBoundingClientRect();
+      if (r.bottom > edge + 1) { anchor = el.children[i]; offset = r.top - edge; break; }
+    }
+    const out = fn();
+    if (anchor !== null && anchor.parentNode === el) {
+      const delta = anchor.getBoundingClientRect().top - el.getBoundingClientRect().top - offset;
+      if (Math.abs(delta) >= 1) el.scrollTop = top + delta;
+    }
+    return out;
   }
 
   function distance(el) {
@@ -125,7 +159,8 @@
     return () => ro.disconnect();
   }
 
-  function behavior(matchMedia) {
+  function behavior(matchMedia, opts) {
+    if (isObj(opts) && opts.streaming === true) return "auto";
     try {
       return typeof matchMedia === "function" && matchMedia("(prefers-reduced-motion: reduce)").matches ? "auto" : "smooth";
     } catch (e) {
@@ -153,7 +188,7 @@
     return {top: Math.min(num(mem.top), max), parked: true, seenId: num(mem.seenId)};
   }
 
-  const ChatScroll = {idle, intent, plan, settle, lastId, newCount, pillHtml, distance, watch, pin, behavior, remember, restore, SLOP, MAX_REMEMBERED};
+  const ChatScroll = {idle, intent, plan, settle, lastId, newCount, pillHtml, grow, keepPlace, distance, watch, pin, behavior, remember, restore, SLOP, MAX_REMEMBERED};
   if (typeof module === "object" && module !== null && module.exports) module.exports = ChatScroll;
   else root.ChatScroll = ChatScroll;
 })(globalThis);

@@ -1423,3 +1423,269 @@ Decided by Claude on its own, on the dates shown. The owner can veto any of them
 - Why: the owner's refactoring rule applied to the library: decisions in data with one owner; the app's per-call environment switching is a workaround the seams remove.
 - Rejected: patching the copy (two truths); leaving the constants in code (the app cannot show or tune them).
 - Diagram: label "J2 asked: constants to data, 3 seams", pill on Template library.
+
+## D201 — Streaming chat stays on the existing global SSE stream, with one new control event `chat.live`
+- Sources: `docs/design/streaming/analysis.md` sections 1 and 7, `docs/design/streaming/architecture.md` (Alternatives), D12.
+- Decided: the direct chat route publishes its live events as the control event type `chat.live` on `GET /api/events`; no per-turn endpoint, no fetch-stream, no WebSocket. `chat.partial` remains only for the agent and J2 polled path and for the rollback flag, read on the client through an adapter (D221). The only transport change in `sutra_events.js` is the `TYPES` entry; each view keeps its own handle.
+- Why: the pipe is already genuinely incremental; the app is one local process with the browser as the window; a second long-lived connection competes for the six-connection limit and needs its own auth, reconnect and tests.
+- Rejected: per-turn SSE (extra connection); POST-response NDJSON (a reload cannot attach); WebSocket (new surface, stop is a plain POST).
+- Diagram: label "chat.live on global SSE", pill on Orchestration.
+
+## D202 — `chat.live` has one versioned envelope: generation id, per-generation seq, block ids, additive payloads, and only events with a real source
+- Sources: `architecture.md` Data model, ABS-5 `ChatBlock`, design critique points 4 and 10.
+- Decided: envelope `{v:1, id, conversation_id, message_id, generation_id, attempt, seq, ts, type, block_id?, payload}`; types `turn.accepted|connecting|started|stopping|done|stopped|failed`, `attempt.failed|restart`, `block.start|update|delta|end`, `heartbeat`. Each type names its real source (router event, connector event, ticker); `usage` and `switched` exist only at turn end and ride `turn.done`, they are not live events. Unknown types and fields are ignored; a higher `v` shows a refresh note.
+- Why: a gap-free seq and a delta offset make loss detectable; a live type without a source would make the UI invent state.
+- Rejected: reusing `chat.turn`; a text-only event with fields added; live `usage` and `switched` (no live source).
+- Diagram: label "chat.live envelope v1", pill on Chat sessions.
+
+## D203 — Catch-up is a snapshot route plus seq dedupe, opened stream-first, not replay from the bus ring
+- Sources: analysis risk 4, `orchestrator/events.py`, critique point 10.
+- Decided: `GET /api/chats/{sid}/turn` returns the live turn's whole state and its seq (or `live:false` with the last reply); a page opens its event stream first, buffers `chat.live`, then fetches the snapshot and applies events after its seq; reload, a second tab, a gap and every reconnect use this path. `chat.live` stays out of the 1000-event ring.
+- Why: snapshot-then-stream can miss a terminal event until a 15 s stall rule; putting chat events in the ring forces `gap` resyncs on every topic.
+- Rejected: ring replay; per-turn `Last-Event-ID`; snapshot before the stream is open.
+- Diagram: label "snapshot + seq catch-up", pill on Chat sessions.
+
+## D204 — A server-side `LiveTurn` coalesces on a real timer and redacts by holding back only a possible secret prefix; the 60-character rule goes
+- Sources: analysis RC3, `chat_v2._answer`, `orchestrator/redact.py`, critique points 3, 11 and 19.
+- Decided: the first delta of a block is sent at once, later ones merge for at most 33 ms, flushed by a per-turn ticker waiting on a condition with the real deadlines (flush, heartbeat, checkpoint), not by the next provider event. Redaction holds back only the trailing suffix of the unemitted text that is a proper prefix of a current secret from `redact.secrets()` (whole env and `.env` values, including values with spaces and newlines, re-read per flush); everything before it is emitted redacted; the remainder is flushed at block end. Stored text is what was emitted. `ChatPort.stream` forwards `started`, and `LiveTurn.close()` runs in a `finally` and joins the ticker with a timeout.
+- Why: `redact` replaces exact values, not shapes, so whitespace splitting leaks and no constant span exists; this is correct for any value and adds no latency when the tail cannot start a secret.
+- Rejected: splitting at whitespace; a constant shape length; a character threshold; redacting only at the end.
+- Diagram: label "time coalesce + secret-prefix hold-back", pill on Orchestration.
+
+## D205 — Provider honesty: each turn declares `stream_mode`; Codex scope is fixed by a real capture taken through the connectors
+- Sources: analysis RC2 and section 9, D32, critique points 15 and 16.
+- Decided: `stream_mode` is `tokens`, `activity`, `final`, `simulated` or `snapshot`; the UI labels non-token modes; a whole message is never chunked. The capture extends `scripts/capture_connector_fixtures.py` with a recording runner behind the connector, so the connector's flags, environment allowlist and the `api_key` billing refusal apply; fixtures are scrubbed (home paths, tool output stubbed) and pass `scripts/ownership-audit.sh` before they are written. Capture and latency checks are POSIX only and nothing is claimed for Windows. No persistent-process change (D32 stands).
+- Why: the owner's rule: real, never simulated; raw CLI calls skip refusals and tool output carries home paths.
+- Rejected: raw CLI capture; typewriter reveal of a whole message; promising Codex token streaming; a second capture script.
+- Diagram: label "stream_mode, honest labels", pill on Codex connector.
+
+## D206 — Thinking is shown as presence and elapsed time only
+- Sources: analysis RC4.
+- Decided: a thinking block produces `block.start` and `block.end` with no text; the UI shows a presence indicator and a measured duration; reasoning text is neither sent nor stored.
+- Why: honest liveness during long thinking without exposing or fabricating content.
+- Rejected: streaming thinking text; a "thinking" label without a provider event.
+- Diagram: label "thinking: presence only", pill on Claude connector.
+
+## D207 — The live row is a transcript item promoted in place at settle, made reachable by deferring the stored-message refetch; the live view has no head cap
+- Sources: analysis RC6, section 4, critique point 5.
+- Decided: the stream row moves inside the scroller as a keyed item and keeps its nodes when the stored reply arrives; while a live generation exists for an owner line, `reconcile`, the page refetch and the reply's `chat.message` go to a stash and are applied at the terminal event, which carries `stored_order` to remap keys; `MAX_SHOWN` no longer applies to the live view; Home reconciles and paints in one step like the panel. The no-jump guarantee is for the reply item.
+- Why: the reply's `chat.message` arrives before `turn.done`; without the deferral the row is replaced first, which is the node swap this decision exists to remove.
+- Rejected: cross-fade between two DOM trees; a larger cap; promoting without the deferral.
+- Diagram: label "live row promoted in place", pill on Chat sessions.
+
+## D208 — The client is layered: event normaliser (with a partial adapter), pure reducer with a fixed state machine, keyed block view; the transport is not refactored
+- Sources: `architecture.md` Message state machine, Components, critique point 12.
+- Decided: `chat_live_events.js`, `chat_live_store.js`, `chat_live_view.js`, `chat_live_activity.js`; states sending, accepted, connecting, running, backoff, stopping, done, stopped, failed, plus resyncing; `sending` to `stopping` queues the stop until the 202; activity (waiting, thinking, writing, tool, stalled) is derived; `state().turn` keeps its keys. `SutraEvents.shared` is dropped from this scope: `home.js` and `node_panel.js` keep their own handles, topics, `pollFn` and first-hello handling, and the state names stay `live`, `polling`, `offline`.
+- Why: each layer is testable alone; a ref-counted shared connection leaves per-subscriber semantics undefined and touches four views for no streaming benefit.
+- Rejected: growing `ChatComposer` state; a framework; a shared connection.
+- Diagram: label "normaliser / reducer / view layers", pill on Chat sessions.
+
+## D209 — Sends carry a `client_id`; retry reuses the owner line with a new generation
+- Sources: analysis section 5 (idempotency), `chat_v2.direct`.
+- Decided: `client_id` makes a repeated send return `duplicate:true` with the same turn; `POST /api/chats/{sid}/direct/retry` re-runs the newest failed or stopped line without a new owner line, with attempt-scoped refs (D216); an earlier attempt that could have changed files stays visible as "Earlier try" (stored as a note after reload); the owner-driven retry warns first when side effects were possible.
+- Why: no duplicated owner line, turn or hidden side effect.
+- Rejected: automatic re-run after an edit or run tool; erasing a failed attempt.
+- Diagram: label "idempotent send, safe retry", pill on Chat sessions.
+
+## D210 — Live tool data is name at start, then kind, title and a redacted target relative to the turn's folder at block stop; never raw input or output
+- Sources: analysis risk 3, `connectors/tool_kinds.py`, critique points 7 and 14.
+- Decided: Claude's tool input arrives as `input_json_delta`, so a tool block starts with its name only ("Using Read") and `block.update` carries title and target once the block stops (or the matching `tool_call` is matched by `tool_id`); the input JSON is buffered server-side (8 KB), parsed, discarded, never sent. Targets are relative to the turn's `folder` (the owner's chosen folder, not the work root), a basename outside it, cut to 200, redacted; `describe(name, input, folder)` runs in the connector so no root leaves it.
+- Why: redaction by construction; a title cannot be honest before the input is known; the child runs in the owner's folder.
+- Rejected: streaming tool input; a title at `block.start`; paths relative to the work root; live output previews.
+- Diagram: label "tool activity: no raw args", pill on Tool connectors.
+
+## D211 — In-flight turns are checkpointed in a side table, never in `chat_messages`, written outside the locks
+- Sources: analysis RC7 and section 5 (persistence), FTS trigger `chat_search_msg_au`, critique point 11.
+- Decided: migration v5 adds `chat_turn_checkpoint`, written at state changes, block ends and at most every 1.5 s while text flows; the block table is copied under the short data lock and serialised (up to 256 KB) and written by the ticker outside every lock; dropped in the transaction that stores the reply; `recover_interrupted` stores the partial turn from it.
+- Why: crash and restart keep text and tools; no FTS churn; no pending-row hazards in `reconcile`; the provider consumer is never blocked by JSON or SQL.
+- Rejected: a `pending` placeholder row; a write per token; serialising under the lock.
+- Diagram: label "checkpoint table, not messages", pill on Chat sessions.
+
+## D212 — New turns store the ordered block list under a sibling meta key; the fold counts a call and its result as one unit
+- Sources: analysis section 5 (stored text, block cap), `models.py` 409, `chats.py` blocks write, critique point 13.
+- Decided: `ordered: true` is written as a sibling key next to `blocks` (`MessageMeta` is J2's closed key set) and read into an additive `ChatMessageOut.ordered`; the `text` column stays `result.result`, so text is stored twice (bounded by `MAX_TEXT`, asserted); the fold closes the list past 400 elements with one `truncated` "more tool calls" block, counting a `tool_use` and its `tool_result` as one unit and never separating them, so call and result stay paired and the 500 read cap cannot fail a store.
+- Why: the settled view equals the live view; legacy messages and search are untouched.
+- Rejected: a key inside `MessageMeta`; lifting the read cap; emptying the `text` column (breaks search); folding results separately.
+- Diagram: label "ordered blocks, fold by pairs", pill on Chat sessions.
+
+## D213 — Stop is two-phase and honest: the server freezes at the request, the route never blocks, `stopped:false` means nothing is running
+- Sources: analysis section 2 row 18 and risk 9, `connectors/process.py`, critique points 9, 16, 17 and 18.
+- Decided: the client shows `stopping` at once; `LiveTurn.request_stop` sets the token, freezes the accumulator (no more text emitted or kept) and publishes `turn.stopping` in one ordered step, so every tab and the stored text end at the same character; the stop route schedules the process cancel in the background and answers at once; the UI ends `stopping` only on a terminal event, and a `stopped:false` answer triggers the snapshot resync; `sending` to `stopping` queues the stop until the 202; `turn.stopped` is sent only after exit and store; open tools end `interrupted`; a stop that races completion ends `done`. The POSIX ladder is SIGINT 5 s, SIGTERM 5 s, SIGKILL 2 s; nothing is claimed for Windows (different ladder, abrupt, unverified). The stalled copy shows the real idle limit (`idle_limit_s`), and the idle-timeout failure message names it.
+- Why: Stop feels immediate and never claims more than happened; the 12 s ladder must not hold the UI.
+- Rejected: optimistic "Stopped"; a client-side freeze that disagrees with the stored text; the UI waiting on the stop response; marking interrupted tools failed; Windows timing claims.
+- Diagram: label "two-phase stop, freeze at request", pill on Connector router.
+
+## D214 — Rollout is behind `SUTRA_LIVE_V1`, with the legacy path kept for one release
+- Sources: `architecture.md` Rollout.
+- Decided: default off until the client lands, then on; off restores today's `chat.partial` path unchanged (read through the D221 adapter); the checkpoint table is ignored when off; the ref and `ChatMessageOut` changes are additive and read the same either way.
+- Why: the change spans server, parsers and four views; a switch makes rollback a config change.
+- Rejected: big-bang replacement; a permanent dual path.
+- Diagram: label "SUTRA_LIVE_V1 rollback flag", pill on Orchestration.
+
+## D215 — One stop owner: a per-turn `CancelToken` through `ChatPort`, `Router` and `base._events`
+- Sources: `connectors/router.py` (`_chat`, `_chat_turn`, `chat_stop`, `_drive`), `connectors/base.py` (`_events`, `_track`), critique points 1 and 18.
+- Decided: `direct_running.begin_turn` creates the token; it is passed `ChatPort.stream(cancel=)` to `Router` to `connector.stream(cancel=)`; `base._events` binds the process to it right after `_track` and a token already set cancels it at once; it is also checked before session setup, before spawn and between events; the Router back-off waits on the token and ends at once on Stop; `Router.chat_stop` returns True iff a turn is running. `_chat`'s entry `discard` cannot erase a token; the legacy early-flag set stays for callers without one.
+- Why: today Stop is lost between `_chat_active` being set and the process being tracked (`stopped:false` is read as "nothing to stop"); a flag read before spawn cannot cover that window.
+- Rejected: a `LiveTurn` flag checked before spawn; keeping `_chat_stop_early`; returning False when the process is not yet tracked.
+- Diagram: label "CancelToken: one stop owner", pill on Connector router.
+
+## D216 — Attempt-scoped refs; a superseded reply stays visible and leaves the model's history
+- Sources: `chat_messages_src` unique index, `direct_turns.Ending`, `chats._turn_of`, `chat_v2.recover_interrupted`, composer `reconcile`, critique point 2.
+- Decided: attempt 1 keeps today's refs (historical rows stay valid); attempt N >= 2 appends `.N` to every reply, note, error and switch ref; `N` is the server-computed ordinal fixed at generation start and returned as `attempt_no`; the `Ending` pattern, `_turn_of`, `recover_interrupted` (`= ... OR LIKE '....%'`) and `reconcile` (ends on `turn === id` and the running attempt) change together under a table test; `ChatMessageOut` gains `attempt` and `superseded`; superseded replies are collapsed under "Earlier try" and excluded from carry-over and history.
+- Why: a retry on the same owner line would reuse refs, `post()` would return `None` and the reply would be lost; the replaced reply must not be told to the model as if it stood.
+- Rejected: deleting the first attempt's reply; reusing refs; a new owner line per retry.
+- Diagram: label "attempt-scoped refs", pill on Chat sessions.
+
+## D217 — The Router emits `route.*` events; connecting, failing and restarting are shown only from them
+- Sources: `Router._drive`, `ChatPort.stream`, critique point 4.
+- Decided: on the chat path only, `_drive` yields `route.plan`, `route.attempt` (provider, model, attempt number, idle limit) right before spawn, and `route.failed` (reason, retryable, action, delay, next provider) before the sleep; `turn.connecting`, `attempt.failed` and `attempt.restart` derive from them; the label for the first is "Starting <provider>", never "connected" (that is `turn.started`, from the CLI's init line).
+- Why: nothing before the CLI's init line was observable, and the retry back-off was silent, leaving a stale "Writing" with frozen text.
+- Rejected: a `connecting` event with no source; a `restart` with no data; building the note only after the turn.
+- Diagram: label "route events: plan, attempt, failed", pill on Connector router.
+
+## D218 — `BlockAccumulator` is the sole owner of block structure
+- Sources: `ChatPort.stream` (blocks, `saw_partial`, restart), critique point 7.
+- Decided: one pure class in `connectors/chat_blocks.py` owns block ids, per-message index scoping (Claude block indexes restart in each assistant message), `saw_partial` per message, matching of the later `tool_call` event to the open block by `tool_id`, restart, the redaction hook, the pair-aware fold and `stored_order`; `ChatPort.stream` uses it for every caller and `LiveTurn` consumes its output and adds only envelope, timing, checkpoint and publishing.
+- Why: two accumulators diverge on restart, tool ids and indexes.
+- Rejected: `LiveTurn` re-implementing accumulation; a global `saw_partial`.
+- Diagram: label "BlockAccumulator: one block owner", pill on Connector router.
+
+## D219 — The stored message is the final attempt; earlier tries are a stored note; `stored_order` maps live keys
+- Sources: `ChatPort` restart (clears blocks), D207, critique point 5.
+- Decided: the stored reply holds only the final attempt's blocks (matching the `text` column and the live reply item); earlier attempts with tool blocks are summarised, from block titles and redacted, in the turn's switch note (at most 20 lines), so they stay visible after a reload; `turn.done`/`stopped`/`failed` carry `stored_order` (live `block_id`s in stored order) so promotion maps by position, never by assumed index.
+- Why: live "Earlier try" blocks and a stored list with only the last attempt cannot share index keys; the note keeps the honest record without breaking the mapping.
+- Rejected: storing all attempts' blocks in one list; dropping earlier tries at settle without a record.
+- Diagram: label "final attempt stored, earlier as note", pill on Chat sessions.
+
+## D220 — Idempotency lookup and claim come before `begin`; a duplicate is 200, not 409 or 500
+- Sources: `api/chat_v2.direct`, `direct_running.begin`, `_post`, `ChatMessageOut`, critique point 6.
+- Decided: the route validates, looks up `client_id` (a stored `direct-ask:<client_id>` line or a running claim), and only then calls `begin_turn(sid, client_id)`, which also covers two concurrent POSTs; a duplicate returns `duplicate:true` and starts nothing; `_post` returns `Optional[int]` and `None` means a replayed ref; `ChatMessageOut` exposes `client_id` (not `src_ref`) so the optimistic owner line and the stored line reconcile to one bubble, in the sending tab and in a second tab.
+- Why: today `begin` refuses first so a double POST is 409, and a duplicate ref would be `None.id` (a 500); without `client_id` on the read model a page shows two bubbles.
+- Rejected: exposing `src_ref`; reconciling by text; relying on the unique index alone.
+- Diagram: label "client_id before begin", pill on Chat sessions.
+
+## D221 — AI workers and the legacy path are read through a `chat.partial` adapter with `stream_mode:"snapshot"`
+- Sources: `chat_composer.js` (`state().turn`), `agent_live.json` path, critique point 8.
+- Decided: `fromPartial` turns `chat.partial {text, reset}` into `partial.snapshot` actions on a synthetic generation with one text block (cumulative, replaced per snapshot, fresh on `reset`); `source:"partial"` switches off seq gap detection and snapshot resync; no tool activity and no label claim; turn end stays the existing reconcile; no server change. The flag-off direct path uses the same adapter.
+- Why: the composer's turn is a projection of the new store, and the polled path has no seq, generation or blocks; without an adapter AI-worker chat would regress.
+- Rejected: leaving the composer with two turn models; converting the AI-worker server path in this scope.
+- Diagram: label "chat.partial adapter (snapshot)", pill on Chat sessions.
+
+## D222 — Seq and publish happen under one lock, every event goes through `LiveTurn`, `turn.accepted` carries `client_id`, every reconnect resyncs
+- Sources: `orchestrator/events.py` (`publish_one`), `sutra_events.js` (hello after an error becomes `server.resync`), critique point 10.
+- Decided: producing an event takes `_pub_lock`, assigns seq and publishes before releasing, so bus order equals seq order and a flushed delta cannot overtake a later one; the route's `turn.accepted` and `turn.stopping` are published through `LiveTurn`; `turn.accepted` carries `client_id` so the sender matches it before it knows `generation_id`; the page resyncs (stream open, buffer, snapshot) on every `server.resync` its own handle synthesises, with no 3 s threshold, and polls the snapshot every second while `polling`.
+- Why: seq assigned apart from publish can reorder on the wire; the first event precedes the 202; a lost terminal event is otherwise found only by the 15 s stall rule.
+- Rejected: assigning seq under the data lock and publishing after; a time threshold before resync; route-side publishing.
+- Diagram: label "seq+publish one lock; resync on reconnect", pill on Chat sessions.
+
+## D223 — A tool line's title and target are set when the provider's `tool_call` arrives, not at `content_block_stop`
+- Sources: `tests/fixtures/connectors/claude/stream_partials_tool_ok.jsonl` (the real capture of 2026-11-14, STR-1), `docs/design/streaming/capture-notes.md`, `connectors/chat_blocks.py`.
+- Decided: Claude sends the complete `assistant` message (the whole `tool_use` with its input) BEFORE the block's `content_block_stop`, so the title and target are computed at the existing `tool_call` event and matched to the open block by `tool_id`; `block_stop` only completes the input and carries the privately buffered input as a fallback when no `assistant` message came; the tool stays open until its `tool_result`. A Codex command starts at `item.started` (with its command text) and ends at `item.completed` with its exit code; an `agent_message` is only ever a whole `item.completed`, so Codex is `stream_mode: "activity"`. Neither parser changes an existing event: block kinds are new events, gated on a partials turn (Claude) or a chat turn (Codex).
+- Why: the design assumed the input was complete only at the stop event; the capture shows it is complete earlier, and an assumption that costs the page a delay it does not need is worth correcting; older parser tests assert exact event data and stay green.
+- Rejected: computing the title in the parser (the existing `tool_call` data is asserted exactly by the older tests, and `ChatPort` can reach the turn's folder through the router anyway); sending the buffered input to the page.
+- Diagram: label "tool title at tool_call (real order)", pill on Claude connector.
+
+## D224 — The live turn uses one lock for sequence, accumulator and publish, and every live kind is opt-in
+- Sources: `orchestrator/live_turn.py`, `connectors/chat_port.py` (`acc=`), `connectors/router.py` (`routes=`), STR-5 and STR-6.
+- Decided: a `LiveTurn` guards the accumulator, the sequence number and the bus call with one re-entrant lock, so a snapshot taken under it is exactly "everything up to seq N" (the design had two locks and needed the pair consistent anyway); the JSON of a checkpoint and every SQL statement run outside it, on a separate writer thread that is skipped while the previous write runs. `ChatPort.stream(acc=)` yields the live kinds (`started`, `route`, `block_*`, a `restart` with data, a `turn_done` with ordered blocks, the settle map and earlier tries) and `Router.chat_stream(routes=True)` yields the route events; without them every older caller sees exactly the events it always saw, which is what keeps the existing connector and port tests unmodified (one test that called the private `_map` now asks the accumulator, which owns that mapping).
+- Why: the second lock bought nothing a snapshot could use; making the new kinds opt-in is cheaper than auditing every consumer of `ConnectorEvent` and `ChatEvent`.
+- Rejected: two locks with a copy for the snapshot; adding the live kinds to every chat stream.
+- Diagram: label "one lock; live kinds opt-in", pill on Chat sessions.
+
+## D225 — Stop is truthful and instant at the route, and the new refusal is `not_retryable`
+- Sources: `orchestrator/api/chat_v2.py` (`_stop_live`, `_retry_live`), `orchestrator/errors.py`, `connectors/router.py` (`chat_stop`), STR-2 and STR-7.
+- Decided: with the live chat on, `POST .../direct/stop` calls `LiveTurn.request_stop()` (flush, freeze, token, `turn.stopping`, in that order) and schedules `port.stop` (the cancel ladder, up to 12 s) on a background task; the response `{session_id, stopped, state}` returns at once, and `stopped: true` means a turn was running and Stop is requested, `false` that none is. With the flag off the route is what it was. A retry of an owner line that was answered or is not the chat's newest is `409 not_retryable`, a code added to the closed list of error codes (and to TROUBLESHOOTING) rather than overloading `busy`, which means "a turn is running". The idle-timeout sentence names the limit and still starts with the words the older tests assert ("<Provider> did not answer within L s: it sent no output for that long, so it was stopped").
+- Why: a Stop that waits for the ladder looks like a hang; a refusal that means one thing must not share a code with one that means another.
+- Rejected: waiting for the process in the route; reusing `busy` for "already answered".
+- Diagram: label "stop answers at once; not_retryable", pill on Connector router.
+
+## D226 — A requested Stop always ends the turn stopped, the ticker never spins on a slow checkpoint, and the chat is freed before the ticker is joined
+- Sources: `orchestrator/live_turn.py` (`_next_timeout`, `stopping`), `orchestrator/api/chat_v2.py` (`_answer_live`), review of STR-6 and STR-7.
+- Decided: when a checkpoint is due but the previous write is still running, the ticker looks again after `CKPT_RETRY_S` (0.05 s) instead of at a deadline already past (it had spun about 700,000 times a second while holding the lock the provider events use). When Stop was requested, `_answer_live` takes the stopped ending even if the provider returned a result (the process had already exited when the cancel ladder ran): the stored text is what every tab saw, and `turn.done` is never sent after `turn.stopping`. A Stop asked after the turn ended still ends `done` (D225). `direct_running.end` runs before `LiveTurn.close`, so the chat accepts the next send while the join of a slow write is still waiting.
+- Why: the stored reply must equal what was shown; a slow disk must not cost CPU or streaming latency or a spurious 409.
+- Rejected: dropping the checkpoint deadline while a write runs (nothing would wake the ticker when it ends); closing without joining (the join is bounded and keeps tests and shutdown clean).
+- Diagram: label "stop wins over a late result" on Live turn.
+
+## D227 — Client layers: intake, store, client, view
+- Sources: streaming design D202, D220, D221, D222; `sutra_events.js` (the page's own SutraEvents handle stays the transport: an EventSource, so the browser frames the bytes and a frame that arrives in pieces or several in one read reaches the page whole and in order); `tests/ui/js/chat_live_*.test.js`.
+- Decided: no layer reads the clock or the network except the client; the reducer takes `now` on the action. A hole (a `seq` that skips, a text `offset` that is not the code-point length already shown, a first frame that is not seq 1, an oversize piece) makes the intake buffer every later frame and the client read `GET /api/chats/{sid}/turn`; the buffered frames newer than the snapshot follow it in order. Every reconnect (`server.resync`), the stream being down (polling, every second) and 15 s of silence run the same sequence. A terminal event, a snapshot that says nothing runs, or 20 s of silence releases the stored reply that was held back.
+- Why: each piece has one input and one output and is tested without a page; the holes the design lists (offset, seq, first frame) are exactly what a chunked or dropped stream produces, and the cursor is the seq the snapshot carries.
+- Rejected: a fetch-based SSE reader of our own (it would repeat SutraEvents' retry and polling and the server sends `chat.live` with id 0, so there is no byte cursor to resume from); counting UTF-16 units for `offset` (the server counts code points, an emoji would look like a hole).
+- Diagram: label "client layers: intake store client view", pill on band:EXPERIENCE.
+
+## D228 — The composer is live only when the page asks for it
+- Sources: `chat_composer.js`, `tests/ui/js/chat_composer.test.js` (unchanged), `tests/ui/js/chat_composer_live.test.js`, streaming design D220.
+- Decided: without `live` every older caller and test sees the composer it always had (the existing 43 composer tests pass unmodified); with it, a Stop pressed while the POST is in flight shows Stopping at once and sends the stop only after the 202 gives the turn an id, a stop answer of `stopped:false` never clears Stopping (the snapshot decides), a failed stop request brings the button back, and the owner's line shows at once and is replaced by the stored line with the same `client_id` (one bubble, also with a second tab). Retry uses `/direct/retry` (no second owner line) and falls back to sending the words again on a server without the live chat.
+- Why: the old composer tests encode behaviour the legacy path must keep; a switch is cheaper than two controllers.
+- Rejected: replacing the composer's turn object (twenty tests assign and compare it); a Retry that re-sends the words on a live server (a second owner line and a repeated side effect).
+- Diagram: label "composer live opt-in; stop queued", pill on band:EXPERIENCE.
+
+## D229 — A reply is one node, painted from a model, live or stored
+- Sources: `chat_view.js` (`shell` option), `chat_live_view.js`, streaming design D207, D212, D219; `tests/e2e/test_browser_live_chat.py` (a node of the reply is never recreated; the item's top does not move at settle).
+- Decided: the shell's html is a function of (turn, try) only, so `Fluid.patchList` never replaces it; a stored `id` and every state is painted into it. The status and the actions share one row under the blocks, present live and settled, so nothing above it moves at settle. Historical messages (ordered blocks, a text-only message, a legacy message with its tools folded in one row) go through the same model; a superseded try is collapsed under Earlier try. The live item exists only until a stored message has its key.
+- Why: a reply that is built twice (a streaming row, then a bubble) flashes and jumps; one node painted by one function cannot.
+- Rejected: keeping the streaming row outside the scroller and moving its text into a bubble at the end (the swap is the jump); putting the status above the text (it disappears at settle and the text moves up).
+- Diagram: label "one reply node; settle in place", pill on band:EXPERIENCE.
+
+## D230 — Text blocks are drawn by appending; a code fence is one node
+- Sources: `fluid.js`, `chat_markdown.js`, `tests/ui/js/fluid_text.test.js` (a 200 KB reply in 4,000 pieces: no settled block and no fence recreated), the browser test of a long reply with a table and a fence.
+- Decided: the tail is split into text and fence segments and reconciled with what is drawn (a text segment is drawn again when it changed, a fence only changes its text); an unfinished table row and an unclosed span are held or shown as text by `ChatMarkdown.hold` as before; the highlighter is a small DOM-building one (no innerHTML from text); the copy-code button lives inside the settled `<pre>`.
+- Why: a streamed fence that is recreated on every piece loses its scroll and selection and costs a layout per piece.
+- Rejected: highlighting while streaming (the colours change as a string closes); a third-party highlighter (a dependency for a feature a hundred lines cover, and the page stays offline).
+- Diagram: label "append-only text; one node per fence", pill on band:EXPERIENCE.
+
+## D231 — The activity line says only what the wire says, and the number that changes is not announced
+- Sources: `chat_live_store.js` (`activity`, `label`), `chat_live_activity.js`, streaming design "Activity timeline" and "Message state machine".
+- Decided: stalled shows the real silence and, when the server sent it, the real idle limit ("Still working, no output for 25 s", "stopped after 120 s without output"); a backoff shows the server's reason and counts down the server's delay; a tool shows its name until the title arrives; thinking shows presence and its real duration, never its text; a provider that sends its answer whole says so and gets a fade, never a typewriter.
+- Why: an invented progress bar is the one thing that makes a user stop trusting a live view; a label that changes every second is read out every second.
+- Rejected: an elapsed-time estimate or a "step 2 of 5" line; one live region for text and clock.
+- Diagram: label "honest labels; clock not announced", pill on band:EXPERIENCE.
+
+## D232 — The data of an event keeps its white space
+- Sources: `orchestrator/models.py` (`Event`), `library/base.py` (`Value`: `str_strip_whitespace=True`), `tests/orchestrator/test_event_whitespace.py`, the browser test of a long reply (`tests/e2e/test_browser_live_chat.py`).
+- Decided: `Event` sets `str_strip_whitespace=False`. `Value` strips the white space around every string it validates, nested strings of `data` included, and a live chat piece ("the ", " price") is nothing but white space at its edge: the page received "aprice in rupees" while the server's offset counted the lost space, so the page's own offset check found a hole at nearly every piece boundary and read the snapshot again and again (the text came out right each time, which is why the earlier tests passed; the reply remounted its code block, which is how the browser test found it).
+- Why: a streamed word must reach the page as the provider sent it; the repair by snapshot hid the fault and cost a request and a redraw per piece.
+- Rejected: leaving the strip and making the page tolerant of a short piece (the text on screen would differ from the stored text until the next snapshot); a new model for live events (the bus has one `Event` and one data shape).
+- Diagram: label "event data keeps its white space", pill on Chat sessions.
+
+## D233 — Stop and Retry live in the reply, and a replaced try collapses at once
+- Sources: `chat_live_view.js` (`plan`, `supersede`, `paintActions`), `home.js`, `node_panel.js`, `tests/ui/js/chat_live_view.test.js`, `tests/e2e/test_browser_live_chat.py` (stop, retry, backoff).
+- Decided: Stop is a button inside the running reply (named for a screen reader, disabled and worded "Stopping…" at once, Esc as before); a reply that was stopped (a note was stored with it) or whose error row is the reply item offers Retry while it is the owner's newest line and no turn answers; a reply whose failure has its own error line leaves Retry to that line (one button, not two). A retry that follows a try that may have run an edit or a command says so first. A page that read the first try before the retry's reply was stored works out `superseded` from the rows it has, by the server's rule, so the first try is collapsed under Earlier try when the retry's reply arrives, not after the next reload.
+- Why: the owner's eyes are on the reply, not on the box; a button that repeats, or a warning that comes after the click, is worse than none; the page never re-reads old rows, so a flag that changes later on the server would otherwise never reach it.
+- Rejected: re-fetching the whole chat after a retry (a request per retry for one boolean); a confirm dialog on Retry (the words are in the reply, the choice is one click).
+- Diagram: label "stop and retry in the reply", pill on band:EXPERIENCE.
+
+## D234 — Only what arrives moves, the loops stop under reduced motion, and the reader keeps their place
+- Sources: `static/css/sutra-panel.css` (the live reply block and the motion tokens), `chat_scroll.js` (`grow`, `keepPlace`, `pillHtml({live})`, `behavior({streaming})`), `tests/ui/js/chat_scroll.test.js`, `tests/ui/js/motion_css.test.js`, `tests/e2e/test_browser_live_chat.py` (scroll, reduced motion, phone width).
+- Decided: two tokens join the scale (`--dur-pulse`, `--dur-blink`, both 0 under `prefers-reduced-motion`); a block that arrives fades or rises over `--dur-fast`, a whole text block of a provider that sends its answer whole fades over `--dur-base` (never a typewriter), text that streams does not animate, the presence dot breathes while the turn waits, thinks, starts or is between tries and stops when words flow, the caret is a pseudo-element of the last open block (no node is made for it) and blinks, and under reduce no animation or transition runs inside a reply at all. A reader at the bottom follows the growing reply; a reader who moved up is not moved, a pill says "Reply in progress", and the jump scrolls with `auto` while the reply still streams (the target moves) and `smooth` otherwise unless motion is reduced; a line inserted above a parked reader moves the scroll by its height (`keepPlace`).
+- Why: motion that is not attached to an arrival is noise, and a smooth scroll to a target that keeps moving always lags; the existing intent machine of `chat_scroll.js` already told following from reading, so the reply only needed to count as one growing item.
+- Rejected: animating every text piece (80 paints a second for nothing), a typewriter for a provider that did not stream (it would claim a stream that did not happen), a count of "N new pieces" on the pill.
+- Diagram: label "motion on arrival; keep the reader's place", pill on band:EXPERIENCE.
+
+## D235 — The live chat is on by default; `SUTRA_LIVE_V1=0` goes back
+- Sources: `config.py` (`live_v1`), `docs/ENVIRONMENT.md`, D214, the browser tests of `tests/e2e/test_browser_live_chat.py` (17 scenarios on and off) and the unchanged older ones.
+- Decided: `live_v1` defaults to `True`. Off is the legacy `chat.partial` path with the same reply node drawn from it (no tool lines, no claim of streaming); the checkpoint table is ignored; the ref and `ChatMessageOut` changes read the same either way. The AI-worker chat keeps its own live row (`AgentChats`, fed by `chat.partial`): its tool line and "writing its reply" rule are unchanged, so it is not read through the adapter after all (D221 is narrowed to the direct chat's flag-off path).
+- Why: every package is built and the eight scenarios pass in a real Chrome with the flag on and off; a switch is the rollback.
+- Rejected: leaving the default off for another release (the legacy row has none of what the owner asked for); removing the legacy path now (rollback should stay a setting).
+- Diagram: label "live chat on by default", pill on Chat sessions.
+
+## D236 — A reply says the same live, settled and after a reload: how it ended, what it said, who wrote it
+- Sources: the review of the live chat (findings on Stop, Copy, the failed turn and the header), `chat_live_view.js`, `chat_blocks.py`, `direct_turns.py`, `chats.py`, D212, D220.
+- Decided: (1) a tool that never returned a result is `Interrupted` whenever the turn ended with Stop or an error, decided from the stored ending (a `Stopped` note or an error row beside the reply, or the note or error that is the reply), not only from an error row. (2) Text blocks that a tool or thinking block divides are joined with a blank line, in Copy and in the stored `text` (`join_text`); a provider text that is only the blocks run together is replaced by that form, a provider text that differs (a real final answer) is kept as it is. (3) A turn that failed before it wrote anything has no card of its own: its ending is the stored error line, and the tries the router gave up on are stored as a note ("Earlier try (Claude) failed: reason") beside it, so a reload says what the live page did. (4) A reply stores `{provider, model}` as a sibling key `via` of its meta (never a `MessageMeta` key), read back as the additive `ChatMessageOut.via`; the header is "via Claude model" live, at settle and after a reload, and plain "Sutra" for a message stored before. (5) An open code fence does not carry the newline of its last line, so its height does not change when the closing fence arrives.
+- Why: the owner reads the reply later, in another tab or after a restart; what the page said while it ran must still be true then, and a tool that did not finish must never read Done.
+- Rejected: storing the interrupted status per block on the server (the ending already says it and old messages have no such field); a second card for a failed turn that wrote nothing (it repeats the error line under a provider that never answered).
+- Diagram: label "ending, text and author read the same after reload", pill on Chat sessions.
+
+## D237 — The live turn's lock covers the feed, and the ticker waits only for work that is due
+- Sources: `chat_port.py`, `live_turn.py`, `chat_blocks.py` (`guard`), D201, D204.
+- Decided: `ChatPort.stream` holds the live turn's lock (`acc.guard`) from `acc.feed` until its consumer has handed the block events on, and lets go as soon as the generator resumes (never while it waits for the provider), so a Stop cannot freeze the accumulator between the two and what is stored is exactly what every tab was shown. The ticker adds a checkpoint deadline only when a checkpoint is due (a database, and a dirty state or `checkpoint_chars` unsaved characters); fewer characters wait for the next structural change.
+- Why: the unlocked gap let stored text hold words no tab saw after a Stop, and a deadline that nothing could satisfy made the ticker spin at full speed during every quiet stretch of a reply, slowing the very stream it serves.
+- Rejected: a second lock inside the accumulator (two orders to keep); a minimum sleep as the only cure (it hides the loop, the deadline is the bug).
+- Diagram: label "feed and publish under one lock; ticker sleeps when nothing is due", pill on Chat sessions.
+
+## D238 — The chat page keeps the owner's place: terminal frames, Stop, mode, width
+- Sources: `chat_live_events.js`, `chat_live_store.js`, `chat_composer.js`, `chat_draft.js`, `home.js`, `sutra-panel.css`.
+- Decided: a terminal frame held while a snapshot was read is applied before `snapshot.none` when the server says nothing runs, so a failed or stopped turn ends as that; a snapshot of a turn still running does not undo a Stop that was pressed (Stopping stays until `turn.stopping` or an ending); the Ask directly / Plan with Sutra choice is kept per chat beside the draft (`sutra:mode:<sid>`, 14 days, 30 chats, storage guarded) and wins over the page's default; the release of a stored reply repaints the bar and box in the same step as the reply, so the box never says Stop beside a settled reply; the `main` of `#sview` has a definite row (in `sutra-panel.css`; `j2-shell.css` is frozen) so the chat column reaches the bottom of the window between 901 and 1150 px; under 600 px the mode and provider toggles and the attach link are 40 px tall and the limits note is one line (its whole text is the link's title).
+- Why: each was a place where the page told the owner something that had stopped being true, or made a control hard to hit.
+- Rejected: persisting the mode on the server (a per-device convenience, like the draft); hiding the limits note on a phone (it stays in the page and is read aloud).
+- Diagram: label "terminal frame kept; Stop stays; mode remembered", pill on band:EXPERIENCE.

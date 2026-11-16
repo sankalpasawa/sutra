@@ -17,7 +17,7 @@ __all__ = ["AttachmentRef", "ProviderPill", "Choice", "CarryPlan", "ChatTurnIn",
 
 BlockType = Literal["text", "thinking", "tool_use", "tool_result"]
 BlockKind = Literal["read", "edit", "run", "search", "web", "other"]
-EVENT_KINDS = ("partial", "block", "restart", "usage", "switched", "turn_done")
+EVENT_KINDS = ("partial", "block", "restart", "usage", "switched", "turn_done", "started", "route", "block_start", "block_update", "block_delta", "block_end")
 
 
 class M(BaseModel):
@@ -85,9 +85,12 @@ class ChatTurnIn(M):
 
 class ChatEvent(M):
     """`restart` (no data): a new attempt of the same turn began (the router retried, or fell back to the other provider), so what the earlier attempt
-    streamed (its text, its blocks) is void and the caller starts its row again."""
+    streamed (its text, its blocks) is void and the caller starts its row again.
+    The kinds `started`, `route` and `block_start` / `block_update` / `block_delta` / `block_end` are the live turn's (streaming design D217, D218): they are yielded only
+    when the caller gave `ChatPort.stream` a `BlockAccumulator`, so every older caller sees exactly the kinds it always saw. A `restart` of a live turn carries
+    `{provider, reason, after_side_effects}`; a plain one carries nothing."""
 
-    kind: Literal["partial", "block", "restart", "usage", "switched", "turn_done"]
+    kind: Literal["partial", "block", "restart", "usage", "switched", "turn_done", "started", "route", "block_start", "block_update", "block_delta", "block_end"]
     data: dict = {}
 
 

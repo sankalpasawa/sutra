@@ -623,3 +623,27 @@ test("QA P3: the offline demo has no model to ask, and the sentence does not sen
   assert.doesNotMatch(words, /Sign in/);
   assert.equal(askBlock([{name: "codex", ready: true}]), "");
 });
+
+test("the mode is remembered per chat: Ask directly survives a new composer for the same chat (a reload), another chat keeps its own, and no storage means the default", () => {
+  const saved = new Map();
+  const modes = {loadMode: sid => saved.get(sid) || "", saveMode: (sid, m) => { saved.set(sid, m); return true; }};
+  const first = create({api: fakeApi({}), sid: SID, mode: "team", modes});
+  assert.equal(first.state().mode, "team");
+  first.setMode("direct");
+  assert.equal(saved.get(SID), "direct");
+  const reloaded = create({api: fakeApi({}), sid: SID, mode: "team", modes});
+  assert.equal(reloaded.state().mode, "direct");
+  assert.equal(create({api: fakeApi({}), sid: "cs_000000000def", mode: "team", modes}).state().mode, "team");
+  reloaded.setMode("team");
+  assert.equal(create({api: fakeApi({}), sid: SID, mode: "direct", modes}).state().mode, "team", "the owner's last choice wins over the page's default");
+  const broken = {loadMode: () => { throw new Error("blocked"); }, saveMode: () => { throw new Error("blocked"); }};
+  const safe = create({api: fakeApi({}), sid: SID, mode: "team", modes: broken});
+  safe.setMode("direct");
+  assert.equal(safe.state().mode, "direct");
+});
+
+test("the Attach link carries the limits as its title (a phone shows the note on one line), and the note stays in the page", () => {
+  const html = bar({mode: "direct", files: [], note: ""}, {});
+  assert.match(html, /data-act="composer-attach" title="Up to 10 files, 20 MB each/);
+  assert.match(html, /<small>Up to 10 files, 20 MB each/);
+});

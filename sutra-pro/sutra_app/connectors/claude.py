@@ -70,6 +70,7 @@ def _folder_tools(folder: str) -> tuple[list[str], list[str], list[str]]:
     return offered, allowed, denied + ([*GIT_DENY, *DOT_GIT_DENY] if edit else [*GIT_DENY] if git else [])
 _IMAGE_MAGIC = ((b"\x89PNG\r\n\x1a\n", "image/png"), (b"\xff\xd8\xff", "image/jpeg"), (b"GIF87a", "image/gif"), (b"GIF89a", "image/gif"),
                 (b"%PDF-", "application/pdf"))        # a PDF goes as a document block (ABS-4)
+JSON_BUFFER_MAX = 8192             # the most of a tool block's streamed input kept to compute its title (never sent anywhere)
 _RESULT_TEXT_CHARS = 300             # how much of the CLI's own text an error keeps
 _AUTH_MARKERS = ("not logged in", "please run /login", "login expired", "oauth token revoked")
 
@@ -132,6 +133,7 @@ class ClaudeParser(LineParser):
         self.result: Optional[dict] = None
         self.cum_usd = None
         self.cum_usage = None
+        self._json: dict[int, Optional[list[str]]] = {}      # a tool block's input pieces by block index (of the current message), bounded at JSON_BUFFER_MAX
 
     # ---- lines -> events -----------------------------------------------------------------------------------------------------
     def feed(self, line: str) -> list[ConnectorEvent]:
@@ -168,7 +170,17 @@ class ClaudeParser(LineParser):
         if not self.plan.partials:
             return []
         event = obj.get("event")
-        if not isinstance(event, dict) or event.get("type") != "content_block_delta":
+        if not isinstance(event, dict):
+            return []
+        kind = event.get("type")
+        if kind == "message_start":                           # block indexes restart at 0 in every assistant message
+            self._json.clear()
+            return [ConnectorEvent(kind="message_boundary")]
+        if kind == "content_block_start":
+            return self._block_start(event)
+        if kind == "content_block_stop":
+            return self._block_stop(event)
+        if kind != "content_block_delta":
             return []
         delta = event.get("delta")
         if not isinstance(delta, dict):
@@ -176,8 +188,46 @@ class ClaudeParser(LineParser):
         if delta.get("type") == "text_delta" and isinstance(delta.get("text"), str):
             return [ConnectorEvent(kind="text_delta", data={"text": delta["text"], "kind": "text"})]
         if delta.get("type") == "input_json_delta" and isinstance(delta.get("partial_json"), str):
+            index = event.get("index")
+            if isinstance(index, int) and index in self._json:
+                buffer = self._json[index]
+                if buffer is not None:
+                    buffer.append(delta["partial_json"])
+                    if sum(len(piece) for piece in buffer) > JSON_BUFFER_MAX:
+                        self._json[index] = None              # too big to keep: the whole `tool_call` event still carries the input
             return [ConnectorEvent(kind="text_delta", data={"text": delta["partial_json"], "kind": "json"})]
         return []
+
+    def _block_start(self, event: dict) -> list[ConnectorEvent]:
+        block = event.get("content_block")
+        index = event.get("index")
+        if not isinstance(block, dict) or not isinstance(index, int) or isinstance(index, bool):
+            return []
+        kind = block.get("type")
+        if kind == "text":
+            return [ConnectorEvent(kind="block_start", data={"index": index, "type": "text"})]
+        if kind in ("thinking", "redacted_thinking"):
+            return [ConnectorEvent(kind="block_start", data={"index": index, "type": "thinking"})]
+        if kind in ("tool_use", "server_tool_use") and isinstance(block.get("name"), str):
+            self._json[index] = []                            # the input arrives as `input_json_delta` pieces; kept privately, parsed at the block's stop
+            return [ConnectorEvent(kind="block_start", data={"index": index, "type": "tool_use", "tool_id": block.get("id") if isinstance(block.get("id"), str) else None,
+                                                             "name": block["name"]})]
+        return []
+
+    def _block_stop(self, event: dict) -> list[ConnectorEvent]:
+        index = event.get("index")
+        if not isinstance(index, int) or isinstance(index, bool):
+            return []
+        data: dict[str, Any] = {"index": index}
+        pieces = self._json.pop(index, None)
+        if pieces:
+            try:
+                parsed = json.loads("".join(pieces))
+            except ValueError:
+                parsed = None
+            if isinstance(parsed, dict):
+                data["input"] = parsed                        # for the block's title and target when no `assistant` message carried the input; never sent to a page
+        return [ConnectorEvent(kind="block_stop", data=data)]
 
     def _on_assistant(self, obj: dict) -> list[ConnectorEvent]:
         message = obj.get("message") if isinstance(obj.get("message"), dict) else {}

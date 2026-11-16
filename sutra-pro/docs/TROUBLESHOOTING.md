@@ -132,6 +132,7 @@ The API answers errors as `{"error": {"code", "message", "details"}}`; the code 
 | `stale_chart` | 409 | the chart changed under the request (F4). Send it again |
 | `already_decided` | 409 | that change was already approved or declined |
 | `not_running` | 409 | you wrote a note to an agent whose run is over. The agent can no longer read it; start a new run |
+| `not_retryable` | 409 | you asked to answer a chat line again that was answered, or is not the chat's last question. Ask it as a new message |
 | `read_only` | 403 | you wrote into a chat that is a log (a function or step chat). Write in the team chat |
 | `too_many_pending` | 429 | one request is being planned at a time and too many wait behind it. Try again when one is done |
 | `provider_unavailable` | 503 | no connector can serve (F1) |

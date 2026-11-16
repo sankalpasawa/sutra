@@ -118,7 +118,7 @@ def test_a_v3_database_migrates_to_v4_with_every_row_intact(settings, events):
     usage(old)
     atom(old, "a-1")
     sql(old, "INSERT INTO recurring(id, dept_id, text, schedule_json, cursor_at, created_at, updated_at) VALUES ('rec_aaaaaaaaaaaa','web','t','{}',1,1,1)")
-    counts = lambda: {t: sql(old, f"SELECT count(*) FROM {t}").fetchone()[0] for t in schema.TABLES if not t.startswith("chat_search")}      # noqa: E731
+    counts = lambda: {t: sql(old, f"SELECT count(*) FROM {t}").fetchone()[0] for t in schema.TABLES if not t.startswith("chat_search") and t != "chat_turn_checkpoint"}      # noqa: E731  (v5's table does not exist yet at version 3)
     before, sessions = counts(), [tuple(r) for r in sql(old, "SELECT id, node_id, kind, title, pinned FROM chat_sessions ORDER BY id")]
     assert old.version() == 3 and "pinned_model" not in {r[1] for r in sql(old, "PRAGMA table_info(chat_sessions)")}
     assert old.migrate() == schema.SCHEMA_VERSION >= 4

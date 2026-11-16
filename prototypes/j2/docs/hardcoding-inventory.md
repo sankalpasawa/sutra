@@ -116,6 +116,98 @@ conditions. Audit and the planners are told that a warning is a heuristic check 
 - **The validator caught a real agent fault.** A reply naming no next speaker (`_usable`): 012507, 095315, 155605, 165902. `to_agents` tagged "@Requester" (`_check_audiences`): 013315, 095315, 165902, 191311. A wrong check type (013315). ids-unique R on a document that only cites R ids (165902 W-7): Adaptation chose that check.
 - **No waste found.** 20261102-120445, 20261103-132039, 20261110-200005, 20261110-220236, 20261112-150211, 20261112-164806 (no calls.jsonl). 20261112-120345 is a mock.
 
+## Group C: status on branch `remove-group-c`
+
+Plan and batches: `docs/remove-group-c-plan.md`. Rows are named by their "Where" in the full inventory below (the survey
+commit's line numbers); "now" is the line in `j2.py` after the batch. Kept rows are guardrails: safety, budget (code
+offers only money it can apply) or valid replies (a fallback for a missing or broken reply).
+
+### Batch 1: Identity
+
+| Row | Status | Now |
+|---|---|---|
+| `j2.py:3549-3556` `PLAIN_TO_REQUESTER` | Fixed: the "college student" persona, the gallery example options and "No recommendation" are gone. One plain-words style rule stays: everyday words for someone outside the team, no internal terms or function names. Who the Requester and the audience are comes only from the brief and the Requester's answers | `j2.py:4084` |
+| `j2.py:5594` `_identity_limit prompt` | Fixed: the second list of banned words and "2 sentences" are gone (the style rule covers them) | `j2.py:6094` |
+| `j2.py:5575-5582` `_identity_limit lead` | Fixed: Identity writes the question (a `question` field). It is told what led here as facts (the limit's reason, plus: keep going changed nothing, parts put off twice, parts that don't fit, money used up); no regex on the reason string. Code still builds the options, the amounts and the choices. Code's own question is only the fallback for a reply without one | `j2.py:6069-6105` |
+| `j2.py:3862` `_ask_user` 2 sentences | Fixed: no cut before the gap list | `j2.py:4396-4397` |
+| `j2.py:3864-3869` `_ask_user` options capped at 3 | Fixed: Identity's options are never cut. Merging several questions into one "Please send these" list is kept: a pause holds one answer (valid replies) | `j2.py:4398-4402` |
+| `j2.py:156-157` `AUTO_FINISH, AUTO_SIMPLE` | Fixed: both word lists deleted. A conflict question: Decide for me takes the option Identity marked `plan_option` (stays with the agreed plan), else option 1. A second limit question: the "ship" option from the pause's `choices` | `j2.py:4488-4505`, `5520`, `5580-5586` |
+| `j2.py:258-275` `CORE_FACT` fallback, `j2.py:5468` `_gap_rows must_keep`, `j2.py:5637-5652` `_finish_only_option must_keep` | Fixed: `must_keep` reads only the no-errors gate and Identity's `core` marks; a charter without marks has no core items but the gate. The keyword list moved to the mock charter (`MOCK_CORE`) | `j2.py:266`, `2221` |
+| `j2.py:4724` `_milestone asks_updates` | Fixed: Identity's intake reply has `email_updates` (true only when the Requester asked for progress updates by email); the charter records it; code reads the charter, not the brief's words. `asks_updates` is used by the mock Identity only | `j2.py:5200`, `5341`, `5379` |
+| `j2.py:4889` `_identity_intake` | Fixed: no "1-4 questions" and no "Done-when may not refer to the Requester, Audit, verification, approval or launch" (in `j2.py` and every `templates/*/intake.md`); checkability is Identity's call, judged by Audit (as A4). `agents/j2/identity.md` says done-when items describe what is delivered, not process steps, and a real-file item is added only when the brief or answers ask for a run (the live check's file-copy brief invented one without it). "Don't ask about cost" is kept: Identity can't see the budget | `j2.py:5355`, templates |
+| `j2.py:5262-5279` `_identity_hears_requester` unclear answer | Fixed: an answer naming no option is asked again every time, never defaulted to continue or ship. It cannot loop: each re-ask is a Requester pause (status waiting) that only a new Requester message resumes, and Decide for me answers with a bare option number, which always names an option. "Continue becomes drop when it isn't offered" is kept (budget) | `j2.py:5753-5766` |
+| `j2.py:79` `LIMIT_ADD`; `j2.py:1804-1807` `DECIDE_FMT, DECIDE_RULE`; `j2.py:3870` budget options stripped; `j2.py:5046` resolve fmt; `j2.py:5511-5590`, `5559-5574` limit options; `j2.py:4348-4377` stage options; `j2.py:5619-5625` one option applied | Kept: budget. Only code offers money, with amounts it can apply |
+| `j2.py:5097-5103`, `5109` resolve fallback question and defaults; `j2.py:5171-5175` approval fallback; `j2.py:4978-4984` stamp retry then accepted | Kept: valid replies |
+| `j2.py:4044` stuck; `j2.py:5709-5719` same failure twice; `j2.py:5531` stale; `j2.py:5761-5766` workable decides done | Kept: safety and loop bounds |
+| `j2.py:4807-4818` change request keeps items word for word | Kept: item numbers are tied to item text (`charter_items`); rewording would break them |
+| `j2.py:154` `AUTO_ASSUME` | Kept: the Requester's own Decide-for-me answer, not Identity's |
+| `j2.py:1828` `PLAIN_WORDS`; `j2.py:1915-1926` `requester_words`; `j2.py:1928-1939` `to_requester` | Later batch: hidden rewrites |
+| `j2.py:5356-5360`, `5368-5376` routing after a drop or a limit answer | Batch 2 (Coordination) or the batch-5 proposal |
+
+### Batch 1b: the stage answer
+
+| Row | Status | Now |
+|---|---|---|
+| `j2.py:4387-4390` `_stage_decision` | Fixed: a click or a bare option number is that option (`_picked`, by number only); any other answer is read by Identity in one call (`_read_decision`, `DECISION_FMT`, the stages still to make by number) and code applies its reading. An answer naming no option is asked again (`_reask`, shared with the limit answer), never defaulted to continue or leave out | `j2.py:4918-4961` |
+| `j2.py:1942-2010` `NEGATION, OPTION_WORDS, affirmed, parse_decision` | Fixed: the mock Identity's reader only. Live code no longer reads an answer's words: the limit answer's bare-number path uses `_picked` | `j2.py:2149`, `5775` |
+| `j2.py:1942-2010` `ONLY_PICK` | Kept: valid replies. It tells a click or a bare number from a typed answer; it names no option by words |
+| `j2.py:4340` `_stage_gate` chain order; `j2.py:4348-4377` stage options and amounts | Kept: budget. Code offers only money it can apply, and funds stages in the order they depend on each other |
+
+### Batch 2: Coordination
+
+Readiness comes only from each workflow's dependencies and what it writes, never from words; Coordination's task and
+code name no workflow, type or file.
+
+| Row | Status | Now |
+|---|---|---|
+| Task text "One writer at a time on the site file: you hold the write lock" (`_turn_coordination`, survey `j2.py:8059-8065`) | Fixed: an engine limit written as Coordination's rule, naming the type and file. The task now says, as code's: "Code runs one workflow at a time, in your order: that is the engine's limit, not your scheduling rule", and what code does next (Priority's envelope check; Adaptation when all is on HOLD) | `j2.py:8672-8683` |
+| `j2.py:8095-8096` `_pick (coordination)` and the format's `next` | Fixed: no `next` field; Coordination isn't offered a choice code makes. The hand-off itself (Priority checks the envelope before a run) is kept: budget | `j2.py:8723`, `8727` |
+| Coordination's input | Fixed: one row per waiting workflow (`_schedule_rows`): dependencies, `waits_for` (dependencies naming a workflow of this run, by id, name or proposal_id exactly, that isn't done), `unknown_dependencies` (naming no workflow of the run: an earlier stage or an unregistered plan entry; never block), `writes` (outputs, section, sections as stored). No word of any field is read | `j2.py:8738-8752`, `8661` |
+| Several ready workflows | New: `ready_now` in the format. A workflow with a non-empty `waits_for` can't be ready: refused with the reason (new guardrail: before, a workflow could run before its dependency finished if Coordination put it first). The engine runs the first ready one and posts "Coordination named N ready: ... The engine runs one at a time: X now; ... wait for the next slot." Collisions are Coordination's call from `writes`; code compares no output strings. No engine parallelism | `j2.py:8686-8712` |
+| `j2.py:8072-8077` ids missing from the order | Kept (valid replies: every registered workflow is scheduled or held), now said in a system line instead of silently | `j2.py:8685` |
+| Empty-queue line "Audit checks site v{n}"; the mock's "index.html" | Fixed: "Audit checks version {n}"; the mock builds its schedule from the rows | `j2.py:8658`, `8664-8671` |
+| `agents/j2/coordination.md` step 4 | Changed: name every ready workflow (dependencies done, writes don't collide); several may be ready; the engine runs one at a time | |
+| `j2.py:8048-8053` empty queue to Audit; `8101-8109` `hold_bounces`; `8033-8047` change resend; HOLD lifted by a settled conflict; charges released on HOLD; `j2_realization.holds`; builder reports to Coordination; `_say` repeat | Kept: loop bounds, budget, a carried-out ruling, safety (no input, no build), routing |
+| `j2.py:7952-7968` `_supersede` | Moved to batch 4 (word matching) |
+
+### Batch 3c: dependency names at registration (founder's fix)
+
+| Row | Status | Now |
+|---|---|---|
+| New guardrail (valid replies): a dependency naming nothing | `_register` refuses a workflow whose dependency matches, exactly, none of: a workflow of this run (id, name or proposal id, any status), a workflow of the same batch (id or name), or a finished earlier stage (`stage_archive`). The refusal goes back to Adaptation through the usual resend path and lists the names it may use. No word of a name is read. Saved runs it would have refused: 'PRD v6' and 'HLD (accepted as it is)' (j2-20261112-165902), 'decide-defaults' (j2-20261114-193037). `_schedule_rows` keeps `unknown_dependencies` for work registered before | `j2.py:8779-8792`, reason chain in `_register` |
+
+### Batch 3: Priority's word lists
+
+| Row | Status | Now |
+|---|---|---|
+| `j2.py:246-253` `item_kind, item_min`; `j2_types.py:357-358` `load (item_parts)`; `j2.py:3480-3486` state `item_minimums`; `j2.py:7475-7486` `_per_item`; `j2.py:8010-8014` `_underpriced`; `j2.py:6571-6581` `_change_cost`; `j2.py:7237-7262` `_cheapest_fit` (their item_min) | Fixed (3a): an item's minimum price is the rate-card part of the kind Identity tagged at J2.a. The type's kinds and what each is about come from `artifacts/types.json` (`cost.item_parts`: part, about, default); Identity's intake format lists them (`item_kinds`, asked only when a type has more than one kind; Identity sees no prices). The charter stores the tags by item text (`goal["item_kinds"]`); an untagged item, a wrong-length list or a kind not in the type's list leaves the item at the type's default kind (logged). Code's HLD/LLD items take their section's part (`section_parts`). Every price floor reads the tags. The old regexes stay only as `mock_words` for the mock Identity (`mock_item_kind`) | `j2.py:248-265`, `2716`, `5389-5396`, `5472`, `5489-5498`; `j2_types.py:394-399` |
+| `BUDGET_TALK` (`_budget_question`, survey `j2.py:6854-6866`) | Fixed (3b): Adaptation's format has `"about": "budget"\|"charter"` with a POLICY_QUESTION. Code reads only that field: a budget question takes the same reject-and-propose path (Priority decides what is funded: kept as a guardrail); a charter question goes to Identity; a question without `about` is asked once more, then goes to Identity. `BUDGET_TALK` is deleted | `j2.py:6826`, `6888-6894`, `7855` |
+| The other Priority rows (rate card fixed, a `fix` part per finding, envelope defaults, GRANT re-ask, REFUSE coercions, `_carry`, `_kept_price`) | Left as they are (founder, 2026-11-14) | |
+
+### Batch 4: Audit's word matching, `_supersede`, board duplicates
+
+Findings are matched to items by id or by Audit's own fields, never by words.
+
+| Row | Status | Now |
+|---|---|---|
+| `j2.py:10220-10238` `_finding_item.like` (followup #5) | Fixed: a finding's item is its run-long number (the numbering Audit is given); with none, Audit's own `criterion` when it is an exact copy of an item's text; otherwise an extra issue, logged as `invalid_move` (the item stays BLOCKED_BY_EVIDENCE). A dropped item's finding is ignored, as before. `like()` (shared words, 0.6) is deleted | `j2.py:11337-11343`, `11305` |
+| `j2.py:7952-7968` `_supersede` (followup #11) | Fixed: a waiting workflow is replaced when the new one names it in `replaces` (new `WF_FMT` field, set by Adaptation), has exactly its name, or is held with exactly its items. The `" (change n)"` strip and the case fold are deleted; a `replaces` id that isn't waiting is logged | `j2.py:8601-8625`, `8571`, `6552` |
+| `j2.py:1367` `TBC_WORDS` | Fixed: the markers are the condition's own data (`"markers"` on nothing-to-be-confirmed in each `conditions/*.json`: website, prd, hld, document, agent); code reads them, case-insensitive, whole words. The check stays | `j2.py:1732`, `conditions/*.json` |
+| `j2.py:1479` `user_groups` split | Fixed: only the charter's `user_groups` name the groups; the "users" text is never split. Without them, the groups-covered condition (a warning) says the charter names no user groups. The mock PRD charter splits its own text (mock only) | `j2.py:1652-1655` |
+| `j2.py:8818` `_ask_board → j2_board.duplicate_of`; `j2_board.py:21-26,50-66` `DUPLICATE_SHARE, duplicate_of` | Fixed: the asker sets `same_as` (a board id that already answers it) in `board_question` / `question`; code refuses it, pointing at that entry, and refuses a `same_as` naming no answered entry. No words compared; the same words without `same_as` are a new question. `duplicate_of` and `DUPLICATE_SHARE` are deleted; `content_words` stays for the mock board answers | `j2.py:9587`, `9593`, `9748-9759`; `j2_board.py:47` |
+| `facts_to_headings`, `_fix_atoms`, `carry_checks.stale`, `CONTENT_EDGES` | Left for later (founder); listed in `docs/remove-group-c-plan.md` | |
+
+### Batch 6: four word rules become fields (founder's list, 2026-11-14)
+
+| Rule | Status | Now |
+|---|---|---|
+| `SPECIFIC` (any digit or email in an atom's goal) and `FACT_VALUE` (prices, times, dates, %, phones, emails by regex; validator path `check_problems`, used with realization on, so not Rubak's) | Fixed: Identity's intake reply marks `exact_facts` [{fact, item}]; the charter stores them by item text. An atom of a workflow covering such an item needs a facts-present check, a named test or behavior steps (`_item_rules`, `check_problems(rules=)`). The facts-present condition checks only marked facts (unmarked: met, and it says so). Both regexes deleted | `j2.py:1035`, `1687`, `5393`, `5506`, `7748` |
+| `BUILT_CLAIM` (phrases like "is built" in Identity's limit message) | Fixed: the limit reply lists `built` (item numbers its words describe as built); a claim not in Audit's passes gets the same replacement and `invalid_move`. The regex is deleted | `j2.py:6171`, `6185` |
+| `DATE_RULE`, `DATE_CONTROL` (deadline words in an atom's goal; date words in a selector) | Fixed: Identity marks `date_rule_items`; the atom covering one names `date_control` (a page: its behavior steps must `set` exactly that selector) or `date_case` (no page: a test check covers the date case, no selector). Page or not is read from the output's check types (behavior-steps). Both regexes deleted | `j2.py:902`, `1039`, `6580` |
+| `_blames_other` (another `W-n` plus "can't/belongs/their" in a builder's report) | Fixed: the builder's reply has `blocked_by` [workflow id]; ids that are no other workflow of the run are ignored and logged; a valid one stops the retries and names the owners to Adaptation (`_owner_note` stays as evidence) | `j2.py:9026`, `9192`, `10492` |
+| `_fix_atoms` | Kept (founder) | |
+| `NEGATED`, `NAME_WITH_DIGIT`, `ID_RANGE`, `RC_RANGE` (same block; not on the list) | Still word rules; noted for later | |
+
 ## Full inventory
 
 
