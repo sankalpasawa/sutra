@@ -214,7 +214,7 @@ is refused, the reason sent to the builder (`real_paths_in`, `_real_path_leak`);
 after the dry run, and a change stops the run with each changed file shown (`real_run_dry`, `_ask_real_run`); builder
 and planner instructions say folders only as arguments. Test `dry_run_real_folders`.
 
-**Follow-ups (not fixed; charter variance for the benchmark to measure):**
+**Follow-ups (charter variance for the benchmark to measure).** #1 is addressed on fix-dry-run: Identity's instructions say the charter lists only files the build produces, and a charter file no workflow's outputs include (exact name) is a plan gap sent back to Adaptation once (`_file_gaps`, test `charter_files_planned`). Not built: Identity revising the charter mid-run when Adaptation says only the real run could make the file (no such handoff outside the change request). Live after it: the real-run brief alone passed (`runs/release/j2-20261117-125431`). #2 is open.
 
 | # | Seen in | What Identity did |
 |---|---|---|

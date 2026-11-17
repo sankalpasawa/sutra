@@ -5074,6 +5074,45 @@ def dry_run_real_folders():
 
 
 @with_folder_type
+def charter_files_planned():
+    """runs/release/j2-20261117-121143 and -122859: Identity listed run_on_folder.md / run_report.md in the charter's
+    files, a file only the real run could make; no workflow wrote it, C1 never passed and the RUN ask never came. Now
+    Identity's instructions say the charter lists only files the build produces, and a charter file no workflow's
+    outputs include (exact name) is a plan gap: Adaptation is asked once more, told it may say only the real run could
+    make it so Identity takes it out."""
+    ident = j2.system_prompt("identity", "{}")
+    assert "The charter lists only files the build produces" in ident and "checked from its receipt" in ident
+    plans = {"run_on_folder.md": [["file_sorter/sorter.py"], ["file_sorter/test_sorter.py"]],      # 121143
+             "run_report.md": [["file_sorter/sorter.py"], ["file_sorter/test_sorter.py"], ["file_sorter/sorter.py"]]}      # 122859
+    for extra, outs in plans.items():
+        run = j2.J2Run()
+        run.set_output(FT)
+        rel = run._out_rel()
+        run.goal = {"statement": "sort", "done_when": ["sorted"], "files": ["sorter.py", "test_sorter.py", extra]}
+        wfs = [{"name": f"W{i}", "outputs": [o.replace("file_sorter/", rel + "/") for o in o_]} for i, o_ in enumerate(outs)]
+        gaps = run._file_gaps(wfs)
+        assert [g["id"] for g in gaps] == [extra] and "no workflow's outputs include it" in gaps[0]["why"] \
+            and "Identity takes it out of the charter" in gaps[0]["why"], gaps
+        assert run._file_gaps(wfs + [{"name": "R", "outputs": [extra]}]) == []      # as Adaptation writes it
+        assert run._file_gaps(wfs + [{"name": "R", "outputs": [f"./{extra}"]}]) == []
+        assert [g["id"] for g in run._file_gaps(wfs + [{"name": "R", "outputs": ["report.md", f"{extra}.bak"]}])] == [extra], "exact names only"
+        run.workflows = [{"status": "registered", "outputs": [f"{rel}/{extra}"]}]      # a registered workflow writes it
+        assert run._file_gaps(wfs) == []
+        run.workflows = []
+        asked = []
+        run.call = lambda fn, fmt, task, mock, **kw: asked.append(task) or {"act": "PROPOSE", "workflows": wfs}
+        run._atoms_checked = lambda r, *a: r
+        run._plan_checked({"act": "PROPOSE", "workflows": wfs}, "{}", "TASK", None)
+        assert len(asked) == 1 and f"the charter lists {extra}" in asked[0], asked
+        assert any(f"leaves {extra} with no workflow" in m["text"] for m in run.chat), [m["text"] for m in run.chat][-2:]
+    web = page_run()      # not a folder: no file gaps
+    web.goal = {"files": ["x.md"]}
+    assert web._file_gaps([]) == []
+    print("charter files planned: Identity lists only built files; a charter file no workflow outputs (exact name) "
+          "goes back to Adaptation as a plan gap ok")
+
+
+@with_folder_type
 def real_run_order():
     """runs/j2-20261114-123619: the RUN ask waited on Identity's done, Identity waited on the run, Decide for me
     "confirmed" the run had happened and "finish as it is" ended "Done:" with the folder untouched. Now: (1) once the
@@ -8941,7 +8980,7 @@ SAVED_RUNS_GOLDEN = {
 # the facts-present condition's evidence names exact facts (stage-*.json). Outcomes, spend, the agents called,
 # workflows and the documents are identical to {"prd": "ac6d3f00fb5c", "design docs": "2284f23cff02",
 # "docs then site": "dc8ed3ceb805"}.
-DOC_RUN_GOLDEN = {"prd": "f1d22a8df780", "design docs": "9a933693c619", "docs then site": "93b81e02b546"}
+DOC_RUN_GOLDEN = {"prd": "264da0c4a2c8", "design docs": "c31742c23e07", "docs then site": "54eb770c8e21"}      # Identity: charter lists only built files (fix-dry-run)
 DOC_PROMPTS_GOLDEN = {
     "prd.builder": "e971c88e727f", "prd.intake": "75a955fb24fa",
     "prd.charter_fmt": "eedccdf82d84", "prd.atom_rules": "b8a918ef6039", "prd.system": "d09f06fa3181",
@@ -16506,6 +16545,7 @@ if __name__ == "__main__":
             run_for_real()              # remove-restrictions step 7: a real run only on the Requester's exact approval
             real_run_checks()           # step 7 gap: an item only the real run meets is decided by its receipt
             dry_run_real_folders()      # runs/j2-20261117-114654: real folders only as arguments; a dry run that reaches them stops the run
+            charter_files_planned()     # runs/release 121143, 122859: a charter file no workflow writes is a plan gap
             real_run_order()            # the RUN ask without Identity; Decide for me never confirms a real run
             grant_and_question_kind()   # the grant keeps Adaptation's plan; Decide for me answers decisions only
             folder_run_reused()         # remove-restrictions step 6: a folder run saved and reused, not rebuilt

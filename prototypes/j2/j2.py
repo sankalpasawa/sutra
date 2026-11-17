@@ -7689,7 +7689,25 @@ class J2Run:
                 if c.get("plan") and c.get("severity") != "warn" and c["id"] not in met
                 and not re.search(c["plan"], text, re.I)
                 and (not c.get("key") or (self.goal or {}).get("chain", {}).get(c["key"]))]   # a link needs the earlier document
-        return gaps + self._lld_gaps(wfs)
+        return gaps + self._lld_gaps(wfs) + self._file_gaps(wfs)
+
+    def _file_gaps(self, wfs):
+        """A folder's charter files (the charter-files-present condition's field) that no proposed or registered
+        workflow lists in its outputs, by exact file name (runs/release/j2-20261117-121143, -122859: a file that only
+        a real run could make, so the folder was never workable and the RUN ask never came)."""
+        if not self.folder:
+            return []
+        conds = [c for c in load_conditions(self.out["conditions"], self.out.get("practice", ""))
+                 if c.get("check") == "charter-files-present"]
+        rel = self._out_rel() + "/"
+        live = [w for w in self.workflows if w["status"] in ("registered", "held", "running", "done")]
+        have = {str(o).removeprefix(rel).removeprefix("./") for w in list(wfs) + live
+                for o in (w.get("outputs") if isinstance(w.get("outputs"), list) else [])}
+        return [{"id": f, "text": "a charter file",
+                 "why": f"the charter lists {f}, and no workflow's outputs include it: plan the workflow that writes it. "
+                        "A real run's result is checked from its receipt, never from a file; if only the real run could "
+                        f"make {f}, say so, and Identity takes it out of the charter"}
+                for c in conds for f in charter_list(self.goal, c.get("charter_field")) if f not in have]
 
     def _mock_blueprint_plan(self, crit):
         """Mock Adaptation for a site with an LLD: the scaffold, then one workflow per LLD section; the charter's items
