@@ -16,6 +16,7 @@ Everything here is deterministic given the child's output.
 from __future__ import annotations
 
 import base64
+import hashlib
 import json
 import os
 import re
@@ -47,7 +48,7 @@ PROBED_FLAGS = (
     "--output-format", "--verbose", "--model", "--effort", "--system-prompt", "--tools", "--strict-mcp-config",
     "--disable-slash-commands", "--setting-sources", "--no-session-persistence", "--session-id", "--resume",
     "--include-partial-messages", "--json-schema", "--input-format", "--mcp-config", "--restricted", "--allowedTools",
-    "--permission-mode", "--permission-prompts", "--max-budget-usd", "--disallowedTools",
+    "--permission-mode", "--permission-prompts", "--max-budget-usd", "--disallowedTools", "--safe-mode", "--settings",
 )
 _MCP_SERVER = "sutra"
 _ALLOWED_TOOLS = f"mcp__{_MCP_SERVER}__*"
@@ -134,6 +135,8 @@ class ClaudeParser(LineParser):
         self.cum_usd = None
         self.cum_usage = None
         self._json: dict[int, Optional[list[str]]] = {}      # a tool block's input pieces by block index (of the current message), bounded at JSON_BUFFER_MAX
+        self.tool_calls: list[dict] = []                      # a builder tools call (D244): every tool call in order, J2's _tool_meta shape
+        self._tool_by_id: dict[Any, dict] = {}
 
     # ---- lines -> events -----------------------------------------------------------------------------------------------------
     def feed(self, line: str) -> list[ConnectorEvent]:
@@ -246,6 +249,10 @@ class ClaudeParser(LineParser):
             elif block.get("type") == "tool_use":
                 events.append(ConnectorEvent(kind="tool_call", data={
                     "id": block.get("id"), "name": block.get("name"), "input": block.get("input")}))
+                if self.plan.run_tools is not None:
+                    self._tool_by_id[block.get("id")] = {"n": len(self.tool_calls) + 1, "name": block.get("name"),
+                                                         "input": _short(block.get("input"), self.plan.run_tools.log_chars), "ok": None}
+                    self.tool_calls.append(self._tool_by_id[block.get("id")])
         return events
 
     def _on_user(self, obj: dict) -> list[ConnectorEvent]:
@@ -253,6 +260,8 @@ class ClaudeParser(LineParser):
         content = message.get("content") if isinstance(message.get("content"), list) else []
         events = []
         for block in content:
+            if isinstance(block, dict) and block.get("type") == "tool_result" and block.get("tool_use_id") in self._tool_by_id:
+                self._tool_by_id[block["tool_use_id"]]["ok"] = not block.get("is_error")
             if isinstance(block, dict) and block.get("type") == "tool_result":
                 events.append(ConnectorEvent(kind="tool_result", data={
                     "tool_use_id": block.get("tool_use_id"), "content": _text_of(block.get("content"))[:2000],
@@ -403,7 +412,40 @@ class ClaudeParser(LineParser):
             text=text, structured=structured, provider="claude", model=model, provider_session_id=session, usage=usage, usd=usd,
             usd_basis="reported", quota=self.quota,
             duration_ms=int(duration) if isinstance(duration, (int, float)) and not isinstance(duration, bool) else None,
-            subtype=res.get("subtype") if isinstance(res.get("subtype"), str) else None)
+            subtype=res.get("subtype") if isinstance(res.get("subtype"), str) else None, tool_record=self.tool_record(res))
+
+    def tool_record(self, res: Optional[dict], stop: Optional[str] = None) -> Optional[dict]:
+        """J2's LAST_META record of a builder tools call (J2 `llm._tool_meta`), None for any other call: the tool calls in order, how many the rules
+        refused, and why it stopped (done, budget, timeout, or the CLI's own subtype)."""
+        if self.plan.run_tools is None:
+            return None
+        res = res or {}
+        sub = res.get("subtype")
+        return {"tool_calls": list(self.tool_calls), "denied": len(res.get("permission_denials") or []),
+                "stop": stop or ("done" if sub == "success" else "budget" if sub == "error_max_budget_usd" else sub or "no result")}
+
+
+def _short(value: Any, limit: int) -> Any:
+    """A tool call's input as J2 logs it (J2 `llm._short`): a string longer than `limit` becomes its length and sha256 (a file's whole text stays in the
+    file), dicts and lists item by item."""
+    if isinstance(value, str) and len(value) > limit:
+        return {"chars": len(value), "sha256": hashlib.sha256(value.encode("utf-8")).hexdigest()}
+    if isinstance(value, dict):
+        return {k: _short(x, limit) for k, x in value.items()}
+    if isinstance(value, list):
+        return [_short(x, limit) for x in value]
+    return value
+
+
+def run_tools_settings(grant: Any) -> dict:
+    """The `--settings` of a builder tools call (J2 `llm.cli_settings`): the grant's rules as allow rules, the file tools refused outside the working
+    folders, and with the sandbox on the CLI's own sandbox: reads fenced (home folder denied, the folders allowed back), writes only in the folders."""
+    folders = [os.path.realpath(grant.cwd)] + [os.path.realpath(x) for x in grant.extra]
+    perms = {"permissions": {"allow": list(grant.allow), "additionalDirectories": folders[1:], "blockReadsOutsideWorkingDirectories": True}}
+    if not grant.sandbox:
+        return perms
+    return {"sandbox": {"enabled": True, "autoAllowBashIfSandboxed": True, "allowUnsandboxedCommands": False,
+                        "filesystem": {"denyRead": ["~/"], "allowRead": folders, "allowWrite": folders}}, **perms}
 
 
 def _exit_label(exit: ExitInfo) -> Any:
@@ -413,7 +455,7 @@ def _exit_label(exit: ExitInfo) -> Any:
 class ClaudeConnector(ModelConnector):
     name = "claude"
     default_model = "sonnet"
-    capabilities = Capabilities(native_schema=True, resume=True, images=True, partials=True, mcp=True)
+    capabilities = Capabilities(native_schema=True, resume=True, images=True, partials=True, mcp=True, run_tools=True)
 
     # ---- model and tools -----------------------------------------------------------------------------------------------------
     def resolve_model(self, requested: Optional[str], *, environ: Optional[Mapping[str, str]] = None) -> str:
@@ -456,6 +498,9 @@ class ClaudeConnector(ModelConnector):
             else:
                 argv += ["--system-prompt", plan.system]
             offered, allowed_here, denied_here = _folder_tools(plan.folder) if plan.folder else ([], [], [])
+            grant = plan.run_tools
+            if grant is not None:            # J2's builder tools (D244): only the grant's tools and rules, in its folder (J2 llm._ask_claude_cli)
+                offered = list(grant.tools)
             argv += ["--tools", ",".join(offered), "--strict-mcp-config", "--disable-slash-commands", "--setting-sources", ""]
             if plan.oneshot:
                 argv.append("--no-session-persistence")
@@ -477,15 +522,19 @@ class ClaudeConnector(ModelConnector):
                 config = Path(files) / "mcp.json"
                 write_private_file(config, json.dumps({"mcpServers": self.mcp_servers(plan.tools)}, ensure_ascii=False))
                 argv += ["--mcp-config", str(config)]
-            if plan.tools or plan.folder:
+            if grant is not None:
+                argv += ["--allowedTools", " ".join(grant.allow), "--restricted", "--safe-mode", "--permission-mode", "dontAsk",
+                         "--permission-prompts", "none", "--settings", json.dumps(run_tools_settings(grant), ensure_ascii=False),
+                         "--max-budget-usd", format(float(grant.usd), "g")]
+            elif plan.tools or plan.folder:
                 allowed = allowed_here + ([_ALLOWED_TOOLS] if plan.tools else [])
                 argv += ["--restricted", "--allowedTools", ",".join(allowed)]
                 if plan.folder:
                     argv += ["--disallowedTools", ",".join(denied_here)]
                 argv += ["--permission-mode", "dontAsk", "--permission-prompts", "none"]
-            if plan.max_budget_usd is not None:
+            if plan.max_budget_usd is not None and grant is None:
                 argv += ["--max-budget-usd", format(plan.max_budget_usd, ".6f").rstrip("0").rstrip(".") or "0"]
-            return Command(argv=tuple(argv), cwd=plan.folder or plan.workdir, env=self._env(), stdin_text=stdin, cleanup=tuple(cleanup),
+            return Command(argv=tuple(argv), cwd=(grant.cwd if grant is not None else "") or plan.folder or plan.workdir, env=self._env(), stdin_text=stdin, cleanup=tuple(cleanup),
                            provider="claude")
         except BaseException:
             for path in cleanup:

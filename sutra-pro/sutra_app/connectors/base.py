@@ -95,6 +95,7 @@ class TurnPlan:
     provider_session_id: Optional[str] = None    # the id to create (turn 1) or to resume (turn n)
     workdir: str = ""                            # the session dir (session.json, system.txt), or a fresh empty one-shot dir; the child's cwd unless `folder`
     folder: str = ""                             # the owner's working folder (GAP3-workdir): the child's cwd, with read-only file tools; "" none
+    run_tools: Any = None                        # J2's builder tools (`engine.port.ToolGrant`, D244): the child runs in its cwd with its tools only
     oneshot: bool = True
     max_budget_usd: Optional[float] = None       # only with Allowance.max_usd
     cum_usd: float = 0.0                         # the session's counters BEFORE this turn (delta rules, CD5)
@@ -369,12 +370,14 @@ class ModelConnector(ABC):
     def call_text(self, prompt: str, *, system: str = "", images: Sequence[str] = (), tools: Sequence[str] = (),
                   timeout: float = DEFAULT_TIMEOUT_S, ctx: Optional[RouteContext] = None, effort: Optional[Effort] = None,
                   model: Optional[str] = None, hooks: Optional[Hooks] = None,
-                  on_event: Optional[Callable[[ConnectorEvent], None]] = None, partials: bool = False, folder: str = "") -> TurnResult:
+                  on_event: Optional[Callable[[ConnectorEvent], None]] = None, partials: bool = False, folder: str = "",
+                  run_tools: Any = None) -> TurnResult:
         """One text call. `folder` is the owner's working folder (a `workdir.Folder`, which also says whether files may be changed): the CLI then runs
-        in it with the file tools, as in a chat turn."""
+        in it with the file tools, as in a chat turn. `run_tools` is J2's builder tools grant (D244): only a connector that can run one takes it."""
         ctx = ctx or RouteContext()
         plan = self._oneshot_plan(prompt, system=system, kind="text", model=model, effort=effort or "high", timeout=timeout,
-                                  ctx=ctx, images=images, tools=tools, schema=None, partials=partials, spent=0.0, folder=folder)
+                                  ctx=ctx, images=images, tools=tools, schema=None, partials=partials, spent=0.0, folder=folder,
+                                  run_tools=run_tools)
         return self._execute(plan, hooks or self.hooks, on_event)
 
     def call_json(self, prompt: str, tools: Sequence[str] = (), schema: "type[BaseModel] | dict | None" = None,
@@ -447,14 +450,17 @@ class ModelConnector(ABC):
 
     def _oneshot_plan(self, prompt: str, *, system: str, kind: str, model: Optional[str], effort: str, timeout: float,
                       ctx: RouteContext, images: Sequence[str], tools: Sequence[str], schema: Optional[dict], partials: bool,
-                      spent: float, folder: str = "") -> TurnPlan:
+                      spent: float, folder: str = "", run_tools: Any = None) -> TurnPlan:
         self._check_prompt(prompt)
+        if run_tools is not None and (not self.capabilities.run_tools or folder or tools):
+            raise InvalidRequestError(f"{self.name} can't run J2's builder tools call" if not self.capabilities.run_tools
+                                      else "a builder tools call has no owner's folder and no MCP tools")
         self._check_effort(effort)
         images = self._check_images(images)
         return TurnPlan(
             prompt=prompt, ctx=ctx, system=system or "", model=self.resolve_model(model), effort=effort, kind=kind,
             timeout_s=_positive(timeout, "timeout"), idle_timeout_s=self.idle_timeout_s if partials else None,
-            partials=partials, schema=schema, images=images, tools=tool_names(tools), folder=folder,
+            partials=partials, schema=schema, images=images, tools=tool_names(tools), folder=folder, run_tools=run_tools,
             max_budget_usd=self._budget_left(ctx, spent))
 
     @staticmethod

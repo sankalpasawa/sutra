@@ -236,13 +236,15 @@ J2_DEFAULTS = {
     "decide_for_me": False,           # J2 sync 4: j2.py `os.getenv("J2_DECIDE_FOR_ME") == "1"`: the Simple view's switch is off until it is turned on
     "reviewer": True,                 # J2 sync 6 (D179): the host's, J2 has no switch; on is J2's behaviour (the reviewer always ran)
     "reviewer_wait": 120.0,           # J2 sync 6 (D179): seconds the host waits for the reviewer thread; the host's own
+    "agent_tools": None,              # D244: unset leaves the engine's rule (tools on live with the Claude CLI, J2_AGENT_TOOLS unset)
+    "sandbox": None,                  # D244: unset leaves the engine's rule (on for macOS and Linux when srt is found, J2_SANDBOX unset)
 }
 
 
 def test_engine_settings_default_to_j2s_values():
     assert EngineSettings().model_dump() == J2_DEFAULTS
     assert list(EngineSettings.model_fields) == list(J2_DEFAULTS)
-    assert len(J2_DEFAULTS) == 38
+    assert len(J2_DEFAULTS) == 40
 
 
 def test_the_flags_that_are_on_in_j2_are_on_and_the_others_off():
@@ -306,10 +308,10 @@ def test_text_settings_are_bounded(field, limit):
 
 # ---- locked and editable fields ----------------------------------------------------------------------------------------
 
-def test_the_ten_locked_fields():
+def test_the_twelve_locked_fields():
     assert LOCKED_FIELDS == ("send_mode", "send_cap", "milestone_emails", "test_email", "test_slack_target", "chrome", "force_audit_fail",
-                             "force_audit_note", "force_question", "memory_test_lessons")
-    assert set(LOCKED_FIELDS) <= set(EngineSettings.model_fields) and len(set(LOCKED_FIELDS)) == 10
+                             "force_audit_note", "force_question", "memory_test_lessons", "agent_tools", "sandbox")      # the last two: D244
+    assert set(LOCKED_FIELDS) <= set(EngineSettings.model_fields) and len(set(LOCKED_FIELDS)) == 12
 
 
 def test_editable_is_everything_else_in_field_order():
@@ -331,7 +333,8 @@ J2_VARIABLES = {     # engine.md 4.4: the J2 variables that become fields
     "force_audit_fail": "J2_FORCE_AUDIT_FAIL", "force_audit_note": "J2_FORCE_AUDIT_NOTE", "force_question": "J2_FORCE_QUESTION",
     "memory_test_lessons": "J2_MEMORY_TEST_LESSONS", "workspace": "J2_WORKSPACE", "builder_timeout": "J2_BUILDER_TIMEOUT",
     "decide_for_me": "J2_DECIDE_FOR_ME", "run_templates": "J2_RUN_TEMPLATES", "auto_reuse": "J2_AUTO_REUSE",
-    "artifact_library": "J2_ARTIFACT_LIBRARY", "reviewer": "J2_REVIEWER", "reviewer_wait": "J2_REVIEWER_WAIT"}
+    "artifact_library": "J2_ARTIFACT_LIBRARY", "reviewer": "J2_REVIEWER", "reviewer_wait": "J2_REVIEWER_WAIT",
+    "agent_tools": "J2_AGENT_TOOLS", "sandbox": "J2_SANDBOX"}
 
 
 def test_every_field_has_its_j2_variable():
@@ -343,13 +346,14 @@ NON_DEFAULT = dict(output="prd", fixes=1, budget=250, budget_cap=400, max_cycles
                    board=True, artifact_schema=True, template_library=True, send_mode="mock", send_cap=0, milestone_emails=True,
                    test_email="me@example.com", test_slack_target="#tests", tap_min=48, chrome="/opt/chrome", force_audit_fail=2,
                    force_audit_note="forced", force_question="why?", memory_test_lessons=True, workspace="off", builder_timeout=30.0,
-                   decide_for_me=True, run_templates=True, auto_reuse=True, artifact_library=True, reviewer=False, reviewer_wait=7.5)
+                   decide_for_me=True, run_templates=True, auto_reuse=True, artifact_library=True, reviewer=False, reviewer_wait=7.5,
+                   agent_tools=False, sandbox=True)
 
 
 def test_to_env_of_the_defaults_leaves_out_the_empty_values():
     env = EngineSettings().to_env()
     assert set(J2_VARIABLES.values()) - set(env) == {"J2_BUDGET_CAP", "J2_TEST_EMAIL", "J2_TEST_SLACK_TARGET", "J2_CHROME",
-                                                     "J2_FORCE_AUDIT_NOTE", "J2_FORCE_QUESTION"}
+                                                     "J2_FORCE_AUDIT_NOTE", "J2_FORCE_QUESTION", "J2_AGENT_TOOLS", "J2_SANDBOX"}
     assert env == {"J2_OUTPUT": "auto", "J2_FIXES": "0", "J2_BUDGET": "100", "J2_MAX_CYCLES": "6", "J2_LIMIT_ADD": "30",
                    "J2_BARGAIN_MINUTES": "15.0", "J2_BARGAIN_CALLS": "8", "J2_MAX_TURNS": "30", "J2_CHAT_FULL_CHARS": "60000",
                    "J2_DELAY": "0.0", "J2_RATES": "1", "J2_SLIM": "1", "J2_MEMORY": "1", "J2_REALIZATION": "1", "J2_CHANGE": "0",
@@ -370,7 +374,8 @@ def test_to_env_for_every_field():
                    "J2_TEST_SLACK_TARGET": "#tests", "J2_TAP_MIN": "48", "J2_CHROME": "/opt/chrome", "J2_FORCE_AUDIT_FAIL": "2",
                    "J2_FORCE_AUDIT_NOTE": "forced", "J2_FORCE_QUESTION": "why?", "J2_MEMORY_TEST_LESSONS": "1",
                    "J2_WORKSPACE": "off", "J2_BUILDER_TIMEOUT": "30.0", "J2_DECIDE_FOR_ME": "1",
-                   "J2_RUN_TEMPLATES": "1", "J2_AUTO_REUSE": "1", "J2_ARTIFACT_LIBRARY": "1", "J2_REVIEWER": "0", "J2_REVIEWER_WAIT": "7.5"}
+                   "J2_RUN_TEMPLATES": "1", "J2_AUTO_REUSE": "1", "J2_ARTIFACT_LIBRARY": "1", "J2_REVIEWER": "0", "J2_REVIEWER_WAIT": "7.5",
+                   "J2_AGENT_TOOLS": "0", "J2_SANDBOX": "1"}
 
 
 def test_the_builder_time_limit_takes_zero_for_no_limit_and_a_bad_value_names_its_variable():

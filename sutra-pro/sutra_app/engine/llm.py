@@ -8,9 +8,12 @@ host calls `configure(...)` BEFORE the vendored `j2` module is imported because 
     ask            J2's signature (`timeout` included) plus a keyword `tag`; the reply text, stripped (unstripped in mock mode, as J2)
     CallTimeout    what `ask` raises when the port reports a timeout (J2's `except llm.CallTimeout`, D170)
     can_read_files False: the agents' file tools are bound to the owner's working folder, never to a run folder (D170)
-    tools_on, can_use_tools, TOOLS   builder tools (J2 sync 7): off for a live run, so J2 takes its section path; a live `ask(tools=...)` is
-                                     refused (D240); offline, J2_AGENT_TOOLS=1 turns J2's general path on with scripted replies, as in J2
-    sandbox_on, inside               J2's own helpers, kept as J2 has them (J2_SANDBOX=1 only; a path strictly inside a folder)
+    tools_on, can_use_tools, TOOLS   builder tools (D244, superseding D240): on for a live run when the provider that would take a builder
+                                     call can run one (the Claude CLI), unless J2_AGENT_TOOLS=0; else J2 takes its section path. Offline,
+                                     J2_AGENT_TOOLS=1 turns J2's general path on with scripted replies, as in J2
+    sandbox_on, sandbox_status       the sandbox (D244): J2_SANDBOX decides when it is set; unset, a live engine has it on for macOS and Linux
+                                     when the sandbox runtime (J2_SANDBOX_CMD, default srt) is found, else off; offline it is J2's (J2_SANDBOX=1)
+    inside                           J2's helper: a path strictly inside a folder
     LAST_META      cleared before each call, then filled from the result (model, provider, tokens, usd, duration_ms,
                    structured); a mock call leaves it empty, as J2's did
     MOCK, PROVIDER, MODEL    what J2 reads; fixed by `configure`. In mock mode PROVIDER and MODEL are None, as in J2
@@ -28,6 +31,8 @@ import itertools
 import math
 import os
 import re
+import shlex
+import shutil
 import sys
 import threading
 import time
@@ -41,11 +46,11 @@ from sutra_app.library.types import clip
 
 from .port import (
     CallTag, CompletionRequest, CompletionResult, ModelError, ModelPort, NoModelAvailable, PortInfo, PreflightResult,
-    UsageRecorder,
+    ToolGrant, UsageRecorder,
 )
 
 __all__ = [
-    "ask", "CallTimeout", "can_read_files", "tools_on", "can_use_tools", "sandbox_on", "inside", "TOOLS", "configure", "tagged", "current_tag", "bind_atom", "bound_atom", "env_mock", "step_label", "ScriptedPort",
+    "ask", "CallTimeout", "can_read_files", "tools_on", "can_use_tools", "sandbox_on", "sandbox_status", "inside", "TOOLS", "configure", "tagged", "current_tag", "bind_atom", "bound_atom", "env_mock", "step_label", "ScriptedPort",
     "EmptyReply", "extract_json", "close_json", "extract_html", "partial_html", "LAST_META", "MOCK", "PROVIDER", "MODEL",
     "MOCK_ENV", "TAG_HOOKS", "PROGRESS_HOOKS",
 ]
@@ -90,28 +95,80 @@ def can_read_files() -> bool:
     return False
 
 
-# Builder tools (J2 sync 7, D240). J2 gives a builder Claude's built-in tools in a folder of the run (`ask(tools=...)`, its
-# "general path") when `llm.tools_on()`; the router and the connectors have no seam for a tools call in a run folder yet, so the
-# engine reports them off for a live run: J2 then builds through its section path, as J2 does with J2_AGENT_TOOLS=0. Offline the
-# switch is J2's own (J2_AGENT_TOOLS=1, mock only). A provider name maps to whether it can run a tools call: none can here.
-TOOLS: dict = {}
+# Builder tools (D244, superseding D240). J2 gives a builder Claude's built-in tools in a folder of the run (`ask(tools=...)`, its "general path")
+# when `llm.tools_on()`. Live, the call goes through the router as a `CompletionRequest.run_tools` grant, and only a connector that can run one
+# takes it (the Claude CLI): the router plans no other, so a tools call never falls back to Codex. When no such connector is usable (the Claude
+# CLI missing or signed out, a Codex-only router) tools are off and J2 builds through its section path, as with J2_AGENT_TOOLS=0. Offline the
+# switch is J2's own (J2_AGENT_TOOLS=1, mock only). `TOOLS` maps a provider name to whether it can run a tools call.
+TOOLS: dict = {"claude": True, "codex": False, "stub": False}
+TOOL_KEYS = ("tools", "allow", "cwd", "root", "usd", "log_chars")      # J2's tools request: every key given (J2 llm.TOOL_KEYS)
+
+
+def tools_provider() -> Optional[str]:
+    """The provider a builder tools call would go to now, or None: mock mode, no port, or a port that can run none (from the router's cached
+    status: no model call)."""
+    if MOCK or _PORT is None:
+        return None
+    probe = getattr(_PORT, "tools_provider", None)
+    try:
+        return probe() if callable(probe) else None
+    except Exception:                    # a probe that fails is "no tools": J2 takes its section path
+        return None
 
 
 def tools_on() -> bool:
-    """J2 asks whether builders get tools. Live, never here (D240). Offline (mock) only when J2_AGENT_TOOLS=1, as in J2: the scripted
-    replies stand for the builders' writes, so J2's own flow test can walk the general path without a model or a tool."""
-    return MOCK and os.getenv("J2_AGENT_TOOLS") == "1"
+    """J2 asks whether builders get tools. Live: unless J2_AGENT_TOOLS=0, when a connector can run the call (`can_use_tools`). Offline (mock) only
+    when J2_AGENT_TOOLS=1, as in J2: the scripted replies stand for the builders' writes, so J2's own flow test can walk the general path."""
+    if MOCK:
+        return os.getenv("J2_AGENT_TOOLS") == "1"
+    return os.getenv("J2_AGENT_TOOLS") != "0" and can_use_tools()
 
 
 def can_use_tools() -> bool:
-    """J2 asks whether the current provider can run a call with tools in a folder; here none can (D240)."""
-    return False
+    """J2 asks whether the current provider can run a call with tools in a folder: live, when the router has a connector that can (D244)."""
+    return bool(TOOLS.get(tools_provider() or "", False))
+
+
+SANDBOX_PLATFORMS = ("darwin", "linux")      # where the sandbox runtime works; off on Windows unless J2_SANDBOX=1 (D244)
+
+
+def sandbox_status(mock: Optional[bool] = None, environ: Optional[Mapping[str, str]] = None) -> tuple[bool, str]:
+    """(on, why) of J2's sandbox for builders' commands, the test rerun and a real run (D244). J2_SANDBOX set: exactly that. Offline (mock):
+    J2's default, off. Live and unset: on for macOS and Linux when the sandbox runtime J2_SANDBOX_CMD (default srt) is found on PATH, else off
+    with the reason and how to install it; off on Windows. `environ` (default the process's) is where J2_SANDBOX is read."""
+    value = (os.environ if environ is None else environ).get("J2_SANDBOX")
+    if value not in (None, ""):
+        return value == "1", f"J2_SANDBOX={value}"
+    if MOCK if mock is None else mock:
+        return False, "offline: J2's default (J2_SANDBOX=1 turns it on)"
+    if not sys.platform.startswith(SANDBOX_PLATFORMS):
+        return False, f"not on {sys.platform} (J2_SANDBOX=1 turns it on)"
+    try:
+        program = shlex.split(os.getenv("J2_SANDBOX_CMD") or "srt")[0]
+    except (ValueError, IndexError):
+        return False, "J2_SANDBOX_CMD can't be read"
+    found = shutil.which(program)
+    if found is None:
+        return False, f"{program} not found; install it with: npm i -g @anthropic-ai/sandbox-runtime"
+    return True, f"{program} at {found}"
 
 
 def sandbox_on() -> bool:
-    """J2's switch, kept as J2 has it: J2_SANDBOX=1 puts builders' commands, the test rerun and a real run in a sandbox; off by
-    default. With builder tools off (D240) nothing in the engine runs such a command."""
-    return os.getenv("J2_SANDBOX") == "1"
+    """J2's switch: builders' commands, the test rerun and a real run go through a sandbox (`sandbox_status`)."""
+    return sandbox_status()[0]
+
+
+def _tool_problems(tools) -> list:
+    """Why a tools request can't be run ([] when it can), as J2 checks it: every key given, the lists not empty, the folder there and inside the
+    run folder (root) once symlinks are resolved."""
+    if not isinstance(tools, Mapping):
+        return ["tools must be an object"]
+    out = [f"tools needs {k}" for k in TOOL_KEYS if tools.get(k) in (None, "", [], ())]
+    if not out and not os.path.isdir(tools["cwd"]):
+        out.append(f"tools cwd {tools['cwd']} is not a folder")
+    elif not out and not inside(tools["cwd"], tools["root"]):
+        out.append(f"tools cwd {tools['cwd']} does not resolve inside the run folder {tools['root']}")
+    return out
 
 
 def inside(path, root) -> bool:
@@ -246,11 +303,16 @@ def ask(system, user, mock, max_tokens=1500, effort="high", on_progress=None, js
     the ones that do not exist are dropped. `schema` is a JSON Schema the reply should follow (advisory: the engine checks
     the reply itself). `timeout` is J2's per-call limit in seconds (D170): it becomes `CompletionRequest.timeout_s`, which the
     router honours and cuts to the envelope's deadline; a `ModelError` with code `timeout` is re-raised as `CallTimeout`.
-    `tag` names the call; default `current_tag()`. Raises a `ModelError` when the port does. `tools` is J2's tools request: only
-    None is accepted live, because builder tools are off here (D240), and J2 sends one only when `tools_on()` is true; mock mode ignores
-    it, as J2 does."""
+    `tag` names the call; default `current_tag()`. Raises a `ModelError` when the port does. `tools` is J2's tools request (D244): checked as J2 checks it,
+    then sent as a `ToolGrant` with the sandbox choice; LAST_META then gets J2's tool record ("tool_calls", "denied", "stop"). Mock mode
+    ignores it, as J2 does."""
+    grant = None
     if tools is not None and not MOCK:      # mock mode ignores tools, as J2's own mock does
-        raise RuntimeError("builder tools are off in Sutra's engine (llm.tools_on, D240): a call with tools can't run")
+        if bad := _tool_problems(tools):
+            raise RuntimeError("; ".join(bad))
+        grant = ToolGrant(tools=tuple(tools["tools"]), allow=tuple(tools["allow"]), cwd=os.path.realpath(tools["cwd"]),
+                          root=os.path.realpath(tools["root"]), usd=float(tools["usd"]), log_chars=int(tools["log_chars"]),
+                          extra=tuple(tools.get("extra") or ()), sandbox=sandbox_on())
     images = [p for p in images or [] if p and os.path.exists(p)]
     LAST_META.clear()
     port = _active_port()
@@ -260,7 +322,7 @@ def ask(system, user, mock, max_tokens=1500, effort="high", on_progress=None, js
     tag = _hooked_tag(tag)
     request = CompletionRequest(system=system, user=user, max_tokens=max_tokens, effort=effort, json_mode=json_mode,
                                 images=images, json_schema=schema, timeout_s=timeout or None, tag=tag, allowance=None,
-                                scripted=mock)
+                                scripted=mock, run_tools=grant)
     try:
         result = port.complete(request, _hooked_progress(tag, on_progress))
     except ModelError as exc:
@@ -273,6 +335,8 @@ def ask(system, user, mock, max_tokens=1500, effort="high", on_progress=None, js
             "output_tokens": result.output_tokens, "usd": result.usd, "duration_ms": result.duration_ms,
             "structured": result.structured}
     LAST_META.update({key: value for key, value in meta.items() if value is not None})
+    if grant is not None:
+        LAST_META.update(result.tool_record or {"tool_calls": [], "denied": 0, "stop": "no result"})
     if not result.text.strip():
         raise EmptyReply(f"{result.provider or 'the model'} returned no text")
     return result.text.strip()

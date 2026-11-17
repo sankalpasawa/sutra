@@ -170,6 +170,21 @@
       "default": null,
       "title": "Tokens"
     },
+    "tools": {
+      "anyOf": [
+        {
+          "additionalProperties": {
+            "$ref": "#/$defs/JsonValue"
+          },
+          "type": "object"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Tools"
+    },
     "usd": {
       "anyOf": [
         {

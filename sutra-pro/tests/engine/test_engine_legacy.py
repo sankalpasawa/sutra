@@ -128,7 +128,7 @@ def test_every_j2_block_of_sync_6_is_defined_called_and_guarded():
 
 # The J2 blocks that came with sync 7 (main dee83d5c: Disha's remove-restrictions #202 and group C #203). The five that read J2's own files
 # (the run-blockers fixtures, the folder-run fixture, J2's server and page) sit in the `skippable` list; `agent_tools_cli` is the engine
-# port's own block on the shim (builder tools off live, D240).
+# port's own block on the shim (D240; since D244 builder tools go to the port as a grant).
 J2_SYNC7_BLOCKS = ("coordination_ready_now", "dependency_names", "item_kinds_and_about", "supersede_and_markers", "declared_not_words",
                    "sandbox_off_default", "run_blockers_batch1", "run_blockers_batch2", "run_blockers_batch3", "agent_tools_cli", "agent_form",
                    "general_path", "missing_capabilities", "one_artifact_view", "folder_types_named", "guesses_warn", "builder_tools_call",

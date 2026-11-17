@@ -4472,35 +4472,75 @@ def agent_tools_cli():
     folder as before; with tools the tool list, permission rules, folder and cost limit come only from the caller (the
     names here are made up: llm names no tool), the call runs once, and every tool call is read back from stream-json
     (long strings kept as length and sha256). A missing key, or a provider without tools, is refused."""
-    # engine port: J2's own claude-cli runner (its command line, stream-json, --settings) is the router's here, and the router has no
-    # tools seam (D240). What J2 checked of `llm.ask(tools=...)` is checked of the shim: a live tools call is refused, mock mode ignores
-    # tools as J2's does, tools are off live and follow J2_AGENT_TOOLS=1 offline only, and `inside` is J2's.
+    # engine port: J2's own claude-cli runner (its command line, stream-json, --settings) is the Claude connector's here
+    # (tests/connectors/test_claude_run_tools.py). What J2 checked of `llm.ask(tools=...)` is checked of the shim (D244): the
+    # request goes to the port as a ToolGrant with only the caller's tools, rules, folder and cost limit; the port's tool record
+    # becomes LAST_META; a missing key or a folder outside the run is refused; tools are on live only when the port has a provider
+    # that can run them and J2_AGENT_TOOLS is not 0; mock mode ignores tools as J2's does, and J2_AGENT_TOOLS=1 turns them on offline.
     import tempfile
     from sutra_app.engine import llm
-    keep, env = (llm.MOCK, llm.PROVIDER, llm.MODEL), os.environ.get("J2_AGENT_TOOLS")
+    from sutra_app.engine.port import CompletionResult, PortInfo
+    keep, env = (llm.MOCK, llm.PROVIDER, llm.MODEL, llm._PORT), os.environ.get("J2_AGENT_TOOLS")
     root = tempfile.mkdtemp()
-    try:
-        folder = os.path.join(root, "w1")
-        os.makedirs(folder)
-        tools = {"tools": ["Read"], "allow": ["Read"], "cwd": folder, "root": root, "usd": 1, "log_chars": 10}
-        assert llm.inside(folder, root) and not llm.inside(root, root) and not llm.inside(root + "-x", root)
-        llm.MOCK = False
-        os.environ["J2_AGENT_TOOLS"] = "1"
-        assert not llm.tools_on() and not llm.can_use_tools() and not llm.TOOLS, "live: no builder tools in the engine"
-        try:
-            llm.ask("s", "u", lambda: "x", tools=tools)
-            raise AssertionError("a live tools call ran")
-        except RuntimeError:
+    seen = []
+
+    class Port:
+        provider = "claude"
+
+        def describe(self):
+            return PortInfo(provider="claude", model="sonnet", mock=False)
+
+        def tools_provider(self):
+            return self.provider
+
+        def complete(self, req, on_progress=None):
+            seen.append(req)
+            record = {"tool_calls": [{"n": 1, "name": "ToolA", "input": {"path": "a.py", "content": {"chars": 50, "sha256": "x"}}, "ok": True},
+                                     {"n": 2, "name": "ToolB", "input": {"command": "run t.py"}, "ok": False}],
+                      "denied": 1, "stop": "done"} if req.run_tools else None
+            return CompletionResult(text="done", model="sonnet", provider="claude", usd=0.02, tool_record=record)
+
+        def close(self):
             pass
-        llm.MOCK = True
+    try:
+        folder = os.path.join(root, "agent")
+        os.makedirs(folder)
+        port = Port()
+        llm.configure(port, mock=False)
+        assert llm.ask("s", "u", lambda: "x") == "done" and seen[-1].run_tools is None and "tool_calls" not in llm.LAST_META
+        tools = {"tools": ["ToolA", "ToolB"], "allow": ["ToolA", "ToolB(run *)"], "cwd": folder, "root": root, "usd": 0.5, "log_chars": 10}
+        assert llm.ask("s", "u", lambda: "x", tools=tools) == "done"
+        g = seen[-1].run_tools
+        assert (g.tools, g.allow, g.cwd, g.root, g.usd, g.log_chars) == (("ToolA", "ToolB"), ("ToolA", "ToolB(run *)"), os.path.realpath(folder),
+                                                                       os.path.realpath(root), 0.5, 10), g
+        tc = llm.LAST_META["tool_calls"]
+        assert [(c["n"], c["name"], c["ok"]) for c in tc] == [(1, "ToolA", True), (2, "ToolB", False)], tc
+        assert (llm.LAST_META["usd"], llm.LAST_META["stop"], llm.LAST_META["denied"]) == (0.02, "done", 1), llm.LAST_META
+        for bad, why in (({**tools, "allow": []}, "tools needs allow"), ({**tools, "cwd": root}, "does not resolve inside the run folder"),
+                         ({**tools, "cwd": os.path.join(root, "nope")}, "is not a folder")):
+            try:
+                llm.ask("s", "u", lambda: "x", tools=bad)
+                raise AssertionError(("a bad tools request ran", why))
+            except RuntimeError as e:
+                assert why in str(e), (why, e)
+        os.environ.pop("J2_AGENT_TOOLS", None)
+        assert llm.tools_on() and llm.can_use_tools(), "live: on when the port has a provider that can run a tools call"
+        os.environ["J2_AGENT_TOOLS"] = "0"
+        assert not llm.tools_on(), "J2_AGENT_TOOLS=0 turns them off"
+        os.environ.pop("J2_AGENT_TOOLS")
+        port.provider = None
+        assert not llm.tools_on() and not llm.can_use_tools(), "no provider can run one (Codex only): the section path"
+        llm.configure(None, mock=True)
+        os.environ["J2_AGENT_TOOLS"] = "1"
         assert llm.tools_on() and llm.ask("s", "u", lambda: "mocked", tools=tools) == "mocked" and not llm.can_use_tools()
         os.environ.pop("J2_AGENT_TOOLS")
         assert not llm.tools_on(), "offline: only J2_AGENT_TOOLS=1 turns them on"
     finally:
-        llm.MOCK, llm.PROVIDER, llm.MODEL = keep
+        llm.MOCK, llm.PROVIDER, llm.MODEL, llm._PORT = keep
         os.environ.pop("J2_AGENT_TOOLS", None) if env is None else os.environ.__setitem__("J2_AGENT_TOOLS", env)
         shutil.rmtree(root, ignore_errors=True)
-    print("agent tools (engine port): a live tools call refused, mock ignores tools, tools off live and J2_AGENT_TOOLS=1 offline only ok")
+    print("agent tools (engine port): a tools call goes to the port as a grant, its record is LAST_META, a bad request is refused, "
+          "tools on live with a provider that can run them and off with J2_AGENT_TOOLS=0 or none, mock ignores tools ok")
 
 
 @with_folder_type

@@ -331,6 +331,16 @@ class AppServer(uvicorn.Server):
         if not self.started:
             return
         print(f"Sutra Pro is running at {self.url}  (Ctrl+C to stop)", flush=True)
+        try:                                                             # D244: builder tools and the sandbox, said once at startup
+            from sutra_app.connectors.engine_port import builder_tools_line
+            from sutra_app.engine.spec import EngineSettings, read_settings_file
+            engine = EngineSettings.layered(os.environ, read_settings_file(self.services.settings.data_dir / "engine.json") or {}, None, {})
+            line = await asyncio.to_thread(builder_tools_line, self.services.connector_router, offline=bool(self.services.settings.offline),
+                                           agent_tools=engine.agent_tools, sandbox=engine.sandbox)
+            print(line, flush=True)
+            log.info("%s", line)
+        except Exception:                                                # noqa: BLE001  (a status line never stops the start)
+            log.warning("could not tell whether builders get tools", exc_info=True)
         if self.stop_path is not None:
             self._stop_watch = asyncio.create_task(self._watch_stop_file(self.stop_path))
         if self.open_browser:

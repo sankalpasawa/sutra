@@ -5,7 +5,7 @@ An output type has a form. Two make one file: `page` (a site) and `document` (a 
 (`"output": "folder"`, J2's `agent` form: a builder writes files with its tools). The engine layer needs the two file words to ask "is this a
 document?" and nowhere else. `is_document(info)` takes the entry of a type as J2 returns it (`j2_types.info(name)`), so no type is named: the
 form decides. `check_forms(j2_types)` proves J2 still has these two forms and that every other form makes a folder, which J2 builds only with
-builder tools on (`j2_realization.type_list`), and the engine reports them off (`llm.tools_on`, D240); `capabilities.register(j2)` calls it,
+builder tools on (`j2_realization.type_list`; the engine's `llm.tools_on`, D244: on live with the Claude CLI); `capabilities.register(j2)` calls it,
 where J2 is already loaded and its environment is set (J2 reads some constants from the environment when it is imported, so this module imports
 nothing of J2 itself). A third file form in J2 stops the engine at registration by name instead of being quietly treated as a page.
 """

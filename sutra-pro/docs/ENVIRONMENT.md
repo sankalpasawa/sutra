@@ -87,6 +87,8 @@ two `engine.json` files. `J2_PUSH_RUNS` (always `0`: Sutra never pushes a run fo
 | `J2_FORCE_AUDIT_NOTE` | `force_audit_note` | `unset` | yes | no | test switch: the text of that forced failure |
 | `J2_FORCE_QUESTION` | `force_question` | `unset` | yes | no | test switch: a comma list of functions that must ask one question (mock mode) |
 | `J2_MEMORY_TEST_LESSONS` | `memory_test_lessons` | `0` | yes | no | demo switch: Adaptation may read lessons that test runs wrote |
+| `J2_AGENT_TOOLS` | `agent_tools` | `unset` | yes | no | builders' tools (D244): unset, on in a live run when the Claude CLI is installed and signed in (Codex has no J2 tools path, so a run that only has Codex builds through J2's section path), off offline; `0` turns them off, `1` on (offline: J2's scripted general path) |
+| `J2_SANDBOX` | `sandbox` | `unset` | yes | no | the sandbox for builders' commands, the test rerun and a real run (D244): unset, on for macOS and Linux when the sandbox runtime `srt` is on PATH (`npm i -g @anthropic-ai/sandbox-runtime`), else off, and off on Windows; `1` or `0` forces it. The startup line says which |
 
 How the layers combine, lowest first: the defaults, `<data>/engine.json`, a `J2_*` variable in the server's environment (development and tests), the team's
 `<data>/departments/<team>/engine.json`, and last the eight task keys of one request. The effective values are written to `<run>/settings.json` when the run starts and the engine never re-reads them; the one later write is the Simple view's Decide for me switch, which adds `decide_for_me` to the same file (a running team takes the switch at once, as a line in its inbox).
