@@ -84,9 +84,15 @@ def test_a_project_run_never_takes_a_run_template_even_when_one_is_named(j2, mak
     assert not (run_dir / "templates.json").exists() or "run_template" not in json.loads((run_dir / "templates.json").read_text())
 
 
+def host_lines(run_dir):
+    """The run template lines but J2's own "Saved run template <name>." (sync 8, D243: J2 saves a workable run as a run template by itself
+    when run templates are on): what the host or a taken template said."""
+    return [line for line in system_lines(run_dir) if "run template" in line.lower() and not line.startswith("Saved run template ")]
+
+
 def test_no_key_means_no_line_no_trace_and_the_run_is_what_it_was(j2, make_run_dir, data_dir):
     run_dir, _ = started(make_run_dir, data_dir, engine={"run_templates": True})
-    assert requested(run_dir) is None and not [line for line in system_lines(run_dir) if "run template" in line.lower()]
+    assert requested(run_dir) is None and not host_lines(run_dir)
 
 
 def test_a_follow_up_ignores_both_keys(j2, make_run_dir, data_dir):
@@ -96,4 +102,4 @@ def test_a_follow_up_ignores_both_keys(j2, make_run_dir, data_dir):
     running = Running(second, "--mock")
     assert running.wait(60) == 0
     assert requested(second) is None and running.host.run.run_tpl is None
-    assert not [line for line in system_lines(second) if "run template" in line.lower()]
+    assert not host_lines(second)

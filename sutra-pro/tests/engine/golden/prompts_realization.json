@@ -7,7 +7,7 @@
   "J2_REALIZATION": "1",
   "STUDIO_MOCK": "1"
  },
- "j2_commit": "dee83d5c565fe7d82631a4f7eb555543160a6d41",
+ "j2_commit": "ee659fb54aec75bf7f5139516791aee20a0474fa",
  "outcome": "Done: the site is workable. Every done-when item passes with Audit's evidence and the render check is clean.",
  "scenario": "realization",
  "schema": "prompts-golden/1",
@@ -16,7 +16,7 @@
  "spent": 75,
  "workflows": "531883809649",
  "calls": [
-  ["identity", "a2ab277bb00e", "577080f906fb"],
+  ["identity", "923fbfac9bab", "577080f906fb"],
   ["adaptation", "4e1585b5eaa4", "127b128b977e"],
   ["priority", "2d002703128a", "031a7ea82bd2"],
   ["coordination", "28fb7578aca3", "972db675a8e9"],
@@ -38,6 +38,6 @@
   ["coordination", "28fb7578aca3", "95e4ce88eed5"],
   ["W-8", "54d8ea2d20f1", "5c88ae627d08"],
   ["audit", "2e68aade3663", "aec4b8b6fab6"],
-  ["identity", "ad4e5000233d", "14af451368a2"]
+  ["identity", "9c07c5c714e2", "14af451368a2"]
  ]
 }

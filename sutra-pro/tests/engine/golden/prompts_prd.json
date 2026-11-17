@@ -8,7 +8,7 @@
   "J2_REALIZATION": "0",
   "STUDIO_MOCK": "1"
  },
- "j2_commit": "dee83d5c565fe7d82631a4f7eb555543160a6d41",
+ "j2_commit": "ee659fb54aec75bf7f5139516791aee20a0474fa",
  "outcome": "Done: the PRD is workable. Every done-when item, rubric item and necessary condition passes.",
  "scenario": "prd",
  "schema": "prompts-golden/1",
@@ -17,7 +17,7 @@
  "spent": 98,
  "workflows": "071b9adfa20b",
  "calls": [
-  ["identity", "cfb066f02249", "0f0d21fa62eb"],
+  ["identity", "9932285c8d59", "0f0d21fa62eb"],
   ["adaptation", "5775eda00c04", "be5e92178b9d"],
   ["priority", "528e2da2e4ba", "d7db0b9e7a9b"],
   ["coordination", "28fb7578aca3", "ba54b72d14cc"],
@@ -33,6 +33,6 @@
   ["coordination", "28fb7578aca3", "af9cf423cd41"],
   ["W-6", "77d1b10a3daa", "076ec4adb3a9"],
   ["audit", "267492f8dd47", "104bd0ef68ea"],
-  ["identity", "ad4e5000233d", "b710130cb4d9"]
+  ["identity", "9c07c5c714e2", "b710130cb4d9"]
  ]
 }

@@ -71,7 +71,7 @@ def test_expected_json_records_the_pin_and_the_minimums():
     assert set(EXPECTED) == {"j2_commit", "j2_flow_test_sha256", "legacy_flow_test_sha256", "flow_fast_ok_lines",
                              "flow_fast_ok_lines_with_extraction", "change_checks", "realization_checks", "skip_lines_with_extraction",
                              "known_upstream_failures"}
-    assert EXPECTED["j2_commit"] == "dee83d5c565fe7d82631a4f7eb555543160a6d41"
+    assert EXPECTED["j2_commit"] == "ee659fb54aec75bf7f5139516791aee20a0474fa"
     assert EXPECTED["j2_commit"] in VENDORED_MD.read_text(encoding="utf-8"), "the scripts and the vendored engine are the same J2"
     assert re.fullmatch(r"[0-9a-f]{64}", EXPECTED["j2_flow_test_sha256"]) and re.fullmatch(r"[0-9a-f]{64}", EXPECTED["legacy_flow_test_sha256"])
     assert EXPECTED["known_upstream_failures"] == ["map_focus", "graph_map", "warm_ui"]
@@ -137,6 +137,21 @@ J2_SYNC7_SKIPPABLE = ("sandbox_off_default", "one_artifact_view", "run_for_real"
                       "run_blockers_batch3", "folder_run_reused")
 
 
+# The J2 blocks that came with sync 8 (main ee659fb5: the dry-run fix #206). `dry_run_real_folders` reads J2's copy-script fixture: skippable.
+J2_SYNC8_BLOCKS = ("dry_run_real_folders", "charter_files_planned")
+J2_SYNC8_SKIPPABLE = ("dry_run_real_folders",)
+
+
+def test_every_j2_block_of_sync_8_is_defined_called_and_guarded():
+    text = (LEGACY / "j2_flow_test.py").read_text(encoding="utf-8")
+    wrapped = text[text.index("for _name in ("):text.index("globals()[_name] = skippable")]
+    for name in J2_SYNC8_BLOCKS:
+        assert re.search(rf"(?m)^def {name}\(", text), (name, "defined")
+        assert len(re.findall(rf"\b{name}\(", text)) >= 2, (name, "called by the main flow")
+    for name in J2_SYNC8_SKIPPABLE:
+        assert f'"{name}"' in wrapped, (name, "reads J2's own files: it needs `skippable`")
+
+
 def test_every_j2_block_of_sync_7_is_defined_called_and_guarded():
     text = (LEGACY / "j2_flow_test.py").read_text(encoding="utf-8")
     wrapped = text[text.index("for _name in ("):text.index("globals()[_name] = skippable")]
@@ -154,11 +169,12 @@ def test_the_sync_6_blocks_read_j2_files_through_the_checkout_never_beside_the_s
     assert text.count("os.path.dirname(os.path.abspath(__file__))") == 1, "only LEGACY_DIR is derived from the script's own folder"
 
 
-def test_the_two_content_door_scripts_pass(tmp_path):
+def test_the_content_door_and_reuse_scripts_pass(tmp_path):
     """J2's own `artifact_lib_test.py` (the door's pure logic) and `content_door_test.py` (mock document runs with the flag on), carried
-    because the flow test does not exercise `j2_artifact_lib` (D192); they import the vendored engine and read J2's committed library
+    because the flow test does not exercise `j2_artifact_lib` (D192), and since sync 8 `reuse_fixes_test.py` and `auto_save_test.py` (the
+    reuse fixes and the run template a workable run saves, D243); they import the vendored engine and read J2's committed library
     as the engine's seed library."""
-    for name, minimum in (("artifact_lib_test.py", 33), ("content_door_test.py", 44)):
+    for name, minimum in (("artifact_lib_test.py", 33), ("content_door_test.py", 44), ("reuse_fixes_test.py", 97), ("auto_save_test.py", 24)):
         res = run_script([name], tmp_path, timeout=300)
         assert res.returncode == 0, res.stdout[-800:] + res.stderr[-1500:]
         n = int(re.search(r"(\d+) checks passed", res.stdout).group(1))
@@ -216,8 +232,8 @@ def test_every_j2_block_of_sync_4_is_defined_called_and_guarded():
 
 
 def test_the_four_scripts_are_there_and_use_the_engine_package():
-    assert sorted(p.name for p in LEGACY.glob("*.py")) == ["artifact_lib_test.py", "change_test.py", "content_door_test.py", "j2_flow_test.py",
-                                                           "j2_replay_size.py", "realization_test.py"]
+    assert sorted(p.name for p in LEGACY.glob("*.py")) == ["artifact_lib_test.py", "auto_save_test.py", "change_test.py", "content_door_test.py",
+                                                           "j2_flow_test.py", "j2_replay_size.py", "realization_test.py", "reuse_fixes_test.py"]
     for path in LEGACY.glob("*.py"):
         text = path.read_text(encoding="utf-8")
         assert not re.search(r"(?m)^\s*import (?!j2_flow_test)(j2[a-z_]*|llm)( as \w+)?\s*(#.*)?$", text), path.name       # no bare sibling import left

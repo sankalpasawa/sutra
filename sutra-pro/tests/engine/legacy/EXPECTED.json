@@ -1,15 +1,15 @@
 {
  "change_checks": 192,
- "flow_fast_ok_lines": 118,
- "flow_fast_ok_lines_with_extraction": 181,
- "j2_commit": "dee83d5c565fe7d82631a4f7eb555543160a6d41",
- "j2_flow_test_sha256": "fd0cf512480a385c613d2f9bcea0dcaca80671d560887e03d4f3d4756eaa79b8",
+ "flow_fast_ok_lines": 119,
+ "flow_fast_ok_lines_with_extraction": 183,
+ "j2_commit": "ee659fb54aec75bf7f5139516791aee20a0474fa",
+ "j2_flow_test_sha256": "ff52fddeee2b40f153869fa73091839fa9810e12866534bf572d6e167558362d",
  "known_upstream_failures": [
   "map_focus",
   "graph_map",
   "warm_ui"
  ],
- "legacy_flow_test_sha256": "334a1f62f6cd310ad534f830509fe0f7240e5b33f8a69bb2336da82c14d52ca5",
+ "legacy_flow_test_sha256": "5a859e0899be491eae2f154baa9c07cca11fc42052f8786672c6e641aaef1950",
  "realization_checks": 98,
  "skip_lines_with_extraction": [
   "replay test skipped: runs/j2-20261015-114723 not found",

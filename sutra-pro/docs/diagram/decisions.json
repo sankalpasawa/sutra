@@ -1208,5 +1208,10 @@
   "id": "D242",
   "label": "beta beside stable; AGENTS.md protocol",
   "anchor": "Desktop app · Electron window"
+ },
+ {
+  "id": "D243",
+  "label": "J2 pin: main ee659fb5",
+  "anchor": "band:DEPARTMENT RUNTIME"
  }
 ]

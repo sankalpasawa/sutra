@@ -204,3 +204,19 @@ the files with none of these, and code's checks then run before any builder. `J2
 | 4 | `j2_artifact_lib.stage_audit` | Pass/fail from `stage-<kind>.json` or `summary.json` done-when; ignores necessary conditions and a real run's receipt |
 | 5 | `J2Run._serve_rollback` | Rolls back `self.sections`, `self.sites`, `sections.json`; files a builder wrote in `out/` are not rolled back |
 | 6 | `_serve_content`, `chat_line`, `j2_artifacts.rows` `reused_from` | Words and keys say "section" |
+
+## Dry run on the real folders (fix-dry-run, 2026-11-17)
+
+`runs/j2-20261117-114654`: the builder wrote test-A and test-B into `copy_files.py` as defaults, the real run's command
+passed no folder, and the dry run "on a copy" copied into the real test-B before approval, then said "0 created".
+Fixed: the command must pass every stated folder (`real_run_problems`); a build whose files hold a stated real folder
+is refused, the reason sent to the builder (`real_paths_in`, `_real_path_leak`); the real folders are read before and
+after the dry run, and a change stops the run with each changed file shown (`real_run_dry`, `_ask_real_run`); builder
+and planner instructions say folders only as arguments. Test `dry_run_real_folders`.
+
+**Follow-ups (charter variance for the benchmark to measure).** #1 is addressed on fix-dry-run: Identity's instructions say the charter lists only files the build produces, and a charter file no workflow's outputs include (exact name) is a plan gap sent back to Adaptation once (`_file_gaps`, test `charter_files_planned`). Not built: Identity revising the charter mid-run when Adaptation says only the real run could make the file (no such handoff outside the change request). Live after it: the real-run brief alone passed (`runs/release/j2-20261117-125431`). #2 is open.
+
+| # | Seen in | What Identity did |
+|---|---|---|
+| 1 | `runs/release/j2-20261117-121143`, `-122859` (file sorter, 2 of 2 on 17 Nov; 0 of 5 from 14 to 16 Nov with the same Identity prompt) | Listed a file in the charter that no workflow writes (`run_on_folder.md`, then `run_report.md`: "records the real run"). Necessary condition C1 stayed unmet, so the run was never workable and the RUN ask never came |
+| 2 | `runs/release/j2-20261117-121137` (Bean There) | Added a done-when item needing a fact the brief doesn't give (a contact phone or email), left to be confirmed, so the run ended "Done with open items" |
