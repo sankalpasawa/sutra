@@ -647,9 +647,38 @@ def transport(t):
     return {"$schema": "http://json-schema.org/draft-07/schema#", **AM._clean(copy.deepcopy(raw), _optional_names(t))}
 
 
+def generic_part(gen, data):
+    """data cut to what the generic template declares: its own fields and, inside every object the generic defines
+    (at any depth), that object's own fields. What a specialised template added, a field of its own or a field inside
+    one of the generic's objects (an id on each metric), is left out: the specialised class has checked it, and the
+    generic's objects are closed, so they would refuse it."""
+    objs = {o.name: o for o in gen.objects}
+
+    def cut(fields, d):
+        if not isinstance(d, dict):
+            return d
+        out = {}
+        for f in fields:
+            if f.name not in d:
+                continue
+            v = d[f.name]
+            kind, obj = _parse_type(f.type)
+            if obj in objs and kind == "list_obj" and isinstance(v, list):
+                v = [cut(objs[obj].fields, x) for x in v]
+            elif obj in objs and kind == "obj":
+                v = cut(objs[obj].fields, v)
+            out[f.name] = v
+        return out
+    return cut(gen.fields, data)
+
+
 def validate(t, data):
-    """(dict or None, [errors]): the template's runtime class, then the generic model on the generic fields (so the
-    generic's shape - what its requires_one_of asks for - still holds)."""
+    """(dict or None, [errors]): the template's runtime class, then the generic model on the generic's part of the
+    data (generic_part), so the generic's shape - what its requires_one_of asks for - still holds. The generic model
+    is shown only what the generic declares: a field the template added inside one of the generic's objects is the
+    template's own, checked by its class in the first step (live run j2-20261117-154941: a created Success metrics
+    template had an id on each metric, its class required it and the generic's closed object refused it, so no reply
+    could pass)."""
     model = build_model(t)
     obj, errs = AM.validate(model, AM.normalise(model, data))
     if errs:
@@ -657,8 +686,10 @@ def validate(t, data):
     got = obj.model_dump(by_alias=True)
     gmodel = AM.section_models(t.artifact).get(t.section)
     if gmodel is not None:
+        gen = generic(t.artifact, t.section)
         gnames = {(f.alias or n) for n, f in gmodel.model_fields.items()}
-        _, gerrs = AM.validate(gmodel, AM.normalise(gmodel, {k: v for k, v in got.items() if k in gnames}))
+        part = generic_part(gen, got) if gen is not None else {k: v for k, v in got.items() if k in gnames}
+        _, gerrs = AM.validate(gmodel, AM.normalise(gmodel, part))
         if gerrs:
             return None, gerrs
     return got, []
