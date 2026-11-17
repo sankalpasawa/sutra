@@ -227,7 +227,7 @@ class EngineSettings(BaseModel):
     decide_for_me: bool = False     # J2 sync 4: the team answers its own questions with the suggested option; the Simple view's switch (J2_DECIDE_FOR_ME)
     reviewer: bool = True           # J2 sync 6 (D179): the reviewer's notes in the run report; read by the host, not by J2 (J2_REVIEWER)
     reviewer_wait: float = Field(120.0, ge=0, allow_inf_nan=False)      # seconds the host waits for the reviewer when a run ends; 0 = do not wait (J2_REVIEWER_WAIT)
-    # D244: None leaves the engine's rule (builder tools on live with the Claude CLI; the sandbox on for macOS and Linux when srt is found);
+    # D245: None leaves the engine's rule (builder tools on live with the Claude CLI; the sandbox on for macOS and Linux when srt is found);
     # False / True force it (J2_AGENT_TOOLS, J2_SANDBOX). Locked: they decide whether builders run commands and whether those are fenced.
     agent_tools: Optional[bool] = None
     sandbox: Optional[bool] = None

@@ -44,7 +44,7 @@ PROBE_GRANT = ToolGrant(tools=("Read",), allow=("Read",), cwd=".", root=".", usd
 
 
 def tools_provider_of(router: Router, tag: Optional[CallTag] = None) -> Optional[str]:
-    """The provider a builder tools call would go to now (D244), or None when none can take one. From cached status: no model call."""
+    """The provider a builder tools call would go to now (D245), or None when none can take one. From cached status: no model call."""
     try:
         return router.plan(AskRequest(user="preflight", ctx=RouteContext(tag=tag or CallTag()), kind="text", run_tools=PROBE_GRANT)).order[0]
     except ConnectorError:
@@ -52,7 +52,7 @@ def tools_provider_of(router: Router, tag: Optional[CallTag] = None) -> Optional
 
 
 def builder_tools_line(router: Optional[Router], *, offline: bool, agent_tools: Optional[bool] = None, sandbox: Optional[bool] = None) -> str:
-    """The startup line (D244): whether builders get tools in a run, with the Claude CLI or not at all, and whether the sandbox is on and why.
+    """The startup line (D245): whether builders get tools in a run, with the Claude CLI or not at all, and whether the sandbox is on and why.
     `agent_tools` and `sandbox` are the engine settings a new run reads (`engine.json` and the J2_* environment; None: the engine's rule)."""
     from sutra_app.engine import llm
     if sandbox is not None:
@@ -125,7 +125,7 @@ class RouterPort:
         return AskRequest(user="preflight", ctx=RouteContext(tag=self._tag), kind="text")
 
     def tools_provider(self) -> Optional[str]:
-        """The provider a builder tools call would go to now (D244), or None when none can take one (the Claude CLI missing or signed out, a
+        """The provider a builder tools call would go to now (D245), or None when none can take one (the Claude CLI missing or signed out, a
         Codex-only or stub-only router): J2 then builds through its section path. From cached status: no model call."""
         if self.mock:
             return None

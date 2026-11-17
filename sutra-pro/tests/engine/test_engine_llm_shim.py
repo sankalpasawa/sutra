@@ -55,7 +55,7 @@ class Recorder:
 # ---- the call syntax ------------------------------------------------------------------------------------------------
 
 def test_ask_signature_is_j2s_plus_a_keyword_only_tag():
-    """J2's own signature, `timeout` (sync 5, D170) and `tools` (sync 7, D240; live since D244) included."""
+    """J2's own signature, `timeout` (sync 5, D170) and `tools` (sync 7, D240; live since D245) included."""
     sig = inspect.signature(llm.ask)
     params = list(sig.parameters.values())
     assert [p.name for p in params] == ["system", "user", "mock", "max_tokens", "effort", "on_progress", "json_mode", "images",
@@ -696,7 +696,7 @@ def test_scripted_port_is_the_port_ask_uses_in_mock_mode(scripted_port):
 
 
 def test_builder_tools_are_on_live_with_a_provider_that_can_run_them_and_follow_j2s_switch_offline(monkeypatch):
-    """D244 (superseding D240): live, tools are on when the port has a provider that can run a tools call, unless J2_AGENT_TOOLS=0; a port with
+    """D245 (superseding D240): live, tools are on when the port has a provider that can run a tools call, unless J2_AGENT_TOOLS=0; a port with
     none (Codex only, or no `tools_provider`) means J2's section path; a bad request is refused before the port; offline J2_AGENT_TOOLS=1 is
     J2's own mock switch."""
     monkeypatch.delenv("J2_AGENT_TOOLS", raising=False)

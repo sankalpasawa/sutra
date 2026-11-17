@@ -84,7 +84,7 @@ _PHRASES = {
 }
 
 
-RUN_TOOLS_REFUSED = "can't run J2's builder tools (only the Claude CLI can, D244)"
+RUN_TOOLS_REFUSED = "can't run J2's builder tools (only the Claude CLI can, D245)"
 
 def fallback_phrase(code: str) -> str:
     return _PHRASES.get(code, code.replace("_", " "))
@@ -515,14 +515,14 @@ class Router:
             order = [pinned] + [p for p in order if p != pinned]
         tools = tuple(req.tools) or (() if resolved.tool_profile == "none" else tuple(resolved.tool_profile.split("+")))
         if getattr(req, "run_tools", None) is not None:
-            tools = ()                       # a builder tools call (D244) has the grant's tools only, no MCP profile
+            tools = ()                       # a builder tools call (D245) has the grant's tools only, no MCP profile
         skipped: list[tuple[str, str]] = []
         usable: list[str] = []
         models: dict[str, str] = {}
         for provider in order:
             reason = self._skip_reason(provider, bool(req.images), bool(tools))
             if reason is None and getattr(req, "run_tools", None) is not None and not self._connectors[provider].capabilities.run_tools:
-                reason = RUN_TOOLS_REFUSED          # D244: a builder tools call goes only where it can run, never to a fallback without tools
+                reason = RUN_TOOLS_REFUSED          # D245: a builder tools call goes only where it can run, never to a fallback without tools
             if reason is None:
                 asked = self.policy.model_for(provider)           # type: ignore[arg-type]
                 if pick is not None and pick.model and provider == pick.provider:
@@ -622,7 +622,7 @@ class Router:
 
         Per provider: gate, then the call; a retryable error is tried again after the policy's delay while the provider has
         had fewer than `max_attempts` tries (J2 `range(2)`: the default is one retry); then, when the error allows it, the
-        next provider. Any other error propagates (the last error of the last provider). `retries=False` (a builder tools call, D244): one try
+        next provider. Any other error propagates (the last error of the last provider). `retries=False` (a builder tools call, D245): one try
         only, as J2 runs it, since a retry would start over on the files the first try wrote; the engine decides what comes next."""
         order = plan.order
         chat = state.routes                    # the route events are for a chat turn's live view only (`chat_stream(routes=True)`): an engine call, `ask` or any older caller never sees them
@@ -729,7 +729,7 @@ class Router:
         on_event = _progress(on_progress)
         model = plan.models[provider]
         scripted = req.scripted if provider == "stub" else None
-        # the owner's folder when the call's tag asks for it (D127); "" leaves the call as it was. A builder tools call (D244) works in its run folder only
+        # the owner's folder when the call's tag asks for it (D127); "" leaves the call as it was. A builder tools call (D245) works in its run folder only
         folder = "" if req.run_tools is not None else self.folder_for(req.ctx.tag)
         system = self._grounded(req.system, folder)
         if req.schema is None:

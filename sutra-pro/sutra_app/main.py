@@ -331,7 +331,7 @@ class AppServer(uvicorn.Server):
         if not self.started:
             return
         print(f"Sutra Pro is running at {self.url}  (Ctrl+C to stop)", flush=True)
-        try:                                                             # D244: builder tools and the sandbox, said once at startup
+        try:                                                             # D245: builder tools and the sandbox, said once at startup
             from sutra_app.connectors.engine_port import builder_tools_line
             from sutra_app.engine.spec import EngineSettings, read_settings_file
             engine = EngineSettings.layered(os.environ, read_settings_file(self.services.settings.data_dir / "engine.json") or {}, None, {})

@@ -8,10 +8,10 @@ host calls `configure(...)` BEFORE the vendored `j2` module is imported because 
     ask            J2's signature (`timeout` included) plus a keyword `tag`; the reply text, stripped (unstripped in mock mode, as J2)
     CallTimeout    what `ask` raises when the port reports a timeout (J2's `except llm.CallTimeout`, D170)
     can_read_files False: the agents' file tools are bound to the owner's working folder, never to a run folder (D170)
-    tools_on, can_use_tools, TOOLS   builder tools (D244, superseding D240): on for a live run when the provider that would take a builder
+    tools_on, can_use_tools, TOOLS   builder tools (D245, superseding D240): on for a live run when the provider that would take a builder
                                      call can run one (the Claude CLI), unless J2_AGENT_TOOLS=0; else J2 takes its section path. Offline,
                                      J2_AGENT_TOOLS=1 turns J2's general path on with scripted replies, as in J2
-    sandbox_on, sandbox_status       the sandbox (D244): J2_SANDBOX decides when it is set; unset, a live engine has it on for macOS and Linux
+    sandbox_on, sandbox_status       the sandbox (D245): J2_SANDBOX decides when it is set; unset, a live engine has it on for macOS and Linux
                                      when the sandbox runtime (J2_SANDBOX_CMD, default srt) is found, else off; offline it is J2's (J2_SANDBOX=1)
     inside                           J2's helper: a path strictly inside a folder
     LAST_META      cleared before each call, then filled from the result (model, provider, tokens, usd, duration_ms,
@@ -95,7 +95,7 @@ def can_read_files() -> bool:
     return False
 
 
-# Builder tools (D244, superseding D240). J2 gives a builder Claude's built-in tools in a folder of the run (`ask(tools=...)`, its "general path")
+# Builder tools (D245, superseding D240). J2 gives a builder Claude's built-in tools in a folder of the run (`ask(tools=...)`, its "general path")
 # when `llm.tools_on()`. Live, the call goes through the router as a `CompletionRequest.run_tools` grant, and only a connector that can run one
 # takes it (the Claude CLI): the router plans no other, so a tools call never falls back to Codex. When no such connector is usable (the Claude
 # CLI missing or signed out, a Codex-only router) tools are off and J2 builds through its section path, as with J2_AGENT_TOOLS=0. Offline the
@@ -125,15 +125,15 @@ def tools_on() -> bool:
 
 
 def can_use_tools() -> bool:
-    """J2 asks whether the current provider can run a call with tools in a folder: live, when the router has a connector that can (D244)."""
+    """J2 asks whether the current provider can run a call with tools in a folder: live, when the router has a connector that can (D245)."""
     return bool(TOOLS.get(tools_provider() or "", False))
 
 
-SANDBOX_PLATFORMS = ("darwin", "linux")      # where the sandbox runtime works; off on Windows unless J2_SANDBOX=1 (D244)
+SANDBOX_PLATFORMS = ("darwin", "linux")      # where the sandbox runtime works; off on Windows unless J2_SANDBOX=1 (D245)
 
 
 def sandbox_status(mock: Optional[bool] = None, environ: Optional[Mapping[str, str]] = None) -> tuple[bool, str]:
-    """(on, why) of J2's sandbox for builders' commands, the test rerun and a real run (D244). J2_SANDBOX set: exactly that. Offline (mock):
+    """(on, why) of J2's sandbox for builders' commands, the test rerun and a real run (D245). J2_SANDBOX set: exactly that. Offline (mock):
     J2's default, off. Live and unset: on for macOS and Linux when the sandbox runtime J2_SANDBOX_CMD (default srt) is found on PATH, else off
     with the reason and how to install it; off on Windows. `environ` (default the process's) is where J2_SANDBOX is read."""
     value = (os.environ if environ is None else environ).get("J2_SANDBOX")
@@ -303,7 +303,7 @@ def ask(system, user, mock, max_tokens=1500, effort="high", on_progress=None, js
     the ones that do not exist are dropped. `schema` is a JSON Schema the reply should follow (advisory: the engine checks
     the reply itself). `timeout` is J2's per-call limit in seconds (D170): it becomes `CompletionRequest.timeout_s`, which the
     router honours and cuts to the envelope's deadline; a `ModelError` with code `timeout` is re-raised as `CallTimeout`.
-    `tag` names the call; default `current_tag()`. Raises a `ModelError` when the port does. `tools` is J2's tools request (D244): checked as J2 checks it,
+    `tag` names the call; default `current_tag()`. Raises a `ModelError` when the port does. `tools` is J2's tools request (D245): checked as J2 checks it,
     then sent as a `ToolGrant` with the sandbox choice; LAST_META then gets J2's tool record ("tool_calls", "denied", "stop"). Mock mode
     ignores it, as J2 does."""
     grant = None

@@ -135,7 +135,7 @@ class ClaudeParser(LineParser):
         self.cum_usd = None
         self.cum_usage = None
         self._json: dict[int, Optional[list[str]]] = {}      # a tool block's input pieces by block index (of the current message), bounded at JSON_BUFFER_MAX
-        self.tool_calls: list[dict] = []                      # a builder tools call (D244): every tool call in order, J2's _tool_meta shape
+        self.tool_calls: list[dict] = []                      # a builder tools call (D245): every tool call in order, J2's _tool_meta shape
         self._tool_by_id: dict[Any, dict] = {}
 
     # ---- lines -> events -----------------------------------------------------------------------------------------------------
@@ -499,7 +499,7 @@ class ClaudeConnector(ModelConnector):
                 argv += ["--system-prompt", plan.system]
             offered, allowed_here, denied_here = _folder_tools(plan.folder) if plan.folder else ([], [], [])
             grant = plan.run_tools
-            if grant is not None:            # J2's builder tools (D244): only the grant's tools and rules, in its folder (J2 llm._ask_claude_cli)
+            if grant is not None:            # J2's builder tools (D245): only the grant's tools and rules, in its folder (J2 llm._ask_claude_cli)
                 offered = list(grant.tools)
             argv += ["--tools", ",".join(offered), "--strict-mcp-config", "--disable-slash-commands", "--setting-sources", ""]
             if plan.oneshot:

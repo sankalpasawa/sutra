@@ -141,7 +141,7 @@ with warnings.catch_warnings():
         timeout_s: Optional[float] = Field(None, gt=0, allow_inf_nan=False)
         partials: bool = False
         scripted: Optional[Callable[[], str]] = Field(None, exclude=True)      # J2's `mock`; only the stub calls it
-        run_tools: Optional[ToolGrant] = None          # J2's builder tools (D244): planned only on a connector whose capabilities say run_tools
+        run_tools: Optional[ToolGrant] = None          # J2's builder tools (D245): planned only on a connector whose capabilities say run_tools
 
     class JsonRequest(AskRequest):
         kind: Literal["json"] = "json"
@@ -160,7 +160,7 @@ class TurnResult(M):
     duration_ms: Optional[int]
     quota: Optional[Quota] = None
     subtype: Optional[str] = None          # Claude result.subtype, kept for J2's structured record
-    tool_record: Optional[dict] = None     # a call with run_tools (D244): {"tool_calls", "denied", "stop"}, J2's LAST_META record of it
+    tool_record: Optional[dict] = None     # a call with run_tools (D245): {"tool_calls", "denied", "stop"}, J2's LAST_META record of it
 
 
 class JsonResult(M):
@@ -206,7 +206,7 @@ class Capabilities(M):
     images: bool
     partials: bool
     mcp: bool
-    run_tools: bool = False               # can run J2's builder tools call in a run folder (D244): only the Claude CLI
+    run_tools: bool = False               # can run J2's builder tools call in a run folder (D245): only the Claude CLI
 
 
 class SessionSpec(M):

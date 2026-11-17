@@ -92,7 +92,7 @@ class Receipt(Value):
     """One line of receipts.jsonl, written by code only (J2 `_receipt`, `_expected_receipts`; `[U]` beyond the golden runs).
     Two shapes share the file: a CHECK receipt (`check`, `type`, `expect`, `actual`, `pass`, `evidence`) and an OUTPUT
     receipt (`expected`, `kind`, `met`, `checks`). The keys after `by` are the ones a template routing adds. J2's send record
-    (`type: deed-send-record`) and its real run receipt (`type: real_run`, D244) are not Receipts: the catalogue checks them as bounded open JSON."""
+    (`type: deed-send-record`) and its real run receipt (`type: real_run`, D245) are not Receipts: the catalogue checks them as bounded open JSON."""
 
     atom: AtomId
     attempt: Annotated[int, Field(ge=0, le=99)]
@@ -154,7 +154,7 @@ class CallLog(Value):
     reason: Optional[Text] = None
     atom: Optional[Short] = None
     artifact_schema: Optional[JsonObject] = None
-    tools: Optional[JsonObject] = None       # a builder tools call (D244): J2's record of it (allowed, cwd, calls, usd, stop, denied, files_written)
+    tools: Optional[JsonObject] = None       # a builder tools call (D245): J2's record of it (allowed, cwd, calls, usd, stop, denied, files_written)
     system: Big = ""
     prompt: Big = ""
     raw: Big = ""
@@ -348,7 +348,7 @@ def _p_lines(family: str, **extra: Any) -> Callable[[str, Any], Prepared]:
 
 def _p_receipt(name: str, data: Any) -> Prepared:
     d = _object(data)
-    # J2's send record and, with builder tools on (D244), its real run receipt (`_identity_real_run`, `_ask_real_run`): bounded open JSON
+    # J2's send record and, with builder tools on (D245), its real run receipt (`_identity_real_run`, `_ask_real_run`): bounded open JSON
     return _p_run_object(name, d) if d.get("type") in ("deed-send-record", "real_run") else [("receipt", d)]
 
 

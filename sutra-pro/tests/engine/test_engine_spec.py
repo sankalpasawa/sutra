@@ -236,8 +236,8 @@ J2_DEFAULTS = {
     "decide_for_me": False,           # J2 sync 4: j2.py `os.getenv("J2_DECIDE_FOR_ME") == "1"`: the Simple view's switch is off until it is turned on
     "reviewer": True,                 # J2 sync 6 (D179): the host's, J2 has no switch; on is J2's behaviour (the reviewer always ran)
     "reviewer_wait": 120.0,           # J2 sync 6 (D179): seconds the host waits for the reviewer thread; the host's own
-    "agent_tools": None,              # D244: unset leaves the engine's rule (tools on live with the Claude CLI, J2_AGENT_TOOLS unset)
-    "sandbox": None,                  # D244: unset leaves the engine's rule (on for macOS and Linux when srt is found, J2_SANDBOX unset)
+    "agent_tools": None,              # D245: unset leaves the engine's rule (tools on live with the Claude CLI, J2_AGENT_TOOLS unset)
+    "sandbox": None,                  # D245: unset leaves the engine's rule (on for macOS and Linux when srt is found, J2_SANDBOX unset)
 }
 
 
@@ -310,7 +310,7 @@ def test_text_settings_are_bounded(field, limit):
 
 def test_the_twelve_locked_fields():
     assert LOCKED_FIELDS == ("send_mode", "send_cap", "milestone_emails", "test_email", "test_slack_target", "chrome", "force_audit_fail",
-                             "force_audit_note", "force_question", "memory_test_lessons", "agent_tools", "sandbox")      # the last two: D244
+                             "force_audit_note", "force_question", "memory_test_lessons", "agent_tools", "sandbox")      # the last two: D245
     assert set(LOCKED_FIELDS) <= set(EngineSettings.model_fields) and len(set(LOCKED_FIELDS)) == 12
 
 

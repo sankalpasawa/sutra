@@ -95,7 +95,7 @@ class TurnPlan:
     provider_session_id: Optional[str] = None    # the id to create (turn 1) or to resume (turn n)
     workdir: str = ""                            # the session dir (session.json, system.txt), or a fresh empty one-shot dir; the child's cwd unless `folder`
     folder: str = ""                             # the owner's working folder (GAP3-workdir): the child's cwd, with read-only file tools; "" none
-    run_tools: Any = None                        # J2's builder tools (`engine.port.ToolGrant`, D244): the child runs in its cwd with its tools only
+    run_tools: Any = None                        # J2's builder tools (`engine.port.ToolGrant`, D245): the child runs in its cwd with its tools only
     oneshot: bool = True
     max_budget_usd: Optional[float] = None       # only with Allowance.max_usd
     cum_usd: float = 0.0                         # the session's counters BEFORE this turn (delta rules, CD5)
@@ -373,7 +373,7 @@ class ModelConnector(ABC):
                   on_event: Optional[Callable[[ConnectorEvent], None]] = None, partials: bool = False, folder: str = "",
                   run_tools: Any = None) -> TurnResult:
         """One text call. `folder` is the owner's working folder (a `workdir.Folder`, which also says whether files may be changed): the CLI then runs
-        in it with the file tools, as in a chat turn. `run_tools` is J2's builder tools grant (D244): only a connector that can run one takes it."""
+        in it with the file tools, as in a chat turn. `run_tools` is J2's builder tools grant (D245): only a connector that can run one takes it."""
         ctx = ctx or RouteContext()
         plan = self._oneshot_plan(prompt, system=system, kind="text", model=model, effort=effort or "high", timeout=timeout,
                                   ctx=ctx, images=images, tools=tools, schema=None, partials=partials, spent=0.0, folder=folder,

@@ -4473,7 +4473,7 @@ def agent_tools_cli():
     names here are made up: llm names no tool), the call runs once, and every tool call is read back from stream-json
     (long strings kept as length and sha256). A missing key, or a provider without tools, is refused."""
     # engine port: J2's own claude-cli runner (its command line, stream-json, --settings) is the Claude connector's here
-    # (tests/connectors/test_claude_run_tools.py). What J2 checked of `llm.ask(tools=...)` is checked of the shim (D244): the
+    # (tests/connectors/test_claude_run_tools.py). What J2 checked of `llm.ask(tools=...)` is checked of the shim (D245): the
     # request goes to the port as a ToolGrant with only the caller's tools, rules, folder and cost limit; the port's tool record
     # becomes LAST_META; a missing key or a folder outside the run is refused; tools are on live only when the port has a provider
     # that can run them and J2_AGENT_TOOLS is not 0; mock mode ignores tools as J2's does, and J2_AGENT_TOOLS=1 turns them on offline.

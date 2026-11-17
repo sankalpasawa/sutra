@@ -1,4 +1,4 @@
-"""J2's builder tools through the connector layer (D244, superseding D240).
+"""J2's builder tools through the connector layer (D245, superseding D240).
 
 What is proved: a `ToolGrant` goes to the Claude CLI only, with J2's own command line (the grant's tools and rules, `--restricted`, `--safe-mode`,
 `dontAsk`, `--settings` with the CLI sandbox when the grant asks for it, the grant's cost limit), in the grant's folder; the parser reads every tool

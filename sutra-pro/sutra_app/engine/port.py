@@ -77,7 +77,7 @@ class PortSpec(BaseModel):
 
 
 class ToolGrant(BaseModel):
-    """J2's tools request for one builder call (J2 `llm.ask(tools=...)`, its "general path"; D244): the call runs in `cwd`, a folder strictly
+    """J2's tools request for one builder call (J2 `llm.ask(tools=...)`, its "general path"; D245): the call runs in `cwd`, a folder strictly
     inside the run folder `root`, with only `tools` and the permission rules `allow`, and stops past `usd`. `extra` are other folders the
     call may also use (J2 names them; none today). `sandbox` is the engine's choice (`llm.sandbox_on`): the CLI's own sandbox then keeps a
     command's writes in the folder and its reads out of the home folder. Only a connector that can run such a call takes it (the router
@@ -109,7 +109,7 @@ class CompletionRequest(BaseModel):
     tag: CallTag = CallTag()
     allowance: Optional[Allowance] = None         # the engine sends None (S1-contracts-02, S1-contracts-06)
     scripted: Optional[Callable[[], str]] = Field(None, exclude=True)   # J2's `mock`; only the stub path calls it
-    run_tools: Optional[ToolGrant] = None         # J2's builder tools for this call (D244); None for every other call
+    run_tools: Optional[ToolGrant] = None         # J2's builder tools for this call (D245); None for every other call
 
 
 class CompletionResult(BaseModel):
@@ -126,7 +126,7 @@ class CompletionResult(BaseModel):
     structured: Optional[dict] = None             # {"provider", "subtype", "present"} when json_schema was sent
     note: Optional[str] = None                    # e.g. "claude out of quota, answered by codex"
     detail: Optional[dict] = None                 # = UsageIn.detail; copied into calls.jsonl, never read by J2 code
-    # a call with `run_tools`: J2's LAST_META record of it (D244): "tool_calls" [{n, name, input (cut to log_chars), ok}], "denied" (how
+    # a call with `run_tools`: J2's LAST_META record of it (D245): "tool_calls" [{n, name, input (cut to log_chars), ok}], "denied" (how
     # many calls the rules refused) and "stop" (done, budget, timeout or the CLI's own subtype); None for every other call
     tool_record: Optional[dict] = None
 
