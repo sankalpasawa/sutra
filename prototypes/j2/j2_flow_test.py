@@ -4818,7 +4818,7 @@ def run_for_real():
     try:
         source = j2.squash(f"Sort the files in {real} into folders by type, reading samples from {src}, and run it.")
         runner = ("python3", "{target}")
-        rr = {"command": ["python3", "sort.py", real], "folder": real, "reads": [src], "why": "sort them"}
+        rr = {"command": ["python3", "sort.py", real, src], "folder": real, "reads": [src], "why": "sort them"}
         P = lambda x, **kw: j2.real_run_problems({**rr, **x}, source, runner, "/nowhere/run")
         assert P({}) == [], P({})
         assert any("must start with python3" in x for x in P({"command": ["bash", "sort.sh"]}))
@@ -4826,6 +4826,7 @@ def run_for_real():
         assert any("not named in the brief" in x for x in P({"folder": tempfile.gettempdir()}))
         assert any("climbs out" in x for x in P({"command": ["python3", "../x.py"]}))
         assert any("outside its folders" in x for x in P({"command": ["python3", "sort.py", "/etc"]}))
+        assert any(f"must pass the folder {src} as an argument" in x for x in P({"command": ["python3", "sort.py", real]}))
         home = os.path.expanduser("~")
         assert any("may not be" in x for x in j2.real_run_problems({**rr, "folder": home}, j2.squash(home), runner, "/nowhere/run"))
         assert any("may not be" in x for x in j2.real_run_problems({**rr, "folder": j2.HERE}, j2.squash(j2.HERE), runner, "/nowhere/run"))
@@ -4965,6 +4966,109 @@ def real_run_checks():
             shutil.rmtree(d, ignore_errors=True)
     print("real run checks: an item only the real run meets is covered by no builder, waits in Audit, and is decided by "
           "the receipt; the run is workable only after an approved run ok")
+
+
+@with_folder_type
+def dry_run_real_folders():
+    """runs/j2-20261117-114654: the builder wrote the Requester's folders into copy_files.py (DEFAULT_SOURCE,
+    DEFAULT_DESTINATION; fixtures/dry-run-real, the run's file with the paths as placeholders), the real run's command
+    was "python3 copy_files.py" with no folder, and the dry run "on a copy" copied into the real test-B before any
+    approval, then said "0 created". Now: (a) a command that does not pass every stated folder is refused; (b) code
+    refuses a build whose files hold a real folder (exact path, not a longer name) and sends the reason back to the
+    builder; (c) the dry run passes the copies' paths; (d) real folders are read before and after the dry run: a
+    change stops the run, shows each changed file, and no count of the copy is reported."""
+    base = tempfile.mkdtemp(prefix="j2-dryreal-")      # outside the repo and the home folder, like the Desktop folders
+    keep = {k: os.environ.get(k) for k in ("J2_SANDBOX_CMD", "J2_SANDBOX", "J2_AGENT_TOOLS")}
+    try:
+        os.environ.pop("J2_SANDBOX", None)      # the default: no sandbox
+        os.environ["J2_AGENT_TOOLS"] = "1"      # builders with tools, as in a live run
+        a, b = os.path.join(base, "test-A"), os.path.join(base, "test-B")
+        os.makedirs(os.path.join(a, "sub"))
+        os.makedirs(b)
+        open(os.path.join(a, "one.txt"), "w").write("1")
+        open(os.path.join(a, "sub", "two.txt"), "w").write("2")
+        open(os.path.join(b, "one.txt"), "w").write("kept")
+        script = open(os.path.join(j2.HERE, "fixtures", "dry-run-real", "copy_files.py"), encoding="utf-8").read()
+        bad = script.replace("__SOURCE__", a).replace("__DESTINATION__", b)
+        fixed = script.replace("'__SOURCE__'", "None").replace("'__DESTINATION__'", "None").replace(
+            "done, left = copy_files()", "import sys\n    done, left = copy_files(sys.argv[1], sys.argv[2])")
+        source = j2.squash(f"Copy all files from {a} to {b}, and run it on the real folders.")
+        runner = ("python3", "{target}")
+        rr = {"command": ["python3", "copy_files.py"], "folder": b, "reads": [a], "why": "copy", "checks": [1]}
+        # (a) the run's own real_run: no folder in its command
+        why = j2.real_run_problems(rr, source, runner, "/nowhere/run")
+        assert any(f"must pass the folder {b} as an argument" in x for x in why) \
+            and any(f"must pass the folder {a} as an argument" in x for x in why), why
+        assert any(f"folder {a} as" in x for x in j2.real_run_problems({**rr, "command": ["python3", "copy_files.py", b]}, source, runner, "/nowhere/run"))
+        good = {**rr, "command": ["python3", "copy_files.py", a, b]}
+        assert j2.real_run_problems(good, source, runner, "/nowhere/run") == []
+        assert j2.real_run_problems({**good, "command": ["python3", "copy_files.py", f"--from={a}/", b]}, source, runner, "/nowhere/run") == []
+        # (b) the run's file holds both folders; the fixed one holds none; a longer name is not the folder
+        out = tempfile.mkdtemp(prefix="j2-dryreal-out-")
+        open(os.path.join(out, "copy_files.py"), "w").write(bad)
+        assert j2.real_paths_in(out, j2.real_folders([{"real_run": rr}])) == [("copy_files.py", b), ("copy_files.py", a)], \
+            j2.real_paths_in(out, [a, b])
+        open(os.path.join(out, "copy_files.py"), "w").write(fixed + f"\n# see {a}B and {b}-old\n")
+        assert j2.real_paths_in(out, [a, b]) == []
+        shutil.rmtree(out)
+        run = j2.J2Run()
+        run.set_output(FT)
+        run.goal, run.budget = {"statement": "copy", "done_when": ["copy_files.py copies the files"]}, 300
+        os.makedirs(run._out_dir(), exist_ok=True)
+        w = {"id": "W-1", "name": "copier", "purpose": "copy", "outputs": [f"{FT}/copy_files.py"], "status": "running",
+             "calls_used": 0, "retries_used": 0, "cost": 10, "cycle": 1, "section": "W-1", "covers": [1], "real_run": rr,
+             "atoms": [{"id": "W-1.a1", "goal": "copy files", "expected_output": [],
+                        "verification": [{"text": "copy_files.py exists", "type": "file-exists", "target": "copy_files.py", "expect": True}]}]}
+        run.workflows = [w]
+        j2.add_workflow_agent("W-1")
+        prompts, texts = [], [bad, fixed]
+
+        def builder(r):      # the run's file first, then the next text (the last one again after that)
+            def call(fn, fmt, prompt, mock, **kw):
+                prompts.append(prompt)
+                open(os.path.join(r._out_dir(), "copy_files.py"), "w").write(texts[min(len(prompts), len(texts)) - 1])
+                return {"say": "@Coordination built", "human_output": "I built the copier.", "atom_human_output": "The copier."}
+            return call
+        run.call = builder(run)
+        run._run_tools(w, {"id": "W-1", "name": "copier", "outputs": w["outputs"]}, 3)
+        assert len(prompts) == 2 and w["status"] == "done", (len(prompts), w["status"])
+        assert f"copy_files.py holds the Requester's real folder {b}" in prompts[1] and "command-line argument" in prompts[1], prompts[1][-600:]
+        assert any(e["type"] == "real_path_in_build" for e in run.events)
+        texts[:] = [bad]      # never fixed: the workflow fails, its reason named
+        run2 = j2.J2Run()
+        run2.set_output(FT)
+        run2.goal, run2.budget = run.goal, 300
+        os.makedirs(run2._out_dir(), exist_ok=True)
+        w2 = {**w, "status": "running", "calls_used": 0}
+        run2.workflows, run2.call, prompts[:] = [w2], builder(run2), []
+        run2._run_tools(w2, {"id": "W-1", "name": "copier", "outputs": w2["outputs"]}, 3)
+        assert w2["status"] == "failed" and any("still hold the Requester's real folder paths" in m["text"] for m in run2.chat), w2["status"]
+        assert open(os.path.join(b, "one.txt")).read() == "kept" and os.listdir(b) == ["one.txt"]
+        # (c) the fixed script with its folders as arguments: the dry run passes the copies, the real folders untouched
+        open(os.path.join(run._out_dir(), "copy_files.py"), "w").write(fixed)
+        dry = j2.real_run_dry(run._out_dir(), good, 60)
+        assert dry["exit"] == 0 and dry["created"] == ["sub/two.txt"] and not dry.get("real_changed"), dry
+        assert os.listdir(b) == ["one.txt"] and open(os.path.join(b, "one.txt")).read() == "kept", "the dry run never touches test-B"
+        # (d) the run's script and command: the dry run reaches the real test-B; the run stops, shows what changed
+        open(os.path.join(run._out_dir(), "copy_files.py"), "w").write(bad)
+        w["status"], run.outcome = "done", None
+        run.post("user", "Copy my files")
+        assert run._ask_real_run({}) and run.turn is None and not run.paused, run.paused
+        assert str(run.outcome).startswith("Stopped: W-1's dry run changed the Requester's real folders"), run.outcome
+        said = next(m["text"] for m in reversed(run.chat) if m.get("real_run") == "W-1")
+        assert f"In {b}:\nCreated (1): sub/two.txt" in said and "RUN " not in said and "0 created" not in said, said
+        r = [json.loads(x) for x in open(os.path.join(run.dir, "receipts.jsonl")) if '"real_run"' in x][-1]
+        assert not r["approved"] and not r["ran"] and r["dry_run"]["real_changed"][b]["created"] == ["sub/two.txt"], r
+        assert "0 created" not in r["evidence"] and r["evidence"].startswith("the dry run changed the real folders"), r["evidence"]
+        assert run.real_runs_done["W-1"] is False
+        assert "Never write the Requester's real folder paths into any file" in open(os.path.join(j2.HERE, "templates", "builder.md"), encoding="utf-8").read()
+    finally:
+        for k, v in keep.items():
+            os.environ.pop(k, None) if v is None else os.environ.__setitem__(k, v)
+        shutil.rmtree(base, ignore_errors=True)
+    print("dry run real folders: a real run's command passes every folder; a build holding a real folder is refused "
+          "with the reason to its builder; the dry run passes the copies; a dry run that changes a real folder stops the "
+          "run and shows what changed ok")
 
 
 @with_folder_type
@@ -16399,6 +16503,7 @@ if __name__ == "__main__":
             folder_types_named()        # remove-restrictions 6a: a folder output gets a type named for what it makes
             run_for_real()              # remove-restrictions step 7: a real run only on the Requester's exact approval
             real_run_checks()           # step 7 gap: an item only the real run meets is decided by its receipt
+            dry_run_real_folders()      # runs/j2-20261117-114654: real folders only as arguments; a dry run that reaches them stops the run
             real_run_order()            # the RUN ask without Identity; Decide for me never confirms a real run
             grant_and_question_kind()   # the grant keeps Adaptation's plan; Decide for me answers decisions only
             folder_run_reused()         # remove-restrictions step 6: a folder run saved and reused, not rebuilt

@@ -569,6 +569,39 @@ def real_run_problems(rr, source, runner, run_dir):
             out.append(f"real_run argument {x!r} climbs out of its folder (..)")
         elif os.path.isabs(v) and not any(within(os.path.realpath(v), r) for r in roots):
             out.append(f"real_run argument {x!r} names a path outside its folders")
+    # every folder passed as an argument, exactly as stated: the dry run swaps these for the copies' paths, so a
+    # script that holds the folder itself would run on the real one (runs/j2-20261117-114654)
+    args = {x.split("=", 1)[-1].rstrip("/") for x in cmd[1:]}
+    for f in [folder] + reads:
+        if isinstance(f, str) and os.path.isabs(f) and f.rstrip("/") not in args:
+            out.append(f"real_run command must pass the folder {f} as an argument, exactly as written here: the dry run "
+                       "points that argument at a copy, so what you build must take the folder from its arguments")
+    return out
+
+
+def real_folders(workflows):
+    """Every real folder the run's planned real runs state (their folder and reads), as stated."""
+    return list(dict.fromkeys(f.rstrip("/") for w in workflows or [] for rr in [w.get("real_run") or {}]
+                              for f in [rr.get("folder")] + list(rr.get("reads") or []) if isinstance(f, str) and f.strip("/")))
+
+
+def real_paths_in(root, folders):
+    """[(file, path)]: each text file under root that holds a real folder path, as stated or resolved, not followed by
+    another name character (so /a/test-A is not found in /a/test-AB). A built file must take its folders as arguments."""
+    pats = [(f, re.compile(re.escape(p) + r"(?![\w.-])")) for f in folders
+            for p in dict.fromkeys([f, os.path.realpath(f)])]
+    out = []
+    for r, ds, fs in os.walk(root):
+        ds.sort()
+        for n in sorted(fs):
+            p = os.path.join(r, n)
+            try:
+                with open(p, encoding="utf-8") as fh:
+                    text = fh.read()
+            except (OSError, UnicodeDecodeError):
+                continue
+            rel = os.path.relpath(p, root).replace(os.sep, "/")
+            out += [(rel, f) for f in dict.fromkeys(f for f, rx in pats if rx.search(text))]
     return out
 
 
@@ -622,14 +655,22 @@ def _tree(root):
     return out
 
 
+def _tree_diff(before, after):
+    """{created, deleted, changed}: relative paths, from two _tree() snapshots."""
+    return {"created": sorted(set(after) - set(before)), "deleted": sorted(set(before) - set(after)),
+            "changed": sorted(k for k in set(before) & set(after) if before[k] != after[k])}
+
+
 def real_run_dry(out_dir, rr, timeout):
     """The real run, first on copies: the stated folder and its read-only folders copied beside the run's output
     folder, the command's paths pointed at the copies, run once in the sandbox (real_run) writing only the copy of
     the folder. What it would do to the folder: {"ran", "exit", "created", "changed", "deleted" (paths in the folder),
-    "evidence"}. The real folders are never touched; the copies are removed after."""
+    "evidence"}. The copies are removed after. The real folders are read before and after: anything changed there is
+    "real_changed" ({folder: {created, deleted, changed}}), and the evidence says so instead of the copy's counts."""
     tmp = tempfile.mkdtemp(prefix=".dryrun-", dir=os.path.dirname(os.path.realpath(out_dir)))
     try:
         roots = [rr["folder"]] + list(rr.get("reads") or [])
+        real_before = {r: _tree(r) for r in roots}
         copies = [os.path.join(tmp, f"f{i}") for i in range(len(roots))]
         for r, c in zip(roots, copies):
             shutil.copytree(r, c, symlinks=True)
@@ -646,10 +687,13 @@ def real_run_dry(out_dir, rr, timeout):
         before = _tree(copies[0])
         res = real_run(out_dir, {**rr, "folder": copies[0], "reads": copies[1:], "command": [moved(x) for x in rr["command"]]},
                        timeout)
-        after = _tree(copies[0])
-        d = {"created": sorted(set(after) - set(before)), "deleted": sorted(set(before) - set(after)),
-             "changed": sorted(k for k in set(before) & set(after) if before[k] != after[k])}
+        d = _tree_diff(before, _tree(copies[0]))
+        real = {r: x for r in roots if any((x := _tree_diff(real_before[r], _tree(r))).values())}
         counts = ", ".join(f"{len(v)} {k}" for k, v in d.items())
+        if real:
+            return {"ran": res.get("ran"), "exit": res.get("exit"), **d, "real_changed": real,
+                    "evidence": "the dry run changed the real folders, not only the copies: " + "; ".join(
+                        f"{r}: " + ", ".join(f"{len(v)} {k}" for k, v in x.items()) for r, x in real.items())}
         return {"ran": res.get("ran"), "exit": res.get("exit"), **d,
                 "evidence": (f"dry run on a copy: exit {res.get('exit')}; {counts}" if res.get("ran") else res["evidence"])}
     finally:
@@ -5186,8 +5230,24 @@ class J2Run:
         rr, code = w["real_run"], secrets.token_hex(3)
         self.real_runs_asked[w["id"]] = code
         dry = self.real_runs_dry[w["id"]] = real_run_dry(self._out_dir(), rr, builder_timeout())
-        show = lambda k: (f"\n{k.capitalize()} ({len(dry.get(k) or [])}): " + ", ".join((dry.get(k) or [])[:10])
-                          + (" ..." if len(dry.get(k) or []) > 10 else "")) if dry.get(k) else ""
+        show = lambda k, d=dry: (f"\n{k.capitalize()} ({len(d.get(k) or [])}): " + ", ".join((d.get(k) or [])[:10])
+                                 + (" ..." if len(d.get(k) or []) > 10 else "")) if d.get(k) else ""
+        if dry.get("real_changed"):      # the dry run reached the Requester's own folders: stop, never ask, never "0 changed"
+            self.post("system", f"{w['id']}'s dry run changed your real folders, not only the copies, before any "
+                                f"approval.\nCommand: {shlex.join(rr['command'])}" + "".join(
+                                    f"\nIn {f}:" + show("created", x) + show("changed", x) + show("deleted", x)
+                                    for f, x in dry["real_changed"].items())
+                      + "\nThe run stops here: nothing else is run. Check these files.", warning=True, real_run=w["id"])
+            self.real_runs_done[w["id"]] = False
+            with open(os.path.join(self.dir, "receipts.jsonl"), "a", encoding="utf-8") as f:
+                f.write(json.dumps({"type": "real_run", "workflow": w["id"], **rr, "code": code, "approved": False,
+                                    "ran": False, "exit": None, "evidence": dry["evidence"],
+                                    "dry_run": {k: v for k, v in dry.items() if k != "evidence"},
+                                    "t": time.strftime("%Y-%m-%dT%H:%M:%S"), "by": "code"}, ensure_ascii=False) + "\n")
+            self._event("code", "real_run", f"{w['id']}: {dry['evidence']}")
+            self.outcome = f"Stopped: {w['id']}'s dry run changed the Requester's real folders ({dry['evidence']})."
+            self.turn, self.handoff = None, {}
+            return True
         self.post("system", f"{w['id']} wants to run what it built on your own files.\nCommand: {shlex.join(rr['command'])}\n"
                             f"Writes only: {rr['folder']}" + (f"\nReads only: {', '.join(rr['reads'])}" if rr.get("reads") else "")
                             + f"\nWhy: {rr.get('why') or 'not given'}\nWhat it would do, from a {dry['evidence']}"
@@ -9493,8 +9553,10 @@ class J2Run:
                  + (f"\nGUIDANCE FOR A {label.upper()} (where it speaks of a reply's sections or code assembling them, "
                     f"write into the files instead):\n{guide}" if guide else "")
                  + self._artifact_context(w))
-        attempt, evidence, r, failed, stop = 0, "", {}, [], None
+        attempt, evidence, r, failed, stop, leak = 0, "", {}, [], None, ""
         reused = self._reuse_folder(w, cwd)
+        if reused and (leak := self._real_path_leak(cwd)):      # reused files that hold a real folder are rebuilt
+            reused, evidence = None, leak
         if reused:      # step 6: the run template's files are already here: code checks them before any builder call
             attempt = 1
             text = self._out_text()
@@ -9523,6 +9585,10 @@ class J2Run:
                 except RuntimeError as e:      # stopped at the time or cost limit, or the CLI failed
                     evidence = f"- your last call was stopped before it finished: {e}"
                     continue
+                leak = self._real_path_leak(cwd)
+                if leak:      # refused before its checks: the reason goes back to the builder
+                    evidence = leak
+                    continue
                 text = self._out_text()
                 self._publish_out(text)
                 failed = self._run_checks(w, attempt, text, folder=cwd)
@@ -9532,6 +9598,8 @@ class J2Run:
                                      f"{x['evidence']}" for x in failed)
         finally:
             self.tools_builder = None
+        if leak and not stop:
+            stop = "its files still hold the Requester's real folder paths: " + leak.removeprefix("- ")
         self.write_lock = self.atom = None
         meta = r if isinstance(r, dict) else {}
         if stop or not self.sites:
@@ -9557,6 +9625,17 @@ class J2Run:
                                 "to Adaptation, which decides whether the check or the build is wrong.")
             return self._handoff("adaptation", kind="atom_failed", wid=fn, atoms=bad, attempt=attempt, owner_note="")
         self._handoff("coordination", kind="schedule")
+
+    def _real_path_leak(self, cwd):
+        """Evidence for the builder when a file in its folder holds a real folder the run's real runs state ("" when
+        none): code refuses that build, since a dry run on copies cannot redirect a path written into a file."""
+        hits = real_paths_in(cwd, real_folders(self.workflows))
+        if not hits:
+            return ""
+        self._event("code", "real_path_in_build", "; ".join(f"{f}: {p}" for f, p in hits))
+        return ("- refused: " + "; ".join(f"{f} holds the Requester's real folder {p}" for f, p in hits)
+                + ". Never write a real folder path into a file, not even as a default: take each folder as a "
+                "command-line argument. Code runs it on copies first by passing the copies' paths.")
 
     def _human_output(self, w, meta, sid):
         """1 to 3 plain sentences saying what the builder built. Code fixes an unusable one itself, with no re-ask
