@@ -15,6 +15,10 @@ Never served (the door is adapt, with the rule that says why):
 - inputs-changed: the documents this section was written from (the PRD for an HLD section, the PRD and the HLD for
   an LLD section) are not what the source run had: other ids (R1 to R12 then, R1 to R14 now) or other content. The
   old section cites the old ids, so it is a draft, not the answer.
+- cross-facts, same-job-facts: the section holds a value of the source run's charter that this run's charter does
+  not hold (foreign_values), whether the source was another business or the same one.
+Never served and never a draft (the door is build):
+- source-not-workable: the source run did not end workable (the caller reads its last audit and passes workable).
 Served although the fingerprint differs:
 - same-job: the router found the same job (j2_template_lib.same_job: this business, the same run-template workflow,
   matching facts) and reused the source's own template as it is.
@@ -180,15 +184,20 @@ def inputs_changed(source, inputs):
     return ""
 
 
-def door(need, rec, source, error=None, has_key=True, goal=None, rework=None, inputs=None):
+def door(need, rec, source, error=None, has_key=True, goal=None, rework=None, inputs=None, workable=None):
     """The content decision for one workflow, from the router's decision rec (its action, template@version and the
     need's fingerprint) and the source section. {door, rule, reason, source: {...}|None}. goal: this run's charter;
     a cross-client section that holds the source business's values is not served as it is (adapt, rule
     cross-facts), so no fact of another client enters this document unchecked.
     rework (a sentence, e.g. "it revises W-9 and fixes F-1"): the workflow was asked to change a section, so nothing
     is served: adapt, rule rework. inputs ({kind: doc_state} of this run's earlier documents): a section that would
-    be served is served only when they are what the source run had (inputs_changed), else adapt, rule inputs-changed."""
-    d = _door(need, rec, source, error, has_key, goal, rework)
+    be served is served only when they are what the source run had (inputs_changed), else adapt, rule inputs-changed.
+    workable (the caller's reading of the source run: did it end workable; None: not asked): False is build, rule
+    source-not-workable: its section is neither served nor a draft. This file reads no audit of a whole run; j2.py
+    passes ended_workable(saved_dir(source run)).
+    The same job is held to the cross rule too: a section of the same business that holds a value of the source
+    run's charter this charter does not is adapt, rule same-job-facts."""
+    d = _door(need, rec, source, error, has_key, goal, rework, workable)
     if d["door"] == "reuse" and inputs is not None:
         why = inputs_changed(source, inputs)
         if why:
@@ -198,7 +207,7 @@ def door(need, rec, source, error=None, has_key=True, goal=None, rework=None, in
     return d
 
 
-def _door(need, rec, source, error, has_key, goal, rework):
+def _door(need, rec, source, error, has_key, goal, rework, workable=None):
     src = None if source is None else {k: source[k] for k in ("run", "workflow", "key", "sha", "template", "fingerprint",
                                                                "audit", "receipts_passed")}
     if error:
@@ -213,11 +222,21 @@ def _door(need, rec, source, error, has_key, goal, rework):
         return {"door": "adapt", "rule": "rework", "source": src,
                 "reason": f"a fix was asked for ({rework}), so nothing is served; the builder rewrites the section from "
                           "what it is now and the findings"}
+    if workable is not None and not workable:      # a run that did not end workable is no source: not served, not a draft
+        return {"door": "build", "rule": "source-not-workable", "source": src,
+                "reason": f"source-not-workable: run {source['run']} did not end workable, so its section is neither "
+                          "served nor used as a draft"}
     if source["audit"] != "pass":
         return {"door": "build", "rule": "audit", "reason": f"the source stage's audit is {source['audit']}, so its section is not served", "source": src}
     if source["fingerprint"] and source["fingerprint"] == (need or {}).get("fingerprint") and source["template"] == routed:
         return {"door": "reuse", "rule": "same", "reason": f"the same inputs and the same template as run {source['run']} {source['workflow']}: served, then checked", "source": src}
     if (rec or {}).get("same_job") and source["template"] == routed:
+        foreign = foreign_values(source, goal) if goal is not None else []      # the cross rule, for the same business too
+        if foreign:
+            return {"door": "adapt", "rule": "same-job-facts", "source": src,
+                    "reason": f"the same job as run {source['run']} {source['workflow']}, but its section holds {len(foreign)} "
+                              "value(s) of the source run's charter that this charter does not; the builder starts from it "
+                              "as a draft, slotted"}
         return {"door": "reuse", "rule": "same-job", "source": src,
                 "reason": f"the same job as run {source['run']} {source['workflow']} (this business, the same run-template "
                           f"workflow, facts that match {rec['same_job'].get('match')}) and the same template: served, then checked"}
