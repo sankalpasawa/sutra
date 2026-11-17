@@ -19,7 +19,7 @@ const APP_NAME = 'Sutra Pro';
 const APP_ID = 'os.sutra.pro';
 const RELEASES_URL = 'https://github.com/sankalpasawa/sutra/releases?q=sutra-pro';
 const PROJECT_ROOT = path.resolve(__dirname, '..', '..');         // sutra-pro/ when the app runs from a checkout
-const ICON_NAME = 'sutra-pro-1024.png';
+const ICON_NAME = process.platform === 'win32' ? 'sutra-pro-windows-1024.png' : 'sutra-pro-1024.png';   // the Windows app has its own icon
 const SELFTEST = process.env.SUTRA_PRO_SELFTEST === '1';
 
 const folder = runtime.dataDir();

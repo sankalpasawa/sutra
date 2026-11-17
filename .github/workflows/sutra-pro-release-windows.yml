@@ -172,7 +172,7 @@ jobs:
           set -euo pipefail
           mkdir -p release
           "$ISCC" "/DAppVersion=$VERSION" "/DSourceDir=$(cygpath -w "$PWD/build/Sutra Pro")" "/DOutputDir=$(cygpath -w "$PWD/release")" \
-            "/DIconFile=$(cygpath -w "$PWD/assets/icon/sutra-pro.ico")" scripts/windows/sutra-pro-desktop.iss
+            "/DIconFile=$(cygpath -w "$PWD/assets/icon/sutra-pro-windows.ico")" scripts/windows/sutra-pro-desktop.iss
           ls -l release
           [ -s release/Sutra-Pro-Setup-x64.exe ] || { echo "::error::the installer was not made"; exit 1; }
 

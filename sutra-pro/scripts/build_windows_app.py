@@ -13,7 +13,7 @@ Layout of `<out>/Sutra Pro/` (the folder the installer copies and the portable z
     Sutra Pro.cmd                 start the app (portable use; the installer makes Start menu shortcuts that do the same)
     Quit Sutra Pro.cmd            ask the running app to stop (`sutra-pro stop`: it writes app.stop, which the server polls)
     sutra-pro.cmd                 the command line (`sutra-pro.cmd doctor | status | stop | config ...`)
-    icon/sutra-pro.ico            the icon of the shortcuts
+    icon/sutra-pro-windows.ico    the icon of the shortcuts (the Windows icon, assets/icon/sutra-pro-windows.ico)
     build-info.json               what went in (version, archive name and sha256, wheel name and sha256)
     README.txt                    how to start it, where the data and the log are, what SmartScreen will say
 
@@ -43,7 +43,7 @@ from build_macos_app import BuildError, Fetch, WheelInfo, fetch_url, read_wheel,
 ROOT = HERE.parent
 APP_NAME = "Sutra Pro"
 TARGET = "win-x64"
-ICON = ROOT / "assets" / "icon" / "sutra-pro.ico"
+ICON = ROOT / "assets" / "icon" / "sutra-pro-windows.ico"      # the Windows icon; hand-made, not derived by scripts/make_icons.py
 EXE_NAME = "SutraPro.exe"
 INTERPRETER_FLAGS = "-I -X utf8"
 

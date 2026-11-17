@@ -41,8 +41,9 @@ export function packagerOptions({ platform, arch, out, version }) {
     asar: true,
     quiet: true,
     ignore: ignored,
-    extraResource: [path.join(icons, 'sutra-pro-1024.png')],      // the window's icon for the pages it draws itself (src/main.js iconPath)
-    icon: path.join(icons, platform === 'darwin' ? 'sutra-pro.icns' : 'sutra-pro.ico'),
+    // the window's icon for the pages it draws itself (src/main.js iconPath): the old Sutra's logo on the Mac, the Windows icon on Windows
+    extraResource: [path.join(icons, platform === 'darwin' ? 'sutra-pro-1024.png' : 'sutra-pro-windows-1024.png')],
+    icon: path.join(icons, platform === 'darwin' ? 'sutra-pro.icns' : 'sutra-pro-windows.ico'),
   };
   if (platform === 'darwin') {
     Object.assign(options, { appBundleId: BUNDLE_ID, appCategoryType: 'public.app-category.developer-tools', darwinDarkModeSupport: true });

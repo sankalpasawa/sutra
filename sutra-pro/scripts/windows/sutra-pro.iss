@@ -1,6 +1,6 @@
 ; Sutra Pro installer (Inno Setup 6). Built by .github/workflows/sutra-pro-release-windows.yml:
 ;
-;   ISCC.exe /DAppVersion=0.1.0 /DSourceDir=<build>\Sutra Pro /DOutputDir=<release> /DIconFile=<assets>\icon\sutra-pro.ico scripts\windows\sutra-pro.iss
+;   ISCC.exe /DAppVersion=0.1.0 /DSourceDir=<build>\Sutra Pro /DOutputDir=<release> /DIconFile=<assets>\icon\sutra-pro-windows.ico scripts\windows\sutra-pro.iss
 ;
 ; PER-USER, NO ADMIN RIGHTS (D101): it installs to %LOCALAPPDATA%\Programs\Sutra Pro and writes only under the user's profile, so it
 ; needs no UAC prompt and works on a locked-down machine. The app's data (%USERPROFILE%\.sutra-pro) is never touched by the installer or
@@ -16,7 +16,7 @@
   #define OutputDir "."
 #endif
 #ifndef IconFile
-  #error IconFile is not defined: pass /DIconFile=<sutra-pro.ico>
+  #error IconFile is not defined: pass /DIconFile=<sutra-pro-windows.ico>
 #endif
 
 #define AppName "Sutra Pro"
@@ -37,7 +37,7 @@ ArchitecturesInstallIn64BitMode=x64compatible
 OutputDir={#OutputDir}
 OutputBaseFilename=Sutra-Pro-Setup-x64
 SetupIconFile={#IconFile}
-UninstallDisplayIcon={app}\icon\sutra-pro.ico
+UninstallDisplayIcon={app}\icon\sutra-pro-windows.ico
 Compression=lzma2/max
 SolidCompression=yes
 WizardStyle=modern
