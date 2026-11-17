@@ -642,7 +642,11 @@ playbooks into the real file, and a live clothing run reused one. Those are now 
   same job worded anew (same business, same run-template workflow, same emails, times and numbers) is still served;
   and a section template of another business is adapted only when that business is similar enough
   (`routing.adapt_min_similarity` in `templates/library-settings.json`, 0.6), else the business gets its own
-  template family. Adaptation does not yet
+  template family. Since the review of 17 Nov 2026: a source run that did not end workable is never served or
+  drafted from (`source-not-workable`); a rework with no section of its own yet gets no draft; the same job is
+  adapted, not served, when its section holds a value this charter does not (`same-job-facts`); the same-job rule
+  and the similarity floor act only with `J2_AUTO_REUSE` (which `J2_ARTIFACT_LIBRARY` implies); and the email,
+  time and number shapes they compare by are `fact_shapes` in `templates/library-settings.json`. Adaptation does not yet
   call `j2_template_lib.find` (a finished artifact first, then a template) when it plans; the search is designed in
   `docs/superpowers/specs/2026-11-13-artifact-search-design.md`.
 - **Engines and triggers**: the page has each function as an engine that wakes when its records exist. Here one
