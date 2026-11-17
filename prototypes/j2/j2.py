@@ -3501,6 +3501,7 @@ class J2Run:
         # J2_TEMPLATE_LIBRARY=1 (template-library/1): the template each workflow's builder fills, chosen by the router
         self.tpl_lib = j2_template_lib.enabled()
         self.tpl_routes, self.tpl_decisions, self.tpl_cur = {}, [], None
+        self.tpl_similar = {}      # how similar each other business's templates were found to this run's (j2_template_lib.route)
         self.reused_from = None      # step 6: the run template whose folder files this run started from
         # J2_ARTIFACT_LIBRARY=1 (artifact-reuse/1): the content door, a document section served from its source run (_route_content)
         self.art_lib = j2_artifact_lib.enabled()
@@ -10577,13 +10578,24 @@ class J2Run:
                 err = str(e)
             except Exception as e:      # the door never blocks a run
                 err = f"{type(e).__name__}: {e}"
-        d = j2_artifact_lib.door(need, rec, src, err, has_key=bool(key and tid), goal=self.goal or {})
+        # a workflow that revises a section or fixes findings is never served an old section (rule rework); a section
+        # is served only when the documents written before it are what the source run had (rule inputs-changed)
+        rework = " and ".join(x for x in (f"it revises {w['revises']}" if w.get("revises") else "",
+                                          "it fixes " + ", ".join(str(f) for f in w["fixes"]) if w.get("fixes") else "") if x)
+        # a source run that did not end workable is never served or drafted from (rule source-not-workable)
+        d = j2_artifact_lib.door(need, rec, src, err, has_key=bool(key and tid), goal=self.goal or {}, rework=rework or None,
+                                 inputs=self._content_inputs(kind),
+                                 workable=ended_workable(saved_dir(src["run"])) if src else None)
         d = {"run": os.path.basename(self.dir), "t": time.strftime("%Y-%m-%dT%H:%M:%S"), "workflow": wid,
              "atom": (w.get("atoms") or [{}])[0].get("id") or "", "artifact": kind, "section": section,
              "run_template": tid, "key": key, "held": False, **d}
         self.content_routes[wid], self.content_sources[wid] = d, src
         self.content_decisions.append(d)
-        if d["door"] == "adapt" and src:
+        now = (self.art_data.get(kind) or {}).get(section)
+        if d.get("rule") == "rework":      # the section the findings were raised on: this run's own, or no draft at all
+            if now is not None:            # (never the source run's section: a fix is not written from another run's text)
+                self.content_draft[wid] = json.dumps(now, ensure_ascii=False, indent=1)
+        elif d["door"] == "adapt" and src:
             try:
                 self.content_draft[wid] = j2_artifact_lib.draft_text(src)
             except Exception as e:      # no draft is better than a draft with the source business's values in it
@@ -10594,6 +10606,22 @@ class J2Run:
 
     def _save_reuse(self):
         self.save("reuse.json", j2_artifact_lib.record(self.content_decisions))
+
+    def _content_inputs(self, kind):
+        """{kind: {ids, sha}} of the documents this run wrote before this one (the PRD for the HLD; the PRD and the HLD
+        for the LLD), as the run holds their data now: what a served section of this document must agree with."""
+        order = [k for k in (self.docset or self.stages or []) if not is_page(k)]
+        before = order[:order.index(kind)] if kind in order else []
+        return {k: j2_artifact_lib.doc_state(self.art_data.get(k)) for k in before if self.art_data.get(k)}
+
+    def _content_findings(self, w):
+        """The Audit findings a workflow fixes, each as Audit last wrote it (what builder_state gives a real run)."""
+        fixes, found = {str(f) for f in w.get("fixes") or []}, {}
+        for a in reversed(self.audits):
+            for r in a["results"]:
+                if r.get("id") in fixes and r["id"] not in found:
+                    found[r["id"]] = {k: r.get(k) for k in ("id", "criterion", "verdict", "severity", "note")}
+        return list(found.values())
 
     def _serve_content(self, w, served, state, kind, section, model, sid, first, attempt):
         """Attempt 1 served from the source section instead of a model call, through the same validate, data and render
@@ -10670,6 +10698,12 @@ class J2Run:
     def _content_draft_text(self, w):
         """The draft a builder starts from (door adapt): the source section with the source business's values slotted."""
         text = self.content_draft.get(w["id"])
+        if (self.content_routes.get(w["id"]) or {}).get("rule") == "rework":      # a fix was asked for: never the old text again
+            return ("\nA FIX WAS ASKED FOR. Write this section again so that every finding below is fixed; a section "
+                    "returned unchanged is not a fix. WHY: " + str(w.get("purpose") or w.get("name") or "")
+                    + "\nFINDINGS TO FIX: " + json.dumps(self._content_findings(w), ensure_ascii=False)
+                    + ("\nTHE SECTION AS IT IS NOW (keep what the findings do not touch, change what they name, and use "
+                       "no fact that is not in FACTS YOU MAY USE):\n```json\n" + text + "\n```" if text else ""))
         if not text:
             return ""
         return ("\nDRAFT (the same section from an earlier finished run, its business's values replaced by <slots>; keep "
@@ -10722,6 +10756,7 @@ class J2Run:
                "agent": "template generator (mock)" if llm.MOCK else f"template generator ({llm.PROVIDER})"}
         if self.run_tpl and auto_reuse_on():      # J2_AUTO_REUSE=1: on a tie the router prefers this run template's own section templates
             ctx["run_template"] = self.run_tpl["id"]
+        ctx["similar"] = self.tpl_similar      # one finding per other business for the whole run (sections with few facts take it)
         self.tpl_cur = {"wid": wid}
         first = self._run_tpl_first(w, kind, section)      # J2_RUN_TEMPLATES=1: the run template's section template first
         try:
