@@ -14,6 +14,17 @@ Mock document runs into a copy of the library and a temp runs folder (j2_flow_te
 (4) the same job after small changes: the yoga brief again, with one done-when item worded anew (another
     fingerprint), reuses the run template's own templates (rule j) and its PRD sections are served (rule same-job);
     a changed price is not the same job.
+After the review of PR #205 (17 Nov 2026):
+(5) a rework with no section of its own yet gets no draft: never the source run's section;
+(6) the same job is held to the foreign-values rule: a section of the same business that holds a value of the
+    source run's charter this charter does not is adapted (rule same-job-facts), not served;
+(7) a source run that did not end workable is never served and never drafted from (door build, rule
+    source-not-workable), in door() and in a whole run;
+(8) flag scope: with J2_RUN_TEMPLATES=1 alone there is no same-job rule, no similarity floor and no sentence about
+    it for the generator (the routing before #205); with J2_AUTO_REUSE=1, or J2_ARTIFACT_LIBRARY=1 which implies it,
+    all three are there;
+(9) the email, time and number shapes are the settings file's (fact_shapes) and give what the patterns that stood
+    in code gave.
 No AI calls. Nothing written outside the temp folders.
 """
 import copy
@@ -166,6 +177,8 @@ try:
     ok(summary_of(r1)["status"] == "done", "the source run is done")
     rt = L.run_template_from_run(r1.dir, name="A rerun of Still Point Yoga")
     L.save_run_template(rt)
+    lib0 = os.path.join(tmp, "lib0")      # the library as the source run left it, for the flag checks of (8)
+    shutil.copytree(lib, lib0)
 
     # ---- (1) never reuse when a fix is asked for: three rework rounds, three texts
     with FollowsFindings() as model:
@@ -321,6 +334,152 @@ try:
     rest = [d for d in reuse_of(r4) if d["artifact"] in ("hld", "lld")]
     ok(rest and all(d["door"] == "reuse" and d["held"] for d in rest),
        f"the PRD is what the source run had, so the HLD and LLD are served too: {A.counts(rest)}")
+
+    # ---- (5) a rework with no section yet: the draft stays empty, never the source run's section
+    d0 = d4[0]
+    w0, sec0 = wf4[d0["workflow"]], d0["section"]
+    src0 = r4.content_sources[w0["id"]]
+    ok(src0 and src0["data"], f"{w0['id']} {sec0} has a source section")
+    fix = {**w0, "id": "W-901", "revises": w0["id"], "fixes": ["F-1"]}
+    r4.tpl_routes["W-901"] = r4.tpl_routes[w0["id"]]
+    mine_now = r4.art_data["prd"].pop(sec0)      # this run has not written the section (yet)
+    dn = r4._route_content(fix, "prd", sec0)
+    ok(dn["door"] == "adapt" and dn["rule"] == "rework" and dn["source"], f"a rework with a source and no section yet: adapt, rule rework: {dn['door']} {dn['rule']}")
+    ok("W-901" not in r4.content_draft, f"no draft is made, the source run's section is not used: {str(r4.content_draft.get('W-901'))[:80]}")
+    block = r4._content_draft_text(fix)
+    ok("A FIX WAS ASKED FOR" in block and "THE SECTION AS IT IS NOW" not in block and "DRAFT (" not in block,
+       "the prompt asks for the fix and carries no section text")
+    ok(not any(str(v) in block for v in src0["data"].values() if isinstance(v, str) and len(v) > 20), "nothing of the source section is in the prompt")
+    r4.art_data["prd"][sec0] = mine_now
+    fix2 = {**fix, "id": "W-902"}
+    r4.tpl_routes["W-902"] = r4.tpl_routes[w0["id"]]
+    r4._route_content(fix2, "prd", sec0)
+    ok(json.loads(r4.content_draft["W-902"]) == mine_now and "THE SECTION AS IT IS NOW" in r4._content_draft_text(fix2),
+       "with a section of its own the rework draft is this run's section, as before")
+
+    # ---- (6) the same job is held to the foreign-values rule
+    jrow = next(w for w in rt.workflows if w.artifact == "prd")
+    jsrc = A.source_section(rt.id, jrow.key, "prd", jrow.section)
+    name, _, ver = jsrc["template"].rpartition("@")
+    jrec6 = {"action": "reused", "template": name, "version": int(ver), "same_job": {"match": 0.9}}
+    goal1 = json.load(open(os.path.join(r1.dir, "goal.json"), encoding="utf-8"))
+    clean = A.door({"fingerprint": "another"}, jrec6, jsrc, goal=goal1)
+    ok(clean["door"] == "reuse" and clean["rule"] == "same-job", f"the same job, nothing foreign in the section: served: {clean['door']} {clean['rule']}")
+    # the same business's source run, whose charter and section carry a value of another business
+    other_dir = os.path.join(tmp, "source-with-foreign-value")
+    shutil.copytree(r1.dir, other_dir)
+    g = json.load(open(os.path.join(other_dir, "goal.json"), encoding="utf-8"))
+    g["facts"] = list(g.get("facts") or []) + ["bookings@calmcore.example"]
+    json.dump(g, open(os.path.join(other_dir, "goal.json"), "w", encoding="utf-8"))
+    carried = copy.deepcopy(jsrc["data"])
+    tkey = next(k for k, v in carried.items() if isinstance(v, str))
+    carried[tkey] += " Write to bookings@calmcore.example."
+    fsrc = {**jsrc, "dir": other_dir, "data": carried}
+    ok(A.foreign_values(fsrc, goal1) == ["bookings@calmcore.example"], f"the section holds a value this charter does not: {A.foreign_values(fsrc, goal1)}")
+    held = A.door({"fingerprint": "another"}, jrec6, fsrc, goal=goal1)
+    ok(held["door"] == "adapt" and held["rule"] == "same-job-facts" and "1 value" in held["reason"],
+       f"the same job with another business's value in the section: adapted, not served: {held['door']} {held['rule']}")
+    ok("calmcore" not in A.draft_text(fsrc), "and the draft has that value slotted")
+    ok(A.door({"fingerprint": "another"}, jrec6, fsrc, goal={**goal1, "facts": g["facts"]})["door"] == "reuse",
+       "a value this charter holds too is not foreign")
+
+    # ---- (7) a source run that did not end workable is never served or drafted from
+    ok(j2.ended_workable(j2.saved_dir(jsrc["run"])), "the source run ended workable (so far it was served from)")
+    for label, kw, want in (("not workable", {"workable": False}, ("build", "source-not-workable")),
+                            ("workable", {"workable": True}, ("reuse", "same-job")),
+                            ("not asked", {}, ("reuse", "same-job"))):
+        got = A.door({"fingerprint": "another"}, jrec6, jsrc, goal=goal1, **kw)
+        ok((got["door"], got["rule"]) == want, f"door(), source {label}: {got['door']} {got['rule']}")
+    nw = A.door({"fingerprint": jsrc["fingerprint"]}, jrec6, jsrc, goal=goal1, workable=False, inputs={})
+    ok(nw["door"] == "build" and nw["reason"].startswith("source-not-workable"), f"the same inputs too, and the reason says so: {nw['reason']}")
+    ok(A.door({"fingerprint": "x"}, {**jrec6, "action": "extended", "same_job": None}, jsrc, goal=goal1, workable=False)["door"] == "build",
+       "a section that would be a draft (adapt) is not one either")
+    apath = os.path.join(r1.dir, "audits.json")
+    audits_then = open(apath, encoding="utf-8").read()
+    audits = json.loads(audits_then)
+    last_audit = [a for a in audits if isinstance(a, dict) and a.get("kind") != "recheck"][-1]
+    last_audit["results"][0].update(verdict="NEEDS_REVISION", **{"pass": False})
+    last_audit["accepted"] = []
+    json.dump(audits, open(apath, "w", encoding="utf-8"))
+    try:
+        ok(not j2.ended_workable(r1.dir), "the source run's last audit is now not workable")
+        asked, orig_ask = [], j2.llm.ask
+
+        def listen(system, user, mock, *a, **kw):
+            asked.append(f"{system}\n{user}")
+            return orig_ask(system, user, mock, *a, **kw)
+        j2.llm.ask = listen
+        try:
+            r5 = run_of(YOGA_DOCS)
+        finally:
+            j2.llm.ask = orig_ask
+    finally:
+        open(apath, "w", encoding="utf-8").write(audits_then)
+    d5 = reuse_of(r5)
+    from5 = [d for d in d5 if d.get("source")]
+    ok(len(from5) >= 6 and all(d["source"]["run"] == os.path.basename(r1.dir) for d in from5),
+       f"the run followed the source run's run template: {len(from5)} sections have a source")
+    ok(all(d["door"] == "build" and d["rule"] == "source-not-workable" and not d.get("held") and not d.get("refunded") for d in from5),
+       f"none is served or adapted: {sorted({(d['door'], d['rule']) for d in from5})}")
+    ok(not any(d["door"] in ("reuse", "adapt") for d in d5), f"no section of the run is served or drafted: {A.counts(d5)}")
+    wf5 = {w["id"]: w for w in r5._all_wfs()}
+    ok(all(wf5[d["workflow"]]["calls_used"] >= 1 and not wf5[d["workflow"]].get("served_from") for d in from5),
+       "each section was written by a builder call")
+    ok(not r5.content_draft and not any("DRAFT (the same section" in x for x in asked), "no draft was made and no prompt carries one")
+    ok(any(m["who"] == "system" and "source-not-workable" in m["text"] for m in r5.chat), "the chat says why")
+
+    # ---- (8) flag scope: the same-job rule and the similarity floor only with J2_AUTO_REUSE (J2_ARTIFACT_LIBRARY implies it)
+    def routed_with(flag, n):
+        """A PRD need of the same job and a law firm's need, routed in a fresh copy of the library with one flag on."""
+        for k in FLAGS:
+            os.environ.pop(k, None)
+        os.environ[flag] = "1"
+        os.environ["J2_LIBRARY_DIR"] = os.path.join(tmp, f"lib-flag-{n}")
+        shutil.copytree(lib0, os.environ["J2_LIBRARY_DIR"])
+        _, j = L.route(anew, {"run": "test-flag", "workflow": "W-1", "atom": "W-1.a1"}, first={"template": "Still Point Yoga Problem@2"})
+        _, f = L.route(law, {"run": "test-flag", "workflow": "W-2", "atom": "W-2.a1"})
+        return j, f, L.routing_rules()
+    told = len(L.settings()["routing"]["rules"])
+    try:
+        joff, foff, rules_off = routed_with("J2_RUN_TEMPLATES", 0)
+        ok(not L.auto_reuse(), "J2_RUN_TEMPLATES=1 alone is not auto reuse")
+        ok(joff["action"] == "extended" and joff["rule"] == "t" and not joff.get("same_job") and joff["version"] > 2
+           and joff["template"] == "Still Point Yoga Problem",
+           f"run templates alone: other facts make a new version of the run template's template, no same-job rule: {joff['action']} v{joff['version']} rule {joff['rule']}")
+        ok(foff["action"] == "created" and not any(k in foff for k in ("fresh_start", "not_similar", "nearest")),
+           f"run templates alone: no similarity floor is applied: {foff['action']} {[k for k in ('fresh_start', 'not_similar', 'nearest') if k in foff]}")
+        ok(len(rules_off) == told and not any("another business" in r for r in rules_off),
+           f"run templates alone: the generator is told the {told} rules it was told before, nothing of the floor")
+        for n, flag in ((1, "J2_AUTO_REUSE"), (2, "J2_ARTIFACT_LIBRARY")):
+            jon, fon, rules_on = routed_with(flag, n)
+            ok(L.auto_reuse(), f"{flag}=1 is auto reuse")
+            ok(jon["action"] == "reused" and jon["rule"] == "j" and jon["version"] == 2 and jon.get("same_job"),
+               f"{flag}=1: the same job reuses the template as it is: {jon['action']} v{jon['version']} rule {jon['rule']}")
+            ok(fon["action"] == "created" and fon.get("fresh_start") and fon.get("not_similar"),
+               f"{flag}=1: the similarity floor is applied: {fon['action']} fresh_start {fon.get('fresh_start')}")
+            ok(len(rules_on) == told + 1 and any(str(least) in r and "another business" in r for r in rules_on),
+               f"{flag}=1: the generator is told the floor too")
+    finally:
+        for k in FLAGS:
+            os.environ.pop(k, None)
+        os.environ["J2_LIBRARY_DIR"] = lib
+        os.environ["J2_ARTIFACT_LIBRARY"] = "1"
+
+    # ---- (9) the shapes are the settings file's and give what the patterns in code gave
+    was_email = re.compile(r"\S+@\S+")
+    was_hard = re.compile(r"[\w.+-]+@[\w.-]+|\d{1,2}:\d{2}|\d{3,}")
+    shapes = json.load(open(L.SETTINGS_PATH, encoding="utf-8"))["fact_shapes"]
+    ok(L.fact_shape("not_compared").pattern == shapes["not_compared"] == was_email.pattern, "not_compared is the settings file's, the pattern as it was")
+    ok(L.fact_shape("hard").pattern == "|".join(shapes["hard"].values()) == was_hard.pattern, "hard is the settings file's shapes in order, the pattern as it was")
+    code = open(os.path.join(here, "j2_template_lib.py"), encoding="utf-8").read()
+    ok(not any(x in code for x in ("_EMAIL_RE", "_HARD_RE", was_email.pattern, was_hard.pattern, r"\d{1,2}:\d{2}")),
+       "neither pattern is left in j2_template_lib.py")
+    samples = LAW_FACTS + PILATES_FACTS + [f for e in L.index()["templates"] for v in e["versions"]
+                                           for f in (L.get(f"{e['name']}@{v['version']}", e["artifact"], e["section"]).context.facts_used)]
+    ok(len(samples) > 50 and all(L.fact_shape("hard").findall(f.lower()) == was_hard.findall(f.lower())
+                                 and L.fact_shape("not_compared").sub(" ", f) == was_email.sub(" ", f) for f in samples),
+       f"every fact of the library ({len(samples)}) gives the same emails, times and numbers as before")
+    ok((sim_law, sim_pil) == (0.1818, 0.8182), f"the similarities are what they were (0.1818, 0.8182): {sim_law} {sim_pil}")
     print(f"reuse_fixes_test: {passed} checks passed (rework run: {len(fixes)} revisions, {len(kept)} Problem texts; "
           f"law firm {sim_law} / pilates {sim_pil} to a yoga studio, least {least}; same-job run served {len(d4)} PRD sections)")
 finally:
