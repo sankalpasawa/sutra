@@ -1094,9 +1094,20 @@ def settings():
     if _SETTINGS.get("key") != key:
         with open(SETTINGS_PATH, encoding="utf-8") as f:
             data = json.load(f)
+        shapes = data["fact_shapes"]
         _SETTINGS.update(key=key, data=data, stop=set(data["stop_words"]),
-                         facts=[(re.compile(x["pattern"], re.I), x) for x in data["fact_fields"]])
+                         facts=[(re.compile(x["pattern"], re.I), x) for x in data["fact_fields"]],
+                         not_compared=re.compile(shapes["not_compared"]),
+                         hard=re.compile("|".join(shapes["hard"].values())))
     return _SETTINGS["data"]
+
+
+def fact_shape(name):
+    """One compiled fact shape of the settings file (fact_shapes): "not_compared", what fact_words takes out of a fact
+    before two businesses are compared (an email address), or "hard", the values two fact lists of the same job must
+    share exactly (its shapes joined in the file's order: an email, a time, a number of three digits or more)."""
+    settings()
+    return _SETTINGS[name]
 
 
 def routing(name):
@@ -1105,11 +1116,12 @@ def routing(name):
 
 
 def routing_rules():
-    """The routing rules as the generator reads them: the settings file's sentences with its own numbers in them."""
+    """The routing rules as the generator reads them: the settings file's sentences with its own numbers in them.
+    rules always; rules_auto_reuse (what code does only with J2_AUTO_REUSE=1) only when auto_reuse() is on."""
     r = settings()["routing"]
     fill = {**{k: v for k, v in r.items() if not isinstance(v, (dict, list))},
             "reuse_without_asking_coverage": r["reuse_without_asking"]["coverage"]}
-    return [str(x).format(**fill) for x in r["rules"]]
+    return [str(x).format(**fill) for x in list(r["rules"]) + (list(r["rules_auto_reuse"]) if auto_reuse() else [])]
 
 
 def words(text):
@@ -1487,14 +1499,11 @@ def nearest_ranked(need, gen, own=()):
     return out
 
 
-_EMAIL_RE = re.compile(r"\S+@\S+")
-_HARD_RE = re.compile(r"[\w.+-]+@[\w.-]+|\d{1,2}:\d{2}|\d{3,}")      # an email, a time, a number of three digits or more
-
-
 def fact_words(fact, site=""):
-    """The words one fact is compared by between two businesses: words() of the fact without its email addresses,
-    without any word that holds a digit, and without the words of this business's own name (site)."""
-    return {w for w in words(_EMAIL_RE.sub(" ", str(fact or ""))) if not any(c.isdigit() for c in w)} - words(site)
+    """The words one fact is compared by between two businesses: words() of the fact without its email addresses (the
+    settings file's fact_shapes.not_compared), without any word that holds a digit, and without the words of this
+    business's own name (site)."""
+    return {w for w in words(fact_shape("not_compared").sub(" ", str(fact or ""))) if not any(c.isdigit() for c in w)} - words(site)
 
 
 def business_similarity(need, facts, business=""):
@@ -1518,13 +1527,13 @@ def business_similarity(need, facts, business=""):
 def same_job(need, t0):
     """The match (0 to 1) when this need is the SAME JOB as the one that made template t0, else None: the template's
     family is named for this run's business, both fact lists hold the same emails, times and numbers (three digits or
-    more), the template has every needed field, and the words of the two lists overlap by at least the settings'
+    more: the settings file's fact_shapes.hard), the template has every needed field, and the words of the two lists overlap by at least the settings'
     same_job_min (shared / all). A done-when item worded anew, or a fact left out, is then the same job: the template
     is reused as it is, and the content door may serve its section. Any changed price, time or address is not."""
     if not _named_for(t0.name, need.get("site")):
         return None
     mine, theirs = list(need.get("facts") or []), list(t0.context.facts_used)
-    hard = lambda fs: set(_HARD_RE.findall(" ".join(str(f) for f in fs).lower()))
+    hard = lambda fs: set(fact_shape("hard").findall(" ".join(str(f) for f in fs).lower()))
     if hard(mine) != hard(theirs):
         return None
     row = {"fields": [f.name for f in t0.fields], "enums": _enums(t0)}
@@ -1547,7 +1556,10 @@ def route(need, ctx, ask=None, first=None, closest=None):
     enough (business_similarity below the settings' adapt_min_similarity: this business gets its own family), and the
     reason says which.
     The same job (same_job: this business, the run template's workflow, matching facts) reuses the run template's
-    section template as it is although the fingerprint differs (rule "j", same_job in the decision).
+    section template as it is although the fingerprint differs (rule "j", same_job in the decision). Like the
+    similarity floor above it is reached only with closest (J2_AUTO_REUSE=1, which J2_ARTIFACT_LIBRARY=1 implies):
+    with J2_RUN_TEMPLATES=1 or J2_TEMPLATE_LIBRARY=1 alone the routing, and what the generator is told
+    (routing_rules), is what it was before these two rules.
     ctx["similar"] (a dict the run keeps, optional): the best similarity found so far for each other business in this
     run; every later need of the run counts it, and a need with too few facts to compare (similarity_min_facts) has
     nothing else. With too few facts and nothing found yet there is no finding: the nearest is adapted, as before.
@@ -1596,7 +1608,9 @@ def route(need, ctx, ask=None, first=None, closest=None):
         if set(need["facts"]) <= set(t0.context.facts_used) and all(has_field(need, row, n) for n in need["fields"]):
             return done(t0, "reused", score, as_is.format(ref=ref), rule="t" if key == "first_refused" else "s",
                         **({} if key == "first_refused" else {"adapted_from": ref}))
-        match = same_job(need, t0) if key == "first_refused" else None
+        # the same job is an auto-reuse rule (J2_AUTO_REUSE=1, which J2_ARTIFACT_LIBRARY=1 implies): with run
+        # templates alone a run template's section template with other facts is adapted to a new version, as before
+        match = same_job(need, t0) if closest and key == "first_refused" else None
         if match is not None:      # the same job, worded anew: the template as it is, so its section can be served
             return done(t0, "reused", score,
                         f"the same job as the one that made {ref}: this business, the same run-template workflow, and "
