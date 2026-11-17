@@ -2,7 +2,7 @@
  "about": "Written by the additive applier (.tmp/core-algo-additive4-apply.py, contract 4). `pinned`: what the lab had recorded when a version was applied (sha256 of the kernel and of each scenario file; sha256 of the canonical JSON of each case, of the event record, of the ask record, of each recorded sequence, of each handler entry and of each lens except the reflection summary), and `built_in`, every Python file the lab had before the add-on points. `points` and `applied`: every file laid in, with its sha256. An entry of `applied` that holds `edits` is an EDIT VERSION (ruling R32): the name and sha256 of its edit script and, for every existing file the script changed, the sha256 before and after; the pin of the kernel and the pinned handler entries were taken again for those files, an added file it changed is listed with its new sha256, and every other pin stayed. Its `moves` are what it declares as moved of the things an earlier version recorded, each with its reason; check S202 holds a declared move to nothing until the next version is applied to the built, verified record. The verifier reads this file for checks S202 and S203, for the sha256 a check module's text is held to before it runs, and for what it hands a check module; tools/run_all.py reads it for the record's file list. Nothing in the lab holds this file itself.",
  "contract": 4,
  "pinned": {
-  "from": "sutra-kernel-extensions/0.19.0-reader",
+  "from": "sutra-kernel-extensions/0.20.0-learn",
   "kernel_sha256": "688ab9431d4f4b17608d848e32f12e0373197a301d3b7f641a6f476a2b9ad368",
   "built_in": [
    "extensions/asks.py",
@@ -174,6 +174,11 @@
    "23_enquiry_extra_knowledge": "5acef6fb34c7d0811046ccfd41c23ae71346b853483c9e3fe11f4f4b255b4bee",
    "24_enquiry_privacy": "d89575814f1cd45e1e880be10077cbb9bc6009a37183b91bb49ed8a88c96d1f0",
    "30_build_goal": "559ecb3cce6b89a0126295db627cf6edece371eed3a14bc018c0478554b6f73b",
+   "310_learn_statements": "5ee8992aeb938e1b4f96bc9d5946f25816c0a526f6d3ffe0941e579eb6b86f02",
+   "311_learn_month_judged": "1e8c052482af3bf7b0c81f745922f29c5e386ae3222926f57d50f75195bb9f13",
+   "312_learn_collections": "76ba2131d8d5a66812267ab4dfe08a8ab62c2e780f58126682a39eda1e6c663d",
+   "313_learn_roster": "d800f4761ebd01dc5d970894254555bc1ac29501577555bef701417c16e9925c",
+   "314_learn_refunds": "d8284ba2cc19865463194673fa79108326ac4810022fe0f5b9203fbc11e86715",
    "31_build_theory": "d5335a7c2990c3adaaabb3a455540c29cfd4ac8d7479fd0f76a8deb49fe6be81",
    "32_builder_components": "b8fb5ad7490da5fa7e7c785684876e9c08d51decf97a69a31c75db0b1b5446dd",
    "33_bad_constructor": "d88c4523ec13a18c99ba33dc4b9de87cc33fafaae7d74a2d9b3582e96f8fa5e5",
@@ -321,6 +326,18 @@
     "3dff2ee6f669022f9ff2513f882eea9316b4769982eacdae6744f68216d89aff"
    ],
    [
+    "160_learn_statement_handed_over",
+    "94003254509fb700510b65c592c7604f008a06adaf12ecb23c0d6d4b18f6f73d"
+   ],
+   [
+    "161_learn_no_place_for_the_call",
+    "91b350bb0ccc9e23203f069373d21e496208008f36463bec4c5da8860c18ab53"
+   ],
+   [
+    "162_learn_refund_asked",
+    "5f2d24cde4d5a9d3beb900099dacab0f23d29354a237f68cd0496041a1105898"
+   ],
+   [
     "50_must_cohere",
     "4a721d5ba360db8e8e28fc3faa840a18d967f56adae281919cba2041d328ba4c"
    ],
@@ -446,6 +463,9 @@
    "journal_chain": "6c189359834d38d83b168a5142f8c0c2cd75d6d1a68533dee20bc9b1d6fb440b",
    "journal_refusals": "0c8646c7ad38b13dc36a29cc6112815e255dde8828b004f6408f169f2ca62ef6",
    "journal_restart": "1b30c480032ee792b0f7d1fd9645a0942fc89e2e886fdd4f2fe3223de9ab99d4",
+   "learn_across": "a1224c89be1b64d647b3a693f1c0bc43a73ab5c116f5ee96e07249d244c6c32a",
+   "learn_checks": "5dc65c738b4c3286fbdc1e22a64e3574d9332ea765e1519df19dd3751e8d8ab3",
+   "learn_settled": "9f2e644575bcaff256bd100597d10e4fcdd39a7f2038f1046bb0f11e10c956b2",
    "numbers": "d3502c559c71eb3f67370b3aa6190315538057febc7a0e291664ee4f7a832553",
    "ordered": "67643bbc6bc3bdd53c3b9c0e790e56e669dd246300dfbeffb82dbabc5c748e48",
    "queue_provenance": "295cdf56f047e3d01741ef202475dd7b1fe610fe5a23808d0bf7b9fc02496de6",
@@ -497,8 +517,8 @@
    "delivery": "journal",
    "files": {
     "cases/60_pack_twice.json": "55b8662e2dab8982955ca489dd5a353325fc9ed5606f938e67be02012c71c32c",
-    "extensions/journal.py": "b6666e833f3a169cbb3bf091e499566b11269857f0cd3953cae34bce52c43345",
-    "extensions/journal_record.py": "512ca1909753f51803b108426ed57221c67a07a520be48945c33c794e4c7eb41",
+    "extensions/journal.py": "50acd3809ca4b626564141f9b044b4d02c074587ea8f094bbdc9b5ee4350bf13",
+    "extensions/journal_record.py": "ffc23d7a80248cf87006ef4c9b38d93a42b028fe80f00e26fac710d6dcd21ed1",
     "qa/checks/journal.py": "1492cd697ea9c579b66918a0b5b67171c4a4e484717a90af3c9c715647bbc75b",
     "tests/test_journal.py": "1bf8da7512c89903932e778166a1fe420f2ab5c585037ec6b45ed133acadfb72",
     "tools/packs/journal.py": "f39d37fcab3fea4af27851e3a7921cd2f5ff827af16361a6960d85cd3601b336",
@@ -647,6 +667,69 @@
     "tools/scenes/learn_checks.py": "4f1f2aa3c03f2b2b9f533b2089de0b83cbde644cb8c53b710bbb7d695d8909c8",
     "tools/scenes/learn_settled.py": "150651f577969ecfbe0b4e60c7b69b856265fa090c5b55bdc14c8252fe287583"
    }
+  },
+  {
+   "label": "0.21.0-doors",
+   "delivery": "doors",
+   "files": {
+    "cases/163_door_file_review_short.json": "9c58c7e7fb0efd488de06afc78764382afbad68dcb76617193620fdada0d81b9",
+    "cases/164_door_batch_in_order.json": "c28755d7af4189c75a0e4e7c9429045109cc0948dc2291f6e59fae0c9434a41b",
+    "tests/test_doors.py": "70e10673dd30f4a5651f43bbb0500eb6719ae56e30e8ebe495b821c910c9e065",
+    "tools/packs/doors.py": "ef88003a5507cdf4fdcd5861f959587b8d6ddcdc6622aa7410495cb066c06ad5",
+    "tools/scenes/doors.py": "7797928efd2570ac1682d13f0ae0b009df7995c39d2ed25d5c19b80f277631de"
+   },
+   "edits": {
+    "script": "doors_edit.py",
+    "sha256": "d55bbf661c5de9739c5f13aa14b0e65155d8ab8fb00f1382f63e2cdbc248e053",
+    "files": {
+     "extensions/journal.py": [
+      "b6666e833f3a169cbb3bf091e499566b11269857f0cd3953cae34bce52c43345",
+      "50acd3809ca4b626564141f9b044b4d02c074587ea8f094bbdc9b5ee4350bf13"
+     ],
+     "extensions/journal_record.py": [
+      "512ca1909753f51803b108426ed57221c67a07a520be48945c33c794e4c7eb41",
+      "ffc23d7a80248cf87006ef4c9b38d93a42b028fe80f00e26fac710d6dcd21ed1"
+     ]
+    }
+   },
+   "moves": [
+    {
+     "what": "sequence journal_chain",
+     "why": "in the journal texts this sequence keeps, the header of a journal states, beside its hash, the sha256 of the code it was made under, extensions/journal.py among it, which this edit version changes; nothing else in the sequence moves (compared field by field on the build with the field stated taken out)"
+    },
+    {
+     "what": "sequence journal_refusals",
+     "why": "in the journal texts this sequence keeps, the header of a journal states, beside its hash, the sha256 of the code it was made under, extensions/journal.py among it, which this edit version changes; nothing else in the sequence moves (compared field by field on the build with the field stated taken out)"
+    },
+    {
+     "what": "sequence journal_restart",
+     "why": "in the journal texts this sequence keeps, the header of a journal states, beside its hash, the sha256 of the code it was made under, extensions/journal.py among it, which this edit version changes; nothing else in the sequence moves (compared field by field on the build with the field stated taken out)"
+    },
+    {
+     "what": "sequence learn_across",
+     "why": "in the journal texts this sequence keeps, the header of a journal states, beside its hash, the sha256 of the code it was made under, extensions/journal.py among it, which this edit version changes; nothing else in the sequence moves (compared field by field on the build with the field stated taken out)"
+    },
+    {
+     "what": "sequence learn_checks",
+     "why": "in the journal texts this sequence keeps, the header of a journal states, beside its hash, the sha256 of the code it was made under, extensions/journal.py among it, which this edit version changes; nothing else in the sequence moves (compared field by field on the build with the field stated taken out)"
+    },
+    {
+     "what": "sequence learn_settled",
+     "why": "in the journal texts this sequence keeps, the header of a journal states, beside its hash, the sha256 of the code it was made under, extensions/journal.py among it, which this edit version changes; nothing else in the sequence moves (compared field by field on the build with the field stated taken out)"
+    },
+    {
+     "what": "sequence reader_answers",
+     "why": "in the journal texts this sequence keeps, the header of a journal states, beside its hash, the sha256 of the code it was made under, extensions/journal.py among it, which this edit version changes; nothing else in the sequence moves (compared field by field on the build with the field stated taken out)"
+    },
+    {
+     "what": "sequence reader_lesson",
+     "why": "in the journal texts this sequence keeps, the header of a journal states, beside its hash, the sha256 of the code it was made under, extensions/journal.py among it, which this edit version changes; nothing else in the sequence moves (compared field by field on the build with the field stated taken out)"
+    },
+    {
+     "what": "sequence reader_one_way",
+     "why": "in the journal texts this sequence keeps, the header of a journal states, beside its hash, the sha256 of the code it was made under, extensions/journal.py among it, which this edit version changes; nothing else in the sequence moves (compared field by field on the build with the field stated taken out)"
+    }
+   ]
   }
  ]
 }

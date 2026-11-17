@@ -3,8 +3,11 @@
    checkout, the checkout's). The app finds the server that is running for the data folder or starts its own, shows its page, and stops its own when
    the window closes. src/server.js has the rules, src/runtime.js where everything is. */
 const { app, BrowserWindow, Menu, dialog, ipcMain, nativeImage, nativeTheme, session, shell } = require('electron');
+const fs = require('node:fs');
+const os = require('node:os');
 const path = require('node:path');
 const runtime = require('./runtime');
+const { channelOf, versionLabel, inertUpdates } = require('./channel');
 const { Supervisor } = require('./server');
 const { createLog } = require('./log');
 const { isInternal, isSafeExternal } = require('./urls');
@@ -15,14 +18,16 @@ const { runSelftest, record } = require('./selftest');
 const { createDesktopUpdates } = require('./update_main');
 const { registerFolderPicker } = require('./folder');
 
-const APP_NAME = 'Sutra Pro';
-const APP_ID = 'os.sutra.pro';
+// the stable app, or a beta built from a working tree to try a change beside it (src/channel.js): the name, the id, the data folder and the icon follow
+const channel = channelOf(require('../package.json'));
+const APP_NAME = channel.appName;
+const APP_ID = channel.appId;
 const RELEASES_URL = 'https://github.com/sankalpasawa/sutra/releases?q=sutra-pro';
 const PROJECT_ROOT = path.resolve(__dirname, '..', '..');         // sutra-pro/ when the app runs from a checkout
-const ICON_NAME = process.platform === 'win32' ? 'sutra-pro-windows-1024.png' : 'sutra-pro-1024.png';   // the Windows app has its own icon
+const ICON_NAME = process.platform === 'win32' ? channel.windowsIconName : channel.iconName;   // the Windows app has its own icon (D243)
 const SELFTEST = process.env.SUTRA_PRO_SELFTEST === '1';
 
-const folder = runtime.dataDir();
+const folder = runtime.dataDir(process.env, os.homedir(), channel.dataDirName);
 // a test's or a developer's own data folder carries its own Chromium state too, and its own single-instance lock. Chromium reports a lock it could not
 // create (a missing drive, a file where the folder should be, a read-only folder) as it reports one another app holds, and the app would end as a
 // "second instance" without a word: so the folder is made and checked first (runtime.windowState). When it cannot be used the window keeps its state in a
@@ -30,6 +35,9 @@ const folder = runtime.dataDir();
 const windowState = runtime.windowState({ named: process.env.SUTRA_DATA_DIR, folder, systemUserData: app.getPath('userData') });
 const folderProblem = windowState.problem;
 if (windowState.userData) app.setPath('userData', windowState.userData);
+// a beta keeps Chromium's state, and with it the single-instance lock, in a folder of its own, so it opens beside the stable app instead of being turned away as its
+// second instance (the packager already names the app after the channel, which does the same; this does not depend on that)
+else if (channel.id !== 'stable') app.setPath('userData', path.join(app.getPath('appData'), channel.appName));
 
 const log = createLog(folderProblem ? app.getPath('userData') : folder);
 const supervisor = new Supervisor({
@@ -48,7 +56,24 @@ let stopped = false;
 let exitCode = 0;
 
 // the app updating itself (src/updater.js): a check a minute after launch and every 6 hours, a dialog when a verified update is ready, never in the self-test
-const updates = createDesktopUpdates({ app, dialog, shell, supervisor, log, folder, getWindow: () => win, isQuitting: () => quitting });
+const updates = channel.updates
+  ? createDesktopUpdates({ app, dialog, shell, supervisor, log, folder, getWindow: () => win, isQuitting: () => quitting })
+  : inertUpdates({ channel, info: (options) => infoBox({ message: options.message, detail: options.detail }) });
+
+function infoBox(options) {
+  const full = { type: 'info', title: APP_NAME, buttons: ['OK'], defaultId: 0, noLink: true, ...options };
+  return win && !win.isDestroyed() ? dialog.showMessageBox(win, full) : dialog.showMessageBox(full);
+}
+
+/* What the build says about itself (Contents/Resources/build-info.json, written by scripts/build_desktop_app.py); null from a checkout. */
+function buildInfo() {
+  if (!app.isPackaged) return null;
+  try {
+    return JSON.parse(fs.readFileSync(path.join(process.resourcesPath, 'build-info.json'), 'utf8'));
+  } catch {
+    return null;
+  }
+}
 
 function selftestDir() {
   return process.env.SUTRA_PRO_SELFTEST_DIR || path.join(folder, 'selftest');
@@ -120,7 +145,7 @@ function dataFolderError(problem) {
 let folderBlocked = Boolean(folderProblem);             // the window opened because the data folder was unusable: look at it again before any start
 
 async function startServer() {
-  show(splashPage({ logo: logoDataUri(), dark: nativeTheme.shouldUseDarkColors }));
+  show(splashPage({ logo: logoDataUri(), dark: nativeTheme.shouldUseDarkColors, appName: APP_NAME }));
   try {
     if (folderBlocked) {                                // Try Again: a server started in a folder that is still unusable would only say "spawn ENOTDIR"
       const problem = runtime.folderProblem(folder);
@@ -141,7 +166,7 @@ async function startServer() {
   }
   if (SELFTEST) {
     const result = await runSelftest({
-      win, supervisor, log: (line) => log.write(line), expectVersion: process.env.SUTRA_PRO_EXPECT_VERSION || '', outDir: selftestDir(),
+      win, supervisor, log: (line) => log.write(line), expectVersion: process.env.SUTRA_PRO_EXPECT_VERSION || '', outDir: selftestDir(), appName: APP_NAME,
     });
     exitCode = result.ok ? 0 : 1;
     app.quit();
@@ -158,7 +183,7 @@ async function failed(error) {
     app.quit();
     return;
   }
-  show(errorPage({ message: String(error && error.message), output, logFile: log.file, logo: logoDataUri(), dark: nativeTheme.shouldUseDarkColors }));
+  show(errorPage({ message: String(error && error.message), output, logFile: log.file, logo: logoDataUri(), dark: nativeTheme.shouldUseDarkColors, appName: APP_NAME }));
   const question = {
     type: 'error', title: APP_NAME, message: error && error.dataFolder ? `${APP_NAME} cannot use its data folder.` : `${APP_NAME} could not start its server.`,
     detail: String(error && error.message),
@@ -198,14 +223,15 @@ function installMenu() {
 }
 
 async function boot() {
-  log.write(`Sutra Pro ${app.getVersion()} on ${process.platform} ${process.arch}, electron ${process.versions.electron}, `
+  const label = versionLabel(channel, app.getVersion(), buildInfo());
+  log.write(`${APP_NAME} ${label} on ${process.platform} ${process.arch}, electron ${process.versions.electron}, `
     + `${app.isPackaged ? 'installed' : 'from a checkout'}; data folder ${folder}`);
   if (process.platform === 'win32') app.setAppUserModelId(APP_ID);
   if (process.platform === 'darwin' && !app.isPackaged && app.dock) {
     const icon = appIcon();
     if (icon) app.dock.setIcon(icon);                  // an installed app has the icon of its bundle
   }
-  app.setAboutPanelOptions({ applicationName: APP_NAME, applicationVersion: app.getVersion(), copyright: 'Sutra' });
+  app.setAboutPanelOptions({ applicationName: APP_NAME, applicationVersion: label, copyright: 'Sutra' });
   guardNavigation();
   registerFolderPicker({ ipcMain, dialog, getWindow: () => win, getOrigin: () => supervisor.origin });
   installMenu();

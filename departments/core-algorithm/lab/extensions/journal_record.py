@@ -6,12 +6,13 @@ whole, in order, of the journal's closed kinds and keys, and ends on the head it
 State digest is checked by replay only, so what this module reads is as true as the journal it was given.
 
   kept     a list of (text, head), oldest first: one journal, or a chain. In a chain every journal but the last ends
-           on a closing entry that names the next one (its kinds, its checkers, its name), and the next header cites
+           on a closing entry that names the next one (its kinds, its checkers, its name, its door), and the next header cites
            that head and starts from that State. Exactly the entries each head names are read; what stands past a
            head is not.
   ledger   one row per thing, in journal order. handed_in: a pack or an event row. asked: a question a step sent
            (to whom, what, the receipt). decided: an answer, with the receipt it answers and where that was asked.
-           ran: one run of one goal (status, what ran, cost, receipts, trace root, what is pending or stopped).
+           ran: one run of one goal (status, what ran, cost, receipts, trace root, what is pending or stopped, and
+           since 0.21.0, in a journal under the plan door, the doers its gate found short: `short`).
            Every row cites its entry by number and hash, which is the head right after it: a citation, not an anchor.
            A closing entry is no row: it hands nothing in and runs nothing.
   counts   how often a goal was looked at and a step ran, stopped or was skipped as already true. Every occurrence is
@@ -51,10 +52,11 @@ def _shaped(e: dict, n: int) -> bool:
     body = e['body']
     if type(body) is not dict or type(e['result']) is not dict or (e['kind'] == 'header') != (n == 0):
         return False
-    if e['kind'] == 'header':
-        return {'kinds', 'checkers'} <= set(body) <= {'kinds', 'checkers', 'name', 'continues'}
+    if e['kind'] == 'header':   # `door` since 0.21.0: the one value is plan
+        return {'kinds', 'checkers'} <= set(body) <= {'kinds', 'checkers', 'name', 'continues', 'door'} and body.get('door', 'plan') == 'plan'
     if e['kind'] == 'close':
-        return set(body) == {'next'} and type(body['next']) is dict and {'kinds', 'checkers'} <= set(body['next']) <= {'kinds', 'checkers', 'name'}
+        return (set(body) == {'next'} and type(body['next']) is dict and {'kinds', 'checkers'} <= set(body['next']) <= {'kinds', 'checkers', 'name', 'door'}
+                and body['next'].get('door', 'plan') == 'plan')
     return set(body) == KEYS[e['kind']] and ('execute' not in body or type(body['execute']) is bool)   # a kind that is not the journal's has no keys here: KeyError, read as broken
 
 
@@ -138,7 +140,7 @@ def ledger(kept: list) -> list:
             run = f"{journal}:{e['seq']}.{i}"
             row = dict(at, what='ran', run=run, executed=body['execute'], receipts=[x['sha256'] for x in b['receipts']])
             row.update({k: b[k] for k in ('goal', 'scope', 'status', 'work_state', 'actions', 'cost', 'trace_root_sha256')})
-            row.update({k: b[k] for k in ('stop_reasons', 'pending', 'waits', 'skipped', 'stopped', 'settled') if k in b})
+            row.update({k: b[k] for k in ('stop_reasons', 'pending', 'waits', 'skipped', 'stopped', 'settled', 'short') if k in b})
             new.append(row)
             for x in b['receipts']:
                 if type(x.get('ask')) is dict:

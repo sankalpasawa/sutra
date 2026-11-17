@@ -8,6 +8,20 @@ is stored twice: runs travel on Git (founder, 13 Nov).
 
 Doors: reuse (serve the data, 0 model calls, refund), adapt (the builder starts from the data as a draft), build (as
 today), unknown (the source run cannot be read: never taken as "there is nothing").
+
+Never served (the door is adapt, with the rule that says why):
+- rework: the workflow revises a section or fixes Audit findings. An old section served again would undo the fix
+  that was asked for, so the builder always writes, from the section and the findings.
+- inputs-changed: the documents this section was written from (the PRD for an HLD section, the PRD and the HLD for
+  an LLD section) are not what the source run had: other ids (R1 to R12 then, R1 to R14 now) or other content. The
+  old section cites the old ids, so it is a draft, not the answer.
+- cross-facts, same-job-facts: the section holds a value of the source run's charter that this run's charter does
+  not hold (foreign_values), whether the source was another business or the same one.
+Never served and never a draft (the door is build):
+- source-not-workable: the source run did not end workable (the caller reads its last audit and passes workable).
+Served although the fingerprint differs:
+- same-job: the router found the same job (j2_template_lib.same_job: this business, the same run-template workflow,
+  matching facts) and reused the source's own template as it is.
 """
 import json
 import os
@@ -115,11 +129,85 @@ def source_section(run_tpl_id, key, kind, section, root=None):
             "audit": stage_audit(run_dir, kind), "receipts_passed": receipts_passed(run_dir, row.made_from)}
 
 
-def door(need, rec, source, error=None, has_key=True, goal=None):
+def ids_of(data):
+    """Every id a document's data holds (the value of each "id" key, at any depth), sorted: R1, C3, S2, G1, ..."""
+    out = set()
+
+    def walk(x):
+        if isinstance(x, dict):
+            if isinstance(x.get("id"), (str, int)):
+                out.add(str(x["id"]))
+            for v in x.values():
+                walk(v)
+        elif isinstance(x, list):
+            for v in x:
+                walk(v)
+    walk(data)
+    return sorted(out, key=lambda i: (re.sub(r"\d+", "", i), [int(n) for n in re.findall(r"\d+", i)], i))
+
+
+def doc_state(sections):
+    """What a section written from a document depends on: {ids, sha} of that document's data ({section: data}).
+    None when there is no data."""
+    if not sections:
+        return None
+    return {"ids": ids_of(sections), "sha": L.sha_of(sections)}
+
+
+def _id_span(ids):
+    """R1 to R14, C1 to C9 for a list of ids (each prefix's first and last); the ids themselves when few."""
+    groups = {}
+    for i in ids:
+        groups.setdefault(re.sub(r"\d+.*$", "", i), []).append(i)
+    return ", ".join(v[0] if len(v) == 1 else f"{v[0]} to {v[-1]}" for v in groups.values()) or "none"
+
+
+def inputs_changed(source, inputs):
+    """Why the documents a source section was written from are not this run's (a sentence), or "" when they are the
+    same. inputs: {kind: doc_state} of this run's earlier documents, as the run holds them now. The source run's are
+    read from its <kind>.json. Same means the same ids AND the same content hash; a document only one side has, or
+    one that cannot be read, is a change (the old section may cite what is not here)."""
+    for kind, now in (inputs or {}).items():
+        try:
+            then = doc_state((_json(os.path.join(source["dir"], f"{kind}.json"), f"the source run's {kind} data") or {}).get("sections"))
+        except SourceUnreadable as e:
+            return f"the {kind.upper()} the source section was written from cannot be compared ({e})"
+        if now is None and then is None:
+            continue
+        if now is None or then is None:
+            return f"only {'the source run' if now is None else 'this run'} has {kind.upper()} data"
+        if now["ids"] != then["ids"]:
+            return (f"this run's {kind.upper()} has other ids than the one the section was written from "
+                    f"({_id_span(then['ids'])} then, {_id_span(now['ids'])} now)")
+        if now["sha"] != then["sha"]:
+            return f"this run's {kind.upper()} has the same ids but other content than the one the section was written from"
+    return ""
+
+
+def door(need, rec, source, error=None, has_key=True, goal=None, rework=None, inputs=None, workable=None):
     """The content decision for one workflow, from the router's decision rec (its action, template@version and the
     need's fingerprint) and the source section. {door, rule, reason, source: {...}|None}. goal: this run's charter;
     a cross-client section that holds the source business's values is not served as it is (adapt, rule
-    cross-facts), so no fact of another client enters this document unchecked."""
+    cross-facts), so no fact of another client enters this document unchecked.
+    rework (a sentence, e.g. "it revises W-9 and fixes F-1"): the workflow was asked to change a section, so nothing
+    is served: adapt, rule rework. inputs ({kind: doc_state} of this run's earlier documents): a section that would
+    be served is served only when they are what the source run had (inputs_changed), else adapt, rule inputs-changed.
+    workable (the caller's reading of the source run: did it end workable; None: not asked): False is build, rule
+    source-not-workable: its section is neither served nor a draft. This file reads no audit of a whole run; j2.py
+    passes ended_workable(saved_dir(source run)).
+    The same job is held to the cross rule too: a section of the same business that holds a value of the source
+    run's charter this charter does not is adapt, rule same-job-facts."""
+    d = _door(need, rec, source, error, has_key, goal, rework, workable)
+    if d["door"] == "reuse" and inputs is not None:
+        why = inputs_changed(source, inputs)
+        if why:
+            return {"door": "adapt", "rule": "inputs-changed", "source": d["source"],
+                    "reason": f"{why}, so the section of run {source['run']} {source['workflow']} is not served; the "
+                              "builder starts from it as a draft and writes it for this run's documents"}
+    return d
+
+
+def _door(need, rec, source, error, has_key, goal, rework, workable=None):
     src = None if source is None else {k: source[k] for k in ("run", "workflow", "key", "sha", "template", "fingerprint",
                                                                "audit", "receipts_passed")}
     if error:
@@ -130,10 +218,28 @@ def door(need, rec, source, error=None, has_key=True, goal=None):
         return {"door": "build", "rule": "none", "reason": "no source section: the source run wrote none for this workflow", "source": None}
     action = str((rec or {}).get("action") or "")
     routed = f"{(rec or {}).get('template')}@{(rec or {}).get('version')}"
+    if rework:      # a fix was asked for: an old section is never the answer to it
+        return {"door": "adapt", "rule": "rework", "source": src,
+                "reason": f"a fix was asked for ({rework}), so nothing is served; the builder rewrites the section from "
+                          "what it is now and the findings"}
+    if workable is not None and not workable:      # a run that did not end workable is no source: not served, not a draft
+        return {"door": "build", "rule": "source-not-workable", "source": src,
+                "reason": f"source-not-workable: run {source['run']} did not end workable, so its section is neither "
+                          "served nor used as a draft"}
     if source["audit"] != "pass":
         return {"door": "build", "rule": "audit", "reason": f"the source stage's audit is {source['audit']}, so its section is not served", "source": src}
     if source["fingerprint"] and source["fingerprint"] == (need or {}).get("fingerprint") and source["template"] == routed:
         return {"door": "reuse", "rule": "same", "reason": f"the same inputs and the same template as run {source['run']} {source['workflow']}: served, then checked", "source": src}
+    if (rec or {}).get("same_job") and source["template"] == routed:
+        foreign = foreign_values(source, goal) if goal is not None else []      # the cross rule, for the same business too
+        if foreign:
+            return {"door": "adapt", "rule": "same-job-facts", "source": src,
+                    "reason": f"the same job as run {source['run']} {source['workflow']}, but its section holds {len(foreign)} "
+                              "value(s) of the source run's charter that this charter does not; the builder starts from it "
+                              "as a draft, slotted"}
+        return {"door": "reuse", "rule": "same-job", "source": src,
+                "reason": f"the same job as run {source['run']} {source['workflow']} (this business, the same run-template "
+                          f"workflow, facts that match {rec['same_job'].get('match')}) and the same template: served, then checked"}
     if action == "reused":
         foreign = foreign_values(source, goal) if goal is not None else []
         if foreign:
@@ -186,7 +292,13 @@ def chat_line(d):
     s = d.get("source") or {}
     where = f"run {s.get('run')} {s.get('workflow')}" if s else "the library"
     if d["door"] == "reuse":
-        return f"{d['workflow']}: served {d.get('section')} from {where} ({d['rule']} inputs); code runs its checks before it counts."
+        how = "the same job" if d["rule"] == "same-job" else f"{d['rule']} inputs"
+        return f"{d['workflow']}: served {d.get('section')} from {where} ({how}); code runs its checks before it counts."
+    if d["door"] == "adapt" and d.get("rule") == "rework":
+        return (f"{d['workflow']}: a fix was asked for, so {d.get('section')} is not served from {where}; the builder "
+                "rewrites it from the section as it is now and the findings.")
+    if d["door"] == "adapt" and d.get("rule") == "inputs-changed":
+        return f"{d['workflow']}: drafting {d.get('section')} from {where}, not serving it: {d['reason'].split(', so the section')[0]}."
     if d["door"] == "adapt":
         return f"{d['workflow']}: drafting {d.get('section')} from {where}; the builder starts from it."
     if d["door"] == "unknown":

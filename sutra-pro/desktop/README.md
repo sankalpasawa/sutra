@@ -24,6 +24,7 @@ From a checkout the developer tools are in the View menu.
 |---|---|
 | `src/main.js` | the Electron entry: single instance, the window, the menu, the quit that waits for the server to stop |
 | `src/server.js` | the supervisor: attach to the server `app.pid` names, or start one; wait for `/api/health`; stop it (D118) |
+| `src/channel.js`, `src/channels.json` | the two kinds of build, stable and beta (D242): name, bundle id, data folder, icon, whether it updates itself; the packager and `scripts/build_desktop_app.py` read the same JSON |
 | `src/runtime.js` | the data folder (and the check that a folder can be made and written), the interpreter, the server's command line and environment, the start timeout |
 | `src/urls.js` | which addresses the window may show (its own origin) and which go to the browser (web addresses only) |
 | `src/permissions.js` | which permissions the window grants: the server's own page may write text to the clipboard (the Copy buttons), nothing else |
@@ -60,6 +61,8 @@ and quits through the normal path, which stops the server. The exit status is 0 
 (`scripts/prove_desktop_app.py`).
 
 ## Package it
+
+A beta that installs beside the released app, from the working tree: `scripts/py scripts/install_app.py beta` (D242; `docs/RELEASE.md`, "One Mac, two apps").
 
 From `sutra-pro/`: `scripts/py scripts/build_desktop_app.py --wheel dist/<the wheel> --target mac-arm64 --out build` (see `docs/RELEASE-macos.md` and
 `docs/RELEASE-windows.md`). The packager alone, without Python in the app: `node scripts/package.mjs --platform darwin --arch arm64 --out out --version X.Y.Z`.

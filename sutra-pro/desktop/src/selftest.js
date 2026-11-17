@@ -24,9 +24,9 @@ const PROBE = `(async () => {
 })()`;
 
 /* The verdict on one probe, as data: { ok, failures }. */
-function judge({ probe, owned, origin, expectVersion, windowTitle }) {
+function judge({ probe, owned, origin, expectVersion, windowTitle, appName = 'Sutra Pro' }) {
   const failures = [];
-  if (windowTitle !== undefined && windowTitle !== 'Sutra Pro') failures.push(`the window is titled ${JSON.stringify(windowTitle)}, not "Sutra Pro"`);
+  if (windowTitle !== undefined && windowTitle !== appName) failures.push(`the window is titled ${JSON.stringify(windowTitle)}, not ${JSON.stringify(appName)}`);
   if (!owned) failures.push('the app did not start its own server (it attached to one that was running)');
   if (!probe) {
     failures.push('the page did not answer the probe');
@@ -76,7 +76,7 @@ async function takePicture({ win, outDir, log, sleep, attempts = 12 }) {
   return null;
 }
 
-async function runSelftest({ win, supervisor, outDir, expectVersion, log, now = Date.now, sleep = (ms) => new Promise((r) => setTimeout(r, ms)) }) {
+async function runSelftest({ win, supervisor, outDir, expectVersion, log, appName = 'Sutra Pro', now = Date.now, sleep = (ms) => new Promise((r) => setTimeout(r, ms)) }) {
   const contents = win.webContents;
   const probeOnce = async () => {
     try {
@@ -88,7 +88,7 @@ async function runSelftest({ win, supervisor, outDir, expectVersion, log, now = 
   };
   const give = now() + GIVE_UP_MS;
   let probe = await probeOnce();
-  const judged = () => judge({ probe, owned: supervisor.owned, origin: supervisor.origin, expectVersion, windowTitle: win.getTitle() });
+  const judged = () => judge({ probe, owned: supervisor.owned, origin: supervisor.origin, expectVersion, windowTitle: win.getTitle(), appName });
   let verdict = judged();
   while (!verdict.ok && now() < give) {          // the page draws after it loads: ask again until it has, or time is up
     await sleep(POLL_MS);

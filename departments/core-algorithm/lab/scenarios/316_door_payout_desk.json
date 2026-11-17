@@ -1,0 +1,81 @@
+{
+  "schema": "sutra-extension/2",
+  "id": "316_door_payout_desk",
+  "scope": "lendco/payouts",
+  "goals": [
+    "payout_reconciled"
+  ],
+  "budget": {
+    "compute": 30,
+    "money": 6,
+    "attention": 2
+  },
+  "preference": [
+    "money",
+    "compute",
+    "attention"
+  ],
+  "methods": [
+    {
+      "id": "door-check-payee@1",
+      "effect": "payee_checked",
+      "requires": [
+        "payout_due"
+      ],
+      "provider": "payout-desk",
+      "grant": "action:door-check-payee@1",
+      "cost": {
+        "compute": 2,
+        "money": 0,
+        "attention": 0
+      },
+      "action": "simulate_fact",
+      "approved": true,
+      "source": "reviewed/synthetic-method"
+    },
+    {
+      "id": "door-pay@1",
+      "effect": "payout_paid",
+      "requires": [
+        "payout_due",
+        "payee_checked"
+      ],
+      "provider": "payout-desk",
+      "grant": "action:door-pay@1",
+      "cost": {
+        "compute": 1,
+        "money": 1,
+        "attention": 0
+      },
+      "action": "simulate_fact",
+      "approved": true,
+      "source": "reviewed/synthetic-method"
+    },
+    {
+      "id": "door-reconcile@1",
+      "effect": "payout_reconciled",
+      "requires": [
+        "payout_due",
+        "payout_paid"
+      ],
+      "provider": "payout-desk",
+      "grant": "action:door-reconcile@1",
+      "cost": {
+        "compute": 2,
+        "money": 0,
+        "attention": 0
+      },
+      "action": "simulate_fact",
+      "approved": true,
+      "source": "reviewed/synthetic-method"
+    }
+  ],
+  "providers": {
+    "payout-desk": 40
+  },
+  "grants": [
+    "action:door-check-payee@1",
+    "action:door-pay@1",
+    "action:door-reconcile@1"
+  ]
+}

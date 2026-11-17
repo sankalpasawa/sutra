@@ -1,0 +1,11 @@
+{
+  "id": "164_door_batch_in_order",
+  "title": "A refund batch: the reconciliation goes out first",
+  "description": "A lender's refund batch has landed when the reconciliation run passed it and the posting step posted it. Both are hand-overs to scripts, checked by the reconciliation ledger and by the posting log, and the posting requires the reconciliation. One look hands the reconciliation over and waits; the posting is pending. This case is that one look, which the kernel gives the same way without this version. The recorded sequence doors shows the program's own moves on this batch: in a journal started as before a checker's row with no work out let the posting go before the reconciliation, and in a journal under the plan door that row is refused, so the plan keeps this order.",
+  "packs": [
+    "318_door_batch_landing"
+  ],
+  "execute": true,
+  "area": "Doors and places",
+  "expected": "WAITING"
+}

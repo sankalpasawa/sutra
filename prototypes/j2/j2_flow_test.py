@@ -4818,7 +4818,7 @@ def run_for_real():
     try:
         source = j2.squash(f"Sort the files in {real} into folders by type, reading samples from {src}, and run it.")
         runner = ("python3", "{target}")
-        rr = {"command": ["python3", "sort.py", real], "folder": real, "reads": [src], "why": "sort them"}
+        rr = {"command": ["python3", "sort.py", real, src], "folder": real, "reads": [src], "why": "sort them"}
         P = lambda x, **kw: j2.real_run_problems({**rr, **x}, source, runner, "/nowhere/run")
         assert P({}) == [], P({})
         assert any("must start with python3" in x for x in P({"command": ["bash", "sort.sh"]}))
@@ -4826,6 +4826,7 @@ def run_for_real():
         assert any("not named in the brief" in x for x in P({"folder": tempfile.gettempdir()}))
         assert any("climbs out" in x for x in P({"command": ["python3", "../x.py"]}))
         assert any("outside its folders" in x for x in P({"command": ["python3", "sort.py", "/etc"]}))
+        assert any(f"must pass the folder {src} as an argument" in x for x in P({"command": ["python3", "sort.py", real]}))
         home = os.path.expanduser("~")
         assert any("may not be" in x for x in j2.real_run_problems({**rr, "folder": home}, j2.squash(home), runner, "/nowhere/run"))
         assert any("may not be" in x for x in j2.real_run_problems({**rr, "folder": j2.HERE}, j2.squash(j2.HERE), runner, "/nowhere/run"))
@@ -4965,6 +4966,150 @@ def real_run_checks():
             shutil.rmtree(d, ignore_errors=True)
     print("real run checks: an item only the real run meets is covered by no builder, waits in Audit, and is decided by "
           "the receipt; the run is workable only after an approved run ok")
+
+
+@with_folder_type
+def dry_run_real_folders():
+    """runs/j2-20261117-114654: the builder wrote the Requester's folders into copy_files.py (DEFAULT_SOURCE,
+    DEFAULT_DESTINATION; fixtures/dry-run-real, the run's file with the paths as placeholders), the real run's command
+    was "python3 copy_files.py" with no folder, and the dry run "on a copy" copied into the real test-B before any
+    approval, then said "0 created". Now: (a) a command that does not pass every stated folder is refused; (b) code
+    refuses a build whose files hold a real folder (exact path, not a longer name) and sends the reason back to the
+    builder; (c) the dry run passes the copies' paths; (d) real folders are read before and after the dry run: a
+    change stops the run, shows each changed file, and no count of the copy is reported."""
+    base = tempfile.mkdtemp(prefix="j2-dryreal-")      # outside the repo and the home folder, like the Desktop folders
+    keep = {k: os.environ.get(k) for k in ("J2_SANDBOX_CMD", "J2_SANDBOX", "J2_AGENT_TOOLS")}
+    try:
+        os.environ.pop("J2_SANDBOX", None)      # the default: no sandbox
+        os.environ["J2_AGENT_TOOLS"] = "1"      # builders with tools, as in a live run
+        a, b = os.path.join(base, "test-A"), os.path.join(base, "test-B")
+        os.makedirs(os.path.join(a, "sub"))
+        os.makedirs(b)
+        open(os.path.join(a, "one.txt"), "w").write("1")
+        open(os.path.join(a, "sub", "two.txt"), "w").write("2")
+        open(os.path.join(b, "one.txt"), "w").write("kept")
+        script = open(os.path.join(j2.HERE, "fixtures", "dry-run-real", "copy_files.py"), encoding="utf-8").read()
+        bad = script.replace("__SOURCE__", a).replace("__DESTINATION__", b)
+        fixed = script.replace("'__SOURCE__'", "None").replace("'__DESTINATION__'", "None").replace(
+            "done, left = copy_files()", "import sys\n    done, left = copy_files(sys.argv[1], sys.argv[2])")
+        source = j2.squash(f"Copy all files from {a} to {b}, and run it on the real folders.")
+        runner = ("python3", "{target}")
+        rr = {"command": ["python3", "copy_files.py"], "folder": b, "reads": [a], "why": "copy", "checks": [1]}
+        # (a) the run's own real_run: no folder in its command
+        why = j2.real_run_problems(rr, source, runner, "/nowhere/run")
+        assert any(f"must pass the folder {b} as an argument" in x for x in why) \
+            and any(f"must pass the folder {a} as an argument" in x for x in why), why
+        assert any(f"folder {a} as" in x for x in j2.real_run_problems({**rr, "command": ["python3", "copy_files.py", b]}, source, runner, "/nowhere/run"))
+        good = {**rr, "command": ["python3", "copy_files.py", a, b]}
+        assert j2.real_run_problems(good, source, runner, "/nowhere/run") == []
+        assert j2.real_run_problems({**good, "command": ["python3", "copy_files.py", f"--from={a}/", b]}, source, runner, "/nowhere/run") == []
+        # (b) the run's file holds both folders; the fixed one holds none; a longer name is not the folder
+        out = tempfile.mkdtemp(prefix="j2-dryreal-out-")
+        open(os.path.join(out, "copy_files.py"), "w").write(bad)
+        assert j2.real_paths_in(out, j2.real_folders([{"real_run": rr}])) == [("copy_files.py", b), ("copy_files.py", a)], \
+            j2.real_paths_in(out, [a, b])
+        open(os.path.join(out, "copy_files.py"), "w").write(fixed + f"\n# see {a}B and {b}-old\n")
+        assert j2.real_paths_in(out, [a, b]) == []
+        shutil.rmtree(out)
+        run = j2.J2Run()
+        run.set_output(FT)
+        run.goal, run.budget = {"statement": "copy", "done_when": ["copy_files.py copies the files"]}, 300
+        os.makedirs(run._out_dir(), exist_ok=True)
+        w = {"id": "W-1", "name": "copier", "purpose": "copy", "outputs": [f"{FT}/copy_files.py"], "status": "running",
+             "calls_used": 0, "retries_used": 0, "cost": 10, "cycle": 1, "section": "W-1", "covers": [1], "real_run": rr,
+             "atoms": [{"id": "W-1.a1", "goal": "copy files", "expected_output": [],
+                        "verification": [{"text": "copy_files.py exists", "type": "file-exists", "target": "copy_files.py", "expect": True}]}]}
+        run.workflows = [w]
+        j2.add_workflow_agent("W-1")
+        prompts, texts = [], [bad, fixed]
+
+        def builder(r):      # the run's file first, then the next text (the last one again after that)
+            def call(fn, fmt, prompt, mock, **kw):
+                prompts.append(prompt)
+                open(os.path.join(r._out_dir(), "copy_files.py"), "w").write(texts[min(len(prompts), len(texts)) - 1])
+                return {"say": "@Coordination built", "human_output": "I built the copier.", "atom_human_output": "The copier."}
+            return call
+        run.call = builder(run)
+        run._run_tools(w, {"id": "W-1", "name": "copier", "outputs": w["outputs"]}, 3)
+        assert len(prompts) == 2 and w["status"] == "done", (len(prompts), w["status"])
+        assert f"copy_files.py holds the Requester's real folder {b}" in prompts[1] and "command-line argument" in prompts[1], prompts[1][-600:]
+        assert any(e["type"] == "real_path_in_build" for e in run.events)
+        texts[:] = [bad]      # never fixed: the workflow fails, its reason named
+        run2 = j2.J2Run()
+        run2.set_output(FT)
+        run2.goal, run2.budget = run.goal, 300
+        os.makedirs(run2._out_dir(), exist_ok=True)
+        w2 = {**w, "status": "running", "calls_used": 0}
+        run2.workflows, run2.call, prompts[:] = [w2], builder(run2), []
+        run2._run_tools(w2, {"id": "W-1", "name": "copier", "outputs": w2["outputs"]}, 3)
+        assert w2["status"] == "failed" and any("still hold the Requester's real folder paths" in m["text"] for m in run2.chat), w2["status"]
+        assert open(os.path.join(b, "one.txt")).read() == "kept" and os.listdir(b) == ["one.txt"]
+        # (c) the fixed script with its folders as arguments: the dry run passes the copies, the real folders untouched
+        open(os.path.join(run._out_dir(), "copy_files.py"), "w").write(fixed)
+        dry = j2.real_run_dry(run._out_dir(), good, 60)
+        assert dry["exit"] == 0 and dry["created"] == ["sub/two.txt"] and dry["real_changed"] == {}, dry
+        assert dry["command"][:2] == ["python3", "copy_files.py"] and a not in dry["command"] and b not in dry["command"] \
+            and all(".dryrun-" in x for x in dry["command"][2:]), dry["command"]
+        assert os.listdir(b) == ["one.txt"] and open(os.path.join(b, "one.txt")).read() == "kept", "the dry run never touches test-B"
+        # (d) the run's script and command: the dry run reaches the real test-B; the run stops, shows what changed
+        open(os.path.join(run._out_dir(), "copy_files.py"), "w").write(bad)
+        w["status"], run.outcome = "done", None
+        run.post("user", "Copy my files")
+        assert run._ask_real_run({}) and run.turn is None and not run.paused, run.paused
+        assert str(run.outcome).startswith("Stopped: W-1's dry run changed the Requester's real folders"), run.outcome
+        said = next(m["text"] for m in reversed(run.chat) if m.get("real_run") == "W-1")
+        assert f"In {b}:\nCreated (1): sub/two.txt" in said and "RUN " not in said and "0 created" not in said, said
+        r = [json.loads(x) for x in open(os.path.join(run.dir, "receipts.jsonl")) if '"real_run"' in x][-1]
+        assert not r["approved"] and not r["ran"] and r["dry_run"]["real_changed"][b]["created"] == ["sub/two.txt"], r
+        assert "0 created" not in r["evidence"] and r["evidence"].startswith("the dry run changed the real folders"), r["evidence"]
+        assert run.real_runs_done["W-1"] is False
+        assert "Never write the Requester's real folder paths into any file" in open(os.path.join(j2.HERE, "templates", "builder.md"), encoding="utf-8").read()
+    finally:
+        for k, v in keep.items():
+            os.environ.pop(k, None) if v is None else os.environ.__setitem__(k, v)
+        shutil.rmtree(base, ignore_errors=True)
+    print("dry run real folders: a real run's command passes every folder; a build holding a real folder is refused "
+          "with the reason to its builder; the dry run passes the copies; a dry run that changes a real folder stops the "
+          "run and shows what changed ok")
+
+
+@with_folder_type
+def charter_files_planned():
+    """runs/release/j2-20261117-121143 and -122859: Identity listed run_on_folder.md / run_report.md in the charter's
+    files, a file only the real run could make; no workflow wrote it, C1 never passed and the RUN ask never came. Now
+    Identity's instructions say the charter lists only files the build produces, and a charter file no workflow's
+    outputs include (exact name) is a plan gap: Adaptation is asked once more, told it may say only the real run could
+    make it so Identity takes it out."""
+    ident = j2.system_prompt("identity", "{}")
+    assert "The charter lists only files the build produces" in ident and "checked from its receipt" in ident
+    plans = {"run_on_folder.md": [["file_sorter/sorter.py"], ["file_sorter/test_sorter.py"]],      # 121143
+             "run_report.md": [["file_sorter/sorter.py"], ["file_sorter/test_sorter.py"], ["file_sorter/sorter.py"]]}      # 122859
+    for extra, outs in plans.items():
+        run = j2.J2Run()
+        run.set_output(FT)
+        rel = run._out_rel()
+        run.goal = {"statement": "sort", "done_when": ["sorted"], "files": ["sorter.py", "test_sorter.py", extra]}
+        wfs = [{"name": f"W{i}", "outputs": [o.replace("file_sorter/", rel + "/") for o in o_]} for i, o_ in enumerate(outs)]
+        gaps = run._file_gaps(wfs)
+        assert [g["id"] for g in gaps] == [extra] and "no workflow's outputs include it" in gaps[0]["why"] \
+            and "Identity takes it out of the charter" in gaps[0]["why"], gaps
+        assert run._file_gaps(wfs + [{"name": "R", "outputs": [extra]}]) == []      # as Adaptation writes it
+        assert run._file_gaps(wfs + [{"name": "R", "outputs": [f"./{extra}"]}]) == []
+        assert [g["id"] for g in run._file_gaps(wfs + [{"name": "R", "outputs": ["report.md", f"{extra}.bak"]}])] == [extra], "exact names only"
+        run.workflows = [{"status": "registered", "outputs": [f"{rel}/{extra}"]}]      # a registered workflow writes it
+        assert run._file_gaps(wfs) == []
+        run.workflows = []
+        asked = []
+        run.call = lambda fn, fmt, task, mock, **kw: asked.append(task) or {"act": "PROPOSE", "workflows": wfs}
+        run._atoms_checked = lambda r, *a: r
+        run._plan_checked({"act": "PROPOSE", "workflows": wfs}, "{}", "TASK", None)
+        assert len(asked) == 1 and f"the charter lists {extra}" in asked[0], asked
+        assert any(f"leaves {extra} with no workflow" in m["text"] for m in run.chat), [m["text"] for m in run.chat][-2:]
+    web = page_run()      # not a folder: no file gaps
+    web.goal = {"files": ["x.md"]}
+    assert web._file_gaps([]) == []
+    print("charter files planned: Identity lists only built files; a charter file no workflow outputs (exact name) "
+          "goes back to Adaptation as a plan gap ok")
 
 
 @with_folder_type
@@ -8835,7 +8980,7 @@ SAVED_RUNS_GOLDEN = {
 # the facts-present condition's evidence names exact facts (stage-*.json). Outcomes, spend, the agents called,
 # workflows and the documents are identical to {"prd": "ac6d3f00fb5c", "design docs": "2284f23cff02",
 # "docs then site": "dc8ed3ceb805"}.
-DOC_RUN_GOLDEN = {"prd": "f1d22a8df780", "design docs": "9a933693c619", "docs then site": "93b81e02b546"}
+DOC_RUN_GOLDEN = {"prd": "264da0c4a2c8", "design docs": "c31742c23e07", "docs then site": "54eb770c8e21"}      # Identity: charter lists only built files (fix-dry-run)
 DOC_PROMPTS_GOLDEN = {
     "prd.builder": "e971c88e727f", "prd.intake": "75a955fb24fa",
     "prd.charter_fmt": "eedccdf82d84", "prd.atom_rules": "b8a918ef6039", "prd.system": "d09f06fa3181",
@@ -15674,8 +15819,9 @@ def auto_reuse():
     (b) a pilates brief with no template chosen picks the yoga run template (match 0.6 or more), says so, records the pick and
     every score, and creates no template: every workflow comes from the template; (c) a template with a stage the brief did not
     name builds that stage too; (d) a law-firm brief with only a PRD finds no similar run template, says so with the best
-    score, and its PRD sections are adapted from the nearest templates, not created: no fact and no name of the earlier
-    businesses reaches the new versions or an agent's prompt; (e) with no template for a section in the library, one is
+    score, and no studio's section template is similar enough to adapt (business_similarity below the settings'
+    adapt_min_similarity): its PRD sections get the firm's own template family, created, and no fact and no name of the
+    earlier businesses reaches the new templates or an agent's prompt; (e) with no template for a section in the library, one is
     created and the reason says so; (f) flag off: no pick, no nearest template, nothing recorded (and plain_unchanged);
     (g) the Library tab says "Auto-picked run template <name> (match 0.xx)" or "Built from scratch", and each adapted row
     names its source (--browser)."""
@@ -15809,7 +15955,8 @@ def auto_reuse():
         assert r1.outcome.startswith("Done") and r1.stages == ["prd", "hld", "lld"], (r1.outcome, r1.stages)
         assert a1["picked"] == rt1["id"] == yoga.id and "Yoga" in rt1["name"] and rt1["auto"] is True and rt1["match"] == a1["match"] >= a1["threshold"] == 0.6, (a1["picked"], a1["match"])
         assert a1["weights"] == {"stages": 0.4, "business": 0.3, "covers": 0.3} and a1["asked_stages"] == ["prd", "hld", "lld"]
-        assert {x["id"] for x in a1["scores"]} == {r["id"] for r in L.run_template_list()} and a1["scores"][0]["id"] == yoga.id, [x["id"] for x in a1["scores"]]
+        # every run template the library had when the run picked (the one this run saved when it ended came after)
+        assert {x["id"] for x in a1["scores"]} == {r["id"] for r in L.run_template_list() if r["made_from_run"] != os.path.basename(r1.dir)} and a1["scores"][0]["id"] == yoga.id, [x["id"] for x in a1["scores"]]
         assert all(abs(x["score"] - round(0.4 * x["stages"] + 0.3 * x["business"] + 0.3 * x["covers"], 2)) <= 0.011 for x in a1["scores"]), a1["scores"]
         line = f"Using similar run template {yoga.name} (match {a1['match']:.2f})."
         assert [m_["text"] for m_ in r1.chat if m_["text"].startswith("Using similar run template")] == [line], line
@@ -15826,10 +15973,15 @@ def auto_reuse():
         L.AUTO_MIN = 0.5
         r2, rec2 = run_of(PILATES_DOCS.replace("Create the design documents (PRD, HLD and LLD) for", "Write the PRD and the HLD for"))
         L.AUTO_MIN = keep_min
-        assert rec2["auto_reuse"]["asked_stages"] == ["prd", "hld"] and 0.5 <= rec2["auto_reuse"]["match"] < 0.6 and rec2["auto_reuse"]["picked"] == yoga.id, rec2["auto_reuse"]["match"]
+        assert rec2["auto_reuse"]["asked_stages"] == ["prd", "hld"] and 0.5 <= rec2["auto_reuse"]["match"] < 0.6, rec2["auto_reuse"]["match"]
+        # the run template picked is the one run r1 saved when it ended workable (J2_RUN_TEMPLATES, which auto reuse implies):
+        # the same business's own documents, before the yoga studio's
+        saved1 = [r_ for r_ in L.run_template_list() if r_["made_from_run"] == os.path.basename(r1.dir)]
+        assert len(saved1) == 1 and saved1[0]["name"].startswith("Flow Pilates: ") and rec2["auto_reuse"]["picked"] == saved1[0]["id"], (saved1, rec2["auto_reuse"]["picked"])
+        assert any(m_["text"] == f"Saved run template {saved1[0]['name']}." for m_ in r1.chat), "r1's chat says it was saved"
         assert r2.outcome.startswith("Done") and r2.stages == ["prd", "hld", "lld"] and {d["artifact"] for d in rec2["decisions"]} == {"prd", "hld", "lld"}, (r2.outcome, r2.stages)
         assert not rec2["run_template"].get("added_stages")
-        # (d) a law firm, a PRD only: no similar run template; its sections are adapted from the nearest templates
+        # (d) a law firm, a PRD only: no similar run template, and no studio's template is similar enough to adapt: its own family
         before3 = {e["name"] for e in L.index()["templates"]}      # with the families the runs above made
         r3, rec3 = run_of(LAW_PRD, 400)
         a3 = rec3["auto_reuse"]
@@ -15838,23 +15990,28 @@ def auto_reuse():
         assert [m_["text"] for m_ in r3.chat if "similar run template" in m_["text"]] == [f"No similar run template (best {best['name']} {best['score']:.2f})."], best
         ds3 = rec3["decisions"]
         assert len(ds3) == 6 and {d["artifact"] for d in ds3} == {"prd"} and not any("from_template" in d for d in ds3), [(d["artifact"], d["action"]) for d in ds3]
+        least3 = L.routing("adapt_min_similarity")
         for d in ds3:
-            assert d["action"] == "extended" and d["rule"] == "s" and d["adapted_from"] == f"{d['nearest']['name']}@{d['nearest']['version']}", d
-            assert d["adapted_from"].rpartition("@")[0] in before3 and d["template"].startswith("Hale Legal ") and d["template"] not in before3 and d["version"] == 1 and d["new_family"], d
-            assert d["reason"].startswith(f"adapted from {d['adapted_from']}: the nearest {d['section']} template by fields"), d["reason"]
+            assert d["action"] == "created" and d["rule"] == "d" and "adapted_from" not in d and "nearest" not in d and d["fresh_start"] is True, d
+            assert d["template"].startswith("Hale Legal ") and d["template"] not in before3 and d["version"] == 1, d
+            turned = d["not_similar"]["templates"]
+            assert d["not_similar"]["least"] == least3 and turned and all(x["business_similarity"] < least3 and x["name"] in before3 for x in turned), d["not_similar"]
+            assert d["reason"].startswith(f"no {d['section']} template of a similar enough business ({turned[0]['name']}@{turned[0]['version']}: business similarity "), d["reason"]
             spec = json.load(open(os.path.join(r3.dir, d["saved"], "spec.json"), encoding="utf-8"))
             body = json.dumps({k: spec[k] for k in ("description", "fields", "objects", "rules", "context")}).lower()
             gone = [f for f in old_facts if f not in d_facts(r3) and len(f) > 12 and f.lower() in body]
-            assert not gone and spec["made_by"]["agent"] == "code (adapted from the nearest template)", (d["workflow"], gone)
-        assert not os.path.isfile(os.path.join(r3.dir, "template_calls.jsonl")), "adapting is code: the generator is not called"
+            assert not gone and spec["made_by"]["agent"].startswith("template generator"), (d["workflow"], gone, spec["made_by"])
+        with open(os.path.join(r3.dir, "template_calls.jsonl"), encoding="utf-8") as f:
+            gen_calls = [json.loads(ln) for ln in f if ln.strip()]
+        assert len(gen_calls) == 6 and all(str(least3) in c["prompt"] and "another business" in c["prompt"] for c in gen_calls), "a new family is the generator's: one call a section, told the least similarity"
         said = [m_["text"] for m_ in r3.chat if " template: " in m_["text"]]
-        assert len(said) == 6 and all("; adapted from " in t for t in said) and all(m_.get("humans_only") for m_ in r3.chat if " template: " in m_["text"]), said
+        assert len(said) == 6 and all(" template: created Hale Legal " in t and "adapted from" not in t for t in said) and all(m_.get("humans_only") for m_ in r3.chat if " template: " in m_["text"]), said
         names3 = {d["template"] for d in ds3} | {"Still Point Yoga", "Iron Grove", "Rhythm Room"}
         leaked = sorted({n for c in calls_file(r3) for n in names3 if n.lower() in (c["system"] + c["prompt"]).lower()})
         assert not leaked, ("an adapted template's name reaches no agent", leaked)
         use3 = L.run_template_use(r3.dir)
-        assert use3["scratch"] is True and use3["best"]["name"] == best["name"] and use3["counts"][DOCS] == {"created": 0, "adapted": 6, "reused": 0, "generic": 0, "total": 6, "from_template": None}, use3
-        r3b, rec3b = run_of(LAW_PRD, 400)      # the same brief again: the adapted versions are there
+        assert use3["scratch"] is True and use3["best"]["name"] == best["name"] and use3["counts"][DOCS] == {"created": 6, "adapted": 0, "reused": 0, "generic": 0, "total": 6, "from_template": None}, use3
+        r3b, rec3b = run_of(LAW_PRD, 400)      # the same brief again: the firm's own templates are there
         assert all(d["action"] == "reused" for d in rec3b["decisions"]), [(d["action"], d["rule"]) for d in rec3b["decisions"]]
         # (e) no template for the section: one is created, and the reason says why
         bare = os.path.join(tmp, "bare")
@@ -15916,8 +16073,8 @@ def auto_reuse():
             assert all(re.match(r"W-\d+", c) for c in g1["cells"]) and sum("adapted from" in c for c in g1["cells"]) == sum(1 for d in ds1 if d.get("adapted_from")) > 0, g1["cells"]
             g3 = load(r3)
             assert g3["auto"] == "scratch" and g3["sum"] == f"Built from scratch: no similar run template (best {best['name']} {best['score']:.2f})" and g3["link"] is None, g3["sum"]
-            assert g3["pills"][f"{DOCS}-created"] == "0 created" and g3["pills"][f"{DOCS}-adapted"] == "6 adapted" and g3["rows"] == 6, g3["pills"]
-            assert g3["cells"] == [f"adapted from {d['adapted_from']}" for d in ds3] and "Run template" in g3["heads"], g3["cells"]
+            assert g3["pills"][f"{DOCS}-created"] == "6 created" and g3["pills"][f"{DOCS}-adapted"] == "0 adapted" and g3["rows"] == 6, g3["pills"]
+            assert len(g3["cells"]) == 6 and not any("adapted from" in c for c in g3["cells"]) and "Run template" in g3["heads"], g3["cells"]      # its own family: no source to name
             assert g1["sw"][0] <= g1["sw"][1] and g3["sw"][0] <= g3["sw"][1], "no sideways scroll"
             page = "an auto-picked run shows \"Auto-picked run template <name> (match 0.xx)\", a run with none shows \"Built from scratch\" with the best score, each adapted row names its source"
         assert tree_sha(real_lib) == real_before, "the committed library is untouched"
@@ -16399,6 +16556,8 @@ if __name__ == "__main__":
             folder_types_named()        # remove-restrictions 6a: a folder output gets a type named for what it makes
             run_for_real()              # remove-restrictions step 7: a real run only on the Requester's exact approval
             real_run_checks()           # step 7 gap: an item only the real run meets is decided by its receipt
+            dry_run_real_folders()      # runs/j2-20261117-114654: real folders only as arguments; a dry run that reaches them stops the run
+            charter_files_planned()     # runs/release 121143, 122859: a charter file no workflow writes is a plan gap
             real_run_order()            # the RUN ask without Identity; Decide for me never confirms a real run
             grant_and_question_kind()   # the grant keeps Adaptation's plan; Decide for me answers decisions only
             folder_run_reused()         # remove-restrictions step 6: a folder run saved and reused, not rebuilt

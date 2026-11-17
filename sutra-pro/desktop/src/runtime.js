@@ -10,11 +10,12 @@ const ASIDE_NAME = 'data-folder-error';          // inside the system's user-dat
 const DEFAULT_START_TIMEOUT_S = 60;
 const MAX_START_TIMEOUT_S = 600;
 
-/* The data folder: SUTRA_DATA_DIR, else ~/.sutra-pro. The server's own default is the same folder, and the app passes it with --data-dir
-   anyway, so the app and the server cannot disagree about where app.pid is. */
-function dataDir(env = process.env, home = os.homedir()) {
+/* The data folder: SUTRA_DATA_DIR, else ~/.sutra-pro (a beta build's own name, ~/.sutra-pro-beta, comes in as `dirName`: src/channel.js). The server's own
+   default is the same folder as the stable app's, and the app passes its folder with --data-dir anyway, so the app and the server cannot disagree about
+   where app.pid is. */
+function dataDir(env = process.env, home = os.homedir(), dirName = DATA_DIR_NAME) {
   const named = String(env.SUTRA_DATA_DIR || '').trim();
-  if (!named) return path.join(home, DATA_DIR_NAME);
+  if (!named) return path.join(home, dirName);
   if (named === '~') return home;
   if (/^~[\\/]/.test(named)) return path.join(home, named.slice(2));
   return path.resolve(named);

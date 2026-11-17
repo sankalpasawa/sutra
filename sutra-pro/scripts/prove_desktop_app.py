@@ -49,7 +49,8 @@ def layout(app: Path) -> tuple[Path, Path]:
     """(the program a person starts, the interpreter inside the app) of a Mac app or a Windows folder."""
     if WINDOWS:
         return app / "Sutra Pro.exe", app / "resources" / "python" / "python.exe"
-    return app / "Contents" / "MacOS" / "Sutra Pro", app / "Contents" / "Resources" / "python" / "bin" / "python3"
+    program = app.name[:-4] if app.name.endswith(".app") else app.name              # Electron names the program after the app: "Sutra Pro" or "Sutra Pro Beta"
+    return app / "Contents" / "MacOS" / program, app / "Contents" / "Resources" / "python" / "bin" / "python3"
 
 
 def kill_tree(proc: subprocess.Popen) -> None:

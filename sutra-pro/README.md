@@ -13,6 +13,7 @@ not touch (D98). Its workflows are the `.github/workflows/sutra-pro-*.yml` files
 - Design in one page: [docs/DESIGN.md](docs/DESIGN.md); the five sections are in [docs/design/](docs/design/)
 - Every decision with its why and what was rejected: [docs/DECISIONS.md](docs/DECISIONS.md)
 - Rule, step, endpoint and decision to module and test: [docs/TRACEABILITY.md](docs/TRACEABILITY.md)
+- Changing Sutra Pro, by a person or an AI agent: [AGENTS.md](AGENTS.md) (try the change in a local beta app, push it, release only when asked)
 
 ## Download the app
 

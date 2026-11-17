@@ -569,6 +569,39 @@ def real_run_problems(rr, source, runner, run_dir):
             out.append(f"real_run argument {x!r} climbs out of its folder (..)")
         elif os.path.isabs(v) and not any(within(os.path.realpath(v), r) for r in roots):
             out.append(f"real_run argument {x!r} names a path outside its folders")
+    # every folder passed as an argument, exactly as stated: the dry run swaps these for the copies' paths, so a
+    # script that holds the folder itself would run on the real one (runs/j2-20261117-114654)
+    args = {x.split("=", 1)[-1].rstrip("/") for x in cmd[1:]}
+    for f in [folder] + reads:
+        if isinstance(f, str) and os.path.isabs(f) and f.rstrip("/") not in args:
+            out.append(f"real_run command must pass the folder {f} as an argument, exactly as written here: the dry run "
+                       "points that argument at a copy, so what you build must take the folder from its arguments")
+    return out
+
+
+def real_folders(workflows):
+    """Every real folder the run's planned real runs state (their folder and reads), as stated."""
+    return list(dict.fromkeys(f.rstrip("/") for w in workflows or [] for rr in [w.get("real_run") or {}]
+                              for f in [rr.get("folder")] + list(rr.get("reads") or []) if isinstance(f, str) and f.strip("/")))
+
+
+def real_paths_in(root, folders):
+    """[(file, path)]: each text file under root that holds a real folder path, as stated or resolved, not followed by
+    another name character (so /a/test-A is not found in /a/test-AB). A built file must take its folders as arguments."""
+    pats = [(f, re.compile(re.escape(p) + r"(?![\w.-])")) for f in folders
+            for p in dict.fromkeys([f, os.path.realpath(f)])]
+    out = []
+    for r, ds, fs in os.walk(root):
+        ds.sort()
+        for n in sorted(fs):
+            p = os.path.join(r, n)
+            try:
+                with open(p, encoding="utf-8") as fh:
+                    text = fh.read()
+            except (OSError, UnicodeDecodeError):
+                continue
+            rel = os.path.relpath(p, root).replace(os.sep, "/")
+            out += [(rel, f) for f in dict.fromkeys(f for f, rx in pats if rx.search(text))]
     return out
 
 
@@ -622,14 +655,23 @@ def _tree(root):
     return out
 
 
+def _tree_diff(before, after):
+    """{created, deleted, changed}: relative paths, from two _tree() snapshots."""
+    return {"created": sorted(set(after) - set(before)), "deleted": sorted(set(before) - set(after)),
+            "changed": sorted(k for k in set(before) & set(after) if before[k] != after[k])}
+
+
 def real_run_dry(out_dir, rr, timeout):
     """The real run, first on copies: the stated folder and its read-only folders copied beside the run's output
     folder, the command's paths pointed at the copies, run once in the sandbox (real_run) writing only the copy of
     the folder. What it would do to the folder: {"ran", "exit", "created", "changed", "deleted" (paths in the folder),
-    "evidence"}. The real folders are never touched; the copies are removed after."""
+    "evidence"}. The copies are removed after. The real folders are read before and after: anything changed there is
+    "real_changed" ({folder: {created, deleted, changed}}; {} when none), and the evidence says so instead of the
+    copy's counts. "command": the command as run, on the copies' paths."""
     tmp = tempfile.mkdtemp(prefix=".dryrun-", dir=os.path.dirname(os.path.realpath(out_dir)))
     try:
         roots = [rr["folder"]] + list(rr.get("reads") or [])
+        real_before = {r: _tree(r) for r in roots}
         copies = [os.path.join(tmp, f"f{i}") for i in range(len(roots))]
         for r, c in zip(roots, copies):
             shutil.copytree(r, c, symlinks=True)
@@ -644,13 +686,16 @@ def real_run_dry(out_dir, rr, timeout):
                     break
             return k + eq + v
         before = _tree(copies[0])
-        res = real_run(out_dir, {**rr, "folder": copies[0], "reads": copies[1:], "command": [moved(x) for x in rr["command"]]},
-                       timeout)
-        after = _tree(copies[0])
-        d = {"created": sorted(set(after) - set(before)), "deleted": sorted(set(before) - set(after)),
-             "changed": sorted(k for k in set(before) & set(after) if before[k] != after[k])}
+        cmd = [moved(x) for x in rr["command"]]
+        res = real_run(out_dir, {**rr, "folder": copies[0], "reads": copies[1:], "command": cmd}, timeout)
+        d = _tree_diff(before, _tree(copies[0]))
+        real = {r: x for r in roots if any((x := _tree_diff(real_before[r], _tree(r))).values())}
         counts = ", ".join(f"{len(v)} {k}" for k, v in d.items())
-        return {"ran": res.get("ran"), "exit": res.get("exit"), **d,
+        if real:
+            return {"ran": res.get("ran"), "exit": res.get("exit"), "command": cmd, **d, "real_changed": real,
+                    "evidence": "the dry run changed the real folders, not only the copies: " + "; ".join(
+                        f"{r}: " + ", ".join(f"{len(v)} {k}" for k, v in x.items()) for r, x in real.items())}
+        return {"ran": res.get("ran"), "exit": res.get("exit"), "command": cmd, **d, "real_changed": {},
                 "evidence": (f"dry run on a copy: exit {res.get('exit')}; {counts}" if res.get("ran") else res["evidence"])}
     finally:
         shutil.rmtree(tmp, ignore_errors=True)
@@ -3501,6 +3546,7 @@ class J2Run:
         # J2_TEMPLATE_LIBRARY=1 (template-library/1): the template each workflow's builder fills, chosen by the router
         self.tpl_lib = j2_template_lib.enabled()
         self.tpl_routes, self.tpl_decisions, self.tpl_cur = {}, [], None
+        self.tpl_similar = {}      # how similar each other business's templates were found to this run's (j2_template_lib.route)
         self.reused_from = None      # step 6: the run template whose folder files this run started from
         # J2_ARTIFACT_LIBRARY=1 (artifact-reuse/1): the content door, a document section served from its source run (_route_content)
         self.art_lib = j2_artifact_lib.enabled()
@@ -4672,6 +4718,7 @@ class J2Run:
         # own thread; timing.json doesn't count it.
         if not self.paused:
             self._write_summary()
+            self._save_run_template()      # J2_RUN_TEMPLATES=1: a run that ended workable becomes a run template
         self.feedback = None
         if self.change and not self.paused:      # J2_CHANGE: the change ends with the run it was built in
             self.change["phase"] = "closed"
@@ -5186,8 +5233,24 @@ class J2Run:
         rr, code = w["real_run"], secrets.token_hex(3)
         self.real_runs_asked[w["id"]] = code
         dry = self.real_runs_dry[w["id"]] = real_run_dry(self._out_dir(), rr, builder_timeout())
-        show = lambda k: (f"\n{k.capitalize()} ({len(dry.get(k) or [])}): " + ", ".join((dry.get(k) or [])[:10])
-                          + (" ..." if len(dry.get(k) or []) > 10 else "")) if dry.get(k) else ""
+        show = lambda k, d=dry: (f"\n{k.capitalize()} ({len(d.get(k) or [])}): " + ", ".join((d.get(k) or [])[:10])
+                                 + (" ..." if len(d.get(k) or []) > 10 else "")) if d.get(k) else ""
+        if dry.get("real_changed"):      # the dry run reached the Requester's own folders: stop, never ask, never "0 changed"
+            self.post("system", f"{w['id']}'s dry run changed your real folders, not only the copies, before any "
+                                f"approval.\nCommand: {shlex.join(rr['command'])}" + "".join(
+                                    f"\nIn {f}:" + show("created", x) + show("changed", x) + show("deleted", x)
+                                    for f, x in dry["real_changed"].items())
+                      + "\nThe run stops here: nothing else is run. Check these files.", warning=True, real_run=w["id"])
+            self.real_runs_done[w["id"]] = False
+            with open(os.path.join(self.dir, "receipts.jsonl"), "a", encoding="utf-8") as f:
+                f.write(json.dumps({"type": "real_run", "workflow": w["id"], **rr, "code": code, "approved": False,
+                                    "ran": False, "exit": None, "evidence": dry["evidence"],
+                                    "dry_run": {k: v for k, v in dry.items() if k != "evidence"},
+                                    "t": time.strftime("%Y-%m-%dT%H:%M:%S"), "by": "code"}, ensure_ascii=False) + "\n")
+            self._event("code", "real_run", f"{w['id']}: {dry['evidence']}")
+            self.outcome = f"Stopped: {w['id']}'s dry run changed the Requester's real folders ({dry['evidence']})."
+            self.turn, self.handoff = None, {}
+            return True
         self.post("system", f"{w['id']} wants to run what it built on your own files.\nCommand: {shlex.join(rr['command'])}\n"
                             f"Writes only: {rr['folder']}" + (f"\nReads only: {', '.join(rr['reads'])}" if rr.get("reads") else "")
                             + f"\nWhy: {rr.get('why') or 'not given'}\nWhat it would do, from a {dry['evidence']}"
@@ -7628,7 +7691,25 @@ class J2Run:
                 if c.get("plan") and c.get("severity") != "warn" and c["id"] not in met
                 and not re.search(c["plan"], text, re.I)
                 and (not c.get("key") or (self.goal or {}).get("chain", {}).get(c["key"]))]   # a link needs the earlier document
-        return gaps + self._lld_gaps(wfs)
+        return gaps + self._lld_gaps(wfs) + self._file_gaps(wfs)
+
+    def _file_gaps(self, wfs):
+        """A folder's charter files (the charter-files-present condition's field) that no proposed or registered
+        workflow lists in its outputs, by exact file name (runs/release/j2-20261117-121143, -122859: a file that only
+        a real run could make, so the folder was never workable and the RUN ask never came)."""
+        if not self.folder:
+            return []
+        conds = [c for c in load_conditions(self.out["conditions"], self.out.get("practice", ""))
+                 if c.get("check") == "charter-files-present"]
+        rel = self._out_rel() + "/"
+        live = [w for w in self.workflows if w["status"] in ("registered", "held", "running", "done")]
+        have = {str(o).removeprefix(rel).removeprefix("./") for w in list(wfs) + live
+                for o in (w.get("outputs") if isinstance(w.get("outputs"), list) else [])}
+        return [{"id": f, "text": "a charter file",
+                 "why": f"the charter lists {f}, and no workflow's outputs include it: plan the workflow that writes it. "
+                        "A real run's result is checked from its receipt, never from a file; if only the real run could "
+                        f"make {f}, say so, and Identity takes it out of the charter"}
+                for c in conds for f in charter_list(self.goal, c.get("charter_field")) if f not in have]
 
     def _mock_blueprint_plan(self, crit):
         """Mock Adaptation for a site with an LLD: the scaffold, then one workflow per LLD section; the charter's items
@@ -9493,8 +9574,10 @@ class J2Run:
                  + (f"\nGUIDANCE FOR A {label.upper()} (where it speaks of a reply's sections or code assembling them, "
                     f"write into the files instead):\n{guide}" if guide else "")
                  + self._artifact_context(w))
-        attempt, evidence, r, failed, stop = 0, "", {}, [], None
+        attempt, evidence, r, failed, stop, leak = 0, "", {}, [], None, ""
         reused = self._reuse_folder(w, cwd)
+        if reused and (leak := self._real_path_leak(cwd)):      # reused files that hold a real folder are rebuilt
+            reused, evidence = None, leak
         if reused:      # step 6: the run template's files are already here: code checks them before any builder call
             attempt = 1
             text = self._out_text()
@@ -9523,6 +9606,10 @@ class J2Run:
                 except RuntimeError as e:      # stopped at the time or cost limit, or the CLI failed
                     evidence = f"- your last call was stopped before it finished: {e}"
                     continue
+                leak = self._real_path_leak(cwd)
+                if leak:      # refused before its checks: the reason goes back to the builder
+                    evidence = leak
+                    continue
                 text = self._out_text()
                 self._publish_out(text)
                 failed = self._run_checks(w, attempt, text, folder=cwd)
@@ -9532,6 +9619,8 @@ class J2Run:
                                      f"{x['evidence']}" for x in failed)
         finally:
             self.tools_builder = None
+        if leak and not stop:
+            stop = "its files still hold the Requester's real folder paths: " + leak.removeprefix("- ")
         self.write_lock = self.atom = None
         meta = r if isinstance(r, dict) else {}
         if stop or not self.sites:
@@ -9557,6 +9646,17 @@ class J2Run:
                                 "to Adaptation, which decides whether the check or the build is wrong.")
             return self._handoff("adaptation", kind="atom_failed", wid=fn, atoms=bad, attempt=attempt, owner_note="")
         self._handoff("coordination", kind="schedule")
+
+    def _real_path_leak(self, cwd):
+        """Evidence for the builder when a file in its folder holds a real folder the run's real runs state ("" when
+        none): code refuses that build, since a dry run on copies cannot redirect a path written into a file."""
+        hits = real_paths_in(cwd, real_folders(self.workflows))
+        if not hits:
+            return ""
+        self._event("code", "real_path_in_build", "; ".join(f"{f}: {p}" for f, p in hits))
+        return ("- refused: " + "; ".join(f"{f} holds the Requester's real folder {p}" for f, p in hits)
+                + ". Never write a real folder path into a file, not even as a default: take each folder as a "
+                "command-line argument. Code runs it on copies first by passing the copies' paths.")
 
     def _human_output(self, w, meta, sid):
         """1 to 3 plain sentences saying what the builder built. Code fixes an unusable one itself, with no re-ask
@@ -10577,13 +10677,24 @@ class J2Run:
                 err = str(e)
             except Exception as e:      # the door never blocks a run
                 err = f"{type(e).__name__}: {e}"
-        d = j2_artifact_lib.door(need, rec, src, err, has_key=bool(key and tid), goal=self.goal or {})
+        # a workflow that revises a section or fixes findings is never served an old section (rule rework); a section
+        # is served only when the documents written before it are what the source run had (rule inputs-changed)
+        rework = " and ".join(x for x in (f"it revises {w['revises']}" if w.get("revises") else "",
+                                          "it fixes " + ", ".join(str(f) for f in w["fixes"]) if w.get("fixes") else "") if x)
+        # a source run that did not end workable is never served or drafted from (rule source-not-workable)
+        d = j2_artifact_lib.door(need, rec, src, err, has_key=bool(key and tid), goal=self.goal or {}, rework=rework or None,
+                                 inputs=self._content_inputs(kind),
+                                 workable=ended_workable(saved_dir(src["run"])) if src else None)
         d = {"run": os.path.basename(self.dir), "t": time.strftime("%Y-%m-%dT%H:%M:%S"), "workflow": wid,
              "atom": (w.get("atoms") or [{}])[0].get("id") or "", "artifact": kind, "section": section,
              "run_template": tid, "key": key, "held": False, **d}
         self.content_routes[wid], self.content_sources[wid] = d, src
         self.content_decisions.append(d)
-        if d["door"] == "adapt" and src:
+        now = (self.art_data.get(kind) or {}).get(section)
+        if d.get("rule") == "rework":      # the section the findings were raised on: this run's own, or no draft at all
+            if now is not None:            # (never the source run's section: a fix is not written from another run's text)
+                self.content_draft[wid] = json.dumps(now, ensure_ascii=False, indent=1)
+        elif d["door"] == "adapt" and src:
             try:
                 self.content_draft[wid] = j2_artifact_lib.draft_text(src)
             except Exception as e:      # no draft is better than a draft with the source business's values in it
@@ -10594,6 +10705,22 @@ class J2Run:
 
     def _save_reuse(self):
         self.save("reuse.json", j2_artifact_lib.record(self.content_decisions))
+
+    def _content_inputs(self, kind):
+        """{kind: {ids, sha}} of the documents this run wrote before this one (the PRD for the HLD; the PRD and the HLD
+        for the LLD), as the run holds their data now: what a served section of this document must agree with."""
+        order = [k for k in (self.docset or self.stages or []) if not is_page(k)]
+        before = order[:order.index(kind)] if kind in order else []
+        return {k: j2_artifact_lib.doc_state(self.art_data.get(k)) for k in before if self.art_data.get(k)}
+
+    def _content_findings(self, w):
+        """The Audit findings a workflow fixes, each as Audit last wrote it (what builder_state gives a real run)."""
+        fixes, found = {str(f) for f in w.get("fixes") or []}, {}
+        for a in reversed(self.audits):
+            for r in a["results"]:
+                if r.get("id") in fixes and r["id"] not in found:
+                    found[r["id"]] = {k: r.get(k) for k in ("id", "criterion", "verdict", "severity", "note")}
+        return list(found.values())
 
     def _serve_content(self, w, served, state, kind, section, model, sid, first, attempt):
         """Attempt 1 served from the source section instead of a model call, through the same validate, data and render
@@ -10670,11 +10797,32 @@ class J2Run:
     def _content_draft_text(self, w):
         """The draft a builder starts from (door adapt): the source section with the source business's values slotted."""
         text = self.content_draft.get(w["id"])
+        if (self.content_routes.get(w["id"]) or {}).get("rule") == "rework":      # a fix was asked for: never the old text again
+            return ("\nA FIX WAS ASKED FOR. Write this section again so that every finding below is fixed; a section "
+                    "returned unchanged is not a fix. WHY: " + str(w.get("purpose") or w.get("name") or "")
+                    + "\nFINDINGS TO FIX: " + json.dumps(self._content_findings(w), ensure_ascii=False)
+                    + ("\nTHE SECTION AS IT IS NOW (keep what the findings do not touch, change what they name, and use "
+                       "no fact that is not in FACTS YOU MAY USE):\n```json\n" + text + "\n```" if text else ""))
         if not text:
             return ""
         return ("\nDRAFT (the same section from an earlier finished run, its business's values replaced by <slots>; keep "
                 "what fits these facts, replace the rest, and use no fact that is not in FACTS YOU MAY USE):\n```json\n"
                 + text + "\n```")
+
+    def _save_run_template(self):
+        """J2_RUN_TEMPLATES=1 (default off): a run that ended Done and workable is saved as a run template
+        (j2_template_lib.auto_save_run_template: its own name, once per run, an existing name never replaced), and the
+        chat says so. A stopped, crashed or not-workable run is never saved. A failure is one event, never a stop."""
+        if not run_templates_on() or not (self.outcome or "").startswith("Done") or not ended_workable(self.dir):
+            return
+        try:
+            rt, saved, why = j2_template_lib.auto_save_run_template(self.dir)
+        except Exception as e:      # the library never blocks a run
+            return self._event("system", "run_template", f"not saved: {type(e).__name__}: {e}")
+        if saved:
+            self.post("system", f"Saved run template {rt.name}.", humans_only=True)
+        else:
+            self._event("system", "run_template", f"not saved: {why}")
 
     def _push_run(self):
         """J2_PUSH_RUNS=1 (default off): the finished run folder is committed and pushed, so anyone's shelf has it
@@ -10722,6 +10870,7 @@ class J2Run:
                "agent": "template generator (mock)" if llm.MOCK else f"template generator ({llm.PROVIDER})"}
         if self.run_tpl and auto_reuse_on():      # J2_AUTO_REUSE=1: on a tie the router prefers this run template's own section templates
             ctx["run_template"] = self.run_tpl["id"]
+        ctx["similar"] = self.tpl_similar      # one finding per other business for the whole run (sections with few facts take it)
         self.tpl_cur = {"wid": wid}
         first = self._run_tpl_first(w, kind, section)      # J2_RUN_TEMPLATES=1: the run template's section template first
         try:

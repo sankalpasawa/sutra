@@ -1,0 +1,26 @@
+{
+  "stable": {
+    "id": "stable",
+    "appName": "Sutra Pro",
+    "appId": "os.sutra.pro",
+    "packageName": "sutra-pro-desktop",
+    "dataDirName": ".sutra-pro",
+    "iconName": "sutra-pro-1024.png",
+    "icns": "sutra-pro.icns",
+    "ico": "sutra-pro-windows.ico",
+    "windowsIconName": "sutra-pro-windows-1024.png",
+    "updates": true
+  },
+  "beta": {
+    "id": "beta",
+    "appName": "Sutra Pro Beta",
+    "appId": "os.sutra.pro.beta",
+    "packageName": "sutra-pro-desktop-beta",
+    "dataDirName": ".sutra-pro-beta",
+    "iconName": "sutra-pro-beta-1024.png",
+    "icns": "sutra-pro-beta.icns",
+    "ico": "sutra-pro-windows.ico",
+    "windowsIconName": "sutra-pro-windows-1024.png",
+    "updates": false
+  }
+}

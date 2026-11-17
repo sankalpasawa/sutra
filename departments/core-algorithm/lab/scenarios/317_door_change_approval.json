@@ -1,0 +1,35 @@
+{
+  "schema": "sutra-extension/2",
+  "id": "317_door_change_approval",
+  "goals": [
+    "payout_reconciled",
+    "cheaper_way_approved"
+  ],
+  "methods": [
+    {
+      "id": "door-ask-owner@1",
+      "effect": "cheaper_way_approved",
+      "requires": [
+        "payout_chain_repeated"
+      ],
+      "provider": "owner-channel",
+      "grant": "action:door-ask-owner@1",
+      "cost": {
+        "compute": 0,
+        "money": 0,
+        "attention": 1
+      },
+      "action": "ask",
+      "approved": true,
+      "source": "reviewed/synthetic-method",
+      "ask_to": "owner:lendco",
+      "question": "The last payouts each ran the same three steps. A person wrote one step that does the same for less. May the desk use it from now on?"
+    }
+  ],
+  "providers": {
+    "owner-channel": 2
+  },
+  "grants": [
+    "action:door-ask-owner@1"
+  ]
+}

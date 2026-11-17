@@ -1,0 +1,65 @@
+{
+  "schema": "sutra-extension/2",
+  "id": "315_door_refund_desk",
+  "scope": "lendco/refund-desk",
+  "goals": [
+    "refund_sent"
+  ],
+  "budget": {
+    "compute": 0,
+    "money": 3,
+    "attention": 2
+  },
+  "preference": [
+    "money",
+    "attention",
+    "compute"
+  ],
+  "methods": [
+    {
+      "id": "door-ask-finance@1",
+      "effect": "refund_approved_by_finance",
+      "requires": [
+        "refund_due"
+      ],
+      "provider": "finance-channel",
+      "grant": "action:door-ask-finance@1",
+      "cost": {
+        "compute": 0,
+        "money": 0,
+        "attention": 1
+      },
+      "action": "ask",
+      "approved": true,
+      "source": "reviewed/synthetic-method",
+      "ask_to": "system:lendco/finance",
+      "question": "Loan L-17 was overpaid on instalment 7. May the desk send the refund?"
+    },
+    {
+      "id": "door-send-refund@1",
+      "effect": "refund_sent",
+      "requires": [
+        "refund_due",
+        "refund_approved_by_finance"
+      ],
+      "provider": "refund-desk",
+      "grant": "action:door-send-refund@1",
+      "cost": {
+        "compute": 0,
+        "money": 1,
+        "attention": 0
+      },
+      "action": "simulate_fact",
+      "approved": true,
+      "source": "reviewed/synthetic-method"
+    }
+  ],
+  "providers": {
+    "finance-channel": 2,
+    "refund-desk": 3
+  },
+  "grants": [
+    "action:door-ask-finance@1",
+    "action:door-send-refund@1"
+  ]
+}
