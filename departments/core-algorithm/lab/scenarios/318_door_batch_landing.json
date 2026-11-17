@@ -1,0 +1,89 @@
+{
+  "schema": "sutra-extension/2",
+  "id": "318_door_batch_landing",
+  "scope": "lendco/refund-batches",
+  "goals": [
+    "refund_batch_landed"
+  ],
+  "budget": {
+    "compute": 0,
+    "money": 0,
+    "attention": 0,
+    "runs": 4
+  },
+  "preference": [
+    "runs",
+    "compute",
+    "money",
+    "attention"
+  ],
+  "evidence": [
+    {
+      "predicate": "batch_rehearsed",
+      "truth": "TRUE",
+      "verified": true,
+      "source": "owner:lendco",
+      "version": "batch-2026-11"
+    }
+  ],
+  "rules": [
+    {
+      "id": "R-DOOR-BATCH@1",
+      "head": "refund_batch_landed",
+      "branches": [
+        [
+          "batch_reconciled",
+          "batch_posted"
+        ]
+      ],
+      "approved": true,
+      "source": "the owner: a batch has landed when the reconciliation run passed it and the posting step posted it"
+    }
+  ],
+  "methods": [
+    {
+      "id": "door-run-reconciliation@1",
+      "effect": "batch_reconciled",
+      "requires": [
+        "batch_rehearsed"
+      ],
+      "provider": "script:reconcile",
+      "grant": "action:door-run-reconciliation@1",
+      "cost": {
+        "runs": 1
+      },
+      "action": "handoff",
+      "approved": true,
+      "source": "reviewed/synthetic-method",
+      "handoff_to": "script:reconcile",
+      "instruction": "Run the reconciliation of refund batch 2026-11 and pass it when every refund matches the loan book.",
+      "verified_by": "checker:reconciliation-ledger"
+    },
+    {
+      "id": "door-post-batch@1",
+      "effect": "batch_posted",
+      "requires": [
+        "batch_reconciled"
+      ],
+      "provider": "script:post",
+      "grant": "action:door-post-batch@1",
+      "cost": {
+        "runs": 1
+      },
+      "action": "handoff",
+      "approved": true,
+      "source": "reviewed/synthetic-method",
+      "handoff_to": "script:post",
+      "instruction": "Post refund batch 2026-11 to the general ledger and write the posting log.",
+      "verified_by": "checker:posting-log"
+    }
+  ],
+  "providers": {
+    "script:reconcile": 2,
+    "script:post": 2
+  },
+  "grants": [
+    "action:door-run-reconciliation@1",
+    "action:door-post-batch@1"
+  ]
+}

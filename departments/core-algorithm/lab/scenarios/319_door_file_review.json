@@ -1,0 +1,131 @@
+{
+  "schema": "sutra-extension/2",
+  "id": "319_door_file_review",
+  "scope": "lendco/file-review",
+  "goals": [
+    "loan_file_reviewed"
+  ],
+  "budget": {
+    "compute": 10,
+    "money": 10,
+    "attention": 3,
+    "agent_runs": 8
+  },
+  "preference": [
+    "agent_runs",
+    "compute",
+    "money",
+    "attention"
+  ],
+  "evidence": [
+    {
+      "predicate": "review_handed_over",
+      "truth": "TRUE",
+      "verified": true,
+      "source": "journal:servicing-desk",
+      "version": "loan L-52, try 1"
+    }
+  ],
+  "methods": [
+    {
+      "id": "door-read-loan-file@1",
+      "effect": "loan_file_read",
+      "requires": [
+        "review_handed_over"
+      ],
+      "provider": "agent:file-reviewer",
+      "grant": "action:door-read-loan-file@1",
+      "cost": {
+        "agent_runs": 1
+      },
+      "action": "handoff",
+      "approved": true,
+      "source": "reviewed/synthetic-method",
+      "handoff_to": "agent:file-reviewer",
+      "instruction": "Read the file of loan L-52 and write down what it says.",
+      "verified_by": "checker:review-notes"
+    },
+    {
+      "id": "door-check-instalments@1",
+      "effect": "instalments_checked",
+      "requires": [
+        "loan_file_read"
+      ],
+      "provider": "agent:file-reviewer",
+      "grant": "action:door-check-instalments@1",
+      "cost": {
+        "agent_runs": 1
+      },
+      "action": "handoff",
+      "approved": true,
+      "source": "reviewed/synthetic-method",
+      "handoff_to": "agent:file-reviewer",
+      "instruction": "Check every instalment of loan L-52 against the loan book.",
+      "verified_by": "checker:review-notes"
+    },
+    {
+      "id": "door-check-arrears@1",
+      "effect": "arrears_checked",
+      "requires": [
+        "instalments_checked"
+      ],
+      "provider": "agent:file-reviewer",
+      "grant": "action:door-check-arrears@1",
+      "cost": {
+        "agent_runs": 1
+      },
+      "action": "handoff",
+      "approved": true,
+      "source": "reviewed/synthetic-method",
+      "handoff_to": "agent:file-reviewer",
+      "instruction": "Check whether loan L-52 is in arrears and since when.",
+      "verified_by": "checker:review-notes"
+    },
+    {
+      "id": "door-write-findings@1",
+      "effect": "findings_written",
+      "requires": [
+        "arrears_checked"
+      ],
+      "provider": "agent:file-reviewer",
+      "grant": "action:door-write-findings@1",
+      "cost": {
+        "agent_runs": 1
+      },
+      "action": "handoff",
+      "approved": true,
+      "source": "reviewed/synthetic-method",
+      "handoff_to": "agent:file-reviewer",
+      "instruction": "Write the findings of the review of loan L-52.",
+      "verified_by": "checker:review-notes"
+    },
+    {
+      "id": "door-close-review@1",
+      "effect": "loan_file_reviewed",
+      "requires": [
+        "findings_written"
+      ],
+      "provider": "agent:file-reviewer",
+      "grant": "action:door-close-review@1",
+      "cost": {
+        "agent_runs": 1
+      },
+      "action": "handoff",
+      "approved": true,
+      "source": "reviewed/synthetic-method",
+      "handoff_to": "agent:file-reviewer",
+      "instruction": "Close the review of loan L-52 and file it.",
+      "verified_by": "checker:review-notes"
+    }
+  ],
+  "providers": {
+    "agent:file-reviewer": 1
+  },
+  "grants": [
+    "action:door-read-loan-file@1",
+    "action:door-check-instalments@1",
+    "action:door-check-arrears@1",
+    "action:door-write-findings@1",
+    "action:door-close-review@1"
+  ]
+}

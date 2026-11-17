@@ -1,0 +1,11 @@
+{
+  "id": "163_door_file_review_short",
+  "title": "Five pieces of work for a reviewer with one place",
+  "description": "A lender's desk reviews one loan file in five pieces of work, each handed to one reviewer and checked by the review notes, and its pack gives the reviewer one place. A plan is admitted whole and every hand-over takes a place of its doer, so the look is blocked for want of a place before any work goes out. This case is that one look, which the kernel gives the same way without this version. The recorded sequence doors makes the same look in a journal started as before, whose brief names no doer, and in a journal under the plan door, whose brief names the reviewer, its one place and the five steps that need one each, as the decision-provenance rows of 0.17.0 do for the replayed look.",
+  "packs": [
+    "319_door_file_review"
+  ],
+  "execute": true,
+  "area": "Doors and places",
+  "expected": "PROVIDER_REQUIRED"
+}

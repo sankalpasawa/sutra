@@ -13,7 +13,8 @@ No line of kernel/core.py knows about any of this.
            brief per run (what ran, what it cost, what is pending, who was asked what, the receipts in full, the
            lines the kinds wrote when they settled, the trace root). An entry is enough to act on without the kernel.
   kinds    header (entry 0: the action kinds the State may use, the checkers whose rows the event door lets in, a
-           name, and the head of the journal it continues, if any), pack, event, look, answer, close (the last
+           name, the head of the journal it continues, if any, and since 0.21.0 `door: plan` when its doors read
+           the plan), pack, event, look, answer, close (the last
            entry of a journal that another one continues: it names that journal). A later version that adds a kind
            or a door rule widens this reader; it renames nothing, so an older journal stays what it was.
   doors    add() is the only way in. A body is read through the kernel's own plain() and holds exactly its kind's
@@ -21,6 +22,20 @@ No line of kernel/core.py knows about any of this.
            row is verified, is not a decision and comes from a checker the header names. An answer presents the
            receipt it answers. Every entry runs on a new Kernel. Nothing is sealed when the thing is refused, and a
            State that was changed outside the journal is refused at the next add.
+  plan     (0.21.0-doors) a journal started with door='plan' holds `door: plan` in its header, and its doors then
+           read the plan: the methods the State holds when the row or the look comes. At the event door (whose())
+           each approved method that makes a fact gives it to someone: an ask to the party its question is put to
+           (`ask_to`), a hand-over to the checker it names (`verified_by`), any other step to itself (no row is a
+           step's); a method that is not approved gives it to no one. A row of a checker of a hand-over of the
+           fact is taken only as the check of the try that is out on the fact in its scope, as the hand-over kind
+           keeps it in its books: from the checker that try names, naming its receipt under `checks`. Another row
+           on a fact the plan gives to someone is refused, in words that say to whom, that no work is out, or
+           which try is. A fact no method makes is given to nobody: every checker the header names may state it,
+           as before. And the brief of a run that stopped with want of a place among its stop reasons names,
+           under `short`, each doer that is short: its places, how many the plan needs of it and the steps that
+           need them (_short()).
+           A journal whose header holds no `door` keeps the doors and the briefs it was made under, at add() and
+           at replay alike; one that continues a journal under the plan door is under it too.
   digest   over named views of what a look reads (views), an empty view left out; never over a list of the State's
            field names, so the State may change shape under it. The guard is a mutation test, not a list of names.
   head     {length, sha256}: how many entries, and the hash of the last. It is kept OUTSIDE the journal. replay runs
@@ -74,6 +89,7 @@ KEYS = {'pack': {'pack'}, 'event': {'row', 'execute'}, 'look': {'execute'}, 'ans
 COVERED = ('seq', 'prev_sha256', 'kind', 'body', 'result')   # what an entry's hash covers; `stated` stands beside it
 DEEPEST = 64   # no entry nests deeper: a body is at most 20 levels at its door, a result what the kernel's bound on a receipt allows; the journal's own entries nest 7
 CLOSED = 'its journal is closed and goes on in the journal its last entry names'
+UNDER = 'A journal that continues one under the plan door is under it too: start it with the same door'
 PROCESS_FAULTS = ('Handler failed: RecursionError', 'Handler failed: MemoryError')
 _PLAN_END = ('BLOCK', 'SELECT', 'ADMISSION', 'LOCAL_EFFECT', 'STEP_ALREADY_TRUE', 'STEP_STOPPED')   # the kernel's last line of a plan is one of these; what follows, up to TERMINAL, the kinds wrote when they settled
 _CODE: dict = {}
@@ -189,10 +205,12 @@ def _head(head) -> dict:
 
 
 def _names(body: dict, may: set, said: str) -> None:
-    """What names a journal: its kinds and its checkers (lists of names, none twice) and, where it has one, its name."""
+    """What names a journal: its kinds and its checkers (lists of names, none twice) and, where it has one, its name and
+    its door (0.21.0: `plan`, the one value there is)."""
     strings = lambda v: type(v) is list and all(type(x) is str and x for x in v) and len(set(v)) == len(v)
     if (not {'kinds', 'checkers'} <= set(body) or set(body) - may or not strings(body['kinds']) or not body['kinds']
-            or not strings(body['checkers']) or ('name' in body and (type(body['name']) is not str or not body['name']))):
+            or not strings(body['checkers']) or ('name' in body and (type(body['name']) is not str or not body['name']))
+            or ('door' in body and body['door'] != 'plan')):
         raise ValueError(said)
 
 
@@ -207,7 +225,7 @@ def _door(kind, body) -> dict:
     except ValueError:
         raise ValueError('An entry body is plain data (text, numbers, true, false, null, lists, objects with text keys), at most 19 levels deep and 100000 items') from None
     if kind == 'header':
-        _names(body, {'kinds', 'checkers', 'name', 'continues'}, 'A header holds kinds and checkers (lists of names) and may hold a name and the head it continues')
+        _names(body, {'kinds', 'checkers', 'name', 'continues', 'door'}, 'A header holds kinds and checkers (lists of names) and may hold a name and the head it continues')
         if 'continues' in body:
             _head(body['continues'])
     else:
@@ -223,8 +241,71 @@ def _door(kind, body) -> dict:
             said = 'A closing entry names the journal that continues this one: its kinds and checkers (lists of names) and, if it has one, its name'
             if type(body['next']) is not dict:
                 raise ValueError(said)
-            _names(body['next'], {'kinds', 'checkers', 'name'}, said)
+            _names(body['next'], {'kinds', 'checkers', 'name', 'door'}, said)
     return json.loads(canonical(body))
+
+
+def whose(s: State, row: dict) -> str | None:
+    """The plan door (0.21.0-doors): why the plan does not let this row's source state its fact, or None when it does.
+    The plan is the methods the State holds now. A fact no method makes is given to nobody, and every source the header
+    names may state it. Each approved method that makes a fact gives it to someone: an ask to the party its question is
+    put to, a hand-over to the checker it names, any other step to itself, whose receipt makes it (no row is a step's).
+    A method that is not approved, which the kernel never runs, gives it to no one and still counts as one that makes it.
+    A checker of an approved hand-over of the fact is held to the try first, also when a question on the fact is put to
+    it: its row is taken only as the check of the try that is out on the fact in the row's scope, as the hand-over kind
+    keeps it in its books (State.active_work['handoff']), from the checker that try names, naming its receipt under
+    `checks`. Else the party an approved question on the fact is put to may state it. The words say to whom the plan
+    gives the fact, that no work is out, or which try is."""
+    fact, source = row.get('predicate'), row.get('source')
+    makers = [m for m in s.methods.values() if m['effect'] == fact]
+    if not makers:
+        return None
+    run = [m for m in makers if m.get('approved', True)]   # what the kernel may run
+    checks = [m['id'] for m in run if m['action'] == 'handoff' and m.get('verified_by') == source]
+    if checks:   # a checker of a hand-over of the fact: held to the try that is out, before anything else
+        scope = row.get('scope')
+        out = s.active_work.get('handoff', {}).get(s.key(fact, scope if type(scope) is str else None))
+        if out is None:
+            return ('No work is out on ' + fact + ': ' + source + ' checks it for ' + ' and '.join(checks) + ', and a row of ' + source
+                    + " on it is taken only as the check of a try that is out, naming that try's receipt under checks")
+        if out['checker'] == source and row.get('checks') == out['receipt']:
+            return None   # the check of the try that is out
+        return ('The try out on ' + fact + ' is the receipt ' + out['receipt'] + ' of ' + out['method'] + ', checked by ' + out['checker']
+                + ': a row of ' + source + ' on it is taken only as that check, from ' + out['checker'] + ', naming that receipt under checks')
+    if source in [m.get('ask_to') for m in run if m['action'] == 'ask']:
+        return None   # the party an approved question on the fact is put to: its row is let in as before (an answer is the stamp's)
+    given = ' and '.join('no one through ' + m['id'] + ', which is not approved' if not m.get('approved', True) else
+                         str(m.get('ask_to')) + ', as the answer to the question of ' + m['id'] if m['action'] == 'ask' else
+                         str(m.get('verified_by')) + ', as the check of ' + m['id'] if m['action'] == 'handoff' else
+                         'the step ' + m['id'] + ', whose receipt makes it' for m in makers)
+    return 'The plan gives ' + fact + ' to ' + given + ': a row of ' + str(source) + ' on it is refused at the event door'
+
+
+def _short(s: State, free: dict, runs: list) -> list:
+    """For each run, in the order the runs were made: when the run stopped and want of a place is one of its stop reasons,
+    the doers its gate found short in the plans it turned away (0.21.0-doors, need N3), each as {doer, has, needs, steps}:
+    the provider, the places it had when the gate was asked, how many the plan needs of it (one for each step of the plan it
+    does: a place is a try, and none comes back) and those steps; else nothing. It is the gate's own count
+    (Kernel.admissible), read from the run's ADMISSION lines (the methods of each plan the gate was asked about) and the
+    State's methods; `free` is the providers before the first run, less one place for every receipt, as the kernel pays
+    a step. A doer that is short in two plans of a run is named once for each of them."""
+    free, out = dict(free), []
+    for r in runs:
+        short, stopped = [], 'PROVIDER_REQUIRED' in r['stop_reasons']   # a run that ran, or stopped for other reasons only, names no doer
+        for e in r['trace']:
+            d = e['data']
+            if stopped and e['operation'] == 'ADMISSION' and 'PROVIDER_REQUIRED' in d['blockers']:
+                use = {}
+                for mid in d['methods']:
+                    use.setdefault(s.methods[mid]['provider'], []).append(mid)
+                for doer, steps in use.items():
+                    if free.get(doer, 0) < len(steps):
+                        short.append({'doer': doer, 'has': free.get(doer, 0), 'needs': len(steps), 'steps': steps})
+            elif e['operation'] == 'LOCAL_EFFECT':
+                doer = s.methods[d['receipt']['method']]['provider']
+                free[doer] = free.get(doer, 0) - 1
+        out.append(short)
+    return out
 
 
 class Run:
@@ -293,6 +374,7 @@ class Run:
     def _do(self, kind: str, body: dict):
         """Put one body through its door. Returns what the journal records as the result, and the kernel's own answer."""
         s, kernel, detail = self.state, Kernel(self.state), None   # a new Kernel for every entry: nothing set on an earlier one reaches this one
+        plan, free = self.journal[0]['body'].get('door') == 'plan', dict(s.providers)   # the plan door (0.21.0), from the sealed header; the places before the kernel is asked
         if kind == 'pack':
             if any(p['pack'] == body['pack'].get('id') for p in s.loaded):
                 raise ValueError('A hand-over passes the door once: a pack with the id ' + json.dumps(body['pack'].get('id'), ensure_ascii=False) + ' was already let in')
@@ -302,6 +384,9 @@ class Run:
             row = body['row']
             if row.get('verified') is not True or row.get('final') or row.get('source') not in self.journal[0]['body']['checkers']:   # the checkers are read from the sealed header, nowhere else
                 raise ValueError('The event door lets in only verified rows that are not decisions, from a checker the header names')
+            why = whose(s, row) if plan else None
+            if why:
+                raise ValueError(why)
             detail = kernel.on_event(row, execute=body['execute'])
             result = {'status': detail['status'], 'affected': detail['affected']}
         elif kind == 'look':
@@ -313,11 +398,17 @@ class Run:
         elif kind == 'close':
             if body['next']['kinds'] != self.journal[0]['body']['kinds']:
                 raise ValueError('A journal that continues another names the same action kinds')
+            if 'door' in self.journal[0]['body'] and body['next'].get('door') != self.journal[0]['body']['door']:
+                raise ValueError(UNDER)
             result = {}   # the State is as it was: the journal named here starts from it
         else:
             raise ValueError('A journal has one header, entry 0')
         if detail is not None:
             result['briefs'] = [_brief(r) for r in detail['runs']]
+            if plan:   # 0.21.0-doors (need N3): the doers the gate found short, in the brief of a run that stopped for want of a place
+                for b, short in zip(result['briefs'], _short(s, free, detail['runs'])):
+                    if short:
+                        b['short'] = short
         return dict(result, state=state_digest(s), **_books(s)), detail
 
     def add(self, kind: str, body: dict) -> dict:
@@ -370,17 +461,21 @@ class Run:
         return dict(at)
 
 
-def start(kinds, checkers=(), name: str = '', continues: 'Run | None' = None, keep=None) -> Run:
+def start(kinds, checkers=(), name: str = '', continues: 'Run | None' = None, keep=None, door: str = '') -> Run:
     """A new journal. `kinds` are the action kinds its State may use, `checkers` the sources whose rows the event door
     lets in. `continues` is the run of the journal before it and `keep` where that journal is kept: continuing is a
     write to it. Its closing entry, which names the new journal, is sealed and saved by compare-and-append first; a
     save that is refused (another writer was there) leaves nothing of the new journal. The header then cites that
     head and the new journal starts from a copy of that State, so no journal that has one before it starts from the
-    packs alone. A journal that is closed already is continued only by the journal it names."""
+    packs alone. A journal that is closed already is continued only by the journal it names. `door` is '' (the doors
+    as they were) or 'plan' (0.21.0: the doors read the plan, see whose() and _short()); a journal that continues one
+    under the plan door is under it too: its closing entry is refused otherwise, and nothing is sealed."""
     listed = lambda v: list(v) if type(v) is tuple else v
     body = {'kinds': listed(kinds), 'checkers': listed(checkers)}
     if name:
         body['name'] = name
+    if door:
+        body['door'] = door
     body = _door('header', body)
     if continues is None:
         if keep is not None:
