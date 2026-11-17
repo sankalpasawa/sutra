@@ -2672,6 +2672,27 @@ def save_run_template(rt):
     return rt
 
 
+def auto_save_run_template(run_dir):
+    """The run template of a run that just ended, saved without being asked (j2.py calls this only for a run that
+    ended workable, with J2_RUN_TEMPLATES=1): (run template, saved, why not). The name and the id are
+    run_template_from_run's own ("<business>: <stages>"), stored by save_run_template. Nothing is written, and saved
+    is False, when the library already has a run template made from this run (under any name: that one is returned),
+    when another run already made one of this name (it is never replaced: that one is returned), or when the run has
+    nothing to bundle (None)."""
+    rid = os.path.basename(os.path.abspath(run_dir).rstrip(os.sep))
+    mine = next((r for r in run_template_list() if r.get("made_from_run") == rid), None)
+    if mine:
+        return get_run_template(mine["id"]), False, f"run {rid} is already saved as run template {mine['name']}"
+    try:
+        rt = run_template_from_run(run_dir)
+    except ValueError as e:
+        return None, False, str(e)
+    old = get_run_template(rt.id)
+    if old is not None:
+        return old, False, f"a run template named {old.name} exists, made from run {old.made_from_run}"
+    return save_run_template(rt), True, ""
+
+
 def get_run_template(tid):
     """A stored RunTemplate by id (or by its name), or None."""
     tid = str(tid or "")
