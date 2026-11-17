@@ -85,7 +85,7 @@ def test_a_project_run_never_takes_a_run_template_even_when_one_is_named(j2, mak
 
 
 def host_lines(run_dir):
-    """The run template lines but J2's own "Saved run template <name>." (sync 8, D243: J2 saves a workable run as a run template by itself
+    """The run template lines but J2's own "Saved run template <name>." (sync 8, D244: J2 saves a workable run as a run template by itself
     when run templates are on): what the host or a taken template said."""
     return [line for line in system_lines(run_dir) if "run template" in line.lower() and not line.startswith("Saved run template ")]
 

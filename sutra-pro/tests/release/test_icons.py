@@ -46,6 +46,26 @@ def test_the_windows_icon_holds_every_size_the_shell_asks_for():
     assert sizes == {(s, s) for s in make_icons.ICO_SIZES}
 
 
+def test_the_windows_app_has_its_own_icon_that_the_script_never_derives():
+    """The Windows exe, installer, shortcuts and window carry `sutra-pro-windows.ico` and `sutra-pro-windows-1024.png`: hand-made,
+    committed, and not among what `make_icons.py` derives or writes, so regenerating the old-logo files leaves them alone."""
+    ico_path, png_path = make_icons.WINDOWS_ICON_FILES
+    assert (ico_path, png_path) == (ICONS / "sutra-pro-windows.ico", ICONS / "sutra-pro-windows-1024.png")
+    ico = ico_path.read_bytes()
+    reserved, kind, count = struct.unpack("<HHH", ico[:6])
+    assert (reserved, kind) == (0, 1)
+    sizes = set()
+    for index in range(count):
+        width, height = struct.unpack("<BB", ico[6 + 16 * index:8 + 16 * index])
+        sizes.add((width or 256, height or 256))
+    assert sizes == {(s, s) for s in make_icons.ICO_SIZES}
+    png = png_path.read_bytes()
+    assert png[:8] == PNG and struct.unpack(">II", png[16:24]) == (1024, 1024)
+    derived = set(make_icons.derive((ICONS / "sutra-pro.icns").read_bytes())) if importlib.util.find_spec("PIL") else set()
+    assert not derived & set(make_icons.WINDOWS_ICON_FILES)
+    assert ico != (ICONS / "sutra-pro.ico").read_bytes() and png != (ICONS / "sutra-pro-1024.png").read_bytes()
+
+
 def test_the_window_icon_is_the_256_px_png_of_the_same_picture():
     data = TRAY.read_bytes()
     assert data[:8] == PNG and struct.unpack(">II", data[16:24]) == (256, 256)

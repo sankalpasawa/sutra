@@ -15,15 +15,16 @@ test('the Mac app is Sutra Pro, os.sutra.pro, with the old Sutra\'s icon', async
   assert.equal(options.appVersion, '0.2.0');
   assert.equal(options.buildVersion, '0.2.0');
   assert.ok(options.icon.endsWith(path.join('assets', 'icon', 'sutra-pro.icns')) && fs.existsSync(options.icon), options.icon);
-  assert.ok(options.extraResource.every((file) => fs.existsSync(file)), 'the PNG the window draws its pages with exists');
+  assert.ok(options.extraResource.every((file) => file.endsWith('sutra-pro-1024.png') && fs.existsSync(file)), 'the PNG the window draws its pages with exists');
   assert.equal(options.asar, true);
   assert.equal('win32metadata' in options, false);
 });
 
-test('the Windows app is x64, with the same name and the .ico of the same logo', async () => {
+test('the Windows app is x64, with the same name and its own Windows icon', async () => {
   const { packagerOptions } = await load();
   const options = packagerOptions({ platform: 'win32', arch: 'x64', out: 'out', version: '1.2.3' });
-  assert.ok(options.icon.endsWith(path.join('assets', 'icon', 'sutra-pro.ico')) && fs.existsSync(options.icon));
+  assert.ok(options.icon.endsWith(path.join('assets', 'icon', 'sutra-pro-windows.ico')) && fs.existsSync(options.icon), options.icon);
+  assert.ok(options.extraResource.every((file) => file.endsWith('sutra-pro-windows-1024.png') && fs.existsSync(file)), 'the Windows PNG the window draws its pages with exists');
   assert.equal(options.win32metadata.ProductName, 'Sutra Pro');
   assert.equal(options.win32metadata.OriginalFilename, 'Sutra Pro.exe');
   assert.equal('appBundleId' in options, false);

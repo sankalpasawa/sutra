@@ -9,8 +9,12 @@ square with the gold lotus mark. Nothing is redrawn here:
 
     assets/icon/sutra-pro.icns       the old file, byte for byte (what the Mac app and the DMG carry)
     assets/icon/sutra-pro-1024.png   its 1024 px chunk (`ic10`), byte for byte
-    assets/icon/sutra-pro.ico        that PNG at 16, 24, 32, 48, 64, 128 and 256 px (what the Windows exe, installer and shortcuts carry)
+    assets/icon/sutra-pro.ico        that PNG at 16, 24, 32, 48, 64, 128 and 256 px (kept for the record; the Windows app no longer carries it)
     sutra_app/assets/icon.png        that PNG at 256 px (the window and tray icon of the apps)
+
+NOT derived, never written or checked here: the Windows app's own icon, `assets/icon/sutra-pro-windows.ico` (what the Windows exe,
+installer and shortcuts carry) and `assets/icon/sutra-pro-windows-1024.png` (what the Windows window draws its pages with). They are
+hand-made; regenerating the files above leaves them as they are (WINDOWS_ICON_FILES, pinned by tests/release/test_icons.py).
 
 Outside this repository (an sdist) the old icon is not there; the committed `sutra-pro.icns` is then the source, so the derived files can
 still be checked. With the old icon present, `--check` also fails when `sutra-pro.icns` differs from it: the two products keep one logo.
@@ -29,6 +33,7 @@ ICNS = OUT / "sutra-pro.icns"
 MASTER_PNG = OUT / "sutra-pro-1024.png"
 ICO = OUT / "sutra-pro.ico"
 TRAY = ROOT / "sutra_app" / "assets" / "icon.png"
+WINDOWS_ICON_FILES = (OUT / "sutra-pro-windows.ico", OUT / "sutra-pro-windows-1024.png")     # hand-made; this script never touches them
 OLD_LOGO = ROOT.parent / "marketplace" / "plugin" / "sutra-ui" / "electron" / "build" / "Sutra.icns"
 MASTER_CHUNK = "ic10"                       # the 1024 x 1024 PNG (512 pt at 2x) inside an .icns
 MASTER = 1024
@@ -118,6 +123,8 @@ def main(argv: list[str] | None = None) -> int:
             print(f"stale or missing: {path.relative_to(ROOT)} (derived from {where})")
         return 1 if stale else 0
     for path, data in produced.items():
+        if path in WINDOWS_ICON_FILES:
+            raise AssertionError(f"{path.name} is the Windows app's own icon and is never derived")
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_bytes(data)
         print("wrote", path.relative_to(ROOT), f"({len(data)} bytes)")

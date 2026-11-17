@@ -40,7 +40,7 @@ import urllib.request
 from pathlib import Path
 
 REPO = Path(__file__).resolve().parent.parent
-BASELINE = "ee659fb54aec75bf7f5139516791aee20a0474fa"       # the sutra commit whose `prototypes/j2` the golden is recorded from (sync 8, D243: J2 main)
+BASELINE = "ee659fb54aec75bf7f5139516791aee20a0474fa"       # the sutra commit whose `prototypes/j2` the golden is recorded from (sync 8, D244: J2 main)
 DEFAULT_OUT = REPO / "tests" / "engine" / "golden" / "api_shapes.json"
 SCHEMA = "api-shapes/1"
 

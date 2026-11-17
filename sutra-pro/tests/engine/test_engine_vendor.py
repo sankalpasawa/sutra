@@ -18,7 +18,7 @@ REPO = Path(__file__).resolve().parents[2]
 ENGINE = REPO / "sutra_app" / "engine"
 MD = ENGINE / "VENDORED.md"
 SEED_INDEX = ENGINE / "seed" / "library" / "index.json"
-PIN = "ee659fb54aec75bf7f5139516791aee20a0474fa"          # sync 8 (D243): J2 main, a sutra commit that touched prototypes/j2 (not tagged)
+PIN = "ee659fb54aec75bf7f5139516791aee20a0474fa"          # sync 8 (D244): J2 main, a sutra commit that touched prototypes/j2 (not tagged)
 PIN_TREE = "ddc9a7875b4e4d0d2d6af1d8f8764e1f0ddd2d37"     # `git rev-parse <PIN>:prototypes/j2`
 FILES = 527                                               # what the script builds from that extraction, VENDORED.md included (sync 7)
 CODE = ("j2", "j2_agent", "j2_agent_models", "j2_agent_views", "j2_artifact_lib", "j2_artifact_models", "j2_artifacts", "j2_board", "j2_change",
@@ -125,7 +125,7 @@ def test_vendored_md_names_the_pinned_commit_the_tree_and_the_extraction_recipe(
     """D136: the one source is prototypes/j2 of this repository at a sutra commit and tree id, extracted with git archive."""
     head = MD.read_text(encoding="utf-8").split("## Patches")[0]
     assert f"at the sutra commit `{PIN}` (tree of `prototypes/j2`: `{PIN_TREE}`, J2's main, not tagged)" in head
-    assert "(sync 8, D243)" in head
+    assert "(sync 8, D244)" in head
     assert f"`git archive {PIN} prototypes/j2 | tar -x --strip-components=2 -C <empty folder>`" in head
     assert "the only source of every file below" in head
     assert f"--source <the extraction> --commit {PIN} --check" in head

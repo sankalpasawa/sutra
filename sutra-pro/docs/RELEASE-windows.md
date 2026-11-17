@@ -72,7 +72,7 @@ Repair an old tag: `gh workflow run sutra-pro-release-windows -f tag=sutra-pro-v
 
 | Path | What |
 |---|---|
-| `Sutra Pro.exe` and Electron's files | the window; the exe carries the old Sutra's icon (`assets/icon/sutra-pro.ico`, D117) and the product name `Sutra Pro` |
+| `Sutra Pro.exe` and Electron's files | the window; the exe carries the Windows app's own icon (`assets/icon/sutra-pro-windows.ico`; the Mac keeps the old Sutra's, D117) and the product name `Sutra Pro` |
 | `resources/app.asar` | `desktop/package.json` and `desktop/src` and nothing else |
 | `resources/python/` | python-build-standalone CPython 3.11 (the release pinned in `scripts/build_macos_app.py`, its sha256 checked) with the wheel and its dependencies installed by that interpreter |
 | `resources/build-info.json`, `resources/sutra-pro-1024.png` | what went in; the window's own picture of the logo for its first pages |

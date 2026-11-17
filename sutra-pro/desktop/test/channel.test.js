@@ -27,7 +27,7 @@ test('there are two channels, and the stable one is what every release has alway
 });
 
 test('the beta shares no name with the stable app, so both can be installed and open together', () => {
-  for (const field of ['appName', 'appId', 'packageName', 'dataDirName', 'iconName', 'icns']) {
+  for (const field of ['appName', 'appId', 'packageName', 'dataDirName', 'iconName', 'icns']) {   // the Windows files (ico, windowsIconName) may be shared: a beta is never built for Windows
     assert.notEqual(CHANNELS.beta[field], CHANNELS.stable[field], field);
   }
   assert.equal(CHANNELS.beta.updates, false, 'a beta never updates itself');
@@ -36,6 +36,9 @@ test('the beta shares no name with the stable app, so both can be installed and 
     'neither data folder is inside the other');
   for (const channel of Object.values(CHANNELS)) {
     assert.ok(fs.existsSync(path.join(icons, channel.iconName)) && fs.existsSync(path.join(icons, channel.icns)), `${channel.id} has its icons`);
+    if (channel.id === 'stable') {                     // the Windows files exist for the app that is built for Windows (a beta is a Mac app)
+      assert.ok(fs.existsSync(path.join(icons, channel.windowsIconName)) && fs.existsSync(path.join(icons, channel.ico)), 'the stable app has its Windows icons');
+    }
   }
 });
 

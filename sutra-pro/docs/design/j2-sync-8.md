@@ -1,10 +1,10 @@
 # J2 sync 8 as built: the engine takes J2 main `ee659fb5` (note of record)
 
-_Status: As built on branch `sync-8` · Date: 2026-11-17 · Pin: commit `ee659fb54aec75bf7f5139516791aee20a0474fa`, tree `ddc9a7875b4e4d0d2d6af1d8f8764e1f0ddd2d37` · Page: unchanged (J2's page at the pin equals `133942b1`, ported in sync 7) · Decision D243._
+_Status: As built on branch `sync-8` · Date: 2026-11-17 · Pin: commit `ee659fb54aec75bf7f5139516791aee20a0474fa`, tree `ddc9a7875b4e4d0d2d6af1d8f8764e1f0ddd2d37` · Page: unchanged (J2's page at the pin equals `133942b1`, ported in sync 7) · Decision D244._
 
 ## A. What moved
 
-- **Engine** (`scripts/vendor_j2.py`, D243): 527 files, 11 changed. In from J2 main since `dee83d5c`:
+- **Engine** (`scripts/vendor_j2.py`, D244): 527 files, 11 changed. In from J2 main since `dee83d5c`:
   - Kaivan's reuse fixes (#205) and the review of 17 Nov. A rework is never served an old section; a section is served only when the documents before it match the source run's; another business's template is adapted only above `adapt_min_similarity`; the same job worded anew is reused (rule `j`); a source run that did not end workable is `build`. A workable run is saved as a run template by itself when run templates are on.
   - The dry-run fix (#206). A real run's command must pass every stated folder; a build that holds a real folder path is refused; the real folders are read before and after the dry run, and a change stops the run. Identity's charter lists only files the build produces; a charter file no workflow writes is a plan gap.
 - **Builder tools stay off** (D240). The #206 code is carried, but J2 takes its section path in a live run, so a real run is not offered yet.

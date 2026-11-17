@@ -62,7 +62,7 @@ PORT_SCRIPT = "scripts/port_j2_ui.py"
 LEGACY_DIR = "tests/engine/legacy"
 LEGACY_NAMES = ("j2_flow_test.py", "change_test.py", "realization_test.py", "j2_replay_size.py",
                 "artifact_lib_test.py", "content_door_test.py",      # sync 6 (D190, D192): these two test the content door, which the flow test does not exercise
-                "reuse_fixes_test.py", "auto_save_test.py")          # sync 8 (D243): the reuse fixes and the saved run template, for the same reason
+                "reuse_fixes_test.py", "auto_save_test.py")          # sync 8 (D244): the reuse fixes and the saved run template, for the same reason
 # the folders `vendor_j2.py` manages: a file in one of them that VENDORED.md does not name is stale
 MANAGED = ("sutra_app/engine/agents", "sutra_app/engine/conditions", "sutra_app/engine/artifacts", "sutra_app/engine/templates",
            "sutra_app/engine/seed", "docs/reference/j2")
@@ -172,7 +172,7 @@ _SYNC7_AT = "docs/design/j2-sync-7.md D239 (the fixtures follow the flow test th
 _DRY_RUN_REAL = ("the copy script of run j2-20261117-114654, its real folders as placeholders, that J2's flow test replays for the dry-run fix "
                  "(`dry_run_real_folders`): test data of J2's own script. The legacy copy in tests/engine/legacy/ reads it from SUTRA_J2_CHECKOUT, "
                  "an extraction of this folder, and prints a skip reason without one.")
-_SYNC8_AT = "docs/design/j2-sync-8.md D243 (the fixtures follow the flow test that reads them)"
+_SYNC8_AT = "docs/design/j2-sync-8.md D244 (the fixtures follow the flow test that reads them)"
 
 EXCLUDED: tuple[Exclusion, ...] = (
     Exclusion("studio.py", "older studio", _STUDIO, _STUDIO_AT),

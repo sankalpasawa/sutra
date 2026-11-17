@@ -24,7 +24,7 @@ const APP_NAME = channel.appName;
 const APP_ID = channel.appId;
 const RELEASES_URL = 'https://github.com/sankalpasawa/sutra/releases?q=sutra-pro';
 const PROJECT_ROOT = path.resolve(__dirname, '..', '..');         // sutra-pro/ when the app runs from a checkout
-const ICON_NAME = channel.iconName;
+const ICON_NAME = process.platform === 'win32' ? channel.windowsIconName : channel.iconName;   // the Windows app has its own icon (D243)
 const SELFTEST = process.env.SUTRA_PRO_SELFTEST === '1';
 
 const folder = runtime.dataDir(process.env, os.homedir(), channel.dataDirName);

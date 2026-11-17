@@ -172,7 +172,7 @@ def test_the_sync_6_blocks_read_j2_files_through_the_checkout_never_beside_the_s
 def test_the_content_door_and_reuse_scripts_pass(tmp_path):
     """J2's own `artifact_lib_test.py` (the door's pure logic) and `content_door_test.py` (mock document runs with the flag on), carried
     because the flow test does not exercise `j2_artifact_lib` (D192), and since sync 8 `reuse_fixes_test.py` and `auto_save_test.py` (the
-    reuse fixes and the run template a workable run saves, D243); they import the vendored engine and read J2's committed library
+    reuse fixes and the run template a workable run saves, D244); they import the vendored engine and read J2's committed library
     as the engine's seed library."""
     for name, minimum in (("artifact_lib_test.py", 33), ("content_door_test.py", 44), ("reuse_fixes_test.py", 97), ("auto_save_test.py", 24)):
         res = run_script([name], tmp_path, timeout=300)

@@ -50,8 +50,10 @@ export function packagerOptions({ platform, arch, out, version, channel = 'stabl
     asar: true,
     quiet: true,
     ignore: ignored,
-    extraResource: [path.join(icons, identity.iconName)],         // the window's icon for the pages it draws itself (src/main.js iconPath)
-    icon: path.join(icons, platform === 'darwin' ? identity.icns : 'sutra-pro.ico'),
+    // the window's icon for the pages it draws itself (src/main.js iconPath) and the app's own icon: the Mac files on a Mac, the Windows
+    // files (the woven lotus, D243) on Windows; both named by the channel (src/channels.json)
+    extraResource: [path.join(icons, platform === 'darwin' ? identity.iconName : identity.windowsIconName)],
+    icon: path.join(icons, platform === 'darwin' ? identity.icns : identity.ico),
   };
   if (identity.id !== 'stable') {
     // the package.json inside the app names the channel (src/channel.js reads it) and gives Electron the name its own state follows. The default
