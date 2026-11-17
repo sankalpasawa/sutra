@@ -666,7 +666,8 @@ def real_run_dry(out_dir, rr, timeout):
     folder, the command's paths pointed at the copies, run once in the sandbox (real_run) writing only the copy of
     the folder. What it would do to the folder: {"ran", "exit", "created", "changed", "deleted" (paths in the folder),
     "evidence"}. The copies are removed after. The real folders are read before and after: anything changed there is
-    "real_changed" ({folder: {created, deleted, changed}}), and the evidence says so instead of the copy's counts."""
+    "real_changed" ({folder: {created, deleted, changed}}; {} when none), and the evidence says so instead of the
+    copy's counts. "command": the command as run, on the copies' paths."""
     tmp = tempfile.mkdtemp(prefix=".dryrun-", dir=os.path.dirname(os.path.realpath(out_dir)))
     try:
         roots = [rr["folder"]] + list(rr.get("reads") or [])
@@ -685,16 +686,16 @@ def real_run_dry(out_dir, rr, timeout):
                     break
             return k + eq + v
         before = _tree(copies[0])
-        res = real_run(out_dir, {**rr, "folder": copies[0], "reads": copies[1:], "command": [moved(x) for x in rr["command"]]},
-                       timeout)
+        cmd = [moved(x) for x in rr["command"]]
+        res = real_run(out_dir, {**rr, "folder": copies[0], "reads": copies[1:], "command": cmd}, timeout)
         d = _tree_diff(before, _tree(copies[0]))
         real = {r: x for r in roots if any((x := _tree_diff(real_before[r], _tree(r))).values())}
         counts = ", ".join(f"{len(v)} {k}" for k, v in d.items())
         if real:
-            return {"ran": res.get("ran"), "exit": res.get("exit"), **d, "real_changed": real,
+            return {"ran": res.get("ran"), "exit": res.get("exit"), "command": cmd, **d, "real_changed": real,
                     "evidence": "the dry run changed the real folders, not only the copies: " + "; ".join(
                         f"{r}: " + ", ".join(f"{len(v)} {k}" for k, v in x.items()) for r, x in real.items())}
-        return {"ran": res.get("ran"), "exit": res.get("exit"), **d,
+        return {"ran": res.get("ran"), "exit": res.get("exit"), "command": cmd, **d, "real_changed": {},
                 "evidence": (f"dry run on a copy: exit {res.get('exit')}; {counts}" if res.get("ran") else res["evidence"])}
     finally:
         shutil.rmtree(tmp, ignore_errors=True)

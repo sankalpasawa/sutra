@@ -5047,7 +5047,9 @@ def dry_run_real_folders():
         # (c) the fixed script with its folders as arguments: the dry run passes the copies, the real folders untouched
         open(os.path.join(run._out_dir(), "copy_files.py"), "w").write(fixed)
         dry = j2.real_run_dry(run._out_dir(), good, 60)
-        assert dry["exit"] == 0 and dry["created"] == ["sub/two.txt"] and not dry.get("real_changed"), dry
+        assert dry["exit"] == 0 and dry["created"] == ["sub/two.txt"] and dry["real_changed"] == {}, dry
+        assert dry["command"][:2] == ["python3", "copy_files.py"] and a not in dry["command"] and b not in dry["command"] \
+            and all(".dryrun-" in x for x in dry["command"][2:]), dry["command"]
         assert os.listdir(b) == ["one.txt"] and open(os.path.join(b, "one.txt")).read() == "kept", "the dry run never touches test-B"
         # (d) the run's script and command: the dry run reaches the real test-B; the run stops, shows what changed
         open(os.path.join(run._out_dir(), "copy_files.py"), "w").write(bad)
