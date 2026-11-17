@@ -10811,8 +10811,9 @@ class J2Run:
 
     def _save_run_template(self):
         """J2_RUN_TEMPLATES=1 (default off): a run that ended Done and workable is saved as a run template
-        (j2_template_lib.auto_save_run_template: its own name, once per run, an existing name never replaced), and the
-        chat says so. A stopped, crashed or not-workable run is never saved. A failure is one event, never a stop."""
+        (j2_template_lib.auto_save_run_template: its own name, once per run, the next version when the name exists),
+        and the chat says so. A stopped, crashed or not-workable run is never saved, and a mock run never is. A
+        failure is one event, never a stop."""
         if not run_templates_on() or not (self.outcome or "").startswith("Done") or not ended_workable(self.dir):
             return
         try:
@@ -10820,7 +10821,7 @@ class J2Run:
         except Exception as e:      # the library never blocks a run
             return self._event("system", "run_template", f"not saved: {type(e).__name__}: {e}")
         if saved:
-            self.post("system", f"Saved run template {rt.name}.", humans_only=True)
+            self.post("system", f"Saved run template {rt.name} v{rt.version}.", humans_only=True)
         else:
             self._event("system", "run_template", f"not saved: {why}")
 
