@@ -10582,8 +10582,10 @@ class J2Run:
         # is served only when the documents written before it are what the source run had (rule inputs-changed)
         rework = " and ".join(x for x in (f"it revises {w['revises']}" if w.get("revises") else "",
                                           "it fixes " + ", ".join(str(f) for f in w["fixes"]) if w.get("fixes") else "") if x)
+        # a source run that did not end workable is never served or drafted from (rule source-not-workable)
         d = j2_artifact_lib.door(need, rec, src, err, has_key=bool(key and tid), goal=self.goal or {}, rework=rework or None,
-                                 inputs=self._content_inputs(kind))
+                                 inputs=self._content_inputs(kind),
+                                 workable=ended_workable(saved_dir(src["run"])) if src else None)
         d = {"run": os.path.basename(self.dir), "t": time.strftime("%Y-%m-%dT%H:%M:%S"), "workflow": wid,
              "atom": (w.get("atoms") or [{}])[0].get("id") or "", "artifact": kind, "section": section,
              "run_template": tid, "key": key, "held": False, **d}
