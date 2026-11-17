@@ -103,11 +103,11 @@ def build(work, *, wheel=None, archive=None, **kwargs):
 def test_the_app_folder_has_the_documented_layout(work):
     app = build(work)
     assert app == work / "out" / "Sutra Pro"
-    for name in ("python/python.exe", "python/pythonw.exe", "python/SutraPro.exe", "icon/sutra-pro.ico", "Sutra Pro.cmd",
+    for name in ("python/python.exe", "python/pythonw.exe", "python/SutraPro.exe", "icon/sutra-pro-windows.ico", "Sutra Pro.cmd",
                  "Quit Sutra Pro.cmd", "sutra-pro.cmd", "README.txt", "build-info.json"):
         assert (app / name).is_file(), name
     assert (app / "python" / "SutraPro.exe").read_bytes() == (app / "python" / "pythonw.exe").read_bytes(), "SutraPro.exe is a copy of pythonw.exe"
-    assert (app / "icon" / "sutra-pro.ico").read_bytes() == (ICONS / "sutra-pro.ico").read_bytes()
+    assert (app / "icon" / "sutra-pro-windows.ico").read_bytes() == (ICONS / "sutra-pro-windows.ico").read_bytes(), "the Windows icon (D243), not the derived sutra-pro.ico"
 
 
 def test_the_wheel_is_installed_with_the_tray_extra_by_the_bundled_interpreter(work):
@@ -161,6 +161,7 @@ def test_the_installer_script_uses_the_same_commands_as_the_launchers():
     assert 'Parameters: "-I -X utf8 -m sutra_app.desktop"' in iss, "the Start menu entry runs the desktop module"
     assert 'Parameters: "-I -X utf8 -m sutra_app stop"' in iss, "the Quit entry stops the app the same way"
     assert 'Filename: "{app}\\python\\SutraPro.exe"' in iss and 'Filename: "{app}\\python\\python.exe"' in iss
+    assert "sutra-pro.ico" not in iss.replace("sutra-pro-windows.ico", ""), "every shortcut carries the Windows icon the bundle ships (D243)"
     assert bwa.EXE_NAME == "SutraPro.exe"
 
 
