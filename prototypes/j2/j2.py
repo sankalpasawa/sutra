@@ -10592,8 +10592,9 @@ class J2Run:
         self.content_routes[wid], self.content_sources[wid] = d, src
         self.content_decisions.append(d)
         now = (self.art_data.get(kind) or {}).get(section)
-        if d.get("rule") == "rework" and now is not None:      # the section the findings were raised on: this run's own
-            self.content_draft[wid] = json.dumps(now, ensure_ascii=False, indent=1)
+        if d.get("rule") == "rework":      # the section the findings were raised on: this run's own, or no draft at all
+            if now is not None:            # (never the source run's section: a fix is not written from another run's text)
+                self.content_draft[wid] = json.dumps(now, ensure_ascii=False, indent=1)
         elif d["door"] == "adapt" and src:
             try:
                 self.content_draft[wid] = j2_artifact_lib.draft_text(src)
