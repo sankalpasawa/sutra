@@ -186,7 +186,7 @@ def test_a_turn_phase_failure_fails_the_close_then_abandons(rig):
     assert rig.outcomes() == ["opened", "verify_failed", "abandoned"]
     failed, abandoned = rig.atoms()[1:]
     assert failed["atom"]["attempt"] == 1 and "fewer than 3" in failed["card"]["rows"][1]["text"]
-    assert abandoned["atom"]["reason"] == "verify failed: charter-stamp: fewer than 3 'done when' criteria"
+    assert abandoned["atom"]["reason"].startswith("verify failed: charter-stamp: fewer than 3 'done when' criteria (the ")
     assert abandoned["card"]["label"] == "WORK ATOM ABANDONED" and abandoned["ledger"]["status"] == "verify_failed"
     assert abandoned["ledger"]["verify"] == {"template": "charter-stamp", "exit_code": 1}
     next_turn = rig.good_turn("identity", "approval")                           # the node is free again, the next id follows
@@ -203,7 +203,7 @@ def test_waived_closes_with_the_concern_on_record(rig):
     rig.finish(t)
     closed = rig.atoms()[-1]
     stamp = next(c for c in closed["atom"]["body"]["verify"]["checks"] if c["template"] == "charter-stamp")
-    assert closed["outcome"] == "closed" and stamp["results"][-1]["evidence"] == "WAIVED: fewer than 3 'done when' criteria"
+    assert closed["outcome"] == "closed" and stamp["results"][-1]["evidence"].startswith("WAIVED: fewer than 3 'done when' criteria (the ")
 
 
 def test_recovered_closes_with_what_j2s_code_changed(rig, run_dir):

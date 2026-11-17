@@ -62,6 +62,10 @@
   const PHASE_AT = {reading_chart: 0, consulting_library: 1, planning: 2, applying: 3, handing_off: 3, done: 4};
   const PHASE_SENTENCE = {reading_chart: "Reading the org chart…", consulting_library: "Checking the model library…", planning: "Planning…",
     applying: "Setting up the team…", handing_off: "Handing the request over…", done: ""};
+  // The same moments in everyday words, for the front door at Simple (one line, no engine terms)
+  const PHASE_PLAIN = {reading_chart: "Reading your request…", consulting_library: "Working out who should make it…", planning: "Working out who should make it…",
+    applying: "Setting up your project…", handing_off: "Setting up your project…", done: ""};
+  const LAND_MS = 1600;                    // how long "Your project is set up" shows before a Simple owner is taken to it
   const STATUS_WORDS = {idle: "idle", running: "working", waiting: "waiting", waiting_on_you: "waiting on you", fault: "problem", filed: "done", done_unchecked: "done, not checked",
     left_open: "done, with open items", not_made: "not started"};
 
@@ -84,6 +88,8 @@
     // autoupdate: the "Check for updates automatically" setting (GET /api/ops/update-setting) and the switch's own busy flag and sentence
     auto: null, autoBusy: false, autoMsg: "",
     pillStale: false, pillSeq: 0,          // the org chat's pill is read again when its session may have moved (renderPill)
+    // the front door (front_door.js): the cards being answered, a refusal per card, Done recently opened up, a send from its box, the Raw AI chat note
+    front: {answering: {}, errors: {}, moreDone: false, sent: false, error: "", going: false, held: false, since: 0},
   };
 
   /* ---------------------------------------------------------------- errors in words */
@@ -222,6 +228,7 @@
     S.departmentsLoaded = true;
     renderRail();
     renderChat();
+    renderFront();
     if (S.settings) paintEngine();
   }
 
@@ -231,6 +238,7 @@
     S.needsLoaded = true;
     S.needsAt = Date.now();
     renderNeeds();
+    renderRail();
     renderChat();
   }
 
@@ -345,6 +353,7 @@
     } else {
       changed = ctx.paint(el, root.ChatView.transcript(session, shown, view) + startHtml());
     }
+    renderFrontLatest();
     if (!changed) return;
     follow(el, shown, near);
   }
@@ -565,12 +574,14 @@
     el.hidden = !S.turn.seen || S.turn.phase === "error";
     ctx.paint(el, STAGES.map((x, i) => '<div class="' + (i < at ? "done" : i === at ? "on" : "") + '"><i></i>' + esc(x) + "</div>").join(""));
     $("sstatus").textContent = hasOwn(PHASE_SENTENCE, S.turn.phase) ? PHASE_SENTENCE[S.turn.phase] : "";
+    renderFrontLatest();
   }
 
   // The owner writes. The bubble shows at once (pending, dimmed); the box keeps its text until the server accepts the line, so a refusal (no usable
   // connector, too many waiting) loses nothing.
-  async function send(value, choice) {
-    if (!choice && directOn()) return sendDirect(value);
+  // opts.plan: the front door's box always plans with Sutra, whatever mode the workspace's box was left in.
+  async function send(value, choice, opts) {
+    if (!choice && !(isObj(opts) && opts.plan === true) && directOn()) return sendDirect(value);
     const body = text(value).trim();
     if (body === "" || S.blocked !== "" || (S.sending && !choice)) return false;
     const entry = {serverId: null, msg: {id: "local-" + (++S.localSeq), session_id: ORG, role: "user", who: "user", kind: "text", text: body, card: null,
@@ -764,6 +775,185 @@
         : (n === 0 ? '<span class="none">Nothing needs you right now.</span>' : "")) + lane + limitLines() + offerHtml());
     barBadge();
     renderSwitch();
+    renderFront();
+  }
+
+  /* ---------------------------------------------------------------- the front door (front_door.js; the one-front brief) */
+  // Home has two places: the front door, Attention ("What should we make?", what needs the owner, what just finished) and the workspace, the back
+  // room (Agent Org at ?pane=org; the org chat, the panes and Settings & logs). <html data-place> says which shows; only a deep link (?pane=, ?node=,
+  // ?change=) opens the workspace. The front door always speaks in plain words.
+  const FD = () => root.FrontDoor || null;
+  const place = () => (doc.documentElement.dataset.place === "ws" ? "ws" : "front");
+
+  function setPlace(where) {
+    const p = where === "ws" ? "ws" : "front";
+    doc.documentElement.dataset.place = p;
+    if (p === "front") {                       // back to the front door: drop the workspace's deep link from the address
+      try { if (root.location.search) root.history.replaceState(root.history.state, "", "/"); } catch (e) { /* no history (a stub) */ }
+      try { root.localStorage.removeItem("sutra:home:place"); } catch (e) { /* storage may be blocked */ }
+    }
+    if (p === "ws" && S.graphView && S.graph) protect("graph redraw", () => S.graphView.update(S.graph));       // drawn while hidden: draw it at its size
+    if (p === "front") renderFront();
+    return p;
+  }
+
+  function renderFront() {
+    const fd = FD();
+    if (!fd || !$("front")) return;
+    protect("front door", () => {
+      // every project and what needs the owner: the sidebar, fed from the lists Home reads anyway (no second stream)
+      if (root.ProjectRail && S.departmentsLoaded) root.ProjectRail.set({departments: S.departments, needs: S.needsLoaded ? S.needs : [], heads: S.heads});
+      if ($("fdfaces") && $("fdfaces").childElementCount === 0 && fd.facesHtml) ctx.paint($("fdfaces"), fd.facesHtml());
+      renderFrontLatest();
+      renderAttention();
+    });
+  }
+
+  // Attention: what needs the owner (each card answered in place) and what just finished. A half-typed answer is never torn down by a repaint
+  // (the cards are drawn again on every event and every minute): the paint waits until the owner leaves the box.
+  function renderAttention() {
+    const fd = FD();
+    const el = $("fdattn");
+    if (!fd || !el) return;
+    const active = doc.activeElement;
+    if (active && el.contains(active) && active.matches && active.matches("textarea[data-msg]") && active.value.trim() !== "" &&
+      !S.front.answering[active.dataset.msg] && !hasOwn(S.answers, active.dataset.msg)) { S.front.held = true; return; }
+    S.front.held = false;
+    const st = {needs: S.needs, heads: S.heads, seen: S.seen, departments: S.departments, loaded: S.needsLoaded, answering: S.front.answering,
+      errors: S.front.errors, elapsedMs: S.needsAt ? Date.now() - S.needsAt : 0, moreDone: S.front.moreDone};
+    ctx.paint(el, fd.needsHtml(st));
+    const done = fd.finishedHtml(st);
+    ctx.paint($("fddone"), done);
+    $("fddone").hidden = done === "";
+  }
+
+  // Under the box: after the owner started something here, the org chat's progress sentence and its last word (or the choice it waits on).
+  // Once the work has a home (a team took it), the owner is taken to that team's page by itself, once, after a moment on the card.
+  function renderFrontLatest() {
+    const fd = FD();
+    if (!fd || !$("fdlatest")) return;
+    const words = PHASE_PLAIN;
+    const status = S.front.sent && S.turn.active && hasOwn(words, S.turn.phase) ? words[S.turn.phase] : "";
+    // only what came after this send: an older project's task card must never be where a new project lands
+    const since = S.front.since || 0;
+    const fresh = S.messages.filter(m => !(typeof m.id === "number" && m.id <= since));
+    const st = {show: S.front.sent || S.front.error !== "", status, error: S.front.error, messages: fresh, answers: answersMap(), going: S.front.going};
+    const href = S.front.sent && fd.landing ? fd.landing(st) : "";
+    if (href && place() === "front" && !S.front.going) {
+      S.front.going = true;
+      st.going = true;
+      root.setTimeout(() => {
+        if (place() === "front") root.location.assign(href);
+        else { S.front.going = false; renderFrontLatest(); }
+      }, LAND_MS);
+    }
+    ctx.paint($("fdlatest"), fd.latestHtml(st));
+  }
+
+  async function sendFront() {
+    const box = $("fdbox");
+    const body = text(box.value).trim();
+    if (body === "" || S.sending) return false;
+    S.front.sent = true;
+    S.front.error = "";
+    S.front.going = false;
+    S.front.since = S.lastId;
+    $("fdsend").disabled = true;
+    const ok = await send(body, null, {plan: true});
+    $("fdsend").disabled = false;
+    if (ok) { if (box.value.trim() === body) box.value = ""; }
+    else S.front.error = (S.banner && S.banner.text) || S.blocked || FAILED;
+    renderFrontLatest();
+    return ok;
+  }
+
+  // An answer to a team's question, from its card: to that team's own session (never cs_org), as answerNeeds does from the org chat.
+  async function answerFront(messageId, value) {
+    const body = text(value).trim();
+    const item = S.needs.find(n => isObj(n) && String(n.message_id) === String(messageId));
+    if (!item || body === "" || S.front.answering[item.message_id]) return false;
+    S.front.answering[item.message_id] = true;
+    delete S.front.errors[item.message_id];
+    renderFront();
+    try {
+      let sid = clean(item.session_id);
+      if (sid === "" || sid === ORG) {
+        const dept = await api.get("/api/departments/" + enc(clean(item.dept_id)));
+        sid = isObj(dept) ? clean(dept.session_id) : "";
+      }
+      if (sid === "") throw new Error("This team has no chat to answer in.");
+      await api.post("/api/chats/" + enc(sid) + "/messages", {text: body});
+      S.answers[item.message_id] = body;
+      await fetchNeeds().catch(handleFetchError);
+      return true;
+    } catch (e) {
+      S.front.errors[item.message_id] = e && e.code ? errorWords(e).text : clean(e && e.message) || FAILED;
+      return false;
+    } finally {
+      delete S.front.answering[item.message_id];
+      renderFront();
+    }
+  }
+
+  // Approve or Not now: the approval card's own button, pressed through the org chat (the same path as the card in the chat).
+  async function decideFront(messageId, label) {
+    const id = Number(messageId);
+    if (!Number.isInteger(id) || S.front.answering[id]) return false;
+    S.front.answering[id] = true;
+    delete S.front.errors[id];
+    S.answers[id] = label;
+    renderFront();
+    const ok = await send(label, {message_id: id, option: label});
+    delete S.front.answering[id];
+    if (!ok) S.front.errors[id] = (S.banner && S.banner.text) || FAILED;
+    await fetchNeeds().catch(handleFetchError);
+    renderFront();
+    return ok;
+  }
+
+  function onFrontClick(e) {
+    if (e.target.closest("#fdsend")) { sendFront(); return; }
+    const tryit = e.target.closest("[data-act=fd-try]");
+    if (tryit) { $("fdbox").value = tryit.dataset.text || tryit.textContent; $("fdbox").focus(); return; }
+    const b = e.target.closest("button[data-act]");
+    if (!b || !$("front").contains(b)) return;
+    const act = b.dataset.act;
+    const card = b.closest(".fdcard");
+    if (act === "fd-option") answerFront(b.dataset.msg, "Option " + b.dataset.opt);
+    else if (act === "fd-answer") { const box = card && card.querySelector("textarea[data-msg]"); if (box) answerFront(b.dataset.msg, box.value); }
+    else if (act === "fd-approve" || act === "fd-decline") decideFront(b.dataset.msg, b.dataset.text || (act === "fd-approve" ? "Yes" : "No"));
+    else if (act === "fd-choose") { const id = Number(b.dataset.msg); if (Number.isInteger(id)) { S.answers[id] = b.dataset.text || ""; send(b.dataset.text || b.dataset.option, {message_id: id, option: b.dataset.option || b.dataset.text}).then(renderFrontLatest); } }
+    else if (act === "fd-retry" || act === "retry-task") retryTask(b.dataset.task, b);
+    else if (act === "fd-seen" || act === "headsup-seen") {
+      S.seen[text(b.dataset.task)] = true;
+      if (HV()) protect("seen", () => HV().saveSeen(storage(), S.seen, S.heads));
+      renderNeeds();
+    } else if (act === "fd-more") { S.front.moreDone = true; renderFront(); }
+  }
+
+  // Settings & logs, "Raw AI chat": the viewer (raw_chat.js) lives on a team's page at /d/{team}/raw. It opens for the team working now, else the one
+  // waiting on the owner, else the first team; with no team yet, a sentence says so.
+  function openRawChat() {
+    const teams = (S.departments || []).filter(isObj);
+    const waiting = (S.needs || []).map(n => n && n.dept_id).find(Boolean);
+    const team = teams.find(d => d.live_task_id) || teams.find(d => d.id === waiting) || teams[0];
+    if (team) { root.location.assign("/d/" + enc(team.id) + "/raw"); return team.id; }
+    const note = $("rawchatnote");
+    if (note) { note.textContent = "No team has run yet. The raw AI chat shows every AI call once a team starts work."; note.hidden = false; }
+    return "";
+  }
+
+  function wireFront() {
+    if (!$("front")) return;
+    $("front").addEventListener("click", onFrontClick);
+    $("fdbox").addEventListener("keydown", e => { if (e.key === "Enter" && !e.shiftKey && !e.isComposing) { e.preventDefault(); sendFront(); } });
+    $("front").addEventListener("keydown", e => {
+      const t = e.target;
+      if (t && t.matches && t.matches("textarea[data-msg]") && e.key === "Enter" && !e.shiftKey && !e.isComposing) { e.preventDefault(); answerFront(t.dataset.msg, t.value); }
+    });
+    $("front").addEventListener("focusout", () => root.setTimeout(() => { if (S.front.held) renderAttention(); }, 0));
+    if ($("gofront")) $("gofront").addEventListener("click", () => setPlace("front"));
+    if (root.ProjectRail) protect("project sidebar", () => root.ProjectRail.mount({feed: false}));      // Home feeds it from its own reads
   }
 
   // The tab title count and one desktop notice per new question or problem (chat_attention.js), once both lists have been read: what is
@@ -785,6 +975,13 @@
   // A notice was clicked: the window is in front already; show what it was about.
   function openAttention(item) {
     const ref = isObj(item) && isObj(item.ref) ? item.ref : {};
+    if (place() === "front") {                                                         // the question is answered on its project's page
+      const dept = clean(ref.dept_id) || clean(isObj(item) ? item.dept_id : "");
+      if (ref.kind === "question" && dept) { root.location.assign("/d/" + enc(dept) + "/?view=simple"); return; }
+      const at = doc.getElementById("pr-needs-h") || doc.getElementById("prail");
+      if (at && at.focus) { at.tabIndex = -1; at.focus(); }
+      return;
+    }
     if (ref.kind === "question") { focusCard(ref.message_id); return; }
     if (ref.kind === "approval") {
       selectPane("chat", {focus: false});
@@ -845,9 +1042,11 @@
   function statusWord(status) { return hasOwn(STATUS_WORDS, status) ? STATUS_WORDS[status] : "idle"; }
 
   function renderRail() {
-    const rows = S.departments.filter(isObj).map(d => '<a class="railteam st-' + esc(d.node_status || "idle") + '" href="/d/' + enc(d.id) + '/" data-dept="' + esc(d.id) + '">' +
+    const rows = S.departments.filter(isObj).map(d => '<a class="railteam st-' + esc(d.node_status || "idle") + '" href="/d/' + enc(d.id) + '/?view=detail" data-dept="' + esc(d.id) + '">' +
       '<span class="rtname">' + esc(d.name || d.id) + '</span><span class="rtstat">' + esc(statusWord(d.node_status)) + "</span></a>");
     ctx.paint($("railteams"), rows.length ? rows.join("") : '<p class="railnone">No teams yet. Tell Sutra what you need and a team appears here.</p>');
+    // Agent Org: one card per team (what it does, its agents, its state), each opening the team's agent view
+    if ($("orgteams") && root.OrgChartView && root.OrgChartView.teamCardsHtml && S.departmentsLoaded) ctx.paint($("orgteams"), root.OrgChartView.teamCardsHtml(S.departments, S.needs));
     renderSwitch();
   }
 
@@ -945,7 +1144,7 @@
 
   function ensureChart() {
     if (S.chartView || !root.OrgChartView) return;
-    S.chartView = root.OrgChartView.create($("pane-chart"), {onOpen: openNode, onShow(node) { selectPane("graph", {reveal: true}); if (S.graphView) S.graphView.select(node.id); }});
+    S.chartView = root.OrgChartView.create($("pane-chart"), {quietMarks: !!root.document && root.document.documentElement.dataset.ws === "org", onOpen: openNode, onShow(node) { selectPane("graph", {reveal: true}); if (S.graphView) S.graphView.select(node.id); }});
     S.chartView.setLive(S.live);
     if (S.chart) S.chartView.update(S.chart, S.changes);
     if (S.find) S.chartView.setFind(S.find);
@@ -984,6 +1183,7 @@
     if (pane === "chart") ensureChart();
     if (pane === "settings") openSettings(S.group);
     markRail();
+    doc.querySelectorAll("[data-orgpane]").forEach(b => b.setAttribute("aria-selected", String(b.dataset.orgpane === pane)));
     return pane;
   }
 
@@ -997,7 +1197,7 @@
   /* ---------------------------------------------------------------- appearance and the left bar (J2's logic, keys j2theme and j2bar) */
   function themePref() {
     if (S.theme) return S.theme;
-    try { const p = root.localStorage.getItem("j2theme"); return ["light", "dark", "system"].includes(p) ? p : "dark"; } catch (e) { return "dark"; }
+    try { const p = root.localStorage.getItem("j2theme"); return ["light", "dark", "system"].includes(p) ? p : "light"; } catch (e) { return "light"; }
   }
 
   function themeApply() {
@@ -1572,7 +1772,9 @@
   function deepLink() {
     const q = new root.URLSearchParams(root.location.search);
     const pane = q.get("pane");
-    return {pane: pane === "chart" ? "chart" : (pane === "graph" || q.get("node") ? "graph" : (q.get("change") ? "chart" : "graph")),
+    // ?pane=settings is the sidebar's "Settings & logs"; ?pane=org its "Agent Org" (the org chart, with the team cards above it)
+    if (pane === "org") return {pane: "chart", node: "", change: "", org: true};
+    return {pane: pane === "chart" || pane === "settings" || pane === "chat" ? pane : (pane === "graph" || q.get("node") ? "graph" : (q.get("change") ? "chart" : "graph")),
       node: q.get("node") || "", change: q.get("change") || ""};
   }
 
@@ -1598,7 +1800,7 @@
     const link = deepLink();
     wire();
     wireFind();
-    selectPane(link.pane, {reveal: link.pane !== "graph" || !!link.node, focus: false});
+    selectPane(link.pane, {reveal: link.pane !== "graph" || !!link.node, focus: false, group: link.pane === "settings" ? "appearance" : ""});
     renderProgress();
     renderComposer();
     renderBar();
@@ -1636,6 +1838,7 @@
       if (root.ChatComposer ? root.ChatComposer.sendKey(e) : (e.key === "Enter" && !e.shiftKey && !e.isComposing)) { e.preventDefault(); send($("sbox").value); }
     });
     wireComfort();
+    wireFront();
     $("sbanner").addEventListener("click", e => {
       const b = e.target.closest("button");
       if (!b) return;
@@ -1665,6 +1868,8 @@
       markRail();
     });
     $("gochat").addEventListener("click", () => selectPane("chat"));
+    if ($("gorawchat")) $("gorawchat").addEventListener("click", openRawChat);
+    doc.querySelectorAll("[data-orgpane]").forEach(b => b.addEventListener("click", () => selectPane(b.dataset.orgpane)));
     doc.querySelectorAll("#rail [data-pane]").forEach(b => b.addEventListener("click", () => selectPane(b.dataset.pane, {group: b.dataset.group || ""})));
     doc.addEventListener("click", e => {
       const b = e.target.closest && e.target.closest("[data-themepick]");
@@ -1711,12 +1916,13 @@
     renderNeeds();
     renderRail();
     renderBanner();
+    renderFront();
     if (S.pane === "settings") renderSettings();
   }
 
   const HomePage = {
     boot, loadAll, renderChat, send, answerNeeds, selectPane, renderRail, renderNeeds, onEvent, themeApply, barSet, renderSettings, saveEngine, testConnector,
-    signIn, cancelSignIn, errorWords, poll: pollAll, state: () => S, retryTask,
+    signIn, cancelSignIn, errorWords, poll: pollAll, state: () => S, retryTask, renderFront, setPlace, answerFront, decideFront, sendFront, openRawChat,
   };
   root.HomePage = HomePage;
   const start = () => protect("boot", () => boot().catch(e => { if (root.console) root.console.error("HomePage: boot failed", e); }));

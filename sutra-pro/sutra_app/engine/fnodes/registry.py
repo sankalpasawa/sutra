@@ -22,9 +22,9 @@ check that serves two phases tells them apart by `ev.outcome` (None before the t
 J2's own functions are the oracle. `stamp_check` and `workable_problems` are ports of the vendored `j2.py` code (the parity tests tie
 them to it); `design_problems` and `problems` are `j2_check`'s own functions. What J2 holds as a value is READ from J2, at first use and never when
 this module is imported (J2 reads some of its own constants from the environment when it is imported, and the host sets the environment first;
-D188, rule R-1): the judge gate is `gate()` (`j2_realization.THRESHOLD`), the three regexes are `not_checkable()`, `agent_content()` and
-`user_content()`, the dispute routes are `j2_routes()`. When J2 deletes `NOT_CHECKABLE` (its fix A4, D189) `not_checkable()` fails by name and the
-check that uses it goes with it, in the same change. Four checks read strings J2 posts (`Validator rejected`, the two Priority price
+D188, rule R-1): the judge gate is `gate()` (`j2_realization.THRESHOLD`), the two regexes are `agent_content()` and `user_content()`, the
+dispute routes are `j2_routes()`. J2 deleted `NOT_CHECKABLE` in sync 7 (its group C, D189): `not_checkable()` went with it, and the charter
+stamp counts the form's minimum only. Four checks read strings J2 posts (`Validator rejected`, the two Priority price
 notes, the charter acceptance note, the `Budget n/m used` line): the constants below hold them and the parity tests pin
 each against the vendored source.
 """
@@ -48,7 +48,7 @@ from sutra_app.library.types import clip
 from .evidence import Evidence
 
 __all__ = [
-    "Outcome", "CheckSpec", "CheckRegistry", "REGISTRY", "CheckFn", "CheckArgsError", "UnknownCheck", "gate", "not_checkable",
+    "Outcome", "CheckSpec", "CheckRegistry", "REGISTRY", "CheckFn", "CheckArgsError", "UnknownCheck", "gate", "least_done_when",
     "agent_content", "user_content", "j2_routes", "stamp_check", "workable_problems", "J2_STRINGS",
 ]
 
@@ -60,12 +60,6 @@ def gate() -> float:
     """The plan confidence the judge gate asks for: `j2_realization.THRESHOLD`."""
     from sutra_app.engine import j2_realization
     return j2_realization.THRESHOLD
-
-
-def not_checkable() -> "re.Pattern[str]":
-    """J2's `J2Run.NOT_CHECKABLE`: words a done-when item may not contain (the charter stamp)."""
-    from sutra_app.engine import j2
-    return j2.J2Run.NOT_CHECKABLE
 
 
 def agent_content() -> "re.Pattern[str]":
@@ -87,7 +81,6 @@ def j2_routes() -> Mapping[str, tuple]:
     return j2.ROUTES
 
 
-_QUOTED: Final = re.compile(r"'[^']*'|\"[^\"]*\"|‘[^’]*’|“[^”]*”")
 _FINDING_ID: Final = re.compile(r"F-\d+")
 
 # What J2 posts or writes that the checks read; the parity test finds each fragment in the vendored j2.py
@@ -174,31 +167,27 @@ CheckFn = Callable[[Evidence, tuple[str, ...]], Outcome]
 
 # ---- ports of J2's own code -------------------------------------------------------------------------------------------
 
-def _what(output: Optional[str]) -> str:
-    """How J2's message names what is built: "the <label of the chosen type>" (its label, from the data), "the output" when no type is chosen."""
-    if output:
-        from sutra_app.engine import j2_types
-        if output in j2_types.names():
-            return f"the {j2_types.info(output)['label'].lower()}"
-    return "the output"
+def least_done_when() -> int:
+    """The smallest `min_done_when` of the forms a run can be built in now: a folder form only while builder tools are on (D240)."""
+    from sutra_app.engine import j2_types, llm
+    return min(int(f.get("min_done_when") or 1) for f in j2_types.forms().values() if f.get("output") != "folder" or llm.tools_on())
 
 
 def stamp_check(goal: Optional[Mapping], output: Optional[str] = None) -> tuple[bool, str]:
-    """`J2Run._stamp_check`: (passes, why). The charter has a statement, at least 3 done-when items, and none that depends
-    on the Requester, Audit, verification, approval or launch (quoted text is a label the output shows, not a dependency).
-    `output` is the run's chosen type (J2's `self.output`): it only changes the words of the refusal."""
+    """`J2Run._stamp_check`: (passes, why). The charter has a statement and at least the form's minimum of done-when items
+    (`min_done_when` of the chosen type, from the data). Since J2 sync 7 (group C) whether an item can be checked is Identity's call,
+    judged by Audit, never read from its words. `output` is the run's chosen type (J2's `self.output`); with none chosen yet J2 has
+    no minimum, so `least_done_when()` is used and the refusal names "the output"."""
+    from sutra_app.engine import j2, j2_types
     g = goal or {}
     if not g.get("statement"):
         return False, "goal has no statement"
-    if len(g.get("done_when") or []) < 3:
-        return False, "fewer than 3 'done when' criteria"
-    unquoted = lambda d: _QUOTED.sub("", str(d))
-    bad = [d for d in g["done_when"] if not_checkable().search(unquoted(d))]
-    if bad:
-        what = _what(output)
-        return False, (f"these done-when items can't be checked by reading {what} (they depend on the Requester, "
-                       f"Audit, verification, approval or launch); rephrase them as something {what} shows, and "
-                       "record a fact only the Requester can give in to_be_confirmed: " + json.dumps(bad))
+    if output and output in j2_types.names():
+        need, label = j2.output_def(output)["min_done_when"], j2_types.info(output)["label"].lower()
+    else:
+        need, label = least_done_when(), "output"
+    if len(g.get("done_when") or []) < need:
+        return False, f"fewer than {need} 'done when' criteria (the {label} needs at least {need})"
     return True, "passes code checks"
 
 

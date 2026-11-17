@@ -43,6 +43,9 @@ J2_API = ["state", "runs", "runlist", "changes", "call", "preview", "docs", "map
           "artifacts", "artifacts/tree", "artifacts/groups", "artifact", "agent", "activity", "record", "code", "story", "board", "audits", "refs",
           "timing", "say", "ask", "output", "settings", "reset", "playbooks/clear", "lessons/clear"]
 NOT_FETCHED = {"output"}
+# J2 routes the studio page fetches that the vendored engine does not serve yet (sutra_ctx.js NOT_IN_ENGINE_YET). Empty: the engine serves
+# Run settings' timing (sync 5) and one run template (sync 6), which the studio pin (b2d70b5) asks.
+NOT_IN_ENGINE_YET: set[str] = set()
 EXTERNAL_REF = re.compile(r"""(?:src|href|action|poster|data-src)\s*=\s*["']\s*(?:https?:)?//""", re.IGNORECASE)
 INLINE_SCRIPT = re.compile(r"<script>(.*?)</script>", re.DOTALL)
 # D138: Home and the console keep the style sheet of the previous sync, frozen. The whole file (one comment line of its own, then the old
@@ -129,7 +132,7 @@ CASES = {
     "E13b": ([("no pricing records", 3)], ["no ranking records"]),
     "E13c": ([("No pricing records in this run", 1)], ["No ranking records"]),
     "E13d": ([("Funded, in registration order; Coordination sets the run order", 1)], ["Funded, in the order it ranked them"]),
-    "E19": ([('<div class="slrow"><div class="soutpick" id="soutpick"></div><button type="button" class="sauto" id="sautoland"', 1)],
+    "E19": ([('<div class="slrow"><div class="soutpick" id="soutpick"></div><button type="button" class="screwg" id="slandteam"', 1)],
             ['<div class="slrow"><button', 'id="outsel"', "OUTS", "EFFOUT", "PICKEDOUT"]),
     "E20a": ([("`${SutraCtx.libraryPath}?q=${encodeURIComponent(t.name)}`", 1)], ["`/library?q="]),
     "E20b": ([("const libHref = (art, sec, name, ver) => `${SutraCtx.libraryPath}?open=", 1)], ["`/library?open="]),
@@ -140,10 +143,10 @@ CASES = {
     "E20e": ([("const back = view => `${SutraCtx.pagePath}?${viewRun", 1)], ["const back = view => `/?${viewRun"]),
     "E20f1": ([('data-catgo="${SutraCtx.libraryPath}?view=artifacts${rq}"', 1)], ['data-catgo="/library?view=artifacts']),
     "E20f2": ([('data-catgo="${SutraCtx.libraryPath}?view=templates${rq}"', 1)], ['data-catgo="/library?view=templates']),
-    "E20g": ([('<a class="slink" href="library?view=detail">Template library</a>', 1)], ['href="/library?view=detail"']),
+    "E20g": ([('<a class="slq" href="library?view=detail">Template library</a>', 1)], ['href="/library?view=detail"']),
     "E20h": ([('`<a href="${SutraCtx.pagePath}?run=${encodeURIComponent(x.id)}&view=simple">', 1)], ['`<a href="/?run=']),
     "E20i": ([('location.href = SutraCtx.pagePath + "?view=simple"', 2)], ['location.href = "/?view=simple"']),
-    # E24 (sync 6, D191): the root-absolute URLs J2 added for the shelves and the run templates
+    # E24 (sync 6, D191): the root-absolute URLs J2 added for the shelves and the run templates (E24c and E24f replace the studio pin's E20j and E20k)
     "E24a": ([("const shelfHref = (view, open, extra) => `${SutraCtx.libraryPath}?view=", 1)], ["const shelfHref = (view, open, extra) => `/library"]),
     "E24b": ([('history.replaceState(history.state, "", SutraCtx.libraryPath + "?" + q.toString()', 1)], ['history.replaceState(history.state, "", "/library?"']),
     "E24c": ([('<a href="${SutraCtx.libraryPath}?view=templates&rt=${encodeURIComponent(u.id)}" data-rtlink="1">', 1)],
@@ -283,7 +286,7 @@ def test_the_simple_view_strip_is_above_the_start_page_and_the_output_place_is_i
     sland = sview[sview.index('id="sland"'):]
     row = sland[sland.index('<div class="slrow">'):]
     assert sland.index('id="lform"') < sland.index('id="schips"') < sland.index('<div class="slrow">')      # J2's chips are examples inside the form
-    assert row.index('id="soutpick"') < row.index('id="sautoland"') < row.index('class="slsep"') < row.index('id="slanddetail"')
+    assert row.index('id="soutpick"') < row.index('id="slandteam"') < row.index('id="sautoland"') < row.index('id="slanddetail"')
     assert row.count('id="soutpick"') == 1 and PAGE.count('id="soutpick"') == 1
     studio = PAGE[PAGE.index('<section class="swork"'):PAGE.index('<div id="dview">')]
     assert 'id="soutpick"' not in studio and 'class="steamstrip"' not in studio                         # only the start page and the top of the view carry them
@@ -331,6 +334,8 @@ def test_every_fetch_goes_to_a_j2_route_or_through_artUrl_so_the_wrapper_covers_
         assert route.startswith("/api/"), site
         if route == "/api/library/":                                  # one template version: /api/library/<artifact>/<section>/<slug>/v<N>
             continue
+        if route[len("/api/"):] in NOT_IN_ENGINE_YET:
+            continue
         assert route[len("/api/"):] in J2_API, site
         routes.add(route[len("/api/"):])
     assert routes == set(J2_API) - NOT_FETCHED                       # 34 routes, and never /api/output (output_pick.js posts it)
@@ -360,7 +365,7 @@ def sheets_of(page: str) -> list[str]:
 
 def test_the_team_page_takes_the_regenerated_sheet_and_home_and_the_console_keep_the_frozen_one():
     assert sheets_of("j2_ui.html") == ["j2.css", "sutra-graph.css", "sutra-panel.css"]
-    assert sheets_of("home.html") == ["j2-shell.css", "sutra-graph.css", "sutra-panel.css", "sutra-shell.css"]
+    assert sheets_of("home.html") == ["j2-shell.css", "sutra-graph.css", "sutra-panel.css", "sutra-shell.css", "sutra-front.css", "project_rail.css"]       # + the front door
     assert sheets_of("console.html") == ["j2-shell.css", "sutra-panel.css", "sutra-console.css"]
     for page in ("j2_ui.html", "home.html", "console.html"):
         assert all((UI / "static" / "css" / name).is_file() for name in sheets_of(page)), page
@@ -422,8 +427,8 @@ document.documentElement.dataset.theme = "dark";</script>
 <div id="sview">
   <section class="sland" id="sland" aria-label="Start">
     <form class="sbox" id="lform"><textarea id="lbox"></textarea><div class="sbrow"><div class="schips" id="schips"></div><button class="sgo" id="lsend" type="submit">Start</button></div></form>
-    <div class="slrow"><button type="button" class="sauto" id="sautoland" role="switch" aria-checked="false">Decide for me</button>
-      <span class="slsep" aria-hidden="true"></span><a class="slink" href="/library?view=detail">Template library</a><button type="button" class="slink" id="slanddetail">Detailed view</button></div>
+    <div class="slrow"><button type="button" class="screwg" id="slandteam">Your team</button><button type="button" class="sauto" id="sautoland" role="switch" aria-checked="false">Decide for me</button>
+      <span class="slsep" aria-hidden="true"></span><a class="slq" href="/library?view=detail">Template library</a><button type="button" class="slink" id="slanddetail">Detailed view</button></div>
   </section>
   <section class="swork" id="swork" hidden>
     <div class="sprev" id="sprevbox"><iframe id="sframe" title="Your result"></iframe><iframe id="sframe2" class="next" title="Your result, next version" tabindex="-1" aria-hidden="true"></iframe></div>
@@ -460,7 +465,7 @@ function sFrameSetup(f){
   const d = sDoc(f); if (!d) return;
   if (!d.getElementById("j2s-style")){ const st = d.createElement("style"); st.id = "j2s-style";
     (d.head || d.body).appendChild(st);
-    if (d.querySelector("h2") && !d.querySelector("[class]")){ const fl = d.createElement("link"); fl.rel = "stylesheet"; fl.href = "https://fonts.googleapis.com/css2?family=DM+Sans:opsz,wght@9..40,400;9..40,600&family=Fraunces:opsz,wght@9..144,500;9..144,600&display=swap"; (d.head || d.body).appendChild(fl); } }
+    { const fl = d.createElement("link"); fl.rel = "stylesheet"; fl.href = "https://fonts.googleapis.com/css2?family=Figtree:wght@400;500;600;700&family=Bricolage+Grotesque:opsz,wght@12..96,600;12..96,700&display=swap"; (d.head || d.body).appendChild(fl); } }
 }
 const motionKey = svg => {
   return `j2pos:${(typeof viewRun !== "undefined" && viewRun) || "live"}:${v}`; };

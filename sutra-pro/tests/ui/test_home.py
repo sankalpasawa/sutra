@@ -104,7 +104,7 @@ def test_the_page_loads_only_its_own_files_and_every_one_exists():
         assert (STATIC_DIR / "js" / name).is_file(), name
     for name in sheets:
         assert (STATIC_DIR / "css" / name).is_file(), name
-    assert sheets == ["j2-shell.css", "sutra-graph.css", "sutra-panel.css", "sutra-shell.css"]       # D138: Home keeps the frozen sheet, not the team page's j2.css
+    assert sheets == ["j2-shell.css", "sutra-graph.css", "sutra-panel.css", "sutra-shell.css", "sutra-front.css", "project_rail.css"]       # the front door; D138: Home keeps the frozen sheet, not the team page's j2.css
     assert scripts[0] == "sutra_ctx.js" and scripts[-1] == "home.js"
     assert scripts.index("settings_view.js") < scripts.index("home.js")
     for earlier, later in (("sutra_events.js", "home.js"), ("graph_layout.js", "graph_view.js"), ("chart_marks.js", "orgchart_view.js"),
@@ -171,7 +171,8 @@ def test_home_reads_what_the_design_says_on_load_and_nothing_else(browser, fake)
               "/api/health", "/api/heads-up",
               "/api/chats/cs_org/providers",                   # the model pill of the org chat (ABS-9)
               "/api/limits", "/api/ops/attention",             # the limit line of the strip and the quiet hours (gap routines-limits)
-              "/api/ops/welcome"}                              # whether the first-run card is due (gap welcome-settings)
+              "/api/ops/welcome",                              # whether the first-run card is due (gap welcome-settings)
+              "/api/sections"}                                 # the sidebar's own sections (project_rail.js, SectionsStore)
     assert {p for p, _ in paths if p != "/api/events"} == wanted
     graph = [r for r in fake.log("/api/graph") if r["path"] == "/api/graph"][0]
     assert "level=chart" in graph["query"]
@@ -191,8 +192,9 @@ def test_home_asks_for_the_newest_changes_not_the_first_of_a_long_log(browser, f
 def test_home_boots_with_no_console_error_and_the_rail_shows_its_items(browser, fake):
     load(browser, fake, stage="full")
     assert texts(browser, "#rail > button, #rail .railhead, #rail .railsec > button") == [
-        "Chat", "Workflow graph", "Org chart", "Teams", "Settings", "Appearance", "Connectors", "Limits", "Notifications", "Recurring work", "Engine", "Notes", "About", "Owner"]
-    assert texts(browser, "#goconsole .rtname") == ["Usage and log"] and attrs(browser, "#goconsole", "href") == ["/console"]       # the Owner section's one link
+        "Chat", "Workflow graph", "Org chart", "Teams", "Settings", "Appearance", "Connectors", "Limits", "Notifications", "Recurring work", "Engine", "Notes", "About", "Logs & debug", "Raw AI chatevery AI call of a run, word for word"]
+    assert texts(browser, "#goconsole .rtname") == ["Usage and log"] and attrs(browser, "#goconsole", "href") == ["/console"]       # Logs & debug: Usage and log
+    assert texts(browser, "#gorawchat .rtname") == ["Raw AI chat"]                                                                 # and Raw AI chat
     assert browser.console_errors == []
 
 
@@ -461,7 +463,7 @@ def test_the_rail_lists_the_teams_with_their_status_and_the_panes_switch(browser
     load(browser, fake, stage="full")
     assert texts(browser, "#railteams .railteam .rtname") == ["Web", "Content"]
     assert texts(browser, "#railteams .railteam .rtstat") == ["waiting on you", "idle"]
-    assert attrs(browser, "#railteams .railteam", "href") == ["/d/web/", "/d/content/"]
+    assert attrs(browser, "#railteams .railteam", "href") == ["/d/web/?view=detail", "/d/content/?view=detail"]      # a team's agent view
     assert shown(browser, "#pane-graph") and not shown(browser, "#pane-chart") and not shown(browser, "#pane-settings")
     browser.click('#rail [data-pane="chart"]')
     assert shown(browser, "#pane-chart") and not shown(browser, "#pane-graph")
@@ -566,15 +568,15 @@ def test_the_left_bar_opens_and_closes_and_remembers_on_a_wide_screen(browser, f
 def test_appearance_sets_the_theme_for_both_pages_and_keeps_it(browser, fake):
     load(browser, fake)
     browser.click('#rail [data-pane="settings"][data-group="appearance"]')
-    present(browser, '[data-themepick="light"]')
-    assert browser.js("document.documentElement.dataset.theme") == "dark"                  # dark is the default
-    browser.click('[data-themepick="light"]')
-    assert browser.js("document.documentElement.dataset.theme") == "light"
-    assert browser.js("localStorage.getItem('j2theme')") == "light"                         # J2's key: the team pages read it too
-    assert attrs(browser, "[data-themepick]", "aria-pressed") == ["true", "false", "false"]
+    present(browser, '[data-themepick="dark"]')
+    assert browser.js("document.documentElement.dataset.theme") == "light"                 # light is the default (the studio look of the front door and the team pages)
+    browser.click('[data-themepick="dark"]')
+    assert browser.js("document.documentElement.dataset.theme") == "dark"
+    assert browser.js("localStorage.getItem('j2theme')") == "dark"                          # J2's key: the team pages read it too
+    assert attrs(browser, "[data-themepick]", "aria-pressed") == ["false", "true", "false"]
     browser.reload()
     browser.wait_for("HomePage.state().loaded === true")
-    assert browser.js("document.documentElement.dataset.theme") == "light"
+    assert browser.js("document.documentElement.dataset.theme") == "dark"
     browser.click('#rail [data-pane="settings"][data-group="appearance"]')
     browser.click('[data-themepick="system"]')
     assert browser.js("localStorage.getItem('j2theme')") == "system"

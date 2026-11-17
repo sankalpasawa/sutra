@@ -145,8 +145,8 @@ def test_turn_phase_judges_every_check_on_the_whole_turn():
 def test_turn_phase_failure_names_the_failing_check_in_the_reason():
     rnd = RUNNER.round(opened(), intake_buffer(TWO_ITEMS), "turn", 12, outcome=TurnOutcome(result="ok", messages=[2]))
     failing = {r.name: r.result for r in rnd.failing}
-    assert "charter-stamp" in failing and failing["charter-stamp"].evidence == "fewer than 3 'done when' criteria"
-    assert "charter-stamp: fewer than 3 'done when' criteria" in rnd.reason
+    assert "charter-stamp" in failing and failing["charter-stamp"].evidence.startswith("fewer than 3 'done when' criteria (the ")
+    assert "charter-stamp: fewer than 3 'done when' criteria (the " in rnd.reason
 
 
 def test_results_are_numbered_by_the_next_close_run_and_a_fourth_run_is_refused():
@@ -202,7 +202,7 @@ def test_real_checks_close_recovered_and_waived_through_the_runner():
     waived.add_message({"id": 9, "who": "identity", "text": "x", "next": "adaptation"})
     rnd = RUNNER.round(opened(), waived, "turn", 12, outcome=TurnOutcome(result="ok"))
     stamp = next(r for r in rnd.runs if r.name == "charter-stamp")
-    assert stamp.passed and stamp.result.evidence == WAIVED + "fewer than 3 'done when' criteria" and stamp.outcome.waived
+    assert stamp.passed and stamp.result.evidence.startswith(WAIVED + "fewer than 3 'done when' criteria (the ") and stamp.outcome.waived
 
     schedule = opened("coordination", "schedule", workflows=[{"id": "W-1", "status": "registered"}])
     buf = TurnBuffer(turn=turn("coordination", "schedule"), before={"workflows.json": [{"id": "W-1", "status": "registered"}]})

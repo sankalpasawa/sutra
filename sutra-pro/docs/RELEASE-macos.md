@@ -97,6 +97,9 @@ every Mach-O file in the app, found by what it is and not by its name, must carr
   archive instead of downloading one. Sign it ad hoc with `scripts/sign_desktop_app.sh "build/Sutra Pro.app"`, or with a Developer ID in the keychain:
   `SIGN_IDENTITY="Developer ID Application: ..." SIGN_TIMESTAMP=none scripts/sign_desktop_app.sh "build/Sutra Pro.app"` (no timestamp: it needs the network).
   Prove it: `scripts/py scripts/prove_desktop_app.py --app "build/Sutra Pro.app" --version X.Y.Z` (`--keep DIR` keeps the picture and the logs).
+- The beta app (D242): `scripts/py scripts/install_app.py beta` builds the wheel of the working tree, runs this builder with `--channel beta`
+  (`Sutra Pro Beta.app`, bundle id `os.sutra.pro.beta`, data `~/.sutra-pro-beta`, its own icon, `build-info.json` with `channel` and `build`), signs it ad hoc, proves it,
+  and installs it into `/Applications` beside Sutra Pro. Nothing of it is uploaded. See "One Mac, two apps" in `docs/RELEASE.md`.
 - Run the window from a checkout, on the checkout's own Python: `cd desktop && npm ci && npm start` (`SUTRA_PRO_PYTHON` names another interpreter; see `desktop/README.md`).
 - The interpreter pin: `PBS_TAG` and `PY_SERIES` in `scripts/build_macos_app.py` choose the release and the 3.11 patch; the archive is checked against the
   release's `SHA256SUMS`, and against `PINNED_SHA256` once a digest is listed there. The desktop builder uses the same table.

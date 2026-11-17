@@ -388,11 +388,14 @@ ok(rv._atom_problems(e2) == [] and e2["atoms"][0]["constraints"] == edit["atoms"
 cnt_goal = {"goal": "learn-puzzles.json holds 8 valid practice starts, one per technique",
             "verification": [{"text": "The file exists", "type": "file-exists", "target": "learn-puzzles.json", "expect": True}]}
 DOCT = j2.DOC_CHECK_TYPES + ("file-exists",)
-ok(j2.check_problems(cnt_goal, "", DOCT) and not j2.check_problems(cnt_goal, "", DOCT, ranges=True),
+# engine port (J2 sync 7): since J2 aebddc0b ("four word rules become fields") a count in the goal is no fact on either path, so J2's own
+# first half (`check_problems(cnt_goal, "", DOCT)` is not empty) fails at dee83d5c in J2's run too; the half this check is named for is kept
+ok(not j2.check_problems(cnt_goal, "", DOCT, ranges=True),
    "'8 practice starts' needs no facts-present in realization runs (140419 learn-practice-puzzles)")
 for g in ("Show the price ₹250 per class", "Open 7:30 am to 9 pm", "Write to hi@cafe.in", "Call +91 98765 43210",
           "Early bird until 15 Aug", "10% off"):
-    ok(j2.check_problems({**cnt_goal, "goal": g}, "", DOCT, ranges=True), f"a fact in the goal still needs a check: {g}")
+    # engine port (J2 sync 7): no word of the goal is read since aebddc0b; a fact needs a check when the item it covers has exact facts
+    ok(j2.check_problems({**cnt_goal, "goal": g}, "", DOCT, ranges=True, rules={"facts": True}), f"a fact in the goal still needs a check: {g}")
 neg = {"how": {"steps": "Remove the #solution-store string"}, "constraints": [], "verification": [
     {"text": "No run of 10 or more digits in #solution-store", "type": "element-count", "target": "#solution-store", "expect": 0}]}
 ok(j2.check_problems(neg, "", j2.CHECK_TYPES) and not j2.check_problems(neg, "", j2.CHECK_TYPES, ranges=True),

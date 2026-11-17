@@ -84,14 +84,14 @@ function transitioned(value) {
 const J2_SHEET = "j2.css";
 const J2_RECORDED = {
   all: ["#sview .sback span { transition: all .3s }", "#sview .sjdone { transition: all .8s }", "#sview .sjdot { transition: all .4s }"],
-  layout: ["@keyframes slrise animates filter", "#sview .sbox transitions box-shadow", "#sview .sgo transitions box-shadow", "#sview .srlist a transitions box-shadow",
-    "#sview .stop .shome,#sview .stop .stheme transitions box-shadow", "@keyframes sping animates box-shadow", "@keyframes sping animates box-shadow",
-    "@keyframes sping2 animates box-shadow", "@keyframes sping2 animates box-shadow", "#sview .sbar i transitions width", "#sview .stop .sbtn transitions box-shadow",
-    "#sview .stop .sauto transitions box-shadow", "#sview .smate transitions box-shadow", "#sview .sstep transitions box-shadow", "@keyframes sblur animates filter",
-    "#sview .sframe transitions box-shadow", "#sview .sprev iframe transitions width", "#sview .smbar>i>i transitions width", "#sview .spart transitions box-shadow",
+  // the studio pin b2d70b5 (the owner's restored design) dropped eleven of the sync-4 studio's box-shadow and filter transitions and makes Go's
+  // hover a filter: the list went from thirty to twenty
+  layout: ["#sview .sgo transitions filter", "@keyframes sping animates box-shadow", "@keyframes sping animates box-shadow",
+    "@keyframes sping2 animates box-shadow", "@keyframes sping2 animates box-shadow", "#sview .sbar i transitions width", "@keyframes sblur animates filter",
+    "#sview .sprev iframe transitions width", "#sview .smbar>i>i transitions width", "#sview .spart transitions box-shadow",
     "@keyframes sblurin animates filter", "#sview .sdesk transitions box-shadow", "@keyframes sload animates left", "@keyframes sload animates left",
     "#sview .sartc transitions box-shadow", "#sview .sprog .fill transitions width", "#sview .qcard .own input transitions box-shadow",
-    "#sview .qcard .pri transitions filter", "#sview .stoast transitions filter", "#dview .dcol transitions margin-right", ".chatfab transitions right"],
+    "#sview .qcard .pri transitions filter", "#dview .dcol transitions margin-right", ".chatfab transitions right"],
 };
 
 // every `transition: all` (and `transition-property: all`) and every layout property that a sheet transitions, animates or announces with will-change

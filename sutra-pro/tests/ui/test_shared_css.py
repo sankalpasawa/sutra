@@ -32,7 +32,7 @@ sys.modules.setdefault("port_j2_ui", port)
 _spec.loader.exec_module(port)
 
 WORD = re.compile(r"-?[A-Za-z_][\w-]*")
-SHELL_FAMILY = ("j2-shell.css", "sutra-graph.css", "sutra-panel.css", "sutra-shell.css", "sutra-console.css")
+SHELL_FAMILY = ("j2-shell.css", "sutra-graph.css", "sutra-panel.css", "sutra-shell.css", "sutra-console.css", "sutra-front.css", "project_rail.css")      # sutra-front.css: Home's front door; project_rail.css: the project sidebar (Home links it, team pages add it from dept_ext.js)
 TEAM_FAMILY = ("j2.css", "sutra-graph.css", "sutra-panel.css", "sutra-shell.css", "sutra-console.css")
 FAMILY = {"home.html": SHELL_FAMILY, "console.html": SHELL_FAMILY, "j2_ui.html": TEAM_FAMILY}
 # The five classes of D138: used by Home, styled by the frozen sheet and by no Sutra sheet.

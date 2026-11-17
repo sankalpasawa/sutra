@@ -398,6 +398,7 @@ class Browser:
         self._requests: dict[str, tuple[str, str]] = {}
         self._load = threading.Event()
         self._theme_script: str | None = None
+        self._place_script: str | None = None
         self.dialogs: list[dict] = []  # alert, confirm and prompt boxes the page opened (all are accepted)
 
     # -- life cycle ---------------------------------------------------------------------------------------------------
@@ -683,6 +684,16 @@ class Browser:
         source = f"try {{ localStorage.setItem({json.dumps(THEME_KEY)}, {json.dumps(theme)}); }} catch (e) {{}}"
         self._theme_script = self._send("Page.addScriptToEvaluateOnNewDocument", {"source": source})["identifier"]
         self._send("Emulation.setEmulatedMedia", {"features": [{"name": "prefers-color-scheme", "value": scheme}]})
+
+    def set_place(self, place: str = "front") -> None:
+        """Home's place for the next page that opens: `front` (Attention, the front door) or `ws` (the workspace: sutra:home:place, the back room
+        the older tests drive). Takes effect on the next `goto` or `reload`."""
+        if place not in ("front", "ws"):
+            raise ValueError(f"place must be front or ws, not {place!r}")
+        if self._place_script is not None:
+            self._send("Page.removeScriptToEvaluateOnNewDocument", {"identifier": self._place_script})
+        source = f"try {{ localStorage.setItem('sutra:home:place', {json.dumps(place)}); }} catch (e) {{}}"
+        self._place_script = self._send("Page.addScriptToEvaluateOnNewDocument", {"source": source})["identifier"]
 
     def set_size(self, width: int, height: int) -> None:
         if not (isinstance(width, int) and isinstance(height, int) and 100 <= width <= 5000 and 100 <= height <= 5000):

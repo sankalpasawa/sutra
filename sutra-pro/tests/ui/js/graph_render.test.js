@@ -643,7 +643,7 @@ test("the tooltip, and the label spoken to a screen reader, follow the design: '
   assert.equal(one(root, "g.wnode[data-id=web.adaptation]").attrs["aria-label"], "Adaptation, Strategist, idle. Open chat.");
   assert.equal(one(root, "g.wnode[data-id=web]").attrs["aria-label"], "Web, team, waiting on you. Open chat.");
   assert.equal(one(root, "g.wnode[data-id=s-web]").attrs["aria-label"], "Coffee shop landing page, step, running now. Open chat.");
-  assert.equal(one(root, "g.wnode[data-id=root]").attrs["aria-label"], "Root, running now. Go to the org chat.", "the word 'root' is not said twice");
+  assert.equal(one(root, "g.wnode[data-id=root]").attrs["aria-label"], "Your org, running now. Go to the org chat.", "the top is the owner's org, and the word 'root' is not said");
   const idle = drawing(hand([box("x", "step", {label: "Quotes"}), box("y", "division", {label: "Division"})]), {uid: "t"});
   assert.equal(one(idle, "g.wnode[data-id=x]").attrs["aria-label"], "Quotes, step. Open chat.", "idle has no word of its own on a step");
   assert.equal(one(idle, "g.wnode[data-id=y]").attrs["aria-label"], "Division. Open chat.");
@@ -655,7 +655,7 @@ test("view.action and view.title replace the end of the label and the name of th
   const root = drawing(sampleLayout(), {uid: "t", title: "Org chart", action: "Select."});
   assert.equal(root.attrs["aria-label"], "Org chart");
   assert.equal(one(root, "g.wnode[data-id=web]").attrs["aria-label"], "Web, team, waiting on you. Select.");
-  assert.equal(one(root, "g.wnode[data-id=root]").attrs["aria-label"], "Root, running now. Select.");
+  assert.equal(one(root, "g.wnode[data-id=root]").attrs["aria-label"], "Your org, running now. Select.");
   for (const bad of [undefined, null, "", "  ", 5, {}]) {
     const r = drawing(sampleLayout(), {uid: "t", title: bad, action: bad});
     assert.equal(r.attrs["aria-label"], typeof bad === "number" ? "5" : "Graph");

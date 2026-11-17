@@ -31,6 +31,8 @@ SYNC4_ADDED = {"judge", "auto_label"}
 # J2 1adb8ecd (sync 6): run templates, auto-reuse and the content door post lines only the humans read (`humans_only`), say which run
 # template a line is about (`run_template`) and which door a section took (`content_door`)
 SYNC6_ADDED = {"humans_only", "run_template", "content_door"}
+# J2 dee83d5c (sync 7): the workflows Coordination named ready now, and a planned real run's question
+SYNC7_ADDED = {"ready_now", "real_run"}
 
 USER_LINE = {"id": 1, "t": "12:48:35", "who": "user", "step": 0,
              "text": "A one-page website for Brew Lab, a small specialty coffee shop in Indiranagar, Bengaluru."}
@@ -65,8 +67,8 @@ def deep(levels: int):
 # ---- MessageMeta --------------------------------------------------------------------------------------------------
 
 def test_the_key_set_is_the_design_list_plus_what_the_scan_of_j2_found_since():
-    assert set(META_KEYS) == SECTION_10 | SCAN_ADDED | SYNC4_ADDED | SYNC6_ADDED
-    assert len(META_KEYS) == len(set(META_KEYS)) == 65
+    assert set(META_KEYS) == SECTION_10 | SCAN_ADDED | SYNC4_ADDED | SYNC6_ADDED | SYNC7_ADDED
+    assert len(META_KEYS) == len(set(META_KEYS)) == 67
     assert set(MessageMeta.model_fields) == set(META_KEYS)
 
 

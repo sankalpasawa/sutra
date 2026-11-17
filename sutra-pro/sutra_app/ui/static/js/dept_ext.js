@@ -22,6 +22,9 @@
                           not edited for it. It also adds chart_notes.js, the Chart notes under the Org chart tab's log: gap package chart-insight.)
      DeptExt.drawers()    mounts #nodepanel once. The panel and J2's Agent drawer exclude each other in both directions (the panel closes the Agent
                           drawer when it opens and closes itself when the Agent drawer opens: node_panel.js); mounting it is what makes that true.
+     (init also adds project_rail.js and its sheet: the sidebar of every page, mounted once the script has loaded; and ONE button, #agentview:
+                          "Agent view" in the studio (it opens J2's detailed view, the team's agents at work) and "Simple view" there (back to the
+                          studio). It sits at the right of the studio's top bar, and at the foot of the sidebar in the agent view.)
      DeptExt.state()      {started, tab, live, mounted: {graph, orgchart}, fetches: {graph, chart}, panel}
      DeptExt.helpers      pure parts: touchesDept, bannerText, titleText.
 
@@ -201,6 +204,18 @@
     return true;
   }
 
+  /* ---- the Raw AI chat debugger (raw_chat.js): /d/{team}/raw opens it full screen (Settings & logs links there);
+     J2's page is not edited, so its script is added from here */
+  function rawChat() {
+    const d = doc();
+    if (!d || !d.head || d.getElementById("raw_chat-js")) return false;
+    const tag = d.createElement("script");
+    tag.id = "raw_chat-js";
+    tag.src = "/ui/js/raw_chat.js";
+    d.head.appendChild(tag);
+    return true;
+  }
+
   function openNode(node) {
     const panel = drawers();
     if (!panel || !isObj(node) || clean(node.id) === "") return;
@@ -353,16 +368,91 @@
     return false;
   }
 
+  /* ---- the project sidebar (project_rail.js): every project, what needs the owner, New project and Settings & logs. J2's page is not edited:
+     its script is added from here and mounts itself into the page once it has loaded. */
+  function rail() {
+    const d = doc();
+    if (!d || !d.head || d.getElementById("project_rail-js")) return false;
+    const css = d.createElement("link");             // before the script runs, so the column does not flash unstyled
+    css.rel = "stylesheet";
+    css.href = "/ui/css/project_rail.css";
+    d.head.appendChild(css);
+    // the sections store first (the sidebar's own groups), then the sidebar, which mounts once it has loaded
+    const add = (id, src, then) => { const tag = d.createElement("script"); tag.id = id; tag.src = src; tag.addEventListener("load", then); tag.addEventListener("error", then); d.head.appendChild(tag); };
+    add("sections_store-js", "/ui/js/sections_store.js", () => add("project_rail-js", "/ui/js/project_rail.js", () => {
+      if (root.ProjectRail) safely("ProjectRail.mount", () => root.ProjectRail.mount({}));
+      place();
+    }));
+    return true;
+  }
+
+  /* ---- the one view button: "Agent view" in the studio, "Simple view" in J2's detailed view. J2's own setView does the switching. */
+  const viewLabel = studio => (studio ? "Agent view" : "Simple view");
+
+  function viewSwitch() {
+    const d = doc();
+    if (!d || !d.body || byId("agentview")) return null;
+    const btn = d.createElement("button");
+    btn.type = "button";
+    btn.className = "pv-btn";
+    btn.id = "agentview";
+    const paint = () => {
+      const studio = d.body.classList.contains("simple");
+      const label = viewLabel(studio);
+      if (btn.textContent !== label) btn.textContent = label;
+      btn.title = studio ? "See the team's agents at work" : "Back to the simple view of your project";
+    };
+    btn.addEventListener("click", e => {
+      e.stopPropagation();                         // the studio's own click handlers (the button sits in #sview) never see it
+      const to = d.body.classList.contains("simple") ? "detail" : "simple";
+      // the next turn: the button moves out of the studio's bar when the view changes, so the click has to be over first
+      root.setTimeout(() => { if (typeof root.setView === "function") safely("setView", () => root.setView(to, true)); }, 0);
+    });
+    if (typeof root.MutationObserver === "function") new root.MutationObserver(paint).observe(d.body, {attributes: true, attributeFilter: ["class"]});
+    paint();
+    place(btn);
+    return btn;
+  }
+
+  // In the studio the switch sits at the right of its top bar (before the theme button); in the Detailed view it floats at the top right.
+  function place(box) {
+    const d = doc();
+    const el = box || byId("agentview");
+    if (!d || !d.body || !el) return;
+    const bar = d.querySelector("#sview .stop");
+    const studio = d.body.classList.contains("simple") && bar;
+    const side = d.getElementById("pr-settings");        // the project sidebar's foot, once project_rail.js has mounted it
+    el.classList.remove("pv-float", "pv-inrail");
+    if (studio) {
+      const before = bar.querySelector("#stheme2");
+      if (el.parentNode !== bar) bar.insertBefore(el, before || null);
+    } else if (side) {                                   // the Detailed view: at the foot of the sidebar, clear of the page's own pill and chat
+      if (el.nextSibling !== side) side.parentNode.insertBefore(el, side);
+      el.classList.add("pv-inrail");
+    } else {
+      if (el.parentNode !== d.body) d.body.appendChild(el);
+      el.classList.add("pv-float");
+    }
+  }
+
   /* ---- start */
   function init() {
     if (S.started) return false;
     S.started = true;
+    // the template library is a Detailed page of its own (a tool, not a project view): it keeps J2's full width, with no sidebar and no switch
+    const library = !!(ctx() && typeof ctx().onLibrary === "function" && ctx().onLibrary());
+    if (!library) rail();
+    if (!library) viewSwitch();
+    if (typeof root.MutationObserver === "function" && doc() && doc().body) {
+      new root.MutationObserver(() => place()).observe(doc().body, {attributes: true, attributeFilter: ["class"]});
+    }
     chip();
     title();
     drawers();
     pickers();
     attention();
     insight();
+    rawChat();
     const d = doc();
     if (d && typeof d.addEventListener === "function") {
       d.addEventListener("sutra:tab", e => onTab(isObj(e && e.detail) ? e.detail.name : ""));
@@ -393,7 +483,7 @@
   const DeptExt = {
     init, chip, title, onTab, events, drawers, destroy,
     state: () => ({started: S.started, tab: S.tab, live: S.live, mounted: mounted(), fetches: Object.assign({}, S.fetches), panel: S.panel !== null, archived: S.archived}),
-    helpers: {touchesDept, bannerText, titleText},
+    helpers: {touchesDept, bannerText, titleText, viewLabel},
   };
 
   if (typeof module === "object" && module !== null && module.exports) {

@@ -23,7 +23,6 @@ STOPWORDS = frozenset(
     "had has have her his how i if in into is it its me my no not of on one or our out over should so some that the "
     "their them then there these they this those to too us was we were what when where which who whom why will with "
     "would you your yours".split())
-DUPLICATE_SHARE = 0.6      # 60% or more of a new question's content words already in an answered one: refused
 
 
 def enabled():
@@ -48,22 +47,6 @@ def new_entry(entry_id, asked_by, atom, to, about, question, cycle, attempt, ask
 def content_words(text):
     """The words a question is about: lowercase, stopwords and single letters removed, in order."""
     return [w for w in re.findall(r"[a-z0-9]+", str(text or "").lower()) if len(w) > 1 and w not in STOPWORDS]
-
-
-def duplicate_of(question, entries):
-    """The id of the answered entry that already answers this question (DUPLICATE_SHARE or more of the new
-    question's content words appear in that entry's question), or None. Code refuses a duplicate: the asker is
-    pointed at the board instead."""
-    words = content_words(question)
-    if not words:
-        return None
-    for e in entries or []:
-        if e.get("status") != "answered":
-            continue
-        have = set(content_words(e.get("question")))
-        if sum(w in have for w in words) / len(words) >= DUPLICATE_SHARE:
-            return e.get("id")
-    return None
 
 
 def write(run_dir, board):

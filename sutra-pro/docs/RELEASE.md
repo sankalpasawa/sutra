@@ -23,7 +23,46 @@ installed apps read `/releases/latest`. So a tag of this product never starts wi
 
     https://github.com/sankalpasawa/sutra/releases/download/sutra-pro-vX.Y.Z/<asset>
 
+## One Mac, two apps: the beta and the release (D242)
+
+A change is **tried** in a beta app that is built from the working tree and lives on one Mac only; a **release** is published on GitHub and the published artifacts are
+what get installed. Both apps are installed at once:
+
+| | Sutra Pro | Sutra Pro Beta |
+|---|---|---|
+| from | a release on GitHub | the working tree of a checkout, never published |
+| app, bundle id | `/Applications/Sutra Pro.app`, `os.sutra.pro` | `/Applications/Sutra Pro Beta.app`, `os.sutra.pro.beta` |
+| data | `~/.sutra-pro` | `~/.sutra-pro-beta` |
+| updates itself | yes, from signed releases (Updates below) | never |
+| icon | the logo | the logo with an orange BETA band (`scripts/make_beta_icon.py`) |
+
+    scripts/py scripts/install_app.py beta              # build the beta from this tree, prove it starts, install it, open it (a few minutes)
+    scripts/py scripts/install_app.py status            # what is installed, what runs, on which port, where the data is
+    scripts/py scripts/release.py                       # publish the next patch release on GitHub, then install it as Sutra Pro
+    scripts/py scripts/install_app.py release [TAG]     # install a release somebody else published (default: the newest stable tag)
+
+The two share no name a second copy could collide on (`desktop/src/channels.json` is the one place: the app, the packager and the builder read it), so they open
+side by side, each with its own server on the first free port from 8780 and its own single-instance lock. A build's channel is written into the `package.json` inside
+the app when it is packaged (`node scripts/package.mjs ... --channel beta`) and is read from nowhere else; there is no setting and no environment variable that
+makes a stable app use the beta's data folder. A beta never checks for updates (Check for Updates says so); its Settings page still shows the automatic-check
+switch, which does nothing there. The beta is a Mac app: Windows and Linux have none.
+
+The beta's data folder starts empty (a fresh first run, which is what a change to the first run needs). To try a change against a copy of the real data, which only the
+owner decides: quit both apps, remove `~/.sutra-pro-beta`, run `cp -R ~/.sutra-pro ~/.sutra-pro-beta`, and open the beta. The stable folder is only read; the beta works on
+its copy, and deleting `~/.sutra-pro-beta` at any time starts it over.
+
+`install_app.py` never quits an app that is working: with an engine run or a reply in progress it stops with exit status 3 and names what runs (`--force` quits it
+anyway; nothing is ever killed with SIGKILL). `beta` replaces only the beta; `release` replaces only Sutra Pro and the `sutra-pro` command and checks the DMG's
+SHA-256, bundle id, version and seal first. Nothing here touches `~/.sutra-pro`.
+
+`scripts/release.py` is the list below as one command (`--dry-run` says what it would do). It needs `docs/release-notes/X.Y.Z.md` (a few plain lines starting
+`### What is new in X.Y.Z`), a clean tree with `origin/main` merged in, and it stops at the first thing wrong: the version already tagged (it names the
+`install_app.py release` command instead), the release workflows changed since the last release (a beta tag first, see below), a red or missing `sutra-pro-ci` run on
+the commit it would tag, a `main` that moved, a failed release run, a missing asset, a release marked Latest. The tag is never moved or deleted.
+
 ## Cut a release
+
+`scripts/release.py` does 1 to 4 and 6 of this list and checks the result. By hand:
 
 1. Tag only a commit whose `sutra-pro-ci` run is green. The release workflows build and verify the artifacts; they do not run the test gate again.
 2. Set the version to `X.Y.Z` (plain integers) in `pyproject.toml`, `sutra_app/__init__.py` and `desktop/package.json` (`npm version X.Y.Z --no-git-tag-version` in
@@ -36,6 +75,8 @@ installed apps read `/releases/latest`. So a tag of this product never starts wi
    A beta of the same target version is `sutra-pro-vX.Y.Z-beta.1`, `sutra-pro-vX.Y.Z-beta.2`, ... `pyproject.toml` stays at `X.Y.Z` for the betas
    and for the stable tag that promotes them. Betas are published as pre-releases.
 4. Watch the three runs. When every job is green the release page carries all the assets.
+5. Put the release notes in front of the release text (the workflows write the download table; `gh release edit <tag> --notes-file <file> --latest=false`, with the notes
+   followed by the existing text) and install the published release here: `scripts/py scripts/install_app.py release <tag>`.
 
 Run one again for a tag that exists (a failed leg, a bad asset): dispatch from the tag's own ref, so the tree is the tag's tree. A re-run
 replaces the assets of that release.

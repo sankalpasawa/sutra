@@ -71,7 +71,7 @@ def test_expected_json_records_the_pin_and_the_minimums():
     assert set(EXPECTED) == {"j2_commit", "j2_flow_test_sha256", "legacy_flow_test_sha256", "flow_fast_ok_lines",
                              "flow_fast_ok_lines_with_extraction", "change_checks", "realization_checks", "skip_lines_with_extraction",
                              "known_upstream_failures"}
-    assert EXPECTED["j2_commit"] == "1adb8ecd8fa8eef47fb7a0fc63a1616f556cdfeb"
+    assert EXPECTED["j2_commit"] == "dee83d5c565fe7d82631a4f7eb555543160a6d41"
     assert EXPECTED["j2_commit"] in VENDORED_MD.read_text(encoding="utf-8"), "the scripts and the vendored engine are the same J2"
     assert re.fullmatch(r"[0-9a-f]{64}", EXPECTED["j2_flow_test_sha256"]) and re.fullmatch(r"[0-9a-f]{64}", EXPECTED["legacy_flow_test_sha256"])
     assert EXPECTED["known_upstream_failures"] == ["map_focus", "graph_map", "warm_ui"]
@@ -123,6 +123,27 @@ def test_every_j2_block_of_sync_6_is_defined_called_and_guarded():
         assert re.search(rf"(?m)^def {name}\(", text), (name, "defined")
         assert re.search(rf"(?m)^\s+{name}\(\)\s*(#.*)?$", main), (name, "called by the main flow")
     for name in J2_SYNC6_SKIPPABLE:
+        assert f'"{name}"' in wrapped, (name, "reads J2's own files: it needs `skippable`")
+
+
+# The J2 blocks that came with sync 7 (main dee83d5c: Disha's remove-restrictions #202 and group C #203). The five that read J2's own files
+# (the run-blockers fixtures, the folder-run fixture, J2's server and page) sit in the `skippable` list; `agent_tools_cli` is the engine
+# port's own block on the shim (builder tools off live, D240).
+J2_SYNC7_BLOCKS = ("coordination_ready_now", "dependency_names", "item_kinds_and_about", "supersede_and_markers", "declared_not_words",
+                   "sandbox_off_default", "run_blockers_batch1", "run_blockers_batch2", "run_blockers_batch3", "agent_tools_cli", "agent_form",
+                   "general_path", "missing_capabilities", "one_artifact_view", "folder_types_named", "guesses_warn", "builder_tools_call",
+                   "run_for_real", "real_run_checks", "real_run_order", "grant_and_question_kind", "folder_run_reused")
+J2_SYNC7_SKIPPABLE = ("sandbox_off_default", "one_artifact_view", "run_for_real", "run_blockers_batch1", "run_blockers_batch2",
+                      "run_blockers_batch3", "folder_run_reused")
+
+
+def test_every_j2_block_of_sync_7_is_defined_called_and_guarded():
+    text = (LEGACY / "j2_flow_test.py").read_text(encoding="utf-8")
+    wrapped = text[text.index("for _name in ("):text.index("globals()[_name] = skippable")]
+    for name in J2_SYNC7_BLOCKS:
+        assert re.search(rf"(?m)^def {name}\(", text), (name, "defined")
+        assert len(re.findall(rf"\b{name}\(", text)) >= 2, (name, "called by the main flow or by another block")
+    for name in J2_SYNC7_SKIPPABLE:
         assert f'"{name}"' in wrapped, (name, "reads J2's own files: it needs `skippable`")
 
 

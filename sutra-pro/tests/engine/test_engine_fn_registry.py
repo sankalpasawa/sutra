@@ -25,7 +25,7 @@ from pydantic import ValidationError
 from sutra_app.engine.fnodes import evidence as evidence_module
 from sutra_app.engine.fnodes import registry as registry_module
 from sutra_app.engine.fnodes.evidence import RECORD_NAMES, Evidence, merge_records, read_records
-from sutra_app.engine.fnodes.registry import (J2_STRINGS, REGISTRY, CheckArgsError, agent_content, gate, j2_routes, not_checkable, user_content,
+from sutra_app.engine.fnodes.registry import (J2_STRINGS, REGISTRY, CheckArgsError, agent_content, gate, j2_routes, user_content,
                                                Outcome, UnknownCheck, stamp_check, workable_problems)
 from sutra_app.library.atom import CHECK_NAMES, REGISTRY_CHECKS, check_arity
 
@@ -358,10 +358,12 @@ def run(j2, tmp_path, llm_reset):
     return lambda: j2.J2Run(run_dir=tmp_path / "runs" / f"j2-20261104-1000{next(counter):02d}-7f3a")
 
 
-def test_the_three_regexes_are_j2s_own_read_from_j2_not_copied(j2):
-    """D188 (R-1): equal by construction, so no character-for-character parity is kept; the registry hands back J2's own objects."""
-    for mine, theirs in ((not_checkable(), j2.J2Run.NOT_CHECKABLE), (agent_content(), j2.AGENT_CONTENT), (user_content(), j2.USER_CONTENT)):
+def test_the_two_regexes_are_j2s_own_read_from_j2_not_copied(j2):
+    """D188 (R-1): equal by construction, so no character-for-character parity is kept; the registry hands back J2's own objects (J2 deleted
+    NOT_CHECKABLE in sync 7, and the registry's reader of it went with it)."""
+    for mine, theirs in ((agent_content(), j2.AGENT_CONTENT), (user_content(), j2.USER_CONTENT)):
         assert mine is theirs
+    assert not hasattr(j2.J2Run, "NOT_CHECKABLE")
 
 
 def test_the_registry_reads_j2_at_first_use_and_not_when_it_is_imported():
@@ -373,7 +375,7 @@ def test_the_registry_reads_j2_at_first_use_and_not_when_it_is_imported():
             "import sutra_app.engine.fnodes.registry as r\n"
             "assert 'sutra_app.engine.j2' not in sys.modules and 'sutra_app.engine.j2_realization' not in sys.modules, 'imported with the module'\n"
             "assert r.gate() == 0.8 and 'sutra_app.engine.j2_realization' in sys.modules\n"
-            "assert r.not_checkable().search('Audit passes') and 'sutra_app.engine.j2' in sys.modules\n")
+            "assert r.agent_content() is not None and 'sutra_app.engine.j2' in sys.modules\n")
     done = subprocess.run([sys.executable, "-c", code], capture_output=True, text=True, timeout=120,
                           env={**os.environ, "PYTHONPATH": os.pathsep.join(p for p in sys.path if p)})
     assert done.returncode == 0, done.stderr
@@ -392,21 +394,26 @@ STAMP_GOALS = [
 @pytest.mark.parametrize("goal", STAMP_GOALS, ids=lambda g: json.dumps(g)[:50])
 def test_stamp_check_equals_j2s_stamp_check(j2, goal):
     """With no type chosen, and with each type of the data (J2 names what is built by the type's label; the check reads `turn.stage`)."""
-    for output in (None, *j2.j2_types.names()):
-        stand_in = types.SimpleNamespace(goal=goal, NOT_CHECKABLE=j2.J2Run.NOT_CHECKABLE, output=output)
+    for output in j2.j2_types.names():
+        stand_in = types.SimpleNamespace(goal=goal, output=output, out=j2.output_def(output))
         assert stamp_check(goal, output) == j2.J2Run._stamp_check(stand_in), output
+    # with no type chosen J2 has no minimum (it never stamps before a type); the smallest form minimum is used
+    from sutra_app.engine.fnodes.registry import least_done_when
+    least = least_done_when()
+    assert least == 3
+    assert stamp_check(goal, None)[0] == bool(goal and goal.get("statement") and len(goal.get("done_when") or []) >= least)
 
 
 def test_the_charter_stamp_names_what_is_built_by_the_stage_type(j2):
-    goal = {"statement": "s", "done_when": ["a", "b", "Requester signs off"]}
+    goal = {"statement": "s", "done_when": ["a"]}
     name = next(n for n in j2.j2_types.names() if j2.is_page(n))
     ev = build_evidence("charter-stamp", {"turn": {"function": "identity", "kind": "intake", "stage": name},
                                           "reply": {"enough": True}, "records": {"goal.json": goal}, "saved": ["goal.json"]})
     why = REGISTRY.run("charter-stamp", ev, ()).evidence
-    assert f"reading the {j2.j2_types.info(name)['label'].lower()}" in why
+    assert f"the {j2.j2_types.info(name)['label'].lower()} needs at least" in why
     bare = build_evidence("charter-stamp", {"turn": {"function": "identity", "kind": "intake"}, "reply": {"enough": True},
                                             "records": {"goal.json": goal}, "saved": ["goal.json"]})
-    assert "reading the output" in REGISTRY.run("charter-stamp", bare, ()).evidence
+    assert "the output needs at least" in REGISTRY.run("charter-stamp", bare, ()).evidence
 
 
 def _row(i, verdict="PASS", **kw):

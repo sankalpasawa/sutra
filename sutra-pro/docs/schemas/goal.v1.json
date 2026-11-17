@@ -74,6 +74,17 @@
           "title": "Core Items",
           "type": "array"
         },
+        "date_rules": {
+          "default": [],
+          "items": {
+            "maxLength": 600,
+            "minLength": 1,
+            "type": "string"
+          },
+          "maxItems": 200,
+          "title": "Date Rules",
+          "type": "array"
+        },
         "done_when": {
           "items": {
             "maxLength": 600,
@@ -116,6 +127,27 @@
           "title": "Dropped Reasons",
           "type": "array"
         },
+        "email_updates": {
+          "anyOf": [
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Email Updates"
+        },
+        "exact_facts": {
+          "default": [],
+          "items": {
+            "$ref": "#/$defs/ExactFact"
+          },
+          "maxItems": 200,
+          "title": "Exact Facts",
+          "type": "array"
+        },
         "facts": {
           "default": [],
           "items": {
@@ -137,6 +169,19 @@
           "maxItems": 40,
           "title": "Features",
           "type": "array"
+        },
+        "item_kinds": {
+          "additionalProperties": {
+            "maxLength": 60,
+            "minLength": 1,
+            "type": "string"
+          },
+          "propertyNames": {
+            "maxLength": 600,
+            "minLength": 1
+          },
+          "title": "Item Kinds",
+          "type": "object"
         },
         "kind": {
           "const": "doc",
@@ -284,6 +329,37 @@
       "title": "DroppedReason",
       "type": "object"
     },
+    "ExactFact": {
+      "additionalProperties": false,
+      "description": "The stored form of the same mark, keyed by the item TEXT (None when Identity named no item that the charter has).",
+      "properties": {
+        "fact": {
+          "maxLength": 300,
+          "minLength": 1,
+          "title": "Fact",
+          "type": "string"
+        },
+        "item": {
+          "anyOf": [
+            {
+              "maxLength": 600,
+              "minLength": 1,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Item"
+        }
+      },
+      "required": [
+        "fact"
+      ],
+      "title": "ExactFact",
+      "type": "object"
+    },
     "JsonValue": {},
     "SiteGoal": {
       "additionalProperties": false,
@@ -341,6 +417,17 @@
           "title": "Core Items",
           "type": "array"
         },
+        "date_rules": {
+          "default": [],
+          "items": {
+            "maxLength": 600,
+            "minLength": 1,
+            "type": "string"
+          },
+          "maxItems": 200,
+          "title": "Date Rules",
+          "type": "array"
+        },
         "done_when": {
           "items": {
             "maxLength": 600,
@@ -383,6 +470,27 @@
           "title": "Dropped Reasons",
           "type": "array"
         },
+        "email_updates": {
+          "anyOf": [
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Email Updates"
+        },
+        "exact_facts": {
+          "default": [],
+          "items": {
+            "$ref": "#/$defs/ExactFact"
+          },
+          "maxItems": 200,
+          "title": "Exact Facts",
+          "type": "array"
+        },
         "facts": {
           "default": [],
           "items": {
@@ -393,6 +501,19 @@
           "maxItems": 60,
           "title": "Facts",
           "type": "array"
+        },
+        "item_kinds": {
+          "additionalProperties": {
+            "maxLength": 60,
+            "minLength": 1,
+            "type": "string"
+          },
+          "propertyNames": {
+            "maxLength": 600,
+            "minLength": 1
+          },
+          "title": "Item Kinds",
+          "type": "object"
         },
         "kind": {
           "const": "site",

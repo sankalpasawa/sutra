@@ -183,6 +183,8 @@
   }
 
   /* ---------------------------------------------------------------- the fetch wrapper for J2's own calls */
+  const NOT_IN_ENGINE_YET = [];      // empty since the engine serves /api/timing (sync 5) and /api/run-template (sync 6)
+  const pathOf = url => (isRootRelative(url) ? URL_PARTS.exec(url)[1] : "");
   function methodOf(init) {
     const m = init?.method;
     return typeof m === "string" && m !== "" ? m.toUpperCase() : "GET";
@@ -232,6 +234,13 @@
     if (!win || typeof win.fetch !== "function" || win.fetch.sutraWrapped === true) return false;
     const original = win.fetch;
     const wrapped = function sutraFetch(input, init) {
+      // A J2 route the studio page asks that the vendored engine does not serve yet is answered "not here" in place, so the page shows its own
+      // empty state and the browser logs no 404. The list is empty while the engine serves every route the page asks.
+      const asked = pathOf(input);
+      if (NOT_IN_ENGINE_YET.includes(asked) && typeof root.Response === "function") {
+        return Promise.resolve(new root.Response('{"error":{"code":"not_in_engine","message":"This engine version does not record this yet."}}',
+          {status: 404, headers: {"Content-Type": "application/json"}}));
+      }
       const token = tokenOf();
       const signed = token !== "" && isRootRelative(input) && needsToken(methodOf(init));
       const first = original.call(win, withDept(input), signed ? withToken(init, token) : init);
@@ -344,6 +353,19 @@
       /* no document to search (a stub, node), or a frame that cannot be read */
     }
   }
+
+  /* ---------------------------------------------------------------- a project opens in its studio */
+  // J2 remembers the last view (j2view) for every team at once, so a plain /d/<team>/ link could open in the agent view. A team page with no ?view=,
+  // no ?tab= and no #hash is its studio: j2view says simple before J2's script reads it. ?view=detail (Agent Org's links) and a deep link are kept.
+  function studioByDefault() {
+    if (boot.page !== "dept" || onLibrary()) return;      // the template library is a detailed page of its own
+    try {
+      const q = new root.URLSearchParams(root.location.search);
+      if (q.has("view") || q.has("tab") || (root.location.hash && root.location.hash.length > 1)) return;
+    } catch (e) { return; }                                // no location (node, a stub)
+    try { root.localStorage.setItem("j2view", "simple"); } catch (e) { /* storage may be blocked */ }
+  }
+  studioByDefault();
 
   Object.assign(ctx, {run: run, esc: esc, paint: paint, tab: tab, api: api, installFetch: installFetch, withDept: withDept,
     onLibrary: onLibrary, J2_PATHS: J2_PATHS, ApiError: ApiError});

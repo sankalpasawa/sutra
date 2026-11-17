@@ -95,8 +95,8 @@ test("J2's page script can declare its own top-level names after it (no lexical 
 test("the public surface is exactly the one the design lists", () => {
   const { SutraCtx } = load(browser());
   assert.deepEqual(Object.keys(SutraCtx).sort(),
-    ["ApiError", "J2_PATHS", "api", "boot", "currentTab", "dept", "esc", "installFetch", "libraryPath", "onLibrary", "pagePath", "paint", "run", "tab",
-      "withDept"]);
+    ["ApiError", "J2_PATHS", "api", "boot", "currentTab", "dept", "esc", "installFetch", "libraryPath", "onLibrary",
+      "pagePath", "paint", "run", "tab", "withDept"]);
   assert.deepEqual(Object.keys(SutraCtx.api).sort(), ["del", "get", "post", "put"]);
   for (const name of ["run", "esc", "paint", "tab", "installFetch", "withDept", "onLibrary"]) assert.equal(typeof SutraCtx[name], "function", name);
   for (const name of ["pagePath", "libraryPath"]) assert.equal(typeof SutraCtx[name], "string", name);
@@ -1134,4 +1134,33 @@ test("the script loads in J2's stub DOM and the page's own names do not clash wi
   assert.equal(vm.runInContext("SutraCtx.run()", sandbox), "");
   // J2's page script then declares its own names without a clash
   vm.runInContext(`const esc = s => s, paint = () => {}, $ = id => id, md = 1, who = 2, col = 3, WHO = {}, isWf = 5; function poll(){}`, sandbox);
+});
+
+// ------------------------------------------------------------------------------------------------------------------
+// A project opens in its studio: a bare team link says j2view=simple before J2's script runs; ?view= and deep links are kept
+// ------------------------------------------------------------------------------------------------------------------
+function storageWith(init = {}) {
+  const data = Object.assign({}, init);
+  return {data, getItem: k => (Object.prototype.hasOwnProperty.call(data, k) ? data[k] : null), setItem: (k, v) => { data[k] = String(v); }};
+}
+
+test("no ?view= means the studio: j2view becomes simple; ?view=detail, ?tab= and a #hash are left as J2 has them", () => {
+  const bare = storageWith({"j2view": "detail"});
+  const replaced = [];
+  load(browser({search: "", localStorage: bare, history: {state: null, replaceState: (s, t, url) => replaced.push(url)}}));
+  assert.equal(bare.data.j2view, "simple");
+  assert.deepEqual(replaced, []);                                   // the address is never rewritten
+  for (const search of ["?view=detail", "?tab=map", "?view=simple&run=r1"]) {
+    const kept = storageWith({"j2view": "detail"});
+    load(browser({search, localStorage: kept}));
+    assert.equal(kept.data.j2view, "detail", search);
+  }
+  const home = storageWith({"j2view": "detail"});
+  load(browser({pathname: "/", search: "", localStorage: home, document: documentWith(Object.assign({}, BOOT, {page: "home"}))}));
+  assert.equal(home.data.j2view, "detail");                         // only a team page
+});
+
+test("no storage at all (blocked, a stub): nothing throws", () => {
+  const sandbox = load(browser({localStorage: {getItem() { throw new Error("blocked"); }, setItem() { throw new Error("blocked"); }}}));
+  assert.equal(typeof sandbox.SutraCtx.api.get, "function");
 });

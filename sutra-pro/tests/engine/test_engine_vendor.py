@@ -18,9 +18,9 @@ REPO = Path(__file__).resolve().parents[2]
 ENGINE = REPO / "sutra_app" / "engine"
 MD = ENGINE / "VENDORED.md"
 SEED_INDEX = ENGINE / "seed" / "library" / "index.json"
-PIN = "1adb8ecd8fa8eef47fb7a0fc63a1616f556cdfeb"          # sync 6 (D176): J2 main, a sutra commit that touched prototypes/j2 (not tagged)
-PIN_TREE = "9a7cb34c028248de7d3b436647f8baf39be6f77e"     # `git rev-parse <PIN>:prototypes/j2`
-FILES = 516                                               # what the script builds from that extraction, VENDORED.md included
+PIN = "dee83d5c565fe7d82631a4f7eb555543160a6d41"          # sync 7 (D239): J2 main, a sutra commit that touched prototypes/j2 (not tagged)
+PIN_TREE = "b9a14370c35a6309062821b549b311d662a8ed3d"     # `git rev-parse <PIN>:prototypes/j2`
+FILES = 527                                               # what the script builds from that extraction, VENDORED.md included (sync 7)
 CODE = ("j2", "j2_agent", "j2_agent_models", "j2_agent_views", "j2_artifact_lib", "j2_artifact_models", "j2_artifacts", "j2_board", "j2_change",
         "j2_check", "j2_map", "j2_realization", "j2_rules", "j2_schema", "j2_send", "j2_story", "j2_studio", "j2_template_lib",
         "j2_types")
@@ -86,14 +86,16 @@ def test_every_vendored_module_imports_in_a_clean_process(tmp_path):
 # ---- the data files -----------------------------------------------------------------------------------------------------
 def test_the_data_files_are_all_there():
     assert {p.name for p in (ENGINE / "agents" / "j2").iterdir()} == ROLE_FILES
-    assert {p.name for p in (ENGINE / "conditions").iterdir()} == {"document.json", "hld.json", "lld.json", "prd.json",
-                                                                    "website.json"}
+    assert {p.name for p in (ENGINE / "conditions").iterdir()} == {"agent.json", "document.json", "hld.json", "lld.json", "prd.json",
+                                                                    "website.json"}      # agent.json: J2's folder form (sync 7)
     for generic in (ENGINE / "templates").glob("*/generic.json"):
         json.loads(generic.read_text(encoding="utf-8"))
     assert sorted(p.parent.name for p in (ENGINE / "templates").glob("*/generic.json")) == \
         ["business_report", "design", "hld", "lld", "prd", "website"]
-    # D161: the whole tree is vendored (18 type text files in sync 5, plus library-settings.json in sync 6), but for templates/README.md
-    assert sum(1 for p in (ENGINE / "templates").rglob("*") if p.is_file()) == 25 and not (ENGINE / "templates" / "README.md").exists()
+    # D161: the whole tree is vendored (18 type text files in sync 5, plus library-settings.json in sync 6, plus the agent form's four
+    # files and the two shared builder texts in sync 7), but for templates/README.md
+    assert sum(1 for p in (ENGINE / "templates").rglob("*") if p.is_file()) == 31 and not (ENGINE / "templates" / "README.md").exists()
+    assert sorted(p.name for p in (ENGINE / "artifacts").iterdir()) == ["real_run.md", "types.json"]      # sync 7: the artifacts tree
     assert sorted(p.name for p in (ENGINE / "templates" / "document").iterdir()) == \
         ["atom_rules.md", "builder.md", "charter.txt", "intake.md"]
     types = json.loads((ENGINE / "artifacts" / "types.json").read_text(encoding="utf-8"))
@@ -123,7 +125,7 @@ def test_vendored_md_names_the_pinned_commit_the_tree_and_the_extraction_recipe(
     """D136: the one source is prototypes/j2 of this repository at a sutra commit and tree id, extracted with git archive."""
     head = MD.read_text(encoding="utf-8").split("## Patches")[0]
     assert f"at the sutra commit `{PIN}` (tree of `prototypes/j2`: `{PIN_TREE}`, J2's main, not tagged)" in head
-    assert "(sync 6, D176)" in head
+    assert "(sync 7, D239)" in head
     assert f"`git archive {PIN} prototypes/j2 | tar -x --strip-components=2 -C <empty folder>`" in head
     assert "the only source of every file below" in head
     assert f"--source <the extraction> --commit {PIN} --check" in head
@@ -223,10 +225,10 @@ def vendor_module():
     return module
 
 
-def test_p1_is_a_counted_rule_over_forty_two_import_lines():
-    """D162: one rule for every code module, with the number of lines it changes recorded per file."""
+def test_p1_is_a_counted_rule_over_forty_four_import_lines():
+    """D162: one rule for every code module, with the number of lines it changes recorded per file (44 since sync 7: j2_artifacts.py has 7)."""
     module = vendor_module()
-    assert sum(module.P1_COUNTS.values()) == 42 and set(module.P1_COUNTS) <= {f"{n}.py" for n in CODE}
+    assert sum(module.P1_COUNTS.values()) == 44 and set(module.P1_COUNTS) <= {f"{n}.py" for n in CODE}
     for name in CODE:
         text = (ENGINE / f"{name}.py").read_text(encoding="utf-8")
         assert len(module.p1_lines(text)) == module.P1_COUNTS.get(f"{name}.py", 0), name

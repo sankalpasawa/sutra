@@ -1177,6 +1177,22 @@
       "additionalProperties": false,
       "description": "J2.b (J2:5396-5402; ROLE:adaptation): propose workflows, ask Identity a policy question, or dispute a finding.",
       "properties": {
+        "about": {
+          "anyOf": [
+            {
+              "enum": [
+                "budget",
+                "charter"
+              ],
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "About"
+        },
         "act": {
           "enum": [
             "PROPOSE",

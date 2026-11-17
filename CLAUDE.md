@@ -74,3 +74,6 @@ Prefer `rtk <cmd>` for noisy commands: `rtk git status`, `rtk git log`, `rtk git
 **Kill-switch**: `touch ~/.rtk-disabled` or `RTK_DISABLED=1` → skip rtk everywhere. Re-enable: `rm ~/.rtk-disabled`.
 
 **Avoid lossy modes** (`rtk smart`, `rtk summary`) without founder approval.
+
+## Sutra Pro (`sutra-pro/`)
+Any change under `sutra-pro/` follows [sutra-pro/AGENTS.md](sutra-pro/AGENTS.md): try it in the local beta app (`scripts/py scripts/install_app.py beta`), push it to GitHub, and release only when the owner asks (`scripts/py scripts/release.py`).

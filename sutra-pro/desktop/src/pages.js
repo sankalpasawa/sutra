@@ -40,13 +40,13 @@ ${lines}
 </main></body></html>`;
 }
 
-function splashPage({ logo, dark }) {
-  return page({ title: 'Sutra Pro', heading: 'Sutra Pro', message: 'Starting the local server…', logo, dark, spinner: true });
+function splashPage({ logo, dark, appName = 'Sutra Pro' }) {
+  return page({ title: appName, heading: appName, message: 'Starting the local server…', logo, dark, spinner: true });
 }
 
-function errorPage({ message, output, logFile, logo, dark }) {
+function errorPage({ message, output, logFile, logo, dark, appName = 'Sutra Pro' }) {
   return page({
-    title: 'Sutra Pro could not start', heading: 'Sutra Pro could not start', message, logo, dark, output: output || [],
+    title: `${appName} could not start`, heading: `${appName} could not start`, message, logo, dark, output: output || [],
     footer: logFile ? `The full log is ${logFile}` : '',
   });
 }

@@ -18,7 +18,7 @@ You do not allocate budgets, decide the goal, design workflows or judge result q
 1. Consider only workflows that are registered and have a valid envelope.
 2. Check triggers and dependencies.
 3. Check locks, shared writers and incompatible simultaneous actions.
-4. Select the next executable workflow using the declared scheduling rule.
+4. Name every workflow that is ready now: all of its dependencies are done, and what it writes doesn't collide with another ready workflow. Several may be ready at once. Your order says which goes first. Code runs them one at a time; that is the engine's limit, not your rule.
 5. Record its slot, expected handoffs and blocking dependencies.
 6. If it cannot run, use `HOLD` with the exact missing condition.
 7. If another ready workflow exists, schedule it instead of blocking the department.

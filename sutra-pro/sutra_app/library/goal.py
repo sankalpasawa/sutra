@@ -59,6 +59,7 @@ class Question(Value):
 
     question: Annotated[str, StringConstraints(min_length=1, max_length=400)]
     options: Annotated[list[Annotated[str, StringConstraints(min_length=1, max_length=300)]], Field(max_length=4)] = []
+    plan_option: Annotated[int, Field(ge=1)] | None = None      # J2 dee83d5c (J2.d): the option that stays with the plan already agreed
 
 
 class TbcAnswer(Value):
@@ -74,6 +75,24 @@ class ToBeConfirmed(Value):
 
     criterion: Item
     fact: Fact
+
+
+KindName = Annotated[str, StringConstraints(min_length=1, max_length=60)]     # one of the type's kinds of work (types.json `item_kinds`)
+
+
+class ExactFactMark(Value):
+    """J2 dee83d5c (group C): a fact Identity marks as one that must appear exactly as written, with the NUMBER of the done-when item
+    it belongs to (what Identity returns; J2's mock leaves the number out)."""
+
+    fact: Fact
+    item: Count | None = None
+
+
+class ExactFact(Value):
+    """The stored form of the same mark, keyed by the item TEXT (None when Identity named no item that the charter has)."""
+
+    fact: Fact
+    item: Item | None = None
 
 
 class UserGroup(Value):
@@ -167,6 +186,12 @@ class _StoredCharter(Value):
     dropped_reasons: Annotated[list[DroppedReason], Field(max_length=200)] = []
     requester_answers: Annotated[list[Said], Field(max_length=100)] = []
     confirmed_facts: Annotated[list[ToBeConfirmed], Field(max_length=200)] = []
+    # J2 dee83d5c (group C): Identity's marks, stored by item text: each item's kind of work, the facts that must appear exactly,
+    # the items whose rule depends on a date, and whether the Requester asked for progress updates by email
+    item_kinds: dict[Item, KindName] = Field(default_factory=dict)
+    exact_facts: Annotated[list[ExactFact], Field(max_length=200)] = []
+    date_rules: Annotated[list[Item], Field(max_length=200)] = []
+    email_updates: bool | None = None
 
     @model_validator(mode="after")
     def _stored_rules(self) -> Self:

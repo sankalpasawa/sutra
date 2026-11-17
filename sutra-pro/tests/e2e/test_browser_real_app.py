@@ -228,7 +228,8 @@ def test_the_whole_first_day_walk_on_the_real_app(app, browser):
     assert browser.js(f"performance.getEntriesByType('resource').every(e => e.name.startsWith({q(live.base_url)}))")        # offline: every file is the app's own
     clean(browser, "team page")
     assert browser.js("document.body.classList.contains('simple')") is True                      # the studio is the page's own start (J2 sync 4)
-    browser.click("#sdetail")                                                                # the Detailed view's button
+    browser.wait_for("document.getElementById('agentview') !== null")
+    browser.click("#agentview")                                                              # the one way into the detailed view (the agent view)
     browser.wait_for("!document.body.classList.contains('simple')")
     present(browser, "#pane-map .mapsvg")                                                    # the Map is where the Detailed view starts (its own tab button is a hidden one now)
     assert shown(browser, "#pane-map") and not shown(browser, "#pane-library")
