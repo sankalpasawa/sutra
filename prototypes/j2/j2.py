@@ -4673,6 +4673,7 @@ class J2Run:
         # own thread; timing.json doesn't count it.
         if not self.paused:
             self._write_summary()
+            self._save_run_template()      # J2_RUN_TEMPLATES=1: a run that ended workable becomes a run template
         self.feedback = None
         if self.change and not self.paused:      # J2_CHANGE: the change ends with the run it was built in
             self.change["phase"] = "closed"
@@ -10709,6 +10710,21 @@ class J2Run:
         return ("\nDRAFT (the same section from an earlier finished run, its business's values replaced by <slots>; keep "
                 "what fits these facts, replace the rest, and use no fact that is not in FACTS YOU MAY USE):\n```json\n"
                 + text + "\n```")
+
+    def _save_run_template(self):
+        """J2_RUN_TEMPLATES=1 (default off): a run that ended Done and workable is saved as a run template
+        (j2_template_lib.auto_save_run_template: its own name, once per run, an existing name never replaced), and the
+        chat says so. A stopped, crashed or not-workable run is never saved. A failure is one event, never a stop."""
+        if not run_templates_on() or not (self.outcome or "").startswith("Done") or not ended_workable(self.dir):
+            return
+        try:
+            rt, saved, why = j2_template_lib.auto_save_run_template(self.dir)
+        except Exception as e:      # the library never blocks a run
+            return self._event("system", "run_template", f"not saved: {type(e).__name__}: {e}")
+        if saved:
+            self.post("system", f"Saved run template {rt.name}.", humans_only=True)
+        else:
+            self._event("system", "run_template", f"not saved: {why}")
 
     def _push_run(self):
         """J2_PUSH_RUNS=1 (default off): the finished run folder is committed and pushed, so anyone's shelf has it

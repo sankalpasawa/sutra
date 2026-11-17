@@ -15810,7 +15810,8 @@ def auto_reuse():
         assert r1.outcome.startswith("Done") and r1.stages == ["prd", "hld", "lld"], (r1.outcome, r1.stages)
         assert a1["picked"] == rt1["id"] == yoga.id and "Yoga" in rt1["name"] and rt1["auto"] is True and rt1["match"] == a1["match"] >= a1["threshold"] == 0.6, (a1["picked"], a1["match"])
         assert a1["weights"] == {"stages": 0.4, "business": 0.3, "covers": 0.3} and a1["asked_stages"] == ["prd", "hld", "lld"]
-        assert {x["id"] for x in a1["scores"]} == {r["id"] for r in L.run_template_list()} and a1["scores"][0]["id"] == yoga.id, [x["id"] for x in a1["scores"]]
+        # every run template the library had when the run picked (the one this run saved when it ended came after)
+        assert {x["id"] for x in a1["scores"]} == {r["id"] for r in L.run_template_list() if r["made_from_run"] != os.path.basename(r1.dir)} and a1["scores"][0]["id"] == yoga.id, [x["id"] for x in a1["scores"]]
         assert all(abs(x["score"] - round(0.4 * x["stages"] + 0.3 * x["business"] + 0.3 * x["covers"], 2)) <= 0.011 for x in a1["scores"]), a1["scores"]
         line = f"Using similar run template {yoga.name} (match {a1['match']:.2f})."
         assert [m_["text"] for m_ in r1.chat if m_["text"].startswith("Using similar run template")] == [line], line
@@ -15827,7 +15828,12 @@ def auto_reuse():
         L.AUTO_MIN = 0.5
         r2, rec2 = run_of(PILATES_DOCS.replace("Create the design documents (PRD, HLD and LLD) for", "Write the PRD and the HLD for"))
         L.AUTO_MIN = keep_min
-        assert rec2["auto_reuse"]["asked_stages"] == ["prd", "hld"] and 0.5 <= rec2["auto_reuse"]["match"] < 0.6 and rec2["auto_reuse"]["picked"] == yoga.id, rec2["auto_reuse"]["match"]
+        assert rec2["auto_reuse"]["asked_stages"] == ["prd", "hld"] and 0.5 <= rec2["auto_reuse"]["match"] < 0.6, rec2["auto_reuse"]["match"]
+        # the run template picked is the one run r1 saved when it ended workable (J2_RUN_TEMPLATES, which auto reuse implies):
+        # the same business's own documents, before the yoga studio's
+        saved1 = [r_ for r_ in L.run_template_list() if r_["made_from_run"] == os.path.basename(r1.dir)]
+        assert len(saved1) == 1 and saved1[0]["name"].startswith("Flow Pilates: ") and rec2["auto_reuse"]["picked"] == saved1[0]["id"], (saved1, rec2["auto_reuse"]["picked"])
+        assert any(m_["text"] == f"Saved run template {saved1[0]['name']}." for m_ in r1.chat), "r1's chat says it was saved"
         assert r2.outcome.startswith("Done") and r2.stages == ["prd", "hld", "lld"] and {d["artifact"] for d in rec2["decisions"]} == {"prd", "hld", "lld"}, (r2.outcome, r2.stages)
         assert not rec2["run_template"].get("added_stages")
         # (d) a law firm, a PRD only: no similar run template, and no studio's template is similar enough to adapt: its own family
