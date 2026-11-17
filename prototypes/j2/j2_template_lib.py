@@ -2334,6 +2334,9 @@ class RunTemplate(BaseModel):
     schema_: str = Field(RUN_TEMPLATE_SCHEMA, alias="schema")
     id: str
     name: str
+    # 1, 2, 3...: a later workable run of the same business, saved under the same name (auto_save_run_template). Version 1
+    # has the name's slug as its id, version n "<slug>-v<n>"; a template saved before versions were kept is version 1.
+    version: int = 1
     description: str = ""
     business_type: str = NOT_RECORDED
     made_from_run: str
@@ -2620,7 +2623,16 @@ def run_template_match(rt, asked, text, done_when):
 def match_run_templates(asked, text, done_when, live=False):
     """J2_AUTO_REUSE=1: every run template in the library scored against a run (run_template_match), best first (then
     by name). A template can be picked only when its first stage is the stage whose charter was just written (the run
-    cannot go back to an earlier stage), and, in a live run, only when a live run made it; "why_not" says which."""
+    cannot go back to an earlier stage), and, in a live run, only when a live run made it; "why_not" says which.
+    Of the versions of one run template (run_template_versions) only one can be picked: the newest whose run ended
+    workable (run_ended_workable); when none is known to have, the newest."""
+    use = {}      # the name's slug -> the id of the version that can be picked
+    for r in run_template_list():
+        fam = slug(r.get("name"))
+        if fam not in use:
+            vs = run_template_versions(r.get("name"))
+            good = [v for v in vs if run_ended_workable(os.path.join(runs_root(), str(v.get("made_from_run")))) is True]
+            use[fam] = (good or vs)[-1]
     out = []
     for r in run_template_list():
         rt = get_run_template(r["id"])
@@ -2632,7 +2644,11 @@ def match_run_templates(asked, text, done_when, live=False):
             why = f"its first stage ({rt.stages[0] if rt.stages else 'none'}) is not this run's first ({asked[0] if asked else 'none'})"
         elif live and rt.mock is not False:
             why = "a mock run made it, so a live run does not start from it"
-        out.append({"id": rt.id, "name": rt.name, **m, "template_stages": list(rt.stages), "business_type": rt.business_type,
+        elif use[slug(rt.name)]["id"] != rt.id:
+            best = int(use[slug(rt.name)].get("version") or 1)
+            why = (f"version {best} of this run template is newer" if best > rt.version else
+                   f"its run did not end workable, so version {best} is used")
+        out.append({"id": rt.id, "name": rt.name, "version": rt.version, **m, "template_stages": list(rt.stages), "business_type": rt.business_type,
                     "mock": rt.mock, "eligible": not why, **({"why_not": why} if why else {})})
     out.sort(key=lambda x: (-x["score"], x["name"]))
     return out
@@ -2648,7 +2664,7 @@ def run_template_dir(tid):
 
 
 def _run_template_row(rt):
-    return {"id": rt.id, "name": rt.name, "description": rt.description, "business_type": rt.business_type,
+    return {"id": rt.id, "name": rt.name, "version": rt.version, "description": rt.description, "business_type": rt.business_type,
             "stages": list(rt.stages), "workflows": len(rt.workflows), "mock": rt.mock, "made_from_run": rt.made_from_run,
             "created": rt.created, "used_by": len(rt.used_by)}
 
@@ -2672,14 +2688,34 @@ def save_run_template(rt):
     return rt
 
 
+def run_template_versions(name):
+    """The index rows of every version of the run template of this name (the name's slug is the family), oldest first.
+    A row with no version recorded is version 1."""
+    fam = slug(name)
+    return sorted((r for r in run_template_list() if slug(r.get("name")) == fam), key=lambda r: int(r.get("version") or 1))
+
+
+def run_ended_workable(run_dir):
+    """True when a saved run's summary.json says it ended workable (nothing left in "workable"), False when it says
+    otherwise, None when the run folder or its summary is not here to read (not known)."""
+    s = _read(os.path.join(run_dir, "summary.json"))
+    if not isinstance(s, dict) or "workable" not in s:
+        return None
+    return s["workable"] == []
+
+
 def auto_save_run_template(run_dir):
     """The run template of a run that just ended, saved without being asked (j2.py calls this only for a run that
-    ended workable, with J2_RUN_TEMPLATES=1): (run template, saved, why not). The name and the id are
-    run_template_from_run's own ("<business>: <stages>"), stored by save_run_template. Nothing is written, and saved
-    is False, when the library already has a run template made from this run (under any name: that one is returned),
-    when another run already made one of this name (it is never replaced: that one is returned), or when the run has
-    nothing to bundle (None)."""
+    ended workable, with J2_RUN_TEMPLATES=1): (run template, saved, why not). The name is run_template_from_run's own
+    ("<business>: <stages>"), stored by save_run_template.
+    A later run under the same name (the same business and stages again) is saved as the next version of that run
+    template: version 2, 3, ... with the id "<slug>-v<n>"; the earlier versions stay as they are.
+    Nothing is written, and saved is False, for a mock run (its chat's meta line says mock, or STUDIO_MOCK=1: why not
+    is "mock run"), when the library already has a run template made from this run (under any name: that one is
+    returned), or when the run has nothing to bundle (None)."""
     rid = os.path.basename(os.path.abspath(run_dir).rstrip(os.sep))
+    if run_facts(run_dir)["mock"] is True or os.environ.get("STUDIO_MOCK") == "1":
+        return None, False, "mock run"
     mine = next((r for r in run_template_list() if r.get("made_from_run") == rid), None)
     if mine:
         return get_run_template(mine["id"]), False, f"run {rid} is already saved as run template {mine['name']}"
@@ -2687,9 +2723,13 @@ def auto_save_run_template(run_dir):
         rt = run_template_from_run(run_dir)
     except ValueError as e:
         return None, False, str(e)
-    old = get_run_template(rt.id)
-    if old is not None:
-        return old, False, f"a run template named {old.name} exists, made from run {old.made_from_run}"
+    earlier = run_template_versions(rt.name)
+    if earlier:
+        rt.version = int(earlier[-1].get("version") or 1) + 1
+        rt.id = f"{slug(rt.name)}-v{rt.version}"
+        while get_run_template(rt.id) is not None:      # a name saved by hand that ends the same way: the next free number
+            rt.version += 1
+            rt.id = f"{slug(rt.name)}-v{rt.version}"
     return save_run_template(rt), True, ""
 
 
