@@ -2734,9 +2734,11 @@ def auto_save_run_template(run_dir):
 
 
 def get_run_template(tid):
-    """A stored RunTemplate by id (or by its name), or None."""
+    """A stored RunTemplate by id (or by its name: the newest version of that name), or None."""
     tid = str(tid or "")
-    row = next((r for r in index().get("run_templates") or [] if tid in (r.get("id"), r.get("name"))), None)
+    rows = index().get("run_templates") or []
+    row = next((r for r in rows if tid == r.get("id")), None) or \
+        next(iter(sorted((r for r in rows if tid == r.get("name")), key=lambda r: -int(r.get("version") or 1))), None)
     data = _read(os.path.join(run_template_dir(row["id"] if row else tid), "template.json")) if (row or tid == slug(tid)) else None
     try:
         return RunTemplate.model_validate(data) if data else None
