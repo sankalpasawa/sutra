@@ -8582,15 +8582,19 @@ class J2Run:
                       charged=sum(w["cost"] for w in registered))
             if left:
                 self._ask_after_audit(left)
-            if missing:
-                return self._handoff("adaptation", kind="propose", why=(
-                    f"Plan gap: the {self.out['noun']} sections {', '.join(missing)} have no registered workflow"
-                    + (f" (the validator rejected: {'; '.join(refused)})" if refused else "")
-                    + ". Propose the workflow(s) that write them, naming each in \"sections\"; the other sections are "
-                    "registered."))
-            return self._handoff("coordination", kind="schedule")
+            # P22 (D246): a repeated rejection stops the cycle; "keep going" then builds what was registered
+            nxt = ({"to": "adaptation", "handoff": {"kind": "propose", "why": (
+                f"Plan gap: the {self.out['noun']} sections {', '.join(missing)} have no registered workflow"
+                + (f" (the validator rejected: {'; '.join(refused)})" if refused else "")
+                + ". Propose the workflow(s) that write them, naming each in \"sections\"; the other sections are "
+                "registered.")}} if missing else {"to": "coordination", "handoff": {"kind": "schedule"}})
+            if self._repeat_stop(nxt):
+                return
+            return self._handoff(nxt["to"], **nxt["handoff"])
         self._say("validator", f"Rejected: {'; '.join(refused) or 'the agreed set was empty'}. Adaptation reshapes or "
                                "parks it.", "adaptation", register=False)
+        if self._repeat_stop():      # P22 (D246)
+            return
         self._parked("the validator registered nothing")
 
     def _unwritten_sections(self):
@@ -8772,6 +8776,7 @@ class J2Run:
         With realization on, a proposal the plan has not judged (a fix, a replacement, a relay revision) is judged first
         (_late_judge), and every workflow is placed in a stage with a certainty zone (_place_wf)."""
         remaining, registered, refused, defaults = self.budget - self.spent, [], [], []
+        n0 = len(self.rejections)      # P22 (D246): this call's rejections, for "the same rejection twice in a row"
         covered = {i for x in self.workflows if x["status"] in ("registered", "held", "running", "done")
                    for i in self._wf_items(x)}
         batch = self._late_judge(norm(agreed))
@@ -8780,7 +8785,21 @@ class J2Run:
         plan_ix = {x["name"]: i for i, x in enumerate((self.real_summary or {}).get("proposal_brief") or [])}
         if plan_ix:
             batch.sort(key=lambda x: plan_ix.get(x.get("name"), 10 ** 6))
-        planned = covered | {i for x in batch for i in self._covers(x)}    # every item the plan's workflows cover
+        # P22 (D246): an item a real run checks is decided by the run's receipt. A proposal without a real run that covers
+        # it is refused, not the real-run workflow (runs/j2-20261118-110800-0c75: "Write run_on_sort_me.md" covered item 3,
+        # which the real run of "Build sort_files.py" checks, and the script was refused four times instead)
+        # a waiting workflow a proposal of this batch supersedes (named in "replaces", or the same name: _supersede) covers
+        # nothing for this check, so following the refusal's advice in one batch lets the real-run workflow register
+        gone = {str(r) for x in batch for r in (x.get("replaces") if isinstance(x.get("replaces"), list)
+                                               else [x.get("replaces")]) if r} | {x.get("name") for x in batch}
+        cover_now = {i for x in self.workflows if x["status"] in ("running", "done") or x["status"] in ("registered", "held")
+                     and x["id"] not in gone and x["name"] not in gone for i in self._wf_items(x)}
+        at0 = self._item_at()
+        rr_by = {at0[as_int(i)]: x.get("name") or "?" for x in batch if isinstance(x.get("real_run"), dict)
+                 and isinstance(x["real_run"].get("checks"), list) for i in x["real_run"]["checks"] if as_int(i) in at0}
+        clash = {id(x): sorted(set(self._covers(x)) & set(rr_by)) for x in batch
+                 if x.get("real_run") is None and set(self._covers(x)) & set(rr_by)}
+        planned = cover_now | {i for x in batch if id(x) not in clash for i in self._covers(x)}    # every item the plan's workflows cover
         for w in batch:
             c, name = granted(w), w.get("name") or "?"
             if self.change and self.change["phase"] == "plan" and name not in self.change["allowed"]:
@@ -8805,6 +8824,10 @@ class J2Run:
             sec_min = sum(RATES.get(parts_of[x], 0) for x in writes) if len(writes) > 1 and parts_of else 0      # no rate card: no minimum
             reason = (f"a check or report on the {self.out['label']} is Audit's job, not a workflow"
                       if w.get("kind") == "audit"
+                      else (f"it covers done-when item(s) {', '.join(str(self._no_at(i)) for i in clash[id(w)])}, which "
+                            f"the real run of {', '.join(sorted({repr(rr_by[i]) for i in clash[id(w)]}))} checks: a real "
+                            "run's receipt decides such an item, so a workflow without a real run doesn't cover it; take "
+                            "it out of covers") if id(w) in clash      # P22 (D246)
                       else f"required field(s) missing: {', '.join(missing)}" if missing
                       else "; ".join(no_atom) if no_atom
                       else (f"it depends on {', '.join(repr(d) for d in odd)}, which names no workflow of this run and no "
@@ -8865,8 +8888,10 @@ class J2Run:
                        else ["real_run checks is empty: a real run decides the done-when item(s) only running it on the "
                              "Requester's files can meet, so name them there"] if not checks
                        else [f"real_run checks item {i}, which is not a done-when item" for i in checks if as_int(i) not in at]
-                       + [f"done-when item {i} is checked by the real run's receipt, so no workflow covers it: take it "
-                          "out of covers and keep it in real_run checks" for i in checks if at.get(as_int(i)) in planned])
+                       + [self._cover_conflict(i, at[as_int(i)], batch, w, clash)     # P22 (D246): names the other workflow
+                          or (f"done-when item {i} is checked by the real run's receipt, so no workflow covers it: take it "
+                              "out of covers and keep it in real_run checks")
+                          for i in checks if at.get(as_int(i)) in planned])
                 if bad:
                     refused.append(self._reject(name, "; ".join(bad)))
                     continue
@@ -8927,7 +8952,49 @@ class J2Run:
                 self.post("system", f"Change {c['id']}: not funded or refused, so not built: {', '.join(cut)}."
                           + (f" The planning documents {', '.join(docs)} are not revised, so they no longer match "
                              "what is built." if docs else ""), change=c["id"])
+        # P22 (D246): a rejection the validator's last call also made (same workflow, same reason) is a repeated failure
+        now = [(x["workflow"], x["reason"]) for x in self.rejections[n0:]]
+        self.repeat_rejected = [x for x in now if x in (getattr(self, "last_rejected", None) or [])]
+        self.last_rejected = now
         return registered, refused, defaults
+
+    def _cover_conflict(self, n, pos, batch, w, skip=()):
+        """P22 (D246): the refusal when item n (at position pos), which w's real run checks, is covered by another workflow:
+        it names that workflow and says the conflict is there. One still waiting (registered or held) can be superseded
+        (_supersede) or replaced; one running or done can't, so the item can't be met in this run, and the same rejection
+        twice in a row stops the cycle for the Requester (_repeat_stop). Another proposal of this batch (not one in skip)
+        is named too. None when w covers the item itself or nothing else does."""
+        if pos in self._covers(w):
+            return None
+        head = f"done-when item {n} is checked by this real run, but {{}} covers it, so the conflict is in {{}}: "
+        old = next((x for x in self.workflows if x["status"] in ("registered", "held", "running", "done")
+                    and pos in self._wf_items(x)), None)
+        if old and old["status"] in ("registered", "held"):
+            who = f"{old['id']} {old['name']}"
+            return (head.format(who, who) + f"it is {old['status']} and not built, so supersede it (name {old['id']} in "
+                    f"\"replaces\") or replace it with a workflow that doesn't cover item {n}; this workflow keeps it in "
+                    "real_run checks")
+        if old:
+            who = f"{old['id']} {old['name']}"
+            return (head.format(who, who) + f"it is {old['status']} and can't be superseded or replaced, so item {n} can't "
+                    "be met by this real run in this run")
+        who = next((repr(x.get("name") or "?") for x in batch if x is not w and id(x) not in skip and pos in self._covers(x)), None)
+        return who and (head.format(who, who) + f"a real run's receipt decides the item, so {who} takes it out of its covers; "
+                                                "this workflow keeps it in real_run checks")
+
+    def _repeat_stop(self, resume=None):
+        """P22 (D246): the validator rejected a workflow for the same reason as at its last call, so another cycle would
+        likely repeat it: the cycle stops and Identity asks the Requester (a safety limit). True when it stopped."""
+        rep, self.repeat_rejected = getattr(self, "repeat_rejected", None) or [], []
+        if not rep:
+            return False
+        self.last_rejected = []
+        said = "; ".join(f"{n} ({r})" for n, r in rep)
+        self._event("validator", "repeat", said)
+        self._handoff("identity", kind="limit", reason=f"The same failure came back twice in a row: the validator rejected "
+                                                       f"{said} again, so another cycle would likely repeat it.",
+                      **({"resume": resume} if resume else {}))
+        return True
 
     def _supersede(self, wf, replaces=None):
         """A workflow still waiting (registered or held, never run) that a new one replaces: one the new workflow names

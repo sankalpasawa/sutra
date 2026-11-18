@@ -5021,7 +5021,9 @@ def real_run_checks():
         later = {"name": "Later", "goal_gap": "x", "outputs": ["more.py"], "completion_check": "z", "covers": [2],
                  "parts": ["agent_file"], "atoms": [{**atom, "id": "a2"}]}      # a workflow after it in the plan covers item 2
         reg, refused, _ = made_run()._register([wf([1], [2]), later])
-        assert "Builder" not in [x["name"] for x in reg] and any("so no workflow covers it" in str(x) for x in refused), (reg, refused)
+        # Sutra P22 (D246): the workflow without a real run is refused, not the real-run one
+        assert [x["name"] for x in reg] == ["Builder"] and any("Later (it covers done-when item(s) 2, which the real run of "
+                                                               "'Builder' checks" in str(x) for x in refused), (reg, refused)
         for reply, ends in (("RUN {code}", "Done:"), ("yes", "Done with open items")):
             run = made_run()
             reg, refused, _ = run._register([wf([1], [2])])
