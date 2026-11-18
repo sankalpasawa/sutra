@@ -53,10 +53,10 @@ Name: "desktopicon"; Description: "Create a &desktop shortcut"; Flags: unchecked
 Source: "{#SourceDir}\*"; DestDir: "{app}"; Flags: recursesubdirs createallsubdirs ignoreversion
 
 [Icons]
-Name: "{group}\{#AppName}"; Filename: "{app}\python\SutraPro.exe"; Parameters: "-I -X utf8 -m sutra_app.desktop"; WorkingDir: "{app}"; IconFilename: "{app}\icon\sutra-pro.ico"
-Name: "{group}\Quit {#AppName}"; Filename: "{app}\python\python.exe"; Parameters: "-I -X utf8 -m sutra_app stop"; WorkingDir: "{app}"; IconFilename: "{app}\icon\sutra-pro.ico"
-Name: "{group}\{#AppName} Doctor"; Filename: "{cmd}"; Parameters: "/k """"{app}\sutra-pro.cmd"" doctor"""; WorkingDir: "{app}"; IconFilename: "{app}\icon\sutra-pro.ico"
-Name: "{autodesktop}\{#AppName}"; Filename: "{app}\python\SutraPro.exe"; Parameters: "-I -X utf8 -m sutra_app.desktop"; WorkingDir: "{app}"; IconFilename: "{app}\icon\sutra-pro.ico"; Tasks: desktopicon
+Name: "{group}\{#AppName}"; Filename: "{app}\python\SutraPro.exe"; Parameters: "-I -X utf8 -m sutra_app.desktop"; WorkingDir: "{app}"; IconFilename: "{app}\icon\sutra-pro-windows.ico"
+Name: "{group}\Quit {#AppName}"; Filename: "{app}\python\python.exe"; Parameters: "-I -X utf8 -m sutra_app stop"; WorkingDir: "{app}"; IconFilename: "{app}\icon\sutra-pro-windows.ico"
+Name: "{group}\{#AppName} Doctor"; Filename: "{cmd}"; Parameters: "/k """"{app}\sutra-pro.cmd"" doctor"""; WorkingDir: "{app}"; IconFilename: "{app}\icon\sutra-pro-windows.ico"
+Name: "{autodesktop}\{#AppName}"; Filename: "{app}\python\SutraPro.exe"; Parameters: "-I -X utf8 -m sutra_app.desktop"; WorkingDir: "{app}"; IconFilename: "{app}\icon\sutra-pro-windows.ico"; Tasks: desktopicon
 
 [Run]
 Filename: "{app}\python\SutraPro.exe"; Parameters: "-I -X utf8 -m sutra_app.desktop"; WorkingDir: "{app}"; Description: "Start {#AppName}"; Flags: nowait postinstall skipifsilent
