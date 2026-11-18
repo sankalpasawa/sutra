@@ -1417,3 +1417,78 @@ def test_p22_a_different_rejection_in_between_is_not_twice_in_a_row(sort_run):
     run._agree([{"name": "Something else"}])                 # another refusal in between
     run._agree(sort_proposals(real, fix=True))
     assert run.turn == "adaptation", run.handoff
+
+
+# ---- P23 (D247): ended_workable only for a clean "Done:" end ---------------------------------------------------------------------
+
+def ended(run_dir, outcome, fail=False, **audit_keys):
+    """A run folder as J2 leaves it: audits.json (a document audit, item 2 failing when `fail`) and summary.json with `outcome`."""
+    run_dir.mkdir(parents=True, exist_ok=True)
+    results = [{"id": "F-1", "item": 1, "criterion": "the policy is written", "pass": True, "verdict": "PASS", "note": "ok"},
+               {"id": "F-2", "item": 2, "criterion": "the script has been run on the folder", "pass": not fail,
+                "verdict": "FAIL" if fail else "PASS", "note": ""}]
+    (run_dir / "audits.json").write_text(json.dumps([{"output": "prd", "results": results, "rubric": [], "conditions": [], **audit_keys}]))
+    if outcome is not None:
+        (run_dir / "summary.json").write_text(json.dumps({"outcome": outcome}))
+    return run_dir
+
+
+PENDING = dict(fail=True, after_real_run=["the script has been run on the folder"])       # a real run that never ran
+ACCEPTED = dict(fail=True, accepted=["the script has been run on the folder"])             # finished as it is
+
+
+def test_p23_ended_workable_is_true_only_for_a_clean_done(j2, tmp_path):
+    assert j2.ended_workable(ended(tmp_path / "clean", "Done: the PRD is workable."))
+    for name, outcome, keys in (("pending", "Done with open items: the real run has not run.", PENDING),
+                                ("accepted", "Done with open items: finished as it is.", ACCEPTED),
+                                ("done-accepted", "Done: the PRD is workable.", ACCEPTED),           # an accepted item never counts as passing
+                                ("done-pending", "Done: the PRD is workable.", PENDING)):
+        d = ended(tmp_path / name, outcome, **keys)
+        audit = json.loads((d / "audits.json").read_text())[-1]
+        assert j2.workable(audit) == [], (name, "J2's workable() takes these items as passing: the hole P23 closes")
+        assert not j2.ended_workable(d), name
+    assert not j2.ended_workable(ended(tmp_path / "no-summary", None)), "no summary.json: not a clean end"
+    assert not j2.ended_workable(ended(tmp_path / "stopped", "Stopped: the plan chose nothing J2 can build."))
+    assert "P23 (D247)" in j2.ended_workable.__doc__
+
+
+def test_p23_a_run_that_ended_with_open_items_is_never_saved_as_a_run_template(j2, make_run, monkeypatch):
+    saved = []
+    monkeypatch.setenv("J2_RUN_TEMPLATES", "1")
+    monkeypatch.setattr(j2.j2_template_lib, "auto_save_run_template", lambda d: saved.append(d) or (None, False, "test"))
+    for outcome, keys in (("Done with open items: the real run has not run.", PENDING),
+                          ("Done with open items: finished as it is.", ACCEPTED)):
+        run = make_run()
+        ended(Path(run.dir), outcome, **keys)
+        run.outcome = outcome
+        run._save_run_template()
+        assert not saved, outcome
+    run = make_run()
+    ended(Path(run.dir), "Done: the PRD is workable.")
+    run.outcome = "Done: the PRD is workable."
+    run._save_run_template()
+    assert saved == [run.dir], "a clean Done: is saved"
+
+
+def test_p23_a_run_that_ended_with_open_items_is_never_reused_as_a_folder(j2, make_run, monkeypatch, tmp_path):
+    for name, outcome, keys, reused in (("pending", "Done with open items: the real run has not run.", PENDING, False),
+                                        ("accepted", "Done with open items: finished as it is.", ACCEPTED, False),
+                                        ("clean", "Done: the script is workable.", {}, True)):
+        src = ended(tmp_path / "runs" / f"j2-src-{name}", outcome, **keys)
+        (src / "copy").mkdir()
+        (src / "copy" / "copy_files.py").write_text("print('copy')\n")
+        run = make_run()
+        run.output = "copy_script"
+        run.run_tpl = {"id": "t", "from_run": src.name, "outputs": {"copy_script": {"folder": "copy", "files": ["copy_files.py"]}}}
+        monkeypatch.setattr(j2, "saved_dir", lambda n, _src=src: str(_src) if n == _src.name else None)
+        monkeypatch.setattr(j2.j2_template_lib, "get_run_template", lambda tid: None)
+        monkeypatch.setattr(j2.j2_template_lib, "folder_decision", lambda *a, **k: {"action": "reused"})
+        cwd = tmp_path / f"out-{name}"
+        cwd.mkdir()
+        try:
+            got = run._reuse_folder({"id": "W-1", "atoms": [{"id": "W-1.a1"}]}, str(cwd))
+        except Exception:          # past the check, the rest of the reuse needs a real run template: the copy is what this test reads
+            got = "past the check"
+        assert bool(os.listdir(cwd)) is reused, (name, os.listdir(cwd))
+        if not reused:
+            assert got is None and any(e["type"] == "reuse_skipped" for e in run.events), name

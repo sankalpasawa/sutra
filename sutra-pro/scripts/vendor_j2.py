@@ -70,7 +70,7 @@ class VendorError(Exception):
 # ---- the patches --------------------------------------------------------------------------------------------------
 @dataclass(frozen=True)
 class Edit:
-    patch: str          # "P1" .. "P22" (P15 is the data patch below, not an Edit; P20 is reserved)
+    patch: str          # "P1" .. "P23" (P15 is the data patch below, not an Edit; P20 is reserved)
     file: str
     old: str
     new: str
@@ -805,6 +805,32 @@ def saved_snapshot_dir(d, name, since=0):
 
     def _supersede(self, wf, replaces=None):
 '''),
+    # ---- P23 (D247): ended_workable is true only for a clean "Done:" end (no accepted items, no real run still waiting)
+    Edit("P23", "j2.py", r'''def ended_workable(run_dir):
+    """A saved run ended workable: its last audit (audits.json, the board's re-checks left out) passes workable().
+    False when there is no audit to read."""
+    try:
+        with open(os.path.join(run_dir or "", "audits.json"), encoding="utf-8") as f:
+            a = [x for x in json.load(f) if isinstance(x, dict) and x.get("kind") != "recheck"]
+    except (OSError, ValueError, TypeError):
+        return False
+    return bool(a) and workable(a[-1]) == []
+''', r'''def ended_workable(run_dir):
+    """A saved run ended workable: its last audit (audits.json, the board's re-checks left out) passes workable().
+    False when there is no audit to read.
+    P23 (D247): and only a clean end. summary.json's outcome starts "Done:" (never "Done with open items"), and the last
+    audit passes with nothing taken as passing: no item the Requester accepted as it is and no item still waiting for a
+    real run (workable() counts both). So a run that ended with open items is never saved as a run template, reused as a
+    folder, or served by the content door."""
+    try:
+        with open(os.path.join(run_dir or "", "audits.json"), encoding="utf-8") as f:
+            a = [x for x in json.load(f) if isinstance(x, dict) and x.get("kind") != "recheck"]
+        with open(os.path.join(run_dir or "", "summary.json"), encoding="utf-8") as f:
+            outcome = str((json.load(f) or {}).get("outcome") or "")
+    except (OSError, ValueError, TypeError, AttributeError):
+        return False
+    return bool(a) and outcome.startswith("Done:") and workable({**a[-1], "accepted": [], "after_real_run": []}) == []
+'''),
     # ---- P19 (sync 6, D179): the host's reviewer switch; only an explicit False turns the reviewer off
     Edit("P19", "j2.py", r'''        metrics = self._metrics()
         self.thinking = None
@@ -1046,6 +1072,7 @@ PATCH_NOTES = {
     "P10": "`store`, `mark_used`, `note_version` and `mark_run_template_used` (sync 6, D181: four writers) of the template library run inside an exclusive lock on `<library>/.lock` (`oslayer.try_lock`: `flock`, or `msvcrt.locking` on Windows) (waits `LOCK_WAIT_S` = 30 s, then raises `LibraryBusy(RuntimeError)`, which `_route_template` already turns into the generic template); the originals are kept as `_store`, `_mark_used`, `_note_version` and `_mark_run_template_used` (a wrapper never calls another wrapper: the lock is not reentrant); `save_run_template`, `move_versions` and the module's `__main__` commands are developer tools and stay unpatched",
     "P21": "`_tool_record` (D245, builder tools live): a file outside the builder's folder that changed during a tools call is not the builder's write when it is one of the host's own run files (`rehydrate.HOST_FILES`: the live view, the snapshot, the event log) or the atomic-write temp file of one (`oslayer.temp_target` maps it back), unless the CLI's tool calls (`LAST_META[\"tool_calls\"]`) name it, so a builder that touches a host file is still stopped",
     "P22": "`_register` (D246): a done-when item a real run checks is decided by the run's receipt; a proposal without a real run that covers it is refused (\"the real run of 'X' checks\"), not the real-run workflow, and the real-run workflow's refusal for an item another workflow covers names that workflow and says the conflict is there (`_cover_conflict`): one registered or held is to be superseded (named in `replaces`) or replaced by one that doesn't cover the item, and a waiting workflow a proposal of the same batch supersedes no longer counts against the real run; one running or done can't be superseded, so the refusal says the item can't be met by that real run in this run; a rejection the validator's last call also made (same workflow, same reason) is a repeated failure: `_agree` stops the cycle with an Identity limit for the Requester (`_repeat_stop`, \"The same failure came back twice in a row\"), resuming where the validator was going when it registered something (runs/j2-20261118-110800-0c75: the script was refused four times for an item the run notes covered)",
+    "P23": "`ended_workable(run_dir)` (D247) is true only for a clean end: `summary.json`'s outcome starts \"Done:\" and the last audit passes `workable()` with `accepted` and `after_real_run` emptied, so a run that ended \"Done with open items\" (an item accepted as it is, a real run that never ran or did not pass) is never saved as a run template (`_save_run_template`), reused as a folder (`_reuse_folder`) or served by the content door",
     "P19": "`_make_report` asks `self._hook(\"review_enabled\")` (sync 6, D179): only an explicit `False` switches the reviewer off (no thread, `ai_calls` without the reviewer's call) and the run report then says \"The reviewer is switched off in this team's settings.\"; under `NullHooks` `_hook` returns `None`, so a bare J2 and a host without the hook behave as before",
     "P11": "`J2Run.rehydrate(src_dir)` delegates to `rehydrate.py`",
     "P12": "Windows (D101), nothing else: `j2_check.find_chrome` also looks in the Windows install folders of Chrome, `j2_check._chrome` decodes Chrome's output as UTF-8 with replacement, `j2_template_lib` writes its index with `oslayer.replace` (a rename that waits out a reader) and takes its library lock through `oslayer` (P10), records a template's saved path with `/` on every system (`run_tpl_rel`) and splits it on either separator when it checks for `..` (`run_saved_dir`)",
@@ -1228,7 +1255,7 @@ def render_vendored_md(commit: str, rows, ranges) -> str:
         "",
         "Copied into `sutra_app/engine/` with the same module names; every change to a J2 file is one of the numbered patches "
         "below and nothing else (decision D13). Prompts stay byte-identical. There is no P6 (the design's table skips it) and no "
-        "P13 (retired in sync 4, D140: its code is Sutra's own `engine/runlist.py`); P20 is reserved for a late-judge switch (D145, D162, D180); P21 (D245) keeps the host's own run files out of a builder's writes outside its folder; P22 (D246) refuses the workflow without a real run that covers a real run's item, and stops the cycle on the same validator rejection twice in a row. "
+        "P13 (retired in sync 4, D140: its code is Sutra's own `engine/runlist.py`); P20 is reserved for a late-judge switch (D145, D162, D180); P21 (D245) keeps the host's own run files out of a builder's writes outside its folder; P22 (D246) refuses the workflow without a real run that covers a real run's item, and stops the cycle on the same validator rejection twice in a row; P23 (D247) makes `ended_workable` true only for a clean \"Done:\" end. "
         "Sync 5 (D160 to D163): the pin moved to the tag `cut-off/2026-11-12`; the types are vendored as data (`conditions/` and "
         "`templates/` as whole trees, D161); P1 is a counted rule, P7, P8, P9, P12 and P14 were repaired, P2 gained a third edit, "
         "P17 and P18 are new (D162). "
