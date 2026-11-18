@@ -1518,10 +1518,27 @@ def _same_business(mine, theirs):
     """2: both charters recorded the same business type (the charter's own field, compared whole: case and punctuation
     aside); 0: they differ, or either one recorded none (the settings file's no_business_type values, or a type's
     name). No word of a business type is read on its own."""
-    said = lambda x: " ".join(re.findall(r"[a-z0-9]+", str(x or "").lower()))
-    a, b = said(mine), said(theirs)
-    says_nothing = {said(x) for x in settings()["no_business_type"]} | {said(n) for n in j2_types.names()}
-    return 2 if a and a == b and a not in says_nothing else 0
+    a, b = _said(mine), _said(theirs)
+    return 2 if a and a == b and not _no_business_type(mine) else 0
+
+
+def _said(x):
+    return " ".join(re.findall(r"[a-z0-9]+", str(x or "").lower()))
+
+
+def _no_business_type(value, run_dir=None):
+    """True when a charter's business_type records no business: nothing, one of the settings file's no_business_type
+    values, or only the name of an output type (types.json's, or one the run itself recorded: type_data). A document
+    run's stage charter writes the stage's own type there ("prd", "hld"), which is a type, not a business."""
+    v = _said(value)
+    return (not v or v in {_said(x) for x in settings()["no_business_type"]} or v in {_said(n) for n in j2_types.names()}
+            or type_data(str(value or "").strip(), run_dir) is not None)
+
+
+def business_type_shown(value, run_dir=None):
+    """A charter's business type as the shelves show it: the recorded words, or "not recorded" when they name no
+    business (_no_business_type). The record itself is never changed."""
+    return NOT_RECORDED if _no_business_type(value, run_dir) else str(value).strip()
 
 
 def nearest(need, gen, own=()):
@@ -3181,7 +3198,8 @@ def run_artifacts(run_dir):
                                                  "sha256": hashlib.sha256(open(os.path.join(run_dir, folder, f), "rb").read()).hexdigest()} for f in files]} if folder else None
         out.append({"id": f"{rid}/{k}", "run": rid, "type": k, "label": str(t.get("label") or k), "tag": str(t.get("tag") or ""),
                     "data_file": data_file, "listing": listing,
-                    "business": facts["business"], "business_type": facts["business_type"], "date": facts["date"], "mock": facts["mock"],
+                    "business": facts["business"], "business_type": business_type_shown(facts["business_type"], run_dir),
+                    "date": facts["date"], "mock": facts["mock"],
                     "status": summary.get("status") or NOT_RECORDED, "checks": checks,
                     "file": (folder + "/") if folder else file, "files": files, "preview": t.get("preview") or ("folder" if folder else None),
                     "made_from": whole, "run_template": from_rt, "sections": secs})
