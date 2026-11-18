@@ -15229,8 +15229,9 @@ def reuse_display():
     use = L.run_template_use(made)
     assert use == {"id": "no-such", "name": "A <i>name</i>", "selected": 2, "of": 9, "added_stages": ["website"], "in_library": False, "generator_calls": 2,
                    "counts": {DOCS: {"created": 1, "adapted": 1, "reused": 1, "generic": 0, "total": 3, "from_template": 2},
-                              PAGES: {"created": 1, "adapted": 0, "reused": 0, "generic": 1, "total": 2, "from_template": 0}},
-                   "scopes": [{"key": DOCS, "label": DOCS.capitalize(), "types": list(dict.fromkeys(d["artifact"] for d in ds if d["artifact"] != "website" and L.decision_group(d)))}, {"key": PAGES, "label": j2.j2_types.info("website")["label"], "types": ["website"]}]}, use
+                              PAGES: {"created": 1, "adapted": 0, "reused": 0, "generic": 2, "total": 3, "from_template": 0}},      # the style guide row is counted with the pages (UI audit row 9)
+                   "totals": {"created": 2, "adapted": 1, "reused": 1, "generic": 2, "total": len(ds)},      # the chips' numbers: the groups added up, every decision once
+                   "scopes": [{"key": DOCS, "label": DOCS.capitalize(), "types": list(dict.fromkeys(d["artifact"] for d in ds if L.decision_group(d) == DOCS))}, {"key": PAGES, "label": j2.j2_types.info("website")["label"], "types": ["website"]}]}, use
     json.dump({"decisions": ds}, open(os.path.join(made, "templates.json"), "w", encoding="utf-8"))
     assert L.run_template_use(made) is None and L.run_template_use(os.path.join(tmp, "none")) is None, "no run template, nothing to show"
     assert L.reuse_counts([{k: v for k, v in d.items() if k != "from_template"} for d in ds])[DOCS]["from_template"] is None, "not recorded stays not recorded"
@@ -15363,12 +15364,12 @@ def reuse_display():
             u2, r2 = shown(saved)
             assert "Still Point Yoga: PRD, HLD and LLD" in r2["sum"] and "17 of 17 workflows" in r2["sum"] and "added, not in template: website" in r2["sum"], r2["sum"]
             assert [r2["pills"][f"{DOCS}-{k}"][0] for k in ("created", "adapted", "reused")] == ["0 created", "24 adapted", "3 reused"], r2["pills"]
-            assert [r2["pills"][f"{PAGES}-{k}"][0] for k in ("created", "generic")] == ["1 created", "4 generic"] and "added, not in template" in r2["groups"][PAGES], r2["pills"]
+            assert [r2["pills"][f"{PAGES}-{k}"][0] for k in ("created", "generic")] == ["1 created", "5 generic"] and "added, not in template" in r2["groups"][PAGES], r2["pills"]      # 4 website rows and the style guide row, counted with the pages (UI audit row 9)
             assert "27 of 27 from the template" in r2["groups"][DOCS] and r2["gen"] == "Generator calls: 8", (r2["groups"], r2["gen"])
             assert r2["cells"].count("added, not in template") == 5 and "" in r2["cells"], "the five website rows; the style guide row says nothing"
             f2, all2 = filters(saved, r2)
             assert (f2[("adapted", DOCS)], f2[("reused", DOCS)], f2[("created", DOCS)]) == (24, 3, 0) and all2 == r2["rows"] == 33, (f2, all2)
-            live_note = ("j2-20261111-211339: 0 created, 24 adapted, 3 reused for the documents, 1 created and 4 generic for the website (added, not in template), 8 generator calls; "
+            live_note = ("j2-20261111-211339: 0 created, 24 adapted, 3 reused for the documents, 1 created and 5 generic for the website with its style guide (added, not in template), 8 generator calls; "
                          f"its filters: Adapted + Documents 24 rows, Reused + Documents 3, Created + Documents none, All {all2} rows")
         p1 = load("now", plain.dir)
         assert p1["sum"] is None and p1["gen"] is None and not p1["cells"] and not p1["pills"] and p1["rows"] > 0, p1
@@ -15421,7 +15422,10 @@ def library_cleanup():
     data = json.load(open(os.path.join(j2.HERE, "artifacts", "types.json"), encoding="utf-8"))
     for t in data["types"]:      # (a) every entry of the types file has a group, read from the file
         assert L.decision_group({"artifact": t["name"]}) == (t.get("group") or t["form"]), t["name"]
-    assert L.decision_group({"artifact": j2_types.style_guide()}) is None and L.decision_group({"artifact": "no_such_type"}) is None
+    # an artifact that is no type still has a group, so no decision is left out of a count (UI audit row 9): the style guide is in the
+    # group of the form that names it, anything else in "other"
+    guide_form = next(f for f, e in data["forms"].items() if isinstance(e, dict) and e.get("style_guide") == j2_types.style_guide())
+    assert L.decision_group({"artifact": j2_types.style_guide()}) == guide_form and L.decision_group({"artifact": "no_such_type"}) == L.OTHER_GROUP
     builtin = [t for t in data["types"] if t.get("kind") == "type"]      # the file's types: the local store (runs' new types) varies by machine
     assert {L.decision_group({"artifact": t["name"]}) for t in builtin} == {t.get("group") or t["form"] for t in builtin}
     decs = [{"artifact": "website"}, {"artifact": "hld"}, {"artifact": "prd"}, {"artifact": j2_types.style_guide()}]
