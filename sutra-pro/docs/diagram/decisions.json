@@ -1228,5 +1228,10 @@
   "id": "D246",
   "label": "P22: real-run cover conflict; repeated rejection stops",
   "anchor": "J2 chips"
+ },
+ {
+  "id": "D247",
+  "label": "ended workable = clean Done: only (P23)",
+  "anchor": "band:DEPARTMENT RUNTIME"
  }
 ]
