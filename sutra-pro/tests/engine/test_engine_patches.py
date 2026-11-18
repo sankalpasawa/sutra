@@ -1199,7 +1199,7 @@ def test_p19_the_edit_is_in_the_vendored_make_report():
 
 # ---- P21 (D245): the host's own run files during a builder tools call ----------------------------------------------------------
 
-def tools_call(j2, run, said=None, extra=None):
+def tools_call(j2, run, said=None, extra=None, temps=()):
     """One builder call with tools, through J2Run.call in mock mode: the scripted reply plays the CLI (it writes in the builder's
     folder, and `said` is what its tool calls named) and the app's host (it updates agent_live.json and snapshot.json meanwhile)."""
     from sutra_app.engine import llm
@@ -1217,6 +1217,9 @@ def tools_call(j2, run, said=None, extra=None):
         (Path(run.dir) / "snapshot.json").write_text(json.dumps({"turn": "W-1"}))                                  # the host's snapshot
         for name, body in (extra or {}).items():
             (Path(run.dir) / name).write_text(body)
+        for name in temps:              # an atomic write caught mid-way: its temp file is there when the call ends
+            from sutra_app import oslayer
+            oslayer.temp_path(Path(run.dir) / name).write_text("{")
         llm.LAST_META["tool_calls"] = [{"n": 1, "name": "Write", "input": said or {"file_path": "build.py"}, "ok": True}]
         return json.dumps({"say": "built"})
     return run.call("identity", '{"say": str}', "build it", mock, tools=tools)
@@ -1240,3 +1243,18 @@ def test_p21_a_host_file_the_cli_names_and_any_other_file_outside_are_still_stop
     run.post("user", "go")
     with pytest.raises(j2.BuilderToolFault, match="notes.txt"):
         tools_call(j2, run, extra={"notes.txt": "x"})                                         # not a host file: outside its folder
+
+
+def test_p21_a_host_file_caught_mid_write_is_the_hosts_and_a_builders_temp_file_still_counts(j2, make_run):
+    from sutra_app import oslayer
+    t = oslayer.temp_path("runs/r/agent_live.json")
+    assert oslayer.temp_target(t) == "runs/r/agent_live.json" and oslayer.temp_target(t.name) == "agent_live.json"
+    assert oslayer.temp_target("agent_live.json") is None and oslayer.temp_target(".agent_live.json.tmp") is None
+    run = make_run()
+    run.post("user", "go")
+    tools_call(j2, run, temps=("agent_live.json", "snapshot.json"))
+    assert not [e for e in run.events if e["type"] == "outside_write"], "the host's temp files, mid-write, are the host's"
+    run = make_run()
+    run.post("user", "go")
+    with pytest.raises(j2.BuilderToolFault, match=r"\.notes\.txt\.[0-9a-f]{8}\.tmp"):
+        tools_call(j2, run, temps=("notes.txt",))                                            # not a host file's temp: outside its folder

@@ -28,7 +28,9 @@ import signal
 import subprocess
 import sys
 import time
-from typing import Any
+import uuid
+from pathlib import Path
+from typing import Any, Optional
 
 __all__ = ["console_python", "IS_WINDOWS", "O_BINARY", "SIGKILL", "try_lock", "unlock", "pid_alive", "process_command", "popen_group_kwargs",
            "hidden_window_kwargs", "ProcessTree", "kill_tree", "replace", "setup_stdio", "user_token", "signal_name"]
@@ -278,6 +280,24 @@ def _make_job(popen: subprocess.Popen) -> Any:
 
 
 # ---- files ---------------------------------------------------------------------------------------------------------------------------
+
+_TEMP_NAME = re.compile(r"\.(?P<target>.+)\.[0-9a-f]{8}\.tmp")
+
+
+def temp_path(target: str | os.PathLike[str]) -> Path:
+    """The temp file an atomic write of `target` goes through before `replace`: `.<name>.<8 hex>.tmp` in the same folder, unique per
+    call (threads and processes never share one). `temp_target` maps such a name back."""
+    path = Path(target)
+    return path.with_name(f".{path.name}.{uuid.uuid4().hex[:8]}.tmp")
+
+
+def temp_target(name: str | os.PathLike[str]) -> Optional[str]:
+    """The file a `temp_path` name stands for (the same folder, as given: relative stays relative), or None when `name` is not one.
+    A reader of a folder that is being written (P21: a builder's writes outside its folder) treats a temp file as its target."""
+    head, tail = os.path.split(os.fspath(name))
+    found = _TEMP_NAME.fullmatch(tail)
+    return os.path.join(head, found["target"]) if found else None
+
 
 def replace(src: str | os.PathLike[str], dst: str | os.PathLike[str], *, attempts: int = 40, delay: float = 0.025) -> None:
     """`os.replace`. Windows refuses to replace a file that another handle has open (a reader polling it), so there a

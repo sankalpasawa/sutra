@@ -99,7 +99,7 @@ def main(argv=None, *, make_port: Optional[Callable[..., Any]] = None) -> int:
 
 
 def _atomic_write(path: Path, text: str) -> None:
-    tmp = path.with_name(f".{path.name}.tmp-{os.getpid()}")
+    tmp = oslayer.temp_path(path)      # oslayer.temp_target maps it back to `path`
     fd = os.open(tmp, os.O_WRONLY | oslayer.O_BINARY | os.O_CREAT | os.O_TRUNC, 0o600)
     with os.fdopen(fd, "w", encoding="utf-8") as f:
         f.write(text)

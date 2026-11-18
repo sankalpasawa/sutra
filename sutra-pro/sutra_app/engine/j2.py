@@ -4533,10 +4533,12 @@ class J2Run:
                     written.append({"path": k[len(pre):], "bytes": after[k][0], "sha256": hashlib.sha256(f.read()).hexdigest()})
         # P21 (D245): the host writes its own run files during the call (rehydrate.HOST_FILES: the live view, the snapshot, the
         # event log); they are not the builder's, unless the CLI's own tool calls name one (then it is still a write outside)
+        # (a host file's atomic-write temp file, oslayer.temp_path, is its target: caught mid-write it is the host's too)
+        from sutra_app.oslayer import temp_target
         from .rehydrate import HOST_FILES
         m = llm.LAST_META
         said = json.dumps([c.get("input") for c in m.get("tool_calls") or [] if isinstance(c, dict)], ensure_ascii=False)
-        host = lambda k: k in HOST_FILES and k not in said and os.path.join(self.dir, k) not in said
+        host = lambda k: (lambda t: t in HOST_FILES and t not in said and os.path.join(self.dir, t) not in said)(temp_target(k) or k)
         outside = sorted(k for k in set(before) | set(after)
                          if not mine(k) and before.get(k) != after.get(k) and os.path.normpath(k) not in self.wrote and not host(k))
         held = [k for k in after if mine(k)]
