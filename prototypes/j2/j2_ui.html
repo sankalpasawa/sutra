@@ -3508,7 +3508,9 @@ const reuseCounts = (c, group) => `<span class="mappill ${c.from_template ? (c.c
 const reuseFrom = c => c.from_template === null || c.from_template === undefined ? "" : c.from_template === 0 ? '<span class="empty">added, not in template</span>'
   : `<span class="empty">${esc(c.from_template)} of ${esc(c.total)} from the template</span>`;
 // Its filters (?filter=adapted&scope=<a group>): a chip per action with the count of rows it shows in the chosen scope, and a scope
-// toggle. Each row carries its group and the kind shown (reuse_rows); the style guide row has no group, so only the scope "All" shows it.
+// toggle. Each row carries its group and the kind shown (reuse_rows); every row has a group (the style guide is in the group of the form
+// that names it), and the chip counts are the server's own counts (reuse_counts per group, reuse_totals for "All"): the same numbers as the
+// header lines, never a second count made here. A run with no such counts (no run template) counts its rows, the only source it has.
 const RTKINDS = [["all", "All"], ["created", "Created"], ["adapted", "Adapted"], ["reused", "Reused"], ["generic", "Generic"]];
 const rtScopes = () => [["all", "All"], ...(((LIB.rt || {}).scopes) || []).map(x => [String(x.key), String(x.label)])];      // one button per group of types this run's decisions fall in, as the server lists them
 (() => { const q = new URLSearchParams(location.search), pick = (list, v) => list.some(x => x[0] === v) ? v : "all";
@@ -3517,7 +3519,8 @@ const rtScope = () => rtScopes().some(x => x[0] === LIB.scope) ? LIB.scope : "al
 const rtInScope = d => rtScope() === "all" || d.group === rtScope();
 const rtShown = d => rtInScope(d) && (LIB.filter === "all" || d.kind_shown === LIB.filter);
 function rtFilters(dec){
-  const mine = dec.filter(rtInScope), n = k => k === "all" ? mine.length : mine.filter(d => d.kind_shown === k).length;
+  const mine = dec.filter(rtInScope), u = LIB.rt || {}, src = rtScope() === "all" ? u.totals : (u.counts || {})[rtScope()];
+  const n = k => src ? (k === "all" ? src.total : src[k]) : k === "all" ? mine.length : mine.filter(d => d.kind_shown === k).length;
   return `<div data-rtfilters="1"><div class="seg" role="group" aria-label="Scope">${rtScopes().map(([k, t]) => `<button type="button" data-rtscope="${esc(k)}" aria-pressed="${rtScope() === k}">${esc(t)}</button>`).join("")}</div></div>`
     + `<div class="rfil" role="group" aria-label="Show rows by action">${RTKINDS.map(([k, t]) => `<button type="button" data-rtfilter="${k}" aria-pressed="${LIB.filter === k}">${t} <i>${esc(n(k))}</i></button>`).join("")}</div>`
     + `<div class="empty" data-rtnote="1">Adapted = the run template's section template, given this run's facts as a new version. Created = no matching section in the run template.</div>`;

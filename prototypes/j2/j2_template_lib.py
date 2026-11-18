@@ -931,9 +931,18 @@ def type_data(name, run_dir=None):
 def decision_group(d, run_dir=None):
     """The group a routing decision is counted in: its type's "group" when the type data gives one, else its form's name
     as artifacts/types.json has it (type_data). Any type has one: a document, a page, a folder of files, an image.
-    None for an artifact that is no type (a form's style guide for one)."""
-    t = type_data(d.get("artifact"), run_dir)
-    return (t.get("group") or t.get("form") or None) if t else None
+    An artifact that is no type still has a group, so no decision is ever left out of a count: the form that names it
+    as its style guide (types.json "forms": "style_guide") when one does, else OTHER_GROUP."""
+    name = d.get("artifact")
+    t = type_data(name, run_dir)
+    if t:
+        return t.get("group") or t.get("form") or OTHER_GROUP
+    forms = j2_types._read_types().get("forms") or {}
+    return next((f for f, e in forms.items() if isinstance(e, dict) and name and e.get("style_guide") == name), OTHER_GROUP)
+
+
+OTHER_GROUP = "other"      # the group of a decision whose artifact no type and no form names
+REUSE_KINDS = ("created", "adapted", "reused", "generic")
 
 
 def decision_scopes(decisions, run_dir=None):
@@ -942,15 +951,13 @@ def decision_scopes(decisions, run_dir=None):
     types.json gives one, else by the form's name. [{"key": the group, "label": ..., "types": [...]}]."""
     seen = {}
     for dec in decisions or []:
-        g = decision_group(dec, run_dir)
-        if g is not None:
-            seen.setdefault(g, {})[dec.get("artifact")] = True
+        seen.setdefault(decision_group(dec, run_dir), {})[dec.get("artifact")] = True
     order = [t.get("name") for t in j2_types.entries()]
-    rank = lambda g: min([order.index(a) if a in order else len(order) for a in seen[g]])
+    rank = lambda g: (g == OTHER_GROUP, min([order.index(a) if a in order else len(order) for a in seen[g]]))
     forms = j2_types._read_types().get("forms") or {}
     out = []
     for g in sorted(seen, key=rank):
-        kinds = list(seen[g])
+        kinds = [a for a in seen[g] if type_data(a, run_dir)] or list(seen[g])      # a group is named by its types, not by a style guide in it
         one = type_data(kinds[0], run_dir) if len(kinds) == 1 else None
         form = forms.get(g) if isinstance(forms.get(g), dict) else {}
         out.append({"key": g, "label": str((one or {}).get("label") or form.get("label") or g.replace("_", " ").capitalize()),
@@ -970,22 +977,25 @@ def reuse_rows(decisions, run_dir=None):
 
 
 def reuse_counts(decisions, run_dir=None):
-    """A run's routing decisions counted for the page: per group (decision_group: the type's form as types.json names
-    it; an artifact that is no type, the style guide for one, is left out), how many were created, adapted (the recorded action
-    "extended"), reused and generic, the total, and how many came from a run template (None when no decision says)."""
+    """A run's routing decisions counted for the page: per group (decision_group: every decision has one, so the
+    groups add up to all the decisions), how many were created, adapted (the recorded action "extended"), reused and
+    generic, the total, and how many came from a run template (None when no decision says). This is the one count the
+    Library tab shows: its header lines are the groups, and its chips are the same numbers (reuse_totals for "All")."""
     out = {}
     for d in decisions or []:
-        group = decision_group(d, run_dir)
-        if group is None:
-            continue
-        g = out.setdefault(group, {"created": 0, "adapted": 0, "reused": 0, "generic": 0, "total": 0, "from_template": None})
+        g = out.setdefault(decision_group(d, run_dir), {**{k: 0 for k in REUSE_KINDS}, "total": 0, "from_template": None})
         k = decision_kind(d)
-        if k in ("created", "adapted", "reused", "generic"):
+        if k in REUSE_KINDS:
             g[k] += 1
         g["total"] += 1
         if "from_template" in d:
             g["from_template"] = (g["from_template"] or 0) + (1 if d["from_template"] is True else 0)
     return out
+
+
+def reuse_totals(counts):
+    """The "All" line of the Library tab's chips: reuse_counts added up over its groups, nothing counted again."""
+    return {k: sum(int(g.get(k) or 0) for g in (counts or {}).values()) for k in REUSE_KINDS + ("total",)}
 
 
 def run_template_use(run_dir):
@@ -1004,12 +1014,12 @@ def run_template_use(run_dir):
             return None
         best = (auto.get("scores") or [None])[0]
         return {"scratch": True, "best": {k: best.get(k) for k in ("id", "name", "score", "why_not") if k in best} if best else None,
-                "threshold": auto.get("threshold"), "generator_calls": n, "counts": reuse_counts(rec.get("decisions"), run_dir),
+                "threshold": auto.get("threshold"), "generator_calls": n, "counts": reuse_counts(rec.get("decisions"), run_dir), "totals": reuse_totals(reuse_counts(rec.get("decisions"), run_dir)),
                 "scopes": decision_scopes(rec.get("decisions"), run_dir)}
     return {"id": rt["id"], "name": rt.get("name") or rt["id"], "selected": len(rt.get("selected") or []), "of": rt.get("of"),
             "added_stages": list(rt.get("added_stages") or []), "in_library": get_run_template(rt["id"]) is not None,
             **({"auto": True, "match": rt.get("match")} if rt.get("auto") else {}),
-            "generator_calls": n, "counts": reuse_counts(rec.get("decisions"), run_dir),
+            "generator_calls": n, "counts": reuse_counts(rec.get("decisions"), run_dir), "totals": reuse_totals(reuse_counts(rec.get("decisions"), run_dir)),
             "scopes": decision_scopes(rec.get("decisions"), run_dir)}
 
 
