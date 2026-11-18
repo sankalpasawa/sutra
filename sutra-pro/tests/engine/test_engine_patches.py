@@ -1248,7 +1248,7 @@ def test_p21_a_host_file_the_cli_names_and_any_other_file_outside_are_still_stop
 def test_p21_a_host_file_caught_mid_write_is_the_hosts_and_a_builders_temp_file_still_counts(j2, make_run):
     from sutra_app import oslayer
     t = oslayer.temp_path("runs/r/agent_live.json")
-    assert oslayer.temp_target(t) == "runs/r/agent_live.json" and oslayer.temp_target(t.name) == "agent_live.json"
+    assert Path(oslayer.temp_target(t)) == Path("runs/r/agent_live.json") and oslayer.temp_target(t.name) == "agent_live.json"      # the OS's separator
     assert oslayer.temp_target("agent_live.json") is None and oslayer.temp_target(".agent_live.json.tmp") is None
     run = make_run()
     run.post("user", "go")
