@@ -1223,5 +1223,10 @@
   "id": "D245",
   "label": "builder tools on live (Claude CLI); sandbox where srt is",
   "anchor": "band:DEPARTMENT RUNTIME"
+ },
+ {
+  "id": "D246",
+  "label": "P22: real-run cover conflict; repeated rejection stops",
+  "anchor": "J2 chips"
  }
 ]

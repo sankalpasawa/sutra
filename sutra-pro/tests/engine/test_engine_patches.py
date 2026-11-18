@@ -1258,3 +1258,162 @@ def test_p21_a_host_file_caught_mid_write_is_the_hosts_and_a_builders_temp_file_
     run.post("user", "go")
     with pytest.raises(j2.BuilderToolFault, match=r"\.notes\.txt\.[0-9a-f]{8}\.tmp"):
         tools_call(j2, run, temps=("notes.txt",))                                            # not a host file's temp: outside its folder
+
+
+# ---- P22 (D246): a real run's item covered by another workflow ------------------------------------------------------------------
+# The proposals of beta run j2-20261118-110800-0c75 (software-engineering): Adaptation's plan (calls 15 to 17) and its fix (call 30),
+# with the Requester's folder replaced by a temp folder. "Write run_on_sort_me.md" covered item 3, which the real run of
+# "Build sort_files.py" checks, and the validator refused the script four times saying item 3 must leave its covers.
+FT = "copy_script"
+SORT_DONE_WHEN = ["sort_files.py sorts the files in a given folder into subfolders named for each file's extension.",
+                  "test_sort_files.py is an automated test that checks sort_files.py puts each file in its folder, and passes.",
+                  "Run on the sort-me folder, the script leaves a.pdf in pdf/, b.jpg in jpg/, c.txt in txt/ and d.csv in csv/."]
+
+
+@pytest.fixture(scope="module")
+def j2ft(tmp_path_factory):
+    """J2 with the folder type FT made in its own type store (as J2's flow test makes it)."""
+    base = tmp_path_factory.mktemp("j2-ft")
+    with fresh_j2(base, J2_TYPES_DIR=base / "types") as mod:
+        mod.j2_types.create(FT, "Script", None, form="agent")
+        mod._data_type.cache_clear()
+        yield mod
+
+
+@pytest.fixture
+def sort_run(j2ft, tmp_path):
+    real = tmp_path / "sort-me"
+    real.mkdir()
+    counter = itertools.count(1)
+
+    def make():
+        run = j2ft.J2Run(run_dir=tmp_path / "runs" / f"j2-20261118-1108{next(counter):02d}-0c75")
+        run._apply_output(FT)
+        run.request = f"Build sort_files.py with a test, then run it on {real}"
+        run.goal, run.budget = {"statement": "x", "done_when": list(SORT_DONE_WHEN)}, 100
+        os.makedirs(run._out_dir(), exist_ok=True)
+        return run
+    return make, str(real)
+
+
+def sort_proposals(real, *, fix=False):
+    """Calls 15 to 17 of the run (fix=False): the script with its real run, the test, the run notes; call 43 (fix=True): the
+    script again, alone, after the run notes were registered as W-3."""
+    def wf(name, out, covers, deps, real_run=None):
+        atom = {"id": "a1", "goal": f"write {out}", "context": ["charter"], "constraints": ["only the folder"],
+                "how": {"kind": "AI", "agent": "Builder", "steps": f"write {out}"},
+                "expected_output": [{"text": f"{out} exists", "kind": "file", "target": out}],
+                "verification": [{"text": f"{out} exists", "type": "file-exists", "target": out, "expect": True}]}
+        return {"name": name, "kind": "build", "goal_gap": "x", "outputs": [out], "completion_check": "z", "covers": covers,
+                "dependencies": deps, "parts": ["agent_file"] * max(1, len(covers)), "atoms": [atom], "real_run": real_run}
+    rr = {"command": ["python3", "sort_files.py", real], "folder": real, "reads": [],
+          "why": "The brief asks to run the script on the Requester's own folder.", "checks": [3]}
+    script = wf("Build sort_files.py", "sort_files.py", [1], [], rr)
+    if fix:
+        return [script]
+    return [script, wf("Write test_sort_files.py", "test_sort_files.py", [2], ["Build sort_files.py"]),
+            wf("Write run_on_sort_me.md", "run_on_sort_me.md", [3], ["Build sort_files.py", "Write test_sort_files.py"])]
+
+
+def notes_alone(real):
+    """The run notes registered on their own (W-3 of the run, covers [3]), before the script came back."""
+    return [{**sort_proposals(real)[2], "dependencies": []}]
+
+
+def test_p22_a_workflow_without_a_real_run_that_covers_its_item_is_refused_and_the_real_run_workflow_registers(sort_run):
+    make, real = sort_run
+    run = make()
+    reg, refused, _ = run._register(sort_proposals(real))
+    assert [w["name"] for w in reg] == ["Build sort_files.py", "Write test_sort_files.py"], refused
+    assert reg[0]["real_run"]["checks"] == [3] and reg[0]["covers"] == [1]
+    assert refused == ["Write run_on_sort_me.md (it covers done-when item(s) 3, which the real run of 'Build sort_files.py' "
+                       "checks: a real run's receipt decides such an item, so a workflow without a real run doesn't cover it; "
+                       "take it out of covers)"]
+
+
+@pytest.mark.parametrize("status", ["registered", "held"])
+def test_p22_a_waiting_workflow_that_covers_the_item_is_named_with_supersede_or_replace(sort_run, status):
+    """The run notes are W-1, registered (or held), not built, when the script comes back: the refusal names W-1 and says
+    to supersede or replace it."""
+    make, real = sort_run
+    run = make()
+    run._register(notes_alone(real))
+    run.workflows[0]["status"] = status
+    reg, refused, _ = run._register(sort_proposals(real, fix=True))
+    who = "W-1 Write run_on_sort_me.md"
+    assert not reg and refused == [f"Build sort_files.py (done-when item 3 is checked by this real run, but {who} covers it, so "
+                                   f"the conflict is in {who}: it is {status} and not built, so supersede it (name W-1 in "
+                                   "\"replaces\") or replace it with a workflow that doesn't cover item 3; this workflow keeps "
+                                   "it in real_run checks)"]
+
+
+def test_p22_following_the_advice_supersedes_the_waiting_workflow_and_the_real_run_workflow_registers(sort_run):
+    make, real = sort_run
+    run = make()
+    run._register(notes_alone(real))
+    notes = {**notes_alone(real)[0], "name": "Rewrite run_on_sort_me.md", "covers": [], "replaces": ["W-1"]}
+    reg, refused, _ = run._register(sort_proposals(real, fix=True) + [notes])
+    assert run.workflows[0]["status"] == "superseded" and not refused, refused
+    assert [w["name"] for w in reg] == ["Build sort_files.py", "Rewrite run_on_sort_me.md"]
+
+
+def test_p22_a_done_workflow_that_covers_the_item_cant_be_replaced_and_the_repeat_goes_to_the_requester(sort_run):
+    """Cycles 2 to 4 of the run: W-3 (here W-1) was built, so it can't be superseded (_supersede takes only registered or held):
+    the refusal says the item can't be met by this real run in this run, and the second identical refusal stops the cycle."""
+    make, real = sort_run
+    run = make()
+    run._register(notes_alone(real))
+    run.workflows[0]["status"] = "done"
+    reg, refused, _ = run._register(sort_proposals(real, fix=True))
+    who = "W-1 Write run_on_sort_me.md"
+    assert not reg and refused == [f"Build sort_files.py (done-when item 3 is checked by this real run, but {who} covers it, so "
+                                   f"the conflict is in {who}: it is done and can't be superseded or replaced, so item 3 "
+                                   "can't be met by this real run in this run)"]
+    run._agree(sort_proposals(real, fix=True))
+    assert run.turn == "identity" and run.handoff["kind"] == "limit" and "can't be superseded" in run.handoff["reason"]
+
+
+def test_p22_the_real_run_workflow_covering_its_own_item_keeps_the_old_message(sort_run):
+    make, real = sort_run
+    script = sort_proposals(real, fix=True)[0]
+    reg, refused, _ = make()._register([{**script, "covers": [1, 3], "parts": ["agent_file"] * 2}])
+    assert not reg and "so no workflow covers it: take it out of covers and keep it in real_run checks" in refused[0]
+
+
+def test_p22_the_same_rejection_of_the_same_workflow_twice_in_a_row_stops_the_cycle(sort_run):
+    """Cycles 2 to 4 of the run refused the script again and again; the second identical refusal stops the cycle: Identity
+    asks the Requester (a limit), and "keep going" resumes where the validator was going."""
+    make, real = sort_run
+    run = make()
+    run._register(notes_alone(real))
+    run.workflows[0]["status"] = "done"                       # W-3 was built before the script came back                  # W-3, the run notes
+    run._agree(sort_proposals(real, fix=True))                # first refusal: back to Adaptation
+    assert run.turn == "adaptation" and not run.repeat_rejected
+    run._agree(sort_proposals(real, fix=True))                # the same refusal again
+    assert run.turn == "identity" and run.handoff["kind"] == "limit", run.handoff
+    assert run.handoff["reason"].startswith("The same failure came back twice in a row: the validator rejected Build sort_files.py")
+    assert "resume" not in run.handoff                        # nothing was registered: "keep going" starts a new cycle
+    assert [e for e in run.events if e["type"] == "repeat" and "Build sort_files.py" in json.dumps(e)]
+
+
+def test_p22_a_repeated_rejection_beside_new_work_stops_the_cycle_and_keep_going_builds_it(sort_run):
+    make, real = sort_run
+    run = make()
+    run._register(notes_alone(real))
+    run.workflows[0]["status"] = "done"                       # W-3 was built before the script came back
+    run._agree(sort_proposals(real, fix=True))
+    test = sort_proposals(real)[1]
+    run._agree(sort_proposals(real, fix=True) + [{**test, "dependencies": []}])
+    assert [w["name"] for w in run.workflows if w["status"] == "registered"][-1] == "Write test_sort_files.py"
+    assert run.handoff["kind"] == "limit" and run.handoff["resume"] == {"to": "coordination", "handoff": {"kind": "schedule"}}
+
+
+def test_p22_a_different_rejection_in_between_is_not_twice_in_a_row(sort_run):
+    make, real = sort_run
+    run = make()
+    run._register(notes_alone(real))
+    run.workflows[0]["status"] = "done"                       # W-3 was built before the script came back
+    run._agree(sort_proposals(real, fix=True))
+    run._agree([{"name": "Something else"}])                 # another refusal in between
+    run._agree(sort_proposals(real, fix=True))
+    assert run.turn == "adaptation", run.handoff
