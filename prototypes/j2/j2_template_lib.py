@@ -970,10 +970,26 @@ def decision_kind(d):
     return {"extended": "adapted"}.get(d.get("action"), d.get("action"))
 
 
+SOURCE_MATCH = "source match"      # what the page calls a score that is the source template's, not the adapted one's
+
+
+def score_label(d):
+    """What a decision's recorded "score" is, for the page: "" when it is the routed template's own coverage of the
+    need, SOURCE_MATCH when it is the coverage of the template it was adapted from. A decision recorded with
+    "source_score" has its own coverage in "score". One recorded before that, for a template adapted from ANOTHER one
+    (adapted_from names a different template@version), holds only the source's number: it is labelled, never shown
+    as the adapted template's score."""
+    src = str(d.get("adapted_from") or "")
+    if not src or "source_score" in d or d.get("score") is None:
+        return ""
+    return "" if src == f"{d.get('template')}@{d.get('version')}" else SOURCE_MATCH
+
+
 def reuse_rows(decisions, run_dir=None):
     """The decisions of a run started from a run template, each with the group and the kind the Library tab's filters
-    read (decision_group, decision_kind)."""
-    return [{**d, "group": d.get("group") or decision_group(d, run_dir), "kind_shown": decision_kind(d)} for d in decisions or []]
+    read (decision_group, decision_kind) and what its score is (score_label)."""
+    return [{**d, "group": d.get("group") or decision_group(d, run_dir), "kind_shown": decision_kind(d),
+             "score_label": score_label(d)} for d in decisions or []]
 
 
 def reuse_counts(decisions, run_dir=None):
@@ -1622,8 +1638,13 @@ def route(need, ctx, ask=None, first=None, closest=None):
                "version": t.version if t else AM.VERSION, "kind": "specialised" if t else "generic",
                "score": score, "reason": reason, **extra}
         if t:
-            _, hf, hd = coverage(need, {"facts": t.context.facts_used, "fields": [f.name for f in t.fields],
-                                        "enums": _enums(t)})
+            own, hf, hd = coverage(need, {"facts": t.context.facts_used, "fields": [f.name for f in t.fields],
+                                          "enums": _enums(t)})
+            if extra.get("adapted_from"):
+                # a template made from another one: "score" is THIS template's own coverage of the need (what "covers"
+                # says in words), and the coverage of the one it was adapted from, which is what was passed in, is kept
+                # apart as "source_score". One is never recorded as the other.
+                rec["source_score"], rec["score"] = score, own
             rec["covers"] = f"covers {hf} of {len(need['facts'])} facts" + (
                 f" and {hd} of {len(need['fields'])} fields" if need["fields"] else "")
             mark_used(t, {**use, "action": action}, need["fingerprint"])
