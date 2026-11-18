@@ -2707,7 +2707,9 @@ def match_run_templates(asked, text, done_when, live=False):
     workable (run_ended_workable); when none is known to have, the newest whose run is not known (its folder is not
     here). A run template whose run is known NOT to have ended workable is never picked, whatever its version and
     however it was saved (the command line saves any run): an unfinished run feeds no new run."""
-    ended = lambda r: run_ended_workable(os.path.join(runs_root(), str(r.get("made_from_run"))))
+    def ended(r):      # True: its run ended workable; False: its run is here and did not (run_end); None: its run is not here
+        d = os.path.join(runs_root(), str(r.get("made_from_run")))
+        return run_end(d)["finished"] if os.path.isdir(d) else None
     use = {}      # the name's slug -> the id of the version that can be picked
     for r in run_template_list():
         fam = slug(r.get("name"))
