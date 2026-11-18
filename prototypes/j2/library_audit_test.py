@@ -10,7 +10,7 @@ in J2_AUDIT_RUNS, then in runs/ beside this file; a run that is not here is said
     the source's is labelled "source match";
 (6) a business type that is nothing, a "says nothing" value or only an output type's name is shown as "not recorded";
 (5) an artifact of a run that did not end workable is marked on the shelf with how the run ended, stays listed, and
-    feeds no new run: not find_artifact, not auto-pick, not the content door.
+    feeds no new run: not auto-pick, not the content door; find_artifact (which nothing calls yet) says it did not finish.
 No AI calls. Nothing written outside a temp folder; the saved runs are copied, never changed.
 """
 import json
@@ -151,8 +151,10 @@ try:
         good = [a for a in arts if a["run"] == WORKABLE]
         ok(good and all(a["run_end"]["finished"] is True and a["run_end"]["outcome"].startswith("Done") for a in good), f"{WORKABLE}: its {len(good)} artifacts are not marked")
         kind = mine[0]["type"]
-        found = {c["run"] for c in L.find_artifact({"artifact": kind}, runs)}
-        ok(STOPPED not in found and WORKABLE in found, f"find_artifact offers the workable run's {kind} and not the stopped run's: {sorted(found)}")
+        found = {c["run"]: c for c in L.find_artifact({"artifact": kind}, runs)}
+        ok(found[STOPPED]["run_finished"] is False and "did not finish" in found[STOPPED]["reasons"][0] and "a finished" not in found[STOPPED]["reasons"][0],
+           f"find_artifact never calls the stopped run's {kind} finished work: {found[STOPPED]['reasons'][0][:90]}")
+        ok(found[WORKABLE]["run_finished"] is True and found[WORKABLE]["reasons"][0].startswith("a finished "), "and the workable run's is offered as finished work")
         # auto-pick: a run template saved by hand from the stopped run can never be picked
         bad = L.save_run_template(L.run_template_from_run(saved[STOPPED], name="Saved by hand from a stopped run"))
         fine = L.save_run_template(L.run_template_from_run(saved[WORKABLE], name="Saved from a workable run"))

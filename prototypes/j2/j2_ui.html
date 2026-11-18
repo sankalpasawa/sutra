@@ -3569,7 +3569,7 @@ function renderLibrary(){
       + ` <a href="${libHref(d.artifact, d.section, d.kind === "generic" ? "generic" : d.template, d.kind === "generic" ? 1 : d.version)}" data-link="catalog" class="empty">library</a></td>`
       + (rt ? `<td data-rtcell="1">${rtCell(d)}</td>` : "")
       + `<td data-tplsource="${esc(d.source || "")}">${d.source ? esc(d.source) : '<span class="empty">not recorded</span>'}</td>`
-      + `<td data-tplscore="${esc(rtScoreLabel(d) || "own")}">${rtScore(d)}</td><td>${esc(d.covers ? d.covers + "; " + d.reason : d.reason)}</td></tr>`).join("")
+      + `<td${rtScoreLabel(d) ? ' data-tplscore="source-match"' : ""}>${rtScore(d)}</td><td>${esc(d.covers ? d.covers + "; " + d.reason : d.reason)}</td></tr>`).join("")
       + (rows.length ? "" : `<tr data-tplnone="1"><td colspan="8"><span class="empty">none</span></td></tr>`) + `</tbody></table>`
     : '<p class="empty">This run recorded no routing decisions.</p>';
   const groups = Object.entries(LIB.groups || {}).map(([art, secs]) => `<details class="artgroup" open data-libart="${esc(art)}"><summary><h3>${esc(art.toUpperCase())}</h3></summary>`

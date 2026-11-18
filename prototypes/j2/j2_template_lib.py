@@ -3422,15 +3422,15 @@ def find_artifact(need, root=None):
     for a in _all_artifacts(root):
         if a["type"] != k or (sec and not any(s["section"] == sec for s in a["sections"])):
             continue
-        if not (a.get("run_end") or {}).get("finished"):      # an unfinished run's work is on the shelf, and is no starting point
-            continue
         goal = _read(os.path.join(runs_root(root), a["run"], "goal.json")) or {}
         same_type = _same_business(need.get("business_type"), a["business_type"]) == 2
         same_name = bool(need.get("site")) and slug(need.get("site")) == slug(a["business"])
         have = words(" ".join([str(goal.get("statement") or "")] + [str(x) for x in goal.get("done_when") or []]))
         share = round(len(want & have) / len(want), 4) if want else 0.0
         c = a["checks"]
-        reasons = [f"a finished {a['label']} of run {a['run']}",
+        end = a.get("run_end") or {}      # nothing is hidden: work from a run that did not finish is offered as that, with how the run ended
+        reasons = [f"a finished {a['label']} of run {a['run']}" if end.get("finished", True) else
+                   f"a {a['label']} of run {a['run']}, which did not finish ({str(end.get('outcome'))[:120]})",
                    "the same business" if same_name else f"the same business type ({a['business_type']})" if same_type
                    else f"another business type ({a['business_type']})",
                    f"{len(want & have)} of {len(want)} of the need's words are in its charter" if want else "the need gave no words to compare"]
@@ -3441,7 +3441,8 @@ def find_artifact(need, root=None):
         reasons.append("a mock run made it" if a["mock"] is True else "a live run made it" if a["mock"] is False else "live or mock not recorded")
         hit = next((s for s in a["sections"] if s["section"] == sec), None) if sec else None
         out.append({"kind": "artifact", "ref": a["id"], "run": a["run"], "type": k, "score": round(0.5 * (same_type or same_name) + 0.5 * share, 4),
-                    "reasons": reasons, **({"section_template": hit["template"]["key"]} if hit else {})})
+                    "reasons": reasons, "run_finished": bool(end.get("finished", True)),
+                    **({"section_template": hit["template"]["key"]} if hit else {})})
     out.sort(key=lambda c: (-c["score"], c["ref"]), reverse=False)
     return out
 
