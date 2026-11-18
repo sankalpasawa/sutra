@@ -70,7 +70,7 @@ class VendorError(Exception):
 # ---- the patches --------------------------------------------------------------------------------------------------
 @dataclass(frozen=True)
 class Edit:
-    patch: str          # "P1" .. "P19" (P15 is the data patch below, not an Edit)
+    patch: str          # "P1" .. "P21" (P15 is the data patch below, not an Edit; P20 is reserved)
     file: str
     old: str
     new: str
@@ -632,6 +632,31 @@ def saved_snapshot_dir(d, name, since=0):
     Edit("P16", "j2.py", '''                self.save("settings.json", {"decide_for_me": True})
 ''', '''                self.save("settings.json", {**(_read(self.dir, "settings.json", {}) or {}), "decide_for_me": True})      # P16
 '''),
+    # ---- P21 (D245): the host's own run files written during a builder tools call are not the builder's writes
+    Edit("P21", "j2.py", r'''        outside = sorted(k for k in set(before) | set(after)
+                         if not mine(k) and before.get(k) != after.get(k) and os.path.normpath(k) not in self.wrote)
+        held = [k for k in after if mine(k)]
+        size = sum(after[k][0] for k in held)
+        over = ([f"{len(held)} files, over J2_AGENT_MAX_FILES ({tools['max_files']})"] if len(held) > tools["max_files"]
+                else []) + ([f"{size} bytes, over J2_AGENT_MAX_BYTES ({tools['max_bytes']})"]
+                            if size > tools["max_bytes"] else [])
+        m = llm.LAST_META
+''', r'''        # P21 (D245): the host writes its own run files during the call (rehydrate.HOST_FILES: the live view, the snapshot, the
+        # event log); they are not the builder's, unless the CLI's own tool calls name one (then it is still a write outside)
+        # (a host file's atomic-write temp file, oslayer.temp_path, is its target: caught mid-write it is the host's too)
+        from sutra_app.oslayer import temp_target
+        from .rehydrate import HOST_FILES
+        m = llm.LAST_META
+        said = json.dumps([c.get("input") for c in m.get("tool_calls") or [] if isinstance(c, dict)], ensure_ascii=False)
+        host = lambda k: (lambda t: t in HOST_FILES and t not in said and os.path.join(self.dir, t) not in said)(temp_target(k) or k)
+        outside = sorted(k for k in set(before) | set(after)
+                         if not mine(k) and before.get(k) != after.get(k) and os.path.normpath(k) not in self.wrote and not host(k))
+        held = [k for k in after if mine(k)]
+        size = sum(after[k][0] for k in held)
+        over = ([f"{len(held)} files, over J2_AGENT_MAX_FILES ({tools['max_files']})"] if len(held) > tools["max_files"]
+                else []) + ([f"{size} bytes, over J2_AGENT_MAX_BYTES ({tools['max_bytes']})"]
+                            if size > tools["max_bytes"] else [])
+'''),
     # ---- P19 (sync 6, D179): the host's reviewer switch; only an explicit False turns the reviewer off
     Edit("P19", "j2.py", r'''        metrics = self._metrics()
         self.thinking = None
@@ -871,6 +896,7 @@ PATCH_NOTES = {
     "P8": "hook calls (`NullHooks` by default, nothing is built for it): `post` (`message_posted`, not for ASK_REQUESTER), `_ask_user` (`message_posted(m, questions=)` once `paused` is set), `save` (`record_saved`), `_log_call` (`call_finished`; `calls.jsonl` also gains `provider` and `usd`), the turn dispatch (`turn_started`, `turn_finished` through `_dispatch_turn`), `user_says` and both run ends (`run_status`; since sync 6 the first fires after `_make_report` has started the reviewer thread, so the host joins that thread, D179), the crash path (`run_error`); a hook error goes to stderr unless it is fatal (`fatal = True` or a class named RecordRejected)",
     "P9": "`call` appends `system_addendum(fn)` to the system prompt: empty unless the hooks have a node-context file (anchored on the delay lines of `call` only, `if self.calls and call_delay():`; the two other `call_delay()` sites, in `_summarize` and the reviewer call, are not under a patch)",
     "P10": "`store`, `mark_used`, `note_version` and `mark_run_template_used` (sync 6, D181: four writers) of the template library run inside an exclusive lock on `<library>/.lock` (`oslayer.try_lock`: `flock`, or `msvcrt.locking` on Windows) (waits `LOCK_WAIT_S` = 30 s, then raises `LibraryBusy(RuntimeError)`, which `_route_template` already turns into the generic template); the originals are kept as `_store`, `_mark_used`, `_note_version` and `_mark_run_template_used` (a wrapper never calls another wrapper: the lock is not reentrant); `save_run_template`, `move_versions` and the module's `__main__` commands are developer tools and stay unpatched",
+    "P21": "`_tool_record` (D245, builder tools live): a file outside the builder's folder that changed during a tools call is not the builder's write when it is one of the host's own run files (`rehydrate.HOST_FILES`: the live view, the snapshot, the event log) or the atomic-write temp file of one (`oslayer.temp_target` maps it back), unless the CLI's tool calls (`LAST_META[\"tool_calls\"]`) name it, so a builder that touches a host file is still stopped",
     "P19": "`_make_report` asks `self._hook(\"review_enabled\")` (sync 6, D179): only an explicit `False` switches the reviewer off (no thread, `ai_calls` without the reviewer's call) and the run report then says \"The reviewer is switched off in this team's settings.\"; under `NullHooks` `_hook` returns `None`, so a bare J2 and a host without the hook behave as before",
     "P11": "`J2Run.rehydrate(src_dir)` delegates to `rehydrate.py`",
     "P12": "Windows (D101), nothing else: `j2_check.find_chrome` also looks in the Windows install folders of Chrome, `j2_check._chrome` decodes Chrome's output as UTF-8 with replacement, `j2_template_lib` writes its index with `oslayer.replace` (a rename that waits out a reader) and takes its library lock through `oslayer` (P10), records a template's saved path with `/` on every system (`run_tpl_rel`) and splits it on either separator when it checks for `..` (`run_saved_dir`)",
@@ -1053,7 +1079,7 @@ def render_vendored_md(commit: str, rows, ranges) -> str:
         "",
         "Copied into `sutra_app/engine/` with the same module names; every change to a J2 file is one of the numbered patches "
         "below and nothing else (decision D13). Prompts stay byte-identical. There is no P6 (the design's table skips it) and no "
-        "P13 (retired in sync 4, D140: its code is Sutra's own `engine/runlist.py`); P20 is reserved for a late-judge switch (D145, D162, D180). "
+        "P13 (retired in sync 4, D140: its code is Sutra's own `engine/runlist.py`); P20 is reserved for a late-judge switch (D145, D162, D180); P21 (D245) keeps the host's own run files out of a builder's writes outside its folder. "
         "Sync 5 (D160 to D163): the pin moved to the tag `cut-off/2026-11-12`; the types are vendored as data (`conditions/` and "
         "`templates/` as whole trees, D161); P1 is a counted rule, P7, P8, P9, P12 and P14 were repaired, P2 gained a third edit, "
         "P17 and P18 are new (D162). "

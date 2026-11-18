@@ -55,7 +55,8 @@ __all__ = ["RehydrateRefused", "check_source", "rehydrate", "continuing_line", "
 
 HOST_FILES = ("task.json", "settings.json", "snapshot.json", "live.json", "events.jsonl", "trace.jsonl", "inbox.jsonl",
               "choices.json", "node_context.json",           # the server's notes to a run's agents (D131, D132): plumbing, never a follow-up's seed
-              "deliverable.json")                             # what the host recorded at the end of a run for the team's chat (D135)
+              "deliverable.json",                             # what the host recorded at the end of a run for the team's chat (D135)
+              "agent_live.json")                              # the live view of an agent's call (D133); also kept out of a builder's writes (P21, D245)
 RUN_TREES = ("site", "artifacts")
 RESTORED = ("chat", "goal", "stamped", "workflows", "conflicts", "audits", "sections", "style", "sites", "request", "calls",
             "cycle", "spent", "budget", "receipts", "decisions", "done", "status", "outcome")

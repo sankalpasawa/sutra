@@ -168,7 +168,7 @@ CheckFn = Callable[[Evidence, tuple[str, ...]], Outcome]
 # ---- ports of J2's own code -------------------------------------------------------------------------------------------
 
 def least_done_when() -> int:
-    """The smallest `min_done_when` of the forms a run can be built in now: a folder form only while builder tools are on (D240)."""
+    """The smallest `min_done_when` of the forms a run can be built in now: a folder form only while builder tools are on (D240, D245)."""
     from sutra_app.engine import j2_types, llm
     return min(int(f.get("min_done_when") or 1) for f in j2_types.forms().values() if f.get("output") != "folder" or llm.tools_on())
 

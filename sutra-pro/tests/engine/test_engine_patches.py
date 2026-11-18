@@ -1195,3 +1195,66 @@ def test_p19_the_edit_is_in_the_vendored_make_report():
     text = (Path(__file__).resolve().parents[2] / "sutra_app" / "engine" / "j2.py").read_text(encoding="utf-8")
     assert text.count('off = review and self._hook("review_enabled") is False') == 1
     assert text.count("The reviewer is switched off in this team's settings.") == 1
+
+
+# ---- P21 (D245): the host's own run files during a builder tools call ----------------------------------------------------------
+
+def tools_call(j2, run, said=None, extra=None, temps=()):
+    """One builder call with tools, through J2Run.call in mock mode: the scripted reply plays the CLI (it writes in the builder's
+    folder, and `said` is what its tool calls named) and the app's host (it updates agent_live.json and snapshot.json meanwhile)."""
+    from sutra_app.engine import llm
+    run._apply_output("website")
+    cwd = Path(run.dir) / "out"
+    cwd.mkdir(parents=True, exist_ok=True)
+    for name in ("agent_live.json", "snapshot.json"):
+        (Path(run.dir) / name).write_text("{}")
+    tools = {"tools": ["Write"], "allow": ["Write"], "cwd": str(cwd), "root": str(run.dir), "usd": 1.0, "log_chars": 200,
+             "max_files": 50, "max_bytes": 1_000_000}
+
+    def mock():
+        (cwd / "build.py").write_text("print('built')\n")
+        (Path(run.dir) / "agent_live.json").write_text(json.dumps({"agents": {"W-1": {"text": "writing"}}}))     # the host's live view
+        (Path(run.dir) / "snapshot.json").write_text(json.dumps({"turn": "W-1"}))                                  # the host's snapshot
+        for name, body in (extra or {}).items():
+            (Path(run.dir) / name).write_text(body)
+        for name in temps:              # an atomic write caught mid-way: its temp file is there when the call ends
+            from sutra_app import oslayer
+            oslayer.temp_path(Path(run.dir) / name).write_text("{")
+        llm.LAST_META["tool_calls"] = [{"n": 1, "name": "Write", "input": said or {"file_path": "build.py"}, "ok": True}]
+        return json.dumps({"say": "built"})
+    return run.call("identity", '{"say": str}', "build it", mock, tools=tools)
+
+
+def test_p21_host_files_written_during_a_tools_call_are_not_the_builders_writes(j2, make_run):
+    run = make_run()
+    run.post("user", "go")
+    tools_call(j2, run)
+    assert not [e for e in run.events if e["type"] == "outside_write"], "the host's agent_live.json and snapshot.json are not the builder's"
+    from sutra_app.engine.rehydrate import HOST_FILES
+    assert {"agent_live.json", "snapshot.json", "events.jsonl"} <= set(HOST_FILES)
+
+
+def test_p21_a_host_file_the_cli_names_and_any_other_file_outside_are_still_stopped(j2, make_run):
+    run = make_run()
+    run.post("user", "go")
+    with pytest.raises(j2.BuilderToolFault, match="snapshot.json"):
+        tools_call(j2, run, said={"command": "echo x > ../snapshot.json"})                 # the CLI wrote a host file itself
+    run = make_run()
+    run.post("user", "go")
+    with pytest.raises(j2.BuilderToolFault, match="notes.txt"):
+        tools_call(j2, run, extra={"notes.txt": "x"})                                         # not a host file: outside its folder
+
+
+def test_p21_a_host_file_caught_mid_write_is_the_hosts_and_a_builders_temp_file_still_counts(j2, make_run):
+    from sutra_app import oslayer
+    t = oslayer.temp_path("runs/r/agent_live.json")
+    assert Path(oslayer.temp_target(t)) == Path("runs/r/agent_live.json") and oslayer.temp_target(t.name) == "agent_live.json"      # the OS's separator
+    assert oslayer.temp_target("agent_live.json") is None and oslayer.temp_target(".agent_live.json.tmp") is None
+    run = make_run()
+    run.post("user", "go")
+    tools_call(j2, run, temps=("agent_live.json", "snapshot.json"))
+    assert not [e for e in run.events if e["type"] == "outside_write"], "the host's temp files, mid-write, are the host's"
+    run = make_run()
+    run.post("user", "go")
+    with pytest.raises(j2.BuilderToolFault, match=r"\.notes\.txt\.[0-9a-f]{8}\.tmp"):
+        tools_call(j2, run, temps=("notes.txt",))                                            # not a host file's temp: outside its folder

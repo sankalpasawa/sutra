@@ -55,7 +55,7 @@ class Recorder:
 # ---- the call syntax ------------------------------------------------------------------------------------------------
 
 def test_ask_signature_is_j2s_plus_a_keyword_only_tag():
-    """J2's own signature, `timeout` (sync 5, D170) and `tools` (sync 7, D240) included."""
+    """J2's own signature, `timeout` (sync 5, D170) and `tools` (sync 7, D240; live since D245) included."""
     sig = inspect.signature(llm.ask)
     params = list(sig.parameters.values())
     assert [p.name for p in params] == ["system", "user", "mock", "max_tokens", "effort", "on_progress", "json_mode", "images",
@@ -695,15 +695,30 @@ def test_scripted_port_is_the_port_ask_uses_in_mock_mode(scripted_port):
     assert (row["fn"], row["step"], row["call_ref"], row["task_id"], row["dept_id"]) == ("priority", "J2.c", "j2-1:2", "tsk_1", "web")
 
 
-def test_builder_tools_are_off_live_and_follow_j2s_switch_offline(monkeypatch):
-    """D240: no tools seam in the router, so a live run takes J2's section path; offline J2_AGENT_TOOLS=1 is J2's own mock switch."""
-    monkeypatch.setenv("J2_AGENT_TOOLS", "1")
+def test_builder_tools_are_on_live_with_a_provider_that_can_run_them_and_follow_j2s_switch_offline(monkeypatch):
+    """D245 (superseding D240): live, tools are on when the port has a provider that can run a tools call, unless J2_AGENT_TOOLS=0; a port with
+    none (Codex only, or no `tools_provider`) means J2's section path; a bad request is refused before the port; offline J2_AGENT_TOOLS=1 is
+    J2's own mock switch."""
+    monkeypatch.delenv("J2_AGENT_TOOLS", raising=False)
     llm.configure(Recorder(), mock=False)
-    assert not llm.tools_on() and not llm.can_use_tools() and llm.TOOLS == {}
-    with pytest.raises(RuntimeError, match="builder tools are off"):
+    assert not llm.tools_on() and not llm.can_use_tools(), "a port that names no tools provider: the section path"
+    assert llm.TOOLS == {"claude": True, "codex": False, "stub": False}
+    with pytest.raises(RuntimeError, match="tools needs allow"):
         llm.ask("s", "u", None, tools={"tools": ["Read"]})
+    port = Recorder()
+    port.tools_provider = lambda: "claude"
+    llm.configure(port, mock=False)
+    assert llm.tools_on() and llm.can_use_tools()
+    monkeypatch.setenv("J2_AGENT_TOOLS", "0")
+    assert not llm.tools_on()
+    port.tools_provider = lambda: "codex"
+    monkeypatch.delenv("J2_AGENT_TOOLS")
+    assert not llm.tools_on(), "a provider without a tools path"
+    monkeypatch.setenv("J2_AGENT_TOOLS", "1")
     llm.configure(mock=True)
     assert llm.tools_on()
     monkeypatch.delenv("J2_AGENT_TOOLS")
     assert not llm.tools_on()
     llm.configure()
+
+

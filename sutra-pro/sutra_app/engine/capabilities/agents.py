@@ -15,7 +15,6 @@ import logging
 import os
 import threading
 import time
-import uuid
 from pathlib import Path
 from typing import Any, Callable, Optional
 
@@ -184,7 +183,8 @@ class AgentLiveCapability(Capability):
         body = self.snapshot()
         if body == self._last:
             return False
-        tmp = path.parent / f".{path.name}.{uuid.uuid4().hex[:8]}.tmp"
+        from sutra_app import oslayer
+        tmp = oslayer.temp_path(path)          # its name maps back to the file (oslayer.temp_target): a reader of the run folder treats it so
         data = json.dumps({**body, "at": round(self._clock(), 3)}, ensure_ascii=False, separators=(",", ":")) + "\n"
         try:
             fd = os.open(tmp, os.O_WRONLY | os.O_CREAT | os.O_TRUNC | getattr(os, "O_BINARY", 0), 0o600)

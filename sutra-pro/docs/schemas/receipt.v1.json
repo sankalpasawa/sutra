@@ -3,7 +3,7 @@
     "JsonValue": {}
   },
   "additionalProperties": false,
-  "description": "One line of receipts.jsonl, written by code only (J2 `_receipt`, `_expected_receipts`; `[U]` beyond the golden runs).\nTwo shapes share the file: a CHECK receipt (`check`, `type`, `expect`, `actual`, `pass`, `evidence`) and an OUTPUT\nreceipt (`expected`, `kind`, `met`, `checks`). The keys after `by` are the ones a template routing adds. J2's send record\n(`type: deed-send-record`) is not a Receipt: the catalogue checks it as bounded open JSON.",
+  "description": "One line of receipts.jsonl, written by code only (J2 `_receipt`, `_expected_receipts`; `[U]` beyond the golden runs).\nTwo shapes share the file: a CHECK receipt (`check`, `type`, `expect`, `actual`, `pass`, `evidence`) and an OUTPUT\nreceipt (`expected`, `kind`, `met`, `checks`). The keys after `by` are the ones a template routing adds. J2's send record\n(`type: deed-send-record`) and its real run receipt (`type: real_run`, D245) are not Receipts: the catalogue checks them as bounded open JSON.",
   "properties": {
     "actual": {
       "$ref": "#/$defs/JsonValue",

@@ -84,6 +84,8 @@ _PHRASES = {
 }
 
 
+RUN_TOOLS_REFUSED = "can't run J2's builder tools (only the Claude CLI can, D245)"
+
 def fallback_phrase(code: str) -> str:
     return _PHRASES.get(code, code.replace("_", " "))
 
@@ -512,11 +514,15 @@ class Router:
         if pinned is not None and pinned in self._connectors:
             order = [pinned] + [p for p in order if p != pinned]
         tools = tuple(req.tools) or (() if resolved.tool_profile == "none" else tuple(resolved.tool_profile.split("+")))
+        if getattr(req, "run_tools", None) is not None:
+            tools = ()                       # a builder tools call (D245) has the grant's tools only, no MCP profile
         skipped: list[tuple[str, str]] = []
         usable: list[str] = []
         models: dict[str, str] = {}
         for provider in order:
             reason = self._skip_reason(provider, bool(req.images), bool(tools))
+            if reason is None and getattr(req, "run_tools", None) is not None and not self._connectors[provider].capabilities.run_tools:
+                reason = RUN_TOOLS_REFUSED          # D245: a builder tools call goes only where it can run, never to a fallback without tools
             if reason is None:
                 asked = self.policy.model_for(provider)           # type: ignore[arg-type]
                 if pick is not None and pick.model and provider == pick.provider:
@@ -611,12 +617,13 @@ class Router:
             return None
         return ", ".join(f"{p} {fallback_phrase(e.code)}" for p, e in failures) + f", answered by {answered_by}"
 
-    def _drive(self, state: _Request, plan: Plan, make: Callable[[Plan, str, ModelConnector], Iterator[Any]]) -> Iterator[Any]:
+    def _drive(self, state: _Request, plan: Plan, make: Callable[[Plan, str, ModelConnector], Iterator[Any]], retries: bool = True) -> Iterator[Any]:
         """The attempt loop, as a generator: it yields what `make(...)` yields and returns the value `make(...)` returns.
 
         Per provider: gate, then the call; a retryable error is tried again after the policy's delay while the provider has
         had fewer than `max_attempts` tries (J2 `range(2)`: the default is one retry); then, when the error allows it, the
-        next provider. Any other error propagates (the last error of the last provider)."""
+        next provider. Any other error propagates (the last error of the last provider). `retries=False` (a builder tools call, D245): one try
+        only, as J2 runs it, since a retry would start over on the files the first try wrote; the engine decides what comes next."""
         order = plan.order
         chat = state.routes                    # the route events are for a chat turn's live view only (`chat_stream(routes=True)`): an engine call, `ask` or any older caller never sees them
         attempt_no = 0
@@ -639,7 +646,7 @@ class Router:
                 except ConnectorError as err:
                     if self._closed.is_set():
                         raise
-                    if err.retryable and tries < plan.resolved.max_attempts:
+                    if retries and err.retryable and tries < plan.resolved.max_attempts:
                         state.check_gate()                         # no point waiting for a retry the envelope will refuse
                         delay = plan.resolved.retry_delay(tries - 1)
                         wait = delay + self._rng() if delay > 0 else 0.0
@@ -705,7 +712,7 @@ class Router:
             state.default_provider = plan.order[0]
             if self.egress is not None:                      # J2's prompts are not ours to edit: observe only, byte-identical
                 self.egress.check(req.user, system=req.system, session=req.ctx.session_id, provider=plan.order[0], replace=False)
-            turn = self._consume(self._drive(state, plan, make))
+            turn = self._consume(self._drive(state, plan, make, retries=req.run_tools is None))
             ok = True
             if state.note and on_progress is not None:
                 on_progress({"note": state.note})          # J2 llm.py:173,187: the owner sees that another provider answered
@@ -722,12 +729,15 @@ class Router:
         on_event = _progress(on_progress)
         model = plan.models[provider]
         scripted = req.scripted if provider == "stub" else None
-        folder = self.folder_for(req.ctx.tag)              # the owner's folder when the call's tag asks for it (D127); "" leaves the call as it was
+        # the owner's folder when the call's tag asks for it (D127); "" leaves the call as it was. A builder tools call (D245) works in its run folder only
+        folder = "" if req.run_tools is not None else self.folder_for(req.ctx.tag)
         system = self._grounded(req.system, folder)
         if req.schema is None:
             kw: dict[str, Any] = {"scripted": scripted} if scripted is not None else {}
             if folder:
                 kw["folder"] = folder
+            if req.run_tools is not None:
+                kw["run_tools"] = req.run_tools
             return connector.call_text(req.user, system=system, images=req.images, tools=plan.tools, timeout=state.timeout_s(),
                                        ctx=state.connector_ctx(), effort=plan.effort_for(provider), model=model, hooks=state,
                                        on_event=on_event, partials=req.partials, **kw)
@@ -747,7 +757,7 @@ class Router:
                 req.user if native_now else prompted_prompt(req.user, schema), system=req.system if system is None else system, kind="json",
                 model=model, effort=plan.effort_for(provider), timeout=state.timeout_s(), ctx=state.connector_ctx(), images=req.images,
                 tools=plan.tools, schema=connector.transport_schema(schema) if native_now else None, partials=False, spent=0.0,
-                folder=folder)
+                folder=folder, run_tools=req.run_tools)
 
         scope = connector._request(schema, scripted) if provider == "stub" else contextlib.nullcontext()   # type: ignore[attr-defined]
         with scope:
@@ -819,7 +829,7 @@ class Router:
             system=req.system, user=req.user, ctx=RouteContext(tag=req.tag, allowance=req.allowance or Allowance()),
             kind="json" if (req.json_mode or req.json_schema is not None) else "text", effort=req.effort, images=list(req.images),
             schema=req.json_schema, timeout_s=req.timeout_s, partials=on_progress is not None and req.json_schema is None,
-            scripted=req.scripted)
+            scripted=req.scripted, run_tools=req.run_tools)
         try:
             turn, state = self._ask(ask, on_progress)
         finally:
@@ -833,7 +843,7 @@ class Router:
             session_id=turn.provider_session_id,
             structured={"provider": turn.provider, "subtype": turn.subtype, "present": turn.structured is not None}
             if req.json_schema is not None else None,
-            note=state.note, detail=row.detail)
+            note=state.note, detail=row.detail, tool_record=turn.tool_record)
 
     def _call_finished(self, tag: CallTag) -> None:
         """Tells whoever watches the engine's calls (the live view of an agent's work, D133) that this one is over, whether it answered or not."""

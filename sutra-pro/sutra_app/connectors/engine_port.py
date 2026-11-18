@@ -21,7 +21,7 @@ from pathlib import Path
 from typing import Callable, Optional
 
 from sutra_app.engine.port import (
-    CallTag, CompletionRequest, CompletionResult, ModelPort, PortInfo, PortSpec, PreflightResult,
+    CallTag, CompletionRequest, CompletionResult, ModelPort, PortInfo, PortSpec, PreflightResult, ToolGrant,
 )
 
 from .base import ModelConnector
@@ -37,7 +37,38 @@ from .stub import StubConnector
 from .usage import UsageSink
 from .workdir import WorkFolder
 
-__all__ = ["make_port", "port_from_config", "build_connectors", "RouterPort"]
+__all__ = ["make_port", "port_from_config", "build_connectors", "RouterPort", "PROBE_GRANT", "tools_provider_of", "builder_tools_line"]
+
+# a grant only for planning: which connector would take a builder tools call (no process is started, nothing runs in its folder)
+PROBE_GRANT = ToolGrant(tools=("Read",), allow=("Read",), cwd=".", root=".", usd=1.0, log_chars=1)
+
+
+def tools_provider_of(router: Router, tag: Optional[CallTag] = None) -> Optional[str]:
+    """The provider a builder tools call would go to now (D245), or None when none can take one. From cached status: no model call."""
+    try:
+        return router.plan(AskRequest(user="preflight", ctx=RouteContext(tag=tag or CallTag()), kind="text", run_tools=PROBE_GRANT)).order[0]
+    except ConnectorError:
+        return None
+
+
+def builder_tools_line(router: Optional[Router], *, offline: bool, agent_tools: Optional[bool] = None, sandbox: Optional[bool] = None) -> str:
+    """The startup line (D245): whether builders get tools in a run, with the Claude CLI or not at all, and whether the sandbox is on and why.
+    `agent_tools` and `sandbox` are the engine settings a new run reads (`engine.json` and the J2_* environment; None: the engine's rule)."""
+    from sutra_app.engine import llm
+    if sandbox is not None:
+        on, why = sandbox, f"J2_SANDBOX={int(sandbox)}"
+    else:
+        on, why = llm.sandbox_status(mock=offline, environ={})
+    if agent_tools is False:
+        tools = "off (J2_AGENT_TOOLS=0): J2 builds through its section path"
+    elif offline:
+        tools = "on (offline: J2's scripted general path)" if agent_tools else "off (offline: J2_AGENT_TOOLS=1 turns J2's scripted general path on)"
+    else:
+        provider = tools_provider_of(router) if router is not None else None
+        tools = (f"on ({'the Claude CLI' if provider == 'claude' else provider})" if provider else
+                 "off (no connector can run them: they need the Claude CLI, installed and signed in; Codex has no J2 tools path): "
+                 "J2 builds through its section path")
+    return f"Builder tools: {tools}. Sandbox: {'on' if on else 'off'} ({why})."
 
 
 def build_connectors(cfg: ConnectorConfig, policy: RoutingPolicy, *, only: Optional[str] = None) -> dict[str, ModelConnector]:
@@ -92,6 +123,13 @@ class RouterPort:
 
     def _probe_request(self) -> AskRequest:
         return AskRequest(user="preflight", ctx=RouteContext(tag=self._tag), kind="text")
+
+    def tools_provider(self) -> Optional[str]:
+        """The provider a builder tools call would go to now (D245), or None when none can take one (the Claude CLI missing or signed out, a
+        Codex-only or stub-only router): J2 then builds through its section path. From cached status: no model call."""
+        if self.mock:
+            return None
+        return tools_provider_of(self.router, self._tag)
 
     def describe(self) -> PortInfo:
         """The provider and model of the first plan; both None when nothing is usable (preflight says why)."""

@@ -123,7 +123,7 @@ def test_completion_request_defaults_match_j2_ask():
 
 def test_completion_request_field_list_and_closed():
     assert list(CompletionRequest.model_fields) == ["system", "user", "max_tokens", "effort", "json_mode", "images",
-                                                    "json_schema", "timeout_s", "tag", "allowance", "scripted"]
+                                                    "json_schema", "timeout_s", "tag", "allowance", "scripted", "run_tools"]      # run_tools: D245
     with pytest.raises(ValidationError):
         CompletionRequest(system="s", user="u", model="sonnet")
     for name in ("system", "user"):
@@ -153,7 +153,7 @@ def test_completion_request_refuses_bad_values(bad):
 
 def test_completion_result_fields():
     assert list(CompletionResult.model_fields) == ["text", "model", "provider", "input_tokens", "output_tokens", "usd",
-                                                   "duration_ms", "session_id", "structured", "note", "detail"]
+                                                   "duration_ms", "session_id", "structured", "note", "detail", "tool_record"]      # tool_record: D245
     res = CompletionResult(text="t")
     assert all(getattr(res, name) is None for name in list(CompletionResult.model_fields)[1:])
     with pytest.raises(ValidationError):

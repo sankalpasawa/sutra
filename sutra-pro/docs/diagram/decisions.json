@@ -1218,5 +1218,10 @@
   "id": "D244",
   "label": "J2 pin: main ee659fb5",
   "anchor": "band:DEPARTMENT RUNTIME"
+ },
+ {
+  "id": "D245",
+  "label": "builder tools on live (Claude CLI); sandbox where srt is",
+  "anchor": "band:DEPARTMENT RUNTIME"
  }
 ]
