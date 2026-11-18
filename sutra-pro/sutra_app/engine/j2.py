@@ -3299,13 +3299,19 @@ SAVED = re.compile(r"j2-[\w-]+")
 
 def ended_workable(run_dir):
     """A saved run ended workable: its last audit (audits.json, the board's re-checks left out) passes workable().
-    False when there is no audit to read."""
+    False when there is no audit to read.
+    P23 (D247): and only a clean end. summary.json's outcome starts "Done:" (never "Done with open items"), and the last
+    audit passes with nothing taken as passing: no item the Requester accepted as it is and no item still waiting for a
+    real run (workable() counts both). So a run that ended with open items is never saved as a run template, reused as a
+    folder, or served by the content door."""
     try:
         with open(os.path.join(run_dir or "", "audits.json"), encoding="utf-8") as f:
             a = [x for x in json.load(f) if isinstance(x, dict) and x.get("kind") != "recheck"]
-    except (OSError, ValueError, TypeError):
+        with open(os.path.join(run_dir or "", "summary.json"), encoding="utf-8") as f:
+            outcome = str((json.load(f) or {}).get("outcome") or "")
+    except (OSError, ValueError, TypeError, AttributeError):
         return False
-    return bool(a) and workable(a[-1]) == []
+    return bool(a) and outcome.startswith("Done:") and workable({**a[-1], "accepted": [], "after_real_run": []}) == []
 
 
 def saved_dir(name, runs_dir=None):
