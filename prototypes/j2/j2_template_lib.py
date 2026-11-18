@@ -2704,14 +2704,17 @@ def match_run_templates(asked, text, done_when, live=False):
     by name). A template can be picked only when its first stage is the stage whose charter was just written (the run
     cannot go back to an earlier stage), and, in a live run, only when a live run made it; "why_not" says which.
     Of the versions of one run template (run_template_versions) only one can be picked: the newest whose run ended
-    workable (run_ended_workable); when none is known to have, the newest."""
+    workable (run_ended_workable); when none is known to have, the newest whose run is not known (its folder is not
+    here). A run template whose run is known NOT to have ended workable is never picked, whatever its version and
+    however it was saved (the command line saves any run): an unfinished run feeds no new run."""
+    ended = lambda r: run_ended_workable(os.path.join(runs_root(), str(r.get("made_from_run"))))
     use = {}      # the name's slug -> the id of the version that can be picked
     for r in run_template_list():
         fam = slug(r.get("name"))
         if fam not in use:
             vs = run_template_versions(r.get("name"))
-            good = [v for v in vs if run_ended_workable(os.path.join(runs_root(), str(v.get("made_from_run")))) is True]
-            use[fam] = (good or vs)[-1]
+            good = [v for v in vs if ended(v) is True]
+            use[fam] = (good or [v for v in vs if ended(v) is None] or vs)[-1]
     out = []
     for r in run_template_list():
         rt = get_run_template(r["id"])
@@ -2727,6 +2730,8 @@ def match_run_templates(asked, text, done_when, live=False):
             best = int(use[slug(rt.name)].get("version") or 1)
             why = (f"version {best} of this run template is newer" if best > rt.version else
                    f"its run did not end workable, so version {best} is used")
+        elif ended(r) is False:
+            why = f"its run ({rt.made_from_run}) did not end workable, so no run starts from it"
         out.append({"id": rt.id, "name": rt.name, "version": rt.version, **m, "template_stages": list(rt.stages), "business_type": rt.business_type,
                     "mock": rt.mock, "eligible": not why, **({"why_not": why} if why else {})})
     out.sort(key=lambda x: (-x["score"], x["name"]))
@@ -2775,12 +2780,27 @@ def run_template_versions(name):
 
 
 def run_ended_workable(run_dir):
-    """True when a saved run's summary.json says it ended workable (nothing left in "workable"), False when it says
-    otherwise, None when the run folder or its summary is not here to read (not known)."""
+    """True when a saved run's summary.json says it ended workable (it ended Done, with nothing left in "workable"),
+    False when it says otherwise (things left, or a run that crashed although its last audit was clean), None when the
+    run folder or its summary is not here to read (not known)."""
     s = _read(os.path.join(run_dir, "summary.json"))
     if not isinstance(s, dict) or "workable" not in s:
         return None
-    return s["workable"] == []
+    return s["workable"] == [] and str(s.get("status") or "done").startswith("done")
+
+
+def run_end(run_dir):
+    """How a saved run ended, for the shelves: {"finished": it ended Done and workable, "workable": run_ended_workable,
+    "status": summary.json's status or "not recorded", "outcome": the run's own outcome sentence, or why there is
+    none}. A run folder with no summary.json never reached its end (stopped, or still running): not finished. A
+    summary written before "workable" was recorded counts as finished when its status is done. Nothing is guessed."""
+    s = _read(os.path.join(run_dir, "summary.json"))
+    if not isinstance(s, dict):
+        return {"finished": False, "workable": None, "status": NOT_RECORDED,
+                "outcome": "no summary.json: the run was stopped before it ended, or is still running"}
+    status, w = str(s.get("status") or NOT_RECORDED), run_ended_workable(run_dir)
+    finished = w is True or (w is None and status == "done")
+    return {"finished": finished, "workable": w, "status": status, "outcome": str(s.get("outcome") or status)[:400]}
 
 
 def auto_save_run_template(run_dir):
@@ -3200,7 +3220,7 @@ def run_artifacts(run_dir):
                     "data_file": data_file, "listing": listing,
                     "business": facts["business"], "business_type": business_type_shown(facts["business_type"], run_dir),
                     "date": facts["date"], "mock": facts["mock"],
-                    "status": summary.get("status") or NOT_RECORDED, "checks": checks,
+                    "status": summary.get("status") or NOT_RECORDED, "run_end": run_end(run_dir), "checks": checks,
                     "file": (folder + "/") if folder else file, "files": files, "preview": t.get("preview") or ("folder" if folder else None),
                     "made_from": whole, "run_template": from_rt, "sections": secs})
     return out
@@ -3399,6 +3419,8 @@ def find_artifact(need, root=None):
     out = []
     for a in _all_artifacts(root):
         if a["type"] != k or (sec and not any(s["section"] == sec for s in a["sections"])):
+            continue
+        if not (a.get("run_end") or {}).get("finished"):      # an unfinished run's work is on the shelf, and is no starting point
             continue
         goal = _read(os.path.join(runs_root(root), a["run"], "goal.json")) or {}
         same_type = _same_business(need.get("business_type"), a["business_type"]) == 2
