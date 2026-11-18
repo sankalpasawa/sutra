@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Vendor the J2 prototype's engine into `sutra_app/engine/` (work package E1; engine design 3.1 and 3.4, decision D13).
 
-    scripts/py scripts/vendor_j2.py --source /path/to/extraction --commit dee83d5c... [--dest .] [--check]
+    scripts/py scripts/vendor_j2.py --source /path/to/extraction --commit ee659fb5... [--dest .] [--check]
 
 Since sync 4 (D136), and in syncs 5 and 6 (D160, D176) again, the source is the folder `prototypes/j2` of this repository at the pinned sutra commit, extracted with
 `git archive <commit> prototypes/j2 | tar -x --strip-components=2 -C <new, empty folder>` (never the working tree).
@@ -38,9 +38,9 @@ from pathlib import Path
 from typing import Optional
 
 REPO = Path(__file__).resolve().parent.parent
-BASELINE = "dee83d5c565fe7d82631a4f7eb555543160a6d41"        # main (sync 7, D239): Disha's #202 and #203 merged; J2 has not tagged it
-BASELINE_TREE = "b9a14370c35a6309062821b549b311d662a8ed3d"   # `git rev-parse <BASELINE>:prototypes/j2`
-PREVIOUS_BASELINES = ("9200cf6", "33aeeda", "025e265c", "1d537295", "1adb8ecd")       # commits the earlier syncs took the J2 prototype at (025e265c: sync 4, 1d537295: sync 5, tag cut-off/2026-11-12, 1adb8ecd: sync 6): history only, never a source
+BASELINE = "ee659fb54aec75bf7f5139516791aee20a0474fa"        # main (sync 8, D244): Kaivan's #205 and the dry-run fix #206 merged; J2 has not tagged it
+BASELINE_TREE = "ddc9a7875b4e4d0d2d6af1d8f8764e1f0ddd2d37"   # `git rev-parse <BASELINE>:prototypes/j2`
+PREVIOUS_BASELINES = ("9200cf6", "33aeeda", "025e265c", "1d537295", "1adb8ecd", "dee83d5c")       # commits the earlier syncs took the J2 prototype at (025e265c: sync 4, 1d537295: sync 5, tag cut-off/2026-11-12, 1adb8ecd: sync 6): history only, never a source
 DESIGNED_AGAINST = "ce2631f"                                  # the design documents' line numbers (`j2.py:n`) are those of this commit: history only
 J2_ENV = "SUTRA_J2_CHECKOUT"
 
@@ -1045,10 +1045,10 @@ def render_vendored_md(commit: str, rows, ranges) -> str:
         "# Vendored J2 engine",
         "",
         f"Source: the J2 prototype as it is kept in this repository's own copy `prototypes/j2`, at the sutra commit `{commit}`{tree}, "
-        f"extracted with `git archive {commit} prototypes/j2 | tar -x --strip-components=2 -C <empty folder>` (sync 7, D239). That "
+        f"extracted with `git archive {commit} prototypes/j2 | tar -x --strip-components=2 -C <empty folder>` (sync 8, D244). That "
         "extraction, given to the script with `--source` and `--commit`, is the only source of every file below, never the working tree. "
         f"History, not a source: the earlier syncs took the J2 prototype at the commits `{PREVIOUS_BASELINES[0]}` and "
-        f"`{PREVIOUS_BASELINES[1]}` and `{PREVIOUS_BASELINES[2]}` (sync 4) and `{PREVIOUS_BASELINES[3]}` (sync 5, the tag `cut-off/2026-11-12`) and `{PREVIOUS_BASELINES[4]}` (sync 6); the design documents cite the line numbers (`j2.py:n`) of `{DESIGNED_AGAINST}`, and everything "
+        f"`{PREVIOUS_BASELINES[1]}` and `{PREVIOUS_BASELINES[2]}` (sync 4) and `{PREVIOUS_BASELINES[3]}` (sync 5, the tag `cut-off/2026-11-12`) and `{PREVIOUS_BASELINES[4]}` (sync 6) and `{PREVIOUS_BASELINES[5]}` (sync 7); the design documents cite the line numbers (`j2.py:n`) of `{DESIGNED_AGAINST}`, and everything "
         "after `j2.py:8313` has moved. Patches are located by anchor text, never by line.",
         "",
         "Copied into `sutra_app/engine/` with the same module names; every change to a J2 file is one of the numbered patches "
@@ -1066,6 +1066,11 @@ def render_vendored_md(commit: str, rows, ranges) -> str:
         "tree (it gains `real_run.md`); P1 (seven lines in `j2_artifacts.py`), P7 (the call passes `tools` on), P8 (the import "
         "block) and P17 (`create` takes the form) were re-anchored; no patch was dropped. Sutra's `llm` shim reports builder tools "
         "off (D240), so the vendored engine takes J2's section path. "
+        "Sync 8 (D244): the pin moved to J2 main `ee659fb5` (Kaivan's reuse fixes #205 and the review of 17 Nov, a workable run saved "
+        "as a run template, and the dry-run fix #206: a real run passes its folders as arguments, a build that holds a real folder is "
+        "refused, the real folders are read before and after the dry run, the charter lists only built files); every patch applied "
+        "unchanged, none was re-anchored or dropped. The new reuse code is carried inert behind J2's library flags; builder tools stay "
+        "off (D240). "
         "This file is written by `scripts/vendor_j2.py`; `scripts/py scripts/vendor_j2.py --source <the extraction> --commit "
         f"{commit} --check` re-derives every file below from the J2 source and fails on any difference.",
         "",

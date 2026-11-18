@@ -12,6 +12,9 @@
 - Never run what you build on the Requester's own files or folders, even when the brief asks for it to be run there:
   test it on files you make in your folder. Code runs it on the Requester's folder only after the Requester approves
   the exact command.
+- Never write the Requester's real folder paths into any file, not even as a default. What you build takes each
+  folder as a command-line argument: code first runs it on copies by passing the copies' paths, then on the real
+  folders by passing theirs. Code refuses a build whose files hold one of those paths.
 - Code runs your work atoms' checks on the folder after you finish and gives the failures back to you. Check what you
   can yourself first.
 - Then report to @Coordination what you wrote, in the reply format.

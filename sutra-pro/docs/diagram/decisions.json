@@ -1213,5 +1213,10 @@
   "id": "D243",
   "label": "Windows icon: woven lotus; Mac keeps old logo",
   "anchor": "Desktop app · Electron window"
+ },
+ {
+  "id": "D244",
+  "label": "J2 pin: main ee659fb5",
+  "anchor": "band:DEPARTMENT RUNTIME"
  }
 ]

@@ -7,7 +7,7 @@
   "J2_REALIZATION": "0",
   "STUDIO_MOCK": "1"
  },
- "j2_commit": "dee83d5c565fe7d82631a4f7eb555543160a6d41",
+ "j2_commit": "ee659fb54aec75bf7f5139516791aee20a0474fa",
  "outcome": "Done: the site is workable. Every done-when item passes with Audit's evidence and the render check is clean.",
  "scenario": "brewlab_fixes0",
  "schema": "prompts-golden/1",
@@ -16,13 +16,13 @@
  "spent": 88,
  "workflows": "c7a38a6f2707",
  "calls": [
-  ["identity", "a2ab277bb00e", "577080f906fb"],
+  ["identity", "923fbfac9bab", "577080f906fb"],
   ["adaptation", "4e1585b5eaa4", "425cd8b26915"],
   ["priority", "2d002703128a", "f4617f7cf2ee"],
   ["adaptation", "47aa3954556e", "cf995c7df627"],
   ["priority", "2d002703128a", "6c44c7c0ddfb"],
   ["adaptation", "47aa3954556e", "1d333eed5d5b"],
-  ["identity", "f116794c3cc2", "e22764c59021"],
+  ["identity", "a4644a712174", "e22764c59021"],
   ["coordination", "28fb7578aca3", "9983fd3d1ab7"],
   ["W-1", "e1a391b2e4a6", "f151b418818c"],
   ["coordination", "28fb7578aca3", "1adfecd8debf"],
@@ -32,7 +32,7 @@
   ["coordination", "28fb7578aca3", "e9b5f467880a"],
   ["W-3", "7e0551b4e834", "38ef7e100cdd"],
   ["audit", "2e68aade3663", "0bf7e9d4f791"],
-  ["identity", "ad4e5000233d", "9420fc9ab45c"],
+  ["identity", "9c07c5c714e2", "9420fc9ab45c"],
   ["adaptation", "4e1585b5eaa4", "fd278d7e1abb"],
   ["audit", "fdc56c12521b", "74eb51693149"],
   ["adaptation", "fee9e608f7c1", "feda0561c2c1"],
@@ -43,6 +43,6 @@
   ["coordination", "28fb7578aca3", "74c73264ba7d"],
   ["W-5", "7ace358fb73a", "52375221e2f9"],
   ["audit", "2e68aade3663", "f7de3ce54b4b"],
-  ["identity", "ad4e5000233d", "a51864ecbd91"]
+  ["identity", "9c07c5c714e2", "a51864ecbd91"]
  ]
 }

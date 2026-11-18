@@ -1724,3 +1724,10 @@ Decided by Claude on its own, on the dates shown. The owner can veto any of them
 - Why: the owner wants the Windows app recognisable as its own on a Windows desktop, where the black rounded square reads as a generic tile at small sizes; the Mac app keeps the old product's logo (D117) because the two apps replace each other in place there.
 - Rejected: deriving the Windows icon from the old logo with a colour change (it is new artwork, not a derivation, and `make_icons.py` would overwrite it); a Windows icon for the beta (a beta is never built for Windows); renaming the files after the artwork (the names are what the packager, the installer scripts and the release workflow reference; the artwork can change under them).
 - Diagram: label "Windows icon: woven lotus; Mac keeps old logo", pill on Desktop app · Electron window.
+
+## D244 — The pin moves to J2 main `ee659fb5` (sync 8): Kaivan's reuse fixes (#205) and the dry-run fix (#206)
+- Sources: D239, D240, `prototypes/j2/docs/remove-restrictions-plan.md` ("Dry run on the real folders"), `docs/design/j2-sync-8.md`.
+- Decided: `scripts/vendor_j2.py` takes `BASELINE = ee659fb54aec75bf7f5139516791aee20a0474fa` and tree `ddc9a7875b4e4d0d2d6af1d8f8764e1f0ddd2d37`; `dee83d5c` joins `PREVIOUS_BASELINES`. Every patch applies unchanged (none re-anchored, none dropped). The page is unchanged: J2's page at the pin equals `133942b1`, which sync 7 ported. The reuse changes are carried inert behind J2's library flags; builder tools stay off (D240).
+- Why: the owner approved lifting D240 (builder tools in live runs); that must not come before the engine has #206, which keeps a dry run off the Requester's real folders (`runs/j2-20261117-114654` wrote into a real folder before approval). The sync goes first and alone, so the app is checked working as before with tools still off.
+- Rejected: carrying only #206 as a new patch (a large patch on `j2.py`, against "patches are small, located by anchor"); lifting D240 in the same change (one review would mix an engine sync with a safety switch).
+- Diagram: label "J2 pin: main ee659fb5", pill on band:DEPARTMENT RUNTIME.

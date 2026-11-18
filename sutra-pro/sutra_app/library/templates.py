@@ -696,6 +696,10 @@ class TemplateDecision(Value):
     nearest: Optional[JsonObject] = None                                                  # the nearest template by fields (auto-reuse)
     nearest_refused: Optional[Text2000] = None                                            # why the nearest template was not adapted
     door: Optional[Literal["reuse", "adapt", "build", "unknown"]] = None                  # the content door's decision for this section
+    # J2 ee659fb5 (sync 8, D244): the reuse fixes of #205 and the review of 17 Nov
+    same_job: Optional[JsonObject] = None                                                 # {template, match}: the same job worded anew, reused as it is (rule "j")
+    not_similar: Optional[JsonObject] = None                                              # {least, templates}: other businesses' templates turned down as not similar enough
+    fresh_start: Optional[bool] = None                                                    # this business got its own template family (none similar enough)
 
 
 class RunTemplate(TemplateDecision):

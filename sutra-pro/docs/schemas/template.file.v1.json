@@ -458,6 +458,18 @@
           "default": null,
           "title": "First Refused"
         },
+        "fresh_start": {
+          "anyOf": [
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Fresh Start"
+        },
         "from_template": {
           "anyOf": [
             {
@@ -542,6 +554,21 @@
           "default": null,
           "title": "New Family"
         },
+        "not_similar": {
+          "anyOf": [
+            {
+              "additionalProperties": {
+                "$ref": "#/$defs/JsonValue"
+              },
+              "type": "object"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Not Similar"
+        },
         "reason": {
           "maxLength": 2000,
           "title": "Reason",
@@ -609,6 +636,21 @@
           ],
           "default": null,
           "title": "Run Template"
+        },
+        "same_job": {
+          "anyOf": [
+            {
+              "additionalProperties": {
+                "$ref": "#/$defs/JsonValue"
+              },
+              "type": "object"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Same Job"
         },
         "saved": {
           "anyOf": [
