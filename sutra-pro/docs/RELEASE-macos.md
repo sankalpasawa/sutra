@@ -65,6 +65,30 @@ What each `dmg` leg does:
 `verify` fails unless both legs succeeded, all four assets are on the release and the published bytes match their checksums. A runner label that has been
 retired does not fail, it hangs in `queued`: `verify` is what notices (see the labels in the workflow header).
 
+## A leg that never got a runner (queue timeout)
+
+GitHub's hosted Apple Silicon pool (`macos-15`) is sometimes short of capacity. Then the `dmg (arm64)` job sits `queued` for about 15 minutes and is
+**cancelled without running a single step** (run 44333095382, `sutra-pro-v0.6.2`). It looks like this:
+
+- the job shows no steps and no runner, and its log is empty (the raw log is a 404);
+- its annotations say "The job was not acquired by Runner of type hosted even after multiple attempts" and "Due to capacity constraints, jobs targeting macOS
+  arm64 runners may experience longer queue times";
+- the x86_64 leg (`macos-15-intel`) is green, and `verify` fails. Its error says the leg "never got a runner ... not a build failure" and points here.
+
+Nothing was built, so there is nothing to repair in the tree. **Re-run the failed jobs** once capacity is back: on the run's page, "Re-run failed jobs", or
+`gh run rerun <run-id> --failed`. Only the failed `dmg` leg and `verify` run again; the upload replaces the release's assets in place, so the green leg's DMG is
+untouched (a notarized asset is never replaced by an ad-hoc one, see "Refuse to downgrade"). A leg that ran and failed shows steps and a runner: read that step's log instead.
+
+If it keeps queueing, dispatch the workflow with another arm64 label for that leg only (the tag must exist; dispatch from the tag's own ref):
+
+    gh workflow run sutra-pro-release-macos -f tag=sutra-pro-vX.Y.Z -f arm64_runner=macos-26 --ref sutra-pro-vX.Y.Z
+
+This is never automatic: a different image carries a different Xcode and toolchain than the one the other releases were built on. Decide it on purpose, and try
+it on a `-beta.N` tag first. A push always uses `macos-15`.
+
+Step timeouts, so that a hang names its step instead of waiting out the job's 60 minutes: building the app and proving it offline 10 minutes each, each
+notarization step 25 (`notarytool submit --wait --timeout 20m` inside it).
+
 ## Signing
 
 | Secrets | Result |

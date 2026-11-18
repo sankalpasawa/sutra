@@ -41,6 +41,10 @@ on:
       tag:
         description: "Tag to attach the DMGs to (must already exist)"
         required: true
+      arm64_runner:
+        description: "Runner label for the arm64 leg when macos-15 has no capacity (e.g. macos-26). Empty keeps macos-15. A different image changes the toolchain: never automatic."
+        required: false
+        default: ""
 
 permissions:
   contents: read
@@ -100,7 +104,9 @@ jobs:
         include:
           - arch: arm64
             target: mac-arm64
-            runner: macos-15           # Apple Silicon
+            # Apple Silicon. A push always uses macos-15; only a manual dispatch may name another arm64 label (input arm64_runner), because
+            # another image changes the toolchain that signs and notarizes the app. The label is read here and nowhere in a script.
+            runner: ${{ inputs.arm64_runner || 'macos-15' }}
           - arch: x86_64
             target: mac-x64
             runner: macos-15-intel     # Intel
@@ -197,6 +203,7 @@ jobs:
 
       # The wheel name must carry the version the tag promises (a beta publishes the wheel of its X.Y.Z), as in release-wheel.yml.
       - name: Build Sutra Pro.app
+        timeout-minutes: 10        # a real build is 2 to 4 min; a hang names this step instead of eating the job's 60
         run: |
           set -euo pipefail
           shopt -s nullglob
@@ -220,6 +227,7 @@ jobs:
       # the server alone runs a team's first turn on that Python. No network (every proxy points at a closed port) and no model. The picture and the logs
       # are kept as an artifact, so a failed run can be looked at, not guessed at.
       - name: Prove the bundle runs offline
+        timeout-minutes: 10
         run: |
           set -euo pipefail
           scripts/py scripts/prove_desktop_app.py --app "build/Sutra Pro.app" --version "$VERSION" --keep proof
@@ -237,6 +245,7 @@ jobs:
 
       - name: Notarize and staple the app
         if: steps.signing.outputs.enabled == 'true'
+        timeout-minutes: 25        # notarytool's own --timeout is 20m; the rest is the staple retries
         env:
           APPLE_NOTARY_KEY: ${{ secrets.APPLE_NOTARY_KEY }}
           APPLE_NOTARY_KEY_ID: ${{ secrets.APPLE_NOTARY_KEY_ID }}
@@ -249,7 +258,7 @@ jobs:
           ditto -c -k --keepParent "build/Sutra Pro.app" "$RUNNER_TEMP/app.zip"
           # Apple's ticket service (CloudKit) drops connections now and then: staple and validate are retried, as Apple advises
           retry() { for attempt in 1 2 3 4 5; do "$@" && return 0; echo "attempt $attempt of $* failed, retrying in 15 s"; sleep 15; done; return 1; }
-          xcrun notarytool submit "$RUNNER_TEMP/app.zip" --key "$key" --key-id "$APPLE_NOTARY_KEY_ID" --issuer "$APPLE_NOTARY_ISSUER" --wait
+          xcrun notarytool submit "$RUNNER_TEMP/app.zip" --key "$key" --key-id "$APPLE_NOTARY_KEY_ID" --issuer "$APPLE_NOTARY_ISSUER" --wait --timeout 20m
           retry xcrun stapler staple "build/Sutra Pro.app"
 
       - name: Make the DMG
@@ -274,6 +283,7 @@ jobs:
 
       - name: Notarize and staple the DMG
         if: steps.signing.outputs.enabled == 'true'
+        timeout-minutes: 25
         env:
           APPLE_NOTARY_KEY: ${{ secrets.APPLE_NOTARY_KEY }}
           APPLE_NOTARY_KEY_ID: ${{ secrets.APPLE_NOTARY_KEY_ID }}
@@ -287,7 +297,7 @@ jobs:
           printf '%s' "$APPLE_NOTARY_KEY" | base64 --decode > "$key"
           # Apple's ticket service (CloudKit) drops connections now and then: staple and validate are retried, as Apple advises
           retry() { for attempt in 1 2 3 4 5; do "$@" && return 0; echo "attempt $attempt of $* failed, retrying in 15 s"; sleep 15; done; return 1; }
-          xcrun notarytool submit "$dmg" --key "$key" --key-id "$APPLE_NOTARY_KEY_ID" --issuer "$APPLE_NOTARY_ISSUER" --wait
+          xcrun notarytool submit "$dmg" --key "$key" --key-id "$APPLE_NOTARY_KEY_ID" --issuer "$APPLE_NOTARY_ISSUER" --wait --timeout 20m
           retry xcrun stapler staple "$dmg"
 
       # A release must never CLAIM notarization it did not get: when the secrets were supplied, both tickets must be stapled.
@@ -355,16 +365,34 @@ jobs:
       run:
         shell: bash
         working-directory: .
+    permissions:
+      contents: read
+      actions: read          # list this run's jobs, to tell "never got a runner" from a failed build
     env:
       GH_TOKEN: ${{ github.token }}
       TAG: ${{ inputs.tag || github.ref_name }}
       DMG_RESULT: ${{ needs.dmg.result }}
     steps:
       - name: Both legs must have succeeded
+        env:
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+          RUN_ATTEMPT: ${{ github.run_attempt }}
         run: |
           set -euo pipefail
           if [ "$DMG_RESULT" != "success" ]; then
-            echo "::error::the dmg job finished as '$DMG_RESULT': a leg failed, was cancelled, or never got a runner. Check the runner labels first."
+            # A leg that was cancelled before it got a runner has no steps and no runner name (hosted capacity, "not acquired by Runner"): that is
+            # the platform, not our build. The jobs API tells it apart from a leg that ran and failed. If the query fails, it reads as a failure that ran.
+            never_ran="$(gh api "repos/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID/attempts/$RUN_ATTEMPT/jobs" --paginate \
+              --jq '.jobs[] | select((.name | startswith("dmg")) and .conclusion == "cancelled" and (.steps | length) == 0 and (.runner_name // "") == "") | .name' \
+              2>/dev/null || true)"
+            if [ -n "$never_ran" ]; then
+              printf '%s\n' "$never_ran" | while IFS= read -r name; do
+                echo "::error::'$name' never got a runner (cancelled while queued; GitHub's hosted macOS capacity), so nothing was built: this is not a build failure."
+              done
+              echo "::error::Re-run the failed jobs: $RUN_URL (Re-run failed jobs), or: gh run rerun $GITHUB_RUN_ID --failed. The release upload replaces assets in place. If it keeps queueing, dispatch with another arm64 runner label (docs/RELEASE-macos.md)."
+            else
+              echo "::error::the dmg job finished as '$DMG_RESULT': a leg failed or was cancelled while running (read its log), or a runner label is retired. Check the runner labels first. Run: $RUN_URL"
+            fi
             exit 1
           fi
 

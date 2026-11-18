@@ -997,7 +997,9 @@ def test_the_matrix_builds_each_architecture_natively_on_its_own_runner():
     assert dmg["runs-on"] == "${{ matrix.runner }}"
     assert dmg["strategy"]["fail-fast"] is False
     assert dmg["strategy"]["matrix"]["include"] == [
-        {"arch": "arm64", "target": "mac-arm64", "runner": "macos-15"}, {"arch": "x86_64", "target": "mac-x64", "runner": "macos-15-intel"},
+        # the arm64 label is macos-15 unless a manual dispatch names another one (never automatic: another image changes the toolchain)
+        {"arch": "arm64", "target": "mac-arm64", "runner": "${{ inputs.arm64_runner || 'macos-15' }}"},
+        {"arch": "x86_64", "target": "mac-x64", "runner": "macos-15-intel"},
     ]
     assert {e["arch"] for e in dmg["strategy"]["matrix"]["include"]} == set(bma.ARCHES)
 
@@ -1006,7 +1008,9 @@ def test_only_the_dmg_job_can_write_the_release():
     data = wf()
     assert data["permissions"] == {"contents": "read"}
     assert data["jobs"]["dmg"]["permissions"] == {"contents": "write"}
-    assert "permissions" not in data["jobs"]["guard"] and "permissions" not in data["jobs"]["verify"]
+    assert "permissions" not in data["jobs"]["guard"]
+    # verify only reads: the release, and this run's job list (to tell a leg that never got a runner from a failed build)
+    assert data["jobs"]["verify"]["permissions"] == {"contents": "read", "actions": "read"}
 
 
 def test_secrets_appear_only_in_the_env_of_the_signing_steps():
@@ -1193,6 +1197,29 @@ def test_verify_needs_both_legs_green_both_architectures_on_the_release_and_matc
         assert name in scripts
     assert "shasum -a 256 -c Sutra-Pro-arm64.dmg.sha256 Sutra-Pro-x86_64.dmg.sha256" in scripts
     assert verify["runs-on"] == "ubuntu-latest"
+
+
+def test_a_hang_names_its_step_and_notarytool_has_its_own_timeout():
+    job = wf()["jobs"]["dmg"]
+    by_name = {s["name"]: s for s in job["steps"]}
+    assert by_name["Build Sutra Pro.app"]["timeout-minutes"] == 10 and by_name["Prove the bundle runs offline"]["timeout-minutes"] == 10
+    for name in ("Notarize and staple the app", "Notarize and staple the DMG"):
+        assert by_name[name]["timeout-minutes"] == 25
+        assert " --wait --timeout 20m" in by_name[name]["run"]
+
+
+def test_the_arm64_runner_input_is_optional_and_reaches_only_the_matrix_never_a_script():
+    inputs = wf()[True]["workflow_dispatch"]["inputs"] if True in wf() else wf()["on"]["workflow_dispatch"]["inputs"]
+    assert inputs["tag"]["required"] is True
+    assert inputs["arm64_runner"]["required"] is False and inputs["arm64_runner"]["default"] == ""
+    assert "arm64_runner" not in "\n".join(s["run"] for job in wf()["jobs"].values() for s in job["steps"] if "run" in s)
+
+
+def test_verify_says_a_leg_that_never_got_a_runner_is_not_a_build_failure_and_how_to_rerun():
+    verify = wf()["jobs"]["verify"]
+    script = next(s["run"] for s in verify["steps"] if s["name"] == "Both legs must have succeeded")
+    assert "(.steps | length) == 0" in script and '.conclusion == "cancelled"' in script
+    assert "never got a runner" in script and "Re-run the failed jobs" in script and "$RUN_URL" in script
 
 
 def test_every_python_call_goes_through_scripts_py_and_nothing_else_is_installed():
