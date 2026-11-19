@@ -33,6 +33,7 @@ Status: Refined   |   Task: pulse-gmail-reader   |   Date: 2026-11-19
 | R-23 | 403 with reason `rateLimitExceeded` or `userRateLimitExceeded` is retried like 429; 403 `dailyLimitExceeded` is `rate_limited` with no retry (retrying cannot help); AC-42 added | Review R1-4: usage limits were `access_denied` with advice to enable the API |
 | R-24 | Token errors: `RefreshError.retryable` is retried, then `server_error`; unknown non-retryable token errors get new code `token_error` (exit 4) instead of `unauthorized_client`; `invalid_grant` message names a revoked or deleted key; AC-43 added | Review R1-5: transient token failures got delegation advice and no retry |
 | R-25 | Key pre-check also requires `token_uri`; a `ValueError` from building credentials (bad PEM, missing field) is `key_unreadable` without the exception text; AC-44 added | Review R1-6: such keys exited `internal` |
+| R-26 | FR-2: only the three named fixture JSON files are re-included (not `fixtures/*.json`); `*.pem`, `*.p12`, `*.key` ignored; AC-45 added | Review R1-7: a key dropped in `fixtures/` could be committed |
 
 ## Problem
 An internal tool needs to read selected mailboxes in the company Google Workspace domain, read-only. Domain-wide delegation lets one service account open any mailbox in the domain; Google does not limit it per mailbox. So the tool itself must limit which mailboxes are opened, why, and what is kept. Credentials (admin-approved key file, domain) arrive later, so step 1 must be complete and tested offline.
@@ -252,7 +253,7 @@ Never in an audit row: mail fields (subject, from, snippet, body, attachment nam
 | ID | Requirement |
 |---|---|
 | FR-1 | `prototypes/pulse/CHARTER.md` exists before any other file in the folder: purpose, scope, data handled (incl. snippet, DEC-2), retention (output 30 d default, audit 365 d, DEC-1), allowlist approval and owner-notice rule (DEC-3), owner Kaivan Shah and approver Workspace admin (DEC-4), non-goals |
-| FR-2 | `prototypes/pulse/.gitignore` ignores `.env`, `.env.*` except `.env.example`, `*.json` outside `fixtures/`, `out/`, `state/`, `.venv/`, `__pycache__/` |
+| FR-2 | `prototypes/pulse/.gitignore` ignores `.env`, `.env.*` except `.env.example`, every `*.json` except the three named fixtures (`fixtures/inbox.json`, `fixtures/scenarios.json`, `fixtures/rules.sample.json`), `*.pem`, `*.p12`, `*.key`, `out/`, `state/`, `.venv/`, `__pycache__/` (R-26) |
 | FR-3 | Config loads per the Configuration table; a non-empty shell value wins over `.env` |
 | FR-4 | Live command with an empty required key exits 2 `config_missing` naming that key; the same `.env` with `PULSE_MOCK=1` works (R-2) |
 | FR-5 | Mock mode imports no `google*` module and opens no network socket |
@@ -352,6 +353,7 @@ Each maps to a test in `pulse_test.py` unless marked (manual).
 | AC-42 | The mapper turns 403 `rateLimitExceeded`/`userRateLimitExceeded` into a retryable 429 and 403 `dailyLimitExceeded` into `rate_limited`; through `LiveClient`, a persistent 403 `rateLimitExceeded` gives 5 attempts and exit 5 | FR-13, FR-14, R-23 |
 | AC-43 | Given a `RefreshError` with `retryable` true, then 5 attempts and `server_error` (one failure then success gives exit 0); an unrecognised non-retryable `RefreshError` gives `token_error`, exit 4, one attempt, and its text is not printed; the `invalid_grant` message says "revoked or deleted" | FR-13, R-24 |
 | AC-44 | A key file without `token_uri` (or with it empty) gives `key_unreadable`; a credentials builder raising `ValueError` gives `key_unreadable`, exit 4, the key path in stderr and none of the exception text in stdout, stderr or the audit log | FR-13, FR-33, R-25 |
+| AC-45 | `git check-ignore --no-index` ignores `fixtures/sa-key.json`, `fixtures/other.json`, `key.pem`, `fixtures/key.pem`, `cert.p12`, `id.key`, and keeps the three named fixtures, `fixtures/allowlist.txt` and `.env.example` (automated in `test_gitignore_keys`) | FR-2, R-26 |
 
 ## Assumptions
 | ID | Assumption |

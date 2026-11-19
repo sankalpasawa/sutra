@@ -3,9 +3,17 @@
 .env.*
 !.env.example
 
-# Service-account keys and any other JSON outside fixtures/
+# Service-account keys and any other JSON. Only the named synthetic fixtures are re-included, so a key
+# dropped into fixtures/ is still ignored (review R1-7)
 *.json
-!fixtures/*.json
+!fixtures/inbox.json
+!fixtures/scenarios.json
+!fixtures/rules.sample.json
+
+# Other private-key formats
+*.pem
+*.p12
+*.key
 
 # Local output and state (default location is ~/.sutra-pulse, these cover a local override)
 out/

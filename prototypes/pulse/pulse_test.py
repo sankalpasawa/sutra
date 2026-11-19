@@ -419,6 +419,25 @@ class FixtureTests(unittest.TestCase):
         self.assertIn("told in writing", allow)
         self.assertIn("ana@example.test", allow)
 
+    def test_gitignore_keys(self):  # R1-7 / AC-45 / AC-2
+        ignored = ["fixtures/sa-key.json", "fixtures/other.json", "sa-key.json", "keys/sa.json", "key.pem",
+                   "fixtures/key.pem", "cert.p12", "id.key", ".env", ".env.local", "out/x.jsonl"]
+        kept = ["fixtures/inbox.json", "fixtures/scenarios.json", "fixtures/rules.sample.json",
+                "fixtures/allowlist.txt", ".env.example", "pulse.py"]
+        text = (HERE / ".gitignore").read_text(encoding="utf-8")
+        self.assertNotIn("!fixtures/*", text)
+        try:
+            subprocess.run(["git", "--version"], capture_output=True, check=True)
+            inside = subprocess.run(["git", "rev-parse", "--is-inside-work-tree"], cwd=HERE,
+                                    capture_output=True, text=True).stdout.strip() == "true"
+        except (OSError, subprocess.CalledProcessError):
+            inside = False
+        if not inside:
+            self.skipTest("git not available; pattern check above only")
+        for path in ignored + kept:
+            r = subprocess.run(["git", "check-ignore", "-q", "--no-index", path], cwd=HERE)
+            self.assertEqual(r.returncode == 0, path in ignored, path)
+
     def test_fixture_scan(self):  # AC-29 / FR-30
         texts = fixture_texts()
         emails = [e for t in texts for e in EMAIL_RE.findall(t)]
