@@ -394,5 +394,89 @@ class FixtureTests(unittest.TestCase):
         self.assertIsNone(PROTO004.search(json.dumps(FAKE_KEY)))
 
 
+# ---------------------------------------------------------------- T6: client, mock, retry
+import gmail_client  # noqa: E402
+from gmail_client import MockClient, with_retry  # noqa: E402
+
+
+class Recorder:
+    def __init__(self):
+        self.delays = []
+
+    def __call__(self, s):
+        self.delays.append(s)
+
+
+class ClientTests(unittest.TestCase):
+    def mock(self, scenario="default"):
+        return MockClient("ana@example.test", FIX, scenario)
+
+    def test_list_pages(self):
+        c = self.mock()
+        r = c.list_messages(None, None, 100)
+        self.assertEqual(len(r["messages"]), 5)
+        self.assertEqual(r["nextPageToken"], "5")
+        r2 = c.list_messages(None, r["nextPageToken"], 2)
+        self.assertEqual([m["id"] for m in r2["messages"]], ["msg-06", "msg-07"])
+        last = c.list_messages(None, "10", 100)
+        self.assertEqual(len(last["messages"]), 3)
+        self.assertNotIn("nextPageToken", last)
+
+    def test_metadata_strips_body(self):
+        m = self.mock().get_message("msg-03", "metadata")
+        self.assertNotIn("parts", m["payload"])
+        self.assertNotIn("body", m["payload"])
+        self.assertEqual({h["name"] for h in m["payload"]["headers"]}, {"From", "To", "Cc", "Subject"})
+        full = self.mock().get_message("msg-03", "full")
+        self.assertIn("parts", full["payload"])
+
+    def test_retry_429_then_ok(self):  # AC-14 (unit)
+        c, rec = self.mock("rate_limit_then_ok"), Recorder()
+        r = with_retry(lambda: c.list_messages(None, None, 10), rec)
+        self.assertEqual(len(r["messages"]), 5)
+        self.assertEqual(c.call_names(), ["list_messages"] * 3)
+        self.assertEqual(rec.delays, [1, 2])
+
+    def test_retry_5xx_exhausted(self):  # AC-14 (unit)
+        c, rec = self.mock("server_error"), Recorder()
+        with self.assertRaises(PulseError) as cm:
+            with_retry(c.get_profile, rec)
+        self.assertEqual((cm.exception.code, cm.exception.exit_code), ("server_error", 5))
+        self.assertEqual(len(c.calls), 5)
+        self.assertEqual(rec.delays, [1, 2, 4, 8])
+
+    def test_retry_429_always(self):
+        c, rec = self.mock("rate_limit_always"), Recorder()
+        with self.assertRaises(PulseError) as cm:
+            with_retry(c.get_profile, rec)
+        self.assertEqual(cm.exception.code, "rate_limited")
+
+    def test_retry_cap(self):
+        rec = Recorder()
+
+        def always():
+            raise TransientError(500)
+        with self.assertRaises(PulseError):
+            with_retry(always, rec, attempts=8)
+        self.assertEqual(rec.delays, [1, 2, 4, 8, 16, 32, 32])
+
+    def test_history(self):
+        h = self.mock().list_history("1500", None, 100)
+        ids = [r["messagesAdded"][0]["message"]["id"] for r in h["history"]]
+        self.assertEqual(ids, ["msg-11", "msg-12", "msg-13"])
+        with self.assertRaises(HistoryExpired):
+            self.mock("history_expired").list_history("1500", None, 100)
+
+    def test_auth_and_http_scenarios(self):
+        for scen, code in (("unauthorized_client", "unauthorized_client"), ("invalid_grant", "invalid_grant"),
+                           ("access_denied", "access_denied")):
+            with self.assertRaises(PulseError) as cm:
+                self.mock(scen).get_profile()
+            self.assertEqual(cm.exception.code, code)
+        with self.assertRaises(RuntimeError):
+            self.mock("boom").get_profile()
+        self.assertEqual(self.mock("mismatch").get_profile()["emailAddress"], "other@example.test")
+
+
 if __name__ == "__main__":
     unittest.main(verbosity=2)
