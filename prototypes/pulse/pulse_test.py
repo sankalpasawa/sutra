@@ -839,7 +839,7 @@ class HistoryTests(FetchBase):
         self.assertNotIn("list_history", self.calls())
 
     def test_history_saved_mock_file(self):  # AC-23
-        self.assertEqual(self.fetch()[0], 0)
+        self.assertEqual(self.fetch("--since-last")[0], 0)
         p = self.state / "history.mock.json"
         self.assertEqual(mode_of(p), 0o600)
         data = json.loads(p.read_text(encoding="utf-8"))
@@ -855,6 +855,32 @@ class HistoryTests(FetchBase):
         self.assertEqual([r["id"] for r in self.rows()], ["msg-01", "msg-02"])
         self.assertIn("Stopped at --max, position not saved", out)
         self.assertEqual(p.read_bytes(), before)
+
+    def test_plain_fetch_never_moves_position(self):  # R1-1 / AC-39
+        for extra in ([], ["--query", "from:nobody"], ["--since", "1d"], ["--query", "x", "--max", "500"]):
+            code, out, err = self.fetch(*extra)
+            self.assertEqual(code, 0, (extra, err))
+            self.assertFalse((self.state / "history.mock.json").exists(), extra)
+        p = self.save_position("1500")
+        before = p.read_bytes()
+        self.assertEqual(self.fetch("--query", "from:nobody")[0], 0)
+        self.assertEqual(p.read_bytes(), before)
+
+    def test_filtered_fallback_saves_with_note(self):  # R1-1 / AC-39
+        code, out, err = self.fetch("--since-last", "--query", "from:ops@example.test")
+        self.assertEqual(code, 0, err)
+        self.assertIn("No saved position, did a full list", out)
+        self.assertIn("did not match --query/--since was not read", out)
+        data = json.loads((self.state / "history.mock.json").read_text(encoding="utf-8"))
+        self.assertEqual(data["ana@example.test"]["history_id"], load_inbox()["profile"]["historyId"])
+        self.save_position()
+        code, out, err = self.fetch("--since-last", "--since", "1d", scenario="history_expired")
+        self.assertEqual(code, 0, err)
+        self.assertIn("Saved position expired", out)
+        self.assertIn("was not read", out)
+        code, out, _e = self.fetch("--since-last", scenario="history_expired")  # unfiltered fallback: no note
+        self.assertIn("Saved position expired", out)
+        self.assertNotIn("was not read", out)
 
     def test_symlink_history_refused(self):  # AC-21 (state)
         target = self.tmp / "target.json"

@@ -93,6 +93,9 @@ Before any Google call Pulse checks, in order: arguments, config, audit log, dom
 key file (live), Google libraries (live). Then it fetches the profile and refuses if the opened mailbox is not
 the one asked for.
 
+Only `fetch --since-last` saves or moves the mailbox's saved position. A plain `fetch`, with or without
+`--query` or `--since`, never touches it.
+
 | Exit | Meaning | Codes |
 |---|---|---|
 | 0 | Success | `ok` |

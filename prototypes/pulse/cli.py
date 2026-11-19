@@ -224,27 +224,35 @@ def cmd_fetch(run: Run) -> None:
     run.row["query"] = query
     path = output_path(run, ".jsonl")
     store.check_file(store.history_path(cfg.state_dir, cfg.mock))
+    filtered_fallback = False
     if a.since_last:
         saved = (store.load_history(cfg.state_dir, cfg.mock).get(a.mailbox) or {}).get("history_id")
         if not saved:
             ids, more = list_ids(run, client, query, a.max)
             run.out("No saved position, did a full list")
+            filtered_fallback = bool(query)
         else:
             try:
                 ids, more = history_ids(run, client, saved, a.max)
             except HistoryExpired:
                 ids, more = list_ids(run, client, query, a.max)
                 run.out("Saved position expired, did a full list")
+                filtered_fallback = bool(query)
     else:
         ids, more = list_ids(run, client, query, a.max)
     rows = get_rows(run, client, ids, a.full)
     written = store.append_rows(path, rows)
     run.row["count"] = len(rows)
     run.out(f"Fetched {len(rows)} messages; wrote {written} new rows to {path}")
+    if not a.since_last:
+        return  # FR-23 (R-20): only --since-last runs move the saved position
     if more:
         run.out("Stopped at --max, position not saved")
-    else:
-        store.save_history(cfg.state_dir, cfg.mock, a.mailbox, profile.get("historyId"), run.now())
+        return
+    store.save_history(cfg.state_dir, cfg.mock, a.mailbox, profile.get("historyId"), run.now())
+    if filtered_fallback:
+        run.out("Position saved. Mail before this point that did not match --query/--since was not read "
+                "and later --since-last runs will not return it")
 
 
 def cmd_find(run: Run) -> None:

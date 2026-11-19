@@ -24,6 +24,11 @@ Status: Refined   |   Task: pulse-gmail-reader   |   Date: 2026-11-19
 | R-18 | Added AC-35..AC-38 for R-5, R-6, R-7; AC-21 and AC-27 extended | Every new rule needs a test |
 | R-19 | Added Q-6: creation guard blocks `.gitignore` / `.env.example` as a new kind | Found while planning T1; needs a user ruling |
 
+## Revisions (developer, fix-up 1 after review round 1, 2026-11-19)
+| # | Change | Why |
+|---|---|---|
+| R-20 | FR-23: only `fetch --since-last` saves a position. A plain fetch (with or without `--query`/`--since`) never reads or changes it. A `--since-last` fallback list that was filtered still saves, and prints that earlier mail outside the filter is not covered. AC-23 now uses `--since-last`; AC-39 added | Review R1-1: a filtered plain fetch moved the position and later `--since-last` runs silently skipped mail |
+
 ## Problem
 An internal tool needs to read selected mailboxes in the company Google Workspace domain, read-only. Domain-wide delegation lets one service account open any mailbox in the domain; Google does not limit it per mailbox. So the tool itself must limit which mailboxes are opened, why, and what is kept. Credentials (admin-approved key file, domain) arrive later, so step 1 must be complete and tested offline.
 
@@ -157,7 +162,7 @@ Behaviour:
 - Effective query: `(<query>) newer_than:<since>` when both given; either alone when one is given; none otherwise.
 - Pagination follows page tokens until `--max` or the end. Each list request asks for `min(remaining, 100)` results.
 - `--since-last`: list message IDs added since the saved historyId via `history.list` (`historyTypes=messageAdded`). If none saved: do a normal list and print "No saved position, did a full list". If Google returns 404 (history expired): do a normal list and print "Saved position expired, did a full list". `--query`/`--since` apply to the fallback list only.
-- After success, save the historyId taken from the profile at step 8 (so mail arriving mid-run is not skipped next time), unless the run stopped at `--max` with more results available; then print "Stopped at --max, position not saved" and keep the old value.
+- After a successful `--since-last` run, save the historyId taken from the profile at step 8 (so mail arriving mid-run is not skipped next time), unless the run stopped at `--max` with more results available; then print "Stopped at --max, position not saved" and keep the old value. A fetch without `--since-last` never saves or changes the position (R-20). If the `--since-last` fallback list (no position, or 404) used `--query`/`--since`, the position is still saved and stdout says that earlier mail outside the filter was not read and later `--since-last` runs will not return it.
 - Live state lives in `history.json`, mock state in `history.mock.json`.
 - Automatic purge runs after step 4 and before step 8 (see `purge`).
 - Output: JSONL rows appended to `<OUT_DIR>/<mailbox>/<YYYY-MM-DD>.jsonl` (UTC run date; mock: `<OUT_DIR>/_mock/<mailbox>/...`). File 0600, new dirs 0700. IDs already in the file are not written again.
@@ -260,7 +265,7 @@ Never in an audit row: mail fields (subject, from, snippet, body, attachment nam
 | FR-20 | Output path, naming, 0600/0700 modes and mock `_mock/` subdir as specified; no duplicate IDs in one file |
 | FR-21 | Writes refuse to follow a symlink at the output file, mailbox dir, audit log or history file path (`unsafe_path`, or `audit_unavailable` for the audit log) |
 | FR-22 | `--since-last` uses saved historyId; no saved id or 404 falls back to a full list with the stated message |
-| FR-23 | After a successful fetch the start-of-run historyId is saved to the mode's state file, except when stopped at `--max` with more available |
+| FR-23 | After a successful `fetch --since-last` the start-of-run historyId is saved to the mode's state file, except when stopped at `--max` with more available. A fetch without `--since-last` never changes the saved position (R-20) |
 | FR-24 | `find` loads JSON rules, validates all before any Google call, and outputs matches with `rules_hit` and `fields_hit` |
 | FR-25 | `purge` deletes only output files older than retention; `--dry-run` deletes nothing; audit/state untouched |
 | FR-26 | Automatic purge runs inside `fetch` and `find` before the profile call |
@@ -316,7 +321,7 @@ Each maps to a test in `pulse_test.py` unless marked (manual).
 | AC-20 | Given fetch run twice on the same day in mock, then one file at `<OUT_DIR>/_mock/<mailbox>/<today>.jsonl`, mode 0600, dirs 0700, no duplicate `id` | FR-20 |
 | AC-21 | Given the output file path, or the history file path, is a symlink, when fetch runs, then `unsafe_path`, exit 3, symlink target unchanged; given the audit path is a symlink, then `audit_unavailable` | FR-21 |
 | AC-22 | Given saved historyId and scenario `default`, when `fetch --since-last`, then only history messages are returned; given scenario `history_expired`, then full list and "expired" message; given no state, then full list and "No saved position" message | FR-22 |
-| AC-23 | Given a successful mock fetch, then `history.mock.json` holds the profile historyId for that mailbox, mode 0600, and `history.json` does not exist | FR-23 |
+| AC-23 | Given a successful mock `fetch --since-last`, then `history.mock.json` holds the profile historyId for that mailbox, mode 0600, and `history.json` does not exist | FR-23 |
 | AC-24 | Given `rules.sample.json`, when `find` runs, then exactly the expected fixture message is output with the expected `rules_hit`; a rules file with a bad regex, unknown key, or `body_text` without `--full` gives `rules_invalid` and zero client calls | FR-24 |
 | AC-25 | Given files dated today, today-30 and today-31 with retention 30, when `purge`, then only today-31 is deleted; `--dry-run` deletes none; audit and history files unchanged | FR-25 |
 | AC-26 | Given an expired file, when `fetch` runs, then it is deleted and the audit row has `purged: 1` | FR-26 |
@@ -332,6 +337,7 @@ Each maps to a test in `pulse_test.py` unless marked (manual).
 | AC-36 | Given a client that raises an unexpected exception, then exit 1, stderr has no traceback (without `PULSE_DEBUG`), audit row `result: internal` | FR-36 |
 | AC-37 | Given saved historyId and more history messages than `--max`, when `fetch --since-last --max 2`, then 2 rows, "position not saved" printed, saved historyId unchanged | FR-23 |
 | AC-38 | Given a test run, then `HOME`, OUT_DIR and STATE_DIR are temp dirs and `git status --porcelain prototypes/pulse` is unchanged after (manual once, then by construction) | NFR-9 |
+| AC-39 | Given no state, when `fetch`, `fetch --query`, `fetch --since` run, then no state file is created; given a saved position, a plain `fetch --query` leaves it byte-identical; given `--since-last` with a filtered fallback, the position is saved and the "not read" note printed; an unfiltered fallback prints no note | FR-23, R-20 |
 
 ## Assumptions
 | ID | Assumption |
@@ -354,3 +360,4 @@ Carried from impact.md, out of scope for step 1: CI workflow for `prototypes/pul
 |---|---|
 | 2026-11-19 | First draft from analysis.md, impact.md and user decisions 1-5 |
 | 2026-11-19 | solution-architect: Status Refined. Recorded DEC-1..5 and removed Q-1..5; applied R-1..R-18 (see Revisions). No requirement removed or weakened; FR-27 scope narrowed to "invocations that reach the audit step" because config/usage errors happen before the audit path is known (R-4) |
+| 2026-11-19 | developer fix-up 1: R-20 onward (see second Revisions table) after review round 1 |
