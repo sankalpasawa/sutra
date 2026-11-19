@@ -564,7 +564,7 @@ import cli  # noqa: E402
 MB = ["--mailbox", "ana@example.test"]
 WHY = ["--reason", "automated test of the pulse reader"]
 CHECK = ["check", *MB, *WHY]
-READ_CMDS = [["check"]]  # extended as fetch and find are built
+READ_CMDS = [["check"], ["fetch"]]  # extended as find is built
 
 
 class CheckCliTests(BaseCase):
@@ -691,6 +691,115 @@ class CheckCliTests(BaseCase):
         self.assertEqual(len(lines), 2)
         for line in lines:
             self.assertEqual(json.loads(line)["result"], "ok")
+
+
+# ---------------------------------------------------------------- T9: store and fetch
+import store  # noqa: E402
+
+FIXED_NOW = datetime(2026, 11, 19, 12, 0, tzinfo=timezone.utc)
+TODAY = FIXED_NOW.date().isoformat()
+FETCH = ["fetch", *MB, *WHY]
+
+
+def fixture_subjects() -> list:
+    return [parse.to_row(m, False)["subject"] for m in load_inbox()["messages"] if parse.to_row(m, False)["subject"]]
+
+
+class FetchTests(BaseCase):
+    def mbdir(self):
+        return self.out / "_mock" / "ana@example.test"
+
+    def out_file(self, suffix=".jsonl"):
+        return self.mbdir() / f"{TODAY}{suffix}"
+
+    def rows(self, suffix=".jsonl"):
+        return [json.loads(x) for x in self.out_file(suffix).read_text(encoding="utf-8").splitlines()]
+
+    def fetch(self, *extra, scenario=None, env=None):
+        return self.run_cli([*FETCH, *extra], scenario=scenario, env=env, now=lambda: FIXED_NOW)
+
+    def test_pagination_stops_at_max(self):  # AC-15
+        code, out, err = self.fetch("--max", "7")
+        self.assertEqual(code, 0, err)
+        self.assertEqual(len(self.rows()), 7)
+        self.assertEqual(self.calls().count("list_messages"), 2)
+        self.assertEqual(self.calls().count("get_message"), 7)
+        self.assertEqual(self.audit_rows()[-1]["count"], 7)
+
+    def test_metadata_only(self):  # AC-16
+        code, _o, err = self.fetch()
+        self.assertEqual(code, 0, err)
+        rows = self.rows()
+        self.assertEqual(len(rows), 13)
+        for r in rows:
+            self.assertNotIn("body_text", r)
+        fmts = [args["fmt"] for c in self.clients for name, args in c.calls if name == "get_message"]
+        self.assertEqual(set(fmts), {"metadata"})
+
+    def test_full_fetch(self):
+        code, _o, err = self.fetch("--full", "--max", "3")
+        self.assertEqual(code, 0, err)
+        self.assertTrue(all("body_text" in r for r in self.rows()))
+
+    def test_output_path_modes_dedupe(self):  # AC-20
+        self.assertEqual(self.fetch("--max", "5")[0], 0)
+        code, out, _e = self.fetch("--max", "7")
+        self.assertEqual(code, 0)
+        self.assertIn("wrote 2 new rows", out)
+        self.assertEqual([p.name for p in self.mbdir().iterdir()], [f"{TODAY}.jsonl"])
+        self.assertEqual(mode_of(self.out_file()), 0o600)
+        self.assertEqual(mode_of(self.mbdir()), 0o700)
+        self.assertEqual(mode_of(self.out / "_mock"), 0o700)
+        ids = [r["id"] for r in self.rows()]
+        self.assertEqual(len(ids), 7)
+        self.assertEqual(len(set(ids)), 7)
+
+    def test_symlink_output_refused(self):  # AC-21 (output)
+        target = self.tmp / "target.txt"
+        target.write_text("keep\n", encoding="utf-8")
+        self.mbdir().mkdir(parents=True)
+        self.out_file().symlink_to(target)
+        code, _o, err = self.fetch()
+        self.assertEqual(code, 3)
+        self.assertIn("symlink", err)
+        self.assertEqual(target.read_text(encoding="utf-8"), "keep\n")
+        self.assertEqual(self.audit_rows()[-1]["result"], "unsafe_path")
+        self.assertNotIn("get_message", self.calls())
+
+    def test_symlink_mailbox_dir_refused(self):  # AC-21 (mailbox dir)
+        real = self.tmp / "elsewhere"
+        real.mkdir()
+        (self.out / "_mock").mkdir()
+        self.mbdir().symlink_to(real)
+        code, _o, _e = self.fetch()
+        self.assertEqual(code, 3)
+        self.assertEqual(list(real.iterdir()), [])
+
+    def test_mailbox_mismatch_fetch(self):  # AC-11 (fetch)
+        code, _o, _e = self.fetch(scenario="mismatch")
+        self.assertEqual(code, 3)
+        self.assertNotIn("list_messages", self.calls())
+        self.assertFalse(self.mbdir().exists())
+
+    def test_retry_via_cli(self):  # AC-14 (CLI)
+        code, _o, err = self.fetch("--max", "3", scenario="rate_limit_then_ok")
+        self.assertEqual(code, 0, err)
+        self.assertEqual(self.calls().count("list_messages"), 3)
+        self.assertEqual(self.sleeps.delays, [1, 2])
+        code, _o, err = self.fetch(scenario="server_error")
+        self.assertEqual(code, 5)
+        self.assertEqual(self.sleeps.delays, [1, 2, 4, 8])
+        self.assertEqual(self.audit_rows()[-1]["result"], "server_error")
+
+    def test_query_and_stdout_has_no_mail(self):
+        code, out, err = self.fetch("--query", "from:ops@example.test", "--since", "7d", "--full")
+        self.assertEqual(code, 0, err)
+        q = "(from:ops@example.test) newer_than:7d"
+        self.assertEqual(self.audit_rows()[-1]["query"], q)
+        self.assertEqual({a["query"] for c in self.clients for n, a in c.calls if n == "list_messages"}, {q})
+        for s in fixture_subjects():
+            self.assertNotIn(s, out + err)
+        self.assertNotIn("Tom & Jerry", out + err)
 
 
 if __name__ == "__main__":

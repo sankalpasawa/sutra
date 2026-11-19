@@ -18,7 +18,9 @@ from typing import Callable, Mapping, TextIO
 import audit
 import config
 import gmail_client
+import parse
 import policy
+import store
 from errors import PulseError
 
 MAX_LIMIT = 500
@@ -140,7 +142,57 @@ def cmd_check(run: Run) -> None:
     run.row["count"] = 0
 
 
-COMMANDS = {"check": cmd_check}
+def effective_query(query, since):
+    if query and since:
+        return f"({query}) newer_than:{since}"
+    if query:
+        return query
+    if since:
+        return f"newer_than:{since}"
+    return None
+
+
+def list_ids(run: Run, client, query, limit: int):
+    """Page through messages.list until `limit` ids or the end. Returns (ids, more_available)."""
+    ids, token = [], None
+    while True:
+        remaining = limit - len(ids)
+        resp = run.call(lambda: client.list_messages(query, token, min(remaining, 100)))
+        got = [m["id"] for m in resp.get("messages") or []]
+        ids.extend(got[:remaining])
+        token = resp.get("nextPageToken")
+        if len(ids) >= limit:
+            return ids, bool(token) or len(got) > remaining
+        if not token:
+            return ids, False
+
+
+def get_rows(run: Run, client, ids, full: bool) -> list:
+    fmt = "full" if full else "metadata"
+    return [parse.to_row(run.call(lambda i=i: client.get_message(i, fmt)), full) for i in ids]
+
+
+def output_path(run: Run, suffix: str) -> Path:
+    d = store.mailbox_dir(run.cfg.out_dir, run.args.mailbox, run.cfg.mock)
+    p = d / f"{run.now().astimezone(timezone.utc).date().isoformat()}{suffix}"
+    store.check_file(p)
+    return p
+
+
+def cmd_fetch(run: Run) -> None:
+    a = run.args
+    client, _profile = open_mailbox(run)
+    query = effective_query(a.query, a.since)
+    run.row["query"] = query
+    path = output_path(run, ".jsonl")
+    ids, _more = list_ids(run, client, query, a.max)
+    rows = get_rows(run, client, ids, a.full)
+    written = store.append_rows(path, rows)
+    run.row["count"] = len(rows)
+    run.out(f"Fetched {len(rows)} messages; wrote {written} new rows to {path}")
+
+
+COMMANDS = {"check": cmd_check, "fetch": cmd_fetch}
 
 
 def main(argv: list, environ: Mapping[str, str] | None = None, env_file: Path | None = None,
