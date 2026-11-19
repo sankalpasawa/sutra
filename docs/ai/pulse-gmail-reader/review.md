@@ -67,3 +67,62 @@ Two Major findings, both on `fetch --since-last`: it can silently skip mail, and
 
 ### Earlier findings
 None (first round).
+
+## Round 2  (2026-11-19, commit 6fb10f4)
+Verdict: **Changes requested**
+
+All 13 round 1 findings are fixed, and both Majors were confirmed by running them again. The fix for R1-8 introduced one regression: when `PULSE_OUT_DIR` is itself a symlink, purge silently stops deleting, while fetch still writes there. That breaks the retention guarantee without telling the user. It is a one-line fix. Severity uses P0-P3 from this round on (round 1's Major = P1, Minor = P2, Nit = P3). New: 0 P0, 0 P1, 1 P2, 3 P3.
+
+### Findings
+| ID | Sev | File:line | Finding | Evidence | Suggested fix |
+|---|---|---|---|---|---|
+| R2-1 | P2 | `prototypes/pulse/store.py:123` | A regression from the R1-8 fix. `purge` now checks `PULSE_OUT_DIR` with `lstat`, so if the configured folder is a symlink (for example `~/.sutra-pulse/out` pointing to another disk), purge returns `[]` and prints "Deleted 0 files". `mailbox_dir` (`store.py:42`, `os.makedirs`) still follows that link and writes mail there. Old files are then kept forever, and the audit records `purged: 0`. At bafb85b the same setup deleted the file. | Scratch run: `out -> real/`, a mock fetch, then a 2020-01-01 file placed in `real/_mock/ana@example.test/`. At HEAD, `purge` printed "Deleted 0 files" and the file was kept. At bafb85b (`git archive`), the same command printed "Deleted 1 files". No test covers a symlinked OUT_DIR. | Resolve `out_dir` once (`os.path.realpath`; `config.py` already computes `real_out`) and use that path for both writing and purging. Keep `lstat` for `_mock/` and the mailbox folders. The other option is to refuse a symlinked OUT_DIR with `unsafe_path` in every command. Either way, fetch and purge must agree. Add a test. |
+| R2-2 | P3 (unverified) | `prototypes/pulse/live_client.py:54-58`, `errors.py` `RATE_LIMIT_403` | The R1-4 routing reads the reason from `error_details[0]["reason"]` only. As I recall the googleapiclient source, `HttpError` fills `error_details` from `error.details` before `error.errors`. If a Gmail 403 includes a `details` array (`google.rpc.ErrorInfo`), the reason is the uppercase form, for example `RATE_LIMIT_EXCEEDED`. That does not match `rateLimitExceeded`, so the error falls through to `access_denied`. This fails closed (no retry, wrong hint), so it is low risk. | googleapiclient is not installed here and there is no network, so I could not check its source or a real Gmail response. Documented Gmail 403 examples carry only `errors[]`, and those match. | At live step L-5 or L-6, record a real 403 body. Then match case-insensitively across every `error_details` entry, including ErrorInfo `RATE_LIMIT_EXCEEDED` and `RESOURCE_EXHAUSTED`. |
+| R2-3 | P3 | `docs/ai/pulse-gmail-reader/architecture.md:287`, `:394` | Both lines still say an unknown `RefreshError` maps to `unauthorized_client`. R-24 replaced that with `token_error`. implementation.md lists this as a known gap, but architecture.md is the design of record. | Lines read at HEAD. | Change both lines to `token_error` (exit 4), and note that a retryable refresh error is retried and then becomes `server_error`. |
+| R2-4 | P3 | `prototypes/pulse/cli.py:272` | The start-up hint prints only when the fallback list had no filter. If someone follows the README with `--since-last --since 1d` and that day holds more than `--max` messages, they see only "Stopped at --max, position not saved", with no next step. | Code reading. `query` is set from `--since`, so `fallback and not query` is false. | When a filtered fallback stops at `--max`, also print "use a shorter window or a higher --max". |
+
+### Round 1 findings
+| ID | Status | Evidence |
+|---|---|---|
+| R1-1 | Fixed | Mock: plain `fetch --query from:nobody --max 500` and a plain unfiltered fetch create no `history.mock.json`. `--since-last --since 3650d` saves `2000` and prints the "did not match --query/--since was not read" note. `test_plain_fetch_never_moves_position` (4 variants plus an existing file that stays byte-identical) and `test_filtered_fallback_saves_with_note` assert this. |
+| R1-2 | Fixed | The round 1 stub, given a key with `token_uri` (scratchpad `stub404_r2.py`): run 1 and run 2 both exit 0, `ok1` written, "Skipped 1 deleted messages", saved position moves 100 to 200, audit `skipped: 1`. Mock scenario `history_deleted`: 2 rows and "Skipped 2 deleted messages". In `find`, the deleted id is cached as `None` and counted once. A 404 on `getProfile` or `messages.list` is still `internal` (`live_client.py` `_exec`). |
+| R1-3 | Fixed | `_is_network` covers `OSError`, `TransportError` and `HttpLib2Error`, then retries and exits with `network_error` (exit 5). `test_live_network_errors` runs 5 exception types, each with 5 attempts, delays `[1,2,4,8]`, no "Unexpected error", and a retry that then succeeds. An SSL certificate failure (an `OSError`) is also retried and gets the network message. That message names proxy and firewall, so this is acceptable. |
+| R1-4 | Fixed (see R2-2) | 403 `rateLimitExceeded`/`userRateLimitExceeded` becomes `TransientError(429)`. Mapper and live tests cover both. |
+| R1-5 | Fixed | `retryable` is honoured. Unknown token errors become `token_error`. The `invalid_grant` text names a revoked key. `test_live_refresh_errors` checks that the SENTINEL text is not shown and that a non-retryable error is tried once. Real token strings still need L-5. |
+| R1-6 | Fixed | The pre-check needs non-empty string `client_email`, `private_key` and `token_uri`. A `ValueError` from the credentials builder becomes `key_unreadable` (`from None`). `test_live_bad_pem_is_key_unreadable` asserts that the SENTINEL text is in none of stdout, stderr or the audit log. google-auth's `MalformedError` subclasses `ValueError`, so it is caught too. |
+| R1-7 | Fixed | `git check-ignore --no-index`: `fixtures/sa-key.json`, `fixtures/k.pem`, `key.pem`, `x.p12`, `a.key`, `keys/sa.json`, `.env` and `out/x.jsonl` are ignored. The three named fixtures and `.env.example` are not. |
+| R1-8 | Fixed, regression R2-1 | Purge is limited to `<out>/<mailbox>/` and `<out>/_mock/<mailbox>/`, one level deep, real folders only. `test_purge_only_own_layout` covers 6 stray locations and a symlinked mailbox folder. `PULSE_OUT_DIR` set to `$HOME` or `/` exits 2 (mock run). The `realpath` check also catches `~/sub/..`. |
+| R1-9 | Fixed (documented, design kept) | README section "Incremental reads", plus the hint (mock run printed it). L-8 updated. I accept keeping R-7: saving after a truncated list would skip the unread remainder. See R2-4. |
+| R1-10 | Fixed | Mock run with a saved position and `--query` printed "--query/--since were not applied", and the audit `query` is null. On the expiry fallback, `query` is restored. |
+| R1-11 | Fixed | `>=2.0.0,<3` for both packages. The bounds are unverified (no network). The code uses `getattr(e, "retryable", False)`, so older google-auth 2.x versions without that attribute are safe. |
+| R1-12 | Fixed | `PULSE_MOCK_SCENARIO=_note` gives exit 2, `config_invalid`. |
+| R1-13 | Fixed | `_paged_ids` is shared. The dead branch is gone (argparse limits the commands). `load_history` has one `except`. |
+
+### The developer's other choices
+| Choice | Judgement |
+|---|---|
+| First-run save on a filtered `--since-last`, with a note | Agree. It matches the round 1 suggestion, and the note is explicit. |
+| New `network_error` (exit 5) and `token_error` (exit 4) | Agree. Each has its own message and fails closed. A retryable token error that is exhausted becomes `server_error`, which is fine. |
+| 403 `dailyLimitExceeded` is `rate_limited` with no retry | Agree. Retrying could not succeed within 15 s, and "Try again tomorrow" is the right advice. Subject to the same caveat as R2-2. |
+| R1-9 kept as documented, not changed in code | Agree, with R2-4 as a small follow-up. |
+| Audit gains a 12th field, `skipped` | Fine. It holds counts only. Rows written before the change have 11 fields and nothing reads the log yet. |
+
+### Privacy and safety re-check
+| Check | Result |
+|---|---|
+| Allowlist and domain | Unchanged by this fix-up. Not re-tested beyond the suite (102 tests). |
+| Audit content | 6 mock rows, keys are exactly the 12 schema fields, no subject, sender or snippet. Exception text from keys and tokens is suppressed (SENTINEL tests). |
+| File modes | Folders 0700 (`out`, `_mock`, mailbox, `state`). Files 0600 (output, `audit.jsonl`, `history.mock.json`). |
+| Purge scope | Narrower and safe, apart from R2-1, which errs on the side of not deleting. |
+| Key ignore rules | See R1-7. |
+| Spec coverage | AC-39 to AC-49 each map to a named test, except AC-49, which is checked by a test that reads `requirements.txt`. No regression test covers a symlinked OUT_DIR (R2-1). |
+
+### Tests run
+- `cd prototypes/pulse && python3 pulse_test.py`: 102 tests, OK (1 skipped: the read-only folder test, root user), 2.4 s. `git status --porcelain` afterwards: empty.
+- Removed test lines in the diff: 5, each replaced by a stricter or updated assertion (`token_error`, the `token_uri` fixture, AC-23 now runs `--since-last`). No assertion was weakened.
+- Mock CLI in a scratch HOME/out/state: plain and filtered fetch (no state), the start-up hint, the filtered fallback save, a saved position with `--query`, `history_deleted`, `_note`, OUT_DIR set to `$HOME` and to `/`, modes, audit.
+- `stub404_r2.py` (live `LiveClient` and the real `cli.main`, 404 on get): see R1-2.
+- Symlinked OUT_DIR purge at HEAD compared with bafb85b: see R2-1.
+
+### Earlier findings
+R1-1 to R1-13: fixed. R1-8's fix introduced R2-1, which is open.
