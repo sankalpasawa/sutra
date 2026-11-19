@@ -76,7 +76,7 @@ def test_the_reuse_flags_that_imply_run_templates_count(j2, make_run_dir, data_d
 
 def test_a_project_run_never_takes_a_run_template_even_when_one_is_named(j2, make_run_dir, data_dir):
     chain = {"run_templates": True, "auto_reuse": True, "artifact_library": True}
-    run_dir, running = started(make_run_dir, data_dir, {"J2_RUN_TEMPLATE": TEMPLATE}, engine=chain,
+    run_dir, running = started(make_run_dir, data_dir, {"J2_RUN_TEMPLATE": TEMPLATE, "J2_OUTPUT": "project"}, engine=chain,      # D253: pinned as the owner would; no word picks project work
                                text=("Check the details of the app in the repo and update the J2 prototype so that its settings page matches the app: look at "
                                      "the settings code, list what differs, change the prototype page to match, and say what you verified and what is left to do."))
     assert running.host.selection.output == "project"
