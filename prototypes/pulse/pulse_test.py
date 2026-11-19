@@ -918,6 +918,24 @@ class HistoryTests(FetchBase):
         self.assertIn("Saved position expired", out)
         self.assertNotIn("was not read", out)
 
+    def test_audit_query_is_what_was_used(self):  # R1-10 / AC-47
+        self.save_position()
+        code, out, err = self.fetch("--since-last", "--query", "from:ops@example.test", "--since", "7d")
+        self.assertEqual(code, 0, err)
+        self.assertIn("--query/--since were not applied", out)
+        self.assertIsNone(self.audit_rows()[-1]["query"])
+        self.assertNotIn("list_messages", self.calls())
+        self.save_position()
+        code, out, err = self.fetch("--since-last", "--query", "in:inbox", scenario="history_expired")
+        self.assertEqual(code, 0, err)
+        self.assertEqual(self.audit_rows()[-1]["query"], "in:inbox")  # fallback list did use it
+        (self.state / "history.mock.json").unlink()
+        self.assertEqual(self.fetch("--since-last", "--query", "in:inbox")[0], 0)
+        self.assertEqual(self.audit_rows()[-1]["query"], "in:inbox")
+        self.save_position()
+        code, out, _e = self.fetch("--since-last")
+        self.assertNotIn("not applied", out)
+
     def test_since_last_skips_deleted(self):  # R1-2 / AC-40 (mock)
         self.save_position()
         code, out, err = self.fetch("--since-last", scenario="history_deleted")

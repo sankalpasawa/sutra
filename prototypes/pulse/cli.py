@@ -249,7 +249,11 @@ def cmd_fetch(run: Run) -> None:
         else:
             try:
                 ids, more = history_ids(run, client, saved, a.max)
+                run.row["query"] = None  # audit records what was used: no query on the history path (R1-10)
+                if query:
+                    run.out("Used the saved position; --query/--since were not applied")
             except HistoryExpired:
+                run.row["query"] = query
                 ids, more = list_ids(run, client, query, a.max)
                 run.out("Saved position expired, did a full list")
                 filtered_fallback = bool(query)

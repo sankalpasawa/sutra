@@ -35,6 +35,7 @@ Status: Refined   |   Task: pulse-gmail-reader   |   Date: 2026-11-19
 | R-25 | Key pre-check also requires `token_uri`; a `ValueError` from building credentials (bad PEM, missing field) is `key_unreadable` without the exception text; AC-44 added | Review R1-6: such keys exited `internal` |
 | R-26 | FR-2: only the three named fixture JSON files are re-included (not `fixtures/*.json`); `*.pem`, `*.p12`, `*.key` ignored; AC-45 added | Review R1-7: a key dropped in `fixtures/` could be committed |
 | R-27 | `purge` (and the automatic purge) only looks one level inside `<OUT_DIR>/<mailbox>/` and `<OUT_DIR>/_mock/<mailbox>/`; `PULSE_OUT_DIR` resolving to home or `/` is `config_invalid` for every command; AC-46 added | Review R1-8: purge walked the whole OUT_DIR tree, so a mis-set OUT_DIR could delete unrelated dated files |
+| R-28 | Audit `query` records the query actually sent: null when a saved position was used; stdout says `--query`/`--since` were not applied; AC-47 added | Review R1-10: the audit claimed a filter that was not applied |
 
 ## Problem
 An internal tool needs to read selected mailboxes in the company Google Workspace domain, read-only. Domain-wide delegation lets one service account open any mailbox in the domain; Google does not limit it per mailbox. So the tool itself must limit which mailboxes are opened, why, and what is kept. Credentials (admin-approved key file, domain) arrive later, so step 1 must be complete and tested offline.
@@ -237,7 +238,7 @@ Allowed rule keys: `id`, `description`, `gmail_query`, `keywords`, `regex`, `fie
 | `mode` | `live` / `mock` |
 | `command` | `check` / `fetch` / `find` / `purge` |
 | `mailbox` | Requested mailbox, or null for purge |
-| `query` | Effective Gmail query, or null |
+| `query` | Effective Gmail query actually sent, or null. Null when `--since-last` used a saved position, since `--query`/`--since` are not applied then (R-28) |
 | `rules_file` | Path, `find` only, else null |
 | `reason` | As given; null for purge |
 | `count` | Messages returned/matched, or files purged |
@@ -356,6 +357,7 @@ Each maps to a test in `pulse_test.py` unless marked (manual).
 | AC-44 | A key file without `token_uri` (or with it empty) gives `key_unreadable`; a credentials builder raising `ValueError` gives `key_unreadable`, exit 4, the key path in stderr and none of the exception text in stdout, stderr or the audit log | FR-13, FR-33, R-25 |
 | AC-45 | `git check-ignore --no-index` ignores `fixtures/sa-key.json`, `fixtures/other.json`, `key.pem`, `fixtures/key.pem`, `cert.p12`, `id.key`, and keeps the three named fixtures, `fixtures/allowlist.txt` and `.env.example` (automated in `test_gitignore_keys`) | FR-2, R-26 |
 | AC-46 | Given old dated files at OUT_DIR top level, in `_mock/`, in a folder not named like a mailbox, deeper trees, below a mailbox dir, and behind a symlinked mailbox dir, when `purge`, then only the file directly in a real mailbox dir is deleted; given `PULSE_OUT_DIR` set to home, `~` or `/`, then exit 2 `config_invalid` and no audit row | FR-25, R-27 |
+| AC-47 | Given a saved position, when `fetch --since-last --query Q --since 7d`, then audit `query` is null and stdout says they were not applied; after a 404 fallback or with no saved position, audit `query` is Q | FR-27, R-28 |
 
 ## Assumptions
 | ID | Assumption |
