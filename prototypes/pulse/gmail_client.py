@@ -141,4 +141,5 @@ def make_client(cfg, mailbox: str) -> GmailClient:
     if cfg.mock:
         from config import FIXTURES
         return MockClient(mailbox, FIXTURES, cfg.scenario)
-    raise PulseError("internal", "Unexpected error: live mode is not built yet.")  # replaced in T13
+    import live_client  # stdlib-only module; it imports Google libraries itself, lazily
+    return live_client.LiveClient(mailbox, cfg.sa_key_path)

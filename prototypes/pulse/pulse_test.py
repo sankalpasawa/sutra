@@ -86,7 +86,7 @@ class BaseCase(unittest.TestCase):
         return code, out.getvalue(), err.getvalue()
 
     def calls(self) -> list:
-        return [n for c in getattr(self, "clients", []) for n in c.call_names()]
+        return [n for c in getattr(self, "clients", []) for n in getattr(c, "call_names", list)()]
 
     def audit_rows(self) -> list:
         return read_audit(self.state)
@@ -1019,6 +1019,177 @@ class FindTests(FetchBase):
         self.assertEqual(rules.match(rule, {"subject": "inv-1234 here", "snippet": ""}), ["subject"])
         self.assertEqual(rules.match(rule, {"subject": "nothing", "snippet": "DUE DATE soon"}), ["snippet"])
         self.assertEqual(rules.match(rule, {"subject": "nothing", "snippet": "none"}), [])
+
+
+# ---------------------------------------------------------------- T13: LiveClient (stubbed, no Google libs)
+import live_client  # noqa: E402
+
+
+class _Req:
+    def __init__(self, svc, name, kw):
+        self.svc, self.name, self.kw = svc, name, kw
+
+    def execute(self, num_retries=None):
+        self.svc.log.append((self.name, self.kw, num_retries))
+        r = self.svc.handler(self.name, self.kw)
+        if isinstance(r, BaseException):
+            raise r
+        return r
+
+
+class _Chain:
+    def __init__(self, svc, path):
+        self._svc, self._path = svc, path
+
+    def __getattr__(self, name):
+        def call(**kw):
+            if name in ("getProfile", "list", "get"):
+                return _Req(self._svc, ".".join(self._path[1:] + [name]), kw)
+            return _Chain(self._svc, self._path + [name])
+        return call
+
+
+class FakeService(_Chain):
+    """Stands in for googleapiclient's Gmail service: users().messages().get(...).execute()."""
+
+    def __init__(self, handler=None):
+        self.log = []
+        self.handler = handler or (lambda name, kw: dict(load_inbox()["profile"]))
+        super().__init__(self, [])
+
+
+class RefreshError(Exception):  # same class name as google.auth.exceptions.RefreshError
+    pass
+
+
+class HttpError(Exception):  # same class name as googleapiclient.errors.HttpError
+    def __init__(self, status, reason=""):
+        super().__init__(f"HTTP {status}")
+        self.resp = type("Resp", (), {"status": status})()
+        self.reason = reason
+
+
+class LiveTests(BaseCase):
+    def setUp(self):
+        super().setUp()
+        self.allow = self.tmp / "allowlist.txt"
+        self.allow.write_text("ana@example.test\n", encoding="utf-8")
+        self.key = write_fake_key(self.tmp / "sa-key.json", 0o600)
+
+    def live_env(self, **kw):
+        e = self.env(mock=False, PULSE_DOMAIN="example.test", PULSE_ALLOWLIST=str(self.allow),
+                     PULSE_SA_KEY_PATH=str(self.key))
+        e.update(kw)
+        return e
+
+    def stub_factory(self, handler=None):
+        self.built = {}
+
+        def creds_builder(key_path, scopes, subject):
+            self.built.update(key_path=key_path, scopes=scopes, subject=subject)
+            return "fake-creds"
+
+        def service_builder(creds):
+            self.built["creds"] = creds
+            self.svc = FakeService(handler)
+            return self.svc
+        return lambda cfg, mb: live_client.LiveClient(mb, cfg.sa_key_path, creds_builder, service_builder)
+
+    def test_live_deps_missing(self):  # AC-6
+        code, _o, err = self.run_cli(CHECK, env=self.live_env())
+        self.assertEqual(code, 2, err)
+        self.assertIn("pip install -r", err)
+        self.assertEqual(self.audit_rows()[-1]["result"], "deps_missing")
+        self.assertEqual(self.audit_rows()[-1]["mode"], "live")
+
+    def test_live_scope_and_subject(self):  # AC-7
+        code, out, err = self.run_cli(CHECK, env=self.live_env(), factory=self.stub_factory())
+        self.assertEqual(code, 0, err)
+        self.assertNotIn("MOCK MODE", out)
+        self.assertIn("Mode: live", out)
+        self.assertEqual(self.built["scopes"], ["https://www.googleapis.com/auth/gmail.readonly"])
+        self.assertEqual(live_client.SCOPES, ["https://www.googleapis.com/auth/gmail.readonly"])
+        self.assertEqual(self.built["subject"], "ana@example.test")
+        self.assertEqual(Path(self.built["key_path"]), self.key)
+        self.assertEqual(self.svc.log, [("getProfile", {"userId": "me"}, 0)])
+
+    def test_key_perms_warning_cli(self):  # AC-32
+        os.chmod(self.key, 0o644)
+        code, _o, err = self.run_cli(CHECK, env=self.live_env(), factory=self.stub_factory())
+        self.assertEqual(code, 0, err)
+        self.assertIn("readable by group or others", err)
+
+    def test_allowlist_live_missing_refused_before_key(self):  # AC-9 (live)
+        env = self.live_env(PULSE_ALLOWLIST=str(self.tmp / "nope.txt"), PULSE_SA_KEY_PATH=str(self.tmp / "nokey"))
+        code, _o, err = self.run_cli(CHECK, env=env, factory=self.stub_factory())
+        self.assertEqual(code, 3)
+        self.assertIn("allowlist", err)
+        self.assertEqual(self.clients, [])
+        self.allow.write_text("# c\n\n Ana@Example.test \n", encoding="utf-8")
+        self.assertEqual(self.run_cli(CHECK, env=self.live_env(), factory=self.stub_factory())[0], 0)
+        code, _o, _e = self.run_cli(["check", "--mailbox", "bob@example.test", *WHY], env=self.live_env(),
+                                    factory=self.stub_factory())
+        self.assertEqual(code, 3)
+
+    def test_key_file_errors_cli(self):  # AC-13(b)
+        code, _o, err = self.run_cli(CHECK, env=self.live_env(PULSE_SA_KEY_PATH=str(self.tmp / "nokey.json")))
+        self.assertEqual(code, 4)
+        self.assertIn("PULSE_SA_KEY_PATH", err)
+        self.assertEqual(self.audit_rows()[-1]["result"], "key_missing")
+        bad = self.tmp / "bad.json"
+        bad.write_text("SENTINEL-KEY-TEXT not json", encoding="utf-8")
+        code, out, err = self.run_cli(CHECK, env=self.live_env(PULSE_SA_KEY_PATH=str(bad)))
+        self.assertEqual(code, 4)
+        self.assertNotIn("SENTINEL", out + err + (self.state / "audit.jsonl").read_text(encoding="utf-8"))
+        self.assertEqual(self.audit_rows()[-1]["result"], "key_unreadable")
+
+    def test_live_error_translation(self):  # AC-13(c) through LiveClient
+        cases = [(RefreshError("invalid_grant: Invalid email or User ID"), 4, "invalid_grant"),
+                 (RefreshError("unauthorized_client: Client is unauthorized"), 4, "unauthorized_client"),
+                 (HttpError(403, "accessNotConfigured"), 4, "access_denied"),
+                 (HttpError(429, "rateLimitExceeded"), 5, "rate_limited"),
+                 (HttpError(503, "backendError"), 5, "server_error")]
+        for exc, exit_code, result in cases:
+            code, _o, err = self.run_cli(CHECK, env=self.live_env(), factory=self.stub_factory(lambda n, k, e=exc: e))
+            self.assertEqual((code, self.audit_rows()[-1]["result"]), (exit_code, result), result)
+        self.assertEqual(len(self.svc.log), 5)  # 503 retried 5 times
+
+    def test_live_requests(self):
+        profile = load_inbox()["profile"]
+        msgs = {m["id"]: m for m in load_inbox()["messages"]}
+
+        def handler(name, kw):
+            if name == "getProfile":
+                return dict(profile)
+            if name == "messages.list":
+                return {"messages": [{"id": "msg-01", "threadId": "thr-01"}]}
+            if name == "messages.get":
+                return msgs[kw["id"]]
+            if name == "history.list":
+                return HttpError(404, "notFound")
+        self.save = self.state / "history.json"
+        self.save.write_text(json.dumps({"ana@example.test": {"history_id": "1", "updated": "x"}}), encoding="utf-8")
+        code, out, err = self.run_cli([*FETCH, "--since-last", "--query", "in:inbox"], env=self.live_env(),
+                                      factory=self.stub_factory(handler), now=lambda: FIXED_NOW)
+        self.assertEqual(code, 0, err)
+        self.assertIn("Saved position expired", out)
+        names = [n for n, _k, _r in self.svc.log]
+        self.assertEqual(names, ["getProfile", "history.list", "messages.list", "messages.get"])
+        get_kw = self.svc.log[-1][1]
+        self.assertEqual((get_kw["format"], get_kw["metadataHeaders"]), ("metadata", ["From", "To", "Cc", "Subject"]))
+        self.assertEqual(self.svc.log[1][1]["historyTypes"], ["messageAdded"])
+        self.assertEqual(self.svc.log[2][1]["q"], "in:inbox")
+        self.assertEqual({r for _n, _k, r in self.svc.log}, {0})
+        self.assertTrue((self.out / "ana@example.test" / f"{TODAY}.jsonl").exists())  # live: no _mock
+        self.assertEqual(json.loads(self.save.read_text(encoding="utf-8"))["ana@example.test"]["history_id"],
+                         profile["historyId"])
+        self.assertFalse((self.state / "history.mock.json").exists())
+
+    def test_requirements_pinned_set(self):  # NFR-7
+        names = [line.strip() for line in (HERE / "requirements.txt").read_text(encoding="utf-8").splitlines()
+                 if line.strip() and not line.startswith("#")]
+        self.assertEqual(sorted(re.split(r"[<>=!~ ]", n)[0] for n in names),
+                         ["google-api-python-client", "google-auth"])
 
 
 if __name__ == "__main__":
