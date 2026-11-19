@@ -20,6 +20,7 @@ import config
 import gmail_client
 import parse
 import policy
+import rules
 import store
 from errors import HistoryExpired, PulseError
 
@@ -246,7 +247,42 @@ def cmd_fetch(run: Run) -> None:
         store.save_history(cfg.state_dir, cfg.mock, a.mailbox, profile.get("historyId"), run.now())
 
 
-COMMANDS = {"check": cmd_check, "fetch": cmd_fetch, "purge": cmd_purge}
+def cmd_find(run: Run) -> None:
+    a = run.args
+    run.row["rules_file"] = a.rules
+    loaded = []
+
+    def before_key():
+        loaded.extend(rules.load_rules(Path(a.rules), a.full))  # step 5: all rules valid before any Google call
+        auto_purge(run)
+
+    client, _profile = open_mailbox(run, before_key=before_key)
+    queries = [effective_query(r.gmail_query, a.since) for r in loaded]
+    run.row["query"] = " | ".join(q for q in queries if q) or None
+    path = output_path(run, ".find.jsonl")
+    fmt_rows, merged, counts = {}, {}, {}
+    for rule, query in zip(loaded, queries):
+        ids, _more = list_ids(run, client, query, a.max)
+        counts[rule.id] = 0
+        for mid in ids:
+            if mid not in fmt_rows:
+                fmt_rows[mid] = get_rows(run, client, [mid], a.full)[0]
+            row = fmt_rows[mid]
+            hit = rules.match(rule, row)
+            if rule.local and not hit:
+                continue
+            counts[rule.id] += 1
+            m = merged.setdefault(mid, {**row, "rules_hit": [], "fields_hit": []})
+            m["rules_hit"].append(rule.id)
+            m["fields_hit"].extend(f for f in hit if f not in m["fields_hit"])
+    written = store.append_rows(path, merged.values())
+    run.row["count"] = len(merged)
+    for rid, n in counts.items():
+        run.out(f"Rule {rid}: {n} matches")
+    run.out(f"Matched {len(merged)} messages; wrote {written} new rows to {path}")
+
+
+COMMANDS = {"check": cmd_check, "fetch": cmd_fetch, "find": cmd_find, "purge": cmd_purge}
 
 
 def main(argv: list, environ: Mapping[str, str] | None = None, env_file: Path | None = None,

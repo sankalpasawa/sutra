@@ -564,7 +564,7 @@ import cli  # noqa: E402
 MB = ["--mailbox", "ana@example.test"]
 WHY = ["--reason", "automated test of the pulse reader"]
 CHECK = ["check", *MB, *WHY]
-READ_CMDS = [["check"], ["fetch"]]  # extended as find is built
+READ_CMDS = [["check"], ["fetch"], ["find", "--rules", str(FIX / "rules.sample.json")]]
 
 
 class CheckCliTests(BaseCase):
@@ -934,6 +934,91 @@ class PurgeTests(FetchBase):
         self.assertEqual(self.audit_rows()[-1]["purged"], 1)
         self.assertEqual(self.fetch("--max", "1")[0], 0)
         self.assertEqual(self.audit_rows()[-1]["purged"], 0)
+
+
+# ---------------------------------------------------------------- T12: rules and find
+import rules  # noqa: E402
+
+
+class FindTests(FetchBase):
+    def write_rules(self, rule_list) -> str:
+        p = self.tmp / "rules.json"
+        p.write_text(json.dumps({"rules": rule_list}), encoding="utf-8")
+        return str(p)
+
+    def find(self, rules_path, *extra, scenario=None):
+        return self.run_cli(["find", *MB, *WHY, "--rules", rules_path, *extra], scenario=scenario,
+                            now=lambda: FIXED_NOW)
+
+    def test_find_sample(self):  # AC-24 (match)
+        code, out, err = self.find(str(FIX / "rules.sample.json"))
+        self.assertEqual(code, 0, err)
+        rows = self.rows(".find.jsonl")
+        self.assertEqual([r["id"] for r in rows], ["msg-12"])
+        self.assertEqual(rows[0]["rules_hit"], ["invoice-due"])
+        self.assertEqual(rows[0]["fields_hit"], ["subject", "snippet"])
+        self.assertIn("Rule invoice-due: 1 matches", out)
+        self.assertEqual(mode_of(self.out_file(".find.jsonl")), 0o600)
+        row = self.audit_rows()[-1]
+        self.assertEqual((row["command"], row["count"], row["rules_file"], row["query"]),
+                         ("find", 1, str(FIX / "rules.sample.json"), "subject:invoice"))
+        self.assertFalse((self.state / "history.mock.json").exists())  # find never touches history
+        self.assertEqual(self.find(str(FIX / "rules.sample.json"))[0], 0)  # rerun: deduped
+        self.assertEqual(len(self.rows(".find.jsonl")), 1)
+
+    def test_rules_invalid(self):  # AC-24 (validation)
+        cases = {
+            "bad regex": [{"id": "a", "regex": ["("]}],
+            "unknown key": [{"id": "a", "keywords": ["x"], "colour": "red"}],
+            "duplicate id": [{"id": "a", "keywords": ["x"]}, {"id": "a", "keywords": ["y"]}],
+            "body without full": [{"id": "a", "keywords": ["x"], "fields": ["body_text"]}],
+            "bad field": [{"id": "a", "keywords": ["x"], "fields": ["headers"]}],
+            "bad id": [{"id": "Bad Id", "keywords": ["x"]}],
+            "nothing to match": [{"id": "a", "description": "empty"}],
+            "empty": [],
+        }
+        for label, rl in cases.items():
+            code, _o, err = self.find(self.write_rules(rl))
+            self.assertEqual(code, 2, label)
+            self.assertIn("Rules file", err, label)
+            self.assertEqual(self.clients, [], label)
+            self.assertEqual(self.audit_rows()[-1]["result"], "rules_invalid")
+        bad_json = self.tmp / "bad.json"
+        bad_json.write_text("{not json", encoding="utf-8")
+        self.assertEqual(self.find(str(bad_json))[0], 2)
+        self.assertEqual(self.find(str(self.tmp / "missing.json"))[0], 2)
+        _c, _o, err = self.find(self.write_rules(cases["body without full"]))
+        self.assertIn("needs --full", err)
+
+    def test_find_attachment_and_body_fields(self):
+        p = self.write_rules([{"id": "pdfs", "regex": [r"\.pdf$"], "fields": ["attachments.name"]},
+                              {"id": "hindi", "keywords": ["आज की बैठक"], "fields": ["body_text"]}])
+        code, out, err = self.find(p, "--full")
+        self.assertEqual(code, 0, err)
+        rows = {r["id"]: r for r in self.rows(".find.jsonl")}
+        self.assertEqual(set(rows), {"msg-03", "msg-07"})
+        self.assertEqual(rows["msg-03"]["fields_hit"], ["attachments.name"])
+        self.assertEqual(rows["msg-07"]["rules_hit"], ["hindi"])
+        self.assertEqual(self.calls().count("get_message"), 13)  # each message fetched once across rules
+
+    def test_find_query_only_rule_matches_all(self):
+        code, out, err = self.find(self.write_rules([{"id": "all", "gmail_query": "label:inbox"}]), "--max", "4")
+        self.assertEqual(code, 0, err)
+        rows = self.rows(".find.jsonl")
+        self.assertEqual(len(rows), 4)
+        self.assertEqual({tuple(r["fields_hit"]) for r in rows}, {()})
+
+    def test_mailbox_mismatch_find(self):  # AC-11 (find)
+        code, _o, _e = self.find(str(FIX / "rules.sample.json"), scenario="mismatch")
+        self.assertEqual(code, 3)
+        self.assertNotIn("list_messages", self.calls())
+        self.assertFalse(self.mbdir().exists())
+
+    def test_match_unit(self):
+        rule = rules.load_rules(FIX / "rules.sample.json", full=False)[0]
+        self.assertEqual(rules.match(rule, {"subject": "inv-1234 here", "snippet": ""}), ["subject"])
+        self.assertEqual(rules.match(rule, {"subject": "nothing", "snippet": "DUE DATE soon"}), ["snippet"])
+        self.assertEqual(rules.match(rule, {"subject": "nothing", "snippet": "none"}), [])
 
 
 if __name__ == "__main__":
