@@ -1,0 +1,16 @@
+# Secrets: never commit. .env.example is the template
+.env
+.env.*
+!.env.example
+
+# Service-account keys and any other JSON outside fixtures/
+*.json
+!fixtures/*.json
+
+# Local output and state (default location is ~/.sutra-pulse, these cover a local override)
+out/
+state/
+
+# Python
+.venv/
+__pycache__/
