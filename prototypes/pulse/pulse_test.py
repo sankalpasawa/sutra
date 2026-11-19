@@ -1088,6 +1088,31 @@ class PurgeTests(FetchBase):
             self.assertTrue(p.exists(), p)
         self.assertTrue((self.out / "_mock").is_dir())
 
+    def test_purge_through_symlinked_out_dir(self):  # R2-1: fetch and purge agree on a symlinked OUT_DIR
+        real = self.tmp / "real-out"
+        real.mkdir()
+        link = self.tmp / "out-link"
+        link.symlink_to(real, target_is_directory=True)
+        env = self.env(PULSE_OUT_DIR=str(link))
+        code, _o, err = self.run_cli(FETCH, env=env)
+        self.assertEqual(code, 0, err)
+        mb = real / "_mock" / "ana@example.test"
+        self.assertTrue(mb.is_dir())
+        old = mb / f"{day(400)}.jsonl"
+        old.write_text("{}\n", encoding="utf-8")
+        code, out, err = self.purge(env=env)
+        self.assertEqual(code, 0, err)
+        self.assertFalse(old.exists())
+        self.assertNotIn("Deleted 0 files", out)
+        self.assertGreaterEqual(self.audit_rows()[-1]["count"], 1)
+        self.assertTrue(link.is_symlink())  # the configured link itself is left alone
+        # the home/root refusal applies to the resolved path
+        home_link = self.tmp / "home-link"
+        home_link.symlink_to(self.home, target_is_directory=True)
+        code, _o, err = self.purge(env=self.env(PULSE_OUT_DIR=str(home_link)))
+        self.assertEqual(code, 2)
+        self.assertIn("PULSE_OUT_DIR", err)
+
     def test_out_dir_home_or_root_refused(self):  # R1-8 / AC-46
         for value in (str(self.home), "~", str(self.home) + "/", "/", str(self.home / "sub" / "..")):
             code, _o, err = self.purge(env=self.env(PULSE_OUT_DIR=value))
