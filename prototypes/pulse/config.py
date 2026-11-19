@@ -66,7 +66,7 @@ def _expand(value: str, home: Path) -> Path:
 def scenario_names(fixtures_dir: Path = FIXTURES) -> set:
     try:
         data = json.loads((fixtures_dir / "scenarios.json").read_text(encoding="utf-8"))
-        return set(data)
+        return {k for k in data if not k.startswith("_")}  # "_note" etc. are comments, not scenarios (R1-12)
     except (OSError, ValueError):
         return {"default"}
 

@@ -147,6 +147,13 @@ class ConfigTests(BaseCase):
         self.assertEqual(cfg.retention_days, 30)
         self.assertEqual(cfg.scenario, "default")
 
+    def test_scenario_comment_key_rejected(self):  # R1-12
+        self.assertNotIn("_note", config.scenario_names())
+        self.assertIn("history_deleted", config.scenario_names())
+        with self.assertRaises(PulseError) as cm:
+            config.load(self.env(PULSE_MOCK_SCENARIO="_note"), self.env_file, need_live_keys=True)
+        self.assertEqual(cm.exception.code, "config_invalid")
+
     def test_bad_domain(self):
         with self.assertRaises(PulseError) as cm:
             config.load(self.env(mock=False, PULSE_DOMAIN="a@b.test"), self.env_file, need_live_keys=False)
