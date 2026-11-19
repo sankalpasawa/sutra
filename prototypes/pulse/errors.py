@@ -83,12 +83,18 @@ def map_refresh_error(text: str, retryable: bool = False):
 
 
 RATE_LIMIT_403 = ("rateLimitExceeded", "userRateLimitExceeded")
+# Compared case-insensitively with underscores removed, so ErrorInfo's RATE_LIMIT_EXCEEDED also matches (R2-2).
+_RATE_LIMIT_KEYS = {r.lower() for r in RATE_LIMIT_403}
+
+
+def is_rate_limit_reason(reason) -> bool:
+    return isinstance(reason, str) and reason.replace("_", "").lower() in _RATE_LIMIT_KEYS
 
 
 def map_http_error(status: int, reason: str = ""):
     """Map an HTTP status from the Gmail API. Returns (does not raise) the exception to raise."""
     reason = reason or "no reason given"
-    if status == 403 and reason in RATE_LIMIT_403:
+    if status == 403 and is_rate_limit_reason(reason):
         return TransientError(429)  # Gmail reports per-user / per-project rate limits as 403 (R1-4)
     if status == 403 and reason == "dailyLimitExceeded":
         return PulseError("rate_limited",

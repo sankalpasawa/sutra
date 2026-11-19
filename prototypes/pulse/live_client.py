@@ -52,11 +52,16 @@ def _is_network(exc) -> bool:
 
 
 def _http_reason(exc) -> str:
-    reason = getattr(exc, "reason", "") or ""
+    """The reason to map. Every error_details entry is checked (R2-2): a rate-limit reason in any of them wins,
+    otherwise the first entry's reason, otherwise exc.reason. Anything unrecognised still fails closed."""
+    fallback = getattr(exc, "reason", "") or ""
     details = getattr(exc, "error_details", None)
-    if isinstance(details, list) and details and isinstance(details[0], dict):
-        reason = details[0].get("reason") or reason
-    return str(reason)
+    reasons = [d.get("reason") for d in details if isinstance(d, dict)] if isinstance(details, list) else []
+    reasons = [r for r in reasons if isinstance(r, str) and r]
+    for r in reasons + [fallback]:
+        if errors.is_rate_limit_reason(r):
+            return r
+    return str(reasons[0] if reasons else fallback)
 
 
 class LiveClient:

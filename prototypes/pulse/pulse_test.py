@@ -181,6 +181,9 @@ class ErrorMapperTests(unittest.TestCase):
             t = errors.map_http_error(403, reason)
             self.assertIsInstance(t, TransientError, reason)
             self.assertEqual(t.status, 429)
+        for reason in ("RATE_LIMIT_EXCEEDED", "ratelimitexceeded", "USER_RATE_LIMIT_EXCEEDED"):  # R2-2
+            self.assertIsInstance(errors.map_http_error(403, reason), TransientError, reason)
+        self.assertEqual(errors.map_http_error(403, "RATE_LIMIT").code, "access_denied")
         e = errors.map_http_error(403, "dailyLimitExceeded")
         self.assertEqual((e.code, e.exit_code), ("rate_limited", 5))
         self.assertNotIn("Enable the Gmail API", e.message)
@@ -1289,10 +1292,12 @@ class RefreshError(Exception):  # same class name as google.auth.exceptions.Refr
 
 
 class HttpError(Exception):  # same class name as googleapiclient.errors.HttpError
-    def __init__(self, status, reason=""):
+    def __init__(self, status, reason="", details=None):
         super().__init__(f"HTTP {status}")
         self.resp = type("Resp", (), {"status": status})()
         self.reason = reason
+        if details is not None:
+            self.error_details = details
 
 
 class LiveTests(BaseCase):
@@ -1383,6 +1388,23 @@ class LiveTests(BaseCase):
         code, _o, _e = self.run_cli(CHECK, env=self.live_env(),
                                     factory=self.stub_factory(lambda n, k: HttpError(403, "rateLimitExceeded")))
         self.assertEqual((code, len(self.svc.log), self.sleeps.delays), (5, 5, [1, 2, 4, 8]))  # R1-4: retried
+
+    def test_live_403_reason_in_any_detail(self):  # R2-2: every error_details entry, any case
+        rate = [HttpError(403, "forbidden", [{"reason": "other"}, {"reason": "RATE_LIMIT_EXCEEDED"}]),
+                HttpError(403, "", [{"reason": "userRateLimitExceeded"}]),
+                HttpError(403, "rateLimitExceeded", [{"reason": "somethingElse"}]),
+                HttpError(403, "", ["not a dict", {"reason": "rateLimitExceeded"}])]
+        for exc in rate:
+            code, _o, err = self.run_cli(CHECK, env=self.live_env(), factory=self.stub_factory(lambda n, k, e=exc: e))
+            self.assertEqual((code, self.audit_rows()[-1]["result"], len(self.svc.log)), (5, "rate_limited", 5), err)
+        denied = [HttpError(403, "", [{"reason": "accessNotConfigured"}, {"reason": "SERVICE_DISABLED"}]),
+                  HttpError(403, "", []), HttpError(403, "", None), HttpError(403, "", [{"reason": None}])]
+        for exc in denied:  # unrecognised: still fails closed, tried once
+            code, _o, err = self.run_cli(CHECK, env=self.live_env(), factory=self.stub_factory(lambda n, k, e=exc: e))
+            self.assertEqual((code, self.audit_rows()[-1]["result"], len(self.svc.log)), (4, "access_denied", 1), err)
+        code, _o, err = self.run_cli(CHECK, env=self.live_env(), factory=self.stub_factory(
+            lambda n, k: HttpError(403, "", [{"reason": "accessNotConfigured"}])))
+        self.assertIn("accessNotConfigured", err)  # first entry still named in the message
 
     def test_live_requests(self):
         profile = load_inbox()["profile"]
