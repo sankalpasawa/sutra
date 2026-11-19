@@ -73,7 +73,7 @@ class LiveClient:
             if _is_network(e):
                 raise errors.TransientError(0, kind="network") from None
             if _is(e, "RefreshError"):
-                raise errors.map_refresh_error(str(e)) from None
+                raise errors.map_refresh_error(str(e), bool(getattr(e, "retryable", False))) from None
             if _is(e, "HttpError"):
                 status = int(getattr(getattr(e, "resp", None), "status", 0) or 0)
                 mapped = errors.map_http_error(status, _http_reason(e))

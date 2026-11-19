@@ -12,6 +12,7 @@ EXIT = {
     "usage": 2, "config_missing": 2, "config_invalid": 2, "rules_invalid": 2, "deps_missing": 2,
     "wrong_domain": 3, "not_allowlisted": 3, "mailbox_mismatch": 3, "audit_unavailable": 3, "unsafe_path": 3,
     "key_missing": 4, "key_unreadable": 4, "unauthorized_client": 4, "invalid_grant": 4, "access_denied": 4,
+    "token_error": 4,
     "rate_limited": 5, "server_error": 5, "network_error": 5,
 }
 
@@ -52,17 +53,22 @@ class MessageGone(Exception):
     """messages.get returned 404: the message was deleted after it was listed. Caller skips and counts it."""
 
 
-def map_refresh_error(text: str) -> PulseError:
-    """Map a token-endpoint error (google.auth.exceptions.RefreshError text) to a PulseError.
+def map_refresh_error(text: str, retryable: bool = False):
+    """Map a token-endpoint error (google.auth.exceptions.RefreshError text and its `retryable` flag).
+    Returns (does not raise) the exception to raise.
 
-    Unknown shapes fail closed as unauthorized_client. The strings are unverified until a key exists (A-2, L-5).
+    retryable -> TransientError(kind="token"), retried; known strings -> their codes; anything else -> token_error
+    (fails closed, exit 4). The exception text is matched but never shown. Strings unverified until L-5 (A-2).
     """
+    if retryable:
+        return TransientError(0, kind="token")
     low = (text or "").lower()
     if "invalid_grant" in low:
         return PulseError(
             "invalid_grant",
             "Google refused a token for this mailbox (invalid_grant). The mailbox may be outside the domain, "
-            "suspended or deleted, or this machine's clock may be wrong.",
+            "suspended or deleted, the service-account key may have been revoked or deleted, or this machine's "
+            "clock may be wrong.",
         )
     if "unauthorized_client" in low:
         return PulseError(
@@ -70,8 +76,9 @@ def map_refresh_error(text: str) -> PulseError:
             "Google refused a token for this service account (unauthorized_client). " + DELEGATION_HELP,
         )
     return PulseError(
-        "unauthorized_client",
-        "Google refused a token for this service account (could not get a token). " + DELEGATION_HELP,
+        "token_error",
+        "Google refused a token for this service account and gave no reason Pulse recognises. Check that the "
+        "key is current (not revoked or deleted) and that domain-wide delegation is set up. " + DELEGATION_HELP,
     )
 
 

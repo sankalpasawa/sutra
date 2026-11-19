@@ -159,7 +159,13 @@ class ErrorMapperTests(unittest.TestCase):
             "('unauthorized_client: Client is unauthorized to retrieve access tokens', {})").code,
             "unauthorized_client")
         self.assertEqual(errors.map_refresh_error("invalid_grant: Invalid email or User ID").code, "invalid_grant")
-        self.assertEqual(errors.map_refresh_error("something else").code, "unauthorized_client")
+        e = errors.map_refresh_error("something else")  # R1-5 / AC-43: unknown, not retryable
+        self.assertEqual((e.code, e.exit_code), ("token_error", 4))
+        self.assertNotIn("something else", e.message)
+        self.assertIn("revoked or deleted", errors.map_refresh_error("invalid_grant: Invalid JWT Signature").message)
+        t = errors.map_refresh_error("('Internal Error', {})", retryable=True)
+        self.assertIsInstance(t, TransientError)
+        self.assertEqual(t.kind, "token")
         e = errors.map_http_error(403, "accessNotConfigured")
         self.assertEqual((e.code, e.exit_code), ("access_denied", 4))
         self.assertIn("Enable the Gmail API", e.message)
@@ -1258,6 +1264,25 @@ class LiveTests(BaseCase):
         self.assertEqual(json.loads(self.save.read_text(encoding="utf-8"))["ana@example.test"]["history_id"],
                          profile["historyId"])
         self.assertFalse((self.state / "history.mock.json").exists())
+
+    def test_live_refresh_errors(self):  # R1-5 / AC-43
+        class RetryableRefresh(RefreshError):
+            retryable = True
+        code, _o, err = self.run_cli(CHECK, env=self.live_env(), factory=self.stub_factory(
+            lambda n, k: RetryableRefresh("temporarily_unavailable")))
+        self.assertEqual((code, self.audit_rows()[-1]["result"]), (5, "server_error"))
+        self.assertIn("token service", err)
+        self.assertEqual((len(self.svc.log), self.sleeps.delays), (5, [1, 2, 4, 8]))
+        profile = load_inbox()["profile"]
+        fails = [RetryableRefresh("x")]
+        code, _o, err = self.run_cli(CHECK, env=self.live_env(), factory=self.stub_factory(
+            lambda n, k: fails.pop(0) if fails else dict(profile)))
+        self.assertEqual(code, 0, err)
+        code, _o, err = self.run_cli(CHECK, env=self.live_env(), factory=self.stub_factory(
+            lambda n, k: RefreshError("SENTINEL-REFRESH some new error")))
+        self.assertEqual((code, self.audit_rows()[-1]["result"]), (4, "token_error"))
+        self.assertNotIn("SENTINEL", err)
+        self.assertEqual(len(self.svc.log), 1)  # not retryable: one attempt
 
     def test_live_network_errors(self):  # R1-3 / AC-41
         class TransportError(Exception):  # name of google.auth.exceptions.TransportError

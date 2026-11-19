@@ -136,6 +136,9 @@ def with_retry(fn: Callable[[], T], sleep: Callable[[float], None], attempts: in
         raise PulseError("network_error",
                          f"Could not reach Google after {attempts} attempts. Check this machine's network "
                          "connection (and any proxy or firewall), then try again.")
+    if last.kind == "token":
+        raise PulseError("server_error",
+                         f"Google's token service kept failing after {attempts} attempts. Try again later.")
     if last.status == 429:
         raise PulseError("rate_limited",
                          f"Gmail kept rate-limiting this request (HTTP 429) after {attempts} attempts. Try again later.")
