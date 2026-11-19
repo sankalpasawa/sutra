@@ -867,5 +867,74 @@ class HistoryTests(FetchBase):
         self.assertEqual(self.audit_rows()[-1]["result"], "unsafe_path")
 
 
+# ---------------------------------------------------------------- T11: purge
+def day(n: int) -> str:
+    return (FIXED_NOW.date() - timedelta(days=n)).isoformat()
+
+
+class PurgeTests(FetchBase):
+    def seed(self):
+        d = self.mbdir()
+        d.mkdir(parents=True)
+        files = {}
+        for name in (f"{day(0)}.jsonl", f"{day(30)}.jsonl", f"{day(31)}.jsonl", f"{day(31)}.find.jsonl",
+                     f"notes-{day(400)}.jsonl", f"{day(400)}.txt"):
+            (d / name).write_text("{}\n", encoding="utf-8")
+            files[name] = d / name
+        live = self.out / "bob@example.test"  # a live-mode mailbox dir, old file only
+        live.mkdir()
+        (live / f"{day(90)}.jsonl").write_text("{}\n", encoding="utf-8")
+        outside = self.tmp / "outside"
+        outside.mkdir()
+        (outside / f"{day(400)}.jsonl").write_text("keep\n", encoding="utf-8")
+        (self.out / "linked").symlink_to(outside, target_is_directory=True)
+        (d / f"{day(500)}.jsonl").symlink_to(outside / f"{day(400)}.jsonl")
+        (self.state / "audit.jsonl").write_text('{"seed": 1}\n', encoding="utf-8")
+        (self.state / "history.mock.json").write_text('{"seed": 1}\n', encoding="utf-8")
+        return files, live, outside
+
+    def purge(self, *extra, env=None):
+        return self.run_cli(["purge", *extra], env=env, now=lambda: FIXED_NOW)
+
+    def test_purge_boundaries(self):  # AC-25
+        files, live, outside = self.seed()
+        hist = (self.state / "history.mock.json").read_bytes()
+        code, out, err = self.purge("--dry-run")
+        self.assertEqual(code, 0, err)
+        self.assertIn("Would delete 3 files", out)
+        self.assertTrue(all(p.exists() for p in files.values()))
+        self.assertEqual(self.audit_rows()[-1]["count"], 0)
+        code, out, err = self.purge()
+        self.assertEqual(code, 0, err)
+        self.assertIn("Deleted 3 files", out)
+        gone = {f"{day(31)}.jsonl", f"{day(31)}.find.jsonl"}
+        for name, p in files.items():
+            self.assertEqual(p.exists(), name not in gone, name)
+        self.assertFalse(live.exists())  # emptied mailbox dir removed
+        self.assertEqual((outside / f"{day(400)}.jsonl").read_text(encoding="utf-8"), "keep\n")
+        self.assertTrue((self.mbdir() / f"{day(500)}.jsonl").is_symlink())
+        self.assertEqual((self.state / "history.mock.json").read_bytes(), hist)
+        self.assertTrue((self.state / "audit.jsonl").read_text(encoding="utf-8").startswith('{"seed": 1}\n'))
+        row = self.audit_rows()[-1]
+        self.assertEqual((row["command"], row["mailbox"], row["reason"], row["count"], row["result"]),
+                         ("purge", None, None, 3, "ok"))
+
+    def test_purge_live_without_key(self):  # purge needs no live keys
+        code, _o, err = self.purge(env=self.env(mock=False))
+        self.assertEqual(code, 0, err)
+        self.assertEqual(self.audit_rows()[-1]["mode"], "live")
+
+    def test_fetch_auto_purge(self):  # AC-26
+        self.mbdir().mkdir(parents=True)
+        old = self.mbdir() / f"{day(31)}.jsonl"
+        old.write_text("{}\n", encoding="utf-8")
+        code, out, err = self.fetch("--max", "1")
+        self.assertEqual(code, 0, err)
+        self.assertFalse(old.exists())
+        self.assertEqual(self.audit_rows()[-1]["purged"], 1)
+        self.assertEqual(self.fetch("--max", "1")[0], 0)
+        self.assertEqual(self.audit_rows()[-1]["purged"], 0)
+
+
 if __name__ == "__main__":
     unittest.main(verbosity=2)

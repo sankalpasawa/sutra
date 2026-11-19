@@ -199,9 +199,26 @@ def history_ids(run: Run, client, start_id: str, limit: int):
             return ids, False
 
 
+def auto_purge(run: Run) -> None:
+    """Runs inside fetch and find after the mailbox policy checks, before the profile call (FR-26)."""
+    gone = store.purge(run.cfg.out_dir, run.cfg.retention_days, run.now().astimezone(timezone.utc).date(), False)
+    run.row["purged"] = len(gone)
+    if gone:
+        run.out(f"Purged {len(gone)} output files older than {run.cfg.retention_days} days")
+
+
+def cmd_purge(run: Run) -> None:
+    cfg, dry = run.cfg, run.args.dry_run
+    files = store.purge(cfg.out_dir, cfg.retention_days, run.now().astimezone(timezone.utc).date(), dry)
+    for p in files:
+        run.out(f"{'Would delete' if dry else 'Deleted'}: {p}")
+    run.out(f"{'Would delete' if dry else 'Deleted'} {len(files)} files older than {cfg.retention_days} days")
+    run.row["count"] = 0 if dry else len(files)
+
+
 def cmd_fetch(run: Run) -> None:
     a, cfg = run.args, run.cfg
-    client, profile = open_mailbox(run)
+    client, profile = open_mailbox(run, before_key=lambda: auto_purge(run))
     query = effective_query(a.query, a.since)
     run.row["query"] = query
     path = output_path(run, ".jsonl")
@@ -229,7 +246,7 @@ def cmd_fetch(run: Run) -> None:
         store.save_history(cfg.state_dir, cfg.mock, a.mailbox, profile.get("historyId"), run.now())
 
 
-COMMANDS = {"check": cmd_check, "fetch": cmd_fetch}
+COMMANDS = {"check": cmd_check, "fetch": cmd_fetch, "purge": cmd_purge}
 
 
 def main(argv: list, environ: Mapping[str, str] | None = None, env_file: Path | None = None,

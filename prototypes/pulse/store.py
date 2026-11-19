@@ -7,8 +7,10 @@ import errno
 import fcntl
 import json
 import os
+import re
 import stat
 import tempfile
+from datetime import date
 from pathlib import Path
 
 from errors import PulseError
@@ -90,6 +92,43 @@ def save_history(state_dir, mock: bool, mailbox: str, history_id: str, now) -> N
         except OSError:
             pass
         raise
+
+
+_DATED = re.compile(r"^(\d{4}-\d{2}-\d{2})(\.find)?\.jsonl$")
+
+
+def purge(out_dir, retention_days: int, today, dry_run: bool) -> list:
+    """Delete dated output files older than retention_days (UTC dates). Never follows symlinks; touches only
+    YYYY-MM-DD.jsonl and YYYY-MM-DD.find.jsonl; removes mailbox dirs left empty. Returns the files (to be) deleted."""
+    out_dir = Path(out_dir)
+    if not out_dir.is_dir():
+        return []
+    victims, touched_dirs = [], set()
+    for root, dirs, files in os.walk(out_dir, followlinks=False):
+        for name in sorted(files):
+            m = _DATED.match(name)
+            if not m:
+                continue
+            p = Path(root) / name
+            try:
+                if not stat.S_ISREG(os.lstat(p).st_mode):
+                    continue
+                d = date.fromisoformat(m.group(1))
+            except (OSError, ValueError):
+                continue
+            if (today - d).days > retention_days:
+                victims.append(p)
+    if not dry_run:
+        for p in victims:
+            os.unlink(p)
+            touched_dirs.add(p.parent)
+        for d in sorted(touched_dirs, key=lambda x: len(x.parts), reverse=True):
+            if d != out_dir:
+                try:
+                    os.rmdir(d)  # only succeeds when empty
+                except OSError:
+                    pass
+    return victims
 
 
 def append_rows(path, rows) -> int:
