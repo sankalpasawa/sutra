@@ -1,0 +1,4 @@
+# Live mode only. Ranges are unverified (written offline, review R1-11); record the exact versions installed at
+# live step L-2. google-api-python-client 2.x ships static discovery documents, which cache_discovery=False needs.
+google-auth>=2.0.0,<3
+google-api-python-client>=2.0.0,<3
