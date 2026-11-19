@@ -478,5 +478,62 @@ class ClientTests(unittest.TestCase):
         self.assertEqual(self.mock("mismatch").get_profile()["emailAddress"], "other@example.test")
 
 
+# ---------------------------------------------------------------- T7: parser
+import parse  # noqa: E402
+
+TAG_RE = re.compile(r"<\s*/?\s*(p|h1|script|style|html|head|body|div|br)\b", re.I)
+
+
+class ParseTests(unittest.TestCase):
+    def full(self, mid):
+        return parse.to_row(fixture_msg(mid), full=True)
+
+    def test_full_html_body(self):  # AC-17
+        body = self.full("msg-02")["body_text"]
+        self.assertIsNone(TAG_RE.search(body))
+        self.assertNotIn("alert", body)
+        self.assertNotIn("color: red", body)
+        self.assertIn("Tom & Jerry joined the team.", body)
+        self.assertIn("Read more <here>.", body)  # &nbsp; and &lt;/&gt; decoded
+
+    def test_attachment_keys(self):  # AC-18
+        atts = self.full("msg-03")["attachments"]
+        self.assertEqual(atts, [{"name": "agreement-signed.pdf", "mime": "application/pdf", "size": 20480}])
+        for a in atts:
+            self.assertEqual(set(a), {"name", "mime", "size"})
+
+    def test_rfc2047_subject(self):  # AC-19
+        row = self.full("msg-07")
+        self.assertEqual(row["subject"], "नमस्ते टीम")
+        self.assertEqual(row["from"], "प्रिया शर्मा <priya.sharma@example.test>")
+        self.assertIn("आज की बैठक 4 बजे है।", row["body_text"])
+
+    def test_metadata_row_shape(self):
+        msg = MockClient("ana@example.test", FIX).get_message("msg-03", "metadata")
+        row = parse.to_row(msg, full=False)
+        self.assertNotIn("body_text", row)
+        self.assertNotIn("body_truncated", row)
+        self.assertEqual(row["attachments"], [])
+        self.assertEqual(row["subject"], "Signed agreement")
+        self.assertEqual(set(row), {"id", "thread_id", "from", "to", "cc", "date", "subject", "snippet", "labels",
+                                    "attachments"})
+
+    def test_missing_headers_and_addresses(self):
+        row = self.full("msg-09")
+        self.assertEqual(row["subject"], "")
+        self.assertEqual(row["cc"], [])
+        row = self.full("msg-04")
+        self.assertEqual(row["cc"], ['"Shah, Kiran" <kiran.shah@example.test>', "dev.team@example.test"])
+        self.assertEqual(row["to"], ["Ana Rao <ana@example.test>"])
+        self.assertRegex(row["date"], r"^\d{4}-\d\d-\d\dT\d\d:\d\d:\d\dZ$")
+
+    def test_plain_preferred_and_truncation(self):
+        self.assertEqual(self.full("msg-08")["body_text"], "Plain version of the offsite agenda.")
+        self.assertFalse(self.full("msg-08")["body_truncated"])
+        row = self.full("msg-10")
+        self.assertEqual(len(row["body_text"]), parse.BODY_MAX)
+        self.assertTrue(row["body_truncated"])
+
+
 if __name__ == "__main__":
     unittest.main(verbosity=2)
