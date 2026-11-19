@@ -457,3 +457,40 @@ def test_a_restart_in_the_middle_of_a_run_reattaches_and_leaves_one_copy_of_ever
         after = counts()
         assert after[:3] == before[:3] and after[3] > before[3]                       # nothing is read twice; only the new lines were
         assert c2.one("SELECT display FROM atoms WHERE id = ?", ATOM) == "closed" and len(c2.cards("done")) == 1
+
+
+# ============================================ D252: the home screen's Budget (work credits) ==================================
+
+def test_a_request_with_a_budget_runs_every_task_it_makes_with_that_j2_budget(convo):
+    answered(convo)
+    mid = convo.say("Also write a menu page.", decide(change="reuse", reuse=("web",), assignments=[draft("a1", "web", title="Menu page")]),
+                    budget=250)
+    assert convo.one("SELECT json_extract(meta_json, '$.budget') FROM chat_messages WHERE id = ?", mid) == 250
+    task = convo.one("SELECT id FROM tasks WHERE request_id = ?", f"req-{mid}")
+    assert json.loads(convo.one("SELECT settings_json FROM tasks WHERE id = ?", task)).get("J2_BUDGET") == "250"
+    convo.until("the run to start", lambda: (convo.run_dir(task) / "task.json").is_file())
+    assert json.loads((convo.run_dir(task) / "task.json").read_text())["settings"]["J2_BUDGET"] == "250"
+
+
+def test_a_request_without_a_budget_leaves_the_teams_own(convo):
+    answered(convo)
+    mid = convo.say("Also write a menu page.", decide(change="reuse", reuse=("web",), assignments=[draft("a1", "web", title="Menu page")]))
+    task = convo.one("SELECT id FROM tasks WHERE request_id = ?", f"req-{mid}")
+    assert "J2_BUDGET" not in json.loads(convo.one("SELECT settings_json FROM tasks WHERE id = ?", task) or "{}")
+    assert convo.one("SELECT json_extract(meta_json, '$.budget') FROM chat_messages WHERE id = ?", mid) is None
+
+
+@pytest.mark.parametrize("budget", [0, -3, 100001, 12.5, "100", True, [100]])
+def test_a_budget_that_is_not_a_whole_number_from_1_to_100000_is_422_and_stores_nothing(convo, budget):
+    before = convo.one("SELECT count(*) FROM chat_messages")
+    response = convo.post(ORG, "A website for my cafe", budget=budget)
+    assert response.status_code == 422 and response.json()["error"]["code"] == "validation", response.text
+    assert convo.one("SELECT count(*) FROM chat_messages") == before
+
+
+def test_a_budget_goes_only_with_a_new_request_in_the_org_chat(convo):
+    asked(convo)
+    response = convo.post(convo.session_of("web"), "Sweet Bean", budget=50)
+    assert response.status_code == 422 and "org chat" in response.text, response.text
+    response = convo.post(ORG, "Yes", choice={"message_id": 1, "option": "yes"}, budget=50)
+    assert response.status_code == 422 and "org chat" in response.text, response.text

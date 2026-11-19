@@ -467,6 +467,9 @@ class ChatChoice(Value):
 class ChatPost(Value):
     text: Annotated[str, StringConstraints(min_length=1, max_length=8000)]
     choice: ChatChoice | None = None
+    # D252: the home screen's "Budget (work credits)" for a new request in the org chat; None: the team's own budget. The limits are
+    # J2_BUDGET's (TaskSettings, EngineSettings.budget).
+    budget: Annotated[int, Field(ge=1, le=100_000)] | None = None
 
 
 class Accepted(Value):

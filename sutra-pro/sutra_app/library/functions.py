@@ -34,7 +34,7 @@ from .goal import DocGoalDraft, ExactFactMark, KindName, Question, SiteGoalDraft
 from .registry import record
 from .replies import tolerate
 from .types import AtomId, FindingId, FunctionName, JsonObject, WorkflowId
-from .workflow import ProposedWorkflow, StageId, WorkflowError, ZoneName, check_fields_from_j2, from_j2
+from .workflow import Envelope, ProposedWorkflow, StageId, WorkflowError, ZoneName, check_fields_from_j2, from_j2
 
 __all__ = [
     "ZONES", "SIGNALS", "Signal", "Signals", "Certainty", "certainty_zone", "signal_answer", "Analysis", "Dispute", "LeftOut",
@@ -631,14 +631,25 @@ class LessonReply(AdaptationReply):
     lessons: Annotated[list[LessonDraft], Field(max_length=10)] = []
 
 
+class PricedWorkflow(Value):
+    """P24 (D250): one workflow Priority funds, as its move names it: the proposed workflow's id (or its name) and the
+    envelope. The rest of the workflow is Adaptation's proposal."""
+
+    TRANSPORT_OPTIONAL = frozenset({"name", "envelope"})
+
+    id: Line40 | None = None      # asked for; a proposal without an id (J2's mock) is named by its name
+    name: Annotated[str, StringConstraints(min_length=1, max_length=120)] | None = None
+    envelope: Envelope | None = None
+
+
 @record
 class Price(PriorityReply):
     """J2.c (J2:6470-6471, 5190-5191, 6476-6481): Priority funds, counters or refuses. A funded workflow carries its
-    envelope with a money limit of at least 1 (J2:6397)."""
+    envelope with a money limit of at least 1 (J2:6397). P24 (D250): each funded workflow is its id and envelope."""
 
     kind: Literal["price"] = "price"
     decision: Literal["GRANT", "COUNTER", "REFUSE"]
-    workflows: _Workflows = []
+    workflows: Annotated[list[PricedWorkflow], Field(max_length=20)] = []
     next: Literal["Adaptation", "Identity"]
 
     @model_validator(mode="after")
@@ -651,9 +662,11 @@ class Price(PriorityReply):
             if not self.workflows:
                 problems.append((("workflows",), f"{self.decision} funds something: workflows must not be empty"))
             for index, w in enumerate(self.workflows):
+                if not (w.id or w.name):
+                    problems.append((("workflows", index, "id"), "a funded workflow names the proposal it funds: its id"))
                 if w.envelope is None or w.envelope.money_limit < 1:
                     problems.append((("workflows", index, "envelope"),
-                                     f"workflow {w.name}: a funded workflow needs envelope.money_limit of at least 1"))
+                                     f"workflow {w.id or w.name}: a funded workflow needs envelope.money_limit of at least 1"))
         if problems:
             _raise("Price", problems)
         return self

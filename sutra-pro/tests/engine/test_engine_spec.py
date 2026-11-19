@@ -756,6 +756,6 @@ def test_every_default_that_has_a_j2_module_constant_equals_it_in_a_clean_proces
     assert done.returncode == 0, done.stderr
     theirs = json.loads(done.stdout.strip().splitlines()[-1])
     ours = EngineSettings()
-    assert theirs.pop("budget_cap") == 2 * ours.budget and ours.budget_cap is None, "unset means twice the budget, as J2 reads it"
+    assert theirs.pop("budget_cap") is None and ours.budget_cap is None, "unset means no cap (D251, P25)"
     assert theirs == {name: getattr(ours, name) for name in theirs}, "a J2 default moved: update spec.py, its tests and docs/ENVIRONMENT.md together"
     assert ours.delay == 0.0, "the one deliberate difference"

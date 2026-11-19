@@ -28,8 +28,8 @@ def wf(**over):
             "completion_check": "hero exists", "steps": [STEP], **over}
 
 
-def granted(**over):
-    return {**wf(), "envelope": {"money_limit": 10}, **over}
+def granted(**over):      # P24 (D250): Priority's move is the proposal's id and the envelope
+    return {"id": "P-1", "envelope": {"money_limit": 10}, **over}
 
 
 CHARTER = {"kind": "site", "statement": "A one-page website for Brew Lab", "site_name": "Brew Lab",

@@ -157,6 +157,24 @@ def test_the_box_starts_a_new_project_through_the_org_chat(browser, fake):
 
 
 @browser_only
+def test_the_box_sends_a_typed_budget_and_none_when_the_field_is_left_empty(browser, fake):
+    """D252: the Budget (work credits) field starts empty with "team default"; a typed number rides with the new request; a bad one stops the send."""
+    load(browser, fake, stage="1")
+    assert browser.js("document.getElementById('fdbudget').value") == "" and \
+        browser.js("document.getElementById('fdbudget').placeholder") == "team default"
+    browser.type("#fdbudget", "0")
+    browser.type("#fdbox", "A website for my cafe")
+    browser.click("#fdsend")
+    assert browser.js("document.getElementById('fdbudget').validationMessage") != "" and not posts(fake, "/api/chats/cs_org/messages")
+    browser.js("document.getElementById('fdbudget').value = '250'")
+    browser.click("#fdsend")
+    browser.wait_for("document.querySelector('#fdlatest .fdlatest') !== null")
+    sent = posts(fake, "/api/chats/cs_org/messages")
+    assert sent and sent[0]["body"] == {"text": "A website for my cafe", "budget": 250}
+    browser.wait_for("document.getElementById('fdbudget').value === ''")
+
+
+@browser_only
 def test_home_takes_the_owner_to_the_project_once_a_team_has_the_work(browser, fake):
     load(browser, fake, stage="1")
     browser.expect_failed("/d/web/")                                                   # the fake serves no team page at stage 1

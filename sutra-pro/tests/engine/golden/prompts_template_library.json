@@ -19,7 +19,7 @@
  "calls": [
   ["identity", "923fbfac9bab", "677eb5d7a74e"],
   ["adaptation", "4e1585b5eaa4", "bc8d3567cf3b"],
-  ["priority", "2d002703128a", "dccb348c6540"],
+  ["priority", "6980b8f6ad82", "66ff2ae0539a"],
   ["coordination", "28fb7578aca3", "752e608af3c0"],
   ["W-1", "760207f93f25", "352079b72dcd"],
   ["coordination", "28fb7578aca3", "b588a5cc7b88"],
@@ -36,7 +36,7 @@
   ["audit", "fdc56c12521b", "7283a255367b"],
   ["adaptation", "fee9e608f7c1", "cce2c063e1fa"],
   ["adaptation", "4e1585b5eaa4", "5ad3cd2f18af"],
-  ["priority", "2d002703128a", "ee9aaa358613"],
+  ["priority", "6980b8f6ad82", "4501cad58942"],
   ["coordination", "28fb7578aca3", "b41abe978561"],
   ["W-5", "d7563badabc6", "19b7349534ac"],
   ["audit", "2e68aade3663", "57eaa90603cd"],

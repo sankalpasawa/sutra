@@ -15,13 +15,13 @@ file would be ported) into a new, empty folder:
 `--j2` is always such an extraction. `--commit` names the commit it was taken from: a `git archive` folder is not a repository, so
 the script cannot ask git; without the flag it asks git about the folder and says "unknown" when that fails.
 
-The page is J2's `j2_ui.html` with 40 edits (E1 to E13, E19 to E24; the letters E2a to E2c, E9b, E20a to E20i with E20f1 and E20f2, and E24a to E24f count). Every edit is `Edit(id, old, new, count)`:
+The page is J2's `j2_ui.html` with 44 edits (E1 to E13, E19 to E25; the letters E2a to E2c, E9b, E20a to E20i with E20f1 and E20f2, E24a to E24f and E25a to E25d count). Every edit is `Edit(id, old, new, count)`:
 `old` is a literal or a compiled regex and `count` is the number of places it must match in J2's file. Every count is checked against
 J2's own text first, so no edit anchors on another edit's output. A count that is not met means J2 changed under the port: the port
 stops, names every edit that no longer matches and writes nothing. Re-port; never hand-edit the copy.
 
 What it writes, under `sutra_app/ui/` of the repository the script lives in (or `--root`):
-    pages/j2_ui.html            the page after the 40 edits
+    pages/j2_ui.html            the page after the 44 edits
     pages/j2_ui_render.js       J2's render harness, three small changes (sutra_ctx.js runs first; d3 and its tag test move)
     pages/j2_graph_layout.js    J2's layout harness, one change (sutra_ctx.js runs first)
     static/css/j2.css           the page's `<style>` block, byte for byte (the leading newline included)
@@ -243,6 +243,25 @@ PAGE_EDITS: tuple[Edit, ...] = (
     Edit("E24e", '`<a href="${esc(`/library?view=artifacts&run=${encodeURIComponent(s.made_by.run)}`)}">${esc(s.made_by.run)}</a> ${esc(s.made_by.workflow',
          '`<a href="${esc(`${SutraCtx.libraryPath}?view=artifacts&run=${encodeURIComponent(s.made_by.run)}`)}">${esc(s.made_by.run)}</a> ${esc(s.made_by.workflow', 1),
     Edit("E24f", 'const rtHref = (id, keys) => `/?view=simple&template=', 'const rtHref = (id, keys) => `${SutraCtx.pagePath}?view=simple&template=', 1),
+    # E25 (D251, D252): the start page's optional "Budget (work credits)", empty by default ("team default": the team's Settings budget, 100 if
+    # none is set); a typed number is sent with the first message as `budget` (the route makes it the task setting J2_BUDGET, within its limits),
+    # and a value that is not a whole number from 1 to 100000 stops the send and says so. No cap field.
+    Edit("E25a", '<div class="schips" id="schips"></div><button class="sgo" id="lsend" type="submit"',
+         '<div class="schips" id="schips"></div><label for="lbudget" style="display:flex;align-items:center;gap:6px;'
+         'font-size:13px;white-space:nowrap">Budget (work credits) <input id="lbudget" name="budget" type="number" inputmode="numeric" min="1" '
+         'max="100000" step="1" placeholder="team default" style="width:8em"></label><button class="sgo" id="lsend" type="submit"', 1),
+    Edit("E25b", "async function sendText(text){", "async function sendText(text, budget){", 1),
+    Edit("E25c", "body:JSON.stringify(RTNEW.id && !RTNEW.sent ? {text, template: RTNEW.id, workflows: RTNEW.keys} : {text})",
+         "body:JSON.stringify({...(RTNEW.id && !RTNEW.sent ? {text, template: RTNEW.id, workflows: RTNEW.keys} : {text}), ...(budget ? {budget} : {})})", 1),
+    Edit("E25d", '$("lform").addEventListener("submit", e => { e.preventDefault(); const t = $("lbox").value.trim(); if (!t) return; $("lbox").value = ""; '
+                 '$("lsend").disabled = true; sendText(t); });',
+         '// E25 (D251, D252): the Budget field: empty is the team default (undefined: no budget sent), else a whole number of work credits from 1\n'
+         '// to 100000 (the limits of the task setting J2_BUDGET); null stops the send\n'
+         'const lbudget = () => { const el = $("lbudget"); if (!el) return undefined; const v = String(el.value).trim(); if (v === ""){ el.setCustomValidity(""); return undefined; }\n'
+         '  const ok = /^[1-9][0-9]{0,5}$/.test(v) && +v <= 100000;\n'
+         '  el.setCustomValidity(ok ? "" : "Budget: a whole number of work credits from 1 to 100000, or empty for the team default"); if (!ok){ el.reportValidity(); return null; } return +v; };\n'
+         '$("lform").addEventListener("submit", e => { e.preventDefault(); const t = $("lbox").value.trim(); if (!t) return; const b = lbudget(); if (b === null) return; '
+         '$("lbox").value = ""; $("lsend").disabled = true; sendText(t, b); });', 1),
 )
 
 # The harnesses. Their command lines and JSON output do not change (docs/design/ui.md section 5, "The two harnesses").

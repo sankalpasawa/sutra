@@ -5301,11 +5301,16 @@ def grant_and_question_kind():
         echo = {**{k: v for k, v in prop.items() if k != "real_run"}, "covers": [1, 2], "goal_gap": "changed",
                 "envelope": env, "cost": 25}
         carried = run._carry([echo])[0]
-        assert carried == {**prop, "envelope": env, "cost": 25}, carried
+        # Sutra Pro P24 (D250): only the envelope is the move's; Adaptation is told of the other fields, no "carried" autofix
+        assert carried == {**prop, "envelope": env}, carried
+        note = run.chat[-1]
+        assert note["who"] == "validator" and note["text"].startswith("@Adaptation") and "covers of 'Builder' to [1, 2]" in note["text"] \
+            and "goal_gap of 'Builder' to \"changed\"" in note["text"] and "cost" not in note["text"], note
+        assert not [f for f in run.__dict__.get("autofixes", []) if f.get("kind") == "carried"], run.__dict__.get("autofixes")
         reg, refused, _ = run._register([carried])
         assert reg and not refused, refused
         w = run.workflows[0]
-        assert w["covers"] == [1] and w["real_run"]["checks"] == [2] and w["real_run"]["folder"] == real, w
+        assert w["covers"] == [1] and w["real_run"]["checks"] == [2] and w["real_run"]["folder"] == real and w["cost"] == 25, w
         # question kinds: Identity sets them; Decide for me answers only decisions
         qs = j2.clean_questions([{"question": "Which layout?", "kind": "decision"}, {"question": "Phone?", "kind": "fact", "item": 1},
                                  "No kind"])
@@ -9048,7 +9053,10 @@ SAVED_RUNS_GOLDEN = {
 # the facts-present condition's evidence names exact facts (stage-*.json). Outcomes, spend, the agents called,
 # workflows and the documents are identical to {"prd": "ac6d3f00fb5c", "design docs": "2284f23cff02",
 # "docs then site": "dc8ed3ceb805"}.
-DOC_RUN_GOLDEN = {"prd": "264da0c4a2c8", "design docs": "c31742c23e07", "docs then site": "54eb770c8e21"}      # Identity: charter lists only built files (fix-dry-run)
+# Re-recorded 2026-11-19 (Sutra Pro P24, D249/D250) for Priority's prompts only: its reply format is each workflow's id
+# and envelope. Outcomes, spend, the agents called, workflows and the documents are identical to J2's
+# {"prd": "264da0c4a2c8", "design docs": "c31742c23e07", "docs then site": "54eb770c8e21"}.
+DOC_RUN_GOLDEN = {"prd": "711f7892f1c0", "design docs": "94bc5e70777b", "docs then site": "c03a6ff44f4c"}      # P24: Priority's move is id + envelope
 DOC_PROMPTS_GOLDEN = {
     "prd.builder": "e971c88e727f", "prd.intake": "75a955fb24fa",
     "prd.charter_fmt": "eedccdf82d84", "prd.atom_rules": "b8a918ef6039", "prd.system": "d09f06fa3181",
@@ -9874,13 +9882,14 @@ def doc_sections_replay():
         done = lambda run: open(os.path.join(run.dir, "hiring_policy.md"), encoding="utf-8").read()
         refusals = lambda run: [e for e in run.events if e["type"] in ("refused", "role_refusal")
                                  and not e["detail"].startswith("charter:")]      # the mock charter's own refusal
-        fixes = lambda run: json.load(open(os.path.join(run.dir, "autofix.json"), encoding="utf-8"))
+        fixes = lambda run: run.__dict__.get("autofixes") or []
         # 1. the run's own replies: Priority drops "sections" and "kind", the validator gets Adaptation's back
         run = _hp_run(HP_PROPOSAL, HP_PROPOSAL)
         assert run.outcome.startswith("Done"), run.outcome
         assert all(f"## {x}" in done(run) for x in HP_SECTIONS) and not refusals(run), refusals(run)
-        assert {f["workflow"] for f in fixes(run) if f["kind"] == "carried"} == {w["name"] for w in HP_PROPOSAL}, fixes(run)
-        assert all("sections" in f["detail"] and "kind" in f["detail"] for f in fixes(run) if f["kind"] == "carried"), fixes(run)
+        # Sutra Pro P24 (D250): a field the move leaves out is not part of it, so nothing is carried and no note is posted
+        assert not [f for f in fixes(run) if f["kind"] == "carried"], fixes(run)
+        assert not [m for m in run.chat if m["who"] == "validator" and " also set " in m["text"]], run.chat
         assert [w["sections"] for w in run.workflows[:4]] == [w["sections"] for w in HP_PROPOSAL]
         # 2. the name the run used next cycle, ending in "review", with kind build: written, not Audit's job
         named = copy.deepcopy(HP_PROPOSAL)
