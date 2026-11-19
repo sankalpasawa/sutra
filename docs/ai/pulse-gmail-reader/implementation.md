@@ -174,3 +174,27 @@ Known gaps after fix-up 1:
 - Live-only checks are unchanged: real `RefreshError` strings and whether `retryable` is set (L-5), and whether history returns deleted ids.
 - The README note that an alias `--mailbox` fails as `mailbox_mismatch` (from the review's "only verifiable live") was not added, because it is not an R1 finding.
 - Dependency bounds are unverified.
+
+## Fix-up 2 (review round 2)
+
+| ID | Sev | Status | Commit | Test | What changed |
+|---|---|---|---|---|---|
+| R2-1 | P2 | Fixed | 6509ade | `test_purge_through_symlinked_out_dir` | `config.load` resolves `PULSE_OUT_DIR` and `PULSE_STATE_DIR` once with `os.path.realpath`; fetch and purge both use that path. The home/root refusal checks the resolved path (the test also refuses a symlink to `$HOME`). `lstat` checks below OUT_DIR (`_mock`, mailbox dirs, files) are unchanged. Confirmed the new test fails against the previous `config.py` |
+| R2-2 | P3 | Fixed | 9dde8fc | `test_error_mapper` rows, `test_live_403_reason_in_any_detail` | `errors.is_rate_limit_reason` matches case-insensitively with underscores removed (`rateLimitExceeded`, `userRateLimitExceeded`, `RATE_LIMIT_EXCEEDED`, `USER_RATE_LIMIT_EXCEEDED`). `_http_reason` checks every `error_details` entry and `exc.reason`; a rate-limit match wins, else the first entry's reason. Unrecognised reasons, empty or malformed details stay `access_denied`, tried once |
+| R2-3 | P3 | Fixed | 5d369e2 | none (doc) | architecture.md: unknown `RefreshError` is `token_error` (exit 4); a retryable one is retried, then `server_error`. Both places (error mapping table, Risks table) |
+| R2-4 | P3 | Fixed | 03cd239 | `test_filtered_fallback_truncated_next_step`, `test_since_last_truncated_keeps_position` | A filtered fallback stopped at `--max` prints "Next: narrow --since (or --query) or raise --max (up to 500) so the list fits, then run --since-last again". The "raise --max" part is dropped when `--max` is already 500 |
+
+Deviations:
+- R2-1 also resolves `PULSE_STATE_DIR`. Nothing `lstat`s the state dir today, so this changes no behaviour; it keeps both dirs on the same rule.
+- R2-4 also prints a next step on the history path when it stops at `--max` below 500 ("run --since-last again with a higher --max"). At `--max 500` no extra line is printed there, because there is no further knob to suggest.
+- R2-2 does not add `RESOURCE_EXHAUSTED` (mentioned in the review). It is a gRPC status, not a Gmail reason, and adding it untested against a real body could retry a quota error that should fail. Left for L-5/L-6.
+
+Tests: `cd prototypes/pulse && python3 pulse_test.py`, run after each commit: 103, 104, 104, 105 tests; final 105 run,
+104 pass, 1 skipped (read-only dir test, root), about 2.5 s. Lint: none defined for prototypes; `python3 -m py_compile`
+on all modules is clean.
+
+Known gaps after fix-up 2:
+- R2-2 is still **unverified** against a real Gmail 403 body (no network, googleapiclient not installed). Record one at L-5/L-6.
+- architecture.md's `HttpError 403 -> access_denied` row predates R1-4 and does not list the rate-limit and `dailyLimitExceeded` routes (spec.md R-23 is current). Not in the R2 findings; not changed.
+- Earlier gaps unchanged: live `RefreshError` strings (L-5), alias `--mailbox` README note, dependency bounds.
+- `docs/ai/pulse-gmail-reader/review.md` has the reviewer's uncommitted Round 2 section; left unstaged as it is not this stage's change.
