@@ -23,6 +23,7 @@ import argparse
 import http.client
 import json
 import re
+import ssl
 import sys
 import urllib.error
 import urllib.request
@@ -35,7 +36,7 @@ from pydantic import BaseModel, ConfigDict
 import sutra_app
 from sutra_app.ops import cli
 
-__all__ = ["check", "plan", "Answer", "Plan", "AssetFact", "ASSET_NAMES", "PLATFORM_ASSETS", "MAX_ASSET_BYTES", "install_kind", "how_to_update", "parse_tag", "default_fetch", "register", "REPO", "RELEASE_API", "RELEASES_PAGE",
+__all__ = ["check", "plan", "Answer", "Plan", "AssetFact", "ASSET_NAMES", "PLATFORM_ASSETS", "MAX_ASSET_BYTES", "install_kind", "how_to_update", "parse_tag", "default_fetch", "tls_context", "register", "REPO", "RELEASE_API", "RELEASES_PAGE",
            "TIMEOUT_S", "MAX_BODY", "PER_PAGE", "MAX_PAGES", "NET_ERRORS"]
 
 REPO = "sankalpasawa/sutra"
@@ -146,10 +147,19 @@ def how_to_update(kind: str) -> str:
 
 # ---- the question --------------------------------------------------------------------------------------------------------------
 
+def tls_context() -> ssl.SSLContext:
+    """The certificate check of the default fetcher: the system's trust store, and a trusted certificate may end the chain (D248).
+    Without that flag OpenSSL 3.5 on Windows fails GitHub's chain in some processes: the store holds the USERTrust ECC root twice, self-signed
+    and cross-signed by a root the store lacks, and whichever copy it walks into first decides the answer."""
+    context = ssl.create_default_context()
+    context.verify_flags |= ssl.VERIFY_X509_PARTIAL_CHAIN
+    return context
+
+
 def default_fetch(url: str, timeout: float) -> bytes:
     """GET `url`: at most MAX_BODY bytes, a `User-Agent` and an `Accept`, nothing else. Raises a NET_ERRORS member on any failure."""
     request = urllib.request.Request(url, headers={"User-Agent": USER_AGENT, "Accept": "application/vnd.github+json"})
-    with urllib.request.urlopen(request, timeout=timeout) as response:
+    with urllib.request.urlopen(request, timeout=timeout, context=tls_context()) as response:
         body = response.read(MAX_BODY + 1)
     if len(body) > MAX_BODY:
         raise ValueError("the answer is larger than expected")

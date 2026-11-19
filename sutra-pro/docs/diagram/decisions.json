@@ -1233,5 +1233,10 @@
   "id": "D247",
   "label": "ended workable = clean Done: only (P23)",
   "anchor": "band:DEPARTMENT RUNTIME"
+ },
+ {
+  "id": "D248",
+  "label": "TLS: a trusted certificate may end the chain",
+  "anchor": "Desktop app · Electron window"
  }
 ]
