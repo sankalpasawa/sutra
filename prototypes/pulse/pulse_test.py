@@ -300,5 +300,99 @@ class AuditTests(BaseCase):
         self.assertEqual(target.read_text(encoding="utf-8"), "original\n")
 
 
+# ---------------------------------------------------------------- T5: fixtures
+import base64  # noqa: E402
+from email.header import decode_header, make_header  # noqa: E402
+
+FIX = HERE / "fixtures"
+# Copied from marketplace/plugin/hooks/keys-in-env-vars.sh:69 (PROTO-004).
+PROTO004 = re.compile(r"(sk-[A-Za-z0-9_-]{20,}|AKIA[0-9A-Z]{16}|ghp_[A-Za-z0-9]{36}|ghs_[A-Za-z0-9]{36}|"
+                      r"xoxb-[0-9A-Za-z-]{20,}|ya29\.[A-Za-z0-9_-]+|AIza[0-9A-Za-z_-]{35}|"
+                      r"-----BEGIN [A-Z ]*PRIVATE KEY-----)")
+EMAIL_RE = re.compile(r"[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+")
+PHONE_RE = re.compile(r"\+91[\d ]*\d")
+
+
+def load_inbox() -> dict:
+    return json.loads((FIX / "inbox.json").read_text(encoding="utf-8"))
+
+
+def fixture_msg(mid: str) -> dict:
+    return next(m for m in load_inbox()["messages"] if m["id"] == mid)
+
+
+def _b64d(data: str) -> str:
+    return base64.urlsafe_b64decode(data + "=" * (-len(data) % 4)).decode("utf-8")
+
+
+def fixture_texts() -> list:
+    """Every text in fixtures/, plus decoded bodies and decoded headers, so encoding cannot hide data."""
+    texts = []
+    for p in sorted(FIX.iterdir()):
+        raw = p.read_text(encoding="utf-8")
+        texts.append(raw)
+        if p.suffix != ".json":
+            continue
+
+        def walk(o):
+            if isinstance(o, dict):
+                for k, v in o.items():
+                    if k == "data" and isinstance(v, str):
+                        texts.append(_b64d(v))
+                    elif k == "value" and isinstance(v, str) and "=?" in v:
+                        texts.append(str(make_header(decode_header(v))))
+                    else:
+                        walk(v)
+            elif isinstance(o, list):
+                for v in o:
+                    walk(v)
+        walk(json.loads(raw))
+    return texts
+
+
+class FixtureTests(unittest.TestCase):
+    def test_fixture_coverage(self):  # AC-29 / FR-29
+        inbox = load_inbox()
+        msgs = {m["id"]: m for m in inbox["messages"]}
+        self.assertGreaterEqual(len(msgs), 12)
+        self.assertEqual(inbox["profile"]["messagesTotal"], len(msgs))
+        self.assertEqual(inbox["profile"]["threadsTotal"], len({m["threadId"] for m in msgs.values()}))
+        self.assertEqual(inbox["page_size"], 5)
+        self.assertEqual(msgs["msg-01"]["payload"]["mimeType"], "text/plain")
+        self.assertEqual(msgs["msg-02"]["payload"]["mimeType"], "text/html")
+        self.assertIn("<script>", _b64d(msgs["msg-02"]["payload"]["body"]["data"]))
+        self.assertTrue(any(p.get("filename") for p in msgs["msg-03"]["payload"]["parts"]))
+        self.assertEqual(sum(1 for m in msgs.values() if m["threadId"] == "thr-plan"), 3)
+        self.assertTrue(any(h["value"].startswith("=?utf-8?b?") for h in msgs["msg-07"]["payload"]["headers"]
+                            if h["name"] == "Subject"))
+        self.assertEqual(len(inbox["history"]["added"]), 3)
+        self.assertTrue(set(inbox["history"]["added"]) <= set(msgs))
+        scen = json.loads((FIX / "scenarios.json").read_text(encoding="utf-8"))
+        for name in ("default", "mismatch", "history_expired", "history_many", "rate_limit_then_ok",
+                     "server_error", "unauthorized_client", "invalid_grant", "access_denied", "boom"):
+            self.assertIn(name, scen)
+        self.assertEqual(len(scen["history_many"]["history_added"]), 6)
+        self.assertTrue(set(scen["history_many"]["history_added"]) <= set(msgs))
+        rules = json.loads((FIX / "rules.sample.json").read_text(encoding="utf-8"))
+        self.assertEqual(len(rules["rules"]), 1)
+        allow = (FIX / "allowlist.txt").read_text(encoding="utf-8")
+        self.assertIn("told in writing", allow)
+        self.assertIn("ana@example.test", allow)
+
+    def test_fixture_scan(self):  # AC-29 / FR-30
+        texts = fixture_texts()
+        emails = [e for t in texts for e in EMAIL_RE.findall(t)]
+        self.assertGreater(len(emails), 10)
+        for e in emails:
+            self.assertTrue(e.endswith("@example.test"), e)
+        phones = [p for t in texts for p in PHONE_RE.findall(t)]
+        self.assertGreaterEqual(len(phones), 2)
+        for p in phones:
+            self.assertRegex(p, r"^\+91 00000 \d{5}$")
+        for t in texts:
+            self.assertIsNone(PROTO004.search(t))
+        self.assertIsNone(PROTO004.search(json.dumps(FAKE_KEY)))
+
+
 if __name__ == "__main__":
     unittest.main(verbosity=2)

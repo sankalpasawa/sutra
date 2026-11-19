@@ -1,0 +1,4 @@
+# Pulse mock allowlist (fixture). One mailbox per line; blank lines and lines starting with # are ignored.
+# Rule DEC-3: the Workspace admin approves every allowlist entry, and each mailbox owner
+# is told in writing before the first read. The tool does not enforce this; people do.
+ana@example.test

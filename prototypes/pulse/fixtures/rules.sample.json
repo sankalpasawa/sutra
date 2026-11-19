@@ -1,0 +1,5 @@
+{"rules": [
+  {"id": "invoice-due", "description": "Invoices mentioning a due date",
+   "gmail_query": "subject:invoice", "keywords": ["due date"], "regex": ["INV-\\d{4}"],
+   "fields": ["subject", "snippet"]}
+]}
