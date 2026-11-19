@@ -19,7 +19,7 @@ from sutra_app.engine import llm
 from sutra_app.engine.host import folder_watch as fw
 
 from test_engine_host import GatePort, QUIET, Running, append_inbox, chat, events, j2, trace, wait_until   # noqa: F401  (fixtures and helpers)
-from test_engine_project import BRIEF, TaggingPort
+from test_engine_project import BRIEF, PROJECT, TaggingPort
 
 needs_git = pytest.mark.skipif(shutil.which("git") is None or fw.git_executable() is None, reason="git is not available here")
 UPDATE = ("Check the details of the app in the repo and update README.md so that its first section matches the app: add the line "
@@ -142,7 +142,7 @@ def test_a_folder_that_is_not_a_git_work_tree_is_left_out_silently(j2, make_run_
 
 
 def test_with_no_folder_the_record_names_the_file_and_no_changes(j2, make_run_dir):
-    run_dir = make_run_dir(user_text=BRIEF, settings=QUIET)
+    run_dir = make_run_dir(user_text=BRIEF, settings=PROJECT)
     run_project(run_dir)
     record = deliverable(run_dir)
     assert record["file"] == "project.md" and "changes" not in record and not trace(run_dir, "publish.error")

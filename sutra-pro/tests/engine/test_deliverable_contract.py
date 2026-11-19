@@ -4,7 +4,7 @@ from sutra_app.connectors.workdir import WorkFolder
 
 from test_engine_deliverable import UPDATE, append, needs_git, repo, run_project   # noqa: F401  (fixtures and helpers)
 from test_engine_host import QUIET, j2   # noqa: F401  (fixtures and helpers)
-from test_engine_project import BRIEF
+from test_engine_project import BRIEF, PROJECT
 
 
 @needs_git
@@ -21,7 +21,7 @@ def test_what_the_host_writes_is_what_the_server_reads(j2, make_run_dir, data_di
 
 def test_a_run_with_no_folder_still_hands_the_server_its_report(j2, make_run_dir):
     from sutra_app.orchestrator.deliverable import read_deliverable
-    run_dir = make_run_dir(user_text=BRIEF, settings=QUIET)
+    run_dir = make_run_dir(user_text=BRIEF, settings=PROJECT)
     run_project(run_dir)
     got = read_deliverable(run_dir)
     assert got is not None and got.has_report and got.changes is None

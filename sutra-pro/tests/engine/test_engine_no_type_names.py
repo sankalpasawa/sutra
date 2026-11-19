@@ -7,7 +7,6 @@ Where a literal has an owner, the owner is named here with the reason, and the t
 
     capabilities/project.py   `project`: the capability's own type, defined once as `TYPE` (D128); everything else reads `project.TYPE`
     forms.py                  `document`: J2's form word, defined once as `DOCUMENT`, with `is_document()` (D168)
-    capabilities/select.py    `project`: the id of a RULE of the selection table, not a type (`RULE_PROJECT`)
 """
 import re
 from pathlib import Path
@@ -26,7 +25,6 @@ TABLE = re.compile(r"\bj2\.OUTPUTS\b|\bOUTPUT_NAMES\b|\bSTAGE_WORDS\b")
 OWNERS = {                                               # file (relative to sutra_app/) -> {literal: how many times it may be spelled}
     "engine/capabilities/project.py": {"project": 1},     # TYPE = "project"
     "engine/forms.py": {"document": 1},                   # DOCUMENT = "document"
-    "engine/capabilities/select.py": {"project": 1},      # RULE_PROJECT = "project"
 }
 
 

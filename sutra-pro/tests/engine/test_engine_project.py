@@ -28,6 +28,7 @@ PRD_BRIEF = ("Write a PRD for QuickQueue, a mobile app that lets clinic patients
 BRIEF = ("Check the details of the app in the repo and update the J2 prototype so that its settings page matches the app: look at the "
          "settings code, list what differs, change the prototype page to match, and say what you verified and what is left to do.")
 SECTIONS = ["Findings", "Changes", "Confirmation", "Open items", "Outcome"]
+PROJECT = {**QUIET, "J2_OUTPUT": "project"}      # D253: no word of a brief picks project work, so a test with no folder pins it as the owner would
 
 
 class TaggingPort(llm.ScriptedPort):
@@ -138,7 +139,7 @@ def test_p14_a_single_output_is_never_swapped_for_the_documents_the_brief_names(
 
 # ---- the mock run to Done ----------------------------------------------------------------------------------------------------
 def test_a_project_brief_runs_to_done_as_project_work_with_a_report_of_five_sections(j2, make_run_dir):
-    run_dir = make_run_dir(user_text=BRIEF, settings=QUIET)
+    run_dir = make_run_dir(user_text=BRIEF, settings=PROJECT)
     running, port = go(run_dir)
     rows = events(run_dir)
     assert rows[-1]["t"] == "run.ended" and rows[-1]["status"] in ("done", "done_with_open_items"), rows[-1]
@@ -152,25 +153,25 @@ def test_a_project_brief_runs_to_done_as_project_work_with_a_report_of_five_sect
 
 
 def test_the_selection_is_recorded_in_output_json_a_trace_line_and_one_line_of_chat(j2, make_run_dir):
-    run_dir = make_run_dir(user_text=BRIEF, settings=QUIET)
+    run_dir = make_run_dir(user_text=BRIEF, settings=PROJECT)
     go(run_dir)
     record = json.loads((run_dir / "output.json").read_text())
-    assert record == {"choice": "auto", "output": "project", "rule": "project", "reason": "you asked about a repository", "folder": False}
+    assert record == {"choice": "project", "output": "project", "rule": "owner", "reason": "you chose it", "folder": False}
     selected = trace(run_dir, "output.selected")
     assert len(selected) == 1 and selected[0]["data"]["output"] == "project" and selected[0]["data"]["forced"] == {}
     lines = [m["text"] for m in chat(run_dir) if m["who"] == "system" and m["text"].startswith(("Working on this as", "Treating this as"))]
-    assert len(lines) == 1 and "you asked about a repository" in lines[0] and "start page" in lines[0]
+    assert len(lines) == 1 and "you chose it" in lines[0] and "start page" in lines[0]
 
 
 def test_identity_never_talks_about_a_website_in_a_project_run(j2, make_run_dir):
-    run_dir = make_run_dir(user_text=BRIEF, settings=QUIET)
+    run_dir = make_run_dir(user_text=BRIEF, settings=PROJECT)
     go(run_dir)
     said = [m["text"] for m in chat(run_dir) if m["who"] == "identity"]
     assert said and not [t for t in said if re.search(r"web\s?site|landing page|visitors", t, re.I)], said
 
 
 def test_a_short_brief_walks_the_document_mock_questions_a_known_limit_of_the_scripted_path(j2, make_run_dir):
-    run_dir = make_run_dir(user_text="update the PRD in the repo", settings=QUIET)
+    run_dir = make_run_dir(user_text="update the PRD in the repo", settings=PROJECT)
     running = Running(run_dir, "--mock")
     from test_engine_host import Answerer
     answerer = Answerer(run_dir, [BRIEF])
@@ -181,7 +182,7 @@ def test_a_short_brief_walks_the_document_mock_questions_a_known_limit_of_the_sc
 
 
 def test_named_documents_in_the_brief_do_not_flip_a_project_run_into_a_prd_chain(j2, make_run_dir):
-    run_dir = make_run_dir(user_text=BRIEF + " Also update the PRD and the HLD in the repo.", settings=QUIET)
+    run_dir = make_run_dir(user_text=BRIEF + " Also update the PRD and the HLD in the repo.", settings=PROJECT)
     go(run_dir)
     assert (run_dir / "project.md").exists() and not (run_dir / "prd.md").exists() and not (run_dir / "hld.md").exists()
     assert not [m for m in chat(run_dir) if "Documents asked for" in m["text"]]
@@ -201,7 +202,7 @@ def test_the_third_section_avoids_the_words_j2s_validator_refused_in_a_done_when
 
 def test_with_artifact_schema_and_the_template_library_on_a_project_run_still_works_and_both_are_forced_off(j2, make_run_dir, data_dir):
     (data_dir / "engine.json").write_text(json.dumps({"artifact_schema": True, "template_library": True}))
-    run_dir = make_run_dir(user_text=BRIEF, settings=QUIET)
+    run_dir = make_run_dir(user_text=BRIEF, settings=PROJECT)
     go(run_dir)
     settings = json.loads((run_dir / "settings.json").read_text())
     assert settings["artifact_schema"] is False and settings["template_library"] is False
@@ -215,7 +216,7 @@ def test_the_whole_reuse_chain_is_forced_off_for_project_work_whatever_the_owner
     """D178: forcing `template_library` alone would let J2's chain turn it on again through `auto_reuse`; the content door would serve document text."""
     chain = {"run_templates": True, "auto_reuse": True, "artifact_library": True, "artifact_schema": True, "template_library": True}
     (data_dir / "engine.json").write_text(json.dumps(chain))
-    run_dir = make_run_dir(user_text=BRIEF, settings=QUIET)
+    run_dir = make_run_dir(user_text=BRIEF, settings=PROJECT)
     go(run_dir)
     settings = json.loads((run_dir / "settings.json").read_text())
     assert {name: settings[name] for name in chain} == {name: False for name in chain}
@@ -330,15 +331,16 @@ def test_a_follow_up_keeps_the_output_of_the_run_it_continues(j2, make_run_dir, 
     assert (run_dir / "project.md").exists()
 
 
-def test_a_seed_that_is_not_a_run_of_this_team_is_not_a_follow_up(j2, make_run_dir, data_dir):
+def test_a_seed_that_is_not_a_run_of_this_team_is_not_a_follow_up(j2, make_run_dir, data_dir, tmp_path):
+    choose_folder(data_dir, tmp_path, "read")
     run_dir = make_run_dir(run_id="j2-20261104-100000-cccc", seed_from="j2-20261104-090000-zzzz", settings=QUIET, user_text=BRIEF)
     go(run_dir)
-    assert json.loads((run_dir / "output.json").read_text())["rule"] == "project"
+    assert json.loads((run_dir / "output.json").read_text())["rule"] == "folder", "not followup: the seed is no run of this team"
 
 
 # ---- the folder policy of a project run ----------------------------------------------------------------------------------------
 def test_builders_of_a_project_run_may_edit_audit_looks_at_git_and_helpers_get_no_folder(j2, make_run_dir):
-    run_dir = make_run_dir(user_text=BRIEF, settings=QUIET)
+    run_dir = make_run_dir(user_text=BRIEF, settings=PROJECT)
     _, port = go(run_dir)
     tags = port.tags
     builders = [t for t in tags if t.function.startswith("W-") and t.purpose == "agent_turn"]
@@ -352,13 +354,13 @@ def test_builders_of_a_project_run_may_edit_audit_looks_at_git_and_helpers_get_n
 
 def test_workspace_off_means_no_agent_of_a_project_run_gets_a_folder(j2, make_run_dir, data_dir):
     (data_dir / "engine.json").write_text(json.dumps({"workspace": "off"}))
-    run_dir = make_run_dir(user_text=BRIEF, settings=QUIET)
+    run_dir = make_run_dir(user_text=BRIEF, settings=PROJECT)
     _, port = go(run_dir)
     assert {t.workspace for t in port.tags} == {"none"}
 
 
 def test_the_project_addenda_reach_identity_adaptation_and_audit_only_in_a_project_run(j2, make_run_dir):
-    run_dir = make_run_dir(user_text=BRIEF, settings=QUIET)
+    run_dir = make_run_dir(user_text=BRIEF, settings=PROJECT)
     _, port = go(run_dir)
     by_fn = {}
     for tag, system in zip(port.tags, port.systems):
@@ -438,7 +440,7 @@ def test_the_charter_of_an_update_brief_says_read_only_plainly_when_the_owner_ch
 
 
 def test_with_no_folder_an_update_brief_is_not_told_the_folder_is_read_only(j2, make_run_dir):
-    run_dir = make_run_dir(user_text=UPDATE_BRIEF, settings=QUIET)
+    run_dir = make_run_dir(user_text=UPDATE_BRIEF, settings=PROJECT)
     go(run_dir)
     assert not READ_ONLY.search(limits_of(charter_of(run_dir)))
 
@@ -465,7 +467,7 @@ def test_the_scripted_identity_reads_the_access_the_host_bound_and_a_direct_call
 
 
 def test_every_call_of_a_project_run_that_has_a_folder_says_what_the_team_may_do(j2, make_run_dir):
-    run_dir = make_run_dir(user_text=BRIEF, settings=QUIET)
+    run_dir = make_run_dir(user_text=BRIEF, settings=PROJECT)
     _, port = go(run_dir)
     asked = [t for t in port.tags if t.workspace != "none"]
     assert asked and {t.team_workspace for t in asked} == {"edit"}
@@ -496,7 +498,7 @@ def test_the_intake_says_what_the_brief_means_and_when_read_only_may_be_written(
 
 
 def test_the_intake_reaches_identity_after_j2s_own_prompt_in_a_project_run(j2, make_run_dir):
-    run_dir = make_run_dir(user_text=UPDATE_BRIEF, settings=QUIET)
+    run_dir = make_run_dir(user_text=UPDATE_BRIEF, settings=PROJECT)
     _, port = go(run_dir)
     intake = [u for t, u in zip(port.tags, port.users) if t.function == "identity" and "REQUESTER'S BRIEF" in u]
     assert intake and all(PROJECT_INTAKE in u for u in intake)
@@ -600,7 +602,7 @@ def documents_of(api, ref):
 
 
 def test_a_project_runs_report_is_a_row_of_the_documents_group_with_the_summary_agent_and_human_tabs(j2, make_run_dir, api, fake_services):
-    run_dir = make_run_dir(user_text=BRIEF, settings=QUIET)
+    run_dir = make_run_dir(user_text=BRIEF, settings=PROJECT)
     go(run_dir)
     ref = register_run(fake_services, run_dir)
     body, rows = documents_of(api, ref)
@@ -646,7 +648,7 @@ def test_a_capability_that_registers_a_second_output_with_a_report_file_is_liste
             return {"thing": thing}
     capabilities.register(j2, [Adds()])
     try:
-        run_dir = make_run_dir(user_text=BRIEF, settings=QUIET)
+        run_dir = make_run_dir(user_text=BRIEF, settings=PROJECT)
         go(run_dir)
         (run_dir / "thing.md").write_text("# Thing\n\nDone.\n", encoding="utf-8")
         chat_file = run_dir / "chat.jsonl"
@@ -669,7 +671,7 @@ def test_a_capability_that_registers_a_second_output_with_a_report_file_is_liste
 
 # ---- J2 sync 5: the project run keeps its prompts and makes no planner call (D164, D165) ----------------------------------------------------
 def test_a_project_run_makes_no_planner_call_and_its_prompts_carry_the_capabilitys_own_texts(j2, make_run_dir):
-    run_dir = make_run_dir(user_text=BRIEF, settings=QUIET)
+    run_dir = make_run_dir(user_text=BRIEF, settings=PROJECT)
     go(run_dir)
     assert not (run_dir / "deliverables.json").exists(), "P14: a host-pinned project run is free of J2's deliverables planner (D129)"
     calls = [json.loads(line) for line in (run_dir / "calls.jsonl").read_text(encoding="utf-8").splitlines() if line.strip()]

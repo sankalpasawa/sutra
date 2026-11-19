@@ -16,7 +16,7 @@ from sutra_app.engine.paths import DataPaths
 from sutra_app.engine.spec import EngineSettings
 
 from test_engine_host import QUIET, chat, events, j2   # noqa: F401  (fixtures and helpers)
-from test_engine_project import PROJECT_INTAKE, go, seed_run
+from test_engine_project import PROJECT, PROJECT_INTAKE, go, seed_run
 
 EARLIER = "j2-20261104-090000-aaaa"
 LATER = "j2-20261104-100000-bbbb"
@@ -76,7 +76,7 @@ def test_the_earlier_result_names_the_files_the_app_saw_change_and_says_it_is_da
 
 def test_a_run_that_does_not_continue_another_has_no_earlier_result_in_any_prompt(j2, make_run_dir, data_dir):
     earlier_run(data_dir)
-    run_dir = make_run_dir(run_id=LATER, settings=QUIET, user_text=QUESTION)             # same team, an earlier run exists, but this is not its follow-up
+    run_dir = make_run_dir(run_id=LATER, settings=PROJECT, user_text=QUESTION)           # same team, an earlier run exists, but this is not its follow-up (D253: pinned, no folder)
     _, port = go(run_dir)
     assert not [s for s in port.systems if "earlier result" in s or "earlier-report" in s]
 

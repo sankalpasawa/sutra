@@ -1,24 +1,27 @@
 """The engine chooses the output itself (work package WP4, engine design 2.4, D129): a pure rule table in `capabilities/select.py`, decided
-once by the host before J2 starts. No model call, so the table is tested as a table of briefs."""
+once by the host before J2 starts. No model call, so the table is tested as a table of briefs. Since D253 no word of the brief decides:
+the owner's choice, a follow-up's own output and a working folder are the only rules, and everything else goes to J2's planner."""
+import inspect
+from pathlib import Path
+
 import pytest
 
 from sutra_app.engine import capabilities
-import json
-
-from sutra_app.engine.capabilities.select import RULES, STRONG_PROJECT_WORDS, WEAK_REASONS, WORDS_FILE, chat_line, choose_output, load_words
+from sutra_app.engine.capabilities import select
+from sutra_app.engine.capabilities.select import RULES, chat_line, choose_output
 
 # (brief, a working folder is set, the output of the run this continues, the owner's choice) -> (output, rule)
-# No default type and no deliverable phrases (D165): a brief the project rules do not claim is left to J2's planner (`None`, rule `planner`).
-# A type name here is test data: the rules read the owner's choice and the earlier run's type as they are.
+# No default type, no deliverable phrases (D165) and no project words (D253): a brief with no folder and no earlier run is left to J2's planner
+# (`None`, rule `planner`). A type name here is test data: the rules read the owner's choice and the earlier run's type as they are.
 TABLE = [
-    # the owner's own sentences
-    ("check the details of the app and update the J2 prototype in the repo", True, None, "auto", "project", "project"),
-    ("check the details of the app and update the J2 prototype in the repo", False, None, "auto", "project", "project"),
+    # the owner's own sentences: the words "repo", "git", "folder" decide nothing; the folder does
+    ("check the details of the app and update the J2 prototype in the repo", True, None, "auto", "project", "folder"),
+    ("check the details of the app and update the J2 prototype in the repo", False, None, "auto", None, "planner"),
     ("check the details of the app and update the J2 prototype", True, None, "auto", "project", "folder"),
     ("build a florist site", False, None, "auto", None, "planner"),
-    ("build a florist site", True, None, "auto", "project", "folder"),          # the folder rule is all that is left to claim a brief
-    ("update the PRD in the repo", True, None, "auto", "project", "project"),
-    ("update the PRD in the repo", False, None, "auto", "project", "project"),
+    ("build a florist site", True, None, "auto", "project", "folder"),          # the folder rule is all that claims a brief
+    ("update the PRD in the repo", True, None, "auto", "project", "folder"),
+    ("update the PRD in the repo", False, None, "auto", None, "planner"),
     # named documents with no folder: the planner decides which types they are
     ("Write a PRD for QuickQueue, a mobile app for clinics", False, None, "auto", None, "planner"),
     ("draft the HLD and the LLD for a bakery site", False, None, "auto", None, "planner"),
@@ -33,23 +36,21 @@ TABLE = [
     # a folder is set and the request is not a make-a-thing request
     ("look at the app and tell me what is missing", True, None, "auto", "project", "folder"),
     ("update the J2 prototype", True, None, "auto", "project", "folder"),
-    # strong project words, each on its own
-    ("fix the bug in checkout", False, None, "auto", "project", "weak"),
-    ("refactor the login module", False, None, "auto", "project", "project"),
-    ("what changed in the last commit?", False, None, "auto", "project", "project"),
-    ("open a pull request for the rename", False, None, "auto", "project", "project"),
-    ("create a new branch for the redesign", False, None, "auto", "project", "project"),
-    ("read CLAUDE.md and follow it", False, None, "auto", "project", "project"),
-    ("summarise the codebase", False, None, "auto", "project", "project"),
-    ("list the files in the folder", False, None, "auto", "project", "project"),
-    ("check the app's code for TODOs", False, None, "auto", "project", "project"),
-    ("update the Source of truth", False, None, "auto", "project", "weak"),
-    ("GIT status please", False, None, "auto", "project", "project"),
-    # a follow-up keeps its output, even when its words are about a bug
+    # the former project words, each on its own, with no folder: the planner (D253). The brief that broke it is the last one.
+    ("fix the bug in checkout", False, None, "auto", None, "planner"),
+    ("refactor the login module", False, None, "auto", None, "planner"),
+    ("what changed in the last commit?", False, None, "auto", None, "planner"),
+    ("open a pull request for the rename", False, None, "auto", None, "planner"),
+    ("read CLAUDE.md and follow it", False, None, "auto", None, "planner"),
+    ("summarise the codebase", False, None, "auto", None, "planner"),
+    ("update the Source of truth", False, None, "auto", None, "planner"),
+    ("GIT status please", False, None, "auto", None, "planner"),
+    ("Build Pulse, an agent that watches six mailboxes; the list above is the source of truth for this pilot", False, None, "auto", None, "planner"),
+    # a follow-up keeps its output, whatever its words
     ("make the header blue", False, "website", "auto", "website", "followup"),
-    ("fix the bug in the contact form", True, "website", "auto", "website", "followup"),      # a weak word does not leave a website follow-up
-    ("update the J2 prototype in the repo", True, "website", "auto", "project", "project"),   # a repository word does: a team whose first run was a site intake
-    ("look at the folder and the git log", False, "website", "auto", "project", "project"),
+    ("fix the bug in the contact form", True, "website", "auto", "website", "followup"),
+    ("update the J2 prototype in the repo", True, "website", "auto", "website", "followup"),   # a repository word no longer leaves a website follow-up: the owner picks Project work for that
+    ("look at the folder and the git log", False, "website", "auto", "website", "followup"),
     ("add a section about pricing", True, "prd", "auto", "prd", "followup"),
     ("also check the tests", True, "project", "auto", "project", "followup"),
     ("also check the tests", False, "project", "auto", "project", "followup"),
@@ -71,20 +72,24 @@ def test_the_table(brief, folder, seed, choice, output, rule):
 @pytest.mark.parametrize("word", ["repository", "repo", "repos", "codebase", "code base", "source code", "git", "branch", "commit", "commits",
                                   "pull request", "CLAUDE.md", "AGENTS.md", "the folder", "my folder", "working folder", "refactor",
                                   "refactoring", "bug", "bugs", "the app's code", "source"])
-def test_every_strong_word_of_the_design_picks_project_work(word):
-    assert choose_output(f"please look at the {word} now", False).output == "project"
+def test_no_word_of_the_brief_picks_project_work(word):
+    """D253: the words that once pinned project work decide nothing; with no folder and no earlier run the planner chooses."""
+    got = choose_output(f"please look at the {word} now", False)
+    assert (got.output, got.rule) == (None, "planner"), word
 
 
-@pytest.mark.parametrize("brief", ["a debugging guide for the bakery", "the budget for the florist", "digital marketing for a gym",
-                                   "a legit coffee shop", "an aggregate of orders", "the resourceful florist"])
-def test_a_word_that_only_contains_a_strong_word_does_not_count(brief):
-    assert choose_output(brief, False).rule not in ("project",), brief
+def test_the_brief_is_not_read_and_the_word_table_is_gone():
+    body = inspect.getsource(select.choose_output).split('"""')[2]
+    assert "brief" not in body, "the body of choose_output reads no word of the brief (D253)"
+    assert not hasattr(select, "load_words") and not hasattr(select, "STRONG_PROJECT_WORDS") and not hasattr(select, "WEAK_REASONS")
+    assert not (Path(select.__file__).with_name("data") / "project.words.json").exists(), "the word file is gone"
 
 
-def test_the_reason_says_what_the_owner_asked_about():
-    assert choose_output("update the repo", False).reason == "you asked about a repository"
-    assert choose_output("fix the bug", False).reason == "you asked about a bug"
-    assert "working folder" in choose_output("look around", True).reason
+def test_the_reason_says_what_decided():
+    assert choose_output("update the repo", True).reason == "a working folder is set and the request is about it"
+    assert choose_output("fix the bug", False, "project").reason == "this continues an earlier project run"
+    assert choose_output("anything", False, None, "project").reason == "you chose it"
+    assert choose_output("anything", False).reason == "the team's planner chooses"
 
 
 def test_the_table_is_pure_and_the_same_every_time():
@@ -97,64 +102,26 @@ def test_a_missing_brief_and_missing_seed_are_not_errors():
     assert choose_output("x", False, "").rule == "planner"
 
 
-def test_no_rule_names_a_default_type_or_a_deliverable_phrase():
-    assert "deliver" not in RULES and "default" not in RULES
-    import inspect
-
-    from sutra_app.engine.capabilities import select
+def test_no_rule_names_a_default_type_a_deliverable_phrase_or_a_project_word():
+    assert RULES == ("owner", "followup", "folder", "planner")
     assert not hasattr(select, "_DELIVER") and "website" not in inspect.getsource(select.choose_output)
-
-
-def test_the_words_are_data_and_each_has_a_reason_for_the_owner():
-    assert all(pattern and why for pattern, why in STRONG_PROJECT_WORDS)
-
-
-def test_the_word_table_is_a_data_file_in_the_order_and_with_the_reasons_it_had_in_code():
-    """D188 (R-2): moved out of code unchanged. The reasons, in order, are what the owner reads in `output.json` and the chat line."""
-    assert WORDS_FILE.name == "project.words.json" and WORDS_FILE.parent.name == "data"
-    assert [why for _, why in STRONG_PROJECT_WORDS] == ["a repository", "the codebase", "a pull request", "git", "the project's instructions file",
-                                                         "your folder", "the app's code", "the source", "a refactor", "a bug"]
-    assert set(WEAK_REASONS) == {"a bug", "the source"}
-    assert json.loads(WORDS_FILE.read_text(encoding="utf-8"))["words"][0] == {"pattern": "repositor(?:y|ies)|repos?", "reason": "a repository"}
-
-
-@pytest.mark.parametrize("body, why", [
-    ("not json", "cannot be read"), ("[]", "non-empty list"), ('{"words": []}', "non-empty list"), ('{"words": [1]}', "words[0]"),
-    ('{"words": [{"pattern": "x"}]}', "words[0]"), ('{"words": [{"reason": "x"}]}', "words[0]"),
-    ('{"words": [{"pattern": "x", "reason": "y", "extra": 1}]}', "words[0]"), ('{"words": [{"pattern": "", "reason": "y"}]}', "pattern and a reason"),
-    ('{"words": [{"pattern": "x", "reason": 3}]}', "pattern and a reason"), ('{"words": [{"pattern": "x", "reason": "y", "weak": "yes"}]}', "weak"),
-    ('{"words": [{"pattern": "(", "reason": "y"}]}', "does not compile")])
-def test_a_bad_words_file_is_refused_by_name(tmp_path, body, why):
-    bad = tmp_path / "words.json"
-    bad.write_text(body)
-    with pytest.raises(ValueError, match="words.json") as refused:
-        load_words(bad)
-    assert why in str(refused.value)
-    with pytest.raises(ValueError, match="cannot be read"):
-        load_words(tmp_path / "missing.json")
-
-
-def test_a_words_file_gives_its_patterns_in_order_and_the_weak_reasons(tmp_path):
-    good = tmp_path / "words.json"
-    good.write_text(json.dumps({"words": [{"pattern": "a", "reason": "ra"}, {"pattern": "b", "reason": "rb", "weak": True}, {"pattern": "c", "reason": "rc", "weak": False}]}))
-    assert load_words(good) == ((("a", "ra"), ("b", "rb"), ("c", "rc")), ("rb",))
 
 
 # ---- the chat line: only for project work ------------------------------------------------------------------------------
 def test_a_selection_that_is_not_project_work_posts_nothing_so_existing_runs_keep_their_events():
-    for brief in ("build a florist site", "hello", "A website for my cafe"):
+    for brief in ("build a florist site", "hello", "A website for my cafe", "update the PRD in the repo"):
         assert chat_line(choose_output(brief, False), False) is None
 
 
 def test_a_project_selection_says_so_in_one_line_with_the_reason_and_the_way_out():
     line = chat_line(choose_output("update the PRD in the repo", True), True)
-    assert line == ("Working on this as project work in your folder (you asked about a repository; choose another kind of result in the "
-                    "start page if that is wrong).")
+    assert line == ("Working on this as project work in your folder (a working folder is set and the request is about it; choose another kind "
+                    "of result in the start page if that is wrong).")
 
 
 def test_project_work_with_no_folder_says_where_to_choose_one():
-    line = chat_line(choose_output("update the PRD in the repo", False), False)
-    assert "no working folder is set" in line and "Working folder" in line
+    line = chat_line(choose_output("also check the tests", False, "project"), False)
+    assert "no working folder is set" in line and "Working folder" in line and "earlier project run" in line
 
 
 def test_an_explicit_choice_of_project_is_acknowledged_without_a_guess():
@@ -173,7 +140,9 @@ def ctx(output="auto", has_folder=False, seed=None):
 
 def test_the_registry_asks_the_capabilities_and_the_project_capability_votes():
     got = capabilities.select_output("update the PRD in the repo", ctx(has_folder=True))
-    assert (got.output, got.rule) == ("project", "project")
+    assert (got.output, got.rule) == ("project", "folder")
+    got = capabilities.select_output("update the PRD in the repo", ctx())
+    assert (got.output, got.rule) == (None, "planner")
     got = capabilities.select_output("build a florist site", ctx())
     assert (got.output, got.rule) == (None, "planner")
 

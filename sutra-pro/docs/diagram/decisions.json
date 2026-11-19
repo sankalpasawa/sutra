@@ -1258,5 +1258,10 @@
   "id": "D252",
   "label": "Budget field on home + team page, empty = team default",
   "anchor": "band:DEPARTMENT RUNTIME"
+ },
+ {
+  "id": "D253",
+  "label": "no word picks project work: owner, follow-up, folder, else the planner",
+  "anchor": "band:DEPARTMENT RUNTIME"
  }
 ]

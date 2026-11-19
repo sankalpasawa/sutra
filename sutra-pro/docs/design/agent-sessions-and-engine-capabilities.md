@@ -82,6 +82,8 @@ How the document flow treats `project`, checked: `doc_agent_output` and `stage_g
 5. a folder is set (`WorkFolder.get()`) and nothing above matched ("check the app and update the J2 prototype") -> `project`;
 6. else `website` (today's behaviour for a team with no folder).
 The host writes the concrete output into `settings.json`/`to_env()` (J2 never sees `auto`), writes `<run>/output.json {choice, output, rule, reason, folder: bool}`, a `output.selected` trace line, and, only when the result is `project`, a `system` line in the run's chat: "Working on this as project work in your folder (you asked about a repository; choose another kind of result in the start page if that is wrong)." `website` selections post nothing, so existing runs, events and goldens do not change.
+**Amendment (D253, 2026-11-19).** Rules 2 and 4 are gone, and so is the weak-word rule of D165 and the word file of D188: no word of the brief decides. The table is the owner's choice, a follow-up's own output, a set working folder, else the planner.
+
 Owner override: per team in `engine.json` (`output`), globally in `data/engine.json`, per request in the start page's select (E19: options "Let the team decide" (auto), Website, PRD document, Project work), and per task through `TaskSettings.J2_OUTPUT`. Changing the default key from `website` to `auto` changes nothing for a team without a folder and without project words; a team whose `engine.json` already says `output: website` keeps it.
 Everything that validates an output name (change all, one list in `capabilities/__init__.py OUTPUT_NAMES` is imported by the Python ones):
 | Place | Change |

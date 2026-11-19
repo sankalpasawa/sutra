@@ -2,93 +2,39 @@
 prompt and no waiting. The host decides once, before J2 is imported, when the owner left the output on `auto`:
 
     1 owner     the owner chose an output (the start page, the team's engine.json, data/engine.json): that one
-    2 project   words that can only mean a project (repository, codebase, git, branch, commit, pull request, CLAUDE.md, the folder, refactor)
-                -> project work, even when the brief continues an earlier run: a team whose first run was a website intake it never needed
-                must not stay a website team for good
-    3 followup  `seed_output`: the brief continues a finished run, so the run keeps its output ("fix the bug in the form" on a website
-                follow-up stays a website run: "bug" and "source" are weak words, looked at after this rule)
-    3b weak     the weak project words (bug, source) -> project work
-    4 folder    a working folder is set and nothing above matched ("check the app and update the J2 prototype") -> project
-    5 planner   nothing above matched: no output (None); J2's planner chooses the type from the brief (D165). There is no default type and no
+    2 followup  `seed_output`: the brief continues a finished run, so the run keeps its output ("fix the bug in the form" on a website
+                follow-up stays a website run)
+    3 folder    a working folder is set and nothing above matched ("check the app and update the J2 prototype") -> project
+    4 planner   nothing above matched: no output (None); J2's planner chooses the type from the brief (D165). There is no default type and no
                 phrase list that names deliverables: "agents decide, code validates"
 
+No word of the brief decides (D253): the project word table of D129 and D188 ("repository", "git", "source", "bug" and the like, once
+`data/project.words.json`) is gone. It read "the source of truth" in a brief that asked for a whole agent as "edit my code", pinned the run to
+project work, and so skipped the planner and every stage the brief deserved. Project work is reached by the owner's choice, by a follow-up of
+a project run, or by a working folder; a brief with none of those goes to the planner, which can choose project work itself (D165).
+
 `choose_output(brief, has_folder, seed_output, choice)` returns a `Selection(output, rule, reason)`. `reason` is a clause of plain words:
-it goes into `<run>/output.json` and, for project work, into the run's chat ("... (you asked about a repository; choose another kind of
-result in the start page if that is wrong)"). The vocabulary of the first fix's route (the repository, code, folder, document and site
-words) is data, `data/project.words.json` (D188, rule R-2: a decision leaves code), moved and not routed: it picks an output, it never sends a message
-anywhere else. The file is read and checked once, when this module is imported; a bad file stops the engine by name. Its exit is a planner that can
-choose a host type (D165).
+it goes into `<run>/output.json` and, for project work, into the run's chat ("... (a working folder is set and the request is about it;
+choose another kind of result in the start page if that is wrong)"). `brief` is read by nobody here: it stays in the signature so every
+caller and record keeps its shape, and so a later rule that reads it has its place.
 """
-import json
-import re
 from typing import Optional
 
 from .base import Selection
-from .project import DATA, TYPE
+from .project import TYPE
 
-__all__ = ["choose_output", "RULES", "STRONG_PROJECT_WORDS", "WEAK_REASONS", "WORDS_FILE", "load_words", "chat_line"]
+__all__ = ["choose_output", "RULES", "chat_line"]
 
-RULE_PROJECT = "project"                         # a rule id of the table below, not an output type: the type is `project.TYPE`
-RULES = ("owner", RULE_PROJECT, "followup", "weak", "folder", "planner")
-WORDS_FILE = DATA / "project.words.json"
-_WORD_KEYS = {"pattern", "reason", "weak"}
-
-
-def load_words(path=WORDS_FILE) -> tuple[tuple[tuple[str, str], ...], tuple[str, ...]]:
-    """`((pattern, reason), ...)` in file order and the reasons of the weak entries, from a words file; ValueError (naming the file) when it is not
-    `{"words": [{"pattern", "reason", "weak"?}]}` with patterns that compile and non-empty texts."""
-    try:
-        data = json.loads(path.read_text(encoding="utf-8"))
-    except (OSError, ValueError) as exc:
-        raise ValueError(f"{path.name}: cannot be read ({exc})") from None
-    rows = data.get("words") if isinstance(data, dict) else None
-    if not isinstance(rows, list) or not rows:
-        raise ValueError(f"{path.name}: needs a non-empty list `words`")
-    words, weak = [], []
-    for i, row in enumerate(rows):
-        if not isinstance(row, dict) or not _WORD_KEYS >= set(row) >= {"pattern", "reason"}:
-            raise ValueError(f"{path.name}: words[{i}] must have pattern and reason (and may have weak)")
-        pattern, reason = row["pattern"], row["reason"]
-        if not isinstance(pattern, str) or not pattern.strip() or not isinstance(reason, str) or not reason.strip() \
-                or not isinstance(row.get("weak", False), bool):
-            raise ValueError(f"{path.name}: words[{i}] needs a pattern and a reason as text, and weak as true or false")
-        try:
-            re.compile(pattern)
-        except re.error as exc:
-            raise ValueError(f"{path.name}: words[{i}].pattern does not compile ({exc})") from None
-        words.append((pattern, reason))
-        if row.get("weak"):
-            weak.append(reason)
-    return tuple(words), tuple(weak)
-
-
-# (pattern, what the owner is told they asked about), in file order: whole words only, any case; the first one that matches names the reason.
-STRONG_PROJECT_WORDS, WEAK_REASONS = load_words()        # WEAK_REASONS: words that name a project only when nothing continues an earlier run
-_STRONG = tuple((re.compile(rf"(?<![\w.])(?:{pattern})(?![\w])", re.I), why) for pattern, why in STRONG_PROJECT_WORDS)
-
-
-def _project_word(brief: str, *, weak: bool) -> Optional[str]:
-    """The reason of the first project word of the kind asked for (`weak`: only the weak ones, else only the others)."""
-    for pattern, why in _STRONG:
-        if (why in WEAK_REASONS) == weak and pattern.search(brief):
-            return why
-    return None
+RULES = ("owner", "followup", "folder", "planner")
 
 
 def choose_output(brief: str, has_folder: bool, seed_output: Optional[str] = None, choice: str = "auto") -> Selection:
     """The output for this brief. `choice` is what the settings say (`auto` leaves the decision to the table); `seed_output` is the
-    output of the finished run this one continues, when there is one."""
+    output of the finished run this one continues, when there is one. The brief's words decide nothing (D253)."""
     if choice and choice != "auto":
         return Selection(choice, "owner", "you chose it")
-    text = brief or ""
-    why = _project_word(text, weak=False)
-    if why:
-        return Selection(TYPE, RULE_PROJECT, f"you asked about {why}")
     if seed_output:
         return Selection(seed_output, "followup", f"this continues an earlier {seed_output} run")
-    why = _project_word(text, weak=True)
-    if why:
-        return Selection(TYPE, "weak", f"you asked about {why}")
     if has_folder:
         return Selection(TYPE, "folder", "a working folder is set and the request is about it")
     return Selection(None, "planner", "the team's planner chooses")
