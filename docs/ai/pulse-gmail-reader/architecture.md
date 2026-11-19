@@ -284,7 +284,7 @@ sequenceDiagram
 |---|---|
 | `RefreshError` text contains `unauthorized_client` | `unauthorized_client` |
 | `RefreshError` text contains `invalid_grant` | `invalid_grant` |
-| other `RefreshError` | `unauthorized_client` with "could not get a token" (fail closed) |
+| other `RefreshError` | `token_error` (exit 4, fail closed, exception text not shown; R-24). A refresh error Google marks retryable is retried and, if still failing, becomes `server_error` |
 | `HttpError` 403 | `access_denied` |
 | `HttpError` 404 on `history.list` | `HistoryExpired` (internal fallback) |
 | `HttpError` 429 | `TransientError(429)` |
@@ -391,7 +391,7 @@ Context: single-user CLI, deterministic tests. Consequences: if Google sends lon
 | Risk | Likelihood | Mitigation |
 |---|---|---|
 | Mock shapes drift from real Gmail responses (A-3) | Moderate | Fixtures copied from Google's documented Message resource; L-6 compares one live message's keys to fixture keys |
-| Token error strings differ from assumed (A-2) | Moderate | Fallback maps unknown `RefreshError` to `unauthorized_client` (fail closed); L-5 records real strings |
+| Token error strings differ from assumed (A-2) | Moderate | Fallback maps unknown `RefreshError` to `token_error` (exit 4, fail closed; a retryable one is retried, then `server_error`); L-5 records real strings |
 | Creation guard blocks the first write if session placement is not registered | High on first run | T1 tells the developer to register placement before writing CHARTER.md |
 | Creation guard hard-blocks `.gitignore` and `.env.example` as "NEW KIND" (no case matches them, `marketplace/plugin/hooks/creation-guard.sh:84-91`) | High (read from code, not run) | Plan stop point before T1: user rules on these two files; no bypass |
 | `snippet` holds personal data in metadata mode (DEC-2) | Certain | Retention 30 d, 0600, outside repo; revisit before J2 |
