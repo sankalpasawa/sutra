@@ -1192,5 +1192,31 @@ class LiveTests(BaseCase):
                          ["google-api-python-client", "google-auth"])
 
 
+# ---------------------------------------------------------------- T14: README and CHARTER
+class DocsTests(unittest.TestCase):
+    def test_readme_contents(self):  # AC-31 / FR-32 / NFR-10
+        text = (HERE / "README.md").read_text(encoding="utf-8")
+        for item in ("GCP project", "Enable the Gmail API", "service account", "outside the repo", "chmod 600",
+                     "Admin console", "Security > Access and data control > API controls > Domain-wide delegation",
+                     "client ID", "https://www.googleapis.com/auth/gmail.readonly", "No other scope",
+                     "told in writing", "Workspace admin approves every allowlist entry", "365 days", "30 days",
+                     "## Install", "pip install -r requirements.txt", "## Mock run", "PULSE_MOCK=1", "## Live run",
+                     "What changes when the key arrives", "POSIX"):
+            self.assertIn(item, text)
+        m = re.search(r"```mermaid\n(.*?)```", text, re.S)
+        self.assertIsNotNone(m)
+        flow = m.group(1)
+        self.assertIn("flowchart", flow)
+        for node in ("setup", "auth", "list", "get", "parse", "store", "find"):
+            self.assertRegex(flow, rf"\b{node}\[")
+        self.assertRegex(flow, r"setup\[.*-->\s*auth\[")
+
+    def test_charter_contents(self):  # FR-1
+        text = (HERE / "CHARTER.md").read_text(encoding="utf-8")
+        for item in ("Kaivan Shah", "Workspace admin", "365 days", "30 days", "told in writing",
+                     "gmail.readonly", "snippet", "Non-goals", "Q-6"):
+            self.assertIn(item, text)
+
+
 if __name__ == "__main__":
     unittest.main(verbosity=2)
