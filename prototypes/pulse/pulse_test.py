@@ -156,5 +156,85 @@ class ErrorMapperTests(unittest.TestCase):
             PulseError("nope", "x")
 
 
+# ---------------------------------------------------------------- T3: policy
+import policy  # noqa: E402
+
+FAKE_KEY = {"type": "service_account", "client_email": "pulse-test@example.test",
+            "private_key": "placeholder, not a real key", "client_id": "000000000000"}
+
+
+def write_fake_key(path: Path, mode=0o600, data=None):
+    path.write_text(json.dumps(FAKE_KEY if data is None else data), encoding="utf-8")
+    os.chmod(path, mode)
+    return path
+
+
+class PolicyTests(BaseCase):
+    def test_wrong_domain(self):  # AC-8 (unit)
+        policy.check_domain("ana@example.test", "example.test")
+        for m in ("x@other.test", "x@sub.example.test"):
+            with self.assertRaises(PulseError) as cm:
+                policy.check_domain(m, "example.test")
+            self.assertEqual((cm.exception.code, cm.exception.exit_code), ("wrong_domain", 3))
+
+    def test_allowlist_parsing(self):  # AC-9 (unit)
+        al = self.tmp / "allow.txt"
+        al.write_text("# c\n\n Ana@Example.test \n", encoding="utf-8")
+        self.assertEqual(policy.load_allowlist(al), frozenset({"ana@example.test"}))
+        policy.check_allowlist("ana@example.test", al)
+        with self.assertRaises(PulseError) as cm:
+            policy.check_allowlist("bob@example.test", al)
+        self.assertEqual(cm.exception.code, "not_allowlisted")
+
+    def test_allowlist_missing_refuses_all(self):  # AC-9 (unit)
+        for p in (self.tmp / "missing.txt", None, self.tmp):  # missing, unset, a directory (unreadable)
+            with self.assertRaises(PulseError) as cm:
+                policy.check_allowlist("ana@example.test", p)
+            self.assertEqual(cm.exception.code, "not_allowlisted")
+
+    def test_mailbox_format(self):  # AC-35 (unit)
+        self.assertEqual(policy.normalise_mailbox("  Ana@Example.TEST "), "ana@example.test")
+        for bad in ("../x@example.test", "a/b@example.test", "noat", "a@b@c.test", "", "a b@example.test"):
+            with self.assertRaises(ValueError):
+                policy.normalise_mailbox(bad)
+
+    def test_reason_length(self):  # FR-10 helper
+        self.assertEqual(policy.check_reason("  ten chars!  "), "ten chars!")
+        for bad in ("", "short", "x" * 501):
+            with self.assertRaises(ValueError):
+                policy.check_reason(bad)
+        policy.check_reason("x" * 500)
+
+    def test_key_file_errors(self):  # AC-13(b) (unit)
+        with self.assertRaises(PulseError) as cm:
+            policy.check_key_file(self.tmp / "nokey.json")
+        self.assertEqual((cm.exception.code, cm.exception.exit_code), ("key_missing", 4))
+        sentinel = "SENTINEL-CONTENT-7f3a"
+        cases = {"notjson.json": f"not json {sentinel}",
+                 "wrongtype.json": json.dumps({"type": "authorized_user", "note": sentinel}),
+                 "nokeys.json": json.dumps({"type": "service_account", "note": sentinel})}
+        for name, text in cases.items():
+            p = self.tmp / name
+            p.write_text(text, encoding="utf-8")
+            os.chmod(p, 0o600)
+            with self.assertRaises(PulseError) as cm:
+                policy.check_key_file(p)
+            self.assertEqual(cm.exception.code, "key_unreadable", name)
+            self.assertIn(str(p), cm.exception.message)
+            self.assertNotIn(sentinel, cm.exception.message)
+        with self.assertRaises(PulseError) as cm:
+            policy.check_key_file(self.tmp)  # a directory
+        self.assertEqual(cm.exception.code, "key_unreadable")
+
+    def test_key_perms_warning(self):  # AC-32 (unit)
+        p = write_fake_key(self.tmp / "k.json", 0o600)
+        self.assertEqual(policy.check_key_file(p), [])
+        os.chmod(p, 0o644)
+        warnings = policy.check_key_file(p)
+        self.assertEqual(len(warnings), 1)
+        self.assertIn("chmod 600", warnings[0])
+        self.assertNotIn("placeholder", warnings[0])
+
+
 if __name__ == "__main__":
     unittest.main(verbosity=2)
