@@ -5,6 +5,7 @@ a throw-away server on 127.0.0.1 (never the real network). Every test that boots
 """
 import json
 import re
+import ssl
 import threading
 import urllib.error
 from http.server import BaseHTTPRequestHandler, HTTPServer
@@ -381,3 +382,35 @@ def test_the_command_refuses_offline_and_makes_no_request(counted, monkeypatch, 
     monkeypatch.setenv("SUTRA_OFFLINE", "1")
     assert cli.main(["update-check"]) == 1
     assert "offline" in capsys.readouterr().err and counted == []
+
+
+# ================================================================ the certificate check (D248)
+
+def test_the_default_fetcher_lets_a_trusted_certificate_end_the_chain():
+    """OpenSSL 3.5 on Windows fails GitHub's chain in some processes when the store holds a root twice (self-signed and cross-signed by a
+    root the store lacks); with the partial-chain flag the trusted copy it finds ends the chain, whichever one it is."""
+    context = update_check.tls_context()
+    assert context.verify_flags & ssl.VERIFY_X509_PARTIAL_CHAIN
+    assert context.verify_mode == ssl.CERT_REQUIRED and context.check_hostname, "the flag relaxes nothing else: the chain is still verified and the name still checked"
+
+
+def test_the_default_fetcher_hands_that_context_to_urlopen(monkeypatch):
+    seen = {}
+
+    class Response:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *a):
+            return False
+
+        def read(self, n):
+            return b"[]"
+
+    def urlopen(request, timeout, context=None):
+        seen["context"] = context
+        return Response()
+
+    monkeypatch.setattr(update_check.urllib.request, "urlopen", urlopen)
+    assert update_check.default_fetch("https://example.invalid/releases", 1.0) == b"[]"
+    assert seen["context"] is not None and seen["context"].verify_flags & ssl.VERIFY_X509_PARTIAL_CHAIN
