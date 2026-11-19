@@ -85,11 +85,8 @@ def cap():
 
 
 def tls_context():
-    """The certificate check for STARTTLS (the tests' fake server swaps in its own certificate here). A trusted certificate may end the
-    chain (D248): the same flag as ops/update_check.py, for the same OpenSSL 3.5 cross-signed-root case."""
-    context = ssl.create_default_context()
-    context.verify_flags |= ssl.VERIFY_X509_PARTIAL_CHAIN
-    return context
+    """The certificate check for STARTTLS (the tests' fake server swaps in its own certificate here)."""
+    return ssl.create_default_context()
 
 
 def smtp_send(msg):
