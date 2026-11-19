@@ -882,6 +882,21 @@ class HistoryTests(FetchBase):
         self.assertIn("Saved position expired", out)
         self.assertNotIn("was not read", out)
 
+    def test_since_last_skips_deleted(self):  # R1-2 / AC-40 (mock)
+        self.save_position()
+        code, out, err = self.fetch("--since-last", scenario="history_deleted")
+        self.assertEqual(code, 0, err)
+        self.assertEqual([r["id"] for r in self.rows()], ["msg-11", "msg-12"])
+        self.assertIn("Skipped 2 deleted messages", out)
+        self.assertNotIn("gone-01", out + err)
+        row = self.audit_rows()[-1]
+        self.assertEqual((row["result"], row["count"], row["skipped"]), ("ok", 2, 2))
+        data = json.loads((self.state / "history.mock.json").read_text(encoding="utf-8"))
+        self.assertEqual(data["ana@example.test"]["history_id"], load_inbox()["profile"]["historyId"])
+        self.assertEqual(self.fetch("--max", "1")[0], 0)
+        self.assertEqual(self.audit_rows()[-1]["skipped"], 0)
+        self.assertNotIn("Skipped", self.fetch("--max", "1")[1])
+
     def test_symlink_history_refused(self):  # AC-21 (state)
         target = self.tmp / "target.json"
         target.write_text("{}", encoding="utf-8")
@@ -991,6 +1006,28 @@ class FindTests(FetchBase):
         self.assertFalse((self.state / "history.mock.json").exists())  # find never touches history
         self.assertEqual(self.find(str(FIX / "rules.sample.json"))[0], 0)  # rerun: deduped
         self.assertEqual(len(self.rows(".find.jsonl")), 1)
+
+    def test_find_skips_deleted(self):  # R1-2 / AC-40 (find)
+        def factory(cfg, mb):
+            c = gmail_client.make_client(cfg, mb)
+            real = c.get_message
+
+            def get_message(msg_id, fmt):
+                if msg_id == "msg-12":
+                    c.calls.append(("get_message", {"msg_id": msg_id, "fmt": fmt}))
+                    raise errors.MessageGone()
+                return real(msg_id, fmt)
+            c.get_message = get_message
+            return c
+        rules_path = self.write_rules([{"id": "all", "gmail_query": "in:inbox"},
+                                       {"id": "again", "gmail_query": "label:x"}])
+        code, out, err = self.run_cli(["find", *MB, *WHY, "--rules", rules_path], factory=factory,
+                                      now=lambda: FIXED_NOW)
+        self.assertEqual(code, 0, err)
+        self.assertNotIn("msg-12", [r["id"] for r in self.rows(".find.jsonl")])
+        self.assertEqual(len(self.rows(".find.jsonl")), 12)
+        self.assertIn("Skipped 1 deleted messages", out)
+        self.assertEqual(self.audit_rows()[-1]["skipped"], 1)
 
     def test_rules_invalid(self):  # AC-24 (validation)
         cases = {
@@ -1210,6 +1247,38 @@ class LiveTests(BaseCase):
         self.assertEqual(json.loads(self.save.read_text(encoding="utf-8"))["ana@example.test"]["history_id"],
                          profile["historyId"])
         self.assertFalse((self.state / "history.mock.json").exists())
+
+    def test_live_get_404_skipped(self):  # R1-2 / AC-40 (live stub)
+        profile = load_inbox()["profile"]
+        msgs = {m["id"]: m for m in load_inbox()["messages"]}
+
+        def handler(name, kw):
+            if name == "getProfile":
+                return dict(profile)
+            if name == "history.list":
+                return {"history": [{"id": "1", "messagesAdded": [{"message": {"id": "gone"}}]},
+                                    {"id": "2", "messagesAdded": [{"message": {"id": "msg-01"}}]}]}
+            if name == "messages.get":
+                return msgs[kw["id"]] if kw["id"] in msgs else HttpError(404, "notFound")
+        hist = self.state / "history.json"
+        hist.write_text(json.dumps({"ana@example.test": {"history_id": "100", "updated": "x"}}), encoding="utf-8")
+        code, out, err = self.run_cli([*FETCH, "--since-last"], env=self.live_env(),
+                                      factory=self.stub_factory(handler), now=lambda: FIXED_NOW)
+        self.assertEqual(code, 0, err)
+        self.assertIn("Skipped 1 deleted messages", out)
+        rows = (self.out / "ana@example.test" / f"{TODAY}.jsonl").read_text(encoding="utf-8").splitlines()
+        self.assertEqual([json.loads(r)["id"] for r in rows], ["msg-01"])
+        self.assertEqual(json.loads(hist.read_text(encoding="utf-8"))["ana@example.test"]["history_id"],
+                         profile["historyId"])
+        self.assertEqual(self.audit_rows()[-1]["skipped"], 1)
+        get_calls = [n for n, _k, _r in self.svc.log if n == "messages.get"]
+        self.assertEqual(len(get_calls), 2)  # a 404 on get is not retried
+        for failing in ("getProfile", "messages.list"):  # 404 elsewhere stays internal
+            def h(name, kw, f=failing):
+                return HttpError(404, "notFound") if name == f else (dict(profile) if name == "getProfile"
+                                                                   else {"messages": []})
+            code, _o, err = self.run_cli(FETCH, env=self.live_env(), factory=self.stub_factory(h))
+            self.assertEqual((code, self.audit_rows()[-1]["result"]), (1, "internal"), failing)
 
     def test_requirements_pinned_set(self):  # NFR-7
         names = [line.strip() for line in (HERE / "requirements.txt").read_text(encoding="utf-8").splitlines()

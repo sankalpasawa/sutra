@@ -9,7 +9,7 @@ from pathlib import Path
 from typing import Callable, Literal, Protocol, TypeVar
 
 import errors
-from errors import PulseError, TransientError, HistoryExpired
+from errors import PulseError, TransientError, HistoryExpired, MessageGone
 
 T = TypeVar("T")
 METADATA_HEADERS = ["From", "To", "Cc", "Subject"]
@@ -94,7 +94,7 @@ class MockClient:
         self._enter("get_message", msg_id=msg_id, fmt=fmt)
         msg = next((m for m in self.inbox["messages"] if m["id"] == msg_id), None)
         if msg is None:
-            raise PulseError("internal", f"Unexpected error: message {msg_id} not found.")
+            raise MessageGone()  # same as a live 404 on messages.get
         msg = copy.deepcopy(msg)
         if fmt == "metadata":
             wanted = {h.lower() for h in METADATA_HEADERS}
@@ -110,8 +110,10 @@ class MockClient:
         ids = self.scenario.get("history_added", self.inbox["history"]["added"])
         chunk, nxt = self._page(ids, page_token, max_results)
         by_id = {m["id"]: m for m in self.inbox["messages"]}
+        # Ids not in the inbox stand for messages deleted since they were added (scenario history_deleted).
         out = {"history": [{"id": str(1600 + n), "messagesAdded": [{"message": {
-                   "id": i, "threadId": by_id[i]["threadId"], "labelIds": by_id[i]["labelIds"]}}]}
+                   "id": i, "threadId": by_id.get(i, {}).get("threadId", "thr-gone"),
+                   "labelIds": by_id.get(i, {}).get("labelIds", [])}}]}
                            for n, i in enumerate(chunk)],
                "historyId": self.inbox["profile"]["historyId"]}
         if nxt:

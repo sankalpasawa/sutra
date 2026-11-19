@@ -1,7 +1,7 @@
 """Append-only audit log: <STATE_DIR>/audit.jsonl, 0600, one JSON line per invocation, flock per write.
 
 Opened and lock-tested before any Google call (FR-28). A symlink at the log path is refused (O_NOFOLLOW).
-Rows only ever hold the 11 schema fields below; never mail fields, key contents or tokens (FR-33).
+Rows only ever hold the 12 schema fields below; never mail fields, key contents or tokens (FR-33).
 """
 import fcntl
 import getpass
@@ -14,7 +14,7 @@ from pathlib import Path
 from errors import PulseError
 
 FIELDS = ("ts", "os_user", "mode", "command", "mailbox", "query", "rules_file", "reason", "count", "purged",
-          "result")
+          "skipped", "result")
 LOCK_WAIT_S = 5.0
 
 

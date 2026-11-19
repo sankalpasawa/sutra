@@ -28,6 +28,7 @@ Status: Refined   |   Task: pulse-gmail-reader   |   Date: 2026-11-19
 | # | Change | Why |
 |---|---|---|
 | R-20 | FR-23: only `fetch --since-last` saves a position. A plain fetch (with or without `--query`/`--since`) never reads or changes it. A `--since-last` fallback list that was filtered still saves, and prints that earlier mail outside the filter is not covered. AC-23 now uses `--since-last`; AC-39 added | Review R1-1: a filtered plain fetch moved the position and later `--since-last` runs silently skipped mail |
+| R-21 | FR-22a added: 404 on `messages.get` skips and counts the message; audit row gains a 12th field `skipped`; mock scenario `history_deleted`; AC-40 added | Review R1-2: one deleted message ended the run and, on `--since-last`, blocked every later run until the history expired |
 
 ## Problem
 An internal tool needs to read selected mailboxes in the company Google Workspace domain, read-only. Domain-wide delegation lets one service account open any mailbox in the domain; Google does not limit it per mailbox. So the tool itself must limit which mailboxes are opened, why, and what is kept. Credentials (admin-approved key file, domain) arrive later, so step 1 must be complete and tested offline.
@@ -233,6 +234,7 @@ Allowed rule keys: `id`, `description`, `gmail_query`, `keywords`, `regex`, `fie
 | `reason` | As given; null for purge |
 | `count` | Messages returned/matched, or files purged |
 | `purged` | Files purged automatically, `fetch`/`find` only, else null |
+| `skipped` | Messages skipped because `messages.get` returned 404 (deleted since listed), `fetch`/`find` only, else null (R-21) |
 | `result` | `ok` or an error code from the table above |
 
 Never in an audit row: mail fields (subject, from, snippet, body, attachment names), key contents, tokens. One row per invocation that reaches step 3 (R-4), including refusals and errors.
@@ -265,13 +267,14 @@ Never in an audit row: mail fields (subject, from, snippet, body, attachment nam
 | FR-20 | Output path, naming, 0600/0700 modes and mock `_mock/` subdir as specified; no duplicate IDs in one file |
 | FR-21 | Writes refuse to follow a symlink at the output file, mailbox dir, audit log or history file path (`unsafe_path`, or `audit_unavailable` for the audit log) |
 | FR-22 | `--since-last` uses saved historyId; no saved id or 404 falls back to a full list with the stated message |
+| FR-22a | A 404 on `messages.get` (message deleted after it was listed) skips that message without retry, counts it, prints "Skipped N deleted messages" (count only), and records N in the audit row `skipped`. The run still succeeds and `--since-last` still saves its position. A 404 on `getProfile` or `messages.list` stays `internal` (R-21) |
 | FR-23 | After a successful `fetch --since-last` the start-of-run historyId is saved to the mode's state file, except when stopped at `--max` with more available. A fetch without `--since-last` never changes the saved position (R-20) |
 | FR-24 | `find` loads JSON rules, validates all before any Google call, and outputs matches with `rules_hit` and `fields_hit` |
 | FR-25 | `purge` deletes only output files older than retention; `--dry-run` deletes nothing; audit/state untouched |
 | FR-26 | Automatic purge runs inside `fetch` and `find` before the profile call |
 | FR-27 | Every invocation that reaches step 3 appends exactly one audit row with the schema above |
 | FR-28 | If the audit log cannot be opened or locked, the command exits `audit_unavailable` before any Google call |
-| FR-29 | Fixtures: `fixtures/inbox.json` in Gmail API response shape with 12+ synthetic messages covering plain, HTML-only, attachment, 3-message reply thread, non-English subject/body, and one matching `fixtures/rules.sample.json`; `fixtures/scenarios.json` with history, expired-history, mismatched-profile, 429-then-ok, 5xx-exhausted, and each auth error; selected by `PULSE_MOCK_SCENARIO` |
+| FR-29 | Fixtures: `fixtures/inbox.json` in Gmail API response shape with 12+ synthetic messages covering plain, HTML-only, attachment, 3-message reply thread, non-English subject/body, and one matching `fixtures/rules.sample.json`; `fixtures/scenarios.json` with history, expired-history, deleted-message history (R-21), mismatched-profile, 429-then-ok, 5xx-exhausted, and each auth error; selected by `PULSE_MOCK_SCENARIO` |
 | FR-30 | Fixtures use only `example.test` addresses, fake names, `+91 00000 xxxxx` phone numbers, and no strings matching the PROTO-004 pattern. No service-account file in the repo; tests create a fake one in a temp dir |
 | FR-31 | `pulse_test.py` is a stdlib-only plain script, runs in mock mode, prints pass/fail per test, exits non-zero on any failure |
 | FR-32 | `README.md` covers: admin setup (GCP project, enable Gmail API, service account, JSON key stored outside the repo with mode 0600, Admin console > Security > Access and data control > API controls > Domain-wide delegation, client ID + `gmail.readonly` only), the allowlist approval and owner-notice rule (DEC-3), retention (DEC-1), install, mock run, live run, mermaid flow (setup → auth → list → get → parse → store → find), "What changes when the key arrives" |
@@ -338,6 +341,7 @@ Each maps to a test in `pulse_test.py` unless marked (manual).
 | AC-37 | Given saved historyId and more history messages than `--max`, when `fetch --since-last --max 2`, then 2 rows, "position not saved" printed, saved historyId unchanged | FR-23 |
 | AC-38 | Given a test run, then `HOME`, OUT_DIR and STATE_DIR are temp dirs and `git status --porcelain prototypes/pulse` is unchanged after (manual once, then by construction) | NFR-9 |
 | AC-39 | Given no state, when `fetch`, `fetch --query`, `fetch --since` run, then no state file is created; given a saved position, a plain `fetch --query` leaves it byte-identical; given `--since-last` with a filtered fallback, the position is saved and the "not read" note printed; an unfiltered fallback prints no note | FR-23, R-20 |
+| AC-40 | Given a saved position and history that lists 2 deleted ids among 2 live ones, when `fetch --since-last`, then exit 0, 2 rows, "Skipped 2 deleted messages", audit `skipped: 2`, position saved; the same through `LiveClient` with a 404 on `messages.get`; `find` skips a deleted message the same way; a 404 on `getProfile`/`messages.list` is `internal` | FR-22a, R-21 |
 
 ## Assumptions
 | ID | Assumption |

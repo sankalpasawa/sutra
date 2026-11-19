@@ -8,7 +8,7 @@ Untested against real Google until the live checklist (plan.md L-1..L-11).
 from pathlib import Path
 
 import errors
-from errors import HistoryExpired, PulseError
+from errors import HistoryExpired, MessageGone, PulseError
 from gmail_client import METADATA_HEADERS
 
 SCOPES = [errors.SCOPE]
@@ -66,6 +66,8 @@ class LiveClient:
             if _is(e, "HttpError"):
                 status = int(getattr(getattr(e, "resp", None), "status", 0) or 0)
                 mapped = errors.map_http_error(status, _http_reason(e))
+                if isinstance(mapped, HistoryExpired) and method == "get_message":
+                    raise MessageGone() from None  # deleted between list and get (R1-2)
                 if isinstance(mapped, HistoryExpired) and method != "list_history":
                     raise PulseError("internal", f"Unexpected error: Gmail returned HTTP 404 for {method}.") from None
                 raise mapped from None

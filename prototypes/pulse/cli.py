@@ -22,7 +22,7 @@ import parse
 import policy
 import rules
 import store
-from errors import HistoryExpired, PulseError
+from errors import HistoryExpired, MessageGone, PulseError
 
 MAX_LIMIT = 500
 SINCE_RE = re.compile(r"^(\d+)([dh])$")
@@ -103,7 +103,7 @@ class Run:
         self.stdout, self.stderr = stdout, stderr
         self.row = {"mode": "mock" if cfg.mock else "live", "command": args.command,
                     "mailbox": getattr(args, "mailbox", None), "query": None, "rules_file": None,
-                    "reason": getattr(args, "reason", None), "count": None, "purged": None}
+                    "reason": getattr(args, "reason", None), "count": None, "purged": None, "skipped": None}
 
     def out(self, text: str) -> None:
         print(text, file=self.stdout)
@@ -169,8 +169,23 @@ def list_ids(run: Run, client, query, limit: int):
 
 
 def get_rows(run: Run, client, ids, full: bool) -> list:
+    """Rows for ids. A message deleted since it was listed (404 on get) is skipped and counted in
+    run.row["skipped"] (R1-2), so one deleted message cannot fail the run or block --since-last."""
     fmt = "full" if full else "metadata"
-    return [parse.to_row(run.call(lambda i=i: client.get_message(i, fmt)), full) for i in ids]
+    rows = []
+    for i in ids:
+        try:
+            msg = run.call(lambda i=i: client.get_message(i, fmt))
+        except MessageGone:
+            run.row["skipped"] = (run.row["skipped"] or 0) + 1
+            continue
+        rows.append(parse.to_row(msg, full))
+    return rows
+
+
+def report_skipped(run: Run) -> None:
+    if run.row["skipped"]:
+        run.out(f"Skipped {run.row['skipped']} deleted messages")
 
 
 def output_path(run: Run, suffix: str) -> Path:
@@ -240,10 +255,12 @@ def cmd_fetch(run: Run) -> None:
                 filtered_fallback = bool(query)
     else:
         ids, more = list_ids(run, client, query, a.max)
+    run.row["skipped"] = 0
     rows = get_rows(run, client, ids, a.full)
     written = store.append_rows(path, rows)
     run.row["count"] = len(rows)
     run.out(f"Fetched {len(rows)} messages; wrote {written} new rows to {path}")
+    report_skipped(run)
     if not a.since_last:
         return  # FR-23 (R-20): only --since-last runs move the saved position
     if more:
@@ -269,13 +286,17 @@ def cmd_find(run: Run) -> None:
     run.row["query"] = " | ".join(q for q in queries if q) or None
     path = output_path(run, ".find.jsonl")
     fmt_rows, merged, counts = {}, {}, {}
+    run.row["skipped"] = 0
     for rule, query in zip(loaded, queries):
         ids, _more = list_ids(run, client, query, a.max)
         counts[rule.id] = 0
         for mid in ids:
             if mid not in fmt_rows:
-                fmt_rows[mid] = get_rows(run, client, [mid], a.full)[0]
+                got = get_rows(run, client, [mid], a.full)
+                fmt_rows[mid] = got[0] if got else None
             row = fmt_rows[mid]
+            if row is None:  # deleted since listed; counted once in run.row["skipped"]
+                continue
             hit = rules.match(rule, row)
             if rule.local and not hit:
                 continue
@@ -288,6 +309,7 @@ def cmd_find(run: Run) -> None:
     for rid, n in counts.items():
         run.out(f"Rule {rid}: {n} matches")
     run.out(f"Matched {len(merged)} messages; wrote {written} new rows to {path}")
+    report_skipped(run)
 
 
 COMMANDS = {"check": cmd_check, "fetch": cmd_fetch, "find": cmd_find, "purge": cmd_purge}

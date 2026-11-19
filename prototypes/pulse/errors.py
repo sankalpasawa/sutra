@@ -2,7 +2,8 @@
 
 Every expected failure is a PulseError(code, message). The CLI maps code -> exit code via EXIT.
 TransientError (429 / 5xx) is retried by gmail_client.with_retry. HistoryExpired (404 on history.list)
-triggers the full-list fallback and is never an exit code.
+triggers the full-list fallback and is never an exit code. MessageGone (404 on messages.get) makes the caller
+skip that message and count it.
 """
 
 EXIT = {
@@ -44,6 +45,10 @@ class TransientError(Exception):
 
 class HistoryExpired(Exception):
     """history.list returned 404: the saved historyId is too old. Caller falls back to a full list."""
+
+
+class MessageGone(Exception):
+    """messages.get returned 404: the message was deleted after it was listed. Caller skips and counts it."""
 
 
 def map_refresh_error(text: str) -> PulseError:

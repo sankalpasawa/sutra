@@ -3,6 +3,7 @@
  "default": {},
  "mismatch": {"profile_email": "other@example.test"},
  "history_expired": {"history_status": 404},
+ "history_deleted": {"history_added": ["msg-11", "gone-01", "msg-12", "gone-02"]},
  "history_many": {"history_added": ["msg-01", "msg-02", "msg-03", "msg-04", "msg-05", "msg-06"]},
  "rate_limit_then_ok": {"fail": {"method": "list_messages", "statuses": [429, 429]}},
  "rate_limit_always": {"fail": {"method": "*", "statuses": "always:429"}},
