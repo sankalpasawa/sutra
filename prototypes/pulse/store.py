@@ -8,6 +8,7 @@ import fcntl
 import json
 import os
 import stat
+import tempfile
 from pathlib import Path
 
 from errors import PulseError
@@ -51,6 +52,44 @@ def check_file(path) -> None:
         return
     if stat.S_ISLNK(st.st_mode) or not stat.S_ISREG(st.st_mode):
         raise _unsafe(path)
+
+
+def history_path(state_dir, mock: bool) -> Path:
+    return Path(state_dir) / ("history.mock.json" if mock else "history.json")
+
+
+def load_history(state_dir, mock: bool) -> dict:
+    """Saved positions by mailbox. Missing or unparsable file gives {} (the caller then does a full list)."""
+    p = history_path(state_dir, mock)
+    check_file(p)
+    try:
+        data = json.loads(p.read_text(encoding="utf-8"))
+    except FileNotFoundError:
+        return {}
+    except (OSError, ValueError):
+        return {}
+    return data if isinstance(data, dict) else {}
+
+
+def save_history(state_dir, mock: bool, mailbox: str, history_id: str, now) -> None:
+    """Replace the state file atomically (temp file in the same dir + os.replace), mode 0600."""
+    p = history_path(state_dir, mock)
+    data = load_history(state_dir, mock)
+    data[mailbox] = {"history_id": str(history_id), "updated": now.isoformat(timespec="seconds")}
+    fd, tmp = tempfile.mkstemp(dir=p.parent, prefix=".history-", suffix=".tmp")
+    try:
+        os.fchmod(fd, 0o600)
+        with os.fdopen(fd, "w", encoding="utf-8") as f:
+            json.dump(data, f, ensure_ascii=False, indent=1, sort_keys=True)
+            f.write("\n")
+        check_file(p)
+        os.replace(tmp, p)
+    except BaseException:
+        try:
+            os.unlink(tmp)
+        except OSError:
+            pass
+        raise
 
 
 def append_rows(path, rows) -> int:

@@ -21,7 +21,7 @@ import gmail_client
 import parse
 import policy
 import store
-from errors import PulseError
+from errors import HistoryExpired, PulseError
 
 MAX_LIMIT = 500
 SINCE_RE = re.compile(r"^(\d+)([dh])$")
@@ -179,17 +179,54 @@ def output_path(run: Run, suffix: str) -> Path:
     return p
 
 
+def history_ids(run: Run, client, start_id: str, limit: int):
+    """Ids added since start_id, via history.list. Raises HistoryExpired on 404. Returns (ids, more_available)."""
+    ids, token = [], None
+    while True:
+        remaining = limit - len(ids)
+        resp = run.call(lambda: client.list_history(start_id, token, min(remaining, 100)))
+        got = []
+        for rec in resp.get("history") or []:
+            for added in rec.get("messagesAdded") or []:
+                mid = (added.get("message") or {}).get("id")
+                if mid and mid not in ids and mid not in got:
+                    got.append(mid)
+        ids.extend(got[:remaining])
+        token = resp.get("nextPageToken")
+        if len(ids) >= limit:
+            return ids, bool(token) or len(got) > remaining
+        if not token:
+            return ids, False
+
+
 def cmd_fetch(run: Run) -> None:
-    a = run.args
-    client, _profile = open_mailbox(run)
+    a, cfg = run.args, run.cfg
+    client, profile = open_mailbox(run)
     query = effective_query(a.query, a.since)
     run.row["query"] = query
     path = output_path(run, ".jsonl")
-    ids, _more = list_ids(run, client, query, a.max)
+    store.check_file(store.history_path(cfg.state_dir, cfg.mock))
+    if a.since_last:
+        saved = (store.load_history(cfg.state_dir, cfg.mock).get(a.mailbox) or {}).get("history_id")
+        if not saved:
+            ids, more = list_ids(run, client, query, a.max)
+            run.out("No saved position, did a full list")
+        else:
+            try:
+                ids, more = history_ids(run, client, saved, a.max)
+            except HistoryExpired:
+                ids, more = list_ids(run, client, query, a.max)
+                run.out("Saved position expired, did a full list")
+    else:
+        ids, more = list_ids(run, client, query, a.max)
     rows = get_rows(run, client, ids, a.full)
     written = store.append_rows(path, rows)
     run.row["count"] = len(rows)
     run.out(f"Fetched {len(rows)} messages; wrote {written} new rows to {path}")
+    if more:
+        run.out("Stopped at --max, position not saved")
+    else:
+        store.save_history(cfg.state_dir, cfg.mock, a.mailbox, profile.get("historyId"), run.now())
 
 
 COMMANDS = {"check": cmd_check, "fetch": cmd_fetch}

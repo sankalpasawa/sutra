@@ -705,7 +705,9 @@ def fixture_subjects() -> list:
     return [parse.to_row(m, False)["subject"] for m in load_inbox()["messages"] if parse.to_row(m, False)["subject"]]
 
 
-class FetchTests(BaseCase):
+class FetchBase(BaseCase):
+    """Helpers for fetch-style tests; holds no tests itself."""
+
     def mbdir(self):
         return self.out / "_mock" / "ana@example.test"
 
@@ -718,6 +720,8 @@ class FetchTests(BaseCase):
     def fetch(self, *extra, scenario=None, env=None):
         return self.run_cli([*FETCH, *extra], scenario=scenario, env=env, now=lambda: FIXED_NOW)
 
+
+class FetchTests(FetchBase):
     def test_pagination_stops_at_max(self):  # AC-15
         code, out, err = self.fetch("--max", "7")
         self.assertEqual(code, 0, err)
@@ -800,6 +804,67 @@ class FetchTests(BaseCase):
         for s in fixture_subjects():
             self.assertNotIn(s, out + err)
         self.assertNotIn("Tom & Jerry", out + err)
+
+
+# ---------------------------------------------------------------- T10: history and --since-last
+class HistoryTests(FetchBase):
+    def save_position(self, hid="1500"):
+        p = self.state / "history.mock.json"
+        p.write_text(json.dumps({"ana@example.test": {"history_id": hid, "updated": "2026-11-18T00:00:00+00:00"}}),
+                     encoding="utf-8")
+        os.chmod(p, 0o600)
+        return p
+
+    def test_since_last_uses_history(self):  # AC-22 (saved)
+        self.save_position()
+        code, out, err = self.fetch("--since-last")
+        self.assertEqual(code, 0, err)
+        self.assertEqual([r["id"] for r in self.rows()], ["msg-11", "msg-12", "msg-13"])
+        self.assertIn("list_history", self.calls())
+        self.assertNotIn("list_messages", self.calls())
+        self.assertNotIn("full list", out)
+
+    def test_since_last_expired(self):  # AC-22 (404)
+        self.save_position()
+        code, out, err = self.fetch("--since-last", scenario="history_expired")
+        self.assertEqual(code, 0, err)
+        self.assertIn("Saved position expired, did a full list", out)
+        self.assertIn("list_messages", self.calls())
+        self.assertEqual(len(self.rows()), 13)
+
+    def test_since_last_no_state(self):  # AC-22 (none saved)
+        code, out, err = self.fetch("--since-last")
+        self.assertEqual(code, 0, err)
+        self.assertIn("No saved position, did a full list", out)
+        self.assertNotIn("list_history", self.calls())
+
+    def test_history_saved_mock_file(self):  # AC-23
+        self.assertEqual(self.fetch()[0], 0)
+        p = self.state / "history.mock.json"
+        self.assertEqual(mode_of(p), 0o600)
+        data = json.loads(p.read_text(encoding="utf-8"))
+        self.assertEqual(data["ana@example.test"]["history_id"], load_inbox()["profile"]["historyId"])
+        self.assertFalse((self.state / "history.json").exists())
+        self.assertEqual([x.name for x in self.state.iterdir() if x.name.endswith(".tmp")], [])
+
+    def test_since_last_truncated_keeps_position(self):  # AC-37
+        p = self.save_position()
+        before = p.read_bytes()
+        code, out, err = self.fetch("--since-last", "--max", "2", scenario="history_many")
+        self.assertEqual(code, 0, err)
+        self.assertEqual([r["id"] for r in self.rows()], ["msg-01", "msg-02"])
+        self.assertIn("Stopped at --max, position not saved", out)
+        self.assertEqual(p.read_bytes(), before)
+
+    def test_symlink_history_refused(self):  # AC-21 (state)
+        target = self.tmp / "target.json"
+        target.write_text("{}", encoding="utf-8")
+        (self.state / "history.mock.json").symlink_to(target)
+        code, _o, err = self.fetch()
+        self.assertEqual(code, 3)
+        self.assertEqual(target.read_text(encoding="utf-8"), "{}")
+        self.assertNotIn("get_message", self.calls())
+        self.assertEqual(self.audit_rows()[-1]["result"], "unsafe_path")
 
 
 if __name__ == "__main__":
