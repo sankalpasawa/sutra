@@ -239,24 +239,24 @@ def cmd_fetch(run: Run) -> None:
     run.row["query"] = query
     path = output_path(run, ".jsonl")
     store.check_file(store.history_path(cfg.state_dir, cfg.mock))
-    filtered_fallback = False
+    fallback = False  # a --since-last run that had to do a normal list
     if a.since_last:
         saved = (store.load_history(cfg.state_dir, cfg.mock).get(a.mailbox) or {}).get("history_id")
         if not saved:
             ids, more = list_ids(run, client, query, a.max)
             run.out("No saved position, did a full list")
-            filtered_fallback = bool(query)
+            fallback = True
         else:
+            run.row["query"] = None  # audit records what was used: no query on the history path (R1-10)
             try:
                 ids, more = history_ids(run, client, saved, a.max)
-                run.row["query"] = None  # audit records what was used: no query on the history path (R1-10)
                 if query:
                     run.out("Used the saved position; --query/--since were not applied")
             except HistoryExpired:
                 run.row["query"] = query
                 ids, more = list_ids(run, client, query, a.max)
                 run.out("Saved position expired, did a full list")
-                filtered_fallback = bool(query)
+                fallback = True
     else:
         ids, more = list_ids(run, client, query, a.max)
     run.row["skipped"] = 0
@@ -269,9 +269,13 @@ def cmd_fetch(run: Run) -> None:
         return  # FR-23 (R-20): only --since-last runs move the saved position
     if more:
         run.out("Stopped at --max, position not saved")
+        if fallback and not query:
+            # R1-9: on a real mailbox an unfiltered full list rarely ends within --max, so say how to start
+            run.out("To start tracking, run once with --since-last --since 1d (or another window that fits in "
+                    "--max); later --since-last runs then use the saved position")
         return
     store.save_history(cfg.state_dir, cfg.mock, a.mailbox, profile.get("historyId"), run.now())
-    if filtered_fallback:
+    if fallback and query:
         run.out("Position saved. Mail before this point that did not match --query/--since was not read "
                 "and later --since-last runs will not return it")
 

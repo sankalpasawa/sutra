@@ -93,8 +93,23 @@ Before any Google call Pulse checks, in order: arguments, config, audit log, dom
 key file (live), Google libraries (live). Then it fetches the profile and refuses if the opened mailbox is not
 the one asked for.
 
+### Incremental reads (`--since-last`)
 Only `fetch --since-last` saves or moves the mailbox's saved position. A plain `fetch`, with or without
 `--query` or `--since`, never touches it.
+
+A position is saved only when the run reads everything it listed. On a real mailbox, a first
+`--since-last` with no saved position lists the whole mailbox, stops at `--max` and saves nothing, so every
+run would repeat that. Start tracking with a short window instead:
+
+```bash
+python3 pulse.py fetch --mailbox M --reason R --since-last --since 1d   # lists 1 day of mail, saves the position
+python3 pulse.py fetch --mailbox M --reason R --since-last              # from now on: only mail added since
+```
+Pulse prints this hint when a first run stops at `--max`. When the start-up list used `--query` or `--since`,
+it also says that earlier mail outside that filter was not read. Once a position is saved, `--query` and
+`--since` are not applied (Gmail's history has no search filter); Pulse says so and logs `query: null`.
+Do the same after "Saved position expired" (Gmail keeps history for about a week).
+Messages deleted between listing and reading are skipped and reported as "Skipped N deleted messages".
 
 | Exit | Meaning | Codes |
 |---|---|---|

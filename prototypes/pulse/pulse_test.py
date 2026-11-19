@@ -891,6 +891,20 @@ class HistoryTests(FetchBase):
         self.assertEqual([r["id"] for r in self.rows()], ["msg-01", "msg-02"])
         self.assertIn("Stopped at --max, position not saved", out)
         self.assertEqual(p.read_bytes(), before)
+        self.assertNotIn("To start tracking", out)  # history path truncated: no bootstrap hint
+
+    def test_since_last_bootstrap_hint(self):  # R1-9 / AC-48
+        code, out, err = self.fetch("--since-last", "--max", "5")
+        self.assertEqual(code, 0, err)
+        self.assertIn("Stopped at --max, position not saved", out)
+        self.assertIn("run once with --since-last --since 1d", out)
+        self.assertFalse((self.state / "history.mock.json").exists())
+        code, out, err = self.fetch("--since-last", "--since", "1d")  # the documented way to start
+        self.assertEqual(code, 0, err)
+        self.assertTrue((self.state / "history.mock.json").exists())
+        code, out, err = self.fetch("--since-last", "--max", "5")
+        self.assertIn("list_history", self.calls())
+        self.assertNotIn("To start tracking", out)
 
     def test_plain_fetch_never_moves_position(self):  # R1-1 / AC-39
         for extra in ([], ["--query", "from:nobody"], ["--since", "1d"], ["--query", "x", "--max", "500"]):

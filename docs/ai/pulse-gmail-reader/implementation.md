@@ -132,7 +132,7 @@ Preconditions: the admin has finished README "Admin setup"; the test mailbox own
 | L-5 | `check` on an allowlisted address that does not exist in the domain; with the admin, briefly remove the delegation entry and run `check` | `invalid_grant` / `unauthorized_client`, exit 4. Record the real error strings; if they differ, fix `errors.map_refresh_error` plus a test |
 | L-6 | `pulse.py fetch --mailbox <approved> --reason "..." --max 5` | 5 rows, no `body_text`, under `~/.sutra-pulse/out/<mailbox>/`, file 0600, dirs 0700. Compare one raw message's keys to `fixtures/inbox.json` (A-3) |
 | L-7 | `pulse.py fetch ... --max 3 --full` (on a fresh day's file, or after deleting today's) | `body_text` present and readable |
-| L-8 | `pulse.py fetch ... --since-last` twice | Second run lists only new mail or 0; `history.json` updated, `history.mock.json` untouched |
+| L-8 | `pulse.py fetch ... --since-last --since 1d`, then `pulse.py fetch ... --since-last` | First run saves a position; second lists only new mail or 0; `history.json` updated, `history.mock.json` untouched (fix-up 1, R1-9) |
 | L-9 | `check` on a mailbox not in the allowlist, and one outside the domain | `not_allowlisted` / `wrong_domain`, exit 3, no Google call; refusal rows in the audit log |
 | L-10 | `pulse.py find --mailbox <approved> --reason "..." --rules fixtures/rules.sample.json --max 20` | Exit 0; 0 or more matches |
 | L-11 | Admin console: the delegation entry lists only `https://www.googleapis.com/auth/gmail.readonly` | Exactly one scope; admin keeps a screenshot |
