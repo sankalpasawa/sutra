@@ -57,20 +57,27 @@ def check_allowlist(mailbox: str, path) -> None:
                          "(a missing or unreadable allowlist refuses every mailbox). Nothing was read.")
 
 
+KEY_FIELDS = ("client_email", "private_key", "token_uri")  # google-auth requires all three (R1-6)
+
+
+def key_unreadable(path) -> PulseError:
+    return PulseError("key_unreadable",
+                      f"The key file at {path} is not a readable service-account JSON key. Check PULSE_SA_KEY_PATH.")
+
+
 def check_key_file(path) -> list:
     """Raise key_missing / key_unreadable; return warnings (for example loose permissions)."""
     p = Path(path)
     if not p.exists():
         raise PulseError("key_missing", f"No key file at {p}. Check PULSE_SA_KEY_PATH.")
-    unreadable = PulseError("key_unreadable",
-                            f"The key file at {p} is not a readable service-account JSON key. Check PULSE_SA_KEY_PATH.")
+    unreadable = key_unreadable(p)
     try:
         with open(p, encoding="utf-8") as f:
             data = json.load(f)
     except (OSError, ValueError, UnicodeDecodeError):
         raise unreadable from None
     ok = (isinstance(data, dict) and data.get("type") == "service_account"
-          and "client_email" in data and "private_key" in data)
+          and all(isinstance(data.get(k), str) and data.get(k) for k in KEY_FIELDS))
     del data
     if not ok:
         raise unreadable

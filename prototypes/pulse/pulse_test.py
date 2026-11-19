@@ -196,7 +196,8 @@ class ErrorMapperTests(unittest.TestCase):
 import policy  # noqa: E402
 
 FAKE_KEY = {"type": "service_account", "client_email": "pulse-test@example.test",
-            "private_key": "placeholder, not a real key", "client_id": "000000000000"}
+            "private_key": "placeholder, not a real key", "client_id": "000000000000",
+            "token_uri": "https://oauth2.example.test/token"}
 
 
 def write_fake_key(path: Path, mode=0o600, data=None):
@@ -248,7 +249,10 @@ class PolicyTests(BaseCase):
         sentinel = "SENTINEL-CONTENT-7f3a"
         cases = {"notjson.json": f"not json {sentinel}",
                  "wrongtype.json": json.dumps({"type": "authorized_user", "note": sentinel}),
-                 "nokeys.json": json.dumps({"type": "service_account", "note": sentinel})}
+                 "nokeys.json": json.dumps({"type": "service_account", "note": sentinel}),
+                 "no_token_uri.json": json.dumps({**{k: v for k, v in FAKE_KEY.items() if k != "token_uri"},
+                                                  "note": sentinel}),  # R1-6 / AC-44
+                 "empty_token_uri.json": json.dumps({**FAKE_KEY, "token_uri": "", "note": sentinel})}
         for name, text in cases.items():
             p = self.tmp / name
             p.write_text(text, encoding="utf-8")
@@ -1264,6 +1268,16 @@ class LiveTests(BaseCase):
         self.assertEqual(json.loads(self.save.read_text(encoding="utf-8"))["ana@example.test"]["history_id"],
                          profile["historyId"])
         self.assertFalse((self.state / "history.mock.json").exists())
+
+    def test_live_bad_pem_is_key_unreadable(self):  # R1-6 / AC-44
+        def creds_builder(key_path, scopes, subject):
+            raise ValueError("Could not deserialize key data SENTINEL-PEM-TEXT")
+        def factory(cfg, mb):
+            return live_client.LiveClient(mb, cfg.sa_key_path, creds_builder, lambda c: FakeService())
+        code, out, err = self.run_cli(CHECK, env=self.live_env(), factory=factory)
+        self.assertEqual((code, self.audit_rows()[-1]["result"]), (4, "key_unreadable"))
+        self.assertIn(str(self.key), err)
+        self.assertNotIn("SENTINEL", out + err + (self.state / "audit.jsonl").read_text(encoding="utf-8"))
 
     def test_live_refresh_errors(self):  # R1-5 / AC-43
         class RetryableRefresh(RefreshError):

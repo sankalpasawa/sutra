@@ -8,6 +8,7 @@ Untested against real Google until the live checklist (plan.md L-1..L-11).
 from pathlib import Path
 
 import errors
+import policy
 from errors import HistoryExpired, MessageGone, PulseError
 from gmail_client import METADATA_HEADERS
 
@@ -63,7 +64,12 @@ class LiveClient:
         if creds_builder is None or service_builder is None:
             _import_google()  # step 7: deps_missing before anything else happens
         self.mailbox = mailbox
-        creds = (creds_builder or default_creds_builder)(key_path, list(SCOPES), mailbox)
+        try:
+            creds = (creds_builder or default_creds_builder)(key_path, list(SCOPES), mailbox)
+        except ValueError:
+            # google-auth raises ValueError for missing fields or a PEM it cannot parse; its text may quote the
+            # key, so it is dropped (FR-33, R1-6).
+            raise policy.key_unreadable(key_path) from None
         self.service = (service_builder or default_service_builder)(creds)
 
     def _exec(self, request, method: str):

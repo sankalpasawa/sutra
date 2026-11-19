@@ -32,6 +32,7 @@ Status: Refined   |   Task: pulse-gmail-reader   |   Date: 2026-11-19
 | R-22 | New code `network_error` (exit 5). Network failures during token refresh or a request are retried like 5xx; FR-14 extended; AC-41 added | Review R1-3: they exited `internal` with no retry |
 | R-23 | 403 with reason `rateLimitExceeded` or `userRateLimitExceeded` is retried like 429; 403 `dailyLimitExceeded` is `rate_limited` with no retry (retrying cannot help); AC-42 added | Review R1-4: usage limits were `access_denied` with advice to enable the API |
 | R-24 | Token errors: `RefreshError.retryable` is retried, then `server_error`; unknown non-retryable token errors get new code `token_error` (exit 4) instead of `unauthorized_client`; `invalid_grant` message names a revoked or deleted key; AC-43 added | Review R1-5: transient token failures got delegation advice and no retry |
+| R-25 | Key pre-check also requires `token_uri`; a `ValueError` from building credentials (bad PEM, missing field) is `key_unreadable` without the exception text; AC-44 added | Review R1-6: such keys exited `internal` |
 
 ## Problem
 An internal tool needs to read selected mailboxes in the company Google Workspace domain, read-only. Domain-wide delegation lets one service account open any mailbox in the domain; Google does not limit it per mailbox. So the tool itself must limit which mailboxes are opened, why, and what is kept. Credentials (admin-approved key file, domain) arrive later, so step 1 must be complete and tested offline.
@@ -134,7 +135,7 @@ Common to `check`, `fetch`, `find`:
 | 3 | `audit_unavailable` | Audit log cannot be opened/locked/written, or is a symlink | Path; nothing read |
 | 3 | `unsafe_path` | Output file, its mailbox dir, or history state file is a symlink | Path; nothing written there |
 | 4 | `key_missing` | Key path does not exist | Path; "check PULSE_SA_KEY_PATH" |
-| 4 | `key_unreadable` | Not readable or not valid service-account JSON | Path; never file contents |
+| 4 | `key_unreadable` | Not readable or not valid service-account JSON (needs `type: service_account` and non-empty `client_email`, `private_key`, `token_uri`), or google-auth cannot load it (bad PEM) (R-25) | Path; never file contents or the library's error text |
 | 4 | `unauthorized_client` | Delegation not set, wrong client ID, or scope not exactly gmail.readonly | Admin console path + client ID + scope to grant |
 | 4 | `invalid_grant` | Mailbox not in domain, suspended, deleted, key revoked or deleted, or clock skew | Those causes |
 | 4 | `token_error` | Token refused for a reason that is not `invalid_grant` or `unauthorized_client`, and not marked retryable (R-24) | Key may be revoked or deleted; delegation help; never the raw error text |
@@ -350,6 +351,7 @@ Each maps to a test in `pulse_test.py` unless marked (manual).
 | AC-41 | Given `LiveClient` whose request raises a `TransportError`, an `httplib2` error, `socket.timeout`, `ConnectionResetError` or `OSError`, when `check` runs, then 5 attempts with delays `[1, 2, 4, 8]`, exit 5 `network_error`, stderr "Could not reach Google"; two failures then success gives exit 0 | FR-14, R-22 |
 | AC-42 | The mapper turns 403 `rateLimitExceeded`/`userRateLimitExceeded` into a retryable 429 and 403 `dailyLimitExceeded` into `rate_limited`; through `LiveClient`, a persistent 403 `rateLimitExceeded` gives 5 attempts and exit 5 | FR-13, FR-14, R-23 |
 | AC-43 | Given a `RefreshError` with `retryable` true, then 5 attempts and `server_error` (one failure then success gives exit 0); an unrecognised non-retryable `RefreshError` gives `token_error`, exit 4, one attempt, and its text is not printed; the `invalid_grant` message says "revoked or deleted" | FR-13, R-24 |
+| AC-44 | A key file without `token_uri` (or with it empty) gives `key_unreadable`; a credentials builder raising `ValueError` gives `key_unreadable`, exit 4, the key path in stderr and none of the exception text in stdout, stderr or the audit log | FR-13, FR-33, R-25 |
 
 ## Assumptions
 | ID | Assumption |
