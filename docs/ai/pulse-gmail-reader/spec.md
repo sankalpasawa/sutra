@@ -34,6 +34,7 @@ Status: Refined   |   Task: pulse-gmail-reader   |   Date: 2026-11-19
 | R-24 | Token errors: `RefreshError.retryable` is retried, then `server_error`; unknown non-retryable token errors get new code `token_error` (exit 4) instead of `unauthorized_client`; `invalid_grant` message names a revoked or deleted key; AC-43 added | Review R1-5: transient token failures got delegation advice and no retry |
 | R-25 | Key pre-check also requires `token_uri`; a `ValueError` from building credentials (bad PEM, missing field) is `key_unreadable` without the exception text; AC-44 added | Review R1-6: such keys exited `internal` |
 | R-26 | FR-2: only the three named fixture JSON files are re-included (not `fixtures/*.json`); `*.pem`, `*.p12`, `*.key` ignored; AC-45 added | Review R1-7: a key dropped in `fixtures/` could be committed |
+| R-27 | `purge` (and the automatic purge) only looks one level inside `<OUT_DIR>/<mailbox>/` and `<OUT_DIR>/_mock/<mailbox>/`; `PULSE_OUT_DIR` resolving to home or `/` is `config_invalid` for every command; AC-46 added | Review R1-8: purge walked the whole OUT_DIR tree, so a mis-set OUT_DIR could delete unrelated dated files |
 
 ## Problem
 An internal tool needs to read selected mailboxes in the company Google Workspace domain, read-only. Domain-wide delegation lets one service account open any mailbox in the domain; Google does not limit it per mailbox. So the tool itself must limit which mailboxes are opened, why, and what is kept. Credentials (admin-approved key file, domain) arrive later, so step 1 must be complete and tested offline.
@@ -97,7 +98,7 @@ Read from the process environment, then `prototypes/pulse/.env` for keys not set
 | `PULSE_SA_KEY_PATH` | empty | required | ignored | Empty: "Add PULSE_SA_KEY_PATH to prototypes/pulse/.env, or set PULSE_MOCK=1 to use the fixture inbox." |
 | `PULSE_DOMAIN` | empty | required | ignored; always `example.test` | Lowercase domain, no `@` |
 | `PULSE_ALLOWLIST` | empty | required | ignored; always `fixtures/allowlist.txt` | Path; existence checked at policy step (FR-9) |
-| `PULSE_OUT_DIR` | `~/.sutra-pulse/out` | used | used (`_mock/` subdir) | Created 0700 if missing |
+| `PULSE_OUT_DIR` | `~/.sutra-pulse/out` | used | used (`_mock/` subdir) | Created 0700 if missing. Must not resolve to the home folder or `/` (`config_invalid`, R-27) |
 | `PULSE_STATE_DIR` | `~/.sutra-pulse/state` | used | used | Created 0700 if missing; holds `audit.jsonl`, `history.json`, `history.mock.json` |
 | `PULSE_RETENTION_DAYS` | `30` | used | used | Integer 1..3650, else `config_invalid` |
 | `PULSE_MOCK_SCENARIO` | `default` | ignored | used | Must be a key in `fixtures/scenarios.json`, else `config_invalid` |
@@ -205,7 +206,7 @@ Allowed rule keys: `id`, `description`, `gmail_query`, `keywords`, `regex`, `fie
 | | |
 |---|---|
 | Input | `[--dry-run]` |
-| Effect | Deletes `*.jsonl` under OUT_DIR (incl. `_mock/`) whose filename date is more than `PULSE_RETENTION_DAYS` days before today (UTC); removes empty mailbox dirs. Does not follow symlinks |
+| Effect | Deletes dated files directly inside Pulse's own mailbox dirs, `<OUT_DIR>/<name@domain>/` and `<OUT_DIR>/_mock/<name@domain>/` (folder names match the `--mailbox` format), whose filename date is more than `PULSE_RETENTION_DAYS` days before today (UTC); removes mailbox dirs left empty. Looks nowhere else and no deeper. Does not follow symlinks (R-27) |
 | Not touched | Audit log, history state, files not matching `YYYY-MM-DD.jsonl` or `YYYY-MM-DD.find.jsonl` |
 | Output | Files deleted (or would delete) and count |
 | Audit | One row, `mailbox` null, `count` = files deleted (0 on dry run) |
@@ -277,7 +278,7 @@ Never in an audit row: mail fields (subject, from, snippet, body, attachment nam
 | FR-22a | A 404 on `messages.get` (message deleted after it was listed) skips that message without retry, counts it, prints "Skipped N deleted messages" (count only), and records N in the audit row `skipped`. The run still succeeds and `--since-last` still saves its position. A 404 on `getProfile` or `messages.list` stays `internal` (R-21) |
 | FR-23 | After a successful `fetch --since-last` the start-of-run historyId is saved to the mode's state file, except when stopped at `--max` with more available. A fetch without `--since-last` never changes the saved position (R-20) |
 | FR-24 | `find` loads JSON rules, validates all before any Google call, and outputs matches with `rules_hit` and `fields_hit` |
-| FR-25 | `purge` deletes only output files older than retention; `--dry-run` deletes nothing; audit/state untouched |
+| FR-25 | `purge` deletes only output files older than retention, and only inside Pulse's own mailbox dirs (R-27); `--dry-run` deletes nothing; audit/state untouched |
 | FR-26 | Automatic purge runs inside `fetch` and `find` before the profile call |
 | FR-27 | Every invocation that reaches step 3 appends exactly one audit row with the schema above |
 | FR-28 | If the audit log cannot be opened or locked, the command exits `audit_unavailable` before any Google call |
@@ -354,6 +355,7 @@ Each maps to a test in `pulse_test.py` unless marked (manual).
 | AC-43 | Given a `RefreshError` with `retryable` true, then 5 attempts and `server_error` (one failure then success gives exit 0); an unrecognised non-retryable `RefreshError` gives `token_error`, exit 4, one attempt, and its text is not printed; the `invalid_grant` message says "revoked or deleted" | FR-13, R-24 |
 | AC-44 | A key file without `token_uri` (or with it empty) gives `key_unreadable`; a credentials builder raising `ValueError` gives `key_unreadable`, exit 4, the key path in stderr and none of the exception text in stdout, stderr or the audit log | FR-13, FR-33, R-25 |
 | AC-45 | `git check-ignore --no-index` ignores `fixtures/sa-key.json`, `fixtures/other.json`, `key.pem`, `fixtures/key.pem`, `cert.p12`, `id.key`, and keeps the three named fixtures, `fixtures/allowlist.txt` and `.env.example` (automated in `test_gitignore_keys`) | FR-2, R-26 |
+| AC-46 | Given old dated files at OUT_DIR top level, in `_mock/`, in a folder not named like a mailbox, deeper trees, below a mailbox dir, and behind a symlinked mailbox dir, when `purge`, then only the file directly in a real mailbox dir is deleted; given `PULSE_OUT_DIR` set to home, `~` or `/`, then exit 2 `config_invalid` and no audit row | FR-25, R-27 |
 
 ## Assumptions
 | ID | Assumption |

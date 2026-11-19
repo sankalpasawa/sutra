@@ -996,6 +996,43 @@ class PurgeTests(FetchBase):
         self.assertEqual((row["command"], row["mailbox"], row["reason"], row["count"], row["result"]),
                          ("purge", None, None, 3, "ok"))
 
+    def test_purge_only_own_layout(self):  # R1-8 / AC-46
+        old = f"{day(400)}.jsonl"
+        strays = [self.out / old,                                   # top of OUT_DIR
+                  self.out / "_mock" / old,                         # top of _mock
+                  self.out / "notes" / old,                         # folder not named like a mailbox
+                  self.out / "projects" / "sub" / old,              # deeper tree
+                  self.mbdir() / "sub" / old,                       # below a mailbox dir
+                  self.out / "bob@example.test" / "x" / old]
+        for p in strays:
+            p.parent.mkdir(parents=True, exist_ok=True)
+            p.write_text("keep\n", encoding="utf-8")
+        outside = self.tmp / "outside"
+        outside.mkdir()
+        (outside / old).write_text("keep\n", encoding="utf-8")
+        (self.out / "_mock" / "link@example.test").symlink_to(outside, target_is_directory=True)
+        own = self.out / "carl@example.test" / old
+        own.parent.mkdir()
+        own.write_text("{}\n", encoding="utf-8")
+        code, out, err = self.purge()
+        self.assertEqual(code, 0, err)
+        self.assertIn("Deleted 1 files", out)
+        self.assertFalse(own.exists())
+        self.assertFalse(own.parent.exists())
+        for p in strays + [outside / old]:
+            self.assertTrue(p.exists(), p)
+        self.assertTrue((self.out / "_mock").is_dir())
+
+    def test_out_dir_home_or_root_refused(self):  # R1-8 / AC-46
+        for value in (str(self.home), "~", str(self.home) + "/", "/", str(self.home / "sub" / "..")):
+            code, _o, err = self.purge(env=self.env(PULSE_OUT_DIR=value))
+            self.assertEqual(code, 2, value)
+            self.assertIn("PULSE_OUT_DIR", err)
+        self.assertFalse((self.state / "audit.jsonl").exists())  # config error: no audit row
+        code, _o, err = self.run_cli(FETCH, env=self.env(PULSE_OUT_DIR="/"))
+        self.assertEqual(code, 2)
+        self.assertEqual(self.purge(env=self.env(PULSE_OUT_DIR=str(self.home / "pulse-out")))[0], 0)
+
     def test_purge_live_without_key(self):  # purge needs no live keys
         code, _o, err = self.purge(env=self.env(mock=False))
         self.assertEqual(code, 0, err)

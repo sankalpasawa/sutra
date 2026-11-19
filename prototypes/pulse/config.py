@@ -4,6 +4,7 @@ Pure: load() returns a Config and never changes os.environ (architecture D-4). E
 never its value (FR-33).
 """
 import json
+import os
 import re
 from dataclasses import dataclass
 from pathlib import Path
@@ -93,6 +94,12 @@ def load(environ: Mapping[str, str], env_file: Path, need_live_keys: bool) -> Co
         raise PulseError("config_invalid", "PULSE_RETENTION_DAYS must be a whole number from 1 to 3650.")
 
     out_dir = _expand(get("PULSE_OUT_DIR") or "~/.sutra-pulse/out", home)
+    real_out = os.path.realpath(out_dir)
+    if real_out in (os.path.realpath(home), os.path.realpath(os.sep)):
+        # purge deletes inside PULSE_OUT_DIR; it must be a folder of its own (R1-8)
+        raise PulseError("config_invalid",
+                         "PULSE_OUT_DIR must be a folder of its own, not your home folder or the filesystem root "
+                         "(default ~/.sutra-pulse/out).")
     state_dir = _expand(get("PULSE_STATE_DIR") or "~/.sutra-pulse/state", home)
     debug = get("PULSE_DEBUG") == "1"
 

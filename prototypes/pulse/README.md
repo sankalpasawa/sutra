@@ -75,7 +75,7 @@ A non-empty value in the shell wins over `prototypes/pulse/.env`.
 | `PULSE_SA_KEY_PATH` | - | Live: path to the JSON key, outside the repo |
 | `PULSE_DOMAIN` | - | Live: Workspace domain, lowercase, no `@` |
 | `PULSE_ALLOWLIST` | - | Live: allowlist file, one mailbox per line, `#` comments |
-| `PULSE_OUT_DIR` | `~/.sutra-pulse/out` | Mail output (mock under `_mock/`) |
+| `PULSE_OUT_DIR` | `~/.sutra-pulse/out` | Mail output (mock under `_mock/`). Must be a folder of its own, not `~` or `/`. `purge` only deletes dated files inside its `<mailbox>/` and `_mock/<mailbox>/` folders |
 | `PULSE_STATE_DIR` | `~/.sutra-pulse/state` | `audit.jsonl`, `history.json`, `history.mock.json` |
 | `PULSE_RETENTION_DAYS` | `30` | 1..3650 |
 | `PULSE_MOCK_SCENARIO` | `default` | Mock only |

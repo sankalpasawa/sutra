@@ -14,6 +14,7 @@ from datetime import date
 from pathlib import Path
 
 from errors import PulseError
+from policy import MAILBOX_RE
 
 
 def _unsafe(path) -> PulseError:
@@ -97,19 +98,39 @@ def save_history(state_dir, mock: bool, mailbox: str, history_id: str, now) -> N
 _DATED = re.compile(r"^(\d{4}-\d{2}-\d{2})(\.find)?\.jsonl$")
 
 
+def _is_real_dir(p: Path) -> bool:
+    try:
+        return stat.S_ISDIR(os.lstat(p).st_mode)  # lstat: a symlink is never a real dir
+    except OSError:
+        return False
+
+
+def _mailbox_dirs(out_dir: Path) -> list:
+    """Pulse's own layout only: <out>/<name@domain>/ and <out>/_mock/<name@domain>/, real dirs, no symlinks."""
+    found = []
+    for parent in (out_dir, out_dir / "_mock"):
+        if not _is_real_dir(parent):
+            continue
+        for name in sorted(os.listdir(parent)):
+            if MAILBOX_RE.match(name) and _is_real_dir(parent / name):
+                found.append(parent / name)
+    return found
+
+
 def purge(out_dir, retention_days: int, today, dry_run: bool) -> list:
-    """Delete dated output files older than retention_days (UTC dates). Never follows symlinks; touches only
+    """Delete dated output files older than retention_days (UTC dates). Looks only one level inside Pulse's own
+    mailbox dirs (R1-8), never deeper and never elsewhere in out_dir; never follows symlinks; touches only
     YYYY-MM-DD.jsonl and YYYY-MM-DD.find.jsonl; removes mailbox dirs left empty. Returns the files (to be) deleted."""
     out_dir = Path(out_dir)
-    if not out_dir.is_dir():
+    if not _is_real_dir(out_dir):
         return []
     victims, touched_dirs = [], set()
-    for root, dirs, files in os.walk(out_dir, followlinks=False):
-        for name in sorted(files):
+    for mb in _mailbox_dirs(out_dir):
+        for name in sorted(os.listdir(mb)):
             m = _DATED.match(name)
             if not m:
                 continue
-            p = Path(root) / name
+            p = mb / name
             try:
                 if not stat.S_ISREG(os.lstat(p).st_mode):
                     continue
@@ -122,12 +143,11 @@ def purge(out_dir, retention_days: int, today, dry_run: bool) -> list:
         for p in victims:
             os.unlink(p)
             touched_dirs.add(p.parent)
-        for d in sorted(touched_dirs, key=lambda x: len(x.parts), reverse=True):
-            if d != out_dir:
-                try:
-                    os.rmdir(d)  # only succeeds when empty
-                except OSError:
-                    pass
+        for d in touched_dirs:  # mailbox dirs only, never out_dir or _mock
+            try:
+                os.rmdir(d)  # only succeeds when empty
+            except OSError:
+                pass
     return victims
 
 
