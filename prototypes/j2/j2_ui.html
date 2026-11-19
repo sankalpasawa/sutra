@@ -1034,6 +1034,7 @@ body.libpage [data-shelfhuman=html]{border:1px solid var(--s-line);border-radius
 :is(body.libpage,#pane-library) .libbadge{border:0;border-radius:999px;padding:2px 10px;font:600 12px var(--lb-body);white-space:nowrap}
 :is(body.libpage,#pane-library) .libbadge.live{background:var(--s-goodbg);color:var(--s-good)}
 :is(body.libpage,#pane-library) .libbadge.mock{background:var(--s-askbg);color:var(--s-ask)}
+:is(body.libpage,#pane-library) .libbadge.unfinished{background:var(--s-askbg);color:var(--s-ask);margin-right:6px}
 :is(body.libpage,#pane-library) .mappill{background:var(--s-surface2);border:1px solid var(--s-line);color:var(--s-ink);border-radius:999px;padding:3px 11px;font-size:13px}
 :is(body.libpage,#pane-library) .mappill.checks{background:var(--s-goodbg);border-color:transparent;color:var(--s-good)}
 :is(body.libpage,#pane-library) .maptable{border-collapse:collapse;width:100%;font-size:14px}
@@ -3497,6 +3498,8 @@ async function openTemplate(artifact, section, name, version){
 }
 const libHref = (art, sec, name, ver) => `/library?open=${encodeURIComponent(art)}/${encodeURIComponent(slugOf(sec))}/${encodeURIComponent(name === "generic" ? "generic" : slugOf(name))}/v${encodeURIComponent(ver)}`;
 const runHref = id => `/?run=${encodeURIComponent(id)}&view=detail&tab=library`;
+// An artifact of a run that did not end workable (run_end, j2_template_lib): it stays on the shelf, marked, with how the run ended.
+const endBadge = a => a && a.run_end && a.run_end.finished === false ? '<span class="libbadge unfinished" data-shelfend="unfinished">unfinished run</span>' : "";
 const libBadge = m => m === true ? '<span class="libbadge mock">mock</span>' : m === false ? '<span class="libbadge live">live</span>' : `<span class="libbadge">${esc(m || "not recorded")}</span>`;
 const libUses = u => (u || []).map(x => `${esc(x.run)} ${esc(x.workflow)}${x.action ? " (" + esc(x.action) + ")" : ""}`).join("<br>") || '<span class="empty">not used yet</span>';
 const libOpen = (art, sec, name, ver, text) => `<button type="button" class="linkbtn" data-tplopen="${esc(art)}|${esc(sec)}|${esc(name)}|${esc(ver)}">${text}</button>`;
@@ -3508,7 +3511,9 @@ const reuseCounts = (c, group) => `<span class="mappill ${c.from_template ? (c.c
 const reuseFrom = c => c.from_template === null || c.from_template === undefined ? "" : c.from_template === 0 ? '<span class="empty">added, not in template</span>'
   : `<span class="empty">${esc(c.from_template)} of ${esc(c.total)} from the template</span>`;
 // Its filters (?filter=adapted&scope=<a group>): a chip per action with the count of rows it shows in the chosen scope, and a scope
-// toggle. Each row carries its group and the kind shown (reuse_rows); the style guide row has no group, so only the scope "All" shows it.
+// toggle. Each row carries its group and the kind shown (reuse_rows); every row has a group (the style guide is in the group of the form
+// that names it), and the chip counts are the server's own counts (reuse_counts per group, reuse_totals for "All"): the same numbers as the
+// header lines, never a second count made here. A run with no such counts (no run template) counts its rows, the only source it has.
 const RTKINDS = [["all", "All"], ["created", "Created"], ["adapted", "Adapted"], ["reused", "Reused"], ["generic", "Generic"]];
 const rtScopes = () => [["all", "All"], ...(((LIB.rt || {}).scopes) || []).map(x => [String(x.key), String(x.label)])];      // one button per group of types this run's decisions fall in, as the server lists them
 (() => { const q = new URLSearchParams(location.search), pick = (list, v) => list.some(x => x[0] === v) ? v : "all";
@@ -3517,7 +3522,8 @@ const rtScope = () => rtScopes().some(x => x[0] === LIB.scope) ? LIB.scope : "al
 const rtInScope = d => rtScope() === "all" || d.group === rtScope();
 const rtShown = d => rtInScope(d) && (LIB.filter === "all" || d.kind_shown === LIB.filter);
 function rtFilters(dec){
-  const mine = dec.filter(rtInScope), n = k => k === "all" ? mine.length : mine.filter(d => d.kind_shown === k).length;
+  const mine = dec.filter(rtInScope), u = LIB.rt || {}, src = rtScope() === "all" ? u.totals : (u.counts || {})[rtScope()];
+  const n = k => src ? (k === "all" ? src.total : src[k]) : k === "all" ? mine.length : mine.filter(d => d.kind_shown === k).length;
   return `<div data-rtfilters="1"><div class="seg" role="group" aria-label="Scope">${rtScopes().map(([k, t]) => `<button type="button" data-rtscope="${esc(k)}" aria-pressed="${rtScope() === k}">${esc(t)}</button>`).join("")}</div></div>`
     + `<div class="rfil" role="group" aria-label="Show rows by action">${RTKINDS.map(([k, t]) => `<button type="button" data-rtfilter="${k}" aria-pressed="${LIB.filter === k}">${t} <i>${esc(n(k))}</i></button>`).join("")}</div>`
     + `<div class="empty" data-rtnote="1">Adapted = the run template's section template, given this run's facts as a new version. Created = no matching section in the run template.</div>`;
@@ -3543,6 +3549,18 @@ function rtSummary(u, dec){
 const rtFrom = d => d.adapted_from ? `<span class="empty">adapted from ${esc(d.adapted_from)}</span>` : "";      // the source of an adapted row, whichever way it was found
 const rtCell = d => d.from_template === true ? `${esc(d.template_workflow || "")}${d.adapted_from ? " " + rtFrom(d) : ""}`
   : d.from_template === false ? `<span class="empty">added, not in template</span>${d.adapted_from ? " " + rtFrom(d) : ""}` : rtFrom(d);
+// The Score cell. A decision's score is the routed template's own coverage of the need, except in a decision recorded before both numbers
+// were kept, for a template adapted from another one: that number is the SOURCE template's, so it is shown as "source match 0.08" and never
+// as the adapted template's score. The server says which (score_label, j2_template_lib); a row without it (a run with no run template) is
+// read by the same rule here. An adapted row that has both shows its own score, with the source's beside it.
+const rtScoreLabel = d => d.score_label !== undefined ? d.score_label
+  : (d.adapted_from && d.source_score === undefined && d.score !== null && d.score !== undefined && d.adapted_from !== `${d.template}@${d.version}` ? "source match" : "");
+function rtScore(d){
+  if (d.score === null || d.score === undefined) return '<span class="empty">not recorded</span>';
+  const n = x => esc(Number(x).toFixed(2)), label = rtScoreLabel(d);
+  if (label) return `<span class="empty" title="The match of the template this one was adapted from. This template's own score was not recorded.">${esc(label)}</span> ${n(d.score)}`;
+  return n(d.score) + (d.source_score !== null && d.source_score !== undefined && d.adapted_from && d.adapted_from !== `${d.template}@${d.version}` ? ` <span class="empty">(source match ${n(d.source_score)})</span>` : "");
+}
 function renderLibrary(){
   const dec = LIB.decisions || [], rt = LIB.rt || null, rows = rt ? dec.filter(rtShown) : dec;
   const table = dec.length ? `<table class="maptable" data-tpltable="1"><thead><tr><th>Workflow</th><th>Artifact · section</th><th>Action</th><th>Template</th>${rt ? "<th>Run template</th>" : ""}<th>From</th><th>Score</th><th>Reason</th></tr></thead><tbody>`
@@ -3551,7 +3569,7 @@ function renderLibrary(){
       + ` <a href="${libHref(d.artifact, d.section, d.kind === "generic" ? "generic" : d.template, d.kind === "generic" ? 1 : d.version)}" data-link="catalog" class="empty">library</a></td>`
       + (rt ? `<td data-rtcell="1">${rtCell(d)}</td>` : "")
       + `<td data-tplsource="${esc(d.source || "")}">${d.source ? esc(d.source) : '<span class="empty">not recorded</span>'}</td>`
-      + `<td>${d.score === null || d.score === undefined ? '<span class="empty">not recorded</span>' : esc(Number(d.score).toFixed(2))}</td><td>${esc(d.covers ? d.covers + "; " + d.reason : d.reason)}</td></tr>`).join("")
+      + `<td${rtScoreLabel(d) ? ' data-tplscore="source-match"' : ""}>${rtScore(d)}</td><td>${esc(d.covers ? d.covers + "; " + d.reason : d.reason)}</td></tr>`).join("")
       + (rows.length ? "" : `<tr data-tplnone="1"><td colspan="8"><span class="empty">none</span></td></tr>`) + `</tbody></table>`
     : '<p class="empty">This run recorded no routing decisions.</p>';
   const groups = Object.entries(LIB.groups || {}).map(([art, secs]) => `<details class="artgroup" open data-libart="${esc(art)}"><summary><h3>${esc(art.toUpperCase())}</h3></summary>`
@@ -3640,9 +3658,9 @@ const shelfMade = t => t ? shelfTplLink(t, `${esc(t.name)}${t.version !== undefi
 const shelfArts = () => (CAT.arts || []).filter(a => !(CAT.hideMock && a.mock === true)).filter(a => catMatch(a.label, a.business, a.run, a.type));
 const shelfCurArt = rows => { rows = rows || shelfArts(); return rows.find(a => a.id === CAT.sel.art) || rows.find(a => a.highlight) || rows[0] || null; };
 function renderShelfArts(){
-  const rows = shelfArts(); if (!rows.length) return '<p class="empty">Nothing matches. This shelf shows the finished work saved on this computer.</p>';
+  const rows = shelfArts(); if (!rows.length) return '<p class="empty">Nothing matches. This shelf shows the work saved on this computer.</p>';
   const cur = shelfCurArt(rows);
-  return rows.map(a => catRow("art|" + a.id, esc(a.label), `${esc(a.business)} · ${esc(a.run)} · ${plural((a.sections || []).length, "section")}`, libBadge(a.mock), a === cur, a.highlight ? "run" : "")).join("");
+  return rows.map(a => catRow("art|" + a.id, esc(a.label), `${esc(a.business)} · ${esc(a.run)} · ${plural((a.sections || []).length, "section")}`, endBadge(a) + libBadge(a.mock), a === cur, a.highlight ? "run" : "")).join("");
 }
 // Shelf 2: the run templates, then each type with its sections nested under it
 const shelfSecs = () => (CAT.types || []).flatMap(t => (t.sections || []).map(s => ({t, s, key: `${t.type}|${s.section}`}))).filter(x => catMatch(x.t.label, x.t.type, x.s.section, ...(x.s.variants || []).map(v => v.name)));
@@ -3715,7 +3733,8 @@ function shelfView(kind, key){
   else if (kind === "artifact" && tab === "sum"){
     const c = s.checks || {}, ck = [c.workflows && typeof c.workflows === "object" ? `${esc(c.workflows.done)} of ${esc(c.workflows.of)} workflows finished` : "", c.conditions ? `${esc(c.conditions.met)} of ${esc(c.conditions.of)} necessary conditions met` : "",
       c.done_when ? `${esc(c.done_when.passed)} of ${esc(c.done_when.of)} done-when items passed` : "", c.data_valid === true ? "its data is valid" : c.data_valid === false ? "its data is not valid" : ""].filter(Boolean);
-    body = `<div class="tplmeta" data-shelfsum="artifact">` + shelfRow("Run", `<a href="${esc(runHref(s.run))}">${esc(s.run)}</a> <span class="empty">${esc(s.status || "")}</span>`) + shelfRow("Business", `${esc(s.business)}${s.business_type && s.business_type !== "not recorded" ? " (" + esc(s.business_type) + ")" : ""}`)
+    body = `<div class="tplmeta" data-shelfsum="artifact">` + shelfRow("Run", `<a href="${esc(runHref(s.run))}">${esc(s.run)}</a> <span class="empty">${esc(s.status || "")}</span> ${endBadge(s)}`)
+      + (s.run_end && s.run_end.finished === false ? shelfRow("How the run ended", `<span data-shelfoutcome="1">${esc(s.run_end.outcome || "not recorded")}</span>`) : "") + shelfRow("Business", esc(s.business)) + shelfRow("Business type", s.business_type && s.business_type !== "not recorded" ? esc(s.business_type) : '<span class="empty" data-shelfbiz="none">not recorded</span>')
       + shelfRow("Date", esc(s.date)) + shelfRow("Live or mock", libBadge(s.mock)) + shelfRow("File", `<span class="code">${esc(s.file)}</span>`) + shelfRow("Checks", ck.join(" · ") || nr)
       + `<div data-shelfmade="whole"><b>Made from template</b> ${shelfMade(s.made_from)}</div>` + (s.run_template ? `<div data-shelfmade="rt"><b>${s.run_template.auto ? "Auto-picked run template" : "Run template"}</b> ${shelfMade(s.run_template)}</div>` : "") + `</div>`
       + `<div class="ablk" data-shelfsections="1"><h5>Sections (${(s.sections || []).length})</h5>` + ((s.sections || []).length ? `<ul class="ackl">${s.sections.map(x => `<li data-shelfsec="${esc(x.section)}"><span><b>${esc(x.label || x.section)}</b>${x.label && x.label !== x.section ? ` <span class="empty">${esc(x.section)}</span>` : ""}</span><span>Made from template ${shelfMade(x.template)} <span class="empty">${esc(x.action || "")}</span></span></li>`).join("")}</ul>`
@@ -3815,7 +3834,7 @@ function catHead(){      // the Artifacts header: a breadcrumb, the title, a lin
   const nv = (CAT.types || []).reduce((n, t) => n + (t.sections || []).reduce((k, s) => k + (s.variants || []).length, 0), 0), ns = (CAT.types || []).reduce((n, t) => n + (t.sections || []).length, 0);
   $("wcrumbs").textContent = "Library"; $("wcrumbg").textContent = "Shared"; $("wcrumb").hidden = false; $("backmap").hidden = true;
   $("wtitle").textContent = CAT.view === "artifacts" ? "Artifacts" : "Artifact templates";
-  $("wsub").textContent = CAT.view === "artifacts" ? "Finished work from the projects saved on this computer" : "Starting points for new work. Each business's own details are left blank."; $("wsub").removeAttribute("title");
+  $("wsub").textContent = CAT.view === "artifacts" ? "Work from the projects saved on this computer. Work from a run that did not finish is marked." : "Starting points for new work. Each business's own details are left blank."; $("wsub").removeAttribute("title");
   $("wcnt").textContent = CAT.view === "artifacts" ? plural((CAT.arts || []).length, "artifact") : `${plural((CAT.rts || []).length, "run template")} · ${ns} sections · ${nv} business versions`; $("wcnt").hidden = false;
 }
 function catUrl(){      // the shelf, the marked run, the open item and the tab stay in the address

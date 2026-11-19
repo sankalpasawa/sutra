@@ -931,9 +931,18 @@ def type_data(name, run_dir=None):
 def decision_group(d, run_dir=None):
     """The group a routing decision is counted in: its type's "group" when the type data gives one, else its form's name
     as artifacts/types.json has it (type_data). Any type has one: a document, a page, a folder of files, an image.
-    None for an artifact that is no type (a form's style guide for one)."""
-    t = type_data(d.get("artifact"), run_dir)
-    return (t.get("group") or t.get("form") or None) if t else None
+    An artifact that is no type still has a group, so no decision is ever left out of a count: the form that names it
+    as its style guide (types.json "forms": "style_guide") when one does, else OTHER_GROUP."""
+    name = d.get("artifact")
+    t = type_data(name, run_dir)
+    if t:
+        return t.get("group") or t.get("form") or OTHER_GROUP
+    forms = j2_types._read_types().get("forms") or {}
+    return next((f for f, e in forms.items() if isinstance(e, dict) and name and e.get("style_guide") == name), OTHER_GROUP)
+
+
+OTHER_GROUP = "other"      # the group of a decision whose artifact no type and no form names
+REUSE_KINDS = ("created", "adapted", "reused", "generic")
 
 
 def decision_scopes(decisions, run_dir=None):
@@ -942,15 +951,13 @@ def decision_scopes(decisions, run_dir=None):
     types.json gives one, else by the form's name. [{"key": the group, "label": ..., "types": [...]}]."""
     seen = {}
     for dec in decisions or []:
-        g = decision_group(dec, run_dir)
-        if g is not None:
-            seen.setdefault(g, {})[dec.get("artifact")] = True
+        seen.setdefault(decision_group(dec, run_dir), {})[dec.get("artifact")] = True
     order = [t.get("name") for t in j2_types.entries()]
-    rank = lambda g: min([order.index(a) if a in order else len(order) for a in seen[g]])
+    rank = lambda g: (g == OTHER_GROUP, min([order.index(a) if a in order else len(order) for a in seen[g]]))
     forms = j2_types._read_types().get("forms") or {}
     out = []
     for g in sorted(seen, key=rank):
-        kinds = list(seen[g])
+        kinds = [a for a in seen[g] if type_data(a, run_dir)] or list(seen[g])      # a group is named by its types, not by a style guide in it
         one = type_data(kinds[0], run_dir) if len(kinds) == 1 else None
         form = forms.get(g) if isinstance(forms.get(g), dict) else {}
         out.append({"key": g, "label": str((one or {}).get("label") or form.get("label") or g.replace("_", " ").capitalize()),
@@ -963,29 +970,48 @@ def decision_kind(d):
     return {"extended": "adapted"}.get(d.get("action"), d.get("action"))
 
 
+SOURCE_MATCH = "source match"      # what the page calls a score that is the source template's, not the adapted one's
+
+
+def score_label(d):
+    """What a decision's recorded "score" is, for the page: "" when it is the routed template's own coverage of the
+    need, SOURCE_MATCH when it is the coverage of the template it was adapted from. A decision recorded with
+    "source_score" has its own coverage in "score". One recorded before that, for a template adapted from ANOTHER one
+    (adapted_from names a different template@version), holds only the source's number: it is labelled, never shown
+    as the adapted template's score."""
+    src = str(d.get("adapted_from") or "")
+    if not src or "source_score" in d or d.get("score") is None:
+        return ""
+    return "" if src == f"{d.get('template')}@{d.get('version')}" else SOURCE_MATCH
+
+
 def reuse_rows(decisions, run_dir=None):
     """The decisions of a run started from a run template, each with the group and the kind the Library tab's filters
-    read (decision_group, decision_kind)."""
-    return [{**d, "group": d.get("group") or decision_group(d, run_dir), "kind_shown": decision_kind(d)} for d in decisions or []]
+    read (decision_group, decision_kind) and what its score is (score_label)."""
+    return [{**d, "group": d.get("group") or decision_group(d, run_dir), "kind_shown": decision_kind(d),
+             "score_label": score_label(d)} for d in decisions or []]
 
 
 def reuse_counts(decisions, run_dir=None):
-    """A run's routing decisions counted for the page: per group (decision_group: the type's form as types.json names
-    it; an artifact that is no type, the style guide for one, is left out), how many were created, adapted (the recorded action
-    "extended"), reused and generic, the total, and how many came from a run template (None when no decision says)."""
+    """A run's routing decisions counted for the page: per group (decision_group: every decision has one, so the
+    groups add up to all the decisions), how many were created, adapted (the recorded action "extended"), reused and
+    generic, the total, and how many came from a run template (None when no decision says). This is the one count the
+    Library tab shows: its header lines are the groups, and its chips are the same numbers (reuse_totals for "All")."""
     out = {}
     for d in decisions or []:
-        group = decision_group(d, run_dir)
-        if group is None:
-            continue
-        g = out.setdefault(group, {"created": 0, "adapted": 0, "reused": 0, "generic": 0, "total": 0, "from_template": None})
+        g = out.setdefault(decision_group(d, run_dir), {**{k: 0 for k in REUSE_KINDS}, "total": 0, "from_template": None})
         k = decision_kind(d)
-        if k in ("created", "adapted", "reused", "generic"):
+        if k in REUSE_KINDS:
             g[k] += 1
         g["total"] += 1
         if "from_template" in d:
             g["from_template"] = (g["from_template"] or 0) + (1 if d["from_template"] is True else 0)
     return out
+
+
+def reuse_totals(counts):
+    """The "All" line of the Library tab's chips: reuse_counts added up over its groups, nothing counted again."""
+    return {k: sum(int(g.get(k) or 0) for g in (counts or {}).values()) for k in REUSE_KINDS + ("total",)}
 
 
 def run_template_use(run_dir):
@@ -1004,12 +1030,12 @@ def run_template_use(run_dir):
             return None
         best = (auto.get("scores") or [None])[0]
         return {"scratch": True, "best": {k: best.get(k) for k in ("id", "name", "score", "why_not") if k in best} if best else None,
-                "threshold": auto.get("threshold"), "generator_calls": n, "counts": reuse_counts(rec.get("decisions"), run_dir),
+                "threshold": auto.get("threshold"), "generator_calls": n, "counts": reuse_counts(rec.get("decisions"), run_dir), "totals": reuse_totals(reuse_counts(rec.get("decisions"), run_dir)),
                 "scopes": decision_scopes(rec.get("decisions"), run_dir)}
     return {"id": rt["id"], "name": rt.get("name") or rt["id"], "selected": len(rt.get("selected") or []), "of": rt.get("of"),
             "added_stages": list(rt.get("added_stages") or []), "in_library": get_run_template(rt["id"]) is not None,
             **({"auto": True, "match": rt.get("match")} if rt.get("auto") else {}),
-            "generator_calls": n, "counts": reuse_counts(rec.get("decisions"), run_dir),
+            "generator_calls": n, "counts": reuse_counts(rec.get("decisions"), run_dir), "totals": reuse_totals(reuse_counts(rec.get("decisions"), run_dir)),
             "scopes": decision_scopes(rec.get("decisions"), run_dir)}
 
 
@@ -1492,10 +1518,27 @@ def _same_business(mine, theirs):
     """2: both charters recorded the same business type (the charter's own field, compared whole: case and punctuation
     aside); 0: they differ, or either one recorded none (the settings file's no_business_type values, or a type's
     name). No word of a business type is read on its own."""
-    said = lambda x: " ".join(re.findall(r"[a-z0-9]+", str(x or "").lower()))
-    a, b = said(mine), said(theirs)
-    says_nothing = {said(x) for x in settings()["no_business_type"]} | {said(n) for n in j2_types.names()}
-    return 2 if a and a == b and a not in says_nothing else 0
+    a, b = _said(mine), _said(theirs)
+    return 2 if a and a == b and not _no_business_type(mine) else 0
+
+
+def _said(x):
+    return " ".join(re.findall(r"[a-z0-9]+", str(x or "").lower()))
+
+
+def _no_business_type(value, run_dir=None):
+    """True when a charter's business_type records no business: nothing, one of the settings file's no_business_type
+    values, or only the name of an output type (types.json's, or one the run itself recorded: type_data). A document
+    run's stage charter writes the stage's own type there ("prd", "hld"), which is a type, not a business."""
+    v = _said(value)
+    return (not v or v in {_said(x) for x in settings()["no_business_type"]} or v in {_said(n) for n in j2_types.names()}
+            or type_data(str(value or "").strip(), run_dir) is not None)
+
+
+def business_type_shown(value, run_dir=None):
+    """A charter's business type as the shelves show it: the recorded words, or "not recorded" when they name no
+    business (_no_business_type). The record itself is never changed."""
+    return NOT_RECORDED if _no_business_type(value, run_dir) else str(value).strip()
 
 
 def nearest(need, gen, own=()):
@@ -1612,8 +1655,13 @@ def route(need, ctx, ask=None, first=None, closest=None):
                "version": t.version if t else AM.VERSION, "kind": "specialised" if t else "generic",
                "score": score, "reason": reason, **extra}
         if t:
-            _, hf, hd = coverage(need, {"facts": t.context.facts_used, "fields": [f.name for f in t.fields],
-                                        "enums": _enums(t)})
+            own, hf, hd = coverage(need, {"facts": t.context.facts_used, "fields": [f.name for f in t.fields],
+                                          "enums": _enums(t)})
+            if extra.get("adapted_from"):
+                # a template made from another one: "score" is THIS template's own coverage of the need (what "covers"
+                # says in words), and the coverage of the one it was adapted from, which is what was passed in, is kept
+                # apart as "source_score". One is never recorded as the other.
+                rec["source_score"], rec["score"] = score, own
             rec["covers"] = f"covers {hf} of {len(need['facts'])} facts" + (
                 f" and {hd} of {len(need['fields'])} fields" if need["fields"] else "")
             mark_used(t, {**use, "action": action}, need["fingerprint"])
@@ -2656,14 +2704,19 @@ def match_run_templates(asked, text, done_when, live=False):
     by name). A template can be picked only when its first stage is the stage whose charter was just written (the run
     cannot go back to an earlier stage), and, in a live run, only when a live run made it; "why_not" says which.
     Of the versions of one run template (run_template_versions) only one can be picked: the newest whose run ended
-    workable (run_ended_workable); when none is known to have, the newest."""
+    workable (run_ended_workable); when none is known to have, the newest whose run is not known (its folder is not
+    here). A run template whose run is known NOT to have ended workable is never picked, whatever its version and
+    however it was saved (the command line saves any run): an unfinished run feeds no new run."""
+    def ended(r):      # True: its run ended workable; False: its run is here and did not (run_end); None: its run is not here
+        d = os.path.join(runs_root(), str(r.get("made_from_run")))
+        return run_end(d)["finished"] if os.path.isdir(d) else None
     use = {}      # the name's slug -> the id of the version that can be picked
     for r in run_template_list():
         fam = slug(r.get("name"))
         if fam not in use:
             vs = run_template_versions(r.get("name"))
-            good = [v for v in vs if run_ended_workable(os.path.join(runs_root(), str(v.get("made_from_run")))) is True]
-            use[fam] = (good or vs)[-1]
+            good = [v for v in vs if ended(v) is True]
+            use[fam] = (good or [v for v in vs if ended(v) is None] or vs)[-1]
     out = []
     for r in run_template_list():
         rt = get_run_template(r["id"])
@@ -2679,6 +2732,8 @@ def match_run_templates(asked, text, done_when, live=False):
             best = int(use[slug(rt.name)].get("version") or 1)
             why = (f"version {best} of this run template is newer" if best > rt.version else
                    f"its run did not end workable, so version {best} is used")
+        elif ended(r) is False:
+            why = f"its run ({rt.made_from_run}) did not end workable, so no run starts from it"
         out.append({"id": rt.id, "name": rt.name, "version": rt.version, **m, "template_stages": list(rt.stages), "business_type": rt.business_type,
                     "mock": rt.mock, "eligible": not why, **({"why_not": why} if why else {})})
     out.sort(key=lambda x: (-x["score"], x["name"]))
@@ -2727,12 +2782,27 @@ def run_template_versions(name):
 
 
 def run_ended_workable(run_dir):
-    """True when a saved run's summary.json says it ended workable (nothing left in "workable"), False when it says
-    otherwise, None when the run folder or its summary is not here to read (not known)."""
+    """True when a saved run's summary.json says it ended workable (it ended Done, with nothing left in "workable"),
+    False when it says otherwise (things left, or a run that crashed although its last audit was clean), None when the
+    run folder or its summary is not here to read (not known)."""
     s = _read(os.path.join(run_dir, "summary.json"))
     if not isinstance(s, dict) or "workable" not in s:
         return None
-    return s["workable"] == []
+    return s["workable"] == [] and str(s.get("status") or "done").startswith("done")
+
+
+def run_end(run_dir):
+    """How a saved run ended, for the shelves: {"finished": it ended Done and workable, "workable": run_ended_workable,
+    "status": summary.json's status or "not recorded", "outcome": the run's own outcome sentence, or why there is
+    none}. A run folder with no summary.json never reached its end (stopped, or still running): not finished. A
+    summary written before "workable" was recorded counts as finished when its status is done. Nothing is guessed."""
+    s = _read(os.path.join(run_dir, "summary.json"))
+    if not isinstance(s, dict):
+        return {"finished": False, "workable": None, "status": NOT_RECORDED,
+                "outcome": "no summary.json: the run was stopped before it ended, or is still running"}
+    status, w = str(s.get("status") or NOT_RECORDED), run_ended_workable(run_dir)
+    finished = w is True or (w is None and status == "done")
+    return {"finished": finished, "workable": w, "status": status, "outcome": str(s.get("outcome") or status)[:400]}
 
 
 def auto_save_run_template(run_dir):
@@ -3150,8 +3220,9 @@ def run_artifacts(run_dir):
                                                  "sha256": hashlib.sha256(open(os.path.join(run_dir, folder, f), "rb").read()).hexdigest()} for f in files]} if folder else None
         out.append({"id": f"{rid}/{k}", "run": rid, "type": k, "label": str(t.get("label") or k), "tag": str(t.get("tag") or ""),
                     "data_file": data_file, "listing": listing,
-                    "business": facts["business"], "business_type": facts["business_type"], "date": facts["date"], "mock": facts["mock"],
-                    "status": summary.get("status") or NOT_RECORDED, "checks": checks,
+                    "business": facts["business"], "business_type": business_type_shown(facts["business_type"], run_dir),
+                    "date": facts["date"], "mock": facts["mock"],
+                    "status": summary.get("status") or NOT_RECORDED, "run_end": run_end(run_dir), "checks": checks,
                     "file": (folder + "/") if folder else file, "files": files, "preview": t.get("preview") or ("folder" if folder else None),
                     "made_from": whole, "run_template": from_rt, "sections": secs})
     return out
@@ -3357,7 +3428,9 @@ def find_artifact(need, root=None):
         have = words(" ".join([str(goal.get("statement") or "")] + [str(x) for x in goal.get("done_when") or []]))
         share = round(len(want & have) / len(want), 4) if want else 0.0
         c = a["checks"]
-        reasons = [f"a finished {a['label']} of run {a['run']}",
+        end = a.get("run_end") or {}      # nothing is hidden: work from a run that did not finish is offered as that, with how the run ended
+        reasons = [f"a finished {a['label']} of run {a['run']}" if end.get("finished", True) else
+                   f"a {a['label']} of run {a['run']}, which did not finish ({str(end.get('outcome'))[:120]})",
                    "the same business" if same_name else f"the same business type ({a['business_type']})" if same_type
                    else f"another business type ({a['business_type']})",
                    f"{len(want & have)} of {len(want)} of the need's words are in its charter" if want else "the need gave no words to compare"]
@@ -3368,7 +3441,8 @@ def find_artifact(need, root=None):
         reasons.append("a mock run made it" if a["mock"] is True else "a live run made it" if a["mock"] is False else "live or mock not recorded")
         hit = next((s for s in a["sections"] if s["section"] == sec), None) if sec else None
         out.append({"kind": "artifact", "ref": a["id"], "run": a["run"], "type": k, "score": round(0.5 * (same_type or same_name) + 0.5 * share, 4),
-                    "reasons": reasons, **({"section_template": hit["template"]["key"]} if hit else {})})
+                    "reasons": reasons, "run_finished": bool(end.get("finished", True)),
+                    **({"section_template": hit["template"]["key"]} if hit else {})})
     out.sort(key=lambda c: (-c["score"], c["ref"]), reverse=False)
     return out
 
