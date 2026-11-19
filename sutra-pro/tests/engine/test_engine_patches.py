@@ -1590,3 +1590,63 @@ def test_p24_priority_is_asked_for_the_id_and_the_envelope_only(j2hp):
         [{"id": "s", "envelope": {"money_limit": 0, "model_call_limit": 0, "time_limit_minutes": 0, "retry_limit": 0, "stop_loss": "s"}}]
     src = Path(j2hp.__file__).read_text(encoding="utf-8")
     assert src.count("self.PRICE_FMT") == 2 and "self.GRANT_FMT + ' (what you fund" not in src
+
+
+# ---- P25 (D251): the budget cap only from J2_BUDGET_CAP; every raise is the Requester's own ------------------------------------
+def test_p25_the_cap_comes_from_j2_budget_cap_only_when_it_is_set(tmp_path):
+    with fresh_j2(tmp_path / "a", J2_BUDGET="100") as mod:
+        assert mod.BUDGET_CAP is None and mod.budget_room(100) == float("inf")      # J2 made it twice the budget
+    with fresh_j2(tmp_path / "b", J2_BUDGET="100", J2_BUDGET_CAP="150") as mod:
+        assert mod.BUDGET_CAP == 150 and mod.budget_room(100) == 50
+
+
+def test_p25_without_a_cap_a_raise_adds_all_and_its_option_names_no_most(j2, make_run, monkeypatch):
+    monkeypatch.setattr(j2, "BUDGET_CAP", None)
+    run = make_run()
+    run.budget = 100
+    run._raise_budget(500, "the Requester's answer")
+    assert run.budget == 600 and j2.own_number(j2.budget_room(600)) == "Or type your own number"
+    monkeypatch.setattr(j2, "BUDGET_CAP", 650)
+    run._raise_budget(500, "the Requester's answer")
+    assert run.budget == 650 and j2.own_number(j2.budget_room(600)) == "Or type your own number, up to 50"
+
+
+LIMIT_Q = {"question": "Add more and keep going, or finish as it is?", "options": ["Add 30 work credits and keep going", "Finish as it is"],
+           "budget": [30, 0]}
+
+
+def test_p25_a_raise_question_shows_the_credits_approved_so_far(j2, make_run, monkeypatch):
+    monkeypatch.setattr(j2, "BUDGET_CAP", None)
+    run = make_run()
+    run.budget = 100
+    assert run._so_far() == "So far: 100 work credits approved."
+    run._raise_budget(30, "the Requester's answer")
+    assert run._so_far() == "So far: 100 + 30 = 130 work credits approved."
+    run._ask_user("The work you approved is used up.", [dict(LIMIT_Q)], "limit", handoff={"kind": "limit", "choices": ["continue", "ship"]})
+    assert run.paused["questions"][0]["question"].endswith(" So far: 100 + 30 = 130 work credits approved."), run.paused
+    other = make_run()
+    other._ask_user("Which one?", [{"question": "Which layout?", "options": ["A", "B"]}], "limit", handoff={"kind": "limit"})
+    assert "So far" not in other.paused["questions"][0]["question"]          # a question that adds no credits shows no total
+    asks = make_run()
+    asks.budget = 100
+    asks._ask_user("Over its envelope.", [{"question": "Run W-2 for 20 more?", "options": ["Yes", "No"]}], "approval")
+    assert asks.paused["questions"][0]["question"].endswith(" So far: 100 work credits approved.")
+
+
+@pytest.mark.parametrize("kind", ["approval", "ruling_budget"])
+def test_p25_decide_for_me_never_approves_a_raise(j2, make_run, kind):
+    run = make_run()
+    run.auto = True
+    run.paused = {"kind": kind, "questions": [{"question": "Add 20 work credits?", "options": []}], "handoff": {}, "msg": 1}
+    assert run._auto_choice(run.paused)[0] == "Yes, approve it."          # still what the Simple view suggests
+    assert run._auto_pick() is None                                     # but only the Requester answers it
+
+
+def test_p25_decide_for_me_waits_on_a_limit_whose_pick_adds_credits_and_answers_one_that_does_not(j2, make_run):
+    run = make_run()
+    run.auto = True
+    run.paused = {"kind": "limit", "questions": [dict(LIMIT_Q)], "handoff": {"choices": ["continue", "ship"]}, "msg": 1}
+    assert run._auto_pick() is None
+    run.paused = {"kind": "limit", "questions": [{"question": "q", "options": ["Leave out the stories", "Finish as it is"]}],
+                  "handoff": {"choices": ["drop", "ship"]}, "msg": 1}
+    assert run._auto_pick() == ("Option 1", "Leave out the stories", 1)

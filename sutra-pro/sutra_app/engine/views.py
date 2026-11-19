@@ -77,8 +77,9 @@ class Commands(Protocol):
     """What the four POSTs that act do to the run (the two clears only touch memory files, which the views do themselves). The
     handler validates; this object acts."""
 
-    def say(self, text: str, template: Optional[str] = None, workflows: Optional[str] = None) -> bool: ...      # False: the run is busy (409); the two
-    #   optional arguments are a run template and its workflows (J2 sync 6, D182); the view passes them only when the body has a template
+    def say(self, text: str, template: Optional[str] = None, workflows: Optional[str] = None, budget: Optional[str] = None) -> bool: ...      # False: busy (409)
+    #   template and workflows: a run template and its workflows (J2 sync 6, D182), passed only when the body has a template; budget: the start
+    #   page's Budget field as J2_BUDGET text (D251), passed only when the body has one
     def set_output(self, out: Any) -> Tuple[bool, str]: ...    # (accepted, the output type now)
     def reset(self) -> bool: ...                               # False: a run is going on, nothing was touched (409)
     def ask(self, who: str, question: Any, run_id: str) -> dict: ...      # J2's answer {who, answer, from}, plus additive keys; AskBusy: 409
@@ -740,6 +741,22 @@ def _no_commands() -> Reply:
     return _json({"error": "this adapter has no command object"}, 501)
 
 
+def _say_budget(body: dict) -> Tuple[Optional[str], Optional[str]]:
+    """(the J2_BUDGET text, the violation) of a `POST /api/say` body's `budget`: the start page's "Budget (work credits)" (D251). Absent or
+    empty is None (the team's own budget applies). A whole number (a JSON number or its digits) within the budget setting's limits
+    (`spec.py` `EngineSettings.budget`, the same 1 to 100000 as the task setting J2_BUDGET); the violation is the 400's text."""
+    raw = body.get("budget")
+    if raw is None or raw == "":
+        return None, None
+    limits = {k: getattr(m, k) for m in EngineSettings.model_fields["budget"].metadata for k in ("ge", "le") if hasattr(m, k)}
+    low, high = limits["ge"], limits["le"]
+    if isinstance(raw, str) and re.fullmatch(r"[0-9]{1,6}", raw.strip()):
+        raw = int(raw.strip())
+    if isinstance(raw, bool) or not isinstance(raw, int) or not low <= raw <= high:
+        return None, f"budget must be a whole number of work credits from {low} to {high}"
+    return str(raw), None
+
+
 def _say_template(body: dict) -> Tuple[Optional[str], Optional[str], Optional[str]]:
     """(template, workflows, the violation) of a `POST /api/say` body (J2 sync 6, D182). `template` is a run template id; `workflows` is `all`,
     a comma list of workflow keys or a list of keys, and comes back as `all` or one comma list. An absent or empty value is None; `workflows`
@@ -773,11 +790,13 @@ def say(ctx: RunCtx, body: dict) -> Reply:
     if not text:
         return _json({"error": "empty"}, 400)
     template, workflows, violation = _say_template(body)
-    if violation:
-        return _json({"error": violation}, 400)
+    budget, too = _say_budget(body)
+    if violation or too:
+        return _json({"error": violation or too}, 400)
     if ctx.commands is None:
         return _no_commands()
-    ok = bool(ctx.commands.say(text, template=template, workflows=workflows) if template else ctx.commands.say(text))
+    extra = {**({"template": template, "workflows": workflows} if template else {}), **({"budget": budget} if budget else {})}
+    ok = bool(ctx.commands.say(text, **extra))
     return _json({"ok": ok}, 200 if ok else 409)
 
 

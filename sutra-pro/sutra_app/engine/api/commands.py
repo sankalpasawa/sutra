@@ -98,12 +98,15 @@ class DeptCommands:
                 return ref
         return ctxmod.current_ref(self.services, self.dept_id)
 
-    def say(self, text: str, template: Optional[str] = None, workflows: Any = None) -> bool:
+    def say(self, text: str, template: Optional[str] = None, workflows: Any = None, budget: Optional[str] = None) -> bool:
         """Deliver the owner's words. `template` is a run template's id and `workflows` `all`, a comma list or a list of workflow keys (already
         checked by the route); both go to this delivery's task as `J2_RUN_TEMPLATE` and `J2_RUN_TEMPLATE_WORKFLOWS` (D182). `workflows` without
-        a template is dropped: there is nothing to select from."""
+        a template is dropped: there is nothing to select from. `budget` (D251, checked by the route) is this delivery's J2_BUDGET: the start
+        page's Budget field, sent with the start page's first message only (never kept in page.json)."""
         page = ctxmod.read_page(self.services.data_dir, self.dept_id)
         settings = dict(page.next_settings)
+        if budget:
+            settings["J2_BUDGET"] = str(budget)
         if template:
             settings["J2_RUN_TEMPLATE"] = str(template)
             if workflows:

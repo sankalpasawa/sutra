@@ -82,9 +82,11 @@ def route(path):
 class _RunCommands:
     """The POSTs that act, done on whichever run `RUN` is now."""
 
-    def say(self, text, template=None, workflows=None):
+    def say(self, text, template=None, workflows=None, budget=None):
         if template:      # a new run from a run template (J2's own server does the same; ignored once the run has started)
             RUN.set_run_template(template, workflows)
+        if budget and not RUN.chat:      # D251: the start page's Budget field, for a run that has not started
+            RUN.budget = int(budget)
         return RUN.user_says(text)
 
     def ask(self, who, question, run_id):

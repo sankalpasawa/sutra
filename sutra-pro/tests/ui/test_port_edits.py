@@ -2,7 +2,7 @@
 
 Three groups, none of them needs a browser or the J2 source:
   1. the committed files (sutra_app/ui/pages/j2_ui.html, static/css/j2.css, static/vendor/*, the two harness copies, and the frozen
-     static/css/j2-shell.css that Home and the console keep): edit by edit (the 40 page edits) against a table written out here, and
+     static/css/j2-shell.css that Home and the console keep): edit by edit (the 44 page edits) against a table written out here, and
      the invariants the design lists;
   2. scripts/port_j2_ui.py on a miniature J2 built below: the same table holds for what the script produces, J2 drift stops the
      port, `--check`, `--commit`, J2 is never written, two ports give the same bytes;
@@ -67,7 +67,7 @@ PAGE = read(UI / "pages" / "j2_ui.html")
 # ----------------------------------------------------------------------------------------------------------------------
 EDIT_IDS = ["E1", "E2a", "E2b", "E2c", "E3", "E4", "E5", "E6a", "E6b", "E7", "E8", "E9", "E9b", "E10", "E11", "E12", "E13a", "E13b", "E13c", "E13d",
             "E19", "E20a", "E20b", "E20c", "E20d", "E20e", "E20f1", "E20f2", "E20g", "E20h", "E20i", "E21", "E22", "E23",
-            "E24a", "E24b", "E24c", "E24d", "E24e", "E24f"]
+            "E24a", "E24b", "E24c", "E24d", "E24e", "E24f", "E25a", "E25b", "E25c", "E25d"]
 COUNTS = {edit: 1 for edit in EDIT_IDS} | {"E13b": 3, "E20d": 2, "E20i": 2}
 E1_HEAD = ('<link rel="stylesheet" href="/ui/css/j2.css">\n'
            '<link rel="stylesheet" href="/ui/css/sutra-graph.css"><link rel="stylesheet" href="/ui/css/sutra-panel.css">\n'
@@ -156,6 +156,14 @@ CASES = {
     "E24e": ([("`${SutraCtx.libraryPath}?view=artifacts&run=${encodeURIComponent(s.made_by.run)}`)}\">${esc(s.made_by.run)}</a> ${esc(s.made_by.workflow", 1)],
              ["`/library?view=artifacts&run=${encodeURIComponent(s.made_by.run)}`)}\">${esc(s.made_by.run)}</a> ${esc(s.made_by.workflow"]),
     "E24f": ([("const rtHref = (id, keys) => `${SutraCtx.pagePath}?view=simple&template=", 1)], ["const rtHref = (id, keys) => `/?view=simple"]),
+    # E25 (D251): the start page's Budget (work credits), 100 by default, sent with the first message as `budget`
+    "E25a": ([('<div class="schips" id="schips"></div><label for="lbudget"', 1),
+              ('Budget (work credits) <input id="lbudget" name="budget" type="number" inputmode="numeric" min="1" max="100000" step="1" value="100"', 1)],
+             ['<div class="schips" id="schips"></div><button']),
+    "E25b": ([("async function sendText(text, budget){", 1)], ["async function sendText(text){"]),
+    "E25c": ([("...(budget ? {budget} : {})})", 1)], ["body:JSON.stringify(RTNEW.id && !RTNEW.sent ?"]),
+    "E25d": ([("const b = lbudget(); if (b === null) return; $(\"lbox\").value = \"\"; $(\"lsend\").disabled = true; sendText(t, b); });", 1),
+              ("const lbudget = () => {", 1)], ['$("lsend").disabled = true; sendText(t); });']),
     "E21": ([(E21_HYDRATE, 1)], ["Object.assign(FEED, v); } } catch (e) {}\n  paintFeed();"]),
     "E22": ([('runsettings: "appearance and saved runs"};', 1)], ["appearance, what to build, saved runs"]),
     "E23": ([("/* no web fonts in the app (UI-D3): the studio's Google Fonts link is not added to a generated document */ }", 1)],
@@ -179,10 +187,10 @@ def test_edit_is_in_the_committed_page(case):
     check_case(PAGE, case)
 
 
-def test_there_are_forty_edits_and_every_one_has_a_case_here():
-    assert len(EDIT_IDS) == len(set(EDIT_IDS)) == 40 and sorted(CASES) == sorted(EDIT_IDS)
+def test_there_are_forty_four_edits_and_every_one_has_a_case_here():
+    assert len(EDIT_IDS) == len(set(EDIT_IDS)) == 44 and sorted(CASES) == sorted(EDIT_IDS)
     assert [COUNTS[f"E13{letter}"] for letter in "abcd"] == [1, 3, 1, 1] and COUNTS["E20d"] == COUNTS["E20i"] == 2
-    assert sum(1 for count in COUNTS.values() if count == 1) == 37
+    assert sum(1 for count in COUNTS.values() if count == 1) == 41
 
 
 def test_the_retired_edits_left_nothing_behind():
@@ -500,6 +508,10 @@ function renderPriorities(s){
   return `<h4>Funded, in the order it ranked them</h4>`;
 }
 const railStatus = s => ({prio: p.has ? "n credits" : "no ranking records"});
+async function sendText(text){
+  await fetch("/api/say", {method:"POST", headers:{"Content-Type":"application/json"}, body:JSON.stringify(RTNEW.id && !RTNEW.sent ? {text, template: RTNEW.id, workflows: RTNEW.keys} : {text})});
+}
+$("lform").addEventListener("submit", e => { e.preventDefault(); const t = $("lbox").value.trim(); if (!t) return; $("lbox").value = ""; $("lsend").disabled = true; sendText(t); });
 const TABSUB = {rundetails: "run id, model, budget", runsettings: "appearance, what to build, saved runs"};
 document.addEventListener("keydown", e => { if (e.key === "Escape" && CHAT.on && !document.body.classList.contains("simple") && !(RAIL && RAIL.open) && !$("detail").open && $("agentdrawer").hidden) chatSet(false); });
 if (!CAT.on) poll();
@@ -617,7 +629,7 @@ def test_check_is_quiet_about_files_in_step_and_writes_nothing(ported, capsys):
     j2, root = ported
     before = tree(root)
     code, out, err = run(capsys, "--j2", j2, "--root", root, "--check")
-    assert (code, err) == (0, "") and out.startswith("ok: the 40 anchors of the page edits match their counts, ")
+    assert (code, err) == (0, "") and out.startswith("ok: the 44 anchors of the page edits match their counts, ")
     assert "and the 7 committed files equal a fresh port of J2 " in out
     assert tree(root) == before
 
@@ -844,7 +856,7 @@ def test_e13_words_are_the_four_pairs_of_the_design_and_the_script_prints_them_a
 
 def test_the_edit_table_has_the_design_ids_and_counts():
     assert [(edit.id, edit.count) for edit in port.PAGE_EDITS] == [(edit, COUNTS[edit]) for edit in EDIT_IDS]
-    assert len(port.PAGE_EDITS) == 40
+    assert len(port.PAGE_EDITS) == 44
     assert [(e.id, e.count) for e in port.RENDER_EDITS] == [("H1", 1), ("H2", 1), ("H3", 1)]
     assert [(e.id, e.count) for e in port.LAYOUT_EDITS] == [("H1", 1)]
     for retired in ("RUN_SETTINGS_EDITS", "OUTPUT_EDITS", "RUN_SETTINGS_CSS"):
@@ -875,5 +887,5 @@ def test_a_fresh_port_of_the_real_j2_equals_the_committed_files_and_leaves_j2_al
     before = [p.read_bytes() for p in watched]
     code, out, err = run(capsys, "--j2", j2, "--commit", PIN, "--check")
     assert (code, err) == (0, ""), out + err
-    assert out.startswith("ok: the 40 anchors of the page edits match their counts, and the 7 committed files equal a fresh port of J2 ")
+    assert out.startswith("ok: the 44 anchors of the page edits match their counts, and the 7 committed files equal a fresh port of J2 ")
     assert [p.read_bytes() for p in watched] == before

@@ -76,7 +76,18 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 J2_DIR = os.getenv("J2_AGENTS_DIR") or os.path.join(HERE, "agents", "j2")     # P2: J2_AGENTS_DIR replaces the role-file folder
 RUNS_DIR = os.getenv("J2_RUNS_DIR") or os.path.join(HERE, "runs")
 BUDGET = int(os.getenv("J2_BUDGET", "100"))           # starting budget
-BUDGET_CAP = int(os.getenv("J2_BUDGET_CAP", str(2 * BUDGET)))   # most the Requester's approvals can raise it to
+# P25 (D251): the most the Requester's approvals can raise the budget to, only when J2_BUDGET_CAP is set; unset: no cap
+BUDGET_CAP = int(os.environ["J2_BUDGET_CAP"]) if os.getenv("J2_BUDGET_CAP") else None
+
+
+def budget_room(budget):
+    """P25 (D251): how much more the Requester may approve: up to the cap when there is one, else without end."""
+    return BUDGET_CAP - budget if BUDGET_CAP is not None else float("inf")
+
+
+def own_number(room):
+    """P25 (D251): the "type your own number" words of a raise option; "up to N" only when there is a cap."""
+    return "Or type your own number" + (f", up to {room}" if BUDGET_CAP is not None else "")
 MAX_ATTEMPTS = 4           # attempts two disagreeing agents get before Identity rules (priority.md: four exchanges)
 BARGAIN_MINUTES = float(os.getenv("J2_BARGAIN_MINUTES", "15"))   # J2.c bargain: four hops, fifteen minutes...
 BARGAIN_CALLS = int(os.getenv("J2_BARGAIN_CALLS", "8"))          # ...and its spend, in AI calls (4 hops x 2 sides)
@@ -4158,20 +4169,29 @@ class J2Run:
         self._hook("call_finished", info)
 
     def _raise_budget(self, add, why):
-        """Only after the Requester approved more budget in answer to Identity's question; capped at BUDGET_CAP."""
+        """Only after the Requester approved more budget in answer to Identity's question; capped at BUDGET_CAP (P25: when
+        J2_BUDGET_CAP is set)."""
         if add <= 0:
             return
-        new = min(self.budget + add, BUDGET_CAP)
+        new = min(self.budget + add, BUDGET_CAP) if BUDGET_CAP is not None else self.budget + add
         if new <= self.budget:
             self.post("system", f"The Requester approved +{add}, but the budget is already at the cap ({BUDGET_CAP}). "
                                 "No change.")
             return
         old, self.budget = self.budget, new
         self.raises.append({"cycle": self.cycle, "asked": add, "from": old, "to": new, "why": why})
-        self._event("identity", "budget_raise", f"{old} -> {new} (asked +{add}, cap {BUDGET_CAP}; {why})")
+        self._event("identity", "budget_raise", f"{old} -> {new} (asked +{add}, cap {BUDGET_CAP or 'none'}; {why})")
         self.post("system", f"Budget raised on the Requester's approval: {old} -> {new}"
                   + (f" (asked +{add}; capped at {BUDGET_CAP})" if old + add > new else "")
                   + f". Remaining: {self.budget - self.spent}.")
+
+    def _so_far(self):
+        """P25 (D251): the work credits the Requester has approved so far, as a sum, for a question that asks for more:
+        "So far: 100 + 30 = 130 work credits approved." (the start alone when nothing was added yet)."""
+        start = self.raises[0]["from"] if self.raises else self.budget
+        adds = [r["to"] - r["from"] for r in self.raises]
+        return "So far: " + " + ".join(str(x) for x in [start, *adds]) + (f" = {self.budget}" if adds else "") + \
+            " work credits approved."
 
     def post(self, who, text, **meta):
         if who == "identity" and meta.get("to_user") and meta.get("act") != "ASK_REQUESTER" and not meta.get("shaped"):
@@ -4651,6 +4671,8 @@ class J2Run:
             items = [re.sub(r"[?.]$", "", q["question"].strip()) for q in questions]
             questions = [{"question": "Please send these: " + "; ".join(items) + "."}]
         questions = [{**q, "options": q.get("options") or []} for q in questions]
+        if kind in ("approval", "ruling_budget") or any(as_int(b) > 0 for q in questions for b in q.get("budget") or []):
+            questions = [{**q, "question": f"{q['question']} {self._so_far()}"} for q in questions]      # P25 (D251)
         if kind != "limit":
             # Adding budget is offered only by the decision question (_identity_limit), whose options code builds
             # and applies. Approval and ruling_budget apply their own amount after the answer.
@@ -4760,7 +4782,14 @@ class J2Run:
             return None
         if p["kind"] == "fact" and not all(q.get("kind") == "decision" for q in p.get("questions") or []):
             return None      # J2.g: only a decision is Decide for me's; a fact waits for the Requester
-        return self._auto_choice(p)
+        pick = self._auto_choice(p)
+        # P25 (D251): every raise needs the Requester's own approval; Decide for me waits instead of approving one
+        if p["kind"] in ("approval", "ruling_budget"):
+            return None
+        qs = p.get("questions") or []
+        if pick[2] and len(qs) == 1 and as_int((qs[0].get("budget") or [0] * pick[2])[pick[2] - 1]) > 0:
+            return None
+        return pick
 
     def _auto_choice(self, p):
         """The answer Decide for me gives to pause p, whether or not it is on (the Simple view marks it "Suggested"):
@@ -5161,12 +5190,12 @@ class J2Run:
         if not short:
             return False
         need = sum(c for _, c, _ in rows) - left
-        room = BUDGET_CAP - self.budget
+        room = budget_room(self.budget)
         add = min(max(need, 1), room) if room > 0 else 0
         opts, budget, choices = [], [], []
         if add:
             opts.append(f"Add {add} work credits{' (the most allowed)' if add < need else ''} and keep going: you get more "
-                        f"of what you asked for built. Or type your own number, up to {room}")
+                        f"of what you asked for built. {own_number(room)}")
             budget.append(add)
             choices.append("continue")
         names = and_list(self._sw(k) for k in short)
@@ -6371,7 +6400,7 @@ class J2Run:
         left = h.get("left_out")          # after Priority's ruling: the done-when items nothing will build
         gaps = [f"{c} (not built yet)" for c in left] if left else self._open_list(last, items)
         cheapest = min(RATES.values()) if RATES else 1
-        room = BUDGET_CAP - self.budget
+        room = budget_room(self.budget)
         short = self.budget - self.spent < cheapest       # whatever the limit was, nothing new can be funded
         want = max(as_int(h.get("budget_needed")) or LIMIT_ADD, cheapest)
         add = min(want, room) if short or h.get("budget_needed") else 0
@@ -6388,7 +6417,7 @@ class J2Run:
         if (not short or self.budget + add - self.spent >= cheapest) and not stale and (add or not h.get("budget_needed")):
             more = f"the team works on what is not right in {dw}" if dw else "you get more of the missing parts built"
             opts.append((f"Add {add} work credits{' (the most allowed)' if add < want else ''} and keep going: {more}. "
-                         f"Or type your own number, up to {room}" if add else
+                         f"{own_number(room)}" if add else
                          f"Keep going: {more}")
                         + (" (send the missing details with your answer)" if h.get("tbc") else ""))
             budget.append(add)

@@ -1103,6 +1103,110 @@ def saved_snapshot_dir(d, name, since=0):
                             "the floor") if rc is not None and c < rc      # P24 (D250)
                       else (f"the judge scored it {w['judge']['score']:.2f}, below the {j2_realization.THRESHOLD:.2f} gate"
 '''),
+    # ---- P25 (D251): the budget cap only when J2_BUDGET_CAP is set; Decide for me never approves a raise; a raise question shows
+    # the credits approved so far (prompt-changing, D249: the raise question's text)
+    Edit('P25', "j2.py", r'''BUDGET = int(os.getenv("J2_BUDGET", "100"))           # starting budget
+BUDGET_CAP = int(os.getenv("J2_BUDGET_CAP", str(2 * BUDGET)))   # most the Requester's approvals can raise it to
+MAX_ATTEMPTS = 4           # attempts two disagreeing agents get before Identity rules (priority.md: four exchanges)
+''', r'''BUDGET = int(os.getenv("J2_BUDGET", "100"))           # starting budget
+# P25 (D251): the most the Requester's approvals can raise the budget to, only when J2_BUDGET_CAP is set; unset: no cap
+BUDGET_CAP = int(os.environ["J2_BUDGET_CAP"]) if os.getenv("J2_BUDGET_CAP") else None
+
+
+def budget_room(budget):
+    """P25 (D251): how much more the Requester may approve: up to the cap when there is one, else without end."""
+    return BUDGET_CAP - budget if BUDGET_CAP is not None else float("inf")
+
+
+def own_number(room):
+    """P25 (D251): the "type your own number" words of a raise option; "up to N" only when there is a cap."""
+    return "Or type your own number" + (f", up to {room}" if BUDGET_CAP is not None else "")
+MAX_ATTEMPTS = 4           # attempts two disagreeing agents get before Identity rules (priority.md: four exchanges)
+'''),
+    Edit('P25', "j2.py", r'''    def _raise_budget(self, add, why):
+        """Only after the Requester approved more budget in answer to Identity's question; capped at BUDGET_CAP."""
+        if add <= 0:
+''', r'''    def _raise_budget(self, add, why):
+        """Only after the Requester approved more budget in answer to Identity's question; capped at BUDGET_CAP (P25: when
+        J2_BUDGET_CAP is set)."""
+        if add <= 0:
+'''),
+    Edit('P25', "j2.py", r'''            return
+        new = min(self.budget + add, BUDGET_CAP)
+        if new <= self.budget:
+''', r'''            return
+        new = min(self.budget + add, BUDGET_CAP) if BUDGET_CAP is not None else self.budget + add
+        if new <= self.budget:
+'''),
+    Edit('P25', "j2.py", r'''        self.raises.append({"cycle": self.cycle, "asked": add, "from": old, "to": new, "why": why})
+        self._event("identity", "budget_raise", f"{old} -> {new} (asked +{add}, cap {BUDGET_CAP}; {why})")
+        self.post("system", f"Budget raised on the Requester's approval: {old} -> {new}"
+''', r'''        self.raises.append({"cycle": self.cycle, "asked": add, "from": old, "to": new, "why": why})
+        self._event("identity", "budget_raise", f"{old} -> {new} (asked +{add}, cap {BUDGET_CAP or 'none'}; {why})")
+        self.post("system", f"Budget raised on the Requester's approval: {old} -> {new}"
+'''),
+    Edit('P25', "j2.py", r'''                  + f". Remaining: {self.budget - self.spent}.")
+
+''', r'''                  + f". Remaining: {self.budget - self.spent}.")
+
+    def _so_far(self):
+        """P25 (D251): the work credits the Requester has approved so far, as a sum, for a question that asks for more:
+        "So far: 100 + 30 = 130 work credits approved." (the start alone when nothing was added yet)."""
+        start = self.raises[0]["from"] if self.raises else self.budget
+        adds = [r["to"] - r["from"] for r in self.raises]
+        return "So far: " + " + ".join(str(x) for x in [start, *adds]) + (f" = {self.budget}" if adds else "") + \
+            " work credits approved."
+
+'''),
+    Edit('P25', "j2.py", r'''        questions = [{**q, "options": q.get("options") or []} for q in questions]
+        if kind != "limit":
+''', r'''        questions = [{**q, "options": q.get("options") or []} for q in questions]
+        if kind in ("approval", "ruling_budget") or any(as_int(b) > 0 for q in questions for b in q.get("budget") or []):
+            questions = [{**q, "question": f"{q['question']} {self._so_far()}"} for q in questions]      # P25 (D251)
+        if kind != "limit":
+'''),
+    Edit('P25', "j2.py", r'''            return None      # J2.g: only a decision is Decide for me's; a fact waits for the Requester
+        return self._auto_choice(p)
+
+''', r'''            return None      # J2.g: only a decision is Decide for me's; a fact waits for the Requester
+        pick = self._auto_choice(p)
+        # P25 (D251): every raise needs the Requester's own approval; Decide for me waits instead of approving one
+        if p["kind"] in ("approval", "ruling_budget"):
+            return None
+        qs = p.get("questions") or []
+        if pick[2] and len(qs) == 1 and as_int((qs[0].get("budget") or [0] * pick[2])[pick[2] - 1]) > 0:
+            return None
+        return pick
+
+'''),
+    Edit('P25', "j2.py", r'''        need = sum(c for _, c, _ in rows) - left
+        room = BUDGET_CAP - self.budget
+        add = min(max(need, 1), room) if room > 0 else 0
+''', r'''        need = sum(c for _, c, _ in rows) - left
+        room = budget_room(self.budget)
+        add = min(max(need, 1), room) if room > 0 else 0
+'''),
+    Edit('P25', "j2.py", r'''            opts.append(f"Add {add} work credits{' (the most allowed)' if add < need else ''} and keep going: you get more "
+                        f"of what you asked for built. Or type your own number, up to {room}")
+            budget.append(add)
+''', r'''            opts.append(f"Add {add} work credits{' (the most allowed)' if add < need else ''} and keep going: you get more "
+                        f"of what you asked for built. {own_number(room)}")
+            budget.append(add)
+'''),
+    Edit('P25', "j2.py", r'''        cheapest = min(RATES.values()) if RATES else 1
+        room = BUDGET_CAP - self.budget
+        short = self.budget - self.spent < cheapest       # whatever the limit was, nothing new can be funded
+''', r'''        cheapest = min(RATES.values()) if RATES else 1
+        room = budget_room(self.budget)
+        short = self.budget - self.spent < cheapest       # whatever the limit was, nothing new can be funded
+'''),
+    Edit('P25', "j2.py", r'''            opts.append((f"Add {add} work credits{' (the most allowed)' if add < want else ''} and keep going: {more}. "
+                         f"Or type your own number, up to {room}" if add else
+                         f"Keep going: {more}")
+''', r'''            opts.append((f"Add {add} work credits{' (the most allowed)' if add < want else ''} and keep going: {more}. "
+                         f"{own_number(room)}" if add else
+                         f"Keep going: {more}")
+'''),
 )
 
 OTHER_EDITS = (
@@ -1329,6 +1433,7 @@ PATCH_NOTES = {
     "P22": "`_register` (D246): a done-when item a real run checks is decided by the run's receipt; a proposal without a real run that covers it is refused (\"the real run of 'X' checks\"), not the real-run workflow, and the real-run workflow's refusal for an item another workflow covers names that workflow and says the conflict is there (`_cover_conflict`): one registered or held is to be superseded (named in `replaces`) or replaced by one that doesn't cover the item, and a waiting workflow a proposal of the same batch supersedes no longer counts against the real run; one running or done can't be superseded, so the refusal says the item can't be met by that real run in this run; a rejection the validator's last call also made (same workflow, same reason) is a repeated failure: `_agree` stops the cycle with an Identity limit for the Requester (`_repeat_stop`, \"The same failure came back twice in a row\"), resuming where the validator was going when it registered something (runs/j2-20261118-110800-0c75: the script was refused four times for an item the run notes covered)",
     "P23": "`ended_workable(run_dir)` (D247) is true only for a clean end: `summary.json`'s outcome starts \"Done:\" and the last audit passes `workable()` with `accepted` and `after_real_run` emptied, so a run that ended \"Done with open items\" (an item accepted as it is, a real run that never ran or did not pass) is never saved as a run template (`_save_run_template`), reused as a folder (`_reuse_folder`) or served by the content door",
     "P24": "(D250, prompt-changing per D249) Priority's move is each workflow's id and its envelope: both pricing turns ask for `PRICE_FMT` (`[{id, envelope}]`) and `_carry` expands the reply to Adaptation's proposal (the table Priority was shown, then the proposals, by id then name) plus the envelope; a field the move sends with another value than Adaptation proposed is not taken, and the validator posts Adaptation a visible note naming the field and the value (no `carried` autofix); `granted` charges `envelope.money_limit`, also with the rate card on; `_register` rejects a COUNTER without a money limit (\"a counter must state its money limit\") and, with the rate card on, a limit below the rate-card price (the floor); J2's mock Priority sends `{id, name, envelope}`, its cycle-1 COUNTER sets the animations' limit to 10, and the mock Adaptation answers by revising their parts (runs/j2-20261118-090053-4a9c: a COUNTER's terms were logged as \"kept as Adaptation proposed it\")",
+    "P25": "(D251, prompt-changing per D249: the raise question's text) `BUDGET_CAP` comes from `J2_BUDGET_CAP` only when it is set; unset means no cap (`budget_room` is unbounded, `_raise_budget` adds the whole approval, and a raise option says \"Or type your own number\" without \"up to N\", `own_number`); Decide for me (`_auto_pick`) waits for the Requester instead of answering an approval, a ruling_budget question or a limit option that adds credits; a question that asks for more credits ends with the credits approved so far (`_so_far`: \"So far: 100 + 30 = 130 work credits approved.\")",
     "P19": "`_make_report` asks `self._hook(\"review_enabled\")` (sync 6, D179): only an explicit `False` switches the reviewer off (no thread, `ai_calls` without the reviewer's call) and the run report then says \"The reviewer is switched off in this team's settings.\"; under `NullHooks` `_hook` returns `None`, so a bare J2 and a host without the hook behave as before",
     "P11": "`J2Run.rehydrate(src_dir)` delegates to `rehydrate.py`",
     "P12": "Windows (D101), nothing else: `j2_check.find_chrome` also looks in the Windows install folders of Chrome, `j2_check._chrome` decodes Chrome's output as UTF-8 with replacement, `j2_template_lib` writes its index with `oslayer.replace` (a rename that waits out a reader) and takes its library lock through `oslayer` (P10), records a template's saved path with `/` on every system (`run_tpl_rel`) and splits it on either separator when it checks for `..` (`run_saved_dir`)",
@@ -1514,7 +1619,7 @@ def render_vendored_md(commit: str, rows, ranges) -> str:
         "frozen at `cut-off/2026-11-17` and the app is the product, so a recorded patch may change what the engine asks the model; the "
         "prompt goldens are recorded from the engine with its patches applied): P24 changes Priority's reply format, and P25 the raise "
         "question's text. There is no P6 (the design's table skips it) and no "
-        "P13 (retired in sync 4, D140: its code is Sutra's own `engine/runlist.py`); P20 is reserved for a late-judge switch (D145, D162, D180); P21 (D245) keeps the host's own run files out of a builder's writes outside its folder; P22 (D246) refuses the workflow without a real run that covers a real run's item, and stops the cycle on the same validator rejection twice in a row; P23 (D247) makes `ended_workable` true only for a clean \"Done:\" end; P24 (D250) makes Priority's move a workflow's id and its envelope. "
+        "P13 (retired in sync 4, D140: its code is Sutra's own `engine/runlist.py`); P20 is reserved for a late-judge switch (D145, D162, D180); P21 (D245) keeps the host's own run files out of a builder's writes outside its folder; P22 (D246) refuses the workflow without a real run that covers a real run's item, and stops the cycle on the same validator rejection twice in a row; P23 (D247) makes `ended_workable` true only for a clean \"Done:\" end; P24 (D250) makes Priority's move a workflow's id and its envelope; P25 (D251) takes the budget cap only from J2_BUDGET_CAP and keeps every raise the Requester's own. "
         "Sync 5 (D160 to D163): the pin moved to the tag `cut-off/2026-11-12`; the types are vendored as data (`conditions/` and "
         "`templates/` as whole trees, D161); P1 is a counted rule, P7, P8, P9, P12 and P14 were repaired, P2 gained a third edit, "
         "P17 and P18 are new (D162). "

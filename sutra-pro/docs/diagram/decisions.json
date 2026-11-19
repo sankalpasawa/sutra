@@ -1243,5 +1243,10 @@
   "id": "D250",
   "label": "Priority's move = id + envelope (P24)",
   "anchor": "band:DEPARTMENT RUNTIME"
+ },
+ {
+  "id": "D251",
+  "label": "budget cap only if set; raises need the Requester (P25)",
+  "anchor": "band:DEPARTMENT RUNTIME"
  }
 ]

@@ -192,7 +192,7 @@ class EngineSettings(BaseModel):
     output: str = Field("auto", pattern=rf"^(auto|{OUTPUT_NAME_RE})$")      # "auto": the host picks the output for the brief, once, before J2 starts (D129)
     fixes: Literal[0, 1] = 0
     budget: int = Field(100, ge=1, le=100000)
-    budget_cap: Optional[int] = Field(None, ge=1, le=100000)      # None: twice the budget
+    budget_cap: Optional[int] = Field(None, ge=1, le=100000)      # None: no cap (D251, P25)
     max_cycles: int = Field(6, ge=1)
     limit_add: int = Field(30, ge=0)
     bargain_minutes: float = Field(15.0, ge=0, allow_inf_nan=False)
