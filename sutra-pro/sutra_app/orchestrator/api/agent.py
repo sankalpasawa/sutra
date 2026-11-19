@@ -1,6 +1,6 @@
 """The chat agent's routes (orchestrator 6.2): posting in a chat, retrying a failed request, answering a chart change.
 
-    POST /api/chats/{sid}/messages               {text, choice?}  -> org chat: 202 Accepted | team chat: 200 Delivery | read-only: 403
+    POST /api/chats/{sid}/messages               {text, choice?, budget?}  -> org chat: 202 Accepted | team chat: 200 Delivery | read-only: 403
     POST /api/chats/cs_org/retry                                  -> 202 Accepted
     POST /api/chart/changes/{change_id}/decision {approve}        -> 200 ChangeResult | 409 already_decided   (goes through the turn runner)
 
@@ -62,8 +62,10 @@ def build_router() -> APIRouter:
             raise ReadOnly("This chat is read-only" if session.status == "active" else "This chat is archived and read-only")
         if direct_running.answering(sid):                                     # the owner asked the model directly and it is still writing: two answers would interleave
             raise Busy("This chat is already answering")
+        if body.budget is not None and (session.kind != "org" or body.choice is not None):
+            raise AppError("validation", "a budget goes with a new request in the org chat")      # D252
         if session.kind == "org":
-            accepted = await _need(request, "runner").post_user_message(sid, body.text, body.choice)
+            accepted = await _need(request, "runner").post_user_message(sid, body.text, body.choice, budget=body.budget)
             return _json(request, accepted.model_dump(mode="json"), 202)
         delivery = await run_blocking(_need(request, "tasks").deliver, sid, body.text)
         return _json(request, delivery.model_dump(mode="json"))

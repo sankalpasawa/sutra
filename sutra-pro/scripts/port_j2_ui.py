@@ -243,20 +243,23 @@ PAGE_EDITS: tuple[Edit, ...] = (
     Edit("E24e", '`<a href="${esc(`/library?view=artifacts&run=${encodeURIComponent(s.made_by.run)}`)}">${esc(s.made_by.run)}</a> ${esc(s.made_by.workflow',
          '`<a href="${esc(`${SutraCtx.libraryPath}?view=artifacts&run=${encodeURIComponent(s.made_by.run)}`)}">${esc(s.made_by.run)}</a> ${esc(s.made_by.workflow', 1),
     Edit("E24f", 'const rtHref = (id, keys) => `/?view=simple&template=', 'const rtHref = (id, keys) => `${SutraCtx.pagePath}?view=simple&template=', 1),
-    # E25 (D251): the start page's optional "Budget (work credits)", 100 by default, sent with the first message as `budget` (the route makes it
-    # the task setting J2_BUDGET, within its limits); a value that is not a whole number from 1 to 100000 stops the send and says so. No cap field.
+    # E25 (D251, D252): the start page's optional "Budget (work credits)", empty by default ("team default": the team's Settings budget, 100 if
+    # none is set); a typed number is sent with the first message as `budget` (the route makes it the task setting J2_BUDGET, within its limits),
+    # and a value that is not a whole number from 1 to 100000 stops the send and says so. No cap field.
     Edit("E25a", '<div class="schips" id="schips"></div><button class="sgo" id="lsend" type="submit"',
          '<div class="schips" id="schips"></div><label for="lbudget" style="display:flex;align-items:center;gap:6px;'
          'font-size:13px;white-space:nowrap">Budget (work credits) <input id="lbudget" name="budget" type="number" inputmode="numeric" min="1" '
-         'max="100000" step="1" value="100" style="width:7em"></label><button class="sgo" id="lsend" type="submit"', 1),
+         'max="100000" step="1" placeholder="team default" style="width:8em"></label><button class="sgo" id="lsend" type="submit"', 1),
     Edit("E25b", "async function sendText(text){", "async function sendText(text, budget){", 1),
     Edit("E25c", "body:JSON.stringify(RTNEW.id && !RTNEW.sent ? {text, template: RTNEW.id, workflows: RTNEW.keys} : {text})",
          "body:JSON.stringify({...(RTNEW.id && !RTNEW.sent ? {text, template: RTNEW.id, workflows: RTNEW.keys} : {text}), ...(budget ? {budget} : {})})", 1),
     Edit("E25d", '$("lform").addEventListener("submit", e => { e.preventDefault(); const t = $("lbox").value.trim(); if (!t) return; $("lbox").value = ""; '
                  '$("lsend").disabled = true; sendText(t); });',
-         '// E25 (D251): the Budget field, a whole number of work credits from 1 to 100000 (the limits of the task setting J2_BUDGET); null stops the send\n'
-         'const lbudget = () => { const el = $("lbudget"); if (!el) return undefined; const v = String(el.value).trim(), ok = /^[1-9][0-9]{0,5}$/.test(v) && +v <= 100000;\n'
-         '  el.setCustomValidity(ok ? "" : "Budget: a whole number of work credits from 1 to 100000"); if (!ok){ el.reportValidity(); return null; } return +v; };\n'
+         '// E25 (D251, D252): the Budget field: empty is the team default (undefined: no budget sent), else a whole number of work credits from 1\n'
+         '// to 100000 (the limits of the task setting J2_BUDGET); null stops the send\n'
+         'const lbudget = () => { const el = $("lbudget"); if (!el) return undefined; const v = String(el.value).trim(); if (v === ""){ el.setCustomValidity(""); return undefined; }\n'
+         '  const ok = /^[1-9][0-9]{0,5}$/.test(v) && +v <= 100000;\n'
+         '  el.setCustomValidity(ok ? "" : "Budget: a whole number of work credits from 1 to 100000, or empty for the team default"); if (!ok){ el.reportValidity(); return null; } return +v; };\n'
          '$("lform").addEventListener("submit", e => { e.preventDefault(); const t = $("lbox").value.trim(); if (!t) return; const b = lbudget(); if (b === null) return; '
          '$("lbox").value = ""; $("lsend").disabled = true; sendText(t, b); });', 1),
 )

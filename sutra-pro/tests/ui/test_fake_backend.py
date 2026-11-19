@@ -2150,7 +2150,7 @@ def test_a_working_log_and_a_step_are_read_only_and_an_unknown_chat_is_gone(fake
     assert len(ok(fake, "/api/chats/cs_77aa10c2e9b4/messages")["messages"]) == 16  # nothing was added
 
 
-BODY_MESSAGE = "the body is {text, choice?}"
+BODY_MESSAGE = "the body is {text, choice?, budget?}"
 TEXT_MESSAGE = "text must be 1 to 8000 characters"
 CHOICE_MESSAGE = "choice is {message_id, option}"
 

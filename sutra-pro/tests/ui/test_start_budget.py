@@ -1,6 +1,7 @@
-"""D251 (port edit E25): the start page's optional "Budget (work credits)" field. It holds 100 by default, a send carries it as `budget`
-with the first message only (the route makes it the task setting J2_BUDGET), and a value that is not a whole number from 1 to 100000
-stops the send with a message on the field. There is no cap field. The page's own `lbudget` and `sendText` run in node with a stub `$`."""
+"""D251, D252 (port edit E25): a team page's optional "Budget (work credits)" field. It starts empty ("team default": the team's Settings
+budget, 100 if none is set) and an empty field sends no budget; a typed number is sent with the first message only as `budget` (the route
+makes it the task setting J2_BUDGET), and a value that is not a whole number from 1 to 100000 stops the send with a message on the field.
+There is no cap field. The page's own `lbudget` and `sendText` run in node with a stub `$`."""
 import json
 import re
 import shutil
@@ -25,21 +26,29 @@ def node(body: str):
     return json.loads(done.stdout)
 
 
-def test_the_field_is_in_the_start_form_with_100_and_the_limits_and_no_cap_field():
+def test_the_field_is_in_the_start_form_empty_with_the_team_default_placeholder_and_no_cap_field():
     form = PAGE[PAGE.index('<form class="sbox" id="lform">'):PAGE.index("</form>", PAGE.index('id="lform"'))]
     assert 'Budget (work credits) <input id="lbudget" name="budget" type="number"' in form
-    assert 'min="1" max="100000" step="1" value="100"' in form
+    assert 'min="1" max="100000" step="1" placeholder="team default"' in form and "value=" not in form.split('id="lbudget"')[1].split(">")[0]
     land = PAGE[PAGE.index('id="sland"'):PAGE.index('id="swork"')]
     assert "cap" not in land.lower()
 
 
 @needs_node
 @pytest.mark.parametrize("value, want", [("100", 100), (" 250 ", 250), ("1", 1), ("100000", 100000),
-                                         ("", None), ("0", None), ("100001", None), ("12.5", None), ("-3", None), ("1e3", None), ("abc", None)])
+                                         ("0", None), ("100001", None), ("12.5", None), ("-3", None), ("1e3", None), ("abc", None)])
 def test_lbudget_takes_a_whole_number_from_1_to_100000_and_stops_anything_else(value, want):
     got = node(f"EL.value = {json.dumps(value)}; const b = lbudget(); console.log(JSON.stringify({{b, msg: EL.msg, reported: EL.reported}}));")
     assert got["b"] == want
-    assert (got["msg"], got["reported"]) == (("", False) if want else ("Budget: a whole number of work credits from 1 to 100000", True))
+    assert (got["msg"], got["reported"]) == (("", False) if want else ("Budget: a whole number of work credits from 1 to 100000, or empty for the team default", True))
+
+
+@needs_node
+@pytest.mark.parametrize("value", ["", "   "])
+def test_an_empty_field_is_the_team_default_and_sends_no_budget(value):
+    got = node(f"EL.value = {json.dumps(value)}; const b = lbudget(); await sendText('a cafe site', b); "
+               "console.log(JSON.stringify({b: b === undefined ? 'undefined' : b, msg: EL.msg, reported: EL.reported, sent: SENT}));")
+    assert got == {"b": "undefined", "msg": "", "reported": False, "sent": [["/api/say", {"text": "a cafe site"}]]}
 
 
 @needs_node

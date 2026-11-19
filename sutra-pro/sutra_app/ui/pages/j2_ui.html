@@ -20,7 +20,7 @@ try { var tp = localStorage.getItem("j2theme"); document.documentElement.dataset
       <h1 class="sgreet" id="sgreet">What should we make?</h1>
       <div class="srt" id="srt" hidden></div>
       <form class="sbox" id="lform"><textarea id="lbox" rows="3" aria-label="Describe what to build" placeholder="A one-page website for my physio clinic in Indiranagar…"></textarea>
-        <div class="sbrow"><div class="schips" id="schips"></div><label for="lbudget" style="display:flex;align-items:center;gap:6px;font-size:13px;white-space:nowrap">Budget (work credits) <input id="lbudget" name="budget" type="number" inputmode="numeric" min="1" max="100000" step="1" value="100" style="width:7em"></label><button class="sgo" id="lsend" type="submit" disabled>Go</button></div></form>
+        <div class="sbrow"><div class="schips" id="schips"></div><label for="lbudget" style="display:flex;align-items:center;gap:6px;font-size:13px;white-space:nowrap">Budget (work credits) <input id="lbudget" name="budget" type="number" inputmode="numeric" min="1" max="100000" step="1" placeholder="team default" style="width:8em"></label><button class="sgo" id="lsend" type="submit" disabled>Go</button></div></form>
       <div class="slrow"><div class="soutpick" id="soutpick"></div><button type="button" class="screwg" id="slandteam" aria-haspopup="dialog" aria-controls="steamcard" aria-label="See your team"><span class="slfaces" id="slfaces"></span><span class="slready">Asha, Mira, Kabir, Dev and Nora are ready.</span></button>
         <button type="button" class="sauto" id="sautoland" role="switch" aria-checked="false" title="When this is on, the team answers its own questions with the suggested option and keeps going."><span class="ssw" aria-hidden="true"></span>Decide for me</button></div>
       <section class="srecent" id="srecent" aria-labelledby="srecenth" hidden><h2 id="srecenth">Recent</h2><div class="srlist" id="srlist"></div></section>
@@ -1808,9 +1808,11 @@ $("srt").addEventListener("click", e => { if (!e.target.closest("[data-rtdrop]")
 // start page: type, or pick an example; Decide for me; the team card
 $("lbox").addEventListener("input", () => { const t = $("lbox"); $("lsend").disabled = !t.value.trim(); t.style.height = "auto"; t.style.height = Math.min(180, Math.max(76, t.scrollHeight)) + "px"; });
 $("lbox").addEventListener("keydown", e => { if (e.key === "Enter" && !e.shiftKey){ e.preventDefault(); $("lform").requestSubmit(); } });
-// E25 (D251): the Budget field, a whole number of work credits from 1 to 100000 (the limits of the task setting J2_BUDGET); null stops the send
-const lbudget = () => { const el = $("lbudget"); if (!el) return undefined; const v = String(el.value).trim(), ok = /^[1-9][0-9]{0,5}$/.test(v) && +v <= 100000;
-  el.setCustomValidity(ok ? "" : "Budget: a whole number of work credits from 1 to 100000"); if (!ok){ el.reportValidity(); return null; } return +v; };
+// E25 (D251, D252): the Budget field: empty is the team default (undefined: no budget sent), else a whole number of work credits from 1
+// to 100000 (the limits of the task setting J2_BUDGET); null stops the send
+const lbudget = () => { const el = $("lbudget"); if (!el) return undefined; const v = String(el.value).trim(); if (v === ""){ el.setCustomValidity(""); return undefined; }
+  const ok = /^[1-9][0-9]{0,5}$/.test(v) && +v <= 100000;
+  el.setCustomValidity(ok ? "" : "Budget: a whole number of work credits from 1 to 100000, or empty for the team default"); if (!ok){ el.reportValidity(); return null; } return +v; };
 $("lform").addEventListener("submit", e => { e.preventDefault(); const t = $("lbox").value.trim(); if (!t) return; const b = lbudget(); if (b === null) return; $("lbox").value = ""; $("lsend").disabled = true; sendText(t, b); });
 $("schips").addEventListener("click", e => { const b = e.target.closest("[data-brief]"); if (!b) return; $("lbox").value = b.dataset.brief; $("lbox").dispatchEvent(new Event("input")); $("lbox").focus(); });
 $("sautoland").onclick = $("sauto").onclick = function(){ if (!this.disabled) sAutoSet(this.getAttribute("aria-checked") !== "true"); };

@@ -158,7 +158,7 @@ CASES = {
     "E24f": ([("const rtHref = (id, keys) => `${SutraCtx.pagePath}?view=simple&template=", 1)], ["const rtHref = (id, keys) => `/?view=simple"]),
     # E25 (D251): the start page's Budget (work credits), 100 by default, sent with the first message as `budget`
     "E25a": ([('<div class="schips" id="schips"></div><label for="lbudget"', 1),
-              ('Budget (work credits) <input id="lbudget" name="budget" type="number" inputmode="numeric" min="1" max="100000" step="1" value="100"', 1)],
+              ('Budget (work credits) <input id="lbudget" name="budget" type="number" inputmode="numeric" min="1" max="100000" step="1" placeholder="team default"', 1)],
              ['<div class="schips" id="schips"></div><button']),
     "E25b": ([("async function sendText(text, budget){", 1)], ["async function sendText(text){"]),
     "E25c": ([("...(budget ? {budget} : {})})", 1)], ["body:JSON.stringify(RTNEW.id && !RTNEW.sent ?"]),

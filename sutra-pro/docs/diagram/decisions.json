@@ -1248,5 +1248,10 @@
   "id": "D251",
   "label": "budget cap only if set; raises need the Requester (P25)",
   "anchor": "band:DEPARTMENT RUNTIME"
+ },
+ {
+  "id": "D252",
+  "label": "Budget field on home + team page, empty = team default",
+  "anchor": "band:DEPARTMENT RUNTIME"
  }
 ]

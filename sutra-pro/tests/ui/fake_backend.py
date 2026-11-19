@@ -1635,8 +1635,11 @@ def frame(event: str, data: Any, event_id: int | None) -> str:
 
 
 def _check_post(body: Any) -> list[dict]:
-    if not isinstance(body, dict) or set(body) - {"text", "choice"}:
-        return [violation("", "bad_body", "the body is {text, choice?}")]
+    if not isinstance(body, dict) or set(body) - {"text", "choice", "budget"}:
+        return [violation("", "bad_body", "the body is {text, choice?, budget?}")]
+    budget = body.get("budget")      # D252: the home box's Budget, as ChatPost takes it
+    if budget is not None and (isinstance(budget, bool) or not isinstance(budget, int) or not 1 <= budget <= 100000):
+        return [violation("budget", "bad_budget", "budget must be a whole number from 1 to 100000")]
     text = body.get("text")
     if not isinstance(text, str) or not 1 <= len(text.strip()) <= 8000:
         return [violation("text", "bad_text", "text must be 1 to 8000 characters")]
