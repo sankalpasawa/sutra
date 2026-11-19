@@ -273,6 +273,11 @@ def cmd_fetch(run: Run) -> None:
             # R1-9: on a real mailbox an unfiltered full list rarely ends within --max, so say how to start
             run.out("To start tracking, run once with --since-last --since 1d (or another window that fits in "
                     "--max); later --since-last runs then use the saved position")
+        elif fallback:  # R2-4: filtered full list did not fit
+            higher = f" or raise --max (up to {MAX_LIMIT})" if a.max < MAX_LIMIT else ""
+            run.out(f"Next: narrow --since (or --query){higher} so the list fits, then run --since-last again")
+        elif a.max < MAX_LIMIT:  # R2-4: history path did not fit
+            run.out(f"Next: run --since-last again with a higher --max (up to {MAX_LIMIT}) so all new mail fits")
         return
     store.save_history(cfg.state_dir, cfg.mock, a.mailbox, profile.get("historyId"), run.now())
     if fallback and query:

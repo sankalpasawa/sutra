@@ -902,6 +902,15 @@ class HistoryTests(FetchBase):
         self.assertIn("Stopped at --max, position not saved", out)
         self.assertEqual(p.read_bytes(), before)
         self.assertNotIn("To start tracking", out)  # history path truncated: no bootstrap hint
+        self.assertIn("Next: run --since-last again with a higher --max (up to 500)", out)  # R2-4
+
+    def test_filtered_fallback_truncated_next_step(self):  # R2-4
+        code, out, err = self.fetch("--since-last", "--since", "3650d", "--max", "2")
+        self.assertEqual(code, 0, err)
+        self.assertIn("Stopped at --max, position not saved", out)
+        self.assertIn("Next: narrow --since (or --query) or raise --max (up to 500) so the list fits", out)
+        self.assertNotIn("To start tracking", out)
+        self.assertFalse((self.state / "history.mock.json").exists())
 
     def test_since_last_bootstrap_hint(self):  # R1-9 / AC-48
         code, out, err = self.fetch("--since-last", "--max", "5")
