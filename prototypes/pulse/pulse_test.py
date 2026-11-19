@@ -164,6 +164,13 @@ class ErrorMapperTests(unittest.TestCase):
         self.assertEqual((e.code, e.exit_code), ("access_denied", 4))
         self.assertIn("Enable the Gmail API", e.message)
         self.assertIsInstance(errors.map_http_error(404, "notFound"), HistoryExpired)
+        for reason in ("rateLimitExceeded", "userRateLimitExceeded"):  # R1-4 / AC-42
+            t = errors.map_http_error(403, reason)
+            self.assertIsInstance(t, TransientError, reason)
+            self.assertEqual(t.status, 429)
+        e = errors.map_http_error(403, "dailyLimitExceeded")
+        self.assertEqual((e.code, e.exit_code), ("rate_limited", 5))
+        self.assertNotIn("Enable the Gmail API", e.message)
         for s in (429, 500, 503, 599):
             t = errors.map_http_error(s, "")
             self.assertIsInstance(t, TransientError)
@@ -1211,11 +1218,15 @@ class LiveTests(BaseCase):
                  (RefreshError("unauthorized_client: Client is unauthorized"), 4, "unauthorized_client"),
                  (HttpError(403, "accessNotConfigured"), 4, "access_denied"),
                  (HttpError(429, "rateLimitExceeded"), 5, "rate_limited"),
+                 (HttpError(403, "userRateLimitExceeded"), 5, "rate_limited"),
                  (HttpError(503, "backendError"), 5, "server_error")]
         for exc, exit_code, result in cases:
             code, _o, err = self.run_cli(CHECK, env=self.live_env(), factory=self.stub_factory(lambda n, k, e=exc: e))
             self.assertEqual((code, self.audit_rows()[-1]["result"]), (exit_code, result), result)
         self.assertEqual(len(self.svc.log), 5)  # 503 retried 5 times
+        code, _o, _e = self.run_cli(CHECK, env=self.live_env(),
+                                    factory=self.stub_factory(lambda n, k: HttpError(403, "rateLimitExceeded")))
+        self.assertEqual((code, len(self.svc.log), self.sleeps.delays), (5, 5, [1, 2, 4, 8]))  # R1-4: retried
 
     def test_live_requests(self):
         profile = load_inbox()["profile"]

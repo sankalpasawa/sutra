@@ -75,9 +75,18 @@ def map_refresh_error(text: str) -> PulseError:
     )
 
 
+RATE_LIMIT_403 = ("rateLimitExceeded", "userRateLimitExceeded")
+
+
 def map_http_error(status: int, reason: str = ""):
     """Map an HTTP status from the Gmail API. Returns (does not raise) the exception to raise."""
     reason = reason or "no reason given"
+    if status == 403 and reason in RATE_LIMIT_403:
+        return TransientError(429)  # Gmail reports per-user / per-project rate limits as 403 (R1-4)
+    if status == 403 and reason == "dailyLimitExceeded":
+        return PulseError("rate_limited",
+                          "Gmail's daily usage limit for this project is used up (HTTP 403, dailyLimitExceeded). "
+                          "Try again tomorrow.")
     if status == 403:
         return PulseError(
             "access_denied",

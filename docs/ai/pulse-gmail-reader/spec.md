@@ -30,6 +30,7 @@ Status: Refined   |   Task: pulse-gmail-reader   |   Date: 2026-11-19
 | R-20 | FR-23: only `fetch --since-last` saves a position. A plain fetch (with or without `--query`/`--since`) never reads or changes it. A `--since-last` fallback list that was filtered still saves, and prints that earlier mail outside the filter is not covered. AC-23 now uses `--since-last`; AC-39 added | Review R1-1: a filtered plain fetch moved the position and later `--since-last` runs silently skipped mail |
 | R-21 | FR-22a added: 404 on `messages.get` skips and counts the message; audit row gains a 12th field `skipped`; mock scenario `history_deleted`; AC-40 added | Review R1-2: one deleted message ended the run and, on `--since-last`, blocked every later run until the history expired |
 | R-22 | New code `network_error` (exit 5). Network failures during token refresh or a request are retried like 5xx; FR-14 extended; AC-41 added | Review R1-3: they exited `internal` with no retry |
+| R-23 | 403 with reason `rateLimitExceeded` or `userRateLimitExceeded` is retried like 429; 403 `dailyLimitExceeded` is `rate_limited` with no retry (retrying cannot help); AC-42 added | Review R1-4: usage limits were `access_denied` with advice to enable the API |
 
 ## Problem
 An internal tool needs to read selected mailboxes in the company Google Workspace domain, read-only. Domain-wide delegation lets one service account open any mailbox in the domain; Google does not limit it per mailbox. So the tool itself must limit which mailboxes are opened, why, and what is kept. Credentials (admin-approved key file, domain) arrive later, so step 1 must be complete and tested offline.
@@ -135,8 +136,8 @@ Common to `check`, `fetch`, `find`:
 | 4 | `key_unreadable` | Not readable or not valid service-account JSON | Path; never file contents |
 | 4 | `unauthorized_client` | Delegation not set, wrong client ID, or scope not exactly gmail.readonly | Admin console path + client ID + scope to grant |
 | 4 | `invalid_grant` | Mailbox not in domain, suspended, deleted, or clock skew | Those causes |
-| 4 | `access_denied` | 403 from Gmail (API not enabled, policy) | "Enable the Gmail API in the GCP project" and other causes |
-| 5 | `rate_limited` | 429 after all retries | Attempts made; try later |
+| 4 | `access_denied` | 403 from Gmail (API not enabled, policy), other than the usage-limit reasons under `rate_limited` | "Enable the Gmail API in the GCP project" and other causes |
+| 5 | `rate_limited` | 429, or 403 `rateLimitExceeded`/`userRateLimitExceeded`, after all retries; 403 `dailyLimitExceeded` at once (R-23) | Attempts made (or daily limit); try later |
 | 5 | `server_error` | 5xx after all retries | Attempts made |
 | 5 | `network_error` | Google unreachable after all retries: token refresh `TransportError`, `httplib2` errors, socket errors and timeouts (R-22) | "Could not reach Google", attempts made, check the network |
 
@@ -345,6 +346,7 @@ Each maps to a test in `pulse_test.py` unless marked (manual).
 | AC-39 | Given no state, when `fetch`, `fetch --query`, `fetch --since` run, then no state file is created; given a saved position, a plain `fetch --query` leaves it byte-identical; given `--since-last` with a filtered fallback, the position is saved and the "not read" note printed; an unfiltered fallback prints no note | FR-23, R-20 |
 | AC-40 | Given a saved position and history that lists 2 deleted ids among 2 live ones, when `fetch --since-last`, then exit 0, 2 rows, "Skipped 2 deleted messages", audit `skipped: 2`, position saved; the same through `LiveClient` with a 404 on `messages.get`; `find` skips a deleted message the same way; a 404 on `getProfile`/`messages.list` is `internal` | FR-22a, R-21 |
 | AC-41 | Given `LiveClient` whose request raises a `TransportError`, an `httplib2` error, `socket.timeout`, `ConnectionResetError` or `OSError`, when `check` runs, then 5 attempts with delays `[1, 2, 4, 8]`, exit 5 `network_error`, stderr "Could not reach Google"; two failures then success gives exit 0 | FR-14, R-22 |
+| AC-42 | The mapper turns 403 `rateLimitExceeded`/`userRateLimitExceeded` into a retryable 429 and 403 `dailyLimitExceeded` into `rate_limited`; through `LiveClient`, a persistent 403 `rateLimitExceeded` gives 5 attempts and exit 5 | FR-13, FR-14, R-23 |
 
 ## Assumptions
 | ID | Assumption |
