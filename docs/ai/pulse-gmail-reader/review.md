@@ -126,3 +126,44 @@ All 13 round 1 findings are fixed, and both Majors were confirmed by running the
 
 ### Earlier findings
 R1-1 to R1-13: fixed. R1-8's fix introduced R2-1, which is open.
+
+## Round 3  (2026-11-19, commit d6d8eca)
+Verdict: **Approved**
+
+All four round 2 findings are fixed, each with a test and, for R2-1, a rerun of the original scenario. The realpath change caused no regression in the home/root refusal, the allowlist, the audit or the file modes. Rate-limit matching still fails closed. Only Nits remain. New: 0 P0, 0 P1, 0 P2, 2 P3.
+
+### Findings
+| ID | Sev | File:line | Finding | Evidence | Suggested fix |
+|---|---|---|---|---|---|
+| R3-1 | P3 | `docs/ai/pulse-gmail-reader/architecture.md:288` | The `HttpError 403 -> access_denied` row predates R1-4. It does not list the 403 rate-limit route (retry, then `rate_limited`) or `dailyLimitExceeded` (`rate_limited`, no retry). spec.md R-23 is current. The developer already lists this as a known gap. | Line read at HEAD. | Split the row into three: rate-limit reasons, `dailyLimitExceeded`, other 403. |
+| R3-2 | P3 (unverified) | `prototypes/pulse/live_client.py:54-64`, `errors.py:96` | Normalisation is applied only to the rate-limit reasons. `DAILY_LIMIT_EXCEEDED` (uppercase) maps to `access_denied`, not `rate_limited`. And if one body carried both `dailyLimitExceeded` and a rate-limit reason, the rate-limit reason wins, so it retries for about 15 s and then ends as `rate_limited` with the retry hint, not "try again tomorrow". Both cases fail closed with a wrong hint. Neither body shape is confirmed to exist. | Direct `_http_reason` + `map_http_error` calls in a scratch check: `[{"reason":"DAILY_LIMIT_EXCEEDED"}]` gives `access_denied`; `[dailyLimitExceeded, RATE_LIMIT_EXCEEDED]` gives `TransientError`. | Settle it at L-5/L-6 with a recorded 403 body. No change needed before then. |
+
+### Round 2 findings
+| ID | Status | Evidence |
+|---|---|---|
+| R2-1 | Fixed | `config.py:98,104` resolves OUT_DIR and STATE_DIR once with `realpath`. Rerun of the round 2 scenario at HEAD (scratch HOME, `~/out -> real/`): mock fetch wrote to `real/_mock/ana@example.test/`, a planted `2020-01-01.jsonl` was removed, "Deleted 1 files", audit `count: 1`, the `out` link itself left intact. `test_purge_through_symlinked_out_dir` covers the same path. |
+| R2-2 | Fixed (code). Real 403 body still unverified, see R3-2 | `is_rate_limit_reason` is exact-match after lowercasing and removing underscores, against only the two known reasons. `_http_reason` scans every dict entry, skips non-dicts, None and non-strings, and falls back to `exc.reason`. Fail-closed check: `RESOURCE_EXHAUSTED`, `rate limit exceeded`, `RATE_LIMIT`, a string `error_details`, `[None, {}]` with message `Rate Limit Exceeded`, `[]` and `None` all map to `access_denied`, tried once (`test_live_403_reason_in_any_detail`, `test_error_mapper`, plus my scratch calls). Not adding `RESOURCE_EXHAUSTED` is the right call. |
+| R2-3 | Fixed | Both architecture.md rows now say `token_error` (exit 4), with the retryable case retried and then `server_error`. |
+| R2-4 | Fixed | `cli.py:276-280`: a filtered fallback stopped at `--max` prints "Next: narrow --since (or --query) or raise --max (up to 500)...", without the `--max` clause at 500. The history path gets its own hint below 500. Asserted at `pulse_test.py:905,911`. |
+
+### Regression checks on the realpath change
+| Check | Result |
+|---|---|
+| Home/root refusal | `PULSE_OUT_DIR` set to a symlink to `$HOME` and to a symlink to `/`: both exit 2, "must be a folder of its own". `test_out_dir_home_or_root_refused` still passes (`~`, trailing slash, `~/sub/..`). |
+| Symlinks below OUT_DIR | A symlinked mailbox folder under `_mock/`: purge "Deleted 0 files", the target file kept. Fetch into it exits 3 (refused). |
+| Allowlist / domain | `fetch --mailbox zed@other.test`: exit 3, "not in the configured domain ... Nothing was read." |
+| Audit | 12 fields, purge row `count: 1`. No content fields. |
+| File modes | `_mock` and mailbox folder 0700, output file 0600, state folder 0700, `audit.jsonl` 0600. |
+
+### Spec coverage
+No requirement changed this round. AC coverage from round 2 holds. The gap noted in round 2 (no symlinked OUT_DIR test) is closed by `test_purge_through_symlinked_out_dir`.
+
+### Tests run
+- `cd prototypes/pulse && python3 pulse_test.py`: 105 tests, OK (1 skipped: read-only folder test, root user), 2.5 s.
+- Removed test lines in `6fb10f4..2892c04`: 1 (a test stub `__init__` signature, replaced). No assertion weakened.
+- Mock CLI in a scratch HOME: the R2-1 scenario, home/root via symlink, symlinked mailbox (purge and fetch), allowlist refusal, modes, audit.
+- Scratch calls to `_http_reason` / `map_http_error` for the fail-closed cases above.
+- `git status --porcelain` after all runs: empty.
+
+### Earlier findings
+R1-1 to R1-13: fixed (round 2). R2-1 to R2-4: fixed. Open: R3-1 and R3-2, both P3.

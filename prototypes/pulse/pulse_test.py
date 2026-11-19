@@ -5,6 +5,9 @@ Google libraries are blocked and sockets raise, so any accidental network or Goo
 """
 import sys
 
+if sys.version_info < (3, 11):
+    sys.exit("Pulse needs Python 3.11 or newer (this is %d.%d). Try: python3.12 %s" % (sys.version_info[0], sys.version_info[1], " ".join(sys.argv)))
+
 # Block Google libraries before anything can import them (FR-5, NFR-1).
 for _name in ("google", "google.auth", "google.oauth2", "google.oauth2.service_account",
               "googleapiclient", "googleapiclient.discovery", "googleapiclient.errors"):
