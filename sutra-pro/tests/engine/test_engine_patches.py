@@ -1492,3 +1492,101 @@ def test_p23_a_run_that_ended_with_open_items_is_never_reused_as_a_folder(j2, ma
         assert bool(os.listdir(cwd)) is reused, (name, os.listdir(cwd))
         if not reused:
             assert got is None and any(e["type"] == "reuse_skipped" for e in run.events), name
+
+
+# ---- P24 (D250): Priority's move is a workflow's id and its envelope -------------------------------------------------------------
+# Beta run j2-20261118-090053-4a9c (people-hr): Priority COUNTERed Adaptation's three fixes from 24 to 18 (6, 7, 5) and also added
+# F-10 to their "fixes"; the validator logged "kept as Adaptation proposed it" as an autofix. Fixture: Adaptation's proposal (chat 32)
+# and Priority's COUNTER (call 14), with the three registered workflows they revise.
+P24 = json.loads((Path(__file__).parent / "fixtures" / "p24" / "counter_4a9c.json").read_text(encoding="utf-8"))
+
+
+@pytest.fixture(scope="module")
+def j2hp(tmp_path_factory):
+    """J2 with the run's document type (hiring_policy, its nine sections) made in its own type store."""
+    base = tmp_path_factory.mktemp("j2-hp")
+    with fresh_j2(base, J2_TYPES_DIR=base / "types") as mod:
+        mod.j2_types.create("hiring_policy", "Hiring policy", P24["sections"], practice=True, form="document")
+        mod._data_type.cache_clear()
+        yield mod
+
+
+@pytest.fixture
+def hp_run(j2hp, tmp_path, monkeypatch):
+    """The run as Priority found it: W-1 to W-3 done (72 of 100 spent), Adaptation's three fixes proposed. `rates`: the rate card
+    (none by default, as in the run)."""
+    def make(rates=None):
+        run = j2hp.J2Run(run_dir=tmp_path / "runs" / "j2-20261118-090053-4a9c")
+        run._apply_output("hiring_policy")
+        monkeypatch.setattr(j2hp, "RATES", rates or {})
+        run.goal, run.budget, run.spent = {"statement": "x", "done_when": list(P24["done_when"])}, P24["budget"], P24["spent_before"]
+        run.workflows = [{**w, "covers": [], "fixes": [], "section": w["id"], "envelope": {"money_limit": w["cost"]}, "charged": True,
+                          "outputs": [], "dependencies": [], "kind": "build", "cycle": 1} for w in P24["registered_before"]]
+        run.cycle = 2
+        table = j2hp.norm(json.loads(json.dumps(P24["proposal"])))
+        for w in table:
+            for k in (w.get("id"), w.get("name")):
+                run.proposed_fields[str(k)] = json.loads(json.dumps(w))
+        return run, table
+    return make
+
+
+def p24_counter(j2, run, table, workflows=None):
+    """Priority's turn and Adaptation's ACCEPT: the reply expanded (_carry with the table shown), then the validator (_agree)."""
+    wfs = run._carry(j2.norm(json.loads(json.dumps(workflows or P24["counter"]["workflows"]))), "Priority", table)
+    run._agree(wfs, counter=True)
+    return [m for m in run.chat if m["who"] == "validator"]
+
+
+def test_p24_the_counter_of_run_4a9c_is_charged_6_7_5_and_adaptation_is_told_of_f10(j2hp, hp_run):
+    run, table = hp_run()      # rate card off, as in the run: the same parts ["fix"] were charged 6, 7 and 5 (a card charges 8 each)
+    said = p24_counter(j2hp, run, table)
+    new = [w for w in run.workflows if w["id"] not in ("W-1", "W-2", "W-3")]
+    assert [(w["id"], w["cost"], w["envelope"]["money_limit"]) for w in new] == [("W-4", 6, 6), ("W-5", 7, 7), ("W-6", 5, 5)], run.rejections
+    assert all(w["fixes"] == ["D-3"] for w in new), [w["fixes"] for w in new]          # the proposal's, not the move's
+    assert said[-1].get("charged") == 18 and "Budget: 90/100 used." in said[-1]["text"], said[-1]
+    note = said[0]["text"]
+    assert note.startswith("@Adaptation Priority also set ") and said[0].get("audience") == "adaptation", note
+    for name in ("Fix unlabelled claims in roles and sourcing", "Fix unlabelled claims in selection, fairness and privacy",
+                 "Fix unlabelled claim in onboarding"):
+        assert f"fixes of '{name}' to [\"D-3\", \"F-10\"]" in note, note
+    assert "atoms" not in note, note      # the move's atoms only lack the item numbers code tagged on the proposal
+    assert "estimated_resources of 'Fix unlabelled claim in onboarding' to {\"money\": 5, \"calls\": 3, \"time_minutes\": 5}" in note, note
+    assert "stays as you proposed it" in note, note
+    assert not [f for f in run.__dict__.get("autofixes", []) if f["kind"] == "carried"], run.__dict__.get("autofixes")
+
+
+def test_p24_a_counter_without_a_money_limit_is_rejected(j2hp, hp_run):
+    run, table = hp_run()
+    bare = [{k: v for k, v in w.items() if k != "envelope"} for w in P24["counter"]["workflows"]]
+    p24_counter(j2hp, run, table, bare)
+    assert [w["id"] for w in run.workflows] == ["W-1", "W-2", "W-3"] and run.spent == 72
+    assert [r["reason"] for r in run.rejections] == ["a counter must state its money limit"] * 3, run.rejections
+
+
+def test_p24_a_grant_without_a_money_limit_still_keeps_the_proposals_price(j2hp, hp_run):
+    run, table = hp_run()
+    bare = [{"id": w["id"]} for w in P24["counter"]["workflows"]]
+    wfs, lost = run._kept_price(run._carry(j2hp.norm(bare), "Priority", table), table)
+    assert not lost and [j2hp.granted(w) for w in wfs] == [8, 9, 7]
+
+
+@pytest.mark.parametrize("limit, ok", [(7, False), (8, True), (9, True)])
+def test_p24_with_the_rate_card_on_it_is_a_floor_never_the_price(j2hp, hp_run, limit, ok):
+    run, table = hp_run({"fix": 8})
+    run.p_refused = {}
+    move = [{**w, "envelope": {**w["envelope"], "money_limit": limit}} for w in P24["counter"]["workflows"][:1]]
+    p24_counter(j2hp, run, table, move)
+    new = [w for w in run.workflows if w["id"] not in ("W-1", "W-2", "W-3")]
+    if ok:
+        assert [(w["cost"], w["envelope"]["money_limit"]) for w in new] == [(limit, limit)], (new, run.rejections)
+    else:
+        assert not new and [r["reason"] for r in run.rejections] == ["its money limit 7 is below its rate-card price 8 (fix), the floor"]
+
+
+def test_p24_priority_is_asked_for_the_id_and_the_envelope_only(j2hp):
+    fmt = j2hp.J2Run.PRICE_FMT
+    assert json.loads(re.sub(r" \(the proposed workflow's id\)", "", fmt).replace("str", '"s"').replace("int", "0")) == \
+        [{"id": "s", "envelope": {"money_limit": 0, "model_call_limit": 0, "time_limit_minutes": 0, "retry_limit": 0, "stop_loss": "s"}}]
+    src = Path(j2hp.__file__).read_text(encoding="utf-8")
+    assert src.count("self.PRICE_FMT") == 2 and "self.GRANT_FMT + ' (what you fund" not in src

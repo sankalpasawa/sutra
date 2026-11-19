@@ -166,19 +166,20 @@ def test_every_vendored_file_is_listed_and_every_listed_file_exists():
     assert on_disk == listed
 
 
-def test_the_patch_table_has_p1_to_p23_without_p6_p13_and_p20():
+def test_the_patch_table_has_p1_to_p24_without_p6_p13_and_p20():
     """P6 never existed; P13 (the run list and the change list) was retired into engine/runlist.py in sync 4 (D140); P17 and
-    P18 are new in sync 5 (D162); P19 is new in sync 6 (D179); P20 is only reserved; P21 is new with builder tools live (D245); P22 with the real-run cover rule (D246); P23 makes ended_workable true only for a clean end (D247)."""
+    P18 are new in sync 5 (D162); P19 is new in sync 6 (D179); P20 is only reserved; P21 is new with builder tools live (D245); P22 with the real-run cover rule (D246); P23 makes ended_workable true only for a clean end (D247); P24 makes
+    Priority's move a workflow's id and its envelope (D250)."""
     table = MD.read_text(encoding="utf-8").split("## Files")[0]
     ids = re.findall(r"^\| (P\d+) \|", table, re.M)
-    assert ids == [f"P{n}" for n in range(1, 24) if n not in (6, 13, 20)]
+    assert ids == [f"P{n}" for n in range(1, 25) if n not in (6, 13, 20)]
     assert "P20" not in ids
     used = {p for _, _, patches, _, _ in rows() for p in patches.split(",") if p != "-"}
     assert used == set(ids)
 
 
 def test_a_patch_listed_for_a_file_leaves_its_mark_in_it():
-    marks = {"P23": ("j2.py", "P23 (D247)"), "P22": ("j2.py", "def _repeat_stop"), "P21": ("j2.py", "from .rehydrate import HOST_FILES"), "P19": ("j2.py", "review_enabled"), "P3": ("j2.py", "run_dir=None"), "P4": ("j2.py", "def apply_override"), "P9": ("j2.py", "system_addendum"),
+    marks = {"P24": ("j2.py", "PRICE_FMT = "), "P23": ("j2.py", "P23 (D247)"), "P22": ("j2.py", "def _repeat_stop"), "P21": ("j2.py", "from .rehydrate import HOST_FILES"), "P19": ("j2.py", "review_enabled"), "P3": ("j2.py", "run_dir=None"), "P4": ("j2.py", "def apply_override"), "P9": ("j2.py", "system_addendum"),
              "P10": ("j2_template_lib.py", "def _mark_run_template_used"), "P11": ("j2.py", "def rehydrate"),
              "P14": ("j2.py", '(self.out or {}).get("single")'),
              "P17": ("j2_types.py", "def _create"), "P18": ("j2_types.py", "def register"),

@@ -303,13 +303,14 @@ def must_keep(criterion, goal):
 
 
 def granted(w):
-    """Rate-card price when the rate card is on; otherwise the money Priority granted (envelope.money_limit),
-    and Adaptation's estimate only if no limit was given."""
-    c, _ = price(w)
-    if c is not None:
-        return c
+    """The money Priority granted (envelope.money_limit); without a limit, the rate-card price when the rate card is on,
+    else Adaptation's estimate. P24 (D250): the limit is what is charged, also with the rate card on, where the rate-card
+    price is a floor the validator checks (_register), never a price put in the place of Priority's."""
     m = as_int((w.get("envelope") or {}).get("money_limit"))
-    return m if m > 0 else wf_cost(w)
+    if m > 0:
+        return m
+    c, _ = price(w)
+    return c if c is not None else wf_cost(w)
 
 
 def granted_total(wfs):
@@ -6927,6 +6928,9 @@ class J2Run:
 
     GRANT_FMT = WF_FMT[:-2] + (', "envelope": {"money_limit": int, "model_call_limit": int, "time_limit_minutes": int, '
                                '"retry_limit": int, "stop_loss": str}}]')
+    # P24 (D250): what Priority sends for each workflow it funds (both pricing turns): the proposal's id and the envelope
+    PRICE_FMT = ('[{"id": str (the proposed workflow\'s id), "envelope": {"money_limit": int, "model_call_limit": int, '
+                 '"time_limit_minutes": int, "retry_limit": int, "stop_loss": str}}]')
 
     def _gaps(self):
         return [r["criterion"] for r in (self.audits[-1]["results"] if self.audits else []) if not r["pass"]]
@@ -7799,25 +7803,34 @@ class J2Run:
     def _own_sections(w):
         return [str(x) for x in w.get("sections") or []] if isinstance(w.get("sections"), list) else []
 
-    PRIORITY_OWNS = ("cost", "estimate", "envelope")      # price, and the envelope: limits, approval, stop-loss
+    PRIORITY_OWNS = ("envelope",)      # P24 (D250): Priority's move is a workflow's id and its envelope, nothing else
+    NOT_SENT = ("id", "name", "cost", "estimate")      # how a move names a workflow, and what norm() adds to every one
 
-    def _carry(self, wfs):
-        """Priority's GRANT or COUNTER, or a ruling, echoes each workflow; only its price and envelope are Priority's.
-        Code registers Adaptation's proposal (found by id, then name) with just PRIORITY_OWNS taken from the echo, so
-        the grant can't drop or change a planning field (runs/j2-20261111-124718 dropped "sections";
-        runs/release/j2-20261114-130736 dropped "real_run" and set covers [1]). One Adaptation never proposed is
-        left as it is."""
-        out = []
+    def _carry(self, wfs, who="The ruling", shown=None):
+        """P24 (D250): a pricing move (Priority's GRANT or COUNTER, or a ruling) is each workflow's id and its envelope;
+        the rest of the workflow is Adaptation's proposal (found by id, then name), so it is registered as Adaptation's
+        proposal plus the move's envelope (runs/j2-20261111-124718 lost "sections" to an echo; runs/release/
+        j2-20261114-130736 lost "real_run"). A field the move sends with another value than Adaptation proposed is
+        neither taken nor dropped in silence: Adaptation gets a visible note naming the field and the move's value
+        (runs/j2-20261118-090053-4a9c: a COUNTER added F-10 to "fixes" and was logged only as an autofix). A field the
+        move leaves out is not part of it. One Adaptation never proposed is left as it is. `shown`: the table Priority
+        priced (a ruling's workflows), looked up before the proposals."""
+        out, said = [], []
+        by = {**self.proposed_fields, **{str(k): x for x in shown or [] for k in (x.get("name"), x.get("id")) if k}}
+        # the proposal's atoms carry the item numbers code tagged in place (cover_expected); an echo is compared the same way
+        same = lambda k, a, b: a == b or k == "atoms" and isinstance(a, list) and \
+            [cover_expected(copy.deepcopy(x)) if isinstance(x, dict) else x for x in a] == b
         for w in wfs:
-            src = (self.proposed_fields.get(str(w.get("id"))) or self.proposed_fields.get(str(w.get("name"))) or {}) \
-                if isinstance(w, dict) else {}
+            src = (by.get(str(w.get("id"))) or by.get(str(w.get("name"))) or {}) if isinstance(w, dict) else {}
             if src:
-                put = sorted(k for k in set(src) | set(w) if k not in self.PRIORITY_OWNS and w.get(k) != src.get(k))
-                if put:
-                    self._autofix(w.get("name") or "?", "carried", "Priority's or the ruling's version dropped or changed "
-                                  + ", ".join(put) + "; kept as Adaptation proposed it")
+                said += [f"{k} of '{src.get('name') or '?'}' to {json.dumps(w[k], ensure_ascii=False)[:200]}"
+                         for k in sorted(w) if k not in self.PRIORITY_OWNS + self.NOT_SENT and not same(k, w[k], src.get(k))]
                 w = {**copy.deepcopy(src), **{k: w[k] for k in self.PRIORITY_OWNS if k in w}}
             out.append(w)
+        if said:
+            self.post("validator", f"@Adaptation {who} also set {'; '.join(said)}. Only the envelope is theirs to set, so "
+                                   "the workflow stays as you proposed it; propose a revision to make that change.",
+                      audience="adaptation")
         return out
 
     REVISION_EXAMPLE = {"say": "@Priority One revision of W-1: its builder rewrites the section with the corrected check.",
@@ -8278,7 +8291,10 @@ class J2Run:
                 say = ("@Priority The stories are what make a small cafe feel warm and personal. I can shrink them to "
                        "two (20)." if self.exchanges == 1 else
                        "@Priority Without any content beyond listings the page feels empty. I can't accept zero.")
-                return json.dumps({"say": say, "act": "REVISE", "workflows": with_atoms(offer + [stories], self.out.get("mock_atom")),
+                # P24 (D250): the cut to the animations is Adaptation's to make (Priority sends only a money limit of 10)
+                cut = [{**w, "parts": ["interactive_feature"]} if "anim" in str(w.get("name")).lower()
+                       and as_int((w.get("envelope") or {}).get("money_limit")) == 10 else w for w in offer]
+                return json.dumps({"say": say, "act": "REVISE", "workflows": with_atoms(cut + [stories], self.out.get("mock_atom")),
                                    "next": "Priority"})
             return json.dumps({"say": "@Priority Accepted.", "act": "ACCEPT", "workflows": [], "next": "Priority"})
         fmt = ('{"say": str, "act": "ACCEPT"|"REVISE"|"PARK", "workflows": ' + self.WF_FMT
@@ -8308,7 +8324,7 @@ class J2Run:
             self._attempt(c, "adaptation", r.get("say"), "accepts Priority's offer", m, True, self.exchanges)
             self._settle(c, "priority", f"Adaptation accepted Priority's {dec.upper()}: {brief_list(offer)} goes to "
                                         "the validator.")
-            return self._agree(offer)
+            return self._agree(offer, counter=dec == "counter")
         if act == "PARK":
             m = self._say("adaptation", r.get("say", ""), None, note, act="PARK", **meta)
             self._attempt(c, "adaptation", r.get("say"), "parks the proposal", m, True, self.exchanges)
@@ -8339,13 +8355,14 @@ class J2Run:
         self.step = 3
         table, remaining = h.get("table") or [], self.budget - self.spent
 
-        def env(w):
-            return {**w, "envelope": {"money_limit": w["cost"], "model_call_limit": 2, "time_limit_minutes": 10,
-                                      "retry_limit": 1, "stop_loss": "stop if the build fails twice"}}
+        def env(w):      # P24 (D250): a move names the workflow and sets its envelope, nothing else
+            return {**({"id": w["id"]} if w.get("id") else {}), "name": w.get("name"),
+                    "envelope": {"money_limit": w["cost"], "model_call_limit": 2, "time_limit_minutes": 10,
+                                 "retry_limit": 1, "stop_loss": "stop if the build fails twice"}}
 
         def mock():
             if self.cycle == 1 and len(table) >= 4 and any("stories" in w["name"].lower() for w in table):
-                offer = [env({**w, "parts": ["interactive_feature"], "cost": 10} if "anim" in w["name"].lower() else w)
+                offer = [env({**w, "cost": 10} if "anim" in w["name"].lower() else w)
                          for w in table if "stories" not in w["name"].lower()]
                 say = ("@Adaptation Scaffold and core sections: granted. The stories serve no done-when item, refused. "
                        "Animations cut to 10. I'm keeping the rest in reserve for Audit fixes."
@@ -8363,8 +8380,9 @@ class J2Run:
                                "decision": "GRANT", "workflows": [env(w) for w in table], "next": "Adaptation",
                                **ask})
         fmt = ('{"say": str (address @Adaptation), "decision": "GRANT"|"COUNTER"|"REFUSE", '
-               '"workflows": ' + self.GRANT_FMT + ' (what you fund, each with its envelope; for COUNTER, your '
-               'smaller version), '
+               '"workflows": ' + self.PRICE_FMT + ' (one entry per workflow you fund: its id and your envelope, nothing '
+               'else, since the workflow itself stays as Adaptation proposed it; a COUNTER funds fewer workflows or '
+               'sets a lower money_limit, and must state every money_limit), '
                + next_field(("adaptation", "identity"), f"Adaptation normally; Identity only once {MAX_ATTEMPTS} "
                             "exchanges are used") + "}")
         task = (f"ON THE TABLE: {json.dumps(table)} (cost {cost_of(table)}, remaining budget {remaining}). "
@@ -8373,8 +8391,8 @@ class J2Run:
                       "workflow, or a fix priced as a cheaper part): COUNTER or REFUSE with that reason. "
                       "A COUNTER names in say what you cut and why. "
                       f"Exchange {self.exchanges + 1} of {MAX_ATTEMPTS}; after that Identity rules on both final "
-                      "positions." + (" Prices are fixed by the rate card: to spend less, remove parts or whole "
-                                      "workflows, not the price." if RATES else "")
+                      "positions." + (" The rate card is a floor: a money_limit below a workflow's rate-card price is "
+                                      "rejected, so to spend less, fund fewer workflows." if RATES else "")
                       + (f" CHANGE {self.change['id']}: its planning-document revisions ({', '.join(self.change['docs'])})"
                          " come first by the change rule; never cut them. If the change plan doesn't fit, REFUSE and "
                          "say how much more it needs." if self.change and self.change["phase"] == "plan"
@@ -8383,7 +8401,7 @@ class J2Run:
         p = self.call("priority", fmt, task, mock)
         for _ in range(2):      # a GRANT carries a price; the reply, not the workflow, is re-asked when it doesn't
             dec = str(p.get("decision") or "").lower()
-            wfs = norm(p.get("workflows")) or (table if dec == "grant" else [])
+            wfs = self._carry(norm(p.get("workflows")), "Priority", table) or (table if dec == "grant" else [])
             if dec != "grant":
                 break
             wfs, lost = self._kept_price(wfs, table)
@@ -8394,8 +8412,8 @@ class J2Run:
                       "proposal it was shown has no price either. Priority is asked once more; the workflow is not "
                       "rejected for that.", redirect=True)
             p = self.call("priority", fmt, task + "\nYOUR LAST REPLY GRANTED WITHOUT A PRICE: every workflow in "
-                          "workflows needs its own cost (or estimated_resources.money) and envelope.money_limit. "
-                          "Send the same decision again with those filled in.", mock)
+                          "workflows needs its own envelope.money_limit. Send the same decision again with those "
+                          "filled in.", mock)
         note = None
         if dec not in ("grant", "counter", "refuse"):
             dec, wfs, note = "refuse", [], f"Priority's decision '{p.get('decision')}' isn't GRANT/COUNTER/REFUSE. Treated as REFUSE."
@@ -8462,18 +8480,20 @@ class J2Run:
             keep = list(table)
             while keep and granted_total(keep) > remaining:
                 keep.pop()
-            env = lambda w: {**w, "envelope": {"money_limit": w["cost"], "model_call_limit": 2, "retry_limit": 1}}
+            env = lambda w: {**({"id": w["id"]} if w.get("id") else {}), "name": w.get("name"),      # P24 (D250)
+                             "envelope": {"money_limit": w["cost"], "model_call_limit": 2, "retry_limit": 1}}
             return json.dumps({"say": f"@Adaptation Identity's ruling priced: {granted_total(keep)} of {remaining} left.",
                                "decision": "GRANT" if len(keep) == len(table) else "COUNTER",
                                "workflows": [env(w) for w in keep]})
-        p = self.call("priority", '{"say": str, "decision": "GRANT"|"COUNTER"|"REFUSE", "workflows": ' + self.GRANT_FMT
-                      + ' (what you fund, each with its envelope)}',
+        p = self.call("priority", '{"say": str, "decision": "GRANT"|"COUNTER"|"REFUSE", "workflows": ' + self.PRICE_FMT
+                      + ' (one entry per workflow you fund: its id and your envelope, nothing else; a COUNTER must state '
+                        'every money_limit)}',
                       f"IDENTITY RULED ON {c['id']}: {(c['identity'] or [{}])[-1].get('say')}\nTHE RULING TO PRICE: "
                       f"{json.dumps(table)} (cost {granted_total(table)}, remaining budget {remaining}).\nPrice it once: "
                       "GRANT, COUNTER (a smaller version you will fund) or REFUSE with a resource reason. Your answer is "
                       "final.", mock)
         dec = str(p.get("decision") or "").lower()
-        wfs = norm(p.get("workflows")) or (table if dec == "grant" else [])
+        wfs = self._carry(norm(p.get("workflows")), "Priority", table) or (table if dec == "grant" else [])
         if dec == "grant":      # the same rule: an echo without a price keeps the price code computed for the ruling
             wfs = self._kept_price(wfs, table)[0]
         if dec not in ("grant", "counter", "refuse") or granted_total(wfs) > remaining or (dec == "counter" and not wfs):
@@ -8499,7 +8519,7 @@ class J2Run:
                                   conflict=c["id"], auto=True)
         self._settle(c, "priority", f"Priority's final answer on Identity's ruling: {dec.upper()} {brief_list(wfs)}.")
         if wfs:
-            return self._agree(wfs)
+            return self._agree(wfs, counter=dec == "counter")
         self.conflict, self.exchanges, self.a_pos, self.p_pos = None, 0, [], []
         self._parked(f"Priority refused Identity's ruling on {c['id']} when pricing it")
 
@@ -8525,7 +8545,7 @@ class J2Run:
         wfs = (c.get("repricing") or {}).get("workflows") or []
         self._settle(c, "priority", f"The Requester kept Priority's final answer: {brief_list(wfs)}.")
         if wfs:
-            return self._agree(wfs)
+            return self._agree(wfs, counter=(c.get("repricing") or {}).get("decision") == "COUNTER")
         self.conflict, self.exchanges, self.a_pos, self.p_pos = None, 0, [], []
         self._parked(f"the Requester kept Priority's refusal on {c['id']}")
 
@@ -8558,11 +8578,11 @@ class J2Run:
                                 f"the price it had already computed: {said}.")
         return out, lost
 
-    def _agree(self, wfs):
+    def _agree(self, wfs, counter=False):
         self.step = 5
         wfs = self._carry(wfs)
         first = self.doc and not self.workflows       # a document stage's first plan
-        registered, refused, defaults = self._register(wfs)
+        registered, refused, defaults = self._register(wfs, counter)
         self.cycle_registered = self.cycle_registered or bool(registered)
         if self.conflict:
             self.conflict["registered"] = [w["name"] for w in registered]
@@ -8776,9 +8796,11 @@ class J2Run:
             self._autofix(w.get("name") or "?", "plan_fields", "filled from the realization plan: " + ", ".join(
                 f"{f}={w[f]!r}" for f in got))
 
-    def _register(self, agreed):
+    def _register(self, agreed, counter=False):
         """J2.e, plain code: every proposal is checked before it is registered, including one from an Identity ruling.
         Checks: required fields present, priced from the rate card, nothing Priority refused, cost fits what's left.
+        P24 (D250): the money limit is charged; a COUNTER (`counter`) without one is rejected, and with the rate card on
+        a limit below the rate-card price is rejected with the reason, never raised to it.
         With realization on, a proposal the plan has not judged (a fix, a replacement, a relay revision) is judged first
         (_late_judge), and every workflow is placed in a stage with a certainty zone (_place_wf)."""
         remaining, registered, refused, defaults = self.budget - self.spent, [], [], []
@@ -8844,8 +8866,12 @@ class J2Run:
                             f"(sections: {', '.join(self.out['sections'])})") if bad_secs
                       else f"it names no section of the {self.out['noun']} (sections)" if no_sec
                       else f"{self.p_refused[name]}, so it can't be registered" if name in self.p_refused
+                      else "a counter must state its money limit"      # P24 (D250)
+                      if counter and as_int((w.get("envelope") or {}).get("money_limit")) <= 0
                       else "no rate-card parts, so it has no price" if RATES and rc is None
                       else f"unknown rate-card parts {unknown}; allowed: {', '.join(RATES)}" if unknown
+                      else (f"its money limit {c} is below its rate-card price {rc} ({' + '.join(map(str, w['parts']))}), "
+                            "the floor") if rc is not None and c < rc      # P24 (D250)
                       else (f"the judge scored it {w['judge']['score']:.2f}, below the {j2_realization.THRESHOLD:.2f} gate"
                             f" (weakest: {w['judge'].get('weakest')}" + (f": {w['judge']['missing'][0]}" if w['judge'].get('missing') else "") + ")")
                       if (w.get("judge") or {}).get("ready") is False

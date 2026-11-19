@@ -27,8 +27,9 @@ same normalisation as J2's `plain_unchanged`). The engine is expected to ask the
                       user text lists the run's records, so the child fixes J2's time-of-day stamp (`time.strftime("%H:%M:%S")`)
                       and `feed_digest` ignores the wall-clock seconds in it, see `freeze_time_of_day` and `feed_digest`
 
-`--engine` records the vendored engine's run instead (to compare by eye or to bootstrap): it writes nothing unless `--out-dir` is
-given. `--check` records again and exits 1 when a file differs. The module is imported by the test for `SCENARIOS`, `engine_result`
+`--engine` records the vendored engine's run instead: it writes nothing unless `--out-dir` is given. Since D249 the goldens in
+`tests/engine/golden/` are recorded this way (`--engine --out-dir tests/engine/golden`): J2 is frozen and the app is the product, so
+the engine at the pin with its recorded patches is the reference, and a patch that changes a prompt says so in VENDORED.md (P24, P25). `--check` records again and exits 1 when a file differs. The module is imported by the test for `SCENARIOS`, `engine_result`
 and `differences`, so the recorder and the test ask the same questions.
 """
 import argparse
@@ -269,7 +270,7 @@ def main(argv=None):
         return child(*a.child)
     names = a.scenario or list(SCENARIOS)
     if a.engine:
-        data = {n: engine_result(n) for n in names}
+        data = {n: {**engine_result(n), "j2_commit": a.commit} for n in names}      # D249: the pin the engine is vendored from
     else:
         if not a.source:
             ap.error("--source (or SUTRA_J2_CHECKOUT) is required")

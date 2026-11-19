@@ -1233,5 +1233,15 @@
   "id": "D247",
   "label": "ended workable = clean Done: only (P23)",
   "anchor": "band:DEPARTMENT RUNTIME"
+ },
+ {
+  "id": "D249",
+  "label": "prompts may differ from J2 via patches (amends D13)",
+  "anchor": "band:DEPARTMENT RUNTIME"
+ },
+ {
+  "id": "D250",
+  "label": "Priority's move = id + envelope (P24)",
+  "anchor": "band:DEPARTMENT RUNTIME"
  }
 ]
