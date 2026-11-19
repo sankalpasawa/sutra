@@ -236,5 +236,69 @@ class PolicyTests(BaseCase):
         self.assertNotIn("placeholder", warnings[0])
 
 
+# ---------------------------------------------------------------- T4: audit log
+import audit  # noqa: E402
+
+IS_ROOT = os.geteuid() == 0
+
+
+def mode_of(p) -> int:
+    return stat.S_IMODE(os.lstat(p).st_mode)
+
+
+def read_audit(state: Path) -> list:
+    p = state / "audit.jsonl"
+    if not p.exists():
+        return []
+    return [json.loads(line) for line in p.read_text(encoding="utf-8").splitlines()]
+
+
+class AuditTests(BaseCase):
+    def test_audit_create_and_roundtrip(self):
+        sd = self.state / "nested"
+        log = audit.AuditLog(sd)
+        row = audit.build_row(mode="mock", command="check", mailbox="ana@example.test", reason="unit test",
+                              count=0, result="ok")
+        log.write(row)
+        log.write(row)
+        log.close()
+        self.assertEqual(mode_of(sd / "audit.jsonl"), 0o600)
+        self.assertEqual(mode_of(sd), 0o700)
+        rows = read_audit(sd)
+        self.assertEqual(len(rows), 2)
+        self.assertEqual(rows[0], row)
+        self.assertEqual(list(rows[0]), list(audit.FIELDS))
+
+    def test_build_row_rejects_unknown(self):
+        with self.assertRaises(ValueError):
+            audit.build_row(subject="x")
+        row = audit.build_row(command="purge")
+        self.assertIsNone(row["mailbox"])
+        self.assertTrue(row["ts"].endswith("+00:00"))
+
+    def test_audit_unavailable_state_is_file(self):  # AC-28 (unit), works as any user
+        f = self.tmp / "statefile"
+        f.write_text("x", encoding="utf-8")
+        with self.assertRaises(PulseError) as cm:
+            audit.AuditLog(f)
+        self.assertEqual((cm.exception.code, cm.exception.exit_code), ("audit_unavailable", 3))
+
+    @unittest.skipIf(IS_ROOT, "root ignores directory permissions")
+    def test_audit_unavailable_readonly_dir(self):  # AC-28 (unit)
+        os.chmod(self.state, 0o500)
+        with self.assertRaises(PulseError) as cm:
+            audit.AuditLog(self.state)
+        self.assertEqual(cm.exception.code, "audit_unavailable")
+
+    def test_audit_symlink_refused(self):  # AC-21 (audit part, unit)
+        target = self.tmp / "target.txt"
+        target.write_text("original\n", encoding="utf-8")
+        (self.state / "audit.jsonl").symlink_to(target)
+        with self.assertRaises(PulseError) as cm:
+            audit.AuditLog(self.state)
+        self.assertEqual(cm.exception.code, "audit_unavailable")
+        self.assertEqual(target.read_text(encoding="utf-8"), "original\n")
+
+
 if __name__ == "__main__":
     unittest.main(verbosity=2)
