@@ -68,6 +68,29 @@ class BaseCase(unittest.TestCase):
         e.update(extra)
         return e
 
+    def run_cli(self, argv, env=None, scenario=None, factory=None, now=None):
+        """Run cli.main in-process against temp dirs. Records every client built and every sleep."""
+        env = dict(self.env() if env is None else env)
+        if scenario:
+            env["PULSE_MOCK_SCENARIO"] = scenario
+        self.clients = []
+        self.sleeps = Recorder()
+
+        def fac(cfg, mailbox):
+            c = (factory or gmail_client.make_client)(cfg, mailbox)
+            self.clients.append(c)
+            return c
+        out, err = io.StringIO(), io.StringIO()
+        code = cli.main(argv, environ=env, env_file=self.env_file, client_factory=fac, sleep=self.sleeps,
+                        now=now, stdout=out, stderr=err)
+        return code, out.getvalue(), err.getvalue()
+
+    def calls(self) -> list:
+        return [n for c in getattr(self, "clients", []) for n in c.call_names()]
+
+    def audit_rows(self) -> list:
+        return read_audit(self.state)
+
 
 # ---------------------------------------------------------------- T2: config and error mappers
 class ConfigTests(BaseCase):
@@ -533,6 +556,141 @@ class ParseTests(unittest.TestCase):
         row = self.full("msg-10")
         self.assertEqual(len(row["body_text"]), parse.BODY_MAX)
         self.assertTrue(row["body_truncated"])
+
+
+# ---------------------------------------------------------------- T8: CLI and check
+import cli  # noqa: E402
+
+MB = ["--mailbox", "ana@example.test"]
+WHY = ["--reason", "automated test of the pulse reader"]
+CHECK = ["check", *MB, *WHY]
+READ_CMDS = [["check"]]  # extended as fetch and find are built
+
+
+class CheckCliTests(BaseCase):
+    def test_check_output_and_calls(self):  # AC-12
+        code, out, err = self.run_cli(CHECK)
+        self.assertEqual(code, 0, err)
+        lines = out.splitlines()
+        self.assertIn("MOCK MODE", lines[0])
+        self.assertIn("Mailbox: ana@example.test", out)
+        inbox = load_inbox()
+        self.assertIn(f"Messages: {inbox['profile']['messagesTotal']}", out)
+        self.assertIn(f"Threads: {inbox['profile']['threadsTotal']}", out)
+        self.assertEqual(self.calls(), ["get_profile"])
+
+    def test_live_missing_key_cli(self):  # AC-4
+        live = self.env(mock=False, PULSE_DOMAIN="example.test", PULSE_ALLOWLIST=str(FIX / "allowlist.txt"))
+        code, _out, err = self.run_cli(CHECK, env=live)
+        self.assertEqual(code, 2)
+        self.assertIn("PULSE_SA_KEY_PATH", err)
+        self.assertFalse((self.state / "audit.jsonl").exists())
+        self.assertEqual(self.clients, [])
+        mock = self.env(PULSE_DOMAIN="realcompany.example", PULSE_ALLOWLIST="/nowhere")
+        code, out, err = self.run_cli(CHECK, env=mock)
+        self.assertEqual(code, 0, err)
+
+    def test_wrong_domain_cli(self):  # AC-8
+        for cmd in READ_CMDS:
+            for m in ("x@other.test", "x@sub.example.test"):
+                code, _o, err = self.run_cli([*cmd, "--mailbox", m, *WHY])
+                self.assertEqual(code, 3)
+                self.assertIn("domain", err)
+                self.assertEqual(self.clients, [])
+        self.assertEqual({r["result"] for r in self.audit_rows()}, {"wrong_domain"})
+
+    def test_not_allowlisted_cli(self):  # AC-9 (mock)
+        code, _o, err = self.run_cli(["check", "--mailbox", "bob@example.test", *WHY])
+        self.assertEqual(code, 3)
+        self.assertIn("allowlist", err)
+        self.assertEqual(self.clients, [])
+
+    def test_reason_validation(self):  # AC-10
+        for cmd in (["check", *MB], ["fetch", *MB], ["find", *MB, "--rules", str(FIX / "rules.sample.json")]):
+            for reason in ([], ["--reason", "short"], ["--reason", "x" * 501]):
+                code, _o, err = self.run_cli(cmd + reason)
+                self.assertEqual(code, 2, (cmd, reason))
+                self.assertIn("Usage error", err)
+        self.assertEqual(self.audit_rows(), [])
+
+    def test_mailbox_mismatch_check(self):  # AC-11 (check)
+        code, _o, err = self.run_cli(CHECK, scenario="mismatch")
+        self.assertEqual(code, 3)
+        self.assertIn("other@example.test", err)
+        self.assertEqual(self.calls(), ["get_profile"])
+        self.assertEqual(self.audit_rows()[-1]["result"], "mailbox_mismatch")
+
+    def test_auth_scenarios(self):  # AC-13(a)
+        for scen, exit_code, phrase in (("unauthorized_client", 4, "Domain-wide delegation"),
+                                        ("invalid_grant", 4, "suspended"),
+                                        ("access_denied", 4, "Enable the Gmail API")):
+            code, _o, err = self.run_cli(CHECK, scenario=scen)
+            self.assertEqual(code, exit_code, scen)
+            self.assertIn(phrase, err)
+            self.assertEqual(self.audit_rows()[-1]["result"], scen)
+
+    def test_audit_rows_check(self):  # AC-27 (check part)
+        self.run_cli(CHECK)
+        self.run_cli(["check", "--mailbox", "bob@example.test", *WHY])
+        self.run_cli(["check", *MB, "--reason", "short"])
+        rows = self.audit_rows()
+        self.assertEqual(len(rows), 2)
+        for r in rows:
+            self.assertEqual(list(r), list(audit.FIELDS))
+            self.assertEqual(r["mode"], "mock")
+            self.assertEqual(r["command"], "check")
+        self.assertEqual([r["result"] for r in rows], ["ok", "not_allowlisted"])
+        self.assertEqual(rows[0]["reason"], "automated test of the pulse reader")
+
+    def test_audit_unavailable_cli(self):  # AC-28
+        state_file = self.tmp / "statefile"
+        state_file.write_text("x", encoding="utf-8")
+        code, _o, err = self.run_cli(["fetch", *MB, *WHY], env=self.env(PULSE_STATE_DIR=str(state_file)))
+        self.assertEqual(code, 3)
+        self.assertIn("audit log", err)
+        self.assertEqual(self.clients, [])
+
+    def test_max_bounds(self):  # AC-33
+        for n in ("0", "501", "x"):
+            code, _o, err = self.run_cli(["fetch", *MB, *WHY, "--max", n])
+            self.assertEqual(code, 2)
+            self.assertIn("--max", err)
+        for s in ("7", "0d", "3651d", "87601h", "1w"):
+            self.assertEqual(self.run_cli(["fetch", *MB, *WHY, "--since", s])[0], 2, s)
+        self.assertEqual(self.audit_rows(), [])
+
+    def test_mailbox_format_cli(self):  # AC-35
+        for m in ("../x@example.test", "a/b@example.test"):
+            code, _o, err = self.run_cli(["check", "--mailbox", m, *WHY])
+            self.assertEqual(code, 2)
+            self.assertIn("--mailbox", err)
+        self.assertEqual(list(self.out.iterdir()), [])
+        self.assertEqual(list(self.state.iterdir()), [])
+
+    def test_internal_error(self):  # AC-36
+        code, _o, err = self.run_cli(CHECK, scenario="boom")
+        self.assertEqual(code, 1)
+        self.assertIn("Unexpected error", err)
+        self.assertNotIn("Traceback", err)
+        self.assertEqual(self.audit_rows()[-1]["result"], "internal")
+        code, _o, err = self.run_cli(CHECK, env=self.env(PULSE_DEBUG="1"), scenario="boom")
+        self.assertEqual(code, 1)
+        self.assertIn("Traceback", err)
+
+    def test_concurrent_audit(self):  # AC-34 / NFR-6
+        env = {"PATH": os.environ.get("PATH", "/usr/bin:/bin"), "HOME": str(self.home), "PULSE_MOCK": "1",
+               "PULSE_OUT_DIR": str(self.out), "PULSE_STATE_DIR": str(self.state), "PULSE_RETENTION_DAYS": "30",
+               "PULSE_MOCK_SCENARIO": "default", "PULSE_DEBUG": "0", "PULSE_SA_KEY_PATH": "/nonexistent",
+               "PULSE_DOMAIN": "example.test", "PULSE_ALLOWLIST": "/nonexistent"}
+        procs = [subprocess.Popen([sys.executable, str(HERE / "pulse.py"), *CHECK], env=env, cwd=str(self.tmp),
+                                  stdout=subprocess.PIPE, stderr=subprocess.PIPE) for _ in range(2)]
+        for p in procs:
+            _o, e = p.communicate(timeout=30)
+            self.assertEqual(p.returncode, 0, e.decode())
+        lines = (self.state / "audit.jsonl").read_text(encoding="utf-8").splitlines()
+        self.assertEqual(len(lines), 2)
+        for line in lines:
+            self.assertEqual(json.loads(line)["result"], "ok")
 
 
 if __name__ == "__main__":
