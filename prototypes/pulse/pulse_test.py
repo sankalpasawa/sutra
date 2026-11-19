@@ -145,8 +145,10 @@ class ConfigTests(BaseCase):
 
     def test_defaults_under_home(self):
         cfg = config.load({"HOME": str(self.home), "PULSE_MOCK": "1"}, self.env_file, need_live_keys=True)
-        self.assertEqual(cfg.out_dir, self.home / ".sutra-pulse" / "out")
-        self.assertEqual(cfg.state_dir, self.home / ".sutra-pulse" / "state")
+        # Config resolves symlinks (R2-1); on macOS /var is a link to /private/var, so compare resolved paths.
+        home = self.home.resolve()
+        self.assertEqual(cfg.out_dir, home / ".sutra-pulse" / "out")
+        self.assertEqual(cfg.state_dir, home / ".sutra-pulse" / "state")
         self.assertEqual(cfg.retention_days, 30)
         self.assertEqual(cfg.scenario, "default")
 
