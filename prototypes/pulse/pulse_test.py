@@ -1447,6 +1447,8 @@ class LiveTests(BaseCase):
                  if line.strip() and not line.startswith("#")]
         self.assertEqual(sorted(re.split(r"[<>=!~ ]", n)[0] for n in names),
                          ["google-api-python-client", "google-auth"])
+        for n in names:  # R1-11 / AC-49: a 2.x floor and a cap below the next major
+            self.assertRegex(n, r"^[a-z-]+>=2\.\d+\.\d+,<3$", n)
 
 
 # ---------------------------------------------------------------- T14: README and CHARTER

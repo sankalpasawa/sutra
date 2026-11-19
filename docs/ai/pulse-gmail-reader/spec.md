@@ -37,6 +37,7 @@ Status: Refined   |   Task: pulse-gmail-reader   |   Date: 2026-11-19
 | R-27 | `purge` (and the automatic purge) only looks one level inside `<OUT_DIR>/<mailbox>/` and `<OUT_DIR>/_mock/<mailbox>/`; `PULSE_OUT_DIR` resolving to home or `/` is `config_invalid` for every command; AC-46 added | Review R1-8: purge walked the whole OUT_DIR tree, so a mis-set OUT_DIR could delete unrelated dated files |
 | R-28 | Audit `query` records the query actually sent: null when a saved position was used; stdout says `--query`/`--since` were not applied; AC-47 added | Review R1-10: the audit claimed a filter that was not applied |
 | R-29 | Review R1-9 (first `--since-last` on a large mailbox never saves) resolved by documentation, not by saving a truncated position: README "Incremental reads" says to start with `--since-last --since 1d`, and an unfiltered fallback run stopped at `--max` prints that hint; live step L-8 uses it; AC-48 added | Keeps R-7 (never save after a truncated run, so nothing is skipped silently) while giving a working start-up path |
+| R-30 | NFR-7: dependencies pinned `google-auth>=2.0.0,<3` and `google-api-python-client>=2.0.0,<3`. Bounds written offline and unverified; exact installed versions recorded at L-2; AC-49 added | Review R1-11: unpinned; a 1.x client would fetch discovery documents over the network |
 
 ## Problem
 An internal tool needs to read selected mailboxes in the company Google Workspace domain, read-only. Domain-wide delegation lets one service account open any mailbox in the domain; Google does not limit it per mailbox. So the tool itself must limit which mailboxes are opened, why, and what is kept. Credentials (admin-approved key file, domain) arrive later, so step 1 must be complete and tested offline.
@@ -302,7 +303,7 @@ Never in an audit row: mail fields (subject, from, snippet, body, attachment nam
 | NFR-4 | Max 5 attempts per request; delay 1 s doubling, capped at 32 s, no jitter | Test counts attempts and recorded delays |
 | NFR-5 | `--max` hard cap 500 (DEC-5) | Test `--max 501` exits 2 |
 | NFR-6 | Two concurrent invocations produce two complete, parseable audit rows | Test with 2 subprocesses |
-| NFR-7 | Live deps limited to `google-auth`, `google-api-python-client` in `requirements.txt` | Inspect file |
+| NFR-7 | Live deps limited to `google-auth`, `google-api-python-client` in `requirements.txt`, each pinned `>=2.x,<3` (R-30) | Inspect file; `test_requirements_pinned_set` |
 | NFR-8 | No file in `prototypes/j2/` or root `.gitignore` changes | `git diff --stat main -- prototypes/j2 .gitignore` is empty |
 | NFR-9 | Tests write only inside temp dirs; never `~/.sutra-pulse` or the repo | Tests set `HOME`, `PULSE_OUT_DIR`, `PULSE_STATE_DIR` to temp dirs; `git status` clean after run |
 | NFR-10 | POSIX only (Linux, macOS); uses `fcntl` and `os.O_NOFOLLOW` | Stated in README |
@@ -360,6 +361,7 @@ Each maps to a test in `pulse_test.py` unless marked (manual).
 | AC-46 | Given old dated files at OUT_DIR top level, in `_mock/`, in a folder not named like a mailbox, deeper trees, below a mailbox dir, and behind a symlinked mailbox dir, when `purge`, then only the file directly in a real mailbox dir is deleted; given `PULSE_OUT_DIR` set to home, `~` or `/`, then exit 2 `config_invalid` and no audit row | FR-25, R-27 |
 | AC-47 | Given a saved position, when `fetch --since-last --query Q --since 7d`, then audit `query` is null and stdout says they were not applied; after a 404 fallback or with no saved position, audit `query` is Q | FR-27, R-28 |
 | AC-48 | Given no saved position, when `fetch --since-last --max 5`, then the hint naming `--since-last --since 1d` is printed and no state is saved; `fetch --since-last --since 1d` then saves; a truncated history-path run prints no hint | FR-23, R-29 |
+| AC-49 | `requirements.txt` lists exactly the two packages, each as `>=2.x.y,<3` | NFR-7, R-30 |
 
 ## Assumptions
 | ID | Assumption |
