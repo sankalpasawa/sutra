@@ -138,3 +138,39 @@ Preconditions: the admin has finished README "Admin setup"; the test mailbox own
 | L-11 | Admin console: the delegation entry lists only `https://www.googleapis.com/auth/gmail.readonly` | Exactly one scope; admin keeps a screenshot |
 
 Any mismatch at L-5 or L-6: open `fix/pulse-live-<topic>`, update `errors.py` or `fixtures/` with a test, re-run L.
+
+## Fix-up 1 (review round 1, 2026-11-19)
+Branch `pulse-gmail-reader`, from bafb85b. One commit per finding. Spec changes are recorded in spec.md
+"Revisions (developer, fix-up 1)" as R-20..R-30, with AC-39..AC-49.
+
+| Finding | Sev | Status | Commit | Regression test(s) | Notes |
+|---|---|---|---|---|---|
+| R1-1 | Major | Fixed | 77482c8 | `test_plain_fetch_never_moves_position`, `test_filtered_fallback_saves_with_note` | Only `fetch --since-last` saves. A filtered fallback still saves and prints that earlier mail outside the filter was not read. FR-23 changed (R-20). AC-23's test now runs `--since-last` (the AC text changed with it; the assertions are unchanged) |
+| R1-2 | Major | Fixed | 51182c4 | `test_since_last_skips_deleted`, `test_live_get_404_skipped`, `test_find_skips_deleted` | New `MessageGone` (404 on `messages.get`, live and mock). Skipped, counted, "Skipped N deleted messages", new 12th audit field `skipped` (null outside fetch/find). Position still saved. 404 on `getProfile`/`messages.list` stays `internal`. New scenario `history_deleted` (R-21) |
+| R1-3 | Minor | Fixed | 3830c76 | `test_live_network_errors` | `TransportError`, `HttpLib2Error` (class name) and any `OSError` become `TransientError(kind="network")`, retried, then new code `network_error` (exit 5) (R-22) |
+| R1-4 | Minor | Fixed | f0172f3 | `test_error_mapper` rows, `test_live_error_translation` rows | 403 `rateLimitExceeded`/`userRateLimitExceeded` retried as 429. Beyond the review: 403 `dailyLimitExceeded` is `rate_limited` with no retry (R-23) |
+| R1-5 | Minor | Fixed | 2230a85 | `test_error_mapper` rows, `test_live_refresh_errors` | `retryable` token errors retried, then `server_error`. Unknown non-retryable token errors get new code `token_error` (exit 4), replacing the `unauthorized_client` fallback. `invalid_grant` message names a revoked or deleted key (R-24) |
+| R1-6 | Minor | Fixed | 092034d | `test_key_file_errors` (2 new cases), `test_live_bad_pem_is_key_unreadable` | Pre-check needs non-empty `token_uri`. `ValueError` from the credentials builder is `key_unreadable`, with no library text. The test fake key gains a synthetic `token_uri` (R-25) |
+| R1-7 | Minor | Fixed | 9610e4a | `test_gitignore_keys` | The three fixture JSON files are re-included by name. `*.pem`, `*.p12` and `*.key` are ignored. The test runs `git check-ignore --no-index` on 17 paths (R-26) |
+| R1-8 | Minor | Fixed | 9d8ec91 | `test_purge_only_own_layout`, `test_out_dir_home_or_root_refused` | Purge looks only one level inside `<out>/<mailbox>/` and `<out>/_mock/<mailbox>/`. `PULSE_OUT_DIR` resolving to home or `/` is `config_invalid` for every command (R-27) |
+| R1-9 | Minor | Fixed (docs + hint) | 1c89f7d | `test_since_last_bootstrap_hint` | Kept R-7 (no save after a truncated run). README "Incremental reads" section; an unfiltered fallback stopped at `--max` prints the `--since-last --since 1d` hint; L-8 updated (R-29) |
+| R1-10 | Minor | Fixed | 22d2bba (+ 1c89f7d) | `test_audit_query_is_what_was_used` | Audit `query` is null when a saved position was used, and stdout says the filters were not applied. 1c89f7d clears it before the history call, so error rows are right too (R-28) |
+| R1-11 | Minor | Fixed | db6b1d9 | `test_requirements_pinned_set` | `>=2.0.0,<3` for both. **Unverified** (no network); record the installed versions at L-2 (R-30) |
+| R1-12 | Nit | Fixed | 006cca9 | `test_scenario_comment_key_rejected` | `_`-prefixed keys are not scenarios |
+| R1-13 | Nit | Fixed | d4c5cd4 | `test_paging_helper` | `_paged_ids` shared by `list_ids`/`history_ids`; dead branch removed; `load_history` excepts merged |
+
+Deviations: R1-4's `dailyLimitExceeded` handling and R1-9's printed hint go a little beyond the suggested fixes. Two
+new error codes were added: `network_error` (requested) and `token_error` (my choice for "correct code" on unknown
+token errors).
+
+Tests: `cd prototypes/pulse && python3 pulse_test.py`: 102 run, 101 pass, 1 skipped (read-only dir test, root),
+about 2.5 s. The suite was run before each commit. Lint: none defined for prototypes (unchanged); `python3 -m
+py_compile` on all modules is clean. A mock CLI smoke run in scratch dirs behaved as specified: a filtered plain
+fetch saved no state, the bootstrap hint printed, the filtered fallback saved with the note, and `PULSE_OUT_DIR=$HOME`
+gave exit 2. `git status` was clean after it.
+
+Known gaps after fix-up 1:
+- architecture.md (lines 287, 394) still describes unknown `RefreshError` mapping to `unauthorized_client`. R-24 in spec.md supersedes it.
+- Live-only checks are unchanged: real `RefreshError` strings and whether `retryable` is set (L-5), and whether history returns deleted ids.
+- The README note that an alias `--mailbox` fails as `mailbox_mismatch` (from the review's "only verifiable live") was not added, because it is not an R1 finding.
+- Dependency bounds are unverified.
