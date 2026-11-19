@@ -67,9 +67,7 @@ def load_history(state_dir, mock: bool) -> dict:
     check_file(p)
     try:
         data = json.loads(p.read_text(encoding="utf-8"))
-    except FileNotFoundError:
-        return {}
-    except (OSError, ValueError):
+    except (OSError, ValueError):  # includes FileNotFoundError
         return {}
     return data if isinstance(data, dict) else {}
 

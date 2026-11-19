@@ -972,6 +972,32 @@ class HistoryTests(FetchBase):
         self.assertEqual(self.audit_rows()[-1]["skipped"], 0)
         self.assertNotIn("Skipped", self.fetch("--max", "1")[1])
 
+    def test_paging_helper(self):  # R1-13: one loop for messages.list and history.list
+        class R:
+            def call(self, fn):
+                return fn()
+
+        class C:
+            def __init__(self):
+                self.calls = []
+
+            def list_history(self, start, token, n):
+                self.calls.append((token, n))
+                pages = {None: ({"history": [{"messagesAdded": [{"message": {"id": "a"}}, {"message": {"id": "b"}}]}],
+                                 "nextPageToken": "p2"}),
+                         "p2": {"history": [{"messagesAdded": [{"message": {"id": "b"}}, {"message": {"id": "c"}}]}]}}
+                return pages[token]
+
+            def list_messages(self, q, token, n):
+                self.calls.append((token, n))
+                return {"messages": [{"id": "x"}, {"id": "y"}, {"id": "z"}], "nextPageToken": "more"}
+        c = C()
+        self.assertEqual(cli.history_ids(R(), c, "1", 10), (["a", "b", "c"], False))  # b deduped across pages
+        self.assertEqual(c.calls, [(None, 10), ("p2", 8)])
+        c = C()
+        self.assertEqual(cli.history_ids(R(), c, "1", 2), (["a", "b"], True))
+        self.assertEqual(cli.list_ids(R(), C(), None, 2), (["x", "y"], True))
+
     def test_symlink_history_refused(self):  # AC-21 (state)
         target = self.tmp / "target.json"
         target.write_text("{}", encoding="utf-8")

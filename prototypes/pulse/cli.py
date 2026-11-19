@@ -153,19 +153,26 @@ def effective_query(query, since):
     return None
 
 
-def list_ids(run: Run, client, query, limit: int):
-    """Page through messages.list until `limit` ids or the end. Returns (ids, more_available)."""
+def _paged_ids(run: Run, fetch_page, page_ids, limit: int):
+    """Shared paging loop. fetch_page(token, n) returns a response; page_ids(resp, seen) returns its new ids.
+    Stops at `limit` ids or the last page. Returns (ids, more_available)."""
     ids, token = [], None
     while True:
         remaining = limit - len(ids)
-        resp = run.call(lambda: client.list_messages(query, token, min(remaining, 100)))
-        got = [m["id"] for m in resp.get("messages") or []]
+        resp = run.call(lambda: fetch_page(token, min(remaining, 100)))
+        got = page_ids(resp, ids)
         ids.extend(got[:remaining])
         token = resp.get("nextPageToken")
         if len(ids) >= limit:
             return ids, bool(token) or len(got) > remaining
         if not token:
             return ids, False
+
+
+def list_ids(run: Run, client, query, limit: int):
+    """Page through messages.list until `limit` ids or the end. Returns (ids, more_available)."""
+    return _paged_ids(run, lambda token, n: client.list_messages(query, token, n),
+                      lambda resp, _seen: [m["id"] for m in resp.get("messages") or []], limit)
 
 
 def get_rows(run: Run, client, ids, full: bool) -> list:
@@ -197,22 +204,15 @@ def output_path(run: Run, suffix: str) -> Path:
 
 def history_ids(run: Run, client, start_id: str, limit: int):
     """Ids added since start_id, via history.list. Raises HistoryExpired on 404. Returns (ids, more_available)."""
-    ids, token = [], None
-    while True:
-        remaining = limit - len(ids)
-        resp = run.call(lambda: client.list_history(start_id, token, min(remaining, 100)))
+    def page_ids(resp, seen):
         got = []
         for rec in resp.get("history") or []:
             for added in rec.get("messagesAdded") or []:
                 mid = (added.get("message") or {}).get("id")
-                if mid and mid not in ids and mid not in got:
+                if mid and mid not in seen and mid not in got:
                     got.append(mid)
-        ids.extend(got[:remaining])
-        token = resp.get("nextPageToken")
-        if len(ids) >= limit:
-            return ids, bool(token) or len(got) > remaining
-        if not token:
-            return ids, False
+        return got
+    return _paged_ids(run, lambda token, n: client.list_history(start_id, token, n), page_ids, limit)
 
 
 def auto_purge(run: Run) -> None:
@@ -363,10 +363,7 @@ def main(argv: list, environ: Mapping[str, str] | None = None, env_file: Path | 
     try:
         if cfg.mock:
             run.out("MOCK MODE: fixture inbox, no Google calls")
-        handler = COMMANDS.get(args.command)
-        if handler is None:
-            raise PulseError("internal", f"Unexpected error: command {args.command} is not built yet.")
-        handler(run)
+        COMMANDS[args.command](run)  # argparse only accepts the four commands
         result, code = "ok", 0
     except PulseError as e:
         result, code = e.code, e.exit_code
