@@ -84,7 +84,7 @@
     builder_timeout: ["Builder time limit (seconds)", "A builder's AI call that runs longer is stopped and tried once more; 0 means no limit"],
     fixes: ["Fix pass", "Let a run make a second pass to repair what the checks refused"],
     budget: ["Budget", "Work credits one run may spend"],
-    budget_cap: ["Budget cap", "The most a run may spend; empty means twice the budget"],
+    budget_cap: ["Budget cap", "The most a run may spend; empty means no cap"],
     max_cycles: ["Most cycles", "How many build and check rounds one run may take"],
     limit_add: ["Credits added on a raised limit", "What a raised limit adds to the budget"],
     bargain_minutes: ["Bargaining time (minutes)", "How long the functions may bargain over a conflict"],

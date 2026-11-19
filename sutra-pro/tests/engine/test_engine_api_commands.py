@@ -575,3 +575,38 @@ def test_say_of_a_busy_team_with_a_template_is_false_and_leaves_the_page_alone(a
     api.svc.busy = True
     assert commands.DeptCommands(api.svc, "web").say("go", "t-1", "all") is False
     assert api.page().next_settings == {}
+
+
+# ---- D251: the start page's Budget (work credits) is this delivery's J2_BUDGET --------------------------------------------------------
+@pytest.mark.parametrize("budget, want", [(100, "100"), ("250", "250"), (1, "1"), (100000, "100000")])
+def test_say_with_a_budget_makes_it_this_deliverys_j2_budget(api, budget, want):
+    got = api.client.post("/api/say?dept=web", json={"text": "a cafe site", "budget": budget}, headers=TOKEN)
+    assert (got.status_code, got.json()) == (200, {"ok": True})
+    assert api.svc.deliveries[-1]["settings"] == {"J2_BUDGET": want}
+    assert api.page().next_settings == {}, "the page keeps nothing of it: the next request starts from the team's own budget"
+
+
+@pytest.mark.parametrize("budget", [0, -3, 100001, 12.5, "12.5", "1e3", "abc", True, [100], {"n": 1}])
+def test_say_with_a_budget_that_is_not_a_whole_number_from_1_to_100000_is_400_and_delivers_nothing(api, budget):
+    got = api.client.post("/api/say?dept=web", json={"text": "a cafe site", "budget": budget}, headers=TOKEN)
+    assert (got.status_code, got.json()) == (400, {"error": "budget must be a whole number of work credits from 1 to 100000"})
+    assert api.svc.deliveries == []
+
+
+def test_say_without_a_budget_or_with_an_empty_one_adds_nothing_and_rides_beside_a_template(api):
+    for body in ({"text": "plain"}, {"text": "plain", "budget": None}, {"text": "plain", "budget": ""}):
+        assert api.client.post("/api/say?dept=web", json=body, headers=TOKEN).json() == {"ok": True}
+        assert api.svc.deliveries[-1]["settings"] is None
+    api.client.post("/api/say?dept=web", json={"text": "go", "template": "t-1", "workflows": "all", "budget": 40}, headers=TOKEN)
+    assert api.svc.deliveries[-1]["settings"] == {"J2_RUN_TEMPLATE": "t-1", "J2_RUN_TEMPLATE_WORKFLOWS": "all", "J2_BUDGET": "40"}
+
+
+def test_the_route_limits_are_the_budget_settings_and_the_task_setting_takes_what_the_route_takes():
+    from sutra_app.engine.spec import EngineSettings
+    from sutra_app.orchestrator.models import TaskSettings
+    field = {k: getattr(m, k) for m in EngineSettings.model_fields["budget"].metadata for k in ("ge", "le") if hasattr(m, k)}
+    assert field == {"ge": 1, "le": 100000}
+    assert TaskSettings(J2_BUDGET="1").J2_BUDGET == "1" and TaskSettings(J2_BUDGET="100000").J2_BUDGET == "100000"
+    for bad in ("0", "100001"):
+        with pytest.raises(ValueError):
+            TaskSettings(J2_BUDGET=bad)

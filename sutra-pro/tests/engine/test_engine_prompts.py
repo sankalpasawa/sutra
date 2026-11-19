@@ -1,4 +1,6 @@
-"""Prompt goldens (work package E5, engine design 9, ENG-01): in mock mode the engine asks the model for exactly the text J2 asks for.
+"""Prompt goldens (work package E5, engine design 9, ENG-01): in mock mode the engine asks the model for exactly the text J2 asks for,
+except where a recorded patch changes a prompt (D249: P24 Priority's reply format, P25 the raise question's text). Since D249 the
+goldens are recorded from the engine (`record_engine_golden.py --engine --out-dir tests/engine/golden`); before, from J2.
 
 `scripts/record_engine_golden.py` ran seven scenarios against J2, the folder `prototypes/j2` of this repository at the pinned commit
 (`BASELINE` of the recorder; see `golden/prompts_*.json`): per scenario the outcome, the spend, the hash of the last page, of the

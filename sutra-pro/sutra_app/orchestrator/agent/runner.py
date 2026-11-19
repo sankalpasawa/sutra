@@ -113,10 +113,11 @@ class TurnRunner:
     # T0: accept
     # =================================================================================================================
 
-    async def post_user_message(self, session_id: str, text: str, choice: ChatChoice | None = None) -> Accepted:
+    async def post_user_message(self, session_id: str, text: str, choice: ChatChoice | None = None, *, budget: int | None = None) -> Accepted:
         """Store the owner's line (state `pending`), queue the turn and return at once. A click on a card button (`choice`) is stored
         as the owner's line with the option's label. Raises 503 `provider_unavailable` / `cli_missing` before anything is stored when
-        a model is needed and none is usable, 429 `too_many_pending`, 409 `already_decided` for a card answered before, 422 `validation`."""
+        a model is needed and none is usable, 429 `too_many_pending`, 409 `already_decided` for a card answered before, 422 `validation`.
+        `budget` (D252): the home screen's Budget field, kept with the owner's line; every task this request makes runs with it as J2_BUDGET."""
         if session_id != ORG:
             raise AppError("validation", f"only the org chat {ORG} is answered by the chat agent")
         body = scrubbed(text.strip(), self._redact)                # a secret never lands in the chat store, the team's first line or a prompt
@@ -126,7 +127,7 @@ class TurnRunner:
         if resolved is None and not await run_blocking(self._is_answer, body):
             self._preflight()                                   # only a request that may call a model needs one
         self._room()
-        message_id = await run_blocking(self._store_user_line, resolved.label if resolved is not None else body, choice)
+        message_id = await run_blocking(self._store_user_line, resolved.label if resolved is not None else body, choice, budget)
         turn = "queued" if (self._active is not None or self._waiting) else "started"
         self._enqueue(_Item(message_id, resolved.pick if resolved is not None else None))
         return Accepted(message_id=message_id, turn=turn)
@@ -236,13 +237,20 @@ class TurnRunner:
         kind = "none" if option["id"] == NONE_OPTION else "team"
         return _Resolved(_Pick(kind, node_id=None if kind == "none" else option["id"], origin=int(origin.group(1))), option["label"])
 
-    def _store_user_line(self, text: str, choice: ChatChoice | None) -> int:
+    def _store_user_line(self, text: str, choice: ChatChoice | None, budget: int | None = None) -> int:
         with self.db.tx() as tx:
             src = f"choice:{choice.message_id}" if choice is not None else None
             posted = self._post(tx, kind="text", text=text, role="user", who="user", state="pending", src_ref=src)
             if posted is None:
                 raise AlreadyDecided(None)
+            if budget is not None:      # D252: a sibling key of meta_json, as `via` and `blocks` are; read back by _budget_of
+                tx.conn.execute("UPDATE chat_messages SET meta_json = json_set(meta_json, '$.budget', ?) WHERE id = ?", (int(budget), posted.id))
             return posted.id
+
+    def _budget_of(self, message_id: int) -> int | None:
+        """D252: the Budget the owner gave with the request line `message_id` (None: the team's own budget)."""
+        row = self.db.conn().execute("SELECT json_extract(meta_json, '$.budget') AS b FROM chat_messages WHERE id = ?", (message_id,)).fetchone()
+        return int(row["b"]) if row is not None and row["b"] is not None else None
 
     def _last_user_line(self) -> sqlite3.Row | None:
         return self.db.conn().execute(
@@ -529,6 +537,8 @@ class TurnRunner:
         """One transaction per assignment, dependencies first. The owner's words become the first line of the team's chat (the
         engine never echoes them)."""
         made: dict[str, str] = {}
+        budget = self._budget_of(request.message_id)
+        settings = {"J2_BUDGET": str(budget)} if budget is not None else None      # D252: every task of the request runs with the owner's Budget
         for draft in drafts:
             follows = draft.follows
             while True:
@@ -537,7 +547,7 @@ class TurnRunner:
                         task = self.tasks.create(
                             tx, dept_id=draft.dept, text=request.text, title=draft.title, scope_id=draft.scope, framing=draft.brief,
                             depends_on=[made[ref] for ref in draft.depends_on if ref in made], follows=follows,
-                            request=request.request_id, change_id=change_id)
+                            request=request.request_id, change_id=change_id, settings=settings)
                         sid = tx.conn.execute("SELECT chat_session_id FROM graph_nodes WHERE id = ?", (draft.dept,)).fetchone()["chat_session_id"]
                         self._post(tx, session_id=sid, kind="text", text=request.text, role="user", who="user",
                                    src_ref=f"req:{request.message_id}:{task.id}", task_id=task.id)

@@ -1,0 +1,766 @@
+{
+ "source": "beta run j2-20261118-090053-4a9c (people-hr): Adaptation's proposal (chat 32), Priority's COUNTER (call 14)",
+ "sections": [
+  "Purpose and scope",
+  "Roles and hiring authority",
+  "Sourcing and job posting",
+  "Selection and interviewing",
+  "Fair hiring and legal compliance",
+  "Candidate data privacy and retention",
+  "Offers and compensation",
+  "Onboarding and probation",
+  "Review and growth"
+ ],
+ "done_when": [
+  "Purpose and scope: states what the policy is for, who it covers, and that Brightpath is a 12-person software startup based in Bengaluru, Karnataka, India",
+  "Roles and hiring authority: states that the hiring manager for each role makes the final call and the CEO signs off on senior hires, and sets out who does what in hiring",
+  "Sourcing and job posting: sets out how Brightpath finds candidates and writes and posts job openings",
+  "Selection and interviewing: sets out the screening, interview and selection steps and how candidates are assessed consistently",
+  "Fair hiring and legal compliance: sets out equal-opportunity and inclusive hiring rules and compliance with the hiring laws that apply in Bengaluru, Karnataka, India",
+  "Candidate data privacy and retention: states how candidate data is protected and that records of candidates not hired are kept for 6 months and then deleted",
+  "Offers and compensation: sets out how offers are prepared, approved and made, and how pay is decided",
+  "Onboarding and probation: sets out the handoff to onboarding and states that new hires are on probation for 3 months",
+  "Review and growth: sets out how the policy is reviewed and updated as Brightpath grows"
+ ],
+ "spent_before": 72,
+ "budget": 100,
+ "registered_before": [
+  {
+   "id": "W-1",
+   "name": "Scope, roles and sourcing sections",
+   "sections": [
+    "Purpose and scope",
+    "Roles and hiring authority",
+    "Sourcing and job posting"
+   ],
+   "cost": 24,
+   "status": "done"
+  },
+  {
+   "id": "W-2",
+   "name": "Selection, fairness and privacy sections",
+   "sections": [
+    "Selection and interviewing",
+    "Fair hiring and legal compliance",
+    "Candidate data privacy and retention"
+   ],
+   "cost": 24,
+   "status": "done"
+  },
+  {
+   "id": "W-3",
+   "name": "Offers, onboarding and review sections",
+   "sections": [
+    "Offers and compensation",
+    "Onboarding and probation",
+    "Review and growth"
+   ],
+   "cost": 24,
+   "status": "done"
+  }
+ ],
+ "proposal": [
+  {
+   "id": "hp-4",
+   "name": "Fix unlabelled claims in roles and sourcing",
+   "kind": "build",
+   "goal_gap": "Roles and hiring authority and Sourcing and job posting hold unlabelled claims about the business (D-3, F-10).",
+   "expected_outcome": "Those two sections have no unlabelled invented claims, and the exact facts still appear.",
+   "outputs": [
+    "hiring_policy.md: Roles and hiring authority, Sourcing and job posting"
+   ],
+   "sections": [
+    "Roles and hiring authority",
+    "Sourcing and job posting"
+   ],
+   "completion_check": "Both headings are present and not empty, and the exact facts still appear. No unlabelled 'CVs', referral or job-board list, 'asks the CEO', or CEO-in-interviews claim remains.",
+   "dependencies": [],
+   "parts": [
+    "fix"
+   ],
+   "covers": [],
+   "fixes": [
+    "D-3"
+   ],
+   "revises": "W-1",
+   "replaces": [],
+   "estimated_resources": {
+    "money": 8,
+    "calls": 3,
+    "time_minutes": 6
+   },
+   "atoms": [
+    {
+     "id": "a1",
+     "goal": "Roles and Sourcing sections contain no unlabelled invented claims and keep the exact facts.",
+     "constraints": [
+      "Keep 'The hiring manager for each role makes the final call' and 'the CEO signs off on senior hires' unchanged",
+      "Do not define senior, name statutes or add new facts",
+      "Do not write 'to be confirmed'",
+      "Leave Purpose and scope unchanged"
+     ],
+     "context": [
+      "Charter items 2 and 3",
+      "Sections: Roles and hiring authority, Sourcing and job posting",
+      "Audit D-3, F-10"
+     ],
+     "how": {
+      "kind": "AI",
+      "agent": "W-1 Builder",
+      "steps": "Edit '## Roles and hiring authority' and '## Sourcing and job posting'. Remove or reword generically, or label 'Assumption:' or 'Recommended practice:', each of: the list 'referrals from the team; the team's own network; general job boards'; 'asks the CEO before going ahead'; 'CEO can also take part in interviews'. Change nothing else."
+     },
+     "date_control": null,
+     "date_case": null,
+     "expected_output": [
+      {
+       "text": "Roles and hiring authority heading",
+       "kind": "heading",
+       "target": "Roles and hiring authority"
+      },
+      {
+       "text": "Sourcing and job posting heading",
+       "kind": "heading",
+       "target": "Sourcing and job posting"
+      },
+      {
+       "text": "Exact facts kept",
+       "kind": "facts",
+       "target": [
+        "Bengaluru, Karnataka, India",
+        "The hiring manager for each role makes the final call",
+        "the CEO signs off on senior hires"
+       ]
+      }
+     ],
+     "verification": [
+      {
+       "text": "Roles heading present",
+       "type": "heading-present",
+       "target": "Roles and hiring authority",
+       "expect": true,
+       "item": 1
+      },
+      {
+       "text": "Roles not empty",
+       "type": "section-not-empty",
+       "target": "Roles and hiring authority",
+       "expect": 30
+      },
+      {
+       "text": "Sourcing heading present",
+       "type": "heading-present",
+       "target": "Sourcing and job posting",
+       "expect": true,
+       "item": 2
+      },
+      {
+       "text": "Sourcing not empty",
+       "type": "section-not-empty",
+       "target": "Sourcing and job posting",
+       "expect": 30
+      },
+      {
+       "text": "Exact facts present",
+       "type": "facts-present",
+       "target": [
+        "Bengaluru, Karnataka, India",
+        "The hiring manager for each role makes the final call",
+        "the CEO signs off on senior hires"
+       ],
+       "expect": true,
+       "item": 3
+      }
+     ]
+    }
+   ],
+   "estimate": 8,
+   "cost": 8
+  },
+  {
+   "id": "hp-5",
+   "name": "Fix unlabelled claims in selection, fairness and privacy",
+   "kind": "build",
+   "goal_gap": "Selection and interviewing, Fair hiring and legal compliance and Candidate data privacy and retention hold unlabelled claims (D-3, F-10).",
+   "expected_outcome": "Those three sections have no unlabelled invented claims, and the 6 months fact still appears.",
+   "outputs": [
+    "hiring_policy.md: Selection and interviewing, Fair hiring and legal compliance, Candidate data privacy and retention"
+   ],
+   "sections": [
+    "Selection and interviewing",
+    "Fair hiring and legal compliance",
+    "Candidate data privacy and retention"
+   ],
+   "completion_check": "All three headings are present and not empty, and '6 months' still appears. No unlabelled 'CVs', 'short call', 'at least one other person', 'asks the CEO' or 'hiring manager makes sure this deletion happens' claim remains.",
+   "dependencies": [
+    "hp-4"
+   ],
+   "parts": [
+    "fix"
+   ],
+   "covers": [],
+   "fixes": [
+    "D-3"
+   ],
+   "revises": "W-2",
+   "replaces": [],
+   "estimated_resources": {
+    "money": 9,
+    "calls": 3,
+    "time_minutes": 6
+   },
+   "atoms": [
+    {
+     "id": "a1",
+     "goal": "Selection, Fair hiring and Privacy sections contain no unlabelled invented claims and keep the retention fact.",
+     "constraints": [
+      "Keep 'Records of candidates who are not hired are kept for 6 months and then deleted'",
+      "Do not name statutes or add new facts",
+      "Do not write 'to be confirmed'",
+      "Keep the passing parts of these sections"
+     ],
+     "context": [
+      "Charter items 4, 5 and 6",
+      "Sections: Selection and interviewing, Fair hiring and legal compliance, Candidate data privacy and retention",
+      "Audit D-3, F-10"
+     ],
+     "how": {
+      "kind": "AI",
+      "agent": "W-2 Builder",
+      "steps": "Edit '## Selection and interviewing', '## Fair hiring and legal compliance' and '## Candidate data privacy and retention'. Remove or reword generically, or label 'Assumption:' or 'Recommended practice:', each of: 'CVs' and 'such as applications, CVs, interview notes'; 'First conversation: a short call'; 'at least one other person from the team'; 'Anyone unsure whether a step is allowed asks the CEO'; 'The hiring manager makes sure this deletion happens'. Change nothing else."
+     },
+     "date_control": null,
+     "date_case": null,
+     "expected_output": [
+      {
+       "text": "Selection and interviewing heading",
+       "kind": "heading",
+       "target": "Selection and interviewing"
+      },
+      {
+       "text": "Fair hiring and legal compliance heading",
+       "kind": "heading",
+       "target": "Fair hiring and legal compliance"
+      },
+      {
+       "text": "Candidate data privacy and retention heading",
+       "kind": "heading",
+       "target": "Candidate data privacy and retention"
+      },
+      {
+       "text": "Retention fact kept",
+       "kind": "facts",
+       "target": [
+        "6 months"
+       ]
+      }
+     ],
+     "verification": [
+      {
+       "text": "Selection heading present",
+       "type": "heading-present",
+       "target": "Selection and interviewing",
+       "expect": true,
+       "item": 1
+      },
+      {
+       "text": "Selection not empty",
+       "type": "section-not-empty",
+       "target": "Selection and interviewing",
+       "expect": 30
+      },
+      {
+       "text": "Fair hiring heading present",
+       "type": "heading-present",
+       "target": "Fair hiring and legal compliance",
+       "expect": true,
+       "item": 2
+      },
+      {
+       "text": "Fair hiring not empty",
+       "type": "section-not-empty",
+       "target": "Fair hiring and legal compliance",
+       "expect": 30
+      },
+      {
+       "text": "Privacy heading present",
+       "type": "heading-present",
+       "target": "Candidate data privacy and retention",
+       "expect": true,
+       "item": 3
+      },
+      {
+       "text": "Privacy not empty",
+       "type": "section-not-empty",
+       "target": "Candidate data privacy and retention",
+       "expect": 30
+      },
+      {
+       "text": "Retention fact present",
+       "type": "facts-present",
+       "target": [
+        "6 months"
+       ],
+       "expect": true,
+       "item": 4
+      }
+     ]
+    }
+   ],
+   "estimate": 9,
+   "cost": 9
+  },
+  {
+   "id": "hp-6",
+   "name": "Fix unlabelled claim in onboarding",
+   "kind": "build",
+   "goal_gap": "Onboarding and probation says the probation period is told to the new hire 'again on their first day', which is unlabelled (D-3, F-10).",
+   "expected_outcome": "The section has no unlabelled invented claim, and the 3 months fact still appears.",
+   "outputs": [
+    "hiring_policy.md: Onboarding and probation"
+   ],
+   "sections": [
+    "Onboarding and probation"
+   ],
+   "completion_check": "The heading is present and not empty, and '3 months' still appears. No unlabelled 'again on their first day' claim remains.",
+   "dependencies": [
+    "hp-5"
+   ],
+   "parts": [
+    "fix"
+   ],
+   "covers": [],
+   "fixes": [
+    "D-3"
+   ],
+   "revises": "W-3",
+   "replaces": [],
+   "estimated_resources": {
+    "money": 7,
+    "calls": 3,
+    "time_minutes": 5
+   },
+   "atoms": [
+    {
+     "id": "a1",
+     "goal": "Onboarding and probation has no unlabelled invented claim and keeps the probation fact.",
+     "constraints": [
+      "Keep 'New hires are on probation for 3 months'",
+      "Do not add new facts",
+      "Do not write 'to be confirmed'",
+      "Leave Offers and compensation and Review and growth unchanged"
+     ],
+     "context": [
+      "Charter item 8",
+      "Section: Onboarding and probation",
+      "Audit D-3, F-10"
+     ],
+     "how": {
+      "kind": "AI",
+      "agent": "W-3 Builder",
+      "steps": "Edit '## Onboarding and probation'. Remove, reword generically, or label 'Recommended practice:' the claim that the hiring manager tells the new hire about the probation period 'again on their first day'. Change nothing else."
+     },
+     "date_control": null,
+     "date_case": null,
+     "expected_output": [
+      {
+       "text": "Onboarding and probation heading",
+       "kind": "heading",
+       "target": "Onboarding and probation"
+      },
+      {
+       "text": "Probation fact kept",
+       "kind": "facts",
+       "target": [
+        "3 months"
+       ]
+      }
+     ],
+     "verification": [
+      {
+       "text": "Onboarding heading present",
+       "type": "heading-present",
+       "target": "Onboarding and probation",
+       "expect": true,
+       "item": 1
+      },
+      {
+       "text": "Onboarding not empty",
+       "type": "section-not-empty",
+       "target": "Onboarding and probation",
+       "expect": 30
+      },
+      {
+       "text": "Probation fact present",
+       "type": "facts-present",
+       "target": [
+        "3 months"
+       ],
+       "expect": true,
+       "item": 2
+      }
+     ]
+    }
+   ],
+   "estimate": 7,
+   "cost": 7
+  }
+ ],
+ "counter": {
+  "decision": "COUNTER",
+  "workflows": [
+   {
+    "id": "hp-4",
+    "name": "Fix unlabelled claims in roles and sourcing",
+    "kind": "build",
+    "goal_gap": "Roles and hiring authority and Sourcing and job posting hold unlabelled claims about the business (D-3, F-10).",
+    "expected_outcome": "Those two sections have no unlabelled invented claims, and the exact facts still appear.",
+    "outputs": [
+     "hiring_policy.md: Roles and hiring authority, Sourcing and job posting"
+    ],
+    "sections": [
+     "Roles and hiring authority",
+     "Sourcing and job posting"
+    ],
+    "completion_check": "Both headings are present and not empty, and the exact facts still appear. No unlabelled 'CVs', referral or job-board list, 'asks the CEO', or CEO-in-interviews claim remains.",
+    "dependencies": [],
+    "parts": [
+     "fix"
+    ],
+    "covers": [],
+    "fixes": [
+     "D-3",
+     "F-10"
+    ],
+    "revises": "W-1",
+    "replaces": [],
+    "estimated_resources": {
+     "money": 6,
+     "calls": 3,
+     "time_minutes": 6
+    },
+    "atoms": [
+     {
+      "id": "a1",
+      "goal": "Roles and Sourcing sections contain no unlabelled invented claims and keep the exact facts.",
+      "constraints": [
+       "Keep 'The hiring manager for each role makes the final call' and 'the CEO signs off on senior hires' unchanged",
+       "Do not define senior, name statutes or add new facts",
+       "Do not write 'to be confirmed'",
+       "Leave Purpose and scope unchanged"
+      ],
+      "context": [
+       "Charter items 2 and 3",
+       "Sections: Roles and hiring authority, Sourcing and job posting",
+       "Audit D-3, F-10"
+      ],
+      "how": {
+       "kind": "AI",
+       "agent": "W-1 Builder",
+       "steps": "Edit '## Roles and hiring authority' and '## Sourcing and job posting'. Remove or reword generically, or label 'Assumption:' or 'Recommended practice:', each of: the list 'referrals from the team; the team's own network; general job boards'; 'asks the CEO before going ahead'; 'CEO can also take part in interviews'. Change nothing else."
+      },
+      "date_control": null,
+      "date_case": null,
+      "expected_output": [
+       {
+        "text": "Roles and hiring authority heading",
+        "kind": "heading",
+        "target": "Roles and hiring authority"
+       },
+       {
+        "text": "Sourcing and job posting heading",
+        "kind": "heading",
+        "target": "Sourcing and job posting"
+       },
+       {
+        "text": "Exact facts kept",
+        "kind": "facts",
+        "target": [
+         "Bengaluru, Karnataka, India",
+         "The hiring manager for each role makes the final call",
+         "the CEO signs off on senior hires"
+        ]
+       }
+      ],
+      "verification": [
+       {
+        "text": "Roles heading present",
+        "type": "heading-present",
+        "target": "Roles and hiring authority",
+        "expect": true
+       },
+       {
+        "text": "Roles not empty",
+        "type": "section-not-empty",
+        "target": "Roles and hiring authority",
+        "expect": 30
+       },
+       {
+        "text": "Sourcing heading present",
+        "type": "heading-present",
+        "target": "Sourcing and job posting",
+        "expect": true
+       },
+       {
+        "text": "Sourcing not empty",
+        "type": "section-not-empty",
+        "target": "Sourcing and job posting",
+        "expect": 30
+       },
+       {
+        "text": "Exact facts present",
+        "type": "facts-present",
+        "target": [
+         "Bengaluru, Karnataka, India",
+         "The hiring manager for each role makes the final call",
+         "the CEO signs off on senior hires"
+        ],
+        "expect": true
+       }
+      ]
+     }
+    ],
+    "envelope": {
+     "money_limit": 6,
+     "model_call_limit": 5,
+     "time_limit_minutes": 8,
+     "retry_limit": 1,
+     "stop_loss": "Stop if spend reaches 6 or 5 model calls are used before both headings are present and non-empty and the exact facts appear."
+    }
+   },
+   {
+    "id": "hp-5",
+    "name": "Fix unlabelled claims in selection, fairness and privacy",
+    "kind": "build",
+    "goal_gap": "Selection and interviewing, Fair hiring and legal compliance and Candidate data privacy and retention hold unlabelled claims (D-3, F-10).",
+    "expected_outcome": "Those three sections have no unlabelled invented claims, and the 6 months fact still appears.",
+    "outputs": [
+     "hiring_policy.md: Selection and interviewing, Fair hiring and legal compliance, Candidate data privacy and retention"
+    ],
+    "sections": [
+     "Selection and interviewing",
+     "Fair hiring and legal compliance",
+     "Candidate data privacy and retention"
+    ],
+    "completion_check": "All three headings are present and not empty, and '6 months' still appears. No unlabelled 'CVs', 'short call', 'at least one other person', 'asks the CEO' or 'hiring manager makes sure this deletion happens' claim remains.",
+    "dependencies": [
+     "hp-4"
+    ],
+    "parts": [
+     "fix"
+    ],
+    "covers": [],
+    "fixes": [
+     "D-3",
+     "F-10"
+    ],
+    "revises": "W-2",
+    "replaces": [],
+    "estimated_resources": {
+     "money": 7,
+     "calls": 3,
+     "time_minutes": 6
+    },
+    "atoms": [
+     {
+      "id": "a1",
+      "goal": "Selection, Fair hiring and Privacy sections contain no unlabelled invented claims and keep the retention fact.",
+      "constraints": [
+       "Keep 'Records of candidates who are not hired are kept for 6 months and then deleted'",
+       "Do not name statutes or add new facts",
+       "Do not write 'to be confirmed'",
+       "Keep the passing parts of these sections"
+      ],
+      "context": [
+       "Charter items 4, 5 and 6",
+       "Sections: Selection and interviewing, Fair hiring and legal compliance, Candidate data privacy and retention",
+       "Audit D-3, F-10"
+      ],
+      "how": {
+       "kind": "AI",
+       "agent": "W-2 Builder",
+       "steps": "Edit '## Selection and interviewing', '## Fair hiring and legal compliance' and '## Candidate data privacy and retention'. Remove or reword generically, or label 'Assumption:' or 'Recommended practice:', each of: 'CVs' and 'such as applications, CVs, interview notes'; 'First conversation: a short call'; 'at least one other person from the team'; 'Anyone unsure whether a step is allowed asks the CEO'; 'The hiring manager makes sure this deletion happens'. Change nothing else."
+      },
+      "date_control": null,
+      "date_case": null,
+      "expected_output": [
+       {
+        "text": "Selection and interviewing heading",
+        "kind": "heading",
+        "target": "Selection and interviewing"
+       },
+       {
+        "text": "Fair hiring and legal compliance heading",
+        "kind": "heading",
+        "target": "Fair hiring and legal compliance"
+       },
+       {
+        "text": "Candidate data privacy and retention heading",
+        "kind": "heading",
+        "target": "Candidate data privacy and retention"
+       },
+       {
+        "text": "Retention fact kept",
+        "kind": "facts",
+        "target": [
+         "6 months"
+        ]
+       }
+      ],
+      "verification": [
+       {
+        "text": "Selection heading present",
+        "type": "heading-present",
+        "target": "Selection and interviewing",
+        "expect": true
+       },
+       {
+        "text": "Selection not empty",
+        "type": "section-not-empty",
+        "target": "Selection and interviewing",
+        "expect": 30
+       },
+       {
+        "text": "Fair hiring heading present",
+        "type": "heading-present",
+        "target": "Fair hiring and legal compliance",
+        "expect": true
+       },
+       {
+        "text": "Fair hiring not empty",
+        "type": "section-not-empty",
+        "target": "Fair hiring and legal compliance",
+        "expect": 30
+       },
+       {
+        "text": "Privacy heading present",
+        "type": "heading-present",
+        "target": "Candidate data privacy and retention",
+        "expect": true
+       },
+       {
+        "text": "Privacy not empty",
+        "type": "section-not-empty",
+        "target": "Candidate data privacy and retention",
+        "expect": 30
+       },
+       {
+        "text": "Retention fact present",
+        "type": "facts-present",
+        "target": [
+         "6 months"
+        ],
+        "expect": true
+       }
+      ]
+     }
+    ],
+    "envelope": {
+     "money_limit": 7,
+     "model_call_limit": 5,
+     "time_limit_minutes": 8,
+     "retry_limit": 1,
+     "stop_loss": "Stop if spend reaches 7 or 5 model calls are used before all three headings are present and non-empty and '6 months' appears."
+    }
+   },
+   {
+    "id": "hp-6",
+    "name": "Fix unlabelled claim in onboarding",
+    "kind": "build",
+    "goal_gap": "Onboarding and probation says the probation period is told to the new hire 'again on their first day', which is unlabelled (D-3, F-10).",
+    "expected_outcome": "The section has no unlabelled invented claim, and the 3 months fact still appears.",
+    "outputs": [
+     "hiring_policy.md: Onboarding and probation"
+    ],
+    "sections": [
+     "Onboarding and probation"
+    ],
+    "completion_check": "The heading is present and not empty, and '3 months' still appears. No unlabelled 'again on their first day' claim remains.",
+    "dependencies": [
+     "hp-5"
+    ],
+    "parts": [
+     "fix"
+    ],
+    "covers": [],
+    "fixes": [
+     "D-3",
+     "F-10"
+    ],
+    "revises": "W-3",
+    "replaces": [],
+    "estimated_resources": {
+     "money": 5,
+     "calls": 3,
+     "time_minutes": 5
+    },
+    "atoms": [
+     {
+      "id": "a1",
+      "goal": "Onboarding and probation has no unlabelled invented claim and keeps the probation fact.",
+      "constraints": [
+       "Keep 'New hires are on probation for 3 months'",
+       "Do not add new facts",
+       "Do not write 'to be confirmed'",
+       "Leave Offers and compensation and Review and growth unchanged"
+      ],
+      "context": [
+       "Charter item 8",
+       "Section: Onboarding and probation",
+       "Audit D-3, F-10"
+      ],
+      "how": {
+       "kind": "AI",
+       "agent": "W-3 Builder",
+       "steps": "Edit '## Onboarding and probation'. Remove, reword generically, or label 'Recommended practice:' the claim that the hiring manager tells the new hire about the probation period 'again on their first day'. Change nothing else."
+      },
+      "date_control": null,
+      "date_case": null,
+      "expected_output": [
+       {
+        "text": "Onboarding and probation heading",
+        "kind": "heading",
+        "target": "Onboarding and probation"
+       },
+       {
+        "text": "Probation fact kept",
+        "kind": "facts",
+        "target": [
+         "3 months"
+        ]
+       }
+      ],
+      "verification": [
+       {
+        "text": "Onboarding heading present",
+        "type": "heading-present",
+        "target": "Onboarding and probation",
+        "expect": true
+       },
+       {
+        "text": "Onboarding not empty",
+        "type": "section-not-empty",
+        "target": "Onboarding and probation",
+        "expect": 30
+       },
+       {
+        "text": "Probation fact present",
+        "type": "facts-present",
+        "target": [
+         "3 months"
+        ],
+        "expect": true
+       }
+      ]
+     }
+    ],
+    "envelope": {
+     "money_limit": 5,
+     "model_call_limit": 5,
+     "time_limit_minutes": 7,
+     "retry_limit": 1,
+     "stop_loss": "Stop if spend reaches 5 or 5 model calls are used before the heading is present and non-empty and '3 months' appears."
+    }
+   }
+  ]
+ }
+}

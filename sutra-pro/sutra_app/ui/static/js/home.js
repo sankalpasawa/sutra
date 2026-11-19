@@ -593,7 +593,8 @@
     renderChat();
     renderComposer();
     try {
-      const accepted = await api.post("/api/chats/" + ORG + "/messages", choice ? {text: body, choice} : {text: body});
+      const budget = isObj(opts) && Number.isInteger(opts.budget) ? {budget: opts.budget} : {};      // D252: the home box's Budget, a new request only
+      const accepted = await api.post("/api/chats/" + ORG + "/messages", choice ? {text: body, choice} : {text: body, ...budget});
       entry.serverId = isObj(accepted) && Number.isInteger(accepted.message_id) ? accepted.message_id : null;
       clearSent(body);
       clearBanner();
@@ -854,14 +855,19 @@
     const box = $("fdbox");
     const body = text(box.value).trim();
     if (body === "" || S.sending) return false;
+    const field = $("fdbudget"), fdo = FD(), b = fdo ? fdo.budgetOf(field ? field.value : "") : {ok: true, budget: null, error: ""};      // D252: empty = the team's own budget
+    if (field) {
+      field.setCustomValidity(b.error);
+      if (!b.ok) { field.reportValidity(); return false; }
+    }
     S.front.sent = true;
     S.front.error = "";
     S.front.going = false;
     S.front.since = S.lastId;
     $("fdsend").disabled = true;
-    const ok = await send(body, null, {plan: true});
+    const ok = await send(body, null, {plan: true, budget: b.budget});
     $("fdsend").disabled = false;
-    if (ok) { if (box.value.trim() === body) box.value = ""; }
+    if (ok) { if (box.value.trim() === body) box.value = ""; if (field) field.value = ""; }
     else S.front.error = (S.banner && S.banner.text) || S.blocked || FAILED;
     renderFrontLatest();
     return ok;

@@ -1238,5 +1238,25 @@
   "id": "D248",
   "label": "TLS: a trusted certificate may end the chain",
   "anchor": "Desktop app · Electron window"
+ },
+ {
+  "id": "D249",
+  "label": "prompts may differ from J2 via patches (amends D13)",
+  "anchor": "band:DEPARTMENT RUNTIME"
+ },
+ {
+  "id": "D250",
+  "label": "Priority's move = id + envelope (P24)",
+  "anchor": "band:DEPARTMENT RUNTIME"
+ },
+ {
+  "id": "D251",
+  "label": "budget cap only if set; raises need the Requester (P25)",
+  "anchor": "band:DEPARTMENT RUNTIME"
+ },
+ {
+  "id": "D252",
+  "label": "Budget field on home + team page, empty = team default",
+  "anchor": "band:DEPARTMENT RUNTIME"
  }
 ]

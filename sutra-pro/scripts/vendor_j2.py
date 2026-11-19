@@ -70,7 +70,7 @@ class VendorError(Exception):
 # ---- the patches --------------------------------------------------------------------------------------------------
 @dataclass(frozen=True)
 class Edit:
-    patch: str          # "P1" .. "P23" (P15 is the data patch below, not an Edit; P20 is reserved)
+    patch: str          # "P1" .. "P25" (P15 is the data patch below, not an Edit; P20 is reserved)
     file: str
     old: str
     new: str
@@ -848,6 +848,365 @@ def saved_snapshot_dir(d, name, since=0):
                                     else "The reviewer is switched off in this team's settings." if off
                                     else "Paused for the Requester; the reviewer runs when the run ends."})
 '''),
+    # ---- P24 (D250): Priority's move is a workflow's id and its envelope; the validator charges the money limit, rejects a
+    # COUNTER without one and a limit below the rate card, and tells Adaptation of any other field the move set (prompt-changing, D249)
+    Edit('P24', "j2.py", r'''def granted(w):
+    """Rate-card price when the rate card is on; otherwise the money Priority granted (envelope.money_limit),
+    and Adaptation's estimate only if no limit was given."""
+    c, _ = price(w)
+''', r'''def granted(w):
+    """The money Priority granted (envelope.money_limit); without a limit, the rate-card price when the rate card is on,
+    else Adaptation's estimate. P24 (D250): the limit is what is charged, also with the rate card on, where the rate-card
+    price is a floor the validator checks (_register), never a price put in the place of Priority's."""
+    m = as_int((w.get("envelope") or {}).get("money_limit"))
+    if m > 0:
+        return m
+    c, _ = price(w)
+'''),
+    Edit('P24', "j2.py", r'''    c, _ = price(w)
+    if c is not None:
+        return c
+    m = as_int((w.get("envelope") or {}).get("money_limit"))
+    return m if m > 0 else wf_cost(w)
+
+''', r'''    c, _ = price(w)
+    return c if c is not None else wf_cost(w)
+
+'''),
+    Edit('P24', "j2.py", r'''                               '"retry_limit": int, "stop_loss": str}}]')
+
+''', r'''                               '"retry_limit": int, "stop_loss": str}}]')
+    # P24 (D250): what Priority sends for each workflow it funds (both pricing turns): the proposal's id and the envelope
+    PRICE_FMT = ('[{"id": str (the proposed workflow\'s id), "envelope": {"money_limit": int, "model_call_limit": int, '
+                 '"time_limit_minutes": int, "retry_limit": int, "stop_loss": str}}]')
+
+'''),
+    Edit('P24', "j2.py", r'''
+    PRIORITY_OWNS = ("cost", "estimate", "envelope")      # price, and the envelope: limits, approval, stop-loss
+
+''', r'''
+    PRIORITY_OWNS = ("envelope",)      # P24 (D250): Priority's move is a workflow's id and its envelope, nothing else
+    NOT_SENT = ("id", "name", "cost", "estimate")      # how a move names a workflow, and what norm() adds to every one
+
+'''),
+    Edit('P24', "j2.py", r'''
+    def _carry(self, wfs):
+        """Priority's GRANT or COUNTER, or a ruling, echoes each workflow; only its price and envelope are Priority's.
+        Code registers Adaptation's proposal (found by id, then name) with just PRIORITY_OWNS taken from the echo, so
+        the grant can't drop or change a planning field (runs/j2-20261111-124718 dropped "sections";
+        runs/release/j2-20261114-130736 dropped "real_run" and set covers [1]). One Adaptation never proposed is
+        left as it is."""
+        out = []
+        for w in wfs:
+''', r'''
+    def _carry(self, wfs, who="The ruling", shown=None):
+        """P24 (D250): a pricing move (Priority's GRANT or COUNTER, or a ruling) is each workflow's id and its envelope;
+        the rest of the workflow is Adaptation's proposal (found by id, then name), so it is registered as Adaptation's
+        proposal plus the move's envelope (runs/j2-20261111-124718 lost "sections" to an echo; runs/release/
+        j2-20261114-130736 lost "real_run"). A field the move sends with another value than Adaptation proposed is
+        neither taken nor dropped in silence: Adaptation gets a visible note naming the field and the move's value
+        (runs/j2-20261118-090053-4a9c: a COUNTER added F-10 to "fixes" and was logged only as an autofix). A field the
+        move leaves out is not part of it. One Adaptation never proposed is left as it is. `shown`: the table Priority
+        priced (a ruling's workflows), looked up before the proposals."""
+        out, said = [], []
+        by = {**self.proposed_fields, **{str(k): x for x in shown or [] for k in (x.get("name"), x.get("id")) if k}}
+        # the proposal's atoms carry the item numbers code tagged in place (cover_expected); an echo is compared the same way
+        same = lambda k, a, b: a == b or k == "atoms" and isinstance(a, list) and \
+            [cover_expected(copy.deepcopy(x)) if isinstance(x, dict) else x for x in a] == b
+        for w in wfs:
+'''),
+    Edit('P24', "j2.py", r'''        for w in wfs:
+            src = (self.proposed_fields.get(str(w.get("id"))) or self.proposed_fields.get(str(w.get("name"))) or {}) \
+                if isinstance(w, dict) else {}
+            if src:
+''', r'''        for w in wfs:
+            src = (by.get(str(w.get("id"))) or by.get(str(w.get("name"))) or {}) if isinstance(w, dict) else {}
+            if src:
+'''),
+    Edit('P24', "j2.py", r'''            if src:
+                put = sorted(k for k in set(src) | set(w) if k not in self.PRIORITY_OWNS and w.get(k) != src.get(k))
+                if put:
+                    self._autofix(w.get("name") or "?", "carried", "Priority's or the ruling's version dropped or changed "
+                                  + ", ".join(put) + "; kept as Adaptation proposed it")
+                w = {**copy.deepcopy(src), **{k: w[k] for k in self.PRIORITY_OWNS if k in w}}
+''', r'''            if src:
+                said += [f"{k} of '{src.get('name') or '?'}' to {json.dumps(w[k], ensure_ascii=False)[:200]}"
+                         for k in sorted(w) if k not in self.PRIORITY_OWNS + self.NOT_SENT and not same(k, w[k], src.get(k))]
+                w = {**copy.deepcopy(src), **{k: w[k] for k in self.PRIORITY_OWNS if k in w}}
+'''),
+    Edit('P24', "j2.py", r'''            out.append(w)
+        return out
+''', r'''            out.append(w)
+        if said:
+            self.post("validator", f"@Adaptation {who} also set {'; '.join(said)}. Only the envelope is theirs to set, so "
+                                   "the workflow stays as you proposed it; propose a revision to make that change.",
+                      audience="adaptation")
+        return out
+'''),
+    Edit('P24', "j2.py", r'''                       "@Priority Without any content beyond listings the page feels empty. I can't accept zero.")
+                return json.dumps({"say": say, "act": "REVISE", "workflows": with_atoms(offer + [stories], self.out.get("mock_atom")),
+                                   "next": "Priority"})
+''', r'''                       "@Priority Without any content beyond listings the page feels empty. I can't accept zero.")
+                # P24 (D250): the cut to the animations is Adaptation's to make (Priority sends only a money limit of 10)
+                cut = [{**w, "parts": ["interactive_feature"]} if "anim" in str(w.get("name")).lower()
+                       and as_int((w.get("envelope") or {}).get("money_limit")) == 10 else w for w in offer]
+                return json.dumps({"say": say, "act": "REVISE", "workflows": with_atoms(cut + [stories], self.out.get("mock_atom")),
+                                   "next": "Priority"})
+'''),
+    Edit('P24', "j2.py", r'''                                        "the validator.")
+            return self._agree(offer)
+        if act == "PARK":
+''', r'''                                        "the validator.")
+            return self._agree(offer, counter=dec == "counter")
+        if act == "PARK":
+'''),
+    Edit('P24', "j2.py", r'''
+        def env(w):
+            return {**w, "envelope": {"money_limit": w["cost"], "model_call_limit": 2, "time_limit_minutes": 10,
+                                      "retry_limit": 1, "stop_loss": "stop if the build fails twice"}}
+
+''', r'''
+        def env(w):      # P24 (D250): a move names the workflow and sets its envelope, nothing else
+            return {**({"id": w["id"]} if w.get("id") else {}), "name": w.get("name"),
+                    "envelope": {"money_limit": w["cost"], "model_call_limit": 2, "time_limit_minutes": 10,
+                                 "retry_limit": 1, "stop_loss": "stop if the build fails twice"}}
+
+'''),
+    Edit('P24', "j2.py", r'''            if self.cycle == 1 and len(table) >= 4 and any("stories" in w["name"].lower() for w in table):
+                offer = [env({**w, "parts": ["interactive_feature"], "cost": 10} if "anim" in w["name"].lower() else w)
+                         for w in table if "stories" not in w["name"].lower()]
+''', r'''            if self.cycle == 1 and len(table) >= 4 and any("stories" in w["name"].lower() for w in table):
+                offer = [env({**w, "cost": 10} if "anim" in w["name"].lower() else w)
+                         for w in table if "stories" not in w["name"].lower()]
+'''),
+    Edit('P24', "j2.py", r'''        fmt = ('{"say": str (address @Adaptation), "decision": "GRANT"|"COUNTER"|"REFUSE", '
+               '"workflows": ' + self.GRANT_FMT + ' (what you fund, each with its envelope; for COUNTER, your '
+               'smaller version), '
+               + next_field(("adaptation", "identity"), f"Adaptation normally; Identity only once {MAX_ATTEMPTS} "
+''', r'''        fmt = ('{"say": str (address @Adaptation), "decision": "GRANT"|"COUNTER"|"REFUSE", '
+               '"workflows": ' + self.PRICE_FMT + ' (one entry per workflow you fund: its id and your envelope, nothing '
+               'else, since the workflow itself stays as Adaptation proposed it; a COUNTER funds fewer workflows or '
+               'sets a lower money_limit, and must state every money_limit), '
+               + next_field(("adaptation", "identity"), f"Adaptation normally; Identity only once {MAX_ATTEMPTS} "
+'''),
+    Edit('P24', "j2.py", r'''                      f"Exchange {self.exchanges + 1} of {MAX_ATTEMPTS}; after that Identity rules on both final "
+                      "positions." + (" Prices are fixed by the rate card: to spend less, remove parts or whole "
+                                      "workflows, not the price." if RATES else "")
+                      + (f" CHANGE {self.change['id']}: its planning-document revisions ({', '.join(self.change['docs'])})"
+''', r'''                      f"Exchange {self.exchanges + 1} of {MAX_ATTEMPTS}; after that Identity rules on both final "
+                      "positions." + (" The rate card is a floor: a money_limit below a workflow's rate-card price is "
+                                      "rejected, so to spend less, fund fewer workflows." if RATES else "")
+                      + (f" CHANGE {self.change['id']}: its planning-document revisions ({', '.join(self.change['docs'])})"
+'''),
+    Edit('P24', "j2.py", r'''            dec = str(p.get("decision") or "").lower()
+            wfs = norm(p.get("workflows")) or (table if dec == "grant" else [])
+            if dec != "grant":
+''', r'''            dec = str(p.get("decision") or "").lower()
+            wfs = self._carry(norm(p.get("workflows")), "Priority", table) or (table if dec == "grant" else [])
+            if dec != "grant":
+'''),
+    Edit('P24', "j2.py", r'''            p = self.call("priority", fmt, task + "\nYOUR LAST REPLY GRANTED WITHOUT A PRICE: every workflow in "
+                          "workflows needs its own cost (or estimated_resources.money) and envelope.money_limit. "
+                          "Send the same decision again with those filled in.", mock)
+        note = None
+''', r'''            p = self.call("priority", fmt, task + "\nYOUR LAST REPLY GRANTED WITHOUT A PRICE: every workflow in "
+                          "workflows needs its own envelope.money_limit. Send the same decision again with those "
+                          "filled in.", mock)
+        note = None
+'''),
+    Edit('P24', "j2.py", r'''                keep.pop()
+            env = lambda w: {**w, "envelope": {"money_limit": w["cost"], "model_call_limit": 2, "retry_limit": 1}}
+            return json.dumps({"say": f"@Adaptation Identity's ruling priced: {granted_total(keep)} of {remaining} left.",
+''', r'''                keep.pop()
+            env = lambda w: {**({"id": w["id"]} if w.get("id") else {}), "name": w.get("name"),      # P24 (D250)
+                             "envelope": {"money_limit": w["cost"], "model_call_limit": 2, "retry_limit": 1}}
+            return json.dumps({"say": f"@Adaptation Identity's ruling priced: {granted_total(keep)} of {remaining} left.",
+'''),
+    Edit('P24', "j2.py", r'''                               "workflows": [env(w) for w in keep]})
+        p = self.call("priority", '{"say": str, "decision": "GRANT"|"COUNTER"|"REFUSE", "workflows": ' + self.GRANT_FMT
+                      + ' (what you fund, each with its envelope)}',
+                      f"IDENTITY RULED ON {c['id']}: {(c['identity'] or [{}])[-1].get('say')}\nTHE RULING TO PRICE: "
+''', r'''                               "workflows": [env(w) for w in keep]})
+        p = self.call("priority", '{"say": str, "decision": "GRANT"|"COUNTER"|"REFUSE", "workflows": ' + self.PRICE_FMT
+                      + ' (one entry per workflow you fund: its id and your envelope, nothing else; a COUNTER must state '
+                        'every money_limit)}',
+                      f"IDENTITY RULED ON {c['id']}: {(c['identity'] or [{}])[-1].get('say')}\nTHE RULING TO PRICE: "
+'''),
+    Edit('P24', "j2.py", r'''        dec = str(p.get("decision") or "").lower()
+        wfs = norm(p.get("workflows")) or (table if dec == "grant" else [])
+        if dec == "grant":      # the same rule: an echo without a price keeps the price code computed for the ruling
+''', r'''        dec = str(p.get("decision") or "").lower()
+        wfs = self._carry(norm(p.get("workflows")), "Priority", table) or (table if dec == "grant" else [])
+        if dec == "grant":      # the same rule: an echo without a price keeps the price code computed for the ruling
+'''),
+    Edit('P24', "j2.py", r'''        self._settle(c, "priority", f"Priority's final answer on Identity's ruling: {dec.upper()} {brief_list(wfs)}.")
+        if wfs:
+            return self._agree(wfs)
+        self.conflict, self.exchanges, self.a_pos, self.p_pos = None, 0, [], []
+        self._parked(f"Priority refused Identity's ruling on {c['id']} when pricing it")
+''', r'''        self._settle(c, "priority", f"Priority's final answer on Identity's ruling: {dec.upper()} {brief_list(wfs)}.")
+        if wfs:
+            return self._agree(wfs, counter=dec == "counter")
+        self.conflict, self.exchanges, self.a_pos, self.p_pos = None, 0, [], []
+        self._parked(f"Priority refused Identity's ruling on {c['id']} when pricing it")
+'''),
+    Edit('P24', "j2.py", r'''        self._settle(c, "priority", f"The Requester kept Priority's final answer: {brief_list(wfs)}.")
+        if wfs:
+            return self._agree(wfs)
+        self.conflict, self.exchanges, self.a_pos, self.p_pos = None, 0, [], []
+        self._parked(f"the Requester kept Priority's refusal on {c['id']}")
+''', r'''        self._settle(c, "priority", f"The Requester kept Priority's final answer: {brief_list(wfs)}.")
+        if wfs:
+            return self._agree(wfs, counter=(c.get("repricing") or {}).get("decision") == "COUNTER")
+        self.conflict, self.exchanges, self.a_pos, self.p_pos = None, 0, [], []
+        self._parked(f"the Requester kept Priority's refusal on {c['id']}")
+'''),
+    Edit('P24', "j2.py", r'''
+    def _agree(self, wfs):
+        self.step = 5
+''', r'''
+    def _agree(self, wfs, counter=False):
+        self.step = 5
+'''),
+    Edit('P24', "j2.py", r'''        first = self.doc and not self.workflows       # a document stage's first plan
+        registered, refused, defaults = self._register(wfs)
+        self.cycle_registered = self.cycle_registered or bool(registered)
+''', r'''        first = self.doc and not self.workflows       # a document stage's first plan
+        registered, refused, defaults = self._register(wfs, counter)
+        self.cycle_registered = self.cycle_registered or bool(registered)
+'''),
+    Edit('P24', "j2.py", r'''
+    def _register(self, agreed):
+        """J2.e, plain code: every proposal is checked before it is registered, including one from an Identity ruling.
+''', r'''
+    def _register(self, agreed, counter=False):
+        """J2.e, plain code: every proposal is checked before it is registered, including one from an Identity ruling.
+'''),
+    Edit('P24', "j2.py", r'''        Checks: required fields present, priced from the rate card, nothing Priority refused, cost fits what's left.
+        With realization on, a proposal the plan has not judged (a fix, a replacement, a relay revision) is judged first
+''', r'''        Checks: required fields present, priced from the rate card, nothing Priority refused, cost fits what's left.
+        P24 (D250): the money limit is charged; a COUNTER (`counter`) without one is rejected, and with the rate card on
+        a limit below the rate-card price is rejected with the reason, never raised to it.
+        With realization on, a proposal the plan has not judged (a fix, a replacement, a relay revision) is judged first
+'''),
+    Edit('P24', "j2.py", r'''                      else f"{self.p_refused[name]}, so it can't be registered" if name in self.p_refused
+                      else "no rate-card parts, so it has no price" if RATES and rc is None
+''', r'''                      else f"{self.p_refused[name]}, so it can't be registered" if name in self.p_refused
+                      else "a counter must state its money limit"      # P24 (D250)
+                      if counter and as_int((w.get("envelope") or {}).get("money_limit")) <= 0
+                      else "no rate-card parts, so it has no price" if RATES and rc is None
+'''),
+    Edit('P24', "j2.py", r'''                      else f"unknown rate-card parts {unknown}; allowed: {', '.join(RATES)}" if unknown
+                      else (f"the judge scored it {w['judge']['score']:.2f}, below the {j2_realization.THRESHOLD:.2f} gate"
+''', r'''                      else f"unknown rate-card parts {unknown}; allowed: {', '.join(RATES)}" if unknown
+                      else (f"its money limit {c} is below its rate-card price {rc} ({' + '.join(map(str, w['parts']))}), "
+                            "the floor") if rc is not None and c < rc      # P24 (D250)
+                      else (f"the judge scored it {w['judge']['score']:.2f}, below the {j2_realization.THRESHOLD:.2f} gate"
+'''),
+    # ---- P25 (D251): the budget cap only when J2_BUDGET_CAP is set; Decide for me never approves a raise; a raise question shows
+    # the credits approved so far (prompt-changing, D249: the raise question's text)
+    Edit('P25', "j2.py", r'''BUDGET = int(os.getenv("J2_BUDGET", "100"))           # starting budget
+BUDGET_CAP = int(os.getenv("J2_BUDGET_CAP", str(2 * BUDGET)))   # most the Requester's approvals can raise it to
+MAX_ATTEMPTS = 4           # attempts two disagreeing agents get before Identity rules (priority.md: four exchanges)
+''', r'''BUDGET = int(os.getenv("J2_BUDGET", "100"))           # starting budget
+# P25 (D251): the most the Requester's approvals can raise the budget to, only when J2_BUDGET_CAP is set; unset: no cap
+BUDGET_CAP = int(os.environ["J2_BUDGET_CAP"]) if os.getenv("J2_BUDGET_CAP") else None
+
+
+def budget_room(budget):
+    """P25 (D251): how much more the Requester may approve: up to the cap when there is one, else without end."""
+    return BUDGET_CAP - budget if BUDGET_CAP is not None else float("inf")
+
+
+def own_number(room):
+    """P25 (D251): the "type your own number" words of a raise option; "up to N" only when there is a cap."""
+    return "Or type your own number" + (f", up to {room}" if BUDGET_CAP is not None else "")
+MAX_ATTEMPTS = 4           # attempts two disagreeing agents get before Identity rules (priority.md: four exchanges)
+'''),
+    Edit('P25', "j2.py", r'''    def _raise_budget(self, add, why):
+        """Only after the Requester approved more budget in answer to Identity's question; capped at BUDGET_CAP."""
+        if add <= 0:
+''', r'''    def _raise_budget(self, add, why):
+        """Only after the Requester approved more budget in answer to Identity's question; capped at BUDGET_CAP (P25: when
+        J2_BUDGET_CAP is set)."""
+        if add <= 0:
+'''),
+    Edit('P25', "j2.py", r'''            return
+        new = min(self.budget + add, BUDGET_CAP)
+        if new <= self.budget:
+''', r'''            return
+        new = min(self.budget + add, BUDGET_CAP) if BUDGET_CAP is not None else self.budget + add
+        if new <= self.budget:
+'''),
+    Edit('P25', "j2.py", r'''        self.raises.append({"cycle": self.cycle, "asked": add, "from": old, "to": new, "why": why})
+        self._event("identity", "budget_raise", f"{old} -> {new} (asked +{add}, cap {BUDGET_CAP}; {why})")
+        self.post("system", f"Budget raised on the Requester's approval: {old} -> {new}"
+''', r'''        self.raises.append({"cycle": self.cycle, "asked": add, "from": old, "to": new, "why": why})
+        self._event("identity", "budget_raise", f"{old} -> {new} (asked +{add}, cap {BUDGET_CAP or 'none'}; {why})")
+        self.post("system", f"Budget raised on the Requester's approval: {old} -> {new}"
+'''),
+    Edit('P25', "j2.py", r'''                  + f". Remaining: {self.budget - self.spent}.")
+
+''', r'''                  + f". Remaining: {self.budget - self.spent}.")
+
+    def _so_far(self):
+        """P25 (D251): the work credits the Requester has approved so far, as a sum, for a question that asks for more:
+        "So far: 100 + 30 = 130 work credits approved." (the start alone when nothing was added yet)."""
+        start = self.raises[0]["from"] if self.raises else self.budget
+        adds = [r["to"] - r["from"] for r in self.raises]
+        return "So far: " + " + ".join(str(x) for x in [start, *adds]) + (f" = {self.budget}" if adds else "") + \
+            " work credits approved."
+
+'''),
+    Edit('P25', "j2.py", r'''        questions = [{**q, "options": q.get("options") or []} for q in questions]
+        if kind != "limit":
+''', r'''        questions = [{**q, "options": q.get("options") or []} for q in questions]
+        if kind in ("approval", "ruling_budget") or any(as_int(b) > 0 for q in questions for b in q.get("budget") or []):
+            questions = [{**q, "question": f"{q['question']} {self._so_far()}"} for q in questions]      # P25 (D251)
+        if kind != "limit":
+'''),
+    Edit('P25', "j2.py", r'''            return None      # J2.g: only a decision is Decide for me's; a fact waits for the Requester
+        return self._auto_choice(p)
+
+''', r'''            return None      # J2.g: only a decision is Decide for me's; a fact waits for the Requester
+        pick = self._auto_choice(p)
+        # P25 (D251): every raise needs the Requester's own approval; Decide for me waits instead of approving one
+        if p["kind"] in ("approval", "ruling_budget"):
+            return None
+        qs = p.get("questions") or []
+        if pick[2] and len(qs) == 1 and as_int((qs[0].get("budget") or [0] * pick[2])[pick[2] - 1]) > 0:
+            return None
+        return pick
+
+'''),
+    Edit('P25', "j2.py", r'''        need = sum(c for _, c, _ in rows) - left
+        room = BUDGET_CAP - self.budget
+        add = min(max(need, 1), room) if room > 0 else 0
+''', r'''        need = sum(c for _, c, _ in rows) - left
+        room = budget_room(self.budget)
+        add = min(max(need, 1), room) if room > 0 else 0
+'''),
+    Edit('P25', "j2.py", r'''            opts.append(f"Add {add} work credits{' (the most allowed)' if add < need else ''} and keep going: you get more "
+                        f"of what you asked for built. Or type your own number, up to {room}")
+            budget.append(add)
+''', r'''            opts.append(f"Add {add} work credits{' (the most allowed)' if add < need else ''} and keep going: you get more "
+                        f"of what you asked for built. {own_number(room)}")
+            budget.append(add)
+'''),
+    Edit('P25', "j2.py", r'''        cheapest = min(RATES.values()) if RATES else 1
+        room = BUDGET_CAP - self.budget
+        short = self.budget - self.spent < cheapest       # whatever the limit was, nothing new can be funded
+''', r'''        cheapest = min(RATES.values()) if RATES else 1
+        room = budget_room(self.budget)
+        short = self.budget - self.spent < cheapest       # whatever the limit was, nothing new can be funded
+'''),
+    Edit('P25', "j2.py", r'''            opts.append((f"Add {add} work credits{' (the most allowed)' if add < want else ''} and keep going: {more}. "
+                         f"Or type your own number, up to {room}" if add else
+                         f"Keep going: {more}")
+''', r'''            opts.append((f"Add {add} work credits{' (the most allowed)' if add < want else ''} and keep going: {more}. "
+                         f"{own_number(room)}" if add else
+                         f"Keep going: {more}")
+'''),
 )
 
 OTHER_EDITS = (
@@ -1073,6 +1432,8 @@ PATCH_NOTES = {
     "P21": "`_tool_record` (D245, builder tools live): a file outside the builder's folder that changed during a tools call is not the builder's write when it is one of the host's own run files (`rehydrate.HOST_FILES`: the live view, the snapshot, the event log) or the atomic-write temp file of one (`oslayer.temp_target` maps it back), unless the CLI's tool calls (`LAST_META[\"tool_calls\"]`) name it, so a builder that touches a host file is still stopped",
     "P22": "`_register` (D246): a done-when item a real run checks is decided by the run's receipt; a proposal without a real run that covers it is refused (\"the real run of 'X' checks\"), not the real-run workflow, and the real-run workflow's refusal for an item another workflow covers names that workflow and says the conflict is there (`_cover_conflict`): one registered or held is to be superseded (named in `replaces`) or replaced by one that doesn't cover the item, and a waiting workflow a proposal of the same batch supersedes no longer counts against the real run; one running or done can't be superseded, so the refusal says the item can't be met by that real run in this run; a rejection the validator's last call also made (same workflow, same reason) is a repeated failure: `_agree` stops the cycle with an Identity limit for the Requester (`_repeat_stop`, \"The same failure came back twice in a row\"), resuming where the validator was going when it registered something (runs/j2-20261118-110800-0c75: the script was refused four times for an item the run notes covered)",
     "P23": "`ended_workable(run_dir)` (D247) is true only for a clean end: `summary.json`'s outcome starts \"Done:\" and the last audit passes `workable()` with `accepted` and `after_real_run` emptied, so a run that ended \"Done with open items\" (an item accepted as it is, a real run that never ran or did not pass) is never saved as a run template (`_save_run_template`), reused as a folder (`_reuse_folder`) or served by the content door",
+    "P24": "(D250, prompt-changing per D249) Priority's move is each workflow's id and its envelope: both pricing turns ask for `PRICE_FMT` (`[{id, envelope}]`) and `_carry` expands the reply to Adaptation's proposal (the table Priority was shown, then the proposals, by id then name) plus the envelope; a field the move sends with another value than Adaptation proposed is not taken, and the validator posts Adaptation a visible note naming the field and the value (no `carried` autofix); `granted` charges `envelope.money_limit`, also with the rate card on; `_register` rejects a COUNTER without a money limit (\"a counter must state its money limit\") and, with the rate card on, a limit below the rate-card price (the floor); J2's mock Priority sends `{id, name, envelope}`, its cycle-1 COUNTER sets the animations' limit to 10, and the mock Adaptation answers by revising their parts (runs/j2-20261118-090053-4a9c: a COUNTER's terms were logged as \"kept as Adaptation proposed it\")",
+    "P25": "(D251, prompt-changing per D249: the raise question's text) `BUDGET_CAP` comes from `J2_BUDGET_CAP` only when it is set; unset means no cap (`budget_room` is unbounded, `_raise_budget` adds the whole approval, and a raise option says \"Or type your own number\" without \"up to N\", `own_number`); Decide for me (`_auto_pick`) waits for the Requester instead of answering an approval, a ruling_budget question or a limit option that adds credits; a question that asks for more credits ends with the credits approved so far (`_so_far`: \"So far: 100 + 30 = 130 work credits approved.\")",
     "P19": "`_make_report` asks `self._hook(\"review_enabled\")` (sync 6, D179): only an explicit `False` switches the reviewer off (no thread, `ai_calls` without the reviewer's call) and the run report then says \"The reviewer is switched off in this team's settings.\"; under `NullHooks` `_hook` returns `None`, so a bare J2 and a host without the hook behave as before",
     "P11": "`J2Run.rehydrate(src_dir)` delegates to `rehydrate.py`",
     "P12": "Windows (D101), nothing else: `j2_check.find_chrome` also looks in the Windows install folders of Chrome, `j2_check._chrome` decodes Chrome's output as UTF-8 with replacement, `j2_template_lib` writes its index with `oslayer.replace` (a rename that waits out a reader) and takes its library lock through `oslayer` (P10), records a template's saved path with `/` on every system (`run_tpl_rel`) and splits it on either separator when it checks for `..` (`run_saved_dir`)",
@@ -1254,8 +1615,11 @@ def render_vendored_md(commit: str, rows, ranges) -> str:
         "after `j2.py:8313` has moved. Patches are located by anchor text, never by line.",
         "",
         "Copied into `sutra_app/engine/` with the same module names; every change to a J2 file is one of the numbered patches "
-        "below and nothing else (decision D13). Prompts stay byte-identical. There is no P6 (the design's table skips it) and no "
-        "P13 (retired in sync 4, D140: its code is Sutra's own `engine/runlist.py`); P20 is reserved for a late-judge switch (D145, D162, D180); P21 (D245) keeps the host's own run files out of a builder's writes outside its folder; P22 (D246) refuses the workflow without a real run that covers a real run's item, and stops the cycle on the same validator rejection twice in a row; P23 (D247) makes `ended_workable` true only for a clean \"Done:\" end. "
+        "below and nothing else (decision D13). Prompts stay byte-identical, except where a patch says it changes a prompt (D249: J2 is "
+        "frozen at `cut-off/2026-11-17` and the app is the product, so a recorded patch may change what the engine asks the model; the "
+        "prompt goldens are recorded from the engine with its patches applied): P24 changes Priority's reply format, and P25 the raise "
+        "question's text. There is no P6 (the design's table skips it) and no "
+        "P13 (retired in sync 4, D140: its code is Sutra's own `engine/runlist.py`); P20 is reserved for a late-judge switch (D145, D162, D180); P21 (D245) keeps the host's own run files out of a builder's writes outside its folder; P22 (D246) refuses the workflow without a real run that covers a real run's item, and stops the cycle on the same validator rejection twice in a row; P23 (D247) makes `ended_workable` true only for a clean \"Done:\" end; P24 (D250) makes Priority's move a workflow's id and its envelope; P25 (D251) takes the budget cap only from J2_BUDGET_CAP and keeps every raise the Requester's own. "
         "Sync 5 (D160 to D163): the pin moved to the tag `cut-off/2026-11-12`; the types are vendored as data (`conditions/` and "
         "`templates/` as whole trees, D161); P1 is a counted rule, P7, P8, P9, P12 and P14 were repaired, P2 gained a third edit, "
         "P17 and P18 are new (D162). "

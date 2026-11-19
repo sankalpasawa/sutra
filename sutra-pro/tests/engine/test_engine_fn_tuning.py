@@ -116,7 +116,8 @@ J2_INTAKE = {"to_requester": "Thanks, I have everything I need.", "to_agents": "
              "next": "Adaptation", "goal": J2_CHARTER}
 J2_PROPOSE = {"say": "@Priority Proposal for cycle 1.", "act": "PROPOSE", "next": "Priority", "workflows": [j2_workflow()]}
 J2_RESPOND = {"say": "@Priority I can shrink them to two.", "act": "REVISE", "next": "Priority", "workflows": [j2_workflow()]}
-J2_PRICE = {"say": "@Adaptation Granted (18 of 30 left).", "decision": "GRANT", "next": "Adaptation", "workflows": [j2_grant()]}
+J2_PRICE = {"say": "@Adaptation Granted (18 of 30 left).", "decision": "GRANT", "next": "Adaptation",      # P24 (D250): id + envelope
+            "workflows": [{"id": "P-1", "name": "Viewport fix", "envelope": copy.deepcopy(ENVELOPE)}]}
 J2_VERDICT = {"say": "@Coordination The build is wrong: the section misses what the check asks for.", "verdict": "BUILD_WRONG",
               "atom": "W-2.a1", "affordable": True}
 
@@ -175,7 +176,9 @@ def test_a_revision_in_j2_words_is_read():
 
 def test_a_grant_in_j2_words_carries_its_envelope_and_drops_the_keys_the_class_lacks():
     [w] = parse("priority", "price", J2_PRICE).workflows
-    assert w.envelope.money_limit == 15 and w.id == "P-1"                     # `estimate` and `cost` are J2's, not the class's
+    assert w.envelope.money_limit == 15 and w.id == "P-1"
+    [w] = parse("priority", "price", {**J2_PRICE, "workflows": [j2_grant(id="P-1")]}).workflows      # an echo of the whole workflow
+    assert w.envelope.money_limit == 15 and w.id == "P-1"                     # the rest is Adaptation's, so it is dropped
 
 
 def test_a_counter_and_a_refusal_in_j2_words():
@@ -229,12 +232,20 @@ def test_a_build_wrong_verdict_with_no_words_at_all_is_still_refused():
 
 
 # ---- the schemas the model is asked for do not change -----------------------------------------------------------------------
-@pytest.mark.parametrize("family,kind", [("adaptation", "propose"), ("adaptation", "respond"), ("priority", "price")])
+@pytest.mark.parametrize("family,kind", [("adaptation", "propose"), ("adaptation", "respond")])
 def test_the_transport_schema_still_asks_for_steps_and_an_id(family, kind):
     schema = REGISTRY.transport_schema(family, kind=kind)
     assert schema["properties"]["workflows"] == {"items": {"$ref": "#/definitions/ProposedWorkflow"}, "type": "array"}
     workflow = schema["definitions"]["ProposedWorkflow"]
     assert {"id", "steps"} <= set(workflow["required"]) and "atoms" not in workflow["properties"]
+
+
+def test_priority_is_asked_for_each_workflows_id_and_envelope_only():
+    """P24 (D250): Priority's move names the proposal by id and sets its envelope; the rest is Adaptation's."""
+    schema = REGISTRY.transport_schema("priority", kind="price")
+    assert schema["properties"]["workflows"] == {"items": {"$ref": "#/definitions/PricedWorkflow"}, "type": "array"}
+    assert schema["definitions"]["PricedWorkflow"]["required"] == ["id"]
+    assert set(schema["definitions"]["PricedWorkflow"]["properties"]) == {"id", "name", "envelope"}
 
 
 # ---- write scope ------------------------------------------------------------------------------------------------------------
