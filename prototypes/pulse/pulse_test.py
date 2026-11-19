@@ -1218,5 +1218,46 @@ class DocsTests(unittest.TestCase):
             self.assertIn(item, text)
 
 
+# ---------------------------------------------------------------- T15: whole-tool checks
+class EndToEndTests(FetchBase):
+    RUNS = [CHECK, FETCH, [*FETCH, "--full"], ["find", *MB, *WHY, "--rules", str(FIX / "rules.sample.json")],
+            ["purge"], ["purge", "--dry-run"]]
+
+    def test_mock_all_commands_offline(self):  # AC-5 / FR-5 / NFR-1
+        for argv in self.RUNS:
+            code, out, err = self.run_cli(argv, now=lambda: FIXED_NOW)
+            self.assertEqual(code, 0, (argv, err))
+            self.assertTrue(out.startswith("MOCK MODE"), argv)
+        self.assertIsNone(sys.modules.get("google"))
+        self.assertIsNone(sys.modules.get("googleapiclient"))
+        with self.assertRaises(RuntimeError):
+            socket.socket()
+
+    def test_audit_rows_schema_and_no_mail(self):  # AC-27 / FR-27 / FR-33
+        for argv in self.RUNS:
+            self.run_cli(argv, now=lambda: FIXED_NOW)
+        refusals = [["check", "--mailbox", "bob@example.test", *WHY], ["fetch", "--mailbox", "x@other.test", *WHY]]
+        for argv in refusals:
+            self.assertEqual(self.run_cli(argv)[0], 3)
+        self.assertEqual(self.run_cli(["fetch", *MB])[0], 2)  # usage: no row
+        rows = self.audit_rows()
+        self.assertEqual(len(rows), len(self.RUNS) + len(refusals))
+        for r in rows:
+            self.assertEqual(list(r), list(audit.FIELDS))
+        self.assertEqual([r["command"] for r in rows],
+                         ["check", "fetch", "fetch", "find", "purge", "purge", "check", "fetch"])
+        self.assertEqual([r["result"] for r in rows][-2:], ["not_allowlisted", "wrong_domain"])
+        log = (self.state / "audit.jsonl").read_text(encoding="utf-8")
+        secrets = []
+        for m in load_inbox()["messages"]:
+            row = parse.to_row(m, full=True)
+            secrets += [row["from"], row["snippet"], row["body_text"].splitlines()[0]]
+            secrets += [row["subject"]] if row["subject"] else []
+            secrets += [a["name"] for a in row["attachments"]]
+        self.assertGreater(len(secrets), 40)
+        for s in secrets:
+            self.assertNotIn(s, log)
+
+
 if __name__ == "__main__":
     unittest.main(verbosity=2)
