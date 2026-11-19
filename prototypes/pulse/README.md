@@ -103,7 +103,7 @@ Only `fetch --since-last` saves or moves the mailbox's saved position. A plain `
 | 2 | Fix your input or install | `usage`, `config_missing`, `config_invalid`, `rules_invalid`, `deps_missing` |
 | 3 | Refused by policy | `wrong_domain`, `not_allowlisted`, `mailbox_mismatch`, `audit_unavailable`, `unsafe_path` |
 | 4 | Credentials or admin setup | `key_missing`, `key_unreadable`, `unauthorized_client`, `invalid_grant`, `access_denied` |
-| 5 | Try later | `rate_limited`, `server_error` (after 5 attempts, backoff 1, 2, 4, 8 s) |
+| 5 | Try later | `rate_limited`, `server_error`, `network_error` (after 5 attempts, backoff 1, 2, 4, 8 s) |
 
 Rules file format (JSON): see `fixtures/rules.sample.json`. Allowed keys: `id`, `description`, `gmail_query`,
 `keywords`, `regex`, `fields`. Fields: `from`, `to`, `cc`, `subject`, `snippet`, `attachments.name`,

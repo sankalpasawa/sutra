@@ -123,7 +123,7 @@ class MockClient:
 
 def with_retry(fn: Callable[[], T], sleep: Callable[[float], None], attempts: int = 5,
                base: float = 1.0, cap: float = 32.0) -> T:
-    """Retry TransientError (429 / 5xx): delays base, 2*base, ... capped at cap; no jitter (spec R-11)."""
+    """Retry TransientError (429 / 5xx / network): delays base, 2*base, ... capped at cap; no jitter (spec R-11)."""
     last = None
     for n in range(1, attempts + 1):
         try:
@@ -132,6 +132,10 @@ def with_retry(fn: Callable[[], T], sleep: Callable[[float], None], attempts: in
             last = e
             if n < attempts:
                 sleep(min(base * 2 ** (n - 1), cap))
+    if last.kind == "network":
+        raise PulseError("network_error",
+                         f"Could not reach Google after {attempts} attempts. Check this machine's network "
+                         "connection (and any proxy or firewall), then try again.")
     if last.status == 429:
         raise PulseError("rate_limited",
                          f"Gmail kept rate-limiting this request (HTTP 429) after {attempts} attempts. Try again later.")

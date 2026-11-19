@@ -41,6 +41,15 @@ def _is(exc, class_name: str) -> bool:
     return any(c.__name__ == class_name for c in type(exc).__mro__)
 
 
+# Network failures, matched by class name in the MRO: google.auth.exceptions.TransportError (token refresh),
+# httplib2.HttpLib2Error (API calls). socket errors, timeouts and requests' errors are all OSError subclasses.
+_NETWORK_CLASSES = ("TransportError", "HttpLib2Error")
+
+
+def _is_network(exc) -> bool:
+    return isinstance(exc, OSError) or any(_is(exc, n) for n in _NETWORK_CLASSES)
+
+
 def _http_reason(exc) -> str:
     reason = getattr(exc, "reason", "") or ""
     details = getattr(exc, "error_details", None)
@@ -61,6 +70,8 @@ class LiveClient:
         try:
             return request.execute(num_retries=0)
         except Exception as e:
+            if _is_network(e):
+                raise errors.TransientError(0, kind="network") from None
             if _is(e, "RefreshError"):
                 raise errors.map_refresh_error(str(e)) from None
             if _is(e, "HttpError"):

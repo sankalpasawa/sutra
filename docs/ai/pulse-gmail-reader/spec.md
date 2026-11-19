@@ -29,6 +29,7 @@ Status: Refined   |   Task: pulse-gmail-reader   |   Date: 2026-11-19
 |---|---|---|
 | R-20 | FR-23: only `fetch --since-last` saves a position. A plain fetch (with or without `--query`/`--since`) never reads or changes it. A `--since-last` fallback list that was filtered still saves, and prints that earlier mail outside the filter is not covered. AC-23 now uses `--since-last`; AC-39 added | Review R1-1: a filtered plain fetch moved the position and later `--since-last` runs silently skipped mail |
 | R-21 | FR-22a added: 404 on `messages.get` skips and counts the message; audit row gains a 12th field `skipped`; mock scenario `history_deleted`; AC-40 added | Review R1-2: one deleted message ended the run and, on `--since-last`, blocked every later run until the history expired |
+| R-22 | New code `network_error` (exit 5). Network failures during token refresh or a request are retried like 5xx; FR-14 extended; AC-41 added | Review R1-3: they exited `internal` with no retry |
 
 ## Problem
 An internal tool needs to read selected mailboxes in the company Google Workspace domain, read-only. Domain-wide delegation lets one service account open any mailbox in the domain; Google does not limit it per mailbox. So the tool itself must limit which mailboxes are opened, why, and what is kept. Credentials (admin-approved key file, domain) arrive later, so step 1 must be complete and tested offline.
@@ -137,6 +138,7 @@ Common to `check`, `fetch`, `find`:
 | 4 | `access_denied` | 403 from Gmail (API not enabled, policy) | "Enable the Gmail API in the GCP project" and other causes |
 | 5 | `rate_limited` | 429 after all retries | Attempts made; try later |
 | 5 | `server_error` | 5xx after all retries | Attempts made |
+| 5 | `network_error` | Google unreachable after all retries: token refresh `TransportError`, `httplib2` errors, socket errors and timeouts (R-22) | "Could not reach Google", attempts made, check the network |
 
 Messages are one or two plain-English sentences on stderr, no stack trace unless `PULSE_DEBUG=1`.
 
@@ -258,7 +260,7 @@ Never in an audit row: mail fields (subject, from, snippet, body, attachment nam
 | FR-11 | check/fetch/find fetch the profile first and refuse with `mailbox_mismatch` (case-insensitive compare) if it differs; no messages read |
 | FR-12 | `check` prints profile email, message total, thread total; makes no call other than getProfile |
 | FR-13 | Each Google error in the error table maps to its code, exit code and message |
-| FR-14 | 429 and 5xx are retried with exponential backoff, max 5 attempts per request, then `rate_limited` / `server_error` |
+| FR-14 | 429, 5xx and network failures are retried with exponential backoff, max 5 attempts per request, then `rate_limited` / `server_error` / `network_error` (R-22) |
 | FR-15 | Listing paginates and stops at `--max` without requesting further pages |
 | FR-16 | `fetch` without `--full` requests metadata only and rows contain no `body_text` |
 | FR-17 | `fetch --full` adds `body_text`; HTML-only mail yields text without tags |
@@ -342,6 +344,7 @@ Each maps to a test in `pulse_test.py` unless marked (manual).
 | AC-38 | Given a test run, then `HOME`, OUT_DIR and STATE_DIR are temp dirs and `git status --porcelain prototypes/pulse` is unchanged after (manual once, then by construction) | NFR-9 |
 | AC-39 | Given no state, when `fetch`, `fetch --query`, `fetch --since` run, then no state file is created; given a saved position, a plain `fetch --query` leaves it byte-identical; given `--since-last` with a filtered fallback, the position is saved and the "not read" note printed; an unfiltered fallback prints no note | FR-23, R-20 |
 | AC-40 | Given a saved position and history that lists 2 deleted ids among 2 live ones, when `fetch --since-last`, then exit 0, 2 rows, "Skipped 2 deleted messages", audit `skipped: 2`, position saved; the same through `LiveClient` with a 404 on `messages.get`; `find` skips a deleted message the same way; a 404 on `getProfile`/`messages.list` is `internal` | FR-22a, R-21 |
+| AC-41 | Given `LiveClient` whose request raises a `TransportError`, an `httplib2` error, `socket.timeout`, `ConnectionResetError` or `OSError`, when `check` runs, then 5 attempts with delays `[1, 2, 4, 8]`, exit 5 `network_error`, stderr "Could not reach Google"; two failures then success gives exit 0 | FR-14, R-22 |
 
 ## Assumptions
 | ID | Assumption |

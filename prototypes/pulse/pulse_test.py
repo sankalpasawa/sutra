@@ -174,7 +174,7 @@ class ErrorMapperTests(unittest.TestCase):
         self.assertIn("Domain-wide delegation", errors.map_refresh_error("unauthorized_client").message)
 
     def test_exit_table(self):
-        self.assertEqual({errors.EXIT[c] for c in ("rate_limited", "server_error")}, {5})
+        self.assertEqual({errors.EXIT[c] for c in ("rate_limited", "server_error", "network_error")}, {5})
         with self.assertRaises(ValueError):
             PulseError("nope", "x")
 
@@ -1247,6 +1247,30 @@ class LiveTests(BaseCase):
         self.assertEqual(json.loads(self.save.read_text(encoding="utf-8"))["ana@example.test"]["history_id"],
                          profile["historyId"])
         self.assertFalse((self.state / "history.mock.json").exists())
+
+    def test_live_network_errors(self):  # R1-3 / AC-41
+        class TransportError(Exception):  # name of google.auth.exceptions.TransportError
+            pass
+
+        class HttpLib2Error(Exception):  # name of httplib2.HttpLib2Error
+            pass
+
+        class ServerNotFoundError(HttpLib2Error):
+            pass
+        for exc in (TransportError("token endpoint unreachable"), ServerNotFoundError("dns"),
+                    socket.timeout("timed out"), ConnectionResetError("reset"), OSError("net down")):
+            code, out, err = self.run_cli(CHECK, env=self.live_env(), factory=self.stub_factory(lambda n, k, e=exc: e))
+            self.assertEqual((code, self.audit_rows()[-1]["result"]), (5, "network_error"), type(exc).__name__)
+            self.assertIn("Could not reach Google", err)
+            self.assertNotIn("Unexpected error", err)
+            self.assertEqual(len(self.svc.log), 5)
+            self.assertEqual(self.sleeps.delays, [1, 2, 4, 8])
+        profile = load_inbox()["profile"]
+        fails = [ConnectionResetError("reset"), TransportError("x")]
+        code, _o, err = self.run_cli(CHECK, env=self.live_env(), factory=self.stub_factory(
+            lambda n, k: fails.pop(0) if fails else dict(profile)))
+        self.assertEqual(code, 0, err)  # retried, then succeeded
+        self.assertEqual(self.sleeps.delays, [1, 2])
 
     def test_live_get_404_skipped(self):  # R1-2 / AC-40 (live stub)
         profile = load_inbox()["profile"]

@@ -1,7 +1,7 @@
 """Error codes, exit codes and the pure mappers from live Google error shapes to Pulse errors.
 
 Every expected failure is a PulseError(code, message). The CLI maps code -> exit code via EXIT.
-TransientError (429 / 5xx) is retried by gmail_client.with_retry. HistoryExpired (404 on history.list)
+TransientError (429 / 5xx / network) is retried by gmail_client.with_retry. HistoryExpired (404 on history.list)
 triggers the full-list fallback and is never an exit code. MessageGone (404 on messages.get) makes the caller
 skip that message and count it.
 """
@@ -12,7 +12,7 @@ EXIT = {
     "usage": 2, "config_missing": 2, "config_invalid": 2, "rules_invalid": 2, "deps_missing": 2,
     "wrong_domain": 3, "not_allowlisted": 3, "mailbox_mismatch": 3, "audit_unavailable": 3, "unsafe_path": 3,
     "key_missing": 4, "key_unreadable": 4, "unauthorized_client": 4, "invalid_grant": 4, "access_denied": 4,
-    "rate_limited": 5, "server_error": 5,
+    "rate_limited": 5, "server_error": 5, "network_error": 5,
 }
 
 SCOPE = "https://www.googleapis.com/auth/gmail.readonly"
@@ -36,11 +36,12 @@ class PulseError(Exception):
 
 
 class TransientError(Exception):
-    """429 or 5xx from Google; retried with backoff."""
+    """429 or 5xx from Google, or a network failure (kind="network", status 0); retried with backoff."""
 
-    def __init__(self, status: int):
-        super().__init__(f"HTTP {status}")
+    def __init__(self, status: int, kind: str = "http"):
+        super().__init__(f"HTTP {status}" if kind == "http" else kind)
         self.status = status
+        self.kind = kind
 
 
 class HistoryExpired(Exception):
