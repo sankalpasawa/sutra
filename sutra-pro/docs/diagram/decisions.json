@@ -1523,5 +1523,40 @@
   "id": "D305",
   "label": "small rules: workers counted, task_id = current attempt",
   "anchor": null
+ },
+ {
+  "id": "D306",
+  "label": "node plan: scope and needs from stage D",
+  "anchor": null
+ },
+ {
+  "id": "D307",
+  "label": "output auto = read; planner only reads",
+  "anchor": null
+ },
+ {
+  "id": "D308",
+  "label": "unanswerable gate: held and said",
+  "anchor": null
+ },
+ {
+  "id": "D309",
+  "label": "hand-off: 64 MB hash budget, handoff step first",
+  "anchor": null
+ },
+ {
+  "id": "D310",
+  "label": "retry keeps upstream; no grant fails; reserve fails closed",
+  "anchor": null
+ },
+ {
+  "id": "D311",
+  "label": "sleep gap on the wall clock; receipt is a note",
+  "anchor": null
+ },
+ {
+  "id": "D312",
+  "label": "Conductor in conductor.py; node states as built",
+  "anchor": null
  }
 ]

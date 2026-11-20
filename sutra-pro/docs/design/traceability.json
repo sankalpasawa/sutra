@@ -1,14 +1,14 @@
 {
  "schema": "traceability/1",
  "counts": {
-  "decisions": 305,
+  "decisions": 312,
   "packages": 78,
   "endpoints": 43,
   "chips": 17,
   "steps": 7,
   "owner_rules": 7
  },
- "max_decision": 305,
+ "max_decision": 312,
  "owner_rules": [
   {
    "rule": "This is a new app, no relation to the old sutra-ui. Its design is the J2 prototype's design.",
@@ -494,7 +494,14 @@
     "D302",
     "D303",
     "D304",
-    "D305"
+    "D305",
+    "D306",
+    "D307",
+    "D308",
+    "D309",
+    "D310",
+    "D311",
+    "D312"
    ],
    "modules": [
     "docs/DECISIONS.md",
@@ -4685,8 +4692,10 @@
   {
    "id": "D255",
    "title": "A project groups the tasks of one request",
-   "packages": [],
-   "status": "documented only",
+   "packages": [
+    "ORCH-7"
+   ],
+   "status": "implemented",
    "superseded_by": [],
    "diagram": "label \"project groups one request's nodes\", pill on band:ORCHESTRATION."
   },
@@ -4875,8 +4884,10 @@
   {
    "id": "D277",
    "title": "Recovery: reconcile first, then reconcile_projects",
-   "packages": [],
-   "status": "documented only",
+   "packages": [
+    "GAP-DEMO"
+   ],
+   "status": "implemented",
    "superseded_by": [],
    "diagram": "label \"reconcile, then reconcile_projects\", pill on band:ORCHESTRATION."
   },
@@ -5046,8 +5057,10 @@
   {
    "id": "D296",
    "title": "A closed laptop is a refusal",
-   "packages": [],
-   "status": "documented only",
+   "packages": [
+    "GAP-DEMO"
+   ],
+   "status": "implemented",
    "superseded_by": [],
    "diagram": "label \"closed laptop = refusal; gates end, project stops\", pill on band:ORCHESTRATION."
   },
@@ -5088,8 +5101,13 @@
   {
    "id": "D301",
    "title": "A planner Stop must end the running call",
-   "packages": [],
-   "status": "documented only",
+   "packages": [
+    "CN-3",
+    "CN-5",
+    "CN-7",
+    "ORCH-7"
+   ],
+   "status": "implemented",
    "superseded_by": [],
    "diagram": "label \"planner Stop ends the running call\", pill on Connector router."
   },
@@ -5106,8 +5124,10 @@
   {
    "id": "D303",
    "title": "The kill switch: one owner, four rules",
-   "packages": [],
-   "status": "documented only",
+   "packages": [
+    "GAP-DEMO"
+   ],
+   "status": "implemented",
    "superseded_by": [],
    "diagram": "label \"kill switch: watcher stays; ladders together; kill ends project\", pill on Operator."
   },
@@ -5126,6 +5146,68 @@
    "status": "documented only",
    "superseded_by": [],
    "diagram": "label \"small rules: workers counted, task_id = current attempt\", key only."
+  },
+  {
+   "id": "D306",
+   "title": "The node plan: scope and needs come from a separate small planner call",
+   "packages": [],
+   "status": "documented only",
+   "superseded_by": [],
+   "diagram": "label \"node plan: scope and needs from stage D\", key only."
+  },
+  {
+   "id": "D307",
+   "title": "What a grant says about an output nobody knows yet, and what the planner may touch",
+   "packages": [
+    "CN-7"
+   ],
+   "status": "implemented",
+   "superseded_by": [],
+   "diagram": "label \"output auto = read; planner only reads\", key only."
+  },
+  {
+   "id": "D308",
+   "title": "A gate that nothing can answer yet is held and said out loud",
+   "packages": [
+    "ORCH-7"
+   ],
+   "status": "implemented",
+   "superseded_by": [],
+   "diagram": "label \"unanswerable gate: held and said\", key only."
+  },
+  {
+   "id": "D309",
+   "title": "Hand-off intake rules",
+   "packages": [],
+   "status": "documented only",
+   "superseded_by": [],
+   "diagram": "label \"hand-off: 64 MB hash budget, handoff step first\", key only."
+  },
+  {
+   "id": "D310",
+   "title": "Retry and failure rules completed",
+   "packages": [
+    "ORCH-6"
+   ],
+   "status": "implemented",
+   "superseded_by": [],
+   "diagram": "label \"retry keeps upstream; no grant fails; reserve fails closed\", key only."
+  },
+  {
+   "id": "D311",
+   "title": "The closed-laptop check and its receipt",
+   "packages": [],
+   "status": "documented only",
+   "superseded_by": [],
+   "diagram": "label \"sleep gap on the wall clock; receipt is a note\", key only."
+  },
+  {
+   "id": "D312",
+   "title": "The design as built, written down",
+   "packages": [],
+   "status": "documented only",
+   "superseded_by": [],
+   "diagram": "label \"Conductor in conductor.py; node states as built\", key only."
   }
  ],
  "packages": [
