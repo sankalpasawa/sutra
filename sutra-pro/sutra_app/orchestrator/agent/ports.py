@@ -13,7 +13,7 @@ from typing import Any, Literal, Protocol, runtime_checkable
 
 __all__ = [
     "ATTEMPTS", "MAX_CALLS", "CALL_TIMEOUT", "HISTORY", "DIGEST_CHARS", "PENDING_TURNS", "MAX_ASSIGNMENTS", "FAILURE_KINDS",
-    "NO_RETRY_KINDS", "FailureKind", "ConnectorFailure", "ConnectorPort", "failure_kind", "usable", "hint", "missing_cli",
+    "NO_RETRY_KINDS", "FailureKind", "ConnectorFailure", "ConnectorPort", "failure_kind", "was_stopped", "usable", "hint", "missing_cli",
 ]
 
 ATTEMPTS = 3                 # per stage (ADR-029 D4)
@@ -72,6 +72,11 @@ def failure_kind(exc: BaseException) -> FailureKind | None:
         if fragment in name:
             return mapped  # type: ignore[return-value]
     return None
+
+
+def was_stopped(exc: BaseException) -> bool:
+    """True when `exc` is the owner's Stop ending a call (the connectors' `CallCancelledError`, code `cancelled`): not a failure, so it is never retried and never turned into a `ConnectorFailure` (D301)."""
+    return getattr(exc, "code", None) == "cancelled" and getattr(exc, "retryable", True) is False
 
 
 _NAMES = {"claude": "Claude", "codex": "Codex", "stub": "The stub model"}

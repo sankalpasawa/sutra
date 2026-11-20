@@ -33,7 +33,7 @@ from sutra_app.library.types import Violation, clip, overhead_atom_id, violation
 from sutra_app.orchestrator.agent import prompts
 from sutra_app.orchestrator.agent.planner import Candidate, candidates, fallback_plan
 from sutra_app.orchestrator.agent.ports import (
-    ATTEMPTS, CALL_TIMEOUT, DIGEST_CHARS, HISTORY, MAX_CALLS, NO_RETRY_KINDS, ConnectorFailure, ConnectorPort, failure_kind,
+    ATTEMPTS, CALL_TIMEOUT, DIGEST_CHARS, HISTORY, MAX_CALLS, NO_RETRY_KINDS, ConnectorFailure, ConnectorPort, failure_kind, was_stopped,
 )
 from sutra_app.orchestrator.agent.replies import AssignmentDraft, AssignmentPlan, ChatDecision, plan_of
 from sutra_app.orchestrator.chart import ChartStore
@@ -314,6 +314,8 @@ class ChatAgent:
                     self.connector.call_json(self._redact(text), schema=schema, timeout=self.timeout, function="chat_agent", step=stage,
                                              context=context, **stop), timeout=self.timeout + _CALL_GRACE_S)
             except Exception as exc:                     # noqa: BLE001  (CancelledError is not an Exception)
+                if was_stopped(exc):                      # the owner's Stop ended the call (D301): it goes up as it is, the runner ends the turn without a plan
+                    raise
                 failed = failure_kind(exc)
                 if failed is None:
                     raise

@@ -523,20 +523,26 @@ class TurnRunner:
         if note is None or stored.change is None:
             await self._reply(mid, [])
             return result
-        request = PlanRequest(text=note["text"], message_id=int(note["message_id"]))
+        request = self._as_planner(PlanRequest(text=note["text"], message_id=int(note["message_id"])))     # a resumed request has its planner node and stop token too (G5, D301)
         decision = ChatDecision.model_validate(note["decision"]) if note.get("decision") else None
         try:
-            plan = await self.agent.resume(request, decision)
-        except ConnectorFailure as exc:
-            await self._connector_down(mid, exc)
+            try:
+                plan = await self.agent.resume(request, decision)
+            except CallCancelledError:                                    # the owner's Stop ended the planner's running call: no plan is adopted (D301)
+                await self._finish_error(mid, line("failed"))
+                return result
+            except ConnectorFailure as exc:
+                await self._connector_down(mid, exc)
+                return result
+            plan = _with_change(plan, stored.change)
+            applied = await run_blocking(self._applied_of, stored.change, result)
+            shown = mid if mid is not None else request.message_id
+            await self._hand_off(shown, request, plan, applied)
+            if plan.outcome in ("none", "clarify"):                       # the keywords found no team for the work: ask the owner
+                await self._offer(shown, request, plan)
             return result
-        plan = _with_change(plan, stored.change)
-        applied = await run_blocking(self._applied_of, stored.change, result)
-        shown = mid if mid is not None else request.message_id
-        await self._hand_off(shown, request, plan, applied)
-        if plan.outcome in ("none", "clarify"):                       # the keywords found no team for the work: ask the owner
-            await self._offer(shown, request, plan)
-        return result
+        finally:
+            self._release_planner(request)
 
     # =================================================================================================================
     # the database work (each runs in one worker thread)
