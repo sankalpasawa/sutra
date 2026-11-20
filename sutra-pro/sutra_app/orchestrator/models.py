@@ -736,6 +736,7 @@ class NodeOut(Value):
     role: NodeRole
     runtime: NodeRuntime
     plan_ref: Annotated[str, StringConstraints(max_length=200)] = ""
+    title: Annotated[str, StringConstraints(max_length=200)] = ""          # the step's own title (its task's), so the page names a step by what it does (D383)
     depends_on: Annotated[list[AgentNodeId], Field(max_length=50)] = []
     state: AgentNodeState
     attempt: Annotated[int, Field(ge=1, le=10)] = 1

@@ -43,14 +43,43 @@
     "scope.violation": "A step changed files that were not its own", "scope.quarantined": "A step's work was set aside", "scope.unchecked": "Sutra could not check which files this step changed",
     "review.started": "The reviewer started", "review.loop_cap": "The reviewer was not asked again", "verdict.received": "The reviewer gave its opinion", "verdict.refused": "The reviewer's opinion could not be used",
     "tool.used": "A step used a tool", "tool.pending": "A step's list of tools is being written", "tool.logged": "A step's list of tools was written", "trigger.cap_reached": "A step reached a limit", "trigger.lease_lost": "A step stopped answering",
-    "trigger.egress_scrub": "Private words were taken out of a step's messages again and again", "trigger.project_wall": "The project ran too long", "trigger.project_usd": "The project spent more than you set"});
+    "trigger.egress_scrub": "Private words were taken out of a step's messages again and again", "trigger.project_wall": "The project ran too long", "trigger.project_usd": "The project spent more than you set",
+    "trigger.project_month": "Your monthly limit was reached", "node.stopped": "A step was stopped", "kill": "The kill switch was used", "pause": "Everything was paused", "resume": "Everything was continued",
+    "plan.empty": "The plan had no steps", "plan.malformed": "The plan could not be read", "plan.owner_access": "The plan needed more than your folder setting allows", "plan.too_big": "The plan was too big"});
   // Reasons that are not plain words are not shown, or are put into words here. Everything else the server wrote in plain words is shown as it is.
-  const NO_REASON = freeze(["tool.pending", "tool.logged", "grant.issued", "node.spawned", "node.leased", "node.heartbeat_lost", "node.lease_extended", "plan.accepted", "node.done"]);
+  const NO_REASON = freeze(["tool.pending", "tool.logged", "grant.issued", "node.spawned", "node.leased", "node.heartbeat_lost", "node.lease_extended", "plan.accepted", "node.done", "kill", "pause", "resume"]);
   const OPINION_WORDS = freeze({approve: "approves of the work", changes: "asks for changes", reject: "does not approve of the work"});
-  function reasonWords(row) {
+  // Why something was stopped, in the words the owner uses (D383): the engine says "Stopped: stopped on request" whoever asked, the server says "stopped by the kill switch" or "stopped by you". `project` is the
+  // project row, so a step the engine only says was "stopped on request" gets the reason the whole project was stopped for.
+  function stopWords(reason, project) {
+    const raw = clean(reason).replace(/^stopped:\s*/i, "").replace(/[.\s]+$/, "");
+    const low = raw.toLowerCase();
+    if (!raw) return "";
+    if (/kill switch|kill file/.test(low)) return "The kill switch was used";
+    if (low === "stopped by you" || low === "reset by you") return "You stopped it";
+    if (low === "stopped on request") {
+      const why = isObj(project) && project.status === "stopped" ? clean(project.stop_reason) : "";
+      return why && !/^stopped on request$/i.test(why.replace(/^stopped:\s*/i, "")) ? stopWords(why, null) : "It was stopped before it finished";
+    }
+    return raw.charAt(0).toUpperCase() + raw.slice(1);
+  }
+  const sentence = text => (text && !/[.!?]$/.test(text) ? text + "." : text);
+  // What a tool row says: its kind, the file when there is one, how many times ("run, 7 times" is "ran commands 7 times").
+  const TOOL_VERBS = freeze({read: "read", edit: "changed", run: "ran commands", search: "searched", web: "used the web", sutra: "looked at Sutra's own data", github: "read GitHub", other: "used a tool"});
+  function toolWords(reason) {
+    const m = /^(read|edit|run|search|web|sutra|github|other)(?: (.+?))?, (\d+) times?$/.exec(clean(reason));
+    if (!m) return "A step used a tool";
+    const times = Number(m[3]);
+    const verb = TOOL_VERBS[m[1]];
+    const what = m[1] === "read" || m[1] === "edit" ? " " + m[2] : "";
+    return "A step " + verb + what + (m[1] === "run" || m[1] === "web" ? " " : ", ") + (times === 1 ? "once" : times + " times");
+  }
+  function reasonWords(row, project) {
     const action = clean(row.action);
     const reason = clean(row.reason);
     if (!reason || NO_REASON.indexOf(action) >= 0) return "";
+    if (action === "tool.used") return "";                         // the words are in the heading (toolWords)
+    if (action === "project.stopped" || action === "node.stopped" || action === "node.cancelled") return stopWords(reason, project);
     if (action === "project.ended") return word(STATUS_WORDS, reason, "");
     if (action === "verdict.received") return word(OPINION_WORDS, reason, "");
     if (action === "gate.decided") return reason.startsWith("decided_by owner") ? "you answered" : reason.replace(/^decided_by rule:decide_for_me:?\s*/, "Sutra answered for you: ").replace(/^(Sutra answered for you: )[a-z0-9_]+:\s*/, "$1");
@@ -87,7 +116,7 @@
     const p = isObj(snap) && isObj(snap.project) ? snap.project : {};
     const reason = clean(p.stop_reason);
     if (!reason || (p.status !== "stopped" && p.status !== "failed" && p.status !== "done_with_open_items" && p.status !== "done")) return "";
-    return '<p class="pwhy" role="status"><b>Why:</b> ' + esc(reason) + "</p>";
+    return '<p class="pwhy" role="status"><b>Why:</b> ' + esc(sentence(stopWords(reason, null))) + "</p>";
   }
 
   // The static note when the installed app is not in the usual place (D322 d). Nothing for a usual place or an answer the page could not read.
@@ -122,35 +151,47 @@
     return all.length ? '<h2>Waiting for you</h2><div class="pcards">' + all.join("") + "</div>" : "";
   }
 
-  /* ---- the graph: steps in columns by how far they are from the start, a line for each "comes after", a dashed one for "shares files, so it waits" */
+  /* ---- the graph: steps in columns by how far they are from the start, a line for each "comes after", a dashed one for "shares files, so it waits". Drawn twice (D383): left to right, and top to
+     bottom for a phone (CSS shows one of them), so the picture never needs a sideways scroll. */
   const BOX = freeze({w: 150, h: 42, gx: 50, gy: 16});
-  function graphHtml(snap) {
-    const s = isObj(snap) ? snap : {};
-    const nodes = arr(s.nodes).filter(n => isObj(n) && n.role !== "planner");
-    if (nodes.length === 0) return "";
-    const deep = Store().depths(nodes, arr(s.edges));
+  const short = (text, n) => (text.length > n ? text.slice(0, n - 1).trimEnd() + "\u2026" : text);
+  function drawGraph(nodes, edges, deep, vertical) {
     const rows = {};
     const place = {};
     nodes.forEach(n => {
       const d = deep[n.id] || 0;
       rows[d] = (rows[d] || 0) + 1;
-      place[n.id] = {x: d * (BOX.w + BOX.gx), y: (rows[d] - 1) * (BOX.h + BOX.gy)};
+      const along = d * (vertical ? BOX.h + BOX.gx : BOX.w + BOX.gx);
+      const across = (rows[d] - 1) * (vertical ? BOX.w + BOX.gy : BOX.h + BOX.gy);
+      place[n.id] = vertical ? {x: across, y: along} : {x: along, y: across};
     });
-    const columns = Math.max.apply(null, Object.keys(rows).map(Number)) + 1;
-    const height = Math.max.apply(null, Object.keys(rows).map(k => rows[k])) * (BOX.h + BOX.gy);
-    const width = columns * BOX.w + (columns - 1) * BOX.gx;
-    const lines = arr(s.edges).filter(e => isObj(e) && place[e.from] && place[e.to]).map(e => {
+    const depth = Object.keys(rows).length;
+    const widest = Math.max.apply(null, Object.keys(rows).map(k => rows[k]));
+    const width = vertical ? widest * BOX.w + (widest - 1) * BOX.gy : depth * BOX.w + (depth - 1) * BOX.gx;
+    const height = vertical ? depth * BOX.h + (depth - 1) * BOX.gx : widest * BOX.h + (widest - 1) * BOX.gy;
+    const lines = edges.filter(e => isObj(e) && place[e.from] && place[e.to]).map(e => {
       const a = place[e.from], b = place[e.to];
-      return '<line class="pedge' + (e.kind === "conflict" ? " pconflict" : "") + '" x1="' + (a.x + BOX.w) + '" y1="' + (a.y + BOX.h / 2) + '" x2="' + b.x + '" y2="' + (b.y + BOX.h / 2) + '"/>';
+      const ends = vertical ? [a.x + BOX.w / 2, a.y + BOX.h, b.x + BOX.w / 2, b.y] : [a.x + BOX.w, a.y + BOX.h / 2, b.x, b.y + BOX.h / 2];
+      return '<line class="pedge' + (e.kind === "conflict" ? " pconflict" : "") + '" x1="' + ends[0] + '" y1="' + ends[1] + '" x2="' + ends[2] + '" y2="' + ends[3] + '"/>';
     }).join("");
     const boxes = nodes.map(n => {
       const at = place[n.id];
-      return '<g class="pnode" data-state="' + esc(clean(n.state)) + '" transform="translate(' + at.x + "," + at.y + ')"><rect width="' + BOX.w + '" height="' + BOX.h + '" rx="8"/>' +
-        '<text x="10" y="18" class="pn1">' + esc(Store().nodeName(n)) + '</text><text x="10" y="34" class="pn2">' + esc(word(STATE_WORDS, n.state, "")) + "</text></g>";
+      const name = Store().nodeName(n);
+      return '<g class="pnode" data-state="' + esc(clean(n.state)) + '" transform="translate(' + at.x + "," + at.y + ')"><title>' + esc(name) + '</title><rect width="' + BOX.w + '" height="' + BOX.h + '" rx="8"/>' +
+        '<text x="10" y="18" class="pn1">' + esc(short(name, 21)) + '</text><text x="10" y="34" class="pn2">' + esc(word(STATE_WORDS, n.state, "")) + "</text></g>";
     }).join("");
+    return {width, height, body: lines + boxes};
+  }
+  function graphHtml(snap) {
+    const s = isObj(snap) ? snap : {};
+    const nodes = arr(s.nodes).filter(n => isObj(n) && n.role !== "planner");
+    if (nodes.length === 0) return "";
+    const edges = arr(s.edges);
+    const deep = Store().depths(nodes, edges);
     const label = nodes.length + (nodes.length === 1 ? " step" : " steps") + " and the order they run in";
-    return '<h2>The steps</h2><div class="pgraph"><svg role="img" aria-label="' + esc(label) + '" viewBox="0 0 ' + width + " " + height + '" width="' + width + '" height="' + height + '">' + lines + boxes + "</svg></div>" +
-      (arr(s.edges).some(e => isObj(e) && e.kind === "conflict") ? '<p class="cnote">A dashed line means two steps use the same files, so one waits for the other.</p>' : "");
+    const svg = (g, klass, hidden) => '<svg class="' + klass + '" ' + (hidden ? 'aria-hidden="true"' : 'role="img" aria-label="' + esc(label) + '"') + ' viewBox="0 0 ' + g.width + " " + g.height + '" width="' + g.width + '" height="' + g.height + '">' + g.body + "</svg>";
+    return '<h2>The steps</h2><div class="pgraph">' + svg(drawGraph(nodes, edges, deep, false), "pflow-h", false) + svg(drawGraph(nodes, edges, deep, true), "pflow-v", true) + "</div>" +
+      (edges.some(e => isObj(e) && e.kind === "conflict") ? '<p class="cnote">A dashed line means two steps use the same files, so one waits for the other.</p>' : "");
   }
 
   function stepsHtml(snap) {
@@ -168,7 +209,7 @@
         (after.length ? '<span class="cnote">Starts after: ' + esc(after.join(", ")) + "</span>" : "") +
         (waits.length ? '<span class="cnote">Shares files with, so waits for: ' + esc(waits.join(", ")) + "</span>" : "") +
         (files.length ? '<span class="cnote">May change: ' + esc(files.join(", ")) + "</span>" : "") +
-        (clean(n.failure_reason) ? '<span class="pwhy">' + esc(clean(n.failure_reason)) + "</span>" : "") +
+        (clean(n.failure_reason) ? '<span class="pwhy">' + esc(sentence(stopWords(n.failure_reason, s.project))) + "</span>" : "") +
         (ACTIVE.indexOf(n.state) >= 0 ? '<button type="button" class="pbad" data-act="node-stop" data-node="' + esc(clean(n.id)) + '">Stop this step</button>' : "") + "</li>";
     });
     return items.length ? '<ul class="plist">' + items.join("") + "</ul>" : "";
@@ -181,7 +222,9 @@
     if (!Number.isFinite(calls)) return "";
     const budget = Number.isFinite(p.budget_credits) && p.budget_credits > 0 ? p.budget_credits : null;
     const usd = isObj(s.spend) && Number.isFinite(s.spend.usd) ? s.spend.usd : null;
+    const unpriced = isObj(s.spend) && Number.isFinite(s.spend.unpriced) && s.spend.unpriced > 0 ? s.spend.unpriced : 0;
     return '<h2>What it has used</h2><p class="pspend"><b>' + credits(calls) + "</b>" + (budget ? " of " + credits(budget) : "") + (usd !== null ? "; about $" + usd.toFixed(2) : "") + "</p>" +
+      (usd !== null ? '<p class="cnote">The dollars are an estimate at list price. They include the planning of the project' + (unpriced ? "; " + (unpriced === 1 ? "1 call has" : unpriced + " calls have") + " no price, so it may be a little more" : "") + ".</p>" : "") +
       (budget && calls >= budget ? '<p class="cnote">It has used all of its credits.</p>' : "");
   }
 
@@ -194,17 +237,39 @@
       '<p class="cnote">Sutra never raises credits, never allows a change to your computer\'s settings and never answers a question about your computer for you.</p>';
   }
 
-  function auditHtml(rows) {
+  function auditHtml(rows, project) {
     const list = arr(rows).filter(isObj);
     if (list.length === 0) return '<h2>What happened</h2><p class="cempty">Nothing yet.</p>';
-    return '<h2>What happened</h2><ol class="plist paudit">' + list.slice().reverse().map(r =>
-      '<li data-seq="' + esc(r.seq) + '"><span class="cnote">' + esc(clock(r.at)) + "</span> <b>" + esc(word(ACTION_WORDS, r.action, "Something happened")) + "</b>" +
-      (reasonWords(r) ? " <span>" + esc(reasonWords(r)) + "</span>" : "") + "</li>").join("") + "</ol>";
+    const tools = list.some(r => r.action === "tool.used");
+    return '<h2>What happened</h2>' + (tools ? '<p class="cnote">What a step used is written down when the step ends, so those lines carry the time it ended.</p>' : "") +
+      '<ol class="plist paudit">' + list.slice().reverse().map(r => {
+        const label = r.action === "tool.used" ? toolWords(r.reason) : word(ACTION_WORDS, r.action, "Something happened");
+        const detail = reasonWords(r, project);
+        return '<li data-seq="' + esc(r.seq) + '"><span class="cnote">' + esc(clock(r.at)) + "</span> <b>" + esc(label) + "</b>" + (detail ? " <span>" + esc(detail) + "</span>" : "") + "</li>";
+      }).join("") + "</ol>";
   }
 
+  // The run's own plumbing is not what a step produced: its files are the engine's, so a hand-off names only the rest (D383).
+  const PLUMBING = freeze(["artifacts.json", "atoms.json", "audits.json", "autofix.json", "calls.jsonl", "chat.jsonl", "choices.json", "conditions.json", "conflicts.json", "deliverable.json", "events.jsonl",
+    "goal.json", "inbox.jsonl", "live.json", "map.json", "output.json", "outputs.jsonl", "receipts.jsonl", "report.json", "settings.json", "snapshot.json", "summary.json", "task.json", "timing.json",
+    "trace.jsonl", "workflows.json", "agent_live.json", "run.stdout.log", "run.stderr.log"]);
+  const ENGINE_WORDS = /rubric|done-when|necessary condition|workflow|\batoms?\b|\bJ2\b|checks? (?:pass|fail)/i;
+  const names = (list, n) => (list.length <= n ? list.join(", ") : list.slice(0, n).join(", ") + " and " + (list.length - n) + " more");
+  // What a hand-off says in plain words: that the step handed in its work, and which files it made. What the engine wrote as the step's summary is not shown (it is the engine's words).
+  function handoffText(body) {
+    const files = arr(body.files).map(f => (isObj(f) ? clean(f.path) : "")).filter(f => f && PLUMBING.indexOf(f) < 0);
+    const changed = arr(body.changes).map(clean).filter(Boolean);
+    const open = body.status === "done_with_open_items";
+    return "handed in its work" + (open ? ", with some things left open" : "") + (files.length ? ". It made " + names(files, 4) : "") + "." +
+      (changed.length ? " It changed " + (changed.length === 1 ? "1 file" : changed.length + " files") + " in your folder: " + names(changed, 3) + "." : "");
+  }
   function textOf(body) {
-    if (typeof body === "string") return clean(body);
-    if (isObj(body)) return clean(body.summary || body.text || body.message || "");
+    if (typeof body === "string") return ENGINE_WORDS.test(body) ? "" : clean(body);
+    if (isObj(body)) {
+      if (Array.isArray(body.files) && typeof body.node_id === "string") return handoffText(body);
+      const said = clean(body.summary || body.text || body.message || "");
+      return ENGINE_WORDS.test(said) ? "" : said;
+    }
     return "";
   }
 
@@ -228,10 +293,10 @@
     if (!S.snapshot) return '<p class="' + (S.error ? "cerr" : "cempty") + '">' + esc(S.error || "Loading...") + "</p>";
     const St = Store();
     return (S.error ? '<p class="cerr" role="alert">' + esc(S.error) + "</p>" : "") + noteHtml(location) + whyHtml(S.snapshot) + cardsHtml(S.snapshot) + graphHtml(S.snapshot) + stepsHtml(S.snapshot) + spendHtml(S.snapshot) +
-      decidedHtml(St.decidedList(S.audit)) + auditHtml(S.audit) + messagesHtml(S.messages, S.snapshot);
+      decidedHtml(St.decidedList(S.audit)) + auditHtml(S.audit, S.snapshot.project) + messagesHtml(S.messages, S.snapshot);
   }
 
-  const ProjectView = {reasonWords, STATUS_WORDS, STATE_WORDS, ANSWERS, ACTION_WORDS, POLICY_WORDS, esc, header, whyHtml, noteHtml, cardsHtml, graphHtml, stepsHtml, spendHtml, decidedHtml, auditHtml, messagesHtml, page, clock};
+  const ProjectView = {reasonWords, stopWords, toolWords, handoffText, PLUMBING, STATUS_WORDS, STATE_WORDS, ANSWERS, ACTION_WORDS, POLICY_WORDS, esc, header, whyHtml, noteHtml, cardsHtml, graphHtml, stepsHtml, spendHtml, decidedHtml, auditHtml, messagesHtml, page, clock};
   if (typeof module === "object" && module !== null && module.exports) module.exports = ProjectView;
   else root.ProjectView = ProjectView;
 })(globalThis);

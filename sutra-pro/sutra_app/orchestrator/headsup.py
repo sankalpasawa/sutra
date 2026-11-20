@@ -70,8 +70,9 @@ def _stopped_by(settings_json: str | None) -> str:
 class HeadsUp:
     """Reads only; one call is one consistent read of `tasks` (a `db.read()` block)."""
 
-    def __init__(self, db: Database) -> None:
+    def __init__(self, db: Database, *, nodes: bool = False) -> None:
         self.db = db
+        self.nodes = nodes                  # SUTRA_NODES_V1 is on (D383): only then is a step of a stopped project looked for; off, no node table is read
 
     def items(self, now: int) -> list[HeadsUpOut]:
         with self.db.read() as conn:
@@ -96,6 +97,11 @@ class HeadsUp:
             "SELECT 1 FROM tasks WHERE dept_id = ? AND id != ? AND (parent_task_id = ? OR (created_at >= ? AND rowid > ?)) LIMIT 1",
             (r["dept_id"], r["id"], r["id"], r["ended_at"], r["seq"])).fetchone() is not None
 
+    @staticmethod
+    def _of_a_stopped_project(conn: sqlite3.Connection, task_id: str) -> bool:
+        """The task is a step of a project that was stopped (by the owner, by the kill switch or by a limit)."""
+        return conn.execute("SELECT 1 FROM agent_nodes n JOIN projects p ON p.id = n.project_id WHERE n.task_id = ? AND p.status = 'stopped' LIMIT 1", (task_id,)).fetchone() is not None
+
     def _item(self, conn: sqlite3.Connection, r: sqlite3.Row, now: int) -> HeadsUpOut | None:
         status = r["status"]
         team = _one_line(r["name"] or r["dept_id"], 200)
@@ -109,6 +115,8 @@ class HeadsUp:
                 return None
             return HeadsUpOut(kind="quiet", tone="warn", text=f'{team} has gone quiet on "{title}": no sign of work for {age_words(since)}',
                               at=iso_z(seen), since_s=since, **base)
+        if status in ("stopped", "crashed") and self.nodes and self._of_a_stopped_project(conn, r["id"]):
+            return None                                                          # D383: the owner, the kill switch or a limit stopped the whole project; its page says so. Not a problem to try again
         since = max(0, now - int(r["ended_at"]))
         ended = dict(at=iso_z(r["ended_at"]), since_s=since)
         app_closed = outcome.lower().startswith("the app was closed")

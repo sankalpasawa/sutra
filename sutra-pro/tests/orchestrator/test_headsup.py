@@ -171,3 +171,30 @@ def test_get_heads_up_is_a_read_without_a_token_in_the_response_model(db, clock,
     [body] = response.json()
     assert HeadsUpOut.model_validate(body).task_id == crashed and body["since_s"] == HOUR
     assert set(body) == {"kind", "tone", "task_id", "dept_id", "dept_name", "title", "status", "text", "outcome", "at", "since_s", "retry"}
+
+
+# ---- a step of a project that was stopped is not a problem to try again (D383) -------------------------------------------------------------
+
+def _step_of(world: World, task: str, project_status: str):
+    world.sql("INSERT INTO projects(id, title, status, created_at) VALUES ('prj_0123456789ab', 'A project', ?, ?)", project_status, NOW - 3 * HOUR)
+    world.sql("INSERT INTO agent_nodes(id, project_id, task_id, role, runtime, state, created_at) VALUES ('nd_0123456789ab', 'prj_0123456789ab', ?, 'worker', 'engine', 'cancelled', ?)", task, NOW - 3 * HOUR)
+
+
+def test_a_step_of_a_stopped_project_is_not_listed_with_try_again_whoever_stopped_it(db, clock):
+    world = World(db, clock)
+    for index, outcome in enumerate(("Stopped: stopped on request", "stopped by the kill switch", "The team stopped unexpectedly.")):
+        task = put(world, 10 + index, "web", "stopped" if index < 2 else "crashed", ended=NOW - HOUR, outcome=outcome, stopped_by="app")
+        _step_of(world, task, "stopped")
+        assert HeadsUp(db, nodes=True).items(NOW) == [], outcome
+        assert [i.task_id for i in HeadsUp(db).items(NOW)] == [task], "flag off: no node table is read and the lane is what it was"
+        world.sql("DELETE FROM agent_nodes")
+        world.sql("DELETE FROM projects")
+        world.sql("DELETE FROM tasks")
+
+
+def test_a_step_of_a_project_that_still_runs_keeps_its_row(db, clock):
+    world = World(db, clock)
+    task = put(world, 20, "web", "crashed", ended=NOW - HOUR, outcome="The team stopped unexpectedly.")
+    _step_of(world, task, "running")
+    [item] = HeadsUp(db, nodes=True).items(NOW)
+    assert item.task_id == task and item.retry is True

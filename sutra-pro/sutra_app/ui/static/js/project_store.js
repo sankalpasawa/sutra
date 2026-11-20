@@ -47,12 +47,14 @@
     return out;
   }
 
-  // A step's name in the owner's words: "Step a1", "The reviewer", "The planner".
+  // A step's name in the owner's words: what it does (its title), else "Step a1"; "The reviewer"; "The planner". A title is one short line (D383).
   function nodeName(node) {
     if (!isObj(node)) return "A step";
     if (node.role === "reviewer") return "The reviewer";
     if (node.role === "planner") return "The planner";
     const ref = typeof node.plan_ref === "string" ? node.plan_ref.trim() : "";
+    const title = typeof node.title === "string" ? node.title.replace(/[\u0000-\u001f\u007f]+/g, " ").replace(/\s+/g, " ").trim() : "";
+    if (title && title !== ref) return title.length > 70 ? title.slice(0, 69).trimEnd() + "\u2026" : title;
     return ref ? "Step " + ref : "A step";
   }
 

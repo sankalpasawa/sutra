@@ -32,7 +32,7 @@ from typing import Any
 
 from sutra_app.config import NODE_DEFAULT_CAPS, Settings
 from sutra_app.connectors.cancel import CancelToken
-from sutra_app.orchestrator.budgets import DEFAULT_SLICE, make_slices, project_spend
+from sutra_app.orchestrator.budgets import DEFAULT_SLICE, make_slices, project_cost, project_spend
 from sutra_app.orchestrator.conductor import NODE_FINAL, PROJECT_FINAL, TASK_TO_NODE, Conductor
 from sutra_app.orchestrator.db import Database, Tx, run_blocking
 from sutra_app.orchestrator.errors import AppError, NotFound
@@ -202,7 +202,7 @@ class ProjectService:
         lefts: list[float] = []
         row = conn.execute("SELECT budget_usd FROM projects WHERE id = ?", (project_id,)).fetchone()
         if row is not None and row["budget_usd"] is not None:
-            lefts.append(float(row["budget_usd"]) - project_spend(conn, project_id)[1])
+            lefts.append(float(row["budget_usd"]) - project_cost(conn, project_id)[0])
         month = self.month_left(conn, now)
         if month is not None:
             lefts.append(month)
@@ -832,7 +832,7 @@ class ProjectService:
     @staticmethod
     def _node_out(row: sqlite3.Row) -> NodeOut:
         grants = json.loads(row["grants_json"] or "{}")
-        return NodeOut(id=row["id"], project_id=row["project_id"], task_id=row["task_id"], role=row["role"], runtime=row["runtime"], plan_ref=row["plan_ref"],
+        return NodeOut(id=row["id"], project_id=row["project_id"], task_id=row["task_id"], role=row["role"], runtime=row["runtime"], plan_ref=row["plan_ref"], title=(row["task_title"] if "task_title" in row.keys() and row["task_title"] else "")[:200],
                        depends_on=json.loads(row["depends_on"] or "[]"), state=row["state"], attempt=row["attempt"], grants=grants, scope=json.loads(row["writes_json"] or "[]"),
                        slice_credits=row["slice_credits"], last_beat_at=iso_z(row["last_beat_at"]) if row["last_beat_at"] is not None else None,
                        lease_expires_at=iso_z(row["lease_expires_at"]) if row["lease_expires_at"] is not None else None, failure_reason=row["failure_reason"],
@@ -861,15 +861,16 @@ class ProjectService:
         """The page's snapshot (architecture 6): the project, its nodes, the plan's edges, what it spent, the open questions and the last message number (0 until hand-offs exist)."""
         conn = self.db.conn()
         project = self.get(project_id)
-        nodes = [self._node_out(r) for r in conn.execute("SELECT * FROM agent_nodes WHERE project_id = ? ORDER BY created_at, rowid", (project_id,))]
+        nodes = [self._node_out(r) for r in conn.execute("SELECT n.*, t.title AS task_title FROM agent_nodes n LEFT JOIN tasks t ON t.id = n.task_id WHERE n.project_id = ? ORDER BY n.created_at, n.rowid", (project_id,))]
         edges = [{"from": dep, "to": node.id, "kind": "depends_on"} for node in nodes for dep in node.depends_on]
         edges += [{"from": earlier, "to": later, "kind": "conflict"} for earlier, later in self._conflict_edges(project, nodes)]
-        calls, usd = project_spend(conn, project_id)                              # every attempt of every node, not only the current task (D324)
+        calls = project_spend(conn, project_id)[0]                                 # every attempt of every node, not only the current task (D324)
+        usd, unpriced = project_cost(conn, project_id)                             # the dollars are the ledger's: the steps, the reviewer and the planner's own calls (D383)
         approvals = [{"id": a.id, "tier": a.tier, "node_id": a.node_id, "status": a.status, "request": dict(a.request), "expires_at": iso_z(a.expires_at)}
                      for a in self.store.approvals(project_id, status="open")]
         last = conn.execute("SELECT COALESCE(MAX(seq), 0) FROM node_messages WHERE project_id = ?", (project_id,)).fetchone()[0]
         return {"project": project.model_dump(mode="json"), "nodes": [n.model_dump(mode="json") for n in nodes], "edges": edges, "caps": project.caps,
-                "spend": {"calls": calls, "usd": round(usd, 6) if calls else None}, "approvals": approvals, "cards": [card.model_dump(mode="json") for card in self.approval_cards(project_id) if card.kind != "system"],
+                "spend": {"calls": calls, "usd": round(usd, 6) if calls or usd else None, "unpriced": unpriced}, "approvals": approvals, "cards": [card.model_dump(mode="json") for card in self.approval_cards(project_id) if card.kind != "system"],
                 "system_cards": [card.model_dump(mode="json") for card in self.system_cards(project_id)], "last_message_seq": last}
 
     @staticmethod

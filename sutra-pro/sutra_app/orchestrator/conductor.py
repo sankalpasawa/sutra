@@ -18,7 +18,7 @@ from pathlib import Path
 from typing import Any
 
 from sutra_app.config import NODE_DEFAULT_CAPS
-from sutra_app.orchestrator.budgets import SCRUB_LIMIT, chain_spend, egress_scrubs, project_spend, slice_left
+from sutra_app.orchestrator.budgets import SCRUB_LIMIT, chain_spend, egress_scrubs, project_cost, slice_left
 from sutra_app.orchestrator.db import Tx, run_blocking
 from sutra_app.orchestrator.grants import fold, scopes_overlap
 from sutra_app.orchestrator.errors import AppError, NotFound
@@ -872,7 +872,7 @@ class Conductor:
             if month_left is not None and month_left <= 0:
                 reason, action = MONTH_REASON, "trigger.project_month"
             elif limit is not None:
-                spent = project_spend(tx.conn, project_id)[1]                      # every attempt of every node counts (D324)
+                spent = project_cost(tx.conn, project_id)[0]                       # every attempt of every node counts (D324), and the planner's own calls (D383)
                 if spent > float(limit):
                     reason, action = (MONTH_REASON, "trigger.project_month") if caps.get("usd_from_month") else ("the project spent more than the dollars you set", "trigger.project_usd")
         if not reason:
