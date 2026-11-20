@@ -268,10 +268,17 @@ class Conductor:
         """One look at every project that runs. A live node that has been silent for its lease (default 90 s: no event, heartbeat included) goes `expired`, its process through the stop ladder,
         and is retried once (D275). If the tick itself came late by more than half a lease the computer slept: the leases are extended once instead, and a project with an open gate is
         refused (D296). A gate that ran out (24 h) is refused too. Stops decided inside a transaction (`stop_all`, a node that lost its lease twice) are run here. Returns what it did."""
-        import asyncio
-        moment = int(now) if now is not None else int(self._clock.now())
+        began = int(self._clock.now())
+        moment = int(now) if now is not None else began
         gap = 0 if self._last_tick is None else moment - self._last_tick
-        self._last_tick = moment
+        try:
+            return await self._tick(moment, gap)
+        finally:
+            # the gap is measured from the END of a tick to the start of the next (D311): the stop ladders a tick ran are its own work, not a sleep. An explicit `now` (tests) moves on by what the tick took.
+            self._last_tick = moment + max(0, int(self._clock.now()) - began)
+
+    async def _tick(self, moment: int, gap: int) -> dict[str, list[str]]:
+        import asyncio
         did = await run_blocking(self._tick_sync, moment, gap)
         if did["expire"]:
             await asyncio.gather(*(self.tasks.stop_node(task_id, f"no sign of life for {did['lease']} s") for task_id in did["expire"]), return_exceptions=True)

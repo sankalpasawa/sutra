@@ -81,3 +81,24 @@ def test_a_project_stopped_by_a_closed_laptop_is_not_started_again_by_itself(rig
 
 def test_the_words_are_the_decided_ones():
     assert GATE_REFUSED_CLOSED == "Sutra was closed before you answered" and GATE_REFUSED_SLEEP == "the computer went to sleep before you answered"
+
+
+def test_a_tick_whose_own_stops_took_long_is_not_read_as_a_sleep_but_a_real_gap_still_is(rig, clock, monkeypatch):
+    """G2 (D311): the gap is measured from the END of a tick to the start of the next, so a tick that spent 50 s on its stop ladders does not make the next one look like a sleep."""
+    reservation, tasks = with_open_gate(rig)
+    conductor = rig.projects.conductor
+    real = conductor._tick_sync
+
+    def slow(now, gap):
+        done = real(now, gap)
+        clock.advance(50)                                                    # the stop ladders of this tick took 50 s
+        return done
+    tick(rig, 10)
+    monkeypatch.setattr(conductor, "_tick_sync", slow)
+    tick(rig, 20)                                                              # ends about 50 s later
+    monkeypatch.setattr(conductor, "_tick_sync", real)
+    normal = tick(rig, 75)                                                     # 55 s after the start of the slow tick, 5 s after its end: not a sleep (the old reading: 55 > 45)
+    assert normal["refused"] == [] and normal["extended"] == [] and rig.project(reservation.project_id)["status"] == "running"
+    assert len(rig.store.approvals(reservation.project_id)) == 1 and rig.store.approvals(reservation.project_id)[0].status == "open"
+    woke = tick(rig, 75 + 60 + 6)                                              # a real gap of 60 s after the last tick ended: still a sleep
+    assert woke["refused"] == [reservation.project_id]
