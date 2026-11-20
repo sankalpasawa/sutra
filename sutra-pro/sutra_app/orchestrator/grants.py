@@ -90,6 +90,8 @@ ROLE_TABLE: Mapping[str, RoleRule] = {
 # ---- write scopes -----------------------------------------------------------------------------------------------------------------
 
 _GLOB = re.compile(r"[*?\[\]{}]")
+_SHORT_NAME = re.compile(r"~[0-9]")                                  # a Windows 8.3 short name: GIT~1 is .git
+_DEVICE_NAMES = frozenset({"CON", "PRN", "AUX", "NUL", *(f"COM{n}" for n in range(1, 10)), *(f"LPT{n}" for n in range(1, 10)), "CONIN$", "CONOUT$", "CLOCK$"})
 _DRIVE = re.compile(r"^[A-Za-z]:")
 
 
@@ -121,6 +123,9 @@ def normalize_scope(entries: Iterable[Any]) -> tuple[str, ...]:
             raise GrantError("a write scope cannot leave the working folder")
         if any(part.lower() == ".git" for part in parts):
             raise GrantError("the .git folder is never part of a write scope")
+        for part in parts:                                         # names that another file system reads as something else (M4): the real check later compares resolved real paths
+            if part[-1] in ". " or ":" in part or _SHORT_NAME.search(part) or part.split(".", 1)[0].upper() in _DEVICE_NAMES:
+                raise GrantError("a write scope names plain files and folders: no name that ends in a dot or a space, holds a colon or a ~1 short name, or is a Windows device name")
         if not parts:
             return ()                                              # the folder itself: the whole folder
         cleaned.append("/".join(parts) + ("/" if text.endswith("/") else ""))

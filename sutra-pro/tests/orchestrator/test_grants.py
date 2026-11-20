@@ -290,6 +290,7 @@ def test_a_scope_is_plain_relative_paths_sorted_with_covered_paths_dropped():
 @pytest.mark.parametrize("entry", [
     "/etc/passwd", "~/x", "C:\\Users\\x", "c:/x", "../x", "a/../b", "a/..", ".git", ".git/config", "a/.git/hooks", "A/.GIT/x", "a/*.py", "a?b", "a[1]", "a{b,c}", "",
     "   ", "a\x00b", "a\nb", "x" * 401, 5, None,
+    "a/.git /x", "a/.git./x", "a/.git::$INDEX_ALLOCATION/x", "GIT~1/config", "a/CON/x", "a/con.txt", "a/Nul", "a/COM1/x", "lpt9.log", "a/name /x", "a/dir./x", "a/b:c", "C~1/x", "a/GIT~2", "a/CONIN$",
 ])
 def test_a_scope_that_leaves_the_folder_or_touches_git_or_is_not_plain_is_refused(entry):
     with pytest.raises(GrantError):
@@ -359,3 +360,13 @@ def test_run_tools_are_in_the_json_and_in_the_audit_line_and_a_stored_grant_with
 def test_a_grant_never_names_the_old_builder_command_level():
     with open(grants.__file__, encoding="utf-8") as handle:
         assert "sandboxed_builder" not in handle.read()
+
+
+def test_names_that_look_ordinary_are_still_accepted_after_the_windows_rules():
+    ok = ["docs/a.md", "site/pricing/", "my.notes/draft.v2.txt", "a~b/c", "~notes/x", "console/x", "com/x", "COM10/x", "nullable.txt", "a/.github/x", "src/.gitignore", "x/aux2.txt", "tilde~/file"]
+    for entry in ok:
+        if entry.startswith("~"):
+            with pytest.raises(GrantError):                                                       # a leading ~ is the home folder: refused as before
+                normalize_scope([entry])
+        else:
+            assert normalize_scope([entry]), entry
