@@ -483,8 +483,11 @@ class ProjectService:
         if any(a.status == "open" for a in approvals):
             return "waiting"
         tx.conn.execute("UPDATE projects SET status = 'running' WHERE id = ? AND status = 'awaiting_approval'", (project_id,))
+        named = {n for a in approvals if a.request.get("kind") == "system" and a.status == "open" for n in (a.request.get("nodes") or [])}      # a step a permission question still names does not go on (M1)
         for node in tx.conn.execute("SELECT n.id AS id, t.status AS tstatus FROM agent_nodes n LEFT JOIN tasks t ON t.id = n.task_id WHERE n.project_id = ? AND n.state = 'awaiting_approval'",
                                     (project_id,)).fetchall():
+            if node["id"] in named:
+                continue
             tx.conn.execute("UPDATE agent_nodes SET state = ? WHERE id = ?", ("queued" if node["tstatus"] == "queued" else "planned", node["id"]))
             tx.emit("node.updated", {"project_id": project_id, "node_id": node["id"], "state": "queued" if node["tstatus"] == "queued" else "planned"})
         tx.emit("project.updated", {"project_id": project_id, "status": "running"})
@@ -661,7 +664,7 @@ class ProjectService:
                 self.store.audit(tx, actor="owner", action="system.skipped", project_id=project_id, tier=found.tier, decision="deny", reason=f"{item}: {found.request.get('label', '')}"[:200], ref=found.id)
                 for node_id in found.request.get("nodes") or []:
                     row = tx.conn.execute("SELECT n.state AS state, n.task_id AS task_id, t.status AS tstatus FROM agent_nodes n LEFT JOIN tasks t ON t.id = n.task_id WHERE n.id = ?", (node_id,)).fetchone()
-                    if row is None or row["state"] != "awaiting_system":
+                    if row is None or row["state"] in NODE_FINAL:                       # every step the question names that is not over is cancelled, whatever else it waits for (M1)
                         continue
                     if row["task_id"] and row["tstatus"] in ("blocked", "queued"):
                         self.tasks.cancel_in(tx, row["task_id"], "skipped: the computer did not allow it")

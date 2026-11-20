@@ -168,3 +168,27 @@ def test_a_probe_that_raises_leaves_the_reserved_project_with_its_tasks(tmp_path
         talk(client, services, connector, "A page and a quote", decide(change="add", reuse=(), why="two"), change_reply(add_dept("$web", "Web", "Websites"), add_dept("$sales", "Sales", "Quotes")),
              assignments(draft("a1", "web", title="Page"), draft("a2", "sales", title="Quote")), NO_REQUESTS)
         assert len(rows(services, "SELECT * FROM tasks")) == 2 and len(rows(services, "SELECT * FROM projects")) == 1
+
+
+# ---- the skip and the answer meet (M1) ------------------------------------------------------------------------------------------------------
+
+def test_skipping_the_permission_and_then_answering_github_never_starts_the_step_the_skip_cancelled(rig):
+    reservation, tasks = rig.request([("a1", "web", []), ("a2", "sales", [])], needs={"a2": ("github",)}, probe=True)
+    assert rig.node_states(tasks)["a1"] in ("awaiting_approval", "awaiting_system") and rig.node_states(tasks)["a2"] == "awaiting_approval"           # the plan's question holds both
+    rig.t.run(rig.projects.system_skip(reservation.project_id, "files_folders"))
+    assert rig.node_states(tasks)["a1"] == "cancelled" and rig.t.status(tasks["a1"]) == "cancelled"
+    [github] = [a for a in rig.store.approvals(reservation.project_id, status="open") if a.request.get("kind") == "tier"]
+    rig.t.run(rig.projects.answer(reservation.project_id, github.id, "allow_once"))
+    started = {s.task_id for s, *_ in rig.t.launcher.started}
+    assert tasks["a2"] in started and tasks["a1"] not in started and rig.node_states(tasks)["a1"] == "cancelled"
+
+
+def test_answering_github_first_does_not_release_the_step_a_permission_question_still_names(rig):
+    reservation, tasks = rig.request([("a1", "web", []), ("a2", "sales", [])], needs={"a2": ("github",)}, probe=True)
+    [github] = [a for a in rig.store.approvals(reservation.project_id, status="open") if a.request.get("kind") == "tier"]
+    rig.t.run(rig.projects.answer(reservation.project_id, github.id, "allow_once"))
+    started = {s.task_id for s, *_ in rig.t.launcher.started}
+    assert tasks["a1"] not in started and rig.node_states(tasks)["a1"] in ("awaiting_approval", "awaiting_system")
+    rig.adapter.blocked = False
+    rig.t.run(rig.projects.system_check(reservation.project_id, "files_folders"))
+    assert tasks["a1"] in {s.task_id for s, *_ in rig.t.launcher.started}
