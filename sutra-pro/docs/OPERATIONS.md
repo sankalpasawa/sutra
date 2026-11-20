@@ -68,6 +68,7 @@ and runs are the part that grows.
   agents/j2/                         engine-owned: the agent prompts a run reads
   connectors/policy.json             optional connector routing policy (the app ships a default)                 tiny
   connectors/slots/                  with SUTRA_NODES_SLOTS=1: one small empty file for each slot of each provider  tiny
+  nodes/tools/<run id>.jsonl         with SUTRA_NODES_V1=1: for each project step, its tool calls (names and kinds only), kept by the step's own host; a record, not a proof   at most about 200 KB each; `prune` does not remove them yet (F-3)
   departments/<team>/
     department.json                  a readable mirror of the team; the database is the authority                 tiny
     engine.json                      optional per-team engine settings                                            tiny
@@ -76,7 +77,7 @@ and runs are the part that grows.
       task.json  inbox.jsonl  events.jsonl  trace.jsonl  snapshot.json  live.json  settings.json  timing.json  autofix.json
       chat.jsonl  calls.jsonl  map.json  report.json  summary.json  goal.json  workflows.json  atoms.json
       run.stdout.log  run.stderr.log
-      handoff.json  handoff.accepted.json  tools.jsonl  verdict.json     only the run of a project step: its hand-off, the checked copy, its tool calls (names and kinds only) and the reviewer's verdict
+      handoff.json  handoff.accepted.json  verdict.json                  only the run of a project step: its hand-off, the checked copy and the reviewer's verdict
       site/ (page versions, documents, shots/)  artifacts/                                                       ~0.08 MB for a mock run; MBs with screenshots
 ```
 
@@ -222,7 +223,7 @@ This is the beta of "projects": a request that the chat splits into two or more 
 - **The list of a step's tool calls** is kept by the step's own host and is a record, not a proof: a step with a shell runs as you and could change it.
 - **A closed laptop** is left out of a project's running time while the app is open and asleep; a closed app is not.
 - **Setting work aside** does not undo anything. The files stay in your folder. Sutra never moves or deletes them.
-- **The network.** A step may fetch pages or search the web from inside the Claude or Codex program, as an ordinary run does today. Sutra only **checks and counts** secret-like words in the prompts of the working steps (it does not change them, as with any ordinary run), so a secret that sits in your folder can reach the model program; it **removes** them from what steps hand to each other, from the planner's and reviewer's text and from the project's record. It does nothing about what a tool fetches or sends, and while a step still runs its live view holds what the tool was given; and the tool inputs in the run's record are emptied when a step ends (the prompts and replies stay, as in any run). The project's record lists which tools a step used (name, kind, file name) and never what they carried.
+- **The network.** A step may fetch pages or search the web from inside the Claude or Codex program, as an ordinary run does today. Sutra only **checks and counts** secret-like words in the prompts of the working steps (it does not change them, as with any ordinary run), so a secret that sits in your folder can reach the model program; it **removes** them from what steps hand to each other, from the planner's and reviewer's text and from the project's record. It does nothing about what a tool fetches or sends, and while a step still runs its live view holds what the tool was given; and the tool inputs in the run's record are emptied when the step's own program ends the run (done, stopped or crashed); a step that is killed hard may keep them, and the prompts and replies stay, as in any run. The project's record lists which tools a step used (name, kind, file name) and never what they carried.
 - **A reviewer** (`SUTRA_NODES_REVIEWER`) only gives an opinion: approve, changes or reject. You decide. If you do not answer its question, or the computer sleeps or is closed, that counts as a no and the project ends as it is. If it cannot run, the project still ends done and says the review could not run. It uses the other Claude or Codex program when both are signed in, and says "not independent" when it had to use the same one.
 - **If your folder is in iCloud Drive or on an external or network disk,** the check before a step starts now looks there on a Mac too (it may show your computer's own window). On Windows with Controlled folder access on, Sutra says once that the programs `claude` and `codex` are judged apart from Sutra Pro; it cannot test them without running a model, so a refusal can still show up after a step has started, as a card with "Check again".
 

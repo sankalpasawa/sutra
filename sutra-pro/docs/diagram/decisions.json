@@ -1725,6 +1725,16 @@
   "anchor": null
  },
  {
+  "id": "D346",
+  "label": "fix-round deviations accepted; limits written",
+  "anchor": null
+ },
+ {
+  "id": "D347",
+  "label": "real-Claude beta: go, read-only, 3 runs",
+  "anchor": null
+ },
+ {
   "id": "D360",
   "label": "work list + tags + code-made summary (DV-2)",
   "anchor": null
@@ -1737,6 +1747,16 @@
  {
   "id": "D362",
   "label": "flag per package; routes mounted only when on",
+  "anchor": null
+ },
+ {
+  "id": "D363",
+  "label": "DV-2/DV-3 accepted with changes; way in needed",
+  "anchor": null
+ },
+ {
+  "id": "D364",
+  "label": "merge order; decision blocks; one release",
   "anchor": null
  }
 ]

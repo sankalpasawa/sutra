@@ -11,5 +11,5 @@ Written for the person who downloads the app, to go in `docs/release-notes/X.Y.Z
 
 - A step that runs through Codex can change files outside its own place while it works; Sutra finds out after it ends and asks you.
 - When a step is tried again, one model call counts as one credit; your dollar limit is the number that holds.
-- Sutra checks and counts secret-like words in what the steps send to the model programs, it does not change them, as with any run. It does nothing about what a tool fetches or sends. The tool inputs are emptied from a step's record when it ends.
+- Sutra checks and counts secret-like words in what the steps send to the model programs, it does not change them, as with any run. It does nothing about what a tool fetches or sends. The tool inputs are emptied from a step's record when it ends; a step that is stopped by force may keep them.
 - Keeping steps apart works among the steps of projects; a normal task of another team can still change the same folder.

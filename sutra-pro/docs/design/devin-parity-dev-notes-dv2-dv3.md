@@ -1,7 +1,7 @@
 # Devin parity: developer notes (DV-2 and DV-3)
 
 Branch `feat/sutra-pro-devin-parity`, cut from the head of `feat/sutra-pro-agent-nodes` (c138f633). Author: developer, 2026-11-20. The architect's analysis is [devin-parity.md](devin-parity.md); DV-1 (Ask) is built by another
-developer in its own worktree and is not here. Decisions are numbered from D360 so that they do not meet the ones the Ask branch adds (merge them in order, renumber if needed).
+developer in its own worktree and is not here. Decisions are numbered from D360 so that they do not meet the ones the Ask branch adds (D350 to D353): no renumbering is needed when the branches meet (D364, [merge-plan-nodes-devin.md](merge-plan-nodes-devin.md)). This file is named for its two packages because the Ask branch has its own `devin-parity-dev-notes.md`; two files of one name would conflict when the branches meet.
 
 ## What was built
 
@@ -53,3 +53,13 @@ test moves. The migrations v7 and v8 only add tables (nothing reads them with th
 No real model run: starting a recipe was tested to the point of the owner's line in the chat (the planner is the existing one, tested elsewhere with fakes). No real browser: the two pages have node tests for their view and
 controller and a route test that every file they name is served; the layout at phone width, dark and light, and a long list were NOT looked at (the project page's check in the beta is the pattern to repeat). The beta app was
 not rebuilt for this branch.
+
+## Architect's rulings (D363)
+
+The five departures stand. The conditions, as a list for the developer; each is small and none changes a flag-off byte:
+
+1. **DV-2b and DV-3b, a way in.** No page or script links to `/work` or `/recipes`, and the desktop window has no address bar, so the pages cannot be reached in the app (the text of D360 d, "from the links on a project's note and card", is not true in the code). At serve time the server adds one line of links ("Work", "Recipes", each only when its flag is on) to the Home HTML; with both flags off the served bytes are what they were; a test compares them to the page file. The project page may show "How did it go?" and "Save as a recipe" only when the route answers (404 means the flag is off, so no link).
+2. **Words.** Starters: "ships with Sutra, cannot be changed" (not "read only"). Under "Never do these": "This is told to the planner. It is not a lock: your folder access setting is the lock." The summary's minutes: "from the first start to the end".
+3. **A test** that starting a recipe adds no standing rule (count the rows before and after).
+4. **A test** `test_schema.py`: the "newer database" case uses `SCHEMA_VERSION + 1`, not `9`.
+5. **Not verified, still:** no real browser, no real planner, the beta was not rebuilt. Look at both pages in the beta built from this branch (dark and light, a long list, phone width), and start one starter with a real planner, before anything is said to be working.

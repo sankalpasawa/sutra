@@ -9,6 +9,19 @@ Answer: we build the functions that fit a local-first desktop app, as small pack
 
 Verdicts: ADOPT (as Devin does), ADAPT (local-first shape), ALREADY HAVE, SKIP.
 
+## 0. Status of the packages (the architect's adherence check, 2026-11-20, D363, D364)
+
+A package is "built" when its code and tests are on a branch with its flag at `0`. **None of them has been looked at in a real browser or run with a real model**, and none is merged to `main`.
+
+| Package | Status | Branch and head | Flag | Migration | Decisions | What is still to do |
+|---|---|---|---|---|---|---|
+| DV-1 Ask | built by another developer, in progress; not reviewed by the architect | `feat/sutra-pro-devin-ask` `254ff018`, cut from `origin/main` (no nodes code) | `SUTRA_ASK_V1` | none | D350 to D353 (D354 to D359 kept for it) | finish and review; merge `origin/main` into it before it lands ([merge-plan-nodes-devin.md](merge-plan-nodes-devin.md)) |
+| DV-2 Work list, tags, "How did it go?" | built, **accepted with changes** (D363) | `feat/sutra-pro-devin-parity` `eecd775b`, stacked on `feat/sutra-pro-agent-nodes` | `SUTRA_WORK_V1` | v7 `work_tags` | D360, D362 | DV-2b: a way in to `/work` (none exists: no link, and the desktop window has no address bar); words: minutes "from the first start to the end"; look at it in a real browser |
+| DV-3 Recipes | built, **accepted with changes** (D363) | same branch | `SUTRA_RECIPES_V1` | v8 `recipes`, `recipe_versions` | D361, D362 | DV-3b: a way in to `/recipes`; words: starter "cannot be changed" (not "read only"), one line under "Never do these"; a test that starting makes no standing rule; start one with a real planner |
+| DV-4 to DV-13 | not started | | | | | order and gate below |
+
+What the owner can do today with DV-2 and DV-3: only by typing `http://127.0.0.1:<port>/work` or `/recipes` in an ordinary browser (the port is in `scripts/py scripts/install_app.py status`), with the flag set, in a beta built from the parity branch. Do that after DV-2b and DV-3b, not before.
+
 ## 1. Devin vs Sutra Pro
 
 | Capability | Devin | Sutra Pro today | Verdict | Package |
@@ -140,13 +153,29 @@ Stays the same: D296. A closed lid is still a refusal. Do not promise lid-closed
 ### DV-13. Worktree writers — L, not now (`SUTRA_WORKTREES_V1`)
 Two steps change the same folder at once, each in its own git worktree under `<data>/worktrees/<node>`, you merge the result. Not now: it writes the repo's git data, which scoped writers are denied today; nodes beta has no real-world evidence; D261 deferred it on purpose.
 
+## 4b. Rulings on how DV-2 and DV-3 were built (D363)
+
+The developer departed from this document in five places (`devin-parity-dev-notes-dv2-dv3.md`). All five stand, two with a condition:
+
+| # | Departure | Ruling | Why, and the condition |
+|---|---|---|---|
+| 1 | No navigation item for Work and Recipes | **Accepted, with a condition** | A flag-aware item on Home would change the flag-off page (D362). But D360 says the pages are reached "from the links on a project's note and card", and the code has no such link (nothing under `ui/static` or `ui/pages` points to `/work` or `/recipes`), and the desktop window has no address bar. So the pages are unreachable in the app. Condition (DV-2b, DV-3b): a way in that exists only with a flag on: at serve time the server adds one line of links ("Work", "Recipes", each only when its flag is on) to the Home HTML; with both flags off the served bytes are what they were, and a test compares them. |
+| 2 | No model sentence in the summary, no model draft of a recipe | **Accepted** | The sentence was optional, off by default and capped in this document; a model draft of a recipe puts a model's words where a model must not write (the rule that a model never approves a model) and spends quota. The code draft (the project's title and its steps' titles) is shallow: no specifications, no advice. That is the known limit; ask again after the nodes beta. |
+| 3 | "Forbidden" as "Never do these" lines in the request, not a standing rule | **Accepted (better than the design), with words** | A standing rule made by a recipe is a lasting change the owner did not choose, and it would apply beyond the recipe. The lines are told to the planner, which is advice and not a lock. Condition: the page says so in one line under that part ("This is told to the planner. It is not a lock: your folder access setting is the lock"), and a test shows that starting a recipe adds no standing rule. |
+| 4 | The summary is on `/work`, not on the project page | **Accepted** | The project page is flag-gated by the nodes, not by the Work flag; a button there would call a route that answers 404 with the Work flag off. A link on the project page that shows only when the Work route answers is part of DV-2b. Small wording fix: the summary's minutes run from the first start to the end and include any time the computer slept; say "from the first start to the end". |
+| 5 | The starters are code, not seed rows | **Accepted** | Simpler than the seed-sync of D144, and nothing can change them. Words: the list says "ships with Sutra, read only", which can be read as "only reads your folder"; say "ships with Sutra, cannot be changed". |
+
+Also found, not a departure: `tests/orchestrator/test_schema.py` pins `PRAGMA user_version = 9` as "a newer app's database"; the first v9 migration (DV-6 will add one) breaks it. Use `SCHEMA_VERSION + 1`.
+
 ## 5. Stays the same for every package
 
 Flag-off path byte-identical; one database writer; external send off; owner's access caps every grant and every edit to a plan or recipe can only narrow; models propose, code checks, the owner decides; branch from the newest main, `scripts/gate.sh` foreground, beta first, never Latest.
 
 ## 6. Order and the owner's three questions (decided)
 
-Build first, in order: DV-1, DV-2, DV-3, DV-4, DV-5. DV-1, DV-2 (tasks half) and DV-3 can start now. DV-4 and DV-5 edit the plan gate and the reviewer, so they follow the nodes beta and G23..G26. Then DV-6, DV-12, DV-7, DV-11, DV-10, DV-9, DV-8.
+Order, as of 2026-11-20 (D363): DV-1 (finish) and DV-2, DV-3 (built) first, then **DV-2b and DV-3b** (a way in, the words), then DV-4 and DV-5, then DV-6, DV-12, DV-7, DV-11, DV-10, DV-9, DV-8. DV-13 is not now.
+
+**The gate for DV-4 and DV-5 (changed).** They edit the plan gate and the reviewer, which are nodes code. G23 to G26 are done, so that part of the old gate is closed. The new gate is: (1) the first real-model beta run of the nodes has **passed** (D347, `multi-agent-nodes/beta-run-checklist.md`: checks C5 to C11 seen, notes written); (2) the nodes branch is **on `main`**, so DV-4 and DV-5 are cut from `main` and not stacked on a branch that still moves; (3) DV-1 is **on `main`**, because both reuse its citation checker; (4) for DV-4, the first real P4 numbers are written down (a plan view shows an estimate, and the numbers behind it are the 60-call and 30-minute guesses until then); for DV-5, a real reviewer run has been seen (check C14, on two providers if the owner has both) because a findings list depends on the real shape of the verdict. If the beta run fails or is not done, DV-4 and DV-5 wait; the other packages that need no nodes code (DV-1, the tasks half of DV-2, DV-3, DV-11) do not.
 Do not build: cloud VMs and snapshots, laptop-closed work, Slack/Teams/Jira/Linear/PagerDuty/webhooks, PRs and commit statuses, secrets vault and browser sign-in for agents, Computer Use and voice and IDE, RBAC/SSO/SCIM, nightly dreaming, auto-proceed timers, video, Python workflow scripts, MCP marketplace, Android and Chief of Staff bots, worktree writers now.
 Owner questions, decided: GitHub read-only watching = yes, after DV-5, off by default, no faster than every 15 minutes. Stay-awake switch = yes, default off. Worktrees and local branches = not yet; revisit after the nodes beta has run on real projects.
 

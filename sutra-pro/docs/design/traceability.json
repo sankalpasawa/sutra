@@ -1,14 +1,14 @@
 {
  "schema": "traceability/1",
  "counts": {
-  "decisions": 348,
+  "decisions": 352,
   "packages": 78,
   "endpoints": 43,
   "chips": 17,
   "steps": 7,
   "owner_rules": 7
  },
- "max_decision": 362,
+ "max_decision": 364,
  "owner_rules": [
   {
    "rule": "This is a new app, no relation to the old sutra-ui. Its design is the J2 prototype's design.",
@@ -535,9 +535,13 @@
     "D343",
     "D344",
     "D345",
+    "D346",
+    "D347",
     "D360",
     "D361",
-    "D362"
+    "D362",
+    "D363",
+    "D364"
    ],
    "modules": [
     "docs/DECISIONS.md",
@@ -5551,6 +5555,22 @@
    "diagram": "label \"phase 4 review fixes as built\", key only."
   },
   {
+   "id": "D346",
+   "title": "The nodes fix round: the deviations are accepted, four limits are written down",
+   "packages": [],
+   "status": "documented only",
+   "superseded_by": [],
+   "diagram": "label \"fix-round deviations accepted; limits written\", key only."
+  },
+  {
+   "id": "D347",
+   "title": "The first real-model beta run: go, with conditions and the checks",
+   "packages": [],
+   "status": "documented only",
+   "superseded_by": [],
+   "diagram": "label \"real-Claude beta: go, read-only, 3 runs\", key only."
+  },
+  {
    "id": "D360",
    "title": "The Work list, tags and How did it go? (DV-2)",
    "packages": [],
@@ -5573,6 +5593,22 @@
    "status": "documented only",
    "superseded_by": [],
    "diagram": "label \"flag per package; routes mounted only when on\", key only."
+  },
+  {
+   "id": "D363",
+   "title": "DV-2 and DV-3 accepted with changes; the order and the gate of DV-4 and DV-5",
+   "packages": [],
+   "status": "documented only",
+   "superseded_by": [],
+   "diagram": "label \"DV-2/DV-3 accepted with changes; way in needed\", key only."
+  },
+  {
+   "id": "D364",
+   "title": "Merge and release order, conflicts, decision blocks",
+   "packages": [],
+   "status": "documented only",
+   "superseded_by": [],
+   "diagram": "label \"merge order; decision blocks; one release\", key only."
   }
  ],
  "packages": [
