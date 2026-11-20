@@ -46,13 +46,14 @@ class PlanStep:
 class Plan:
     """The steps in plan order (a step waits only for earlier steps), the owner's folder access (`none`, `read`, `edit`), and what has been allowed so far: `approved` maps a step id
     to the tiers the owner or a rule allowed for it, `approved_wide` holds the steps whose wide write scope was allowed. `confirm_credits` is the estimate above which the plan asks
-    (None: it never asks about the estimate). `max_nodes` bounds the steps (the plan limit)."""
+    (None: it never asks about the estimate; the default is the configured 500 work credits, D300, and the caller passes None only for a project the owner gave a budget). `max_nodes`
+    bounds the steps (the plan limit)."""
 
     steps: tuple[PlanStep, ...]
     owner_access: str = "none"
     approved: Mapping[str, frozenset[int]] = field(default_factory=dict)
     approved_wide: frozenset[str] = frozenset()
-    confirm_credits: int | None = None
+    confirm_credits: int | None = int(NODE_DEFAULT_CAPS["confirm_credits"] or 500)
     max_nodes: int = int(NODE_DEFAULT_CAPS["max_nodes"] or 12)
 
 

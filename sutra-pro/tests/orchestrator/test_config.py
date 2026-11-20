@@ -229,7 +229,7 @@ def test_the_node_flags_do_not_change_what_the_public_view_shows():
 def test_the_default_caps_are_the_documented_ones_and_cannot_be_changed_in_place():
     caps = config.NODE_DEFAULT_CAPS
     assert dict(caps) == {"max_parallel": 3, "max_nodes": 12, "node_calls": 60, "node_usd": None, "node_wall_s": 1800, "retries": 1, "review_loops": 2,
-                          "project_wall_s": 7200, "lease_s": 90, "approval_expiry_s": 86400, "depth": 1}
+                          "project_wall_s": 7200, "lease_s": 90, "approval_expiry_s": 86400, "depth": 1, "confirm_credits": 500}
     with pytest.raises(TypeError):
         caps["depth"] = 2
 
