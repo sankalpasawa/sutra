@@ -2569,3 +2569,24 @@ Why: the project's promise is that its limit is about time spent working; counti
 - Why: the files grow without end; R11 should hold when the host did not get to run; an in-memory debt is lost.
 - Rejected: deleting the log at the node's end (the audit may not have been written yet); a database table for the debt.
 - Diagram: label "tool records: prune, sweep, durable debt", key only.
+
+## D365 — The review round of DV-2 and DV-3, as built
+- Sources: `docs/design/devin-parity.md`, `docs/design/devin-parity-dev-notes-dv2-dv3.md` and `docs/design/merge-plan-nodes-devin.md`; the owner's direction of 2026-11-20 (take inspiration from Devin, decide autonomously, document every decision).
+- Decided: The review round of DV-2 and DV-3 is built as listed in `devin-parity-dev-notes-dv2-dv3.md`: the Work list hides every attempt of a retried step and is filtered and paged by the database; the summary counts minutes from the first attempt, names steps by their title and says real retries; a tag is checked as typed and never echoed; Recipes refuse hidden text and a recipe that could never start, write a dollar as `$$`, list with one query and save as a file in any language; the page says a recipe is words, not a lock. The six static files are served with the switches off (nothing loads them).
+- Why: each finding is a way the owner would meet a wrong list, a 500, or text they cannot see; each fix is the smallest that closes it.
+- Rejected: hiding only a step's current task; refusing hidden text in the shared notes gate (it would change the Notes and Rules pages with the switches off).
+- Diagram: label "DV-2/DV-3 review fixes as built", key only.
+
+## D366 — Home gets a row for Work and Recipes at serve time
+- Sources: `docs/design/devin-parity.md`, `docs/design/devin-parity-dev-notes-dv2-dv3.md` and `docs/design/merge-plan-nodes-devin.md`; the owner's direction of 2026-11-20 (take inspiration from Devin, decide autonomously, document every decision).
+- Decided: The server adds one row for each mounted page to Home's "Logs & debug" group when Home is served (`add_home_links`, the links registered by `mount_work_page` and `mount_recipes_page` in `app.state.home_links`); with both switches off Home is served exactly as the file says (a test strips the two rows and compares the bytes). The desktop window has no address bar, so a page that exists must be reachable.
+- Why: a page nobody can open is not a feature; a fixed row in the file would change the flag-off page.
+- Rejected: a row in `home.html` hidden by a script (the bytes change, a request fails with the switch off).
+- Diagram: label "Home rows for Work/Recipes, only while mounted", key only.
+
+## D367 — Hidden text is refused in recipes and tags only
+- Sources: `docs/design/devin-parity.md`, `docs/design/devin-parity-dev-notes-dv2-dv3.md` and `docs/design/merge-plan-nodes-devin.md`; the owner's direction of 2026-11-20 (take inspiration from Devin, decide autonomously, document every decision).
+- Decided: `owner_words.hidden_text_refusal` refuses any character of the Unicode categories `Cf`, `Co`, `Cs` and `Cn` (zero-width, text-direction and Tag-block characters, private use, unassigned) except the two joiners U+200C and U+200D, in every line, title, blank and imported file of Recipes and in tags. The notes and rules gate (`refusal`, `clean_text`) is unchanged.
+- Why: an imported recipe's defence is that the owner reads it before saving; text they cannot see defeats that. The notes and rules pages keep their behaviour with the switches off.
+- Rejected: changing the shared gate (it moves flag-off pages); allowing the joiners nowhere (it breaks some languages and emoji).
+- Diagram: label "hidden text refused in recipes and tags", key only.

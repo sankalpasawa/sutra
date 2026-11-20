@@ -22,9 +22,7 @@ test moves. The migrations v7 and v8 only add tables (nothing reads them with th
   characters of letters, digits, spaces, `-` and `_`, at most 8 for an item; it passes the note gate (`owner_words.refusal`), so a key, a token or a password is refused and never echoed. The whole set is replaced in one `db.tx()`.
   (c) "How did it go?" (`GET /api/projects/{id}/summary`) is computed by code from rows that exist (the usage ledger by the chain of a step's tasks, the node tables, the approvals, the audit): credits are model calls (D324),
   dollars what the providers reported, minutes from the first start to the end, what was tried again, how many questions and how many Sutra answered, scope notices, where steps got stuck and why it stopped, as plain sentences. A model
-  writes none of it: the optional "model sentence" of the design is NOT built (it would spend quota and adds nothing the code cannot say). (d) NO navigation item on Home: a flag-aware item would change the Home page or ask a
-  question that fails with the flag off; the page is reached by its address `/work` and from the links on a project's note and card. This is the one place the design (nav item only with the flag) is not followed; the reason is the
-  byte-identical rule. (e) The summary is not on the project page; it is on `/work` ("How did it go?" on a project). (f) Search is by words in the title and the request (every word, any case), done in code over the rows: it is a few
+  writes none of it: the optional "model sentence" of the design is NOT built (it would spend quota and adds nothing the code cannot say). (d) NO navigation item in the Home FILE: a fixed item would change the Home page with the flag off; since the review the server adds a row at serve time only while the page is mounted (D366). (e) The summary is not on the project page; it is on `/work` ("How did it go?" on a project). (f) Search is by words in the title and the request (every word, any case), done in code over the rows: it is a few
   thousand rows at most on one computer; no index and no full-text table were added.
 - **D361. Recipes (DV-3).** (a) A recipe has a title and six parts: overview, procedure (1 to 30 lines, at least one), specifications, advice, forbidden (each at most 20 lines), and needs (at most 9 blanks). `$1` to `$9` in any
   text stand for the needs, in order; a `$n` with no need is refused. Every line passes the note gate and is at most 300 characters. (b) Versions only grow: `recipe_versions` has triggers that forbid update and delete; a change
@@ -41,7 +39,7 @@ test moves. The migrations v7 and v8 only add tables (nothing reads them with th
 
 ## Deviations from devin-parity.md
 
-1. No navigation item for Work or Recipes (D360 d).
+1. No fixed navigation item for Work or Recipes in the Home file (D360 d); since the review round Home gets a row for each, added at serve time only while that page is mounted (D366).
 2. No optional model sentence in the summary and no model draft of a recipe (D360 c, D361 f).
 3. "Forbidden maps to never" is a line in the request, not a standing rule (D361 d).
 4. Recipes are started through `post_user_message` with a `client_id` (the route of `POST /api/projects`), so a started recipe is an org chat request whether or not the nodes are on.
@@ -63,3 +61,18 @@ The five departures stand. The conditions, as a list for the developer; each is 
 3. **A test** that starting a recipe adds no standing rule (count the rows before and after).
 4. **A test** `test_schema.py`: the "newer database" case uses `SCHEMA_VERSION + 1`, not `9`.
 5. **Not verified, still:** no real browser, no real planner, the beta was not rebuilt. Look at both pages in the beta built from this branch (dark and light, a long list, phone width), and start one starter with a real planner, before anything is said to be working.
+
+
+## The review round (DV-2 and DV-3: 4 majors, 11 minors; D365 to D367)
+
+Every item has a test that fails without it (the tests are in `test_work.py`, `test_recipes.py`, `work_view/page.test.js`, `recipe_view.test.js`).
+
+- **DV-2:** the Work list hides every attempt of a retried step (the whole `parent_task_id` chain, the CTE of `project_spend`), filters and pages in the database (`LIKE` with `%` and `_` as letters, `EXISTS` on the tag table, the page's own tags read afterwards); the summary's minutes start at the first attempt of any step, and its words say that any time asleep or closed is in them; steps are named by their task's title; "tried again" counts the audit's `node.retry` rows (a restart after Sutra was closed and a send-back by the reviewer are said apart); the server gives each node state its owner word; dollars are shown for each step; the page says "Showing the newest 200" and offers Show more (up to 800); the search box holds 200 characters and keeps its caret.
+- **Tags:** the secret gate runs on what was typed, before lower-casing (the shapes of keys use capitals); no refusal repeats the tag; a tag is letters of any language, digits, spaces, `-` and `_`.
+- **DV-3:** hidden text is refused in every line, title, blank and imported file (`owner_words.hidden_text_refusal`: the categories `Cf`, `Co`, `Cs`, `Cn`, except the two joiners that some languages need); `$$` is one dollar sign; a recipe that could never start (the request with every blank at 300 characters over 7,900) is refused when it is saved; `list` is one query; "Save as a file" sends an ASCII name and the real name in `filename*=UTF-8''`.
+- **Architect's rulings:** Home rows (D366); the start form says a recipe is words, not a lock; a test that starting one makes no approval and no rule; the starter label says "cannot be changed"; the schema pin follows `SCHEMA_VERSION`; the flag-off route table is tested to equal the flag-on one minus the new paths.
+- **Static files:** the four scripts and two style sheets are in the static folder and are served at `/ui/js/...` with the switches off. No page or route loads them and nothing is read; "nothing exists" is true of routes, pages, tables read and Home, not of those six files (D362 says so now).
+
+## Verification (M1, the migration on a copy of real data)
+
+On 2026-11-20 a read-only copy of the stable app's database (`~/.sutra-pro/db.sqlite3`, version 5, 9 tasks, 720 chat messages, 2.4 MB, made with SQLite's backup call through a read-only connection) was put in a temp folder and migrated by the code of this branch: version 5 to 8 in 2 ms; every table that was there keeps its row count; the 8 new tables (the nodes' five, `work_tags`, `recipes`, `recipe_versions`) are there empty; `PRAGMA integrity_check` ok, no foreign-key problem, the `lane` column and the two recipe triggers are there; a second run does nothing. On a second copy in a throw-away data folder `backup.before_upgrade` wrote `backups/pre-upgrade-v5-to-v8.sqlite3` (2.5 MB, mode 600, version 5, integrity ok) before the migration and wrote nothing the second time. The copies were deleted afterwards; the original and the stable app were not touched. NOT done: a restore of that backup, and a start of the real app on the copy.

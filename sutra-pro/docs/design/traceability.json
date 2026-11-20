@@ -1,14 +1,14 @@
 {
  "schema": "traceability/1",
  "counts": {
-  "decisions": 354,
+  "decisions": 357,
   "packages": 78,
   "endpoints": 43,
   "chips": 17,
   "steps": 7,
   "owner_rules": 7
  },
- "max_decision": 364,
+ "max_decision": 367,
  "owner_rules": [
   {
    "rule": "This is a new app, no relation to the old sutra-ui. Its design is the J2 prototype's design.",
@@ -543,7 +543,10 @@
     "D361",
     "D362",
     "D363",
-    "D364"
+    "D364",
+    "D365",
+    "D366",
+    "D367"
    ],
    "modules": [
     "docs/DECISIONS.md",
@@ -5629,6 +5632,30 @@
    "status": "implemented",
    "superseded_by": [],
    "diagram": "label \"tool records: prune, sweep, durable debt\", key only."
+  },
+  {
+   "id": "D365",
+   "title": "The review round of DV-2 and DV-3, as built",
+   "packages": [],
+   "status": "documented only",
+   "superseded_by": [],
+   "diagram": "label \"DV-2/DV-3 review fixes as built\", key only."
+  },
+  {
+   "id": "D366",
+   "title": "Home gets a row for Work and Recipes at serve time",
+   "packages": [],
+   "status": "documented only",
+   "superseded_by": [],
+   "diagram": "label \"Home rows for Work/Recipes, only while mounted\", key only."
+  },
+  {
+   "id": "D367",
+   "title": "Hidden text is refused in recipes and tags only",
+   "packages": [],
+   "status": "documented only",
+   "superseded_by": [],
+   "diagram": "label \"hidden text refused in recipes and tags\", key only."
   }
  ],
  "packages": [
