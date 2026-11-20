@@ -34,7 +34,7 @@ function world(over = {}) {
   const doc = {activeElement: null, getElementById: id => (nodes[id] = nodes[id] || {id, innerHTML: "", contains: () => false})};
   const timers = [];
   const page = WorkPage.create({doc, api, setTimeout: (fn, ms) => { timers.push({fn, ms}); return timers.length; }, clearTimeout: n => { if (timers[n - 1]) timers[n - 1].fn = null; }});
-  return {page, gets, puts, nodes, timers, answers};
+  return {page, gets, puts, nodes, timers, answers, doc};
 }
 const button = dataset => ({dataset, closest() { return this; }});
 const click = (w, b) => w.page.onClick({target: b});
@@ -153,4 +153,16 @@ test("what is typed in the search box is cut at 200 characters", () => {
   const w = world();
   w.page.typed("x".repeat(500));
   assert.equal(w.page.state().filter.q.length, 200);
+});
+
+test("the caret stays where it was when the list is drawn again while the owner types", async () => {                          // review 12
+  const w = world();
+  await w.page.start();
+  const box = {id: "w-q", selectionStart: 2, selectionEnd: 4, focused: 0, range: null, focus() { this.focused += 1; }, setSelectionRange(a, b) { this.range = [a, b]; }};
+  w.doc.activeElement = box;
+  w.nodes["w-filters"].contains = x => x === box;
+  w.nodes["w-q"] = box;
+  await w.page.setFilter({tag: "cafe"});                                                                     // the filters are drawn again with a tag pressed
+  assert.equal(box.focused, 1);
+  assert.deepEqual(box.range, [2, 4]);
 });

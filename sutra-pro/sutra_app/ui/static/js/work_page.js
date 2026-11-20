@@ -39,10 +39,17 @@
     function paint(id, html) {
       const node = el(id);
       if (!node || painted[id] === html) return;
-      const active = doc && doc.activeElement && doc.activeElement.id && node.contains && node.contains(doc.activeElement) ? doc.activeElement.id : "";
+      const active = doc && doc.activeElement && doc.activeElement.id && node.contains && node.contains(doc.activeElement) ? doc.activeElement : null;
+      const keep = active ? {id: active.id, from: active.selectionStart, to: active.selectionEnd} : null;      // the caret too, so typing in the middle of a word does not jump (review 12)
       node.innerHTML = html;
       painted[id] = html;
-      if (active) { const back = el(active); if (back && typeof back.focus === "function") back.focus(); }
+      if (keep) {
+        const back = el(keep.id);
+        if (back && typeof back.focus === "function") {
+          back.focus();
+          if (typeof keep.from === "number" && typeof back.setSelectionRange === "function") { try { back.setSelectionRange(keep.from, keep.to); } catch (e) { /* not a text box */ } }
+        }
+      }
     }
 
     function render() {
