@@ -1021,6 +1021,8 @@ class Router:
         sid = state.ctx.session_id or ""
         lost = False
         folder = self.chat_folder()            # the working folder of THIS turn (a change applies to the next message)
+        if folder and getattr(state.ctx.tag, "workspace", "none") == "read":
+            folder = Folder(str(folder), edit=False)       # a turn that asks for `read` (the Ask mode, DV-1) never gets more than the file tools that look: the owner's "edit" is capped here
         for round_no in (1, 2):
             self._check_cancel(state, provider)
             old = load_session_state(self._workdir(sid))

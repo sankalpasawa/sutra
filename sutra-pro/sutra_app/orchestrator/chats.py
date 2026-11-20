@@ -126,13 +126,13 @@ def _passed_on_of(session_id: str, src_ref: str | None) -> int | None:
 
 
 def _turn_of(src_ref: str | None) -> int | None:
-    """The owner's line a direct-chat reply answers (`src_ref` is `direct:<message id>`, or `direct-note:`, `direct-error:`, `direct-switch:`
+    """The owner's line a direct-chat reply answers (`src_ref` is `direct:<message id>`, or `direct-note:`, `direct-error:`, `direct-switch:`, `direct-sources:`
     for the other messages that end the same turn: orchestrator/direct_turns.py), else None."""
     found = _DIRECT_REF.fullmatch(src_ref or "")
     return int(found.group(1)) if found else None
 
 
-_DIRECT_REF = re.compile(r"direct(?:-(?:note|error|switch))?:([1-9][0-9]{0,15})(?:\.([2-9]|[1-9][0-9]))?")
+_DIRECT_REF = re.compile(r"direct(?:-(?:note|error|switch|sources))?:([1-9][0-9]{0,15})(?:\.([2-9]|[1-9][0-9]))?")
 
 
 def _attempt_of(src_ref: str | None) -> int | None:

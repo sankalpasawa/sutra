@@ -30,7 +30,7 @@ __all__ = [
     "Iso", "Event", "Violation", "ChartNodeOut", "ChartView", "ChartChangeOut", "ChangeResult", "GraphEdgeOut", "GraphNodeOut",
     "GraphView", "FnStats", "FnMeta", "FnDetailMeta", "UsageTotals", "ChatSessionOut", "ChatMessageOut", "ChatOption",
     "ChatCard", "ChartChangeCard", "TaskCard", "ApprovalCard", "ChoiceCard", "NeedsYouCard", "DoneCard", "DoneReceipt", "DoneReport", "AtomCard", "CardRow",
-    "DeliverableCard", "DeliverableChanges", "ChangedFile", "DELIVERABLE_TEXT_MAX", "DELIVERABLE_FILES_MAX",
+    "DeliverableCard", "DeliverableChanges", "ChangedFile", "DELIVERABLE_TEXT_MAX", "DELIVERABLE_FILES_MAX", "AnswerCard", "AnswerSource",
     "ChatChoice", "ChatPost", "Accepted", "Delivery", "TaskOut", "RunRef", "FunctionChip", "DepartmentOut", "DeptRow", "AtomOut",
     "AtomLogRow", "UsageOut", "NeedsYouOut", "NodeDetail", "TaskSettings", "UpstreamRef", "RunSpec", "RunEvent", "RUN_EVENT_TYPES",
     "RUN_EVENT_VARIANTS", "EventParseError", "parse_event", "RunStarted", "RunSay", "RunNode", "RunStep", "RunAtom", "RunUsage",
@@ -387,6 +387,39 @@ class DeliverableCard(Value):
         return data
 
 
+class AnswerSource(Value):
+    """One source a cited answer named, as code found it (DV-1, `orchestrator/citations.py`). `label` is `checked` or `could not find`; it is written by code and never by a model.
+    `how` says what `checked` covers (`lines`: the file and those lines are there; `quote`: and the quoted words are on them) and is absent for `could not find`, which has a `reason`."""
+    path: Annotated[str, StringConstraints(min_length=1, max_length=300)]
+    start: Annotated[int, Field(ge=0, le=999_999_999)]
+    end: Annotated[int, Field(ge=0, le=999_999_999)]
+    quote: Annotated[str, StringConstraints(max_length=1000)] | None = None
+    label: Literal["checked", "could not find"]
+    how: Literal["lines", "quote"] | None = None
+    reason: Annotated[str, StringConstraints(max_length=200)] = ""
+
+    @model_serializer(mode="wrap")
+    def _only_what_there_is(self, handler: Any) -> dict[str, Any]:
+        data = handler(self)
+        for key in ("quote", "how"):
+            if data.get(key) is None:
+                data.pop(key, None)
+        if not data.get("reason"):
+            data.pop("reason", None)
+        return data
+
+
+class AnswerCard(Value):
+    """The sources of a cited answer (DV-1), a card of its own in the chat right after the answer: every mark of the answer with its label, the counts, and the owner's question
+    (the page drafts "Turn this into work" from it). `sources` empty is an answer too: the answer named no file. `more` counts marks past the limit that were not checked."""
+    type: Literal["answer_sources"]
+    question: Annotated[str, StringConstraints(max_length=500)] = ""
+    sources: Annotated[list[AnswerSource], Field(max_length=50)] = []
+    checked: Count = 0
+    missing: Count = 0
+    more: Count = 0
+
+
 class CardRow(Value):
     label: Annotated[str, StringConstraints(max_length=80)]
     text: Annotated[str, StringConstraints(max_length=2000)]
@@ -402,7 +435,7 @@ class AtomCard(Value):
 
 
 ChatCard = Annotated[
-    Union[ChartChangeCard, TaskCard, ApprovalCard, ChoiceCard, NeedsYouCard, TeamChatCard, DoneCard, DeliverableCard, AtomCard],
+    Union[ChartChangeCard, TaskCard, ApprovalCard, ChoiceCard, NeedsYouCard, TeamChatCard, DoneCard, DeliverableCard, AtomCard, AnswerCard],
     Field(discriminator="type"),
 ]
 

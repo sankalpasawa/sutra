@@ -402,6 +402,17 @@ def test_config_shows_the_settings_and_never_a_secret(tmp_path):
         assert TOKEN not in text and "override-key" not in text and "hunter2" not in text and "token" not in body and "override_key" not in body
 
 
+def test_config_lists_the_ask_flag_only_when_it_is_on(tmp_path):
+    """DV-1 (D342): an off flag is not in the answer, so the shape of /api/config is what it was before the flag existed."""
+    keys = {}
+    for flag in (False, True):
+        settings = Settings.load({}, data_dir=tmp_path / f"data{flag}", token=TOKEN, env_file=tmp_path / "none.env", engine="fake", ask_v1=flag)
+        with TestClient(create_app(settings, connector=ScriptedConnector(), launcher=FakeLauncher()), base_url=BASE) as client:
+            keys[flag] = client.get("/api/config").json()
+    assert "ask_v1" not in keys[False] and keys[True].pop("ask_v1") is True
+    assert {k: v for k, v in keys[True].items() if k not in ("data_dir",)} == {k: v for k, v in keys[False].items() if k not in ("data_dir",)}
+
+
 # ============================================ the command line ===============================================================
 
 def test_help_exits_zero_and_lists_the_flags(capsys):

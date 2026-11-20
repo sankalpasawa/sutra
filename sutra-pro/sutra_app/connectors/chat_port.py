@@ -220,7 +220,10 @@ class RouterChatPort:
         return Message(role="user", text=turn.text + d.text, images=list(d.images))
 
     def _ctx_for(self, session_id: str, turn: ChatTurnIn) -> RouteContext:
-        return self._ctx.model_copy(update={"session_id": session_id, "tag": turn.tag})
+        update = {"session_id": session_id, "tag": turn.tag}
+        if turn.allowance is not None:                      # only a turn that carries its own limits changes the port's context (DV-1)
+            update["allowance"] = turn.allowance
+        return self._ctx.model_copy(update=update)
 
     def stream(self, session_id: str, turn: ChatTurnIn, *, cancel: Optional[CancelToken] = None, acc: Optional[BlockAccumulator] = None) -> Iterator[ChatEvent]:
         """(partial | block | restart)* / usage / switched? / turn_done. The last event is always `turn_done` (errors raise while iterating).
