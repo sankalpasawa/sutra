@@ -726,6 +726,10 @@ class TaskService:
                 from sutra_app.orchestrator.budgets import chain_spend, slice_left
                 left = max(1, slice_left(int(sliced["slice_credits"]), chain_spend(conn, row.parent_task_id)[0]))      # a retry or a restart: the slice minus what earlier attempts spent (D324)
                 settings = {**settings, "J2_BUDGET": str(left), "J2_BUDGET_CAP": str(left)}      # start with it and never go past it (P25: no raise without the Requester)
+        if node is not None and node.runtime == "light":                                 # the reviewer uses a program that did not build the work, when there is one (MAN-11)
+            picked = json.loads((conn.execute("SELECT caps_json FROM projects WHERE id = ?", (node.project_id,)).fetchone() or {"caps_json": "{}"})["caps_json"] or "{}").get("reviewer_connector")
+            if picked in ("claude", "codex") and connector != "stub":
+                connector = picked
         return RunSpec(
             run_id=run_id, task_id=row.id, dept_id=row.dept_id, dept_label=clip(dept["name"] if dept else row.dept_id, 200),
             scope_id=row.scope_node_id, scope_label=clip(scope["name"], 200) if scope is not None else None, user_text=row.user_text,

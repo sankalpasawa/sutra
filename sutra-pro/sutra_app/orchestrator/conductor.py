@@ -275,6 +275,8 @@ class Conductor:
             self.store.audit(tx, actor="conductor", action="node.spawned", project_id=node["project_id"], node_id=node["id"], role=node["role"], decision="n/a", ref=task_id)
         elif want == "done" and node["role"] == "worker" and self.tasks is not None:
             self._hand_off(tx, node, task_id)                              # the hand-off is read, checked, scrubbed and stored; only then is the node done (MAN-6)
+        elif want == "done" and node["role"] == "reviewer" and self.tasks is not None:
+            self._review_done(tx, node, task_id)                           # the verdict is read, checked and stored; it informs, the owner decides (MAN-11)
         elif want == "failed":
             self._fail(tx, node, outcome[:200])
         elif want in NODE_FINAL:
@@ -428,6 +430,8 @@ class Conductor:
         project = tx.conn.execute("SELECT status FROM projects WHERE id = ?", (project_id,)).fetchone()
         if project is None or project["status"] in PROJECT_FINAL:
             return
+        if self._review(tx, project_id):                                    # a reviewer is made, or the owner's answer to a verdict is awaited (MAN-11): the project does not end yet
+            return
         states = [r["state"] for r in tx.conn.execute("SELECT state FROM agent_nodes WHERE project_id = ? AND role <> 'planner'", (project_id,))]
         if not states or any(state not in NODE_FINAL for state in states):
             return
@@ -539,7 +543,7 @@ class Conductor:
         refuse: list[tuple[str, str]] = []
         lease_default = int(NODE_DEFAULT_CAPS["lease_s"] or 90)
         with self.db.tx() as tx:
-            for project in tx.conn.execute("SELECT id, status, caps_json, created_at, budget_usd FROM projects WHERE status IN ('planning','awaiting_approval','running') ORDER BY created_at").fetchall():
+            for project in tx.conn.execute("SELECT id, status, caps_json, created_at, budget_usd FROM projects WHERE status IN ('planning','awaiting_approval','running','reviewing') ORDER BY created_at").fetchall():
                 lease_s = int(json.loads(project["caps_json"] or "{}").get("lease_s") or lease_default)
                 slept = gap > lease_s // 2
                 ran_out = self.store.expire_due(tx, project_id=project["id"], now=now)
@@ -637,6 +641,107 @@ class Conductor:
                 self.store.audit(tx, actor="conductor", action="trigger.egress_scrub", project_id=project_id, node_id=row["id"], role=row["role"], decision="deny",
                                  reason=f"its prompts were scrubbed {counts[row['id']]} times", ref=row["task_id"])
                 self._note(tx, project_id, "A step was stopped because its prompts held secrets again and again.", f"project:{project_id}#scrub:{row['id']}")
+
+    # ---- the reviewer (MAN-11) ------------------------------------------------------------------------------------------------------
+
+    def _review(self, tx: Tx, project_id: str) -> bool:
+        """With SUTRA_NODES_REVIEWER on: once every worker of the project is over and at least one finished, a read-only reviewer node (runtime `light`) is made, with the earlier steps' tasks as its
+        upstream; at most one more for each time the owner sent work back. While a reviewer runs, or a question about its verdict is open, the project is `reviewing` and does not end. Returns True
+        when the project must not end now."""
+        if not self.settings.reviewer_on or self.tasks is None:
+            return False
+        open_review = any(a.request.get("kind") == "review" for a in self.store.approvals(project_id, status="open"))
+        rows = tx.conn.execute("SELECT * FROM agent_nodes WHERE project_id = ? AND role <> 'planner' ORDER BY created_at, rowid", (project_id,)).fetchall()
+        workers = [r for r in rows if r["role"] == "worker"]
+        reviewers = [r for r in rows if r["role"] == "reviewer"]
+        if open_review or any(r["state"] not in NODE_FINAL for r in reviewers):
+            return True
+        project = tx.conn.execute("SELECT request_id, review_loops FROM projects WHERE id = ?", (project_id,)).fetchone()
+        if not workers or any(r["state"] not in NODE_FINAL for r in workers) or not any(r["state"] == "done" for r in workers) or len(reviewers) >= 1 + int(project["review_loops"]):
+            return False
+        done = [r for r in workers if r["state"] == "done" and r["task_id"]]
+        level = "edit" if any(json.loads(r["grants_json"] or "{}").get("folder") == "edit" for r in done) else "read"        # the strongest level among the steps it reviews (D305 a)
+        from sutra_app.orchestrator.grants import StepRequest, resolve
+        node_id = self.ids.node_id()
+        grant = resolve("reviewer", StepRequest(id="review"), level, self.service._owner_access()).grant.for_node(self.ids.grant_id(), node_id)
+        first = tx.conn.execute("SELECT dept_id, title FROM tasks WHERE id = ?", (done[0]["task_id"],)).fetchone()
+        title = tx.conn.execute("SELECT title FROM projects WHERE id = ?", (project_id,)).fetchone()["title"] or "the project"
+        try:
+            task = self.tasks.create(tx, dept_id=first["dept_id"], text=f"Check the work of: {title}", title="Review", depends_on=[r["task_id"] for r in done], request=project["request_id"])
+        except AppError:                                                     # the team is gone: no review, the project ends as it would have
+            return False
+        tx.conn.execute("INSERT INTO agent_nodes(id, project_id, task_id, role, runtime, plan_ref, depends_on, state, grants_json, writes_json, created_at) VALUES (?,?,?,?,?,?,?,?,?,?,?)",
+                        (node_id, project_id, task.id, "reviewer", "light", "review", json.dumps([r["id"] for r in done]), "planned", json.dumps(grant.to_json(), sort_keys=True), "[]", tx.now()))
+        pick, independent = self._reviewer_connector(tx, [r["task_id"] for r in done])
+        tx.conn.execute("UPDATE projects SET status = 'reviewing', caps_json = json_set(caps_json, '$.reviewer_connector', ?, '$.reviewer_independent', ?) WHERE id = ?", (pick, 1 if independent else 0, project_id))
+        self.store.audit(tx, actor="gatekeeper", action="grant.issued", project_id=project_id, node_id=node_id, role="reviewer", tier=max(grant.tiers), decision="allow", reason=grant.describe(), target=first["dept_id"], ref=grant.id)
+        self.store.audit(tx, actor="conductor", action="review.started", project_id=project_id, node_id=node_id, role="reviewer", decision="n/a",
+                         reason="independent of the builders" if independent else "not independent of the builders", ref=task.id)
+        self.sync_task(tx, task.id)
+        tx.emit("project.updated", {"project_id": project_id, "status": "reviewing"})
+        return True
+
+    def _reviewer_connector(self, tx: Tx, task_ids: list[str]) -> tuple[str, bool]:
+        """The connector the reviewer should use: one that did NOT build the work (the usage ledger says which providers did), when another is installed and signed in; else `` (the router picks) and
+        the review says it is not independent. A model that checks its own work is not a second opinion, so the page and the card say so."""
+        marks = ",".join("?" * len(task_ids))
+        built = {r[0] for r in tx.conn.execute(f"SELECT DISTINCT provider FROM usage_ledger WHERE task_id IN ({marks}) AND provider != 'stub'", task_ids)} if task_ids else set()
+        for name in self.service._providers():
+            if name not in built:
+                return name, True
+        return "", False
+
+    def _review_done(self, tx: Tx, node: sqlite3.Row, task_id: str) -> None:
+        """The reviewer's run ended well: its `verdict.json` is read (at most 8 KB), checked as a closed typed object, scrubbed and stored as a message of the project; a verdict that is not the typed
+        object fails the node. `approve` changes nothing. `changes` and `reject` open ONE question for the owner (kind `review`): nothing is redone unless the owner says so (a model never approves
+        a model, and it never orders work either). Decide for me does not answer it."""
+        from sutra_app.nodes.reviewer import VERDICT_FILE, VerdictInvalid, check_verdict
+        row = self.tasks.store.row_in(tx.conn, task_id)
+        try:
+            path = self.tasks.store.run_dir_of(row) / VERDICT_FILE
+            if path.is_symlink() or not path.is_file() or path.stat().st_size > 8192:
+                raise VerdictInvalid("there is no verdict file")
+            verdict = check_verdict(json.loads(path.read_text(encoding="utf-8")))
+        except (OSError, ValueError, VerdictInvalid):
+            self.store.audit(tx, actor="conductor", action="verdict.refused", project_id=node["project_id"], node_id=node["id"], role="reviewer", decision="deny", reason="the verdict could not be used", ref=task_id)
+            self._fail(tx, node, "its verdict could not be used", retry=False)
+            return
+        posted = self.store.post(tx, project_id=node["project_id"], kind="verdict", src_ref=f"verdict:{node['id']}:{node['attempt']}", body=verdict, from_node=node["id"], to_node="project")
+        self.store.audit(tx, actor="conductor", action="verdict.received", project_id=node["project_id"], node_id=node["id"], role="reviewer", decision="allow" if verdict["verdict"] == "approve" else "ask",
+                         reason=verdict["verdict"], ref=str(posted.seq))
+        self._teardown(tx, node, "done", "")
+        if verdict["verdict"] != "approve":
+            loops = tx.conn.execute("SELECT review_loops FROM projects WHERE id = ?", (node["project_id"],)).fetchone()[0]
+            cap = int(json.loads(tx.conn.execute("SELECT caps_json FROM projects WHERE id = ?", (node["project_id"],)).fetchone()[0] or "{}").get("review_loops") or NODE_DEFAULT_CAPS["review_loops"] or 2)
+            if int(loops) >= cap:                                            # the loop cap: no more going back; the owner is told, and the project ends as it is
+                self.store.audit(tx, actor="conductor", action="review.loop_cap", project_id=node["project_id"], node_id=node["id"], role="reviewer", decision="deny", reason="the work went back twice already")
+                self._note(tx, node["project_id"], "The reviewer still asks for changes after two tries, so I stopped there. Open the project to read what it said.", f"project:{node['project_id']}#review-cap")
+            else:
+                independent = bool(verdict.get("independent"))
+                asked = self.store.open_approval(tx, project_id=node["project_id"], node_id="", tier=1, client_id=f"review:{node['id']}:{node['attempt']}",
+                                                 expires_at=tx.now() + int(NODE_DEFAULT_CAPS["approval_expiry_s"] or 86400),
+                                                 request={"kind": "review", "verdict": verdict["verdict"], "summary": verdict["summary"][:200], "refs": verdict["needs_work"], "independent": independent})
+                self.store.audit(tx, actor="gatekeeper", action="gate.asked", project_id=node["project_id"], node_id=node["id"], tier=1, decision="ask", reason=f"the reviewer says {verdict['verdict']}", ref=asked.id)
+                self.service.sync_cards(tx, node["project_id"])
+
+    def send_back(self, tx: Tx, project_id: str, refs: list[str]) -> int:
+        """The owner said yes to the reviewer's `changes`: each step the verdict names gets a fresh attempt (one for each loop, at most the project's cap), and the project runs again; the reviewer
+        looks once more when they are done. Returns how many steps went back."""
+        tx.conn.execute("UPDATE projects SET review_loops = review_loops + 1, status = 'running' WHERE id = ?", (project_id,))
+        went = 0
+        for ref in refs:
+            node = tx.conn.execute("SELECT * FROM agent_nodes WHERE project_id = ? AND plan_ref = ? AND role = 'worker' AND state = 'done'", (project_id, ref)).fetchone()
+            if node is None:
+                continue
+            try:
+                with tx.savepoint():
+                    self._retry(tx, node, "the reviewer asked for changes", action="node.rework")
+                went += 1
+            except AppError:
+                continue
+        if not went:                                                         # nothing could go back: the project ends as it is
+            self._sync_project(tx, project_id)
+        return went
 
     def _fail_without_grant(self, tx: Tx, project_id: str) -> None:
         """G3 (D310, D302): a node whose task waits and whose grant is missing, unreadable, too wide for its role or not its own is held by the gate for ever, and the project would hang. The tick fails it:
@@ -759,7 +864,7 @@ class Conductor:
             refused: list[str] = []
             fixed = 0
             with self.db.tx() as tx:
-                for project in tx.conn.execute("SELECT id FROM projects WHERE status IN ('planning','awaiting_approval','running') ORDER BY created_at").fetchall():
+                for project in tx.conn.execute("SELECT id FROM projects WHERE status IN ('planning','awaiting_approval','running','reviewing') ORDER BY created_at").fetchall():
                     gate_open = tx.conn.execute("SELECT 1 FROM approvals WHERE project_id = ? AND status = 'open' AND request_json NOT LIKE '%\"late\":1%'", (project["id"],)).fetchone() is not None
                     if gate_open:
                         refused.append(project["id"])

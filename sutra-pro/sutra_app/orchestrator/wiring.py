@@ -203,7 +203,7 @@ def build_services(settings: Settings, *, connector: Any = None, launcher: Any =
 
         projects = ProjectService(db, store=node_control.store, ids=ids, clock=clock, settings=settings, owner_access=owner_access,
                                   output_of=default_output_of(settings.data_dir), output_name=default_output_name(settings.data_dir), node_control=node_control, tasks=tasks, chats=chats,
-                                  owner_decides=_owner_decides(settings.data_dir), folder_of=lambda: (str(router.folders.grant()) if getattr(router, "folders", None) is not None and router.folders.grant() is not None else None))
+                                  owner_decides=_owner_decides(settings.data_dir), providers=_providers_of(port), folder_of=lambda: (str(router.folders.grant()) if getattr(router, "folders", None) is not None and router.folders.grant() is not None else None))
         node_control.projects = projects
         tasks.task_gate = projects.gate                    # the Conductor's gate asks the switch and the grant first (`node_control.gate`), then the project's own rules (D303)
         tasks.node_sync = projector.node_sync = projects.sync_task
@@ -256,6 +256,14 @@ def _send_setting(tasks: Any, projects: Any) -> Callable[[str, dict], Any]:
                 log.exception("could not apply Decide for me to the open questions")
         return sent
     return send
+
+
+def _providers_of(router: Any) -> Callable[[], list[str]]:
+    """The model programs that are installed and not known to be signed out: what the reviewer may pick from (MAN-11)."""
+    def names() -> list[str]:
+        status = router.status() if hasattr(router, "status") else {}
+        return [name for name, entry in dict(status).items() if name in ("claude", "codex") and isinstance(entry, dict) and entry.get("installed", True) and entry.get("signed_in") is not False]
+    return names
 
 
 def _owner_decides(data_dir: Any) -> Callable[[Any], bool]:

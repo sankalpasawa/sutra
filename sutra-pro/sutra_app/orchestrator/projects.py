@@ -121,7 +121,7 @@ class ProjectService:
     def __init__(self, db: Database, *, store: NodeStore, ids: IdFactory | None = None, clock: Clock | None = None, settings: Settings,
                  owner_access: Callable[[], str] | None = None, output_of: Callable[[str], Any] | None = None, node_control: Any = None, tasks: Any = None, chats: Any = None,
                  output_name: Callable[[str], str] | None = None, folder_of: Callable[[], str | None] | None = None, adapter: Any = None,
-                 elevated: Callable[[], bool] | None = None, owner_decides: Callable[[Sequence[str]], bool] | None = None) -> None:
+                 elevated: Callable[[], bool] | None = None, owner_decides: Callable[[Sequence[str]], bool] | None = None, providers: Callable[[], Sequence[str]] | None = None) -> None:
         self.db = db
         self.store = store
         self.ids = ids or IdFactory()
@@ -133,6 +133,7 @@ class ProjectService:
         self._folder_of = folder_of or (lambda: None)                              # the owner's working folder, for the system probe (MAN-15)
         self._adapter = adapter                                                     # a fake in tests; None: the adapter of this system
         self._elevated = elevated or oslayer.is_elevated
+        self._providers_fn = providers or (lambda: ())                              # the model programs that are installed and signed in: the reviewer picks one that did not build (MAN-11)
         self._owner_decides = owner_decides or (lambda depts: False)                # the owner's own Decide for me setting of these teams (D319, G13)
         self.control = node_control
         self.tasks = tasks
@@ -426,7 +427,7 @@ class ProjectService:
     def _is_step_question(a: Any) -> bool:
         """A question about ONE step: a system permission (D295's skip) or a tier-4 or wide-scope question that names its node (D315 b)."""
         kind = a.request.get("kind")
-        return kind in ("system", "scope_violation") or (kind in ("tier", "scope", "sutra_tools") and bool(a.node_id))
+        return kind in ("system", "scope_violation", "review") or (kind in ("tier", "scope", "sutra_tools") and bool(a.node_id))
 
     def _cancel_step(self, tx: Tx, project_id: str, node_id: str) -> bool:
         """Cancel one step that was not approved ("not approved: you said no") and, following the plan's edges, the steps that wait for it ("a step it needed was not approved"). Returns True
@@ -468,7 +469,7 @@ class ProjectService:
             self.conductor._refuse_in(tx, project_id, why)
             return "refused"
         for a in approvals:                                                          # a no to ONE step's question cancels only that step (D315 b)
-            if a.status == "denied" and a.request.get("kind") not in ("system", "scope_violation") and self._is_step_question(a):
+            if a.status == "denied" and a.request.get("kind") not in ("system", "scope_violation", "review") and self._is_step_question(a):
                 if self._cancel_step(tx, project_id, a.node_id) and project["failure_policy"] == "stop_all":
                     self.conductor._refuse_in(tx, project_id, "not approved: you said no and this project stops at the first failure")
                     return "refused"
@@ -547,6 +548,13 @@ class ProjectService:
                 self.store.audit(tx, actor="owner" if by == "owner" else "system", action="gate.refused" if row.status == "expired" else "gate.decided", project_id=project_id,
                                  node_id=row.node_id or None, tier=row.tier, decision="deny" if refused else "allow",
                                  reason=("the question had run out of time" if row.status == "expired" else f"decided_by {row.decided_by}: {decision}"), ref=approval_id)
+                if row.request.get("kind") == "review":                                     # the owner decides what the reviewer's verdict does (MAN-11)
+                    if decision != "deny" and row.status == "allowed_once":
+                        self.conductor.send_back(tx, project_id, list(row.request.get("refs") or []))
+                    else:
+                        self.conductor._sync_project(tx, project_id)
+                    self.sync_cards(tx, project_id)
+                    return "running"
                 if row.request.get("kind") == "scope_violation":                          # a held step goes on (kept) or is set aside, and the project starts again
                     return self._after_violation(tx, project_id, row)
                 return self._settle_answers(tx, project_id, why="not approved: you said no" if decision == "deny" else "not approved: a question was answered no")
@@ -558,6 +566,7 @@ class ProjectService:
     # the words of a card (plain, simple). A no to a question about one step cancels that step (D315 b); a no to the estimate stops the project; nothing here says a writer "runs alone" before MAN-10 (D323).
     _WORDS = {
         "tier": "A step wants to read GitHub, through your own GitHub login (read only). Allow it? If you say no, only that step is cancelled and the steps that need it. The rest go on.",
+        "review": "The reviewer says the work needs changes: {summary} Send the steps it names back for another try? If you say no, the project ends as it is.{independent}",
         "scope_violation": "A step changed files that no step was given ({count}, for example {paths}). Keep its work? If you say no, its work is set aside, its files are kept for you to look at, and the steps that need it are cancelled.",
         "sutra_tools": "A step wants to read this app's own data (your teams, tasks and notes). Allow it? If you say no, only that step is cancelled and the steps that need it. The rest go on.",
         "scope": "A step changes files in several places of your folder. It is kept apart from other steps that change your folder. Allow it? If you say no, only that step is cancelled and the steps that need it. The rest go on.",
@@ -567,9 +576,10 @@ class ProjectService:
 
     def _card_of(self, project_id: str, a: Any) -> NodeApprovalCard:
         kind = str(a.request.get("kind", ""))
-        options = (["check_again", "skip"] if kind == "system" else ["allow_once", "deny"] if kind in ("plan_estimate", "scope", "sutra_tools", "scope_violation") or a.tier == 5 else ["allow_once", "allow_project", "deny"])
+        options = (["check_again", "skip"] if kind == "system" else ["allow_once", "deny"] if kind in ("plan_estimate", "scope", "sutra_tools", "scope_violation", "review") or a.tier == 5 else ["allow_once", "allow_project", "deny"])
         question = self._WORDS.get(kind, "A step needs your answer.").format(credits=a.request.get("credits", "?"), limit=a.request.get("limit", "?"), count=a.request.get("count", "?"),
-                                                                            paths=", ".join(a.request.get("paths") or [])[:150])
+                                                                            paths=", ".join(a.request.get("paths") or [])[:150], summary=str(a.request.get("summary", ""))[:200],
+                                                                            independent="" if a.request.get("independent", True) else " (The reviewer is not independent of the builders: it used the same model program.)")
         return NodeApprovalCard(project_id=project_id, approval_id=a.id, kind=kind[:40], tier=a.tier, node_id=a.node_id, question=question, options=options, expires_at=iso_z(a.expires_at),
                                 item=str(a.request.get("item", ""))[:40] if kind == "system" else "")
 
@@ -600,6 +610,12 @@ class ProjectService:
             self.chats.emit_needs_you(tx)
 
     # ---- system permissions (MAN-15, D295) ------------------------------------------------------------------------------------------
+
+    def _providers(self) -> list[str]:
+        try:
+            return [str(name) for name in self._providers_fn()]
+        except Exception:                                                                 # noqa: BLE001  (an unknown answer means no independent pick)
+            return []
 
     def _system_adapter(self) -> Any:
         return self._adapter if self._adapter is not None else syspermissions.adapter_for()
