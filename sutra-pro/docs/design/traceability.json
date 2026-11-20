@@ -1,14 +1,14 @@
 {
  "schema": "traceability/1",
  "counts": {
-  "decisions": 347,
+  "decisions": 349,
   "packages": 78,
   "endpoints": 43,
   "chips": 17,
   "steps": 7,
   "owner_rules": 7
  },
- "max_decision": 347,
+ "max_decision": 349,
  "owner_rules": [
   {
    "rule": "This is a new app, no relation to the old sutra-ui. Its design is the J2 prototype's design.",
@@ -536,7 +536,9 @@
     "D344",
     "D345",
     "D346",
-    "D347"
+    "D347",
+    "D348",
+    "D349"
    ],
    "modules": [
     "docs/DECISIONS.md",
@@ -5564,6 +5566,24 @@
    "status": "documented only",
    "superseded_by": [],
    "diagram": "label \"real-Claude beta: go, read-only, 3 runs\", key only."
+  },
+  {
+   "id": "D348",
+   "title": "The wall time leaves out time once, and a closed app counts as a sleep",
+   "packages": [],
+   "status": "documented only",
+   "superseded_by": [],
+   "diagram": "label \"wall time: union of pauses and gaps; closed app = sleep\", key only."
+  },
+  {
+   "id": "D349",
+   "title": "Housekeeping of the tool records: prune, a server sweep, a durable debt",
+   "packages": [
+    "GAP-DATA"
+   ],
+   "status": "implemented",
+   "superseded_by": [],
+   "diagram": "label \"tool records: prune, sweep, durable debt\", key only."
   }
  ],
  "packages": [

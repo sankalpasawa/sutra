@@ -1733,5 +1733,15 @@
   "id": "D347",
   "label": "real-Claude beta: go, read-only, 3 runs",
   "anchor": null
+ },
+ {
+  "id": "D348",
+  "label": "wall time: union of pauses and gaps; closed app = sleep",
+  "anchor": null
+ },
+ {
+  "id": "D349",
+  "label": "tool records: prune, sweep, durable debt",
+  "anchor": null
  }
 ]
