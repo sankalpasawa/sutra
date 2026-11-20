@@ -376,7 +376,7 @@ class Conductor:
         if did["expire"]:
             await asyncio.gather(*(self.tasks.stop_node(task_id, f"no sign of life for {did['lease']} s") for task_id in did["expire"]), return_exceptions=True)
         for project_id, reason in did["refuse"]:
-            await self.refuse_open_gates(project_id, reason)
+            await self._stop_nodes(project_id, reason)                              # the database part of the refusal was done in the tick's own transaction
         pending, self._pending = self._pending, []
         for project_id, reason in pending:
             await self.stop(project_id, by="system", reason=reason)
@@ -388,18 +388,23 @@ class Conductor:
         refuse: list[tuple[str, str]] = []
         lease_default = int(NODE_DEFAULT_CAPS["lease_s"] or 90)
         with self.db.tx() as tx:
-            for project in tx.conn.execute("SELECT id, caps_json FROM projects WHERE status IN ('planning','awaiting_approval','running') ORDER BY created_at").fetchall():
+            for project in tx.conn.execute("SELECT id, status, caps_json FROM projects WHERE status IN ('planning','awaiting_approval','running') ORDER BY created_at").fetchall():
                 lease_s = int(json.loads(project["caps_json"] or "{}").get("lease_s") or lease_default)
                 slept = gap > lease_s // 2
                 ran_out = self.store.expire_due(tx, project_id=project["id"], now=now)
+                reason = ""
                 if ran_out:
                     for approval in ran_out:
                         self.store.audit(tx, actor="system", action=GATE_REFUSED_ACTION, project_id=project["id"], node_id=approval.node_id or None, tier=approval.tier, decision="deny",
                                          reason="the question ran out of time", ref=approval.id)
-                    refuse.append((project["id"], "not approved: the question ran out of time"))
-                    continue
-                if slept and tx.conn.execute("SELECT 1 FROM approvals WHERE project_id = ? AND status = 'open'", (project["id"],)).fetchone() is not None:
-                    refuse.append((project["id"], GATE_REFUSED_SLEEP))
+                    reason = "not approved: the question ran out of time"
+                elif slept and tx.conn.execute("SELECT 1 FROM approvals WHERE project_id = ? AND status = 'open'", (project["id"],)).fetchone() is not None:
+                    reason = GATE_REFUSED_SLEEP
+                elif project["status"] == "awaiting_approval" and tx.conn.execute("SELECT 1 FROM approvals WHERE project_id = ? AND status = 'open'", (project["id"],)).fetchone() is None:
+                    reason = "not approved: no question was left to answer"          # a project that waits for nothing would wait for ever (MJ7)
+                if reason:
+                    self._refuse_in(tx, project["id"], reason)                       # the decision and the stop are one transaction: no crash can leave one without the other (MJ7)
+                    refuse.append((project["id"], reason))
                     continue
                 self._fail_without_grant(tx, project["id"])
                 for node in tx.conn.execute(
@@ -445,33 +450,39 @@ class Conductor:
 
     async def refuse_open_gates(self, project_id: str, reason: str) -> int:
         """D296: every open gate of the project counts as refused. The questions are answered `denied` (by the system), the nodes that waited for them are `cancelled` with the reason, the project
-        is `stopped`, one receipt line says why, and the nodes that run are stopped through the ladder together. Returns how many nodes it ended."""
+        is `stopped`, one receipt line says why, and the nodes that run are stopped through the ladder together. Returns how many nodes it ended. The decision and the stop are ONE transaction
+        (`_refuse_in`), so a crash cannot leave a project that was refused but not stopped (MJ7)."""
         def settle() -> int:
             with self.db.tx() as tx:
-                status = tx.conn.execute("SELECT status FROM projects WHERE id = ?", (project_id,)).fetchone()
-                if status is None or status["status"] in PROJECT_FINAL:
-                    return 0
-                for approval in self.store.approvals(project_id, status="open"):
-                    self.store.decide(tx, approval.id, "deny", decided_by="system")
-                    self.store.audit(tx, actor="system", action=GATE_REFUSED_ACTION, project_id=project_id, node_id=approval.node_id or None, tier=approval.tier, decision="deny",
-                                     reason=reason, ref=approval.id)
-                tx.conn.execute("UPDATE projects SET status = 'stopped', ended_at = ?, stop_reason = ? WHERE id = ?", (tx.now(), self.store.clean(reason), project_id))
-                self.store.audit(tx, actor="system", action=PROJECT_STOPPED_ACTION, project_id=project_id, decision="n/a", reason=reason)
-                cancelled = 0
-                for node in tx.conn.execute("SELECT n.id AS id, n.task_id AS task_id, n.state AS state, t.status AS tstatus FROM agent_nodes n LEFT JOIN tasks t ON t.id = n.task_id "
-                                            "WHERE n.project_id = ? AND n.role <> 'planner' AND n.state NOT IN ('done','failed','cancelled')", (project_id,)).fetchall():
-                    if node["task_id"] and node["tstatus"] in ("blocked", "queued"):
-                        self.tasks.cancel_in(tx, node["task_id"], reason)
-                        cancelled += 1
-                    elif not node["task_id"]:
-                        tx.conn.execute("UPDATE agent_nodes SET state = 'cancelled', failure_reason = ?, ended_at = ?, torn_down_at = ? WHERE id = ?", (self.store.clean(reason), tx.now(), tx.now(), node["id"]))
-                        cancelled += 1
-                self._receipt(tx, project_id, reason)
-                tx.emit("project.updated", {"project_id": project_id, "status": "stopped"})
-                return cancelled
+                return self._refuse_in(tx, project_id, reason)
         ended = await run_blocking(settle)
         ended += await self._stop_nodes(project_id, reason)
         return ended
+
+    def _refuse_in(self, tx: Tx, project_id: str, reason: str) -> int:
+        """The database part of the D296 refusal, inside the caller's transaction: the open questions denied, the project stopped, the nodes that had not started cancelled, the receipt. The nodes
+        that run are stopped by the caller after the commit (`_stop_nodes`). 0 when the project is over already."""
+        status = tx.conn.execute("SELECT status FROM projects WHERE id = ?", (project_id,)).fetchone()
+        if status is None or status["status"] in PROJECT_FINAL:
+            return 0
+        for approval in self.store.approvals(project_id, status="open"):
+            self.store.decide(tx, approval.id, "deny", decided_by="system")
+            self.store.audit(tx, actor="system", action=GATE_REFUSED_ACTION, project_id=project_id, node_id=approval.node_id or None, tier=approval.tier, decision="deny",
+                             reason=reason, ref=approval.id)
+        tx.conn.execute("UPDATE projects SET status = 'stopped', ended_at = ?, stop_reason = ? WHERE id = ?", (tx.now(), self.store.clean(reason), project_id))
+        self.store.audit(tx, actor="system", action=PROJECT_STOPPED_ACTION, project_id=project_id, decision="n/a", reason=reason)
+        cancelled = 0
+        for node in tx.conn.execute("SELECT n.id AS id, n.task_id AS task_id, n.state AS state, t.status AS tstatus FROM agent_nodes n LEFT JOIN tasks t ON t.id = n.task_id "
+                                    "WHERE n.project_id = ? AND n.role <> 'planner' AND n.state NOT IN ('done','failed','cancelled')", (project_id,)).fetchall():
+            if node["task_id"] and node["tstatus"] in ("blocked", "queued"):
+                self.tasks.cancel_in(tx, node["task_id"], reason)
+                cancelled += 1
+            elif not node["task_id"]:
+                tx.conn.execute("UPDATE agent_nodes SET state = 'cancelled', failure_reason = ?, ended_at = ?, torn_down_at = ? WHERE id = ?", (self.store.clean(reason), tx.now(), tx.now(), node["id"]))
+                cancelled += 1
+        self._receipt(tx, project_id, reason)
+        tx.emit("project.updated", {"project_id": project_id, "status": "stopped"})
+        return cancelled
 
     def _receipt(self, tx: Tx, project_id: str, reason: str) -> None:
         """The one line in the org chat that says why a project stopped by itself (D296). A plain note, once (by its `src_ref`)."""
@@ -579,7 +590,12 @@ class Conductor:
             changed = tx.conn.execute("UPDATE projects SET status = 'stopped', ended_at = ?, stop_reason = ? WHERE id = ? AND status NOT IN ('done','done_with_open_items','stopped','failed')",
                                       (tx.now(), self.store.clean(reason), project_id)).rowcount
             if changed:
-                self.store.audit(tx, actor="owner" if by == "owner" else "system", action="project.stopped", project_id=project_id, decision="n/a", reason=reason)
+                actor = "owner" if by == "owner" else "system"
+                for approval in self.store.approvals(project_id, status="open"):          # a stopped project asks nothing: its open questions are answered no (MJ7)
+                    self.store.decide(tx, approval.id, "deny", decided_by=actor)
+                    self.store.audit(tx, actor=actor, action="approval.denied" if actor == "owner" else GATE_REFUSED_ACTION, project_id=project_id, node_id=approval.node_id or None,
+                                     tier=approval.tier, decision="deny", reason="the project was stopped", ref=approval.id)
+                self.store.audit(tx, actor=actor, action="project.stopped", project_id=project_id, decision="n/a", reason=reason)
                 tx.emit("project.updated", {"project_id": project_id, "status": "stopped"})
 
     async def _stop_nodes(self, project_id: str, outcome: str) -> int:

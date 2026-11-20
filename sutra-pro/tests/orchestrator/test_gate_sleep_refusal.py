@@ -102,3 +102,41 @@ def test_a_tick_whose_own_stops_took_long_is_not_read_as_a_sleep_but_a_real_gap_
     assert len(rig.store.approvals(reservation.project_id)) == 1 and rig.store.approvals(reservation.project_id)[0].status == "open"
     woke = tick(rig, 75 + 60 + 6)                                              # a real gap of 60 s after the last tick ended: still a sleep
     assert woke["refused"] == [reservation.project_id]
+
+
+# ---- a stop answers the open questions; no half-done refusal; a project that waits for nothing (MJ7) ---------------------------------------
+
+def test_stopping_a_project_denies_its_open_questions_by_the_owner_and_a_kill_by_the_system(rig):
+    reservation, tasks = with_open_gate(rig)
+    rig.t.run(rig.projects.stop(reservation.project_id))
+    [approval] = rig.store.approvals(reservation.project_id)
+    assert approval.status == "denied" and approval.decided_by == "owner" and [r["action"] for r in rig.audit("approval.denied")] == ["approval.denied"]
+    second, more = rig.request([("b1", "dev", []), ("b2", "legal", [])], request_id="req-2")
+    with rig.t.db.tx() as tx:
+        rig.store.open_approval(tx, project_id=second.project_id, node_id=rig.node_of(more["b1"])["id"], tier=4, request={"why": "read GitHub"}, expires_at=BASE + 86_400)
+    ids = rig.projects.begin_kill("stopped by the kill switch")
+    assert second.project_id in ids
+    [asked] = rig.store.approvals(second.project_id)
+    assert asked.status == "denied" and asked.decided_by == "system" and rig.project(second.project_id)["status"] == "stopped"
+
+
+def test_a_project_that_waits_for_an_answer_with_no_question_open_is_ended_by_the_tick(rig):
+    reservation, tasks = with_open_gate(rig)
+    rig.sql("UPDATE projects SET status = 'awaiting_approval' WHERE id = ?", reservation.project_id)
+    rig.sql("UPDATE approvals SET status = 'denied', decided_by = 'owner' WHERE project_id = ?", reservation.project_id)          # answered, but nothing moved the project on
+    done = tick(rig, 10)
+    project = rig.project(reservation.project_id)
+    assert done["refused"] == [reservation.project_id] and project["status"] == "stopped" and project["stop_reason"].startswith("not approved")
+
+
+def test_the_refusal_is_one_transaction_a_failure_half_way_leaves_the_gate_open_and_the_next_tick_finishes_it(rig, monkeypatch):
+    reservation, tasks = with_open_gate(rig, expires=BASE + 500)
+    conductor = rig.projects.conductor
+    real = conductor._receipt
+    monkeypatch.setattr(conductor, "_receipt", lambda *a, **k: (_ for _ in ()).throw(RuntimeError("crash while writing the receipt")))
+    with pytest.raises(RuntimeError):
+        tick(rig, 600)                                                                                 # the question ran out, then the stop failed
+    assert [a.status for a in rig.store.approvals(reservation.project_id)] == ["open"] and rig.project(reservation.project_id)["status"] in ("running", "awaiting_approval")
+    monkeypatch.setattr(conductor, "_receipt", real)
+    assert tick(rig, 700)["refused"] == [reservation.project_id] and rig.project(reservation.project_id)["status"] == "stopped"
+    assert [a.status for a in rig.store.approvals(reservation.project_id)] == ["expired"]
