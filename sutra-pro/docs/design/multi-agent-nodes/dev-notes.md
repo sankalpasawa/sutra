@@ -43,3 +43,56 @@ nothing but its table, and the v6 swap of the index has its own test file.
 
 `GET /api/config` and `sutra-pro config show` list `public()`. Adding keys there would change an existing route's output while the feature is off, so the four flags are
 left out for now. The kill switch command (MAN-4, `sutra-pro nodes status`) prints them.
+
+## MAN-2. Grants, tiers and the audit store
+
+Built as designed: `orchestrator/grants.py` (role table, tiers, `intersect`), `orchestrator/gatekeeper.py` (`evaluate(plan)`, rules only), `orchestrator/nodes_store.py` (`audit`,
+approvals rows). Nothing calls them yet. The points below are places where the design said less than the code needed. Each one was decided the cautious way (deny by default) and is
+open for the architect to change; every one has a test, so a change shows up as a failing test with a clear name.
+
+### N7. A grant has a fourth folder level, `inspect` (additive)
+
+Architecture 5.2 lists the folder as `none|read|edit`. Guardrails 4 says a reviewer's folder access is `inspect` at most (reads plus the four git reads, as `Router.folder_for`
+decides). Both cannot be right, so `Grant.folder` is `none|read|inspect|edit`.
+
+### N8. The owner's access caps tier 4 and tier 3 as well as tier 2
+
+Guardrails 4: "if the owner chose read only, every node is at most tier 1." Built literally: with the working folder set to read only, or no folder at all, no node gets tier 2, 3 or 4.
+Consequence the architect should look at: a worker that only needs the GitHub read tools (tier 4) is refused when the owner chose read only, although those tools do not touch the folder.
+If that is not wanted, tier 4 should depend on the approval alone. The rule is one line in `grants.resolve` and one test (`test_tier_4_is_only_given_to_a_worker_...`).
+
+### N9. A worker whose output only reads has tiers 0 and 1, so no "sandboxed builder tools" (T3)
+
+Guardrails 3 says tier 3 includes "J2's sandboxed builder tools inside the run folder (D245)", and guardrails 4 and the build plan say "a worker with output `read` has tiers 0 and 1
+only, whatever the plan says". A document or website run has output `read` for the owner's folder but does use J2's builder tools in its own run folder today. The grant follows the
+explicit rule (tiers 0 and 1), so `commands` is `sandboxed_builder` only for a worker that may change the owner's folder. MAN-5 must decide whether the grant describes the run
+folder's builder tools at all (then they need their own word, not tier 3) or whether the grant is silent about them and they stay exactly as they are today. Nothing is enforced from the
+grant yet, so no behaviour changed.
+
+### N10. Tier 1 can come from the read-only app tools instead of the folder
+
+A worker with no working folder but with the tool profile `sutra` has tier 1 (it reads app data). Without a folder and without that profile it has tier 0 only. The profile is never on
+unless the step asks for it.
+
+### N11. "Wider than a folder" is "more than one path"; "no scope declared" is not a question
+
+The plan gate asks when a step's write scope has more than one path (`scope_width == "wide"`). A writer with no declared scope holds the whole folder, runs alone among writers (`alone`),
+and is not asked about: that is the default, serial and safe (D260), and the Decide for me table (D294) also says "run alone". If the architect wants a question for "no scope" too, it is one
+more `Gate` in `evaluate`.
+
+### N12. There is no number for "the confirm threshold"
+
+Guardrails 5 says the plan gate asks when "the estimate is over the project's confirm threshold" and gives no default. `Plan.confirm_credits` is None (never asks about the estimate) until
+MAN-5 or MAN-8 gets a number from the architect. D273's default caps do not contain one either.
+
+### N13. The plan has no tier, scope or `needs` field yet
+
+`TaskWorkflow` steps are `AssignmentStep`s: a team, a brief, `depends_on`. D291 says the planner may add a write scope and a `needs` list per step. `evaluate` works on a plan that has been
+put into plain values (`gatekeeper.Plan`, `PlanStep`); turning a `TaskWorkflow` plus the departments' output specs into one, and the planner's new fields, belong to MAN-5. `grants.py` takes the
+output spec as a word (`read`/`edit`) or any object with a `workspace` attribute, so it imports nothing from the engine and the real `OutputSpec` fits without a copy.
+
+### N14. Small additions
+
+- `IdFactory` (and so `FakeIds`) gained `project_id`, `node_id`, `grant_id`, `approval_id` (`prj_`, `nd_`, `gr_`, `ap_` and 12 hex).
+- `NodeStore` has only what MAN-2 needs (audit, approvals). `put_node`, `lease`, `release` and `post` of the architecture's component table arrive with the packages that use them.
+- `approvals.decided_by` is `owner`, `system` or `rule:<name>` (the Decide for me rule table, D294). An answer that arrives after `expires_at` is stored as `expired` (denied).

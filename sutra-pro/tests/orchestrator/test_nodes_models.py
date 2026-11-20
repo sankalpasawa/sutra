@@ -76,3 +76,12 @@ def test_the_value_lists_match_the_database_checks(db):
     assert check_words("projects", "status") == PROJECT_STATUSES
     assert set(AgentNodeState.__args__) == set(NODE_STATES)
 
+
+
+def test_the_id_factory_makes_ids_the_models_accept():
+    from sutra_app.orchestrator.ids import IdFactory
+    from sutra_app.orchestrator.testing import FakeIds
+    for ids in (IdFactory(), FakeIds()):
+        block_ = NodeBlock(id=ids.node_id(), project_id=ids.project_id(), role="reviewer", runtime="light", grants_id=ids.grant_id())
+        assert block_.runtime == "light" and ids.approval_id().startswith("ap_") and len(ids.approval_id()) == 15
+    assert FakeIds().project_id() == "prj_000000000001"
