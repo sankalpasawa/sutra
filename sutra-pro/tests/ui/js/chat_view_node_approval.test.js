@@ -52,3 +52,17 @@ test("the card links to the project's own page, and only for an id of the projec
   assert.equal(hostile.includes("<script"), false);
   assert.equal(hostile.includes("/p/"), false);
 });
+
+const SESSION = {id: "cs_x", node_id: "web", kind: "department", title: "Web", writable: true, status: "active", connector: "claude", note: ""};
+const note = text => ({id: 1, session_id: "cs_x", role: "agent", who: "sutra", kind: "note", text, card: null, pause: null, answered_by: null, task_id: null, state: "ok", at: "2026-11-04T10:00:00Z"});
+
+test("a note that ends with a project's address links to the project, and every other note comes out as it always did", () => {          // R6, PB-19
+  const linked = ChatView.transcript(SESSION, [note("I stopped the project \u201cA\u201d: why. /p/" + PROJECT)]);
+  assert.ok(linked.includes('<a class="plink" href="/p/' + PROJECT + '">Open the project</a>'));
+  for (const same of ["a plain note", "see /p/prj_zz and <b>x</b>", "/p/" + PROJECT + "abc", "http://x.example/p/" + PROJECT.toUpperCase()]) {
+    const html = ChatView.transcript(SESSION, [note(same)]);
+    assert.equal(html.includes("<a class=\"plink\""), false, same);
+  }
+  assert.equal(ChatView.transcript(SESSION, [note("a plain note")]), ChatView.transcript(SESSION, [note("a plain note")]));
+  assert.equal(ChatView.transcript(SESSION, [note("Merged into Web")]).includes("Merged into Web</div>"), true);                       // the flag-off note is the text and nothing else
+});

@@ -8,7 +8,7 @@
     GET  /api/nodes/app-location  -> {usual: bool, note: str}                  (MAN-13, D322 d: false with plain words when the installed app is not in the usual place)
     POST /api/nodes/{id}/stop     {}         -> {stopped: bool}                that node's task through the stop ladder; 404 for a node that does not exist
 
-    GET  /api/projects            ?status=&limit=&offset=  -> ProjectOut[]                  (MAN-5: the projects, newest first)
+    GET  /api/projects            ?status=&limit=&offset=&client_id=  -> ProjectOut[]                  (MAN-5: the projects, newest first)
     POST /api/projects            {client_id, text, budget?, failure_policy?, decide_for_me?} -> 202 {message_id, turn, duplicate:false}; a repeated client_id -> 200 {duplicate:true}   (MAN-13, D326)
     GET  /api/projects/{id}/messages ?after=&limit=         -> node-message/1[] in seq order (MAN-6; 1, 2, 3 ... per project with no gap, D297)
     GET  /api/projects/{id}/audit    ?after=&limit=         -> the audit rows of the project
@@ -24,14 +24,14 @@ token (`require_token`) as everywhere. Errors are the app's envelope. The router
 """
 from typing import Any, Literal
 
-from fastapi import APIRouter, Depends, Request
+from fastapi import APIRouter, Depends, Query, Request
 from pydantic import BaseModel, ConfigDict, Field
 
 from sutra_app import oslayer
 from sutra_app.orchestrator.api.deps import RedactedJSONResponse, require_token, services_of
 from sutra_app.orchestrator.db import run_blocking
 from sutra_app.orchestrator.errors import AlreadyDecided, AppError, NotFound
-from sutra_app.orchestrator.ids import ORG_SESSION_ID
+from sutra_app.orchestrator.ids import ORG_SESSION_ID, IdFactory
 from sutra_app.orchestrator.killswitch import REASON_MAX, NodeControl
 
 __all__ = ["build_router", "ReasonBody", "EmptyBody", "PauseBody"]
@@ -121,8 +121,15 @@ def build_router() -> APIRouter:
     # ---- the projects (MAN-5) ----------------------------------------------------------------------------------------------------
 
     @router.get("/api/projects", summary="The projects, newest first")
-    async def list_projects(request: Request, status: str | None = None, limit: int = 50, offset: int = 0) -> RedactedJSONResponse:
-        found = await run_blocking(lambda: _projects(request).list_projects(status=status, limit=limit, offset=offset))
+    async def list_projects(request: Request, status: str | None = None, limit: int = 50, offset: int = 0, client_id: str | None = Query(None, pattern=r"^[A-Za-z0-9_-]{8,64}$")) -> RedactedJSONResponse:
+        request_id = None
+        if client_id is not None:                                                          # the project a `POST /api/projects` with this `client_id` started (R6, D334); none yet = []
+            runner = getattr(services_of(request), "runner", None)
+            line = await run_blocking(runner.line_of, client_id) if runner is not None else None
+            if line is None:
+                return _json(request, [])
+            request_id = IdFactory.request_id(line)
+        found = await run_blocking(lambda: _projects(request).list_projects(status=status, limit=limit, offset=offset, request_id=request_id))
         return _json(request, [project.model_dump(mode="json") for project in found])
 
     @router.post("/api/projects", summary="Start a project from a request in the owner's own words", dependencies=[Depends(require_token)])

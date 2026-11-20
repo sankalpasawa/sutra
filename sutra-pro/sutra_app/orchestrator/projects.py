@@ -791,11 +791,16 @@ class ProjectService:
             raise NotFound("that project")
         return self._project_out(row)
 
-    def list_projects(self, *, status: str | None = None, limit: int = 50, offset: int = 0) -> list[ProjectOut]:
-        sql, args = "SELECT * FROM projects", []
+    def list_projects(self, *, status: str | None = None, limit: int = 50, offset: int = 0, request_id: str | None = None) -> list[ProjectOut]:
+        sql, args, where = "SELECT * FROM projects", [], []
         if status:
-            sql += " WHERE status = ?"
+            where.append("status = ?")
             args.append(status)
+        if request_id:
+            where.append("request_id = ?")
+            args.append(request_id)
+        if where:
+            sql += " WHERE " + " AND ".join(where)
         rows = self.db.conn().execute(sql + " ORDER BY created_at DESC, id LIMIT ? OFFSET ?", (*args, max(1, min(int(limit), 200)), max(0, int(offset)))).fetchall()
         return [self._project_out(row) for row in rows]
 

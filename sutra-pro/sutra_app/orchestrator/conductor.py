@@ -609,6 +609,7 @@ class Conductor:
             why = "The review could not run, so nobody has checked the work"
             self._note(tx, project_id, "The steps are done, but the review could not run, so nobody has checked the work. Open the project to see more.", f"project:{project_id}#review-failed")
         tx.conn.execute("UPDATE projects SET status = ?, ended_at = ?, stop_reason = ? WHERE id = ?", (end, tx.now(), why, project_id))
+        self._note(tx, project_id, {"done": "It is finished.", "done_with_open_items": "It is finished, but some steps did not finish.", "failed": "It could not finish."}.get(end, "It has ended."), f"project:{project_id}#ended")
         self.store.audit(tx, actor="conductor", action="project.ended", project_id=project_id, decision="n/a", reason=end)
         tx.emit("project.updated", {"project_id": project_id, "status": end})
 
@@ -1053,7 +1054,7 @@ class Conductor:
         from sutra_app.library.gate import GATE
         from sutra_app.orchestrator.ids import ORG_SESSION_ID
         title = tx.conn.execute("SELECT title FROM projects WHERE id = ?", (project_id,)).fetchone()["title"]
-        full = f"Project \u201c{title}\u201d: {text}" if title else text
+        full = f"Project \u201c{title}\u201d: {text} /p/{project_id}" if title else f"{text} /p/{project_id}"          # the chat shows the address as a link to the project's page (R6)
         payload = dict(kind="note", session_id=ORG_SESSION_ID, role="agent", who="sutra", text=full[:2000], src_ref=src_ref, at=tx.now())
         self.chats.post(tx, ORG_SESSION_ID, GATE.check("chat_message", payload, ctx=tx.ctx))
 
@@ -1064,7 +1065,7 @@ class Conductor:
         from sutra_app.library.gate import GATE
         from sutra_app.orchestrator.ids import ORG_SESSION_ID
         title = tx.conn.execute("SELECT title FROM projects WHERE id = ?", (project_id,)).fetchone()["title"]
-        text = f"I stopped the project \u201c{title}\u201d: {reason}. Start it again when you are back." if title else f"I stopped a project: {reason}."
+        text = (f"I stopped the project \u201c{title}\u201d: {reason}. Start it again when you are back." if title else f"I stopped a project: {reason}.") + f" /p/{project_id}"
         payload = dict(kind="note", session_id=ORG_SESSION_ID, role="agent", who="sutra", text=text[:2000], src_ref=f"project:{project_id}#stopped", at=tx.now())
         self.chats.post(tx, ORG_SESSION_ID, GATE.check("chat_message", payload, ctx=tx.ctx))
 

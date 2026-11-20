@@ -133,3 +133,14 @@ def test_the_time_the_computer_slept_is_not_counted_in_the_wall_time(rig):      
     assert woke["stopped"] == [] and rig.project(reservation.project_id)["status"] == "running"
     [row] = rig.audit("project.slept")
     assert "asleep or closed" in row["reason"] and 7400 <= int(row["ref"]) <= 7490
+
+
+def test_a_finished_project_leaves_one_note_with_the_way_back_into_it(rig):                                     # R6
+    reservation, tasks = running(rig, [("a1", "web", []), ("a2", "sales", [])])
+    for task_id in tasks.values():
+        rig.finish(task_id)
+    pid = reservation.project_id
+    [done] = notes(rig, pid, "ended")
+    assert rig.project(pid)["status"] == "done" and done["text"].endswith(f"It is finished. /p/{pid}")
+    rig.t.run(rig.projects.tick(now=BASE + 20))
+    assert len(notes(rig, pid, "ended")) == 1                                                                  # once

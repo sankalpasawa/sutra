@@ -87,3 +87,32 @@ def test_the_app_location_is_read_and_has_plain_words_only_when_it_is_not_usual(
     with TestClient(app, base_url=BASE) as client:
         got = client.get("/api/nodes/app-location")
         assert got.status_code == 200 and set(got.json()) == {"usual", "note"}
+
+
+def test_the_project_a_post_started_is_found_by_its_client_id(tmp_path):                                        # R6
+    app, connector = make_app(tmp_path, nodes_v1=True)
+    script(connector)
+    with TestClient(app, base_url=BASE) as client:
+        services = app.state.services
+        assert client.get(f"/api/projects?client_id={CLIENT}").json() == []                                       # nothing sent yet
+        assert client.post("/api/projects", json={"client_id": CLIENT, "text": "A page and a quote"}, headers=HEADERS).status_code == 202
+        wait_idle(services)
+        found = client.get(f"/api/projects?client_id={CLIENT}").json()
+        assert [p["id"] for p in found] == [r["id"] for r in rows(services, "SELECT id FROM projects")] and len(found) == 1
+        assert client.get("/api/projects?client_id=other-0002").json() == []                                       # another send's project is not this one
+        assert client.get("/api/projects?client_id=x").status_code == 422                                          # the id rule of the post
+        assert len(client.get("/api/projects").json()) == 1
+
+
+def test_a_note_about_a_project_ends_with_its_address_and_a_finished_project_says_so(tmp_path):
+    app, connector = make_app(tmp_path, nodes_v1=True)
+    script(connector)
+    with TestClient(app, base_url=BASE) as client:
+        services = app.state.services
+        client.post("/api/projects", json={"client_id": CLIENT, "text": "A page and a quote"}, headers=HEADERS)
+        wait_idle(services)
+        project = rows(services, "SELECT id FROM projects")[0]["id"]
+        asyncio_stop = client.post(f"/api/projects/{project}/stop", json={}, headers=HEADERS)
+        assert asyncio_stop.status_code == 200
+        notes = [r["text"] for r in rows(services, "SELECT text FROM chat_messages WHERE session_id = ? AND kind = 'note' AND text LIKE ?", ORG, "%/p/%")]
+        assert all(text.endswith(f"/p/{project}") for text in notes)

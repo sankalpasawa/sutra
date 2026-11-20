@@ -218,6 +218,10 @@
     const project = clean(id);
     return /^prj_[0-9a-f]{12}$/.test(project) ? '<p class="plinkrow"><a class="plink" href="/p/' + esc(project) + '">Open the project</a></p>' : "";
   }
+  // R6: a note about a project ends with its page address (`/p/prj_...`); the address becomes the way back into the project. Only that exact shape; a note without it comes out unchanged.
+  function projectAddress(html) {
+    return html.replace(/\/p\/(prj_[0-9a-f]{12})(?![0-9a-zA-Z_])/g, '<a class="plink" href="/p/$1">Open the project</a>');
+  }
   function nodeApprovalCard(c, ctx) {
     const done = ctx.answered === true || clean(ctx.answer) !== "";
     const options = (Array.isArray(c.options) ? c.options : []).map(clean).filter(o => hasOwn(NODE_ANSWER_WORDS, o));
@@ -492,7 +496,7 @@
           safeText(chosen ? clean(chosen) : att.text) + attachedHtml(att.names) +
           (failed ? '<div class="nerr">Something went wrong. Try again.' + (clean(s.kind) === "org" ? ' <button type="button" class="linkbtn" data-act="retry">Retry</button>' : "") + "</div>" : "") + "</div>";
       }
-      if (kind === "note" || kind === "error" || bubbleClass(m) === "nmsg sys") return '<div class="' + klass + '"' + attrs + ">" + safeText(text(m.text)) + retryOf(m) + "</div>";
+      if (kind === "note" || kind === "error" || bubbleClass(m) === "nmsg sys") return '<div class="' + klass + '"' + attrs + ">" + projectAddress(safeText(text(m.text))) + retryOf(m) + "</div>";
       if (cardIn) {
         const ctx = {deptName: dept, sessionKind: clean(s.kind), answer: answers[m.id], answered: answers[m.id] !== undefined,
           deptSession: sessions[clean(cardIn.dept_id)], retry: isObj(o.retryTasks) && o.retryTasks[clean(cardIn.task_id)] === true};
