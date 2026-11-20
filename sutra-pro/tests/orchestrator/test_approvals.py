@@ -116,3 +116,11 @@ def test_two_questions_the_project_waits_for_both(rig):
     assert answer(rig, reservation.project_id, first.id, "allow_project")["project"]["status"] == "awaiting_approval" and rig.start() == []
     second = next(q for q in questions if q.request["kind"] == "plan_estimate")
     assert answer(rig, reservation.project_id, second.id, "allow_once")["project"]["status"] == "running"
+
+
+def test_the_allowed_tool_reaches_the_run_through_the_node_block_of_task_json_and_only_for_that_node(rig):
+    reservation, tasks = asking_github(rig)
+    [asked] = rig.store.approvals(reservation.project_id, status="open")
+    answer(rig, reservation.project_id, asked.id, "allow_once")
+    blocks = {ref: json.loads((rig.t.run_dir(task_id) / "task.json").read_text(encoding="utf-8"))["node"] for ref, task_id in tasks.items()}
+    assert blocks["a2"]["tool_profile"] == "github" and blocks["a1"]["tool_profile"] == "none"

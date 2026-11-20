@@ -106,6 +106,7 @@ class NodeSpec(BaseModel):
     grants_id: str = Field(pattern=r"^gr_[0-9a-f]{12}$")
     caps: NodeCapsSpec = NodeCapsSpec()
     scope: list[str] = Field(default_factory=list, max_length=50)
+    tool_profile: Literal["none", "sutra", "github", "sutra+github"] = "none"      # the app tools the grant gives this node's own agent-turn calls (MAN-8, D298)
 
 
 class TaskSpec(BaseModel):

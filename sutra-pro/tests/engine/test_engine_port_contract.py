@@ -90,7 +90,7 @@ def test_allowance_accepts_the_envelope_of_one_request():
 
 
 def test_port_spec_has_exactly_its_fields():
-    assert list(PortSpec.model_fields) == ["mock", "connector", "run_id", "dept_id", "task_id", "data_dir"]
+    assert list(PortSpec.model_fields) == ["mock", "connector", "run_id", "dept_id", "task_id", "data_dir", "tools"]       # `tools` added on purpose (MAN-8, D298): empty for every run that is not a node
     spec = PortSpec(mock=False, run_id="j2-1", dept_id="web", data_dir="/tmp/d")
     assert (spec.connector, spec.task_id) == ("auto", None)
     with pytest.raises(ValidationError):

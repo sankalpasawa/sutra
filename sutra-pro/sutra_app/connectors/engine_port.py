@@ -109,17 +109,18 @@ def port_from_config(spec: PortSpec, cfg: ConnectorConfig, *, usage_sink: UsageS
     if not stub_only:                                  # D109: J2's agents are observed, never edited: one audit row per prompt, byte-identical text
         router.egress = Egress(Path(spec.data_dir) / "connectors" / "egress.jsonl")
         router.folders = WorkFolder(spec.data_dir, cfg.resolved_work_root())      # D127: a call whose tag asks for the owner's folder gets it; read on every call
-    return RouterPort(router, mock=stub_only, tag=CallTag(run_id=spec.run_id, dept_id=spec.dept_id, task_id=spec.task_id))
+    return RouterPort(router, mock=stub_only, tag=CallTag(run_id=spec.run_id, dept_id=spec.dept_id, task_id=spec.task_id), tools=tuple(spec.tools))
 
 
 class RouterPort:
     """The engine's `ModelPort` over a `Router`. `complete` is the router's own (the mapping lives there, connectors 3.10);
     this class adds `describe`, `preflight` and `close`."""
 
-    def __init__(self, router: Router, *, mock: bool = False, tag: Optional[CallTag] = None) -> None:
+    def __init__(self, router: Router, *, mock: bool = False, tag: Optional[CallTag] = None, tools: tuple[str, ...] = ()) -> None:
         self.router = router
         self.mock = mock
         self._tag = tag or CallTag()
+        self._tools = tuple(tools)                       # a node's granted app tools: on its agent-turn calls only (MAN-8, D298)
 
     def _probe_request(self) -> AskRequest:
         return AskRequest(user="preflight", ctx=RouteContext(tag=self._tag), kind="text")
@@ -156,6 +157,8 @@ class RouterPort:
         return PreflightResult(ok=True, message=f"{first} is ready ({plan.models[first]})", providers=providers)
 
     def complete(self, req: CompletionRequest, on_progress: Optional[Callable[[dict], None]] = None) -> CompletionResult:
+        if self._tools and req.run_tools is None:        # never on a builder-tools call: its tools are the grant's own
+            return self.router.complete(req, on_progress, tools=self._tools)
         return self.router.complete(req, on_progress)
 
     def close(self) -> None:

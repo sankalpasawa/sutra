@@ -78,6 +78,9 @@ class PortSpec(BaseModel):
     dept_id: str
     task_id: Optional[str] = None
     data_dir: str
+    # the app tools a node of a multi-agent project was granted (`sutra`, `github`; MAN-8, D298). Empty for every run there was before. The RouterPort puts them on the run's own agent-turn
+    # calls only, never on a builder-tools call (`run_tools`), so a grant of GitHub reads reaches the agents the engine asks and nothing else.
+    tools: tuple[str, ...] = ()
 
 
 class ToolGrant(BaseModel):

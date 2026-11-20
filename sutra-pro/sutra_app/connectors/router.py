@@ -825,14 +825,14 @@ class Router:
             repair_rounds=plan.resolved.repair_rounds, folder=folder, **kw)
 
     # ---- the engine seam ------------------------------------------------------------------------------------------------------
-    def complete(self, req: CompletionRequest, on_progress: Optional[Callable[[dict], None]] = None) -> CompletionResult:
+    def complete(self, req: CompletionRequest, on_progress: Optional[Callable[[dict], None]] = None, *, tools: Sequence[str] = ()) -> CompletionResult:
         """`CompletionRequest` in, `CompletionResult` out (connectors 3.10). With a `json_schema` only the native step runs and the
         reply text comes back as it is; the router never repairs here, so every call the engine pays for is a call it sees."""
         ask = AskRequest(
             system=req.system, user=req.user, ctx=RouteContext(tag=req.tag, allowance=req.allowance or Allowance()),
             kind="json" if (req.json_mode or req.json_schema is not None) else "text", effort=req.effort, images=list(req.images),
             schema=req.json_schema, timeout_s=req.timeout_s, partials=on_progress is not None and req.json_schema is None,
-            scripted=req.scripted, run_tools=req.run_tools)
+            scripted=req.scripted, run_tools=req.run_tools, tools=tuple(tools) if req.run_tools is None else ())
         try:
             turn, state = self._ask(ask, on_progress)
         finally:

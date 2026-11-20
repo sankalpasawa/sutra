@@ -658,6 +658,9 @@ class NodeBlock(Value):
     grants_id: GrantId
     caps: NodeCaps = NodeCaps()
     scope: ScopeList = []
+    # MAN-8 (D298): the app tools this node's grant gives it (`none`, `sutra`, `github` or `sutra+github`), so the host can put them on the node's own agent-turn calls (never on a builder-tools
+    # call). `none` for a node whose grant holds none.
+    tool_profile: Literal["none", "sutra", "github", "sutra+github"] = "none"
 
 
 class ProjectOut(Value):
