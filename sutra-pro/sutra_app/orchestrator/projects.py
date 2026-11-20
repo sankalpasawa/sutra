@@ -32,7 +32,7 @@ from typing import Any
 
 from sutra_app.config import NODE_DEFAULT_CAPS, Settings
 from sutra_app.connectors.cancel import CancelToken
-from sutra_app.orchestrator.budgets import DEFAULT_SLICE, make_slices, project_cost, project_spend
+from sutra_app.orchestrator.budgets import DEFAULT_SLICE, chain_spend, make_slices, project_cost, project_spend
 from sutra_app.orchestrator.conductor import NODE_FINAL, PROJECT_FINAL, TASK_TO_NODE, Conductor
 from sutra_app.orchestrator.db import Database, Tx, run_blocking
 from sutra_app.orchestrator.errors import AppError, NotFound
@@ -874,6 +874,7 @@ class ProjectService:
         conn = self.db.conn()
         project = self.get(project_id)
         nodes = [self._node_out(r) for r in conn.execute("SELECT n.*, t.title AS task_title FROM agent_nodes n LEFT JOIN tasks t ON t.id = n.task_id WHERE n.project_id = ? ORDER BY n.created_at, n.rowid", (project_id,))]
+        nodes = [self._with_usage(conn, node, int(self._clock.now())) for node in nodes]
         edges = [{"from": dep, "to": node.id, "kind": "depends_on"} for node in nodes for dep in node.depends_on]
         edges += [{"from": earlier, "to": later, "kind": "conflict"} for earlier, later in self._conflict_edges(project, nodes)]
         calls = project_spend(conn, project_id)[0]                                 # every attempt of every node, not only the current task (D324)
@@ -884,6 +885,18 @@ class ProjectService:
         return {"project": project.model_dump(mode="json"), "nodes": [n.model_dump(mode="json") for n in nodes], "edges": edges, "caps": project.caps,
                 "spend": {"calls": calls, "usd": round(usd, 6) if calls or usd else None, "unpriced": unpriced}, "approvals": approvals, "cards": [card.model_dump(mode="json") for card in self.approval_cards(project_id) if card.kind != "system"],
                 "system_cards": [card.model_dump(mode="json") for card in self.system_cards(project_id)], "last_message_seq": last}
+
+    @staticmethod
+    def _with_usage(conn: sqlite3.Connection, node: NodeOut, now: int) -> NodeOut:
+        """The step's calls, dollars and minutes, from the ledger and its tasks, every earlier attempt included (D395). Minutes run from the first attempt's start to the last one's end (to now while one runs):
+        a step that waited or was sent back shows the whole time it took. Nothing for a node with no task (the planner)."""
+        if not node.task_id:
+            return node
+        calls, usd = chain_spend(conn, node.task_id)
+        span = conn.execute("WITH RECURSIVE chain(id) AS (SELECT ?1 UNION SELECT t.parent_task_id FROM tasks t JOIN chain c ON t.id = c.id WHERE t.parent_task_id IS NOT NULL) "
+                            "SELECT MIN(started_at), MAX(COALESCE(ended_at, ?2)), SUM(started_at IS NOT NULL AND ended_at IS NULL) FROM tasks WHERE id IN (SELECT id FROM chain)", (node.task_id, now)).fetchone()
+        minutes = round(max(0, int(span[1]) - int(span[0])) / 60, 1) if span[0] is not None and span[1] is not None else None
+        return node.model_copy(update={"calls": calls, "usd": round(usd, 6) if calls else None, "minutes": minutes})
 
     @staticmethod
     def _conflict_edges(project: ProjectOut, nodes: Sequence[NodeOut]) -> list[tuple[str, str]]:

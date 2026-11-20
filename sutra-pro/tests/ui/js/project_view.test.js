@@ -295,3 +295,14 @@ test("the engine's own run report is not named as something a step made", () => 
   assert.match(View.messagesHtml([{seq: 1, from: {node_id: "nd_a"}, body}], snap()).replace(/<[^>]*>/g, " "), /It made project\.md\./);
   assert.equal(/report\.md/.test(View.messagesHtml([{seq: 1, from: {node_id: "nd_a"}, body}], snap())), false);
 });
+
+test("each step says what it used: calls, minutes, about how many dollars; nothing before it has made a call (D395)", () => {
+  const s = snap({nodes: [node("nd_a", "a1", "done", {calls: 17, usd: 0.7, minutes: 3.4}), node("nd_b", "a2", "running", {calls: 1, usd: null, minutes: 0.4}), node("nd_c", "a3", "planned", {calls: 0, usd: null, minutes: null}),
+    node("nd_d", "a4", "done", {calls: 28, usd: 1.5, minutes: 12.2})]});
+  const html = View.stepsHtml(s).replace(/<[^>]*>/g, " ").replace(/\s+/g, " ");
+  assert.match(html, /Used: 17 calls, 3\.4 minutes, about \$0\.70/);
+  assert.match(html, /Used: 1 call, under a minute/);
+  assert.match(html, /Used: 28 calls, 12 minutes, about \$1\.50/);
+  assert.equal((html.match(/Used:/g) || []).length, 3, "a step that has made no call says nothing");
+  assert.equal(/Used: 1 call[^U]*\$/.test(html), false, "no dollars known: none shown");
+});

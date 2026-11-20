@@ -198,6 +198,15 @@
       (edges.some(e => isObj(e) && e.kind === "conflict") ? '<p class="cnote">A dashed line means two steps use the same files, so one waits for the other.</p>' : "");
   }
 
+  // What one step used, in the owner's units: calls, minutes, about how many dollars (D395). Nothing before it has made a call.
+  function usedHtml(n) {
+    if (!Number.isFinite(n.calls) || n.calls <= 0) return "";
+    const parts = [n.calls + (n.calls === 1 ? " call" : " calls")];
+    if (Number.isFinite(n.minutes)) parts.push(n.minutes < 1 ? "under a minute" : (n.minutes >= 10 ? Math.round(n.minutes) : n.minutes) + (n.minutes === 1 ? " minute" : " minutes"));
+    if (Number.isFinite(n.usd)) parts.push("about $" + n.usd.toFixed(2));
+    return '<span class="cnote pused">Used: ' + esc(parts.join(", ")) + "</span>";
+  }
+
   function stepsHtml(snap) {
     const s = isObj(snap) ? snap : {};
     const nodes = arr(s.nodes).filter(n => isObj(n) && n.role !== "planner");
@@ -209,7 +218,7 @@
       const files = arr(n.scope).map(clean).filter(Boolean);
       return '<li class="pstep" data-state="' + esc(clean(n.state)) + '" data-node="' + esc(clean(n.id)) + '"><b>' + esc(Store().nodeName(n)) + "</b> " +
         '<span class="pstate">' + esc(word(STATE_WORDS, n.state, "")) + "</span>" +
-        (n.attempt > 1 ? ' <span class="cnote">(try ' + esc(n.attempt) + ")</span>" : "") +
+        (n.attempt > 1 ? ' <span class="cnote">(try ' + esc(n.attempt) + ")</span>" : "") + usedHtml(n) +
         (after.length ? '<span class="cnote">Starts after: ' + esc(after.join(", ")) + "</span>" : "") +
         (waits.length ? '<span class="cnote">Shares files with, so waits for: ' + esc(waits.join(", ")) + "</span>" : "") +
         (files.length ? '<span class="cnote">May change: ' + esc(files.join(", ")) + "</span>" : "") +
