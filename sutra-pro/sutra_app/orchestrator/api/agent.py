@@ -65,7 +65,7 @@ def build_router() -> APIRouter:
         if body.budget is not None and (session.kind != "org" or body.choice is not None):
             raise AppError("validation", "a budget goes with a new request in the org chat")      # D252
         if session.kind == "org":
-            accepted = await _need(request, "runner").post_user_message(sid, body.text, body.choice, budget=body.budget)
+            accepted = await _need(request, "runner").post_user_message(sid, body.text, body.choice, budget=body.budget, decide_for_me=bool(body.decide_for_me))
             return _json(request, accepted.model_dump(mode="json"), 202)
         delivery = await run_blocking(_need(request, "tasks").deliver, sid, body.text)
         return _json(request, delivery.model_dump(mode="json"))

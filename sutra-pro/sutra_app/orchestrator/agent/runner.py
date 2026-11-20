@@ -116,7 +116,7 @@ class TurnRunner:
     # T0: accept
     # =================================================================================================================
 
-    async def post_user_message(self, session_id: str, text: str, choice: ChatChoice | None = None, *, budget: int | None = None) -> Accepted:
+    async def post_user_message(self, session_id: str, text: str, choice: ChatChoice | None = None, *, budget: int | None = None, decide_for_me: bool = False) -> Accepted:
         """Store the owner's line (state `pending`), queue the turn and return at once. A click on a card button (`choice`) is stored
         as the owner's line with the option's label. Raises 503 `provider_unavailable` / `cli_missing` before anything is stored when
         a model is needed and none is usable, 429 `too_many_pending`, 409 `already_decided` for a card answered before, 422 `validation`.
@@ -130,7 +130,7 @@ class TurnRunner:
         if resolved is None and not await run_blocking(self._is_answer, body):
             self._preflight()                                   # only a request that may call a model needs one
         self._room()
-        message_id = await run_blocking(self._store_user_line, resolved.label if resolved is not None else body, choice, budget)
+        message_id = await run_blocking(self._store_user_line, resolved.label if resolved is not None else body, choice, budget, decide_for_me)
         turn = "queued" if (self._active is not None or self._waiting) else "started"
         self._enqueue(_Item(message_id, resolved.pick if resolved is not None else None))
         return Accepted(message_id=message_id, turn=turn)
@@ -240,7 +240,7 @@ class TurnRunner:
         kind = "none" if option["id"] == NONE_OPTION else "team"
         return _Resolved(_Pick(kind, node_id=None if kind == "none" else option["id"], origin=int(origin.group(1))), option["label"])
 
-    def _store_user_line(self, text: str, choice: ChatChoice | None, budget: int | None = None) -> int:
+    def _store_user_line(self, text: str, choice: ChatChoice | None, budget: int | None = None, decide_for_me: bool = False) -> int:
         with self.db.tx() as tx:
             src = f"choice:{choice.message_id}" if choice is not None else None
             posted = self._post(tx, kind="text", text=text, role="user", who="user", state="pending", src_ref=src)
@@ -248,12 +248,19 @@ class TurnRunner:
                 raise AlreadyDecided(None)
             if budget is not None:      # D252: a sibling key of meta_json, as `via` and `blocks` are; read back by _budget_of
                 tx.conn.execute("UPDATE chat_messages SET meta_json = json_set(meta_json, '$.budget', ?) WHERE id = ?", (int(budget), posted.id))
+            if decide_for_me:           # MAN-8: the owner's switch for this request; read back by _decide_for_me_of
+                tx.conn.execute("UPDATE chat_messages SET meta_json = json_set(meta_json, '$.decide_for_me', 1) WHERE id = ?", (posted.id,))
             return posted.id
 
     def _budget_of(self, message_id: int) -> int | None:
         """D252: the Budget the owner gave with the request line `message_id` (None: the team's own budget)."""
         row = self.db.conn().execute("SELECT json_extract(meta_json, '$.budget') AS b FROM chat_messages WHERE id = ?", (message_id,)).fetchone()
         return int(row["b"]) if row is not None and row["b"] is not None else None
+
+    def _decide_for_me_of(self, message_id: int) -> bool:
+        """MAN-8: whether the owner turned Decide for me on with the request line `message_id` (the request's `J2_DECIDE_FOR_ME`)."""
+        row = self.db.conn().execute("SELECT json_extract(meta_json, '$.decide_for_me') AS d FROM chat_messages WHERE id = ?", (message_id,)).fetchone()
+        return bool(row is not None and row["d"])
 
     def _last_user_line(self) -> sqlite3.Row | None:
         return self.db.conn().execute(
@@ -577,7 +584,7 @@ class TurnRunner:
         steps = [ProjectStep(ref=d.ref, dept_id=d.dept, depends_on=tuple(r for r in d.depends_on if r != d.ref), scope=asked.get(d.ref, ((), ()))[0], needs=asked.get(d.ref, ((), ()))[1]) for d in drafts]
         title = drafts[0].title if drafts else one_line_title(request.text, 80)
         return self.projects.reserve(request.request_id, title, steps, budget=self._budget_of(request.message_id), planner_node_id=self.projects.planner_id_of(request.request_id),
-                                      plan_defaults=defaulted)
+                                      plan_defaults=defaulted, decide_for_me=self._decide_for_me_of(request.message_id))
 
     def _create_tasks(self, request: PlanRequest, drafts: Sequence[AssignmentDraft], change_id: str | None, reservation: Any = None) -> list[str]:
         """One transaction per assignment, dependencies first. The owner's words become the first line of the team's chat (the
@@ -585,6 +592,8 @@ class TurnRunner:
         made: dict[str, str] = {}
         budget = self._budget_of(request.message_id)
         settings = {"J2_BUDGET": str(budget)} if budget is not None else None      # D252: every task of the request runs with the owner's Budget
+        if self.projects is not None and self._decide_for_me_of(request.message_id):
+            settings = {**(settings or {}), "J2_DECIDE_FOR_ME": "1"}               # Decide for me reaches the workers as their own switch (D294)
         for draft in drafts:
             follows = draft.follows
             while True:

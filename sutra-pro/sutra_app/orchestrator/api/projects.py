@@ -13,11 +13,12 @@
     GET  /api/projects/{id}       -> snapshot: project, nodes, edges, caps, spend, open approvals, last_message_seq
     POST /api/projects/{id}/stop  {}                       -> {stopped: n}                  the project is stopped, its agents go through the stop ladder together
     POST /api/projects/{id}/pause {resume?: bool}          -> ProjectOut
+    POST /api/projects/{id}/approvals/{aid} {decision}     -> snapshot                      (MAN-8: allow_once | allow_project | deny; the plan is evaluated again and, when nothing is left to ask, the project starts)
 
 Every route answers `404 not_found` while SUTRA_NODES_V1 is off, whoever asks and whether or not a token came (the feature does not exist then); with it on, every write needs the launch
 token (`require_token`) as everywhere. Errors are the app's envelope. The router reads `request.app.state.services.node_control` (a `killswitch.NodeControl`).
 """
-from typing import Any
+from typing import Any, Literal
 
 from fastapi import APIRouter, Depends, Request
 from pydantic import BaseModel, ConfigDict, Field
@@ -39,6 +40,11 @@ class ReasonBody(BaseModel):
 
 class EmptyBody(BaseModel):
     model_config = ConfigDict(extra="forbid", strict=True)
+
+
+class AnswerBody(BaseModel):
+    model_config = ConfigDict(extra="forbid", strict=True)
+    decision: Literal["allow_once", "allow_project", "deny"]
 
 
 class PauseBody(BaseModel):
@@ -118,6 +124,10 @@ def build_router() -> APIRouter:
     @router.post("/api/projects/{project_id}/stop", summary="Stop a project: its agents through the stop ladder, nothing starts by itself afterwards", dependencies=[Depends(require_token)])
     async def stop_project(request: Request, project_id: str, body: EmptyBody) -> RedactedJSONResponse:
         return _json(request, {"stopped": await _projects(request).stop(project_id, by="owner")})
+
+    @router.post("/api/projects/{project_id}/approvals/{approval_id}", summary="Answer one question of a project: allow_once, allow_project or deny", dependencies=[Depends(require_token)])
+    async def answer_approval(request: Request, project_id: str, approval_id: str, body: AnswerBody) -> RedactedJSONResponse:
+        return _json(request, await _projects(request).answer(project_id, approval_id, body.decision, by="owner"))
 
     @router.post("/api/projects/{project_id}/pause", summary="Pause or resume one project: no agent of it starts while it is paused", dependencies=[Depends(require_token)])
     async def pause_project(request: Request, project_id: str, body: PauseBody) -> RedactedJSONResponse:

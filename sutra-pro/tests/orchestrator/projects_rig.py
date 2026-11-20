@@ -33,11 +33,12 @@ class PRig:
 
     # ---- making a request the way the runner does ---------------------------------------------------------------------------------
 
-    def request(self, steps, *, request_id="req-1", budget=None, title="A project"):
+    def request(self, steps, *, request_id="req-1", budget=None, title="A project", needs=None, scope=None, estimates=None, decide_for_me=False):
         """`steps`: (ref, team, [refs it waits for]). Reserves the project, then makes every task and links it in the same transaction. Returns (reservation, {ref: task id})."""
         t = self.t
-        project_steps = [ProjectStep(ref=ref, dept_id=dept, depends_on=tuple(deps)) for ref, dept, deps in steps]
-        reservation = self.projects.reserve(request_id, title, project_steps, budget=budget)
+        project_steps = [ProjectStep(ref=ref, dept_id=dept, depends_on=tuple(deps), needs=tuple((needs or {}).get(ref, ())), scope=tuple((scope or {}).get(ref, ())),
+                                     estimate_credits=int((estimates or {}).get(ref, 0))) for ref, dept, deps in steps]
+        reservation = self.projects.reserve(request_id, title, project_steps, budget=budget, decide_for_me=decide_for_me)
         tasks = {}
         if reservation is None or not reservation.ok:
             return reservation, tasks

@@ -35,7 +35,7 @@ __all__ = [
     "AtomLogRow", "UsageOut", "NeedsYouOut", "NodeDetail", "TaskSettings", "UpstreamRef", "RunSpec", "RunEvent", "RUN_EVENT_TYPES",
     "RUN_EVENT_VARIANTS", "EventParseError", "parse_event", "RunStarted", "RunSay", "RunNode", "RunStep", "RunAtom", "RunUsage",
     "RunHeartbeat", "RunEnded", "ChangeContext", "NodeInit", "ResumeInfo", "TASK_STATUSES", "LIVE_STATUSES", "TERMINAL_STATUSES",
-    "STEP_ID_RE", "ProjectId", "AgentNodeId", "GrantId", "ApprovalId", "AgentNodeState", "NodeCaps", "NodeBlock", "ProjectOut", "NodeOut", "PROJECT_STATUSES", "NODE_STATES", "NODE_ROLES",
+    "STEP_ID_RE", "ProjectId", "AgentNodeId", "GrantId", "ApprovalId", "AgentNodeState", "NodeCaps", "NodeBlock", "ProjectOut", "NodeOut", "NodeApprovalCard", "PROJECT_STATUSES", "NODE_STATES", "NODE_ROLES",
     "NODE_RUNTIMES",
 ]
 
@@ -471,6 +471,9 @@ class ChatPost(Value):
     # D252: the home screen's "Budget (work credits)" for a new request in the org chat; None: the team's own budget. The limits are
     # J2_BUDGET's (TaskSettings, EngineSettings.budget).
     budget: Annotated[int, Field(ge=1, le=100_000)] | None = None
+    # MAN-8, D294: "Decide for me" for the project this request may become: the Gatekeeper's rule table answers its questions (never credits over the ceiling, never a permission of the computer).
+    # Only read while SUTRA_NODES_V1 is on; None or false: the owner answers.
+    decide_for_me: bool | None = None
 
 
 class Accepted(Value):
@@ -674,6 +677,22 @@ class ProjectOut(Value):
     created_at: Iso
     ended_at: Iso | None = None
     stop_reason: Annotated[str, StringConstraints(max_length=200)] = ""
+
+
+class NodeApprovalCard(Value):
+    """One open question of a project as a card (MAN-8): what is asked in plain words, which tier, which node it is about (empty: the whole project), the answers it takes and when it
+    ends. `kind` is `tier` (the app tools or GitHub), `scope` (a wide write scope), `plan_estimate` (the plan's cost) or `system` (a permission of the computer, MAN-15). A plan estimate
+    can be allowed once or refused; nothing is ever "allowed for the project" above tier 4."""
+
+    type: Literal["node_approval"] = "node_approval"
+    project_id: ProjectId
+    approval_id: ApprovalId
+    kind: Annotated[str, StringConstraints(max_length=40)]
+    tier: Annotated[int, Field(ge=0, le=6)]
+    node_id: Annotated[str, StringConstraints(max_length=40)] = ""
+    question: Annotated[str, StringConstraints(max_length=500)]
+    options: Annotated[list[Annotated[str, StringConstraints(max_length=40)]], Field(max_length=4)]
+    expires_at: Iso
 
 
 class NodeOut(Value):

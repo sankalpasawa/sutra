@@ -114,7 +114,7 @@ def test_a_project_that_waits_for_the_owner_starts_nothing(rig):
     reservation, tasks = rig.request(steps)
     assert rig.project(reservation.project_id)["status"] == "awaiting_approval"
     assert rig.start() == [] and "Waiting for your answer" in rig.detail(tasks["a1"])
-    assert [r["action"] for r in rig.audit("gate.asked")] == ["gate.asked"] and rig.store.approvals(reservation.project_id, status="open")[0].request["kind"] == "estimate"
+    assert [r["action"] for r in rig.audit("gate.asked")] == ["gate.asked"] and rig.store.approvals(reservation.project_id, status="open")[0].request["kind"] == "plan_estimate"
 
 
 def test_a_node_whose_grant_is_broken_is_held_and_the_rest_of_the_project_starts(rig):

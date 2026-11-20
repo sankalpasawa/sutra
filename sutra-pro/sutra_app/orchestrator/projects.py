@@ -33,9 +33,10 @@ from sutra_app.connectors.cancel import CancelToken
 from sutra_app.orchestrator.conductor import NODE_FINAL, PROJECT_FINAL, TASK_TO_NODE, Conductor
 from sutra_app.orchestrator.db import Database, Tx, run_blocking
 from sutra_app.orchestrator.errors import AppError, NotFound
-from sutra_app.orchestrator.gatekeeper import Evaluation, Plan, PlanStep, evaluate
+from sutra_app.orchestrator.gatekeeper import DECIDE_FOR_ME, Evaluation, Plan, PlanStep, decide_for_me_answer, evaluate
+from sutra_app.orchestrator.grants import Grant
 from sutra_app.orchestrator.ids import Clock, IdFactory, SystemClock, iso_z
-from sutra_app.orchestrator.models import NodeOut, ProjectOut
+from sutra_app.orchestrator.models import NodeApprovalCard, NodeOut, ProjectOut
 from sutra_app.orchestrator.nodes_store import NodeStore
 
 __all__ = ["ProjectService", "ProjectStep", "Reservation", "default_output_of", "default_output_name", "NODE_FINAL", "PROJECT_FINAL", "TASK_TO_NODE"]
@@ -192,7 +193,8 @@ class ProjectService:
         if budget is not None:
             caps["confirm_credits"] = None                                           # the owner's own number is the answer (D300)
         caps["conflict_edges"] = [list(edge) for edge in evaluation.conflicts]     # kept for the lanes package (MAN-10): a delay, never a cancel (D259)
-        caps["plan"] = [{"ref": step.ref, "dept": step.dept_id, "scope": list(step.scope), "needs": list(step.needs), "estimate": int(step.estimate_credits or 0)} for step in steps]       # what the answer path re-evaluates (MAN-8); not shown
+        caps["plan"] = [{"ref": step.ref, "dept": step.dept_id, "scope": list(step.scope), "needs": list(step.needs), "estimate": int(step.estimate_credits or 0),
+                              "depends_on": list(step.depends_on)} for step in steps]       # what the answer path re-evaluates (MAN-8); not shown
         status = "failed" if not evaluation.ok else "awaiting_approval" if evaluation.gates else "running"
         why = "; ".join(refusal.why for refusal in evaluation.refusals)[:200]
         tx.conn.execute(
@@ -230,13 +232,16 @@ class ProjectService:
         for gate in evaluation.gates:                                                  # the questions are rows; the cards and the answers are MAN-8
             tier = gate.tier if gate.tier is not None else 5
             detail = {"credits": total, "limit": int(plan.confirm_credits or 0)} if gate.kind == "estimate" else {}
+            kind = "plan_estimate" if gate.kind == "estimate" else gate.kind                  # the estimate question is its own kind: tier 5, allow once or deny only (D308)
             asked = self.store.open_approval(tx, project_id=project_id, node_id=node_ids.get(gate.step_id or "", ""), tier=tier, expires_at=expires,
-                                             request={"kind": gate.kind, "why": gate.why, **detail})
+                                             request={"kind": kind, "why": gate.why, **detail})
             self.store.audit(tx, actor="gatekeeper", action="gate.asked", project_id=project_id, node_id=node_ids.get(gate.step_id or "", None), tier=tier, decision="ask",
                              reason=gate.why, ref=asked.id)
         self.store.audit(tx, actor="gatekeeper", action="plan.accepted", project_id=project_id, decision="allow", reason=f"{len(steps)} steps, {len(evaluation.gates)} question(s)")
         tx.emit("project.created", {"project_id": project_id, "status": status})
-        waits = (total, int(plan.confirm_credits or 0)) if any(gate.kind == "estimate" for gate in evaluation.gates) else None
+        if decide_for_me:
+            self._decide_by_rule(tx, project_id)                                      # Decide for me (D294): the rule table answers in this transaction; nothing it cannot answer is hidden
+        waits = (total, int(plan.confirm_credits or 0)) if self._waits_of(tx, project_id) is not None else None
         return Reservation(project_id, True, "", node_ids, planner_node_id, title=" ".join(title.split())[:200], waits=waits)
 
     @staticmethod
@@ -245,7 +250,7 @@ class ProjectService:
         for row in tx.conn.execute("SELECT request_json FROM approvals WHERE project_id = ? AND status = 'open' ORDER BY created_at, id", (project_id,)):
             try:
                 asked = json.loads(row["request_json"])
-                if asked.get("kind") == "estimate":
+                if asked.get("kind") == "plan_estimate":
                     return (int(asked["credits"]), int(asked["limit"]))
             except (ValueError, KeyError, TypeError, AttributeError):
                 continue
@@ -320,6 +325,119 @@ class ProjectService:
     def _project_row(self, project_id: str) -> sqlite3.Row | None:
         return self.db.conn().execute("SELECT * FROM projects WHERE id = ?", (project_id,)).fetchone()
 
+    # ---- Decide for me, and the answer path (MAN-8, D294, D306, D308) --------------------------------------------------------------
+
+    def _ceiling(self, project: sqlite3.Row) -> int | None:
+        """The most credits the project may be estimated at before only the owner can say yes: the owner's own budget when they gave one, else the cap `project_credits`."""
+        if project["budget_credits"] is not None:
+            return int(project["budget_credits"])
+        found = json.loads(project["caps_json"] or "{}").get("project_credits")
+        return int(found) if found else None
+
+    def _decide_by_rule(self, tx: Tx, project_id: str) -> None:
+        """Decide for me (D294): the rule table of the Gatekeeper answers every open question it may, in the caller's transaction, each answer audited as `decided_by rule:decide_for_me`. The
+        questions it may not answer (credits over the ceiling, tier 6, a permission of the computer) stay open for the owner."""
+        project = tx.conn.execute("SELECT * FROM projects WHERE id = ?", (project_id,)).fetchone()
+        for approval in self.store.approvals(project_id, status="open"):
+            answer = decide_for_me_answer(str(approval.request.get("kind", "")), approval.tier, estimate=int(approval.request.get("credits") or 0), ceiling=self._ceiling(project))
+            if answer is None:
+                continue
+            self.store.decide(tx, approval.id, answer.decision, decided_by=DECIDE_FOR_ME)
+            self.store.audit(tx, actor="gatekeeper", action="gate.decided", project_id=project_id, node_id=approval.node_id or None, tier=approval.tier, decision="allow",
+                             reason=f"decided_by {DECIDE_FOR_ME}: {answer.rule}: {answer.why}", ref=approval.id)
+        self._settle_answers(tx, project_id)
+
+    def _settle_answers(self, tx: Tx, project_id: str, why: str = "not approved: a question was answered no") -> str:
+        """After any answer (the owner's, a rule's): a project with a question answered no (or run out) is refused at once (D296's own path); else the plan is evaluated again with what was
+        allowed, the grant of every node that has NOT spawned is rewritten (a new `grant.issued` row; a node that runs is never touched), and when no question is open the project and its waiting
+        nodes move on. Returns `refused`, `running`, `waiting` or `ended`."""
+        project = tx.conn.execute("SELECT * FROM projects WHERE id = ?", (project_id,)).fetchone()
+        if project is None or project["status"] in PROJECT_FINAL:
+            return "ended"
+        approvals = self.store.approvals(project_id)
+        if any(a.status in ("denied", "expired") for a in approvals):
+            self.conductor._refuse_in(tx, project_id, why)
+            return "refused"
+        caps = json.loads(project["caps_json"] or "{}")
+        nodes = {r["plan_ref"]: r for r in tx.conn.execute("SELECT * FROM agent_nodes WHERE project_id = ? AND role = 'worker'", (project_id,))}
+        by_id = {row["id"]: ref for ref, row in nodes.items()}
+        approved: dict[str, set[int]] = {}
+        wide: set[str] = set()
+        estimate_ok = False
+        for approval in approvals:
+            if approval.status not in ("allowed_once", "allowed_project"):
+                continue
+            kind, ref = str(approval.request.get("kind", "")), by_id.get(approval.node_id)
+            if kind == "tier" and ref:
+                approved.setdefault(ref, set()).add(approval.tier)
+            elif kind == "scope" and ref:
+                wide.add(ref)
+            elif kind == "plan_estimate":
+                estimate_ok = True
+        rows = caps.get("plan") or []
+        if rows:
+            slice_credits = project["budget_credits"] if project["budget_credits"] is not None else DEFAULT_SLICE
+            plan = Plan(
+                steps=tuple(PlanStep(id=r["ref"], role="worker", depends_on=tuple(r.get("depends_on") or ()), output=self._output_of(r["dept"]), estimate_credits=r.get("estimate") or slice_credits,
+                                     wants=frozenset({4}) if "github" in r.get("needs", ()) else frozenset(), scope=tuple(r.get("scope") or ()), tool_profile=_tool_profile(r.get("needs", ())))
+                            for r in rows),
+                owner_access=self._owner_access(), approved={k: frozenset(v) for k, v in approved.items()}, approved_wide=frozenset(wide),
+                confirm_credits=None if estimate_ok or project["budget_credits"] is not None else int(caps.get("confirm_credits") or NODE_DEFAULT_CAPS["confirm_credits"] or 500))
+            evaluation = evaluate(plan)
+            if evaluation.ok:
+                for ref, node in nodes.items():
+                    if node["state"] not in ("awaiting_approval", "planned", "queued") or ref not in evaluation.grants:
+                        continue                                                    # a node that has spawned is never rewritten
+                    old = Grant.from_json(json.loads(node["grants_json"]))
+                    new = evaluation.grants[ref].for_node(old.id, node["id"])
+                    if new.to_json() != old.to_json():
+                        issued = evaluation.grants[ref].for_node(self.ids.grant_id(), node["id"])
+                        tx.conn.execute("UPDATE agent_nodes SET grants_json = ?, writes_json = ? WHERE id = ?",
+                                        (json.dumps(issued.to_json(), sort_keys=True), json.dumps(list(issued.scope)), node["id"]))
+                        self.store.audit(tx, actor="gatekeeper", action="grant.issued", project_id=project_id, node_id=node["id"], role="worker", tier=max(issued.tiers), decision="allow",
+                                         reason=issued.describe(), ref=issued.id)
+        if any(a.status == "open" for a in approvals):
+            return "waiting"
+        tx.conn.execute("UPDATE projects SET status = 'running' WHERE id = ? AND status = 'awaiting_approval'", (project_id,))
+        for node in tx.conn.execute("SELECT n.id AS id, t.status AS tstatus FROM agent_nodes n LEFT JOIN tasks t ON t.id = n.task_id WHERE n.project_id = ? AND n.state = 'awaiting_approval'",
+                                    (project_id,)).fetchall():
+            tx.conn.execute("UPDATE agent_nodes SET state = ? WHERE id = ?", ("queued" if node["tstatus"] == "queued" else "planned", node["id"]))
+            tx.emit("node.updated", {"project_id": project_id, "node_id": node["id"], "state": "queued" if node["tstatus"] == "queued" else "planned"})
+        tx.emit("project.updated", {"project_id": project_id, "status": "running"})
+        return "running"
+
+    async def answer(self, project_id: str, approval_id: str, decision: str, *, by: str = "owner") -> dict[str, Any]:
+        """The owner's answer to one open question (`allow_once`, `allow_project` or `deny`; `allow_project` is refused for the plan's estimate and above tier 4, 422). The first answer wins (a
+        repeat is a no-op, a different one is 409, an answer to a question that ran out says so). The plan is evaluated again, the grants of the nodes that have not started are rewritten and,
+        when nothing is left to ask, the project starts; a no stops it with "not approved". Returns the project's snapshot."""
+        def work() -> str:
+            with self.db.tx() as tx:
+                found = tx.conn.execute("SELECT 1 FROM approvals WHERE id = ? AND project_id = ?", (approval_id, project_id)).fetchone()
+                if found is None:
+                    raise NotFound("that question")
+                row = self.store.decide(tx, approval_id, decision, decided_by="owner" if by == "owner" else "system")
+                if row.duplicate:
+                    return "again"
+                self.store.audit(tx, actor="owner" if by == "owner" else "system", action="gate.decided", project_id=project_id, node_id=row.node_id or None, tier=row.tier,
+                                 decision="deny" if decision == "deny" else "allow", reason=f"decided_by {row.decided_by}: {decision}", ref=approval_id)
+                return self._settle_answers(tx, project_id, why="not approved: you said no" if decision == "deny" else "not approved: a question was answered no")
+        outcome = await run_blocking(work)
+        if outcome == "running" and self.tasks is not None:
+            await self.tasks.start_ready()
+        return await run_blocking(self.snapshot, project_id)
+
+    def approval_cards(self, project_id: str) -> list[NodeApprovalCard]:
+        """The open questions of a project as cards, in plain words (no word of any node)."""
+        words = {"tier": "A step wants to read GitHub, through your own GitHub login (read only). Allow it?", "scope": "A step changes files in several places of your folder. It will run alone. Allow it?",
+                 "plan_estimate": "This plan is estimated at about {credits} credits, which is over {limit}. Allow it once?", "system": "Your computer must allow this first. Open the settings, allow it, then check again."}
+        cards = []
+        for a in self.store.approvals(project_id, status="open"):
+            kind = str(a.request.get("kind", ""))
+            options = ["allow_once", "deny"] if kind in ("plan_estimate", "scope") or a.tier == 5 else ["allow_once", "allow_project", "deny"]
+            question = words.get(kind, "A step needs your answer.").format(credits=a.request.get("credits", "?"), limit=a.request.get("limit", "?"))
+            cards.append(NodeApprovalCard(project_id=project_id, approval_id=a.id, kind=kind[:40], tier=a.tier, node_id=a.node_id, question=question, options=options, expires_at=iso_z(a.expires_at)))
+        return cards
+
     # ---- reading --------------------------------------------------------------------------------------------------------------------
 
     @staticmethod
@@ -367,7 +485,7 @@ class ProjectService:
                      for a in self.store.approvals(project_id, status="open")]
         last = conn.execute("SELECT COALESCE(MAX(seq), 0) FROM node_messages WHERE project_id = ?", (project_id,)).fetchone()[0]
         return {"project": project.model_dump(mode="json"), "nodes": [n.model_dump(mode="json") for n in nodes], "edges": edges, "caps": project.caps,
-                "spend": {"calls": spend["calls"], "usd": round(spend["usd"], 6) if spend["usd"] is not None else None}, "approvals": approvals, "last_message_seq": last}
+                "spend": {"calls": spend["calls"], "usd": round(spend["usd"], 6) if spend["usd"] is not None else None}, "approvals": approvals, "cards": [card.model_dump(mode="json") for card in self.approval_cards(project_id)], "last_message_seq": last}
 
     @staticmethod
     def _conflict_edges(project: ProjectOut, nodes: Sequence[NodeOut]) -> list[tuple[str, str]]:

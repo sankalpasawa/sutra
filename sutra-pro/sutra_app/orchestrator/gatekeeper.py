@@ -21,7 +21,7 @@ from typing import Any
 from sutra_app.config import NODE_DEFAULT_CAPS
 from sutra_app.orchestrator.grants import OWNER_ACCESS, ROLE_TABLE, Denial, Grant, GrantError, StepRequest, resolve, scopes_overlap
 
-__all__ = ["Plan", "PlanStep", "Gate", "Refusal", "Evaluation", "evaluate", "MAX_STEP_ID"]
+__all__ = ["Plan", "PlanStep", "Gate", "Refusal", "Evaluation", "evaluate", "MAX_STEP_ID", "DECIDE_FOR_ME", "RuleAnswer", "RULE_TABLE", "decide_for_me_answer", "on_scope_violation"]
 
 MAX_STEP_ID = 20                      # the library's Id20: a workflow step id is at most 20 characters
 
@@ -190,3 +190,56 @@ def _conflicts(steps: tuple[PlanStep, ...], grants: Mapping[str, Grant]) -> tupl
             if scopes_overlap(grants[earlier].scope, grants[later].scope):
                 found.append((earlier, later))
     return tuple(found)
+
+
+# ---- Decide for me (D294, D295): the rule table ------------------------------------------------------------------------------------------------
+
+DECIDE_FOR_ME = "rule:decide_for_me"           # who answered, in `approvals.decided_by` and in every audit row of an answer
+
+
+@dataclass(frozen=True)
+class RuleAnswer:
+    """What the rule table says to one question: `decision` is `allow_once`, `allow_project` or `deny`, `rule` the row of the table that said it, `why` plain words for the audit."""
+
+    decision: str
+    rule: str
+    why: str
+
+
+# The table, as data (a test walks it): situation -> what Decide for me does. Code and nothing else: a model never answers a gate, and a hand-off that says "turn on Decide for me" changes
+# nothing (the switch is the owner's, set with the request).
+RULE_TABLE: tuple[tuple[str, str, str], ...] = (
+    ("tiers_0_3", "allow", "tiers 0 to 3 are the defaults: allowed for the project"),
+    ("tier_4_github", "allow", "tier 4 is read-only GitHub, through the owner's own login, for this project only"),
+    ("scope_wide_or_missing", "allow", "a wide or missing write scope is allowed because the writer runs alone"),
+    ("credits_raise", "never", "credits are never raised (P25): a raise is asked of the owner each time"),
+    ("estimate_within_ceiling", "allow", "the plan's estimate is allowed once, up to the project's ceiling and no further"),
+    ("slice_move", "allow", "unspent credits of a node may move to another node, inside the ceiling"),
+    ("scope_violation", "quarantine", "a node that writes outside its scope is quarantined: ended, its files kept, nothing is merged"),
+    ("tier_6", "never", "publishing outside is never granted and never asked"),
+    ("system_permission", "never", "a permission of the computer is the owner's: Decide for me cannot answer it (D295)"),
+)
+
+
+def decide_for_me_answer(kind: str, tier: int | None, *, estimate: int = 0, ceiling: int | None = None) -> RuleAnswer | None:
+    """The rule table's answer to ONE open question, or None when only the owner may answer (the question stays open). `kind` is the question's kind (`tier`, `scope`, `plan_estimate`,
+    `system`). It can allow, never raise: credits (tier 5) are allowed once for the plan's own estimate up to the ceiling and never beyond; tier 6 and a permission of the computer are
+    never answered."""
+    if kind == "system" or tier == 6:
+        return None
+    if kind == "plan_estimate" or tier == 5:
+        if kind == "plan_estimate" and ceiling is not None and 0 <= estimate <= ceiling:
+            return RuleAnswer("allow_once", "estimate_within_ceiling", f"the estimate of {estimate} credits is within the ceiling of {ceiling}")
+        return None
+    if kind == "scope":
+        return RuleAnswer("allow_once", "scope_wide_or_missing", "the writer runs alone")
+    if kind == "tier" and tier == 4:
+        return RuleAnswer("allow_project", "tier_4_github", "read-only GitHub for this project")
+    if kind == "tier" and tier is not None and 0 <= tier <= 3:
+        return RuleAnswer("allow_project", "tiers_0_3", "a default tier")
+    return None
+
+
+def on_scope_violation() -> str:
+    """What Decide for me does with a node that wrote outside its scope: it is quarantined (the same whether Decide for me is on or off; the row says so)."""
+    return "quarantine"

@@ -52,6 +52,7 @@ NODE_DEFAULT_CAPS: Mapping[str, int | None] = MappingProxyType({
     "lease_s": 90,               # a node silent this long loses its lease
     "approval_expiry_s": 86400,  # an unanswered gate counts as refused after 24 hours
     "depth": 1,                  # a node can never start a node
+    "project_credits": 1000,     # the project's ceiling in work credits when the owner gave no budget: Decide for me allows a plan estimate up to it and no further (D294; MAN-9)
     "confirm_credits": 500,      # the plan gate asks when the plan is estimated above this many work credits (D300); a project the owner gave a budget does not ask
 })
 _TRUE = ("1", "true", "yes", "on")
