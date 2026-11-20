@@ -9,6 +9,7 @@ keeps `reserve`, `link_task`, the reads and the planner's tokens, and hands the 
 from __future__ import annotations
 
 import json
+import re
 import logging
 import os
 import sqlite3
@@ -331,6 +332,19 @@ class Conductor:
         if node is not None:
             self._sync_project(tx, node["project_id"])
 
+    @staticmethod
+    def _closed_by_the_app(tx: Tx, task_id: str, outcome: str) -> bool:
+        """A graceful close of the app (D397). Its stop ladder asks every live run to stop, and the engine answers with its stock "Stopped: stopped on request" BEFORE the app can write "the app was closed",
+        so the outcome alone cannot tell it from the owner's stop. The shutdown path marks the task `_stopped_by = app` first; the owner's and the kill switch's stops mark `owner` or `system`. The two
+        together (the app asked, and the engine said only its stock words) are a close, and the step gets a fresh attempt that spends no retry (D314), as after a crash found at the next start."""
+        if not re.match(r"^stopped:\s*stopped on request\.?$", outcome.strip(), re.I):
+            return False
+        found = tx.conn.execute("SELECT settings_json FROM tasks WHERE id = ?", (task_id,)).fetchone()
+        try:
+            return found is not None and json.loads(found["settings_json"] or "{}").get("_stopped_by") == "app"
+        except ValueError:
+            return False
+
     def _sync_task(self, tx: Tx, task_id: str) -> None:
         node = tx.conn.execute("SELECT n.*, t.status AS tstatus, t.outcome AS toutcome FROM agent_nodes n JOIN tasks t ON t.id = n.task_id WHERE n.task_id = ?", (task_id,)).fetchone()
         if node is None:
@@ -343,7 +357,7 @@ class Conductor:
         if state == "expired" and want in ("cancelled", "failed"):
             want = "failed"                                                  # the ladder ended a node that had gone silent: that is a failure to retry, not the owner's stop
             outcome = LOST_LEASE
-        elif want in ("cancelled", "failed") and outcome.startswith(APP_CLOSED):
+        elif want in ("cancelled", "failed") and (outcome.startswith(APP_CLOSED) or self._closed_by_the_app(tx, task_id, outcome)):
             want = "failed"                                                  # the app was closed under the node: nothing the owner asked for, so it is tried again, not cancelled
             outcome = APP_CLOSED_WHY
         if want == "failed" and state not in NODE_FINAL and is_permission_failure(outcome):
