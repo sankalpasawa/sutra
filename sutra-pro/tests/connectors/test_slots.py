@@ -131,3 +131,30 @@ def test_the_pause_between_looks_is_random_so_no_waiter_keeps_the_same_rhythm(tm
     assert pool.acquire("codex", timeout=1.0) is None
     assert len(set(pauses)) > 3 and all(0.024 <= p <= 0.076 for p in pauses)
     pool.release(held)
+
+
+def test_a_call_that_found_no_slot_through_a_real_router_is_given_back_by_the_nodes_meter(tmp_path):              # N-4, PB-14
+    from test_node_identity import Rig
+
+    from sutra_app.connectors.engine_port import RouterPort
+    from sutra_app.engine import llm
+    from sutra_app.engine.llm import NodeMeter
+    from sutra_app.engine.port import ModelError
+    rig = Rig(tmp_path)
+
+    class Full:
+        def acquire(self, provider, **kw):
+            return None
+
+        def release(self, slot):
+            raise AssertionError("nothing was taken")
+    rig.router.slots = Full()
+    meter = NodeMeter(max_calls=2)
+    llm.configure(RouterPort(rig.router), mock=False, meter=meter)
+    try:
+        for _ in range(4):
+            with pytest.raises(ModelError):
+                llm.ask("sys", "user", None)
+        assert meter.calls == 0 and meter.reached is None and rig.claude.calls == [] and rig.codex.calls == []              # four waits that never started a program used none of the two calls
+    finally:
+        llm.configure()
