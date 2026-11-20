@@ -89,3 +89,32 @@ def test_the_gate_reads_the_owners_folder_setting_once_in_a_moment_not_for_every
     for ref in ("a1", "a2", "a3", "a1", "a2"):
         rig.projects.gate(conn, 1793786400, rig.t.row(tasks[ref]))
     assert len(reads) == 1
+
+
+def test_scopes_that_differ_only_in_how_an_accent_is_written_are_the_same_place():                              # PB-17
+    from sutra_app.orchestrator.grants import GrantError, normalize_scope, scopes_overlap
+    nfc, nfd = "café/", "café/menu"
+    assert scopes_overlap(normalize_scope([nfc]), normalize_scope([nfd])) and normalize_scope([nfc, "café/"]) == (nfc,)            # one place, once
+    for bad in ("!notes", "a(b)", "site/(draft)", "x)"):
+        with pytest.raises(GrantError):
+            normalize_scope([bad])
+
+
+def test_a_link_inside_the_folder_leads_to_the_place_it_points_at_and_one_that_leaves_the_folder_is_the_whole_folder(tmp_path):
+    from sutra_app.orchestrator.conductor import Conductor
+    folder = tmp_path / "work"
+    (folder / "docs").mkdir(parents=True)
+    (tmp_path / "outside").mkdir()
+    (folder / "site").symlink_to(folder / "docs")
+    (folder / "escape").symlink_to(tmp_path / "outside")
+    assert set(Conductor._resolved(str(folder), ("site/",))) == {"site/", "docs/"}
+    assert Conductor._resolved(str(folder), ("escape/",)) == ()
+    assert Conductor._resolved(str(folder), ("plain/",)) == ("plain/",) and Conductor._resolved(None, ("site/",)) == ("site/",) and Conductor._resolved(str(folder), ()) == ()
+
+
+def test_a_writer_of_a_link_waits_for_the_writer_of_what_the_link_points_at(rig):
+    (rig.folder / "docs").mkdir()
+    (rig.folder / "site").symlink_to(rig.folder / "docs")
+    reservation, tasks = rig.request([("a1", "web", []), ("a2", "sales", [])], scope={"a1": ("site/",), "a2": ("docs/",)})
+    rig.start()
+    assert len(rig.t.launcher.started) == 1                                                                    # they would have run together by their names; the link makes them one place

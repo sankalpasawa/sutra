@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import json
 import logging
+import os
 import sqlite3
 import time
 from collections.abc import Sequence
@@ -19,7 +20,7 @@ from typing import Any
 from sutra_app.config import NODE_DEFAULT_CAPS
 from sutra_app.orchestrator.budgets import SCRUB_LIMIT, chain_spend, egress_scrubs, project_spend, slice_left
 from sutra_app.orchestrator.db import Tx, run_blocking
-from sutra_app.orchestrator.grants import scopes_overlap
+from sutra_app.orchestrator.grants import fold, scopes_overlap
 from sutra_app.orchestrator.errors import AppError, NotFound
 from sutra_app.engine.host.handoff import ACCEPTED_FILE, HANDOFF_FILE
 from sutra_app.engine.host.toollog import log_path, read_log, summarize
@@ -49,8 +50,8 @@ CAP_REACHED = "stopped: this step "                       # + "used up its model
 
 def _covers_path(scope: tuple[str, ...], path: str) -> bool:
     """`path` (of the owner's folder, written with `/`) is inside one of the `scope` entries, compared without case (Windows and the default macOS file system do not tell them apart)."""
-    low = path.replace("\\", "/").lstrip("/").casefold()
-    return any(low == entry.rstrip("/").casefold() or low.startswith(entry.rstrip("/").casefold() + "/") for entry in scope)
+    low = fold(path.replace("\\", "/").lstrip("/"))
+    return any(low == fold(entry.rstrip("/")) or low.startswith(fold(entry.rstrip("/")) + "/") for entry in scope)
 
 
 FOLDER_TTL_S = 2.0
@@ -182,6 +183,26 @@ class Conductor:
         self._folder_seen = (look, now, found)
         return found
 
+    @staticmethod
+    def _resolved(folder: Any, scope: tuple[str, ...]) -> tuple[str, ...]:
+        """A scope with the places its links lead to (PB-17): `site/` that is a link to `docs/` is also `docs/`, so it overlaps a writer of `docs/`. A path that leads OUT of the owner's folder makes the
+        scope the whole folder (`()`), the safe side. Best effort and a moment in time: a link made later is not followed. No scope, no folder or an unreadable path: the scope as it was."""
+        if not folder or not scope:
+            return scope
+        try:
+            root = os.path.realpath(str(folder))
+            found = list(scope)
+            for entry in scope:
+                real = os.path.realpath(os.path.join(root, *entry.rstrip("/").split("/")))
+                rel = os.path.relpath(real, root).replace("\\", "/")
+                if rel == ".." or rel.startswith("../") or os.path.isabs(rel):
+                    return ()
+                if rel != "." and rel != entry.rstrip("/"):
+                    found.append(rel + ("/" if entry.endswith("/") else ""))
+            return tuple(dict.fromkeys(found))
+        except (OSError, ValueError):
+            return scope
+
     def _lease_conflict(self, conn: sqlite3.Connection, node_id: str) -> str:
         """A waiting sentence when another writer that is alive holds a part of the folder that overlaps this node's, else "". The leases are the rows of `agent_nodes` (their `writes_json`), so they
         survive a restart and are read in the transaction that starts the node. A folder that is not a git repository cannot say who changed what: writers run one at a time (D260)."""
@@ -191,8 +212,11 @@ class Conductor:
             return ""
         folder = self._folder()
         serial = bool(folder) and not (Path(folder) / ".git").exists()           # one stat, no read
+        mine = self._resolved(folder, mine)
         for other in conn.execute("SELECT id, project_id, plan_ref, grants_json, writes_json FROM agent_nodes WHERE id <> ? AND state IN ('leased','running','handing_off','expired')", (node_id,)).fetchall():
             theirs = self._lease_of(conn, other)
+            if theirs is not None:
+                theirs = self._resolved(folder, theirs)
             if theirs is not None and (serial or scopes_overlap(mine, theirs)):
                 return "Waiting: another step is changing the same part of your folder" if not serial else "Waiting: another step is changing your folder (it is not a git folder, so steps change it one at a time)"
         return ""
@@ -475,13 +499,18 @@ class Conductor:
         if mine is not None and not mine:
             self._unchecked(tx, node, task_id, "this step was not given its own part of your folder, so nothing could be outside it")
             return []
+        folder = self._folder()
         if mine is not None and self._ran_alone(tx, node, task_id):
-            return [path for path in paths if not _covers_path(mine, path)]
+            own = self._resolved(folder, mine)
+            if not own:                                                         # a link that leads out of the folder: the scope cannot be said
+                self._unchecked(tx, node, task_id, "one of this step's paths leads out of your folder, so what it changed could not be checked")
+                return []
+            return [path for path in paths if not _covers_path(own, path)]
         owned: list[tuple[str, ...]] = []
         for row in tx.conn.execute("SELECT plan_ref, grants_json, writes_json, project_id FROM agent_nodes WHERE project_id = ? AND role = 'worker'", (node["project_id"],)).fetchall():
             lease = self._lease_of(tx.conn, row)
             if lease is not None:
-                owned.append(lease)
+                owned.append(self._resolved(folder, lease))
         if any(not scope for scope in owned):                                   # a writer that owns the whole folder: nothing can be said to be outside
             if mine is not None:
                 self._unchecked(tx, node, task_id, "another step may change the whole folder, so one step's files cannot be told from another's")

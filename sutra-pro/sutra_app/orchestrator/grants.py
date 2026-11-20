@@ -22,6 +22,7 @@ from __future__ import annotations
 
 import dataclasses
 import re
+import unicodedata
 from collections.abc import Iterable, Mapping
 from dataclasses import dataclass, field
 from typing import Any
@@ -89,7 +90,7 @@ ROLE_TABLE: Mapping[str, RoleRule] = {
 
 # ---- write scopes -----------------------------------------------------------------------------------------------------------------
 
-_GLOB = re.compile(r"[*?\[\]{}]")
+_GLOB = re.compile(r"[*?\[\]{}()!]")           # a wild-card, or a character a permission rule of the model program reads as part of its own syntax (PB-17)
 _SHORT_NAME = re.compile(r"~[0-9]")                                  # a Windows 8.3 short name: GIT~1 is .git
 _DEVICE_NAMES = frozenset({"CON", "PRN", "AUX", "NUL", *(f"COM{n}" for n in range(1, 10)), *(f"LPT{n}" for n in range(1, 10)), "CONIN$", "CONOUT$", "CLOCK$",
                            "COM\u00b9", "COM\u00b2", "COM\u00b3", "LPT\u00b9", "LPT\u00b2", "LPT\u00b3"})          # Windows also treats the superscript digits as devices (m7)
@@ -136,15 +137,21 @@ def normalize_scope(entries: Iterable[Any]) -> tuple[str, ...]:
         if not parts:
             return ()                                              # the folder itself: the whole folder
         cleaned.append("/".join(parts) + ("/" if text.endswith("/") else ""))
-    unique = sorted(set(cleaned))
+    unique = sorted({unicodedata.normalize("NFC", path) for path in cleaned})
     kept = [path for path in unique if not any(other != path and _covers(other, path) for other in unique)]
     return tuple(kept)
 
 
+def fold(path: str) -> str:
+    """A path as the file systems of the owner's computer compare it: the same name whatever the case (Windows and the default macOS file system) and whichever way an accent is written (macOS keeps
+    `é` as `e` and an accent, other systems as one letter): NFC then case-folded (m7, PB-17)."""
+    return unicodedata.normalize("NFC", path).casefold()
+
+
 def _covers(parent: str, child: str) -> bool:
     """`child` is `parent` or lies below it."""
-    base = parent.rstrip("/").casefold()                    # Windows and the default macOS file system do not tell `Site` from `site`: two writers on those spellings overlap (m7)
-    other = child.rstrip("/").casefold()
+    base = fold(parent.rstrip("/"))                         # Windows and the default macOS file system do not tell `Site` from `site`: two writers on those spellings overlap (m7)
+    other = fold(child.rstrip("/"))
     return other == base or other.startswith(base + "/")
 
 
