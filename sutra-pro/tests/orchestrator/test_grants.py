@@ -389,7 +389,7 @@ def test_the_grant_line_is_true_about_the_builder_tools_the_host_allows(monkeypa
     for owner in OWNER_ACCESS:
         grant = intersect("worker", StepRequest(), "edit", owner)
         line = grant.describe()
-        assert "run_tools engine (reads; writes only in its own folder; no commands; no web)" in line and len(line) <= 200
+        assert "run_tools engine (own folder only; no commands or web)" in line and len(line) <= 200
         assert node_tools.words(node_tools.NodeRights(grant.tiers, grant.commands)) in line
     assert "(" not in intersect("reviewer", None, "edit", "edit").describe().split("run_tools")[1].split(";")[0]
 
@@ -399,8 +399,18 @@ def test_a_tier_four_grant_says_no_web_and_holds_none(monkeypatch):
     from sutra_app.connectors import node_tools
     grant = intersect("worker", StepRequest(wants=frozenset({4})), "edit", "edit", approved={4})
     assert 4 in grant.tiers and grant.tool_profile in ("github", "sutra+github")
-    assert "no web" in grant.describe() and "; web" not in grant.describe()
+    assert "no commands or web" in grant.describe()
     narrowed = node_tools.narrow(__import__("sutra_app.engine.port", fromlist=["ToolGrant"]).ToolGrant(
         tools=("Read", "WebSearch", "WebFetch"), allow=("Read", "WebSearch", "WebFetch", "WebFetch(domain:*)"), cwd="/tmp/x", root="/tmp", usd=1, log_chars=5),
         node_tools.NodeRights(grant.tiers, grant.commands))
     assert narrowed.tools == ("Read",) and "WebFetch(domain:*)" not in narrowed.allow
+
+
+def test_no_grant_line_is_cut_in_the_middle_of_a_word_even_the_longest(monkeypatch):
+    """m7: tier 4, both tool parts, a scope and an `auto` output made the line 216 characters and cut "(decided in the run)" mid-word. Every case now fits in 200 and ends whole."""
+    for scope in ((), ("a/",), tuple(f"p{n}/" for n in range(9))):
+        for wants, profile in ((frozenset(), "none"), (frozenset({4}), "sutra+github")):
+            grant = intersect("worker", StepRequest(scope=scope, wants=wants, tool_profile=profile), "edit", "edit", approved={4})
+            for output in ("", "auto"):
+                line = grant.describe(output=output)
+                assert len(line) <= 200 and line.endswith("wall 1800s" if not output else "(decided in the run)"), line

@@ -150,8 +150,8 @@ def test_the_narrowed_grant_is_a_copy_and_the_engines_own_is_untouched(folders):
 def test_the_words_of_the_grant_line_are_true_for_each_case_and_no_shell_level_exists_in_the_code():
     from sutra_app.orchestrator import builder_rights
     assert not hasattr(builder_rights, "SHELL_LEVELS") and not hasattr(builder_rights, "owner_words") and not hasattr(NodeRights(), "shell")
-    assert node_tools.words(NARROWEST) == "reads; writes only in its own folder; no commands; no web"
-    assert node_tools.words(NodeRights((0, 1, 4), "none")) == "reads; writes only in its own folder; no commands; no web"
+    assert node_tools.words(NARROWEST) == "own folder only; no commands or web"
+    assert node_tools.words(NodeRights((0, 1, 4), "none")) == "own folder only; no commands or web"
 
 
 # ---- Codex ---------------------------------------------------------------------------------------------------------------------

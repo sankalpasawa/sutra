@@ -37,5 +37,5 @@ def allowed_tools(rights: NodeRights) -> tuple[str, ...]:
 
 
 def words(rights: NodeRights) -> str:
-    """The short, plain part of the grant line that says what the builder tools of the step may do (at most 80 characters)."""
-    return "reads; writes only in its own folder; no commands; no web"
+    """The short, plain part of the grant line that says what the builder tools of the step may do (short: the audit line is cut at 200 characters, D387)."""
+    return "own folder only; no commands or web"
