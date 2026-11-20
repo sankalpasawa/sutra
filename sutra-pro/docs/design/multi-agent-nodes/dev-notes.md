@@ -330,3 +330,27 @@ No column was added: `node.restarted` rows are counted (`MAX_RESTARTS = 2`). `at
 ### N43. Known v1 limits recorded (m9)
 `node_audit` and `node_messages` have no retention in v1 (they are append-only and a project is never deleted, D305); the size is small (words and numbers only) and a retention rule needs a decision about the append-only triggers, so it waits for a later version.
 
+### N44. MAN-8: the node plan has no schema file in `docs/schemas`
+The architect expected `node_plan.v1.json` there. The exporter only writes the families the library registers; `chat_turn` (registered by `agent/replies.py` too) has no file either, so the new family follows it and `docs/schemas/` is unchanged. A flag-on request with two or more steps makes ONE more model call (the node plan), so every existing flag-on test that scripts the planner now scripts that reply too (`NO_REQUESTS` in `test_projects_adopt.py`).
+
+### N45. MAN-8: where the plan is kept
+The answer path must evaluate the plan again, so the step requests are kept in `projects.caps_json["plan"]` (ref, team, scope, needs, estimate, depends_on). It is an internal key, left out of `ProjectOut.caps`. No migration: the other choice was a v7 column for a table that has not been released.
+
+### N46. MAN-8: the Decide for me table
+`gatekeeper.RULE_TABLE` is data (nine rows, a test walks it) and `decide_for_me_answer` is the function the reserve uses: tiers 0 to 3 and tier 4 are allowed for the project, a wide or missing scope is allowed once (the writer runs alone), the plan estimate is allowed once up to the cap `project_credits` and never beyond, a permission of the computer and tier 6 are never answered, credits are never raised. The rows `slice_move` (`budgets.move_unspent`) and `scope_violation` (`on_scope_violation()`, "quarantine") are the runtime rules of MAN-9 and MAN-10 and are only data and pure functions until then.
+
+### N47. MAN-8: what is NOT built
+The card is a model (`NodeApprovalCard`) and comes with the project snapshot (`cards`); it is NOT posted as a message of the org chat, the `needs_you` list does not count it, and the page does not draw it, so there is no UI test. The reason: the `ChatCard` union is part of recorded API shapes, and adding a kind there moves goldens for the flag-off app; it needs its own change with the page (MAN-13). A no to any question of the plan stops the project ("not approved: you said no"), also the tier-4 question of one step: the design said "a deny or expiry cancels the nodes"; cancelling only the one step was not asked for.
+
+### N48. MAN-8: the request carries `decide_for_me`
+`ChatPost` has a new optional field `decide_for_me` (stored in the line's `meta` like `budget`). It is read only with the flag on; with it off the field is accepted and ignored. A hand-off, a plan step or a message of a node has no way to set it.
+
+### N49. Existing tests extended on purpose in this round
+`test_engine_port_contract.py` (`PortSpec.tools`), the node block goldens (`tool_profile`), `test_config.py` (`project_credits`), the two budget assertions (`budget_credits` is now the sum of the slices). Nothing was removed or weakened.
+
+### N50. MAN-9: what changed in meaning, and what is thin
+`projects.budget_credits` is now the ceiling, the sum of the slices; the owner's own number (each run's `J2_BUDGET`, D252) is each slice and is kept as `caps.owner_budget`. The slice reaches the run as `J2_BUDGET` and `J2_BUDGET_CAP` at `_run_spec`, so a run cannot raise itself (P25); the only test of "no raise without the Requester" is that these two settings are written and the task's own settings are not rewritten: the engine's cap behaviour is the existing D251 one and was not re-tested. The triggers say their words in a plain note (D311), not a card. `make_slices` and `move_unspent` are pure and tested; nothing calls `move_unspent` yet (the move is a rule for a later package that spends). Project dollars are read from `usage_ledger` through the nodes' tasks; with no `budget_usd` they are not limited.
+
+### N51. MAN-15: what is not verified
+Everything uses fake adapters and a patched platform. NOT verified: a real macOS Files & Folders dialog, a real Controlled folder access block, a real elevated process, the settings pages the adapters open (`x-apple.systempreferences:` and `windowsdefender://`), and the page. The late-refusal check (`is_permission_failure`) reads the words of an outcome (EPERM, WinError 5, "Operation not permitted", "Access is denied", "Permission denied"), so an unrelated crash that quotes one of them is also read as a permission need. `oslayer` has no "app location" helper yet: nothing asks for it.
+
