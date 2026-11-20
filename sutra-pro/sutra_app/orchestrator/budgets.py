@@ -56,14 +56,15 @@ def project_spend(conn: sqlite3.Connection, project_id: str) -> tuple[int, float
     return int(row[0]), float(row[1])
 
 
-def project_cost(conn: sqlite3.Connection, project_id: str) -> tuple[float, int]:
+def project_cost(conn: sqlite3.Connection, project_id: str, after: int | None = None) -> tuple[float, int]:
     """(dollars, calls with no dollar figure) of the whole project as the usage ledger holds them (D383): every step's task and its earlier attempts, the reviewer, AND the calls the project's planner made
     (a row of the org chat whose detail names one of the project's nodes). A call with no dollar figure (Codex, a call that failed before it reported one) is counted apart, so the page can say "about". Stub calls
-    cost nothing and are not counted."""
+    cost nothing and are not counted. `after`: only the rows from that moment on (the project's creation), which is what the project's dollar limit is compared with: the planner's calls were made before the project
+    existed, so they are already out of the month's allowance the limit was taken from (D388); the page shows them all."""
     row = conn.execute(
         "WITH RECURSIVE chain(id) AS (SELECT task_id FROM agent_nodes WHERE project_id = ?1 AND task_id IS NOT NULL UNION SELECT t.parent_task_id FROM tasks t JOIN chain c ON t.id = c.id WHERE t.parent_task_id IS NOT NULL) "
         "SELECT COALESCE(SUM(usd), 0), COALESCE(SUM(usd IS NULL), 0) FROM usage_ledger WHERE provider != 'stub' AND (task_id IN (SELECT id FROM chain) OR "
-        "(task_id IS NULL AND CASE WHEN json_valid(detail_json) THEN json_extract(detail_json, '$.agent_node') END IN (SELECT id FROM agent_nodes WHERE project_id = ?1)))", (project_id,)).fetchone()
+        "(task_id IS NULL AND CASE WHEN json_valid(detail_json) THEN json_extract(detail_json, '$.agent_node') END IN (SELECT id FROM agent_nodes WHERE project_id = ?1))) AND (?2 IS NULL OR at >= ?2)", (project_id, after)).fetchone()
     return float(row[0]), int(row[1])
 
 

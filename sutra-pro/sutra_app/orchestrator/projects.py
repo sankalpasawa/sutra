@@ -196,13 +196,25 @@ class ProjectService:
             return None
         return max(0.0, round(float(limit) - float(spend_status(conn, limit, now)["spent"]), 6))
 
+    def frozen_limit(self, project: Any, now: float) -> float | None:
+        """The dollars a project was given at its start, while that still means something (D388): the owner's own number for the project always; the month's leftover only while the owner still has a monthly
+        limit and the month it was taken from is still the month (a removed limit, or a new month, makes the old figure meaningless: the live month check governs). None when there is none."""
+        if project is None or project["budget_usd"] is None:
+            return None
+        if json.loads(project["caps_json"] or "{}").get("usd_from_month"):
+            from sutra_app.orchestrator.limits import month_start
+            if not self._limit_seen[1] or month_start(float(project["created_at"])) != month_start(now):
+                return None
+        return float(project["budget_usd"])
+
     def usd_left(self, conn: sqlite3.Connection, project_id: str, now: float) -> float | None:
         """The most dollars a step of this project may still spend if it starts now: the project's own dollars minus what it spent, and the month's allowance that is left, whichever is less. None when
         nothing limits it. Never below 0."""
         lefts: list[float] = []
-        row = conn.execute("SELECT budget_usd FROM projects WHERE id = ?", (project_id,)).fetchone()
-        if row is not None and row["budget_usd"] is not None:
-            lefts.append(float(row["budget_usd"]) - project_cost(conn, project_id)[0])
+        row = conn.execute("SELECT budget_usd, caps_json, created_at FROM projects WHERE id = ?", (project_id,)).fetchone()
+        frozen = self.frozen_limit(row, now) if row is not None else None
+        if frozen is not None:
+            lefts.append(frozen - project_cost(conn, project_id, int(row["created_at"]))[0])
         month = self.month_left(conn, now)
         if month is not None:
             lefts.append(month)

@@ -58,7 +58,8 @@ def _covers_path(scope: tuple[str, ...], path: str) -> bool:
 FOLDER_TTL_S = 2.0
 
 
-MONTH_REASON = "Your monthly limit was reached, so the project stopped."          # D381: the one sentence for a project that ran into the owner's monthly dollar limit
+MONTH_REASON = "Your monthly limit was reached, so the project stopped."
+MONTH_START_REASON = "This project used what was left of your month when it started, so it stopped."          # D388: the frozen figure ran out while the month itself still has room (the owner raised the limit)          # D381: the one sentence for a project that ran into the owner's monthly dollar limit
 
 
 def plain_refusal(text: Any) -> str:
@@ -149,6 +150,9 @@ class Conductor:
             return "Paused: this project is paused until you resume it"
         if self._upstream_held(conn, node["id"]):
             return "Waiting: a step it needs is held for your answer"             # PB-1: never handed the work of a step that has not been kept or set aside, whoever pressed Continue
+        left = self.service.usd_left(conn, node["project_id"], now)              # D388: no dollars left for the project: the step does not start (the tick stops the project with its plain sentence)
+        if left is not None and left <= 0:
+            return "Waiting: the dollars for this project are used up"
         caps = json.loads(node["caps"] or "{}")
         limit = int(caps.get("max_parallel") or NODE_DEFAULT_CAPS["max_parallel"] or 3)
         running = conn.execute("SELECT count(*) FROM agent_nodes WHERE project_id = ? AND state IN ('leased','running','handing_off','expired')", (node["project_id"],)).fetchone()[0]      # an expired node whose process is still there holds its slot (Minor 6)
@@ -868,13 +872,14 @@ class Conductor:
             reason, action = f"the project ran longer than {wall // 60} minutes", "trigger.project_wall"
         else:
             month_left = self.service.month_left(tx.conn, now)                    # D381: the owner's monthly allowance is the project's own limit as well, between two ticks and for every step
-            limit = tx.conn.execute("SELECT budget_usd FROM projects WHERE id = ?", (project_id,)).fetchone()["budget_usd"]
+            frozen = self.service.frozen_limit(tx.conn.execute("SELECT budget_usd, caps_json, created_at FROM projects WHERE id = ?", (project_id,)).fetchone(), now)
             if month_left is not None and month_left <= 0:
                 reason, action = MONTH_REASON, "trigger.project_month"
-            elif limit is not None:
-                spent = project_cost(tx.conn, project_id)[0]                       # every attempt of every node counts (D324), and the planner's own calls (D383)
-                if spent > float(limit):
-                    reason, action = (MONTH_REASON, "trigger.project_month") if caps.get("usd_from_month") else ("the project spent more than the dollars you set", "trigger.project_usd")
+            elif frozen is not None:
+                spent = project_cost(tx.conn, project_id, int(created_at))[0]      # every attempt of every node counts (D324); the planner's calls came before the project and are not in this figure (D388)
+                from_month = bool(caps.get("usd_from_month"))
+                if spent >= frozen if from_month else spent > frozen:
+                    reason, action = (MONTH_START_REASON, "trigger.project_month") if from_month else ("the project spent more than the dollars you set", "trigger.project_usd")
         if not reason:
             return False
         self.store.audit(tx, actor="conductor", action=action, project_id=project_id, decision="deny", reason=reason)
