@@ -31,6 +31,10 @@ _HINTS = {
     "SUTRA_MAX_LIVE": "most live processes (at least SUTRA_MAX_RUNS)",
     "SUTRA_WATCH_MS": "how often a run's event file is read",
     "SUTRA_LIVE": "1: allow the tests that call the real CLIs",
+    "SUTRA_NODES_V1": "1: the multi-agent nodes work may run (default 0: everything stays as it was)",
+    "SUTRA_NODES_LANES": "1: two workers of one team may run together (needs SUTRA_NODES_V1)",
+    "SUTRA_NODES_REVIEWER": "1: a read-only reviewer node (needs SUTRA_NODES_V1)",
+    "SUTRA_NODES_SLOTS": "1: Claude and Codex limits shared by the whole machine (needs SUTRA_NODES_V1)",
 }
 
 

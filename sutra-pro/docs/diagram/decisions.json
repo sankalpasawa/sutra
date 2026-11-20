@@ -1258,5 +1258,225 @@
   "id": "D252",
   "label": "Budget field on home + team page, empty = team default",
   "anchor": "band:DEPARTMENT RUNTIME"
+ },
+ {
+  "id": "D253",
+  "label": "node = a run + an identity row",
+  "anchor": "band:ORCHESTRATION"
+ },
+ {
+  "id": "D254",
+  "label": "SUTRA_NODES_V1, default 0; off = today",
+  "anchor": "band:ORCHESTRATION"
+ },
+ {
+  "id": "D255",
+  "label": "project groups one request's nodes",
+  "anchor": "band:ORCHESTRATION"
+ },
+ {
+  "id": "D256",
+  "label": "planner inline, worker = J2 run, reviewer light",
+  "anchor": "band:DEPARTMENT RUNTIME"
+ },
+ {
+  "id": "D257",
+  "label": "one scheduler; Conductor is a task gate",
+  "anchor": "band:ORCHESTRATION"
+ },
+ {
+  "id": "D258",
+  "label": "lane column; (team, lane) unique",
+  "anchor": "band:ORCHESTRATION"
+ },
+ {
+  "id": "D259",
+  "label": "plan edges + conflict edges (delay only)",
+  "anchor": null
+ },
+ {
+  "id": "D260",
+  "label": "write scopes: exclusive leases; narrow only",
+  "anchor": null
+ },
+ {
+  "id": "D261",
+  "label": "no git worktrees; scope fence + path check",
+  "anchor": null
+ },
+ {
+  "id": "D262",
+  "label": "server is the only DB writer; nodes use files",
+  "anchor": "band:ORCHESTRATION"
+ },
+ {
+  "id": "D263",
+  "label": "handoff/verdict/needs are files; eight events stay",
+  "anchor": "band:DEPARTMENT RUNTIME"
+ },
+ {
+  "id": "D264",
+  "label": "node_messages: append-only, gap-free seq",
+  "anchor": "band:ORCHESTRATION"
+ },
+ {
+  "id": "D265",
+  "label": "upstream via folder + hand-off, never framing",
+  "anchor": null
+ },
+ {
+  "id": "D266",
+  "label": "Gatekeeper is code; a model never approves",
+  "anchor": "band:ORCHESTRATION"
+ },
+ {
+  "id": "D267",
+  "label": "grant = intersection, frozen at spawn",
+  "anchor": "band:ORCHESTRATION"
+ },
+ {
+  "id": "D268",
+  "label": "six tiers by blast radius",
+  "anchor": null
+ },
+ {
+  "id": "D269",
+  "label": "deny by default; tier 6 never granted",
+  "anchor": null
+ },
+ {
+  "id": "D270",
+  "label": "approvals at three gates; 24 h; expired = denied",
+  "anchor": null
+ },
+ {
+  "id": "D271",
+  "label": "budget slices; sum never over the ceiling",
+  "anchor": null
+ },
+ {
+  "id": "D272",
+  "label": "NodeMeter: cumulative calls, dollars, time",
+  "anchor": "Connector router"
+ },
+ {
+  "id": "D273",
+  "label": "default caps: 3 parallel, 60 calls, 30 min",
+  "anchor": null
+ },
+ {
+  "id": "D274",
+  "label": "nodes never spawn nodes (depth 1)",
+  "anchor": null
+ },
+ {
+  "id": "D275",
+  "label": "lease 90 s; silent node stopped, retried once",
+  "anchor": null
+ },
+ {
+  "id": "D276",
+  "label": "teardown keeps run folders",
+  "anchor": null
+ },
+ {
+  "id": "D277",
+  "label": "reconcile, then reconcile_projects",
+  "anchor": "band:ORCHESTRATION"
+ },
+ {
+  "id": "D278",
+  "label": "failure policy stop_branch; never a silent done",
+  "anchor": null
+ },
+ {
+  "id": "D279",
+  "label": "kill switch: 4 levels + KILL file",
+  "anchor": "Operator"
+ },
+ {
+  "id": "D280",
+  "label": "append-only node_audit, no payloads",
+  "anchor": null
+ },
+ {
+  "id": "D281",
+  "label": "injection boundary: hand-off is data",
+  "anchor": null
+ },
+ {
+  "id": "D282",
+  "label": "egress per node: observe / replace",
+  "anchor": "Connector router"
+ },
+ {
+  "id": "D283",
+  "label": "node identity in CallTag, task.json, env",
+  "anchor": "Connector router"
+ },
+ {
+  "id": "D284",
+  "label": "machine-wide provider slots (file locks)",
+  "anchor": "Connector router"
+ },
+ {
+  "id": "D285",
+  "label": "reviewer independence across processes",
+  "anchor": "Connector router"
+ },
+ {
+  "id": "D286",
+  "label": "reviewer: read-only, verdict enum, 2 loops",
+  "anchor": null
+ },
+ {
+  "id": "D287",
+  "label": "project events on the bus; heartbeats coalesced",
+  "anchor": "band:ORCHESTRATION"
+ },
+ {
+  "id": "D288",
+  "label": "SQLite stays; the load test decides",
+  "anchor": "band:ORCHESTRATION"
+ },
+ {
+  "id": "D289",
+  "label": "nodes are local processes only",
+  "anchor": null
+ },
+ {
+  "id": "D290",
+  "label": "'runtime node' vs 'graph node'",
+  "anchor": null
+ },
+ {
+  "id": "D291",
+  "label": "planner = chat agent with identity and slice",
+  "anchor": "Chat agent (orchestrator)"
+ },
+ {
+  "id": "D292",
+  "label": "fake engine tests; no live smoke",
+  "anchor": null
+ },
+ {
+  "id": "D293",
+  "label": "registered in log, diagram, traceability, env docs",
+  "anchor": null
+ },
+ {
+  "id": "D294",
+  "label": "Decide for me for projects: a rule table",
+  "anchor": "band:ORCHESTRATION"
+ },
+ {
+  "id": "D295",
+  "label": "OS permissions: check first, the owner clicks",
+  "anchor": "Desktop app · Electron window"
+ },
+ {
+  "id": "D296",
+  "label": "closed laptop = refusal; gates end, project stops",
+  "anchor": "band:ORCHESTRATION"
  }
 ]

@@ -35,7 +35,8 @@ __all__ = [
     "AtomLogRow", "UsageOut", "NeedsYouOut", "NodeDetail", "TaskSettings", "UpstreamRef", "RunSpec", "RunEvent", "RUN_EVENT_TYPES",
     "RUN_EVENT_VARIANTS", "EventParseError", "parse_event", "RunStarted", "RunSay", "RunNode", "RunStep", "RunAtom", "RunUsage",
     "RunHeartbeat", "RunEnded", "ChangeContext", "NodeInit", "ResumeInfo", "TASK_STATUSES", "LIVE_STATUSES", "TERMINAL_STATUSES",
-    "STEP_ID_RE",
+    "STEP_ID_RE", "ProjectId", "AgentNodeId", "GrantId", "ApprovalId", "AgentNodeState", "NodeCaps", "NodeBlock", "ProjectOut", "NodeOut", "PROJECT_STATUSES", "NODE_STATES", "NODE_ROLES",
+    "NODE_RUNTIMES",
 ]
 
 Iso = Annotated[str, StringConstraints(pattern=r"^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}Z$")]
@@ -683,6 +684,90 @@ class RunSpec(Value):
     upstream: Annotated[list[UpstreamRef], Field(max_length=10)] = []
     settings: TaskSettings = TaskSettings()
     connector: Literal["auto", "claude", "codex", "stub"] = "auto"
+
+
+# ---- multi-agent nodes: projects and nodes (design docs/design/multi-agent-nodes, D253, D283, D290) --------------------------------------
+# A "node" here is a runtime node: a running agent, one `tasks` row plus one `agent_nodes` row (not a graph node, which is a box in the graph). These shapes are inert until
+# SUTRA_NODES_V1 is on: nothing builds one while the flag is off, and `RunSpec` does not carry a `NodeBlock` yet (the identity plumbing, MAN-3, adds the field).
+
+ProjectId = Annotated[str, StringConstraints(pattern=r"^prj_[0-9a-f]{12}$")]
+AgentNodeId = Annotated[str, StringConstraints(pattern=r"^nd_[0-9a-f]{12}$")]
+GrantId = Annotated[str, StringConstraints(pattern=r"^gr_[0-9a-f]{12}$")]
+ApprovalId = Annotated[str, StringConstraints(pattern=r"^ap_[0-9a-f]{12}$")]
+ScopePath = Annotated[str, StringConstraints(min_length=1, max_length=400)]
+ScopeList = Annotated[list[ScopePath], Field(max_length=50)]
+
+PROJECT_STATUSES = ("planning", "awaiting_approval", "running", "reviewing", "done", "done_with_open_items", "stopped", "failed")
+NODE_STATES = ("planned", "awaiting_approval", "awaiting_system", "ready", "queued", "leased", "running", "handing_off", "done", "failed", "cancelled", "expired")
+NODE_ROLES = ("planner", "worker", "reviewer")
+NODE_RUNTIMES = ("inline", "engine", "light")
+ProjectStatus = Literal["planning", "awaiting_approval", "running", "reviewing", "done", "done_with_open_items", "stopped", "failed"]
+AgentNodeState = Literal["planned", "awaiting_approval", "awaiting_system", "ready", "queued", "leased", "running", "handing_off", "done", "failed", "cancelled", "expired"]
+NodeRole = Literal["planner", "worker", "reviewer"]
+NodeRuntime = Literal["inline", "engine", "light"]
+
+
+class NodeCaps(Value):
+    """What one node may spend before its host stops it (D272, D273): model calls, dollars where the provider reports them (none unless the owner sets it), wall time."""
+
+    calls: Annotated[int, Field(ge=1, le=10_000)] = 60
+    usd: Annotated[float, Field(gt=0, le=100_000)] | None = None
+    wall_s: Annotated[int, Field(ge=1, le=86_400)] = 1800
+
+
+class NodeBlock(Value):
+    """The optional `node` block of `task.json` (D283): who this run is inside a project. Older readers ignore it (`TaskSpec` drops unknown keys); the writer leaves it out
+    of the file while SUTRA_NODES_V1 is off, so the file is byte-identical to today's. Only workers and reviewers run as processes: the planner is inline."""
+
+    id: AgentNodeId
+    project_id: ProjectId
+    role: Literal["worker", "reviewer"]
+    runtime: Literal["engine", "light"]
+    attempt: Annotated[int, Field(ge=1, le=10)] = 1
+    grants_id: GrantId
+    caps: NodeCaps = NodeCaps()
+    scope: ScopeList = []
+
+
+class ProjectOut(Value):
+    """A project as the page reads it (`GET /api/projects`): the row, with times as ISO text. `caps` is the cap table the project froze at plan time."""
+
+    id: ProjectId
+    request_id: Ident | None = None
+    title: Name = ""
+    status: ProjectStatus
+    failure_policy: Literal["stop_branch", "stop_all"] = "stop_branch"
+    decide_for_me: bool = False
+    paused: bool = False
+    review_loops: Count = 0
+    caps: JsonObject = {}
+    budget_credits: Count | None = None
+    budget_usd: Seconds | None = None
+    created_at: Iso
+    ended_at: Iso | None = None
+    stop_reason: Annotated[str, StringConstraints(max_length=200)] = ""
+
+
+class NodeOut(Value):
+    """A runtime node as the page reads it. `grants` is the frozen grant (`grants.Grant.to_json()`), empty until the Gatekeeper has issued one."""
+
+    id: AgentNodeId
+    project_id: ProjectId
+    task_id: TaskId | None = None
+    role: NodeRole
+    runtime: NodeRuntime
+    plan_ref: Annotated[str, StringConstraints(max_length=200)] = ""
+    depends_on: Annotated[list[AgentNodeId], Field(max_length=50)] = []
+    state: AgentNodeState
+    attempt: Annotated[int, Field(ge=1, le=10)] = 1
+    grants: JsonObject = {}
+    scope: ScopeList = []
+    slice_credits: Count | None = None
+    last_beat_at: Iso | None = None
+    lease_expires_at: Iso | None = None
+    failure_reason: Annotated[str, StringConstraints(max_length=200)] = ""
+    created_at: Iso
+    ended_at: Iso | None = None
 
 
 # ---- the run events (events.jsonl) -----------------------------------------------------------------------------

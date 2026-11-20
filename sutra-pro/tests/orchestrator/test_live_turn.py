@@ -670,14 +670,14 @@ def test_migration_v5_adds_the_checkpoint_table_and_changes_nothing_else(setting
     old.conn().execute("INSERT INTO chat_sessions(id, node_id, kind, title, created_at, updated_at) VALUES ('cs_x','root','org','Org',1,1)") if False else None
     before = {r[0] for r in old.conn().execute("SELECT name FROM sqlite_master")}
     assert old.version() == 4 and "chat_turn_checkpoint" not in before
-    assert old.migrate() == schema.SCHEMA_VERSION == 5
+    assert old.migrate(schema.MIGRATIONS[:5]) == 5                              # to version 5 only: this test is about v5 (v6 swaps an index, so "nothing else changed" would not hold)
     after = {r[0] for r in old.conn().execute("SELECT name FROM sqlite_master")}
     assert after - before == {"chat_turn_checkpoint", "chat_turn_checkpoint_session", "sqlite_autoindex_chat_turn_checkpoint_1"} or after - before >= {"chat_turn_checkpoint", "chat_turn_checkpoint_session"}
     assert before - after == set()
     cols = [r[1] for r in old.conn().execute("PRAGMA table_info(chat_turn_checkpoint)")]
     assert cols == ["generation_id", "session_id", "message_id", "attempt", "attempt_no", "state", "seq", "blocks_json", "updated_at"]
     assert "chat_turn_checkpoint" in schema.TABLES
-    assert old.migrate() == schema.SCHEMA_VERSION                              # again: a no-op
+    assert old.migrate(schema.MIGRATIONS[:5]) == 5                             # again: a no-op
     old.close()
 
 

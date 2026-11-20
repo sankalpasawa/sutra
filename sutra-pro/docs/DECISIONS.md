@@ -1789,3 +1789,311 @@ Decided by Claude on its own, on the dates shown. The owner can veto any of them
 - Why: a field that always sent 100 overrode a team's own Settings budget without the owner choosing to; and the home screen, where most requests start, could not set a budget at all.
 - Rejected: prefilling the team's Settings budget (the home screen has no team until the chat agent picks one); a new column for the budget (the owner's line already carries `meta_json`, as `via` and `blocks` do).
 - Diagram: label "Budget field on home + team page, empty = team default", pill on band:DEPARTMENT RUNTIME.
+
+## D253 — A node is an ordinary run plus an identity row
+- Sources: `docs/design/multi-agent-nodes` (decisions.md, architecture.md, guardrails-and-permissions.md); the owner's direction of 2026-11-20 (enhance, do not replace; decide autonomously, document every decision).
+- Decided: A node is an ordinary run (a `tasks` row, a run folder, a process) plus an identity row in `agent_nodes`. No new process model. Built in package MAN-1, MAN-5.
+- Why: a run already has files in and out, a heartbeat, a stop ladder, recovery and cost by task, so the cheapest way to get nodes is to give that thing an identity.
+- Rejected: threads or tasks inside the server (J2's configuration is per process, there is no OS isolation and no kill without taking the server down); splitting J2's five functions into five processes (they share one `J2Run`, and it is a rewrite of a frozen engine); a broker with remote workers (a new service, and it breaks local-first).
+- Diagram: label "node = a run + an identity row", pill on band:ORCHESTRATION.
+
+## D254 — Everything is behind SUTRA_NODES_V1, default 0
+- Sources: `docs/design/multi-agent-nodes` (decisions.md, architecture.md, guardrails-and-permissions.md); the owner's direction of 2026-11-20 (enhance, do not replace; decide autonomously, document every decision).
+- Decided: Everything is behind `SUTRA_NODES_V1`, default 0. With it off no new table is read, no new column is used, and `task.json` is byte-identical to today. Sub-flags `SUTRA_NODES_LANES`, `SUTRA_NODES_REVIEWER`, `SUTRA_NODES_SLOTS` also default 0 and only count when the master is on. Built in package MAN-1.
+- Why: the owner wants today's behaviour kept and every change additive, and a flag is the way back.
+- Rejected: no alternative beyond the whole-design options in `docs/design/multi-agent-nodes/architecture.md` section 12 was weighed for this one.
+- Diagram: label "SUTRA_NODES_V1, default 0; off = today", pill on band:ORCHESTRATION.
+
+## D255 — A project groups the tasks of one request
+- Sources: `docs/design/multi-agent-nodes` (decisions.md, architecture.md, guardrails-and-permissions.md); the owner's direction of 2026-11-20 (enhance, do not replace; decide autonomously, document every decision).
+- Decided: A project is a new row that groups the tasks of one request. It is made only when the flag is on and the plan has two or more steps, or when the owner starts one with `POST /api/projects`. A one-step request keeps today's path. Built in package MAN-5.
+- Why: one budget, one stop and one teardown for the nodes of a request, without touching the simple case.
+- Rejected: no alternative beyond the whole-design options in `docs/design/multi-agent-nodes/architecture.md` section 12 was weighed for this one.
+- Diagram: label "project groups one request's nodes", pill on band:ORCHESTRATION.
+
+## D256 — Roles and runtimes: planner inline, worker is a J2 run, reviewer is light
+- Sources: `docs/design/multi-agent-nodes` (decisions.md, architecture.md, guardrails-and-permissions.md); the owner's direction of 2026-11-20 (enhance, do not replace; decide autonomously, document every decision).
+- Decided: Roles and runtimes: planner inline (today's org chat agent stage), worker on the engine runtime (an unchanged J2 run), reviewer on a new light runtime, Conductor and Gatekeeper as server code. J2's five functions are not split into nodes. Built in package MAN-5, MAN-11.
+- Why: the engine is frozen and its functions share one `J2Run`, so a team run is the smallest honest worker.
+- Rejected: splitting J2's five functions into five nodes (a rewrite of a frozen engine, D13 and D249).
+- Diagram: label "planner inline, worker = J2 run, reviewer light", pill on band:DEPARTMENT RUNTIME.
+
+## D257 — One scheduler: the Conductor is a task gate, not a second queue
+- Sources: `docs/design/multi-agent-nodes` (decisions.md, architecture.md, guardrails-and-permissions.md); the owner's direction of 2026-11-20 (enhance, do not replace; decide autonomously, document every decision).
+- Decided: One scheduler. The Conductor is a task gate inside `_prepare_next` (next to `start_gate`) plus a tick, not a second queue. Built in package MAN-5.
+- Why: FIFO, `SUTRA_MAX_RUNS`, `SUTRA_MAX_LIVE`, the spending limit and "waiting" sentences then apply to nodes for free.
+- Rejected: no alternative beyond the whole-design options in `docs/design/multi-agent-nodes/architecture.md` section 12 was weighed for this one.
+- Diagram: label "one scheduler; Conductor is a task gate", pill on band:ORCHESTRATION.
+
+## D258 — Same-team parallelism uses a lane column and a (team, lane) unique index
+- Sources: `docs/design/multi-agent-nodes` (decisions.md, architecture.md, guardrails-and-permissions.md); the owner's direction of 2026-11-20 (enhance, do not replace; decide autonomously, document every decision).
+- Decided: Same-team parallelism uses a `lane` column on `tasks`. The unique index becomes `(dept_id, lane)` for live statuses. Every ordinary task has lane `''`; `live_in`, `deliver_to_department` and `stop_live` see lane `''` only. Built in package MAN-1 (column), MAN-10 (use).
+- Why: it widens the "one live task per team" rule only for nodes and leaves the rule for everything else exactly as it is.
+- Rejected: no alternative beyond the whole-design options in `docs/design/multi-agent-nodes/architecture.md` section 12 was weighed for this one.
+- Diagram: label "lane column; (team, lane) unique", pill on band:ORCHESTRATION.
+
+## D259 — Plan edges plus conflict edges; a conflict edge only delays
+- Sources: `docs/design/multi-agent-nodes` (decisions.md, architecture.md, guardrails-and-permissions.md); the owner's direction of 2026-11-20 (enhance, do not replace; decide autonomously, document every decision).
+- Decided: Parallelism comes from plan edges (`depends_on`, as today) plus conflict edges the Gatekeeper derives from write scopes. A conflict edge delays a step; it never cancels it. Built in package MAN-5, MAN-10.
+- Why: a step that only waited for a folder must not die because a sibling failed.
+- Rejected: no alternative beyond the whole-design options in `docs/design/multi-agent-nodes/architecture.md` section 12 was weighed for this one.
+- Diagram: label "plan edges + conflict edges (delay only)", key only.
+
+## D260 — Write scopes are exclusive leases; the planner may only narrow
+- Sources: `docs/design/multi-agent-nodes` (decisions.md, architecture.md, guardrails-and-permissions.md); the owner's direction of 2026-11-20 (enhance, do not replace; decide autonomously, document every decision).
+- Decided: Write scopes are exclusive leases on paths. The planner may only narrow a scope, never widen it. No declared scope means the whole folder, so that writer runs alone. A folder that is not a git work tree means writers run one at a time. Built in package MAN-10.
+- Why: the safe default is serial, and the after-run check needs git.
+- Rejected: no alternative beyond the whole-design options in `docs/design/multi-agent-nodes/architecture.md` section 12 was weighed for this one.
+- Diagram: label "write scopes: exclusive leases; narrow only", key only.
+
+## D261 — No git worktrees in v1: scoped leases and a path check
+- Sources: `docs/design/multi-agent-nodes` (decisions.md, architecture.md, guardrails-and-permissions.md); the owner's direction of 2026-11-20 (enhance, do not replace; decide autonomously, document every decision).
+- Decided: No git worktrees in v1. Parallel writers share the owner's folder, fenced by scope rules in the CLI, with a path-attribution check after each run. A path changed that no running node owns pauses the project and asks the owner. Built in package MAN-10.
+- Why: worktrees need a merge step and a merge policy; scoped leases are simpler and the check catches what the fence misses.
+- Rejected: a git worktree per node (it needs a merge step and a merge policy).
+- Diagram: label "no git worktrees; scope fence + path check", key only.
+
+## D262 — The server is the only database writer; nodes write files
+- Sources: `docs/design/multi-agent-nodes` (decisions.md, architecture.md, guardrails-and-permissions.md); the owner's direction of 2026-11-20 (enhance, do not replace; decide autonomously, document every decision).
+- Decided: The server stays the only database writer (D16 kept). Nodes never open the database and never call the server. They write files in their own run folder. Built in package all.
+- Why: it keeps SQLite safe and leaves nothing for a node to authenticate to or steal.
+- Rejected: no alternative beyond the whole-design options in `docs/design/multi-agent-nodes/architecture.md` section 12 was weighed for this one.
+- Diagram: label "server is the only DB writer; nodes use files", pill on band:ORCHESTRATION.
+
+## D263 — Hand-off, verdict and needs are files; the eight run events stay closed
+- Sources: `docs/design/multi-agent-nodes` (decisions.md, architecture.md, guardrails-and-permissions.md); the owner's direction of 2026-11-20 (enhance, do not replace; decide autonomously, document every decision).
+- Decided: Structured payloads (`handoff.json`, `verdict.json`, `needs.json`) are files in the node's run folder. No new run event type is added; the eight stay closed. Built in package MAN-6, MAN-11.
+- Why: it extends D133 ("a published file, not a ninth run event") and keeps the engine event contract and its goldens unchanged.
+- Rejected: no alternative beyond the whole-design options in `docs/design/multi-agent-nodes/architecture.md` section 12 was weighed for this one.
+- Diagram: label "handoff/verdict/needs are files; eight events stay", pill on band:DEPARTMENT RUNTIME.
+
+## D264 — Messages between nodes: an append-only table with a gap-free seq per project
+- Sources: `docs/design/multi-agent-nodes` (decisions.md, architecture.md, guardrails-and-permissions.md); the owner's direction of 2026-11-20 (enhance, do not replace; decide autonomously, document every decision).
+- Decided: Messages between nodes live in `node_messages`: append-only, written only by the server, gap-free `seq` per project, `src_ref` unique per project. Built in package MAN-6.
+- Why: the same de-duplication pattern as `chat_messages.src_ref` and `usage_ledger.call_ref`, and the same catch-up pattern as the streaming snapshot.
+- Rejected: no alternative beyond the whole-design options in `docs/design/multi-agent-nodes/architecture.md` section 12 was weighed for this one.
+- Diagram: label "node_messages: append-only, gap-free seq", pill on band:ORCHESTRATION.
+
+## D265 — Upstream data reaches a node through the upstream folder, never through framing
+- Sources: `docs/design/multi-agent-nodes` (decisions.md, architecture.md, guardrails-and-permissions.md); the owner's direction of 2026-11-20 (enhance, do not replace; decide autonomously, document every decision).
+- Decided: Upstream data reaches a node through the existing `upstream` folder mechanism (checked paths) plus the validated hand-off, and never through `framing` or system text. Built in package MAN-6.
+- Why: `framing` is context from the chat agent, and mixing node output into instructions is how injection works.
+- Rejected: no alternative beyond the whole-design options in `docs/design/multi-agent-nodes/architecture.md` section 12 was weighed for this one.
+- Diagram: label "upstream via folder + hand-off, never framing", key only.
+
+## D266 — The Gatekeeper is deterministic code: a model never approves a model
+- Sources: `docs/design/multi-agent-nodes` (decisions.md, architecture.md, guardrails-and-permissions.md); the owner's direction of 2026-11-20 (enhance, do not replace; decide autonomously, document every decision).
+- Decided: The Gatekeeper is deterministic code. A model never approves a model. Only a rule or the owner says yes. Built in package MAN-2, MAN-8.
+- Why: an approval a model can give is an approval a prompt can steal.
+- Rejected: no alternative beyond the whole-design options in `docs/design/multi-agent-nodes/architecture.md` section 12 was weighed for this one.
+- Diagram: label "Gatekeeper is code; a model never approves", pill on band:ORCHESTRATION.
+
+## D267 — A grant is an intersection, frozen at spawn
+- Sources: `docs/design/multi-agent-nodes` (decisions.md, architecture.md, guardrails-and-permissions.md); the owner's direction of 2026-11-20 (enhance, do not replace; decide autonomously, document every decision).
+- Decided: A grant is the intersection of the role table, the plan step, the department's output spec and the owner's folder access. It is frozen when the node spawns. A node cannot raise it. A node that lacks a tier ends with `needs.json`; that becomes a card and, if allowed, a new attempt. Built in package MAN-2, MAN-8.
+- Why: no process waits alive for a human, and content can never change a permission.
+- Rejected: no alternative beyond the whole-design options in `docs/design/multi-agent-nodes/architecture.md` section 12 was weighed for this one.
+- Diagram: label "grant = intersection, frozen at spawn", pill on band:ORCHESTRATION.
+
+## D268 — Six tiers by blast radius
+- Sources: `docs/design/multi-agent-nodes` (decisions.md, architecture.md, guardrails-and-permissions.md); the owner's direction of 2026-11-20 (enhance, do not replace; decide autonomously, document every decision).
+- Decided: Six tiers by blast radius: 1 read, 2 write files, 3 run commands, 4 network, 5 spend, 6 external publish; tier 0 is thinking only. Built in package MAN-2.
+- Why: the owner named these six, and each maps onto a control the connectors already have.
+- Rejected: no alternative beyond the whole-design options in `docs/design/multi-agent-nodes/architecture.md` section 12 was weighed for this one.
+- Diagram: label "six tiers by blast radius", key only.
+
+## D269 — Deny by default; tier 6 is never granted
+- Sources: `docs/design/multi-agent-nodes` (decisions.md, architecture.md, guardrails-and-permissions.md); the owner's direction of 2026-11-20 (enhance, do not replace; decide autonomously, document every decision).
+- Decided: Deny by default. Defaults give tiers 0 to 2 where the role, the output spec and the owner's access allow. Tier 3 is only the four git reads and J2's sandboxed builder tools. Tier 4 needs the owner. Tier 5 is a slice, never extra. Tier 6 is never granted in v1. Built in package MAN-2.
+- Why: today's apps cannot send for real (`J2_SEND_MODE` defaults to `dry-run` and is not a task setting) and the design must not open that.
+- Rejected: no alternative beyond the whole-design options in `docs/design/multi-agent-nodes/architecture.md` section 12 was weighed for this one.
+- Diagram: label "deny by default; tier 6 never granted", key only.
+
+## D270 — Approvals at three gates, stored as rows, expiring after 24 hours
+- Sources: `docs/design/multi-agent-nodes` (decisions.md, architecture.md, guardrails-and-permissions.md); the owner's direction of 2026-11-20 (enhance, do not replace; decide autonomously, document every decision).
+- Decided: Approvals: asked at the plan gate, after a `needs.json` end, and for budget raises. Stored as rows. "Allow for this project" only up to tier 4; tier 5 is per raise; tier 6 is not offered. They expire after 24 hours and expired means denied. With the project's Decide for me switch on, the Gatekeeper's rule table answers them instead (D294); the owner's own answer is still the only other thing that can. Built in package MAN-8.
+- Why: three places are enough to protect the owner without wearing them out, and the answer must be the owner's own (P25 principle).
+- Rejected: no alternative beyond the whole-design options in `docs/design/multi-agent-nodes/architecture.md` section 12 was weighed for this one.
+- Diagram: label "approvals at three gates; 24 h; expired = denied", key only.
+
+## D271 — Project credits are the sum of the node slices
+- Sources: `docs/design/multi-agent-nodes` (decisions.md, architecture.md, guardrails-and-permissions.md); the owner's direction of 2026-11-20 (enhance, do not replace; decide autonomously, document every decision).
+- Decided: Project credits: the ceiling is the sum of the node slices (so total spend equals today's separate tasks). A node's `J2_BUDGET` and `J2_BUDGET_CAP` both equal its slice, so it cannot raise itself. A spawn that does not fit the unspent slices is held. Built in package MAN-9.
+- Why: P25 says every raise is the Requester's own, and the sum of slices makes the project ceiling true by construction.
+- Rejected: no alternative beyond the whole-design options in `docs/design/multi-agent-nodes/architecture.md` section 12 was weighed for this one.
+- Diagram: label "budget slices; sum never over the ceiling", key only.
+
+## D272 — A NodeMeter makes the router's allowance cumulative per node
+- Sources: `docs/design/multi-agent-nodes` (decisions.md, architecture.md, guardrails-and-permissions.md); the owner's direction of 2026-11-20 (enhance, do not replace; decide autonomously, document every decision).
+- Decided: A `NodeMeter` in Sutra's own `engine/llm.py` shim makes the router's per-request `Allowance` cumulative per node: calls, dollars where known, and a wall-time deadline. Past a cap the host stops the run and the outcome names the limit. Built in package MAN-9.
+- Why: the allowance exists and is enforced by the router but the engine never sent one (`allowance=None`); Codex has no dollar figure, so calls and time are its bound.
+- Rejected: no alternative beyond the whole-design options in `docs/design/multi-agent-nodes/architecture.md` section 12 was weighed for this one.
+- Diagram: label "NodeMeter: cumulative calls, dollars, time", pill on Connector router.
+
+## D273 — Default caps for projects and nodes
+- Sources: `docs/design/multi-agent-nodes` (decisions.md, architecture.md, guardrails-and-permissions.md); the owner's direction of 2026-11-20 (enhance, do not replace; decide autonomously, document every decision).
+- Decided: Default caps: 3 parallel nodes per project, 12 workers, 60 calls and 30 minutes per node, 1 retry per node, 2 review loops, 2 hours per project, lease 90 s, approval expiry 24 h, spawn depth 1. All in `caps_json` and `config.py`. Built in package MAN-1, MAN-9.
+- Why: they are in line with today's plan limits (12 steps, 3 runs) and are easy to raise later because they are data.
+- Rejected: no alternative beyond the whole-design options in `docs/design/multi-agent-nodes/architecture.md` section 12 was weighed for this one.
+- Diagram: label "default caps: 3 parallel, 60 calls, 30 min", key only.
+
+## D274 — Nodes never spawn nodes (depth 1)
+- Sources: `docs/design/multi-agent-nodes` (decisions.md, architecture.md, guardrails-and-permissions.md); the owner's direction of 2026-11-20 (enhance, do not replace; decide autonomously, document every decision).
+- Decided: Nodes never spawn nodes (depth 1). Only the Conductor spawns, from the accepted plan. A changed plan goes through the plan gate again. Built in package MAN-5.
+- Why: this is the loop guard; with no code path for a node to spawn a node, no text can make one.
+- Rejected: no alternative beyond the whole-design options in `docs/design/multi-agent-nodes/architecture.md` section 12 was weighed for this one.
+- Diagram: label "nodes never spawn nodes (depth 1)", key only.
+
+## D275 — Leases: 90 seconds, a silent node is stopped and retried once
+- Sources: `docs/design/multi-agent-nodes` (decisions.md, architecture.md, guardrails-and-permissions.md); the owner's direction of 2026-11-20 (enhance, do not replace; decide autonomously, document every decision).
+- Decided: A lease is `last_beat_at + 90 s`, taken inside the transaction that marks the task `starting`. Any event extends it. In project mode only, a node silent past its lease and still alive is stopped with the ladder and retried once. If the Conductor's own tick gap shows the machine slept, the lease is extended once instead. Built in package MAN-7.
+- Why: today a hung run is never recovered while the app runs (a deliberate choice for sleeping laptops); the sleep check keeps that kindness and fixes hangs.
+- Rejected: no alternative beyond the whole-design options in `docs/design/multi-agent-nodes/architecture.md` section 12 was weighed for this one.
+- Diagram: label "lease 90 s; silent node stopped, retried once", key only.
+
+## D276 — Teardown keeps the run folder and releases everything else
+- Sources: `docs/design/multi-agent-nodes` (decisions.md, architecture.md, guardrails-and-permissions.md); the owner's direction of 2026-11-20 (enhance, do not replace; decide autonomously, document every decision).
+- Decided: Teardown after a node ends: stop the process if needed, sweep its temp files (`choices.json`, MCP config), release scope and slot, write the audit, keep the run folder. Project teardown writes `audit.jsonl` and a receipt. Built in package MAN-5, MAN-7.
+- Why: nothing the owner could want is deleted, and nothing stays held.
+- Rejected: no alternative beyond the whole-design options in `docs/design/multi-agent-nodes/architecture.md` section 12 was weighed for this one.
+- Diagram: label "teardown keeps run folders", key only.
+
+## D277 — Recovery: reconcile first, then reconcile_projects
+- Sources: `docs/design/multi-agent-nodes` (decisions.md, architecture.md, guardrails-and-permissions.md); the owner's direction of 2026-11-20 (enhance, do not replace; decide autonomously, document every decision).
+- Decided: Recovery: `reconcile` runs first and unchanged; `reconcile_projects` then rebuilds leases from rows, re-adopts live nodes, and retries or fails the rest. Leases are rows, not memory. Built in package MAN-7.
+- Why: a crash must lose nothing and double-start nothing.
+- Rejected: no alternative beyond the whole-design options in `docs/design/multi-agent-nodes/architecture.md` section 12 was weighed for this one.
+- Diagram: label "reconcile, then reconcile_projects", pill on band:ORCHESTRATION.
+
+## D278 — Failure policy per project, never a silent done
+- Sources: `docs/design/multi-agent-nodes` (decisions.md, architecture.md, guardrails-and-permissions.md); the owner's direction of 2026-11-20 (enhance, do not replace; decide autonomously, document every decision).
+- Decided: Failure policy per project, default `stop_branch` (a failed node cancels its dependants, siblings go on, as a failed task does today); `stop_all` is the other choice. A project with a failed node ends `done_with_open_items` or `stopped`, never `done`. Built in package MAN-7.
+- Why: it is today's rule for tasks and it never claims success it did not have.
+- Rejected: no alternative beyond the whole-design options in `docs/design/multi-agent-nodes/architecture.md` section 12 was weighed for this one.
+- Diagram: label "failure policy stop_branch; never a silent done", key only.
+
+## D279 — Kill switch in four levels, and a file that works when the UI does not
+- Sources: `docs/design/multi-agent-nodes` (decisions.md, architecture.md, guardrails-and-permissions.md); the owner's direction of 2026-11-20 (enhance, do not replace; decide autonomously, document every decision).
+- Decided: Kill switch in four levels (node, project, pause all, kill all) using the one stop ladder; a file `<data>/nodes/KILL` works when the UI does not; automatic triggers on caps, scope violation, repeated egress hits, repeated lease loss and the monthly limit. Built in package MAN-4.
+- Why: the owner must be able to stop everything by hand, and a stuck UI is exactly when that is needed.
+- Rejected: no alternative beyond the whole-design options in `docs/design/multi-agent-nodes/architecture.md` section 12 was weighed for this one.
+- Diagram: label "kill switch: 4 levels + KILL file", pill on Operator.
+
+## D280 — The audit is an append-only table of names and shapes
+- Sources: `docs/design/multi-agent-nodes` (decisions.md, architecture.md, guardrails-and-permissions.md); the owner's direction of 2026-11-20 (enhance, do not replace; decide autonomously, document every decision).
+- Decided: The audit is an append-only table `node_audit` (update and delete triggers), one row per decision or action, names and shapes and hashes only, exported to `<data>/projects/<id>/audit.jsonl` (0600) at close. Built in package MAN-2, MAN-14.
+- Why: it copies `atom_ledger` and `egress.jsonl`, so the rule "never a payload" stays true.
+- Rejected: no alternative beyond the whole-design options in `docs/design/multi-agent-nodes/architecture.md` section 12 was weighed for this one.
+- Diagram: label "append-only node_audit, no payloads", key only.
+
+## D281 — Prompt-injection boundary: what a node reads is data
+- Sources: `docs/design/multi-agent-nodes` (decisions.md, architecture.md, guardrails-and-permissions.md); the owner's direction of 2026-11-20 (enhance, do not replace; decide autonomously, document every decision).
+- Decided: Prompt-injection boundary: hand-off and read text is data in a labelled block in the user part; hand-offs are typed JSON; only enums touch control flow; no content can change a grant, an edge or a budget; paths are checked; the reviewer is read-only. Built in package MAN-6, MAN-11, and tests in MAN-2.
+- Why: a fooled model should only be able to do what its grant allows and show words to a human.
+- Rejected: no alternative beyond the whole-design options in `docs/design/multi-agent-nodes/architecture.md` section 12 was weighed for this one.
+- Diagram: label "injection boundary: hand-off is data", key only.
+
+## D282 — Egress scrub per node: observe for engine nodes, replace where the app owns the text
+- Sources: `docs/design/multi-agent-nodes` (decisions.md, architecture.md, guardrails-and-permissions.md); the owner's direction of 2026-11-20 (enhance, do not replace; decide autonomously, document every decision).
+- Decided: Egress per node: `observe` for engine nodes (J2 prompts stay byte-identical), `replace` for hand-offs, stored messages and light-node prompts. Audit rows carry node, project and role. Three secret-shaped hits by one node stop it. Built in package MAN-3, MAN-6.
+- Why: it keeps D109 and D249 and adds scrub exactly where the app owns the text.
+- Rejected: no alternative beyond the whole-design options in `docs/design/multi-agent-nodes/architecture.md` section 12 was weighed for this one.
+- Diagram: label "egress per node: observe / replace", pill on Connector router.
+
+## D283 — Node identity travels in the tag, task.json and the environment
+- Sources: `docs/design/multi-agent-nodes` (decisions.md, architecture.md, guardrails-and-permissions.md); the owner's direction of 2026-11-20 (enhance, do not replace; decide autonomously, document every decision).
+- Decided: Node identity is an optional `node_id` and `node_role` on `CallTag` and an optional `node` block in `task.json`, plus `SUTRA_NODE_ID` in the child environment. Empty by default; the block is left out of the dump when the flag is off. Built in package MAN-3.
+- Why: usage, egress and allowance rows then carry the node with no new column, and `TaskSpec` already ignores unknown keys.
+- Rejected: no alternative beyond the whole-design options in `docs/design/multi-agent-nodes/architecture.md` section 12 was weighed for this one.
+- Diagram: label "node identity in CallTag, task.json, env", pill on Connector router.
+
+## D284 — Provider slots shared by the whole machine
+- Sources: `docs/design/multi-agent-nodes` (decisions.md, architecture.md, guardrails-and-permissions.md); the owner's direction of 2026-11-20 (enhance, do not replace; decide autonomously, document every decision).
+- Decided: Provider concurrency becomes machine-wide with file-lock slot files (`oslayer.try_lock`), one slot file per allowed process, shared by every router. Sub-flag `SUTRA_NODES_SLOTS`. Built in package MAN-12.
+- Why: the limit is per `Router` and each engine process has its own, so N processes multiply it; a file lock also vanishes when the process dies.
+- Rejected: no alternative beyond the whole-design options in `docs/design/multi-agent-nodes/architecture.md` section 12 was weighed for this one.
+- Diagram: label "machine-wide provider slots (file locks)", pill on Connector router.
+
+## D285 — Reviewer independence across processes
+- Sources: `docs/design/multi-agent-nodes` (decisions.md, architecture.md, guardrails-and-permissions.md); the owner's direction of 2026-11-20 (enhance, do not replace; decide autonomously, document every decision).
+- Decided: Reviewer independence across processes: the Conductor records which provider served each worker and writes the reviewer's run pick (`choices.json`, existing agent picks) to the other provider; if the other is unavailable the review still runs and says it was not independent. Built in package MAN-11.
+- Why: `Independence` is in one process's memory and cannot see a worker in another process.
+- Rejected: no alternative beyond the whole-design options in `docs/design/multi-agent-nodes/architecture.md` section 12 was weighed for this one.
+- Diagram: label "reviewer independence across processes", pill on Connector router.
+
+## D286 — The reviewer is a read-only light node with a verdict enum
+- Sources: `docs/design/multi-agent-nodes` (decisions.md, architecture.md, guardrails-and-permissions.md); the owner's direction of 2026-11-20 (enhance, do not replace; decide autonomously, document every decision).
+- Decided: The reviewer is a read-only light node with a verdict enum (`approve`, `changes_requested`, `reject`) and at most 2 review loops; then the owner decides. Built in package MAN-11.
+- Why: an independent reader that cannot write cannot be turned into a writer, and a loop cap ends ping-pong.
+- Rejected: no alternative beyond the whole-design options in `docs/design/multi-agent-nodes/architecture.md` section 12 was weighed for this one.
+- Diagram: label "reviewer: read-only, verdict enum, 2 loops", key only.
+
+## D287 — Project and node changes are ordinary store events
+- Sources: `docs/design/multi-agent-nodes` (decisions.md, architecture.md, guardrails-and-permissions.md); the owner's direction of 2026-11-20 (enhance, do not replace; decide autonomously, document every decision).
+- Decided: Project and node changes are ordinary store events (`project.updated`, `node.updated`, `approval.opened`, `approval.decided`, `project.message`) on the existing bus. The page refetches the snapshot. Heartbeat-only batches touch the database at most once per 15 s. Built in package MAN-6, MAN-12.
+- Why: it reuses the bus ring and replay and keeps write pressure down; the replay of a few heartbeat lines is harmless.
+- Rejected: no alternative beyond the whole-design options in `docs/design/multi-agent-nodes/architecture.md` section 12 was weighed for this one.
+- Diagram: label "project events on the bus; heartbeats coalesced", pill on band:ORCHESTRATION.
+
+## D288 — SQLite, WAL and one writer stay; a load test decides
+- Sources: `docs/design/multi-agent-nodes` (decisions.md, architecture.md, guardrails-and-permissions.md); the owner's direction of 2026-11-20 (enhance, do not replace; decide autonomously, document every decision).
+- Decided: SQLite, WAL and one writer stay. The change is an additive migration v6. A 12-node load test is the acceptance test. If it fails the next step is a 250 ms batch window per project, not a new database. Built in package MAN-1, MAN-12.
+- Why: the numbers are guessed, not measured, so measure first and add the smallest fix.
+- Rejected: no alternative beyond the whole-design options in `docs/design/multi-agent-nodes/architecture.md` section 12 was weighed for this one.
+- Diagram: label "SQLite stays; the load test decides", pill on band:ORCHESTRATION.
+
+## D289 — Nodes are local child processes only
+- Sources: `docs/design/multi-agent-nodes` (decisions.md, architecture.md, guardrails-and-permissions.md); the owner's direction of 2026-11-20 (enhance, do not replace; decide autonomously, document every decision).
+- Decided: Nodes are local child processes only. Remote nodes are a non-goal; the protocol stays files, so it remains possible later.
+- Why: local-first is an owner rule and a broker would be a new service and dependency.
+- Rejected: a broker and remote workers (a new service and dependency, and local-first is an owner rule).
+- Diagram: label "nodes are local processes only", key only.
+
+## D290 — Words: runtime node and graph node are kept apart
+- Sources: `docs/design/multi-agent-nodes` (decisions.md, architecture.md, guardrails-and-permissions.md); the owner's direction of 2026-11-20 (enhance, do not replace; decide autonomously, document every decision).
+- Decided: Words: "runtime node" (a running agent) is kept apart from "graph node" (a box in the graph). The table is `agent_nodes`. The UI says "agent". The engine's `project` output type is unrelated. Built in package MAN-1.
+- Why: the word node already means three things in this repo, and a clear name saves mistakes.
+- Rejected: no alternative beyond the whole-design options in `docs/design/multi-agent-nodes/architecture.md` section 12 was weighed for this one.
+- Diagram: label "'runtime node' vs 'graph node'", key only.
+
+## D291 — The planner is the chat agent's staged planning with an identity
+- Sources: `docs/design/multi-agent-nodes` (decisions.md, architecture.md, guardrails-and-permissions.md); the owner's direction of 2026-11-20 (enhance, do not replace; decide autonomously, document every decision).
+- Decided: The planner is the org chat agent's staged planning with a node identity and a small slice. It may add a write scope and a `needs` list per step, only narrower than the department's. The planner call gets a `CancelToken` if `call_json` has none today. Built in package MAN-3, MAN-5.
+- Why: it keeps the planning flow as it is and makes it auditable and stoppable.
+- Rejected: no alternative beyond the whole-design options in `docs/design/multi-agent-nodes/architecture.md` section 12 was weighed for this one.
+- Diagram: label "planner = chat agent with identity and slice", pill on Chat agent (orchestrator).
+
+## D292 — Tests use the fake engine and the scripted connector
+- Sources: `docs/design/multi-agent-nodes` (decisions.md, architecture.md, guardrails-and-permissions.md); the owner's direction of 2026-11-20 (enhance, do not replace; decide autonomously, document every decision).
+- Decided: Tests use the fake engine and the scripted connector; the gate never calls a model; `live_smoke.py` is not run. Each package is tried in the beta app. Releases, packaging and version files are not touched. Built in package all.
+- Why: `AGENTS.md` forbids spending the owner's quota in tests and reserves the stable app and releases for the owner.
+- Rejected: no alternative beyond the whole-design options in `docs/design/multi-agent-nodes/architecture.md` section 12 was weighed for this one.
+- Diagram: label "fake engine tests; no live smoke", key only.
+
+## D293 — The decisions and the flag table are registered in the first package
+- Sources: `docs/design/multi-agent-nodes` (decisions.md, architecture.md, guardrails-and-permissions.md); the owner's direction of 2026-11-20 (enhance, do not replace; decide autonomously, document every decision).
+- Decided: The decisions, the design documents and the flag table are registered in `docs/DECISIONS.md`, `docs/diagram/decisions.json`, `docs/design/traceability.json`, `docs/ENVIRONMENT.md` and `sutra_app/ops/envfile.py` in MAN-1, not at the end. Built in package MAN-1.
+- Why: the repository's own tests fail on a decision without its diagram entry, and the docs check fails on a setting nobody documented.
+- Rejected: no alternative beyond the whole-design options in `docs/design/multi-agent-nodes/architecture.md` section 12 was weighed for this one.
+- Diagram: label "registered in log, diagram, traceability, env docs", key only.
+
+## D294 — Decide for me works for projects: a rule table answers the gates
+- Sources: `docs/design/multi-agent-nodes` (decisions.md, architecture.md, guardrails-and-permissions.md); the owner's direction of 2026-11-20 (enhance, do not replace; decide autonomously, document every decision).
+- Decided: Decide for me works for projects: one switch (`projects.decide_for_me`, set from the existing `J2_DECIDE_FOR_ME`) means "do not wait for me". It is passed to every worker as the existing setting, and the three node gates are answered at once by a fixed rule table in the Gatekeeper (code, never a model), each answer audited as `decided_by: rule:decide_for_me`. Tiers 0 to 3 are allowed within the role's grant; tier 4 only as read-only GitHub tools for this project; wide or missing write scopes run alone; a credit request is never raised (P25), but unspent slices may move inside the approved ceiling; a scope violation fails and quarantines the node; tier 6 is never granted and never asked. The owner's folder access, all caps, the depth rule and the kill switch stay in force. The owner reads a "Sutra decided for you" list on the project page. Built in package MAN-8 (the table and the switch), MAN-13 (the "decided for you" list).
+- Why: the owner wants projects that run with no input; a rule table keeps "a model never approves a model", and every wall that protects spend and the outside world stays where D251, D268 and D269 put it.
+- Rejected: letting an AI pick the answer for node gates (a model would approve a model); having Decide for me raise credits (breaks P25); answering tier 6 "yes" (the wall in D268).
+- Diagram: label "Decide for me for projects: a rule table", pill on band:ORCHESTRATION.
+
+## D295 — Operating-system permissions are checked per system before a node starts
+- Sources: `docs/design/multi-agent-nodes` (decisions.md, architecture.md, guardrails-and-permissions.md); the owner's direction of 2026-11-20 (enhance, do not replace; decide autonomously, document every decision).
+- Decided: Operating-system permissions are checked per system (macOS, Windows) before a node starts. A node's reach is its grant intersected with what the computer has allowed. A new `sutra_app/syspermissions.py` beside `oslayer.py` probes the folders the plan names (a listing, and for write steps one small temporary file in the node's own scope), explains what is missing in plain steps for that system, opens the right settings page and checks again. Sutra never changes a system setting, never asks for an administrator password and never runs a node elevated. Decide for me cannot grant these. Only the steps that need a missing permission wait (state `awaiting_system`); the rest of the project runs. Skipping cancels only those steps. A late "Operation not permitted" or "Access is denied" ends a node as `needs_system_permission` with the same card. The broadest permission (macOS Full Disk Access) is a last resort and names the path. Camera, microphone, screen, accessibility and other-app control are never requested. Linux has nothing to ask. Built in package MAN-15.
+- Why: macOS protects Desktop, Documents and similar folders per app and Windows can block writes with Controlled folder access, so a node would otherwise fail halfway with a vague error; asking up front, in system-specific words, keeps the owner in control and keeps the sentence "a model never approves" true for the machine too. (Amended by D296: the card does not outlive a closed laptop.)
+- Rejected: asking in the middle of a run (a node would hang behind a hidden system dialog); Sutra changing the setting itself (a system setting belongs to the owner, and it would need an administrator password); one generic card for both systems (the steps are different); asking for Full Disk Access by default (far wider than needed).
+- Diagram: label "OS permissions: check first, the owner clicks", pill on Desktop app · Electron window.
+
+## D296 — A closed laptop is a refusal
+- Sources: `docs/design/multi-agent-nodes` (decisions.md, architecture.md, guardrails-and-permissions.md); the owner's direction of 2026-11-20 (enhance, do not replace; decide autonomously, document every decision).
+- Decided: A closed laptop is a refusal. If the computer sleeps, or Sutra is closed, while any gate is open (an approval card or a system permission card), every open gate of that project counts as refused: the waiting nodes are `cancelled` with the reason "the computer went to sleep before you answered" (or "Sutra was closed before you answered"), the running nodes of the project are stopped with the existing stop ladder, the project is `stopped`, and one receipt card says why. Detected by the Conductor's tick gap (more than half a lease) and by `reconcile_projects` after a restart. A project with no open gate keeps the one-time lease extension for a sleeping laptop (N2). An open card still ends after 24 hours. This amends D270 and D295 (the system permission card no longer waits for ever). Built in package MAN-7 (detection and recovery), MAN-8 and MAN-15 (the two cards).
+- Why: the owner's rule: nobody is there to answer, so the work must not go on and must not wait unseen; stopping is the safe reading of silence.
+- Rejected: waiting until the owner returns (the work and any held lease would sit unseen); stopping every project on every sleep (a project with nothing open can safely continue, as today).
+- Diagram: label "closed laptop = refusal; gates end, project stops", pill on band:ORCHESTRATION.

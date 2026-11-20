@@ -14,13 +14,14 @@ import re
 import secrets
 from collections.abc import Mapping
 from pathlib import Path
+from types import MappingProxyType
 from typing import Annotated, Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, SecretStr, StringConstraints, ValidationError, field_validator, model_validator
 
 __all__ = [
     "Settings", "SettingsError", "ENV_NAMES", "LOOPBACK_HOSTS", "OVERRIDE_KEY_NAME", "MIN_TOKEN_LENGTH", "DB_FILENAME", "project_root",
-    "default_data_dir", "default_env_file", "read_env_file", "env_value", "new_token",
+    "default_data_dir", "default_env_file", "read_env_file", "env_value", "new_token", "NODE_DEFAULT_CAPS",
 ]
 
 MIN_TOKEN_LENGTH = 16
@@ -35,7 +36,23 @@ ENV_NAMES = {
     "watch_ms": "SUTRA_WATCH_MS", "live": "SUTRA_LIVE", "env_file": "SUTRA_ENV_FILE",
     "live_v1": "SUTRA_LIVE_V1", "live_heartbeat_s": "SUTRA_LIVE_HEARTBEAT_S", "live_coalesce_ms": "SUTRA_LIVE_COALESCE_MS",
     "live_checkpoint_s": "SUTRA_LIVE_CHECKPOINT_S",
+    "nodes_v1": "SUTRA_NODES_V1", "nodes_lanes": "SUTRA_NODES_LANES", "nodes_reviewer": "SUTRA_NODES_REVIEWER", "nodes_slots": "SUTRA_NODES_SLOTS",
 }
+# The default caps of a project and its nodes (multi-agent nodes, D273): data, not code paths. A project row copies them into `caps_json` at plan time, so a later
+# change here never moves a project that is already running. Nothing reads them while SUTRA_NODES_V1 is off.
+NODE_DEFAULT_CAPS: Mapping[str, int | None] = MappingProxyType({
+    "max_parallel": 3,           # nodes of one project running together
+    "max_nodes": 12,             # workers in one project (the plan limit); reviewers come on top
+    "node_calls": 60,            # model calls one node may make
+    "node_usd": None,            # dollars one node may spend (none unless the owner sets it)
+    "node_wall_s": 1800,         # 30 minutes of wall time for one node
+    "retries": 1,                # extra attempts of a failed or silent node
+    "review_loops": 2,           # times a reviewer may send work back
+    "project_wall_s": 7200,      # 2 hours for the whole project
+    "lease_s": 90,               # a node silent this long loses its lease
+    "approval_expiry_s": 86400,  # an unanswered gate counts as refused after 24 hours
+    "depth": 1,                  # a node can never start a node
+})
 _TRUE = ("1", "true", "yes", "on")
 _FALSE = ("", "0", "false", "no", "off")
 
@@ -153,6 +170,12 @@ class Settings(BaseModel):
     live_heartbeat_s: float = Field(5.0, ge=0.2, le=60, allow_inf_nan=False)
     live_coalesce_ms: int = Field(33, ge=0, le=1000)
     live_checkpoint_s: float = Field(1.5, ge=0.05, le=60, allow_inf_nan=False)
+    # multi-agent nodes (design docs/design/multi-agent-nodes, D254): `nodes_v1` is the master switch and is off by default; with it off no new table is read, no new column is
+    # used and `task.json` is byte-identical to before. The three others only count when the master is on: read them through `lanes_on`, `reviewer_on` and `slots_on`
+    nodes_v1: bool = False
+    nodes_lanes: bool = False
+    nodes_reviewer: bool = False
+    nodes_slots: bool = False
     override_key: SecretStr | None = Field(None, exclude=True, repr=False)
     env_file: Path
 
@@ -255,6 +278,26 @@ class Settings(BaseModel):
             "chat_attempts": self.chat_attempts, "max_runs": self.max_runs, "max_live": self.max_live,
             "watch_ms": self.watch_ms, "live": self.live, "live_v1": self.live_v1,
         }
+
+    @property
+    def lanes_on(self) -> bool:
+        """Same-team parallel lanes: `SUTRA_NODES_LANES`, and only with `SUTRA_NODES_V1`."""
+        return self.nodes_v1 and self.nodes_lanes
+
+    @property
+    def reviewer_on(self) -> bool:
+        """The read-only reviewer node: `SUTRA_NODES_REVIEWER`, and only with `SUTRA_NODES_V1`."""
+        return self.nodes_v1 and self.nodes_reviewer
+
+    @property
+    def slots_on(self) -> bool:
+        """Machine-wide provider slots: `SUTRA_NODES_SLOTS`, and only with `SUTRA_NODES_V1`."""
+        return self.nodes_v1 and self.nodes_slots
+
+    @property
+    def nodes_dir(self) -> Path:
+        """`<data>/nodes`: the folder of the owner's kill switch files (`KILL`, `PAUSE`). It is not created until something needs it."""
+        return self.data_dir / "nodes"
 
     @property
     def db_path(self) -> Path:

@@ -1,14 +1,14 @@
 {
  "schema": "traceability/1",
  "counts": {
-  "decisions": 200,
+  "decisions": 296,
   "packages": 78,
   "endpoints": 43,
   "chips": 17,
   "steps": 7,
   "owner_rules": 7
  },
- "max_decision": 200,
+ "max_decision": 296,
  "owner_rules": [
   {
    "rule": "This is a new app, no relation to the old sutra-ui. Its design is the J2 prototype's design.",
@@ -389,7 +389,103 @@
     "D197",
     "D198",
     "D199",
-    "D200"
+    "D200",
+    "D201",
+    "D202",
+    "D203",
+    "D204",
+    "D205",
+    "D206",
+    "D207",
+    "D208",
+    "D209",
+    "D210",
+    "D211",
+    "D212",
+    "D213",
+    "D214",
+    "D215",
+    "D216",
+    "D217",
+    "D218",
+    "D219",
+    "D220",
+    "D221",
+    "D222",
+    "D223",
+    "D224",
+    "D225",
+    "D226",
+    "D227",
+    "D228",
+    "D229",
+    "D230",
+    "D231",
+    "D232",
+    "D233",
+    "D234",
+    "D235",
+    "D236",
+    "D237",
+    "D238",
+    "D239",
+    "D240",
+    "D241",
+    "D242",
+    "D243",
+    "D244",
+    "D245",
+    "D246",
+    "D247",
+    "D248",
+    "D249",
+    "D250",
+    "D251",
+    "D252",
+    "D253",
+    "D254",
+    "D255",
+    "D256",
+    "D257",
+    "D258",
+    "D259",
+    "D260",
+    "D261",
+    "D262",
+    "D263",
+    "D264",
+    "D265",
+    "D266",
+    "D267",
+    "D268",
+    "D269",
+    "D270",
+    "D271",
+    "D272",
+    "D273",
+    "D274",
+    "D275",
+    "D276",
+    "D277",
+    "D278",
+    "D279",
+    "D280",
+    "D281",
+    "D282",
+    "D283",
+    "D284",
+    "D285",
+    "D286",
+    "D287",
+    "D288",
+    "D289",
+    "D290",
+    "D291",
+    "D292",
+    "D293",
+    "D294",
+    "D295",
+    "D296"
    ],
    "modules": [
     "docs/DECISIONS.md",
@@ -3245,6 +3341,7 @@
    "packages": [
     "CN-7",
     "GAP-DEMO",
+    "GAP-E1B",
     "ORCH-6",
     "UI-6"
    ],
@@ -3752,10 +3849,8 @@
   {
    "id": "D176",
    "title": "The pin moves to J2 main `1adb8ecd`; the source stays the extraction of this repository's `prototypes/j2`",
-   "packages": [
-    "E1"
-   ],
-   "status": "implemented",
+   "packages": [],
+   "status": "documented only",
    "superseded_by": [],
    "diagram": "label \"J2 pin: main 1adb8ecd\", pill on band:DEPARTMENT RUNTIME."
   },
@@ -3794,6 +3889,8 @@
     "E1",
     "GAP-E1B",
     "GAP-W1",
+    "L8",
+    "L9",
     "UI-0",
     "UI-7"
    ],
@@ -3913,7 +4010,8 @@
    "id": "D190",
    "title": "Goldens and fixtures move only through the recorders; `J2_RUN_BY` is pinned in every recorder",
    "packages": [
-    "E5"
+    "E5",
+    "UI-0"
    ],
    "status": "implemented",
    "superseded_by": [],
@@ -4002,6 +4100,928 @@
    "status": "documented only",
    "superseded_by": [],
    "diagram": "label \"J2 asked: constants to data, 3 seams\", pill on Template library."
+  },
+  {
+   "id": "D201",
+   "title": "Streaming chat stays on the existing global SSE stream, with one new control event `chat.live`",
+   "packages": [
+    "ABS-7",
+    "ORCH-2"
+   ],
+   "status": "implemented",
+   "superseded_by": [],
+   "diagram": "label \"chat.live on global SSE\", pill on Orchestration."
+  },
+  {
+   "id": "D202",
+   "title": "`chat.live` has one versioned envelope: generation id, per-generation seq, block ids, additive payloads, and only events with a real source",
+   "packages": [
+    "ABS-1",
+    "ABS-5",
+    "ORCH-2"
+   ],
+   "status": "implemented",
+   "superseded_by": [],
+   "diagram": "label \"chat.live envelope v1\", pill on Chat sessions."
+  },
+  {
+   "id": "D203",
+   "title": "Catch-up is a snapshot route plus seq dedupe, opened stream-first, not replay from the bus ring",
+   "packages": [
+    "ABS-7",
+    "ORCH-1"
+   ],
+   "status": "implemented",
+   "superseded_by": [],
+   "diagram": "label \"snapshot + seq catch-up\", pill on Chat sessions."
+  },
+  {
+   "id": "D204",
+   "title": "A server-side `LiveTurn` coalesces on a real timer and redacts by holding back only a possible secret prefix; the 60-character rule goes",
+   "packages": [
+    "GAP-W1"
+   ],
+   "status": "implemented",
+   "superseded_by": [],
+   "diagram": "label \"time coalesce + secret-prefix hold-back\", pill on Orchestration."
+  },
+  {
+   "id": "D205",
+   "title": "Provider honesty: each turn declares `stream_mode`; Codex scope is fixed by a real capture taken through the connectors",
+   "packages": [],
+   "status": "documented only",
+   "superseded_by": [],
+   "diagram": "label \"stream_mode, honest labels\", pill on Codex connector."
+  },
+  {
+   "id": "D206",
+   "title": "Thinking is shown as presence and elapsed time only",
+   "packages": [],
+   "status": "documented only",
+   "superseded_by": [],
+   "diagram": "label \"thinking: presence only\", pill on Claude connector."
+  },
+  {
+   "id": "D207",
+   "title": "The live row is a transcript item promoted in place at settle, made reachable by deferring the stored-message refetch; the live view has no head cap",
+   "packages": [],
+   "status": "documented only",
+   "superseded_by": [],
+   "diagram": "label \"live row promoted in place\", pill on Chat sessions."
+  },
+  {
+   "id": "D208",
+   "title": "The client is layered: event normaliser (with a partial adapter), pure reducer with a fixed state machine, keyed block view; the transport is not refactored",
+   "packages": [],
+   "status": "documented only",
+   "superseded_by": [],
+   "diagram": "label \"normaliser / reducer / view layers\", pill on Chat sessions."
+  },
+  {
+   "id": "D209",
+   "title": "Sends carry a `client_id`; retry reuses the owner line with a new generation",
+   "packages": [],
+   "status": "documented only",
+   "superseded_by": [],
+   "diagram": "label \"idempotent send, safe retry\", pill on Chat sessions."
+  },
+  {
+   "id": "D210",
+   "title": "Live tool data is name at start, then kind, title and a redacted target relative to the turn's folder at block stop; never raw input or output",
+   "packages": [
+    "ABS-5"
+   ],
+   "status": "implemented",
+   "superseded_by": [],
+   "diagram": "label \"tool activity: no raw args\", pill on Tool connectors."
+  },
+  {
+   "id": "D211",
+   "title": "In-flight turns are checkpointed in a side table, never in `chat_messages`, written outside the locks",
+   "packages": [
+    "ABS-6",
+    "ABS-7",
+    "GAP-W1",
+    "ORCH-1"
+   ],
+   "status": "implemented",
+   "superseded_by": [],
+   "diagram": "label \"checkpoint table, not messages\", pill on Chat sessions."
+  },
+  {
+   "id": "D212",
+   "title": "New turns store the ordered block list under a sibling meta key; the fold counts a call and its result as one unit",
+   "packages": [
+    "ORCH-1",
+    "ORCH-3"
+   ],
+   "status": "implemented",
+   "superseded_by": [],
+   "diagram": "label \"ordered blocks, fold by pairs\", pill on Chat sessions."
+  },
+  {
+   "id": "D213",
+   "title": "Stop is two-phase and honest: the server freezes at the request, the route never blocks, `stopped:false` means nothing is running",
+   "packages": [
+    "CN-1"
+   ],
+   "status": "implemented",
+   "superseded_by": [],
+   "diagram": "label \"two-phase stop, freeze at request\", pill on Connector router."
+  },
+  {
+   "id": "D214",
+   "title": "Rollout is behind `SUTRA_LIVE_V1`, with the legacy path kept for one release",
+   "packages": [
+    "GAP-W1"
+   ],
+   "status": "implemented",
+   "superseded_by": [],
+   "diagram": "label \"SUTRA_LIVE_V1 rollback flag\", pill on Orchestration."
+  },
+  {
+   "id": "D215",
+   "title": "One stop owner: a per-turn `CancelToken` through `ChatPort`, `Router` and `base._events`",
+   "packages": [
+    "ABS-1",
+    "CN-3",
+    "CN-7"
+   ],
+   "status": "implemented",
+   "superseded_by": [],
+   "diagram": "label \"CancelToken: one stop owner\", pill on Connector router."
+  },
+  {
+   "id": "D216",
+   "title": "Attempt-scoped refs; a superseded reply stays visible and leaves the model's history",
+   "packages": [
+    "ABS-6",
+    "ABS-7",
+    "ORCH-1",
+    "ORCH-3"
+   ],
+   "status": "implemented",
+   "superseded_by": [],
+   "diagram": "label \"attempt-scoped refs\", pill on Chat sessions."
+  },
+  {
+   "id": "D217",
+   "title": "The Router emits `route.*` events; connecting, failing and restarting are shown only from them",
+   "packages": [
+    "ABS-1",
+    "CN-1",
+    "CN-7"
+   ],
+   "status": "implemented",
+   "superseded_by": [],
+   "diagram": "label \"route events: plan, attempt, failed\", pill on Connector router."
+  },
+  {
+   "id": "D218",
+   "title": "`BlockAccumulator` is the sole owner of block structure",
+   "packages": [
+    "ABS-1",
+    "CN-1"
+   ],
+   "status": "implemented",
+   "superseded_by": [],
+   "diagram": "label \"BlockAccumulator: one block owner\", pill on Connector router."
+  },
+  {
+   "id": "D219",
+   "title": "The stored message is the final attempt; earlier tries are a stored note; `stored_order` maps live keys",
+   "packages": [],
+   "status": "documented only",
+   "superseded_by": [],
+   "diagram": "label \"final attempt stored, earlier as note\", pill on Chat sessions."
+  },
+  {
+   "id": "D220",
+   "title": "Idempotency lookup and claim come before `begin`; a duplicate is 200, not 409 or 500",
+   "packages": [
+    "ABS-6",
+    "ABS-7",
+    "ORCH-1"
+   ],
+   "status": "implemented",
+   "superseded_by": [],
+   "diagram": "label \"client_id before begin\", pill on Chat sessions."
+  },
+  {
+   "id": "D221",
+   "title": "AI workers and the legacy path are read through a `chat.partial` adapter with `stream_mode:\"snapshot\"`",
+   "packages": [],
+   "status": "documented only",
+   "superseded_by": [],
+   "diagram": "label \"chat.partial adapter (snapshot)\", pill on Chat sessions."
+  },
+  {
+   "id": "D222",
+   "title": "Seq and publish happen under one lock, every event goes through `LiveTurn`, `turn.accepted` carries `client_id`, every reconnect resyncs",
+   "packages": [
+    "ABS-7"
+   ],
+   "status": "implemented",
+   "superseded_by": [],
+   "diagram": "label \"seq+publish one lock; resync on reconnect\", pill on Chat sessions."
+  },
+  {
+   "id": "D223",
+   "title": "A tool line's title and target are set when the provider's `tool_call` arrives, not at `content_block_stop`",
+   "packages": [
+    "CN-2"
+   ],
+   "status": "implemented",
+   "superseded_by": [],
+   "diagram": "label \"tool title at tool_call (real order)\", pill on Claude connector."
+  },
+  {
+   "id": "D224",
+   "title": "The live turn uses one lock for sequence, accumulator and publish, and every live kind is opt-in",
+   "packages": [
+    "ABS-5"
+   ],
+   "status": "implemented",
+   "superseded_by": [],
+   "diagram": "label \"one lock; live kinds opt-in\", pill on Chat sessions."
+  },
+  {
+   "id": "D225",
+   "title": "Stop is truthful and instant at the route, and the new refusal is `not_retryable`",
+   "packages": [],
+   "status": "documented only",
+   "superseded_by": [],
+   "diagram": "label \"stop answers at once; not_retryable\", pill on Connector router."
+  },
+  {
+   "id": "D226",
+   "title": "A requested Stop always ends the turn stopped, the ticker never spins on a slow checkpoint, and the chat is freed before the ticker is joined",
+   "packages": [],
+   "status": "documented only",
+   "superseded_by": [],
+   "diagram": "label \"stop wins over a late result\" on Live turn."
+  },
+  {
+   "id": "D227",
+   "title": "Client layers: intake, store, client, view",
+   "packages": [],
+   "status": "documented only",
+   "superseded_by": [],
+   "diagram": "label \"client layers: intake store client view\", pill on band:EXPERIENCE."
+  },
+  {
+   "id": "D228",
+   "title": "The composer is live only when the page asks for it",
+   "packages": [],
+   "status": "documented only",
+   "superseded_by": [],
+   "diagram": "label \"composer live opt-in; stop queued\", pill on band:EXPERIENCE."
+  },
+  {
+   "id": "D229",
+   "title": "A reply is one node, painted from a model, live or stored",
+   "packages": [],
+   "status": "documented only",
+   "superseded_by": [],
+   "diagram": "label \"one reply node; settle in place\", pill on band:EXPERIENCE."
+  },
+  {
+   "id": "D230",
+   "title": "Text blocks are drawn by appending; a code fence is one node",
+   "packages": [],
+   "status": "documented only",
+   "superseded_by": [],
+   "diagram": "label \"append-only text; one node per fence\", pill on band:EXPERIENCE."
+  },
+  {
+   "id": "D231",
+   "title": "The activity line says only what the wire says, and the number that changes is not announced",
+   "packages": [],
+   "status": "documented only",
+   "superseded_by": [],
+   "diagram": "label \"honest labels; clock not announced\", pill on band:EXPERIENCE."
+  },
+  {
+   "id": "D232",
+   "title": "The data of an event keeps its white space",
+   "packages": [
+    "ORCH-1"
+   ],
+   "status": "implemented",
+   "superseded_by": [],
+   "diagram": "label \"event data keeps its white space\", pill on Chat sessions."
+  },
+  {
+   "id": "D233",
+   "title": "Stop and Retry live in the reply, and a replaced try collapses at once",
+   "packages": [],
+   "status": "documented only",
+   "superseded_by": [],
+   "diagram": "label \"stop and retry in the reply\", pill on band:EXPERIENCE."
+  },
+  {
+   "id": "D234",
+   "title": "Only what arrives moves, the loops stop under reduced motion, and the reader keeps their place",
+   "packages": [],
+   "status": "documented only",
+   "superseded_by": [],
+   "diagram": "label \"motion on arrival; keep the reader's place\", pill on band:EXPERIENCE."
+  },
+  {
+   "id": "D235",
+   "title": "The live chat is on by default; `SUTRA_LIVE_V1=0` goes back",
+   "packages": [
+    "GAP-W1",
+    "ORCH-1"
+   ],
+   "status": "implemented",
+   "superseded_by": [],
+   "diagram": "label \"live chat on by default\", pill on Chat sessions."
+  },
+  {
+   "id": "D236",
+   "title": "A reply says the same live, settled and after a reload: how it ended, what it said, who wrote it",
+   "packages": [],
+   "status": "documented only",
+   "superseded_by": [],
+   "diagram": "label \"ending, text and author read the same after reload\", pill on Chat sessions."
+  },
+  {
+   "id": "D237",
+   "title": "The live turn's lock covers the feed, and the ticker waits only for work that is due",
+   "packages": [],
+   "status": "documented only",
+   "superseded_by": [],
+   "diagram": "label \"feed and publish under one lock; ticker sleeps when nothing is due\", pill on Chat sessions."
+  },
+  {
+   "id": "D238",
+   "title": "The chat page keeps the owner's place: terminal frames, Stop, mode, width",
+   "packages": [],
+   "status": "documented only",
+   "superseded_by": [],
+   "diagram": "label \"terminal frame kept; Stop stays; mode remembered\", pill on band:EXPERIENCE."
+  },
+  {
+   "id": "D239",
+   "title": "The pin moves to J2 main `dee83d5c` (sync 7): Disha's remove-restrictions (#202) and group C (#203)",
+   "packages": [],
+   "status": "documented only",
+   "superseded_by": [],
+   "diagram": "label \"J2 pin: main dee83d5c\", pill on band:DEPARTMENT RUNTIME."
+  },
+  {
+   "id": "D240",
+   "title": "Builder tools stay off for a live run of the engine; J2's section path builds, J2's general path is carried inert",
+   "packages": [
+    "E0",
+    "E5",
+    "GAP-TUNE"
+   ],
+   "status": "implemented",
+   "superseded_by": [],
+   "diagram": "label \"builder tools off live (section path)\", pill on band:DEPARTMENT RUNTIME."
+  },
+  {
+   "id": "D241",
+   "title": "J2's forms are data; a folder form is allowed at registration, a new file form still stops it",
+   "packages": [],
+   "status": "documented only",
+   "superseded_by": [],
+   "diagram": "label \"forms are data; folder forms pass\", pill on band:DEPARTMENT RUNTIME."
+  },
+  {
+   "id": "D242",
+   "title": "A beta app is tried beside the stable app, and every AI agent is told so by AGENTS.md",
+   "packages": [],
+   "status": "documented only",
+   "superseded_by": [],
+   "diagram": "label \"beta beside stable; AGENTS.md protocol\", pill on Desktop app · Electron window."
+  },
+  {
+   "id": "D243",
+   "title": "The Windows app carries its own icon, the woven lotus; the Mac keeps the old Sutra's",
+   "packages": [],
+   "status": "documented only",
+   "superseded_by": [],
+   "diagram": "label \"Windows icon: woven lotus; Mac keeps old logo\", pill on Desktop app · Electron window."
+  },
+  {
+   "id": "D244",
+   "title": "The pin moves to J2 main `ee659fb5` (sync 8): Kaivan's reuse fixes (#205) and the dry-run fix (#206)",
+   "packages": [
+    "E1",
+    "E5",
+    "L7"
+   ],
+   "status": "implemented",
+   "superseded_by": [],
+   "diagram": "label \"J2 pin: main ee659fb5\", pill on band:DEPARTMENT RUNTIME."
+  },
+  {
+   "id": "D245",
+   "title": "Builder tools are on in a live run with the Claude CLI; the sandbox is on for macOS and Linux when srt is found (supersedes D240)",
+   "packages": [
+    "CN-1",
+    "CN-3",
+    "CN-7",
+    "E0",
+    "E1",
+    "E5",
+    "GAP-E1B",
+    "GAP-OPS-1",
+    "GAP-TUNE",
+    "GAP-W1",
+    "L8"
+   ],
+   "status": "implemented",
+   "superseded_by": [],
+   "diagram": "label \"builder tools on live (Claude CLI); sandbox where srt is\", pill on band:DEPARTMENT RUNTIME."
+  },
+  {
+   "id": "D246",
+   "title": "Patch P22: the workflow without a real run that covers a real run's item is refused, and the same validator rejection twice in a row stops the cycle",
+   "packages": [
+    "CN-5",
+    "CN-6",
+    "CT-1",
+    "E0",
+    "E1",
+    "E2",
+    "E3",
+    "E4",
+    "E5",
+    "E6",
+    "E7",
+    "GAP-CONSOLE",
+    "GAP-E1B",
+    "GAP-LIVE",
+    "L3",
+    "L4",
+    "L5",
+    "L6",
+    "L7",
+    "L8",
+    "L9",
+    "ORCH-1",
+    "ORCH-3",
+    "ORCH-6",
+    "UI-0",
+    "UI-2",
+    "UI-4",
+    "UI-6",
+    "UI-8"
+   ],
+   "status": "implemented",
+   "superseded_by": [],
+   "diagram": "label \"P22: real-run cover conflict; repeated rejection stops\", pill on J2 chips."
+  },
+  {
+   "id": "D247",
+   "title": "A run counts as ended workable only when it ended clean (\"Done:\"); a run with open items is never saved or reused (patch P23)",
+   "packages": [
+    "E1",
+    "GAP-E1B"
+   ],
+   "status": "implemented",
+   "superseded_by": [],
+   "diagram": "label \"ended workable = clean Done: only (P23)\", pill on band:DEPARTMENT RUNTIME."
+  },
+  {
+   "id": "D248",
+   "title": "A trusted certificate may end a TLS chain (OpenSSL 3.5 on Windows)",
+   "packages": [],
+   "status": "documented only",
+   "superseded_by": [],
+   "diagram": "badge on Desktop app · Electron window."
+  },
+  {
+   "id": "D249",
+   "title": "The engine's prompts may differ from J2 through recorded patches; the prompt goldens are the engine's (amends D13)",
+   "packages": [
+    "E5"
+   ],
+   "status": "implemented",
+   "superseded_by": [],
+   "diagram": "label \"prompts may differ from J2 via patches (amends D13)\", pill on band:DEPARTMENT RUNTIME."
+  },
+  {
+   "id": "D250",
+   "title": "Priority's move is a workflow's id and its envelope; the validator charges the money limit or rejects the move with a reason (patch P24)",
+   "packages": [
+    "E1",
+    "E5",
+    "GAP-E1B",
+    "GAP-TUNE",
+    "L5"
+   ],
+   "status": "implemented",
+   "superseded_by": [],
+   "diagram": "label \"Priority's move = id + envelope (P24)\", pill on band:DEPARTMENT RUNTIME."
+  },
+  {
+   "id": "D251",
+   "title": "The budget cap only when J2_BUDGET_CAP is set; every raise is the Requester's own; a Budget field on the start page (patch P25)",
+   "packages": [
+    "E0",
+    "E1",
+    "E2",
+    "E4",
+    "GAP-E1B",
+    "UI-2"
+   ],
+   "status": "implemented",
+   "superseded_by": [],
+   "diagram": "label \"budget cap only if set; raises need the Requester (P25)\", pill on band:DEPARTMENT RUNTIME."
+  },
+  {
+   "id": "D252",
+   "title": "The Budget (work credits) field is on the home screen too, and on both pages starts empty: \"team default\" (amends D251)",
+   "packages": [
+    "GAP-CONSOLE",
+    "ORCH-1",
+    "ORCH-7",
+    "ORCH-8",
+    "UI-0",
+    "UI-2"
+   ],
+   "status": "implemented",
+   "superseded_by": [],
+   "diagram": "label \"Budget field on home + team page, empty = team default\", pill on band:DEPARTMENT RUNTIME."
+  },
+  {
+   "id": "D253",
+   "title": "A node is an ordinary run plus an identity row",
+   "packages": [
+    "ORCH-1"
+   ],
+   "status": "implemented",
+   "superseded_by": [],
+   "diagram": "label \"node = a run + an identity row\", pill on band:ORCHESTRATION."
+  },
+  {
+   "id": "D254",
+   "title": "Everything is behind SUTRA_NODES_V1, default 0",
+   "packages": [
+    "GAP-W1",
+    "ORCH-1"
+   ],
+   "status": "implemented",
+   "superseded_by": [],
+   "diagram": "label \"SUTRA_NODES_V1, default 0; off = today\", pill on band:ORCHESTRATION."
+  },
+  {
+   "id": "D255",
+   "title": "A project groups the tasks of one request",
+   "packages": [],
+   "status": "documented only",
+   "superseded_by": [],
+   "diagram": "label \"project groups one request's nodes\", pill on band:ORCHESTRATION."
+  },
+  {
+   "id": "D256",
+   "title": "Roles and runtimes: planner inline, worker is a J2 run, reviewer is light",
+   "packages": [],
+   "status": "documented only",
+   "superseded_by": [],
+   "diagram": "label \"planner inline, worker = J2 run, reviewer light\", pill on band:DEPARTMENT RUNTIME."
+  },
+  {
+   "id": "D257",
+   "title": "One scheduler: the Conductor is a task gate, not a second queue",
+   "packages": [],
+   "status": "documented only",
+   "superseded_by": [],
+   "diagram": "label \"one scheduler; Conductor is a task gate\", pill on band:ORCHESTRATION."
+  },
+  {
+   "id": "D258",
+   "title": "Same-team parallelism uses a lane column and a (team, lane) unique index",
+   "packages": [
+    "ORCH-1"
+   ],
+   "status": "implemented",
+   "superseded_by": [],
+   "diagram": "label \"lane column; (team, lane) unique\", pill on band:ORCHESTRATION."
+  },
+  {
+   "id": "D259",
+   "title": "Plan edges plus conflict edges; a conflict edge only delays",
+   "packages": [],
+   "status": "documented only",
+   "superseded_by": [],
+   "diagram": "label \"plan edges + conflict edges (delay only)\", key only."
+  },
+  {
+   "id": "D260",
+   "title": "Write scopes are exclusive leases; the planner may only narrow",
+   "packages": [],
+   "status": "documented only",
+   "superseded_by": [],
+   "diagram": "label \"write scopes: exclusive leases; narrow only\", key only."
+  },
+  {
+   "id": "D261",
+   "title": "No git worktrees in v1: scoped leases and a path check",
+   "packages": [],
+   "status": "documented only",
+   "superseded_by": [],
+   "diagram": "label \"no git worktrees; scope fence + path check\", key only."
+  },
+  {
+   "id": "D262",
+   "title": "The server is the only database writer; nodes write files",
+   "packages": [
+    "ORCH-1"
+   ],
+   "status": "implemented",
+   "superseded_by": [],
+   "diagram": "label \"server is the only DB writer; nodes use files\", pill on band:ORCHESTRATION."
+  },
+  {
+   "id": "D263",
+   "title": "Hand-off, verdict and needs are files; the eight run events stay closed",
+   "packages": [],
+   "status": "documented only",
+   "superseded_by": [],
+   "diagram": "label \"handoff/verdict/needs are files; eight events stay\", pill on band:DEPARTMENT RUNTIME."
+  },
+  {
+   "id": "D264",
+   "title": "Messages between nodes: an append-only table with a gap-free seq per project",
+   "packages": [
+    "ORCH-1"
+   ],
+   "status": "implemented",
+   "superseded_by": [],
+   "diagram": "label \"node_messages: append-only, gap-free seq\", pill on band:ORCHESTRATION."
+  },
+  {
+   "id": "D265",
+   "title": "Upstream data reaches a node through the upstream folder, never through framing",
+   "packages": [],
+   "status": "documented only",
+   "superseded_by": [],
+   "diagram": "label \"upstream via folder + hand-off, never framing\", key only."
+  },
+  {
+   "id": "D266",
+   "title": "The Gatekeeper is deterministic code: a model never approves a model",
+   "packages": [],
+   "status": "documented only",
+   "superseded_by": [],
+   "diagram": "label \"Gatekeeper is code; a model never approves\", pill on band:ORCHESTRATION."
+  },
+  {
+   "id": "D267",
+   "title": "A grant is an intersection, frozen at spawn",
+   "packages": [],
+   "status": "documented only",
+   "superseded_by": [],
+   "diagram": "label \"grant = intersection, frozen at spawn\", pill on band:ORCHESTRATION."
+  },
+  {
+   "id": "D268",
+   "title": "Six tiers by blast radius",
+   "packages": [],
+   "status": "documented only",
+   "superseded_by": [],
+   "diagram": "label \"six tiers by blast radius\", key only."
+  },
+  {
+   "id": "D269",
+   "title": "Deny by default; tier 6 is never granted",
+   "packages": [],
+   "status": "documented only",
+   "superseded_by": [],
+   "diagram": "label \"deny by default; tier 6 never granted\", key only."
+  },
+  {
+   "id": "D270",
+   "title": "Approvals at three gates, stored as rows, expiring after 24 hours",
+   "packages": [],
+   "status": "documented only",
+   "superseded_by": [],
+   "diagram": "label \"approvals at three gates; 24 h; expired = denied\", key only."
+  },
+  {
+   "id": "D271",
+   "title": "Project credits are the sum of the node slices",
+   "packages": [],
+   "status": "documented only",
+   "superseded_by": [],
+   "diagram": "label \"budget slices; sum never over the ceiling\", key only."
+  },
+  {
+   "id": "D272",
+   "title": "A NodeMeter makes the router's allowance cumulative per node",
+   "packages": [
+    "ORCH-1"
+   ],
+   "status": "implemented",
+   "superseded_by": [],
+   "diagram": "label \"NodeMeter: cumulative calls, dollars, time\", pill on Connector router."
+  },
+  {
+   "id": "D273",
+   "title": "Default caps for projects and nodes",
+   "packages": [
+    "GAP-W1",
+    "ORCH-1"
+   ],
+   "status": "implemented",
+   "superseded_by": [],
+   "diagram": "label \"default caps: 3 parallel, 60 calls, 30 min\", key only."
+  },
+  {
+   "id": "D274",
+   "title": "Nodes never spawn nodes (depth 1)",
+   "packages": [],
+   "status": "documented only",
+   "superseded_by": [],
+   "diagram": "label \"nodes never spawn nodes (depth 1)\", key only."
+  },
+  {
+   "id": "D275",
+   "title": "Leases: 90 seconds, a silent node is stopped and retried once",
+   "packages": [],
+   "status": "documented only",
+   "superseded_by": [],
+   "diagram": "label \"lease 90 s; silent node stopped, retried once\", key only."
+  },
+  {
+   "id": "D276",
+   "title": "Teardown keeps the run folder and releases everything else",
+   "packages": [],
+   "status": "documented only",
+   "superseded_by": [],
+   "diagram": "label \"teardown keeps run folders\", key only."
+  },
+  {
+   "id": "D277",
+   "title": "Recovery: reconcile first, then reconcile_projects",
+   "packages": [],
+   "status": "documented only",
+   "superseded_by": [],
+   "diagram": "label \"reconcile, then reconcile_projects\", pill on band:ORCHESTRATION."
+  },
+  {
+   "id": "D278",
+   "title": "Failure policy per project, never a silent done",
+   "packages": [],
+   "status": "documented only",
+   "superseded_by": [],
+   "diagram": "label \"failure policy stop_branch; never a silent done\", key only."
+  },
+  {
+   "id": "D279",
+   "title": "Kill switch in four levels, and a file that works when the UI does not",
+   "packages": [],
+   "status": "documented only",
+   "superseded_by": [],
+   "diagram": "label \"kill switch: 4 levels + KILL file\", pill on Operator."
+  },
+  {
+   "id": "D280",
+   "title": "The audit is an append-only table of names and shapes",
+   "packages": [
+    "ORCH-1"
+   ],
+   "status": "implemented",
+   "superseded_by": [],
+   "diagram": "label \"append-only node_audit, no payloads\", key only."
+  },
+  {
+   "id": "D281",
+   "title": "Prompt-injection boundary: what a node reads is data",
+   "packages": [],
+   "status": "documented only",
+   "superseded_by": [],
+   "diagram": "label \"injection boundary: hand-off is data\", key only."
+  },
+  {
+   "id": "D282",
+   "title": "Egress scrub per node: observe for engine nodes, replace where the app owns the text",
+   "packages": [],
+   "status": "documented only",
+   "superseded_by": [],
+   "diagram": "label \"egress per node: observe / replace\", pill on Connector router."
+  },
+  {
+   "id": "D283",
+   "title": "Node identity travels in the tag, task.json and the environment",
+   "packages": [
+    "ORCH-1"
+   ],
+   "status": "implemented",
+   "superseded_by": [],
+   "diagram": "label \"node identity in CallTag, task.json, env\", pill on Connector router."
+  },
+  {
+   "id": "D284",
+   "title": "Provider slots shared by the whole machine",
+   "packages": [],
+   "status": "documented only",
+   "superseded_by": [],
+   "diagram": "label \"machine-wide provider slots (file locks)\", pill on Connector router."
+  },
+  {
+   "id": "D285",
+   "title": "Reviewer independence across processes",
+   "packages": [],
+   "status": "documented only",
+   "superseded_by": [],
+   "diagram": "label \"reviewer independence across processes\", pill on Connector router."
+  },
+  {
+   "id": "D286",
+   "title": "The reviewer is a read-only light node with a verdict enum",
+   "packages": [],
+   "status": "documented only",
+   "superseded_by": [],
+   "diagram": "label \"reviewer: read-only, verdict enum, 2 loops\", key only."
+  },
+  {
+   "id": "D287",
+   "title": "Project and node changes are ordinary store events",
+   "packages": [],
+   "status": "documented only",
+   "superseded_by": [],
+   "diagram": "label \"project events on the bus; heartbeats coalesced\", pill on band:ORCHESTRATION."
+  },
+  {
+   "id": "D288",
+   "title": "SQLite, WAL and one writer stay; a load test decides",
+   "packages": [],
+   "status": "documented only",
+   "superseded_by": [],
+   "diagram": "label \"SQLite stays; the load test decides\", pill on band:ORCHESTRATION."
+  },
+  {
+   "id": "D289",
+   "title": "Nodes are local child processes only",
+   "packages": [],
+   "status": "documented only",
+   "superseded_by": [],
+   "diagram": "label \"nodes are local processes only\", key only."
+  },
+  {
+   "id": "D290",
+   "title": "Words: runtime node and graph node are kept apart",
+   "packages": [
+    "ORCH-1"
+   ],
+   "status": "implemented",
+   "superseded_by": [],
+   "diagram": "label \"'runtime node' vs 'graph node'\", key only."
+  },
+  {
+   "id": "D291",
+   "title": "The planner is the chat agent's staged planning with an identity",
+   "packages": [],
+   "status": "documented only",
+   "superseded_by": [],
+   "diagram": "label \"planner = chat agent with identity and slice\", pill on Chat agent (orchestrator)."
+  },
+  {
+   "id": "D292",
+   "title": "Tests use the fake engine and the scripted connector",
+   "packages": [],
+   "status": "documented only",
+   "superseded_by": [],
+   "diagram": "label \"fake engine tests; no live smoke\", key only."
+  },
+  {
+   "id": "D293",
+   "title": "The decisions and the flag table are registered in the first package",
+   "packages": [],
+   "status": "documented only",
+   "superseded_by": [],
+   "diagram": "label \"registered in log, diagram, traceability, env docs\", key only."
+  },
+  {
+   "id": "D294",
+   "title": "Decide for me works for projects: a rule table answers the gates",
+   "packages": [],
+   "status": "documented only",
+   "superseded_by": [],
+   "diagram": "label \"Decide for me for projects: a rule table\", pill on band:ORCHESTRATION."
+  },
+  {
+   "id": "D295",
+   "title": "Operating-system permissions are checked per system before a node starts",
+   "packages": [],
+   "status": "documented only",
+   "superseded_by": [],
+   "diagram": "label \"OS permissions: check first, the owner clicks\", pill on Desktop app · Electron window."
+  },
+  {
+   "id": "D296",
+   "title": "A closed laptop is a refusal",
+   "packages": [],
+   "status": "documented only",
+   "superseded_by": [],
+   "diagram": "label \"closed laptop = refusal; gates end, project stops\", pill on band:ORCHESTRATION."
   }
  ],
  "packages": [

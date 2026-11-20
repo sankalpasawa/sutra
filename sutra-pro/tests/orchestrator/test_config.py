@@ -191,3 +191,51 @@ def test_layout_helpers_and_ensure_dirs(tmp_path):
     s.ensure_dirs()                                                     # idempotent
     assert (tmp_path / "d" / "logs").is_dir() and (tmp_path / "d" / "departments").is_dir()
     assert oct((tmp_path / "d").stat().st_mode & 0o777) == "0o700"
+
+
+# ---- multi-agent nodes (MAN-1, D254, D273) ---------------------------------------------------------------------------------------
+
+NODE_FLAGS = ("nodes_v1", "nodes_lanes", "nodes_reviewer", "nodes_slots")
+
+
+def test_the_node_flags_default_to_off_and_every_one_has_a_variable():
+    s = load()
+    assert [getattr(s, flag) for flag in NODE_FLAGS] == [False] * 4
+    assert (s.lanes_on, s.reviewer_on, s.slots_on) == (False, False, False)
+    assert [ENV_NAMES[flag] for flag in NODE_FLAGS] == ["SUTRA_NODES_V1", "SUTRA_NODES_LANES", "SUTRA_NODES_REVIEWER", "SUTRA_NODES_SLOTS"]
+
+
+def test_the_sub_flags_are_ignored_without_the_master():
+    every_sub_flag = {"SUTRA_NODES_LANES": "1", "SUTRA_NODES_REVIEWER": "1", "SUTRA_NODES_SLOTS": "1"}
+    s = load(every_sub_flag)
+    assert (s.nodes_lanes, s.nodes_reviewer, s.nodes_slots) == (True, True, True)         # they are read ...
+    assert (s.lanes_on, s.reviewer_on, s.slots_on) == (False, False, False)               # ... and do nothing without SUTRA_NODES_V1
+    on = load({"SUTRA_NODES_V1": "1", **every_sub_flag})
+    assert on.nodes_v1 and (on.lanes_on, on.reviewer_on, on.slots_on) == (True, True, True)
+    only_master = load({"SUTRA_NODES_V1": "1"})
+    assert only_master.nodes_v1 and (only_master.lanes_on, only_master.reviewer_on, only_master.slots_on) == (False, False, False)
+
+
+@pytest.mark.parametrize("name", ["SUTRA_NODES_V1", "SUTRA_NODES_LANES", "SUTRA_NODES_REVIEWER", "SUTRA_NODES_SLOTS"])
+def test_a_malformed_node_flag_names_itself(name):
+    with pytest.raises(SettingsError, match=name):
+        load({name: "maybe"})
+
+
+def test_the_node_flags_do_not_change_what_the_public_view_shows():
+    assert set(load({"SUTRA_NODES_V1": "1"}).public()) == set(load().public())
+
+
+def test_the_default_caps_are_the_documented_ones_and_cannot_be_changed_in_place():
+    caps = config.NODE_DEFAULT_CAPS
+    assert dict(caps) == {"max_parallel": 3, "max_nodes": 12, "node_calls": 60, "node_usd": None, "node_wall_s": 1800, "retries": 1, "review_loops": 2,
+                          "project_wall_s": 7200, "lease_s": 90, "approval_expiry_s": 86400, "depth": 1}
+    with pytest.raises(TypeError):
+        caps["depth"] = 2
+
+
+def test_the_kill_switch_folder_is_under_the_data_folder_and_is_not_made_by_ensure_dirs(tmp_path):
+    s = load({"SUTRA_DATA_DIR": str(tmp_path / "d")})
+    assert s.nodes_dir == tmp_path / "d" / "nodes"
+    s.ensure_dirs()
+    assert not s.nodes_dir.exists()                                      # nothing is created for a feature that is off
