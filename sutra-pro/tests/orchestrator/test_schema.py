@@ -84,7 +84,7 @@ def test_a_database_makes_its_missing_folder_private_whatever_the_umask(tmp_path
 
 
 def test_a_database_from_a_newer_app_is_refused(db, settings, events):
-    sql(db, "PRAGMA user_version = 9")
+    sql(db, f"PRAGMA user_version = {schema.SCHEMA_VERSION + 1}")                # one newer than this build, whatever this build's version is
     with pytest.raises(SchemaError, match="newer"):
         Database(settings.db_path, events).migrate()
 
