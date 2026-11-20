@@ -270,3 +270,11 @@ test("the cost says it is about, includes the planning, and counts the calls tha
   assert.equal(/no price/.test(View.spendHtml(snap({spend: {calls: 23, usd: 0.97, unpriced: 0}}))), false);
   assert.equal(/estimate/.test(View.spendHtml(snap({spend: {calls: 1, usd: null}}))), false);
 });
+
+test("the reviewer's question is answered with 'Send them back' and 'Leave as it is', every other question keeps its words (D393)", () => {
+  const review = {kind: "review", approval_id: "ap_0123456789ab", question: "The reviewer asks for changes to a1. Send them back?", options: ["allow_once", "deny"], item: ""};
+  const html = View.cardsHtml(snap({cards: [review]}));
+  assert.ok(html.includes('data-decision="allow_once">Send them back</button>') && html.includes('data-decision="deny">Leave as it is</button>'));
+  assert.equal(/Allow once|>No</.test(html), false);
+  assert.ok(View.cardsHtml(snap({cards: [Object.assign({}, review, {kind: "tier"})]})).includes('data-decision="allow_once">Allow once</button>'));
+});

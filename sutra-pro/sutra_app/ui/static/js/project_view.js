@@ -126,9 +126,12 @@
     return text ? '<p class="pnote" role="note">' + esc(text) + "</p>" : "";
   }
 
-  function answerButtons(options, project, approval, item) {
+  // The reviewer's question is "send the steps back?" (D393): its two answers say that, not "Allow once" and "No".
+  const REVIEW_ANSWERS = freeze({allow_once: "Send them back", deny: "Leave as it is"});
+  function answerButtons(options, project, approval, item, kind) {
+    const words = kind === "review" ? Object.assign({}, ANSWERS, REVIEW_ANSWERS) : ANSWERS;
     return arr(options).map(clean).filter(o => Object.prototype.hasOwnProperty.call(ANSWERS, o)).map(o =>
-      '<button type="button" data-act="node-answer" data-project="' + esc(project) + '" data-approval="' + esc(approval) + '" data-item="' + esc(item) + '" data-decision="' + o + '">' + esc(ANSWERS[o]) + "</button>").join("");
+      '<button type="button" data-act="node-answer" data-project="' + esc(project) + '" data-approval="' + esc(approval) + '" data-item="' + esc(item) + '" data-decision="' + o + '">' + esc(words[o]) + "</button>").join("");
   }
 
   // The open questions: a card for each, its answers as buttons. A permission of the computer lists its steps for this system.
@@ -137,7 +140,7 @@
     const project = clean(isObj(s.project) ? s.project.id : "");
     const asked = arr(s.cards).filter(isObj).map(c =>
       '<div class="ncard c-nodeapproval" data-card="node_approval" data-kind="' + esc(clean(c.kind)) + '" data-approval="' + esc(clean(c.approval_id)) + '"><p class="sq">' + esc(clean(c.question)) + "</p>" +
-      '<div class="opts">' + answerButtons(c.options, project, clean(c.approval_id), clean(c.item)) + "</div></div>");
+      '<div class="opts">' + answerButtons(c.options, project, clean(c.approval_id), clean(c.item), clean(c.kind)) + "</div></div>");
     const system = arr(s.system_cards).filter(isObj).map(c => {
       const steps = arr(c.steps).map(clean).filter(Boolean);
       const affects = arr(c.affects).map(clean).filter(Boolean);

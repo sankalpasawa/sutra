@@ -222,11 +222,14 @@
   function projectAddress(html) {
     return html.replace(/\/p\/(prj_[0-9a-f]{12})(?![0-9a-zA-Z_])/g, '<a class="plink" href="/p/$1">Open the project</a>');
   }
+  // The reviewer's question is "send the steps back?" (D393): its two answers say that, not "Allow once" and "No".
+  const REVIEW_ANSWER_WORDS = freeze({allow_once: "Send them back", deny: "Leave as it is"});
   function nodeApprovalCard(c, ctx) {
+    const words = clean(c.kind) === "review" ? Object.assign({}, NODE_ANSWER_WORDS, REVIEW_ANSWER_WORDS) : NODE_ANSWER_WORDS;
     const done = ctx.answered === true || clean(ctx.answer) !== "";
     const options = (Array.isArray(c.options) ? c.options : []).map(clean).filter(o => hasOwn(NODE_ANSWER_WORDS, o));
     const buttons = options.map(o => '<button type="button" data-act="node-answer" data-project="' + esc(clean(c.project_id)) + '" data-approval="' + esc(clean(c.approval_id)) + '" data-item="' +
-      esc(clean(c.item)) + '" data-decision="' + o + '">' + esc(NODE_ANSWER_WORDS[o]) + "</button>").join("");
+      esc(clean(c.item)) + '" data-decision="' + o + '">' + esc(words[o]) + "</button>").join("");
     return '<div class="ncard c-nodeapproval" data-card="node_approval" data-kind="' + esc(clean(c.kind)) + '" data-project="' + esc(clean(c.project_id)) + '" data-approval="' + esc(clean(c.approval_id)) + '"' +
       (done ? ' data-answered="true"' : "") + '><p class="sq">' + safeText(clean(c.question)) + "</p>" +
       (done ? '<p class="canswer">Answered</p>' : '<div class="opts">' + buttons + "</div>") + projectLink(c.project_id) + "</div>";

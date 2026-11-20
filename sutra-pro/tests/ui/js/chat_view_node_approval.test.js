@@ -86,3 +86,9 @@ test("the card of a step of a project links to the project, the card of an ordin
   assert.equal(plain.includes("plink"), false);
   assert.equal(ChatView.card(taskCard({project_id: '"><script>'})).includes("<script"), false);
 });
+
+test("the reviewer's card says 'Send them back' and 'Leave as it is' (D393)", () => {
+  const html = ChatView.card(card({kind: "review", question: "The reviewer asks for changes to a1. Send them back?", options: ["allow_once", "deny"]}));
+  assert.ok(html.includes('data-decision="allow_once">Send them back</button>') && html.includes('data-decision="deny">Leave as it is</button>'));
+  assert.equal(/Allow once|>No</.test(html), false);
+});
