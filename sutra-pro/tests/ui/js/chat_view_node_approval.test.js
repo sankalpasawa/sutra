@@ -10,12 +10,12 @@ const ChatView = require(path.join(path.resolve(__dirname, "../../../sutra_app/u
 const PROJECT = "prj_0123456789ab";
 const APPROVAL = "ap_0123456789ab";
 const card = (over = {}) => Object.assign({type: "node_approval", project_id: PROJECT, approval_id: APPROVAL, kind: "tier", tier: 4, node_id: "", item: "",
-  question: "A step wants to read GitHub. Allow it? If you say no, the whole project stops.", options: ["allow_once", "allow_project", "deny"], expires_at: "2026-11-21T10:00:00Z"}, over);
+  question: "A step wants to read GitHub. Allow it? If you say no, only that step is cancelled.", options: ["allow_once", "allow_project", "deny"], expires_at: "2026-11-21T10:00:00Z"}, over);
 
 test("an open question shows its words and one button for each answer", () => {
   const html = ChatView.card(card());
   assert.match(html, /^<div class="ncard c-nodeapproval" data-card="node_approval" data-kind="tier"/);
-  assert.match(html, /If you say no, the whole project stops\./);
+  assert.match(html, /If you say no, only that step is cancelled\./);
   for (const [decision, label] of [["allow_once", "Allow once"], ["allow_project", "Allow for this project"], ["deny", "No"]]) {
     assert.ok(html.includes('data-act="node-answer" data-project="' + PROJECT + '" data-approval="' + APPROVAL + '" data-item="" data-decision="' + decision + '">' + label + "</button>"), decision);
   }

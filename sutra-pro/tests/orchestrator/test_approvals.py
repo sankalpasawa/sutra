@@ -63,12 +63,34 @@ def test_a_node_that_has_spawned_is_never_given_a_new_grant(rig):
     assert json.loads(rig.sql("SELECT grants_json FROM agent_nodes WHERE plan_ref = 'a1'").fetchone()[0])["id"] == "gr_spawned" and before
 
 
-def test_a_deny_stops_the_project_with_not_approved_and_nothing_starts(rig):
-    reservation, tasks = asking_github(rig)
+def test_a_no_to_one_steps_question_cancels_only_that_step_and_the_others_run(rig):
+    reservation, tasks = rig.request([("a1", "web", []), ("a2", "sales", []), ("a3", "ops", []), ("a4", "hr", ["a3"]), ("a5", "dev", [])], needs={"a3": ("github",)}, budget=60)
+    [asked] = rig.store.approvals(reservation.project_id, status="open")
+    snapshot = answer(rig, reservation.project_id, asked.id, "deny")
+    assert snapshot["project"]["status"] == "running" and rig.node_states(tasks)["a3"] == "cancelled"
+    assert rig.node_states(tasks)["a4"] == "cancelled" and rig.t.status(tasks["a3"]) == "cancelled" and "not approved: you said no" in rig.t.row(tasks["a3"]).outcome
+    assert "did not finish" in rig.t.row(tasks["a4"]).outcome                                                           # the step that waited for it is cancelled in plain words
+    started = {s.task_id for s, *_ in rig.t.launcher.started}
+    assert tasks["a3"] not in started and tasks["a4"] not in started and {tasks["a1"], tasks["a2"], tasks["a5"]} <= started
+    for ref in ("a1", "a2", "a5"):
+        rig.go(tasks[ref])
+        rig.finish(tasks[ref])
+    assert rig.project(reservation.project_id)["status"] == "done_with_open_items"
+
+
+def test_a_no_to_the_estimate_stops_the_whole_project_with_not_approved(rig):
+    reservation, tasks = rig.request([("a1", "web", []), ("a2", "sales", [])], estimates={"a1": 400, "a2": 400})
     [asked] = rig.store.approvals(reservation.project_id, status="open")
     snapshot = answer(rig, reservation.project_id, asked.id, "deny")
     assert snapshot["project"]["status"] == "stopped" and snapshot["project"]["stop_reason"].startswith("not approved")
     assert set(rig.node_states(tasks).values()) == {"cancelled"} and rig.start() == [] and rig.t.launcher.started == []
+
+
+def test_a_no_under_the_stop_all_policy_stops_the_project(rig):
+    reservation, tasks = rig.request([("a1", "web", []), ("a2", "sales", [])], needs={"a2": ("github",)})
+    rig.sql("UPDATE projects SET failure_policy = 'stop_all' WHERE id = ?", reservation.project_id)
+    answer(rig, reservation.project_id, rig.store.approvals(reservation.project_id)[0].id, "deny")
+    assert rig.project(reservation.project_id)["status"] == "stopped"
 
 
 def test_the_answer_is_final_a_repeat_is_a_no_op_another_answer_is_409_and_an_expired_question_says_so(rig):

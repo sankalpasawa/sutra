@@ -373,6 +373,40 @@ class ProjectService:
         self.sync_cards(tx, project_id)
         return outcome
 
+    @staticmethod
+    def _is_step_question(a: Any) -> bool:
+        """A question about ONE step: a system permission (D295's skip) or a tier-4 or wide-scope question that names its node (D315 b)."""
+        kind = a.request.get("kind")
+        return kind == "system" or (kind in ("tier", "scope") and bool(a.node_id))
+
+    def _cancel_step(self, tx: Tx, project_id: str, node_id: str) -> bool:
+        """Cancel one step that was not approved ("not approved: you said no") and, following the plan's edges, the steps that wait for it ("a step it needed was not approved"). Returns True
+        when a step was cancelled now. A system question is not handled here (its skip cancels its own nodes)."""
+        why = "not approved: you said no"
+        did = False
+        todo, seen = [(node_id, why)], set()
+        while todo:
+            nid, reason = todo.pop(0)
+            if not nid or nid in seen:
+                continue
+            seen.add(nid)
+            row = tx.conn.execute("SELECT n.state AS state, n.task_id AS task_id, t.status AS tstatus FROM agent_nodes n LEFT JOIN tasks t ON t.id = n.task_id WHERE n.id = ? AND n.project_id = ?",
+                                  (nid, project_id)).fetchone()
+            if row is None or row["state"] in NODE_FINAL:
+                continue
+            if row["task_id"] and row["tstatus"] in ("blocked", "queued") and self.tasks is not None:
+                self.tasks.cancel_in(tx, row["task_id"], reason)
+            else:
+                tx.conn.execute("UPDATE agent_nodes SET state = 'cancelled', failure_reason = ?, ended_at = ?, torn_down_at = ? WHERE id = ? AND state NOT IN ('done','failed','cancelled')",
+                                (reason, tx.now(), tx.now(), nid))
+                tx.emit("node.updated", {"project_id": project_id, "node_id": nid, "state": "cancelled"})
+            self.store.audit(tx, actor="gatekeeper", action="node.cancelled", project_id=project_id, node_id=nid, decision="deny", reason=reason)
+            did = True
+            todo += [(r["id"], "a step it needed was not approved") for r in tx.conn.execute("SELECT n.id AS id FROM agent_nodes n, json_each(n.depends_on) j WHERE n.project_id = ? AND j.value = ?", (project_id, nid))]
+        if did:
+            self.conductor._sync_project(tx, project_id)
+        return did
+
     def _settle_inner(self, tx: Tx, project_id: str, why: str) -> str:
         """After any answer (the owner's, a rule's): a project with a question answered no (or run out) is refused at once (D296's own path); else the plan is evaluated again with what was
         allowed, the grant of every node that has NOT spawned is rewritten (a new `grant.issued` row; a node that runs is never touched), and when no question is open the project and its waiting
@@ -381,9 +415,14 @@ class ProjectService:
         if project is None or project["status"] in PROJECT_FINAL:
             return "ended"
         approvals = self.store.approvals(project_id)
-        if any(a.status == "expired" or (a.status == "denied" and a.request.get("kind") != "system") for a in approvals):      # a skipped system question only cancels the steps that need it
+        if any(a.status == "expired" or (a.status == "denied" and not self._is_step_question(a)) for a in approvals):      # a no to the estimate, or a question that ran out, stops the project
             self.conductor._refuse_in(tx, project_id, why)
             return "refused"
+        for a in approvals:                                                          # a no to ONE step's question cancels only that step (D315 b)
+            if a.status == "denied" and a.request.get("kind") != "system" and self._is_step_question(a):
+                if self._cancel_step(tx, project_id, a.node_id) and project["failure_policy"] == "stop_all":
+                    self.conductor._refuse_in(tx, project_id, "not approved: you said no and this project stops at the first failure")
+                    return "refused"
         caps = json.loads(project["caps_json"] or "{}")
         nodes = {r["plan_ref"]: r for r in tx.conn.execute("SELECT * FROM agent_nodes WHERE project_id = ? AND role = 'worker'", (project_id,))}
         by_id = {row["id"]: ref for ref, row in nodes.items()}
@@ -454,10 +493,10 @@ class ProjectService:
             await self.tasks.start_ready()
         return await run_blocking(self.snapshot, project_id)
 
-    # the words of a card (plain, simple). A no to a question about one step stops the whole project until P1 (D315 c); nothing here says a writer "runs alone" before MAN-10 (D323).
+    # the words of a card (plain, simple). A no to a question about one step cancels that step (D315 b); a no to the estimate stops the project; nothing here says a writer "runs alone" before MAN-10 (D323).
     _WORDS = {
-        "tier": "A step wants to read GitHub, through your own GitHub login (read only). Allow it? If you say no, the whole project stops.",
-        "scope": "A step changes files in several places of your folder. Allow it? If you say no, the whole project stops.",
+        "tier": "A step wants to read GitHub, through your own GitHub login (read only). Allow it? If you say no, only that step is cancelled and the steps that need it. The rest go on.",
+        "scope": "A step changes files in several places of your folder. Allow it? If you say no, only that step is cancelled and the steps that need it. The rest go on.",
         "plan_estimate": "This plan is estimated at about {credits} credits, which is over {limit}. Allow it once? If you say no, the whole project stops.",
         "system": "Your computer must allow something first. Open the settings, allow it, then press Check again. If you skip it, the steps that need it are cancelled.",
     }

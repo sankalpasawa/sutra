@@ -29,7 +29,7 @@ def test_an_open_question_makes_one_card_and_one_needs_you_item_and_an_answer_cl
     [row] = cards(rig)
     card = json.loads(row["card_json"])
     assert row["src_ref"] == f"approval:{rig.store.approvals(reservation.project_id)[0].id}" and card["type"] == "node_approval" and card["options"] == ["allow_once", "allow_project", "deny"]
-    assert "If you say no, the whole project stops." in card["question"] and row["answered_by"] is None
+    assert "only that step is cancelled" in card["question"] and row["answered_by"] is None
     [item] = rig.t.chats.needs_you()
     assert item.kind == "node_approval" and item.message_id == row["id"] and item.options == ["allow_once", "allow_project", "deny"] and rig.t.chats.needs_you_count() == 1
     rig.t.run(rig.projects.answer(reservation.project_id, rig.store.approvals(reservation.project_id)[0].id, "allow_once"))
@@ -63,8 +63,9 @@ def test_the_estimate_and_scope_questions_say_what_a_no_does_and_none_of_the_wor
     questions = {json.loads(r["card_json"])["kind"]: json.loads(r["card_json"]) for r in cards(rig)}
     assert set(questions) == {"scope", "plan_estimate"} and questions["scope"]["options"] == ["allow_once", "deny"]
     assert "about 600 credits, which is over 400" in questions["plan_estimate"]["question"]
+    assert "only that step is cancelled" in questions["scope"]["question"] and "whole project stops" in questions["plan_estimate"]["question"]       # what a no does (D315)
     for card in questions.values():
-        assert "whole project stops" in card["question"] and "alone" not in card["question"].lower()
+        assert "alone" not in card["question"].lower()
     assert "alone" not in json.dumps(gatekeeper.RULE_TABLE).lower() and "alone" not in gatekeeper.decide_for_me_answer("scope", 2).why
 
 
