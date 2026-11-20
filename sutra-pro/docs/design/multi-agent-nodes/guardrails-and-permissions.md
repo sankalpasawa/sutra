@@ -1,7 +1,7 @@
 # Multi-agent nodes: guardrails and permissions
 
 Status: proposed, 2026-11-20. Design only. Read [architecture.md](architecture.md) first for the words (node, project, Conductor, Gatekeeper, lease, grant).
-Decisions: D266 to D282, D294, D295 and D296 in [decisions.md](decisions.md).
+Decisions: D266 to D282, D294, D295 and D296 in [decisions.md](decisions.md). Corrected after phase 1 (MAN-1 to MAN-4) by the architect rulings D297 to D305: tier 4 and the folder (D298), the builder tools are not a tier (D299), the confirm threshold (D300), the planner's stop (D301), no grant no start (D302), kill switch ownership (D303).
 
 ## 1. The rules in six lines
 
@@ -39,12 +39,16 @@ A tier is a kind of reach. Higher number means a bigger mistake if it goes wrong
 | Tier | Name | What it lets a node do | In v1 |
 |---|---|---|---|
 | 0 | Think | Talk to the model with no tools and no folder. | Allowed for every role. |
-| 1 | Read | Read files in the owner's working folder; read app data through the read-only `sutra` tools. | Allowed where the role and the owner's access allow. |
+| 1 | Read | Read files in the owner's working folder (`folder` is `read`, `inspect` or `edit`); read app data through the read-only `sutra` tools (the `sutra` part of the tool profile). | Allowed where the role and the owner's folder access allow, or where the step asked for the `sutra` tools. |
 | 2 | Write files | Create or change files, only inside the node's write scope. Never `.git`. | Workers whose output spec says `edit`, and only if the owner chose "read and change". |
-| 3 | Run commands | The four git reads (`status`, `diff`, `log`, `show`) and J2's sandboxed builder tools inside the run folder. No other command. | Git reads for reviewers and for workers with edit; sandboxed builder tools as J2 has them today (D245). Anything wider is **not available**. |
-| 4 | Network | The GitHub read tools through the owner's own `gh`. No other network tool. | Needs the owner's approval. Off otherwise. |
+| 3 | Run commands | The four git reads (`status`, `diff`, `log`, `show`) in the owner's folder. No other command. **J2's builder tools are not tier 3** (D299, see below the table). | Git reads for reviewers that review a writer, and for workers whose folder level is `edit` (their Audit agent). Needs the owner to have allowed changes, as `Router.folder_for` decides. Anything wider is **not available**. |
+| 4 | Network | The GitHub read tools (the `github` part of the tool profile) through the owner's own `gh`. No other Sutra network tool. | Workers only, and only with an approval (the owner's, or the Decide for me rule). **It does not depend on the owner's folder access** (D298): the tools touch no file. Off otherwise. |
 | 5 | Spend | Model spend beyond the node's own slice. | Never granted to a node. A raise is a question to the owner, each time (P25 kept). |
 | 6 | External publish | Send mail, post, push, or anything that leaves the machine for other people. | **Never granted.** `J2_SEND_MODE` stays `dry-run` and cannot be set by a request (`TaskSettings` has no such key). |
+
+Tiers are not a ladder: a grant lists each tier it holds (a reviewer holds 0, 1 and 3, never 2; a worker with only the GitHub tools holds 0 and 4).
+
+**J2's builder tools are not a tier (D299).** An engine worker whose output is a folder type (a website, an agent) has J2's own builder tools in its own run folder, as it does today: `Read`, `Write`, `Edit`, `Glob`, `Grep`, `Bash`, `WebSearch` and `WebFetch` from `types.json`, switched on by the engine (`llm.tools_on`), fenced by the CLI sandbox when `srt` is found and by J2's check that a file outside the run folder fails the workflow. The router gives such a call no owner's folder, so it does not depend on the owner's folder access or on the output spec's `read` or `edit`. The grant describes it in a separate field, `run_tools` (`engine` for a worker, `none` for the planner and the reviewer), written in the `grant.issued` audit row; the grant does not enforce it, because the engine decides, and in v1 it does not narrow it (there is no per-task switch: `agent_tools` is a locked engine setting, and a task key would be a J2 sync). The owner can still turn the builder tools off for every run in the engine settings. So this part of a worker's reach is the engine's own, unchanged, and it includes web tools; the tier 4 words "no other network tool" are about Sutra's tools.
 
 Tier 6 is a wall, not a gate. If the owner wants a published result, the owner does it by hand from the reviewed hand-off. A later decision can add a gated publisher; this design does not.
 
@@ -55,16 +59,17 @@ A grant is the **intersection** of four things: the role table, the plan's step,
 | Role | T0 | T1 read | T2 write | T3 commands | T4 network | T5 spend | T6 publish |
 |---|---|---|---|---|---|---|---|
 | Planner (inline) | yes | chart and plan data only | no | no | no | small slice | no |
-| Worker | yes | yes | in scope, if output is `edit` and owner allows | git reads; sandboxed builder tools as today | ask | its slice, no self-raise | never |
+| Worker | yes | yes | in scope, if output is `edit` and owner allows | git reads (folder `edit`); `run_tools` = engine, as today, not a tier | ask (approval, any folder access) | its slice, no self-raise | never |
 | Reviewer | yes | yes | **never** | git reads only | no | small slice | never |
 | Conductor, Gatekeeper | not models, no tools | | | | | | |
 
 Rules that follow:
 
-- A worker with output `read` gets tiers 0 and 1 only, whatever the plan says.
-- A reviewer's folder access is `inspect` at most (reads plus the four git reads, and only when the owner allowed changes, as `Router.folder_for` already decides). It never gets `edit`.
+- A worker with output `read` gets tiers 0 and 1 only in the owner's folder, whatever the plan says: it cannot change files or run the git reads there. (Tier 4 can still be added by an approval; its builder tools in its own run folder are as today, `run_tools = engine`.)
+- A reviewer's folder access is `inspect` at most (reads plus the four git reads, and only when the owner allowed changes, as `Router.folder_for` already decides). It never gets `edit`. The output level a reviewer is judged by is the strongest level among the steps it reviews: `edit` if it reviews a writer, so it gets the git reads exactly when the work it checks changed files (D305).
 - The planner may narrow a write scope. It may not add a tier. The Gatekeeper checks this before it stores the plan.
-- No grant exceeds the owner's access: if the owner chose "read only", every node is at most tier 1 whatever the table says.
+- No FOLDER reach exceeds the owner's access (D298): with "read only" or no folder, no node has tier 2 or tier 3, and its folder level is at most `read`. That is the whole of the cap. Tier 4 and the `sutra` tools are not folder reach: they follow the role and the approval, so a read-only owner can still allow GitHub reads, and the Decide for me table can too.
+- A node whose grant is missing, unreadable or wider than the role table is never started, not even as an ordinary task (D302).
 
 ### How a grant becomes real limits (existing code)
 
@@ -73,8 +78,9 @@ Rules that follow:
 | Folder none, read, edit | `CallTag.workspace` and `team_workspace`, turned into a folder by the router, capped by the owner's access | `engine/capabilities/workspace.py`, `Router.folder_for` |
 | Write scope | New: `Folder.scope`. Claude gets `Edit(<scope>/**)` allow rules and a deny for the rest; Codex gets its sandbox with `cwd` set to the scope when the scope is one folder. Backstop for both: the path check after the run. | `connectors/workdir.py` (`READ_TOOLS`, `EDIT_TOOLS`, `DOT_GIT_DENY`), `claude.py` (`--allowedTools`, `--permission-mode dontAsk`), `codex.py` (`sandbox`) |
 | No prompts, no surprise tools | `--restricted`, `--permission-mode dontAsk`, `--permission-prompts none`, `--tools ""` by default | `claude.py` |
-| Commands | `GIT_READ` and `GIT_DENY`; J2's tool grant with the CLI sandbox | `workdir.py`, `engine/port.py` `ToolGrant`, `claude.py` `run_tools_settings` |
-| Network and app data | Tool profile `none` by default; `sutra` and `sutra+github` need a grant | `connectors/tools/profiles.py` |
+| Commands (tier 3) | `GIT_READ` and `GIT_DENY`, through folder level `inspect` | `workdir.py`, `router.py` `folder_for` |
+| Run-folder builder tools (`run_tools`, not a tier) | The engine's own rule: J2's tool grant (`ToolGrant`, in the run folder) with the CLI sandbox when `srt` is found. Described by the grant, not enforced by it (D299). | `engine/port.py` `ToolGrant`, `engine/llm.py` `tools_on`, `claude.py` `run_tools_settings` |
+| Network and app data | Tool profile `none` by default. `sutra` (tier 1) and `github` (tier 4) are separate parts of it; a tier-4 grant holds `github` only (D298). Engine workers get it through the `tool_profile` of the `node` block and an optional `PortSpec.tools`, applied to agent-turn calls only (MAN-8); the engine path carried no tool profile before. | `connectors/tools/profiles.py`, `connectors/engine_port.py` |
 | Spend | `Allowance` and the node meter; credits as `J2_BUDGET` | `router.py` `check_gate`, `engine/port.py` |
 
 Known limit, written down on purpose: the `sutra` read tools open the whole app database read-only (`sutra_tools.py`); they are not scoped to one project. So they are
@@ -87,7 +93,7 @@ The Gatekeeper asks the owner through the card system the app already has (`need
 
 | Gate | When | What the owner sees | Answers |
 |---|---|---|---|
-| **Plan gate** | Before the first node starts, if any step needs more than the defaults: tier 4, or a write scope wider than a folder, or an estimate over the project's confirm threshold. | "This project has 4 steps. Step 3 wants to read GitHub. Step 2 will change files in `site/pricing/`. Estimated spend: about 180 credits." | Allow for this project, allow once, deny |
+| **Plan gate** | Before the first node starts, if any step needs more than the defaults: tier 4, or a write scope of more than one path, or an estimate over the project's confirm threshold (default 500 work credits, `caps_json["confirm_credits"]`; not asked when the owner gave their own budget: D300). A writer with no declared scope is not asked about: it holds the whole folder and runs alone. | "This project has 4 steps. Step 3 wants to read GitHub. Step 2 will change files in `site/pricing/`. Estimated spend: about 180 credits." | Allow for this project, allow once, deny |
 | **Grant gate** | After a light node ends with `needs.json` (it lacked a tier). | "The reviewer asked for: read GitHub. Why: ... Allow and run it again?" | same |
 | **Budget gate** | A node asks for more credits (J2's own question, routed) or the project ceiling is near. | The existing raise question, with "So far: 100 + 30 = 130 work credits approved" (P25). | exact amount, or no |
 
@@ -115,8 +121,8 @@ The rule table (fixed, in code, in `gatekeeper.py`):
 |---|---|---|
 | Plan gate, tiers 0 to 3 | **Allow**, within the grant the roles table already gives | These are the defaults. The owner's folder access still caps every grant. |
 | Plan gate, tier 4 (network: GitHub read tools) | **Allow for this project**, only the read-only tools, only through the owner's own `gh` login | The owner switched Decide for me on knowing the project may read. Read-only, no write path. |
-| Plan gate, a write scope wider than one folder, or no declared scope | **Allow, but the writer runs alone** among writers (no parallel writers) | The safe version of "yes": slower, never unsafe. |
-| Plan gate, estimate over the confirm threshold | **Allow only up to the project's credit ceiling** (the owner's own number, or the default). The ceiling is never raised. | The owner approved the ceiling up front, which is the owner's own answer. |
+| Plan gate, a write scope of more than one path (a missing scope needs no answer: it runs alone anyway) | **Allow, but the writer runs alone** among writers (no parallel writers) | The safe version of "yes": slower, never unsafe. |
+| Plan gate, estimate over the confirm threshold (500 by default) | **Allow only up to the project's credit ceiling** (the owner's own number, or the default). The ceiling is never raised. | The owner approved the ceiling up front, which is the owner's own answer. |
 | Grant gate: a node ended with `needs.json` for tier 0 to 4 | **Allow and run again, once** (the retry budget of the node) | Same as the plan gate. A second request for the same tier is refused. |
 | Grant gate: `needs.json` asks for tier 5 or 6 | **Deny.** The node ends with the reason; the project goes on by its failure policy | See the walls below. |
 | Budget gate: a node asks for more credits | **Do not raise** (P25 kept). The node stops at its slice. Unspent slices of finished nodes may move to a node that needs them, as long as the project total never goes above the ceiling | P25: a raise needs the Requester's own approval. Moving credits inside an approved total is not a raise. |
@@ -126,7 +132,7 @@ Walls Decide for me never crosses (each is also a test):
 
 - Tier 6 (publish outside) is never granted. It is also never asked, so there is no card to answer. `J2_SEND_MODE` stays `dry-run`.
 - Tier 5 (spend beyond the slice) is never auto-approved. The ceiling the owner set, or the default, is the whole budget.
-- The owner's folder access (read only, or read and change) caps every grant. Decide for me cannot widen it.
+- The owner's folder access (read only, or read and change) caps the folder part of every grant (tiers 2 and 3). Decide for me cannot widen it. (Tier 4 is not folder reach: the rule table may allow it, read-only, as in the table above: D298.)
 - The caps in section 6, the depth rule (a node never starts a node) and the kill switch all stay in force.
 - Prompt-injection rule stays: text a node writes can never turn Decide for me on, because the switch is a field on the project row that only the owner's own request (the Simple view switch or the start of a project) can set.
 - A model's own suggestion is not used. J2's inside-worker answers come from J2 as today; the node gates are answered by the rule table only.
@@ -209,7 +215,7 @@ Defaults are in `projects.caps_json` and `config.py`. Every cap stops something 
 
 | Cap | Default | What stops | Where counted |
 |---|---|---|---|
-| Nodes per project | 12 workers (the plan limit) + reviewers | no more spawn | `projects` row |
+| Nodes per project | 12 workers (the plan limit; reviewers come on top) | no more spawn | `projects` row |
 | Parallel nodes per project | 3 | others stay `queued` with "waiting for a free slot" | task gate |
 | Whole machine | `SUTRA_MAX_RUNS` 3, `SUTRA_MAX_LIVE` 12 | same | `start_ready` (unchanged) |
 | Provider processes | `max_concurrency` of the policy (Claude 4, Codex 2) for the whole machine | the call waits | slots (sub-flag) |
@@ -222,6 +228,7 @@ Defaults are in `projects.caps_json` and `config.py`. Every cap stops something 
 | Project wall time | 2 hours | project stopped | Conductor tick |
 | Retries per node | 1 | node failed | `agent_nodes.attempt` |
 | Review loops | 2 | card to the owner | `projects` row |
+| Plan confirm threshold | 500 work credits | the plan gate asks | `caps_json["confirm_credits"]` (D300) |
 | Spawn depth | 1 | **a node can never spawn a node** | there is no code path for it |
 | Silent node | 90 s lease | stop ladder, retry once | Conductor tick |
 | Router calls per request | 6 | existing | `policy.default.json` |
@@ -236,15 +243,15 @@ Four levels, from small to large. Each uses the one stop ladder that exists (sto
 
 | Level | How | Effect |
 |---|---|---|
-| Node stop | button; `POST /api/nodes/{id}/stop` | That node's ladder. Dependants cancelled by the project's policy. |
-| Project stop | button; `POST /api/projects/{id}/stop` | Every node of the project; no new spawns; state `stopped`. |
-| Pause all | `POST /api/nodes/pause-all`; or a `PAUSE` file | No new spawns anywhere; running nodes finish. |
-| Kill all | `POST /api/nodes/kill-all`; the ops command; or a file `<data>/nodes/KILL` | Ladder for every node; no new spawns until the file is removed. |
+| Node stop | button; `POST /api/nodes/{id}/stop` | That node's ladder. Dependants cancelled by the project's policy. A planner call in flight is stopped too (D301). |
+| Project stop | button; `POST /api/projects/{id}/stop` | Every node of the project, ladders together; no new spawns; state `stopped`. |
+| Pause all | `POST /api/nodes/pause-all`; `sutra-pro nodes pause`; or a `PAUSE` file | No new spawns anywhere; running nodes finish. Nothing is cancelled; what waited starts at resume. |
+| Kill all | `POST /api/nodes/kill-all`; `sutra-pro nodes kill`; or a file `<data>/nodes/KILL` | The ladders of every live node run together (about 12 s in all). Every project with a live node becomes `stopped`, its queued and blocked nodes are `cancelled`, planner calls in flight are stopped (D301). No new spawns until the file is removed; nothing restarts by itself after resume. |
+| Resume | `POST /api/nodes/resume`; `sutra-pro nodes resume`; or remove the files | Both files removed; held nodes start. |
 
-The file exists because the UI can be the thing that is stuck. The owner can create `~/.sutra-pro/nodes/KILL` by hand. The Conductor checks it every tick and again inside the task
-gate, so even a tick that was missed cannot spawn past it. The light node host checks it in its loop.
+The file exists because the UI can be the thing that is stuck. The owner can create `~/.sutra-pro/nodes/KILL` by hand (an empty file is enough). Three things look at it (D303): the `NodeControl` watcher (one `lstat` every 2 s and once at start; it runs the ladders once for each new file and stays when the Conductor arrives, so a stuck tick cannot hold back a kill), the task gate (inside the start transaction, so a missed tick cannot spawn past it; the check fails closed, a file that cannot be looked at counts as present), and the light node host in its loop. The command line only writes and removes the files: a launch token is never on disk, so it cannot call the server. A node the owner or the switch stopped is never retried or restarted by the Conductor.
 
-Automatic triggers (each also an audit row and a card): a project or node cap reached; a scope violation; the same node hits the egress scrub three times; a node loses its lease twice; the owner's monthly dollar limit is used up (the existing `Limits` hold).
+Automatic triggers (each also an audit row and a card), built with their causes and not in MAN-4 (D303): a project or node cap reached and the same node hitting the egress scrub three times (MAN-9); a node losing its lease twice (MAN-7); a scope violation (MAN-10); the owner's monthly dollar limit used up (the existing `Limits` hold, nothing new).
 
 ## 8. Audit trail per node action
 
@@ -267,7 +274,8 @@ reason (<= 200 chars, redacted), ref (run_id, message seq or call_ref), hash (sh
 | `budget.stop` (which cap) | Conductor, host |
 | `egress.hit` (shape names, count) | router, through the tag |
 | `review.verdict` (the enum only) | Gatekeeper |
-| `kill`, `pause` (who, level) | route, Conductor |
+| `kill`, `pause`, `resume`, `node.stopped` (who, level) | `NodeControl` (route, command-line file, watcher) |
+| `gate.refused`, `project.stopped` (D296: names are constants in `nodes_store.py`) | Conductor |
 
 Where the owner reads it: `GET /api/projects/{id}/audit`, the project page, and `<data>/projects/<id>/audit.jsonl` (mode 0600) written at close. Local only.
 
@@ -296,7 +304,7 @@ frozen and byte-identical (D109, D249).
 
 | Traffic | Mode | Why |
 |---|---|---|
-| Engine node's model calls | `observe` (unchanged). The audit row now has `node_id`, `project_id`, `role` from the tag. | J2's prompts are not ours to edit. |
+| Engine node's model calls | `observe` (unchanged). The audit row now has `node` and `role` from the tag; the project is one join away (`agent_nodes.project_id`). | J2's prompts are not ours to edit. |
 | Light node's prompt | `replace`: the host scrubs its own text with `scrubbed()` before the call. | We own that text. |
 | Hand-off summary and claims, stored message bodies | `replace` plus the app's `Redactor` (known secret values), before storing and again before giving to the next node. | A secret must not travel from node to node. |
 | Anything shown on the wire (SSE, API) | `redact` as today. | Existing. |
@@ -329,3 +337,5 @@ If a node's egress row shows a secret shape three times, the node is stopped and
 - Per-tool-call audit, until MAN-14.
 - Publishing to the outside world. It is not offered (tier 6).
 - Several owners or accounts. Sutra Pro is one owner on one machine.
+- Narrowing J2's own builder tools (`Bash`, `WebSearch`, `WebFetch` in the run folder) per node. They are the engine's reach as today (D299); only an engine setting for all runs turns them off.
+- The `sutra` tool part reads the whole app database (see the known limit under section 4). A tier-4 grant does not carry it (D298), but a step that asks for it separately does.

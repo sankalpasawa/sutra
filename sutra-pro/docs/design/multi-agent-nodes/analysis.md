@@ -82,3 +82,14 @@ The existing behaviours that must stay are listed in `architecture.md` section 9
 - P15 external send stays off
 
 Each is kept by the mechanism in `architecture.md` section 9 and by the "what stays the same" column of the matching MAN package.
+
+## Addendum: facts found while building phase 1 (2026-11-20)
+
+Read in the code by the architect after MAN-1 to MAN-4; they changed the design through D297 to D305.
+
+- **F11. The engine path cannot carry a tool profile.** Fact: `policy.default.json` has `tool_profile: none` for every call; `CallTag` and `CompletionRequest` have no tools field; only chat and the orchestrator ask for `sutra` or `github` (through `AskRequest.tools`). So tier 4 (and tier 1 through the `sutra` tools) had no way to reach an engine worker. Answered by D298 (MAN-8).
+- **F12. J2's builder tools are a separate reach.** Fact: a builder-tools call is a `ToolGrant` (`CompletionRequest.run_tools`) that runs in a folder strictly inside the run folder; the router gives it no owner's folder (`folder_for` is skipped) and no MCP profile; the engine switches it on (`llm.tools_on`) and `types.json` lists its tools (Read, Write, Edit, Glob, Grep, Bash, WebSearch, WebFetch); `agent_tools` is a locked engine setting, not a task key. The department output spec's `workspace` only says what builders do in the OWNER's folder. Answered by D299.
+- **F13. The profile `sutra+github` is a bundle.** Fact: the MCP server and `tool_names_of` already accept the parts separately (`github` alone works); the policy type and the first design named only the bundle, which hands the whole app database read with the GitHub tools. Answered by D298.
+- **F14. A one-shot JSON call has no process-level stop.** Fact: `call_json_result` takes no `cancel`; a chat turn's token reaches the spawned process through `TurnPlan.cancel` (D215). Answered by D301.
+- **F15. `agent_nodes.task_id UNIQUE` and retries.** Fact: a retry is a new `tasks` row (`TaskService.retry`, `parent_task_id`). The node row therefore follows the current attempt (D305).
+- **F16. Stop restarts the queue.** Fact: `TaskService._stop` ends with `start_ready()`, so the kill file must already be on disk when the ladders run (it is: `kill_all` writes it first), and a stopped node must never be picked up again by a retry rule (D303).

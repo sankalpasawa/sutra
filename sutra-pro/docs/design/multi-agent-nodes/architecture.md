@@ -2,6 +2,7 @@
 
 Status: proposed, 2026-11-20. Design only. Findings: [analysis.md](analysis.md). Permissions and safety: [guardrails-and-permissions.md](guardrails-and-permissions.md).
 Decisions D253 on: [decisions.md](decisions.md). Work packages MAN-1 on: [build-plan.md](build-plan.md).
+Phase 1 (MAN-1 to MAN-4) is built; this document was corrected after it from the developer's notes ([dev-notes.md](dev-notes.md)) by the architect rulings D297 to D305. Corrections are marked with their D number.
 
 ## 1. The idea in one page
 
@@ -102,8 +103,8 @@ runs/<run_id> (existing)  the folder: task.json now carries an optional "node" b
 Identity travels in four places so it cannot get lost:
 
 1. `task.json` gets an optional `node` block: `{id, project_id, role, runtime, attempt, grants_id}` (see section 5).
-2. `CallTag` gets two optional fields, `node_id` and `node_role` (empty by default), so every model call, usage row and egress row carries them.
-3. The child environment gets `SUTRA_NODE_ID` (a plain id, not a secret). The existing allowance already passes every `SUTRA_*` name except the token.
+2. `CallTag` gets two optional fields, `node_id` and `node_role` (empty by default), so every model call, usage row and egress row carries them. (The usage row's own `node_id` column is the GRAPH node, so the runtime node goes in its `detail` as `agent_node` and `agent_role`; the egress row has `node` and `role`; the project is one join away: D304.)
+3. The child environment gets `SUTRA_NODE_ID` (a plain id, not a secret). The server's own value of it is never passed on: a run is a node only when its `task.json` says so.
 4. Every audit row names the node.
 
 ### 3.3 Lifecycle
@@ -139,7 +140,7 @@ What each step means in plain words:
 
 | Step | What happens | Who does it |
 |---|---|---|
-| **spawn** | The Conductor's task gate lets the queued task through. `_prepare_next` makes the run folder and `task.json` (with the `node` block) and the process starts. | Conductor + `TaskService` |
+| **spawn** | The Conductor's task gate lets the queued task through (it asks the kill switch first and holds a node with no valid grant: D302, D303). `_prepare_next` makes the run folder and `task.json` (with the `node` block) and the process starts. | Conductor + `TaskService` |
 | **lease** | A lease is a row: this node holds this write scope and this slot until `last_beat_at + lease_s`. It is taken inside the same transaction that marks the task `starting`, so two nodes cannot take the same scope. | `_prepare_next` (server) |
 | **heartbeat** | The engine's existing heartbeat line every 5 s. The Projector moves `agent_nodes.last_beat_at` (coalesced, at most once per 15 s when nothing else changed). Any event extends the lease. | node writes, Projector reads |
 | **hand-off** | On a clean end the host writes `handoff.json` (a summary, the files made with their checksums, claims, status). The Conductor validates it, scrubs it, stores it as a message and releases the lease. | host (writes), Conductor (reads) |
@@ -209,7 +210,7 @@ absolute paths, `..` and links) plus the validated `handoff.json`.
 Message envelope (`node-message/1`):
 
 ```
-{ v:1, project_id, seq,            # seq: gap-free per project, from the table's autoincrement
+{ v:1, project_id, seq,            # seq: 1, 2, 3 ... per project, no gap (D297): the writer takes MAX(seq)+1 in its own transaction
   at, from:{node_id, role}, to:{node_id|role|"project"},
   kind: handoff | verdict | gate_request | gate_decision | control | status,
   src_ref,                         # unique per project: "handoff:<node_id>:<attempt>"; a repeat is stored once
@@ -218,6 +219,8 @@ Message envelope (`node-message/1`):
 
 Delivery is at least once with `src_ref` de-duplication, so effectively once (the same pattern as `chat_messages.src_ref` and `usage_ledger.call_ref`).
 
+**The `seq` guarantee (D297).** For one project, at every committed state, the stored `seq` values are exactly 1 to n. The key is `(project_id, seq)`, not a table-wide autoincrement (that would give project A the numbers 1, 3, 4). `NodeStore.post` does all of this in one write transaction: look up `(project_id, src_ref)`, and if it is there return that row and take no number; else take `MAX(seq) + 1` for the project and insert. Nothing is ever updated or deleted (triggers; a project is never deleted in v1), a rollback gives the number back, and `project.message` is published after COMMIT. So a page that has `k` and asks `?after=k` gets `k+1, k+2, ...`; a first row that is not `k+1` means a message was lost and the page refetches from its last contiguous number. The snapshot carries `last_message_seq`. There is no global sequence for the page; the bus has its own `seq`.
+
 **To the owner (the page):** project and node changes are ordinary store events emitted after COMMIT, in the style of today's invalidation events:
 `project.created`, `project.updated`, `node.updated`, `approval.opened`, `approval.decided`, `project.message`. They go through the same bus, so they get a `seq`, enter the
 ring and replay by `Last-Event-ID`. The page then refetches `GET /api/projects/{id}` (a snapshot), the same "events are invalidations, the page refetches" rule as the bus
@@ -225,12 +228,12 @@ ring and replay by `Last-Event-ID`. The page then refetches `GET /api/projects/{
 
 | Streaming contract (D201-D238) | Used for nodes |
 |---|---|
-| Gap-free `seq`, snapshot plus `after=` catch-up (`LiveTurn`) | `node_messages.seq` and `GET /api/projects/{id}/messages?after=` |
+| Gap-free `seq`, snapshot plus `after=` catch-up (`LiveTurn`) | `node_messages.seq` (per project, D297) and `GET /api/projects/{id}/messages?after=` |
 | State words `accepted, running, stopping, done, stopped, failed` | Node states map one to one: `queued/leased` is accepted, `running`, `stopping` (stop ladder), `done`, `cancelled` is stopped, `failed` |
 | `heartbeat` with real idle time and idle limit | The node's `last_beat_at` and the lease length are shown the same way ("quiet for 40 s of 90 s") |
 | `chat.partial` live text of AI workers | A worker's live text is unchanged |
 | Idempotent send with `client_id` (D219, D220) | `POST /api/projects` and approval answers |
-| One `CancelToken` per turn (D215) | The planner's call and a light node's calls |
+| One `CancelToken` per turn (D215) | The planner's call (bound to its spawned process, D301) and a light node's calls |
 
 ### 4.2 Shared state and who owns it
 
@@ -246,7 +249,7 @@ The rule that keeps this safe: **every piece of state has exactly one writer.**
 | The owner's working folder | disk | only a node holding a write lease on that path, and only in its scope | owner, other nodes (read) |
 | Provider slots (optional, sub-flag) | `<data>/connectors/slots/*.lock` | each router's `flock` on a slot file | all routers |
 | `quota.json` | `<data>/connectors/` | routers (as today) | all |
-| Kill file `<data>/nodes/KILL` | disk | the owner (by hand) or the server | Conductor, light host |
+| Kill and pause files `<data>/nodes/KILL`, `PAUSE` | disk | the owner (by hand, or `sutra-pro nodes`) or the server | `NodeControl` watcher (every 2 s) and the task gate; the Conductor tick may also look; the light host |
 
 **SQLite approach.** Keep SQLite, WAL, one writer (D16). Nodes never open the database. New tables are additive in migration v6. To stop heartbeats from flooding the writer:
 
@@ -263,7 +266,7 @@ One scheduler. The Conductor is a **gate** on it, not a second queue.
 - **Conflict edges** are new and implicit: two steps that write overlapping paths must not run together. The Gatekeeper computes them from write scopes at plan time and the task gate enforces them at start time with a lease check. A conflict edge **delays**; it never cancels, so a failed sibling does not cancel a step that only waited for a folder.
 - **Write scope** per writing step: a list of relative paths or folders. The department's output spec decides if a step may write at all (`workspace_for`). The planner may **narrow** the scope, never widen it. No declared scope means "the whole folder", so that step runs alone among writers. If the folder is not a git work tree, writers run one at a time (the post-run check needs git).
 - **Same-team parallelism** (sub-flag `SUTRA_NODES_LANES`): a node task gets `lane = node_id`. The unique index becomes `(dept_id, lane)`. Every ordinary task has lane `''`, so the rule for them is identical to today. `live_in`, `deliver_to_department` and `stop_live(dept)` look only at lane `''`: a node is addressed by node id only.
-- **What may start**: `_prepare_next` already walks queued tasks in FIFO order and asks `why_waiting` and `start_gate`. A new optional `task_gate(conn, now, row)` is asked next, in the same transaction. It answers with a waiting sentence or empty. It checks, in order: master kill and pause, project state, node state, parallel cap of the project, project budget, write lease, provider slot. A held task stays `queued` with the sentence as its detail (the `Limits` pattern) and starts by itself when the reason ends.
+- **What may start**: `_prepare_next` already walks queued tasks in FIFO order and asks `why_waiting` and `start_gate`. A new optional `task_gate(conn, now, row)` is asked next, in the same transaction. It answers with a waiting sentence or empty. It checks, in order: master kill and pause (`NodeControl.gate`, built in MAN-4; the Conductor's gate asks it first and adds the rest, never replaces it: D303), that the node has a valid grant (a node with none is held, never started as an ordinary task: D302), project state, node state, parallel cap of the project, project budget, write lease, provider slot. A held task stays `queued` with the sentence as its detail (the `Limits` pattern) and starts by itself when the reason ends.
 - **Caps** are shared. Node tasks count in `counts_in`, so `SUTRA_MAX_RUNS` and `SUTRA_MAX_LIVE` bound the whole machine. A project adds its own `max_parallel` (default 3).
 - **Order** is FIFO by task creation, which is plan order. Critical-path ordering is a non-goal for v1.
 - **Inside a department** the J2 engine still runs its own builders one after another. That is a known limit, not a regression. The seam for later is the Coordination function's schedule; it needs a J2 sync and is outside this design.
@@ -278,7 +281,8 @@ One scheduler. The Conductor is a **gate** on it, not a second queue.
 | Project dollars | optional ceiling | the Conductor tick sums `usage_ledger` by the project's task ids; over the ceiling stops nodes with the stop ladder | `UsageStore.rows(task_id=)` |
 | Node credits | one slice per engine node | `task.json` settings `J2_BUDGET` and `J2_BUDGET_CAP` both set to the slice. A raise is a question to the Gatekeeper and then to the owner, never self-served (P25 kept) | `TaskSettings` |
 | Node calls, dollars, time | `max_calls` (default 60), `max_usd` (optional), `wall_s` (default 1800) | a `NodeMeter` in Sutra's own `engine/llm.py` shim adds `Allowance(max_calls, max_usd, deadline, envelope_id=node id)` to each call, from a running total in the process. Past a cap the host stops the run with outcome "Stopped: node limit (calls)" | `Allowance` and `Router.check_gate` |
-| Retries | one per node, review loops at most 2, nodes spawned at most `max_nodes` | counted in `agent_nodes` and `projects` rows | `attempts.py` |
+| Retries | one per node, review loops at most 2, nodes spawned at most `max_nodes` (workers only, reviewers on top: D305) | counted in `agent_nodes` and `projects` rows | `attempts.py` |
+| Plan confirm threshold | 500 work credits (D300): the plan gate asks when the estimate is over it; not asked when the owner gave their own `budget` | `caps_json["confirm_credits"]`, default in `config.py`; a step with no estimate counts as its slice | `Plan.confirm_credits` in `gatekeeper.py` |
 
 Honest limits: the dollar cap sees only Claude's list-price figure (Codex rows carry tokens, no dollars, D37), so a Codex node is bounded by calls and time. The router's
 `Allowance` was per request; the new `NodeMeter` makes it cumulative per node by passing the remaining amount each time.
@@ -300,7 +304,7 @@ Honest limits: the dollar cap sees only Claude's list-price figure (Codex rows c
 | N10 | Database busy past 5 s (`StoreBusy`) | The gate returns "waiting" and the tick tries again. Nothing is half-written (single transaction). | none |
 | N11 | App closed or crashed with live nodes | At start `reconcile` then `reconcile_projects` (section 3.3). | resumes or fails per node |
 | N13 | The computer has not allowed a folder (macOS "Operation not permitted", Windows "Access is denied") | Found by the probe before spawn: the node waits in `awaiting_system` with one card, the rest runs. Found late, during a run: the node ends as `needs_system_permission` (no retry) and the same card appears. Never answered by Decide for me. | only the affected steps wait or are cancelled |
-| N12 | Kill switch | Stop ladder for every node in scope, audit row, no new spawns until cleared. | project `stopped` |
+| N12 | Kill switch | The stop ladders of every live node run together (about 12 s in all, D303), audit row, no new spawns until cleared. Every project with a live node becomes `stopped`, its queued and blocked nodes are `cancelled`, and nothing restarts by itself after resume. Pause only holds. A node the owner or the switch stopped is never retried. | project `stopped` |
 
 **Failure policy** per project, set at plan time, default `stop_branch`: a failed node cancels only its dependants (what a failed task does today), siblings go on. The other
 choice is `stop_all`. Nothing silently continues: a project that ends with a failed node ends `done_with_open_items` or `stopped`, never `done`.
@@ -311,6 +315,7 @@ choice is `stop_all`. Nothing silently continues: a project that ends with a fai
 |---|---|---|---|---|
 | `ProjectService` | new | Create a project from a plan, own the project and node rows, adopt tasks, build the snapshot. | `sutra_app/orchestrator/projects.py` | `adopt(tx, request, plan, task_ids) -> ProjectOut`, `snapshot(id)`, `stop(id)`, `pause(id)` |
 | `NodeStore` | new | Rows of `agent_nodes`, `node_messages`, `node_audit`, `approvals`; leases; state moves. | `sutra_app/orchestrator/nodes_store.py` | `put_node`, `lease(tx, node, now)`, `release(tx, node)`, `post(tx, msg)`, `audit(tx, row)` |
+| `KillSwitch`, `NodeControl` | new (MAN-4, built) | The two files, the stop and pause levels, the 2-second watcher, the node stop, an audit row for each. Calls the one stop ladder through `TaskService.stop_node`. | `sutra_app/orchestrator/killswitch.py`, `sutra_app/ops/nodes.py` | `KillSwitch.held()`, `NodeControl.gate`, `stop_node`, `pause_all`, `kill_all`, `resume`, `enforce` |
 | `Conductor` | new | The task gate, the tick, hand-off intake, teardown, expiry, `reconcile_projects`. | `sutra_app/orchestrator/conductor.py` | `task_gate(conn, now, row) -> str`, `tick(now)`, `on_run_ended(task_id)`, `reconcile_projects()` |
 | `Gatekeeper` | new | Role table, grant calculation (an intersection), tier rules, approval cards, audit of decisions. | `sutra_app/orchestrator/gatekeeper.py`, `sutra_app/orchestrator/grants.py` | `evaluate(plan) -> Evaluation`, `grant_for(node) -> Grant`, `decide(approval_id, answer)` |
 | Project routes | new | HTTP surface (token, flag-guarded). | `sutra_app/orchestrator/api/projects.py` | see section 6 |
@@ -323,8 +328,8 @@ choice is `stop_all`. Nothing silently continues: a project that ends with a fai
 | `host/finish.py` | changed (additive step) | `handoff` step: write `handoff.json`. Only when the task says it is a node. | `sutra_app/engine/host/finish.py`, `handoff.py` | `finish.run_steps` gains one step |
 | Router slots | new, optional | A file-lock slot per provider, shared across processes. | `sutra_app/connectors/slots.py`, `router.py` (one hook) | `Slots.acquire(provider) -> Slot` |
 | Scoped folder grant | changed (additive) | `Folder` may carry `scope`; Claude gets `Edit(<scope>/**)` rules. | `sutra_app/connectors/workdir.py`, `claude.py`, `codex.py` | `Folder(..., scope=())` |
-| Egress | changed (additive) | The audit row also records `node_id` and `project_id`. | `sutra_app/connectors/egress.py` | one optional field |
-| Schema | changed (additive) | Migration v6: five tables, `tasks.lane`, index swap. | `sutra_app/orchestrator/schema.py` | `DDL_V6_NODES` |
+| Egress | changed (additive, built) | The audit row also records `node` and `role` from the tag (the project is one join away, D304). | `sutra_app/connectors/egress.py` | two optional fields |
+| Schema | changed (additive, built) | Migration v6: five tables, `tasks.lane`, index swap. | `sutra_app/orchestrator/schema.py` | `DDL_V6_NODES` |
 | Config | changed (additive) | The flags and defaults. | `sutra_app/config.py`, `sutra_app/ops/envfile.py` | `Settings.nodes_v1` etc. |
 | UI | new | A project page: node list, graph, approval card, stop, audit. Behind the flag. | `sutra_app/ui/static/js/project_*.js`, `sutra_app/ui/...` | page `/p/<id>` |
 
@@ -336,14 +341,24 @@ choice is `stop_all`. Nothing silently continues: a project that ends with a fai
           "caps": { "calls": 60, "usd": null, "wall_s": 1800 }, "scope": ["site/pricing/"] }
 ```
 
+MAN-8 adds one more optional key, `tool_profile` (`none|sutra|github|sutra+github`, from the grant), so an engine worker's calls can carry the tools it was granted (D298); `folder` needs no key, because the router already derives it from the tag and the owner's access.
+
 `TaskSpec` already has `extra="ignore"` ("a newer orchestrator may add some", `engine/spec.py` line 91), so an older engine reads the file as before. The block is **left out** of the
 dump when the flag is off, so `task.json` is byte-identical to today (golden test).
 
 ### 5.2 The grant (frozen at spawn)
 
-A grant is data: `{id, node_id, tiers: [0..4], folder: none|read|edit, scope: [...], tool_profile: none|sutra|sutra+github, commands: none|git_reads|sandboxed_builder, caps}`.
+A grant is data: `{id, node_id, role, tiers: [0..4], folder: none|read|inspect|edit, scope: [...], tool_profile: none|sutra|github|sutra+github, commands: none|git_reads, run_tools: none|engine, caps}`.
 It is computed once by the Gatekeeper as the **intersection** of the role table, the plan, the department's output spec and the owner's own folder access. It never changes
 during the node's life. The connectors enforce it with what they already have (see the mapping table in the guardrails document).
+
+How the parts relate (D298, D299, D304):
+
+- `tiers` are not a ladder: a grant lists each tier it holds (a reviewer holds 0, 1 and 3, never 2).
+- `folder` is what the node may do in the owner's folder. It is capped by the owner's access and by the department's output spec (`workspace_for`). `inspect` is read plus the four git reads (`Router.folder_for`).
+- Tier 1 = a folder to read, or the `sutra` part of the profile. Tier 2 = folder `edit`. Tier 3 = the four git reads (`commands = git_reads`). Tier 4 = the `github` part of the profile. The owner's folder access caps the first three through `folder`; it does not cap the profile.
+- `run_tools` describes J2's builder tools in the run folder: `engine` for a worker (the engine's own rule, as today), `none` otherwise. It is written in the audit and not enforced by the grant; it is not a tier and not capped by the owner's access.
+- `from_json` checks a stored grant by the same rules as a new one, so a row edited by hand cannot be wider than the role table.
 
 ### 5.3 `handoff.json` (`handoff/1`)
 
@@ -360,7 +375,7 @@ inside the node's scope or its run folder) and every checksum before accepting.
 
 ## 6. Interfaces / APIs
 
-All routes need the launch token (`require_token`) and answer `404 not_found` while `SUTRA_NODES_V1` is off.
+Every route answers `404 not_found` while `SUTRA_NODES_V1` is off, before the token is looked at. With it on, every write needs the launch token (`require_token`); reads need none, as every read of the app (D305).
 
 | Route | Request | Response | Errors |
 |---|---|---|---|
@@ -372,8 +387,10 @@ All routes need the launch token (`require_token`) and answer `404 not_found` wh
 | `POST /api/projects/{id}/approvals/{aid}` | `{decision: "allow_once"|"allow_project"|"deny", client_id}` | `ApprovalOut`; a repeat is a no-op `{duplicate:true}` | 404; 409 `decided`; 422 `allow_project` on tier 5 or 6 |
 | `POST /api/projects/{id}/stop` | `{}` | `{stopped: n}` | 404 |
 | `POST /api/projects/{id}/pause` | `{resume?: bool}` | `ProjectOut` | 404 |
-| `POST /api/nodes/pause-all` and `/kill-all` | `{reason}` | `{affected: n}` | |
-| `POST /api/nodes/{id}/stop` | | `{stopped: bool}` | 404 |
+| `GET /api/nodes/status` | | `{level: none|pause|kill, kill, pause}` (what the two files say; the page's way to learn the flag: 404 means off) | |
+| `POST /api/nodes/pause-all` and `/kill-all` | `{reason?}` | `{affected: n}`: for pause, nodes now waiting to start; for kill, nodes stopped | |
+| `POST /api/nodes/resume` | `{}` | `{resumed: bool}`: removes both files; what was held starts | |
+| `POST /api/nodes/{id}/stop` | `{}` | `{stopped: bool}` (`false` for a node whose task is over) | 404 only for an id that does not exist |
 
 Error codes reuse the app's closed set where one fits (`not_found`, `busy`, `store_busy`, `validation`). One new code: `node_limit` (a cap stopped something), carried as data, never a new HTTP status.
 
@@ -385,22 +402,25 @@ Migration `DDL_V6_NODES` (one tuple, one transaction, never edited later):
 
 ```
 projects        id TEXT PK ('prj_'+12 hex), request_id TEXT UNIQUE, title, status CHECK (planning, awaiting_approval, running, reviewing, done,
-                done_with_open_items, stopped, failed), failure_policy ('stop_branch'|'stop_all'), caps_json, budget_credits, budget_usd,
-                client_id UNIQUE, created_at, ended_at, stop_reason
+                done_with_open_items, stopped, failed), failure_policy ('stop_branch'|'stop_all'), decide_for_me 0|1, paused 0|1, review_loops,
+                caps_json, budget_credits, budget_usd, client_id UNIQUE, created_at, ended_at, stop_reason
 agent_nodes     id TEXT PK ('nd_'+12 hex), project_id FK, task_id UNIQUE FK NULL, role CHECK (planner, worker, reviewer),
                 runtime CHECK (inline, engine, light), plan_ref, depends_on JSON, state CHECK (planned, awaiting_approval, awaiting_system, ready, queued, leased,
                 running, handing_off, done, failed, cancelled, expired), attempt, grants_json, writes_json, slice_credits,
                 lease_expires_at, last_beat_at, failure_reason, torn_down_at, created_at, ended_at
-node_messages   seq INTEGER PK AUTOINCREMENT, project_id FK, from_node, to_node, kind CHECK (...), src_ref, body, body_sha256, at,
-                UNIQUE(project_id, src_ref)
+node_messages   project_id FK, seq INTEGER (>= 1), from_node, to_node, kind CHECK (...), src_ref, body, body_sha256, at,
+                PRIMARY KEY (project_id, seq), UNIQUE(project_id, src_ref)   -- seq per project, no gap (D297)
+                + triggers: no UPDATE, no DELETE (D264)
 node_audit      seq INTEGER PK AUTOINCREMENT, at, project_id, node_id, role, actor, action, tier, target, decision, reason, ref, hash
                 + triggers: no UPDATE, no DELETE (the pattern of atom_ledger)
 approvals       id TEXT PK ('ap_'+12 hex), project_id FK, node_id, tier, request_json, status CHECK (open, allowed_once, allowed_project, denied,
-                expired), decided_by, decided_at, expires_at, client_id
+                expired), decided_by ('owner'|'system'|'rule:<name>'), decided_at, expires_at, client_id, created_at
 tasks           + lane TEXT NOT NULL DEFAULT ''
 index swap      DROP INDEX tasks_one_live_per_dept; CREATE UNIQUE INDEX tasks_one_live_per_dept_lane ON tasks(dept_id, lane)
                 WHERE status IN ('starting','running','waiting_user')
 ```
+
+Notes from the build (D304, D305): `agent_nodes.task_id` (UNIQUE) points at the node's current attempt; an earlier attempt stays in `tasks` through `parent_task_id`, and a retry re-points the row in the same transaction that makes the new task. Projects are never deleted in v1, because the append-only tables refer to them. `paused` is a column because a paused project is still `running` in the status list.
 
 Backward compatibility:
 
@@ -428,7 +448,7 @@ Backward compatibility:
 |---|---|
 | Checkpoints | Nodes are runs, so run files, `snapshot.json` and `LiveTurn` checkpoints are untouched. The planner's turn keeps its checkpoint. Project state is rows plus files, rebuilt at start. |
 | Resume | `reconcile` runs first and unchanged. `reconcile_projects` is read-and-repair on top. A follow-up task and `rehydrate` work on a node's run like any run. |
-| Stop and `CancelToken` | A node stop is `launcher.stop` (the same ladder). The project stop calls it per node. The planner and the light host use a `CancelToken` as chat turns do. |
+| Stop and `CancelToken` | A node stop is `launcher.stop` (the same ladder). The project stop calls it per node, all together (D303). The planner and the light host use a `CancelToken` as chat turns do, bound to the spawned process, so a Stop ends the running call (D301). |
 | Idempotent send | `client_id` on project start and approvals; `src_ref` on messages. |
 | Egress scrub | Both modes stay. New: hand-off and messages are scrubbed in `replace` mode; light-node prompts are scrubbed by the host before the call; audit rows gain node fields. |
 | Budgets | Slices become `J2_BUDGET`; raises stay the Requester's; `Limits` still gates the start; the monthly dollar limit still applies. |
@@ -447,6 +467,7 @@ Runs with the fake engine (`SUTRA_ENGINE=fake`, `FakeLauncher`, `ScriptedConnect
 | Store | Migration v6 on an empty file and on a v5 file with data; the lane index keeps the old rule for lane `''`; append-only triggers; `src_ref` uniqueness. |
 | Integration | A project of 4 steps with `FakeLauncher`: edges respected, parallel steps run together, a conflict edge delays, caps hold, a failed node cancels only its branch; kill and stop; crash and restart (`reconcile_projects`); lease expiry; approval allow, deny and expiry; budget ceiling stop; `StoreBusy` retry. |
 | Contract | `task.json` byte-identical with the flag off (golden); `RunSpec` dump with a node block validates in `TaskSpec`; event set of `events.jsonl` is still the closed eight; the bus topics. |
+| Phase 1 additions | `seq` stays 1 to n under two projects, a repeated `src_ref` and a rollback (D297); a read-only owner still gets tier 4 when approved, and never tier 2 or 3 (D298); a document run's grant has `run_tools = engine` and tiers 0 and 1 (D299); a node with no valid grant is held, never started (D302); kill-all with several nodes ends in one ladder's time (D303). |
 | Safety | A planted-instruction hand-off ("ignore your rules, enable writes") changes no grant and no edge; a secret in a hand-off is redacted; a path outside scope pauses the project; no route works with the flag off. |
 | Preservation | The whole existing suite with the flag off: unchanged. Vendored-file hashes unchanged. |
 | e2e (beta app, by hand) | The owner runs a 3-step project in the beta and stops it. `live_smoke.py` is **not** run (it spends quota, `AGENTS.md`). |
@@ -494,8 +515,11 @@ The owner's asks, with where each is answered.
 | Failure handling | 4.5 | integration | MAN-7 |
 | Guardrails, permissions, approvals, audit, kill, injection, egress | guardrails document | safety tests | MAN-2, MAN-3, MAN-4, MAN-8, MAN-14 |
 | Flag off keeps today | 5.1, 7, 9 | preservation tests | every package |
+| Resume of messages by `after=` | 4.1 (`seq` guarantee), 7 | store and message tests | MAN-1, MAN-6 |
+| A node can reach only what its grant says, builder tools and network told truthfully | 5.2, guardrails 3 and 4 | grant tests | MAN-2, MAN-8 |
+| Stop means stop, also for the planner | 4.5, 9 | kill, planner stop tests | MAN-4, MAN-5 |
 
 ## 14. Decisions
 
-D253 to D296 in [decisions.md](decisions.md). D294 is Decide for me for projects (the project runs with no input; a rule table answers the gates). D295 is operating-system permissions per system, Mac and Windows (checked before a node starts; only the owner can grant them). D296: a closed laptop is a refusal. The main ones: D253 node = run plus identity, D254 flag off by default, D257 one scheduler with a task gate, D258 lanes,
+D253 to D305 in [decisions.md](decisions.md). D297 to D305 are the architect's rulings after phase 1 (seq per project, tier 4 and the folder, builder tools are not a tier, the confirm threshold, the planner's stop, no grant no start, kill switch ownership, adopted findings, small rules). D294 is Decide for me for projects (the project runs with no input; a rule table answers the gates). D295 is operating-system permissions per system, Mac and Windows (checked before a node starts; only the owner can grant them). D296: a closed laptop is a refusal. The main ones: D253 node = run plus identity, D254 flag off by default, D257 one scheduler with a task gate, D258 lanes,
 D262 server is the only writer, D266 the Gatekeeper is code, D267 grants frozen at spawn, D271 budget slices.
