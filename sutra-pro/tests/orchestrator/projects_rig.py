@@ -15,6 +15,7 @@ MORE_TEAMS = ("ops", "hr", "dev", "legal", "finance")
 
 class PRig:
     def __init__(self, db, settings, clock, events, *, owner="edit", launcher=None, teams=True, **settings_changes):
+        from sutra_app.orchestrator.limits import LIMITS_FILE, Limits
         self.t = tenv_with(db, settings, clock, events, nodes_v1=True, launcher=launcher or FakeLauncher({"*": [{"hold": True}]}), **settings_changes)
         t = self.t
         if teams:
@@ -24,11 +25,14 @@ class PRig:
         self.switch = KillSwitch(t.settings.data_dir / "nodes", clock=t.clock)
         self.store = NodeStore(t.db, ids=t.ids)
         self.control = NodeControl(self.switch, tasks=t.service, db=t.db, store=self.store, clock=t.clock, kick=t.service.start_ready)
-        self.projects = ProjectService(t.db, store=self.store, ids=t.ids, clock=t.clock, settings=t.settings, owner_access=lambda: self.owner, node_control=self.control, tasks=t.service, chats=t.chats)
+        self.limits = Limits(t.settings.data_dir / LIMITS_FILE, t.db, quotas=lambda: {}, clock=t.clock)           # the real limits file and the real ledger, as wiring has them (D381)
+        self.projects = ProjectService(t.db, store=self.store, ids=t.ids, clock=t.clock, settings=t.settings, owner_access=lambda: self.owner, node_control=self.control, tasks=t.service, chats=t.chats,
+                                       monthly_limit=self.limits.monthly_limit)
         self.control.projects = self.projects
         t.service.task_gate = self.projects.gate
         t.service.spawn_guard = self.control.spawn_guard
         t.service.node_sync = t.projector.node_sync = self.projects.sync_task
+        t.service.node_usd_left = self.projects.usd_left
         t.projector.before_drain = self.projects.prepare_handoff
 
     # ---- making a request the way the runner does ---------------------------------------------------------------------------------

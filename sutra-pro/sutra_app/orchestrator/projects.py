@@ -121,7 +121,8 @@ class ProjectService:
     def __init__(self, db: Database, *, store: NodeStore, ids: IdFactory | None = None, clock: Clock | None = None, settings: Settings,
                  owner_access: Callable[[], str] | None = None, output_of: Callable[[str], Any] | None = None, node_control: Any = None, tasks: Any = None, chats: Any = None,
                  output_name: Callable[[str], str] | None = None, folder_of: Callable[[], str | None] | None = None, adapter: Any = None,
-                 elevated: Callable[[], bool] | None = None, owner_decides: Callable[[Sequence[str]], bool] | None = None, providers: Callable[[], Sequence[str]] | None = None) -> None:
+                 elevated: Callable[[], bool] | None = None, owner_decides: Callable[[Sequence[str]], bool] | None = None, providers: Callable[[], Sequence[str]] | None = None,
+                 monthly_limit: Callable[[], float | None] | None = None) -> None:
         self.db = db
         self.store = store
         self.ids = ids or IdFactory()
@@ -135,6 +136,8 @@ class ProjectService:
         self._elevated = elevated or oslayer.is_elevated
         self._providers_fn = providers or (lambda: ())                              # the model programs that are installed and signed in: the reviewer picks one that did not build (MAN-11)
         self._owner_decides = owner_decides or (lambda depts: False)                # the owner's own Decide for me setting of these teams (D319, G13)
+        self._monthly_limit = monthly_limit or (lambda: None)                       # the owner's monthly dollar limit (Settings), None when there is none (D381)
+        self._limit_seen: tuple[float, float | None] = (-1e9, None)                  # (when it was read, what it said): read at most every 2 s, and before a transaction opens (`warm_limit`)
         self.control = node_control
         self.tasks = tasks
         self.chats = chats                                                        # the org chat's store: where the receipt of a stopped project is written (MAN-7)
@@ -172,6 +175,39 @@ class ProjectService:
             token.cancel_bound()
         return len(tokens)
 
+    # ---- the monthly dollar limit (D381) ----------------------------------------------------------------------------------------------
+
+    def warm_limit(self) -> float | None:
+        """The owner's monthly limit, read from its file at most every 2 s. Called BEFORE a write transaction opens, so what a transaction reads is this value and no file (PB-16)."""
+        import time
+        now = time.monotonic()
+        seen_at, seen = self._limit_seen
+        if now - seen_at > 2.0:
+            seen = self._monthly_limit()
+            self._limit_seen = (now, seen)
+        return seen
+
+    def month_left(self, conn: sqlite3.Connection, now: float) -> float | None:
+        """The dollars of the owner's monthly allowance that are left now: the limit minus this month's known spending (every call of every task, planners and steps included). None when the owner
+        set no limit. Never below 0. From the value `warm_limit` read, so it reads no file."""
+        from sutra_app.orchestrator.limits import spend_status
+        limit = self._limit_seen[1]
+        if not limit:
+            return None
+        return max(0.0, round(float(limit) - float(spend_status(conn, limit, now)["spent"]), 6))
+
+    def usd_left(self, conn: sqlite3.Connection, project_id: str, now: float) -> float | None:
+        """The most dollars a step of this project may still spend if it starts now: the project's own dollars minus what it spent, and the month's allowance that is left, whichever is less. None when
+        nothing limits it. Never below 0."""
+        lefts: list[float] = []
+        row = conn.execute("SELECT budget_usd FROM projects WHERE id = ?", (project_id,)).fetchone()
+        if row is not None and row["budget_usd"] is not None:
+            lefts.append(float(row["budget_usd"]) - project_spend(conn, project_id)[1])
+        month = self.month_left(conn, now)
+        if month is not None:
+            lefts.append(month)
+        return max(0.0, min(lefts)) if lefts else None
+
     # ---- planning: the Gatekeeper's rules, then the rows ---------------------------------------------------------------------------
 
     def reserve(self, request_id: str, title: str, steps: Sequence[ProjectStep], *, budget: int | None = None, decide_for_me: bool = False,
@@ -192,6 +228,7 @@ class ProjectService:
         evaluation = evaluate(plan)
         if self._elevated():                                                        # a process run as administrator makes no node: what it writes would belong to the administrator (MAN-15)
             evaluation = Evaluation(False, {}, refusals=(Refusal(None, "system.elevated", "Sutra is running as administrator. Close it and open it again the usual way, then ask again"),))
+        self.warm_limit()                                                           # the owner's limit is read before the transaction opens (D381)
         with self.db.tx() as tx:
             if tx.conn.execute("SELECT id FROM projects WHERE request_id = ?", (request_id,)).fetchone() is not None:
                 found = tx.conn.execute("SELECT id, status FROM projects WHERE request_id = ?", (request_id,)).fetchone()
@@ -218,14 +255,17 @@ class ProjectService:
         # (a plan above the cap always has the estimate question) and was dead code. `make_slices` keeps its ceiling argument for the callers that have one (tests).
         slices = make_slices(wants)                                               # each step's share (MAN-9, D324); the project's ceiling is their sum, written as `budget_credits`
         caps["owner_budget"] = budget                                            # the owner's own number for each run (D252), None when they gave none
+        left = self.month_left(tx.conn, now)                                     # D381: the project may spend what is left of the owner's monthly limit when it starts, and no more
+        if left is not None:
+            caps["usd_from_month"] = True
         sutra_asks = [step.ref for step in steps if "sutra" in step.needs]               # the app's own data is only ever a question to the owner (D325)
         holds = bool(evaluation.gates) or bool(sutra_asks)
         status = "failed" if not evaluation.ok else "awaiting_approval" if holds else "running"
         why = "; ".join(refusal.why for refusal in evaluation.refusals)[:200]
         tx.conn.execute(
-            "INSERT INTO projects(id, request_id, title, status, failure_policy, decide_for_me, caps_json, budget_credits, created_at, ended_at, stop_reason) VALUES (?,?,?,?,?,?,?,?,?,?,?)",
+            "INSERT INTO projects(id, request_id, title, status, failure_policy, decide_for_me, caps_json, budget_credits, created_at, ended_at, stop_reason, budget_usd) VALUES (?,?,?,?,?,?,?,?,?,?,?,?)",
             (project_id, request_id, " ".join(title.split())[:200], status, failure_policy, 1 if decide_for_me else 0, json.dumps(caps, sort_keys=True), sum(slices), now,
-             now if status == "failed" else None, why if status == "failed" else ""))
+             now if status == "failed" else None, why if status == "failed" else "", left))
         self.store.audit(tx, actor="system", action="project.created", project_id=project_id, decision="n/a", reason=f"{len(steps)} steps", ref=request_id)
         if plan_defaults:
             self.store.audit(tx, actor="system", action="plan.defaults", project_id=project_id, decision="n/a", reason="the step requests could not be read, so no step asks for more than its defaults")

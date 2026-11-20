@@ -206,9 +206,10 @@ def build_services(settings: Settings, *, connector: Any = None, launcher: Any =
 
         projects = ProjectService(db, store=node_control.store, ids=ids, clock=clock, settings=settings, owner_access=owner_access,
                                   output_of=default_output_of(settings.data_dir), output_name=default_output_name(settings.data_dir), node_control=node_control, tasks=tasks, chats=chats,
-                                  owner_decides=_owner_decides(settings.data_dir), providers=_providers_of(port), folder_of=lambda: (str(router.folders.grant()) if getattr(router, "folders", None) is not None and router.folders.grant() is not None else None))
+                                  owner_decides=_owner_decides(settings.data_dir), providers=_providers_of(port), monthly_limit=limits.monthly_limit, folder_of=lambda: (str(router.folders.grant()) if getattr(router, "folders", None) is not None and router.folders.grant() is not None else None))
         node_control.projects = projects
         tasks.task_gate = projects.gate                    # the Conductor's gate asks the switch and the grant first (`node_control.gate`), then the project's own rules (D303)
+        tasks.node_usd_left = projects.usd_left                # a step's dollar cap is what the project and the owner's month have left when it starts (D381)
         tasks.before_prepare = projects.conductor.warm_scopes   # the links of the steps' scopes are looked at before the start transaction opens (N-6)
         tasks.node_sync = projector.node_sync = projects.sync_task
         projector.before_drain = projects.prepare_handoff
