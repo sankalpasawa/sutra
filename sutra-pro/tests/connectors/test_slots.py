@@ -86,3 +86,48 @@ def test_the_router_takes_a_slot_around_a_call_only_with_a_pool(tmp_path):
     from sutra_app.connectors.errors import ConnectorError
     with pytest.raises(ConnectorError):
         rig.call()                                                                                   # no slot in time: the call is refused as busy, nothing was left held
+
+
+def test_waiters_of_one_process_are_served_in_the_order_they_came_and_none_is_passed_over(tmp_path):              # PB-14
+    pool = SlotPool(tmp_path / "s", {"codex": 1}, sleep=lambda s: time.sleep(0.01))
+    held = pool.acquire("codex", timeout=1)
+    order, lock = [], threading.Lock()
+
+    def wait(name):
+        slot = pool.acquire("codex", timeout=10)
+        with lock:
+            order.append(name)
+        time.sleep(0.05)
+        pool.release(slot)
+    threads = []
+    for name in ("first", "second", "third"):
+        thread = threading.Thread(target=wait, args=(name,))
+        thread.start()
+        threads.append(thread)
+        time.sleep(0.1)                                                                                         # they arrive one after the other
+    pool.release(held)
+    for thread in threads:
+        thread.join(10)
+    assert order == ["first", "second", "third"]
+
+
+def test_a_waiter_that_gives_up_leaves_the_queue_so_the_ones_behind_it_are_not_stuck(tmp_path):
+    pool = SlotPool(tmp_path / "s", {"codex": 1})
+    held = pool.acquire("codex", timeout=1)
+    assert pool.acquire("codex", timeout=0.2) is None                                                           # gave up: its ticket is gone
+    pool.release(held)
+    slot = pool.acquire("codex", timeout=1)
+    assert slot is not None
+    pool.release(slot)
+    assert not pool._queues["codex"]
+
+
+def test_the_pause_between_looks_is_random_so_no_waiter_keeps_the_same_rhythm(tmp_path):
+    pauses = []
+    pool = SlotPool(tmp_path / "s", {"codex": 1}, sleep=pauses.append)
+    held = pool.acquire("codex", timeout=1)
+    ticks = iter(range(100))
+    pool._clock = lambda: next(ticks) * 0.05
+    assert pool.acquire("codex", timeout=1.0) is None
+    assert len(set(pauses)) > 3 and all(0.024 <= p <= 0.076 for p in pauses)
+    pool.release(held)

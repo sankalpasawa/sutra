@@ -253,6 +253,11 @@ class NodeMeter:
             self.calls += 1
             return allowance
 
+    def refund(self) -> None:
+        """Take back the count of a call that never started a model program (it waited for a machine-wide slot and gave up: PB-14)."""
+        with self._lock:
+            self.calls = max(0, self.calls - 1)
+
     def charge(self, usd: Optional[float]) -> None:
         """Add what a finished call cost (the call itself was counted by `begin`)."""
         with self._lock:
@@ -395,6 +400,8 @@ def ask(system, user, mock, max_tokens=1500, effort="high", on_progress=None, js
     try:
         result = port.complete(request, _hooked_progress(tag, on_progress))
     except ModelError as exc:
+        if meter is not None and (getattr(exc, "detail", None) or {}).get("slots") is True:
+            meter.refund()                                                    # it never started a program: not a call (PB-14)
         if exc.code == "timeout":
             raise CallTimeout(str(exc)) from exc
         raise

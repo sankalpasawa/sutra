@@ -124,3 +124,18 @@ def test_two_threads_cannot_both_take_the_last_call():
 
 def test_the_words_of_a_cap_are_plain():
     assert llm.CAP_WORDS == {"calls": "used up its model calls", "usd": "used up its dollars", "wall": "ran out of time"}
+
+
+def test_a_call_that_waited_for_a_machine_wide_slot_and_gave_up_is_not_counted():                              # PB-14
+    from sutra_app.connectors.errors import OverloadedError
+    busy = OverloadedError("the claude program is busy with other work on this computer", provider="claude", detail={"slots": True})
+    port, meter = Port(fail=busy), NodeMeter(max_calls=3)
+    llm.configure(port, mock=False, meter=meter)
+    for _ in range(5):
+        with pytest.raises(OverloadedError):
+            ask()
+    assert meter.calls == 0                                                                                    # five waits that never started a program used none of the three calls
+    port.fail = ModelError("a real failure")
+    with pytest.raises(ModelError):
+        ask()
+    assert meter.calls == 1                                                                                    # a call that did start and failed is still a call

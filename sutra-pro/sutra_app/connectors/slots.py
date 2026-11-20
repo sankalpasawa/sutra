@@ -11,7 +11,10 @@ crashed engine never keeps a slot. The router's own per-process semaphore stays 
 from __future__ import annotations
 
 import os
+import random
+import threading
 import time
+from collections import deque
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass
 from pathlib import Path
@@ -35,6 +38,8 @@ class SlotPool:
         self.directory = Path(directory)
         self.limits = {name: max(1, int(n)) for name, n in limits.items()}
         self._clock, self._sleep = clock, sleep
+        self._queues: dict[str, deque] = {}                    # the waiters of THIS process, first come first served (PB-14)
+        self._guard = threading.Lock()
 
     def _try(self, provider: str) -> Slot | None:
         self.directory.mkdir(mode=0o700, parents=True, exist_ok=True)
@@ -46,15 +51,27 @@ class SlotPool:
         return None
 
     def acquire(self, provider: str, *, timeout: float = 120.0, cancelled: Callable[[], bool] = lambda: False) -> Slot | None:
-        """A free slot of `provider`, waiting up to `timeout` seconds (polling; a stop ends the wait). None when none came."""
+        """A free slot of `provider`, waiting up to `timeout` seconds (a stop ends the wait). None when none came. Fairness (PB-14): the waiters of one process are served in the order they came; between
+        processes there is no queue (a file lock has none), so each waiter looks again after a random short pause, which keeps any one of them from being passed over for long. A call that waits
+        past its timeout is not a call: it never started a program."""
         end = self._clock() + timeout
-        while True:
-            found = self._try(provider)
-            if found is not None:
-                return found
-            if cancelled() or self._clock() >= end:
-                return None
-            self._sleep(POLL_S)
+        ticket = object()
+        with self._guard:
+            self._queues.setdefault(provider, deque()).append(ticket)
+        try:
+            while True:
+                with self._guard:
+                    first = self._queues[provider][0] is ticket
+                if first:
+                    found = self._try(provider)
+                    if found is not None:
+                        return found
+                if cancelled() or self._clock() >= end:
+                    return None
+                self._sleep(POLL_S * (0.5 + random.random()))
+        finally:
+            with self._guard:
+                self._queues[provider].remove(ticket)
 
     def release(self, slot: Slot | None) -> None:
         if slot is None:

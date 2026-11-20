@@ -245,7 +245,7 @@ class _Request(Hooks):
             if slots is not None:                      # SUTRA_NODES_SLOTS: the limit across processes too (MAN-12); the wait ends when the request is stopped
                 slot = slots.acquire(info.provider, timeout=self.timeout_s(), cancelled=lambda: bool(getattr(getattr(self.ctx, "cancel", None), "requested", False)))
                 if slot is None:
-                    raise OverloadedError(f"the {info.provider} program is busy with other work on this computer", provider=info.provider)
+                    raise OverloadedError(f"the {info.provider} program is busy with other work on this computer", provider=info.provider, detail={"slots": True})      # never started: a node's meter does not count it (PB-14)
             self.check_gate()                         # the deadline may have passed while this request waited for the cap
         except BaseException:
             if slot is not None:
