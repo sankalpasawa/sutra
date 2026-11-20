@@ -111,12 +111,11 @@ def test_a_step_whose_rights_are_not_known_gets_the_narrowest_list(fake, tmp_pat
     assert value(argv, "--tools") == "Read,Write,Edit,Glob,Grep" and "Bash" not in value(argv, "--allowedTools")
 
 
-@pytest.mark.parametrize("rights, shell, web", [
-    (NodeRights((0, 1, 2, 3), "git_reads"), False, False),         # tier 3 is the four git reads of the owner's folder, not a shell
-    (NodeRights((0, 1, 2, 3, 4), "git_reads"), False, True),       # tier 4 opens the web tools
-    (NodeRights((0, 1, 3), "sandboxed_builder"), True, False),     # a shell level that no grant holds today
+@pytest.mark.parametrize("rights", [
+    NodeRights((0, 1, 2, 3), "git_reads"),                          # tier 3 is the four git reads of the owner's folder, not a shell
+    NodeRights((0, 1, 2, 3, 4), "git_reads"),                       # tier 4 is "Read GitHub, read only": it opens NO web tool (D386)
 ])
-def test_the_shell_needs_a_shell_level_and_the_web_needs_tier_four(fake, tmp_path, folders, rights, shell, web):
+def test_no_grant_opens_the_shell_or_the_web_for_a_builder_call(fake, tmp_path, folders, rights):
     fake.sequence("ok_plain").reply(text="built")
     router = rig(fake, tmp_path, rights)
     try:
@@ -125,10 +124,10 @@ def test_the_shell_needs_a_shell_level_and_the_web_needs_tier_four(fake, tmp_pat
     finally:
         router.close()
     offered = value(argv, "--tools").split(",")
-    assert ("Bash" in offered) is shell and ("WebSearch" in offered and "WebFetch" in offered) is web
-    assert ("Bash" in value(argv, "--allowedTools").split(" ")) is shell
-    assert ("WebFetch(domain:*)" in value(argv, "--allowedTools").split(" ")) is web
-    assert {"Read", "Glob", "Grep"} <= set(offered)
+    allowed = value(argv, "--allowedTools").split(" ")
+    assert offered == ["Read", "Write", "Edit", "Glob", "Grep"]
+    for name in ("Bash", "WebSearch", "WebFetch", "WebFetch(domain:*)"):
+        assert name not in offered and name not in allowed and not any(a.startswith(name + "(") for a in allowed if name != "WebFetch(domain:*)")
 
 
 # ---- the pure rule -------------------------------------------------------------------------------------------------------------
@@ -148,9 +147,9 @@ def test_the_narrowed_grant_is_a_copy_and_the_engines_own_is_untouched(folders):
 
 def test_the_words_of_the_grant_line_are_true_for_each_case():
     assert node_tools.words(NARROWEST) == "reads; writes only in its own folder; no commands; no web"
-    assert node_tools.words(NodeRights((0, 1, 4), "none")) == "reads; writes only in its own folder; no commands; web"
+    assert node_tools.words(NodeRights((0, 1, 4), "none")) == "reads; writes only in its own folder; no commands; no web"
     assert node_tools.owner_words(NARROWEST) == "This step can look at the files it is given and write its own working files in a scratch space of its own. It cannot run commands or use the web."
-    assert "search and read the web" in node_tools.owner_words(NodeRights((0, 1, 4), "none"))
+    assert node_tools.owner_words(NodeRights((0, 1, 4), "none")) == node_tools.owner_words(NARROWEST)
 
 
 # ---- Codex ---------------------------------------------------------------------------------------------------------------------

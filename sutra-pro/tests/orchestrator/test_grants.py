@@ -392,3 +392,15 @@ def test_the_grant_line_is_true_about_the_builder_tools_the_host_allows(monkeypa
         assert "run_tools engine (reads; writes only in its own folder; no commands; no web)" in line and len(line) <= 200
         assert node_tools.words(node_tools.NodeRights(grant.tiers, grant.commands)) in line
     assert "(" not in intersect("reviewer", None, "edit", "edit").describe().split("run_tools")[1].split(";")[0]
+
+
+def test_a_tier_four_grant_says_no_web_and_holds_none(monkeypatch):
+    """D386: "Read GitHub, read only" is not a web tool. The line of a grant that holds tier 4 says no web, and the rule gives a builder call none."""
+    from sutra_app.connectors import node_tools
+    grant = intersect("worker", StepRequest(wants=frozenset({4})), "edit", "edit", approved={4})
+    assert 4 in grant.tiers and grant.tool_profile in ("github", "sutra+github")
+    assert "no web" in grant.describe() and "; web" not in grant.describe()
+    narrowed = node_tools.narrow(__import__("sutra_app.engine.port", fromlist=["ToolGrant"]).ToolGrant(
+        tools=("Read", "WebSearch", "WebFetch"), allow=("Read", "WebSearch", "WebFetch", "WebFetch(domain:*)"), cwd="/tmp/x", root="/tmp", usd=1, log_chars=5),
+        node_tools.NodeRights(grant.tiers, grant.commands))
+    assert narrowed.tools == ("Read",) and "WebFetch(domain:*)" not in narrowed.allow
