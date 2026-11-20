@@ -125,9 +125,72 @@ def test_codex_an_ask_turn_runs_in_a_read_only_sandbox_even_when_the_owner_allow
     turn(router, ASK)
     turn(router)
     plain, ask1, ask2, plain2 = (c["argv"] for c in fake.model_calls("codex"))
-    assert value(plain, "-s") == "workspace-write"
-    assert "resume" in ask1 and 'sandbox_mode="read-only"' in ask1 and 'sandbox_mode="read-only"' in ask2      # a resumed thread takes its sandbox from -c, every turn
-    assert 'sandbox_mode="workspace-write"' in plain2                                                         # and a plain turn after it is the chat as it was
+    assert value(plain, "-s") == "workspace-write" and "resume" not in plain
+    assert value(ask1, "-s") == "read-only" and "resume" not in ask1                                       # the first Ask turn: a new thread (the mode changed), read only
+    assert "resume" in ask2 and 'sandbox_mode="read-only"' in ask2                                         # the next Ask turn resumes it, read only again
+    assert value(plain2, "-s") == "workspace-write" and "resume" not in plain2                             # a Do after it: a new thread, as it was
+
+
+def system_of(call):
+    """The text a Codex thread was given in its first prompt, or "" (a resumed turn is given none)."""
+    stdin = call["stdin"]
+    return stdin.split("</system>")[0] if stdin.startswith("<system>") else ""
+
+
+def test_codex_the_ask_words_reach_an_ask_turn_and_never_a_do_turn_in_either_order(rig, fake):
+    """Review M3. Codex reads the system text of a thread's first turn and never again, so a thread is one mode: Do first then Ask, and Ask first then Do, both start a new thread."""
+    fake.sequence("ok_plain", cli="codex").reply(text="r")
+    router, _ = rig("codex", access="edit", sandbox="workspace-write")
+    port = RouterChatPort(router)
+    def go(mode, text):
+        port.set_system(SID, f"SYSTEM-{mode.upper()}: " + ("you cannot change anything" if mode == "ask" else "you may change the files"))
+        return turn(router, ASK if mode == "ask" else None, text)
+    for mode in ("do", "ask", "do", "ask", "ask", "do", "do"):
+        go(mode, "hello " + mode)
+    calls = fake.model_calls("codex")
+    expected = ["do", "ask", "do", "ask", "ask", "do", "do"]
+    for call, mode in zip(calls, expected):
+        system = system_of(call)
+        if "resume" in call["argv"]:
+            assert system == "", (mode, call["stdin"][:80])                                                # a resumed thread is told nothing new, and was started in this very mode
+        else:
+            assert f"SYSTEM-{mode.upper()}" in system and f"SYSTEM-{'DO' if mode == 'ask' else 'ASK'}" not in system, (mode, system)
+    resumed = [("resume" in c["argv"]) for c in calls]
+    assert resumed == [False, False, False, False, True, False, True]                                      # a change of mode is a new thread; the same mode resumes
+    assert all("SYSTEM-ASK" not in c["stdin"] for c, m in zip(calls, expected) if m == "do")               # no Do prompt ever carries the Ask words, in its system part or in the carry-over of one
+
+
+def test_codex_a_new_thread_after_a_mode_change_carries_the_conversation_over(rig, fake):
+    fake.sequence("ok_plain", cli="codex").reply(text="r")
+    router, _ = rig("codex", access="edit", sandbox="workspace-write")
+    router.transcripts.messages = lambda sid, limit=20: [Message(role="user", text="an earlier question"), Message(role="assistant", text="an earlier answer")]
+    turn(router, text="first")
+    turn(router, ASK, text="second")
+    first, second = fake.model_calls("codex")
+    assert "an earlier question" in second["stdin"] and "resume" not in second["argv"]
+
+
+def test_claude_keeps_its_thread_across_modes_and_the_system_text_is_given_every_turn(rig, fake):
+    fake.sequence("ok_plain").reply(text="r")
+    router, _ = rig("claude", access="edit")
+    port = RouterChatPort(router)
+    for mode in ("do", "ask", "do"):
+        port.set_system(SID, f"SYSTEM-{mode.upper()}")
+        turn(router, ASK if mode == "ask" else None)
+    a, b, c = (x["argv"] for x in fake.model_calls("claude"))
+    assert [value(x, "--system-prompt") for x in (a, b, c)] == ["SYSTEM-DO", "SYSTEM-ASK", "SYSTEM-DO"] and "--resume" in b and "--resume" in c
+
+
+def test_a_chat_that_never_asked_has_the_same_session_file_as_before(rig, fake):
+    import json
+    fake.sequence("ok_plain", cli="codex").reply(text="r")
+    router, _ = rig("codex", access="read")
+    turn(router)
+    turn(router)
+    saved = json.loads((router._workdir(SID) / "session.json").read_text(encoding="utf-8"))
+    assert "thread_mode" not in saved
+    turn(router, ASK)
+    assert json.loads((router._workdir(SID) / "session.json").read_text(encoding="utf-8"))["thread_mode"] == "ask"
 
 
 def test_the_limits_of_a_turn_reach_the_routers_gate_and_a_turn_without_them_is_unchanged(rig, fake):

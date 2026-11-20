@@ -1010,6 +1010,7 @@ class Router:
         fresh.turns = old.turns if old is not None else 0
         fresh.switches = (old.switches + (1 if replaces else 0)) if old is not None else 0
         fresh.pinned = pinned          # type: ignore[assignment]
+        fresh.thread_mode = "ask" if getattr(state.ctx.tag, "workspace", "none") == "read" else ""       # the mode this thread's first turn (its system text) was written for
         save_session_state(fresh)
         window = carry_chars(provider, fresh.model)
         carry = render_carry_over(self._transcript(sid, m), from_provider=old.provider if old is not None else None, to_provider=provider,
@@ -1031,6 +1032,12 @@ class Router:
             # a provider session belongs to the folder it began in (Claude stores and resumes it per working directory): in another folder
             # it starts a new one with the carry-over below, and the chat's transcript, which is the app's own, is untouched
             moved = old is not None and old.provider == provider and old.provider_session_id is not None and old.work_folder != folder
+            # Codex keeps the system text of a thread's first turn and never reads it again, so a thread is one mode (DV-1, D350): a turn of the other mode starts a new thread, with the
+            # carry-over, and what the Ask words said (or did not say) can never be stale. Claude is given the text on every turn and keeps its thread.
+            mode_now = "ask" if getattr(state.ctx.tag, "workspace", "none") == "read" else ""
+            mode_moved = (not moved and provider == "codex" and old is not None and old.provider == provider and old.provider_session_id is not None
+                          and old.thread_mode != mode_now)
+            moved = moved or mode_moved
             if old is not None and not lost and old.provider == provider and old.provider_session_id is not None and not moved:
                 session = connector.resume(old)
                 if session.provider_session_id is None:         # the work dir was lost: the provider session went with it
@@ -1067,18 +1074,18 @@ class Router:
                     if self._chat_active.get(sid, (None, None))[1] is session:
                         del self._chat_active[sid]
             assert turn is not None
-            self._after_turn(state, provider, old, session, previous_id, replaces, lost, plan, moved and not lost)
+            self._after_turn(state, provider, old, session, previous_id, replaces, lost, plan, ("the Ask mode changed" if mode_moved else True) if moved and not lost else False)
             return turn
         raise AssertionError("unreachable")       # pragma: no cover
 
     def _after_turn(self, state: _Request, provider: str, old: Optional[SessionState], session: SessionState,
-                    previous_id: Optional[str], replaces: bool, lost: bool, plan: Plan, folder_moved: bool = False) -> None:
+                    previous_id: Optional[str], replaces: bool, lost: bool, plan: Plan, folder_moved: "bool | str" = False) -> None:
         sid = state.ctx.session_id or ""
         if replaces and old is not None:
             if lost:
                 reason = "session lost"
             elif folder_moved:
-                reason = "working folder changed"
+                reason = folder_moved if isinstance(folder_moved, str) else "working folder changed"
             elif state.failures:
                 reason = fallback_phrase(state.failures[-1][1].code)
             elif old.pinned == provider:
