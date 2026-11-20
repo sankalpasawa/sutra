@@ -74,15 +74,32 @@ def test_the_planner_cannot_add_a_tier_by_asking():
         assert intersect("planner", StepRequest(wants=wants, tool_profile=profile), "edit", owner, approved={4, 5, 6}).tiers == plain[owner].tiers == (0, 1)
 
 
-def test_tier_4_is_only_given_to_a_worker_with_an_approval_and_an_owner_who_allowed_changes():
+def test_tier_4_is_only_given_to_a_worker_with_an_approval_for_any_folder_access():
     ask = StepRequest(wants=frozenset({4}))
     assert 4 not in intersect("worker", ask, "edit", "edit").tiers                                           # no approval
     given = intersect("worker", ask, "edit", "edit", approved={4})
-    assert given.tiers == (0, 1, 2, 3, 4) and given.tool_profile == "sutra+github"
+    assert given.tiers == (0, 1, 2, 3, 4) and given.tool_profile == "github"                                 # the github part only: no app-database read comes with it
     assert 4 not in intersect("worker", StepRequest(), "edit", "edit", approved={4}).tiers                   # approved but never asked for
-    assert 4 not in intersect("worker", ask, "edit", "read", approved={4}).tiers                             # the owner chose read only
-    assert 4 not in intersect("worker", ask, "edit", "none", approved={4}).tiers
-    assert 4 not in intersect("reviewer", ask, "edit", "edit", approved={4}).tiers                           # a reviewer never reaches the network
+    for owner in ("read", "none"):                                                                           # the folder access does not matter for the network (D298)
+        assert 4 in intersect("worker", ask, "edit", owner, approved={4}).tiers
+        assert 4 not in intersect("worker", ask, "edit", owner).tiers
+    assert intersect("worker", ask, "read", "read", approved={4}).tiers == (0, 1, 4)                         # a read-only owner: the folder to read, and the network
+    assert intersect("worker", ask, "edit", "none", approved={4}).tiers == (0, 4)                            # no folder at all: tiers 0 and 4 only
+    for role in ("reviewer", "planner"):
+        assert 4 not in intersect(role, ask, "edit", "edit", approved={4}).tiers                             # a reviewer and the planner never reach the network
+        assert "never reaches the network" in resolve(role, ask, "edit", "edit", approved={4}).denied[0].why
+
+
+def test_a_tier_4_grant_holds_github_only_and_sutra_only_if_the_step_asked_for_it_separately():
+    assert intersect("worker", StepRequest(wants=frozenset({4})), "read", "none", approved={4}).tool_profile == "github"
+    assert intersect("worker", StepRequest(tool_profile="github"), "read", "none", approved={4}).tool_profile == "github"
+    both = intersect("worker", StepRequest(tool_profile="sutra+github"), "read", "none", approved={4})
+    assert both.tool_profile == "sutra+github" and both.tiers == (0, 1, 4)
+    sutra_only = intersect("worker", StepRequest(tool_profile="sutra+github"), "read", "none")                # asked for both, approved for neither: the sutra part needs no approval
+    assert sutra_only.tool_profile == "sutra" and sutra_only.tiers == (0, 1)
+    assert resolve("worker", StepRequest(tool_profile="sutra+github"), "read", "none").asks[0].tier == 4
+    assert intersect("worker", StepRequest(tool_profile="sutra"), "read", "none", approved={4}).tool_profile == "sutra"     # an approval for tier 4 changes nothing when it was not asked for
+    assert intersect("reviewer", StepRequest(tool_profile="sutra+github"), "read", "read", approved={4}).tool_profile == "sutra"
 
 
 def test_what_a_step_asks_for_and_cannot_have_is_listed_with_a_reason_and_what_the_owner_could_allow_is_asked():
@@ -90,7 +107,7 @@ def test_what_a_step_asks_for_and_cannot_have_is_listed_with_a_reason_and_what_t
     assert [ask.tier for ask in refused.asks] == [4] and [denial.tier for denial in refused.denied] == [5, 6]
     assert all(denial.why for denial in refused.denied) and refused.asks[0].why
     read_only = resolve("worker", StepRequest(wants=frozenset({2, 3, 4})), "edit", "read")
-    assert [denial.tier for denial in read_only.denied] == [4, 2, 3] and read_only.asks == ()
+    assert [denial.tier for denial in read_only.denied] == [2, 3] and [ask.tier for ask in read_only.asks] == [4]      # the network is still the owner's to allow
     no_edit_output = resolve("worker", StepRequest(wants=frozenset({2})), "read", "edit")
     assert "only reads" in no_edit_output.denied[0].why
     assert resolve("reviewer", StepRequest(wants=frozenset({2})), "edit", "edit").denied[0].why == "A reviewer never changes files"
@@ -101,9 +118,11 @@ def test_the_tool_profile_follows_what_was_asked_and_the_role_and_never_gives_gi
     assert intersect("worker", StepRequest(tool_profile="sutra"), "read", "none").tool_profile == "sutra"
     assert intersect("worker", StepRequest(tool_profile="sutra+github"), "edit", "edit").tool_profile == "sutra"     # asked, not approved: only the app tools
     assert intersect("worker", StepRequest(tool_profile="sutra+github"), "edit", "edit", approved={4}).tool_profile == "sutra+github"
+    assert intersect("worker", StepRequest(tool_profile="github"), "edit", "edit").tool_profile == "none"
     assert intersect("reviewer", StepRequest(tool_profile="sutra+github"), "read", "read").tool_profile == "sutra"
     assert intersect("worker", StepRequest(), "edit", "edit").tool_profile == "none"                           # deny by default: nothing is on unless asked
-    assert intersect("worker", StepRequest(wants=frozenset({4})), "read", "read", approved={4}).tool_profile == "none"      # a refused network ask adds no app tools
+    assert intersect("worker", StepRequest(wants=frozenset({4})), "read", "read", approved={4}).tool_profile == "github"
+    assert intersect("planner", StepRequest(tool_profile="sutra"), "read", "read").tool_profile == "none"
 
 
 def test_a_worker_with_no_working_folder_and_no_tools_can_only_think():
@@ -129,13 +148,13 @@ def test_a_grant_is_never_wider_than_the_owners_access_and_never_holds_tier_5_or
         if role == "planner":
             continue                                                                    # the planner has no folder: the owner's access does not apply to it
         if owner == "none":
-            assert grant.folder == "none" and grant.commands == "none" and not set(grant.tiers) & {2, 3, 4}
+            assert grant.folder == "none" and grant.commands == "none" and not set(grant.tiers) & {2, 3}
         if owner == "read":
-            assert max(grant.tiers) <= 1 and grant.folder in ("none", "read") and grant.commands == "none" and not grant.writer
+            assert max(set(grant.tiers) - {4}) <= 1 and grant.folder in ("none", "read") and grant.commands == "none" and not grant.writer         # the folder part only (D298)
         if grant.writer:
             assert role == "worker" and owner == "edit" and (output_level_of(output) == "edit") and 2 in grant.tiers
         if 4 in grant.tiers:
-            assert role == "worker" and owner == "edit" and 4 in approved and (4 in wants or profile == "sutra+github")
+            assert role == "worker" and 4 in approved and (4 in wants or "github" in profile)                    # any folder access: the approval is the control
     assert count == len(ROLES) * len(OUTPUTS) * len(OWNER_ACCESS) * len(TOOL_PROFILES) * len(WANTS) * len(APPROVALS)
 
 
@@ -171,7 +190,8 @@ def test_what_a_step_asks_for_adds_nothing_but_tier_4_with_an_approval():
         plain = intersect(role, StepRequest(tool_profile=profile), output, owner)
         assert set(asked.tiers) - set(plain.tiers) <= {4}
         if asked.tiers != plain.tiers:
-            assert 4 in approved and role == "worker" and owner == "edit"
+            assert 4 in approved and role == "worker"
+        assert set(asked.tool_profile.split("+")) - {"github"} <= set(plain.tool_profile.split("+"))               # asking for the network never adds the app-database read
 
 
 def test_the_same_inputs_give_the_same_grant_whatever_the_order_of_asking():

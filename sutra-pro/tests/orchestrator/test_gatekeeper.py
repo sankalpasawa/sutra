@@ -64,10 +64,10 @@ def test_an_approval_for_one_step_does_not_reach_another():
     assert 4 in evaluation.grants["a1"].tiers and 4 not in evaluation.grants["a2"].tiers and [g.step_id for g in evaluation.gates] == ["a2"]
 
 
-def test_the_network_is_not_asked_where_nobody_can_allow_it():
-    for owner in ("read", "none"):
+def test_the_network_is_asked_for_any_folder_access_and_not_where_nobody_can_allow_it():
+    for owner in ("read", "none", "edit"):
         evaluation = evaluate(plan(PlanStep("a1", output=EDIT, wants=frozenset({4})), owner=owner))
-        assert evaluation.gates == () and [d.tier for _, d in evaluation.denied] == [4]
+        assert [(g.kind, g.tier) for g in evaluation.gates] == [("tier", 4)] and evaluation.denied == ()      # the approval is the owner's real control (D298)
     reviewer = evaluate(plan(PlanStep("a1", output=EDIT, scope=("a/",)), PlanStep("a2", role="reviewer", depends_on=("a1",), output=EDIT, wants=frozenset({4}))))
     assert reviewer.gates == () and [(s, d.tier) for s, d in reviewer.denied] == [("a2", 4)]
 

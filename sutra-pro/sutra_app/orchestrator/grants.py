@@ -7,9 +7,9 @@ A grant is the INTERSECTION of four things: the role table, the plan's step, the
 
     * the role table says the most a role can ever hold (a reviewer never writes, the planner never touches the folder);
     * the step can only ask. What it asks for never adds a tier the table, the output and the owner's access do not already give. The one tier above the defaults
-      that can be added is tier 4 (network), and only by an approval passed in (`approved`), for a worker, when the owner allowed changes;
+      that can be added is tier 4 (network: the `github` part of the tools), and only by an approval passed in (`approved`), for a worker, whatever the owner's folder access (D298);
     * the department's output spec says what the team's builders may do in the owner's folder (`read` or `edit`, as `engine/capabilities/workspace.py` decides);
-    * the owner's access caps every grant: `none` (no working folder chosen), `read` (nothing above tier 1) or `edit`.
+    * the owner's access caps the FOLDER part of the grant (D298): `none` (no working folder chosen), `read` (no tier 2, no tier 3) or `edit`. It does not cap the tools: tier 1 through the `sutra` tools and tier 4.
 
 Tier 5 (spend beyond a node's own slice) is never part of a grant: a raise is a question to the owner each time (P25). Tier 6 (publish outside) is never granted, asked or stored:
 `Grant` refuses to be built with it, so no code path can hold one. A `Grant` is frozen when the node spawns and cannot change; a stored one is read back through `Grant.from_json`,
@@ -41,7 +41,8 @@ GRANTABLE_TIERS = (0, 1, 2, 3, 4)          # the tiers a grant can hold: 5 is a 
 APPROVABLE_TIERS = frozenset({4})          # the one tier an approval can add to the defaults (tier 5 is asked per raise, tier 6 is never offered)
 FOLDER_LEVELS = ("none", "read", "inspect", "edit")        # inspect = read plus the four git reads (Router.folder_for)
 OWNER_ACCESS = ("none", "read", "edit")                    # no working folder chosen, read only, read and change (WorkFolder)
-TOOL_PROFILES = ("none", "sutra", "sutra+github")          # connectors/tools/profiles.py: the read-only app tools, and those plus the GitHub reads
+TOOL_PROFILES = ("none", "sutra", "github", "sutra+github")      # the two parts of the tools a call can carry (D298): `sutra` = read-only app data (tier 1), `github` = the GitHub reads (tier 4)
+_PARTS = {"none": frozenset(), "sutra": frozenset({"sutra"}), "github": frozenset({"github"}), "sutra+github": frozenset({"sutra", "github"})}
 COMMAND_LEVELS = ("none", "git_reads")                # tier 3 is only the four git reads on the owner's folder (D299)
 RUN_TOOLS = ("none", "engine")                          # J2's builder tools in the run folder: a description, not a tier and not enforced by the grant (D299)
 MAX_SCOPE_ENTRIES = 50
@@ -54,6 +55,11 @@ class GrantError(ValueError):
 
 def _rank(order: tuple[str, ...], value: str) -> int:
     return order.index(value)
+
+
+def _profile_of(parts: Iterable[str]) -> str:
+    found = frozenset(parts)
+    return next(name for name, members in _PARTS.items() if members == found)
 
 
 def _least(order: tuple[str, ...], *values: str) -> str:
@@ -162,7 +168,7 @@ class StepRequest:
         if any(isinstance(tier, bool) or not isinstance(tier, int) or not 0 <= tier <= 6 for tier in wants):
             raise GrantError("a step asks for tiers from 0 to 6")
         if self.tool_profile not in TOOL_PROFILES:
-            raise GrantError("a step asks for the tool profile none, sutra or sutra+github")
+            raise GrantError("a step asks for the tool profile none, sutra, github or sutra+github")
         object.__setattr__(self, "wants", wants)
         object.__setattr__(self, "scope", tuple(self.scope))
 
@@ -232,9 +238,12 @@ class Grant:
             raise GrantError(f"a {self.role} cannot hold tier {sorted(set(tiers) - rule.tiers)[0]}")
         for name, value, order, ceiling in (("folder", self.folder, FOLDER_LEVELS, rule.folder), ("tool profile", self.tool_profile, TOOL_PROFILES, rule.profile),
                                             ("commands", self.commands, COMMAND_LEVELS, rule.commands), ("run tools", self.run_tools, RUN_TOOLS, rule.run_tools)):
-            if value not in order:
+            if not isinstance(value, str) or value not in order:
                 raise GrantError(f"a grant has no such {name}")
-            if _rank(order, value) > _rank(order, ceiling):
+            if name == "tool profile":
+                if not _PARTS[value] <= _PARTS[ceiling]:
+                    raise GrantError(f"a {self.role} cannot have {name} {value}")
+            elif _rank(order, value) > _rank(order, ceiling):
                 raise GrantError(f"a {self.role} cannot have {name} {value}")
         scope = tuple(self.scope)
         if scope != normalize_scope(scope):
@@ -246,14 +255,15 @@ class Grant:
             raise GrantError("tier 3 (run commands) goes with a commands level, and only with it")
         if self.commands == "git_reads" and self.folder not in ("inspect", "edit"):
             raise GrantError("the git reads need a folder to run in")
-        if (4 in has) != (self.tool_profile == "sutra+github"):
-            raise GrantError("tier 4 (network) goes with the tool profile sutra+github, and only with it")
+        parts = _PARTS[self.tool_profile]
+        if (4 in has) != ("github" in parts):
+            raise GrantError("tier 4 (network) goes with the github part of the tool profile, and only with it")
         if scope and 2 not in has:
             raise GrantError("only a writer has a write scope")
-        if 1 in has and self.role != "planner" and self.folder == "none" and self.tool_profile == "none":
+        if 1 in has and self.role != "planner" and self.folder == "none" and "sutra" not in parts:
             raise GrantError("tier 1 (read) needs a folder to read or the read-only app tools")
-        if self.role != "planner" and 1 not in has and (self.folder != "none" or self.tool_profile != "none"):
-            raise GrantError("a folder or a tool profile goes with tier 1")
+        if self.role != "planner" and 1 not in has and (self.folder != "none" or "sutra" in parts):
+            raise GrantError("a folder or the sutra tools go with tier 1")
         if self.role == "planner" and (self.folder != "none" or self.tool_profile != "none" or self.commands != "none"):
             raise GrantError("the planner has no folder, no tools and no commands")
         object.__setattr__(self, "tiers", tiers)
@@ -348,28 +358,31 @@ def resolve(role: str, step: StepRequest | None, output: Any, owner_access: str,
     commands = "git_reads" if (role == "worker" and folder == "edit") or (role == "reviewer" and folder == "inspect") else "none"
     run_tools = rule.run_tools                                  # the engine's own rule for a worker: not capped by the owner's access or the output level (D299)
 
-    # tools: what the step asks for, capped by the role; tier 4 only with an approval, for a worker, when the owner allowed changes
-    profile = "none" if role == "planner" else _least(TOOL_PROFILES, "sutra" if step.tool_profile == "sutra+github" else step.tool_profile, rule.profile)
+    # tools (D298): the `sutra` part (read-only app data, tier 1) is given up to the role's ceiling, whatever the owner's folder access; the `github` part (tier 4) only to a worker with an
+    # approval, also whatever the folder access (the GitHub reads touch no file of the folder). A tier-4 approval gives `github` and nothing more: `sutra` only if the step asked for it.
+    asked = _PARTS[step.tool_profile] | ({"github"} if 4 in step.wants else set())
+    parts = (asked & _PARTS[rule.profile]) - {"github"}
     asks: list[Ask] = []
     denied: list[Denial] = []
-    if 4 in step.wants or step.tool_profile == "sutra+github":
-        reason = _why_not_network(role, owner_access)
+    if "github" in asked:
+        reason = _why_not_network(role)
         if reason:
             denied.append(Denial(4, reason))
         elif 4 in allowed:
-            profile = "sutra+github"                           # the profile that carries tier 4 is only ever given with an approval
+            parts = parts | {"github"}
         else:
             asks.append(Ask(4, "Read GitHub (read only), through your own GitHub login"))
+    profile = _profile_of(parts) if role != "planner" else "none"
 
     # the tiers follow from the pieces
     tiers = {0}
-    if role == "planner" or folder != "none" or profile != "none":
+    if role == "planner" or folder != "none" or "sutra" in _PARTS[profile]:
         tiers.add(1)
     if folder == "edit":
         tiers.add(2)
     if commands != "none":
         tiers.add(3)
-    if profile == "sutra+github":
+    if "github" in _PARTS[profile]:
         tiers.add(4)
     for tier in sorted(step.wants):
         if tier == 6:
@@ -391,12 +404,8 @@ def intersect(role: str, step: StepRequest | None, output: Any, owner_access: st
     return resolve(role, step, output, owner_access, approved=approved, caps=caps, grant_id=grant_id, node_id=node_id).grant
 
 
-def _why_not_network(role: str, owner_access: str) -> str:
-    if role != "worker":
-        return f"A {role} never reaches the network"
-    if owner_access != "edit":
-        return "The network is only open to a project when you allowed changes to the working folder"
-    return ""
+def _why_not_network(role: str) -> str:
+    return f"A {role} never reaches the network" if role != "worker" else ""
 
 
 def _why_not(tier: int, role: str, level: str, owner_access: str) -> str:
