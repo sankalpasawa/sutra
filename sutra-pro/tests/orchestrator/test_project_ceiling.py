@@ -122,3 +122,16 @@ def test_the_egress_file_is_read_before_the_write_transaction_and_the_row_is_wri
         tick(rig, seconds)
     assert depths == [0, 0, 0]                                                                        # never inside a transaction
     assert [r["action"] for r in rig.audit("trigger.egress_scrub")] == ["trigger.egress_scrub"] and len(notes(rig, reservation.project_id, "scrub")) == 1
+
+
+def test_the_time_the_computer_slept_is_not_counted_in_the_wall_time(rig):                                      # PB-12
+    reservation, tasks = running(rig, [("a1", "web", []), ("a2", "sales", [])])
+    rig.sql("UPDATE tasks SET created_at = ?, started_at = ?, last_event_at = ?", BASE - 200, BASE - 100, BASE + 5)
+    tick(rig, 10)
+    rig.sql("UPDATE tasks SET last_event_at = ?", BASE + 7490)
+    woke = tick(rig, 7500)                                                                                    # the tick came two hours late: the computer slept, and nothing was open to refuse
+    assert woke["stopped"] == [] and rig.project(reservation.project_id)["status"] == "running"
+    [row] = rig.audit("project.slept")
+    assert "asleep or closed" in row["reason"] and 7400 <= int(row["ref"]) <= 7490
+    rig.sql("UPDATE tasks SET last_event_at = ?", BASE + 7500 + 7300)
+    assert tick(rig, 7510 + 7300)["stopped"] == [reservation.project_id]                                     # real working time still counts: two more hours of work stops it

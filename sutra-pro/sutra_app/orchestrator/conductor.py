@@ -667,6 +667,8 @@ class Conductor:
                     self._refuse_in(tx, project["id"], reason)                       # the decision and the stop are one transaction: no crash can leave one without the other (MJ7)
                     refuse.append((project["id"], reason))
                     continue
+                if slept:                                                            # the time the computer slept is not time the project worked (PB-12, D311's own gap): written down, left out of the wall time
+                    self.store.audit(tx, actor="system", action="project.slept", project_id=project["id"], decision="n/a", reason=f"the computer was asleep or closed for about {max(1, gap // 60)} minutes", ref=str(gap))
                 if self._project_limit(tx, project["id"], now, project["created_at"], caps_of(project)):
                     continue
                 self._scrubbed_nodes(tx, project["id"], scrub, scrubs or {})
@@ -719,7 +721,8 @@ class Conductor:
 
     @staticmethod
     def _paused_seconds(tx: Tx, project_id: str, now: int, since: int) -> int:
-        """How long the project was paused after `since`, from its audit rows (`project.paused`, `project.resumed`); a pause that is still on counts until `now`."""
+        """How long the project was paused after `since`, from its audit rows (`project.paused`, `project.resumed`); a pause that is still on counts until `now`. A gap the tick found (the computer slept: `project.slept`)
+        counts too. Not counted: a closed app (the tick's gap is kept in memory, so a restart does not know how long it was closed: D345)."""
         total, began = 0, None
         for row in tx.conn.execute("SELECT at, action FROM node_audit WHERE project_id = ? AND action IN ('project.paused','project.resumed') ORDER BY seq", (project_id,)):
             if row["action"] == "project.paused" and began is None:
@@ -727,7 +730,11 @@ class Conductor:
             elif row["action"] == "project.resumed" and began is not None:
                 total += max(0, int(row["at"]) - began)
                 began = None
-        return total + (max(0, now - began) if began is not None else 0)
+        total += (max(0, now - began) if began is not None else 0)
+        for row in tx.conn.execute("SELECT at, ref FROM node_audit WHERE project_id = ? AND action = 'project.slept'", (project_id,)):         # a sleeping computer is not working time (PB-12)
+            if int(row["at"]) >= since and str(row["ref"]).isdigit():
+                total += int(row["ref"])
+        return total
 
     def _scrubbed_nodes(self, tx: Tx, project_id: str, scrub: list[str], counts: dict[str, int]) -> None:
         """D303: a node whose prompts were scrubbed `SCRUB_LIMIT` times (rows of `egress.jsonl` that name it and found something) is ended: audit `trigger.egress_scrub`, a plain note, its task
