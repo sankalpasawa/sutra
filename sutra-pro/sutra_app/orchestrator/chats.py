@@ -325,7 +325,7 @@ class ChatStore:
         conn.execute("UPDATE chat_sessions SET last_message_id = ?, updated_at = max(updated_at, ?) WHERE id = ?", (message_id, msg.at, session_id))
         out = self.message_in(conn, message_id)
         tx.emit("chat.message", {"session_id": session_id, "message": out.model_dump(mode="json")})
-        if msg.kind == "question" or (msg.kind == "card" and (msg.card or {}).get("type") == "approval"):
+        if msg.kind == "question" or (msg.kind == "card" and (msg.card or {}).get("type") in ("approval", "node_approval")):
             self.emit_needs_you(tx)
         return out
 
@@ -377,6 +377,11 @@ class ChatStore:
             out.append(NeedsYouOut(
                 message_id=r["id"], session_id=r["session_id"], kind="approval", text=card["question"],
                 options=[o["label"] for o in card["options"]], asked_at=iso_z(r["at"]), **age(r["at"])))
+        for r in conn.execute("SELECT m.id, m.session_id, m.card_json, m.at FROM chat_messages m WHERE m.kind = 'card' AND json_extract(m.card_json, '$.type') = 'node_approval' "
+                              "AND m.answered_by IS NULL ORDER BY m.id"):                     # the open questions of a multi-agent project (D317); no such row exists while SUTRA_NODES_V1 is off
+            card = json.loads(r["card_json"])
+            out.append(NeedsYouOut(message_id=r["id"], session_id=r["session_id"], kind="node_approval", text=card["question"], options=[str(o) for o in card["options"]],
+                                   asked_at=iso_z(r["at"]), **age(r["at"])))
         return sorted(out, key=lambda item: item.message_id)
 
     def needs_you_count(self) -> int:
@@ -394,7 +399,8 @@ class ChatStore:
         approvals = conn.execute(
             "SELECT count(*) FROM chat_messages m WHERE m.kind = 'card' AND json_extract(m.card_json, '$.type') = 'approval'"
             " AND json_extract(m.card_json, '$.change_id') IN (SELECT id FROM chart_changes WHERE status = 'pending_approval')").fetchone()[0]
-        return int(questions + approvals)
+        projects = conn.execute("SELECT count(*) FROM chat_messages m WHERE m.kind = 'card' AND json_extract(m.card_json, '$.type') = 'node_approval' AND m.answered_by IS NULL").fetchone()[0]
+        return int(questions + approvals + projects)
 
     # ---- the provider chip -----------------------------------------------------------------------------------------
 

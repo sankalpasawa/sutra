@@ -39,6 +39,8 @@ __all__ = [
     "NODE_RUNTIMES",
 ]
 
+ProjectId = Annotated[str, StringConstraints(pattern=r"^prj_[0-9a-f]{12}$")]
+ApprovalId = Annotated[str, StringConstraints(pattern=r"^ap_[0-9a-f]{12}$")]
 Iso = Annotated[str, StringConstraints(pattern=r"^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}Z$")]
 Name = Annotated[str, StringConstraints(max_length=200)]
 Line = Annotated[str, StringConstraints(max_length=1000)]
@@ -402,8 +404,25 @@ class AtomCard(Value):
     rows: Annotated[list[CardRow], Field(max_length=30)] = []
 
 
+class NodeApprovalCard(Value):
+    """One open question of a project as a card (MAN-8): what is asked in plain words, which tier, which node it is about (empty: the whole project), the answers it takes and when it
+    ends. `kind` is `tier` (the app tools or GitHub), `scope` (a wide write scope), `plan_estimate` (the plan's cost) or `system` (a permission of the computer, MAN-15). A plan estimate
+    can be allowed once or refused; nothing is ever "allowed for the project" above tier 4."""
+
+    type: Literal["node_approval"] = "node_approval"
+    project_id: ProjectId
+    approval_id: ApprovalId
+    kind: Annotated[str, StringConstraints(max_length=40)]
+    tier: Annotated[int, Field(ge=0, le=6)]
+    node_id: Annotated[str, StringConstraints(max_length=40)] = ""
+    question: Annotated[str, StringConstraints(max_length=500)]
+    options: Annotated[list[Annotated[str, StringConstraints(max_length=40)]], Field(max_length=4)]
+    expires_at: Iso
+    item: Annotated[str, StringConstraints(max_length=40)] = ""      # a system question: which permission (the buttons call its check and skip routes)
+
+
 ChatCard = Annotated[
-    Union[ChartChangeCard, TaskCard, ApprovalCard, ChoiceCard, NeedsYouCard, TeamChatCard, DoneCard, DeliverableCard, AtomCard],
+    Union[ChartChangeCard, TaskCard, ApprovalCard, ChoiceCard, NeedsYouCard, TeamChatCard, DoneCard, DeliverableCard, AtomCard, NodeApprovalCard],
     Field(discriminator="type"),
 ]
 
@@ -598,7 +617,7 @@ class UsageOut(Value):
 class NeedsYouOut(Value):
     message_id: Annotated[int, Field(ge=1)]
     session_id: SessionId
-    kind: Literal["question", "approval"]
+    kind: Literal["question", "approval", "node_approval"]
     dept_id: NodeId | None = None
     dept_name: Name = ""
     text: Body
@@ -621,10 +640,8 @@ class NodeDetail(Value):
 # A "node" here is a runtime node: a running agent, one `tasks` row plus one `agent_nodes` row (not a graph node, which is a box in the graph). These shapes are inert until
 # SUTRA_NODES_V1 is on: nothing builds one while the flag is off, and `RunSpec.node` (MAN-3) is left out of `task.json` unless it is set.
 
-ProjectId = Annotated[str, StringConstraints(pattern=r"^prj_[0-9a-f]{12}$")]
 AgentNodeId = Annotated[str, StringConstraints(pattern=r"^nd_[0-9a-f]{12}$")]
 GrantId = Annotated[str, StringConstraints(pattern=r"^gr_[0-9a-f]{12}$")]
-ApprovalId = Annotated[str, StringConstraints(pattern=r"^ap_[0-9a-f]{12}$")]
 ScopePath = Annotated[str, StringConstraints(min_length=1, max_length=400)]
 ScopeList = Annotated[list[ScopePath], Field(max_length=50)]
 
@@ -680,22 +697,6 @@ class ProjectOut(Value):
     created_at: Iso
     ended_at: Iso | None = None
     stop_reason: Annotated[str, StringConstraints(max_length=200)] = ""
-
-
-class NodeApprovalCard(Value):
-    """One open question of a project as a card (MAN-8): what is asked in plain words, which tier, which node it is about (empty: the whole project), the answers it takes and when it
-    ends. `kind` is `tier` (the app tools or GitHub), `scope` (a wide write scope), `plan_estimate` (the plan's cost) or `system` (a permission of the computer, MAN-15). A plan estimate
-    can be allowed once or refused; nothing is ever "allowed for the project" above tier 4."""
-
-    type: Literal["node_approval"] = "node_approval"
-    project_id: ProjectId
-    approval_id: ApprovalId
-    kind: Annotated[str, StringConstraints(max_length=40)]
-    tier: Annotated[int, Field(ge=0, le=6)]
-    node_id: Annotated[str, StringConstraints(max_length=40)] = ""
-    question: Annotated[str, StringConstraints(max_length=500)]
-    options: Annotated[list[Annotated[str, StringConstraints(max_length=40)]], Field(max_length=4)]
-    expires_at: Iso
 
 
 class SystemPermissionCard(Value):

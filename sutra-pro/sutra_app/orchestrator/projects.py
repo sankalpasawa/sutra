@@ -74,6 +74,7 @@ class Reservation:
     nodes: dict[str, str] = field(default_factory=dict)
     planner_node_id: str = ""
     title: str = ""
+    asks: tuple[str, ...] = ()                                  # the kinds of the other open questions (`tier`, `scope`) the reply must tell the owner about (D317)
     waits: tuple[int, int] | None = None                      # (the estimate, the limit it is over) while the project waits for the owner's OK on its estimate (D308); None otherwise
 
 
@@ -254,8 +255,10 @@ class ProjectService:
         tx.emit("project.created", {"project_id": project_id, "status": status})
         if decide_for_me:
             self._decide_by_rule(tx, project_id)                                      # Decide for me (D294): the rule table answers in this transaction; nothing it cannot answer is hidden
+        self.sync_cards(tx, project_id)                                                 # one card in the org chat for each open question (D317)
         waits = (total, int(plan.confirm_credits or 0)) if self._waits_of(tx, project_id) is not None else None
-        return Reservation(project_id, True, "", node_ids, planner_node_id, title=" ".join(title.split())[:200], waits=waits)
+        asks = tuple(dict.fromkeys(str(a.request.get("kind", "")) for a in self.store.approvals(project_id, status="open") if a.request.get("kind") in ("tier", "scope")))
+        return Reservation(project_id, True, "", node_ids, planner_node_id, title=" ".join(title.split())[:200], waits=waits, asks=asks)
 
     @staticmethod
     def _waits_of(tx: Tx, project_id: str) -> tuple[int, int] | None:
@@ -359,6 +362,11 @@ class ProjectService:
         self._settle_answers(tx, project_id)
 
     def _settle_answers(self, tx: Tx, project_id: str, why: str = "not approved: a question was answered no") -> str:
+        outcome = self._settle_inner(tx, project_id, why)
+        self.sync_cards(tx, project_id)
+        return outcome
+
+    def _settle_inner(self, tx: Tx, project_id: str, why: str) -> str:
         """After any answer (the owner's, a rule's): a project with a question answered no (or run out) is refused at once (D296's own path); else the plan is evaluated again with what was
         allowed, the grant of every node that has NOT spawned is rewritten (a new `grant.issued` row; a node that runs is never touched), and when no question is open the project and its waiting
         nodes move on. Returns `refused`, `running`, `waiting` or `ended`."""
@@ -438,17 +446,46 @@ class ProjectService:
             await self.tasks.start_ready()
         return await run_blocking(self.snapshot, project_id)
 
+    # the words of a card (plain, simple). A no to a question about one step stops the whole project until P1 (D315 c); nothing here says a writer "runs alone" before MAN-10 (D323).
+    _WORDS = {
+        "tier": "A step wants to read GitHub, through your own GitHub login (read only). Allow it? If you say no, the whole project stops.",
+        "scope": "A step changes files in several places of your folder. Allow it? If you say no, the whole project stops.",
+        "plan_estimate": "This plan is estimated at about {credits} credits, which is over {limit}. Allow it once? If you say no, the whole project stops.",
+        "system": "Your computer must allow something first. Open the settings, allow it, then press Check again. If you skip it, the steps that need it are cancelled.",
+    }
+
+    def _card_of(self, project_id: str, a: Any) -> NodeApprovalCard:
+        kind = str(a.request.get("kind", ""))
+        options = (["check_again", "skip"] if kind == "system" else ["allow_once", "deny"] if kind in ("plan_estimate", "scope") or a.tier == 5 else ["allow_once", "allow_project", "deny"])
+        question = self._WORDS.get(kind, "A step needs your answer.").format(credits=a.request.get("credits", "?"), limit=a.request.get("limit", "?"))
+        return NodeApprovalCard(project_id=project_id, approval_id=a.id, kind=kind[:40], tier=a.tier, node_id=a.node_id, question=question, options=options, expires_at=iso_z(a.expires_at),
+                                item=str(a.request.get("item", ""))[:40] if kind == "system" else "")
+
     def approval_cards(self, project_id: str) -> list[NodeApprovalCard]:
         """The open questions of a project as cards, in plain words (no word of any node)."""
-        words = {"tier": "A step wants to read GitHub, through your own GitHub login (read only). Allow it?", "scope": "A step changes files in several places of your folder. It will run alone. Allow it?",
-                 "plan_estimate": "This plan is estimated at about {credits} credits, which is over {limit}. Allow it once?", "system": "Your computer must allow this first. Open the settings, allow it, then check again."}
-        cards = []
-        for a in self.store.approvals(project_id, status="open"):
-            kind = str(a.request.get("kind", ""))
-            options = ["allow_once", "deny"] if kind in ("plan_estimate", "scope") or a.tier == 5 else ["allow_once", "allow_project", "deny"]
-            question = words.get(kind, "A step needs your answer.").format(credits=a.request.get("credits", "?"), limit=a.request.get("limit", "?"))
-            cards.append(NodeApprovalCard(project_id=project_id, approval_id=a.id, kind=kind[:40], tier=a.tier, node_id=a.node_id, question=question, options=options, expires_at=iso_z(a.expires_at)))
-        return cards
+        return [self._card_of(project_id, a) for a in self.store.approvals(project_id, status="open")]
+
+    def sync_cards(self, tx: Tx, project_id: str) -> None:
+        """Keep the org chat in step with the project's questions (D317): ONE card message for each open question (by its `src_ref` `approval:<id>`), written in the transaction that opens it, and
+        a card whose question was answered or ended is marked answered (it points at itself, as a card decided without a line does). `needs_you.changed` follows. A no-op without a chat."""
+        if self.chats is None:
+            return
+        from sutra_app.library.gate import GATE
+        from sutra_app.orchestrator.ids import ORG_SESSION_ID
+        changed = False
+        for a in self.store.approvals(project_id):
+            src = f"approval:{a.id}"
+            row = tx.conn.execute("SELECT id, answered_by FROM chat_messages WHERE session_id = ? AND src_ref = ?", (ORG_SESSION_ID, src)).fetchone()
+            if row is None and a.status == "open":
+                card = json.loads(self._card_of(project_id, a).model_dump_json())
+                payload = dict(kind="card", session_id=ORG_SESSION_ID, role="agent", who="sutra", text="", card=card, src_ref=src, at=tx.now())
+                self.chats.post(tx, ORG_SESSION_ID, GATE.check("chat_message", payload, ctx=tx.ctx))
+                changed = True
+            elif row is not None and a.status != "open" and row["answered_by"] is None:
+                tx.conn.execute("UPDATE chat_messages SET answered_by = ? WHERE id = ?", (row["id"], row["id"]))
+                changed = True
+        if changed:
+            self.chats.emit_needs_you(tx)
 
     # ---- system permissions (MAN-15, D295) ------------------------------------------------------------------------------------------
 
@@ -491,6 +528,7 @@ class ProjectService:
                     for node_id in dict.fromkeys(ids):
                         tx.conn.execute("UPDATE agent_nodes SET state = 'awaiting_system' WHERE id = ? AND state IN ('planned','queued')", (node_id,))
                         tx.emit("node.updated", {"project_id": project_id, "node_id": node_id, "state": "awaiting_system"})
+                self.sync_cards(tx, project_id)
             return opened
         return await run_blocking(open_questions)
 

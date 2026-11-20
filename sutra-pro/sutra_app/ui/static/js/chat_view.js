@@ -2,7 +2,7 @@
    S4-fnodes-12).
 
    Strings in, strings out: transcript() draws a session's messages in J2's bubble look (.sb.team, .sb.me, .opts), card() draws one chat card
-   (task, chart_change, approval, choice, needs_you, team_chat, done, deliverable and, in a function node's working log, atom), composerState() says whether the
+   (task, chart_change, approval, choice, node_approval, needs_you, team_chat, done, deliverable and, in a function node's working log, atom), composerState() says whether the
    message box shows, is disabled and what it says, whoLabel() names an author, and safeText() is the one door a message text goes through.
    Nothing touches the DOM, every word that came from the wire is escaped, and the markup is well formed XML.
 
@@ -210,6 +210,19 @@
       "</div>";
   }
 
+  // A question of a multi-agent project (D317, a `node_approval` card): what is asked in plain words and its answers as buttons. A button posts to the project's answer route
+  // (`allow_once`, `allow_project`, `deny`) or, for a permission of the computer, to its check or skip route (`check_again`, `skip`). An answered or ended card reads "Answered".
+  const NODE_ANSWER_WORDS = freeze({allow_once: "Allow once", allow_project: "Allow for this project", deny: "No", check_again: "Check again", skip: "Skip"});
+  function nodeApprovalCard(c, ctx) {
+    const done = ctx.answered === true || clean(ctx.answer) !== "";
+    const options = (Array.isArray(c.options) ? c.options : []).map(clean).filter(o => hasOwn(NODE_ANSWER_WORDS, o));
+    const buttons = options.map(o => '<button type="button" data-act="node-answer" data-project="' + esc(clean(c.project_id)) + '" data-approval="' + esc(clean(c.approval_id)) + '" data-item="' +
+      esc(clean(c.item)) + '" data-decision="' + o + '">' + esc(NODE_ANSWER_WORDS[o]) + "</button>").join("");
+    return '<div class="ncard c-nodeapproval" data-card="node_approval" data-kind="' + esc(clean(c.kind)) + '" data-project="' + esc(clean(c.project_id)) + '" data-approval="' + esc(clean(c.approval_id)) + '"' +
+      (done ? ' data-answered="true"' : "") + '><p class="sq">' + safeText(clean(c.question)) + "</p>" +
+      (done ? '<p class="canswer">Answered</p>' : '<div class="opts">' + buttons + "</div>") + "</div>";
+  }
+
   // The team's Identity question, as it said it. The answer goes to the DEPARTMENT's session (data-session, from ctx.deptSession), never to the org chat.
   function needsYouCard(c, ctx) {
     const dept = clean(c.dept_name);
@@ -373,6 +386,7 @@
       case "chart_change": return chartChangeCard(value);
       case "approval": return choiceCard(value, c, "approval");
       case "choice": return choiceCard(value, c, "choice");
+      case "node_approval": return nodeApprovalCard(value, c);
       case "needs_you": return needsYouCard(value, c);
       case "team_chat": return teamChatCard(value, c);
       case "done": return doneCard(value, c);

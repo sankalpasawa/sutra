@@ -566,6 +566,7 @@ class Conductor:
                 tx.conn.execute("UPDATE agent_nodes SET state = 'cancelled', failure_reason = ?, ended_at = ?, torn_down_at = ? WHERE id = ?", (self.store.clean(reason), tx.now(), tx.now(), node["id"]))
                 cancelled += 1
         self._receipt(tx, project_id, reason)
+        self.service.sync_cards(tx, project_id)
         tx.emit("project.updated", {"project_id": project_id, "status": "stopped"})
         return cancelled
 
@@ -580,6 +581,7 @@ class Conductor:
         if not asked.duplicate:
             self.store.audit(tx, actor="gatekeeper", action="system.asked", project_id=node["project_id"], node_id=node["id"], tier=2, decision="ask", reason="late: the computer refused a file", ref=asked.id)
             self._note(tx, node["project_id"], "A step could not use your files because your computer did not allow it. Open the project to see what to allow.", f"project:{node['project_id']}#late")
+            self.service.sync_cards(tx, node["project_id"])
         self._fail(tx, node, NEEDS_SYSTEM_PERMISSION, retry=False)
         tx.emit("node.updated", {"project_id": node["project_id"], "node_id": node["id"], "state": "failed"})
         self._sync_project(tx, node["project_id"])
@@ -707,6 +709,7 @@ class Conductor:
                     self.store.audit(tx, actor=actor, action="approval.denied" if actor == "owner" else GATE_REFUSED_ACTION, project_id=project_id, node_id=approval.node_id or None,
                                      tier=approval.tier, decision="deny", reason="the project was stopped", ref=approval.id)
                 self.store.audit(tx, actor=actor, action="project.stopped", project_id=project_id, decision="n/a", reason=reason)
+                self.service.sync_cards(tx, project_id)
                 tx.emit("project.updated", {"project_id": project_id, "status": "stopped"})
 
     async def _stop_nodes(self, project_id: str, outcome: str, by: str = "owner") -> int:

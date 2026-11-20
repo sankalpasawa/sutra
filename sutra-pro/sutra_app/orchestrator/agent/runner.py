@@ -460,6 +460,7 @@ class TurnRunner:
         task_ids: list[str] = []
         failure: str | None = None
         waits = ""
+        asked_system = False
         if drafts:
             self._phase(mid, "handing_off")
             change_id = applied.result.id if applied is not None else None
@@ -471,10 +472,19 @@ class TurnRunner:
                     if reservation is not None and not reservation.ok:  # the Gatekeeper refused the plan: no node, no task, and the owner is told why
                         raise AppError("validation", reservation.why or "the plan was refused")
                     if reservation is not None:
-                        await self.projects.probe_system(reservation.project_id)    # what the computer has allowed, before any task exists (MAN-15): the steps it affects wait, the rest run
+                        if await self.projects.probe_system(reservation.project_id):   # what the computer has allowed, before any task exists (MAN-15): the steps it affects wait, the rest run
+                            asked_system = True
                 task_ids = await run_blocking(self._create_tasks, request, drafts, change_id, reservation)
-                if reservation is not None and reservation.waits is not None:          # the project waits for the owner's OK on its estimate: say so (D308)
-                    waits = line("project_waits", title=reservation.title, credits=str(reservation.waits[0]), limit=str(reservation.waits[1]))
+                if reservation is not None:                                             # every question the owner has to answer is said in plain words, not only the estimate (D308, D317)
+                    said = []
+                    if reservation.waits is not None:
+                        said.append(line("project_waits", title=reservation.title, credits=str(reservation.waits[0]), limit=str(reservation.waits[1])))
+                    if reservation.asks:
+                        what = " and ".join({"tier": "Reading GitHub", "scope": "Changing files in several places"}[k] for k in reservation.asks)
+                        said.append(line("project_asks", title=reservation.title, what=what))
+                    if asked_system:
+                        said.append(line("project_system", title=reservation.title))
+                    waits = " ".join(said)
             except AppError as exc:
                 failure = exc.message
             if task_ids:

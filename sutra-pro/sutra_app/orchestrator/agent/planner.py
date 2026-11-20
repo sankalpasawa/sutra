@@ -66,6 +66,8 @@ NODE_LINES: dict[str, str] = {
     "stopped": "Stopped. I did not start anything.",                                                  # the owner's Stop ended the planner's call (D301)
     "project_waits": "I set up the project \u201c{title}\u201d. It is estimated at about {credits} credits, which is over {limit}, so it waits for your OK. Nothing has started. "
                      "If nobody answers it is cancelled after 24 hours.",                              # a project made `awaiting_approval` (D308); MAN-8 replaces it with the card
+    "project_asks": "I set up the project \u201c{title}\u201d. {what} needs your OK. Nothing has started. If nobody answers it is cancelled after 24 hours.",     # a tier-4 or a wide-scope question (D317)
+    "project_system": "I set up the project \u201c{title}\u201d. Your computer must allow something first. Open the card, follow the steps, then press Check again. Steps that do not need it can go on.",
 }
 _ALL_LINES: dict[str, str] = {**LINES, **NODE_LINES}
 _SPECIAL = {

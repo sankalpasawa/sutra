@@ -706,6 +706,8 @@
         renderChat();
         send(label, {message_id: numeric, option: b.dataset.id || label});
       }
+    } else if (act === "node-answer") {
+      answerProjectQuestion(b, numeric);
     } else if (act === "option") {
       send("Option " + b.dataset.opt);
     } else if (act === "answer-option") {
@@ -1006,6 +1008,27 @@
     const out = {};
     S.heads.forEach(h => { if (isObj(h) && h.retry === true && typeof h.task_id === "string") out[h.task_id] = true; });
     return out;
+  }
+
+  // A question of a multi-agent project (D317): the buttons of a `node_approval` card. An answer goes to the project's answer route; "Check again" and "Skip" to the permission routes.
+  async function answerProjectQuestion(button, messageId) {
+    const project = text(button.dataset.project), approval = text(button.dataset.approval), item = text(button.dataset.item), decision = text(button.dataset.decision);
+    if (!/^prj_[0-9a-f]{12}$/.test(project)) return false;
+    const url = decision === "check_again" ? "/api/projects/" + enc(project) + "/system/" + enc(item) + "/check" : decision === "skip" ? "/api/projects/" + enc(project) + "/system/" + enc(item) + "/skip"
+      : "/api/projects/" + enc(project) + "/approvals/" + enc(approval);
+    button.disabled = true;
+    try {
+      await api.post(url, decision === "check_again" || decision === "skip" ? {} : {decision});
+      clearBanner();
+    } catch (e) {
+      showBanner(errorWords(e));
+      button.disabled = false;
+      return false;
+    }
+    if (decision !== "check_again" && typeof messageId === "number") { S.answers[messageId] = ""; renderChat(); }
+    try { await fetchMessages(true); } catch (e) { handleFetchError(e); }              // the card is marked answered by the server: read the chat again
+    refetchNeeds();
+    return true;
   }
 
   // Try again: the existing POST /api/tasks/{id}/retry (a new task with the same words, parent_task_id = this one), then the lane again.
