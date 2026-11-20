@@ -156,3 +156,12 @@ def test_the_links_of_the_steps_scopes_are_followed_before_the_start_transaction
         Conductor._resolved = staticmethod(real)
     assert depths and set(depths) == {0}                                                                        # every look at a link was outside any transaction
     assert len(rig.t.launcher.started) == 2                                                                      # and the gate still did its work from the answers
+
+
+def test_a_path_from_git_written_with_the_other_accent_form_is_covered_by_the_scope(rig):                       # N-10
+    from sutra_app.orchestrator.conductor import _covers_path
+    from sutra_app.orchestrator.grants import normalize_scope
+    scope = normalize_scope(["caf\u00e9/"])                                                                    # the owner typed the accent as one letter ...
+    assert _covers_path(scope, "cafe\u0301/menu.txt") and _covers_path(scope, "CAFE\u0301/Menu.txt")         # ... git reports it as a letter and a mark (macOS)
+    assert not _covers_path(scope, "cafe/menu.txt") and not _covers_path(scope, "caf\u00e9s/menu.txt")
+    assert _covers_path(("cafe\u0301/",), "caf\u00e9/menu.txt")                                              # and the other way round

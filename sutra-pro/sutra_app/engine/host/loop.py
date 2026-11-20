@@ -211,7 +211,10 @@ class Host:
         if getattr(getattr(self, "task", None), "node", None) is None or self.paths is None:
             return
         try:
-            blank_tool_inputs(self.paths.run_dir)
+            failed: list[str] = []
+            blank_tool_inputs(self.paths.run_dir, failed)
+            if failed:                                                            # the inputs stay in that file: the trace says so, the run still ends (N-12)
+                self.trace("publish.error", {"where": "tool inputs", "error": clip("could not empty the tool inputs of " + ", ".join(failed), 300)})
         except Exception as exc:  # noqa: BLE001
             self.trace("publish.error", {"where": "tool inputs", "error": clip(f"{type(exc).__name__}: {exc}", 300)})
 

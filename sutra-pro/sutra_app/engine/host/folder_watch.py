@@ -187,6 +187,6 @@ class FolderWatch:
             return None
         rows = changes_between(self.before, after)
         found = {"files": rows[:LISTED_MAX], "more": max(0, len(rows) - LISTED_MAX)}
-        if full:
-            found["all"] = [row["path"] for row in rows[:MAX_ENTRIES]]
+        if full and len(rows) <= MAX_ENTRIES:                                  # a list cut at the cap would read as complete: with more than that there is no whole list, and the server says the check was partial (N-11)
+            found["all"] = [row["path"] for row in rows]
         return found
