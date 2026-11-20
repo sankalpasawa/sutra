@@ -1,14 +1,14 @@
 {
  "schema": "traceability/1",
  "counts": {
-  "decisions": 323,
+  "decisions": 325,
   "packages": 78,
   "endpoints": 43,
   "chips": 17,
   "steps": 7,
   "owner_rules": 7
  },
- "max_decision": 323,
+ "max_decision": 325,
  "owner_rules": [
   {
    "rule": "This is a new app, no relation to the old sutra-ui. Its design is the J2 prototype's design.",
@@ -512,7 +512,9 @@
     "D320",
     "D321",
     "D322",
-    "D323"
+    "D323",
+    "D324",
+    "D325"
    ],
    "modules": [
     "docs/DECISIONS.md",
@@ -2927,7 +2929,8 @@
    "packages": [
     "GAP-DATA",
     "GAP-DOCS",
-    "GAP-TRACE"
+    "GAP-TRACE",
+    "ORCH-7"
    ],
    "status": "implemented",
    "superseded_by": [],
@@ -5272,8 +5275,13 @@
   {
    "id": "D317",
    "title": "The approval card is a message of the org chat",
-   "packages": [],
-   "status": "documented only",
+   "packages": [
+    "GAP-CONSOLE",
+    "ORCH-3",
+    "ORCH-7",
+    "UI-6"
+   ],
+   "status": "implemented",
    "superseded_by": [],
    "diagram": "label \"approval card in the chat, before phase 4\", key only."
   },
@@ -5288,8 +5296,10 @@
   {
    "id": "D319",
    "title": "Decide for me as built, and what it must also do",
-   "packages": [],
-   "status": "documented only",
+   "packages": [
+    "GAP-DEMO"
+   ],
+   "status": "implemented",
    "superseded_by": [],
    "diagram": "label \"Decide for me: also the owner's own switch\", key only."
   },
@@ -5304,8 +5314,10 @@
   {
    "id": "D321",
    "title": "Caps and the automatic triggers as built",
-   "packages": [],
-   "status": "documented only",
+   "packages": [
+    "GAP-W1"
+   ],
+   "status": "implemented",
    "superseded_by": [],
    "diagram": "label \"cap hit = failed; wall time from first start\", key only."
   },
@@ -5324,6 +5336,24 @@
    "status": "documented only",
    "superseded_by": [],
    "diagram": "label \"runs alone is MAN-10's promise\", key only."
+  },
+  {
+   "id": "D324",
+   "title": "The ceiling is real",
+   "packages": [
+    "ORCH-6"
+   ],
+   "status": "implemented",
+   "superseded_by": [],
+   "diagram": "label \"ceiling real: retry gets slice minus spend\", key only."
+  },
+  {
+   "id": "D325",
+   "title": "The app's own data is only ever a question to the owner",
+   "packages": [],
+   "status": "documented only",
+   "superseded_by": [],
+   "diagram": "label \"sutra tools only on the owner's yes\", key only."
   }
  ],
  "packages": [
