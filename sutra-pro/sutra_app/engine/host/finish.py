@@ -4,7 +4,7 @@
 
 `Host._conclude` calls it once, right after the publisher stopped and before the heartbeat does: the heartbeat still beats while the steps
 work, and the final publish and `run.ended` come after every file they write. A run that ended `done` or `done_with_open_items` gets the
-steps below, in this order; a stopped or crashed run gets none.
+steps below, in this order (a node's `handoff` first, G1); a stopped or crashed run gets none.
 
     agent_views   `j2_agent_views.build(<run folder>, quiet=True)`: the agent-readable JSON (`agent/*.json`, `artifacts/<name>.json`,
                   `site/sections/<id>.json`, the stamped `prd.json`, `hld.json`, `lld.json`, `design.json`) that the Artifacts pane's
@@ -113,7 +113,7 @@ def run_steps(host, status: str, steps: Optional[tuple[tuple[str, Step], ...]] =
     written: list[dict] = []
     slow: Optional[str] = None                                    # the name of the first step over the limit
     if steps is None:
-        steps = STEPS + (NODE_STEPS if getattr(getattr(host, "task", None), "node", None) is not None else ())
+        steps = (NODE_STEPS if getattr(getattr(host, "task", None), "node", None) is not None else ()) + STEPS     # a node's hand-off goes FIRST: a slow step must never cost it its hand-off (G1, D311)
     for name, step in steps:
         row: dict[str, Any] = {"step": name}
         asked_to_stop = getattr(host, "stopping", None)

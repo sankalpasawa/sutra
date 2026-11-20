@@ -89,7 +89,7 @@ def test_the_plumbing_names_cover_what_the_servers_upstream_listing_leaves_out()
     assert set(orchestrator_tasks.RUN_FOLDER_INTERNALS) <= set(handoff.NOT_HANDED_ON)
 
 
-def test_the_default_steps_of_a_node_end_with_the_hand_off_and_those_of_any_other_run_are_unchanged(tmp_path, monkeypatch):
+def test_the_default_steps_of_a_node_carry_the_hand_off_and_those_of_any_other_run_are_unchanged(tmp_path, monkeypatch):
     monkeypatch.setattr(finish, "STEPS", ())                                   # the J2 steps are tested elsewhere: only the node step differs
     node_dir, plain_dir = tmp_path / "n", tmp_path / "p"
     for folder in (node_dir, plain_dir):
@@ -98,3 +98,21 @@ def test_the_default_steps_of_a_node_end_with_the_hand_off_and_those_of_any_othe
     node_host, plain_host = host_for(node_dir), host_for(plain_dir, node=False)
     assert [row["step"] for row in finish.run_steps(node_host, "done")] == ["handoff"] and (node_dir / "handoff.json").is_file()
     assert finish.run_steps(plain_host, "done") == [] and not (plain_dir / "handoff.json").exists() and plain_host.lines == []
+
+
+def test_the_hand_off_runs_first_so_a_slow_step_never_costs_a_node_its_hand_off(tmp_path, monkeypatch):
+    """G1 (D311): `agent_views` took more than the step limit and ends the rest; the hand-off had already been written, and the slow step's own line says it was slow."""
+    folder = tmp_path / "n"
+    folder.mkdir()
+    (folder / "a.txt").write_text("a")
+    ticks = iter(range(0, 1000, 1))
+
+    def slow_views(host):                                                      # takes "30 seconds" on the fake clock: over STEP_SECONDS
+        for _ in range(29):
+            next(ticks)
+        return {"files": 0}
+    monkeypatch.setattr(finish, "STEPS", (("agent_views", slow_views), ("catalog", lambda host: {})))
+    rows = finish.run_steps(host_for(folder), "done", clock=lambda: float(next(ticks)))
+    assert [row["step"] for row in rows] == ["handoff", "agent_views", "catalog"]
+    assert rows[0]["result"] == "ok" and (folder / "handoff.json").is_file()
+    assert rows[1].get("slow") is True and rows[2]["result"] == "skipped"
