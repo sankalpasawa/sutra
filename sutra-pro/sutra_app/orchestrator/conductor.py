@@ -38,7 +38,7 @@ APP_CLOSED_WHY = "the app was closed while it ran"
 MAX_RESTARTS = 2                                   # a node that the closing of the app ended gets a fresh attempt that does not use up its one retry, at most this many times (D314)
 NODE_ERROR_WHY = "following this step failed, so it was ended"
 PERMISSION_RESTART = "the computer allowed it, so the step starts again"
-NEEDS_SYSTEM_PERMISSION = "needs_system_permission"           # why a node ended when the computer refused a file (MAN-15)
+NEEDS_SYSTEM_PERMISSION = "your computer did not allow it"       # why a node ended when the computer refused a file (MAN-15)
 CAP_PHRASES = ("used up its model calls", "used up its dollars", "ran out of time")      # what the engine host writes (`llm.CAP_WORDS`)
 CAP_REACHED = "stopped: this step "                       # + "used up its model calls" / "used up its dollars" / "ran out of time"          # the outcome the engine host writes when a node used up its calls, dollars or time (MAN-9)
 
@@ -128,7 +128,7 @@ class Conductor:
             slices = conn.execute("SELECT COALESCE(SUM(slice_credits), 0) FROM agent_nodes WHERE project_id = ? AND role = 'worker' AND state NOT IN ('failed','cancelled')",
                                   (node["project_id"],)).fetchone()[0]
             if slices > ceiling:
-                return "Waiting: the credits set aside for this project's steps do not fit its ceiling"
+                return "Waiting: the credits set aside for this project's steps are more than the project may spend"
         return ""
 
     def on_starting(self, tx: Tx, row: Any) -> None:
@@ -302,12 +302,12 @@ class Conductor:
         except HandoffRefused as refused:
             self.store.audit(tx, actor="conductor", action="handoff.refused", project_id=node["project_id"], node_id=node["id"], role=node["role"], decision="deny", reason=str(refused),
                              ref=task_id)
-            self._fail(tx, node, f"hand-off refused: {refused}")
+            self._fail(tx, node, f"its results were not accepted: {refused}")
             return
         except OSError:
             self.store.audit(tx, actor="conductor", action="handoff.refused", project_id=node["project_id"], node_id=node["id"], role=node["role"], decision="deny",
                              reason="the hand-off could not be stored", ref=task_id)
-            self._fail(tx, node, "hand-off refused: it could not be stored")
+            self._fail(tx, node, "its results were not accepted: they could not be stored")
             return
         self.store.audit(tx, actor="conductor", action="handoff.accepted", project_id=node["project_id"], node_id=node["id"], role=node["role"], decision="allow",
                          reason=f"{len(accepted.document['files'])} file(s), message {posted.seq}", ref=str(posted.seq))
@@ -565,9 +565,9 @@ class Conductor:
             except NodeBlockError:
                 pass
             self.store.audit(tx, actor="conductor", action="grant.denied", project_id=project_id, node_id=node["id"], role=node["role"], decision="deny",
-                             reason="this step has no valid grant", ref=node["task_id"])
-            self._fail(tx, node, "no valid grant", retry=False)
-            self.tasks.cancel_in(tx, node["task_id"], "cancelled: this step has no valid grant")       # the node is final already: the task's end changes nothing more
+                             reason="this step has no permissions set", ref=node["task_id"])
+            self._fail(tx, node, "it had no permissions set", retry=False)
+            self.tasks.cancel_in(tx, node["task_id"], "cancelled: this step has no permissions set")       # the node is final already: the task's end changes nothing more
             tx.emit("node.updated", {"project_id": project_id, "node_id": node["id"], "state": "failed"})
             self._sync_project(tx, project_id)
 
@@ -609,9 +609,9 @@ class Conductor:
         return cancelled
 
     def _late_permission(self, tx: Tx, node: sqlite3.Row, outcome: str) -> None:
-        """A node that ended on a refusal of the computer (EPERM, WinError 5: a permission the probe could not see) did not fail: it `needs_system_permission`. It ends `failed` with that reason, is not
+        """A node that ended on a refusal of the computer (EPERM, WinError 5: a permission the probe could not see) did not fail: it needs a permission. It ends `failed` with that reason, is not
         retried (it would be refused again), and ONE card asks the owner (a system question of the project, once, by its client id); the audit says `system.late_denied`."""
-        self.store.audit(tx, actor="conductor", action="system.late_denied", project_id=node["project_id"], node_id=node["id"], role=node["role"], decision="deny", reason="needs_system_permission",
+        self.store.audit(tx, actor="conductor", action="system.late_denied", project_id=node["project_id"], node_id=node["id"], role=node["role"], decision="deny", reason="your computer did not allow it",
                          ref=node["task_id"] or "")
         asked = self.store.open_approval(tx, project_id=node["project_id"], node_id=node["id"], tier=2,
                                          request={"kind": "system", "item": "unknown", "level": "write", "late": 1, "nodes": [node["id"]]},
@@ -625,7 +625,7 @@ class Conductor:
         self._sync_project(tx, node["project_id"])
 
     def restart_after_permission(self, tx: Tx, node_id: str) -> bool:
-        """P3 (D322 g): after the late permission card was cleared, the node that ended `needs_system_permission` gets ONE fresh attempt, as a new task of the same node, that does not spend its
+        """P3 (D322 g): after the late permission card was cleared, the node that ended with the computer refusing a file gets ONE fresh attempt, as a new task of the same node, that does not spend its
         retry (the D314 mechanism: audit `node.restarted`). Once for each node; never for a node whose project has ended. Returns True when it started one."""
         node = tx.conn.execute("SELECT * FROM agent_nodes WHERE id = ?", (node_id,)).fetchone()
         if node is None or node["state"] != "failed" or node["failure_reason"] != NEEDS_SYSTEM_PERMISSION or not node["task_id"] or self.tasks is None:

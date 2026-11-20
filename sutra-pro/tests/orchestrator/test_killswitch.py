@@ -354,7 +354,7 @@ def test_a_node_whose_grant_is_missing_unreadable_too_wide_or_not_its_own_is_hel
     broken, fine = t.new("web", "node with a bad grant"), t.new("sales", "an ordinary task behind it")
     seed_raw(t, broken.id, 1, bad_grants(1)[why])
     assert t.run(t.service.start_ready()) == [fine.id]                                # the held one does not stop the next from starting
-    assert t.status(broken.id) == "queued" and "Held: this agent has no valid grant" in waiting_detail(t, broken.id)
+    assert t.status(broken.id) == "queued" and "Held: this step has no permissions set, so it cannot start" in waiting_detail(t, broken.id)
     assert t.launcher.stopped == [] and not list((t.settings.data_dir / "departments" / "web" / "runs").glob("j2-*"))
 
 
@@ -381,7 +381,7 @@ def test_the_gate_names_the_switch_before_the_grant_and_never_holds_an_ordinary_
     task, ordinary = t.new("web", "node"), t.new("sales", "plain")
     seed_raw(t, task.id, 1, "{}")
     conn = t.db.conn()
-    assert rig.control.gate(conn, 0, t.row(task.id)) == "Held: this agent has no valid grant" and rig.control.gate(conn, 0, t.row(ordinary.id)) == ""
+    assert rig.control.gate(conn, 0, t.row(task.id)) == "Held: this step has no permissions set, so it cannot start" and rig.control.gate(conn, 0, t.row(ordinary.id)) == ""
     rig.switch.set("pause")
     assert "Paused" in rig.control.gate(conn, 0, t.row(task.id)) and rig.control.gate(conn, 0, t.row(ordinary.id)) == ""
 

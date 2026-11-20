@@ -120,7 +120,7 @@ def test_a_project_that_waits_for_the_owner_starts_nothing(rig):
 def test_a_node_whose_grant_is_broken_is_held_and_the_rest_of_the_project_starts(rig):
     reservation, tasks = rig.request([("a1", "web", []), ("a2", "sales", [])])
     rig.sql("UPDATE agent_nodes SET grants_json = '{}' WHERE task_id = ?", tasks["a1"])
-    assert rig.start() == [tasks["a2"]] and "no valid grant" in rig.detail(tasks["a1"])
+    assert rig.start() == [tasks["a2"]] and "no permissions set" in rig.detail(tasks["a1"])
 
 
 def test_the_gate_asks_the_switch_before_the_project_and_never_holds_an_ordinary_task(rig):
@@ -220,7 +220,7 @@ def test_a_node_whose_run_ended_well_but_left_no_hand_off_is_failed_with_the_rea
     rig.go(tasks["a1"])
     rig.finish(tasks["a1"], handoff=False)
     node = rig.node_of(tasks["a1"])
-    assert node["state"] == "failed" and node["failure_reason"] == "hand-off refused: the node left no hand-off" and node["torn_down_at"] is not None
+    assert node["state"] == "failed" and node["failure_reason"] == "its results were not accepted: the node left no hand-off" and node["torn_down_at"] is not None
     assert rig.node_of(tasks["a2"])["state"] == "cancelled" and rig.project(reservation.project_id)["status"] == "failed"
     refused = rig.audit("handoff.refused")
     assert len(refused) == 1 and refused[0]["decision"] == "deny" and refused[0]["actor"] == "conductor" and rig.sql("SELECT count(*) FROM node_messages").fetchone()[0] == 0

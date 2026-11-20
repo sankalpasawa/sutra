@@ -77,12 +77,12 @@ class StartFailed(Exception):
         self.reason, self.exit_code, self.chat = reason, exit_code, chat
 
 
-NEEDS_PERMISSION = "needs_system_permission"          # the outcome prefix of a run the computer refused a file to (MAN-15): written by the host, read by the orchestrator, nothing a node writes
+NEEDS_PERMISSION = "Your computer did not allow it"          # the outcome prefix (plain words: the owner reads it) of a run the computer refused a file to (MAN-15): written by the host, read by the orchestrator, nothing a node writes
 _OS_REFUSAL = re.compile(r"^(?:Crashed: )?(?:\[(?:Errno (?:1|13)|WinError 5)\]|(?:PermissionError)\b)")      # the start of the text of a Python OSError that the system refused
 
 
 def permission_outcome(exc_or_text: Any) -> Optional[str]:
-    """`needs_system_permission: ...` when `exc_or_text` is a refusal of the computer: a PermissionError (or an OSError with EPERM, EACCES, WinError 5), or the text a Python OSError of that kind makes
+    """`Your computer did not allow it: ...` when `exc_or_text` is a refusal of the computer: a PermissionError (or an OSError with EPERM, EACCES, WinError 5), or the text a Python OSError of that kind makes
     (J2 keeps only the text of the error that crashed a run). None otherwise. Only this prefix is read as a permission need: the words of a node are never matched (m5)."""
     import errno
     if isinstance(exc_or_text, PermissionError) or (isinstance(exc_or_text, OSError) and (exc_or_text.errno in (errno.EPERM, errno.EACCES) or getattr(exc_or_text, "winerror", None) == 5)):

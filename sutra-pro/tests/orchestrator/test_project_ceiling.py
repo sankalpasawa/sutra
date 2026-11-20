@@ -81,7 +81,7 @@ def test_the_gate_holds_a_node_when_the_slices_do_not_fit_the_ceiling(rig):
     conn = rig.t.db.conn()
     assert rig.projects.gate(conn, BASE, rig.t.row(tasks["a1"])) == ""                                      # the slices are exactly the ceiling
     rig.sql("UPDATE agent_nodes SET slice_credits = slice_credits + 1 WHERE plan_ref = 'a2'")              # something moved credits past the ceiling: it must not start
-    assert "do not fit its ceiling" in rig.projects.gate(conn, BASE, rig.t.row(tasks["a1"]))
+    assert "are more than the project may spend" in rig.projects.gate(conn, BASE, rig.t.row(tasks["a1"]))
     assert rig.start() == []
     rig.sql("UPDATE agent_nodes SET state = 'cancelled' WHERE plan_ref = 'a2'")                              # a node that no longer counts frees its credits
     assert rig.projects.gate(conn, BASE, rig.t.row(tasks["a1"])) == ""

@@ -188,7 +188,7 @@ def test_a_paused_project_does_not_retry_into_a_running_state_but_keeps_the_retr
     assert rig.node_of(rig.sql("SELECT task_id FROM agent_nodes WHERE plan_ref = 'a1'").fetchone()[0])["state"] == "queued" and rig.start() == []
 
 
-# ---- a node with no valid grant (G3, D310) -------------------------------------------------------------------------------------------
+# ---- a node with no permissions set (G3, D310) -------------------------------------------------------------------------------------------
 
 @pytest.mark.parametrize("broken", ["{}", "not json", '{"role": "reviewer"}'])
 def test_a_node_with_no_valid_grant_is_failed_by_the_tick_and_the_project_does_not_hang(rig, broken):
@@ -199,7 +199,7 @@ def test_a_node_with_no_valid_grant_is_failed_by_the_tick_and_the_project_does_n
     assert done["expired"] == [] and rig.node_states(tasks) == {"a1": "failed", "a2": "cancelled", "a3": "leased"}
     assert rig.t.status(tasks["a1"]) == "cancelled" and rig.t.status(tasks["a2"]) == "cancelled"        # nothing of it starts, its dependant is cancelled
     denied = rig.audit("grant.denied")
-    assert [(r["actor"], r["decision"], r["reason"]) for r in denied if r["node_id"] == rig.node_of(tasks["a1"])["id"]] == [("conductor", "deny", "this step has no valid grant")]
+    assert [(r["actor"], r["decision"], r["reason"]) for r in denied if r["node_id"] == rig.node_of(tasks["a1"])["id"]] == [("conductor", "deny", "this step has no permissions set")]
     assert rig.sql("SELECT count(*) FROM agent_nodes WHERE plan_ref = 'a1'").fetchone()[0] == 1 and rig.node_of(tasks["a1"])["attempt"] == 1       # no retry: the grant would be the same
     rig.go(tasks["a3"])
     rig.finish(tasks["a3"])

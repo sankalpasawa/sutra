@@ -52,7 +52,7 @@ NOTE_MAX_BYTES = 4096                          # how much of a switch file is re
 LIVE_TASK_STATUSES = ("starting", "running", "waiting_user")
 OPEN_TASK_STATUSES = ("blocked", "queued", "starting", "running", "waiting_user")
 KILL_OUTCOME = "stopped by the kill switch"
-NO_GRANT_HELD = "Held: this agent has no valid grant"
+NO_GRANT_HELD = "Held: this step has no permissions set, so it cannot start"
 
 
 class KillSwitch:

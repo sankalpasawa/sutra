@@ -45,7 +45,7 @@ class Adapter(Protocol):
     def open_settings(self, need: Need) -> bool: ...
 
 
-NEEDS_PERMISSION = "needs_system_permission"     # the outcome prefix the engine host writes when the computer refused a file (engine/host/loop.py `permission_outcome`)
+NEEDS_PERMISSION = "Your computer did not allow it"     # the outcome prefix (plain words: the owner reads it) the engine host writes when the computer refused a file (engine/host/loop.py `permission_outcome`)
 
 
 def is_permission_failure(error: BaseException | str) -> bool:

@@ -192,3 +192,9 @@ def test_answering_github_first_does_not_release_the_step_a_permission_question_
     rig.adapter.blocked = False
     rig.t.run(rig.projects.system_check(reservation.project_id, "files_folders"))
     assert tasks["a1"] in {s.task_id for s, *_ in rig.t.launcher.started}
+
+
+def test_the_permission_card_names_the_steps_it_holds_by_their_titles_not_by_ids(rig):
+    reservation, tasks = rig.request([("a1", "web", []), ("a2", "sales", [])], probe=True)
+    [card] = rig.projects.system_cards(reservation.project_id)
+    assert card.affects == ["a1"] and not any(word.startswith("nd_") for word in card.affects)

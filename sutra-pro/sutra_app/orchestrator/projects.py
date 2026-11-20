@@ -693,6 +693,15 @@ class ProjectService:
             await self.tasks.start_ready()
         return await run_blocking(self.snapshot, project_id)
 
+    def _step_names(self, project_id: str, node_ids: Sequence[Any]) -> list[str]:
+        """The steps a permission question holds, by the title of their task (plain words), never by node id."""
+        names = []
+        for node_id in list(node_ids)[:20]:
+            row = self.db.conn().execute("SELECT t.title AS title, n.plan_ref AS ref FROM agent_nodes n LEFT JOIN tasks t ON t.id = n.task_id WHERE n.id = ? AND n.project_id = ?", (node_id, project_id)).fetchone()
+            if row is not None:
+                names.append(str(row["title"] or row["ref"] or "a step")[:80])
+        return names
+
     def system_cards(self, project_id: str) -> list[SystemPermissionCard]:
         """The open permission questions of a project as cards, with the steps of THIS system in plain words."""
         adapter = self._system_adapter()
@@ -702,7 +711,7 @@ class ProjectService:
                 continue
             need = syspermissions.Need(str(a.request.get("item", "unknown")), "write" if a.request.get("level") == "write" else "read", str(a.request.get("label", "")))
             cards.append(SystemPermissionCard(project_id=project_id, approval_id=a.id, item=need.item[:40], label=need.label[:200], level=need.level, steps=[s[:300] for s in adapter.explain(need)][:8],
-                                              platform=str(getattr(adapter, "name", ""))[:20], affects=[str(n) for n in (a.request.get("nodes") or [])][:20]))
+                                              platform=str(getattr(adapter, "name", ""))[:20], affects=self._step_names(project_id, a.request.get("nodes") or [])))
         return cards
 
     # ---- reading --------------------------------------------------------------------------------------------------------------------
