@@ -71,10 +71,12 @@ const reply = text => ({id: 2, session_id: "cs_x", role: "agent", who: "sutra", 
 const taskCard = over => Object.assign({type: "task", task_id: "tsk_0123456789ab", dept_id: "web", dept_name: "Web", title: "Page", status: "running"}, over || {});
 
 test("a reply that ends with a project's address links to the project, any other reply is as it was (D382)", () => {
-  const html = ChatView.transcript(SESSION, [reply("I gave this to the Web team. You can follow it here: /p/" + PROJECT)]);
+  const ORG = Object.assign({}, SESSION, {id: "cs_org", kind: "org", node_id: "", title: "Org"});
+  const html = ChatView.transcript(ORG, [reply("I gave this to the Web team. You can follow it here: /p/" + PROJECT)]);
   assert.ok(html.includes('You can follow it here: <a class="plink" href="/p/' + PROJECT + '">Open the project</a>'));
+  assert.equal(ChatView.transcript(SESSION, [reply("a model wrote /p/" + PROJECT)]).includes('class="plink"'), false, "a team's own chat never links it (D389)");
   for (const same of ["I gave this to the Web team.", "see /p/prj_zz", "/p/" + PROJECT + "abc"]) {
-    assert.equal(ChatView.transcript(SESSION, [reply(same)]).includes('class="plink"'), false, same);
+    assert.equal(ChatView.transcript(ORG, [reply(same)]).includes('class="plink"'), false, same);
   }
 });
 

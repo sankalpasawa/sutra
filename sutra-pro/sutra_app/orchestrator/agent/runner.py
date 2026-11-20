@@ -53,6 +53,7 @@ __all__ = ["TurnRunner", "TurnHooks", "PHASE_DETAIL", "TITLE_CHARS", "YES", "NO"
 
 log = logging.getLogger(__name__)
 ORG = ORG_SESSION_ID
+_NO_PROJECT_ADDRESS = re.compile(r"/p/(?=prj_)")        # the shape the chat page turns into a link: only the app writes it
 PROJECT_SRC = "project:"        # the `src_ref` prefix of a line the owner sent with `POST /api/projects` (MAN-13): a repeated `client_id` finds the same line
 TITLE_CHARS = 60
 YES, NO, NONE_OPTION = "yes", "no", "none"
@@ -659,7 +660,8 @@ class TurnRunner:
         sentences = self._sentences(plan, applied, drafts)
         if waits:
             sentences = sentences + [waits]
-        if project_id and failure is None:
+        sentences = [_NO_PROJECT_ADDRESS.sub("/p/ ", text) for text in sentences]     # a word of the model's (a title) that looks like a project address is not one (D389, m11)
+        if project_id and failure is None and self.db.conn().execute("SELECT 1 FROM projects WHERE id = ?", (project_id,)).fetchone() is not None:     # only a project that exists
             sentences = sentences + [f"You can follow it here: /p/{project_id}"]           # D382: the page shows the address as a link ("Open the project"); only that exact shape
         if failure is not None:
             sentences = [line("task_failed", reason=failure)]

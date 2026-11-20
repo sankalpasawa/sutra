@@ -510,7 +510,7 @@
       } else if (directReply(m) && root.ChatMarkdown) {
         inner = root.ChatMarkdown.render(text(m.text));                 // as the model wrote it: an "@name" at its start is not an agent's address
       } else {
-        inner = projectAddress(safeText(body));                        // D382: a reply that ends with a project's address links to its page; only that exact shape, any other text is as it was
+        inner = clean(s.kind) === "org" ? projectAddress(safeText(body)) : safeText(body);      // D382, D389: in the org chat only (the app's own reply there); only that exact shape, any other text is as it was
       }
       // a settled provider turn: its tool calls fold into ONE row (ChatFold, ABS-10); nothing is drawn while the message is pending
       if (root.ChatFold && Array.isArray(m.blocks) && m.blocks.length > 0) inner += root.ChatFold.fold(m.blocks, {settled: clean(m.state) !== "pending"});
