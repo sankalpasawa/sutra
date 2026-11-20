@@ -1,30 +1,32 @@
 /* budget_chip.js - the Budget chip (D257): what one run may use, in dollars (API price), on the home box and the team page's start form.
 
-   "Budget: $20 API price (team default) · change" opens a small menu: half, the default, double, or a typed amount; then
-   "The team stops and asks you before going over." and "API price, estimated. Runs use your Claude subscription; nobody is billed this amount."
+   A pill beside Go reads "$20 budget ▾". It opens a popover above it (an overlay: the row under it never moves) titled "Run budget": one row of
+   pills, half, the default (tagged "default"), double and Custom, and the line "Asks before going over · estimated at API prices, not billed."
+   Custom shows a "$" box in the same row that applies as you type; a bad amount marks the box and changes nothing. A click outside or Esc closes it.
    A choice goes with the next request only (`usd_budget`), then the chip shows the default again. Nothing is sent for the default.
 
      fmt(x)                      "$20", "$12.50"
      parse(text)                 "$12.50", "12.5", "12" -> the number of dollars from 1 to 10000 with at most two decimals, else null
      presets(def)                [half, def, double], to the cent
-     chipHtml({value, source})   the chip's line; source "team" ("team default"), "default" ("default") or "request" ("this request")
-     menuHtml(value)             the four choices and the two lines
-     mount(el, def, source)      draws the chip in `el` and wires it; -> {value() (the chosen dollars, null for the default), reset()}
+     chipHtml(value)             the pill's words: "$20 budget ▾"
+     popHtml(o)                  the popover: {def, shown, custom, typed, open, id}
+     mount(el, def, source)      draws the chip in `el` and wires it; -> {value() (the chosen dollars, null for the default), reset()};
+                                 source "team" ("team default") or "default" ("default") names the default for a screen reader
      raiseHtml(suggested, attrs) the raise input of a dollar question: the suggested amount filled in, "Add and keep going" (its button carries
                                  `attrs`, written by code: `data-raise` on the team page), and "API price, estimated"
      raiseFromText(text)         the suggested dollars of a question's continue option, read from its "[adds $Z]" tail; null when there is none
 
-   A classic script with ONE global, BudgetChip; in node it is module.exports. Every amount on screen says "API price". */
+   Its look is `.bchip*` in sutra-panel.css (both pages link it). A classic script with ONE global, BudgetChip; in node it is module.exports. */
 (function (root) {
   "use strict";
 
   const MIN = 1, MAX = 10000;
-  const STOPS = "The team stops and asks you before going over.";
-  const NOT_BILLED = "API price, estimated. Runs use your Claude subscription; nobody is billed this amount.";
+  const NOTE = "Asks before going over · estimated at API prices, not billed.";
   const SOURCES = {team: "team default", default: "default", request: "this request"};
   const ENTITIES = {"&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;"};
   const esc = s => String(s).replace(/[&<>"']/g, c => ENTITIES[c]);
   const cents = x => Math.round(x * 100) / 100;
+  let uid = 0;
 
   function fmt(x) {
     const n = cents(Number(x) || 0);
@@ -40,49 +42,77 @@
 
   const presets = def => [cents(def / 2), cents(def), cents(def * 2)];
 
-  function chipHtml(o) {
-    const value = o && Number.isFinite(o.value) ? o.value : null;
-    const source = SOURCES[o && o.source] || SOURCES.default;
-    return '<summary class="bchipline" aria-label="Budget, API price">Budget: <b>' + esc(value === null ? "" : fmt(value)) +
-      '</b> <small class="bchipapi" style="opacity:.65">API price</small> (' + esc(source) + ") &middot; change</summary>";
-  }
+  const chipHtml = value => esc(fmt(value)) + ' budget <span class="bchipcaret" aria-hidden="true">&#9662;</span>';
 
-  function menuHtml(value) {
-    const [half, def, double] = presets(value);
-    const pick = (n, label) => '<button type="button" class="bchippick" data-usd="' + n + '">' + esc(label) + "</button>";
-    return '<div class="bchipmenu" role="group" aria-label="Budget for this request" style="display:flex;flex-wrap:wrap;gap:6px;align-items:center;padding:6px 0">' +
-      pick(half, fmt(half)) + pick(def, fmt(def) + " (default)") + pick(double, fmt(double)) +
-      '<label style="display:flex;gap:4px;align-items:center">Other <input class="bchipown" inputmode="decimal" placeholder="$" aria-label="Another amount, in dollars" style="width:6em"></label>' +
-      '<button type="button" class="bchipuse">Use</button>' +
-      '<p class="bchipnote" style="flex-basis:100%;margin:2px 0;font-size:12px">' + esc(STOPS) + "</p>" +
-      '<p class="bchipnote" style="flex-basis:100%;margin:0;font-size:12px;opacity:.75">' + esc(NOT_BILLED) + "</p></div>";
+  // o: {def, shown (the dollars in force), custom (Custom is picked), typed (the Custom box's text), open, id}
+  function popHtml(o) {
+    const [half, def, double] = presets(o.def), on = !o.custom && cents(o.shown);
+    const pick = (n, words) => '<button type="button" class="bchippick" data-usd="' + n + '" aria-pressed="' + (on === n) + '">' + words + "</button>";
+    return '<div class="bchippop" id="' + esc(o.id) + '" role="dialog" aria-label="Run budget"' + (o.open ? "" : " hidden") + ">" +
+      '<p class="bchiptitle">Run budget</p><div class="bchiprow" role="group" aria-label="Budget for this request">' +
+      pick(half, esc(fmt(half))) + pick(def, esc(fmt(def)) + ' <small class="bchiptag">default</small>') + pick(double, esc(fmt(double))) +
+      '<button type="button" class="bchippick" data-custom="1" aria-pressed="' + !!o.custom + '">Custom</button>' +
+      (o.custom ? '<label class="bchipcustom"><span aria-hidden="true">$</span><input class="bchipown" inputmode="decimal" autocomplete="off" ' +
+        'value="' + esc(o.typed || "") + '" aria-label="Another amount, in dollars"></label>' : "") +
+      '</div><p class="bchipnote">' + esc(NOTE) + "</p></div>";
   }
 
   // Draws the chip in `el` (a <span>) and wires it. `def` is the team's own budget (GET /api/engine/settings, effective.usd_budget); the chip is
-  // only drawn once that is known, never with a placeholder. A bad typed amount marks the input and changes nothing.
+  // only drawn once that is known, never with a placeholder. Focus goes into the popover when it opens and back to the pill when Esc or a pick closes it.
   function mount(el, def, source) {
-    let chosen = null;
+    const id = "bchippop" + (++uid);
+    let chosen = null, open = false, custom = false, typed = "";
+    const shown = () => chosen === null ? def : chosen;
+    const label = () => fmt(shown()) + " budget, " + (SOURCES[chosen === null ? source : "request"] || SOURCES.default);
+    const focus = sel => { const f = el.querySelector && el.querySelector(sel); if (f && f.focus) f.focus(); };
     const draw = () => {
-      const shown = chosen === null ? def : chosen;
-      el.innerHTML = '<details class="bchip" style="display:inline-block;font-size:13px">' + chipHtml({value: shown, source: chosen === null ? source : "request"}) +
-        menuHtml(def) + "</details>";
+      el.innerHTML = '<span class="bchip"><button type="button" class="bchippill" aria-haspopup="dialog" aria-expanded="' + open + '" aria-controls="' + id +
+        '" aria-label="' + esc(label() + ", API price") + '">' + chipHtml(shown()) + "</button>" +
+        popHtml({def, shown: shown(), custom, typed, open, id}) + "</span>";
     };
-    const take = n => { chosen = n === def ? null : n; draw(); };
+    const shut = back => { open = false; draw(); if (back) focus(".bchippill"); };
+    const take = n => { chosen = n === def ? null : n; };
     el.addEventListener("click", e => {
       const b = e.target.closest && e.target.closest("button");
       if (!b || !el.contains(b)) return;
-      if (b.dataset.usd) return take(Number(b.dataset.usd));
-      if (b.classList.contains("bchipuse")) {
-        const box = el.querySelector(".bchipown"), n = parse(box && box.value);
-        if (n === null) {
-          if (box) { box.setAttribute("aria-invalid", "true"); box.setCustomValidity("Dollars from $1 to $10,000"); box.reportValidity(); }
-          return;
-        }
-        take(n);
+      if (b.dataset.usd) { custom = false; typed = ""; take(Number(b.dataset.usd)); return shut(true); }
+      if (b.dataset.custom) { custom = true; draw(); return focus(".bchipown"); }
+      if (b.classList.contains("bchippill")) {
+        open = !open; draw();
+        focus(open ? (custom ? ".bchipown" : '.bchippick[aria-pressed="true"]') : ".bchippill");
       }
     });
+    // Custom applies as you type: a good amount is the choice at once (the pill follows), a bad one marks the box and changes nothing
+    el.addEventListener("input", e => {
+      const box = e.target;
+      if (!box || !box.classList || !box.classList.contains("bchipown")) return;
+      typed = box.value;
+      const n = parse(typed), bad = n === null && typed.trim() !== "";
+      if (bad) box.setAttribute("aria-invalid", "true"); else box.removeAttribute("aria-invalid");
+      box.setCustomValidity(bad ? "Dollars from $1 to $10,000" : "");
+      if (n === null) return;
+      take(n);
+      const pill = el.querySelector(".bchippill");
+      if (pill) { pill.innerHTML = chipHtml(shown()); pill.setAttribute("aria-label", label() + ", API price"); }
+    });
+    el.addEventListener("keydown", e => {
+      if (!open) return;
+      if (e.key === "Escape") { e.preventDefault(); return shut(true); }
+      if (e.key === "Enter" && e.target && e.target.classList && e.target.classList.contains("bchipown")) {
+        e.preventDefault();                                     // the team page's chip sits in its start form: Enter here never sends the request
+        if (e.target.getAttribute("aria-invalid") === "true") return e.target.reportValidity();
+        shut(true);
+      }
+    });
+    // A click anywhere else closes it. The path is the one of the click itself: a redraw has already replaced the node that was clicked.
+    const doc = el.ownerDocument;
+    if (doc) doc.addEventListener("click", e => {
+      if (!open) return;
+      const path = e.composedPath ? e.composedPath() : [];
+      if (path.indexOf(el) < 0 && !el.contains(e.target)) shut(false);
+    });
     draw();
-    return {value: () => chosen, reset: () => { chosen = null; draw(); }};
+    return {value: () => chosen, reset: () => { chosen = null; custom = false; typed = ""; open = false; draw(); }};
   }
 
   function raiseHtml(suggested, attrs) {
@@ -97,7 +127,7 @@
     return m ? parse(m[1]) : null;
   }
 
-  const BudgetChip = {fmt, parse, presets, chipHtml, menuHtml, mount, raiseHtml, raiseFromText, STOPS, NOT_BILLED};
+  const BudgetChip = {fmt, parse, presets, chipHtml, popHtml, mount, raiseHtml, raiseFromText, NOTE};
   if (typeof module === "object" && module !== null && module.exports) module.exports = BudgetChip;
   else root.BudgetChip = BudgetChip;
 })(globalThis);

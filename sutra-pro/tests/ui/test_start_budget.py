@@ -1,6 +1,6 @@
 """D257 (port edit E25, amends D251 and D252): a team page's Budget chip in dollars (API price). It shows the team's own budget once
 GET /api/engine/settings?dept= answers, and sends nothing for it; a choice (half, double, a typed amount) is sent with the next request only
-as `usd_budget`, then the chip shows the team default again. The page's own `sendText` and submit handler run in node with a stub `$`."""
+as `usd_budget`, then the chip (a pill, "$20 budget ▾", and its popover) shows the team default again. The page's own `sendText` and submit handler run in node with a stub `$`."""
 import json
 import re
 import shutil
@@ -46,8 +46,9 @@ def test_the_chip_holder_is_in_the_start_form_and_the_credit_field_is_gone():
 def test_chip_shows_team_default():
     got = node("await ready(); console.log(JSON.stringify({gets: GETS, html: EL.lbudget.innerHTML}));")
     assert got["gets"] == [["/api/engine/settings", {"dept": "web"}]]
-    text = re.sub(r"<[^>]+>", "", got["html"].split("</summary>")[0]).replace("&middot;", "·")
-    assert re.sub(r"\s+", " ", text).strip() == "Budget: $20 API price (team default) · change"
+    pill = re.search(r'<button type="button" class="bchippill"[^>]*>(.*?)</button>', got["html"])
+    assert re.sub(r"\s+", " ", re.sub(r"<[^>]+>", "", pill.group(1)).replace("&#9662;", "▾")).strip() == "$20 budget ▾"
+    assert 'aria-label="$20 budget, team default, API price"' in pill.group(0) and 'aria-expanded="false"' in pill.group(0)
 
 
 @needs_node
@@ -56,7 +57,7 @@ def test_nothing_is_sent_for_the_team_default_and_a_pick_goes_with_one_request_o
                "console.log(JSON.stringify({sent: SENT, html: EL.lbudget.innerHTML}));")
     assert got["sent"] == [["/api/say", {"text": "a cafe site"}], ["/api/say", {"text": "a bigger site", "usd_budget": 40}],
                            ["/api/say", {"text": "more please"}]]
-    assert "(team default)" in got["html"]                                        # back to the default after the send
+    assert "$20 budget, team default" in got["html"]                              # back to the default after the send
 
 
 @needs_node

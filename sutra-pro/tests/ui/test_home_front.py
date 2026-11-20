@@ -156,30 +156,90 @@ def test_the_box_starts_a_new_project_through_the_org_chat(browser, fake):
     browser.wait_for("document.getElementById('fdbox').value === ''")
 
 
+# D257: the Budget chip is a pill beside Go and a popover that floats above it. What the layout must keep, open or closed: the row's height, the
+# hint on its one line, and the popover inside the window and above the pill.
+LAYOUT_JS = """((row, hint) => {
+  const r = document.querySelector(row), h = document.querySelector(hint), pill = r.querySelector('.bchippill'), pop = r.querySelector('.bchippop');
+  const box = e => e.getBoundingClientRect(), fs = parseFloat(getComputedStyle(h).fontSize);
+  const shown = !!pop && !pop.hidden && getComputedStyle(pop).display !== 'none';
+  return {row: box(r).height, hintOneLine: box(h).height < 1.8 * fs, pill: pill.textContent.trim().replace(/\\s+/g, ' '), expanded: pill.getAttribute('aria-expanded'),
+          shown, position: pop ? getComputedStyle(pop).position : '', above: shown ? box(pop).bottom <= box(pill).top : null,
+          inside: shown ? box(pop).left >= 0 && box(pop).top >= 0 && box(pop).right <= innerWidth : null,
+          focus: document.activeElement ? (document.activeElement.className + '|' + (document.activeElement.dataset.usd || document.activeElement.dataset.custom || '')) : ''};
+})(%s, %s)"""
+
+
+def chip_layout(browser, row, hint):
+    return browser.js(LAYOUT_JS % (q(row), q(hint)))
+
+
+def check_open_and_closed(browser, screens_dir, page, row, hint):
+    """The closed pill and the open popover, with a screenshot of each in tests/ui/screens (git-ignored)."""
+    closed = chip_layout(browser, row, hint)
+    assert closed["pill"] == "$20 budget ▾" and closed["expanded"] == "false" and closed["shown"] is False and closed["hintOneLine"] is True, closed
+    browser.shot(screens_dir / f"budget-chip__{page}__closed.png")
+    browser.click(f"{row} .bchippill")
+    opened = chip_layout(browser, row, hint)
+    assert opened["expanded"] == "true" and opened["shown"] is True and opened["position"] == "absolute", opened
+    assert opened["row"] == closed["row"] and opened["hintOneLine"] is True, (closed, opened)          # the popover floats: nothing under it moves
+    assert opened["above"] is True and opened["inside"] is True, opened
+    assert opened["focus"] == "bchippick|20", opened                                                   # focus moves in, to the default
+    words = browser.js(f"document.querySelector({q(row + ' .bchippop')}).innerText").split("\n")
+    assert [w.strip() for w in words if w.strip()][0] == "Run budget"
+    assert texts(browser, f"{row} .bchippick") == ["$10", "$20 default", "$40", "Custom"]
+    assert texts(browser, f"{row} .bchipnote") == ["Asks before going over · estimated at API prices, not billed."]
+    browser.shot(screens_dir / f"budget-chip__{page}__open.png")
+    browser.press("Escape")
+    shut = chip_layout(browser, row, hint)
+    assert shut["shown"] is False and shut["expanded"] == "false" and shut["focus"] == "bchippill|", shut      # Esc closes and gives focus back
+    return closed
+
+
+@browser_only
+def test_home_chip_is_a_pill_and_a_popover_that_never_moves_the_footer(browser, fake, screens_dir):
+    load(browser, fake, stage="1")
+    browser.wait_for("document.querySelector('#fdbudget .bchippill') !== null")
+    assert "credit" not in browser.js("document.querySelector('.fdcompose').innerText").lower()
+    check_open_and_closed(browser, screens_dir, "home", ".fdcfoot", ".fdtry")
+    browser.click("#fdbudget .bchippill")
+    browser.click(".fdtitle")                                                         # a click outside closes it
+    assert chip_layout(browser, ".fdcfoot", ".fdtry")["shown"] is False
+    assert browser.console_errors == []
+
+
 @browser_only
 def test_home_chip_sends_dollars_once_and_nothing_for_the_default(browser, fake):
-    """D257: the Budget chip shows the default in dollars (API price); nothing is sent for it; a pick or a typed amount rides with the next
-    request only as usd_budget; a bad amount marks the box and changes nothing."""
+    """D257: nothing is sent for the default; a pick or a typed amount rides with the next request only as usd_budget; Custom applies as you type and a
+    bad amount marks the box and changes nothing."""
     load(browser, fake, stage="1")
-    browser.wait_for("document.querySelector('#fdbudget summary') !== null")
-    line = texts(browser, "#fdbudget summary")[0]
-    assert line == "Budget: $20 API price (default) · change" and "credit" not in browser.js("document.querySelector('.fdcompose').innerText").lower()
-    browser.js("document.querySelector('#fdbudget details').open = true")
-    assert "nobody is billed this amount" in browser.js("document.querySelector('#fdbudget .bchipmenu').innerText")
-    browser.js("document.querySelector('#fdbudget .bchipown').value = '0.5'")
-    browser.click("#fdbudget .bchipuse")
-    assert browser.js("document.querySelector('#fdbudget .bchipown').getAttribute('aria-invalid')") == "true"
-    assert texts(browser, "#fdbudget summary")[0].startswith("Budget: $20 ")
+    browser.wait_for("document.querySelector('#fdbudget .bchippill') !== null")
+    pill = lambda: texts(browser, "#fdbudget .bchippill")[0]
+    browser.click("#fdbudget .bchippill")
+    browser.click('#fdbudget [data-custom]')
+    assert browser.js("document.activeElement.className") == "bchipown"
+    browser.type("#fdbudget .bchipown", "0.5")
+    assert browser.js("document.querySelector('#fdbudget .bchipown').getAttribute('aria-invalid')") == "true" and pill() == "$20 budget ▾"
+    browser.js("document.querySelector('#fdbudget .bchipown').value = ''")
+    browser.type("#fdbudget .bchipown", "12.50")
+    assert browser.js("document.querySelector('#fdbudget .bchipown').getAttribute('aria-invalid')") is None and pill() == "$12.50 budget ▾"
+    assert browser.js("document.activeElement.className") == "bchipown"                # it applied without a redraw: the box keeps the caret
+    browser.js("document.querySelector('#fdbudget .bchipown').value = ''")
+    browser.type("#fdbudget .bchipown", "0.5")                                          # back to a bad amount: $12.50 stays
+    assert pill() == "$12.50 budget ▾"
+    browser.click('#fdbudget [data-usd="20"]')                                         # back to the default: nothing is sent for it
+    assert pill() == "$20 budget ▾" and not browser.exists("#fdbudget .bchipown")
     browser.type("#fdbox", "A website for my cafe")
     browser.click("#fdsend")
     browser.wait_for("document.querySelector('#fdlatest .fdlatest') !== null")
     browser.wait_for("document.getElementById('fdbox').value === ''")
-    browser.js("document.querySelector('#fdbudget details').open = true")
+    browser.wait_for("document.querySelector('#fdbudget .bchippill').textContent.indexOf('$20 budget') === 0")
+    browser.click("#fdbudget .bchippill")
     browser.click('#fdbudget [data-usd="40"]')
-    assert texts(browser, "#fdbudget summary")[0] == "Budget: $40 API price (this request) · change"
+    assert pill() == "$40 budget ▾" and browser.js("document.activeElement.className") == "bchippill"
     browser.type("#fdbox", "A bakery page")
     browser.click("#fdsend")
-    browser.wait_for("document.querySelectorAll('#fdbudget summary').length === 1 && document.querySelector('#fdbudget summary').textContent.indexOf('(default)') > 0")
+    browser.wait_for("document.querySelector('#fdbudget .bchippill').textContent.indexOf('$20 budget') === 0")
+    browser.wait_for("document.getElementById('fdbox').value === ''")
     sent = [r["body"] for r in posts(fake, "/api/chats/cs_org/messages")]
     assert sent == [{"text": "A website for my cafe"}, {"text": "A bakery page", "usd_budget": 40}]
 
@@ -341,3 +401,23 @@ def test_the_phone_folds_the_sidebar_behind_a_menu_button_and_has_no_sideways_sc
     assert on_screen(browser, "#prail") and browser.js("document.getElementById('prailbtn').getAttribute('aria-expanded')") == "true"
     browser.js("document.querySelector('.pr-scrim').click()")
     browser.wait_for("!document.body.classList.contains('prail-open')")
+
+
+
+@browser_only
+def test_team_chip_is_the_same_pill_and_popover_on_the_start_form(browser, fake, screens_dir):
+    """The team page's start form (port edit E25) mounts the same component. The fake's captured team always has a chat, so J2 shows the studio, not the
+    start page: the test wraps J2's renderSimple to keep the start page on screen, as a team with no request yet has it."""
+    load(browser, fake, path="/d/web/?view=simple")
+    browser.wait_for("window.DeptExt !== undefined && DeptExt.state().started === true && document.querySelector('#lbudget .bchippill') !== null")
+    browser.js("(() => { const own = renderSimple; window.renderSimple = s => { own(s); document.getElementById('sland').hidden = false; "
+               "document.getElementById('swork').hidden = true; }; document.getElementById('sland').hidden = false; document.getElementById('swork').hidden = true; })()")
+    browser.wait_for("document.getElementById('lform').offsetParent !== null")
+    check_open_and_closed(browser, screens_dir, "team", "#lform .sbrow", "#schips")
+    browser.click("#lbudget .bchippill")
+    browser.click('#lbudget [data-custom]')
+    browser.type("#lbudget .bchipown", "25")
+    browser.press("Enter")                                                             # Enter in the box closes the popover and never sends the form
+    assert texts(browser, "#lbudget .bchippill") == ["$25 budget ▾"] and not [r for r in posts(fake, "/api/say")]
+    assert browser.js("document.activeElement.className") == "bchippill"
+    assert browser.console_errors == []

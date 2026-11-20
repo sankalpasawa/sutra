@@ -1,5 +1,6 @@
 "use strict";
-// BudgetChip (sutra_app/ui/static/js/budget_chip.js), D257: the Budget chip in dollars (API price) on the home box and the team page.
+// BudgetChip (sutra_app/ui/static/js/budget_chip.js), D257: the Budget chip in dollars (API price) on the home box and the team page:
+// a pill ("$20 budget ▾") and a popover above it.
 // Run with: node --test tests/ui/js/budget_chip.test.js
 const test = require("node:test");
 const assert = require("node:assert/strict");
@@ -24,22 +25,66 @@ test("presets: half, the default and double ($20 -> $10 / $20 / $40)", () => {
   assert.deepEqual(BC.presets(25), [12.5, 25, 50]);
 });
 
-test("chip text: the amount, API price beside it, where it comes from, and change", () => {
-  const text = html => html.replace(/<[^>]+>/g, "").replace(/&middot;/g, "·").replace(/\s+/g, " ").trim();
-  assert.equal(text(BC.chipHtml({value: 20, source: "team"})), "Budget: $20 API price (team default) · change");
-  assert.equal(text(BC.chipHtml({value: 20, source: "default"})), "Budget: $20 API price (default) · change");
-  assert.equal(text(BC.chipHtml({value: 40, source: "request"})), "Budget: $40 API price (this request) · change");
-  assert.doesNotMatch(BC.chipHtml({value: 20, source: "team"}), /credit/i);
+test("pill: the amount, then budget and a caret; no source text and no credits", () => {
+  const text = html => html.replace(/<[^>]+>/g, "").replace(/&#9662;/g, "▾").replace(/\s+/g, " ").trim();
+  assert.equal(text(BC.chipHtml(20)), "$20 budget ▾");
+  assert.equal(text(BC.chipHtml(12.5)), "$12.50 budget ▾");
+  assert.doesNotMatch(BC.chipHtml(20), /credit|default|change|▶/i);
 });
 
-test("menu: the three presets, another amount, and both lines", () => {
-  const html = BC.menuHtml(20);
+test("popover: Run budget, $10 · $20 (default tag) · $40 · Custom, the one muted line", () => {
+  const text = html => html.replace(/<[^>]+>/g, " ").replace(/\s+/g, " ").trim();
+  const html = BC.popHtml({def: 20, shown: 20, custom: false, open: true, id: "p1"});
+  assert.match(html, /^<div class="bchippop" id="p1" role="dialog" aria-label="Run budget">/);
+  assert.equal(text(html), "Run budget $10 $20 default $40 Custom Asks before going over · estimated at API prices, not billed.");
   assert.deepEqual([...html.matchAll(/data-usd="([^"]+)"/g)].map(m => m[1]), ["10", "20", "40"]);
-  assert.match(html, /\$20 \(default\)/);
-  assert.match(html, /class="bchipown"/);
-  assert.match(html, /The team stops and asks you before going over\./);
-  assert.match(html, /API price, estimated\. Runs use your Claude subscription; nobody is billed this amount\./);
-  assert.doesNotMatch(html, /credit/i);
+  assert.deepEqual([...html.matchAll(/<button type="button" class="bchippick"[^>]*aria-pressed="(true|false)"/g)].map(m => m[1]), ["false", "true", "false", "false"]);
+  assert.doesNotMatch(html, /bchipown|bchipuse|credit/i);                                  // no box until Custom, and no Use button ever
+  assert.match(BC.popHtml({def: 20, shown: 20, custom: false, open: false, id: "p1"}), /aria-label="Run budget" hidden>/);
+});
+
+test("popover: a picked preset is the pressed one; Custom shows the $ box in the row with what was typed", () => {
+  const pressed = html => [...html.matchAll(/class="bchippick" (?:data-usd="([^"]+)"|data-custom="1") aria-pressed="true"/g)].map(m => m[1] || "custom");
+  assert.deepEqual(pressed(BC.popHtml({def: 20, shown: 40, custom: false, open: true, id: "p"})), ["40"]);
+  const custom = BC.popHtml({def: 20, shown: 25, custom: true, typed: "25<", open: true, id: "p"});
+  assert.deepEqual(pressed(custom), ["custom"]);
+  assert.match(custom, /<div class="bchiprow"[^>]*>.*<label class="bchipcustom"><span aria-hidden="true">\$<\/span><input class="bchipown"[^>]*value="25&lt;"[^>]*><\/label><\/div>/);
+});
+
+test("mount: picks, Custom as you type (bad marks the box and changes nothing), reset; Esc closes", () => {
+  // a small stand-in for the page: the delegated listeners get events whose target is a button or the box
+  const on = {}, el = {innerHTML: "", addEventListener: (k, f) => { on[k] = f; }, contains: () => true, querySelector: () => null};
+  const btn = data => ({dataset: data, classList: {contains: c => c === "bchippill" && data.pill}, closest() { return this; }});
+  const chip = BC.mount(el, 20, "team");
+  assert.match(el.innerHTML, /aria-expanded="false"/);
+  assert.match(el.innerHTML, /aria-label="\$20 budget, team default, API price"/);
+  on.click({target: btn({pill: true})});
+  assert.match(el.innerHTML, /aria-expanded="true"/);
+  assert.doesNotMatch(el.innerHTML, /role="dialog" aria-label="Run budget" hidden/);
+  on.keydown({key: "Escape", preventDefault() {}});
+  assert.match(el.innerHTML, /aria-expanded="false"/);
+  on.click({target: btn({usd: "40"})});
+  assert.equal(chip.value(), 40);
+  on.click({target: btn({usd: "20"})});
+  assert.equal(chip.value(), null);                                                     // the default is never sent
+  on.click({target: btn({custom: "1"})});
+  const attrs = {};
+  const box = v => ({value: v, classList: {contains: c => c === "bchipown"}, setAttribute: (k, x) => { attrs[k] = x; }, removeAttribute: k => { delete attrs[k]; },
+                     setCustomValidity: m => { attrs.validity = m; }});
+  on.input({target: box("12.5")});
+  assert.equal(chip.value(), 12.5);
+  on.input({target: box("0.5")});
+  assert.equal(chip.value(), 12.5);                                                     // a bad amount changes nothing
+  assert.equal(attrs["aria-invalid"], "true");
+  assert.equal(attrs.validity, "Dollars from $1 to $10,000");
+  on.input({target: box("$1,000")});
+  assert.equal(chip.value(), 1000);
+  assert.equal(attrs["aria-invalid"], undefined);
+  assert.match(el.innerHTML, /class="bchipown"/);                                       // the box stays in the row while it is typed in
+  chip.reset();
+  assert.equal(chip.value(), null);
+  assert.match(el.innerHTML, /\$20 budget/);
+  assert.doesNotMatch(el.innerHTML, /bchipown/);
 });
 
 test("raise input: the suggested dollars filled in, Add and keep going, the API price note", () => {
