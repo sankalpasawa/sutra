@@ -57,10 +57,11 @@ test("the filters offer the tags in use with their count and only the states tha
 });
 
 test("how did it go: the lines, the steps, working and a problem are drawn in plain words", () => {
-  const html = View.summaryHtml({project_id: PROJECT, lines: ["It stopped.", "It used 3 credits and about $0.60, in about 4 minutes."], steps: [{name: "Step a1", state: "done", calls: 3, tries: 2}, {name: "Step a2", state: "cancelled", calls: 0, tries: 1}]});
+  const html = View.summaryHtml({project_id: PROJECT, lines: ["It stopped.", "It used 3 credits and about $0.60, in about 4 minutes."], steps: [{name: "Write the menu", state: "done", state_word: "Done", calls: 3, usd: 0.6, tries: 2}, {name: "Price the dishes", state: "cancelled", state_word: "Cancelled", calls: 0, usd: null, tries: 1}, {name: "Check it", state: "planned", state_word: "Waiting its turn", calls: 0, usd: null, tries: 1}]});
   assert.match(html, /<p>It stopped\.<\/p><p>It used 3 credits/);
-  assert.match(html, /<b>Step a1<\/b> Done, 3 credits, 2 tries/);
-  assert.match(html, /<b>Step a2<\/b> Cancelled<\/li>/);
+  assert.match(html, /<b>Write the menu<\/b> Done, 3 credits, about \$0\.60, 2 tries/);
+  assert.match(html, /<b>Price the dishes<\/b> Cancelled<\/li>/);
+  assert.match(html, /<b>Check it<\/b> Waiting its turn<\/li>/);                               // a step that has not started has its words too
   assert.match(View.summaryHtml("loading"), /Working it out/);
   assert.match(View.summaryHtml({error: "There is nothing to say about that project."}), /role="alert"><p>There is nothing/);
   assert.equal(View.summaryHtml(undefined), "");
@@ -71,4 +72,8 @@ test("the page uses no machine words", () => {
   const html = View.filtersHtml([{tag: "cafe", count: 1}], {}, ["done"]) + View.listHtml([task(), project()], {}) + View.summaryHtml({lines: ["It finished."], steps: []});
   const words = html.replace(/<[^>]*>/g, " ");
   assert.equal(/\b(node|nodes|lease|tier|grant|ledger|ceiling|api)\b/i.test(words), false, words);
+});
+
+test("the search box holds at most 200 characters", () => {
+  assert.match(View.filtersHtml([], {}, []), /id="w-q" maxlength="200"/);
 });

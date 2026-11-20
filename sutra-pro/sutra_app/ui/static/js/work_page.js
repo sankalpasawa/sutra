@@ -10,6 +10,8 @@
 
   const isObj = v => v !== null && typeof v === "object" && !Array.isArray(v);
   const SEARCH_MS = 300;
+  const PAGE = 200;                       // the newest 200 first; Show more adds another 200, up to MOST
+  const MOST = 800;
   const KIND = /^(task|project)$/;
   const ID = /^(tsk|prj)_[0-9a-f]{12}$/;
   const View = () => (typeof require === "function" && typeof module === "object" ? require("./work_view.js") : root.WorkView);
@@ -29,7 +31,7 @@
     const el = id => (doc && doc.getElementById ? doc.getElementById(id) : null);
     const later = o.setTimeout || (root.setTimeout && root.setTimeout.bind(root));
     const cancel = o.clearTimeout || (root.clearTimeout && root.clearTimeout.bind(root));
-    const S = {items: [], tags: [], filter: {tag: "", q: "", status: ""}, statuses: [], editing: "", summaries: {}, error: "", loaded: false};
+    const S = {items: [], tags: [], filter: {tag: "", q: "", status: ""}, statuses: [], editing: "", summaries: {}, error: "", loaded: false, limit: PAGE, more: false};
     let timer = null;
     let painted = {};
     let sequence = 0;
@@ -46,11 +48,11 @@
     function render() {
       const filtered = !!(S.filter.tag || S.filter.q || S.filter.status);
       paint("w-filters", view.filtersHtml(S.tags, S.filter, S.statuses));
-      paint("w-list", (S.error ? '<p class="cerr" role="alert">' + view.esc(S.error) + "</p>" : "") + (S.loaded ? view.listHtml(S.items, {editing: S.editing, summaries: S.summaries, filtered}) : '<p class="cempty">Loading&hellip;</p>'));
+      paint("w-list", (S.error ? '<p class="cerr" role="alert">' + view.esc(S.error) + "</p>" : "") + (S.loaded ? view.listHtml(S.items, {editing: S.editing, summaries: S.summaries, filtered, more: S.more && S.limit < MOST}) : '<p class="cempty">Loading&hellip;</p>'));
     }
 
     function query() {
-      const q = {limit: 200};
+      const q = {limit: S.limit + 1};                                             // one more than shown: that is how the page knows there is more
       if (S.filter.tag) q.tag = S.filter.tag;
       if (S.filter.q) q.q = S.filter.q;
       if (S.filter.status) q.status = S.filter.status;
@@ -62,7 +64,9 @@
       try {
         const [items, tags] = await Promise.all([api.get("/api/work", query()), api.get("/api/work/tags")]);
         if (mine !== sequence) return false;
-        S.items = Array.isArray(items) ? items : [];
+        const got = Array.isArray(items) ? items : [];
+        S.more = got.length > S.limit;
+        S.items = S.more ? got.slice(0, S.limit) : got;
         S.tags = Array.isArray(tags) ? tags : [];
         if (!S.filter.status && !S.filter.tag && !S.filter.q) S.statuses = Array.from(new Set(S.items.map(i => i && i.status).filter(Boolean)));
         S.error = "";
@@ -77,11 +81,13 @@
 
     function setFilter(part) {
       Object.assign(S.filter, part);
+      S.limit = PAGE;
       return refresh();
     }
 
     function typed(text) {
-      S.filter.q = String(text || "").trim();
+      S.filter.q = String(text || "").trim().slice(0, 200);
+      S.limit = PAGE;
       if (timer !== null && cancel) cancel(timer);
       timer = later ? later(() => { timer = null; refresh(); }, SEARCH_MS) : null;
     }
@@ -121,6 +127,7 @@
       else if (d.act === "tags-edit") { S.editing = d.id || ""; render(); }
       else if (d.act === "tags-cancel") { S.editing = ""; render(); }
       else if (d.act === "how") how(d.id || "");
+      else if (d.act === "show-more") { S.limit = Math.min(MOST, S.limit + PAGE); refresh(); }
     }
 
     function onSubmit(event) {
@@ -165,7 +172,7 @@
     return page;
   }
 
-  const WorkPage = {create, boot, words, SEARCH_MS};
+  const WorkPage = {create, boot, words, SEARCH_MS, PAGE, MOST};
   if (typeof module === "object" && module !== null && module.exports) module.exports = WorkPage;
   else {
     root.WorkPage = WorkPage;

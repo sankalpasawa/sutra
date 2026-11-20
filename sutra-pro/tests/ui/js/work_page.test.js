@@ -44,16 +44,16 @@ test("start reads the list and the tags and draws them", async () => {
   assert.equal(await w.page.start(), true);
   assert.match(w.nodes["w-list"].innerHTML, /Menu/);
   assert.match(w.nodes["w-filters"].innerHTML, /cafe \(1\)/);
-  assert.deepEqual(w.gets[0], ["/api/work", {limit: 200}]);
+  assert.deepEqual(w.gets[0], ["/api/work", {limit: 201}]);
 });
 
 test("a tag, a state and the words typed each ask again, the words after a pause and only the last", async () => {
   const w = world();
   await w.page.start();
   await click(w, button({act: "filter-tag", tag: "cafe"}));
-  assert.deepEqual(w.gets.filter(g => g[0] === "/api/work").pop()[1], {limit: 200, tag: "cafe"});
+  assert.deepEqual(w.gets.filter(g => g[0] === "/api/work").pop()[1], {limit: 201, tag: "cafe"});
   await click(w, button({act: "filter-tag", tag: "cafe"}));                                      // the same tag again clears it
-  assert.deepEqual(w.gets.filter(g => g[0] === "/api/work").pop()[1], {limit: 200});
+  assert.deepEqual(w.gets.filter(g => g[0] === "/api/work").pop()[1], {limit: 201});
   await w.page.onChange({target: {id: "w-status", value: "done"}});
   assert.equal(w.gets.filter(g => g[0] === "/api/work").pop()[1].status, "done");
   const before = w.gets.length;
@@ -127,4 +127,30 @@ test("a list that cannot be read says so in plain words and keeps asking possibl
   w.answers.fail = null;
   assert.equal(await w.page.refresh(), true);
   assert.equal(w.page.state().error, "");
+});
+
+test("the page shows the newest 200 and says so when there are more, and Show more asks for another 200", async () => {          // review 11
+  const many = n => Array.from({length: n}, (_, i) => item({id: "tsk_" + String(i).padStart(12, "0"), title: "Task " + i}));
+  const w = world({items: q => many(Math.min(q.limit, 450))});
+  await w.page.start();
+  assert.equal(w.page.state().items.length, 200);
+  assert.equal(w.page.state().more, true);
+  assert.match(w.nodes["w-list"].innerHTML, /Showing the newest 200\. <button type="button" data-act="show-more">Show more<\/button>/);
+  assert.deepEqual(w.gets[0][1], {limit: 201});                                                    // one more than shown: that is how it knows
+  await click(w, button({act: "show-more"}));
+  await new Promise(r => setImmediate(r));
+  assert.equal(w.gets.filter(g => g[0] === "/api/work").pop()[1].limit, 401);
+  assert.equal(w.page.state().items.length, 400);
+  await w.page.setFilter({q: "x"});
+  assert.equal(w.page.state().limit, WorkPage.PAGE, "a new question starts again from the newest 200");
+  const few = world({items: many(5)});
+  await few.page.start();
+  assert.equal(few.page.state().more, false);
+  assert.equal(few.nodes["w-list"].innerHTML.includes("Show more"), false);
+});
+
+test("what is typed in the search box is cut at 200 characters", () => {
+  const w = world();
+  w.page.typed("x".repeat(500));
+  assert.equal(w.page.state().filter.q.length, 200);
 });

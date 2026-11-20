@@ -30,7 +30,7 @@
       '<option value="' + esc(s) + '"' + (f.status === s ? " selected" : "") + ">" + esc(STATUS_WORDS[s] || s) + "</option>"));
     const chips = arr(tags).filter(isObj).map(t => '<button type="button" class="wtag" data-act="filter-tag" data-tag="' + esc(clean(t.tag)) + '" aria-pressed="' + (f.tag === t.tag ? "true" : "false") + '">' +
       esc(clean(t.tag)) + " (" + esc(Number.isFinite(t.count) ? t.count : 0) + ")</button>").join("");
-    return '<div class="wfind"><input type="search" id="w-q" placeholder="Find work by words" aria-label="Find work by words" value="' + esc(clean(f.q)) + '">' +
+    return '<div class="wfind"><input type="search" id="w-q" maxlength="200" placeholder="Find work by words" aria-label="Find work by words" value="' + esc(clean(f.q)) + '">' +
       '<select id="w-status" aria-label="State">' + options.join("") + "</select></div>" + (chips ? '<div class="wtags" aria-label="Tags">' + chips + "</div>" : "");
   }
 
@@ -49,8 +49,8 @@
     if (!isObj(summary)) return "";
     if (typeof summary.error === "string") return '<div class="wsum" role="alert"><p>' + esc(clean(summary.error)) + "</p></div>";
     const lines = arr(summary.lines).map(clean).filter(Boolean);
-    const steps = arr(summary.steps).filter(isObj).map(s => "<li><b>" + esc(clean(s.name)) + "</b> " + esc(STATUS_WORDS[s.state] || "") + (s.calls ? ", " + esc(s.calls) + (s.calls === 1 ? " credit" : " credits") : "") +
-      (s.tries > 1 ? ", " + esc(s.tries) + " tries" : "") + "</li>").join("");
+    const steps = arr(summary.steps).filter(isObj).map(s => "<li><b>" + esc(clean(s.name)) + "</b> " + esc(clean(s.state_word)) + (s.calls ? ", " + esc(s.calls) + (s.calls === 1 ? " credit" : " credits") : "") +
+      (Number.isFinite(s.usd) ? ", about $" + esc(s.usd.toFixed(2)) : "") + (s.tries > 1 ? ", " + esc(s.tries) + " tries" : "") + "</li>").join("");
     return '<div class="wsum" data-summary="' + esc(clean(summary.project_id)) + '">' + lines.map(l => "<p>" + esc(l) + "</p>").join("") + (steps ? '<ul class="plist">' + steps + "</ul>" : "") + "</div>";
   }
 
@@ -63,6 +63,7 @@
     const s = isObj(state) ? state : {};
     const list = arr(items).filter(isObj);
     if (list.length === 0) return '<p class="cempty">' + (s.filtered ? "Nothing matches." : "Nothing yet. Work you ask Sutra for shows up here.") + "</p>";
+    const more = s.more ? '<p class="cnote">Showing the newest ' + esc(list.length) + ". " + '<button type="button" data-act="show-more">Show more</button></p>' : "";
     return '<ul class="plist wlist">' + list.map(item => {
       const id = clean(item.id);
       const link = typeof item.link === "string" && LINK.test(item.link) ? item.link : "";
@@ -74,7 +75,7 @@
         (clean(item.team) ? '<span class="cnote">' + esc(clean(item.team)) + "</span>" : "") + (when(item.created_at) ? '<span class="cnote">' + esc(when(item.created_at)) + "</span>" : "") + "</div>" +
         (editing ? editForm(item) : tagChips(item.tags) + '<span class="wedit"><button type="button" data-act="tags-edit" data-id="' + esc(id) + '">' + (arr(item.tags).length ? "Change tags" : "Add tags") + "</button>" +
           (item.kind === "project" ? '<button type="button" data-act="how" data-id="' + esc(id) + '">How did it go?</button>' : "") + "</span>") + summaryHtml(sum) + "</li>";
-    }).join("") + "</ul>";
+    }).join("") + "</ul>" + more;
   }
 
   const WorkView = {esc, KIND_WORDS, STATUS_WORDS, STATUS_ORDER, tagsFromText, tagsToText, filtersHtml, listHtml, summaryHtml};
