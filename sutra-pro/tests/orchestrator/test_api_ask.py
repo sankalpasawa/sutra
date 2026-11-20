@@ -393,3 +393,48 @@ def test_a_mode_taken_out_of_the_body_does_not_change_a_body_without_one(ask):
     services.chat_port = Port(started(), text("ok"))
     assert say(client, sid, "plain words", client_id="client-aaaa1111").status_code == 202 and finish(chats, sid, 2)
     assert chats.messages(sid)[0].text == "plain words" and chats.messages(sid)[0].client_id == "client-aaaa1111"
+
+
+# ---- a body nobody can encode or parse must not be a 500, and must not be heard before the token (review m1) --------------------------------------------------------------------
+
+def raw(client, path, body, token=True):
+    return client.post(path, content=body, headers={"Content-Type": "application/json", **(H if token else {})})
+
+
+@pytest.mark.parametrize("route, body", [
+    ("direct", b'{"text": "x\\ud800", "mode": "ask"}'),
+    ("direct", b'{"mode": "ask", "text": "\\udfff and \\ud83d"}'),
+    ("direct/retry", b'{"message_id": 1, "mode": "ask", "client_id": "client-\\ud800"}'),
+])
+def test_on_a_lone_surrogate_in_a_body_that_names_mode_is_a_clean_refusal_and_the_token_is_asked_for_first(ask, route, body):
+    client, world, chats, bus, services = ask
+    sid = world.session_of["web"]
+    services.chat_port = Port(started(), text("x"))
+    nobody = raw(client, f"/api/chats/{sid}/{route}", body, token=False)
+    assert nobody.status_code == 401 and nobody.json()["error"]["code"] == "bad_token"            # it was a 500 before the fix
+    someone = raw(client, f"/api/chats/{sid}/{route}", body)
+    assert someone.status_code == 422, someone.text
+    assert chats.messages(sid) == [] and services.chat_port.streams == []
+
+
+@pytest.mark.parametrize("body", [b"[" * 200_000, b'{"mode": ' + b"[" * 100_000 + b"}", b"\xff\xfe not json", b'{"text": "x", "mode": "ask"'])
+def test_a_body_that_is_not_json_is_refused_the_same_with_the_flag_on_and_off(live, body):
+    client, world, chats, bus, services = live
+    sid = world.session_of["web"]
+    results = {}
+    for flag in (False, True):
+        services.settings = services.settings.model_copy(update={"ask_v1": flag})
+        results[flag] = [(r.status_code, r.json()) for r in (raw(client, f"/api/chats/{sid}/direct", body), raw(client, f"/api/chats/{sid}/direct", body, token=False))]
+    assert results[False] == results[True] and all(code < 500 for code, _ in results[True])
+    assert chats.messages(sid) == []
+
+
+def test_on_a_lone_surrogate_in_the_text_is_refused_like_with_the_flag_off(live):
+    client, world, chats, bus, services = live
+    sid = world.session_of["web"]
+    body = b'{"text": "x\\ud800"}'
+    off = raw(client, f"/api/chats/{sid}/direct", body)
+    services.settings = services.settings.model_copy(update={"ask_v1": True})
+    on_plain = raw(client, f"/api/chats/{sid}/direct", body)
+    on_mode = raw(client, f"/api/chats/{sid}/direct", b'{"text": "x\\ud800", "mode": "ask"}')
+    assert off.status_code == on_plain.status_code == on_mode.status_code == 422 and off.json() == on_plain.json() == on_mode.json()

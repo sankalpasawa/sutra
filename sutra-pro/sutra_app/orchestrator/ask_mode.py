@@ -74,14 +74,16 @@ async def _take_mode(request: Request) -> Request:
     raw = await request.body()
     try:
         doc = json.loads(raw)
-    except ValueError:
-        return request                                 # not JSON: the route's own refusal says so
+    except (ValueError, RecursionError):
+        return request                                 # not JSON (or nested past what the parser takes): the route's own refusal says so
     if not isinstance(doc, dict) or "mode" not in doc:
         return request
     mode = doc.pop("mode")
     request.scope[MODE_KEY] = mode
     changed = Request(request.scope, request.receive)
-    changed._body = json.dumps(doc, ensure_ascii=False).encode("utf-8")        # what the request model reads; the closed model never sees `mode`
+    # what the request model reads; the closed model never sees `mode`. ASCII with escapes, so that a lone surrogate the owner's client wrote (`\ud800`) is carried on as it came
+    # and refused by the model's own check, instead of failing to encode here: this runs before the token is looked at, so it must never fail
+    changed._body = json.dumps(doc, ensure_ascii=True).encode("ascii")
     return changed
 
 
