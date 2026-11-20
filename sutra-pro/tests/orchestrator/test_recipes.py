@@ -222,3 +222,18 @@ def test_saving_a_project_as_a_recipe_through_the_route_gives_a_draft(tmp_path):
         assert len(client.get("/api/recipes").json()) == 4                                                                               # only the starters: nothing was saved
     finally:
         client.__exit__(None, None, None)
+
+
+def test_the_recipes_page_exists_only_with_the_switch_on_and_every_file_it_names_is_served(tmp_path):
+    import re
+    off, _c = make_app(tmp_path / "off")
+    with TestClient(off, base_url=BASE) as client:
+        assert client.get("/recipes").status_code == 404
+        assert "/recipes" not in client.get("/").text
+    on, _c = make_app(tmp_path / "on", recipes_v1=True)
+    with TestClient(on, base_url=BASE) as client:
+        page = client.get("/recipes")
+        assert page.status_code == 200 and 'id="recipes-root"' in page.text and '"page":"recipes"' in page.text and "<!--SUTRA-BOOT-->" not in page.text
+        assert client.head("/recipes").status_code == 200 and client.get("/work").status_code == 404                      # one switch for each page
+        for name in re.findall(r'(?:src|href)="(/ui/[^"]+)"', page.text):
+            assert client.get(name).status_code == 200, name
