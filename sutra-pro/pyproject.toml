@@ -52,6 +52,7 @@ sutra_app = [
     "engine/seed/**/*",
     "engine/capabilities/data/*",
     "orchestrator/agent/templates/*.md",
+    "nodes/templates/*.md",
     "library/specs/*.json",
     "assets/*",
     "connectors/policy.default.json",

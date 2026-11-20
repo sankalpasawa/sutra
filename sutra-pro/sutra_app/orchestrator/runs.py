@@ -48,6 +48,7 @@ SILENT_AFTER_S = 30.0            # no event for this long: "no signal" (and, at 
 STDERR_TAIL_BYTES = 2048
 EXTRA_PASS_NAMES = ("SHELL", "TERM", "PYTHONPATH")
 ENGINE_MODULE = "sutra_app.engine"
+LIGHT_MODULE = "sutra_app.nodes"                # the process of a node whose runtime is `light` (a reviewer, MAN-11)
 _POLL_S = 0.05
 LIVE_FILE = "agent_live.json"          # written by the engine's AgentLiveCapability (D133): who is working now, the text of its reply so far, its last tool
 LIVE_SCHEMA = "agent-live/1"
@@ -243,13 +244,18 @@ class ProcessLauncher:
         err_fd = os.open(run_dir / "run.stderr.log", os.O_WRONLY | oslayer.O_BINARY | os.O_APPEND | os.O_CREAT, 0o600)
         try:
             proc = await asyncio.create_subprocess_exec(
-                self._python, *self._interpreter_flags(), "-m", self.module, "--run-dir", str(run_dir), env=self.environment(spec),
+                self._python, *self._interpreter_flags(), "-m", self._module_of(spec), "--run-dir", str(run_dir), env=self.environment(spec),
                 stdin=asyncio.subprocess.DEVNULL, stdout=out_fd, stderr=err_fd, cwd=str(run_dir), **oslayer.popen_group_kwargs())
         finally:
             os.close(out_fd)
             os.close(err_fd)
         self._handles[proc.pid] = proc
         return proc.pid
+
+    def _module_of(self, spec: RunSpec) -> str:
+        """The engine for every run there was; the light host for a node whose runtime is `light` and only when this launcher runs the real engine (a test's own module is kept)."""
+        node = getattr(spec, "node", None)
+        return LIGHT_MODULE if node is not None and node.runtime == "light" and self.module == ENGINE_MODULE else self.module
 
     @staticmethod
     def _interpreter_flags() -> list[str]:
