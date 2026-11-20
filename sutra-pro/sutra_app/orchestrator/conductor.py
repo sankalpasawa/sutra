@@ -426,7 +426,7 @@ class Conductor:
         rows = ahead[1] if ahead is not None else None
         if rows is None and task_id and self.tasks is not None:
             row = self.tasks.store.row_in(tx.conn, task_id)
-            if row is not None and row.run_id is not None:                       # not read ahead (a restart, a task that ended at once): no file is read inside the transaction; the next tick writes the rows (PB-16).
+            if row is not None and row.run_id is not None and log_path(self.settings.data_dir, row.run_id).is_file():                       # not read ahead (a restart, a task that ended at once): no file is read inside the transaction; the next tick writes the rows (PB-16).
                 self.store.audit(tx, actor="node", action="tool.pending", project_id=node["project_id"], node_id=node["id"], role=node["role"], decision="n/a", ref=task_id)      # a row, so it is kept with the transaction (a rollback takes it back) and survives a restart (N-7)
                 self._maybe_owed = True
             return
