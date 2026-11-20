@@ -65,7 +65,7 @@ def test_pause_then_kill_then_resume_move_the_files_and_the_words(capsys, tmp_pa
     code, out, _ = call(capsys, *args(tmp_path, "kill", "--reason", "stop everything"))
     assert code == 0 and "Kill switch on" in out and "nodes resume" in out and (nodes(tmp_path) / KILL_FILE).is_file()
     _, out, _ = call(capsys, *args(tmp_path, "status"))
-    assert "Killed" in out and "KILL present, PAUSE present" in out and "reason stop everything" in out and "by owner" in out
+    assert "The KILL file is there" in out and "every agent was stopped" not in out and "KILL present, PAUSE present" in out and "reason stop everything" in out and "by owner" in out
     code, out, _ = call(capsys, *args(tmp_path, "resume"))
     assert code == 0 and "KILL" in out and "PAUSE" in out and not list(nodes(tmp_path).iterdir())
     code, out, _ = call(capsys, *args(tmp_path, "resume"))

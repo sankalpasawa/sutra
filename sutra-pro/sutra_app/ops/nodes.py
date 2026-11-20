@@ -2,7 +2,7 @@
 
     sutra-pro nodes status [--json]            the switch (none, pause or kill), the two files, and the four SUTRA_NODES_* settings
     sutra-pro nodes pause [--reason TEXT]      put the PAUSE file in <data>/nodes: no new agent starts; the ones that run finish
-    sutra-pro nodes kill [--reason TEXT]       put the KILL file there: a running Sutra stops every agent within a few seconds (its stop ladder) and none starts
+    sutra-pro nodes kill [--reason TEXT]       put the KILL file there: a running Sutra stops every agent through its stop ladder (all together, about 12 seconds at most) and none starts
     sutra-pro nodes resume                     remove both files
 
 The command only writes and removes the two small files (it does not need the server, and it has no token to give one: a launch token is never written to disk). A running Sutra with
@@ -33,7 +33,7 @@ def _status(args: argparse.Namespace) -> int:
         return 2
     state = KillSwitch(settings.nodes_dir).status()
     payload: dict[str, Any] = {**state, "folder": str(settings.nodes_dir), "settings": _flags(settings)}
-    words = {"none": "Agents may start.", "pause": "Paused: no new agent starts.", "kill": "Killed: every agent was stopped and none starts."}[state["level"]]
+    words = {"none": "Agents may start.", "pause": "The PAUSE file is there: no new agent starts; the ones that run finish.", "kill": "The KILL file is there: a running Sutra stops every agent and starts none. (Look at the page or the log to see that they ended.)"}[state["level"]]
     lines = [f"nodes: {words}", f"  files in {settings.nodes_dir}: KILL {'present' if state['kill'] is not None else 'absent'}, PAUSE {'present' if state['pause'] is not None else 'absent'}"]
     for name in ("kill", "pause"):
         note = state[name]
@@ -53,7 +53,7 @@ def _write(level: str):
         reason = " ".join((args.reason or "").split())[:REASON_MAX]
         KillSwitch(settings.nodes_dir).set(level, by="owner", reason=reason)
         done = ("Paused: no new agent starts; the ones that run finish." if level == "pause" else
-                "Kill switch on: a running Sutra stops every agent within a few seconds, and none starts.")
+                "Kill switch on: a running Sutra stops every agent (all together, about 12 seconds at most), and none starts.")
         emit(args, {"level": level, "folder": str(settings.nodes_dir)}, [done, "Run `sutra-pro nodes resume` to remove it.", *_off_note(settings)])
         return 0
     return run

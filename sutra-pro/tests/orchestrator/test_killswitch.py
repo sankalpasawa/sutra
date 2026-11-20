@@ -379,3 +379,45 @@ def test_the_gate_names_the_switch_before_the_grant_and_never_holds_an_ordinary_
     assert rig.control.gate(conn, 0, t.row(task.id)) == "Held: this agent has no valid grant" and rig.control.gate(conn, 0, t.row(ordinary.id)) == ""
     rig.switch.set("pause")
     assert "Paused" in rig.control.gate(conn, 0, t.row(task.id)) and rig.control.gate(conn, 0, t.row(ordinary.id)) == ""
+
+
+# ---- the ladders run together (D303) --------------------------------------------------------------------------------------------------
+
+def test_kill_all_with_three_stubborn_nodes_ends_in_about_one_ladders_time(db, settings, clock, events):
+    """Each fake run ignores the stop line and holds for 0.5 s (its stop grace): one after the other that would be 1.5 s."""
+    import time
+    from orchestrator.test_tasks import tenv_with
+    from sutra_app.orchestrator.testing.fake_engine import FakeLauncher
+    t = tenv_with(db, settings, clock, events, max_runs=3, max_live=6, launcher=FakeLauncher({"*": [{"ignore_stop": True}, {"hold": True}]}, stop_grace=0.5))
+    from orchestrator.test_chart_store import dept_op
+    t.env.apply(dept_op("$ops", "Ops"))                                               # a third team: the chart has web and sales
+    rig = Rig(t)
+    tasks = [t.new(dept, f"node in {dept}") for dept in ("web", "sales", "ops")]
+    t.run(t.service.start_ready())
+    for task in tasks:
+        t.write_events(task.id, ev("run.started", pid=t.row(task.id).pid, schema="events/1", mock=True, seed="none"))
+        t.drain(task.id)
+    for n, task in enumerate(tasks, 1):
+        seed_node(t, task.id, n)
+    started = time.monotonic()
+    assert t.run(rig.control.kill_all(reason="all of them")) == 3
+    took = time.monotonic() - started
+    assert took < 1.2, f"the ladders ran one after the other: {took:.2f} s"
+    assert [t.status(task.id) for task in tasks] == ["stopped"] * 3 and len(t.launcher.stopped) == 3
+
+
+def test_a_node_that_will_not_stop_is_logged_and_the_rest_still_end_together(rig, monkeypatch, caplog):
+    import logging
+    t = rig.t
+    a, b, na, nb = two_live_nodes(rig)
+    real = t.service.stop_node
+
+    async def flaky(task_id, outcome="stopped by you"):
+        if task_id == a.id:
+            raise RuntimeError("it will not stop")
+        return await real(task_id, outcome)
+
+    monkeypatch.setattr(t.service, "stop_node", flaky)
+    with caplog.at_level(logging.ERROR, logger="sutra_app.orchestrator.killswitch"):
+        assert t.run(rig.control.kill_all()) == 1
+    assert "could not stop node" in caplog.text and t.status(b.id) == "stopped"

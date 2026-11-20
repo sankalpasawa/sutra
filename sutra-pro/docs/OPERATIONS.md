@@ -39,7 +39,7 @@ sutra-pro nodes status        # the switch for multi-agent nodes (pause, kill) a
 | `sutra-pro import-old-chats` | `--data-dir D`, `--json`, `--source DIR`, `--apply` | read only on the old folder; a dry run unless `--apply`; the server must be stopped |
 | `sutra-pro nodes status` | `--data-dir D`, `--json` | the switch (none, pause or kill), its two files in `<data>/nodes` and the four `SUTRA_NODES_*` settings; changes nothing |
 | `sutra-pro nodes pause` | `--data-dir D`, `--json`, `--reason TEXT` | puts the `PAUSE` file there: no new agent starts, the ones that run finish |
-| `sutra-pro nodes kill` | `--data-dir D`, `--json`, `--reason TEXT` | puts the `KILL` file there: a running Sutra (with `SUTRA_NODES_V1=1`) stops every agent through its stop ladder within a few seconds, and none starts until you resume; you can also create the file by hand |
+| `sutra-pro nodes kill` | `--data-dir D`, `--json`, `--reason TEXT` | puts the `KILL` file there: a running Sutra (with `SUTRA_NODES_V1=1`) stops every agent through its stop ladder (all together: about 12 seconds at most) and starts none until you resume; you can also create the file by hand |
 | `sutra-pro nodes resume` | `--data-dir D`, `--json` | removes both files |
 | `sutra-pro export chart` | `--data-dir D`, `--json`, `--out FILE` | `--out -` is standard output |
 | `sutra-pro export team DEPT` | `--data-dir D`, `--json`, `--out DIR` | a team's last finished run |

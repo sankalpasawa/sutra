@@ -256,19 +256,22 @@ class NodeControl:
         return bool(removed)
 
     async def _stop_live(self, outcome: str) -> int:
-        """The ladder for every node whose task is starting, running or waiting for the owner; each one is marked and audited. The ladders run one after the other (each ends
-        inside 12 s); a failure of one is logged and the next still runs."""
+        """The ladder for every node whose task is starting, running or waiting for the owner, all together (as app shutdown does, D303): the whole kill takes about one ladder's time
+        (12 s at most), not one per node. Each node is marked and audited as its ladder ends; a failure of one is logged and the others go on."""
         live = await run_blocking(self._nodes, LIVE_TASK_STATUSES)
-        stopped = 0
-        for node in live:
+
+        async def one(node: dict[str, Any]) -> int:
             try:
-                if await self.tasks.stop_node(node["task_id"], outcome):
-                    stopped += 1
-                    await run_blocking(self._mark, node["id"], "cancelled", outcome)
-                    await run_blocking(lambda node=node: self._audit("node.stopped", reason=outcome, node=node, actor="system"))
+                if not await self.tasks.stop_node(node["task_id"], outcome):
+                    return 0
+                await run_blocking(self._mark, node["id"], "cancelled", outcome)
+                await run_blocking(lambda: self._audit("node.stopped", reason=outcome, node=node, actor="system"))
+                return 1
             except Exception:                         # noqa: BLE001  (one node that will not stop must not keep the others running)
                 log.exception("could not stop node %s", node["id"])
-        return stopped
+                return 0
+
+        return sum(await asyncio.gather(*(one(node) for node in live)))
 
     # ---- the watcher ---------------------------------------------------------------------------------------------------------------
 
