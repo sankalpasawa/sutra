@@ -16,6 +16,11 @@ def rig(db, settings, clock, events):
     return PRig(db, settings, clock, events, max_runs=5, max_live=10)
 
 
+def no_retries(rig, reservation):
+    """These tests are about what a failure costs: the retry has its own tests (test_conductor_expiry.py)."""
+    rig.sql("UPDATE projects SET caps_json = json_set(caps_json, '$.retries', 0) WHERE id = ?", reservation.project_id)
+
+
 def test_independent_steps_start_together_up_to_the_projects_parallel_cap_of_three_and_the_rest_wait_with_a_sentence(rig):
     reservation, tasks = rig.request(FIVE)
     started = rig.start()
@@ -63,6 +68,7 @@ def test_the_lease_is_taken_when_the_node_starts_beats_with_the_run_and_is_relea
 
 def test_a_failed_node_cancels_only_its_dependants_and_the_project_never_ends_done(rig):
     reservation, tasks = rig.request([("a1", "web", []), ("a2", "sales", []), ("a3", "ops", ["a1"]), ("a4", "hr", ["a2"])])
+    no_retries(rig, reservation)
     rig.start()
     for ref in ("a1", "a2"):
         rig.go(tasks[ref])
@@ -209,6 +215,7 @@ def test_the_node_stop_of_a_planner_node_ends_its_call(rig):
 
 def test_a_node_whose_run_ended_well_but_left_no_hand_off_is_failed_with_the_reason_and_its_dependant_is_cancelled(rig):
     reservation, tasks = rig.request([("a1", "web", []), ("a2", "sales", ["a1"])])
+    no_retries(rig, reservation)
     rig.start()
     rig.go(tasks["a1"])
     rig.finish(tasks["a1"], handoff=False)
@@ -221,6 +228,7 @@ def test_a_node_whose_run_ended_well_but_left_no_hand_off_is_failed_with_the_rea
 
 def test_a_hand_off_that_does_not_match_its_files_fails_the_node_and_keeps_the_files(rig):
     reservation, tasks = rig.request([("a1", "web", []), ("a2", "sales", [])])
+    no_retries(rig, reservation)
     rig.start()
     rig.go(tasks["a1"])
     rig.finish(tasks["a1"], files={"out.md": "result"}, override={"files": [{"path": "out.md", "sha256": "0" * 64, "bytes": 6}]})

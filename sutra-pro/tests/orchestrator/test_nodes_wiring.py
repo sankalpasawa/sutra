@@ -64,3 +64,20 @@ def test_a_kill_file_made_by_hand_while_the_app_runs_is_noticed(tmp_path):
             seen = app.state.services.db.conn().execute("SELECT action FROM node_audit").fetchall()
             time.sleep(0.1)
     assert [r["action"] for r in seen] == ["kill"]
+
+
+def test_the_project_tick_runs_with_the_app_and_a_gate_left_open_by_a_closed_app_is_refused_at_start(tmp_path):
+    from sutra_app.orchestrator.db import Database
+    app = app_with(tmp_path, nodes_v1=True)
+    services = app.state.services
+    with TestClient(app, base_url=BASE) as client:
+        assert services.projects._ticker is not None and not services.projects._ticker.done()
+        db = services.db
+        db.conn().execute("INSERT INTO projects(id, request_id, title, status, created_at) VALUES ('prj_" + "1" * 12 + "', 'req-9', 'Left open', 'awaiting_approval', 1)")
+        db.conn().execute("INSERT INTO approvals(id, project_id, tier, expires_at, created_at) VALUES ('ap_" + "1" * 12 + "', 'prj_" + "1" * 12 + "', 4, 9999999999, 1)")
+    assert services.projects._ticker is None                                          # the tick ended with the app
+    again = app_with(tmp_path, nodes_v1=True)                                         # the next start: reconcile_projects refuses the open gate
+    with TestClient(again, base_url=BASE) as client:
+        row = again.state.services.db.conn().execute("SELECT status, stop_reason FROM projects WHERE id = 'prj_" + "1" * 12 + "'").fetchone()
+        assert row["status"] == "stopped" and row["stop_reason"] == "Sutra was closed before you answered"
+        assert again.state.services.db.conn().execute("SELECT status FROM approvals").fetchone()["status"] == "denied"

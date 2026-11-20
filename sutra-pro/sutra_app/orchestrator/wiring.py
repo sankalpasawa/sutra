@@ -201,7 +201,7 @@ def build_services(settings: Settings, *, connector: Any = None, launcher: Any =
             return "none" if grant is None else ("edit" if getattr(grant, "edit", False) else "read")
 
         projects = ProjectService(db, store=node_control.store, ids=ids, clock=clock, settings=settings, owner_access=owner_access, output_of=default_output_of(settings.data_dir),
-                                  node_control=node_control, tasks=tasks)
+                                  node_control=node_control, tasks=tasks, chats=chats)
         node_control.projects = projects
         tasks.task_gate = projects.gate                    # the Conductor's gate asks the switch and the grant first (`node_control.gate`), then the project's own rules (D303)
         tasks.node_sync = projector.node_sync = projects.sync_task
@@ -255,6 +255,8 @@ async def start_services(services: AppServices) -> AppServices:
     services.reconciled = await reconcile(
         tasks=services.tasks.store, projector=services.projector, watcher=services.watcher, launcher=services.launcher,
         publish=services.bus.publish_one, clock=services.clock)
+    if services.projects is not None:                       # nodes follow the tasks reconcile settled; an open gate left by a closed app is refused (D277, D296)
+        await services.projects.reconcile_projects()
     await run_blocking(services.tasks.reconcile_choices)          # the agents' picks of every live run are rebuilt from the database (D131)
     marked = await run_blocking(recover_interrupted, services.db, services.chats)     # a direct turn the last process did not finish gets its error line
     if marked:
@@ -265,6 +267,7 @@ async def start_services(services: AppServices) -> AppServices:
     if services.node_control is not None:                   # a KILL file the owner made by hand is acted on within two seconds, and one that was there at the start before anything starts
         await services.node_control.enforce()
         services.node_control.start_watching()
+        services.projects.start_ticking()
     await services.tasks.start_ready()
     services.started = True
     services.stopped = False
@@ -293,6 +296,8 @@ async def stop_services(services: AppServices) -> None:
         return
     services.stopped = True
     services.started = False
+    if services.projects is not None:
+        await _quietly("project tick", services.projects.stop_ticking, services)
     if services.node_control is not None:
         await _quietly("node switch watcher", services.node_control.stop_watching, services)
     if services.recurring is not None:                      # first: no schedule may make a task while the rest closes

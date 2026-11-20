@@ -26,6 +26,7 @@ def snapshot_of_rules(rig, project_id):
 
 def run_two(rig, override_a1=None, **files):
     reservation, tasks = rig.request([("a1", "web", []), ("a2", "sales", ["a1"])])
+    rig.sql("UPDATE projects SET caps_json = json_set(caps_json, '$.retries', 0) WHERE id = ?", reservation.project_id)           # a refused hand-off is not retried here
     rig.start()
     rig.go(tasks["a1"])
     return reservation, tasks

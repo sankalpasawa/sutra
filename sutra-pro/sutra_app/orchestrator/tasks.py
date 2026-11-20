@@ -1075,25 +1075,29 @@ class TaskService:
         carries its attempt number."""
         def make() -> str:
             with self.db.tx() as tx:
-                old = self.store.row_in(tx.conn, task_id)
-                if old is None:
-                    raise NotFound("that task")
-                if old.status not in ("stopped", "crashed", "cancelled", "done_with_open_items"):
-                    raise Busy("Only a task that stopped, crashed or was cancelled can be tried again")
-                earlier = attempts.chain(tx.conn, old.id)
-                number = attempts.attempt_of(earlier[-1]) + 1
-                note = attempts.brief(tx.conn, earlier, number, run_dir=lambda dept, run: self.store.runs_dir_in(tx.conn, dept) / run,
-                                      scrub=lambda text: scan(self.redact(text), replace=True)[0])
-                base = earlier[0]["framing"].strip()
-                framing = f"{clip(base, 20_000 - len(note) - 2)}\n\n{note}" if base else note          # the brief is never the part cut
-                row = self._insert(
-                    tx, dept_id=old.dept_id, text=old.user_text, title=old.title, scope_id=old.scope_node_id, framing=framing, depends_on=(),
-                    follows=None, request=old.request_id, change_id=old.change_id, settings=old.settings, seed_run=None, parent_task_id=old.id,
-                    attempt=number)
-                return row.id
+                return self.retry_in(tx, task_id).id
         new_id = await run_blocking(make)
         await self.start_ready()
         return await run_blocking(self.store.get, new_id)
+
+    def retry_in(self, tx: Tx, task_id: str, *, force: bool = False) -> TaskRow:
+        """The retry of `retry`, inside the caller's transaction: a new queued task with the same words, team, scope and settings, `parent_task_id` = the old task, the earlier attempts' brief in
+        its framing and its attempt number. `force` (the project service, for a node: MAN-7) also allows an old task that ended `done`, because the node's hand-off was refused."""
+        old = self.store.row_in(tx.conn, task_id)
+        if old is None:
+            raise NotFound("that task")
+        if old.status not in ("stopped", "crashed", "cancelled", "done_with_open_items") and not (force and old.status in ("done",)):
+            raise Busy("Only a task that stopped, crashed or was cancelled can be tried again")
+        earlier = attempts.chain(tx.conn, old.id)
+        number = attempts.attempt_of(earlier[-1]) + 1
+        note = attempts.brief(tx.conn, earlier, number, run_dir=lambda dept, run: self.store.runs_dir_in(tx.conn, dept) / run,
+                              scrub=lambda text: scan(self.redact(text), replace=True)[0])
+        base = earlier[0]["framing"].strip()
+        framing = f"{clip(base, 20_000 - len(note) - 2)}\n\n{note}" if base else note          # the brief is never the part cut
+        return self._insert(
+            tx, dept_id=old.dept_id, text=old.user_text, title=old.title, scope_id=old.scope_node_id, framing=framing, depends_on=(),
+            follows=None, request=old.request_id, change_id=old.change_id, settings=old.settings, seed_run=None, parent_task_id=old.id,
+            attempt=number)
 
     # ---- reads the engine plug-in needs ---------------------------------------------------------------------------------------
 

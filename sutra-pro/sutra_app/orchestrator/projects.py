@@ -38,7 +38,7 @@ from sutra_app.orchestrator.grants import Grant
 from sutra_app.orchestrator.handoff_intake import HandoffRefused, read_handoff, write_accepted
 from sutra_app.orchestrator.ids import Clock, IdFactory, SystemClock, iso_z
 from sutra_app.orchestrator.models import NodeOut, ProjectOut
-from sutra_app.orchestrator.nodes_store import NodeStore
+from sutra_app.orchestrator.nodes_store import GATE_REFUSED_ACTION, GATE_REFUSED_CLOSED, GATE_REFUSED_SLEEP, PROJECT_STOPPED_ACTION, NodeStore
 
 __all__ = ["ProjectService", "ProjectStep", "Reservation", "default_output_of", "NODE_FINAL", "PROJECT_FINAL", "TASK_TO_NODE"]
 
@@ -51,6 +51,8 @@ DEFAULT_SLICE = 100                       # the work credits a team's run starts
 TASK_TO_NODE = {"blocked": "planned", "queued": "queued", "starting": "leased", "running": "running", "waiting_user": "running", "done": "done", "done_with_open_items": "done",
                 "crashed": "failed", "stopped": "cancelled", "cancelled": "cancelled"}
 HELD_STATES = ("awaiting_approval", "awaiting_system")
+LOST_LEASE = "lost its lease: no sign of life"
+APP_CLOSED = "the app was closed"
 
 
 @dataclass(frozen=True)
@@ -98,7 +100,7 @@ def default_output_of(data_dir: Any) -> Callable[[str], Any]:
 
 class ProjectService:
     def __init__(self, db: Database, *, store: NodeStore, ids: IdFactory | None = None, clock: Clock | None = None, settings: Settings,
-                 owner_access: Callable[[], str] | None = None, output_of: Callable[[str], Any] | None = None, node_control: Any = None, tasks: Any = None) -> None:
+                 owner_access: Callable[[], str] | None = None, output_of: Callable[[str], Any] | None = None, node_control: Any = None, tasks: Any = None, chats: Any = None) -> None:
         self.db = db
         self.store = store
         self.ids = ids or IdFactory()
@@ -108,6 +110,11 @@ class ProjectService:
         self._output_of = output_of or (lambda dept: None)
         self.control = node_control
         self.tasks = tasks
+        self.chats = chats                                                        # the org chat's store: where the receipt of a stopped project is written (MAN-7)
+        self._pending: list[tuple[str, str]] = []                                # (project id, reason): stops that were decided inside a transaction and are run by the next tick
+        self._last_tick: int | None = None
+        self._extended: dict[str, int] = {}                                       # node id -> the moment its lease was extended (once) for a sleeping computer
+        self._ticker: Any = None
         self._planners: dict[str, tuple[str, CancelToken]] = {}          # request id -> (the planner's node id, its stop token)
         self._lock = threading.Lock()
 
@@ -263,6 +270,13 @@ class ProjectService:
         state = node["state"]
         if state in NODE_FINAL:
             return
+        outcome = node["toutcome"] or ""
+        if state == "expired" and want in ("cancelled", "failed"):
+            want = "failed"                                                  # the ladder ended a node that had gone silent: that is a failure to retry, not the owner's stop
+            outcome = LOST_LEASE
+        elif want == "cancelled" and outcome.startswith(APP_CLOSED):
+            want = "failed"                                                  # the app was closed under the node: nothing the owner asked for, so it is retried, not cancelled
+            outcome = "the app was closed while it ran"
         if state in HELD_STATES and want in ("queued", "planned"):
             want = state                                                    # a node that waits for an answer stays there until it is answered
         if want == state:
@@ -279,8 +293,10 @@ class ProjectService:
             self.store.audit(tx, actor="conductor", action="node.spawned", project_id=node["project_id"], node_id=node["id"], role=node["role"], decision="n/a", ref=task_id)
         elif want == "done" and node["role"] == "worker" and self.tasks is not None:
             self._hand_off(tx, node, task_id)                              # the hand-off is read, checked, scrubbed and stored; only then is the node done (MAN-6)
+        elif want == "failed":
+            self._fail(tx, node, outcome[:200])
         elif want in NODE_FINAL:
-            self._teardown(tx, node, want, (node["toutcome"] or "")[:200] if want != "done" else "")
+            self._teardown(tx, node, want, outcome[:200] if want != "done" else "")
         else:
             tx.conn.execute("UPDATE agent_nodes SET state = ? WHERE id = ?", (want, node["id"]))
         tx.emit("node.updated", {"project_id": node["project_id"], "node_id": node["id"], "state": want})
@@ -301,12 +317,12 @@ class ProjectService:
         except HandoffRefused as refused:
             self.store.audit(tx, actor="conductor", action="handoff.refused", project_id=node["project_id"], node_id=node["id"], role=node["role"], decision="deny", reason=str(refused),
                              ref=task_id)
-            self._teardown(tx, node, "failed", f"hand-off refused: {refused}")
+            self._fail(tx, node, f"hand-off refused: {refused}")
             return
         except OSError:
             self.store.audit(tx, actor="conductor", action="handoff.refused", project_id=node["project_id"], node_id=node["id"], role=node["role"], decision="deny",
                              reason="the hand-off could not be stored", ref=task_id)
-            self._teardown(tx, node, "failed", "hand-off refused: it could not be stored")
+            self._fail(tx, node, "hand-off refused: it could not be stored")
             return
         self.store.audit(tx, actor="conductor", action="handoff.accepted", project_id=node["project_id"], node_id=node["id"], role=node["role"], decision="allow",
                          reason=f"{len(accepted.document['files'])} file(s), message {posted.seq}", ref=str(posted.seq))
@@ -354,6 +370,199 @@ class ProjectService:
         tx.conn.execute("UPDATE projects SET status = ?, ended_at = ?, stop_reason = ? WHERE id = ?", (end, tx.now(), why, project_id))
         self.store.audit(tx, actor="conductor", action="project.ended", project_id=project_id, decision="n/a", reason=end)
         tx.emit("project.updated", {"project_id": project_id, "status": end})
+
+    # ---- failure: retry once, then the policy (D278, D305c, MAN-7) ------------------------------------------------------------------
+
+    def _fail(self, tx: Tx, node: sqlite3.Row, why: str) -> None:
+        """A node failed (its task crashed, it lost its lease, its hand-off was refused). It is retried once, as a new attempt of the same node, if the project still runs; else it is `failed`
+        and the project's failure policy applies. A node the owner or the kill switch stopped never comes here (it is `cancelled`)."""
+        project = tx.conn.execute("SELECT status, failure_policy, caps_json FROM projects WHERE id = ?", (node["project_id"],)).fetchone()
+        caps = json.loads(project["caps_json"] or "{}")
+        retries = int(caps.get("retries") if caps.get("retries") is not None else NODE_DEFAULT_CAPS["retries"] or 1)
+        if project["status"] in ("running",) and node["attempt"] <= retries and self.tasks is not None and node["task_id"]:
+            self._retry(tx, node, why)
+            return
+        self._teardown(tx, node, "failed", why)
+        if why.startswith(LOST_LEASE) and node["attempt"] >= 2:                 # D303 e: a node that loses its lease twice stops the project and says so
+            self.store.audit(tx, actor="conductor", action="trigger.lease_lost", project_id=node["project_id"], node_id=node["id"], role=node["role"], decision="deny",
+                             reason="lost its lease twice", ref=node["task_id"] or "")
+            self._pending.append((node["project_id"], "a step lost contact with Sutra twice"))
+        elif project["failure_policy"] == "stop_all":
+            self._pending.append((node["project_id"], "a step failed and this project stops at the first failure"))
+
+    def _retry(self, tx: Tx, node: sqlite3.Row, why: str) -> None:
+        """A new attempt of the node in the transaction that ends the old one (D305c): the node's `task_id` points at the new task, the attempt number goes up, its dependants wait for the new task,
+        and the grant is the one it had (frozen). The old task stays in `tasks` as the new one's parent."""
+        old_task = node["task_id"]
+        new = self.tasks.retry_in(tx, old_task, force=True)
+        now = tx.now()
+        tx.conn.execute("UPDATE agent_nodes SET task_id = ?, attempt = attempt + 1, state = 'queued', failure_reason = '', lease_expires_at = NULL, last_beat_at = NULL, ended_at = NULL, "
+                        "torn_down_at = NULL WHERE id = ?", (new.id, node["id"]))
+        for row in tx.conn.execute("SELECT t.id AS id, t.depends_on AS deps FROM tasks t WHERE t.status IN ('blocked','queued') AND t.id <> ? AND EXISTS "
+                                   "(SELECT 1 FROM json_each(t.depends_on) j WHERE j.value = ?)", (new.id, old_task)).fetchall():
+            tx.conn.execute("UPDATE tasks SET depends_on = ? WHERE id = ?", (json.dumps([new.id if dep == old_task else dep for dep in json.loads(row["deps"])]), row["id"]))
+        self._extended.pop(node["id"], None)
+        self.store.audit(tx, actor="conductor", action="node.retry", project_id=node["project_id"], node_id=node["id"], role=node["role"], decision="n/a", reason=why[:200],
+                         ref=new.id)
+        tx.emit("node.updated", {"project_id": node["project_id"], "node_id": node["id"], "state": "queued"})
+
+    # ---- the tick: leases, a sleeping computer, gates that ran out (MAN-7) ------------------------------------------------------------
+
+    async def tick(self, now: int | None = None) -> dict[str, list[str]]:
+        """One look at every project that runs. A live node that has been silent for its lease (default 90 s: no event, heartbeat included) goes `expired`, its process through the stop ladder,
+        and is retried once (D275). If the tick itself came late by more than half a lease the computer slept: the leases are extended once instead, and a project with an open gate is
+        refused (D296). A gate that ran out (24 h) is refused too. Stops decided inside a transaction (`stop_all`, a node that lost its lease twice) are run here. Returns what it did."""
+        import asyncio
+        moment = int(now) if now is not None else int(self._clock.now())
+        gap = 0 if self._last_tick is None else moment - self._last_tick
+        self._last_tick = moment
+        did = await run_blocking(self._tick_sync, moment, gap)
+        if did["expire"]:
+            await asyncio.gather(*(self.tasks.stop_node(task_id, f"no sign of life for {did['lease']} s") for task_id in did["expire"]), return_exceptions=True)
+        for project_id, reason in did["refuse"]:
+            await self.refuse_open_gates(project_id, reason)
+        pending, self._pending = self._pending, []
+        for project_id, reason in pending:
+            await self.stop(project_id, by="system", reason=reason)
+        return {"expired": did["expire"], "refused": [p for p, _ in did["refuse"]], "stopped": [p for p, _ in pending], "extended": did["extended"]}
+
+    def _tick_sync(self, now: int, gap: int) -> dict[str, Any]:
+        expire: list[str] = []
+        extended: list[str] = []
+        refuse: list[tuple[str, str]] = []
+        lease_default = int(NODE_DEFAULT_CAPS["lease_s"] or 90)
+        with self.db.tx() as tx:
+            for project in tx.conn.execute("SELECT id, caps_json FROM projects WHERE status IN ('planning','awaiting_approval','running') ORDER BY created_at").fetchall():
+                lease_s = int(json.loads(project["caps_json"] or "{}").get("lease_s") or lease_default)
+                slept = gap > lease_s // 2
+                ran_out = self.store.expire_due(tx, project_id=project["id"], now=now)
+                if ran_out:
+                    for approval in ran_out:
+                        self.store.audit(tx, actor="system", action=GATE_REFUSED_ACTION, project_id=project["id"], node_id=approval.node_id or None, tier=approval.tier, decision="deny",
+                                         reason="the question ran out of time", ref=approval.id)
+                    refuse.append((project["id"], "not approved: the question ran out of time"))
+                    continue
+                if slept and tx.conn.execute("SELECT 1 FROM approvals WHERE project_id = ? AND status = 'open'", (project["id"],)).fetchone() is not None:
+                    refuse.append((project["id"], GATE_REFUSED_SLEEP))
+                    continue
+                for node in tx.conn.execute(
+                        "SELECT n.id AS id, n.role AS role, n.task_id AS task_id, n.state AS state, COALESCE(t.last_event_at, t.started_at, ?) AS beat FROM agent_nodes n "
+                        "JOIN tasks t ON t.id = n.task_id WHERE n.project_id = ? AND n.state IN ('leased','running')", (now, project["id"])).fetchall():
+                    beat = max(int(node["beat"]), self._extended.get(node["id"], 0))        # the extension counts as a sign of life
+                    silent = now - beat
+                    if silent <= lease_s:
+                        tx.conn.execute("UPDATE agent_nodes SET last_beat_at = ?, lease_expires_at = ? WHERE id = ?", (beat, beat + lease_s, node["id"]))
+                    elif slept and node["id"] not in self._extended:         # the computer slept: the lease is extended once, not the process killed
+                        self._extended[node["id"]] = now
+                        tx.conn.execute("UPDATE agent_nodes SET last_beat_at = ?, lease_expires_at = ? WHERE id = ?", (now, now + lease_s, node["id"]))
+                        self.store.audit(tx, actor="conductor", action="node.lease_extended", project_id=project["id"], node_id=node["id"], role=node["role"], decision="n/a",
+                                         reason="the computer slept")
+                        extended.append(node["id"])
+                    else:
+                        tx.conn.execute("UPDATE agent_nodes SET state = 'expired' WHERE id = ?", (node["id"],))
+                        self.store.audit(tx, actor="conductor", action="node.heartbeat_lost", project_id=project["id"], node_id=node["id"], role=node["role"], decision="n/a",
+                                         reason=f"silent for {silent} s (lease {lease_s} s)")
+                        self.store.audit(tx, actor="conductor", action="node.expired", project_id=project["id"], node_id=node["id"], role=node["role"], decision="n/a", reason="lease lost")
+                        expire.append(node["task_id"])
+        return {"expire": expire, "refuse": refuse, "extended": extended, "lease": lease_default}
+
+    async def refuse_open_gates(self, project_id: str, reason: str) -> int:
+        """D296: every open gate of the project counts as refused. The questions are answered `denied` (by the system), the nodes that waited for them are `cancelled` with the reason, the project
+        is `stopped`, one receipt line says why, and the nodes that run are stopped through the ladder together. Returns how many nodes it ended."""
+        def settle() -> int:
+            with self.db.tx() as tx:
+                status = tx.conn.execute("SELECT status FROM projects WHERE id = ?", (project_id,)).fetchone()
+                if status is None or status["status"] in PROJECT_FINAL:
+                    return 0
+                for approval in self.store.approvals(project_id, status="open"):
+                    self.store.decide(tx, approval.id, "deny", decided_by="system")
+                    self.store.audit(tx, actor="system", action=GATE_REFUSED_ACTION, project_id=project_id, node_id=approval.node_id or None, tier=approval.tier, decision="deny",
+                                     reason=reason, ref=approval.id)
+                tx.conn.execute("UPDATE projects SET status = 'stopped', ended_at = ?, stop_reason = ? WHERE id = ?", (tx.now(), self.store.clean(reason), project_id))
+                self.store.audit(tx, actor="system", action=PROJECT_STOPPED_ACTION, project_id=project_id, decision="n/a", reason=reason)
+                cancelled = 0
+                for node in tx.conn.execute("SELECT n.id AS id, n.task_id AS task_id, n.state AS state, t.status AS tstatus FROM agent_nodes n LEFT JOIN tasks t ON t.id = n.task_id "
+                                            "WHERE n.project_id = ? AND n.role <> 'planner' AND n.state NOT IN ('done','failed','cancelled')", (project_id,)).fetchall():
+                    if node["task_id"] and node["tstatus"] in ("blocked", "queued"):
+                        self.tasks.cancel_in(tx, node["task_id"], reason)
+                        cancelled += 1
+                    elif not node["task_id"]:
+                        tx.conn.execute("UPDATE agent_nodes SET state = 'cancelled', failure_reason = ?, ended_at = ?, torn_down_at = ? WHERE id = ?", (self.store.clean(reason), tx.now(), tx.now(), node["id"]))
+                        cancelled += 1
+                self._receipt(tx, project_id, reason)
+                tx.emit("project.updated", {"project_id": project_id, "status": "stopped"})
+                return cancelled
+        ended = await run_blocking(settle)
+        ended += await self._stop_nodes(project_id, reason)
+        return ended
+
+    def _receipt(self, tx: Tx, project_id: str, reason: str) -> None:
+        """The one line in the org chat that says why a project stopped by itself (D296). A plain note, once (by its `src_ref`)."""
+        if self.chats is None:
+            return
+        from sutra_app.library.gate import GATE
+        from sutra_app.orchestrator.ids import ORG_SESSION_ID
+        title = tx.conn.execute("SELECT title FROM projects WHERE id = ?", (project_id,)).fetchone()["title"]
+        text = f"I stopped the project \u201c{title}\u201d: {reason}. Start it again when you are back." if title else f"I stopped a project: {reason}."
+        payload = dict(kind="note", session_id=ORG_SESSION_ID, role="agent", who="sutra", text=text[:2000], src_ref=f"project:{project_id}#stopped", at=tx.now())
+        self.chats.post(tx, ORG_SESSION_ID, GATE.check("chat_message", payload, ctx=tx.ctx))
+
+    async def reconcile_projects(self) -> dict[str, int]:
+        """Run once at start, after `reconcile` has settled the tasks and before anything starts (D277, D296). A project with an open gate was left open by a closed app: every gate is refused
+        ("Sutra was closed before you answered"). The nodes follow their tasks (a task `reconcile` crashed gives a node that is retried); a node that was reserved but never got its task
+        (the request was cut off) is cancelled; the lease of every live node starts again from now. It never starts a task."""
+        def settle() -> tuple[list[str], int]:
+            refused: list[str] = []
+            fixed = 0
+            with self.db.tx() as tx:
+                for project in tx.conn.execute("SELECT id FROM projects WHERE status IN ('planning','awaiting_approval','running') ORDER BY created_at").fetchall():
+                    gate_open = tx.conn.execute("SELECT 1 FROM approvals WHERE project_id = ? AND status = 'open'", (project["id"],)).fetchone() is not None
+                    if gate_open:
+                        refused.append(project["id"])
+                        continue
+                    for node in tx.conn.execute("SELECT id, task_id, state, role FROM agent_nodes WHERE project_id = ? AND role <> 'planner' AND state NOT IN ('done','failed','cancelled')",
+                                                (project["id"],)).fetchall():
+                        if node["task_id"] is None:
+                            tx.conn.execute("UPDATE agent_nodes SET state = 'cancelled', failure_reason = 'the request was cut off before its task was made', ended_at = ?, torn_down_at = ? WHERE id = ?",
+                                            (tx.now(), tx.now(), node["id"]))
+                            fixed += 1
+                        else:
+                            self.sync_task(tx, node["task_id"])
+                    lease = int(json.loads(tx.conn.execute("SELECT caps_json FROM projects WHERE id = ?", (project["id"],)).fetchone()["caps_json"] or "{}").get("lease_s") or 90)
+                    tx.conn.execute("UPDATE agent_nodes SET last_beat_at = ?, lease_expires_at = ? WHERE project_id = ? AND state IN ('leased','running')", (tx.now(), tx.now() + lease, project["id"]))
+                    self._sync_project(tx, project["id"])
+            return refused, fixed
+        refused, fixed = await run_blocking(settle)
+        for project_id in refused:
+            await self.refuse_open_gates(project_id, GATE_REFUSED_CLOSED)
+        return {"refused": len(refused), "cancelled": fixed}
+
+    def start_ticking(self, interval: float = 5.0) -> None:
+        """Run `tick` every `interval` seconds on the running loop. Idempotent."""
+        import asyncio
+        if self._ticker is not None and not self._ticker.done():
+            return
+
+        async def loop() -> None:
+            while True:
+                try:
+                    await self.tick()
+                except asyncio.CancelledError:
+                    raise
+                except Exception:                         # noqa: BLE001  (a bad look must not end the tick)
+                    log.exception("the project tick failed")
+                await asyncio.sleep(interval)
+        self._ticker = asyncio.get_running_loop().create_task(loop())
+
+    async def stop_ticking(self) -> None:
+        import asyncio
+        ticker, self._ticker = self._ticker, None
+        if ticker is not None:
+            ticker.cancel()
+            try:
+                await ticker
+            except (asyncio.CancelledError, Exception):         # noqa: BLE001
+                pass
 
     # ---- stopping (D303) ------------------------------------------------------------------------------------------------------------
 

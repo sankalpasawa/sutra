@@ -311,9 +311,9 @@ class NodeStore:
         tx.conn.execute("UPDATE approvals SET status = ?, decided_by = ?, decided_at = ? WHERE id = ? AND status = 'open'", (status, decided_by, tx.now(), approval_id))
         return self._row(tx.conn.execute("SELECT * FROM approvals WHERE id = ?", (approval_id,)).fetchone())
 
-    def expire_due(self, tx: Tx, *, project_id: str | None = None) -> list[ApprovalRow]:
-        """Every open approval whose time has run out becomes `expired` (denied, decided by `system`). Returns the rows it changed."""
-        now = tx.now()
+    def expire_due(self, tx: Tx, *, project_id: str | None = None, now: int | None = None) -> list[ApprovalRow]:
+        """Every open approval whose time has run out becomes `expired` (denied, decided by `system`). Returns the rows it changed. `now` is the caller's moment (the tick's); default the clock's."""
+        now = tx.now() if now is None else int(now)
         found = tx.conn.execute("SELECT id FROM approvals WHERE status = 'open' AND expires_at <= ?" + (" AND project_id = ?" if project_id else "") + " ORDER BY created_at, id",
                                 (now, project_id) if project_id else (now,)).fetchall()
         changed = []

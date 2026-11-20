@@ -24,7 +24,7 @@ class PRig:
         self.switch = KillSwitch(t.settings.data_dir / "nodes", clock=t.clock)
         self.store = NodeStore(t.db, ids=t.ids)
         self.control = NodeControl(self.switch, tasks=t.service, db=t.db, store=self.store, clock=t.clock, kick=t.service.start_ready)
-        self.projects = ProjectService(t.db, store=self.store, ids=t.ids, clock=t.clock, settings=t.settings, owner_access=lambda: self.owner, node_control=self.control, tasks=t.service)
+        self.projects = ProjectService(t.db, store=self.store, ids=t.ids, clock=t.clock, settings=t.settings, owner_access=lambda: self.owner, node_control=self.control, tasks=t.service, chats=t.chats)
         self.control.projects = self.projects
         t.service.task_gate = self.projects.gate
         t.service.spawn_guard = self.control.spawn_guard

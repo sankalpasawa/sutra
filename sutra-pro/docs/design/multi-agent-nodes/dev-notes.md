@@ -240,3 +240,33 @@ expiry (24 h) or a restart refuses the gate (D296). Flag-on only.
 - F3 vs the build plan's wording: with a read-only owner a worker has a folder to read, so its tier-4 grant is `{0, 1, 4}`; `{0, 4}` is the no-folder owner. The test says so.
 - m1: a database `INSERT OR REPLACE` on `node_messages` really does remove the old row without firing the append-only trigger (SQLite fires delete triggers on REPLACE only with
   `recursive_triggers` on). The code never writes that spelling and a test fails the day it does; turning the pragma on for the whole app was not done (it would change every other trigger).
+
+### N30. MAN-6: what a dependant is given, and where the intake runs
+
+- The hand-off reaches a dependant as a FILE: after the intake accepts `handoff.json`, the server writes `handoff.accepted.json` (validated, scrubbed, with a plain note that it is data) into the
+  node's run folder, and the existing `upstream` listing offers it (`_files_of` lists every top-level file that is not run plumbing; `handoff.json` was added to `RUN_FOLDER_INTERNALS`, so
+  the node's own raw file is never offered). The host copies it under `upstream/<run id>/` and its one-line upstream message names it. Nothing goes into `framing` (D265). The design's
+  `RunSpec.upstream` "adds the hand-off" is therefore the file name in `files`, not a new field.
+- The intake runs INSIDE the projector's transaction (`ProjectService._hand_off` from `sync_task`), because the node's state, the message and the dependants must change together. The checksum of
+  every listed file is recomputed there (files over 64 MB are checked for size only, and counted as `unchecked`); a very large hand-off therefore holds the writer for the time it takes to read
+  those files. MAN-12's load test should look at it.
+- A node whose run ended well and whose hand-off is missing or refused is `failed` (audit `handoff.refused`), is retried once (MAN-7) and its dependants are cancelled only when the retry is used up.
+- `finish.NODE_STEPS` (not `STEPS`) holds the `handoff` step: a run that is not a node gets no new trace line.
+
+### N31. MAN-7: what is built and what is not
+
+Built: leases checked by `ProjectService.tick` against the task's last event (any event, heartbeat included, extends it); a node silent for 90 s goes `expired`, its process through the stop ladder, and
+is retried once as a new attempt of the same node (`TaskService.retry_in`, `agent_nodes.task_id` re-pointed in the same transaction, dependants' `depends_on` re-pointed so they wait for the new
+attempt); a tick that comes more than half a lease late is a sleeping computer (leases extended once per node); a node that loses its lease twice stops the project (audit `trigger.lease_lost`, D303 e);
+a crash, a refused hand-off and "the app was closed" are retried once, the owner's stop and the kill switch never; `stop_branch` (default) and `stop_all`; D296 (`refuse_open_gates`: tick gap, 24 h expiry,
+restart); `reconcile_projects` after `reconcile` (nodes follow their tasks, leases restart from now, a reserved node with no task is cancelled, an open gate is refused with "Sutra was closed before
+you answered"). Wired in `start_services` / `stop_services`.
+
+Open points for the architect:
+- **The receipt of D296 is a plain note** in the org chat (`I stopped the project "<title>": <reason>. Start it again when you are back.`), once per project. A card kind for it belongs with
+  `NodeApprovalCard` in MAN-8.
+- **Nothing can open a gate yet** except the plan gate's estimate question (stored by MAN-5): D296 is tested against approval rows made in the tests. The "system permission" gate is MAN-15.
+- **`failure_policy` has no way to be set to `stop_all` yet** (the planner has no such field, N26); the code and its tests exist.
+- **The lease clock** is the task's `last_event_at` (the projector sets it per batch), not a column the engine writes: `agent_nodes.last_beat_at` is a copy for the page, refreshed by the tick.
+- **A retry may start at once**: `stop_node` ends with `start_ready`, so the new attempt can already be `leased` when `tick` returns. The tests say so.
+- The `retries` cap is read from the project's `caps_json` (default 1, D273); there is no `max_nodes` bound on retries beyond it.
