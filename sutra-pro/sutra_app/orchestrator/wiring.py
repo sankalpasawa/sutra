@@ -208,6 +208,8 @@ def build_services(settings: Settings, *, connector: Any = None, launcher: Any =
         tasks.task_gate = projects.gate                    # the Conductor's gate asks the switch and the grant first (`node_control.gate`), then the project's own rules (D303)
         tasks.node_sync = projector.node_sync = projects.sync_task
         projector.before_drain = projects.prepare_handoff
+        if settings.slots_on:                              # SUTRA_NODES_SLOTS: a node's heartbeat-only batches are not written every time (MAN-12)
+            projector.coalesce = lambda tx, row: tx.conn.execute("SELECT 1 FROM agent_nodes WHERE task_id = ?", (row.id,)).fetchone() is not None
     runner = TurnRunner(db=db, chart=chart, chats=chats, tasks=tasks, agent=agent, connector=port,
                         publish=lambda type_, data: bus.publish_one(type_, data), redact=redactor, projects=projects)
     return AppServices(

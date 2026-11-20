@@ -109,6 +109,9 @@ def port_from_config(spec: PortSpec, cfg: ConnectorConfig, *, usage_sink: UsageS
     if not stub_only:                                  # D109: J2's agents are observed, never edited: one audit row per prompt, byte-identical text
         router.egress = Egress(Path(spec.data_dir) / "connectors" / "egress.jsonl")
         router.folders = WorkFolder(spec.data_dir, cfg.resolved_work_root())      # D127: a call whose tag asks for the owner's folder gets it; read on every call
+        if spec.slots:                                                            # SUTRA_NODES_SLOTS: the limit across processes (MAN-12)
+            from .slots import SlotPool
+            router.slots = SlotPool(Path(spec.data_dir) / "connectors" / "slots", {name: load.policy.max_concurrency(name) for name in connectors})
         router.node_scope = tuple(spec.scope)                                     # a step of a project edits only inside its scope (MAN-10)
     return RouterPort(router, mock=stub_only, tag=CallTag(run_id=spec.run_id, dept_id=spec.dept_id, task_id=spec.task_id), tools=tuple(spec.tools))
 

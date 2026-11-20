@@ -83,6 +83,7 @@ class PortSpec(BaseModel):
     tools: tuple[str, ...] = ()
     # the paths of the owner's folder a step of a project may change (MAN-10): the router narrows an editing call's tools to them. Empty for every run that is not a node and for a node with no scope.
     scope: tuple[str, ...] = ()
+    slots: bool = False                           # SUTRA_NODES_SLOTS: the router takes a machine-wide slot (a lock file) for each model program it starts (MAN-12)
 
 
 class ToolGrant(BaseModel):

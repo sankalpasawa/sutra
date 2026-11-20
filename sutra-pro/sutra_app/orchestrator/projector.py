@@ -47,6 +47,7 @@ from sutra_app.orchestrator.usage import UsageStore
 __all__ = ["Projector", "Drained", "MAX_CHUNK_BYTES", "MAX_LINE_BYTES", "DEFAULT_OUTCOMES"]
 
 log = logging.getLogger(__name__)
+HEARTBEAT_COALESCE_S = 15                         # a node's heartbeat-only batch within this many seconds of its last event writes nothing (MAN-12; a lease is 90 s)
 MAX_CHUNK_BYTES = 2_000_000
 MAX_LINE_BYTES = 64_000_000
 DEFAULT_OUTCOMES = {
@@ -100,6 +101,7 @@ class Projector:
         self.taskgraph = taskgraph
         self.sessions = taskgraph.sessions                   # which chat session an agent's line goes to in this run (D130)
         self.clock = clock or SystemClock()
+        self.coalesce: Callable[[Tx, TaskRow], bool] | None = None   # SUTRA_NODES_SLOTS: True for a task whose heartbeat-only batches need not be written every time (a node's, MAN-12)
         self.before_drain: Callable[[str], None] | None = None       # the project service's `prepare_handoff`: files of a node's hand-off are read and hashed BEFORE the transaction opens (MJ5)
         self.node_sync: Callable[[Tx, str], None] | None = None      # the project service's `sync_task`, set only while SUTRA_NODES_V1 is on: a node follows its task (MAN-5)
 
@@ -150,6 +152,7 @@ class Projector:
             batch = _Batch(tx, row)
             dropped: list[str] = []
             applied, newest, position = 0, None, offset
+            kinds: set[str] = set()
             for raw in chunk.split(b"\n")[:-1]:
                 start, position = position, position + len(raw) + 1
                 if not raw.strip():
@@ -165,6 +168,7 @@ class Projector:
                 for key in dict.fromkeys(dropped):
                     self._note(batch, f"Ignored the unknown field {key} in a {event.t} event.", f"{batch.run}#dropped:{event.t}.{key}")
                 dropped.clear()
+                kinds.add(event.t)
                 if self._apply_guarded(batch, event, start):
                     applied += 1
                 try:
@@ -172,6 +176,9 @@ class Projector:
                 except ValueError:
                     pass
             new_offset = offset + len(chunk)                  # nothing is read after run.ended, so the rest of a chunk may be dropped
+            if (self.coalesce is not None and kinds == {"heartbeat"} and row.last_event_at is not None and newest is not None and 0 <= newest - row.last_event_at < HEARTBEAT_COALESCE_S
+                    and not batch.skipped and self.coalesce(tx, row)):
+                return Drained(applied=applied, skipped=0, ended=False, status=row.status, offset=row.events_offset, more=offset + len(data) < size)       # nothing is written: the same lines are read again next time, which is harmless (every projection is idempotent)
             self.store.touch(tx, task_id, events_offset=new_offset, last_event_at=newest)
             if batch.changed or applied:
                 self._refresh(batch)

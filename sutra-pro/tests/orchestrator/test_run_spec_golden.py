@@ -52,7 +52,7 @@ def test_a_node_adds_one_block_at_the_end_and_changes_nothing_before_it():
     text = full_spec(node=block).model_dump_json(indent=2) + "\n"
     assert {k: v for k, v in json.loads(text).items() if k != "node"} == json.loads(golden("full.task.json"))             # everything else is the golden file's
     assert json.loads(text)["node"] == {"id": NODE, "project_id": PROJECT, "role": "worker", "runtime": "engine", "attempt": 1, "grants_id": GRANT,
-                                        "caps": {"calls": 60, "usd": None, "wall_s": 1800}, "scope": ["site/pricing/"], "tool_profile": "none"}
+                                        "caps": {"calls": 60, "usd": None, "wall_s": 1800}, "scope": ["site/pricing/"], "tool_profile": "none", "slots": False}
     assert list(json.loads(text))[-1] == "node"
 
 
@@ -131,7 +131,7 @@ def test_with_the_flag_on_a_node_task_gets_the_block_from_its_row_and_its_grant(
     text, _ = start_and_read(tenv, task.id)
     doc = json.loads(text)
     assert doc["node"] == {"id": NODE, "project_id": PROJECT, "role": "worker", "runtime": "engine", "attempt": 1, "grants_id": GRANT,
-                           "caps": {"calls": 60, "usd": None, "wall_s": 1800}, "scope": ["site/pricing/"], "tool_profile": "none"}
+                           "caps": {"calls": 60, "usd": None, "wall_s": 1800}, "scope": ["site/pricing/"], "tool_profile": "none", "slots": False}
     assert TaskSpec.model_validate(doc).node.id == NODE
 
 

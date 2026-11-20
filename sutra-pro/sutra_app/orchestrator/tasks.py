@@ -720,6 +720,8 @@ class TaskService:
         if self.settings.nodes_v1:                                   # the identity block is written only while SUTRA_NODES_V1 is on: off, nothing of it is read or written (D254)
             node = node_block_of(conn, row.id)                       # a node with no usable grant raises: the task gate holds such a node, so it never gets here, and it is never started as an ordinary task (D302)
         settings = row.settings
+        if node is not None and self.settings.slots_on:
+            node = node.model_copy(update={"slots": True})              # SUTRA_NODES_SLOTS: this run takes machine-wide provider slots (MAN-12)
         if node is not None:                                         # the node's slice, read from its row now (not rewritten into the task's settings): a retry or a later move cannot drift (MAN-9)
             sliced = conn.execute("SELECT slice_credits FROM agent_nodes WHERE task_id = ?", (row.id,)).fetchone()
             if sliced is not None and sliced["slice_credits"]:

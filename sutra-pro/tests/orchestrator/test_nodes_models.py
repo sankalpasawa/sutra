@@ -19,7 +19,7 @@ def block(**over):
 def test_a_node_block_round_trips_and_has_the_documented_keys():
     dump = block(scope=["site/pricing/"], caps=NodeCaps(calls=40, usd=1.5, wall_s=600), attempt=2).model_dump(mode="json")
     assert dump == {"id": NODE, "project_id": PROJECT, "role": "worker", "runtime": "engine", "attempt": 2, "grants_id": GRANT,
-                    "caps": {"calls": 40, "usd": 1.5, "wall_s": 600}, "scope": ["site/pricing/"], "tool_profile": "none"}
+                    "caps": {"calls": 40, "usd": 1.5, "wall_s": 600}, "scope": ["site/pricing/"], "tool_profile": "none", "slots": False}
     assert NodeBlock.model_validate(dump) == block(scope=["site/pricing/"], caps=NodeCaps(calls=40, usd=1.5, wall_s=600), attempt=2)
 
 

@@ -416,7 +416,7 @@ class Host:
         node = getattr(self.task, "node", None)
         tools = tuple(node.tool_profile.split("+")) if node is not None and node.tool_profile != "none" else ()       # a node's granted app tools (MAN-8, D298)
         spec = PortSpec(mock=False, connector=self.task.connector, run_id=self.task.run_id, dept_id=self.task.dept_id,
-                        task_id=self.task.task_id, data_dir=str(self.paths.data_dir), tools=tools, scope=tuple(node.scope) if node is not None else ())
+                        task_id=self.task.task_id, data_dir=str(self.paths.data_dir), tools=tools, scope=tuple(node.scope) if node is not None else (), slots=bool(node is not None and node.slots))
         return make_port(spec, usage_sink=self.sink)
 
     def _hooks_off(self, target: str, exc: BaseException) -> None:

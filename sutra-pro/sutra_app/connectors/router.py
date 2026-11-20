@@ -38,7 +38,7 @@ from sutra_app.engine.port import Allowance, CallTag, CompletionRequest, Complet
 from .base import ModelConnector, Hooks, CallInfo, CallRecord, prompted_prompt
 from .cancel import CancelToken
 from .errors import (
-    CallCancelledError, ConnectorError, EnvelopeExceededError, InvalidJsonError, InvalidRequestError, NoProviderError,
+    CallCancelledError, ConnectorError, EnvelopeExceededError, InvalidJsonError, InvalidRequestError, NoProviderError, OverloadedError,
     SessionLostError, StructuredError,
 )
 from .health import API_KEY_REFUSED, HealthBook, HealthState
@@ -196,7 +196,7 @@ class _Request(Hooks):
         self.default_provider: Optional[str] = None
         self.last_native = False
         self.row: Optional[UsageIn] = None
-        self._held: list[threading.Semaphore] = []
+        self._held: list[tuple[threading.Semaphore, Any]] = []
         self.cancel: Optional[CancelToken] = None     # a chat turn's stop token (D215); None for every other request
         self.routes = False                            # a chat turn that asked for the router's own events (route plan, attempt, failed; D217)
 
@@ -238,20 +238,30 @@ class _Request(Hooks):
         self.check_gate()
         sem = self.router._semaphore(info.provider)
         sem.acquire()
+        slot = None
         try:
+            slots = getattr(self.router, "slots", None)
+            if slots is not None:                      # SUTRA_NODES_SLOTS: the limit across processes too (MAN-12); the wait ends when the request is stopped
+                slot = slots.acquire(info.provider, timeout=self.timeout_s(), cancelled=lambda: bool(getattr(getattr(self.ctx, "cancel", None), "requested", False)))
+                if slot is None:
+                    raise OverloadedError(f"the {info.provider} program is busy with other work on this computer", provider=info.provider)
             self.check_gate()                         # the deadline may have passed while this request waited for the cap
         except BaseException:
+            if slot is not None:
+                self.router.slots.release(slot)
             sem.release()
             raise
-        self._held.append(sem)
+        self._held.append((sem, slot))
         self.spawns += 1
         self.last_native = info.native
 
     def after_call(self, record: CallRecord) -> None:
-        sem = self._held.pop() if self._held else None
+        sem, slot = self._held.pop() if self._held else (None, None)
         try:
             self._record(record)
         finally:
+            if slot is not None:
+                self.router.slots.release(slot)
             if sem is not None:
                 sem.release()
 

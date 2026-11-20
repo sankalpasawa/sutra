@@ -87,6 +87,9 @@ def build_router(settings: Any, *, usage_sink: Any = None, events: Optional[Call
     if not stub_only:
         router.egress = Egress(data_dir / "connectors" / "egress.jsonl", redactor=redactor)
         attach_quota_store(router.health, data_dir / "connectors" / QUOTA_FILE)          # the plan meters survive a restart
+        if getattr(settings, "slots_on", False):                                         # SUTRA_NODES_SLOTS: the limits count the whole computer, engine processes too (MAN-12)
+            from .slots import SlotPool
+            router.slots = SlotPool(data_dir / "connectors" / "slots", {name: load.policy.max_concurrency(name) for name in connectors})
         for name, connector in connectors.items():
             _probe_flags(router, name, connector, events)
             _check_version(name, connector)

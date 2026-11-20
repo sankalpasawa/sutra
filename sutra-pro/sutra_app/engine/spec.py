@@ -107,6 +107,7 @@ class NodeSpec(BaseModel):
     caps: NodeCapsSpec = NodeCapsSpec()
     scope: list[str] = Field(default_factory=list, max_length=50)
     tool_profile: Literal["none", "sutra", "github", "sutra+github"] = "none"      # the app tools the grant gives this node's own agent-turn calls (MAN-8, D298)
+    slots: bool = False                                                            # take a machine-wide provider slot for each model program (MAN-12)
 
 
 class TaskSpec(BaseModel):
