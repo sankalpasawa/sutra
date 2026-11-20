@@ -362,3 +362,26 @@ def long_paths_enabled() -> bool:
             return bool(winreg.QueryValueEx(key, "LongPathsEnabled")[0])
     except Exception:                                               # noqa: BLE001
         return True
+
+
+def app_location(executable: str | None = None, platform: str | None = None, env: dict[str, str] | None = None) -> dict[str, Any]:
+    """Whether the app runs from the usual place for an installed app (MAN-13, D322 d, D326): `{usual: bool, note: str}`. The note is plain words for the project page, empty when all is well.
+    Only an installed app is judged: a Mac app outside the Applications folders (the disk image, Downloads), a Windows install outside Program Files and the per-user Programs folder. A checkout, a
+    command-line install and any other system are never "not usual": nothing is said about them. Read only; nothing about the path leaves this function. The arguments are for a test."""
+    exe = (executable if executable is not None else sys.executable).replace("\\", "/")
+    system = platform if platform is not None else sys.platform
+    variables = env if env is not None else os.environ
+    if system == "darwin" and ".app/Contents/" in exe:
+        homes = ("/Applications/", (variables.get("HOME", "").replace("\\", "/").rstrip("/") + "/Applications/") if variables.get("HOME") else "/Applications/")
+        if exe.startswith(homes):
+            return {"usual": True, "note": ""}
+        return {"usual": False, "note": "Sutra Pro is not in your Applications folder. Your computer asks about files and folders for the app where it is, so it may ask again. Drag the app into Applications and open it from there."}
+    if system == "win32" and exe.rsplit("/", 1)[-1].lower().startswith("sutrapro"):
+        roots = [variables.get(name, "").replace("\\", "/").rstrip("/").lower() for name in ("ProgramFiles", "ProgramFiles(x86)", "ProgramW6432")]
+        local = variables.get("LOCALAPPDATA", "").replace("\\", "/").rstrip("/").lower()
+        if local:
+            roots.append(local + "/programs")
+        if any(root and exe.lower().startswith(root + "/") for root in roots):
+            return {"usual": True, "note": ""}
+        return {"usual": False, "note": "Sutra Pro is not installed in the usual place. Windows may ask again, or block it, where it is. Run the installer again and open the app from there."}
+    return {"usual": True, "note": ""}

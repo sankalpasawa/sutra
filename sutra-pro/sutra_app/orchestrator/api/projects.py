@@ -5,9 +5,11 @@
     POST /api/nodes/kill-all      {reason?}  -> {affected: n, file_written: bool}   n = nodes stopped through the stop ladder (all together); file_written is false when
                                                                               the KILL file could not be written (the nodes are stopped anyway); no new node starts until resumed
     POST /api/nodes/resume        {}         -> {resumed: bool}                removes both files; what waited starts
+    GET  /api/nodes/app-location  -> {usual: bool, note: str}                  (MAN-13, D322 d: false with plain words when the installed app is not in the usual place)
     POST /api/nodes/{id}/stop     {}         -> {stopped: bool}                that node's task through the stop ladder; 404 for a node that does not exist
 
     GET  /api/projects            ?status=&limit=&offset=  -> ProjectOut[]                  (MAN-5: the projects, newest first)
+    POST /api/projects            {client_id, text, budget?, failure_policy?, decide_for_me?} -> 202 {message_id, turn, duplicate:false}; a repeated client_id -> 200 {duplicate:true}   (MAN-13, D326)
     GET  /api/projects/{id}/messages ?after=&limit=         -> node-message/1[] in seq order (MAN-6; 1, 2, 3 ... per project with no gap, D297)
     GET  /api/projects/{id}/audit    ?after=&limit=         -> the audit rows of the project
     GET  /api/projects/{id}       -> snapshot: project, nodes, edges, caps, spend, open approvals, last_message_seq
@@ -25,9 +27,11 @@ from typing import Any, Literal
 from fastapi import APIRouter, Depends, Request
 from pydantic import BaseModel, ConfigDict, Field
 
+from sutra_app import oslayer
 from sutra_app.orchestrator.api.deps import RedactedJSONResponse, require_token, services_of
 from sutra_app.orchestrator.db import run_blocking
-from sutra_app.orchestrator.errors import AppError, NotFound
+from sutra_app.orchestrator.errors import AlreadyDecided, AppError, NotFound
+from sutra_app.orchestrator.ids import ORG_SESSION_ID
 from sutra_app.orchestrator.killswitch import REASON_MAX, NodeControl
 
 __all__ = ["build_router", "ReasonBody", "EmptyBody", "PauseBody"]
@@ -47,6 +51,17 @@ class EmptyBody(BaseModel):
 class AnswerBody(BaseModel):
     model_config = ConfigDict(extra="forbid", strict=True)
     decision: Literal["allow_once", "allow_project", "deny"]
+
+
+class StartBody(BaseModel):
+    """`POST /api/projects` (MAN-13, D310 c, D326). The owner's request in their own words, how the project fails and the same two switches the home screen has. Closed."""
+
+    model_config = ConfigDict(extra="forbid", strict=True)
+    client_id: str = Field(pattern=r"^[A-Za-z0-9_-]{8,64}$")
+    text: str = Field(min_length=1, max_length=8000)
+    budget: int | None = Field(None, ge=1, le=100_000)
+    failure_policy: Literal["stop_branch", "stop_all"] = "stop_branch"
+    decide_for_me: bool = False
 
 
 class PauseBody(BaseModel):
@@ -99,12 +114,31 @@ def build_router() -> APIRouter:
             raise NotFound("that agent")
         return _json(request, {"stopped": stopped})
 
+    @router.get("/api/nodes/app-location", summary="Whether the app runs from the usual place for an installed app (plain words when it does not)")
+    async def app_location(request: Request) -> RedactedJSONResponse:
+        return _json(request, await run_blocking(oslayer.app_location))
+
     # ---- the projects (MAN-5) ----------------------------------------------------------------------------------------------------
 
     @router.get("/api/projects", summary="The projects, newest first")
     async def list_projects(request: Request, status: str | None = None, limit: int = 50, offset: int = 0) -> RedactedJSONResponse:
         found = await run_blocking(lambda: _projects(request).list_projects(status=status, limit=limit, offset=offset))
         return _json(request, [project.model_dump(mode="json") for project in found])
+
+    @router.post("/api/projects", summary="Start a project from a request in the owner's own words", dependencies=[Depends(require_token)])
+    async def start_project(request: Request, body: StartBody) -> RedactedJSONResponse:
+        """The request goes to the org chat as the owner's line, exactly as if typed there, with the failure policy kept for the project it may become; the plan is made after this answers, so the
+        answer is `202 {message_id, turn}` and the project appears in `GET /api/projects` (D326). A repeated `client_id` answers `200 {duplicate: true, message_id}` and starts nothing."""
+        runner = getattr(services_of(request), "runner", None)
+        if runner is None:
+            raise AppError("internal", "the chat agent is not wired")
+        if (found := await run_blocking(runner.line_of, body.client_id)) is not None:
+            return _json(request, {"duplicate": True, "message_id": found, "client_id": body.client_id})
+        try:
+            accepted = await runner.post_user_message(ORG_SESSION_ID, body.text, None, budget=body.budget, decide_for_me=body.decide_for_me, failure_policy=body.failure_policy, client_id=body.client_id)
+        except AlreadyDecided:                                                      # the same send, caught while its first request was storing the line
+            return _json(request, {"duplicate": True, "message_id": await run_blocking(runner.line_of, body.client_id), "client_id": body.client_id})
+        return _json(request, {**accepted.model_dump(mode="json"), "duplicate": False, "client_id": body.client_id}, 202)
 
     @router.get("/api/projects/{project_id}", summary="One project: its nodes, edges, caps, spend and open questions")
     async def get_project(request: Request, project_id: str) -> RedactedJSONResponse:

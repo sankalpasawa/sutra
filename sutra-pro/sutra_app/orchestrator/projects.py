@@ -175,7 +175,7 @@ class ProjectService:
     # ---- planning: the Gatekeeper's rules, then the rows ---------------------------------------------------------------------------
 
     def reserve(self, request_id: str, title: str, steps: Sequence[ProjectStep], *, budget: int | None = None, decide_for_me: bool = False,
-                planner_node_id: str = "", plan_defaults: bool = False) -> Reservation | None:
+                planner_node_id: str = "", plan_defaults: bool = False, failure_policy: str = "stop_branch") -> Reservation | None:
         """Make the project and its nodes for a request, before its tasks exist (the tasks are linked as they are made: `link_task`). None when this is not a project: fewer than two steps (D255:
         a one-step request keeps today's path). The plan goes through `gatekeeper.evaluate`; a refused plan makes a project that is `failed` and no node. A plan that needs the owner (a question
         about a tier above the defaults, a wide scope, or an estimate over the confirm threshold) makes the project `awaiting_approval` with its questions stored as approvals; nothing starts until
@@ -199,10 +199,11 @@ class ProjectService:
                 if found["status"] in PROJECT_FINAL:                                  # fail closed (G8, B2): a request whose project ended makes no task, so no ordinary task escapes the gate
                     return Reservation(found["id"], False, "that project has already ended, so it was not started again")
                 return Reservation(found["id"], True, "", nodes, waits=self._waits_of(tx, found["id"]))        # a request planned again (stale chart) finds its project
-            return self._reserve(tx, request_id, title, steps, plan, evaluation, budget, decide_for_me, planner_node_id, plan_defaults)
+            return self._reserve(tx, request_id, title, steps, plan, evaluation, budget, decide_for_me, planner_node_id, plan_defaults,
+                                 "stop_all" if failure_policy == "stop_all" else "stop_branch")
 
     def _reserve(self, tx: Tx, request_id: str, title: str, steps: Sequence[ProjectStep], plan: Plan, evaluation: Evaluation, budget: int | None, decide_for_me: bool,
-                 planner_node_id: str, plan_defaults: bool = False) -> Reservation:
+                 planner_node_id: str, plan_defaults: bool = False, failure_policy: str = "stop_branch") -> Reservation:
         now = tx.now()
         project_id = self.ids.project_id()
         caps = {key: value for key, value in NODE_DEFAULT_CAPS.items()}
@@ -221,8 +222,8 @@ class ProjectService:
         status = "failed" if not evaluation.ok else "awaiting_approval" if holds else "running"
         why = "; ".join(refusal.why for refusal in evaluation.refusals)[:200]
         tx.conn.execute(
-            "INSERT INTO projects(id, request_id, title, status, decide_for_me, caps_json, budget_credits, created_at, ended_at, stop_reason) VALUES (?,?,?,?,?,?,?,?,?,?)",
-            (project_id, request_id, " ".join(title.split())[:200], status, 1 if decide_for_me else 0, json.dumps(caps, sort_keys=True), sum(slices), now,
+            "INSERT INTO projects(id, request_id, title, status, failure_policy, decide_for_me, caps_json, budget_credits, created_at, ended_at, stop_reason) VALUES (?,?,?,?,?,?,?,?,?,?,?)",
+            (project_id, request_id, " ".join(title.split())[:200], status, failure_policy, 1 if decide_for_me else 0, json.dumps(caps, sort_keys=True), sum(slices), now,
              now if status == "failed" else None, why if status == "failed" else ""))
         self.store.audit(tx, actor="system", action="project.created", project_id=project_id, decision="n/a", reason=f"{len(steps)} steps", ref=request_id)
         if plan_defaults:
