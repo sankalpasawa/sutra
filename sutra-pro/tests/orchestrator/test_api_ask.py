@@ -1,4 +1,4 @@
-"""Ask, the read-only cited answer of the direct chat (DV-1, flag SUTRA_ASK_V1, D350 to D353), over HTTP.
+"""Ask, the read-only cited answer of the direct chat (DV-1, flag SUTRA_ASK_V1, D350 to D358), over HTTP.
 
 Two halves. With the flag OFF the chat is what it was: a request that names `mode` is refused as an unknown field exactly like any other, no answer of the API has a new key, and a direct
 chat without a mode sends the same system text and the same turn to the port, and stores the same rows, as before. With the flag ON an Ask turn is held to read access with the limits of a

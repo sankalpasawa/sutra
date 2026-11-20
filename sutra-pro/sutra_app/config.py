@@ -153,7 +153,7 @@ class Settings(BaseModel):
     live_heartbeat_s: float = Field(5.0, ge=0.2, le=60, allow_inf_nan=False)
     live_coalesce_ms: int = Field(33, ge=0, le=1000)
     live_checkpoint_s: float = Field(1.5, ge=0.05, le=60, allow_inf_nan=False)
-    # Ask (DV-1, D350 to D353): `ask_v1` lets the direct chat answer in `mode` "ask", a read-only answer whose every source Sutra checks by code. Off (the default) nothing
+    # Ask (DV-1, D350 to D358): `ask_v1` lets the direct chat answer in `mode` "ask", a read-only answer whose every source Sutra checks by code. Off (the default) nothing
     # of it exists: no field in any answer of the API, no changed route, no switch on the page
     ask_v1: bool = False
     override_key: SecretStr | None = Field(None, exclude=True, repr=False)

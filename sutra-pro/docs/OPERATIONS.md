@@ -190,12 +190,12 @@ the **next** run of that scope (`--dept D` for one team). Locked ones (`send_mod
 ## 12. Ask: cited answers about your folder (`SUTRA_ASK_V1`, off by default)
 
 Start the app with `SUTRA_ASK_V1=1 sutra-pro` and the chat box gets an **Ask | Do** switch (Home and every team's chat). Do is the chat as it always was. Ask answers a question about your working
-folder (Settings, Working folder) and **only reads**: it changes nothing, even when you allowed changes in that setting, and it uses no command and no web tool. It has the limits of a question to a
-function: two model calls, about $0.25 and two minutes, and your monthly limit or plan window holds it back in its own words.
+folder (Settings, Working folder) and **only reads**: it changes nothing, even when you allowed changes in that setting, and Claude is given only file-reading tools (no command, no web tool); Codex runs in a read-only sandbox (it cannot change anything or reach the network, though its shell can still look at files). It has the limits of a question to a
+function: two model calls and two minutes, and $0.25 as a real ceiling for Claude (for Codex a check before each model call, not a cap inside one). Your monthly limit does not hold it back, as it does not hold back a plain chat.
 
 Under the answer, a **Sources** card lists every file and lines the answer points to, each with a label Sutra decided itself (never the model): **checked** means the file is inside your folder, the lines
 are there and, when words were quoted, those words are on those lines; **could not find** says why. It does not mean the answer is right, and the card says so. An answer that names no file says
-"No sources given". **Turn this into work** only writes the start of a request in the box (Send then points at the team); you finish it and press Send. A stopped or failed answer has no card.
+"No sources given". If the answer's turn also tried to change something or reach the web, the card says that Ask does not allow it. **Turn this into work** only writes the start of a request in the box (Send then points at the team); you finish it and press Send. A stopped or failed answer has no card.
 
 With no working folder every source reads "no working folder is set". Switch the flag off (unset it, or `SUTRA_ASK_V1=0`) and nothing of Ask exists: no switch, and a request that names `mode` is refused as an unknown
-field, as before. Nothing is stored in a new table; the card is an ordinary chat message. Details: D350 to D353 in [DECISIONS.md](DECISIONS.md).
+field, as before. Nothing is stored in a new table; the card is an ordinary chat message. The model can still paraphrase a file it read wrongly and cite it: the card proves the citation, not the claim. Details: D350 to D358 in [DECISIONS.md](DECISIONS.md).
