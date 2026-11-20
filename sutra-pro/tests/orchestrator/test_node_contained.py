@@ -95,3 +95,44 @@ def test_a_failed_part_of_the_transaction_leaves_no_half_written_rows_and_no_eve
         tx.conn.execute("INSERT INTO scratch VALUES (3)")
         assert [e.type for e in tx.pending] == []
     assert [r[0] for r in db.conn().execute("SELECT x FROM scratch ORDER BY x")] == [1, 3]
+
+
+# ---- the hand-off's files are read and written before the transaction opens (MJ5) -----------------------------------------------------
+
+def test_the_hand_off_is_read_hashed_and_written_before_the_projectors_transaction_opens(rig, monkeypatch):
+    from sutra_app.orchestrator import conductor
+    seen = {"read": [], "write": []}
+    real_read, real_write = conductor.read_handoff, conductor.write_accepted
+
+    def read(*args, **kwargs):
+        seen["read"].append(rig.t.db._local.depth)                                                   # 0: no transaction is open on this thread
+        return real_read(*args, **kwargs)
+
+    def write(*args, **kwargs):
+        seen["write"].append(rig.t.db._local.depth)
+        return real_write(*args, **kwargs)
+    monkeypatch.setattr(conductor, "read_handoff", read)
+    monkeypatch.setattr(conductor, "write_accepted", write)
+    reservation, tasks = two(rig)
+    rig.finish(tasks["a1"], files={"out.md": "result"})
+    assert seen == {"read": [0], "write": [0]}                                                       # once each, never inside the transaction, and not again inside it
+    assert node(rig, "a1")["state"] == "done" and (rig.t.run_dir(tasks["a1"]) / "handoff.accepted.json").is_file()
+    assert [r["action"] for r in rig.audit("handoff.accepted")] == ["handoff.accepted"]
+
+
+def test_a_refusal_found_before_the_transaction_is_the_refusal_the_transaction_records(rig):
+    reservation, tasks = two(rig)
+    rig.finish(tasks["a1"], files={"out.md": "result"}, override={"files": [{"path": "out.md", "sha256": "0" * 64, "bytes": 6}]})
+    assert node(rig, "a1")["state"] == "failed" and rig.audit("handoff.refused")[0]["reason"] == "a listed file does not match its checksum"
+
+
+def test_a_hand_off_that_changed_after_it_was_prepared_is_read_again_inside(rig):
+    reservation, tasks = two(rig)
+    run_dir = rig.t.run_dir(tasks["a1"])
+    (run_dir / "out.md").write_text("result")
+    from sutra_app.engine.host import handoff as handoff_file
+    handoff_file.write(run_dir, handoff_file.build(run_dir, node(rig, "a1")["id"], "done", "first"))
+    rig.projects.prepare_handoff(tasks["a1"])                                                         # prepared for the first file
+    handoff_file.write(run_dir, handoff_file.build(run_dir, node(rig, "a1")["id"], "done", "second and longer"))
+    rig.finish(tasks["a1"], handoff=False)
+    assert json.loads((run_dir / "handoff.accepted.json").read_text())["handoff"]["summary"] == "second and longer"

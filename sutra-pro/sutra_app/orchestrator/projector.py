@@ -100,6 +100,7 @@ class Projector:
         self.taskgraph = taskgraph
         self.sessions = taskgraph.sessions                   # which chat session an agent's line goes to in this run (D130)
         self.clock = clock or SystemClock()
+        self.before_drain: Callable[[str], None] | None = None       # the project service's `prepare_handoff`: files of a node's hand-off are read and hashed BEFORE the transaction opens (MJ5)
         self.node_sync: Callable[[Tx, str], None] | None = None      # the project service's `sync_task`, set only while SUTRA_NODES_V1 is on: a node follows its task (MAN-5)
 
     # =================================================================================================================
@@ -109,6 +110,8 @@ class Projector:
     def drain(self, task_id: str) -> Drained:
         """Apply the complete lines of the task's `events.jsonl` that came after `events_offset`, with the new offset, in one
         transaction. A finished task is left alone."""
+        if self.before_drain is not None:
+            self.before_drain(task_id)                       # outside the transaction: a node's hand-off is read, hashed and written here (MJ5)
         with self.db.tx() as tx:
             row = self.store.row_in(tx.conn, task_id)
             if row is None:

@@ -266,6 +266,9 @@ class ProjectService:
     def sync_task(self, tx: Tx, task_id: str) -> None:
         self.conductor.sync_task(tx, task_id)
 
+    def prepare_handoff(self, task_id: str) -> None:
+        self.conductor.prepare_handoff(task_id)
+
     async def tick(self, now: int | None = None) -> dict[str, list[str]]:
         return await self.conductor.tick(now)
 

@@ -29,6 +29,7 @@ class PRig:
         t.service.task_gate = self.projects.gate
         t.service.spawn_guard = self.control.spawn_guard
         t.service.node_sync = t.projector.node_sync = self.projects.sync_task
+        t.projector.before_drain = self.projects.prepare_handoff
 
     # ---- making a request the way the runner does ---------------------------------------------------------------------------------
 

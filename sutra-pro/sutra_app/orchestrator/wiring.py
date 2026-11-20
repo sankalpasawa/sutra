@@ -205,6 +205,7 @@ def build_services(settings: Settings, *, connector: Any = None, launcher: Any =
         node_control.projects = projects
         tasks.task_gate = projects.gate                    # the Conductor's gate asks the switch and the grant first (`node_control.gate`), then the project's own rules (D303)
         tasks.node_sync = projector.node_sync = projects.sync_task
+        projector.before_drain = projects.prepare_handoff
     runner = TurnRunner(db=db, chart=chart, chats=chats, tasks=tasks, agent=agent, connector=port,
                         publish=lambda type_, data: bus.publish_one(type_, data), redact=redactor, projects=projects)
     return AppServices(

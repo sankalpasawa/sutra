@@ -17,8 +17,8 @@ from typing import Any
 from sutra_app.config import NODE_DEFAULT_CAPS
 from sutra_app.orchestrator.db import Tx, run_blocking
 from sutra_app.orchestrator.errors import AppError, NotFound
-from sutra_app.engine.host.handoff import ACCEPTED_FILE
-from sutra_app.orchestrator.handoff_intake import HandoffRefused, read_handoff, write_accepted
+from sutra_app.engine.host.handoff import ACCEPTED_FILE, HANDOFF_FILE
+from sutra_app.orchestrator.handoff_intake import Accepted, HandoffRefused, read_handoff, write_accepted
 from sutra_app.orchestrator.models import ProjectOut
 from sutra_app.orchestrator.nodes_store import GATE_REFUSED_ACTION, GATE_REFUSED_CLOSED, GATE_REFUSED_SLEEP, PROJECT_STOPPED_ACTION, NodeBlockError, node_block_of
 
@@ -42,6 +42,7 @@ class Conductor:
         self._last_tick: int | None = None
         self._extended: dict[str, int] = {}                                       # node id -> the moment its lease was extended (once) for a sleeping computer
         self._ticker: Any = None
+        self._prepared: dict[str, tuple[tuple[int, int, int], Accepted | None, str]] = {}      # task id -> (the hand-off file's stamp, what was accepted or why not): made outside any transaction (MJ5)
 
     # what the Conductor shares with the service (read live: the wiring sets some of them after the service is built)
     @property
@@ -202,16 +203,58 @@ class Conductor:
         tx.emit("node.updated", {"project_id": node["project_id"], "node_id": node["id"], "state": want})
         self._sync_project(tx, node["project_id"])
 
+    def prepare_handoff(self, task_id: str) -> None:
+        """Before the projector opens its transaction for a task's events (MJ5): when the task is the run of a worker node and its `handoff.json` is there, the file is read, checked, hashed and
+        `handoff.accepted.json` is written NOW, outside any transaction, so no hash, fsync or rename happens while the writer transaction is open. The outcome (an `Accepted` or the refusal)
+        waits in `_prepared` for `_hand_off`; a changed file is read again there. Never raises: a failure here only means `_hand_off` does the work itself."""
+        try:
+            node = self.db.conn().execute("SELECT id, runtime FROM agent_nodes WHERE task_id = ? AND role = 'worker' AND state IN ('leased','running')", (task_id,)).fetchone()
+            if node is None or self.tasks is None:
+                return
+            row = self.tasks.store.find_row(task_id)
+            if row is None or row.run_id is None:
+                return
+            run_dir = self.tasks.store.run_dir_of(row)
+            stamp = self._stamp(run_dir)
+            if stamp is None or (task_id in self._prepared and self._prepared[task_id][0] == stamp):
+                return
+            try:
+                accepted = read_handoff(run_dir, node["id"], node["runtime"], self.store.redact)
+                write_accepted(run_dir, accepted)
+                self._prepared[task_id] = (stamp, accepted, "")
+            except HandoffRefused as refused:
+                self._prepared[task_id] = (stamp, None, str(refused))
+            except OSError:
+                self._prepared[task_id] = (stamp, None, "the hand-off could not be stored")
+        except Exception:                                                    # noqa: BLE001  (a look ahead that fails is no reason to fail anything)
+            log.exception("could not look at the hand-off of task %s ahead of time", task_id)
+
+    @staticmethod
+    def _stamp(run_dir: Any) -> tuple[int, int, int] | None:
+        from pathlib import Path
+        try:
+            info = (Path(run_dir) / HANDOFF_FILE).lstat()
+        except OSError:
+            return None
+        return (info.st_mtime_ns, info.st_size, info.st_ino)
+
     def _hand_off(self, tx: Tx, node: sqlite3.Row, task_id: str) -> None:
         """The Conductor's intake (D263, D281; MAN-6): the node's task ended well, so its `handoff.json` is read and checked (`handoff_intake`), scrubbed, stored as a message of the project
         (`handoff:<node>:<attempt>`, once) and written as `handoff.accepted.json`, the one file dependants are given. A missing, malformed, too big or untrue hand-off ends the node `failed` with
-        the rule that broke, and an audit row `handoff.refused`; the node's own files stay for the owner (retry is MAN-7)."""
+        the rule that broke, and an audit row `handoff.refused`; the node's own files stay for the owner. The reading, hashing and writing of files is done before the transaction opened
+        (`prepare_handoff`, MJ5); only when that did not happen (the file changed, or the task ended some other way) is it done here."""
         tx.conn.execute("UPDATE agent_nodes SET state = 'handing_off' WHERE id = ?", (node["id"],))
         row = self.tasks.store.row_in(tx.conn, task_id)
         try:
             run_dir = self.tasks.store.run_dir_of(row)
-            accepted = read_handoff(run_dir, node["id"], node["runtime"], self.store.redact)
-            write_accepted(run_dir, accepted)
+            prepared = self._prepared.pop(task_id, None)
+            if prepared is not None and prepared[0] == self._stamp(run_dir):
+                if prepared[1] is None:
+                    raise HandoffRefused(prepared[2])
+                accepted = prepared[1]
+            else:
+                accepted = read_handoff(run_dir, node["id"], node["runtime"], self.store.redact)
+                write_accepted(run_dir, accepted)
             posted = self.store.post(tx, project_id=node["project_id"], kind="handoff", src_ref=f"handoff:{node['id']}:{node['attempt']}", body=accepted.document,
                                      from_node=node["id"], to_node="project", file=ACCEPTED_FILE)
         except HandoffRefused as refused:
@@ -236,6 +279,7 @@ class Conductor:
     def _teardown(self, tx: Tx, node: sqlite3.Row, state: str, why: str) -> None:
         """A node ended: its final state, its lease released, the time stamped, one audit row. The run folder stays where it is (D276: nothing the owner could want is deleted)."""
         now = tx.now()
+        self._prepared.pop(node["task_id"] or "", None)
         tx.conn.execute("UPDATE agent_nodes SET state = ?, failure_reason = ?, lease_expires_at = NULL, ended_at = ?, torn_down_at = ? WHERE id = ?", (state, why[:200], now, now, node["id"]))
         self.store.audit(tx, actor="conductor", action=f"node.{state}", project_id=node["project_id"], node_id=node["id"], role=node["role"], decision="n/a", reason=why, ref=node["task_id"] or "")
         if state == "failed" and self.tasks is not None:
