@@ -58,8 +58,9 @@ NO_GRANT_HELD = "Held: this step has no permissions set, so it cannot start"
 class KillSwitch:
     """The two files. Reads only look at the file system; a write is a small file made by temp file and rename (mode 0600 in a 0700 folder)."""
 
-    def __init__(self, directory: str | os.PathLike[str], *, clock: Clock | None = None) -> None:
+    def __init__(self, directory: str | os.PathLike[str], *, clock: Clock | None = None, consume: bool = True) -> None:
         self.directory = Path(directory)
+        self._consume = consume                    # False for the command line: it only LOOKS. Only the running app takes the resume marker and writes its audit row (D391)
         self._clock = clock or SystemClock()
         self._by_hand: list[str] = []              # the texts of the resume markers the command line left, not yet audited (D384)
         self._latched = ""                         # "kill" or "pause" when the file could not be written: the switch is on in memory until it is cleared (Minor 3: a full or read-only disk must not open the gate)
@@ -79,11 +80,13 @@ class KillSwitch:
 
     def _released(self) -> None:
         """A `nodes resume` of the command line (a separate process) leaves a RESUME file: a switch held in memory because its file could not be written is let go, and the marker is removed."""
+        if not self._consume:
+            return
         marker = self.resume_marker()
         if os.path.lexists(marker):
             self._latched = ""
             try:
-                said = Path(marker).read_text(encoding="utf-8", errors="replace")[:400]
+                said = Path(marker).read_text(encoding="utf-8", errors="replace")[:2000]
             except OSError:
                 said = ""
             self._by_hand.append(said)                                      # what the command said it removed: the one that has the database writes an audit row for it (D384)
@@ -396,9 +399,9 @@ class NodeControl:
         when there is no file, and one query while there is."""
         killed = await run_blocking(lambda: self.switch.killed)                  # this look also finds a `nodes resume` left by the command line
         for said in await run_blocking(self.switch.take_resumed_by_hand):
-            removed = next((line.split(":", 1)[1].strip() for line in said.splitlines() if line.startswith("removed:")), "")
-            if removed:                                                           # the command only writes the words when it removed a file: a row for each, never for a look
-                await run_blocking(lambda removed=removed: self._audit("resume", reason="resumed by hand with the command line: " + removed, actor="owner"))
+            for removed in (line.split(":", 1)[1].strip() for line in said.splitlines() if line.startswith("removed:")):
+                if removed:                                                       # the command only writes the words when it removed a file: a row for each resume, never for a look
+                    await run_blocking(lambda removed=removed: self._audit("resume", reason="resumed by hand with the command line: " + removed, actor="owner"))
         if not killed:
             self._enforced = None
             return 0

@@ -77,7 +77,7 @@ def _status(args: argparse.Namespace) -> int:
     if settings is None:
         return 2
     from sutra_app.orchestrator.killswitch import KillSwitch
-    state = KillSwitch(settings.nodes_dir).status()
+    state = KillSwitch(settings.nodes_dir, consume=False).status()
     running = _running(settings)
     payload: dict[str, Any] = {**state, "folder": str(settings.nodes_dir), "settings": _flags(settings), "running": running}
     words = {"none": "Agents may start.", "pause": "The PAUSE file is there: no new agent starts; the ones that run finish.", "kill": "The KILL file is there: a running Sutra stops every agent and starts none. (Look at the page or the log to see that they ended.)"}[state["level"]]
@@ -101,7 +101,7 @@ def _write(level: str):
         reason = " ".join((args.reason or "").split())[:REASON_MAX]
         from sutra_app.orchestrator.killswitch import KillSwitch
         try:
-            KillSwitch(settings.nodes_dir).set(level, by="owner", reason=reason)
+            KillSwitch(settings.nodes_dir, consume=False).set(level, by="owner", reason=reason)
         except OSError as exc:
             print(f"sutra-pro: could not write the {level.upper()} file in {settings.nodes_dir} ({type(exc).__name__}): nothing is held back", file=sys.stderr)
             return 1
@@ -118,13 +118,14 @@ def _resume(args: argparse.Namespace) -> int:
     if settings is None:
         return 2
     from sutra_app.orchestrator.killswitch import KillSwitch
-    switch = KillSwitch(settings.nodes_dir)
+    switch = KillSwitch(settings.nodes_dir, consume=False)
     if switch.broken():                                       # a plain error, never a silent "killed for ever" (m11)
         emit(args, {"error": "not_a_folder", "path": str(settings.nodes_dir)}, [f"{settings.nodes_dir} is a file, not a folder, so the stop switch cannot work. Rename or remove that file, then run this again."])
         return 1
     removed = switch.clear()
     try:                                                      # tell a running app to let go of a switch it holds in memory (its file could not be written), and what was removed: it writes the audit row (D384)
-        switch.resume_marker().write_text("resume\n" + (f"removed: {', '.join(removed)}\n" if removed else ""), encoding="utf-8")
+        with open(switch.resume_marker(), "a", encoding="utf-8") as marker:          # appended: two resumes before the app looks are two rows (D391)
+            marker.write("resume\n" + (f"removed: {', '.join(removed)}\n" if removed else ""))
     except OSError:
         pass
     emit(args, {"removed": removed}, ["Resumed: " + ", ".join(removed) + " removed." if removed else "Nothing to resume: neither file was there."])
