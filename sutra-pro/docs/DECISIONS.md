@@ -2279,3 +2279,10 @@ Why: (a) the first version counted its own work as sleep and could refuse an ope
 - Why: an ordinary task has the reach of a whole team run, wider than a node's grant, so letting a waiting step start that way after the flag goes off would give it more than anyone granted; the owner turning the switch off means "stop", not "run it the old way".
 - Rejected: starting them as ordinary tasks (the old text of ENVIRONMENT.md); cancelling them at start (the owner may switch the flag on again and want them).
 - Diagram: label "flag off: waiting project steps stay on hold", key only.
+
+## D314 — An app that was closed is not a node that failed
+- Sources: `docs/design/multi-agent-nodes` (decisions.md, architecture.md, guardrails-and-permissions.md); the owner's direction of 2026-11-20 (enhance, do not replace; decide autonomously, document every decision).
+- Decided: An app that was closed is not a node that failed. `reconcile_projects` re-adopts a node whose process still lives (its lease starts again from now). A node found dead because the app was closed (its task ended with "the app was closed") gets a fresh attempt as a new task of the same node, audit `node.restarted`, that does NOT spend its one retry; at most 2 such restart attempts per node (counted from the audit rows), after that the closing counts like any failure. A real failure still has its single retry (`attempt - restarts <= retries`). This amends D277 and D305 (c). Package: MAN-7 (built as a fix in the phase 2 round).
+- Why: closing the laptop or the app is the owner's own act, and a project that fails because they went to lunch would be a poor product; the cap stops a node that crashes the app from being started for ever.
+- Rejected: counting the closing as the one retry (the owner's habit would use it up); no cap.
+- Diagram: label "app closed: fresh attempt, retry not spent, cap 2", key only.

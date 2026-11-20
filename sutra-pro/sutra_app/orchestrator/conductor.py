@@ -32,6 +32,8 @@ TASK_TO_NODE = {"blocked": "planned", "queued": "queued", "starting": "leased", 
 HELD_STATES = ("awaiting_approval", "awaiting_system")
 LOST_LEASE = "lost its lease: no sign of life"
 APP_CLOSED = "the app was closed"
+APP_CLOSED_WHY = "the app was closed while it ran"
+MAX_RESTARTS = 2                                   # a node that the closing of the app ended gets a fresh attempt that does not use up its one retry, at most this many times (D314)
 NODE_ERROR_WHY = "following this step failed, so it was ended"
 
 
@@ -175,9 +177,9 @@ class Conductor:
         if state == "expired" and want in ("cancelled", "failed"):
             want = "failed"                                                  # the ladder ended a node that had gone silent: that is a failure to retry, not the owner's stop
             outcome = LOST_LEASE
-        elif want == "cancelled" and outcome.startswith(APP_CLOSED):
-            want = "failed"                                                  # the app was closed under the node: nothing the owner asked for, so it is retried, not cancelled
-            outcome = "the app was closed while it ran"
+        elif want in ("cancelled", "failed") and outcome.startswith(APP_CLOSED):
+            want = "failed"                                                  # the app was closed under the node: nothing the owner asked for, so it is tried again, not cancelled
+            outcome = APP_CLOSED_WHY
         if state in HELD_STATES and want in ("queued", "planned"):
             want = state                                                    # a node that waits for an answer stays there until it is answered
         if want == state:
@@ -324,10 +326,18 @@ class Conductor:
         project = tx.conn.execute("SELECT status, failure_policy, caps_json FROM projects WHERE id = ?", (node["project_id"],)).fetchone()
         caps = json.loads(project["caps_json"] or "{}")
         retries = int(caps.get("retries") if caps.get("retries") is not None else NODE_DEFAULT_CAPS["retries"] or 1)
-        if retry and project["status"] in ("running",) and node["attempt"] <= retries and self.tasks is not None and node["task_id"]:
+        restarts = self._restarts(tx, node["id"])
+        closed = why.startswith(APP_CLOSED_WHY)
+        if closed and restarts < MAX_RESTARTS:
+            action = "node.restarted"                                        # the app closing is not the node's failure: a fresh attempt that spends no retry (D314)
+        elif node["attempt"] - restarts <= retries:
+            action = "node.retry"
+        else:
+            action = ""
+        if action and retry and project["status"] in ("running",) and self.tasks is not None and node["task_id"]:
             try:
                 with tx.savepoint():
-                    self._retry(tx, node, why)
+                    self._retry(tx, node, why, action=action)
                 return
             except AppError:                                                 # the team is gone (archived) or the task cannot be repeated: the node ends here, cleanly (B1)
                 why = f"{why[:150]} (it could not be tried again)"
@@ -339,7 +349,12 @@ class Conductor:
         elif project["failure_policy"] == "stop_all":
             self._pending.append((node["project_id"], "a step failed and this project stops at the first failure"))
 
-    def _retry(self, tx: Tx, node: sqlite3.Row, why: str) -> None:
+    @staticmethod
+    def _restarts(tx: Tx, node_id: str) -> int:
+        """How many times the closing of the app already gave this node a fresh attempt (counted from the audit trail: no column for it)."""
+        return int(tx.conn.execute("SELECT count(*) FROM node_audit WHERE node_id = ? AND action = 'node.restarted'", (node_id,)).fetchone()[0])
+
+    def _retry(self, tx: Tx, node: sqlite3.Row, why: str, *, action: str = "node.retry") -> None:
         """A new attempt of the node in the transaction that ends the old one (D305c): the node's `task_id` points at the new task, the attempt number goes up, its dependants wait for the new task,
         and the grant is the one it had (frozen). The old task stays in `tasks` as the new one's parent."""
         old_task = node["task_id"]
@@ -351,7 +366,7 @@ class Conductor:
                                    "(SELECT 1 FROM json_each(t.depends_on) j WHERE j.value = ?)", (new.id, old_task)).fetchall():
             tx.conn.execute("UPDATE tasks SET depends_on = ? WHERE id = ?", (json.dumps([new.id if dep == old_task else dep for dep in json.loads(row["deps"])]), row["id"]))
         self._extended.pop(node["id"], None)
-        self.store.audit(tx, actor="conductor", action="node.retry", project_id=node["project_id"], node_id=node["id"], role=node["role"], decision="n/a", reason=why[:200],
+        self.store.audit(tx, actor="conductor", action=action, project_id=node["project_id"], node_id=node["id"], role=node["role"], decision="n/a", reason=why[:200],
                          ref=new.id)
         tx.emit("node.updated", {"project_id": node["project_id"], "node_id": node["id"], "state": "queued"})
 

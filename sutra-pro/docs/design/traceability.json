@@ -1,14 +1,14 @@
 {
  "schema": "traceability/1",
  "counts": {
-  "decisions": 313,
+  "decisions": 314,
   "packages": 78,
   "endpoints": 43,
   "chips": 17,
   "steps": 7,
   "owner_rules": 7
  },
- "max_decision": 313,
+ "max_decision": 314,
  "owner_rules": [
   {
    "rule": "This is a new app, no relation to the old sutra-ui. Its design is the J2 prototype's design.",
@@ -502,7 +502,8 @@
     "D310",
     "D311",
     "D312",
-    "D313"
+    "D313",
+    "D314"
    ],
    "modules": [
     "docs/DECISIONS.md",
@@ -5219,6 +5220,14 @@
    "status": "implemented",
    "superseded_by": [],
    "diagram": "label \"flag off: waiting project steps stay on hold\", key only."
+  },
+  {
+   "id": "D314",
+   "title": "An app that was closed is not a node that failed",
+   "packages": [],
+   "status": "documented only",
+   "superseded_by": [],
+   "diagram": "label \"app closed: fresh attempt, retry not spent, cap 2\", key only."
   }
  ],
  "packages": [

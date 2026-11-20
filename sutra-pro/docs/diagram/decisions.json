@@ -1563,5 +1563,10 @@
   "id": "D313",
   "label": "flag off: waiting project steps stay on hold",
   "anchor": null
+ },
+ {
+  "id": "D314",
+  "label": "app closed: fresh attempt, retry not spent, cap 2",
+  "anchor": null
  }
 ]

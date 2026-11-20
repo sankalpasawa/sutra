@@ -88,3 +88,50 @@ def test_a_project_with_an_open_gate_is_refused_on_restart_with_the_closed_words
     assert rig.node_states(tasks) == {"a1": "cancelled", "a2": "cancelled"}                              # the running node was stopped through the ladder, the waiting one cancelled
     assert [r["action"] for r in rig.audit("gate.refused")] == ["gate.refused"] and rig.audit("gate.refused")[0]["reason"] == GATE_REFUSED_CLOSED
     assert rig.sql("SELECT text FROM chat_messages WHERE src_ref = ?", f"project:{reservation.project_id}#stopped").fetchone()["text"].startswith("I stopped the project")
+
+
+# ---- an app that was closed is not a node that failed (D314) ----------------------------------------------------------------------------
+
+def app_closed_under(rig, ref):
+    """What `reconcile` leaves of a node's task when the app was closed under it, then the node follows its task."""
+    node = rig.sql("SELECT task_id FROM agent_nodes WHERE plan_ref = ?", ref).fetchone()
+    rig.sql("UPDATE tasks SET status = 'crashed', outcome = 'the app was closed while it ran' WHERE id = ?", node["task_id"])
+    reconcile(rig)
+    return rig.sql("SELECT * FROM agent_nodes WHERE plan_ref = ?", ref).fetchone()
+
+
+def test_a_node_found_dead_because_the_app_closed_gets_a_fresh_attempt_that_does_not_spend_its_one_retry(rig):
+    reservation, tasks = running(rig, [("a1", "web", []), ("a2", "sales", [])])
+    node = app_closed_under(rig, "a1")
+    assert node["attempt"] == 2 and node["state"] == "queued" and [r["action"] for r in rig.audit("node.restarted")] == ["node.restarted"] and rig.audit("node.retry") == []
+    rig.start()
+    rig.go(node["task_id"])
+    rig.finish(node["task_id"], status="crashed", outcome="it really crashed", handoff=False)         # now a real failure: the one retry is still there
+    again = rig.sql("SELECT * FROM agent_nodes WHERE plan_ref = 'a1'").fetchone()
+    assert again["attempt"] == 3 and again["state"] in ("queued", "leased") and [r["action"] for r in rig.audit("node.retry")] == ["node.retry"]
+    rig.start()
+    rig.go(again["task_id"])
+    rig.finish(again["task_id"], status="crashed", outcome="and again", handoff=False)               # the retry is used: the node fails and the project goes on without it
+    assert rig.sql("SELECT state FROM agent_nodes WHERE plan_ref = 'a1'").fetchone()[0] == "failed"
+
+
+def test_the_restart_attempts_of_a_node_are_capped_at_two(rig):
+    reservation, tasks = running(rig, [("a1", "web", []), ("a2", "sales", [])])
+    rig.sql("UPDATE projects SET caps_json = json_set(caps_json, '$.retries', 0) WHERE id = ?", reservation.project_id)         # no ordinary retry: only restart attempts remain
+    for expected in (2, 3):
+        node = app_closed_under(rig, "a1")
+        assert node["attempt"] == expected and node["state"] == "queued"
+        rig.start()
+        rig.go(node["task_id"])
+    node = app_closed_under(rig, "a1")                                                                  # the third close: the cap is reached
+    assert node["state"] == "failed" and node["attempt"] == 3 and len(rig.audit("node.restarted")) == 2
+    assert "app was closed" in node["failure_reason"]
+
+
+def test_a_node_that_was_stopped_by_the_closing_of_the_app_is_a_restart_too_and_a_stop_by_the_owner_is_not(rig):
+    reservation, tasks = running(rig, [("a1", "web", []), ("a2", "sales", [])])
+    rig.sql("UPDATE tasks SET status = 'stopped', outcome = 'the app was closed' WHERE id = ?", tasks["a1"])         # app shutdown ends a live task as stopped
+    rig.sql("UPDATE tasks SET status = 'stopped', outcome = 'stopped by you' WHERE id = ?", tasks["a2"])
+    reconcile(rig)
+    assert rig.sql("SELECT attempt, state FROM agent_nodes WHERE plan_ref = 'a1'").fetchone()[:] == (2, "queued")
+    assert rig.sql("SELECT attempt, state FROM agent_nodes WHERE plan_ref = 'a2'").fetchone()[:] == (1, "cancelled")
